@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
 
 import {
   isWakeAuthoredComment,
@@ -10,6 +10,7 @@ import {
   parseRunRecord,
   parseRunnerResultSentinel,
 } from '../../src/domain/schema.js';
+import type { WakeSandboxConfig } from '../../src/domain/types.js';
 
 describe('issue state schema', () => {
   it('accepts canonical issue and comment fields plus extensible context', () => {
@@ -64,6 +65,15 @@ describe('issue state schema', () => {
 });
 
 describe('run and event schemas', () => {
+  it('exports an explicit sandbox config helper type', () => {
+    expectTypeOf<WakeSandboxConfig>().toEqualTypeOf<{
+      image: string;
+      containerName: string;
+      containerMountPath: string;
+      containerHomeMountPath: string;
+    }>();
+  });
+
   it('accepts running run records', () => {
     const run = parseRunRecord({
       schemaVersion: 1,

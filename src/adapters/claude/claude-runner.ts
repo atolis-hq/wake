@@ -72,7 +72,9 @@ export async function buildStagePrompt(input: {
 }): Promise<StagePromptResult> {
   const mode = input.mode ?? 'start';
   const template = await loadPromptTemplate(input.action, mode, {
-    promptsRoot: input.config?.paths.promptsRoot,
+    ...(input.config?.paths.promptsRoot === undefined
+      ? {}
+      : { promptsRoot: input.config.paths.promptsRoot }),
   });
 
   const context: Record<string, unknown> = {
