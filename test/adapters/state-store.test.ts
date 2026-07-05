@@ -60,4 +60,18 @@ describe('state store', () => {
     const contents = await readFile(join(root, 'events', '2026-07-05.jsonl'), 'utf8');
     expect(contents).toContain('"type":"issue.synced"');
   });
+
+  it('writes and reads github poll state records', async () => {
+    const store = createStateStore({ wakeRoot: root });
+
+    await store.writeSourceState({
+      schemaVersion: 1,
+      source: 'github',
+      key: 'atolis-hq/wake',
+      lastSuccessfulPollAt: '2026-07-05T12:00:00.000Z',
+    });
+
+    const saved = await store.readSourceState('github', 'atolis-hq/wake');
+    expect(saved?.lastSuccessfulPollAt).toBe('2026-07-05T12:00:00.000Z');
+  });
 });

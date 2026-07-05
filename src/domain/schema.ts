@@ -43,6 +43,13 @@ const issueSnapshotSchema = z.object({
   updatedAt: isoTimestampSchema,
 });
 
+export const sourceStateRecordSchema = z.object({
+  schemaVersion: z.literal(1),
+  source: z.string(),
+  key: z.string(),
+  lastSuccessfulPollAt: isoTimestampSchema,
+});
+
 const eventEnvelopeSourceRefsSchema = z.object({
   repo: z.string().optional(),
   issueNumber: z.number().int().positive().optional(),
@@ -169,6 +176,25 @@ export const wakeConfigSchema = z.object({
       smokePrompt: z.string(),
     }),
   }),
+  sources: z.object({
+    github: z.object({
+      enabled: z.boolean(),
+      repos: z.array(z.string().min(1)),
+      polling: z.object({
+        maxIssuesPerRepo: z.number().int().positive(),
+        commentPageSize: z.number().int().positive(),
+        lookbackMs: z.number().int().nonnegative(),
+      }),
+      policy: z.object({
+        requiredLabels: z.array(z.string()),
+        ignoredLabels: z.array(z.string()),
+      }),
+      publication: z.object({
+        postStatusComments: z.boolean(),
+        activeLabel: z.string().optional(),
+      }),
+    }),
+  }),
 });
 
 export const claudePrintResultSchema = z.object({
@@ -202,6 +228,10 @@ export function parseLedger(input: unknown) {
 
 export function parseWakeConfig(input: unknown) {
   return wakeConfigSchema.parse(input);
+}
+
+export function parseSourceStateRecord(input: unknown) {
+  return sourceStateRecordSchema.parse(input);
 }
 
 export function parseClaudePrintResult(input: unknown) {

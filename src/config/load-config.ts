@@ -27,6 +27,26 @@ function mergeWakeConfig(base: WakeConfig, loaded: Record<string, unknown>): Wak
         ...(next.runner?.claude ?? {}),
       },
     },
+    sources: {
+      ...base.sources,
+      ...(next.sources ?? {}),
+      github: {
+        ...base.sources.github,
+        ...(next.sources?.github ?? {}),
+        polling: {
+          ...base.sources.github.polling,
+          ...(next.sources?.github?.polling ?? {}),
+        },
+        policy: {
+          ...base.sources.github.policy,
+          ...(next.sources?.github?.policy ?? {}),
+        },
+        publication: {
+          ...base.sources.github.publication,
+          ...(next.sources?.github?.publication ?? {}),
+        },
+      },
+    },
   });
 }
 

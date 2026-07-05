@@ -7,6 +7,7 @@ import {
   parseIssueStateRecord,
   parseLedger,
   parseRunRecord,
+  parseSourceStateRecord,
   parseWakeConfig,
 } from '../../domain/schema.js';
 import type {
@@ -14,6 +15,7 @@ import type {
   EventRecord,
   IssueStateRecord,
   RunRecord,
+  SourceStateRecord,
   WakeConfig,
   WakeLedger,
 } from '../../domain/types.js';
@@ -62,9 +64,23 @@ export function createStateStore({ wakeRoot }: { wakeRoot: string }) {
       await writeJsonFile(paths.runFile(parsed.runId), parsed);
       return parsed;
     },
+    async writeSourceState(record: SourceStateRecord): Promise<SourceStateRecord> {
+      const parsed = parseSourceStateRecord(record);
+      await writeJsonFile(paths.sourceStateFile(parsed.source, parsed.key), parsed);
+      return parsed;
+    },
     async readRunRecord(runId: string): Promise<RunRecord | null> {
       try {
         return parseRunRecord(await readJsonFile(paths.runFile(runId)));
+      } catch {
+        return null;
+      }
+    },
+    async readSourceState(source: string, key: string): Promise<SourceStateRecord | null> {
+      try {
+        return parseSourceStateRecord(
+          await readJsonFile(paths.sourceStateFile(source, key)),
+        );
       } catch {
         return null;
       }

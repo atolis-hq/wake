@@ -5,6 +5,8 @@ import {
   parseEventEnvelope,
   parseEventRecord,
   parseIssueStateRecord,
+  parseSourceStateRecord,
+  parseWakeConfig,
   parseRunRecord,
   parseRunnerResultSentinel,
 } from '../../src/domain/schema.js';
@@ -129,5 +131,59 @@ describe('run and event schemas', () => {
   it('detects the wake comment marker in shared-account comments', () => {
     expect(isWakeAuthoredComment('Question <!-- wake -->')).toBe(true);
     expect(isWakeAuthoredComment('Human answer')).toBe(false);
+  });
+
+  it('accepts source state records for provider poll watermarks', () => {
+    const sourceState = parseSourceStateRecord({
+      schemaVersion: 1,
+      source: 'github',
+      key: 'atolis-hq/wake',
+      lastSuccessfulPollAt: '2026-07-05T12:00:00.000Z',
+    });
+
+    expect(sourceState.source).toBe('github');
+  });
+
+  it('accepts github source configuration', () => {
+    const config = parseWakeConfig({
+      schemaVersion: 1,
+      paths: {
+        wakeRoot: '/tmp/wake',
+      },
+      scheduler: {
+        intervalMs: 1000,
+      },
+      runner: {
+        mode: 'fake',
+        claude: {
+          command: 'claude',
+          model: 'haiku',
+          smokeModel: 'haiku',
+          sessionName: 'Eddy',
+          remoteControlName: 'Eddy',
+          smokePrompt: 'hi',
+        },
+      },
+      sources: {
+        github: {
+          enabled: false,
+          repos: ['atolis-hq/wake'],
+          polling: {
+            maxIssuesPerRepo: 25,
+            commentPageSize: 25,
+            lookbackMs: 60000,
+          },
+          policy: {
+            requiredLabels: [],
+            ignoredLabels: [],
+          },
+          publication: {
+            postStatusComments: true,
+          },
+        },
+      },
+    });
+
+    expect(config.sources.github.repos).toEqual(['atolis-hq/wake']);
   });
 });

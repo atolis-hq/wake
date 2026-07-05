@@ -7,6 +7,7 @@ import {
   issueStateRecordSchema,
   ledgerSchema,
   runRecordSchema,
+  sourceStateRecordSchema,
   wakeConfigSchema,
 } from './schema.js';
 import {
@@ -26,3 +27,4 @@ export type EventEnvelope = z.infer<typeof eventEnvelopeSchema>;
 export type WakeLedger = z.infer<typeof ledgerSchema>;
 export type WakeConfig = z.infer<typeof wakeConfigSchema>;
 export type ClaudePrintResult = z.infer<typeof claudePrintResultSchema>;
+export type SourceStateRecord = z.infer<typeof sourceStateRecordSchema>;
