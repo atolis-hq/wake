@@ -24,5 +24,4 @@ RUN useradd --create-home --shell /bin/bash wake
 USER wake
 WORKDIR /home/wake
 
-# Built artifact is produced by `node dist/src/main.js start`.
 ENTRYPOINT ["node", "/app/dist/src/main.js", "start", "--wake-root", "/wake"]
