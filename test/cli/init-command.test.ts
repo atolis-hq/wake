@@ -52,6 +52,9 @@ describe('init command', () => {
       'ENTRYPOINT ["node", "/app/dist/src/main.js", "start", "--wake-root", "/wake"]',
     );
     expect(setupScript).toContain('gh auth login');
+    expect(setupScript).not.toContain('docker exec');
+    expect(setupScript).toContain('claude setup-token');
+    expect(setupScript).toContain('ssh-keygen -t ed25519');
 
     for (const promptFile of promptFiles) {
       const prompt = await readFile(join(result.wakeRoot, 'prompts', promptFile), 'utf8');
