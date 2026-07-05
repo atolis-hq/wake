@@ -1,22 +1,68 @@
 import { createLifecycleService } from './lifecycle-service.js';
 import { createPolicyEngine } from './policy-engine.js';
-import type { AgentRunner, WorkSource, WorkspaceManager } from './contracts.js';
+import { createProjectionUpdater } from './projection-updater.js';
+import type {
+  AgentRunner,
+  OutboundSink,
+  WorkSource,
+  WorkspaceManager,
+} from './contracts.js';
 import type { Clock } from '../lib/clock.js';
 import { acquireFileLock } from '../lib/lock.js';
 import { parseRunnerResultSentinel } from '../domain/schema.js';
-import type { WakeConfig } from '../domain/types.js';
-import { createEventRecord } from '../lib/event-log.js';
+import type { EventEnvelope, WakeConfig } from '../domain/types.js';
+import { createEventEnvelope } from '../lib/event-log.js';
 
 export function createTickRunner(deps: {
   clock: Clock;
   config: WakeConfig;
   stateStore: ReturnType<typeof import('../adapters/fs/state-store.js').createStateStore>;
   workSource: WorkSource;
+  outboundSink?: OutboundSink;
   runner: AgentRunner;
   workspaceManager: WorkspaceManager;
 }) {
   const policy = createPolicyEngine();
   const lifecycle = createLifecycleService();
+  const projectionUpdater = createProjectionUpdater({
+    stateStore: deps.stateStore,
+  });
+
+  function createPublishIntentEvent(input: {
+    projection: import('../domain/types.js').IssueStateRecord;
+    runId: string;
+    runnerResult: { result: string };
+    sentinel: 'DONE' | 'BLOCKED' | 'FAILED';
+    occurredAt: string;
+  }): EventEnvelope | null {
+    if (input.sentinel !== 'DONE' && input.sentinel !== 'BLOCKED') {
+      return null;
+    }
+
+    return createEventEnvelope({
+      eventId: `${input.runId}-publish-intent`,
+      workItemKey: input.projection.workItemKey,
+      streamScope: 'work-item',
+      direction: 'outbound',
+      sourceSystem: 'wake',
+      sourceEventType: 'wake.publish.intent.requested',
+      sourceRefs: {
+        repo: input.projection.issue.repo,
+        issueNumber: input.projection.issue.number,
+        runId: input.runId,
+      },
+      occurredAt: input.occurredAt,
+      ingestedAt: input.occurredAt,
+      trigger: 'context-only',
+      payload: {
+        kind: input.sentinel === 'BLOCKED' ? 'question' : 'status-update',
+        body: input.runnerResult.result.replace(/\b(DONE|BLOCKED|FAILED)\b/g, '').trim(),
+      },
+      derivedHints: {
+        stage: input.projection.wake.stage,
+      },
+    });
+  }
 
   return {
     async runTick() {
@@ -27,25 +73,16 @@ export function createTickRunner(deps: {
 
       try {
         const nowIso = deps.clock.now().toISOString();
-        const synced = await deps.workSource.syncIssues();
-
-        for (const issue of synced) {
-          await deps.stateStore.writeIssueState(issue);
-          await deps.stateStore.appendEvent(
-            createEventRecord({
-              type: 'issue.synced',
-              occurredAt: nowIso,
-              repo: issue.issue.repo,
-              issueNumber: issue.issue.number,
-              payload: {
-                stage: issue.wake.stage,
-                labels: issue.issue.labels,
-              },
-            }),
-          );
+        const inboundEvents = await deps.workSource.pollEvents();
+        if (inboundEvents.length > 0) {
+          for (const event of inboundEvents) {
+            await deps.stateStore.appendEventEnvelope(event);
+          }
+          await projectionUpdater.rebuildFromEvents(inboundEvents);
         }
 
-        const candidate = synced.find((issue) => {
+        const projections = await deps.stateStore.listIssueStates();
+        const candidate = projections.find((issue) => {
           const nextAction = policy.chooseAction(issue.wake.stage);
           return nextAction !== null;
         });
@@ -71,13 +108,22 @@ export function createTickRunner(deps: {
         };
 
         await deps.stateStore.writeRunRecord(runningRecord);
-        await deps.stateStore.appendEvent(
-          createEventRecord({
-            type: 'run.claimed',
+        await deps.stateStore.appendEventEnvelope(
+          createEventEnvelope({
+            eventId: `${runId}-claimed`,
+            workItemKey: candidate.workItemKey,
+            streamScope: 'work-item',
+            direction: 'internal',
+            sourceSystem: 'wake',
+            sourceEventType: 'wake.run.claimed',
+            sourceRefs: {
+              repo: candidate.issue.repo,
+              issueNumber: candidate.issue.number,
+              runId,
+            },
             occurredAt: nowIso,
-            repo: candidate.issue.repo,
-            issueNumber: candidate.issue.number,
-            runId,
+            ingestedAt: nowIso,
+            trigger: 'immediate',
             payload: {
               action,
               priorStage: candidate.wake.stage,
@@ -90,9 +136,14 @@ export function createTickRunner(deps: {
           issueNumber: candidate.issue.number,
         });
 
+        const recentEvents = await deps.stateStore.listEventEnvelopesForWorkItem(
+          candidate.workItemKey,
+          6,
+        );
         const runnerResult = await deps.runner.run({
           action,
-          issue: candidate,
+          projection: candidate,
+          recentEvents,
           config: deps.config,
         });
         const sentinel = parseRunnerResultSentinel(runnerResult.result);
@@ -114,41 +165,56 @@ export function createTickRunner(deps: {
           metadata: runnerResult.metadata,
         });
 
-        await deps.stateStore.writeIssueState({
-          ...candidate,
-          wake: {
-            ...candidate.wake,
-            stage: nextStage,
-            lastRunId: runId,
-            sessionId: runnerResult.session_id,
-            workspacePath,
-            syncedAt: finishedAt,
-            stageHistory: [
-              ...candidate.wake.stageHistory,
-              {
-                stage: nextStage,
-                changedAt: finishedAt,
-                reason: `runner:${sentinel.toLowerCase()}`,
-              },
-            ],
-          },
-        });
-
-        await deps.stateStore.appendEvent(
-          createEventRecord({
-            type: 'run.completed',
-            occurredAt: finishedAt,
+        const runCompletedEvent = createEventEnvelope({
+          eventId: `${runId}-completed`,
+          workItemKey: candidate.workItemKey,
+          streamScope: 'work-item',
+          direction: 'internal',
+          sourceSystem: 'wake',
+          sourceEventType: 'wake.run.completed',
+          sourceRefs: {
             repo: candidate.issue.repo,
             issueNumber: candidate.issue.number,
             runId,
-            payload: {
-              action,
-              sentinel,
-              nextStage,
-              sessionId: runnerResult.session_id,
-            },
-          }),
-        );
+          },
+          occurredAt: finishedAt,
+          ingestedAt: finishedAt,
+          trigger: 'immediate',
+          payload: {
+            action,
+            sentinel,
+            nextStage,
+            runId,
+            sessionId: runnerResult.session_id,
+            workspacePath,
+            reason: `runner:${sentinel.toLowerCase()}`,
+          },
+        });
+        await deps.stateStore.appendEventEnvelope(runCompletedEvent);
+        await projectionUpdater.rebuildFromEvents([runCompletedEvent]);
+
+        const publishIntent = createPublishIntentEvent({
+          projection: candidate,
+          runId,
+          runnerResult,
+          sentinel,
+          occurredAt: finishedAt,
+        });
+
+        if (publishIntent !== null) {
+          await deps.stateStore.appendEventEnvelope(publishIntent);
+          await projectionUpdater.rebuildFromEvents([publishIntent]);
+
+          if (deps.outboundSink !== undefined) {
+            const deliveryEvents = await deps.outboundSink.deliverIntent({
+              event: publishIntent,
+            });
+            for (const event of deliveryEvents) {
+              await deps.stateStore.appendEventEnvelope(event);
+            }
+            await projectionUpdater.rebuildFromEvents(deliveryEvents);
+          }
+        }
 
         return {
           status: 'processed' as const,

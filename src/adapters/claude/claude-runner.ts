@@ -5,21 +5,46 @@ import { parseClaudePrintResult } from '../../domain/schema.js';
 import type {
   AgentAction,
   ClaudePrintResult,
+  EventEnvelope,
   IssueStateRecord,
   WakeConfig,
 } from '../../domain/types.js';
 
-function buildStagePrompt(input: {
+export function buildStagePrompt(input: {
   action: AgentAction;
-  issue: IssueStateRecord;
+  projection: IssueStateRecord;
+  recentEvents: EventEnvelope[];
 }): string {
+  const projectionSummary = {
+    workItemKey: input.projection.workItemKey,
+    repo: input.projection.issue.repo,
+    issueNumber: input.projection.issue.number,
+    stage: input.projection.wake.stage,
+    attempts: input.projection.wake.attempts,
+    title: input.projection.issue.title,
+    latestComment: input.projection.latestComment?.body,
+  };
+
   return [
     'You are Eddy, the Wake execution identity.',
     `Stage: ${input.action}`,
     'Respond concisely.',
     'The last line of your response must be exactly one of: DONE, BLOCKED, FAILED.',
-    `Issue: ${input.issue.issue.title}`,
-    input.issue.issue.body,
+    'Projection summary:',
+    JSON.stringify(projectionSummary, null, 2),
+    'Recent events:',
+    JSON.stringify(
+      input.recentEvents.map((event) => ({
+        eventId: event.eventId,
+        sourceEventType: event.sourceEventType,
+        occurredAt: event.occurredAt,
+        payload: event.payload,
+      })),
+      null,
+      2,
+    ),
+    'Issue body:',
+    input.projection.issue.body,
   ].join('\n\n');
 }
 
@@ -107,14 +132,16 @@ export function createClaudeRunner(options: {
   return {
     async run(input: {
       action: AgentAction;
-      issue: IssueStateRecord;
+      projection: IssueStateRecord;
+      recentEvents: EventEnvelope[];
       config: WakeConfig;
     }): Promise<AgentRunResult> {
       const args = buildClaudePrintArgs({
         model: input.config.runner.claude.model,
         prompt: buildStagePrompt({
           action: input.action,
-          issue: input.issue,
+          projection: input.projection,
+          recentEvents: input.recentEvents,
         }),
         sessionName: input.config.runner.claude.sessionName,
       });

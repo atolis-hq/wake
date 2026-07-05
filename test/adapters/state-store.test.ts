@@ -17,6 +17,7 @@ describe('state store', () => {
 
     await store.writeIssueState({
       schemaVersion: 1,
+      workItemKey: 'atolis-hq/wake#7',
       issue: {
         repo: 'atolis-hq/wake',
         number: 7,
@@ -34,6 +35,7 @@ describe('state store', () => {
         stage: 'queue',
         attempts: 0,
         stageHistory: [],
+        recentEventIds: [],
         syncedAt: '2026-07-05T12:00:00.000Z',
       },
       context: {},

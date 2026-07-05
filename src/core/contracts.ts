@@ -1,11 +1,16 @@
 import type {
   AgentAction,
+  EventEnvelope,
   IssueStateRecord,
   WakeConfig,
 } from '../domain/types.js';
 
 export interface WorkSource {
-  syncIssues(): Promise<IssueStateRecord[]>;
+  pollEvents(): Promise<EventEnvelope[]>;
+}
+
+export interface OutboundSink {
+  deliverIntent(input: { event: EventEnvelope }): Promise<EventEnvelope[]>;
 }
 
 export interface AgentRunResult {
@@ -17,7 +22,8 @@ export interface AgentRunResult {
 export interface AgentRunner {
   run(input: {
     action: AgentAction;
-    issue: IssueStateRecord;
+    projection: IssueStateRecord;
+    recentEvents: EventEnvelope[];
     config: WakeConfig;
   }): Promise<AgentRunResult>;
 }

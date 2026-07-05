@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { createFakeTicketingSystem } from '../../src/adapters/fake/fake-ticketing-system.js';
 
 describe('fake ticketing system', () => {
-  it('marks wake-authored comments using the wake marker', async () => {
+  it('emits issue and comment events with shared work item correlation', async () => {
     const source = createFakeTicketingSystem({
       tickets: [
         {
@@ -18,9 +18,16 @@ describe('fake ticketing system', () => {
           ],
         },
       ],
+      now: () => new Date('2026-07-05T12:00:00.000Z'),
     });
 
-    const items = await source.syncIssues();
-    expect(items[0]?.comments.at(-1)?.isWakeAuthored).toBe(false);
+    const events = await source.pollEvents();
+    const issueEvent = events.find((event) => event.sourceEventType === 'fake.issue.upsert');
+    const commentEvents = events.filter((event) => event.sourceEventType === 'fake.issue.comment.created');
+
+    expect(issueEvent?.workItemKey).toBe('atolis-hq/wake#3');
+    expect(commentEvents).toHaveLength(2);
+    expect(commentEvents[0]?.workItemKey).toBe('atolis-hq/wake#3');
+    expect(commentEvents[1]?.derivedHints?.wakeAuthoredComment).toBe(false);
   });
 });

@@ -1,7 +1,8 @@
 import { access } from 'node:fs/promises';
 
-import { isWakeAuthoredComment, parseIssueStateRecord } from '../../domain/schema.js';
-import type { IssueStateRecord } from '../../domain/types.js';
+import { isWakeAuthoredComment } from '../../domain/schema.js';
+import type { EventEnvelope } from '../../domain/types.js';
+import { createEventEnvelope } from '../../lib/event-log.js';
 import { readJsonFile } from '../../lib/json-file.js';
 
 export interface FakeTicketSeed {
@@ -19,59 +20,80 @@ export interface FakeTicketSeed {
   }>;
 }
 
-function stageFromLabels(labels: string[]): IssueStateRecord['wake']['stage'] {
-  if (labels.includes('wake:blocked')) {
-    return 'blocked';
-  }
-
-  if (labels.includes('wake:refined')) {
-    return 'refined';
-  }
-
-  if (labels.includes('wake:active')) {
-    return 'active';
-  }
-
-  if (labels.includes('wake:done')) {
-    return 'done';
-  }
-
-  if (labels.includes('wake:failed')) {
-    return 'failed';
-  }
-
-  return 'queue';
+function workItemKeyForIssue(issue: { repo: string; number: number }): string {
+  return `${issue.repo}#${issue.number}`;
 }
 
-function normalizeIssue(issue: FakeTicketSeed, nowIso: string): IssueStateRecord {
-  return parseIssueStateRecord({
-    schemaVersion: 1,
-    issue: {
-      repo: issue.repo,
-      number: issue.number,
-      title: issue.title,
-      body: issue.body,
-      labels: issue.labels,
-      assignees: [],
-      state: 'open',
-      url: `https://example.test/${issue.repo}/issues/${issue.number}`,
-      createdAt: nowIso,
-      updatedAt: nowIso,
-    },
-    comments: issue.comments.map((comment) => ({
-      ...comment,
-      createdAt: nowIso,
-      updatedAt: nowIso,
-      isWakeAuthored: isWakeAuthoredComment(comment.body),
-    })),
-    wake: {
-      stage: stageFromLabels(issue.labels),
-      attempts: 0,
-      stageHistory: [],
-      syncedAt: nowIso,
-    },
-    context: {},
-  });
+function normalizeIssueEvents(issue: FakeTicketSeed, nowIso: string): EventEnvelope[] {
+  const workItemKey = workItemKeyForIssue(issue);
+  const sourceUrl = `https://example.test/${issue.repo}/issues/${issue.number}`;
+
+  return [
+    createEventEnvelope({
+      eventId: `fake-issue-${issue.repo}-${issue.number}`,
+      workItemKey,
+      streamScope: 'global-intake',
+      direction: 'inbound',
+      sourceSystem: 'fake-ticketing',
+      sourceEventType: 'fake.issue.upsert',
+      sourceRefs: {
+        repo: issue.repo,
+        issueNumber: issue.number,
+        sourceUrl,
+      },
+      occurredAt: nowIso,
+      ingestedAt: nowIso,
+      trigger: 'immediate',
+      payload: {
+        issue: {
+          repo: issue.repo,
+          number: issue.number,
+          title: issue.title,
+          body: issue.body,
+          labels: issue.labels,
+          assignees: [],
+          state: 'open',
+          url: sourceUrl,
+          createdAt: nowIso,
+          updatedAt: nowIso,
+        },
+      },
+      raw: {
+        title: issue.title,
+        body: issue.body,
+        labels: issue.labels,
+      },
+    }),
+    ...issue.comments.map((comment, index) =>
+      createEventEnvelope({
+        eventId: `fake-comment-${issue.repo}-${issue.number}-${comment.id}-${index}`,
+        workItemKey,
+        streamScope: 'work-item',
+        direction: 'inbound',
+        sourceSystem: 'fake-ticketing',
+        sourceEventType: 'fake.issue.comment.created',
+        sourceRefs: {
+          repo: issue.repo,
+          issueNumber: issue.number,
+          commentId: comment.id,
+          sourceUrl,
+        },
+        occurredAt: nowIso,
+        ingestedAt: nowIso,
+        trigger: 'context-only',
+        payload: {
+          comment: {
+            ...comment,
+            createdAt: nowIso,
+            updatedAt: nowIso,
+          },
+        },
+        derivedHints: {
+          wakeAuthoredComment: isWakeAuthoredComment(comment.body),
+        },
+      }),
+    ),
+  ];
 }
 
 export function createFakeTicketingSystem(options: {
@@ -79,9 +101,34 @@ export function createFakeTicketingSystem(options: {
   now?: () => Date;
 }) {
   return {
-    async syncIssues(): Promise<IssueStateRecord[]> {
+    async pollEvents(): Promise<EventEnvelope[]> {
       const nowIso = (options.now ?? (() => new Date()))().toISOString();
-      return options.tickets.map((issue) => normalizeIssue(issue, nowIso));
+      return options.tickets.flatMap((issue) => normalizeIssueEvents(issue, nowIso));
+    },
+    async deliverIntent(input: { event: EventEnvelope }): Promise<EventEnvelope[]> {
+      const publishedAt = (options.now ?? (() => new Date()))().toISOString();
+      return [
+        createEventEnvelope({
+          eventId: `${input.event.eventId}-delivery`,
+          workItemKey: input.event.workItemKey,
+          streamScope: 'work-item',
+          direction: 'outbound',
+          sourceSystem: 'fake-ticketing',
+          sourceEventType: 'fake.issue.comment.published',
+          sourceRefs: {
+            ...input.event.sourceRefs,
+            sink: 'fake-ticketing',
+          },
+          occurredAt: publishedAt,
+          ingestedAt: publishedAt,
+          trigger: 'context-only',
+          payload: {
+            intentEventId: input.event.eventId,
+            kind: input.event.payload.kind,
+            body: input.event.payload.body,
+          },
+        }),
+      ];
     },
   };
 }

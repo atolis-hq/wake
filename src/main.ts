@@ -36,7 +36,7 @@ async function buildRuntime(args: string[]) {
   });
   await stateStore.writeConfig(config);
 
-  const workSource = await createFileBackedFakeTicketingSystem({
+  const ticketingSystem = await createFileBackedFakeTicketingSystem({
     fixturePath: stateStore.paths.issueFixtureFile,
     now: () => systemClock.now(),
   });
@@ -61,7 +61,8 @@ async function buildRuntime(args: string[]) {
       },
     },
     stateStore,
-    workSource,
+    workSource: ticketingSystem,
+    outboundSink: ticketingSystem,
     runner,
     workspaceManager,
   });

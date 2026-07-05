@@ -82,7 +82,47 @@ describe('tick runner', () => {
     await tickRunner.runTick();
 
     const events = await readFile(join(root, 'events', '2026-07-05.jsonl'), 'utf8');
-    expect(events).toContain('"type":"issue.synced"');
-    expect(events).toContain('"type":"run.completed"');
+    expect(events).toContain('"sourceEventType":"fake.issue.upsert"');
+    expect(events).toContain('"sourceEventType":"wake.run.completed"');
+  });
+
+  it('persists outbound publish intents before sink delivery', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const ticketingSystem = createFakeTicketingSystem({
+      tickets: [
+        {
+          repo: 'atolis-hq/wake',
+          number: 11,
+          title: 'Clarify',
+          body: 'Body',
+          labels: ['wake:queue'],
+          comments: [],
+        },
+      ],
+      now: () => new Date('2026-07-05T12:00:00.000Z'),
+    });
+
+    const tickRunner = createTickRunner({
+      clock: { now: () => new Date('2026-07-05T12:00:00.000Z') },
+      config: createDefaultWakeConfig(root),
+      stateStore: store,
+      workSource: ticketingSystem,
+      outboundSink: ticketingSystem,
+      runner: {
+        async run() {
+          return {
+            result: 'Question for the owner\nBLOCKED',
+            session_id: 'fake-session-2',
+          };
+        },
+      },
+      workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+    });
+
+    await tickRunner.runTick();
+
+    const events = await readFile(join(root, 'events', '2026-07-05.jsonl'), 'utf8');
+    expect(events).toContain('"sourceEventType":"wake.publish.intent.requested"');
+    expect(events).toContain('"sourceEventType":"fake.issue.comment.published"');
   });
 });
