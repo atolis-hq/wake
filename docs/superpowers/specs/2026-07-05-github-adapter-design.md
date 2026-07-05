@@ -1,19 +1,20 @@
-# Wake GitHub Adapter Design
+# Wake GitHub Issues Adapter Design
 
 ## Goal
 
-Add the first real GitHub-backed intake path to Wake so the control plane can
-poll configured repositories, synchronize relevant issue state locally, decide
-when work is needed, and invoke Eddy through the existing runner seam.
+Add the first real GitHub Issues-backed ticketing path to Wake so the control
+plane can poll configured repositories, synchronize relevant issue state
+locally, decide when work is needed, and invoke Eddy through the existing
+runner seam.
 
 ## Scope
 
-This design covers the first real-source integration for Wake:
+This design covers the first real ticketing-source integration for Wake:
 
-- a GitHub source configuration surface
-- a polling GitHub adapter that reads issues and comments
+- a GitHub Issues source configuration surface
+- a polling GitHub Issues adapter that reads issues and comments
 - config-driven pickup policy based on repository and labels
-- local synchronization through normalized Wake event envelopes
+- local synchronization through canonical Wake ticket events
 - policy-driven Eddy invocation when new or changed work requires action
 - minimal outbound GitHub status publication for active, blocked, and done work
 - support for `fake` and fixed-model `claude` runner modes
@@ -28,11 +29,11 @@ This design explicitly excludes:
 
 ## Design Summary
 
-Wake will keep GitHub-specific behavior behind adapter seams while retaining
-product logic inside the control plane. A GitHub source adapter will poll one or
-more configured repositories, apply coarse server-side filtering where possible,
-compare fetched snapshots with Wake's local state, and emit normalized inbound
-events only for newly discovered or changed items.
+Wake will keep GitHub Issues-specific behavior behind adapter seams while
+retaining product logic inside the control plane. A GitHub Issues adapter will
+poll one or more configured repositories, apply coarse server-side filtering
+where possible, compare fetched snapshots with Wake's local state, and emit
+canonical inbound ticket events only for newly discovered or changed items.
 
 Wake policy will remain responsible for deciding whether work is needed. When an
 eligible issue is new, receives a new human comment, or becomes newly eligible
@@ -47,7 +48,7 @@ subprocess wrapper around `gh` for normal GitHub API operations. Direct
 `gh api` usage remains an escape hatch for edge cases where Octokit is awkward
 or incomplete.
 
-GitHub synchronization should run inside the normal tick path, not in a
+GitHub Issues synchronization should run inside the normal tick path, not in a
 separate background sync loop. The resident loop should only schedule ticks.
 That keeps source polling, event persistence, projection rebuilds, candidate
 selection, and Eddy invocation inside one durable, lock-protected control-plane
@@ -57,7 +58,7 @@ cycle.
 
 ### Transport choice
 
-The GitHub integration should use:
+The GitHub Issues integration should use:
 
 - `gh auth token` to resolve the active GitHub CLI credential once at startup
 - an Octokit client constructed from that token
@@ -77,18 +78,19 @@ The new code should preserve existing control-plane boundaries:
 - `src/adapters/github/`
   - token resolution through `gh auth token`
   - Octokit client creation
-  - polling and normalization logic
-  - outbound GitHub publication logic
+  - GitHub Issues polling and source-to-canonical ticket normalization logic
+  - outbound GitHub Issues publication logic
 - `src/core/`
   - policy decisions about whether work is needed
   - candidate selection from synchronized local projections
 - `src/domain/`
-  - config schemas and event payload shapes for GitHub-sourced data
+  - config schemas and canonical ticket event payload shapes
 - `src/adapters/fs/`
   - durable storage for source cursors and projection-backed sync state
 
-The GitHub adapter should not choose lifecycle stages or runner behavior. It
-should only fetch, normalize, and publish.
+The GitHub Issues adapter should not choose lifecycle stages or runner
+behavior. It should only fetch, translate into canonical ticket events, and
+publish.
 
 ## Configuration
 
@@ -104,7 +106,7 @@ The existing runner configuration should remain the source of truth:
 
 Wake should not determine models dynamically in this slice.
 
-### GitHub source configuration
+### GitHub Issues source configuration
 
 Add a `sources.github` configuration section with fields equivalent to:
 
@@ -127,7 +129,8 @@ adapter should not introduce a separate scheduler or background sync daemon.
 
 ## Polling And Efficiency
 
-The adapter should use efficient coarse filtering without owning business policy.
+The adapter should use efficient coarse filtering without owning business
+policy.
 
 ### Source-side filtering
 
@@ -186,16 +189,32 @@ adapter while still keeping lifecycle and runner decisions inside core policy.
 
 ## Event Model And Local Sync
 
-The GitHub adapter should emit normalized Wake events rather than writing state
-files directly.
+The GitHub Issues adapter should emit canonical Wake ticket events rather than
+writing state files directly.
 
-### Inbound event types
+### Canonical ticket event types
 
-The first pass should support event types equivalent to:
+Core Wake modules should operate on source-agnostic ticket event types such as:
 
-- `github.issue.upsert`
-- `github.issue.comment.created`
-- `github.issue.comment.updated`
+- `ticket.upsert`
+- `ticket.comment.created`
+- `ticket.comment.updated`
+- `ticket.reply.published`
+
+The adapter may retain the original provider event name for diagnostics in
+fields such as `raw`, `sourceRefs`, or a provider-specific payload fragment, but
+`projection-updater`, `policy-engine`, and `tick-runner` should not branch on
+GitHub-specific event names.
+
+### Adapter translation rules
+
+The GitHub Issues adapter should translate provider events into canonical Wake
+ticket events:
+
+- GitHub issue snapshot changes map to `ticket.upsert`
+- newly seen GitHub issue comments map to `ticket.comment.created`
+- edited GitHub issue comments map to `ticket.comment.updated`
+- successfully published Wake comments map to `ticket.reply.published`
 
 Each event should include:
 
@@ -206,26 +225,28 @@ Each event should include:
 - `ingestedAt` from Wake
 - optional raw fragments for diagnostics
 
-The projection updater should continue to own derived per-issue state material.
+The projection updater should continue to own derived per-issue state material,
+but it should only understand canonical ticket events.
 
 ### Local synchronization contract
 
 Wake should treat the local per-issue state as the synchronized mirror used for
-deterministic routing. The GitHub adapter should compare remote snapshots
-against that mirror and emit only new or changed events.
+deterministic routing. The GitHub Issues adapter should compare remote
+snapshots against that mirror and emit only new or changed canonical ticket
+events.
 
 This keeps the data flow consistent:
 
-1. poll GitHub
-2. normalize changed data into event envelopes
+1. poll GitHub Issues
+2. translate changed data into canonical ticket event envelopes
 3. append inbound events
 4. rebuild projections
 5. let policy decide whether work is needed
 
 ## Policy And Eddy Invocation
 
-Policy should decide whether synchronized change requires work. The adapter
-should not make this decision.
+Policy should decide whether synchronized ticket change requires work. The
+adapter should not make this decision.
 
 ### Eligibility rules
 
@@ -252,7 +273,7 @@ on every poll.
 
 The existing tick runner should remain structurally the same:
 
-1. poll inbound events from the GitHub adapter
+1. poll inbound canonical ticket events from the GitHub Issues adapter
 2. persist inbound events
 3. rebuild projections
 4. select an actionable candidate
@@ -265,8 +286,8 @@ The existing tick runner should remain structurally the same:
 The main policy enhancement is candidate selection based on actionable change,
 not just on the current lifecycle stage.
 
-For this milestone, the tick is also responsible for triggering GitHub sync. A
-separate intake loop would add coordination and race complexity without
+For this milestone, the tick is also responsible for triggering GitHub Issues
+sync. A separate intake loop would add coordination and race complexity without
 improving the first production proof.
 
 ## Outbound GitHub Publication
@@ -285,8 +306,8 @@ this slice.
 
 ## Testing Strategy
 
-The GitHub integration should add focused tests without disturbing the existing
-skeleton contract coverage.
+The GitHub Issues integration should add focused tests without disturbing the
+existing skeleton contract coverage.
 
 ### Required tests
 
@@ -294,9 +315,9 @@ skeleton contract coverage.
    - successful `gh auth token` resolution initializes the GitHub client
    - a failed token lookup produces a clear startup or adapter error
 2. incremental sync
-   - newly seen issues emit normalized issue events
+   - newly seen issues emit canonical `ticket.upsert` events
    - unchanged issues emit no duplicate events
-   - new human comments emit comment events
+   - new human comments emit canonical `ticket.comment.*` events
    - already-synced comments do not re-emit
 3. policy-triggered execution
    - a newly eligible issue triggers Eddy exactly once
@@ -308,17 +329,17 @@ skeleton contract coverage.
    - the same GitHub intake path works with `fake`
    - the same GitHub intake path works with fixed-model `claude`
 
-Tests should isolate GitHub transport behind mocks or a fake GitHub client while
-still exercising the real projection and tick flow.
+Tests should isolate GitHub transport behind mocks or a fake GitHub Issues
+client while still exercising the real projection and tick flow.
 
 ## Implementation Sequence
 
 The implementation should proceed in this order:
 
-1. extend config schema for GitHub source and policy settings
+1. extend config schema for the GitHub Issues source and ticket policy settings
 2. add GitHub token resolution through `gh auth token`
 3. add an Octokit-backed GitHub client wrapper
-4. implement polling and normalization into Wake event envelopes
+4. implement polling and translation into canonical Wake ticket events
 5. persist poll watermark and sync metadata
 6. extend policy to detect actionable new or changed work
 7. add minimal outbound GitHub publication
@@ -326,7 +347,10 @@ The implementation should proceed in this order:
 
 ## Risks And Guardrails
 
-- Do not move lifecycle or runner selection logic into the GitHub adapter.
+- Do not move lifecycle or runner selection logic into the GitHub Issues
+  adapter.
+- Do not let core modules branch on provider-specific event names; translate
+  provider events into canonical ticket events at the adapter boundary.
 - Do not make polling correctness depend only on timestamps; keep local snapshot
   comparison as the final authority.
 - Do not introduce dynamic model routing in this milestone.
@@ -344,7 +368,7 @@ This milestone is complete when:
 - one or more configured repositories can be polled on the resident interval
 - label-based eligibility is configurable
 - new or changed eligible issues synchronize into local Wake state through
-  normalized events
+  canonical ticket events
 - Wake invokes Eddy only when policy determines work is needed
 - Wake can run the flow with either `fake` or fixed-model `claude`
 - Wake publishes minimal outbound GitHub status for active, blocked, or done

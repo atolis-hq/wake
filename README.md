@@ -47,6 +47,18 @@ Useful commands:
 - `npm run smoke:claude` runs a minimal Claude Haiku smoke test
 - `npm run smoke:claude -- --remote-control` starts a minimal remote-control Claude smoke session
 
+## GitHub Issues Polling
+
+Wake can poll configured GitHub repositories when `sources.github.enabled` is
+set to `true`. Authentication is resolved from the current GitHub CLI session
+via `gh auth token`, and Wake uses a fixed runner mode of either `fake` or
+`claude`.
+
+GitHub Issues sync runs inside the normal tick path. Each tick polls GitHub,
+translates provider payloads into canonical ticket events, appends those
+events, rebuilds local projections, decides whether work is needed, and only
+then invokes Eddy.
+
 The default Claude smoke prompt is intentionally tiny:
 
 ```text

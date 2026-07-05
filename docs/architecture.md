@@ -10,6 +10,8 @@
 - Agent-produced outbound intents use the same event model as imported source events.
 - Fake ticketing-system and runner adapters are permanent test harnesses and future real-adapter seams.
 - Real runner integrations live behind the same adapter boundary, with Claude Haiku smoke tests kept intentionally minimal.
+- Ticketing adapters must translate provider-specific payloads into canonical
+  ticket events before core consumes them.
 
 ## Module Boundaries
 
@@ -43,6 +45,12 @@ Each event envelope should carry:
 - a normalized canonical payload Wake scripts can rely on
 - optional source-specific raw payload fragments
 - optional derived hints computed cheaply during ingestion
+
+Core modules should branch on canonical ticket events such as `ticket.upsert`,
+`ticket.comment.created`, `ticket.comment.updated`, and
+`ticket.reply.published`. Provider-specific event names such as GitHub issue
+webhook or API concepts belong in `sourceSystem`, `sourceRefs`, and optional
+`raw` fragments for diagnostics only.
 
 This lets the same durable artifacts serve three roles:
 
