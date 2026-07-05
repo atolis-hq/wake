@@ -93,11 +93,17 @@ export async function buildStagePrompt(input: {
     context.branch = branchNameForIssue(input.projection.issue.number);
   }
 
+  const allowedTools = parseFrontmatterList(template.frontmatter.allowedTools);
+  // Single source of truth: the prompt's tool-restriction prose references
+  // this instead of separately restating the tool list, so the two can't
+  // drift out of sync.
+  context.allowedToolsList = allowedTools.length > 0 ? allowedTools.join(', ') : '(none)';
+
   const permissionMode = template.frontmatter.permissionMode;
 
   return {
     prompt: renderPromptTemplate(template, context),
-    allowedTools: parseFrontmatterList(template.frontmatter.allowedTools),
+    allowedTools,
     extraArgs: parseFrontmatterArgs(template.frontmatter.extraArgs),
     ...(permissionMode === undefined ? {} : { permissionMode }),
   };
@@ -253,6 +259,7 @@ export function createClaudeRunner(options: {
       if (result.exitCode !== 0) {
         return {
           result: `Claude runner failed\n${result.stderr}\nFAILED`,
+          model: input.config.runner.claude.model,
           metadata: {
             stdout: result.stdout,
             stderr: result.stderr,
@@ -264,6 +271,7 @@ export function createClaudeRunner(options: {
       const parsed = parseClaudePrintOutput(result.stdout);
       return {
         result: parsed.result,
+        model: input.config.runner.claude.model,
         ...(parsed.session_id === undefined
           ? {}
           : { session_id: parsed.session_id }),

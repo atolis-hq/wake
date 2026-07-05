@@ -65,7 +65,7 @@ export function createTickRunner(deps: {
         ...(input.runnerResult.session_id === undefined
           ? {}
           : { sessionId: input.runnerResult.session_id }),
-        model: deps.config.runner.claude.model,
+        model: input.runnerResult.model,
         ...(input.workspacePath === undefined
           ? {}
           : { workspacePath: input.workspacePath }),
@@ -147,15 +147,18 @@ export function createTickRunner(deps: {
           }),
         );
 
-        const workspacePath =
+        // 'implement' gets its own branch/workspace; 'refine' only reads
+        // the issue and, at most, the canonical clone read-only - it never
+        // pays per-issue workspace-preparation cost.
+        const { workspacePath } =
           action === 'implement'
-            ? (
-                await deps.workspaceManager.prepareWorkspace({
-                  repo: candidate.issue.repo,
-                  issueNumber: candidate.issue.number,
-                })
-              ).workspacePath
-            : undefined;
+            ? await deps.workspaceManager.prepareWorkspace({
+                repo: candidate.issue.repo,
+                issueNumber: candidate.issue.number,
+              })
+            : await deps.workspaceManager.prepareReadOnlyClone({
+                repo: candidate.issue.repo,
+              });
 
         const recentEvents = await deps.stateStore.listEventEnvelopesForWorkItem(
           candidate.workItemKey,

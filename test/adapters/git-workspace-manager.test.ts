@@ -93,4 +93,23 @@ describe('git workspace manager', () => {
     const readme = await readFile(join(workspacePath, 'README.md'), 'utf8');
     expect(readme).toContain('# updated');
   });
+
+  it('prepares a read-only canonical clone for refine without a per-issue branch', async () => {
+    const wakeRoot = join(root, '.wake');
+    const manager = createGitWorkspaceManager({
+      wakeRoot,
+      remoteUrlForRepo: () => remotePath,
+    });
+
+    const { workspacePath } = await manager.prepareReadOnlyClone({ repo: 'acme/example' });
+
+    const readme = await readFile(join(workspacePath, 'README.md'), 'utf8');
+    expect(readme).toContain('# seed');
+
+    const { stdout } = await execFile('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
+      cwd: workspacePath,
+      env: process.env,
+    });
+    expect(stdout.trim()).toBe('main');
+  });
 });

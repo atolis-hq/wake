@@ -101,6 +101,7 @@ function applyEvent(
     }
 
     const isWakeAuthored = Boolean(event.derivedHints?.wakeAuthoredComment);
+    const isBotAuthored = Boolean(event.derivedHints?.botAuthoredComment);
     const nextComment = {
       ...(comment as Record<string, unknown>),
       isWakeAuthored,
@@ -110,9 +111,14 @@ function applyEvent(
     );
 
     // A human reply is how an owner unblocks a blocked run (per the
-    // "resume to understand; comment to unblock" flow) - return it to the
-    // queue so the next tick picks it back up.
-    const unblocked = current.wake.stage === 'blocked' && !isWakeAuthored;
+    // "resume to understand; comment to unblock" flow). Route back to
+    // whichever stage lets the next tick resume where it left off: a
+    // block during 'implement' should retry implement (stage 'refined'),
+    // not redo the read-only 'refine' stage and abandon the in-progress
+    // branch/workspace.
+    const unblocked = current.wake.stage === 'blocked' && !isWakeAuthored && !isBotAuthored;
+    const blockedFromAction = current.context.blockedFromAction;
+    const unblockStage = blockedFromAction === 'implement' ? 'refined' : 'queue';
 
     return parseIssueStateRecord({
       ...current,
@@ -120,7 +126,7 @@ function applyEvent(
       latestComment: nextComment,
       wake: {
         ...current.wake,
-        stage: unblocked ? 'queue' : current.wake.stage,
+        stage: unblocked ? unblockStage : current.wake.stage,
         syncedAt: event.ingestedAt,
         recentEventIds: [...current.wake.recentEventIds, event.eventId].slice(-10),
         ...(unblocked
@@ -128,7 +134,7 @@ function applyEvent(
               stageHistory: [
                 ...current.wake.stageHistory,
                 {
-                  stage: 'queue' as const,
+                  stage: unblockStage,
                   changedAt: event.occurredAt,
                   reason: 'human-reply-unblocked',
                 },
@@ -141,6 +147,7 @@ function applyEvent(
 
   if (event.sourceEventType === 'wake.run.completed') {
     const payload = event.payload as {
+      action?: string;
       nextStage?: IssueStateRecord['wake']['stage'];
       runId?: string;
       sessionId?: string;
@@ -160,6 +167,12 @@ function applyEvent(
         ...(payload.handledIssueUpdatedAt === undefined
           ? {}
           : { lastHandledIssueUpdatedAt: payload.handledIssueUpdatedAt }),
+        // Remembered so a later human reply can route an unblocked issue
+        // back to the stage that lets the same action resume, instead of
+        // always restarting from 'refine'.
+        ...(payload.nextStage === 'blocked' && payload.action !== undefined
+          ? { blockedFromAction: payload.action }
+          : {}),
       },
       wake: {
         ...current.wake,

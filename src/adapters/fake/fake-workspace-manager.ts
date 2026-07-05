@@ -14,6 +14,11 @@ export function createFakeWorkspaceManager(root: string) {
       await mkdir(workspacePath, { recursive: true });
       return { workspacePath };
     },
+    async prepareReadOnlyClone({ repo }: { repo: string }) {
+      const workspacePath = join(root, repo.replace(/[\\/]/g, '__'), 'canonical');
+      await mkdir(workspacePath, { recursive: true });
+      return { workspacePath };
+    },
     async cleanupWorkspace({ workspacePath }: { workspacePath: string }) {
       await rm(workspacePath, { recursive: true, force: true });
     },

@@ -140,7 +140,8 @@ describe('claude runner command building', () => {
     });
 
     expect(result.prompt).toContain('REFINE stage');
-    expect(result.prompt).toContain('NO Edit, Write, or Bash tool access');
+    expect(result.prompt).toContain('Your only available tools are: Read, Glob, Grep');
+    expect(result.prompt).toContain('Do not attempt to use Edit, Write, or Bash');
     expect(result.prompt).toContain('Please add a widget.');
     expect(result.prompt).not.toContain('gh pr create');
     expect(result.permissionMode).toBe('default');

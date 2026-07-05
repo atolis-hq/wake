@@ -17,7 +17,7 @@ type GitHubIssue = {
 type GitHubComment = {
   id: number;
   body?: string;
-  user?: { login?: string } | null;
+  user?: { login?: string; type?: string } | null;
   created_at: string;
   updated_at: string;
   html_url?: string;
@@ -113,6 +113,10 @@ function normalizeTicketCommentEvent(input: {
     },
     derivedHints: {
       wakeAuthoredComment: isWakeAuthoredComment(input.comment.body ?? ''),
+      // Third-party bots/integrations (CI, Dependabot, Renovate, etc.) must
+      // not be able to unblock a blocked issue just by lacking Wake's own
+      // marker - only an actual human reply should.
+      botAuthoredComment: input.comment.user?.type === 'Bot',
     },
   });
 }

@@ -42,6 +42,23 @@ export function createGitWorkspaceManager(options: {
   const paths = createWakePaths(options.wakeRoot);
   const remoteUrlForRepo = options.remoteUrlForRepo ?? defaultRemoteUrlForRepo;
 
+  async function ensureCanonicalClone(repo: string): Promise<string> {
+    const repoPath = paths.repoRoot(repo);
+    const remoteUrl = remoteUrlForRepo(repo);
+
+    if (await pathExists(repoPath)) {
+      await git(['fetch', 'origin'], repoPath);
+      await git(['checkout', 'main'], repoPath);
+      await git(['reset', '--hard', 'origin/main'], repoPath);
+      await git(['clean', '-fdx'], repoPath);
+    } else {
+      await mkdir(dirname(repoPath), { recursive: true });
+      await git(['clone', remoteUrl, repoPath], dirname(repoPath));
+    }
+
+    return repoPath;
+  }
+
   return {
     async prepareWorkspace({
       repo,
@@ -50,18 +67,8 @@ export function createGitWorkspaceManager(options: {
       repo: string;
       issueNumber: number;
     }): Promise<{ workspacePath: string }> {
-      const repoPath = paths.repoRoot(repo);
+      const repoPath = await ensureCanonicalClone(repo);
       const remoteUrl = remoteUrlForRepo(repo);
-
-      if (await pathExists(repoPath)) {
-        await git(['fetch', 'origin'], repoPath);
-        await git(['checkout', 'main'], repoPath);
-        await git(['reset', '--hard', 'origin/main'], repoPath);
-        await git(['clean', '-fdx'], repoPath);
-      } else {
-        await mkdir(dirname(repoPath), { recursive: true });
-        await git(['clone', remoteUrl, repoPath], dirname(repoPath));
-      }
 
       const workspacePath = paths.workspaceDir(repo, issueNumber);
       await rm(workspacePath, { recursive: true, force: true });
@@ -73,6 +80,13 @@ export function createGitWorkspaceManager(options: {
       await git(['checkout', '-B', branch], workspacePath);
 
       return { workspacePath };
+    },
+    async prepareReadOnlyClone({ repo }: { repo: string }): Promise<{ workspacePath: string }> {
+      // Refine only reads the issue and, at most, the canonical clone -
+      // it never gets a per-issue branch/workspace of its own (only
+      // 'implement' pays that cost).
+      const repoPath = await ensureCanonicalClone(repo);
+      return { workspacePath: repoPath };
     },
     async cleanupWorkspace({ workspacePath }: { workspacePath: string }): Promise<void> {
       await rm(workspacePath, { recursive: true, force: true });
