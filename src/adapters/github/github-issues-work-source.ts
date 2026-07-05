@@ -5,19 +5,19 @@ import { createEventEnvelope } from '../../lib/event-log.js';
 type GitHubIssue = {
   number: number;
   title: string;
-  body: string | null;
-  state: 'open' | 'closed';
+  body?: string | null;
+  state: string;
   html_url: string;
   created_at: string;
   updated_at: string;
-  labels: Array<{ name?: string }>;
-  assignees: Array<{ login: string }>;
+  labels?: Array<string | { name?: string }>;
+  assignees?: Array<{ login?: string }> | null;
 };
 
 type GitHubComment = {
   id: number;
-  body: string;
-  user: { login: string };
+  body?: string;
+  user?: { login?: string } | null;
   created_at: string;
   updated_at: string;
   html_url?: string;
@@ -49,11 +49,13 @@ function normalizeTicketUpsert(input: {
         number: input.issue.number,
         title: input.issue.title,
         body: input.issue.body ?? '',
-        labels: input.issue.labels
-          .map((label) => label.name)
+        labels: (input.issue.labels ?? [])
+          .map((label) => (typeof label === 'string' ? label : label.name))
           .filter((label): label is string => typeof label === 'string'),
-        assignees: input.issue.assignees.map((assignee) => assignee.login),
-        state: input.issue.state,
+        assignees: (input.issue.assignees ?? [])
+          .map((assignee) => assignee.login)
+          .filter((login): login is string => typeof login === 'string'),
+        state: input.issue.state === 'closed' ? 'closed' : 'open',
         url: input.issue.html_url,
         createdAt: input.issue.created_at,
         updatedAt: input.issue.updated_at,
@@ -98,9 +100,9 @@ function normalizeTicketCommentEvent(input: {
     payload: {
       comment: {
         id: String(input.comment.id),
-        body: input.comment.body,
+        body: input.comment.body ?? '',
         author: {
-          login: input.comment.user.login,
+          login: input.comment.user?.login ?? 'unknown',
         },
         createdAt: input.comment.created_at,
         updatedAt: input.comment.updated_at,
@@ -110,7 +112,7 @@ function normalizeTicketCommentEvent(input: {
         : 'github.issue.comment.created',
     },
     derivedHints: {
-      wakeAuthoredComment: isWakeAuthoredComment(input.comment.body),
+      wakeAuthoredComment: isWakeAuthoredComment(input.comment.body ?? ''),
     },
   });
 }
@@ -175,15 +177,15 @@ export function createGitHubIssuesWorkSource(deps: {
               continue;
             }
 
-            events.push(
-              normalizeTicketCommentEvent({
-                repo: repoRef,
-                issueNumber: issue.number,
-                comment,
-                ingestedAt,
-                existingUpdatedAt: known?.updatedAt,
-              }),
-            );
+            events.push(normalizeTicketCommentEvent({
+              repo: repoRef,
+              issueNumber: issue.number,
+              comment,
+              ingestedAt,
+              ...(known?.updatedAt === undefined
+                ? {}
+                : { existingUpdatedAt: known.updatedAt }),
+            }));
           }
         }
 
