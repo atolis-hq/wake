@@ -64,3 +64,12 @@ The default Claude smoke prompt is intentionally tiny:
 ```text
 This is Eddy, reply with "hi Eddy only"
 ```
+
+## Runner Configuration
+
+Wake's execution behavior is configured via the `runner` section in `.wake/config.json`. The following fields control how Eddy is invoked:
+
+- **`runner.mode`** — Execution mode. Set to `"claude"` to use Claude Code for agentic work, or `"fake"` for testing and dry-runs. Default: `"claude"`.
+- **`runner.claude.command`** — CLI command to invoke Claude Code. Default: `"claude"`.
+- **`runner.claude.model`** — Claude model for agent execution. Choose based on task complexity and cost: `"haiku"` for simple work, `"sonnet"` or `"opus"` for complex reasoning. Default: `"haiku"`.
+- **`runner.claude.sessionName`** — Session name for CLI context persistence. Used to resume prior conversations and maintain state across runs. Default: `"Eddy"`.
