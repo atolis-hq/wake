@@ -124,10 +124,21 @@ function applyEvent(
       sessionId?: string;
       workspacePath?: string;
       reason?: string;
+      handledCommentId?: string;
+      handledIssueUpdatedAt?: string;
     };
 
     return parseIssueStateRecord({
       ...current,
+      context: {
+        ...current.context,
+        ...(payload.handledCommentId === undefined
+          ? {}
+          : { lastHandledCommentId: payload.handledCommentId }),
+        ...(payload.handledIssueUpdatedAt === undefined
+          ? {}
+          : { lastHandledIssueUpdatedAt: payload.handledIssueUpdatedAt }),
+      },
       wake: {
         ...current.wake,
         stage: payload.nextStage ?? current.wake.stage,

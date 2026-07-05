@@ -5,6 +5,9 @@ import { createFileBackedFakeTicketingSystem } from './adapters/fake/fake-ticket
 import { createFakeRunner } from './adapters/fake/fake-runner.js';
 import { createFakeWorkspaceManager } from './adapters/fake/fake-workspace-manager.js';
 import { createStateStore } from './adapters/fs/state-store.js';
+import { resolveGitHubToken } from './adapters/github/github-auth.js';
+import { createGitHubClient } from './adapters/github/github-client.js';
+import { createGitHubIssuesWorkSource } from './adapters/github/github-issues-work-source.js';
 import { loadWakeConfig } from './config/load-config.js';
 import { createControlPlane } from './core/control-plane.js';
 import { createTickRunner } from './core/tick-runner.js';
@@ -36,10 +39,17 @@ async function buildRuntime(args: string[]) {
   });
   await stateStore.writeConfig(config);
 
-  const ticketingSystem = await createFileBackedFakeTicketingSystem({
-    fixturePath: stateStore.paths.issueFixtureFile,
-    now: () => systemClock.now(),
-  });
+  const ticketingSystem = config.sources.github.enabled
+    ? createGitHubIssuesWorkSource({
+        client: createGitHubClient(await resolveGitHubToken()),
+        stateStore,
+        config,
+        now: () => systemClock.now(),
+      })
+    : await createFileBackedFakeTicketingSystem({
+        fixturePath: stateStore.paths.issueFixtureFile,
+        now: () => systemClock.now(),
+      });
 
   const runnerMode = readFlag('--runner', args) ?? config.runner.mode;
   const runner =
