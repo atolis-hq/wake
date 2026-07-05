@@ -97,5 +97,26 @@ describe('claude runner command building', () => {
     expect(prompt).toContain('Projection summary');
     expect(prompt).toContain('atolis-hq/wake#12');
     expect(prompt).toContain('github.issue.comment.created');
+    expect(prompt).toContain('wake/issue-12');
+    expect(prompt).toContain('git push -u origin wake/issue-12');
+    expect(prompt).toContain('gh pr create');
+    expect(prompt).toContain('Closes #12');
+  });
+
+  it('includes allowedTools and permission-mode flags in a print invocation when requested', () => {
+    const args = buildClaudePrintArgs({
+      model: 'haiku',
+      prompt: 'do work',
+      sessionName: 'Eddy',
+      permissionMode: 'acceptEdits',
+      allowedTools: ['Bash(git *)', 'Bash(gh *)'],
+    });
+
+    expect(args).toContain('--permission-mode');
+    expect(args).toContain('acceptEdits');
+    expect(args).toContain('--allowedTools');
+    expect(args).toContain('Bash(git *) Bash(gh *)');
+    expect(args).toContain('--');
+    expect(args.at(-1)).toBe('do work');
   });
 });

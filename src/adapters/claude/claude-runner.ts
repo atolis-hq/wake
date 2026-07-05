@@ -9,6 +9,7 @@ import type {
   IssueStateRecord,
   WakeConfig,
 } from '../../domain/types.js';
+import { branchNameForIssue } from '../git/git-workspace-manager.js';
 
 export function buildStagePrompt(input: {
   action: AgentAction;
@@ -25,7 +26,7 @@ export function buildStagePrompt(input: {
     latestComment: input.projection.latestComment?.body,
   };
 
-  return [
+  const sections = [
     'You are Eddy, the Wake execution identity.',
     `Stage: ${input.action}`,
     'Respond concisely.',
@@ -45,13 +46,34 @@ export function buildStagePrompt(input: {
     ),
     'Issue body:',
     input.projection.issue.body,
-  ].join('\n\n');
+  ];
+
+  if (input.action === 'implement') {
+    const branch = branchNameForIssue(input.projection.issue.number);
+    sections.push(
+      [
+        'Completion requirements for this implement stage:',
+        `- Your current working directory is a git checkout of ${input.projection.issue.repo}, already on branch ${branch}, created from the latest main.`,
+        '- Make the code changes needed to resolve the issue directly in this working directory.',
+        '- Stage and commit all changes with `git add -A` and a clear, descriptive commit message.',
+        `- Push the branch with \`git push -u origin ${branch}\`.`,
+        `- Open a pull request against main with \`gh pr create --base main --head ${branch} --title "<summary>" --body "Closes #${input.projection.issue.number}"\`.`,
+        '- Do not merge the pull request yourself; a human reviews and merges it.',
+        '- Include the pull request URL in your response before the final sentinel line.',
+        '- If you cannot safely complete the change, leave the workspace as-is and end with BLOCKED or FAILED instead of guessing.',
+      ].join('\n'),
+    );
+  }
+
+  return sections.join('\n\n');
 }
 
 export function buildClaudePrintArgs(options: {
   model: string;
   prompt: string;
   sessionName: string;
+  permissionMode?: string;
+  allowedTools?: string[];
 }): string[] {
   return [
     '-p',
@@ -61,9 +83,28 @@ export function buildClaudePrintArgs(options: {
     options.model,
     '--name',
     options.sessionName,
+    ...(options.permissionMode === undefined
+      ? []
+      : ['--permission-mode', options.permissionMode]),
+    ...(options.allowedTools === undefined || options.allowedTools.length === 0
+      ? []
+      : ['--allowedTools', options.allowedTools.join(' '), '--']),
     options.prompt,
   ];
 }
+
+const implementAllowedTools = [
+  'Bash(git *)',
+  'Bash(gh *)',
+  'Bash(npm *)',
+  'Edit',
+  'Write',
+  'Read',
+  'Glob',
+  'Grep',
+];
+
+const refineAllowedTools = ['Read', 'Glob', 'Grep'];
 
 export function buildClaudeRemoteControlArgs(options: {
   model: string;
@@ -135,6 +176,7 @@ export function createClaudeRunner(options: {
       projection: IssueStateRecord;
       recentEvents: EventEnvelope[];
       config: WakeConfig;
+      workspacePath?: string;
     }): Promise<AgentRunResult> {
       const args = buildClaudePrintArgs({
         model: input.config.runner.claude.model,
@@ -144,12 +186,15 @@ export function createClaudeRunner(options: {
           recentEvents: input.recentEvents,
         }),
         sessionName: input.config.runner.claude.sessionName,
+        permissionMode: input.action === 'implement' ? 'acceptEdits' : 'default',
+        allowedTools:
+          input.action === 'implement' ? implementAllowedTools : refineAllowedTools,
       });
 
       const result = await runClaudeCommand({
         command: options.command,
         args,
-        cwd: options.cwd,
+        cwd: input.workspacePath ?? options.cwd,
       });
 
       if (result.exitCode !== 0) {

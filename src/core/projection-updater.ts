@@ -71,12 +71,15 @@ function applyEvent(
       return next;
     }
 
+    // Once a projection exists, wake.run.completed events own stage transitions.
+    // Re-deriving stage from labels here would regress it to 'queue' whenever the
+    // issue is re-synced (e.g. GitHub bumps updatedAt when Wake posts its own
+    // status comment), producing an infinite refine loop.
     return parseIssueStateRecord({
       ...current,
       issue: next.issue,
       wake: {
         ...current.wake,
-        stage: next.wake.stage,
         syncedAt: event.ingestedAt,
         recentEventIds: [...current.wake.recentEventIds, event.eventId].slice(-10),
       },

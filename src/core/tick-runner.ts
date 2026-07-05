@@ -135,10 +135,15 @@ export function createTickRunner(deps: {
           }),
         );
 
-        const { workspacePath } = await deps.workspaceManager.prepareWorkspace({
-          repo: candidate.issue.repo,
-          issueNumber: candidate.issue.number,
-        });
+        const workspacePath =
+          action === 'implement'
+            ? (
+                await deps.workspaceManager.prepareWorkspace({
+                  repo: candidate.issue.repo,
+                  issueNumber: candidate.issue.number,
+                })
+              ).workspacePath
+            : undefined;
 
         const recentEvents = await deps.stateStore.listEventEnvelopesForWorkItem(
           candidate.workItemKey,
@@ -149,6 +154,7 @@ export function createTickRunner(deps: {
           projection: candidate,
           recentEvents,
           config: deps.config,
+          ...(workspacePath === undefined ? {} : { workspacePath }),
         });
         const sentinel = parseRunnerResultSentinel(runnerResult.result);
         const nextStage = lifecycle.nextStageFromSentinel(action, sentinel);
