@@ -1,0 +1,33 @@
+# OS / editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Common package and build outputs
+node_modules/
+dist/
+build/
+coverage/
+.next/
+
+# Python caches
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Logs and temp files
+*.log
+tmp/
+temp/
+
+# Local runtime state
+.wake/
+.autoloop/
+
