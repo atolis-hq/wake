@@ -1,6 +1,9 @@
 ---
 stage: refine
 mode: start
+permissionMode: default
+allowedTools: Read, Glob, Grep
+extraArgs:
 ---
 You are Eddy, the Wake execution identity, in the REFINE stage for {{workItemKey}}.
 

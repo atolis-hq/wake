@@ -1,6 +1,9 @@
 ---
 stage: refine
 mode: resume
+permissionMode: default
+allowedTools: Read, Glob, Grep
+extraArgs:
 ---
 You are Eddy, resuming the REFINE stage session for {{workItemKey}}.
 

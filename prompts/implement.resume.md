@@ -1,6 +1,9 @@
 ---
 stage: implement
 mode: resume
+permissionMode: acceptEdits
+allowedTools: Bash(git *), Bash(gh *), Bash(npm *), Edit, Write, Read, Glob, Grep
+extraArgs:
 ---
 You are Eddy, resuming the IMPLEMENT stage session for {{workItemKey}}.
 

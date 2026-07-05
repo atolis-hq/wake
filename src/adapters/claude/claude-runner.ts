@@ -37,12 +37,38 @@ export function buildEddySessionName(input: {
     .join('-');
 }
 
+function parseFrontmatterList(value: string | undefined): string[] {
+  if (value === undefined || value.trim().length === 0) {
+    return [];
+  }
+
+  return value
+    .split(',')
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+}
+
+function parseFrontmatterArgs(value: string | undefined): string[] {
+  if (value === undefined || value.trim().length === 0) {
+    return [];
+  }
+
+  return value.trim().split(/\s+/);
+}
+
+export interface StagePromptResult {
+  prompt: string;
+  permissionMode?: string;
+  allowedTools: string[];
+  extraArgs: string[];
+}
+
 export async function buildStagePrompt(input: {
   action: AgentAction;
   projection: IssueStateRecord;
   recentEvents: EventEnvelope[];
   mode?: 'start' | 'resume';
-}): Promise<string> {
+}): Promise<StagePromptResult> {
   const mode = input.mode ?? 'start';
   const template = await loadPromptTemplate(input.action, mode);
 
@@ -67,7 +93,14 @@ export async function buildStagePrompt(input: {
     context.branch = branchNameForIssue(input.projection.issue.number);
   }
 
-  return renderPromptTemplate(template, context);
+  const permissionMode = template.frontmatter.permissionMode;
+
+  return {
+    prompt: renderPromptTemplate(template, context),
+    allowedTools: parseFrontmatterList(template.frontmatter.allowedTools),
+    extraArgs: parseFrontmatterArgs(template.frontmatter.extraArgs),
+    ...(permissionMode === undefined ? {} : { permissionMode }),
+  };
 }
 
 export function buildClaudePrintArgs(options: {
@@ -77,6 +110,7 @@ export function buildClaudePrintArgs(options: {
   permissionMode?: string;
   allowedTools?: string[];
   remoteControlName?: string;
+  extraArgs?: string[];
 }): string[] {
   return [
     '-p',
@@ -95,25 +129,16 @@ export function buildClaudePrintArgs(options: {
     ...(options.remoteControlName === undefined
       ? []
       : ['--remote-control', options.remoteControlName]),
+    // Generic escape hatch for any other CLI flag a stage template needs
+    // (e.g. --dangerously-skip-permissions) without bespoke code per flag.
+    ...(options.extraArgs ?? []),
     // Terminate option parsing so the prompt is never swallowed by a
-    // variadic/optional-value flag above (e.g. --allowedTools, --remote-control).
+    // variadic/optional-value flag above (e.g. --allowedTools, --remote-control,
+    // or anything in extraArgs with an optional value).
     '--',
     options.prompt,
   ];
 }
-
-const implementAllowedTools = [
-  'Bash(git *)',
-  'Bash(gh *)',
-  'Bash(npm *)',
-  'Edit',
-  'Write',
-  'Read',
-  'Glob',
-  'Grep',
-];
-
-const refineAllowedTools = ['Read', 'Glob', 'Grep'];
 
 export function buildClaudeRemoteControlArgs(options: {
   model: string;
@@ -198,7 +223,7 @@ export function createClaudeRunner(options: {
       // Wake always starts a fresh session today - it does not yet call
       // `claude --resume`, so mode is always 'start'. The 'resume' templates
       // exist for when that policy (tracked in todo/) is wired up.
-      const prompt = await buildStagePrompt({
+      const stagePrompt = await buildStagePrompt({
         action: input.action,
         projection: input.projection,
         recentEvents: input.recentEvents,
@@ -207,11 +232,13 @@ export function createClaudeRunner(options: {
 
       const args = buildClaudePrintArgs({
         model: input.config.runner.claude.model,
-        prompt,
+        prompt: stagePrompt.prompt,
         sessionName,
-        permissionMode: input.action === 'implement' ? 'acceptEdits' : 'default',
-        allowedTools:
-          input.action === 'implement' ? implementAllowedTools : refineAllowedTools,
+        allowedTools: stagePrompt.allowedTools,
+        extraArgs: stagePrompt.extraArgs,
+        ...(stagePrompt.permissionMode === undefined
+          ? {}
+          : { permissionMode: stagePrompt.permissionMode }),
         ...(input.config.runner.claude.remoteControl.enabled
           ? { remoteControlName: sessionName }
           : {}),
