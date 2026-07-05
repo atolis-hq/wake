@@ -13,16 +13,6 @@ The core idea is to coordinate local agent execution through a control plane tha
 
 Wake is intended to start simple. The first justified version is a small loop that can pick work, decide what to do next, execute it locally, persist state, and resume later. More advanced routing, lifecycle control, and self-improvement should only be added once that simple version proves useful.
 
-## Status
-
-This repository now includes the first control-plane skeleton as a TypeScript Node app.
-
-- Vision document: [docs/vision.md](docs/vision.md)
-- Implementation guide (MVP + longer-term shape): [docs/implementation.md](docs/implementation.md)
-- Skeleton architecture guide: [docs/architecture.md](docs/architecture.md)
-- Event-first refactor handoff: [docs/handoffs/2026-07-05-event-first-persistence.md](docs/handoffs/2026-07-05-event-first-persistence.md)
-- Early-thinking inputs (not the accepted plan): [docs/vision-inputs/](docs/vision-inputs/)
-
 ## Concepts
 
 - `Wake` is the control plane and decision-maker.
