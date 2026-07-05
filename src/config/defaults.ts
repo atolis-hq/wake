@@ -25,5 +25,23 @@ export function createDefaultWakeConfig(wakeRoot = resolve(process.cwd(), '.wake
         smokePrompt: defaultSmokePrompt,
       },
     },
+    sources: {
+      github: {
+        enabled: false,
+        repos: [],
+        polling: {
+          maxIssuesPerRepo: 25,
+          commentPageSize: 25,
+          lookbackMs: 60_000,
+        },
+        policy: {
+          requiredLabels: [],
+          ignoredLabels: [],
+        },
+        publication: {
+          postStatusComments: true,
+        },
+      },
+    },
   });
 }

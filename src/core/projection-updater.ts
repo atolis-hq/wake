@@ -26,7 +26,11 @@ function stageFromLabels(labels: string[]): IssueStateRecord['wake']['stage'] {
 }
 
 function createProjectionFromIssueEvent(event: EventEnvelope): IssueStateRecord | null {
-  const issue = event.payload.issue;
+  const issue =
+    event.sourceEventType === 'ticket.upsert'
+      ? event.payload.ticket
+      : event.payload.issue;
+
   if (issue === undefined || typeof issue !== 'object' || issue === null) {
     return null;
   }
@@ -54,7 +58,10 @@ function applyEvent(
   current: IssueStateRecord | null,
   event: EventEnvelope,
 ): IssueStateRecord | null {
-  if (event.sourceEventType === 'fake.issue.upsert') {
+  if (
+    event.sourceEventType === 'fake.issue.upsert' ||
+    event.sourceEventType === 'ticket.upsert'
+  ) {
     const next = createProjectionFromIssueEvent(event);
     if (next === null) {
       return current;
@@ -80,22 +87,28 @@ function applyEvent(
     return null;
   }
 
-  if (event.sourceEventType === 'fake.issue.comment.created') {
+  if (
+    event.sourceEventType === 'fake.issue.comment.created' ||
+    event.sourceEventType === 'ticket.comment.created' ||
+    event.sourceEventType === 'ticket.comment.updated'
+  ) {
     const comment = event.payload.comment;
     if (comment === undefined || typeof comment !== 'object' || comment === null) {
       return current;
     }
 
+    const nextComment = {
+      ...(comment as Record<string, unknown>),
+      isWakeAuthored: Boolean(event.derivedHints?.wakeAuthoredComment),
+    };
+    const existingComments = current.comments.filter(
+      (entry) => entry.id !== String((comment as { id?: unknown }).id),
+    );
+
     return parseIssueStateRecord({
       ...current,
-      comments: [...current.comments, {
-        ...(comment as Record<string, unknown>),
-        isWakeAuthored: Boolean(event.derivedHints?.wakeAuthoredComment),
-      }],
-      latestComment: {
-        ...(comment as Record<string, unknown>),
-        isWakeAuthored: Boolean(event.derivedHints?.wakeAuthoredComment),
-      },
+      comments: [...existingComments, nextComment],
+      latestComment: nextComment,
       wake: {
         ...current.wake,
         syncedAt: event.ingestedAt,
@@ -111,10 +124,21 @@ function applyEvent(
       sessionId?: string;
       workspacePath?: string;
       reason?: string;
+      handledCommentId?: string;
+      handledIssueUpdatedAt?: string;
     };
 
     return parseIssueStateRecord({
       ...current,
+      context: {
+        ...current.context,
+        ...(payload.handledCommentId === undefined
+          ? {}
+          : { lastHandledCommentId: payload.handledCommentId }),
+        ...(payload.handledIssueUpdatedAt === undefined
+          ? {}
+          : { lastHandledIssueUpdatedAt: payload.handledIssueUpdatedAt }),
+      },
       wake: {
         ...current.wake,
         stage: payload.nextStage ?? current.wake.stage,

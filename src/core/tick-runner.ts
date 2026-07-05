@@ -83,8 +83,12 @@ export function createTickRunner(deps: {
 
         const projections = await deps.stateStore.listIssueStates();
         const candidate = projections.find((issue) => {
+          if (!policy.isEligible(issue, deps.config)) {
+            return false;
+          }
+
           const nextAction = policy.chooseAction(issue.wake.stage);
-          return nextAction !== null;
+          return nextAction !== null && policy.needsWakeAction(issue);
         });
 
         if (candidate === undefined) {
@@ -188,6 +192,10 @@ export function createTickRunner(deps: {
             sessionId: runnerResult.session_id,
             workspacePath,
             reason: `runner:${sentinel.toLowerCase()}`,
+            handledCommentId: candidate.latestComment?.isWakeAuthored
+              ? undefined
+              : candidate.latestComment?.id,
+            handledIssueUpdatedAt: candidate.issue.updatedAt,
           },
         });
         await deps.stateStore.appendEventEnvelope(runCompletedEvent);
