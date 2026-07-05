@@ -16,47 +16,34 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: "24"
-      - name: Run tests when the Node scaffold exists
-        shell: bash
+      - run: npm ci
+      - run: npm test
+
+  tag:
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.semver.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Determine next version
+        id: semver
+        uses: paulhatch/semantic-version@v6.0.2
+        with:
+          tag_prefix: "v"
+          major_pattern: "(MAJOR)"
+          minor_pattern: "(MINOR)"
+      - name: Push tag
         run: |
-          if [ -f package.json ]; then
-            if [ ! -f package-lock.json ]; then
-              echo "package.json exists but package-lock.json is missing." >&2
-              exit 1
-            fi
-
-            npm ci
-            npm test
-            exit 0
-          fi
-
-          echo "Wake does not have a runnable Node package yet. CI is ready for pull requests and will start running npm test once the scaffold lands."
-
-  # tag:
-  #   needs: test
-  #   if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-  #   runs-on: ubuntu-latest
-  #   permissions:
-  #     contents: write
-  #   outputs:
-  #     version: ${{ steps.semver.outputs.version }}
-  #   steps:
-  #     - uses: actions/checkout@v7
-  #       with:
-  #         fetch-depth: 0
-  #     - name: Determine next version
-  #       id: semver
-  #       uses: paulhatch/semantic-version@v6.0.2
-  #       with:
-  #         tag_prefix: "v"
-  #         major_pattern: "(MAJOR)"
-  #         minor_pattern: "(MINOR)"
-  #     - name: Push tag
-  #       run: |
-  #         git config user.name "github-actions[bot]"
-  #         git config user.email "github-actions[bot]@users.noreply.github.com"
-  #         git tag v${{ steps.semver.outputs.version }}
-  #         git push origin v${{ steps.semver.outputs.version }}
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag v${{ steps.semver.outputs.version }}
+          git push origin v${{ steps.semver.outputs.version }}
 
   # publish:
   #   needs: [tag]
