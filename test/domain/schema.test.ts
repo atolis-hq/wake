@@ -149,6 +149,13 @@ describe('run and event schemas', () => {
       schemaVersion: 1,
       paths: {
         wakeRoot: '/tmp/wake',
+        promptsRoot: '/tmp/wake/prompts',
+      },
+      sandbox: {
+        image: 'wake-sandbox',
+        containerName: 'wake-sandbox-1',
+        containerMountPath: '/wake',
+        containerHomeMountPath: '/home/wake',
       },
       scheduler: {
         intervalMs: 1000,
@@ -188,5 +195,7 @@ describe('run and event schemas', () => {
     });
 
     expect(config.sources.github.repos).toEqual(['atolis-hq/wake']);
+    expect(config.paths.promptsRoot).toBe('/tmp/wake/prompts');
+    expect(config.sandbox.containerName).toBe('wake-sandbox-1');
   });
 });

@@ -1,3 +1,7 @@
+import { mkdtemp, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -147,6 +151,102 @@ describe('claude runner command building', () => {
     expect(result.permissionMode).toBe('default');
     expect(result.allowedTools).toEqual(['Read', 'Glob', 'Grep']);
     expect(result.allowedTools).not.toContain('Edit');
+  });
+
+  it('assembles a stage prompt from an explicit prompts root when configured', async () => {
+    const promptsDir = await mkdtemp(join(tmpdir(), 'wake-prompts-'));
+    await writeFile(
+      join(promptsDir, 'refine.start.md'),
+      [
+        '---',
+        'permissionMode: default',
+        'allowedTools: Read',
+        '---',
+        'Custom template for {{workItemKey}}',
+      ].join('\n'),
+      'utf8',
+    );
+
+    const result = await buildStagePrompt({
+      action: 'refine',
+      projection: {
+        schemaVersion: 1,
+        workItemKey: 'atolis-hq/wake#14',
+        issue: {
+          repo: 'atolis-hq/wake',
+          number: 14,
+          title: 'Example issue',
+          body: 'Please add a widget.',
+          labels: [],
+          assignees: [],
+          state: 'open',
+          url: 'https://example.test/issues/14',
+          createdAt: '2026-07-05T12:00:00.000Z',
+          updatedAt: '2026-07-05T12:00:00.000Z',
+        },
+        comments: [],
+        wake: {
+          stage: 'queue',
+          attempts: 0,
+          stageHistory: [],
+          recentEventIds: [],
+          syncedAt: '2026-07-05T12:00:00.000Z',
+        },
+        context: {},
+      },
+      recentEvents: [],
+      config: {
+        schemaVersion: 1,
+        paths: {
+          wakeRoot: '/tmp/wake',
+          promptsRoot: promptsDir,
+        },
+        sandbox: {
+          image: 'wake-sandbox',
+          containerName: 'wake-sandbox',
+          containerMountPath: '/wake',
+          containerHomeMountPath: '/home/wake',
+        },
+        scheduler: {
+          intervalMs: 1000,
+        },
+        runner: {
+          mode: 'fake',
+          claude: {
+            command: 'claude',
+            model: 'haiku',
+            smokeModel: 'haiku',
+            sessionName: 'Eddy',
+            remoteControlName: 'Eddy',
+            smokePrompt: 'hi',
+            remoteControl: {
+              enabled: false,
+            },
+          },
+        },
+        sources: {
+          github: {
+            enabled: false,
+            repos: [],
+            polling: {
+              maxIssuesPerRepo: 25,
+              commentPageSize: 25,
+              lookbackMs: 60000,
+            },
+            policy: {
+              requiredLabels: [],
+              ignoredLabels: [],
+            },
+            publication: {
+              postStatusComments: true,
+            },
+          },
+        },
+      },
+    });
+
+    expect(result.prompt).toContain('Custom template for atolis-hq/wake#14');
+    expect(result.allowedTools).toEqual(['Read']);
   });
 
   it('includes extraArgs verbatim before the -- terminator', () => {

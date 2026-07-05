@@ -161,6 +161,13 @@ export const wakeConfigSchema = z.object({
   schemaVersion: z.literal(1),
   paths: z.object({
     wakeRoot: z.string(),
+    promptsRoot: z.string().optional(),
+  }),
+  sandbox: z.object({
+    image: z.string().min(1),
+    containerName: z.string().min(1),
+    containerMountPath: z.string().min(1),
+    containerHomeMountPath: z.string().min(1),
   }),
   scheduler: z.object({
     intervalMs: z.number().int().positive(),

@@ -1,3 +1,7 @@
+import { mkdtemp, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -18,6 +22,21 @@ describe('prompt templates', () => {
     await expect(loadPromptTemplate('refine', 'resume')).resolves.toBeDefined();
     await expect(loadPromptTemplate('implement', 'start')).resolves.toBeDefined();
     await expect(loadPromptTemplate('implement', 'resume')).resolves.toBeDefined();
+  });
+
+  it('loads a template from an explicit prompts root', async () => {
+    const promptsDir = await mkdtemp(join(tmpdir(), 'wake-prompts-'));
+    await writeFile(
+      join(promptsDir, 'refine.start.md'),
+      '---\nstage: refine\nmode: start\n---\nCustom prompt body',
+      'utf8',
+    );
+
+    const template = await loadPromptTemplate('refine', 'start', {
+      promptsRoot: promptsDir,
+    });
+
+    expect(template.body).toBe('Custom prompt body');
   });
 
   it('substitutes known tokens and leaves unknown ones untouched', () => {

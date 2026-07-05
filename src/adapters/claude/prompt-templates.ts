@@ -51,15 +51,18 @@ function parseFrontmatter(raw: string): PromptTemplate {
   return { frontmatter, body: body ?? '' };
 }
 
-export function promptsRoot(): string {
-  return join(findProjectRoot(dirname(fileURLToPath(import.meta.url))), 'prompts');
+export function promptsRoot(explicitRoot?: string): string {
+  return explicitRoot ?? join(findProjectRoot(dirname(fileURLToPath(import.meta.url))), 'prompts');
 }
 
 export async function loadPromptTemplate(
   stage: string,
   mode: string,
+  options?: {
+    promptsRoot?: string;
+  },
 ): Promise<PromptTemplate> {
-  const filePath = join(promptsRoot(), `${stage}.${mode}.md`);
+  const filePath = join(promptsRoot(options?.promptsRoot), `${stage}.${mode}.md`);
   const raw = await readFile(filePath, 'utf8');
   return parseFrontmatter(raw);
 }
