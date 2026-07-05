@@ -35,8 +35,8 @@ describe('claude runner command building', () => {
     expect(args.at(-1)).toBe(defaultSmokePrompt);
   });
 
-  it('assembles a stage prompt from a projection summary and recent events', () => {
-    const prompt = buildStagePrompt({
+  it('assembles a stage prompt from a projection summary and recent events', async () => {
+    const prompt = await buildStagePrompt({
       action: 'implement',
       projection: {
         schemaVersion: 1,
@@ -95,13 +95,50 @@ describe('claude runner command building', () => {
       ],
     });
 
-    expect(prompt).toContain('Projection summary');
+    expect(prompt).toContain('IMPLEMENT stage');
     expect(prompt).toContain('atolis-hq/wake#12');
-    expect(prompt).toContain('github.issue.comment.created');
+    expect(prompt).toContain('"github.issue.comment.created"');
     expect(prompt).toContain('wake/issue-12');
     expect(prompt).toContain('git push -u origin wake/issue-12');
     expect(prompt).toContain('gh pr create');
     expect(prompt).toContain('Closes #12');
+  });
+
+  it('assembles a refine-stage prompt that withholds edit tools', async () => {
+    const prompt = await buildStagePrompt({
+      action: 'refine',
+      projection: {
+        schemaVersion: 1,
+        workItemKey: 'atolis-hq/wake#13',
+        issue: {
+          repo: 'atolis-hq/wake',
+          number: 13,
+          title: 'Example issue',
+          body: 'Please add a widget.',
+          labels: [],
+          assignees: [],
+          state: 'open',
+          url: 'https://example.test/issues/13',
+          createdAt: '2026-07-05T12:00:00.000Z',
+          updatedAt: '2026-07-05T12:00:00.000Z',
+        },
+        comments: [],
+        wake: {
+          stage: 'queue',
+          attempts: 0,
+          stageHistory: [],
+          recentEventIds: [],
+          syncedAt: '2026-07-05T12:00:00.000Z',
+        },
+        context: {},
+      },
+      recentEvents: [],
+    });
+
+    expect(prompt).toContain('REFINE stage');
+    expect(prompt).toContain('NO Edit, Write, or Bash tool access');
+    expect(prompt).toContain('Please add a widget.');
+    expect(prompt).not.toContain('gh pr create');
   });
 
   it('includes allowedTools and permission-mode flags in a print invocation when requested', () => {

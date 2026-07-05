@@ -10,6 +10,7 @@ import type {
   WakeConfig,
 } from '../../domain/types.js';
 import { branchNameForIssue } from '../git/git-workspace-manager.js';
+import { loadPromptTemplate, renderPromptTemplate } from './prompt-templates.js';
 
 function slugify(value: string, maxLength = 40): string {
   return value
@@ -36,61 +37,37 @@ export function buildEddySessionName(input: {
     .join('-');
 }
 
-export function buildStagePrompt(input: {
+export async function buildStagePrompt(input: {
   action: AgentAction;
   projection: IssueStateRecord;
   recentEvents: EventEnvelope[];
-}): string {
-  const projectionSummary = {
+  mode?: 'start' | 'resume';
+}): Promise<string> {
+  const mode = input.mode ?? 'start';
+  const template = await loadPromptTemplate(input.action, mode);
+
+  const context: Record<string, unknown> = {
     workItemKey: input.projection.workItemKey,
     repo: input.projection.issue.repo,
     issueNumber: input.projection.issue.number,
+    title: input.projection.issue.title,
     stage: input.projection.wake.stage,
     attempts: input.projection.wake.attempts,
-    title: input.projection.issue.title,
-    latestComment: input.projection.latestComment?.body,
+    latestComment: input.projection.latestComment?.body ?? '(none)',
+    body: input.projection.issue.body,
+    recentEventsJson: input.recentEvents.map((event) => ({
+      eventId: event.eventId,
+      sourceEventType: event.sourceEventType,
+      occurredAt: event.occurredAt,
+      payload: event.payload,
+    })),
   };
 
-  const sections = [
-    'You are Eddy, the Wake execution identity.',
-    `Stage: ${input.action}`,
-    'Respond concisely.',
-    'The last line of your response must be exactly one of: DONE, BLOCKED, FAILED.',
-    'Projection summary:',
-    JSON.stringify(projectionSummary, null, 2),
-    'Recent events:',
-    JSON.stringify(
-      input.recentEvents.map((event) => ({
-        eventId: event.eventId,
-        sourceEventType: event.sourceEventType,
-        occurredAt: event.occurredAt,
-        payload: event.payload,
-      })),
-      null,
-      2,
-    ),
-    'Issue body:',
-    input.projection.issue.body,
-  ];
-
   if (input.action === 'implement') {
-    const branch = branchNameForIssue(input.projection.issue.number);
-    sections.push(
-      [
-        'Completion requirements for this implement stage:',
-        `- Your current working directory is a git checkout of ${input.projection.issue.repo}, already on branch ${branch}, created from the latest main.`,
-        '- Make the code changes needed to resolve the issue directly in this working directory.',
-        '- Stage and commit all changes with `git add -A` and a clear, descriptive commit message.',
-        `- Push the branch with \`git push -u origin ${branch}\`.`,
-        `- Open a pull request against main with \`gh pr create --base main --head ${branch} --title "<summary>" --body "Closes #${input.projection.issue.number}"\`.`,
-        '- Do not merge the pull request yourself; a human reviews and merges it.',
-        '- Include the pull request URL in your response before the final sentinel line.',
-        '- If you cannot safely complete the change, leave the workspace as-is and end with BLOCKED or FAILED instead of guessing.',
-      ].join('\n'),
-    );
+    context.branch = branchNameForIssue(input.projection.issue.number);
   }
 
-  return sections.join('\n\n');
+  return renderPromptTemplate(template, context);
 }
 
 export function buildClaudePrintArgs(options: {
@@ -218,13 +195,19 @@ export function createClaudeRunner(options: {
         runId: input.runId,
       });
 
+      // Wake always starts a fresh session today - it does not yet call
+      // `claude --resume`, so mode is always 'start'. The 'resume' templates
+      // exist for when that policy (tracked in todo/) is wired up.
+      const prompt = await buildStagePrompt({
+        action: input.action,
+        projection: input.projection,
+        recentEvents: input.recentEvents,
+        mode: 'start',
+      });
+
       const args = buildClaudePrintArgs({
         model: input.config.runner.claude.model,
-        prompt: buildStagePrompt({
-          action: input.action,
-          projection: input.projection,
-          recentEvents: input.recentEvents,
-        }),
+        prompt,
         sessionName,
         permissionMode: input.action === 'implement' ? 'acceptEdits' : 'default',
         allowedTools:
