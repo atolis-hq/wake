@@ -18,7 +18,7 @@ Wake should persist three distinct layers:
 
 1. **Canonical event stream**
    - immutable envelopes under `.wake/events/<date>.jsonl`
-   - imported external events and internal Wake decisions
+   - imported external events, internal Wake decisions, and outbound publish intents
 2. **Derived projections**
    - current work-item views under `.wake/state/<repo>/<issue>.json`
    - optimized for deterministic policy decisions and resume routing
@@ -55,6 +55,10 @@ Each event envelope should include:
 - `derivedHints`
   - optional cheap ingestion-time hints such as `wakeAuthoredComment=false`
 
+For outbound intents, `sourceSystem` can still be `wake`, while `payload`
+describes the requested publication and `derivedHints` or a dedicated field can
+identify intended sinks.
+
 ## Projection shape
 
 The per-issue projection should remain cheap to read and deterministic. It
@@ -86,6 +90,30 @@ The intended control-plane flow is:
    - prior session id or run references
 6. persist new internal events and run records
 
+For outbound communication, the parallel pattern is:
+
+1. agent or control-plane logic emits a Wake intent event
+2. persist the intent envelope
+3. route it through sink adapters
+4. persist delivery result events
+
+This decouples the agent from channel-specific integrations.
+
+## Global intake and correlated streams
+
+Wake should treat the event system as having two scopes:
+
+1. **global intake/index**
+   - all synced work signals across GitHub, Jira, Slack, and Wake itself
+   - used for scanning, pickup, and prioritization
+2. **correlated work-item stream**
+   - all events linked to a chosen `workItemKey`
+   - used for projection building and run context
+
+When an item is picked up, Wake should correlate the relevant intake events into
+its work-item stream rather than assuming every needed detail already lives on a
+single ticket thread.
+
 This keeps the tick a pure function of durable inputs while avoiding wasteful
 prompt assembly from a full raw stream.
 
@@ -108,13 +136,17 @@ token-heavy replay.
 2. Split current `event` audit records into:
    - imported source events
    - Wake internal control-plane events
-3. Refactor fake GitHub sync to emit canonical issue/comment events first.
-4. Build a projection updater that consumes envelopes and writes `state/`.
-5. Change tick orchestration to read from projections, not directly from raw
+   - outbound Wake intent and delivery-result events
+3. Introduce a `workItemKey` correlation model plus intake-vs-work-item scope.
+4. Refactor fake GitHub sync to emit canonical issue/comment events first.
+5. Build a projection updater that consumes envelopes and writes `state/`.
+6. Change tick orchestration to read from projections, not directly from raw
    fake issue snapshots.
-6. Update prompt assembly to pass a projection summary plus selected recent
+7. Add an outbound event path so questions/status updates become Wake events
+   first and sink delivery second.
+8. Update prompt assembly to pass a projection summary plus selected recent
    envelopes.
-7. Keep the Claude Haiku smoke path minimal and separate from the richer runner
+9. Keep the Claude Haiku smoke path minimal and separate from the richer runner
    prompt path.
 
 ## What can stay
@@ -130,6 +162,7 @@ token-heavy replay.
 
 - stop treating fake issue snapshots as the primary durable input
 - make event ingestion explicit in the adapter boundary
+- make outbound publication intents explicit in the same event boundary
 - make `state/` a projection in code and docs, not just in intention
 
 ## Session prompt seed
@@ -141,4 +174,5 @@ The next session should start by reading:
 - `docs/handoffs/2026-07-05-event-first-persistence.md`
 
 Then it should refactor the durable-state model so event envelopes are primary
-and `state/` becomes a derived projection.
+and `state/` becomes a derived projection, while supporting both inbound source
+events and outbound Wake intent events.

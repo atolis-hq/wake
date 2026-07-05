@@ -7,6 +7,7 @@
 - Immutable event envelopes are the primary durable record.
 - Canonical deterministic fields stay separate from extensible agent-readable context.
 - Structured event audits drive automation and diagnostics.
+- Agent-produced outbound intents use the same event model as imported source events.
 - Fake adapters are permanent test harnesses and future real-adapter seams.
 - Real runner integrations live behind the same adapter boundary, with Claude Haiku smoke tests kept intentionally minimal.
 
@@ -49,6 +50,11 @@ This lets the same durable artifacts serve three roles:
 - provide agent context for continuing work
 - provide a replayable audit trail
 
+They should also support a fourth role:
+
+- represent outbound agent intents that the control plane will publish to one or
+  more configured channels
+
 Per-issue projection files should deliberately separate canonical deterministic
 fields from optional `context` payloads that can grow for agent-facing data later
 without destabilizing scripts.
@@ -66,6 +72,49 @@ The intended flow is:
 
 Wake should not require the model to scan a full raw event stream by default.
 The control plane should pick the relevant slice and keep prompts cheap.
+
+## Inbound And Outbound Events
+
+The event stream is not just an import log. Wake should use one canonical event
+model for both:
+
+- **inbound source events**
+  - GitHub issue created
+  - GitHub issue comment created
+  - PR review submitted
+  - Jira ticket updated
+- **outbound Wake intents**
+  - question publish requested
+  - status update publish requested
+  - handoff message publish requested
+  - PR link publish requested
+
+The agent should not need to know which delivery channel to integrate with.
+Instead it can emit a Wake event or request an event through a Wake-owned
+surface. The control plane then decides how to publish that event to GitHub,
+Slack, or another configured sink.
+
+This preserves channel independence:
+
+- the agent expresses intent
+- Wake owns routing and delivery policy
+- sink-specific formatting lives in adapters, not agent prompts
+
+## Global Intake And Work-Item Streams
+
+Not every important event originates inside a single issue thread. Wake should
+distinguish between:
+
+- **global intake/index events**
+  - all synced work signals across systems
+  - used for scanning, prioritization, and pickup decisions
+- **correlated work-item streams**
+  - the subset of events linked to a chosen `workItemKey`
+  - used as detailed execution context for a run
+
+When a ticket or item is picked up, Wake should correlate the relevant intake
+events into a work-item stream and build projections from that stream. That lets
+the queue stay broad while each active run stays context-rich and focused.
 
 ## Runner Strategy
 

@@ -321,11 +321,16 @@ durably. The files on disk **are** the audit trail. Two principles govern this:
   workspaces/<repo>/<issue>/  # EPHEMERAL working copy for a run — code only, deleted after
 ```
 
-Each imported event should be written as a durable envelope with a stable id,
-source metadata, correlation identifiers, normalized canonical payload, and
-optional raw/source-specific fragments. GitHub issue creation, issue comments,
-label changes, PR reviews, PR comments, and Wake's own internal decisions should
-all become first-class events in this stream.
+Each imported or Wake-produced event should be written as a durable envelope
+with a stable id, source metadata, correlation identifiers, normalized
+canonical payload, and optional raw/source-specific fragments. GitHub issue
+creation, issue comments, label changes, PR reviews, PR comments, and Wake's
+own internal decisions should all become first-class events in this stream.
+
+That event model should also support outbound publication intents. For example,
+an agent asking a question should not post directly to GitHub or Slack. It
+should create or request a Wake event such as "question publish requested", and
+the control plane should route that event to the configured sink.
 
 **Eddy never owns state.** Wake keeps the full picture and injects the relevant
 slice into each run: a current projection plus selected recent events, the prior
@@ -341,6 +346,16 @@ changes. Together the event stream, projections, and run records let the human
 reconstruct exactly what happened, and let Wake resume after any interruption —
 a container recreation, a full machine restart, or a task whose workspace is
 long gone.
+
+Wake should further distinguish:
+
+- a **global intake/index stream** of all synced external/internal events used
+  for queue scanning and prioritization
+- a **correlated work-item stream** used to build detailed context once a ticket
+  is selected
+
+This matters because some important signals live outside a single ticket thread;
+they still need to be available to Wake for pickup decisions and prioritization.
 
 ## Safety rails
 
