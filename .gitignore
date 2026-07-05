@@ -30,4 +30,4 @@ temp/
 # Local runtime state
 .wake/
 .autoloop/
-
+.worktrees/
