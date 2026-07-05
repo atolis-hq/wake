@@ -47,6 +47,10 @@ Useful commands:
 - `npm run smoke:claude` runs a minimal Claude Haiku smoke test
 - `npm run smoke:claude -- --remote-control` starts a minimal remote-control Claude smoke session
 
+## Contributing
+
+Please run `npm test` before opening a PR.
+
 ## GitHub Issues Polling
 
 Wake can poll configured GitHub repositories when `sources.github.enabled` is
