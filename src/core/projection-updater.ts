@@ -100,13 +100,19 @@ function applyEvent(
       return current;
     }
 
+    const isWakeAuthored = Boolean(event.derivedHints?.wakeAuthoredComment);
     const nextComment = {
       ...(comment as Record<string, unknown>),
-      isWakeAuthored: Boolean(event.derivedHints?.wakeAuthoredComment),
+      isWakeAuthored,
     };
     const existingComments = current.comments.filter(
       (entry) => entry.id !== String((comment as { id?: unknown }).id),
     );
+
+    // A human reply is how an owner unblocks a blocked run (per the
+    // "resume to understand; comment to unblock" flow) - return it to the
+    // queue so the next tick picks it back up.
+    const unblocked = current.wake.stage === 'blocked' && !isWakeAuthored;
 
     return parseIssueStateRecord({
       ...current,
@@ -114,8 +120,21 @@ function applyEvent(
       latestComment: nextComment,
       wake: {
         ...current.wake,
+        stage: unblocked ? 'queue' : current.wake.stage,
         syncedAt: event.ingestedAt,
         recentEventIds: [...current.wake.recentEventIds, event.eventId].slice(-10),
+        ...(unblocked
+          ? {
+              stageHistory: [
+                ...current.wake.stageHistory,
+                {
+                  stage: 'queue' as const,
+                  changedAt: event.occurredAt,
+                  reason: 'human-reply-unblocked',
+                },
+              ],
+            }
+          : {}),
       },
     });
   }
