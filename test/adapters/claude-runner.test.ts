@@ -4,6 +4,7 @@ import {
   buildStagePrompt,
   buildClaudePrintArgs,
   buildClaudeRemoteControlArgs,
+  buildEddySessionName,
 } from '../../src/adapters/claude/claude-runner.js';
 import { defaultSmokePrompt } from '../../src/config/defaults.js';
 
@@ -34,8 +35,8 @@ describe('claude runner command building', () => {
     expect(args.at(-1)).toBe(defaultSmokePrompt);
   });
 
-  it('assembles a stage prompt from a projection summary and recent events', () => {
-    const prompt = buildStagePrompt({
+  it('assembles a stage prompt from a projection summary and recent events', async () => {
+    const result = await buildStagePrompt({
       action: 'implement',
       projection: {
         schemaVersion: 1,
@@ -94,8 +95,114 @@ describe('claude runner command building', () => {
       ],
     });
 
-    expect(prompt).toContain('Projection summary');
-    expect(prompt).toContain('atolis-hq/wake#12');
-    expect(prompt).toContain('github.issue.comment.created');
+    expect(result.prompt).toContain('IMPLEMENT stage');
+    expect(result.prompt).toContain('atolis-hq/wake#12');
+    expect(result.prompt).toContain('"github.issue.comment.created"');
+    expect(result.prompt).toContain('wake/issue-12');
+    expect(result.prompt).toContain('git push -u origin wake/issue-12');
+    expect(result.prompt).toContain('gh pr create');
+    expect(result.prompt).toContain('Closes #12');
+    expect(result.permissionMode).toBe('acceptEdits');
+    expect(result.allowedTools).toContain('Edit');
+    expect(result.allowedTools).toContain('Bash(git *)');
+    expect(result.extraArgs).toEqual([]);
+  });
+
+  it('assembles a refine-stage prompt that withholds edit tools', async () => {
+    const result = await buildStagePrompt({
+      action: 'refine',
+      projection: {
+        schemaVersion: 1,
+        workItemKey: 'atolis-hq/wake#13',
+        issue: {
+          repo: 'atolis-hq/wake',
+          number: 13,
+          title: 'Example issue',
+          body: 'Please add a widget.',
+          labels: [],
+          assignees: [],
+          state: 'open',
+          url: 'https://example.test/issues/13',
+          createdAt: '2026-07-05T12:00:00.000Z',
+          updatedAt: '2026-07-05T12:00:00.000Z',
+        },
+        comments: [],
+        wake: {
+          stage: 'queue',
+          attempts: 0,
+          stageHistory: [],
+          recentEventIds: [],
+          syncedAt: '2026-07-05T12:00:00.000Z',
+        },
+        context: {},
+      },
+      recentEvents: [],
+    });
+
+    expect(result.prompt).toContain('REFINE stage');
+    expect(result.prompt).toContain('Your only available tools are: Read, Glob, Grep');
+    expect(result.prompt).toContain('Do not attempt to use Edit, Write, or Bash');
+    expect(result.prompt).toContain('Please add a widget.');
+    expect(result.prompt).not.toContain('gh pr create');
+    expect(result.permissionMode).toBe('default');
+    expect(result.allowedTools).toEqual(['Read', 'Glob', 'Grep']);
+    expect(result.allowedTools).not.toContain('Edit');
+  });
+
+  it('includes extraArgs verbatim before the -- terminator', () => {
+    const args = buildClaudePrintArgs({
+      model: 'haiku',
+      prompt: 'do work',
+      sessionName: 'Eddy',
+      extraArgs: ['--dangerously-skip-permissions'],
+    });
+
+    expect(args).toContain('--dangerously-skip-permissions');
+    expect(args).toContain('--');
+    expect(args.at(-1)).toBe('do work');
+  });
+
+  it('includes allowedTools and permission-mode flags in a print invocation when requested', () => {
+    const args = buildClaudePrintArgs({
+      model: 'haiku',
+      prompt: 'do work',
+      sessionName: 'Eddy',
+      permissionMode: 'acceptEdits',
+      allowedTools: ['Bash(git *)', 'Bash(gh *)'],
+    });
+
+    expect(args).toContain('--permission-mode');
+    expect(args).toContain('acceptEdits');
+    expect(args).toContain('--allowedTools');
+    expect(args).toContain('Bash(git *) Bash(gh *)');
+    expect(args).toContain('--');
+    expect(args.at(-1)).toBe('do work');
+  });
+
+  it('includes a --remote-control flag with the given name and still terminates before the prompt', () => {
+    const args = buildClaudePrintArgs({
+      model: 'haiku',
+      prompt: 'do work',
+      sessionName: 'Eddy',
+      remoteControlName: 'Eddy-issue-8-run-1',
+    });
+
+    expect(args).toContain('--remote-control');
+    expect(args).toContain('Eddy-issue-8-run-1');
+    expect(args).toContain('--');
+    expect(args.at(-1)).toBe('do work');
+  });
+
+  it('builds a session name from the ticket id, title, and run id', () => {
+    const name = buildEddySessionName({
+      sessionName: 'Eddy',
+      issueNumber: 8,
+      title: 'Update README with runner config documentation',
+      runId: 'run-8-1783282434129',
+    });
+
+    expect(name).toBe(
+      'Eddy-issue-8-update-readme-with-runner-config-documen-run-8-1783282434129',
+    );
   });
 });

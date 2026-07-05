@@ -13,9 +13,12 @@ export function createFakeRunner(result?: AgentRunResult) {
       projection: IssueStateRecord;
       recentEvents: EventEnvelope[];
       config: WakeConfig;
+      runId: string;
+      workspacePath?: string;
     }): Promise<AgentRunResult> {
       return result ?? {
         result: 'Fake runner completed\nDONE',
+        model: 'fake',
         session_id: 'fake-session-1',
         metadata: {
           source: 'fake-runner',

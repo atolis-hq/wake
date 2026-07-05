@@ -1,4 +1,4 @@
-import { isWakeAuthoredComment } from '../../domain/schema.js';
+import { isWakeAuthoredComment, wakeCommentMarker } from '../../domain/schema.js';
 import type { EventEnvelope, WakeConfig } from '../../domain/types.js';
 import { createEventEnvelope } from '../../lib/event-log.js';
 
@@ -17,7 +17,7 @@ type GitHubIssue = {
 type GitHubComment = {
   id: number;
   body?: string;
-  user?: { login?: string } | null;
+  user?: { login?: string; type?: string } | null;
   created_at: string;
   updated_at: string;
   html_url?: string;
@@ -113,8 +113,52 @@ function normalizeTicketCommentEvent(input: {
     },
     derivedHints: {
       wakeAuthoredComment: isWakeAuthoredComment(input.comment.body ?? ''),
+      // Third-party bots/integrations (CI, Dependabot, Renovate, etc.) must
+      // not be able to unblock a blocked issue just by lacking Wake's own
+      // marker - only an actual human reply should.
+      botAuthoredComment: input.comment.user?.type === 'Bot',
     },
   });
+}
+
+function formatWakeComment(payload: Record<string, unknown>): string {
+  const body = typeof payload.body === 'string' ? payload.body : '';
+  const action = typeof payload.action === 'string' ? payload.action : undefined;
+  const runId = typeof payload.runId === 'string' ? payload.runId : undefined;
+  const sessionId = typeof payload.sessionId === 'string' ? payload.sessionId : undefined;
+  const model = typeof payload.model === 'string' ? payload.model : undefined;
+  const workspacePath =
+    typeof payload.workspacePath === 'string' ? payload.workspacePath : undefined;
+
+  const details = [
+    action === undefined ? undefined : `stage \`${action}\``,
+    model === undefined ? undefined : `model \`${model}\``,
+    runId === undefined ? undefined : `run \`${runId}\``,
+  ].filter((part): part is string => part !== undefined);
+
+  const header = `**Eddy** _(Wake${details.length > 0 ? ` · ${details.join(' · ')}` : ''})_`;
+  const sections = [header, body];
+
+  if (sessionId !== undefined) {
+    const resumeCommand =
+      workspacePath === undefined
+        ? `claude --resume ${sessionId}`
+        : `cd "${workspacePath}"\nclaude --resume ${sessionId}`;
+
+    sections.push(
+      [
+        '---',
+        '_Next steps: reply on this thread to continue, or resume this exact Eddy session locally:_',
+        '```',
+        resumeCommand,
+        '```',
+      ].join('\n'),
+    );
+  }
+
+  sections.push(wakeCommentMarker);
+
+  return sections.join('\n\n');
 }
 
 export function createGitHubIssuesWorkSource(deps: {
@@ -216,7 +260,7 @@ export function createGitHubIssuesWorkSource(deps: {
         owner,
         repoName,
         issueNumber,
-        `${String(input.event.payload.body)}\n\n<!-- wake -->`,
+        formatWakeComment(input.event.payload),
       );
 
       const publishedAt = deps.now().toISOString();

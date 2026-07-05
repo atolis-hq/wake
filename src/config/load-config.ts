@@ -25,6 +25,10 @@ function mergeWakeConfig(base: WakeConfig, loaded: Record<string, unknown>): Wak
       claude: {
         ...base.runner.claude,
         ...(next.runner?.claude ?? {}),
+        remoteControl: {
+          ...base.runner.claude.remoteControl,
+          ...(next.runner?.claude?.remoteControl ?? {}),
+        },
       },
     },
     sources: {

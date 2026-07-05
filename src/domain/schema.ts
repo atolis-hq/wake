@@ -174,6 +174,9 @@ export const wakeConfigSchema = z.object({
       sessionName: z.string(),
       remoteControlName: z.string(),
       smokePrompt: z.string(),
+      remoteControl: z.object({
+        enabled: z.boolean(),
+      }),
     }),
   }),
   sources: z.object({

@@ -90,4 +90,451 @@ describe('projection updater', () => {
     expect(projection?.latestComment?.id).toBe('c-1');
     expect(projection?.wake.recentEventIds).toEqual(['evt-issue', 'evt-comment']);
   });
+
+  it('does not regress an already-advanced stage when the issue is re-synced', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const updater = createProjectionUpdater({ stateStore: store });
+
+    const initialUpsert = createEventEnvelope({
+      eventId: 'evt-issue-1',
+      workItemKey: 'atolis-hq/wake#9',
+      streamScope: 'global-intake',
+      direction: 'inbound',
+      sourceSystem: 'github',
+      sourceEventType: 'ticket.upsert',
+      sourceRefs: {
+        repo: 'atolis-hq/wake',
+        issueNumber: 9,
+        sourceUrl: 'https://example.test/issues/9',
+      },
+      occurredAt: '2026-07-05T12:00:00.000Z',
+      ingestedAt: '2026-07-05T12:00:01.000Z',
+      trigger: 'immediate',
+      payload: {
+        ticket: {
+          repo: 'atolis-hq/wake',
+          number: 9,
+          title: 'Example',
+          body: 'Body',
+          labels: [],
+          assignees: [],
+          state: 'open',
+          url: 'https://example.test/issues/9',
+          createdAt: '2026-07-05T12:00:00.000Z',
+          updatedAt: '2026-07-05T12:00:00.000Z',
+        },
+      },
+    });
+
+    await store.appendEventEnvelope(initialUpsert);
+    await updater.rebuildFromEvents([initialUpsert]);
+
+    const runCompleted = createEventEnvelope({
+      eventId: 'evt-run-completed',
+      workItemKey: 'atolis-hq/wake#9',
+      streamScope: 'work-item',
+      direction: 'internal',
+      sourceSystem: 'wake',
+      sourceEventType: 'wake.run.completed',
+      sourceRefs: {
+        repo: 'atolis-hq/wake',
+        issueNumber: 9,
+        runId: 'run-9-1',
+      },
+      occurredAt: '2026-07-05T12:01:00.000Z',
+      ingestedAt: '2026-07-05T12:01:00.000Z',
+      trigger: 'immediate',
+      payload: {
+        nextStage: 'refined',
+        runId: 'run-9-1',
+      },
+    });
+
+    await store.appendEventEnvelope(runCompleted);
+    await updater.rebuildFromEvents([runCompleted]);
+
+    let projection = await store.readIssueState('atolis-hq/wake', 9);
+    expect(projection?.wake.stage).toBe('refined');
+
+    // Wake's own status comment bumps the GitHub issue's updatedAt, which
+    // causes the next poll to re-ingest a ticket.upsert with no labels applied.
+    const resync = createEventEnvelope({
+      eventId: 'evt-issue-2',
+      workItemKey: 'atolis-hq/wake#9',
+      streamScope: 'global-intake',
+      direction: 'inbound',
+      sourceSystem: 'github',
+      sourceEventType: 'ticket.upsert',
+      sourceRefs: {
+        repo: 'atolis-hq/wake',
+        issueNumber: 9,
+        sourceUrl: 'https://example.test/issues/9',
+      },
+      occurredAt: '2026-07-05T12:02:00.000Z',
+      ingestedAt: '2026-07-05T12:02:01.000Z',
+      trigger: 'immediate',
+      payload: {
+        ticket: {
+          repo: 'atolis-hq/wake',
+          number: 9,
+          title: 'Example',
+          body: 'Body',
+          labels: [],
+          assignees: [],
+          state: 'open',
+          url: 'https://example.test/issues/9',
+          createdAt: '2026-07-05T12:00:00.000Z',
+          updatedAt: '2026-07-05T12:02:00.000Z',
+        },
+      },
+    });
+
+    await store.appendEventEnvelope(resync);
+    await updater.rebuildFromEvents([resync]);
+
+    projection = await store.readIssueState('atolis-hq/wake', 9);
+    expect(projection?.wake.stage).toBe('refined');
+  });
+
+  it('returns a blocked issue to the queue when the owner replies', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const updater = createProjectionUpdater({ stateStore: store });
+
+    const initialUpsert = createEventEnvelope({
+      eventId: 'evt-issue-1',
+      workItemKey: 'atolis-hq/wake#20',
+      streamScope: 'global-intake',
+      direction: 'inbound',
+      sourceSystem: 'github',
+      sourceEventType: 'ticket.upsert',
+      sourceRefs: {
+        repo: 'atolis-hq/wake',
+        issueNumber: 20,
+        sourceUrl: 'https://example.test/issues/20',
+      },
+      occurredAt: '2026-07-05T12:00:00.000Z',
+      ingestedAt: '2026-07-05T12:00:01.000Z',
+      trigger: 'immediate',
+      payload: {
+        ticket: {
+          repo: 'atolis-hq/wake',
+          number: 20,
+          title: 'Example',
+          body: 'Body',
+          labels: [],
+          assignees: [],
+          state: 'open',
+          url: 'https://example.test/issues/20',
+          createdAt: '2026-07-05T12:00:00.000Z',
+          updatedAt: '2026-07-05T12:00:00.000Z',
+        },
+      },
+    });
+
+    await store.appendEventEnvelope(initialUpsert);
+    await updater.rebuildFromEvents([initialUpsert]);
+
+    const runCompleted = createEventEnvelope({
+      eventId: 'evt-run-completed',
+      workItemKey: 'atolis-hq/wake#20',
+      streamScope: 'work-item',
+      direction: 'internal',
+      sourceSystem: 'wake',
+      sourceEventType: 'wake.run.completed',
+      sourceRefs: {
+        repo: 'atolis-hq/wake',
+        issueNumber: 20,
+        runId: 'run-20-1',
+      },
+      occurredAt: '2026-07-05T12:01:00.000Z',
+      ingestedAt: '2026-07-05T12:01:00.000Z',
+      trigger: 'immediate',
+      payload: {
+        nextStage: 'blocked',
+        runId: 'run-20-1',
+      },
+    });
+
+    await store.appendEventEnvelope(runCompleted);
+    await updater.rebuildFromEvents([runCompleted]);
+
+    let projection = await store.readIssueState('atolis-hq/wake', 20);
+    expect(projection?.wake.stage).toBe('blocked');
+
+    const wakeQuestionComment = createEventEnvelope({
+      eventId: 'evt-comment-wake',
+      workItemKey: 'atolis-hq/wake#20',
+      streamScope: 'work-item',
+      direction: 'inbound',
+      sourceSystem: 'github',
+      sourceEventType: 'ticket.comment.created',
+      sourceRefs: {
+        repo: 'atolis-hq/wake',
+        issueNumber: 20,
+        commentId: 'c-wake',
+      },
+      occurredAt: '2026-07-05T12:01:30.000Z',
+      ingestedAt: '2026-07-05T12:01:31.000Z',
+      trigger: 'context-only',
+      payload: {
+        comment: {
+          id: 'c-wake',
+          body: 'I need more info <!-- wake -->',
+          author: { login: 'wake-bot' },
+          createdAt: '2026-07-05T12:01:30.000Z',
+          updatedAt: '2026-07-05T12:01:30.000Z',
+        },
+      },
+      derivedHints: {
+        wakeAuthoredComment: true,
+      },
+    });
+
+    await store.appendEventEnvelope(wakeQuestionComment);
+    await updater.rebuildFromEvents([wakeQuestionComment]);
+
+    projection = await store.readIssueState('atolis-hq/wake', 20);
+    expect(projection?.wake.stage).toBe('blocked');
+
+    const ownerReply = createEventEnvelope({
+      eventId: 'evt-comment-owner',
+      workItemKey: 'atolis-hq/wake#20',
+      streamScope: 'work-item',
+      direction: 'inbound',
+      sourceSystem: 'github',
+      sourceEventType: 'ticket.comment.created',
+      sourceRefs: {
+        repo: 'atolis-hq/wake',
+        issueNumber: 20,
+        commentId: 'c-owner',
+      },
+      occurredAt: '2026-07-05T12:05:00.000Z',
+      ingestedAt: '2026-07-05T12:05:01.000Z',
+      trigger: 'context-only',
+      payload: {
+        comment: {
+          id: 'c-owner',
+          body: 'Go ahead and proceed.',
+          author: { login: 'owner' },
+          createdAt: '2026-07-05T12:05:00.000Z',
+          updatedAt: '2026-07-05T12:05:00.000Z',
+        },
+      },
+      derivedHints: {
+        wakeAuthoredComment: false,
+      },
+    });
+
+    await store.appendEventEnvelope(ownerReply);
+    await updater.rebuildFromEvents([ownerReply]);
+
+    projection = await store.readIssueState('atolis-hq/wake', 20);
+    expect(projection?.wake.stage).toBe('queue');
+    expect(projection?.wake.stageHistory.at(-1)?.reason).toBe('human-reply-unblocked');
+  });
+
+  it('routes an implement-stage block back to refined (not queue) on unblock', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const updater = createProjectionUpdater({ stateStore: store });
+
+    const initialUpsert = createEventEnvelope({
+      eventId: 'evt-issue-1',
+      workItemKey: 'atolis-hq/wake#21',
+      streamScope: 'global-intake',
+      direction: 'inbound',
+      sourceSystem: 'github',
+      sourceEventType: 'ticket.upsert',
+      sourceRefs: {
+        repo: 'atolis-hq/wake',
+        issueNumber: 21,
+        sourceUrl: 'https://example.test/issues/21',
+      },
+      occurredAt: '2026-07-05T12:00:00.000Z',
+      ingestedAt: '2026-07-05T12:00:01.000Z',
+      trigger: 'immediate',
+      payload: {
+        ticket: {
+          repo: 'atolis-hq/wake',
+          number: 21,
+          title: 'Example',
+          body: 'Body',
+          labels: [],
+          assignees: [],
+          state: 'open',
+          url: 'https://example.test/issues/21',
+          createdAt: '2026-07-05T12:00:00.000Z',
+          updatedAt: '2026-07-05T12:00:00.000Z',
+        },
+      },
+    });
+
+    await store.appendEventEnvelope(initialUpsert);
+    await updater.rebuildFromEvents([initialUpsert]);
+
+    const runCompleted = createEventEnvelope({
+      eventId: 'evt-run-completed',
+      workItemKey: 'atolis-hq/wake#21',
+      streamScope: 'work-item',
+      direction: 'internal',
+      sourceSystem: 'wake',
+      sourceEventType: 'wake.run.completed',
+      sourceRefs: {
+        repo: 'atolis-hq/wake',
+        issueNumber: 21,
+        runId: 'run-21-1',
+      },
+      occurredAt: '2026-07-05T12:01:00.000Z',
+      ingestedAt: '2026-07-05T12:01:00.000Z',
+      trigger: 'immediate',
+      payload: {
+        action: 'implement',
+        nextStage: 'blocked',
+        runId: 'run-21-1',
+      },
+    });
+
+    await store.appendEventEnvelope(runCompleted);
+    await updater.rebuildFromEvents([runCompleted]);
+
+    let projection = await store.readIssueState('atolis-hq/wake', 21);
+    expect(projection?.wake.stage).toBe('blocked');
+
+    const ownerReply = createEventEnvelope({
+      eventId: 'evt-comment-owner',
+      workItemKey: 'atolis-hq/wake#21',
+      streamScope: 'work-item',
+      direction: 'inbound',
+      sourceSystem: 'github',
+      sourceEventType: 'ticket.comment.created',
+      sourceRefs: {
+        repo: 'atolis-hq/wake',
+        issueNumber: 21,
+        commentId: 'c-owner',
+      },
+      occurredAt: '2026-07-05T12:05:00.000Z',
+      ingestedAt: '2026-07-05T12:05:01.000Z',
+      trigger: 'context-only',
+      payload: {
+        comment: {
+          id: 'c-owner',
+          body: 'Go ahead and proceed.',
+          author: { login: 'owner' },
+          createdAt: '2026-07-05T12:05:00.000Z',
+          updatedAt: '2026-07-05T12:05:00.000Z',
+        },
+      },
+      derivedHints: {
+        wakeAuthoredComment: false,
+      },
+    });
+
+    await store.appendEventEnvelope(ownerReply);
+    await updater.rebuildFromEvents([ownerReply]);
+
+    projection = await store.readIssueState('atolis-hq/wake', 21);
+    expect(projection?.wake.stage).toBe('refined');
+  });
+
+  it('does not unblock a blocked issue on a bot-authored comment', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const updater = createProjectionUpdater({ stateStore: store });
+
+    const initialUpsert = createEventEnvelope({
+      eventId: 'evt-issue-1',
+      workItemKey: 'atolis-hq/wake#22',
+      streamScope: 'global-intake',
+      direction: 'inbound',
+      sourceSystem: 'github',
+      sourceEventType: 'ticket.upsert',
+      sourceRefs: {
+        repo: 'atolis-hq/wake',
+        issueNumber: 22,
+        sourceUrl: 'https://example.test/issues/22',
+      },
+      occurredAt: '2026-07-05T12:00:00.000Z',
+      ingestedAt: '2026-07-05T12:00:01.000Z',
+      trigger: 'immediate',
+      payload: {
+        ticket: {
+          repo: 'atolis-hq/wake',
+          number: 22,
+          title: 'Example',
+          body: 'Body',
+          labels: [],
+          assignees: [],
+          state: 'open',
+          url: 'https://example.test/issues/22',
+          createdAt: '2026-07-05T12:00:00.000Z',
+          updatedAt: '2026-07-05T12:00:00.000Z',
+        },
+      },
+    });
+
+    await store.appendEventEnvelope(initialUpsert);
+    await updater.rebuildFromEvents([initialUpsert]);
+
+    const runCompleted = createEventEnvelope({
+      eventId: 'evt-run-completed',
+      workItemKey: 'atolis-hq/wake#22',
+      streamScope: 'work-item',
+      direction: 'internal',
+      sourceSystem: 'wake',
+      sourceEventType: 'wake.run.completed',
+      sourceRefs: {
+        repo: 'atolis-hq/wake',
+        issueNumber: 22,
+        runId: 'run-22-1',
+      },
+      occurredAt: '2026-07-05T12:01:00.000Z',
+      ingestedAt: '2026-07-05T12:01:00.000Z',
+      trigger: 'immediate',
+      payload: {
+        action: 'refine',
+        nextStage: 'blocked',
+        runId: 'run-22-1',
+      },
+    });
+
+    await store.appendEventEnvelope(runCompleted);
+    await updater.rebuildFromEvents([runCompleted]);
+
+    let projection = await store.readIssueState('atolis-hq/wake', 22);
+    expect(projection?.wake.stage).toBe('blocked');
+
+    const botComment = createEventEnvelope({
+      eventId: 'evt-comment-bot',
+      workItemKey: 'atolis-hq/wake#22',
+      streamScope: 'work-item',
+      direction: 'inbound',
+      sourceSystem: 'github',
+      sourceEventType: 'ticket.comment.created',
+      sourceRefs: {
+        repo: 'atolis-hq/wake',
+        issueNumber: 22,
+        commentId: 'c-bot',
+      },
+      occurredAt: '2026-07-05T12:05:00.000Z',
+      ingestedAt: '2026-07-05T12:05:01.000Z',
+      trigger: 'context-only',
+      payload: {
+        comment: {
+          id: 'c-bot',
+          body: 'CI failed on this issue.',
+          author: { login: 'renovate[bot]' },
+          createdAt: '2026-07-05T12:05:00.000Z',
+          updatedAt: '2026-07-05T12:05:00.000Z',
+        },
+      },
+      derivedHints: {
+        wakeAuthoredComment: false,
+        botAuthoredComment: true,
+      },
+    });
+
+    await store.appendEventEnvelope(botComment);
+    await updater.rebuildFromEvents([botComment]);
+
+    projection = await store.readIssueState('atolis-hq/wake', 22);
+    expect(projection?.wake.stage).toBe('blocked');
+  });
 });

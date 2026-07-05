@@ -24,7 +24,7 @@ describe('tick runner', () => {
       async run() {
         const runFiles = await readdir(join(root, 'runs'));
         runFileSnapshot = await readFile(join(root, 'runs', runFiles[0]!), 'utf8');
-        return { result: 'Runner output\nDONE', session_id: 'session-1' };
+        return { result: 'Runner output\nDONE', model: 'test-model', session_id: 'session-1' };
       },
     };
 
@@ -73,7 +73,7 @@ describe('tick runner', () => {
       }),
       runner: {
         async run() {
-          return { result: 'Fake runner completed\nDONE', session_id: 'fake-session-1' };
+          return { result: 'Fake runner completed\nDONE', model: 'test-model', session_id: 'fake-session-1' };
         },
       },
       workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
@@ -112,6 +112,7 @@ describe('tick runner', () => {
         async run() {
           return {
             result: 'Question for the owner\nBLOCKED',
+            model: 'test-model',
             session_id: 'fake-session-2',
           };
         },
@@ -210,7 +211,7 @@ describe('tick runner', () => {
       runner: {
         async run() {
           callCount += 1;
-          return { result: 'Handled\nDONE', session_id: 'session-2' };
+          return { result: 'Handled\nDONE', model: 'test-model', session_id: 'session-2' };
         },
       },
       workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),

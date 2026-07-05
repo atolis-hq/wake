@@ -4,6 +4,7 @@ import { createClaudeRunner } from './adapters/claude/claude-runner.js';
 import { createFileBackedFakeTicketingSystem } from './adapters/fake/fake-ticketing-system.js';
 import { createFakeRunner } from './adapters/fake/fake-runner.js';
 import { createFakeWorkspaceManager } from './adapters/fake/fake-workspace-manager.js';
+import { createGitWorkspaceManager } from './adapters/git/git-workspace-manager.js';
 import { createStateStore } from './adapters/fs/state-store.js';
 import { resolveGitHubToken } from './adapters/github/github-auth.js';
 import { createGitHubClient } from './adapters/github/github-client.js';
@@ -60,7 +61,10 @@ async function buildRuntime(args: string[]) {
         })
       : createFakeRunner();
 
-  const workspaceManager = createFakeWorkspaceManager(stateStore.paths.workspaceRoot);
+  const workspaceManager =
+    runnerMode === 'claude'
+      ? createGitWorkspaceManager({ wakeRoot })
+      : createFakeWorkspaceManager(stateStore.paths.workspaceRoot);
   const tickRunner = createTickRunner({
     clock: systemClock,
     config: {

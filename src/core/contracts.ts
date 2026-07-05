@@ -15,6 +15,7 @@ export interface OutboundSink {
 
 export interface AgentRunResult {
   result: string;
+  model: string;
   session_id?: string;
   metadata?: Record<string, unknown>;
 }
@@ -25,6 +26,8 @@ export interface AgentRunner {
     projection: IssueStateRecord;
     recentEvents: EventEnvelope[];
     config: WakeConfig;
+    runId: string;
+    workspacePath?: string;
   }): Promise<AgentRunResult>;
 }
 
@@ -33,6 +36,7 @@ export interface WorkspaceManager {
     repo: string;
     issueNumber: number;
   }): Promise<{ workspacePath: string }>;
+  prepareReadOnlyClone(input: { repo: string }): Promise<{ workspacePath: string }>;
   cleanupWorkspace(input: {
     workspacePath: string;
   }): Promise<void>;
