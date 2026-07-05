@@ -12,6 +12,9 @@ This document has two parts, deliberately at different levels of detail:
   it names the directions the MVP should leave room for, without over-specifying
   work we are not doing yet.
 
+Implementers should also read [`builder-notes.md`](builder-notes.md) — the
+non-obvious traps and intents that gate success but don't belong in the plan.
+
 The guiding rule from the vision holds throughout: **justify Wake as a simple
 loop first.** Everything in Part 2 is added only where the simple loop proves
 insufficient.
@@ -129,8 +132,14 @@ wake:queue → wake:refined → wake:active → wake:blocked | wake:done | wake:
   out-of-scope). A missing-criteria issue is rejected/flagged rather than run.
 - **Questions are issue comments**; the worker @mentions the owner so mobile
   pushes a notification, and Wake applies `wake:blocked`.
-- **Unblocking is automatic:** if the latest comment on a blocked issue is from
-  the repo owner, the item returns to the queue on the next tick.
+- **Wake-authored comments carry a marker.** In a personal setup the agent and
+  the human share the same GitHub account (`gh` auth), so comment *author* cannot
+  distinguish them. Every comment Wake or the worker posts must embed a marker
+  (e.g. an HTML comment `<!-- wake -->` — invisible in the UI). Without this,
+  unblock detection cannot work at all.
+- **Unblocking is automatic:** if the latest comment on a blocked issue lacks
+  the Wake marker (i.e. the human wrote it), the item returns to the queue on
+  the next tick.
 - On completion the PR references `Closes #<n>` and Wake comments the PR URL.
 
 Execution stays **local** (`claude -p` on this machine). GitHub is only the
@@ -158,14 +167,21 @@ Plus the terminal/holding states `blocked`, `done`, `failed`. Additional stages
 must be data-driven so they can be added without reworking the loop.
 
 **Runner contract (the sentinel).** Each stage's agent invocation must end with
-exactly one sentinel on its last line, which Wake routes on:
+exactly one sentinel on its last line, which Wake routes on. Sentinel meaning is
+**per stage** — `DONE` means "this stage's objective is met", not always "PR
+opened":
 
 - `BLOCKED` — ambiguous or unmet acceptance criteria; the agent has posted
   specific, answerable questions as an issue comment. Wake labels `wake:blocked`.
-- `DONE` — implemented, tests passed, branch pushed, PR opened. Wake records the
-  PR URL and labels `wake:done`.
+- `DONE` — for **refine**: spec rewritten to template, Wake labels
+  `wake:refined`; for **implement**: tests passed, branch pushed, PR opened,
+  Wake records the PR URL and labels `wake:done`.
 - `FAILED` — unrecoverable error, with a one-line reason. Wake increments the
   attempt counter (→ `wake:failed` on the cap).
+
+Parse defensively: take the **last** sentinel occurrence in the JSON `result`
+field rather than requiring it to be the literal final line — models drift. No
+sentinel found = `FAILED`.
 
 Every invocation also carries a hard `--max-turns` cap (small for refine, larger
 for implement); hitting the cap counts as `FAILED`. This is free runaway
@@ -215,11 +231,23 @@ the host's only jobs are to run the container and provide a volume mount.
   session) and `gh` auth must be available in the container and survive restarts
   — via mounted config dirs (`~/.claude`, `~/.config/gh`) or equivalent. This is
   a small but real setup task — see the spikes.
+- **Windows host specifics.** Prefer a **named Docker volume** (or a path inside
+  the WSL2 filesystem) over a Windows bind mount for repos/workspaces — bind
+  mounts from NTFS are dramatically slower for `node_modules`-heavy work and
+  cause file-watcher and permission oddities. Set the container `TZ` to the
+  local timezone or quiet hours will run on UTC. Enforce LF line endings in the
+  container (`core.autocrlf=false`) since the repos are shared with a Windows
+  host.
 - **Per-run or per-task containers** — stronger isolation, or parallelism via
   separate sandboxes — remain a Part 2 extension, not the baseline.
 
 ## Isolation and workspaces
 
+- Each managed repo has one **canonical clone** on the mounted volume (e.g.
+  `~/wake-repos/<repo>`), kept on `main` and fetched by the control plane.
+  Workspaces are created from it; it is never worked in directly by the agent.
+- **Refine needs no workspace.** It reads the issue and, at most, the canonical
+  clone read-only. Only implement pays workspace-preparation cost.
 - Inside the container, each work item gets its own prepared workspace off
   `main`, on a branch `wake/<issue-slug>`. A **separate folder per issue** is an
   accepted mechanism; a git worktree is the alternative. Either is fine.
