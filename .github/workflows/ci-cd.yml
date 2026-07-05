@@ -1,0 +1,13 @@
+name: CI/CD
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "CI/CD bootstrap placeholder for Wake"
