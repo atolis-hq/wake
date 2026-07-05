@@ -17,6 +17,7 @@
 - Create: `tsconfig.json`
 - Create: `vitest.config.ts`
 - Create: `.editorconfig`
+- Modify: `.gitignore`
 - Modify: `README.md`
 - Test: `package.json`
 
@@ -109,6 +110,15 @@ trim_trailing_whitespace = true
 ```
 
 Update `README.md` with a short “Development” section showing `npm install`, `npm test`, and `npm run tick`.
+
+Update `.gitignore` to explicitly cover Node/TypeScript outputs created by the
+bootstrap work:
+
+```gitignore
+node_modules/
+dist/
+coverage/
+```
 
 - [ ] **Step 4: Run build and tests to verify the scaffold passes**
 

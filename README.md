@@ -15,10 +15,11 @@ Wake is intended to start simple. The first justified version is a small loop th
 
 ## Status
 
-This repository is currently focused on product definition and early direction.
+This repository now includes the first control-plane skeleton as a TypeScript Node app.
 
 - Vision document: [docs/vision.md](docs/vision.md)
 - Implementation guide (MVP + longer-term shape): [docs/implementation.md](docs/implementation.md)
+- Skeleton architecture guide: [docs/architecture.md](docs/architecture.md)
 - Early-thinking inputs (not the accepted plan): [docs/vision-inputs/](docs/vision-inputs/)
 
 ## Concepts
@@ -29,3 +30,24 @@ This repository is currently focused on product definition and early direction.
 ## Direction
 
 Wake is intended to integrate with existing local agent CLIs such as Claude Code and Codex rather than replace them. It should run work locally, likely in a reusable isolated development environment, and use external workflow systems as the default coordination surface.
+
+## Development
+
+```bash
+npm install
+npm test
+npm run tick
+```
+
+Useful commands:
+
+- `npm run tick` runs one control-plane tick using fake work-source data from `.wake/fixtures/issues.json` when present
+- `npm run start` runs the resident loop
+- `npm run smoke:claude` runs a minimal Claude Haiku smoke test
+- `npm run smoke:claude -- --remote-control` starts a minimal remote-control Claude smoke session
+
+The default Claude smoke prompt is intentionally tiny:
+
+```text
+This is Eddy, reply with "hi Eddy only"
+```
