@@ -9,6 +9,7 @@
     "test:watch": "vitest",
     "start": "tsx src/main.ts start",
     "tick": "tsx src/main.ts tick",
+    "e2e:github-fake": "tsx scripts/e2e-github-fake.ts",
     "smoke:claude": "tsx src/main.ts smoke claude",
     "verify": "npm run build && npm test"
   },
