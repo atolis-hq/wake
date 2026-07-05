@@ -18,6 +18,8 @@ Wake is intended to start simple. The first justified version is a small loop th
 This repository is currently focused on product definition and early direction.
 
 - Vision document: [docs/vision.md](docs/vision.md)
+- Implementation guide (MVP + longer-term shape): [docs/implementation.md](docs/implementation.md)
+- Early-thinking inputs (not the accepted plan): [docs/vision-inputs/](docs/vision-inputs/)
 
 ## Concepts
 

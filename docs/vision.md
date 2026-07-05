@@ -43,6 +43,8 @@ Wake should be model-agnostic and CLI-agnostic. Claude Code, Codex, and future t
 
 Eddy is the runtime identity Wake uses for a unit of agentic execution. It may correspond to a local CLI session, a sandboxed container, a transcript, or a resumable execution context associated with a specific objective or lifecycle step.
 
+Eddy is not a persistent, long-running process. It does not sit resident for hours or days waiting for work. It is a resumable execution context: Wake starts it for a step, lets it finish, and records enough to bring it back. Equally, Wake should not blindly start a brand-new session for every step. Where continuity is valuable, a later lifecycle stage should be able to resume the same underlying session with its prior context intact, rather than rebuilding understanding from scratch. Whether to resume an existing session or begin a fresh one is a policy decision Wake owns.
+
 Eddy should remain thin. It does not own policy, prioritisation, or execution strategy. It does not decide which model to use, which CLI to invoke, or how work should progress. Wake makes those decisions and uses Eddy as the local wrapper or handle through which the chosen step is executed.
 
 This distinction matters because it keeps agency in one place. Wake decides. Eddy runs.
@@ -52,6 +54,8 @@ This distinction matters because it keeps agency in one place. Wake decides. Edd
 Wake should support a staged lifecycle rather than a single opaque agent session. Work may move through steps such as intake, refinement, planning, implementation, validation, review preparation, blocked clarification, and completion. These steps should be explicit enough that Wake can resume work later, hand it off between execution contexts, or switch between deterministic and agentic handling without losing state.
 
 Those lifecycle stages should be configurable rather than hard-coded into Wake. The control plane should provide the machinery for progressing work through stages, but the actual stage model, transitions, and workflow definitions should be pluggable so different repositories or teams can shape the system around their own delivery process.
+
+Wake should own its own execution timing. It runs as a resident local process that drives this loop on a schedule it controls, rather than delegating orchestration to an external operating-system scheduler. Because durable state lives outside the process — on disk and in the external channel — Wake can crash and restart without losing work, rebuilding its picture from that state on startup.
 
 The initial version does not need sophisticated orchestration to prove value. A simple loop is enough:
 
@@ -94,10 +98,10 @@ Wake should eventually provide the following capabilities:
 - lifecycle-aware handoff between stages or execution contexts
 - configurable and pluggable workflows, triggers, and routing rules
 - deterministic control-plane actions that reduce token use and increase reliability
-- observable state, history, and reasoning about what the system did and why
+- a durable audit trail on the local filesystem — the files Wake writes (state, per-run records, logs, session references, and results) are the record of what the system did and why, and are also how it resumes
 - the ability to evolve its own workflows and operating logic in controlled ways over time
 
-For local development environments that run in Docker or similar isolation, Wake should prefer reusing a single durable sandbox instance rather than managing a fleet of separate per-task sandboxes by default. In many cases the isolation boundary needed for work items is the workspace, branch, or worktree rather than a fully separate container for every execution. Wake should treat multiple concurrent sandboxes as an extension case, not as the baseline operating model.
+For local development environments that run in Docker or similar isolation, Wake should prefer reusing a single durable sandbox instance rather than managing a fleet of separate per-task sandboxes by default. In many cases the isolation boundary needed for work items is the workspace, branch, or worktree rather than a fully separate container for every execution. A separate working folder per work item is an acceptable isolation mechanism where git worktrees are awkward; the setup cost of preparing such a workspace is expected and can be coordinated by the control plane outside the LLM path. Wake should treat multiple concurrent sandboxes as an extension case, not as the baseline operating model.
 
 These capabilities should be developed incrementally, with each layer justified by clear operational value rather than architectural ambition alone.
 
@@ -140,6 +144,8 @@ Agent behaviour, routing rules, workflow steps, lifecycle stages, and triggers s
 Wake should eventually be able to improve parts of its own operation, especially workflows, policies, and supporting automation. That is a major long-term unlock because it allows the control plane to become better at coordinating work without requiring constant manual redesign. This should be treated as an aspirational capability rather than a dependency of the first version, and any self-upgrade path should remain explicit, reviewable, and bounded by the same control-plane safeguards applied elsewhere.
 
 ## Boundaries and Non-Goals
+
+Wake is a personal, local-first tool. It is meant to run on an individual's own machine, coordinating that person's own work — not to be a hosted, multi-tenant, or organisation-wide engineering fleet. A hosted service is a plausible future direction, but it is explicitly outside the scope of this vision; nothing in the first versions should assume or require it.
 
 Wake should not assume that more agent autonomy is automatically better. It is not trying to simulate a fully independent engineering organisation from day one. It is also not trying to replace existing issue trackers, source control systems, or coding CLIs. Those systems remain important surfaces; Wake coordinates across them.
 

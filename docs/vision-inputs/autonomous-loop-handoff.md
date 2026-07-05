@@ -1,3 +1,15 @@
+> [!NOTE]
+> **This is not the accepted plan.** This document is an early-thinking input: a
+> detailed but pre-vision design sketch for a scheduler-driven loop. It is kept
+> because much of its mechanism is reused, but it must not be treated as the
+> final design. Where it conflicts with [`../vision.md`](../vision.md) or
+> [`../implementation.md`](../implementation.md), those documents win. Known
+> divergences from the accepted plan: timing is owned by a resident Node control
+> plane, **not** Windows Task Scheduler (supersedes D1/§5 step 5); stages may
+> **resume** an existing session rather than always spawning a fresh process
+> (refines D1); per-issue **folders** are an accepted isolation alternative to
+> worktrees; and proactive budget metering is a post-MVP concern (refines D2).
+
 # Autonomous Task Loop — Implementation Hand-off
 
 **Audience:** an implementing model (Sonnet/Opus/Haiku) in Claude Code.

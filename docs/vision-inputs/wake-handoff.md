@@ -1,3 +1,12 @@
+> [!NOTE]
+> **This is not the accepted plan.** This document is an early-thinking input:
+> raw ideas and framing captured before the vision was settled. It is kept for
+> provenance only. Where it conflicts with [`../vision.md`](../vision.md) or
+> [`../implementation.md`](../implementation.md), those documents win. In
+> particular, the "long-lived, persistent, multi-day worker" framing of Eddy and
+> the parallel-Eddy diagram below have been superseded — see the vision and
+> implementation guide for the accepted model.
+
 # Wake Vision
 
 > **Wake is an autonomous engineering control plane.**
