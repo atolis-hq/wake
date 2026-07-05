@@ -22,6 +22,23 @@ import type {
 import { appendJsonLine, readJsonFile, writeJsonFile } from '../../lib/json-file.js';
 import { createWakePaths } from '../../lib/paths.js';
 
+export async function listRunRecords(wakeRoot: string): Promise<RunRecord[]> {
+  const runsRoot = join(wakeRoot, 'runs');
+
+  try {
+    const files = (await readdir(runsRoot)).sort();
+    const records: RunRecord[] = [];
+
+    for (const file of files) {
+      records.push(parseRunRecord(await readJsonFile(join(runsRoot, file))));
+    }
+
+    return records;
+  } catch {
+    return [];
+  }
+}
+
 export function createStateStore({ wakeRoot }: { wakeRoot: string }) {
   const paths = createWakePaths(wakeRoot);
 
@@ -75,6 +92,9 @@ export function createStateStore({ wakeRoot }: { wakeRoot: string }) {
       } catch {
         return null;
       }
+    },
+    async listRunRecords(): Promise<RunRecord[]> {
+      return listRunRecords(wakeRoot);
     },
     async readSourceState(source: string, key: string): Promise<SourceStateRecord | null> {
       try {
