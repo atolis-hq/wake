@@ -20,6 +20,7 @@ This repository now includes the first control-plane skeleton as a TypeScript No
 - Vision document: [docs/vision.md](docs/vision.md)
 - Implementation guide (MVP + longer-term shape): [docs/implementation.md](docs/implementation.md)
 - Skeleton architecture guide: [docs/architecture.md](docs/architecture.md)
+- Event-first refactor handoff: [docs/handoffs/2026-07-05-event-first-persistence.md](docs/handoffs/2026-07-05-event-first-persistence.md)
 - Early-thinking inputs (not the accepted plan): [docs/vision-inputs/](docs/vision-inputs/)
 
 ## Concepts

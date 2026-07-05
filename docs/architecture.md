@@ -4,6 +4,7 @@
 
 - Wake is a control plane, not a long-lived worker session.
 - Durable state files are schema-validated state-of-record.
+- Immutable event envelopes are the primary durable record.
 - Canonical deterministic fields stay separate from extensible agent-readable context.
 - Structured event audits drive automation and diagnostics.
 - Fake adapters are permanent test harnesses and future real-adapter seams.
@@ -18,15 +19,53 @@
 
 ## Durable State
 
-Wake owns a central `.wake/` home that acts as the state-of-record:
+Wake owns a central `.wake/` home. The canonical durable record is an append-only
+event stream; projections and summaries are derived from it:
 
 - `config.json` for versioned config
 - `ledger.json` for pause windows and future budget state
-- `state/<repo>/<issue>.json` for canonical issue/comment snapshots plus Wake state
+- `events/<date>.jsonl` for immutable imported and internal event envelopes
+- `state/<repo>/<issue>.json` for a derived projection of the current work item
 - `runs/<run-id>.json` for per-invocation records
-- `events/<date>.jsonl` for append-only audit events
+- optional future prompt/context artifacts derived from events plus projections
 
-Per-issue files deliberately separate canonical deterministic fields from optional `context` payloads that can grow for agent-facing data later without destabilizing scripts.
+The projection file is no longer the source of truth. It is a materialized view
+used for fast deterministic routing. If projection logic changes, Wake should be
+able to rebuild `state/` from the canonical event stream.
+
+Each event envelope should carry:
+
+- a stable event id and schema version
+- source system and source event type such as `github.issue_comment.created`
+- correlation identifiers for the work item, issue, comment, review, or PR
+- `occurredAt` and `ingestedAt`
+- a normalized canonical payload Wake scripts can rely on
+- optional source-specific raw payload fragments
+- optional derived hints computed cheaply during ingestion
+
+This lets the same durable artifacts serve three roles:
+
+- trigger Wake when relevant external or internal changes arrive
+- provide agent context for continuing work
+- provide a replayable audit trail
+
+Per-issue projection files should deliberately separate canonical deterministic
+fields from optional `context` payloads that can grow for agent-facing data later
+without destabilizing scripts.
+
+## Event-First Flow
+
+The intended flow is:
+
+1. ingest a source event from GitHub, Jira, or another system
+2. write an immutable event envelope
+3. update one or more projections such as `state/<repo>/<issue>.json`
+4. let deterministic policy read projections and selected event slices
+5. let the runner prompt receive a compact projection summary plus relevant
+   recent events, with direct event-file reading available when needed
+
+Wake should not require the model to scan a full raw event stream by default.
+The control plane should pick the relevant slice and keep prompts cheap.
 
 ## Runner Strategy
 
