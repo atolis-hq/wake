@@ -47,6 +47,19 @@ Useful commands:
 - `npm run smoke:claude` runs a minimal Claude Haiku smoke test
 - `npm run smoke:claude -- --remote-control` starts a minimal remote-control Claude smoke session
 
+## .wake Directory Structure
+
+Wake maintains local state in the `.wake` directory at the repository root:
+
+- `config.json` — Wake configuration and settings for control-plane behavior
+- `state/` — Runtime state and persistence files, including ticket projections and execution events
+- `runs/` — Execution history and run artifacts from each agent invocation
+- `events/` — Event logs capturing all state changes across stages and execution steps
+- `workspaces/` — Workspace-specific state or isolation directories for concurrent work
+- `fixtures/` — Test data for local development (e.g., `fixtures/issues.json` for fake polling)
+
+New contributors can inspect these directories to understand what Wake persists locally and how execution state flows through the system.
+
 ## GitHub Issues Polling
 
 Wake can poll configured GitHub repositories when `sources.github.enabled` is
