@@ -4,6 +4,7 @@ import {
   buildStagePrompt,
   buildClaudePrintArgs,
   buildClaudeRemoteControlArgs,
+  buildEddySessionName,
 } from '../../src/adapters/claude/claude-runner.js';
 import { defaultSmokePrompt } from '../../src/config/defaults.js';
 
@@ -118,5 +119,32 @@ describe('claude runner command building', () => {
     expect(args).toContain('Bash(git *) Bash(gh *)');
     expect(args).toContain('--');
     expect(args.at(-1)).toBe('do work');
+  });
+
+  it('includes a --remote-control flag with the given name and still terminates before the prompt', () => {
+    const args = buildClaudePrintArgs({
+      model: 'haiku',
+      prompt: 'do work',
+      sessionName: 'Eddy',
+      remoteControlName: 'Eddy-issue-8-run-1',
+    });
+
+    expect(args).toContain('--remote-control');
+    expect(args).toContain('Eddy-issue-8-run-1');
+    expect(args).toContain('--');
+    expect(args.at(-1)).toBe('do work');
+  });
+
+  it('builds a session name from the ticket id, title, and run id', () => {
+    const name = buildEddySessionName({
+      sessionName: 'Eddy',
+      issueNumber: 8,
+      title: 'Update README with runner config documentation',
+      runId: 'run-8-1783282434129',
+    });
+
+    expect(name).toBe(
+      'Eddy-issue-8-update-readme-with-runner-config-documen-run-8-1783282434129',
+    );
   });
 });

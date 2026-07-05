@@ -11,6 +11,31 @@ import type {
 } from '../../domain/types.js';
 import { branchNameForIssue } from '../git/git-workspace-manager.js';
 
+function slugify(value: string, maxLength = 40): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, maxLength)
+    .replace(/-+$/g, '');
+}
+
+export function buildEddySessionName(input: {
+  sessionName: string;
+  issueNumber: number;
+  title: string;
+  runId: string;
+}): string {
+  return [
+    input.sessionName,
+    `issue-${input.issueNumber}`,
+    slugify(input.title),
+    input.runId,
+  ]
+    .filter((part) => part.length > 0)
+    .join('-');
+}
+
 export function buildStagePrompt(input: {
   action: AgentAction;
   projection: IssueStateRecord;
@@ -74,6 +99,7 @@ export function buildClaudePrintArgs(options: {
   sessionName: string;
   permissionMode?: string;
   allowedTools?: string[];
+  remoteControlName?: string;
 }): string[] {
   return [
     '-p',
@@ -88,7 +114,13 @@ export function buildClaudePrintArgs(options: {
       : ['--permission-mode', options.permissionMode]),
     ...(options.allowedTools === undefined || options.allowedTools.length === 0
       ? []
-      : ['--allowedTools', options.allowedTools.join(' '), '--']),
+      : ['--allowedTools', options.allowedTools.join(' ')]),
+    ...(options.remoteControlName === undefined
+      ? []
+      : ['--remote-control', options.remoteControlName]),
+    // Terminate option parsing so the prompt is never swallowed by a
+    // variadic/optional-value flag above (e.g. --allowedTools, --remote-control).
+    '--',
     options.prompt,
   ];
 }
@@ -176,8 +208,16 @@ export function createClaudeRunner(options: {
       projection: IssueStateRecord;
       recentEvents: EventEnvelope[];
       config: WakeConfig;
+      runId: string;
       workspacePath?: string;
     }): Promise<AgentRunResult> {
+      const sessionName = buildEddySessionName({
+        sessionName: input.config.runner.claude.sessionName,
+        issueNumber: input.projection.issue.number,
+        title: input.projection.issue.title,
+        runId: input.runId,
+      });
+
       const args = buildClaudePrintArgs({
         model: input.config.runner.claude.model,
         prompt: buildStagePrompt({
@@ -185,10 +225,13 @@ export function createClaudeRunner(options: {
           projection: input.projection,
           recentEvents: input.recentEvents,
         }),
-        sessionName: input.config.runner.claude.sessionName,
+        sessionName,
         permissionMode: input.action === 'implement' ? 'acceptEdits' : 'default',
         allowedTools:
           input.action === 'implement' ? implementAllowedTools : refineAllowedTools,
+        ...(input.config.runner.claude.remoteControl.enabled
+          ? { remoteControlName: sessionName }
+          : {}),
       });
 
       const result = await runClaudeCommand({

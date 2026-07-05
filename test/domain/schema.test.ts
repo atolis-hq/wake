@@ -162,6 +162,9 @@ describe('run and event schemas', () => {
           sessionName: 'Eddy',
           remoteControlName: 'Eddy',
           smokePrompt: 'hi',
+          remoteControl: {
+            enabled: false,
+          },
         },
       },
       sources: {

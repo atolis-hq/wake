@@ -23,6 +23,9 @@ export function createDefaultWakeConfig(wakeRoot = resolve(process.cwd(), '.wake
         sessionName: 'Eddy',
         remoteControlName: 'Eddy',
         smokePrompt: defaultSmokePrompt,
+        remoteControl: {
+          enabled: false,
+        },
       },
     },
     sources: {

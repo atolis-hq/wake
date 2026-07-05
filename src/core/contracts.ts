@@ -25,6 +25,7 @@ export interface AgentRunner {
     projection: IssueStateRecord;
     recentEvents: EventEnvelope[];
     config: WakeConfig;
+    runId: string;
     workspacePath?: string;
   }): Promise<AgentRunResult>;
 }

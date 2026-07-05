@@ -166,6 +166,7 @@ export function createTickRunner(deps: {
           projection: candidate,
           recentEvents,
           config: deps.config,
+          runId,
           ...(workspacePath === undefined ? {} : { workspacePath }),
         });
         const sentinel = parseRunnerResultSentinel(runnerResult.result);
