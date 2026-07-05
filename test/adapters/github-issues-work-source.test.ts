@@ -186,4 +186,56 @@ describe('github issues work source', () => {
     expect(createComment).toHaveBeenCalledOnce();
     expect(deliveryEvents[0]?.sourceEventType).toBe('ticket.reply.published');
   });
+
+  it('formats outbound comments with attribution, model, and a resume command', async () => {
+    const createComment = vi.fn();
+    const store = createStateStore({ wakeRoot: root });
+    const config = createDefaultWakeConfig(root);
+    config.sources.github.enabled = true;
+    config.sources.github.repos = ['atolis-hq/wake'];
+
+    const workSource = createGitHubIssuesWorkSource({
+      client: {
+        listIssues: async () => [],
+        listComments: async () => [],
+        createComment,
+      },
+      stateStore: store,
+      config,
+      now: () => new Date('2026-07-05T12:10:00.000Z'),
+    });
+
+    await workSource.deliverIntent({
+      event: createEventEnvelope({
+        eventId: 'intent-2',
+        workItemKey: 'atolis-hq/wake#12',
+        streamScope: 'work-item',
+        direction: 'outbound',
+        sourceSystem: 'wake',
+        sourceEventType: 'wake.publish.intent.requested',
+        sourceRefs: { repo: 'atolis-hq/wake', issueNumber: 12 },
+        occurredAt: '2026-07-05T12:00:00.000Z',
+        ingestedAt: '2026-07-05T12:00:00.000Z',
+        trigger: 'context-only',
+        payload: {
+          kind: 'status-update',
+          body: 'Opened a PR',
+          action: 'implement',
+          runId: 'run-12-1',
+          sessionId: 'session-abc',
+          model: 'haiku',
+          workspacePath: 'C:\\wake\\.wake\\workspaces\\atolis-hq__wake\\12',
+        },
+      }),
+    });
+
+    const [, , , postedBody] = createComment.mock.calls[0] as [string, string, number, string];
+    expect(postedBody).toContain('**Eddy**');
+    expect(postedBody).toContain('stage `implement`');
+    expect(postedBody).toContain('model `haiku`');
+    expect(postedBody).toContain('run `run-12-1`');
+    expect(postedBody).toContain('claude --resume session-abc');
+    expect(postedBody).toContain('cd "C:\\wake\\.wake\\workspaces\\atolis-hq__wake\\12"');
+    expect(postedBody).toContain('<!-- wake -->');
+  });
 });

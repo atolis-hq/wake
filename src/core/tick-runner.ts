@@ -3,6 +3,7 @@ import { createPolicyEngine } from './policy-engine.js';
 import { createProjectionUpdater } from './projection-updater.js';
 import type {
   AgentRunner,
+  AgentRunResult,
   OutboundSink,
   WorkSource,
   WorkspaceManager,
@@ -10,7 +11,7 @@ import type {
 import type { Clock } from '../lib/clock.js';
 import { acquireFileLock } from '../lib/lock.js';
 import { parseRunnerResultSentinel } from '../domain/schema.js';
-import type { EventEnvelope, WakeConfig } from '../domain/types.js';
+import type { AgentAction, EventEnvelope, WakeConfig } from '../domain/types.js';
 import { createEventEnvelope } from '../lib/event-log.js';
 
 export function createTickRunner(deps: {
@@ -31,9 +32,11 @@ export function createTickRunner(deps: {
   function createPublishIntentEvent(input: {
     projection: import('../domain/types.js').IssueStateRecord;
     runId: string;
-    runnerResult: { result: string };
+    action: AgentAction;
+    runnerResult: AgentRunResult;
     sentinel: 'DONE' | 'BLOCKED' | 'FAILED';
     occurredAt: string;
+    workspacePath?: string;
   }): EventEnvelope | null {
     if (input.sentinel !== 'DONE' && input.sentinel !== 'BLOCKED') {
       return null;
@@ -57,6 +60,15 @@ export function createTickRunner(deps: {
       payload: {
         kind: input.sentinel === 'BLOCKED' ? 'question' : 'status-update',
         body: input.runnerResult.result.replace(/\b(DONE|BLOCKED|FAILED)\b/g, '').trim(),
+        action: input.action,
+        runId: input.runId,
+        ...(input.runnerResult.session_id === undefined
+          ? {}
+          : { sessionId: input.runnerResult.session_id }),
+        model: deps.config.runner.claude.model,
+        ...(input.workspacePath === undefined
+          ? {}
+          : { workspacePath: input.workspacePath }),
       },
       derivedHints: {
         stage: input.projection.wake.stage,
@@ -210,9 +222,11 @@ export function createTickRunner(deps: {
         const publishIntent = createPublishIntentEvent({
           projection: candidate,
           runId,
+          action,
           runnerResult,
           sentinel,
           occurredAt: finishedAt,
+          ...(workspacePath === undefined ? {} : { workspacePath }),
         });
 
         if (publishIntent !== null) {
