@@ -20,6 +20,7 @@ This repository now includes the first control-plane skeleton as a TypeScript No
 - Vision document: [docs/vision.md](docs/vision.md)
 - Implementation guide (MVP + longer-term shape): [docs/implementation.md](docs/implementation.md)
 - Skeleton architecture guide: [docs/architecture.md](docs/architecture.md)
+- Event-first refactor handoff: [docs/handoffs/2026-07-05-event-first-persistence.md](docs/handoffs/2026-07-05-event-first-persistence.md)
 - Early-thinking inputs (not the accepted plan): [docs/vision-inputs/](docs/vision-inputs/)
 
 ## Concepts
@@ -41,7 +42,7 @@ npm run tick
 
 Useful commands:
 
-- `npm run tick` runs one control-plane tick using fake work-source data from `.wake/fixtures/issues.json` when present
+- `npm run tick` runs one control-plane tick using fake ticketing-system data from `.wake/fixtures/issues.json` when present
 - `npm run start` runs the resident loop
 - `npm run smoke:claude` runs a minimal Claude Haiku smoke test
 - `npm run smoke:claude -- --remote-control` starts a minimal remote-control Claude smoke session

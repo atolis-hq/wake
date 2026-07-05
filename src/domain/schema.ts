@@ -30,21 +30,82 @@ const commentSnapshotSchema = z.object({
   isWakeAuthored: z.boolean(),
 });
 
-export const issueStateRecordSchema = z.object({
+const issueSnapshotSchema = z.object({
+  repo: z.string(),
+  number: z.number().int().positive(),
+  title: z.string(),
+  body: z.string(),
+  labels: z.array(z.string()),
+  assignees: z.array(z.string()),
+  state: z.enum(['open', 'closed']),
+  url: z.string().url(),
+  createdAt: isoTimestampSchema,
+  updatedAt: isoTimestampSchema,
+});
+
+const eventEnvelopeSourceRefsSchema = z.object({
+  repo: z.string().optional(),
+  issueNumber: z.number().int().positive().optional(),
+  commentId: z.string().optional(),
+  reviewId: z.string().optional(),
+  runId: z.string().optional(),
+  sink: z.string().optional(),
+  sourceUrl: z.string().optional(),
+});
+
+export const eventEnvelopeSchema = z.object({
   schemaVersion: z.literal(1),
-  issue: z.object({
-    repo: z.string(),
-    number: z.number().int().positive(),
-    title: z.string(),
-    body: z.string(),
-    labels: z.array(z.string()),
-    assignees: z.array(z.string()),
-    state: z.enum(['open', 'closed']),
-    url: z.string().url(),
-    createdAt: isoTimestampSchema,
-    updatedAt: isoTimestampSchema,
-  }),
-  comments: z.array(commentSnapshotSchema),
+  eventId: z.string(),
+  workItemKey: z.string(),
+  streamScope: z.enum(['global-intake', 'work-item']),
+  direction: z.enum(['inbound', 'outbound', 'internal']),
+  sourceSystem: z.string(),
+  sourceEventType: z.string(),
+  sourceRefs: eventEnvelopeSourceRefsSchema,
+  occurredAt: isoTimestampSchema,
+  ingestedAt: isoTimestampSchema,
+  trigger: z.enum(['immediate', 'context-only']),
+  payload: z.record(z.string(), z.unknown()),
+  raw: z.record(z.string(), z.unknown()).optional(),
+  derivedHints: z.record(z.string(), z.unknown()).optional(),
+});
+
+export const issueStateRecordSchema = z.preprocess((input) => {
+  if (input === null || typeof input !== 'object') {
+    return input;
+  }
+
+  const record = input as Record<string, unknown>;
+  const issue = record.issue as
+    | { repo?: unknown; number?: unknown }
+    | undefined;
+  const workItemKey =
+    record.workItemKey ??
+    (issue !== undefined &&
+    typeof issue.repo === 'string' &&
+    typeof issue.number === 'number'
+      ? `${issue.repo}#${issue.number}`
+      : undefined);
+
+  return {
+    comments: [],
+    context: {},
+    ...record,
+    workItemKey,
+    wake:
+      record.wake !== null && typeof record.wake === 'object'
+        ? {
+            recentEventIds: [],
+            ...(record.wake as Record<string, unknown>),
+          }
+        : record.wake,
+  };
+}, z.object({
+  schemaVersion: z.literal(1),
+  workItemKey: z.string(),
+  issue: issueSnapshotSchema,
+  comments: z.array(commentSnapshotSchema).default([]),
+  latestComment: commentSnapshotSchema.optional(),
   wake: z.object({
     stage: stageSchema,
     attempts: z.number().int().nonnegative(),
@@ -54,9 +115,10 @@ export const issueStateRecordSchema = z.object({
     blockReason: z.string().optional(),
     syncedAt: isoTimestampSchema,
     stageHistory: z.array(stageHistoryEntrySchema),
+    recentEventIds: z.array(z.string()).default([]),
   }),
   context: z.record(z.string(), z.unknown()).default({}),
-});
+}));
 
 export const runRecordSchema = z.object({
   schemaVersion: z.literal(1),
@@ -128,6 +190,10 @@ export function parseRunRecord(input: unknown) {
 
 export function parseEventRecord(input: unknown) {
   return eventRecordSchema.parse(input);
+}
+
+export function parseEventEnvelope(input: unknown) {
+  return eventEnvelopeSchema.parse(input);
 }
 
 export function parseLedger(input: unknown) {

@@ -291,7 +291,7 @@ Code hooks, or, worst case, scraping a browser session. A cheap early **spike**
 should simply inventory what allowance signal is actually available; committing
 to a metering design before that is premature.
 
-## State and audit trail (the control plane owns all state, centrally)
+## State and audit trail (event-first, centrally owned)
 
 The control plane holds the **complete** state of every task, centrally and
 durably. The files on disk **are** the audit trail. Two principles govern this:
@@ -300,7 +300,10 @@ durably. The files on disk **are** the audit trail. Two principles govern this:
    home (`~/.wake/`, on the mounted volume — *not* scattered inside each managed
    repo, and *never* inside a workspace). Wake is the sole owner and reader of
    that state.
-2. **Durable beyond any session, task, container, or workspace.** The audit trail
+2. **Event-first durability.** Imported and internal events are the primary
+   record. Current-state files are projections derived from those events, not
+   the source of truth.
+3. **Durable beyond any session, task, container, or workspace.** The audit trail
    outlives individual runs. Workspaces are deleted, sessions end, tasks close,
    the container is recreated — the central record on the volume persists.
    Nothing important lives only in process memory or only in an agent transcript.
@@ -309,7 +312,8 @@ durably. The files on disk **are** the audit trail. Two principles govern this:
 ~/.wake/                # central control-plane home — owns ALL state, permanent
   config.json           # timing, quiet hours, models, repo allowlist, caps
   ledger.json           # per-run cost/duration, pause state
-  state/<repo>/<issue>.json  # stage, attempts, workspace path, session id(s), history
+  events/<date>.jsonl   # canonical imported + internal event envelopes
+  state/<repo>/<issue>.json  # derived projection: stage, attempts, session refs, history
   runs/<run-id>.json    # one record per invocation: model, prompt ref, sentinel,
                         #   session_id, cost, duration, timestamps, gate decisions
   logs/<date>.log       # what the control plane did each tick and why
@@ -317,18 +321,41 @@ durably. The files on disk **are** the audit trail. Two principles govern this:
   workspaces/<repo>/<issue>/  # EPHEMERAL working copy for a run — code only, deleted after
 ```
 
-**Eddy never owns state.** Wake keeps the full picture and *injects* only the
-relevant slice into each run: the issue spec, the prior `session_id` to resume,
-and (later) applicable lessons. The agent receives what it needs for this step
-and writes results back through Wake — it does not read or mutate the central
-record directly.
+Each imported or Wake-produced event should be written as a durable envelope
+with a stable id, source metadata, correlation identifiers, normalized
+canonical payload, and optional raw/source-specific fragments. GitHub issue
+creation, issue comments, label changes, PR reviews, PR comments, and Wake's
+own internal decisions should all become first-class events in this stream.
+
+That event model should also support outbound publication intents. For example,
+an agent asking a question should not post directly to GitHub or Slack. It
+should create or request a Wake event such as "question publish requested", and
+the control plane should route that event to the configured sink.
+
+**Eddy never owns state.** Wake keeps the full picture and injects the relevant
+slice into each run: a current projection plus selected recent events, the prior
+`session_id` to resume, and (later) applicable lessons. The agent may read event
+files directly when needed, but the default path should keep prompts compact by
+passing a curated slice rather than the entire stream.
 
 Every meaningful event is appended to the central store: which item was chosen
 and why, which model/stage/route the policy selected, each run's inputs/outputs/
-cost, and every state transition. GitHub issue and PR history is the second,
-human-facing half of the same trail. Together they let the human reconstruct
-exactly what happened, and let Wake resume after any interruption — a container
-recreation, a full machine restart, or a task whose workspace is long gone.
+cost, every imported source change, and every state transition. The `state/`
+projection exists for fast deterministic routing and can be rebuilt if its shape
+changes. Together the event stream, projections, and run records let the human
+reconstruct exactly what happened, and let Wake resume after any interruption —
+a container recreation, a full machine restart, or a task whose workspace is
+long gone.
+
+Wake should further distinguish:
+
+- a **global intake/index stream** of all synced external/internal events used
+  for queue scanning and prioritization
+- a **correlated work-item stream** used to build detailed context once a ticket
+  is selected
+
+This matters because some important signals live outside a single ticket thread;
+they still need to be available to Wake for pickup decisions and prioritization.
 
 ## Safety rails
 

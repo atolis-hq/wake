@@ -1,11 +1,17 @@
 import type { AgentRunResult } from '../../core/contracts.js';
-import type { AgentAction, IssueStateRecord, WakeConfig } from '../../domain/types.js';
+import type {
+  AgentAction,
+  EventEnvelope,
+  IssueStateRecord,
+  WakeConfig,
+} from '../../domain/types.js';
 
 export function createFakeRunner(result?: AgentRunResult) {
   return {
     async run(_: {
       action: AgentAction;
-      issue: IssueStateRecord;
+      projection: IssueStateRecord;
+      recentEvents: EventEnvelope[];
       config: WakeConfig;
     }): Promise<AgentRunResult> {
       return result ?? {

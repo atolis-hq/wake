@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build a TypeScript Node control-plane skeleton for Wake with durable file-backed state, explicit schemas, fake GitHub and runner adapters, append-only event audits, and a resident/tick CLI.
+**Goal:** Build a TypeScript Node control-plane skeleton for Wake with durable file-backed state, explicit schemas, fake ticketing-system and runner adapters, append-only event audits, and a resident/tick CLI.
 
-**Architecture:** The implementation centers on a thin CLI over a modular control plane. Core orchestration depends on pure domain types and narrow interfaces, while filesystem IO, fake GitHub sync, and fake runner behavior live in adapters. Durable state is schema-validated and versioned so deterministic scripts can consume canonical fields while bundled agent-readable context can grow safely.
+**Architecture:** The implementation centers on a thin CLI over a modular control plane. Core orchestration depends on pure domain types and narrow interfaces, while filesystem IO, fake ticketing-system sync, and fake runner behavior live in adapters. Durable state is schema-validated and versioned so deterministic scripts can consume canonical fields while bundled agent-readable context can grow safely.
 
 **Tech Stack:** Node.js, TypeScript, Vitest, Zod, tsx
 
@@ -534,26 +534,26 @@ git add src/config/defaults.ts src/config/load-config.ts src/lib/paths.ts src/li
 git commit -m "feat: add wake filesystem state store"
 ```
 
-### Task 4: Add fake GitHub sync, Wake comment detection, and the workspace and runner adapters
+### Task 4: Add fake ticketing-system sync, Wake comment detection, and the workspace and runner adapters
 
 **Files:**
 - Create: `src/core/contracts.ts`
-- Create: `src/adapters/fake/fake-work-source.ts`
+- Create: `src/adapters/fake/fake-ticketing-system.ts`
 - Create: `src/adapters/fake/fake-runner.ts`
 - Create: `src/adapters/fake/fake-workspace-manager.ts`
-- Create: `test/adapters/fake-work-source.test.ts`
-- Test: `test/adapters/fake-work-source.test.ts`
+- Create: `test/adapters/fake-ticketing-system.test.ts`
+- Test: `test/adapters/fake-ticketing-system.test.ts`
 
 - [ ] **Step 1: Write the failing fake work source tests**
 
 ```ts
 import { describe, expect, it } from 'vitest';
-import { createFakeWorkSource } from '../../src/adapters/fake/fake-work-source.js';
+import { createFakeTicketingSystem } from '../../src/adapters/fake/fake-ticketing-system.js';
 
 describe('fake work source', () => {
   it('marks wake-authored comments using the wake marker', async () => {
-    const source = createFakeWorkSource({
-      issues: [
+    const source = createFakeTicketingSystem({
+      tickets: [
         {
           repo: 'atolis-hq/wake',
           number: 3,
@@ -576,7 +576,7 @@ describe('fake work source', () => {
 
 - [ ] **Step 2: Run fake work source tests to verify they fail**
 
-Run: `npm test -- test/adapters/fake-work-source.test.ts`
+Run: `npm test -- test/adapters/fake-ticketing-system.test.ts`
 
 Expected: FAIL because the adapter and contracts do not exist yet.
 
@@ -611,8 +611,8 @@ function isWakeAuthoredComment(body: string): boolean {
   return body.includes('<!-- wake -->');
 }
 
-export function createFakeWorkSource(input: {
-  issues: Array<{
+export function createFakeTicketingSystem(input: {
+  tickets: Array<{
     repo: string;
     number: number;
     title: string;
@@ -623,7 +623,7 @@ export function createFakeWorkSource(input: {
 }) {
   return {
     async syncIssues() {
-      return input.issues.map((issue) =>
+      return input.tickets.map((issue) =>
         parseIssueStateRecord({
           schemaVersion: 1,
           issue: {
@@ -691,14 +691,14 @@ export function createFakeWorkspaceManager(root: string) {
 
 - [ ] **Step 4: Run fake work source tests to verify they pass**
 
-Run: `npm test -- test/adapters/fake-work-source.test.ts`
+Run: `npm test -- test/adapters/fake-ticketing-system.test.ts`
 
 Expected: PASS
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/core/contracts.ts src/adapters/fake/fake-work-source.ts src/adapters/fake/fake-runner.ts src/adapters/fake/fake-workspace-manager.ts test/adapters/fake-work-source.test.ts
+git add src/core/contracts.ts src/adapters/fake/fake-ticketing-system.ts src/adapters/fake/fake-runner.ts src/adapters/fake/fake-workspace-manager.ts test/adapters/fake-ticketing-system.test.ts
 git commit -m "feat: add fake wake adapters"
 ```
 
@@ -722,7 +722,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createStateStore } from '../../src/adapters/fs/state-store.js';
 import { createFakeRunner } from '../../src/adapters/fake/fake-runner.js';
-import { createFakeWorkSource } from '../../src/adapters/fake/fake-work-source.js';
+import { createFakeTicketingSystem } from '../../src/adapters/fake/fake-ticketing-system.js';
 import { createFakeWorkspaceManager } from '../../src/adapters/fake/fake-workspace-manager.js';
 import { createTickRunner } from '../../src/core/tick-runner.js';
 
@@ -747,8 +747,8 @@ describe('tick runner', () => {
     const tickRunner = createTickRunner({
       now: () => new Date('2026-07-05T12:00:00.000Z'),
       stateStore: store,
-      workSource: createFakeWorkSource({
-        issues: [
+      workSource: createFakeTicketingSystem({
+        tickets: [
           {
             repo: 'atolis-hq/wake',
             number: 9,
@@ -773,8 +773,8 @@ describe('tick runner', () => {
     const tickRunner = createTickRunner({
       now: () => new Date('2026-07-05T12:00:00.000Z'),
       stateStore: store,
-      workSource: createFakeWorkSource({
-        issues: [
+      workSource: createFakeTicketingSystem({
+        tickets: [
           {
             repo: 'atolis-hq/wake',
             number: 10,
@@ -1126,7 +1126,7 @@ git commit -m "docs: add wake architecture guide"
 - Modify: `package.json`
 - Test: `test/domain/schema.test.ts`
 - Test: `test/adapters/state-store.test.ts`
-- Test: `test/adapters/fake-work-source.test.ts`
+- Test: `test/adapters/fake-ticketing-system.test.ts`
 - Test: `test/core/tick-runner.test.ts`
 - Test: `test/cli/control-plane.test.ts`
 

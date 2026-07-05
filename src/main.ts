@@ -1,7 +1,7 @@
 import { resolve } from 'node:path';
 
 import { createClaudeRunner } from './adapters/claude/claude-runner.js';
-import { createFileBackedFakeWorkSource } from './adapters/fake/fake-work-source.js';
+import { createFileBackedFakeTicketingSystem } from './adapters/fake/fake-ticketing-system.js';
 import { createFakeRunner } from './adapters/fake/fake-runner.js';
 import { createFakeWorkspaceManager } from './adapters/fake/fake-workspace-manager.js';
 import { createStateStore } from './adapters/fs/state-store.js';
@@ -36,7 +36,7 @@ async function buildRuntime(args: string[]) {
   });
   await stateStore.writeConfig(config);
 
-  const workSource = await createFileBackedFakeWorkSource({
+  const ticketingSystem = await createFileBackedFakeTicketingSystem({
     fixturePath: stateStore.paths.issueFixtureFile,
     now: () => systemClock.now(),
   });
@@ -61,7 +61,8 @@ async function buildRuntime(args: string[]) {
       },
     },
     stateStore,
-    workSource,
+    workSource: ticketingSystem,
+    outboundSink: ticketingSystem,
     runner,
     workspaceManager,
   });

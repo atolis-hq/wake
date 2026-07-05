@@ -71,7 +71,7 @@ The repository will be organized around clear responsibilities:
   - config schema, defaults, and config loading
 - `src/adapters/`
   - filesystem-backed implementations and fake adapters
-  - fake GitHub work source
+  - fake ticketing-system work source
   - fake agent runner
   - workspace manager skeleton
 - `src/lib/`
@@ -250,7 +250,7 @@ audit data for automation.
 
 ## Fake adapters
 
-### Fake GitHub work source
+### Fake ticketing-system work source
 
 The fake work source should allow tests and local runs to exercise the lifecycle
 without network access. It can read work items from local JSON fixtures or from

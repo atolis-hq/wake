@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   isWakeAuthoredComment,
+  parseEventEnvelope,
   parseEventRecord,
   parseIssueStateRecord,
   parseRunRecord,
@@ -86,6 +87,39 @@ describe('run and event schemas', () => {
     });
 
     expect(event.type).toBe('issue.synced');
+  });
+
+  it('accepts canonical event envelopes with work item correlation', () => {
+    const event = parseEventEnvelope({
+      schemaVersion: 1,
+      eventId: 'evt-1',
+      workItemKey: 'atolis-hq/wake#12',
+      streamScope: 'work-item',
+      direction: 'inbound',
+      sourceSystem: 'github',
+      sourceEventType: 'github.issue.comment.created',
+      sourceRefs: {
+        repo: 'atolis-hq/wake',
+        issueNumber: 12,
+        commentId: 'c-1',
+        sourceUrl: 'https://example.test/issues/12#issuecomment-1',
+      },
+      occurredAt: '2026-07-05T12:00:00.000Z',
+      ingestedAt: '2026-07-05T12:00:01.000Z',
+      trigger: 'immediate',
+      payload: {
+        body: 'Need more detail',
+      },
+      raw: {
+        body: 'Need more detail',
+      },
+      derivedHints: {
+        wakeAuthoredComment: false,
+      },
+    });
+
+    expect(event.workItemKey).toBe('atolis-hq/wake#12');
+    expect(event.streamScope).toBe('work-item');
   });
 
   it('parses the last sentinel occurrence from runner result text', () => {

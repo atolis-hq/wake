@@ -1,6 +1,8 @@
-import { access, appendFile, mkdir, readFile } from 'node:fs/promises';
+import { access, appendFile, mkdir, readFile, readdir } from 'node:fs/promises';
+import { join } from 'node:path';
 
 import {
+  parseEventEnvelope,
   parseEventRecord,
   parseIssueStateRecord,
   parseLedger,
@@ -8,6 +10,7 @@ import {
   parseWakeConfig,
 } from '../../domain/schema.js';
 import type {
+  EventEnvelope,
   EventRecord,
   IssueStateRecord,
   RunRecord,
@@ -70,6 +73,76 @@ export function createStateStore({ wakeRoot }: { wakeRoot: string }) {
       const parsed = parseEventRecord(record);
       await appendJsonLine(paths.eventFile(parsed.occurredAt.slice(0, 10)), parsed);
       return parsed;
+    },
+    async appendEventEnvelope(record: EventEnvelope): Promise<EventEnvelope> {
+      const parsed = parseEventEnvelope(record);
+      await appendJsonLine(paths.eventFile(parsed.occurredAt.slice(0, 10)), parsed);
+      return parsed;
+    },
+    async listIssueStates(): Promise<IssueStateRecord[]> {
+      const stateRoot = join(wakeRoot, 'state');
+      try {
+        const repoDirs = await readdir(stateRoot);
+        const items: IssueStateRecord[] = [];
+
+        for (const repoDir of repoDirs) {
+          const issueFiles = await readdir(join(stateRoot, repoDir));
+          for (const issueFile of issueFiles) {
+            items.push(
+              parseIssueStateRecord(
+                await readJsonFile(join(stateRoot, repoDir, issueFile)),
+              ),
+            );
+          }
+        }
+
+        return items.sort((left, right) =>
+          left.workItemKey.localeCompare(right.workItemKey),
+        );
+      } catch {
+        return [];
+      }
+    },
+    async listEventEnvelopes(): Promise<EventEnvelope[]> {
+      const eventsRoot = join(wakeRoot, 'events');
+      try {
+        const files = (await readdir(eventsRoot)).sort();
+        const envelopes: EventEnvelope[] = [];
+
+        for (const file of files) {
+          const raw = await readFile(join(eventsRoot, file), 'utf8');
+          for (const line of raw.split('\n')) {
+            const trimmed = line.trim();
+            if (trimmed.length === 0) {
+              continue;
+            }
+
+            const parsed = JSON.parse(trimmed) as unknown;
+            if (
+              parsed !== null &&
+              typeof parsed === 'object' &&
+              'eventId' in parsed &&
+              'sourceEventType' in parsed
+            ) {
+              envelopes.push(parseEventEnvelope(parsed));
+            }
+          }
+        }
+
+        return envelopes;
+      } catch {
+        return [];
+      }
+    },
+    async listEventEnvelopesForWorkItem(
+      workItemKey: string,
+      limit = 10,
+    ): Promise<EventEnvelope[]> {
+      const envelopes = await this.listEventEnvelopes();
+      return envelopes
+        .filter((event) => event.workItemKey === workItemKey)
+        .sort((left, right) => left.occurredAt.localeCompare(right.occurredAt))
+        .slice(-limit);
     },
     async appendLog(date: string, line: string): Promise<void> {
       await mkdir(wakeRoot, { recursive: true });
