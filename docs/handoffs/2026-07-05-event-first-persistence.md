@@ -138,7 +138,7 @@ token-heavy replay.
    - Wake internal control-plane events
    - outbound Wake intent and delivery-result events
 3. Introduce a `workItemKey` correlation model plus intake-vs-work-item scope.
-4. Refactor fake GitHub sync to emit canonical issue/comment events first.
+4. Refactor fake ticketing-system sync to emit canonical issue/comment events first.
 5. Build a projection updater that consumes envelopes and writes `state/`.
 6. Change tick orchestration to read from projections, not directly from raw
    fake issue snapshots.

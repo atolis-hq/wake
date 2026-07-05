@@ -8,7 +8,7 @@
 - Canonical deterministic fields stay separate from extensible agent-readable context.
 - Structured event audits drive automation and diagnostics.
 - Agent-produced outbound intents use the same event model as imported source events.
-- Fake adapters are permanent test harnesses and future real-adapter seams.
+- Fake ticketing-system and runner adapters are permanent test harnesses and future real-adapter seams.
 - Real runner integrations live behind the same adapter boundary, with Claude Haiku smoke tests kept intentionally minimal.
 
 ## Module Boundaries

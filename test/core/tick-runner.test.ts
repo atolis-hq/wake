@@ -3,7 +3,7 @@ import { mkdtemp, readdir, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { createFakeWorkSource } from '../../src/adapters/fake/fake-work-source.js';
+import { createFakeTicketingSystem } from '../../src/adapters/fake/fake-ticketing-system.js';
 import { createFakeWorkspaceManager } from '../../src/adapters/fake/fake-workspace-manager.js';
 import { createStateStore } from '../../src/adapters/fs/state-store.js';
 import { createDefaultWakeConfig } from '../../src/config/defaults.js';
@@ -32,8 +32,8 @@ describe('tick runner', () => {
       clock: { now: () => new Date('2026-07-05T12:00:00.000Z') },
       config: createDefaultWakeConfig(root),
       stateStore: store,
-      workSource: createFakeWorkSource({
-        issues: [
+      workSource: createFakeTicketingSystem({
+        tickets: [
           {
             repo: 'atolis-hq/wake',
             number: 9,
@@ -59,8 +59,8 @@ describe('tick runner', () => {
       clock: { now: () => new Date('2026-07-05T12:00:00.000Z') },
       config: createDefaultWakeConfig(root),
       stateStore: store,
-      workSource: createFakeWorkSource({
-        issues: [
+      workSource: createFakeTicketingSystem({
+        tickets: [
           {
             repo: 'atolis-hq/wake',
             number: 10,

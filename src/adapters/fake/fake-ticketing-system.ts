@@ -4,7 +4,7 @@ import { isWakeAuthoredComment, parseIssueStateRecord } from '../../domain/schem
 import type { IssueStateRecord } from '../../domain/types.js';
 import { readJsonFile } from '../../lib/json-file.js';
 
-export interface FakeIssueSeed {
+export interface FakeTicketSeed {
   repo: string;
   number: number;
   title: string;
@@ -43,7 +43,7 @@ function stageFromLabels(labels: string[]): IssueStateRecord['wake']['stage'] {
   return 'queue';
 }
 
-function normalizeIssue(issue: FakeIssueSeed, nowIso: string): IssueStateRecord {
+function normalizeIssue(issue: FakeTicketSeed, nowIso: string): IssueStateRecord {
   return parseIssueStateRecord({
     schemaVersion: 1,
     issue: {
@@ -74,36 +74,36 @@ function normalizeIssue(issue: FakeIssueSeed, nowIso: string): IssueStateRecord 
   });
 }
 
-export function createFakeWorkSource(options: {
-  issues: FakeIssueSeed[];
+export function createFakeTicketingSystem(options: {
+  tickets: FakeTicketSeed[];
   now?: () => Date;
 }) {
   return {
     async syncIssues(): Promise<IssueStateRecord[]> {
       const nowIso = (options.now ?? (() => new Date()))().toISOString();
-      return options.issues.map((issue) => normalizeIssue(issue, nowIso));
+      return options.tickets.map((issue) => normalizeIssue(issue, nowIso));
     },
   };
 }
 
-export async function createFileBackedFakeWorkSource(options: {
+export async function createFileBackedFakeTicketingSystem(options: {
   fixturePath: string;
   now?: () => Date;
 }) {
   try {
     await access(options.fixturePath);
   } catch {
-    return createFakeWorkSource(
+    return createFakeTicketingSystem(
       options.now === undefined
-        ? { issues: [] }
-        : { issues: [], now: options.now },
+        ? { tickets: [] }
+        : { tickets: [], now: options.now },
     );
   }
 
-  const raw = await readJsonFile<FakeIssueSeed[]>(options.fixturePath);
-  return createFakeWorkSource(
+  const raw = await readJsonFile<FakeTicketSeed[]>(options.fixturePath);
+  return createFakeTicketingSystem(
     options.now === undefined
-      ? { issues: raw }
-      : { issues: raw, now: options.now },
+      ? { tickets: raw }
+      : { tickets: raw, now: options.now },
   );
 }

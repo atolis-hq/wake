@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { createFakeWorkSource } from '../../src/adapters/fake/fake-work-source.js';
+import { createFakeTicketingSystem } from '../../src/adapters/fake/fake-ticketing-system.js';
 
-describe('fake work source', () => {
+describe('fake ticketing system', () => {
   it('marks wake-authored comments using the wake marker', async () => {
-    const source = createFakeWorkSource({
-      issues: [
+    const source = createFakeTicketingSystem({
+      tickets: [
         {
           repo: 'atolis-hq/wake',
           number: 3,
