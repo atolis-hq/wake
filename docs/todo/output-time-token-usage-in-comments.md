@@ -1,1 +1,0 @@
-when a run completes and the output is sent back to the source (eg a comment on github issue) - include the duration and the number of tokens used.
