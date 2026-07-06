@@ -1,5 +1,14 @@
 # Add better container-side debug logging for Wake runs
 
+Implemented on 2026-07-06:
+- forwarded sandbox commands now run through `/wake/docker/log-command.sh`, which emits command metadata, path resolution, readiness/auth checks, and command output into container logs
+- `wake sandbox logs` now tails Docker logs for the durable sandbox container instead of Wake-managed log files
+- Claude runner failures now include a container-log breadcrumb when available
+
+Remaining follow-up, if needed:
+- expand redaction rules if future auth/status commands emit new sensitive fields
+- if a future control-plane UI needs richer activity history, prefer structured Wake events/run metadata over raw log-file retention
+
 The current Docker sandbox flow is now usable, but it is still too opaque when
 something goes wrong during `wake.sh start`, `wake.sh tick`, or `wake sandbox`
 operations.
