@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp } from 'node:fs/promises';
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -10,10 +10,10 @@ import { createDefaultWakeConfig } from '../../src/config/defaults.js';
 
 describe('sandbox resume command', () => {
   it('executes claude resume in the requested workspace for explicit inputs', async () => {
-    const calls: Array<{ containerName: string; args: string[] }> = [];
+    const calls: string[][] = [];
     const docker = {
       exec: async (containerName: string, args: string[]) => {
-        calls.push({ containerName, args });
+        calls.push(['exec', '-it', containerName, ...args]);
       },
     };
 
@@ -25,14 +25,14 @@ describe('sandbox resume command', () => {
     });
 
     expect(calls).toEqual([
-      {
-        containerName: 'wake-sandbox',
-        args: [
-          'bash',
-          '-lc',
-          'cd "/wake/workspaces/atolis-hq__wake/12" && claude --resume session-123',
-        ],
-      },
+      [
+        'exec',
+        '-it',
+        'wake-sandbox',
+        'bash',
+        '-lc',
+        'cd "/wake/workspaces/atolis-hq__wake/12" && claude --resume session-123',
+      ],
     ]);
   });
 
@@ -57,6 +57,7 @@ describe('sandbox resume command', () => {
         finishedAt: '2026-07-06T10:05:00.000Z',
         sessionId: 'session-22',
       });
+      await writeFile(join(root, 'runs', 'notes.txt'), 'ignore me', 'utf8');
       await mkdir(join(root, 'workspaces', 'atolis-hq__wake', '22'), { recursive: true });
 
       let seenOptions:

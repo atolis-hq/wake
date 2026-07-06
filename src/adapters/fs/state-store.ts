@@ -26,7 +26,9 @@ export async function listRunRecords(wakeRoot: string): Promise<RunRecord[]> {
   const runsRoot = join(wakeRoot, 'runs');
 
   try {
-    const files = (await readdir(runsRoot)).sort();
+    const files = (await readdir(runsRoot))
+      .filter((file) => file.endsWith('.json'))
+      .sort();
     const records: RunRecord[] = [];
 
     for (const file of files) {

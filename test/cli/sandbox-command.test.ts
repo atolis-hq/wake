@@ -106,19 +106,23 @@ describe('sandbox command', () => {
     expect(docker.exec).toHaveBeenCalledWith('wake-sandbox', ['pwd']);
   });
 
-  it('rejects resume until the next task implements it', async () => {
+  it('dispatches resume through the sandbox resume command flow', async () => {
     const docker = createDockerMock();
 
-    await expect(
-      runSandboxCommand({
-        args: ['resume'],
-        config: createDefaultWakeConfig(wakeRoot),
-        repoRoot,
-        wakeRoot,
-        containerHomeRoot,
-        docker,
-      }),
-    ).rejects.toThrow(/resume is not implemented yet/i);
+    await runSandboxCommand({
+      args: ['resume', 'session-123', '--cwd', '/wake/workspaces/atolis-hq__wake/12'],
+      config: createDefaultWakeConfig(wakeRoot),
+      repoRoot,
+      wakeRoot,
+      containerHomeRoot,
+      docker,
+    });
+
+    expect(docker.exec).toHaveBeenCalledWith('wake-sandbox', [
+      'bash',
+      '-lc',
+      'cd "/wake/workspaces/atolis-hq__wake/12" && claude --resume session-123',
+    ]);
   });
 
   it('rejects unknown sandbox subcommands', async () => {

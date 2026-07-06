@@ -1,6 +1,7 @@
 import { resolve } from 'node:path';
 
 import type { DockerCli } from '../adapters/docker/docker-cli.js';
+import { runSandboxResumeCommand } from './sandbox-resume.js';
 import type { WakeConfig } from '../domain/types.js';
 
 export async function runSandboxCommand(input: {
@@ -50,7 +51,13 @@ export async function runSandboxCommand(input: {
   }
 
   if (subcommand === 'resume') {
-    throw new Error('Sandbox resume is not implemented yet.');
+    await runSandboxResumeCommand({
+      args: input.args.slice(1),
+      config: input.config,
+      docker: input.docker,
+      wakeRoot: input.wakeRoot,
+    });
+    return;
   }
 
   throw new Error(`Unknown sandbox command: ${subcommand ?? ''}`.trimEnd());
