@@ -238,6 +238,7 @@ describe('claude runner command building', () => {
             policy: {
               requiredLabels: [],
               ignoredLabels: [],
+              requiredAssignees: [],
             },
             publication: {
               postStatusComments: true,
