@@ -91,7 +91,8 @@ Docker sandbox settings for the durable Wake container.
 | `containerHomeMountPath` | string | Container path where the sandbox home directory is bind-mounted | `"/home/wake"` |
 | `extraMounts` | `{ source: string, target: string, readOnly?: boolean }[]` | Additional host paths to mount into the sandbox, for example Claude config from the host home directory | `[]` |
 
-To expose host Claude configuration inside the sandbox:
+To expose host Claude auth inside the sandbox, mount individual files rather
+than the whole `~/.claude` directory:
 
 ```json
 {
@@ -99,37 +100,58 @@ To expose host Claude configuration inside the sandbox:
   "sandbox": {
     "extraMounts": [
       {
-        "source": "C:/Users/alice/.claude",
-        "target": "/home/wake/.claude"
+        "source": "C:/Users/alice/.claude/.credentials.json",
+        "target": "/home/wake/.claude/.credentials.json",
+        "readOnly": true
+      },
+      {
+        "source": "C:/Users/alice/.claude/settings.json",
+        "target": "/home/wake/.claude/settings.json",
+        "readOnly": true
       }
     ]
   }
 }
 ```
 
-This is the recommended shape when Wake runs the real Claude CLI in the
-sandbox. Claude's user settings, plugin registry, installed plugin cache, and
-file-based credentials all live under `~/.claude` on the host.
+`.credentials.json` carries login tokens and `settings.json` carries plugin
+enablement flags (e.g. `enabledPlugins`) — both are plain data with no
+filesystem paths baked in, so they're portable between the host OS and the
+sandbox's Linux container.
 
-For example, on this machine:
-- `~/.claude/settings.json` enables `superpowers@claude-plugins-official`
-- `~/.claude/plugins/installed_plugins.json` points that plugin at
-  `C:/Users/live/.claude/plugins/cache/claude-plugins-official/superpowers/6.1.1`
-- `~/.claude/plugins/known_marketplaces.json` tracks the marketplace checkout
-- Claude credentials are also stored under `~/.claude`
+**Do not mount the whole `~/.claude` directory.** Plugin bookkeeping files
+under `~/.claude/plugins/` (`installed_plugins.json`,
+`known_marketplaces.json`, `plugin-catalog-cache.json`) record *absolute
+install paths* written by whichever OS's Claude process touched them last —
+e.g. `C:\Users\alice\.claude\plugins\cache\...` on Windows. If the entire
+directory is bind-mounted into the Linux container, the container's Claude
+CLI reads those same Windows paths and can't resolve them, so it reports the
+plugin/marketplace as failed to load (`cache-miss`) even though a plugin
+cache exists on disk. Because the mount is bidirectional, this also risks the
+sandbox's Claude process overwriting the host's plugin bookkeeping with
+paths that don't make sense back on the host.
 
-Mounting the whole `~/.claude` directory is more robust than mounting only a
-plugin subtree because it keeps:
-- `settings.json`
-- `plugins/installed_plugins.json`
-- the plugin cache under `plugins/cache/`
-- Claude credentials
+Instead, let the sandbox maintain its own `~/.claude/plugins` under the
+container home mount (`containerHomeMountPath`, e.g.
+`container-home/.claude/plugins` on the host) and install/enable plugins
+there independently (`claude plugin marketplace add ...`,
+`claude plugin install ...`). Only the two files above need to come from the
+host.
 
-in the same place Claude expects to find them.
+`settings.json` must stay writable (`readOnly: false`). `claude plugin
+install`/`enable`/`disable` all write their enablement state back into
+`settings.json` — if it's mounted read-only, those commands fail outright
+(`Failed to update settings: ... EBUSY`), which also means the
+`enabledPlugins` entries the host declared can never be turned into an
+actual local install inside the sandbox.
 
-Do not mark the `~/.claude` mount read-only if you expect Claude to log in,
-refresh credentials, install/update plugins, or write local state from inside
-the sandbox.
+`.credentials.json` can safely be marked `readOnly: true` (as above) if you
+want the sandbox to use the host's login without ever mutating it. The
+tradeoff is that if Claude needs to refresh an OAuth token from inside the
+sandbox, it can't persist the refreshed token back to `.credentials.json`, so
+a long-running sandbox may eventually need re-authentication even though the
+host session stays valid. Set it to `false` instead if you want the sandbox
+to be able to log in or refresh credentials on the host's behalf.
 
 Do not mount host `~/.config/gh` into the sandbox by default. That would let
 Wake reuse the host GitHub identity directly, which widens the blast radius if

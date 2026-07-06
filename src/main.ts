@@ -17,6 +17,7 @@ import { loadWakeConfig } from './config/load-config.js';
 import { createControlPlane } from './core/control-plane.js';
 import { createTickRunner } from './core/tick-runner.js';
 import { systemClock } from './lib/clock.js';
+import type { RunRecord } from './domain/types.js';
 
 function commandArgsBeforeTerminator(args: string[]): string[] {
   const terminatorIndex = args.indexOf('--');
@@ -42,6 +43,42 @@ export function readFlagBeforeCommandTerminator(
 
 function hasFlag(name: string, args: string[]): boolean {
   return commandArgsBeforeTerminator(args).includes(name);
+}
+
+export function formatTickFailureDetails(runRecord: RunRecord | null): string | null {
+  if (runRecord === null) {
+    return null;
+  }
+
+  const summary = runRecord.summary?.trim();
+  const exitCode =
+    runRecord.metadata !== undefined && typeof runRecord.metadata.exitCode === 'number'
+      ? runRecord.metadata.exitCode
+      : undefined;
+  const stderr =
+    runRecord.metadata !== undefined && typeof runRecord.metadata.stderr === 'string'
+      ? runRecord.metadata.stderr.trim()
+      : '';
+
+  if (summary === undefined && exitCode === undefined && stderr.length === 0) {
+    return null;
+  }
+
+  const lines = ['Tick failure details:', `runId: ${runRecord.runId}`];
+
+  if (exitCode !== undefined) {
+    lines.push(`exitCode: ${exitCode}`);
+  }
+
+  if (summary !== undefined) {
+    lines.push('', 'Summary:', summary);
+  }
+
+  if (stderr.length > 0) {
+    lines.push('', 'stderr:', stderr);
+  }
+
+  return lines.join('\n');
 }
 
 async function runCommand(command: string, args: string[]): Promise<void> {
@@ -170,6 +207,16 @@ async function runTick(args: string[]) {
   const runtime = await buildRuntime(args);
   const outcome = await runtime.tickRunner.runTick();
   console.log(JSON.stringify(outcome, null, 2));
+
+  if (outcome.status !== 'processed' || outcome.sentinel !== 'FAILED') {
+    return;
+  }
+
+  const runRecord = await runtime.stateStore.readRunRecord(outcome.runId);
+  const details = formatTickFailureDetails(runRecord);
+  if (details !== null) {
+    console.error(details);
+  }
 }
 
 async function runStart(args: string[]) {
