@@ -28,9 +28,12 @@ describe('tick runner', () => {
       },
     };
 
+    const config = createDefaultWakeConfig(root);
+    config.sources.github.policy.requiredLabels = ['wake:queue'];
+
     const tickRunner = createTickRunner({
       clock: { now: () => new Date('2026-07-05T12:00:00.000Z') },
-      config: createDefaultWakeConfig(root),
+      config,
       stateStore: store,
       workSource: createFakeTicketingSystem({
         tickets: [
@@ -55,9 +58,12 @@ describe('tick runner', () => {
 
   it('creates event audit records for sync and completion', async () => {
     const store = createStateStore({ wakeRoot: root });
+    const config = createDefaultWakeConfig(root);
+    config.sources.github.policy.requiredLabels = ['wake:queue'];
+
     const tickRunner = createTickRunner({
       clock: { now: () => new Date('2026-07-05T12:00:00.000Z') },
-      config: createDefaultWakeConfig(root),
+      config,
       stateStore: store,
       workSource: createFakeTicketingSystem({
         tickets: [
@@ -89,6 +95,9 @@ describe('tick runner', () => {
 
   it('persists outbound publish intents before sink delivery', async () => {
     const store = createStateStore({ wakeRoot: root });
+    const config = createDefaultWakeConfig(root);
+    config.sources.github.policy.requiredLabels = ['wake:queue'];
+
     const ticketingSystem = createFakeTicketingSystem({
       tickets: [
         {
@@ -105,7 +114,7 @@ describe('tick runner', () => {
 
     const tickRunner = createTickRunner({
       clock: { now: () => new Date('2026-07-05T12:00:00.000Z') },
-      config: createDefaultWakeConfig(root),
+      config,
       stateStore: store,
       workSource: ticketingSystem,
       outboundSink: ticketingSystem,
@@ -134,9 +143,12 @@ describe('tick runner', () => {
     let callCount = 0;
     let pollCount = 0;
 
+    const config = createDefaultWakeConfig(root);
+    config.sources.github.policy.requiredLabels = ['wake:queue'];
+
     const tickRunner = createTickRunner({
       clock: { now: () => new Date('2026-07-05T12:00:00.000Z') },
-      config: createDefaultWakeConfig(root),
+      config,
       stateStore: store,
       workSource: {
         async pollEvents() {
@@ -255,9 +267,12 @@ describe('tick runner', () => {
       context: {},
     });
 
+    const config = createDefaultWakeConfig(root);
+    config.sources.github.policy.requiredLabels = ['wake:refined'];
+
     const tickRunner = createTickRunner({
       clock: { now: () => new Date('2026-07-05T12:00:00.000Z') },
-      config: createDefaultWakeConfig(root),
+      config,
       stateStore: store,
       workSource: {
         async pollEvents() {
@@ -323,9 +338,12 @@ describe('tick runner', () => {
       context: {},
     });
 
+    const config = createDefaultWakeConfig(root);
+    config.sources.github.policy.requiredLabels = ['wake:queue'];
+
     const tickRunner = createTickRunner({
       clock: { now: () => new Date('2026-07-05T12:00:00.000Z') },
-      config: createDefaultWakeConfig(root),
+      config,
       stateStore: store,
       workSource: {
         async pollEvents() {

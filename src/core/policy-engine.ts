@@ -3,6 +3,13 @@ import type { AgentAction, IssueStateRecord, Stage, WakeConfig } from '../domain
 export function createPolicyEngine() {
   return {
     isEligible(issue: IssueStateRecord, config: WakeConfig): boolean {
+      const requiredLabels = config.sources.github.policy.requiredLabels;
+      const requiredAssignees = config.sources.github.policy.requiredAssignees;
+
+      if (requiredLabels.length === 0 && requiredAssignees.length === 0) {
+        return false;
+      }
+
       const labels = new Set(issue.issue.labels);
       const assignees = new Set(issue.issue.assignees);
 
@@ -10,9 +17,7 @@ export function createPolicyEngine() {
         return false;
       }
 
-      if (
-        config.sources.github.policy.requiredLabels.some((label) => !labels.has(label))
-      ) {
+      if (requiredLabels.some((label) => !labels.has(label))) {
         return false;
       }
 
@@ -22,7 +27,6 @@ export function createPolicyEngine() {
         return false;
       }
 
-      const requiredAssignees = config.sources.github.policy.requiredAssignees;
       if (
         requiredAssignees.length > 0 &&
         !requiredAssignees.some((login) => assignees.has(login))
