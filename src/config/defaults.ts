@@ -32,6 +32,7 @@ export function createDefaultWakeConfig(wakeRoot = resolve(process.cwd(), '.wake
         sessionName: 'Eddy',
         remoteControlName: 'Eddy',
         smokePrompt: defaultSmokePrompt,
+        timeoutMs: 30 * 60 * 1000,
         remoteControl: {
           enabled: false,
         },

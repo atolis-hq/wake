@@ -72,6 +72,31 @@ export function formatClaudeRunLogLine(input: {
   return parts.join(' ');
 }
 
+type CommentSnapshot = IssueStateRecord['comments'][number];
+
+function formatComment(comment: CommentSnapshot): string {
+  return `- ${comment.author.login} (${comment.createdAt}): ${comment.body}`;
+}
+
+function formatCommentList(comments: CommentSnapshot[]): string {
+  return comments.length > 0 ? comments.map(formatComment).join('\n') : '(none)';
+}
+
+// Comments Wake itself posted (status updates) or that a bot authored are
+// noise for "what changed since I last looked" - only human replies should
+// prompt the resumed agent to reconsider its approach.
+function newCommentsSinceLastRun(projection: IssueStateRecord): CommentSnapshot[] {
+  const handledCommentId = projection.context.lastHandledCommentId;
+  const cursorIndex =
+    typeof handledCommentId === 'string'
+      ? projection.comments.findIndex((comment) => comment.id === handledCommentId)
+      : -1;
+  const candidates =
+    cursorIndex === -1 ? projection.comments : projection.comments.slice(cursorIndex + 1);
+
+  return candidates.filter((comment) => !comment.isWakeAuthored && !comment.isBotAuthored);
+}
+
 function parseFrontmatterList(value: string | undefined): string[] {
   if (value === undefined || value.trim().length === 0) {
     return [];
@@ -91,17 +116,35 @@ function parseFrontmatterArgs(value: string | undefined): string[] {
   return value.trim().split(/\s+/);
 }
 
+function parseFrontmatterMaxTurns(input: { action: AgentAction; value: string | undefined }): number {
+  if (input.value === undefined || input.value.trim().length === 0) {
+    throw new Error(
+      `Prompt template for action "${input.action}" is missing a required "maxTurns" frontmatter value. ` +
+        'Every runner invocation must carry a --max-turns cap; add one to the template.',
+    );
+  }
+
+  const parsed = Number(input.value.trim());
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new Error(
+      `Prompt template for action "${input.action}" has an invalid "maxTurns" frontmatter value: ${input.value}`,
+    );
+  }
+
+  return parsed;
+}
+
 export interface StagePromptResult {
   prompt: string;
   permissionMode?: string;
   allowedTools: string[];
   extraArgs: string[];
+  maxTurns: number;
 }
 
 export async function buildStagePrompt(input: {
   action: AgentAction;
   projection: IssueStateRecord;
-  recentEvents: EventEnvelope[];
   mode?: 'start' | 'resume';
   config?: WakeConfig;
 }): Promise<StagePromptResult> {
@@ -119,14 +162,9 @@ export async function buildStagePrompt(input: {
     title: input.projection.issue.title,
     stage: input.projection.wake.stage,
     attempts: input.projection.wake.attempts,
-    latestComment: input.projection.latestComment?.body ?? '(none)',
     body: input.projection.issue.body,
-    recentEventsJson: input.recentEvents.map((event) => ({
-      eventId: event.eventId,
-      sourceEventType: event.sourceEventType,
-      occurredAt: event.occurredAt,
-      payload: event.payload,
-    })),
+    allCommentsText: formatCommentList(input.projection.comments),
+    newCommentsText: formatCommentList(newCommentsSinceLastRun(input.projection)),
   };
 
   if (input.action === 'implement') {
@@ -145,6 +183,7 @@ export async function buildStagePrompt(input: {
     prompt: renderPromptTemplate(template, context),
     allowedTools,
     extraArgs: parseFrontmatterArgs(template.frontmatter.extraArgs),
+    maxTurns: parseFrontmatterMaxTurns({ action: input.action, value: template.frontmatter.maxTurns }),
     ...(permissionMode === undefined ? {} : { permissionMode }),
   };
 }
@@ -157,6 +196,7 @@ export function buildClaudePrintArgs(options: {
   allowedTools?: string[];
   remoteControlName?: string;
   extraArgs?: string[];
+  maxTurns?: number;
 }): string[] {
   return [
     '-p',
@@ -166,6 +206,7 @@ export function buildClaudePrintArgs(options: {
     options.model,
     '--name',
     options.sessionName,
+    ...(options.maxTurns === undefined ? [] : ['--max-turns', String(options.maxTurns)]),
     ...(options.permissionMode === undefined
       ? []
       : ['--permission-mode', options.permissionMode]),
@@ -204,14 +245,18 @@ export function buildClaudeRemoteControlArgs(options: {
   ];
 }
 
-function runClaudeCommand(input: {
+const TIMEOUT_KILL_GRACE_MS = 5_000;
+
+export function runClaudeCommand(input: {
   command: string;
   args: string[];
   cwd: string;
+  timeoutMs?: number;
 }): Promise<{
   stdout: string;
   stderr: string;
   exitCode: number;
+  timedOut: boolean;
 }> {
   return new Promise((resolve, reject) => {
     const child = spawn(input.command, input.args, {
@@ -222,6 +267,19 @@ function runClaudeCommand(input: {
 
     let stdout = '';
     let stderr = '';
+    let timedOut = false;
+    let killTimer: NodeJS.Timeout | undefined;
+
+    // Runaway-cost protection: a hung/looping CLI invocation must never be
+    // able to hold the tick lock forever - kill it and surface as FAILED.
+    const timeoutTimer =
+      input.timeoutMs === undefined
+        ? undefined
+        : setTimeout(() => {
+            timedOut = true;
+            child.kill('SIGTERM');
+            killTimer = setTimeout(() => child.kill('SIGKILL'), TIMEOUT_KILL_GRACE_MS);
+          }, input.timeoutMs);
 
     child.stdout.on('data', (chunk) => {
       stdout += chunk.toString();
@@ -231,12 +289,19 @@ function runClaudeCommand(input: {
       stderr += chunk.toString();
     });
 
-    child.on('error', reject);
+    child.on('error', (error) => {
+      clearTimeout(timeoutTimer);
+      clearTimeout(killTimer);
+      reject(error);
+    });
     child.on('close', (exitCode) => {
+      clearTimeout(timeoutTimer);
+      clearTimeout(killTimer);
       resolve({
         stdout,
         stderr,
         exitCode: exitCode ?? 1,
+        timedOut,
       });
     });
   });
@@ -297,7 +362,6 @@ export function createClaudeRunner(options: {
       const stagePrompt = await buildStagePrompt({
         action: input.action,
         projection: input.projection,
-        recentEvents: input.recentEvents,
         mode: 'start',
         config: input.config,
       });
@@ -308,6 +372,7 @@ export function createClaudeRunner(options: {
         sessionName,
         allowedTools: stagePrompt.allowedTools,
         extraArgs: stagePrompt.extraArgs,
+        maxTurns: stagePrompt.maxTurns,
         ...(stagePrompt.permissionMode === undefined
           ? {}
           : { permissionMode: stagePrompt.permissionMode }),
@@ -334,9 +399,10 @@ export function createClaudeRunner(options: {
         command: options.command,
         args,
         cwd: input.workspacePath ?? options.cwd,
+        timeoutMs: input.config.runner.claude.timeoutMs,
       });
 
-      if (result.exitCode !== 0) {
+      if (result.exitCode !== 0 || result.timedOut) {
         const sandboxLog = readSandboxLogBreadcrumb();
         console.error(
           formatClaudeRunLogLine({
@@ -354,7 +420,9 @@ export function createClaudeRunner(options: {
         );
         return {
           result: [
-            'Claude runner failed',
+            result.timedOut
+              ? `Claude runner timed out after ${input.config.runner.claude.timeoutMs}ms and was killed`
+              : 'Claude runner failed',
             result.stderr,
             sandboxLog?.text,
             'FAILED',

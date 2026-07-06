@@ -197,6 +197,7 @@ describe('run and event schemas', () => {
           sessionName: 'Eddy',
           remoteControlName: 'Eddy',
           smokePrompt: 'hi',
+          timeoutMs: 60_000,
           remoteControl: {
             enabled: false,
           },
@@ -263,6 +264,7 @@ describe('run and event schemas', () => {
           sessionName: 'Eddy',
           remoteControlName: 'Eddy',
           smokePrompt: 'hi',
+          timeoutMs: 60_000,
           remoteControl: {
             enabled: false,
           },
@@ -324,6 +326,7 @@ describe('run and event schemas', () => {
           sessionName: 'Eddy',
           remoteControlName: 'Eddy',
           smokePrompt: 'hi',
+          timeoutMs: 60_000,
           remoteControl: {
             enabled: false,
           },

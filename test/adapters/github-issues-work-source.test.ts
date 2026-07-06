@@ -127,6 +127,7 @@ describe('github issues work source', () => {
           createdAt: '2026-07-05T12:05:00.000Z',
           updatedAt: '2026-07-05T12:05:00.000Z',
           isWakeAuthored: false,
+          isBotAuthored: false,
         },
       ],
       latestComment: {
@@ -136,6 +137,7 @@ describe('github issues work source', () => {
         createdAt: '2026-07-05T12:05:00.000Z',
         updatedAt: '2026-07-05T12:05:00.000Z',
         isWakeAuthored: false,
+        isBotAuthored: false,
       },
       wake: {
         stage: 'queue',

@@ -188,6 +188,19 @@ Resume a recorded Claude session inside the container workspace:
 ./wake.sh sandbox resume <session-id> --cwd "/wake/workspaces/<repo>/<issue>"
 ```
 
+If a tick is ever stuck reporting `{"status": "locked"}` with no run actually
+in progress (e.g. the process holding the tick lock was killed before it could
+clean up), clear the stale lock file:
+
+```bash
+./wake.sh locks clear
+```
+
+A wall-clock timeout (`runner.claude.timeoutMs`, see `docs/configuration.md`)
+now kills a hung Claude CLI invocation and marks the run `FAILED` before this
+should ever be needed, but `locks clear` remains the manual escape hatch for
+cases outside that (e.g. the container itself was restarted mid-run).
+
 ### 6. Stop the sandbox
 
 ```bash
