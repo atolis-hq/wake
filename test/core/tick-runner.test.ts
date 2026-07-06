@@ -269,6 +269,9 @@ describe('tick runner', () => {
           if (input.event.sourceEventType === 'wake.status.label.requested') {
             deliveredEvents.push(String(input.event.payload.statusLabel));
           }
+          if (input.event.sourceEventType === 'wake.stage.label.requested') {
+            deliveredEvents.push(String(input.event.payload.stageLabel));
+          }
           return [];
         },
       },
@@ -282,7 +285,12 @@ describe('tick runner', () => {
 
     await tickRunner.runTick();
 
-    expect(deliveredEvents).toEqual(['wake:status.working', 'wake:status.completed']);
+    expect(deliveredEvents).toEqual([
+      'wake:status.working',
+      'wake:stage.refined',
+      'wake:status.completed',
+      'wake:stage.done',
+    ]);
   });
 
   it('publishes a failed status label when a run ends in FAILED', async () => {
@@ -329,6 +337,9 @@ describe('tick runner', () => {
           if (input.event.sourceEventType === 'wake.status.label.requested') {
             deliveredEvents.push(String(input.event.payload.statusLabel));
           }
+          if (input.event.sourceEventType === 'wake.stage.label.requested') {
+            deliveredEvents.push(String(input.event.payload.stageLabel));
+          }
           return [];
         },
       },
@@ -342,6 +353,11 @@ describe('tick runner', () => {
 
     await tickRunner.runTick();
 
-    expect(deliveredEvents).toEqual(['wake:status.working', 'wake:status.failed']);
+    expect(deliveredEvents).toEqual([
+      'wake:status.working',
+      'wake:stage.queue',
+      'wake:status.failed',
+      'wake:stage.failed',
+    ]);
   });
 });

@@ -3,6 +3,7 @@ import type { EventEnvelope, WakeConfig } from '../../domain/types.js';
 import { createEventEnvelope } from '../../lib/event-log.js';
 
 const wakeStatusLabelPrefix = 'wake:status.';
+const wakeStageLabelPrefix = 'wake:stage.';
 
 type GitHubIssue = {
   number: number;
@@ -281,8 +282,13 @@ export function createGitHubIssuesWorkSource(deps: {
 
         if (nextStatusLabel !== undefined) {
           const nextLabels = [
-            ...currentLabels.filter((label) => !label.startsWith(wakeStatusLabelPrefix)),
+            ...currentLabels.filter(
+              (label) =>
+                !label.startsWith(wakeStatusLabelPrefix) &&
+                !label.startsWith(wakeStageLabelPrefix),
+            ),
             nextStatusLabel,
+            ...currentLabels.filter((label) => label.startsWith(wakeStageLabelPrefix)),
           ];
           await deps.client.setLabels(owner, repoName, issueNumber, nextLabels);
 
@@ -309,6 +315,61 @@ export function createGitHubIssuesWorkSource(deps: {
               },
             }),
           ];
+        }
+
+        return [];
+      }
+
+      if (input.event.sourceEventType === 'wake.stage.label.requested') {
+        const projection = await deps.stateStore.readIssueState(repo, issueNumber);
+        const currentLabels = projection?.issue.labels ?? [];
+        const nextStageLabel =
+          typeof input.event.payload.stageLabel === 'string'
+            ? input.event.payload.stageLabel
+            : undefined;
+
+        if (nextStageLabel !== undefined) {
+          const nextLabels = [
+            ...currentLabels.filter(
+              (label) =>
+                !label.startsWith(wakeStatusLabelPrefix) &&
+                !label.startsWith(wakeStageLabelPrefix),
+            ),
+            ...currentLabels.filter((label) => label.startsWith(wakeStatusLabelPrefix)),
+            nextStageLabel,
+          ];
+
+          const labelsChanged =
+            nextLabels.length !== currentLabels.length ||
+            !nextLabels.every((label, index) => label === currentLabels[index]);
+
+          if (labelsChanged) {
+            await deps.client.setLabels(owner, repoName, issueNumber, nextLabels);
+
+            return [
+              createEventEnvelope({
+                eventId: `${input.event.eventId}-labels-updated`,
+                workItemKey: input.event.workItemKey,
+                streamScope: 'work-item',
+                direction: 'outbound',
+                sourceSystem: 'github',
+                sourceEventType: 'ticket.labels.updated',
+                sourceRefs: {
+                  repo,
+                  issueNumber,
+                },
+                occurredAt: publishedAt,
+                ingestedAt: publishedAt,
+                trigger: 'context-only',
+                payload: {
+                  intentEventId: input.event.eventId,
+                  stageLabel: nextStageLabel,
+                  labels: nextLabels,
+                  providerEventType: 'github.issue.labels.updated',
+                },
+              }),
+            ];
+          }
         }
 
         return [];

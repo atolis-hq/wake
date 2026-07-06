@@ -133,6 +133,10 @@ export function createTickRunner(deps: {
     return 'wake:status.pending';
   }
 
+  function stageLabelForStage(stage: import('../domain/types.js').Stage): string {
+    return `wake:stage.${stage}`;
+  }
+
   function createStatusLabelEvent(input: {
     projection: import('../domain/types.js').IssueStateRecord;
     runId: string;
@@ -156,6 +160,33 @@ export function createTickRunner(deps: {
       trigger: 'context-only',
       payload: {
         statusLabel: input.statusLabel,
+      },
+    });
+  }
+
+  function createStageLabelEvent(input: {
+    projection: import('../domain/types.js').IssueStateRecord;
+    runId: string;
+    stageLabel: string;
+    occurredAt: string;
+  }): EventEnvelope {
+    return createEventEnvelope({
+      eventId: `${input.runId}-${input.stageLabel.replace(/[^a-z0-9]+/gi, '-')}`,
+      workItemKey: input.projection.workItemKey,
+      streamScope: 'work-item',
+      direction: 'outbound',
+      sourceSystem: 'wake',
+      sourceEventType: 'wake.stage.label.requested',
+      sourceRefs: {
+        repo: input.projection.issue.repo,
+        issueNumber: input.projection.issue.number,
+        runId: input.runId,
+      },
+      occurredAt: input.occurredAt,
+      ingestedAt: input.occurredAt,
+      trigger: 'context-only',
+      payload: {
+        stageLabel: input.stageLabel,
       },
     });
   }
@@ -255,6 +286,15 @@ export function createTickRunner(deps: {
           }),
         );
 
+        await deliverOutboundEvent(
+          createStageLabelEvent({
+            projection: candidate,
+            runId,
+            stageLabel: stageLabelForStage(candidate.wake.stage),
+            occurredAt: nowIso,
+          }),
+        );
+
         // 'implement' gets its own branch/workspace; 'refine' only reads
         // the issue and, at most, the canonical clone read-only - it never
         // pays per-issue workspace-preparation cost.
@@ -336,6 +376,15 @@ export function createTickRunner(deps: {
             projection: candidate,
             runId,
             statusLabel: statusLabelForStage(nextStage),
+            occurredAt: finishedAt,
+          }),
+        );
+
+        await deliverOutboundEvent(
+          createStageLabelEvent({
+            projection: candidate,
+            runId,
+            stageLabel: stageLabelForStage(nextStage),
             occurredAt: finishedAt,
           }),
         );

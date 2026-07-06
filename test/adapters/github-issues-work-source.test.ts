@@ -319,4 +319,142 @@ describe('github issues work source', () => {
       ['bug', 'wake:status.completed'],
     );
   });
+
+  it('applies stage labels and removes old stage labels', async () => {
+    const createComment = vi.fn();
+    const setLabels = vi.fn();
+    const store = createStateStore({ wakeRoot: root });
+    const config = createDefaultWakeConfig(root);
+    config.sources.github.enabled = true;
+    config.sources.github.repos = ['atolis-hq/wake'];
+
+    await store.writeIssueState({
+      schemaVersion: 1,
+      workItemKey: 'atolis-hq/wake#13',
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 13,
+        title: 'Example',
+        body: 'Body',
+        labels: ['bug', 'wake:status.pending', 'wake:stage.queue'],
+        assignees: [],
+        state: 'open',
+        url: 'https://github.com/atolis-hq/wake/issues/13',
+        createdAt: '2026-07-05T12:00:00.000Z',
+        updatedAt: '2026-07-05T12:00:00.000Z',
+      },
+      comments: [],
+      wake: {
+        stage: 'queue',
+        attempts: 0,
+        stageHistory: [],
+        recentEventIds: [],
+        syncedAt: '2026-07-05T12:10:00.000Z',
+      },
+      context: {},
+    });
+
+    const workSource = createGitHubIssuesWorkSource({
+      client: {
+        listIssues: async () => [],
+        listComments: async () => [],
+        createComment,
+        setLabels,
+      },
+      stateStore: store,
+      config,
+      now: () => new Date('2026-07-05T12:10:00.000Z'),
+    });
+
+    await workSource.deliverIntent({
+      event: createEventEnvelope({
+        eventId: 'intent-stage-1',
+        workItemKey: 'atolis-hq/wake#13',
+        streamScope: 'work-item',
+        direction: 'outbound',
+        sourceSystem: 'wake',
+        sourceEventType: 'wake.stage.label.requested',
+        sourceRefs: { repo: 'atolis-hq/wake', issueNumber: 13 },
+        occurredAt: '2026-07-05T12:00:00.000Z',
+        ingestedAt: '2026-07-05T12:00:00.000Z',
+        trigger: 'context-only',
+        payload: { stageLabel: 'wake:stage.refined' },
+      }),
+    });
+
+    expect(createComment).not.toHaveBeenCalled();
+    expect(setLabels).toHaveBeenCalledWith(
+      'atolis-hq',
+      'wake',
+      13,
+      ['bug', 'wake:status.pending', 'wake:stage.refined'],
+    );
+  });
+
+  it('does not emit stage label event when stage label unchanged', async () => {
+    const createComment = vi.fn();
+    const setLabels = vi.fn();
+    const store = createStateStore({ wakeRoot: root });
+    const config = createDefaultWakeConfig(root);
+    config.sources.github.enabled = true;
+    config.sources.github.repos = ['atolis-hq/wake'];
+
+    await store.writeIssueState({
+      schemaVersion: 1,
+      workItemKey: 'atolis-hq/wake#14',
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 14,
+        title: 'Example',
+        body: 'Body',
+        labels: ['bug', 'wake:status.pending', 'wake:stage.refined'],
+        assignees: [],
+        state: 'open',
+        url: 'https://github.com/atolis-hq/wake/issues/14',
+        createdAt: '2026-07-05T12:00:00.000Z',
+        updatedAt: '2026-07-05T12:00:00.000Z',
+      },
+      comments: [],
+      wake: {
+        stage: 'refined',
+        attempts: 0,
+        stageHistory: [],
+        recentEventIds: [],
+        syncedAt: '2026-07-05T12:10:00.000Z',
+      },
+      context: {},
+    });
+
+    const workSource = createGitHubIssuesWorkSource({
+      client: {
+        listIssues: async () => [],
+        listComments: async () => [],
+        createComment,
+        setLabels,
+      },
+      stateStore: store,
+      config,
+      now: () => new Date('2026-07-05T12:10:00.000Z'),
+    });
+
+    const deliveryEvents = await workSource.deliverIntent({
+      event: createEventEnvelope({
+        eventId: 'intent-stage-2',
+        workItemKey: 'atolis-hq/wake#14',
+        streamScope: 'work-item',
+        direction: 'outbound',
+        sourceSystem: 'wake',
+        sourceEventType: 'wake.stage.label.requested',
+        sourceRefs: { repo: 'atolis-hq/wake', issueNumber: 14 },
+        occurredAt: '2026-07-05T12:00:00.000Z',
+        ingestedAt: '2026-07-05T12:00:00.000Z',
+        trigger: 'context-only',
+        payload: { stageLabel: 'wake:stage.refined' },
+      }),
+    });
+
+    expect(createComment).not.toHaveBeenCalled();
+    expect(setLabels).not.toHaveBeenCalled();
+    expect(deliveryEvents).toEqual([]);
+  });
 });
