@@ -88,3 +88,6 @@ Wake's core selling point is being model/CLI/workflow-agnostic. This only holds 
 - Prefer exercising `core/` logic through the fake adapters (`createFakeRunner`, `createFileBackedFakeTicketingSystem`, `createFakeWorkspaceManager`) rather than mocking `core/contracts.ts` interfaces ad hoc — the fakes already model the real contract and are maintained for exactly this purpose.
 - Any new runner invocation must set `--max-turns` and a wall-clock timeout — these are the only runaway-cost protections and must not be optional.
 - Don't add retry-with-bigger-model logic on a failed run; a failed attempt should surface as `BLOCKED` (bad spec), not trigger silent model escalation.
+
+# Documentation requirements
+Whenever changing the cli command surface or config file options, you must update the relevant documentation, such as the `README.md` or `docs\configuration.md`. Keep changes minimal and scoped only to changes you made.

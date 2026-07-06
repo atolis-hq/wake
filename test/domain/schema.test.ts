@@ -214,6 +214,7 @@ describe('run and event schemas', () => {
           policy: {
             requiredLabels: [],
             ignoredLabels: [],
+            requiredAssignees: [],
           },
           publication: {
             postStatusComments: true,
@@ -279,6 +280,7 @@ describe('run and event schemas', () => {
           policy: {
             requiredLabels: [],
             ignoredLabels: [],
+            requiredAssignees: [],
           },
           publication: {
             postStatusComments: true,
@@ -288,5 +290,66 @@ describe('run and event schemas', () => {
     });
 
     expect(config.dev?.repoRoot).toBe('/tmp/wake-repo');
+  });
+
+  it('parses sources.github.policy.requiredAssignees', () => {
+    const config = parseWakeConfig({
+      schemaVersion: 1,
+      paths: {
+        wakeRoot: '/tmp/wake',
+        promptsRoot: '/tmp/wake/prompts',
+      },
+      sandbox: {
+        image: 'wake-sandbox',
+        containerName: 'wake-sandbox-1',
+        containerMountPath: '/wake',
+        containerHomeMountPath: '/home/wake',
+        extraMounts: [
+          {
+            source: '/host/.claude/skills',
+            target: '/home/wake/.claude/skills',
+            readOnly: true,
+          },
+        ],
+      },
+      scheduler: {
+        intervalMs: 1000,
+      },
+      runner: {
+        mode: 'fake',
+        claude: {
+          command: 'claude',
+          model: 'haiku',
+          smokeModel: 'haiku',
+          sessionName: 'Eddy',
+          remoteControlName: 'Eddy',
+          smokePrompt: 'hi',
+          remoteControl: {
+            enabled: false,
+          },
+        },
+      },
+      sources: {
+        github: {
+          enabled: false,
+          repos: ['atolis-hq/wake'],
+          polling: {
+            maxIssuesPerRepo: 25,
+            commentPageSize: 25,
+            lookbackMs: 60000,
+          },
+          policy: {
+            requiredLabels: [],
+            ignoredLabels: [],
+            requiredAssignees: ['octocat'],
+          },
+          publication: {
+            postStatusComments: true,
+          },
+        },
+      },
+    });
+
+    expect(config.sources.github.policy.requiredAssignees).toEqual(['octocat']);
   });
 });

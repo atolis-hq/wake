@@ -49,6 +49,7 @@ export function createDefaultWakeConfig(wakeRoot = resolve(process.cwd(), '.wake
         policy: {
           requiredLabels: [],
           ignoredLabels: [],
+          requiredAssignees: [],
         },
         publication: {
           postStatusComments: true,

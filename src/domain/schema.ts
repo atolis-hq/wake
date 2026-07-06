@@ -206,6 +206,7 @@ export const wakeConfigSchema = z.object({
       policy: z.object({
         requiredLabels: z.array(z.string()),
         ignoredLabels: z.array(z.string()),
+        requiredAssignees: z.array(z.string()),
       }),
       publication: z.object({
         postStatusComments: z.boolean(),

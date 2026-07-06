@@ -58,7 +58,8 @@ All configuration uses `schemaVersion: 1`.
       },
       "policy": {
         "requiredLabels": [],
-        "ignoredLabels": []
+        "ignoredLabels": [],
+        "requiredAssignees": []
       },
       "publication": {
         "postStatusComments": true
@@ -222,6 +223,7 @@ Filtering rules for which issues to process.
 |----------|------|-------------|---------|
 | `requiredLabels` | string[] | Only process issues with all of these labels (empty = no requirement) | `[]` |
 | `ignoredLabels` | string[] | Ignore issues with any of these labels | `[]` |
+| `requiredAssignees` | string[] | Only process issues assigned to at least one of these GitHub logins (empty = no requirement) | `[]` |
 
 #### publication
 
