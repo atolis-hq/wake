@@ -37,6 +37,10 @@ Useful commands:
 - `npm run smoke:claude` runs a minimal Claude Haiku smoke test
 - `npm run smoke:claude -- --remote-control` starts a minimal remote-control Claude smoke session
 
+### Configuration
+
+Wake's behavior can be customized through a configuration file at `.wake/configuration.json`. See [docs/configuration.md](docs/configuration.md) for a complete reference of all configurable properties, including paths, scheduler timing, execution mode, Claude CLI settings, and GitHub integration options.
+
 ## GitHub Issues Polling
 
 Wake can poll configured GitHub repositories when `sources.github.enabled` is
