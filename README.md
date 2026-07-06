@@ -119,7 +119,7 @@ Set-Location $env:WAKE_HOME
 .\wake.ps1 sandbox build
 ```
 
-### 3. Start the persistent container
+### 3. Start or update the persistent container
 
 Start the persistent container from inside `wake-home`:
 
@@ -132,6 +132,19 @@ If the container already exists and is stopped:
 ```bash
 ./wake.sh sandbox up
 ```
+
+When you change Wake source or the Dockerfile and want the sandbox to pick up
+the new version without losing mounted state, rebuild the image and replace the
+container in place:
+
+```bash
+./wake.sh sandbox build
+./wake.sh sandbox update
+```
+
+`wake sandbox update` is the normal upgrade path. It preserves the existing
+`wake-home` mount, including `/home/wake` auth state such as GitHub, Claude,
+and SSH credentials.
 
 ### 4. Run first-time auth setup inside the container
 

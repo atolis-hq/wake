@@ -57,21 +57,28 @@ export async function runSandboxCommand(input: {
       return;
     }
 
+    if (subcommand === 'update') {
+      await input.docker.update({
+        image: input.config.sandbox.image,
+        containerName: input.config.sandbox.containerName,
+        wakeRoot: input.wakeRoot,
+        containerHomeRoot: input.containerHomeRoot,
+        containerMountPath: input.config.sandbox.containerMountPath,
+        containerHomeMountPath: input.config.sandbox.containerHomeMountPath,
+        extraMounts: input.config.sandbox.extraMounts,
+      });
+      return;
+    }
+
     if (subcommand === 'down') {
       await input.docker.down(input.config.sandbox.containerName);
       return;
     }
 
     if (subcommand === 'setup') {
-      await input.docker.exec(
+      await input.docker.execInteractive(
         input.config.sandbox.containerName,
-        buildSandboxLoggedCommand({
-          label: 'sandbox.setup',
-          config: input.config,
-          wakeRoot: input.wakeRoot,
-          containerHomeRoot: input.containerHomeRoot,
-          command: ['bash', '/wake/docker/setup.sh'],
-        }),
+        ['bash', '/wake/docker/setup.sh'],
       );
       return;
     }

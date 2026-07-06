@@ -123,6 +123,76 @@ describe('docker cli adapter', () => {
     expect(calls).toEqual([]);
   });
 
+  it('replaces an existing running container without changing mounted paths', async () => {
+    const calls: string[][] = [];
+    const docker = createDockerCli({
+      inspectContainer: async () => 'running',
+      inspectImage: async () => true,
+      run: async (args) => {
+        calls.push(args);
+      },
+    });
+
+    await docker.update({
+      image: 'wake-sandbox',
+      containerName: 'wake-sandbox',
+      wakeRoot: '/host/wake-home',
+      containerHomeRoot: '/host/wake-home/container-home',
+      containerMountPath: '/wake',
+      containerHomeMountPath: '/home/wake',
+    });
+
+    expect(calls).toEqual([
+      ['stop', 'wake-sandbox'],
+      ['rm', 'wake-sandbox'],
+      [
+        'run',
+        '-d',
+        '--name',
+        'wake-sandbox',
+        '-v',
+        '/host/wake-home:/wake',
+        '-v',
+        '/host/wake-home/container-home:/home/wake',
+        'wake-sandbox',
+      ],
+    ]);
+  });
+
+  it('creates the container during update when none exists', async () => {
+    const calls: string[][] = [];
+    const docker = createDockerCli({
+      inspectContainer: async () => null,
+      inspectImage: async () => true,
+      run: async (args) => {
+        calls.push(args);
+      },
+    });
+
+    await docker.update({
+      image: 'wake-sandbox',
+      containerName: 'wake-sandbox',
+      wakeRoot: '/host/wake-home',
+      containerHomeRoot: '/host/wake-home/container-home',
+      containerMountPath: '/wake',
+      containerHomeMountPath: '/home/wake',
+    });
+
+    expect(calls).toEqual([
+      [
+        'run',
+        '-d',
+        '--name',
+        'wake-sandbox',
+        '-v',
+        '/host/wake-home:/wake',
+        '-v',
+        '/host/wake-home/container-home:/home/wake',
+        'wake-sandbox',
+      ],
+    ]);
+  });
+
   it('mounts configured extra host paths when creating a new container', async () => {
     const calls: string[][] = [];
     const docker = createDockerCli({
@@ -192,6 +262,21 @@ describe('docker cli adapter', () => {
     });
 
     await docker.setup('wake-sandbox');
+
+    expect(calls).toEqual([['exec', '-it', 'wake-sandbox', 'bash', '/wake/docker/setup.sh']]);
+  });
+
+  it('executes interactive commands with a tty inside the container', async () => {
+    const calls: string[][] = [];
+    const docker = createDockerCli({
+      inspectContainer: async () => null,
+      inspectImage: async () => false,
+      run: async (args) => {
+        calls.push(args);
+      },
+    });
+
+    await docker.execInteractive('wake-sandbox', ['bash', '/wake/docker/setup.sh']);
 
     expect(calls).toEqual([['exec', '-it', 'wake-sandbox', 'bash', '/wake/docker/setup.sh']]);
   });

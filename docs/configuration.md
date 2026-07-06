@@ -191,6 +191,10 @@ Wake loads configuration from `.wake/configuration.json` relative to the current
 
 For sandbox debugging, `wake sandbox logs` tails Docker container logs for the durable sandbox. Wake keeps structured run/event records durably, but raw sandbox stdout/stderr is treated as container log output rather than a Wake-managed on-disk archive.
 
+For day-to-day local upgrades, use `wake sandbox build` followed by
+`wake sandbox update`. That rebuilds the image and replaces the container while
+preserving the mounted Wake home and sandbox home directories.
+
 For example, to enable GitHub polling while keeping all other defaults:
 
 ```json

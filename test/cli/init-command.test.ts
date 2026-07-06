@@ -54,10 +54,15 @@ describe('init command', () => {
     expect(config).toContain('"sandbox"');
     expect(config).toContain(`"repoRoot": "${repoRoot.replaceAll('\\', '\\\\')}"`);
     expect(dockerfile).toContain('ENTRYPOINT ["sleep", "infinity"]');
+    expect(setupScript).toContain('Wake sandbox setup starting.');
     expect(setupScript).toContain('gh auth login');
+    expect(setupScript).toContain('prompt_yes_no "Configure GitHub auth?"');
+    expect(setupScript).not.toContain('gh auth status >/dev/null 2>&1');
     expect(setupScript).not.toContain('docker exec');
     expect(setupScript).not.toContain('\r\n');
-    expect(setupScript).toContain('claude setup-token');
+    expect(setupScript).toContain('claude auth login --claudeai');
+    expect(setupScript).toContain('prompt_yes_no "Configure Claude auth?"');
+    expect(setupScript).not.toContain('claude auth status >/dev/null 2>&1');
     expect(setupScript).toContain('ssh-keygen -t ed25519');
     expect(shellLauncher).toContain(repoRoot.replaceAll('\\', '/'));
     expect(shellLauncher).toContain('case "${1:-}" in');

@@ -14,9 +14,11 @@ describe('sandbox command', () => {
     return {
       build: vi.fn(async () => {}),
       up: vi.fn(async () => {}),
+      update: vi.fn(async () => {}),
       down: vi.fn(async () => {}),
       setup: vi.fn(async () => {}),
       exec: vi.fn(async () => {}),
+      execInteractive: vi.fn(async () => {}),
       logs: vi.fn(async () => {}),
     };
   }
@@ -95,6 +97,28 @@ describe('sandbox command', () => {
     expect(docker.down).toHaveBeenCalledWith('wake-sandbox');
   });
 
+  it('dispatches update with config-derived container settings', async () => {
+    const docker = createDockerMock();
+
+    await runSandboxCommand({
+      args: ['update'],
+      config: createDefaultWakeConfig(wakeRoot),
+      wakeRoot,
+      containerHomeRoot,
+      docker,
+    });
+
+    expect(docker.update).toHaveBeenCalledWith({
+      image: 'wake-sandbox',
+      containerName: 'wake-sandbox',
+      wakeRoot,
+      containerHomeRoot,
+      containerMountPath: '/wake',
+      containerHomeMountPath: '/home/wake',
+      extraMounts: [],
+    });
+  });
+
   it('dispatches setup to the configured container name', async () => {
     const docker = createDockerMock();
 
@@ -106,23 +130,9 @@ describe('sandbox command', () => {
       docker,
     });
 
-    expect(docker.exec).toHaveBeenCalledWith(
+    expect(docker.execInteractive).toHaveBeenCalledWith(
       'wake-sandbox',
-      expect.arrayContaining([
-        'env',
-        'WAKE_SANDBOX_LABEL=sandbox.setup',
-        'WAKE_SANDBOX_CONTAINER_WAKE_ROOT=/wake',
-        'WAKE_SANDBOX_PROMPTS_ROOT=/wake/prompts',
-        'WAKE_SANDBOX_CONTAINER_HOME=/home/wake',
-        'WAKE_SANDBOX_HOST_WAKE_ROOT=/host/wake-home',
-        'WAKE_SANDBOX_HOST_CONTAINER_HOME=/host/wake-home/container-home',
-        'WAKE_SANDBOX_CONTAINER_MOUNT=/wake',
-        'WAKE_SANDBOX_CONTAINER_NAME=wake-sandbox',
-        '/wake/docker/log-command.sh',
-        '--',
-        'bash',
-        '/wake/docker/setup.sh',
-      ]),
+      ['bash', '/wake/docker/setup.sh'],
     );
   });
 

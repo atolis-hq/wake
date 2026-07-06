@@ -22,6 +22,24 @@ export type DockerUpInput = {
 
 export type DockerCli = ReturnType<typeof createDockerCli>;
 
+function buildRunArgs(input: DockerUpInput): string[] {
+  return [
+    'run',
+    '-d',
+    '--name',
+    input.containerName,
+    '-v',
+    `${input.wakeRoot}:${input.containerMountPath}`,
+    '-v',
+    `${input.containerHomeRoot}:${input.containerHomeMountPath}`,
+    ...(input.extraMounts ?? []).flatMap((mount) => [
+      '-v',
+      `${mount.source}:${mount.target}${mount.readOnly === true ? ':ro' : ''}`,
+    ]),
+    input.image,
+  ];
+}
+
 export function createDockerCli(deps: {
   run(args: string[]): Promise<void>;
   inspectImage(image: string): Promise<boolean>;
@@ -48,21 +66,25 @@ export function createDockerCli(deps: {
         return;
       }
 
-      await deps.run([
-        'run',
-        '-d',
-        '--name',
-        input.containerName,
-        '-v',
-        `${input.wakeRoot}:${input.containerMountPath}`,
-        '-v',
-        `${input.containerHomeRoot}:${input.containerHomeMountPath}`,
-        ...(input.extraMounts ?? []).flatMap((mount) => [
-          '-v',
-          `${mount.source}:${mount.target}${mount.readOnly === true ? ':ro' : ''}`,
-        ]),
-        input.image,
-      ]);
+      await deps.run(buildRunArgs(input));
+    },
+
+    async update(input: DockerUpInput): Promise<void> {
+      const imageExists = await deps.inspectImage(input.image);
+      if (!imageExists) {
+        throw new Error('Sandbox image not found. Run `wake sandbox build` first.');
+      }
+
+      const containerState = await deps.inspectContainer(input.containerName);
+      if (containerState === 'running' || containerState === 'stopped') {
+        if (containerState === 'running') {
+          await deps.run(['stop', input.containerName]);
+        }
+
+        await deps.run(['rm', input.containerName]);
+      }
+
+      await deps.run(buildRunArgs(input));
     },
 
     async down(containerName: string): Promise<void> {
@@ -77,6 +99,14 @@ export function createDockerCli(deps: {
       await deps.run(
         command.length > 0
           ? ['exec', '-i', containerName, ...command]
+          : ['exec', '-it', containerName, 'bash'],
+      );
+    },
+
+    async execInteractive(containerName: string, command: string[]): Promise<void> {
+      await deps.run(
+        command.length > 0
+          ? ['exec', '-it', containerName, ...command]
           : ['exec', '-it', containerName, 'bash'],
       );
     },
