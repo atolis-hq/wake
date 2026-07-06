@@ -32,12 +32,12 @@ function buildIssue(overrides: {
 }
 
 describe('policy engine: requiredAssignees', () => {
-  it('is eligible when requiredAssignees is empty (no restriction)', () => {
+  it('is ineligible when both requiredLabels and requiredAssignees are empty', () => {
     const policy = createPolicyEngine();
     const config = createDefaultWakeConfig('/tmp/wake-root');
     const issue = buildIssue({ assignees: [] });
 
-    expect(policy.isEligible(issue, config)).toBe(true);
+    expect(policy.isEligible(issue, config)).toBe(false);
   });
 
   it('is eligible when issue is assigned to a listed login', () => {
