@@ -31,7 +31,7 @@ All configuration uses `schemaVersion: 1`.
     "extraMounts": []
   },
   "scheduler": {
-    "intervalMs": 1800000
+    "intervalMs": 60000
   },
   "runner": {
     "mode": "fake",
@@ -89,9 +89,9 @@ Docker sandbox settings for the durable Wake container.
 | `containerName` | string | Container name Wake starts and reuses | `"wake-sandbox"` |
 | `containerMountPath` | string | Container path where the Wake home is bind-mounted | `"/wake"` |
 | `containerHomeMountPath` | string | Container path where the sandbox home directory is bind-mounted | `"/home/wake"` |
-| `extraMounts` | `{ source: string, target: string, readOnly?: boolean }[]` | Additional host paths to mount into the sandbox, for example global Claude skills | `[]` |
+| `extraMounts` | `{ source: string, target: string, readOnly?: boolean }[]` | Additional host paths to mount into the sandbox, for example Claude config from the host home directory | `[]` |
 
-To expose host Claude skills inside the sandbox without hard-coding host-specific paths:
+To expose host Claude configuration inside the sandbox:
 
 ```json
 {
@@ -99,14 +99,47 @@ To expose host Claude skills inside the sandbox without hard-coding host-specifi
   "sandbox": {
     "extraMounts": [
       {
-        "source": "C:/Users/alice/.claude/skills",
-        "target": "/home/wake/.claude/skills",
-        "readOnly": true
+        "source": "C:/Users/alice/.claude",
+        "target": "/home/wake/.claude"
       }
     ]
   }
 }
 ```
+
+This is the recommended shape when Wake runs the real Claude CLI in the
+sandbox. Claude's user settings, plugin registry, installed plugin cache, and
+file-based credentials all live under `~/.claude` on the host.
+
+For example, on this machine:
+- `~/.claude/settings.json` enables `superpowers@claude-plugins-official`
+- `~/.claude/plugins/installed_plugins.json` points that plugin at
+  `C:/Users/live/.claude/plugins/cache/claude-plugins-official/superpowers/6.1.1`
+- `~/.claude/plugins/known_marketplaces.json` tracks the marketplace checkout
+- Claude credentials are also stored under `~/.claude`
+
+Mounting the whole `~/.claude` directory is more robust than mounting only a
+plugin subtree because it keeps:
+- `settings.json`
+- `plugins/installed_plugins.json`
+- the plugin cache under `plugins/cache/`
+- Claude credentials
+
+in the same place Claude expects to find them.
+
+Do not mark the `~/.claude` mount read-only if you expect Claude to log in,
+refresh credentials, install/update plugins, or write local state from inside
+the sandbox.
+
+Do not mount host `~/.config/gh` into the sandbox by default. That would let
+Wake reuse the host GitHub identity directly, which widens the blast radius if
+the sandbox does the wrong thing. Prefer authenticating GitHub separately
+inside the sandbox when Wake needs GitHub access there.
+
+If you have a narrower setup and only want to expose plain un-packaged skills,
+you can mount `~/.claude/skills` directly to `/home/wake/.claude/skills`
+instead. If you do that, do not expect Claude settings, plugin enablement, or
+credentials from the host to come along with it.
 
 ### scheduler
 
@@ -114,7 +147,7 @@ Control plane tick frequency and timing.
 
 | Property | Type | Description | Default |
 |----------|------|-------------|---------|
-| `intervalMs` | number | Milliseconds between control-plane ticks (minimum 1) | `1800000` (30 minutes) |
+| `intervalMs` | number | Milliseconds between control-plane ticks (minimum 1) | `60000` (60 seconds) |
 
 ### runner
 

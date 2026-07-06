@@ -21,7 +21,7 @@ export function createDefaultWakeConfig(wakeRoot = resolve(process.cwd(), '.wake
     },
     dev: {},
     scheduler: {
-      intervalMs: 30 * 60 * 1000,
+      intervalMs: 60 * 1000,
     },
     runner: {
       mode: 'fake',
