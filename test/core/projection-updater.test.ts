@@ -537,4 +537,209 @@ describe('projection updater', () => {
     projection = await store.readIssueState('atolis-hq/wake', 22);
     expect(projection?.wake.stage).toBe('blocked');
   });
+
+  it('returns a failed refine issue to the queue when the owner replies', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const updater = createProjectionUpdater({ stateStore: store });
+
+    const initialUpsert = createEventEnvelope({
+      eventId: 'evt-issue-1',
+      workItemKey: 'atolis-hq/wake#23',
+      streamScope: 'global-intake',
+      direction: 'inbound',
+      sourceSystem: 'github',
+      sourceEventType: 'ticket.upsert',
+      sourceRefs: {
+        repo: 'atolis-hq/wake',
+        issueNumber: 23,
+        sourceUrl: 'https://example.test/issues/23',
+      },
+      occurredAt: '2026-07-05T12:00:00.000Z',
+      ingestedAt: '2026-07-05T12:00:01.000Z',
+      trigger: 'immediate',
+      payload: {
+        ticket: {
+          repo: 'atolis-hq/wake',
+          number: 23,
+          title: 'Example',
+          body: 'Body',
+          labels: [],
+          assignees: [],
+          state: 'open',
+          url: 'https://example.test/issues/23',
+          createdAt: '2026-07-05T12:00:00.000Z',
+          updatedAt: '2026-07-05T12:00:00.000Z',
+        },
+      },
+    });
+
+    await store.appendEventEnvelope(initialUpsert);
+    await updater.rebuildFromEvents([initialUpsert]);
+
+    const runCompleted = createEventEnvelope({
+      eventId: 'evt-run-completed',
+      workItemKey: 'atolis-hq/wake#23',
+      streamScope: 'work-item',
+      direction: 'internal',
+      sourceSystem: 'wake',
+      sourceEventType: 'wake.run.completed',
+      sourceRefs: {
+        repo: 'atolis-hq/wake',
+        issueNumber: 23,
+        runId: 'run-23-1',
+      },
+      occurredAt: '2026-07-05T12:01:00.000Z',
+      ingestedAt: '2026-07-05T12:01:00.000Z',
+      trigger: 'immediate',
+      payload: {
+        action: 'refine',
+        nextStage: 'failed',
+        runId: 'run-23-1',
+      },
+    });
+
+    await store.appendEventEnvelope(runCompleted);
+    await updater.rebuildFromEvents([runCompleted]);
+
+    let projection = await store.readIssueState('atolis-hq/wake', 23);
+    expect(projection?.wake.stage).toBe('failed');
+
+    const ownerReply = createEventEnvelope({
+      eventId: 'evt-comment-owner',
+      workItemKey: 'atolis-hq/wake#23',
+      streamScope: 'work-item',
+      direction: 'inbound',
+      sourceSystem: 'github',
+      sourceEventType: 'ticket.comment.created',
+      sourceRefs: {
+        repo: 'atolis-hq/wake',
+        issueNumber: 23,
+        commentId: 'c-owner',
+      },
+      occurredAt: '2026-07-05T12:05:00.000Z',
+      ingestedAt: '2026-07-05T12:05:01.000Z',
+      trigger: 'context-only',
+      payload: {
+        comment: {
+          id: 'c-owner',
+          body: 'Retry with this detail.',
+          author: { login: 'owner' },
+          createdAt: '2026-07-05T12:05:00.000Z',
+          updatedAt: '2026-07-05T12:05:00.000Z',
+        },
+      },
+      derivedHints: {
+        wakeAuthoredComment: false,
+      },
+    });
+
+    await store.appendEventEnvelope(ownerReply);
+    await updater.rebuildFromEvents([ownerReply]);
+
+    projection = await store.readIssueState('atolis-hq/wake', 23);
+    expect(projection?.wake.stage).toBe('queue');
+    expect(projection?.wake.stageHistory.at(-1)?.reason).toBe('human-reply-unblocked');
+  });
+
+  it('returns a failed implement issue to refined when the owner replies', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const updater = createProjectionUpdater({ stateStore: store });
+
+    const initialUpsert = createEventEnvelope({
+      eventId: 'evt-issue-1',
+      workItemKey: 'atolis-hq/wake#24',
+      streamScope: 'global-intake',
+      direction: 'inbound',
+      sourceSystem: 'github',
+      sourceEventType: 'ticket.upsert',
+      sourceRefs: {
+        repo: 'atolis-hq/wake',
+        issueNumber: 24,
+        sourceUrl: 'https://example.test/issues/24',
+      },
+      occurredAt: '2026-07-05T12:00:00.000Z',
+      ingestedAt: '2026-07-05T12:00:01.000Z',
+      trigger: 'immediate',
+      payload: {
+        ticket: {
+          repo: 'atolis-hq/wake',
+          number: 24,
+          title: 'Example',
+          body: 'Body',
+          labels: [],
+          assignees: [],
+          state: 'open',
+          url: 'https://example.test/issues/24',
+          createdAt: '2026-07-05T12:00:00.000Z',
+          updatedAt: '2026-07-05T12:00:00.000Z',
+        },
+      },
+    });
+
+    await store.appendEventEnvelope(initialUpsert);
+    await updater.rebuildFromEvents([initialUpsert]);
+
+    const runCompleted = createEventEnvelope({
+      eventId: 'evt-run-completed',
+      workItemKey: 'atolis-hq/wake#24',
+      streamScope: 'work-item',
+      direction: 'internal',
+      sourceSystem: 'wake',
+      sourceEventType: 'wake.run.completed',
+      sourceRefs: {
+        repo: 'atolis-hq/wake',
+        issueNumber: 24,
+        runId: 'run-24-1',
+      },
+      occurredAt: '2026-07-05T12:01:00.000Z',
+      ingestedAt: '2026-07-05T12:01:00.000Z',
+      trigger: 'immediate',
+      payload: {
+        action: 'implement',
+        nextStage: 'failed',
+        runId: 'run-24-1',
+      },
+    });
+
+    await store.appendEventEnvelope(runCompleted);
+    await updater.rebuildFromEvents([runCompleted]);
+
+    let projection = await store.readIssueState('atolis-hq/wake', 24);
+    expect(projection?.wake.stage).toBe('failed');
+
+    const ownerReply = createEventEnvelope({
+      eventId: 'evt-comment-owner',
+      workItemKey: 'atolis-hq/wake#24',
+      streamScope: 'work-item',
+      direction: 'inbound',
+      sourceSystem: 'github',
+      sourceEventType: 'ticket.comment.created',
+      sourceRefs: {
+        repo: 'atolis-hq/wake',
+        issueNumber: 24,
+        commentId: 'c-owner',
+      },
+      occurredAt: '2026-07-05T12:05:00.000Z',
+      ingestedAt: '2026-07-05T12:05:01.000Z',
+      trigger: 'context-only',
+      payload: {
+        comment: {
+          id: 'c-owner',
+          body: 'I fixed the prerequisite, please continue.',
+          author: { login: 'owner' },
+          createdAt: '2026-07-05T12:05:00.000Z',
+          updatedAt: '2026-07-05T12:05:00.000Z',
+        },
+      },
+      derivedHints: {
+        wakeAuthoredComment: false,
+      },
+    });
+
+    await store.appendEventEnvelope(ownerReply);
+    await updater.rebuildFromEvents([ownerReply]);
+
+    projection = await store.readIssueState('atolis-hq/wake', 24);
+    expect(projection?.wake.stage).toBe('refined');
+  });
 });

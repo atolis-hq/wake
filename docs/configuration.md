@@ -6,6 +6,7 @@ Wake's behavior is configured through a `configuration.json` file located at `.w
 
 The configuration file defines:
 - Where Wake stores runtime data and state
+- How the Docker sandbox is mounted and debugged
 - How frequently the control plane checks for new work
 - Which execution mode and Claude CLI settings to use
 - Which external sources (like GitHub) to monitor for work
@@ -19,10 +20,18 @@ All configuration uses `schemaVersion: 1`.
 {
   "schemaVersion": 1,
   "paths": {
-    "wakeRoot": ".wake"
+    "wakeRoot": ".wake",
+    "promptsRoot": ".wake/prompts"
+  },
+  "sandbox": {
+    "image": "wake-sandbox",
+    "containerName": "wake-sandbox",
+    "containerMountPath": "/wake",
+    "containerHomeMountPath": "/home/wake",
+    "extraMounts": []
   },
   "scheduler": {
-    "intervalMs": 1800000
+    "intervalMs": 60000
   },
   "runner": {
     "mode": "fake",
@@ -68,6 +77,91 @@ Runtime and storage directories.
 | Property | Type | Description | Default |
 |----------|------|-------------|---------|
 | `wakeRoot` | string | Root directory where Wake stores state, fixtures, and persistent data | `.wake` |
+| `promptsRoot` | string (optional) | Explicit prompt-template root; defaults to `<wakeRoot>/prompts` | `<wakeRoot>/prompts` |
+
+### sandbox
+
+Docker sandbox settings for the durable Wake container.
+
+| Property | Type | Description | Default |
+|----------|------|-------------|---------|
+| `image` | string | Docker image Wake uses for the sandbox | `"wake-sandbox"` |
+| `containerName` | string | Container name Wake starts and reuses | `"wake-sandbox"` |
+| `containerMountPath` | string | Container path where the Wake home is bind-mounted | `"/wake"` |
+| `containerHomeMountPath` | string | Container path where the sandbox home directory is bind-mounted | `"/home/wake"` |
+| `extraMounts` | `{ source: string, target: string, readOnly?: boolean }[]` | Additional host paths to mount into the sandbox, for example Claude config from the host home directory | `[]` |
+
+To expose host Claude auth inside the sandbox, mount individual files rather
+than the whole `~/.claude` directory:
+
+```json
+{
+  "schemaVersion": 1,
+  "sandbox": {
+    "extraMounts": [
+      {
+        "source": "C:/Users/alice/.claude/.credentials.json",
+        "target": "/home/wake/.claude/.credentials.json",
+        "readOnly": true
+      },
+      {
+        "source": "C:/Users/alice/.claude/settings.json",
+        "target": "/home/wake/.claude/settings.json",
+        "readOnly": true
+      }
+    ]
+  }
+}
+```
+
+`.credentials.json` carries login tokens and `settings.json` carries plugin
+enablement flags (e.g. `enabledPlugins`) — both are plain data with no
+filesystem paths baked in, so they're portable between the host OS and the
+sandbox's Linux container.
+
+**Do not mount the whole `~/.claude` directory.** Plugin bookkeeping files
+under `~/.claude/plugins/` (`installed_plugins.json`,
+`known_marketplaces.json`, `plugin-catalog-cache.json`) record *absolute
+install paths* written by whichever OS's Claude process touched them last —
+e.g. `C:\Users\alice\.claude\plugins\cache\...` on Windows. If the entire
+directory is bind-mounted into the Linux container, the container's Claude
+CLI reads those same Windows paths and can't resolve them, so it reports the
+plugin/marketplace as failed to load (`cache-miss`) even though a plugin
+cache exists on disk. Because the mount is bidirectional, this also risks the
+sandbox's Claude process overwriting the host's plugin bookkeeping with
+paths that don't make sense back on the host.
+
+Instead, let the sandbox maintain its own `~/.claude/plugins` under the
+container home mount (`containerHomeMountPath`, e.g.
+`container-home/.claude/plugins` on the host) and install/enable plugins
+there independently (`claude plugin marketplace add ...`,
+`claude plugin install ...`). Only the two files above need to come from the
+host.
+
+`settings.json` must stay writable (`readOnly: false`). `claude plugin
+install`/`enable`/`disable` all write their enablement state back into
+`settings.json` — if it's mounted read-only, those commands fail outright
+(`Failed to update settings: ... EBUSY`), which also means the
+`enabledPlugins` entries the host declared can never be turned into an
+actual local install inside the sandbox.
+
+`.credentials.json` can safely be marked `readOnly: true` (as above) if you
+want the sandbox to use the host's login without ever mutating it. The
+tradeoff is that if Claude needs to refresh an OAuth token from inside the
+sandbox, it can't persist the refreshed token back to `.credentials.json`, so
+a long-running sandbox may eventually need re-authentication even though the
+host session stays valid. Set it to `false` instead if you want the sandbox
+to be able to log in or refresh credentials on the host's behalf.
+
+Do not mount host `~/.config/gh` into the sandbox by default. That would let
+Wake reuse the host GitHub identity directly, which widens the blast radius if
+the sandbox does the wrong thing. Prefer authenticating GitHub separately
+inside the sandbox when Wake needs GitHub access there.
+
+If you have a narrower setup and only want to expose plain un-packaged skills,
+you can mount `~/.claude/skills` directly to `/home/wake/.claude/skills`
+instead. If you do that, do not expect Claude settings, plugin enablement, or
+credentials from the host to come along with it.
 
 ### scheduler
 
@@ -75,7 +169,7 @@ Control plane tick frequency and timing.
 
 | Property | Type | Description | Default |
 |----------|------|-------------|---------|
-| `intervalMs` | number | Milliseconds between control-plane ticks (minimum 1) | `1800000` (30 minutes) |
+| `intervalMs` | number | Milliseconds between control-plane ticks (minimum 1) | `60000` (60 seconds) |
 
 ### runner
 
@@ -138,9 +232,23 @@ How Wake publishes work status back to GitHub.
 | `postStatusComments` | boolean | Post stage updates and run completion as issue comments | `true` |
 | `activeLabel` | string (optional) | Label to add when work is assigned to a stage; removed when completed | (not set) |
 
+Wake also owns one derived status label while it works a ticket:
+- `wake:status.pending`
+- `wake:status.working`
+- `wake:status.failed`
+- `wake:status.completed`
+
+Wake replaces only the `wake:status.*` label family and preserves unrelated issue labels.
+
 ## Loading and Merging
 
 Wake loads configuration from `.wake/configuration.json` relative to the current working directory. If the file does not exist, Wake uses built-in defaults. Configuration is merged with defaults, so you only need to specify the properties you want to override.
+
+For sandbox debugging, `wake sandbox logs` tails Docker container logs for the durable sandbox. Wake keeps structured run/event records durably, but raw sandbox stdout/stderr is treated as container log output rather than a Wake-managed on-disk archive.
+
+For day-to-day local upgrades, use `wake sandbox build` followed by
+`wake sandbox update`. That rebuilds the image and replaces the container while
+preserving the mounted Wake home and sandbox home directories.
 
 For example, to enable GitHub polling while keeping all other defaults:
 

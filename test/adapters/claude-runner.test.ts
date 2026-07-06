@@ -9,6 +9,7 @@ import {
   buildClaudePrintArgs,
   buildClaudeRemoteControlArgs,
   buildEddySessionName,
+  formatClaudeRunLogLine,
 } from '../../src/adapters/claude/claude-runner.js';
 import { defaultSmokePrompt } from '../../src/config/defaults.js';
 
@@ -206,6 +207,7 @@ describe('claude runner command building', () => {
           containerName: 'wake-sandbox',
           containerMountPath: '/wake',
           containerHomeMountPath: '/home/wake',
+          extraMounts: [],
         },
         scheduler: {
           intervalMs: 1000,
@@ -304,5 +306,26 @@ describe('claude runner command building', () => {
     expect(name).toBe(
       'Eddy-issue-8-update-readme-with-runner-config-documen-run-8-1783282434129',
     );
+  });
+
+  it('formats a run correlation log line with run and recent event ids', () => {
+    const line = formatClaudeRunLogLine({
+      phase: 'start',
+      runId: 'run-12-1',
+      action: 'implement',
+      issueNumber: 12,
+      repo: 'atolis-hq/wake',
+      recentEventIds: ['evt-1', 'evt-2'],
+      workspacePath: '/wake/workspaces/atolis-hq__wake/12',
+    });
+
+    expect(line).toContain('[claude-run]');
+    expect(line).toContain('phase=start');
+    expect(line).toContain('runId=run-12-1');
+    expect(line).toContain('repo=atolis-hq/wake');
+    expect(line).toContain('issueNumber=12');
+    expect(line).toContain('action=implement');
+    expect(line).toContain('recentEventIds=evt-1,evt-2');
+    expect(line).toContain('workspacePath=/wake/workspaces/atolis-hq__wake/12');
   });
 });

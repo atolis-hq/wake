@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { dispatchMainCommand, readFlagBeforeCommandTerminator } from '../../src/main.js';
+import {
+  dispatchMainCommand,
+  formatTickFailureDetails,
+  readFlagBeforeCommandTerminator,
+} from '../../src/main.js';
 
 describe('main command routing', () => {
   it('routes init and sandbox through the public CLI surface', async () => {
@@ -88,5 +92,54 @@ describe('main command routing', () => {
         '/wake',
       ]),
     ).toBe('C:\\Users\\live\\wake-home');
+  });
+
+  it('formats persisted run failure details for failed ticks', () => {
+    expect(
+      formatTickFailureDetails({
+        schemaVersion: 1,
+        runId: 'run-29',
+        repo: 'atolis-hq/wake',
+        issueNumber: 29,
+        action: 'refine',
+        status: 'failed',
+        startedAt: '2026-07-06T12:28:12.000Z',
+        finishedAt: '2026-07-06T12:29:12.000Z',
+        sentinel: 'FAILED',
+        summary: 'Claude runner failed\nSandbox logs: docker logs --tail 200 wake',
+        metadata: {
+          exitCode: 1,
+          stderr: 'Trace line 1\nTrace line 2',
+        },
+      }),
+    ).toBe(
+      [
+        'Tick failure details:',
+        'runId: run-29',
+        'exitCode: 1',
+        '',
+        'Summary:',
+        'Claude runner failed',
+        'Sandbox logs: docker logs --tail 200 wake',
+        '',
+        'stderr:',
+        'Trace line 1',
+        'Trace line 2',
+      ].join('\n'),
+    );
+  });
+
+  it('returns null when a failed tick has no persisted details to show', () => {
+    expect(
+      formatTickFailureDetails({
+        schemaVersion: 1,
+        runId: 'run-29',
+        repo: 'atolis-hq/wake',
+        issueNumber: 29,
+        action: 'refine',
+        status: 'failed',
+        startedAt: '2026-07-06T12:28:12.000Z',
+      }),
+    ).toBeNull();
   });
 });
