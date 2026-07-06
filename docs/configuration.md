@@ -42,6 +42,7 @@ All configuration uses `schemaVersion: 1`.
       "sessionName": "Eddy",
       "remoteControlName": "Eddy",
       "smokePrompt": "This is Eddy, reply with \"hi Eddy only\"",
+      "timeoutMs": 1800000,
       "remoteControl": {
         "enabled": false
       }
@@ -192,6 +193,7 @@ Claude CLI settings for agent execution (used when `runner.mode` is `"claude"`).
 | `sessionName` | string | Name of the agent identity for issue context | `"Eddy"` |
 | `remoteControlName` | string | Display name for remote control sessions | `"Eddy"` |
 | `smokePrompt` | string | Minimal prompt used to verify Claude CLI is working | `"This is Eddy, reply with \"hi Eddy only\""` |
+| `timeoutMs` | number | Wall-clock timeout (ms) for a single runner invocation; the CLI process is killed and the run marked `FAILED` if it's exceeded | `1800000` (30 min) |
 | `remoteControl.enabled` | boolean | Enable human remote control of agent sessions | `false` |
 
 ### sources.github

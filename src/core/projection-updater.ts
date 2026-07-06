@@ -105,6 +105,7 @@ function applyEvent(
     const nextComment = {
       ...(comment as Record<string, unknown>),
       isWakeAuthored,
+      isBotAuthored,
     };
     const existingComments = current.comments.filter(
       (entry) => entry.id !== String((comment as { id?: unknown }).id),

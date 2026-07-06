@@ -10,6 +10,7 @@ import {
   buildClaudeRemoteControlArgs,
   buildEddySessionName,
   formatClaudeRunLogLine,
+  runClaudeCommand,
 } from '../../src/adapters/claude/claude-runner.js';
 import { defaultSmokePrompt } from '../../src/config/defaults.js';
 
@@ -40,7 +41,7 @@ describe('claude runner command building', () => {
     expect(args.at(-1)).toBe(defaultSmokePrompt);
   });
 
-  it('assembles a stage prompt from a projection summary and recent events', async () => {
+  it('assembles a stage prompt from a projection summary and its comments', async () => {
     const result = await buildStagePrompt({
       action: 'implement',
       projection: {
@@ -58,7 +59,17 @@ describe('claude runner command building', () => {
           createdAt: '2026-07-05T12:00:00.000Z',
           updatedAt: '2026-07-05T12:00:00.000Z',
         },
-        comments: [],
+        comments: [
+          {
+            id: 'c-2',
+            body: 'Please proceed',
+            author: { login: 'shared-user' },
+            createdAt: '2026-07-05T12:01:00.000Z',
+            updatedAt: '2026-07-05T12:01:00.000Z',
+            isWakeAuthored: false,
+            isBotAuthored: false,
+          },
+        ],
         latestComment: {
           id: 'c-2',
           body: 'Please proceed',
@@ -66,6 +77,7 @@ describe('claude runner command building', () => {
           createdAt: '2026-07-05T12:01:00.000Z',
           updatedAt: '2026-07-05T12:01:00.000Z',
           isWakeAuthored: false,
+          isBotAuthored: false,
         },
         wake: {
           stage: 'refined',
@@ -76,33 +88,12 @@ describe('claude runner command building', () => {
         },
         context: {},
       },
-      recentEvents: [
-        {
-          schemaVersion: 1,
-          eventId: 'evt-1',
-          workItemKey: 'atolis-hq/wake#12',
-          streamScope: 'work-item',
-          direction: 'inbound',
-          sourceSystem: 'github',
-          sourceEventType: 'github.issue.comment.created',
-          sourceRefs: {
-            repo: 'atolis-hq/wake',
-            issueNumber: 12,
-            commentId: 'c-2',
-          },
-          occurredAt: '2026-07-05T12:01:00.000Z',
-          ingestedAt: '2026-07-05T12:01:01.000Z',
-          trigger: 'context-only',
-          payload: {
-            body: 'Please proceed',
-          },
-        },
-      ],
     });
 
     expect(result.prompt).toContain('IMPLEMENT stage');
     expect(result.prompt).toContain('atolis-hq/wake#12');
-    expect(result.prompt).toContain('"github.issue.comment.created"');
+    expect(result.prompt).toContain('shared-user');
+    expect(result.prompt).toContain('Please proceed');
     expect(result.prompt).toContain('wake/issue-12');
     expect(result.prompt).toContain('git push -u origin wake/issue-12');
     expect(result.prompt).toContain('gh pr create');
@@ -111,6 +102,84 @@ describe('claude runner command building', () => {
     expect(result.allowedTools).toContain('Edit');
     expect(result.allowedTools).toContain('Bash(git *)');
     expect(result.extraArgs).toEqual([]);
+  });
+
+  it('resume prompts only surface new human comments since the last handled one, not the full history', async () => {
+    const result = await buildStagePrompt({
+      action: 'refine',
+      mode: 'resume',
+      projection: {
+        schemaVersion: 1,
+        workItemKey: 'atolis-hq/wake#20',
+        issue: {
+          repo: 'atolis-hq/wake',
+          number: 20,
+          title: 'Example issue',
+          body: 'Body',
+          labels: [],
+          assignees: [],
+          state: 'open',
+          url: 'https://example.test/issues/20',
+          createdAt: '2026-07-05T12:00:00.000Z',
+          updatedAt: '2026-07-05T12:00:00.000Z',
+        },
+        comments: [
+          {
+            id: 'c-1',
+            body: 'Already handled reply',
+            author: { login: 'alice' },
+            createdAt: '2026-07-05T12:01:00.000Z',
+            updatedAt: '2026-07-05T12:01:00.000Z',
+            isWakeAuthored: false,
+            isBotAuthored: false,
+          },
+          {
+            id: 'c-2',
+            body: 'Wake status update',
+            author: { login: 'eddy-bot' },
+            createdAt: '2026-07-05T12:02:00.000Z',
+            updatedAt: '2026-07-05T12:02:00.000Z',
+            isWakeAuthored: true,
+            isBotAuthored: false,
+          },
+          {
+            id: 'c-3',
+            body: 'CI comment',
+            author: { login: 'ci-bot' },
+            createdAt: '2026-07-05T12:03:00.000Z',
+            updatedAt: '2026-07-05T12:03:00.000Z',
+            isWakeAuthored: false,
+            isBotAuthored: true,
+          },
+          {
+            id: 'c-4',
+            body: 'New human reply',
+            author: { login: 'bob' },
+            createdAt: '2026-07-05T12:04:00.000Z',
+            updatedAt: '2026-07-05T12:04:00.000Z',
+            isWakeAuthored: false,
+            isBotAuthored: false,
+          },
+        ],
+        wake: {
+          stage: 'refined',
+          attempts: 1,
+          stageHistory: [],
+          recentEventIds: [],
+          syncedAt: '2026-07-05T12:04:00.000Z',
+        },
+        context: { lastHandledCommentId: 'c-1' },
+      },
+    });
+
+    // Resume prompts must not repeat the full comment history - the session
+    // already has it - only what's new since the last handled comment.
+    expect(result.prompt).not.toContain('alice');
+    expect(result.prompt).not.toContain('Already handled reply');
+    expect(result.prompt).not.toContain('Wake status update');
+    expect(result.prompt).not.toContain('CI comment');
+    expect(result.prompt).toContain('bob');
+    expect(result.prompt).toContain('New human reply');
   });
 
   it('assembles a refine-stage prompt that withholds edit tools', async () => {
@@ -141,7 +210,6 @@ describe('claude runner command building', () => {
         },
         context: {},
       },
-      recentEvents: [],
     });
 
     expect(result.prompt).toContain('REFINE stage');
@@ -162,6 +230,7 @@ describe('claude runner command building', () => {
         '---',
         'permissionMode: default',
         'allowedTools: Read',
+        'maxTurns: 10',
         '---',
         'Custom template for {{workItemKey}}',
       ].join('\n'),
@@ -195,7 +264,6 @@ describe('claude runner command building', () => {
         },
         context: {},
       },
-      recentEvents: [],
       config: {
         schemaVersion: 1,
         paths: {
@@ -221,6 +289,7 @@ describe('claude runner command building', () => {
             sessionName: 'Eddy',
             remoteControlName: 'Eddy',
             smokePrompt: 'hi',
+            timeoutMs: 60_000,
             remoteControl: {
               enabled: false,
             },
@@ -328,5 +397,168 @@ describe('claude runner command building', () => {
     expect(line).toContain('action=implement');
     expect(line).toContain('recentEventIds=evt-1,evt-2');
     expect(line).toContain('workspacePath=/wake/workspaces/atolis-hq__wake/12');
+  });
+
+  it('includes a --max-turns flag when maxTurns is provided', () => {
+    const args = buildClaudePrintArgs({
+      model: 'haiku',
+      prompt: 'do work',
+      sessionName: 'Eddy',
+      maxTurns: 10,
+    });
+
+    expect(args).toContain('--max-turns');
+    expect(args).toContain('10');
+  });
+
+  it('reads maxTurns from the real refine and implement prompt templates', async () => {
+    const refine = await buildStagePrompt({
+      action: 'refine',
+      projection: {
+        schemaVersion: 1,
+        workItemKey: 'atolis-hq/wake#20',
+        issue: {
+          repo: 'atolis-hq/wake',
+          number: 20,
+          title: 'Example issue',
+          body: 'Body',
+          labels: [],
+          assignees: [],
+          state: 'open',
+          url: 'https://example.test/issues/20',
+          createdAt: '2026-07-05T12:00:00.000Z',
+          updatedAt: '2026-07-05T12:00:00.000Z',
+        },
+        comments: [],
+        wake: {
+          stage: 'queue',
+          attempts: 0,
+          stageHistory: [],
+          recentEventIds: [],
+          syncedAt: '2026-07-05T12:00:00.000Z',
+        },
+        context: {},
+      },
+    });
+
+    expect(refine.maxTurns).toBeGreaterThan(0);
+  });
+
+  it('throws when a prompt template is missing the required maxTurns frontmatter', async () => {
+    const promptsDir = await mkdtemp(join(tmpdir(), 'wake-prompts-'));
+    await writeFile(
+      join(promptsDir, 'refine.start.md'),
+      ['---', 'permissionMode: default', 'allowedTools: Read', '---', 'No maxTurns here'].join(
+        '\n',
+      ),
+      'utf8',
+    );
+
+    await expect(
+      buildStagePrompt({
+        action: 'refine',
+        projection: {
+          schemaVersion: 1,
+          workItemKey: 'atolis-hq/wake#21',
+          issue: {
+            repo: 'atolis-hq/wake',
+            number: 21,
+            title: 'Example issue',
+            body: 'Body',
+            labels: [],
+            assignees: [],
+            state: 'open',
+            url: 'https://example.test/issues/21',
+            createdAt: '2026-07-05T12:00:00.000Z',
+            updatedAt: '2026-07-05T12:00:00.000Z',
+          },
+          comments: [],
+          wake: {
+            stage: 'queue',
+            attempts: 0,
+            stageHistory: [],
+            recentEventIds: [],
+            syncedAt: '2026-07-05T12:00:00.000Z',
+          },
+          context: {},
+        },
+        config: {
+          schemaVersion: 1,
+          paths: {
+            wakeRoot: '/tmp/wake',
+            promptsRoot: promptsDir,
+          },
+          sandbox: {
+            image: 'wake-sandbox',
+            containerName: 'wake-sandbox',
+            containerMountPath: '/wake',
+            containerHomeMountPath: '/home/wake',
+            extraMounts: [],
+          },
+          scheduler: {
+            intervalMs: 1000,
+          },
+          runner: {
+            mode: 'fake',
+            claude: {
+              command: 'claude',
+              model: 'haiku',
+              smokeModel: 'haiku',
+              sessionName: 'Eddy',
+              remoteControlName: 'Eddy',
+              smokePrompt: 'hi',
+              timeoutMs: 60_000,
+              remoteControl: {
+                enabled: false,
+              },
+            },
+          },
+          sources: {
+            github: {
+              enabled: false,
+              repos: [],
+              polling: {
+                maxIssuesPerRepo: 25,
+                commentPageSize: 25,
+                lookbackMs: 60000,
+              },
+              policy: {
+                requiredLabels: [],
+                ignoredLabels: [],
+                requiredAssignees: [],
+              },
+              publication: {
+                postStatusComments: true,
+              },
+            },
+          },
+        },
+      }),
+    ).rejects.toThrow(/missing a required "maxTurns"/);
+  });
+
+  it('kills a hung invocation once the wall-clock timeout elapses and reports timedOut', async () => {
+    const result = await runClaudeCommand({
+      command: process.execPath,
+      args: ['-e', 'setTimeout(() => {}, 60000)'],
+      cwd: process.cwd(),
+      timeoutMs: 200,
+    });
+
+    expect(result.timedOut).toBe(true);
+    expect(result.exitCode).not.toBe(0);
+  }, 10_000);
+
+  it('does not report a timeout for a process that finishes on its own', async () => {
+    const result = await runClaudeCommand({
+      command: process.execPath,
+      args: ['-e', 'process.stdout.write("ok")'],
+      cwd: process.cwd(),
+      timeoutMs: 10_000,
+    });
+
+    expect(result.timedOut).toBe(false);
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe('ok');
   });
 });

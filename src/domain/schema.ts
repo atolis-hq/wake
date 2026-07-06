@@ -28,6 +28,7 @@ const commentSnapshotSchema = z.object({
   createdAt: isoTimestampSchema,
   updatedAt: isoTimestampSchema,
   isWakeAuthored: z.boolean(),
+  isBotAuthored: z.boolean().default(false),
 });
 
 const issueSnapshotSchema = z.object({
@@ -189,6 +190,7 @@ export const wakeConfigSchema = z.object({
       sessionName: z.string(),
       remoteControlName: z.string(),
       smokePrompt: z.string(),
+      timeoutMs: z.number().int().positive(),
       remoteControl: z.object({
         enabled: z.boolean(),
       }),
