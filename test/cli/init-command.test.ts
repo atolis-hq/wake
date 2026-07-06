@@ -13,7 +13,7 @@ describe('init command', () => {
     'implement.start.md',
     'implement.resume.md',
   ] as const;
-  const dockerAssets = ['Dockerfile', 'setup.sh'] as const;
+  const dockerAssets = ['Dockerfile', 'setup.sh', 'log-command.sh'] as const;
   const launcherScripts = ['wake.sh', 'wake.ps1'] as const;
   const runtimeDirectories = [
     'events',
@@ -23,6 +23,7 @@ describe('init command', () => {
     'repos',
     'sources',
     'locks',
+    'logs',
   ] as const;
 
   let tempRoot: string;

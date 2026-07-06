@@ -17,6 +17,7 @@ export function createDefaultWakeConfig(wakeRoot = resolve(process.cwd(), '.wake
       containerName: 'wake-sandbox',
       containerMountPath: '/wake',
       containerHomeMountPath: '/home/wake',
+      extraMounts: [],
     },
     dev: {},
     scheduler: {

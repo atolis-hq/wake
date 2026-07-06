@@ -37,6 +37,41 @@ export function buildEddySessionName(input: {
     .join('-');
 }
 
+function compactLogValue(value: string): string {
+  return value.replace(/\s+/g, ' ').trim();
+}
+
+export function formatClaudeRunLogLine(input: {
+  phase: 'start' | 'success' | 'failure';
+  runId: string;
+  action: AgentAction;
+  issueNumber: number;
+  repo: string;
+  recentEventIds: string[];
+  workspacePath?: string;
+  sessionId?: string;
+  exitCode?: number;
+}): string {
+  const parts = [
+    '[claude-run]',
+    `phase=${input.phase}`,
+    `runId=${input.runId}`,
+    `repo=${input.repo}`,
+    `issueNumber=${input.issueNumber}`,
+    `action=${input.action}`,
+    `recentEventIds=${
+      input.recentEventIds.length > 0 ? input.recentEventIds.join(',') : '(none)'
+    }`,
+    ...(input.workspacePath === undefined
+      ? []
+      : [`workspacePath=${compactLogValue(input.workspacePath)}`]),
+    ...(input.sessionId === undefined ? [] : [`sessionId=${input.sessionId}`]),
+    ...(input.exitCode === undefined ? [] : [`exitCode=${input.exitCode}`]),
+  ];
+
+  return parts.join(' ');
+}
+
 function parseFrontmatterList(value: string | undefined): string[] {
   if (value === undefined || value.trim().length === 0) {
     return [];
@@ -211,6 +246,20 @@ function parseClaudePrintOutput(stdout: string): ClaudePrintResult {
   return parseClaudePrintResult(JSON.parse(stdout));
 }
 
+function readSandboxLogBreadcrumb(): { text: string; metadata: { sandboxContainerName: string } } | null {
+  const containerName = process.env.WAKE_SANDBOX_CONTAINER_NAME;
+  if (containerName === undefined || containerName.length === 0) {
+    return null;
+  }
+
+  return {
+    text: `Sandbox logs: docker logs --tail 200 ${containerName}`,
+    metadata: {
+      sandboxContainerName: containerName,
+    },
+  };
+}
+
 export function createClaudeRunner(options: {
   command: string;
   cwd: string;
@@ -256,6 +305,20 @@ export function createClaudeRunner(options: {
           : {}),
       });
 
+      console.log(
+        formatClaudeRunLogLine({
+          phase: 'start',
+          runId: input.runId,
+          action: input.action,
+          issueNumber: input.projection.issue.number,
+          repo: input.projection.issue.repo,
+          recentEventIds: input.recentEvents.map((event) => event.eventId),
+          ...(input.workspacePath === undefined
+            ? {}
+            : { workspacePath: input.workspacePath }),
+        }),
+      );
+
       const result = await runClaudeCommand({
         command: options.command,
         args,
@@ -263,18 +326,56 @@ export function createClaudeRunner(options: {
       });
 
       if (result.exitCode !== 0) {
+        const sandboxLog = readSandboxLogBreadcrumb();
+        console.error(
+          formatClaudeRunLogLine({
+            phase: 'failure',
+            runId: input.runId,
+            action: input.action,
+            issueNumber: input.projection.issue.number,
+            repo: input.projection.issue.repo,
+            recentEventIds: input.recentEvents.map((event) => event.eventId),
+            ...(input.workspacePath === undefined
+              ? {}
+              : { workspacePath: input.workspacePath }),
+            exitCode: result.exitCode,
+          }),
+        );
         return {
-          result: `Claude runner failed\n${result.stderr}\nFAILED`,
+          result: [
+            'Claude runner failed',
+            result.stderr,
+            sandboxLog?.text,
+            'FAILED',
+          ]
+            .filter((part) => part !== undefined && part.length > 0)
+            .join('\n'),
           model: input.config.runner.claude.model,
           metadata: {
             stdout: result.stdout,
             stderr: result.stderr,
             exitCode: result.exitCode,
+            ...(sandboxLog?.metadata ?? {}),
           },
         };
       }
 
       const parsed = parseClaudePrintOutput(result.stdout);
+      const sandboxLog = readSandboxLogBreadcrumb();
+      console.log(
+        formatClaudeRunLogLine({
+          phase: 'success',
+          runId: input.runId,
+          action: input.action,
+          issueNumber: input.projection.issue.number,
+          repo: input.projection.issue.repo,
+          recentEventIds: input.recentEvents.map((event) => event.eventId),
+          ...(input.workspacePath === undefined
+            ? {}
+            : { workspacePath: input.workspacePath }),
+          ...(parsed.session_id === undefined ? {} : { sessionId: parsed.session_id }),
+        }),
+      );
       return {
         result: parsed.result,
         model: input.config.runner.claude.model,
@@ -285,6 +386,7 @@ export function createClaudeRunner(options: {
           stdout: result.stdout,
           stderr: result.stderr,
           raw: parsed,
+          ...(sandboxLog?.metadata ?? {}),
         },
       };
     },

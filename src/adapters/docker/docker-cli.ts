@@ -13,6 +13,11 @@ export type DockerUpInput = {
   containerHomeRoot: string;
   containerMountPath: string;
   containerHomeMountPath: string;
+  extraMounts?: Array<{
+    source: string;
+    target: string;
+    readOnly?: boolean | undefined;
+  }>;
 };
 
 export type DockerCli = ReturnType<typeof createDockerCli>;
@@ -52,6 +57,10 @@ export function createDockerCli(deps: {
         `${input.wakeRoot}:${input.containerMountPath}`,
         '-v',
         `${input.containerHomeRoot}:${input.containerHomeMountPath}`,
+        ...(input.extraMounts ?? []).flatMap((mount) => [
+          '-v',
+          `${mount.source}:${mount.target}${mount.readOnly === true ? ':ro' : ''}`,
+        ]),
         input.image,
       ]);
     },
@@ -70,6 +79,10 @@ export function createDockerCli(deps: {
           ? ['exec', '-i', containerName, ...command]
           : ['exec', '-it', containerName, 'bash'],
       );
+    },
+
+    async logs(containerName: string, tailLines: number): Promise<void> {
+      await deps.run(['logs', '--tail', String(tailLines), containerName]);
     },
   };
 }

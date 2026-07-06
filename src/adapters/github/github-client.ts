@@ -43,5 +43,18 @@ export function createGitHubClient(token: string) {
         body,
       });
     },
+    async setLabels(
+      owner: string,
+      repo: string,
+      issueNumber: number,
+      labels: string[],
+    ) {
+      return octokit.rest.issues.update({
+        owner,
+        repo,
+        issue_number: issueNumber,
+        labels,
+      });
+    },
   };
 }

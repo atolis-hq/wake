@@ -17,6 +17,7 @@ describe('sandbox command', () => {
       down: vi.fn(async () => {}),
       setup: vi.fn(async () => {}),
       exec: vi.fn(async () => {}),
+      logs: vi.fn(async () => {}),
     };
   }
 
@@ -76,6 +77,7 @@ describe('sandbox command', () => {
       containerHomeRoot,
       containerMountPath: '/wake',
       containerHomeMountPath: '/home/wake',
+      extraMounts: [],
     });
   });
 
@@ -104,7 +106,24 @@ describe('sandbox command', () => {
       docker,
     });
 
-    expect(docker.setup).toHaveBeenCalledWith('wake-sandbox');
+    expect(docker.exec).toHaveBeenCalledWith(
+      'wake-sandbox',
+      expect.arrayContaining([
+        'env',
+        'WAKE_SANDBOX_LABEL=sandbox.setup',
+        'WAKE_SANDBOX_CONTAINER_WAKE_ROOT=/wake',
+        'WAKE_SANDBOX_PROMPTS_ROOT=/wake/prompts',
+        'WAKE_SANDBOX_CONTAINER_HOME=/home/wake',
+        'WAKE_SANDBOX_HOST_WAKE_ROOT=/host/wake-home',
+        'WAKE_SANDBOX_HOST_CONTAINER_HOME=/host/wake-home/container-home',
+        'WAKE_SANDBOX_CONTAINER_MOUNT=/wake',
+        'WAKE_SANDBOX_CONTAINER_NAME=wake-sandbox',
+        '/wake/docker/log-command.sh',
+        '--',
+        'bash',
+        '/wake/docker/setup.sh',
+      ]),
+    );
   });
 
   it('dispatches exec with the remaining command arguments', async () => {
@@ -118,7 +137,16 @@ describe('sandbox command', () => {
       docker,
     });
 
-    expect(docker.exec).toHaveBeenCalledWith('wake-sandbox', ['pwd']);
+    expect(docker.exec).toHaveBeenCalledWith(
+      'wake-sandbox',
+      expect.arrayContaining([
+        'env',
+        'WAKE_SANDBOX_LABEL=sandbox.exec',
+        '/wake/docker/log-command.sh',
+        '--',
+        'pwd',
+      ]),
+    );
   });
 
   it('strips the command terminator before dispatching exec payload', async () => {
@@ -132,13 +160,18 @@ describe('sandbox command', () => {
       docker,
     });
 
-    expect(docker.exec).toHaveBeenCalledWith('wake-sandbox', [
-      'node',
-      '/app/dist/src/main.js',
-      'tick',
-      '--wake-root',
-      '/wake',
-    ]);
+    expect(docker.exec).toHaveBeenCalledWith(
+      'wake-sandbox',
+      expect.arrayContaining([
+        '/wake/docker/log-command.sh',
+        '--',
+        'node',
+        '/app/dist/src/main.js',
+        'tick',
+        '--wake-root',
+        '/wake',
+      ]),
+    );
   });
 
   it('dispatches resume through the sandbox resume command flow', async () => {
@@ -152,11 +185,33 @@ describe('sandbox command', () => {
       docker,
     });
 
-    expect(docker.exec).toHaveBeenCalledWith('wake-sandbox', [
-      'bash',
-      '-lc',
-      'cd "/wake/workspaces/atolis-hq__wake/12" && claude --resume session-123',
-    ]);
+    expect(docker.exec).toHaveBeenCalledWith(
+      'wake-sandbox',
+      expect.arrayContaining([
+        'env',
+        'WAKE_SANDBOX_LABEL=sandbox.resume',
+        'WAKE_SANDBOX_CWD=/wake/workspaces/atolis-hq__wake/12',
+        '/wake/docker/log-command.sh',
+        '--',
+        'claude',
+        '--resume',
+        'session-123',
+      ]),
+    );
+  });
+
+  it('tails the latest sandbox debug log through docker logs', async () => {
+    const docker = createDockerMock();
+
+    await runSandboxCommand({
+      args: ['logs'],
+      config: createDefaultWakeConfig(wakeRoot),
+      wakeRoot,
+      containerHomeRoot,
+      docker,
+    });
+
+    expect(docker.logs).toHaveBeenCalledWith('wake-sandbox', 200);
   });
 
   it('rejects unknown sandbox subcommands', async () => {

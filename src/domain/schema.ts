@@ -168,6 +168,11 @@ export const wakeConfigSchema = z.object({
     containerName: z.string().min(1),
     containerMountPath: z.string().min(1),
     containerHomeMountPath: z.string().min(1),
+    extraMounts: z.array(z.object({
+      source: z.string().min(1),
+      target: z.string().min(1),
+      readOnly: z.boolean().optional(),
+    })).default([]),
   }),
   dev: z.object({
     repoRoot: z.string().optional(),

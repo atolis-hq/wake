@@ -6,6 +6,7 @@ Wake's behavior is configured through a `configuration.json` file located at `.w
 
 The configuration file defines:
 - Where Wake stores runtime data and state
+- How the Docker sandbox is mounted and debugged
 - How frequently the control plane checks for new work
 - Which execution mode and Claude CLI settings to use
 - Which external sources (like GitHub) to monitor for work
@@ -19,7 +20,15 @@ All configuration uses `schemaVersion: 1`.
 {
   "schemaVersion": 1,
   "paths": {
-    "wakeRoot": ".wake"
+    "wakeRoot": ".wake",
+    "promptsRoot": ".wake/prompts"
+  },
+  "sandbox": {
+    "image": "wake-sandbox",
+    "containerName": "wake-sandbox",
+    "containerMountPath": "/wake",
+    "containerHomeMountPath": "/home/wake",
+    "extraMounts": []
   },
   "scheduler": {
     "intervalMs": 1800000
@@ -68,6 +77,36 @@ Runtime and storage directories.
 | Property | Type | Description | Default |
 |----------|------|-------------|---------|
 | `wakeRoot` | string | Root directory where Wake stores state, fixtures, and persistent data | `.wake` |
+| `promptsRoot` | string (optional) | Explicit prompt-template root; defaults to `<wakeRoot>/prompts` | `<wakeRoot>/prompts` |
+
+### sandbox
+
+Docker sandbox settings for the durable Wake container.
+
+| Property | Type | Description | Default |
+|----------|------|-------------|---------|
+| `image` | string | Docker image Wake uses for the sandbox | `"wake-sandbox"` |
+| `containerName` | string | Container name Wake starts and reuses | `"wake-sandbox"` |
+| `containerMountPath` | string | Container path where the Wake home is bind-mounted | `"/wake"` |
+| `containerHomeMountPath` | string | Container path where the sandbox home directory is bind-mounted | `"/home/wake"` |
+| `extraMounts` | `{ source: string, target: string, readOnly?: boolean }[]` | Additional host paths to mount into the sandbox, for example global Claude skills | `[]` |
+
+To expose host Claude skills inside the sandbox without hard-coding host-specific paths:
+
+```json
+{
+  "schemaVersion": 1,
+  "sandbox": {
+    "extraMounts": [
+      {
+        "source": "C:/Users/alice/.claude/skills",
+        "target": "/home/wake/.claude/skills",
+        "readOnly": true
+      }
+    ]
+  }
+}
+```
 
 ### scheduler
 
@@ -138,9 +177,19 @@ How Wake publishes work status back to GitHub.
 | `postStatusComments` | boolean | Post stage updates and run completion as issue comments | `true` |
 | `activeLabel` | string (optional) | Label to add when work is assigned to a stage; removed when completed | (not set) |
 
+Wake also owns one derived status label while it works a ticket:
+- `wake:status.pending`
+- `wake:status.working`
+- `wake:status.failed`
+- `wake:status.completed`
+
+Wake replaces only the `wake:status.*` label family and preserves unrelated issue labels.
+
 ## Loading and Merging
 
 Wake loads configuration from `.wake/configuration.json` relative to the current working directory. If the file does not exist, Wake uses built-in defaults. Configuration is merged with defaults, so you only need to specify the properties you want to override.
+
+For sandbox debugging, `wake sandbox logs` tails Docker container logs for the durable sandbox. Wake keeps structured run/event records durably, but raw sandbox stdout/stderr is treated as container log output rather than a Wake-managed on-disk archive.
 
 For example, to enable GitHub polling while keeping all other defaults:
 

@@ -123,6 +123,49 @@ describe('docker cli adapter', () => {
     expect(calls).toEqual([]);
   });
 
+  it('mounts configured extra host paths when creating a new container', async () => {
+    const calls: string[][] = [];
+    const docker = createDockerCli({
+      inspectContainer: async () => null,
+      inspectImage: async () => true,
+      run: async (args) => {
+        calls.push(args);
+      },
+    });
+
+    await docker.up({
+      image: 'wake-sandbox',
+      containerName: 'wake-sandbox',
+      wakeRoot: '/host/wake-home',
+      containerHomeRoot: '/host/wake-home/container-home',
+      containerMountPath: '/wake',
+      containerHomeMountPath: '/home/wake',
+      extraMounts: [
+        {
+          source: '/host/.claude/skills',
+          target: '/home/wake/.claude/skills',
+          readOnly: true,
+        },
+      ],
+    });
+
+    expect(calls).toEqual([
+      [
+        'run',
+        '-d',
+        '--name',
+        'wake-sandbox',
+        '-v',
+        '/host/wake-home:/wake',
+        '-v',
+        '/host/wake-home/container-home:/home/wake',
+        '-v',
+        '/host/.claude/skills:/home/wake/.claude/skills:ro',
+        'wake-sandbox',
+      ],
+    ]);
+  });
+
   it('stops the sandbox container', async () => {
     const calls: string[][] = [];
     const docker = createDockerCli({
@@ -181,5 +224,20 @@ describe('docker cli adapter', () => {
     await docker.exec('wake-sandbox', ['pwd']);
 
     expect(calls).toEqual([['exec', '-i', 'wake-sandbox', 'pwd']]);
+  });
+
+  it('tails docker container logs with a bounded line count', async () => {
+    const calls: string[][] = [];
+    const docker = createDockerCli({
+      inspectContainer: async () => null,
+      inspectImage: async () => false,
+      run: async (args) => {
+        calls.push(args);
+      },
+    });
+
+    await docker.logs('wake-sandbox', 200);
+
+    expect(calls).toEqual([['logs', '--tail', '200', 'wake-sandbox']]);
   });
 });
