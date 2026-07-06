@@ -7,7 +7,6 @@ import type { WakeConfig } from '../domain/types.js';
 export async function runSandboxCommand(input: {
   args: string[];
   config: WakeConfig;
-  repoRoot: string;
   wakeRoot: string;
   containerHomeRoot: string;
   docker: DockerCli;
@@ -15,10 +14,15 @@ export async function runSandboxCommand(input: {
   const subcommand = input.args[0];
 
   if (subcommand === 'build') {
+    const repoRoot = input.config.dev?.repoRoot;
+    if (repoRoot === undefined || repoRoot.length === 0) {
+      throw new Error('Sandbox build requires config.dev.repoRoot');
+    }
+
     await input.docker.build({
       image: input.config.sandbox.image,
-      dockerfile: resolve(input.repoRoot, 'docker', 'Dockerfile'),
-      contextDir: input.repoRoot,
+      dockerfile: resolve(repoRoot, 'docker', 'Dockerfile'),
+      contextDir: repoRoot,
     });
     return;
   }
@@ -46,7 +50,11 @@ export async function runSandboxCommand(input: {
   }
 
   if (subcommand === 'exec') {
-    await input.docker.exec(input.config.sandbox.containerName, input.args.slice(1));
+    const commandArgs = input.args.slice(1);
+    await input.docker.exec(
+      input.config.sandbox.containerName,
+      commandArgs[0] === '--' ? commandArgs.slice(1) : commandArgs,
+    );
     return;
   }
 

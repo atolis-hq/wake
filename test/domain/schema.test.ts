@@ -10,7 +10,7 @@ import {
   parseRunRecord,
   parseRunnerResultSentinel,
 } from '../../src/domain/schema.js';
-import type { WakeSandboxConfig } from '../../src/domain/types.js';
+import type { WakeDevConfig, WakeSandboxConfig } from '../../src/domain/types.js';
 
 describe('issue state schema', () => {
   it('accepts canonical issue and comment fields plus extensible context', () => {
@@ -71,6 +71,12 @@ describe('run and event schemas', () => {
       containerName: string;
       containerMountPath: string;
       containerHomeMountPath: string;
+    }>();
+  });
+
+  it('exports an explicit local-development config helper type', () => {
+    expectTypeOf<WakeDevConfig>().toEqualTypeOf<{
+      repoRoot?: string;
     }>();
   });
 
@@ -207,5 +213,60 @@ describe('run and event schemas', () => {
     expect(config.sources.github.repos).toEqual(['atolis-hq/wake']);
     expect(config.paths.promptsRoot).toBe('/tmp/wake/prompts');
     expect(config.sandbox.containerName).toBe('wake-sandbox-1');
+  });
+
+  it('accepts optional local-development repo root configuration', () => {
+    const config = parseWakeConfig({
+      schemaVersion: 1,
+      paths: {
+        wakeRoot: '/tmp/wake',
+      },
+      sandbox: {
+        image: 'wake-sandbox',
+        containerName: 'wake-sandbox',
+        containerMountPath: '/wake',
+        containerHomeMountPath: '/home/wake',
+      },
+      dev: {
+        repoRoot: '/tmp/wake-repo',
+      },
+      scheduler: {
+        intervalMs: 1000,
+      },
+      runner: {
+        mode: 'fake',
+        claude: {
+          command: 'claude',
+          model: 'haiku',
+          smokeModel: 'haiku',
+          sessionName: 'Eddy',
+          remoteControlName: 'Eddy',
+          smokePrompt: 'hi',
+          remoteControl: {
+            enabled: false,
+          },
+        },
+      },
+      sources: {
+        github: {
+          enabled: false,
+          repos: [],
+          polling: {
+            maxIssuesPerRepo: 25,
+            commentPageSize: 25,
+            lookbackMs: 60000,
+          },
+          policy: {
+            requiredLabels: [],
+            ignoredLabels: [],
+          },
+          publication: {
+            postStatusComments: true,
+          },
+        },
+      },
+    });
+
+    expect(config.dev?.repoRoot).toBe('/tmp/wake-repo');
   });
 });

@@ -65,12 +65,11 @@ export function createDockerCli(deps: {
     },
 
     async exec(containerName: string, command: string[]): Promise<void> {
-      await deps.run([
-        'exec',
-        '-it',
-        containerName,
-        ...(command.length > 0 ? command : ['bash']),
-      ]);
+      await deps.run(
+        command.length > 0
+          ? ['exec', '-i', containerName, ...command]
+          : ['exec', '-it', containerName, 'bash'],
+      );
     },
   };
 }

@@ -180,6 +180,6 @@ describe('docker cli adapter', () => {
 
     await docker.exec('wake-sandbox', ['pwd']);
 
-    expect(calls).toEqual([['exec', '-it', 'wake-sandbox', 'pwd']]);
+    expect(calls).toEqual([['exec', '-i', 'wake-sandbox', 'pwd']]);
   });
 });

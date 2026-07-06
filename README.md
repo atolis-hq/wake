@@ -37,6 +37,141 @@ Useful commands:
 - `npm run smoke:claude` runs a minimal Claude Haiku smoke test
 - `npm run smoke:claude -- --remote-control` starts a minimal remote-control Claude smoke session
 
+## Sandbox Setup
+
+The sandbox flow on this branch has three parts:
+
+1. scaffold a clean Wake home directory
+2. build and start the persistent Docker sandbox from this repo checkout
+3. run the first-time auth setup inside the container
+
+Today, the top-level `wake init` / `wake sandbox ...` CLI routing is not wired
+through [`src/main.ts`](src/main.ts). The only local-development detail that
+still points back at the repo checkout is `dev.repoRoot`, which `wake init`
+stores in `wake-home/config.json` so `wake sandbox build` can build the Docker
+image from source.
+
+### 1. Scaffold a clean Wake home
+
+Pick a directory that is not this repo checkout and does not already contain
+files. Wake treats that directory itself as its home root.
+
+Run the scaffold command from the Wake repo root.
+
+Example:
+
+```bash
+export WAKE_REPO="/path/to/wake"
+cd "$WAKE_REPO"
+export WAKE_HOME="$HOME/wake-home"
+npx tsx src/main.ts init "$WAKE_HOME"
+```
+
+That creates a self-contained home with:
+
+- `config.json`
+- `prompts/`
+- `docker/Dockerfile`
+- `docker/setup.sh`
+- `events/`, `state/`, `runs/`, `workspaces/`, `repos/`, `sources/`, `locks/`
+
+Use an absolute path in `WAKE_HOME`.
+
+### 2. Build the sandbox image
+
+After scaffolding, switch to the Wake home directory. `wake init` drops two
+local-development launchers there:
+
+- `wake.sh` for bash, Git Bash, WSL, and similar shells
+- `wake.ps1` for PowerShell
+
+Both wrappers call back into the repo checkout recorded at scaffold time, so
+you can operate from `wake-home` instead of repeating the full `npx tsx
+.../src/main.ts` path.
+
+`init` and explicit `sandbox ...` commands run on the host. Other runtime
+commands such as `start`, `tick`, and `smoke claude` are automatically
+forwarded into the running container via `sandbox exec`. The wrappers default
+the in-container Wake home to `/wake`, so you do not need to pass
+`--wake-root` for normal scaffolded usage.
+
+The build command reads `config.json`, uses `dev.repoRoot` for the Docker build
+context, and keeps the operator flow rooted in `wake-home`.
+
+```bash
+cd "$WAKE_HOME"
+./wake.sh sandbox build
+```
+
+PowerShell equivalent:
+
+```powershell
+Set-Location $env:WAKE_HOME
+.\wake.ps1 sandbox build
+```
+
+### 3. Start the persistent container
+
+Start the persistent container from inside `wake-home`:
+
+```bash
+./wake.sh sandbox up
+```
+
+If the container already exists and is stopped:
+
+```bash
+./wake.sh sandbox up
+```
+
+### 4. Run first-time auth setup inside the container
+
+```bash
+./wake.sh sandbox setup
+```
+
+That script runs:
+
+- `gh auth login`
+- `gh auth setup-git`
+- `ssh-keygen` for `/home/wake/.ssh/id_ed25519` if missing
+- `claude setup-token`
+
+Because `/home/wake` is volume-mounted, the sandbox's `gh`, SSH, and Claude auth
+state survives container restart and recreation.
+
+### 5. Inspect or use the running sandbox
+
+Open a shell:
+
+```bash
+./wake.sh sandbox exec
+```
+
+Run the resident loop. The wrapper forwards this into the container:
+
+```bash
+./wake.sh start
+```
+
+Run one tick manually. The wrapper forwards this into the container:
+
+```bash
+./wake.sh tick
+```
+
+Resume a recorded Claude session inside the container workspace:
+
+```bash
+./wake.sh sandbox resume <session-id> --cwd "/wake/workspaces/<repo>/<issue>"
+```
+
+### 6. Stop the sandbox
+
+```bash
+./wake.sh sandbox down
+```
+
 ## GitHub Issues Polling
 
 Wake can poll configured GitHub repositories when `sources.github.enabled` is

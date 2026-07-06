@@ -22,11 +22,16 @@ describe('sandbox command', () => {
 
   it('dispatches build with repo-root docker paths', async () => {
     const docker = createDockerMock();
+    const config = {
+      ...createDefaultWakeConfig(wakeRoot),
+      dev: {
+        repoRoot,
+      },
+    };
 
     await runSandboxCommand({
       args: ['build'],
-      config: createDefaultWakeConfig(wakeRoot),
-      repoRoot,
+      config,
       wakeRoot,
       containerHomeRoot,
       docker,
@@ -39,13 +44,26 @@ describe('sandbox command', () => {
     });
   });
 
+  it('rejects build when local-development repo root is missing', async () => {
+    const docker = createDockerMock();
+
+    await expect(
+      runSandboxCommand({
+        args: ['build'],
+        config: createDefaultWakeConfig(wakeRoot),
+        wakeRoot,
+        containerHomeRoot,
+        docker,
+      }),
+    ).rejects.toThrow('Sandbox build requires config.dev.repoRoot');
+  });
+
   it('dispatches up with config-derived container settings', async () => {
     const docker = createDockerMock();
 
     await runSandboxCommand({
       args: ['up'],
       config: createDefaultWakeConfig(wakeRoot),
-      repoRoot,
       wakeRoot,
       containerHomeRoot,
       docker,
@@ -67,7 +85,6 @@ describe('sandbox command', () => {
     await runSandboxCommand({
       args: ['down'],
       config: createDefaultWakeConfig(wakeRoot),
-      repoRoot,
       wakeRoot,
       containerHomeRoot,
       docker,
@@ -82,7 +99,6 @@ describe('sandbox command', () => {
     await runSandboxCommand({
       args: ['setup'],
       config: createDefaultWakeConfig(wakeRoot),
-      repoRoot,
       wakeRoot,
       containerHomeRoot,
       docker,
@@ -97,7 +113,6 @@ describe('sandbox command', () => {
     await runSandboxCommand({
       args: ['exec', 'pwd'],
       config: createDefaultWakeConfig(wakeRoot),
-      repoRoot,
       wakeRoot,
       containerHomeRoot,
       docker,
@@ -106,13 +121,32 @@ describe('sandbox command', () => {
     expect(docker.exec).toHaveBeenCalledWith('wake-sandbox', ['pwd']);
   });
 
+  it('strips the command terminator before dispatching exec payload', async () => {
+    const docker = createDockerMock();
+
+    await runSandboxCommand({
+      args: ['exec', '--', 'node', '/app/dist/src/main.js', 'tick', '--wake-root', '/wake'],
+      config: createDefaultWakeConfig(wakeRoot),
+      wakeRoot,
+      containerHomeRoot,
+      docker,
+    });
+
+    expect(docker.exec).toHaveBeenCalledWith('wake-sandbox', [
+      'node',
+      '/app/dist/src/main.js',
+      'tick',
+      '--wake-root',
+      '/wake',
+    ]);
+  });
+
   it('dispatches resume through the sandbox resume command flow', async () => {
     const docker = createDockerMock();
 
     await runSandboxCommand({
       args: ['resume', 'session-123', '--cwd', '/wake/workspaces/atolis-hq__wake/12'],
       config: createDefaultWakeConfig(wakeRoot),
-      repoRoot,
       wakeRoot,
       containerHomeRoot,
       docker,
@@ -132,7 +166,6 @@ describe('sandbox command', () => {
       runSandboxCommand({
         args: ['bogus'],
         config: createDefaultWakeConfig(wakeRoot),
-        repoRoot,
         wakeRoot,
         containerHomeRoot,
         docker,

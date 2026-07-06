@@ -24,4 +24,4 @@ RUN useradd --create-home --shell /bin/bash wake
 USER wake
 WORKDIR /home/wake
 
-ENTRYPOINT ["node", "/app/dist/src/main.js", "start", "--wake-root", "/wake"]
+ENTRYPOINT ["sleep", "infinity"]

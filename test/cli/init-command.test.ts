@@ -14,6 +14,7 @@ describe('init command', () => {
     'implement.resume.md',
   ] as const;
   const dockerAssets = ['Dockerfile', 'setup.sh'] as const;
+  const launcherScripts = ['wake.sh', 'wake.ps1'] as const;
   const runtimeDirectories = [
     'events',
     'state',
@@ -46,15 +47,28 @@ describe('init command', () => {
     const config = await readFile(join(result.wakeRoot, 'config.json'), 'utf8');
     const dockerfile = await readFile(join(result.wakeRoot, 'docker', 'Dockerfile'), 'utf8');
     const setupScript = await readFile(join(result.wakeRoot, 'docker', 'setup.sh'), 'utf8');
+    const shellLauncher = await readFile(join(result.wakeRoot, 'wake.sh'), 'utf8');
+    const powerShellLauncher = await readFile(join(result.wakeRoot, 'wake.ps1'), 'utf8');
 
     expect(config).toContain('"sandbox"');
-    expect(dockerfile).toContain(
-      'ENTRYPOINT ["node", "/app/dist/src/main.js", "start", "--wake-root", "/wake"]',
-    );
+    expect(config).toContain(`"repoRoot": "${repoRoot.replaceAll('\\', '\\\\')}"`);
+    expect(dockerfile).toContain('ENTRYPOINT ["sleep", "infinity"]');
     expect(setupScript).toContain('gh auth login');
     expect(setupScript).not.toContain('docker exec');
+    expect(setupScript).not.toContain('\r\n');
     expect(setupScript).toContain('claude setup-token');
     expect(setupScript).toContain('ssh-keygen -t ed25519');
+    expect(shellLauncher).toContain(repoRoot.replaceAll('\\', '/'));
+    expect(shellLauncher).toContain('case "${1:-}" in');
+    expect(shellLauncher).toContain('MSYS_NO_PATHCONV=1');
+    expect(shellLauncher).toContain("MSYS2_ARG_CONV_EXCL='*'");
+    expect(shellLauncher).toContain('sandbox exec -- node "$CONTAINER_MAIN"');
+    expect(shellLauncher).toContain('rewritten_args+=("--wake-root" "/wake")');
+    expect(powerShellLauncher).toContain(repoRoot);
+    expect(powerShellLauncher).toContain("switch ($command)");
+    expect(powerShellLauncher).toContain('sandbox exec -- node $containerMain');
+    expect(powerShellLauncher).toContain("$rewrittenArgs.Add('--wake-root')");
+    expect(powerShellLauncher).toContain("$rewrittenArgs.Add('/wake')");
 
     for (const promptFile of promptFiles) {
       const prompt = await readFile(join(result.wakeRoot, 'prompts', promptFile), 'utf8');
@@ -67,6 +81,10 @@ describe('init command', () => {
 
     for (const dockerAsset of dockerAssets) {
       expect((await stat(join(result.wakeRoot, 'docker', dockerAsset))).isFile()).toBe(true);
+    }
+
+    for (const launcherScript of launcherScripts) {
+      expect((await stat(join(result.wakeRoot, launcherScript))).isFile()).toBe(true);
     }
 
     for (const runtimeDirectory of runtimeDirectories) {

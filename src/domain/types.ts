@@ -28,5 +28,6 @@ export type WakeLedger = z.infer<typeof ledgerSchema>;
 export type WakeConfig = z.infer<typeof wakeConfigSchema>;
 export type WakePathsConfig = WakeConfig['paths'];
 export type WakeSandboxConfig = WakeConfig['sandbox'];
+export type WakeDevConfig = NonNullable<WakeConfig['dev']>;
 export type ClaudePrintResult = z.infer<typeof claudePrintResultSchema>;
 export type SourceStateRecord = z.infer<typeof sourceStateRecordSchema>;

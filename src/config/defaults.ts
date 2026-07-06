@@ -18,6 +18,7 @@ export function createDefaultWakeConfig(wakeRoot = resolve(process.cwd(), '.wake
       containerMountPath: '/wake',
       containerHomeMountPath: '/home/wake',
     },
+    dev: {},
     scheduler: {
       intervalMs: 30 * 60 * 1000,
     },
