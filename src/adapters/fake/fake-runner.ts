@@ -19,6 +19,7 @@ export function createFakeRunner(result?: AgentRunResult) {
       return result ?? {
         result: 'Fake runner completed\nDONE',
         model: 'fake',
+        cli: 'Fake',
         session_id: 'fake-session-1',
         metadata: {
           source: 'fake-runner',

@@ -13,10 +13,18 @@ export interface OutboundSink {
   deliverIntent(input: { event: EventEnvelope }): Promise<EventEnvelope[]>;
 }
 
+export interface AgentRunTokenUsage {
+  inputTokens: number;
+  outputTokens: number;
+}
+
 export interface AgentRunResult {
   result: string;
   model: string;
+  /** Display name of the CLI/agent that produced this result, e.g. "Claude", "Codex". */
+  cli: string;
   session_id?: string;
+  tokenUsage?: AgentRunTokenUsage;
   metadata?: Record<string, unknown>;
 }
 

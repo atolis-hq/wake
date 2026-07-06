@@ -4,6 +4,7 @@ import { createProjectionUpdater } from './projection-updater.js';
 import type {
   AgentRunner,
   AgentRunResult,
+  AgentRunTokenUsage,
   OutboundSink,
   WorkSource,
   WorkspaceManager,
@@ -29,19 +30,11 @@ export function createTickRunner(deps: {
     stateStore: deps.stateStore,
   });
 
-  function extractTokenCount(metadata: Record<string, unknown> | undefined): number | undefined {
-    if (!metadata?.raw || typeof metadata.raw !== 'object') {
+  function extractTokenCount(tokenUsage: AgentRunTokenUsage | undefined): number | undefined {
+    if (tokenUsage === undefined) {
       return undefined;
     }
-    const raw = metadata.raw as Record<string, unknown>;
-    const usage = raw.usage;
-    if (!usage || typeof usage !== 'object') {
-      return undefined;
-    }
-    const usageObj = usage as Record<string, unknown>;
-    const input_tokens = typeof usageObj.input_tokens === 'number' ? usageObj.input_tokens : 0;
-    const output_tokens = typeof usageObj.output_tokens === 'number' ? usageObj.output_tokens : 0;
-    return input_tokens + output_tokens;
+    return tokenUsage.inputTokens + tokenUsage.outputTokens;
   }
 
   function formatDuration(startedAtStr: string, finishedAtStr: string): string | undefined {
@@ -88,7 +81,7 @@ export function createTickRunner(deps: {
       return null;
     }
 
-    const tokenCount = extractTokenCount(input.runnerResult.metadata);
+    const tokenCount = extractTokenCount(input.runnerResult.tokenUsage);
     const duration = formatDuration(input.startedAt, input.occurredAt);
 
     return createEventEnvelope({
@@ -115,7 +108,7 @@ export function createTickRunner(deps: {
           ? {}
           : { sessionId: input.runnerResult.session_id }),
         model: input.runnerResult.model,
-        cli: 'Claude',
+        cli: input.runnerResult.cli,
         ...(duration === undefined ? {} : { duration }),
         ...(tokenCount === undefined ? {} : { tokens: formatTokenCount(tokenCount) }),
         ...(input.workspacePath === undefined

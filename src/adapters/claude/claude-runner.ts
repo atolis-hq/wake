@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 
-import type { AgentRunResult } from '../../core/contracts.js';
+import type { AgentRunResult, AgentRunTokenUsage } from '../../core/contracts.js';
 import { parseClaudePrintResult } from '../../domain/schema.js';
 import type {
   AgentAction,
@@ -246,6 +246,17 @@ function parseClaudePrintOutput(stdout: string): ClaudePrintResult {
   return parseClaudePrintResult(JSON.parse(stdout));
 }
 
+function extractTokenUsage(usage: ClaudePrintResult['usage']): AgentRunTokenUsage | undefined {
+  if (usage === undefined) {
+    return undefined;
+  }
+  const inputTokens = typeof usage.input_tokens === 'number' ? usage.input_tokens : 0;
+  const outputTokens = typeof usage.output_tokens === 'number' ? usage.output_tokens : 0;
+  return { inputTokens, outputTokens };
+}
+
+const CLAUDE_CLI_NAME = 'Claude';
+
 function readSandboxLogBreadcrumb(): { text: string; metadata: { sandboxContainerName: string } } | null {
   const containerName = process.env.WAKE_SANDBOX_CONTAINER_NAME;
   if (containerName === undefined || containerName.length === 0) {
@@ -351,6 +362,7 @@ export function createClaudeRunner(options: {
             .filter((part) => part !== undefined && part.length > 0)
             .join('\n'),
           model: input.config.runner.claude.model,
+          cli: CLAUDE_CLI_NAME,
           metadata: {
             stdout: result.stdout,
             stderr: result.stderr,
@@ -376,12 +388,15 @@ export function createClaudeRunner(options: {
           ...(parsed.session_id === undefined ? {} : { sessionId: parsed.session_id }),
         }),
       );
+      const tokenUsage = extractTokenUsage(parsed.usage);
       return {
         result: parsed.result,
         model: input.config.runner.claude.model,
+        cli: CLAUDE_CLI_NAME,
         ...(parsed.session_id === undefined
           ? {}
           : { session_id: parsed.session_id }),
+        ...(tokenUsage === undefined ? {} : { tokenUsage }),
         metadata: {
           stdout: result.stdout,
           stderr: result.stderr,
