@@ -228,6 +228,9 @@ describe('github issues work source', () => {
           runId: 'run-12-1',
           sessionId: 'session-abc',
           model: 'haiku',
+          cli: 'Claude',
+          duration: '1m30s',
+          tokens: '28k',
           workspacePath: 'C:\\wake\\.wake\\workspaces\\atolis-hq__wake\\12',
         },
       }),
@@ -236,7 +239,10 @@ describe('github issues work source', () => {
     const [, , , postedBody] = createComment.mock.calls[0] as [string, string, number, string];
     expect(postedBody).toContain('**Eddy**');
     expect(postedBody).toContain('stage `implement`');
+    expect(postedBody).toContain('cli Claude');
     expect(postedBody).toContain('model `haiku`');
+    expect(postedBody).toContain('duration 1m30s');
+    expect(postedBody).toContain('tokens 28k');
     expect(postedBody).toContain('run `run-12-1`');
     expect(postedBody).toContain('claude --resume session-abc');
     expect(postedBody).toContain('cd "C:\\wake\\.wake\\workspaces\\atolis-hq__wake\\12"');

@@ -129,12 +129,18 @@ function formatWakeComment(payload: Record<string, unknown>): string {
   const runId = typeof payload.runId === 'string' ? payload.runId : undefined;
   const sessionId = typeof payload.sessionId === 'string' ? payload.sessionId : undefined;
   const model = typeof payload.model === 'string' ? payload.model : undefined;
+  const cli = typeof payload.cli === 'string' ? payload.cli : undefined;
+  const duration = typeof payload.duration === 'string' ? payload.duration : undefined;
+  const tokens = typeof payload.tokens === 'string' ? payload.tokens : undefined;
   const workspacePath =
     typeof payload.workspacePath === 'string' ? payload.workspacePath : undefined;
 
   const details = [
     action === undefined ? undefined : `stage \`${action}\``,
+    cli === undefined ? undefined : `cli ${cli}`,
     model === undefined ? undefined : `model \`${model}\``,
+    duration === undefined ? undefined : `duration ${duration}`,
+    tokens === undefined ? undefined : `tokens ${tokens}`,
     runId === undefined ? undefined : `run \`${runId}\``,
   ].filter((part): part is string => part !== undefined);
 

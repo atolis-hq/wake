@@ -29,6 +29,51 @@ export function createTickRunner(deps: {
     stateStore: deps.stateStore,
   });
 
+  function extractTokenCount(metadata: Record<string, unknown> | undefined): number | undefined {
+    if (!metadata?.raw || typeof metadata.raw !== 'object') {
+      return undefined;
+    }
+    const raw = metadata.raw as Record<string, unknown>;
+    const usage = raw.usage;
+    if (!usage || typeof usage !== 'object') {
+      return undefined;
+    }
+    const usageObj = usage as Record<string, unknown>;
+    const input_tokens = typeof usageObj.input_tokens === 'number' ? usageObj.input_tokens : 0;
+    const output_tokens = typeof usageObj.output_tokens === 'number' ? usageObj.output_tokens : 0;
+    return input_tokens + output_tokens;
+  }
+
+  function formatDuration(startedAtStr: string, finishedAtStr: string): string | undefined {
+    try {
+      const startedAt = new Date(startedAtStr);
+      const finishedAt = new Date(finishedAtStr);
+      const durationMs = finishedAt.getTime() - startedAt.getTime();
+      if (durationMs < 0 || !isFinite(durationMs)) return undefined;
+
+      const totalSeconds = Math.floor(durationMs / 1000);
+      const minutes = Math.floor(totalSeconds / 60);
+      const seconds = totalSeconds % 60;
+
+      if (minutes > 0) {
+        return `${minutes}m${seconds}s`;
+      }
+      return `${seconds}s`;
+    } catch {
+      return undefined;
+    }
+  }
+
+  function formatTokenCount(count: number): string {
+    if (count >= 1000000) {
+      return `${(count / 1000000).toFixed(1)}M`;
+    }
+    if (count >= 1000) {
+      return `${(count / 1000).toFixed(0)}k`;
+    }
+    return String(count);
+  }
+
   function createPublishIntentEvent(input: {
     projection: import('../domain/types.js').IssueStateRecord;
     runId: string;
@@ -37,10 +82,14 @@ export function createTickRunner(deps: {
     sentinel: 'DONE' | 'BLOCKED' | 'FAILED';
     occurredAt: string;
     workspacePath?: string;
+    startedAt: string;
   }): EventEnvelope | null {
     if (input.sentinel !== 'DONE' && input.sentinel !== 'BLOCKED') {
       return null;
     }
+
+    const tokenCount = extractTokenCount(input.runnerResult.metadata);
+    const duration = formatDuration(input.startedAt, input.occurredAt);
 
     return createEventEnvelope({
       eventId: `${input.runId}-publish-intent`,
@@ -66,6 +115,9 @@ export function createTickRunner(deps: {
           ? {}
           : { sessionId: input.runnerResult.session_id }),
         model: input.runnerResult.model,
+        cli: 'Claude',
+        ...(duration === undefined ? {} : { duration }),
+        ...(tokenCount === undefined ? {} : { tokens: formatTokenCount(tokenCount) }),
         ...(input.workspacePath === undefined
           ? {}
           : { workspacePath: input.workspacePath }),
@@ -302,6 +354,7 @@ export function createTickRunner(deps: {
           runnerResult,
           sentinel,
           occurredAt: finishedAt,
+          startedAt: nowIso,
           ...(workspacePath === undefined ? {} : { workspacePath }),
         });
 
