@@ -91,22 +91,15 @@ export function createDockerCli(deps: {
       await deps.run(['stop', containerName]);
     },
 
-    async setup(containerName: string): Promise<void> {
-      await deps.run(['exec', '-it', containerName, 'bash', '/wake/docker/setup.sh']);
-    },
-
-    async exec(containerName: string, command: string[]): Promise<void> {
+    async exec(
+      containerName: string,
+      command: string[],
+      options?: { interactive?: boolean },
+    ): Promise<void> {
+      const interactive = options?.interactive ?? false;
       await deps.run(
         command.length > 0
-          ? ['exec', '-i', containerName, ...command]
-          : ['exec', '-it', containerName, 'bash'],
-      );
-    },
-
-    async execInteractive(containerName: string, command: string[]): Promise<void> {
-      await deps.run(
-        command.length > 0
-          ? ['exec', '-it', containerName, ...command]
+          ? ['exec', interactive ? '-it' : '-i', containerName, ...command]
           : ['exec', '-it', containerName, 'bash'],
       );
     },

@@ -16,9 +16,7 @@ describe('sandbox command', () => {
       up: vi.fn(async () => {}),
       update: vi.fn(async () => {}),
       down: vi.fn(async () => {}),
-      setup: vi.fn(async () => {}),
       exec: vi.fn(async () => {}),
-      execInteractive: vi.fn(async () => {}),
       logs: vi.fn(async () => {}),
     };
   }
@@ -130,9 +128,10 @@ describe('sandbox command', () => {
       docker,
     });
 
-    expect(docker.execInteractive).toHaveBeenCalledWith(
+    expect(docker.exec).toHaveBeenCalledWith(
       'wake-sandbox',
       ['bash', '/wake/docker/setup.sh'],
+      { interactive: true },
     );
   });
 

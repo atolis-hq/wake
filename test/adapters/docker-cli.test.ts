@@ -251,21 +251,6 @@ describe('docker cli adapter', () => {
     expect(calls).toEqual([['stop', 'wake-sandbox']]);
   });
 
-  it('runs the sandbox setup script inside the container', async () => {
-    const calls: string[][] = [];
-    const docker = createDockerCli({
-      inspectContainer: async () => null,
-      inspectImage: async () => false,
-      run: async (args) => {
-        calls.push(args);
-      },
-    });
-
-    await docker.setup('wake-sandbox');
-
-    expect(calls).toEqual([['exec', '-it', 'wake-sandbox', 'bash', '/wake/docker/setup.sh']]);
-  });
-
   it('executes interactive commands with a tty inside the container', async () => {
     const calls: string[][] = [];
     const docker = createDockerCli({
@@ -276,7 +261,7 @@ describe('docker cli adapter', () => {
       },
     });
 
-    await docker.execInteractive('wake-sandbox', ['bash', '/wake/docker/setup.sh']);
+    await docker.exec('wake-sandbox', ['bash', '/wake/docker/setup.sh'], { interactive: true });
 
     expect(calls).toEqual([['exec', '-it', 'wake-sandbox', 'bash', '/wake/docker/setup.sh']]);
   });

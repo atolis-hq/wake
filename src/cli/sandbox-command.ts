@@ -29,100 +29,97 @@ export async function runSandboxCommand(input: {
     throw new Error('Unknown sandbox command:');
   }
 
-  try {
-    if (subcommand === 'build') {
-      const repoRoot = input.config.dev?.repoRoot;
-      if (repoRoot === undefined || repoRoot.length === 0) {
-        throw new Error('Sandbox build requires config.dev.repoRoot');
-      }
-
-      await input.docker.build({
-        image: input.config.sandbox.image,
-        dockerfile: resolve(repoRoot, 'docker', 'Dockerfile'),
-        contextDir: repoRoot,
-      });
-      return;
+  if (subcommand === 'build') {
+    const repoRoot = input.config.dev?.repoRoot;
+    if (repoRoot === undefined || repoRoot.length === 0) {
+      throw new Error('Sandbox build requires config.dev.repoRoot');
     }
 
-    if (subcommand === 'up') {
-      await input.docker.up({
-        image: input.config.sandbox.image,
-        containerName: input.config.sandbox.containerName,
-        wakeRoot: input.wakeRoot,
-        containerHomeRoot: input.containerHomeRoot,
-        containerMountPath: input.config.sandbox.containerMountPath,
-        containerHomeMountPath: input.config.sandbox.containerHomeMountPath,
-        extraMounts: input.config.sandbox.extraMounts,
-      });
-      return;
-    }
-
-    if (subcommand === 'update') {
-      await input.docker.update({
-        image: input.config.sandbox.image,
-        containerName: input.config.sandbox.containerName,
-        wakeRoot: input.wakeRoot,
-        containerHomeRoot: input.containerHomeRoot,
-        containerMountPath: input.config.sandbox.containerMountPath,
-        containerHomeMountPath: input.config.sandbox.containerHomeMountPath,
-        extraMounts: input.config.sandbox.extraMounts,
-      });
-      return;
-    }
-
-    if (subcommand === 'down') {
-      await input.docker.down(input.config.sandbox.containerName);
-      return;
-    }
-
-    if (subcommand === 'setup') {
-      await input.docker.execInteractive(
-        input.config.sandbox.containerName,
-        ['bash', '/wake/docker/setup.sh'],
-      );
-      return;
-    }
-
-    if (subcommand === 'exec') {
-      const commandArgs = input.args.slice(1);
-      const wrappedCommand = commandArgs[0] === '--' ? commandArgs.slice(1) : commandArgs;
-      await input.docker.exec(
-        input.config.sandbox.containerName,
-        wrappedCommand.length === 0
-          ? []
-          : buildSandboxLoggedCommand({
-              label: 'sandbox.exec',
-              config: input.config,
-              wakeRoot: input.wakeRoot,
-              containerHomeRoot: input.containerHomeRoot,
-              command: wrappedCommand,
-            }),
-      );
-      return;
-    }
-
-    if (subcommand === 'logs') {
-      const tailLines = Number.parseInt(readFlag('--tail', input.args) ?? '200', 10);
-      await input.docker.logs(
-        input.config.sandbox.containerName,
-        Number.isFinite(tailLines) && tailLines > 0 ? tailLines : 200,
-      );
-      return;
-    }
-
-    if (subcommand === 'resume') {
-      await runSandboxResumeCommand({
-        args: input.args.slice(1),
-        config: input.config,
-        docker: input.docker,
-        wakeRoot: input.wakeRoot,
-        containerHomeRoot: input.containerHomeRoot,
-      });
-      return;
-    }
-
-    throw new Error(`Unknown sandbox command: ${subcommand}`.trimEnd());
-  } catch (error) {
-    throw error;
+    await input.docker.build({
+      image: input.config.sandbox.image,
+      dockerfile: resolve(repoRoot, 'docker', 'Dockerfile'),
+      contextDir: repoRoot,
+    });
+    return;
   }
+
+  if (subcommand === 'up') {
+    await input.docker.up({
+      image: input.config.sandbox.image,
+      containerName: input.config.sandbox.containerName,
+      wakeRoot: input.wakeRoot,
+      containerHomeRoot: input.containerHomeRoot,
+      containerMountPath: input.config.sandbox.containerMountPath,
+      containerHomeMountPath: input.config.sandbox.containerHomeMountPath,
+      extraMounts: input.config.sandbox.extraMounts,
+    });
+    return;
+  }
+
+  if (subcommand === 'update') {
+    await input.docker.update({
+      image: input.config.sandbox.image,
+      containerName: input.config.sandbox.containerName,
+      wakeRoot: input.wakeRoot,
+      containerHomeRoot: input.containerHomeRoot,
+      containerMountPath: input.config.sandbox.containerMountPath,
+      containerHomeMountPath: input.config.sandbox.containerHomeMountPath,
+      extraMounts: input.config.sandbox.extraMounts,
+    });
+    return;
+  }
+
+  if (subcommand === 'down') {
+    await input.docker.down(input.config.sandbox.containerName);
+    return;
+  }
+
+  if (subcommand === 'setup') {
+    await input.docker.exec(
+      input.config.sandbox.containerName,
+      ['bash', '/wake/docker/setup.sh'],
+      { interactive: true },
+    );
+    return;
+  }
+
+  if (subcommand === 'exec') {
+    const commandArgs = input.args.slice(1);
+    const wrappedCommand = commandArgs[0] === '--' ? commandArgs.slice(1) : commandArgs;
+    await input.docker.exec(
+      input.config.sandbox.containerName,
+      wrappedCommand.length === 0
+        ? []
+        : buildSandboxLoggedCommand({
+            label: 'sandbox.exec',
+            config: input.config,
+            wakeRoot: input.wakeRoot,
+            containerHomeRoot: input.containerHomeRoot,
+            command: wrappedCommand,
+          }),
+    );
+    return;
+  }
+
+  if (subcommand === 'logs') {
+    const tailLines = Number.parseInt(readFlag('--tail', input.args) ?? '200', 10);
+    await input.docker.logs(
+      input.config.sandbox.containerName,
+      Number.isFinite(tailLines) && tailLines > 0 ? tailLines : 200,
+    );
+    return;
+  }
+
+  if (subcommand === 'resume') {
+    await runSandboxResumeCommand({
+      args: input.args.slice(1),
+      config: input.config,
+      docker: input.docker,
+      wakeRoot: input.wakeRoot,
+      containerHomeRoot: input.containerHomeRoot,
+    });
+    return;
+  }
+
+  throw new Error(`Unknown sandbox command: ${subcommand}`.trimEnd());
 }
