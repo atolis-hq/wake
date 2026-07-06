@@ -10,7 +10,15 @@ export function createDefaultWakeConfig(wakeRoot = resolve(process.cwd(), '.wake
     schemaVersion: 1,
     paths: {
       wakeRoot,
+      promptsRoot: resolve(wakeRoot, 'prompts'),
     },
+    sandbox: {
+      image: 'wake-sandbox',
+      containerName: 'wake-sandbox',
+      containerMountPath: '/wake',
+      containerHomeMountPath: '/home/wake',
+    },
+    dev: {},
     scheduler: {
       intervalMs: 30 * 60 * 1000,
     },

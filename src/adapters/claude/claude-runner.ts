@@ -68,9 +68,14 @@ export async function buildStagePrompt(input: {
   projection: IssueStateRecord;
   recentEvents: EventEnvelope[];
   mode?: 'start' | 'resume';
+  config?: WakeConfig;
 }): Promise<StagePromptResult> {
   const mode = input.mode ?? 'start';
-  const template = await loadPromptTemplate(input.action, mode);
+  const template = await loadPromptTemplate(input.action, mode, {
+    ...(input.config?.paths.promptsRoot === undefined
+      ? {}
+      : { promptsRoot: input.config.paths.promptsRoot }),
+  });
 
   const context: Record<string, unknown> = {
     workItemKey: input.projection.workItemKey,
@@ -234,6 +239,7 @@ export function createClaudeRunner(options: {
         projection: input.projection,
         recentEvents: input.recentEvents,
         mode: 'start',
+        config: input.config,
       });
 
       const args = buildClaudePrintArgs({

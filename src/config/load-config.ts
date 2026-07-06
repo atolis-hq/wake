@@ -15,6 +15,14 @@ function mergeWakeConfig(base: WakeConfig, loaded: Record<string, unknown>): Wak
       ...base.paths,
       ...(next.paths ?? {}),
     },
+    sandbox: {
+      ...base.sandbox,
+      ...(next.sandbox ?? {}),
+    },
+    dev: {
+      ...(base.dev ?? {}),
+      ...(next.dev ?? {}),
+    },
     scheduler: {
       ...base.scheduler,
       ...(next.scheduler ?? {}),

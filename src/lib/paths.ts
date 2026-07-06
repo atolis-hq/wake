@@ -11,6 +11,7 @@ function sanitizePathKey(value: string): string {
 export function createWakePaths(wakeRoot: string) {
   return {
     wakeRoot,
+    containerHomeRoot: join(wakeRoot, 'container-home'),
     configFile: join(wakeRoot, 'config.json'),
     ledgerFile: join(wakeRoot, 'ledger.json'),
     pauseFile: join(wakeRoot, 'PAUSE'),
