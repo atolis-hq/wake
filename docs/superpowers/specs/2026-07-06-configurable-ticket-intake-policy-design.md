@@ -26,6 +26,12 @@ policy: z.object({
 }),
 ```
 
+Identity: entries are GitHub **logins** (usernames, e.g. `"octocat"`), not
+numeric user IDs or emails — this matches what's already extracted from the
+GitHub API and stored on `IssueStateRecord.issue.assignees`
+(`github-issues-work-source.ts:57-59` takes `assignee.login`, discarding the
+numeric `id` GitHub also returns).
+
 Semantics, matching the existing `requiredLabels` convention:
 - Empty array (default) = no restriction.
 - Non-empty = ticket must be assigned to **at least one** (OR) of the listed
