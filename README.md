@@ -37,6 +37,15 @@ Useful commands:
 - `npm run smoke:claude` runs a minimal Claude Haiku smoke test
 - `npm run smoke:claude -- --remote-control` starts a minimal remote-control Claude smoke session
 
+### Configuration
+
+Wake's behavior can be customized through its JSON config file. In the default
+repo-local flow, Wake loads config from `.wake/config.json`. In the scaffolded
+sandbox flow below, `wake init` creates `wake-home/config.json` and the
+wrappers run Wake against that mounted home directory. See
+[docs/configuration.md](docs/configuration.md) for the full config structure
+and available options.
+
 ## Sandbox Setup
 
 The sandbox flow on this branch has three parts:
