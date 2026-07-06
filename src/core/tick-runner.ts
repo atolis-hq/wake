@@ -76,6 +76,60 @@ export function createTickRunner(deps: {
     });
   }
 
+  function statusLabelForStage(stage: import('../domain/types.js').Stage): string {
+    if (stage === 'done') {
+      return 'wake:status.completed';
+    }
+
+    if (stage === 'failed') {
+      return 'wake:status.failed';
+    }
+
+    return 'wake:status.pending';
+  }
+
+  function createStatusLabelEvent(input: {
+    projection: import('../domain/types.js').IssueStateRecord;
+    runId: string;
+    statusLabel: string;
+    occurredAt: string;
+  }): EventEnvelope {
+    return createEventEnvelope({
+      eventId: `${input.runId}-${input.statusLabel.replace(/[^a-z0-9]+/gi, '-')}`,
+      workItemKey: input.projection.workItemKey,
+      streamScope: 'work-item',
+      direction: 'outbound',
+      sourceSystem: 'wake',
+      sourceEventType: 'wake.status.label.requested',
+      sourceRefs: {
+        repo: input.projection.issue.repo,
+        issueNumber: input.projection.issue.number,
+        runId: input.runId,
+      },
+      occurredAt: input.occurredAt,
+      ingestedAt: input.occurredAt,
+      trigger: 'context-only',
+      payload: {
+        statusLabel: input.statusLabel,
+      },
+    });
+  }
+
+  async function deliverOutboundEvent(event: EventEnvelope): Promise<void> {
+    await deps.stateStore.appendEventEnvelope(event);
+    await projectionUpdater.rebuildFromEvents([event]);
+
+    if (deps.outboundSink === undefined) {
+      return;
+    }
+
+    const deliveryEvents = await deps.outboundSink.deliverIntent({ event });
+    for (const deliveryEvent of deliveryEvents) {
+      await deps.stateStore.appendEventEnvelope(deliveryEvent);
+    }
+    await projectionUpdater.rebuildFromEvents(deliveryEvents);
+  }
+
   return {
     async runTick() {
       const lock = await acquireFileLock(deps.stateStore.paths.tickLockFile);
@@ -144,6 +198,15 @@ export function createTickRunner(deps: {
               action,
               priorStage: candidate.wake.stage,
             },
+          }),
+        );
+
+        await deliverOutboundEvent(
+          createStatusLabelEvent({
+            projection: candidate,
+            runId,
+            statusLabel: 'wake:status.working',
+            occurredAt: nowIso,
           }),
         );
 
@@ -223,6 +286,15 @@ export function createTickRunner(deps: {
         await deps.stateStore.appendEventEnvelope(runCompletedEvent);
         await projectionUpdater.rebuildFromEvents([runCompletedEvent]);
 
+        await deliverOutboundEvent(
+          createStatusLabelEvent({
+            projection: candidate,
+            runId,
+            statusLabel: statusLabelForStage(nextStage),
+            occurredAt: finishedAt,
+          }),
+        );
+
         const publishIntent = createPublishIntentEvent({
           projection: candidate,
           runId,
@@ -234,18 +306,7 @@ export function createTickRunner(deps: {
         });
 
         if (publishIntent !== null) {
-          await deps.stateStore.appendEventEnvelope(publishIntent);
-          await projectionUpdater.rebuildFromEvents([publishIntent]);
-
-          if (deps.outboundSink !== undefined) {
-            const deliveryEvents = await deps.outboundSink.deliverIntent({
-              event: publishIntent,
-            });
-            for (const event of deliveryEvents) {
-              await deps.stateStore.appendEventEnvelope(event);
-            }
-            await projectionUpdater.rebuildFromEvents(deliveryEvents);
-          }
+          await deliverOutboundEvent(publishIntent);
         }
 
         return {

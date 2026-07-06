@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import type { DockerCli } from '../adapters/docker/docker-cli.js';
 import { listRunRecords } from '../adapters/fs/state-store.js';
 import type { RunRecord, WakeConfig } from '../domain/types.js';
+import { buildSandboxLoggedCommand } from './sandbox-logging.js';
 
 type ResumeTarget = {
   sessionId: string;
@@ -90,6 +91,7 @@ export async function runSandboxResumeCommand(input: {
   config: WakeConfig;
   docker: Pick<DockerCli, 'exec'>;
   wakeRoot: string;
+  containerHomeRoot: string;
   select?: ResumeSelector;
 }): Promise<void> {
   const sessionId = input.args[0];
@@ -113,6 +115,15 @@ export async function runSandboxResumeCommand(input: {
     throw new Error('No resumable sandbox session selected.');
   }
 
-  const command = `cd "${target.workspacePath}" && claude --resume ${target.sessionId}`;
-  await input.docker.exec(input.config.sandbox.containerName, ['bash', '-lc', command]);
+  await input.docker.exec(
+    input.config.sandbox.containerName,
+    buildSandboxLoggedCommand({
+      label: 'sandbox.resume',
+      config: input.config,
+      wakeRoot: input.wakeRoot,
+      containerHomeRoot: input.containerHomeRoot,
+      cwd: target.workspacePath,
+      command: ['claude', '--resume', target.sessionId],
+    }),
+  );
 }

@@ -24,9 +24,11 @@ miss and expensive to discover. Do not re-litigate decisions recorded there.
    fresh-session-always must be a config change, not a rewrite.
 5. **Credentials in the container.** Claude Code stores OAuth creds under
    `~/.claude` (file-based on Linux — good; no keychain inside a container).
-   Mount `~/.claude` and `~/.config/gh` from the volume. First login must be
-   done interactively via `docker exec`. Verify both survive container
-   *recreation*, not just restart.
+   Mount `~/.claude` from the volume. Do not mount host `~/.config/gh` by
+   default; that would make the sandbox reuse the host GitHub identity.
+   First login must be done interactively via `docker exec`. Verify Claude
+   auth survives container *recreation*, not just restart, and authenticate
+   GitHub separately inside the sandbox if Wake needs it there.
 6. **Windows host filesystem.** Bind-mounting NTFS into the container makes
    `npm install` and git 5–20× slower and breaks some file modes. Use a named
    volume or WSL2-native path. Set `TZ` in the container or quiet hours run on

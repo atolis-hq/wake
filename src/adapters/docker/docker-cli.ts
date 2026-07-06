@@ -13,9 +13,32 @@ export type DockerUpInput = {
   containerHomeRoot: string;
   containerMountPath: string;
   containerHomeMountPath: string;
+  extraMounts?: Array<{
+    source: string;
+    target: string;
+    readOnly?: boolean | undefined;
+  }>;
 };
 
 export type DockerCli = ReturnType<typeof createDockerCli>;
+
+function buildRunArgs(input: DockerUpInput): string[] {
+  return [
+    'run',
+    '-d',
+    '--name',
+    input.containerName,
+    '-v',
+    `${input.wakeRoot}:${input.containerMountPath}`,
+    '-v',
+    `${input.containerHomeRoot}:${input.containerHomeMountPath}`,
+    ...(input.extraMounts ?? []).flatMap((mount) => [
+      '-v',
+      `${mount.source}:${mount.target}${mount.readOnly === true ? ':ro' : ''}`,
+    ]),
+    input.image,
+  ];
+}
 
 export function createDockerCli(deps: {
   run(args: string[]): Promise<void>;
@@ -43,33 +66,46 @@ export function createDockerCli(deps: {
         return;
       }
 
-      await deps.run([
-        'run',
-        '-d',
-        '--name',
-        input.containerName,
-        '-v',
-        `${input.wakeRoot}:${input.containerMountPath}`,
-        '-v',
-        `${input.containerHomeRoot}:${input.containerHomeMountPath}`,
-        input.image,
-      ]);
+      await deps.run(buildRunArgs(input));
+    },
+
+    async update(input: DockerUpInput): Promise<void> {
+      const imageExists = await deps.inspectImage(input.image);
+      if (!imageExists) {
+        throw new Error('Sandbox image not found. Run `wake sandbox build` first.');
+      }
+
+      const containerState = await deps.inspectContainer(input.containerName);
+      if (containerState === 'running' || containerState === 'stopped') {
+        if (containerState === 'running') {
+          await deps.run(['stop', input.containerName]);
+        }
+
+        await deps.run(['rm', input.containerName]);
+      }
+
+      await deps.run(buildRunArgs(input));
     },
 
     async down(containerName: string): Promise<void> {
       await deps.run(['stop', containerName]);
     },
 
-    async setup(containerName: string): Promise<void> {
-      await deps.run(['exec', '-it', containerName, 'bash', '/wake/docker/setup.sh']);
-    },
-
-    async exec(containerName: string, command: string[]): Promise<void> {
+    async exec(
+      containerName: string,
+      command: string[],
+      options?: { interactive?: boolean },
+    ): Promise<void> {
+      const interactive = options?.interactive ?? false;
       await deps.run(
         command.length > 0
-          ? ['exec', '-i', containerName, ...command]
+          ? ['exec', interactive ? '-it' : '-i', containerName, ...command]
           : ['exec', '-it', containerName, 'bash'],
       );
+    },
+
+    async logs(containerName: string, tailLines: number): Promise<void> {
+      await deps.run(['logs', '--tail', String(tailLines), containerName]);
     },
   };
 }

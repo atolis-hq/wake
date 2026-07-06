@@ -116,7 +116,10 @@ function applyEvent(
     // block during 'implement' should retry implement (stage 'refined'),
     // not redo the read-only 'refine' stage and abandon the in-progress
     // branch/workspace.
-    const unblocked = current.wake.stage === 'blocked' && !isWakeAuthored && !isBotAuthored;
+    const unblocked =
+      (current.wake.stage === 'blocked' || current.wake.stage === 'failed') &&
+      !isWakeAuthored &&
+      !isBotAuthored;
     const blockedFromAction = current.context.blockedFromAction;
     const unblockStage = blockedFromAction === 'implement' ? 'refined' : 'queue';
 
@@ -170,7 +173,9 @@ function applyEvent(
         // Remembered so a later human reply can route an unblocked issue
         // back to the stage that lets the same action resume, instead of
         // always restarting from 'refine'.
-        ...(payload.nextStage === 'blocked' && payload.action !== undefined
+        ...((
+          payload.nextStage === 'blocked' || payload.nextStage === 'failed'
+        ) && payload.action !== undefined
           ? { blockedFromAction: payload.action }
           : {}),
       },

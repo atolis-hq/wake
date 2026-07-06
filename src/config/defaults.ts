@@ -17,10 +17,11 @@ export function createDefaultWakeConfig(wakeRoot = resolve(process.cwd(), '.wake
       containerName: 'wake-sandbox',
       containerMountPath: '/wake',
       containerHomeMountPath: '/home/wake',
+      extraMounts: [],
     },
     dev: {},
     scheduler: {
-      intervalMs: 30 * 60 * 1000,
+      intervalMs: 60 * 1000,
     },
     runner: {
       mode: 'fake',

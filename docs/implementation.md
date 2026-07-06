@@ -228,9 +228,10 @@ the host's only jobs are to run the container and provide a volume mount.
   disposable; the volume is not. Rebuild the image freely; nothing important is
   lost.
 - **Credentials persist inside the container.** Claude Code's login (the Pro-plan
-  session) and `gh` auth must be available in the container and survive restarts
-  — via mounted config dirs (`~/.claude`, `~/.config/gh`) or equivalent. This is
-  a small but real setup task — see the spikes.
+  session) must be available in the container and survive restarts via mounted
+  `~/.claude` or equivalent. Do not mount host `~/.config/gh` by default;
+  authenticate GitHub separately inside the sandbox if Wake needs it there.
+  This is a small but real setup task — see the spikes.
 - **Windows host specifics.** Prefer a **named Docker volume** (or a path inside
   the WSL2 filesystem) over a Windows bind mount for repos/workspaces — bind
   mounts from NTFS are dramatically slower for `node_modules`-heavy work and

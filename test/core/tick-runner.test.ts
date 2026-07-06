@@ -223,4 +223,124 @@ describe('tick runner', () => {
 
     expect(callCount).toBe(1);
   });
+
+  it('publishes working then completed status labels around a successful implement run', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const deliveredEvents: string[] = [];
+
+    await store.writeIssueState({
+      schemaVersion: 1,
+      workItemKey: 'atolis-hq/wake#14',
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 14,
+        title: 'Implement',
+        body: 'Body',
+        labels: ['wake:refined'],
+        assignees: [],
+        state: 'open',
+        url: 'https://example.test/issues/14',
+        createdAt: '2026-07-05T12:00:00.000Z',
+        updatedAt: '2026-07-05T12:00:00.000Z',
+      },
+      comments: [],
+      wake: {
+        stage: 'refined',
+        attempts: 0,
+        stageHistory: [],
+        recentEventIds: [],
+        syncedAt: '2026-07-05T12:00:00.000Z',
+      },
+      context: {},
+    });
+
+    const tickRunner = createTickRunner({
+      clock: { now: () => new Date('2026-07-05T12:00:00.000Z') },
+      config: createDefaultWakeConfig(root),
+      stateStore: store,
+      workSource: {
+        async pollEvents() {
+          return [];
+        },
+      },
+      outboundSink: {
+        async deliverIntent(input) {
+          if (input.event.sourceEventType === 'wake.status.label.requested') {
+            deliveredEvents.push(String(input.event.payload.statusLabel));
+          }
+          return [];
+        },
+      },
+      runner: {
+        async run() {
+          return { result: 'Implemented\nDONE', model: 'test-model', session_id: 'session-3' };
+        },
+      },
+      workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+    });
+
+    await tickRunner.runTick();
+
+    expect(deliveredEvents).toEqual(['wake:status.working', 'wake:status.completed']);
+  });
+
+  it('publishes a failed status label when a run ends in FAILED', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const deliveredEvents: string[] = [];
+
+    await store.writeIssueState({
+      schemaVersion: 1,
+      workItemKey: 'atolis-hq/wake#15',
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 15,
+        title: 'Refine',
+        body: 'Body',
+        labels: ['wake:queue'],
+        assignees: [],
+        state: 'open',
+        url: 'https://example.test/issues/15',
+        createdAt: '2026-07-05T12:00:00.000Z',
+        updatedAt: '2026-07-05T12:00:00.000Z',
+      },
+      comments: [],
+      wake: {
+        stage: 'queue',
+        attempts: 0,
+        stageHistory: [],
+        recentEventIds: [],
+        syncedAt: '2026-07-05T12:00:00.000Z',
+      },
+      context: {},
+    });
+
+    const tickRunner = createTickRunner({
+      clock: { now: () => new Date('2026-07-05T12:00:00.000Z') },
+      config: createDefaultWakeConfig(root),
+      stateStore: store,
+      workSource: {
+        async pollEvents() {
+          return [];
+        },
+      },
+      outboundSink: {
+        async deliverIntent(input) {
+          if (input.event.sourceEventType === 'wake.status.label.requested') {
+            deliveredEvents.push(String(input.event.payload.statusLabel));
+          }
+          return [];
+        },
+      },
+      runner: {
+        async run() {
+          return { result: 'Nope\nFAILED', model: 'test-model', session_id: 'session-4' };
+        },
+      },
+      workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+    });
+
+    await tickRunner.runTick();
+
+    expect(deliveredEvents).toEqual(['wake:status.working', 'wake:status.failed']);
+  });
 });

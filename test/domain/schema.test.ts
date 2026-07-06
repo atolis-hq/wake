@@ -71,6 +71,11 @@ describe('run and event schemas', () => {
       containerName: string;
       containerMountPath: string;
       containerHomeMountPath: string;
+      extraMounts: Array<{
+        source: string;
+        target: string;
+        readOnly?: boolean;
+      }>;
     }>();
   });
 
@@ -172,6 +177,13 @@ describe('run and event schemas', () => {
         containerName: 'wake-sandbox-1',
         containerMountPath: '/wake',
         containerHomeMountPath: '/home/wake',
+        extraMounts: [
+          {
+            source: '/host/.claude/skills',
+            target: '/home/wake/.claude/skills',
+            readOnly: true,
+          },
+        ],
       },
       scheduler: {
         intervalMs: 1000,
@@ -213,6 +225,13 @@ describe('run and event schemas', () => {
     expect(config.sources.github.repos).toEqual(['atolis-hq/wake']);
     expect(config.paths.promptsRoot).toBe('/tmp/wake/prompts');
     expect(config.sandbox.containerName).toBe('wake-sandbox-1');
+    expect(config.sandbox.extraMounts).toEqual([
+      {
+        source: '/host/.claude/skills',
+        target: '/home/wake/.claude/skills',
+        readOnly: true,
+      },
+    ]);
   });
 
   it('accepts optional local-development repo root configuration', () => {
@@ -226,6 +245,7 @@ describe('run and event schemas', () => {
         containerName: 'wake-sandbox',
         containerMountPath: '/wake',
         containerHomeMountPath: '/home/wake',
+        extraMounts: [],
       },
       dev: {
         repoRoot: '/tmp/wake-repo',

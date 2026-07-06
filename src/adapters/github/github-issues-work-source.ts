@@ -2,6 +2,8 @@ import { isWakeAuthoredComment, wakeCommentMarker } from '../../domain/schema.js
 import type { EventEnvelope, WakeConfig } from '../../domain/types.js';
 import { createEventEnvelope } from '../../lib/event-log.js';
 
+const wakeStatusLabelPrefix = 'wake:status.';
+
 type GitHubIssue = {
   number: number;
   title: string;
@@ -176,6 +178,12 @@ export function createGitHubIssuesWorkSource(deps: {
       issueNumber: number,
       body: string,
     ) => Promise<unknown>;
+    setLabels: (
+      owner: string,
+      repo: string,
+      issueNumber: number,
+      labels: string[],
+    ) => Promise<unknown>;
   };
   stateStore: ReturnType<typeof import('../fs/state-store.js').createStateStore>;
   config: WakeConfig;
@@ -256,6 +264,50 @@ export function createGitHubIssuesWorkSource(deps: {
         return [];
       }
 
+      const publishedAt = deps.now().toISOString();
+      if (input.event.sourceEventType === 'wake.status.label.requested') {
+        const projection = await deps.stateStore.readIssueState(repo, issueNumber);
+        const currentLabels = projection?.issue.labels ?? [];
+        const nextStatusLabel =
+          typeof input.event.payload.statusLabel === 'string'
+            ? input.event.payload.statusLabel
+            : undefined;
+
+        if (nextStatusLabel !== undefined) {
+          const nextLabels = [
+            ...currentLabels.filter((label) => !label.startsWith(wakeStatusLabelPrefix)),
+            nextStatusLabel,
+          ];
+          await deps.client.setLabels(owner, repoName, issueNumber, nextLabels);
+
+          return [
+            createEventEnvelope({
+              eventId: `${input.event.eventId}-labels-updated`,
+              workItemKey: input.event.workItemKey,
+              streamScope: 'work-item',
+              direction: 'outbound',
+              sourceSystem: 'github',
+              sourceEventType: 'ticket.labels.updated',
+              sourceRefs: {
+                repo,
+                issueNumber,
+              },
+              occurredAt: publishedAt,
+              ingestedAt: publishedAt,
+              trigger: 'context-only',
+              payload: {
+                intentEventId: input.event.eventId,
+                statusLabel: nextStatusLabel,
+                labels: nextLabels,
+                providerEventType: 'github.issue.labels.updated',
+              },
+            }),
+          ];
+        }
+
+        return [];
+      }
+
       await deps.client.createComment(
         owner,
         repoName,
@@ -263,7 +315,6 @@ export function createGitHubIssuesWorkSource(deps: {
         formatWakeComment(input.event.payload),
       );
 
-      const publishedAt = deps.now().toISOString();
       return [
         createEventEnvelope({
           eventId: `${input.event.eventId}-published`,

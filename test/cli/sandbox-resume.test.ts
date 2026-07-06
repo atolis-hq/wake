@@ -22,6 +22,7 @@ describe('sandbox resume command', () => {
       config: createDefaultWakeConfig('/wake-home'),
       docker,
       wakeRoot: '/wake-home',
+      containerHomeRoot: '/wake-home/container-home',
     });
 
     expect(calls).toEqual([
@@ -29,9 +30,21 @@ describe('sandbox resume command', () => {
         'exec',
         '-it',
         'wake-sandbox',
-        'bash',
-        '-lc',
-        'cd "/wake/workspaces/atolis-hq__wake/12" && claude --resume session-123',
+        'env',
+        'WAKE_SANDBOX_LABEL=sandbox.resume',
+        'WAKE_SANDBOX_CONTAINER_WAKE_ROOT=/wake',
+        'WAKE_SANDBOX_PROMPTS_ROOT=/wake/prompts',
+        'WAKE_SANDBOX_CONTAINER_HOME=/home/wake',
+        'WAKE_SANDBOX_HOST_WAKE_ROOT=/wake-home',
+        'WAKE_SANDBOX_HOST_CONTAINER_HOME=/wake-home/container-home',
+        'WAKE_SANDBOX_CONTAINER_MOUNT=/wake',
+        'WAKE_SANDBOX_CONTAINER_NAME=wake-sandbox',
+        'WAKE_SANDBOX_CWD=/wake/workspaces/atolis-hq__wake/12',
+        '/wake/docker/log-command.sh',
+        '--',
+        'claude',
+        '--resume',
+        'session-123',
       ],
     ]);
   });

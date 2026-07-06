@@ -12,6 +12,7 @@ const runtimeDirectoryNames = [
   'repos',
   'sources',
   'locks',
+  'logs',
 ] as const;
 
 const promptFileNames = [
@@ -21,7 +22,7 @@ const promptFileNames = [
   'implement.resume.md',
 ] as const;
 
-const dockerAssetNames = ['Dockerfile', 'setup.sh'] as const;
+const dockerAssetNames = ['Dockerfile', 'setup.sh', 'log-command.sh'] as const;
 
 export async function assertEmptyDirectory(targetDir: string): Promise<void> {
   try {
