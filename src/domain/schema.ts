@@ -10,7 +10,7 @@ export const wakeCommentMarker = '<!-- wake -->';
 
 const isoTimestampSchema = z.string().datetime({ offset: true });
 const stageSchema = z.enum(stageValues);
-const runnerSentinelSchema = z.enum(runnerSentinelValues);
+export const runnerSentinelSchema = z.enum(runnerSentinelValues);
 const agentActionSchema = z.enum(agentActionValues);
 
 const stageHistoryEntrySchema = z.object({
@@ -252,13 +252,14 @@ export function parseClaudePrintResult(input: unknown) {
 export function parseRunnerResultSentinel(
   result: string,
 ): 'DONE' | 'BLOCKED' | 'FAILED' | 'AWAITING_APPROVAL' {
-  const matches = Array.from(
-    result.matchAll(/\b(DONE|BLOCKED|FAILED|AWAITING_APPROVAL)\b/g),
-    (match) => match[1],
-  );
+  const lastLine = result
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .at(-1);
 
-  const lastMatch = matches.at(-1);
-  return lastMatch === undefined ? 'BLOCKED' : runnerSentinelSchema.parse(lastMatch);
+  const parsed = runnerSentinelSchema.safeParse(lastLine);
+  return parsed.success ? parsed.data : 'FAILED';
 }
 
 export function isWakeAuthoredComment(body: string): boolean {

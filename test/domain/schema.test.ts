@@ -130,17 +130,24 @@ describe('run and event schemas', () => {
     expect(event.streamScope).toBe('work-item');
   });
 
-  it('parses the last sentinel occurrence from runner result text', () => {
-    expect(parseRunnerResultSentinel('notes DONE more notes FAILED')).toBe('FAILED');
+  it('parses the sentinel from the last non-empty line only', () => {
+    expect(parseRunnerResultSentinel('notes DONE more notes\nFAILED')).toBe('FAILED');
+    expect(parseRunnerResultSentinel('notes DONE more notes\nDONE')).toBe('DONE');
   });
 
-  it('parses AWAITING_APPROVAL sentinel from runner result text', () => {
+  it('does not match a sentinel word embedded in prose on the last line', () => {
+    // Last line contains prose, not an exact sentinel — should fall back to FAILED
+    expect(parseRunnerResultSentinel('notes DONE more notes FAILED')).toBe('FAILED');
+    expect(parseRunnerResultSentinel('the previous run FAILED, so I re-ran the tests\nIf they had FAILED again it would be bad\nDONE. Finished.')).toBe('FAILED');
+  });
+
+  it('parses AWAITING_APPROVAL sentinel from last line', () => {
     expect(parseRunnerResultSentinel('Work complete, awaiting sign-off\nAWAITING_APPROVAL')).toBe('AWAITING_APPROVAL');
   });
 
-  it('defaults to BLOCKED when no sentinel keyword is present', () => {
-    expect(parseRunnerResultSentinel('Should I proceed with creating the worktree?')).toBe('BLOCKED');
-    expect(parseRunnerResultSentinel('')).toBe('BLOCKED');
+  it('defaults to FAILED when no sentinel keyword is present on the last line', () => {
+    expect(parseRunnerResultSentinel('Should I proceed with creating the worktree?')).toBe('FAILED');
+    expect(parseRunnerResultSentinel('')).toBe('FAILED');
   });
 
   it('detects the wake comment marker in shared-account comments', () => {
