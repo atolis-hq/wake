@@ -1,3 +1,4 @@
+import { agentActionValues } from '../domain/stages.js';
 import type { AgentAction, IssueStateRecord, Stage, WakeConfig } from '../domain/types.js';
 
 export interface ApprovalResolution {
@@ -83,8 +84,11 @@ export function createPolicyEngine() {
       }
 
       const context = issue.context as Record<string, unknown>;
-      const pendingAction: AgentAction =
-        context.pendingApprovalAction === 'refine' ? 'refine' : 'implement';
+      const pendingAction: AgentAction = agentActionValues.includes(
+        context.pendingApprovalAction as AgentAction,
+      )
+        ? (context.pendingApprovalAction as AgentAction)
+        : 'implement';
 
       const latestHumanComment = [...issue.comments]
         .reverse()
