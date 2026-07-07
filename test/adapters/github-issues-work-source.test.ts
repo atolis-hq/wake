@@ -458,4 +458,94 @@ describe('github issues work source', () => {
     expect(setLabels).not.toHaveBeenCalled();
     expect(deliveryEvents).toEqual([]);
   });
+
+  it('appends approval instructions for approval-request comments', async () => {
+    const createComment = vi.fn();
+    const store = createStateStore({ wakeRoot: root });
+    const config = createDefaultWakeConfig(root);
+    config.sources.github.enabled = true;
+    config.sources.github.repos = ['atolis-hq/wake'];
+
+    const workSource = createGitHubIssuesWorkSource({
+      client: {
+        listIssues: async () => [],
+        listComments: async () => [],
+        createComment,
+        setLabels: vi.fn(),
+      },
+      stateStore: store,
+      config,
+      now: () => new Date('2026-07-05T12:10:00.000Z'),
+    });
+
+    await workSource.deliverIntent({
+      event: createEventEnvelope({
+        eventId: 'intent-approval-1',
+        workItemKey: 'atolis-hq/wake#15',
+        streamScope: 'work-item',
+        direction: 'outbound',
+        sourceSystem: 'wake',
+        sourceEventType: 'wake.publish.intent.requested',
+        sourceRefs: { repo: 'atolis-hq/wake', issueNumber: 15 },
+        occurredAt: '2026-07-05T12:00:00.000Z',
+        ingestedAt: '2026-07-05T12:00:00.000Z',
+        trigger: 'context-only',
+        payload: {
+          kind: 'approval-request',
+          body: 'Work is ready for review.',
+          action: 'implement',
+          runId: 'run-15-1',
+          model: 'haiku',
+          cli: 'Claude',
+        },
+      }),
+    });
+
+    const [, , , postedBody] = createComment.mock.calls[0] as [string, string, number, string];
+    expect(postedBody).toContain('/approved');
+    expect(postedBody.split('/approved')).toHaveLength(2);
+    expect(postedBody).toContain('Work is ready for review.');
+  });
+
+  it('does not append approval instructions for non-approval-request comments', async () => {
+    const createComment = vi.fn();
+    const store = createStateStore({ wakeRoot: root });
+    const config = createDefaultWakeConfig(root);
+    config.sources.github.enabled = true;
+    config.sources.github.repos = ['atolis-hq/wake'];
+
+    const workSource = createGitHubIssuesWorkSource({
+      client: {
+        listIssues: async () => [],
+        listComments: async () => [],
+        createComment,
+        setLabels: vi.fn(),
+      },
+      stateStore: store,
+      config,
+      now: () => new Date('2026-07-05T12:10:00.000Z'),
+    });
+
+    await workSource.deliverIntent({
+      event: createEventEnvelope({
+        eventId: 'intent-status-1',
+        workItemKey: 'atolis-hq/wake#16',
+        streamScope: 'work-item',
+        direction: 'outbound',
+        sourceSystem: 'wake',
+        sourceEventType: 'wake.publish.intent.requested',
+        sourceRefs: { repo: 'atolis-hq/wake', issueNumber: 16 },
+        occurredAt: '2026-07-05T12:00:00.000Z',
+        ingestedAt: '2026-07-05T12:00:00.000Z',
+        trigger: 'context-only',
+        payload: {
+          kind: 'status-update',
+          body: 'In progress.',
+        },
+      }),
+    });
+
+    const [, , , postedBody] = createComment.mock.calls[0] as [string, string, number, string];
+    expect(postedBody).not.toContain('/approved');
+  });
 });

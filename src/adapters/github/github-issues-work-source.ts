@@ -126,6 +126,7 @@ function normalizeTicketCommentEvent(input: {
 
 function formatWakeComment(payload: Record<string, unknown>): string {
   const body = typeof payload.body === 'string' ? payload.body : '';
+  const kind = typeof payload.kind === 'string' ? payload.kind : undefined;
   const action = typeof payload.action === 'string' ? payload.action : undefined;
   const runId = typeof payload.runId === 'string' ? payload.runId : undefined;
   const sessionId = typeof payload.sessionId === 'string' ? payload.sessionId : undefined;
@@ -147,6 +148,10 @@ function formatWakeComment(payload: Record<string, unknown>): string {
 
   const header = `**Eddy** _(Wake${details.length > 0 ? ` · ${details.join(' · ')}` : ''})_`;
   const sections = [header, body];
+
+  if (kind === 'approval-request') {
+    sections.push('_To approve this work, reply with `/approved`. To request changes, reply with your feedback._');
+  }
 
   if (sessionId !== undefined) {
     const resumeCommand =
