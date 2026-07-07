@@ -258,7 +258,7 @@ export function parseRunnerResultSentinel(
   );
 
   const lastMatch = matches.at(-1);
-  return lastMatch === undefined ? 'FAILED' : runnerSentinelSchema.parse(lastMatch);
+  return lastMatch === undefined ? 'BLOCKED' : runnerSentinelSchema.parse(lastMatch);
 }
 
 export function isWakeAuthoredComment(body: string): boolean {
