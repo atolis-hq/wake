@@ -272,24 +272,37 @@ export function createGitHubIssuesWorkSource(deps: {
       }
 
       const publishedAt = deps.now().toISOString();
-      if (input.event.sourceEventType === 'wake.status.label.requested') {
+      if (input.event.sourceEventType === 'wake.labels.requested') {
         const projection = await deps.stateStore.readIssueState(repo, issueNumber);
         const currentLabels = projection?.issue.labels ?? [];
         const nextStatusLabel =
           typeof input.event.payload.statusLabel === 'string'
             ? input.event.payload.statusLabel
             : undefined;
+        const nextStageLabel =
+          typeof input.event.payload.stageLabel === 'string'
+            ? input.event.payload.stageLabel
+            : undefined;
 
-        if (nextStatusLabel !== undefined) {
-          const nextLabels = [
-            ...currentLabels.filter(
-              (label) =>
-                !label.startsWith(wakeStatusLabelPrefix) &&
-                !label.startsWith(wakeStageLabelPrefix),
-            ),
-            nextStatusLabel,
-            ...currentLabels.filter((label) => label.startsWith(wakeStageLabelPrefix)),
-          ];
+        const nextLabels = [
+          ...currentLabels.filter(
+            (label) =>
+              !label.startsWith(wakeStatusLabelPrefix) &&
+              !label.startsWith(wakeStageLabelPrefix),
+          ),
+          ...(nextStatusLabel !== undefined
+            ? [nextStatusLabel]
+            : currentLabels.filter((label) => label.startsWith(wakeStatusLabelPrefix))),
+          ...(nextStageLabel !== undefined
+            ? [nextStageLabel]
+            : currentLabels.filter((label) => label.startsWith(wakeStageLabelPrefix))),
+        ];
+
+        const labelsChanged =
+          nextLabels.length !== currentLabels.length ||
+          !nextLabels.every((label, index) => label === currentLabels[index]);
+
+        if (labelsChanged) {
           await deps.client.setLabels(owner, repoName, issueNumber, nextLabels);
 
           return [
@@ -309,67 +322,13 @@ export function createGitHubIssuesWorkSource(deps: {
               trigger: 'context-only',
               payload: {
                 intentEventId: input.event.eventId,
-                statusLabel: nextStatusLabel,
+                ...(nextStatusLabel !== undefined ? { statusLabel: nextStatusLabel } : {}),
+                ...(nextStageLabel !== undefined ? { stageLabel: nextStageLabel } : {}),
                 labels: nextLabels,
                 providerEventType: 'github.issue.labels.updated',
               },
             }),
           ];
-        }
-
-        return [];
-      }
-
-      if (input.event.sourceEventType === 'wake.stage.label.requested') {
-        const projection = await deps.stateStore.readIssueState(repo, issueNumber);
-        const currentLabels = projection?.issue.labels ?? [];
-        const nextStageLabel =
-          typeof input.event.payload.stageLabel === 'string'
-            ? input.event.payload.stageLabel
-            : undefined;
-
-        if (nextStageLabel !== undefined) {
-          const nextLabels = [
-            ...currentLabels.filter(
-              (label) =>
-                !label.startsWith(wakeStatusLabelPrefix) &&
-                !label.startsWith(wakeStageLabelPrefix),
-            ),
-            ...currentLabels.filter((label) => label.startsWith(wakeStatusLabelPrefix)),
-            nextStageLabel,
-          ];
-
-          const labelsChanged =
-            nextLabels.length !== currentLabels.length ||
-            !nextLabels.every((label, index) => label === currentLabels[index]);
-
-          if (labelsChanged) {
-            await deps.client.setLabels(owner, repoName, issueNumber, nextLabels);
-
-            return [
-              createEventEnvelope({
-                eventId: `${input.event.eventId}-labels-updated`,
-                workItemKey: input.event.workItemKey,
-                streamScope: 'work-item',
-                direction: 'outbound',
-                sourceSystem: 'github',
-                sourceEventType: 'ticket.labels.updated',
-                sourceRefs: {
-                  repo,
-                  issueNumber,
-                },
-                occurredAt: publishedAt,
-                ingestedAt: publishedAt,
-                trigger: 'context-only',
-                payload: {
-                  intentEventId: input.event.eventId,
-                  stageLabel: nextStageLabel,
-                  labels: nextLabels,
-                  providerEventType: 'github.issue.labels.updated',
-                },
-              }),
-            ];
-          }
         }
 
         return [];

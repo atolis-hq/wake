@@ -250,7 +250,7 @@ describe('github issues work source', () => {
     expect(postedBody).toContain('<!-- wake -->');
   });
 
-  it('replaces only wake status labels when syncing a status update', async () => {
+  it('applies both status and stage labels atomically in a single setLabels call', async () => {
     const createComment = vi.fn();
     const setLabels = vi.fn();
     const store = createStateStore({ wakeRoot: root });
@@ -266,7 +266,7 @@ describe('github issues work source', () => {
         number: 12,
         title: 'Example',
         body: 'Body',
-        labels: ['bug', 'wake:status.pending'],
+        labels: ['bug', 'wake:status.pending', 'wake:stage.queue'],
         assignees: [],
         state: 'open',
         url: 'https://github.com/atolis-hq/wake/issues/12',
@@ -295,32 +295,34 @@ describe('github issues work source', () => {
       now: () => new Date('2026-07-05T12:10:00.000Z'),
     });
 
-    await workSource.deliverIntent({
+    const deliveryEvents = await workSource.deliverIntent({
       event: createEventEnvelope({
-        eventId: 'intent-status-1',
+        eventId: 'intent-labels-1',
         workItemKey: 'atolis-hq/wake#12',
         streamScope: 'work-item',
         direction: 'outbound',
         sourceSystem: 'wake',
-        sourceEventType: 'wake.status.label.requested',
+        sourceEventType: 'wake.labels.requested',
         sourceRefs: { repo: 'atolis-hq/wake', issueNumber: 12 },
         occurredAt: '2026-07-05T12:00:00.000Z',
         ingestedAt: '2026-07-05T12:00:00.000Z',
         trigger: 'context-only',
-        payload: { statusLabel: 'wake:status.completed' },
+        payload: { statusLabel: 'wake:status.working', stageLabel: 'wake:stage.queue' },
       }),
     });
 
     expect(createComment).not.toHaveBeenCalled();
+    expect(setLabels).toHaveBeenCalledOnce();
     expect(setLabels).toHaveBeenCalledWith(
       'atolis-hq',
       'wake',
       12,
-      ['bug', 'wake:status.completed'],
+      ['bug', 'wake:status.working', 'wake:stage.queue'],
     );
+    expect(deliveryEvents[0]?.sourceEventType).toBe('ticket.labels.updated');
   });
 
-  it('applies stage labels and removes old stage labels', async () => {
+  it('replaces old status and stage labels when both change', async () => {
     const createComment = vi.fn();
     const setLabels = vi.fn();
     const store = createStateStore({ wakeRoot: root });
@@ -336,7 +338,7 @@ describe('github issues work source', () => {
         number: 13,
         title: 'Example',
         body: 'Body',
-        labels: ['bug', 'wake:status.pending', 'wake:stage.queue'],
+        labels: ['bug', 'wake:status.working', 'wake:stage.refined'],
         assignees: [],
         state: 'open',
         url: 'https://github.com/atolis-hq/wake/issues/13',
@@ -345,7 +347,7 @@ describe('github issues work source', () => {
       },
       comments: [],
       wake: {
-        stage: 'queue',
+        stage: 'refined',
         stageHistory: [],
         recentEventIds: [],
         syncedAt: '2026-07-05T12:10:00.000Z',
@@ -367,30 +369,31 @@ describe('github issues work source', () => {
 
     await workSource.deliverIntent({
       event: createEventEnvelope({
-        eventId: 'intent-stage-1',
+        eventId: 'intent-labels-2',
         workItemKey: 'atolis-hq/wake#13',
         streamScope: 'work-item',
         direction: 'outbound',
         sourceSystem: 'wake',
-        sourceEventType: 'wake.stage.label.requested',
+        sourceEventType: 'wake.labels.requested',
         sourceRefs: { repo: 'atolis-hq/wake', issueNumber: 13 },
         occurredAt: '2026-07-05T12:00:00.000Z',
         ingestedAt: '2026-07-05T12:00:00.000Z',
         trigger: 'context-only',
-        payload: { stageLabel: 'wake:stage.refined' },
+        payload: { statusLabel: 'wake:status.completed', stageLabel: 'wake:stage.done' },
       }),
     });
 
     expect(createComment).not.toHaveBeenCalled();
+    expect(setLabels).toHaveBeenCalledOnce();
     expect(setLabels).toHaveBeenCalledWith(
       'atolis-hq',
       'wake',
       13,
-      ['bug', 'wake:status.pending', 'wake:stage.refined'],
+      ['bug', 'wake:status.completed', 'wake:stage.done'],
     );
   });
 
-  it('does not emit stage label event when stage label unchanged', async () => {
+  it('does not call setLabels when no labels change', async () => {
     const createComment = vi.fn();
     const setLabels = vi.fn();
     const store = createStateStore({ wakeRoot: root });
@@ -437,17 +440,17 @@ describe('github issues work source', () => {
 
     const deliveryEvents = await workSource.deliverIntent({
       event: createEventEnvelope({
-        eventId: 'intent-stage-2',
+        eventId: 'intent-labels-3',
         workItemKey: 'atolis-hq/wake#14',
         streamScope: 'work-item',
         direction: 'outbound',
         sourceSystem: 'wake',
-        sourceEventType: 'wake.stage.label.requested',
+        sourceEventType: 'wake.labels.requested',
         sourceRefs: { repo: 'atolis-hq/wake', issueNumber: 14 },
         occurredAt: '2026-07-05T12:00:00.000Z',
         ingestedAt: '2026-07-05T12:00:00.000Z',
         trigger: 'context-only',
-        payload: { stageLabel: 'wake:stage.refined' },
+        payload: { statusLabel: 'wake:status.pending', stageLabel: 'wake:stage.refined' },
       }),
     });
 
