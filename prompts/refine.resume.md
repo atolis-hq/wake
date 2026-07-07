@@ -5,7 +5,7 @@ permissionMode: default
 allowedTools: Read, Glob, Grep, Bash(git fetch), Bash(git status)
 extraArgs:
 maxTurns: 40
-requiresApproval: true
+skipApproval: false
 ---
 Resuming the REFINE stage session for {{workItemKey}}.
 

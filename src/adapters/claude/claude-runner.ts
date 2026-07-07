@@ -176,11 +176,11 @@ export async function buildStagePrompt(input: {
   // drift out of sync.
   context.allowedToolsList = allowedTools.length > 0 ? allowedTools.join(', ') : '(none)';
 
-  const requiresApproval = template.frontmatter.requiresApproval === 'true';
-  context.additionalSentinels = requiresApproval ? ', AWAITING_APPROVAL' : '';
-  context.approvalInstructions = requiresApproval
-    ? '- AWAITING_APPROVAL: your work is complete but you are requesting human sign-off before proceeding. Post a comment asking the human to reply with `/approved` to confirm, or to comment with feedback if they want changes.'
-    : '';
+  const skipApproval = template.frontmatter.skipApproval === 'true';
+  context.additionalSentinels = skipApproval ? '' : ', AWAITING_APPROVAL';
+  context.approvalInstructions = skipApproval
+    ? ''
+    : '- AWAITING_APPROVAL: your work is complete but you are requesting human sign-off before proceeding. Post a comment asking the human to reply with `/approved` to confirm, or to comment with feedback if they want changes.';
 
   const permissionMode = template.frontmatter.permissionMode;
 
