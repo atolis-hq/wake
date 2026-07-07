@@ -38,7 +38,7 @@ export function createDefaultWakeConfig(wakeRoot = resolve(process.cwd(), '.wake
         },
         models: {
           default: 'haiku',
-          implement: 'sonnet-4.6',
+          implement: 'claude-sonnet-4-6',
         },
       },
     },
