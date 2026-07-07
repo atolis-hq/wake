@@ -138,6 +138,11 @@ describe('run and event schemas', () => {
     expect(parseRunnerResultSentinel('Work complete, awaiting sign-off\nAWAITING_APPROVAL')).toBe('AWAITING_APPROVAL');
   });
 
+  it('defaults to BLOCKED when no sentinel keyword is present', () => {
+    expect(parseRunnerResultSentinel('Should I proceed with creating the worktree?')).toBe('BLOCKED');
+    expect(parseRunnerResultSentinel('')).toBe('BLOCKED');
+  });
+
   it('detects the wake comment marker in shared-account comments', () => {
     expect(isWakeAuthoredComment('Question <!-- wake -->')).toBe(true);
     expect(isWakeAuthoredComment('Human answer')).toBe(false);
