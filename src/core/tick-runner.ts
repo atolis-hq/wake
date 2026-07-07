@@ -133,19 +133,20 @@ export function createTickRunner(deps: {
     return `wake:stage.${stage}`;
   }
 
-  function createStatusLabelEvent(input: {
+  function createLabelsEvent(input: {
     projection: import('../domain/types.js').IssueStateRecord;
     runId: string;
     statusLabel: string;
+    stageLabel: string;
     occurredAt: string;
   }): EventEnvelope {
     return createEventEnvelope({
-      eventId: `${input.runId}-${input.statusLabel.replace(/[^a-z0-9]+/gi, '-')}`,
+      eventId: `${input.runId}-labels-${input.statusLabel.replace(/[^a-z0-9]+/gi, '-')}-${input.stageLabel.replace(/[^a-z0-9]+/gi, '-')}`,
       workItemKey: input.projection.workItemKey,
       streamScope: 'work-item',
       direction: 'outbound',
       sourceSystem: 'wake',
-      sourceEventType: 'wake.status.label.requested',
+      sourceEventType: 'wake.labels.requested',
       sourceRefs: {
         repo: input.projection.issue.repo,
         issueNumber: input.projection.issue.number,
@@ -156,32 +157,6 @@ export function createTickRunner(deps: {
       trigger: 'context-only',
       payload: {
         statusLabel: input.statusLabel,
-      },
-    });
-  }
-
-  function createStageLabelEvent(input: {
-    projection: import('../domain/types.js').IssueStateRecord;
-    runId: string;
-    stageLabel: string;
-    occurredAt: string;
-  }): EventEnvelope {
-    return createEventEnvelope({
-      eventId: `${input.runId}-${input.stageLabel.replace(/[^a-z0-9]+/gi, '-')}`,
-      workItemKey: input.projection.workItemKey,
-      streamScope: 'work-item',
-      direction: 'outbound',
-      sourceSystem: 'wake',
-      sourceEventType: 'wake.stage.label.requested',
-      sourceRefs: {
-        repo: input.projection.issue.repo,
-        issueNumber: input.projection.issue.number,
-        runId: input.runId,
-      },
-      occurredAt: input.occurredAt,
-      ingestedAt: input.occurredAt,
-      trigger: 'context-only',
-      payload: {
         stageLabel: input.stageLabel,
       },
     });
@@ -274,18 +249,10 @@ export function createTickRunner(deps: {
         );
 
         await deliverOutboundEvent(
-          createStatusLabelEvent({
+          createLabelsEvent({
             projection: candidate,
             runId,
             statusLabel: 'wake:status.working',
-            occurredAt: nowIso,
-          }),
-        );
-
-        await deliverOutboundEvent(
-          createStageLabelEvent({
-            projection: candidate,
-            runId,
             stageLabel: stageLabelForStage(candidate.wake.stage),
             occurredAt: nowIso,
           }),
@@ -368,18 +335,10 @@ export function createTickRunner(deps: {
         await projectionUpdater.rebuildFromEvents([runCompletedEvent]);
 
         await deliverOutboundEvent(
-          createStatusLabelEvent({
+          createLabelsEvent({
             projection: candidate,
             runId,
             statusLabel: statusLabelForStage(nextStage),
-            occurredAt: finishedAt,
-          }),
-        );
-
-        await deliverOutboundEvent(
-          createStageLabelEvent({
-            projection: candidate,
-            runId,
             stageLabel: stageLabelForStage(nextStage),
             occurredAt: finishedAt,
           }),

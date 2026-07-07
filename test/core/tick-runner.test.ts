@@ -280,10 +280,8 @@ describe('tick runner', () => {
       },
       outboundSink: {
         async deliverIntent(input) {
-          if (input.event.sourceEventType === 'wake.status.label.requested') {
+          if (input.event.sourceEventType === 'wake.labels.requested') {
             deliveredEvents.push(String(input.event.payload.statusLabel));
-          }
-          if (input.event.sourceEventType === 'wake.stage.label.requested') {
             deliveredEvents.push(String(input.event.payload.stageLabel));
           }
           return [];
@@ -350,10 +348,8 @@ describe('tick runner', () => {
       },
       outboundSink: {
         async deliverIntent(input) {
-          if (input.event.sourceEventType === 'wake.status.label.requested') {
+          if (input.event.sourceEventType === 'wake.labels.requested') {
             deliveredEvents.push(String(input.event.payload.statusLabel));
-          }
-          if (input.event.sourceEventType === 'wake.stage.label.requested') {
             deliveredEvents.push(String(input.event.payload.stageLabel));
           }
           return [];
