@@ -1,3 +1,0 @@
-the new `wake.status.label.requested` event (emitted by tick-runner for working/completed/failed status labels) only carries a `statusLabel` payload field. the github work source branches on `sourceEventType` to handle it and preserve existing labels, but `fake-ticketing-system.ts`'s `deliverIntent` doesn't - it unconditionally reads `payload.kind` and `payload.body`, which are undefined for this event type.
-
-this doesn't crash, it just writes a delivery event with `kind: undefined, body: undefined` into the event log whenever github is disabled (fake/dev mode). low priority since it only affects local/demo runs, but worth branching `fake-ticketing-system.ts` the same way the github adapter does if we want fake mode to stay a faithful stand-in.

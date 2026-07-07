@@ -1,6 +1,6 @@
 # Handoff: Wake harness review — brittleness, patterns, simplification
 
-Date: 2026-07-06. Scope: full read of `src/` (core, adapters, cli, domain, lib), prompts, and `docs/todo/`. Findings already tracked in `docs/todo/` are not repeated except where they turn out to be symptoms of a deeper pattern.
+Date: 2026-07-06. Scope: full read of `src/` (core, adapters, cli, domain, lib), prompts, and the (now-deleted) `docs/todo/` directory. Findings already tracked in `docs/todo/` were not repeated except where they turned out to be symptoms of a deeper pattern; the `docs/todo/` items themselves were subsequently filed as GitHub issues #74–#83 and the directory removed (see the "Suggested sequencing" section below for the mapping).
 
 ## TL;DR — the three highest-impact items
 
@@ -23,7 +23,7 @@ Wake writes to GitHub, then polls GitHub, so every outbound action re-enters as 
 | Label writes bumping `updated_at` → re-trigger | `lastHandledIssueUpdatedAt` cursor | policy engine + `wake.run.completed` payload |
 | Re-synced labels regressing stage to `queue` | "labels only set stage at projection creation" | `projection-updater.ts` (the infinite-refine-loop comment) |
 
-Each of these was discovered as a production incident (the code comments say so). The pattern will recur for every new outbound surface (PR comments are already on the roadmap in `docs/todo/pr-activity-source.md`).
+Each of these was discovered as a production incident (the code comments say so). The pattern will recur for every new outbound surface (PR comments are already on the roadmap — [Issue #82](https://github.com/atolis-hq/wake/issues/82)).
 
 **Recommendation:** make echo suppression a single first-class concept at the ingestion boundary. When Wake performs an outbound side effect, record what it expects to see back (comment ID, label set, approximate `updated_at` bump). At `pollEvents`, drop or mark inbound events that match a recorded expectation. Then `needsWakeAction` can shrink to "is there an unhandled *human* event", and the projection-updater's special cases disappear. This is the single change that most reduces future incident surface.
 
@@ -71,7 +71,7 @@ In `runTick`, `prepareWorkspace` / `prepareReadOnlyClone` / `runner.run` are cal
 
 - the run record permanently `running` (nothing ever reconciles stale run records),
 - GitHub labels stuck at `wake:status.working`,
-- the issue re-eligible next tick → infinite retry with a fresh workspace each time (`docs/todo/workspace-prepare-error-handling.md` is one instance of this general hole).
+- the issue re-eligible next tick → infinite retry with a fresh workspace each time ([Issue #77](https://github.com/atolis-hq/wake/issues/77), the branch-hardcoding half of the former `docs/todo/workspace-prepare-error-handling.md`, is one instance of this general hole).
 
 **Fix:** wrap the prepare+run section; on throw, write the run record as `failed`, emit `wake.run.completed` with sentinel `FAILED`, and let the existing lifecycle take it to the `failed` stage (which a human unblocks by replying). That single catch closes the whole class, including the todo item.
 
@@ -83,7 +83,7 @@ The tick is meant to be a pure function of durable state, but a process kill bet
 
 ### 2.4 Label vocabulary mismatch means "GitHub wins for stage" is not true → [Issue #57](https://github.com/atolis-hq/wake/issues/57)
 
-`stageFromLabels` (`projection-updater.ts:4`) recognizes `wake:blocked` / `wake:refined` / etc., but everything Wake writes uses the `wake:stage.*` prefix (`tick-runner.ts:137`, work source). So the initial-stage-from-labels path can never match a label Wake itself wrote, and a human editing `wake:stage.*` labels has no effect at any point. CLAUDE.md's "reconcile labels → local projection at the start of every tick; GitHub wins for stage" is aspirational, not implemented (`docs/todo/label-driven-stage-sync.md` acknowledges the deliberate disable, but not the prefix mismatch). Either unify the vocabulary and implement the reconcile (with the §1.1 echo fix, this becomes safe), or update CLAUDE.md/docs so operators don't assume label edits work.
+`stageFromLabels` (`projection-updater.ts:4`) recognizes `wake:blocked` / `wake:refined` / etc., but everything Wake writes uses the `wake:stage.*` prefix (`tick-runner.ts:137`, work source). So the initial-stage-from-labels path can never match a label Wake itself wrote, and a human editing `wake:stage.*` labels has no effect at any point. CLAUDE.md's "reconcile labels → local projection at the start of every tick; GitHub wins for stage" is aspirational, not implemented ([Issue #78](https://github.com/atolis-hq/wake/issues/78) acknowledges the deliberate disable, but not the prefix mismatch). Either unify the vocabulary and implement the reconcile (with the §1.1 echo fix, this becomes safe), or update CLAUDE.md/docs so operators don't assume label edits work.
 
 ### 2.5 Whole-log scan per tick → [Issue #58](https://github.com/atolis-hq/wake/issues/58)
 
@@ -95,7 +95,7 @@ Issue title/body/comments are interpolated raw into the agent prompt, and the im
 
 ### 2.7 Comment-triggered re-runs race with in-flight ordering → [Issue #59](https://github.com/atolis-hq/wake/issues/59)
 
-`pollEvents` fetches issues then comments per issue with no lookback bound in use (`docs/todo/github-poll-lookbackms-unused.md`) and no pagination beyond one page of size `commentPageSize`; a busy issue with more comments than the page size silently misses old comments (dedupe is by ID against the projection, so *missed* ones never arrive). Low priority, but the failure is silent.
+`pollEvents` fetches issues then comments per issue with no lookback bound in use (see [Issue #59](https://github.com/atolis-hq/wake/issues/59)) and no pagination beyond one page of size `commentPageSize`; a busy issue with more comments than the page size silently misses old comments (dedupe is by ID against the projection, so *missed* ones never arrive). Low priority, but the failure is silent.
 
 ---
 
@@ -123,3 +123,23 @@ Issue title/body/comments are interpolated raw into the agent prompt, and the im
 6. §1.2 move unblock policy into the policy engine (mechanical once §1.1 lands). → [Issue #55](https://github.com/atolis-hq/wake/issues/55)
 
 Additional findings not in the original sequencing: crash-safety/stale-lock reclaim ([#56](https://github.com/atolis-hq/wake/issues/56)), label-vocabulary/GitHub-wins-for-stage reconciliation ([#57](https://github.com/atolis-hq/wake/issues/57)), event-log scan performance ([#58](https://github.com/atolis-hq/wake/issues/58)), comment-polling gaps ([#59](https://github.com/atolis-hq/wake/issues/59)), dead-code cleanup ([#60](https://github.com/atolis-hq/wake/issues/60)), and prompt-injection hardening ([#63](https://github.com/atolis-hq/wake/issues/63), tracked jointly with the design doc's §4.3).
+
+## 6. `docs/todo/` items — filed as issues, directory removed
+
+The pre-existing `docs/todo/` directory (findings from earlier code reviews, predating this handoff) has been reviewed, filed as GitHub issues carrying the original wording, and deleted:
+
+- `fake-ticketing-status-label-payload.md` → [Issue #75](https://github.com/atolis-hq/wake/issues/75)
+- `github-label-endpoint-deprecation.md` → [Issue #74](https://github.com/atolis-hq/wake/issues/74)
+- `label-driven-stage-sync.md` → [Issue #78](https://github.com/atolis-hq/wake/issues/78)
+- `npm-packaging.md` → [Issue #83](https://github.com/atolis-hq/wake/issues/83)
+- `polling-exponential-backoff.md` → [Issue #81](https://github.com/atolis-hq/wake/issues/81)
+- `pr-activity-source.md` → [Issue #82](https://github.com/atolis-hq/wake/issues/82)
+- `pr-filtering-wrong-layer.md` → [Issue #76](https://github.com/atolis-hq/wake/issues/76)
+- `session-resume-policy.md` → [Issue #79](https://github.com/atolis-hq/wake/issues/79)
+- `workspace-cleanup.md` → [Issue #80](https://github.com/atolis-hq/wake/issues/80)
+- `workspace-prepare-error-handling.md` → split: the failure-containment half is already covered by [Issue #51](https://github.com/atolis-hq/wake/issues/51); the remaining "stop hardcoding the `main` branch" half is [Issue #77](https://github.com/atolis-hq/wake/issues/77).
+
+Two items were superseded rather than re-filed, since this review and the companion design doc already cover them in full:
+
+- `codex-and-cursor.md` — superseded by [Issue #66](https://github.com/atolis-hq/wake/issues/66) (runner registry/tiers) and [Issue #68](https://github.com/atolis-hq/wake/issues/68) (Codex/Cursor adapters).
+- `github-poll-lookbackms-unused.md` — superseded by [Issue #59](https://github.com/atolis-hq/wake/issues/59) (comment-polling gaps, which already covers the unused `lookbackMs` config).
