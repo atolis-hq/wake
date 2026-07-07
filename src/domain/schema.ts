@@ -165,13 +165,13 @@ export const wakeConfigSchema = z.object({
       target: z.string().min(1),
       readOnly: z.boolean().optional(),
     })).default([]),
-  }).default({}),
+  }).default({ image: 'wake-sandbox', containerName: 'wake-sandbox', containerMountPath: '/wake', containerHomeMountPath: '/home/wake', extraMounts: [] }),
   dev: z.object({
     repoRoot: z.string().optional(),
   }).default({}),
   scheduler: z.object({
     intervalMs: z.number().int().positive().default(60 * 1000),
-  }).default({}),
+  }).default({ intervalMs: 60 * 1000 }),
   runner: z.object({
     mode: z.enum(['fake', 'claude']).default('fake'),
     claude: z.object({
@@ -184,14 +184,14 @@ export const wakeConfigSchema = z.object({
       timeoutMs: z.number().int().positive().default(30 * 60 * 1000),
       remoteControl: z.object({
         enabled: z.boolean().default(false),
-      }).default({}),
+      }).default({ enabled: false }),
       models: z.object({
         default: z.string().optional(),
         refine: z.string().optional(),
         implement: z.string().optional(),
       }).default({ default: 'haiku', implement: 'claude-sonnet-4-6' }),
-    }).default({}),
-  }).default({}),
+    }).default({ command: 'claude', model: 'haiku', smokeModel: 'haiku', sessionName: 'Eddy', remoteControlName: 'Eddy', smokePrompt: defaultSmokePrompt, timeoutMs: 30 * 60 * 1000, remoteControl: { enabled: false }, models: { default: 'haiku', implement: 'claude-sonnet-4-6' } }),
+  }).default({ mode: 'fake', claude: { command: 'claude', model: 'haiku', smokeModel: 'haiku', sessionName: 'Eddy', remoteControlName: 'Eddy', smokePrompt: defaultSmokePrompt, timeoutMs: 30 * 60 * 1000, remoteControl: { enabled: false }, models: { default: 'haiku', implement: 'claude-sonnet-4-6' } } }),
   sources: z.object({
     github: z.object({
       enabled: z.boolean().default(false),
@@ -200,18 +200,18 @@ export const wakeConfigSchema = z.object({
         maxIssuesPerRepo: z.number().int().positive().default(25),
         commentPageSize: z.number().int().positive().default(25),
         lookbackMs: z.number().int().nonnegative().default(60_000),
-      }).default({}),
+      }).default({ maxIssuesPerRepo: 25, commentPageSize: 25, lookbackMs: 60_000 }),
       policy: z.object({
         requiredLabels: z.array(z.string()).default([]),
         ignoredLabels: z.array(z.string()).default([]),
         requiredAssignees: z.array(z.string()).default([]),
-      }).default({}),
+      }).default({ requiredLabels: [], ignoredLabels: [], requiredAssignees: [] }),
       publication: z.object({
         postStatusComments: z.boolean().default(true),
         activeLabel: z.string().optional(),
-      }).default({}),
-    }).default({}),
-  }).default({}),
+      }).default({ postStatusComments: true }),
+    }).default({ enabled: false, repos: [], polling: { maxIssuesPerRepo: 25, commentPageSize: 25, lookbackMs: 60_000 }, policy: { requiredLabels: [], ignoredLabels: [], requiredAssignees: [] }, publication: { postStatusComments: true } }),
+  }).default({ github: { enabled: false, repos: [], polling: { maxIssuesPerRepo: 25, commentPageSize: 25, lookbackMs: 60_000 }, policy: { requiredLabels: [], ignoredLabels: [], requiredAssignees: [] }, publication: { postStatusComments: true } } }),
 });
 
 export const claudePrintResultSchema = z.object({
