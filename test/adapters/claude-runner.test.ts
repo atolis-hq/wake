@@ -280,6 +280,7 @@ describe('claude runner command building', () => {
           containerHomeMountPath: '/home/wake',
           extraMounts: [],
         },
+        dev: {},
         scheduler: {
           intervalMs: 1000,
         },
@@ -296,6 +297,7 @@ describe('claude runner command building', () => {
             remoteControl: {
               enabled: false,
             },
+            models: { default: 'haiku', implement: 'claude-sonnet-4-6' },
           },
         },
         sources: {
@@ -496,6 +498,7 @@ describe('claude runner command building', () => {
             containerHomeMountPath: '/home/wake',
             extraMounts: [],
           },
+          dev: {},
           scheduler: {
             intervalMs: 1000,
           },
@@ -512,6 +515,7 @@ describe('claude runner command building', () => {
               remoteControl: {
                 enabled: false,
               },
+              models: { default: 'haiku', implement: 'claude-sonnet-4-6' },
             },
           },
           sources: {
@@ -578,6 +582,7 @@ describe('model resolution', () => {
         containerHomeMountPath: '/home/wake',
         extraMounts: [],
       },
+      dev: {},
       scheduler: {
         intervalMs: 1000,
       },
@@ -594,6 +599,7 @@ describe('model resolution', () => {
           remoteControl: {
             enabled: false,
           },
+          models: { default: 'haiku', implement: 'claude-sonnet-4-6' },
           ...overrides,
         },
       },
