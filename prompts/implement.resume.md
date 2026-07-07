@@ -5,7 +5,7 @@ permissionMode: acceptEdits
 allowedTools: Bash(git *), Bash(gh *), Bash(npm *), Edit, Write, Read, Glob, Grep
 extraArgs:
 maxTurns: 150
-requiresApproval: true
+skipApproval: false
 ---
 Resuming the IMPLEMENT stage session for {{workItemKey}}.
 
