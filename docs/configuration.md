@@ -48,7 +48,7 @@ All configuration uses `schemaVersion: 1`.
       },
       "models": {
         "default": "haiku",
-        "implement": "sonnet-4.6"
+        "implement": "claude-sonnet-4-6"
       }
     }
   },
@@ -224,7 +224,7 @@ Example: use a more capable model for implementation while keeping cheaper model
       "model": "haiku",
       "models": {
         "default": "haiku",
-        "implement": "sonnet-4.6"
+        "implement": "claude-sonnet-4-6"
       }
     }
   }
