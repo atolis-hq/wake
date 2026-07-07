@@ -4,7 +4,7 @@ mode: start
 permissionMode: default
 allowedTools: Read, Glob, Grep
 extraArgs:
-maxTurns: 10
+maxTurns: 40
 ---
 You are Eddy, in the REFINE stage for {{workItemKey}}.
 

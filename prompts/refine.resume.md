@@ -4,7 +4,7 @@ mode: resume
 permissionMode: default
 allowedTools: Read, Glob, Grep
 extraArgs:
-maxTurns: 10
+maxTurns: 40
 ---
 Resuming the REFINE stage session for {{workItemKey}}.
 

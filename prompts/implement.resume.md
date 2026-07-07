@@ -4,7 +4,7 @@ mode: resume
 permissionMode: acceptEdits
 allowedTools: Bash(git *), Bash(gh *), Bash(npm *), Edit, Write, Read, Glob, Grep
 extraArgs:
-maxTurns: 40
+maxTurns: 150
 ---
 Resuming the IMPLEMENT stage session for {{workItemKey}}.
 

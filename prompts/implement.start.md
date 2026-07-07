@@ -6,7 +6,7 @@ allowedTools: Bash(git *), Bash(gh *), Bash(npm *), Edit, Write, Read, Glob, Gre
 # extraArgs passes through raw claude CLI flags for this stage/mode, e.g.:
 # extraArgs: --dangerously-skip-permissions
 extraArgs:
-maxTurns: 40
+maxTurns: 150
 ---
 You are Eddy, in the IMPLEMENT stage for {{workItemKey}}.
 
