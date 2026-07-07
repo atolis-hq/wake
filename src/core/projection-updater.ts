@@ -155,6 +155,7 @@ function applyEvent(
   if (event.sourceEventType === 'wake.run.completed') {
     const payload = event.payload as {
       action?: string;
+      sentinel?: string;
       nextStage?: IssueStateRecord['wake']['stage'];
       runId?: string;
       sessionId?: string;
@@ -174,6 +175,9 @@ function applyEvent(
         ...(payload.handledIssueUpdatedAt === undefined
           ? {}
           : { lastHandledIssueUpdatedAt: payload.handledIssueUpdatedAt }),
+        ...(payload.sentinel === undefined
+          ? {}
+          : { lastRunSentinel: payload.sentinel }),
         // Remembered so a later human reply can route an unblocked issue
         // back to the stage that lets the same action resume, instead of
         // always restarting from 'refine'.

@@ -1,4 +1,4 @@
-import { agentActionValues } from '../domain/stages.js';
+import { agentActionValues, failedRunnerSentinel } from '../domain/stages.js';
 import type { AgentAction, IssueStateRecord, Stage, WakeConfig } from '../domain/types.js';
 
 export interface ApprovalResolution {
@@ -52,6 +52,10 @@ export function createPolicyEngine() {
         typeof context.lastHandledIssueUpdatedAt === 'string'
           ? context.lastHandledIssueUpdatedAt
           : undefined;
+      const lastRunSentinel =
+        typeof context.lastRunSentinel === 'string'
+          ? context.lastRunSentinel
+          : undefined;
 
       if (issue.wake.lastRunId === undefined) {
         return true;
@@ -63,6 +67,10 @@ export function createPolicyEngine() {
         issue.latestComment.id !== handledCommentId
       ) {
         return true;
+      }
+
+      if (lastRunSentinel === failedRunnerSentinel) {
+        return false;
       }
 
       return issue.issue.updatedAt !== handledIssueUpdatedAt;

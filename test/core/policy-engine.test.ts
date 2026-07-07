@@ -71,6 +71,70 @@ function buildIssue(overrides: {
   });
 }
 
+function buildNeedsWakeActionIssue(overrides: {
+  updatedAt?: string;
+  lastHandledIssueUpdatedAt?: string;
+  latestCommentId?: string;
+  lastHandledCommentId?: string;
+  latestCommentWakeAuthored?: boolean;
+  lastRunSentinel?: string;
+}) {
+  return parseIssueStateRecord({
+    schemaVersion: 1,
+    issue: {
+      repo: 'atolis-hq/wake',
+      number: 61,
+      title: 'Example',
+      body: 'Body',
+      labels: ['wake:refined'],
+      assignees: [],
+      state: 'open',
+      url: 'https://example.test/issues/61',
+      createdAt: '2026-07-06T00:00:00.000Z',
+      updatedAt: overrides.updatedAt ?? '2026-07-07T00:00:00.000Z',
+    },
+    comments: overrides.latestCommentId === undefined
+      ? []
+      : [
+          {
+            id: overrides.latestCommentId,
+            body: 'Comment',
+            author: { login: 'owner' },
+            createdAt: '2026-07-06T01:00:00.000Z',
+            updatedAt: '2026-07-06T01:00:00.000Z',
+            isWakeAuthored: overrides.latestCommentWakeAuthored ?? false,
+          },
+        ],
+    latestComment: overrides.latestCommentId === undefined
+      ? undefined
+      : {
+          id: overrides.latestCommentId,
+          body: 'Comment',
+          author: { login: 'owner' },
+          createdAt: '2026-07-06T01:00:00.000Z',
+          updatedAt: '2026-07-06T01:00:00.000Z',
+          isWakeAuthored: overrides.latestCommentWakeAuthored ?? false,
+        },
+    wake: {
+      stage: 'refined',
+      lastRunId: 'run-61-1',
+      syncedAt: '2026-07-07T00:00:00.000Z',
+      stageHistory: [],
+    },
+    context: {
+      ...(overrides.lastHandledIssueUpdatedAt === undefined
+        ? {}
+        : { lastHandledIssueUpdatedAt: overrides.lastHandledIssueUpdatedAt }),
+      ...(overrides.lastHandledCommentId === undefined
+        ? {}
+        : { lastHandledCommentId: overrides.lastHandledCommentId }),
+      ...(overrides.lastRunSentinel === undefined
+        ? {}
+        : { lastRunSentinel: overrides.lastRunSentinel }),
+    },
+  });
+}
+
 describe('policy engine: requiredAssignees', () => {
   it('is ineligible when both requiredLabels and requiredAssignees are empty', () => {
     const policy = createPolicyEngine();
@@ -223,5 +287,31 @@ describe('policy engine: resolveApprovalTransition', () => {
     const issue = buildAwaitingApprovalIssue({ latestCommentBody: '/approved' });
     const resolution = policy.resolveApprovalTransition(issue);
     expect(resolution?.pendingAction).toBe('implement');
+  });
+});
+
+describe('policy engine: needsWakeAction', () => {
+  it('ignores updatedAt-only changes while waiting for a human reply after a failed run', () => {
+    const policy = createPolicyEngine();
+    const issue = buildNeedsWakeActionIssue({
+      updatedAt: '2026-07-07T00:05:00.000Z',
+      lastHandledIssueUpdatedAt: '2026-07-07T00:00:00.000Z',
+      lastRunSentinel: 'FAILED',
+    });
+
+    expect(policy.needsWakeAction(issue)).toBe(false);
+  });
+
+  it('still wakes up when a new human comment arrives after a failed run', () => {
+    const policy = createPolicyEngine();
+    const issue = buildNeedsWakeActionIssue({
+      updatedAt: '2026-07-07T00:05:00.000Z',
+      lastHandledIssueUpdatedAt: '2026-07-07T00:00:00.000Z',
+      latestCommentId: 'c-2',
+      lastHandledCommentId: 'c-1',
+      lastRunSentinel: 'FAILED',
+    });
+
+    expect(policy.needsWakeAction(issue)).toBe(true);
   });
 });
