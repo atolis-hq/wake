@@ -503,7 +503,7 @@ describe('github issues work source', () => {
 
     const [, , , postedBody] = createComment.mock.calls[0] as [string, string, number, string];
     expect(postedBody).toContain('/approved');
-    expect(postedBody).not.toContain('/approved', postedBody.indexOf('/approved') + 1);
+    expect(postedBody.split('/approved')).toHaveLength(2);
     expect(postedBody).toContain('Work is ready for review.');
   });
 
