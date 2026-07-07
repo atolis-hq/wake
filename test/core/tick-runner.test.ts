@@ -463,9 +463,10 @@ describe('tick runner', () => {
     expect(runnerCallCount).toBe(1);
   });
 
-  it('writes a failed run record and publishes failed labels when workspace prep throws', async () => {
+  it('writes a failed run record, publishes failed labels, and posts a failure comment when workspace prep throws', async () => {
     const store = createStateStore({ wakeRoot: root });
     const deliveredEvents: string[] = [];
+    const publishedIntents: Array<{ kind: string; body: string }> = [];
 
     await store.writeIssueState({
       schemaVersion: 1,
@@ -506,6 +507,12 @@ describe('tick runner', () => {
             deliveredEvents.push(String(input.event.payload.statusLabel));
             deliveredEvents.push(String(input.event.payload.stageLabel));
           }
+          if (input.event.sourceEventType === 'wake.publish.intent.requested') {
+            publishedIntents.push({
+              kind: String(input.event.payload.kind),
+              body: String(input.event.payload.body),
+            });
+          }
           return [];
         },
       },
@@ -532,6 +539,9 @@ describe('tick runner', () => {
       'wake:status.failed',
       'wake:stage.failed',
     ]);
+    expect(publishedIntents).toHaveLength(1);
+    expect(publishedIntents[0]!.kind).toBe('failure');
+    expect(publishedIntents[0]!.body).toContain('git network failure');
 
     const events = await readFile(join(root, 'events', '2026-07-05.jsonl'), 'utf8');
     const completedEvent = events.split('\n').filter(Boolean).map((l: string) => JSON.parse(l))
@@ -544,9 +554,10 @@ describe('tick runner', () => {
     expect(runRecord.status).toBe('failed');
   });
 
-  it('publishes a failed status label when a run ends in FAILED', async () => {
+  it('publishes a failed status label and failure comment when a run ends in FAILED', async () => {
     const store = createStateStore({ wakeRoot: root });
     const deliveredEvents: string[] = [];
+    const publishedIntents: Array<{ kind: string; body: string }> = [];
 
     await store.writeIssueState({
       schemaVersion: 1,
@@ -591,6 +602,12 @@ describe('tick runner', () => {
             deliveredEvents.push(String(input.event.payload.statusLabel));
             deliveredEvents.push(String(input.event.payload.stageLabel));
           }
+          if (input.event.sourceEventType === 'wake.publish.intent.requested') {
+            publishedIntents.push({
+              kind: String(input.event.payload.kind),
+              body: String(input.event.payload.body),
+            });
+          }
           return [];
         },
       },
@@ -610,5 +627,8 @@ describe('tick runner', () => {
       'wake:status.failed',
       'wake:stage.failed',
     ]);
+    expect(publishedIntents).toHaveLength(1);
+    expect(publishedIntents[0]!.kind).toBe('failure');
+    expect(publishedIntents[0]!.body).toContain('Nope');
   });
 });
