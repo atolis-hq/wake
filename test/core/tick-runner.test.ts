@@ -517,6 +517,7 @@ describe('tick runner', () => {
       workspaceManager: {
         async prepareWorkspace() { throw new Error('git network failure'); },
         async prepareReadOnlyClone() { throw new Error('git network failure'); },
+        async cleanupWorkspace() {},
       },
     });
 
