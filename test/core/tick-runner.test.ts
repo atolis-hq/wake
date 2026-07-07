@@ -385,7 +385,7 @@ describe('tick runner', () => {
     const result = await tickRunner.runTick();
 
     expect(result.status).toBe('processed');
-    expect((result as { nextStage?: string }).nextStage).toBe('done');
+    expect((result as { results?: Array<{ nextStage?: string }> }).results?.[0]?.nextStage).toBe('done');
     expect(runnerCallCount).toBe(0);
     expect(deliveredEvents).toContain('wake:stage.done');
   });
@@ -589,8 +589,8 @@ describe('tick runner', () => {
     const result = await tickRunner.runTick();
 
     expect(result.status).toBe('processed');
-    expect((result as { sentinel?: string }).sentinel).toBe('FAILED');
-    expect((result as { nextStage?: string | null }).nextStage).toBeNull();
+    expect((result as { results?: Array<{ sentinel?: string }> }).results?.[0]?.sentinel).toBe('FAILED');
+    expect((result as { results?: Array<{ nextStage?: string | null }> }).results?.[0]?.nextStage).toBeNull();
     expect(deliveredEvents).toEqual([
       'wake:status.working',
       'wake:stage.refined',

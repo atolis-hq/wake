@@ -209,14 +209,18 @@ async function runTick(args: string[]) {
   const outcome = await runtime.tickRunner.runTick();
   console.log(JSON.stringify(outcome, null, 2));
 
-  if (outcome.status !== 'processed' || outcome.sentinel !== 'FAILED') {
+  if (outcome.status !== 'processed') {
     return;
   }
 
-  const runRecord = await runtime.stateStore.readRunRecord(outcome.runId);
-  const details = formatTickFailureDetails(runRecord);
-  if (details !== null) {
-    console.error(details);
+  for (const result of outcome.results) {
+    if (result.sentinel === 'FAILED') {
+      const runRecord = await runtime.stateStore.readRunRecord(result.runId);
+      const details = formatTickFailureDetails(runRecord);
+      if (details !== null) {
+        console.error(details);
+      }
+    }
   }
 }
 
@@ -298,7 +302,7 @@ async function runLocks(args: string[]) {
   const stateStore = createStateStore({ wakeRoot });
   const outcome = await runLocksCommand({
     args: commandArgsBeforeTerminator(args),
-    tickLockFile: stateStore.paths.tickLockFile,
+    locksDir: stateStore.paths.locksDir,
   });
   console.log(JSON.stringify(outcome, null, 2));
 }

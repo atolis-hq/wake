@@ -15,7 +15,9 @@ export function createWakePaths(wakeRoot: string) {
     configFile: join(wakeRoot, 'config.json'),
     ledgerFile: join(wakeRoot, 'ledger.json'),
     pauseFile: join(wakeRoot, 'PAUSE'),
-    tickLockFile: join(wakeRoot, 'locks', 'tick.lock'),
+    locksDir: join(wakeRoot, 'locks'),
+    issueLockFile: (repo: string, issueNumber: number) =>
+      join(wakeRoot, 'locks', `${sanitizeRepo(repo)}__issue-${issueNumber}.lock`),
     issueFixtureFile: join(wakeRoot, 'fixtures', 'issues.json'),
     workspaceRoot: join(wakeRoot, 'workspaces'),
     reposRoot: join(wakeRoot, 'repos'),

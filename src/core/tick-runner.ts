@@ -203,337 +203,352 @@ export function createTickRunner(deps: {
     await projectionUpdater.rebuildFromEvents(deliveryEvents);
   }
 
-  return {
-    async runTick() {
-      const lock = await acquireFileLock(deps.stateStore.paths.tickLockFile);
-      if (!lock.acquired) {
-        return { status: 'locked' as const };
+  type ProcessedResult = {
+    runId: string;
+    sentinel: 'DONE' | 'BLOCKED' | 'FAILED' | 'AWAITING_APPROVAL';
+    nextStage: import('../domain/types.js').Stage | null;
+  };
+
+  async function processCandidate(
+    candidate: IssueStateRecord,
+    nowIso: string,
+  ): Promise<ProcessedResult | null> {
+    let action: AgentAction;
+
+    if (candidate.wake.stage === 'awaiting-approval') {
+      const approvalResolution = policy.resolveApprovalTransition(candidate);
+      if (approvalResolution === null) {
+        return null;
       }
 
-      try {
-        const nowIso = deps.clock.now().toISOString();
-        const inboundEvents = await deps.workSource.pollEvents();
-        if (inboundEvents.length > 0) {
-          for (const event of inboundEvents) {
-            await deps.stateStore.appendEventEnvelope(event);
-          }
-          await projectionUpdater.rebuildFromEvents(inboundEvents);
-        }
+      if (approvalResolution.approved) {
+        const approvalId = `approval-${candidate.issue.number}-${deps.clock.now().getTime()}`;
+        const approvedAt = deps.clock.now().toISOString();
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        const nextStage = lifecycle.nextStageFromSentinel(approvalResolution.pendingAction, 'DONE')!;
 
-        const projections = await deps.stateStore.listIssueStates();
-        const candidate = projections.find((issue) => {
-          if (!policy.isEligible(issue, deps.config)) {
-            return false;
-          }
-
-          if (issue.wake.stage === 'awaiting-approval') {
-            return policy.needsWakeAction(issue);
-          }
-
-          const nextAction = policy.chooseAction(issue.wake.stage);
-          return nextAction !== null && policy.needsWakeAction(issue);
+        const approvalCompletedEvent = createEventEnvelope({
+          eventId: `${approvalId}-completed`,
+          workItemKey: candidate.workItemKey,
+          streamScope: 'work-item',
+          direction: 'internal',
+          sourceSystem: 'wake',
+          sourceEventType: 'wake.run.completed',
+          sourceRefs: {
+            repo: candidate.issue.repo,
+            issueNumber: candidate.issue.number,
+            runId: approvalId,
+          },
+          occurredAt: approvedAt,
+          ingestedAt: approvedAt,
+          trigger: 'immediate',
+          payload: {
+            action: approvalResolution.pendingAction,
+            sentinel: 'DONE',
+            nextStage,
+            runId: approvalId,
+            reason: 'human:approved',
+            handledCommentId: latestHumanCommentId(candidate),
+            handledIssueUpdatedAt: candidate.issue.updatedAt,
+          },
         });
-
-        if (candidate === undefined) {
-          return { status: 'idle' as const };
-        }
-
-        let action: AgentAction;
-
-        if (candidate.wake.stage === 'awaiting-approval') {
-          const approvalResolution = policy.resolveApprovalTransition(candidate);
-          if (approvalResolution === null) {
-            return { status: 'idle' as const };
-          }
-
-          if (approvalResolution.approved) {
-            const approvalId = `approval-${candidate.issue.number}-${deps.clock.now().getTime()}`;
-            const approvedAt = deps.clock.now().toISOString();
-            // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-            const nextStage = lifecycle.nextStageFromSentinel(approvalResolution.pendingAction, 'DONE')!;
-
-            const approvalCompletedEvent = createEventEnvelope({
-              eventId: `${approvalId}-completed`,
-              workItemKey: candidate.workItemKey,
-              streamScope: 'work-item',
-              direction: 'internal',
-              sourceSystem: 'wake',
-              sourceEventType: 'wake.run.completed',
-              sourceRefs: {
-                repo: candidate.issue.repo,
-                issueNumber: candidate.issue.number,
-                runId: approvalId,
-              },
-              occurredAt: approvedAt,
-              ingestedAt: approvedAt,
-              trigger: 'immediate',
-              payload: {
-                action: approvalResolution.pendingAction,
-                sentinel: 'DONE',
-                nextStage,
-                runId: approvalId,
-                reason: 'human:approved',
-                handledCommentId: latestHumanCommentId(candidate),
-                handledIssueUpdatedAt: candidate.issue.updatedAt,
-              },
-            });
-            await deps.stateStore.appendEventEnvelope(approvalCompletedEvent);
-            await projectionUpdater.rebuildFromEvents([approvalCompletedEvent]);
-
-            await deliverOutboundEvent(
-              createLabelsEvent({
-                projection: candidate,
-                runId: approvalId,
-                statusLabel: statusLabelForStage(nextStage),
-                stageLabel: stageLabelForStage(nextStage),
-                occurredAt: approvedAt,
-              }),
-            );
-
-            return {
-              status: 'processed' as const,
-              runId: approvalId,
-              sentinel: 'DONE' as const,
-              nextStage,
-            };
-          }
-
-          action = approvalResolution.pendingAction;
-        } else {
-          const nextAction = policy.chooseAction(candidate.wake.stage);
-          if (nextAction === null) {
-            return { status: 'idle' as const };
-          }
-          action = nextAction;
-        }
-
-        const runId = `run-${candidate.issue.number}-${deps.clock.now().getTime()}`;
-        const runningRecord = {
-          schemaVersion: 1 as const,
-          runId,
-          repo: candidate.issue.repo,
-          issueNumber: candidate.issue.number,
-          action,
-          status: 'running' as const,
-          startedAt: nowIso,
-        };
-
-        await deps.stateStore.writeRunRecord(runningRecord);
-        await deps.stateStore.appendEventEnvelope(
-          createEventEnvelope({
-            eventId: `${runId}-claimed`,
-            workItemKey: candidate.workItemKey,
-            streamScope: 'work-item',
-            direction: 'internal',
-            sourceSystem: 'wake',
-            sourceEventType: 'wake.run.claimed',
-            sourceRefs: {
-              repo: candidate.issue.repo,
-              issueNumber: candidate.issue.number,
-              runId,
-            },
-            occurredAt: nowIso,
-            ingestedAt: nowIso,
-            trigger: 'immediate',
-            payload: {
-              action,
-              priorStage: candidate.wake.stage,
-            },
-          }),
-        );
+        await deps.stateStore.appendEventEnvelope(approvalCompletedEvent);
+        await projectionUpdater.rebuildFromEvents([approvalCompletedEvent]);
 
         await deliverOutboundEvent(
           createLabelsEvent({
             projection: candidate,
-            runId,
-            statusLabel: 'wake:status.working',
-            stageLabel: stageLabelForStage(candidate.wake.stage),
-            occurredAt: nowIso,
+            runId: approvalId,
+            statusLabel: statusLabelForStage(nextStage),
+            stageLabel: stageLabelForStage(nextStage),
+            occurredAt: approvedAt,
           }),
         );
 
-        try {
-          // 'implement' gets its own branch/workspace; 'refine' only reads
-          // the issue and, at most, the canonical clone read-only - it never
-          // pays per-issue workspace-preparation cost.
-          const { workspacePath } =
-            action === 'implement'
-              ? await deps.workspaceManager.prepareWorkspace({
-                  repo: candidate.issue.repo,
-                  issueNumber: candidate.issue.number,
-                })
-              : await deps.workspaceManager.prepareReadOnlyClone({
-                  repo: candidate.issue.repo,
-                });
-
-          const recentEvents = await deps.stateStore.listEventEnvelopesForWorkItem(
-            candidate.workItemKey,
-            6,
-          );
-          const runnerResult = await deps.runner.run({
-            action,
-            projection: candidate,
-            recentEvents,
-            config: deps.config,
-            runId,
-            ...(workspacePath === undefined ? {} : { workspacePath }),
-          });
-          const sentinel = parseRunnerResultSentinel(runnerResult.result);
-          const nextStage = lifecycle.nextStageFromSentinel(action, sentinel);
-          const finishedAt = deps.clock.now().toISOString();
-
-          await deps.stateStore.writeRunRecord({
-            ...runningRecord,
-            status:
-              sentinel === 'DONE'
-                ? 'completed'
-                : sentinel === 'BLOCKED'
-                  ? 'blocked'
-                  : sentinel === 'AWAITING_APPROVAL'
-                    ? 'awaiting-approval'
-                    : 'failed',
-            finishedAt,
-            sessionId: runnerResult.session_id,
-            sentinel,
-            summary: runnerResult.result,
-            metadata: runnerResult.metadata,
-          });
-
-          const runCompletedEvent = createEventEnvelope({
-            eventId: `${runId}-completed`,
-            workItemKey: candidate.workItemKey,
-            streamScope: 'work-item',
-            direction: 'internal',
-            sourceSystem: 'wake',
-            sourceEventType: 'wake.run.completed',
-            sourceRefs: {
-              repo: candidate.issue.repo,
-              issueNumber: candidate.issue.number,
-              runId,
-            },
-            occurredAt: finishedAt,
-            ingestedAt: finishedAt,
-            trigger: 'immediate',
-            payload: {
-              action,
-              sentinel,
-              ...(nextStage !== null ? { nextStage } : {}),
-              runId,
-              sessionId: runnerResult.session_id,
-              workspacePath,
-              reason: `runner:${sentinel.toLowerCase()}`,
-              handledCommentId: latestHumanCommentId(candidate),
-              handledIssueUpdatedAt: candidate.issue.updatedAt,
-            },
-          });
-          await deps.stateStore.appendEventEnvelope(runCompletedEvent);
-          await projectionUpdater.rebuildFromEvents([runCompletedEvent]);
-
-          await deliverOutboundEvent(
-            createLabelsEvent({
-              projection: candidate,
-              runId,
-              statusLabel: nextStage !== null ? statusLabelForStage(nextStage) : 'wake:status.failed',
-              stageLabel: stageLabelForStage(nextStage ?? candidate.wake.stage),
-              occurredAt: finishedAt,
-            }),
-          );
-
-          const publishIntent = createPublishIntentEvent({
-            projection: candidate,
-            runId,
-            action,
-            runnerResult,
-            sentinel,
-            occurredAt: finishedAt,
-            startedAt: nowIso,
-            ...(workspacePath === undefined ? {} : { workspacePath }),
-          });
-
-          await deliverOutboundEvent(publishIntent);
-
-          return {
-            status: 'processed' as const,
-            runId,
-            sentinel,
-            nextStage,
-          };
-        } catch (err) {
-          const finishedAt = deps.clock.now().toISOString();
-          const sentinel = 'FAILED' as const;
-
-          await deps.stateStore.writeRunRecord({
-            ...runningRecord,
-            status: 'failed',
-            finishedAt,
-            sentinel,
-            summary: err instanceof Error ? err.message : String(err),
-          });
-
-          const runCompletedEvent = createEventEnvelope({
-            eventId: `${runId}-completed`,
-            workItemKey: candidate.workItemKey,
-            streamScope: 'work-item',
-            direction: 'internal',
-            sourceSystem: 'wake',
-            sourceEventType: 'wake.run.completed',
-            sourceRefs: {
-              repo: candidate.issue.repo,
-              issueNumber: candidate.issue.number,
-              runId,
-            },
-            occurredAt: finishedAt,
-            ingestedAt: finishedAt,
-            trigger: 'immediate',
-            payload: {
-              action,
-              sentinel,
-              runId,
-              reason: 'runner:infrastructure-error',
-              handledCommentId: latestHumanCommentId(candidate),
-              handledIssueUpdatedAt: candidate.issue.updatedAt,
-            },
-          });
-          await deps.stateStore.appendEventEnvelope(runCompletedEvent);
-          await projectionUpdater.rebuildFromEvents([runCompletedEvent]);
-
-          await deliverOutboundEvent(
-            createLabelsEvent({
-              projection: candidate,
-              runId,
-              statusLabel: 'wake:status.failed',
-              stageLabel: stageLabelForStage(candidate.wake.stage),
-              occurredAt: finishedAt,
-            }),
-          );
-
-          const errorMessage = err instanceof Error ? err.message : String(err);
-          const infraFailureResult: import('./contracts.js').AgentRunResult = {
-            result: errorMessage,
-            model: 'unknown',
-            cli: 'unknown',
-          };
-          const failurePublishIntent = createPublishIntentEvent({
-            projection: candidate,
-            runId,
-            action,
-            runnerResult: infraFailureResult,
-            sentinel,
-            occurredAt: finishedAt,
-            startedAt: nowIso,
-          });
-          await deliverOutboundEvent(failurePublishIntent);
-
-          return {
-            status: 'processed' as const,
-            runId,
-            sentinel,
-            nextStage: null,
-          };
-        }
-      } finally {
-        await lock.release();
+        return { runId: approvalId, sentinel: 'DONE', nextStage };
       }
+
+      action = approvalResolution.pendingAction;
+    } else {
+      const nextAction = policy.chooseAction(candidate.wake.stage);
+      if (nextAction === null) {
+        return null;
+      }
+      action = nextAction;
+    }
+
+    const runId = `run-${candidate.issue.number}-${deps.clock.now().getTime()}`;
+    const runningRecord = {
+      schemaVersion: 1 as const,
+      runId,
+      repo: candidate.issue.repo,
+      issueNumber: candidate.issue.number,
+      action,
+      status: 'running' as const,
+      startedAt: nowIso,
+    };
+
+    await deps.stateStore.writeRunRecord(runningRecord);
+    await deps.stateStore.appendEventEnvelope(
+      createEventEnvelope({
+        eventId: `${runId}-claimed`,
+        workItemKey: candidate.workItemKey,
+        streamScope: 'work-item',
+        direction: 'internal',
+        sourceSystem: 'wake',
+        sourceEventType: 'wake.run.claimed',
+        sourceRefs: {
+          repo: candidate.issue.repo,
+          issueNumber: candidate.issue.number,
+          runId,
+        },
+        occurredAt: nowIso,
+        ingestedAt: nowIso,
+        trigger: 'immediate',
+        payload: {
+          action,
+          priorStage: candidate.wake.stage,
+        },
+      }),
+    );
+
+    await deliverOutboundEvent(
+      createLabelsEvent({
+        projection: candidate,
+        runId,
+        statusLabel: 'wake:status.working',
+        stageLabel: stageLabelForStage(candidate.wake.stage),
+        occurredAt: nowIso,
+      }),
+    );
+
+    try {
+      // 'implement' gets its own branch/workspace; 'refine' only reads
+      // the issue and, at most, the canonical clone read-only - it never
+      // pays per-issue workspace-preparation cost.
+      const { workspacePath } =
+        action === 'implement'
+          ? await deps.workspaceManager.prepareWorkspace({
+              repo: candidate.issue.repo,
+              issueNumber: candidate.issue.number,
+            })
+          : await deps.workspaceManager.prepareReadOnlyClone({
+              repo: candidate.issue.repo,
+            });
+
+      const recentEvents = await deps.stateStore.listEventEnvelopesForWorkItem(
+        candidate.workItemKey,
+        6,
+      );
+      const runnerResult = await deps.runner.run({
+        action,
+        projection: candidate,
+        recentEvents,
+        config: deps.config,
+        runId,
+        ...(workspacePath === undefined ? {} : { workspacePath }),
+      });
+      const sentinel = parseRunnerResultSentinel(runnerResult.result);
+      const nextStage = lifecycle.nextStageFromSentinel(action, sentinel);
+      const finishedAt = deps.clock.now().toISOString();
+
+      await deps.stateStore.writeRunRecord({
+        ...runningRecord,
+        status:
+          sentinel === 'DONE'
+            ? 'completed'
+            : sentinel === 'BLOCKED'
+              ? 'blocked'
+              : sentinel === 'AWAITING_APPROVAL'
+                ? 'awaiting-approval'
+                : 'failed',
+        finishedAt,
+        sessionId: runnerResult.session_id,
+        sentinel,
+        summary: runnerResult.result,
+        metadata: runnerResult.metadata,
+      });
+
+      const runCompletedEvent = createEventEnvelope({
+        eventId: `${runId}-completed`,
+        workItemKey: candidate.workItemKey,
+        streamScope: 'work-item',
+        direction: 'internal',
+        sourceSystem: 'wake',
+        sourceEventType: 'wake.run.completed',
+        sourceRefs: {
+          repo: candidate.issue.repo,
+          issueNumber: candidate.issue.number,
+          runId,
+        },
+        occurredAt: finishedAt,
+        ingestedAt: finishedAt,
+        trigger: 'immediate',
+        payload: {
+          action,
+          sentinel,
+          ...(nextStage !== null ? { nextStage } : {}),
+          runId,
+          sessionId: runnerResult.session_id,
+          workspacePath,
+          reason: `runner:${sentinel.toLowerCase()}`,
+          handledCommentId: latestHumanCommentId(candidate),
+          handledIssueUpdatedAt: candidate.issue.updatedAt,
+        },
+      });
+      await deps.stateStore.appendEventEnvelope(runCompletedEvent);
+      await projectionUpdater.rebuildFromEvents([runCompletedEvent]);
+
+      await deliverOutboundEvent(
+        createLabelsEvent({
+          projection: candidate,
+          runId,
+          statusLabel: nextStage !== null ? statusLabelForStage(nextStage) : 'wake:status.failed',
+          stageLabel: stageLabelForStage(nextStage ?? candidate.wake.stage),
+          occurredAt: finishedAt,
+        }),
+      );
+
+      const publishIntent = createPublishIntentEvent({
+        projection: candidate,
+        runId,
+        action,
+        runnerResult,
+        sentinel,
+        occurredAt: finishedAt,
+        startedAt: nowIso,
+        ...(workspacePath === undefined ? {} : { workspacePath }),
+      });
+
+      await deliverOutboundEvent(publishIntent);
+
+      return { runId, sentinel, nextStage };
+    } catch (err) {
+      const finishedAt = deps.clock.now().toISOString();
+      const sentinel = 'FAILED' as const;
+
+      await deps.stateStore.writeRunRecord({
+        ...runningRecord,
+        status: 'failed',
+        finishedAt,
+        sentinel,
+        summary: err instanceof Error ? err.message : String(err),
+      });
+
+      const runCompletedEvent = createEventEnvelope({
+        eventId: `${runId}-completed`,
+        workItemKey: candidate.workItemKey,
+        streamScope: 'work-item',
+        direction: 'internal',
+        sourceSystem: 'wake',
+        sourceEventType: 'wake.run.completed',
+        sourceRefs: {
+          repo: candidate.issue.repo,
+          issueNumber: candidate.issue.number,
+          runId,
+        },
+        occurredAt: finishedAt,
+        ingestedAt: finishedAt,
+        trigger: 'immediate',
+        payload: {
+          action,
+          sentinel,
+          runId,
+          reason: 'runner:infrastructure-error',
+          handledCommentId: latestHumanCommentId(candidate),
+          handledIssueUpdatedAt: candidate.issue.updatedAt,
+        },
+      });
+      await deps.stateStore.appendEventEnvelope(runCompletedEvent);
+      await projectionUpdater.rebuildFromEvents([runCompletedEvent]);
+
+      await deliverOutboundEvent(
+        createLabelsEvent({
+          projection: candidate,
+          runId,
+          statusLabel: 'wake:status.failed',
+          stageLabel: stageLabelForStage(candidate.wake.stage),
+          occurredAt: finishedAt,
+        }),
+      );
+
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      const infraFailureResult: import('./contracts.js').AgentRunResult = {
+        result: errorMessage,
+        model: 'unknown',
+        cli: 'unknown',
+      };
+      const failurePublishIntent = createPublishIntentEvent({
+        projection: candidate,
+        runId,
+        action,
+        runnerResult: infraFailureResult,
+        sentinel,
+        occurredAt: finishedAt,
+        startedAt: nowIso,
+      });
+      await deliverOutboundEvent(failurePublishIntent);
+
+      return { runId, sentinel, nextStage: null };
+    }
+  }
+
+  return {
+    async runTick() {
+      const nowIso = deps.clock.now().toISOString();
+      const inboundEvents = await deps.workSource.pollEvents();
+      if (inboundEvents.length > 0) {
+        for (const event of inboundEvents) {
+          await deps.stateStore.appendEventEnvelope(event);
+        }
+        await projectionUpdater.rebuildFromEvents(inboundEvents);
+      }
+
+      const projections = await deps.stateStore.listIssueStates();
+      const candidates = projections.filter((issue) => {
+        if (!policy.isEligible(issue, deps.config)) {
+          return false;
+        }
+
+        if (issue.wake.stage === 'awaiting-approval') {
+          return policy.needsWakeAction(issue);
+        }
+
+        const nextAction = policy.chooseAction(issue.wake.stage);
+        return nextAction !== null && policy.needsWakeAction(issue);
+      });
+
+      if (candidates.length === 0) {
+        return { status: 'idle' as const };
+      }
+
+      const results: ProcessedResult[] = [];
+
+      for (const candidate of candidates) {
+        const lockPath = deps.stateStore.paths.issueLockFile(
+          candidate.issue.repo,
+          candidate.issue.number,
+        );
+        const lock = await acquireFileLock(lockPath);
+        if (!lock.acquired) {
+          continue;
+        }
+
+        try {
+          const result = await processCandidate(candidate, nowIso);
+          if (result !== null) {
+            results.push(result);
+          }
+        } finally {
+          await lock.release();
+        }
+      }
+
+      if (results.length === 0) {
+        return { status: 'idle' as const };
+      }
+
+      return { status: 'processed' as const, results };
     },
   };
 }

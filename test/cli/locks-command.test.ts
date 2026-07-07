@@ -16,30 +16,44 @@ async function fileExists(path: string): Promise<boolean> {
 }
 
 describe('locks command', () => {
-  it('clears an existing stale lock file', async () => {
+  it('clears existing stale lock files', async () => {
     const wakeRoot = await mkdtemp(join(tmpdir(), 'wake-locks-'));
-    const tickLockFile = join(wakeRoot, 'locks', 'tick.lock');
-    await mkdir(join(wakeRoot, 'locks'), { recursive: true });
-    await writeFile(tickLockFile, '', 'utf8');
+    const locksDir = join(wakeRoot, 'locks');
+    await mkdir(locksDir, { recursive: true });
+    const lockFile1 = join(locksDir, 'atolis-hq__wake__issue-1.lock');
+    const lockFile2 = join(locksDir, 'atolis-hq__wake__issue-2.lock');
+    await writeFile(lockFile1, '', 'utf8');
+    await writeFile(lockFile2, '', 'utf8');
 
-    const result = await runLocksCommand({ args: ['clear'], tickLockFile });
+    const result = await runLocksCommand({ args: ['clear'], locksDir });
 
     expect(result).toEqual({ status: 'cleared' });
-    expect(await fileExists(tickLockFile)).toBe(false);
+    expect(await fileExists(lockFile1)).toBe(false);
+    expect(await fileExists(lockFile2)).toBe(false);
   });
 
-  it('reports not-locked when there is nothing to clear', async () => {
+  it('reports not-locked when the locks directory does not exist', async () => {
     const wakeRoot = await mkdtemp(join(tmpdir(), 'wake-locks-'));
-    const tickLockFile = join(wakeRoot, 'locks', 'tick.lock');
+    const locksDir = join(wakeRoot, 'locks');
 
-    const result = await runLocksCommand({ args: ['clear'], tickLockFile });
+    const result = await runLocksCommand({ args: ['clear'], locksDir });
+
+    expect(result).toEqual({ status: 'not-locked' });
+  });
+
+  it('reports not-locked when there are no lock files', async () => {
+    const wakeRoot = await mkdtemp(join(tmpdir(), 'wake-locks-'));
+    const locksDir = join(wakeRoot, 'locks');
+    await mkdir(locksDir, { recursive: true });
+
+    const result = await runLocksCommand({ args: ['clear'], locksDir });
 
     expect(result).toEqual({ status: 'not-locked' });
   });
 
   it('rejects unknown subcommands', async () => {
     await expect(
-      runLocksCommand({ args: ['bogus'], tickLockFile: 'unused' }),
+      runLocksCommand({ args: ['bogus'], locksDir: 'unused' }),
     ).rejects.toThrow(/Unknown locks subcommand/);
   });
 });

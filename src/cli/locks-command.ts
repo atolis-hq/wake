@@ -1,17 +1,9 @@
-import { access, rm } from 'node:fs/promises';
-
-async function fileExists(path: string): Promise<boolean> {
-  try {
-    await access(path);
-    return true;
-  } catch {
-    return false;
-  }
-}
+import { readdir, rm } from 'node:fs/promises';
+import { join } from 'node:path';
 
 export async function runLocksCommand(input: {
   args: string[];
-  tickLockFile: string;
+  locksDir: string;
 }): Promise<{ status: 'cleared' | 'not-locked' }> {
   const subcommand = input.args[0];
   if (subcommand !== 'clear') {
@@ -20,8 +12,17 @@ export async function runLocksCommand(input: {
     );
   }
 
-  const existed = await fileExists(input.tickLockFile);
-  await rm(input.tickLockFile, { force: true });
+  let lockFiles: string[];
+  try {
+    lockFiles = (await readdir(input.locksDir)).filter((f) => f.endsWith('.lock'));
+  } catch {
+    return { status: 'not-locked' };
+  }
 
-  return { status: existed ? 'cleared' : 'not-locked' };
+  if (lockFiles.length === 0) {
+    return { status: 'not-locked' };
+  }
+
+  await Promise.all(lockFiles.map((f) => rm(join(input.locksDir, f), { force: true })));
+  return { status: 'cleared' };
 }
