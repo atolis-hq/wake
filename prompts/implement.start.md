@@ -7,7 +7,7 @@ allowedTools: Bash(git *), Bash(gh *), Bash(npm *), Edit, Write, Read, Glob, Gre
 # extraArgs: --dangerously-skip-permissions
 extraArgs:
 maxTurns: 150
-requiresApproval: false
+requiresApproval: true
 ---
 You are Eddy, in the IMPLEMENT stage for {{workItemKey}}.
 
