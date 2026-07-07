@@ -147,69 +147,71 @@ export const ledgerSchema = z.object({
   pausedUntil: isoTimestampSchema.optional(),
 });
 
+export const defaultSmokePrompt = 'This is Eddy, reply with "hi Eddy only"';
+
 export const wakeConfigSchema = z.object({
-  schemaVersion: z.literal(1),
+  schemaVersion: z.literal(1).default(1),
   paths: z.object({
     wakeRoot: z.string(),
     promptsRoot: z.string().optional(),
   }),
   sandbox: z.object({
-    image: z.string().min(1),
-    containerName: z.string().min(1),
-    containerMountPath: z.string().min(1),
-    containerHomeMountPath: z.string().min(1),
+    image: z.string().min(1).default('wake-sandbox'),
+    containerName: z.string().min(1).default('wake-sandbox'),
+    containerMountPath: z.string().min(1).default('/wake'),
+    containerHomeMountPath: z.string().min(1).default('/home/wake'),
     extraMounts: z.array(z.object({
       source: z.string().min(1),
       target: z.string().min(1),
       readOnly: z.boolean().optional(),
     })).default([]),
-  }),
+  }).default({}),
   dev: z.object({
     repoRoot: z.string().optional(),
-  }).optional(),
+  }).default({}),
   scheduler: z.object({
-    intervalMs: z.number().int().positive(),
-  }),
+    intervalMs: z.number().int().positive().default(60 * 1000),
+  }).default({}),
   runner: z.object({
-    mode: z.enum(['fake', 'claude']),
+    mode: z.enum(['fake', 'claude']).default('fake'),
     claude: z.object({
-      command: z.string(),
-      model: z.string(),
-      smokeModel: z.string(),
-      sessionName: z.string(),
-      remoteControlName: z.string(),
-      smokePrompt: z.string(),
-      timeoutMs: z.number().int().positive(),
+      command: z.string().default('claude'),
+      model: z.string().default('haiku'),
+      smokeModel: z.string().default('haiku'),
+      sessionName: z.string().default('Eddy'),
+      remoteControlName: z.string().default('Eddy'),
+      smokePrompt: z.string().default(defaultSmokePrompt),
+      timeoutMs: z.number().int().positive().default(30 * 60 * 1000),
       remoteControl: z.object({
-        enabled: z.boolean(),
-      }),
+        enabled: z.boolean().default(false),
+      }).default({}),
       models: z.object({
         default: z.string().optional(),
         refine: z.string().optional(),
         implement: z.string().optional(),
-      }).optional(),
-    }),
-  }),
+      }).default({ default: 'haiku', implement: 'claude-sonnet-4-6' }),
+    }).default({}),
+  }).default({}),
   sources: z.object({
     github: z.object({
-      enabled: z.boolean(),
-      repos: z.array(z.string().min(1)),
+      enabled: z.boolean().default(false),
+      repos: z.array(z.string().min(1)).default([]),
       polling: z.object({
-        maxIssuesPerRepo: z.number().int().positive(),
-        commentPageSize: z.number().int().positive(),
-        lookbackMs: z.number().int().nonnegative(),
-      }),
+        maxIssuesPerRepo: z.number().int().positive().default(25),
+        commentPageSize: z.number().int().positive().default(25),
+        lookbackMs: z.number().int().nonnegative().default(60_000),
+      }).default({}),
       policy: z.object({
-        requiredLabels: z.array(z.string()),
-        ignoredLabels: z.array(z.string()),
-        requiredAssignees: z.array(z.string()),
-      }),
+        requiredLabels: z.array(z.string()).default([]),
+        ignoredLabels: z.array(z.string()).default([]),
+        requiredAssignees: z.array(z.string()).default([]),
+      }).default({}),
       publication: z.object({
-        postStatusComments: z.boolean(),
+        postStatusComments: z.boolean().default(true),
         activeLabel: z.string().optional(),
-      }),
-    }),
-  }),
+      }).default({}),
+    }).default({}),
+  }).default({}),
 });
 
 export const claudePrintResultSchema = z.object({
