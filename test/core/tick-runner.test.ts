@@ -463,6 +463,86 @@ describe('tick runner', () => {
     expect(runnerCallCount).toBe(1);
   });
 
+  it('writes a failed run record and publishes failed labels when workspace prep throws', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const deliveredEvents: string[] = [];
+
+    await store.writeIssueState({
+      schemaVersion: 1,
+      workItemKey: 'atolis-hq/wake#20',
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 20,
+        title: 'Implement',
+        body: 'Body',
+        labels: ['wake:refined'],
+        assignees: [],
+        state: 'open',
+        url: 'https://example.test/issues/20',
+        createdAt: '2026-07-05T12:00:00.000Z',
+        updatedAt: '2026-07-05T12:00:00.000Z',
+      },
+      comments: [],
+      wake: {
+        stage: 'refined',
+        stageHistory: [],
+        recentEventIds: [],
+        syncedAt: '2026-07-05T12:00:00.000Z',
+      },
+      context: {},
+    });
+
+    const config = createDefaultWakeConfig(root);
+    config.sources.github.policy.requiredLabels = ['wake:refined'];
+
+    const tickRunner = createTickRunner({
+      clock: { now: () => new Date('2026-07-05T12:00:00.000Z') },
+      config,
+      stateStore: store,
+      workSource: { async pollEvents() { return []; } },
+      outboundSink: {
+        async deliverIntent(input) {
+          if (input.event.sourceEventType === 'wake.labels.requested') {
+            deliveredEvents.push(String(input.event.payload.statusLabel));
+            deliveredEvents.push(String(input.event.payload.stageLabel));
+          }
+          return [];
+        },
+      },
+      runner: {
+        async run() {
+          return { result: 'DONE', model: 'test-model', cli: 'test-cli' };
+        },
+      },
+      workspaceManager: {
+        async prepareWorkspace() { throw new Error('git network failure'); },
+        async prepareReadOnlyClone() { throw new Error('git network failure'); },
+      },
+    });
+
+    const result = await tickRunner.runTick();
+
+    expect(result.status).toBe('processed');
+    expect((result as { sentinel?: string }).sentinel).toBe('FAILED');
+    expect((result as { nextStage?: string }).nextStage).toBe('failed');
+    expect(deliveredEvents).toEqual([
+      'wake:status.working',
+      'wake:stage.refined',
+      'wake:status.failed',
+      'wake:stage.failed',
+    ]);
+
+    const events = await readFile(join(root, 'events', '2026-07-05.jsonl'), 'utf8');
+    const completedEvent = events.split('\n').filter(Boolean).map((l: string) => JSON.parse(l))
+      .find((e: { payload?: { reason?: string } }) => e.payload?.reason === 'runner:infrastructure-error');
+    expect(completedEvent).toBeDefined();
+    expect(completedEvent.payload.sentinel).toBe('FAILED');
+
+    const runFiles = await readdir(join(root, 'runs'));
+    const runRecord = JSON.parse(await readFile(join(root, 'runs', runFiles[0]!), 'utf8'));
+    expect(runRecord.status).toBe('failed');
+  });
+
   it('publishes a failed status label when a run ends in FAILED', async () => {
     const store = createStateStore({ wakeRoot: root });
     const deliveredEvents: string[] = [];
