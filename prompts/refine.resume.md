@@ -5,6 +5,7 @@ permissionMode: default
 allowedTools: Read, Glob, Grep
 extraArgs:
 maxTurns: 40
+requiresApproval: false
 ---
 Resuming the REFINE stage session for {{workItemKey}}.
 
@@ -17,4 +18,5 @@ New comments since your last turn (excludes Wake/bot comments):
 
 Re-evaluate whether the issue is now well-specified enough to implement,
 incorporating the new context above. Respond concisely. The last line of
-your response must be exactly one of: DONE, BLOCKED, FAILED.
+your response must be exactly one of: DONE, BLOCKED, FAILED{{additionalSentinels}}.
+{{approvalInstructions}}

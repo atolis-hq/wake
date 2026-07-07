@@ -5,6 +5,7 @@ permissionMode: acceptEdits
 allowedTools: Bash(git *), Bash(gh *), Bash(npm *), Edit, Write, Read, Glob, Grep
 extraArgs:
 maxTurns: 150
+requiresApproval: false
 ---
 Resuming the IMPLEMENT stage session for {{workItemKey}}.
 
@@ -19,4 +20,5 @@ Reminder of the completion requirements: commit, push {{branch}}, open a PR
 with `gh pr create` closing #{{issueNumber}}, and never merge it yourself.
 
 Respond concisely. The last line of your response must be exactly one of:
-DONE, BLOCKED, FAILED.
+DONE, BLOCKED, FAILED{{additionalSentinels}}.
+{{approvalInstructions}}

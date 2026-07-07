@@ -14,6 +14,10 @@ function stageFromLabels(labels: string[]): IssueStateRecord['wake']['stage'] {
     return 'active';
   }
 
+  if (labels.includes('wake:awaiting-approval')) {
+    return 'awaiting-approval';
+  }
+
   if (labels.includes('wake:done')) {
     return 'done';
   }
@@ -177,6 +181,11 @@ function applyEvent(
           payload.nextStage === 'blocked' || payload.nextStage === 'failed'
         ) && payload.action !== undefined
           ? { blockedFromAction: payload.action }
+          : {}),
+        // Remembered so the approval path knows which action to resume or
+        // skip when a human posts /approved.
+        ...(payload.nextStage === 'awaiting-approval' && payload.action !== undefined
+          ? { pendingApprovalAction: payload.action }
           : {}),
       },
       wake: {

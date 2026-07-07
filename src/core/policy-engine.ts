@@ -1,5 +1,10 @@
 import type { AgentAction, IssueStateRecord, Stage, WakeConfig } from '../domain/types.js';
 
+export interface ApprovalResolution {
+  approved: boolean;
+  pendingAction: AgentAction;
+}
+
 export function createPolicyEngine() {
   return {
     isEligible(issue: IssueStateRecord, config: WakeConfig): boolean {
@@ -71,6 +76,23 @@ export function createPolicyEngine() {
       }
 
       return null;
+    },
+    resolveApprovalTransition(issue: IssueStateRecord): ApprovalResolution | null {
+      if (issue.wake.stage !== 'awaiting-approval') {
+        return null;
+      }
+
+      const context = issue.context as Record<string, unknown>;
+      const pendingAction: AgentAction =
+        context.pendingApprovalAction === 'refine' ? 'refine' : 'implement';
+
+      const latestHumanComment = [...issue.comments]
+        .reverse()
+        .find((c) => !c.isWakeAuthored && !c.isBotAuthored);
+
+      const approved = latestHumanComment?.body.includes('/approved') ?? false;
+
+      return { approved, pendingAction };
     },
   };
 }

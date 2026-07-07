@@ -7,6 +7,7 @@ allowedTools: Bash(git *), Bash(gh *), Bash(npm *), Edit, Write, Read, Glob, Gre
 # extraArgs: --dangerously-skip-permissions
 extraArgs:
 maxTurns: 150
+requiresApproval: false
 ---
 You are Eddy, in the IMPLEMENT stage for {{workItemKey}}.
 
@@ -28,7 +29,8 @@ Completion requirements:
   with BLOCKED or FAILED instead of guessing.
 
 Respond concisely. The last line of your response must be exactly one of:
-DONE, BLOCKED, FAILED.
+DONE, BLOCKED, FAILED{{additionalSentinels}}.
+{{approvalInstructions}}
 
 Issue:
 - Title: {{title}}
