@@ -590,12 +590,12 @@ describe('tick runner', () => {
 
     expect(result.status).toBe('processed');
     expect((result as { sentinel?: string }).sentinel).toBe('FAILED');
-    expect((result as { nextStage?: string }).nextStage).toBe('failed');
+    expect((result as { nextStage?: string | null }).nextStage).toBeNull();
     expect(deliveredEvents).toEqual([
       'wake:status.working',
       'wake:stage.refined',
       'wake:status.failed',
-      'wake:stage.failed',
+      'wake:stage.refined',
     ]);
     expect(publishedIntents).toHaveLength(1);
     expect(publishedIntents[0]!.kind).toBe('failure');
@@ -683,7 +683,7 @@ describe('tick runner', () => {
       'wake:status.working',
       'wake:stage.queue',
       'wake:status.failed',
-      'wake:stage.failed',
+      'wake:stage.queue',
     ]);
     expect(publishedIntents).toHaveLength(1);
     expect(publishedIntents[0]!.kind).toBe('failure');
