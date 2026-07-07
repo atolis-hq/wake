@@ -77,15 +77,7 @@ export function createTickRunner(deps: {
     occurredAt: string;
     workspacePath?: string;
     startedAt: string;
-  }): EventEnvelope | null {
-    if (
-      input.sentinel !== 'DONE' &&
-      input.sentinel !== 'BLOCKED' &&
-      input.sentinel !== 'AWAITING_APPROVAL'
-    ) {
-      return null;
-    }
-
+  }): EventEnvelope {
     const tokenCount = extractTokenCount(input.runnerResult.tokenUsage);
     const duration = formatDuration(input.startedAt, input.occurredAt);
 
@@ -109,7 +101,9 @@ export function createTickRunner(deps: {
           ? 'question'
           : input.sentinel === 'AWAITING_APPROVAL'
             ? 'approval-request'
-            : 'status-update',
+            : input.sentinel === 'FAILED'
+              ? 'failure'
+              : 'status-update',
         body: input.runnerResult.result.replace(/\b(DONE|BLOCKED|FAILED)\b/g, '').trim(),
         action: input.action,
         runId: input.runId,
@@ -436,9 +430,7 @@ export function createTickRunner(deps: {
             ...(workspacePath === undefined ? {} : { workspacePath }),
           });
 
-          if (publishIntent !== null) {
-            await deliverOutboundEvent(publishIntent);
-          }
+          await deliverOutboundEvent(publishIntent);
 
           return {
             status: 'processed' as const,
@@ -496,6 +488,23 @@ export function createTickRunner(deps: {
               occurredAt: finishedAt,
             }),
           );
+
+          const errorMessage = err instanceof Error ? err.message : String(err);
+          const infraFailureResult: import('./contracts.js').AgentRunResult = {
+            result: errorMessage,
+            model: 'unknown',
+            cli: 'unknown',
+          };
+          const failurePublishIntent = createPublishIntentEvent({
+            projection: candidate,
+            runId,
+            action,
+            runnerResult: infraFailureResult,
+            sentinel,
+            occurredAt: finishedAt,
+            startedAt: nowIso,
+          });
+          await deliverOutboundEvent(failurePublishIntent);
 
           return {
             status: 'processed' as const,
