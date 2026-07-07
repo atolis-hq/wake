@@ -249,7 +249,8 @@ export function createTickRunner(deps: {
           if (approvalResolution.approved) {
             const approvalId = `approval-${candidate.issue.number}-${deps.clock.now().getTime()}`;
             const approvedAt = deps.clock.now().toISOString();
-            const nextStage = lifecycle.nextStageFromSentinel(approvalResolution.pendingAction, 'DONE');
+            // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+            const nextStage = lifecycle.nextStageFromSentinel(approvalResolution.pendingAction, 'DONE')!;
 
             const approvalCompletedEvent = createEventEnvelope({
               eventId: `${approvalId}-completed`,
@@ -416,7 +417,7 @@ export function createTickRunner(deps: {
             payload: {
               action,
               sentinel,
-              nextStage,
+              ...(nextStage !== null ? { nextStage } : {}),
               runId,
               sessionId: runnerResult.session_id,
               workspacePath,
@@ -432,8 +433,8 @@ export function createTickRunner(deps: {
             createLabelsEvent({
               projection: candidate,
               runId,
-              statusLabel: statusLabelForStage(nextStage),
-              stageLabel: stageLabelForStage(nextStage),
+              statusLabel: nextStage !== null ? statusLabelForStage(nextStage) : 'wake:status.failed',
+              stageLabel: stageLabelForStage(nextStage ?? candidate.wake.stage),
               occurredAt: finishedAt,
             }),
           );
@@ -460,7 +461,6 @@ export function createTickRunner(deps: {
         } catch (err) {
           const finishedAt = deps.clock.now().toISOString();
           const sentinel = 'FAILED' as const;
-          const nextStage = lifecycle.nextStageFromSentinel(action, sentinel);
 
           await deps.stateStore.writeRunRecord({
             ...runningRecord,
@@ -488,7 +488,6 @@ export function createTickRunner(deps: {
             payload: {
               action,
               sentinel,
-              nextStage,
               runId,
               reason: 'runner:infrastructure-error',
               handledCommentId: latestHumanCommentId(candidate),
@@ -502,8 +501,8 @@ export function createTickRunner(deps: {
             createLabelsEvent({
               projection: candidate,
               runId,
-              statusLabel: statusLabelForStage(nextStage),
-              stageLabel: stageLabelForStage(nextStage),
+              statusLabel: 'wake:status.failed',
+              stageLabel: stageLabelForStage(candidate.wake.stage),
               occurredAt: finishedAt,
             }),
           );
@@ -529,7 +528,7 @@ export function createTickRunner(deps: {
             status: 'processed' as const,
             runId,
             sentinel,
-            nextStage,
+            nextStage: null,
           };
         }
       } finally {
