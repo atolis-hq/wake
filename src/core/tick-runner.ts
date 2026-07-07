@@ -335,115 +335,176 @@ export function createTickRunner(deps: {
           }),
         );
 
-        // 'implement' gets its own branch/workspace; 'refine' only reads
-        // the issue and, at most, the canonical clone read-only - it never
-        // pays per-issue workspace-preparation cost.
-        const { workspacePath } =
-          action === 'implement'
-            ? await deps.workspaceManager.prepareWorkspace({
-                repo: candidate.issue.repo,
-                issueNumber: candidate.issue.number,
-              })
-            : await deps.workspaceManager.prepareReadOnlyClone({
-                repo: candidate.issue.repo,
-              });
+        try {
+          // 'implement' gets its own branch/workspace; 'refine' only reads
+          // the issue and, at most, the canonical clone read-only - it never
+          // pays per-issue workspace-preparation cost.
+          const { workspacePath } =
+            action === 'implement'
+              ? await deps.workspaceManager.prepareWorkspace({
+                  repo: candidate.issue.repo,
+                  issueNumber: candidate.issue.number,
+                })
+              : await deps.workspaceManager.prepareReadOnlyClone({
+                  repo: candidate.issue.repo,
+                });
 
-        const recentEvents = await deps.stateStore.listEventEnvelopesForWorkItem(
-          candidate.workItemKey,
-          6,
-        );
-        const runnerResult = await deps.runner.run({
-          action,
-          projection: candidate,
-          recentEvents,
-          config: deps.config,
-          runId,
-          ...(workspacePath === undefined ? {} : { workspacePath }),
-        });
-        const sentinel = parseRunnerResultSentinel(runnerResult.result);
-        const nextStage = lifecycle.nextStageFromSentinel(action, sentinel);
-        const finishedAt = deps.clock.now().toISOString();
-
-        await deps.stateStore.writeRunRecord({
-          ...runningRecord,
-          status:
-            sentinel === 'DONE'
-              ? 'completed'
-              : sentinel === 'BLOCKED'
-                ? 'blocked'
-                : sentinel === 'AWAITING_APPROVAL'
-                  ? 'awaiting-approval'
-                  : 'failed',
-          finishedAt,
-          sessionId: runnerResult.session_id,
-          sentinel,
-          summary: runnerResult.result,
-          metadata: runnerResult.metadata,
-        });
-
-        const runCompletedEvent = createEventEnvelope({
-          eventId: `${runId}-completed`,
-          workItemKey: candidate.workItemKey,
-          streamScope: 'work-item',
-          direction: 'internal',
-          sourceSystem: 'wake',
-          sourceEventType: 'wake.run.completed',
-          sourceRefs: {
-            repo: candidate.issue.repo,
-            issueNumber: candidate.issue.number,
-            runId,
-          },
-          occurredAt: finishedAt,
-          ingestedAt: finishedAt,
-          trigger: 'immediate',
-          payload: {
+          const recentEvents = await deps.stateStore.listEventEnvelopesForWorkItem(
+            candidate.workItemKey,
+            6,
+          );
+          const runnerResult = await deps.runner.run({
             action,
-            sentinel,
-            nextStage,
+            projection: candidate,
+            recentEvents,
+            config: deps.config,
             runId,
-            sessionId: runnerResult.session_id,
-            workspacePath,
-            reason: `runner:${sentinel.toLowerCase()}`,
-            handledCommentId: candidate.latestComment?.isWakeAuthored
-              ? undefined
-              : candidate.latestComment?.id,
-            handledIssueUpdatedAt: candidate.issue.updatedAt,
-          },
-        });
-        await deps.stateStore.appendEventEnvelope(runCompletedEvent);
-        await projectionUpdater.rebuildFromEvents([runCompletedEvent]);
+            ...(workspacePath === undefined ? {} : { workspacePath }),
+          });
+          const sentinel = parseRunnerResultSentinel(runnerResult.result);
+          const nextStage = lifecycle.nextStageFromSentinel(action, sentinel);
+          const finishedAt = deps.clock.now().toISOString();
 
-        await deliverOutboundEvent(
-          createLabelsEvent({
+          await deps.stateStore.writeRunRecord({
+            ...runningRecord,
+            status:
+              sentinel === 'DONE'
+                ? 'completed'
+                : sentinel === 'BLOCKED'
+                  ? 'blocked'
+                  : sentinel === 'AWAITING_APPROVAL'
+                    ? 'awaiting-approval'
+                    : 'failed',
+            finishedAt,
+            sessionId: runnerResult.session_id,
+            sentinel,
+            summary: runnerResult.result,
+            metadata: runnerResult.metadata,
+          });
+
+          const runCompletedEvent = createEventEnvelope({
+            eventId: `${runId}-completed`,
+            workItemKey: candidate.workItemKey,
+            streamScope: 'work-item',
+            direction: 'internal',
+            sourceSystem: 'wake',
+            sourceEventType: 'wake.run.completed',
+            sourceRefs: {
+              repo: candidate.issue.repo,
+              issueNumber: candidate.issue.number,
+              runId,
+            },
+            occurredAt: finishedAt,
+            ingestedAt: finishedAt,
+            trigger: 'immediate',
+            payload: {
+              action,
+              sentinel,
+              nextStage,
+              runId,
+              sessionId: runnerResult.session_id,
+              workspacePath,
+              reason: `runner:${sentinel.toLowerCase()}`,
+              handledCommentId: candidate.latestComment?.isWakeAuthored
+                ? undefined
+                : candidate.latestComment?.id,
+              handledIssueUpdatedAt: candidate.issue.updatedAt,
+            },
+          });
+          await deps.stateStore.appendEventEnvelope(runCompletedEvent);
+          await projectionUpdater.rebuildFromEvents([runCompletedEvent]);
+
+          await deliverOutboundEvent(
+            createLabelsEvent({
+              projection: candidate,
+              runId,
+              statusLabel: statusLabelForStage(nextStage),
+              stageLabel: stageLabelForStage(nextStage),
+              occurredAt: finishedAt,
+            }),
+          );
+
+          const publishIntent = createPublishIntentEvent({
             projection: candidate,
             runId,
-            statusLabel: statusLabelForStage(nextStage),
-            stageLabel: stageLabelForStage(nextStage),
+            action,
+            runnerResult,
+            sentinel,
             occurredAt: finishedAt,
-          }),
-        );
+            startedAt: nowIso,
+            ...(workspacePath === undefined ? {} : { workspacePath }),
+          });
 
-        const publishIntent = createPublishIntentEvent({
-          projection: candidate,
-          runId,
-          action,
-          runnerResult,
-          sentinel,
-          occurredAt: finishedAt,
-          startedAt: nowIso,
-          ...(workspacePath === undefined ? {} : { workspacePath }),
-        });
+          if (publishIntent !== null) {
+            await deliverOutboundEvent(publishIntent);
+          }
 
-        if (publishIntent !== null) {
-          await deliverOutboundEvent(publishIntent);
+          return {
+            status: 'processed' as const,
+            runId,
+            sentinel,
+            nextStage,
+          };
+        } catch (err) {
+          const finishedAt = deps.clock.now().toISOString();
+          const sentinel = 'FAILED' as const;
+          const nextStage = lifecycle.nextStageFromSentinel(action, sentinel);
+
+          await deps.stateStore.writeRunRecord({
+            ...runningRecord,
+            status: 'failed',
+            finishedAt,
+            sentinel,
+            summary: err instanceof Error ? err.message : String(err),
+          });
+
+          const runCompletedEvent = createEventEnvelope({
+            eventId: `${runId}-completed`,
+            workItemKey: candidate.workItemKey,
+            streamScope: 'work-item',
+            direction: 'internal',
+            sourceSystem: 'wake',
+            sourceEventType: 'wake.run.completed',
+            sourceRefs: {
+              repo: candidate.issue.repo,
+              issueNumber: candidate.issue.number,
+              runId,
+            },
+            occurredAt: finishedAt,
+            ingestedAt: finishedAt,
+            trigger: 'immediate',
+            payload: {
+              action,
+              sentinel,
+              nextStage,
+              runId,
+              reason: 'runner:infrastructure-error',
+              handledCommentId: candidate.latestComment?.isWakeAuthored
+                ? undefined
+                : candidate.latestComment?.id,
+              handledIssueUpdatedAt: candidate.issue.updatedAt,
+            },
+          });
+          await deps.stateStore.appendEventEnvelope(runCompletedEvent);
+          await projectionUpdater.rebuildFromEvents([runCompletedEvent]);
+
+          await deliverOutboundEvent(
+            createLabelsEvent({
+              projection: candidate,
+              runId,
+              statusLabel: statusLabelForStage(nextStage),
+              stageLabel: stageLabelForStage(nextStage),
+              occurredAt: finishedAt,
+            }),
+          );
+
+          return {
+            status: 'processed' as const,
+            runId,
+            sentinel,
+            nextStage,
+          };
         }
-
-        return {
-          status: 'processed' as const,
-          runId,
-          sentinel,
-          nextStage,
-        };
       } finally {
         await lock.release();
       }
