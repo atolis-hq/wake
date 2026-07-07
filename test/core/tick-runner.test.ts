@@ -689,4 +689,104 @@ describe('tick runner', () => {
     expect(publishedIntents[0]!.kind).toBe('failure');
     expect(publishedIntents[0]!.body).toContain('Nope');
   });
+
+  it('does not retry a FAILED run when only Wake-driven issue.updatedAt changes arrive', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    let runnerCallCount = 0;
+    let pollCount = 0;
+
+    await store.writeIssueState({
+      schemaVersion: 1,
+      workItemKey: 'atolis-hq/wake#121',
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 121,
+        title: 'Execute',
+        body: 'Body',
+        labels: ['wake:refined'],
+        assignees: [],
+        state: 'open',
+        url: 'https://example.test/issues/121',
+        createdAt: '2026-07-05T12:00:00.000Z',
+        updatedAt: '2026-07-05T12:00:00.000Z',
+      },
+      comments: [],
+      wake: {
+        stage: 'refined',
+        stageHistory: [],
+        recentEventIds: [],
+        syncedAt: '2026-07-05T12:00:00.000Z',
+      },
+      context: {},
+    });
+
+    const config = createDefaultWakeConfig(root);
+    config.sources.github.policy.requiredLabels = ['wake:refined'];
+
+    const tickRunner = createTickRunner({
+      clock: { now: () => new Date('2026-07-05T12:00:00.000Z') },
+      config,
+      stateStore: store,
+      workSource: {
+        async pollEvents() {
+          pollCount += 1;
+
+          if (pollCount === 1) {
+            return [];
+          }
+
+          return [
+            {
+              schemaVersion: 1,
+              eventId: 'evt-issue-121-resync',
+              workItemKey: 'atolis-hq/wake#121',
+              streamScope: 'global-intake',
+              direction: 'inbound',
+              sourceSystem: 'github',
+              sourceEventType: 'ticket.upsert',
+              sourceRefs: {
+                repo: 'atolis-hq/wake',
+                issueNumber: 121,
+                sourceUrl: 'https://example.test/issues/121',
+              },
+              occurredAt: '2026-07-05T12:01:00.000Z',
+              ingestedAt: '2026-07-05T12:01:00.000Z',
+              trigger: 'immediate',
+              payload: {
+                ticket: {
+                  repo: 'atolis-hq/wake',
+                  number: 121,
+                  title: 'Execute',
+                  body: 'Body',
+                  labels: ['wake:refined'],
+                  assignees: [],
+                  state: 'open',
+                  url: 'https://example.test/issues/121',
+                  createdAt: '2026-07-05T12:00:00.000Z',
+                  updatedAt: '2026-07-05T12:01:00.000Z',
+                },
+              },
+            },
+          ];
+        },
+      },
+      runner: {
+        async run() {
+          runnerCallCount += 1;
+          return { result: 'Execution failed\nFAILED', model: 'test-model', cli: 'test-cli' };
+        },
+      },
+      workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+    });
+
+    const first = await tickRunner.runTick();
+    const second = await tickRunner.runTick();
+    const projection = await store.readIssueState('atolis-hq/wake', 121);
+
+    expect(first.status).toBe('processed');
+    expect((first as { sentinel?: string }).sentinel).toBe('FAILED');
+    expect(projection?.wake.stage).toBe('refined');
+    expect(second.status).toBe('idle');
+    expect(runnerCallCount).toBe(1);
+  });
 });
