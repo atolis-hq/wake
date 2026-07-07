@@ -12,8 +12,13 @@ import type {
 import type { Clock } from '../lib/clock.js';
 import { acquireFileLock } from '../lib/lock.js';
 import { parseRunnerResultSentinel } from '../domain/schema.js';
-import type { AgentAction, EventEnvelope, WakeConfig } from '../domain/types.js';
+import type { AgentAction, EventEnvelope, IssueStateRecord, WakeConfig } from '../domain/types.js';
 import { createEventEnvelope } from '../lib/event-log.js';
+
+function latestHumanCommentId(candidate: IssueStateRecord): string | undefined {
+  const human = candidate.comments.filter((c) => !c.isWakeAuthored && !c.isBotAuthored);
+  return human.at(-1)?.id;
+}
 
 export function createTickRunner(deps: {
   clock: Clock;
@@ -254,9 +259,7 @@ export function createTickRunner(deps: {
                 nextStage,
                 runId: approvalId,
                 reason: 'human:approved',
-                handledCommentId: candidate.latestComment?.isWakeAuthored
-                  ? undefined
-                  : candidate.latestComment?.id,
+                handledCommentId: latestHumanCommentId(candidate),
                 handledIssueUpdatedAt: candidate.issue.updatedAt,
               },
             });
@@ -405,9 +408,7 @@ export function createTickRunner(deps: {
               sessionId: runnerResult.session_id,
               workspacePath,
               reason: `runner:${sentinel.toLowerCase()}`,
-              handledCommentId: candidate.latestComment?.isWakeAuthored
-                ? undefined
-                : candidate.latestComment?.id,
+              handledCommentId: latestHumanCommentId(candidate),
               handledIssueUpdatedAt: candidate.issue.updatedAt,
             },
           });
@@ -479,9 +480,7 @@ export function createTickRunner(deps: {
               nextStage,
               runId,
               reason: 'runner:infrastructure-error',
-              handledCommentId: candidate.latestComment?.isWakeAuthored
-                ? undefined
-                : candidate.latestComment?.id,
+              handledCommentId: latestHumanCommentId(candidate),
               handledIssueUpdatedAt: candidate.issue.updatedAt,
             },
           });
