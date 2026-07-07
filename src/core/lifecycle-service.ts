@@ -14,6 +14,10 @@ export function createLifecycleService() {
         return 'failed';
       }
 
+      if (sentinel === 'AWAITING_APPROVAL') {
+        return 'awaiting-approval';
+      }
+
       return action === 'refine' ? 'refined' : 'done';
     },
   };

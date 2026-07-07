@@ -68,12 +68,16 @@ export function createTickRunner(deps: {
     runId: string;
     action: AgentAction;
     runnerResult: AgentRunResult;
-    sentinel: 'DONE' | 'BLOCKED' | 'FAILED';
+    sentinel: 'DONE' | 'BLOCKED' | 'FAILED' | 'AWAITING_APPROVAL';
     occurredAt: string;
     workspacePath?: string;
     startedAt: string;
   }): EventEnvelope | null {
-    if (input.sentinel !== 'DONE' && input.sentinel !== 'BLOCKED') {
+    if (
+      input.sentinel !== 'DONE' &&
+      input.sentinel !== 'BLOCKED' &&
+      input.sentinel !== 'AWAITING_APPROVAL'
+    ) {
       return null;
     }
 
@@ -96,7 +100,11 @@ export function createTickRunner(deps: {
       ingestedAt: input.occurredAt,
       trigger: 'context-only',
       payload: {
-        kind: input.sentinel === 'BLOCKED' ? 'question' : 'status-update',
+        kind: input.sentinel === 'BLOCKED'
+          ? 'question'
+          : input.sentinel === 'AWAITING_APPROVAL'
+            ? 'approval-request'
+            : 'status-update',
         body: input.runnerResult.result.replace(/\b(DONE|BLOCKED|FAILED)\b/g, '').trim(),
         action: input.action,
         runId: input.runId,
@@ -200,6 +208,10 @@ export function createTickRunner(deps: {
             return false;
           }
 
+          if (issue.wake.stage === 'awaiting-approval') {
+            return policy.needsWakeAction(issue);
+          }
+
           const nextAction = policy.chooseAction(issue.wake.stage);
           return nextAction !== null && policy.needsWakeAction(issue);
         });
@@ -208,9 +220,74 @@ export function createTickRunner(deps: {
           return { status: 'idle' as const };
         }
 
-        const action = policy.chooseAction(candidate.wake.stage);
-        if (action === null) {
-          return { status: 'idle' as const };
+        let action: AgentAction;
+
+        if (candidate.wake.stage === 'awaiting-approval') {
+          const approvalResolution = policy.resolveApprovalTransition(candidate);
+          if (approvalResolution === null) {
+            return { status: 'idle' as const };
+          }
+
+          if (approvalResolution.approved) {
+            const approvalId = `approval-${candidate.issue.number}-${deps.clock.now().getTime()}`;
+            const approvedAt = deps.clock.now().toISOString();
+            const nextStage = lifecycle.nextStageFromSentinel(approvalResolution.pendingAction, 'DONE');
+
+            const approvalCompletedEvent = createEventEnvelope({
+              eventId: `${approvalId}-completed`,
+              workItemKey: candidate.workItemKey,
+              streamScope: 'work-item',
+              direction: 'internal',
+              sourceSystem: 'wake',
+              sourceEventType: 'wake.run.completed',
+              sourceRefs: {
+                repo: candidate.issue.repo,
+                issueNumber: candidate.issue.number,
+                runId: approvalId,
+              },
+              occurredAt: approvedAt,
+              ingestedAt: approvedAt,
+              trigger: 'immediate',
+              payload: {
+                action: approvalResolution.pendingAction,
+                sentinel: 'DONE',
+                nextStage,
+                runId: approvalId,
+                reason: 'human:approved',
+                handledCommentId: candidate.latestComment?.isWakeAuthored
+                  ? undefined
+                  : candidate.latestComment?.id,
+                handledIssueUpdatedAt: candidate.issue.updatedAt,
+              },
+            });
+            await deps.stateStore.appendEventEnvelope(approvalCompletedEvent);
+            await projectionUpdater.rebuildFromEvents([approvalCompletedEvent]);
+
+            await deliverOutboundEvent(
+              createLabelsEvent({
+                projection: candidate,
+                runId: approvalId,
+                statusLabel: statusLabelForStage(nextStage),
+                stageLabel: stageLabelForStage(nextStage),
+                occurredAt: approvedAt,
+              }),
+            );
+
+            return {
+              status: 'processed' as const,
+              runId: approvalId,
+              sentinel: 'DONE' as const,
+              nextStage,
+            };
+          }
+
+          action = approvalResolution.pendingAction;
+        } else {
+          const nextAction = policy.chooseAction(candidate.wake.stage);
+          if (nextAction === null) {
+            return { status: 'idle' as const };
+          }
+          action = nextAction;
         }
 
         const runId = `run-${candidate.issue.number}-${deps.clock.now().getTime()}`;
@@ -294,7 +371,9 @@ export function createTickRunner(deps: {
               ? 'completed'
               : sentinel === 'BLOCKED'
                 ? 'blocked'
-                : 'failed',
+                : sentinel === 'AWAITING_APPROVAL'
+                  ? 'awaiting-approval'
+                  : 'failed',
           finishedAt,
           sessionId: runnerResult.session_id,
           sentinel,

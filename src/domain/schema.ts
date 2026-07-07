@@ -133,7 +133,7 @@ export const runRecordSchema = z.object({
   repo: z.string(),
   issueNumber: z.number().int().positive(),
   action: agentActionSchema,
-  status: z.enum(['running', 'completed', 'blocked', 'failed']),
+  status: z.enum(['running', 'completed', 'awaiting-approval', 'blocked', 'failed']),
   startedAt: isoTimestampSchema,
   finishedAt: isoTimestampSchema.optional(),
   sessionId: z.string().optional(),
@@ -251,9 +251,9 @@ export function parseClaudePrintResult(input: unknown) {
 
 export function parseRunnerResultSentinel(
   result: string,
-): 'DONE' | 'BLOCKED' | 'FAILED' {
+): 'DONE' | 'BLOCKED' | 'FAILED' | 'AWAITING_APPROVAL' {
   const matches = Array.from(
-    result.matchAll(/\b(DONE|BLOCKED|FAILED)\b/g),
+    result.matchAll(/\b(DONE|BLOCKED|FAILED|AWAITING_APPROVAL)\b/g),
     (match) => match[1],
   );
 

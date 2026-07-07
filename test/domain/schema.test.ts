@@ -134,6 +134,10 @@ describe('run and event schemas', () => {
     expect(parseRunnerResultSentinel('notes DONE more notes FAILED')).toBe('FAILED');
   });
 
+  it('parses AWAITING_APPROVAL sentinel from runner result text', () => {
+    expect(parseRunnerResultSentinel('Work complete, awaiting sign-off\nAWAITING_APPROVAL')).toBe('AWAITING_APPROVAL');
+  });
+
   it('defaults to BLOCKED when no sentinel keyword is present', () => {
     expect(parseRunnerResultSentinel('Should I proceed with creating the worktree?')).toBe('BLOCKED');
     expect(parseRunnerResultSentinel('')).toBe('BLOCKED');
