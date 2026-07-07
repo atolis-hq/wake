@@ -116,7 +116,6 @@ export const issueStateRecordSchema = z.preprocess((input) => {
   latestComment: commentSnapshotSchema.optional(),
   wake: z.object({
     stage: stageSchema,
-    attempts: z.number().int().nonnegative(),
     lastRunId: z.string().optional(),
     sessionId: z.string().optional(),
     workspacePath: z.string().optional(),
@@ -141,16 +140,6 @@ export const runRecordSchema = z.object({
   sentinel: runnerSentinelSchema.optional(),
   summary: z.string().optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
-});
-
-export const eventRecordSchema = z.object({
-  schemaVersion: z.literal(1),
-  type: z.string(),
-  occurredAt: isoTimestampSchema,
-  repo: z.string().optional(),
-  issueNumber: z.number().int().positive().optional(),
-  runId: z.string().optional(),
-  payload: z.record(z.string(), z.unknown()),
 });
 
 export const ledgerSchema = z.object({
@@ -233,10 +222,6 @@ export function parseIssueStateRecord(input: unknown) {
 
 export function parseRunRecord(input: unknown) {
   return runRecordSchema.parse(input);
-}
-
-export function parseEventRecord(input: unknown) {
-  return eventRecordSchema.parse(input);
 }
 
 export function parseEventEnvelope(input: unknown) {

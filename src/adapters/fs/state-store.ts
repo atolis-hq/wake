@@ -3,7 +3,6 @@ import { join } from 'node:path';
 
 import {
   parseEventEnvelope,
-  parseEventRecord,
   parseIssueStateRecord,
   parseLedger,
   parseRunRecord,
@@ -12,7 +11,6 @@ import {
 } from '../../domain/schema.js';
 import type {
   EventEnvelope,
-  EventRecord,
   IssueStateRecord,
   RunRecord,
   SourceStateRecord,
@@ -106,11 +104,6 @@ export function createStateStore({ wakeRoot }: { wakeRoot: string }) {
       } catch {
         return null;
       }
-    },
-    async appendEvent(record: EventRecord): Promise<EventRecord> {
-      const parsed = parseEventRecord(record);
-      await appendJsonLine(paths.eventFile(parsed.occurredAt.slice(0, 10)), parsed);
-      return parsed;
     },
     async appendEventEnvelope(record: EventEnvelope): Promise<EventEnvelope> {
       const parsed = parseEventEnvelope(record);

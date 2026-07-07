@@ -32,7 +32,6 @@ Issue:
 - Number: {{issueNumber}}
 - Title: {{title}}
 - Stage: {{stage}}
-- Attempts: {{attempts}}
 
 Comments on this issue:
 {{allCommentsText}}

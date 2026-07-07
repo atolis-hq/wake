@@ -259,7 +259,6 @@ describe('tick runner', () => {
       comments: [],
       wake: {
         stage: 'refined',
-        attempts: 0,
         stageHistory: [],
         recentEventIds: [],
         syncedAt: '2026-07-05T12:00:00.000Z',
@@ -330,7 +329,6 @@ describe('tick runner', () => {
       comments: [],
       wake: {
         stage: 'queue',
-        attempts: 0,
         stageHistory: [],
         recentEventIds: [],
         syncedAt: '2026-07-05T12:00:00.000Z',

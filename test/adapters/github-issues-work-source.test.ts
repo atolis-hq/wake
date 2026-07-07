@@ -141,7 +141,6 @@ describe('github issues work source', () => {
       },
       wake: {
         stage: 'queue',
-        attempts: 0,
         stageHistory: [],
         recentEventIds: [],
         syncedAt: '2026-07-05T12:10:00.000Z',
@@ -277,7 +276,6 @@ describe('github issues work source', () => {
       comments: [],
       wake: {
         stage: 'queue',
-        attempts: 0,
         stageHistory: [],
         recentEventIds: [],
         syncedAt: '2026-07-05T12:10:00.000Z',
@@ -348,7 +346,6 @@ describe('github issues work source', () => {
       comments: [],
       wake: {
         stage: 'queue',
-        attempts: 0,
         stageHistory: [],
         recentEventIds: [],
         syncedAt: '2026-07-05T12:10:00.000Z',
@@ -419,7 +416,6 @@ describe('github issues work source', () => {
       comments: [],
       wake: {
         stage: 'refined',
-        attempts: 0,
         stageHistory: [],
         recentEventIds: [],
         syncedAt: '2026-07-05T12:10:00.000Z',

@@ -38,23 +38,19 @@ export function createTickRunner(deps: {
   }
 
   function formatDuration(startedAtStr: string, finishedAtStr: string): string | undefined {
-    try {
-      const startedAt = new Date(startedAtStr);
-      const finishedAt = new Date(finishedAtStr);
-      const durationMs = finishedAt.getTime() - startedAt.getTime();
-      if (durationMs < 0 || !isFinite(durationMs)) return undefined;
+    const startedAt = new Date(startedAtStr);
+    const finishedAt = new Date(finishedAtStr);
+    const durationMs = finishedAt.getTime() - startedAt.getTime();
+    if (durationMs < 0 || !isFinite(durationMs)) return undefined;
 
-      const totalSeconds = Math.floor(durationMs / 1000);
-      const minutes = Math.floor(totalSeconds / 60);
-      const seconds = totalSeconds % 60;
+    const totalSeconds = Math.floor(durationMs / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
 
-      if (minutes > 0) {
-        return `${minutes}m${seconds}s`;
-      }
-      return `${seconds}s`;
-    } catch {
-      return undefined;
+    if (minutes > 0) {
+      return `${minutes}m${seconds}s`;
     }
+    return `${seconds}s`;
   }
 
   function formatTokenCount(count: number): string {
