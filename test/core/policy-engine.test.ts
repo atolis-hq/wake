@@ -173,11 +173,49 @@ describe('policy engine: resolveApprovalTransition', () => {
     expect(resolution?.pendingAction).toBe('implement');
   });
 
-  it('returns approved=false when there are no human comments', () => {
+  it('returns null when there are no human comments', () => {
     const policy = createPolicyEngine();
     const issue = buildAwaitingApprovalIssue({});
-    const resolution = policy.resolveApprovalTransition(issue);
-    expect(resolution?.approved).toBe(false);
+    expect(policy.resolveApprovalTransition(issue)).toBeNull();
+  });
+
+  it('returns null when the latest human comment was already handled', () => {
+    const policy = createPolicyEngine();
+    const issue = parseIssueStateRecord({
+      schemaVersion: 1,
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 50,
+        title: 'Example',
+        body: 'Body',
+        labels: [],
+        assignees: [],
+        state: 'open',
+        url: 'https://example.test/issues/50',
+        createdAt: '2026-07-06T00:00:00.000Z',
+        updatedAt: '2026-07-07T00:00:00.000Z',
+      },
+      comments: [
+        {
+          id: 'c-1',
+          body: 'Please start the implementation.',
+          author: { login: 'owner' },
+          createdAt: '2026-07-06T01:00:00.000Z',
+          updatedAt: '2026-07-06T01:00:00.000Z',
+          isWakeAuthored: false,
+        },
+      ],
+      wake: {
+        stage: 'awaiting-approval',
+        syncedAt: '2026-07-07T00:00:00.000Z',
+        stageHistory: [],
+      },
+      context: {
+        pendingApprovalAction: 'implement',
+        lastHandledCommentId: 'c-1',
+      },
+    });
+    expect(policy.resolveApprovalTransition(issue)).toBeNull();
   });
 
   it('defaults pendingAction to implement when context is missing', () => {

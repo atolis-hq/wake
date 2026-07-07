@@ -90,6 +90,7 @@ function normalizeIssueEvents(issue: FakeTicketSeed, nowIso: string): EventEnvel
         },
         derivedHints: {
           wakeAuthoredComment: isWakeAuthoredComment(comment.body),
+          botAuthoredComment: false,
         },
       }),
     ),
