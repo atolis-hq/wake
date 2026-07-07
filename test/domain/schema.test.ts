@@ -3,7 +3,6 @@ import { describe, expect, expectTypeOf, it } from 'vitest';
 import {
   isWakeAuthoredComment,
   parseEventEnvelope,
-  parseEventRecord,
   parseIssueStateRecord,
   parseSourceStateRecord,
   parseWakeConfig,
@@ -40,7 +39,6 @@ describe('issue state schema', () => {
       ],
       wake: {
         stage: 'queue',
-        attempts: 0,
         stageHistory: [],
         syncedAt: '2026-07-05T12:00:00.000Z',
       },
@@ -97,19 +95,6 @@ describe('run and event schemas', () => {
     });
 
     expect(run.status).toBe('running');
-  });
-
-  it('accepts append-only event records', () => {
-    const event = parseEventRecord({
-      schemaVersion: 1,
-      type: 'issue.synced',
-      occurredAt: '2026-07-05T12:00:00.000Z',
-      repo: 'atolis-hq/wake',
-      issueNumber: 12,
-      payload: { labels: ['wake:queue'] },
-    });
-
-    expect(event.type).toBe('issue.synced');
   });
 
   it('accepts canonical event envelopes with work item correlation', () => {

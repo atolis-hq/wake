@@ -81,7 +81,6 @@ describe('claude runner command building', () => {
         },
         wake: {
           stage: 'refined',
-          attempts: 1,
           stageHistory: [],
           recentEventIds: ['evt-1'],
           syncedAt: '2026-07-05T12:01:00.000Z',
@@ -163,7 +162,6 @@ describe('claude runner command building', () => {
         ],
         wake: {
           stage: 'refined',
-          attempts: 1,
           stageHistory: [],
           recentEventIds: [],
           syncedAt: '2026-07-05T12:04:00.000Z',
@@ -203,7 +201,6 @@ describe('claude runner command building', () => {
         comments: [],
         wake: {
           stage: 'queue',
-          attempts: 0,
           stageHistory: [],
           recentEventIds: [],
           syncedAt: '2026-07-05T12:00:00.000Z',
@@ -257,7 +254,6 @@ describe('claude runner command building', () => {
         comments: [],
         wake: {
           stage: 'queue',
-          attempts: 0,
           stageHistory: [],
           recentEventIds: [],
           syncedAt: '2026-07-05T12:00:00.000Z',
@@ -432,7 +428,6 @@ describe('claude runner command building', () => {
         comments: [],
         wake: {
           stage: 'queue',
-          attempts: 0,
           stageHistory: [],
           recentEventIds: [],
           syncedAt: '2026-07-05T12:00:00.000Z',
@@ -475,7 +470,6 @@ describe('claude runner command building', () => {
           comments: [],
           wake: {
             stage: 'queue',
-            attempts: 0,
             stageHistory: [],
             recentEventIds: [],
             syncedAt: '2026-07-05T12:00:00.000Z',

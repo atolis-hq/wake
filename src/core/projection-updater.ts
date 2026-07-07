@@ -45,7 +45,6 @@ function createProjectionFromIssueEvent(event: EventEnvelope): IssueStateRecord 
           ? ((issue as { labels: string[] }).labels)
           : [],
       ),
-      attempts: 0,
       stageHistory: [],
       recentEventIds: [event.eventId],
       syncedAt: event.ingestedAt,

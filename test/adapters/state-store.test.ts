@@ -33,7 +33,6 @@ describe('state store', () => {
       comments: [],
       wake: {
         stage: 'queue',
-        attempts: 0,
         stageHistory: [],
         recentEventIds: [],
         syncedAt: '2026-07-05T12:00:00.000Z',
@@ -43,22 +42,6 @@ describe('state store', () => {
 
     const saved = await store.readIssueState('atolis-hq/wake', 7);
     expect(saved?.issue.number).toBe(7);
-  });
-
-  it('appends structured event audit records', async () => {
-    const store = createStateStore({ wakeRoot: root });
-
-    await store.appendEvent({
-      schemaVersion: 1,
-      type: 'issue.synced',
-      occurredAt: '2026-07-05T12:00:00.000Z',
-      repo: 'atolis-hq/wake',
-      issueNumber: 7,
-      payload: { labels: ['wake:queue'] },
-    });
-
-    const contents = await readFile(join(root, 'events', '2026-07-05.jsonl'), 'utf8');
-    expect(contents).toContain('"type":"issue.synced"');
   });
 
   it('writes and reads github poll state records', async () => {

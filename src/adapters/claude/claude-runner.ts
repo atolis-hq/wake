@@ -161,7 +161,6 @@ export async function buildStagePrompt(input: {
     issueNumber: input.projection.issue.number,
     title: input.projection.issue.title,
     stage: input.projection.wake.stage,
-    attempts: input.projection.wake.attempts,
     body: input.projection.issue.body,
     allCommentsText: formatCommentList(input.projection.comments),
     newCommentsText: formatCommentList(newCommentsSinceLastRun(input.projection)),
@@ -402,7 +401,7 @@ export function createClaudeRunner(options: {
         timeoutMs: input.config.runner.claude.timeoutMs,
       });
 
-      if (result.exitCode !== 0 || result.timedOut) {
+      if (result.exitCode !== 0 || result.timedOut || result.stdout.trim().length === 0) {
         const sandboxLog = readSandboxLogBreadcrumb();
         console.error(
           formatClaudeRunLogLine({
@@ -422,6 +421,7 @@ export function createClaudeRunner(options: {
           result: [
             result.timedOut
               ? `Claude runner timed out after ${input.config.runner.claude.timeoutMs}ms and was killed`
+              : result.stdout.trim().length === 0 ? 'Claude runner produced no output'
               : 'Claude runner failed',
             result.stderr,
             sandboxLog?.text,

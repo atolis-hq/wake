@@ -33,7 +33,6 @@ DONE, BLOCKED, FAILED.
 Issue:
 - Title: {{title}}
 - Stage: {{stage}}
-- Attempts: {{attempts}}
 
 Comments on this issue:
 {{allCommentsText}}
