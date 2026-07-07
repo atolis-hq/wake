@@ -36,6 +36,10 @@ export function createDefaultWakeConfig(wakeRoot = resolve(process.cwd(), '.wake
         remoteControl: {
           enabled: false,
         },
+        models: {
+          default: 'haiku',
+          implement: 'sonnet-4.6',
+        },
       },
     },
     sources: {

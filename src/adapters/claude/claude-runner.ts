@@ -306,6 +306,26 @@ export function runClaudeCommand(input: {
   });
 }
 
+function resolveModel(options: {
+  action: AgentAction;
+  config: WakeConfig;
+}): string {
+  const models = options.config.runner.claude.models;
+
+  if (models !== undefined) {
+    const actionSpecificModel = models[options.action];
+    if (actionSpecificModel !== undefined) {
+      return actionSpecificModel;
+    }
+
+    if (models.default !== undefined) {
+      return models.default;
+    }
+  }
+
+  return options.config.runner.claude.model;
+}
+
 function parseClaudePrintOutput(stdout: string): ClaudePrintResult {
   return parseClaudePrintResult(JSON.parse(stdout));
 }
@@ -365,8 +385,13 @@ export function createClaudeRunner(options: {
         config: input.config,
       });
 
+      const model = resolveModel({
+        action: input.action,
+        config: input.config,
+      });
+
       const args = buildClaudePrintArgs({
-        model: input.config.runner.claude.model,
+        model,
         prompt: stagePrompt.prompt,
         sessionName,
         allowedTools: stagePrompt.allowedTools,
@@ -429,7 +454,7 @@ export function createClaudeRunner(options: {
           ]
             .filter((part) => part !== undefined && part.length > 0)
             .join('\n'),
-          model: input.config.runner.claude.model,
+          model,
           cli: CLAUDE_CLI_NAME,
           metadata: {
             stdout: result.stdout,
@@ -459,7 +484,7 @@ export function createClaudeRunner(options: {
       const tokenUsage = extractTokenUsage(parsed.usage);
       return {
         result: parsed.result,
-        model: input.config.runner.claude.model,
+        model,
         cli: CLAUDE_CLI_NAME,
         ...(parsed.session_id === undefined
           ? {}
