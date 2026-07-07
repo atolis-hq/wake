@@ -12,6 +12,7 @@ import {
   formatClaudeRunLogLine,
   runClaudeCommand,
 } from '../../src/adapters/claude/claude-runner.js';
+import type { WakeConfig } from '../../src/domain/types.js';
 import { defaultSmokePrompt } from '../../src/config/defaults.js';
 
 describe('claude runner command building', () => {
@@ -554,5 +555,126 @@ describe('claude runner command building', () => {
     expect(result.timedOut).toBe(false);
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toBe('ok');
+  });
+});
+
+describe('model resolution', () => {
+  function createTestConfig(overrides?: Partial<WakeConfig['runner']['claude']>): WakeConfig {
+    return {
+      schemaVersion: 1,
+      paths: {
+        wakeRoot: '/tmp/wake',
+      },
+      sandbox: {
+        image: 'wake-sandbox',
+        containerName: 'wake-sandbox',
+        containerMountPath: '/wake',
+        containerHomeMountPath: '/home/wake',
+        extraMounts: [],
+      },
+      scheduler: {
+        intervalMs: 1000,
+      },
+      runner: {
+        mode: 'fake',
+        claude: {
+          command: 'claude',
+          model: 'haiku',
+          smokeModel: 'haiku',
+          sessionName: 'Eddy',
+          remoteControlName: 'Eddy',
+          smokePrompt: 'hi',
+          timeoutMs: 60_000,
+          remoteControl: {
+            enabled: false,
+          },
+          ...overrides,
+        },
+      },
+      sources: {
+        github: {
+          enabled: false,
+          repos: [],
+          polling: {
+            maxIssuesPerRepo: 25,
+            commentPageSize: 25,
+            lookbackMs: 60000,
+          },
+          policy: {
+            requiredLabels: [],
+            ignoredLabels: [],
+            requiredAssignees: [],
+          },
+          publication: {
+            postStatusComments: true,
+          },
+        },
+      },
+    };
+  }
+
+  it('uses action-specific model when configured', () => {
+    const config = createTestConfig({
+      models: {
+        implement: 'sonnet-4.6',
+      },
+    });
+
+    const args = buildClaudePrintArgs({
+      model: config.runner.claude.models?.implement ?? config.runner.claude.model,
+      prompt: 'test',
+      sessionName: 'Eddy',
+    });
+
+    expect(args).toContain('sonnet-4.6');
+  });
+
+  it('falls back to default model when action-specific model is not set', () => {
+    const config = createTestConfig({
+      models: {
+        default: 'opus',
+        implement: 'sonnet-4.6',
+      },
+    });
+
+    // For refine action, which doesn't have a specific model configured
+    const args = buildClaudePrintArgs({
+      model: config.runner.claude.models?.refine ?? config.runner.claude.models?.default ?? config.runner.claude.model,
+      prompt: 'test',
+      sessionName: 'Eddy',
+    });
+
+    expect(args).toContain('opus');
+  });
+
+  it('falls back to legacy model field for backward compatibility', () => {
+    const config = createTestConfig({
+      model: 'legacy-haiku',
+    });
+
+    const args = buildClaudePrintArgs({
+      model: config.runner.claude.model,
+      prompt: 'test',
+      sessionName: 'Eddy',
+    });
+
+    expect(args).toContain('legacy-haiku');
+  });
+
+  it('prioritizes models.default over legacy model field', () => {
+    const config = createTestConfig({
+      model: 'legacy-haiku',
+      models: {
+        default: 'new-haiku',
+      },
+    });
+
+    const args = buildClaudePrintArgs({
+      model: config.runner.claude.models?.default ?? config.runner.claude.model,
+      prompt: 'test',
+      sessionName: 'Eddy',
+    });
+
+    expect(args).toContain('new-haiku');
   });
 });

@@ -183,6 +183,11 @@ export const wakeConfigSchema = z.object({
       remoteControl: z.object({
         enabled: z.boolean(),
       }),
+      models: z.object({
+        default: z.string().optional(),
+        refine: z.string().optional(),
+        implement: z.string().optional(),
+      }).optional(),
     }),
   }),
   sources: z.object({
