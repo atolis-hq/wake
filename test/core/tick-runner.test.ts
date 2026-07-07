@@ -390,6 +390,64 @@ describe('tick runner', () => {
     expect(deliveredEvents).toContain('wake:stage.done');
   });
 
+  it('stays idle when awaiting-approval and issue.updatedAt changed but no new human comment (Wake activity false-positive)', async () => {
+    // Regression test: when Wake posts its approval-request comment, GitHub bumps
+    // issue.updatedAt, causing needsWakeAction() to return true even though no
+    // human has replied. The tick should return idle — not invoke the LLM.
+    const store = createStateStore({ wakeRoot: root });
+    let runnerCallCount = 0;
+
+    await store.writeIssueState({
+      schemaVersion: 1,
+      workItemKey: 'atolis-hq/wake#32',
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 32,
+        title: 'Awaiting Approval Idle Test',
+        body: 'Body',
+        labels: ['wake:queue'],
+        assignees: [],
+        state: 'open',
+        url: 'https://example.test/issues/32',
+        createdAt: '2026-07-05T12:00:00.000Z',
+        updatedAt: '2026-07-05T12:06:00.000Z',
+      },
+      comments: [],
+      wake: {
+        stage: 'awaiting-approval',
+        stageHistory: [],
+        recentEventIds: [],
+        syncedAt: '2026-07-05T12:00:00.000Z',
+      },
+      context: {
+        pendingApprovalAction: 'implement',
+        lastHandledIssueUpdatedAt: '2026-07-05T12:05:00.000Z',
+      },
+    });
+
+    const config = createDefaultWakeConfig(root);
+    config.sources.github.policy.requiredLabels = ['wake:queue'];
+
+    const tickRunner = createTickRunner({
+      clock: { now: () => new Date('2026-07-05T12:10:00.000Z') },
+      config,
+      stateStore: store,
+      workSource: { async pollEvents() { return []; } },
+      runner: {
+        async run() {
+          runnerCallCount += 1;
+          return { result: 'DONE', model: 'test-model', cli: 'test-cli' };
+        },
+      },
+      workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+    });
+
+    const result = await tickRunner.runTick();
+
+    expect(result.status).toBe('idle');
+    expect(runnerCallCount).toBe(0);
+  });
+
   it('invokes the agent when awaiting-approval but comment is not /approved', async () => {
     const store = createStateStore({ wakeRoot: root });
     let runnerCallCount = 0;

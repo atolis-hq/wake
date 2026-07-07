@@ -90,11 +90,24 @@ export function createPolicyEngine() {
         ? (context.pendingApprovalAction as AgentAction)
         : 'implement';
 
+      const handledCommentId =
+        typeof context.lastHandledCommentId === 'string'
+          ? context.lastHandledCommentId
+          : undefined;
+
       const latestHumanComment = [...issue.comments]
         .reverse()
         .find((c) => !c.isWakeAuthored && !c.isBotAuthored);
 
-      const approved = latestHumanComment?.body.includes('/approved') ?? false;
+      // No new human comment since the last handled one — Wake's own activity
+      // (posting a comment, updating labels) bumps GitHub's issue.updatedAt and
+      // can trigger needsWakeAction even though the human hasn't replied yet.
+      // Return null so the tick stays idle instead of falling through to the LLM.
+      if (latestHumanComment === undefined || latestHumanComment.id === handledCommentId) {
+        return null;
+      }
+
+      const approved = latestHumanComment.body.includes('/approved');
 
       return { approved, pendingAction };
     },
