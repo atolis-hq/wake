@@ -11,7 +11,7 @@ import type {
 } from './contracts.js';
 import type { Clock } from '../lib/clock.js';
 import { acquireFileLock } from '../lib/lock.js';
-import { parseRunnerResultSentinel } from '../domain/schema.js';
+import { parseRunnerResultSentinel, runnerSentinelSchema } from '../domain/schema.js';
 import type { AgentAction, EventEnvelope, IssueStateRecord, WakeConfig } from '../domain/types.js';
 import { createEventEnvelope } from '../lib/event-log.js';
 
@@ -104,7 +104,26 @@ export function createTickRunner(deps: {
             : input.sentinel === 'FAILED'
               ? 'failure'
               : 'status-update',
-        body: input.runnerResult.result.replace(/\b(DONE|BLOCKED|FAILED)\b/g, '').trim(),
+        body: (() => {
+          const lines = input.runnerResult.result.split('\n');
+          const lastNonEmpty = lines.map((l) => l.trim()).filter((l) => l.length > 0).at(-1);
+          const isSentinel = runnerSentinelSchema.safeParse(lastNonEmpty).success;
+          if (!isSentinel) return input.runnerResult.result.trim();
+          // Remove the sentinel line (last non-empty line) from the body
+          let removed = false;
+          const stripped = lines
+            .slice()
+            .reverse()
+            .filter((l) => {
+              if (!removed && l.trim() === lastNonEmpty) {
+                removed = true;
+                return false;
+              }
+              return true;
+            })
+            .reverse();
+          return stripped.join('\n').trim();
+        })(),
         action: input.action,
         runId: input.runId,
         ...(input.runnerResult.session_id === undefined
