@@ -1,6 +1,7 @@
 import { isWakeAuthoredComment, wakeCommentMarker } from '../../domain/schema.js';
 import type { EventEnvelope, WakeConfig } from '../../domain/types.js';
 import { createEventEnvelope } from '../../lib/event-log.js';
+import { buildResumeCommandForCli } from '../runner/runner-cli-adapter.js';
 
 const wakeStatusLabelPrefix = 'wake:status.';
 const wakeStageLabelPrefix = 'wake:stage.';
@@ -154,10 +155,23 @@ function formatWakeComment(payload: Record<string, unknown>): string {
   }
 
   if (sessionId !== undefined) {
+    const resumeCommandArgs =
+      cli === undefined
+        ? null
+        : buildResumeCommandForCli({
+            cli,
+            sessionId,
+          });
+    const resumeCommandText =
+      cli === undefined
+        ? `<resume command unavailable: missing runner identity for session ${sessionId}>`
+        : resumeCommandArgs === null
+        ? `<resume command unavailable: unsupported runner identity for session ${sessionId}>`
+        : resumeCommandArgs.join(' ');
     const resumeCommand =
       workspacePath === undefined
-        ? `claude --resume ${sessionId}`
-        : `cd "${workspacePath}"\nclaude --resume ${sessionId}`;
+        ? resumeCommandText
+        : `cd "${workspacePath}"\n${resumeCommandText}`;
 
     sections.push(
       [

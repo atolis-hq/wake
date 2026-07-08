@@ -237,6 +237,29 @@ describe('run and event schemas', () => {
     ]);
   });
 
+  it('accepts codex runner configuration', () => {
+    const config = parseWakeConfig({
+      schemaVersion: 1,
+      paths: {
+        wakeRoot: '/tmp/wake',
+      },
+      runner: {
+        mode: 'codex',
+        codex: {
+          command: 'codex',
+          model: 'gpt-5.5',
+          smokeModel: 'gpt-5.4-mini',
+          smokePrompt: 'hello',
+          timeoutMs: 60_000,
+        },
+      },
+    });
+
+    expect(config.runner.mode).toBe('codex');
+    expect(config.runner.codex.command).toBe('codex');
+    expect(config.runner.codex.smokeModel).toBe('gpt-5.4-mini');
+  });
+
   it('accepts optional local-development repo root configuration', () => {
     const config = parseWakeConfig({
       schemaVersion: 1,

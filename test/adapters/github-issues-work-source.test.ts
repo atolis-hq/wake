@@ -250,6 +250,149 @@ describe('github issues work source', () => {
     expect(postedBody).toContain('<!-- wake -->');
   });
 
+  it('formats Codex resume instructions when the run came from Codex', async () => {
+    const createComment = vi.fn();
+    const store = createStateStore({ wakeRoot: root });
+    const config = createDefaultWakeConfig(root);
+    config.sources.github.enabled = true;
+    config.sources.github.repos = ['atolis-hq/wake'];
+
+    const workSource = createGitHubIssuesWorkSource({
+      client: {
+        listIssues: async () => [],
+        listComments: async () => [],
+        createComment,
+        setLabels: vi.fn(),
+      },
+      stateStore: store,
+      config,
+      now: () => new Date('2026-07-05T12:10:00.000Z'),
+    });
+
+    await workSource.deliverIntent({
+      event: createEventEnvelope({
+        eventId: 'intent-2b',
+        workItemKey: 'atolis-hq/wake#13',
+        streamScope: 'work-item',
+        direction: 'outbound',
+        sourceSystem: 'wake',
+        sourceEventType: 'wake.publish.intent.requested',
+        sourceRefs: { repo: 'atolis-hq/wake', issueNumber: 13 },
+        occurredAt: '2026-07-05T12:00:00.000Z',
+        ingestedAt: '2026-07-05T12:00:00.000Z',
+        trigger: 'context-only',
+        payload: {
+          kind: 'status-update',
+          body: 'Opened a PR',
+          action: 'implement',
+          runId: 'run-13-1',
+          sessionId: 'session-codex',
+          model: 'gpt-5.5',
+          cli: 'Codex',
+          workspacePath: '/wake/workspaces/atolis-hq__wake/13',
+        },
+      }),
+    });
+
+    const [, , , postedBody] = createComment.mock.calls[0] as [string, string, number, string];
+    expect(postedBody).toContain('cli Codex');
+    expect(postedBody).toContain('codex resume session-codex');
+    expect(postedBody).not.toContain('claude --resume session-codex');
+  });
+
+  it('does not silently fall back to Claude resume instructions when cli is missing', async () => {
+    const createComment = vi.fn();
+    const store = createStateStore({ wakeRoot: root });
+    const config = createDefaultWakeConfig(root);
+    config.sources.github.enabled = true;
+    config.sources.github.repos = ['atolis-hq/wake'];
+
+    const workSource = createGitHubIssuesWorkSource({
+      client: {
+        listIssues: async () => [],
+        listComments: async () => [],
+        createComment,
+        setLabels: vi.fn(),
+      },
+      stateStore: store,
+      config,
+      now: () => new Date('2026-07-05T12:10:00.000Z'),
+    });
+
+    await workSource.deliverIntent({
+      event: createEventEnvelope({
+        eventId: 'intent-2c',
+        workItemKey: 'atolis-hq/wake#14',
+        streamScope: 'work-item',
+        direction: 'outbound',
+        sourceSystem: 'wake',
+        sourceEventType: 'wake.publish.intent.requested',
+        sourceRefs: { repo: 'atolis-hq/wake', issueNumber: 14 },
+        occurredAt: '2026-07-05T12:00:00.000Z',
+        ingestedAt: '2026-07-05T12:00:00.000Z',
+        trigger: 'context-only',
+        payload: {
+          kind: 'status-update',
+          body: 'Opened a PR',
+          action: 'implement',
+          runId: 'run-14-1',
+          sessionId: 'session-missing-cli',
+        },
+      }),
+    });
+
+    const [, , , postedBody] = createComment.mock.calls[0] as [string, string, number, string];
+    expect(postedBody).toContain('resume command unavailable');
+    expect(postedBody).not.toContain('claude --resume session-missing-cli');
+  });
+
+  it('does not silently fall back to Claude resume instructions when cli is unsupported', async () => {
+    const createComment = vi.fn();
+    const store = createStateStore({ wakeRoot: root });
+    const config = createDefaultWakeConfig(root);
+    config.sources.github.enabled = true;
+    config.sources.github.repos = ['atolis-hq/wake'];
+
+    const workSource = createGitHubIssuesWorkSource({
+      client: {
+        listIssues: async () => [],
+        listComments: async () => [],
+        createComment,
+        setLabels: vi.fn(),
+      },
+      stateStore: store,
+      config,
+      now: () => new Date('2026-07-05T12:10:00.000Z'),
+    });
+
+    await workSource.deliverIntent({
+      event: createEventEnvelope({
+        eventId: 'intent-2d',
+        workItemKey: 'atolis-hq/wake#15',
+        streamScope: 'work-item',
+        direction: 'outbound',
+        sourceSystem: 'wake',
+        sourceEventType: 'wake.publish.intent.requested',
+        sourceRefs: { repo: 'atolis-hq/wake', issueNumber: 15 },
+        occurredAt: '2026-07-05T12:00:00.000Z',
+        ingestedAt: '2026-07-05T12:00:00.000Z',
+        trigger: 'context-only',
+        payload: {
+          kind: 'status-update',
+          body: 'Opened a PR',
+          action: 'implement',
+          runId: 'run-15-1',
+          sessionId: 'session-unsupported-cli',
+          cli: 'Cursor',
+        },
+      }),
+    });
+
+    const [, , , postedBody] = createComment.mock.calls[0] as [string, string, number, string];
+    expect(postedBody).toContain('unsupported runner identity');
+    expect(postedBody).not.toContain('claude --resume session-unsupported-cli');
+  });
+
   it('applies both status and stage labels atomically in a single setLabels call', async () => {
     const createComment = vi.fn();
     const setLabels = vi.fn();

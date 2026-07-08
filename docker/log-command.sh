@@ -10,6 +10,8 @@ host_container_home="${WAKE_SANDBOX_HOST_CONTAINER_HOME:-}"
 container_mount="${WAKE_SANDBOX_CONTAINER_MOUNT:-/wake}"
 container_name="${WAKE_SANDBOX_CONTAINER_NAME:-wake-sandbox}"
 working_dir="${WAKE_SANDBOX_CWD:-}"
+codex_bootstrap_home="${container_home}/.codex"
+codex_runtime_home="${container_home}/.codex-runtime"
 
 mirror_stdout() {
   local line="$1"
@@ -51,6 +53,20 @@ emit_check() {
   mirror_stdout "[${label}] ${description}: exit_code=${status}"
 }
 
+prepare_codex_home() {
+  mkdir -p "${codex_runtime_home}"
+
+  if [ -f "${codex_bootstrap_home}/config.toml" ]; then
+    cp "${codex_bootstrap_home}/config.toml" "${codex_runtime_home}/config.toml"
+  fi
+
+  if [ -f "${codex_bootstrap_home}/auth.json" ] && [ ! -f "${codex_runtime_home}/auth.json" ]; then
+    cp "${codex_bootstrap_home}/auth.json" "${codex_runtime_home}/auth.json"
+  fi
+
+  export CODEX_HOME="${codex_runtime_home}"
+}
+
 if [ "${1:-}" != "--" ]; then
   mirror_stderr "[${label}] expected -- before the wrapped command"
   exit 64
@@ -66,6 +82,8 @@ if [ -n "${working_dir}" ]; then
   cd "${working_dir}"
 fi
 
+prepare_codex_home
+
 mirror_stdout "[${label}] begin ts=$(date -u +%FT%TZ) cwd=$(pwd) command=$*"
 mirror_stdout "[${label}] paths hostWakeRoot=${host_wake_root} containerWakeRoot=${container_wake_root} promptsRoot=${prompts_root} containerHome=${container_home} hostContainerHome=${host_container_home} containerMount=${container_mount} containerName=${container_name}"
 
@@ -75,6 +93,7 @@ emit_check "workspaces-root" test -d "${container_mount}/workspaces"
 emit_check "repos-root" test -d "${container_mount}/repos"
 emit_check "gh-auth-status" gh auth status
 emit_check "claude-auth-status" claude auth status
+emit_check "codex-auth-status" codex login status
 
 set +e
 "$@" \

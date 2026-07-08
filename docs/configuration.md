@@ -8,7 +8,7 @@ The configuration file defines:
 - Where Wake stores runtime data and state
 - How the Docker sandbox is mounted and debugged
 - How frequently the control plane checks for new work
-- Which execution mode and Claude CLI settings to use
+- Which execution mode and CLI settings to use
 - Which external sources (like GitHub) to monitor for work
 - Policies for filtering and publishing work
 
@@ -49,6 +49,17 @@ All configuration uses `schemaVersion: 1`.
       "models": {
         "default": "haiku",
         "implement": "claude-sonnet-4-6"
+      }
+    },
+    "codex": {
+      "command": "codex",
+      "model": "gpt-5.5",
+      "smokeModel": "gpt-5.4-mini",
+      "smokePrompt": "This is Eddy, reply with \"hi Eddy only\"",
+      "timeoutMs": 1800000,
+      "models": {
+        "default": "gpt-5.5",
+        "implement": "gpt-5.5"
       }
     }
   },
@@ -95,7 +106,7 @@ Docker sandbox settings for the durable Wake container.
 | `containerName` | string | Container name Wake starts and reuses | `"wake-sandbox"` |
 | `containerMountPath` | string | Container path where the Wake home is bind-mounted | `"/wake"` |
 | `containerHomeMountPath` | string | Container path where the sandbox home directory is bind-mounted | `"/home/wake"` |
-| `extraMounts` | `{ source: string, target: string, readOnly?: boolean }[]` | Additional host paths to mount into the sandbox, for example Claude config from the host home directory | `[]` |
+| `extraMounts` | `{ source: string, target: string, readOnly?: boolean }[]` | Additional host paths to mount into the sandbox, for example Claude or Codex config from the host home directory | `[]` |
 
 To expose host Claude auth inside the sandbox, mount individual files rather
 than the whole `~/.claude` directory:
@@ -169,6 +180,34 @@ you can mount `~/.claude/skills` directly to `/home/wake/.claude/skills`
 instead. If you do that, do not expect Claude settings, plugin enablement, or
 credentials from the host to come along with it.
 
+For Codex, the narrow equivalent is to mount only the user config and auth
+files rather than the whole `~/.codex` tree:
+
+```json
+{
+  "schemaVersion": 1,
+  "sandbox": {
+    "extraMounts": [
+      {
+        "source": "C:/Users/alice/.codex/config.toml",
+        "target": "/home/wake/.codex/config.toml"
+      },
+      {
+        "source": "C:/Users/alice/.codex/auth.json",
+        "target": "/home/wake/.codex/auth.json",
+        "readOnly": true
+      }
+    ]
+  }
+}
+```
+
+`config.toml` is the user-level Codex configuration file and `auth.json`
+stores Codex account tokens. In Wake's Docker flow, prefer mounting just these
+portable files, plus any optional plain-skill directories you explicitly want,
+instead of bind-mounting the whole `~/.codex` directory across host/container
+boundaries.
+
 ### scheduler
 
 Control plane tick frequency and timing.
@@ -183,7 +222,7 @@ Execution mode and CLI settings for agent invocation.
 
 | Property | Type | Description | Default |
 |----------|------|-------------|---------|
-| `mode` | `"fake"` \| `"claude"` | Execution mode: `"fake"` for testing/fixtures, `"claude"` for real Claude CLI execution | `"fake"` |
+| `mode` | `"fake"` \| `"claude"` \| `"codex"` | Execution mode: `"fake"` for testing/fixtures, `"claude"` for real Claude CLI execution, `"codex"` for real Codex CLI execution | `"fake"` |
 
 #### runner.claude
 
@@ -230,6 +269,32 @@ Example: use a more capable model for implementation while keeping cheaper model
   }
 }
 ```
+
+#### runner.codex
+
+Codex CLI settings for agent execution (used when `runner.mode` is `"codex"`).
+
+| Property | Type | Description | Default |
+|----------|------|-------------|---------|
+| `command` | string | Path or command to invoke the Codex CLI | `"codex"` |
+| `model` | string | Codex model ID for standard agent execution | `"gpt-5.5"` |
+| `smokeModel` | string | Codex model ID for smoke tests; defaults to the lower-cost `gpt-5.4-mini` model | `"gpt-5.4-mini"` |
+| `smokePrompt` | string | Minimal prompt used to verify Codex CLI is working | `"This is Eddy, reply with \"hi Eddy only\""` |
+| `timeoutMs` | number | Wall-clock timeout (ms) for a single runner invocation; the CLI process is killed and the run marked `FAILED` if it's exceeded | `1800000` (30 min) |
+| `models` | object (optional) | Model overrides per action; see [models section](#runnercodex-models) below | (not set; uses `model` field) |
+
+##### runner.codex.models
+
+Optional model overrides for specific agent actions. Resolution order matches `runner.claude.models`:
+1. Action-specific model
+2. Default model (`models.default`)
+3. Legacy `model` field
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `default` | string (optional) | Default model for all actions not explicitly overridden |
+| `refine` | string (optional) | Model for the refine action |
+| `implement` | string (optional) | Model for the implement action |
 
 ### sources.github
 

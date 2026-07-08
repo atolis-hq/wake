@@ -16,7 +16,9 @@ npm run test:watch   # vitest watch mode
 npm run verify       # build + test, run this before considering work done
 npm run tick         # run one control-plane tick against .wake/ (fake ticketing data if no GitHub source configured)
 npm run start        # run the resident loop
+npm run smoke        # smoke test the configured real runner
 npm run smoke:claude # minimal Claude Haiku smoke test (see prompt below)
+npm run smoke:codex  # minimal Codex smoke test using gpt-5.4-mini
 npm run smoke:claude -- --remote-control  # remote-control smoke session
 ```
 
@@ -35,7 +37,7 @@ CI (`.github/workflows/ci-cd.yml`) runs `npm ci && npm test` on push/PR to `main
 - `lib/`: small focused utilities (paths, file locking, event envelope shaping, clock)
 - `cli/`: `init`/`sandbox` command implementations invoked from `main.ts`
 
-`main.ts` is the entrypoint and command dispatcher (`tick`, `start`, `init`, `sandbox`, `smoke claude`). It wires together the adapters selected by config/flags (`--runner`, `--wake-root`) into a `tickRunner` via `buildRuntime`.
+`main.ts` is the entrypoint and command dispatcher (`tick`, `start`, `init`, `sandbox`, `smoke`). It wires together the adapters selected by config/flags (`--runner`, `--wake-root`) into a `tickRunner` via `buildRuntime`.
 
 ### Adapter seams (`src/core/contracts.ts`)
 
@@ -66,7 +68,7 @@ Wake owns a `.wake/` (or scaffolded `wake-home/`) directory: `config.json`, `led
 
 ### Sandbox / Docker flow
 
-`wake init <path>` scaffolds a Wake home outside the repo checkout with `config.json`, `prompts/`, `docker/`, and `wake.sh`/`wake.ps1` launchers. Those wrappers call back into this repo checkout via `dev.repoRoot` recorded at scaffold time, and forward runtime commands (`start`, `tick`, `smoke claude`) into the running container via `sandbox exec`; `init` and explicit `sandbox ...` subcommands run on the host. See `README.md` for the full `sandbox build` / `up` / `setup` / `exec` / `down` walkthrough.
+`wake init <path>` scaffolds a Wake home outside the repo checkout with `config.json`, `prompts/`, `docker/`, and `wake.sh`/`wake.ps1` launchers. Those wrappers call back into this repo checkout via `dev.repoRoot` recorded at scaffold time, and forward runtime commands (`start`, `tick`, `smoke`) into the running container via `sandbox exec`; `init` and explicit `sandbox ...` subcommands run on the host. See `README.md` for the full `sandbox build` / `up` / `setup` / `exec` / `down` walkthrough.
 
 ### Claude smoke test
 

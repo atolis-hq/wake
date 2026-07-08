@@ -93,6 +93,7 @@ export async function runSandboxResumeCommand(input: {
   wakeRoot: string;
   containerHomeRoot: string;
   select?: ResumeSelector;
+  buildResumeCommand: (input: { sessionId: string }) => string[];
 }): Promise<void> {
   const sessionId = input.args[0];
   const explicitCwd = readFlag('--cwd', input.args);
@@ -123,7 +124,7 @@ export async function runSandboxResumeCommand(input: {
       wakeRoot: input.wakeRoot,
       containerHomeRoot: input.containerHomeRoot,
       cwd: target.workspacePath,
-      command: ['claude', '--resume', target.sessionId],
+      command: input.buildResumeCommand({ sessionId: target.sessionId }),
     }),
   );
 }

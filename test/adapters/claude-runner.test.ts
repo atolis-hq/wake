@@ -299,6 +299,14 @@ describe('claude runner command building', () => {
             },
             models: { default: 'haiku', implement: 'claude-sonnet-4-6' },
           },
+          codex: {
+            command: 'codex',
+            model: 'gpt-5.5',
+            smokeModel: 'gpt-5.4-mini',
+            smokePrompt: 'hi',
+            timeoutMs: 60_000,
+            models: { default: 'gpt-5.5', implement: 'gpt-5.5' },
+          },
         },
         sources: {
           github: {
@@ -517,6 +525,14 @@ describe('claude runner command building', () => {
               },
               models: { default: 'haiku', implement: 'claude-sonnet-4-6' },
             },
+            codex: {
+              command: 'codex',
+              model: 'gpt-5.5',
+              smokeModel: 'gpt-5.4-mini',
+              smokePrompt: 'hi',
+              timeoutMs: 60_000,
+              models: { default: 'gpt-5.5', implement: 'gpt-5.5' },
+            },
           },
           sources: {
             github: {
@@ -601,6 +617,14 @@ describe('model resolution', () => {
           },
           models: { default: 'haiku', implement: 'claude-sonnet-4-6' },
           ...overrides,
+        },
+        codex: {
+          command: 'codex',
+          model: 'gpt-5.5',
+          smokeModel: 'gpt-5.4-mini',
+          smokePrompt: 'hi',
+          timeoutMs: 60_000,
+          models: { default: 'gpt-5.5', implement: 'gpt-5.5' },
         },
       },
       sources: {

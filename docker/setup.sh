@@ -3,6 +3,9 @@ set -euo pipefail
 
 echo "Wake sandbox setup starting."
 
+codex_bootstrap_home="/home/wake/.codex"
+codex_runtime_home="/home/wake/.codex-runtime"
+
 prompt_yes_no() {
   local message="$1"
   local reply
@@ -16,6 +19,22 @@ prompt_yes_no() {
       ;;
   esac
 }
+
+prepare_codex_home() {
+  mkdir -p "${codex_runtime_home}"
+
+  if [ -f "${codex_bootstrap_home}/config.toml" ]; then
+    cp "${codex_bootstrap_home}/config.toml" "${codex_runtime_home}/config.toml"
+  fi
+
+  if [ -f "${codex_bootstrap_home}/auth.json" ] && [ ! -f "${codex_runtime_home}/auth.json" ]; then
+    cp "${codex_bootstrap_home}/auth.json" "${codex_runtime_home}/auth.json"
+  fi
+
+  export CODEX_HOME="${codex_runtime_home}"
+}
+
+prepare_codex_home
 
 if [ ! -f /home/wake/.ssh/id_ed25519 ]; then
   mkdir -p /home/wake/.ssh
@@ -36,4 +55,10 @@ if prompt_yes_no "Configure Claude auth?"; then
   claude auth login --claudeai
 else
   echo "Skipping Claude auth setup."
+fi
+
+if prompt_yes_no "Configure Codex auth?"; then
+  codex login
+else
+  echo "Skipping Codex auth setup."
 fi

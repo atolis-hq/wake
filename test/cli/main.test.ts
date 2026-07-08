@@ -24,7 +24,7 @@ describe('main command routing', () => {
       runStart: async () => {
         calls.push('start');
       },
-      runClaudeSmoke: async () => {
+      runSmoke: async () => {
         calls.push('smoke');
       },
       runLocks: async () => {
@@ -46,7 +46,7 @@ describe('main command routing', () => {
       runStart: async () => {
         calls.push('start-again');
       },
-      runClaudeSmoke: async () => {
+      runSmoke: async () => {
         calls.push('smoke-again');
       },
       runLocks: async () => {
@@ -66,15 +66,15 @@ describe('main command routing', () => {
       runSandbox: async () => {},
       runTick: async () => {},
       runStart: async () => {},
-      runClaudeSmoke: async () => {},
+      runSmoke: async () => {},
       runLocks,
     });
 
     expect(runLocks).toHaveBeenCalledWith(['clear', '--wake-root', '/tmp/wake-home']);
   });
 
-  it('still routes smoke claude through the smoke path', async () => {
-    const runClaudeSmoke = vi.fn(async () => {});
+  it('routes explicit smoke targets through the smoke path', async () => {
+    const runSmoke = vi.fn(async () => {});
 
     await dispatchMainCommand({
       args: ['smoke', 'claude', '--remote-control'],
@@ -82,11 +82,38 @@ describe('main command routing', () => {
       runSandbox: async () => {},
       runTick: async () => {},
       runStart: async () => {},
-      runClaudeSmoke,
+      runSmoke,
       runLocks: async () => {},
     });
 
-    expect(runClaudeSmoke).toHaveBeenCalledWith(['--remote-control']);
+    await dispatchMainCommand({
+      args: ['smoke', 'codex', '--json'],
+      runInit: async () => {},
+      runSandbox: async () => {},
+      runTick: async () => {},
+      runStart: async () => {},
+      runSmoke,
+      runLocks: async () => {},
+    });
+
+    expect(runSmoke).toHaveBeenNthCalledWith(1, ['claude', '--remote-control']);
+    expect(runSmoke).toHaveBeenNthCalledWith(2, ['codex', '--json']);
+  });
+
+  it('routes smoke with no explicit target through the smoke path', async () => {
+    const runSmoke = vi.fn(async () => {});
+
+    await dispatchMainCommand({
+      args: ['smoke', '--wake-root', '/tmp/wake-home'],
+      runInit: async () => {},
+      runSandbox: async () => {},
+      runTick: async () => {},
+      runStart: async () => {},
+      runSmoke,
+      runLocks: async () => {},
+    });
+
+    expect(runSmoke).toHaveBeenCalledWith(['--wake-root', '/tmp/wake-home']);
   });
 
   it('ignores inner exec payload flags after command terminator', () => {

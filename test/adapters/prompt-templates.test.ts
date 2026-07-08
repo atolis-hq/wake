@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import {
   loadPromptTemplate,
   renderPromptTemplate,
-} from '../../src/adapters/claude/prompt-templates.js';
+} from '../../src/adapters/runner/prompt-templates.js';
 
 describe('prompt templates', () => {
   it('parses frontmatter and body from a stage/mode template file', async () => {
