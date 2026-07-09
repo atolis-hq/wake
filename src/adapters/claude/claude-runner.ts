@@ -48,6 +48,7 @@ export function formatClaudeRunLogLine(input: {
   issueNumber: number;
   repo: string;
   recentEventIds: string[];
+  model?: string;
   workspacePath?: string;
   sessionId?: string;
   exitCode?: number;
@@ -56,6 +57,8 @@ export function formatClaudeRunLogLine(input: {
     '[claude-run]',
     `phase=${input.phase}`,
     `runId=${input.runId}`,
+    `cli=Claude`,
+    ...(input.model === undefined ? [] : [`model=${input.model}`]),
     `repo=${input.repo}`,
     `issueNumber=${input.issueNumber}`,
     `action=${input.action}`,
@@ -250,6 +253,7 @@ export function createClaudeRunner(options: {
           issueNumber: input.projection.issue.number,
           repo: input.projection.issue.repo,
           recentEventIds: input.recentEvents.map((event) => event.eventId),
+          model,
           ...(input.workspacePath === undefined
             ? {}
             : { workspacePath: input.workspacePath }),
@@ -273,6 +277,7 @@ export function createClaudeRunner(options: {
             issueNumber: input.projection.issue.number,
             repo: input.projection.issue.repo,
             recentEventIds: input.recentEvents.map((event) => event.eventId),
+            model,
             ...(input.workspacePath === undefined
               ? {}
               : { workspacePath: input.workspacePath }),
@@ -312,6 +317,7 @@ export function createClaudeRunner(options: {
           issueNumber: input.projection.issue.number,
           repo: input.projection.issue.repo,
           recentEventIds: input.recentEvents.map((event) => event.eventId),
+          model,
           ...(input.workspacePath === undefined
             ? {}
             : { workspacePath: input.workspacePath }),
