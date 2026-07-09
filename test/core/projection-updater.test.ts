@@ -321,7 +321,7 @@ describe('projection updater', () => {
     ]);
   });
 
-  it('returns a blocked issue to the queue when the owner replies', async () => {
+  it('records a human reply on a blocked issue without changing stage', async () => {
     const store = createStateStore({ wakeRoot: root });
     const updater = createProjectionUpdater({ stateStore: store });
 
@@ -453,11 +453,12 @@ describe('projection updater', () => {
     await updater.rebuildFromEvents([ownerReply]);
 
     projection = await store.readIssueState('atolis-hq/wake', 20);
-    expect(projection?.wake.stage).toBe('queue');
-    expect(projection?.wake.stageHistory.at(-1)?.reason).toBe('human-reply-unblocked');
+    expect(projection?.wake.stage).toBe('blocked');
+    expect(projection?.latestComment?.id).toBe('c-owner');
+    expect(projection?.wake.stageHistory).toHaveLength(1);
   });
 
-  it('routes an implement-stage block back to refined (not queue) on unblock', async () => {
+  it('does not route an implement-stage block when a human replies', async () => {
     const store = createStateStore({ wakeRoot: root });
     const updater = createProjectionUpdater({ stateStore: store });
 
@@ -555,7 +556,8 @@ describe('projection updater', () => {
     await updater.rebuildFromEvents([ownerReply]);
 
     projection = await store.readIssueState('atolis-hq/wake', 21);
-    expect(projection?.wake.stage).toBe('refined');
+    expect(projection?.wake.stage).toBe('blocked');
+    expect(projection?.context.lastRunAction).toBe('implement');
   });
 
   it('does not unblock a blocked issue on a bot-authored comment', async () => {
@@ -660,7 +662,7 @@ describe('projection updater', () => {
     expect(projection?.wake.stage).toBe('blocked');
   });
 
-  it('returns a failed refine issue to the queue when the owner replies', async () => {
+  it('records a human reply on a failed refine issue without changing stage', async () => {
     const store = createStateStore({ wakeRoot: root });
     const updater = createProjectionUpdater({ stateStore: store });
 
@@ -758,11 +760,12 @@ describe('projection updater', () => {
     await updater.rebuildFromEvents([ownerReply]);
 
     projection = await store.readIssueState('atolis-hq/wake', 23);
-    expect(projection?.wake.stage).toBe('queue');
-    expect(projection?.wake.stageHistory.at(-1)?.reason).toBe('human-reply-unblocked');
+    expect(projection?.wake.stage).toBe('failed');
+    expect(projection?.latestComment?.id).toBe('c-owner');
+    expect(projection?.wake.stageHistory).toHaveLength(1);
   });
 
-  it('returns a failed implement issue to refined when the owner replies', async () => {
+  it('records a human reply on a failed implement issue without changing stage', async () => {
     const store = createStateStore({ wakeRoot: root });
     const updater = createProjectionUpdater({ stateStore: store });
 
@@ -860,6 +863,7 @@ describe('projection updater', () => {
     await updater.rebuildFromEvents([ownerReply]);
 
     projection = await store.readIssueState('atolis-hq/wake', 24);
-    expect(projection?.wake.stage).toBe('refined');
+    expect(projection?.wake.stage).toBe('failed');
+    expect(projection?.context.lastRunAction).toBe('implement');
   });
 });

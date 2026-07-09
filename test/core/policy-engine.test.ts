@@ -131,6 +131,56 @@ function buildNeedsWakeActionIssue(overrides: {
   });
 }
 
+function buildBlockedOrFailedIssue(overrides: {
+  stage: 'blocked' | 'failed' | 'queue';
+  latestCommentId?: string;
+  latestCommentIsBotAuthored?: boolean;
+  lastHandledCommentId?: string;
+  lastRunAction?: string;
+}) {
+  return parseIssueStateRecord({
+    schemaVersion: 1,
+    issue: {
+      repo: 'atolis-hq/wake',
+      number: 62,
+      title: 'Example',
+      body: 'Body',
+      labels: ['wake'],
+      assignees: [],
+      state: 'open',
+      url: 'https://example.test/issues/62',
+      createdAt: '2026-07-06T00:00:00.000Z',
+      updatedAt: '2026-07-07T00:00:00.000Z',
+    },
+    comments: overrides.latestCommentId === undefined
+      ? []
+      : [
+          {
+            id: overrides.latestCommentId,
+            body: 'Here is the missing context.',
+            author: { login: overrides.latestCommentIsBotAuthored ? 'wake-bot' : 'owner' },
+            createdAt: '2026-07-06T01:00:00.000Z',
+            updatedAt: '2026-07-06T01:00:00.000Z',
+            isBotAuthored: overrides.latestCommentIsBotAuthored ?? false,
+          },
+        ],
+    wake: {
+      stage: overrides.stage,
+      lastRunId: 'run-62-1',
+      syncedAt: '2026-07-07T00:00:00.000Z',
+      stageHistory: [],
+    },
+    context: {
+      ...(overrides.lastHandledCommentId === undefined
+        ? {}
+        : { lastHandledCommentId: overrides.lastHandledCommentId }),
+      ...(overrides.lastRunAction === undefined
+        ? {}
+        : { lastRunAction: overrides.lastRunAction }),
+    },
+  });
+}
+
 describe('policy engine: requiredAssignees', () => {
   it('is ineligible when both requiredLabels and requiredAssignees are empty', () => {
     const policy = createPolicyEngine();
@@ -326,5 +376,61 @@ describe('policy engine: needsWakeAction', () => {
     });
 
     expect(policy.needsWakeAction(issue)).toBe(false);
+  });
+});
+
+describe('policy engine: chooseRetryActionAfterHumanReply', () => {
+  it('retries the last run action for a blocked issue with an unhandled human reply', () => {
+    const policy = createPolicyEngine();
+    const issue = buildBlockedOrFailedIssue({
+      stage: 'blocked',
+      latestCommentId: 'c-2',
+      lastHandledCommentId: 'c-1',
+      lastRunAction: 'implement',
+    });
+
+    expect(policy.chooseRetryActionAfterHumanReply(issue)).toBe('implement');
+  });
+
+  it('retries the last run action for a failed issue with an unhandled human reply', () => {
+    const policy = createPolicyEngine();
+    const issue = buildBlockedOrFailedIssue({
+      stage: 'failed',
+      latestCommentId: 'c-2',
+      lastHandledCommentId: 'c-1',
+      lastRunAction: 'refine',
+    });
+
+    expect(policy.chooseRetryActionAfterHumanReply(issue)).toBe('refine');
+  });
+
+  it('does not retry when the latest human reply was already handled', () => {
+    const policy = createPolicyEngine();
+    const issue = buildBlockedOrFailedIssue({
+      stage: 'blocked',
+      latestCommentId: 'c-1',
+      lastHandledCommentId: 'c-1',
+      lastRunAction: 'implement',
+    });
+
+    expect(policy.chooseRetryActionAfterHumanReply(issue)).toBeNull();
+  });
+
+  it('does not retry for bot comments or stages outside blocked and failed', () => {
+    const policy = createPolicyEngine();
+    const botReply = buildBlockedOrFailedIssue({
+      stage: 'blocked',
+      latestCommentId: 'c-2',
+      latestCommentIsBotAuthored: true,
+      lastRunAction: 'implement',
+    });
+    const queued = buildBlockedOrFailedIssue({
+      stage: 'queue',
+      latestCommentId: 'c-2',
+      lastRunAction: 'refine',
+    });
+
+    expect(policy.chooseRetryActionAfterHumanReply(botReply)).toBeNull();
+    expect(policy.chooseRetryActionAfterHumanReply(queued)).toBeNull();
   });
 });

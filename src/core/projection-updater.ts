@@ -118,39 +118,14 @@ function applyEvent(
       (entry) => entry.id !== String((comment as { id?: unknown }).id),
     );
 
-    // A human reply is how an owner unblocks a blocked run (per the
-    // "resume to understand; comment to unblock" flow). Route back to
-    // whichever stage lets the next tick resume where it left off: a
-    // block during 'implement' should retry implement (stage 'refined'),
-    // not redo the read-only 'refine' stage and abandon the in-progress
-    // branch/workspace.
-    const unblocked =
-      (current.wake.stage === 'blocked' || current.wake.stage === 'failed') &&
-      !isBotAuthored;
-    const blockedFromAction = current.context.blockedFromAction;
-    const unblockStage = blockedFromAction === 'implement' ? 'refined' : 'queue';
-
     return parseIssueStateRecord({
       ...current,
       comments: [...existingComments, nextComment],
       latestComment: nextComment,
       wake: {
         ...current.wake,
-        stage: unblocked ? unblockStage : current.wake.stage,
         syncedAt: event.ingestedAt,
         recentEventIds: [...current.wake.recentEventIds, event.eventId].slice(-10),
-        ...(unblocked
-          ? {
-              stageHistory: [
-                ...current.wake.stageHistory,
-                {
-                  stage: unblockStage,
-                  changedAt: event.occurredAt,
-                  reason: 'human-reply-unblocked',
-                },
-              ],
-            }
-          : {}),
       },
     });
   }
@@ -177,16 +152,11 @@ function applyEvent(
         ...(payload.sentinel === undefined
           ? {}
           : { lastRunSentinel: payload.sentinel }),
+        ...(payload.action === undefined
+          ? {}
+          : { lastRunAction: payload.action }),
         ...(payload.sentinel === doneRunnerSentinel && payload.action !== undefined
           ? { lastCompletedAction: payload.action }
-          : {}),
-        // Remembered so a later human reply can route an unblocked issue
-        // back to the stage that lets the same action resume, instead of
-        // always restarting from 'refine'.
-        ...((
-          payload.nextStage === 'blocked' || payload.nextStage === 'failed'
-        ) && payload.action !== undefined
-          ? { blockedFromAction: payload.action }
           : {}),
         // Remembered so the approval path knows which action to resume or
         // skip when a human posts /approved.

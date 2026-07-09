@@ -879,4 +879,84 @@ describe('tick runner', () => {
     expect(second.status).toBe('idle');
     expect(runnerCallCount).toBe(1);
   });
+
+  it('retries the last action for a blocked issue with an unhandled human reply', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const config = createDefaultWakeConfig(root);
+    config.sources.github.policy.requiredLabels = ['wake'];
+    let actionSeen = '';
+
+    await store.writeIssueState({
+      schemaVersion: 1,
+      workItemKey: 'atolis-hq/wake#122',
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 122,
+        title: 'Execute',
+        body: 'Body',
+        labels: ['wake'],
+        assignees: [],
+        state: 'open',
+        url: 'https://example.test/issues/122',
+        createdAt: '2026-07-05T12:00:00.000Z',
+        updatedAt: '2026-07-05T12:05:00.000Z',
+      },
+      comments: [
+        {
+          id: 'c-owner',
+          body: 'Here is the missing detail.',
+          author: { login: 'owner' },
+          createdAt: '2026-07-05T12:05:00.000Z',
+          updatedAt: '2026-07-05T12:05:00.000Z',
+          isBotAuthored: false,
+        },
+      ],
+      latestComment: {
+        id: 'c-owner',
+        body: 'Here is the missing detail.',
+        author: { login: 'owner' },
+        createdAt: '2026-07-05T12:05:00.000Z',
+        updatedAt: '2026-07-05T12:05:00.000Z',
+        isBotAuthored: false,
+      },
+      wake: {
+        stage: 'blocked',
+        lastRunId: 'run-122-1',
+        syncedAt: '2026-07-05T12:05:00.000Z',
+        stageHistory: [],
+        recentEventIds: [],
+        expectedEcho: { commentIds: [], labels: [] },
+      },
+      context: {
+        lastHandledCommentId: 'c-bot-question',
+        lastRunAction: 'implement',
+        lastRunSentinel: 'BLOCKED',
+      },
+    });
+
+    const tickRunner = createTickRunner({
+      clock: { now: () => new Date('2026-07-05T12:10:00.000Z') },
+      config,
+      stateStore: store,
+      workSource: {
+        async pollEvents() {
+          return [];
+        },
+      },
+      runner: {
+        async run(input) {
+          actionSeen = input.action;
+          return { result: 'Implemented\nDONE', model: 'test-model', cli: 'test-cli' };
+        },
+      },
+      workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+    });
+
+    const result = await tickRunner.runTick();
+    const projection = await store.readIssueState('atolis-hq/wake', 122);
+
+    expect(result.status).toBe('processed');
+    expect(actionSeen).toBe('implement');
+    expect(projection?.context.lastHandledCommentId).toBe('c-owner');
+  });
 });

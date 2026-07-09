@@ -6,6 +6,24 @@ export interface ApprovalResolution {
   pendingAction: AgentAction;
 }
 
+function latestUnhandledHumanComment(issue: IssueStateRecord): IssueStateRecord['comments'][number] | undefined {
+  const context = issue.context as Record<string, unknown>;
+  const handledCommentId =
+    typeof context.lastHandledCommentId === 'string'
+      ? context.lastHandledCommentId
+      : undefined;
+
+  const latestHumanComment = [...issue.comments]
+    .reverse()
+    .find((c) => !c.isBotAuthored);
+
+  if (latestHumanComment === undefined || latestHumanComment.id === handledCommentId) {
+    return undefined;
+  }
+
+  return latestHumanComment;
+}
+
 export function createPolicyEngine() {
   return {
     isEligible(issue: IssueStateRecord, config: WakeConfig): boolean {
@@ -94,6 +112,20 @@ export function createPolicyEngine() {
 
       return null;
     },
+    chooseRetryActionAfterHumanReply(issue: IssueStateRecord): AgentAction | null {
+      if (issue.wake.stage !== 'blocked' && issue.wake.stage !== 'failed') {
+        return null;
+      }
+
+      if (latestUnhandledHumanComment(issue) === undefined) {
+        return null;
+      }
+
+      const context = issue.context as Record<string, unknown>;
+      return agentActionValues.includes(context.lastRunAction as AgentAction)
+        ? (context.lastRunAction as AgentAction)
+        : null;
+    },
     resolveApprovalTransition(issue: IssueStateRecord): ApprovalResolution | null {
       if (issue.wake.stage !== 'awaiting-approval') {
         return null;
@@ -106,18 +138,10 @@ export function createPolicyEngine() {
         ? (context.pendingApprovalAction as AgentAction)
         : 'implement';
 
-      const handledCommentId =
-        typeof context.lastHandledCommentId === 'string'
-          ? context.lastHandledCommentId
-          : undefined;
-
-      const latestHumanComment = [...issue.comments]
-        .reverse()
-        .find((c) => !c.isBotAuthored);
-
       // No new human comment since the last handled one; stay idle instead of
       // falling through to the LLM while awaiting explicit approval feedback.
-      if (latestHumanComment === undefined || latestHumanComment.id === handledCommentId) {
+      const latestHumanComment = latestUnhandledHumanComment(issue);
+      if (latestHumanComment === undefined) {
         return null;
       }
 
