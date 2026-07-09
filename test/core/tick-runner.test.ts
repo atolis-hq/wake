@@ -56,6 +56,95 @@ describe('tick runner', () => {
     expect(runFileSnapshot).toContain('"status": "running"');
   });
 
+  it('coerces DONE to AWAITING_APPROVAL when runner metadata signals skipApproval=false', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const config = createDefaultWakeConfig(root);
+    config.sources.github.policy.requiredLabels = ['wake:queue'];
+
+    const tickRunner = createTickRunner({
+      clock: { now: () => new Date('2026-07-05T12:00:00.000Z') },
+      config,
+      stateStore: store,
+      workSource: createFakeTicketingSystem({
+        tickets: [
+          {
+            repo: 'atolis-hq/wake',
+            number: 9,
+            title: 'Implement',
+            body: 'Body',
+            labels: ['wake:queue'],
+            comments: [],
+          },
+        ],
+      }),
+      runner: {
+        async run() {
+          return {
+            result: 'PR is open.\nDONE',
+            model: 'test-model',
+            cli: 'test-cli',
+            metadata: { skipApproval: false },
+          };
+        },
+      },
+      workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+    });
+
+    const result = await tickRunner.runTick();
+
+    expect(result.status).toBe('processed');
+    if (result.status === 'processed') {
+      expect(result.sentinel).toBe('AWAITING_APPROVAL');
+      expect(result.nextStage).toBe('awaiting-approval');
+    }
+
+    const events = await readFile(join(root, 'events', '2026-07-05.jsonl'), 'utf8');
+    expect(events).toContain('"sentinel":"AWAITING_APPROVAL"');
+    expect(events).toContain('"rawSentinel":"DONE"');
+  });
+
+  it('does not coerce DONE when runner metadata signals skipApproval=true', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const config = createDefaultWakeConfig(root);
+    config.sources.github.policy.requiredLabels = ['wake:queue'];
+
+    const tickRunner = createTickRunner({
+      clock: { now: () => new Date('2026-07-05T12:00:00.000Z') },
+      config,
+      stateStore: store,
+      workSource: createFakeTicketingSystem({
+        tickets: [
+          {
+            repo: 'atolis-hq/wake',
+            number: 9,
+            title: 'Refine',
+            body: 'Body',
+            labels: ['wake:queue'],
+            comments: [],
+          },
+        ],
+      }),
+      runner: {
+        async run() {
+          return {
+            result: 'Plan complete.\nDONE',
+            model: 'test-model',
+            cli: 'test-cli',
+            metadata: { skipApproval: true },
+          };
+        },
+      },
+      workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+    });
+
+    const result = await tickRunner.runTick();
+
+    expect(result.status).toBe('processed');
+    if (result.status === 'processed') {
+      expect(result.sentinel).toBe('DONE');
+    }
+  });
+
   it('creates event audit records for sync and completion', async () => {
     const store = createStateStore({ wakeRoot: root });
     const config = createDefaultWakeConfig(root);

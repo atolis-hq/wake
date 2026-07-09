@@ -380,6 +380,7 @@ export function createClaudeRunner(options: {
           stdout: result.stdout,
           stderr: result.stderr,
           raw: parsed,
+          skipApproval: stagePrompt.skipApproval,
           ...(sandboxLog?.metadata ?? {}),
         },
       };

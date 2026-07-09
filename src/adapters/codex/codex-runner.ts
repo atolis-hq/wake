@@ -333,6 +333,7 @@ export function createCodexRunner(options: {
             .split(/\r?\n/)
             .filter((line) => line.trim().length > 0)
             .map((line) => JSON.parse(line) as Record<string, unknown>),
+          skipApproval: stagePrompt.skipApproval,
           ...(sandboxLog?.metadata ?? {}),
         },
       };
