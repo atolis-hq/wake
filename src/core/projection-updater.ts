@@ -1,34 +1,6 @@
 import { parseIssueStateRecord } from '../domain/schema.js';
-import { doneRunnerSentinel } from '../domain/stages.js';
+import { doneRunnerSentinel, stageFromLabels } from '../domain/stages.js';
 import type { EventEnvelope, IssueStateRecord } from '../domain/types.js';
-
-function stageFromLabels(labels: string[]): IssueStateRecord['wake']['stage'] {
-  if (labels.includes('wake:blocked')) {
-    return 'blocked';
-  }
-
-  if (labels.includes('wake:refined')) {
-    return 'refined';
-  }
-
-  if (labels.includes('wake:active')) {
-    return 'active';
-  }
-
-  if (labels.includes('wake:awaiting-approval')) {
-    return 'awaiting-approval';
-  }
-
-  if (labels.includes('wake:done')) {
-    return 'done';
-  }
-
-  if (labels.includes('wake:failed')) {
-    return 'failed';
-  }
-
-  return 'queue';
-}
 
 function stringArrayFromPayload(value: unknown): string[] {
   return Array.isArray(value)
@@ -46,16 +18,16 @@ function createProjectionFromIssueEvent(event: EventEnvelope): IssueStateRecord 
     return null;
   }
 
+  const labels = Array.isArray((issue as { labels?: unknown }).labels)
+    ? ((issue as { labels: string[] }).labels)
+    : [];
+
   return parseIssueStateRecord({
     schemaVersion: 1,
     workItemKey: event.workItemKey,
     issue,
     wake: {
-      stage: stageFromLabels(
-        Array.isArray((issue as { labels?: unknown }).labels)
-          ? ((issue as { labels: string[] }).labels)
-          : [],
-      ),
+      stage: stageFromLabels(labels) ?? 'queue',
       stageHistory: [],
       recentEventIds: [event.eventId],
       syncedAt: event.ingestedAt,
@@ -81,15 +53,27 @@ function applyEvent(
       return next;
     }
 
-    // Once a projection exists, wake.run.completed events own stage transitions.
-    // Re-deriving stage from labels here would let external label churn move the
-    // workflow without an explicit Wake lifecycle event.
+    const nextStageFromLabels = stageFromLabels(next.issue.labels);
+    const shouldReconcileStage =
+      nextStageFromLabels !== undefined && nextStageFromLabels !== current.wake.stage;
+
     return parseIssueStateRecord({
       ...current,
       issue: next.issue,
       wake: {
         ...current.wake,
+        ...(shouldReconcileStage ? { stage: nextStageFromLabels } : {}),
         syncedAt: event.ingestedAt,
+        stageHistory: shouldReconcileStage
+          ? [
+              ...current.wake.stageHistory,
+              {
+                stage: nextStageFromLabels,
+                changedAt: event.occurredAt,
+                reason: 'github-label-sync',
+              },
+            ]
+          : current.wake.stageHistory,
         recentEventIds: [...current.wake.recentEventIds, event.eventId].slice(-10),
       },
     });
