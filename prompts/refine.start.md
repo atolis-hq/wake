@@ -2,7 +2,7 @@
 stage: refine
 mode: start
 permissionMode: default
-allowedTools: Read, Glob, Grep, Bash(git fetch), Bash(git status)
+allowedTools: Read, Glob, Grep, Bash(git status)
 extraArgs:
 maxTurns: 40
 skipApproval: false
@@ -14,10 +14,9 @@ Do not attempt to use Edit, Write, or any Bash command other than the git
 commands listed above — that capability is intentionally withheld at this
 stage and only becomes available in the later `implement` stage.
 
-You may run `git fetch origin` to ensure the canonical clone is up-to-date,
-and `git status` to inspect repository state. If any git operation results in
-merge conflicts, you must cancel the action and return BLOCKED rather than
-attempting to resolve conflicts.
+The canonical clone has already been fetched and reset to the latest `origin/main`
+by Wake before this session started — you do not need to run `git fetch`. You may
+run `git status` to inspect repository state.
 
 Your job here is only to:
 - Read the repository (via your available tools) and decide whether the
