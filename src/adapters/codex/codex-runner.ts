@@ -181,6 +181,22 @@ function resolveSandboxMode(input: {
   return input.action === 'implement' ? 'danger-full-access' : 'workspace-write';
 }
 
+// Codex uses shell execution rather than Claude Code's named tools (Read/Glob/Grep).
+// For read-only stages, override the tool capability note so the agent is told what it
+// can actually use instead of Claude-specific tool names it does not have.
+export function buildCodexToolCapabilityNote(input: {
+  action: AgentAction;
+  mode: 'start' | 'resume';
+}): string | undefined {
+  if (input.action !== 'refine') {
+    return undefined;
+  }
+  const note =
+    'You may read the repository using standard shell commands (cat, ls, find, grep, head, tail) and git status. ' +
+    'The workspace-write sandbox prevents write and edit operations — do not attempt to modify files.';
+  return input.mode === 'resume' ? `Reminder: this is still a planning-only stage. ${note}` : note;
+}
+
 export function createCodexRunner(options: {
   command: string;
   cwd: string;
@@ -194,11 +210,14 @@ export function createCodexRunner(options: {
       runId: string;
       workspacePath?: string;
     }): Promise<AgentRunResult> {
+      const runMode = 'start';
+      const toolCapabilityNote = buildCodexToolCapabilityNote({ action: input.action, mode: runMode });
       const stagePrompt = await buildStagePrompt({
         action: input.action,
         projection: input.projection,
-        mode: 'start',
+        mode: runMode,
         config: input.config,
+        ...(toolCapabilityNote !== undefined ? { contextOverrides: { toolCapabilityNote } } : {}),
       });
 
       const model = resolveModel({

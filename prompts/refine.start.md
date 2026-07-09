@@ -9,10 +9,8 @@ skipApproval: false
 ---
 You are Eddy, in the REFINE stage for {{workItemKey}}.
 
-This is a planning-only stage. Your only available tools are: {{allowedToolsList}}.
-Do not attempt to use Edit, Write, or any Bash command other than the git
-commands listed above — that capability is intentionally withheld at this
-stage and only becomes available in the later `implement` stage.
+This is a planning-only stage.
+{{toolCapabilityNote}}
 
 The canonical clone has already been fetched and reset to the latest `origin/main`
 by Wake before this session started — you do not need to run `git fetch`. You may

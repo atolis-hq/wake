@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildCodexExecArgs,
   buildCodexResumeArgs,
+  buildCodexToolCapabilityNote,
   extractCodexExecResult,
   formatCodexRunLogLine,
 } from '../../src/adapters/codex/codex-runner.js';
@@ -70,6 +71,36 @@ describe('codex runner command building', () => {
     expect(line).toContain('action=implement');
     expect(line).toContain('recentEventIds=evt-1,evt-2');
     expect(line).toContain('workspacePath=/wake/workspaces/atolis-hq__wake/12');
+  });
+});
+
+describe('codex tool capability note', () => {
+  it('returns a shell-oriented note for the refine start action', () => {
+    const note = buildCodexToolCapabilityNote({ action: 'refine', mode: 'start' });
+
+    expect(note).toBeDefined();
+    // Should mention shell commands, not Claude Code tool names
+    expect(note).toContain('cat');
+    expect(note).toContain('grep');
+    expect(note).toContain('git status');
+    expect(note).toContain('sandbox');
+    // Must not mention Claude-specific tool names
+    expect(note).not.toContain('Read,');
+    expect(note).not.toContain('Glob');
+  });
+
+  it('prefixes the resume note with a planning-stage reminder', () => {
+    const start = buildCodexToolCapabilityNote({ action: 'refine', mode: 'start' });
+    const resume = buildCodexToolCapabilityNote({ action: 'refine', mode: 'resume' });
+
+    expect(resume).toContain('planning-only stage');
+    expect(resume).toContain(start!.slice(0, 30));
+  });
+
+  it('returns undefined for implement so default Claude note is used', () => {
+    const note = buildCodexToolCapabilityNote({ action: 'implement', mode: 'start' });
+
+    expect(note).toBeUndefined();
   });
 });
 

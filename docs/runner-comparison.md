@@ -44,10 +44,12 @@ explicit tool allowlist and deny edit tools at the CLI boundary.
 
 Codex refine is a middle ground:
 
-- the shared prompt still says refine is planning-only
+- Wake passes a Codex-specific tool capability note that describes shell read
+  commands (`cat`, `ls`, `find`, `grep`, `head`, `tail`, `git status`) instead
+  of Claude Code tool names (`Read`, `Glob`, `Grep`) that Codex does not have
 - Wake selects the less-permissive Codex sandbox mode (`workspace-write`)
-- but Codex cannot be told "only Read/Glob/Grep/git fetch/git status" with a
-  documented local CLI flag
+- but Codex cannot be told "only read-only shell commands" with a documented
+  local CLI flag — enforcement is prompt-guided plus sandbox-limited
 
 That means Codex refine is safer than full-access implementation, but not as
 strictly confined as Claude refine.

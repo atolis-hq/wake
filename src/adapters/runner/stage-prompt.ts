@@ -98,6 +98,7 @@ export async function buildStagePrompt(input: {
   projection: IssueStateRecord;
   mode?: 'start' | 'resume';
   config?: WakeConfig;
+  contextOverrides?: Record<string, unknown>;
 }): Promise<StagePromptResult> {
   const mode = input.mode ?? 'start';
   const template = await loadPromptTemplate(input.action, mode, {
@@ -122,7 +123,22 @@ export async function buildStagePrompt(input: {
   }
 
   const allowedTools = parseFrontmatterList(template.frontmatter.allowedTools);
-  context.allowedToolsList = allowedTools.length > 0 ? allowedTools.join(', ') : '(none)';
+  const allowedToolsListStr = allowedTools.length > 0 ? allowedTools.join(', ') : '(none)';
+  context.allowedToolsList = allowedToolsListStr;
+
+  // Default tool capability note — runner adapters can override this via contextOverrides
+  // when the runner's tool model differs from Claude Code's named-tool model (e.g. Codex).
+  if (mode === 'resume') {
+    context.toolCapabilityNote =
+      `Reminder: this is still a planning-only stage - your only available tools are: ${allowedToolsListStr}. Do not attempt to use Edit, Write, or any Bash command other than the git commands listed above, or modify any file.`;
+  } else {
+    context.toolCapabilityNote =
+      `Your only available tools are: ${allowedToolsListStr}.\nDo not attempt to use Edit, Write, or any Bash command other than the git commands listed above — that capability is intentionally withheld at this stage and only becomes available in the later \`implement\` stage.`;
+  }
+
+  if (input.contextOverrides !== undefined) {
+    Object.assign(context, input.contextOverrides);
+  }
 
   const skipApproval = template.frontmatter.skipApproval === 'true';
   context.sentinelList = sentinelListForApproval(skipApproval);
