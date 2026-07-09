@@ -349,7 +349,6 @@ describe('claude runner command building', () => {
       'Read',
       'Glob',
       'Grep',
-      'Bash(git fetch)',
       'Bash(git status)',
     ]);
     expect(result.allowedTools).not.toContain('Edit');
