@@ -9,11 +9,12 @@ import {
   buildClaudePrintArgs,
   buildClaudeRemoteControlArgs,
   buildEddySessionName,
+  classifyClaudeCliFailure,
   formatClaudeRunLogLine,
   runClaudeCommand,
 } from '../../src/adapters/claude/claude-runner.js';
 import type { WakeConfig } from '../../src/domain/types.js';
-import { defaultSmokePrompt } from '../../src/config/defaults.js';
+import { createDefaultWakeConfig, defaultSmokePrompt } from '../../src/config/defaults.js';
 
 describe('claude runner command building', () => {
   const baseProjection = {
@@ -170,6 +171,7 @@ describe('claude runner command building', () => {
       action: 'refine',
       projection: baseProjection,
       config: {
+        ...createDefaultWakeConfig('/tmp/wake'),
         schemaVersion: 1,
         paths: {
           wakeRoot: '/tmp/wake',
@@ -402,6 +404,7 @@ describe('claude runner command building', () => {
         context: {},
       },
       config: {
+        ...createDefaultWakeConfig('/tmp/wake'),
         schemaVersion: 1,
         paths: {
           wakeRoot: '/tmp/wake',
@@ -710,6 +713,7 @@ describe('claude runner command building', () => {
           context: {},
         },
         config: {
+          ...createDefaultWakeConfig('/tmp/wake'),
           schemaVersion: 1,
           paths: {
             wakeRoot: '/tmp/wake',
@@ -798,11 +802,26 @@ describe('claude runner command building', () => {
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toBe('ok');
   });
+
+  it('classifies Claude CLI quota failures separately from infra failures', () => {
+    expect(classifyClaudeCliFailure({
+      stdout: '',
+      stderr: 'Error: rate limit exceeded',
+      timedOut: false,
+    })).toBe('quota');
+
+    expect(classifyClaudeCliFailure({
+      stdout: '',
+      stderr: 'spawn claude ENOENT',
+      timedOut: false,
+    })).toBe('infra');
+  });
 });
 
 describe('model resolution', () => {
   function createTestConfig(overrides?: Partial<WakeConfig['runner']['claude']>): WakeConfig {
     return {
+      ...createDefaultWakeConfig('/tmp/wake'),
       schemaVersion: 1,
       paths: {
         wakeRoot: '/tmp/wake',

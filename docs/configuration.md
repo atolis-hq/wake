@@ -63,6 +63,37 @@ All configuration uses `schemaVersion: 1`.
       }
     }
   },
+  "runners": {
+    "fake": { "kind": "fake" },
+    "claude-haiku": {
+      "kind": "claude",
+      "command": "claude",
+      "model": "claude-haiku-4-5",
+      "timeoutMs": 600000
+    },
+    "claude-opus": {
+      "kind": "claude",
+      "command": "claude",
+      "model": "claude-opus-4-8",
+      "timeoutMs": 1800000
+    },
+    "codex": {
+      "kind": "codex",
+      "command": "codex",
+      "model": "gpt-5.5",
+      "timeoutMs": 1800000
+    }
+  },
+  "tiers": {
+    "light": ["claude-haiku"],
+    "standard": ["codex", "claude-haiku"],
+    "deep": ["claude-opus", "codex"]
+  },
+  "defaultTier": "standard",
+  "stages": {
+    "queue": { "action": "refine", "tier": "light" },
+    "refined": { "action": "implement", "tier": "standard" }
+  },
   "sources": {
     "github": {
       "enabled": false,
@@ -218,11 +249,46 @@ Control plane tick frequency and timing.
 
 ### runner
 
-Execution mode and CLI settings for agent invocation.
+Legacy execution mode and per-kind CLI defaults. New multi-runner routing uses
+the top-level [`runners`](#runners), [`tiers`](#tiers), and
+[`stages`](#stages) sections. `--runner fake` still acts as a global override;
+`runner.mode = "claude"` or `"codex"` remains supported for older configs that
+select one CLI globally.
 
 | Property | Type | Description | Default |
 |----------|------|-------------|---------|
 | `mode` | `"fake"` \| `"claude"` \| `"codex"` | Execution mode: `"fake"` for testing/fixtures, `"claude"` for real Claude CLI execution, `"codex"` for real Codex CLI execution | `"fake"` |
+
+### runners
+
+Named runner registry. The object key is the routing target; `kind` selects the
+adapter implementation. Multiple entries can share the same `kind` with
+different models, commands, or timeouts.
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `kind` | `"fake"` \| `"claude"` \| `"codex"` | Adapter kind to use for this named runner |
+| `command` | string | CLI command for real runner kinds |
+| `model` | string | Default model for this named runner |
+| `timeoutMs` | number | Wall-clock timeout for this named runner |
+
+`claude` and `codex` entries accept the same per-kind settings as
+`runner.claude` and `runner.codex`.
+
+### tiers
+
+Capability tiers map a closed category name to an ordered list of named runner
+candidates. Current selection is deterministic: Wake uses the first configured
+candidate in the tier.
+
+### defaultTier
+
+Fallback tier used when a stage does not set `tier` or `runner`.
+
+### stages
+
+Per-stage routing. A stage normally routes to a `tier`; `runner` pins a concrete
+named runner and takes precedence over `tier`.
 
 #### runner.claude
 

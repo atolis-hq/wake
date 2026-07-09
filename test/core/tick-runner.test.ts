@@ -93,6 +93,60 @@ describe('tick runner', () => {
     expect(events).toContain('"sourceEventType":"wake.run.completed"');
   });
 
+  it('stamps resolved runner routing into run records and completion events', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const config = createDefaultWakeConfig(root);
+    config.sources.github.policy.requiredLabels = ['wake:queue'];
+
+    const tickRunner = createTickRunner({
+      clock: { now: () => new Date('2026-07-05T12:00:00.000Z') },
+      config,
+      stateStore: store,
+      workSource: createFakeTicketingSystem({
+        tickets: [
+          {
+            repo: 'atolis-hq/wake',
+            number: 110,
+            title: 'Route stamp',
+            body: 'Body',
+            labels: ['wake:queue'],
+            comments: [],
+          },
+        ],
+        now: () => new Date('2026-07-05T12:00:00.000Z'),
+      }),
+      runner: {
+        async run() {
+          return {
+            result: 'Fake runner completed\nDONE',
+            model: 'test-model',
+            cli: 'test-cli',
+            routing: {
+              runnerName: 'fake-light',
+              runnerKind: 'fake',
+              tier: 'light',
+              reason: 'stage queue tier light selected runner fake-light',
+            },
+          };
+        },
+      },
+      workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+    });
+
+    await tickRunner.runTick();
+
+    const [runRecord] = await store.listRunRecords();
+    expect(runRecord?.routing).toEqual({
+      runnerName: 'fake-light',
+      runnerKind: 'fake',
+      tier: 'light',
+      reason: 'stage queue tier light selected runner fake-light',
+    });
+
+    const events = await readFile(join(root, 'events', '2026-07-05.jsonl'), 'utf8');
+    expect(events).toContain('"routing":{"runnerName":"fake-light","runnerKind":"fake","tier":"light"');
+  });
+
   it('persists outbound publish intents before sink delivery', async () => {
     const store = createStateStore({ wakeRoot: root });
     const config = createDefaultWakeConfig(root);

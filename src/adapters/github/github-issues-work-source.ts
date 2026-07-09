@@ -195,6 +195,8 @@ function formatWakeComment(payload: Record<string, unknown>): string {
   const sessionId = typeof payload.sessionId === 'string' ? payload.sessionId : undefined;
   const model = typeof payload.model === 'string' ? payload.model : undefined;
   const cli = typeof payload.cli === 'string' ? payload.cli : undefined;
+  const runnerName = typeof payload.runnerName === 'string' ? payload.runnerName : undefined;
+  const runnerTier = typeof payload.runnerTier === 'string' ? payload.runnerTier : undefined;
   const duration = typeof payload.duration === 'string' ? payload.duration : undefined;
   const tokens = typeof payload.tokens === 'string' ? payload.tokens : undefined;
   const workspacePath =
@@ -202,6 +204,8 @@ function formatWakeComment(payload: Record<string, unknown>): string {
 
   const details = [
     action === undefined ? undefined : `stage \`${action}\``,
+    runnerName === undefined ? undefined : `runner \`${runnerName}\``,
+    runnerTier === undefined ? undefined : `tier \`${runnerTier}\``,
     cli === undefined ? undefined : `cli ${cli}`,
     model === undefined ? undefined : `model \`${model}\``,
     duration === undefined ? undefined : `duration ${duration}`,
