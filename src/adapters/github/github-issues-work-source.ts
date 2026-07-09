@@ -1,5 +1,4 @@
-import { isWakeAuthoredComment, wakeCommentMarker } from '../../domain/schema.js';
-import type { EventEnvelope, WakeConfig } from '../../domain/types.js';
+import type { EventEnvelope, IssueStateRecord, WakeConfig } from '../../domain/types.js';
 import { createEventEnvelope } from '../../lib/event-log.js';
 import { buildResumeCommandForCli } from '../runner/runner-cli-adapter.js';
 
@@ -31,6 +30,7 @@ function normalizeTicketUpsert(input: {
   repo: string;
   issue: GitHubIssue;
   ingestedAt: string;
+  expectedEcho?: boolean;
 }): EventEnvelope {
   return createEventEnvelope({
     eventId: `github-issue-${input.repo}-${input.issue.number}-${input.issue.updated_at}`,
@@ -46,7 +46,7 @@ function normalizeTicketUpsert(input: {
     },
     occurredAt: input.issue.updated_at,
     ingestedAt: input.ingestedAt,
-    trigger: 'immediate',
+    trigger: input.expectedEcho === true ? 'context-only' : 'immediate',
     payload: {
       ticket: {
         repo: input.repo,
@@ -71,6 +71,9 @@ function normalizeTicketUpsert(input: {
         issueUpdatedAt: input.issue.updated_at,
       },
     },
+    ...(input.expectedEcho === true
+      ? { derivedHints: { expectedEcho: true } }
+      : {}),
   });
 }
 
@@ -116,13 +119,72 @@ function normalizeTicketCommentEvent(input: {
         : 'github.issue.comment.created',
     },
     derivedHints: {
-      wakeAuthoredComment: isWakeAuthoredComment(input.comment.body ?? ''),
       // Third-party bots/integrations (CI, Dependabot, Renovate, etc.) must
-      // not be able to unblock a blocked issue just by lacking Wake's own
-      // marker - only an actual human reply should.
+      // not be able to unblock a blocked issue; only an actual human reply should.
       botAuthoredComment: input.comment.user?.type === 'Bot',
     },
   });
+}
+
+function normalizeLabels(labels: string[]): string[] {
+  return [...labels].sort();
+}
+
+function labelsMatch(left: string[], right: string[]): boolean {
+  const normalizedLeft = normalizeLabels(left);
+  const normalizedRight = normalizeLabels(right);
+  return (
+    normalizedLeft.length === normalizedRight.length &&
+    normalizedLeft.every((label, index) => label === normalizedRight[index])
+  );
+}
+
+function issueLabels(issue: GitHubIssue): string[] {
+  return (issue.labels ?? [])
+    .map((label) => (typeof label === 'string' ? label : label.name))
+    .filter((label): label is string => typeof label === 'string');
+}
+
+function issueAssignees(issue: GitHubIssue): string[] {
+  return (issue.assignees ?? [])
+    .map((assignee) => assignee.login)
+    .filter((login): login is string => typeof login === 'string');
+}
+
+function isExpectedLabelEcho(issue: GitHubIssue, local: IssueStateRecord | null): boolean {
+  if (local === null || local.wake.expectedEcho.labels.length === 0) {
+    return false;
+  }
+
+  return (
+    issue.title === local.issue.title &&
+    (issue.body ?? '') === local.issue.body &&
+    (issue.state === 'closed' ? 'closed' : 'open') === local.issue.state &&
+    issue.html_url === local.issue.url &&
+    labelsMatch(issueAssignees(issue), local.issue.assignees) &&
+    labelsMatch(issueLabels(issue), local.wake.expectedEcho.labels)
+  );
+}
+
+function extractCreatedCommentId(response: unknown): string | undefined {
+  if (response === null || typeof response !== 'object') {
+    return undefined;
+  }
+
+  const directId = (response as { id?: unknown }).id;
+  if (typeof directId === 'number' || typeof directId === 'string') {
+    return String(directId);
+  }
+
+  const data = (response as { data?: unknown }).data;
+  if (data !== null && typeof data === 'object') {
+    const dataId = (data as { id?: unknown }).id;
+    if (typeof dataId === 'number' || typeof dataId === 'string') {
+      return String(dataId);
+    }
+  }
+
+  return undefined;
 }
 
 function formatWakeComment(payload: Record<string, unknown>): string {
@@ -184,8 +246,6 @@ function formatWakeComment(payload: Record<string, unknown>): string {
     );
   }
 
-  sections.push(wakeCommentMarker);
-
   return sections.join('\n\n');
 }
 
@@ -236,7 +296,12 @@ export function createGitHubIssuesWorkSource(deps: {
           const local = await deps.stateStore.readIssueState(repoRef, issue.number);
 
           if (local?.issue.updatedAt !== issue.updated_at) {
-            events.push(normalizeTicketUpsert({ repo: repoRef, issue, ingestedAt }));
+            events.push(normalizeTicketUpsert({
+              repo: repoRef,
+              issue,
+              ingestedAt,
+              expectedEcho: isExpectedLabelEcho(issue, local ?? null),
+            }));
           }
 
           const comments = await deps.client.listComments(
@@ -252,6 +317,10 @@ export function createGitHubIssuesWorkSource(deps: {
             );
 
             if (known?.updatedAt === comment.updated_at) {
+              continue;
+            }
+
+            if (local?.wake.expectedEcho.commentIds.includes(String(comment.id)) === true) {
               continue;
             }
 
@@ -353,12 +422,13 @@ export function createGitHubIssuesWorkSource(deps: {
         return [];
       }
 
-      await deps.client.createComment(
+      const response = await deps.client.createComment(
         owner,
         repoName,
         issueNumber,
         formatWakeComment(input.event.payload),
       );
+      const commentId = extractCreatedCommentId(response);
 
       return [
         createEventEnvelope({
@@ -371,6 +441,7 @@ export function createGitHubIssuesWorkSource(deps: {
           sourceRefs: {
             repo,
             issueNumber,
+            ...(commentId === undefined ? {} : { commentId }),
           },
           occurredAt: publishedAt,
           ingestedAt: publishedAt,

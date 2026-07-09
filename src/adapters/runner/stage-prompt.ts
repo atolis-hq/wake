@@ -25,7 +25,7 @@ function newCommentsSinceLastRun(projection: IssueStateRecord): CommentSnapshot[
   const candidates =
     cursorIndex === -1 ? projection.comments : projection.comments.slice(cursorIndex + 1);
 
-  return candidates.filter((comment) => !comment.isWakeAuthored && !comment.isBotAuthored);
+  return candidates.filter((comment) => !comment.isBotAuthored);
 }
 
 function parseFrontmatterList(value: string | undefined): string[] {

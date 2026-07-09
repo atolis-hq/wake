@@ -1,7 +1,6 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 
 import {
-  isWakeAuthoredComment,
   parseEventEnvelope,
   parseIssueStateRecord,
   parseSourceStateRecord,
@@ -30,11 +29,10 @@ describe('issue state schema', () => {
       comments: [
         {
           id: 'c1',
-          body: 'Need more detail <!-- wake -->',
+          body: 'Need more detail',
           author: { login: 'shared-user' },
           createdAt: '2026-07-05T12:00:00.000Z',
           updatedAt: '2026-07-05T12:00:00.000Z',
-          isWakeAuthored: true,
         },
       ],
       wake: {
@@ -48,6 +46,7 @@ describe('issue state schema', () => {
     });
 
     expect(record.context.agentBrief).toBe('Extra information for future prompts');
+    expect(record.wake.expectedEcho).toEqual({ commentIds: [], labels: [] });
   });
 
   it('rejects missing canonical wake stage', () => {
@@ -122,7 +121,6 @@ describe('run and event schemas', () => {
         body: 'Need more detail',
       },
       derivedHints: {
-        wakeAuthoredComment: false,
       },
     });
 
@@ -148,11 +146,6 @@ describe('run and event schemas', () => {
   it('defaults to FAILED when no sentinel keyword is present on the last line', () => {
     expect(parseRunnerResultSentinel('Should I proceed with creating the worktree?')).toBe('FAILED');
     expect(parseRunnerResultSentinel('')).toBe('FAILED');
-  });
-
-  it('detects the wake comment marker in shared-account comments', () => {
-    expect(isWakeAuthoredComment('Question <!-- wake -->')).toBe(true);
-    expect(isWakeAuthoredComment('Human answer')).toBe(false);
   });
 
   it('accepts source state records for provider poll watermarks', () => {

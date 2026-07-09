@@ -36,6 +36,7 @@ describe('state store', () => {
         stageHistory: [],
         recentEventIds: [],
         syncedAt: '2026-07-05T12:00:00.000Z',
+          expectedEcho: { commentIds: [], labels: [] },
       },
       context: {},
     });

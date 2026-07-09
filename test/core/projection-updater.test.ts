@@ -67,14 +67,13 @@ describe('projection updater', () => {
         payload: {
           comment: {
             id: 'c-1',
-            body: 'Need more detail <!-- wake -->',
+            body: 'Need more detail',
             author: { login: 'shared-user' },
             createdAt: '2026-07-05T12:05:00.000Z',
             updatedAt: '2026-07-05T12:05:00.000Z',
           },
         },
         derivedHints: {
-          wakeAuthoredComment: true,
         },
       }),
     ];
@@ -196,6 +195,132 @@ describe('projection updater', () => {
     expect(projection?.wake.stage).toBe('refined');
   });
 
+  it('records published comment ids as expected echoes', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const updater = createProjectionUpdater({ stateStore: store });
+
+    const initialUpsert = createEventEnvelope({
+      eventId: 'evt-issue-echo-comment',
+      workItemKey: 'atolis-hq/wake#10',
+      streamScope: 'global-intake',
+      direction: 'inbound',
+      sourceSystem: 'github',
+      sourceEventType: 'ticket.upsert',
+      sourceRefs: {
+        repo: 'atolis-hq/wake',
+        issueNumber: 10,
+        sourceUrl: 'https://example.test/issues/10',
+      },
+      occurredAt: '2026-07-05T12:00:00.000Z',
+      ingestedAt: '2026-07-05T12:00:01.000Z',
+      trigger: 'immediate',
+      payload: {
+        ticket: {
+          repo: 'atolis-hq/wake',
+          number: 10,
+          title: 'Example',
+          body: 'Body',
+          labels: [],
+          assignees: [],
+          state: 'open',
+          url: 'https://example.test/issues/10',
+          createdAt: '2026-07-05T12:00:00.000Z',
+          updatedAt: '2026-07-05T12:00:00.000Z',
+        },
+      },
+    });
+    const published = createEventEnvelope({
+      eventId: 'evt-comment-published',
+      workItemKey: 'atolis-hq/wake#10',
+      streamScope: 'work-item',
+      direction: 'outbound',
+      sourceSystem: 'github',
+      sourceEventType: 'ticket.reply.published',
+      sourceRefs: {
+        repo: 'atolis-hq/wake',
+        issueNumber: 10,
+        commentId: 'c-wake',
+      },
+      occurredAt: '2026-07-05T12:01:00.000Z',
+      ingestedAt: '2026-07-05T12:01:00.000Z',
+      trigger: 'context-only',
+      payload: {},
+    });
+
+    await updater.rebuildFromEvents([initialUpsert, published]);
+
+    const projection = await store.readIssueState('atolis-hq/wake', 10);
+    expect(projection?.wake.expectedEcho.commentIds).toEqual(['c-wake']);
+  });
+
+  it('records updated labels as expected echoes and refreshes local labels', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const updater = createProjectionUpdater({ stateStore: store });
+
+    const initialUpsert = createEventEnvelope({
+      eventId: 'evt-issue-echo-label',
+      workItemKey: 'atolis-hq/wake#11',
+      streamScope: 'global-intake',
+      direction: 'inbound',
+      sourceSystem: 'github',
+      sourceEventType: 'ticket.upsert',
+      sourceRefs: {
+        repo: 'atolis-hq/wake',
+        issueNumber: 11,
+        sourceUrl: 'https://example.test/issues/11',
+      },
+      occurredAt: '2026-07-05T12:00:00.000Z',
+      ingestedAt: '2026-07-05T12:00:01.000Z',
+      trigger: 'immediate',
+      payload: {
+        ticket: {
+          repo: 'atolis-hq/wake',
+          number: 11,
+          title: 'Example',
+          body: 'Body',
+          labels: ['bug', 'wake:status.pending'],
+          assignees: [],
+          state: 'open',
+          url: 'https://example.test/issues/11',
+          createdAt: '2026-07-05T12:00:00.000Z',
+          updatedAt: '2026-07-05T12:00:00.000Z',
+        },
+      },
+    });
+    const labelsUpdated = createEventEnvelope({
+      eventId: 'evt-labels-updated',
+      workItemKey: 'atolis-hq/wake#11',
+      streamScope: 'work-item',
+      direction: 'outbound',
+      sourceSystem: 'github',
+      sourceEventType: 'ticket.labels.updated',
+      sourceRefs: {
+        repo: 'atolis-hq/wake',
+        issueNumber: 11,
+      },
+      occurredAt: '2026-07-05T12:01:00.000Z',
+      ingestedAt: '2026-07-05T12:01:00.000Z',
+      trigger: 'context-only',
+      payload: {
+        labels: ['bug', 'wake:status.working', 'wake:stage.queue'],
+      },
+    });
+
+    await updater.rebuildFromEvents([initialUpsert, labelsUpdated]);
+
+    const projection = await store.readIssueState('atolis-hq/wake', 11);
+    expect(projection?.issue.labels).toEqual([
+      'bug',
+      'wake:status.working',
+      'wake:stage.queue',
+    ]);
+    expect(projection?.wake.expectedEcho.labels).toEqual([
+      'bug',
+      'wake:status.working',
+      'wake:stage.queue',
+    ]);
+  });
+
   it('returns a blocked issue to the queue when the owner replies', async () => {
     const store = createStateStore({ wakeRoot: root });
     const updater = createProjectionUpdater({ stateStore: store });
@@ -279,14 +404,14 @@ describe('projection updater', () => {
       payload: {
         comment: {
           id: 'c-wake',
-          body: 'I need more info <!-- wake -->',
+          body: 'I need more info',
           author: { login: 'wake-bot' },
           createdAt: '2026-07-05T12:01:30.000Z',
           updatedAt: '2026-07-05T12:01:30.000Z',
         },
       },
       derivedHints: {
-        wakeAuthoredComment: true,
+        botAuthoredComment: true,
       },
     });
 
@@ -321,7 +446,6 @@ describe('projection updater', () => {
         },
       },
       derivedHints: {
-        wakeAuthoredComment: false,
       },
     });
 
@@ -424,7 +548,6 @@ describe('projection updater', () => {
         },
       },
       derivedHints: {
-        wakeAuthoredComment: false,
       },
     });
 
@@ -526,7 +649,6 @@ describe('projection updater', () => {
         },
       },
       derivedHints: {
-        wakeAuthoredComment: false,
         botAuthoredComment: true,
       },
     });
@@ -629,7 +751,6 @@ describe('projection updater', () => {
         },
       },
       derivedHints: {
-        wakeAuthoredComment: false,
       },
     });
 
@@ -732,7 +853,6 @@ describe('projection updater', () => {
         },
       },
       derivedHints: {
-        wakeAuthoredComment: false,
       },
     });
 

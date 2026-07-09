@@ -16,7 +16,7 @@ import type { AgentAction, EventEnvelope, IssueStateRecord, WakeConfig } from '.
 import { createEventEnvelope } from '../lib/event-log.js';
 
 function latestHumanCommentId(candidate: IssueStateRecord): string | undefined {
-  const human = candidate.comments.filter((c) => !c.isWakeAuthored && !c.isBotAuthored);
+  const human = candidate.comments.filter((c) => !c.isBotAuthored);
   return human.at(-1)?.id;
 }
 
@@ -274,7 +274,6 @@ export function createTickRunner(deps: {
                 runId: approvalId,
                 reason: 'human:approved',
                 handledCommentId: latestHumanCommentId(candidate),
-                handledIssueUpdatedAt: candidate.issue.updatedAt,
               },
             });
             await deps.stateStore.appendEventEnvelope(approvalCompletedEvent);
@@ -423,7 +422,6 @@ export function createTickRunner(deps: {
               workspacePath,
               reason: `runner:${sentinel.toLowerCase()}`,
               handledCommentId: latestHumanCommentId(candidate),
-              handledIssueUpdatedAt: candidate.issue.updatedAt,
             },
           });
           await deps.stateStore.appendEventEnvelope(runCompletedEvent);
@@ -491,7 +489,6 @@ export function createTickRunner(deps: {
               runId,
               reason: 'runner:infrastructure-error',
               handledCommentId: latestHumanCommentId(candidate),
-              handledIssueUpdatedAt: candidate.issue.updatedAt,
             },
           });
           await deps.stateStore.appendEventEnvelope(runCompletedEvent);

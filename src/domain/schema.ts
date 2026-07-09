@@ -6,8 +6,6 @@ import {
   stageValues,
 } from './stages.js';
 
-export const wakeCommentMarker = '<!-- wake -->';
-
 const isoTimestampSchema = z.string().datetime({ offset: true });
 const stageSchema = z.enum(stageValues);
 export const runnerSentinelSchema = z.enum(runnerSentinelValues);
@@ -27,7 +25,6 @@ const commentSnapshotSchema = z.object({
   }),
   createdAt: isoTimestampSchema,
   updatedAt: isoTimestampSchema,
-  isWakeAuthored: z.boolean(),
   isBotAuthored: z.boolean().default(false),
 });
 
@@ -104,6 +101,7 @@ export const issueStateRecordSchema = z.preprocess((input) => {
       record.wake !== null && typeof record.wake === 'object'
         ? {
             recentEventIds: [],
+            expectedEcho: { commentIds: [], labels: [] },
             ...(record.wake as Record<string, unknown>),
           }
         : record.wake,
@@ -123,6 +121,10 @@ export const issueStateRecordSchema = z.preprocess((input) => {
     syncedAt: isoTimestampSchema,
     stageHistory: z.array(stageHistoryEntrySchema),
     recentEventIds: z.array(z.string()).default([]),
+    expectedEcho: z.object({
+      commentIds: z.array(z.string()).default([]),
+      labels: z.array(z.string()).default([]),
+    }).default({ commentIds: [], labels: [] }),
   }),
   context: z.record(z.string(), z.unknown()).default({}),
 }));
@@ -274,8 +276,4 @@ export function parseRunnerResultSentinel(
 
   const parsed = runnerSentinelSchema.safeParse(lastLine);
   return parsed.success ? parsed.data : 'FAILED';
-}
-
-export function isWakeAuthoredComment(body: string): boolean {
-  return body.includes(wakeCommentMarker);
 }
