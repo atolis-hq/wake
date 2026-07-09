@@ -17,9 +17,5 @@ export function maxConfiguredRunnerTimeoutMs(config: WakeConfig): number {
     )
     .filter((timeout): timeout is number => timeout !== undefined);
 
-  return Math.max(
-    config.runner.claude.timeoutMs,
-    config.runner.codex.timeoutMs,
-    ...registryTimeouts,
-  );
+  return registryTimeouts.length > 0 ? Math.max(...registryTimeouts) : Infinity;
 }

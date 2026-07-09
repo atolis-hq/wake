@@ -21,20 +21,6 @@ function withoutKind<T extends RunnerEntry>(entry: T): Omit<T, 'kind'> {
   return settings;
 }
 
-function legacyEntryForMode(config: WakeConfig, mode: Exclude<WakeConfig['runner']['mode'], 'fake'>): RunnerEntry {
-  if (mode === 'claude') {
-    return {
-      kind: 'claude',
-      ...config.runner.claude,
-    };
-  }
-
-  return {
-    kind: 'codex',
-    ...config.runner.codex,
-  };
-}
-
 function createRunnerForEntry(input: {
   name: string;
   entry: RunnerEntry;
@@ -155,7 +141,7 @@ export function resolveRunnerRouting(input: {
 export function createRegistryRunner(input: {
   config: WakeConfig;
   cwd: string;
-  override?: WakeConfig['runner']['mode'] | string;
+  override?: string;
 }): AgentRunner {
   if (input.override === 'fake') {
     const runner = createFakeRunner();
@@ -168,29 +154,6 @@ export function createRegistryRunner(input: {
             runnerName: 'fake',
             runnerKind: 'fake',
             reason: '--runner fake override',
-          },
-        });
-      },
-    };
-  }
-
-  if (input.override === 'claude' || input.override === 'codex') {
-    const entry = legacyEntryForMode(input.config, input.override);
-    const runner = createRunnerForEntry({
-      name: input.override,
-      entry,
-      config: input.config,
-      cwd: input.cwd,
-    });
-    return {
-      run(runInput) {
-        return runWithRouting({
-          runner,
-          runInput,
-          routing: {
-            runnerName: input.override as string,
-            runnerKind: input.override as Exclude<WakeConfig['runner']['mode'], 'fake'>,
-            reason: `legacy runner.mode ${input.override}`,
           },
         });
       },
@@ -217,29 +180,6 @@ export function createRegistryRunner(input: {
             runnerName: input.override as string,
             runnerKind: entry.kind,
             reason: `--runner ${input.override} override`,
-          },
-        });
-      },
-    };
-  }
-
-  if (input.config.runner.mode !== 'fake') {
-    const entry = legacyEntryForMode(input.config, input.config.runner.mode);
-    const runner = createRunnerForEntry({
-      name: input.config.runner.mode,
-      entry,
-      config: input.config,
-      cwd: input.cwd,
-    });
-    return {
-      run(runInput) {
-        return runWithRouting({
-          runner,
-          runInput,
-          routing: {
-            runnerName: input.config.runner.mode,
-            runnerKind: input.config.runner.mode,
-            reason: `legacy runner.mode ${input.config.runner.mode}`,
           },
         });
       },
@@ -277,10 +217,10 @@ export function createRegistryRunner(input: {
 
 export function runnerKindForOverride(
   config: WakeConfig,
-  override: WakeConfig['runner']['mode'] | string,
+  override: string,
 ): RunnerKind | null {
-  if (override === 'fake' || override === 'claude' || override === 'codex') {
-    return override;
+  if (override === 'fake') {
+    return 'fake';
   }
   return config.runners[override]?.kind ?? null;
 }

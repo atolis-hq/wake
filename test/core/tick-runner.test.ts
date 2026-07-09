@@ -1037,8 +1037,12 @@ describe('tick runner', () => {
     const store = createStateStore({ wakeRoot: root });
     const config = createDefaultWakeConfig(root);
     config.sources.github.policy.requiredLabels = ['wake'];
-    config.runner.claude.timeoutMs = 60_000;
-    config.runner.codex.timeoutMs = 60_000;
+    const claudeHaikuEntry = config.runners['claude-haiku'];
+    if (claudeHaikuEntry?.kind === 'claude') {
+      claudeHaikuEntry.timeoutMs = 60_000;
+    }
+    config.tiers.light = ['claude-haiku'];
+    config.tiers.standard = ['claude-haiku'];
     let runnerCallCount = 0;
 
     await store.writeIssueState({

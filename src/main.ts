@@ -48,15 +48,7 @@ function hasFlag(name: string, args: string[]): boolean {
   return commandArgsBeforeTerminator(args).includes(name);
 }
 
-function isRunnerMode(value: string): value is WakeConfig['runner']['mode'] {
-  return value === 'fake' || value === 'claude' || value === 'codex';
-}
-
 function routesOnlyToFake(config: WakeConfig): boolean {
-  if (config.runner.mode !== 'fake') {
-    return false;
-  }
-
   return Object.values(config.tiers).every((candidates) => {
     const first = candidates[0];
     return first !== undefined && config.runners[first]?.kind === 'fake';
@@ -187,7 +179,7 @@ async function buildRuntime(args: string[]) {
   const runnerOverride = readFlagBeforeCommandTerminator('--runner', args);
   if (
     runnerOverride !== undefined &&
-    !isRunnerMode(runnerOverride) &&
+    runnerOverride !== 'fake' &&
     config.runners[runnerOverride] === undefined
   ) {
     throw new Error(`Unsupported runner override: ${runnerOverride}`);
@@ -207,15 +199,7 @@ async function buildRuntime(args: string[]) {
       : createGitWorkspaceManager({ wakeRoot });
   const tickRunner = createTickRunner({
     clock: systemClock,
-    config: {
-      ...config,
-      runner: {
-        ...config.runner,
-        mode: isRunnerMode(runnerOverride ?? '')
-          ? (runnerOverride as WakeConfig['runner']['mode'])
-          : config.runner.mode,
-      },
-    },
+    config,
     stateStore,
     workSource: ticketingSystem,
     outboundSink: ticketingSystem,
