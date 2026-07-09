@@ -17,10 +17,7 @@ merge conflicts, cancel the action and return BLOCKED rather than attempting
 to resolve conflicts.
 
 New comments since your last turn (excludes Wake/bot comments):
-{{newCommentsText}}
+Wake will provide them below in a delimited untrusted data block.
 
 Re-evaluate whether the issue is now well-specified enough to implement,
-incorporating the new context above. Respond concisely. End your response with
-a fenced `wake-result` JSON block, then repeat the status word on its own final
-line for degraded-mode fallback. The JSON `status` and final line must be exactly one of: {{sentinelList}}.
-{{sentinelInstructions}}
+incorporating the new context above.

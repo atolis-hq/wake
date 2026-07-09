@@ -32,9 +32,15 @@ const CODEX_CLI_NAME = 'Codex';
 export function buildCodexExecArgs(input: {
   model: string;
   prompt: string;
+  harnessPrompt?: string;
   cwd: string;
   sandboxMode: 'workspace-write' | 'danger-full-access';
 }): string[] {
+  const prompt =
+    input.harnessPrompt === undefined
+      ? input.prompt
+      : `${input.harnessPrompt}\n\n${input.prompt}`;
+
   return [
     '--ask-for-approval',
     'never',
@@ -47,7 +53,7 @@ export function buildCodexExecArgs(input: {
     input.cwd,
     '--model',
     input.model,
-    input.prompt,
+    prompt,
   ];
 }
 
@@ -248,6 +254,7 @@ export function createCodexRunner(options: {
         args: buildCodexExecArgs({
           model,
           prompt: stagePrompt.prompt,
+          harnessPrompt: stagePrompt.harnessPrompt,
           cwd,
           sandboxMode,
         }),

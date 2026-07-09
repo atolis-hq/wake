@@ -78,6 +78,7 @@ export function formatClaudeRunLogLine(input: {
 export function buildClaudePrintArgs(options: {
   model: string;
   prompt: string;
+  systemPrompt?: string;
   sessionName: string;
   permissionMode?: string;
   allowedTools?: string[];
@@ -93,6 +94,9 @@ export function buildClaudePrintArgs(options: {
     options.model,
     '--name',
     options.sessionName,
+    ...(options.systemPrompt === undefined
+      ? []
+      : ['--append-system-prompt', options.systemPrompt]),
     ...(options.maxTurns === undefined ? [] : ['--max-turns', String(options.maxTurns)]),
     ...(options.permissionMode === undefined
       ? []
@@ -233,6 +237,7 @@ export function createClaudeRunner(options: {
       const args = buildClaudePrintArgs({
         model,
         prompt: stagePrompt.prompt,
+        systemPrompt: stagePrompt.harnessPrompt,
         sessionName,
         allowedTools: stagePrompt.allowedTools,
         extraArgs: stagePrompt.extraArgs,

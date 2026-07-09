@@ -119,6 +119,7 @@ describe('claude runner command building', () => {
     expect(result.prompt).toContain('atolis-hq/wake#12');
     expect(result.prompt).toContain('shared-user');
     expect(result.prompt).toContain('Please proceed');
+    expect(result.prompt).toContain('<wake-untrusted-data>');
     expect(result.prompt).toContain('wake/issue-12');
     expect(result.prompt).toContain('git push -u origin wake/issue-12');
     expect(result.prompt).toContain('gh pr create');
@@ -138,11 +139,13 @@ describe('claude runner command building', () => {
           projection: baseProjection,
         });
 
-        expect(result.prompt).toContain('must be exactly one of:');
-        expect(result.prompt).toContain('AWAITING_APPROVAL, BLOCKED, FAILED');
-        expect(result.prompt).not.toContain('DONE, BLOCKED, FAILED');
-        expect(result.prompt).toContain('- AWAITING_APPROVAL: the stage objective is complete');
-        expect(result.prompt).not.toContain('- DONE:');
+        expect(result.harnessPrompt).toContain('must be exactly one of:');
+        expect(result.harnessPrompt).toContain('AWAITING_APPROVAL, BLOCKED, FAILED');
+        expect(result.harnessPrompt).not.toContain('DONE, BLOCKED, FAILED');
+        expect(result.harnessPrompt).toContain('- AWAITING_APPROVAL: the stage objective is complete');
+        expect(result.harnessPrompt).not.toContain('- DONE:');
+        expect(result.prompt).not.toContain('must be exactly one of:');
+        expect(result.prompt).not.toContain('AWAITING_APPROVAL, BLOCKED, FAILED');
       }
     }
   });
@@ -158,8 +161,7 @@ describe('claude runner command building', () => {
         'maxTurns: 10',
         'skipApproval: true',
         '---',
-        'Last line: {{sentinelList}}.',
-        '{{sentinelInstructions}}',
+        'Custom stage instruction for {{workItemKey}}.',
       ].join('\n'),
       'utf8',
     );
@@ -230,9 +232,10 @@ describe('claude runner command building', () => {
       },
     });
 
-    expect(result.prompt).toContain('DONE, BLOCKED, FAILED');
-    expect(result.prompt).toContain('- DONE: the stage objective is complete.');
-    expect(result.prompt).not.toContain('AWAITING_APPROVAL');
+    expect(result.harnessPrompt).toContain('DONE, BLOCKED, FAILED');
+    expect(result.harnessPrompt).toContain('- DONE: the stage objective is complete.');
+    expect(result.harnessPrompt).not.toContain('AWAITING_APPROVAL');
+    expect(result.prompt).toContain('Custom stage instruction for atolis-hq/wake#12.');
   });
 
   it('resume prompts only surface new human comments since the last handled one, not the full history', async () => {
@@ -301,6 +304,7 @@ describe('claude runner command building', () => {
 
     // Resume prompts must not repeat the full comment history - the session
     // already has it - only what's new since the last handled comment.
+    expect(result.prompt).toContain('<wake-untrusted-data>');
     expect(result.prompt).not.toContain('alice');
     expect(result.prompt).not.toContain('Already handled reply');
     expect(result.prompt).not.toContain('Wake status update');
@@ -342,6 +346,7 @@ describe('claude runner command building', () => {
     expect(result.prompt).toContain('REFINE stage');
     expect(result.prompt).toContain('Your only available tools are: Read, Glob, Grep');
     expect(result.prompt).toContain('Do not attempt to use Edit, Write, or any Bash');
+    expect(result.prompt).toContain('<wake-untrusted-data>');
     expect(result.prompt).toContain('Please add a widget.');
     expect(result.prompt).not.toContain('gh pr create');
     expect(result.permissionMode).toBe('default');
@@ -480,11 +485,14 @@ describe('claude runner command building', () => {
     const args = buildClaudePrintArgs({
       model: 'haiku',
       prompt: 'do work',
+      systemPrompt: 'Wake harness',
       sessionName: 'Eddy',
       permissionMode: 'acceptEdits',
       allowedTools: ['Bash(git *)', 'Bash(gh *)'],
     });
 
+    expect(args).toContain('--append-system-prompt');
+    expect(args).toContain('Wake harness');
     expect(args).toContain('--permission-mode');
     expect(args).toContain('acceptEdits');
     expect(args).toContain('--allowedTools');

@@ -34,11 +34,13 @@ describe('codex runner command building', () => {
     const args = buildCodexExecArgs({
       model: 'gpt-5.5',
       prompt: 'plan it',
+      harnessPrompt: 'Wake harness',
       cwd: '/wake/workspaces/atolis-hq__wake/12',
       sandboxMode: 'workspace-write',
     });
 
     expect(args).toContain('workspace-write');
+    expect(args.at(-1)).toBe('Wake harness\n\nplan it');
   });
 
   it('builds a resume invocation', () => {
