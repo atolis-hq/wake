@@ -1,4 +1,6 @@
 import { resolve } from 'node:path';
+import { mkdtemp, stat } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 
 import { describe, expect, it, vi } from 'vitest';
 
@@ -78,6 +80,39 @@ describe('sandbox command', () => {
       containerMountPath: '/wake',
       containerHomeMountPath: '/home/wake',
       extraMounts: [],
+    });
+  });
+
+  it('creates parent directories in container-home for extra file mounts under /home/wake before up', async () => {
+    const docker = createDockerMock();
+    const tempRoot = await mkdtemp(resolve(tmpdir(), 'wake-sandbox-command-'));
+    const tempContainerHomeRoot = resolve(tempRoot, 'container-home');
+    const config = createDefaultWakeConfig(wakeRoot);
+    config.sandbox.extraMounts = [
+      {
+        source: '/host/.codex/config.toml',
+        target: '/home/wake/.codex/config.toml',
+      },
+      {
+        source: '/host/.claude/.credentials.json',
+        target: '/home/wake/.claude/.credentials.json',
+        readOnly: true,
+      },
+    ];
+
+    await runSandboxCommand({
+      args: ['up'],
+      config,
+      wakeRoot,
+      containerHomeRoot: tempContainerHomeRoot,
+      docker,
+    });
+
+    await expect(stat(resolve(tempContainerHomeRoot, '.codex'))).resolves.toMatchObject({
+      isDirectory: expect.any(Function),
+    });
+    await expect(stat(resolve(tempContainerHomeRoot, '.claude'))).resolves.toMatchObject({
+      isDirectory: expect.any(Function),
     });
   });
 
@@ -185,10 +220,12 @@ describe('sandbox command', () => {
 
   it('dispatches resume through the sandbox resume command flow', async () => {
     const docker = createDockerMock();
+    const config = createDefaultWakeConfig(wakeRoot);
+    config.runner.mode = 'claude';
 
     await runSandboxCommand({
       args: ['resume', 'session-123', '--cwd', '/wake/workspaces/atolis-hq__wake/12'],
-      config: createDefaultWakeConfig(wakeRoot),
+      config,
       wakeRoot,
       containerHomeRoot,
       docker,

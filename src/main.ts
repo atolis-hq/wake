@@ -1,12 +1,12 @@
 import { spawn } from 'node:child_process';
 import { resolve } from 'node:path';
 
-import { createClaudeRunner } from './adapters/claude/claude-runner.js';
 import { createDockerCli } from './adapters/docker/docker-cli.js';
 import { createFileBackedFakeTicketingSystem } from './adapters/fake/fake-ticketing-system.js';
 import { createFakeRunner } from './adapters/fake/fake-runner.js';
 import { createFakeWorkspaceManager } from './adapters/fake/fake-workspace-manager.js';
 import { createGitWorkspaceManager } from './adapters/git/git-workspace-manager.js';
+import { createRunnerCliAdapter } from './adapters/runner/runner-cli-adapter.js';
 import { createStateStore } from './adapters/fs/state-store.js';
 import { resolveGitHubToken } from './adapters/github/github-auth.js';
 import { createGitHubClient } from './adapters/github/github-client.js';
@@ -18,7 +18,7 @@ import { loadWakeConfig } from './config/load-config.js';
 import { createControlPlane } from './core/control-plane.js';
 import { createTickRunner } from './core/tick-runner.js';
 import { systemClock } from './lib/clock.js';
-import type { RunRecord } from './domain/types.js';
+import type { RunRecord, WakeConfig } from './domain/types.js';
 
 function commandArgsBeforeTerminator(args: string[]): string[] {
   const terminatorIndex = args.indexOf('--');
@@ -44,6 +44,10 @@ export function readFlagBeforeCommandTerminator(
 
 function hasFlag(name: string, args: string[]): boolean {
   return commandArgsBeforeTerminator(args).includes(name);
+}
+
+function isRunnerMode(value: string): value is WakeConfig['runner']['mode'] {
+  return value === 'fake' || value === 'claude' || value === 'codex';
 }
 
 export function formatTickFailureDetails(runRecord: RunRecord | null): string | null {
@@ -167,26 +171,33 @@ async function buildRuntime(args: string[]) {
         now: () => systemClock.now(),
       });
 
-  const runnerMode = readFlagBeforeCommandTerminator('--runner', args) ?? config.runner.mode;
-  const runner =
-    runnerMode === 'claude'
-      ? createClaudeRunner({
-          command: config.runner.claude.command,
+  const requestedRunnerMode =
+    readFlagBeforeCommandTerminator('--runner', args) ?? config.runner.mode;
+  if (!isRunnerMode(requestedRunnerMode)) {
+    throw new Error(`Unsupported runner mode: ${requestedRunnerMode}`);
+  }
+  const runnerMode: WakeConfig['runner']['mode'] = requestedRunnerMode;
+  const runnerAdapter =
+    runnerMode === 'fake'
+      ? null
+      : createRunnerCliAdapter({
+          mode: runnerMode,
+          config,
           cwd: process.cwd(),
-        })
-      : createFakeRunner();
+        });
+  const runner = runnerAdapter?.runner ?? createFakeRunner();
 
   const workspaceManager =
-    runnerMode === 'claude'
-      ? createGitWorkspaceManager({ wakeRoot })
-      : createFakeWorkspaceManager(stateStore.paths.workspaceRoot);
+    runnerMode === 'fake'
+      ? createFakeWorkspaceManager(stateStore.paths.workspaceRoot)
+      : createGitWorkspaceManager({ wakeRoot });
   const tickRunner = createTickRunner({
     clock: systemClock,
     config: {
       ...config,
       runner: {
         ...config.runner,
-        mode: runnerMode === 'claude' ? 'claude' : 'fake',
+        mode: runnerMode,
       },
     },
     stateStore,
@@ -198,6 +209,7 @@ async function buildRuntime(args: string[]) {
 
   return {
     config,
+    runnerAdapter,
     runner,
     stateStore,
     tickRunner,
@@ -248,47 +260,23 @@ async function runStart(args: string[]) {
   await controlPlane.start();
 }
 
-async function runClaudeSmoke(args: string[]) {
+async function runSmoke(args: string[]) {
   const runtime = await buildRuntime(args);
-  const claudeRunner = createClaudeRunner({
-    command: runtime.config.runner.claude.command,
-    cwd: process.cwd(),
-  });
+  const explicitTarget = args[0] === 'claude' || args[0] === 'codex' ? args[0] : undefined;
+  const runnerMode = explicitTarget ?? runtime.config.runner.mode;
+  const smokeArgs = explicitTarget === undefined ? args : args.slice(1);
 
-  if (hasFlag('--remote-control', args)) {
-    const result = await claudeRunner.startRemoteControlSmoke(runtime.config);
-    console.log(
-      JSON.stringify(
-        {
-          mode: 'remote-control',
-          exitCode: result.exitCode,
-          stdout: result.stdout.trim(),
-          stderr: result.stderr.trim(),
-          command: result.command,
-          args: result.args,
-        },
-        null,
-        2,
-      ),
-    );
-    return;
+  if (runnerMode === 'fake') {
+    throw new Error('Smoke tests require a real runner mode (`claude` or `codex`).');
   }
 
-  const result = await claudeRunner.smoke(runtime.config);
-  console.log(
-    JSON.stringify(
-      {
-        mode: 'print-json',
-        exitCode: result.exitCode,
-        text: result.text,
-        sessionId: result.sessionId,
-        stdout: result.stdout.trim(),
-        stderr: result.stderr.trim(),
-      },
-      null,
-      2,
-    ),
-  );
+  const runnerAdapter = createRunnerCliAdapter({
+    mode: runnerMode,
+    config: runtime.config,
+    cwd: process.cwd(),
+  });
+  const result = await runnerAdapter.smoke(runtime.config, smokeArgs);
+  console.log(JSON.stringify(result, null, 2));
 }
 
 async function runLocks(args: string[]) {
@@ -309,7 +297,7 @@ export async function dispatchMainCommand(input: {
   runSandbox: (args: string[]) => Promise<unknown>;
   runTick: (args: string[]) => Promise<unknown>;
   runStart: (args: string[]) => Promise<unknown>;
-  runClaudeSmoke: (args: string[]) => Promise<unknown>;
+  runSmoke: (args: string[]) => Promise<unknown>;
   runLocks: (args: string[]) => Promise<unknown>;
 }) {
   const command = input.args[0] ?? 'tick';
@@ -338,8 +326,8 @@ export async function dispatchMainCommand(input: {
     return;
   }
 
-  if (command === 'smoke' && input.args[1] === 'claude') {
-    await input.runClaudeSmoke(input.args.slice(2));
+  if (command === 'smoke') {
+    await input.runSmoke(input.args.slice(1));
     return;
   }
 
@@ -383,7 +371,7 @@ async function main() {
     },
     runTick,
     runStart,
-    runClaudeSmoke,
+    runSmoke,
     runLocks,
   });
 }

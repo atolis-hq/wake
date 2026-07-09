@@ -10,7 +10,9 @@
     "start": "tsx src/main.ts start",
     "tick": "tsx src/main.ts tick",
     "e2e:github-fake": "tsx scripts/e2e-github-fake.ts",
+    "smoke": "tsx src/main.ts smoke",
     "smoke:claude": "tsx src/main.ts smoke claude",
+    "smoke:codex": "tsx src/main.ts smoke codex",
     "verify": "npm run build && npm test"
   },
   "dependencies": {

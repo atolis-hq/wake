@@ -22,6 +22,9 @@ Wake is intended to start simple. The first justified version is a small loop th
 
 Wake is intended to integrate with existing local agent CLIs such as Claude Code and Codex rather than replace them. It should run work locally, likely in a reusable isolated development environment, and use external workflow systems as the default coordination surface.
 
+Current runner capability differences are documented in
+[docs/runner-comparison.md](docs/runner-comparison.md).
+
 ## Development
 
 ```bash
@@ -34,7 +37,9 @@ Useful commands:
 
 - `npm run tick` runs one control-plane tick using fake ticketing-system data from `.wake/fixtures/issues.json` when present
 - `npm run start` runs the resident loop
+- `npm run smoke` runs a smoke test against the configured real runner
 - `npm run smoke:claude` runs a minimal Claude Haiku smoke test
+- `npm run smoke:codex` runs a minimal Codex smoke test with the lower-cost `gpt-5.4-mini` model
 - `npm run smoke:claude -- --remote-control` starts a minimal remote-control Claude smoke session
 
 ### Configuration
@@ -44,7 +49,8 @@ repo-local flow, Wake loads config from `.wake/config.json`. In the scaffolded
 sandbox flow below, `wake init` creates `wake-home/config.json` and the
 wrappers run Wake against that mounted home directory. See
 [docs/configuration.md](docs/configuration.md) for the full config structure
-and available options.
+and available options. For current Claude-vs-Codex runner capability gaps, see
+[docs/runner-comparison.md](docs/runner-comparison.md).
 
 ## Sandbox Setup
 
@@ -99,7 +105,7 @@ you can operate from `wake-home` instead of repeating the full `npx tsx
 .../src/main.ts` path.
 
 `init` and explicit `sandbox ...` commands run on the host. Other runtime
-commands such as `start`, `tick`, and `smoke claude` are automatically
+commands such as `start`, `tick`, and `smoke` are automatically
 forwarded into the running container via `sandbox exec`. The wrappers default
 the in-container Wake home to `/wake`, so you do not need to pass
 `--wake-root` for normal scaffolded usage.
@@ -157,10 +163,11 @@ That script runs:
 - `gh auth login`
 - `gh auth setup-git`
 - `ssh-keygen` for `/home/wake/.ssh/id_ed25519` if missing
-- `claude setup-token`
+- `claude auth login --claudeai`
+- `codex login`
 
-Because `/home/wake` is volume-mounted, the sandbox's `gh`, SSH, and Claude auth
-state survives container restart and recreation.
+Because `/home/wake` is volume-mounted, the sandbox's `gh`, SSH, Claude, and
+Codex auth state survives container restart and recreation.
 
 ### 5. Inspect or use the running sandbox
 
@@ -182,7 +189,7 @@ Run one tick manually. The wrapper forwards this into the container:
 ./wake.sh tick
 ```
 
-Resume a recorded Claude session inside the container workspace:
+Resume a recorded runner session inside the container workspace:
 
 ```bash
 ./wake.sh sandbox resume <session-id> --cwd "/wake/workspaces/<repo>/<issue>"
@@ -196,8 +203,9 @@ clean up), clear the stale lock file:
 ./wake.sh locks clear
 ```
 
-A wall-clock timeout (`runner.claude.timeoutMs`, see `docs/configuration.md`)
-now kills a hung Claude CLI invocation and marks the run `FAILED` before this
+A wall-clock timeout on the selected real runner (`runner.claude.timeoutMs` or
+`runner.codex.timeoutMs`, see `docs/configuration.md`) now kills a hung CLI
+invocation and marks the run `FAILED` before this
 should ever be needed, but `locks clear` remains the manual escape hatch for
 cases outside that (e.g. the container itself was restarted mid-run).
 
@@ -211,15 +219,15 @@ cases outside that (e.g. the container itself was restarted mid-run).
 
 Wake can poll configured GitHub repositories when `sources.github.enabled` is
 set to `true`. Authentication is resolved from the current GitHub CLI session
-via `gh auth token`, and Wake uses a fixed runner mode of either `fake` or
-`claude`.
+via `gh auth token`, and Wake uses a fixed runner mode of `fake`, `claude`, or
+`codex`.
 
 GitHub Issues sync runs inside the normal tick path. Each tick polls GitHub,
 translates provider payloads into canonical ticket events, appends those
 events, rebuilds local projections, decides whether work is needed, and only
 then invokes Eddy.
 
-The default Claude smoke prompt is intentionally tiny:
+The default smoke prompt is intentionally tiny:
 
 ```text
 This is Eddy, reply with "hi Eddy only"

@@ -48,6 +48,7 @@ describe('init command', () => {
     const config = await readFile(join(result.wakeRoot, 'config.json'), 'utf8');
     const dockerfile = await readFile(join(result.wakeRoot, 'docker', 'Dockerfile'), 'utf8');
     const setupScript = await readFile(join(result.wakeRoot, 'docker', 'setup.sh'), 'utf8');
+    const logScript = await readFile(join(result.wakeRoot, 'docker', 'log-command.sh'), 'utf8');
     const shellLauncher = await readFile(join(result.wakeRoot, 'wake.sh'), 'utf8');
     const powerShellLauncher = await readFile(join(result.wakeRoot, 'wake.ps1'), 'utf8');
 
@@ -63,7 +64,13 @@ describe('init command', () => {
     expect(setupScript).toContain('claude auth login --claudeai');
     expect(setupScript).toContain('prompt_yes_no "Configure Claude auth?"');
     expect(setupScript).not.toContain('claude auth status >/dev/null 2>&1');
+    expect(setupScript).toContain('codex login');
+    expect(setupScript).toContain('prompt_yes_no "Configure Codex auth?"');
     expect(setupScript).toContain('ssh-keygen -t ed25519');
+    expect(dockerfile).toContain('@anthropic-ai/claude-code');
+    expect(dockerfile).toContain('@openai/codex');
+    expect(logScript).toContain('emit_check "claude-auth-status" claude auth status');
+    expect(logScript).toContain('emit_check "codex-auth-status" codex login status');
     expect(shellLauncher).toContain(repoRoot.replaceAll('\\', '/'));
     expect(shellLauncher).toContain('case "${1:-}" in');
     expect(shellLauncher).toContain('MSYS_NO_PATHCONV=1');

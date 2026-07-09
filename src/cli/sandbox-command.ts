@@ -1,11 +1,35 @@
-import { resolve } from 'node:path';
+import { mkdir } from 'node:fs/promises';
+import { posix, resolve } from 'node:path';
 
 import type { DockerCli } from '../adapters/docker/docker-cli.js';
+import { createRunnerCliAdapter } from '../adapters/runner/runner-cli-adapter.js';
 import { runSandboxResumeCommand } from './sandbox-resume.js';
 import {
   buildSandboxLoggedCommand,
 } from './sandbox-logging.js';
 import type { WakeConfig } from '../domain/types.js';
+
+async function ensureContainerHomeMountParents(input: {
+  containerHomeRoot: string;
+  containerHomeMountPath: string;
+  extraMounts: WakeConfig['sandbox']['extraMounts'];
+}): Promise<void> {
+  for (const mount of input.extraMounts) {
+    const relativeTarget = posix.relative(input.containerHomeMountPath, mount.target);
+    if (
+      relativeTarget.length === 0 ||
+      relativeTarget === '.' ||
+      relativeTarget.startsWith('..')
+    ) {
+      continue;
+    }
+
+    const parentRelativeTarget = posix.dirname(relativeTarget);
+    await mkdir(resolve(input.containerHomeRoot, parentRelativeTarget), {
+      recursive: true,
+    });
+  }
+}
 
 function readFlag(name: string, args: string[]): string | undefined {
   const index = args.indexOf(name);
@@ -44,6 +68,11 @@ export async function runSandboxCommand(input: {
   }
 
   if (subcommand === 'up') {
+    await ensureContainerHomeMountParents({
+      containerHomeRoot: input.containerHomeRoot,
+      containerHomeMountPath: input.config.sandbox.containerHomeMountPath,
+      extraMounts: input.config.sandbox.extraMounts,
+    });
     await input.docker.up({
       image: input.config.sandbox.image,
       containerName: input.config.sandbox.containerName,
@@ -57,6 +86,11 @@ export async function runSandboxCommand(input: {
   }
 
   if (subcommand === 'update') {
+    await ensureContainerHomeMountParents({
+      containerHomeRoot: input.containerHomeRoot,
+      containerHomeMountPath: input.config.sandbox.containerHomeMountPath,
+      extraMounts: input.config.sandbox.extraMounts,
+    });
     await input.docker.update({
       image: input.config.sandbox.image,
       containerName: input.config.sandbox.containerName,
@@ -111,12 +145,22 @@ export async function runSandboxCommand(input: {
   }
 
   if (subcommand === 'resume') {
+    if (input.config.runner.mode === 'fake') {
+      throw new Error('Sandbox resume requires a real runner mode (`claude` or `codex`).');
+    }
+
+    const runnerAdapter = createRunnerCliAdapter({
+      mode: input.config.runner.mode,
+      config: input.config,
+      cwd: process.cwd(),
+    });
     await runSandboxResumeCommand({
       args: input.args.slice(1),
       config: input.config,
       docker: input.docker,
       wakeRoot: input.wakeRoot,
       containerHomeRoot: input.containerHomeRoot,
+      buildResumeCommand: runnerAdapter.buildResumeCommand,
     });
     return;
   }

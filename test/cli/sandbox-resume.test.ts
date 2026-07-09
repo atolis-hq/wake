@@ -23,6 +23,7 @@ describe('sandbox resume command', () => {
       docker,
       wakeRoot: '/wake-home',
       containerHomeRoot: '/wake-home/container-home',
+      buildResumeCommand: ({ sessionId }) => ['claude', '--resume', sessionId],
     });
 
     expect(calls).toEqual([
@@ -47,6 +48,70 @@ describe('sandbox resume command', () => {
         'session-123',
       ],
     ]);
+  });
+
+  it('executes codex resume in the requested workspace when the runner adapter provides it', async () => {
+    const calls: string[][] = [];
+    const docker = {
+      exec: async (containerName: string, args: string[]) => {
+        calls.push(['exec', '-it', containerName, ...args]);
+      },
+    };
+
+    const config = createDefaultWakeConfig('/wake-home');
+    config.runner.mode = 'codex';
+
+    await runSandboxResumeCommand({
+      args: ['session-456', '--cwd', '/wake/workspaces/atolis-hq__wake/34'],
+      config,
+      docker,
+      wakeRoot: '/wake-home',
+      containerHomeRoot: '/wake-home/container-home',
+      buildResumeCommand: ({ sessionId }) => ['codex', 'resume', sessionId],
+    });
+
+    expect(calls).toEqual([
+      [
+        'exec',
+        '-it',
+        'wake-sandbox',
+        'env',
+        'WAKE_SANDBOX_LABEL=sandbox.resume',
+        'WAKE_SANDBOX_CONTAINER_WAKE_ROOT=/wake',
+        'WAKE_SANDBOX_PROMPTS_ROOT=/wake/prompts',
+        'WAKE_SANDBOX_CONTAINER_HOME=/home/wake',
+        'WAKE_SANDBOX_HOST_WAKE_ROOT=/wake-home',
+        'WAKE_SANDBOX_HOST_CONTAINER_HOME=/wake-home/container-home',
+        'WAKE_SANDBOX_CONTAINER_MOUNT=/wake',
+        'WAKE_SANDBOX_CONTAINER_NAME=wake-sandbox',
+        'WAKE_SANDBOX_CWD=/wake/workspaces/atolis-hq__wake/34',
+        '/wake/docker/log-command.sh',
+        '--',
+        'codex',
+        'resume',
+        'session-456',
+      ],
+    ]);
+  });
+
+  it('throws if the caller does not provide runner-specific resume wiring', async () => {
+    const docker = {
+      exec: async () => {
+        throw new Error('should not execute');
+      },
+    };
+
+    await expect(
+      runSandboxResumeCommand({
+        args: ['session-789', '--cwd', '/wake/workspaces/atolis-hq__wake/56'],
+        config: createDefaultWakeConfig('/wake-home'),
+        docker,
+        wakeRoot: '/wake-home',
+        containerHomeRoot: '/wake-home/container-home',
+        // @ts-expect-error intentional runtime coverage for missing adapter wiring
+        buildResumeCommand: undefined,
+      }),
+    ).rejects.toThrow();
   });
 
   describe('chooseResumeTarget', () => {

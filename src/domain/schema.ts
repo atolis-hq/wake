@@ -173,7 +173,7 @@ export const wakeConfigSchema = z.object({
     intervalMs: z.number().int().positive().default(60 * 1000),
   }).default({ intervalMs: 60 * 1000 }),
   runner: z.object({
-    mode: z.enum(['fake', 'claude']).default('fake'),
+    mode: z.enum(['fake', 'claude', 'codex']).default('fake'),
     claude: z.object({
       command: z.string().default('claude'),
       model: z.string().default('haiku'),
@@ -191,7 +191,19 @@ export const wakeConfigSchema = z.object({
         implement: z.string().optional(),
       }).default({ default: 'haiku', implement: 'claude-sonnet-4-6' }),
     }).default({ command: 'claude', model: 'haiku', smokeModel: 'haiku', sessionName: 'Eddy', remoteControlName: 'Eddy', smokePrompt: defaultSmokePrompt, timeoutMs: 30 * 60 * 1000, remoteControl: { enabled: false }, models: { default: 'haiku', implement: 'claude-sonnet-4-6' } }),
-  }).default({ mode: 'fake', claude: { command: 'claude', model: 'haiku', smokeModel: 'haiku', sessionName: 'Eddy', remoteControlName: 'Eddy', smokePrompt: defaultSmokePrompt, timeoutMs: 30 * 60 * 1000, remoteControl: { enabled: false }, models: { default: 'haiku', implement: 'claude-sonnet-4-6' } } }),
+    codex: z.object({
+      command: z.string().default('codex'),
+      model: z.string().default('gpt-5.5'),
+      smokeModel: z.string().default('gpt-5.4-mini'),
+      smokePrompt: z.string().default(defaultSmokePrompt),
+      timeoutMs: z.number().int().positive().default(30 * 60 * 1000),
+      models: z.object({
+        default: z.string().optional(),
+        refine: z.string().optional(),
+        implement: z.string().optional(),
+      }).default({ default: 'gpt-5.5', implement: 'gpt-5.5' }),
+    }).default({ command: 'codex', model: 'gpt-5.5', smokeModel: 'gpt-5.4-mini', smokePrompt: defaultSmokePrompt, timeoutMs: 30 * 60 * 1000, models: { default: 'gpt-5.5', implement: 'gpt-5.5' } }),
+  }).default({ mode: 'fake', claude: { command: 'claude', model: 'haiku', smokeModel: 'haiku', sessionName: 'Eddy', remoteControlName: 'Eddy', smokePrompt: defaultSmokePrompt, timeoutMs: 30 * 60 * 1000, remoteControl: { enabled: false }, models: { default: 'haiku', implement: 'claude-sonnet-4-6' } }, codex: { command: 'codex', model: 'gpt-5.5', smokeModel: 'gpt-5.4-mini', smokePrompt: defaultSmokePrompt, timeoutMs: 30 * 60 * 1000, models: { default: 'gpt-5.5', implement: 'gpt-5.5' } } }),
   sources: z.object({
     github: z.object({
       enabled: z.boolean().default(false),

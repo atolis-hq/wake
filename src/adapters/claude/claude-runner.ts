@@ -1,5 +1,3 @@
-import { spawn } from 'node:child_process';
-
 import type { AgentRunResult, AgentRunTokenUsage } from '../../core/contracts.js';
 import { parseClaudePrintResult } from '../../domain/schema.js';
 import type {
@@ -9,8 +7,10 @@ import type {
   IssueStateRecord,
   WakeConfig,
 } from '../../domain/types.js';
-import { branchNameForIssue } from '../git/git-workspace-manager.js';
-import { loadPromptTemplate, renderPromptTemplate } from './prompt-templates.js';
+import { runAgentCliCommand } from '../runner/cli-command.js';
+import { buildStagePrompt } from '../runner/stage-prompt.js';
+
+export { buildStagePrompt } from '../runner/stage-prompt.js';
 
 function slugify(value: string, maxLength = 40): string {
   return value
@@ -72,127 +72,6 @@ export function formatClaudeRunLogLine(input: {
   return parts.join(' ');
 }
 
-type CommentSnapshot = IssueStateRecord['comments'][number];
-
-function formatComment(comment: CommentSnapshot): string {
-  return `- ${comment.author.login} (${comment.createdAt}): ${comment.body}`;
-}
-
-function formatCommentList(comments: CommentSnapshot[]): string {
-  return comments.length > 0 ? comments.map(formatComment).join('\n') : '(none)';
-}
-
-// Comments Wake itself posted (status updates) or that a bot authored are
-// noise for "what changed since I last looked" - only human replies should
-// prompt the resumed agent to reconsider its approach.
-function newCommentsSinceLastRun(projection: IssueStateRecord): CommentSnapshot[] {
-  const handledCommentId = projection.context.lastHandledCommentId;
-  const cursorIndex =
-    typeof handledCommentId === 'string'
-      ? projection.comments.findIndex((comment) => comment.id === handledCommentId)
-      : -1;
-  const candidates =
-    cursorIndex === -1 ? projection.comments : projection.comments.slice(cursorIndex + 1);
-
-  return candidates.filter((comment) => !comment.isWakeAuthored && !comment.isBotAuthored);
-}
-
-function parseFrontmatterList(value: string | undefined): string[] {
-  if (value === undefined || value.trim().length === 0) {
-    return [];
-  }
-
-  return value
-    .split(',')
-    .map((part) => part.trim())
-    .filter((part) => part.length > 0);
-}
-
-function parseFrontmatterArgs(value: string | undefined): string[] {
-  if (value === undefined || value.trim().length === 0) {
-    return [];
-  }
-
-  return value.trim().split(/\s+/);
-}
-
-function parseFrontmatterMaxTurns(input: { action: AgentAction; value: string | undefined }): number {
-  if (input.value === undefined || input.value.trim().length === 0) {
-    throw new Error(
-      `Prompt template for action "${input.action}" is missing a required "maxTurns" frontmatter value. ` +
-        'Every runner invocation must carry a --max-turns cap; add one to the template.',
-    );
-  }
-
-  const parsed = Number(input.value.trim());
-  if (!Number.isInteger(parsed) || parsed <= 0) {
-    throw new Error(
-      `Prompt template for action "${input.action}" has an invalid "maxTurns" frontmatter value: ${input.value}`,
-    );
-  }
-
-  return parsed;
-}
-
-export interface StagePromptResult {
-  prompt: string;
-  permissionMode?: string;
-  allowedTools: string[];
-  extraArgs: string[];
-  maxTurns: number;
-}
-
-export async function buildStagePrompt(input: {
-  action: AgentAction;
-  projection: IssueStateRecord;
-  mode?: 'start' | 'resume';
-  config?: WakeConfig;
-}): Promise<StagePromptResult> {
-  const mode = input.mode ?? 'start';
-  const template = await loadPromptTemplate(input.action, mode, {
-    ...(input.config?.paths.promptsRoot === undefined
-      ? {}
-      : { promptsRoot: input.config.paths.promptsRoot }),
-  });
-
-  const context: Record<string, unknown> = {
-    workItemKey: input.projection.workItemKey,
-    repo: input.projection.issue.repo,
-    issueNumber: input.projection.issue.number,
-    title: input.projection.issue.title,
-    stage: input.projection.wake.stage,
-    body: input.projection.issue.body,
-    allCommentsText: formatCommentList(input.projection.comments),
-    newCommentsText: formatCommentList(newCommentsSinceLastRun(input.projection)),
-  };
-
-  if (input.action === 'implement') {
-    context.branch = branchNameForIssue(input.projection.issue.number);
-  }
-
-  const allowedTools = parseFrontmatterList(template.frontmatter.allowedTools);
-  // Single source of truth: the prompt's tool-restriction prose references
-  // this instead of separately restating the tool list, so the two can't
-  // drift out of sync.
-  context.allowedToolsList = allowedTools.length > 0 ? allowedTools.join(', ') : '(none)';
-
-  const skipApproval = template.frontmatter.skipApproval === 'true';
-  context.additionalSentinels = skipApproval ? '' : ', AWAITING_APPROVAL';
-  context.approvalInstructions = skipApproval
-    ? ''
-    : '- AWAITING_APPROVAL: your work is complete but you are requesting human sign-off before proceeding. Post a comment asking the human to reply with `/approved` to confirm, or to comment with feedback if they want changes.';
-
-  const permissionMode = template.frontmatter.permissionMode;
-
-  return {
-    prompt: renderPromptTemplate(template, context),
-    allowedTools,
-    extraArgs: parseFrontmatterArgs(template.frontmatter.extraArgs),
-    maxTurns: parseFrontmatterMaxTurns({ action: input.action, value: template.frontmatter.maxTurns }),
-    ...(permissionMode === undefined ? {} : { permissionMode }),
-  };
-}
-
 export function buildClaudePrintArgs(options: {
   model: string;
   prompt: string;
@@ -250,8 +129,6 @@ export function buildClaudeRemoteControlArgs(options: {
   ];
 }
 
-const TIMEOUT_KILL_GRACE_MS = 5_000;
-
 export function runClaudeCommand(input: {
   command: string;
   args: string[];
@@ -263,53 +140,7 @@ export function runClaudeCommand(input: {
   exitCode: number;
   timedOut: boolean;
 }> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(input.command, input.args, {
-      cwd: input.cwd,
-      env: process.env,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-
-    let stdout = '';
-    let stderr = '';
-    let timedOut = false;
-    let killTimer: NodeJS.Timeout | undefined;
-
-    // Runaway-cost protection: a hung/looping CLI invocation must never be
-    // able to hold the tick lock forever - kill it and surface as FAILED.
-    const timeoutTimer =
-      input.timeoutMs === undefined
-        ? undefined
-        : setTimeout(() => {
-            timedOut = true;
-            child.kill('SIGTERM');
-            killTimer = setTimeout(() => child.kill('SIGKILL'), TIMEOUT_KILL_GRACE_MS);
-          }, input.timeoutMs);
-
-    child.stdout.on('data', (chunk) => {
-      stdout += chunk.toString();
-    });
-
-    child.stderr.on('data', (chunk) => {
-      stderr += chunk.toString();
-    });
-
-    child.on('error', (error) => {
-      clearTimeout(timeoutTimer);
-      clearTimeout(killTimer);
-      reject(error);
-    });
-    child.on('close', (exitCode) => {
-      clearTimeout(timeoutTimer);
-      clearTimeout(killTimer);
-      resolve({
-        stdout,
-        stderr,
-        exitCode: exitCode ?? 1,
-        timedOut,
-      });
-    });
-  });
+  return runAgentCliCommand(input);
 }
 
 function resolveModel(options: {
