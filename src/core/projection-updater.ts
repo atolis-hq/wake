@@ -243,7 +243,7 @@ export function createProjectionUpdater(deps: {
 
       for (const workItemEvents of grouped.values()) {
         const ordered = [...workItemEvents].sort((left, right) =>
-          left.occurredAt.localeCompare(right.occurredAt),
+          left.ingestedAt.localeCompare(right.ingestedAt),
         );
 
         const firstEvent = ordered[0];

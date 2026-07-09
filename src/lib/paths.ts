@@ -27,6 +27,8 @@ export function createWakePaths(wakeRoot: string) {
       join(wakeRoot, 'sources', sanitizePathKey(source), `${sanitizePathKey(key)}.json`),
     runFile: (runId: string) => join(wakeRoot, 'runs', `${runId}.json`),
     eventFile: (date: string) => join(wakeRoot, 'events', `${date}.jsonl`),
+    eventEnvelopeFile: (eventId: string) =>
+      join(wakeRoot, 'events-by-id', `${sanitizePathKey(eventId)}.json`),
     logFile: (date: string) => join(wakeRoot, 'logs', `${date}.log`),
     workspaceDir: (repo: string, issueNumber: number) =>
       join(wakeRoot, 'workspaces', sanitizeRepo(repo), String(issueNumber)),

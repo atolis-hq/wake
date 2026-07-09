@@ -133,6 +133,50 @@ describe('projection updater', () => {
     expect(projection?.wake.recentEventIds).toEqual(['evt-issue', 'evt-comment']);
   });
 
+  it('replays events by ingestedAt when source occurredAt timestamps are stale', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const updater = createProjectionUpdater({ stateStore: store });
+
+    const issue = issueUpsert({
+      eventId: 'evt-stale-issue',
+      issueNumber: 8,
+      labels: ['wake:queue'],
+      occurredAt: '2026-07-05T12:00:00.000Z',
+      ingestedAt: '2026-07-05T12:00:01.000Z',
+    });
+    const staleComment = createEventEnvelope({
+      eventId: 'evt-stale-comment',
+      workItemKey: 'atolis-hq/wake#8',
+      streamScope: 'work-item',
+      direction: 'inbound',
+      sourceSystem: 'github',
+      sourceEventType: 'ticket.comment.created',
+      sourceRefs: {
+        repo: 'atolis-hq/wake',
+        issueNumber: 8,
+        commentId: 'c-stale',
+      },
+      occurredAt: '2026-06-01T12:00:00.000Z',
+      ingestedAt: '2026-07-05T12:00:02.000Z',
+      trigger: 'context-only',
+      payload: {
+        comment: {
+          id: 'c-stale',
+          body: 'Old upstream update, newly ingested',
+          author: { login: 'shared-user' },
+          createdAt: '2026-06-01T12:00:00.000Z',
+          updatedAt: '2026-06-01T12:00:00.000Z',
+        },
+      },
+    });
+
+    await updater.rebuildFromEvents([staleComment, issue]);
+
+    const projection = await store.readIssueState('atolis-hq/wake', 8);
+    expect(projection?.latestComment?.id).toBe('c-stale');
+    expect(projection?.wake.recentEventIds).toEqual(['evt-stale-issue', 'evt-stale-comment']);
+  });
+
   it('sets the initial projection stage from each current wake stage label', async () => {
     for (const [index, stage] of stageValues.entries()) {
       const store = createStateStore({
