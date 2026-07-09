@@ -12,7 +12,7 @@ import type {
 import type { Clock } from '../lib/clock.js';
 import { acquireFileLock } from '../lib/lock.js';
 import { parseRunnerResultSentinel, runnerSentinelSchema } from '../domain/schema.js';
-import type { AgentAction, EventEnvelope, IssueStateRecord, WakeConfig } from '../domain/types.js';
+import type { AgentAction, EventEnvelope, IssueStateRecord, RunRecord, WakeConfig } from '../domain/types.js';
 import { createEventEnvelope } from '../lib/event-log.js';
 
 function latestHumanCommentId(candidate: IssueStateRecord): string | undefined {
@@ -188,6 +188,87 @@ export function createTickRunner(deps: {
     });
   }
 
+  function runnerTimeoutMs(): number {
+    return Math.max(
+      deps.config.runner.claude.timeoutMs,
+      deps.config.runner.codex.timeoutMs,
+    );
+  }
+
+  function isStaleRunningRecord(record: RunRecord, now: Date): boolean {
+    if (record.status !== 'running') {
+      return false;
+    }
+
+    const startedAtMs = Date.parse(record.startedAt);
+    if (!Number.isFinite(startedAtMs)) {
+      return true;
+    }
+
+    return now.getTime() - startedAtMs >= runnerTimeoutMs();
+  }
+
+  async function reconcileStaleRunningRecords(now: Date): Promise<void> {
+    const finishedAt = now.toISOString();
+    const staleRecords = (await deps.stateStore.listRunRecords())
+      .filter((record) => isStaleRunningRecord(record, now));
+
+    for (const record of staleRecords) {
+      await deps.stateStore.writeRunRecord({
+        ...record,
+        status: 'failed',
+        finishedAt,
+        sentinel: 'FAILED',
+        summary: `Run exceeded timeout while marked running and was reconciled by a later tick.`,
+        metadata: {
+          ...record.metadata,
+          reconciledBy: 'stale-running-record',
+          timeoutMs: runnerTimeoutMs(),
+        },
+      });
+
+      const workItemKey = `${record.repo}#${record.issueNumber}`;
+      const runCompletedEvent = createEventEnvelope({
+        eventId: `${record.runId}-stale-reconciled`,
+        workItemKey,
+        streamScope: 'work-item',
+        direction: 'internal',
+        sourceSystem: 'wake',
+        sourceEventType: 'wake.run.completed',
+        sourceRefs: {
+          repo: record.repo,
+          issueNumber: record.issueNumber,
+          runId: record.runId,
+        },
+        occurredAt: finishedAt,
+        ingestedAt: finishedAt,
+        trigger: 'immediate',
+        payload: {
+          action: record.action,
+          sentinel: 'FAILED',
+          nextStage: 'failed',
+          runId: record.runId,
+          reason: 'runner:stale-timeout',
+        },
+      });
+      await deps.stateStore.appendEventEnvelope(runCompletedEvent);
+      await projectionUpdater.rebuildFromEvents([runCompletedEvent]);
+
+      const projection = await deps.stateStore.readIssueState(record.repo, record.issueNumber);
+      if (projection !== null) {
+        await deliverOutboundEvent(
+          createLabelsEvent({
+            projection,
+            runId: record.runId,
+            statusLabel: 'wake:status.failed',
+            stageLabel: stageLabelForStage('failed'),
+            occurredAt: finishedAt,
+          }),
+        );
+      }
+    }
+  }
+
   async function deliverOutboundEvent(event: EventEnvelope): Promise<void> {
     await deps.stateStore.appendEventEnvelope(event);
     await projectionUpdater.rebuildFromEvents([event]);
@@ -205,13 +286,17 @@ export function createTickRunner(deps: {
 
   return {
     async runTick() {
-      const lock = await acquireFileLock(deps.stateStore.paths.tickLockFile);
+      const lock = await acquireFileLock(deps.stateStore.paths.tickLockFile, {
+        staleAfterMs: runnerTimeoutMs(),
+      });
       if (!lock.acquired) {
         return { status: 'locked' as const };
       }
 
       try {
-        const nowIso = deps.clock.now().toISOString();
+        const tickStartedAt = deps.clock.now();
+        const nowIso = tickStartedAt.toISOString();
+        await reconcileStaleRunningRecords(tickStartedAt);
         const inboundEvents = await deps.workSource.pollEvents();
         if (inboundEvents.length > 0) {
           for (const event of inboundEvents) {

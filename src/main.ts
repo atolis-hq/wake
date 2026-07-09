@@ -12,7 +12,6 @@ import { resolveGitHubToken } from './adapters/github/github-auth.js';
 import { createGitHubClient } from './adapters/github/github-client.js';
 import { createGitHubIssuesWorkSource } from './adapters/github/github-issues-work-source.js';
 import { runInitCommand } from './cli/init-command.js';
-import { runLocksCommand } from './cli/locks-command.js';
 import { runSandboxCommand } from './cli/sandbox-command.js';
 import { loadWakeConfig } from './config/load-config.js';
 import { createControlPlane } from './core/control-plane.js';
@@ -279,18 +278,6 @@ async function runSmoke(args: string[]) {
   console.log(JSON.stringify(result, null, 2));
 }
 
-async function runLocks(args: string[]) {
-  const wakeRoot = resolve(
-    readFlagBeforeCommandTerminator('--wake-root', args) ?? resolve(process.cwd(), '.wake'),
-  );
-  const stateStore = createStateStore({ wakeRoot });
-  const outcome = await runLocksCommand({
-    args: commandArgsBeforeTerminator(args),
-    tickLockFile: stateStore.paths.tickLockFile,
-  });
-  console.log(JSON.stringify(outcome, null, 2));
-}
-
 export async function dispatchMainCommand(input: {
   args: string[];
   runInit: (args: string[]) => Promise<unknown>;
@@ -298,7 +285,6 @@ export async function dispatchMainCommand(input: {
   runTick: (args: string[]) => Promise<unknown>;
   runStart: (args: string[]) => Promise<unknown>;
   runSmoke: (args: string[]) => Promise<unknown>;
-  runLocks: (args: string[]) => Promise<unknown>;
 }) {
   const command = input.args[0] ?? 'tick';
   if (command === 'tick') {
@@ -318,11 +304,6 @@ export async function dispatchMainCommand(input: {
 
   if (command === 'sandbox') {
     await input.runSandbox(input.args.slice(1));
-    return;
-  }
-
-  if (command === 'locks') {
-    await input.runLocks(input.args.slice(1));
     return;
   }
 
@@ -372,7 +353,6 @@ async function main() {
     runTick,
     runStart,
     runSmoke,
-    runLocks,
   });
 }
 

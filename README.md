@@ -195,19 +195,11 @@ Resume a recorded runner session inside the container workspace:
 ./wake.sh sandbox resume <session-id> --cwd "/wake/workspaces/<repo>/<issue>"
 ```
 
-If a tick is ever stuck reporting `{"status": "locked"}` with no run actually
-in progress (e.g. the process holding the tick lock was killed before it could
-clean up), clear the stale lock file:
-
-```bash
-./wake.sh locks clear
-```
-
-A wall-clock timeout on the selected real runner (`runner.claude.timeoutMs` or
-`runner.codex.timeoutMs`, see `docs/configuration.md`) now kills a hung CLI
-invocation and marks the run `FAILED` before this
-should ever be needed, but `locks clear` remains the manual escape hatch for
-cases outside that (e.g. the container itself was restarted mid-run).
+Tick locks include owner metadata and are self-healing. If a process dies while
+holding the tick lock, the next tick reclaims the lock when the owner PID is no
+longer alive or the lock is older than the configured runner timeout. Stale
+`running` run records are also marked `FAILED` during the next tick so local
+history and labels converge without manual cleanup.
 
 ### 6. Stop the sandbox
 

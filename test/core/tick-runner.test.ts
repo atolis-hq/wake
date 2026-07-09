@@ -959,4 +959,81 @@ describe('tick runner', () => {
     expect(actionSeen).toBe('implement');
     expect(projection?.context.lastHandledCommentId).toBe('c-owner');
   });
+
+  it('marks stale running run records failed during a later tick', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const config = createDefaultWakeConfig(root);
+    config.sources.github.policy.requiredLabels = ['wake'];
+    config.runner.claude.timeoutMs = 60_000;
+    config.runner.codex.timeoutMs = 60_000;
+    let runnerCallCount = 0;
+
+    await store.writeIssueState({
+      schemaVersion: 1,
+      workItemKey: 'atolis-hq/wake#123',
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 123,
+        title: 'Stale run',
+        body: 'Body',
+        labels: ['wake'],
+        assignees: [],
+        state: 'open',
+        url: 'https://example.test/issues/123',
+        createdAt: '2026-07-05T12:00:00.000Z',
+        updatedAt: '2026-07-05T12:00:00.000Z',
+      },
+      comments: [],
+      wake: {
+        stage: 'active',
+        lastRunId: 'run-123-stale',
+        syncedAt: '2026-07-05T12:00:00.000Z',
+        stageHistory: [],
+        recentEventIds: [],
+        expectedEcho: { commentIds: [], labels: [] },
+      },
+      context: {},
+    });
+    await store.writeRunRecord({
+      schemaVersion: 1,
+      runId: 'run-123-stale',
+      repo: 'atolis-hq/wake',
+      issueNumber: 123,
+      action: 'implement',
+      status: 'running',
+      startedAt: '2026-07-05T12:00:00.000Z',
+    });
+
+    const tickRunner = createTickRunner({
+      clock: { now: () => new Date('2026-07-05T12:02:00.000Z') },
+      config,
+      stateStore: store,
+      workSource: {
+        async pollEvents() {
+          return [];
+        },
+      },
+      runner: {
+        async run() {
+          runnerCallCount += 1;
+          return { result: 'Should not run\nDONE', model: 'test-model', cli: 'test-cli' };
+        },
+      },
+      workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+    });
+
+    const result = await tickRunner.runTick();
+    const runRecord = await store.readRunRecord('run-123-stale');
+    const projection = await store.readIssueState('atolis-hq/wake', 123);
+    const events = await readFile(join(root, 'events', '2026-07-05.jsonl'), 'utf8');
+
+    expect(result.status).toBe('idle');
+    expect(runnerCallCount).toBe(0);
+    expect(runRecord?.status).toBe('failed');
+    expect(runRecord?.sentinel).toBe('FAILED');
+    expect(projection?.wake.stage).toBe('failed');
+    expect(events).toContain('"eventId":"run-123-stale-stale-reconciled"');
+    expect(events).toContain('"sourceEventType":"wake.labels.requested"');
+    expect(events).toContain('"stageLabel":"wake:stage.failed"');
+  });
 });
