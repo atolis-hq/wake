@@ -27,9 +27,6 @@ describe('main command routing', () => {
       runSmoke: async () => {
         calls.push('smoke');
       },
-      runLocks: async () => {
-        calls.push('locks');
-      },
     });
 
     await dispatchMainCommand({
@@ -49,28 +46,9 @@ describe('main command routing', () => {
       runSmoke: async () => {
         calls.push('smoke-again');
       },
-      runLocks: async () => {
-        calls.push('locks-again');
-      },
     });
 
     expect(calls).toEqual(['init:/tmp/wake-home', 'sandbox:build']);
-  });
-
-  it('routes locks through the public CLI surface', async () => {
-    const runLocks = vi.fn(async () => {});
-
-    await dispatchMainCommand({
-      args: ['locks', 'clear', '--wake-root', '/tmp/wake-home'],
-      runInit: async () => {},
-      runSandbox: async () => {},
-      runTick: async () => {},
-      runStart: async () => {},
-      runSmoke: async () => {},
-      runLocks,
-    });
-
-    expect(runLocks).toHaveBeenCalledWith(['clear', '--wake-root', '/tmp/wake-home']);
   });
 
   it('routes explicit smoke targets through the smoke path', async () => {
@@ -83,7 +61,6 @@ describe('main command routing', () => {
       runTick: async () => {},
       runStart: async () => {},
       runSmoke,
-      runLocks: async () => {},
     });
 
     await dispatchMainCommand({
@@ -93,7 +70,6 @@ describe('main command routing', () => {
       runTick: async () => {},
       runStart: async () => {},
       runSmoke,
-      runLocks: async () => {},
     });
 
     expect(runSmoke).toHaveBeenNthCalledWith(1, ['claude', '--remote-control']);
@@ -110,7 +86,6 @@ describe('main command routing', () => {
       runTick: async () => {},
       runStart: async () => {},
       runSmoke,
-      runLocks: async () => {},
     });
 
     expect(runSmoke).toHaveBeenCalledWith(['--wake-root', '/tmp/wake-home']);
