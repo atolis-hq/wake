@@ -556,6 +556,80 @@ describe('claude runner command building', () => {
     expect(args).toContain('10');
   });
 
+  it('renders tool capability note into refine start prompt for Claude tool names', async () => {
+    const result = await buildStagePrompt({
+      action: 'refine',
+      projection: {
+        schemaVersion: 1,
+        workItemKey: 'atolis-hq/wake#20',
+        issue: {
+          repo: 'atolis-hq/wake',
+          number: 20,
+          title: 'Example issue',
+          body: 'Body',
+          labels: [],
+          assignees: [],
+          state: 'open',
+          url: 'https://example.test/issues/20',
+          createdAt: '2026-07-05T12:00:00.000Z',
+          updatedAt: '2026-07-05T12:00:00.000Z',
+        },
+        comments: [],
+        wake: {
+          stage: 'queue',
+          stageHistory: [],
+          recentEventIds: [],
+          syncedAt: '2026-07-05T12:00:00.000Z',
+          expectedEcho: { commentIds: [], labels: [] },
+        },
+        context: {},
+      },
+    });
+
+    // The default note contains Claude tool names from the frontmatter
+    expect(result.prompt).toContain('Read, Glob, Grep');
+    expect(result.prompt).toContain('Bash(git status)');
+    // Should not have an unresolved template variable
+    expect(result.prompt).not.toContain('{{toolCapabilityNote}}');
+  });
+
+  it('applies contextOverrides to replace toolCapabilityNote for non-Claude runners', async () => {
+    const codexNote = 'Use shell commands: cat, ls, grep. Sandbox blocks writes.';
+    const result = await buildStagePrompt({
+      action: 'refine',
+      projection: {
+        schemaVersion: 1,
+        workItemKey: 'atolis-hq/wake#20',
+        issue: {
+          repo: 'atolis-hq/wake',
+          number: 20,
+          title: 'Example issue',
+          body: 'Body',
+          labels: [],
+          assignees: [],
+          state: 'open',
+          url: 'https://example.test/issues/20',
+          createdAt: '2026-07-05T12:00:00.000Z',
+          updatedAt: '2026-07-05T12:00:00.000Z',
+        },
+        comments: [],
+        wake: {
+          stage: 'queue',
+          stageHistory: [],
+          recentEventIds: [],
+          syncedAt: '2026-07-05T12:00:00.000Z',
+          expectedEcho: { commentIds: [], labels: [] },
+        },
+        context: {},
+      },
+      contextOverrides: { toolCapabilityNote: codexNote },
+    });
+
+    expect(result.prompt).toContain(codexNote);
+    // The Claude-specific tool names should no longer appear as the tool note
+    expect(result.prompt).not.toContain('Read, Glob, Grep');
+  });
+
   it('reads maxTurns from the real refine and implement prompt templates', async () => {
     const refine = await buildStagePrompt({
       action: 'refine',

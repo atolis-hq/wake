@@ -9,9 +9,7 @@ skipApproval: false
 ---
 Resuming the REFINE stage session for {{workItemKey}}.
 
-Reminder: this is still a planning-only stage - your only available tools
-are: {{allowedToolsList}}. Do not attempt to use Edit, Write, or any Bash
-command other than the git commands listed above, or modify any file.
+{{toolCapabilityNote}}
 
 You may run `git fetch origin` to ensure the canonical clone is up-to-date,
 and `git status` to inspect repository state. If any git operation results in
