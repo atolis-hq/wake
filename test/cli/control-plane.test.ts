@@ -20,4 +20,48 @@ describe('control plane', () => {
 
     expect(tickRunner.runTick).not.toHaveBeenCalled();
   });
+
+  it('logs status on change but suppresses repeated identical statuses', async () => {
+    const tickRunner = {
+      runTick: vi.fn().mockResolvedValue({ status: 'idle' }),
+    };
+    const logged: string[] = [];
+
+    const controlPlane = createControlPlane({
+      tickRunner,
+      intervalMs: 0,
+      isPaused: () => false,
+      logger: { info(msg) { logged.push(msg); }, error() {} },
+      sleep: async () => {},
+    });
+
+    await controlPlane.runOnce();
+    await controlPlane.runOnce();
+    await controlPlane.runOnce();
+
+    expect(logged.filter((m) => m.includes('status=idle'))).toHaveLength(1);
+  });
+
+  it('logs each distinct status transition', async () => {
+    const statuses = ['idle', 'processed', 'idle'];
+    let call = 0;
+    const tickRunner = {
+      runTick: vi.fn().mockImplementation(() => Promise.resolve({ status: statuses[call++] })),
+    };
+    const logged: string[] = [];
+
+    const controlPlane = createControlPlane({
+      tickRunner,
+      intervalMs: 0,
+      isPaused: () => false,
+      logger: { info(msg) { logged.push(msg); }, error() {} },
+      sleep: async () => {},
+    });
+
+    await controlPlane.runOnce();
+    await controlPlane.runOnce();
+    await controlPlane.runOnce();
+
+    expect(logged).toEqual(['[wake] status=idle', '[wake] status=processed', '[wake] status=idle']);
+  });
 });

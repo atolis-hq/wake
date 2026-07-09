@@ -68,6 +68,7 @@ export function formatCodexRunLogLine(input: {
   issueNumber: number;
   repo: string;
   recentEventIds: string[];
+  model?: string;
   workspacePath?: string;
   sessionId?: string;
   exitCode?: number;
@@ -76,6 +77,8 @@ export function formatCodexRunLogLine(input: {
     '[codex-run]',
     `phase=${input.phase}`,
     `runId=${input.runId}`,
+    `cli=Codex`,
+    ...(input.model === undefined ? [] : [`model=${input.model}`]),
     `repo=${input.repo}`,
     `issueNumber=${input.issueNumber}`,
     `action=${input.action}`,
@@ -215,6 +218,7 @@ export function createCodexRunner(options: {
           issueNumber: input.projection.issue.number,
           repo: input.projection.issue.repo,
           recentEventIds: input.recentEvents.map((event) => event.eventId),
+          model,
           ...(input.workspacePath === undefined
             ? {}
             : { workspacePath: input.workspacePath }),
@@ -242,6 +246,7 @@ export function createCodexRunner(options: {
             issueNumber: input.projection.issue.number,
             repo: input.projection.issue.repo,
             recentEventIds: input.recentEvents.map((event) => event.eventId),
+            model,
             ...(input.workspacePath === undefined
               ? {}
               : { workspacePath: input.workspacePath }),
@@ -281,6 +286,7 @@ export function createCodexRunner(options: {
           issueNumber: input.projection.issue.number,
           repo: input.projection.issue.repo,
           recentEventIds: input.recentEvents.map((event) => event.eventId),
+          model,
           ...(input.workspacePath === undefined
             ? {}
             : { workspacePath: input.workspacePath }),

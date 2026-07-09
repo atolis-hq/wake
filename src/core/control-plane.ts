@@ -9,6 +9,7 @@ export function createControlPlane(deps: {
   sleep: (ms: number) => Promise<void>;
 }) {
   let running = true;
+  let lastStatus: string | undefined;
 
   return {
     stop() {
@@ -16,11 +17,20 @@ export function createControlPlane(deps: {
     },
     async runOnce() {
       if (await deps.isPaused()) {
-        deps.logger.info('Wake is paused');
+        if (lastStatus !== 'paused') {
+          deps.logger.info('[wake] status=paused');
+          lastStatus = 'paused';
+        }
         return { status: 'paused' as const };
       }
 
-      return deps.tickRunner.runTick();
+      const result = await deps.tickRunner.runTick();
+      const status = (result as { status?: string } | null)?.status ?? 'unknown';
+      if (status !== lastStatus) {
+        deps.logger.info(`[wake] status=${status}`);
+        lastStatus = status;
+      }
+      return result;
     },
     async start() {
       while (running) {

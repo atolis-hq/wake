@@ -529,11 +529,14 @@ describe('claude runner command building', () => {
       issueNumber: 12,
       repo: 'atolis-hq/wake',
       recentEventIds: ['evt-1', 'evt-2'],
+      model: 'claude-sonnet-5',
       workspacePath: '/wake/workspaces/atolis-hq__wake/12',
     });
 
     expect(line).toContain('[claude-run]');
     expect(line).toContain('phase=start');
+    expect(line).toContain('cli=Claude');
+    expect(line).toContain('model=claude-sonnet-5');
     expect(line).toContain('runId=run-12-1');
     expect(line).toContain('repo=atolis-hq/wake');
     expect(line).toContain('issueNumber=12');
