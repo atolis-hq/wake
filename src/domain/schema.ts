@@ -260,7 +260,8 @@ export const wakeConfigSchema = z.object({
     fake: { kind: 'fake', cli: 'Fake' },
     'claude-haiku': { kind: 'claude', command: 'claude', model: 'haiku', smokeModel: 'haiku', sessionName: 'Eddy', remoteControlName: 'Eddy', smokePrompt: defaultSmokePrompt, timeoutMs: 30 * 60 * 1000, remoteControl: { enabled: false }, models: { default: 'haiku' } },
     'claude-opus': { kind: 'claude', command: 'claude', model: 'claude-opus-4-8', smokeModel: 'haiku', sessionName: 'Eddy', remoteControlName: 'Eddy', smokePrompt: defaultSmokePrompt, timeoutMs: 30 * 60 * 1000, remoteControl: { enabled: false }, models: { default: 'claude-opus-4-8' } },
-    codex: { kind: 'codex', command: 'codex', model: 'gpt-5.5', smokeModel: 'gpt-5.4-mini', smokePrompt: defaultSmokePrompt, timeoutMs: 30 * 60 * 1000, models: { default: 'gpt-5.5', implement: 'gpt-5.5' } },
+    'codex-mini': { kind: 'codex', command: 'codex', model: 'gpt-5.4-mini', smokeModel: 'gpt-5.4-mini', smokePrompt: defaultSmokePrompt, timeoutMs: 30 * 60 * 1000, models: { default: 'gpt-5.4-mini', implement: 'gpt-5.4-mini' } },
+    'codex-flagship': { kind: 'codex', command: 'codex', model: 'gpt-5.5', smokeModel: 'gpt-5.4-mini', smokePrompt: defaultSmokePrompt, timeoutMs: 30 * 60 * 1000, models: { default: 'gpt-5.5', implement: 'gpt-5.5' } },
   }),
   tiers: z.record(z.string(), z.array(z.string().min(1)).min(1)).default({
     light: ['fake'],

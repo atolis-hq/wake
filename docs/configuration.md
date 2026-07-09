@@ -77,7 +77,13 @@ All configuration uses `schemaVersion: 1`.
       "model": "claude-opus-4-8",
       "timeoutMs": 1800000
     },
-    "codex": {
+    "codex-mini": {
+      "kind": "codex",
+      "command": "codex",
+      "model": "gpt-5.4-mini",
+      "timeoutMs": 600000
+    },
+    "codex-flagship": {
       "kind": "codex",
       "command": "codex",
       "model": "gpt-5.5",
@@ -86,8 +92,8 @@ All configuration uses `schemaVersion: 1`.
   },
   "tiers": {
     "light": ["claude-haiku"],
-    "standard": ["codex", "claude-haiku"],
-    "deep": ["claude-opus", "codex"]
+    "standard": ["codex-mini", "claude-haiku"],
+    "deep": ["claude-opus", "codex-flagship"]
   },
   "defaultTier": "standard",
   "stages": {
@@ -249,15 +255,11 @@ Control plane tick frequency and timing.
 
 ### runner
 
-Legacy execution mode and per-kind CLI defaults. New multi-runner routing uses
+Per-kind CLI defaults used by the [`runner.claude`](#runnerclaude) and
+[`runner.codex`](#runnercodex) subsections. Runner selection and routing use
 the top-level [`runners`](#runners), [`tiers`](#tiers), and
-[`stages`](#stages) sections. `--runner fake` still acts as a global override;
-`runner.mode = "claude"` or `"codex"` remains supported for older configs that
-select one CLI globally.
-
-| Property | Type | Description | Default |
-|----------|------|-------------|---------|
-| `mode` | `"fake"` \| `"claude"` \| `"codex"` | Execution mode: `"fake"` for testing/fixtures, `"claude"` for real Claude CLI execution, `"codex"` for real Codex CLI execution | `"fake"` |
+[`stages`](#stages) sections; use `--runner <name>` on the CLI or configure
+tiers to select runners. `--runner fake` acts as a global override for testing.
 
 ### runners
 
