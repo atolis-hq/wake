@@ -12,6 +12,7 @@ import type {
 import type { Clock } from '../lib/clock.js';
 import { acquireFileLock } from '../lib/lock.js';
 import { parseRunnerResultSentinel, runnerSentinelSchema } from '../domain/schema.js';
+import { stageLabelForStage } from '../domain/stages.js';
 import type { AgentAction, EventEnvelope, IssueStateRecord, RunRecord, WakeConfig } from '../domain/types.js';
 import { createEventEnvelope } from '../lib/event-log.js';
 
@@ -153,10 +154,6 @@ export function createTickRunner(deps: {
     }
 
     return 'wake:status.pending';
-  }
-
-  function stageLabelForStage(stage: import('../domain/types.js').Stage): string {
-    return `wake:stage.${stage}`;
   }
 
   function createLabelsEvent(input: {

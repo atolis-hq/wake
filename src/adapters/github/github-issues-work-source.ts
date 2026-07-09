@@ -1,9 +1,9 @@
 import type { EventEnvelope, IssueStateRecord, WakeConfig } from '../../domain/types.js';
+import { wakeStageLabelPrefix } from '../../domain/stages.js';
 import { createEventEnvelope } from '../../lib/event-log.js';
 import { buildResumeCommandForCli } from '../runner/runner-cli-adapter.js';
 
 const wakeStatusLabelPrefix = 'wake:status.';
-const wakeStageLabelPrefix = 'wake:stage.';
 
 type GitHubIssue = {
   number: number;

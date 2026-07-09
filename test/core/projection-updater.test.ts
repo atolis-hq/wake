@@ -5,7 +5,50 @@ import { join } from 'node:path';
 
 import { createStateStore } from '../../src/adapters/fs/state-store.js';
 import { createProjectionUpdater } from '../../src/core/projection-updater.js';
+import { stageLabelForStage, stageValues } from '../../src/domain/stages.js';
 import { createEventEnvelope } from '../../src/lib/event-log.js';
+
+function issueUpsert(input: {
+  eventId: string;
+  issueNumber: number;
+  labels: string[];
+  occurredAt?: string;
+  ingestedAt?: string;
+}) {
+  const occurredAt = input.occurredAt ?? '2026-07-05T12:00:00.000Z';
+  const ingestedAt = input.ingestedAt ?? occurredAt;
+
+  return createEventEnvelope({
+    eventId: input.eventId,
+    workItemKey: `atolis-hq/wake#${input.issueNumber}`,
+    streamScope: 'global-intake',
+    direction: 'inbound',
+    sourceSystem: 'github',
+    sourceEventType: 'ticket.upsert',
+    sourceRefs: {
+      repo: 'atolis-hq/wake',
+      issueNumber: input.issueNumber,
+      sourceUrl: `https://example.test/issues/${input.issueNumber}`,
+    },
+    occurredAt,
+    ingestedAt,
+    trigger: 'immediate',
+    payload: {
+      ticket: {
+        repo: 'atolis-hq/wake',
+        number: input.issueNumber,
+        title: 'Example',
+        body: 'Body',
+        labels: input.labels,
+        assignees: [],
+        state: 'open',
+        url: `https://example.test/issues/${input.issueNumber}`,
+        createdAt: '2026-07-05T12:00:00.000Z',
+        updatedAt: occurredAt,
+      },
+    },
+  });
+}
 
 describe('projection updater', () => {
   let root: string;
@@ -88,6 +131,111 @@ describe('projection updater', () => {
     expect(projection?.workItemKey).toBe('atolis-hq/wake#7');
     expect(projection?.latestComment?.id).toBe('c-1');
     expect(projection?.wake.recentEventIds).toEqual(['evt-issue', 'evt-comment']);
+  });
+
+  it('sets the initial projection stage from each current wake stage label', async () => {
+    for (const [index, stage] of stageValues.entries()) {
+      const store = createStateStore({
+        wakeRoot: await mkdtemp(join(tmpdir(), 'wake-projection-updater-stage-')),
+      });
+      const updater = createProjectionUpdater({ stateStore: store });
+      const event = issueUpsert({
+        eventId: `evt-stage-${stage}`,
+        issueNumber: 100 + index,
+        labels: ['bug', stageLabelForStage(stage)],
+      });
+
+      await updater.rebuildFromEvents([event]);
+
+      const projection = await store.readIssueState('atolis-hq/wake', 100 + index);
+      expect(projection?.wake.stage).toBe(stage);
+    }
+  });
+
+  it('ignores legacy and unknown stage labels when creating a projection', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const updater = createProjectionUpdater({ stateStore: store });
+    const event = issueUpsert({
+      eventId: 'evt-legacy-label',
+      issueNumber: 101,
+      labels: ['wake:refined', 'wake:stage.nope'],
+    });
+
+    await updater.rebuildFromEvents([event]);
+
+    const projection = await store.readIssueState('atolis-hq/wake', 101);
+    expect(projection?.wake.stage).toBe('queue');
+  });
+
+  it('does not set stage from ambiguous current wake stage labels', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const updater = createProjectionUpdater({ stateStore: store });
+    const event = issueUpsert({
+      eventId: 'evt-ambiguous-labels',
+      issueNumber: 102,
+      labels: [stageLabelForStage('refined'), stageLabelForStage('blocked')],
+    });
+
+    await updater.rebuildFromEvents([event]);
+
+    const projection = await store.readIssueState('atolis-hq/wake', 102);
+    expect(projection?.wake.stage).toBe('queue');
+  });
+
+  it('reconciles an existing projection stage from a single current wake stage label', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const updater = createProjectionUpdater({ stateStore: store });
+    const initial = issueUpsert({
+      eventId: 'evt-reconcile-initial',
+      issueNumber: 103,
+      labels: [stageLabelForStage('refined')],
+      occurredAt: '2026-07-05T12:00:00.000Z',
+      ingestedAt: '2026-07-05T12:00:01.000Z',
+    });
+    const reconciled = issueUpsert({
+      eventId: 'evt-reconcile-updated',
+      issueNumber: 103,
+      labels: [stageLabelForStage('blocked')],
+      occurredAt: '2026-07-05T12:05:00.000Z',
+      ingestedAt: '2026-07-05T12:05:01.000Z',
+    });
+
+    await updater.rebuildFromEvents([initial]);
+    await updater.rebuildFromEvents([reconciled]);
+
+    const projection = await store.readIssueState('atolis-hq/wake', 103);
+    expect(projection?.wake.stage).toBe('blocked');
+    expect(projection?.wake.stageHistory).toEqual([
+      {
+        stage: 'blocked',
+        changedAt: '2026-07-05T12:05:00.000Z',
+        reason: 'github-label-sync',
+      },
+    ]);
+  });
+
+  it('leaves an existing projection stage unchanged for ambiguous current wake stage labels', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const updater = createProjectionUpdater({ stateStore: store });
+    const initial = issueUpsert({
+      eventId: 'evt-ambiguous-existing-initial',
+      issueNumber: 104,
+      labels: [stageLabelForStage('refined')],
+    });
+    const ambiguous = issueUpsert({
+      eventId: 'evt-ambiguous-existing-updated',
+      issueNumber: 104,
+      labels: [stageLabelForStage('active'), stageLabelForStage('blocked')],
+      occurredAt: '2026-07-05T12:05:00.000Z',
+      ingestedAt: '2026-07-05T12:05:01.000Z',
+    });
+
+    await updater.rebuildFromEvents([initial]);
+    await updater.rebuildFromEvents([ambiguous]);
+
+    const projection = await store.readIssueState('atolis-hq/wake', 104);
+    expect(projection?.wake.stage).toBe('refined');
+    expect(projection?.wake.stageHistory).toEqual([]);
   });
 
   it('does not regress an already-advanced stage when the issue is re-synced', async () => {
