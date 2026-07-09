@@ -73,6 +73,26 @@ export interface StagePromptResult {
   maxTurns: number;
 }
 
+function sentinelListForApproval(skipApproval: boolean): string {
+  return skipApproval ? 'DONE, BLOCKED, FAILED' : 'AWAITING_APPROVAL, BLOCKED, FAILED';
+}
+
+function sentinelInstructionsForApproval(skipApproval: boolean): string {
+  if (skipApproval) {
+    return [
+      '- DONE: the stage objective is complete.',
+      '- BLOCKED: you need clarification from a human or cannot proceed safely.',
+      '- FAILED: something prevented you from completing this stage at all.',
+    ].join('\n');
+  }
+
+  return [
+    '- AWAITING_APPROVAL: the stage objective is complete, and you have asked a human to approve before Wake proceeds. Post a comment asking the human to reply with `/approved` to confirm, or to comment with feedback if they want changes.',
+    '- BLOCKED: you need clarification from a human or cannot proceed safely.',
+    '- FAILED: something prevented you from completing this stage at all.',
+  ].join('\n');
+}
+
 export async function buildStagePrompt(input: {
   action: AgentAction;
   projection: IssueStateRecord;
@@ -105,10 +125,8 @@ export async function buildStagePrompt(input: {
   context.allowedToolsList = allowedTools.length > 0 ? allowedTools.join(', ') : '(none)';
 
   const skipApproval = template.frontmatter.skipApproval === 'true';
-  context.additionalSentinels = skipApproval ? '' : ', AWAITING_APPROVAL';
-  context.approvalInstructions = skipApproval
-    ? ''
-    : '- AWAITING_APPROVAL: your work is complete but you are requesting human sign-off before proceeding. Post a comment asking the human to reply with `/approved` to confirm, or to comment with feedback if they want changes.';
+  context.sentinelList = sentinelListForApproval(skipApproval);
+  context.sentinelInstructions = sentinelInstructionsForApproval(skipApproval);
 
   const permissionMode = template.frontmatter.permissionMode;
 

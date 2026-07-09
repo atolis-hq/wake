@@ -29,8 +29,8 @@ Completion requirements:
   with BLOCKED or FAILED instead of guessing.
 
 Respond concisely. The last line of your response must be exactly one of:
-DONE, BLOCKED, FAILED{{additionalSentinels}}.
-{{approvalInstructions}}
+{{sentinelList}}.
+{{sentinelInstructions}}
 
 Issue:
 - Title: {{title}}
