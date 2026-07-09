@@ -1,4 +1,4 @@
-import { agentActionValues, failedRunnerSentinel } from '../domain/stages.js';
+import { agentActionValues } from '../domain/stages.js';
 import type { AgentAction, IssueStateRecord, Stage, WakeConfig } from '../domain/types.js';
 
 export interface ApprovalResolution {
@@ -48,9 +48,9 @@ export function createPolicyEngine() {
         typeof context.lastHandledCommentId === 'string'
           ? context.lastHandledCommentId
           : undefined;
-      const handledIssueUpdatedAt =
-        typeof context.lastHandledIssueUpdatedAt === 'string'
-          ? context.lastHandledIssueUpdatedAt
+      const lastCompletedAction =
+        typeof context.lastCompletedAction === 'string'
+          ? context.lastCompletedAction
           : undefined;
       const lastRunSentinel =
         typeof context.lastRunSentinel === 'string'
@@ -63,17 +63,25 @@ export function createPolicyEngine() {
 
       if (
         issue.latestComment !== undefined &&
-        !issue.latestComment.isWakeAuthored &&
+        !issue.latestComment.isBotAuthored &&
         issue.latestComment.id !== handledCommentId
       ) {
         return true;
       }
 
-      if (lastRunSentinel === failedRunnerSentinel) {
+      if (lastRunSentinel === 'FAILED') {
         return false;
       }
 
-      return issue.issue.updatedAt !== handledIssueUpdatedAt;
+      if (issue.wake.stage === 'queue' && lastCompletedAction !== 'refine') {
+        return true;
+      }
+
+      if (issue.wake.stage === 'refined' && lastCompletedAction !== 'implement') {
+        return true;
+      }
+
+      return false;
     },
     chooseAction(stage: Stage): AgentAction | null {
       if (stage === 'queue') {
@@ -105,12 +113,10 @@ export function createPolicyEngine() {
 
       const latestHumanComment = [...issue.comments]
         .reverse()
-        .find((c) => !c.isWakeAuthored && !c.isBotAuthored);
+        .find((c) => !c.isBotAuthored);
 
-      // No new human comment since the last handled one — Wake's own activity
-      // (posting a comment, updating labels) bumps GitHub's issue.updatedAt and
-      // can trigger needsWakeAction even though the human hasn't replied yet.
-      // Return null so the tick stays idle instead of falling through to the LLM.
+      // No new human comment since the last handled one; stay idle instead of
+      // falling through to the LLM while awaiting explicit approval feedback.
       if (latestHumanComment === undefined || latestHumanComment.id === handledCommentId) {
         return null;
       }

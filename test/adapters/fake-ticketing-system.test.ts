@@ -13,7 +13,7 @@ describe('fake ticketing system', () => {
           body: 'Needs detail',
           labels: ['wake:blocked'],
           comments: [
-            { id: 'c1', body: 'Question <!-- wake -->', author: { login: 'shared-user' } },
+            { id: 'c1', body: 'Question', author: { login: 'shared-user' } },
             { id: 'c2', body: 'Here is the answer', author: { login: 'shared-user' } },
           ],
         },
@@ -28,6 +28,6 @@ describe('fake ticketing system', () => {
     expect(issueEvent?.workItemKey).toBe('atolis-hq/wake#3');
     expect(commentEvents).toHaveLength(2);
     expect(commentEvents[0]?.workItemKey).toBe('atolis-hq/wake#3');
-    expect(commentEvents[1]?.derivedHints?.wakeAuthoredComment).toBe(false);
+    expect(commentEvents[1]?.derivedHints?.botAuthoredComment).toBe(false);
   });
 });

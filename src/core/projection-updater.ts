@@ -29,6 +29,12 @@ function stageFromLabels(labels: string[]): IssueStateRecord['wake']['stage'] {
   return 'queue';
 }
 
+function stringArrayFromPayload(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === 'string')
+    : [];
+}
+
 function createProjectionFromIssueEvent(event: EventEnvelope): IssueStateRecord | null {
   const issue =
     event.sourceEventType === 'ticket.upsert'
@@ -75,9 +81,8 @@ function applyEvent(
     }
 
     // Once a projection exists, wake.run.completed events own stage transitions.
-    // Re-deriving stage from labels here would regress it to 'queue' whenever the
-    // issue is re-synced (e.g. GitHub bumps updatedAt when Wake posts its own
-    // status comment), producing an infinite refine loop.
+    // Re-deriving stage from labels here would let external label churn move the
+    // workflow without an explicit Wake lifecycle event.
     return parseIssueStateRecord({
       ...current,
       issue: next.issue,
@@ -103,11 +108,9 @@ function applyEvent(
       return current;
     }
 
-    const isWakeAuthored = Boolean(event.derivedHints?.wakeAuthoredComment);
     const isBotAuthored = Boolean(event.derivedHints?.botAuthoredComment);
     const nextComment = {
       ...(comment as Record<string, unknown>),
-      isWakeAuthored,
       isBotAuthored,
     };
     const existingComments = current.comments.filter(
@@ -122,7 +125,6 @@ function applyEvent(
     // branch/workspace.
     const unblocked =
       (current.wake.stage === 'blocked' || current.wake.stage === 'failed') &&
-      !isWakeAuthored &&
       !isBotAuthored;
     const blockedFromAction = current.context.blockedFromAction;
     const unblockStage = blockedFromAction === 'implement' ? 'refined' : 'queue';
@@ -162,7 +164,6 @@ function applyEvent(
       workspacePath?: string;
       reason?: string;
       handledCommentId?: string;
-      handledIssueUpdatedAt?: string;
     };
 
     return parseIssueStateRecord({
@@ -172,12 +173,12 @@ function applyEvent(
         ...(payload.handledCommentId === undefined
           ? {}
           : { lastHandledCommentId: payload.handledCommentId }),
-        ...(payload.handledIssueUpdatedAt === undefined
-          ? {}
-          : { lastHandledIssueUpdatedAt: payload.handledIssueUpdatedAt }),
         ...(payload.sentinel === undefined
           ? {}
           : { lastRunSentinel: payload.sentinel }),
+        ...(payload.sentinel === 'DONE' && payload.action !== undefined
+          ? { lastCompletedAction: payload.action }
+          : {}),
         // Remembered so a later human reply can route an unblocked issue
         // back to the stage that lets the same action resume, instead of
         // always restarting from 'refine'.
@@ -207,6 +208,56 @@ function applyEvent(
             reason: payload.reason ?? event.sourceEventType,
           },
         ],
+        recentEventIds: [...current.wake.recentEventIds, event.eventId].slice(-10),
+      },
+    });
+  }
+
+  if (event.sourceEventType === 'ticket.reply.published') {
+    const commentId = event.sourceRefs.commentId;
+    if (commentId === undefined) {
+      return parseIssueStateRecord({
+        ...current,
+        wake: {
+          ...current.wake,
+          syncedAt: event.ingestedAt,
+          recentEventIds: [...current.wake.recentEventIds, event.eventId].slice(-10),
+        },
+      });
+    }
+
+    return parseIssueStateRecord({
+      ...current,
+      wake: {
+        ...current.wake,
+        expectedEcho: {
+          ...current.wake.expectedEcho,
+          commentIds: Array.from(
+            new Set([...current.wake.expectedEcho.commentIds, commentId]),
+          ),
+        },
+        syncedAt: event.ingestedAt,
+        recentEventIds: [...current.wake.recentEventIds, event.eventId].slice(-10),
+      },
+    });
+  }
+
+  if (event.sourceEventType === 'ticket.labels.updated') {
+    const labels = stringArrayFromPayload(event.payload.labels);
+
+    return parseIssueStateRecord({
+      ...current,
+      issue: {
+        ...current.issue,
+        labels,
+      },
+      wake: {
+        ...current.wake,
+        expectedEcho: {
+          ...current.wake.expectedEcho,
+          labels,
+        },
+        syncedAt: event.ingestedAt,
         recentEventIds: [...current.wake.recentEventIds, event.eventId].slice(-10),
       },
     });

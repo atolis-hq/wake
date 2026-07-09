@@ -1,6 +1,5 @@
 import { access } from 'node:fs/promises';
 
-import { isWakeAuthoredComment } from '../../domain/schema.js';
 import type { EventEnvelope } from '../../domain/types.js';
 import { createEventEnvelope } from '../../lib/event-log.js';
 import { readJsonFile } from '../../lib/json-file.js';
@@ -89,7 +88,6 @@ function normalizeIssueEvents(issue: FakeTicketSeed, nowIso: string): EventEnvel
           },
         },
         derivedHints: {
-          wakeAuthoredComment: isWakeAuthoredComment(comment.body),
           botAuthoredComment: false,
         },
       }),
@@ -108,6 +106,38 @@ export function createFakeTicketingSystem(options: {
     },
     async deliverIntent(input: { event: EventEnvelope }): Promise<EventEnvelope[]> {
       const publishedAt = (options.now ?? (() => new Date()))().toISOString();
+
+      if (input.event.sourceEventType === 'wake.labels.requested') {
+        const labels = [
+          input.event.payload.statusLabel,
+          input.event.payload.stageLabel,
+        ].filter((label): label is string => typeof label === 'string');
+
+        return [
+          createEventEnvelope({
+            eventId: `${input.event.eventId}-labels-updated`,
+            workItemKey: input.event.workItemKey,
+            streamScope: 'work-item',
+            direction: 'outbound',
+            sourceSystem: 'fake-ticketing',
+            sourceEventType: 'ticket.labels.updated',
+            sourceRefs: {
+              ...input.event.sourceRefs,
+              sink: 'fake-ticketing',
+            },
+            occurredAt: publishedAt,
+            ingestedAt: publishedAt,
+            trigger: 'context-only',
+            payload: {
+              intentEventId: input.event.eventId,
+              labels,
+            },
+          }),
+        ];
+      }
+
+      const commentId = `${input.event.eventId}-comment`;
+
       return [
         createEventEnvelope({
           eventId: `${input.event.eventId}-delivery`,
@@ -115,9 +145,10 @@ export function createFakeTicketingSystem(options: {
           streamScope: 'work-item',
           direction: 'outbound',
           sourceSystem: 'fake-ticketing',
-          sourceEventType: 'fake.issue.comment.published',
+          sourceEventType: 'ticket.reply.published',
           sourceRefs: {
             ...input.event.sourceRefs,
+            commentId,
             sink: 'fake-ticketing',
           },
           occurredAt: publishedAt,

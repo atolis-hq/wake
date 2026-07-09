@@ -135,7 +135,7 @@ describe('tick runner', () => {
 
     const events = await readFile(join(root, 'events', '2026-07-05.jsonl'), 'utf8');
     expect(events).toContain('"sourceEventType":"wake.publish.intent.requested"');
-    expect(events).toContain('"sourceEventType":"fake.issue.comment.published"');
+    expect(events).toContain('"sourceEventType":"ticket.reply.published"');
   });
 
   it('runs once when a new human comment arrives on an eligible issue', async () => {
@@ -216,7 +216,6 @@ describe('tick runner', () => {
                 },
               },
               derivedHints: {
-                wakeAuthoredComment: false,
               },
             },
           ];
@@ -225,7 +224,7 @@ describe('tick runner', () => {
       runner: {
         async run() {
           callCount += 1;
-          return { result: 'Handled\nDONE', model: 'test-model', cli: 'test-cli', session_id: 'session-2' };
+          return { result: 'Need more detail\nBLOCKED', model: 'test-model', cli: 'test-cli', session_id: 'session-2' };
         },
       },
       workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
@@ -262,6 +261,7 @@ describe('tick runner', () => {
         stageHistory: [],
         recentEventIds: [],
         syncedAt: '2026-07-05T12:00:00.000Z',
+          expectedEcho: { commentIds: [], labels: [] },
       },
       context: {},
     });
@@ -331,6 +331,7 @@ describe('tick runner', () => {
         stageHistory: [],
         recentEventIds: [],
         syncedAt: '2026-07-05T12:00:00.000Z',
+          expectedEcho: { commentIds: [], labels: [] },
       },
       context: {},
     });
@@ -420,7 +421,6 @@ describe('tick runner', () => {
           author: { login: 'owner' },
           createdAt: '2026-07-05T12:05:00.000Z',
           updatedAt: '2026-07-05T12:05:00.000Z',
-          isWakeAuthored: false,
           isBotAuthored: false,
         },
       ],
@@ -430,7 +430,6 @@ describe('tick runner', () => {
         author: { login: 'owner' },
         createdAt: '2026-07-05T12:05:00.000Z',
         updatedAt: '2026-07-05T12:05:00.000Z',
-        isWakeAuthored: false,
         isBotAuthored: false,
       },
       wake: {
@@ -438,6 +437,7 @@ describe('tick runner', () => {
         stageHistory: [],
         recentEventIds: [],
         syncedAt: '2026-07-05T12:00:00.000Z',
+          expectedEcho: { commentIds: [], labels: [] },
       },
       context: {
         pendingApprovalAction: 'implement',
@@ -506,10 +506,10 @@ describe('tick runner', () => {
         stageHistory: [],
         recentEventIds: [],
         syncedAt: '2026-07-05T12:00:00.000Z',
+          expectedEcho: { commentIds: [], labels: [] },
       },
       context: {
         pendingApprovalAction: 'implement',
-        lastHandledIssueUpdatedAt: '2026-07-05T12:05:00.000Z',
       },
     });
 
@@ -562,7 +562,6 @@ describe('tick runner', () => {
           author: { login: 'owner' },
           createdAt: '2026-07-05T12:05:00.000Z',
           updatedAt: '2026-07-05T12:05:00.000Z',
-          isWakeAuthored: false,
           isBotAuthored: false,
         },
       ],
@@ -572,7 +571,6 @@ describe('tick runner', () => {
         author: { login: 'owner' },
         createdAt: '2026-07-05T12:05:00.000Z',
         updatedAt: '2026-07-05T12:05:00.000Z',
-        isWakeAuthored: false,
         isBotAuthored: false,
       },
       wake: {
@@ -580,6 +578,7 @@ describe('tick runner', () => {
         stageHistory: [],
         recentEventIds: [],
         syncedAt: '2026-07-05T12:00:00.000Z',
+          expectedEcho: { commentIds: [], labels: [] },
       },
       context: {
         pendingApprovalAction: 'refine',
@@ -635,6 +634,7 @@ describe('tick runner', () => {
         stageHistory: [],
         recentEventIds: [],
         syncedAt: '2026-07-05T12:00:00.000Z',
+          expectedEcho: { commentIds: [], labels: [] },
       },
       context: {},
     });
@@ -726,6 +726,7 @@ describe('tick runner', () => {
         stageHistory: [],
         recentEventIds: [],
         syncedAt: '2026-07-05T12:00:00.000Z',
+          expectedEcho: { commentIds: [], labels: [] },
       },
       context: {},
     });
@@ -804,6 +805,7 @@ describe('tick runner', () => {
         stageHistory: [],
         recentEventIds: [],
         syncedAt: '2026-07-05T12:00:00.000Z',
+          expectedEcho: { commentIds: [], labels: [] },
       },
       context: {},
     });

@@ -30,7 +30,6 @@ function buildAwaitingApprovalIssue(options: {
             author: { login: 'owner' },
             createdAt: '2026-07-06T01:00:00.000Z',
             updatedAt: '2026-07-06T01:00:00.000Z',
-            isWakeAuthored: false,
           },
         ]
       : [],
@@ -73,11 +72,10 @@ function buildIssue(overrides: {
 
 function buildNeedsWakeActionIssue(overrides: {
   updatedAt?: string;
-  lastHandledIssueUpdatedAt?: string;
   latestCommentId?: string;
   lastHandledCommentId?: string;
-  latestCommentWakeAuthored?: boolean;
   lastRunSentinel?: string;
+  lastCompletedAction?: string;
 }) {
   return parseIssueStateRecord({
     schemaVersion: 1,
@@ -102,7 +100,6 @@ function buildNeedsWakeActionIssue(overrides: {
             author: { login: 'owner' },
             createdAt: '2026-07-06T01:00:00.000Z',
             updatedAt: '2026-07-06T01:00:00.000Z',
-            isWakeAuthored: overrides.latestCommentWakeAuthored ?? false,
           },
         ],
     latestComment: overrides.latestCommentId === undefined
@@ -113,7 +110,6 @@ function buildNeedsWakeActionIssue(overrides: {
           author: { login: 'owner' },
           createdAt: '2026-07-06T01:00:00.000Z',
           updatedAt: '2026-07-06T01:00:00.000Z',
-          isWakeAuthored: overrides.latestCommentWakeAuthored ?? false,
         },
     wake: {
       stage: 'refined',
@@ -122,15 +118,15 @@ function buildNeedsWakeActionIssue(overrides: {
       stageHistory: [],
     },
     context: {
-      ...(overrides.lastHandledIssueUpdatedAt === undefined
-        ? {}
-        : { lastHandledIssueUpdatedAt: overrides.lastHandledIssueUpdatedAt }),
       ...(overrides.lastHandledCommentId === undefined
         ? {}
         : { lastHandledCommentId: overrides.lastHandledCommentId }),
       ...(overrides.lastRunSentinel === undefined
         ? {}
         : { lastRunSentinel: overrides.lastRunSentinel }),
+      ...(overrides.lastCompletedAction === undefined
+        ? {}
+        : { lastCompletedAction: overrides.lastCompletedAction }),
     },
   });
 }
@@ -266,7 +262,6 @@ describe('policy engine: resolveApprovalTransition', () => {
           author: { login: 'owner' },
           createdAt: '2026-07-06T01:00:00.000Z',
           updatedAt: '2026-07-06T01:00:00.000Z',
-          isWakeAuthored: false,
         },
       ],
       wake: {
@@ -295,7 +290,6 @@ describe('policy engine: needsWakeAction', () => {
     const policy = createPolicyEngine();
     const issue = buildNeedsWakeActionIssue({
       updatedAt: '2026-07-07T00:05:00.000Z',
-      lastHandledIssueUpdatedAt: '2026-07-07T00:00:00.000Z',
       lastRunSentinel: 'FAILED',
     });
 
@@ -306,12 +300,31 @@ describe('policy engine: needsWakeAction', () => {
     const policy = createPolicyEngine();
     const issue = buildNeedsWakeActionIssue({
       updatedAt: '2026-07-07T00:05:00.000Z',
-      lastHandledIssueUpdatedAt: '2026-07-07T00:00:00.000Z',
       latestCommentId: 'c-2',
       lastHandledCommentId: 'c-1',
       lastRunSentinel: 'FAILED',
     });
 
     expect(policy.needsWakeAction(issue)).toBe(true);
+  });
+
+  it('continues to implement after refine completed without relying on updatedAt churn', () => {
+    const policy = createPolicyEngine();
+    const issue = buildNeedsWakeActionIssue({
+      lastRunSentinel: 'DONE',
+      lastCompletedAction: 'refine',
+    });
+
+    expect(policy.needsWakeAction(issue)).toBe(true);
+  });
+
+  it('does not repeat implement when the refined stage action is already complete', () => {
+    const policy = createPolicyEngine();
+    const issue = buildNeedsWakeActionIssue({
+      lastRunSentinel: 'DONE',
+      lastCompletedAction: 'implement',
+    });
+
+    expect(policy.needsWakeAction(issue)).toBe(false);
   });
 });

@@ -126,7 +126,6 @@ describe('github issues work source', () => {
           author: { login: 'alice' },
           createdAt: '2026-07-05T12:05:00.000Z',
           updatedAt: '2026-07-05T12:05:00.000Z',
-          isWakeAuthored: false,
           isBotAuthored: false,
         },
       ],
@@ -136,7 +135,6 @@ describe('github issues work source', () => {
         author: { login: 'alice' },
         createdAt: '2026-07-05T12:05:00.000Z',
         updatedAt: '2026-07-05T12:05:00.000Z',
-        isWakeAuthored: false,
         isBotAuthored: false,
       },
       wake: {
@@ -144,6 +142,7 @@ describe('github issues work source', () => {
         stageHistory: [],
         recentEventIds: [],
         syncedAt: '2026-07-05T12:10:00.000Z',
+          expectedEcho: { commentIds: [], labels: [] },
       },
       context: {},
     });
@@ -152,8 +151,150 @@ describe('github issues work source', () => {
     expect(secondPoll).toEqual([]);
   });
 
+  it('drops inbound comments whose provider ids match expected echoes', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const config = createDefaultWakeConfig(root);
+    config.sources.github.enabled = true;
+    config.sources.github.repos = ['atolis-hq/wake'];
+
+    await store.writeIssueState({
+      schemaVersion: 1,
+      workItemKey: 'atolis-hq/wake#12',
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 12,
+        title: 'Example',
+        body: 'Body',
+        labels: ['wake:queue'],
+        assignees: [],
+        state: 'open',
+        url: 'https://github.com/atolis-hq/wake/issues/12',
+        createdAt: '2026-07-05T12:00:00.000Z',
+        updatedAt: '2026-07-05T12:00:00.000Z',
+      },
+      comments: [],
+      wake: {
+        stage: 'queue',
+        stageHistory: [],
+        recentEventIds: [],
+        syncedAt: '2026-07-05T12:10:00.000Z',
+        expectedEcho: {
+          commentIds: ['202'],
+          labels: [],
+        },
+      },
+      context: {},
+    });
+
+    const workSource = createGitHubIssuesWorkSource({
+      client: {
+        listIssues: async () => [
+          {
+            number: 12,
+            title: 'Example',
+            body: 'Body',
+            state: 'open',
+            html_url: 'https://github.com/atolis-hq/wake/issues/12',
+            created_at: '2026-07-05T12:00:00.000Z',
+            updated_at: '2026-07-05T12:00:00.000Z',
+            labels: [{ name: 'wake:queue' }],
+            assignees: [],
+          },
+        ],
+        listComments: async () => [
+          {
+            id: 202,
+            body: 'Wake status update',
+            user: { login: 'shared-user' },
+            created_at: '2026-07-05T12:05:00.000Z',
+            updated_at: '2026-07-05T12:05:00.000Z',
+            html_url: 'https://github.com/atolis-hq/wake/issues/12#issuecomment-202',
+          },
+        ],
+        createComment: vi.fn(),
+        setLabels: vi.fn(),
+      },
+      stateStore: store,
+      config,
+      now: () => new Date('2026-07-05T12:10:00.000Z'),
+    });
+
+    const events = await workSource.pollEvents();
+    expect(events).toEqual([]);
+  });
+
+  it('marks label-only upserts that match expected echoes as context-only', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const config = createDefaultWakeConfig(root);
+    config.sources.github.enabled = true;
+    config.sources.github.repos = ['atolis-hq/wake'];
+
+    await store.writeIssueState({
+      schemaVersion: 1,
+      workItemKey: 'atolis-hq/wake#13',
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 13,
+        title: 'Example',
+        body: 'Body',
+        labels: ['bug', 'wake:status.pending', 'wake:stage.queue'],
+        assignees: [],
+        state: 'open',
+        url: 'https://github.com/atolis-hq/wake/issues/13',
+        createdAt: '2026-07-05T12:00:00.000Z',
+        updatedAt: '2026-07-05T12:00:00.000Z',
+      },
+      comments: [],
+      wake: {
+        stage: 'queue',
+        stageHistory: [],
+        recentEventIds: [],
+        syncedAt: '2026-07-05T12:10:00.000Z',
+        expectedEcho: {
+          commentIds: [],
+          labels: ['bug', 'wake:status.working', 'wake:stage.queue'],
+        },
+      },
+      context: {},
+    });
+
+    const workSource = createGitHubIssuesWorkSource({
+      client: {
+        listIssues: async () => [
+          {
+            number: 13,
+            title: 'Example',
+            body: 'Body',
+            state: 'open',
+            html_url: 'https://github.com/atolis-hq/wake/issues/13',
+            created_at: '2026-07-05T12:00:00.000Z',
+            updated_at: '2026-07-05T12:01:00.000Z',
+            labels: [
+              { name: 'bug' },
+              { name: 'wake:status.working' },
+              { name: 'wake:stage.queue' },
+            ],
+            assignees: [],
+          },
+        ],
+        listComments: async () => [],
+        createComment: vi.fn(),
+        setLabels: vi.fn(),
+      },
+      stateStore: store,
+      config,
+      now: () => new Date('2026-07-05T12:10:00.000Z'),
+    });
+
+    const events = await workSource.pollEvents();
+    expect(events).toHaveLength(1);
+    expect(events[0]?.sourceEventType).toBe('ticket.upsert');
+    expect(events[0]?.trigger).toBe('context-only');
+    expect(events[0]?.derivedHints?.expectedEcho).toBe(true);
+  });
+
   it('publishes outbound comments for wake intents', async () => {
-    const createComment = vi.fn();
+    const createComment = vi.fn(async () => ({ data: { id: 202 } }));
     const store = createStateStore({ wakeRoot: root });
     const config = createDefaultWakeConfig(root);
     config.sources.github.enabled = true;
@@ -189,6 +330,7 @@ describe('github issues work source', () => {
 
     expect(createComment).toHaveBeenCalledOnce();
     expect(deliveryEvents[0]?.sourceEventType).toBe('ticket.reply.published');
+    expect(deliveryEvents[0]?.sourceRefs.commentId).toBe('202');
   });
 
   it('formats outbound comments with attribution, model, and a resume command', async () => {
@@ -247,7 +389,7 @@ describe('github issues work source', () => {
     expect(postedBody).toContain('run `run-12-1`');
     expect(postedBody).toContain('claude --resume session-abc');
     expect(postedBody).toContain('cd "C:\\wake\\.wake\\workspaces\\atolis-hq__wake\\12"');
-    expect(postedBody).toContain('<!-- wake -->');
+    expect(postedBody).not.toContain('<!-- wake -->');
   });
 
   it('formats Codex resume instructions when the run came from Codex', async () => {
@@ -422,6 +564,7 @@ describe('github issues work source', () => {
         stageHistory: [],
         recentEventIds: [],
         syncedAt: '2026-07-05T12:10:00.000Z',
+          expectedEcho: { commentIds: [], labels: [] },
       },
       context: {},
     });
@@ -494,6 +637,7 @@ describe('github issues work source', () => {
         stageHistory: [],
         recentEventIds: [],
         syncedAt: '2026-07-05T12:10:00.000Z',
+          expectedEcho: { commentIds: [], labels: [] },
       },
       context: {},
     });
@@ -565,6 +709,7 @@ describe('github issues work source', () => {
         stageHistory: [],
         recentEventIds: [],
         syncedAt: '2026-07-05T12:10:00.000Z',
+          expectedEcho: { commentIds: [], labels: [] },
       },
       context: {},
     });
