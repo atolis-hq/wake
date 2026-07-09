@@ -230,7 +230,9 @@ export function createTickRunner(deps: {
             return policy.needsWakeAction(issue);
           }
 
-          const nextAction = policy.chooseAction(issue.wake.stage);
+          const nextAction =
+            policy.chooseAction(issue.wake.stage) ??
+            policy.chooseRetryActionAfterHumanReply(issue);
           return nextAction !== null && policy.needsWakeAction(issue);
         });
 
@@ -299,7 +301,9 @@ export function createTickRunner(deps: {
 
           action = approvalResolution.pendingAction;
         } else {
-          const nextAction = policy.chooseAction(candidate.wake.stage);
+          const nextAction =
+            policy.chooseAction(candidate.wake.stage) ??
+            policy.chooseRetryActionAfterHumanReply(candidate);
           if (nextAction === null) {
             return { status: 'idle' as const };
           }
