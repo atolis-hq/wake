@@ -20,7 +20,12 @@ RUN npm ci
 COPY . .
 RUN npm run build
 
-RUN useradd --create-home --shell /bin/bash wake
+RUN useradd --create-home --shell /bin/bash wake \
+  && mkdir -p /home/wake/.codex-runtime \
+  && chown -R wake:wake /home/wake/.codex-runtime
+
+ENV CODEX_HOME=/home/wake/.codex-runtime
+
 USER wake
 WORKDIR /home/wake
 
