@@ -13,9 +13,18 @@ function latestUnhandledHumanComment(issue: IssueStateRecord): IssueStateRecord[
       ? context.lastHandledCommentId
       : undefined;
 
-  const latestHumanComment = [...issue.comments]
-    .reverse()
-    .find((c) => !c.isBotAuthored);
+  // Only consider human comments that appear after the last bot comment.
+  // A human /approved posted before Wake's approval-request comment must not
+  // be re-consumed as approval for a later awaiting-approval cycle.
+  const lastBotIndex = issue.comments.reduce(
+    (acc, c, i) => (c.isBotAuthored ? i : acc),
+    -1,
+  );
+  const humanCommentsAfterBot = issue.comments
+    .slice(lastBotIndex + 1)
+    .filter((c) => !c.isBotAuthored);
+
+  const latestHumanComment = humanCommentsAfterBot.at(-1);
 
   if (latestHumanComment === undefined || latestHumanComment.id === handledCommentId) {
     return undefined;

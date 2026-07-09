@@ -72,6 +72,7 @@ export interface StagePromptResult {
   allowedTools: string[];
   extraArgs: string[];
   maxTurns: number;
+  skipApproval: boolean;
 }
 
 function sentinelListForApproval(skipApproval: boolean): string {
@@ -88,7 +89,7 @@ function sentinelInstructionsForApproval(skipApproval: boolean): string {
   }
 
   return [
-    '- AWAITING_APPROVAL: the stage objective is complete, and you have asked a human to approve before Wake proceeds. Post a comment asking the human to reply with `/approved` to confirm, or to comment with feedback if they want changes.',
+    '- AWAITING_APPROVAL: the stage objective is complete but requires human sign-off before Wake proceeds. Wake will notify the human automatically — do not post a GitHub comment yourself.',
     '- BLOCKED: you need clarification from a human or cannot proceed safely.',
     '- FAILED: something prevented you from completing this stage at all.',
   ].join('\n');
@@ -211,6 +212,7 @@ export async function buildStagePrompt(input: {
     allowedTools,
     extraArgs: parseFrontmatterArgs(template.frontmatter.extraArgs),
     maxTurns: parseFrontmatterMaxTurns({ action: input.action, value: template.frontmatter.maxTurns }),
+    skipApproval,
     ...(permissionMode === undefined ? {} : { permissionMode }),
   };
 }

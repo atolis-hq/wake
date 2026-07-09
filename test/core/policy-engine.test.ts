@@ -333,6 +333,95 @@ describe('policy engine: resolveApprovalTransition', () => {
     const resolution = policy.resolveApprovalTransition(issue);
     expect(resolution?.pendingAction).toBe('implement');
   });
+
+  it('ignores a /approved comment that predates the last bot comment', () => {
+    const policy = createPolicyEngine();
+    const issue = parseIssueStateRecord({
+      schemaVersion: 1,
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 50,
+        title: 'Example',
+        body: 'Body',
+        labels: [],
+        assignees: [],
+        state: 'open',
+        url: 'https://example.test/issues/50',
+        createdAt: '2026-07-06T00:00:00.000Z',
+        updatedAt: '2026-07-07T00:00:00.000Z',
+      },
+      comments: [
+        {
+          id: 'c-human-approved',
+          body: '/approved',
+          author: { login: 'owner' },
+          createdAt: '2026-07-06T01:00:00.000Z',
+          updatedAt: '2026-07-06T01:00:00.000Z',
+          isBotAuthored: false,
+        },
+        {
+          id: 'c-bot-approval-request',
+          body: 'Implementation PR is open. Wake is awaiting your approval.',
+          author: { login: 'wake-bot' },
+          createdAt: '2026-07-06T02:00:00.000Z',
+          updatedAt: '2026-07-06T02:00:00.000Z',
+          isBotAuthored: true,
+        },
+      ],
+      wake: {
+        stage: 'awaiting-approval',
+        syncedAt: '2026-07-07T00:00:00.000Z',
+        stageHistory: [],
+      },
+      context: { pendingApprovalAction: 'implement' },
+    });
+    expect(policy.resolveApprovalTransition(issue)).toBeNull();
+  });
+
+  it('accepts a /approved comment that follows the last bot comment', () => {
+    const policy = createPolicyEngine();
+    const issue = parseIssueStateRecord({
+      schemaVersion: 1,
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 50,
+        title: 'Example',
+        body: 'Body',
+        labels: [],
+        assignees: [],
+        state: 'open',
+        url: 'https://example.test/issues/50',
+        createdAt: '2026-07-06T00:00:00.000Z',
+        updatedAt: '2026-07-07T00:00:00.000Z',
+      },
+      comments: [
+        {
+          id: 'c-bot-approval-request',
+          body: 'Implementation PR is open. Wake is awaiting your approval.',
+          author: { login: 'wake-bot' },
+          createdAt: '2026-07-06T02:00:00.000Z',
+          updatedAt: '2026-07-06T02:00:00.000Z',
+          isBotAuthored: true,
+        },
+        {
+          id: 'c-human-approved',
+          body: '/approved',
+          author: { login: 'owner' },
+          createdAt: '2026-07-06T03:00:00.000Z',
+          updatedAt: '2026-07-06T03:00:00.000Z',
+          isBotAuthored: false,
+        },
+      ],
+      wake: {
+        stage: 'awaiting-approval',
+        syncedAt: '2026-07-07T00:00:00.000Z',
+        stageHistory: [],
+      },
+      context: { pendingApprovalAction: 'implement' },
+    });
+    const resolution = policy.resolveApprovalTransition(issue);
+    expect(resolution?.approved).toBe(true);
+  });
 });
 
 describe('policy engine: needsWakeAction', () => {

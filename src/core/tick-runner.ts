@@ -448,7 +448,15 @@ export function createTickRunner(deps: {
             ...(workspacePath === undefined ? {} : { workspacePath }),
           });
           const parsedRunnerResult = parseRunnerResult(runnerResult.result);
-          const sentinel = parsedRunnerResult.status;
+          const rawSentinel = parsedRunnerResult.status;
+          // Coerce DONE → AWAITING_APPROVAL when the stage requires human sign-off.
+          // An agent that writes DONE but was told not to skip approval has violated
+          // the protocol; treat it as AWAITING_APPROVAL so the gate is enforced.
+          const skipApproval = runnerResult.metadata?.skipApproval;
+          const sentinel =
+            rawSentinel === 'DONE' && skipApproval === false
+              ? 'AWAITING_APPROVAL'
+              : rawSentinel;
           const nextStage = lifecycle.nextStageFromSentinel(action, sentinel);
           const finishedAt = deps.clock.now().toISOString();
           const resultMetadata = {
@@ -500,12 +508,24 @@ export function createTickRunner(deps: {
             payload: {
               action,
               sentinel,
+              ...(rawSentinel !== sentinel ? { rawSentinel } : {}),
               ...(nextStage !== null ? { nextStage } : {}),
               runId,
               sessionId: runnerResult.session_id,
               workspacePath,
               reason: `runner:${sentinel.toLowerCase()}`,
               handledCommentId: latestHumanCommentId(candidate),
+              body: parsedRunnerResult.body,
+              envelope: parsedRunnerResult.envelope,
+              ...(parsedRunnerResult.result?.advice === undefined
+                ? {}
+                : { advice: parsedRunnerResult.result.advice }),
+              ...(parsedRunnerResult.result?.needs === undefined
+                ? {}
+                : { needs: parsedRunnerResult.result.needs }),
+              ...(parsedRunnerResult.result?.prUrl === undefined
+                ? {}
+                : { prUrl: parsedRunnerResult.result.prUrl }),
             },
           });
           await deps.stateStore.appendEventEnvelope(runCompletedEvent);
