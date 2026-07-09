@@ -1,5 +1,5 @@
 import type { AgentRunResult, AgentRunTokenUsage } from '../../core/contracts.js';
-import { parseClaudePrintResult } from '../../domain/schema.js';
+import { parseClaudePrintResult, parseRunnerResult } from '../../domain/schema.js';
 import type {
   AgentAction,
   ClaudePrintResult,
@@ -185,6 +185,34 @@ function extractTokenUsage(usage: ClaudePrintResult['usage']): AgentRunTokenUsag
 
 const CLAUDE_CLI_NAME = 'Claude';
 
+export function classifyClaudeCliFailure(input: {
+  stderr: string;
+  stdout: string;
+  timedOut: boolean;
+}): 'quota' | 'infra' {
+  if (input.timedOut) {
+    return 'infra';
+  }
+
+  const text = `${input.stderr}\n${input.stdout}`.toLowerCase();
+  if (
+    text.includes('rate limit') ||
+    text.includes('quota') ||
+    text.includes('billing') ||
+    text.includes('credit balance') ||
+    text.includes('spend limit') ||
+    text.includes('usage limit') ||
+    text.includes('too many requests') ||
+    text.includes('authentication') ||
+    text.includes('unauthorized') ||
+    text.includes('permission denied')
+  ) {
+    return 'quota';
+  }
+
+  return 'infra';
+}
+
 function readSandboxLogBreadcrumb(): { text: string; metadata: { sandboxContainerName: string } } | null {
   const containerName = process.env.WAKE_SANDBOX_CONTAINER_NAME;
   if (containerName === undefined || containerName.length === 0) {
@@ -274,6 +302,11 @@ export function createClaudeRunner(options: {
 
       if (result.exitCode !== 0 || result.timedOut || result.stdout.trim().length === 0) {
         const sandboxLog = readSandboxLogBreadcrumb();
+        const failureClass = classifyClaudeCliFailure({
+          stdout: result.stdout,
+          stderr: result.stderr,
+          timedOut: result.timedOut,
+        });
         console.error(
           formatClaudeRunLogLine({
             phase: 'failure',
@@ -303,10 +336,12 @@ export function createClaudeRunner(options: {
             .join('\n'),
           model,
           cli: CLAUDE_CLI_NAME,
+          failureClass,
           metadata: {
             stdout: result.stdout,
             stderr: result.stderr,
             exitCode: result.exitCode,
+            failureClass,
             ...(sandboxLog?.metadata ?? {}),
           },
         };
@@ -334,6 +369,9 @@ export function createClaudeRunner(options: {
         result: parsed.result,
         model,
         cli: CLAUDE_CLI_NAME,
+        ...(parseRunnerResult(parsed.result).status === 'FAILED'
+          ? { failureClass: 'task' as const }
+          : {}),
         ...(parsed.session_id === undefined
           ? {}
           : { session_id: parsed.session_id }),

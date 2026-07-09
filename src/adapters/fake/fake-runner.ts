@@ -6,7 +6,10 @@ import type {
   WakeConfig,
 } from '../../domain/types.js';
 
-export function createFakeRunner(result?: AgentRunResult) {
+export function createFakeRunner(
+  result?: AgentRunResult,
+  options?: { cli?: string },
+) {
   return {
     async run(_: {
       action: AgentAction;
@@ -26,7 +29,7 @@ export function createFakeRunner(result?: AgentRunResult) {
           'DONE',
         ].join('\n'),
         model: 'fake',
-        cli: 'Fake',
+        cli: options?.cli ?? 'Fake',
         session_id: 'fake-session-1',
         metadata: {
           source: 'fake-runner',

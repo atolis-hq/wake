@@ -3,10 +3,13 @@ import { resolve } from 'node:path';
 
 import { createDockerCli } from './adapters/docker/docker-cli.js';
 import { createFileBackedFakeTicketingSystem } from './adapters/fake/fake-ticketing-system.js';
-import { createFakeRunner } from './adapters/fake/fake-runner.js';
 import { createFakeWorkspaceManager } from './adapters/fake/fake-workspace-manager.js';
 import { createGitWorkspaceManager } from './adapters/git/git-workspace-manager.js';
 import { createRunnerCliAdapter } from './adapters/runner/runner-cli-adapter.js';
+import {
+  createRegistryRunner,
+  runnerKindForOverride,
+} from './adapters/runner/runner-registry.js';
 import { createStateStore } from './adapters/fs/state-store.js';
 import { resolveGitHubToken } from './adapters/github/github-auth.js';
 import { createGitHubClient } from './adapters/github/github-client.js';
@@ -47,6 +50,17 @@ function hasFlag(name: string, args: string[]): boolean {
 
 function isRunnerMode(value: string): value is WakeConfig['runner']['mode'] {
   return value === 'fake' || value === 'claude' || value === 'codex';
+}
+
+function routesOnlyToFake(config: WakeConfig): boolean {
+  if (config.runner.mode !== 'fake') {
+    return false;
+  }
+
+  return Object.values(config.tiers).every((candidates) => {
+    const first = candidates[0];
+    return first !== undefined && config.runners[first]?.kind === 'fake';
+  });
 }
 
 export function formatTickFailureDetails(runRecord: RunRecord | null): string | null {
@@ -170,24 +184,25 @@ async function buildRuntime(args: string[]) {
         now: () => systemClock.now(),
       });
 
-  const requestedRunnerMode =
-    readFlagBeforeCommandTerminator('--runner', args) ?? config.runner.mode;
-  if (!isRunnerMode(requestedRunnerMode)) {
-    throw new Error(`Unsupported runner mode: ${requestedRunnerMode}`);
+  const runnerOverride = readFlagBeforeCommandTerminator('--runner', args);
+  if (
+    runnerOverride !== undefined &&
+    !isRunnerMode(runnerOverride) &&
+    config.runners[runnerOverride] === undefined
+  ) {
+    throw new Error(`Unsupported runner override: ${runnerOverride}`);
   }
-  const runnerMode: WakeConfig['runner']['mode'] = requestedRunnerMode;
-  const runnerAdapter =
-    runnerMode === 'fake'
-      ? null
-      : createRunnerCliAdapter({
-          mode: runnerMode,
-          config,
-          cwd: process.cwd(),
-        });
-  const runner = runnerAdapter?.runner ?? createFakeRunner();
+
+  const runner = createRegistryRunner({
+    config,
+    cwd: process.cwd(),
+    ...(runnerOverride === undefined ? {} : { override: runnerOverride }),
+  });
 
   const workspaceManager =
-    runnerMode === 'fake'
+    (runnerOverride !== undefined
+      ? runnerKindForOverride(config, runnerOverride) === 'fake'
+      : routesOnlyToFake(config))
       ? createFakeWorkspaceManager(stateStore.paths.workspaceRoot)
       : createGitWorkspaceManager({ wakeRoot });
   const tickRunner = createTickRunner({
@@ -196,7 +211,9 @@ async function buildRuntime(args: string[]) {
       ...config,
       runner: {
         ...config.runner,
-        mode: runnerMode,
+        mode: isRunnerMode(runnerOverride ?? '')
+          ? (runnerOverride as WakeConfig['runner']['mode'])
+          : config.runner.mode,
       },
     },
     stateStore,
@@ -208,7 +225,7 @@ async function buildRuntime(args: string[]) {
 
   return {
     config,
-    runnerAdapter,
+    runnerAdapter: null,
     runner,
     stateStore,
     tickRunner,

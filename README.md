@@ -211,8 +211,8 @@ history and labels converge without manual cleanup.
 
 Wake can poll configured GitHub repositories when `sources.github.enabled` is
 set to `true`. Authentication is resolved from the current GitHub CLI session
-via `gh auth token`, and Wake uses a fixed runner mode of `fake`, `claude`, or
-`codex`.
+via `gh auth token`, and Wake routes work through configured named runners and
+capability tiers. `--runner fake` remains available as a global local override.
 
 GitHub Issues sync runs inside the normal tick path. Each tick polls GitHub,
 translates provider payloads into canonical ticket events, appends those

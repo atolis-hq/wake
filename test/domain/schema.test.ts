@@ -309,6 +309,46 @@ describe('run and event schemas', () => {
     expect(config.runner.codex.smokeModel).toBe('gpt-5.4-mini');
   });
 
+  it('accepts named runners and tier routing', () => {
+    const config = parseWakeConfig({
+      schemaVersion: 1,
+      paths: {
+        wakeRoot: '/tmp/wake',
+      },
+      runners: {
+        'claude-haiku': {
+          kind: 'claude',
+          command: 'claude',
+          model: 'claude-haiku-4-5',
+          timeoutMs: 600_000,
+        },
+        'claude-opus': {
+          kind: 'claude',
+          command: 'claude',
+          model: 'claude-opus-4-8',
+          timeoutMs: 1_800_000,
+        },
+        fake: {
+          kind: 'fake',
+        },
+      },
+      tiers: {
+        light: ['claude-haiku'],
+        standard: ['claude-haiku'],
+        deep: ['claude-opus', 'claude-haiku'],
+      },
+      defaultTier: 'standard',
+      stages: {
+        queue: { action: 'refine', tier: 'light' },
+        refined: { action: 'implement', runner: 'claude-opus' },
+      },
+    });
+
+    expect(config.runners['claude-haiku']?.kind).toBe('claude');
+    expect(config.tiers.deep).toEqual(['claude-opus', 'claude-haiku']);
+    expect(config.stages.refined?.runner).toBe('claude-opus');
+  });
+
   it('accepts optional local-development repo root configuration', () => {
     const config = parseWakeConfig({
       schemaVersion: 1,

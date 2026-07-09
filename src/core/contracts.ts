@@ -2,6 +2,8 @@ import type {
   AgentAction,
   EventEnvelope,
   IssueStateRecord,
+  RunnerFailureClass,
+  RunnerRouting,
   WakeConfig,
 } from '../domain/types.js';
 
@@ -25,6 +27,8 @@ export interface AgentRunResult {
   cli: string;
   session_id?: string;
   tokenUsage?: AgentRunTokenUsage;
+  failureClass?: RunnerFailureClass;
+  routing?: RunnerRouting;
   metadata?: Record<string, unknown>;
 }
 
@@ -36,6 +40,7 @@ export interface AgentRunner {
     config: WakeConfig;
     runId: string;
     workspacePath?: string;
+    routing?: RunnerRouting;
   }): Promise<AgentRunResult>;
 }
 

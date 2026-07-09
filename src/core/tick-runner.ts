@@ -12,6 +12,7 @@ import type {
 import type { Clock } from '../lib/clock.js';
 import { acquireFileLock } from '../lib/lock.js';
 import { parseRunnerResult } from '../domain/schema.js';
+import { maxConfiguredRunnerTimeoutMs } from '../domain/runner-routing.js';
 import { stageLabelForStage } from '../domain/stages.js';
 import type { AgentAction, EventEnvelope, IssueStateRecord, RunRecord, WakeConfig } from '../domain/types.js';
 import { createEventEnvelope } from '../lib/event-log.js';
@@ -116,6 +117,14 @@ export function createTickRunner(deps: {
           : { sessionId: input.runnerResult.session_id }),
         model: input.runnerResult.model,
         cli: input.runnerResult.cli,
+        ...(input.runnerResult.routing === undefined
+          ? {}
+          : {
+              runnerName: input.runnerResult.routing.runnerName,
+              runnerKind: input.runnerResult.routing.runnerKind,
+              runnerTier: input.runnerResult.routing.tier,
+              runnerReason: input.runnerResult.routing.reason,
+            }),
         ...(duration === undefined ? {} : { duration }),
         ...(tokenCount === undefined ? {} : { tokens: formatTokenCount(tokenCount) }),
         ...(input.workspacePath === undefined
@@ -170,10 +179,7 @@ export function createTickRunner(deps: {
   }
 
   function runnerTimeoutMs(): number {
-    return Math.max(
-      deps.config.runner.claude.timeoutMs,
-      deps.config.runner.codex.timeoutMs,
-    );
+    return maxConfiguredRunnerTimeoutMs(deps.config);
   }
 
   function isStaleRunningRecord(record: RunRecord, now: Date): boolean {
@@ -230,6 +236,7 @@ export function createTickRunner(deps: {
           nextStage: 'failed',
           runId: record.runId,
           reason: 'runner:stale-timeout',
+          ...(record.routing === undefined ? {} : { routing: record.routing }),
         },
       });
       await deps.stateStore.appendEventEnvelope(runCompletedEvent);
@@ -462,6 +469,10 @@ export function createTickRunner(deps: {
           const resultMetadata = {
             ...runnerResult.metadata,
             envelope: parsedRunnerResult.envelope,
+            ...(runnerResult.failureClass === undefined
+              ? {}
+              : { failureClass: runnerResult.failureClass }),
+            ...(runnerResult.routing === undefined ? {} : { routing: runnerResult.routing }),
             ...(parsedRunnerResult.result?.advice === undefined
               ? {}
               : { advice: parsedRunnerResult.result.advice }),
@@ -487,6 +498,7 @@ export function createTickRunner(deps: {
             sessionId: runnerResult.session_id,
             sentinel,
             summary: parsedRunnerResult.body,
+            ...(runnerResult.routing === undefined ? {} : { routing: runnerResult.routing }),
             metadata: resultMetadata,
           });
 
@@ -514,6 +526,10 @@ export function createTickRunner(deps: {
               sessionId: runnerResult.session_id,
               workspacePath,
               reason: `runner:${sentinel.toLowerCase()}`,
+              ...(runnerResult.routing === undefined ? {} : { routing: runnerResult.routing }),
+              ...(runnerResult.failureClass === undefined
+                ? {}
+                : { failureClass: runnerResult.failureClass }),
               handledCommentId: latestHumanCommentId(candidate),
               body: parsedRunnerResult.body,
               envelope: parsedRunnerResult.envelope,
@@ -571,6 +587,9 @@ export function createTickRunner(deps: {
             finishedAt,
             sentinel,
             summary: err instanceof Error ? err.message : String(err),
+            metadata: {
+              failureClass: 'infra',
+            },
           });
 
           const runCompletedEvent = createEventEnvelope({
