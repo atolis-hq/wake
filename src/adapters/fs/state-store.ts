@@ -20,6 +20,23 @@ import type {
 import { appendJsonLine, readJsonFile, writeJsonFile } from '../../lib/json-file.js';
 import { createWakePaths } from '../../lib/paths.js';
 
+function issueRefFromWorkItemKey(
+  workItemKey: string,
+): { repo: string; issueNumber: number } | null {
+  const marker = workItemKey.lastIndexOf('#');
+  if (marker === -1) {
+    return null;
+  }
+
+  const repo = workItemKey.slice(0, marker);
+  const issueNumber = Number(workItemKey.slice(marker + 1));
+  if (repo.length === 0 || !Number.isInteger(issueNumber) || issueNumber <= 0) {
+    return null;
+  }
+
+  return { repo, issueNumber };
+}
+
 export async function listRunRecords(wakeRoot: string): Promise<RunRecord[]> {
   const runsRoot = join(wakeRoot, 'runs');
 
@@ -107,8 +124,16 @@ export function createStateStore({ wakeRoot }: { wakeRoot: string }) {
     },
     async appendEventEnvelope(record: EventEnvelope): Promise<EventEnvelope> {
       const parsed = parseEventEnvelope(record);
-      await appendJsonLine(paths.eventFile(parsed.occurredAt.slice(0, 10)), parsed);
+      await appendJsonLine(paths.eventFile(parsed.ingestedAt.slice(0, 10)), parsed);
+      await writeJsonFile(paths.eventEnvelopeFile(parsed.eventId), parsed);
       return parsed;
+    },
+    async readEventEnvelope(eventId: string): Promise<EventEnvelope | null> {
+      try {
+        return parseEventEnvelope(await readJsonFile(paths.eventEnvelopeFile(eventId)));
+      } catch {
+        return null;
+      }
     },
     async listIssueStates(): Promise<IssueStateRecord[]> {
       const stateRoot = join(wakeRoot, 'state');
@@ -169,11 +194,23 @@ export function createStateStore({ wakeRoot }: { wakeRoot: string }) {
       workItemKey: string,
       limit = 10,
     ): Promise<EventEnvelope[]> {
-      const envelopes = await this.listEventEnvelopes();
-      return envelopes
-        .filter((event) => event.workItemKey === workItemKey)
-        .sort((left, right) => left.occurredAt.localeCompare(right.occurredAt))
-        .slice(-limit);
+      const issueRef = issueRefFromWorkItemKey(workItemKey);
+      if (issueRef === null) {
+        return [];
+      }
+
+      const projection = await this.readIssueState(issueRef.repo, issueRef.issueNumber);
+      const recentEventIds = projection?.wake.recentEventIds.slice(-limit) ?? [];
+      const envelopes: EventEnvelope[] = [];
+
+      for (const eventId of recentEventIds) {
+        const envelope = await this.readEventEnvelope(eventId);
+        if (envelope?.workItemKey === workItemKey) {
+          envelopes.push(envelope);
+        }
+      }
+
+      return envelopes;
     },
     async appendLog(date: string, line: string): Promise<void> {
       await mkdir(wakeRoot, { recursive: true });
