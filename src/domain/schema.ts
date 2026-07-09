@@ -11,6 +11,20 @@ const stageSchema = z.enum(stageValues);
 export const runnerSentinelSchema = z.enum(runnerSentinelValues);
 const agentActionSchema = z.enum(agentActionValues);
 
+const wakeAdviceTierSchema = z.enum(['light', 'standard', 'deep']);
+
+const wakeResultAdviceSchema = z.object({
+  nextTier: wakeAdviceTierSchema.optional(),
+  reason: z.string().optional(),
+});
+
+export const wakeResultEnvelopeSchema = z.object({
+  status: runnerSentinelSchema,
+  advice: wakeResultAdviceSchema.optional(),
+  needs: z.array(z.string()).optional(),
+  prUrl: z.string().url().optional(),
+});
+
 const stageHistoryEntrySchema = z.object({
   stage: stageSchema,
   changedAt: isoTimestampSchema,
@@ -265,9 +279,39 @@ export function parseClaudePrintResult(input: unknown) {
   return claudePrintResultSchema.parse(input);
 }
 
-export function parseRunnerResultSentinel(
+export function parseRunnerResult(
   result: string,
-): 'DONE' | 'BLOCKED' | 'FAILED' | 'AWAITING_APPROVAL' {
+): {
+  status: 'DONE' | 'BLOCKED' | 'FAILED' | 'AWAITING_APPROVAL';
+  body: string;
+  envelope: 'structured' | 'degraded';
+  result?: z.infer<typeof wakeResultEnvelopeSchema>;
+} {
+  const wakeResultFencePattern = /^```wake-result[^\n]*\n([\s\S]*?)^```[ \t]*$/gm;
+  let lastMatch: RegExpExecArray | null = null;
+  let match: RegExpExecArray | null;
+
+  while ((match = wakeResultFencePattern.exec(result)) !== null) {
+    lastMatch = match;
+  }
+
+  if (lastMatch !== null) {
+    try {
+      const parsed = wakeResultEnvelopeSchema.safeParse(JSON.parse(lastMatch[1] ?? 'null'));
+      if (parsed.success) {
+        return {
+          status: parsed.data.status,
+          body: result.slice(0, lastMatch.index).trim(),
+          envelope: 'structured',
+          result: parsed.data,
+        };
+      }
+    } catch {
+      // Invalid structured trailers intentionally degrade to last-line parsing.
+    }
+  }
+
+  const lines = result.split('\n');
   const lastLine = result
     .split('\n')
     .map((line) => line.trim())
@@ -275,5 +319,38 @@ export function parseRunnerResultSentinel(
     .at(-1);
 
   const parsed = runnerSentinelSchema.safeParse(lastLine);
-  return parsed.success ? parsed.data : 'FAILED';
+  if (!parsed.success) {
+    return {
+      status: 'FAILED',
+      body: result.trim(),
+      envelope: 'degraded',
+    };
+  }
+
+  let removed = false;
+  const body = lines
+    .slice()
+    .reverse()
+    .filter((line) => {
+      if (!removed && line.trim() === lastLine) {
+        removed = true;
+        return false;
+      }
+      return true;
+    })
+    .reverse()
+    .join('\n')
+    .trim();
+
+  return {
+    status: parsed.data,
+    body,
+    envelope: 'degraded',
+  };
+}
+
+export function parseRunnerResultSentinel(
+  result: string,
+): 'DONE' | 'BLOCKED' | 'FAILED' | 'AWAITING_APPROVAL' {
+  return parseRunnerResult(result).status;
 }

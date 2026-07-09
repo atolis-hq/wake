@@ -8,6 +8,7 @@ import {
   runRecordSchema,
   sourceStateRecordSchema,
   wakeConfigSchema,
+  wakeResultEnvelopeSchema,
 } from './schema.js';
 import {
   agentActionValues,
@@ -29,3 +30,4 @@ export type WakeSandboxConfig = WakeConfig['sandbox'];
 export type WakeDevConfig = NonNullable<WakeConfig['dev']>;
 export type ClaudePrintResult = z.infer<typeof claudePrintResultSchema>;
 export type SourceStateRecord = z.infer<typeof sourceStateRecordSchema>;
+export type WakeResultEnvelope = z.infer<typeof wakeResultEnvelopeSchema>;

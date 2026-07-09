@@ -289,13 +289,26 @@ describe('tick runner', () => {
       },
       runner: {
         async run() {
-          return { result: 'Implemented\nDONE', model: 'test-model', cli: 'test-cli', session_id: 'session-3' };
+          return {
+            result: [
+              'Implemented. The previous CI run FAILED, but this one passed.',
+              '',
+              '```wake-result',
+              '{ "status": "DONE", "advice": { "nextTier": "deep", "reason": "schema migration involved" }, "prUrl": "https://github.com/atolis-hq/wake/pull/14" }',
+              '```',
+              'DONE',
+            ].join('\n'),
+            model: 'test-model',
+            cli: 'test-cli',
+            session_id: 'session-3',
+          };
         },
       },
       workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
     });
 
     await tickRunner.runTick();
+    const runRecords = await store.listRunRecords();
 
     expect(deliveredEvents).toEqual([
       'wake:status.working',
@@ -303,6 +316,12 @@ describe('tick runner', () => {
       'wake:status.completed',
       'wake:stage.done',
     ]);
+    expect(runRecords[0]?.summary).toBe('Implemented. The previous CI run FAILED, but this one passed.');
+    expect(runRecords[0]?.metadata).toMatchObject({
+      envelope: 'structured',
+      advice: { nextTier: 'deep', reason: 'schema migration involved' },
+      prUrl: 'https://github.com/atolis-hq/wake/pull/14',
+    });
   });
 
   it('transitions to awaiting-approval and posts an approval request when a run requests sign-off', async () => {

@@ -23,13 +23,14 @@ Completion requirements:
 - Open a pull request against main with `gh pr create --base main --head
   {{branch}} --title "<summary>" --body "Closes #{{issueNumber}}"`.
 - Do not merge the pull request yourself; a human reviews and merges it.
-- Include the pull request URL in your response before the final sentinel
-  line.
+- Include the pull request URL in your prose response before the wake-result
+  trailer.
 - If you cannot safely complete the change, leave the workspace as-is and end
   with BLOCKED or FAILED instead of guessing.
 
-Respond concisely. The last line of your response must be exactly one of:
-{{sentinelList}}.
+Respond concisely. End your response with a fenced `wake-result` JSON block,
+then repeat the status word on its own final line for degraded-mode fallback.
+The JSON `status` and final line must be exactly one of: {{sentinelList}}.
 {{sentinelInstructions}}
 
 Issue:
