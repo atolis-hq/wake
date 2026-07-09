@@ -1,4 +1,5 @@
 import { parseIssueStateRecord } from '../domain/schema.js';
+import { doneRunnerSentinel } from '../domain/stages.js';
 import type { EventEnvelope, IssueStateRecord } from '../domain/types.js';
 
 function stageFromLabels(labels: string[]): IssueStateRecord['wake']['stage'] {
@@ -176,7 +177,7 @@ function applyEvent(
         ...(payload.sentinel === undefined
           ? {}
           : { lastRunSentinel: payload.sentinel }),
-        ...(payload.sentinel === 'DONE' && payload.action !== undefined
+        ...(payload.sentinel === doneRunnerSentinel && payload.action !== undefined
           ? { lastCompletedAction: payload.action }
           : {}),
         // Remembered so a later human reply can route an unblocked issue

@@ -1,4 +1,4 @@
-import { agentActionValues } from '../domain/stages.js';
+import { agentActionValues, failedRunnerSentinel } from '../domain/stages.js';
 import type { AgentAction, IssueStateRecord, Stage, WakeConfig } from '../domain/types.js';
 
 export interface ApprovalResolution {
@@ -69,7 +69,7 @@ export function createPolicyEngine() {
         return true;
       }
 
-      if (lastRunSentinel === 'FAILED') {
+      if (lastRunSentinel === failedRunnerSentinel) {
         return false;
       }
 
