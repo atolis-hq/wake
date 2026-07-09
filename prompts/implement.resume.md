@@ -20,5 +20,5 @@ Reminder of the completion requirements: commit, push {{branch}}, open a PR
 with `gh pr create` closing #{{issueNumber}}, and never merge it yourself.
 
 Respond concisely. The last line of your response must be exactly one of:
-DONE, BLOCKED, FAILED{{additionalSentinels}}.
-{{approvalInstructions}}
+{{sentinelList}}.
+{{sentinelInstructions}}

@@ -16,6 +16,31 @@ import type { WakeConfig } from '../../src/domain/types.js';
 import { defaultSmokePrompt } from '../../src/config/defaults.js';
 
 describe('claude runner command building', () => {
+  const baseProjection = {
+    schemaVersion: 1 as const,
+    workItemKey: 'atolis-hq/wake#12',
+    issue: {
+      repo: 'atolis-hq/wake',
+      number: 12,
+      title: 'Example issue',
+      body: 'Body',
+      labels: ['wake:refined'],
+      assignees: [],
+      state: 'open' as const,
+      url: 'https://example.test/issues/12',
+      createdAt: '2026-07-05T12:00:00.000Z',
+      updatedAt: '2026-07-05T12:00:00.000Z',
+    },
+    comments: [],
+    wake: {
+      stage: 'refined' as const,
+      stageHistory: [],
+      recentEventIds: [],
+      syncedAt: '2026-07-05T12:00:00.000Z',
+    },
+    context: {},
+  };
+
   it('builds a minimal haiku print invocation for smoke tests', () => {
     const args = buildClaudePrintArgs({
       model: 'haiku',
@@ -102,6 +127,112 @@ describe('claude runner command building', () => {
     expect(result.allowedTools).toContain('Edit');
     expect(result.allowedTools).toContain('Bash(git *)');
     expect(result.extraArgs).toEqual([]);
+  });
+
+  it('requires AWAITING_APPROVAL, not DONE, for successful built-in prompts when approval is required', async () => {
+    for (const action of ['refine', 'implement'] as const) {
+      for (const mode of ['start', 'resume'] as const) {
+        const result = await buildStagePrompt({
+          action,
+          mode,
+          projection: baseProjection,
+        });
+
+        expect(result.prompt).toContain('must be exactly one of:');
+        expect(result.prompt).toContain('AWAITING_APPROVAL, BLOCKED, FAILED');
+        expect(result.prompt).not.toContain('DONE, BLOCKED, FAILED');
+        expect(result.prompt).toContain('- AWAITING_APPROVAL: the stage objective is complete');
+        expect(result.prompt).not.toContain('- DONE:');
+      }
+    }
+  });
+
+  it('allows DONE as the success sentinel only when a template opts out of approval', async () => {
+    const promptsDir = await mkdtemp(join(tmpdir(), 'wake-prompts-'));
+    await writeFile(
+      join(promptsDir, 'refine.start.md'),
+      [
+        '---',
+        'permissionMode: default',
+        'allowedTools: Read',
+        'maxTurns: 10',
+        'skipApproval: true',
+        '---',
+        'Last line: {{sentinelList}}.',
+        '{{sentinelInstructions}}',
+      ].join('\n'),
+      'utf8',
+    );
+
+    const result = await buildStagePrompt({
+      action: 'refine',
+      projection: baseProjection,
+      config: {
+        schemaVersion: 1,
+        paths: {
+          wakeRoot: '/tmp/wake',
+          promptsRoot: promptsDir,
+        },
+        sandbox: {
+          image: 'wake-sandbox',
+          containerName: 'wake-sandbox',
+          containerMountPath: '/wake',
+          containerHomeMountPath: '/home/wake',
+          extraMounts: [],
+        },
+        dev: {},
+        scheduler: {
+          intervalMs: 1000,
+        },
+        runner: {
+          mode: 'fake',
+          claude: {
+            command: 'claude',
+            model: 'haiku',
+            smokeModel: 'haiku',
+            sessionName: 'Eddy',
+            remoteControlName: 'Eddy',
+            smokePrompt: 'hi',
+            timeoutMs: 60_000,
+            remoteControl: {
+              enabled: false,
+            },
+            models: { default: 'haiku', implement: 'claude-sonnet-4-6' },
+          },
+          codex: {
+            command: 'codex',
+            model: 'gpt-5.5',
+            smokeModel: 'gpt-5.4-mini',
+            smokePrompt: 'hi',
+            timeoutMs: 60_000,
+            models: { default: 'gpt-5.5', implement: 'gpt-5.5' },
+          },
+        },
+        sources: {
+          github: {
+            enabled: false,
+            repos: [],
+            polling: {
+              maxIssuesPerRepo: 25,
+              commentPageSize: 25,
+              lookbackMs: 60000,
+            },
+            policy: {
+              requiredLabels: [],
+              ignoredLabels: [],
+              requiredAssignees: [],
+            },
+            publication: {
+              postStatusComments: true,
+            },
+          },
+        },
+      },
+    });
+
+    expect(result.prompt).toContain('DONE, BLOCKED, FAILED');
+    expect(result.prompt).toContain('- DONE: the stage objective is complete.');
+    expect(result.prompt).not.toContain('AWAITING_APPROVAL');
   });
 
   it('resume prompts only surface new human comments since the last handled one, not the full history', async () => {

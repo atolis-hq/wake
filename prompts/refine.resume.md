@@ -23,5 +23,5 @@ New comments since your last turn (excludes Wake/bot comments):
 
 Re-evaluate whether the issue is now well-specified enough to implement,
 incorporating the new context above. Respond concisely. The last line of
-your response must be exactly one of: DONE, BLOCKED, FAILED{{additionalSentinels}}.
-{{approvalInstructions}}
+your response must be exactly one of: {{sentinelList}}.
+{{sentinelInstructions}}

@@ -305,6 +305,94 @@ describe('tick runner', () => {
     ]);
   });
 
+  it('transitions to awaiting-approval and posts an approval request when a run requests sign-off', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const deliveredEvents: string[] = [];
+    const publishedIntents: Array<{ kind: string; body: string }> = [];
+
+    await store.writeIssueState({
+      schemaVersion: 1,
+      workItemKey: 'atolis-hq/wake#33',
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 33,
+        title: 'Approval Required Test',
+        body: 'Body',
+        labels: ['wake:queue'],
+        assignees: [],
+        state: 'open',
+        url: 'https://example.test/issues/33',
+        createdAt: '2026-07-05T12:00:00.000Z',
+        updatedAt: '2026-07-05T12:00:00.000Z',
+      },
+      comments: [],
+      wake: {
+        stage: 'queue',
+        stageHistory: [],
+        recentEventIds: [],
+        syncedAt: '2026-07-05T12:00:00.000Z',
+      },
+      context: {},
+    });
+
+    const config = createDefaultWakeConfig(root);
+    config.sources.github.policy.requiredLabels = ['wake:queue'];
+
+    const tickRunner = createTickRunner({
+      clock: { now: () => new Date('2026-07-05T12:10:00.000Z') },
+      config,
+      stateStore: store,
+      workSource: { async pollEvents() { return []; } },
+      outboundSink: {
+        async deliverIntent(input) {
+          if (input.event.sourceEventType === 'wake.labels.requested') {
+            deliveredEvents.push(String(input.event.payload.statusLabel));
+            deliveredEvents.push(String(input.event.payload.stageLabel));
+          }
+          if (input.event.sourceEventType === 'wake.publish.intent.requested') {
+            publishedIntents.push({
+              kind: String(input.event.payload.kind),
+              body: String(input.event.payload.body),
+            });
+          }
+          return [];
+        },
+      },
+      runner: {
+        async run() {
+          return {
+            result: 'Issue is well-specified. Please reply with /approved to proceed.\nAWAITING_APPROVAL',
+            model: 'test-model',
+            cli: 'test-cli',
+            session_id: 'session-33',
+          };
+        },
+      },
+      workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+    });
+
+    const result = await tickRunner.runTick();
+    const projection = await store.readIssueState('atolis-hq/wake', 33);
+
+    expect(result.status).toBe('processed');
+    expect((result as { sentinel?: string }).sentinel).toBe('AWAITING_APPROVAL');
+    expect((result as { nextStage?: string }).nextStage).toBe('awaiting-approval');
+    expect(projection?.wake.stage).toBe('awaiting-approval');
+    expect(projection?.context.pendingApprovalAction).toBe('refine');
+    expect(deliveredEvents).toEqual([
+      'wake:status.working',
+      'wake:stage.queue',
+      'wake:status.pending',
+      'wake:stage.awaiting-approval',
+    ]);
+    expect(publishedIntents).toEqual([
+      {
+        kind: 'approval-request',
+        body: 'Issue is well-specified. Please reply with /approved to proceed.',
+      },
+    ]);
+  });
+
   it('transitions awaiting-approval to done when /approved comment is present', async () => {
     const store = createStateStore({ wakeRoot: root });
     const deliveredEvents: string[] = [];
