@@ -22,6 +22,13 @@ Wake is intended to start simple. The first justified version is a small loop th
 
 Wake is intended to integrate with existing local agent CLIs such as Claude Code and Codex rather than replace them. It should run work locally, likely in a reusable isolated development environment, and use external workflow systems as the default coordination surface.
 
+### Supported CLIs
+
+| CLI | Status |
+| --- | --- |
+| Codex | Supported |
+| Claude | Supported |
+
 Current runner capability differences are documented in
 [docs/runner-comparison.md](docs/runner-comparison.md).
 
