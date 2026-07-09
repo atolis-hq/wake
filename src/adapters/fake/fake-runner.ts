@@ -17,7 +17,14 @@ export function createFakeRunner(result?: AgentRunResult) {
       workspacePath?: string;
     }): Promise<AgentRunResult> {
       return result ?? {
-        result: 'Fake runner completed\nDONE',
+        result: [
+          'Fake runner completed',
+          '',
+          '```wake-result',
+          '{ "status": "DONE" }',
+          '```',
+          'DONE',
+        ].join('\n'),
         model: 'fake',
         cli: 'Fake',
         session_id: 'fake-session-1',

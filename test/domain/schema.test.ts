@@ -6,6 +6,7 @@ import {
   parseSourceStateRecord,
   parseWakeConfig,
   parseRunRecord,
+  parseRunnerResult,
   parseRunnerResultSentinel,
 } from '../../src/domain/schema.js';
 import type { WakeDevConfig, WakeSandboxConfig } from '../../src/domain/types.js';
@@ -131,6 +132,61 @@ describe('run and event schemas', () => {
   it('parses the sentinel from the last non-empty line only', () => {
     expect(parseRunnerResultSentinel('notes DONE more notes\nFAILED')).toBe('FAILED');
     expect(parseRunnerResultSentinel('notes DONE more notes\nDONE')).toBe('DONE');
+  });
+
+  it('parses the last valid wake-result envelope and keeps only prose before it as body', () => {
+    const parsed = parseRunnerResult([
+      'The prose mentions FAILED legitimately.',
+      '',
+      '```wake-result',
+      '{ "status": "BLOCKED" }',
+      '```',
+      '',
+      'Updated summary after an earlier sample.',
+      '',
+      '```wake-result',
+      '{ "status": "DONE", "advice": { "nextTier": "deep", "reason": "schema migration involved" }, "needs": ["confirm rollout"], "prUrl": "https://github.com/atolis-hq/wake/pull/61", "ignored": true }',
+      '```',
+      'DONE',
+    ].join('\n'));
+
+    expect(parsed).toEqual({
+      status: 'DONE',
+      body: [
+        'The prose mentions FAILED legitimately.',
+        '',
+        '```wake-result',
+        '{ "status": "BLOCKED" }',
+        '```',
+        '',
+        'Updated summary after an earlier sample.',
+      ].join('\n'),
+      envelope: 'structured',
+      result: {
+        status: 'DONE',
+        advice: {
+          nextTier: 'deep',
+          reason: 'schema migration involved',
+        },
+        needs: ['confirm rollout'],
+        prUrl: 'https://github.com/atolis-hq/wake/pull/61',
+      },
+    });
+  });
+
+  it('degrades to the final bare sentinel when the wake-result envelope is malformed', () => {
+    const parsed = parseRunnerResult([
+      'Summary',
+      '',
+      '```wake-result',
+      '{ "status": "NOT_A_STATUS" }',
+      '```',
+      'BLOCKED',
+    ].join('\n'));
+
+    expect(parsed.status).toBe('BLOCKED');
+    expect(parsed.envelope).toBe('degraded');
+    expect(parsed.body).toBe('Summary\n\n```wake-result\n{ "status": "NOT_A_STATUS" }\n```');
   });
 
   it('does not match a sentinel word embedded in prose on the last line', () => {

@@ -11,10 +11,12 @@ import type {
 } from './contracts.js';
 import type { Clock } from '../lib/clock.js';
 import { acquireFileLock } from '../lib/lock.js';
-import { parseRunnerResultSentinel, runnerSentinelSchema } from '../domain/schema.js';
+import { parseRunnerResult } from '../domain/schema.js';
 import { stageLabelForStage } from '../domain/stages.js';
 import type { AgentAction, EventEnvelope, IssueStateRecord, RunRecord, WakeConfig } from '../domain/types.js';
 import { createEventEnvelope } from '../lib/event-log.js';
+
+type ParsedRunnerResult = ReturnType<typeof parseRunnerResult>;
 
 function latestHumanCommentId(candidate: IssueStateRecord): string | undefined {
   const human = candidate.comments.filter((c) => !c.isBotAuthored);
@@ -74,6 +76,7 @@ export function createTickRunner(deps: {
     runId: string;
     action: AgentAction;
     runnerResult: AgentRunResult;
+    parsedRunnerResult: ParsedRunnerResult;
     sentinel: 'DONE' | 'BLOCKED' | 'FAILED' | 'AWAITING_APPROVAL';
     occurredAt: string;
     workspacePath?: string;
@@ -105,26 +108,7 @@ export function createTickRunner(deps: {
             : input.sentinel === 'FAILED'
               ? 'failure'
               : 'status-update',
-        body: (() => {
-          const lines = input.runnerResult.result.split('\n');
-          const lastNonEmpty = lines.map((l) => l.trim()).filter((l) => l.length > 0).at(-1);
-          const isSentinel = runnerSentinelSchema.safeParse(lastNonEmpty).success;
-          if (!isSentinel) return input.runnerResult.result.trim();
-          // Remove the sentinel line (last non-empty line) from the body
-          let removed = false;
-          const stripped = lines
-            .slice()
-            .reverse()
-            .filter((l) => {
-              if (!removed && l.trim() === lastNonEmpty) {
-                removed = true;
-                return false;
-              }
-              return true;
-            })
-            .reverse();
-          return stripped.join('\n').trim();
-        })(),
+        body: input.parsedRunnerResult.body,
         action: input.action,
         runId: input.runId,
         ...(input.runnerResult.session_id === undefined
@@ -463,9 +447,23 @@ export function createTickRunner(deps: {
             runId,
             ...(workspacePath === undefined ? {} : { workspacePath }),
           });
-          const sentinel = parseRunnerResultSentinel(runnerResult.result);
+          const parsedRunnerResult = parseRunnerResult(runnerResult.result);
+          const sentinel = parsedRunnerResult.status;
           const nextStage = lifecycle.nextStageFromSentinel(action, sentinel);
           const finishedAt = deps.clock.now().toISOString();
+          const resultMetadata = {
+            ...runnerResult.metadata,
+            envelope: parsedRunnerResult.envelope,
+            ...(parsedRunnerResult.result?.advice === undefined
+              ? {}
+              : { advice: parsedRunnerResult.result.advice }),
+            ...(parsedRunnerResult.result?.needs === undefined
+              ? {}
+              : { needs: parsedRunnerResult.result.needs }),
+            ...(parsedRunnerResult.result?.prUrl === undefined
+              ? {}
+              : { prUrl: parsedRunnerResult.result.prUrl }),
+          };
 
           await deps.stateStore.writeRunRecord({
             ...runningRecord,
@@ -480,8 +478,8 @@ export function createTickRunner(deps: {
             finishedAt,
             sessionId: runnerResult.session_id,
             sentinel,
-            summary: runnerResult.result,
-            metadata: runnerResult.metadata,
+            summary: parsedRunnerResult.body,
+            metadata: resultMetadata,
           });
 
           const runCompletedEvent = createEventEnvelope({
@@ -528,6 +526,7 @@ export function createTickRunner(deps: {
             runId,
             action,
             runnerResult,
+            parsedRunnerResult,
             sentinel,
             occurredAt: finishedAt,
             startedAt: nowIso,
@@ -596,11 +595,13 @@ export function createTickRunner(deps: {
             model: 'unknown',
             cli: 'unknown',
           };
+          const parsedInfraFailureResult = parseRunnerResult(infraFailureResult.result);
           const failurePublishIntent = createPublishIntentEvent({
             projection: candidate,
             runId,
             action,
             runnerResult: infraFailureResult,
+            parsedRunnerResult: parsedInfraFailureResult,
             sentinel,
             occurredAt: finishedAt,
             startedAt: nowIso,
