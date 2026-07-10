@@ -2,7 +2,7 @@
 stage: refine
 mode: resume
 permissionMode: default
-allowedTools: Read, Glob, Grep, Bash(git fetch), Bash(git status)
+allowedTools: Read, Glob, Grep, Bash(git fetch), Bash(git status), WebSearch, WebFetch
 extraArgs:
 maxTurns: 40
 skipApproval: false
