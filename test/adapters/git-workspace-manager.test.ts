@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
   branchNameForIssue,
+  buildWorkspaceCloneArgs,
   createGitWorkspaceManager,
 } from '../../src/adapters/git/git-workspace-manager.js';
 
@@ -147,5 +148,22 @@ describe('git workspace manager', () => {
     const readme = await readFile(join(third.workspacePath, 'README.md'), 'utf8');
     expect(readme).toContain('# seed');
     await expect(access(join(third.workspacePath, 'local-only.txt'))).rejects.toThrow();
+  });
+
+  it('uses a non-hardlink local clone when creating a missing workspace', () => {
+    expect(
+      buildWorkspaceCloneArgs({
+        sourceRepoPath: '/wake/repos/acme__example',
+        workspacePath: '/wake/workspaces/acme__example/42',
+        defaultBranch: 'main',
+      }),
+    ).toEqual([
+      'clone',
+      '--no-local',
+      '--branch',
+      'main',
+      '/wake/repos/acme__example',
+      '/wake/workspaces/acme__example/42',
+    ]);
   });
 });
