@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { mkdtemp, readdir, readFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readdir, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -1199,5 +1199,105 @@ describe('tick runner', () => {
     expect(events).toContain('"eventId":"run-123-stale-stale-reconciled"');
     expect(events).toContain('"sourceEventType":"wake.labels.requested"');
     expect(events).toContain('"stageLabel":"wake:stage.failed"');
+  });
+
+  it('deletes the per-issue workspace and clears workspacePath when an issue is closed', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const workspacePath = join(root, 'workspaces', 'atolis-hq__wake', '200');
+    await mkdir(workspacePath, { recursive: true });
+
+    const nowIso = '2026-07-05T12:00:00.000Z';
+    await store.writeIssueState({
+      schemaVersion: 1,
+      workItemKey: 'atolis-hq/wake#200',
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 200,
+        title: 'Closed issue with workspace',
+        body: 'Body',
+        labels: [],
+        assignees: [],
+        state: 'closed',
+        url: 'https://example.test/atolis-hq/wake/issues/200',
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      },
+      comments: [],
+      wake: {
+        stage: 'done',
+        workspacePath,
+        syncedAt: nowIso,
+        stageHistory: [{ stage: 'done', changedAt: nowIso, reason: 'test' }],
+        recentEventIds: [],
+        expectedEcho: { commentIds: [], labels: [] },
+      },
+      context: {},
+    });
+
+    const config = createDefaultWakeConfig(root);
+    const tickRunner = createTickRunner({
+      clock: { now: () => new Date(nowIso) },
+      config,
+      stateStore: store,
+      workSource: { async pollEvents() { return []; } },
+      runner: { async run() { return { result: 'DONE', model: 'test', cli: 'test' }; } },
+      workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+    });
+
+    await tickRunner.runTick();
+
+    await expect(access(workspacePath)).rejects.toThrow();
+    const updatedProjection = await store.readIssueState('atolis-hq/wake', 200);
+    expect(updatedProjection?.wake.workspacePath).toBeUndefined();
+  });
+
+  it('does not delete the canonical clone when a closed issue has a read-only workspace path', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const canonicalClonePath = join(root, 'repos', 'atolis-hq__wake');
+    await mkdir(canonicalClonePath, { recursive: true });
+
+    const nowIso = '2026-07-05T12:00:00.000Z';
+    await store.writeIssueState({
+      schemaVersion: 1,
+      workItemKey: 'atolis-hq/wake#201',
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 201,
+        title: 'Closed refine-only issue',
+        body: 'Body',
+        labels: [],
+        assignees: [],
+        state: 'closed',
+        url: 'https://example.test/atolis-hq/wake/issues/201',
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      },
+      comments: [],
+      wake: {
+        stage: 'refined',
+        workspacePath: canonicalClonePath,
+        syncedAt: nowIso,
+        stageHistory: [{ stage: 'refined', changedAt: nowIso, reason: 'test' }],
+        recentEventIds: [],
+        expectedEcho: { commentIds: [], labels: [] },
+      },
+      context: {},
+    });
+
+    const config = createDefaultWakeConfig(root);
+    const tickRunner = createTickRunner({
+      clock: { now: () => new Date(nowIso) },
+      config,
+      stateStore: store,
+      workSource: { async pollEvents() { return []; } },
+      runner: { async run() { return { result: 'DONE', model: 'test', cli: 'test' }; } },
+      workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+    });
+
+    await tickRunner.runTick();
+
+    await expect(access(canonicalClonePath)).resolves.toBeUndefined();
+    const updatedProjection = await store.readIssueState('atolis-hq/wake', 201);
+    expect(updatedProjection?.wake.workspacePath).toBe(canonicalClonePath);
   });
 });
