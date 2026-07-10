@@ -12,7 +12,7 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends gh \
   && rm -rf /var/lib/apt/lists/*
 
-RUN npm install -g @anthropic-ai/claude-code @openai/codex @cursor/cursor-cli
+RUN npm install -g @anthropic-ai/claude-code @openai/codex
 
 WORKDIR /app
 COPY package*.json ./
@@ -27,8 +27,14 @@ RUN useradd --create-home --shell /bin/bash wake \
   && chown -R wake:wake /home/wake/.cursor
 
 ENV CODEX_HOME=/home/wake/.codex-runtime
+ENV PATH=/home/wake/.local/bin:$PATH
 
 USER wake
 WORKDIR /home/wake
+
+RUN curl https://cursor.com/install -fsS | bash \
+  && printf '#!/bin/bash\n[ "$1" = "agent" ] && shift\nexec ~/.local/bin/agent "$@"\n' \
+     > ~/.local/bin/cursor \
+  && chmod +x ~/.local/bin/cursor
 
 ENTRYPOINT ["sleep", "infinity"]

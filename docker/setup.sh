@@ -64,7 +64,7 @@ else
 fi
 
 if prompt_yes_no "Configure Cursor auth?"; then
-  cursor auth login
+  agent login
 else
   echo "Skipping Cursor auth setup."
 fi

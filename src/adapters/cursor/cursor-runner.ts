@@ -54,6 +54,7 @@ export function buildCursorAgentArgs(input: {
     'json',
     '--model',
     input.model,
+    '--trust',
     ...(input.mode !== undefined ? ['--mode', input.mode] : []),
     ...(input.force === true ? ['--force'] : []),
     ...(input.resumeSessionId !== undefined ? [`--resume=${input.resumeSessionId}`] : []),

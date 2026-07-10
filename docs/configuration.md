@@ -61,10 +61,10 @@ All configuration uses `schemaVersion: 1`.
       "timeoutMs": 1800000,
       "reasoningEffort": "high"
     },
-    "cursor-standard": {
+    "cursor-composer": {
       "kind": "cursor",
       "command": "cursor",
-      "model": "claude-sonnet-4-6",
+      "model": "composer-2.5",
       "timeoutMs": 1800000
     }
   },
@@ -223,7 +223,7 @@ portable files, plus any optional plain-skill directories you explicitly want,
 instead of bind-mounting the whole `~/.codex` directory across host/container
 boundaries.
 
-For Cursor, mount the user-level auth directory:
+For Cursor, mount the auth file that `agent login` writes:
 
 ```json
 {
@@ -231,19 +231,20 @@ For Cursor, mount the user-level auth directory:
   "sandbox": {
     "extraMounts": [
       {
-        "source": "C:/Users/alice/.cursor",
-        "target": "/home/wake/.cursor"
+        "source": "C:/Users/alice/.config/cursor/auth.json",
+        "target": "/home/wake/.config/cursor/auth.json",
+        "readOnly": true
       }
     ]
   }
 }
 ```
 
-The `~/.cursor` directory stores Cursor's session tokens and configuration.
-Mount the whole directory rather than individual files since Cursor may write
-multiple credential files. If you prefer read-only, set `"readOnly": true` and
-re-authenticate inside the sandbox when the session expires by running
-`cursor auth login` via `wake sandbox exec`.
+`~/.config/cursor/auth.json` is the file written by `agent login` and is the
+only Cursor file that needs to be shared with the sandbox. Mount it read-only
+unless you want the sandbox to be able to refresh tokens on the host's behalf.
+Re-authenticate inside the sandbox when the session expires by running
+`agent login` via `wake sandbox exec`.
 
 ### scheduler
 
