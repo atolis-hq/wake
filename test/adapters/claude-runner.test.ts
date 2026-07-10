@@ -260,6 +260,71 @@ describe('claude runner command building', () => {
     expect(result.prompt).toContain('New human reply');
   });
 
+  it('start prompts make new comments prominent while preserving prior comment context', async () => {
+    const result = await buildStagePrompt({
+      action: 'implement',
+      mode: 'start',
+      projection: {
+        schemaVersion: 1,
+        workItemKey: 'atolis-hq/wake#21',
+        issue: {
+          repo: 'atolis-hq/wake',
+          number: 21,
+          title: 'Example issue',
+          body: 'Body',
+          labels: [],
+          assignees: [],
+          isPullRequest: false,
+          state: 'open',
+          url: 'https://example.test/issues/21',
+          createdAt: '2026-07-05T12:00:00.000Z',
+          updatedAt: '2026-07-05T12:00:00.000Z',
+        },
+        comments: [
+          {
+            id: 'c-1',
+            body: 'Earlier human context',
+            author: { login: 'alice' },
+            createdAt: '2026-07-05T12:01:00.000Z',
+            updatedAt: '2026-07-05T12:01:00.000Z',
+            isBotAuthored: false,
+          },
+          {
+            id: 'c-2',
+            body: 'Wake status update',
+            author: { login: 'eddy-bot' },
+            createdAt: '2026-07-05T12:02:00.000Z',
+            updatedAt: '2026-07-05T12:02:00.000Z',
+            isBotAuthored: true,
+          },
+          {
+            id: 'c-3',
+            body: 'Fresh human request',
+            author: { login: 'bob' },
+            createdAt: '2026-07-05T12:03:00.000Z',
+            updatedAt: '2026-07-05T12:03:00.000Z',
+            isBotAuthored: false,
+          },
+        ],
+        wake: {
+          stage: 'implement',
+          stageHistory: [],
+          recentEventIds: [],
+          syncedAt: '2026-07-05T12:03:00.000Z',
+          expectedEcho: { commentIds: [], labels: [] },
+        },
+        context: { lastHandledCommentId: 'c-2' },
+      },
+    });
+
+    expect(result.prompt).toContain('<wake-comments-to-address>');
+    expect(result.prompt).toContain('New human comments since the last handled Wake run');
+    expect(result.prompt).toContain('Fresh human request');
+    expect(result.prompt).toContain('<wake-comment-history>');
+    expect(result.prompt).toContain('Earlier human context');
+    expect(result.prompt).toContain('Wake status update');
+  });
+
   it('assembles a refine-stage prompt that withholds edit tools', async () => {
     const result = await buildStagePrompt({
       action: 'refine',
