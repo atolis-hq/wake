@@ -5,8 +5,11 @@ import type {
   ClaudePrintResult,
   EventEnvelope,
   IssueStateRecord,
+  RunnerEntry,
   WakeConfig,
 } from '../../domain/types.js';
+
+type ClaudeRunnerSettings = Omit<Extract<RunnerEntry, { kind: 'claude' }>, 'kind'>;
 import { runAgentCliCommand } from '../runner/cli-command.js';
 import { buildStagePrompt } from '../runner/stage-prompt.js';
 
@@ -85,6 +88,7 @@ export function buildClaudePrintArgs(options: {
   remoteControlName?: string;
   extraArgs?: string[];
   maxTurns?: number;
+  effort?: string;
 }): string[] {
   return [
     '-p',
@@ -94,6 +98,7 @@ export function buildClaudePrintArgs(options: {
     options.model,
     '--name',
     options.sessionName,
+    ...(options.effort === undefined ? [] : ['--effort', options.effort]),
     ...(options.systemPrompt === undefined
       ? []
       : ['--append-system-prompt', options.systemPrompt]),
@@ -152,22 +157,20 @@ export function runClaudeCommand(input: {
 
 function resolveModel(options: {
   action: AgentAction;
-  config: WakeConfig;
+  settings: ClaudeRunnerSettings;
 }): string {
-  const models = options.config.runner.claude.models;
+  const { models, model } = options.settings;
 
-  if (models !== undefined) {
-    const actionSpecificModel = models[options.action];
-    if (actionSpecificModel !== undefined) {
-      return actionSpecificModel;
-    }
-
-    if (models.default !== undefined) {
-      return models.default;
-    }
+  const actionSpecificModel = models[options.action];
+  if (actionSpecificModel !== undefined) {
+    return actionSpecificModel;
   }
 
-  return options.config.runner.claude.model;
+  if (models.default !== undefined) {
+    return models.default;
+  }
+
+  return model;
 }
 
 function parseClaudePrintOutput(stdout: string): ClaudePrintResult {
@@ -230,6 +233,7 @@ function readSandboxLogBreadcrumb(): { text: string; metadata: { sandboxContaine
 export function createClaudeRunner(options: {
   command: string;
   cwd: string;
+  settings: ClaudeRunnerSettings;
 }) {
   return {
     async run(input: {
@@ -241,7 +245,7 @@ export function createClaudeRunner(options: {
       workspacePath?: string;
     }): Promise<AgentRunResult> {
       const sessionName = buildEddySessionName({
-        sessionName: input.config.runner.claude.sessionName,
+        sessionName: options.settings.sessionName,
         issueNumber: input.projection.issue.number,
         title: input.projection.issue.title,
         runId: input.runId,
@@ -259,7 +263,7 @@ export function createClaudeRunner(options: {
 
       const model = resolveModel({
         action: input.action,
-        config: input.config,
+        settings: options.settings,
       });
 
       const args = buildClaudePrintArgs({
@@ -273,9 +277,10 @@ export function createClaudeRunner(options: {
         ...(stagePrompt.permissionMode === undefined
           ? {}
           : { permissionMode: stagePrompt.permissionMode }),
-        ...(input.config.runner.claude.remoteControl.enabled
+        ...(options.settings.remoteControl.enabled
           ? { remoteControlName: sessionName }
           : {}),
+        ...(options.settings.effort === undefined ? {} : { effort: options.settings.effort }),
       });
 
       console.log(
@@ -297,7 +302,7 @@ export function createClaudeRunner(options: {
         command: options.command,
         args,
         cwd: input.workspacePath ?? options.cwd,
-        timeoutMs: input.config.runner.claude.timeoutMs,
+        timeoutMs: options.settings.timeoutMs,
       });
 
       if (result.exitCode !== 0 || result.timedOut || result.stdout.trim().length === 0) {
@@ -325,7 +330,7 @@ export function createClaudeRunner(options: {
         return {
           result: [
             result.timedOut
-              ? `Claude runner timed out after ${input.config.runner.claude.timeoutMs}ms and was killed`
+              ? `Claude runner timed out after ${options.settings.timeoutMs}ms and was killed`
               : result.stdout.trim().length === 0 ? 'Claude runner produced no output'
               : 'Claude runner failed',
             result.stderr,
@@ -385,7 +390,7 @@ export function createClaudeRunner(options: {
         },
       };
     },
-    async smoke(config: WakeConfig): Promise<{
+    async smoke(): Promise<{
       text: string;
       sessionId?: string;
       stdout: string;
@@ -393,9 +398,9 @@ export function createClaudeRunner(options: {
       exitCode: number;
     }> {
       const args = buildClaudePrintArgs({
-        model: config.runner.claude.smokeModel,
-        prompt: config.runner.claude.smokePrompt,
-        sessionName: config.runner.claude.sessionName,
+        model: options.settings.smokeModel,
+        prompt: options.settings.smokePrompt,
+        sessionName: options.settings.sessionName,
       });
 
       const result = await runClaudeCommand({
@@ -419,7 +424,7 @@ export function createClaudeRunner(options: {
         exitCode: result.exitCode,
       };
     },
-    async startRemoteControlSmoke(config: WakeConfig): Promise<{
+    async startRemoteControlSmoke(): Promise<{
       stdout: string;
       stderr: string;
       exitCode: number;
@@ -427,10 +432,10 @@ export function createClaudeRunner(options: {
       args: string[];
     }> {
       const args = buildClaudeRemoteControlArgs({
-        model: config.runner.claude.smokeModel,
-        prompt: config.runner.claude.smokePrompt,
-        remoteControlName: config.runner.claude.remoteControlName,
-        sessionName: config.runner.claude.sessionName,
+        model: options.settings.smokeModel,
+        prompt: options.settings.smokePrompt,
+        remoteControlName: options.settings.remoteControlName,
+        sessionName: options.settings.sessionName,
       });
 
       const result = await runClaudeCommand({

@@ -21,6 +21,9 @@ const modelOverridesSchema = z.object({
   implement: z.string().optional(),
 }).default({});
 
+const claudeEffortSchema = z.enum(['low', 'medium', 'high', 'xhigh', 'max']);
+const codexReasoningEffortSchema = z.enum(['low', 'medium', 'high']);
+
 const claudeRunnerSettingsSchema = z.object({
   command: z.string().default('claude'),
   model: z.string().default('haiku'),
@@ -33,6 +36,7 @@ const claudeRunnerSettingsSchema = z.object({
     enabled: z.boolean().default(false),
   }).default({ enabled: false }),
   models: modelOverridesSchema.default({ default: 'haiku', implement: 'claude-sonnet-4-6' }),
+  effort: claudeEffortSchema.optional(),
 });
 
 const codexRunnerSettingsSchema = z.object({
@@ -42,6 +46,7 @@ const codexRunnerSettingsSchema = z.object({
   smokePrompt: z.string().default(defaultSmokePrompt),
   timeoutMs: z.number().int().positive().default(30 * 60 * 1000),
   models: modelOverridesSchema.default({ default: 'gpt-5.5', implement: 'gpt-5.5' }),
+  reasoningEffort: codexReasoningEffortSchema.optional(),
 });
 
 const fakeRunnerEntrySchema = z.object({
@@ -242,11 +247,6 @@ export const wakeConfigSchema = z.object({
   scheduler: z.object({
     intervalMs: z.number().int().positive().default(60 * 1000),
   }).default({ intervalMs: 60 * 1000 }),
-  runner: z.object({
-    mode: z.enum(['fake', 'claude', 'codex']).default('fake'),
-    claude: claudeRunnerSettingsSchema.default({ command: 'claude', model: 'haiku', smokeModel: 'haiku', sessionName: 'Eddy', remoteControlName: 'Eddy', smokePrompt: defaultSmokePrompt, timeoutMs: 30 * 60 * 1000, remoteControl: { enabled: false }, models: { default: 'haiku', implement: 'claude-sonnet-4-6' } }),
-    codex: codexRunnerSettingsSchema.default({ command: 'codex', model: 'gpt-5.5', smokeModel: 'gpt-5.4-mini', smokePrompt: defaultSmokePrompt, timeoutMs: 30 * 60 * 1000, models: { default: 'gpt-5.5', implement: 'gpt-5.5' } }),
-  }).default({ mode: 'fake', claude: { command: 'claude', model: 'haiku', smokeModel: 'haiku', sessionName: 'Eddy', remoteControlName: 'Eddy', smokePrompt: defaultSmokePrompt, timeoutMs: 30 * 60 * 1000, remoteControl: { enabled: false }, models: { default: 'haiku', implement: 'claude-sonnet-4-6' } }, codex: { command: 'codex', model: 'gpt-5.5', smokeModel: 'gpt-5.4-mini', smokePrompt: defaultSmokePrompt, timeoutMs: 30 * 60 * 1000, models: { default: 'gpt-5.5', implement: 'gpt-5.5' } } }),
   runners: z.record(z.string(), runnerEntrySchema).default({
     fake: { kind: 'fake', cli: 'Fake' },
     'claude-haiku': { kind: 'claude', command: 'claude', model: 'haiku', smokeModel: 'haiku', sessionName: 'Eddy', remoteControlName: 'Eddy', smokePrompt: defaultSmokePrompt, timeoutMs: 30 * 60 * 1000, remoteControl: { enabled: false }, models: { default: 'haiku' } },

@@ -1,36 +1,44 @@
 import { createClaudeRunner } from '../claude/claude-runner.js';
 import { createCodexRunner } from '../codex/codex-runner.js';
 import type { AgentRunner } from '../../core/contracts.js';
-import type { WakeConfig } from '../../domain/types.js';
+import type { RunnerEntry, RunnerKind } from '../../domain/types.js';
 
-export type SupportedRunnerMode = Exclude<WakeConfig['runner']['mode'], 'fake'>;
+export type SupportedRunnerMode = Exclude<RunnerKind, 'fake'>;
+
+type RealRunnerEntry = Exclude<RunnerEntry, { kind: 'fake' }>;
+
+function withoutKind<T extends RealRunnerEntry>(entry: T): Omit<T, 'kind'> {
+  const { kind: _kind, ...settings } = entry;
+  return settings as Omit<T, 'kind'>;
+}
 
 export interface RunnerCliAdapter {
   mode: SupportedRunnerMode;
   cliName: string;
   runner: AgentRunner;
-  smoke(config: WakeConfig, args: string[]): Promise<unknown>;
+  smoke(args: string[]): Promise<unknown>;
   buildResumeCommand(input: { sessionId: string }): string[];
 }
 
 export function createRunnerCliAdapter(input: {
-  mode: SupportedRunnerMode;
-  config: WakeConfig;
+  entry: RealRunnerEntry;
   cwd: string;
 }): RunnerCliAdapter {
-  if (input.mode === 'claude') {
+  if (input.entry.kind === 'claude') {
+    const settings = withoutKind(input.entry);
     const runner = createClaudeRunner({
-      command: input.config.runner.claude.command,
+      command: settings.command,
       cwd: input.cwd,
+      settings,
     });
 
     return {
       mode: 'claude',
       cliName: 'Claude',
       runner,
-      async smoke(config, args) {
+      async smoke(args) {
         if (args.includes('--remote-control')) {
-          const result = await runner.startRemoteControlSmoke(config);
+          const result = await runner.startRemoteControlSmoke();
           return {
             mode: 'remote-control',
             exitCode: result.exitCode,
@@ -41,7 +49,7 @@ export function createRunnerCliAdapter(input: {
           };
         }
 
-        const result = await runner.smoke(config);
+        const result = await runner.smoke();
         return {
           mode: 'print-json',
           exitCode: result.exitCode,
@@ -57,17 +65,19 @@ export function createRunnerCliAdapter(input: {
     };
   }
 
+  const settings = withoutKind(input.entry);
   const runner = createCodexRunner({
-    command: input.config.runner.codex.command,
+    command: settings.command,
     cwd: input.cwd,
+    settings,
   });
 
   return {
     mode: 'codex',
     cliName: 'Codex',
     runner,
-    async smoke(config) {
-      const result = await runner.smoke(config);
+    async smoke() {
+      const result = await runner.smoke();
       return {
         mode: 'jsonl',
         exitCode: result.exitCode,

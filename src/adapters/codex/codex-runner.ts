@@ -22,8 +22,11 @@ import type {
   AgentAction,
   EventEnvelope,
   IssueStateRecord,
+  RunnerEntry,
   WakeConfig,
 } from '../../domain/types.js';
+
+type CodexRunnerSettings = Omit<Extract<RunnerEntry, { kind: 'codex' }>, 'kind'>;
 import { buildStagePrompt } from '../runner/stage-prompt.js';
 import { runAgentCliCommand } from '../runner/cli-command.js';
 
@@ -35,6 +38,7 @@ export function buildCodexExecArgs(input: {
   harnessPrompt?: string;
   cwd: string;
   sandboxMode: 'workspace-write' | 'danger-full-access';
+  reasoningEffort?: string;
 }): string[] {
   const prompt =
     input.harnessPrompt === undefined
@@ -44,6 +48,9 @@ export function buildCodexExecArgs(input: {
   return [
     '--ask-for-approval',
     'never',
+    ...(input.reasoningEffort === undefined
+      ? []
+      : ['-c', `model_reasoning_effort="${input.reasoningEffort}"`]),
     'exec',
     '--json',
     '--skip-git-repo-check',
@@ -149,22 +156,20 @@ export function extractCodexExecResult(stdout: string): {
 
 function resolveModel(input: {
   action: AgentAction;
-  config: WakeConfig;
+  settings: CodexRunnerSettings;
 }): string {
-  const models = input.config.runner.codex.models;
+  const { models, model } = input.settings;
 
-  if (models !== undefined) {
-    const actionSpecificModel = models[input.action];
-    if (actionSpecificModel !== undefined) {
-      return actionSpecificModel;
-    }
-
-    if (models.default !== undefined) {
-      return models.default;
-    }
+  const actionSpecificModel = models[input.action];
+  if (actionSpecificModel !== undefined) {
+    return actionSpecificModel;
   }
 
-  return input.config.runner.codex.model;
+  if (models.default !== undefined) {
+    return models.default;
+  }
+
+  return model;
 }
 
 function readSandboxLogBreadcrumb(): { text: string; metadata: { sandboxContainerName: string } } | null {
@@ -206,6 +211,7 @@ export function buildCodexToolCapabilityNote(input: {
 export function createCodexRunner(options: {
   command: string;
   cwd: string;
+  settings: CodexRunnerSettings;
 }) {
   return {
     async run(input: {
@@ -228,7 +234,7 @@ export function createCodexRunner(options: {
 
       const model = resolveModel({
         action: input.action,
-        config: input.config,
+        settings: options.settings,
       });
 
       const cwd = input.workspacePath ?? options.cwd;
@@ -257,9 +263,12 @@ export function createCodexRunner(options: {
           harnessPrompt: stagePrompt.harnessPrompt,
           cwd,
           sandboxMode,
+          ...(options.settings.reasoningEffort === undefined
+            ? {}
+            : { reasoningEffort: options.settings.reasoningEffort }),
         }),
         cwd,
-        timeoutMs: input.config.runner.codex.timeoutMs,
+        timeoutMs: options.settings.timeoutMs,
       });
 
       if (result.exitCode !== 0 || result.timedOut || result.stdout.trim().length === 0) {
@@ -282,7 +291,7 @@ export function createCodexRunner(options: {
         return {
           result: [
             result.timedOut
-              ? `Codex runner timed out after ${input.config.runner.codex.timeoutMs}ms and was killed`
+              ? `Codex runner timed out after ${options.settings.timeoutMs}ms and was killed`
               : result.stdout.trim().length === 0 ? 'Codex runner produced no output'
               : 'Codex runner failed',
             result.stderr,
@@ -338,7 +347,7 @@ export function createCodexRunner(options: {
         },
       };
     },
-    async smoke(config: WakeConfig): Promise<{
+    async smoke(): Promise<{
       text: string;
       sessionId?: string;
       stdout: string;
@@ -348,10 +357,13 @@ export function createCodexRunner(options: {
       const result = await runAgentCliCommand({
         command: options.command,
         args: buildCodexExecArgs({
-          model: config.runner.codex.smokeModel,
-          prompt: config.runner.codex.smokePrompt,
+          model: options.settings.smokeModel,
+          prompt: options.settings.smokePrompt,
           cwd: options.cwd,
           sandboxMode: 'danger-full-access',
+          ...(options.settings.reasoningEffort === undefined
+            ? {}
+            : { reasoningEffort: options.settings.reasoningEffort }),
         }),
         cwd: options.cwd,
       });

@@ -59,7 +59,6 @@ describe('sandbox resume command', () => {
     };
 
     const config = createDefaultWakeConfig('/wake-home');
-    config.runner.mode = 'codex';
 
     await runSandboxResumeCommand({
       args: ['session-456', '--cwd', '/wake/workspaces/atolis-hq__wake/34'],
