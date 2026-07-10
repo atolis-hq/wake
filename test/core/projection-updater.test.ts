@@ -1058,4 +1058,138 @@ describe('projection updater', () => {
     expect(projection?.wake.stage).toBe('failed');
     expect(projection?.context.lastRunAction).toBe('implement');
   });
+
+  it('preserves sessionId and sessionCli when a run transitions to blocked', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const updater = createProjectionUpdater({ stateStore: store });
+
+    await updater.rebuildFromEvents([
+      issueUpsert({ eventId: 'evt-sess-blocked-init', issueNumber: 50, labels: ['wake:stage.refined'] }),
+    ]);
+
+    const blockedRun = createEventEnvelope({
+      eventId: 'evt-sess-blocked-run',
+      workItemKey: 'atolis-hq/wake#50',
+      streamScope: 'work-item',
+      direction: 'internal',
+      sourceSystem: 'wake',
+      sourceEventType: 'wake.run.completed',
+      sourceRefs: { repo: 'atolis-hq/wake', issueNumber: 50, runId: 'run-50-1' },
+      occurredAt: '2026-07-05T12:01:00.000Z',
+      ingestedAt: '2026-07-05T12:01:00.000Z',
+      trigger: 'immediate',
+      payload: {
+        action: 'implement',
+        sentinel: 'BLOCKED',
+        nextStage: 'blocked',
+        runId: 'run-50-1',
+        sessionId: 'sess-xyz',
+        sessionCli: 'Claude',
+      },
+    });
+
+    await updater.rebuildFromEvents([blockedRun]);
+
+    const projection = await store.readIssueState('atolis-hq/wake', 50);
+    expect(projection?.wake.stage).toBe('blocked');
+    expect(projection?.wake.sessionId).toBe('sess-xyz');
+    expect(projection?.wake.sessionCli).toBe('Claude');
+  });
+
+  it('clears sessionId and sessionCli when a run advances to a new action stage', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const updater = createProjectionUpdater({ stateStore: store });
+
+    await updater.rebuildFromEvents([
+      issueUpsert({ eventId: 'evt-sess-adv-init', issueNumber: 51, labels: ['wake:stage.queue'] }),
+    ]);
+
+    // Refine completes with a session; stage advances to 'refined'
+    const refineRun = createEventEnvelope({
+      eventId: 'evt-sess-adv-refine',
+      workItemKey: 'atolis-hq/wake#51',
+      streamScope: 'work-item',
+      direction: 'internal',
+      sourceSystem: 'wake',
+      sourceEventType: 'wake.run.completed',
+      sourceRefs: { repo: 'atolis-hq/wake', issueNumber: 51, runId: 'run-51-1' },
+      occurredAt: '2026-07-05T12:01:00.000Z',
+      ingestedAt: '2026-07-05T12:01:00.000Z',
+      trigger: 'immediate',
+      payload: {
+        action: 'refine',
+        sentinel: 'DONE',
+        nextStage: 'refined',
+        runId: 'run-51-1',
+        sessionId: 'sess-refine',
+        sessionCli: 'Claude',
+      },
+    });
+
+    await updater.rebuildFromEvents([refineRun]);
+
+    const projection = await store.readIssueState('atolis-hq/wake', 51);
+    expect(projection?.wake.stage).toBe('refined');
+    // Session from refine must be cleared so implement starts fresh
+    expect(projection?.wake.sessionId).toBeUndefined();
+    expect(projection?.wake.sessionCli).toBeUndefined();
+  });
+
+  it('clears sessionId and sessionCli when a run fails', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const updater = createProjectionUpdater({ stateStore: store });
+
+    await updater.rebuildFromEvents([
+      issueUpsert({ eventId: 'evt-sess-fail-init', issueNumber: 52, labels: ['wake:stage.refined'] }),
+    ]);
+
+    // Seed a prior session into the projection via a blocked run
+    await updater.rebuildFromEvents([
+      createEventEnvelope({
+        eventId: 'evt-sess-fail-block',
+        workItemKey: 'atolis-hq/wake#52',
+        streamScope: 'work-item',
+        direction: 'internal',
+        sourceSystem: 'wake',
+        sourceEventType: 'wake.run.completed',
+        sourceRefs: { repo: 'atolis-hq/wake', issueNumber: 52, runId: 'run-52-1' },
+        occurredAt: '2026-07-05T12:01:00.000Z',
+        ingestedAt: '2026-07-05T12:01:00.000Z',
+        trigger: 'immediate',
+        payload: {
+          action: 'implement',
+          sentinel: 'BLOCKED',
+          nextStage: 'blocked',
+          runId: 'run-52-1',
+          sessionId: 'sess-impl',
+          sessionCli: 'Claude',
+        },
+      }),
+    ]);
+
+    // Retry runs and fails outright — session must be cleared
+    const failedRun = createEventEnvelope({
+      eventId: 'evt-sess-fail-run',
+      workItemKey: 'atolis-hq/wake#52',
+      streamScope: 'work-item',
+      direction: 'internal',
+      sourceSystem: 'wake',
+      sourceEventType: 'wake.run.completed',
+      sourceRefs: { repo: 'atolis-hq/wake', issueNumber: 52, runId: 'run-52-2' },
+      occurredAt: '2026-07-05T12:10:00.000Z',
+      ingestedAt: '2026-07-05T12:10:00.000Z',
+      trigger: 'immediate',
+      payload: {
+        action: 'implement',
+        sentinel: 'FAILED',
+        runId: 'run-52-2',
+      },
+    });
+
+    await updater.rebuildFromEvents([failedRun]);
+
+    const projection = await store.readIssueState('atolis-hq/wake', 52);
+    expect(projection?.wake.sessionId).toBeUndefined();
+    expect(projection?.wake.sessionCli).toBeUndefined();
+  });
 });

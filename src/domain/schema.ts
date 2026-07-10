@@ -190,6 +190,7 @@ export const issueStateRecordSchema = z.preprocess((input) => {
     stage: stageSchema,
     lastRunId: z.string().optional(),
     sessionId: z.string().optional(),
+    sessionCli: z.string().optional(),
     workspacePath: z.string().optional(),
     blockReason: z.string().optional(),
     syncedAt: isoTimestampSchema,

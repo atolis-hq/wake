@@ -438,6 +438,32 @@ describe('claude runner command building', () => {
     expect(line).toContain('workspacePath=/wake/workspaces/atolis-hq__wake/12');
   });
 
+  it('includes --resume <sessionId> before the -- terminator when resumeSessionId is provided', () => {
+    const args = buildClaudePrintArgs({
+      model: 'haiku',
+      prompt: 'do work',
+      sessionName: 'Eddy',
+      resumeSessionId: 'session-abc-123',
+    });
+
+    const resumeIdx = args.indexOf('--resume');
+    const dashDashIdx = args.indexOf('--');
+    expect(resumeIdx).toBeGreaterThanOrEqual(0);
+    expect(args[resumeIdx + 1]).toBe('session-abc-123');
+    expect(resumeIdx).toBeLessThan(dashDashIdx);
+    expect(args.at(-1)).toBe('do work');
+  });
+
+  it('omits --resume when no resumeSessionId is provided', () => {
+    const args = buildClaudePrintArgs({
+      model: 'haiku',
+      prompt: 'do work',
+      sessionName: 'Eddy',
+    });
+
+    expect(args).not.toContain('--resume');
+  });
+
   it('includes a --max-turns flag when maxTurns is provided', () => {
     const args = buildClaudePrintArgs({
       model: 'haiku',

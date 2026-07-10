@@ -515,6 +515,7 @@ export function createTickRunner(deps: {
               ...(nextStage !== null ? { nextStage } : {}),
               runId,
               sessionId: runnerResult.session_id,
+              sessionCli: runnerResult.cli,
               workspacePath,
               reason: `runner:${sentinel.toLowerCase()}`,
               ...(runnerResult.routing === undefined ? {} : { routing: runnerResult.routing }),
