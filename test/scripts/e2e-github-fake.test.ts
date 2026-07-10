@@ -15,7 +15,6 @@ describe('e2e github fake helpers', () => {
       requiredLabel: 'wake:e2e',
     });
 
-    expect(config.runner.mode).toBe('fake');
     expect(config.sources.github.enabled).toBe(true);
     expect(config.sources.github.repos).toEqual(['atolis-hq/wake']);
     expect(config.sources.github.policy.requiredLabels).toEqual(['wake:e2e']);

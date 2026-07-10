@@ -221,7 +221,18 @@ describe('sandbox command', () => {
   it('dispatches resume through the sandbox resume command flow', async () => {
     const docker = createDockerMock();
     const config = createDefaultWakeConfig(wakeRoot);
-    config.runner.mode = 'claude';
+    config.runners['claude-haiku'] = {
+      kind: 'claude',
+      command: 'claude',
+      model: 'claude-haiku-4-5',
+      smokeModel: 'claude-haiku-4-5',
+      sessionName: 'Eddy',
+      remoteControlName: 'Eddy',
+      smokePrompt: 'hi',
+      timeoutMs: 600_000,
+      remoteControl: { enabled: false },
+      models: {},
+    };
 
     await runSandboxCommand({
       args: ['resume', 'session-123', '--cwd', '/wake/workspaces/atolis-hq__wake/12'],

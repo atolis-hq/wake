@@ -33,36 +33,6 @@ All configuration uses `schemaVersion: 1`.
   "scheduler": {
     "intervalMs": 60000
   },
-  "runner": {
-    "mode": "fake",
-    "claude": {
-      "command": "claude",
-      "model": "haiku",
-      "smokeModel": "haiku",
-      "sessionName": "Eddy",
-      "remoteControlName": "Eddy",
-      "smokePrompt": "This is Eddy, reply with \"hi Eddy only\"",
-      "timeoutMs": 1800000,
-      "remoteControl": {
-        "enabled": false
-      },
-      "models": {
-        "default": "haiku",
-        "implement": "claude-sonnet-4-6"
-      }
-    },
-    "codex": {
-      "command": "codex",
-      "model": "gpt-5.5",
-      "smokeModel": "gpt-5.4-mini",
-      "smokePrompt": "This is Eddy, reply with \"hi Eddy only\"",
-      "timeoutMs": 1800000,
-      "models": {
-        "default": "gpt-5.5",
-        "implement": "gpt-5.5"
-      }
-    }
-  },
   "runners": {
     "fake": { "kind": "fake" },
     "claude-haiku": {
@@ -253,14 +223,6 @@ Control plane tick frequency and timing.
 |----------|------|-------------|---------|
 | `intervalMs` | number | Milliseconds between control-plane ticks (minimum 1) | `60000` (60 seconds) |
 
-### runner
-
-Per-kind CLI defaults used by the [`runner.claude`](#runnerclaude) and
-[`runner.codex`](#runnercodex) subsections. Runner selection and routing use
-the top-level [`runners`](#runners), [`tiers`](#tiers), and
-[`stages`](#stages) sections; use `--runner <name>` on the CLI or configure
-tiers to select runners. `--runner fake` acts as a global override for testing.
-
 ### runners
 
 Named runner registry. The object key is the routing target; `kind` selects the
@@ -291,78 +253,6 @@ Fallback tier used when a stage does not set `tier` or `runner`.
 
 Per-stage routing. A stage normally routes to a `tier`; `runner` pins a concrete
 named runner and takes precedence over `tier`.
-
-#### runner.claude
-
-Claude CLI settings for agent execution (used when `runner.mode` is `"claude"`).
-
-| Property | Type | Description | Default |
-|----------|------|-------------|---------|
-| `command` | string | Path or command to invoke the Claude CLI | `"claude"` |
-| `model` | string | Claude model ID for standard agent execution (used if `models` is not configured) | `"haiku"` |
-| `smokeModel` | string | Claude model ID for smoke tests and validation | `"haiku"` |
-| `sessionName` | string | Name of the agent identity for issue context | `"Eddy"` |
-| `remoteControlName` | string | Display name for remote control sessions | `"Eddy"` |
-| `smokePrompt` | string | Minimal prompt used to verify Claude CLI is working | `"This is Eddy, reply with \"hi Eddy only\""` |
-| `timeoutMs` | number | Wall-clock timeout (ms) for a single runner invocation; the CLI process is killed and the run marked `FAILED` if it's exceeded | `1800000` (30 min) |
-| `remoteControl.enabled` | boolean | Enable human remote control of agent sessions | `false` |
-| `models` | object (optional) | Model overrides per action; see [models section](#runnerclaude-models) below | (not set; uses `model` field) |
-
-##### runner.claude.models
-
-Optional model overrides for specific agent actions. When configured, models are resolved in this order:
-1. Action-specific model (e.g., `models.implement` for the implement action)
-2. Default model (`models.default`)
-3. Legacy `model` field (for backward compatibility)
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `default` | string (optional) | Default model for all actions not explicitly overridden |
-| `refine` | string (optional) | Model for the refine action (reading/analyzing issues) |
-| `implement` | string (optional) | Model for the implement action (implementing fixes) |
-
-Example: use a more capable model for implementation while keeping cheaper models for analysis:
-
-```json
-{
-  "runner": {
-    "claude": {
-      "command": "claude",
-      "model": "haiku",
-      "models": {
-        "default": "haiku",
-        "implement": "claude-sonnet-4-6"
-      }
-    }
-  }
-}
-```
-
-#### runner.codex
-
-Codex CLI settings for agent execution (used when `runner.mode` is `"codex"`).
-
-| Property | Type | Description | Default |
-|----------|------|-------------|---------|
-| `command` | string | Path or command to invoke the Codex CLI | `"codex"` |
-| `model` | string | Codex model ID for standard agent execution | `"gpt-5.5"` |
-| `smokeModel` | string | Codex model ID for smoke tests; defaults to the lower-cost `gpt-5.4-mini` model | `"gpt-5.4-mini"` |
-| `smokePrompt` | string | Minimal prompt used to verify Codex CLI is working | `"This is Eddy, reply with \"hi Eddy only\""` |
-| `timeoutMs` | number | Wall-clock timeout (ms) for a single runner invocation; the CLI process is killed and the run marked `FAILED` if it's exceeded | `1800000` (30 min) |
-| `models` | object (optional) | Model overrides per action; see [models section](#runnercodex-models) below | (not set; uses `model` field) |
-
-##### runner.codex.models
-
-Optional model overrides for specific agent actions. Resolution order matches `runner.claude.models`:
-1. Action-specific model
-2. Default model (`models.default`)
-3. Legacy `model` field
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `default` | string (optional) | Default model for all actions not explicitly overridden |
-| `refine` | string (optional) | Model for the refine action |
-| `implement` | string (optional) | Model for the implement action |
 
 ### sources.github
 

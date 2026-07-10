@@ -33,47 +33,19 @@ function createRunnerForEntry(input: {
 
   if (input.entry.kind === 'claude') {
     const settings = withoutKind(input.entry);
-    const runner = createClaudeRunner({
+    return createClaudeRunner({
       command: settings.command,
       cwd: input.cwd,
+      settings,
     });
-    return {
-      run(runInput) {
-        return runner.run({
-          ...runInput,
-          config: {
-            ...runInput.config,
-            runner: {
-              ...runInput.config.runner,
-              mode: 'claude',
-              claude: settings,
-            },
-          },
-        });
-      },
-    };
   }
 
   const settings = withoutKind(input.entry);
-  const runner = createCodexRunner({
+  return createCodexRunner({
     command: settings.command,
     cwd: input.cwd,
+    settings,
   });
-  return {
-    run(runInput) {
-      return runner.run({
-        ...runInput,
-        config: {
-          ...runInput.config,
-          runner: {
-            ...runInput.config.runner,
-            mode: 'codex',
-            codex: settings,
-          },
-        },
-      });
-    },
-  };
 }
 
 async function runWithRouting(input: {

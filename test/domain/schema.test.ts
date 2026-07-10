@@ -286,15 +286,15 @@ describe('run and event schemas', () => {
     ]);
   });
 
-  it('accepts codex runner configuration', () => {
+  it('accepts codex runner configuration via registry', () => {
     const config = parseWakeConfig({
       schemaVersion: 1,
       paths: {
         wakeRoot: '/tmp/wake',
       },
-      runner: {
-        mode: 'codex',
-        codex: {
+      runners: {
+        'codex-flagship': {
+          kind: 'codex',
           command: 'codex',
           model: 'gpt-5.5',
           smokeModel: 'gpt-5.4-mini',
@@ -304,9 +304,11 @@ describe('run and event schemas', () => {
       },
     });
 
-    expect(config.runner.mode).toBe('codex');
-    expect(config.runner.codex.command).toBe('codex');
-    expect(config.runner.codex.smokeModel).toBe('gpt-5.4-mini');
+    const entry = config.runners['codex-flagship'];
+    expect(entry?.kind).toBe('codex');
+    if (entry?.kind !== 'codex') throw new Error('unreachable');
+    expect(entry.command).toBe('codex');
+    expect(entry.smokeModel).toBe('gpt-5.4-mini');
   });
 
   it('accepts named runners and tier routing', () => {

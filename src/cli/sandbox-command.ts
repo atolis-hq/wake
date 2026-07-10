@@ -3,6 +3,7 @@ import { posix, resolve } from 'node:path';
 
 import type { DockerCli } from '../adapters/docker/docker-cli.js';
 import { createRunnerCliAdapter } from '../adapters/runner/runner-cli-adapter.js';
+import type { RunnerEntry } from '../domain/types.js';
 import { runSandboxResumeCommand } from './sandbox-resume.js';
 import {
   buildSandboxLoggedCommand,
@@ -145,13 +146,15 @@ export async function runSandboxCommand(input: {
   }
 
   if (subcommand === 'resume') {
-    if (input.config.runner.mode === 'fake') {
-      throw new Error('Sandbox resume requires a real runner mode (`claude` or `codex`).');
+    const realEntry = Object.values(input.config.runners).find(
+      (e): e is Exclude<RunnerEntry, { kind: 'fake' }> => e.kind !== 'fake',
+    );
+    if (realEntry === undefined) {
+      throw new Error('Sandbox resume requires a real runner entry (`claude` or `codex`) in config.runners.');
     }
 
     const runnerAdapter = createRunnerCliAdapter({
-      mode: input.config.runner.mode,
-      config: input.config,
+      entry: realEntry,
       cwd: process.cwd(),
     });
     await runSandboxResumeCommand({

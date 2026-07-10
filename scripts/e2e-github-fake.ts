@@ -20,10 +20,6 @@ export function buildE2eConfig(input: {
   const config = createDefaultWakeConfig(input.wakeRoot);
   return {
     ...config,
-    runner: {
-      ...config.runner,
-      mode: 'fake',
-    },
     sources: {
       github: {
         ...config.sources.github,

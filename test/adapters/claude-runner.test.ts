@@ -13,7 +13,6 @@ import {
   formatClaudeRunLogLine,
   runClaudeCommand,
 } from '../../src/adapters/claude/claude-runner.js';
-import type { WakeConfig } from '../../src/domain/types.js';
 import { createDefaultWakeConfig, defaultSmokePrompt } from '../../src/config/defaults.js';
 
 describe('claude runner command building', () => {
@@ -172,65 +171,7 @@ describe('claude runner command building', () => {
       projection: baseProjection,
       config: {
         ...createDefaultWakeConfig('/tmp/wake'),
-        schemaVersion: 1,
-        paths: {
-          wakeRoot: '/tmp/wake',
-          promptsRoot: promptsDir,
-        },
-        sandbox: {
-          image: 'wake-sandbox',
-          containerName: 'wake-sandbox',
-          containerMountPath: '/wake',
-          containerHomeMountPath: '/home/wake',
-          extraMounts: [],
-        },
-        dev: {},
-        scheduler: {
-          intervalMs: 1000,
-        },
-        runner: {
-          mode: 'fake',
-          claude: {
-            command: 'claude',
-            model: 'haiku',
-            smokeModel: 'haiku',
-            sessionName: 'Eddy',
-            remoteControlName: 'Eddy',
-            smokePrompt: 'hi',
-            timeoutMs: 60_000,
-            remoteControl: {
-              enabled: false,
-            },
-            models: { default: 'haiku', implement: 'claude-sonnet-4-6' },
-          },
-          codex: {
-            command: 'codex',
-            model: 'gpt-5.5',
-            smokeModel: 'gpt-5.4-mini',
-            smokePrompt: 'hi',
-            timeoutMs: 60_000,
-            models: { default: 'gpt-5.5', implement: 'gpt-5.5' },
-          },
-        },
-        sources: {
-          github: {
-            enabled: false,
-            repos: [],
-            polling: {
-              maxIssuesPerRepo: 25,
-              commentPageSize: 25,
-              lookbackMs: 60000,
-            },
-            policy: {
-              requiredLabels: [],
-              ignoredLabels: [],
-              requiredAssignees: [],
-            },
-            publication: {
-              postStatusComments: true,
-            },
-          },
-        },
+        paths: { wakeRoot: '/tmp/wake', promptsRoot: promptsDir },
       },
     });
 
@@ -405,65 +346,7 @@ describe('claude runner command building', () => {
       },
       config: {
         ...createDefaultWakeConfig('/tmp/wake'),
-        schemaVersion: 1,
-        paths: {
-          wakeRoot: '/tmp/wake',
-          promptsRoot: promptsDir,
-        },
-        sandbox: {
-          image: 'wake-sandbox',
-          containerName: 'wake-sandbox',
-          containerMountPath: '/wake',
-          containerHomeMountPath: '/home/wake',
-          extraMounts: [],
-        },
-        dev: {},
-        scheduler: {
-          intervalMs: 1000,
-        },
-        runner: {
-          mode: 'fake',
-          claude: {
-            command: 'claude',
-            model: 'haiku',
-            smokeModel: 'haiku',
-            sessionName: 'Eddy',
-            remoteControlName: 'Eddy',
-            smokePrompt: 'hi',
-            timeoutMs: 60_000,
-            remoteControl: {
-              enabled: false,
-            },
-            models: { default: 'haiku', implement: 'claude-sonnet-4-6' },
-          },
-          codex: {
-            command: 'codex',
-            model: 'gpt-5.5',
-            smokeModel: 'gpt-5.4-mini',
-            smokePrompt: 'hi',
-            timeoutMs: 60_000,
-            models: { default: 'gpt-5.5', implement: 'gpt-5.5' },
-          },
-        },
-        sources: {
-          github: {
-            enabled: false,
-            repos: [],
-            polling: {
-              maxIssuesPerRepo: 25,
-              commentPageSize: 25,
-              lookbackMs: 60000,
-            },
-            policy: {
-              requiredLabels: [],
-              ignoredLabels: [],
-              requiredAssignees: [],
-            },
-            publication: {
-              postStatusComments: true,
-            },
-          },
-        },
+        paths: { wakeRoot: '/tmp/wake', promptsRoot: promptsDir },
       },
     });
 
@@ -714,65 +597,7 @@ describe('claude runner command building', () => {
         },
         config: {
           ...createDefaultWakeConfig('/tmp/wake'),
-          schemaVersion: 1,
-          paths: {
-            wakeRoot: '/tmp/wake',
-            promptsRoot: promptsDir,
-          },
-          sandbox: {
-            image: 'wake-sandbox',
-            containerName: 'wake-sandbox',
-            containerMountPath: '/wake',
-            containerHomeMountPath: '/home/wake',
-            extraMounts: [],
-          },
-          dev: {},
-          scheduler: {
-            intervalMs: 1000,
-          },
-          runner: {
-            mode: 'fake',
-            claude: {
-              command: 'claude',
-              model: 'haiku',
-              smokeModel: 'haiku',
-              sessionName: 'Eddy',
-              remoteControlName: 'Eddy',
-              smokePrompt: 'hi',
-              timeoutMs: 60_000,
-              remoteControl: {
-                enabled: false,
-              },
-              models: { default: 'haiku', implement: 'claude-sonnet-4-6' },
-            },
-            codex: {
-              command: 'codex',
-              model: 'gpt-5.5',
-              smokeModel: 'gpt-5.4-mini',
-              smokePrompt: 'hi',
-              timeoutMs: 60_000,
-              models: { default: 'gpt-5.5', implement: 'gpt-5.5' },
-            },
-          },
-          sources: {
-            github: {
-              enabled: false,
-              repos: [],
-              polling: {
-                maxIssuesPerRepo: 25,
-                commentPageSize: 25,
-                lookbackMs: 60000,
-              },
-              policy: {
-                requiredLabels: [],
-                ignoredLabels: [],
-                requiredAssignees: [],
-              },
-              publication: {
-                postStatusComments: true,
-              },
-            },
-          },
+          paths: { wakeRoot: '/tmp/wake', promptsRoot: promptsDir },
         },
       }),
     ).rejects.toThrow(/missing a required "maxTurns"/);
@@ -819,133 +644,53 @@ describe('claude runner command building', () => {
 });
 
 describe('model resolution', () => {
-  function createTestConfig(overrides?: Partial<WakeConfig['runner']['claude']>): WakeConfig {
-    return {
-      ...createDefaultWakeConfig('/tmp/wake'),
-      schemaVersion: 1,
-      paths: {
-        wakeRoot: '/tmp/wake',
-      },
-      sandbox: {
-        image: 'wake-sandbox',
-        containerName: 'wake-sandbox',
-        containerMountPath: '/wake',
-        containerHomeMountPath: '/home/wake',
-        extraMounts: [],
-      },
-      dev: {},
-      scheduler: {
-        intervalMs: 1000,
-      },
-      runner: {
-        mode: 'fake',
-        claude: {
-          command: 'claude',
-          model: 'haiku',
-          smokeModel: 'haiku',
-          sessionName: 'Eddy',
-          remoteControlName: 'Eddy',
-          smokePrompt: 'hi',
-          timeoutMs: 60_000,
-          remoteControl: {
-            enabled: false,
-          },
-          models: { default: 'haiku', implement: 'claude-sonnet-4-6' },
-          ...overrides,
-        },
-        codex: {
-          command: 'codex',
-          model: 'gpt-5.5',
-          smokeModel: 'gpt-5.4-mini',
-          smokePrompt: 'hi',
-          timeoutMs: 60_000,
-          models: { default: 'gpt-5.5', implement: 'gpt-5.5' },
-        },
-      },
-      sources: {
-        github: {
-          enabled: false,
-          repos: [],
-          polling: {
-            maxIssuesPerRepo: 25,
-            commentPageSize: 25,
-            lookbackMs: 60000,
-          },
-          policy: {
-            requiredLabels: [],
-            ignoredLabels: [],
-            requiredAssignees: [],
-          },
-          publication: {
-            postStatusComments: true,
-          },
-        },
-      },
-    };
+  type ClaudeSettings = {
+    model: string;
+    models?: { default?: string; refine?: string; implement?: string };
+  };
+
+  function resolveTestModel(settings: ClaudeSettings, action: 'implement' | 'refine'): string {
+    const models = settings.models ?? {};
+    return models[action] ?? models.default ?? settings.model;
   }
 
   it('uses action-specific model when configured', () => {
-    const config = createTestConfig({
-      models: {
-        implement: 'sonnet-4.6',
-      },
-    });
-
+    const settings: ClaudeSettings = { model: 'haiku', models: { implement: 'sonnet-4.6' } };
     const args = buildClaudePrintArgs({
-      model: config.runner.claude.models?.implement ?? config.runner.claude.model,
+      model: resolveTestModel(settings, 'implement'),
       prompt: 'test',
       sessionName: 'Eddy',
     });
-
     expect(args).toContain('sonnet-4.6');
   });
 
   it('falls back to default model when action-specific model is not set', () => {
-    const config = createTestConfig({
-      models: {
-        default: 'opus',
-        implement: 'sonnet-4.6',
-      },
-    });
-
-    // For refine action, which doesn't have a specific model configured
+    const settings: ClaudeSettings = { model: 'haiku', models: { default: 'opus', implement: 'sonnet-4.6' } };
     const args = buildClaudePrintArgs({
-      model: config.runner.claude.models?.refine ?? config.runner.claude.models?.default ?? config.runner.claude.model,
+      model: resolveTestModel(settings, 'refine'),
       prompt: 'test',
       sessionName: 'Eddy',
     });
-
     expect(args).toContain('opus');
   });
 
-  it('falls back to legacy model field for backward compatibility', () => {
-    const config = createTestConfig({
-      model: 'legacy-haiku',
-    });
-
+  it('falls back to model field when no models overrides set', () => {
+    const settings: ClaudeSettings = { model: 'legacy-haiku' };
     const args = buildClaudePrintArgs({
-      model: config.runner.claude.model,
+      model: resolveTestModel(settings, 'implement'),
       prompt: 'test',
       sessionName: 'Eddy',
     });
-
     expect(args).toContain('legacy-haiku');
   });
 
-  it('prioritizes models.default over legacy model field', () => {
-    const config = createTestConfig({
-      model: 'legacy-haiku',
-      models: {
-        default: 'new-haiku',
-      },
-    });
-
+  it('prioritizes models.default over model field', () => {
+    const settings: ClaudeSettings = { model: 'legacy-haiku', models: { default: 'new-haiku' } };
     const args = buildClaudePrintArgs({
-      model: config.runner.claude.models?.default ?? config.runner.claude.model,
+      model: resolveTestModel(settings, 'implement'),
       prompt: 'test',
       sessionName: 'Eddy',
     });
-
     expect(args).toContain('new-haiku');
   });
 });
