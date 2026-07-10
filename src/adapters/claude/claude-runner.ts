@@ -89,6 +89,7 @@ export function buildClaudePrintArgs(options: {
   extraArgs?: string[];
   maxTurns?: number;
   effort?: string;
+  resumeSessionId?: string;
 }): string[] {
   return [
     '-p',
@@ -98,6 +99,7 @@ export function buildClaudePrintArgs(options: {
     options.model,
     '--name',
     options.sessionName,
+    ...(options.resumeSessionId === undefined ? [] : ['--resume', options.resumeSessionId]),
     ...(options.effort === undefined ? [] : ['--effort', options.effort]),
     ...(options.systemPrompt === undefined
       ? []
@@ -251,13 +253,19 @@ export function createClaudeRunner(options: {
         runId: input.runId,
       });
 
-      // Wake always starts a fresh session today - it does not yet call
-      // `claude --resume`, so mode is always 'start'. The 'resume' templates
-      // exist for when that policy (tracked in todo/) is wired up.
+      // Resume an in-progress session when the projection carries a session ID
+      // that was created by this same CLI. This happens when the previous run
+      // ended with BLOCKED and the same action is being retried after a human
+      // reply. Any forward-stage transition or FAILED run clears the stored
+      // session ID so that the next action always starts fresh.
+      const priorSessionId = input.projection.wake.sessionId;
+      const priorSessionCli = input.projection.wake.sessionCli;
+      const isResume = priorSessionId !== undefined && priorSessionCli === CLAUDE_CLI_NAME;
+
       const stagePrompt = await buildStagePrompt({
         action: input.action,
         projection: input.projection,
-        mode: 'start',
+        mode: isResume ? 'resume' : 'start',
         config: input.config,
       });
 
@@ -281,6 +289,7 @@ export function createClaudeRunner(options: {
           ? { remoteControlName: sessionName }
           : {}),
         ...(options.settings.effort === undefined ? {} : { effort: options.settings.effort }),
+        ...(isResume ? { resumeSessionId: priorSessionId } : {}),
       });
 
       console.log(

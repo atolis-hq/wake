@@ -121,10 +121,21 @@ function applyEvent(
       nextStage?: IssueStateRecord['wake']['stage'];
       runId?: string;
       sessionId?: string;
+      sessionCli?: string;
       workspacePath?: string;
       reason?: string;
       handledCommentId?: string;
     };
+
+    // Clear the session when the stage moves forward (new action needed) or the
+    // run failed outright. Keep it when moving to 'blocked' so the same action
+    // can resume the in-progress session after a human replies.
+    const isForwardProgression =
+      payload.nextStage !== undefined &&
+      payload.nextStage !== 'blocked' &&
+      payload.nextStage !== current.wake.stage;
+    const isFailed = payload.sentinel === 'FAILED';
+    const shouldClearSession = isForwardProgression || isFailed;
 
     return parseIssueStateRecord({
       ...current,
@@ -152,7 +163,12 @@ function applyEvent(
         ...current.wake,
         stage: payload.nextStage ?? current.wake.stage,
         lastRunId: payload.runId ?? current.wake.lastRunId,
-        sessionId: payload.sessionId ?? current.wake.sessionId,
+        sessionId: shouldClearSession
+          ? undefined
+          : (payload.sessionId ?? current.wake.sessionId),
+        sessionCli: shouldClearSession
+          ? undefined
+          : (payload.sessionCli ?? current.wake.sessionCli),
         workspacePath: payload.workspacePath ?? current.wake.workspacePath,
         syncedAt: event.ingestedAt,
         stageHistory: [
