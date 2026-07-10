@@ -148,6 +148,10 @@ const eventEnvelopeSourceRefsSchema = z.object({
   sourceUrl: z.string().optional(),
 });
 
+function normalizeLegacyStage(stage: unknown): unknown {
+  return stage === 'refined' ? 'implement' : stage;
+}
+
 export const eventEnvelopeSchema = z.object({
   schemaVersion: z.literal(1),
   eventId: z.string(),
@@ -193,6 +197,17 @@ export const issueStateRecordSchema = z.preprocess((input) => {
             recentEventIds: [],
             expectedEcho: { commentIds: [], labels: [] },
             ...(record.wake as Record<string, unknown>),
+            stage: normalizeLegacyStage((record.wake as Record<string, unknown>).stage),
+            stageHistory: Array.isArray((record.wake as Record<string, unknown>).stageHistory)
+              ? ((record.wake as Record<string, unknown>).stageHistory as unknown[]).map((entry) =>
+                  entry !== null && typeof entry === 'object'
+                    ? {
+                        ...(entry as Record<string, unknown>),
+                        stage: normalizeLegacyStage((entry as Record<string, unknown>).stage),
+                      }
+                    : entry,
+                )
+              : (record.wake as Record<string, unknown>).stageHistory,
           }
         : record.wake,
   };

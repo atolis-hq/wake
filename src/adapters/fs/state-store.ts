@@ -144,11 +144,15 @@ export function createStateStore({ wakeRoot }: { wakeRoot: string }) {
         for (const repoDir of repoDirs) {
           const issueFiles = await readdir(join(stateRoot, repoDir));
           for (const issueFile of issueFiles) {
-            items.push(
-              parseIssueStateRecord(
-                await readJsonFile(join(stateRoot, repoDir, issueFile)),
-              ),
-            );
+            try {
+              items.push(
+                parseIssueStateRecord(
+                  await readJsonFile(join(stateRoot, repoDir, issueFile)),
+                ),
+              );
+            } catch {
+              continue;
+            }
           }
         }
 
