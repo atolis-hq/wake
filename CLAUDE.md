@@ -19,6 +19,7 @@ npm run start        # run the resident loop
 npm run smoke        # smoke test the configured real runner
 npm run smoke:claude # minimal Claude Haiku smoke test (see prompt below)
 npm run smoke:codex  # minimal Codex smoke test using gpt-5.4-mini
+npm run smoke:cursor # minimal Cursor smoke test
 npm run smoke:claude -- --remote-control  # remote-control smoke session
 ```
 

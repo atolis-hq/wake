@@ -1,5 +1,6 @@
 import { createClaudeRunner } from '../claude/claude-runner.js';
 import { createCodexRunner } from '../codex/codex-runner.js';
+import { createCursorRunner } from '../cursor/cursor-runner.js';
 import { createFakeRunner } from '../fake/fake-runner.js';
 import type { AgentRunner } from '../../core/contracts.js';
 import type {
@@ -34,6 +35,15 @@ function createRunnerForEntry(input: {
   if (input.entry.kind === 'claude') {
     const settings = withoutKind(input.entry);
     return createClaudeRunner({
+      command: settings.command,
+      cwd: input.cwd,
+      settings,
+    });
+  }
+
+  if (input.entry.kind === 'cursor') {
+    const settings = withoutKind(input.entry);
+    return createCursorRunner({
       command: settings.command,
       cwd: input.cwd,
       settings,

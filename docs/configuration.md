@@ -60,6 +60,12 @@ All configuration uses `schemaVersion: 1`.
       "model": "gpt-5.5",
       "timeoutMs": 1800000,
       "reasoningEffort": "high"
+    },
+    "cursor-standard": {
+      "kind": "cursor",
+      "command": "cursor",
+      "model": "claude-sonnet-4-6",
+      "timeoutMs": 1800000
     }
   },
   "tiers": {
@@ -217,6 +223,28 @@ portable files, plus any optional plain-skill directories you explicitly want,
 instead of bind-mounting the whole `~/.codex` directory across host/container
 boundaries.
 
+For Cursor, mount the user-level auth directory:
+
+```json
+{
+  "schemaVersion": 1,
+  "sandbox": {
+    "extraMounts": [
+      {
+        "source": "C:/Users/alice/.cursor",
+        "target": "/home/wake/.cursor"
+      }
+    ]
+  }
+}
+```
+
+The `~/.cursor` directory stores Cursor's session tokens and configuration.
+Mount the whole directory rather than individual files since Cursor may write
+multiple credential files. If you prefer read-only, set `"readOnly": true` and
+re-authenticate inside the sandbox when the session expires by running
+`cursor auth login` via `wake sandbox exec`.
+
 ### scheduler
 
 Control plane tick frequency and timing.
@@ -233,12 +261,18 @@ different models, commands, or timeouts.
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `kind` | `"fake"` \| `"claude"` \| `"codex"` | Adapter kind to use for this named runner |
+| `kind` | `"fake"` \| `"claude"` \| `"codex"` \| `"cursor"` | Adapter kind to use for this named runner |
 | `command` | string | CLI command for real runner kinds |
 | `model` | string | Default model for this named runner |
 | `timeoutMs` | number | Wall-clock timeout for this named runner |
 | `effort` | `"low"` \| `"medium"` \| `"high"` \| `"xhigh"` \| `"max"` (optional) | **Claude only.** Thinking effort level passed as `--effort` to the CLI. Controls extended reasoning depth. |
 | `reasoningEffort` | `"low"` \| `"medium"` \| `"high"` (optional) | **Codex only.** Reasoning effort passed as `-c model_reasoning_effort=<level>`. Controls how much compute the model spends on planning before responding. |
+
+The **Cursor runner** uses `cursor agent -p --output-format json` for
+non-interactive runs. Refine-stage runs pass `--mode ask` (read-only) and
+implement-stage runs pass `--force` (auto-approve writes). Session resume uses
+`--resume=<session_id>`. Credentials bind-mount from `~/.cursor` — see
+`docs/runner-comparison.md` for the recommended extraMounts configuration.
 
 ### tiers
 

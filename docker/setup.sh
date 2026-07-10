@@ -62,3 +62,9 @@ if prompt_yes_no "Configure Codex auth?"; then
 else
   echo "Skipping Codex auth setup."
 fi
+
+if prompt_yes_no "Configure Cursor auth?"; then
+  cursor auth login
+else
+  echo "Skipping Cursor auth setup."
+fi

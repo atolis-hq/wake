@@ -12,7 +12,7 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends gh \
   && rm -rf /var/lib/apt/lists/*
 
-RUN npm install -g @anthropic-ai/claude-code @openai/codex
+RUN npm install -g @anthropic-ai/claude-code @openai/codex @cursor/cursor-cli
 
 WORKDIR /app
 COPY package*.json ./
@@ -22,7 +22,9 @@ RUN npm run build
 
 RUN useradd --create-home --shell /bin/bash wake \
   && mkdir -p /home/wake/.codex-runtime \
-  && chown -R wake:wake /home/wake/.codex-runtime
+  && mkdir -p /home/wake/.cursor \
+  && chown -R wake:wake /home/wake/.codex-runtime \
+  && chown -R wake:wake /home/wake/.cursor
 
 ENV CODEX_HOME=/home/wake/.codex-runtime
 

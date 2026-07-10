@@ -13,6 +13,7 @@
     "smoke": "tsx src/main.ts smoke",
     "smoke:claude": "tsx src/main.ts smoke claude",
     "smoke:codex": "tsx src/main.ts smoke codex",
+    "smoke:cursor": "tsx src/main.ts smoke cursor",
     "verify": "npm run build && npm test"
   },
   "dependencies": {
