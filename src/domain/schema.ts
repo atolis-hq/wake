@@ -13,7 +13,6 @@ const agentActionSchema = z.enum(agentActionValues);
 
 export const defaultSmokePrompt = 'This is Eddy, reply with "hi Eddy only"';
 
-const wakeAdviceTierSchema = z.enum(['light', 'standard', 'deep']);
 const runnerFailureClassSchema = z.enum(['task', 'quota', 'infra']);
 
 const modelOverridesSchema = z.object({
@@ -77,16 +76,8 @@ const runnerRoutingSchema = z.object({
   reason: z.string(),
 });
 
-const wakeResultAdviceSchema = z.object({
-  nextTier: wakeAdviceTierSchema.optional(),
-  reason: z.string().optional(),
-});
-
 export const wakeResultEnvelopeSchema = z.object({
   status: runnerSentinelSchema,
-  advice: wakeResultAdviceSchema.optional(),
-  needs: z.array(z.string()).optional(),
-  prUrl: z.string().url().optional(),
 });
 
 const stageHistoryEntrySchema = z.object({
@@ -332,6 +323,16 @@ export function parseClaudePrintResult(input: unknown) {
   return claudePrintResultSchema.parse(input);
 }
 
+function synthesizeBodyFromEnvelope(envelope: z.infer<typeof wakeResultEnvelopeSchema>): string {
+  const labels: Record<string, string> = {
+    DONE: 'Run completed.',
+    BLOCKED: 'Run blocked — needs input.',
+    AWAITING_APPROVAL: 'Ready for approval.',
+    FAILED: 'Run failed.',
+  };
+  return labels[envelope.status] ?? 'Run finished.';
+}
+
 export function parseRunnerResult(
   result: string,
 ): {
@@ -352,9 +353,10 @@ export function parseRunnerResult(
     try {
       const parsed = wakeResultEnvelopeSchema.safeParse(JSON.parse(lastMatch[1] ?? 'null'));
       if (parsed.success) {
+        const proseBody = result.slice(0, lastMatch.index).trim();
         return {
           status: parsed.data.status,
-          body: result.slice(0, lastMatch.index).trim(),
+          body: proseBody || synthesizeBodyFromEnvelope(parsed.data),
           envelope: 'structured',
           result: parsed.data,
         };

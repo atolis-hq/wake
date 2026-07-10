@@ -473,15 +473,6 @@ export function createTickRunner(deps: {
               ? {}
               : { failureClass: runnerResult.failureClass }),
             ...(runnerResult.routing === undefined ? {} : { routing: runnerResult.routing }),
-            ...(parsedRunnerResult.result?.advice === undefined
-              ? {}
-              : { advice: parsedRunnerResult.result.advice }),
-            ...(parsedRunnerResult.result?.needs === undefined
-              ? {}
-              : { needs: parsedRunnerResult.result.needs }),
-            ...(parsedRunnerResult.result?.prUrl === undefined
-              ? {}
-              : { prUrl: parsedRunnerResult.result.prUrl }),
           };
 
           await deps.stateStore.writeRunRecord({
@@ -533,15 +524,6 @@ export function createTickRunner(deps: {
               handledCommentId: latestHumanCommentId(candidate),
               body: parsedRunnerResult.body,
               envelope: parsedRunnerResult.envelope,
-              ...(parsedRunnerResult.result?.advice === undefined
-                ? {}
-                : { advice: parsedRunnerResult.result.advice }),
-              ...(parsedRunnerResult.result?.needs === undefined
-                ? {}
-                : { needs: parsedRunnerResult.result.needs }),
-              ...(parsedRunnerResult.result?.prUrl === undefined
-                ? {}
-                : { prUrl: parsedRunnerResult.result.prUrl }),
             },
           });
           await deps.stateStore.appendEventEnvelope(runCompletedEvent);

@@ -145,7 +145,7 @@ describe('run and event schemas', () => {
       'Updated summary after an earlier sample.',
       '',
       '```wake-result',
-      '{ "status": "DONE", "advice": { "nextTier": "deep", "reason": "schema migration involved" }, "needs": ["confirm rollout"], "prUrl": "https://github.com/atolis-hq/wake/pull/61", "ignored": true }',
+      '{ "status": "DONE", "ignored": true }',
       '```',
       'DONE',
     ].join('\n'));
@@ -164,14 +164,47 @@ describe('run and event schemas', () => {
       envelope: 'structured',
       result: {
         status: 'DONE',
-        advice: {
-          nextTier: 'deep',
-          reason: 'schema migration involved',
-        },
-        needs: ['confirm rollout'],
-        prUrl: 'https://github.com/atolis-hq/wake/pull/61',
       },
     });
+  });
+
+  it('synthesizes a generic status body for AWAITING_APPROVAL when structured envelope has no prose', () => {
+    const parsed = parseRunnerResult([
+      '```wake-result',
+      '{"status":"AWAITING_APPROVAL"}',
+      '```',
+      'AWAITING_APPROVAL',
+    ].join('\n'));
+
+    expect(parsed.status).toBe('AWAITING_APPROVAL');
+    expect(parsed.envelope).toBe('structured');
+    expect(parsed.body).toBeTruthy();
+  });
+
+  it('synthesizes a generic status sentence when structured envelope has no prose', () => {
+    const parsed = parseRunnerResult([
+      '```wake-result',
+      '{"status":"DONE"}',
+      '```',
+      'DONE',
+    ].join('\n'));
+
+    expect(parsed.status).toBe('DONE');
+    expect(parsed.envelope).toBe('structured');
+    expect(parsed.body).toBeTruthy();
+  });
+
+  it('does not synthesize body when prose already precedes the structured envelope', () => {
+    const parsed = parseRunnerResult([
+      'Here is my plan.',
+      '',
+      '```wake-result',
+      '{"status":"AWAITING_APPROVAL"}',
+      '```',
+      'AWAITING_APPROVAL',
+    ].join('\n'));
+
+    expect(parsed.body).toBe('Here is my plan.');
   });
 
   it('degrades to the final bare sentinel when the wake-result envelope is malformed', () => {
