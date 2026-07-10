@@ -67,11 +67,14 @@ export function createGitWorkspaceManager(options: {
       repo: string;
       issueNumber: number;
     }): Promise<{ workspacePath: string }> {
+      const workspacePath = paths.workspaceDir(repo, issueNumber);
+      if (await pathExists(workspacePath)) {
+        return { workspacePath };
+      }
+
       const repoPath = await ensureCanonicalClone(repo);
       const remoteUrl = remoteUrlForRepo(repo);
 
-      const workspacePath = paths.workspaceDir(repo, issueNumber);
-      await rm(workspacePath, { recursive: true, force: true });
       await mkdir(dirname(workspacePath), { recursive: true });
       await git(['clone', '--local', '--branch', 'main', repoPath, workspacePath], dirname(workspacePath));
 
