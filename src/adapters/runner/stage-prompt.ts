@@ -9,11 +9,19 @@ import { loadPromptTemplate, renderPromptTemplate } from './prompt-templates.js'
 type CommentSnapshot = IssueStateRecord['comments'][number];
 
 function formatComment(comment: CommentSnapshot): string {
-  return `- ${comment.author.login} (${comment.createdAt}): ${comment.body}`;
+  return [
+    '<wake-comment>',
+    `Author: ${comment.author.login}`,
+    `Created: ${comment.createdAt}`,
+    `Bot-authored: ${comment.isBotAuthored ? 'yes' : 'no'}`,
+    'Body:',
+    comment.body,
+    '</wake-comment>',
+  ].join('\n');
 }
 
 function formatCommentList(comments: CommentSnapshot[]): string {
-  return comments.length > 0 ? comments.map(formatComment).join('\n') : '(none)';
+  return comments.length > 0 ? comments.map(formatComment).join('\n\n') : '(none)';
 }
 
 function newCommentsSinceLastRun(projection: IssueStateRecord): CommentSnapshot[] {
@@ -26,6 +34,16 @@ function newCommentsSinceLastRun(projection: IssueStateRecord): CommentSnapshot[
     cursorIndex === -1 ? projection.comments : projection.comments.slice(cursorIndex + 1);
 
   return candidates.filter((comment) => !comment.isBotAuthored);
+}
+
+function previousCommentsThroughLastRun(projection: IssueStateRecord): CommentSnapshot[] {
+  const handledCommentId = projection.context.lastHandledCommentId;
+  if (typeof handledCommentId !== 'string') {
+    return [];
+  }
+
+  const cursorIndex = projection.comments.findIndex((comment) => comment.id === handledCommentId);
+  return cursorIndex === -1 ? [] : projection.comments.slice(0, cursorIndex + 1);
 }
 
 function parseFrontmatterList(value: string | undefined): string[] {
@@ -121,8 +139,11 @@ function buildHarnessPrompt(input: { skipApproval: boolean }): string {
 
 function buildUntrustedDataBlock(input: {
   projection: IssueStateRecord;
-  comments: CommentSnapshot[];
-  commentsHeading: string;
+  commentSections: Array<{
+    tag: string;
+    heading: string;
+    comments: CommentSnapshot[];
+  }>;
   includeRepoDetails: boolean;
 }): string {
   return [
@@ -139,8 +160,13 @@ function buildUntrustedDataBlock(input: {
     `- Title: ${input.projection.issue.title}`,
     `- Stage: ${input.projection.wake.stage}`,
     '',
-    input.commentsHeading,
-    formatCommentList(input.comments),
+    ...input.commentSections.flatMap((section) => [
+      `<${section.tag}>`,
+      section.heading,
+      formatCommentList(section.comments),
+      `</${section.tag}>`,
+      '',
+    ]),
     '',
     'Issue body:',
     input.projection.issue.body,
@@ -193,16 +219,43 @@ export async function buildStagePrompt(input: {
 
   const skipApproval = template.frontmatter.skipApproval === 'true';
   const permissionMode = template.frontmatter.permissionMode;
-  const commentsForBlock =
-    mode === 'resume' ? newCommentsSinceLastRun(input.projection) : input.projection.comments;
+  const commentsToAddress = newCommentsSinceLastRun(input.projection);
+  const priorComments = previousCommentsThroughLastRun(input.projection);
+  const commentSections =
+    mode === 'resume'
+      ? [
+          {
+            tag: 'wake-comments-to-address',
+            heading: 'New human comments since your last turn. Address these comments:',
+            comments: commentsToAddress,
+          },
+        ]
+      : commentsToAddress.length > 0 && priorComments.length > 0
+        ? [
+            {
+              tag: 'wake-comments-to-address',
+              heading:
+                'New human comments since the last handled Wake run. Address these comments:',
+              comments: commentsToAddress,
+            },
+            {
+              tag: 'wake-comment-history',
+              heading:
+                'Full comment history, including bot comments for context. Use this as background:',
+              comments: input.projection.comments,
+            },
+          ]
+        : [
+            {
+              tag: 'wake-comment-history',
+              heading: 'All comments on this issue, including bot comments for context:',
+              comments: input.projection.comments,
+            },
+          ];
   const renderedTemplate = renderPromptTemplate(template, context).trimEnd();
   const untrustedDataBlock = buildUntrustedDataBlock({
     projection: input.projection,
-    comments: commentsForBlock,
-    commentsHeading:
-      mode === 'resume'
-        ? 'New comments since your last turn (excludes Wake/bot comments):'
-        : 'Comments on this issue:',
+    commentSections,
     includeRepoDetails: input.action === 'refine',
   });
 
