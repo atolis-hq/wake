@@ -27,14 +27,15 @@ if ([string]::IsNullOrWhiteSpace($WakeHome)) {
   throw "Wake home path is not set. Set WAKE_HOME or pass -WakeHome."
 }
 
-$updateScript = Join-Path $WakeHome "update.sh"
+$updateScriptPs1 = Join-Path $WakeHome "update.ps1"
+$updateScriptSh = Join-Path $WakeHome "update.sh"
 
 if (-not (Test-Path -LiteralPath $RepoRoot)) {
   throw "Repo root does not exist: $RepoRoot"
 }
 
-if (-not (Test-Path -LiteralPath $updateScript)) {
-  throw "Wake update script does not exist: $updateScript"
+if (-not (Test-Path -LiteralPath $updateScriptPs1) -and -not (Test-Path -LiteralPath $updateScriptSh)) {
+  throw "Wake update script does not exist: $updateScriptPs1"
 }
 
 do {
@@ -64,7 +65,11 @@ do {
           }
 
           Write-Log "running wake update"
-          & bash $updateScript --keep-prompts
+          if (Test-Path -LiteralPath $updateScriptPs1) {
+            & powershell -NonInteractive -File $updateScriptPs1 --keep-prompts
+          } else {
+            & bash $updateScriptSh --keep-prompts
+          }
 
           if ($LASTEXITCODE -ne 0) {
             throw "Wake update failed with exit code $LASTEXITCODE."
