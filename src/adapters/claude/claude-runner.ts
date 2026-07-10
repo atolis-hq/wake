@@ -207,6 +207,7 @@ export function classifyClaudeCliFailure(input: {
     text.includes('credit balance') ||
     text.includes('spend limit') ||
     text.includes('usage limit') ||
+    text.includes('session limit') ||
     text.includes('too many requests') ||
     text.includes('authentication') ||
     text.includes('unauthorized') ||
@@ -336,11 +337,22 @@ export function createClaudeRunner(options: {
             exitCode: result.exitCode,
           }),
         );
+        let parsedReason: string | undefined;
+        try {
+          if (result.stdout.trim().length > 0) {
+            parsedReason = parseClaudePrintOutput(result.stdout).result;
+          }
+        } catch {
+          // stdout wasn't valid JSON; fall through to generic message
+        }
         return {
           result: [
             result.timedOut
               ? `Claude runner timed out after ${options.settings.timeoutMs}ms and was killed`
-              : result.stdout.trim().length === 0 ? 'Claude runner produced no output'
+              : result.stdout.trim().length === 0
+              ? 'Claude runner produced no output'
+              : parsedReason !== undefined
+              ? `Claude runner failed: ${parsedReason}`
               : 'Claude runner failed',
             result.stderr,
             sandboxLog?.text,

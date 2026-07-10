@@ -665,6 +665,18 @@ describe('claude runner command building', () => {
       timedOut: false,
     })).toBe('infra');
   });
+
+  it('classifies session limit (429) as quota not infra', () => {
+    const stdout = JSON.stringify({
+      type: 'result',
+      subtype: 'success',
+      is_error: true,
+      api_error_status: 429,
+      result: "You've hit your session limit · resets 12:20pm (UTC)",
+    });
+
+    expect(classifyClaudeCliFailure({ stdout, stderr: '', timedOut: false })).toBe('quota');
+  });
 });
 
 describe('model resolution', () => {
