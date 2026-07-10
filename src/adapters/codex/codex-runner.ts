@@ -38,6 +38,7 @@ export function buildCodexExecArgs(input: {
   harnessPrompt?: string;
   cwd: string;
   sandboxMode: 'workspace-write' | 'danger-full-access';
+  reasoningEffort?: string;
 }): string[] {
   const prompt =
     input.harnessPrompt === undefined
@@ -47,6 +48,9 @@ export function buildCodexExecArgs(input: {
   return [
     '--ask-for-approval',
     'never',
+    ...(input.reasoningEffort === undefined
+      ? []
+      : ['-c', `model_reasoning_effort="${input.reasoningEffort}"`]),
     'exec',
     '--json',
     '--skip-git-repo-check',
@@ -259,6 +263,9 @@ export function createCodexRunner(options: {
           harnessPrompt: stagePrompt.harnessPrompt,
           cwd,
           sandboxMode,
+          ...(options.settings.reasoningEffort === undefined
+            ? {}
+            : { reasoningEffort: options.settings.reasoningEffort }),
         }),
         cwd,
         timeoutMs: options.settings.timeoutMs,
@@ -354,6 +361,9 @@ export function createCodexRunner(options: {
           prompt: options.settings.smokePrompt,
           cwd: options.cwd,
           sandboxMode: 'danger-full-access',
+          ...(options.settings.reasoningEffort === undefined
+            ? {}
+            : { reasoningEffort: options.settings.reasoningEffort }),
         }),
         cwd: options.cwd,
       });

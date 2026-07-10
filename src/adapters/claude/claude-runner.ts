@@ -88,6 +88,7 @@ export function buildClaudePrintArgs(options: {
   remoteControlName?: string;
   extraArgs?: string[];
   maxTurns?: number;
+  effort?: string;
 }): string[] {
   return [
     '-p',
@@ -97,6 +98,7 @@ export function buildClaudePrintArgs(options: {
     options.model,
     '--name',
     options.sessionName,
+    ...(options.effort === undefined ? [] : ['--effort', options.effort]),
     ...(options.systemPrompt === undefined
       ? []
       : ['--append-system-prompt', options.systemPrompt]),
@@ -278,6 +280,7 @@ export function createClaudeRunner(options: {
         ...(options.settings.remoteControl.enabled
           ? { remoteControlName: sessionName }
           : {}),
+        ...(options.settings.effort === undefined ? {} : { effort: options.settings.effort }),
       });
 
       console.log(

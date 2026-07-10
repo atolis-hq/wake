@@ -47,22 +47,24 @@ All configuration uses `schemaVersion: 1`.
       "model": "claude-opus-4-8",
       "timeoutMs": 1800000
     },
-    "codex-mini": {
+    "codex-standard": {
       "kind": "codex",
       "command": "codex",
-      "model": "gpt-5.4-mini",
-      "timeoutMs": 600000
+      "model": "gpt-5.4",
+      "timeoutMs": 1200000,
+      "reasoningEffort": "medium"
     },
     "codex-flagship": {
       "kind": "codex",
       "command": "codex",
       "model": "gpt-5.5",
-      "timeoutMs": 1800000
+      "timeoutMs": 1800000,
+      "reasoningEffort": "high"
     }
   },
   "tiers": {
     "light": ["claude-haiku"],
-    "standard": ["codex-mini", "claude-haiku"],
+    "standard": ["codex-standard", "claude-haiku"],
     "deep": ["claude-opus", "codex-flagship"]
   },
   "defaultTier": "standard",
@@ -235,9 +237,8 @@ different models, commands, or timeouts.
 | `command` | string | CLI command for real runner kinds |
 | `model` | string | Default model for this named runner |
 | `timeoutMs` | number | Wall-clock timeout for this named runner |
-
-`claude` and `codex` entries accept the same per-kind settings as
-`runner.claude` and `runner.codex`.
+| `effort` | `"low"` \| `"medium"` \| `"high"` \| `"xhigh"` \| `"max"` (optional) | **Claude only.** Thinking effort level passed as `--effort` to the CLI. Controls extended reasoning depth. |
+| `reasoningEffort` | `"low"` \| `"medium"` \| `"high"` (optional) | **Codex only.** Reasoning effort passed as `-c model_reasoning_effort=<level>`. Controls how much compute the model spends on planning before responding. |
 
 ### tiers
 

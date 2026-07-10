@@ -22,6 +22,9 @@ const modelOverridesSchema = z.object({
   implement: z.string().optional(),
 }).default({});
 
+const claudeEffortSchema = z.enum(['low', 'medium', 'high', 'xhigh', 'max']);
+const codexReasoningEffortSchema = z.enum(['low', 'medium', 'high']);
+
 const claudeRunnerSettingsSchema = z.object({
   command: z.string().default('claude'),
   model: z.string().default('haiku'),
@@ -34,6 +37,7 @@ const claudeRunnerSettingsSchema = z.object({
     enabled: z.boolean().default(false),
   }).default({ enabled: false }),
   models: modelOverridesSchema.default({ default: 'haiku', implement: 'claude-sonnet-4-6' }),
+  effort: claudeEffortSchema.optional(),
 });
 
 const codexRunnerSettingsSchema = z.object({
@@ -43,6 +47,7 @@ const codexRunnerSettingsSchema = z.object({
   smokePrompt: z.string().default(defaultSmokePrompt),
   timeoutMs: z.number().int().positive().default(30 * 60 * 1000),
   models: modelOverridesSchema.default({ default: 'gpt-5.5', implement: 'gpt-5.5' }),
+  reasoningEffort: codexReasoningEffortSchema.optional(),
 });
 
 const fakeRunnerEntrySchema = z.object({
