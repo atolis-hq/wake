@@ -19,7 +19,7 @@ vi.mock('@octokit/rest', () => ({
 }));
 
 describe('github client', () => {
-  it('filters out pull requests from listIssues results', async () => {
+  it('passes through GitHub issues API results, including pull requests', async () => {
     paginate.mockResolvedValueOnce([
       { number: 5, title: 'A real issue' },
       { number: 6, title: 'An open PR', pull_request: { url: 'https://example.test/pulls/6' } },
@@ -30,8 +30,10 @@ describe('github client', () => {
 
     const issues = await client.listIssues('atolis-hq', 'wake', 25);
 
-    expect(issues).toHaveLength(1);
+    expect(issues).toHaveLength(2);
     expect(issues[0]?.number).toBe(5);
+    expect(issues[1]?.number).toBe(6);
+    expect(issues[1]).toHaveProperty('pull_request');
   });
 
   it('replaces issue labels via the dedicated setLabels endpoint', async () => {

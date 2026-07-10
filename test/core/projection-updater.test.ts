@@ -12,6 +12,7 @@ function issueUpsert(input: {
   eventId: string;
   issueNumber: number;
   labels: string[];
+  isPullRequest?: boolean;
   occurredAt?: string;
   ingestedAt?: string;
 }) {
@@ -41,6 +42,7 @@ function issueUpsert(input: {
         body: 'Body',
         labels: input.labels,
         assignees: [],
+        isPullRequest: input.isPullRequest ?? false,
         state: 'open',
         url: `https://example.test/issues/${input.issueNumber}`,
         createdAt: '2026-07-05T12:00:00.000Z',
@@ -85,6 +87,7 @@ describe('projection updater', () => {
             body: 'Body',
             labels: ['wake:queue'],
             assignees: [],
+            isPullRequest: false,
             state: 'open',
             url: 'https://example.test/issues/7',
             createdAt: '2026-07-05T12:00:00.000Z',
@@ -175,6 +178,22 @@ describe('projection updater', () => {
     const projection = await store.readIssueState('atolis-hq/wake', 8);
     expect(projection?.latestComment?.id).toBe('c-stale');
     expect(projection?.wake.recentEventIds).toEqual(['evt-stale-issue', 'evt-stale-comment']);
+  });
+
+  it('preserves pull-request identity from ticket upserts in the local projection', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const updater = createProjectionUpdater({ stateStore: store });
+    const event = issueUpsert({
+      eventId: 'evt-pr-upsert',
+      issueNumber: 80,
+      labels: ['wake:queue'],
+      isPullRequest: true,
+    });
+
+    await updater.rebuildFromEvents([event]);
+
+    const projection = await store.readIssueState('atolis-hq/wake', 80);
+    expect(projection?.issue.isPullRequest).toBe(true);
   });
 
   it('sets the initial projection stage from each current wake stage label', async () => {
@@ -309,6 +328,7 @@ describe('projection updater', () => {
           body: 'Body',
           labels: [],
           assignees: [],
+          isPullRequest: false,
           state: 'open',
           url: 'https://example.test/issues/9',
           createdAt: '2026-07-05T12:00:00.000Z',
@@ -372,6 +392,7 @@ describe('projection updater', () => {
           body: 'Body',
           labels: [],
           assignees: [],
+          isPullRequest: false,
           state: 'open',
           url: 'https://example.test/issues/9',
           createdAt: '2026-07-05T12:00:00.000Z',
@@ -414,6 +435,7 @@ describe('projection updater', () => {
           body: 'Body',
           labels: [],
           assignees: [],
+          isPullRequest: false,
           state: 'open',
           url: 'https://example.test/issues/10',
           createdAt: '2026-07-05T12:00:00.000Z',
@@ -472,6 +494,7 @@ describe('projection updater', () => {
           body: 'Body',
           labels: ['bug', 'wake:status.pending'],
           assignees: [],
+          isPullRequest: false,
           state: 'open',
           url: 'https://example.test/issues/11',
           createdAt: '2026-07-05T12:00:00.000Z',
@@ -540,6 +563,7 @@ describe('projection updater', () => {
           body: 'Body',
           labels: [],
           assignees: [],
+          isPullRequest: false,
           state: 'open',
           url: 'https://example.test/issues/20',
           createdAt: '2026-07-05T12:00:00.000Z',
@@ -677,6 +701,7 @@ describe('projection updater', () => {
           body: 'Body',
           labels: [],
           assignees: [],
+          isPullRequest: false,
           state: 'open',
           url: 'https://example.test/issues/21',
           createdAt: '2026-07-05T12:00:00.000Z',
@@ -779,6 +804,7 @@ describe('projection updater', () => {
           body: 'Body',
           labels: [],
           assignees: [],
+          isPullRequest: false,
           state: 'open',
           url: 'https://example.test/issues/22',
           createdAt: '2026-07-05T12:00:00.000Z',
@@ -881,6 +907,7 @@ describe('projection updater', () => {
           body: 'Body',
           labels: [],
           assignees: [],
+          isPullRequest: false,
           state: 'open',
           url: 'https://example.test/issues/23',
           createdAt: '2026-07-05T12:00:00.000Z',
@@ -984,6 +1011,7 @@ describe('projection updater', () => {
           body: 'Body',
           labels: [],
           assignees: [],
+          isPullRequest: false,
           state: 'open',
           url: 'https://example.test/issues/24',
           createdAt: '2026-07-05T12:00:00.000Z',

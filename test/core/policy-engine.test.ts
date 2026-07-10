@@ -17,6 +17,7 @@ function buildAwaitingApprovalIssue(options: {
       body: 'Body',
       labels: [],
       assignees: [],
+      isPullRequest: false,
       state: 'open',
       url: 'https://example.test/issues/50',
       createdAt: '2026-07-06T00:00:00.000Z',
@@ -47,6 +48,7 @@ function buildAwaitingApprovalIssue(options: {
 function buildIssue(overrides: {
   labels?: string[];
   assignees?: string[];
+  isPullRequest?: boolean;
 }) {
   return parseIssueStateRecord({
     schemaVersion: 1,
@@ -57,6 +59,7 @@ function buildIssue(overrides: {
       body: 'Body',
       labels: overrides.labels ?? [],
       assignees: overrides.assignees ?? [],
+      isPullRequest: overrides.isPullRequest ?? false,
       state: 'open',
       url: 'https://example.test/issues/1',
       createdAt: '2026-07-06T00:00:00.000Z',
@@ -86,6 +89,7 @@ function buildNeedsWakeActionIssue(overrides: {
       body: 'Body',
       labels: ['wake:implement'],
       assignees: [],
+      isPullRequest: false,
       state: 'open',
       url: 'https://example.test/issues/61',
       createdAt: '2026-07-06T00:00:00.000Z',
@@ -147,6 +151,7 @@ function buildBlockedOrFailedIssue(overrides: {
       body: 'Body',
       labels: ['wake'],
       assignees: [],
+      isPullRequest: false,
       state: 'open',
       url: 'https://example.test/issues/62',
       createdAt: '2026-07-06T00:00:00.000Z',
@@ -208,6 +213,15 @@ describe('policy engine: requiredAssignees', () => {
     expect(policy.isEligible(issue, config)).toBe(false);
   });
 
+  it('is ineligible when the work item is a pull request', () => {
+    const policy = createPolicyEngine();
+    const config = createDefaultWakeConfig('/tmp/wake-root');
+    config.sources.github.policy.requiredLabels = ['wake'];
+    const issue = buildIssue({ labels: ['wake'], isPullRequest: true });
+
+    expect(policy.isEligible(issue, config)).toBe(false);
+  });
+
   it('is ineligible when issue is assigned to a non-listed login only', () => {
     const policy = createPolicyEngine();
     const config = createDefaultWakeConfig('/tmp/wake-root');
@@ -220,8 +234,29 @@ describe('policy engine: requiredAssignees', () => {
   it('is eligible when issue matches any one of multiple requiredAssignees (OR semantics)', () => {
     const policy = createPolicyEngine();
     const config = createDefaultWakeConfig('/tmp/wake-root');
+    config.sources.github.policy.requiredLabels = [];
     config.sources.github.policy.requiredAssignees = ['octocat', 'other-user'];
-    const issue = buildIssue({ assignees: ['other-user'] });
+    const issue = parseIssueStateRecord({
+      schemaVersion: 1,
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 1,
+        title: 'Example',
+        body: 'Body',
+        labels: [],
+        assignees: ['other-user'],
+        isPullRequest: false,
+        state: 'open',
+        url: 'https://example.test/issues/1',
+        createdAt: '2026-07-06T00:00:00.000Z',
+        updatedAt: '2026-07-06T00:00:00.000Z',
+      },
+      wake: {
+        stage: 'queue',
+        syncedAt: '2026-07-06T00:00:00.000Z',
+        stageHistory: [],
+      },
+    });
 
     expect(policy.isEligible(issue, config)).toBe(true);
   });
@@ -300,6 +335,7 @@ describe('policy engine: resolveApprovalTransition', () => {
         body: 'Body',
         labels: [],
         assignees: [],
+        isPullRequest: false,
         state: 'open',
         url: 'https://example.test/issues/50',
         createdAt: '2026-07-06T00:00:00.000Z',
@@ -345,6 +381,7 @@ describe('policy engine: resolveApprovalTransition', () => {
         body: 'Body',
         labels: [],
         assignees: [],
+        isPullRequest: false,
         state: 'open',
         url: 'https://example.test/issues/50',
         createdAt: '2026-07-06T00:00:00.000Z',
@@ -389,6 +426,7 @@ describe('policy engine: resolveApprovalTransition', () => {
         body: 'Body',
         labels: [],
         assignees: [],
+        isPullRequest: false,
         state: 'open',
         url: 'https://example.test/issues/50',
         createdAt: '2026-07-06T00:00:00.000Z',
