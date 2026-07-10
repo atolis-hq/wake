@@ -2,7 +2,7 @@
 stage: implement
 mode: resume
 permissionMode: acceptEdits
-allowedTools: Bash(git *), Bash(gh *), Bash(npm *), Edit, Write, Read, Glob, Grep
+allowedTools: Bash(git *), Bash(gh *), Bash(npm *), Bash(curl *), Bash(jq *), Edit, Write, Read, Glob, Grep, WebSearch, WebFetch
 extraArgs:
 maxTurns: 150
 skipApproval: false

@@ -2,7 +2,7 @@
 stage: implement
 mode: start
 permissionMode: acceptEdits
-allowedTools: Bash(git *), Bash(gh pr *), Bash(gh issue view *), Bash(gh repo view *), Bash(npm *), Edit, Write, Read, Glob, Grep
+allowedTools: Bash(git *), Bash(gh pr *), Bash(gh issue view *), Bash(gh issue list *), Bash(gh repo view *), Bash(gh search *), Bash(npm *), Bash(curl *), Bash(jq *), Edit, Write, Read, Glob, Grep, WebSearch, WebFetch
 # extraArgs passes through raw claude CLI flags for this stage/mode, e.g.:
 # extraArgs: --dangerously-skip-permissions
 extraArgs:
