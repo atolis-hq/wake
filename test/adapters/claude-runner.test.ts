@@ -1,4 +1,4 @@
-import { mkdtemp, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -10,6 +10,7 @@ import {
   buildClaudeRemoteControlArgs,
   buildEddySessionName,
   classifyClaudeCliFailure,
+  createClaudeRunner,
   formatClaudeRunLogLine,
   runClaudeCommand,
 } from '../../src/adapters/claude/claude-runner.js';
@@ -685,6 +686,51 @@ describe('claude runner command building', () => {
     });
 
     expect(classifyClaudeCliFailure({ stdout, stderr: '', timedOut: false })).toBe('quota');
+  });
+
+  it('surfaces non-JSON stdout from failed Claude invocations', async () => {
+    const commandDir = await mkdtemp(join(tmpdir(), 'wake-claude-cli-'));
+    const command = join(commandDir, 'claude-fails');
+    await writeFile(
+      command,
+      [
+        '#!/usr/bin/env bash',
+        'printf "%s\\n" "Claude Code login required"',
+        'printf "%s\\n" "stderr detail" >&2',
+        'exit 1',
+      ].join('\n'),
+      'utf8',
+    );
+    await chmod(command, 0o755);
+
+    const runner = createClaudeRunner({
+      command,
+      cwd: process.cwd(),
+      settings: {
+        command,
+        model: 'haiku',
+        models: { default: 'haiku' },
+        smokeModel: 'haiku',
+        sessionName: 'Eddy',
+        remoteControlName: 'Eddy',
+        smokePrompt: defaultSmokePrompt,
+        timeoutMs: 10_000,
+        remoteControl: { enabled: false },
+      },
+    });
+
+    const result = await runner.run({
+      action: 'implement',
+      projection: baseProjection,
+      recentEvents: [],
+      config: createDefaultWakeConfig(process.cwd()),
+      runId: 'run-12-stdout-failure',
+    });
+
+    expect(result.result).toContain('Claude runner failed');
+    expect(result.result).toContain('stderr detail');
+    expect(result.result).toContain('Claude Code login required');
+    expect(result.metadata?.stdout).toBe('Claude Code login required\n');
   });
 });
 

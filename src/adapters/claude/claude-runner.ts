@@ -338,23 +338,28 @@ export function createClaudeRunner(options: {
           }),
         );
         let parsedReason: string | undefined;
+        let stdoutFailureDetail: string | undefined;
+        const trimmedStdout = result.stdout.trim();
         try {
-          if (result.stdout.trim().length > 0) {
+          if (trimmedStdout.length > 0) {
             parsedReason = parseClaudePrintOutput(result.stdout).result;
           }
         } catch {
-          // stdout wasn't valid JSON; fall through to generic message
+          // stdout wasn't valid JSON, so it is likely a CLI-level error
+          // message rather than a Claude print result.
+          stdoutFailureDetail = trimmedStdout;
         }
         return {
           result: [
             result.timedOut
               ? `Claude runner timed out after ${options.settings.timeoutMs}ms and was killed`
-              : result.stdout.trim().length === 0
+              : trimmedStdout.length === 0
               ? 'Claude runner produced no output'
               : parsedReason !== undefined
               ? `Claude runner failed: ${parsedReason}`
               : 'Claude runner failed',
             result.stderr,
+            stdoutFailureDetail,
             sandboxLog?.text,
             'FAILED',
           ]
