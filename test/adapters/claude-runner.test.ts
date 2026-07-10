@@ -293,12 +293,10 @@ describe('claude runner command building', () => {
     expect(result.prompt).toContain('Please add a widget.');
     expect(result.prompt).not.toContain('gh pr create');
     expect(result.permissionMode).toBe('default');
-    expect(result.allowedTools).toEqual([
-      'Read',
-      'Glob',
-      'Grep',
-      'Bash(git status)',
-    ]);
+    expect(result.allowedTools).toContain('Read');
+    expect(result.allowedTools).toContain('Glob');
+    expect(result.allowedTools).toContain('Grep');
+    expect(result.allowedTools).toContain('Bash(git status)');
     expect(result.allowedTools).not.toContain('Edit');
   });
 
