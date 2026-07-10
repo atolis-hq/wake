@@ -20,7 +20,7 @@ Wake is intended to start simple. The first justified version is a small loop th
 
 ## Direction
 
-Wake is intended to integrate with existing local agent CLIs such as Claude Code and Codex rather than replace them. It should run work locally, likely in a reusable isolated development environment, and use external workflow systems as the default coordination surface.
+Wake is intended to integrate with existing local agent CLIs such as Claude Code, Codex, and Cursor rather than replace them. It should run work locally, likely in a reusable isolated development environment, and use external workflow systems as the default coordination surface.
 
 Current runner capability differences are documented in
 [docs/runner-comparison.md](docs/runner-comparison.md).
@@ -40,6 +40,7 @@ Useful commands:
 - `npm run smoke` runs a smoke test against the configured real runner
 - `npm run smoke:claude` runs a minimal Claude Haiku smoke test
 - `npm run smoke:codex` runs a minimal Codex smoke test with the lower-cost `gpt-5.4-mini` model
+- `npm run smoke:cursor` runs a minimal Cursor smoke test
 - `npm run smoke:claude -- --remote-control` starts a minimal remote-control Claude smoke session
 
 ### Configuration
@@ -49,8 +50,8 @@ repo-local flow, Wake loads config from `.wake/config.json`. In the scaffolded
 sandbox flow below, `wake init` creates `wake-home/config.json` and the
 wrappers run Wake against that mounted home directory. See
 [docs/configuration.md](docs/configuration.md) for the full config structure
-and available options. For current Claude-vs-Codex runner capability gaps, see
-[docs/runner-comparison.md](docs/runner-comparison.md).
+and available options. For current Claude, Codex, and Cursor runner capability
+differences, see [docs/runner-comparison.md](docs/runner-comparison.md).
 
 ## Sandbox Setup
 
