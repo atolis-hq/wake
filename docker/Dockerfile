@@ -17,6 +17,7 @@ RUN npm install -g @anthropic-ai/claude-code @openai/codex
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci
+
 COPY . .
 RUN npm run build
 
