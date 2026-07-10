@@ -262,7 +262,7 @@ async function runStart(args: string[]) {
 
 function resolveSmokEntry(
   config: WakeConfig,
-  kind?: 'claude' | 'codex',
+  kind?: 'claude' | 'codex' | 'cursor',
 ): Exclude<WakeConfig['runners'][string], { kind: 'fake' }> | null {
   for (const entry of Object.values(config.runners)) {
     if (entry.kind === 'fake') {
@@ -277,12 +277,13 @@ function resolveSmokEntry(
 
 async function runSmoke(args: string[]) {
   const runtime = await buildRuntime(args);
-  const explicitKind = args[0] === 'claude' || args[0] === 'codex' ? args[0] : undefined;
+  const explicitKind =
+    args[0] === 'claude' || args[0] === 'codex' || args[0] === 'cursor' ? args[0] : undefined;
   const smokeArgs = explicitKind === undefined ? args : args.slice(1);
 
   const entry = resolveSmokEntry(runtime.config, explicitKind);
   if (entry === null) {
-    throw new Error('Smoke tests require a real runner entry (`claude` or `codex`) in config.runners.');
+    throw new Error('Smoke tests require a real runner entry (`claude`, `codex`, or `cursor`) in config.runners.');
   }
 
   const runnerAdapter = createRunnerCliAdapter({

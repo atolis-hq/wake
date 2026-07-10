@@ -1,5 +1,6 @@
 import { createClaudeRunner } from '../claude/claude-runner.js';
 import { createCodexRunner } from '../codex/codex-runner.js';
+import { createCursorRunner } from '../cursor/cursor-runner.js';
 import type { AgentRunner } from '../../core/contracts.js';
 import type { RunnerEntry, RunnerKind } from '../../domain/types.js';
 
@@ -65,6 +66,35 @@ export function createRunnerCliAdapter(input: {
     };
   }
 
+  if (input.entry.kind === 'cursor') {
+    const settings = withoutKind(input.entry);
+    const runner = createCursorRunner({
+      command: settings.command,
+      cwd: input.cwd,
+      settings,
+    });
+
+    return {
+      mode: 'cursor',
+      cliName: 'Cursor',
+      runner,
+      async smoke() {
+        const result = await runner.smoke();
+        return {
+          mode: 'print-json',
+          exitCode: result.exitCode,
+          text: result.text,
+          sessionId: result.sessionId,
+          stdout: result.stdout.trim(),
+          stderr: result.stderr.trim(),
+        };
+      },
+      buildResumeCommand({ sessionId }) {
+        return ['cursor', 'agent', `--resume=${sessionId}`];
+      },
+    };
+  }
+
   const settings = withoutKind(input.entry);
   const runner = createCodexRunner({
     command: settings.command,
@@ -105,6 +135,10 @@ export function buildResumeCommandForCli(input: {
 
   if (normalizedCli === 'claude') {
     return ['claude', '--resume', input.sessionId];
+  }
+
+  if (normalizedCli === 'cursor') {
+    return ['cursor', 'agent', `--resume=${input.sessionId}`];
   }
 
   return null;

@@ -22,11 +22,19 @@ RUN npm run build
 
 RUN useradd --create-home --shell /bin/bash wake \
   && mkdir -p /home/wake/.codex-runtime \
-  && chown -R wake:wake /home/wake/.codex-runtime
+  && mkdir -p /home/wake/.cursor \
+  && chown -R wake:wake /home/wake/.codex-runtime \
+  && chown -R wake:wake /home/wake/.cursor
 
 ENV CODEX_HOME=/home/wake/.codex-runtime
+ENV PATH=/home/wake/.local/bin:$PATH
 
 USER wake
 WORKDIR /home/wake
+
+RUN curl https://cursor.com/install -fsS | bash \
+  && printf '#!/bin/bash\n[ "$1" = "agent" ] && shift\nexec ~/.local/bin/agent "$@"\n' \
+     > ~/.local/bin/cursor \
+  && chmod +x ~/.local/bin/cursor
 
 ENTRYPOINT ["sleep", "infinity"]

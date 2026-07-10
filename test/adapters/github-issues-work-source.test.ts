@@ -442,6 +442,56 @@ describe('github issues work source', () => {
     expect(postedBody).not.toContain('claude --resume session-codex');
   });
 
+  it('formats Cursor resume instructions when the run came from Cursor', async () => {
+    const createComment = vi.fn();
+    const store = createStateStore({ wakeRoot: root });
+    const config = createDefaultWakeConfig(root);
+    config.sources.github.enabled = true;
+    config.sources.github.repos = ['atolis-hq/wake'];
+
+    const workSource = createGitHubIssuesWorkSource({
+      client: {
+        listIssues: async () => [],
+        listComments: async () => [],
+        createComment,
+        setLabels: vi.fn(),
+      },
+      stateStore: store,
+      config,
+      now: () => new Date('2026-07-05T12:10:00.000Z'),
+    });
+
+    await workSource.deliverIntent({
+      event: createEventEnvelope({
+        eventId: 'intent-2cursor',
+        workItemKey: 'atolis-hq/wake#16',
+        streamScope: 'work-item',
+        direction: 'outbound',
+        sourceSystem: 'wake',
+        sourceEventType: 'wake.publish.intent.requested',
+        sourceRefs: { repo: 'atolis-hq/wake', issueNumber: 16 },
+        occurredAt: '2026-07-05T12:00:00.000Z',
+        ingestedAt: '2026-07-05T12:00:00.000Z',
+        trigger: 'context-only',
+        payload: {
+          kind: 'status-update',
+          body: 'Opened a PR',
+          action: 'implement',
+          runId: 'run-16-1',
+          sessionId: 'session-cursor',
+          model: 'claude-sonnet-4-6',
+          cli: 'Cursor',
+          workspacePath: '/wake/workspaces/atolis-hq__wake/16',
+        },
+      }),
+    });
+
+    const [, , , postedBody] = createComment.mock.calls[0] as [string, string, number, string];
+    expect(postedBody).toContain('cli Cursor');
+    expect(postedBody).toContain('cursor agent --resume=session-cursor');
+    expect(postedBody).not.toContain('claude --resume session-cursor');
+  });
+
   it('does not silently fall back to Claude resume instructions when cli is missing', async () => {
     const createComment = vi.fn();
     const store = createStateStore({ wakeRoot: root });
@@ -525,7 +575,7 @@ describe('github issues work source', () => {
           action: 'implement',
           runId: 'run-15-1',
           sessionId: 'session-unsupported-cli',
-          cli: 'Cursor',
+          cli: 'Gemini',
         },
       }),
     });

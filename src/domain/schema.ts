@@ -23,6 +23,7 @@ const modelOverridesSchema = z.object({
 
 const claudeEffortSchema = z.enum(['low', 'medium', 'high', 'xhigh', 'max']);
 const codexReasoningEffortSchema = z.enum(['low', 'medium', 'high']);
+const cursorModeSchema = z.enum(['ask', 'agent']);
 
 const claudeRunnerSettingsSchema = z.object({
   command: z.string().default('claude'),
@@ -62,10 +63,25 @@ const codexRunnerEntrySchema = codexRunnerSettingsSchema.extend({
   kind: z.literal('codex'),
 });
 
+const cursorRunnerSettingsSchema = z.object({
+  command: z.string().default('cursor'),
+  model: z.string().default('composer-2.5'),
+  smokeModel: z.string().default('auto'),
+  smokePrompt: z.string().default(defaultSmokePrompt),
+  timeoutMs: z.number().int().positive().default(30 * 60 * 1000),
+  models: modelOverridesSchema.default({ default: 'composer-2.5', implement: 'composer-2.5' }),
+  defaultMode: cursorModeSchema.optional(),
+});
+
+const cursorRunnerEntrySchema = cursorRunnerSettingsSchema.extend({
+  kind: z.literal('cursor'),
+});
+
 const runnerEntrySchema = z.discriminatedUnion('kind', [
   fakeRunnerEntrySchema,
   claudeRunnerEntrySchema,
   codexRunnerEntrySchema,
+  cursorRunnerEntrySchema,
 ]);
 
 const stageRouteSchema = z.object({
@@ -76,7 +92,7 @@ const stageRouteSchema = z.object({
 
 const runnerRoutingSchema = z.object({
   runnerName: z.string(),
-  runnerKind: z.enum(['fake', 'claude', 'codex']),
+  runnerKind: z.enum(['fake', 'claude', 'codex', 'cursor']),
   tier: z.string().optional(),
   reason: z.string(),
 });
@@ -254,6 +270,7 @@ export const wakeConfigSchema = z.object({
     'claude-opus': { kind: 'claude', command: 'claude', model: 'claude-opus-4-8', smokeModel: 'haiku', sessionName: 'Eddy', remoteControlName: 'Eddy', smokePrompt: defaultSmokePrompt, timeoutMs: 30 * 60 * 1000, remoteControl: { enabled: false }, models: { default: 'claude-opus-4-8' } },
     'codex-mini': { kind: 'codex', command: 'codex', model: 'gpt-5.4-mini', smokeModel: 'gpt-5.4-mini', smokePrompt: defaultSmokePrompt, timeoutMs: 30 * 60 * 1000, models: { default: 'gpt-5.4-mini', implement: 'gpt-5.4-mini' } },
     'codex-flagship': { kind: 'codex', command: 'codex', model: 'gpt-5.5', smokeModel: 'gpt-5.4-mini', smokePrompt: defaultSmokePrompt, timeoutMs: 30 * 60 * 1000, models: { default: 'gpt-5.5', implement: 'gpt-5.5' } },
+    'cursor-composer': { kind: 'cursor', command: 'cursor', model: 'composer-2.5', smokeModel: 'auto', smokePrompt: defaultSmokePrompt, timeoutMs: 30 * 60 * 1000, models: { default: 'composer-2.5', implement: 'composer-2.5' } },
   }),
   tiers: z.record(z.string(), z.array(z.string().min(1)).min(1)).default({
     light: ['fake'],
