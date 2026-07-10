@@ -202,7 +202,7 @@ describe('projection updater', () => {
     const event = issueUpsert({
       eventId: 'evt-legacy-label',
       issueNumber: 101,
-      labels: ['wake:refined', 'wake:stage.nope'],
+      labels: ['wake:legacy-label', 'wake:stage.nope'],
     });
 
     await updater.rebuildFromEvents([event]);
@@ -217,7 +217,7 @@ describe('projection updater', () => {
     const event = issueUpsert({
       eventId: 'evt-ambiguous-labels',
       issueNumber: 102,
-      labels: [stageLabelForStage('refined'), stageLabelForStage('blocked')],
+      labels: [stageLabelForStage('implement'), stageLabelForStage('blocked')],
     });
 
     await updater.rebuildFromEvents([event]);
@@ -232,7 +232,7 @@ describe('projection updater', () => {
     const initial = issueUpsert({
       eventId: 'evt-reconcile-initial',
       issueNumber: 103,
-      labels: [stageLabelForStage('refined')],
+      labels: [stageLabelForStage('implement')],
       occurredAt: '2026-07-05T12:00:00.000Z',
       ingestedAt: '2026-07-05T12:00:01.000Z',
     });
@@ -264,12 +264,12 @@ describe('projection updater', () => {
     const initial = issueUpsert({
       eventId: 'evt-ambiguous-existing-initial',
       issueNumber: 104,
-      labels: [stageLabelForStage('refined')],
+      labels: [stageLabelForStage('implement')],
     });
     const ambiguous = issueUpsert({
       eventId: 'evt-ambiguous-existing-updated',
       issueNumber: 104,
-      labels: [stageLabelForStage('active'), stageLabelForStage('blocked')],
+      labels: [stageLabelForStage('refine'), stageLabelForStage('blocked')],
       occurredAt: '2026-07-05T12:05:00.000Z',
       ingestedAt: '2026-07-05T12:05:01.000Z',
     });
@@ -278,7 +278,7 @@ describe('projection updater', () => {
     await updater.rebuildFromEvents([ambiguous]);
 
     const projection = await store.readIssueState('atolis-hq/wake', 104);
-    expect(projection?.wake.stage).toBe('refined');
+    expect(projection?.wake.stage).toBe('implement');
     expect(projection?.wake.stageHistory).toEqual([]);
   });
 
@@ -336,7 +336,7 @@ describe('projection updater', () => {
       ingestedAt: '2026-07-05T12:01:00.000Z',
       trigger: 'immediate',
       payload: {
-        nextStage: 'refined',
+        nextStage: 'implement',
         runId: 'run-9-1',
       },
     });
@@ -345,7 +345,7 @@ describe('projection updater', () => {
     await updater.rebuildFromEvents([runCompleted]);
 
     let projection = await store.readIssueState('atolis-hq/wake', 9);
-    expect(projection?.wake.stage).toBe('refined');
+    expect(projection?.wake.stage).toBe('implement');
 
     // Wake's own status comment bumps the GitHub issue's updatedAt, which
     // causes the next poll to re-ingest a ticket.upsert with no labels applied.
@@ -384,7 +384,7 @@ describe('projection updater', () => {
     await updater.rebuildFromEvents([resync]);
 
     projection = await store.readIssueState('atolis-hq/wake', 9);
-    expect(projection?.wake.stage).toBe('refined');
+    expect(projection?.wake.stage).toBe('implement');
   });
 
   it('records published comment ids as expected echoes', async () => {
@@ -1064,7 +1064,7 @@ describe('projection updater', () => {
     const updater = createProjectionUpdater({ stateStore: store });
 
     await updater.rebuildFromEvents([
-      issueUpsert({ eventId: 'evt-sess-blocked-init', issueNumber: 50, labels: ['wake:stage.refined'] }),
+      issueUpsert({ eventId: 'evt-sess-blocked-init', issueNumber: 50, labels: ['wake:stage.implement'] }),
     ]);
 
     const blockedRun = createEventEnvelope({
@@ -1104,7 +1104,7 @@ describe('projection updater', () => {
       issueUpsert({ eventId: 'evt-sess-adv-init', issueNumber: 51, labels: ['wake:stage.queue'] }),
     ]);
 
-    // Refine completes with a session; stage advances to 'refined'
+    // Refine completes with a session; stage advances to 'implement'
     const refineRun = createEventEnvelope({
       eventId: 'evt-sess-adv-refine',
       workItemKey: 'atolis-hq/wake#51',
@@ -1119,7 +1119,7 @@ describe('projection updater', () => {
       payload: {
         action: 'refine',
         sentinel: 'DONE',
-        nextStage: 'refined',
+        nextStage: 'implement',
         runId: 'run-51-1',
         sessionId: 'sess-refine',
         sessionCli: 'Claude',
@@ -1129,7 +1129,7 @@ describe('projection updater', () => {
     await updater.rebuildFromEvents([refineRun]);
 
     const projection = await store.readIssueState('atolis-hq/wake', 51);
-    expect(projection?.wake.stage).toBe('refined');
+    expect(projection?.wake.stage).toBe('implement');
     // Session from refine must be cleared so implement starts fresh
     expect(projection?.wake.sessionId).toBeUndefined();
     expect(projection?.wake.sessionCli).toBeUndefined();
@@ -1140,7 +1140,7 @@ describe('projection updater', () => {
     const updater = createProjectionUpdater({ stateStore: store });
 
     await updater.rebuildFromEvents([
-      issueUpsert({ eventId: 'evt-sess-fail-init', issueNumber: 52, labels: ['wake:stage.refined'] }),
+      issueUpsert({ eventId: 'evt-sess-fail-init', issueNumber: 52, labels: ['wake:stage.implement'] }),
     ]);
 
     // Seed a prior session into the projection via a blocked run

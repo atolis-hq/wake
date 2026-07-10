@@ -31,8 +31,8 @@ A workflow is a set of named stages; each stage either dispatches an agent actio
     "default": {
       "entryStage": "queue",
       "stages": {
-        "queue":   { "action": "refine",    "workspace": "read-only", "onDone": "refined" },
-        "refined": { "action": "implement", "workspace": "branch",    "onDone": "done" },
+        "queue":   { "action": "refine",    "workspace": "read-only", "onDone": "implement" },
+        "implement": { "action": "implement", "workspace": "branch",    "onDone": "done" },
         "done":    { "terminal": true },
         "failed":  { "terminal": true }
       }
@@ -135,7 +135,7 @@ Stages route to a *tier* by default (a concrete runner name remains legal for pi
 ```jsonc
 "stages": {
   "queue":   { "action": "refine",    "tier": "light", ... },
-  "refined": { "action": "implement", "tier": "standard", ... }
+  "implement": { "action": "implement", "tier": "standard", ... }
 },
 "defaultTier": "standard"
 ```

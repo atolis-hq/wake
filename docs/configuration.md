@@ -76,7 +76,7 @@ All configuration uses `schemaVersion: 1`.
   "defaultTier": "standard",
   "stages": {
     "queue": { "action": "refine", "tier": "light" },
-    "refined": { "action": "implement", "tier": "standard" }
+    "implement": { "action": "implement", "tier": "standard" }
   },
   "sources": {
     "github": {

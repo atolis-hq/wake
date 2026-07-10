@@ -280,7 +280,7 @@ export const wakeConfigSchema = z.object({
   defaultTier: z.string().default('standard'),
   stages: z.record(z.string(), stageRouteSchema).default({
     queue: { action: 'refine', tier: 'light' },
-    refined: { action: 'implement', tier: 'standard' },
+    implement: { action: 'implement', tier: 'standard' },
   }),
   sources: z.object({
     github: z.object({

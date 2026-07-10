@@ -125,7 +125,7 @@ The queue is GitHub issues; state is labels. This gives a phone-native
 interface, a free audit trail, and zero custom UI.
 
 ```text
-wake:queue → wake:refined → wake:active → wake:blocked | wake:done | wake:failed
+wake:queue → wake:refine → wake:implement → wake:done | wake:blocked | wake:failed
 ```
 
 - The issue **body** is the task spec (template: context, acceptance criteria,
@@ -152,7 +152,7 @@ Stages are explicit and pluggable, but the MVP uses a deliberately small set:
 1. **refine** — cheap model, **may be batched** (e.g. up to the 3 oldest queued
    issues per tick). Rewrite the issue into the full spec template; if anything
    is ambiguous, post questions and block *now*, before any expensive run.
-   Otherwise label `wake:refined`. Batching cheap triage means your answers to
+   Otherwise Wake advances the stage to `wake:implement`. Batching cheap triage means your answers to
    questions arrive while implementation proceeds on already-ready tasks — the
    pipeline never stalls waiting on you, and ambiguity costs a cheap triage
    instead of an expensive implementation run (the largest single token saving
@@ -173,8 +173,8 @@ opened":
 
 - `BLOCKED` — ambiguous or unmet acceptance criteria; the agent has posted
   specific, answerable questions as an issue comment. Wake labels `wake:blocked`.
-- `DONE` — for **refine**: spec rewritten to template, Wake labels
-  `wake:refined`; for **implement**: tests passed, branch pushed, PR opened,
+- `DONE` — for **refine**: spec rewritten to template, Wake advances stage to
+  `wake:implement`; for **implement**: tests passed, branch pushed, PR opened,
   Wake records the PR URL and labels `wake:done`.
 - `FAILED` — unrecoverable error, with a one-line reason. Wake increments the
   attempt counter (→ `wake:failed` on the cap).

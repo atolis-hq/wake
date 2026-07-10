@@ -232,8 +232,8 @@ async function main() {
     });
 
     const issueState = await readIssueState(wakeRoot, repo, issue.issueNumber);
-    if (issueState.wake.stage !== 'refined') {
-      throw new Error(`Expected synced issue stage to be refined but received ${issueState.wake.stage}`);
+    if (issueState.wake.stage !== 'implement') {
+      throw new Error(`Expected synced issue stage to be implement but received ${issueState.wake.stage}`);
     }
 
     const latestRun = await readLatestRun(wakeRoot);

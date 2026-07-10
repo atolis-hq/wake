@@ -18,7 +18,7 @@ export function createLifecycleService() {
         return 'awaiting-approval';
       }
 
-      return action === 'refine' ? 'refined' : 'done';
+      return action === 'refine' ? 'implement' : 'done';
     },
   };
 }

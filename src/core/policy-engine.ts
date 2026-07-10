@@ -104,7 +104,7 @@ export function createPolicyEngine() {
         return true;
       }
 
-      if (issue.wake.stage === 'refined' && lastCompletedAction !== 'implement') {
+      if (issue.wake.stage === 'implement' && lastCompletedAction !== 'implement') {
         return true;
       }
 
@@ -115,7 +115,7 @@ export function createPolicyEngine() {
         return 'refine';
       }
 
-      if (stage === 'refined') {
+      if (stage === 'implement') {
         return 'implement';
       }
 
