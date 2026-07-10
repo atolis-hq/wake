@@ -15,7 +15,6 @@ describe('cursor runner command building', () => {
     const args = buildCursorAgentArgs({
       model: 'claude-haiku-4-5',
       prompt: defaultSmokePrompt,
-      mode: 'agent',
       force: true,
     });
 
@@ -25,8 +24,7 @@ describe('cursor runner command building', () => {
     expect(args).toContain('json');
     expect(args).toContain('--model');
     expect(args).toContain('claude-haiku-4-5');
-    expect(args).toContain('--mode');
-    expect(args).toContain('agent');
+    expect(args).not.toContain('--mode');
     expect(args).toContain('--force');
     expect(args.at(-1)).toBe(defaultSmokePrompt);
   });
@@ -49,7 +47,6 @@ describe('cursor runner command building', () => {
     const args = buildCursorAgentArgs({
       model: 'claude-sonnet-4-6',
       prompt: 'continue',
-      mode: 'agent',
       force: true,
       resumeSessionId: 'session-abc-123',
     });

@@ -19,7 +19,7 @@ Wake normalizes all real runners behind `AgentRunner`, `smoke`, and
 | `wake smoke` support | Yes | Yes | Yes | All support the generic smoke surface. |
 | Explicit smoke command | `smoke claude` | `smoke codex` | `smoke cursor` | All supported. |
 | Session resume command generation | `claude --resume <id>` | `codex resume <id>` | `cursor agent --resume=<id>` | All supported in `wake sandbox resume` and GitHub comments. |
-| Stage-specific access control | Per-tool allowlist | Sandbox mode | `--mode ask`/`agent` | Mechanisms differ; all separate refine from implement. |
+| Stage-specific access control | Per-tool allowlist | Sandbox mode | `--mode ask` / default | Mechanisms differ; all separate refine from implement. |
 | Parsed raw CLI output in metadata | Yes | Yes | Yes | Claude: parsed JSON; Codex: parsed JSONL; Cursor: parsed JSON. |
 | Run correlation logging | Yes | Yes | Yes | All emit start/success/failure log lines. |
 
@@ -50,6 +50,9 @@ allowlist and deny edit tools at the CLI boundary.
 - The Cursor CLI itself refuses write operations in ask mode
 - Wake also passes a Cursor-specific capability note explaining ask mode
 - This provides CLI-level enforcement without per-tool granularity
+
+**Cursor implement** omits `--mode` entirely, using Cursor's default agent mode
+which allows file edits, and passes `--force` to auto-approve writes.
 
 ### Turn budgeting
 
