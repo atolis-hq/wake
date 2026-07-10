@@ -1,7 +1,7 @@
 param(
   [string]$RepoRoot = (Split-Path $PSScriptRoot -Parent),
-  [string]$WakeHome = (if ($env:WAKE_HOME) { $env:WAKE_HOME } elseif ($env:USERPROFILE) { Join-Path $env:USERPROFILE "wake-home" } else { "" }),
-  [int]$IntervalSeconds = (if ($env:WAKE_UPDATE_INTERVAL_SECONDS) { [int]$env:WAKE_UPDATE_INTERVAL_SECONDS } else { 90 }),
+  [string]$WakeHome = $(if ($env:WAKE_HOME) { $env:WAKE_HOME } elseif ($env:USERPROFILE) { Join-Path $env:USERPROFILE "wake-home" } else { "" }),
+  [int]$IntervalSeconds = $(if ($env:WAKE_UPDATE_INTERVAL_SECONDS) { [int]$env:WAKE_UPDATE_INTERVAL_SECONDS } else { 90 }),
   [switch]$Once
 )
 
@@ -17,10 +17,10 @@ function Write-Log {
 function Get-TrimmedGitOutput {
   param(
     [string]$Root,
-    [string[]]$Args
+    [string[]]$GitArgs
   )
 
-  return (git -C $Root @Args).Trim()
+  return (git -C $Root @GitArgs).Trim()
 }
 
 if ([string]::IsNullOrWhiteSpace($WakeHome)) {
@@ -39,7 +39,7 @@ if (-not (Test-Path -LiteralPath $updateScript)) {
 
 do {
   try {
-    $branch = Get-TrimmedGitOutput -Root $RepoRoot -Args @("rev-parse", "--abbrev-ref", "HEAD")
+    $branch = Get-TrimmedGitOutput -Root $RepoRoot -GitArgs @("rev-parse", "--abbrev-ref", "HEAD")
     if ($branch -ne "main") {
       Write-Log "skip: branch is $branch"
     } else {
@@ -49,8 +49,8 @@ do {
       } else {
         git -C $RepoRoot fetch origin main | Out-Null
 
-        $localCommit = Get-TrimmedGitOutput -Root $RepoRoot -Args @("rev-parse", "HEAD")
-        $remoteCommit = Get-TrimmedGitOutput -Root $RepoRoot -Args @("rev-parse", "origin/main")
+        $localCommit = Get-TrimmedGitOutput -Root $RepoRoot -GitArgs @("rev-parse", "HEAD")
+        $remoteCommit = Get-TrimmedGitOutput -Root $RepoRoot -GitArgs @("rev-parse", "origin/main")
 
         if ($localCommit -eq $remoteCommit) {
           Write-Log "no change"
@@ -58,7 +58,7 @@ do {
           Write-Log "change detected; pulling main"
           git -C $RepoRoot pull --ff-only origin main
 
-          $updatedCommit = Get-TrimmedGitOutput -Root $RepoRoot -Args @("rev-parse", "HEAD")
+          $updatedCommit = Get-TrimmedGitOutput -Root $RepoRoot -GitArgs @("rev-parse", "HEAD")
           if ($updatedCommit -ne $remoteCommit) {
             throw "Pull completed but HEAD ($updatedCommit) does not match origin/main ($remoteCommit)."
           }
