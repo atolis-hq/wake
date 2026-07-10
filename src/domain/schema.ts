@@ -369,7 +369,13 @@ export function parseRunnerResult(
 
   if (lastMatch !== null) {
     try {
-      const parsed = wakeResultEnvelopeSchema.safeParse(JSON.parse(lastMatch[1] ?? 'null'));
+      const rawContent = lastMatch[1] ?? 'null';
+      // Claude sometimes places the sentinel keyword inside the fence rather than after
+      // the closing fence. Strip a trailing sentinel line so JSON.parse sees only the JSON.
+      // The capture group includes the newline before the closing fence, so allow \n? after.
+      const jsonContent =
+        rawContent.replace(/\n(?:DONE|BLOCKED|FAILED|AWAITING_APPROVAL)[ \t]*\n?$/, '') || rawContent;
+      const parsed = wakeResultEnvelopeSchema.safeParse(JSON.parse(jsonContent));
       if (parsed.success) {
         const proseBody = result.slice(0, lastMatch.index).trim();
         return {
@@ -388,7 +394,9 @@ export function parseRunnerResult(
   const lastLine = result
     .split('\n')
     .map((line) => line.trim())
-    .filter((line) => line.length > 0)
+    // Skip closing code fence lines — they appear as the last non-empty line when the
+    // sentinel is embedded inside the fenced block or when a plain ``` fence is used.
+    .filter((line) => line.length > 0 && line !== '```')
     .at(-1);
 
   const parsed = runnerSentinelSchema.safeParse(lastLine);

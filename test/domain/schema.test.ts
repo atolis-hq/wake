@@ -222,6 +222,35 @@ describe('run and event schemas', () => {
     expect(parsed.body).toBe('Summary\n\n```wake-result\n{ "status": "NOT_A_STATUS" }\n```');
   });
 
+  it('parses structured envelope when sentinel is inside the fenced block', () => {
+    const parsed = parseRunnerResult([
+      'PR opened and ready for review.',
+      '',
+      '```wake-result',
+      '{"status": "AWAITING_APPROVAL"}',
+      'AWAITING_APPROVAL',
+      '```',
+    ].join('\n'));
+
+    expect(parsed.status).toBe('AWAITING_APPROVAL');
+    expect(parsed.envelope).toBe('structured');
+    expect(parsed.body).toBe('PR opened and ready for review.');
+  });
+
+  it('falls back to sentinel inside block when structured parse fails and closing fence is last line', () => {
+    const parsed = parseRunnerResult([
+      'Summary.',
+      '',
+      '```wake-result',
+      '{ "status": "NOT_A_STATUS" }',
+      'BLOCKED',
+      '```',
+    ].join('\n'));
+
+    expect(parsed.status).toBe('BLOCKED');
+    expect(parsed.envelope).toBe('degraded');
+  });
+
   it('does not match a sentinel word embedded in prose on the last line', () => {
     // Last line contains prose, not an exact sentinel — should fall back to FAILED
     expect(parseRunnerResultSentinel('notes DONE more notes FAILED')).toBe('FAILED');
