@@ -1,3 +1,5 @@
+import { isAbsolute, join, relative } from 'node:path';
+
 import { createLifecycleService } from './lifecycle-service.js';
 import { createPolicyEngine } from './policy-engine.js';
 import { createProjectionUpdater } from './projection-updater.js';
@@ -182,6 +184,46 @@ export function createTickRunner(deps: {
     return maxConfiguredRunnerTimeoutMs(deps.config);
   }
 
+  function isPerIssueWorkspacePath(workspacePath: string): boolean {
+    const workspacesRoot = join(deps.config.paths.wakeRoot, 'workspaces');
+    const rel = relative(workspacesRoot, workspacePath);
+    return !rel.startsWith('..') && !isAbsolute(rel) && rel.length > 0;
+  }
+
+  async function cleanupClosedIssueWorkspaces(
+    projections: import('../domain/types.js').IssueStateRecord[],
+    nowIso: string,
+  ): Promise<void> {
+    for (const projection of projections) {
+      const { workspacePath } = projection.wake;
+      if (
+        projection.issue.state === 'closed' &&
+        workspacePath !== undefined &&
+        isPerIssueWorkspacePath(workspacePath)
+      ) {
+        await deps.workspaceManager.cleanupWorkspace({ workspacePath });
+        const cleanupEvent = createEventEnvelope({
+          eventId: `workspace-cleaned-${projection.issue.repo.replace(/[^a-z0-9]+/gi, '-')}-${projection.issue.number}-${deps.clock.now().getTime()}`,
+          workItemKey: projection.workItemKey,
+          streamScope: 'work-item',
+          direction: 'internal',
+          sourceSystem: 'wake',
+          sourceEventType: 'wake.workspace.cleaned',
+          sourceRefs: {
+            repo: projection.issue.repo,
+            issueNumber: projection.issue.number,
+          },
+          occurredAt: nowIso,
+          ingestedAt: nowIso,
+          trigger: 'immediate',
+          payload: { workspacePath },
+        });
+        await deps.stateStore.appendEventEnvelope(cleanupEvent);
+        await projectionUpdater.rebuildFromEvents([cleanupEvent]);
+      }
+    }
+  }
+
   function isStaleRunningRecord(record: RunRecord, now: Date): boolean {
     if (record.status !== 'running') {
       return false;
@@ -294,6 +336,8 @@ export function createTickRunner(deps: {
         }
 
         const projections = await deps.stateStore.listIssueStates();
+        await cleanupClosedIssueWorkspaces(projections, nowIso);
+
         const candidate = projections.find((issue) => {
           if (!policy.isEligible(issue, deps.config)) {
             return false;

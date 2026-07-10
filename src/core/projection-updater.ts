@@ -213,6 +213,18 @@ function applyEvent(
     });
   }
 
+  if (event.sourceEventType === 'wake.workspace.cleaned') {
+    return parseIssueStateRecord({
+      ...current,
+      wake: {
+        ...current.wake,
+        workspacePath: undefined,
+        syncedAt: event.ingestedAt,
+        recentEventIds: [...current.wake.recentEventIds, event.eventId].slice(-10),
+      },
+    });
+  }
+
   if (event.sourceEventType === 'ticket.labels.updated') {
     const labels = stringArrayFromPayload(event.payload.labels);
 
