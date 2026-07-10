@@ -18,6 +18,19 @@ async function git(args: string[], cwd: string): Promise<{ stdout: string; stder
   return { stdout: result.stdout.trim(), stderr: result.stderr.trim() };
 }
 
+async function detectDefaultBranch(repoPath: string): Promise<string> {
+  await git(['remote', 'set-head', 'origin', '--auto'], repoPath);
+
+  const { stdout } = await git(['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'], repoPath);
+  const defaultBranch = stdout.replace(/^origin\//, '');
+
+  if (defaultBranch.length === 0) {
+    throw new Error(`Unable to detect default branch for ${repoPath}`);
+  }
+
+  return defaultBranch;
+}
+
 async function pathExists(path: string): Promise<boolean> {
   try {
     await access(path);
@@ -57,21 +70,23 @@ export function createGitWorkspaceManager(options: {
   const paths = createWakePaths(options.wakeRoot);
   const remoteUrlForRepo = options.remoteUrlForRepo ?? defaultRemoteUrlForRepo;
 
-  async function ensureCanonicalClone(repo: string): Promise<string> {
+  async function ensureCanonicalClone(repo: string): Promise<{ repoPath: string; defaultBranch: string }> {
     const repoPath = paths.repoRoot(repo);
     const remoteUrl = remoteUrlForRepo(repo);
 
     if (await pathExists(repoPath)) {
       await git(['fetch', 'origin'], repoPath);
-      await git(['checkout', 'main'], repoPath);
-      await git(['reset', '--hard', 'origin/main'], repoPath);
+      const defaultBranch = await detectDefaultBranch(repoPath);
+      await git(['checkout', defaultBranch], repoPath);
+      await git(['reset', '--hard', `origin/${defaultBranch}`], repoPath);
       await git(['clean', '-fdx'], repoPath);
+      return { repoPath, defaultBranch };
     } else {
       await mkdir(dirname(repoPath), { recursive: true });
       await git(['clone', remoteUrl, repoPath], dirname(repoPath));
+      const defaultBranch = await detectDefaultBranch(repoPath);
+      return { repoPath, defaultBranch };
     }
-
-    return repoPath;
   }
 
   return {
@@ -87,7 +102,7 @@ export function createGitWorkspaceManager(options: {
         return { workspacePath };
       }
 
-      const repoPath = await ensureCanonicalClone(repo);
+      const { repoPath, defaultBranch } = await ensureCanonicalClone(repo);
       const remoteUrl = remoteUrlForRepo(repo);
 
       await mkdir(dirname(workspacePath), { recursive: true });
@@ -95,7 +110,7 @@ export function createGitWorkspaceManager(options: {
         buildWorkspaceCloneArgs({
           sourceRepoPath: repoPath,
           workspacePath,
-          defaultBranch: 'main',
+          defaultBranch,
         }),
         dirname(workspacePath),
       );
@@ -110,7 +125,7 @@ export function createGitWorkspaceManager(options: {
       // Refine only reads the issue and, at most, the canonical clone -
       // it never gets a per-issue branch/workspace of its own (only
       // 'implement' pays that cost).
-      const repoPath = await ensureCanonicalClone(repo);
+      const { repoPath } = await ensureCanonicalClone(repo);
       return { workspacePath: repoPath };
     },
     async cleanupWorkspace({ workspacePath }: { workspacePath: string }): Promise<void> {

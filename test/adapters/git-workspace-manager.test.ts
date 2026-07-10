@@ -21,12 +21,10 @@ describe('git workspace manager', () => {
   let root: string;
   let remotePath: string;
 
-  beforeEach(async () => {
-    root = await mkdtemp(join(tmpdir(), 'wake-git-workspace-'));
-    remotePath = join(root, 'remote.git');
-
-    const seedPath = join(root, 'seed');
-    await git(['init', '--initial-branch=main', seedPath], root);
+  async function createRemote(defaultBranch = 'main'): Promise<string> {
+    const remotePath = join(root, `${defaultBranch}.git`);
+    const seedPath = join(root, `seed-${defaultBranch}`);
+    await git(['init', `--initial-branch=${defaultBranch}`, seedPath], root);
     await writeFile(join(seedPath, 'README.md'), '# seed\n', 'utf8');
     await git(['-C', seedPath, 'config', 'user.email', 'wake@example.test'], root);
     await git(['-C', seedPath, 'config', 'user.name', 'Wake Test'], root);
@@ -36,7 +34,14 @@ describe('git workspace manager', () => {
 
     await git(['clone', '--bare', seedPath, remotePath], root);
     await git(['-C', seedPath, 'remote', 'add', 'origin', remotePath], root);
-    await git(['-C', seedPath, 'push', 'origin', 'main'], root);
+    await git(['-C', seedPath, 'push', 'origin', defaultBranch], root);
+
+    return remotePath;
+  }
+
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), 'wake-git-workspace-'));
+    remotePath = await createRemote();
   });
 
   afterEach(async () => {
@@ -80,7 +85,7 @@ describe('git workspace manager', () => {
 
     await manager.prepareWorkspace({ repo: 'acme/example', issueNumber: 1 });
 
-    const seedPath = join(root, 'seed');
+    const seedPath = join(root, 'seed-main');
     await writeFile(join(seedPath, 'README.md'), '# updated\n', 'utf8');
     await git(['-C', seedPath, 'add', 'README.md'], root);
     await git(['-C', seedPath, 'commit', '-m', 'update'], root);
@@ -93,6 +98,38 @@ describe('git workspace manager', () => {
 
     const readme = await readFile(join(workspacePath, 'README.md'), 'utf8');
     expect(readme).toContain('# updated');
+  });
+
+  it('prepares workspaces from a non-main default branch', async () => {
+    remotePath = await createRemote('trunk');
+    const wakeRoot = join(root, '.wake-trunk');
+    const manager = createGitWorkspaceManager({
+      wakeRoot,
+      remoteUrlForRepo: () => remotePath,
+    });
+
+    const { workspacePath } = await manager.prepareWorkspace({
+      repo: 'acme/trunk-example',
+      issueNumber: 77,
+    });
+
+    const readme = await readFile(join(workspacePath, 'README.md'), 'utf8');
+    expect(readme).toContain('# seed');
+
+    const { stdout: branch } = await execFile('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
+      cwd: workspacePath,
+      env: process.env,
+    });
+    expect(branch.trim()).toBe(branchNameForIssue(77));
+
+    const { workspacePath: readOnlyPath } = await manager.prepareReadOnlyClone({
+      repo: 'acme/trunk-example',
+    });
+    const { stdout: readOnlyBranch } = await execFile('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
+      cwd: readOnlyPath,
+      env: process.env,
+    });
+    expect(readOnlyBranch.trim()).toBe('trunk');
   });
 
   it('prepares a read-only canonical clone for refine without a per-issue branch', async () => {
