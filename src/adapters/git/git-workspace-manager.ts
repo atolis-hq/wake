@@ -35,6 +35,21 @@ export function defaultRemoteUrlForRepo(repo: string): string {
   return `https://github.com/${repo}.git`;
 }
 
+export function buildWorkspaceCloneArgs(input: {
+  sourceRepoPath: string;
+  workspacePath: string;
+  defaultBranch: string;
+}): string[] {
+  return [
+    'clone',
+    '--no-local',
+    '--branch',
+    input.defaultBranch,
+    input.sourceRepoPath,
+    input.workspacePath,
+  ];
+}
+
 export function createGitWorkspaceManager(options: {
   wakeRoot: string;
   remoteUrlForRepo?: (repo: string) => string;
@@ -67,13 +82,23 @@ export function createGitWorkspaceManager(options: {
       repo: string;
       issueNumber: number;
     }): Promise<{ workspacePath: string }> {
+      const workspacePath = paths.workspaceDir(repo, issueNumber);
+      if (await pathExists(workspacePath)) {
+        return { workspacePath };
+      }
+
       const repoPath = await ensureCanonicalClone(repo);
       const remoteUrl = remoteUrlForRepo(repo);
 
-      const workspacePath = paths.workspaceDir(repo, issueNumber);
-      await rm(workspacePath, { recursive: true, force: true });
       await mkdir(dirname(workspacePath), { recursive: true });
-      await git(['clone', '--local', '--branch', 'main', repoPath, workspacePath], dirname(workspacePath));
+      await git(
+        buildWorkspaceCloneArgs({
+          sourceRepoPath: repoPath,
+          workspacePath,
+          defaultBranch: 'main',
+        }),
+        dirname(workspacePath),
+      );
 
       const branch = branchNameForIssue(issueNumber);
       await git(['remote', 'set-url', 'origin', remoteUrl], workspacePath);

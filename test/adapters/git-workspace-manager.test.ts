@@ -1,5 +1,5 @@
 import { execFile as nodeExecFile } from 'node:child_process';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
   branchNameForIssue,
+  buildWorkspaceCloneArgs,
   createGitWorkspaceManager,
 } from '../../src/adapters/git/git-workspace-manager.js';
 
@@ -111,5 +112,58 @@ describe('git workspace manager', () => {
       env: process.env,
     });
     expect(stdout.trim()).toBe('main');
+  });
+
+  it('reuses an existing per-issue workspace and recreates it only when missing', async () => {
+    const wakeRoot = join(root, '.wake');
+    const manager = createGitWorkspaceManager({
+      wakeRoot,
+      remoteUrlForRepo: () => remotePath,
+    });
+
+    const first = await manager.prepareWorkspace({
+      repo: 'acme/example',
+      issueNumber: 42,
+    });
+
+    await writeFile(join(first.workspacePath, 'local-only.txt'), 'keep me\n', 'utf8');
+
+    const second = await manager.prepareWorkspace({
+      repo: 'acme/example',
+      issueNumber: 42,
+    });
+
+    expect(second.workspacePath).toBe(first.workspacePath);
+    await expect(access(join(second.workspacePath, 'local-only.txt'))).resolves.toBeUndefined();
+
+    await manager.cleanupWorkspace({ workspacePath: second.workspacePath });
+    await expect(access(second.workspacePath)).rejects.toThrow();
+
+    const third = await manager.prepareWorkspace({
+      repo: 'acme/example',
+      issueNumber: 42,
+    });
+
+    expect(third.workspacePath).toBe(first.workspacePath);
+    const readme = await readFile(join(third.workspacePath, 'README.md'), 'utf8');
+    expect(readme).toContain('# seed');
+    await expect(access(join(third.workspacePath, 'local-only.txt'))).rejects.toThrow();
+  });
+
+  it('uses a non-hardlink local clone when creating a missing workspace', () => {
+    expect(
+      buildWorkspaceCloneArgs({
+        sourceRepoPath: '/wake/repos/acme__example',
+        workspacePath: '/wake/workspaces/acme__example/42',
+        defaultBranch: 'main',
+      }),
+    ).toEqual([
+      'clone',
+      '--no-local',
+      '--branch',
+      'main',
+      '/wake/repos/acme__example',
+      '/wake/workspaces/acme__example/42',
+    ]);
   });
 });
