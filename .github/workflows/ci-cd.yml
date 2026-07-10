@@ -32,14 +32,14 @@ jobs:
           file: docker/Dockerfile
           tags: wake-ci-smoke
           load: true
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=docker-smoke
+          cache-to: type=gha,mode=max,scope=docker-smoke
       - name: Run tick with fake sources
         run: |
           docker run --rm \
             --entrypoint node \
             wake-ci-smoke \
-            /app/dist/main.js tick --wake-root /tmp/wake-smoke
+            /app/dist/src/main.js tick --wake-root /tmp/wake-smoke
 
   tag:
     needs: [test, docker-smoke]
