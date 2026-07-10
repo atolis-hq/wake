@@ -34,8 +34,9 @@ export function createControlPlane(deps: {
     },
     async start() {
       while (running) {
+        let result: unknown;
         try {
-          await this.runOnce();
+          result = await this.runOnce();
         } catch (error) {
           deps.logger.error(error instanceof Error ? error.message : String(error));
         }
@@ -44,7 +45,10 @@ export function createControlPlane(deps: {
           break;
         }
 
-        await deps.sleep(deps.intervalMs);
+        const status = (result as { status?: string } | null)?.status;
+        if (status !== 'processed') {
+          await deps.sleep(deps.intervalMs);
+        }
       }
     },
   };
