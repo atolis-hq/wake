@@ -60,6 +60,55 @@ describe('issue state schema', () => {
       }),
     ).toThrow(/stage/i);
   });
+
+  it('normalizes legacy refined stages in persisted issue state', () => {
+    const record = parseIssueStateRecord({
+      schemaVersion: 1,
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 13,
+        title: 'Example',
+        body: 'Body',
+        labels: ['wake:stage.refined'],
+        assignees: [],
+        state: 'open',
+        url: 'https://example.test/issues/13',
+        createdAt: '2026-07-05T12:00:00.000Z',
+        updatedAt: '2026-07-05T12:00:00.000Z',
+      },
+      comments: [],
+      wake: {
+        stage: 'refined',
+        stageHistory: [
+          {
+            stage: 'queue',
+            changedAt: '2026-07-05T12:00:00.000Z',
+            reason: 'seed',
+          },
+          {
+            stage: 'refined',
+            changedAt: '2026-07-05T12:05:00.000Z',
+            reason: 'runner:done',
+          },
+        ],
+        syncedAt: '2026-07-05T12:05:00.000Z',
+      },
+    });
+
+    expect(record.wake.stage).toBe('implement');
+    expect(record.wake.stageHistory).toEqual([
+      {
+        stage: 'queue',
+        changedAt: '2026-07-05T12:00:00.000Z',
+        reason: 'seed',
+      },
+      {
+        stage: 'implement',
+        changedAt: '2026-07-05T12:05:00.000Z',
+        reason: 'runner:done',
+      },
+    ]);
+  });
 });
 
 describe('run and event schemas', () => {

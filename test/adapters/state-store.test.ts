@@ -144,4 +144,26 @@ describe('state store', () => {
     const saved = await store.readSourceState('github', 'atolis-hq/wake');
     expect(saved?.lastSuccessfulPollAt).toBe('2026-07-05T12:00:00.000Z');
   });
+
+  it('skips invalid issue-state files instead of returning an empty list', async () => {
+    const store = createStateStore({ wakeRoot: root });
+
+    await store.writeIssueState(issueState({ number: 7 }));
+    await writeFile(
+      join(root, 'state', 'atolis-hq__wake', '8.json'),
+      JSON.stringify({
+        ...issueState({ number: 8 }),
+        wake: {
+          ...issueState({ number: 8 }).wake,
+          stage: 'not-a-stage',
+        },
+      }),
+      'utf8',
+    );
+
+    const states = await store.listIssueStates();
+
+    expect(states).toHaveLength(1);
+    expect(states[0]?.issue.number).toBe(7);
+  });
 });
