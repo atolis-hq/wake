@@ -49,7 +49,7 @@ export function createGitHubClient(token: string) {
       issueNumber: number,
       labels: string[],
     ) {
-      return octokit.rest.issues.update({
+      return octokit.rest.issues.setLabels({
         owner,
         repo,
         issue_number: issueNumber,
