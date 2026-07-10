@@ -125,6 +125,7 @@ const issueSnapshotSchema = z.object({
   body: z.string(),
   labels: z.array(z.string()),
   assignees: z.array(z.string()),
+  isPullRequest: z.boolean().default(false),
   state: z.enum(['open', 'closed']),
   url: z.string().url(),
   createdAt: isoTimestampSchema,

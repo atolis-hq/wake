@@ -50,6 +50,10 @@ export function createPolicyEngine() {
         return false;
       }
 
+      if (issue.issue.isPullRequest) {
+        return false;
+      }
+
       if (requiredLabels.some((label) => !labels.has(label))) {
         return false;
       }

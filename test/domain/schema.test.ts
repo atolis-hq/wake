@@ -22,6 +22,7 @@ describe('issue state schema', () => {
         body: 'Body',
         labels: ['wake:queue'],
         assignees: [],
+        isPullRequest: false,
         state: 'open',
         url: 'https://example.test/issues/12',
         createdAt: '2026-07-05T12:00:00.000Z',
@@ -48,6 +49,33 @@ describe('issue state schema', () => {
 
     expect(record.context.agentBrief).toBe('Extra information for future prompts');
     expect(record.wake.expectedEcho).toEqual({ commentIds: [], labels: [] });
+    expect(record.issue.isPullRequest).toBe(false);
+  });
+
+  it('accepts an explicit pull-request discriminator on canonical issues', () => {
+    const record = parseIssueStateRecord({
+      schemaVersion: 1,
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 14,
+        title: 'Example PR',
+        body: 'Body',
+        labels: ['wake:queue'],
+        assignees: [],
+        isPullRequest: true,
+        state: 'open',
+        url: 'https://example.test/pull/14',
+        createdAt: '2026-07-05T12:00:00.000Z',
+        updatedAt: '2026-07-05T12:00:00.000Z',
+      },
+      wake: {
+        stage: 'queue',
+        stageHistory: [],
+        syncedAt: '2026-07-05T12:00:00.000Z',
+      },
+    });
+
+    expect(record.issue.isPullRequest).toBe(true);
   });
 
   it('rejects missing canonical wake stage', () => {
@@ -71,6 +99,7 @@ describe('issue state schema', () => {
         body: 'Body',
         labels: ['wake:stage.refined'],
         assignees: [],
+        isPullRequest: false,
         state: 'open',
         url: 'https://example.test/issues/13',
         createdAt: '2026-07-05T12:00:00.000Z',

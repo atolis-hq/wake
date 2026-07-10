@@ -59,6 +59,49 @@ describe('github issues work source', () => {
       'ticket.upsert',
       'ticket.comment.created',
     ]);
+    expect(events[0]?.payload.ticket).toMatchObject({
+      number: 12,
+      isPullRequest: false,
+    });
+  });
+
+  it('marks normalized ticket upserts as pull requests when the GitHub payload is a PR', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const config = createDefaultWakeConfig(root);
+    config.sources.github.enabled = true;
+    config.sources.github.repos = ['atolis-hq/wake'];
+
+    const workSource = createGitHubIssuesWorkSource({
+      client: {
+        listIssues: async () => [
+          {
+            number: 76,
+            title: 'Example PR',
+            body: 'Body',
+            state: 'open',
+            html_url: 'https://github.com/atolis-hq/wake/pull/76',
+            created_at: '2026-07-05T12:00:00.000Z',
+            updated_at: '2026-07-05T12:00:00.000Z',
+            labels: [{ name: 'wake:queue' }],
+            assignees: [],
+            pull_request: { url: 'https://api.github.com/repos/atolis-hq/wake/pulls/76' },
+          },
+        ],
+        listComments: async () => [],
+        createComment: vi.fn(),
+        setLabels: vi.fn(),
+      },
+      stateStore: store,
+      config,
+      now: () => new Date('2026-07-05T12:10:00.000Z'),
+    });
+
+    const events = await workSource.pollEvents();
+    expect(events).toHaveLength(1);
+    expect(events[0]?.payload.ticket).toMatchObject({
+      number: 76,
+      isPullRequest: true,
+    });
   });
 
   it('does not re-emit unchanged issues on the next poll', async () => {
@@ -114,6 +157,7 @@ describe('github issues work source', () => {
         body: 'Body',
         labels: ['wake:queue'],
         assignees: [],
+        isPullRequest: false,
         state: 'open',
         url: 'https://github.com/atolis-hq/wake/issues/12',
         createdAt: '2026-07-05T12:00:00.000Z',
@@ -167,6 +211,7 @@ describe('github issues work source', () => {
         body: 'Body',
         labels: ['wake:queue'],
         assignees: [],
+        isPullRequest: false,
         state: 'open',
         url: 'https://github.com/atolis-hq/wake/issues/12',
         createdAt: '2026-07-05T12:00:00.000Z',
@@ -239,6 +284,7 @@ describe('github issues work source', () => {
         body: 'Body',
         labels: ['bug', 'wake:status.pending', 'wake:stage.queue'],
         assignees: [],
+        isPullRequest: false,
         state: 'open',
         url: 'https://github.com/atolis-hq/wake/issues/13',
         createdAt: '2026-07-05T12:00:00.000Z',
@@ -603,6 +649,7 @@ describe('github issues work source', () => {
         body: 'Body',
         labels: ['bug', 'wake:status.pending', 'wake:stage.queue'],
         assignees: [],
+        isPullRequest: false,
         state: 'open',
         url: 'https://github.com/atolis-hq/wake/issues/12',
         createdAt: '2026-07-05T12:00:00.000Z',
@@ -676,6 +723,7 @@ describe('github issues work source', () => {
         body: 'Body',
         labels: ['bug', 'wake:status.working', 'wake:stage.implement'],
         assignees: [],
+        isPullRequest: false,
         state: 'open',
         url: 'https://github.com/atolis-hq/wake/issues/13',
         createdAt: '2026-07-05T12:00:00.000Z',
@@ -748,6 +796,7 @@ describe('github issues work source', () => {
         body: 'Body',
         labels: ['bug', 'wake:status.pending', 'wake:stage.implement'],
         assignees: [],
+        isPullRequest: false,
         state: 'open',
         url: 'https://github.com/atolis-hq/wake/issues/14',
         createdAt: '2026-07-05T12:00:00.000Z',

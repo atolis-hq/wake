@@ -15,6 +15,7 @@ type GitHubIssue = {
   updated_at: string;
   labels?: Array<string | { name?: string }>;
   assignees?: Array<{ login?: string }> | null;
+  pull_request?: Record<string, unknown>;
 };
 
 type GitHubComment = {
@@ -59,6 +60,7 @@ function normalizeTicketUpsert(input: {
         assignees: (input.issue.assignees ?? [])
           .map((assignee) => assignee.login)
           .filter((login): login is string => typeof login === 'string'),
+        isPullRequest: input.issue.pull_request !== undefined,
         state: input.issue.state === 'closed' ? 'closed' : 'open',
         url: input.issue.html_url,
         createdAt: input.issue.created_at,

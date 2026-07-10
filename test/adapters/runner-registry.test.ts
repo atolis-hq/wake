@@ -72,6 +72,7 @@ describe('runner registry routing', () => {
           body: 'Body',
           labels: [],
           assignees: [],
+          isPullRequest: false,
           state: 'open',
           url: 'https://example.test/issues/1',
           createdAt: '2026-07-05T12:00:00.000Z',

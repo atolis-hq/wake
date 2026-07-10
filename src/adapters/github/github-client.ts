@@ -5,17 +5,12 @@ export function createGitHubClient(token: string) {
 
   return {
     async listIssues(owner: string, repo: string, perPage: number) {
-      const issues = await octokit.paginate(octokit.rest.issues.listForRepo, {
+      return octokit.paginate(octokit.rest.issues.listForRepo, {
         owner,
         repo,
         state: 'open',
         per_page: perPage,
       });
-
-      // GitHub's issues endpoint also returns pull requests (each PR is an
-      // "issue" under the hood); Wake should never pick up its own open PRs
-      // as fresh work items.
-      return issues.filter((issue) => !('pull_request' in issue));
     },
     async listComments(
       owner: string,

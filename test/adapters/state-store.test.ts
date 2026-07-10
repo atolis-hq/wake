@@ -22,6 +22,7 @@ function issueState(input?: {
       body: 'Body',
       labels: ['wake:queue'],
       assignees: [],
+      isPullRequest: false,
       state: 'open',
       url: `https://example.test/issues/${number}`,
       createdAt: '2026-07-05T12:00:00.000Z',
