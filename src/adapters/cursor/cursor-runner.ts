@@ -5,7 +5,8 @@
  *   (--output-format json), and session resume (--resume=<id>), so Wake maps
  *   those directly.
  * - Cursor's `--mode ask` enforces read-only access at the CLI boundary for
- *   refine-stage runs; `--force` auto-approves writes for implement-stage runs.
+ *   refine-stage runs; implement-stage runs omit `--mode` (Cursor default is
+ *   full agent/edit mode) and pass `--force` to auto-approve writes.
  * - Cursor does NOT expose a Claude-equivalent `--max-turns` cap, so Wake
  *   cannot enforce `maxTurns` at the CLI boundary for this runner today.
  * - Cursor does NOT expose a Claude-equivalent per-tool allowlist such as
@@ -38,7 +39,7 @@ export function buildCursorAgentArgs(input: {
   model: string;
   prompt: string;
   harnessPrompt?: string;
-  mode?: 'ask' | 'agent';
+  mode?: 'ask';
   force?: boolean;
   resumeSessionId?: string;
 }): string[] {
@@ -164,7 +165,7 @@ export function classifyCursorCliFailure(input: {
 
 // Cursor uses --mode ask for read-only refine stages, which already enforces
 // the constraint at the CLI boundary. The capability note explains to the agent
-// what tools are available in ask mode versus agent mode.
+// what tools are available in ask mode versus the default agent mode.
 export function buildCursorToolCapabilityNote(input: {
   action: AgentAction;
   mode: 'start' | 'resume';
@@ -178,8 +179,8 @@ export function buildCursorToolCapabilityNote(input: {
   return input.mode === 'resume' ? `Reminder: this is still a planning-only stage. ${note}` : note;
 }
 
-function resolveCursorMode(input: { action: AgentAction }): 'ask' | 'agent' {
-  return input.action === 'refine' ? 'ask' : 'agent';
+function resolveCursorMode(input: { action: AgentAction }): 'ask' | undefined {
+  return input.action === 'refine' ? 'ask' : undefined;
 }
 
 function resolveModel(input: {
@@ -269,8 +270,8 @@ export function createCursorRunner(options: {
           model,
           prompt: stagePrompt.prompt,
           harnessPrompt: stagePrompt.harnessPrompt,
-          mode: cursorMode,
-          force: cursorMode === 'agent',
+          ...(cursorMode !== undefined ? { mode: cursorMode } : {}),
+          force: cursorMode === undefined,
           ...(isResume ? { resumeSessionId: priorSessionId } : {}),
         }),
         cwd,
@@ -388,7 +389,6 @@ export function createCursorRunner(options: {
         args: buildCursorAgentArgs({
           model: options.settings.smokeModel,
           prompt: options.settings.smokePrompt,
-          mode: 'agent',
           force: true,
         }),
         cwd: options.cwd,
