@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 
 const paginate = vi.fn();
 
+const setLabels = vi.fn();
+
 vi.mock('@octokit/rest', () => ({
   Octokit: vi.fn().mockImplementation(() => ({
     paginate,
@@ -10,6 +12,7 @@ vi.mock('@octokit/rest', () => ({
         listForRepo: vi.fn(),
         listComments: vi.fn(),
         createComment: vi.fn(),
+        setLabels,
       },
     },
   })),
@@ -29,5 +32,26 @@ describe('github client', () => {
 
     expect(issues).toHaveLength(1);
     expect(issues[0]?.number).toBe(5);
+  });
+
+  it('replaces issue labels via the dedicated setLabels endpoint', async () => {
+    setLabels.mockResolvedValueOnce({ data: [] });
+
+    const { createGitHubClient } = await import('../../src/adapters/github/github-client.js');
+    const client = createGitHubClient('fake-token');
+
+    await client.setLabels('atolis-hq', 'wake', 74, [
+      'bug',
+      'wake:status.working',
+      'wake:stage.active',
+    ]);
+
+    expect(setLabels).toHaveBeenCalledOnce();
+    expect(setLabels).toHaveBeenCalledWith({
+      owner: 'atolis-hq',
+      repo: 'wake',
+      issue_number: 74,
+      labels: ['bug', 'wake:status.working', 'wake:stage.active'],
+    });
   });
 });
