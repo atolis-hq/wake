@@ -84,7 +84,7 @@ function buildNeedsWakeActionIssue(overrides: {
       number: 61,
       title: 'Example',
       body: 'Body',
-      labels: ['wake:refined'],
+      labels: ['wake:implement'],
       assignees: [],
       state: 'open',
       url: 'https://example.test/issues/61',
@@ -112,7 +112,7 @@ function buildNeedsWakeActionIssue(overrides: {
           updatedAt: '2026-07-06T01:00:00.000Z',
         },
     wake: {
-      stage: 'refined',
+      stage: 'implement',
       lastRunId: 'run-61-1',
       syncedAt: '2026-07-07T00:00:00.000Z',
       stageHistory: [],

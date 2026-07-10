@@ -439,35 +439,37 @@ export function createTickRunner(deps: {
         };
 
         await deps.stateStore.writeRunRecord(runningRecord);
-        await deps.stateStore.appendEventEnvelope(
-          createEventEnvelope({
-            eventId: `${runId}-claimed`,
-            workItemKey: candidate.workItemKey,
-            streamScope: 'work-item',
-            direction: 'internal',
-            sourceSystem: 'wake',
-            sourceEventType: 'wake.run.claimed',
-            sourceRefs: {
-              repo: candidate.issue.repo,
-              issueNumber: candidate.issue.number,
-              runId,
-            },
-            occurredAt: nowIso,
-            ingestedAt: nowIso,
-            trigger: 'immediate',
-            payload: {
-              action,
-              priorStage: candidate.wake.stage,
-            },
-          }),
-        );
+        const claimedStage = action as import('../domain/types.js').Stage;
+        const claimedEvent = createEventEnvelope({
+          eventId: `${runId}-claimed`,
+          workItemKey: candidate.workItemKey,
+          streamScope: 'work-item',
+          direction: 'internal',
+          sourceSystem: 'wake',
+          sourceEventType: 'wake.run.claimed',
+          sourceRefs: {
+            repo: candidate.issue.repo,
+            issueNumber: candidate.issue.number,
+            runId,
+          },
+          occurredAt: nowIso,
+          ingestedAt: nowIso,
+          trigger: 'immediate',
+          payload: {
+            action,
+            priorStage: candidate.wake.stage,
+            claimedStage,
+          },
+        });
+        await deps.stateStore.appendEventEnvelope(claimedEvent);
+        await projectionUpdater.rebuildFromEvents([claimedEvent]);
 
         await deliverOutboundEvent(
           createLabelsEvent({
             projection: candidate,
             runId,
             statusLabel: 'wake:status.working',
-            stageLabel: stageLabelForStage(candidate.wake.stage),
+            stageLabel: stageLabelForStage(claimedStage),
             occurredAt: nowIso,
           }),
         );
@@ -579,7 +581,7 @@ export function createTickRunner(deps: {
               projection: candidate,
               runId,
               statusLabel: nextStage !== null ? statusLabelForStage(nextStage) : 'wake:status.failed',
-              stageLabel: stageLabelForStage(nextStage ?? candidate.wake.stage),
+              stageLabel: stageLabelForStage(nextStage ?? claimedStage),
               occurredAt: finishedAt,
             }),
           );
@@ -650,7 +652,7 @@ export function createTickRunner(deps: {
               projection: candidate,
               runId,
               statusLabel: 'wake:status.failed',
-              stageLabel: stageLabelForStage(candidate.wake.stage),
+              stageLabel: stageLabelForStage(claimedStage),
               occurredAt: finishedAt,
             }),
           );

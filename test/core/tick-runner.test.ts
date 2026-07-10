@@ -391,7 +391,7 @@ describe('tick runner', () => {
         number: 14,
         title: 'Implement',
         body: 'Body',
-        labels: ['wake:refined'],
+        labels: ['wake:implement'],
         assignees: [],
         state: 'open',
         url: 'https://example.test/issues/14',
@@ -400,7 +400,7 @@ describe('tick runner', () => {
       },
       comments: [],
       wake: {
-        stage: 'refined',
+        stage: 'implement',
         stageHistory: [],
         recentEventIds: [],
         syncedAt: '2026-07-05T12:00:00.000Z',
@@ -410,7 +410,7 @@ describe('tick runner', () => {
     });
 
     const config = createDefaultWakeConfig(root);
-    config.sources.github.policy.requiredLabels = ['wake:refined'];
+    config.sources.github.policy.requiredLabels = ['wake:implement'];
 
     const tickRunner = createTickRunner({
       clock: { now: () => new Date('2026-07-05T12:00:00.000Z') },
@@ -455,7 +455,7 @@ describe('tick runner', () => {
 
     expect(deliveredEvents).toEqual([
       'wake:status.working',
-      'wake:stage.refined',
+      'wake:stage.implement',
       'wake:status.completed',
       'wake:stage.done',
     ]);
@@ -542,7 +542,7 @@ describe('tick runner', () => {
     expect(projection?.context.pendingApprovalAction).toBe('refine');
     expect(deliveredEvents).toEqual([
       'wake:status.working',
-      'wake:stage.queue',
+      'wake:stage.refine',
       'wake:status.pending',
       'wake:stage.awaiting-approval',
     ]);
@@ -781,7 +781,7 @@ describe('tick runner', () => {
         number: 20,
         title: 'Implement',
         body: 'Body',
-        labels: ['wake:refined'],
+        labels: ['wake:implement'],
         assignees: [],
         state: 'open',
         url: 'https://example.test/issues/20',
@@ -790,7 +790,7 @@ describe('tick runner', () => {
       },
       comments: [],
       wake: {
-        stage: 'refined',
+        stage: 'implement',
         stageHistory: [],
         recentEventIds: [],
         syncedAt: '2026-07-05T12:00:00.000Z',
@@ -800,7 +800,7 @@ describe('tick runner', () => {
     });
 
     const config = createDefaultWakeConfig(root);
-    config.sources.github.policy.requiredLabels = ['wake:refined'];
+    config.sources.github.policy.requiredLabels = ['wake:implement'];
 
     const tickRunner = createTickRunner({
       clock: { now: () => new Date('2026-07-05T12:00:00.000Z') },
@@ -841,9 +841,9 @@ describe('tick runner', () => {
     expect((result as { nextStage?: string | null }).nextStage).toBeNull();
     expect(deliveredEvents).toEqual([
       'wake:status.working',
-      'wake:stage.refined',
+      'wake:stage.implement',
       'wake:status.failed',
-      'wake:stage.refined',
+      'wake:stage.implement',
     ]);
     expect(publishedIntents).toHaveLength(1);
     expect(publishedIntents[0]!.kind).toBe('failure');
@@ -930,9 +930,9 @@ describe('tick runner', () => {
 
     expect(deliveredEvents).toEqual([
       'wake:status.working',
-      'wake:stage.queue',
+      'wake:stage.refine',
       'wake:status.failed',
-      'wake:stage.queue',
+      'wake:stage.refine',
     ]);
     expect(publishedIntents).toHaveLength(1);
     expect(publishedIntents[0]!.kind).toBe('failure');
@@ -952,7 +952,7 @@ describe('tick runner', () => {
         number: 121,
         title: 'Execute',
         body: 'Body',
-        labels: ['wake:refined'],
+        labels: ['wake:implement'],
         assignees: [],
         state: 'open',
         url: 'https://example.test/issues/121',
@@ -961,7 +961,7 @@ describe('tick runner', () => {
       },
       comments: [],
       wake: {
-        stage: 'refined',
+        stage: 'implement',
         stageHistory: [],
         recentEventIds: [],
         syncedAt: '2026-07-05T12:00:00.000Z',
@@ -971,7 +971,7 @@ describe('tick runner', () => {
     });
 
     const config = createDefaultWakeConfig(root);
-    config.sources.github.policy.requiredLabels = ['wake:refined'];
+    config.sources.github.policy.requiredLabels = ['wake:implement'];
 
     const tickRunner = createTickRunner({
       clock: { now: () => new Date('2026-07-05T12:00:00.000Z') },
@@ -1008,7 +1008,7 @@ describe('tick runner', () => {
                   number: 121,
                   title: 'Execute',
                   body: 'Body',
-                  labels: ['wake:refined'],
+                  labels: ['wake:implement'],
                   assignees: [],
                   state: 'open',
                   url: 'https://example.test/issues/121',
@@ -1035,7 +1035,7 @@ describe('tick runner', () => {
 
     expect(first.status).toBe('processed');
     expect((first as { sentinel?: string }).sentinel).toBe('FAILED');
-    expect(projection?.wake.stage).toBe('refined');
+    expect(projection?.wake.stage).toBe('implement');
     expect(second.status).toBe('idle');
     expect(runnerCallCount).toBe(1);
   });
@@ -1149,7 +1149,7 @@ describe('tick runner', () => {
       },
       comments: [],
       wake: {
-        stage: 'active',
+        stage: 'implement',
         lastRunId: 'run-123-stale',
         syncedAt: '2026-07-05T12:00:00.000Z',
         stageHistory: [],
@@ -1274,10 +1274,10 @@ describe('tick runner', () => {
       },
       comments: [],
       wake: {
-        stage: 'refined',
+        stage: 'implement',
         workspacePath: canonicalClonePath,
         syncedAt: nowIso,
-        stageHistory: [{ stage: 'refined', changedAt: nowIso, reason: 'test' }],
+        stageHistory: [{ stage: 'implement', changedAt: nowIso, reason: 'test' }],
         recentEventIds: [],
         expectedEcho: { commentIds: [], labels: [] },
       },

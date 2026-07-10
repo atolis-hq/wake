@@ -114,6 +114,42 @@ function applyEvent(
     });
   }
 
+  if (event.sourceEventType === 'wake.run.claimed') {
+    const payload = event.payload as {
+      action?: string;
+      claimedStage?: IssueStateRecord['wake']['stage'];
+    };
+
+    if (payload.claimedStage === undefined) {
+      return parseIssueStateRecord({
+        ...current,
+        wake: {
+          ...current.wake,
+          syncedAt: event.ingestedAt,
+          recentEventIds: [...current.wake.recentEventIds, event.eventId].slice(-10),
+        },
+      });
+    }
+
+    return parseIssueStateRecord({
+      ...current,
+      wake: {
+        ...current.wake,
+        stage: payload.claimedStage,
+        syncedAt: event.ingestedAt,
+        stageHistory: [
+          ...current.wake.stageHistory,
+          {
+            stage: payload.claimedStage,
+            changedAt: event.occurredAt,
+            reason: `run:${payload.action ?? 'unknown'}:claimed`,
+          },
+        ],
+        recentEventIds: [...current.wake.recentEventIds, event.eventId].slice(-10),
+      },
+    });
+  }
+
   if (event.sourceEventType === 'wake.run.completed') {
     const payload = event.payload as {
       action?: string;

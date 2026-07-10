@@ -674,7 +674,7 @@ describe('github issues work source', () => {
         number: 13,
         title: 'Example',
         body: 'Body',
-        labels: ['bug', 'wake:status.working', 'wake:stage.refined'],
+        labels: ['bug', 'wake:status.working', 'wake:stage.implement'],
         assignees: [],
         state: 'open',
         url: 'https://github.com/atolis-hq/wake/issues/13',
@@ -683,7 +683,7 @@ describe('github issues work source', () => {
       },
       comments: [],
       wake: {
-        stage: 'refined',
+        stage: 'implement',
         stageHistory: [],
         recentEventIds: [],
         syncedAt: '2026-07-05T12:10:00.000Z',
@@ -746,7 +746,7 @@ describe('github issues work source', () => {
         number: 14,
         title: 'Example',
         body: 'Body',
-        labels: ['bug', 'wake:status.pending', 'wake:stage.refined'],
+        labels: ['bug', 'wake:status.pending', 'wake:stage.implement'],
         assignees: [],
         state: 'open',
         url: 'https://github.com/atolis-hq/wake/issues/14',
@@ -755,7 +755,7 @@ describe('github issues work source', () => {
       },
       comments: [],
       wake: {
-        stage: 'refined',
+        stage: 'implement',
         stageHistory: [],
         recentEventIds: [],
         syncedAt: '2026-07-05T12:10:00.000Z',
@@ -788,7 +788,7 @@ describe('github issues work source', () => {
         occurredAt: '2026-07-05T12:00:00.000Z',
         ingestedAt: '2026-07-05T12:00:00.000Z',
         trigger: 'context-only',
-        payload: { statusLabel: 'wake:status.pending', stageLabel: 'wake:stage.refined' },
+        payload: { statusLabel: 'wake:status.pending', stageLabel: 'wake:stage.implement' },
       }),
     });
 

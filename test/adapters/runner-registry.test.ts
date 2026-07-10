@@ -14,7 +14,7 @@ describe('runner registry routing', () => {
     config.tiers.light = ['fake-light'];
     config.tiers.standard = ['fake-deep', 'fake-light'];
     config.stages.queue = { action: 'refine', tier: 'light' };
-    config.stages.refined = { action: 'implement', tier: 'standard' };
+    config.stages.implement = { action: 'implement', tier: 'standard' };
 
     expect(resolveRunnerRouting({
       config,
@@ -28,7 +28,7 @@ describe('runner registry routing', () => {
 
     expect(resolveRunnerRouting({
       config,
-      stage: 'refined',
+      stage: 'implement',
       action: 'implement',
     })).toMatchObject({
       runnerName: 'fake-deep',
@@ -40,16 +40,16 @@ describe('runner registry routing', () => {
   it('keeps explicit stage runner pins legal', () => {
     const config = createDefaultWakeConfig('/tmp/wake');
     config.runners.pinned = { kind: 'fake', cli: 'Pinned Fake' };
-    config.stages.refined = { action: 'implement', tier: 'standard', runner: 'pinned' };
+    config.stages.implement = { action: 'implement', tier: 'standard', runner: 'pinned' };
 
     expect(resolveRunnerRouting({
       config,
-      stage: 'refined',
+      stage: 'implement',
       action: 'implement',
     })).toMatchObject({
       runnerName: 'pinned',
       runnerKind: 'fake',
-      reason: 'stage refined pins runner pinned',
+      reason: 'stage implement pins runner pinned',
     });
   });
 
