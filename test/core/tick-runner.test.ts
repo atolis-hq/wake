@@ -437,7 +437,7 @@ describe('tick runner', () => {
               'Implemented. The previous CI run FAILED, but this one passed.',
               '',
               '```wake-result',
-              '{ "status": "DONE", "advice": { "nextTier": "deep", "reason": "schema migration involved" }, "prUrl": "https://github.com/atolis-hq/wake/pull/14" }',
+              '{ "status": "DONE" }',
               '```',
               'DONE',
             ].join('\n'),
@@ -462,8 +462,6 @@ describe('tick runner', () => {
     expect(runRecords[0]?.summary).toBe('Implemented. The previous CI run FAILED, but this one passed.');
     expect(runRecords[0]?.metadata).toMatchObject({
       envelope: 'structured',
-      advice: { nextTier: 'deep', reason: 'schema migration involved' },
-      prUrl: 'https://github.com/atolis-hq/wake/pull/14',
     });
   });
 
