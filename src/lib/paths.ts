@@ -23,11 +23,16 @@ export function createWakePaths(wakeRoot: string) {
     sourceStateRoot: join(wakeRoot, 'sources'),
     issueStateFile: (source: string, repo: string, issueNumber: number) =>
       join(wakeRoot, 'state', sanitizePathKey(source), sanitizeRepo(repo), `${issueNumber}.json`),
+    archivedIssueStateFile: (source: string, repo: string, issueNumber: number) =>
+      join(wakeRoot, 'state', sanitizePathKey(source), 'archive', sanitizeRepo(repo), `${issueNumber}.json`),
     legacyIssueStateFile: (repo: string, issueNumber: number) =>
       join(wakeRoot, 'state', sanitizeRepo(repo), `${issueNumber}.json`),
+    archivedLegacyIssueStateFile: (repo: string, issueNumber: number) =>
+      join(wakeRoot, 'state', 'archive', 'legacy', sanitizeRepo(repo), `${issueNumber}.json`),
     sourceStateFile: (source: string, key: string) =>
       join(wakeRoot, 'sources', sanitizePathKey(source), `${sanitizePathKey(key)}.json`),
     runFile: (runId: string) => join(wakeRoot, 'runs', `${runId}.json`),
+    runDateFile: (date: string, runId: string) => join(wakeRoot, 'runs', 'by-date', date, `${runId}.json`),
     eventFile: (date: string) => join(wakeRoot, 'events', `${date}.jsonl`),
     eventEnvelopeFile: (eventId: string) =>
       join(wakeRoot, 'events-by-id', `${sanitizePathKey(eventId)}.json`),

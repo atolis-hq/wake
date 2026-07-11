@@ -73,7 +73,7 @@ async function readLockInfo(
  */
 function deriveCondition(
   item: IssueStateRecord,
-  runs: RunRecord[],
+  lastRun: RunRecord | null,
   config: WakeConfig,
 ): { condition: BoardCondition; reason: string } {
   const stage = item.wake.stage;
@@ -82,20 +82,9 @@ function deriveCondition(
     return { condition: 'finished', reason: 'terminal stage' };
   }
 
-  const hasRunningRun = runs.some(
-    (run) =>
-      run.repo === item.issue.repo &&
-      run.issueNumber === item.issue.number &&
-      run.status === 'running',
-  );
-  if (hasRunningRun) {
+  if (lastRun?.status === 'running') {
     return { condition: 'active', reason: 'run in flight' };
   }
-
-  const lastRun = runs
-    .filter((run) => run.repo === item.issue.repo && run.issueNumber === item.issue.number)
-    .sort((left, right) => left.startedAt.localeCompare(right.startedAt))
-    .at(-1);
 
   if (
     stage === 'blocked' ||
@@ -128,19 +117,21 @@ export async function buildBoard(input: {
   config: WakeConfig;
   now: Date;
 }) {
-  const [items, runs] = await Promise.all([
-    input.stateStore.listIssueStates(),
-    input.stateStore.listRunRecords(),
-  ]);
+  const items = await input.stateStore.listIssueStates({
+    archiveFreshnessDays: input.config.ui.archiveFreshnessDays,
+    now: input.now,
+  });
+  const lastRuns = await Promise.all(
+    items.map((item) =>
+      item.wake.lastRunId === undefined
+        ? Promise.resolve(null)
+        : input.stateStore.readRunRecord(item.wake.lastRunId),
+    ),
+  );
 
-  return items.map((item) => {
-    const { condition, reason } = deriveCondition(item, runs, input.config);
-    const lastRun = runs
-      .filter(
-        (run) => run.repo === item.issue.repo && run.issueNumber === item.issue.number,
-      )
-      .sort((left, right) => left.startedAt.localeCompare(right.startedAt))
-      .at(-1);
+  return items.map((item, index) => {
+    const lastRun = lastRuns[index] ?? null;
+    const { condition, reason } = deriveCondition(item, lastRun, input.config);
 
     return {
       repo: item.issue.repo,
@@ -165,11 +156,13 @@ export async function buildStatus(input: {
   config: WakeConfig;
   now: Date;
 }) {
-  const [ledger, paused, allEvents, runs, board] = await Promise.all([
+  const today = input.now.toISOString().slice(0, 10);
+  const [ledger, paused, recentEvents, todaysRuns, recentRuns, board] = await Promise.all([
     input.stateStore.readLedger(),
     input.stateStore.isPaused(),
-    input.stateStore.listEventEnvelopes(),
-    input.stateStore.listRunRecords(),
+    input.stateStore.listRecentEventEnvelopes({ limit: 1 }),
+    input.stateStore.listRunRecordsForDate(today),
+    input.stateStore.listRecentRunRecords(1),
     buildBoard(input),
   ]);
 
@@ -186,14 +179,8 @@ export async function buildStatus(input: {
       : 'idle';
   const runnerHealth = ledger?.runners ?? {};
 
-  const lastEvent = allEvents
-    .slice()
-    .sort((left, right) => left.ingestedAt.localeCompare(right.ingestedAt))
-    .at(-1);
-  const lastRun = runs
-    .slice()
-    .sort((left, right) => left.startedAt.localeCompare(right.startedAt))
-    .at(-1);
+  const lastEvent = recentEvents[0];
+  const lastRun = recentRuns[0];
 
   const counters: Record<BoardCondition, number> = {
     'needs-human': 0,
@@ -241,13 +228,13 @@ export async function buildStatus(input: {
         },
     sourceFreshness,
     counters,
-    runsToday: countToday(runs.map((run) => run.startedAt), input.now),
+    runsToday: countToday(todaysRuns.map((run) => run.startedAt), input.now),
     failuresToday: countToday(
-      runs.filter((run) => run.status === 'failed').map((run) => run.startedAt),
+      todaysRuns.filter((run) => run.status === 'failed').map((run) => run.startedAt),
       input.now,
     ),
     costUsdToday: sumToday(
-      runs.map((run) => ({ at: run.startedAt, value: run.tokenUsage?.costUsd ?? 0 })),
+      todaysRuns.map((run) => ({ at: run.startedAt, value: run.tokenUsage?.costUsd ?? 0 })),
       input.now,
     ),
   };
@@ -325,15 +312,13 @@ export async function buildEventsFeed(input: {
   direction?: EventEnvelope['direction'] | undefined;
   type?: string | undefined;
 }) {
-  const events = await input.stateStore.listEventEnvelopes();
-  const filtered = events
-    .filter((event) => input.workItemKey === undefined || event.workItemKey === input.workItemKey)
-    .filter((event) => input.direction === undefined || event.direction === input.direction)
-    .filter((event) => input.type === undefined || event.sourceEventType === input.type)
-    .sort((left, right) => right.ingestedAt.localeCompare(left.ingestedAt));
-
   const limit = input.limit ?? 200;
-  return filtered.slice(0, limit);
+  return input.stateStore.listRecentEventEnvelopes({
+    limit,
+    ...(input.workItemKey === undefined ? {} : { workItemKey: input.workItemKey }),
+    ...(input.direction === undefined ? {} : { direction: input.direction }),
+    ...(input.type === undefined ? {} : { type: input.type }),
+  });
 }
 
 export async function buildRuns(input: {
