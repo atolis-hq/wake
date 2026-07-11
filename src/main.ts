@@ -97,11 +97,15 @@ export function formatTickFailureDetails(runRecord: RunRecord | null): string | 
   return lines.join('\n');
 }
 
-async function runCommand(command: string, args: string[]): Promise<void> {
+async function runCommand(
+  command: string,
+  args: string[],
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<void> {
   await new Promise<void>((resolveRun, reject) => {
     const child = spawn(command, args, {
       cwd: process.cwd(),
-      env: process.env,
+      env,
       stdio: 'inherit',
     });
 
@@ -432,7 +436,11 @@ async function main() {
         configFile: stateStore.paths.configFile,
       });
       const docker = createDockerCli({
-        run: (dockerArgs) => runCommand('docker', dockerArgs),
+        // BuildKit is required for the Dockerfile's cache-mount syntax
+        // (`RUN --mount=type=cache`), which keeps `npm`/`apt` package
+        // caches warm across builds even when a layer above them changes.
+        run: (dockerArgs) =>
+          runCommand('docker', dockerArgs, { ...process.env, DOCKER_BUILDKIT: '1' }),
         inspectImage: inspectDockerImage,
         inspectContainer: inspectDockerContainer,
       });
