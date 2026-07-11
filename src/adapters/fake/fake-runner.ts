@@ -18,6 +18,7 @@ export function createFakeRunner(
       config: WakeConfig;
       runId: string;
       workspacePath?: string;
+      mergeConflictDetected?: boolean;
     }): Promise<AgentRunResult> {
       return result ?? {
         result: [

@@ -48,6 +48,7 @@ export interface AgentRunner {
     runId: string;
     workspacePath?: string;
     routing?: RunnerRouting;
+    mergeConflictDetected?: boolean;
   }): Promise<AgentRunResult>;
 }
 
@@ -55,7 +56,7 @@ export interface WorkspaceManager {
   prepareWorkspace(input: {
     repo: string;
     issueNumber: number;
-  }): Promise<{ workspacePath: string }>;
+  }): Promise<{ workspacePath: string; mergeConflictDetected: boolean }>;
   prepareReadOnlyClone(input: { repo: string }): Promise<{ workspacePath: string }>;
   cleanupWorkspace(input: {
     workspacePath: string;

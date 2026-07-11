@@ -259,6 +259,7 @@ export function createCursorRunner(options: {
       config: WakeConfig;
       runId: string;
       workspacePath?: string;
+      mergeConflictDetected?: boolean;
     }): Promise<AgentRunResult> {
       const priorSessionId = input.projection.wake.sessionId;
       const priorSessionCli = input.projection.wake.sessionCli;
@@ -275,6 +276,7 @@ export function createCursorRunner(options: {
         projection: input.projection,
         mode: isResume ? 'resume' : 'start',
         config: input.config,
+        ...(input.mergeConflictDetected === true ? { mergeConflictDetected: true } : {}),
         ...(toolCapabilityNote !== undefined ? { contextOverrides: { toolCapabilityNote } } : {}),
       });
 

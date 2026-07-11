@@ -683,7 +683,7 @@ export function createTickRunner(deps: {
           // 'implement' gets its own branch/workspace; 'refine' only reads
           // the issue and, at most, the canonical clone read-only - it never
           // pays per-issue workspace-preparation cost.
-          const { workspacePath } =
+          const prepareResult =
             action === 'implement'
               ? await deps.workspaceManager.prepareWorkspace({
                   repo: candidate.issue.repo,
@@ -692,6 +692,10 @@ export function createTickRunner(deps: {
               : await deps.workspaceManager.prepareReadOnlyClone({
                   repo: candidate.issue.repo,
                 });
+
+          const { workspacePath } = prepareResult;
+          const mergeConflictDetected =
+            'mergeConflictDetected' in prepareResult ? prepareResult.mergeConflictDetected : false;
 
           const recentEvents = await deps.stateStore.listEventEnvelopesForWorkItem(
             candidate.workItemKey,
@@ -705,6 +709,7 @@ export function createTickRunner(deps: {
             runId,
             routing,
             ...(workspacePath === undefined ? {} : { workspacePath }),
+            ...(mergeConflictDetected ? { mergeConflictDetected: true } : {}),
           });
           const parsedRunnerResult = parseRunnerResult(runnerResult.result);
           const rawSentinel = parsedRunnerResult.status;

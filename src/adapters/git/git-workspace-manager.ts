@@ -63,6 +63,47 @@ export function buildWorkspaceCloneArgs(input: {
   ];
 }
 
+async function tryUpdateFromDefaultBranch(workspacePath: string): Promise<boolean> {
+  try {
+    const { stdout: status } = await git(['status', '--porcelain'], workspacePath);
+    if (status.length > 0) {
+      return false;
+    }
+
+    await git(['fetch', 'origin'], workspacePath);
+    const defaultBranch = await detectDefaultBranch(workspacePath);
+
+    const { stdout: count } = await git(
+      ['rev-list', '--count', `HEAD..origin/${defaultBranch}`],
+      workspacePath,
+    );
+
+    if (parseInt(count.trim(), 10) === 0) {
+      return false;
+    }
+
+    try {
+      // Supply fallback identity so merge commits succeed in environments where
+      // git user.email/user.name is not configured globally (e.g. CI containers).
+      await git(
+        ['-c', 'user.email=wake@merge.local', '-c', 'user.name=Wake', 'merge', '--no-edit', `origin/${defaultBranch}`],
+        workspacePath,
+      );
+      return false;
+    } catch {
+      try {
+        await git(['merge', '--abort'], workspacePath);
+      } catch {
+        // Merge abort failed (e.g. no merge in progress) — ignore
+      }
+      return true;
+    }
+  } catch {
+    // Fetch or branch detection failed — leave workspace as-is, no conflict reported
+    return false;
+  }
+}
+
 export function createGitWorkspaceManager(options: {
   wakeRoot: string;
   remoteUrlForRepo?: (repo: string) => string;
@@ -103,10 +144,11 @@ export function createGitWorkspaceManager(options: {
     }: {
       repo: string;
       issueNumber: number;
-    }): Promise<{ workspacePath: string }> {
+    }): Promise<{ workspacePath: string; mergeConflictDetected: boolean }> {
       const workspacePath = paths.workspaceDir(repo, issueNumber);
       if (await pathExists(workspacePath)) {
-        return { workspacePath };
+        const mergeConflictDetected = await tryUpdateFromDefaultBranch(workspacePath);
+        return { workspacePath, mergeConflictDetected };
       }
 
       const { repoPath, defaultBranch } = await ensureCanonicalClone(repo);
@@ -126,7 +168,7 @@ export function createGitWorkspaceManager(options: {
       await git(['remote', 'set-url', 'origin', remoteUrl], workspacePath);
       await git(['checkout', '-B', branch], workspacePath);
 
-      return { workspacePath };
+      return { workspacePath, mergeConflictDetected: false };
     },
     async prepareReadOnlyClone({ repo }: { repo: string }): Promise<{ workspacePath: string }> {
       // Refine only reads the issue and, at most, the canonical clone -

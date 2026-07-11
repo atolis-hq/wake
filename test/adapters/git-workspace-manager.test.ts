@@ -220,6 +220,123 @@ describe('git workspace manager', () => {
     expect(readme).toContain('# seed');
   }, 20_000);
 
+  it('returns mergeConflictDetected: false for a freshly created workspace', async () => {
+    const wakeRoot = join(root, '.wake');
+    const manager = createGitWorkspaceManager({
+      wakeRoot,
+      remoteUrlForRepo: () => remotePath,
+    });
+
+    const { mergeConflictDetected } = await manager.prepareWorkspace({
+      repo: 'acme/example',
+      issueNumber: 42,
+    });
+
+    expect(mergeConflictDetected).toBe(false);
+  }, 20_000);
+
+  it('merges default branch into a clean existing workspace when ahead', async () => {
+    const wakeRoot = join(root, '.wake');
+    const manager = createGitWorkspaceManager({
+      wakeRoot,
+      remoteUrlForRepo: () => remotePath,
+    });
+
+    const { workspacePath } = await manager.prepareWorkspace({
+      repo: 'acme/example',
+      issueNumber: 42,
+    });
+
+    // Push a new file to remote main (no conflict)
+    const seedPath = join(root, 'seed-main');
+    await writeFile(join(seedPath, 'newfile.txt'), 'new content\n', 'utf8');
+    await git(['-C', seedPath, 'add', 'newfile.txt'], root);
+    await git(['-C', seedPath, 'commit', '-m', 'add newfile'], root);
+    await git(['-C', seedPath, 'push', 'origin', 'main'], root);
+
+    const { mergeConflictDetected } = await manager.prepareWorkspace({
+      repo: 'acme/example',
+      issueNumber: 42,
+    });
+
+    expect(mergeConflictDetected).toBe(false);
+    // New file from main should be merged into the workspace
+    await expect(access(join(workspacePath, 'newfile.txt'))).resolves.toBeUndefined();
+  }, 20_000);
+
+  it('skips merge update when workspace has pending changes', async () => {
+    const wakeRoot = join(root, '.wake');
+    const manager = createGitWorkspaceManager({
+      wakeRoot,
+      remoteUrlForRepo: () => remotePath,
+    });
+
+    const { workspacePath } = await manager.prepareWorkspace({
+      repo: 'acme/example',
+      issueNumber: 42,
+    });
+
+    // Push a new file to remote main
+    const seedPath = join(root, 'seed-main');
+    await writeFile(join(seedPath, 'newfile.txt'), 'new content\n', 'utf8');
+    await git(['-C', seedPath, 'add', 'newfile.txt'], root);
+    await git(['-C', seedPath, 'commit', '-m', 'add newfile'], root);
+    await git(['-C', seedPath, 'push', 'origin', 'main'], root);
+
+    // Introduce a pending (untracked) change in the workspace
+    await writeFile(join(workspacePath, 'pending.txt'), 'local work\n', 'utf8');
+
+    const { mergeConflictDetected } = await manager.prepareWorkspace({
+      repo: 'acme/example',
+      issueNumber: 42,
+    });
+
+    expect(mergeConflictDetected).toBe(false);
+    // Pending file is preserved (merge was skipped)
+    await expect(access(join(workspacePath, 'pending.txt'))).resolves.toBeUndefined();
+    // Upstream file was NOT merged (merge was skipped)
+    await expect(access(join(workspacePath, 'newfile.txt'))).rejects.toThrow();
+  }, 20_000);
+
+  it('detects merge conflict and leaves workspace in a clean state', async () => {
+    const wakeRoot = join(root, '.wake');
+    const manager = createGitWorkspaceManager({
+      wakeRoot,
+      remoteUrlForRepo: () => remotePath,
+    });
+
+    const { workspacePath } = await manager.prepareWorkspace({
+      repo: 'acme/example',
+      issueNumber: 42,
+    });
+
+    // Commit a conflicting change in the workspace branch
+    await writeFile(join(workspacePath, 'README.md'), '# workspace version\n', 'utf8');
+    await git(['-C', workspacePath, 'add', 'README.md'], root);
+    await git(['-C', workspacePath, '-c', 'user.email=test@test.local', '-c', 'user.name=Test', 'commit', '-m', 'workspace change'], root);
+
+    // Push a conflicting change to remote main (same file, different content)
+    const seedPath = join(root, 'seed-main');
+    await writeFile(join(seedPath, 'README.md'), '# remote version\n', 'utf8');
+    await git(['-C', seedPath, 'add', 'README.md'], root);
+    await git(['-C', seedPath, 'commit', '-m', 'remote change'], root);
+    await git(['-C', seedPath, 'push', 'origin', 'main'], root);
+
+    const { mergeConflictDetected } = await manager.prepareWorkspace({
+      repo: 'acme/example',
+      issueNumber: 42,
+    });
+
+    expect(mergeConflictDetected).toBe(true);
+
+    // Workspace must not be left in a MERGING state
+    const { stdout: statusOutput } = await execFile('git', ['status', '--porcelain'], {
+      cwd: workspacePath,
+      env: process.env,
+    });
+    expect(statusOutput.trim()).toBe('');
+  }, 20_000);
+
   it('uses a non-hardlink local clone when creating a missing workspace', () => {
     expect(
       buildWorkspaceCloneArgs({

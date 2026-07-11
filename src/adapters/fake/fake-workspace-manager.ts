@@ -12,7 +12,7 @@ export function createFakeWorkspaceManager(root: string) {
     }) {
       const workspacePath = join(root, repo.replace(/[\\/]/g, '__'), String(issueNumber));
       await mkdir(workspacePath, { recursive: true });
-      return { workspacePath };
+      return { workspacePath, mergeConflictDetected: false };
     },
     async prepareReadOnlyClone({ repo }: { repo: string }) {
       const workspacePath = join(root, repo.replace(/[\\/]/g, '__'), 'canonical');
