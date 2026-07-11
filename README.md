@@ -1,6 +1,6 @@
 # Wake
 
-Wake is an autonomous agent control plane for software development. It watches the work channels your team already uses (GitHub issues today), decides each item's next lifecycle step with deterministic rules, and launches local coding-agent CLIs (Claude Code, Codex, Cursor) only when agentic execution is actually needed. There are no new tools, dashboards, or rituals to adopt: work is refined, implemented in an isolated git workspace, and gated for approval directly on the ticket — Wake asks questions, requests sign-off, and reports progress as issue comments and labels, and a human can pick up the exact agent session locally at any point.
+Wake is an autonomous agent control plane for software development. It watches existing work channels (GitHub issues today), decides each item's next lifecycle step with deterministic rules, and launches local coding-agent CLIs (Claude Code, Codex, Cursor) only when agentic execution is needed. There are no new tools, dashboards, or rituals to adopt: work is refined, implemented in an isolated git workspace, and gated for approval on the ticket — Wake asks questions, requests sign-off, reports progress as comments and labels, and lets a human pick up the exact agent session locally at any point.
 
 Key callouts:
 
