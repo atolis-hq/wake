@@ -136,7 +136,7 @@ function buildNeedsWakeActionIssue(overrides: {
 }
 
 function buildBlockedOrFailedIssue(overrides: {
-  stage: 'blocked' | 'failed' | 'queue';
+  stage: 'blocked' | 'refine' | 'implement' | 'queue';
   latestCommentId?: string;
   latestCommentIsBotAuthored?: boolean;
   lastHandledCommentId?: string;
@@ -522,12 +522,26 @@ describe('policy engine: chooseRetryActionAfterHumanReply', () => {
   it('retries the last run action for a failed issue with an unhandled human reply', () => {
     const policy = createPolicyEngine();
     const issue = buildBlockedOrFailedIssue({
-      stage: 'failed',
+      stage: 'refine',
       latestCommentId: 'c-2',
       lastHandledCommentId: 'c-1',
       lastRunAction: 'refine',
     });
+    issue.context.lastRunSentinel = 'FAILED';
 
+    expect(policy.chooseRetryActionAfterHumanReply(issue)).toBe('refine');
+  });
+
+  it('retries a quota-failed action after the control-plane pause expires without a human reply', () => {
+    const policy = createPolicyEngine();
+    const issue = buildBlockedOrFailedIssue({
+      stage: 'refine',
+      lastRunAction: 'refine',
+    });
+    issue.context.lastRunSentinel = 'FAILED';
+    issue.context.lastFailureClass = 'quota';
+
+    expect(policy.needsWakeAction(issue)).toBe(true);
     expect(policy.chooseRetryActionAfterHumanReply(issue)).toBe('refine');
   });
 
@@ -543,7 +557,7 @@ describe('policy engine: chooseRetryActionAfterHumanReply', () => {
     expect(policy.chooseRetryActionAfterHumanReply(issue)).toBeNull();
   });
 
-  it('does not retry for bot comments or stages outside blocked and failed', () => {
+  it('does not retry for bot comments or runs that did not fail or block', () => {
     const policy = createPolicyEngine();
     const botReply = buildBlockedOrFailedIssue({
       stage: 'blocked',

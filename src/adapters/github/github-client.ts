@@ -4,12 +4,13 @@ export function createGitHubClient(token: string) {
   const octokit = new Octokit({ auth: token });
 
   return {
-    async listIssues(owner: string, repo: string, perPage: number) {
+    async listIssues(owner: string, repo: string, perPage: number, since?: string) {
       return octokit.paginate(octokit.rest.issues.listForRepo, {
         owner,
         repo,
-        state: 'open',
+        state: 'all',
         per_page: perPage,
+        ...(since === undefined ? {} : { since }),
       });
     },
     async listComments(

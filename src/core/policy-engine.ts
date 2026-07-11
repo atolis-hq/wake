@@ -87,6 +87,10 @@ export function createPolicyEngine() {
         typeof context.lastRunSentinel === 'string'
           ? context.lastRunSentinel
           : undefined;
+      const lastFailureClass =
+        typeof context.lastFailureClass === 'string'
+          ? context.lastFailureClass
+          : undefined;
 
       if (issue.wake.lastRunId === undefined) {
         return true;
@@ -100,8 +104,12 @@ export function createPolicyEngine() {
         return true;
       }
 
-      if (lastRunSentinel === failedRunnerSentinel) {
+      if (lastRunSentinel === failedRunnerSentinel && lastFailureClass !== 'quota') {
         return false;
+      }
+
+      if (lastFailureClass === 'quota') {
+        return true;
       }
 
       if (issue.wake.stage === 'queue' && lastCompletedAction !== 'refine') {
@@ -126,7 +134,15 @@ export function createPolicyEngine() {
       return null;
     },
     chooseRetryActionAfterHumanReply(issue: IssueStateRecord): AgentAction | null {
-      if (issue.wake.stage !== 'blocked' && issue.wake.stage !== 'failed') {
+      const context = issue.context as Record<string, unknown>;
+      const failed = context.lastRunSentinel === failedRunnerSentinel;
+      if (failed && context.lastFailureClass === 'quota') {
+        return agentActionValues.includes(context.lastRunAction as AgentAction)
+          ? (context.lastRunAction as AgentAction)
+          : null;
+      }
+
+      if (issue.wake.stage !== 'blocked' && !failed) {
         return null;
       }
 
@@ -134,7 +150,6 @@ export function createPolicyEngine() {
         return null;
       }
 
-      const context = issue.context as Record<string, unknown>;
       return agentActionValues.includes(context.lastRunAction as AgentAction)
         ? (context.lastRunAction as AgentAction)
         : null;

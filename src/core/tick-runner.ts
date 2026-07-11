@@ -18,6 +18,7 @@ import { maxConfiguredRunnerTimeoutMs } from '../domain/runner-routing.js';
 import { stageLabelForStage } from '../domain/stages.js';
 import type { AgentAction, EventEnvelope, IssueStateRecord, RunRecord, WakeConfig } from '../domain/types.js';
 import { createEventEnvelope } from '../lib/event-log.js';
+import { resolveQuotaPauseUntil } from './quota-backoff.js';
 
 type ParsedRunnerResult = ReturnType<typeof parseRunnerResult>;
 
@@ -144,10 +145,6 @@ export function createTickRunner(deps: {
       return 'wake:status.completed';
     }
 
-    if (stage === 'failed') {
-      return 'wake:status.failed';
-    }
-
     return 'wake:status.pending';
   }
 
@@ -201,7 +198,30 @@ export function createTickRunner(deps: {
         workspacePath !== undefined &&
         isPerIssueWorkspacePath(workspacePath)
       ) {
-        await deps.workspaceManager.cleanupWorkspace({ workspacePath });
+        try {
+          await deps.workspaceManager.cleanupWorkspace({ workspacePath });
+        } catch (error) {
+          await deps.stateStore.appendEventEnvelope(createEventEnvelope({
+            eventId: `workspace-cleanup-failed-${projection.issue.repo.replace(/[^a-z0-9]+/gi, '-')}-${projection.issue.number}`,
+            workItemKey: projection.workItemKey,
+            streamScope: 'work-item',
+            direction: 'internal',
+            sourceSystem: 'wake',
+            sourceEventType: 'wake.workspace.cleanup-failed',
+            sourceRefs: {
+              repo: projection.issue.repo,
+              issueNumber: projection.issue.number,
+            },
+            occurredAt: nowIso,
+            ingestedAt: nowIso,
+            trigger: 'context-only',
+            payload: {
+              workspacePath,
+              error: error instanceof Error ? error.message : String(error),
+            },
+          }));
+          continue;
+        }
         const cleanupEvent = createEventEnvelope({
           eventId: `workspace-cleaned-${projection.issue.repo.replace(/[^a-z0-9]+/gi, '-')}-${projection.issue.number}-${deps.clock.now().getTime()}`,
           workItemKey: projection.workItemKey,
@@ -239,10 +259,34 @@ export function createTickRunner(deps: {
 
   async function reconcileStaleRunningRecords(now: Date): Promise<void> {
     const finishedAt = now.toISOString();
-    const staleRecords = (await deps.stateStore.listRunRecords())
+    const runRecords = await deps.stateStore.listRunRecords();
+    const staleRecords = runRecords
       .filter((record) => isStaleRunningRecord(record, now));
 
     for (const record of staleRecords) {
+      const projection = await deps.stateStore.readIssueState(record.repo, record.issueNumber);
+      const newerCompletedRun = runRecords.some((candidate) =>
+        candidate.repo === record.repo &&
+        candidate.issueNumber === record.issueNumber &&
+        candidate.runId !== record.runId &&
+        candidate.status !== 'running' &&
+        Date.parse(candidate.startedAt) > Date.parse(record.startedAt)
+      );
+      if (projection?.wake.lastRunId !== record.runId || newerCompletedRun) {
+        await deps.stateStore.writeRunRecord({
+          ...record,
+          status: 'superseded',
+          finishedAt,
+          summary: 'Stale running record was superseded by a newer run.',
+          metadata: {
+            ...record.metadata,
+            reconciledBy: 'stale-running-record',
+            supersededBy: projection?.wake.lastRunId,
+          },
+        });
+        continue;
+      }
+
       await deps.stateStore.writeRunRecord({
         ...record,
         status: 'failed',
@@ -275,7 +319,6 @@ export function createTickRunner(deps: {
         payload: {
           action: record.action,
           sentinel: 'FAILED',
-          nextStage: 'failed',
           runId: record.runId,
           reason: 'runner:stale-timeout',
           ...(record.routing === undefined ? {} : { routing: record.routing }),
@@ -284,14 +327,14 @@ export function createTickRunner(deps: {
       await deps.stateStore.appendEventEnvelope(runCompletedEvent);
       await projectionUpdater.rebuildFromEvents([runCompletedEvent]);
 
-      const projection = await deps.stateStore.readIssueState(record.repo, record.issueNumber);
-      if (projection !== null) {
+      const updatedProjection = await deps.stateStore.readIssueState(record.repo, record.issueNumber);
+      if (updatedProjection !== null) {
         await deliverOutboundEvent(
           createLabelsEvent({
-            projection,
+            projection: updatedProjection,
             runId: record.runId,
             statusLabel: 'wake:status.failed',
-            stageLabel: stageLabelForStage('failed'),
+            stageLabel: stageLabelForStage(updatedProjection.wake.stage),
             occurredAt: finishedAt,
           }),
         );
@@ -512,6 +555,28 @@ export function createTickRunner(deps: {
               : rawSentinel;
           const nextStage = lifecycle.nextStageFromSentinel(action, sentinel);
           const finishedAt = deps.clock.now().toISOString();
+          if (runnerResult.failureClass === 'quota') {
+            const ledger = await deps.stateStore.readLedger();
+            const quotaFailureCount = (ledger?.quotaFailureCount ?? 0) + 1;
+            await deps.stateStore.writeLedger({
+              schemaVersion: 1,
+              pausedUntil: resolveQuotaPauseUntil({
+                result: runnerResult.result,
+                now: new Date(finishedAt),
+                failureCount: quotaFailureCount,
+              }),
+              quotaFailureCount,
+              lastQuotaFailureAt: finishedAt,
+            });
+          } else {
+            const ledger = await deps.stateStore.readLedger();
+            if ((ledger?.quotaFailureCount ?? 0) > 0) {
+              await deps.stateStore.writeLedger({
+                schemaVersion: 1,
+                quotaFailureCount: 0,
+              });
+            }
+          }
           const resultMetadata = {
             ...runnerResult.metadata,
             envelope: parsedRunnerResult.envelope,
@@ -568,7 +633,9 @@ export function createTickRunner(deps: {
               ...(runnerResult.failureClass === undefined
                 ? {}
                 : { failureClass: runnerResult.failureClass }),
-              handledCommentId: latestHumanCommentId(candidate),
+              ...(runnerResult.failureClass === 'quota'
+                ? {}
+                : { handledCommentId: latestHumanCommentId(candidate) }),
               body: parsedRunnerResult.body,
               envelope: parsedRunnerResult.envelope,
             },
@@ -586,19 +653,21 @@ export function createTickRunner(deps: {
             }),
           );
 
-          const publishIntent = createPublishIntentEvent({
-            projection: candidate,
-            runId,
-            action,
-            runnerResult,
-            parsedRunnerResult,
-            sentinel,
-            occurredAt: finishedAt,
-            startedAt: nowIso,
-            ...(workspacePath === undefined ? {} : { workspacePath }),
-          });
+          if (runnerResult.failureClass !== 'quota') {
+            const publishIntent = createPublishIntentEvent({
+              projection: candidate,
+              runId,
+              action,
+              runnerResult,
+              parsedRunnerResult,
+              sentinel,
+              occurredAt: finishedAt,
+              startedAt: nowIso,
+              ...(workspacePath === undefined ? {} : { workspacePath }),
+            });
 
-          await deliverOutboundEvent(publishIntent);
+            await deliverOutboundEvent(publishIntent);
+          }
 
           return {
             status: 'processed' as const,

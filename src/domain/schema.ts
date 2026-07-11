@@ -149,8 +149,16 @@ const eventEnvelopeSourceRefsSchema = z.object({
   sourceUrl: z.string().optional(),
 });
 
-function normalizeLegacyStage(stage: unknown): unknown {
-  return stage === 'refined' ? 'implement' : stage;
+function normalizeLegacyStage(stage: unknown, failedAction?: unknown): unknown {
+  if (stage === 'refined') {
+    return 'implement';
+  }
+  if (stage === 'failed') {
+    return agentActionValues.includes(failedAction as (typeof agentActionValues)[number])
+      ? failedAction
+      : 'queue';
+  }
+  return stage;
 }
 
 export const eventEnvelopeSchema = z.object({
@@ -186,11 +194,19 @@ export const issueStateRecordSchema = z.preprocess((input) => {
     typeof issue.number === 'number'
       ? `${issue.repo}#${issue.number}`
       : undefined);
+  const context = record.context !== null && typeof record.context === 'object'
+    ? record.context as Record<string, unknown>
+    : {};
 
   return {
     comments: [],
-    context: {},
     ...record,
+    context: {
+      ...context,
+      ...(context.lastRunAction === undefined && context.blockedFromAction !== undefined
+        ? { lastRunAction: context.blockedFromAction }
+        : {}),
+    },
     workItemKey,
     wake:
       record.wake !== null && typeof record.wake === 'object'
@@ -198,13 +214,19 @@ export const issueStateRecordSchema = z.preprocess((input) => {
             recentEventIds: [],
             expectedEcho: { commentIds: [], labels: [] },
             ...(record.wake as Record<string, unknown>),
-            stage: normalizeLegacyStage((record.wake as Record<string, unknown>).stage),
+            stage: normalizeLegacyStage(
+              (record.wake as Record<string, unknown>).stage,
+              context.lastRunAction,
+            ),
             stageHistory: Array.isArray((record.wake as Record<string, unknown>).stageHistory)
               ? ((record.wake as Record<string, unknown>).stageHistory as unknown[]).map((entry) =>
                   entry !== null && typeof entry === 'object'
                     ? {
                         ...(entry as Record<string, unknown>),
-                        stage: normalizeLegacyStage((entry as Record<string, unknown>).stage),
+                        stage: normalizeLegacyStage(
+                          (entry as Record<string, unknown>).stage,
+                          context.lastRunAction,
+                        ),
                       }
                     : entry,
                 )
@@ -242,7 +264,7 @@ export const runRecordSchema = z.object({
   repo: z.string(),
   issueNumber: z.number().int().positive(),
   action: agentActionSchema,
-  status: z.enum(['running', 'completed', 'awaiting-approval', 'blocked', 'failed']),
+  status: z.enum(['running', 'completed', 'awaiting-approval', 'blocked', 'failed', 'superseded']),
   startedAt: isoTimestampSchema,
   finishedAt: isoTimestampSchema.optional(),
   sessionId: z.string().optional(),
@@ -255,6 +277,8 @@ export const runRecordSchema = z.object({
 export const ledgerSchema = z.object({
   schemaVersion: z.literal(1),
   pausedUntil: isoTimestampSchema.optional(),
+  quotaFailureCount: z.number().int().nonnegative().optional(),
+  lastQuotaFailureAt: isoTimestampSchema.optional(),
 });
 
 export const wakeConfigSchema = z.object({
@@ -380,7 +404,7 @@ export function parseRunnerResult(
   envelope: 'structured' | 'degraded';
   result?: z.infer<typeof wakeResultEnvelopeSchema>;
 } {
-  const wakeResultFencePattern = /^```wake-result[^\n]*\n([\s\S]*?)^```[ \t]*$/gm;
+  const wakeResultFencePattern = /^```(?:wake-result[^\n]*\n|[ \t]*\n[ \t]*wake-result[ \t]*\n)([\s\S]*?)^```[ \t]*$/gm;
   let lastMatch: RegExpExecArray | null = null;
   let match: RegExpExecArray | null;
 
@@ -411,20 +435,42 @@ export function parseRunnerResult(
     }
   }
 
+  const offFenceEnvelopePattern = /^```wake-result[^\n]*\n```[ \t]*\n(\{[^\n]+\})[ \t]*$/gm;
+  let offFenceMatch: RegExpExecArray | null = null;
+  while ((match = offFenceEnvelopePattern.exec(result)) !== null) {
+    offFenceMatch = match;
+  }
+  if (offFenceMatch !== null) {
+    try {
+      const parsed = wakeResultEnvelopeSchema.safeParse(JSON.parse(offFenceMatch[1] ?? 'null'));
+      if (parsed.success) {
+        return {
+          status: parsed.data.status,
+          body: result.slice(0, offFenceMatch.index).trim() || synthesizeBodyFromEnvelope(parsed.data),
+          envelope: 'structured',
+          result: parsed.data,
+        };
+      }
+    } catch {
+      // Invalid off-fence trailers intentionally degrade to sentinel parsing.
+    }
+  }
+
   const lines = result.split('\n');
-  const lastLine = result
-    .split('\n')
+  const lastLine = lines
     .map((line) => line.trim())
     // Skip closing code fence lines — they appear as the last non-empty line when the
     // sentinel is embedded inside the fenced block or when a plain ``` fence is used.
     .filter((line) => line.length > 0 && line !== '```')
     .at(-1);
 
-  const parsed = runnerSentinelSchema.safeParse(lastLine);
+  const normalizedLastLine = lastLine?.replace(/^(?:\*\*|__)(.+)(?:\*\*|__)$/, '$1');
+  const parsed = runnerSentinelSchema.safeParse(normalizedLastLine);
   if (!parsed.success) {
+    const body = result.trim();
     return {
-      status: 'FAILED',
-      body: result.trim(),
+      status: body.length === 0 ? 'FAILED' : 'BLOCKED',
+      body,
       envelope: 'degraded',
     };
   }

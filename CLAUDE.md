@@ -61,7 +61,7 @@ The durable record is an append-only event stream, not the projection:
 5. `tick-runner.ts` orchestrates one pass of the above and, when agentic work is required, invokes the `AgentRunner` with a compact projection summary plus recent events (not the full event log)
 6. agent-produced outbound intents (status updates, questions, PR links) go back through the same event model via `OutboundSink`, so the agent never needs to know the delivery channel — Wake owns routing/formatting per sink
 
-Stages (`domain/stages.ts`): `queue -> refined -> active -> blocked/done/failed`. Runner sentinels: `DONE` / `BLOCKED` / `FAILED`, parsed from agent output via `domain/schema.ts`.
+Stages (`domain/stages.ts`): `queue -> refine -> implement -> awaiting-approval/done`, with `blocked` for work awaiting human input. `FAILED` is a run status and does not change the current stage. Runner sentinels are `DONE` / `BLOCKED` / `FAILED`, parsed from agent output via `domain/schema.ts`.
 
 ### Wake home (`.wake/`)
 

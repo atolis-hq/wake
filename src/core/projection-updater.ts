@@ -136,6 +136,7 @@ function applyEvent(
       wake: {
         ...current.wake,
         stage: payload.claimedStage,
+        lastRunId: event.sourceRefs.runId ?? current.wake.lastRunId,
         syncedAt: event.ingestedAt,
         stageHistory: [
           ...current.wake.stageHistory,
@@ -161,6 +162,7 @@ function applyEvent(
       workspacePath?: string;
       reason?: string;
       handledCommentId?: string;
+      failureClass?: string;
     };
 
     // Clear the session when the stage moves forward (new action needed) or the
@@ -170,6 +172,8 @@ function applyEvent(
       payload.nextStage !== undefined &&
       payload.nextStage !== 'blocked' &&
       payload.nextStage !== current.wake.stage;
+    const stageChanged =
+      payload.nextStage !== undefined && payload.nextStage !== current.wake.stage;
     const isFailed = payload.sentinel === 'FAILED';
     const shouldClearSession = isForwardProgression || isFailed;
 
@@ -177,6 +181,7 @@ function applyEvent(
       ...current,
       context: {
         ...current.context,
+        lastFailureClass: payload.failureClass,
         ...(payload.handledCommentId === undefined
           ? {}
           : { lastHandledCommentId: payload.handledCommentId }),
@@ -207,14 +212,16 @@ function applyEvent(
           : (payload.sessionCli ?? current.wake.sessionCli),
         workspacePath: payload.workspacePath ?? current.wake.workspacePath,
         syncedAt: event.ingestedAt,
-        stageHistory: [
-          ...current.wake.stageHistory,
-          {
-            stage: payload.nextStage ?? current.wake.stage,
-            changedAt: event.occurredAt,
-            reason: payload.reason ?? event.sourceEventType,
-          },
-        ],
+        stageHistory: stageChanged
+          ? [
+              ...current.wake.stageHistory,
+              {
+                stage: payload.nextStage,
+                changedAt: event.occurredAt,
+                reason: payload.reason ?? event.sourceEventType,
+              },
+            ]
+          : current.wake.stageHistory,
         recentEventIds: [...current.wake.recentEventIds, event.eventId].slice(-10),
       },
     });

@@ -28,12 +28,24 @@ describe('github client', () => {
     const { createGitHubClient } = await import('../../src/adapters/github/github-client.js');
     const client = createGitHubClient('fake-token');
 
-    const issues = await client.listIssues('atolis-hq', 'wake', 25);
+    const issues = await client.listIssues(
+      'atolis-hq',
+      'wake',
+      25,
+      '2026-07-11T11:00:00.000Z',
+    );
 
     expect(issues).toHaveLength(2);
     expect(issues[0]?.number).toBe(5);
     expect(issues[1]?.number).toBe(6);
     expect(issues[1]).toHaveProperty('pull_request');
+    expect(paginate).toHaveBeenCalledWith(expect.anything(), {
+      owner: 'atolis-hq',
+      repo: 'wake',
+      state: 'all',
+      per_page: 25,
+      since: '2026-07-11T11:00:00.000Z',
+    });
   });
 
   it('replaces issue labels via the dedicated setLabels endpoint', async () => {

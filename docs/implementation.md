@@ -125,8 +125,11 @@ The queue is GitHub issues; state is labels. This gives a phone-native
 interface, a free audit trail, and zero custom UI.
 
 ```text
-wake:queue → wake:refine → wake:implement → wake:done | wake:blocked | wake:failed
+wake:queue → wake:refine → wake:implement → wake:done | wake:blocked
 ```
+
+A failed run keeps its current stage and applies `wake:status.failed`; failure
+is an execution status, not a workflow stage.
 
 - The issue **body** is the task spec (template: context, acceptance criteria,
   out-of-scope). A missing-criteria issue is rejected/flagged rather than run.
