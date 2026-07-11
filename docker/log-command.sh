@@ -94,6 +94,7 @@ emit_check "repos-root" test -d "${container_mount}/repos"
 emit_check "gh-auth-status" gh auth status
 emit_check "claude-auth-status" claude auth status
 emit_check "codex-auth-status" codex login status
+emit_check "cursor-auth-status" cursor status
 
 set +e
 "$@" \

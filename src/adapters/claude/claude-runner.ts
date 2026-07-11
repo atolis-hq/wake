@@ -179,13 +179,27 @@ function parseClaudePrintOutput(stdout: string): ClaudePrintResult {
   return parseClaudePrintResult(JSON.parse(stdout));
 }
 
-function extractTokenUsage(usage: ClaudePrintResult['usage']): AgentRunTokenUsage | undefined {
+function extractTokenUsage(parsed: ClaudePrintResult): AgentRunTokenUsage | undefined {
+  const usage = parsed.usage;
   if (usage === undefined) {
     return undefined;
   }
   const inputTokens = typeof usage.input_tokens === 'number' ? usage.input_tokens : 0;
   const outputTokens = typeof usage.output_tokens === 'number' ? usage.output_tokens : 0;
-  return { inputTokens, outputTokens };
+  const cacheCreationInputTokens =
+    typeof usage.cache_creation_input_tokens === 'number'
+      ? usage.cache_creation_input_tokens
+      : undefined;
+  const cacheReadInputTokens =
+    typeof usage.cache_read_input_tokens === 'number' ? usage.cache_read_input_tokens : undefined;
+  return {
+    inputTokens,
+    outputTokens,
+    ...(cacheCreationInputTokens === undefined ? {} : { cacheCreationInputTokens }),
+    ...(cacheReadInputTokens === undefined ? {} : { cacheReadInputTokens }),
+    ...(parsed.total_cost_usd === undefined ? {} : { costUsd: parsed.total_cost_usd }),
+    ...(parsed.num_turns === undefined ? {} : { turns: parsed.num_turns }),
+  };
 }
 
 const CLAUDE_CLI_NAME = 'Claude';
@@ -395,7 +409,7 @@ export function createClaudeRunner(options: {
           ...(parsed.session_id === undefined ? {} : { sessionId: parsed.session_id }),
         }),
       );
-      const tokenUsage = extractTokenUsage(parsed.usage);
+      const tokenUsage = extractTokenUsage(parsed);
       return {
         result: parsed.result,
         model,

@@ -100,6 +100,7 @@ async function renderStatusBar() {
     const summary = document.getElementById('status-summary');
     summary.textContent =
       'runs today: ' + status.runsToday + ' · failures today: ' + status.failuresToday +
+      ' · cost today: $' + Number(status.costUsdToday ?? 0).toFixed(2) +
       ' · source freshness: ' + freshness +
       (status.lastRun ? ' · last run: ' + status.lastRun.repo + '#' + status.lastRun.issueNumber + ' ' + status.lastRun.action + ' → ' + (status.lastRun.sentinel ?? status.lastRun.status) : '');
   } catch (err) {
@@ -175,15 +176,30 @@ async function renderActivity() {
   main.appendChild(table);
 }
 
+function fmtCost(usd) {
+  if (usd === undefined || usd === null) return '';
+  return '$' + Number(usd).toFixed(usd < 1 ? 4 : 2);
+}
+
+function fmtTokens(tokenUsage) {
+  if (!tokenUsage) return '';
+  const total =
+    (tokenUsage.inputTokens || 0) + (tokenUsage.outputTokens || 0) +
+    (tokenUsage.cacheCreationInputTokens || 0) + (tokenUsage.cacheReadInputTokens || 0);
+  return total >= 1000 ? (total / 1000).toFixed(1) + 'k' : String(total);
+}
+
 async function renderRuns() {
   const runs = await getJson('/runs');
   const main = document.getElementById('main');
   main.innerHTML = '';
   const table = el('table', {}, [
-    el('tr', {}, ['repo#issue', 'action', 'status', 'sentinel', 'started', 'finished'].map((h) => el('th', { text: h }))),
+    el('tr', {}, ['repo#issue', 'action', 'status', 'sentinel', 'runner', 'tokens', 'cost', 'started', 'finished'].map((h) => el('th', { text: h }))),
     ...runs.map((r) => el('tr', {}, [
       el('td', { text: r.repo + '#' + r.issueNumber }), el('td', { text: r.action }), el('td', { text: r.status }),
-      el('td', { text: r.sentinel || '' }), el('td', { text: r.startedAt }), el('td', { text: r.finishedAt || '' }),
+      el('td', { text: r.sentinel || '' }), el('td', { text: r.routing ? r.routing.runnerName : '' }),
+      el('td', { text: fmtTokens(r.tokenUsage) }), el('td', { text: fmtCost(r.tokenUsage && r.tokenUsage.costUsd) }),
+      el('td', { text: r.startedAt }), el('td', { text: r.finishedAt || '' }),
     ])),
   ]);
   main.appendChild(table);
@@ -195,10 +211,14 @@ async function renderConfig() {
   main.innerHTML = '';
   main.appendChild(el('h3', { text: 'Routing table' }));
   main.appendChild(el('table', {}, [
-    el('tr', {}, ['stage', 'action', 'tier', 'runner', 'model'].map((h) => el('th', { text: h }))),
+    el('tr', {}, ['stage', 'action', 'tier', 'runner', 'model', 'fallback order'].map((h) => el('th', { text: h }))),
     ...data.routingTable.map((r) => el('tr', {}, [
       el('td', { text: r.stage }), el('td', { text: r.action || '' }), el('td', { text: r.tier || '' }),
       el('td', { text: r.runnerName || '' }), el('td', { text: r.model || '' }),
+      el('td', {}, (r.candidates || []).map((c) => el('span', {
+        class: 'chip' + (c.paused ? ' amber' : ''),
+        text: c.runnerName + (c.paused ? ' (paused)' : ''),
+      }))),
     ])),
   ]));
   main.appendChild(el('h3', { text: 'Effective config (redacted)' }));
@@ -209,11 +229,35 @@ async function renderHealth() {
   const health = await getJson('/health');
   const main = document.getElementById('main');
   main.innerHTML = '';
+  const runnerNames = Object.keys(health.pause.runnerHealth || {});
   main.appendChild(el('div', { class: 'tiles' }, [
     tile('Tick lock', health.lock.present ? (health.lock.stale ? 'stale' : 'held') : 'free'),
     tile('Paused', String(health.pause.paused)),
+    tile('Runners paused now', String(runnerNames.filter((name) => {
+      const until = health.pause.runnerHealth[name].pausedUntil;
+      return until && Date.parse(until) > Date.now();
+    }).length)),
     tile('Integrity issues', String(health.integrityIssues.length)),
   ]));
+  main.appendChild(el('h3', { text: 'Runner health (quota fallback, #67)' }));
+  if (runnerNames.length === 0) {
+    main.appendChild(el('p', { class: 'meta', text: 'No quota failures recorded.' }));
+  } else {
+    main.appendChild(el('table', {}, [
+      el('tr', {}, ['runner', 'status', 'paused until', 'failure count', 'last failure'].map((h) => el('th', { text: h }))),
+      ...runnerNames.map((name) => {
+        const entry = health.pause.runnerHealth[name];
+        const paused = entry.pausedUntil && Date.parse(entry.pausedUntil) > Date.now();
+        return el('tr', {}, [
+          el('td', { text: name }),
+          el('td', {}, [el('span', { class: 'chip' + (paused ? ' amber' : ' ok') , text: paused ? 'paused' : 'available' })]),
+          el('td', { text: entry.pausedUntil || '' }),
+          el('td', { text: String(entry.failureCount || 0) }),
+          el('td', { text: entry.lastFailureAt || '' }),
+        ]);
+      }),
+    ]));
+  }
   main.appendChild(el('h3', { text: 'Storage' }));
   main.appendChild(el('pre', { text: JSON.stringify(health.storage, null, 2) }));
   main.appendChild(el('h3', { text: 'Source polling' }));

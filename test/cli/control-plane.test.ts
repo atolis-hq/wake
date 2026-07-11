@@ -117,4 +117,59 @@ describe('control plane', () => {
 
     expect(sleepCalls).toEqual([5000]);
   });
+
+  it('doubles the idle sleep on consecutive idle ticks, capped at maxIntervalMs (#81)', async () => {
+    let calls = 0;
+    const tickRunner = {
+      runTick: vi.fn().mockImplementation(() => {
+        calls++;
+        if (calls > 5) {
+          controlPlane.stop();
+        }
+        return Promise.resolve({ status: 'idle' });
+      }),
+    };
+    const sleepCalls: number[] = [];
+
+    const controlPlane = createControlPlane({
+      tickRunner,
+      intervalMs: 1000,
+      maxIntervalMs: 5000,
+      isPaused: () => false,
+      logger: { info() {}, error() {} },
+      sleep: async (ms) => { sleepCalls.push(ms); },
+    });
+
+    await controlPlane.start();
+
+    expect(sleepCalls).toEqual([1000, 2000, 4000, 5000, 5000]);
+  });
+
+  it('resets the idle backoff to intervalMs after a processed tick', async () => {
+    const statuses = ['idle', 'idle', 'processed', 'idle', 'idle'];
+    let call = 0;
+    const tickRunner = {
+      runTick: vi.fn().mockImplementation(() => {
+        const status = statuses[call++];
+        if (call === statuses.length) {
+          controlPlane.stop();
+        }
+        return Promise.resolve({ status });
+      }),
+    };
+    const sleepCalls: number[] = [];
+
+    const controlPlane = createControlPlane({
+      tickRunner,
+      intervalMs: 1000,
+      isPaused: () => false,
+      logger: { info() {}, error() {} },
+      sleep: async (ms) => { sleepCalls.push(ms); },
+    });
+
+    await controlPlane.start();
+
+    // idle, idle (backed off) -> processed (no sleep, resets) -> idle back at base interval
+    expect(sleepCalls).toEqual([1000, 2000, 1000]);
+  });
 });

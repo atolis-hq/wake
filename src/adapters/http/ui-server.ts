@@ -173,7 +173,7 @@ async function handleRequest(
   }
 
   if (resource === 'config' && segments.length === 1) {
-    sendJson(res, 200, buildConfigView(config));
+    sendJson(res, 200, await buildConfigView({ config, stateStore, now: now() }));
     return;
   }
 

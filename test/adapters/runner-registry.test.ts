@@ -37,6 +37,134 @@ describe('runner registry routing', () => {
     });
   });
 
+  it('falls sideways to the next tier candidate when the primary runner is quota-paused (#67)', () => {
+    const config = createDefaultWakeConfig('/tmp/wake');
+    config.runners['fake-primary'] = { kind: 'fake', cli: 'Fake Primary' };
+    config.runners['fake-secondary'] = { kind: 'fake', cli: 'Fake Secondary' };
+    config.tiers.standard = ['fake-primary', 'fake-secondary'];
+    config.stages.implement = { action: 'implement', tier: 'standard' };
+
+    const now = new Date('2026-07-07T22:30:00.000Z');
+    const ledger = {
+      schemaVersion: 1 as const,
+      runners: {
+        'fake-primary': { pausedUntil: '2026-07-07T23:00:00.000Z', failureCount: 1 },
+      },
+    };
+
+    expect(resolveRunnerRouting({
+      config,
+      stage: 'implement',
+      action: 'implement',
+      ledger,
+      now,
+    })).toMatchObject({ runnerName: 'fake-secondary' });
+
+    // Rotation: once the pause expires, the primary is preferred again.
+    expect(resolveRunnerRouting({
+      config,
+      stage: 'implement',
+      action: 'implement',
+      ledger,
+      now: new Date('2026-07-07T23:00:01.000Z'),
+    })).toMatchObject({ runnerName: 'fake-primary' });
+  });
+
+  it('allows an early recovery probe on an estimated pause once the probe interval elapses', () => {
+    const config = createDefaultWakeConfig('/tmp/wake');
+    config.runners['fake-primary'] = { kind: 'fake', cli: 'Fake Primary' };
+    config.tiers.standard = ['fake-primary'];
+    config.stages.implement = { action: 'implement', tier: 'standard' };
+
+    const lastFailureAt = '2026-07-07T22:30:00.000Z';
+    const ledger = {
+      schemaVersion: 1 as const,
+      runners: {
+        // A 1-hour estimated pause (backoff guess, not a real reported reset time).
+        'fake-primary': {
+          pausedUntil: '2026-07-07T23:30:00.000Z',
+          pausedUntilSource: 'estimated' as const,
+          failureCount: 3,
+          lastFailureAt,
+        },
+      },
+    };
+
+    // Before the 15-minute probe interval: still fully paused.
+    expect(resolveRunnerRouting({
+      config,
+      stage: 'implement',
+      action: 'implement',
+      ledger,
+      now: new Date('2026-07-07T22:40:00.000Z'),
+    })).toBeNull();
+
+    // After the probe interval, but before the estimated pause fully elapses:
+    // let a real attempt through as a recovery probe in case the guess overshot.
+    expect(resolveRunnerRouting({
+      config,
+      stage: 'implement',
+      action: 'implement',
+      ledger,
+      now: new Date('2026-07-07T22:46:00.000Z'),
+    })).toMatchObject({
+      runnerName: 'fake-primary',
+      reason: expect.stringContaining('recovery probe'),
+    });
+  });
+
+  it('does not probe early on a reported (real) reset time - trusts it for its full duration', () => {
+    const config = createDefaultWakeConfig('/tmp/wake');
+    config.runners['fake-primary'] = { kind: 'fake', cli: 'Fake Primary' };
+    config.tiers.standard = ['fake-primary'];
+    config.stages.implement = { action: 'implement', tier: 'standard' };
+
+    const ledger = {
+      schemaVersion: 1 as const,
+      runners: {
+        'fake-primary': {
+          pausedUntil: '2026-07-07T23:30:00.000Z',
+          pausedUntilSource: 'reported' as const,
+          failureCount: 1,
+          lastFailureAt: '2026-07-07T22:30:00.000Z',
+        },
+      },
+    };
+
+    expect(resolveRunnerRouting({
+      config,
+      stage: 'implement',
+      action: 'implement',
+      ledger,
+      now: new Date('2026-07-07T23:00:00.000Z'),
+    })).toBeNull();
+  });
+
+  it('returns null when every tier candidate is quota-paused', () => {
+    const config = createDefaultWakeConfig('/tmp/wake');
+    config.runners['fake-primary'] = { kind: 'fake', cli: 'Fake Primary' };
+    config.runners['fake-secondary'] = { kind: 'fake', cli: 'Fake Secondary' };
+    config.tiers.standard = ['fake-primary', 'fake-secondary'];
+    config.stages.implement = { action: 'implement', tier: 'standard' };
+
+    const now = new Date('2026-07-07T22:30:00.000Z');
+    const ledger = {
+      schemaVersion: 1 as const,
+      runners: {
+        'fake-primary': { pausedUntil: '2026-07-07T23:00:00.000Z', failureCount: 1 },
+        'fake-secondary': { pausedUntil: '2026-07-07T23:05:00.000Z', failureCount: 1 },
+      },
+    };
+
+    expect(resolveRunnerRouting({
+      config,
+      stage: 'implement',
+      action: 'implement',
+      ledger,
+      now,
+    })).toBeNull();
+  });
+
   it('keeps explicit stage runner pins legal', () => {
     const config = createDefaultWakeConfig('/tmp/wake');
     config.runners.pinned = { kind: 'fake', cli: 'Pinned Fake' };

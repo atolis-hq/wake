@@ -173,17 +173,18 @@ export async function buildStatus(input: {
     buildBoard(input),
   ]);
 
-  const pausedUntilMs = ledger?.pausedUntil !== undefined ? Date.parse(ledger.pausedUntil) : undefined;
-  const pausedUntilFuture = pausedUntilMs !== undefined && pausedUntilMs > input.now.getTime();
-
   const lock = await readLockInfo(input.stateStore.paths.tickLockFile, input.now);
   const lockLive = lock.present && lock.pidAlive === true;
 
-  const loopState: 'paused' | 'ticking' | 'idle' = paused || pausedUntilFuture
+  // A quota-paused runner (#67) no longer stops the loop - routing falls
+  // sideways to another candidate in the tier, so only the manual pause file
+  // is a hard stop here. Per-runner health is surfaced separately below.
+  const loopState: 'paused' | 'ticking' | 'idle' = paused
     ? 'paused'
     : lockLive
       ? 'ticking'
       : 'idle';
+  const runnerHealth = ledger?.runners ?? {};
 
   const lastEvent = allEvents
     .slice()
@@ -224,7 +225,7 @@ export async function buildStatus(input: {
   return {
     loopState,
     paused,
-    pausedUntil: ledger?.pausedUntil,
+    runnerHealth,
     lock,
     lastEvent: lastEvent === undefined
       ? undefined
@@ -245,12 +246,23 @@ export async function buildStatus(input: {
       runs.filter((run) => run.status === 'failed').map((run) => run.startedAt),
       input.now,
     ),
+    costUsdToday: sumToday(
+      runs.map((run) => ({ at: run.startedAt, value: run.tokenUsage?.costUsd ?? 0 })),
+      input.now,
+    ),
   };
 }
 
 function countToday(timestamps: string[], now: Date): number {
   const today = now.toISOString().slice(0, 10);
   return timestamps.filter((ts) => ts.slice(0, 10) === today).length;
+}
+
+function sumToday(entries: Array<{ at: string; value: number }>, now: Date): number {
+  const today = now.toISOString().slice(0, 10);
+  return entries
+    .filter((entry) => entry.at.slice(0, 10) === today)
+    .reduce((total, entry) => total + entry.value, 0);
 }
 
 async function listSourceStates(sourceStateRoot: string) {
@@ -357,12 +369,28 @@ function redact(value: unknown, keyHint = ''): unknown {
   return value;
 }
 
-export function buildConfigView(config: WakeConfig) {
-  const routingTable = Object.entries(config.stages).map(([stage, route]) => {
-    const tier = route.tier ?? config.defaultTier;
-    const candidates = config.tiers[tier] ?? [];
+export async function buildConfigView(input: {
+  config: WakeConfig;
+  stateStore: StateStore;
+  now: Date;
+}) {
+  const ledger = await input.stateStore.readLedger();
+  const runnerHealth = ledger?.runners ?? {};
+
+  const routingTable = Object.entries(input.config.stages).map(([stage, route]) => {
+    const tier = route.tier ?? input.config.defaultTier;
+    const candidates = input.config.tiers[tier] ?? [];
     const runnerName = route.runner ?? candidates[0];
-    const runner = runnerName !== undefined ? config.runners[runnerName] : undefined;
+    const runner = runnerName !== undefined ? input.config.runners[runnerName] : undefined;
+    // Full fallback order for the tier (#67), each candidate's current pause
+    // state so the UI can show not just who's active but who Wake would fall
+    // sideways to next, and rotate back to once a pause expires.
+    const candidateHealth = candidates.map((name) => {
+      const health = runnerHealth[name];
+      const pausedUntil = health?.pausedUntil;
+      const paused = pausedUntil !== undefined && Date.parse(pausedUntil) > input.now.getTime();
+      return { runnerName: name, paused, pausedUntil };
+    });
     return {
       stage,
       action: route.action,
@@ -371,10 +399,11 @@ export function buildConfigView(config: WakeConfig) {
       runnerKind: runner?.kind,
       model: runner !== undefined && runner.kind !== 'fake' ? runner.model : undefined,
       timeoutMs: runner !== undefined && runner.kind !== 'fake' ? runner.timeoutMs : undefined,
+      candidates: candidateHealth,
     };
   });
 
-  return { config: redact(config), routingTable };
+  return { config: redact(input.config), routingTable };
 }
 
 async function dirSize(path: string): Promise<{ files: number; bytes: number }> {
@@ -440,7 +469,7 @@ export async function buildHealth(input: {
       stale: lock.present && ((lock.ageMs ?? 0) >= staleAfterMs || lock.pidAlive === false),
       staleAfterMs,
     },
-    pause: { paused, pausedUntil: ledger?.pausedUntil },
+    pause: { paused, runnerHealth: ledger?.runners ?? {} },
     sources: sourceStates.map((source) => ({
       ...source,
       ageMs: input.now.getTime() - Date.parse(source.lastSuccessfulPollAt),

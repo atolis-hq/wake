@@ -1,8 +1,19 @@
 import { describe, expect, it, vi } from 'vitest';
 
-const paginate = vi.fn();
+const paginateIterator = vi.fn();
+const paginate = Object.assign(vi.fn(), { iterator: paginateIterator });
 
 const setLabels = vi.fn();
+
+function pagesOf(...pages: unknown[][]) {
+  return {
+    async *[Symbol.asyncIterator]() {
+      for (const data of pages) {
+        yield { data };
+      }
+    },
+  };
+}
 
 vi.mock('@octokit/rest', () => ({
   Octokit: vi.fn().mockImplementation(() => ({
@@ -20,10 +31,10 @@ vi.mock('@octokit/rest', () => ({
 
 describe('github client', () => {
   it('passes through GitHub issues API results, including pull requests', async () => {
-    paginate.mockResolvedValueOnce([
+    paginateIterator.mockReturnValueOnce(pagesOf([
       { number: 5, title: 'A real issue' },
       { number: 6, title: 'An open PR', pull_request: { url: 'https://example.test/pulls/6' } },
-    ]);
+    ]));
 
     const { createGitHubClient } = await import('../../src/adapters/github/github-client.js');
     const client = createGitHubClient('fake-token');
@@ -39,13 +50,31 @@ describe('github client', () => {
     expect(issues[0]?.number).toBe(5);
     expect(issues[1]?.number).toBe(6);
     expect(issues[1]).toHaveProperty('pull_request');
-    expect(paginate).toHaveBeenCalledWith(expect.anything(), {
+    expect(paginateIterator).toHaveBeenCalledWith(expect.anything(), {
       owner: 'atolis-hq',
       repo: 'wake',
       state: 'all',
       per_page: 25,
       since: '2026-07-11T11:00:00.000Z',
     });
+  });
+
+  it('stops paginating once maxResults is reached instead of walking every page (E4)', async () => {
+    paginateIterator.mockReturnValueOnce(pagesOf(
+      [{ number: 1 }, { number: 2 }],
+      [{ number: 3 }, { number: 4 }],
+      [{ number: 5 }, { number: 6 }],
+    ));
+
+    const { createGitHubClient } = await import('../../src/adapters/github/github-client.js');
+    const client = createGitHubClient('fake-token');
+
+    const issues = await client.listIssues('atolis-hq', 'wake', 3);
+
+    expect(issues.map((issue) => (issue as { number: number }).number)).toEqual([1, 2, 3]);
+    expect(paginateIterator).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      per_page: 3,
+    }));
   });
 
   it('replaces issue labels via the dedicated setLabels endpoint', async () => {

@@ -4,14 +4,28 @@ export function createGitHubClient(token: string) {
   const octokit = new Octokit({ auth: token });
 
   return {
-    async listIssues(owner: string, repo: string, perPage: number, since?: string) {
-      return octokit.paginate(octokit.rest.issues.listForRepo, {
+    // `maxResults` is a hard cap on issues returned, not just a page size:
+    // octokit.paginate otherwise walks every page regardless of page size,
+    // which burns GitHub's rate limit (a "fourth budget") on repos with many
+    // issues. Stop paginating as soon as the cap is reached.
+    async listIssues(owner: string, repo: string, maxResults: number, since?: string) {
+      const perPage = Math.min(maxResults, 100);
+      const results: Awaited<ReturnType<typeof octokit.rest.issues.listForRepo>>['data'] = [];
+
+      for await (const { data } of octokit.paginate.iterator(octokit.rest.issues.listForRepo, {
         owner,
         repo,
         state: 'all',
         per_page: perPage,
         ...(since === undefined ? {} : { since }),
-      });
+      })) {
+        results.push(...data);
+        if (results.length >= maxResults) {
+          break;
+        }
+      }
+
+      return results.slice(0, maxResults);
     },
     async listComments(
       owner: string,

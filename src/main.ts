@@ -238,6 +238,7 @@ async function runStart(args: string[]) {
   const controlPlane = createControlPlane({
     tickRunner: runtime.tickRunner,
     intervalMs: runtime.config.scheduler.intervalMs,
+    maxIntervalMs: runtime.config.scheduler.maxIntervalMs,
     isPaused: () => runtime.stateStore.isPaused(),
     logger: {
       info(message) {

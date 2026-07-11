@@ -18,6 +18,13 @@ export interface OutboundSink {
 export interface AgentRunTokenUsage {
   inputTokens: number;
   outputTokens: number;
+  // Cache tokens dominate real agent-run cost/volume and were previously
+  // dropped entirely, understating usage by roughly an order of magnitude
+  // (#135). Present only when the CLI's structured output reports them.
+  cacheCreationInputTokens?: number;
+  cacheReadInputTokens?: number;
+  costUsd?: number;
+  turns?: number;
 }
 
 export interface AgentRunResult {

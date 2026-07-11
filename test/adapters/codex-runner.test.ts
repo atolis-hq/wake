@@ -4,6 +4,8 @@ import {
   buildCodexExecArgs,
   buildCodexResumeArgs,
   buildCodexToolCapabilityNote,
+  classifyCodexCliFailure,
+  extractCodexErrorMessage,
   extractCodexExecResult,
   formatCodexRunLogLine,
 } from '../../src/adapters/codex/codex-runner.js';
@@ -117,7 +119,18 @@ describe('codex runner output parsing', () => {
 
     expect(parsed.result).toBe('Implemented change\nDONE');
     expect(parsed.sessionId).toBe('thread-123');
-    expect(parsed.tokenUsage).toEqual({ inputTokens: 24763, outputTokens: 122 });
+    expect(parsed.tokenUsage).toEqual({ inputTokens: 24763, outputTokens: 122, turns: 1 });
+  });
+
+  it('accumulates usage across multiple turn.completed events instead of keeping only the last', () => {
+    const parsed = extractCodexExecResult([
+      '{"type":"thread.started","thread_id":"thread-123"}',
+      '{"type":"turn.completed","usage":{"input_tokens":100,"output_tokens":10}}',
+      '{"type":"turn.completed","usage":{"input_tokens":50,"output_tokens":5}}',
+      '{"type":"item.completed","item":{"id":"item_3","type":"agent_message","text":"DONE"}}',
+    ].join('\n'));
+
+    expect(parsed.tokenUsage).toEqual({ inputTokens: 150, outputTokens: 15, turns: 2 });
   });
 
   it('throws when the jsonl stream does not include a final agent message', () => {
@@ -128,5 +141,42 @@ describe('codex runner output parsing', () => {
         ),
       ),
     ).toThrow(/final agent message/i);
+  });
+});
+
+describe('codex runner failure classification', () => {
+  // Captured from a real `codex exec` invocation against an exhausted ChatGPT
+  // Codex plan quota.
+  const quotaStdout = [
+    '{"type":"thread.started","thread_id":"019f50d8-44de-7343-b518-5a99341d7173"}',
+    '{"type":"turn.started"}',
+    '{"type":"error","message":"You\'ve hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at 2:29 PM."}',
+    '{"type":"turn.failed","error":{"message":"You\'ve hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at 2:29 PM."}}',
+  ].join('\n');
+
+  it('extracts the structured error message from a quota-exhausted jsonl stream', () => {
+    expect(extractCodexErrorMessage(quotaStdout)).toBe(
+      "You've hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at 2:29 PM.",
+    );
+  });
+
+  it('classifies a usage-limit jsonl error as quota', () => {
+    expect(classifyCodexCliFailure({ stdout: quotaStdout, stderr: '', timedOut: false })).toBe(
+      'quota',
+    );
+  });
+
+  it('classifies a timeout as infra even if the stream happens to mention quota wording', () => {
+    expect(classifyCodexCliFailure({ stdout: quotaStdout, stderr: '', timedOut: true })).toBe(
+      'infra',
+    );
+  });
+
+  it('classifies an unrecognized failure as infra', () => {
+    expect(classifyCodexCliFailure({
+      stdout: '{"type":"error","message":"internal server error"}',
+      stderr: '',
+      timedOut: false,
+    })).toBe('infra');
   });
 });

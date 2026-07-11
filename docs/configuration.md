@@ -31,7 +31,8 @@ All configuration uses `schemaVersion: 1`.
     "extraMounts": []
   },
   "scheduler": {
-    "intervalMs": 60000
+    "intervalMs": 60000,
+    "maxIntervalMs": 600000
   },
   "runners": {
     "fake": { "kind": "fake" },
@@ -257,6 +258,7 @@ Control plane tick frequency and timing.
 | Property | Type | Description | Default |
 |----------|------|-------------|---------|
 | `intervalMs` | number | Milliseconds between control-plane ticks (minimum 1) | `60000` (60 seconds) |
+| `maxIntervalMs` | number | Ceiling for the idle-cadence backoff: each consecutive idle tick doubles the sleep (starting from `intervalMs`) up to this value, and any `processed` tick resets it back to `intervalMs` | `600000` (10 minutes) |
 
 ### runners
 
@@ -282,8 +284,23 @@ implement-stage runs pass `--force` (auto-approve writes). Session resume uses
 ### tiers
 
 Capability tiers map a closed category name to an ordered list of named runner
-candidates. Current selection is deterministic: Wake uses the first configured
-candidate in the tier.
+candidates. Wake normally uses the first configured candidate in the tier, but
+falls sideways to the next candidate whenever a higher-priority one is
+currently quota-paused (tracked per-runner in `ledger.json`, see below), and
+rotates back to the primary candidate automatically once its pause expires. If
+every candidate in a tier is paused, Wake leaves that item alone for the tick
+(no run is claimed) rather than running against a runner it already knows is
+exhausted.
+
+A quota pause is either **reported** (the CLI told us the real reset time,
+e.g. Claude's "resets 1:10am (UTC)") or **estimated** (no reset time was
+found, so Wake backs off exponentially: 15min, 30min, 1h, capped at 1h).
+Reported pauses are trusted for their full duration. Estimated pauses get an
+early recovery probe: 15 minutes after the failure that triggered the pause,
+Wake lets one real attempt through even though the estimated pause hasn't
+fully elapsed, in case the guess overshot and quota actually reset sooner. A
+failed probe simply recomputes the backoff from the new failure, same as any
+other quota failure.
 
 ### defaultTier
 

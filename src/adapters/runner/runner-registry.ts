@@ -3,14 +3,15 @@ import { createCodexRunner } from '../codex/codex-runner.js';
 import { createCursorRunner } from '../cursor/cursor-runner.js';
 import { createFakeRunner } from '../fake/fake-runner.js';
 import type { AgentRunner } from '../../core/contracts.js';
+import { resolveRunnerRouting } from '../../domain/runner-routing.js';
 import type {
-  AgentAction,
   RunnerEntry,
   RunnerKind,
   RunnerRouting,
-  Stage,
   WakeConfig,
 } from '../../domain/types.js';
+
+export { resolveRunnerRouting } from '../../domain/runner-routing.js';
 
 export interface ResolvedRunner {
   runner: AgentRunner;
@@ -77,49 +78,6 @@ async function runWithRouting(input: {
   };
 }
 
-export function resolveRunnerRouting(input: {
-  config: WakeConfig;
-  stage: Stage;
-  action: AgentAction;
-}): RunnerRouting {
-  const stageRoute = input.config.stages[input.stage];
-
-  if (stageRoute?.runner !== undefined) {
-    const entry = input.config.runners[stageRoute.runner];
-    if (entry === undefined) {
-      throw new Error(`Stage ${input.stage} pins unknown runner "${stageRoute.runner}".`);
-    }
-    return {
-      runnerName: stageRoute.runner,
-      runnerKind: entry.kind,
-      ...(stageRoute.tier === undefined ? {} : { tier: stageRoute.tier }),
-      reason: `stage ${input.stage} pins runner ${stageRoute.runner}`,
-    };
-  }
-
-  const tier = stageRoute?.tier ?? input.config.defaultTier;
-  const candidates = input.config.tiers[tier];
-  if (candidates === undefined || candidates.length === 0) {
-    throw new Error(`Stage ${input.stage} routes to unknown or empty tier "${tier}".`);
-  }
-
-  const runnerName = candidates[0]!;
-  const entry = input.config.runners[runnerName];
-  if (entry === undefined) {
-    throw new Error(`Tier ${tier} references unknown runner "${runnerName}".`);
-  }
-
-  return {
-    runnerName,
-    runnerKind: entry.kind,
-    tier,
-    reason:
-      stageRoute?.tier === undefined
-        ? `defaultTier ${tier} selected runner ${runnerName}`
-        : `stage ${input.stage} tier ${tier} selected runner ${runnerName}`,
-  };
-}
-
 export function createRegistryRunner(input: {
   config: WakeConfig;
   cwd: string;
@@ -172,11 +130,22 @@ export function createRegistryRunner(input: {
 
   return {
     async run(runInput) {
-      const routing = resolveRunnerRouting({
-        config: runInput.config,
-        stage: runInput.projection.wake.stage,
-        action: runInput.action,
-      });
+      // Callers that already resolved routing against the ledger (tick-runner,
+      // so it can skip claiming a run when every candidate is paused) pass it
+      // in; only fall back to a ledger-less resolve for direct callers (smoke
+      // tests, sandbox exec) that never see quota state.
+      const routing =
+        runInput.routing ??
+        resolveRunnerRouting({
+          config: runInput.config,
+          stage: runInput.projection.wake.stage,
+          action: runInput.action,
+        });
+      if (routing === null) {
+        throw new Error(
+          'No runner available: every candidate in the resolved tier is quota-paused.',
+        );
+      }
       const cacheKey = `${routing.runnerKind}:${routing.runnerName}`;
       const existing = cache.get(cacheKey);
       const runner =

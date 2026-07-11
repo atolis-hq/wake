@@ -159,15 +159,18 @@ describe('state store', () => {
     expect(saved?.lastSuccessfulPollAt).toBe('2026-07-05T12:00:00.000Z');
   });
 
-  it('honors pausedUntil until its reset time has passed', async () => {
+  it('does not treat a per-runner quota pause as a global pause (#67 sideways fallback)', async () => {
     const store = createStateStore({ wakeRoot: root });
     await store.writeLedger({
       schemaVersion: 1,
-      pausedUntil: '2026-07-08T01:10:00.000Z',
+      runners: {
+        'claude-haiku': { pausedUntil: '2026-07-08T01:10:00.000Z', failureCount: 1 },
+      },
     });
 
-    await expect(store.isPaused(new Date('2026-07-08T01:09:59.000Z'))).resolves.toBe(true);
-    await expect(store.isPaused(new Date('2026-07-08T01:10:00.000Z'))).resolves.toBe(false);
+    // A paused runner should not stop the whole tick loop - routing falls
+    // sideways to another candidate instead; only the manual pause file does.
+    await expect(store.isPaused(new Date('2026-07-08T01:09:59.000Z'))).resolves.toBe(false);
   });
 
   it('skips invalid issue-state files instead of returning an empty list', async () => {

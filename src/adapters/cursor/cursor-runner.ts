@@ -19,7 +19,7 @@
  * Keep this comment aligned with docs/runner-comparison.md when the adapter or
  * public CLI surface changes.
  */
-import type { AgentRunResult } from '../../core/contracts.js';
+import type { AgentRunResult, AgentRunTokenUsage } from '../../core/contracts.js';
 import type {
   AgentAction,
   EventEnvelope,
@@ -105,10 +105,39 @@ export function formatCursorRunLogLine(input: {
   return parts.join(' ');
 }
 
+// Verified against a live `cursor-agent agent -p --output-format json` call
+// (run through the wake-sandbox container, since the host `cursor` binary
+// here is the desktop app, not the CLI). Cursor's usage keys are camelCase
+// and different names from both Claude's and Codex's snake_case fields, e.g.:
+// {"usage":{"inputTokens":5945,"outputTokens":32,"cacheReadTokens":6020,"cacheWriteTokens":0}}
+// No cost field was present in that response, so costUsd stays unset for Cursor.
+function extractCursorTokenUsage(parsed: Record<string, unknown>): AgentRunTokenUsage | undefined {
+  const usage = parsed.usage as Record<string, unknown> | undefined;
+  if (usage === undefined) {
+    return undefined;
+  }
+  const inputTokens = typeof usage.inputTokens === 'number' ? usage.inputTokens : undefined;
+  const outputTokens = typeof usage.outputTokens === 'number' ? usage.outputTokens : undefined;
+  if (inputTokens === undefined || outputTokens === undefined) {
+    return undefined;
+  }
+  const cacheReadInputTokens =
+    typeof usage.cacheReadTokens === 'number' ? usage.cacheReadTokens : undefined;
+  const cacheCreationInputTokens =
+    typeof usage.cacheWriteTokens === 'number' ? usage.cacheWriteTokens : undefined;
+  return {
+    inputTokens,
+    outputTokens,
+    ...(cacheCreationInputTokens === undefined ? {} : { cacheCreationInputTokens }),
+    ...(cacheReadInputTokens === undefined ? {} : { cacheReadInputTokens }),
+  };
+}
+
 export function extractCursorAgentResult(stdout: string): {
   result: string;
   sessionId?: string;
   isError?: boolean;
+  tokenUsage?: AgentRunTokenUsage;
 } {
   const trimmed = stdout.trim();
   if (trimmed.length === 0) {
@@ -124,11 +153,13 @@ export function extractCursorAgentResult(stdout: string): {
 
   const sessionId = typeof parsed.session_id === 'string' ? parsed.session_id : undefined;
   const isError = typeof parsed.is_error === 'boolean' ? parsed.is_error : undefined;
+  const tokenUsage = extractCursorTokenUsage(parsed);
 
   return {
     result,
     ...(sessionId !== undefined ? { sessionId } : {}),
     ...(isError !== undefined ? { isError } : {}),
+    ...(tokenUsage !== undefined ? { tokenUsage } : {}),
   };
 }
 
@@ -368,6 +399,7 @@ export function createCursorRunner(options: {
           ? { failureClass: 'task' as const }
           : {}),
         ...(parsed.sessionId === undefined ? {} : { session_id: parsed.sessionId }),
+        ...(parsed.tokenUsage === undefined ? {} : { tokenUsage: parsed.tokenUsage }),
         metadata: {
           stdout: result.stdout,
           stderr: result.stderr,

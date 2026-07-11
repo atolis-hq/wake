@@ -215,6 +215,7 @@ function formatWakeComment(payload: Record<string, unknown>): string {
   const runnerTier = typeof payload.runnerTier === 'string' ? payload.runnerTier : undefined;
   const duration = typeof payload.duration === 'string' ? payload.duration : undefined;
   const tokens = typeof payload.tokens === 'string' ? payload.tokens : undefined;
+  const cost = typeof payload.cost === 'string' ? payload.cost : undefined;
   const workspacePath =
     typeof payload.workspacePath === 'string' ? payload.workspacePath : undefined;
 
@@ -226,6 +227,7 @@ function formatWakeComment(payload: Record<string, unknown>): string {
     model === undefined ? undefined : `model \`${model}\``,
     duration === undefined ? undefined : `duration ${duration}`,
     tokens === undefined ? undefined : `tokens ${tokens}`,
+    cost === undefined ? undefined : `cost ${cost}`,
     runId === undefined ? undefined : `run \`${runId}\``,
   ].filter((part): part is string => part !== undefined);
 
@@ -311,73 +313,86 @@ export function createGitHubIssuesWorkSource(deps: {
           continue;
         }
 
-        const previousPoll = await deps.stateStore.readSourceState('github', repoRef);
-        const since = previousPoll === null
-          ? undefined
-          : new Date(Date.parse(previousPoll.lastSuccessfulPollAt) - pollOverlapMs).toISOString();
-        const issues = since === undefined
-          ? await deps.client.listIssues(
+        // One repo's failure (deleted repo, revoked access, transient API
+        // error) must not stop polling for every other configured repo (E3).
+        // Skipping `writeSourceState` below on failure means the `since`
+        // cursor doesn't advance, so the next tick retries this repo from the
+        // same point instead of silently losing the gap.
+        try {
+          const previousPoll = await deps.stateStore.readSourceState('github', repoRef);
+          const since = previousPoll === null
+            ? undefined
+            : new Date(Date.parse(previousPoll.lastSuccessfulPollAt) - pollOverlapMs).toISOString();
+          const issues = since === undefined
+            ? await deps.client.listIssues(
+                owner,
+                repo,
+                deps.config.sources.github.polling.maxIssuesPerRepo,
+              )
+            : await deps.client.listIssues(
+                owner,
+                repo,
+                deps.config.sources.github.polling.maxIssuesPerRepo,
+                since,
+              );
+
+          for (const issue of issues) {
+            const local = await deps.stateStore.readIssueState(repoRef, issue.number);
+
+            if (local?.issue.updatedAt !== issue.updated_at) {
+              events.push(normalizeTicketUpsert({
+                repo: repoRef,
+                issue,
+                ingestedAt,
+                expectedEcho: isExpectedLabelEcho(issue, local ?? null),
+              }));
+            }
+
+            const comments = await deps.client.listComments(
               owner,
               repo,
-              deps.config.sources.github.polling.maxIssuesPerRepo,
-            )
-          : await deps.client.listIssues(
-              owner,
-              repo,
-              deps.config.sources.github.polling.maxIssuesPerRepo,
-              since,
+              issue.number,
+              deps.config.sources.github.polling.commentPageSize,
             );
 
-        for (const issue of issues) {
-          const local = await deps.stateStore.readIssueState(repoRef, issue.number);
+            for (const comment of comments) {
+              const known = local?.comments.find(
+                (entry) => entry.id === String(comment.id),
+              );
 
-          if (local?.issue.updatedAt !== issue.updated_at) {
-            events.push(normalizeTicketUpsert({
-              repo: repoRef,
-              issue,
-              ingestedAt,
-              expectedEcho: isExpectedLabelEcho(issue, local ?? null),
-            }));
+              if (known?.updatedAt === comment.updated_at) {
+                continue;
+              }
+
+              if (local?.wake.expectedEcho.commentIds.includes(String(comment.id)) === true) {
+                continue;
+              }
+
+              events.push(normalizeTicketCommentEvent({
+                repo: repoRef,
+                issueNumber: issue.number,
+                comment,
+                ingestedAt,
+                ...(known?.updatedAt === undefined
+                  ? {}
+                  : { existingUpdatedAt: known.updatedAt }),
+              }));
+            }
           }
 
-          const comments = await deps.client.listComments(
-            owner,
-            repo,
-            issue.number,
-            deps.config.sources.github.polling.commentPageSize,
+          await deps.stateStore.writeSourceState({
+            schemaVersion: 1,
+            source: 'github',
+            key: repoRef,
+            lastSuccessfulPollAt: ingestedAt,
+          });
+        } catch (error) {
+          console.error(
+            `[github-work-source] poll failed for ${repoRef}, skipping this tick: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
           );
-
-          for (const comment of comments) {
-            const known = local?.comments.find(
-              (entry) => entry.id === String(comment.id),
-            );
-
-            if (known?.updatedAt === comment.updated_at) {
-              continue;
-            }
-
-            if (local?.wake.expectedEcho.commentIds.includes(String(comment.id)) === true) {
-              continue;
-            }
-
-            events.push(normalizeTicketCommentEvent({
-              repo: repoRef,
-              issueNumber: issue.number,
-              comment,
-              ingestedAt,
-              ...(known?.updatedAt === undefined
-                ? {}
-                : { existingUpdatedAt: known.updatedAt }),
-            }));
-          }
         }
-
-        await deps.stateStore.writeSourceState({
-          schemaVersion: 1,
-          source: 'github',
-          key: repoRef,
-          lastSuccessfulPollAt: ingestedAt,
-        });
       }
 
       return events;
