@@ -1580,4 +1580,77 @@ describe('tick runner', () => {
     const failures = events.filter((e) => e.sourceEventType === 'wake.publish.failed');
     expect(failures).toHaveLength(3);
   });
+
+  it('does not consume the triggering comment on an infra failure, so the next tick retries it (S9)', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const config = createDefaultWakeConfig(root);
+    config.sources.github.policy.requiredLabels = ['wake:queue'];
+    let runnerCallCount = 0;
+    let prepareCallCount = 0;
+
+    await store.writeIssueState({
+      schemaVersion: 1,
+      workItemKey: 'atolis-hq/wake#50',
+      issue: {
+        repo: 'atolis-hq/wake', number: 50, title: 'Infra blip', body: '',
+        labels: ['wake:queue'], assignees: [], isPullRequest: false, state: 'open',
+        url: 'https://example.test/issues/50',
+        createdAt: '2026-07-05T12:00:00.000Z', updatedAt: '2026-07-05T12:00:00.000Z',
+      },
+      comments: [
+        {
+          id: 'c-trigger', body: 'Please pick this up.', author: { login: 'owner' },
+          createdAt: '2026-07-05T12:00:00.000Z', updatedAt: '2026-07-05T12:00:00.000Z',
+          isBotAuthored: false,
+        },
+      ],
+      latestComment: {
+        id: 'c-trigger', body: 'Please pick this up.', author: { login: 'owner' },
+        createdAt: '2026-07-05T12:00:00.000Z', updatedAt: '2026-07-05T12:00:00.000Z',
+        isBotAuthored: false,
+      },
+      wake: {
+        stage: 'queue', stageHistory: [], recentEventIds: [],
+        syncedAt: '2026-07-05T12:00:00.000Z', expectedEcho: { commentIds: [], labels: [] },
+      },
+      context: {},
+    });
+
+    const tickRunner = createTickRunner({
+      clock: { now: () => new Date('2026-07-05T12:00:00.000Z') },
+      config,
+      stateStore: store,
+      workSource: { async pollEvents() { return []; } },
+      runner: {
+        async run() {
+          runnerCallCount += 1;
+          return { result: 'Refined\nDONE', model: 'test-model', cli: 'test-cli' };
+        },
+      },
+      workspaceManager: {
+        async prepareWorkspace() { return { workspacePath: 'unused' }; },
+        async prepareReadOnlyClone() {
+          prepareCallCount += 1;
+          if (prepareCallCount === 1) {
+            throw new Error('git network failure');
+          }
+          return { workspacePath: 'unused' };
+        },
+        async cleanupWorkspace() {},
+      },
+    });
+
+    const first = await tickRunner.runTick();
+    expect(first.status).toBe('processed');
+    expect((first as { sentinel?: string }).sentinel).toBe('FAILED');
+    expect(runnerCallCount).toBe(0);
+
+    const afterFirst = await store.readIssueState('atolis-hq/wake', 50);
+    expect(afterFirst?.context.lastHandledCommentId).toBeUndefined();
+    expect(afterFirst?.context.lastFailureClass).toBe('infra');
+
+    const second = await tickRunner.runTick();
+    expect(second.status).toBe('processed');
+    expect(runnerCallCount).toBe(1);
+  });
 });

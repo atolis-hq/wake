@@ -742,7 +742,11 @@ export function createTickRunner(deps: {
               ...(runnerResult.failureClass === undefined
                 ? {}
                 : { failureClass: runnerResult.failureClass }),
-              ...(runnerResult.failureClass === 'quota'
+              // Only mark the triggering comment handled when the run reached the
+              // agent and produced a real outcome. Quota/infra failures are transient
+              // blips, not an answer to the human's comment — leaving handledCommentId
+              // unset lets the next tick retry instead of silently eating the request (S9).
+              ...(runnerResult.failureClass === 'quota' || runnerResult.failureClass === 'infra'
                 ? {}
                 : { handledCommentId: latestHumanCommentId(candidate) }),
               body: parsedRunnerResult.body,
@@ -819,7 +823,11 @@ export function createTickRunner(deps: {
               sentinel,
               runId,
               reason: 'runner:infrastructure-error',
-              handledCommentId: latestHumanCommentId(candidate),
+              failureClass: 'infra',
+              // Deliberately omit handledCommentId: an infra blip (CLI crash, timeout,
+              // network error) never reached the agent, so it isn't an answer to the
+              // triggering comment. Leaving it unset lets the next tick retry the same
+              // request instead of silently eating it (S9).
             },
           });
           await deps.stateStore.appendEventEnvelope(runCompletedEvent);
