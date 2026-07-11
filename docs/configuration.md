@@ -29,6 +29,7 @@ All configuration uses `schemaVersion: 1`.
     "containerName": "wake-sandbox",
     "containerMountPath": "/wake",
     "containerHomeMountPath": "/home/wake",
+    "start": { "enabled": true },
     "extraMounts": []
   },
   "scheduler": {
@@ -128,6 +129,7 @@ Docker sandbox settings for the durable Wake container.
 | `containerName` | string | Container name Wake starts and reuses | `"wake-sandbox"` |
 | `containerMountPath` | string | Container path where the Wake home is bind-mounted | `"/wake"` |
 | `containerHomeMountPath` | string | Container path where the sandbox home directory is bind-mounted | `"/home/wake"` |
+| `start.enabled` | boolean | Whether the sandbox entrypoint starts the resident `wake start` loop automatically | `true` |
 | `extraMounts` | `{ source: string, target: string, readOnly?: boolean }[]` | Additional host paths to mount into the sandbox, for example Claude or Codex config from the host home directory | `[]` |
 
 To expose host Claude auth inside the sandbox, mount individual files rather

@@ -314,6 +314,43 @@ describe('docker cli adapter', () => {
     ]);
   });
 
+  it('passes resident start env when start.enabled is true', async () => {
+    const calls: string[][] = [];
+    const docker = createDockerCli({
+      inspectContainer: async () => null,
+      inspectImage: async () => true,
+      run: async (args) => {
+        calls.push(args);
+      },
+    });
+
+    await docker.up({
+      image: 'wake-sandbox',
+      containerName: 'wake-sandbox',
+      wakeRoot: '/host/wake-home',
+      containerHomeRoot: '/host/wake-home/container-home',
+      containerMountPath: '/wake',
+      containerHomeMountPath: '/home/wake',
+      start: { enabled: true },
+    });
+
+    expect(calls).toEqual([
+      [
+        'run',
+        '-d',
+        '--name',
+        'wake-sandbox',
+        '-v',
+        '/host/wake-home:/wake',
+        '-v',
+        '/host/wake-home/container-home:/home/wake',
+        '-e',
+        'WAKE_START_ENABLED=true',
+        'wake-sandbox',
+      ],
+    ]);
+  });
+
   it('stops the sandbox container', async () => {
     const calls: string[][] = [];
     const docker = createDockerCli({

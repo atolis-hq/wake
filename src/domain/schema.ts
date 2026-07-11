@@ -369,12 +369,15 @@ export const wakeConfigSchema = z.object({
     containerName: z.string().min(1).default('wake-sandbox'),
     containerMountPath: z.string().min(1).default('/wake'),
     containerHomeMountPath: z.string().min(1).default('/home/wake'),
+    start: z.object({
+      enabled: z.boolean().default(true),
+    }).default({ enabled: true }),
     extraMounts: z.array(z.object({
       source: z.string().min(1),
       target: z.string().min(1),
       readOnly: z.boolean().optional(),
     })).default([]),
-  }).default({ image: 'wake-sandbox', imageRepository: 'wake-sandbox', containerName: 'wake-sandbox', containerMountPath: '/wake', containerHomeMountPath: '/home/wake', extraMounts: [] }),
+  }).default({ image: 'wake-sandbox', imageRepository: 'wake-sandbox', containerName: 'wake-sandbox', containerMountPath: '/wake', containerHomeMountPath: '/home/wake', start: { enabled: true }, extraMounts: [] }),
   dev: z.object({
     repoRoot: z.string().optional(),
   }).default({}),
