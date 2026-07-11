@@ -43,6 +43,8 @@ if [ ! -f /home/wake/.ssh/id_ed25519 ]; then
 fi
 
 if prompt_yes_no "Configure GitHub auth?"; then
+  echo "Optional best practice: sign in with a dedicated GitHub identity for Wake-managed agent work,"
+  echo "rather than your main personal account. Make sure it has only the repository access Wake needs."
   gh auth login
   gh auth setup-git
 else

@@ -175,6 +175,12 @@ See [docs/configuration.md#ui](configuration.md#ui) for the full config shape.
 ./wake.sh sandbox setup
 ```
 
+When configuring GitHub auth, consider using a dedicated GitHub identity for
+Wake-managed agent work instead of your main personal account. This keeps
+automated issue comments, PRs, and commits easy to distinguish from human
+activity and lets you grant only the repository access Wake needs. It is an
+optional best practice, not a hard requirement.
+
 That script runs:
 
 - `gh auth login`
