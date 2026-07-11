@@ -8,6 +8,7 @@ function buildAwaitingApprovalIssue(options: {
   latestCommentBody?: string;
   pendingApprovalAction?: string;
 }) {
+  const pendingApprovalAction = options.pendingApprovalAction ?? 'implement';
   return parseIssueStateRecord({
     schemaVersion: 1,
     issue: {
@@ -35,13 +36,16 @@ function buildAwaitingApprovalIssue(options: {
         ]
       : [],
     wake: {
-      stage: 'awaiting-approval',
+      stage: pendingApprovalAction === 'refine' ? 'refine' : 'implement',
       syncedAt: '2026-07-06T00:00:00.000Z',
       stageHistory: [],
     },
-    context: options.pendingApprovalAction !== undefined
-      ? { pendingApprovalAction: options.pendingApprovalAction }
-      : {},
+    context: {
+      lastRunSentinel: 'AWAITING_APPROVAL',
+      ...(options.pendingApprovalAction !== undefined
+        ? { pendingApprovalAction: options.pendingApprovalAction }
+        : {}),
+    },
   });
 }
 
@@ -136,11 +140,12 @@ function buildNeedsWakeActionIssue(overrides: {
 }
 
 function buildBlockedOrFailedIssue(overrides: {
-  stage: 'blocked' | 'refine' | 'implement' | 'queue';
+  stage: 'refine' | 'implement' | 'queue';
   latestCommentId?: string;
   latestCommentIsBotAuthored?: boolean;
   lastHandledCommentId?: string;
   lastRunAction?: string;
+  lastRunSentinel?: string;
 }) {
   return parseIssueStateRecord({
     schemaVersion: 1,
@@ -182,6 +187,9 @@ function buildBlockedOrFailedIssue(overrides: {
       ...(overrides.lastRunAction === undefined
         ? {}
         : { lastRunAction: overrides.lastRunAction }),
+      ...(overrides.lastRunSentinel === undefined
+        ? {}
+        : { lastRunSentinel: overrides.lastRunSentinel }),
     },
   });
 }
@@ -279,7 +287,7 @@ describe('policy engine: requiredAssignees', () => {
 });
 
 describe('policy engine: resolveApprovalTransition', () => {
-  it('returns null when issue is not in awaiting-approval stage', () => {
+  it('returns null when issue is not awaiting approval', () => {
     const policy = createPolicyEngine();
     const issue = buildIssue({ labels: ['wake'] });
     expect(policy.resolveApprovalTransition(issue)).toBeNull();
@@ -369,11 +377,12 @@ describe('policy engine: resolveApprovalTransition', () => {
         },
       ],
       wake: {
-        stage: 'awaiting-approval',
+        stage: 'implement',
         syncedAt: '2026-07-07T00:00:00.000Z',
         stageHistory: [],
       },
       context: {
+        lastRunSentinel: 'AWAITING_APPROVAL',
         pendingApprovalAction: 'implement',
         lastHandledCommentId: 'c-1',
       },
@@ -424,11 +433,14 @@ describe('policy engine: resolveApprovalTransition', () => {
         },
       ],
       wake: {
-        stage: 'awaiting-approval',
+        stage: 'implement',
         syncedAt: '2026-07-07T00:00:00.000Z',
         stageHistory: [],
       },
-      context: { pendingApprovalAction: 'implement' },
+      context: {
+        lastRunSentinel: 'AWAITING_APPROVAL',
+        pendingApprovalAction: 'implement',
+      },
     });
     expect(policy.resolveApprovalTransition(issue)).toBeNull();
   });
@@ -469,11 +481,14 @@ describe('policy engine: resolveApprovalTransition', () => {
         },
       ],
       wake: {
-        stage: 'awaiting-approval',
+        stage: 'implement',
         syncedAt: '2026-07-07T00:00:00.000Z',
         stageHistory: [],
       },
-      context: { pendingApprovalAction: 'implement' },
+      context: {
+        lastRunSentinel: 'AWAITING_APPROVAL',
+        pendingApprovalAction: 'implement',
+      },
     });
     const resolution = policy.resolveApprovalTransition(issue);
     expect(resolution?.approved).toBe(true);
@@ -522,16 +537,26 @@ describe('policy engine: needsWakeAction', () => {
 
     expect(policy.needsWakeAction(issue)).toBe(false);
   });
+
+  it('does not wake an implement-stage item only because it is awaiting approval', () => {
+    const policy = createPolicyEngine();
+    const issue = buildNeedsWakeActionIssue({
+      lastRunSentinel: 'AWAITING_APPROVAL',
+    });
+
+    expect(policy.needsWakeAction(issue)).toBe(false);
+  });
 });
 
 describe('policy engine: chooseRetryActionAfterHumanReply', () => {
   it('retries the last run action for a blocked issue with an unhandled human reply', () => {
     const policy = createPolicyEngine();
     const issue = buildBlockedOrFailedIssue({
-      stage: 'blocked',
+      stage: 'implement',
       latestCommentId: 'c-2',
       lastHandledCommentId: 'c-1',
       lastRunAction: 'implement',
+      lastRunSentinel: 'BLOCKED',
     });
 
     expect(policy.chooseRetryActionAfterHumanReply(issue)).toBe('implement');
@@ -566,10 +591,11 @@ describe('policy engine: chooseRetryActionAfterHumanReply', () => {
   it('does not retry when the latest human reply was already handled', () => {
     const policy = createPolicyEngine();
     const issue = buildBlockedOrFailedIssue({
-      stage: 'blocked',
+      stage: 'implement',
       latestCommentId: 'c-1',
       lastHandledCommentId: 'c-1',
       lastRunAction: 'implement',
+      lastRunSentinel: 'BLOCKED',
     });
 
     expect(policy.chooseRetryActionAfterHumanReply(issue)).toBeNull();
@@ -578,10 +604,11 @@ describe('policy engine: chooseRetryActionAfterHumanReply', () => {
   it('does not retry for bot comments or runs that did not fail or block', () => {
     const policy = createPolicyEngine();
     const botReply = buildBlockedOrFailedIssue({
-      stage: 'blocked',
+      stage: 'implement',
       latestCommentId: 'c-2',
       latestCommentIsBotAuthored: true,
       lastRunAction: 'implement',
+      lastRunSentinel: 'BLOCKED',
     });
     const queued = buildBlockedOrFailedIssue({
       stage: 'queue',

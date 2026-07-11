@@ -273,6 +273,7 @@ describe('run and event schemas', () => {
 
     expect(issue.context.lastRunAction).toBe('refine');
     expect(issue.context.blockedFromAction).toBe('refine');
+    expect(issue.wake.stage).toBe('refine');
   });
 
   it('preserves lastRunAction when both current and legacy context keys exist', () => {
@@ -300,6 +301,7 @@ describe('run and event schemas', () => {
     });
 
     expect(issue.context.lastRunAction).toBe('implement');
+    expect(issue.wake.stage).toBe('implement');
   });
 
   it('parses the last valid wake-result envelope and keeps only prose before it as body', () => {

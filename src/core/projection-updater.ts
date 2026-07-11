@@ -173,11 +173,10 @@ function applyEvent(
     };
 
     // Clear the session when the stage moves forward (new action needed) or the
-    // run failed outright. Keep it when moving to 'blocked' so the same action
-    // can resume the in-progress session after a human replies.
+    // run failed outright. Keep it for BLOCKED so the same action can resume
+    // the in-progress session after a human replies.
     const isForwardProgression =
       payload.nextStage !== undefined &&
-      payload.nextStage !== 'blocked' &&
       payload.nextStage !== current.wake.stage;
     const stageChanged =
       payload.nextStage !== undefined && payload.nextStage !== current.wake.stage;
@@ -203,7 +202,7 @@ function applyEvent(
           : {}),
         // Remembered so the approval path knows which action to resume or
         // skip when a human posts /approved.
-        ...(payload.nextStage === 'awaiting-approval' && payload.action !== undefined
+        ...(payload.sentinel === 'AWAITING_APPROVAL' && payload.action !== undefined
           ? { pendingApprovalAction: payload.action }
           : {}),
       },

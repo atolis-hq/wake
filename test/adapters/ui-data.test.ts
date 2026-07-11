@@ -81,10 +81,16 @@ describe('ui-data', () => {
     const config = createDefaultWakeConfig(root);
 
     await store.writeIssueState(issueState({ number: 1, stage: 'implement', lastRunId: 'run-1' }));
-    await store.writeIssueState(issueState({ number: 2, stage: 'blocked' }));
+    await store.writeIssueState(issueState({ number: 2, stage: 'implement', lastRunId: 'run-2' }));
     await store.writeIssueState(issueState({ number: 3, stage: 'done' }));
     await store.writeIssueState(issueState({ number: 4, stage: 'queue' }));
     await store.writeRunRecord(runRecord({ runId: 'run-1', issueNumber: 1, status: 'running' }));
+    await store.writeRunRecord(runRecord({
+      runId: 'run-2',
+      issueNumber: 2,
+      status: 'blocked',
+      sentinel: 'BLOCKED',
+    }));
 
     const board = await buildBoard({ stateStore: store, config, now: new Date('2026-07-05T13:00:00.000Z') });
     const byNumber = new Map(board.map((card) => [card.number, card]));
@@ -99,8 +105,14 @@ describe('ui-data', () => {
     const store = createStateStore({ wakeRoot: root });
     const config = createDefaultWakeConfig(root);
 
-    await store.writeIssueState(issueState({ number: 9, stage: 'awaiting-approval' }));
-    // awaiting-approval is a needs-human sentinel stage; use a stage with no route to hit stalled.
+    await store.writeIssueState(issueState({ number: 9, stage: 'implement', lastRunId: 'run-9' }));
+    await store.writeRunRecord(runRecord({
+      runId: 'run-9',
+      issueNumber: 9,
+      status: 'awaiting-approval',
+      sentinel: 'AWAITING_APPROVAL',
+    }));
+    // Use a stage with no route to hit stalled.
     await store.writeIssueState(
       issueState({ number: 10, stage: 'refine' }),
     );
