@@ -24,7 +24,7 @@ export type DockerUpInput = {
     target: string;
     readOnly?: boolean | undefined;
   }>;
-  ui?: DockerUiInput;
+  ui?: DockerUiInput | undefined;
   stopTimeoutSeconds?: number;
 };
 

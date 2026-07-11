@@ -36,6 +36,7 @@ function baseDeps(overrides: Record<string, unknown> = {}) {
     containerMountPath: '/wake',
     containerHomeMountPath: '/home/wake',
     dockerfilePath: '/repo/wake/docker/Dockerfile',
+    ui: { enabled: true, port: 4317, token: 'secret' },
     ...overrides,
   };
 }
@@ -87,7 +88,10 @@ describe('runSelfUpdateCommand', () => {
       expect.objectContaining({ image: 'wake-sandbox:v0.0.80' }),
     );
     expect(docker.update).toHaveBeenCalledWith(
-      expect.objectContaining({ image: 'wake-sandbox:v0.0.80' }),
+      expect.objectContaining({
+        image: 'wake-sandbox:v0.0.80',
+        ui: { enabled: true, port: 4317, token: 'secret' },
+      }),
     );
     expect(docker.exec).toHaveBeenCalledWith('wake-sandbox', [
       'node',
@@ -121,11 +125,17 @@ describe('runSelfUpdateCommand', () => {
 
     expect(docker.update).toHaveBeenNthCalledWith(
       1,
-      expect.objectContaining({ image: 'wake-sandbox:v0.0.80' }),
+      expect.objectContaining({
+        image: 'wake-sandbox:v0.0.80',
+        ui: { enabled: true, port: 4317, token: 'secret' },
+      }),
     );
     expect(docker.update).toHaveBeenNthCalledWith(
       2,
-      expect.objectContaining({ image: 'wake-sandbox:v0.0.79' }),
+      expect.objectContaining({
+        image: 'wake-sandbox:v0.0.79',
+        ui: { enabled: true, port: 4317, token: 'secret' },
+      }),
     );
     expect(writeLedger).toHaveBeenCalledWith(
       expect.objectContaining({
