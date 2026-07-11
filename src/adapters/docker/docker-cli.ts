@@ -25,9 +25,18 @@ export type DockerUpInput = {
     readOnly?: boolean | undefined;
   }>;
   ui?: DockerUiInput;
+  stopTimeoutSeconds?: number;
 };
 
 export type DockerCli = ReturnType<typeof createDockerCli>;
+
+function buildStopArgs(containerName: string, timeoutSeconds?: number): string[] {
+  return [
+    'stop',
+    ...(timeoutSeconds !== undefined ? ['--time', String(timeoutSeconds)] : []),
+    containerName,
+  ];
+}
 
 function buildRunArgs(input: DockerUpInput): string[] {
   return [
@@ -99,7 +108,7 @@ export function createDockerCli(deps: {
       const containerState = await deps.inspectContainer(input.containerName);
       if (containerState === 'running' || containerState === 'stopped') {
         if (containerState === 'running') {
-          await deps.run(['stop', input.containerName]);
+          await deps.run(buildStopArgs(input.containerName, input.stopTimeoutSeconds));
         }
 
         await deps.run(['rm', input.containerName]);
@@ -108,8 +117,8 @@ export function createDockerCli(deps: {
       await deps.run(buildRunArgs(input));
     },
 
-    async down(containerName: string): Promise<void> {
-      await deps.run(['stop', containerName]);
+    async down(containerName: string, options?: { timeoutSeconds?: number }): Promise<void> {
+      await deps.run(buildStopArgs(containerName, options?.timeoutSeconds));
     },
 
     async exec(
