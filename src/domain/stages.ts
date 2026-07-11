@@ -3,7 +3,6 @@ export const stageValues = [
   'refine',
   'implement',
   'done',
-  'awaiting-approval',
   'blocked',
 ] as const;
 

@@ -16,7 +16,7 @@ import type { Clock } from '../lib/clock.js';
 import { acquireFileLock } from '../lib/lock.js';
 import { parseRunnerResult } from '../domain/schema.js';
 import { maxConfiguredRunnerTimeoutMs, resolveRunnerRouting } from '../domain/runner-routing.js';
-import { stageLabelForStage } from '../domain/stages.js';
+import { awaitingApprovalRunnerSentinel, stageLabelForStage } from '../domain/stages.js';
 import type { AgentAction, EventEnvelope, IssueStateRecord, RunRecord, WakeConfig } from '../domain/types.js';
 import { createEventEnvelope } from '../lib/event-log.js';
 import { resolveQuotaPauseUntil } from './quota-backoff.js';
@@ -157,12 +157,29 @@ export function createTickRunner(deps: {
     });
   }
 
+  function isAwaitingApproval(projection: IssueStateRecord): boolean {
+    return projection.context.lastRunSentinel === awaitingApprovalRunnerSentinel;
+  }
+
   function statusLabelForStage(stage: import('../domain/types.js').Stage): string {
     if (stage === 'done') {
       return 'wake:status.completed';
     }
 
     return 'wake:status.pending';
+  }
+
+  function statusLabelForOutcome(input: {
+    sentinel: 'DONE' | 'BLOCKED' | 'FAILED' | 'AWAITING_APPROVAL';
+    stage: import('../domain/types.js').Stage;
+  }): string {
+    if (input.sentinel === 'AWAITING_APPROVAL') {
+      return 'wake:status.awaiting-approval';
+    }
+    if (input.sentinel === 'FAILED') {
+      return 'wake:status.failed';
+    }
+    return statusLabelForStage(input.stage);
   }
 
   function createLabelsEvent(input: {
@@ -512,7 +529,7 @@ export function createTickRunner(deps: {
             return false;
           }
 
-          if (issue.wake.stage === 'awaiting-approval') {
+          if (isAwaitingApproval(issue)) {
             return policy.needsWakeAction(issue);
           }
 
@@ -528,7 +545,7 @@ export function createTickRunner(deps: {
 
         let action: AgentAction;
 
-        if (candidate.wake.stage === 'awaiting-approval') {
+        if (isAwaitingApproval(candidate)) {
           const approvalResolution = policy.resolveApprovalTransition(candidate);
           if (approvalResolution === null) {
             return { status: 'idle' as const };
@@ -802,7 +819,10 @@ export function createTickRunner(deps: {
             createLabelsEvent({
               projection: candidate,
               runId,
-              statusLabel: nextStage !== null ? statusLabelForStage(nextStage) : 'wake:status.failed',
+              statusLabel: statusLabelForOutcome({
+                sentinel,
+                stage: nextStage ?? claimedStage,
+              }),
               stageLabel: stageLabelForStage(nextStage ?? claimedStage),
               occurredAt: finishedAt,
             }),

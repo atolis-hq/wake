@@ -99,7 +99,6 @@ function deriveCondition(
 
   if (
     stage === 'blocked' ||
-    stage === 'awaiting-approval' ||
     lastRun?.sentinel === 'BLOCKED' ||
     lastRun?.sentinel === 'AWAITING_APPROVAL'
   ) {

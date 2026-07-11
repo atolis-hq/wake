@@ -203,7 +203,7 @@ function applyEvent(
           : {}),
         // Remembered so the approval path knows which action to resume or
         // skip when a human posts /approved.
-        ...(payload.nextStage === 'awaiting-approval' && payload.action !== undefined
+        ...(payload.sentinel === 'AWAITING_APPROVAL' && payload.action !== undefined
           ? { pendingApprovalAction: payload.action }
           : {}),
       },

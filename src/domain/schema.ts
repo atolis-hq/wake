@@ -185,6 +185,11 @@ function normalizeLegacyStage(stage: unknown, failedAction?: unknown): unknown {
   if (stage === 'refined') {
     return 'implement';
   }
+  if (stage === 'awaiting-approval') {
+    return agentActionValues.includes(failedAction as (typeof agentActionValues)[number])
+      ? failedAction
+      : 'implement';
+  }
   if (stage === 'failed') {
     return agentActionValues.includes(failedAction as (typeof agentActionValues)[number])
       ? failedAction

@@ -15,7 +15,7 @@ export function createLifecycleService() {
       }
 
       if (sentinel === 'AWAITING_APPROVAL') {
-        return 'awaiting-approval';
+        return null;
       }
 
       return action === 'refine' ? 'implement' : 'done';

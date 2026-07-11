@@ -1,9 +1,18 @@
-import { agentActionValues, failedRunnerSentinel } from '../domain/stages.js';
+import {
+  agentActionValues,
+  awaitingApprovalRunnerSentinel,
+  failedRunnerSentinel,
+} from '../domain/stages.js';
 import type { AgentAction, IssueStateRecord, Stage, WakeConfig } from '../domain/types.js';
 
 export interface ApprovalResolution {
   approved: boolean;
   pendingAction: AgentAction;
+}
+
+function isAwaitingApproval(issue: IssueStateRecord): boolean {
+  const context = issue.context as Record<string, unknown>;
+  return context.lastRunSentinel === awaitingApprovalRunnerSentinel;
 }
 
 // Commands are matched as a token at the start of a (trimmed) line, not as a
@@ -116,6 +125,10 @@ export function createPolicyEngine() {
         return true;
       }
 
+      if (isAwaitingApproval(issue)) {
+        return false;
+      }
+
       if (lastRunSentinel === failedRunnerSentinel && lastFailureClass !== 'quota') {
         return false;
       }
@@ -167,7 +180,7 @@ export function createPolicyEngine() {
         : null;
     },
     resolveApprovalTransition(issue: IssueStateRecord): ApprovalResolution | null {
-      if (issue.wake.stage !== 'awaiting-approval') {
+      if (!isAwaitingApproval(issue)) {
         return null;
       }
 

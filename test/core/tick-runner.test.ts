@@ -95,7 +95,7 @@ describe('tick runner', () => {
     expect(result.status).toBe('processed');
     if (result.status === 'processed') {
       expect(result.sentinel).toBe('AWAITING_APPROVAL');
-      expect(result.nextStage).toBe('awaiting-approval');
+      expect(result.nextStage).toBeNull();
     }
 
     const events = await readFile(join(root, 'events', '2026-07-05.jsonl'), 'utf8');
@@ -467,7 +467,7 @@ describe('tick runner', () => {
     });
   });
 
-  it('transitions to awaiting-approval and posts an approval request when a run requests sign-off', async () => {
+  it('sets awaiting-approval status and posts an approval request when a run requests sign-off', async () => {
     const store = createStateStore({ wakeRoot: root });
     const deliveredEvents: string[] = [];
     const publishedIntents: Array<{ kind: string; body: string }> = [];
@@ -540,14 +540,15 @@ describe('tick runner', () => {
 
     expect(result.status).toBe('processed');
     expect((result as { sentinel?: string }).sentinel).toBe('AWAITING_APPROVAL');
-    expect((result as { nextStage?: string }).nextStage).toBe('awaiting-approval');
-    expect(projection?.wake.stage).toBe('awaiting-approval');
+    expect((result as { nextStage?: string | null }).nextStage).toBeNull();
+    expect(projection?.wake.stage).toBe('refine');
     expect(projection?.context.pendingApprovalAction).toBe('refine');
+    expect(projection?.context.lastRunSentinel).toBe('AWAITING_APPROVAL');
     expect(deliveredEvents).toEqual([
       'wake:status.working',
       'wake:stage.refine',
-      'wake:status.pending',
-      'wake:stage.awaiting-approval',
+      'wake:status.awaiting-approval',
+      'wake:stage.refine',
     ]);
     expect(publishedIntents).toEqual([
       {
@@ -557,7 +558,7 @@ describe('tick runner', () => {
     ]);
   });
 
-  it('transitions awaiting-approval to done when /approved comment is present', async () => {
+  it('transitions an awaiting-approval status to done when /approved comment is present', async () => {
     const store = createStateStore({ wakeRoot: root });
     const deliveredEvents: string[] = [];
     let runnerCallCount = 0;
@@ -597,13 +598,14 @@ describe('tick runner', () => {
         isBotAuthored: false,
       },
       wake: {
-        stage: 'awaiting-approval',
+        stage: 'implement',
         stageHistory: [],
         recentEventIds: [],
         syncedAt: '2026-07-05T12:00:00.000Z',
           expectedEcho: { commentIds: [], labels: [] },
       },
       context: {
+        lastRunSentinel: 'AWAITING_APPROVAL',
         pendingApprovalAction: 'implement',
       },
     });
@@ -642,7 +644,7 @@ describe('tick runner', () => {
     expect(deliveredEvents).toContain('wake:stage.done');
   });
 
-  it('stays idle when awaiting-approval and issue.updatedAt changed but no new human comment (Wake activity false-positive)', async () => {
+  it('stays idle when awaiting approval and issue.updatedAt changed but no new human comment (Wake activity false-positive)', async () => {
     // Regression test: when Wake posts its approval-request comment, GitHub bumps
     // issue.updatedAt, causing needsWakeAction() to return true even though no
     // human has replied. The tick should return idle — not invoke the LLM.
@@ -667,13 +669,14 @@ describe('tick runner', () => {
       },
       comments: [],
       wake: {
-        stage: 'awaiting-approval',
+        stage: 'implement',
         stageHistory: [],
         recentEventIds: [],
         syncedAt: '2026-07-05T12:00:00.000Z',
           expectedEcho: { commentIds: [], labels: [] },
       },
       context: {
+        lastRunSentinel: 'AWAITING_APPROVAL',
         pendingApprovalAction: 'implement',
       },
     });
@@ -701,7 +704,7 @@ describe('tick runner', () => {
     expect(runnerCallCount).toBe(0);
   });
 
-  it('invokes the agent when awaiting-approval and comment is an explicit /changes command (S2)', async () => {
+  it('invokes the agent when awaiting approval and comment is an explicit /changes command (S2)', async () => {
     const store = createStateStore({ wakeRoot: root });
     let runnerCallCount = 0;
 
@@ -740,13 +743,14 @@ describe('tick runner', () => {
         isBotAuthored: false,
       },
       wake: {
-        stage: 'awaiting-approval',
+        stage: 'refine',
         stageHistory: [],
         recentEventIds: [],
         syncedAt: '2026-07-05T12:00:00.000Z',
           expectedEcho: { commentIds: [], labels: [] },
       },
       context: {
+        lastRunSentinel: 'AWAITING_APPROVAL',
         pendingApprovalAction: 'refine',
       },
     });
@@ -774,7 +778,7 @@ describe('tick runner', () => {
     expect(runnerCallCount).toBe(1);
   });
 
-  it('stays idle when awaiting-approval and the comment is conversation, not an /approved or /changes command (S2)', async () => {
+  it('stays idle when awaiting approval and the comment is conversation, not an /approved or /changes command (S2)', async () => {
     const store = createStateStore({ wakeRoot: root });
     let runnerCallCount = 0;
 
@@ -813,13 +817,14 @@ describe('tick runner', () => {
         isBotAuthored: false,
       },
       wake: {
-        stage: 'awaiting-approval',
+        stage: 'refine',
         stageHistory: [],
         recentEventIds: [],
         syncedAt: '2026-07-05T12:00:00.000Z',
           expectedEcho: { commentIds: [], labels: [] },
       },
       context: {
+        lastRunSentinel: 'AWAITING_APPROVAL',
         pendingApprovalAction: 'refine',
       },
     });
@@ -886,13 +891,14 @@ describe('tick runner', () => {
         isBotAuthored: false,
       },
       wake: {
-        stage: 'awaiting-approval',
+        stage: 'implement',
         stageHistory: [],
         recentEventIds: [],
         syncedAt: '2026-07-05T12:00:00.000Z',
           expectedEcho: { commentIds: [], labels: [] },
       },
       context: {
+        lastRunSentinel: 'AWAITING_APPROVAL',
         pendingApprovalAction: 'implement',
       },
     });

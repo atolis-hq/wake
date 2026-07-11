@@ -90,8 +90,14 @@ describe('ui-data', () => {
     const store = createStateStore({ wakeRoot: root });
     const config = createDefaultWakeConfig(root);
 
-    await store.writeIssueState(issueState({ number: 9, stage: 'awaiting-approval' }));
-    // awaiting-approval is a needs-human sentinel stage; use a stage with no route to hit stalled.
+    await store.writeIssueState(issueState({ number: 9, stage: 'implement' }));
+    await store.writeRunRecord(runRecord({
+      runId: 'run-9',
+      issueNumber: 9,
+      status: 'awaiting-approval',
+      sentinel: 'AWAITING_APPROVAL',
+    }));
+    // Use a stage with no route to hit stalled.
     await store.writeIssueState(
       issueState({ number: 10, stage: 'refine' }),
     );
