@@ -15,8 +15,6 @@
     "smoke:claude": "tsx src/main.ts smoke claude",
     "smoke:codex": "tsx src/main.ts smoke codex",
     "smoke:cursor": "tsx src/main.ts smoke cursor",
-    "self-update": "tsx src/main.ts sandbox self-update",
-    "self-update:loop": "tsx src/main.ts sandbox self-update --loop",
     "verify": "npm run build && npm test"
   },
   "dependencies": {

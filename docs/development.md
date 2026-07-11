@@ -231,14 +231,26 @@ after this long instead of blocking forever) and `--poll-interval-ms`.
 
 ### Self-update
 
-`wake sandbox self-update` (or `npm run self-update`) checks for a newer
-version tag on `origin`, and if found: waits for any active run to finish
-(same mechanism as `wake stop`), checks out the tag, builds a versioned image
-(`<sandbox.imageRepository>:<tag>`), replaces the running container, and
-health-checks it with a real `tick` against a throwaway `--wake-root`. On
-failure it rolls back to the last-known-good image/tag, records the failed
-tag in `<wake-root>/self-update-ledger.json` so it's never silently retried,
-and files a GitHub issue with the failure detail via `gh issue create`.
+Run from inside your **wake-home** directory (the one scaffolded by `wake
+init`, containing `wake.sh`/`wake.ps1`/`config.json`) — like every other
+sandbox lifecycle command (`build`/`up`/`down`), `self-update` is not an npm
+script. Running it from the dev repo checkout instead (`npm run ...`) fails
+with "Sandbox self-update requires config.dev.repoRoot", because that's the
+one field that only exists in your scaffolded `config.json`, not in the repo:
+
+```bash
+cd /path/to/your/wake-home
+./wake.sh sandbox self-update
+```
+
+`self-update` checks for a newer version tag on `origin`, and if found: waits
+for any active run to finish (same mechanism as `wake stop`), checks out the
+tag, builds a versioned image (`<sandbox.imageRepository>:<tag>`), replaces
+the running container, and health-checks it with a real `tick` against a
+throwaway `--wake-root`. On failure it rolls back to the last-known-good
+image/tag, records the failed tag in `<wake-root>/self-update-ledger.json` so
+it's never silently retried, and files a GitHub issue with the failure detail
+via `gh issue create`.
 
 Flags:
 - `--force` — proceed even if the tag matches what's already applied, or is
@@ -264,11 +276,10 @@ existing routing — you just need something on the host keeping the process
 alive.
 
 To run it continuously with no external scheduler, start the loop as a
-long-lived host process:
+long-lived host process from your wake-home directory:
 
 ```bash
-npm run self-update:loop
-# or, equivalently:
+cd /path/to/your/wake-home
 ./wake.sh sandbox self-update --loop
 ```
 
@@ -277,9 +288,10 @@ dedicated terminal tab. It polls indefinitely until the process is stopped
 (Ctrl+C, or killed) — there's no separate scheduler or cron job to configure.
 If you want it to survive terminal closes or host reboots, wrap it with
 whatever process supervisor you'd use for any other long-running host script
-(e.g. `pm2 start npm -- run self-update:loop`, an `nssm`/Windows service, or a
-systemd unit) — that's optional and outside Wake's own scope, since Wake only
-owns what happens inside the loop, not how the host keeps a process alive.
+(e.g. `pm2 start ./wake.sh -- sandbox self-update --loop`, an `nssm`/Windows
+service, or a systemd unit) — that's optional and outside Wake's own scope,
+since Wake only owns what happens inside the loop, not how the host keeps a
+process alive.
 
 ## GitHub Issues Polling
 
