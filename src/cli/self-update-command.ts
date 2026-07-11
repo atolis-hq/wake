@@ -116,16 +116,26 @@ export async function runSelfUpdateCommand(input: {
       badTags: [...ledger.badTags, { tag, reason, recordedAt: new Date().toISOString() }],
     });
 
-    await input.issueReporter.createIssue({
-      title: `Self-update to ${tag} failed and was rolled back`,
-      body: [
-        `Automated update to \`${tag}\` failed during rollout and was rolled back to \`${ledger.lastKnownGoodTag ?? 'unknown'}\`.`,
-        '',
-        '```',
-        reason,
-        '```',
-      ].join('\n'),
-    });
+    try {
+      await input.issueReporter.createIssue({
+        title: `Self-update to ${tag} failed and was rolled back`,
+        body: [
+          `Automated update to \`${tag}\` failed during rollout and was rolled back to \`${ledger.lastKnownGoodTag ?? 'unknown'}\`.`,
+          '',
+          '```',
+          reason,
+          '```',
+        ].join('\n'),
+      });
+    } catch (issueError) {
+      // Rollback already succeeded above; a failure to file the notification
+      // issue must not be reported as an overall self-update failure.
+      input.logger.error(
+        `[self-update] rolled back successfully, but failed to file a GitHub issue: ${
+          issueError instanceof Error ? issueError.message : String(issueError)
+        }`,
+      );
+    }
 
     return;
   }

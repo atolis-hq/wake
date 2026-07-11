@@ -142,6 +142,31 @@ describe('runSelfUpdateCommand', () => {
     );
   });
 
+  it('does not fail overall when rollback succeeds but issue-filing fails', async () => {
+    const deps = baseDeps({
+      docker: {
+        build: vi.fn(async () => {}),
+        update: vi.fn(async () => {}),
+        exec: vi.fn(async () => {
+          throw new Error('tick exited 1');
+        }),
+      },
+      issueReporter: {
+        createIssue: vi.fn(async () => {
+          throw new Error('gh: not authenticated');
+        }),
+      },
+    });
+
+    await expect(runSelfUpdateCommand(deps as never)).resolves.toBeUndefined();
+
+    const docker = deps.docker as { update: ReturnType<typeof vi.fn> };
+    expect(docker.update).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ image: 'wake-sandbox:v0.0.79' }),
+    );
+  });
+
   it('refuses to proceed when the working tree is dirty', async () => {
     const deps = baseDeps({
       git: {
