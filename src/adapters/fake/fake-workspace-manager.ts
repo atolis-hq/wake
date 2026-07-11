@@ -20,7 +20,14 @@ export function createFakeWorkspaceManager(root: string) {
       return { workspacePath };
     },
     async cleanupWorkspace({ workspacePath }: { workspacePath: string }) {
-      await rm(workspacePath, { recursive: true, force: true });
+      // Retry on Windows EBUSY/EPERM (AV/indexer holding a brief handle) to
+      // match the real git-backed workspace manager's cleanup behavior.
+      await rm(workspacePath, {
+        recursive: true,
+        force: true,
+        maxRetries: 5,
+        retryDelay: 200,
+      });
     },
   };
 }

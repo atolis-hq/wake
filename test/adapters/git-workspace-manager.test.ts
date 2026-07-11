@@ -45,7 +45,11 @@ describe('git workspace manager', () => {
   });
 
   afterEach(async () => {
-    await rm(root, { recursive: true, force: true });
+    // On Windows, a just-exited git subprocess (or AV/indexer) can briefly hold a
+    // handle on files it touched inside the cloned workspaces; a bare rm races
+    // that and fails EBUSY/EPERM. maxRetries/retryDelay retry with backoff
+    // instead of failing the test on unrelated teardown flakiness.
+    await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   });
 
   it('prepares a workspace checked out on a wake/issue branch from main', async () => {
@@ -74,7 +78,9 @@ describe('git workspace manager', () => {
       env: process.env,
     });
     expect(remoteUrl.trim()).toBe(remotePath);
-  });
+  // git subprocess work (clone/fetch/reset) is routinely slower than vitest's
+  // default 5s timeout on Windows (AV/indexer contention); give these room.
+  }, 20_000);
 
   it('resets an existing canonical clone to the latest main on re-prepare', async () => {
     const wakeRoot = join(root, '.wake');
@@ -98,7 +104,7 @@ describe('git workspace manager', () => {
 
     const readme = await readFile(join(workspacePath, 'README.md'), 'utf8');
     expect(readme).toContain('# updated');
-  });
+  }, 20_000);
 
   it('prepares workspaces from a non-main default branch', async () => {
     remotePath = await createRemote('trunk');
@@ -130,7 +136,7 @@ describe('git workspace manager', () => {
       env: process.env,
     });
     expect(readOnlyBranch.trim()).toBe('trunk');
-  });
+  }, 20_000);
 
   it('prepares a read-only canonical clone for refine without a per-issue branch', async () => {
     const wakeRoot = join(root, '.wake');
@@ -149,7 +155,7 @@ describe('git workspace manager', () => {
       env: process.env,
     });
     expect(stdout.trim()).toBe('main');
-  });
+  }, 20_000);
 
   it('reuses an existing per-issue workspace and recreates it only when missing', async () => {
     const wakeRoot = join(root, '.wake');
@@ -185,7 +191,7 @@ describe('git workspace manager', () => {
     const readme = await readFile(join(third.workspacePath, 'README.md'), 'utf8');
     expect(readme).toContain('# seed');
     await expect(access(join(third.workspacePath, 'local-only.txt'))).rejects.toThrow();
-  });
+  }, 20_000);
 
   it('uses a non-hardlink local clone when creating a missing workspace', () => {
     expect(

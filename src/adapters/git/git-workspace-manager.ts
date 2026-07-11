@@ -129,7 +129,15 @@ export function createGitWorkspaceManager(options: {
       return { workspacePath: repoPath };
     },
     async cleanupWorkspace({ workspacePath }: { workspacePath: string }): Promise<void> {
-      await rm(workspacePath, { recursive: true, force: true });
+      // On Windows, a just-exited git subprocess (or AV/indexer) can hold a brief
+      // handle on files it touched; a bare rm races that and fails EBUSY/EPERM.
+      // maxRetries/retryDelay make fs.rm retry with backoff instead of throwing.
+      await rm(workspacePath, {
+        recursive: true,
+        force: true,
+        maxRetries: 5,
+        retryDelay: 200,
+      });
     },
   };
 }
