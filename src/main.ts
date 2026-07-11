@@ -11,6 +11,11 @@ import {
   runnerKindForOverride,
 } from './adapters/runner/runner-registry.js';
 import { createStateStore } from './adapters/fs/state-store.js';
+import {
+  readSelfUpdateLedger,
+  writeSelfUpdateLedger,
+  type SelfUpdateLedger,
+} from './adapters/fs/self-update-ledger.js';
 import { resolveGitHubToken } from './adapters/github/github-auth.js';
 import { createGitHubClient } from './adapters/github/github-client.js';
 import { createGitHubIssuesWorkSource } from './adapters/github/github-issues-work-source.js';
@@ -104,6 +109,40 @@ async function runCommand(command: string, args: string[]): Promise<void> {
     child.on('close', (exitCode) => {
       if (exitCode === 0) {
         resolveRun();
+        return;
+      }
+
+      reject(new Error(`${command} ${args.join(' ')} failed with exit code ${exitCode ?? 1}`));
+    });
+  });
+}
+
+function parseGithubRepoSlug(remoteUrl: string): string {
+  const match = /github\.com[:/]([^/]+\/[^/]+?)(?:\.git)?$/.exec(remoteUrl.trim());
+  if (match === null) {
+    throw new Error(`Could not parse a GitHub owner/repo from origin remote: ${remoteUrl}`);
+  }
+
+  return match[1] as string;
+}
+
+async function runCommandCapture(command: string, args: string[]): Promise<string> {
+  return await new Promise<string>((resolveRun, reject) => {
+    const child = spawn(command, args, {
+      cwd: process.cwd(),
+      env: process.env,
+      stdio: ['ignore', 'pipe', 'inherit'],
+    });
+
+    let stdout = '';
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk.toString();
+    });
+
+    child.on('error', reject);
+    child.on('close', (exitCode) => {
+      if (exitCode === 0) {
+        resolveRun(stdout);
         return;
       }
 
@@ -398,6 +437,68 @@ async function main() {
         inspectContainer: inspectDockerContainer,
       });
 
+      const repoRoot = config.dev?.repoRoot;
+      const selfUpdate =
+        commandArgs[0] === 'self-update' && repoRoot !== undefined && repoRoot.length > 0
+          ? {
+              git: {
+                latestTag: async () => {
+                  await runCommand('git', ['-C', repoRoot, 'fetch', '--tags']);
+                  const output = await runCommandCapture('git', [
+                    '-C',
+                    repoRoot,
+                    'tag',
+                    '--list',
+                    'v*',
+                    '--sort=-v:refname',
+                  ]);
+                  const [latest] = output.split('\n').filter((line) => line.trim().length > 0);
+                  if (latest === undefined) {
+                    throw new Error('No version tags found in repo');
+                  }
+                  return latest.trim();
+                },
+                isWorkingTreeClean: async () => {
+                  const output = await runCommandCapture('git', [
+                    '-C',
+                    repoRoot,
+                    'status',
+                    '--porcelain',
+                  ]);
+                  return output.trim().length === 0;
+                },
+                checkoutTag: async (tag: string) => {
+                  await runCommand('git', ['-C', repoRoot, 'checkout', tag]);
+                },
+              },
+              issueReporter: {
+                createIssue: async (issue: { title: string; body: string }) => {
+                  const remoteUrl = await runCommandCapture('git', [
+                    '-C',
+                    repoRoot,
+                    'remote',
+                    'get-url',
+                    'origin',
+                  ]);
+                  const repoSlug = parseGithubRepoSlug(remoteUrl);
+                  await runCommand('gh', [
+                    'issue',
+                    'create',
+                    '--repo',
+                    repoSlug,
+                    '--title',
+                    issue.title,
+                    '--body',
+                    issue.body,
+                  ]);
+                },
+              },
+              readLedger: () => readSelfUpdateLedger(resolve(wakeRoot, 'self-update-ledger.json')),
+              writeLedger: (ledger: SelfUpdateLedger) =>
+                writeSelfUpdateLedger(resolve(wakeRoot, 'self-update-ledger.json'), ledger),
+            }
+          : undefined;
+
       await runSandboxCommand({
         args: commandArgs,
         config,
@@ -414,6 +515,7 @@ async function main() {
             console.error(message);
           },
         },
+        selfUpdate,
       });
     },
     runTick,

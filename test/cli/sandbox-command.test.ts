@@ -218,6 +218,47 @@ describe('sandbox command', () => {
     });
   });
 
+  it('dispatches self-update with git, ledger, and issue-reporter deps', async () => {
+    const docker = createDockerMock();
+    const config = { ...createDefaultWakeConfig(wakeRoot), dev: { repoRoot } };
+    const checkoutTag = vi.fn(async () => {});
+    const createIssue = vi.fn(async () => {});
+    const writeLedger = vi.fn(async () => {});
+
+    await runSandboxCommand({
+      args: ['self-update', '--tag', 'v0.0.80', '--force'],
+      config,
+      wakeRoot,
+      containerHomeRoot,
+      docker,
+      stateStore: { listRunRecords: async () => [] } as never,
+      sleep: vi.fn(async () => {}),
+      logger: { info: () => {} },
+      selfUpdate: {
+        git: {
+          latestTag: vi.fn(async () => 'v0.0.79'),
+          isWorkingTreeClean: vi.fn(async () => true),
+          checkoutTag,
+        },
+        issueReporter: { createIssue },
+        readLedger: vi.fn(async () => ({
+          lastAppliedTag: 'v0.0.79',
+          lastKnownGoodTag: 'v0.0.79',
+          badTags: [],
+        })),
+        writeLedger,
+      },
+    });
+
+    expect(checkoutTag).toHaveBeenCalledWith('v0.0.80');
+    expect(docker.build).toHaveBeenCalledWith(
+      expect.objectContaining({ image: 'wake-sandbox:v0.0.80' }),
+    );
+    expect(writeLedger).toHaveBeenCalledWith(
+      expect.objectContaining({ lastAppliedTag: 'v0.0.80' }),
+    );
+  });
+
   it('dispatches setup to the configured container name', async () => {
     const docker = createDockerMock();
 

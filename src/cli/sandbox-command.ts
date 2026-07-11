@@ -2,9 +2,11 @@ import { mkdir } from 'node:fs/promises';
 import { posix, resolve } from 'node:path';
 
 import type { DockerCli } from '../adapters/docker/docker-cli.js';
+import type { SelfUpdateLedger } from '../adapters/fs/self-update-ledger.js';
 import { createRunnerCliAdapter } from '../adapters/runner/runner-cli-adapter.js';
 import type { RunnerEntry, RunRecord } from '../domain/types.js';
 import { runSandboxResumeCommand } from './sandbox-resume.js';
+import { runSelfUpdateCommand } from './self-update-command.js';
 import { runStopCommand } from './stop-command.js';
 import {
   buildSandboxLoggedCommand,
@@ -59,6 +61,18 @@ export async function runSandboxCommand(input: {
   stateStore: { listRunRecords: () => Promise<RunRecord[]> };
   sleep: (ms: number) => Promise<void>;
   logger: { info: (message: string) => void; error?: (message: string) => void };
+  selfUpdate?:
+    | {
+        git: {
+          latestTag: () => Promise<string>;
+          isWorkingTreeClean: () => Promise<boolean>;
+          checkoutTag: (tag: string) => Promise<void>;
+        };
+        issueReporter: { createIssue: (issue: { title: string; body: string }) => Promise<void> };
+        readLedger: () => Promise<SelfUpdateLedger>;
+        writeLedger: (ledger: SelfUpdateLedger) => Promise<void>;
+      }
+    | undefined;
 }): Promise<void> {
   const subcommand = input.args[0];
 
@@ -131,6 +145,40 @@ export async function runSandboxCommand(input: {
       containerName: input.config.sandbox.containerName,
       sleep: input.sleep,
       logger: input.logger,
+    });
+    return;
+  }
+
+  if (subcommand === 'self-update') {
+    const repoRoot = input.config.dev?.repoRoot;
+    if (repoRoot === undefined || repoRoot.length === 0) {
+      throw new Error('Sandbox self-update requires config.dev.repoRoot');
+    }
+    if (input.selfUpdate === undefined) {
+      throw new Error('Sandbox self-update requires git/issueReporter/ledger dependencies');
+    }
+
+    await runSelfUpdateCommand({
+      args: input.args.slice(1),
+      repoRoot,
+      imageRepository: input.config.sandbox.imageRepository,
+      containerName: input.config.sandbox.containerName,
+      stateStore: input.stateStore,
+      docker: input.docker,
+      git: input.selfUpdate.git,
+      issueReporter: input.selfUpdate.issueReporter,
+      readLedger: input.selfUpdate.readLedger,
+      writeLedger: input.selfUpdate.writeLedger,
+      sleep: input.sleep,
+      logger: {
+        info: input.logger.info,
+        error: input.logger.error ?? input.logger.info,
+      },
+      wakeRoot: input.wakeRoot,
+      containerHomeRoot: input.containerHomeRoot,
+      containerMountPath: input.config.sandbox.containerMountPath,
+      containerHomeMountPath: input.config.sandbox.containerHomeMountPath,
+      dockerfilePath: resolve(repoRoot, 'docker', 'Dockerfile'),
     });
     return;
   }
