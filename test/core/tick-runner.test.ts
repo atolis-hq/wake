@@ -1207,10 +1207,113 @@ describe('tick runner', () => {
     expect(runnerCallCount).toBe(0);
     expect(runRecord?.status).toBe('failed');
     expect(runRecord?.sentinel).toBe('FAILED');
-    expect(projection?.wake.stage).toBe('failed');
+    expect(projection?.wake.stage).toBe('implement');
     expect(events).toContain('"eventId":"run-123-stale-stale-reconciled"');
     expect(events).toContain('"sourceEventType":"wake.labels.requested"');
-    expect(events).toContain('"stageLabel":"wake:stage.failed"');
+    expect(events).toContain('"stageLabel":"wake:stage.implement"');
+  });
+
+  it('pauses until the reported quota reset and suppresses quota failure comments', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const publishedKinds: string[] = [];
+    const config = createDefaultWakeConfig(root);
+    config.sources.github.policy.requiredLabels = ['wake:queue'];
+
+    const tickRunner = createTickRunner({
+      clock: { now: () => new Date('2026-07-07T22:30:00.000Z') },
+      config,
+      stateStore: store,
+      workSource: createFakeTicketingSystem({
+        tickets: [{
+          repo: 'atolis-hq/wake', number: 112, title: 'Quota pause', body: '',
+          labels: ['wake:queue'], comments: [],
+        }],
+      }),
+      outboundSink: {
+        async deliverIntent({ event }) {
+          if (event.sourceEventType === 'wake.publish.intent.requested') {
+            publishedKinds.push(String(event.payload.kind));
+          }
+          return [];
+        },
+      },
+      runner: {
+        async run() {
+          return {
+            result: "Claude runner failed: You've hit your session limit - resets 1:10am (UTC)\nFAILED",
+            model: 'test-model',
+            cli: 'Claude',
+            failureClass: 'quota' as const,
+          };
+        },
+      },
+      workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+    });
+
+    await tickRunner.runTick();
+
+    expect(await store.readLedger()).toMatchObject({
+      pausedUntil: '2026-07-08T01:10:00.000Z',
+      quotaFailureCount: 1,
+    });
+    expect(publishedKinds).toEqual([]);
+    const projection = await store.readIssueState('atolis-hq/wake', 112);
+    expect(projection?.context.lastFailureClass).toBe('quota');
+  });
+
+  it('supersedes a stale running record when the item has already completed a newer run', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const config = createDefaultWakeConfig(root);
+    const claudeHaikuEntry = config.runners['claude-haiku'];
+    if (claudeHaikuEntry?.kind === 'claude') {
+      claudeHaikuEntry.timeoutMs = 60_000;
+    }
+    config.tiers.light = ['claude-haiku'];
+    config.tiers.standard = ['claude-haiku'];
+
+    await store.writeIssueState({
+      schemaVersion: 1,
+      workItemKey: 'atolis-hq/wake#124',
+      issue: {
+        repo: 'atolis-hq/wake', number: 124, title: 'Recovered run', body: '',
+        labels: ['wake'], assignees: [], isPullRequest: false, state: 'open',
+        url: 'https://example.test/issues/124',
+        createdAt: '2026-07-05T12:00:00.000Z', updatedAt: '2026-07-05T12:01:00.000Z',
+      },
+      comments: [],
+      wake: {
+        stage: 'done', lastRunId: 'run-124-new', syncedAt: '2026-07-05T12:01:00.000Z',
+        stageHistory: [], recentEventIds: [], expectedEcho: { commentIds: [], labels: [] },
+      },
+      context: { lastRunAction: 'implement', lastRunSentinel: 'DONE' },
+    });
+    await store.writeRunRecord({
+      schemaVersion: 1, runId: 'run-124-stale', repo: 'atolis-hq/wake', issueNumber: 124,
+      action: 'implement', status: 'running', startedAt: '2026-07-05T12:00:00.000Z',
+    });
+    await store.writeRunRecord({
+      schemaVersion: 1, runId: 'run-124-new', repo: 'atolis-hq/wake', issueNumber: 124,
+      action: 'implement', status: 'completed', startedAt: '2026-07-05T12:00:30.000Z',
+      finishedAt: '2026-07-05T12:01:00.000Z', sentinel: 'DONE',
+    });
+
+    const tickRunner = createTickRunner({
+      clock: { now: () => new Date('2026-07-05T12:02:00.000Z') },
+      config,
+      stateStore: store,
+      workSource: { async pollEvents() { return []; } },
+      runner: { async run() { throw new Error('should not run'); } },
+      workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+    });
+
+    const result = await tickRunner.runTick();
+    const staleRecord = await store.readRunRecord('run-124-stale');
+    const projection = await store.readIssueState('atolis-hq/wake', 124);
+
+    expect(result.status).toBe('idle');
+    expect(staleRecord?.status).toBe('superseded');
+    expect(projection?.wake.stage).toBe('done');
+    expect(await store.readEventEnvelope('run-124-stale-stale-reconciled')).toBeNull();
   });
 
   it('deletes the per-issue workspace and clears workspacePath when an issue is closed', async () => {
@@ -1313,5 +1416,55 @@ describe('tick runner', () => {
     await expect(access(canonicalClonePath)).resolves.toBeUndefined();
     const updatedProjection = await store.readIssueState('atolis-hq/wake', 201);
     expect(updatedProjection?.wake.workspacePath).toBe(canonicalClonePath);
+  });
+
+  it('records cleanup failure and continues dispatching eligible work', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const workspacePath = join(root, 'workspaces', 'atolis-hq__wake', '202');
+    const nowIso = '2026-07-05T12:00:00.000Z';
+    await store.writeIssueState({
+      schemaVersion: 1,
+      workItemKey: 'atolis-hq/wake#202',
+      issue: {
+        repo: 'atolis-hq/wake', number: 202, title: 'Locked workspace', body: '',
+        labels: [], assignees: [], isPullRequest: false, state: 'closed',
+        url: 'https://example.test/issues/202', createdAt: nowIso, updatedAt: nowIso,
+      },
+      comments: [],
+      wake: {
+        stage: 'done', workspacePath, syncedAt: nowIso, stageHistory: [],
+        recentEventIds: [], expectedEcho: { commentIds: [], labels: [] },
+      },
+      context: {},
+    });
+    const config = createDefaultWakeConfig(root);
+    config.sources.github.policy.requiredLabels = ['wake:queue'];
+    const fakeWorkspace = createFakeWorkspaceManager(join(root, 'workspaces'));
+    const tickRunner = createTickRunner({
+      clock: { now: () => new Date(nowIso) },
+      config,
+      stateStore: store,
+      workSource: createFakeTicketingSystem({
+        tickets: [{
+          repo: 'atolis-hq/wake', number: 203, title: 'Runnable', body: '',
+          labels: ['wake:queue'], comments: [],
+        }],
+      }),
+      runner: { async run() { return { result: 'Refined\nDONE', model: 'test', cli: 'test' }; } },
+      workspaceManager: {
+        ...fakeWorkspace,
+        async cleanupWorkspace() { throw new Error('EPERM: workspace is locked'); },
+      },
+    });
+
+    const result = await tickRunner.runTick();
+    const events = await store.listEventEnvelopes();
+
+    expect(result.status).toBe('processed');
+    expect(events.some((event) =>
+      event.sourceEventType === 'wake.workspace.cleanup-failed' &&
+      event.workItemKey === 'atolis-hq/wake#202' &&
+      event.payload.error === 'EPERM: workspace is locked'
+    )).toBe(true);
   });
 });

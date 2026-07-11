@@ -107,6 +107,19 @@ describe('state store', () => {
     );
   });
 
+  it('does not append an event whose id is already persisted', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const event = eventEnvelope({ eventId: 'evt-once' });
+
+    await store.appendEventEnvelope(event);
+    await store.appendEventEnvelope(event);
+
+    const lines = (await readFile(join(root, 'events', '2026-07-05.jsonl'), 'utf8'))
+      .split('\n')
+      .filter(Boolean);
+    expect(lines).toHaveLength(1);
+  });
+
   it('lists recent work-item events from projection ids without scanning event history', async () => {
     const store = createStateStore({ wakeRoot: root });
 
@@ -144,6 +157,17 @@ describe('state store', () => {
 
     const saved = await store.readSourceState('github', 'atolis-hq/wake');
     expect(saved?.lastSuccessfulPollAt).toBe('2026-07-05T12:00:00.000Z');
+  });
+
+  it('honors pausedUntil until its reset time has passed', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    await store.writeLedger({
+      schemaVersion: 1,
+      pausedUntil: '2026-07-08T01:10:00.000Z',
+    });
+
+    await expect(store.isPaused(new Date('2026-07-08T01:09:59.000Z'))).resolves.toBe(true);
+    await expect(store.isPaused(new Date('2026-07-08T01:10:00.000Z'))).resolves.toBe(false);
   });
 
   it('skips invalid issue-state files instead of returning an empty list', async () => {

@@ -59,6 +59,32 @@ describe('projection updater', () => {
     root = await mkdtemp(join(tmpdir(), 'wake-projection-updater-'));
   });
 
+  it('records the claimed run as the projection latest run', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const updater = createProjectionUpdater({ stateStore: store });
+    const claimed = createEventEnvelope({
+      eventId: 'run-7-claimed',
+      workItemKey: 'atolis-hq/wake#7',
+      streamScope: 'work-item',
+      direction: 'internal',
+      sourceSystem: 'wake',
+      sourceEventType: 'wake.run.claimed',
+      sourceRefs: { repo: 'atolis-hq/wake', issueNumber: 7, runId: 'run-7' },
+      occurredAt: '2026-07-05T12:01:00.000Z',
+      ingestedAt: '2026-07-05T12:01:00.000Z',
+      trigger: 'immediate',
+      payload: { action: 'refine', priorStage: 'queue', claimedStage: 'refine' },
+    });
+
+    await updater.rebuildFromEvents([
+      issueUpsert({ eventId: 'issue-7', issueNumber: 7, labels: ['wake:queue'] }),
+      claimed,
+    ]);
+
+    const projection = await store.readIssueState('atolis-hq/wake', 7);
+    expect(projection?.wake.lastRunId).toBe('run-7');
+  });
+
   it('builds a work-item projection from correlated event envelopes', async () => {
     const store = createStateStore({ wakeRoot: root });
     const updater = createProjectionUpdater({ stateStore: store });
@@ -905,7 +931,7 @@ describe('projection updater', () => {
           number: 23,
           title: 'Example',
           body: 'Body',
-          labels: [],
+          labels: ['wake:stage.refine'],
           assignees: [],
           isPullRequest: false,
           state: 'open',
@@ -936,7 +962,7 @@ describe('projection updater', () => {
       trigger: 'immediate',
       payload: {
         action: 'refine',
-        nextStage: 'failed',
+        sentinel: 'FAILED',
         runId: 'run-23-1',
       },
     });
@@ -945,7 +971,7 @@ describe('projection updater', () => {
     await updater.rebuildFromEvents([runCompleted]);
 
     let projection = await store.readIssueState('atolis-hq/wake', 23);
-    expect(projection?.wake.stage).toBe('failed');
+    expect(projection?.wake.stage).toBe('refine');
 
     const ownerReply = createEventEnvelope({
       eventId: 'evt-comment-owner',
@@ -979,9 +1005,9 @@ describe('projection updater', () => {
     await updater.rebuildFromEvents([ownerReply]);
 
     projection = await store.readIssueState('atolis-hq/wake', 23);
-    expect(projection?.wake.stage).toBe('failed');
+    expect(projection?.wake.stage).toBe('refine');
     expect(projection?.latestComment?.id).toBe('c-owner');
-    expect(projection?.wake.stageHistory).toHaveLength(1);
+    expect(projection?.wake.stageHistory).toHaveLength(0);
   });
 
   it('records a human reply on a failed implement issue without changing stage', async () => {
@@ -1009,7 +1035,7 @@ describe('projection updater', () => {
           number: 24,
           title: 'Example',
           body: 'Body',
-          labels: [],
+          labels: ['wake:stage.implement'],
           assignees: [],
           isPullRequest: false,
           state: 'open',
@@ -1040,7 +1066,7 @@ describe('projection updater', () => {
       trigger: 'immediate',
       payload: {
         action: 'implement',
-        nextStage: 'failed',
+        sentinel: 'FAILED',
         runId: 'run-24-1',
       },
     });
@@ -1049,7 +1075,7 @@ describe('projection updater', () => {
     await updater.rebuildFromEvents([runCompleted]);
 
     let projection = await store.readIssueState('atolis-hq/wake', 24);
-    expect(projection?.wake.stage).toBe('failed');
+    expect(projection?.wake.stage).toBe('implement');
 
     const ownerReply = createEventEnvelope({
       eventId: 'evt-comment-owner',
@@ -1083,7 +1109,7 @@ describe('projection updater', () => {
     await updater.rebuildFromEvents([ownerReply]);
 
     projection = await store.readIssueState('atolis-hq/wake', 24);
-    expect(projection?.wake.stage).toBe('failed');
+    expect(projection?.wake.stage).toBe('implement');
     expect(projection?.context.lastRunAction).toBe('implement');
   });
 

@@ -124,6 +124,10 @@ export function createStateStore({ wakeRoot }: { wakeRoot: string }) {
     },
     async appendEventEnvelope(record: EventEnvelope): Promise<EventEnvelope> {
       const parsed = parseEventEnvelope(record);
+      const existing = await this.readEventEnvelope(parsed.eventId);
+      if (existing !== null) {
+        return existing;
+      }
       await appendJsonLine(paths.eventFile(parsed.ingestedAt.slice(0, 10)), parsed);
       await writeJsonFile(paths.eventEnvelopeFile(parsed.eventId), parsed);
       return parsed;
@@ -220,12 +224,13 @@ export function createStateStore({ wakeRoot }: { wakeRoot: string }) {
       await mkdir(wakeRoot, { recursive: true });
       await appendFile(paths.logFile(date), `${line}\n`, 'utf8');
     },
-    async isPaused(): Promise<boolean> {
+    async isPaused(now = new Date()): Promise<boolean> {
       try {
         await access(paths.pauseFile);
         return true;
       } catch {
-        return false;
+        const ledger = await this.readLedger();
+        return ledger?.pausedUntil !== undefined && Date.parse(ledger.pausedUntil) > now.getTime();
       }
     },
     async readEventLog(date: string): Promise<string> {

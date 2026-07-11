@@ -1,6 +1,7 @@
 import { chmod, mkdtemp, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { platform } from 'node:process';
 
 import { describe, expect, it } from 'vitest';
 
@@ -753,7 +754,7 @@ describe('claude runner command building', () => {
     expect(classifyClaudeCliFailure({ stdout, stderr: '', timedOut: false })).toBe('quota');
   });
 
-  it('surfaces non-JSON stdout from failed Claude invocations', async () => {
+  it.skipIf(platform === 'win32')('surfaces non-JSON stdout from failed Claude invocations', async () => {
     const commandDir = await mkdtemp(join(tmpdir(), 'wake-claude-cli-'));
     const command = join(commandDir, 'claude-fails');
     await writeFile(

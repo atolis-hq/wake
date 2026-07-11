@@ -138,6 +138,39 @@ describe('issue state schema', () => {
       },
     ]);
   });
+
+  it('normalizes legacy failed stages back to the action that failed', () => {
+    const record = parseIssueStateRecord({
+      schemaVersion: 1,
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 14,
+        title: 'Legacy failure',
+        body: '',
+        labels: ['wake:status.failed'],
+        assignees: [],
+        isPullRequest: false,
+        state: 'open',
+        url: 'https://example.test/issues/14',
+        createdAt: '2026-07-05T12:00:00.000Z',
+        updatedAt: '2026-07-05T12:05:00.000Z',
+      },
+      comments: [],
+      wake: {
+        stage: 'failed',
+        stageHistory: [{
+          stage: 'failed',
+          changedAt: '2026-07-05T12:05:00.000Z',
+          reason: 'runner:failed',
+        }],
+        syncedAt: '2026-07-05T12:05:00.000Z',
+      },
+      context: { lastRunAction: 'refine', lastRunSentinel: 'FAILED' },
+    });
+
+    expect(record.wake.stage).toBe('refine');
+    expect(record.wake.stageHistory[0]?.stage).toBe('refine');
+  });
 });
 
 describe('run and event schemas', () => {
@@ -210,6 +243,61 @@ describe('run and event schemas', () => {
   it('parses the sentinel from the last non-empty line only', () => {
     expect(parseRunnerResultSentinel('notes DONE more notes\nFAILED')).toBe('FAILED');
     expect(parseRunnerResultSentinel('notes DONE more notes\nDONE')).toBe('DONE');
+  });
+
+  it('normalizes legacy blockedFromAction context when lastRunAction is absent', () => {
+    const issue = parseIssueStateRecord({
+      schemaVersion: 1,
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 12,
+        title: 'Legacy blocked issue',
+        body: '',
+        labels: [],
+        assignees: [],
+        isPullRequest: false,
+        state: 'open',
+        url: 'https://example.test/issues/12',
+        createdAt: '2026-07-05T12:00:00.000Z',
+        updatedAt: '2026-07-05T12:00:00.000Z',
+      },
+      wake: {
+        stage: 'blocked',
+        syncedAt: '2026-07-05T12:00:00.000Z',
+        stageHistory: [],
+      },
+      context: { blockedFromAction: 'refine' },
+    });
+
+    expect(issue.context.lastRunAction).toBe('refine');
+    expect(issue.context.blockedFromAction).toBe('refine');
+  });
+
+  it('preserves lastRunAction when both current and legacy context keys exist', () => {
+    const issue = parseIssueStateRecord({
+      schemaVersion: 1,
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 12,
+        title: 'Migrated blocked issue',
+        body: '',
+        labels: [],
+        assignees: [],
+        isPullRequest: false,
+        state: 'open',
+        url: 'https://example.test/issues/12',
+        createdAt: '2026-07-05T12:00:00.000Z',
+        updatedAt: '2026-07-05T12:00:00.000Z',
+      },
+      wake: {
+        stage: 'blocked',
+        syncedAt: '2026-07-05T12:00:00.000Z',
+        stageHistory: [],
+      },
+      context: { blockedFromAction: 'refine', lastRunAction: 'implement' },
+    });
+
+    expect(issue.context.lastRunAction).toBe('implement');
   });
 
   it('parses the last valid wake-result envelope and keeps only prose before it as body', () => {
@@ -329,18 +417,62 @@ describe('run and event schemas', () => {
     expect(parsed.envelope).toBe('degraded');
   });
 
+  it('accepts markdown-decorated sentinels on the final line', () => {
+    const parsed = parseRunnerResult('I need the repository owner to choose.\n\n**BLOCKED**');
+
+    expect(parsed.status).toBe('BLOCKED');
+    expect(parsed.body).toBe('I need the repository owner to choose.');
+    expect(parsed.envelope).toBe('degraded');
+  });
+
+  it('parses an off-fence wake-result envelope', () => {
+    const parsed = parseRunnerResult([
+      'I need one missing detail.',
+      '',
+      '```wake-result',
+      '```',
+      '{"status":"BLOCKED"}',
+    ].join('\n'));
+
+    expect(parsed.status).toBe('BLOCKED');
+    expect(parsed.body).toBe('I need one missing detail.');
+    expect(parsed.envelope).toBe('structured');
+  });
+
+  it('parses wake-result when its marker is on the line after the fence opener', () => {
+    const parsed = parseRunnerResult([
+      'I need one missing detail.',
+      '',
+      '```',
+      'wake-result',
+      '{"status":"BLOCKED"}',
+      '```',
+    ].join('\n'));
+
+    expect(parsed.status).toBe('BLOCKED');
+    expect(parsed.body).toBe('I need one missing detail.');
+    expect(parsed.envelope).toBe('structured');
+  });
+
+  it('treats substantive degraded output without a sentinel as blocked', () => {
+    const parsed = parseRunnerResult('Should I create a migration or preserve the legacy format?');
+
+    expect(parsed.status).toBe('BLOCKED');
+    expect(parsed.envelope).toBe('degraded');
+  });
+
   it('does not match a sentinel word embedded in prose on the last line', () => {
     // Last line contains prose, not an exact sentinel — should fall back to FAILED
-    expect(parseRunnerResultSentinel('notes DONE more notes FAILED')).toBe('FAILED');
-    expect(parseRunnerResultSentinel('the previous run FAILED, so I re-ran the tests\nIf they had FAILED again it would be bad\nDONE. Finished.')).toBe('FAILED');
+    expect(parseRunnerResultSentinel('notes DONE more notes FAILED')).toBe('BLOCKED');
+    expect(parseRunnerResultSentinel('the previous run FAILED, so I re-ran the tests\nIf they had FAILED again it would be bad\nDONE. Finished.')).toBe('BLOCKED');
   });
 
   it('parses AWAITING_APPROVAL sentinel from last line', () => {
     expect(parseRunnerResultSentinel('Work complete, awaiting sign-off\nAWAITING_APPROVAL')).toBe('AWAITING_APPROVAL');
   });
 
-  it('defaults to FAILED when no sentinel keyword is present on the last line', () => {
-    expect(parseRunnerResultSentinel('Should I proceed with creating the worktree?')).toBe('FAILED');
+  it('blocks on substantive output and fails on empty output when no sentinel is present', () => {
+    expect(parseRunnerResultSentinel('Should I proceed with creating the worktree?')).toBe('BLOCKED');
     expect(parseRunnerResultSentinel('')).toBe('FAILED');
   });
 

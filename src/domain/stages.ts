@@ -5,7 +5,6 @@ export const stageValues = [
   'done',
   'awaiting-approval',
   'blocked',
-  'failed',
 ] as const;
 
 export const doneRunnerSentinel = 'DONE';
@@ -22,7 +21,7 @@ export const runnerSentinelValues = [
 
 export const agentActionValues = ['refine', 'implement'] as const;
 
-export const terminalStageValues = ['done', 'failed'] as const;
+export const terminalStageValues = ['done'] as const;
 
 type Stage = (typeof stageValues)[number];
 
