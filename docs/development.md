@@ -165,8 +165,13 @@ to `0.0.0.0` inside the container.
 `http://127.0.0.1:4317` once the container is running. Requests must include
 `Authorization: Bearer <token>` or a `wake_ui_token` cookie.
 
-If `ui.enabled` is true but no token is configured, the entrypoint logs a
-warning and skips starting the UI rather than binding an unauthenticated port.
+To expose the same in-container UI through a public ngrok URL, set
+`ui.tunnel.enabled: true` and provide `ui.tunnel.authToken` or run
+`./wake.sh sandbox setup` and choose ngrok auth setup. The entrypoint starts
+the ngrok CLI and writes the generated URL to
+`<wake-root>/control-plane-ui-url`; GitHub comments link their `Eddy` header to
+that URL while the file exists.
+
 See [docs/configuration.md#ui](configuration.md#ui) for the full config shape.
 
 ## 4. Run First-Time Auth Setup Inside The Container

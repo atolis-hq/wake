@@ -10,6 +10,10 @@ export type DockerUiInput = {
   enabled: boolean;
   port: number;
   token?: string | undefined;
+  tunnel?: {
+    enabled: boolean;
+    authToken?: string | undefined;
+  } | undefined;
 };
 
 export type DockerStartInput = {
@@ -69,6 +73,15 @@ function buildRunArgs(input: DockerUpInput): string[] {
           '-e',
           `WAKE_UI_PORT=${input.ui.port}`,
           ...(input.ui.token !== undefined ? ['-e', `WAKE_UI_TOKEN=${input.ui.token}`] : []),
+          ...(input.ui.tunnel?.enabled === true
+            ? [
+                '-e',
+                'WAKE_UI_TUNNEL_ENABLED=true',
+                ...(input.ui.tunnel.authToken !== undefined
+                  ? ['-e', `NGROK_AUTHTOKEN=${input.ui.tunnel.authToken}`]
+                  : []),
+              ]
+            : []),
         ]
       : []),
     ...(input.start?.enabled === true ? ['-e', 'WAKE_START_ENABLED=true'] : []),
