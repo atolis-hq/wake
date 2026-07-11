@@ -21,6 +21,7 @@ import { createGitHubClient } from './adapters/github/github-client.js';
 import { createGitHubIssuesWorkSource } from './adapters/github/github-issues-work-source.js';
 import { runInitCommand } from './cli/init-command.js';
 import { runSandboxCommand } from './cli/sandbox-command.js';
+import { runStartupPreflight } from './cli/startup-preflight.js';
 import { runUiCommand } from './cli/ui-command.js';
 import { loadWakeConfig } from './config/load-config.js';
 import { createControlPlane } from './core/control-plane.js';
@@ -275,6 +276,7 @@ async function buildRuntime(args: string[]) {
     runner,
     stateStore,
     tickRunner,
+    workspaceManager,
   };
 }
 
@@ -296,6 +298,11 @@ async function runTick(args: string[]) {
 
 async function runStart(args: string[]) {
   const runtime = await buildRuntime(args);
+  const runnerOverride = readFlagBeforeCommandTerminator('--runner', args);
+  await runStartupPreflight(runtime.config, {
+    ...(runnerOverride === undefined ? {} : { runnerOverride }),
+    workspaceManager: runtime.workspaceManager,
+  });
   const controlPlane = createControlPlane({
     tickRunner: runtime.tickRunner,
     intervalMs: runtime.config.scheduler.intervalMs,

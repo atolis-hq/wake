@@ -1,5 +1,5 @@
-import { access, appendFile, mkdir, readFile, readdir } from 'node:fs/promises';
-import { join } from 'node:path';
+import { access, appendFile, mkdir, readFile, readdir, rename } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 
 import {
   parseEventEnvelope,
@@ -9,6 +9,7 @@ import {
   parseSourceStateRecord,
   parseWakeConfig,
 } from '../../domain/schema.js';
+import { isTerminalStage } from '../../domain/stages.js';
 import type {
   EventEnvelope,
   IssueStateRecord,
@@ -19,6 +20,19 @@ import type {
 } from '../../domain/types.js';
 import { appendJsonLine, readJsonFile, writeJsonFile } from '../../lib/json-file.js';
 import { createWakePaths } from '../../lib/paths.js';
+
+type ListIssueStatesOptions = {
+  includeArchived?: boolean;
+  archiveFreshnessDays?: number;
+  now?: Date;
+};
+
+type EventFeedFilter = {
+  limit?: number;
+  workItemKey?: string;
+  direction?: EventEnvelope['direction'];
+  type?: string;
+};
 
 function issueRefFromWorkItemKey(
   workItemKey: string,
@@ -54,23 +68,161 @@ async function readIssueStateFile(file: string): Promise<IssueStateRecord | null
   }
 }
 
+async function readRunRecordFile(file: string): Promise<RunRecord | null> {
+  try {
+    return parseRunRecord(await readJsonFile(file));
+  } catch {
+    return null;
+  }
+}
+
+async function readEventFile(file: string): Promise<EventEnvelope[]> {
+  try {
+    const raw = await readFile(file, 'utf8');
+    const envelopes: EventEnvelope[] = [];
+    for (const line of raw.split('\n')) {
+      const trimmed = line.trim();
+      if (trimmed.length === 0) {
+        continue;
+      }
+
+      const parsed = JSON.parse(trimmed) as unknown;
+      if (
+        parsed !== null &&
+        typeof parsed === 'object' &&
+        'eventId' in parsed &&
+        'sourceEventType' in parsed
+      ) {
+        envelopes.push(parseEventEnvelope(parsed));
+      }
+    }
+    return envelopes;
+  } catch {
+    return [];
+  }
+}
+
+function issueArchiveAgeDate(item: IssueStateRecord): string {
+  const stageChangedAt = item.wake.stageHistory.at(-1)?.changedAt;
+  return [stageChangedAt, item.wake.syncedAt, item.issue.updatedAt]
+    .filter((value): value is string => value !== undefined)
+    .sort()
+    .at(-1) ?? item.wake.syncedAt;
+}
+
+function shouldArchiveIssueState(
+  item: IssueStateRecord,
+  options: Required<Pick<ListIssueStatesOptions, 'archiveFreshnessDays' | 'now'>>,
+): boolean {
+  if (!isTerminalStage(item.wake.stage) && item.issue.state !== 'closed') {
+    return false;
+  }
+
+  const ageMs = options.now.getTime() - Date.parse(issueArchiveAgeDate(item));
+  return Number.isFinite(ageMs) && ageMs > options.archiveFreshnessDays * 24 * 60 * 60 * 1000;
+}
+
 export async function listRunRecords(wakeRoot: string): Promise<RunRecord[]> {
   const runsRoot = join(wakeRoot, 'runs');
+  const recordsById = new Map<string, RunRecord>();
 
   try {
     const files = (await readdir(runsRoot))
       .filter((file) => file.endsWith('.json'))
       .sort();
-    const records: RunRecord[] = [];
 
     for (const file of files) {
-      records.push(parseRunRecord(await readJsonFile(join(runsRoot, file))));
+      const record = await readRunRecordFile(join(runsRoot, file));
+      if (record !== null) {
+        recordsById.set(record.runId, record);
+      }
     }
-
-    return records;
   } catch {
-    return [];
+    // The date-bucketed layout below may still exist.
   }
+
+  try {
+    const byDateRoot = join(runsRoot, 'by-date');
+    const dateDirs = (await readdir(byDateRoot)).sort();
+    for (const dateDir of dateDirs) {
+      const files = (await readdir(join(byDateRoot, dateDir)).catch(() => []))
+        .filter((file) => file.endsWith('.json'))
+        .sort();
+      for (const file of files) {
+        const record = await readRunRecordFile(join(byDateRoot, dateDir, file));
+        if (record !== null) {
+          recordsById.set(record.runId, record);
+        }
+      }
+    }
+  } catch {
+    // Old wake homes only have root-level run files.
+  }
+
+  return [...recordsById.values()].sort((left, right) =>
+    left.startedAt.localeCompare(right.startedAt),
+  );
+}
+
+async function listRunRecordsForDate(wakeRoot: string, date: string): Promise<RunRecord[]> {
+  const runsRoot = join(wakeRoot, 'runs');
+  const recordsById = new Map<string, RunRecord>();
+
+  const bucketFiles = (await readdir(join(runsRoot, 'by-date', date)).catch(() => []))
+    .filter((file) => file.endsWith('.json'))
+    .sort();
+  for (const file of bucketFiles) {
+    const record = await readRunRecordFile(join(runsRoot, 'by-date', date, file));
+    if (record !== null) {
+      recordsById.set(record.runId, record);
+    }
+  }
+
+  if (recordsById.size === 0) {
+    const legacyFiles = (await readdir(runsRoot).catch(() => []))
+      .filter((file) => file.endsWith('.json'))
+      .sort();
+    for (const file of legacyFiles) {
+      const record = await readRunRecordFile(join(runsRoot, file));
+      if (record?.startedAt.slice(0, 10) === date) {
+        recordsById.set(record.runId, record);
+      }
+    }
+  }
+
+  return [...recordsById.values()].sort((left, right) =>
+    left.startedAt.localeCompare(right.startedAt),
+  );
+}
+
+async function listRecentRunRecords(wakeRoot: string, limit: number): Promise<RunRecord[]> {
+  const runsRoot = join(wakeRoot, 'runs');
+  const recordsById = new Map<string, RunRecord>();
+  const dateDirs = (await readdir(join(runsRoot, 'by-date')).catch(() => []))
+    .sort()
+    .reverse();
+
+  for (const dateDir of dateDirs) {
+    const records = await listRunRecordsForDate(wakeRoot, dateDir);
+    for (const record of records.reverse()) {
+      recordsById.set(record.runId, record);
+      if (recordsById.size >= limit) {
+        return [...recordsById.values()].sort((left, right) =>
+          right.startedAt.localeCompare(left.startedAt),
+        );
+      }
+    }
+  }
+
+  if (recordsById.size === 0) {
+    return (await listRunRecords(wakeRoot))
+      .sort((left, right) => right.startedAt.localeCompare(left.startedAt))
+      .slice(0, limit);
+  }
+
+  return [...recordsById.values()].sort((left, right) =>
+    right.startedAt.localeCompare(left.startedAt),
+  );
 }
 
 export function createStateStore({ wakeRoot }: { wakeRoot: string }) {
@@ -126,6 +278,22 @@ export function createStateStore({ wakeRoot }: { wakeRoot: string }) {
         return legacy;
       }
 
+      for (const sourceName of sources) {
+        const archived = await readIssueStateFile(
+          paths.archivedIssueStateFile(sourceName, repo, issueNumber),
+        );
+        if (archived !== null) {
+          return archived;
+        }
+      }
+
+      const archivedLegacy = await readIssueStateFile(
+        paths.archivedLegacyIssueStateFile(repo, issueNumber),
+      );
+      if (archivedLegacy !== null) {
+        return archivedLegacy;
+      }
+
       if (source !== undefined) {
         return null;
       }
@@ -134,11 +302,20 @@ export function createStateStore({ wakeRoot }: { wakeRoot: string }) {
         const stateRoot = join(wakeRoot, 'state');
         const sourceDirs = await readdir(stateRoot);
         for (const sourceDir of sourceDirs) {
+          if (sourceDir === 'archive') {
+            continue;
+          }
           const record = await readIssueStateFile(
             paths.issueStateFile(sourceDir, repo, issueNumber),
           );
           if (record !== null) {
             return record;
+          }
+          const archived = await readIssueStateFile(
+            paths.archivedIssueStateFile(sourceDir, repo, issueNumber),
+          );
+          if (archived !== null) {
+            return archived;
           }
         }
       } catch {
@@ -149,6 +326,7 @@ export function createStateStore({ wakeRoot }: { wakeRoot: string }) {
     async writeRunRecord(record: RunRecord): Promise<RunRecord> {
       const parsed = parseRunRecord(record);
       await writeJsonFile(paths.runFile(parsed.runId), parsed);
+      await writeJsonFile(paths.runDateFile(parsed.startedAt.slice(0, 10), parsed.runId), parsed);
       return parsed;
     },
     async writeSourceState(record: SourceStateRecord): Promise<SourceStateRecord> {
@@ -160,11 +338,18 @@ export function createStateStore({ wakeRoot }: { wakeRoot: string }) {
       try {
         return parseRunRecord(await readJsonFile(paths.runFile(runId)));
       } catch {
-        return null;
+        const recent = await listRecentRunRecords(wakeRoot, 500);
+        return recent.find((record) => record.runId === runId) ?? null;
       }
     },
     async listRunRecords(): Promise<RunRecord[]> {
       return listRunRecords(wakeRoot);
+    },
+    async listRunRecordsForDate(date: string): Promise<RunRecord[]> {
+      return listRunRecordsForDate(wakeRoot, date);
+    },
+    async listRecentRunRecords(limit = 10): Promise<RunRecord[]> {
+      return listRecentRunRecords(wakeRoot, limit);
     },
     async readSourceState(source: string, key: string): Promise<SourceStateRecord | null> {
       try {
@@ -192,35 +377,57 @@ export function createStateStore({ wakeRoot }: { wakeRoot: string }) {
         return null;
       }
     },
-    async listIssueStates(): Promise<IssueStateRecord[]> {
+    async listIssueStates(options: ListIssueStatesOptions = {}): Promise<IssueStateRecord[]> {
       const stateRoot = join(wakeRoot, 'state');
       try {
-        const repoDirs = await readdir(stateRoot);
         const items: IssueStateRecord[] = [];
+        const includeArchived = options.includeArchived ?? false;
+        const archiveOptions = options.archiveFreshnessDays === undefined
+          ? null
+          : {
+              archiveFreshnessDays: options.archiveFreshnessDays,
+              now: options.now ?? new Date(),
+            };
 
-        for (const firstLevelDir of repoDirs) {
-          const firstLevelPath = join(stateRoot, firstLevelDir);
-          const childEntries = await readdir(firstLevelPath);
-          for (const childEntry of childEntries) {
-            if (childEntry.endsWith('.json')) {
-              const record = await readIssueStateFile(join(firstLevelPath, childEntry));
-              if (record !== null) {
-                items.push(record);
+        const visit = async (dir: string, segments: string[]): Promise<void> => {
+          const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
+          for (const entry of entries) {
+            if (entry.isDirectory()) {
+              if (!includeArchived && entry.name === 'archive') {
+                continue;
               }
+              await visit(join(dir, entry.name), [...segments, entry.name]);
               continue;
             }
 
-            const issueFiles = await readdir(join(firstLevelPath, childEntry));
-            for (const issueFile of issueFiles) {
-              const record = await readIssueStateFile(
-                join(firstLevelPath, childEntry, issueFile),
-              );
-              if (record !== null) {
-                items.push(record);
-              }
+            if (!entry.isFile() || !entry.name.endsWith('.json')) {
+              continue;
             }
+
+            const file = join(dir, entry.name);
+            const record = await readIssueStateFile(file);
+            if (record === null) {
+              continue;
+            }
+
+            const alreadyArchived = segments.includes('archive');
+            if (archiveOptions !== null && !alreadyArchived && shouldArchiveIssueState(record, archiveOptions)) {
+              const sourceName = record.origin ?? (segments[0] ?? 'github');
+              const archivePath = paths.archivedIssueStateFile(
+                sourceName,
+                record.issue.repo,
+                record.issue.number,
+              );
+              await mkdir(dirname(archivePath), { recursive: true });
+              await rename(file, archivePath).catch(() => undefined);
+              continue;
+            }
+
+            items.push(record);
           }
-        }
+        };
+
+        await visit(stateRoot, []);
 
         const byWorkItemKey = new Map<string, IssueStateRecord>();
         for (const item of items) {
@@ -241,29 +448,43 @@ export function createStateStore({ wakeRoot }: { wakeRoot: string }) {
         const envelopes: EventEnvelope[] = [];
 
         for (const file of files) {
-          const raw = await readFile(join(eventsRoot, file), 'utf8');
-          for (const line of raw.split('\n')) {
-            const trimmed = line.trim();
-            if (trimmed.length === 0) {
-              continue;
-            }
-
-            const parsed = JSON.parse(trimmed) as unknown;
-            if (
-              parsed !== null &&
-              typeof parsed === 'object' &&
-              'eventId' in parsed &&
-              'sourceEventType' in parsed
-            ) {
-              envelopes.push(parseEventEnvelope(parsed));
-            }
-          }
+          envelopes.push(...await readEventFile(join(eventsRoot, file)));
         }
 
         return envelopes;
       } catch {
         return [];
       }
+    },
+    async listRecentEventEnvelopes(filter: EventFeedFilter = {}): Promise<EventEnvelope[]> {
+      const limit = filter.limit ?? 200;
+      const eventsRoot = join(wakeRoot, 'events');
+      const files = (await readdir(eventsRoot).catch(() => []))
+        .filter((file) => file.endsWith('.jsonl'))
+        .sort()
+        .reverse();
+      const results: EventEnvelope[] = [];
+
+      for (const file of files) {
+        const events = await readEventFile(join(eventsRoot, file));
+        for (const event of events.reverse()) {
+          if (filter.workItemKey !== undefined && event.workItemKey !== filter.workItemKey) {
+            continue;
+          }
+          if (filter.direction !== undefined && event.direction !== filter.direction) {
+            continue;
+          }
+          if (filter.type !== undefined && event.sourceEventType !== filter.type) {
+            continue;
+          }
+          results.push(event);
+          if (results.length >= limit) {
+            return results;
+          }
+        }
+      }
+
+      return results;
     },
     async listEventEnvelopesForWorkItem(
       workItemKey: string,

@@ -97,7 +97,7 @@ describe('sandbox command', () => {
   it('forwards ui.enabled, port, and token from config to docker up', async () => {
     const docker = createDockerMock();
     const config = createDefaultWakeConfig(wakeRoot);
-    config.ui = { enabled: true, port: 4400, token: 'secret-token' };
+    config.ui = { enabled: true, port: 4400, token: 'secret-token', archiveFreshnessDays: 5 };
 
     await runSandboxCommand({
       args: ['up'],
@@ -226,7 +226,7 @@ describe('sandbox command', () => {
     const config = {
       ...createDefaultWakeConfig(wakeRoot),
       dev: { repoRoot },
-      ui: { enabled: true, port: 4400, token: 'secret-token' },
+      ui: { enabled: true, port: 4400, token: 'secret-token', archiveFreshnessDays: 5 },
     };
     const checkoutTag = vi.fn(async () => {});
     const createIssue = vi.fn(async () => {});

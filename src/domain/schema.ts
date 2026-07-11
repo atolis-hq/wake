@@ -420,7 +420,8 @@ export const wakeConfigSchema = z.object({
     enabled: z.boolean().default(false),
     port: z.number().int().positive().default(4317),
     token: z.string().optional(),
-  }).default({ enabled: false, port: 4317 }),
+    archiveFreshnessDays: z.number().int().nonnegative().default(5),
+  }).default({ enabled: false, port: 4317, archiveFreshnessDays: 5 }),
   sources: z.object({
     github: z.object({
       enabled: z.boolean().default(false),
