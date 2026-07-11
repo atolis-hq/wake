@@ -313,6 +313,10 @@ export const wakeConfigSchema = z.object({
   }),
   sandbox: z.object({
     image: z.string().min(1).default('wake-sandbox'),
+    // Base image name (no tag) that `wake sandbox self-update` appends a
+    // release tag to, e.g. "wake-sandbox:v0.0.80". `image` above stays the
+    // resolved ref that `build`/`up`/`update` actually run.
+    imageRepository: z.string().min(1).default('wake-sandbox'),
     containerName: z.string().min(1).default('wake-sandbox'),
     containerMountPath: z.string().min(1).default('/wake'),
     containerHomeMountPath: z.string().min(1).default('/home/wake'),
@@ -321,7 +325,7 @@ export const wakeConfigSchema = z.object({
       target: z.string().min(1),
       readOnly: z.boolean().optional(),
     })).default([]),
-  }).default({ image: 'wake-sandbox', containerName: 'wake-sandbox', containerMountPath: '/wake', containerHomeMountPath: '/home/wake', extraMounts: [] }),
+  }).default({ image: 'wake-sandbox', imageRepository: 'wake-sandbox', containerName: 'wake-sandbox', containerMountPath: '/wake', containerHomeMountPath: '/home/wake', extraMounts: [] }),
   dev: z.object({
     repoRoot: z.string().optional(),
   }).default({}),

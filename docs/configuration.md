@@ -25,6 +25,7 @@ All configuration uses `schemaVersion: 1`.
   },
   "sandbox": {
     "image": "wake-sandbox",
+    "imageRepository": "wake-sandbox",
     "containerName": "wake-sandbox",
     "containerMountPath": "/wake",
     "containerHomeMountPath": "/home/wake",
@@ -122,7 +123,8 @@ Docker sandbox settings for the durable Wake container.
 
 | Property | Type | Description | Default |
 |----------|------|-------------|---------|
-| `image` | string | Docker image Wake uses for the sandbox | `"wake-sandbox"` |
+| `image` | string | Docker image (including tag) Wake uses for the sandbox | `"wake-sandbox"` |
+| `imageRepository` | string | Base image name (no tag) that `wake sandbox self-update` appends a release tag to, e.g. `wake-sandbox:v0.0.80`; old tags are kept so a failed update can roll back to the previous image without a rebuild | `"wake-sandbox"` |
 | `containerName` | string | Container name Wake starts and reuses | `"wake-sandbox"` |
 | `containerMountPath` | string | Container path where the Wake home is bind-mounted | `"/wake"` |
 | `containerHomeMountPath` | string | Container path where the sandbox home directory is bind-mounted | `"/home/wake"` |
