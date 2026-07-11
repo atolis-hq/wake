@@ -49,17 +49,6 @@ else
   echo "Skipping GitHub auth setup."
 fi
 
-if prompt_yes_no "Configure ngrok auth?"; then
-  read -r -p "ngrok authtoken: " ngrok_authtoken
-  if [ -n "${ngrok_authtoken}" ]; then
-    ngrok config add-authtoken "${ngrok_authtoken}"
-  else
-    echo "Skipping ngrok auth setup because no token was entered."
-  fi
-else
-  echo "Skipping ngrok auth setup."
-fi
-
 cat /home/wake/.ssh/id_ed25519.pub
 
 if prompt_yes_no "Configure Claude auth?"; then

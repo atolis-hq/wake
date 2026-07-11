@@ -352,10 +352,11 @@ server:
   writes the discovered public URL to `<wakeRoot>/control-plane-ui-url`. GitHub
   status comments then link the `Eddy` header to that URL. Default `false`.
 - `tunnel.authToken` — optional ngrok authtoken passed to the container as
-  `NGROK_AUTHTOKEN`. You can also configure the token interactively with
-  `wake sandbox setup`, which runs `ngrok config add-authtoken` inside the
-  container. Ngrok provides free HTTPS tunnels, but it generally requires a free
-  account authtoken.
+  `NGROK_AUTHTOKEN`. To avoid storing the token in `config.json`, leave this
+  unset and export `NGROK_AUTHTOKEN` before `wake sandbox up` or
+  `wake sandbox update`; the Docker run command passes it through when the
+  tunnel is enabled. Ngrok provides free HTTPS tunnels, but it generally
+  requires a free account authtoken.
 
 See [docs/specs/control-plane-ui.md](specs/control-plane-ui.md) for the full
 design; the current implementation covers the v0 read-only surface (status

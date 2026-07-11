@@ -307,6 +307,35 @@ describe('docker cli adapter', () => {
     expect(calls[0]).toContain('NGROK_AUTHTOKEN=ngrok-token');
   });
 
+  it('passes through host ngrok auth env when tunnel is enabled without a config token', async () => {
+    const calls: string[][] = [];
+    const docker = createDockerCli({
+      inspectContainer: async () => null,
+      inspectImage: async () => true,
+      run: async (args) => {
+        calls.push(args);
+      },
+    });
+
+    await docker.up({
+      image: 'wake-sandbox',
+      containerName: 'wake-sandbox',
+      wakeRoot: '/host/wake-home',
+      containerHomeRoot: '/host/wake-home/container-home',
+      containerMountPath: '/wake',
+      containerHomeMountPath: '/home/wake',
+      ui: {
+        enabled: true,
+        port: 4317,
+        tunnel: { enabled: true },
+      },
+    });
+
+    expect(calls[0]).toContain('WAKE_UI_TUNNEL_ENABLED=true');
+    expect(calls[0]).toContain('NGROK_AUTHTOKEN');
+    expect(calls[0]).not.toContain('NGROK_AUTHTOKEN=ngrok-token');
+  });
+
   it('omits the UI port mapping when ui.enabled is false', async () => {
     const calls: string[][] = [];
     const docker = createDockerCli({

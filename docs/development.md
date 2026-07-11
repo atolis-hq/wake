@@ -166,9 +166,9 @@ to `0.0.0.0` inside the container.
 `Authorization: Bearer <token>` or a `wake_ui_token` cookie.
 
 To expose the same in-container UI through a public ngrok URL, set
-`ui.tunnel.enabled: true` and provide `ui.tunnel.authToken` or run
-`./wake.sh sandbox setup` and choose ngrok auth setup. The entrypoint starts
-the ngrok CLI and writes the generated URL to
+`ui.tunnel.enabled: true` and either provide `ui.tunnel.authToken` or export
+`NGROK_AUTHTOKEN` before `./wake.sh sandbox up` or `./wake.sh sandbox update`.
+The entrypoint starts the ngrok CLI and writes the generated URL to
 `<wake-root>/control-plane-ui-url`; GitHub comments link their `Eddy` header to
 that URL while the file exists.
 

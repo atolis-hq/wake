@@ -58,6 +58,8 @@ describe('init command', () => {
     expect(setupScript).toContain('Wake sandbox setup starting.');
     expect(setupScript).toContain('gh auth login');
     expect(setupScript).toContain('prompt_yes_no "Configure GitHub auth?"');
+    expect(setupScript).not.toContain('Configure ngrok auth');
+    expect(setupScript).not.toContain('ngrok config add-authtoken');
     expect(setupScript).not.toContain('gh auth status >/dev/null 2>&1');
     expect(setupScript).not.toContain('docker exec');
     expect(setupScript).not.toContain('\r\n');

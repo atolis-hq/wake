@@ -77,9 +77,10 @@ function buildRunArgs(input: DockerUpInput): string[] {
             ? [
                 '-e',
                 'WAKE_UI_TUNNEL_ENABLED=true',
-                ...(input.ui.tunnel.authToken !== undefined
-                  ? ['-e', `NGROK_AUTHTOKEN=${input.ui.tunnel.authToken}`]
-                  : []),
+                '-e',
+                input.ui.tunnel.authToken !== undefined
+                  ? `NGROK_AUTHTOKEN=${input.ui.tunnel.authToken}`
+                  : 'NGROK_AUTHTOKEN',
               ]
             : []),
         ]
