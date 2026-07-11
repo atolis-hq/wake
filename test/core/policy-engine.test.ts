@@ -296,10 +296,10 @@ describe('policy engine: resolveApprovalTransition', () => {
     expect(resolution?.pendingAction).toBe('refine');
   });
 
-  it('returns approved=true when /approved appears within a longer comment', () => {
+  it('returns approved=true when /approved is on its own line within a longer comment', () => {
     const policy = createPolicyEngine();
     const issue = buildAwaitingApprovalIssue({
-      latestCommentBody: 'Looks good! /approved',
+      latestCommentBody: 'Looks good!\n/approved',
       pendingApprovalAction: 'implement',
     });
     const resolution = policy.resolveApprovalTransition(issue);
@@ -307,15 +307,33 @@ describe('policy engine: resolveApprovalTransition', () => {
     expect(resolution?.pendingAction).toBe('implement');
   });
 
-  it('returns approved=false when latest comment does not contain /approved', () => {
+  it('does not approve when /approved appears mid-line as a substring, not a command (S2)', () => {
     const policy = createPolicyEngine();
     const issue = buildAwaitingApprovalIssue({
-      latestCommentBody: 'Can you change the approach?',
+      latestCommentBody: 'I have *not* /approved this yet.',
+      pendingApprovalAction: 'implement',
+    });
+    expect(policy.resolveApprovalTransition(issue)).toBeNull();
+  });
+
+  it('returns approved=false when latest comment is an explicit /changes command (S2)', () => {
+    const policy = createPolicyEngine();
+    const issue = buildAwaitingApprovalIssue({
+      latestCommentBody: '/changes Can you change the approach?',
       pendingApprovalAction: 'implement',
     });
     const resolution = policy.resolveApprovalTransition(issue);
     expect(resolution?.approved).toBe(false);
     expect(resolution?.pendingAction).toBe('implement');
+  });
+
+  it('returns null (holds state) when the latest comment is conversation, not a command (S2)', () => {
+    const policy = createPolicyEngine();
+    const issue = buildAwaitingApprovalIssue({
+      latestCommentBody: 'Can you explain the approach?',
+      pendingApprovalAction: 'implement',
+    });
+    expect(policy.resolveApprovalTransition(issue)).toBeNull();
   });
 
   it('returns null when there are no human comments', () => {
