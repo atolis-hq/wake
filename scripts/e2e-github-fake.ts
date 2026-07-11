@@ -169,7 +169,7 @@ async function closeIssue(repo: string, issueNumber: number, cwd: string) {
 
 async function readIssueState(wakeRoot: string, repo: string, issueNumber: number) {
   const paths = createWakePaths(wakeRoot);
-  const raw = await readFile(paths.issueStateFile(repo, issueNumber), 'utf8');
+  const raw = await readFile(paths.issueStateFile('github', repo, issueNumber), 'utf8');
   return JSON.parse(raw) as IssueStateRecord;
 }
 

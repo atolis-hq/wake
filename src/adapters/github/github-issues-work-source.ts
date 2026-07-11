@@ -14,6 +14,7 @@ const pollOverlapMs = 60 * 60 * 1000;
 // signal so bot-authored detection doesn't depend on account type or
 // expectedEcho bookkeeping surviving a crash (#145).
 const wakeCommentMarker = '<!-- wake:agent -->';
+const githubSource = 'github';
 
 type GitHubIssue = {
   number: number;
@@ -45,7 +46,7 @@ function normalizeTicketUpsert(input: {
 }): EventEnvelope {
   return createEventEnvelope({
     eventId: `github-issue-${input.repo}-${input.issue.number}-${input.issue.updated_at}`,
-    workItemKey: `${input.repo}#${input.issue.number}`,
+    workItemKey: `${githubSource}:${input.repo}#${input.issue.number}`,
     streamScope: 'global-intake',
     direction: 'inbound',
     sourceSystem: 'github',
@@ -102,7 +103,7 @@ function normalizeTicketCommentEvent(input: {
 
   return createEventEnvelope({
     eventId: `github-comment-${input.repo}-${input.issueNumber}-${input.comment.id}-${input.comment.updated_at}`,
-    workItemKey: `${input.repo}#${input.issueNumber}`,
+    workItemKey: `${githubSource}:${input.repo}#${input.issueNumber}`,
     streamScope: 'work-item',
     direction: 'inbound',
     sourceSystem: 'github',
@@ -337,7 +338,7 @@ export function createGitHubIssuesWorkSource(deps: {
               );
 
           for (const issue of issues) {
-            const local = await deps.stateStore.readIssueState(repoRef, issue.number);
+            const local = await deps.stateStore.readIssueState(repoRef, issue.number, githubSource);
 
             if (local?.issue.updatedAt !== issue.updated_at) {
               events.push(normalizeTicketUpsert({
@@ -414,7 +415,7 @@ export function createGitHubIssuesWorkSource(deps: {
 
       const publishedAt = deps.now().toISOString();
       if (input.event.sourceEventType === 'wake.labels.requested') {
-        const projection = await deps.stateStore.readIssueState(repo, issueNumber);
+        const projection = await deps.stateStore.readIssueState(repo, issueNumber, githubSource);
         const currentLabels = projection?.issue.labels ?? [];
         const nextStatusLabel =
           typeof input.event.payload.statusLabel === 'string'

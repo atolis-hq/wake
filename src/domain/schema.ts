@@ -97,6 +97,11 @@ const runnerRoutingSchema = z.object({
   reason: z.string(),
 });
 
+const sinkEntrySchema = z.object({
+  kind: z.string().min(1),
+  subscribe: z.array(z.string().min(1)).default([]),
+}).passthrough();
+
 export const wakeResultEnvelopeSchema = z.object({
   status: runnerSentinelSchema,
 });
@@ -131,6 +136,33 @@ const issueSnapshotSchema = z.object({
   createdAt: isoTimestampSchema,
   updatedAt: isoTimestampSchema,
 });
+
+function sourceFromWorkItemKey(workItemKey: unknown): string | undefined {
+  if (typeof workItemKey !== 'string') {
+    return undefined;
+  }
+  const marker = workItemKey.indexOf(':');
+  return marker > 0 ? workItemKey.slice(0, marker) : undefined;
+}
+
+function namespacedWorkItemKey(input: {
+  source?: unknown;
+  workItemKey?: unknown;
+  repo?: unknown;
+  issueNumber?: unknown;
+}): unknown {
+  if (typeof input.workItemKey === 'string' && input.workItemKey.includes(':')) {
+    return input.workItemKey;
+  }
+  const source = typeof input.source === 'string' ? input.source : 'github';
+  if (typeof input.workItemKey === 'string') {
+    return `${source}:${input.workItemKey}`;
+  }
+  if (typeof input.repo === 'string' && typeof input.issueNumber === 'number') {
+    return `${source}:${input.repo}#${input.issueNumber}`;
+  }
+  return input.workItemKey;
+}
 
 export const sourceStateRecordSchema = z.object({
   schemaVersion: z.literal(1),
@@ -176,7 +208,15 @@ export const eventEnvelopeSchema = z.object({
   payload: z.record(z.string(), z.unknown()),
   raw: z.record(z.string(), z.unknown()).optional(),
   derivedHints: z.record(z.string(), z.unknown()).optional(),
-});
+}).transform((event) => ({
+  ...event,
+  workItemKey: namespacedWorkItemKey({
+    source: event.direction === 'inbound' ? event.sourceSystem : undefined,
+    workItemKey: event.workItemKey,
+    repo: event.sourceRefs.repo,
+    issueNumber: event.sourceRefs.issueNumber,
+  }) as string,
+}));
 
 export const issueStateRecordSchema = z.preprocess((input) => {
   if (input === null || typeof input !== 'object') {
@@ -187,13 +227,20 @@ export const issueStateRecordSchema = z.preprocess((input) => {
   const issue = record.issue as
     | { repo?: unknown; number?: unknown }
     | undefined;
-  const workItemKey =
+  const rawWorkItemKey =
     record.workItemKey ??
     (issue !== undefined &&
     typeof issue.repo === 'string' &&
     typeof issue.number === 'number'
-      ? `${issue.repo}#${issue.number}`
+      ? `${record.origin ?? 'github'}:${issue.repo}#${issue.number}`
       : undefined);
+  const origin = record.origin ?? sourceFromWorkItemKey(rawWorkItemKey) ?? 'github';
+  const workItemKey = namespacedWorkItemKey({
+    source: origin,
+    workItemKey: rawWorkItemKey,
+    repo: issue?.repo,
+    issueNumber: issue?.number,
+  });
   const context = record.context !== null && typeof record.context === 'object'
     ? record.context as Record<string, unknown>
     : {};
@@ -208,6 +255,7 @@ export const issueStateRecordSchema = z.preprocess((input) => {
         : {}),
     },
     workItemKey,
+    origin,
     wake:
       record.wake !== null && typeof record.wake === 'object'
         ? {
@@ -237,6 +285,7 @@ export const issueStateRecordSchema = z.preprocess((input) => {
 }, z.object({
   schemaVersion: z.literal(1),
   workItemKey: z.string(),
+  origin: z.string().optional(),
   issue: issueSnapshotSchema,
   comments: z.array(commentSnapshotSchema).default([]),
   latestComment: commentSnapshotSchema.optional(),
@@ -378,6 +427,7 @@ export const wakeConfigSchema = z.object({
       }).default({ postStatusComments: true }),
     }).default({ enabled: false, repos: [], polling: { maxIssuesPerRepo: 25, commentPageSize: 25, lookbackMs: 60_000 }, policy: { requiredLabels: [], ignoredLabels: [], requiredAssignees: [] }, publication: { postStatusComments: true } }),
   }).default({ github: { enabled: false, repos: [], polling: { maxIssuesPerRepo: 25, commentPageSize: 25, lookbackMs: 60_000 }, policy: { requiredLabels: [], ignoredLabels: [], requiredAssignees: [] }, publication: { postStatusComments: true } } }),
+  sinks: z.record(z.string(), sinkEntrySchema).default({}),
 });
 
 export const claudePrintResultSchema = z.object({

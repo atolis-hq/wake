@@ -24,6 +24,7 @@ import { runSandboxCommand } from './cli/sandbox-command.js';
 import { runUiCommand } from './cli/ui-command.js';
 import { loadWakeConfig } from './config/load-config.js';
 import { createControlPlane } from './core/control-plane.js';
+import { createOutboundSinkRouter, createWorkSourceFanIn } from './core/sink-router.js';
 import { createTickRunner } from './core/tick-runner.js';
 import { systemClock } from './lib/clock.js';
 import type { RunRecord, WakeConfig } from './domain/types.js';
@@ -219,6 +220,23 @@ async function buildRuntime(args: string[]) {
         fixturePath: stateStore.paths.issueFixtureFile,
         now: () => systemClock.now(),
       });
+  const sourceName = config.sources.github.enabled ? 'github' : 'fake-ticketing';
+  const sinkName = config.sources.github.enabled ? 'github' : 'fake-ticketing';
+  const workSource = createWorkSourceFanIn([
+    {
+      source: sourceName,
+      pollEvents: ticketingSystem.pollEvents,
+    },
+  ]);
+  const outboundSink = createOutboundSinkRouter({
+    sinks: [
+      {
+        sink: sinkName,
+        deliverIntent: ticketingSystem.deliverIntent,
+      },
+    ],
+    config,
+  });
 
   const runnerOverride = readFlagBeforeCommandTerminator('--runner', args);
   if (
@@ -245,8 +263,8 @@ async function buildRuntime(args: string[]) {
     clock: systemClock,
     config,
     stateStore,
-    workSource: ticketingSystem,
-    outboundSink: ticketingSystem,
+    workSource,
+    outboundSink,
     runner,
     workspaceManager,
   });

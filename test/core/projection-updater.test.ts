@@ -157,7 +157,7 @@ describe('projection updater', () => {
     await updater.rebuildFromEvents(events);
 
     const projection = await store.readIssueState('atolis-hq/wake', 7);
-    expect(projection?.workItemKey).toBe('atolis-hq/wake#7');
+    expect(projection?.workItemKey).toBe('fake-ticketing:atolis-hq/wake#7');
     expect(projection?.latestComment?.id).toBe('c-1');
     expect(projection?.wake.recentEventIds).toEqual(['evt-issue', 'evt-comment']);
   });
