@@ -142,6 +142,27 @@ describe('cursor runner output parsing', () => {
     expect(parsed.sessionId).toBeUndefined();
   });
 
+  it('extracts token usage using Cursor\'s camelCase usage keys (#135)', () => {
+    // Captured from a real `cursor-agent agent -p --output-format json` call
+    // run via the wake-sandbox container.
+    const parsed = extractCursorAgentResult(JSON.stringify({
+      type: 'result',
+      subtype: 'success',
+      is_error: false,
+      duration_ms: 4357,
+      result: 'hi',
+      session_id: 'c4860a32-d60b-49c5-9149-ca2bd956e5ef',
+      usage: { inputTokens: 5945, outputTokens: 32, cacheReadTokens: 6020, cacheWriteTokens: 0 },
+    }));
+
+    expect(parsed.tokenUsage).toEqual({
+      inputTokens: 5945,
+      outputTokens: 32,
+      cacheReadInputTokens: 6020,
+      cacheCreationInputTokens: 0,
+    });
+  });
+
   it('throws when the output is empty', () => {
     expect(() => extractCursorAgentResult('')).toThrow(/no output/i);
   });

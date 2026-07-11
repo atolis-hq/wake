@@ -29,6 +29,7 @@ import type {
 type CodexRunnerSettings = Omit<Extract<RunnerEntry, { kind: 'codex' }>, 'kind'>;
 import { buildStagePrompt } from '../runner/stage-prompt.js';
 import { runAgentCliCommand } from '../runner/cli-command.js';
+import { parseRunnerResult } from '../../domain/schema.js';
 
 const CODEX_CLI_NAME = 'Codex';
 
@@ -115,7 +116,11 @@ export function extractCodexExecResult(stdout: string): {
 } {
   let result: string | undefined;
   let sessionId: string | undefined;
-  let tokenUsage: AgentRunTokenUsage | undefined;
+  let turns = 0;
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let cachedInputTokens = 0;
+  let sawUsage = false;
 
   for (const line of stdout.split(/\r?\n/).filter((entry) => entry.trim().length > 0)) {
     const event = JSON.parse(line) as Record<string, unknown>;
@@ -135,10 +140,25 @@ export function extractCodexExecResult(stdout: string): {
     if (event.type === 'turn.completed') {
       const usage = event.usage as Record<string, unknown> | undefined;
       if (usage !== undefined) {
-        tokenUsage = {
-          inputTokens: typeof usage.input_tokens === 'number' ? usage.input_tokens : 0,
-          outputTokens: typeof usage.output_tokens === 'number' ? usage.output_tokens : 0,
-        };
+        sawUsage = true;
+        turns += 1;
+        // Each `turn.completed` reports that turn's own usage (an exec run can
+        // make several model turns via tool calls), so accumulate across turns
+        // rather than keeping only the last one - otherwise a multi-turn run's
+        // reported usage undercounts the actual spend (#135).
+        inputTokens += typeof usage.input_tokens === 'number' ? usage.input_tokens : 0;
+        outputTokens += typeof usage.output_tokens === 'number' ? usage.output_tokens : 0;
+        // OpenAI's Responses API reports cached prompt tokens nested under
+        // input_tokens_details.cached_tokens; unverified against a live Codex
+        // success response (this environment's Codex quota was exhausted while
+        // this adapter was written), so it is read defensively and simply
+        // omitted if absent rather than assumed to exist.
+        const inputTokensDetails = usage.input_tokens_details as
+          | Record<string, unknown>
+          | undefined;
+        if (typeof inputTokensDetails?.cached_tokens === 'number') {
+          cachedInputTokens += inputTokensDetails.cached_tokens;
+        }
       }
     }
   }
@@ -147,11 +167,77 @@ export function extractCodexExecResult(stdout: string): {
     throw new Error('Codex exec JSONL stream did not include a final agent message.');
   }
 
+  const tokenUsage: AgentRunTokenUsage | undefined = sawUsage
+    ? {
+        inputTokens,
+        outputTokens,
+        turns,
+        ...(cachedInputTokens > 0 ? { cacheReadInputTokens: cachedInputTokens } : {}),
+      }
+    : undefined;
+
   return {
     result,
     ...(sessionId === undefined ? {} : { sessionId }),
     ...(tokenUsage === undefined ? {} : { tokenUsage }),
   };
+}
+
+// Codex exec emits a JSONL stream even on failure (unlike a bare CLI crash,
+// which produces no JSON at all). Reading the structured `message` field off
+// `error`/`turn.failed` events is more reliable than grepping the raw stdout
+// blob, and it is also the string that carries the actual reset-time hint
+// (e.g. "...or try again at 2:29 PM") that quota-backoff needs.
+export function extractCodexErrorMessage(stdout: string): string | undefined {
+  for (const line of stdout.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (trimmed.length === 0) {
+      continue;
+    }
+    let event: Record<string, unknown>;
+    try {
+      event = JSON.parse(trimmed) as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+    if (event.type === 'error' && typeof event.message === 'string') {
+      return event.message;
+    }
+    if (event.type === 'turn.failed') {
+      const error = event.error as Record<string, unknown> | undefined;
+      if (typeof error?.message === 'string') {
+        return error.message;
+      }
+    }
+  }
+  return undefined;
+}
+
+export function classifyCodexCliFailure(input: {
+  stderr: string;
+  stdout: string;
+  timedOut: boolean;
+}): 'quota' | 'infra' {
+  if (input.timedOut) {
+    return 'infra';
+  }
+
+  const structuredMessage = extractCodexErrorMessage(input.stdout);
+  const text = (structuredMessage ?? `${input.stderr}\n${input.stdout}`).toLowerCase();
+  if (
+    text.includes('usage limit') ||
+    text.includes('rate limit') ||
+    text.includes('quota') ||
+    text.includes('billing') ||
+    text.includes('credit') ||
+    text.includes('too many requests') ||
+    text.includes('unauthorized') ||
+    text.includes('authentication')
+  ) {
+    return 'quota';
+  }
+
+  return 'infra';
 }
 
 function resolveModel(input: {
@@ -273,6 +359,14 @@ export function createCodexRunner(options: {
 
       if (result.exitCode !== 0 || result.timedOut || result.stdout.trim().length === 0) {
         const sandboxLog = readSandboxLogBreadcrumb();
+        const failureClass = classifyCodexCliFailure({
+          stdout: result.stdout,
+          stderr: result.stderr,
+          timedOut: result.timedOut,
+        });
+        const structuredMessage = result.timedOut
+          ? undefined
+          : extractCodexErrorMessage(result.stdout);
         console.error(
           formatCodexRunLogLine({
             phase: 'failure',
@@ -292,6 +386,8 @@ export function createCodexRunner(options: {
           result: [
             result.timedOut
               ? `Codex runner timed out after ${options.settings.timeoutMs}ms and was killed`
+              : structuredMessage !== undefined
+              ? `Codex runner failed: ${structuredMessage}`
               : result.stdout.trim().length === 0 ? 'Codex runner produced no output'
               : 'Codex runner failed',
             result.stderr,
@@ -302,10 +398,12 @@ export function createCodexRunner(options: {
             .join('\n'),
           model,
           cli: CODEX_CLI_NAME,
+          failureClass,
           metadata: {
             stdout: result.stdout,
             stderr: result.stderr,
             exitCode: result.exitCode,
+            failureClass,
             ...(sandboxLog?.metadata ?? {}),
           },
         };
@@ -333,6 +431,9 @@ export function createCodexRunner(options: {
         result: parsed.result,
         model,
         cli: CODEX_CLI_NAME,
+        ...(parseRunnerResult(parsed.result).status === 'FAILED'
+          ? { failureClass: 'task' as const }
+          : {}),
         ...(parsed.sessionId === undefined ? {} : { session_id: parsed.sessionId }),
         ...(parsed.tokenUsage === undefined ? {} : { tokenUsage: parsed.tokenUsage }),
         metadata: {

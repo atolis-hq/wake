@@ -5,7 +5,7 @@ import { join } from 'node:path';
 
 import { createStateStore } from '../../src/adapters/fs/state-store.js';
 import { createDefaultWakeConfig } from '../../src/config/defaults.js';
-import { buildBoard, buildStatus } from '../../src/adapters/http/ui-data.js';
+import { buildBoard, buildConfigView, buildStatus } from '../../src/adapters/http/ui-data.js';
 import type { IssueStateRecord, RunRecord } from '../../src/domain/types.js';
 
 function issueState(input: {
@@ -112,5 +112,33 @@ describe('ui-data', () => {
     expect(status.loopState).toBe('idle');
     expect(status.paused).toBe(false);
     expect(status.counters.finished).toBe(0);
+  });
+
+  it('marks a paused tier candidate in the routing table fallback order (#67)', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const config = createDefaultWakeConfig(root);
+    config.runners['fake-primary'] = { kind: 'fake', cli: 'Fake Primary' };
+    config.runners['fake-secondary'] = { kind: 'fake', cli: 'Fake Secondary' };
+    config.tiers.standard = ['fake-primary', 'fake-secondary'];
+    config.stages.implement = { action: 'implement', tier: 'standard' };
+
+    await store.writeLedger({
+      schemaVersion: 1,
+      runners: {
+        'fake-primary': { pausedUntil: '2026-07-08T01:00:00.000Z', failureCount: 1 },
+      },
+    });
+
+    const view = await buildConfigView({
+      stateStore: store,
+      config,
+      now: new Date('2026-07-07T22:00:00.000Z'),
+    });
+    const implementRoute = view.routingTable.find((r) => r.stage === 'implement');
+
+    expect(implementRoute?.candidates).toEqual([
+      { runnerName: 'fake-primary', paused: true, pausedUntil: '2026-07-08T01:00:00.000Z' },
+      { runnerName: 'fake-secondary', paused: false, pausedUntil: undefined },
+    ]);
   });
 });

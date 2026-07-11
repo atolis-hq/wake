@@ -258,6 +258,15 @@ export const issueStateRecordSchema = z.preprocess((input) => {
   context: z.record(z.string(), z.unknown()).default({}),
 }));
 
+const runTokenUsageSchema = z.object({
+  inputTokens: z.number().nonnegative(),
+  outputTokens: z.number().nonnegative(),
+  cacheCreationInputTokens: z.number().nonnegative().optional(),
+  cacheReadInputTokens: z.number().nonnegative().optional(),
+  costUsd: z.number().nonnegative().optional(),
+  turns: z.number().nonnegative().optional(),
+});
+
 export const runRecordSchema = z.object({
   schemaVersion: z.literal(1),
   runId: z.string(),
@@ -271,14 +280,29 @@ export const runRecordSchema = z.object({
   sentinel: runnerSentinelSchema.optional(),
   summary: z.string().optional(),
   routing: runnerRoutingSchema.optional(),
+  tokenUsage: runTokenUsageSchema.optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
+});
+
+const runnerHealthEntrySchema = z.object({
+  pausedUntil: isoTimestampSchema.optional(),
+  // 'reported' = CLI told us the real reset time; 'estimated' = exponential
+  // backoff guess. Only 'estimated' pauses are eligible for an early recovery
+  // probe (domain/runner-routing.ts) - a reported time is already trustworthy.
+  pausedUntilSource: z.enum(['reported', 'estimated']).optional(),
+  failureCount: z.number().int().nonnegative().default(0),
+  lastFailureAt: isoTimestampSchema.optional(),
 });
 
 export const ledgerSchema = z.object({
   schemaVersion: z.literal(1),
+  // Legacy single-runner pause fields, superseded by `runners` (per-runner
+  // health, #67). Kept read-only so ledgers written before the fallback/rotation
+  // change still parse; nothing writes them anymore.
   pausedUntil: isoTimestampSchema.optional(),
   quotaFailureCount: z.number().int().nonnegative().optional(),
   lastQuotaFailureAt: isoTimestampSchema.optional(),
+  runners: z.record(z.string(), runnerHealthEntrySchema).default({}),
 });
 
 export const wakeConfigSchema = z.object({
@@ -303,7 +327,10 @@ export const wakeConfigSchema = z.object({
   }).default({}),
   scheduler: z.object({
     intervalMs: z.number().int().positive().default(60 * 1000),
-  }).default({ intervalMs: 60 * 1000 }),
+    // Cap for the idle-cadence backoff (#81): consecutive idle ticks double the
+    // sleep, up to this ceiling, so a quiet repo doesn't poll every intervalMs.
+    maxIntervalMs: z.number().int().positive().default(10 * 60 * 1000),
+  }).default({ intervalMs: 60 * 1000, maxIntervalMs: 10 * 60 * 1000 }),
   runners: z.record(z.string(), runnerEntrySchema).default({
     fake: { kind: 'fake', cli: 'Fake' },
     'claude-haiku': { kind: 'claude', command: 'claude', model: 'haiku', smokeModel: 'haiku', sessionName: 'Eddy', remoteControlName: 'Eddy', smokePrompt: defaultSmokePrompt, timeoutMs: 30 * 60 * 1000, remoteControl: { enabled: false }, models: { default: 'haiku' } },
@@ -355,6 +382,7 @@ export const claudePrintResultSchema = z.object({
   result: z.string(),
   session_id: z.string().optional(),
   total_cost_usd: z.number().optional(),
+  num_turns: z.number().optional(),
   usage: z.record(z.string(), z.unknown()).optional(),
 }).passthrough();
 

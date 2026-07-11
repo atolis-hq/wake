@@ -15,7 +15,7 @@ import type {
 import type { Clock } from '../lib/clock.js';
 import { acquireFileLock } from '../lib/lock.js';
 import { parseRunnerResult } from '../domain/schema.js';
-import { maxConfiguredRunnerTimeoutMs } from '../domain/runner-routing.js';
+import { maxConfiguredRunnerTimeoutMs, resolveRunnerRouting } from '../domain/runner-routing.js';
 import { stageLabelForStage } from '../domain/stages.js';
 import type { AgentAction, EventEnvelope, IssueStateRecord, RunRecord, WakeConfig } from '../domain/types.js';
 import { createEventEnvelope } from '../lib/event-log.js';
@@ -47,7 +47,19 @@ export function createTickRunner(deps: {
     if (tokenUsage === undefined) {
       return undefined;
     }
-    return tokenUsage.inputTokens + tokenUsage.outputTokens;
+    // Cache tokens dominate real usage and were previously dropped from this
+    // total entirely, understating the reported figure by roughly an order of
+    // magnitude (#135).
+    return (
+      tokenUsage.inputTokens +
+      tokenUsage.outputTokens +
+      (tokenUsage.cacheCreationInputTokens ?? 0) +
+      (tokenUsage.cacheReadInputTokens ?? 0)
+    );
+  }
+
+  function formatCostUsd(costUsd: number): string {
+    return `$${costUsd.toFixed(costUsd < 1 ? 4 : 2)}`;
   }
 
   function formatDuration(startedAtStr: string, finishedAtStr: string): string | undefined {
@@ -131,6 +143,9 @@ export function createTickRunner(deps: {
             }),
         ...(duration === undefined ? {} : { duration }),
         ...(tokenCount === undefined ? {} : { tokens: formatTokenCount(tokenCount) }),
+        ...(input.runnerResult.tokenUsage?.costUsd === undefined
+          ? {}
+          : { cost: formatCostUsd(input.runnerResult.tokenUsage.costUsd) }),
         ...(input.workspacePath === undefined
           ? {}
           : { workspacePath: input.workspacePath }),
@@ -579,6 +594,21 @@ export function createTickRunner(deps: {
           action = nextAction;
         }
 
+        // Resolve routing (with sideways fallback across quota-paused runners,
+        // #67) before claiming a run, so a fully-paused tier costs nothing more
+        // than an idle tick instead of a claimed-but-doomed run record.
+        const ledgerAtStart = await deps.stateStore.readLedger();
+        const routing = resolveRunnerRouting({
+          config: deps.config,
+          stage: candidate.wake.stage,
+          action,
+          now: tickStartedAt,
+          ...(ledgerAtStart === null ? {} : { ledger: ledgerAtStart }),
+        });
+        if (routing === null) {
+          return { status: 'idle' as const };
+        }
+
         const runId = `run-${candidate.issue.number}-${deps.clock.now().getTime()}`;
         const runningRecord = {
           schemaVersion: 1 as const,
@@ -650,6 +680,7 @@ export function createTickRunner(deps: {
             recentEvents,
             config: deps.config,
             runId,
+            routing,
             ...(workspacePath === undefined ? {} : { workspacePath }),
           });
           const parsedRunnerResult = parseRunnerResult(runnerResult.result);
@@ -664,27 +695,35 @@ export function createTickRunner(deps: {
               : rawSentinel;
           const nextStage = lifecycle.nextStageFromSentinel(action, sentinel);
           const finishedAt = deps.clock.now().toISOString();
+          const failedRunnerName = runnerResult.routing?.runnerName ?? routing.runnerName;
+          const existingRunners = ledgerAtStart?.runners ?? {};
           if (runnerResult.failureClass === 'quota') {
-            const ledger = await deps.stateStore.readLedger();
-            const quotaFailureCount = (ledger?.quotaFailureCount ?? 0) + 1;
+            const failureCount = (existingRunners[failedRunnerName]?.failureCount ?? 0) + 1;
+            const quotaPause = resolveQuotaPauseUntil({
+              result: runnerResult.result,
+              now: new Date(finishedAt),
+              failureCount,
+            });
             await deps.stateStore.writeLedger({
               schemaVersion: 1,
-              pausedUntil: resolveQuotaPauseUntil({
-                result: runnerResult.result,
-                now: new Date(finishedAt),
-                failureCount: quotaFailureCount,
-              }),
-              quotaFailureCount,
-              lastQuotaFailureAt: finishedAt,
+              runners: {
+                ...existingRunners,
+                [failedRunnerName]: {
+                  pausedUntil: quotaPause.pausedUntil,
+                  pausedUntilSource: quotaPause.source,
+                  failureCount,
+                  lastFailureAt: finishedAt,
+                },
+              },
             });
-          } else {
-            const ledger = await deps.stateStore.readLedger();
-            if ((ledger?.quotaFailureCount ?? 0) > 0) {
-              await deps.stateStore.writeLedger({
-                schemaVersion: 1,
-                quotaFailureCount: 0,
-              });
-            }
+          } else if ((existingRunners[failedRunnerName]?.failureCount ?? 0) > 0) {
+            await deps.stateStore.writeLedger({
+              schemaVersion: 1,
+              runners: {
+                ...existingRunners,
+                [failedRunnerName]: { failureCount: 0 },
+              },
+            });
           }
           const resultMetadata = {
             ...runnerResult.metadata,
@@ -710,6 +749,7 @@ export function createTickRunner(deps: {
             sentinel,
             summary: parsedRunnerResult.body,
             ...(runnerResult.routing === undefined ? {} : { routing: runnerResult.routing }),
+            ...(runnerResult.tokenUsage === undefined ? {} : { tokenUsage: runnerResult.tokenUsage }),
             metadata: resultMetadata,
           });
 

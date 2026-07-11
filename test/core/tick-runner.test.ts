@@ -1399,8 +1399,12 @@ describe('tick runner', () => {
     await tickRunner.runTick();
 
     expect(await store.readLedger()).toMatchObject({
-      pausedUntil: '2026-07-08T01:10:00.000Z',
-      quotaFailureCount: 1,
+      runners: {
+        fake: {
+          pausedUntil: '2026-07-08T01:10:00.000Z',
+          failureCount: 1,
+        },
+      },
     });
     expect(publishedKinds).toEqual([]);
     const projection = await store.readIssueState('atolis-hq/wake', 112);

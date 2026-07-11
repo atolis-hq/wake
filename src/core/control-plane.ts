@@ -1,6 +1,10 @@
 export function createControlPlane(deps: {
   tickRunner: { runTick: () => Promise<unknown> };
   intervalMs: number;
+  // Ceiling for the idle-cadence backoff (#81): each consecutive non-`processed`
+  // tick doubles the sleep from `intervalMs` up to this value. Defaults to
+  // 16x intervalMs, matching the resolved default in domain/schema.ts.
+  maxIntervalMs?: number;
   isPaused: () => Promise<boolean> | boolean;
   logger: {
     info: (message: string) => void;
@@ -10,6 +14,13 @@ export function createControlPlane(deps: {
 }) {
   let running = true;
   let lastStatus: string | undefined;
+  let consecutiveIdleTicks = 0;
+  const maxIntervalMs = deps.maxIntervalMs ?? deps.intervalMs * 16;
+
+  function nextSleepMs(): number {
+    const backoffMs = deps.intervalMs * 2 ** Math.min(consecutiveIdleTicks, 20);
+    return Math.min(backoffMs, maxIntervalMs);
+  }
 
   return {
     stop() {
@@ -46,8 +57,11 @@ export function createControlPlane(deps: {
         }
 
         const status = (result as { status?: string } | null)?.status;
-        if (status !== 'processed') {
-          await deps.sleep(deps.intervalMs);
+        if (status === 'processed') {
+          consecutiveIdleTicks = 0;
+        } else {
+          await deps.sleep(nextSleepMs());
+          consecutiveIdleTicks += 1;
         }
       }
     },

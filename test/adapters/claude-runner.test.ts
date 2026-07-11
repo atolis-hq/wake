@@ -728,6 +728,67 @@ describe('claude runner command building', () => {
     expect(result.stdout).toBe('ok');
   });
 
+  it.skipIf(platform === 'win32')(
+    'reports cache tokens, cost, and turn count from a successful run (#135)',
+    async () => {
+      const commandDir = await mkdtemp(join(tmpdir(), 'wake-claude-cli-'));
+      const command = join(commandDir, 'claude-success');
+      const claudeJson = JSON.stringify({
+        type: 'result',
+        subtype: 'success',
+        result: 'done\nDONE',
+        session_id: 'session-abc',
+        total_cost_usd: 0.0247,
+        num_turns: 3,
+        usage: {
+          input_tokens: 10,
+          output_tokens: 295,
+          cache_creation_input_tokens: 10860,
+          cache_read_input_tokens: 15157,
+        },
+      });
+      await writeFile(
+        command,
+        ['#!/usr/bin/env bash', `printf '%s' '${claudeJson}'`].join('\n'),
+        'utf8',
+      );
+      await chmod(command, 0o755);
+
+      const runner = createClaudeRunner({
+        command,
+        cwd: process.cwd(),
+        settings: {
+          command,
+          model: 'haiku',
+          models: { default: 'haiku' },
+          smokeModel: 'haiku',
+          sessionName: 'Eddy',
+          remoteControlName: 'Eddy',
+          smokePrompt: defaultSmokePrompt,
+          timeoutMs: 10_000,
+          remoteControl: { enabled: false },
+        },
+      });
+
+      const result = await runner.run({
+        action: 'implement',
+        projection: baseProjection,
+        recentEvents: [],
+        config: createDefaultWakeConfig(process.cwd()),
+        runId: 'run-12-token-usage',
+      });
+
+      expect(result.tokenUsage).toEqual({
+        inputTokens: 10,
+        outputTokens: 295,
+        cacheCreationInputTokens: 10860,
+        cacheReadInputTokens: 15157,
+        costUsd: 0.0247,
+        turns: 3,
+      });
+    },
+  );
+
   it('classifies Claude CLI quota failures separately from infra failures', () => {
     expect(classifyClaudeCliFailure({
       stdout: '',

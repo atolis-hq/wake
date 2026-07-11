@@ -224,13 +224,17 @@ export function createStateStore({ wakeRoot }: { wakeRoot: string }) {
       await mkdir(wakeRoot, { recursive: true });
       await appendFile(paths.logFile(date), `${line}\n`, 'utf8');
     },
-    async isPaused(now = new Date()): Promise<boolean> {
+    // Only the manual pause file is a hard stop on the whole loop. Quota
+    // pauses are now per-runner (ledger.runners, #67): a paused runner skips
+    // itself via routing fallback inside a tick, but the tick loop itself must
+    // keep running so polling, delivery retries, and other tiers still make
+    // progress while one runner is paused.
+    async isPaused(_now = new Date()): Promise<boolean> {
       try {
         await access(paths.pauseFile);
         return true;
       } catch {
-        const ledger = await this.readLedger();
-        return ledger?.pausedUntil !== undefined && Date.parse(ledger.pausedUntil) > now.getTime();
+        return false;
       }
     },
     async readEventLog(date: string): Promise<string> {

@@ -65,6 +65,55 @@ describe('github issues work source', () => {
     });
   });
 
+  it('isolates a poll failure to the failing repo so other repos still poll this tick (E3)', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const config = createDefaultWakeConfig(root);
+    config.sources.github.enabled = true;
+    config.sources.github.repos = ['atolis-hq/broken-repo', 'atolis-hq/healthy-repo'];
+
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const workSource = createGitHubIssuesWorkSource({
+      client: {
+        listIssues: async (owner: string, repo: string) => {
+          if (repo === 'broken-repo') {
+            throw new Error('simulated GitHub API failure');
+          }
+          return [
+            {
+              number: 42,
+              title: 'Healthy issue',
+              body: 'Body',
+              state: 'open',
+              html_url: 'https://github.com/atolis-hq/healthy-repo/issues/42',
+              created_at: '2026-07-05T12:00:00.000Z',
+              updated_at: '2026-07-05T12:00:00.000Z',
+              labels: [{ name: 'wake:queue' }],
+              assignees: [],
+            },
+          ];
+        },
+        listComments: async () => [],
+        createComment: vi.fn(),
+        setLabels: vi.fn(),
+      },
+      stateStore: store,
+      config,
+      now: () => new Date('2026-07-05T12:10:00.000Z'),
+    });
+
+    const events = await workSource.pollEvents();
+
+    expect(events.map((event) => event.sourceEventType)).toEqual(['ticket.upsert']);
+    expect(events[0]?.sourceRefs.repo).toBe('atolis-hq/healthy-repo');
+
+    // The failing repo's cursor must not advance, so the next tick retries it.
+    expect(await store.readSourceState('github', 'atolis-hq/broken-repo')).toBeNull();
+    expect(await store.readSourceState('github', 'atolis-hq/healthy-repo')).not.toBeNull();
+
+    consoleError.mockRestore();
+  });
+
   it('marks a Wake-authored comment as bot-authored via the hidden marker, even when the account type is User (#145)', async () => {
     const store = createStateStore({ wakeRoot: root });
     const config = createDefaultWakeConfig(root);
