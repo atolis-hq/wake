@@ -3,6 +3,16 @@ import type { SelfUpdateLedger } from '../adapters/fs/self-update-ledger.js';
 import type { RunRecord } from '../domain/types.js';
 
 const HEALTHCHECK_WAKE_ROOT = '/tmp/wake-self-update-healthcheck';
+const START_PROCESS_CHECK = [
+  'sh',
+  '-lc',
+  [
+    'pid="$(cat /wake/logs/start.pid)"',
+    'test -n "$pid"',
+    'kill -0 "$pid"',
+    'tr "\\0" " " < "/proc/$pid/cmdline" | grep -F "node /app/dist/src/main.js start --wake-root /wake" >/dev/null',
+  ].join(' && '),
+];
 
 function readFlag(name: string, args: string[]): string | undefined {
   const index = args.indexOf(name);
@@ -21,6 +31,24 @@ function readNumberFlag(name: string, args: string[]): number | undefined {
 
 const DEFAULT_LOOP_INTERVAL_MS = 5 * 60 * 1000;
 
+async function verifyResidentStart(input: {
+  docker: { exec: (containerName: string, command: string[]) => Promise<void> };
+  containerName: string;
+  start?: { enabled: boolean } | undefined;
+  logger: { info: (message: string) => void; error: (message: string) => void };
+  context: string;
+}): Promise<void> {
+  if (input.start?.enabled !== true) {
+    input.logger.error(
+      `[self-update] wake start auto-start is disabled; resident loop will not be running after ${input.context}`,
+    );
+    return;
+  }
+
+  await input.docker.exec(input.containerName, START_PROCESS_CHECK);
+  input.logger.info(`[self-update] verified wake start is running after ${input.context}`);
+}
+
 export async function runSelfUpdateCommand(input: {
   args: string[];
   repoRoot: string;
@@ -37,6 +65,7 @@ export async function runSelfUpdateCommand(input: {
       containerMountPath: string;
       containerHomeMountPath: string;
       ui?: { enabled: boolean; port: number; token?: string | undefined } | undefined;
+      start?: { enabled: boolean } | undefined;
     }) => Promise<void>;
     exec: (containerName: string, command: string[]) => Promise<void>;
   };
@@ -56,6 +85,7 @@ export async function runSelfUpdateCommand(input: {
   containerHomeMountPath: string;
   dockerfilePath: string;
   ui?: { enabled: boolean; port: number; token?: string | undefined } | undefined;
+  start?: { enabled: boolean } | undefined;
 }): Promise<void> {
   const force = hasFlag('--force', input.args);
   const explicitTag = readFlag('--tag', input.args);
@@ -91,6 +121,7 @@ export async function runSelfUpdateCommand(input: {
     containerMountPath: input.containerMountPath,
     containerHomeMountPath: input.containerHomeMountPath,
     ui: input.ui,
+    start: input.start,
   };
 
   try {
@@ -101,6 +132,14 @@ export async function runSelfUpdateCommand(input: {
       contextDir: input.repoRoot,
     });
     await input.docker.update({ ...updateInput, image: newImage });
+    input.logger.info('[self-update] recreated container; entrypoint will keep wake start running');
+    await verifyResidentStart({
+      docker: input.docker,
+      containerName: input.containerName,
+      start: input.start,
+      logger: input.logger,
+      context: 'rollout',
+    });
     await input.docker.exec(input.containerName, [
       'node',
       '/app/dist/src/main.js',
@@ -116,6 +155,14 @@ export async function runSelfUpdateCommand(input: {
       const rollbackImage = `${input.imageRepository}:${ledger.lastKnownGoodTag}`;
       await input.git.checkoutTag(ledger.lastKnownGoodTag);
       await input.docker.update({ ...updateInput, image: rollbackImage });
+      input.logger.info('[self-update] recreated rollback container; entrypoint will keep wake start running');
+      await verifyResidentStart({
+        docker: input.docker,
+        containerName: input.containerName,
+        start: input.start,
+        logger: input.logger,
+        context: 'rollback',
+      });
       input.logger.info(`[self-update] rolled back to ${ledger.lastKnownGoodTag}`);
     } else {
       input.logger.error('[self-update] no previous known-good tag to roll back to');

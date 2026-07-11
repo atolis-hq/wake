@@ -90,6 +90,7 @@ describe('sandbox command', () => {
       containerHomeMountPath: '/home/wake',
       extraMounts: [],
       ui: { enabled: false, port: 4317, token: undefined },
+      start: { enabled: true },
     });
   });
 
@@ -112,6 +113,7 @@ describe('sandbox command', () => {
     expect(docker.up).toHaveBeenCalledWith(
       expect.objectContaining({
         ui: { enabled: true, port: 4400, token: 'secret-token' },
+        start: { enabled: true },
       }),
     );
   });
@@ -215,6 +217,7 @@ describe('sandbox command', () => {
       containerHomeMountPath: '/home/wake',
       extraMounts: [],
       ui: { enabled: false, port: 4317, token: undefined },
+      start: { enabled: true },
     });
   });
 
@@ -262,6 +265,7 @@ describe('sandbox command', () => {
       expect.objectContaining({
         image: 'wake-sandbox:v0.0.80',
         ui: { enabled: true, port: 4400, token: 'secret-token' },
+        start: { enabled: true },
       }),
     );
     expect(writeLedger).toHaveBeenCalledWith(

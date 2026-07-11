@@ -37,6 +37,7 @@ function baseDeps(overrides: Record<string, unknown> = {}) {
     containerHomeMountPath: '/home/wake',
     dockerfilePath: '/repo/wake/docker/Dockerfile',
     ui: { enabled: true, port: 4317, token: 'secret' },
+    start: { enabled: true },
     ...overrides,
   };
 }
@@ -91,9 +92,15 @@ describe('runSelfUpdateCommand', () => {
       expect.objectContaining({
         image: 'wake-sandbox:v0.0.80',
         ui: { enabled: true, port: 4317, token: 'secret' },
+        start: { enabled: true },
       }),
     );
-    expect(docker.exec).toHaveBeenCalledWith('wake-sandbox', [
+    expect(docker.exec).toHaveBeenNthCalledWith(1, 'wake-sandbox', [
+      'sh',
+      '-lc',
+      expect.stringContaining('/wake/logs/start.pid'),
+    ]);
+    expect(docker.exec).toHaveBeenNthCalledWith(2, 'wake-sandbox', [
       'node',
       '/app/dist/src/main.js',
       'tick',
@@ -111,8 +118,10 @@ describe('runSelfUpdateCommand', () => {
       docker: {
         build: vi.fn(async () => {}),
         update: vi.fn(async () => {}),
-        exec: vi.fn(async () => {
-          throw new Error('tick exited 1');
+        exec: vi.fn(async (_containerName: string, command: string[]) => {
+          if (command[0] === 'node') {
+            throw new Error('tick exited 1');
+          }
         }),
       },
     });
@@ -128,6 +137,7 @@ describe('runSelfUpdateCommand', () => {
       expect.objectContaining({
         image: 'wake-sandbox:v0.0.80',
         ui: { enabled: true, port: 4317, token: 'secret' },
+        start: { enabled: true },
       }),
     );
     expect(docker.update).toHaveBeenNthCalledWith(
@@ -135,6 +145,7 @@ describe('runSelfUpdateCommand', () => {
       expect.objectContaining({
         image: 'wake-sandbox:v0.0.79',
         ui: { enabled: true, port: 4317, token: 'secret' },
+        start: { enabled: true },
       }),
     );
     expect(writeLedger).toHaveBeenCalledWith(
@@ -157,8 +168,10 @@ describe('runSelfUpdateCommand', () => {
       docker: {
         build: vi.fn(async () => {}),
         update: vi.fn(async () => {}),
-        exec: vi.fn(async () => {
-          throw new Error('tick exited 1');
+        exec: vi.fn(async (_containerName: string, command: string[]) => {
+          if (command[0] === 'node') {
+            throw new Error('tick exited 1');
+          }
         }),
       },
       issueReporter: {
@@ -174,6 +187,33 @@ describe('runSelfUpdateCommand', () => {
     expect(docker.update).toHaveBeenNthCalledWith(
       2,
       expect.objectContaining({ image: 'wake-sandbox:v0.0.79' }),
+    );
+  });
+
+  it('rolls back when the resident start process cannot be verified after rollout', async () => {
+    const deps = baseDeps({
+      docker: {
+        build: vi.fn(async () => {}),
+        update: vi.fn(async () => {}),
+        exec: vi.fn(async (_containerName: string, command: string[]) => {
+          if (command[0] === 'sh') {
+            throw new Error('wake start is not running');
+          }
+        }),
+      },
+    });
+
+    await expect(runSelfUpdateCommand(deps as never)).rejects.toThrow('wake start is not running');
+
+    const docker = deps.docker as { update: ReturnType<typeof vi.fn> };
+
+    expect(docker.update).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ image: 'wake-sandbox:v0.0.80', start: { enabled: true } }),
+    );
+    expect(docker.update).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ image: 'wake-sandbox:v0.0.79', start: { enabled: true } }),
     );
   });
 

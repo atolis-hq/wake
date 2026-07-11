@@ -52,6 +52,12 @@ function uiDockerInput(config: WakeConfig): { enabled: boolean; port: number; to
   };
 }
 
+function startDockerInput(config: WakeConfig): { enabled: boolean } {
+  return {
+    enabled: config.sandbox.start.enabled,
+  };
+}
+
 export async function runSandboxCommand(input: {
   args: string[];
   config: WakeConfig;
@@ -109,6 +115,7 @@ export async function runSandboxCommand(input: {
       containerHomeMountPath: input.config.sandbox.containerHomeMountPath,
       extraMounts: input.config.sandbox.extraMounts,
       ui: uiDockerInput(input.config),
+      start: startDockerInput(input.config),
     });
     return;
   }
@@ -128,6 +135,7 @@ export async function runSandboxCommand(input: {
       containerHomeMountPath: input.config.sandbox.containerHomeMountPath,
       extraMounts: input.config.sandbox.extraMounts,
       ui: uiDockerInput(input.config),
+      start: startDockerInput(input.config),
     });
     return;
   }
@@ -183,6 +191,7 @@ export async function runSandboxCommand(input: {
       containerHomeMountPath: input.config.sandbox.containerHomeMountPath,
       dockerfilePath: resolve(repoRoot, 'docker', 'Dockerfile'),
       ui: uiDockerInput(input.config),
+      start: startDockerInput(input.config),
     });
     return;
   }

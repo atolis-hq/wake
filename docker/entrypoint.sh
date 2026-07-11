@@ -13,4 +13,12 @@ if [ "${WAKE_UI_ENABLED:-false}" = "true" ]; then
     >> /wake/logs/ui.log 2>&1 &
 fi
 
+if [ "${WAKE_START_ENABLED:-false}" = "true" ]; then
+  echo "wake start: starting resident loop"
+  node /app/dist/src/main.js start \
+    --wake-root /wake \
+    >> /wake/logs/start.log 2>&1 &
+  echo "$!" > /wake/logs/start.pid
+fi
+
 exec sleep infinity

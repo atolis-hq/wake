@@ -12,6 +12,10 @@ export type DockerUiInput = {
   token?: string | undefined;
 };
 
+export type DockerStartInput = {
+  enabled: boolean;
+};
+
 export type DockerUpInput = {
   image: string;
   containerName: string;
@@ -25,6 +29,7 @@ export type DockerUpInput = {
     readOnly?: boolean | undefined;
   }>;
   ui?: DockerUiInput | undefined;
+  start?: DockerStartInput | undefined;
   stopTimeoutSeconds?: number;
 };
 
@@ -66,6 +71,7 @@ function buildRunArgs(input: DockerUpInput): string[] {
           ...(input.ui.token !== undefined ? ['-e', `WAKE_UI_TOKEN=${input.ui.token}`] : []),
         ]
       : []),
+    ...(input.start?.enabled === true ? ['-e', 'WAKE_START_ENABLED=true'] : []),
     input.image,
   ];
 }

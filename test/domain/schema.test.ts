@@ -181,6 +181,7 @@ describe('run and event schemas', () => {
       containerName: string;
       containerMountPath: string;
       containerHomeMountPath: string;
+      start: { enabled: boolean };
       extraMounts: Array<{
         source: string;
         target: string;
@@ -550,6 +551,7 @@ describe('run and event schemas', () => {
     expect(config.sources.github.repos).toEqual(['atolis-hq/wake']);
     expect(config.paths.promptsRoot).toBe('/tmp/wake/prompts');
     expect(config.sandbox.containerName).toBe('wake-sandbox-1');
+    expect(config.sandbox.start).toEqual({ enabled: true });
     expect(config.sandbox.extraMounts).toEqual([
       {
         source: '/host/.claude/skills',

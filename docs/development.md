@@ -144,6 +144,15 @@ container in place:
 `wake-home` mount, including `/home/wake` auth state such as GitHub, Claude, and
 SSH credentials.
 
+### Auto-Starting The Resident Loop
+
+By default, `sandbox.start.enabled: true` makes the container entrypoint start
+`wake start --wake-root /wake` whenever `sandbox up`, `sandbox update`, or
+`sandbox self-update` creates the container. Output is written to
+`<wake-root>/logs/start.log`, and the entrypoint records the process id in
+`<wake-root>/logs/start.pid` so self-update can verify the loop survived a
+container replacement.
+
 ### Auto-Starting The Control-Plane UI
 
 Set `ui.enabled: true` and a `ui.token` in `wake-home/config.json`, or export
@@ -185,7 +194,9 @@ Open a shell:
 ./wake.sh sandbox exec
 ```
 
-Run the resident loop. The wrapper forwards this into the container:
+Run the resident loop in the foreground for local development or debugging.
+The wrapper forwards this into the container. In normal sandbox operation, the
+entrypoint already starts the resident loop automatically:
 
 ```bash
 ./wake.sh start
@@ -246,8 +257,9 @@ cd /path/to/your/wake-home
 `self-update` checks for a newer version tag on `origin`, and if found: waits
 for any active run to finish (same mechanism as `wake stop`), checks out the
 tag, builds a versioned image (`<sandbox.imageRepository>:<tag>`), replaces
-the running container, and health-checks it with a real `tick` against a
-throwaway `--wake-root`. On failure it rolls back to the last-known-good
+the running container, verifies the entrypoint-managed `wake start` process is
+running, and health-checks it with a real `tick` against a throwaway
+`--wake-root`. On failure it rolls back to the last-known-good
 image/tag, records the failed tag in `<wake-root>/self-update-ledger.json` so
 it's never silently retried, and files a GitHub issue with the failure detail
 via `gh issue create`.
