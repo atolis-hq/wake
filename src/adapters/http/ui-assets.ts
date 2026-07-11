@@ -108,9 +108,9 @@ async function renderStatusBar() {
 }
 
 async function renderBoard() {
+  const board = await getJson('/board');
   const main = document.getElementById('main');
   main.innerHTML = '';
-  const board = await getJson('/board');
   const columns = el('div', { class: 'columns' }, CONDITIONS.map((cond) => {
     const items = board.filter((c) => c.condition === cond);
     const cards = items.map((item) => el('div', {
@@ -162,9 +162,9 @@ async function openItem(repo, number) {
 }
 
 async function renderActivity() {
+  const events = await getJson('/events?limit=200');
   const main = document.getElementById('main');
   main.innerHTML = '';
-  const events = await getJson('/events?limit=200');
   const table = el('table', {}, [
     el('tr', {}, ['time', 'direction', 'type', 'work item'].map((h) => el('th', { text: h }))),
     ...events.map((ev) => el('tr', {}, [
@@ -176,9 +176,9 @@ async function renderActivity() {
 }
 
 async function renderRuns() {
+  const runs = await getJson('/runs');
   const main = document.getElementById('main');
   main.innerHTML = '';
-  const runs = await getJson('/runs');
   const table = el('table', {}, [
     el('tr', {}, ['repo#issue', 'action', 'status', 'sentinel', 'started', 'finished'].map((h) => el('th', { text: h }))),
     ...runs.map((r) => el('tr', {}, [
@@ -190,9 +190,9 @@ async function renderRuns() {
 }
 
 async function renderConfig() {
+  const data = await getJson('/config');
   const main = document.getElementById('main');
   main.innerHTML = '';
-  const data = await getJson('/config');
   main.appendChild(el('h3', { text: 'Routing table' }));
   main.appendChild(el('table', {}, [
     el('tr', {}, ['stage', 'action', 'tier', 'runner', 'model'].map((h) => el('th', { text: h }))),
@@ -206,9 +206,9 @@ async function renderConfig() {
 }
 
 async function renderHealth() {
+  const health = await getJson('/health');
   const main = document.getElementById('main');
   main.innerHTML = '';
-  const health = await getJson('/health');
   main.appendChild(el('div', { class: 'tiles' }, [
     tile('Tick lock', health.lock.present ? (health.lock.stale ? 'stale' : 'held') : 'free'),
     tile('Paused', String(health.pause.paused)),

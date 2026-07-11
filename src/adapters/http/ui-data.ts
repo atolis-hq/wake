@@ -418,24 +418,21 @@ export async function buildHealth(input: {
   const sourceStates = await listSourceStates(input.stateStore.paths.sourceStateRoot);
 
   const storageDirs = ['events', 'state', 'runs', 'workspaces'] as const;
-  const storage: Record<string, { files: number; bytes: number }> = {};
-  for (const dir of storageDirs) {
-    storage[dir] = await dirSize(join(input.stateStore.paths.wakeRoot, dir));
-  }
+  const storageSizes = await Promise.all(
+    storageDirs.map((dir) => dirSize(join(input.stateStore.paths.wakeRoot, dir))),
+  );
+  const storage = Object.fromEntries(storageDirs.map((dir, i) => [dir, storageSizes[i]]));
 
-  const integrityIssues: { path: string; problem: string }[] = [];
   const items = await input.stateStore.listIssueStates();
-  for (const item of items) {
-    if (item.wake.workspacePath !== undefined) {
-      const exists = await stat(item.wake.workspacePath).then(() => true).catch(() => false);
-      if (!exists) {
-        integrityIssues.push({
-          path: item.wake.workspacePath,
-          problem: `workspacePath missing for ${item.workItemKey}`,
-        });
-      }
-    }
-  }
+  const integrityChecks = await Promise.all(
+    items
+      .filter((item) => item.wake.workspacePath !== undefined)
+      .map(async (item) => {
+        const exists = await stat(item.wake.workspacePath!).then(() => true).catch(() => false);
+        return exists ? null : { path: item.wake.workspacePath!, problem: `workspacePath missing for ${item.workItemKey}` };
+      }),
+  );
+  const integrityIssues = integrityChecks.filter((issue): issue is { path: string; problem: string } => issue !== null);
 
   return {
     lock: {

@@ -115,7 +115,7 @@ async function handleRequest(
   }
 
   const { stateStore, config } = options;
-  const segments = url.pathname.slice('/api/v1/'.length).split('/').filter((part) => part.length > 0);
+  const segments = url.pathname.slice('/api/v1/'.length).split('/').filter((part) => part.length > 0).map((s) => decodeURIComponent(s));
   const resource = segments[0];
 
   if (resource === 'status' && segments.length === 1) {
