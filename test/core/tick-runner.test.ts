@@ -852,6 +852,214 @@ describe('tick runner', () => {
     expect(runnerCallCount).toBe(0);
   });
 
+  it('marks synced approval replies pending before the next item is claimed', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const deliveredEvents: Array<{ issueNumber: number | undefined; statusLabel: string; stageLabel: string }> = [];
+    let runnerCallCount = 0;
+
+    for (const issueNumber of [41, 42]) {
+      await store.writeIssueState({
+        schemaVersion: 1,
+        workItemKey: `atolis-hq/wake#${issueNumber}`,
+        issue: {
+          repo: 'atolis-hq/wake',
+          number: issueNumber,
+          title: `Approval ${issueNumber}`,
+          body: 'Body',
+          labels: ['wake:queue', 'wake:status.awaiting-approval', 'wake:stage.implement'],
+          assignees: [],
+          isPullRequest: false,
+          state: 'open',
+          url: `https://example.test/issues/${issueNumber}`,
+          createdAt: '2026-07-05T12:00:00.000Z',
+          updatedAt: '2026-07-05T12:00:00.000Z',
+        },
+        comments: [],
+        wake: {
+          stage: 'implement',
+          stageHistory: [],
+          recentEventIds: [],
+          syncedAt: '2026-07-05T12:00:00.000Z',
+          expectedEcho: { commentIds: [], labels: [] },
+        },
+        context: {
+          lastRunSentinel: 'AWAITING_APPROVAL',
+          pendingApprovalAction: 'implement',
+        },
+      });
+    }
+
+    const config = createDefaultWakeConfig(root);
+    config.sources.github.policy.requiredLabels = ['wake:queue'];
+
+    const tickRunner = createTickRunner({
+      clock: { now: () => new Date('2026-07-05T12:10:00.000Z') },
+      config,
+      stateStore: store,
+      workSource: {
+        async pollEvents() {
+          return [41, 42].map((issueNumber) => ({
+            schemaVersion: 1 as const,
+            eventId: `evt-comment-${issueNumber}`,
+            workItemKey: `atolis-hq/wake#${issueNumber}`,
+            streamScope: 'work-item' as const,
+            direction: 'inbound' as const,
+            sourceSystem: 'github',
+            sourceEventType: 'ticket.comment.created',
+            sourceRefs: {
+              repo: 'atolis-hq/wake',
+              issueNumber,
+              commentId: `c-${issueNumber}`,
+            },
+            occurredAt: '2026-07-05T12:09:00.000Z',
+            ingestedAt: '2026-07-05T12:09:00.000Z',
+            trigger: 'context-only' as const,
+            payload: {
+              comment: {
+                id: `c-${issueNumber}`,
+                body: issueNumber === 41 ? '/approved' : '/changes Please adjust this.',
+                author: { login: 'owner' },
+                createdAt: '2026-07-05T12:09:00.000Z',
+                updatedAt: '2026-07-05T12:09:00.000Z',
+              },
+            },
+          }));
+        },
+      },
+      outboundSink: {
+        async deliverIntent(input) {
+          if (input.event.sourceEventType === 'wake.labels.requested') {
+            deliveredEvents.push({
+              issueNumber: input.event.sourceRefs.issueNumber,
+              statusLabel: String(input.event.payload.statusLabel),
+              stageLabel: String(input.event.payload.stageLabel),
+            });
+          }
+          return [];
+        },
+      },
+      runner: {
+        async run() {
+          runnerCallCount += 1;
+          return { result: 'Revised.\nDONE', model: 'test-model', cli: 'test-cli' };
+        },
+      },
+      workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+    });
+
+    await tickRunner.runTick();
+
+    expect(deliveredEvents).toContainEqual({
+      issueNumber: 41,
+      statusLabel: 'wake:status.pending',
+      stageLabel: 'wake:stage.implement',
+    });
+    expect(deliveredEvents).toContainEqual({
+      issueNumber: 42,
+      statusLabel: 'wake:status.pending',
+      stageLabel: 'wake:stage.implement',
+    });
+    expect(deliveredEvents).toContainEqual({
+      issueNumber: 41,
+      statusLabel: 'wake:status.completed',
+      stageLabel: 'wake:stage.done',
+    });
+    expect(runnerCallCount).toBe(0);
+  });
+
+  it('does not mark synced approval-thread conversation pending', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const deliveredEvents: string[] = [];
+
+    await store.writeIssueState({
+      schemaVersion: 1,
+      workItemKey: 'atolis-hq/wake#43',
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 43,
+        title: 'Approval Conversation Sync',
+        body: 'Body',
+        labels: ['wake:queue', 'wake:status.awaiting-approval', 'wake:stage.implement'],
+        assignees: [],
+        isPullRequest: false,
+        state: 'open',
+        url: 'https://example.test/issues/43',
+        createdAt: '2026-07-05T12:00:00.000Z',
+        updatedAt: '2026-07-05T12:00:00.000Z',
+      },
+      comments: [],
+      wake: {
+        stage: 'implement',
+        stageHistory: [],
+        recentEventIds: [],
+        syncedAt: '2026-07-05T12:00:00.000Z',
+        expectedEcho: { commentIds: [], labels: [] },
+      },
+      context: {
+        lastRunSentinel: 'AWAITING_APPROVAL',
+        pendingApprovalAction: 'implement',
+      },
+    });
+
+    const config = createDefaultWakeConfig(root);
+    config.sources.github.policy.requiredLabels = ['wake:queue'];
+
+    const tickRunner = createTickRunner({
+      clock: { now: () => new Date('2026-07-05T12:10:00.000Z') },
+      config,
+      stateStore: store,
+      workSource: {
+        async pollEvents() {
+          return [{
+            schemaVersion: 1 as const,
+            eventId: 'evt-comment-43',
+            workItemKey: 'atolis-hq/wake#43',
+            streamScope: 'work-item' as const,
+            direction: 'inbound' as const,
+            sourceSystem: 'github',
+            sourceEventType: 'ticket.comment.created',
+            sourceRefs: {
+              repo: 'atolis-hq/wake',
+              issueNumber: 43,
+              commentId: 'c-43',
+            },
+            occurredAt: '2026-07-05T12:09:00.000Z',
+            ingestedAt: '2026-07-05T12:09:00.000Z',
+            trigger: 'context-only' as const,
+            payload: {
+              comment: {
+                id: 'c-43',
+                body: 'What is included in this change?',
+                author: { login: 'owner' },
+                createdAt: '2026-07-05T12:09:00.000Z',
+                updatedAt: '2026-07-05T12:09:00.000Z',
+              },
+            },
+          }];
+        },
+      },
+      outboundSink: {
+        async deliverIntent(input) {
+          if (input.event.sourceEventType === 'wake.labels.requested') {
+            deliveredEvents.push(String(input.event.payload.statusLabel));
+          }
+          return [];
+        },
+      },
+      runner: {
+        async run() {
+          throw new Error('should not run');
+        },
+      },
+      workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+    });
+
+    const result = await tickRunner.runTick();
+
+    expect(result.status).toBe('idle');
+    expect(deliveredEvents).toEqual([]);
+  });
+
   it('does not approve on a comment that merely mentions /approved as a substring (S2)', async () => {
     const store = createStateStore({ wakeRoot: root });
     let runnerCallCount = 0;

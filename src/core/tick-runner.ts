@@ -186,6 +186,26 @@ export function createTickRunner(deps: {
     return statusLabelForStage(input.stage);
   }
 
+  function hasLabel(projection: IssueStateRecord, label: string): boolean {
+    return projection.issue.labels.includes(label);
+  }
+
+  function shouldMarkPending(projection: IssueStateRecord): boolean {
+    if (!policy.isEligible(projection, deps.config)) {
+      return false;
+    }
+
+    if (isAwaitingApproval(projection)) {
+      return policy.resolveApprovalTransition(projection) !== null;
+    }
+
+    const nextAction =
+      policy.chooseAction(projection.wake.stage) ??
+      policy.chooseRetryActionAfterHumanReply(projection);
+
+    return nextAction !== null && policy.needsWakeAction(projection);
+  }
+
   function createLabelsEvent(input: {
     projection: import('../domain/types.js').IssueStateRecord;
     runId: string;
@@ -214,6 +234,33 @@ export function createTickRunner(deps: {
         origin: input.projection.origin ?? 'github',
       },
     });
+  }
+
+  async function markPendingActionableIssues(
+    projections: IssueStateRecord[],
+    occurredAt: string,
+  ): Promise<void> {
+    for (const projection of projections) {
+      const statusLabel = statusLabelForStage(projection.wake.stage);
+      const stageLabel = stageLabelForStage(projection.wake.stage);
+
+      if (
+        !shouldMarkPending(projection) ||
+        (hasLabel(projection, statusLabel) && hasLabel(projection, stageLabel))
+      ) {
+        continue;
+      }
+
+      await deliverOutboundEvent(
+        createLabelsEvent({
+          projection,
+          runId: `pending-${projection.issue.number}-${deps.clock.now().getTime()}`,
+          statusLabel,
+          stageLabel,
+          occurredAt,
+        }),
+      );
+    }
   }
 
   function runnerTimeoutMs(): number {
@@ -527,6 +574,9 @@ export function createTickRunner(deps: {
 
         const projections = await deps.stateStore.listIssueStates();
         await cleanupClosedIssueWorkspaces(projections, nowIso);
+        if (inboundEvents.length > 0) {
+          await markPendingActionableIssues(projections, nowIso);
+        }
 
         const candidate = projections.find((issue) => {
           if (!policy.isEligible(issue, deps.config)) {
