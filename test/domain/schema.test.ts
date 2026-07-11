@@ -552,6 +552,7 @@ describe('run and event schemas', () => {
     expect(config.paths.promptsRoot).toBe('/tmp/wake/prompts');
     expect(config.sandbox.containerName).toBe('wake-sandbox-1');
     expect(config.sandbox.start).toEqual({ enabled: true });
+    expect(config.ui.archiveFreshnessDays).toBe(5);
     expect(config.sandbox.extraMounts).toEqual([
       {
         source: '/host/.claude/skills',

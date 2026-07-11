@@ -22,7 +22,7 @@ describe('tick runner', () => {
 
     const runner = {
       async run() {
-        const runFiles = await readdir(join(root, 'runs'));
+        const runFiles = (await readdir(join(root, 'runs'))).filter((file) => file.endsWith('.json'));
         runFileSnapshot = await readFile(join(root, 'runs', runFiles[0]!), 'utf8');
         return { result: 'Runner output\nDONE', model: 'test-model', cli: 'test-cli', session_id: 'session-1' };
       },
@@ -1008,7 +1008,7 @@ describe('tick runner', () => {
     expect(completedEvent).toBeDefined();
     expect(completedEvent.payload.sentinel).toBe('FAILED');
 
-    const runFiles = await readdir(join(root, 'runs'));
+    const runFiles = (await readdir(join(root, 'runs'))).filter((file) => file.endsWith('.json'));
     const runRecord = JSON.parse(await readFile(join(root, 'runs', runFiles[0]!), 'utf8'));
     expect(runRecord.status).toBe('failed');
   });

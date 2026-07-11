@@ -5,14 +5,17 @@ import { join } from 'node:path';
 
 import { createStateStore } from '../../src/adapters/fs/state-store.js';
 import { createDefaultWakeConfig } from '../../src/config/defaults.js';
-import { buildBoard, buildConfigView, buildStatus } from '../../src/adapters/http/ui-data.js';
+import { buildBoard, buildConfigView, buildEventsFeed, buildStatus } from '../../src/adapters/http/ui-data.js';
 import type { IssueStateRecord, RunRecord } from '../../src/domain/types.js';
 
 function issueState(input: {
   number: number;
   stage: IssueStateRecord['wake']['stage'];
   sessionId?: string;
+  lastRunId?: string;
+  syncedAt?: string;
 }): IssueStateRecord {
+  const syncedAt = input.syncedAt ?? '2026-07-05T12:00:00.000Z';
   return {
     schemaVersion: 1,
     workItemKey: `atolis-hq/wake#${input.number}`,
@@ -27,16 +30,17 @@ function issueState(input: {
       state: 'open',
       url: `https://example.test/issues/${input.number}`,
       createdAt: '2026-07-05T12:00:00.000Z',
-      updatedAt: '2026-07-05T12:00:00.000Z',
+      updatedAt: syncedAt,
     },
     comments: [],
     wake: {
       stage: input.stage,
-      stageHistory: [{ stage: input.stage, changedAt: '2026-07-05T12:00:00.000Z', reason: 'test' }],
+      stageHistory: [{ stage: input.stage, changedAt: syncedAt, reason: 'test' }],
       recentEventIds: [],
-      syncedAt: '2026-07-05T12:00:00.000Z',
+      syncedAt,
       expectedEcho: { commentIds: [], labels: [] },
       ...(input.sessionId === undefined ? {} : { sessionId: input.sessionId }),
+      ...(input.lastRunId === undefined ? {} : { lastRunId: input.lastRunId }),
     },
     context: {},
   };
@@ -47,6 +51,8 @@ function runRecord(input: {
   issueNumber: number;
   status: RunRecord['status'];
   sentinel?: RunRecord['sentinel'];
+  startedAt?: string;
+  costUsd?: number;
 }): RunRecord {
   return {
     schemaVersion: 1,
@@ -55,7 +61,10 @@ function runRecord(input: {
     issueNumber: input.issueNumber,
     action: 'implement',
     status: input.status,
-    startedAt: '2026-07-05T12:00:00.000Z',
+    startedAt: input.startedAt ?? '2026-07-05T12:00:00.000Z',
+    tokenUsage: input.costUsd === undefined
+      ? undefined
+      : { inputTokens: 1, outputTokens: 1, costUsd: input.costUsd },
     ...(input.sentinel === undefined ? {} : { sentinel: input.sentinel, finishedAt: '2026-07-05T12:05:00.000Z' }),
   };
 }
@@ -71,7 +80,7 @@ describe('ui-data', () => {
     const store = createStateStore({ wakeRoot: root });
     const config = createDefaultWakeConfig(root);
 
-    await store.writeIssueState(issueState({ number: 1, stage: 'implement' }));
+    await store.writeIssueState(issueState({ number: 1, stage: 'implement', lastRunId: 'run-1' }));
     await store.writeIssueState(issueState({ number: 2, stage: 'blocked' }));
     await store.writeIssueState(issueState({ number: 3, stage: 'done' }));
     await store.writeIssueState(issueState({ number: 4, stage: 'queue' }));
@@ -112,6 +121,91 @@ describe('ui-data', () => {
     expect(status.loopState).toBe('idle');
     expect(status.paused).toBe(false);
     expect(status.counters.finished).toBe(0);
+  });
+
+  it('builds status from recent events and today run buckets without a full history run scan', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const config = createDefaultWakeConfig(root);
+
+    await store.writeRunRecord(runRecord({
+      runId: 'run-yesterday',
+      issueNumber: 1,
+      status: 'completed',
+      startedAt: '2026-07-04T23:59:00.000Z',
+      costUsd: 10,
+    }));
+    await store.writeRunRecord(runRecord({
+      runId: 'run-today',
+      issueNumber: 2,
+      status: 'failed',
+      startedAt: '2026-07-05T01:00:00.000Z',
+      costUsd: 2,
+    }));
+    await store.appendEventEnvelope({
+      schemaVersion: 1,
+      eventId: 'evt-latest',
+      workItemKey: 'atolis-hq/wake#2',
+      streamScope: 'work-item',
+      direction: 'inbound',
+      sourceSystem: 'github',
+      sourceEventType: 'ticket.comment.created',
+      sourceRefs: { repo: 'atolis-hq/wake', issueNumber: 2 },
+      occurredAt: '2026-07-05T01:00:00.000Z',
+      ingestedAt: '2026-07-05T01:00:01.000Z',
+      trigger: 'immediate',
+      payload: {},
+    });
+
+    const status = await buildStatus({
+      stateStore: store,
+      config,
+      now: new Date('2026-07-05T13:00:00.000Z'),
+    });
+
+    expect(status.runsToday).toBe(1);
+    expect(status.failuresToday).toBe(1);
+    expect(status.costUsdToday).toBe(2);
+    expect(status.lastRun?.issueNumber).toBe(2);
+    expect(status.lastEvent?.type).toBe('ticket.comment.created');
+  });
+
+  it('caps the events feed using the recent event store helper', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const config = createDefaultWakeConfig(root);
+
+    await store.appendEventEnvelope({
+      schemaVersion: 1,
+      eventId: 'evt-one',
+      workItemKey: 'atolis-hq/wake#1',
+      streamScope: 'work-item',
+      direction: 'inbound',
+      sourceSystem: 'github',
+      sourceEventType: 'ticket.comment.created',
+      sourceRefs: { repo: 'atolis-hq/wake', issueNumber: 1 },
+      occurredAt: '2026-07-05T01:00:00.000Z',
+      ingestedAt: '2026-07-05T01:00:00.000Z',
+      trigger: 'immediate',
+      payload: {},
+    });
+    await store.appendEventEnvelope({
+      schemaVersion: 1,
+      eventId: 'evt-two',
+      workItemKey: 'atolis-hq/wake#1',
+      streamScope: 'work-item',
+      direction: 'inbound',
+      sourceSystem: 'github',
+      sourceEventType: 'ticket.comment.created',
+      sourceRefs: { repo: 'atolis-hq/wake', issueNumber: 1 },
+      occurredAt: '2026-07-05T01:00:01.000Z',
+      ingestedAt: '2026-07-05T01:00:01.000Z',
+      trigger: 'immediate',
+      payload: {},
+    });
+
+    const events = await buildEventsFeed({ stateStore: store, limit: 1 });
+
+    expect(config.ui.archiveFreshnessDays).toBe(5);
+    expect(events.map((event) => event.eventId)).toEqual(['evt-two']);
   });
 
   it('marks a paused tier candidate in the routing table fallback order (#67)', async () => {
