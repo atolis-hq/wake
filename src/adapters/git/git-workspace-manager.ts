@@ -63,7 +63,7 @@ export function buildWorkspaceCloneArgs(input: {
   ];
 }
 
-async function tryUpdateFromDefaultBranch(workspacePath: string): Promise<boolean> {
+async function tryDetectMergeConflict(workspacePath: string): Promise<boolean> {
   try {
     const { stdout: status } = await git(['status', '--porcelain'], workspacePath);
     if (status.length > 0) {
@@ -82,22 +82,26 @@ async function tryUpdateFromDefaultBranch(workspacePath: string): Promise<boolea
       return false;
     }
 
+    // Probe for conflicts without committing — always abort so the workspace
+    // stays clean regardless of outcome. The agent merges if a conflict is found.
+    let hasConflict = false;
     try {
-      // Supply fallback identity so merge commits succeed in environments where
-      // git user.email/user.name is not configured globally (e.g. CI containers).
-      await git(
-        ['-c', 'user.email=wake@merge.local', '-c', 'user.name=Wake', 'merge', '--no-edit', `origin/${defaultBranch}`],
-        workspacePath,
-      );
-      return false;
+      await git(['merge', '--no-commit', '--no-ff', `origin/${defaultBranch}`], workspacePath);
+    } catch {
+      hasConflict = true;
+    }
+
+    try {
+      await git(['merge', '--abort'], workspacePath);
     } catch {
       try {
-        await git(['merge', '--abort'], workspacePath);
+        await git(['reset', '--hard', 'HEAD'], workspacePath);
       } catch {
-        // Merge abort failed (e.g. no merge in progress) — ignore
+        // ignore
       }
-      return true;
     }
+
+    return hasConflict;
   } catch {
     // Fetch or branch detection failed — leave workspace as-is, no conflict reported
     return false;
@@ -147,7 +151,7 @@ export function createGitWorkspaceManager(options: {
     }): Promise<{ workspacePath: string; mergeConflictDetected: boolean }> {
       const workspacePath = paths.workspaceDir(repo, issueNumber);
       if (await pathExists(workspacePath)) {
-        const mergeConflictDetected = await tryUpdateFromDefaultBranch(workspacePath);
+        const mergeConflictDetected = await tryDetectMergeConflict(workspacePath);
         return { workspacePath, mergeConflictDetected };
       }
 

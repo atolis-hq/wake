@@ -134,7 +134,7 @@ function buildHarnessPrompt(input: { skipApproval: boolean; mergeConflictDetecte
     lines.push(
       '',
       'Merge conflict notice:',
-      'An attempt to automatically update your workspace from the upstream default branch resulted in a merge conflict. The merge was aborted and your workspace is in a clean state. Before proceeding with your task, run `git fetch origin` and then merge the default branch manually (e.g. `git merge origin/HEAD`) and resolve any conflicts before committing.',
+      'A conflict check against the upstream default branch detected that merging it into your workspace would cause conflicts. Your workspace is in a clean state. Before proceeding with your task, run `git fetch origin` and then merge the default branch manually (e.g. `git merge origin/HEAD`) and resolve any conflicts before committing.',
     );
   }
 
