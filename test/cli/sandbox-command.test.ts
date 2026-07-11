@@ -1,4 +1,4 @@
-import { resolve } from 'node:path';
+﻿import { resolve } from 'node:path';
 import { mkdtemp, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 
@@ -38,6 +38,9 @@ describe('sandbox command', () => {
       wakeRoot,
       containerHomeRoot,
       docker,
+      stateStore: { listRunRecords: async () => [] },
+      sleep: async () => {},
+      logger: { info: () => {} },
     });
 
     expect(docker.build).toHaveBeenCalledWith({
@@ -57,6 +60,9 @@ describe('sandbox command', () => {
         wakeRoot,
         containerHomeRoot,
         docker,
+        stateStore: { listRunRecords: async () => [] },
+        sleep: async () => {},
+        logger: { info: () => {} },
       }),
     ).rejects.toThrow('Sandbox build requires config.dev.repoRoot');
   });
@@ -70,6 +76,9 @@ describe('sandbox command', () => {
       wakeRoot,
       containerHomeRoot,
       docker,
+      stateStore: { listRunRecords: async () => [] },
+      sleep: async () => {},
+      logger: { info: () => {} },
     });
 
     expect(docker.up).toHaveBeenCalledWith({
@@ -95,6 +104,9 @@ describe('sandbox command', () => {
       wakeRoot,
       containerHomeRoot,
       docker,
+      stateStore: { listRunRecords: async () => [] },
+      sleep: async () => {},
+      logger: { info: () => {} },
     });
 
     expect(docker.up).toHaveBeenCalledWith(
@@ -127,6 +139,9 @@ describe('sandbox command', () => {
       wakeRoot,
       containerHomeRoot: tempContainerHomeRoot,
       docker,
+      stateStore: { listRunRecords: async () => [] },
+      sleep: async () => {},
+      logger: { info: () => {} },
     });
 
     await expect(stat(resolve(tempContainerHomeRoot, '.codex'))).resolves.toMatchObject({
@@ -146,9 +161,35 @@ describe('sandbox command', () => {
       wakeRoot,
       containerHomeRoot,
       docker,
+      stateStore: { listRunRecords: async () => [] },
+      sleep: async () => {},
+      logger: { info: () => {} },
     });
 
     expect(docker.down).toHaveBeenCalledWith('wake-sandbox');
+  });
+
+  it('waits for active runs before stopping via sandbox stop', async () => {
+    const docker = createDockerMock();
+    let calls = 0;
+    const listRunRecords = vi.fn(async () => {
+      calls += 1;
+      return calls < 2 ? [{ status: 'running' }] : [{ status: 'completed' }];
+    });
+
+    await runSandboxCommand({
+      args: ['stop'],
+      config: createDefaultWakeConfig(wakeRoot),
+      wakeRoot,
+      containerHomeRoot,
+      docker,
+      stateStore: { listRunRecords } as never,
+      sleep: vi.fn(async () => {}),
+      logger: { info: () => {} },
+    });
+
+    expect(listRunRecords).toHaveBeenCalledTimes(2);
+    expect(docker.down).toHaveBeenCalledWith('wake-sandbox', { timeoutSeconds: 60 });
   });
 
   it('dispatches update with config-derived container settings', async () => {
@@ -160,6 +201,9 @@ describe('sandbox command', () => {
       wakeRoot,
       containerHomeRoot,
       docker,
+      stateStore: { listRunRecords: async () => [] },
+      sleep: async () => {},
+      logger: { info: () => {} },
     });
 
     expect(docker.update).toHaveBeenCalledWith({
@@ -183,6 +227,9 @@ describe('sandbox command', () => {
       wakeRoot,
       containerHomeRoot,
       docker,
+      stateStore: { listRunRecords: async () => [] },
+      sleep: async () => {},
+      logger: { info: () => {} },
     });
 
     expect(docker.exec).toHaveBeenCalledWith(
@@ -201,6 +248,9 @@ describe('sandbox command', () => {
       wakeRoot,
       containerHomeRoot,
       docker,
+      stateStore: { listRunRecords: async () => [] },
+      sleep: async () => {},
+      logger: { info: () => {} },
     });
 
     expect(docker.exec).toHaveBeenCalledWith(
@@ -224,6 +274,9 @@ describe('sandbox command', () => {
       wakeRoot,
       containerHomeRoot,
       docker,
+      stateStore: { listRunRecords: async () => [] },
+      sleep: async () => {},
+      logger: { info: () => {} },
     });
 
     expect(docker.exec).toHaveBeenCalledWith(
@@ -262,6 +315,9 @@ describe('sandbox command', () => {
       wakeRoot,
       containerHomeRoot,
       docker,
+      stateStore: { listRunRecords: async () => [] },
+      sleep: async () => {},
+      logger: { info: () => {} },
     });
 
     expect(docker.exec).toHaveBeenCalledWith(
@@ -288,6 +344,9 @@ describe('sandbox command', () => {
       wakeRoot,
       containerHomeRoot,
       docker,
+      stateStore: { listRunRecords: async () => [] },
+      sleep: async () => {},
+      logger: { info: () => {} },
     });
 
     expect(docker.logs).toHaveBeenCalledWith('wake-sandbox', 200);
@@ -303,6 +362,9 @@ describe('sandbox command', () => {
         wakeRoot,
         containerHomeRoot,
         docker,
+        stateStore: { listRunRecords: async () => [] },
+        sleep: async () => {},
+        logger: { info: () => {} },
       }),
     ).rejects.toThrow('Unknown sandbox command: bogus');
   });

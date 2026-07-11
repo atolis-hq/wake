@@ -215,6 +215,40 @@ history and labels converge without manual cleanup.
 ./wake.sh sandbox down
 ```
 
+`sandbox down` stops the container immediately. If an agent run may be in
+progress, use the safe stop instead — it waits for any active run to finish
+before stopping, so an in-flight `implement`/`refine` session isn't killed
+mid-way:
+
+```bash
+./wake.sh stop
+```
+
+(equivalent to `./wake.sh sandbox stop`). It polls `.wake/runs/*.json` for any
+`status: "running"` record and blocks until none remain, then stops the
+container with a 60s grace period. Flags: `--timeout-ms` (give up waiting
+after this long instead of blocking forever) and `--poll-interval-ms`.
+
+### Self-update
+
+`wake sandbox self-update` (or `npm run self-update`) checks for a newer
+version tag on `origin`, and if found: waits for any active run to finish
+(same mechanism as `wake stop`), checks out the tag, builds a versioned image
+(`<sandbox.imageRepository>:<tag>`), replaces the running container, and
+health-checks it with a real `tick` against a throwaway `--wake-root`. On
+failure it rolls back to the last-known-good image/tag, records the failed
+tag in `<wake-root>/self-update-ledger.json` so it's never silently retried,
+and files a GitHub issue with the failure detail via `gh issue create`.
+
+Flags:
+- `--force` — proceed even if the tag matches what's already applied, or is
+  recorded as a known-bad tag.
+- `--tag <tag>` — target an explicit tag instead of discovering the latest
+  one (useful for testing/rehearsal).
+
+Requires a clean git working tree in `config.dev.repoRoot` and `gh`
+authenticated with permission to create issues on the repo.
+
 ## GitHub Issues Polling
 
 Wake can poll configured GitHub repositories when `sources.github.enabled` is

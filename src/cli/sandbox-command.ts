@@ -3,8 +3,9 @@ import { posix, resolve } from 'node:path';
 
 import type { DockerCli } from '../adapters/docker/docker-cli.js';
 import { createRunnerCliAdapter } from '../adapters/runner/runner-cli-adapter.js';
-import type { RunnerEntry } from '../domain/types.js';
+import type { RunnerEntry, RunRecord } from '../domain/types.js';
 import { runSandboxResumeCommand } from './sandbox-resume.js';
+import { runStopCommand } from './stop-command.js';
 import {
   buildSandboxLoggedCommand,
 } from './sandbox-logging.js';
@@ -55,6 +56,9 @@ export async function runSandboxCommand(input: {
   wakeRoot: string;
   containerHomeRoot: string;
   docker: DockerCli;
+  stateStore: { listRunRecords: () => Promise<RunRecord[]> };
+  sleep: (ms: number) => Promise<void>;
+  logger: { info: (message: string) => void; error?: (message: string) => void };
 }): Promise<void> {
   const subcommand = input.args[0];
 
@@ -116,6 +120,18 @@ export async function runSandboxCommand(input: {
 
   if (subcommand === 'down') {
     await input.docker.down(input.config.sandbox.containerName);
+    return;
+  }
+
+  if (subcommand === 'stop') {
+    await runStopCommand({
+      args: input.args.slice(1),
+      stateStore: input.stateStore,
+      docker: input.docker,
+      containerName: input.config.sandbox.containerName,
+      sleep: input.sleep,
+      logger: input.logger,
+    });
     return;
   }
 

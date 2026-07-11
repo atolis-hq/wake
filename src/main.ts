@@ -353,6 +353,11 @@ export async function dispatchMainCommand(input: {
     return;
   }
 
+  if (command === 'stop') {
+    await input.runSandbox(['stop', ...input.args.slice(1)]);
+    return;
+  }
+
   if (command === 'smoke') {
     await input.runSmoke(input.args.slice(1));
     return;
@@ -399,6 +404,16 @@ async function main() {
         wakeRoot,
         containerHomeRoot: stateStore.paths.containerHomeRoot,
         docker,
+        stateStore,
+        sleep: (ms) => new Promise((resolveSleep) => setTimeout(resolveSleep, ms)),
+        logger: {
+          info(message) {
+            console.log(message);
+          },
+          error(message) {
+            console.error(message);
+          },
+        },
       });
     },
     runTick,
