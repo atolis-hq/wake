@@ -104,6 +104,41 @@ describe('github issues work source', () => {
     });
   });
 
+  it('polls issues updated within the previous successful poll hour overlap', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const config = createDefaultWakeConfig(root);
+    config.sources.github.enabled = true;
+    config.sources.github.repos = ['atolis-hq/wake'];
+    await store.writeSourceState({
+      schemaVersion: 1,
+      source: 'github',
+      key: 'atolis-hq/wake',
+      lastSuccessfulPollAt: '2026-07-05T12:00:00.000Z',
+    });
+    const listIssues = vi.fn(async () => []);
+
+    const workSource = createGitHubIssuesWorkSource({
+      client: {
+        listIssues,
+        listComments: async () => [],
+        createComment: vi.fn(),
+        setLabels: vi.fn(),
+      },
+      stateStore: store,
+      config,
+      now: () => new Date('2026-07-05T12:10:00.000Z'),
+    });
+
+    await workSource.pollEvents();
+
+    expect(listIssues).toHaveBeenCalledWith(
+      'atolis-hq',
+      'wake',
+      config.sources.github.polling.maxIssuesPerRepo,
+      '2026-07-05T11:00:00.000Z',
+    );
+  });
+
   it('does not re-emit unchanged issues on the next poll', async () => {
     const store = createStateStore({ wakeRoot: root });
     const config = createDefaultWakeConfig(root);

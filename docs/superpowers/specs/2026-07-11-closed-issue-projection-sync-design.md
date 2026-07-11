@@ -7,20 +7,23 @@ Ensure a GitHub issue that is closed after Wake has projected it is reflected as
 
 ## Design
 
-The GitHub client will request issues with `state: 'all'` rather than only
-open issues. The existing polling and `ticket.upsert` normalization path will
-therefore receive a closed issue and update its projection without a second
-sync mechanism or per-item API requests.
+The GitHub client requests issues with `state: 'all'` rather than only open
+issues. After the first successful poll, each request includes a `since` value
+one hour before the previous successful-poll timestamp. The existing polling
+and `ticket.upsert` normalization path therefore receives a closed issue and
+updates its projection without a second sync mechanism or per-item API
+requests.
 
 ## Behaviour
 
 - Open issues continue to be discovered and processed exactly as today.
+- The first poll has no time filter; later polls re-fetch the previous hour to
+  make the timestamp boundary tolerant of delayed provider updates.
 - Closed issues are emitted as normal `ticket.upsert` events when their
   `updated_at` value differs from the stored projection.
 - The existing projection updater records the normalized `closed` state.
 
 ## Test coverage
 
-Add a regression test proving that a closed GitHub issue is normalized into a
-`ticket.upsert` whose ticket state is `closed`, and update the client test to
-assert the `state: 'all'` API argument.
+Add regression tests for the `state: 'all'` request, its optional `since`
+argument, and the one-hour overlap calculated from the stored poll watermark.

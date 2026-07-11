@@ -4,6 +4,7 @@ import { createEventEnvelope } from '../../lib/event-log.js';
 import { buildResumeCommandForCli } from '../runner/runner-cli-adapter.js';
 
 const wakeStatusLabelPrefix = 'wake:status.';
+const pollOverlapMs = 60 * 60 * 1000;
 
 type GitHubIssue = {
   number: number;
@@ -257,7 +258,12 @@ function formatWakeComment(payload: Record<string, unknown>): string {
 
 export function createGitHubIssuesWorkSource(deps: {
   client: {
-    listIssues: (owner: string, repo: string, perPage: number) => Promise<GitHubIssue[]>;
+    listIssues: (
+      owner: string,
+      repo: string,
+      perPage: number,
+      since?: string,
+    ) => Promise<GitHubIssue[]>;
     listComments: (
       owner: string,
       repo: string,
@@ -292,11 +298,22 @@ export function createGitHubIssuesWorkSource(deps: {
           continue;
         }
 
-        const issues = await deps.client.listIssues(
-          owner,
-          repo,
-          deps.config.sources.github.polling.maxIssuesPerRepo,
-        );
+        const previousPoll = await deps.stateStore.readSourceState('github', repoRef);
+        const since = previousPoll === null
+          ? undefined
+          : new Date(Date.parse(previousPoll.lastSuccessfulPollAt) - pollOverlapMs).toISOString();
+        const issues = since === undefined
+          ? await deps.client.listIssues(
+              owner,
+              repo,
+              deps.config.sources.github.polling.maxIssuesPerRepo,
+            )
+          : await deps.client.listIssues(
+              owner,
+              repo,
+              deps.config.sources.github.polling.maxIssuesPerRepo,
+              since,
+            );
 
         for (const issue of issues) {
           const local = await deps.stateStore.readIssueState(repoRef, issue.number);
