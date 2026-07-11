@@ -97,11 +97,7 @@ function deriveCondition(
     .sort((left, right) => left.startedAt.localeCompare(right.startedAt))
     .at(-1);
 
-  if (
-    stage === 'blocked' ||
-    lastRun?.sentinel === 'BLOCKED' ||
-    lastRun?.sentinel === 'AWAITING_APPROVAL'
-  ) {
+  if (lastRun?.sentinel === 'BLOCKED' || lastRun?.sentinel === 'AWAITING_APPROVAL') {
     return { condition: 'needs-human', reason: `sentinel ${lastRun?.sentinel ?? stage}` };
   }
 

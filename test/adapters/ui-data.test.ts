@@ -72,10 +72,16 @@ describe('ui-data', () => {
     const config = createDefaultWakeConfig(root);
 
     await store.writeIssueState(issueState({ number: 1, stage: 'implement' }));
-    await store.writeIssueState(issueState({ number: 2, stage: 'blocked' }));
+    await store.writeIssueState(issueState({ number: 2, stage: 'implement' }));
     await store.writeIssueState(issueState({ number: 3, stage: 'done' }));
     await store.writeIssueState(issueState({ number: 4, stage: 'queue' }));
     await store.writeRunRecord(runRecord({ runId: 'run-1', issueNumber: 1, status: 'running' }));
+    await store.writeRunRecord(runRecord({
+      runId: 'run-2',
+      issueNumber: 2,
+      status: 'blocked',
+      sentinel: 'BLOCKED',
+    }));
 
     const board = await buildBoard({ stateStore: store, config, now: new Date('2026-07-05T13:00:00.000Z') });
     const byNumber = new Map(board.map((card) => [card.number, card]));

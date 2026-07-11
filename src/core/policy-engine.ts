@@ -161,13 +161,14 @@ export function createPolicyEngine() {
     chooseRetryActionAfterHumanReply(issue: IssueStateRecord): AgentAction | null {
       const context = issue.context as Record<string, unknown>;
       const failed = context.lastRunSentinel === failedRunnerSentinel;
+      const blocked = context.lastRunSentinel === 'BLOCKED';
       if (failed && context.lastFailureClass === 'quota') {
         return agentActionValues.includes(context.lastRunAction as AgentAction)
           ? (context.lastRunAction as AgentAction)
           : null;
       }
 
-      if (issue.wake.stage !== 'blocked' && !failed) {
+      if (!blocked && !failed) {
         return null;
       }
 

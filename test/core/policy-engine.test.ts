@@ -140,11 +140,12 @@ function buildNeedsWakeActionIssue(overrides: {
 }
 
 function buildBlockedOrFailedIssue(overrides: {
-  stage: 'blocked' | 'refine' | 'implement' | 'queue';
+  stage: 'refine' | 'implement' | 'queue';
   latestCommentId?: string;
   latestCommentIsBotAuthored?: boolean;
   lastHandledCommentId?: string;
   lastRunAction?: string;
+  lastRunSentinel?: string;
 }) {
   return parseIssueStateRecord({
     schemaVersion: 1,
@@ -186,6 +187,9 @@ function buildBlockedOrFailedIssue(overrides: {
       ...(overrides.lastRunAction === undefined
         ? {}
         : { lastRunAction: overrides.lastRunAction }),
+      ...(overrides.lastRunSentinel === undefined
+        ? {}
+        : { lastRunSentinel: overrides.lastRunSentinel }),
     },
   });
 }
@@ -548,10 +552,11 @@ describe('policy engine: chooseRetryActionAfterHumanReply', () => {
   it('retries the last run action for a blocked issue with an unhandled human reply', () => {
     const policy = createPolicyEngine();
     const issue = buildBlockedOrFailedIssue({
-      stage: 'blocked',
+      stage: 'implement',
       latestCommentId: 'c-2',
       lastHandledCommentId: 'c-1',
       lastRunAction: 'implement',
+      lastRunSentinel: 'BLOCKED',
     });
 
     expect(policy.chooseRetryActionAfterHumanReply(issue)).toBe('implement');
@@ -586,10 +591,11 @@ describe('policy engine: chooseRetryActionAfterHumanReply', () => {
   it('does not retry when the latest human reply was already handled', () => {
     const policy = createPolicyEngine();
     const issue = buildBlockedOrFailedIssue({
-      stage: 'blocked',
+      stage: 'implement',
       latestCommentId: 'c-1',
       lastHandledCommentId: 'c-1',
       lastRunAction: 'implement',
+      lastRunSentinel: 'BLOCKED',
     });
 
     expect(policy.chooseRetryActionAfterHumanReply(issue)).toBeNull();
@@ -598,10 +604,11 @@ describe('policy engine: chooseRetryActionAfterHumanReply', () => {
   it('does not retry for bot comments or runs that did not fail or block', () => {
     const policy = createPolicyEngine();
     const botReply = buildBlockedOrFailedIssue({
-      stage: 'blocked',
+      stage: 'implement',
       latestCommentId: 'c-2',
       latestCommentIsBotAuthored: true,
       lastRunAction: 'implement',
+      lastRunSentinel: 'BLOCKED',
     });
     const queued = buildBlockedOrFailedIssue({
       stage: 'queue',

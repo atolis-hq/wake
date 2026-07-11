@@ -11,4 +11,13 @@ describe('lifecycle service', () => {
       expect(lifecycle.nextStageFromSentinel(action, 'FAILED')).toBeNull();
     },
   );
+
+  it.each(['refine', 'implement'] as const)(
+    'keeps the current stage when a %s action blocks',
+    (action) => {
+      const lifecycle = createLifecycleService();
+
+      expect(lifecycle.nextStageFromSentinel(action, 'BLOCKED')).toBeNull();
+    },
+  );
 });

@@ -173,11 +173,10 @@ function applyEvent(
     };
 
     // Clear the session when the stage moves forward (new action needed) or the
-    // run failed outright. Keep it when moving to 'blocked' so the same action
-    // can resume the in-progress session after a human replies.
+    // run failed outright. Keep it for BLOCKED so the same action can resume
+    // the in-progress session after a human replies.
     const isForwardProgression =
       payload.nextStage !== undefined &&
-      payload.nextStage !== 'blocked' &&
       payload.nextStage !== current.wake.stage;
     const stageChanged =
       payload.nextStage !== undefined && payload.nextStage !== current.wake.stage;

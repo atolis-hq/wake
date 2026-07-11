@@ -262,7 +262,7 @@ describe('projection updater', () => {
     const event = issueUpsert({
       eventId: 'evt-ambiguous-labels',
       issueNumber: 102,
-      labels: [stageLabelForStage('implement'), stageLabelForStage('blocked')],
+      labels: [stageLabelForStage('implement'), stageLabelForStage('refine')],
     });
 
     await updater.rebuildFromEvents([event]);
@@ -284,7 +284,7 @@ describe('projection updater', () => {
     const reconciled = issueUpsert({
       eventId: 'evt-reconcile-updated',
       issueNumber: 103,
-      labels: [stageLabelForStage('blocked')],
+      labels: [stageLabelForStage('done')],
       occurredAt: '2026-07-05T12:05:00.000Z',
       ingestedAt: '2026-07-05T12:05:01.000Z',
     });
@@ -293,10 +293,10 @@ describe('projection updater', () => {
     await updater.rebuildFromEvents([reconciled]);
 
     const projection = await store.readIssueState('atolis-hq/wake', 103);
-    expect(projection?.wake.stage).toBe('blocked');
+    expect(projection?.wake.stage).toBe('done');
     expect(projection?.wake.stageHistory).toEqual([
       {
-        stage: 'blocked',
+        stage: 'done',
         changedAt: '2026-07-05T12:05:00.000Z',
         reason: 'github-label-sync',
       },
@@ -314,7 +314,7 @@ describe('projection updater', () => {
     const ambiguous = issueUpsert({
       eventId: 'evt-ambiguous-existing-updated',
       issueNumber: 104,
-      labels: [stageLabelForStage('refine'), stageLabelForStage('blocked')],
+      labels: [stageLabelForStage('refine'), stageLabelForStage('queue')],
       occurredAt: '2026-07-05T12:05:00.000Z',
       ingestedAt: '2026-07-05T12:05:01.000Z',
     });
@@ -587,7 +587,7 @@ describe('projection updater', () => {
           number: 20,
           title: 'Example',
           body: 'Body',
-          labels: [],
+          labels: [stageLabelForStage('implement')],
           assignees: [],
           isPullRequest: false,
           state: 'open',
@@ -617,7 +617,8 @@ describe('projection updater', () => {
       ingestedAt: '2026-07-05T12:01:00.000Z',
       trigger: 'immediate',
       payload: {
-        nextStage: 'blocked',
+        action: 'implement',
+        sentinel: 'BLOCKED',
         runId: 'run-20-1',
       },
     });
@@ -626,7 +627,7 @@ describe('projection updater', () => {
     await updater.rebuildFromEvents([runCompleted]);
 
     let projection = await store.readIssueState('atolis-hq/wake', 20);
-    expect(projection?.wake.stage).toBe('blocked');
+    expect(projection?.wake.stage).toBe('implement');
 
     const wakeQuestionComment = createEventEnvelope({
       eventId: 'evt-comment-wake',
@@ -661,7 +662,7 @@ describe('projection updater', () => {
     await updater.rebuildFromEvents([wakeQuestionComment]);
 
     projection = await store.readIssueState('atolis-hq/wake', 20);
-    expect(projection?.wake.stage).toBe('blocked');
+    expect(projection?.wake.stage).toBe('implement');
 
     const ownerReply = createEventEnvelope({
       eventId: 'evt-comment-owner',
@@ -695,9 +696,9 @@ describe('projection updater', () => {
     await updater.rebuildFromEvents([ownerReply]);
 
     projection = await store.readIssueState('atolis-hq/wake', 20);
-    expect(projection?.wake.stage).toBe('blocked');
+    expect(projection?.wake.stage).toBe('implement');
     expect(projection?.latestComment?.id).toBe('c-owner');
-    expect(projection?.wake.stageHistory).toHaveLength(1);
+    expect(projection?.wake.stageHistory).toHaveLength(0);
   });
 
   it('does not route an implement-stage block when a human replies', async () => {
@@ -725,7 +726,7 @@ describe('projection updater', () => {
           number: 21,
           title: 'Example',
           body: 'Body',
-          labels: [],
+          labels: [stageLabelForStage('implement')],
           assignees: [],
           isPullRequest: false,
           state: 'open',
@@ -756,7 +757,7 @@ describe('projection updater', () => {
       trigger: 'immediate',
       payload: {
         action: 'implement',
-        nextStage: 'blocked',
+        sentinel: 'BLOCKED',
         runId: 'run-21-1',
       },
     });
@@ -765,7 +766,7 @@ describe('projection updater', () => {
     await updater.rebuildFromEvents([runCompleted]);
 
     let projection = await store.readIssueState('atolis-hq/wake', 21);
-    expect(projection?.wake.stage).toBe('blocked');
+    expect(projection?.wake.stage).toBe('implement');
 
     const ownerReply = createEventEnvelope({
       eventId: 'evt-comment-owner',
@@ -799,7 +800,7 @@ describe('projection updater', () => {
     await updater.rebuildFromEvents([ownerReply]);
 
     projection = await store.readIssueState('atolis-hq/wake', 21);
-    expect(projection?.wake.stage).toBe('blocked');
+    expect(projection?.wake.stage).toBe('implement');
     expect(projection?.context.lastRunAction).toBe('implement');
   });
 
@@ -828,7 +829,7 @@ describe('projection updater', () => {
           number: 22,
           title: 'Example',
           body: 'Body',
-          labels: [],
+          labels: [stageLabelForStage('refine')],
           assignees: [],
           isPullRequest: false,
           state: 'open',
@@ -859,7 +860,7 @@ describe('projection updater', () => {
       trigger: 'immediate',
       payload: {
         action: 'refine',
-        nextStage: 'blocked',
+        sentinel: 'BLOCKED',
         runId: 'run-22-1',
       },
     });
@@ -868,7 +869,7 @@ describe('projection updater', () => {
     await updater.rebuildFromEvents([runCompleted]);
 
     let projection = await store.readIssueState('atolis-hq/wake', 22);
-    expect(projection?.wake.stage).toBe('blocked');
+    expect(projection?.wake.stage).toBe('refine');
 
     const botComment = createEventEnvelope({
       eventId: 'evt-comment-bot',
@@ -903,7 +904,7 @@ describe('projection updater', () => {
     await updater.rebuildFromEvents([botComment]);
 
     projection = await store.readIssueState('atolis-hq/wake', 22);
-    expect(projection?.wake.stage).toBe('blocked');
+    expect(projection?.wake.stage).toBe('refine');
   });
 
   it('records a human reply on a failed refine issue without changing stage', async () => {
@@ -1135,7 +1136,6 @@ describe('projection updater', () => {
       payload: {
         action: 'implement',
         sentinel: 'BLOCKED',
-        nextStage: 'blocked',
         runId: 'run-50-1',
         sessionId: 'sess-xyz',
         sessionCli: 'Claude',
@@ -1145,7 +1145,7 @@ describe('projection updater', () => {
     await updater.rebuildFromEvents([blockedRun]);
 
     const projection = await store.readIssueState('atolis-hq/wake', 50);
-    expect(projection?.wake.stage).toBe('blocked');
+    expect(projection?.wake.stage).toBe('implement');
     expect(projection?.wake.sessionId).toBe('sess-xyz');
     expect(projection?.wake.sessionCli).toBe('Claude');
   });
@@ -1213,7 +1213,6 @@ describe('projection updater', () => {
         payload: {
           action: 'implement',
           sentinel: 'BLOCKED',
-          nextStage: 'blocked',
           runId: 'run-52-1',
           sessionId: 'sess-impl',
           sessionCli: 'Claude',

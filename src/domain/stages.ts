@@ -3,7 +3,6 @@ export const stageValues = [
   'refine',
   'implement',
   'done',
-  'blocked',
 ] as const;
 
 export const doneRunnerSentinel = 'DONE';

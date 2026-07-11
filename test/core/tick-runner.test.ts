@@ -1243,7 +1243,7 @@ describe('tick runner', () => {
         isBotAuthored: false,
       },
       wake: {
-        stage: 'blocked',
+        stage: 'implement',
         lastRunId: 'run-122-1',
         syncedAt: '2026-07-05T12:05:00.000Z',
         stageHistory: [],
@@ -1688,7 +1688,7 @@ describe('tick runner', () => {
       },
       comments: [],
       wake: {
-        stage: 'blocked', syncedAt: '2026-07-05T12:00:00.000Z',
+        stage: 'implement', syncedAt: '2026-07-05T12:00:00.000Z',
         stageHistory: [], recentEventIds: [], expectedEcho: { commentIds: [], labels: [] },
       },
       context: {},

@@ -7,7 +7,7 @@ export function createLifecycleService() {
       sentinel: RunnerSentinel,
     ): Stage | null {
       if (sentinel === 'BLOCKED') {
-        return 'blocked';
+        return null;
       }
 
       if (sentinel === 'FAILED') {

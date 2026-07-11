@@ -185,6 +185,11 @@ function normalizeLegacyStage(stage: unknown, failedAction?: unknown): unknown {
   if (stage === 'refined') {
     return 'implement';
   }
+  if (stage === 'blocked') {
+    return agentActionValues.includes(failedAction as (typeof agentActionValues)[number])
+      ? failedAction
+      : 'implement';
+  }
   if (stage === 'awaiting-approval') {
     return agentActionValues.includes(failedAction as (typeof agentActionValues)[number])
       ? failedAction
@@ -249,16 +254,17 @@ export const issueStateRecordSchema = z.preprocess((input) => {
   const context = record.context !== null && typeof record.context === 'object'
     ? record.context as Record<string, unknown>
     : {};
+  const normalizedContext = {
+    ...context,
+    ...(context.lastRunAction === undefined && context.blockedFromAction !== undefined
+      ? { lastRunAction: context.blockedFromAction }
+      : {}),
+  };
 
   return {
     comments: [],
     ...record,
-    context: {
-      ...context,
-      ...(context.lastRunAction === undefined && context.blockedFromAction !== undefined
-        ? { lastRunAction: context.blockedFromAction }
-        : {}),
-    },
+    context: normalizedContext,
     workItemKey,
     origin,
     wake:
@@ -269,7 +275,7 @@ export const issueStateRecordSchema = z.preprocess((input) => {
             ...(record.wake as Record<string, unknown>),
             stage: normalizeLegacyStage(
               (record.wake as Record<string, unknown>).stage,
-              context.lastRunAction,
+              normalizedContext.lastRunAction,
             ),
             stageHistory: Array.isArray((record.wake as Record<string, unknown>).stageHistory)
               ? ((record.wake as Record<string, unknown>).stageHistory as unknown[]).map((entry) =>
@@ -278,7 +284,7 @@ export const issueStateRecordSchema = z.preprocess((input) => {
                         ...(entry as Record<string, unknown>),
                         stage: normalizeLegacyStage(
                           (entry as Record<string, unknown>).stage,
-                          context.lastRunAction,
+                          normalizedContext.lastRunAction,
                         ),
                       }
                     : entry,

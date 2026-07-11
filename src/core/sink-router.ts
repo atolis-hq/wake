@@ -28,7 +28,7 @@ function intentKind(event: EventEnvelope): string | null {
 
 function isTerminalStageIntent(event: EventEnvelope): boolean {
   const stage = event.derivedHints?.stage;
-  return stage === 'done' || stage === 'blocked';
+  return stage === 'done' || event.payload.sentinel === 'BLOCKED';
 }
 
 function subscriptionMatches(event: EventEnvelope, subscription: string): boolean {

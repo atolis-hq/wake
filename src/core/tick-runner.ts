@@ -128,6 +128,7 @@ export function createTickRunner(deps: {
         origin: input.projection.origin ?? 'github',
         body: input.parsedRunnerResult.body,
         action: input.action,
+        sentinel: input.sentinel,
         runId: input.runId,
         ...(input.runnerResult.session_id === undefined
           ? {}
@@ -175,6 +176,9 @@ export function createTickRunner(deps: {
   }): string {
     if (input.sentinel === 'AWAITING_APPROVAL') {
       return 'wake:status.awaiting-approval';
+    }
+    if (input.sentinel === 'BLOCKED') {
+      return 'wake:status.blocked';
     }
     if (input.sentinel === 'FAILED') {
       return 'wake:status.failed';
