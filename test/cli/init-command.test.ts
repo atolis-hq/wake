@@ -54,7 +54,7 @@ describe('init command', () => {
 
     expect(config).toContain('"sandbox"');
     expect(config).toContain(`"repoRoot": "${repoRoot.replaceAll('\\', '\\\\')}"`);
-    expect(dockerfile).toContain('ENTRYPOINT ["sleep", "infinity"]');
+    expect(dockerfile).toContain('ENTRYPOINT ["/app/docker/entrypoint.sh"]');
     expect(setupScript).toContain('Wake sandbox setup starting.');
     expect(setupScript).toContain('gh auth login');
     expect(setupScript).toContain('prompt_yes_no "Configure GitHub auth?"');

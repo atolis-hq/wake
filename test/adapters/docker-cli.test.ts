@@ -236,6 +236,84 @@ describe('docker cli adapter', () => {
     ]);
   });
 
+  it('publishes the UI port and forwards its env vars only when ui.enabled', async () => {
+    const calls: string[][] = [];
+    const docker = createDockerCli({
+      inspectContainer: async () => null,
+      inspectImage: async () => true,
+      run: async (args) => {
+        calls.push(args);
+      },
+    });
+
+    await docker.up({
+      image: 'wake-sandbox',
+      containerName: 'wake-sandbox',
+      wakeRoot: '/host/wake-home',
+      containerHomeRoot: '/host/wake-home/container-home',
+      containerMountPath: '/wake',
+      containerHomeMountPath: '/home/wake',
+      ui: { enabled: true, port: 4317, token: 'secret-token' },
+    });
+
+    expect(calls).toEqual([
+      [
+        'run',
+        '-d',
+        '--name',
+        'wake-sandbox',
+        '-v',
+        '/host/wake-home:/wake',
+        '-v',
+        '/host/wake-home/container-home:/home/wake',
+        '-p',
+        '127.0.0.1:4317:4317',
+        '-e',
+        'WAKE_UI_ENABLED=true',
+        '-e',
+        'WAKE_UI_PORT=4317',
+        '-e',
+        'WAKE_UI_TOKEN=secret-token',
+        'wake-sandbox',
+      ],
+    ]);
+  });
+
+  it('omits the UI port mapping when ui.enabled is false', async () => {
+    const calls: string[][] = [];
+    const docker = createDockerCli({
+      inspectContainer: async () => null,
+      inspectImage: async () => true,
+      run: async (args) => {
+        calls.push(args);
+      },
+    });
+
+    await docker.up({
+      image: 'wake-sandbox',
+      containerName: 'wake-sandbox',
+      wakeRoot: '/host/wake-home',
+      containerHomeRoot: '/host/wake-home/container-home',
+      containerMountPath: '/wake',
+      containerHomeMountPath: '/home/wake',
+      ui: { enabled: false, port: 4317 },
+    });
+
+    expect(calls).toEqual([
+      [
+        'run',
+        '-d',
+        '--name',
+        'wake-sandbox',
+        '-v',
+        '/host/wake-home:/wake',
+        '-v',
+        '/host/wake-home/container-home:/home/wake',
+        'wake-sandbox',
+      ],
+    ]);
+  });
+
   it('stops the sandbox container', async () => {
     const calls: string[][] = [];
     const docker = createDockerCli({

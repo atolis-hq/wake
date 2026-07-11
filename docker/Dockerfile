@@ -19,7 +19,7 @@ COPY package*.json ./
 RUN npm ci
 
 COPY . .
-RUN npm run build
+RUN npm run build && chmod +x docker/entrypoint.sh
 
 RUN useradd --create-home --shell /bin/bash wake \
   && mkdir -p /home/wake/.codex-runtime \
@@ -38,4 +38,6 @@ RUN curl https://cursor.com/install -fsS | bash \
      > ~/.local/bin/cursor \
   && chmod +x ~/.local/bin/cursor
 
-ENTRYPOINT ["sleep", "infinity"]
+EXPOSE 4317
+
+ENTRYPOINT ["/app/docker/entrypoint.sh"]

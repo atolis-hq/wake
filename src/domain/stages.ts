@@ -22,7 +22,13 @@ export const runnerSentinelValues = [
 
 export const agentActionValues = ['refine', 'implement'] as const;
 
+export const terminalStageValues = ['done', 'failed'] as const;
+
 type Stage = (typeof stageValues)[number];
+
+export function isTerminalStage(stage: Stage): boolean {
+  return (terminalStageValues as readonly string[]).includes(stage);
+}
 
 export const wakeStageLabelPrefix = 'wake:stage.';
 

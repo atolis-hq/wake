@@ -78,6 +78,10 @@ All configuration uses `schemaVersion: 1`.
     "queue": { "action": "refine", "tier": "light" },
     "implement": { "action": "implement", "tier": "standard" }
   },
+  "ui": {
+    "enabled": false,
+    "port": 4317
+  },
   "sources": {
     "github": {
       "enabled": false,
@@ -289,6 +293,39 @@ Fallback tier used when a stage does not set `tier` or `runner`.
 
 Per-stage routing. A stage normally routes to a `tier`; `runner` pins a concrete
 named runner and takes precedence over `tier`.
+
+### ui
+
+Optional settings for the read-only control-plane UI (`wake ui` / `npm run
+ui`). All fields are optional and default to a loopback-only, tokenless
+server:
+
+```json
+"ui": {
+  "enabled": false,
+  "port": 4317,
+  "token": null
+}
+```
+
+- `enabled` — when `true`, `wake sandbox up`/`wake sandbox update` publish
+  `ui.port` from the container to `127.0.0.1:<ui.port>` on the host and pass
+  `WAKE_UI_ENABLED`/`WAKE_UI_PORT`/`WAKE_UI_TOKEN` into the container; the
+  container's `docker/entrypoint.sh` then starts `wake ui --host 0.0.0.0`
+  automatically alongside the resident loop. `false` (the default) leaves the
+  container exactly as before — no published port, no auto-started process.
+- `port` — port `wake ui` binds (`--port` overrides this), and the port
+  published from the container when `enabled` is true. Default `4317`.
+- `token` — shared-secret bearer token required for non-loopback binds (also
+  settable via `--token` or the `WAKE_UI_TOKEN` env var). Binding to a
+  non-loopback `--host` without a token is refused; the container entrypoint
+  applies the same rule, so `enabled: true` without a token logs a warning and
+  skips starting the UI rather than exposing it unauthenticated.
+
+See [docs/specs/control-plane-ui.md](specs/control-plane-ui.md) for the full
+design; the current implementation covers the v0 read-only surface (status
+bar, condition board, item detail, activity feed, config view, health view)
+with no mutation endpoints yet.
 
 ### sources.github
 

@@ -41,6 +41,14 @@ function readFlag(name: string, args: string[]): string | undefined {
   return args[index + 1];
 }
 
+function uiDockerInput(config: WakeConfig): { enabled: boolean; port: number; token?: string | undefined } {
+  return {
+    enabled: config.ui.enabled,
+    port: config.ui.port,
+    token: config.ui.token,
+  };
+}
+
 export async function runSandboxCommand(input: {
   args: string[];
   config: WakeConfig;
@@ -82,6 +90,7 @@ export async function runSandboxCommand(input: {
       containerMountPath: input.config.sandbox.containerMountPath,
       containerHomeMountPath: input.config.sandbox.containerHomeMountPath,
       extraMounts: input.config.sandbox.extraMounts,
+      ui: uiDockerInput(input.config),
     });
     return;
   }
@@ -100,6 +109,7 @@ export async function runSandboxCommand(input: {
       containerMountPath: input.config.sandbox.containerMountPath,
       containerHomeMountPath: input.config.sandbox.containerHomeMountPath,
       extraMounts: input.config.sandbox.extraMounts,
+      ui: uiDockerInput(input.config),
     });
     return;
   }

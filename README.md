@@ -27,6 +27,7 @@ Useful commands:
 
 - `npm run tick` runs one control-plane tick using fake ticketing-system data from `.wake/fixtures/issues.json` when present
 - `npm run start` runs the resident loop
+- `npm run ui` runs the read-only control-plane UI (status bar, condition board, item detail, activity feed, config, health) alongside the loop — binds `127.0.0.1:4317` by default; see [docs/specs/control-plane-ui.md](docs/specs/control-plane-ui.md) for the full design and `--port` / `--host` / `--token` flags
 - `npm run smoke` runs a smoke test against the configured real runner
 - `npm run smoke:claude` runs a minimal Claude Haiku smoke test
 - `npm run smoke:codex` runs a minimal Codex smoke test with the lower-cost `gpt-5.4-mini` model
@@ -142,6 +143,20 @@ container in place:
 `wake sandbox update` is the normal upgrade path. It preserves the existing
 `wake-home` mount, including `/home/wake` auth state such as GitHub, Claude,
 and SSH credentials.
+
+#### Auto-starting the control-plane UI
+
+Set `ui.enabled: true` and a `ui.token` in `wake-home/config.json` (or export
+`WAKE_UI_TOKEN` before `sandbox up`/`update`) before bringing the container
+up, and the container's entrypoint starts `wake ui` automatically, bound to
+`0.0.0.0` inside the container. `sandbox up`/`update` publish that port to the
+host as `127.0.0.1:<ui.port>` (default `4317`), so the UI is reachable at
+`http://127.0.0.1:4317` once the container is running — no manual `sandbox
+exec` needed. Requests must include `Authorization: Bearer <token>` (or a
+`wake_ui_token` cookie). If `ui.enabled` is true but no token is configured,
+the entrypoint logs a warning and skips starting the UI rather than binding an
+unauthenticated port. See [docs/configuration.md](docs/configuration.md#ui)
+for the full config shape.
 
 ### 4. Run first-time auth setup inside the container
 

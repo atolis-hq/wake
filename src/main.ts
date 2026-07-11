@@ -16,6 +16,7 @@ import { createGitHubClient } from './adapters/github/github-client.js';
 import { createGitHubIssuesWorkSource } from './adapters/github/github-issues-work-source.js';
 import { runInitCommand } from './cli/init-command.js';
 import { runSandboxCommand } from './cli/sandbox-command.js';
+import { runUiCommand } from './cli/ui-command.js';
 import { loadWakeConfig } from './config/load-config.js';
 import { createControlPlane } from './core/control-plane.js';
 import { createTickRunner } from './core/tick-runner.js';
@@ -275,6 +276,33 @@ function resolveSmokEntry(
   return null;
 }
 
+async function runUi(args: string[]) {
+  const wakeRoot = resolve(
+    readFlagBeforeCommandTerminator('--wake-root', args) ?? resolve(process.cwd(), '.wake'),
+  );
+  const stateStore = createStateStore({ wakeRoot });
+  await stateStore.ensureWakeRoot();
+  const config = await loadWakeConfig({
+    wakeRoot,
+    configFile: stateStore.paths.configFile,
+  });
+
+  const server = await runUiCommand({
+    args,
+    stateStore,
+    config,
+    readFlag: readFlagBeforeCommandTerminator,
+  });
+
+  const stop = () => {
+    void server.close().then(() => process.exit(0));
+  };
+  process.on('SIGINT', stop);
+  process.on('SIGTERM', stop);
+
+  await new Promise(() => {});
+}
+
 async function runSmoke(args: string[]) {
   const runtime = await buildRuntime(args);
   const explicitKind =
@@ -301,6 +329,7 @@ export async function dispatchMainCommand(input: {
   runTick: (args: string[]) => Promise<unknown>;
   runStart: (args: string[]) => Promise<unknown>;
   runSmoke: (args: string[]) => Promise<unknown>;
+  runUi: (args: string[]) => Promise<unknown>;
 }) {
   const command = input.args[0] ?? 'tick';
   if (command === 'tick') {
@@ -325,6 +354,11 @@ export async function dispatchMainCommand(input: {
 
   if (command === 'smoke') {
     await input.runSmoke(input.args.slice(1));
+    return;
+  }
+
+  if (command === 'ui') {
+    await input.runUi(input.args.slice(1));
     return;
   }
 
@@ -369,6 +403,7 @@ async function main() {
     runTick,
     runStart,
     runSmoke,
+    runUi,
   });
 }
 

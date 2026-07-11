@@ -27,6 +27,9 @@ describe('main command routing', () => {
       runSmoke: async () => {
         calls.push('smoke');
       },
+      runUi: async () => {
+        calls.push('ui');
+      },
     });
 
     await dispatchMainCommand({
@@ -46,6 +49,9 @@ describe('main command routing', () => {
       runSmoke: async () => {
         calls.push('smoke-again');
       },
+      runUi: async () => {
+        calls.push('ui-again');
+      },
     });
 
     expect(calls).toEqual(['init:/tmp/wake-home', 'sandbox:build']);
@@ -61,6 +67,7 @@ describe('main command routing', () => {
       runTick: async () => {},
       runStart: async () => {},
       runSmoke,
+      runUi: async () => {},
     });
 
     await dispatchMainCommand({
@@ -70,6 +77,7 @@ describe('main command routing', () => {
       runTick: async () => {},
       runStart: async () => {},
       runSmoke,
+      runUi: async () => {},
     });
 
     expect(runSmoke).toHaveBeenNthCalledWith(1, ['claude', '--remote-control']);
@@ -86,9 +94,26 @@ describe('main command routing', () => {
       runTick: async () => {},
       runStart: async () => {},
       runSmoke,
+      runUi: async () => {},
     });
 
     expect(runSmoke).toHaveBeenCalledWith(['--wake-root', '/tmp/wake-home']);
+  });
+
+  it('routes the ui command through the ui path', async () => {
+    const runUi = vi.fn(async () => {});
+
+    await dispatchMainCommand({
+      args: ['ui', '--port', '4400'],
+      runInit: async () => {},
+      runSandbox: async () => {},
+      runTick: async () => {},
+      runStart: async () => {},
+      runSmoke: async () => {},
+      runUi,
+    });
+
+    expect(runUi).toHaveBeenCalledWith(['--port', '4400']);
   });
 
   it('ignores inner exec payload flags after command terminator', () => {
