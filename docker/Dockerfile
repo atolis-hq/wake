@@ -1,6 +1,9 @@
+# syntax=docker/dockerfile:1
 FROM node:20-bookworm-slim
 
-RUN apt-get update \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+  apt-get update \
   && apt-get install -y --no-install-recommends git openssh-client ca-certificates curl gnupg \
   && mkdir -p /etc/apt/keyrings \
   && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
@@ -9,17 +12,10 @@ RUN apt-get update \
   && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
     > /etc/apt/sources.list.d/github-cli.list \
   && apt-get update \
-  && apt-get install -y --no-install-recommends gh \
-  && rm -rf /var/lib/apt/lists/*
+  && apt-get install -y --no-install-recommends gh
 
-RUN npm install -g @anthropic-ai/claude-code @openai/codex
-
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci
-
-COPY . .
-RUN npm run build && chmod +x docker/entrypoint.sh
+RUN --mount=type=cache,target=/root/.npm \
+  npm install -g @anthropic-ai/claude-code @openai/codex
 
 RUN useradd --create-home --shell /bin/bash wake \
   && mkdir -p /home/wake/.codex-runtime \
@@ -30,13 +26,21 @@ RUN useradd --create-home --shell /bin/bash wake \
 ENV CODEX_HOME=/home/wake/.codex-runtime
 ENV PATH=/home/wake/.local/bin:$PATH
 
+RUN curl https://cursor.com/install -fsS | HOME=/home/wake bash \
+  && printf '#!/bin/bash\n[ "$1" = "agent" ] && shift\nexec ~/.local/bin/agent "$@"\n' \
+     > /home/wake/.local/bin/cursor \
+  && chmod +x /home/wake/.local/bin/cursor \
+  && chown -R wake:wake /home/wake/.local
+
+WORKDIR /app
+COPY package*.json ./
+RUN --mount=type=cache,target=/root/.npm npm ci
+
+COPY . .
+RUN npm run build && chmod +x docker/entrypoint.sh
+
 USER wake
 WORKDIR /home/wake
-
-RUN curl https://cursor.com/install -fsS | bash \
-  && printf '#!/bin/bash\n[ "$1" = "agent" ] && shift\nexec ~/.local/bin/agent "$@"\n' \
-     > ~/.local/bin/cursor \
-  && chmod +x ~/.local/bin/cursor
 
 EXPOSE 4317
 
