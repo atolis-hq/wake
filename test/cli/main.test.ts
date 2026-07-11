@@ -57,6 +57,34 @@ describe('main command routing', () => {
     expect(calls).toEqual(['init:/tmp/wake-home', 'sandbox:build']);
   });
 
+  it('routes stop to the sandbox stop handler', async () => {
+    const calls: string[] = [];
+
+    await dispatchMainCommand({
+      args: ['stop', '--timeout-ms', '5000'],
+      runInit: async () => {
+        calls.push('init');
+      },
+      runSandbox: async (args) => {
+        calls.push(`sandbox:${args.join(' ')}`);
+      },
+      runTick: async () => {
+        calls.push('tick');
+      },
+      runStart: async () => {
+        calls.push('start');
+      },
+      runSmoke: async () => {
+        calls.push('smoke');
+      },
+      runUi: async () => {
+        calls.push('ui');
+      },
+    });
+
+    expect(calls).toEqual(['sandbox:stop --timeout-ms 5000']);
+  });
+
   it('routes explicit smoke targets through the smoke path', async () => {
     const runSmoke = vi.fn(async () => {});
 

@@ -329,6 +329,58 @@ describe('docker cli adapter', () => {
     expect(calls).toEqual([['stop', 'wake-sandbox']]);
   });
 
+  it('stops the sandbox container with a grace period when a timeout is provided', async () => {
+    const calls: string[][] = [];
+    const docker = createDockerCli({
+      inspectContainer: async () => null,
+      inspectImage: async () => false,
+      run: async (args) => {
+        calls.push(args);
+      },
+    });
+
+    await docker.down('wake-sandbox', { timeoutSeconds: 3600 });
+
+    expect(calls).toEqual([['stop', '--time', '3600', 'wake-sandbox']]);
+  });
+
+  it('passes the stop timeout through update when replacing a running container', async () => {
+    const calls: string[][] = [];
+    const docker = createDockerCli({
+      inspectContainer: async () => 'running',
+      inspectImage: async () => true,
+      run: async (args) => {
+        calls.push(args);
+      },
+    });
+
+    await docker.update({
+      image: 'wake-sandbox',
+      containerName: 'wake-sandbox',
+      wakeRoot: '/host/wake-home',
+      containerHomeRoot: '/host/wake-home/container-home',
+      containerMountPath: '/wake',
+      containerHomeMountPath: '/home/wake',
+      stopTimeoutSeconds: 3600,
+    });
+
+    expect(calls).toEqual([
+      ['stop', '--time', '3600', 'wake-sandbox'],
+      ['rm', 'wake-sandbox'],
+      [
+        'run',
+        '-d',
+        '--name',
+        'wake-sandbox',
+        '-v',
+        '/host/wake-home:/wake',
+        '-v',
+        '/host/wake-home/container-home:/home/wake',
+        'wake-sandbox',
+      ],
+    ]);
+  });
+
   it('executes interactive commands with a tty inside the container', async () => {
     const calls: string[][] = [];
     const docker = createDockerCli({

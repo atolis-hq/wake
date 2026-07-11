@@ -215,6 +215,72 @@ history and labels converge without manual cleanup.
 ./wake.sh sandbox down
 ```
 
+`sandbox down` stops the container immediately. If an agent run may be in
+progress, use the safe stop instead — it waits for any active run to finish
+before stopping, so an in-flight `implement`/`refine` session isn't killed
+mid-way:
+
+```bash
+./wake.sh stop
+```
+
+(equivalent to `./wake.sh sandbox stop`). It polls `.wake/runs/*.json` for any
+`status: "running"` record and blocks until none remain, then stops the
+container with a 60s grace period. Flags: `--timeout-ms` (give up waiting
+after this long instead of blocking forever) and `--poll-interval-ms`.
+
+### Self-update
+
+`wake sandbox self-update` (or `npm run self-update`) checks for a newer
+version tag on `origin`, and if found: waits for any active run to finish
+(same mechanism as `wake stop`), checks out the tag, builds a versioned image
+(`<sandbox.imageRepository>:<tag>`), replaces the running container, and
+health-checks it with a real `tick` against a throwaway `--wake-root`. On
+failure it rolls back to the last-known-good image/tag, records the failed
+tag in `<wake-root>/self-update-ledger.json` so it's never silently retried,
+and files a GitHub issue with the failure detail via `gh issue create`.
+
+Flags:
+- `--force` — proceed even if the tag matches what's already applied, or is
+  recorded as a known-bad tag.
+- `--tag <tag>` — target an explicit tag instead of discovering the latest
+  one (useful for testing/rehearsal).
+- `--loop` — don't exit after one check; repeat forever, sleeping
+  `--loop-interval-ms` (default 5 minutes) between checks. Each iteration is
+  independent: a failed iteration (a transient git/docker error, for example)
+  is logged and the loop continues rather than exiting, and a healthy no-op
+  check (already on the latest tag) is cheap — it's just `git fetch --tags`
+  plus a tag comparison, no rebuild.
+
+Requires a clean git working tree in `config.dev.repoRoot` and `gh`
+authenticated with permission to create issues on the repo.
+
+**`self-update` (with or without `--loop`) runs on the host, not inside the
+sandbox container.** It has to be able to stop and replace the very container
+it might be updating, and the host `docker`/`git` CLIs aren't reachable from
+inside the container. `wake stop`/`sandbox` are already routed to the host by
+the generated launchers (`wake.sh`/`wake.ps1`), so this falls out of the
+existing routing — you just need something on the host keeping the process
+alive.
+
+To run it continuously with no external scheduler, start the loop as a
+long-lived host process:
+
+```bash
+npm run self-update:loop
+# or, equivalently:
+./wake.sh sandbox self-update --loop
+```
+
+Leave it running in a background terminal, a `tmux`/`screen` session, or a
+dedicated terminal tab. It polls indefinitely until the process is stopped
+(Ctrl+C, or killed) — there's no separate scheduler or cron job to configure.
+If you want it to survive terminal closes or host reboots, wrap it with
+whatever process supervisor you'd use for any other long-running host script
+(e.g. `pm2 start npm -- run self-update:loop`, an `nssm`/Windows service, or a
+systemd unit) — that's optional and outside Wake's own scope, since Wake only
+owns what happens inside the loop, not how the host keeps a process alive.
+
 ## GitHub Issues Polling
 
 Wake can poll configured GitHub repositories when `sources.github.enabled` is

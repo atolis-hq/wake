@@ -177,6 +177,7 @@ describe('run and event schemas', () => {
   it('exports an explicit sandbox config helper type', () => {
     expectTypeOf<WakeSandboxConfig>().toEqualTypeOf<{
       image: string;
+      imageRepository: string;
       containerName: string;
       containerMountPath: string;
       containerHomeMountPath: string;
