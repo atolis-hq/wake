@@ -220,7 +220,11 @@ describe('sandbox command', () => {
 
   it('dispatches self-update with git, ledger, and issue-reporter deps', async () => {
     const docker = createDockerMock();
-    const config = { ...createDefaultWakeConfig(wakeRoot), dev: { repoRoot } };
+    const config = {
+      ...createDefaultWakeConfig(wakeRoot),
+      dev: { repoRoot },
+      ui: { enabled: true, port: 4400, token: 'secret-token' },
+    };
     const checkoutTag = vi.fn(async () => {});
     const createIssue = vi.fn(async () => {});
     const writeLedger = vi.fn(async () => {});
@@ -253,6 +257,12 @@ describe('sandbox command', () => {
     expect(checkoutTag).toHaveBeenCalledWith('v0.0.80');
     expect(docker.build).toHaveBeenCalledWith(
       expect.objectContaining({ image: 'wake-sandbox:v0.0.80' }),
+    );
+    expect(docker.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        image: 'wake-sandbox:v0.0.80',
+        ui: { enabled: true, port: 4400, token: 'secret-token' },
+      }),
     );
     expect(writeLedger).toHaveBeenCalledWith(
       expect.objectContaining({ lastAppliedTag: 'v0.0.80' }),

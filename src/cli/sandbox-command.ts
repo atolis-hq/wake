@@ -182,6 +182,7 @@ export async function runSandboxCommand(input: {
       containerMountPath: input.config.sandbox.containerMountPath,
       containerHomeMountPath: input.config.sandbox.containerHomeMountPath,
       dockerfilePath: resolve(repoRoot, 'docker', 'Dockerfile'),
+      ui: uiDockerInput(input.config),
     });
     return;
   }

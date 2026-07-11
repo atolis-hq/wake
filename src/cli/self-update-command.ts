@@ -36,6 +36,7 @@ export async function runSelfUpdateCommand(input: {
       containerHomeRoot: string;
       containerMountPath: string;
       containerHomeMountPath: string;
+      ui?: { enabled: boolean; port: number; token?: string | undefined } | undefined;
     }) => Promise<void>;
     exec: (containerName: string, command: string[]) => Promise<void>;
   };
@@ -54,6 +55,7 @@ export async function runSelfUpdateCommand(input: {
   containerMountPath: string;
   containerHomeMountPath: string;
   dockerfilePath: string;
+  ui?: { enabled: boolean; port: number; token?: string | undefined } | undefined;
 }): Promise<void> {
   const force = hasFlag('--force', input.args);
   const explicitTag = readFlag('--tag', input.args);
@@ -88,6 +90,7 @@ export async function runSelfUpdateCommand(input: {
     containerHomeRoot: input.containerHomeRoot,
     containerMountPath: input.containerMountPath,
     containerHomeMountPath: input.containerHomeMountPath,
+    ui: input.ui,
   };
 
   try {
