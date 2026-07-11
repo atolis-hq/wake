@@ -1467,4 +1467,117 @@ describe('tick runner', () => {
       event.payload.error === 'EPERM: workspace is locked'
     )).toBe(true);
   });
+
+  it('does not overwrite a completed run record when outbound delivery fails (S1)', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const config = createDefaultWakeConfig(root);
+    config.sources.github.policy.requiredLabels = ['wake:queue'];
+
+    const tickRunner = createTickRunner({
+      clock: { now: () => new Date('2026-07-05T12:00:00.000Z') },
+      config,
+      stateStore: store,
+      workSource: createFakeTicketingSystem({
+        tickets: [{
+          repo: 'atolis-hq/wake', number: 40, title: 'Delivery failure', body: '',
+          labels: ['wake:queue'], comments: [],
+        }],
+      }),
+      outboundSink: {
+        async deliverIntent() {
+          throw new Error('GitHub 503');
+        },
+      },
+      runner: {
+        async run() {
+          return { result: 'Refined\nDONE', model: 'test-model', cli: 'test-cli', session_id: 'session-40' };
+        },
+      },
+      workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+    });
+
+    const result = await tickRunner.runTick();
+
+    expect(result.status).toBe('processed');
+    expect((result as { sentinel?: string }).sentinel).toBe('DONE');
+
+    const runRecords = await store.listRunRecords();
+    expect(runRecords).toHaveLength(1);
+    expect(runRecords[0]?.status).toBe('completed');
+    expect(runRecords[0]?.sentinel).toBe('DONE');
+
+    const events = await store.listEventEnvelopes();
+    const completedEvents = events.filter((e) => e.sourceEventType === 'wake.run.completed');
+    expect(completedEvents).toHaveLength(1);
+    expect(completedEvents[0]?.payload.sentinel).toBe('DONE');
+
+    const deliveryFailures = events.filter((e) => e.sourceEventType === 'wake.publish.failed');
+    expect(deliveryFailures.length).toBeGreaterThan(0);
+    expect(deliveryFailures[0]?.payload.error).toBe('GitHub 503');
+  });
+
+  it('retries an unconfirmed outbound intent from a prior tick and dead-letters after max attempts (E5)', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const config = createDefaultWakeConfig(root);
+    let deliverAttempts = 0;
+
+    await store.writeIssueState({
+      schemaVersion: 1,
+      workItemKey: 'atolis-hq/wake#41',
+      issue: {
+        repo: 'atolis-hq/wake', number: 41, title: 'Outbox retry', body: '',
+        labels: [], assignees: [], isPullRequest: false, state: 'open',
+        url: 'https://example.test/issues/41',
+        createdAt: '2026-07-05T12:00:00.000Z', updatedAt: '2026-07-05T12:00:00.000Z',
+      },
+      comments: [],
+      wake: {
+        stage: 'blocked', syncedAt: '2026-07-05T12:00:00.000Z',
+        stageHistory: [], recentEventIds: [], expectedEcho: { commentIds: [], labels: [] },
+      },
+      context: {},
+    });
+
+    const orphanedIntent = {
+      schemaVersion: 1 as const,
+      eventId: 'run-41-publish-intent',
+      workItemKey: 'atolis-hq/wake#41',
+      streamScope: 'work-item' as const,
+      direction: 'outbound' as const,
+      sourceSystem: 'wake',
+      sourceEventType: 'wake.publish.intent.requested',
+      sourceRefs: { repo: 'atolis-hq/wake', issueNumber: 41, runId: 'run-41' },
+      occurredAt: '2026-07-05T11:00:00.000Z',
+      ingestedAt: '2026-07-05T11:00:00.000Z',
+      trigger: 'context-only' as const,
+      payload: { kind: 'question', body: 'What should happen here?', action: 'refine', runId: 'run-41' },
+    };
+    await store.appendEventEnvelope(orphanedIntent);
+
+    const tickRunner = createTickRunner({
+      clock: { now: () => new Date('2026-07-05T12:00:00.000Z') },
+      config,
+      stateStore: store,
+      workSource: { async pollEvents() { return []; } },
+      outboundSink: {
+        async deliverIntent() {
+          deliverAttempts += 1;
+          throw new Error('still down');
+        },
+      },
+      runner: { async run() { throw new Error('should not run'); } },
+      workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+    });
+
+    await tickRunner.runTick();
+    await tickRunner.runTick();
+    await tickRunner.runTick();
+    await tickRunner.runTick();
+
+    expect(deliverAttempts).toBe(3);
+
+    const events = await store.listEventEnvelopes();
+    const failures = events.filter((e) => e.sourceEventType === 'wake.publish.failed');
+    expect(failures).toHaveLength(3);
+  });
 });

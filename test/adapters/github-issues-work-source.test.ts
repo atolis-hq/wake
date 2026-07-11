@@ -414,6 +414,43 @@ describe('github issues work source', () => {
     expect(deliveryEvents[0]?.sourceRefs.commentId).toBe('202');
   });
 
+  it('rejects delivery instead of silently dropping an intent with missing sourceRefs (E5)', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const config = createDefaultWakeConfig(root);
+    config.sources.github.enabled = true;
+    config.sources.github.repos = ['atolis-hq/wake'];
+
+    const workSource = createGitHubIssuesWorkSource({
+      client: {
+        listIssues: async () => [],
+        listComments: async () => [],
+        createComment: vi.fn(),
+        setLabels: vi.fn(),
+      },
+      stateStore: store,
+      config,
+      now: () => new Date('2026-07-05T12:10:00.000Z'),
+    });
+
+    await expect(
+      workSource.deliverIntent({
+        event: createEventEnvelope({
+          eventId: 'intent-missing-refs',
+          workItemKey: 'atolis-hq/wake#12',
+          streamScope: 'work-item',
+          direction: 'outbound',
+          sourceSystem: 'wake',
+          sourceEventType: 'wake.publish.intent.requested',
+          sourceRefs: {},
+          occurredAt: '2026-07-05T12:00:00.000Z',
+          ingestedAt: '2026-07-05T12:00:00.000Z',
+          trigger: 'context-only',
+          payload: { kind: 'status-update', body: 'Handled' },
+        }),
+      }),
+    ).rejects.toThrow(/missing sourceRefs/);
+  });
+
   it('formats outbound comments with attribution, model, and a resume command', async () => {
     const createComment = vi.fn();
     const store = createStateStore({ wakeRoot: root });

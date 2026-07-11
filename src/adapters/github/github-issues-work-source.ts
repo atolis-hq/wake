@@ -374,12 +374,14 @@ export function createGitHubIssuesWorkSource(deps: {
       const issueNumber = input.event.sourceRefs.issueNumber;
 
       if (repo === undefined || issueNumber === undefined) {
-        return [];
+        throw new Error(
+          `cannot deliver intent ${input.event.eventId}: missing sourceRefs.repo/issueNumber`,
+        );
       }
 
       const [owner, repoName] = repo.split('/');
       if (owner === undefined || repoName === undefined) {
-        return [];
+        throw new Error(`cannot deliver intent ${input.event.eventId}: malformed repo "${repo}"`);
       }
 
       const publishedAt = deps.now().toISOString();
