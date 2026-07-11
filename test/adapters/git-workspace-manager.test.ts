@@ -1,5 +1,5 @@
 import { execFile as nodeExecFile } from 'node:child_process';
-import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -191,6 +191,33 @@ describe('git workspace manager', () => {
     const readme = await readFile(join(third.workspacePath, 'README.md'), 'utf8');
     expect(readme).toContain('# seed');
     await expect(access(join(third.workspacePath, 'local-only.txt'))).rejects.toThrow();
+  }, 20_000);
+
+  it('clears a stale index.lock on the canonical clone before re-preparing', async () => {
+    const wakeRoot = join(root, '.wake');
+    const manager = createGitWorkspaceManager({
+      wakeRoot,
+      remoteUrlForRepo: () => remotePath,
+    });
+
+    const { workspacePath: firstWorkspace } = await manager.prepareWorkspace({
+      repo: 'acme/example',
+      issueNumber: 1,
+    });
+    const repoPath = join(wakeRoot, 'repos', 'acme__example');
+
+    // Simulate a process that was killed mid-git-operation on the canonical clone.
+    await mkdir(join(repoPath, '.git'), { recursive: true });
+    await writeFile(join(repoPath, '.git', 'index.lock'), '', 'utf8');
+
+    const { workspacePath: secondWorkspace } = await manager.prepareWorkspace({
+      repo: 'acme/example',
+      issueNumber: 2,
+    });
+
+    expect(secondWorkspace).not.toBe(firstWorkspace);
+    const readme = await readFile(join(secondWorkspace, 'README.md'), 'utf8');
+    expect(readme).toContain('# seed');
   }, 20_000);
 
   it('uses a non-hardlink local clone when creating a missing workspace', () => {

@@ -1,6 +1,6 @@
 import { execFile as nodeExecFile } from 'node:child_process';
 import { access, mkdir, rm } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 
 import { createWakePaths } from '../../lib/paths.js';
@@ -75,6 +75,13 @@ export function createGitWorkspaceManager(options: {
     const remoteUrl = remoteUrlForRepo(repo);
 
     if (await pathExists(repoPath)) {
+      // The canonical clone is only ever touched by one tick at a time, so an
+      // index.lock found here can't be a live concurrent writer - it's a leftover
+      // from a process that was killed mid-git-operation (e.g. a container
+      // restart). Left in place it wedges every future tick on this repo with
+      // "Unable to create index.lock: File exists", so clear it defensively
+      // before running any git command against the clone.
+      await rm(join(repoPath, '.git', 'index.lock'), { force: true });
       await git(['fetch', 'origin'], repoPath);
       const defaultBranch = await detectDefaultBranch(repoPath);
       await git(['checkout', defaultBranch], repoPath);
