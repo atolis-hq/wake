@@ -1,26 +1,16 @@
 # Wake
 
-Wake is an autonomous agent control plane for software development.
+Wake is an autonomous agent control plane for software development. It watches the work channels your team already uses (GitHub issues today), decides each item's next lifecycle step with deterministic rules, and launches local coding-agent CLIs (Claude Code, Codex, Cursor) only when agentic execution is actually needed. There are no new tools, dashboards, or rituals to adopt: work is refined, implemented in an isolated git workspace, and gated for approval directly on the ticket — Wake asks questions, requests sign-off, and reports progress as issue comments and labels, and a human can pick up the exact agent session locally at any point.
 
-The core idea is to coordinate local agent execution through a control plane that can:
+Key callouts:
 
-- take work from external channels such as issue trackers
-- decide the next lifecycle step for that work
-- choose the appropriate CLI, model, and execution mode using deterministic rules
-- run deterministic control-plane tasks without spending tokens when possible
-- launch or resume local agent sessions when agentic execution is needed
-- let a human jump directly into a local session when asynchronous coordination is not enough
+- **Wake decides, the agent runs.** Choosing the CLI, model, and stage transition is a zero-token control-plane decision; agents only do the work and report an outcome (`DONE` / `BLOCKED` / `FAILED`).
+- **Event-sourced and restart-safe.** The durable record is an append-only event log; all other state is a rebuildable projection, and every tick is a pure function of durable state — the loop can crash and resume without losing its place.
+- **Shares state honestly.** Ticket labels are half the state: humans can edit them at any time, and Wake reconciles rather than assuming it owns the tracker.
+- **Pluggable by construction.** Work sources, agent runners, and workspace strategies sit behind small interfaces, with permanent fake adapters that keep the whole loop testable at zero token cost.
+- **Local and inspectable.** Runs on your machine or in a Docker sandbox; config, events, and state live in a plain-file Wake home directory you can read with `cat`.
 
-Wake is intended to start simple. The first justified version is a small loop that can pick work, decide what to do next, execute it locally, persist state, and resume later. More advanced routing, lifecycle control, and self-improvement should only be added once that simple version proves useful.
-
-## Concepts
-
-- `Wake` is the control plane and decision-maker.
-- `Eddy` is the thin local execution identity or wrapper that Wake launches and manages.
-
-## Direction
-
-Wake is intended to integrate with existing local agent CLIs such as Claude Code, Codex, and Cursor rather than replace them. It should run work locally, likely in a reusable isolated development environment, and use external workflow systems as the default coordination surface.
+Two names to know: `Wake` is the control plane and decision-maker; `Eddy` is the execution identity Wake launches and manages.
 
 Current runner capability differences are documented in
 [docs/runner-comparison.md](docs/runner-comparison.md).
