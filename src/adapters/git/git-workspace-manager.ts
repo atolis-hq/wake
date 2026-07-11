@@ -82,26 +82,14 @@ async function tryDetectMergeConflict(workspacePath: string): Promise<boolean> {
       return false;
     }
 
-    // Probe for conflicts without committing — always abort so the workspace
-    // stays clean regardless of outcome. The agent merges if a conflict is found.
-    let hasConflict = false;
+    // Probe for conflicts without touching the index or worktree. A real merge
+    // would need committer identity even with --no-commit on some Git versions.
     try {
-      await git(['merge', '--no-commit', '--no-ff', `origin/${defaultBranch}`], workspacePath);
+      await git(['merge-tree', '--write-tree', 'HEAD', `origin/${defaultBranch}`], workspacePath);
+      return false;
     } catch {
-      hasConflict = true;
+      return true;
     }
-
-    try {
-      await git(['merge', '--abort'], workspacePath);
-    } catch {
-      try {
-        await git(['reset', '--hard', 'HEAD'], workspacePath);
-      } catch {
-        // ignore
-      }
-    }
-
-    return hasConflict;
   } catch {
     // Fetch or branch detection failed — leave workspace as-is, no conflict reported
     return false;
