@@ -6,6 +6,18 @@ export interface ApprovalResolution {
   pendingAction: AgentAction;
 }
 
+// Commands are matched as a token at the start of a (trimmed) line, not as a
+// substring anywhere in the body — so "I have *not* /approved this yet" or a
+// quoted reply containing /approved does not approve the gate.
+const approvedCommandPattern = /^\/approved\b/i;
+const changesCommandPattern = /^\/changes\b/i;
+
+function matchesCommand(body: string, pattern: RegExp): boolean {
+  return body
+    .split(/\r?\n/)
+    .some((line) => pattern.test(line.trim()));
+}
+
 function latestUnhandledHumanComment(issue: IssueStateRecord): IssueStateRecord['comments'][number] | undefined {
   const context = issue.context as Record<string, unknown>;
   const handledCommentId =
@@ -173,7 +185,17 @@ export function createPolicyEngine() {
         return null;
       }
 
-      const approved = latestHumanComment.body.includes('/approved');
+      const approved = matchesCommand(latestHumanComment.body, approvedCommandPattern);
+      const changesRequested = matchesCommand(latestHumanComment.body, changesCommandPattern);
+
+      // Neither an explicit /approved nor an explicit /changes: treat this as
+      // conversation, not a decision. Stay idle rather than re-running the
+      // pending action off the back of a clarifying question (S2). The comment
+      // stays unhandled, so it's reconsidered on the next tick and by a human
+      // who follows up with an explicit command.
+      if (!approved && !changesRequested) {
+        return null;
+      }
 
       return { approved, pendingAction };
     },

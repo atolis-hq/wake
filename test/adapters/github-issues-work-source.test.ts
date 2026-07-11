@@ -65,6 +65,53 @@ describe('github issues work source', () => {
     });
   });
 
+  it('marks a Wake-authored comment as bot-authored via the hidden marker, even when the account type is User (#145)', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const config = createDefaultWakeConfig(root);
+    config.sources.github.enabled = true;
+    config.sources.github.repos = ['atolis-hq/wake'];
+
+    const workSource = createGitHubIssuesWorkSource({
+      client: {
+        listIssues: async () => [
+          {
+            number: 12,
+            title: 'Example',
+            body: 'Body',
+            state: 'open',
+            html_url: 'https://github.com/atolis-hq/wake/issues/12',
+            created_at: '2026-07-05T12:00:00.000Z',
+            updated_at: '2026-07-05T12:00:00.000Z',
+            labels: [{ name: 'wake:queue' }],
+            assignees: [],
+          },
+        ],
+        listComments: async () => [
+          {
+            id: 102,
+            body: '<!-- wake:agent -->\n\n**Eddy** _(Wake)_\n\nWorking on it.',
+            // Wake's own GitHub account is a normal 'User', not a 'Bot' — the
+            // marker is the only signal available if expectedEcho missed this
+            // comment (e.g. Wake crashed before recording delivery).
+            user: { login: 'atolis-hq-agent', type: 'User' },
+            created_at: '2026-07-05T12:05:00.000Z',
+            updated_at: '2026-07-05T12:05:00.000Z',
+            html_url: 'https://github.com/atolis-hq/wake/issues/12#issuecomment-102',
+          },
+        ],
+        createComment: vi.fn(),
+        setLabels: vi.fn(),
+      },
+      stateStore: store,
+      config,
+      now: () => new Date('2026-07-05T12:10:00.000Z'),
+    });
+
+    const events = await workSource.pollEvents();
+    const commentEvent = events.find((event) => event.sourceEventType === 'ticket.comment.created');
+    expect(commentEvent?.derivedHints?.botAuthoredComment).toBe(true);
+  });
+
   it('marks normalized ticket upserts as pull requests when the GitHub payload is a PR', async () => {
     const store = createStateStore({ wakeRoot: root });
     const config = createDefaultWakeConfig(root);
@@ -412,6 +459,14 @@ describe('github issues work source', () => {
     expect(createComment).toHaveBeenCalledOnce();
     expect(deliveryEvents[0]?.sourceEventType).toBe('ticket.reply.published');
     expect(deliveryEvents[0]?.sourceRefs.commentId).toBe('202');
+
+    const [, , , postedBody] = createComment.mock.calls[0] as unknown as [
+      string,
+      string,
+      number,
+      string,
+    ];
+    expect(postedBody).toContain('<!-- wake:agent -->');
   });
 
   it('rejects delivery instead of silently dropping an intent with missing sourceRefs (E5)', async () => {

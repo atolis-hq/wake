@@ -701,7 +701,7 @@ describe('tick runner', () => {
     expect(runnerCallCount).toBe(0);
   });
 
-  it('invokes the agent when awaiting-approval but comment is not /approved', async () => {
+  it('invokes the agent when awaiting-approval and comment is an explicit /changes command (S2)', async () => {
     const store = createStateStore({ wakeRoot: root });
     let runnerCallCount = 0;
 
@@ -724,7 +724,7 @@ describe('tick runner', () => {
       comments: [
         {
           id: 'c-feedback',
-          body: 'Please revise section 3.',
+          body: '/changes Please revise section 3.',
           author: { login: 'owner' },
           createdAt: '2026-07-05T12:05:00.000Z',
           updatedAt: '2026-07-05T12:05:00.000Z',
@@ -733,7 +733,7 @@ describe('tick runner', () => {
       ],
       latestComment: {
         id: 'c-feedback',
-        body: 'Please revise section 3.',
+        body: '/changes Please revise section 3.',
         author: { login: 'owner' },
         createdAt: '2026-07-05T12:05:00.000Z',
         updatedAt: '2026-07-05T12:05:00.000Z',
@@ -772,6 +772,152 @@ describe('tick runner', () => {
 
     expect(result.status).toBe('processed');
     expect(runnerCallCount).toBe(1);
+  });
+
+  it('stays idle when awaiting-approval and the comment is conversation, not an /approved or /changes command (S2)', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    let runnerCallCount = 0;
+
+    await store.writeIssueState({
+      schemaVersion: 1,
+      workItemKey: 'atolis-hq/wake#34',
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 34,
+        title: 'Approval Conversation Test',
+        body: 'Body',
+        labels: ['wake:queue'],
+        assignees: [],
+        isPullRequest: false,
+        state: 'open',
+        url: 'https://example.test/issues/34',
+        createdAt: '2026-07-05T12:00:00.000Z',
+        updatedAt: '2026-07-05T12:05:00.000Z',
+      },
+      comments: [
+        {
+          id: 'c-question',
+          body: 'What does this change do exactly?',
+          author: { login: 'owner' },
+          createdAt: '2026-07-05T12:05:00.000Z',
+          updatedAt: '2026-07-05T12:05:00.000Z',
+          isBotAuthored: false,
+        },
+      ],
+      latestComment: {
+        id: 'c-question',
+        body: 'What does this change do exactly?',
+        author: { login: 'owner' },
+        createdAt: '2026-07-05T12:05:00.000Z',
+        updatedAt: '2026-07-05T12:05:00.000Z',
+        isBotAuthored: false,
+      },
+      wake: {
+        stage: 'awaiting-approval',
+        stageHistory: [],
+        recentEventIds: [],
+        syncedAt: '2026-07-05T12:00:00.000Z',
+          expectedEcho: { commentIds: [], labels: [] },
+      },
+      context: {
+        pendingApprovalAction: 'refine',
+      },
+    });
+
+    const config = createDefaultWakeConfig(root);
+    config.sources.github.policy.requiredLabels = ['wake:queue'];
+
+    const tickRunner = createTickRunner({
+      clock: { now: () => new Date('2026-07-05T12:10:00.000Z') },
+      config,
+      stateStore: store,
+      workSource: { async pollEvents() { return []; } },
+      runner: {
+        async run() {
+          runnerCallCount += 1;
+          return { result: 'Revised plan.\nDONE', model: 'test-model', cli: 'test-cli' };
+        },
+      },
+      workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+    });
+
+    const result = await tickRunner.runTick();
+
+    expect(result.status).toBe('idle');
+    expect(runnerCallCount).toBe(0);
+  });
+
+  it('does not approve on a comment that merely mentions /approved as a substring (S2)', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    let runnerCallCount = 0;
+
+    await store.writeIssueState({
+      schemaVersion: 1,
+      workItemKey: 'atolis-hq/wake#35',
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 35,
+        title: 'Approval Substring Test',
+        body: 'Body',
+        labels: ['wake:queue'],
+        assignees: [],
+        isPullRequest: false,
+        state: 'open',
+        url: 'https://example.test/issues/35',
+        createdAt: '2026-07-05T12:00:00.000Z',
+        updatedAt: '2026-07-05T12:05:00.000Z',
+      },
+      comments: [
+        {
+          id: 'c-not-approved',
+          body: 'I have *not* /approved this yet, please wait.',
+          author: { login: 'owner' },
+          createdAt: '2026-07-05T12:05:00.000Z',
+          updatedAt: '2026-07-05T12:05:00.000Z',
+          isBotAuthored: false,
+        },
+      ],
+      latestComment: {
+        id: 'c-not-approved',
+        body: 'I have *not* /approved this yet, please wait.',
+        author: { login: 'owner' },
+        createdAt: '2026-07-05T12:05:00.000Z',
+        updatedAt: '2026-07-05T12:05:00.000Z',
+        isBotAuthored: false,
+      },
+      wake: {
+        stage: 'awaiting-approval',
+        stageHistory: [],
+        recentEventIds: [],
+        syncedAt: '2026-07-05T12:00:00.000Z',
+          expectedEcho: { commentIds: [], labels: [] },
+      },
+      context: {
+        pendingApprovalAction: 'implement',
+      },
+    });
+
+    const config = createDefaultWakeConfig(root);
+    config.sources.github.policy.requiredLabels = ['wake:queue'];
+
+    const tickRunner = createTickRunner({
+      clock: { now: () => new Date('2026-07-05T12:10:00.000Z') },
+      config,
+      stateStore: store,
+      workSource: { async pollEvents() { return []; } },
+      runner: {
+        async run() {
+          runnerCallCount += 1;
+          return { result: 'DONE', model: 'test-model', cli: 'test-cli' };
+        },
+      },
+      workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+    });
+
+    const result = await tickRunner.runTick();
+
+    expect(result.status).toBe('idle');
+    expect(runnerCallCount).toBe(0);
   });
 
   it('writes a failed run record, publishes failed labels, and posts a failure comment when workspace prep throws', async () => {

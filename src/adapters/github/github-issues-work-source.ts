@@ -6,6 +6,15 @@ import { buildResumeCommandForCli } from '../runner/runner-cli-adapter.js';
 const wakeStatusLabelPrefix = 'wake:status.';
 const pollOverlapMs = 60 * 60 * 1000;
 
+// Hidden marker appended to every comment Wake posts. `expectedEcho` normally
+// suppresses Wake's own comments from re-entering the projection, but if Wake
+// crashes after posting and before the reply-published event is processed,
+// expectedEcho is never updated — on restart the comment would otherwise be
+// polled back in as a new human comment. The marker is a second, independent
+// signal so bot-authored detection doesn't depend on account type or
+// expectedEcho bookkeeping surviving a crash (#145).
+const wakeCommentMarker = '<!-- wake:agent -->';
+
 type GitHubIssue = {
   number: number;
   title: string;
@@ -124,7 +133,11 @@ function normalizeTicketCommentEvent(input: {
     derivedHints: {
       // Third-party bots/integrations (CI, Dependabot, Renovate, etc.) must
       // not be able to unblock a blocked issue; only an actual human reply should.
-      botAuthoredComment: input.comment.user?.type === 'Bot',
+      // The marker check catches Wake's own comments even when expectedEcho
+      // missed them (crash-recovery gap) or the agent account type is 'User'.
+      botAuthoredComment:
+        input.comment.user?.type === 'Bot' ||
+        (input.comment.body ?? '').includes(wakeCommentMarker),
     },
   });
 }
@@ -217,10 +230,10 @@ function formatWakeComment(payload: Record<string, unknown>): string {
   ].filter((part): part is string => part !== undefined);
 
   const header = `**Eddy** _(Wake${details.length > 0 ? ` · ${details.join(' · ')}` : ''})_`;
-  const sections = [header, body];
+  const sections = [wakeCommentMarker, header, body];
 
   if (kind === 'approval-request') {
-    sections.push('_To approve this work, reply with `/approved`. To request changes, reply with your feedback._');
+    sections.push('_To approve this work, reply with `/approved`. To request changes, reply with `/changes` followed by your feedback._');
   }
 
   if (sessionId !== undefined) {
