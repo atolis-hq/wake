@@ -8,7 +8,11 @@ import type { RunnerEntry, WakeConfig } from '../domain/types.js';
 import { loadPromptTemplate } from '../adapters/runner/prompt-templates.js';
 
 const execFile = promisify(nodeExecFile);
-const runnerVersionProbeTimeoutMs = 5_000;
+// Some CLIs (observed with Cursor's `agent --version`) take 5-6s to exit
+// when stdout isn't a TTY, likely due to a background update/telemetry
+// check — keep this comfortably above that or the probe kills a CLI that
+// is actually fine.
+const runnerVersionProbeTimeoutMs = 20_000;
 
 type RealRunnerEntry = Exclude<RunnerEntry, { kind: 'fake' }>;
 
