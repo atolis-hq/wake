@@ -245,9 +245,41 @@ Flags:
   recorded as a known-bad tag.
 - `--tag <tag>` — target an explicit tag instead of discovering the latest
   one (useful for testing/rehearsal).
+- `--loop` — don't exit after one check; repeat forever, sleeping
+  `--loop-interval-ms` (default 5 minutes) between checks. Each iteration is
+  independent: a failed iteration (a transient git/docker error, for example)
+  is logged and the loop continues rather than exiting, and a healthy no-op
+  check (already on the latest tag) is cheap — it's just `git fetch --tags`
+  plus a tag comparison, no rebuild.
 
 Requires a clean git working tree in `config.dev.repoRoot` and `gh`
 authenticated with permission to create issues on the repo.
+
+**`self-update` (with or without `--loop`) runs on the host, not inside the
+sandbox container.** It has to be able to stop and replace the very container
+it might be updating, and the host `docker`/`git` CLIs aren't reachable from
+inside the container. `wake stop`/`sandbox` are already routed to the host by
+the generated launchers (`wake.sh`/`wake.ps1`), so this falls out of the
+existing routing — you just need something on the host keeping the process
+alive.
+
+To run it continuously with no external scheduler, start the loop as a
+long-lived host process:
+
+```bash
+npm run self-update:loop
+# or, equivalently:
+./wake.sh sandbox self-update --loop
+```
+
+Leave it running in a background terminal, a `tmux`/`screen` session, or a
+dedicated terminal tab. It polls indefinitely until the process is stopped
+(Ctrl+C, or killed) — there's no separate scheduler or cron job to configure.
+If you want it to survive terminal closes or host reboots, wrap it with
+whatever process supervisor you'd use for any other long-running host script
+(e.g. `pm2 start npm -- run self-update:loop`, an `nssm`/Windows service, or a
+systemd unit) — that's optional and outside Wake's own scope, since Wake only
+owns what happens inside the loop, not how the host keeps a process alive.
 
 ## GitHub Issues Polling
 

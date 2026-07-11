@@ -259,6 +259,50 @@ describe('sandbox command', () => {
     );
   });
 
+  it('dispatches self-update --loop through the continuous loop path', async () => {
+    const docker = createDockerMock();
+    const config = { ...createDefaultWakeConfig(wakeRoot), dev: { repoRoot } };
+    let sleepCalls = 0;
+    const sleep = vi.fn(async () => {
+      sleepCalls += 1;
+      if (sleepCalls >= 1) {
+        throw new Error('STOP_TEST_LOOP');
+      }
+    });
+
+    await expect(
+      runSandboxCommand({
+        args: ['self-update', '--tag', 'v0.0.80', '--force', '--loop', '--loop-interval-ms', '50'],
+        config,
+        wakeRoot,
+        containerHomeRoot,
+        docker,
+        stateStore: { listRunRecords: async () => [] } as never,
+        sleep,
+        logger: { info: () => {}, error: () => {} },
+        selfUpdate: {
+          git: {
+            latestTag: vi.fn(async () => 'v0.0.79'),
+            isWorkingTreeClean: vi.fn(async () => true),
+            checkoutTag: vi.fn(async () => {}),
+          },
+          issueReporter: { createIssue: vi.fn(async () => {}) },
+          readLedger: vi.fn(async () => ({
+            lastAppliedTag: 'v0.0.79',
+            lastKnownGoodTag: 'v0.0.79',
+            badTags: [],
+          })),
+          writeLedger: vi.fn(async () => {}),
+        },
+      }),
+    ).rejects.toThrow('STOP_TEST_LOOP');
+
+    expect(docker.build).toHaveBeenCalledWith(
+      expect.objectContaining({ image: 'wake-sandbox:v0.0.80' }),
+    );
+    expect(sleep).toHaveBeenCalledWith(50);
+  });
+
   it('dispatches setup to the configured container name', async () => {
     const docker = createDockerMock();
 

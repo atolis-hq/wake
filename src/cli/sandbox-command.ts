@@ -6,7 +6,7 @@ import type { SelfUpdateLedger } from '../adapters/fs/self-update-ledger.js';
 import { createRunnerCliAdapter } from '../adapters/runner/runner-cli-adapter.js';
 import type { RunnerEntry, RunRecord } from '../domain/types.js';
 import { runSandboxResumeCommand } from './sandbox-resume.js';
-import { runSelfUpdateCommand } from './self-update-command.js';
+import { runSelfUpdateCommand, runSelfUpdateLoop } from './self-update-command.js';
 import { runStopCommand } from './stop-command.js';
 import {
   buildSandboxLoggedCommand,
@@ -158,8 +158,11 @@ export async function runSandboxCommand(input: {
       throw new Error('Sandbox self-update requires git/issueReporter/ledger dependencies');
     }
 
-    await runSelfUpdateCommand({
-      args: input.args.slice(1),
+    const selfUpdateArgs = input.args.slice(1);
+    const runSelfUpdate = selfUpdateArgs.includes('--loop') ? runSelfUpdateLoop : runSelfUpdateCommand;
+
+    await runSelfUpdate({
+      args: selfUpdateArgs,
       repoRoot,
       imageRepository: input.config.sandbox.imageRepository,
       containerName: input.config.sandbox.containerName,

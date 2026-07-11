@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { runSelfUpdateCommand } from '../../src/cli/self-update-command.js';
+import { runSelfUpdateCommand, runSelfUpdateLoop } from '../../src/cli/self-update-command.js';
 import type { SelfUpdateLedger } from '../../src/adapters/fs/self-update-ledger.js';
 
 function baseDeps(overrides: Record<string, unknown> = {}) {
@@ -201,5 +201,75 @@ describe('runSelfUpdateCommand', () => {
     expect(docker.build).toHaveBeenCalledWith(
       expect.objectContaining({ image: 'wake-sandbox:v0.0.81' }),
     );
+  });
+});
+
+describe('runSelfUpdateLoop', () => {
+  it('repeats the check on the configured interval', async () => {
+    let calls = 0;
+    const sleep = vi.fn(async () => {
+      calls += 1;
+      if (calls >= 2) {
+        throw new Error('STOP_TEST_LOOP');
+      }
+    });
+    const deps = baseDeps({
+      args: ['--loop-interval-ms', '1000'],
+      sleep,
+      git: {
+        latestTag: vi.fn(async () => 'v0.0.79'),
+        isWorkingTreeClean: vi.fn(async () => true),
+        checkoutTag: vi.fn(async () => {}),
+      },
+    });
+
+    await expect(runSelfUpdateLoop(deps as never)).rejects.toThrow('STOP_TEST_LOOP');
+
+    expect(sleep).toHaveBeenNthCalledWith(1, 1000);
+    expect(sleep).toHaveBeenNthCalledWith(2, 1000);
+  });
+
+  it('logs and continues when one iteration throws', async () => {
+    let calls = 0;
+    const sleep = vi.fn(async () => {
+      calls += 1;
+      if (calls >= 1) {
+        throw new Error('STOP_TEST_LOOP');
+      }
+    });
+    const errors: string[] = [];
+    const deps = baseDeps({
+      sleep,
+      logger: { info: () => {}, error: (message: string) => errors.push(message) },
+      git: {
+        latestTag: vi.fn(async () => {
+          throw new Error('git fetch failed');
+        }),
+        isWorkingTreeClean: vi.fn(async () => true),
+        checkoutTag: vi.fn(async () => {}),
+      },
+    });
+
+    await expect(runSelfUpdateLoop(deps as never)).rejects.toThrow('STOP_TEST_LOOP');
+
+    expect(errors.some((message) => message.includes('git fetch failed'))).toBe(true);
+  });
+
+  it('defaults to a 5 minute interval when none is given', async () => {
+    const sleep = vi.fn(async () => {
+      throw new Error('STOP_TEST_LOOP');
+    });
+    const deps = baseDeps({
+      sleep,
+      git: {
+        latestTag: vi.fn(async () => 'v0.0.79'),
+        isWorkingTreeClean: vi.fn(async () => true),
+        checkoutTag: vi.fn(async () => {}),
+      },
+    });
+
+    await expect(runSelfUpdateLoop(deps as never)).rejects.toThrow('STOP_TEST_LOOP');
+
+    expect(sleep).toHaveBeenCalledWith(5 * 60 * 1000);
   });
 });

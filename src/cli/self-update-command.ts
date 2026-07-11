@@ -13,6 +13,14 @@ function hasFlag(name: string, args: string[]): boolean {
   return args.includes(name);
 }
 
+function readNumberFlag(name: string, args: string[]): number | undefined {
+  const raw = readFlag(name, args);
+  const parsed = raw === undefined ? Number.NaN : Number(raw);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+const DEFAULT_LOOP_INTERVAL_MS = 5 * 60 * 1000;
+
 export async function runSelfUpdateCommand(input: {
   args: string[];
   repoRoot: string;
@@ -146,4 +154,29 @@ export async function runSelfUpdateCommand(input: {
     badTags: ledger.badTags,
   });
   input.logger.info(`[self-update] ${tag} is live and healthy`);
+}
+
+// Runs runSelfUpdateCommand forever, polling for a new tag every
+// --loop-interval-ms (default 5 minutes). One failed iteration (e.g. a
+// transient git/docker error) is logged and does not stop the loop — the
+// next iteration retries. Exits only if `sleep` itself rejects (e.g. the
+// process is being torn down), matching the resident-loop shape in
+// core/control-plane.ts.
+export async function runSelfUpdateLoop(
+  input: Parameters<typeof runSelfUpdateCommand>[0],
+): Promise<void> {
+  const loopIntervalMs = readNumberFlag('--loop-interval-ms', input.args) ?? DEFAULT_LOOP_INTERVAL_MS;
+
+  for (;;) {
+    try {
+      await runSelfUpdateCommand(input);
+    } catch (error) {
+      input.logger.error(
+        `[self-update] loop iteration failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+
+    input.logger.info(`[self-update] next check in ${loopIntervalMs}ms`);
+    await input.sleep(loopIntervalMs);
+  }
 }
