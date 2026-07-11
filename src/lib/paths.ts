@@ -21,7 +21,9 @@ export function createWakePaths(wakeRoot: string) {
     reposRoot: join(wakeRoot, 'repos'),
     repoRoot: (repo: string) => join(wakeRoot, 'repos', sanitizeRepo(repo)),
     sourceStateRoot: join(wakeRoot, 'sources'),
-    issueStateFile: (repo: string, issueNumber: number) =>
+    issueStateFile: (source: string, repo: string, issueNumber: number) =>
+      join(wakeRoot, 'state', sanitizePathKey(source), sanitizeRepo(repo), `${issueNumber}.json`),
+    legacyIssueStateFile: (repo: string, issueNumber: number) =>
       join(wakeRoot, 'state', sanitizeRepo(repo), `${issueNumber}.json`),
     sourceStateFile: (source: string, key: string) =>
       join(wakeRoot, 'sources', sanitizePathKey(source), `${sanitizePathKey(key)}.json`),

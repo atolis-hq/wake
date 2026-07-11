@@ -4,6 +4,8 @@ import type { EventEnvelope } from '../../domain/types.js';
 import { createEventEnvelope } from '../../lib/event-log.js';
 import { readJsonFile } from '../../lib/json-file.js';
 
+const fakeSource = 'fake-ticketing';
+
 export interface FakeTicketSeed {
   repo: string;
   number: number;
@@ -20,7 +22,7 @@ export interface FakeTicketSeed {
 }
 
 function workItemKeyForIssue(issue: { repo: string; number: number }): string {
-  return `${issue.repo}#${issue.number}`;
+  return `${fakeSource}:${issue.repo}#${issue.number}`;
 }
 
 function normalizeIssueEvents(issue: FakeTicketSeed, nowIso: string): EventEnvelope[] {

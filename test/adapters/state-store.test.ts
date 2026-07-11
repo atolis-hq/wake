@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -90,6 +90,21 @@ describe('state store', () => {
     expect(saved?.issue.number).toBe(7);
   });
 
+  it('falls back to the legacy non-namespaced issue state path on read', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    await mkdir(join(root, 'state', 'atolis-hq__wake'), { recursive: true });
+    await writeFile(
+      join(root, 'state', 'atolis-hq__wake', '7.json'),
+      JSON.stringify(issueState()),
+      'utf8',
+    );
+
+    const saved = await store.readIssueState('atolis-hq/wake', 7, 'github');
+
+    expect(saved?.workItemKey).toBe('github:atolis-hq/wake#7');
+    expect(saved?.issue.number).toBe(7);
+  });
+
   it('buckets event log files by ingestedAt', async () => {
     const store = createStateStore({ wakeRoot: root });
 
@@ -177,6 +192,7 @@ describe('state store', () => {
     const store = createStateStore({ wakeRoot: root });
 
     await store.writeIssueState(issueState({ number: 7 }));
+    await mkdir(join(root, 'state', 'atolis-hq__wake'), { recursive: true });
     await writeFile(
       join(root, 'state', 'atolis-hq__wake', '8.json'),
       JSON.stringify({

@@ -22,19 +22,36 @@ import { createWakePaths } from '../../lib/paths.js';
 
 function issueRefFromWorkItemKey(
   workItemKey: string,
-): { repo: string; issueNumber: number } | null {
-  const marker = workItemKey.lastIndexOf('#');
+): { source?: string; repo: string; issueNumber: number } | null {
+  const sourceMarker = workItemKey.indexOf(':');
+  const source =
+    sourceMarker === -1 ? undefined : workItemKey.slice(0, sourceMarker);
+  const unprefixedKey =
+    sourceMarker === -1 ? workItemKey : workItemKey.slice(sourceMarker + 1);
+  const marker = unprefixedKey.lastIndexOf('#');
   if (marker === -1) {
     return null;
   }
 
-  const repo = workItemKey.slice(0, marker);
-  const issueNumber = Number(workItemKey.slice(marker + 1));
+  const repo = unprefixedKey.slice(0, marker);
+  const issueNumber = Number(unprefixedKey.slice(marker + 1));
   if (repo.length === 0 || !Number.isInteger(issueNumber) || issueNumber <= 0) {
     return null;
   }
 
-  return { repo, issueNumber };
+  return source === undefined ? { repo, issueNumber } : { source, repo, issueNumber };
+}
+
+function namespacedWorkItemKey(workItemKey: string, source = 'github'): string {
+  return workItemKey.includes(':') ? workItemKey : `${source}:${workItemKey}`;
+}
+
+async function readIssueStateFile(file: string): Promise<IssueStateRecord | null> {
+  try {
+    return parseIssueStateRecord(await readJsonFile(file));
+  } catch {
+    return null;
+  }
 }
 
 export async function listRunRecords(wakeRoot: string): Promise<RunRecord[]> {
@@ -83,15 +100,51 @@ export function createStateStore({ wakeRoot }: { wakeRoot: string }) {
     },
     async writeIssueState(record: IssueStateRecord): Promise<IssueStateRecord> {
       const parsed = parseIssueStateRecord(record);
-      await writeJsonFile(paths.issueStateFile(parsed.issue.repo, parsed.issue.number), parsed);
+      await writeJsonFile(
+        paths.issueStateFile(parsed.origin ?? 'github', parsed.issue.repo, parsed.issue.number),
+        parsed,
+      );
       return parsed;
     },
-    async readIssueState(repo: string, issueNumber: number): Promise<IssueStateRecord | null> {
+    async readIssueState(
+      repo: string,
+      issueNumber: number,
+      source?: string,
+    ): Promise<IssueStateRecord | null> {
+      const sources = source === undefined ? ['github'] : [source];
+      for (const sourceName of sources) {
+        const record = await readIssueStateFile(
+          paths.issueStateFile(sourceName, repo, issueNumber),
+        );
+        if (record !== null) {
+          return record;
+        }
+      }
+
+      const legacy = await readIssueStateFile(paths.legacyIssueStateFile(repo, issueNumber));
+      if (legacy !== null) {
+        return legacy;
+      }
+
+      if (source !== undefined) {
+        return null;
+      }
+
       try {
-        return parseIssueStateRecord(await readJsonFile(paths.issueStateFile(repo, issueNumber)));
+        const stateRoot = join(wakeRoot, 'state');
+        const sourceDirs = await readdir(stateRoot);
+        for (const sourceDir of sourceDirs) {
+          const record = await readIssueStateFile(
+            paths.issueStateFile(sourceDir, repo, issueNumber),
+          );
+          if (record !== null) {
+            return record;
+          }
+        }
       } catch {
         return null;
       }
+      return null;
     },
     async writeRunRecord(record: RunRecord): Promise<RunRecord> {
       const parsed = parseRunRecord(record);
@@ -145,22 +198,36 @@ export function createStateStore({ wakeRoot }: { wakeRoot: string }) {
         const repoDirs = await readdir(stateRoot);
         const items: IssueStateRecord[] = [];
 
-        for (const repoDir of repoDirs) {
-          const issueFiles = await readdir(join(stateRoot, repoDir));
-          for (const issueFile of issueFiles) {
-            try {
-              items.push(
-                parseIssueStateRecord(
-                  await readJsonFile(join(stateRoot, repoDir, issueFile)),
-                ),
-              );
-            } catch {
+        for (const firstLevelDir of repoDirs) {
+          const firstLevelPath = join(stateRoot, firstLevelDir);
+          const childEntries = await readdir(firstLevelPath);
+          for (const childEntry of childEntries) {
+            if (childEntry.endsWith('.json')) {
+              const record = await readIssueStateFile(join(firstLevelPath, childEntry));
+              if (record !== null) {
+                items.push(record);
+              }
               continue;
+            }
+
+            const issueFiles = await readdir(join(firstLevelPath, childEntry));
+            for (const issueFile of issueFiles) {
+              const record = await readIssueStateFile(
+                join(firstLevelPath, childEntry, issueFile),
+              );
+              if (record !== null) {
+                items.push(record);
+              }
             }
           }
         }
 
-        return items.sort((left, right) =>
+        const byWorkItemKey = new Map<string, IssueStateRecord>();
+        for (const item of items) {
+          byWorkItemKey.set(item.workItemKey, item);
+        }
+
+        return [...byWorkItemKey.values()].sort((left, right) =>
           left.workItemKey.localeCompare(right.workItemKey),
         );
       } catch {
@@ -206,14 +273,19 @@ export function createStateStore({ wakeRoot }: { wakeRoot: string }) {
       if (issueRef === null) {
         return [];
       }
+      const canonicalWorkItemKey = namespacedWorkItemKey(workItemKey, issueRef.source);
 
-      const projection = await this.readIssueState(issueRef.repo, issueRef.issueNumber);
+      const projection = await this.readIssueState(
+        issueRef.repo,
+        issueRef.issueNumber,
+        issueRef.source,
+      );
       const recentEventIds = projection?.wake.recentEventIds.slice(-limit) ?? [];
       const envelopes: EventEnvelope[] = [];
 
       for (const eventId of recentEventIds) {
         const envelope = await this.readEventEnvelope(eventId);
-        if (envelope?.workItemKey === workItemKey) {
+        if (envelope?.workItemKey === canonicalWorkItemKey) {
           envelopes.push(envelope);
         }
       }

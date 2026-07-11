@@ -1613,7 +1613,7 @@ describe('tick runner', () => {
     expect(result.status).toBe('processed');
     expect(events.some((event) =>
       event.sourceEventType === 'wake.workspace.cleanup-failed' &&
-      event.workItemKey === 'atolis-hq/wake#202' &&
+      event.workItemKey === 'github:atolis-hq/wake#202' &&
       event.payload.error === 'EPERM: workspace is locked'
     )).toBe(true);
   });

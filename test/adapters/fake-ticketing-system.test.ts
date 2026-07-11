@@ -25,9 +25,9 @@ describe('fake ticketing system', () => {
     const issueEvent = events.find((event) => event.sourceEventType === 'fake.issue.upsert');
     const commentEvents = events.filter((event) => event.sourceEventType === 'fake.issue.comment.created');
 
-    expect(issueEvent?.workItemKey).toBe('atolis-hq/wake#3');
+    expect(issueEvent?.workItemKey).toBe('fake-ticketing:atolis-hq/wake#3');
     expect(commentEvents).toHaveLength(2);
-    expect(commentEvents[0]?.workItemKey).toBe('atolis-hq/wake#3');
+    expect(commentEvents[0]?.workItemKey).toBe('fake-ticketing:atolis-hq/wake#3');
     expect(commentEvents[1]?.derivedHints?.botAuthoredComment).toBe(false);
   });
 });

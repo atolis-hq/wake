@@ -237,7 +237,7 @@ describe('run and event schemas', () => {
       },
     });
 
-    expect(event.workItemKey).toBe('atolis-hq/wake#12');
+    expect(event.workItemKey).toBe('github:atolis-hq/wake#12');
     expect(event.streamScope).toBe('work-item');
   });
 

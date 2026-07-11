@@ -25,6 +25,7 @@ function createProjectionFromIssueEvent(event: EventEnvelope): IssueStateRecord 
   return parseIssueStateRecord({
     schemaVersion: 1,
     workItemKey: event.workItemKey,
+    origin: event.sourceSystem,
     issue,
     wake: {
       stage: stageFromLabels(labels) ?? 'queue',
@@ -34,6 +35,11 @@ function createProjectionFromIssueEvent(event: EventEnvelope): IssueStateRecord 
     },
     context: {},
   });
+}
+
+function sourceFromWorkItemKey(workItemKey: string): string | undefined {
+  const marker = workItemKey.indexOf(':');
+  return marker > 0 ? workItemKey.slice(0, marker) : undefined;
 }
 
 function applyEvent(
@@ -59,6 +65,7 @@ function applyEvent(
 
     return parseIssueStateRecord({
       ...current,
+      origin: current.origin,
       issue: next.issue,
       wake: {
         ...current.wake,
@@ -324,6 +331,7 @@ export function createProjectionUpdater(deps: {
             ? await deps.stateStore.readIssueState(
                 firstEvent.sourceRefs.repo,
                 firstEvent.sourceRefs.issueNumber,
+                sourceFromWorkItemKey(firstEvent.workItemKey),
               )
             : null;
 

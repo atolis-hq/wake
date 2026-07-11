@@ -125,6 +125,7 @@ export function createTickRunner(deps: {
             : input.sentinel === 'FAILED'
               ? 'failure'
               : 'status-update',
+        origin: input.projection.origin ?? 'github',
         body: input.parsedRunnerResult.body,
         action: input.action,
         runId: input.runId,
@@ -151,7 +152,7 @@ export function createTickRunner(deps: {
           : { workspacePath: input.workspacePath }),
       },
       derivedHints: {
-        stage: input.projection.wake.stage,
+        stage: input.sentinel === 'DONE' ? 'done' : input.projection.wake.stage,
       },
     });
   }
@@ -189,6 +190,7 @@ export function createTickRunner(deps: {
       payload: {
         statusLabel: input.statusLabel,
         stageLabel: input.stageLabel,
+        origin: input.projection.origin ?? 'github',
       },
     });
   }
