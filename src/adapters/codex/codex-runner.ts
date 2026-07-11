@@ -307,6 +307,7 @@ export function createCodexRunner(options: {
       config: WakeConfig;
       runId: string;
       workspacePath?: string;
+      mergeConflictDetected?: boolean;
     }): Promise<AgentRunResult> {
       const runMode = 'start';
       const toolCapabilityNote = buildCodexToolCapabilityNote({ action: input.action, mode: runMode });
@@ -315,6 +316,7 @@ export function createCodexRunner(options: {
         projection: input.projection,
         mode: runMode,
         config: input.config,
+        ...(input.mergeConflictDetected === true ? { mergeConflictDetected: true } : {}),
         ...(toolCapabilityNote !== undefined ? { contextOverrides: { toolCapabilityNote } } : {}),
       });
 

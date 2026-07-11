@@ -1784,7 +1784,7 @@ describe('tick runner', () => {
         },
       },
       workspaceManager: {
-        async prepareWorkspace() { return { workspacePath: 'unused' }; },
+        async prepareWorkspace() { return { workspacePath: 'unused', mergeConflictDetected: false }; },
         async prepareReadOnlyClone() {
           prepareCallCount += 1;
           if (prepareCallCount === 1) {

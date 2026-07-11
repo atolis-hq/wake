@@ -260,6 +260,7 @@ export function createClaudeRunner(options: {
       config: WakeConfig;
       runId: string;
       workspacePath?: string;
+      mergeConflictDetected?: boolean;
     }): Promise<AgentRunResult> {
       const sessionName = buildEddySessionName({
         sessionName: options.settings.sessionName,
@@ -282,6 +283,7 @@ export function createClaudeRunner(options: {
         projection: input.projection,
         mode: isResume ? 'resume' : 'start',
         config: input.config,
+        ...(input.mergeConflictDetected === true ? { mergeConflictDetected: true } : {}),
       });
 
       const model = resolveModel({

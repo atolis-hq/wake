@@ -63,6 +63,39 @@ export function buildWorkspaceCloneArgs(input: {
   ];
 }
 
+async function tryDetectMergeConflict(workspacePath: string): Promise<boolean> {
+  try {
+    const { stdout: status } = await git(['status', '--porcelain'], workspacePath);
+    if (status.length > 0) {
+      return false;
+    }
+
+    await git(['fetch', 'origin'], workspacePath);
+    const defaultBranch = await detectDefaultBranch(workspacePath);
+
+    const { stdout: count } = await git(
+      ['rev-list', '--count', `HEAD..origin/${defaultBranch}`],
+      workspacePath,
+    );
+
+    if (parseInt(count.trim(), 10) === 0) {
+      return false;
+    }
+
+    // Probe for conflicts without touching the index or worktree. A real merge
+    // would need committer identity even with --no-commit on some Git versions.
+    try {
+      await git(['merge-tree', '--write-tree', 'HEAD', `origin/${defaultBranch}`], workspacePath);
+      return false;
+    } catch {
+      return true;
+    }
+  } catch {
+    // Fetch or branch detection failed — leave workspace as-is, no conflict reported
+    return false;
+  }
+}
+
 export function createGitWorkspaceManager(options: {
   wakeRoot: string;
   remoteUrlForRepo?: (repo: string) => string;
@@ -103,10 +136,11 @@ export function createGitWorkspaceManager(options: {
     }: {
       repo: string;
       issueNumber: number;
-    }): Promise<{ workspacePath: string }> {
+    }): Promise<{ workspacePath: string; mergeConflictDetected: boolean }> {
       const workspacePath = paths.workspaceDir(repo, issueNumber);
       if (await pathExists(workspacePath)) {
-        return { workspacePath };
+        const mergeConflictDetected = await tryDetectMergeConflict(workspacePath);
+        return { workspacePath, mergeConflictDetected };
       }
 
       const { repoPath, defaultBranch } = await ensureCanonicalClone(repo);
@@ -126,7 +160,7 @@ export function createGitWorkspaceManager(options: {
       await git(['remote', 'set-url', 'origin', remoteUrl], workspacePath);
       await git(['checkout', '-B', branch], workspacePath);
 
-      return { workspacePath };
+      return { workspacePath, mergeConflictDetected: false };
     },
     async prepareReadOnlyClone({ repo }: { repo: string }): Promise<{ workspacePath: string }> {
       // Refine only reads the issue and, at most, the canonical clone -
