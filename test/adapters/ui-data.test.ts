@@ -1,0 +1,116 @@
+import { beforeEach, describe, expect, it } from 'vitest';
+import { mkdtemp } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+import { createStateStore } from '../../src/adapters/fs/state-store.js';
+import { createDefaultWakeConfig } from '../../src/config/defaults.js';
+import { buildBoard, buildStatus } from '../../src/adapters/http/ui-data.js';
+import type { IssueStateRecord, RunRecord } from '../../src/domain/types.js';
+
+function issueState(input: {
+  number: number;
+  stage: IssueStateRecord['wake']['stage'];
+  sessionId?: string;
+}): IssueStateRecord {
+  return {
+    schemaVersion: 1,
+    workItemKey: `atolis-hq/wake#${input.number}`,
+    issue: {
+      repo: 'atolis-hq/wake',
+      number: input.number,
+      title: 'Spec item',
+      body: 'Body',
+      labels: [],
+      assignees: [],
+      isPullRequest: false,
+      state: 'open',
+      url: `https://example.test/issues/${input.number}`,
+      createdAt: '2026-07-05T12:00:00.000Z',
+      updatedAt: '2026-07-05T12:00:00.000Z',
+    },
+    comments: [],
+    wake: {
+      stage: input.stage,
+      stageHistory: [{ stage: input.stage, changedAt: '2026-07-05T12:00:00.000Z', reason: 'test' }],
+      recentEventIds: [],
+      syncedAt: '2026-07-05T12:00:00.000Z',
+      expectedEcho: { commentIds: [], labels: [] },
+      ...(input.sessionId === undefined ? {} : { sessionId: input.sessionId }),
+    },
+    context: {},
+  };
+}
+
+function runRecord(input: {
+  runId: string;
+  issueNumber: number;
+  status: RunRecord['status'];
+  sentinel?: RunRecord['sentinel'];
+}): RunRecord {
+  return {
+    schemaVersion: 1,
+    runId: input.runId,
+    repo: 'atolis-hq/wake',
+    issueNumber: input.issueNumber,
+    action: 'implement',
+    status: input.status,
+    startedAt: '2026-07-05T12:00:00.000Z',
+    ...(input.sentinel === undefined ? {} : { sentinel: input.sentinel, finishedAt: '2026-07-05T12:05:00.000Z' }),
+  };
+}
+
+describe('ui-data', () => {
+  let root: string;
+
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), 'wake-ui-data-'));
+  });
+
+  it('derives board conditions from stage, routes, and run state', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const config = createDefaultWakeConfig(root);
+
+    await store.writeIssueState(issueState({ number: 1, stage: 'implement' }));
+    await store.writeIssueState(issueState({ number: 2, stage: 'blocked' }));
+    await store.writeIssueState(issueState({ number: 3, stage: 'done' }));
+    await store.writeIssueState(issueState({ number: 4, stage: 'queue' }));
+    await store.writeRunRecord(runRecord({ runId: 'run-1', issueNumber: 1, status: 'running' }));
+
+    const board = await buildBoard({ stateStore: store, config, now: new Date('2026-07-05T13:00:00.000Z') });
+    const byNumber = new Map(board.map((card) => [card.number, card]));
+
+    expect(byNumber.get(1)?.condition).toBe('active');
+    expect(byNumber.get(2)?.condition).toBe('needs-human');
+    expect(byNumber.get(3)?.condition).toBe('finished');
+    expect(byNumber.get(4)?.condition).toBe('ready');
+  });
+
+  it('flags a stage with no configured route as stalled', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const config = createDefaultWakeConfig(root);
+
+    await store.writeIssueState(issueState({ number: 9, stage: 'awaiting-approval' }));
+    // awaiting-approval is a needs-human sentinel stage; use a stage with no route to hit stalled.
+    await store.writeIssueState(
+      issueState({ number: 10, stage: 'refine' }),
+    );
+
+    const board = await buildBoard({ stateStore: store, config, now: new Date() });
+    const byNumber = new Map(board.map((card) => [card.number, card]));
+
+    expect(byNumber.get(9)?.condition).toBe('needs-human');
+    expect(byNumber.get(10)?.condition).toBe('stalled');
+  });
+
+  it('reports idle loop state when no lock is held and nothing is paused', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const config = createDefaultWakeConfig(root);
+
+    const status = await buildStatus({ stateStore: store, config, now: new Date() });
+
+    expect(status.loopState).toBe('idle');
+    expect(status.paused).toBe(false);
+    expect(status.counters.finished).toBe(0);
+  });
+});

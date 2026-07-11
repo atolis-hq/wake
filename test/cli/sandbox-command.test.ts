@@ -80,7 +80,28 @@ describe('sandbox command', () => {
       containerMountPath: '/wake',
       containerHomeMountPath: '/home/wake',
       extraMounts: [],
+      ui: { enabled: false, port: 4317, token: undefined },
     });
+  });
+
+  it('forwards ui.enabled, port, and token from config to docker up', async () => {
+    const docker = createDockerMock();
+    const config = createDefaultWakeConfig(wakeRoot);
+    config.ui = { enabled: true, port: 4400, token: 'secret-token' };
+
+    await runSandboxCommand({
+      args: ['up'],
+      config,
+      wakeRoot,
+      containerHomeRoot,
+      docker,
+    });
+
+    expect(docker.up).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ui: { enabled: true, port: 4400, token: 'secret-token' },
+      }),
+    );
   });
 
   it('creates parent directories in container-home for extra file mounts under /home/wake before up', async () => {
@@ -149,6 +170,7 @@ describe('sandbox command', () => {
       containerMountPath: '/wake',
       containerHomeMountPath: '/home/wake',
       extraMounts: [],
+      ui: { enabled: false, port: 4317, token: undefined },
     });
   });
 

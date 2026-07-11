@@ -298,6 +298,11 @@ export const wakeConfigSchema = z.object({
     queue: { action: 'refine', tier: 'light' },
     implement: { action: 'implement', tier: 'standard' },
   }),
+  ui: z.object({
+    enabled: z.boolean().default(false),
+    port: z.number().int().positive().default(4317),
+    token: z.string().optional(),
+  }).default({ enabled: false, port: 4317 }),
   sources: z.object({
     github: z.object({
       enabled: z.boolean().default(false),

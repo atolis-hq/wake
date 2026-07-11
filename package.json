@@ -9,6 +9,7 @@
     "test:watch": "vitest",
     "start": "tsx src/main.ts start",
     "tick": "tsx src/main.ts tick",
+    "ui": "tsx src/main.ts ui",
     "e2e:github-fake": "tsx scripts/e2e-github-fake.ts",
     "smoke": "tsx src/main.ts smoke",
     "smoke:claude": "tsx src/main.ts smoke claude",

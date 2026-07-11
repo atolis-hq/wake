@@ -6,6 +6,12 @@ export type DockerBuildInput = {
   contextDir: string;
 };
 
+export type DockerUiInput = {
+  enabled: boolean;
+  port: number;
+  token?: string | undefined;
+};
+
 export type DockerUpInput = {
   image: string;
   containerName: string;
@@ -18,6 +24,7 @@ export type DockerUpInput = {
     target: string;
     readOnly?: boolean | undefined;
   }>;
+  ui?: DockerUiInput;
 };
 
 export type DockerCli = ReturnType<typeof createDockerCli>;
@@ -36,6 +43,20 @@ function buildRunArgs(input: DockerUpInput): string[] {
       '-v',
       `${mount.source}:${mount.target}${mount.readOnly === true ? ':ro' : ''}`,
     ]),
+    // Auto-started by docker/entrypoint.sh; the UI binds 0.0.0.0 inside the
+    // container so this published port can reach it (127.0.0.1 inside the
+    // container would not be reachable via docker's port-forwarding NAT).
+    ...(input.ui?.enabled === true
+      ? [
+          '-p',
+          `127.0.0.1:${input.ui.port}:${input.ui.port}`,
+          '-e',
+          'WAKE_UI_ENABLED=true',
+          '-e',
+          `WAKE_UI_PORT=${input.ui.port}`,
+          ...(input.ui.token !== undefined ? ['-e', `WAKE_UI_TOKEN=${input.ui.token}`] : []),
+        ]
+      : []),
     input.image,
   ];
 }
