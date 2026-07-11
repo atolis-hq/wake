@@ -43,12 +43,12 @@ Every item here is production-observed or a confirmed trapdoor. All are S or S�
 
 ### Phase 1 — Protect human bandwidth and the approval gate
 
-| Order | Item | Why | Issue |
-|-------|------|-----|-------|
-| 1.1 | **E5** — outbox/delivery confirmation for outbound intents | A lost BLOCKED question stalls an issue invisibly; humans can't answer what they never saw | file new |
-| 1.2 | **S2 + [#143](https://github.com/atolis-hq/wake/issues/143) + [#145](https://github.com/atolis-hq/wake/issues/145)** — strict `/approved` parsing, control-plane-enforced approval, reliable bot-comment detection | Approval-gate integrity is the human-trust constraint; a spurious approval or a re-run triggered by a clarifying question wastes both budgets | [#143](https://github.com/atolis-hq/wake/issues/143), [#145](https://github.com/atolis-hq/wake/issues/145) |
-| 1.3 | **S9** — infra failures must not consume the triggering human comment | A human's retry request being silently eaten forces a second human touch | file new |
-| 1.4 | **S1** — narrow tick-runner try/catch; stop rewriting successful runs as failed | Durable-record corruption misleads both Wake and the human | file new |
+| Order | Status | Item | Why | Issue |
+|-------|--------|------|-----|-------|
+| 1.1 | Done | ~~**E5** — outbox/delivery confirmation for outbound intents~~ | A lost BLOCKED question stalls an issue invisibly; humans can't answer what they never saw | file new |
+| 1.2 | Done | ~~**S2 + [#143](https://github.com/atolis-hq/wake/issues/143) + [#145](https://github.com/atolis-hq/wake/issues/145)** — strict `/approved` parsing, control-plane-enforced approval, reliable bot-comment detection~~ | Approval-gate integrity is the human-trust constraint; a spurious approval or a re-run triggered by a clarifying question wastes both budgets | [#143](https://github.com/atolis-hq/wake/issues/143), [#145](https://github.com/atolis-hq/wake/issues/145) |
+| 1.3 | Done | ~~**S9** — infra failures must not consume the triggering human comment~~ | A human's retry request being silently eaten forces a second human touch | file new |
+| 1.4 | Done | ~~**S1** — narrow tick-runner try/catch; stop rewriting successful runs as failed~~ | Durable-record corruption misleads both Wake and the human | file new |
 
 ### Phase 2 — Quota economy (the autonomy multiplier)
 
