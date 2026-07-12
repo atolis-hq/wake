@@ -398,6 +398,10 @@ export const wakeConfigSchema = z.object({
     // sleep, up to this ceiling, so a quiet repo doesn't poll every intervalMs.
     maxIntervalMs: z.number().int().positive().default(10 * 60 * 1000),
   }).default({ intervalMs: 60 * 1000, maxIntervalMs: 10 * 60 * 1000 }),
+  transcripts: z.object({
+    enabled: z.boolean().default(false),
+    retainAfterWorkspaceCleanup: z.boolean().default(false),
+  }).default({ enabled: false, retainAfterWorkspaceCleanup: false }),
   runners: z.record(z.string(), runnerEntrySchema).default({
     fake: { kind: 'fake', cli: 'Fake' },
     'claude-haiku': { kind: 'claude', command: 'claude', model: 'haiku', smokeModel: 'haiku', sessionName: 'Eddy', remoteControlName: 'Eddy', smokePrompt: defaultSmokePrompt, timeoutMs: 30 * 60 * 1000, remoteControl: { enabled: false }, models: { default: 'haiku' } },

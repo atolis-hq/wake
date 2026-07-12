@@ -36,6 +36,10 @@ All configuration uses `schemaVersion: 1`.
     "intervalMs": 60000,
     "maxIntervalMs": 600000
   },
+  "transcripts": {
+    "enabled": false,
+    "retainAfterWorkspaceCleanup": false
+  },
   "runners": {
     "fake": { "kind": "fake" },
     "claude-haiku": {
@@ -257,6 +261,22 @@ only Cursor file that needs to be shared with the sandbox. Mount it read-only
 unless you want the sandbox to be able to refresh tokens on the host's behalf.
 Re-authenticate inside the sandbox when the session expires by running
 `agent login` via `wake sandbox exec`.
+
+### transcripts
+
+Raw runner prompt and response capture for debugging.
+
+When enabled, Wake writes text files under
+`<wakeRoot>/transcripts/<repo>/<issue>/<session-or-run>/`. Each runner run
+writes a separate `*.prompt.txt` file with the exact prompt text passed to the
+CLI prompt argument and a matching `*.response.txt` file with raw stdout from
+the CLI. Initial runs are grouped by Wake `runId`; resumed runs are grouped by
+the previously recorded agent session ID when Wake has one.
+
+| Property | Type | Description | Default |
+|----------|------|-------------|---------|
+| `enabled` | boolean | Write raw runner prompt and response text files | `false` |
+| `retainAfterWorkspaceCleanup` | boolean | Keep transcript directories when Wake cleans up a closed issue's per-issue workspace | `false` |
 
 ### scheduler
 

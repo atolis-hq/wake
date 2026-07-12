@@ -30,6 +30,7 @@ import type {
 import { parseRunnerResult } from '../../domain/schema.js';
 import { buildStagePrompt } from '../runner/stage-prompt.js';
 import { runAgentCliCommand } from '../runner/cli-command.js';
+import { writeRunnerTranscript } from '../runner/transcripts.js';
 
 type CursorRunnerSettings = Omit<Extract<RunnerEntry, { kind: 'cursor' }>, 'kind'>;
 
@@ -43,10 +44,7 @@ export function buildCursorAgentArgs(input: {
   force?: boolean;
   resumeSessionId?: string;
 }): string[] {
-  const fullPrompt =
-    input.harnessPrompt === undefined
-      ? input.prompt
-      : `${input.harnessPrompt}\n\n${input.prompt}`;
+  const fullPrompt = buildCursorPromptText(input);
 
   return [
     'agent',
@@ -61,6 +59,15 @@ export function buildCursorAgentArgs(input: {
     ...(input.resumeSessionId !== undefined ? [`--resume=${input.resumeSessionId}`] : []),
     fullPrompt,
   ];
+}
+
+export function buildCursorPromptText(input: {
+  prompt: string;
+  harnessPrompt?: string;
+}): string {
+  return input.harnessPrompt === undefined
+    ? input.prompt
+    : `${input.harnessPrompt}\n\n${input.prompt}`;
 }
 
 export function buildCursorResumeArgs(input: { sessionId: string }): string[] {
@@ -282,6 +289,19 @@ export function createCursorRunner(options: {
 
       const model = resolveModel({ action: input.action, settings: options.settings });
       const cwd = input.workspacePath ?? options.cwd;
+      const promptText = buildCursorPromptText({
+        prompt: stagePrompt.prompt,
+        harnessPrompt: stagePrompt.harnessPrompt,
+      });
+      const promptTranscriptPath = await writeRunnerTranscript({
+        config: input.config,
+        projection: input.projection,
+        runId: input.runId,
+        action: input.action,
+        cli: CURSOR_CLI_NAME,
+        kind: 'prompt',
+        text: promptText,
+      });
 
       console.log(
         formatCursorRunLogLine({
@@ -301,14 +321,22 @@ export function createCursorRunner(options: {
         command: options.command,
         args: buildCursorAgentArgs({
           model,
-          prompt: stagePrompt.prompt,
-          harnessPrompt: stagePrompt.harnessPrompt,
+          prompt: promptText,
           ...(cursorMode !== undefined ? { mode: cursorMode } : {}),
           force: cursorMode === undefined,
           ...(isResume ? { resumeSessionId: priorSessionId } : {}),
         }),
         cwd,
         timeoutMs: options.settings.timeoutMs,
+      });
+      const responseTranscriptPath = await writeRunnerTranscript({
+        config: input.config,
+        projection: input.projection,
+        runId: input.runId,
+        action: input.action,
+        cli: CURSOR_CLI_NAME,
+        kind: 'response',
+        text: result.stdout,
       });
 
       if (result.exitCode !== 0 || result.timedOut || result.stdout.trim().length === 0) {
@@ -352,6 +380,8 @@ export function createCursorRunner(options: {
             stderr: result.stderr,
             exitCode: result.exitCode,
             failureClass,
+            ...(promptTranscriptPath === undefined ? {} : { promptTranscriptPath }),
+            ...(responseTranscriptPath === undefined ? {} : { responseTranscriptPath }),
             ...(sandboxLog?.metadata ?? {}),
           },
         };
@@ -373,6 +403,8 @@ export function createCursorRunner(options: {
             stdout: result.stdout,
             stderr: result.stderr,
             parseError: String(err),
+            ...(promptTranscriptPath === undefined ? {} : { promptTranscriptPath }),
+            ...(responseTranscriptPath === undefined ? {} : { responseTranscriptPath }),
             ...(sandboxLog?.metadata ?? {}),
           },
         };
@@ -407,6 +439,8 @@ export function createCursorRunner(options: {
           stderr: result.stderr,
           raw: parsed,
           skipApproval: stagePrompt.skipApproval,
+          ...(promptTranscriptPath === undefined ? {} : { promptTranscriptPath }),
+          ...(responseTranscriptPath === undefined ? {} : { responseTranscriptPath }),
           ...(sandboxLog?.metadata ?? {}),
         },
       };
