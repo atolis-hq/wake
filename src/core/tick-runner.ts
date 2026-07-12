@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { rm } from 'node:fs/promises';
 import { isAbsolute, join, relative } from 'node:path';
 
 import { createLifecycleService } from './lifecycle-service.js';
@@ -286,6 +287,15 @@ export function createTickRunner(deps: {
       ) {
         try {
           await deps.workspaceManager.cleanupWorkspace({ workspacePath });
+          if (!deps.config.transcripts.retainAfterWorkspaceCleanup) {
+            await rm(deps.stateStore.paths.transcriptIssueDir(
+              projection.issue.repo,
+              projection.issue.number,
+            ), {
+              recursive: true,
+              force: true,
+            });
+          }
         } catch (error) {
           await deps.stateStore.appendEventEnvelope(createEventEnvelope({
             eventId: `workspace-cleanup-failed-${projection.issue.repo.replace(/[^a-z0-9]+/gi, '-')}-${projection.issue.number}`,

@@ -1,10 +1,10 @@
 import { join } from 'node:path';
 
-function sanitizeRepo(repo: string): string {
+export function sanitizeRepo(repo: string): string {
   return repo.replace(/[\\/]/g, '__');
 }
 
-function sanitizePathKey(value: string): string {
+export function sanitizePathKey(value: string): string {
   return value.replace(/[^A-Za-z0-9._-]/g, '__');
 }
 
@@ -18,6 +18,7 @@ export function createWakePaths(wakeRoot: string) {
     tickLockFile: join(wakeRoot, 'locks', 'tick.lock'),
     issueFixtureFile: join(wakeRoot, 'fixtures', 'issues.json'),
     workspaceRoot: join(wakeRoot, 'workspaces'),
+    transcriptsRoot: join(wakeRoot, 'transcripts'),
     reposRoot: join(wakeRoot, 'repos'),
     repoRoot: (repo: string) => join(wakeRoot, 'repos', sanitizeRepo(repo)),
     sourceStateRoot: join(wakeRoot, 'sources'),
@@ -39,5 +40,9 @@ export function createWakePaths(wakeRoot: string) {
     logFile: (date: string) => join(wakeRoot, 'logs', `${date}.log`),
     workspaceDir: (repo: string, issueNumber: number) =>
       join(wakeRoot, 'workspaces', sanitizeRepo(repo), String(issueNumber)),
+    transcriptIssueDir: (repo: string, issueNumber: number) =>
+      join(wakeRoot, 'transcripts', sanitizeRepo(repo), String(issueNumber)),
+    transcriptSessionDir: (repo: string, issueNumber: number, sessionKey: string) =>
+      join(wakeRoot, 'transcripts', sanitizeRepo(repo), String(issueNumber), sanitizePathKey(sessionKey)),
   };
 }

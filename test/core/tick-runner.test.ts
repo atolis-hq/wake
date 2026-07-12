@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { access, mkdir, mkdtemp, readdir, readFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -1683,7 +1683,10 @@ describe('tick runner', () => {
   it('deletes the per-issue workspace and clears workspacePath when an issue is closed', async () => {
     const store = createStateStore({ wakeRoot: root });
     const workspacePath = join(root, 'workspaces', 'atolis-hq__wake', '200');
+    const transcriptPath = join(root, 'transcripts', 'atolis-hq__wake', '200', 'run-200-1', 'run-200-1.codex.implement.prompt.txt');
     await mkdir(workspacePath, { recursive: true });
+    await mkdir(join(root, 'transcripts', 'atolis-hq__wake', '200', 'run-200-1'), { recursive: true });
+    await writeFile(transcriptPath, 'raw prompt', 'utf8');
 
     const nowIso = '2026-07-05T12:00:00.000Z';
     await store.writeIssueState({
@@ -1727,8 +1730,63 @@ describe('tick runner', () => {
     await tickRunner.runTick();
 
     await expect(access(workspacePath)).rejects.toThrow();
+    await expect(access(transcriptPath)).rejects.toThrow();
     const updatedProjection = await store.readIssueState('atolis-hq/wake', 200);
     expect(updatedProjection?.wake.workspacePath).toBeUndefined();
+  });
+
+  it('retains transcripts for closed workspace cleanup when configured', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const workspacePath = join(root, 'workspaces', 'atolis-hq__wake', '204');
+    const transcriptPath = join(root, 'transcripts', 'atolis-hq__wake', '204', 'run-204-1', 'run-204-1.codex.implement.prompt.txt');
+    await mkdir(workspacePath, { recursive: true });
+    await mkdir(join(root, 'transcripts', 'atolis-hq__wake', '204', 'run-204-1'), { recursive: true });
+    await writeFile(transcriptPath, 'raw prompt', 'utf8');
+
+    const nowIso = '2026-07-05T12:00:00.000Z';
+    await store.writeIssueState({
+      schemaVersion: 1,
+      workItemKey: 'atolis-hq/wake#204',
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 204,
+        title: 'Closed issue with retained transcripts',
+        body: 'Body',
+        labels: [],
+        assignees: [],
+        isPullRequest: false,
+        state: 'closed',
+        url: 'https://example.test/atolis-hq/wake/issues/204',
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      },
+      comments: [],
+      wake: {
+        stage: 'done',
+        workspacePath,
+        syncedAt: nowIso,
+        stageHistory: [{ stage: 'done', changedAt: nowIso, reason: 'test' }],
+        recentEventIds: [],
+        expectedEcho: { commentIds: [], labels: [] },
+      },
+      context: {},
+    });
+
+    const config = createDefaultWakeConfig(root);
+    config.transcripts.retainAfterWorkspaceCleanup = true;
+    const tickRunner = createTickRunner({
+      clock: { now: () => new Date(nowIso) },
+      config,
+      stateStore: store,
+      workSource: { async pollEvents() { return []; } },
+      runner: { async run() { return { result: 'DONE', model: 'test', cli: 'test' }; } },
+      workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+    });
+
+    await tickRunner.runTick();
+
+    await expect(access(workspacePath)).rejects.toThrow();
+    await expect(readFile(transcriptPath, 'utf8')).resolves.toBe('raw prompt');
   });
 
   it('does not delete the canonical clone when a closed issue has a read-only workspace path', async () => {

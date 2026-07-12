@@ -12,6 +12,7 @@ import type {
 type ClaudeRunnerSettings = Omit<Extract<RunnerEntry, { kind: 'claude' }>, 'kind'>;
 import { runAgentCliCommand } from '../runner/cli-command.js';
 import { buildStagePrompt } from '../runner/stage-prompt.js';
+import { writeRunnerTranscript } from '../runner/transcripts.js';
 
 export { buildStagePrompt } from '../runner/stage-prompt.js';
 
@@ -308,6 +309,15 @@ export function createClaudeRunner(options: {
         ...(options.settings.effort === undefined ? {} : { effort: options.settings.effort }),
         ...(isResume ? { resumeSessionId: priorSessionId } : {}),
       });
+      const promptTranscriptPath = await writeRunnerTranscript({
+        config: input.config,
+        projection: input.projection,
+        runId: input.runId,
+        action: input.action,
+        cli: CLAUDE_CLI_NAME,
+        kind: 'prompt',
+        text: stagePrompt.prompt,
+      });
 
       console.log(
         formatClaudeRunLogLine({
@@ -329,6 +339,15 @@ export function createClaudeRunner(options: {
         args,
         cwd: input.workspacePath ?? options.cwd,
         timeoutMs: options.settings.timeoutMs,
+      });
+      const responseTranscriptPath = await writeRunnerTranscript({
+        config: input.config,
+        projection: input.projection,
+        runId: input.runId,
+        action: input.action,
+        cli: CLAUDE_CLI_NAME,
+        kind: 'response',
+        text: result.stdout,
       });
 
       if (result.exitCode !== 0 || result.timedOut || result.stdout.trim().length === 0) {
@@ -389,6 +408,8 @@ export function createClaudeRunner(options: {
             stderr: result.stderr,
             exitCode: result.exitCode,
             failureClass,
+            ...(promptTranscriptPath === undefined ? {} : { promptTranscriptPath }),
+            ...(responseTranscriptPath === undefined ? {} : { responseTranscriptPath }),
             ...(sandboxLog?.metadata ?? {}),
           },
         };
@@ -428,6 +449,8 @@ export function createClaudeRunner(options: {
           stderr: result.stderr,
           raw: parsed,
           skipApproval: stagePrompt.skipApproval,
+          ...(promptTranscriptPath === undefined ? {} : { promptTranscriptPath }),
+          ...(responseTranscriptPath === undefined ? {} : { responseTranscriptPath }),
           ...(sandboxLog?.metadata ?? {}),
         },
       };

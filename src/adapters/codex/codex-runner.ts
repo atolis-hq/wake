@@ -29,6 +29,7 @@ import type {
 type CodexRunnerSettings = Omit<Extract<RunnerEntry, { kind: 'codex' }>, 'kind'>;
 import { buildStagePrompt } from '../runner/stage-prompt.js';
 import { runAgentCliCommand } from '../runner/cli-command.js';
+import { writeRunnerTranscript } from '../runner/transcripts.js';
 import { parseRunnerResult } from '../../domain/schema.js';
 
 const CODEX_CLI_NAME = 'Codex';
@@ -41,10 +42,7 @@ export function buildCodexExecArgs(input: {
   sandboxMode: 'workspace-write' | 'danger-full-access';
   reasoningEffort?: string;
 }): string[] {
-  const prompt =
-    input.harnessPrompt === undefined
-      ? input.prompt
-      : `${input.harnessPrompt}\n\n${input.prompt}`;
+  const prompt = buildCodexPromptText(input);
 
   return [
     '--ask-for-approval',
@@ -63,6 +61,15 @@ export function buildCodexExecArgs(input: {
     input.model,
     prompt,
   ];
+}
+
+export function buildCodexPromptText(input: {
+  prompt: string;
+  harnessPrompt?: string;
+}): string {
+  return input.harnessPrompt === undefined
+    ? input.prompt
+    : `${input.harnessPrompt}\n\n${input.prompt}`;
 }
 
 export function buildCodexResumeArgs(input: {
@@ -329,6 +336,19 @@ export function createCodexRunner(options: {
       const sandboxMode = resolveSandboxMode({
         action: input.action,
       });
+      const promptText = buildCodexPromptText({
+        prompt: stagePrompt.prompt,
+        harnessPrompt: stagePrompt.harnessPrompt,
+      });
+      const promptTranscriptPath = await writeRunnerTranscript({
+        config: input.config,
+        projection: input.projection,
+        runId: input.runId,
+        action: input.action,
+        cli: CODEX_CLI_NAME,
+        kind: 'prompt',
+        text: promptText,
+      });
       console.log(
         formatCodexRunLogLine({
           phase: 'start',
@@ -347,8 +367,7 @@ export function createCodexRunner(options: {
         command: options.command,
         args: buildCodexExecArgs({
           model,
-          prompt: stagePrompt.prompt,
-          harnessPrompt: stagePrompt.harnessPrompt,
+          prompt: promptText,
           cwd,
           sandboxMode,
           ...(options.settings.reasoningEffort === undefined
@@ -357,6 +376,15 @@ export function createCodexRunner(options: {
         }),
         cwd,
         timeoutMs: options.settings.timeoutMs,
+      });
+      const responseTranscriptPath = await writeRunnerTranscript({
+        config: input.config,
+        projection: input.projection,
+        runId: input.runId,
+        action: input.action,
+        cli: CODEX_CLI_NAME,
+        kind: 'response',
+        text: result.stdout,
       });
 
       if (result.exitCode !== 0 || result.timedOut || result.stdout.trim().length === 0) {
@@ -406,6 +434,8 @@ export function createCodexRunner(options: {
             stderr: result.stderr,
             exitCode: result.exitCode,
             failureClass,
+            ...(promptTranscriptPath === undefined ? {} : { promptTranscriptPath }),
+            ...(responseTranscriptPath === undefined ? {} : { responseTranscriptPath }),
             ...(sandboxLog?.metadata ?? {}),
           },
         };
@@ -446,6 +476,8 @@ export function createCodexRunner(options: {
             .filter((line) => line.trim().length > 0)
             .map((line) => JSON.parse(line) as Record<string, unknown>),
           skipApproval: stagePrompt.skipApproval,
+          ...(promptTranscriptPath === undefined ? {} : { promptTranscriptPath }),
+          ...(responseTranscriptPath === undefined ? {} : { responseTranscriptPath }),
           ...(sandboxLog?.metadata ?? {}),
         },
       };
