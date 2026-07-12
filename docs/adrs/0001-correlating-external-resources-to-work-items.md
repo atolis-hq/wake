@@ -7,7 +7,7 @@
 
 ## Context and Problem Statement
 
-A Wake work item starts life as a single ticket (today: a GitHub issue), but the work it drives quickly sprawls across other resources: an agent opens a PR from the issue; a human reviews that PR; a Slack thread discusses the issue or the PR; in future, a GitHub or LitLab PR may be raised from a Jira or Linear issue. Each of these surfaces has its own provider, its own identifier scheme, and its own conversation thread — yet all of them are facets of **one** unit of work with **one** lifecycle.
+A Wake work item starts life as a single ticket (today: a GitHub issue), but the work it drives quickly sprawls across other resources: an agent opens a PR from the issue; a human reviews that PR; a Slack thread discusses the issue or the PR; in future, a GitHub PR or GitLab merge request may be raised from a Jira or Linear issue. Each of these surfaces has its own provider, its own identifier scheme, and its own conversation thread — yet all of them are facets of **one** unit of work with **one** lifecycle.
 
 Today Wake has no durable record of "work item X owns resources A, B, C":
 
@@ -25,7 +25,7 @@ How should Wake reliably correlate identifiers from multiple external sources an
 * **Full-context resumption from anywhere.** Whichever surface triggers a run, Wake must be able to assemble the complete picture — issue thread, PRs, review threads, side discussions — into the prompt/session it resumes. Consolidated correlation is the index that makes this possible.
 * **Cardinality is not 1:1.** One issue may accumulate several PRs (an abandoned attempt plus its replacement is routine) and several discussion threads; conversely a single PR may claim to address two issues (poor practice, but it happens). The model must represent many-per-item cleanly and shared-resource cases deliberately, not by accident of a uniqueness constraint.
 * **Not every work item is a code change, and not every resource fits in a prompt.** A task may be "create or review a Jira/Confluence page (or several)", with comments to read and answer. Correlated resources can be large content artifacts whose wholesale injection into prompts is prohibitively expensive. Correlation must therefore not imply any particular content-delivery mechanism.
-* **Provider-agnostic by construction.** The mechanism decided here must work unchanged for GitHub PRs, Slack threads, Jira/Linear tickets, and LitLab PRs — new surfaces must not require core schema changes.
+* **Provider-agnostic by construction.** The mechanism decided here must work unchanged for GitHub PRs, Slack threads, Jira/Linear tickets, and GitLab merge requests — new surfaces must not require core schema changes.
 * **The tick is a pure function of durable state.** Correlation must be persisted as events under `.wake/` and be rebuildable from the event stream, like every other projection (CLAUDE.md invariant).
 * **Wake decides, the agent runs.** The agent must not become responsible for routing or state; whatever the agent contributes to correlation must be a parsed, validated output — like the existing sentinel contract.
 * **Adapters stay behind seams.** Sources/sinks implement `src/core/contracts.ts` interfaces; `core/` never imports a concrete adapter. Correlation must not leak provider knowledge into core, nor core state into adapters.
@@ -71,7 +71,7 @@ Every external resource Wake correlates is named by a **resource URI**:
 | `github:pr-review-thread:atolis-hq/wake#91/rt_123` | a specific review comment thread on that PR |
 | `slack:thread:C0123/1699999999.000042` | a Slack thread (channel + root ts) |
 | `jira:issue:WAKE-12` | a Jira ticket |
-| `litlab:pr:team/repo!7` | a LitLab pull request |
+| `gitlab:mr:team/repo!7` | a GitLab merge request (GitLab's own `!` notation; the `kind` is `mr`, not `pr` — each provider's `kind` vocabulary uses that provider's native terms) |
 
 Rules:
 
@@ -171,7 +171,7 @@ Correlation is what makes every mode workable: the registry is the enumerable in
 
 ### Positive
 
-* One mechanism serves #82 (PR activity) and every subsequent surface (Slack, Jira, Linear, LitLab); new integrations add an adapter and a URI grammar, not core schema changes.
+* One mechanism serves #82 (PR activity) and every subsequent surface (Slack, Jira, Linear, GitLab); new integrations add an adapter and a URI grammar, not core schema changes.
 * Correlation is durable, replayable, and rebuildable from `events/` — consistent with the event-first invariant; `state/` remains disposable.
 * `correlatedResources[]` gives Wake the complete surface inventory of a work item, so prompts and resumed sessions can be assembled with full context no matter which surface triggered the run — the consolidation that makes resume-from-anywhere possible.
 * Non-1:1 realities (multiple PRs or threads per issue, one PR touching two issues) are represented explicitly via roles and the primary/secondary relation instead of being ruled out or handled ambiguously.
@@ -188,7 +188,7 @@ Correlation is what makes every mode workable: the registry is the enumerable in
 
 ### Neutral / deferred
 
-* Slack, Jira, Linear, LitLab adapters themselves are out of scope; they must conform to this ADR when introduced (each should record its URI grammar and creation-flow choice in its own ADR or design doc).
+* Slack, Jira, Linear, GitLab adapters themselves are out of scope; they must conform to this ADR when introduced (each should record its URI grammar and creation-flow choice in its own ADR or design doc).
 * Whether Wake ever takes over PR creation from the agent (flow 1 for PRs) is left open; both flows conform, so the choice can be revisited per adapter without touching this decision.
 * Shared resources are supported via the primary/secondary relation, but no policy behavior beyond context-only fan-out is defined for secondaries yet (e.g. auto-closing a secondary issue when a shared PR merges is deliberately not decided here).
 * Context-delivery mode *selection* is scoped out: whether it is per-adapter config, a size threshold, a `role` default, or a per-stage choice needs its own design once a large-content adapter (Jira/Confluence) is real. This ADR fixes only the mode vocabulary and the read/write asymmetry.
