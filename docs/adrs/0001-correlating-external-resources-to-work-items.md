@@ -143,7 +143,12 @@ Note the originating-ticket sources (GitHub issues today, Jira/Linear later) are
 
 ### 6. Reply routing falls out of correlation
 
-The sink router (`src/core/sink-router.ts`) already routes publish intents back to `sourceRefs.sink`. With `resourceUri` present on triggering events, the rule generalizes: **a reply targets the `resourceUri` of the event that triggered the run.** A question asked on a PR review thread is answered on that thread; a comment on the issue is answered on the issue; a Slack message is answered in its thread. The owning adapter (matched by the URI's `provider` segment) interprets the `kind`/`locator` to hit the right provider API. Wake owns this routing end-to-end; the agent's publish intents never name a channel.
+The sink router (`src/core/sink-router.ts`) already routes publish intents back to `sourceRefs.sink`. With `resourceUri` present on inbound events, the rule generalizes — and the routing unit is the **publish intent, not the run**:
+
+* Each publish intent carries a target `resourceUri`; the owning adapter (matched by the URI's `provider` segment) interprets the `kind`/`locator` to hit the right provider API. A question asked on a PR review thread is answered on that thread; a comment on the issue is answered on the issue; a Slack message is answered in its thread.
+* The default target is the `resourceUri` of the event that triggered the run, so the common single-trigger case needs no extra machinery.
+* **Multiple surfaces pending → one run, multiple intents.** A work item has one stage machine, so accumulated activity on several surfaces (a Slack comment *and* an issue comment since the last run) is drained by a single run — which is also what full-context resumption wants, since the pending items may be related or contradictory and only one agent seeing both can reconcile them. The prompt presents pending activity grouped by surface with a stable per-item reference; the agent's replies cite the reference of the item they answer; Wake maps each reference back to its `resourceUri` and routes each intent independently, validating every target against the registry.
+* Wake owns this routing end-to-end; the agent's publish intents never name a channel or provider — they name the conversation item being answered.
 
 ### 7. Echo suppression generalizes (#54 alignment)
 
