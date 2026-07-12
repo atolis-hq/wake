@@ -11,8 +11,13 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
   && chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
   && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
     > /etc/apt/sources.list.d/github-cli.list \
+  && curl -fsSL https://ngrok-agent.s3.amazonaws.com/ngrok.asc \
+    | gpg --dearmor -o /etc/apt/keyrings/ngrok-archive-keyring.gpg \
+  && chmod go+r /etc/apt/keyrings/ngrok-archive-keyring.gpg \
+  && echo "deb [signed-by=/etc/apt/keyrings/ngrok-archive-keyring.gpg] https://ngrok-agent.s3.amazonaws.com buster main" \
+    > /etc/apt/sources.list.d/ngrok.list \
   && apt-get update \
-  && apt-get install -y --no-install-recommends gh
+  && apt-get install -y --no-install-recommends gh ngrok
 
 RUN --mount=type=cache,target=/root/.npm \
   npm install -g @anthropic-ai/claude-code @openai/codex

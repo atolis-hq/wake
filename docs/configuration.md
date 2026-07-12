@@ -83,7 +83,10 @@ All configuration uses `schemaVersion: 1`.
   },
   "ui": {
     "enabled": false,
-    "port": 4317
+    "port": 4317,
+    "tunnel": {
+      "enabled": false
+    }
   },
   "sources": {
     "github": {
@@ -325,7 +328,11 @@ server:
 "ui": {
   "enabled": false,
   "port": 4317,
-  "token": null
+  "token": null,
+  "tunnel": {
+    "enabled": false,
+    "authToken": null
+  }
 }
 ```
 
@@ -337,11 +344,19 @@ server:
   container exactly as before — no published port, no auto-started process.
 - `port` — port `wake ui` binds (`--port` overrides this), and the port
   published from the container when `enabled` is true. Default `4317`.
-- `token` — shared-secret bearer token required for non-loopback binds (also
-  settable via `--token` or the `WAKE_UI_TOKEN` env var). Binding to a
-  non-loopback `--host` without a token is refused; the container entrypoint
-  applies the same rule, so `enabled: true` without a token logs a warning and
-  skips starting the UI rather than exposing it unauthenticated.
+- `token` — optional shared-secret bearer token (also settable via `--token` or
+  the `WAKE_UI_TOKEN` env var). When set, every UI request must include
+  `Authorization: Bearer <token>` or a `wake_ui_token` cookie.
+- `tunnel.enabled` — when `true` and `ui.enabled` is also true, the sandbox
+  entrypoint starts `ngrok http 127.0.0.1:<ui.port>` inside the container and
+  writes the discovered public URL to `<wakeRoot>/control-plane-ui-url`. GitHub
+  status comments then link the `Eddy` header to that URL. Default `false`.
+- `tunnel.authToken` — optional ngrok authtoken passed to the container as
+  `NGROK_AUTHTOKEN`. To avoid storing the token in `config.json`, leave this
+  unset and export `NGROK_AUTHTOKEN` before `wake sandbox up` or
+  `wake sandbox update`; the Docker run command passes it through when the
+  tunnel is enabled. Ngrok provides free HTTPS tunnels, but it generally
+  requires a free account authtoken.
 
 See [docs/specs/control-plane-ui.md](specs/control-plane-ui.md) for the full
 design; the current implementation covers the v0 read-only surface (status

@@ -1,3 +1,6 @@
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+
 import type { EventEnvelope, IssueStateRecord, WakeConfig } from '../../domain/types.js';
 import { wakeStageLabelPrefix } from '../../domain/stages.js';
 import { createEventEnvelope } from '../../lib/event-log.js';
@@ -204,7 +207,28 @@ function extractCreatedCommentId(response: unknown): string | undefined {
   return undefined;
 }
 
-function formatWakeComment(payload: Record<string, unknown>): string {
+function formatControlPlaneLink(url: string): string | null {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return null;
+    }
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
+async function readControlPlaneUiUrl(wakeRoot: string): Promise<string | undefined> {
+  try {
+    const raw = await readFile(resolve(wakeRoot, 'control-plane-ui-url'), 'utf8');
+    return formatControlPlaneLink(raw.trim()) ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function formatWakeComment(payload: Record<string, unknown>, controlPlaneUrl?: string): string {
   const body = typeof payload.body === 'string' ? payload.body : '';
   const kind = typeof payload.kind === 'string' ? payload.kind : undefined;
   const action = typeof payload.action === 'string' ? payload.action : undefined;
@@ -232,7 +256,8 @@ function formatWakeComment(payload: Record<string, unknown>): string {
     runId === undefined ? undefined : `run \`${runId}\``,
   ].filter((part): part is string => part !== undefined);
 
-  const header = `**Eddy** _(Wake${details.length > 0 ? ` · ${details.join(' · ')}` : ''})_`;
+  const name = controlPlaneUrl === undefined ? 'Eddy' : `[Eddy](${controlPlaneUrl})`;
+  const header = `**${name}** _(Wake${details.length > 0 ? ` · ${details.join(' · ')}` : ''})_`;
   const sections = [wakeCommentMarker, header, body];
 
   if (kind === 'approval-request') {
@@ -480,7 +505,7 @@ export function createGitHubIssuesWorkSource(deps: {
         owner,
         repoName,
         issueNumber,
-        formatWakeComment(input.event.payload),
+        formatWakeComment(input.event.payload, await readControlPlaneUiUrl(deps.config.paths.wakeRoot)),
       );
       const commentId = extractCreatedCommentId(response);
 

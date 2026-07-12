@@ -89,7 +89,7 @@ describe('sandbox command', () => {
       containerMountPath: '/wake',
       containerHomeMountPath: '/home/wake',
       extraMounts: [],
-      ui: { enabled: false, port: 4317, token: undefined },
+      ui: { enabled: false, port: 4317, token: undefined, tunnel: { enabled: false } },
       start: { enabled: true },
     });
   });
@@ -97,7 +97,13 @@ describe('sandbox command', () => {
   it('forwards ui.enabled, port, and token from config to docker up', async () => {
     const docker = createDockerMock();
     const config = createDefaultWakeConfig(wakeRoot);
-    config.ui = { enabled: true, port: 4400, token: 'secret-token', archiveFreshnessDays: 5 };
+    config.ui = {
+      enabled: true,
+      port: 4400,
+      token: 'secret-token',
+      tunnel: { enabled: true, authToken: 'ngrok-token' },
+      archiveFreshnessDays: 5,
+    };
 
     await runSandboxCommand({
       args: ['up'],
@@ -112,7 +118,12 @@ describe('sandbox command', () => {
 
     expect(docker.up).toHaveBeenCalledWith(
       expect.objectContaining({
-        ui: { enabled: true, port: 4400, token: 'secret-token' },
+        ui: {
+          enabled: true,
+          port: 4400,
+          token: 'secret-token',
+          tunnel: { enabled: true, authToken: 'ngrok-token' },
+        },
         start: { enabled: true },
       }),
     );
@@ -216,7 +227,7 @@ describe('sandbox command', () => {
       containerMountPath: '/wake',
       containerHomeMountPath: '/home/wake',
       extraMounts: [],
-      ui: { enabled: false, port: 4317, token: undefined },
+      ui: { enabled: false, port: 4317, token: undefined, tunnel: { enabled: false } },
       start: { enabled: true },
     });
   });
@@ -226,7 +237,13 @@ describe('sandbox command', () => {
     const config = {
       ...createDefaultWakeConfig(wakeRoot),
       dev: { repoRoot },
-      ui: { enabled: true, port: 4400, token: 'secret-token', archiveFreshnessDays: 5 },
+      ui: {
+        enabled: true,
+        port: 4400,
+        token: 'secret-token',
+        tunnel: { enabled: false },
+        archiveFreshnessDays: 5,
+      },
     };
     const checkoutTag = vi.fn(async () => {});
     const createIssue = vi.fn(async () => {});
@@ -264,7 +281,12 @@ describe('sandbox command', () => {
     expect(docker.update).toHaveBeenCalledWith(
       expect.objectContaining({
         image: 'wake-sandbox:v0.0.80',
-        ui: { enabled: true, port: 4400, token: 'secret-token' },
+        ui: {
+          enabled: true,
+          port: 4400,
+          token: 'secret-token',
+          tunnel: { enabled: false },
+        },
         start: { enabled: true },
       }),
     );

@@ -44,11 +44,17 @@ function readFlag(name: string, args: string[]): string | undefined {
   return args[index + 1];
 }
 
-function uiDockerInput(config: WakeConfig): { enabled: boolean; port: number; token?: string | undefined } {
+function uiDockerInput(config: WakeConfig): {
+  enabled: boolean;
+  port: number;
+  token?: string | undefined;
+  tunnel?: { enabled: boolean; authToken?: string | undefined } | undefined;
+} {
   return {
     enabled: config.ui.enabled,
     port: config.ui.port,
     token: config.ui.token,
+    tunnel: config.ui.tunnel,
   };
 }
 
