@@ -24,8 +24,10 @@ Implements [ADR 0001](../adrs/0001-correlating-external-resources-to-work-items.
 ## URI and naming rules
 
 - Grammar: `<provider>:<kind>:<locator>`. `provider` must equal the adapter's registered source/sink name. `kind` uses the provider's native vocabulary (`github:pr:…` but `gitlab:mr:…`). Core compares URIs for equality only — never parse a `locator` outside its owning adapter.
-- `workItemKey` shape is untouched. Existing keys, projections, and state files must load unchanged (the schema preprocessors in `domain/schema.ts` handle legacy records — don't break them).
+- `workItemKey` carries the provider-independent work ID (e.g. `work-<ulid>`), minted at discovery. Streams, projections, and run records are keyed by it; no path embeds a provider, repo, or issue number. The originating ticket resolves through the reverse index like any other resource. The cutover is a one-time fresh start: the old `.wake/` home is archived, a clean one is scaffolded, and no migration code is written — see the [implementation plan](../plans/2026-07-12-work-graph-implementation-plan.md).
 - `sourceRefs` gains one optional field, `resourceUri`. It stays per-event provenance; item-level ownership lives only in the registry.
+- `role` values are **Wake-owned relationship vocabulary** (`representation | implementation | discussion | review | documentation | decision`), never provider terms — `github:pr:…` and `gitlab:mr:…` both register as `implementation`. New providers add URI kinds, not roles.
+- When a discovery source mints a work item, auto-register the originating ticket itself (`role: 'representation'`, `relation: 'primary'`, `provenance: 'wake-created'`) so `correlatedResources[]` enumerates every surface with no special case for the founding one.
 
 ## Detection (build second, not first)
 

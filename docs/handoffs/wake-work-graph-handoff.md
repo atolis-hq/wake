@@ -22,6 +22,14 @@ The work graph is a model of those entities and relationships.
 
 ---
 
+## Relationship to ADR 0001
+
+[ADR 0001](../adrs/0001-correlating-external-resources-to-work-items.md) defines the first layer of this model: the work-to-surface layer (section 9.2 below). Its correlation registry records each surface as a typed edge from the work item — a `wake.correlation.registered` event whose resource URI (`<provider>:<kind>:<locator>`) identifies the resource node and whose `role` (`representation | implementation | discussion | review | documentation | decision | ...`) is the edge type. Per resource, exactly one work item holds `relation: primary` and owns lifecycle resumption and reply routing.
+
+This document describes the rest of the model: the work identity those edges hang off (§15), work-to-work topology (§9.1), and software impact (§9.3). The [implementation plan](../plans/2026-07-12-work-graph-implementation-plan.md) sequences which parts land now and which are deferred.
+
+---
+
 ## 1. Why this concept matters
 
 Wake currently centres work around an issue or ticket. That is a sensible starting point because an issue provides:
@@ -102,7 +110,7 @@ WorkCompleted
 A current-state projection can rebuild a view such as:
 
 ```text
-Work: github:atolis-hq/quorum:issue:42
+Work: github:atolis-hq/quorum#42
 Stage: awaiting-review
 Runner: claude-code
 Session: claude-abc
@@ -138,15 +146,7 @@ to:
 
 > The issue is one representation of the work.
 
-This can initially be a conceptual distinction only.
-
-Today, Wake may reasonably use the existing issue or stream identifier as the work identity:
-
-```text
-WakeWorkId == GitHub issue-backed stream ID
-```
-
-Later, if work can begin from multiple systems, Wake may introduce a provider-independent identity:
+Wake makes this distinction concrete in its identity model: a work item is identified by a provider-independent work ID, and every external surface — including the originating ticket — is a linked representation:
 
 ```text
 Work: work-01JXYZ
@@ -157,9 +157,7 @@ Work: work-01JXYZ
     +-- implemented by Pull Request #87
 ```
 
-The point is not that Wake must introduce an internal `WorkItem` aggregate immediately. The point is that the architecture should avoid assuming that a GitHub issue will always be the only valid identity or container for a piece of work.
-
-This distinction matters because platform objects have different lifecycles from the work itself.
+No platform object is the identity or the permanent container of the work — which matters because platform objects have different lifecycles from the work itself.
 
 For example:
 
@@ -352,13 +350,13 @@ These are complementary questions.
 stream: work-123
 
 WorkCreated
-GitHubIssueLinked
+CorrelationRegistered   (github issue, role: representation)
 RefinementStarted
-SlackThreadLinked
+CorrelationRegistered   (slack thread, role: discussion)
 AgentExecutionStarted
 PlanProposed
 PlanApproved
-PullRequestCreated
+CorrelationRegistered   (pull request, role: implementation)
 ReviewCommentObserved
 AgentExecutionResumed
 WorkCompleted
@@ -393,23 +391,27 @@ The same events can feed both projections.
 
 A graph projector can interpret selected domain events as changes to nodes and relationships.
 
-For example:
+Surface links all arrive as the generic registration event from ADR 0001:
 
 ```typescript
-type GitHubIssueLinked = {
-  type: "GitHubIssueLinked";
-  workId: string;
-  repository: string;
-  issueNumber: number;
+type CorrelationRegistered = {
+  sourceEventType: "wake.correlation.registered";
+  workItemKey: string;
+  payload: {
+    resourceUri: string;              // e.g. "github:issue:atolis-hq/quorum#42"
+    role: string;                     // e.g. "representation"
+    relation: "primary" | "secondary";
+    registeredBy?: string;            // e.g. the run that produced the artifact
+  };
 };
 ```
 
-This may project to:
+This projects to:
 
 ```text
-UPSERT Work(workId)
-UPSERT GitHubIssue(repository, issueNumber)
-UPSERT Work -[REPRESENTED_BY]-> GitHubIssue
+UPSERT Work(workItemKey)
+UPSERT Resource(resourceUri)
+UPSERT Work -[REPRESENTED_BY]-> Resource     // edge type derived from role
 ```
 
 An execution event:
@@ -431,22 +433,10 @@ UPSERT AgentExecution(executionId)
 UPSERT Work -[EXECUTED_THROUGH]-> AgentExecution
 ```
 
-A pull request event:
-
-```typescript
-type PullRequestCreated = {
-  type: "PullRequestCreated";
-  workId: string;
-  repository: string;
-  pullRequestNumber: number;
-  executionId?: string;
-};
-```
-
-may project to:
+A pull request registration (`role: implementation`, `registeredBy: <run id>`) projects to several relationships at once:
 
 ```text
-UPSERT PullRequest(repository, pullRequestNumber)
+UPSERT PullRequest(resourceUri)
 UPSERT Work -[IMPLEMENTED_BY]-> PullRequest
 UPSERT AgentExecution -[CREATED]-> PullRequest
 ```
@@ -898,11 +888,13 @@ work-01JXYZ
 
 ### External surface identity
 
+Using ADR 0001's resource-URI grammar (`<provider>:<kind>:<locator>`):
+
 ```text
-github:atolis-hq/quorum:issue:42
-jira:PAY-314
-slack:workspace/channel/thread
-github:atolis-hq/quorum:pull:87
+github:issue:atolis-hq/quorum#42
+jira:issue:PAY-314
+slack:thread:C0123/1699999999.000042
+github:pr:atolis-hq/quorum#87
 ```
 
 ### Execution identity
@@ -921,33 +913,15 @@ quorum:module:payroll-calculation
 quorum:service:tax-residency
 ```
 
-Wake may not need all of these immediately. The important guidance is to avoid accidental identity coupling.
+Wake may not need all of these immediately. The important guidance is to avoid accidental identity coupling: a Claude session ID must never become the work ID, and no external surface ID is the work's identity.
 
-For example, a Claude session ID should not become the work ID. A GitHub issue ID should not necessarily be assumed to remain the permanent provider-independent identity.
-
-A practical migration path is:
-
-### Current
+The adopted model (see the [implementation plan](../plans/2026-07-12-work-graph-implementation-plan.md)):
 
 ```text
-stream ID = github issue identity
-```
-
-### Transitional
-
-```text
-stream metadata includes an internal work ID
-GitHub issue is marked as the primary representation
-```
-
-### Later
-
-```text
-stream ID = internal work ID
+stream ID = internal work ID (e.g. work-01JXYZ)
+the originating ticket is the primary representation
 GitHub issue, Jira item, Slack thread, and documents are linked surfaces
 ```
-
-This can be introduced only when multiple initiating surfaces make it necessary.
 
 ---
 
@@ -1076,12 +1050,21 @@ The graph is a read model. It may lag briefly behind the event stream without be
 
 Wake may already have many of these concepts under different names. The following examples illustrate graph-relevant semantics rather than required event names.
 
-### Work identity and representation
+### Surfaces, conversations, and documents
+
+Every work-to-surface relationship — tickets, pull requests, Slack threads, documents, ADRs — is recorded by the single generic registration event pair from ADR 0001:
+
+```text
+wake.correlation.registered   (resourceUri + role + relation)
+wake.correlation.retracted
+```
+
+A new surface never adds a core event type; it adds a URI `kind` and, at most, a new `role` value. Distinct event types are reserved for relationships whose semantics genuinely differ, as in the categories below.
+
+### Work identity
 
 ```text
 WorkCreated
-ExternalWorkItemLinked
-ExternalWorkItemUnlinked
 PrimaryRepresentationChanged
 ```
 
@@ -1098,13 +1081,9 @@ WorkSuperseded
 DuplicateIdentified
 ```
 
-### Conversation and documents
+### Decisions and approvals
 
 ```text
-ConversationLinked
-SlackThreadLinked
-DocumentLinked
-ADRLinked
 DecisionRecorded
 ApprovalRecorded
 ```
@@ -1122,10 +1101,10 @@ RunnerChanged
 
 ### Source control
 
+Pull requests and branches enter the graph as registrations (`role: implementation`); the events below record activity *on* them:
+
 ```text
-RepositoryLinked
 BranchCreated
-PullRequestCreated
 CommitObserved
 ReviewCommentObserved
 PullRequestMerged
@@ -1228,6 +1207,12 @@ This should be treated as a longer-term opportunity, not a prerequisite for the 
 
 ## 20. Potential risks
 
+### Competing with established work-graph products
+
+Asana's work graph, Atlassian's Teamwork Graph, and similar products already own the work-graph-as-product space. Wake's graph exists to coordinate its own autonomous work — correlation, context assembly, reply routing, and sequencing — not to provide portfolio views, reporting, or an organisational planning tool.
+
+Where an organisation already runs such a tool, Wake should plug in through its adapter seams (the tool is a `WorkSource`; externally maintained relationships enter as correlation or topology events) rather than replicate it. Model only what coordination needs.
+
 ### Over-modelling too early
 
 It is easy to invent a large ontology before Wake has real queries that require it.
@@ -1289,22 +1274,19 @@ The graph should allow cardinality to emerge from real workflows.
 
 A sensible sequence would be:
 
-### Stage 1: Name the concept
+### Stage 1: Establish work identity
 
-Treat the existing issue-backed stream as a Wake work identity, even if no new aggregate or storage is introduced.
-
-Document that external issues are representations or initiating surfaces rather than necessarily the permanent definition of the work.
+Identify work by an internal, provider-independent work ID; key streams and projections by it; register the originating ticket as the primary representation. This is deliberately first — it is the only change that becomes a migration if delayed (see the [implementation plan](../plans/2026-07-12-work-graph-implementation-plan.md)).
 
 ### Stage 2: Add explicit relationship events
 
-Introduce only the relationships Wake already needs, such as:
+Introduce only the relationships Wake already needs. Surface links (pull requests, conversations, documents) flow through the generic `wake.correlation.registered` event (ADR 0001); this stage adds the work-topology events, such as:
 
 ```text
-PullRequestLinked
 WorkDependencyAdded
-ConversationLinked
-ExecutionStarted
 FollowUpWorkCreated
+WorkSplit
+WorkSuperseded
 ```
 
 ### Stage 3: Build a small graph projection
@@ -1330,15 +1312,11 @@ Before invoking an agent, collect relevant linked context:
 - Previous executions.
 - Affected software entities.
 
-### Stage 5: Introduce provider-independent work identity if needed
-
-Do this when work can begin outside GitHub or when migration between surfaces becomes a practical concern.
-
-### Stage 6: Connect to the software graph
+### Stage 5: Connect to the software graph
 
 Link Wake work to Quorum entities and use graph traversal for impact analysis and contextual retrieval.
 
-### Stage 7: Reconsider storage based on query pressure
+### Stage 6: Reconsider storage based on query pressure
 
 Move to a specialised graph store only when current storage becomes limiting.
 
