@@ -261,7 +261,7 @@ function formatWakeComment(payload: Record<string, unknown>, controlPlaneUrl?: s
   const sections = [wakeCommentMarker, header, body];
 
   if (kind === 'approval-request') {
-    sections.push('_To approve this work, reply with `/approved`. To request changes, reply with `/changes` followed by your feedback._');
+    sections.push('_To approve this work, reply with `/approved`. To request changes, reply with `/changes` followed by your feedback. To ask a question without requesting changes, reply with `/question` followed by your question._');
   }
 
   if (sessionId !== undefined) {

@@ -16,6 +16,7 @@ and `git status` to inspect repository state. If any git operation results in
 merge conflicts, cancel the action and return BLOCKED rather than attempting
 to resolve conflicts.
 
+{{feedbackCommandNote}}
 New comments since your last turn (excludes Wake/bot comments):
 Wake will provide them below in a delimited untrusted data block.
 

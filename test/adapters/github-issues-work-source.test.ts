@@ -1107,6 +1107,8 @@ describe('github issues work source', () => {
     const [, , , postedBody] = createComment.mock.calls[0] as [string, string, number, string];
     expect(postedBody).toContain('/approved');
     expect(postedBody.split('/approved')).toHaveLength(2);
+    expect(postedBody).toContain('/changes');
+    expect(postedBody).toContain('/question');
     expect(postedBody).toContain('Work is ready for review.');
   });
 

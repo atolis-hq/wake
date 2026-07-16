@@ -261,6 +261,60 @@ describe('claude runner command building', () => {
     expect(result.prompt).toContain('New human reply');
   });
 
+  it('adds a trusted resume note for explicit /question comments', async () => {
+    const result = await buildStagePrompt({
+      action: 'implement',
+      mode: 'resume',
+      projection: {
+        schemaVersion: 1,
+        workItemKey: 'atolis-hq/wake#22',
+        issue: {
+          repo: 'atolis-hq/wake',
+          number: 22,
+          title: 'Example issue',
+          body: 'Body',
+          labels: [],
+          assignees: [],
+          isPullRequest: false,
+          state: 'open',
+          url: 'https://example.test/issues/22',
+          createdAt: '2026-07-05T12:00:00.000Z',
+          updatedAt: '2026-07-05T12:00:00.000Z',
+        },
+        comments: [
+          {
+            id: 'c-1',
+            body: 'Already handled reply',
+            author: { login: 'alice' },
+            createdAt: '2026-07-05T12:01:00.000Z',
+            updatedAt: '2026-07-05T12:01:00.000Z',
+            isBotAuthored: false,
+          },
+          {
+            id: 'c-2',
+            body: '/question What did you change?',
+            author: { login: 'bob' },
+            createdAt: '2026-07-05T12:04:00.000Z',
+            updatedAt: '2026-07-05T12:04:00.000Z',
+            isBotAuthored: false,
+          },
+        ],
+        wake: {
+          stage: 'implement',
+          stageHistory: [],
+          recentEventIds: [],
+          syncedAt: '2026-07-05T12:04:00.000Z',
+          expectedEcho: { commentIds: [], labels: [] },
+        },
+        context: { lastHandledCommentId: 'c-1' },
+      },
+    });
+
+    expect(result.prompt).toContain('The latest actionable command is `/question`.');
+    expect(result.prompt).toContain('Do not make code changes solely because of this command');
+    expect(result.prompt).toContain('/question What did you change?');
+  });
+
   it('start prompts make new comments prominent while preserving prior comment context', async () => {
     const result = await buildStagePrompt({
       action: 'implement',

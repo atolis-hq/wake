@@ -778,7 +778,82 @@ describe('tick runner', () => {
     expect(runnerCallCount).toBe(1);
   });
 
-  it('stays idle when awaiting approval and the comment is conversation, not an /approved or /changes command (S2)', async () => {
+  it('invokes the agent when awaiting approval and comment is an explicit /question command', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    let runnerCallCount = 0;
+
+    await store.writeIssueState({
+      schemaVersion: 1,
+      workItemKey: 'atolis-hq/wake#33',
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 33,
+        title: 'Approval Question Test',
+        body: 'Body',
+        labels: ['wake:queue'],
+        assignees: [],
+        isPullRequest: false,
+        state: 'open',
+        url: 'https://example.test/issues/33',
+        createdAt: '2026-07-05T12:00:00.000Z',
+        updatedAt: '2026-07-05T12:05:00.000Z',
+      },
+      comments: [
+        {
+          id: 'c-question',
+          body: '/question What changed in the implementation?',
+          author: { login: 'owner' },
+          createdAt: '2026-07-05T12:05:00.000Z',
+          updatedAt: '2026-07-05T12:05:00.000Z',
+          isBotAuthored: false,
+        },
+      ],
+      latestComment: {
+        id: 'c-question',
+        body: '/question What changed in the implementation?',
+        author: { login: 'owner' },
+        createdAt: '2026-07-05T12:05:00.000Z',
+        updatedAt: '2026-07-05T12:05:00.000Z',
+        isBotAuthored: false,
+      },
+      wake: {
+        stage: 'refine',
+        stageHistory: [],
+        recentEventIds: [],
+        syncedAt: '2026-07-05T12:00:00.000Z',
+        expectedEcho: { commentIds: [], labels: [] },
+      },
+      context: {
+        lastRunSentinel: 'AWAITING_APPROVAL',
+        pendingApprovalAction: 'refine',
+      },
+    });
+
+    const config = createDefaultWakeConfig(root);
+    config.sources.github.policy.requiredLabels = ['wake:queue'];
+
+    const tickRunner = createTickRunner({
+      clock: { now: () => new Date('2026-07-05T12:10:00.000Z') },
+      config,
+      stateStore: store,
+      workSource: { async pollEvents() { return []; } },
+      runner: {
+        async run(input) {
+          runnerCallCount += 1;
+          expect(input.action).toBe('refine');
+          return { result: 'The implementation updates the parser only.\nAWAITING_APPROVAL', model: 'test-model', cli: 'test-cli' };
+        },
+      },
+      workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+    });
+
+    const result = await tickRunner.runTick();
+
+    expect(result.status).toBe('processed');
+    expect(runnerCallCount).toBe(1);
+  });
+
+  it('stays idle when awaiting approval and the comment is conversation, not an explicit command (S2)', async () => {
     const store = createStateStore({ wakeRoot: root });
     let runnerCallCount = 0;
 

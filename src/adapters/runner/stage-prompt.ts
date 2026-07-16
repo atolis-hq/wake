@@ -7,6 +7,7 @@ import { branchNameForIssue } from '../git/git-workspace-manager.js';
 import { loadPromptTemplate, renderPromptTemplate } from './prompt-templates.js';
 
 type CommentSnapshot = IssueStateRecord['comments'][number];
+const questionCommandPattern = /^\/question\b/i;
 
 function formatComment(comment: CommentSnapshot): string {
   return [
@@ -44,6 +45,32 @@ function previousCommentsThroughLastRun(projection: IssueStateRecord): CommentSn
 
   const cursorIndex = projection.comments.findIndex((comment) => comment.id === handledCommentId);
   return cursorIndex === -1 ? [] : projection.comments.slice(0, cursorIndex + 1);
+}
+
+function matchesCommand(body: string, pattern: RegExp): boolean {
+  return body
+    .split(/\r?\n/)
+    .some((line) => pattern.test(line.trim()));
+}
+
+function latestQuestionCommandNote(input: {
+  comments: CommentSnapshot[];
+  successSentinel: 'AWAITING_APPROVAL' | 'DONE';
+}): string {
+  const { comments, successSentinel } = input;
+  const latestHumanComment = comments.at(-1);
+  if (
+    latestHumanComment === undefined ||
+    !matchesCommand(latestHumanComment.body, questionCommandPattern)
+  ) {
+    return '';
+  }
+
+  return [
+    'The latest actionable command is `/question`.',
+    `Answer the question in the resumed session context. Do not make code changes solely because of this command; if the answer does not require changes, leave the work in its current state and report ${successSentinel}.`,
+    '',
+  ].join('\n');
 }
 
 function parseFrontmatterList(value: string | undefined): string[] {
@@ -235,6 +262,12 @@ export async function buildStagePrompt(input: {
   const permissionMode = template.frontmatter.permissionMode;
   const commentsToAddress = newCommentsSinceLastRun(input.projection);
   const priorComments = previousCommentsThroughLastRun(input.projection);
+  context.feedbackCommandNote = mode === 'resume'
+    ? latestQuestionCommandNote({
+        comments: commentsToAddress,
+        successSentinel: skipApproval ? 'DONE' : 'AWAITING_APPROVAL',
+      })
+    : '';
   const commentSections =
     mode === 'resume'
       ? [
