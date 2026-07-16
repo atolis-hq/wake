@@ -39,6 +39,22 @@ The "no repo/issue in paths" rule binds `.wake/` durable storage. Git branches a
 
 Note: the work-graph handoff's §7 `CorrelationRegistered` code sample (lines 396-407) omits `provenance` and is stale. ADR 0001 §2 governs the payload shape.
 
+### D3. Why identity is minted rather than the originating ticket
+
+The source documents assert minted identity without arguing for it (the handoff's "no external surface ID is the work's identity", line 916). The question "why is work not simply named by its ticket?" is the obvious one and was raised during review; recording the answer so it is not re-litigated.
+
+**The case rests on ticket keys not being stable names for work over its whole life:**
+
+* **Ticket mutation.** Transferring a GitHub issue between repos assigns a *new number in the target repo*. Under ticket-identity that is not a rename but a different key: stream, projection path, and accumulated history orphan, and Wake mints a fresh work item for work already in flight. Provider migration (Jira → Linear) has the same shape.
+* **Cardinality.** Work splits, or two tickets prove to be one job. If the ticket *is* the identity, a merge is unrepresentable — one lifecycle cannot hold two keys. Ticket-identity forecloses the deferred work-to-work topology layer rather than deferring it.
+* **Multiple representations.** A Jira epic mirrored to a GitHub issue: both are representations, neither privileged. Ticket-identity forces an arbitrary winner.
+
+**What does *not* justify it:** "uniform resolution, no founding-surface special case" and "complete `correlatedResources[]`" are cited by the plan (§1) but are achievable *without* minting — a ticket-shaped key plus representation auto-registration yields both. Do not rely on those arguments; the case is the three points above and nothing else.
+
+**Accepted cost:** work IDs are opaque. `work-01JXYZ` in a log line conveys nothing without a lookup, and `state/<workId>.json` is not greppable by issue number. This is a real, daily operator tax. No lookup affordance is being built (deliberate YAGNI, decided at review); the reverse index shards serve for manual debugging.
+
+**Why it is accepted:** asymmetry, not frequency. If minting proves unnecessary, the cost is readability and some indirection. If ticket-identity proves wrong, it surfaces on the first transfer — and the remedy is a migration over accumulated history, precisely what this plan exists to avoid. The fresh-start pass is free now and shrinks as history accrues.
+
 ## Design
 
 ### 1. Identity and minting
