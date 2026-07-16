@@ -320,6 +320,7 @@ describe('github issues work source', () => {
           expectedEcho: { commentIds: [], labels: [] },
       },
       context: {},
+      correlatedResources: [],
     });
 
     const secondPoll = await workSource.pollEvents();
@@ -360,6 +361,7 @@ describe('github issues work source', () => {
         },
       },
       context: {},
+      correlatedResources: [],
     });
 
     const workSource = createGitHubIssuesWorkSource({
@@ -433,6 +435,7 @@ describe('github issues work source', () => {
         },
       },
       context: {},
+      correlatedResources: [],
     });
 
     const workSource = createGitHubIssuesWorkSource({
@@ -880,6 +883,7 @@ describe('github issues work source', () => {
           expectedEcho: { commentIds: [], labels: [] },
       },
       context: {},
+      correlatedResources: [],
     });
 
     const workSource = createGitHubIssuesWorkSource({
@@ -954,6 +958,7 @@ describe('github issues work source', () => {
           expectedEcho: { commentIds: [], labels: [] },
       },
       context: {},
+      correlatedResources: [],
     });
 
     const workSource = createGitHubIssuesWorkSource({
@@ -1027,6 +1032,7 @@ describe('github issues work source', () => {
           expectedEcho: { commentIds: [], labels: [] },
       },
       context: {},
+      correlatedResources: [],
     });
 
     const workSource = createGitHubIssuesWorkSource({

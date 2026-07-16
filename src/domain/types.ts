@@ -25,17 +25,13 @@ export type Stage = (typeof stageValues)[number];
 export type RunnerSentinel = (typeof runnerSentinelValues)[number];
 export type AgentAction = (typeof agentActionValues)[number];
 
-// correlatedResources is required on the schema's true parsed output (zod's
-// `.default([])` always fills it), but making it required on the exported
-// TS type would force every existing call site across the codebase that
-// builds an IssueStateRecord-shaped literal (test fixtures, adapters) to add
-// it. Widening it to optional here keeps those call sites compiling; every
-// value that actually flows through parseIssueStateRecord/readIssueState
-// still gets a real array at runtime regardless of what the type says.
-type ParsedIssueStateRecord = z.infer<typeof issueStateRecordSchema>;
-export type IssueStateRecord = Omit<ParsedIssueStateRecord, 'correlatedResources'> & {
-  correlatedResources?: ParsedIssueStateRecord['correlatedResources'];
-};
+// correlatedResources is always present on the schema's true parsed output
+// (zod's `.default([])` guarantees it), so the read type keeps it required —
+// an optional marker here would be a lie about runtime and would push
+// pointless `?? []` guards onto every consumer. Call sites that build a raw
+// IssueStateRecord literal without going through parseIssueStateRecord
+// (test fixtures) simply include `correlatedResources: []` explicitly.
+export type IssueStateRecord = z.infer<typeof issueStateRecordSchema>;
 export type RunRecord = z.infer<typeof runRecordSchema>;
 export type EventEnvelope = z.infer<typeof eventEnvelopeSchema>;
 export type WakeLedger = z.infer<typeof ledgerSchema>;

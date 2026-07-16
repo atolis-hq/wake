@@ -15,35 +15,6 @@ import type {
 import { createEventEnvelope } from '../lib/event-log.js';
 import type { ResourceIndex } from './contracts.js';
 
-/**
- * Minimal in-memory default so createProjectionUpdater/createTickRunner stay
- * usable without a caller wiring a real index in (mainly existing tests that
- * predate the correlation registry and don't exercise it). core/ must never
- * import a concrete adapter (src/adapters/fs/resource-index.ts) — this is a
- * self-contained fallback, not that adapter. Production always gets the real,
- * disk-backed index via main.ts's buildRuntime.
- */
-export function createInMemoryResourceIndex(): ResourceIndex {
-  const entries = new Map<string, string>();
-  return {
-    async resolve(resourceUri: string) {
-      return entries.get(resourceUri);
-    },
-    async register(resourceUri: string, workItemKey: string) {
-      entries.set(resourceUri, workItemKey);
-    },
-    async retract(resourceUri: string) {
-      entries.delete(resourceUri);
-    },
-    async replaceAll(next: ReadonlyMap<string, string>) {
-      entries.clear();
-      for (const [resourceUri, workItemKey] of next) {
-        entries.set(resourceUri, workItemKey);
-      }
-    },
-  };
-}
-
 type ApplyEventCtx = {
   resourceIndex: ResourceIndex;
   appendEvent: (event: EventEnvelope) => Promise<EventEnvelope>;
@@ -354,16 +325,26 @@ async function applyEvent(
 
   if (event.sourceEventType === CORRELATION_REGISTERED_EVENT) {
     const payload = event.payload as unknown as CorrelationRegisteredPayload;
-    let relation = payload.relation;
+
+    // ADR 0001 §5/§6: relation is decided by the fold, not merely accepted
+    // from the event — the event's `relation` is a request, not the outcome.
+    // If no *other* work item currently holds this uri as primary, the
+    // registration folds as primary regardless of what was requested; this
+    // is what makes an "orphan secondary" (a secondary registration on a uri
+    // nobody holds as primary) unrepresentable, and one-primary-per-uri
+    // trivially true. Only when another work item already holds the uri as
+    // primary does this fold to secondary — and only then, and only when the
+    // event itself requested primary, is a primary-conflict event recorded
+    // naming the incumbent. Promotion still requires the incumbent to
+    // retract first — never let a second registration silently steal a uri.
+    const incumbent = await ctx.resourceIndex.resolve(payload.resourceUri);
+    const heldByAnotherWorkItem = incumbent !== undefined && incumbent !== current.workItemKey;
+    const relation: CorrelatedResource['relation'] = heldByAnotherWorkItem ? 'secondary' : 'primary';
 
     if (relation === 'primary') {
-      const incumbent = await ctx.resourceIndex.resolve(payload.resourceUri);
-      if (incumbent !== undefined && incumbent !== current.workItemKey) {
-        // One primary per uri (ADR 0001 §6): the second claimant folds to
-        // secondary and a conflict is recorded naming the incumbent.
-        // Promotion requires the incumbent to retract first — never let the
-        // second registration silently steal the uri.
-        relation = 'secondary';
+      await ctx.resourceIndex.register(payload.resourceUri, current.workItemKey);
+    } else {
+      if (payload.relation === 'primary') {
         await ctx.appendEvent(createEventEnvelope({
           eventId: `${event.eventId}-primary-conflict`,
           workItemKey: current.workItemKey,
@@ -380,8 +361,17 @@ async function applyEvent(
             incumbentWorkItemKey: incumbent,
           },
         }));
-      } else {
-        await ctx.resourceIndex.register(payload.resourceUri, current.workItemKey);
+      }
+
+      // Coherent inverse of the retraction gate below: a registration that
+      // resolves to non-primary must never leave the index stranded
+      // crediting this work item. Under this fold `heldByAnotherWorkItem`
+      // already implies the index credits someone else, so this is
+      // defensive — but the gate must be correct on its own terms, not
+      // merely unreachable given today's call sites (finding B).
+      const owner = await ctx.resourceIndex.resolve(payload.resourceUri);
+      if (owner === current.workItemKey) {
+        await ctx.resourceIndex.retract(payload.resourceUri);
       }
     }
 
@@ -394,7 +384,7 @@ async function applyEvent(
       registeredAt: event.occurredAt,
     };
 
-    const currentCorrelatedResources = current.correlatedResources ?? [];
+    const currentCorrelatedResources = current.correlatedResources;
     const existingIndex = currentCorrelatedResources.findIndex(
       (resource) => resource.resourceUri === payload.resourceUri,
     );
@@ -418,16 +408,18 @@ async function applyEvent(
 
   if (event.sourceEventType === CORRELATION_RETRACTED_EVENT) {
     const payload = event.payload as unknown as CorrelationRetractedPayload;
-    const currentCorrelatedResources = current.correlatedResources ?? [];
-    const existing = currentCorrelatedResources.find(
-      (resource) => resource.resourceUri === payload.resourceUri,
-    );
+    const currentCorrelatedResources = current.correlatedResources;
 
-    if (existing?.relation === 'primary') {
-      const owner = await ctx.resourceIndex.resolve(payload.resourceUri);
-      if (owner === current.workItemKey) {
-        await ctx.resourceIndex.retract(payload.resourceUri);
-      }
+    // Retract whenever the index currently credits this work item —
+    // regardless of the locally stored relation — so the registration and
+    // retraction gates are coherent inverses across a demotion. Gating this
+    // on `existing?.relation === 'primary'` (the locally folded relation at
+    // *registration* time) can strand the index pointing at a work item that
+    // no longer holds the resource once that relation has drifted, which is
+    // exactly the identity-critical path `resolve()` depends on (finding B).
+    const owner = await ctx.resourceIndex.resolve(payload.resourceUri);
+    if (owner === current.workItemKey) {
+      await ctx.resourceIndex.retract(payload.resourceUri);
     }
 
     return parseIssueStateRecord({
@@ -455,10 +447,18 @@ async function applyEvent(
 
 export function createProjectionUpdater(deps: {
   stateStore: ReturnType<typeof import('../adapters/fs/state-store.js').createStateStore>;
-  resourceIndex?: ResourceIndex;
+  // Required, not defaulted: this is correlation state, and CLAUDE.md forbids
+  // caching durable state in process memory between ticks. A default here
+  // would (a) silently evaporate the one-primary guarantee across a process
+  // restart and (b) let a future caller who forgets to wire the real index
+  // get no failure at all — just resolve() -> undefined, which downstream
+  // means "mint a new work item". Tests pass an explicit fake
+  // (adapters/fake/fake-resource-index.ts); production always passes the
+  // real, disk-backed index via main.ts's buildRuntime.
+  resourceIndex: ResourceIndex;
 }) {
   const applyEventCtx: ApplyEventCtx = {
-    resourceIndex: deps.resourceIndex ?? createInMemoryResourceIndex(),
+    resourceIndex: deps.resourceIndex,
     appendEvent: (event) => deps.stateStore.appendEventEnvelope(event),
   };
 

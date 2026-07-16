@@ -43,6 +43,7 @@ describe('claude runner command building', () => {
           expectedEcho: { commentIds: [], labels: [] },
     },
     context: {},
+    correlatedResources: [],
   };
 
   it('builds a minimal haiku print invocation for smoke tests', () => {
@@ -116,6 +117,7 @@ describe('claude runner command building', () => {
           expectedEcho: { commentIds: [], labels: [] },
         },
         context: {},
+        correlatedResources: [],
       },
     });
 
@@ -247,6 +249,7 @@ describe('claude runner command building', () => {
           expectedEcho: { commentIds: [], labels: [] },
         },
         context: { lastHandledCommentId: 'c-1' },
+        correlatedResources: [],
       },
     });
 
@@ -384,6 +387,7 @@ describe('claude runner command building', () => {
           expectedEcho: { commentIds: [], labels: [] },
         },
         context: { lastHandledCommentId: 'c-2' },
+        correlatedResources: [],
       },
     });
 
@@ -423,6 +427,7 @@ describe('claude runner command building', () => {
           expectedEcho: { commentIds: [], labels: [] },
         },
         context: {},
+        correlatedResources: [],
       },
     });
 
@@ -482,6 +487,7 @@ describe('claude runner command building', () => {
           expectedEcho: { commentIds: [], labels: [] },
         },
         context: {},
+        correlatedResources: [],
       },
       config: {
         ...createDefaultWakeConfig('/tmp/wake'),
@@ -643,6 +649,7 @@ describe('claude runner command building', () => {
           expectedEcho: { commentIds: [], labels: [] },
         },
         context: {},
+        correlatedResources: [],
       },
     });
 
@@ -682,6 +689,7 @@ describe('claude runner command building', () => {
           expectedEcho: { commentIds: [], labels: [] },
         },
         context: {},
+        correlatedResources: [],
       },
       contextOverrides: { toolCapabilityNote: codexNote },
     });
@@ -719,6 +727,7 @@ describe('claude runner command building', () => {
           expectedEcho: { commentIds: [], labels: [] },
         },
         context: {},
+        correlatedResources: [],
       },
     });
 
@@ -763,6 +772,7 @@ describe('claude runner command building', () => {
           expectedEcho: { commentIds: [], labels: [] },
           },
           context: {},
+          correlatedResources: [],
         },
         config: {
           ...createDefaultWakeConfig('/tmp/wake'),

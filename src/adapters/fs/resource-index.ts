@@ -4,13 +4,9 @@ import { rm } from 'node:fs/promises';
 import { acquireFileLock } from '../../lib/lock.js';
 import { readJsonFile, writeJsonFile } from '../../lib/json-file.js';
 import type { WakePaths } from '../../lib/paths.js';
+import type { ResourceIndex } from '../../core/contracts.js';
 
-export interface ResourceIndex {
-  resolve(resourceUri: string): Promise<string | undefined>;
-  register(resourceUri: string, workItemKey: string): Promise<void>;
-  retract(resourceUri: string): Promise<void>;
-  replaceAll(entries: ReadonlyMap<string, string>): Promise<void>;
-}
+export type { ResourceIndex } from '../../core/contracts.js';
 
 type ShardContents = Record<string, string>;
 

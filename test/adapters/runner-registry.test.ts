@@ -215,6 +215,7 @@ describe('runner registry routing', () => {
           expectedEcho: { commentIds: [], labels: [] },
         },
         context: {},
+        correlatedResources: [],
       },
       recentEvents: [],
       config,

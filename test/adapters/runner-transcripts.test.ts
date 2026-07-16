@@ -34,6 +34,7 @@ describe('runner transcripts', () => {
       expectedEcho: { commentIds: [], labels: [] },
     },
     context: {},
+    correlatedResources: [],
   };
 
   it('does nothing when transcript logging is disabled', async () => {

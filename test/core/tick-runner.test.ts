@@ -3,6 +3,7 @@ import { access, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:f
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { createFakeResourceIndex } from '../../src/adapters/fake/fake-resource-index.js';
 import { createFakeTicketingSystem } from '../../src/adapters/fake/fake-ticketing-system.js';
 import { createFakeWorkspaceManager } from '../../src/adapters/fake/fake-workspace-manager.js';
 import { createResourceIndex } from '../../src/adapters/fs/resource-index.js';
@@ -10,7 +11,7 @@ import { createStateStore } from '../../src/adapters/fs/state-store.js';
 import { createDefaultWakeConfig } from '../../src/config/defaults.js';
 import { createProjectionUpdater } from '../../src/core/projection-updater.js';
 import { createTickRunner } from '../../src/core/tick-runner.js';
-import { CORRELATION_REGISTERED_EVENT } from '../../src/domain/schema.js';
+import { CORRELATION_PRIMARY_CONFLICT_EVENT, CORRELATION_REGISTERED_EVENT } from '../../src/domain/schema.js';
 import { createEventEnvelope } from '../../src/lib/event-log.js';
 
 describe('tick runner', () => {
@@ -52,6 +53,7 @@ describe('tick runner', () => {
         ],
       }),
       runner,
+      resourceIndex: createFakeResourceIndex(),
       workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
     });
 
@@ -91,6 +93,7 @@ describe('tick runner', () => {
           };
         },
       },
+      resourceIndex: createFakeResourceIndex(),
       workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
     });
 
@@ -138,6 +141,7 @@ describe('tick runner', () => {
           };
         },
       },
+      resourceIndex: createFakeResourceIndex(),
       workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
     });
 
@@ -176,6 +180,7 @@ describe('tick runner', () => {
           return { result: 'Fake runner completed\nDONE', model: 'test-model', cli: 'test-cli', session_id: 'fake-session-1' };
         },
       },
+      resourceIndex: createFakeResourceIndex(),
       workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
     });
 
@@ -223,6 +228,7 @@ describe('tick runner', () => {
           };
         },
       },
+      resourceIndex: createFakeResourceIndex(),
       workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
     });
 
@@ -275,6 +281,7 @@ describe('tick runner', () => {
           };
         },
       },
+      resourceIndex: createFakeResourceIndex(),
       workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
     });
 
@@ -375,6 +382,7 @@ describe('tick runner', () => {
           return { result: 'Need more detail\nBLOCKED', model: 'test-model', cli: 'test-cli', session_id: 'session-2' };
         },
       },
+      resourceIndex: createFakeResourceIndex(),
       workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
     });
 
@@ -413,6 +421,7 @@ describe('tick runner', () => {
           expectedEcho: { commentIds: [], labels: [] },
       },
       context: {},
+      correlatedResources: [],
     });
 
     const config = createDefaultWakeConfig(root);
@@ -453,6 +462,7 @@ describe('tick runner', () => {
           };
         },
       },
+      resourceIndex: createFakeResourceIndex(),
       workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
     });
 
@@ -501,6 +511,7 @@ describe('tick runner', () => {
           expectedEcho: { commentIds: [], labels: [] },
       },
       context: {},
+      correlatedResources: [],
     });
 
     const config = createDefaultWakeConfig(root);
@@ -536,6 +547,7 @@ describe('tick runner', () => {
           };
         },
       },
+      resourceIndex: createFakeResourceIndex(),
       workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
     });
 
@@ -612,6 +624,7 @@ describe('tick runner', () => {
         lastRunSentinel: 'AWAITING_APPROVAL',
         pendingApprovalAction: 'implement',
       },
+      correlatedResources: [],
     });
 
     const config = createDefaultWakeConfig(root);
@@ -637,6 +650,7 @@ describe('tick runner', () => {
           return { result: 'DONE', model: 'test-model', cli: 'test-cli' };
         },
       },
+      resourceIndex: createFakeResourceIndex(),
       workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
     });
 
@@ -683,6 +697,7 @@ describe('tick runner', () => {
         lastRunSentinel: 'AWAITING_APPROVAL',
         pendingApprovalAction: 'implement',
       },
+      correlatedResources: [],
     });
 
     const config = createDefaultWakeConfig(root);
@@ -699,6 +714,7 @@ describe('tick runner', () => {
           return { result: 'DONE', model: 'test-model', cli: 'test-cli' };
         },
       },
+      resourceIndex: createFakeResourceIndex(),
       workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
     });
 
@@ -757,6 +773,7 @@ describe('tick runner', () => {
         lastRunSentinel: 'AWAITING_APPROVAL',
         pendingApprovalAction: 'refine',
       },
+      correlatedResources: [],
     });
 
     const config = createDefaultWakeConfig(root);
@@ -773,6 +790,7 @@ describe('tick runner', () => {
           return { result: 'Revised plan.\nDONE', model: 'test-model', cli: 'test-cli' };
         },
       },
+      resourceIndex: createFakeResourceIndex(),
       workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
     });
 
@@ -906,6 +924,7 @@ describe('tick runner', () => {
         lastRunSentinel: 'AWAITING_APPROVAL',
         pendingApprovalAction: 'refine',
       },
+      correlatedResources: [],
     });
 
     const config = createDefaultWakeConfig(root);
@@ -922,6 +941,7 @@ describe('tick runner', () => {
           return { result: 'Revised plan.\nDONE', model: 'test-model', cli: 'test-cli' };
         },
       },
+      resourceIndex: createFakeResourceIndex(),
       workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
     });
 
@@ -965,6 +985,7 @@ describe('tick runner', () => {
           lastRunSentinel: 'AWAITING_APPROVAL',
           pendingApprovalAction: 'implement',
         },
+        correlatedResources: [],
       });
     }
 
@@ -1023,6 +1044,7 @@ describe('tick runner', () => {
           return { result: 'Revised.\nDONE', model: 'test-model', cli: 'test-cli' };
         },
       },
+      resourceIndex: createFakeResourceIndex(),
       workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
     });
 
@@ -1078,6 +1100,7 @@ describe('tick runner', () => {
         lastRunSentinel: 'AWAITING_APPROVAL',
         pendingApprovalAction: 'implement',
       },
+      correlatedResources: [],
     });
 
     const config = createDefaultWakeConfig(root);
@@ -1130,6 +1153,7 @@ describe('tick runner', () => {
           throw new Error('should not run');
         },
       },
+      resourceIndex: createFakeResourceIndex(),
       workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
     });
 
@@ -1188,6 +1212,7 @@ describe('tick runner', () => {
         lastRunSentinel: 'AWAITING_APPROVAL',
         pendingApprovalAction: 'implement',
       },
+      correlatedResources: [],
     });
 
     const config = createDefaultWakeConfig(root);
@@ -1204,6 +1229,7 @@ describe('tick runner', () => {
           return { result: 'DONE', model: 'test-model', cli: 'test-cli' };
         },
       },
+      resourceIndex: createFakeResourceIndex(),
       workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
     });
 
@@ -1243,6 +1269,7 @@ describe('tick runner', () => {
           expectedEcho: { commentIds: [], labels: [] },
       },
       context: {},
+      correlatedResources: [],
     });
 
     const config = createDefaultWakeConfig(root);
@@ -1273,6 +1300,7 @@ describe('tick runner', () => {
           return { result: 'DONE', model: 'test-model', cli: 'test-cli' };
         },
       },
+      resourceIndex: createFakeResourceIndex(),
       workspaceManager: {
         async prepareWorkspace() { throw new Error('git network failure'); },
         async prepareReadOnlyClone() { throw new Error('git network failure'); },
@@ -1336,6 +1364,7 @@ describe('tick runner', () => {
           expectedEcho: { commentIds: [], labels: [] },
       },
       context: {},
+      correlatedResources: [],
     });
 
     const config = createDefaultWakeConfig(root);
@@ -1370,6 +1399,7 @@ describe('tick runner', () => {
           return { result: 'Nope\nFAILED', model: 'test-model', cli: 'test-cli', session_id: 'session-4' };
         },
       },
+      resourceIndex: createFakeResourceIndex(),
       workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
     });
 
@@ -1416,6 +1446,7 @@ describe('tick runner', () => {
           expectedEcho: { commentIds: [], labels: [] },
       },
       context: {},
+      correlatedResources: [],
     });
 
     const config = createDefaultWakeConfig(root);
@@ -1475,6 +1506,7 @@ describe('tick runner', () => {
           return { result: 'Execution failed\nFAILED', model: 'test-model', cli: 'test-cli' };
         },
       },
+      resourceIndex: createFakeResourceIndex(),
       workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
     });
 
@@ -1542,6 +1574,7 @@ describe('tick runner', () => {
         lastRunAction: 'implement',
         lastRunSentinel: 'BLOCKED',
       },
+      correlatedResources: [],
     });
 
     const tickRunner = createTickRunner({
@@ -1559,6 +1592,7 @@ describe('tick runner', () => {
           return { result: 'Implemented\nDONE', model: 'test-model', cli: 'test-cli' };
         },
       },
+      resourceIndex: createFakeResourceIndex(),
       workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
     });
 
@@ -1608,6 +1642,7 @@ describe('tick runner', () => {
         expectedEcho: { commentIds: [], labels: [] },
       },
       context: {},
+      correlatedResources: [],
     });
     await store.writeRunRecord({
       schemaVersion: 1,
@@ -1634,6 +1669,7 @@ describe('tick runner', () => {
           return { result: 'Should not run\nDONE', model: 'test-model', cli: 'test-cli' };
         },
       },
+      resourceIndex: createFakeResourceIndex(),
       workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
     });
 
@@ -1686,6 +1722,7 @@ describe('tick runner', () => {
           };
         },
       },
+      resourceIndex: createFakeResourceIndex(),
       workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
     });
 
@@ -1729,6 +1766,7 @@ describe('tick runner', () => {
         stageHistory: [], recentEventIds: [], expectedEcho: { commentIds: [], labels: [] },
       },
       context: { lastRunAction: 'implement', lastRunSentinel: 'DONE' },
+      correlatedResources: [],
     });
     await store.writeRunRecord({
       schemaVersion: 1, runId: 'run-124-stale', repo: 'atolis-hq/wake', issueNumber: 124,
@@ -1746,6 +1784,7 @@ describe('tick runner', () => {
       stateStore: store,
       workSource: { async pollEvents() { return []; } },
       runner: { async run() { throw new Error('should not run'); } },
+      resourceIndex: createFakeResourceIndex(),
       workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
     });
 
@@ -1794,6 +1833,7 @@ describe('tick runner', () => {
         expectedEcho: { commentIds: [], labels: [] },
       },
       context: {},
+      correlatedResources: [],
     });
 
     const config = createDefaultWakeConfig(root);
@@ -1803,6 +1843,7 @@ describe('tick runner', () => {
       stateStore: store,
       workSource: { async pollEvents() { return []; } },
       runner: { async run() { return { result: 'DONE', model: 'test', cli: 'test' }; } },
+      resourceIndex: createFakeResourceIndex(),
       workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
     });
 
@@ -1849,6 +1890,7 @@ describe('tick runner', () => {
         expectedEcho: { commentIds: [], labels: [] },
       },
       context: {},
+      correlatedResources: [],
     });
 
     const config = createDefaultWakeConfig(root);
@@ -1859,6 +1901,7 @@ describe('tick runner', () => {
       stateStore: store,
       workSource: { async pollEvents() { return []; } },
       runner: { async run() { return { result: 'DONE', model: 'test', cli: 'test' }; } },
+      resourceIndex: createFakeResourceIndex(),
       workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
     });
 
@@ -1900,6 +1943,7 @@ describe('tick runner', () => {
         expectedEcho: { commentIds: [], labels: [] },
       },
       context: {},
+      correlatedResources: [],
     });
 
     const config = createDefaultWakeConfig(root);
@@ -1909,6 +1953,7 @@ describe('tick runner', () => {
       stateStore: store,
       workSource: { async pollEvents() { return []; } },
       runner: { async run() { return { result: 'DONE', model: 'test', cli: 'test' }; } },
+      resourceIndex: createFakeResourceIndex(),
       workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
     });
 
@@ -1937,6 +1982,7 @@ describe('tick runner', () => {
         recentEventIds: [], expectedEcho: { commentIds: [], labels: [] },
       },
       context: {},
+      correlatedResources: [],
     });
     const config = createDefaultWakeConfig(root);
     config.sources.github.policy.requiredLabels = ['wake:queue'];
@@ -1952,6 +1998,7 @@ describe('tick runner', () => {
         }],
       }),
       runner: { async run() { return { result: 'Refined\nDONE', model: 'test', cli: 'test' }; } },
+      resourceIndex: createFakeResourceIndex(),
       workspaceManager: {
         ...fakeWorkspace,
         async cleanupWorkspace() { throw new Error('EPERM: workspace is locked'); },
@@ -1994,6 +2041,7 @@ describe('tick runner', () => {
           return { result: 'Refined\nDONE', model: 'test-model', cli: 'test-cli', session_id: 'session-40' };
         },
       },
+      resourceIndex: createFakeResourceIndex(),
       workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
     });
 
@@ -2037,6 +2085,7 @@ describe('tick runner', () => {
         stageHistory: [], recentEventIds: [], expectedEcho: { commentIds: [], labels: [] },
       },
       context: {},
+      correlatedResources: [],
     });
 
     const orphanedIntent = {
@@ -2067,6 +2116,7 @@ describe('tick runner', () => {
         },
       },
       runner: { async run() { throw new Error('should not run'); } },
+      resourceIndex: createFakeResourceIndex(),
       workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
     });
 
@@ -2115,6 +2165,7 @@ describe('tick runner', () => {
         syncedAt: '2026-07-05T12:00:00.000Z', expectedEcho: { commentIds: [], labels: [] },
       },
       context: {},
+      correlatedResources: [],
     });
 
     const tickRunner = createTickRunner({
@@ -2128,6 +2179,7 @@ describe('tick runner', () => {
           return { result: 'Refined\nDONE', model: 'test-model', cli: 'test-cli' };
         },
       },
+      resourceIndex: createFakeResourceIndex(),
       workspaceManager: {
         async prepareWorkspace() { return { workspacePath: 'unused', mergeConflictDetected: false }; },
         async prepareReadOnlyClone() {
@@ -2182,6 +2234,7 @@ describe('tick runner', () => {
           return { result: 'DONE', model: 'test-model', cli: 'test-cli' };
         },
       },
+      resourceIndex: createFakeResourceIndex(),
       workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
     });
 
@@ -2210,6 +2263,83 @@ describe('tick runner', () => {
       (event) => event.sourceEventType === CORRELATION_REGISTERED_EVENT,
     );
     expect(registrationEventsAfterSecondTick).toHaveLength(1);
+  });
+
+  it('fix E: does not resurrect a deliberate retraction — a work item that retracted all its resources is not re-auto-registered', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const config = createDefaultWakeConfig(root);
+    config.sources.github.policy.requiredLabels = ['wake:queue'];
+    const resourceIndex = createFakeResourceIndex();
+
+    const tickRunner = createTickRunner({
+      clock: { now: () => new Date('2026-07-05T12:00:00.000Z') },
+      config,
+      stateStore: store,
+      workSource: createFakeTicketingSystem({
+        tickets: [
+          {
+            repo: 'atolis-hq/wake',
+            number: 61,
+            title: 'Retract then re-tick',
+            body: 'Body',
+            labels: ['wake:queue'],
+            comments: [],
+          },
+        ],
+        now: () => new Date('2026-07-05T12:00:00.000Z'),
+      }),
+      runner: {
+        async run() {
+          return { result: 'DONE', model: 'test-model', cli: 'test-cli' };
+        },
+      },
+      resourceIndex,
+      workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+    });
+
+    // First tick auto-registers the origin ticket.
+    await tickRunner.runTick();
+    const registeredBefore = (await store.listEventEnvelopes()).filter(
+      (event) => event.sourceEventType === CORRELATION_REGISTERED_EVENT,
+    );
+    expect(registeredBefore).toHaveLength(1);
+
+    // The operator (or a later `wake correlate` command) deliberately
+    // retracts the only correlated resource, leaving correlatedResources[]
+    // legitimately empty — this must be durable, not just a transient state
+    // that the next tick silently reverses.
+    const projectionUpdater = createProjectionUpdater({ stateStore: store, resourceIndex });
+    const retraction = createEventEnvelope({
+      eventId: 'wake-61-origin-retracted',
+      workItemKey: 'fake-ticketing:atolis-hq/wake#61',
+      streamScope: 'work-item',
+      direction: 'internal',
+      sourceSystem: 'wake',
+      sourceEventType: 'wake.correlation.retracted',
+      sourceRefs: { repo: 'atolis-hq/wake', issueNumber: 61 },
+      occurredAt: '2026-07-05T12:05:00.000Z',
+      ingestedAt: '2026-07-05T12:05:00.000Z',
+      trigger: 'context-only',
+      payload: { resourceUri: 'fake-ticketing:issue:atolis-hq/wake#61' },
+    });
+    await store.appendEventEnvelope(retraction);
+    await projectionUpdater.rebuildFromEvents([retraction]);
+
+    const afterRetraction = await store.readIssueState('atolis-hq/wake', 61);
+    expect(afterRetraction?.correlatedResources).toEqual([]);
+
+    // A later tick must not treat the now-empty correlatedResources[] as
+    // "never registered" and silently re-claim the origin uri as primary
+    // (finding E) — the length-based check this replaces would fail here.
+    await tickRunner.runTick();
+
+    const registeredAfter = (await store.listEventEnvelopes()).filter(
+      (event) => event.sourceEventType === CORRELATION_REGISTERED_EVENT,
+    );
+    expect(registeredAfter).toHaveLength(1);
+
+    const finalProjection = await store.readIssueState('atolis-hq/wake', 61);
+    expect(finalProjection?.correlatedResources).toEqual([]);
   });
 
   it('reproduces projections and the resource index exactly after deleting state/ and replaying events/ (ADR 0001 rebuild guarantee)', async () => {
@@ -2248,56 +2378,114 @@ describe('tick runner', () => {
     await tickRunner.runTick();
 
     // Simulate additional correlated resources being discovered (e.g. an
-    // implementation PR and a discussion thread) via the same fold + index
-    // machinery a later `wake correlate` command will drive, sharing the
-    // exact stateStore + resourceIndex instances the tick runner uses.
+    // implementation PR) via the same fold + index machinery a later
+    // `wake correlate` command will drive, sharing the exact stateStore +
+    // resourceIndex instances the tick runner uses.
     const projectionUpdater = createProjectionUpdater({ stateStore: store, resourceIndex });
-    const extraRegistrations = [
-      createEventEnvelope({
-        eventId: 'wake-70-pr-registered',
-        workItemKey: 'fake-ticketing:atolis-hq/wake#70',
-        streamScope: 'work-item',
-        direction: 'internal',
-        sourceSystem: 'wake',
-        sourceEventType: CORRELATION_REGISTERED_EVENT,
-        sourceRefs: { repo: 'atolis-hq/wake', issueNumber: 70 },
-        occurredAt: '2026-07-05T12:05:00.000Z',
-        ingestedAt: '2026-07-05T12:05:00.000Z',
-        trigger: 'context-only',
-        payload: {
-          resourceUri: 'github:pr:atolis-hq/wake#71',
-          role: 'implementation',
-          relation: 'primary',
-          provenance: 'agent-reported',
-        },
-      }),
-      createEventEnvelope({
-        eventId: 'wake-70-discussion-registered',
-        workItemKey: 'fake-ticketing:atolis-hq/wake#70',
-        streamScope: 'work-item',
-        direction: 'internal',
-        sourceSystem: 'wake',
-        sourceEventType: CORRELATION_REGISTERED_EVENT,
-        sourceRefs: { repo: 'atolis-hq/wake', issueNumber: 70 },
-        occurredAt: '2026-07-05T12:06:00.000Z',
-        ingestedAt: '2026-07-05T12:06:00.000Z',
-        trigger: 'context-only',
-        payload: {
-          resourceUri: 'slack:thread:C123-456',
-          role: 'discussion',
-          relation: 'secondary',
-          provenance: 'operator-declared',
-        },
-      }),
-    ];
+    const prRegistration = createEventEnvelope({
+      eventId: 'wake-70-pr-registered',
+      workItemKey: 'fake-ticketing:atolis-hq/wake#70',
+      streamScope: 'work-item',
+      direction: 'internal',
+      sourceSystem: 'wake',
+      sourceEventType: CORRELATION_REGISTERED_EVENT,
+      sourceRefs: { repo: 'atolis-hq/wake', issueNumber: 70, resourceUri: 'github:pr:atolis-hq/wake#71' },
+      occurredAt: '2026-07-05T12:05:00.000Z',
+      ingestedAt: '2026-07-05T12:05:00.000Z',
+      trigger: 'context-only',
+      payload: {
+        resourceUri: 'github:pr:atolis-hq/wake#71',
+        role: 'implementation',
+        relation: 'primary',
+        provenance: 'agent-reported',
+      },
+    });
+    await store.appendEventEnvelope(prRegistration);
+    await projectionUpdater.rebuildFromEvents([prRegistration]);
 
-    for (const event of extraRegistrations) {
+    // A second, unrelated work item now shows up and tries to claim the same
+    // PR as its own primary — this must fold to a *real* secondary (a
+    // registration on a uri another work item already holds as primary),
+    // never an orphan one, and must record a primary-conflict event naming
+    // the incumbent (ADR 0001 §6). This is also the conflict path that
+    // appends an event mid-fold, which is exactly where replay divergence
+    // would hide, so the rebuild guarantee below must hold across it too.
+    const secondIssueUpsert = createEventEnvelope({
+      eventId: 'fake-issue-atolis-hq-wake-90',
+      workItemKey: 'fake-ticketing:atolis-hq/wake#90',
+      streamScope: 'global-intake',
+      direction: 'inbound',
+      sourceSystem: 'fake-ticketing',
+      sourceEventType: 'fake.issue.upsert',
+      sourceRefs: {
+        repo: 'atolis-hq/wake',
+        issueNumber: 90,
+        resourceUri: 'fake-ticketing:issue:atolis-hq/wake#90',
+      },
+      occurredAt: '2026-07-05T12:07:00.000Z',
+      ingestedAt: '2026-07-05T12:07:00.000Z',
+      trigger: 'immediate',
+      payload: {
+        issue: {
+          repo: 'atolis-hq/wake',
+          number: 90,
+          title: 'Conflicting claimant',
+          body: 'Body',
+          labels: ['wake:queue'],
+          assignees: [],
+          state: 'open',
+          url: 'https://example.test/atolis-hq/wake/issues/90',
+          createdAt: '2026-07-05T12:07:00.000Z',
+          updatedAt: '2026-07-05T12:07:00.000Z',
+        },
+      },
+    });
+    const conflictingRegistration = createEventEnvelope({
+      eventId: 'wake-90-pr-conflict-registered',
+      workItemKey: 'fake-ticketing:atolis-hq/wake#90',
+      streamScope: 'work-item',
+      direction: 'internal',
+      sourceSystem: 'wake',
+      sourceEventType: CORRELATION_REGISTERED_EVENT,
+      sourceRefs: { repo: 'atolis-hq/wake', issueNumber: 90, resourceUri: 'github:pr:atolis-hq/wake#71' },
+      occurredAt: '2026-07-05T12:08:00.000Z',
+      ingestedAt: '2026-07-05T12:08:00.000Z',
+      trigger: 'context-only',
+      payload: {
+        resourceUri: 'github:pr:atolis-hq/wake#71',
+        role: 'implementation',
+        relation: 'primary',
+        provenance: 'agent-reported',
+      },
+    });
+
+    for (const event of [secondIssueUpsert, conflictingRegistration]) {
       await store.appendEventEnvelope(event);
       await projectionUpdater.rebuildFromEvents([event]);
     }
 
-    const before = await store.readIssueState('atolis-hq/wake', 70);
-    expect(before?.correlatedResources?.length ?? 0).toBeGreaterThanOrEqual(3);
+    const beforeIncumbent = await store.readIssueState('atolis-hq/wake', 70);
+    expect(beforeIncumbent?.correlatedResources.length ?? 0).toBeGreaterThanOrEqual(2);
+
+    const beforeClaimant = await store.readIssueState('atolis-hq/wake', 90);
+    expect(beforeClaimant?.correlatedResources).toEqual([
+      {
+        resourceUri: 'github:pr:atolis-hq/wake#71',
+        role: 'implementation',
+        relation: 'secondary',
+        provenance: 'agent-reported',
+        registeredAt: '2026-07-05T12:08:00.000Z',
+      },
+    ]);
+    expect(await resourceIndex.resolve('github:pr:atolis-hq/wake#71')).toBe(
+      'fake-ticketing:atolis-hq/wake#70',
+    );
+
+    const beforeAllEvents = await store.listEventEnvelopes();
+    const conflictEventCountBefore = beforeAllEvents.filter(
+      (event) => event.sourceEventType === CORRELATION_PRIMARY_CONFLICT_EVENT,
+    ).length;
+    expect(conflictEventCountBefore).toBe(1);
 
     const indexDir = join(root, 'state', 'index');
     const shardFilesBefore = (await readdir(indexDir)).sort();
@@ -2314,13 +2502,22 @@ describe('tick runner', () => {
     const allEvents = await store.listEventEnvelopes();
     await projectionUpdater.rebuildFromEvents(allEvents);
 
-    const after = await store.readIssueState('atolis-hq/wake', 70);
-    expect(after).toEqual(before);
+    const afterIncumbent = await store.readIssueState('atolis-hq/wake', 70);
+    expect(afterIncumbent).toEqual(beforeIncumbent);
+
+    const afterClaimant = await store.readIssueState('atolis-hq/wake', 90);
+    expect(afterClaimant).toEqual(beforeClaimant);
 
     const shardFilesAfter = (await readdir(indexDir)).sort();
     expect(shardFilesAfter).toEqual(shardFilesBefore);
     for (const file of shardFilesAfter) {
       expect(await readFile(join(indexDir, file), 'utf8')).toBe(shardSnapshots.get(file));
     }
+
+    const afterAllEvents = await store.listEventEnvelopes();
+    const conflictEventCountAfter = afterAllEvents.filter(
+      (event) => event.sourceEventType === CORRELATION_PRIMARY_CONFLICT_EVENT,
+    ).length;
+    expect(conflictEventCountAfter).toBe(conflictEventCountBefore);
   });
 });

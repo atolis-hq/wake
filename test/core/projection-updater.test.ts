@@ -3,6 +3,7 @@ import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { createFakeResourceIndex } from '../../src/adapters/fake/fake-resource-index.js';
 import { createResourceIndex } from '../../src/adapters/fs/resource-index.js';
 import { createStateStore } from '../../src/adapters/fs/state-store.js';
 import { createProjectionUpdater } from '../../src/core/projection-updater.js';
@@ -121,7 +122,7 @@ describe('projection updater', () => {
 
   it('records the claimed run as the projection latest run', async () => {
     const store = createStateStore({ wakeRoot: root });
-    const updater = createProjectionUpdater({ stateStore: store });
+    const updater = createProjectionUpdater({ stateStore: store, resourceIndex: createFakeResourceIndex() });
     const claimed = createEventEnvelope({
       eventId: 'run-7-claimed',
       workItemKey: 'atolis-hq/wake#7',
@@ -147,7 +148,7 @@ describe('projection updater', () => {
 
   it('builds a work-item projection from correlated event envelopes', async () => {
     const store = createStateStore({ wakeRoot: root });
-    const updater = createProjectionUpdater({ stateStore: store });
+    const updater = createProjectionUpdater({ stateStore: store, resourceIndex: createFakeResourceIndex() });
 
     const events = [
       createEventEnvelope({
@@ -224,7 +225,7 @@ describe('projection updater', () => {
 
   it('replays events by ingestedAt when source occurredAt timestamps are stale', async () => {
     const store = createStateStore({ wakeRoot: root });
-    const updater = createProjectionUpdater({ stateStore: store });
+    const updater = createProjectionUpdater({ stateStore: store, resourceIndex: createFakeResourceIndex() });
 
     const issue = issueUpsert({
       eventId: 'evt-stale-issue',
@@ -268,7 +269,7 @@ describe('projection updater', () => {
 
   it('preserves pull-request identity from ticket upserts in the local projection', async () => {
     const store = createStateStore({ wakeRoot: root });
-    const updater = createProjectionUpdater({ stateStore: store });
+    const updater = createProjectionUpdater({ stateStore: store, resourceIndex: createFakeResourceIndex() });
     const event = issueUpsert({
       eventId: 'evt-pr-upsert',
       issueNumber: 80,
@@ -287,7 +288,7 @@ describe('projection updater', () => {
       const store = createStateStore({
         wakeRoot: await mkdtemp(join(tmpdir(), 'wake-projection-updater-stage-')),
       });
-      const updater = createProjectionUpdater({ stateStore: store });
+      const updater = createProjectionUpdater({ stateStore: store, resourceIndex: createFakeResourceIndex() });
       const event = issueUpsert({
         eventId: `evt-stage-${stage}`,
         issueNumber: 100 + index,
@@ -303,7 +304,7 @@ describe('projection updater', () => {
 
   it('ignores legacy and unknown stage labels when creating a projection', async () => {
     const store = createStateStore({ wakeRoot: root });
-    const updater = createProjectionUpdater({ stateStore: store });
+    const updater = createProjectionUpdater({ stateStore: store, resourceIndex: createFakeResourceIndex() });
     const event = issueUpsert({
       eventId: 'evt-legacy-label',
       issueNumber: 101,
@@ -318,7 +319,7 @@ describe('projection updater', () => {
 
   it('does not set stage from ambiguous current wake stage labels', async () => {
     const store = createStateStore({ wakeRoot: root });
-    const updater = createProjectionUpdater({ stateStore: store });
+    const updater = createProjectionUpdater({ stateStore: store, resourceIndex: createFakeResourceIndex() });
     const event = issueUpsert({
       eventId: 'evt-ambiguous-labels',
       issueNumber: 102,
@@ -333,7 +334,7 @@ describe('projection updater', () => {
 
   it('reconciles an existing projection stage from a single current wake stage label', async () => {
     const store = createStateStore({ wakeRoot: root });
-    const updater = createProjectionUpdater({ stateStore: store });
+    const updater = createProjectionUpdater({ stateStore: store, resourceIndex: createFakeResourceIndex() });
     const initial = issueUpsert({
       eventId: 'evt-reconcile-initial',
       issueNumber: 103,
@@ -365,7 +366,7 @@ describe('projection updater', () => {
 
   it('leaves an existing projection stage unchanged for ambiguous current wake stage labels', async () => {
     const store = createStateStore({ wakeRoot: root });
-    const updater = createProjectionUpdater({ stateStore: store });
+    const updater = createProjectionUpdater({ stateStore: store, resourceIndex: createFakeResourceIndex() });
     const initial = issueUpsert({
       eventId: 'evt-ambiguous-existing-initial',
       issueNumber: 104,
@@ -389,7 +390,7 @@ describe('projection updater', () => {
 
   it('does not regress an already-advanced stage when the issue is re-synced', async () => {
     const store = createStateStore({ wakeRoot: root });
-    const updater = createProjectionUpdater({ stateStore: store });
+    const updater = createProjectionUpdater({ stateStore: store, resourceIndex: createFakeResourceIndex() });
 
     const initialUpsert = createEventEnvelope({
       eventId: 'evt-issue-1',
@@ -496,7 +497,7 @@ describe('projection updater', () => {
 
   it('records published comment ids as expected echoes', async () => {
     const store = createStateStore({ wakeRoot: root });
-    const updater = createProjectionUpdater({ stateStore: store });
+    const updater = createProjectionUpdater({ stateStore: store, resourceIndex: createFakeResourceIndex() });
 
     const initialUpsert = createEventEnvelope({
       eventId: 'evt-issue-echo-comment',
@@ -555,7 +556,7 @@ describe('projection updater', () => {
 
   it('records updated labels as expected echoes and refreshes local labels', async () => {
     const store = createStateStore({ wakeRoot: root });
-    const updater = createProjectionUpdater({ stateStore: store });
+    const updater = createProjectionUpdater({ stateStore: store, resourceIndex: createFakeResourceIndex() });
 
     const initialUpsert = createEventEnvelope({
       eventId: 'evt-issue-echo-label',
@@ -624,7 +625,7 @@ describe('projection updater', () => {
 
   it('records a human reply on a blocked issue without changing stage', async () => {
     const store = createStateStore({ wakeRoot: root });
-    const updater = createProjectionUpdater({ stateStore: store });
+    const updater = createProjectionUpdater({ stateStore: store, resourceIndex: createFakeResourceIndex() });
 
     const initialUpsert = createEventEnvelope({
       eventId: 'evt-issue-1',
@@ -763,7 +764,7 @@ describe('projection updater', () => {
 
   it('does not route an implement-stage block when a human replies', async () => {
     const store = createStateStore({ wakeRoot: root });
-    const updater = createProjectionUpdater({ stateStore: store });
+    const updater = createProjectionUpdater({ stateStore: store, resourceIndex: createFakeResourceIndex() });
 
     const initialUpsert = createEventEnvelope({
       eventId: 'evt-issue-1',
@@ -866,7 +867,7 @@ describe('projection updater', () => {
 
   it('does not unblock a blocked issue on a bot-authored comment', async () => {
     const store = createStateStore({ wakeRoot: root });
-    const updater = createProjectionUpdater({ stateStore: store });
+    const updater = createProjectionUpdater({ stateStore: store, resourceIndex: createFakeResourceIndex() });
 
     const initialUpsert = createEventEnvelope({
       eventId: 'evt-issue-1',
@@ -969,7 +970,7 @@ describe('projection updater', () => {
 
   it('records a human reply on a failed refine issue without changing stage', async () => {
     const store = createStateStore({ wakeRoot: root });
-    const updater = createProjectionUpdater({ stateStore: store });
+    const updater = createProjectionUpdater({ stateStore: store, resourceIndex: createFakeResourceIndex() });
 
     const initialUpsert = createEventEnvelope({
       eventId: 'evt-issue-1',
@@ -1073,7 +1074,7 @@ describe('projection updater', () => {
 
   it('records a human reply on a failed implement issue without changing stage', async () => {
     const store = createStateStore({ wakeRoot: root });
-    const updater = createProjectionUpdater({ stateStore: store });
+    const updater = createProjectionUpdater({ stateStore: store, resourceIndex: createFakeResourceIndex() });
 
     const initialUpsert = createEventEnvelope({
       eventId: 'evt-issue-1',
@@ -1176,7 +1177,7 @@ describe('projection updater', () => {
 
   it('preserves sessionId and sessionCli when a run transitions to blocked', async () => {
     const store = createStateStore({ wakeRoot: root });
-    const updater = createProjectionUpdater({ stateStore: store });
+    const updater = createProjectionUpdater({ stateStore: store, resourceIndex: createFakeResourceIndex() });
 
     await updater.rebuildFromEvents([
       issueUpsert({ eventId: 'evt-sess-blocked-init', issueNumber: 50, labels: ['wake:stage.implement'] }),
@@ -1212,7 +1213,7 @@ describe('projection updater', () => {
 
   it('clears sessionId and sessionCli when a run advances to a new action stage', async () => {
     const store = createStateStore({ wakeRoot: root });
-    const updater = createProjectionUpdater({ stateStore: store });
+    const updater = createProjectionUpdater({ stateStore: store, resourceIndex: createFakeResourceIndex() });
 
     await updater.rebuildFromEvents([
       issueUpsert({ eventId: 'evt-sess-adv-init', issueNumber: 51, labels: ['wake:stage.queue'] }),
@@ -1251,7 +1252,7 @@ describe('projection updater', () => {
 
   it('clears sessionId and sessionCli when a run fails', async () => {
     const store = createStateStore({ wakeRoot: root });
-    const updater = createProjectionUpdater({ stateStore: store });
+    const updater = createProjectionUpdater({ stateStore: store, resourceIndex: createFakeResourceIndex() });
 
     await updater.rebuildFromEvents([
       issueUpsert({ eventId: 'evt-sess-fail-init', issueNumber: 52, labels: ['wake:stage.implement'] }),
@@ -1379,6 +1380,24 @@ describe('projection updater', () => {
 
       await updater.rebuildFromEvents([
         issueUpsert({ eventId: 'evt-c3-issue', issueNumber: 202, labels: ['wake:queue'] }),
+        issueUpsert({ eventId: 'evt-c3-issue-incumbent', issueNumber: 999, labels: ['wake:queue'] }),
+      ]);
+
+      // Uri #302 must already be held primary by a *different* work item for
+      // 202's registration below to genuinely fold as secondary (ADR 0001
+      // §5/§6: with no incumbent, the fold now folds as primary regardless of
+      // the relation requested — see the "orphan secondary" fix).
+      await updater.rebuildFromEvents([
+        correlationRegistered({
+          eventId: 'evt-c3-incumbent-register',
+          workItemKey: 'github:atolis-hq/wake#999',
+          issueNumber: 999,
+          resourceUri: 'github:pr:atolis-hq/wake#302',
+          role: 'implementation',
+          relation: 'primary',
+          provenance: 'agent-reported',
+          occurredAt: '2026-07-05T12:59:00.000Z',
+        }),
       ]);
 
       await updater.rebuildFromEvents([
@@ -1544,6 +1563,104 @@ describe('projection updater', () => {
         resourceUri: 'github:pr:atolis-hq/wake#999',
         incumbentWorkItemKey: 'github:atolis-hq/wake#205',
       });
+    });
+
+    it('fix A: a secondary-requested registration on an unclaimed uri folds as primary and is resolvable in the index (no orphan secondaries)', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const resourceIndex = createResourceIndex({ paths: store.paths });
+      const updater = createProjectionUpdater({ stateStore: store, resourceIndex });
+
+      await updater.rebuildFromEvents([
+        issueUpsert({ eventId: 'evt-fixA-issue', issueNumber: 300, labels: ['wake:queue'] }),
+      ]);
+
+      // Nobody holds this uri as primary yet. Even though the event requests
+      // 'secondary', the fold — not the event — decides the outcome (ADR
+      // 0001 §5/§6): with no incumbent, it must fold as primary so an
+      // "orphan secondary" (a secondary on a uri nobody holds as primary,
+      // and so nobody can ever resolve) is unrepresentable.
+      await updater.rebuildFromEvents([
+        correlationRegistered({
+          eventId: 'evt-fixA-register',
+          workItemKey: 'github:atolis-hq/wake#300',
+          issueNumber: 300,
+          resourceUri: 'slack:thread:C900',
+          role: 'discussion',
+          relation: 'secondary',
+          provenance: 'operator-declared',
+          occurredAt: '2026-07-05T13:00:00.000Z',
+        }),
+      ]);
+
+      const projection = await store.readIssueState('atolis-hq/wake', 300);
+      expect(projection?.correlatedResources).toEqual([
+        {
+          resourceUri: 'slack:thread:C900',
+          role: 'discussion',
+          relation: 'primary',
+          provenance: 'operator-declared',
+          registeredAt: '2026-07-05T13:00:00.000Z',
+        },
+      ]);
+      expect(await resourceIndex.resolve('slack:thread:C900')).toBe('github:atolis-hq/wake#300');
+    });
+
+    it('fix B: register primary, re-register the same uri, then retract — the index no longer credits this work item', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const resourceIndex = createResourceIndex({ paths: store.paths });
+      const updater = createProjectionUpdater({ stateStore: store, resourceIndex });
+
+      await updater.rebuildFromEvents([
+        issueUpsert({ eventId: 'evt-fixB-issue', issueNumber: 301, labels: ['wake:queue'] }),
+      ]);
+
+      await updater.rebuildFromEvents([
+        correlationRegistered({
+          eventId: 'evt-fixB-register-1',
+          workItemKey: 'github:atolis-hq/wake#301',
+          issueNumber: 301,
+          resourceUri: 'slack:thread:C901',
+          role: 'discussion',
+          relation: 'primary',
+          provenance: 'operator-declared',
+          occurredAt: '2026-07-05T13:00:00.000Z',
+        }),
+      ]);
+      expect(await resourceIndex.resolve('slack:thread:C901')).toBe('github:atolis-hq/wake#301');
+
+      // Re-register the same (workItemKey, uri) pair requesting 'secondary'
+      // this time. Under the old code, `relation === 'primary'` gated the
+      // *only* place the index got touched on registration, so this local
+      // relation flip could go unrecorded in the index while
+      // correlatedResources[] itself changed — stranding the index. The
+      // gate must not depend on what the locally-stored relation happens to
+      // be; retraction below must work off actual index ownership.
+      await updater.rebuildFromEvents([
+        correlationRegistered({
+          eventId: 'evt-fixB-register-2',
+          workItemKey: 'github:atolis-hq/wake#301',
+          issueNumber: 301,
+          resourceUri: 'slack:thread:C901',
+          role: 'discussion',
+          relation: 'secondary',
+          provenance: 'operator-declared',
+          occurredAt: '2026-07-05T13:01:00.000Z',
+        }),
+      ]);
+
+      await updater.rebuildFromEvents([
+        correlationRetracted({
+          eventId: 'evt-fixB-retract',
+          workItemKey: 'github:atolis-hq/wake#301',
+          issueNumber: 301,
+          resourceUri: 'slack:thread:C901',
+          occurredAt: '2026-07-05T13:02:00.000Z',
+        }),
+      ]);
+
+      expect(await resourceIndex.resolve('slack:thread:C901')).toBeUndefined();
+      const projection = await store.readIssueState('atolis-hq/wake', 301);
+      expect(projection?.correlatedResources).toEqual([]);
     });
   });
 });

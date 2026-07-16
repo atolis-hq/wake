@@ -41,6 +41,7 @@ function issueState(input?: {
       expectedEcho: { commentIds: [], labels: [] },
     },
     context: {},
+    correlatedResources: [],
   };
 }
 

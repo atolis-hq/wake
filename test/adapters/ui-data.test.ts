@@ -43,6 +43,7 @@ function issueState(input: {
       ...(input.lastRunId === undefined ? {} : { lastRunId: input.lastRunId }),
     },
     context: {},
+    correlatedResources: [],
   };
 }
 

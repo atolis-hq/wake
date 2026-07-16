@@ -4,7 +4,7 @@ import { isAbsolute, join, relative } from 'node:path';
 
 import { createLifecycleService } from './lifecycle-service.js';
 import { createPolicyEngine } from './policy-engine.js';
-import { createInMemoryResourceIndex, createProjectionUpdater } from './projection-updater.js';
+import { createProjectionUpdater } from './projection-updater.js';
 import type {
   AgentRunner,
   AgentRunResult,
@@ -18,7 +18,6 @@ import type { Clock } from '../lib/clock.js';
 import { acquireFileLock } from '../lib/lock.js';
 import { CORRELATION_REGISTERED_EVENT, parseRunnerResult } from '../domain/schema.js';
 import { maxConfiguredRunnerTimeoutMs, resolveRunnerRouting } from '../domain/runner-routing.js';
-import { buildResourceUri } from '../domain/resource-uri.js';
 import { awaitingApprovalRunnerSentinel, stageLabelForStage } from '../domain/stages.js';
 import type { AgentAction, EventEnvelope, IssueStateRecord, RunRecord, WakeConfig } from '../domain/types.js';
 import { createEventEnvelope } from '../lib/event-log.js';
@@ -39,14 +38,16 @@ export function createTickRunner(deps: {
   outboundSink?: OutboundSink;
   runner: AgentRunner;
   workspaceManager: WorkspaceManager;
-  resourceIndex?: ResourceIndex;
+  // Required — see the matching note on createProjectionUpdater's
+  // resourceIndex: this is durable correlation state and must never be
+  // cached in process memory across ticks or silently defaulted away.
+  resourceIndex: ResourceIndex;
 }) {
   const policy = createPolicyEngine();
   const lifecycle = createLifecycleService();
-  const resourceIndex = deps.resourceIndex ?? createInMemoryResourceIndex();
   const projectionUpdater = createProjectionUpdater({
     stateStore: deps.stateStore,
-    resourceIndex,
+    resourceIndex: deps.resourceIndex,
   });
 
   function extractTokenCount(tokenUsage: AgentRunTokenUsage | undefined): number | undefined {
@@ -273,23 +274,55 @@ export function createTickRunner(deps: {
   // resource the first time we ever see it, so correlatedResources[] is a
   // complete inventory with no special-cased "founding surface" — the origin
   // ticket is just the first entry, like any other later-discovered PR or
-  // thread. correlatedResources.length === 0 is what "not yet registered"
-  // means, which is also what makes a second tick over the same ticket a
-  // no-op here (the fold itself is additionally idempotent per uri).
+  // thread. "First time we ever see it" is judged by event history — the
+  // absence of any prior wake.correlation.registered event for the work item
+  // — not by an empty correlatedResources[] array. A work item that later
+  // retracts every resource has a legitimately empty array; treating that as
+  // "not yet registered" would silently resurrect a deliberate retraction on
+  // the next tick and re-claim the origin uri as primary. The fold is also
+  // independently idempotent per uri, so this only needs to be a reasonable
+  // gate, not a perfectly tight one.
   async function autoRegisterOriginatingTickets(
     projections: IssueStateRecord[],
     nowIso: string,
   ): Promise<void> {
+    const allEvents = await deps.stateStore.listEventEnvelopes();
+    const workItemsWithRegistration = new Set(
+      allEvents
+        .filter((event) => event.sourceEventType === CORRELATION_REGISTERED_EVENT)
+        .map((event) => event.workItemKey),
+    );
+    // The originating ticket-upsert event is the event that created this
+    // projection in the first place, and both sources (github, fake) now
+    // stamp sourceRefs.resourceUri on it. Reusing that value — rather than
+    // rebuilding it here with a defaulted `origin ?? 'github'` — means there
+    // is exactly one place in the system that constructs this identity
+    // string, so the two can never disagree.
+    const originResourceUriByWorkItem = new Map<string, string>();
+    for (const event of allEvents) {
+      if (
+        (event.sourceEventType === 'fake.issue.upsert' ||
+          event.sourceEventType === 'ticket.upsert') &&
+        event.sourceRefs.resourceUri !== undefined
+      ) {
+        originResourceUriByWorkItem.set(event.workItemKey, event.sourceRefs.resourceUri);
+      }
+    }
+
     for (const projection of projections) {
-      if ((projection.correlatedResources ?? []).length > 0) {
+      if (workItemsWithRegistration.has(projection.workItemKey)) {
         continue;
       }
 
-      const resourceUri = buildResourceUri(
-        projection.origin ?? 'github',
-        'issue',
-        `${projection.issue.repo}#${projection.issue.number}`,
-      );
+      const resourceUri = originResourceUriByWorkItem.get(projection.workItemKey);
+      if (resourceUri === undefined) {
+        // No source-provided resourceUri on record for this work item's
+        // origin ticket (e.g. its projection was constructed directly by a
+        // test fixture rather than folded from a real ticket-upsert event).
+        // Skip rather than reintroduce a defaulted guess; a future tick that
+        // does see the source event will register it then.
+        continue;
+      }
 
       const registeredEvent = createEventEnvelope({
         eventId: `${projection.workItemKey}-origin-correlation`,

@@ -7,10 +7,16 @@ import type {
   WakeConfig,
 } from '../domain/types.js';
 
-// Re-exported so core/ never needs to import the concrete fs adapter module
-// directly (only main.ts's buildRuntime wires createResourceIndex() in) —
-// this is a type-only re-export, so it carries no runtime dependency.
-export type { ResourceIndex } from '../adapters/fs/resource-index.js';
+// Declared here (not in the concrete fs adapter) so the seam direction
+// matches every other adapter contract in this file: core/ declares the
+// interface, the adapter imports and implements it. Only main.ts's
+// buildRuntime wires the concrete createResourceIndex() in.
+export interface ResourceIndex {
+  resolve(resourceUri: string): Promise<string | undefined>;
+  register(resourceUri: string, workItemKey: string): Promise<void>;
+  retract(resourceUri: string): Promise<void>;
+  replaceAll(entries: ReadonlyMap<string, string>): Promise<void>;
+}
 
 export interface WorkSource {
   pollEvents(): Promise<EventEnvelope[]>;
