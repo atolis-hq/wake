@@ -1,6 +1,11 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 
 import {
+  correlationPrimaryConflictPayloadSchema,
+  correlationRegisteredPayloadSchema,
+  correlationRetractedPayloadSchema,
+  eventEnvelopeSchema,
+  eventEnvelopeSourceRefsSchema,
   parseEventEnvelope,
   parseIssueStateRecord,
   parseSourceStateRecord,
@@ -8,6 +13,11 @@ import {
   parseRunRecord,
   parseRunnerResult,
   parseRunnerResultSentinel,
+  workItemCreatedPayloadSchema,
+  CORRELATION_PRIMARY_CONFLICT_EVENT,
+  CORRELATION_REGISTERED_EVENT,
+  CORRELATION_RETRACTED_EVENT,
+  WORK_ITEM_CREATED_EVENT,
 } from '../../src/domain/schema.js';
 import type { WakeDevConfig, WakeSandboxConfig } from '../../src/domain/types.js';
 
@@ -240,6 +250,164 @@ describe('run and event schemas', () => {
 
     expect(event.workItemKey).toBe('github:atolis-hq/wake#12');
     expect(event.streamScope).toBe('work-item');
+  });
+
+  it('accepts a valid resourceUri on sourceRefs', () => {
+    const refs = eventEnvelopeSourceRefsSchema.parse({
+      resourceUri: 'github:pr:atolis-hq/wake#91',
+    });
+
+    expect(refs.resourceUri).toBe('github:pr:atolis-hq/wake#91');
+  });
+
+  it('rejects a malformed resourceUri on sourceRefs', () => {
+    expect(() =>
+      eventEnvelopeSourceRefsSchema.parse({ resourceUri: 'not-a-resource-uri' }),
+    ).toThrow();
+  });
+
+  it('parses sourceRefs successfully when resourceUri is absent', () => {
+    const refs = eventEnvelopeSourceRefsSchema.parse({
+      repo: 'atolis-hq/wake',
+      issueNumber: 12,
+    });
+
+    expect(refs.resourceUri).toBeUndefined();
+  });
+
+  it('accepts a full correlation registered payload', () => {
+    const payload = correlationRegisteredPayloadSchema.parse({
+      resourceUri: 'github:pr:atolis-hq/wake#91',
+      role: 'implementation',
+      relation: 'primary',
+      provenance: 'operator-declared',
+      registeredBy: 'run-1',
+    });
+
+    expect(payload.registeredBy).toBe('run-1');
+  });
+
+  it('accepts a correlation registered payload with registeredBy omitted', () => {
+    const payload = correlationRegisteredPayloadSchema.parse({
+      resourceUri: 'github:pr:atolis-hq/wake#91',
+      role: 'implementation',
+      relation: 'primary',
+      provenance: 'operator-declared',
+    });
+
+    expect(payload.registeredBy).toBeUndefined();
+  });
+
+  it('rejects a correlation registered payload with an unknown role', () => {
+    expect(() =>
+      correlationRegisteredPayloadSchema.parse({
+        resourceUri: 'github:pr:atolis-hq/wake#91',
+        role: 'pr',
+        relation: 'primary',
+        provenance: 'operator-declared',
+      }),
+    ).toThrow();
+  });
+
+  it('rejects a correlation registered payload with an unknown relation', () => {
+    expect(() =>
+      correlationRegisteredPayloadSchema.parse({
+        resourceUri: 'github:pr:atolis-hq/wake#91',
+        role: 'implementation',
+        relation: 'tertiary',
+        provenance: 'operator-declared',
+      }),
+    ).toThrow();
+  });
+
+  it('rejects a correlation registered payload with an unknown provenance', () => {
+    expect(() =>
+      correlationRegisteredPayloadSchema.parse({
+        resourceUri: 'github:pr:atolis-hq/wake#91',
+        role: 'implementation',
+        relation: 'primary',
+        provenance: 'human-declared',
+      }),
+    ).toThrow();
+  });
+
+  it('rejects a correlation registered payload with a malformed resourceUri', () => {
+    expect(() =>
+      correlationRegisteredPayloadSchema.parse({
+        resourceUri: 'not-a-resource-uri',
+        role: 'implementation',
+        relation: 'primary',
+        provenance: 'operator-declared',
+      }),
+    ).toThrow();
+  });
+
+  it('accepts a correlation retracted payload', () => {
+    const payload = correlationRetractedPayloadSchema.parse({
+      resourceUri: 'github:pr:atolis-hq/wake#91',
+    });
+
+    expect(payload.resourceUri).toBe('github:pr:atolis-hq/wake#91');
+  });
+
+  it('rejects a correlation retracted payload missing resourceUri', () => {
+    expect(() => correlationRetractedPayloadSchema.parse({})).toThrow();
+  });
+
+  it('accepts an empty work item created payload', () => {
+    expect(workItemCreatedPayloadSchema.parse({})).toEqual({});
+  });
+
+  it('accepts a correlation primary-conflict payload', () => {
+    const payload = correlationPrimaryConflictPayloadSchema.parse({
+      resourceUri: 'github:pr:atolis-hq/wake#91',
+      incumbentWorkItemKey: 'work-01ABC',
+    });
+
+    expect(payload.incumbentWorkItemKey).toBe('work-01ABC');
+  });
+
+  it('round-trips a wake.correlation.registered envelope through eventEnvelopeSchema', () => {
+    const event = parseEventEnvelope({
+      schemaVersion: 1,
+      eventId: 'evt-2',
+      workItemKey: 'work-01JXYZ',
+      streamScope: 'work-item',
+      direction: 'internal',
+      sourceSystem: 'wake',
+      sourceEventType: CORRELATION_REGISTERED_EVENT,
+      sourceRefs: {
+        resourceUri: 'github:pr:atolis-hq/wake#91',
+      },
+      occurredAt: '2026-07-05T12:00:00.000Z',
+      ingestedAt: '2026-07-05T12:00:01.000Z',
+      trigger: 'context-only',
+      payload: correlationRegisteredPayloadSchema.parse({
+        resourceUri: 'github:pr:atolis-hq/wake#91',
+        role: 'implementation',
+        relation: 'primary',
+        provenance: 'operator-declared',
+        registeredBy: 'run-1',
+      }),
+    });
+
+    expect(event.sourceEventType).toBe(CORRELATION_REGISTERED_EVENT);
+    expect(event.sourceRefs.resourceUri).toBe('github:pr:atolis-hq/wake#91');
+    expect(event.payload).toEqual({
+      resourceUri: 'github:pr:atolis-hq/wake#91',
+      role: 'implementation',
+      relation: 'primary',
+      provenance: 'operator-declared',
+      registeredBy: 'run-1',
+    });
+  });
+
+  it('exposes the four correlation event type constants', () => {
+    expect(WORK_ITEM_CREATED_EVENT).toBe('wake.workitem.created');
+    expect(CORRELATION_REGISTERED_EVENT).toBe('wake.correlation.registered');
+    expect(CORRELATION_RETRACTED_EVENT).toBe('wake.correlation.retracted');
+    expect(CORRELATION_PRIMARY_CONFLICT_EVENT).toBe('wake.correlation.primary-conflict');
+    expect(eventEnvelopeSchema).toBeDefined();
   });
 
   it('parses the sentinel from the last non-empty line only', () => {

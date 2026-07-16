@@ -2,6 +2,9 @@ import { z } from 'zod';
 
 import {
   claudePrintResultSchema,
+  correlationPrimaryConflictPayloadSchema,
+  correlationRegisteredPayloadSchema,
+  correlationRetractedPayloadSchema,
   eventEnvelopeSchema,
   issueStateRecordSchema,
   ledgerSchema,
@@ -9,6 +12,7 @@ import {
   sourceStateRecordSchema,
   wakeConfigSchema,
   wakeResultEnvelopeSchema,
+  workItemCreatedPayloadSchema,
 } from './schema.js';
 import {
   agentActionValues,
@@ -35,3 +39,7 @@ export type WakeDevConfig = NonNullable<WakeConfig['dev']>;
 export type ClaudePrintResult = z.infer<typeof claudePrintResultSchema>;
 export type SourceStateRecord = z.infer<typeof sourceStateRecordSchema>;
 export type WakeResultEnvelope = z.infer<typeof wakeResultEnvelopeSchema>;
+export type WorkItemCreatedPayload = z.infer<typeof workItemCreatedPayloadSchema>;
+export type CorrelationRegisteredPayload = z.infer<typeof correlationRegisteredPayloadSchema>;
+export type CorrelationRetractedPayload = z.infer<typeof correlationRetractedPayloadSchema>;
+export type CorrelationPrimaryConflictPayload = z.infer<typeof correlationPrimaryConflictPayloadSchema>;

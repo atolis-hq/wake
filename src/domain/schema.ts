@@ -5,6 +5,12 @@ import {
   runnerSentinelValues,
   stageValues,
 } from './stages.js';
+import {
+  correlationProvenanceSchema,
+  correlationRelationSchema,
+  correlationRoleSchema,
+  resourceUriSchema,
+} from './resource-uri.js';
 
 const isoTimestampSchema = z.string().datetime({ offset: true });
 const stageSchema = z.enum(stageValues);
@@ -171,7 +177,7 @@ export const sourceStateRecordSchema = z.object({
   lastSuccessfulPollAt: isoTimestampSchema,
 });
 
-const eventEnvelopeSourceRefsSchema = z.object({
+export const eventEnvelopeSourceRefsSchema = z.object({
   repo: z.string().optional(),
   issueNumber: z.number().int().positive().optional(),
   commentId: z.string().optional(),
@@ -179,6 +185,38 @@ const eventEnvelopeSourceRefsSchema = z.object({
   runId: z.string().optional(),
   sink: z.string().optional(),
   sourceUrl: z.string().optional(),
+  // Per-event provenance: which external resource this one event came from.
+  // Item-level ownership lives only in the correlation registry, never here.
+  resourceUri: resourceUriSchema.optional(),
+});
+
+/** Event type constants for the correlation registry (ADR 0001 §5). */
+export const WORK_ITEM_CREATED_EVENT = 'wake.workitem.created';
+export const CORRELATION_REGISTERED_EVENT = 'wake.correlation.registered';
+export const CORRELATION_RETRACTED_EVENT = 'wake.correlation.retracted';
+export const CORRELATION_PRIMARY_CONFLICT_EVENT = 'wake.correlation.primary-conflict';
+
+// The envelope's `workItemKey` already carries the identity; this payload is
+// deliberately empty.
+export const workItemCreatedPayloadSchema = z.object({});
+
+export const correlationRegisteredPayloadSchema = z.object({
+  resourceUri: resourceUriSchema,
+  role: correlationRoleSchema,
+  relation: correlationRelationSchema,
+  provenance: correlationProvenanceSchema,
+  registeredBy: z.string().optional(),
+});
+
+export const correlationRetractedPayloadSchema = z.object({
+  resourceUri: resourceUriSchema,
+});
+
+// Warning event emitted when a second `primary` registration lands on an
+// already-claimed URI (ADR 0001 §6). Fold behavior lives in the projection.
+export const correlationPrimaryConflictPayloadSchema = z.object({
+  resourceUri: resourceUriSchema,
+  incumbentWorkItemKey: z.string(),
 });
 
 function normalizeLegacyStage(stage: unknown, failedAction?: unknown): unknown {
