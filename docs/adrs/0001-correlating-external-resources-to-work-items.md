@@ -3,7 +3,7 @@
 * Status: proposed
 * Deciders: jmenziessmith
 * Date: 2026-07-12
-* Informed by: [Issue #82](https://github.com/atolis-hq/wake/issues/82) (PR activity source), [Issue #54](https://github.com/atolis-hq/wake/issues/54) (unified echo suppression), [Issue #70](https://github.com/atolis-hq/wake/issues/70) (sink router), [Issue #76](https://github.com/atolis-hq/wake/issues/76) (PR exclusion moves to policy engine)
+* Informed by: [Issue #82](https://github.com/atolis-hq/wake/issues/82) (PR activity source), [Issue #54](https://github.com/atolis-hq/wake/issues/54) (unified echo suppression), [Issue #70](https://github.com/atolis-hq/wake/issues/70) (sink router), [Issue #76](https://github.com/atolis-hq/wake/issues/76) (PR exclusion moves to policy engine), [work-graph handoff](../handoffs/wake-work-graph-handoff.md) (conceptual direction)
 
 ## Context and Problem Statement
 
@@ -56,6 +56,8 @@ How should Wake reliably correlate identifiers from multiple external sources an
 
 Chosen: **A1 + B1 + C3** — a contract-first correlation registry keyed by provider-agnostic resource URIs, resolved centrally at ingestion, with registry-derived watchlists driving source polling and marker-based detection as the recovery path.
 
+**Framing: the registry is the first layer of a work graph.** The [work-graph handoff](../handoffs/wake-work-graph-handoff.md) describes the broader model this decision serves: a work item is a durable unit of work of which the originating ticket is only one *representation*, and its relationships to surfaces, artifacts, executions, and other work form a graph projected from the event stream. The registry defined below is that graph's work-to-surface layer — each registration is a typed edge from the work item to a resource node, with the resource URI as the node's identity and `role` as the edge type — built with today's vocabulary and no new storage. Later layers (work-to-work topology, software impact) extend the same event-sourced model with further edge kinds. Resources are nodes, not peer work items: only work items carry a lifecycle (which is why B3 is rejected).
+
 ### 1. Resource URIs: one identifier grammar for every surface
 
 Every external resource Wake correlates is named by a **resource URI**:
@@ -77,7 +79,7 @@ Rules:
 
 * The `provider` segment matches the source/sink adapter's registered name; the `kind` vocabulary is owned by the adapter but must be stable (it drives routing and prompt rendering).
 * The `locator` grammar is provider-specific and opaque to core; core only ever compares URIs for equality and passes them back to the owning adapter.
-* The canonical `workItemKey` remains what it is today — the URI of the *originating ticket* is derivable from it, but the key itself does not change shape. Existing keys, projections, and state files are unaffected.
+* The canonical `workItemKey` names the *work*, not any surface: its value is a provider-independent work ID (e.g. `work-01JXYZ`) minted when a discovery source first surfaces a ticket. The originating ticket is the work's primary **representation** — one registered resource among others (see §3) — and is resolved to its work item through the same reverse index as every other correlated resource. Streams, projections, and run records are keyed by the work ID, so no path or key ever embeds a provider, repo, or issue number. The cutover from today's ticket-shaped keys is a one-time fresh start, not a migration (see the [implementation plan](../plans/2026-07-12-work-graph-implementation-plan.md)).
 
 ### 2. The correlation registry: an event-sourced alias table
 
@@ -89,7 +91,7 @@ A new internal event type registers a resource against a work item:
   "workItemKey": "github:atolis-hq/wake#82",
   "payload": {
     "resourceUri": "github:pr:atolis-hq/wake#91",
-    "role": "pr",                    // pr | discussion | review-thread | ticket | ...
+    "role": "implementation",        // representation | implementation | discussion | review | documentation | decision | ...
     "relation": "primary",           // primary | secondary — see Cardinality below
     "provenance": "agent-reported",  // wake-created | agent-reported | detected | operator-declared
     "registeredBy": "run-82-1783798187999"
@@ -97,7 +99,8 @@ A new internal event type registers a resource against a work item:
 }
 ```
 
-* `projection-updater.ts` folds these into a `correlatedResources[]` array on the projection (`state/<repo>/<issue>.json`), alongside a rebuildable reverse index `resourceUri → workItemKey`. Like all of `state/`, the index is a cache over `events/` — deleting it must be harmless.
+* `role` is the graph edge type and uses a **Wake-owned relationship vocabulary**, deliberately independent of the URI's provider-native `kind`: a `github:pr:…` and a `gitlab:mr:…` both register with `role: implementation`. A new provider adds URI kinds, never new roles; a new role is a Wake modelling decision, not an adapter one. Provider-specific identity lives on the resource URI; relationship semantics live on the edge.
+* `projection-updater.ts` folds these into a `correlatedResources[]` array on the per-work-item projection under `state/`, alongside a rebuildable reverse index `resourceUri → workItemKey`. Like all of `state/`, the index is a cache over `events/` — deleting it must be harmless.
 * A matching `wake.correlation.retracted` event handles the rare correction case (wrong PR registered, thread archived); the fold is last-write-wins per `resourceUri`.
 * Registration is idempotent: re-registering an existing `(workItemKey, resourceUri)` pair is a no-op at fold time, so contract and detection paths can both fire without conflict.
 
@@ -111,7 +114,9 @@ A new internal event type registers a resource against a work item:
 
 ### 3. How resources get registered (the contract half)
 
-Three conforming registration flows, chosen per artifact type — codifying that **who creates an artifact is a per-adapter/per-artifact decision**, while the registration contract is invariant:
+First, one registration is automatic: when a discovery source mints a new work item, the tick runner registers the **originating ticket itself** (`role: representation`, `relation: primary`, `provenance: wake-created`). This costs one event and makes `correlatedResources[]` a *complete* inventory — context assembly, routing, and any future graph projection enumerate every surface uniformly, with no special case for the founding one. It also means discovery-source reconciliation (mapping an inbound issue event to its work item) is the same reverse-index lookup used for every other surface; a miss means "mint a new work item".
+
+Beyond that, three conforming registration flows, chosen per artifact type — codifying that **who creates an artifact is a per-adapter/per-artifact decision**, while the registration contract is invariant:
 
 1. **Wake-created artifacts.** When a sink adapter creates a resource on Wake's behalf (posting a Slack thread, or a future adapter opening a PR from an agent-pushed branch), the sink returns the provider identifiers in its delivery events — the same path that today returns provider comment IDs for echo suppression — and the tick runner appends the `wake.correlation.registered` event. This is the default for conversational surfaces: **the agent must not create Slack messages**; it emits a publish intent describing the message, Wake delivers it and records the resulting thread identity.
 2. **Agent-created, structurally reported.** For artifacts the agent is better placed to create (today: PRs, via `gh` in its workspace), the runner result contract gains a structured `artifacts` section parsed exactly like sentinels (`domain/schema.ts`): the agent reports `{ kind: "pr", url: ... }` in a fenced, machine-readable block; the runner parses it, Wake **verifies the artifact against the provider** (the adapter resolves the URL to a live resource and checks the branch matches the run's workspace branch) and only then registers it. An unverifiable claim is treated like a malformed sentinel — the run result is suspect, not silently trusted.
@@ -190,6 +195,7 @@ Correlation is what makes every mode workable: the registry is the enumerable in
 * The runner result contract grows an `artifacts` section; all runner adapters (Claude, Codex, Cursor, fake) must parse/emit it symmetrically.
 * Artifact verification adds a provider round-trip per agent-reported artifact.
 * Cross-provider correlation (Jira issue ↔ GitHub PR) requires the GitHub activity source to be configured for repos it would not otherwise know about; watchlist derivation must handle providers with zero originating tickets.
+* The work-ID identity model requires a one-time fresh start of `.wake/` (existing data backed up, not migrated); in-flight items lose local attempt history. See the [implementation plan](../plans/2026-07-12-work-graph-implementation-plan.md).
 
 ### Neutral / deferred
 
@@ -199,6 +205,8 @@ Correlation is what makes every mode workable: the registry is the enumerable in
 * Context-delivery mode *selection* is scoped out: whether it is per-adapter config, a size threshold, a `role` default, or a per-stage choice needs its own design once a large-content adapter (Jira/Confluence) is real. This ADR fixes only the mode vocabulary and the read/write asymmetry.
 * Credential provisioning for `by-reference` fetches (how an agent workspace gets read access to a provider without inheriting Wake's write credentials) is deliberately unresolved — it is a sandbox/security decision, not a correlation one.
 * Whether materialization is a `WorkspaceManager` responsibility or a new seam alongside it is left to the first implementing adapter.
+* **Work-to-work relationships** (depends-on, blocked-by, follow-up, split, supersedes — the handoff's work-topology layer) are deferred. When introduced they should reuse this event family — a registration whose target URI names another work item — rather than a parallel linking mechanism; the `role` vocabulary grows, the event shape does not. Nothing is decided about their policy effects (e.g. unblocking on dependency close) here.
+* **A richer graph projection** (nodes/edges store, multi-hop queries, Quorum software-graph linkage) is deferred. `correlatedResources[]` plus the reverse index are the only read models this ADR requires; anything more is a future rebuildable projection over the same events.
 
 ## Confirmation
 
@@ -213,5 +221,8 @@ Implementation of #82 confirms this decision when:
 ## More Information
 
 * `docs/architecture.md` — event-first flow this builds on.
+* [`docs/handoffs/wake-work-graph-handoff.md`](../handoffs/wake-work-graph-handoff.md) — the work-graph concept this registry is the first layer of.
+* [`docs/handoffs/2026-07-12-resource-correlation-implementation.md`](../handoffs/2026-07-12-resource-correlation-implementation.md) — condensed implementation invariants for this ADR.
+* [`docs/plans/2026-07-12-work-graph-implementation-plan.md`](../plans/2026-07-12-work-graph-implementation-plan.md) — now-vs-later sequencing, identity cutover, and scope guard.
 * Related issues: [#54](https://github.com/atolis-hq/wake/issues/54) echo suppression (prerequisite), [#76](https://github.com/atolis-hq/wake/issues/76) PR exclusion → policy engine (prerequisite), [#70](https://github.com/atolis-hq/wake/issues/70) sink router (routing substrate), [#82](https://github.com/atolis-hq/wake/issues/82) first consumer of this decision.
 * MADR template: https://adr.github.io/madr/
