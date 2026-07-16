@@ -35,15 +35,43 @@ async function readShard(file: string): Promise<ShardContents> {
   }
 }
 
+// acquireFileLock is a non-blocking try-lock: when contended it returns
+// { acquired: false } immediately rather than waiting. register/retract have
+// no sensible "try again later" behavior at their call sites — skipping the
+// write here is exactly the silent-drop corruption this index exists to
+// avoid — so withShardLock must retry until it actually holds the lock.
+// staleAfterMs (60s) already reclaims a lock from a crashed holder, so this
+// bound only needs to outlast normal contention between live processes, not
+// a dead one.
+const SHARD_LOCK_RETRY_INTERVAL_MS = 25;
+const SHARD_LOCK_RETRY_BUDGET_MS = 10_000;
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export function createResourceIndex({ paths }: { paths: WakePaths }): ResourceIndex {
   async function withShardLock<T>(shard: string, fn: () => Promise<T>): Promise<T> {
-    const lock = await acquireFileLock(`${paths.resourceIndexShardFile(shard)}.lock`, {
-      staleAfterMs: 60_000,
-    });
-    try {
-      return await fn();
-    } finally {
-      await lock.release();
+    const lockPath = `${paths.resourceIndexShardFile(shard)}.lock`;
+    const deadline = Date.now() + SHARD_LOCK_RETRY_BUDGET_MS;
+
+    for (;;) {
+      const lock = await acquireFileLock(lockPath, { staleAfterMs: 60_000 });
+      if (lock.acquired) {
+        try {
+          return await fn();
+        } finally {
+          await lock.release();
+        }
+      }
+
+      if (Date.now() >= deadline) {
+        throw new Error(
+          `resource-index: timed out after ${SHARD_LOCK_RETRY_BUDGET_MS}ms waiting for lock on shard '${shard}' (${lockPath})`,
+        );
+      }
+
+      await delay(SHARD_LOCK_RETRY_INTERVAL_MS);
     }
   }
 
@@ -77,6 +105,11 @@ export function createResourceIndex({ paths }: { paths: WakePaths }): ResourceIn
     },
 
     async replaceAll(entries: ReadonlyMap<string, string>): Promise<void> {
+      // Deliberately unlocked: this is the exclusive full-rebuild path (only
+      // called with nothing else touching the index concurrently), not a
+      // per-shard read-modify-write. A register/retract racing this mid-rm
+      // would be undefined behavior, but that's a caller-ordering
+      // requirement out of scope for this fix, not something to lock around.
       await rm(paths.resourceIndexRoot, { recursive: true, force: true });
 
       const byShard = new Map<string, ShardContents>();

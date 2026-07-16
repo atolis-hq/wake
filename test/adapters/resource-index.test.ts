@@ -105,6 +105,22 @@ describe('ResourceIndex', () => {
     expect(await index.resolve('github:issue:atolis-hq/wake#82')).toBe('work-BBB');
   });
 
+  it('concurrent registrations on the same shard do not lose a write', async () => {
+    // Regression guard for the lost-update race: withShardLock must be
+    // genuinely exclusive. Two uris that hash to the same shard, registered
+    // concurrently, must both be resolvable afterward — a dropped write here
+    // means resolve() later returns undefined and a duplicate work item gets
+    // minted for work that already exists.
+    const index = createResourceIndex({ paths: freshPaths() });
+    const [a, b] = findCollidingUris();
+    await Promise.all([
+      index.register(a, 'work-AAA'),
+      index.register(b, 'work-BBB'),
+    ]);
+    expect(await index.resolve(a)).toBe('work-AAA');
+    expect(await index.resolve(b)).toBe('work-BBB');
+  });
+
   it('survives many registrations across shards', async () => {
     // 300 sequential lock-guarded read-modify-writes hitting real disk I/O;
     // fine in isolation but can exceed vitest's 5s default under a fully
