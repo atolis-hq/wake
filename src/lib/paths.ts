@@ -8,6 +8,8 @@ export function sanitizePathKey(value: string): string {
   return value.replace(/[^A-Za-z0-9._-]/g, '__');
 }
 
+export type WakePaths = ReturnType<typeof createWakePaths>;
+
 export function createWakePaths(wakeRoot: string) {
   return {
     wakeRoot,
@@ -44,5 +46,7 @@ export function createWakePaths(wakeRoot: string) {
       join(wakeRoot, 'transcripts', sanitizeRepo(repo), String(issueNumber)),
     transcriptSessionDir: (repo: string, issueNumber: number, sessionKey: string) =>
       join(wakeRoot, 'transcripts', sanitizeRepo(repo), String(issueNumber), sanitizePathKey(sessionKey)),
+    resourceIndexRoot: join(wakeRoot, 'state', 'index'),
+    resourceIndexShardFile: (shard: string) => join(wakeRoot, 'state', 'index', `${shard}.json`),
   };
 }
