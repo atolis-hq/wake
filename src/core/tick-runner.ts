@@ -4,19 +4,21 @@ import { isAbsolute, join, relative } from 'node:path';
 
 import { createLifecycleService } from './lifecycle-service.js';
 import { createPolicyEngine } from './policy-engine.js';
-import { createProjectionUpdater } from './projection-updater.js';
+import { createInMemoryResourceIndex, createProjectionUpdater } from './projection-updater.js';
 import type {
   AgentRunner,
   AgentRunResult,
   AgentRunTokenUsage,
   OutboundSink,
+  ResourceIndex,
   WorkSource,
   WorkspaceManager,
 } from './contracts.js';
 import type { Clock } from '../lib/clock.js';
 import { acquireFileLock } from '../lib/lock.js';
-import { parseRunnerResult } from '../domain/schema.js';
+import { CORRELATION_REGISTERED_EVENT, parseRunnerResult } from '../domain/schema.js';
 import { maxConfiguredRunnerTimeoutMs, resolveRunnerRouting } from '../domain/runner-routing.js';
+import { buildResourceUri } from '../domain/resource-uri.js';
 import { awaitingApprovalRunnerSentinel, stageLabelForStage } from '../domain/stages.js';
 import type { AgentAction, EventEnvelope, IssueStateRecord, RunRecord, WakeConfig } from '../domain/types.js';
 import { createEventEnvelope } from '../lib/event-log.js';
@@ -37,11 +39,14 @@ export function createTickRunner(deps: {
   outboundSink?: OutboundSink;
   runner: AgentRunner;
   workspaceManager: WorkspaceManager;
+  resourceIndex?: ResourceIndex;
 }) {
   const policy = createPolicyEngine();
   const lifecycle = createLifecycleService();
+  const resourceIndex = deps.resourceIndex ?? createInMemoryResourceIndex();
   const projectionUpdater = createProjectionUpdater({
     stateStore: deps.stateStore,
+    resourceIndex,
   });
 
   function extractTokenCount(tokenUsage: AgentRunTokenUsage | undefined): number | undefined {
@@ -261,6 +266,56 @@ export function createTickRunner(deps: {
           occurredAt,
         }),
       );
+    }
+  }
+
+  // Registers each work item's originating ticket as its founding correlated
+  // resource the first time we ever see it, so correlatedResources[] is a
+  // complete inventory with no special-cased "founding surface" — the origin
+  // ticket is just the first entry, like any other later-discovered PR or
+  // thread. correlatedResources.length === 0 is what "not yet registered"
+  // means, which is also what makes a second tick over the same ticket a
+  // no-op here (the fold itself is additionally idempotent per uri).
+  async function autoRegisterOriginatingTickets(
+    projections: IssueStateRecord[],
+    nowIso: string,
+  ): Promise<void> {
+    for (const projection of projections) {
+      if ((projection.correlatedResources ?? []).length > 0) {
+        continue;
+      }
+
+      const resourceUri = buildResourceUri(
+        projection.origin ?? 'github',
+        'issue',
+        `${projection.issue.repo}#${projection.issue.number}`,
+      );
+
+      const registeredEvent = createEventEnvelope({
+        eventId: `${projection.workItemKey}-origin-correlation`,
+        workItemKey: projection.workItemKey,
+        streamScope: 'work-item',
+        direction: 'internal',
+        sourceSystem: 'wake',
+        sourceEventType: CORRELATION_REGISTERED_EVENT,
+        sourceRefs: {
+          repo: projection.issue.repo,
+          issueNumber: projection.issue.number,
+          resourceUri,
+        },
+        occurredAt: nowIso,
+        ingestedAt: nowIso,
+        trigger: 'context-only',
+        payload: {
+          resourceUri,
+          role: 'representation',
+          relation: 'primary',
+          provenance: 'wake-created',
+        },
+      });
+
+      await deps.stateStore.appendEventEnvelope(registeredEvent);
+      await projectionUpdater.rebuildFromEvents([registeredEvent]);
     }
   }
 
@@ -583,6 +638,7 @@ export function createTickRunner(deps: {
         }
 
         const projections = await deps.stateStore.listIssueStates();
+        await autoRegisterOriginatingTickets(projections, nowIso);
         await cleanupClosedIssueWorkspaces(projections, nowIso);
         if (inboundEvents.length > 0) {
           await markPendingActionableIssues(projections, nowIso);

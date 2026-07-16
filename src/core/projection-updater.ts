@@ -1,6 +1,53 @@
-import { parseIssueStateRecord } from '../domain/schema.js';
+import {
+  CORRELATION_PRIMARY_CONFLICT_EVENT,
+  CORRELATION_REGISTERED_EVENT,
+  CORRELATION_RETRACTED_EVENT,
+  parseIssueStateRecord,
+} from '../domain/schema.js';
 import { doneRunnerSentinel, stageFromLabels } from '../domain/stages.js';
-import type { EventEnvelope, IssueStateRecord } from '../domain/types.js';
+import type {
+  CorrelatedResource,
+  CorrelationRegisteredPayload,
+  CorrelationRetractedPayload,
+  EventEnvelope,
+  IssueStateRecord,
+} from '../domain/types.js';
+import { createEventEnvelope } from '../lib/event-log.js';
+import type { ResourceIndex } from './contracts.js';
+
+/**
+ * Minimal in-memory default so createProjectionUpdater/createTickRunner stay
+ * usable without a caller wiring a real index in (mainly existing tests that
+ * predate the correlation registry and don't exercise it). core/ must never
+ * import a concrete adapter (src/adapters/fs/resource-index.ts) — this is a
+ * self-contained fallback, not that adapter. Production always gets the real,
+ * disk-backed index via main.ts's buildRuntime.
+ */
+export function createInMemoryResourceIndex(): ResourceIndex {
+  const entries = new Map<string, string>();
+  return {
+    async resolve(resourceUri: string) {
+      return entries.get(resourceUri);
+    },
+    async register(resourceUri: string, workItemKey: string) {
+      entries.set(resourceUri, workItemKey);
+    },
+    async retract(resourceUri: string) {
+      entries.delete(resourceUri);
+    },
+    async replaceAll(next: ReadonlyMap<string, string>) {
+      entries.clear();
+      for (const [resourceUri, workItemKey] of next) {
+        entries.set(resourceUri, workItemKey);
+      }
+    },
+  };
+}
+
+type ApplyEventCtx = {
+  resourceIndex: ResourceIndex;
+  appendEvent: (event: EventEnvelope) => Promise<EventEnvelope>;
+};
 
 function stringArrayFromPayload(value: unknown): string[] {
   return Array.isArray(value)
@@ -42,10 +89,11 @@ function sourceFromWorkItemKey(workItemKey: string): string | undefined {
   return marker > 0 ? workItemKey.slice(0, marker) : undefined;
 }
 
-function applyEvent(
+async function applyEvent(
   current: IssueStateRecord | null,
   event: EventEnvelope,
-): IssueStateRecord | null {
+  ctx: ApplyEventCtx,
+): Promise<IssueStateRecord | null> {
   if (
     event.sourceEventType === 'fake.issue.upsert' ||
     event.sourceEventType === 'ticket.upsert'
@@ -295,6 +343,106 @@ function applyEvent(
     });
   }
 
+  // Purely an audit record; must never affect projection state, so a full
+  // event replay produces byte-identical output whether or not this
+  // synthesized event happens to be included in the batch being folded
+  // (it's created as a fold side effect, not iterated over on the original
+  // pass, but is naturally present on a later full replay).
+  if (event.sourceEventType === CORRELATION_PRIMARY_CONFLICT_EVENT) {
+    return current;
+  }
+
+  if (event.sourceEventType === CORRELATION_REGISTERED_EVENT) {
+    const payload = event.payload as unknown as CorrelationRegisteredPayload;
+    let relation = payload.relation;
+
+    if (relation === 'primary') {
+      const incumbent = await ctx.resourceIndex.resolve(payload.resourceUri);
+      if (incumbent !== undefined && incumbent !== current.workItemKey) {
+        // One primary per uri (ADR 0001 §6): the second claimant folds to
+        // secondary and a conflict is recorded naming the incumbent.
+        // Promotion requires the incumbent to retract first — never let the
+        // second registration silently steal the uri.
+        relation = 'secondary';
+        await ctx.appendEvent(createEventEnvelope({
+          eventId: `${event.eventId}-primary-conflict`,
+          workItemKey: current.workItemKey,
+          streamScope: 'work-item',
+          direction: 'internal',
+          sourceSystem: 'wake',
+          sourceEventType: CORRELATION_PRIMARY_CONFLICT_EVENT,
+          sourceRefs: event.sourceRefs,
+          occurredAt: event.occurredAt,
+          ingestedAt: event.ingestedAt,
+          trigger: 'context-only',
+          payload: {
+            resourceUri: payload.resourceUri,
+            incumbentWorkItemKey: incumbent,
+          },
+        }));
+      } else {
+        await ctx.resourceIndex.register(payload.resourceUri, current.workItemKey);
+      }
+    }
+
+    const entry: CorrelatedResource = {
+      resourceUri: payload.resourceUri,
+      role: payload.role,
+      relation,
+      provenance: payload.provenance,
+      ...(payload.registeredBy === undefined ? {} : { registeredBy: payload.registeredBy }),
+      registeredAt: event.occurredAt,
+    };
+
+    const currentCorrelatedResources = current.correlatedResources ?? [];
+    const existingIndex = currentCorrelatedResources.findIndex(
+      (resource) => resource.resourceUri === payload.resourceUri,
+    );
+    const correlatedResources =
+      existingIndex === -1
+        ? [...currentCorrelatedResources, entry]
+        : currentCorrelatedResources.map((resource, index) =>
+            index === existingIndex ? entry : resource,
+          );
+
+    return parseIssueStateRecord({
+      ...current,
+      correlatedResources,
+      wake: {
+        ...current.wake,
+        syncedAt: event.ingestedAt,
+        recentEventIds: [...current.wake.recentEventIds, event.eventId].slice(-10),
+      },
+    });
+  }
+
+  if (event.sourceEventType === CORRELATION_RETRACTED_EVENT) {
+    const payload = event.payload as unknown as CorrelationRetractedPayload;
+    const currentCorrelatedResources = current.correlatedResources ?? [];
+    const existing = currentCorrelatedResources.find(
+      (resource) => resource.resourceUri === payload.resourceUri,
+    );
+
+    if (existing?.relation === 'primary') {
+      const owner = await ctx.resourceIndex.resolve(payload.resourceUri);
+      if (owner === current.workItemKey) {
+        await ctx.resourceIndex.retract(payload.resourceUri);
+      }
+    }
+
+    return parseIssueStateRecord({
+      ...current,
+      correlatedResources: currentCorrelatedResources.filter(
+        (resource) => resource.resourceUri !== payload.resourceUri,
+      ),
+      wake: {
+        ...current.wake,
+        syncedAt: event.ingestedAt,
+        recentEventIds: [...current.wake.recentEventIds, event.eventId].slice(-10),
+      },
+    });
+  }
+
   return parseIssueStateRecord({
     ...current,
     wake: {
@@ -307,7 +455,13 @@ function applyEvent(
 
 export function createProjectionUpdater(deps: {
   stateStore: ReturnType<typeof import('../adapters/fs/state-store.js').createStateStore>;
+  resourceIndex?: ResourceIndex;
 }) {
+  const applyEventCtx: ApplyEventCtx = {
+    resourceIndex: deps.resourceIndex ?? createInMemoryResourceIndex(),
+    appendEvent: (event) => deps.stateStore.appendEventEnvelope(event),
+  };
+
   return {
     async rebuildFromEvents(events: EventEnvelope[]): Promise<void> {
       const grouped = new Map<string, EventEnvelope[]>();
@@ -335,7 +489,7 @@ export function createProjectionUpdater(deps: {
             : null;
 
         for (const event of ordered) {
-          projection = applyEvent(projection, event);
+          projection = await applyEvent(projection, event, applyEventCtx);
         }
 
         if (projection !== null) {

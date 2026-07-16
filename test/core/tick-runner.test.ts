@@ -1,13 +1,17 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { access, mkdir, mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { createFakeTicketingSystem } from '../../src/adapters/fake/fake-ticketing-system.js';
 import { createFakeWorkspaceManager } from '../../src/adapters/fake/fake-workspace-manager.js';
+import { createResourceIndex } from '../../src/adapters/fs/resource-index.js';
 import { createStateStore } from '../../src/adapters/fs/state-store.js';
 import { createDefaultWakeConfig } from '../../src/config/defaults.js';
+import { createProjectionUpdater } from '../../src/core/projection-updater.js';
 import { createTickRunner } from '../../src/core/tick-runner.js';
+import { CORRELATION_REGISTERED_EVENT } from '../../src/domain/schema.js';
+import { createEventEnvelope } from '../../src/lib/event-log.js';
 
 describe('tick runner', () => {
   let root: string;
@@ -2149,5 +2153,174 @@ describe('tick runner', () => {
     const second = await tickRunner.runTick();
     expect(second.status).toBe('processed');
     expect(runnerCallCount).toBe(1);
+  });
+
+  it('auto-registers the originating ticket as a correlated resource on first sight, once', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const config = createDefaultWakeConfig(root);
+    config.sources.github.policy.requiredLabels = ['wake:queue'];
+
+    const tickRunner = createTickRunner({
+      clock: { now: () => new Date('2026-07-05T12:00:00.000Z') },
+      config,
+      stateStore: store,
+      workSource: createFakeTicketingSystem({
+        tickets: [
+          {
+            repo: 'atolis-hq/wake',
+            number: 60,
+            title: 'Auto register',
+            body: 'Body',
+            labels: ['wake:queue'],
+            comments: [],
+          },
+        ],
+        now: () => new Date('2026-07-05T12:00:00.000Z'),
+      }),
+      runner: {
+        async run() {
+          return { result: 'DONE', model: 'test-model', cli: 'test-cli' };
+        },
+      },
+      workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+    });
+
+    await tickRunner.runTick();
+
+    const projection = await store.readIssueState('atolis-hq/wake', 60);
+    expect(projection?.correlatedResources).toEqual([
+      {
+        resourceUri: 'fake-ticketing:issue:atolis-hq/wake#60',
+        role: 'representation',
+        relation: 'primary',
+        provenance: 'wake-created',
+        registeredAt: '2026-07-05T12:00:00.000Z',
+      },
+    ]);
+
+    const registrationEvents = (await store.listEventEnvelopes()).filter(
+      (event) => event.sourceEventType === CORRELATION_REGISTERED_EVENT,
+    );
+    expect(registrationEvents).toHaveLength(1);
+
+    // A second tick over the same, already-registered ticket must not
+    // append a duplicate registration.
+    await tickRunner.runTick();
+    const registrationEventsAfterSecondTick = (await store.listEventEnvelopes()).filter(
+      (event) => event.sourceEventType === CORRELATION_REGISTERED_EVENT,
+    );
+    expect(registrationEventsAfterSecondTick).toHaveLength(1);
+  });
+
+  it('reproduces projections and the resource index exactly after deleting state/ and replaying events/ (ADR 0001 rebuild guarantee)', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const resourceIndex = createResourceIndex({ paths: store.paths });
+    const config = createDefaultWakeConfig(root);
+    config.sources.github.policy.requiredLabels = ['wake:queue'];
+
+    const tickRunner = createTickRunner({
+      clock: { now: () => new Date('2026-07-05T12:00:00.000Z') },
+      config,
+      stateStore: store,
+      resourceIndex,
+      workSource: createFakeTicketingSystem({
+        tickets: [
+          {
+            repo: 'atolis-hq/wake',
+            number: 70,
+            title: 'Rebuild target',
+            body: 'Body',
+            labels: ['wake:queue'],
+            comments: [],
+          },
+        ],
+        now: () => new Date('2026-07-05T12:00:00.000Z'),
+      }),
+      runner: {
+        async run() {
+          return { result: 'DONE', model: 'test-model', cli: 'test-cli' };
+        },
+      },
+      workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+    });
+
+    // First tick auto-registers the origin ticket as a correlated resource.
+    await tickRunner.runTick();
+
+    // Simulate additional correlated resources being discovered (e.g. an
+    // implementation PR and a discussion thread) via the same fold + index
+    // machinery a later `wake correlate` command will drive, sharing the
+    // exact stateStore + resourceIndex instances the tick runner uses.
+    const projectionUpdater = createProjectionUpdater({ stateStore: store, resourceIndex });
+    const extraRegistrations = [
+      createEventEnvelope({
+        eventId: 'wake-70-pr-registered',
+        workItemKey: 'fake-ticketing:atolis-hq/wake#70',
+        streamScope: 'work-item',
+        direction: 'internal',
+        sourceSystem: 'wake',
+        sourceEventType: CORRELATION_REGISTERED_EVENT,
+        sourceRefs: { repo: 'atolis-hq/wake', issueNumber: 70 },
+        occurredAt: '2026-07-05T12:05:00.000Z',
+        ingestedAt: '2026-07-05T12:05:00.000Z',
+        trigger: 'context-only',
+        payload: {
+          resourceUri: 'github:pr:atolis-hq/wake#71',
+          role: 'implementation',
+          relation: 'primary',
+          provenance: 'agent-reported',
+        },
+      }),
+      createEventEnvelope({
+        eventId: 'wake-70-discussion-registered',
+        workItemKey: 'fake-ticketing:atolis-hq/wake#70',
+        streamScope: 'work-item',
+        direction: 'internal',
+        sourceSystem: 'wake',
+        sourceEventType: CORRELATION_REGISTERED_EVENT,
+        sourceRefs: { repo: 'atolis-hq/wake', issueNumber: 70 },
+        occurredAt: '2026-07-05T12:06:00.000Z',
+        ingestedAt: '2026-07-05T12:06:00.000Z',
+        trigger: 'context-only',
+        payload: {
+          resourceUri: 'slack:thread:C123-456',
+          role: 'discussion',
+          relation: 'secondary',
+          provenance: 'operator-declared',
+        },
+      }),
+    ];
+
+    for (const event of extraRegistrations) {
+      await store.appendEventEnvelope(event);
+      await projectionUpdater.rebuildFromEvents([event]);
+    }
+
+    const before = await store.readIssueState('atolis-hq/wake', 70);
+    expect(before?.correlatedResources?.length ?? 0).toBeGreaterThanOrEqual(3);
+
+    const indexDir = join(root, 'state', 'index');
+    const shardFilesBefore = (await readdir(indexDir)).sort();
+    expect(shardFilesBefore.length).toBeGreaterThanOrEqual(1);
+    const shardSnapshots = new Map<string, string>();
+    for (const file of shardFilesBefore) {
+      shardSnapshots.set(file, await readFile(join(indexDir, file), 'utf8'));
+    }
+
+    // Delete state/ entirely — the projection AND the index are both
+    // rebuildable projections over events/, never source of truth.
+    await rm(join(root, 'state'), { recursive: true, force: true });
+
+    const allEvents = await store.listEventEnvelopes();
+    await projectionUpdater.rebuildFromEvents(allEvents);
+
+    const after = await store.readIssueState('atolis-hq/wake', 70);
+    expect(after).toEqual(before);
+
+    const shardFilesAfter = (await readdir(indexDir)).sort();
+    expect(shardFilesAfter).toEqual(shardFilesBefore);
+    for (const file of shardFilesAfter) {
+      expect(await readFile(join(indexDir, file), 'utf8')).toBe(shardSnapshots.get(file));
+    }
   });
 });

@@ -7,6 +7,11 @@ import type {
   WakeConfig,
 } from '../domain/types.js';
 
+// Re-exported so core/ never needs to import the concrete fs adapter module
+// directly (only main.ts's buildRuntime wires createResourceIndex() in) —
+// this is a type-only re-export, so it carries no runtime dependency.
+export type { ResourceIndex } from '../adapters/fs/resource-index.js';
+
 export interface WorkSource {
   pollEvents(): Promise<EventEnvelope[]>;
 }

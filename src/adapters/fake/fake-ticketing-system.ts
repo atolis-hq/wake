@@ -1,6 +1,7 @@
 import { access } from 'node:fs/promises';
 
 import type { EventEnvelope } from '../../domain/types.js';
+import { buildResourceUri } from '../../domain/resource-uri.js';
 import { createEventEnvelope } from '../../lib/event-log.js';
 import { readJsonFile } from '../../lib/json-file.js';
 
@@ -41,6 +42,7 @@ function normalizeIssueEvents(issue: FakeTicketSeed, nowIso: string): EventEnvel
         repo: issue.repo,
         issueNumber: issue.number,
         sourceUrl,
+        resourceUri: buildResourceUri(fakeSource, 'issue', `${issue.repo}#${issue.number}`),
       },
       occurredAt: nowIso,
       ingestedAt: nowIso,

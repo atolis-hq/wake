@@ -10,6 +10,7 @@ import {
   createRegistryRunner,
   runnerKindForOverride,
 } from './adapters/runner/runner-registry.js';
+import { createResourceIndex } from './adapters/fs/resource-index.js';
 import { createStateStore } from './adapters/fs/state-store.js';
 import {
   readSelfUpdateLedger,
@@ -260,6 +261,7 @@ async function buildRuntime(args: string[]) {
       : routesOnlyToFake(config))
       ? createFakeWorkspaceManager(stateStore.paths.workspaceRoot)
       : createGitWorkspaceManager({ wakeRoot });
+  const resourceIndex = createResourceIndex({ paths: stateStore.paths });
   const tickRunner = createTickRunner({
     clock: systemClock,
     config,
@@ -268,6 +270,7 @@ async function buildRuntime(args: string[]) {
     outboundSink,
     runner,
     workspaceManager,
+    resourceIndex,
   });
 
   return {

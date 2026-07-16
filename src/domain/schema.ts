@@ -219,6 +219,18 @@ export const correlationPrimaryConflictPayloadSchema = z.object({
   incumbentWorkItemKey: z.string(),
 });
 
+// Folded shape of a `wake.correlation.registered`/`wake.correlation.retracted`
+// event, one entry per resourceUri currently held by this work item
+// (ADR 0001 §5). `registeredAt` comes from the folding event's `occurredAt`.
+export const correlatedResourceSchema = z.object({
+  resourceUri: resourceUriSchema,
+  role: correlationRoleSchema,
+  relation: correlationRelationSchema,
+  provenance: correlationProvenanceSchema,
+  registeredBy: z.string().optional(),
+  registeredAt: isoTimestampSchema,
+});
+
 function normalizeLegacyStage(stage: unknown, failedAction?: unknown): unknown {
   if (stage === 'refined') {
     return 'implement';
@@ -354,6 +366,7 @@ export const issueStateRecordSchema = z.preprocess((input) => {
     }).default({ commentIds: [], labels: [] }),
   }),
   context: z.record(z.string(), z.unknown()).default({}),
+  correlatedResources: z.array(correlatedResourceSchema).default([]),
 }));
 
 const runTokenUsageSchema = z.object({

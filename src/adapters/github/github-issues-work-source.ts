@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 import type { EventEnvelope, IssueStateRecord, WakeConfig } from '../../domain/types.js';
+import { buildResourceUri } from '../../domain/resource-uri.js';
 import { wakeStageLabelPrefix } from '../../domain/stages.js';
 import { createEventEnvelope } from '../../lib/event-log.js';
 import { buildResumeCommandForCli } from '../runner/runner-cli-adapter.js';
@@ -58,6 +59,7 @@ function normalizeTicketUpsert(input: {
       repo: input.repo,
       issueNumber: input.issue.number,
       sourceUrl: input.issue.html_url,
+      resourceUri: buildResourceUri(githubSource, 'issue', `${input.repo}#${input.issue.number}`),
     },
     occurredAt: input.issue.updated_at,
     ingestedAt: input.ingestedAt,

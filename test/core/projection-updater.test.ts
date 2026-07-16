@@ -3,10 +3,70 @@ import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { createResourceIndex } from '../../src/adapters/fs/resource-index.js';
 import { createStateStore } from '../../src/adapters/fs/state-store.js';
 import { createProjectionUpdater } from '../../src/core/projection-updater.js';
+import {
+  CORRELATION_PRIMARY_CONFLICT_EVENT,
+  CORRELATION_REGISTERED_EVENT,
+  CORRELATION_RETRACTED_EVENT,
+} from '../../src/domain/schema.js';
 import { stageLabelForStage, stageValues } from '../../src/domain/stages.js';
 import { createEventEnvelope } from '../../src/lib/event-log.js';
+
+function correlationRegistered(input: {
+  eventId: string;
+  workItemKey: string;
+  issueNumber: number;
+  resourceUri: string;
+  role: string;
+  relation: 'primary' | 'secondary';
+  provenance: string;
+  registeredBy?: string;
+  occurredAt: string;
+}) {
+  return createEventEnvelope({
+    eventId: input.eventId,
+    workItemKey: input.workItemKey,
+    streamScope: 'work-item',
+    direction: 'internal',
+    sourceSystem: 'wake',
+    sourceEventType: CORRELATION_REGISTERED_EVENT,
+    sourceRefs: { repo: 'atolis-hq/wake', issueNumber: input.issueNumber },
+    occurredAt: input.occurredAt,
+    ingestedAt: input.occurredAt,
+    trigger: 'context-only',
+    payload: {
+      resourceUri: input.resourceUri,
+      role: input.role,
+      relation: input.relation,
+      provenance: input.provenance,
+      ...(input.registeredBy === undefined ? {} : { registeredBy: input.registeredBy }),
+    },
+  });
+}
+
+function correlationRetracted(input: {
+  eventId: string;
+  workItemKey: string;
+  issueNumber: number;
+  resourceUri: string;
+  occurredAt: string;
+}) {
+  return createEventEnvelope({
+    eventId: input.eventId,
+    workItemKey: input.workItemKey,
+    streamScope: 'work-item',
+    direction: 'internal',
+    sourceSystem: 'wake',
+    sourceEventType: CORRELATION_RETRACTED_EVENT,
+    sourceRefs: { repo: 'atolis-hq/wake', issueNumber: input.issueNumber },
+    occurredAt: input.occurredAt,
+    ingestedAt: input.occurredAt,
+    trigger: 'context-only',
+    payload: { resourceUri: input.resourceUri },
+  });
+}
 
 function issueUpsert(input: {
   eventId: string;
@@ -1244,5 +1304,246 @@ describe('projection updater', () => {
     const projection = await store.readIssueState('atolis-hq/wake', 52);
     expect(projection?.wake.sessionId).toBeUndefined();
     expect(projection?.wake.sessionCli).toBeUndefined();
+  });
+
+  describe('correlation fold (ADR 0001 §5-6)', () => {
+    it('rule 1: wake.correlation.registered appends to correlatedResources[] and registers in the index', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const resourceIndex = createResourceIndex({ paths: store.paths });
+      const updater = createProjectionUpdater({ stateStore: store, resourceIndex });
+
+      await updater.rebuildFromEvents([
+        issueUpsert({ eventId: 'evt-c1-issue', issueNumber: 200, labels: ['wake:queue'] }),
+      ]);
+
+      await updater.rebuildFromEvents([
+        correlationRegistered({
+          eventId: 'evt-c1-register',
+          workItemKey: 'github:atolis-hq/wake#200',
+          issueNumber: 200,
+          resourceUri: 'github:pr:atolis-hq/wake#201',
+          role: 'implementation',
+          relation: 'primary',
+          provenance: 'agent-reported',
+          occurredAt: '2026-07-05T13:00:00.000Z',
+        }),
+      ]);
+
+      const projection = await store.readIssueState('atolis-hq/wake', 200);
+      expect(projection?.correlatedResources).toEqual([
+        {
+          resourceUri: 'github:pr:atolis-hq/wake#201',
+          role: 'implementation',
+          relation: 'primary',
+          provenance: 'agent-reported',
+          registeredAt: '2026-07-05T13:00:00.000Z',
+        },
+      ]);
+      expect(await resourceIndex.resolve('github:pr:atolis-hq/wake#201')).toBe(
+        'github:atolis-hq/wake#200',
+      );
+    });
+
+    it('rule 2: re-registering an identical (workItemKey, resourceUri) pair is a no-op at fold time', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const resourceIndex = createResourceIndex({ paths: store.paths });
+      const updater = createProjectionUpdater({ stateStore: store, resourceIndex });
+
+      await updater.rebuildFromEvents([
+        issueUpsert({ eventId: 'evt-c2-issue', issueNumber: 201, labels: ['wake:queue'] }),
+      ]);
+
+      const register = (eventId: string, occurredAt: string) =>
+        correlationRegistered({
+          eventId,
+          workItemKey: 'github:atolis-hq/wake#201',
+          issueNumber: 201,
+          resourceUri: 'github:pr:atolis-hq/wake#301',
+          role: 'implementation',
+          relation: 'primary',
+          provenance: 'agent-reported',
+          occurredAt,
+        });
+
+      await updater.rebuildFromEvents([register('evt-c2-register-1', '2026-07-05T13:00:00.000Z')]);
+      await updater.rebuildFromEvents([register('evt-c2-register-2', '2026-07-05T13:01:00.000Z')]);
+
+      const projection = await store.readIssueState('atolis-hq/wake', 201);
+      expect(projection?.correlatedResources).toHaveLength(1);
+    });
+
+    it('rule 3: last-write-wins per resourceUri — a role change updates the entry in place', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const resourceIndex = createResourceIndex({ paths: store.paths });
+      const updater = createProjectionUpdater({ stateStore: store, resourceIndex });
+
+      await updater.rebuildFromEvents([
+        issueUpsert({ eventId: 'evt-c3-issue', issueNumber: 202, labels: ['wake:queue'] }),
+      ]);
+
+      await updater.rebuildFromEvents([
+        correlationRegistered({
+          eventId: 'evt-c3-register-1',
+          workItemKey: 'github:atolis-hq/wake#202',
+          issueNumber: 202,
+          resourceUri: 'github:pr:atolis-hq/wake#302',
+          role: 'discussion',
+          relation: 'secondary',
+          provenance: 'detected',
+          occurredAt: '2026-07-05T13:00:00.000Z',
+        }),
+      ]);
+      await updater.rebuildFromEvents([
+        correlationRegistered({
+          eventId: 'evt-c3-register-2',
+          workItemKey: 'github:atolis-hq/wake#202',
+          issueNumber: 202,
+          resourceUri: 'github:pr:atolis-hq/wake#302',
+          role: 'review',
+          relation: 'secondary',
+          provenance: 'detected',
+          occurredAt: '2026-07-05T13:05:00.000Z',
+        }),
+      ]);
+
+      const projection = await store.readIssueState('atolis-hq/wake', 202);
+      expect(projection?.correlatedResources).toEqual([
+        {
+          resourceUri: 'github:pr:atolis-hq/wake#302',
+          role: 'review',
+          relation: 'secondary',
+          provenance: 'detected',
+          registeredAt: '2026-07-05T13:05:00.000Z',
+        },
+      ]);
+    });
+
+    it('rule 4: wake.correlation.retracted removes the entry and the index entry', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const resourceIndex = createResourceIndex({ paths: store.paths });
+      const updater = createProjectionUpdater({ stateStore: store, resourceIndex });
+
+      await updater.rebuildFromEvents([
+        issueUpsert({ eventId: 'evt-c4-issue', issueNumber: 203, labels: ['wake:queue'] }),
+      ]);
+      await updater.rebuildFromEvents([
+        correlationRegistered({
+          eventId: 'evt-c4-register',
+          workItemKey: 'github:atolis-hq/wake#203',
+          issueNumber: 203,
+          resourceUri: 'github:pr:atolis-hq/wake#303',
+          role: 'implementation',
+          relation: 'primary',
+          provenance: 'agent-reported',
+          occurredAt: '2026-07-05T13:00:00.000Z',
+        }),
+      ]);
+      await updater.rebuildFromEvents([
+        correlationRetracted({
+          eventId: 'evt-c4-retract',
+          workItemKey: 'github:atolis-hq/wake#203',
+          issueNumber: 203,
+          resourceUri: 'github:pr:atolis-hq/wake#303',
+          occurredAt: '2026-07-05T13:10:00.000Z',
+        }),
+      ]);
+
+      const projection = await store.readIssueState('atolis-hq/wake', 203);
+      expect(projection?.correlatedResources).toEqual([]);
+      expect(await resourceIndex.resolve('github:pr:atolis-hq/wake#303')).toBeUndefined();
+    });
+
+    it('a registration followed by a retraction of the same uri leaves correlatedResources[] empty', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const resourceIndex = createResourceIndex({ paths: store.paths });
+      const updater = createProjectionUpdater({ stateStore: store, resourceIndex });
+
+      await updater.rebuildFromEvents([
+        issueUpsert({ eventId: 'evt-c4b-issue', issueNumber: 204, labels: ['wake:queue'] }),
+      ]);
+      await updater.rebuildFromEvents([
+        correlationRegistered({
+          eventId: 'evt-c4b-register',
+          workItemKey: 'github:atolis-hq/wake#204',
+          issueNumber: 204,
+          resourceUri: 'slack:thread:C1',
+          role: 'discussion',
+          relation: 'secondary',
+          provenance: 'operator-declared',
+          occurredAt: '2026-07-05T13:00:00.000Z',
+        }),
+        correlationRetracted({
+          eventId: 'evt-c4b-retract',
+          workItemKey: 'github:atolis-hq/wake#204',
+          issueNumber: 204,
+          resourceUri: 'slack:thread:C1',
+          occurredAt: '2026-07-05T13:01:00.000Z',
+        }),
+      ]);
+
+      const projection = await store.readIssueState('atolis-hq/wake', 204);
+      expect(projection?.correlatedResources).toEqual([]);
+    });
+
+    it('rule 5: a second primary registration on a claimed uri folds to secondary and emits a primary-conflict event', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const resourceIndex = createResourceIndex({ paths: store.paths });
+      const updater = createProjectionUpdater({ stateStore: store, resourceIndex });
+
+      await updater.rebuildFromEvents([
+        issueUpsert({ eventId: 'evt-c5-issue-a', issueNumber: 205, labels: ['wake:queue'] }),
+        issueUpsert({ eventId: 'evt-c5-issue-b', issueNumber: 206, labels: ['wake:queue'] }),
+      ]);
+
+      // Work item 205 claims primary first.
+      await updater.rebuildFromEvents([
+        correlationRegistered({
+          eventId: 'evt-c5-register-a',
+          workItemKey: 'github:atolis-hq/wake#205',
+          issueNumber: 205,
+          resourceUri: 'github:pr:atolis-hq/wake#999',
+          role: 'implementation',
+          relation: 'primary',
+          provenance: 'agent-reported',
+          occurredAt: '2026-07-05T13:00:00.000Z',
+        }),
+      ]);
+
+      // Work item 206 tries to claim the same uri as primary; must lose.
+      const conflictingRegistration = correlationRegistered({
+        eventId: 'evt-c5-register-b',
+        workItemKey: 'github:atolis-hq/wake#206',
+        issueNumber: 206,
+        resourceUri: 'github:pr:atolis-hq/wake#999',
+        role: 'implementation',
+        relation: 'primary',
+        provenance: 'agent-reported',
+        occurredAt: '2026-07-05T13:05:00.000Z',
+      });
+      await updater.rebuildFromEvents([conflictingRegistration]);
+
+      const loser = await store.readIssueState('atolis-hq/wake', 206);
+      expect(loser?.correlatedResources).toEqual([
+        {
+          resourceUri: 'github:pr:atolis-hq/wake#999',
+          role: 'implementation',
+          relation: 'secondary',
+          provenance: 'agent-reported',
+          registeredAt: '2026-07-05T13:05:00.000Z',
+        },
+      ]);
+      expect(await resourceIndex.resolve('github:pr:atolis-hq/wake#999')).toBe(
+        'github:atolis-hq/wake#205',
+      );
+
+      const conflictEvent = await store.readEventEnvelope(
+        `${conflictingRegistration.eventId}-primary-conflict`,
+      );
+      expect(conflictEvent?.sourceEventType).toBe(CORRELATION_PRIMARY_CONFLICT_EVENT);
+      expect(conflictEvent?.payload).toMatchObject({
+        resourceUri: 'github:pr:atolis-hq/wake#999',
+        incumbentWorkItemKey: 'github:atolis-hq/wake#205',
+      });
+    });
   });
 });
