@@ -19,11 +19,5 @@ export function createFakeResourceIndex(): ResourceIndex {
     async retract(resourceUri: string) {
       entries.delete(resourceUri);
     },
-    async replaceAll(next: ReadonlyMap<string, string>) {
-      entries.clear();
-      for (const [resourceUri, workItemKey] of next) {
-        entries.set(resourceUri, workItemKey);
-      }
-    },
   };
 }

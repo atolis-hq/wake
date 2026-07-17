@@ -97,14 +97,6 @@ describe('ResourceIndex', () => {
     await expect(index.retract('github:pr:atolis-hq/wake#404')).resolves.toBeUndefined();
   });
 
-  it('replaceAll discards entries absent from the new map', async () => {
-    const index = createResourceIndex({ paths: freshPaths() });
-    await index.register('github:pr:atolis-hq/wake#91', 'work-AAA');
-    await index.replaceAll(new Map([['github:issue:atolis-hq/wake#82', 'work-BBB']]));
-    expect(await index.resolve('github:pr:atolis-hq/wake#91')).toBeUndefined();
-    expect(await index.resolve('github:issue:atolis-hq/wake#82')).toBe('work-BBB');
-  });
-
   it('concurrent registrations on the same shard do not lose a write', async () => {
     // Regression guard for the lost-update race: withShardLock must be
     // genuinely exclusive. Two uris that hash to the same shard, registered

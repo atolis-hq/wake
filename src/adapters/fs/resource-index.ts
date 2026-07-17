@@ -98,25 +98,5 @@ export function createResourceIndex({ paths }: { paths: WakePaths }): ResourceIn
       });
     },
 
-    async replaceAll(entries: ReadonlyMap<string, string>): Promise<void> {
-      // Deliberately unlocked: this is the exclusive full-rebuild path (only
-      // called with nothing else touching the index concurrently), not a
-      // per-shard read-modify-write. A register/retract racing this mid-rm
-      // would be undefined behavior, but that's a caller-ordering
-      // requirement out of scope for this fix, not something to lock around.
-      await rm(paths.resourceIndexRoot, { recursive: true, force: true });
-
-      const byShard = new Map<string, ShardContents>();
-      for (const [resourceUri, workItemKey] of entries) {
-        const shard = shardFor(resourceUri);
-        const contents = byShard.get(shard) ?? {};
-        contents[resourceUri] = workItemKey;
-        byShard.set(shard, contents);
-      }
-
-      for (const [shard, contents] of byShard) {
-        await writeJsonFile(paths.resourceIndexShardFile(shard), contents);
-      }
-    },
   };
 }

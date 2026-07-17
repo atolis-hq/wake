@@ -5,7 +5,9 @@ import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 
+import { createResourceIndex } from '../src/adapters/fs/resource-index.js';
 import { createDefaultWakeConfig } from '../src/config/defaults.js';
+import { buildResourceUri } from '../src/domain/resource-uri.js';
 import type { IssueStateRecord, RunRecord, WakeConfig } from '../src/domain/types.js';
 import { writeJsonFile } from '../src/lib/json-file.js';
 import { createWakePaths } from '../src/lib/paths.js';
@@ -168,21 +170,23 @@ async function closeIssue(repo: string, issueNumber: number, cwd: string) {
 }
 
 async function readIssueState(wakeRoot: string, repo: string, issueNumber: number) {
-  // state/ is keyed by the opaque minted work id, so the projection is found
-  // by the ticket it represents, via its retained issue snapshot.
-  const stateRoot = join(wakeRoot, 'state');
-  const files = (await readdir(stateRoot).catch(() => []))
-    .filter((file) => file.endsWith('.json'));
+  // state/ is keyed by the opaque minted work id, so resolve the ticket to its
+  // work item the way the rest of Wake does: construct the resource uri and
+  // look it up in the reverse index. Do NOT scan state/ matching on the
+  // retained `issue` snapshot — that snapshot is representation content, not
+  // identity, and using it to *find* a work item is the O(n) pattern this
+  // change deleted (findIssueStateByIssueRef).
+  const paths = createWakePaths(wakeRoot);
+  const resourceIndex = createResourceIndex({ paths });
+  const uri = buildResourceUri('github', 'issue', `${repo}#${issueNumber}`);
+  const workId = await resourceIndex.resolve(uri);
 
-  for (const file of files) {
-    const raw = await readFile(join(stateRoot, file), 'utf8');
-    const record = JSON.parse(raw) as IssueStateRecord;
-    if (record.issue?.repo === repo && record.issue?.number === issueNumber) {
-      return record;
-    }
+  if (workId === undefined) {
+    throw new Error(`No work item registered for ${uri}`);
   }
 
-  throw new Error(`No projection found for ${repo}#${issueNumber}`);
+  const raw = await readFile(paths.workItemStateFile(workId), 'utf8');
+  return JSON.parse(raw) as IssueStateRecord;
 }
 
 async function readLatestRun(wakeRoot: string): Promise<RunRecord> {

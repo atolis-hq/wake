@@ -325,10 +325,14 @@ async function applyEvent(
     // `primary` registration on a claimed URI is downgraded to `secondary` and
     // a warning event appended." It says nothing about promoting a requested
     // `secondary`, and §5 lists `relation` as a payload input — so a requested
-    // `secondary` must stay `secondary`. `wake correlate` (Task 7) depends on
-    // this: an operator declaring "this Slack thread is a secondary discussion
-    // resource for X" has to be expressible, and folding it up to `primary`
-    // would silently rewrite the declaration.
+    // `secondary` must stay `secondary`. Folding a requested `secondary` up to
+    // `primary` would silently rewrite the declaration the event made, and the
+    // downgrade rule is a corruption guard, not a merge rule — it exists to
+    // stop a second claim on a URI, not to promote unclaimed ones.
+    //
+    // (No shipped caller declares `secondary` yet — `wake correlate` hardcodes
+    // `primary`. The rule follows the spec's payload contract, which is the
+    // standard here; an emitter is #82's scope.)
     //
     //   requested primary + held by ANOTHER work item -> secondary + conflict
     //   requested primary + unclaimed / held by THIS   -> primary, indexed

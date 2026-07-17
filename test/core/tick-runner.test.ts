@@ -2926,21 +2926,21 @@ describe('tick runner', () => {
             comments: [],
           },
         ],
-        // NOTE: deliberately pinned to the same instant as the tick clock,
-        // unlike the correlation tests above/below which offset it. Offsetting
-        // it here (source polling at 12:00:01, i.e. after tickStartedAt, as
-        // production always does) makes this test fail on a *second*, unrelated
-        // pre-existing bug: `wake.run.claimed` and the pending/working label
-        // events are stamped from `nowIso` (= tickStartedAt, captured at
-        // tick-runner.ts:661 BEFORE pollEvents() at :665), so on the very first
-        // tick that both discovers and dispatches an item they carry an
-        // ingestedAt earlier than the ticket.upsert that creates the
-        // projection — and the globally-ordered replay drops them against
-        // `current === null`, losing stage/stageHistory/lastRunId/context.
-        // That is the same class of defect as the auto-registration one fixed
-        // here, but it has no durable anchor to derive a timestamp from (the
-        // fix is to capture the clock *after* the poll), so it is out of scope
-        // for this change and is reported separately rather than papered over.
+        // Pinned to the tick clock deliberately, and this test must stay that
+        // way while its `clock` is frozen. This tick clock returns 12:00:00 on
+        // every read, so `eventStampNow()` cannot advance past the poll the way
+        // a real clock does; polling at 12:00:01 would sort every Wake-stamped
+        // event before the upsert that creates the projection and drop them on
+        // replay — a frozen-clock artifact, not a production defect.
+        //
+        // The cost is that this fixture cannot see ordering bugs: equal
+        // timestamps tie, the stable sort keeps append order, and replay comes
+        // out right for the wrong reason. That blind spot is why three separate
+        // ordering bugs survived here. It is covered instead by the dedicated
+        // rebuild test above, which drives a *sequenced* clock (tick 12:00:00,
+        // poll 12:00:01, stamping 12:00:02+) and is the fixture to extend if
+        // you are testing ordering. This one proves projection equivalence for
+        // a rich projection; that one proves ordering.
         now: () => new Date('2026-07-05T12:00:00.000Z'),
       }),
       runner: {
