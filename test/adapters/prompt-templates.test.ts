@@ -76,6 +76,25 @@ describe('prompt templates', () => {
     expect(rendered).toBe('Resume: Read Grep');
   });
 
+  it('renders the wake:work-item marker with the real work id, not the placeholder', async () => {
+    // The marker only earns its keep if {{workItemKey}} is actually substituted.
+    // renderPromptTemplate leaves an unknown token untouched rather than
+    // failing, so dropping workItemKey from the render context would ship
+    // `<!-- wake:work-item {{workItemKey}} -->` verbatim into real PR bodies —
+    // a marker that looks present and carries nothing, with nothing to catch it.
+    // Asserting the template merely *contains* the placeholder cannot see that;
+    // this renders it and asserts the id survives.
+    for (const mode of ['start', 'resume'] as const) {
+      const template = await loadPromptTemplate('implement', mode);
+      const rendered = renderPromptTemplate(template, {
+        workItemKey: 'work-01JQZX9K2N4P6R8T0V2W4Y6A8C',
+      });
+
+      expect(rendered).toContain('<!-- wake:work-item work-01JQZX9K2N4P6R8T0V2W4Y6A8C -->');
+      expect(rendered).not.toContain('{{workItemKey}}');
+    }
+  });
+
   it('stringifies non-string values passed as context', () => {
     const rendered = renderPromptTemplate(
       { frontmatter: {}, body: 'Events: {{events}}' },
