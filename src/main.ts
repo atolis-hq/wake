@@ -20,6 +20,7 @@ import {
 import { resolveGitHubToken } from './adapters/github/github-auth.js';
 import { createGitHubClient } from './adapters/github/github-client.js';
 import { createGitHubIssuesWorkSource } from './adapters/github/github-issues-work-source.js';
+import { runCorrelateCommand } from './cli/correlate-command.js';
 import { runInitCommand } from './cli/init-command.js';
 import { runSandboxCommand } from './cli/sandbox-command.js';
 import { runStartupPreflight } from './cli/startup-preflight.js';
@@ -379,6 +380,22 @@ async function runUi(args: string[]) {
   await new Promise(() => {});
 }
 
+async function runCorrelate(args: string[]) {
+  const wakeRoot = resolve(
+    readFlagBeforeCommandTerminator('--wake-root', args) ?? resolve(process.cwd(), '.wake'),
+  );
+  const stateStore = createStateStore({ wakeRoot });
+  await stateStore.ensureWakeRoot();
+
+  await runCorrelateCommand({
+    args,
+    stateStore,
+    resourceIndex: createResourceIndex({ paths: stateStore.paths }),
+    clock: systemClock,
+    readFlag: readFlagBeforeCommandTerminator,
+  });
+}
+
 async function runSmoke(args: string[]) {
   const runtime = await buildRuntime(args);
   const explicitKind =
@@ -406,6 +423,7 @@ export async function dispatchMainCommand(input: {
   runStart: (args: string[]) => Promise<unknown>;
   runSmoke: (args: string[]) => Promise<unknown>;
   runUi: (args: string[]) => Promise<unknown>;
+  runCorrelate: (args: string[]) => Promise<unknown>;
 }) {
   const command = input.args[0] ?? 'tick';
   if (command === 'tick') {
@@ -440,6 +458,11 @@ export async function dispatchMainCommand(input: {
 
   if (command === 'ui') {
     await input.runUi(input.args.slice(1));
+    return;
+  }
+
+  if (command === 'correlate') {
+    await input.runCorrelate(input.args.slice(1));
     return;
   }
 
@@ -562,6 +585,7 @@ async function main() {
     runStart,
     runSmoke,
     runUi,
+    runCorrelate,
   });
 }
 

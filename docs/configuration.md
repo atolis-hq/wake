@@ -391,6 +391,35 @@ design; the current implementation covers the v0 read-only surface (status
 bar, condition board, item detail, activity feed, config view, health view)
 with no mutation endpoints yet.
 
+### wake correlate
+
+```
+wake correlate <workItemKey> <resourceUri> [--role <role>] [--wake-root <path>]
+```
+
+Operator escape hatch for the correlation registry (see
+[docs/superpowers/specs/2026-07-16-work-identity-correlation-design.md](superpowers/specs/2026-07-16-work-identity-correlation-design.md)
+§5–§6). Use it to declare by hand that a resource (a GitHub PR, a Slack
+thread, etc.) belongs to an existing work item when nothing detected the
+correlation automatically.
+
+- `<workItemKey>` must be an existing work item's key (`work-<ulid>`); an
+  unknown key is rejected rather than minting a phantom work item.
+- `<resourceUri>` must match the `<provider>:<kind>:<locator>` grammar (see
+  `src/domain/resource-uri.ts`); a malformed URI is rejected.
+- `--role` sets the correlation role and defaults to `implementation`. Must be
+  one of the closed vocabulary: `representation`, `implementation`,
+  `discussion`, `review`, `documentation`, `decision`.
+- The declaration is always requested as `primary`, `provenance:
+  operator-declared`. If another work item already holds the URI as
+  `primary`, the fold downgrades this registration to `secondary` and emits a
+  `wake.correlation.primary-conflict` event rather than stealing the URI.
+
+Like every other correlation-affecting change, this command appends an event
+and lets the projection fold decide the outcome — it never writes the
+resource index or a work item's projection directly, so `rm -rf state/` plus
+replay still reproduces the same result.
+
 ### sources.github
 
 GitHub Issues integration and polling configuration.

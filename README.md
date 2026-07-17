@@ -62,6 +62,10 @@ For more detail, see [docs/vision.md](docs/vision.md) and
   provider.
 - **Human resumption.** A human can pick up the exact local agent session when a
   direct terminal intervention is the best way forward.
+- **Operator correlation escape hatch.** `wake correlate <workItemKey>
+  <resourceUri>` lets an operator hand-declare that a resource (a PR, a Slack
+  thread, etc.) belongs to an existing work item when nothing detected the
+  link automatically. See [docs/configuration.md](docs/configuration.md).
 
 Current runner capability differences are documented in
 [docs/runner-comparison.md](docs/runner-comparison.md).

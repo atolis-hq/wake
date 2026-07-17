@@ -30,6 +30,9 @@ describe('main command routing', () => {
       runUi: async () => {
         calls.push('ui');
       },
+      runCorrelate: async () => {
+        calls.push('correlate');
+      },
     });
 
     await dispatchMainCommand({
@@ -51,6 +54,9 @@ describe('main command routing', () => {
       },
       runUi: async () => {
         calls.push('ui-again');
+      },
+      runCorrelate: async () => {
+        calls.push('correlate-again');
       },
     });
 
@@ -80,6 +86,9 @@ describe('main command routing', () => {
       runUi: async () => {
         calls.push('ui');
       },
+      runCorrelate: async () => {
+        calls.push('correlate');
+      },
     });
 
     expect(calls).toEqual(['sandbox:stop --timeout-ms 5000']);
@@ -96,6 +105,7 @@ describe('main command routing', () => {
       runStart: async () => {},
       runSmoke,
       runUi: async () => {},
+      runCorrelate: async () => {},
     });
 
     await dispatchMainCommand({
@@ -106,6 +116,7 @@ describe('main command routing', () => {
       runStart: async () => {},
       runSmoke,
       runUi: async () => {},
+      runCorrelate: async () => {},
     });
 
     expect(runSmoke).toHaveBeenNthCalledWith(1, ['claude', '--remote-control']);
@@ -123,6 +134,7 @@ describe('main command routing', () => {
       runStart: async () => {},
       runSmoke,
       runUi: async () => {},
+      runCorrelate: async () => {},
     });
 
     expect(runSmoke).toHaveBeenCalledWith(['--wake-root', '/tmp/wake-home']);
@@ -139,9 +151,32 @@ describe('main command routing', () => {
       runStart: async () => {},
       runSmoke: async () => {},
       runUi,
+      runCorrelate: async () => {},
     });
 
     expect(runUi).toHaveBeenCalledWith(['--port', '4400']);
+  });
+
+  it('routes the correlate command through the correlate path', async () => {
+    const runCorrelate = vi.fn(async () => {});
+
+    await dispatchMainCommand({
+      args: ['correlate', 'work-01JZ0000000000000000000029', 'github:pr:456', '--role', 'review'],
+      runInit: async () => {},
+      runSandbox: async () => {},
+      runTick: async () => {},
+      runStart: async () => {},
+      runSmoke: async () => {},
+      runUi: async () => {},
+      runCorrelate,
+    });
+
+    expect(runCorrelate).toHaveBeenCalledWith([
+      'work-01JZ0000000000000000000029',
+      'github:pr:456',
+      '--role',
+      'review',
+    ]);
   });
 
   it('ignores inner exec payload flags after command terminator', () => {
