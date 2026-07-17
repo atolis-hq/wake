@@ -25,6 +25,14 @@ describe('prompt templates', () => {
     await expect(loadPromptTemplate('implement', 'resume')).resolves.toBeDefined();
   });
 
+  it('instructs the agent to embed the wake:work-item marker verbatim in PR bodies it creates', async () => {
+    const startTemplate = await loadPromptTemplate('implement', 'start');
+    expect(startTemplate.body).toContain('<!-- wake:work-item {{workItemKey}} -->');
+
+    const resumeTemplate = await loadPromptTemplate('implement', 'resume');
+    expect(resumeTemplate.body).toContain('<!-- wake:work-item {{workItemKey}} -->');
+  });
+
   it('loads a combined template from an explicit prompts root', async () => {
     const promptsDir = await mkdtemp(join(tmpdir(), 'wake-prompts-'));
     await writeFile(
