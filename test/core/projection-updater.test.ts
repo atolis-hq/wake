@@ -1380,26 +1380,11 @@ describe('projection updater', () => {
 
       await updater.rebuildFromEvents([
         issueUpsert({ eventId: 'evt-c3-issue', issueNumber: 202, labels: ['wake:queue'] }),
-        issueUpsert({ eventId: 'evt-c3-issue-incumbent', issueNumber: 999, labels: ['wake:queue'] }),
       ]);
 
-      // Uri #302 must already be held primary by a *different* work item for
-      // 202's registration below to genuinely fold as secondary (ADR 0001
-      // §5/§6: with no incumbent, the fold now folds as primary regardless of
-      // the relation requested — see the "orphan secondary" fix).
-      await updater.rebuildFromEvents([
-        correlationRegistered({
-          eventId: 'evt-c3-incumbent-register',
-          workItemKey: 'github:atolis-hq/wake#999',
-          issueNumber: 999,
-          resourceUri: 'github:pr:atolis-hq/wake#302',
-          role: 'implementation',
-          relation: 'primary',
-          provenance: 'agent-reported',
-          occurredAt: '2026-07-05T12:59:00.000Z',
-        }),
-      ]);
-
+      // A `secondary` is directly declarable on an unclaimed uri — ADR 0001 §6
+      // is a downgrade rule only, so the fold never promotes a requested
+      // secondary. No artificial incumbent is needed to reach this state.
       await updater.rebuildFromEvents([
         correlationRegistered({
           eventId: 'evt-c3-register-1',
@@ -1565,7 +1550,7 @@ describe('projection updater', () => {
       });
     });
 
-    it('fix A: a secondary-requested registration on an unclaimed uri folds as primary and is resolvable in the index (no orphan secondaries)', async () => {
+    it('round 3: a secondary-requested registration on an unclaimed uri stays secondary and does not touch the primary-only index', async () => {
       const store = createStateStore({ wakeRoot: root });
       const resourceIndex = createResourceIndex({ paths: store.paths });
       const updater = createProjectionUpdater({ stateStore: store, resourceIndex });
@@ -1574,11 +1559,12 @@ describe('projection updater', () => {
         issueUpsert({ eventId: 'evt-fixA-issue', issueNumber: 300, labels: ['wake:queue'] }),
       ]);
 
-      // Nobody holds this uri as primary yet. Even though the event requests
-      // 'secondary', the fold — not the event — decides the outcome (ADR
-      // 0001 §5/§6): with no incumbent, it must fold as primary so an
-      // "orphan secondary" (a secondary on a uri nobody holds as primary,
-      // and so nobody can ever resolve) is unrepresentable.
+      // Nobody holds this uri as primary yet, and the event requests
+      // 'secondary'. ADR 0001 §6 is a *downgrade* rule only — it never
+      // promotes — so this must stay 'secondary'. This is the shape
+      // `wake correlate` (Task 7) emits when an operator declares "this Slack
+      // thread is a secondary discussion resource for X"; folding it up to
+      // primary would make that declaration unexpressible.
       await updater.rebuildFromEvents([
         correlationRegistered({
           eventId: 'evt-fixA-register',
@@ -1597,12 +1583,15 @@ describe('projection updater', () => {
         {
           resourceUri: 'slack:thread:C900',
           role: 'discussion',
-          relation: 'primary',
+          relation: 'secondary',
           provenance: 'operator-declared',
           registeredAt: '2026-07-05T13:00:00.000Z',
         },
       ]);
-      expect(await resourceIndex.resolve('slack:thread:C900')).toBe('github:atolis-hq/wake#300');
+      // The index is primary-only (ADR 0001 §5: the resolver stamps the
+      // *primary* work item's canonical key), so a secondary is simply never
+      // indexed. That is by design, not an orphan.
+      expect(await resourceIndex.resolve('slack:thread:C900')).toBeUndefined();
     });
 
     it('fix B: register primary, re-register the same uri, then retract — the index no longer credits this work item', async () => {

@@ -2227,7 +2227,12 @@ describe('tick runner', () => {
             comments: [],
           },
         ],
-        now: () => new Date('2026-07-05T12:00:00.000Z'),
+        // Deliberately offset from the tick clock above. In production the
+        // work source stamps its own ingestedAt inside pollEvents(), which
+        // runs *after* the tick captures tickStartedAt, so the origin upsert
+        // is always LATER than the tick's `now`. Pinning both clocks to the
+        // same instant hides every ordering bug this asymmetry causes.
+        now: () => new Date('2026-07-05T12:00:01.000Z'),
       }),
       runner: {
         async run() {
@@ -2247,7 +2252,11 @@ describe('tick runner', () => {
         role: 'representation',
         relation: 'primary',
         provenance: 'wake-created',
-        registeredAt: '2026-07-05T12:00:00.000Z',
+        // max(origin upsert's ingestedAt, tick's nowIso) — the origin upsert
+        // (polled at 12:00:01) is later than the tick's start (12:00:00), so
+        // the registration takes the upsert's timestamp and can never sort
+        // before the projection it folds into.
+        registeredAt: '2026-07-05T12:00:01.000Z',
       },
     ]);
 
@@ -2263,6 +2272,80 @@ describe('tick runner', () => {
       (event) => event.sourceEventType === CORRELATION_REGISTERED_EVENT,
     );
     expect(registrationEventsAfterSecondTick).toHaveLength(1);
+  });
+
+  it('round 3: the auto-registration survives rm -rf state/ + replay when the source polls after the tick started (ADR 0001 rebuild guarantee)', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const resourceIndex = createResourceIndex({ paths: store.paths });
+    const config = createDefaultWakeConfig(root);
+    config.sources.github.policy.requiredLabels = ['wake:queue'];
+
+    const tickRunner = createTickRunner({
+      // The tick captures `nowIso` at 12:00:00, before it polls; the work
+      // source stamps its upsert at poll time, 12:00:01. This is the real
+      // production relationship (pollEvents runs after tickStartedAt is
+      // captured), and it is what every other fixture hides by pinning both
+      // clocks to the same instant.
+      clock: { now: () => new Date('2026-07-05T12:00:00.000Z') },
+      config,
+      stateStore: store,
+      resourceIndex,
+      workSource: createFakeTicketingSystem({
+        tickets: [
+          {
+            repo: 'atolis-hq/wake',
+            number: 62,
+            title: 'Replay the origin registration',
+            body: 'Body',
+            labels: ['wake:queue'],
+            comments: [],
+          },
+        ],
+        now: () => new Date('2026-07-05T12:00:01.000Z'),
+      }),
+      runner: {
+        async run() {
+          return { result: 'DONE', model: 'test-model', cli: 'test-cli' };
+        },
+      },
+      workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+    });
+
+    await tickRunner.runTick();
+
+    const before = await store.readIssueState('atolis-hq/wake', 62);
+    expect(before?.correlatedResources).toEqual([
+      expect.objectContaining({
+        resourceUri: 'fake-ticketing:issue:atolis-hq/wake#62',
+        role: 'representation',
+        relation: 'primary',
+        provenance: 'wake-created',
+      }),
+    ]);
+    expect(await resourceIndex.resolve('fake-ticketing:issue:atolis-hq/wake#62')).toBe(
+      'fake-ticketing:atolis-hq/wake#62',
+    );
+
+    // state/ (projection AND index) is a rebuildable cache over events/.
+    await rm(join(root, 'state'), { recursive: true, force: true });
+    await createProjectionUpdater({ stateStore: store, resourceIndex })
+      .rebuildFromEvents(await store.listEventEnvelopes());
+
+    // If the registration were stamped with the tick's own `nowIso` it would
+    // sort before the 12:00:01 upsert that creates the projection, fold
+    // against `current === null`, and be silently dropped — leaving these two
+    // assertions empty/undefined while the registration event still on record
+    // stops any later tick from re-registering it. Permanent, silent loss.
+    const after = await store.readIssueState('atolis-hq/wake', 62);
+    expect(after?.correlatedResources).toEqual(before?.correlatedResources);
+    expect(await resourceIndex.resolve('fake-ticketing:issue:atolis-hq/wake#62')).toBe(
+      'fake-ticketing:atolis-hq/wake#62',
+    );
+
+    // And the mechanism that makes the above hold: the registration is stamped
+    // max(origin upsert's ingestedAt, tick's nowIso), never the tick's nowIso
+    // alone, so it can never sort ahead of the upsert it depends on.
+    expect(before?.correlatedResources[0]?.registeredAt).toBe('2026-07-05T12:00:01.000Z');
   });
 
   it('fix E: does not resurrect a deliberate retraction — a work item that retracted all its resources is not re-auto-registered', async () => {
@@ -2286,7 +2369,8 @@ describe('tick runner', () => {
             comments: [],
           },
         ],
-        now: () => new Date('2026-07-05T12:00:00.000Z'),
+        // Offset from the tick clock — see the auto-registration test above.
+        now: () => new Date('2026-07-05T12:00:01.000Z'),
       }),
       runner: {
         async run() {
@@ -2364,6 +2448,21 @@ describe('tick runner', () => {
             comments: [],
           },
         ],
+        // NOTE: deliberately pinned to the same instant as the tick clock,
+        // unlike the correlation tests above/below which offset it. Offsetting
+        // it here (source polling at 12:00:01, i.e. after tickStartedAt, as
+        // production always does) makes this test fail on a *second*, unrelated
+        // pre-existing bug: `wake.run.claimed` and the pending/working label
+        // events are stamped from `nowIso` (= tickStartedAt, captured at
+        // tick-runner.ts:661 BEFORE pollEvents() at :665), so on the very first
+        // tick that both discovers and dispatches an item they carry an
+        // ingestedAt earlier than the ticket.upsert that creates the
+        // projection — and the globally-ordered replay drops them against
+        // `current === null`, losing stage/stageHistory/lastRunId/context.
+        // That is the same class of defect as the auto-registration one fixed
+        // here, but it has no durable anchor to derive a timestamp from (the
+        // fix is to capture the clock *after* the poll), so it is out of scope
+        // for this change and is reported separately rather than papered over.
         now: () => new Date('2026-07-05T12:00:00.000Z'),
       }),
       runner: {

@@ -270,6 +270,21 @@ export function createTickRunner(deps: {
     }
   }
 
+  // Returns whichever of the two timestamps is unambiguously later, defaulting
+  // to `left`. `right` wins only if it is later by BOTH the actual instant and
+  // the lexicographic order rebuildFromEvents sorts on — the envelope schema is
+  // `z.string().datetime({ offset: true })`, so a timestamp may legally carry a
+  // non-UTC offset or differing sub-second precision, and lexicographic order
+  // alone is not a reliable proxy for chronology across those formats. Falling
+  // back to `left` (the origin upsert's own exact string) is always safe: it
+  // ties with the upsert under localeCompare, and the stable sort then preserves
+  // append order, which puts the registration after it — exactly what we need.
+  function laterTimestamp(left: string, right: string): string {
+    const isLater =
+      Date.parse(right) > Date.parse(left) && right.localeCompare(left) > 0;
+    return isLater ? right : left;
+  }
+
   // Registers each work item's originating ticket as its founding correlated
   // resource the first time we ever see it, so correlatedResources[] is a
   // complete inventory with no special-cased "founding surface" — the origin
@@ -298,14 +313,29 @@ export function createTickRunner(deps: {
     // rebuilding it here with a defaulted `origin ?? 'github'` — means there
     // is exactly one place in the system that constructs this identity
     // string, so the two can never disagree.
-    const originResourceUriByWorkItem = new Map<string, string>();
+    // The upsert's own ingestedAt is captured alongside it, because the
+    // registration event must never sort *before* the upsert that creates the
+    // projection it folds into. `nowIso` is the tick's start time, captured
+    // before pollEvents() runs, while the work source stamps the upsert at
+    // poll time — so in production the upsert is always LATER than nowIso.
+    // Stamping the registration nowIso would append it after the upsert but
+    // date it before, and rebuildFromEvents' globally-ordered replay would
+    // then fold it against a null projection and silently drop it, leaving
+    // correlatedResources[] empty and the index unpopulated after a
+    // `rm -rf state/` + replay — while the registration event still on record
+    // stops the next tick from re-registering. Permanent, self-concealing
+    // loss, so the timestamp is derived from durable event data instead.
+    const originByWorkItem = new Map<string, { resourceUri: string; ingestedAt: string }>();
     for (const event of allEvents) {
       if (
         (event.sourceEventType === 'fake.issue.upsert' ||
           event.sourceEventType === 'ticket.upsert') &&
         event.sourceRefs.resourceUri !== undefined
       ) {
-        originResourceUriByWorkItem.set(event.workItemKey, event.sourceRefs.resourceUri);
+        originByWorkItem.set(event.workItemKey, {
+          resourceUri: event.sourceRefs.resourceUri,
+          ingestedAt: event.ingestedAt,
+        });
       }
     }
 
@@ -314,8 +344,8 @@ export function createTickRunner(deps: {
         continue;
       }
 
-      const resourceUri = originResourceUriByWorkItem.get(projection.workItemKey);
-      if (resourceUri === undefined) {
+      const origin = originByWorkItem.get(projection.workItemKey);
+      if (origin === undefined) {
         // No source-provided resourceUri on record for this work item's
         // origin ticket (e.g. its projection was constructed directly by a
         // test fixture rather than folded from a real ticket-upsert event).
@@ -323,6 +353,9 @@ export function createTickRunner(deps: {
         // does see the source event will register it then.
         continue;
       }
+
+      const { resourceUri } = origin;
+      const registeredAt = laterTimestamp(origin.ingestedAt, nowIso);
 
       const registeredEvent = createEventEnvelope({
         eventId: `${projection.workItemKey}-origin-correlation`,
@@ -336,8 +369,8 @@ export function createTickRunner(deps: {
           issueNumber: projection.issue.number,
           resourceUri,
         },
-        occurredAt: nowIso,
-        ingestedAt: nowIso,
+        occurredAt: registeredAt,
+        ingestedAt: registeredAt,
         trigger: 'context-only',
         payload: {
           resourceUri,

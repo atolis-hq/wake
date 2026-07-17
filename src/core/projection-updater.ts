@@ -326,20 +326,28 @@ async function applyEvent(
   if (event.sourceEventType === CORRELATION_REGISTERED_EVENT) {
     const payload = event.payload as unknown as CorrelationRegisteredPayload;
 
-    // ADR 0001 §5/§6: relation is decided by the fold, not merely accepted
-    // from the event — the event's `relation` is a request, not the outcome.
-    // If no *other* work item currently holds this uri as primary, the
-    // registration folds as primary regardless of what was requested; this
-    // is what makes an "orphan secondary" (a secondary registration on a uri
-    // nobody holds as primary) unrepresentable, and one-primary-per-uri
-    // trivially true. Only when another work item already holds the uri as
-    // primary does this fold to secondary — and only then, and only when the
-    // event itself requested primary, is a primary-conflict event recorded
-    // naming the incumbent. Promotion still requires the incumbent to
-    // retract first — never let a second registration silently steal a uri.
+    // ADR 0001 §6 is a *downgrade* rule, and only a downgrade rule: "a second
+    // `primary` registration on a claimed URI is downgraded to `secondary` and
+    // a warning event appended." It says nothing about promoting a requested
+    // `secondary`, and §5 lists `relation` as a payload input — so a requested
+    // `secondary` must stay `secondary`. `wake correlate` (Task 7) depends on
+    // this: an operator declaring "this Slack thread is a secondary discussion
+    // resource for X" has to be expressible, and folding it up to `primary`
+    // would silently rewrite the declaration.
+    //
+    //   requested primary + held by ANOTHER work item -> secondary + conflict
+    //   requested primary + unclaimed / held by THIS   -> primary, indexed
+    //   requested secondary                            -> secondary, unindexed
+    //
+    // A requested-secondary never touching the index is by design, not an
+    // orphan: the index is primary-only (ADR §5 — the resolver stamps the
+    // *primary* work item's canonical key), so a secondary has nothing to
+    // register. Promotion still requires the incumbent to retract first —
+    // never let a second registration silently steal a uri.
     const incumbent = await ctx.resourceIndex.resolve(payload.resourceUri);
     const heldByAnotherWorkItem = incumbent !== undefined && incumbent !== current.workItemKey;
-    const relation: CorrelatedResource['relation'] = heldByAnotherWorkItem ? 'secondary' : 'primary';
+    const relation: CorrelatedResource['relation'] =
+      payload.relation === 'primary' && !heldByAnotherWorkItem ? 'primary' : 'secondary';
 
     if (relation === 'primary') {
       await ctx.resourceIndex.register(payload.resourceUri, current.workItemKey);
@@ -364,11 +372,13 @@ async function applyEvent(
       }
 
       // Coherent inverse of the retraction gate below: a registration that
-      // resolves to non-primary must never leave the index stranded
-      // crediting this work item. Under this fold `heldByAnotherWorkItem`
-      // already implies the index credits someone else, so this is
-      // defensive — but the gate must be correct on its own terms, not
-      // merely unreachable given today's call sites (finding B).
+      // folds to non-primary must never leave the index stranded crediting
+      // this work item. This is reachable as a genuine *self-demotion* — a
+      // work item that holds a uri primary and then registers it `secondary`
+      // — where leaving the index pointing at us would contradict our own
+      // correlatedResources[] entry. Gated on actual index ownership, so the
+      // ordinary requested-secondary-on-an-unclaimed-uri case (owner
+      // undefined) correctly leaves the index untouched (finding B).
       const owner = await ctx.resourceIndex.resolve(payload.resourceUri);
       if (owner === current.workItemKey) {
         await ctx.resourceIndex.retract(payload.resourceUri);
