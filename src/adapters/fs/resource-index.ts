@@ -6,8 +6,6 @@ import { readJsonFile, writeJsonFile } from '../../lib/json-file.js';
 import type { WakePaths } from '../../lib/paths.js';
 import type { ResourceIndex } from '../../core/contracts.js';
 
-export type { ResourceIndex } from '../../core/contracts.js';
-
 type ShardContents = Record<string, string>;
 
 /**

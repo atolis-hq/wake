@@ -2464,6 +2464,162 @@ describe('tick runner', () => {
       await projectionUpdater.rebuildFromEvents([event]);
     }
 
+    // A third and fourth work item whose *creation* order and *registration*
+    // order disagree — the fixture that catches grouped-by-workItemKey
+    // rebuild ordering bugs, which the #70/#90 pair above does not (there,
+    // creation order and registration order happen to agree). Work item
+    // #100 is created first (12:10) but registers the shared uri *second*
+    // (12:30); work item #101 is created second (12:15) but registers the
+    // shared uri *first* (12:20). Live/incremental folding (in true
+    // chronological order, one event at a time, exactly as below) must make
+    // #101 the primary (it registered first) and #100 the secondary with a
+    // primary-conflict event naming #101 as incumbent. A rebuild that groups
+    // by workItemKey and folds group-by-group in Map insertion order would
+    // instead process #100's group to completion first (its earliest event,
+    // the 12:10 creation, appears first in the overall event array), making
+    // #100 the primary — silently disagreeing with the live result.
+    const thirdIssueUpsert = createEventEnvelope({
+      eventId: 'fake-issue-atolis-hq-wake-100',
+      workItemKey: 'fake-ticketing:atolis-hq/wake#100',
+      streamScope: 'global-intake',
+      direction: 'inbound',
+      sourceSystem: 'fake-ticketing',
+      sourceEventType: 'fake.issue.upsert',
+      sourceRefs: {
+        repo: 'atolis-hq/wake',
+        issueNumber: 100,
+        resourceUri: 'fake-ticketing:issue:atolis-hq/wake#100',
+      },
+      occurredAt: '2026-07-05T12:10:00.000Z',
+      ingestedAt: '2026-07-05T12:10:00.000Z',
+      trigger: 'immediate',
+      payload: {
+        issue: {
+          repo: 'atolis-hq/wake',
+          number: 100,
+          title: 'Created first, registers second',
+          body: 'Body',
+          labels: ['wake:queue'],
+          assignees: [],
+          state: 'open',
+          url: 'https://example.test/atolis-hq/wake/issues/100',
+          createdAt: '2026-07-05T12:10:00.000Z',
+          updatedAt: '2026-07-05T12:10:00.000Z',
+        },
+      },
+    });
+    const fourthIssueUpsert = createEventEnvelope({
+      eventId: 'fake-issue-atolis-hq-wake-101',
+      workItemKey: 'fake-ticketing:atolis-hq/wake#101',
+      streamScope: 'global-intake',
+      direction: 'inbound',
+      sourceSystem: 'fake-ticketing',
+      sourceEventType: 'fake.issue.upsert',
+      sourceRefs: {
+        repo: 'atolis-hq/wake',
+        issueNumber: 101,
+        resourceUri: 'fake-ticketing:issue:atolis-hq/wake#101',
+      },
+      occurredAt: '2026-07-05T12:15:00.000Z',
+      ingestedAt: '2026-07-05T12:15:00.000Z',
+      trigger: 'immediate',
+      payload: {
+        issue: {
+          repo: 'atolis-hq/wake',
+          number: 101,
+          title: 'Created second, registers first',
+          body: 'Body',
+          labels: ['wake:queue'],
+          assignees: [],
+          state: 'open',
+          url: 'https://example.test/atolis-hq/wake/issues/101',
+          createdAt: '2026-07-05T12:15:00.000Z',
+          updatedAt: '2026-07-05T12:15:00.000Z',
+        },
+      },
+    });
+    const fourthWorkItemRegistersFirst = createEventEnvelope({
+      eventId: 'wake-101-shared-registered',
+      workItemKey: 'fake-ticketing:atolis-hq/wake#101',
+      streamScope: 'work-item',
+      direction: 'internal',
+      sourceSystem: 'wake',
+      sourceEventType: CORRELATION_REGISTERED_EVENT,
+      sourceRefs: { repo: 'atolis-hq/wake', issueNumber: 101, resourceUri: 'github:pr:atolis-hq/wake#72' },
+      occurredAt: '2026-07-05T12:20:00.000Z',
+      ingestedAt: '2026-07-05T12:20:00.000Z',
+      trigger: 'context-only',
+      payload: {
+        resourceUri: 'github:pr:atolis-hq/wake#72',
+        role: 'implementation',
+        relation: 'primary',
+        provenance: 'agent-reported',
+      },
+    });
+    const thirdWorkItemRegistersSecond = createEventEnvelope({
+      eventId: 'wake-100-shared-registered',
+      workItemKey: 'fake-ticketing:atolis-hq/wake#100',
+      streamScope: 'work-item',
+      direction: 'internal',
+      sourceSystem: 'wake',
+      sourceEventType: CORRELATION_REGISTERED_EVENT,
+      sourceRefs: { repo: 'atolis-hq/wake', issueNumber: 100, resourceUri: 'github:pr:atolis-hq/wake#72' },
+      occurredAt: '2026-07-05T12:30:00.000Z',
+      ingestedAt: '2026-07-05T12:30:00.000Z',
+      trigger: 'context-only',
+      payload: {
+        resourceUri: 'github:pr:atolis-hq/wake#72',
+        role: 'implementation',
+        relation: 'primary',
+        provenance: 'agent-reported',
+      },
+    });
+
+    // Fold strictly in chronological (ingestedAt) order, one event at a
+    // time, exactly like the live/incremental tick path does — this is the
+    // "before" ground truth the rebuild must reproduce.
+    for (const event of [
+      thirdIssueUpsert,
+      fourthIssueUpsert,
+      fourthWorkItemRegistersFirst,
+      thirdWorkItemRegistersSecond,
+    ]) {
+      await store.appendEventEnvelope(event);
+      await projectionUpdater.rebuildFromEvents([event]);
+    }
+
+    const beforeCreatedFirst = await store.readIssueState('atolis-hq/wake', 100);
+    const beforeCreatedSecond = await store.readIssueState('atolis-hq/wake', 101);
+    expect(beforeCreatedSecond?.correlatedResources).toEqual([
+      {
+        resourceUri: 'github:pr:atolis-hq/wake#72',
+        role: 'implementation',
+        relation: 'primary',
+        provenance: 'agent-reported',
+        registeredAt: '2026-07-05T12:20:00.000Z',
+      },
+    ]);
+    expect(beforeCreatedFirst?.correlatedResources).toEqual([
+      {
+        resourceUri: 'github:pr:atolis-hq/wake#72',
+        role: 'implementation',
+        relation: 'secondary',
+        provenance: 'agent-reported',
+        registeredAt: '2026-07-05T12:30:00.000Z',
+      },
+    ]);
+    expect(await resourceIndex.resolve('github:pr:atolis-hq/wake#72')).toBe(
+      'fake-ticketing:atolis-hq/wake#101',
+    );
+
+    const disagreeingOrderConflictEventBefore = (await store.listEventEnvelopes()).find(
+      (event) => event.sourceEventType === CORRELATION_PRIMARY_CONFLICT_EVENT
+        && (event.payload as { resourceUri?: string }).resourceUri === 'github:pr:atolis-hq/wake#72',
+    );
+    expect(disagreeingOrderConflictEventBefore?.eventId).toBe(
+      'wake-100-shared-registered-primary-conflict',
+    );
+
     const beforeIncumbent = await store.readIssueState('atolis-hq/wake', 70);
     expect(beforeIncumbent?.correlatedResources.length ?? 0).toBeGreaterThanOrEqual(2);
 
@@ -2485,7 +2641,7 @@ describe('tick runner', () => {
     const conflictEventCountBefore = beforeAllEvents.filter(
       (event) => event.sourceEventType === CORRELATION_PRIMARY_CONFLICT_EVENT,
     ).length;
-    expect(conflictEventCountBefore).toBe(1);
+    expect(conflictEventCountBefore).toBe(2);
 
     const indexDir = join(root, 'state', 'index');
     const shardFilesBefore = (await readdir(indexDir)).sort();
@@ -2507,6 +2663,27 @@ describe('tick runner', () => {
 
     const afterClaimant = await store.readIssueState('atolis-hq/wake', 90);
     expect(afterClaimant).toEqual(beforeClaimant);
+
+    // The disagreeing-order pair: replay must reproduce the *live* winner
+    // (#101, who registered first chronologically), not whichever work item
+    // a workItemKey-grouped rebuild happened to visit first.
+    const afterCreatedFirst = await store.readIssueState('atolis-hq/wake', 100);
+    expect(afterCreatedFirst).toEqual(beforeCreatedFirst);
+
+    const afterCreatedSecond = await store.readIssueState('atolis-hq/wake', 101);
+    expect(afterCreatedSecond).toEqual(beforeCreatedSecond);
+
+    expect(await resourceIndex.resolve('github:pr:atolis-hq/wake#72')).toBe(
+      'fake-ticketing:atolis-hq/wake#101',
+    );
+
+    const disagreeingOrderConflictEventAfter = (await store.listEventEnvelopes()).find(
+      (event) => event.sourceEventType === CORRELATION_PRIMARY_CONFLICT_EVENT
+        && (event.payload as { resourceUri?: string }).resourceUri === 'github:pr:atolis-hq/wake#72',
+    );
+    expect(disagreeingOrderConflictEventAfter?.eventId).toBe(
+      disagreeingOrderConflictEventBefore?.eventId,
+    );
 
     const shardFilesAfter = (await readdir(indexDir)).sort();
     expect(shardFilesAfter).toEqual(shardFilesBefore);

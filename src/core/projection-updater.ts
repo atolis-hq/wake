@@ -464,34 +464,57 @@ export function createProjectionUpdater(deps: {
 
   return {
     async rebuildFromEvents(events: EventEnvelope[]): Promise<void> {
-      const grouped = new Map<string, EventEnvelope[]>();
+      // Correlation-index-affecting events (wake.correlation.registered in
+      // particular) must be folded in *globally* ordered time, not grouped by
+      // workItemKey and folded per-group. resourceIndex is shared/global
+      // across all work items, so whichever group happens to be visited first
+      // (Map insertion order — i.e. whichever work item's earliest event
+      // happens to appear first in the input array) would otherwise decide
+      // who wins a primary claim, independent of when the registration events
+      // actually occurred. That makes a full replay (this function, called
+      // with every event) diverge from the live/incremental fold (this
+      // function, called with one new event at a time as it happens) for any
+      // two work items whose creation order and registration order disagree
+      // — silently handing resumption for a resource to the wrong work item
+      // after `rm -rf state/` + replay. Sorting once, globally, by
+      // (ingestedAt, eventId) and folding in that single pass keeps replay
+      // and live agreeing by construction, for both the index and the
+      // per-work-item projection fold (a global sort is still a valid order
+      // for each individual work item's own events, since it's a stable
+      // sort over a total order that's consistent with each event's own
+      // ingestedAt).
+      // Sort is stable (ES2019+), so events sharing an ingestedAt keep their
+      // input order — which is append/arrival order, the same order the live
+      // fold saw them in. Do not add a tie-break on eventId: ids are not
+      // chronological, so that would reorder same-timestamp events within a
+      // work item against the order they actually happened.
+      const ordered = [...events].sort((left, right) =>
+        left.ingestedAt.localeCompare(right.ingestedAt),
+      );
 
-      for (const event of events) {
-        const bucket = grouped.get(event.workItemKey) ?? [];
-        bucket.push(event);
-        grouped.set(event.workItemKey, bucket);
-      }
+      const projections = new Map<string, IssueStateRecord | null>();
+      const touchedWorkItemKeys: string[] = [];
 
-      for (const workItemEvents of grouped.values()) {
-        const ordered = [...workItemEvents].sort((left, right) =>
-          left.ingestedAt.localeCompare(right.ingestedAt),
-        );
-
-        const firstEvent = ordered[0];
-        let projection =
-          firstEvent?.sourceRefs.repo !== undefined &&
-          firstEvent.sourceRefs.issueNumber !== undefined
-            ? await deps.stateStore.readIssueState(
-                firstEvent.sourceRefs.repo,
-                firstEvent.sourceRefs.issueNumber,
-                sourceFromWorkItemKey(firstEvent.workItemKey),
-              )
-            : null;
-
-        for (const event of ordered) {
-          projection = await applyEvent(projection, event, applyEventCtx);
+      for (const event of ordered) {
+        if (!projections.has(event.workItemKey)) {
+          touchedWorkItemKeys.push(event.workItemKey);
+          const initial =
+            event.sourceRefs.repo !== undefined && event.sourceRefs.issueNumber !== undefined
+              ? await deps.stateStore.readIssueState(
+                  event.sourceRefs.repo,
+                  event.sourceRefs.issueNumber,
+                  sourceFromWorkItemKey(event.workItemKey),
+                )
+              : null;
+          projections.set(event.workItemKey, initial);
         }
 
+        const current = projections.get(event.workItemKey) ?? null;
+        projections.set(event.workItemKey, await applyEvent(current, event, applyEventCtx));
+      }
+
+      for (const workItemKey of touchedWorkItemKeys) {
+        const projection = projections.get(workItemKey) ?? null;
         if (projection !== null) {
           await deps.stateStore.writeIssueState(projection);
         }
