@@ -29,6 +29,7 @@ import { createControlPlane } from './core/control-plane.js';
 import { createOutboundSinkRouter, createWorkSourceFanIn } from './core/sink-router.js';
 import { createTickRunner } from './core/tick-runner.js';
 import { systemClock } from './lib/clock.js';
+import { configuredTicketSource } from './domain/sources.js';
 import type { RunRecord, WakeConfig } from './domain/types.js';
 
 function commandArgsBeforeTerminator(args: string[]): string[] {
@@ -225,8 +226,8 @@ async function buildRuntime(args: string[]) {
         fixturePath: stateStore.paths.issueFixtureFile,
         now: () => systemClock.now(),
       });
-  const sourceName = config.sources.github.enabled ? 'github' : 'fake-ticketing';
-  const sinkName = config.sources.github.enabled ? 'github' : 'fake-ticketing';
+  const sourceName = configuredTicketSource(config);
+  const sinkName = sourceName;
   const workSource = createWorkSourceFanIn([
     {
       source: sourceName,

@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 
 import type { ResourceIndex } from '../../core/contracts.js';
+import { configuredTicketSource } from '../../domain/sources.js';
 import type { WakeConfig } from '../../domain/types.js';
 import type { createStateStore } from '../fs/state-store.js';
 import { indexHtml } from './ui-assets.js';
@@ -23,16 +24,6 @@ export interface UiServerOptions {
   config: WakeConfig;
   token?: string;
   now?: () => Date;
-}
-
-/**
- * The uri provider segment for the configured ticket source — the same choice
- * main.ts's buildRuntime makes when it names the source it wires in. The UI
- * resolves tickets against the index that source's events registered, so the
- * two must agree.
- */
-function ticketProvider(config: WakeConfig): string {
-  return config.sources.github.enabled ? 'github' : 'fake-ticketing';
 }
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
@@ -150,7 +141,7 @@ async function handleRequest(
     const itemDetailInput = {
       stateStore,
       resourceIndex,
-      provider: ticketProvider(config),
+      provider: configuredTicketSource(config),
       repo: parsed.repo,
       issueNumber: parsed.issueNumber,
     };
