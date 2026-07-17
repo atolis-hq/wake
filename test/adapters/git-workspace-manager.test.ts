@@ -13,6 +13,16 @@ import {
 
 const execFile = promisify(nodeExecFile);
 
+/**
+ * A stable, ULID-shaped work id per issue number. The workspace is keyed by
+ * work id now, so tests that must land in the *same* workspace pass the same
+ * id; the issue number only reaches the branch name. Real ids come from
+ * createWorkId().
+ */
+function workId(issueNumber: number): string {
+  return `work-01JZ${String(issueNumber).padStart(22, '0')}`;
+}
+
 async function git(args: string[], cwd: string): Promise<void> {
   await execFile('git', args, { cwd, env: process.env });
 }
@@ -60,6 +70,7 @@ describe('git workspace manager', () => {
     });
 
     const { workspacePath } = await manager.prepareWorkspace({
+      workId: workId(42),
       repo: 'acme/example',
       issueNumber: 42,
     });
@@ -89,7 +100,7 @@ describe('git workspace manager', () => {
       remoteUrlForRepo: () => remotePath,
     });
 
-    await manager.prepareWorkspace({ repo: 'acme/example', issueNumber: 1 });
+    await manager.prepareWorkspace({ workId: workId(1), repo: 'acme/example', issueNumber: 1 });
 
     const seedPath = join(root, 'seed-main');
     await writeFile(join(seedPath, 'README.md'), '# updated\n', 'utf8');
@@ -98,6 +109,7 @@ describe('git workspace manager', () => {
     await git(['-C', seedPath, 'push', 'origin', 'main'], root);
 
     const { workspacePath } = await manager.prepareWorkspace({
+      workId: workId(2),
       repo: 'acme/example',
       issueNumber: 2,
     });
@@ -115,6 +127,7 @@ describe('git workspace manager', () => {
     });
 
     const { workspacePath } = await manager.prepareWorkspace({
+      workId: workId(77),
       repo: 'acme/trunk-example',
       issueNumber: 77,
     });
@@ -165,6 +178,7 @@ describe('git workspace manager', () => {
     });
 
     const first = await manager.prepareWorkspace({
+      workId: workId(42),
       repo: 'acme/example',
       issueNumber: 42,
     });
@@ -172,6 +186,7 @@ describe('git workspace manager', () => {
     await writeFile(join(first.workspacePath, 'local-only.txt'), 'keep me\n', 'utf8');
 
     const second = await manager.prepareWorkspace({
+      workId: workId(42),
       repo: 'acme/example',
       issueNumber: 42,
     });
@@ -183,6 +198,7 @@ describe('git workspace manager', () => {
     await expect(access(second.workspacePath)).rejects.toThrow();
 
     const third = await manager.prepareWorkspace({
+      workId: workId(42),
       repo: 'acme/example',
       issueNumber: 42,
     });
@@ -201,6 +217,7 @@ describe('git workspace manager', () => {
     });
 
     const { workspacePath: firstWorkspace } = await manager.prepareWorkspace({
+      workId: workId(1),
       repo: 'acme/example',
       issueNumber: 1,
     });
@@ -211,6 +228,7 @@ describe('git workspace manager', () => {
     await writeFile(join(repoPath, '.git', 'index.lock'), '', 'utf8');
 
     const { workspacePath: secondWorkspace } = await manager.prepareWorkspace({
+      workId: workId(2),
       repo: 'acme/example',
       issueNumber: 2,
     });
@@ -228,6 +246,7 @@ describe('git workspace manager', () => {
     });
 
     const { mergeConflictDetected } = await manager.prepareWorkspace({
+      workId: workId(42),
       repo: 'acme/example',
       issueNumber: 42,
     });
@@ -243,6 +262,7 @@ describe('git workspace manager', () => {
     });
 
     const { workspacePath } = await manager.prepareWorkspace({
+      workId: workId(42),
       repo: 'acme/example',
       issueNumber: 42,
     });
@@ -255,6 +275,7 @@ describe('git workspace manager', () => {
     await git(['-C', seedPath, 'push', 'origin', 'main'], root);
 
     const { mergeConflictDetected, upstreamChanges } = await manager.prepareWorkspace({
+      workId: workId(42),
       repo: 'acme/example',
       issueNumber: 42,
     });
@@ -274,6 +295,7 @@ describe('git workspace manager', () => {
     });
 
     const { workspacePath } = await manager.prepareWorkspace({
+      workId: workId(42),
       repo: 'acme/example',
       issueNumber: 42,
     });
@@ -289,6 +311,7 @@ describe('git workspace manager', () => {
     await writeFile(join(workspacePath, 'pending.txt'), 'local work\n', 'utf8');
 
     const { mergeConflictDetected } = await manager.prepareWorkspace({
+      workId: workId(42),
       repo: 'acme/example',
       issueNumber: 42,
     });
@@ -308,6 +331,7 @@ describe('git workspace manager', () => {
     });
 
     const { workspacePath } = await manager.prepareWorkspace({
+      workId: workId(42),
       repo: 'acme/example',
       issueNumber: 42,
     });
@@ -325,6 +349,7 @@ describe('git workspace manager', () => {
     await git(['-C', seedPath, 'push', 'origin', 'main'], root);
 
     const { mergeConflictDetected } = await manager.prepareWorkspace({
+      workId: workId(42),
       repo: 'acme/example',
       issueNumber: 42,
     });
@@ -343,7 +368,7 @@ describe('git workspace manager', () => {
     expect(
       buildWorkspaceCloneArgs({
         sourceRepoPath: '/wake/repos/acme__example',
-        workspacePath: '/wake/workspaces/acme__example/42',
+        workspacePath: '/wake/workspaces/work-01JZ0000000000000000000042',
         defaultBranch: 'main',
       }),
     ).toEqual([
@@ -352,7 +377,7 @@ describe('git workspace manager', () => {
       '--branch',
       'main',
       '/wake/repos/acme__example',
-      '/wake/workspaces/acme__example/42',
+      '/wake/workspaces/work-01JZ0000000000000000000042',
     ]);
   });
 });

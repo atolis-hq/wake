@@ -1,10 +1,11 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
+import type { UnkeyedEventEnvelope } from '../../core/contracts.js';
 import type { EventEnvelope, IssueStateRecord, WakeConfig } from '../../domain/types.js';
 import { buildResourceUri } from '../../domain/resource-uri.js';
 import { wakeStageLabelPrefix } from '../../domain/stages.js';
-import { createEventEnvelope } from '../../lib/event-log.js';
+import { createEventEnvelope, createUnkeyedEventEnvelope } from '../../lib/event-log.js';
 import { buildResumeCommandForCli } from '../runner/runner-cli-adapter.js';
 
 const wakeStatusLabelPrefix = 'wake:status.';
@@ -47,10 +48,11 @@ function normalizeTicketUpsert(input: {
   issue: GitHubIssue;
   ingestedAt: string;
   expectedEcho?: boolean;
-}): EventEnvelope {
-  return createEventEnvelope({
+}): UnkeyedEventEnvelope {
+  // Names the resource, never the work item — the resolver stamps the
+  // canonical workItemKey after the poll (spec D1).
+  return createUnkeyedEventEnvelope({
     eventId: `github-issue-${input.repo}-${input.issue.number}-${input.issue.updated_at}`,
-    workItemKey: `${githubSource}:${input.repo}#${input.issue.number}`,
     streamScope: 'global-intake',
     direction: 'inbound',
     sourceSystem: 'github',
@@ -101,14 +103,13 @@ function normalizeTicketCommentEvent(input: {
   comment: GitHubComment;
   ingestedAt: string;
   existingUpdatedAt?: string;
-}): EventEnvelope {
+}): UnkeyedEventEnvelope {
   const isUpdate =
     input.existingUpdatedAt !== undefined &&
     input.existingUpdatedAt !== input.comment.updated_at;
 
-  return createEventEnvelope({
+  return createUnkeyedEventEnvelope({
     eventId: `github-comment-${input.repo}-${input.issueNumber}-${input.comment.id}-${input.comment.updated_at}`,
-    workItemKey: `${githubSource}:${input.repo}#${input.issueNumber}`,
     streamScope: 'work-item',
     direction: 'inbound',
     sourceSystem: 'github',
@@ -118,6 +119,9 @@ function normalizeTicketCommentEvent(input: {
       issueNumber: input.issueNumber,
       commentId: String(input.comment.id),
       sourceUrl: input.comment.html_url,
+      // The comment belongs to the issue's work item; the issue is the
+      // resource the resolver knows it by.
+      resourceUri: buildResourceUri(githubSource, 'issue', `${input.repo}#${input.issueNumber}`),
     },
     occurredAt: input.comment.updated_at,
     ingestedAt: input.ingestedAt,
@@ -331,9 +335,9 @@ export function createGitHubIssuesWorkSource(deps: {
   now: () => Date;
 }) {
   return {
-    async pollEvents(): Promise<EventEnvelope[]> {
+    async pollEvents(): Promise<UnkeyedEventEnvelope[]> {
       const ingestedAt = deps.now().toISOString();
-      const events: EventEnvelope[] = [];
+      const events: UnkeyedEventEnvelope[] = [];
 
       for (const repoRef of deps.config.sources.github.repos) {
         const [owner, repo] = repoRef.split('/');
@@ -365,7 +369,14 @@ export function createGitHubIssuesWorkSource(deps: {
               );
 
           for (const issue of issues) {
-            const local = await deps.stateStore.readIssueState(repoRef, issue.number, githubSource);
+            // Looked up by the ticket it represents, not by work id: the
+            // source has no work id and is not owed one (spec D1). This read
+            // is only poll dedup + echo suppression, never identity.
+            const local = await deps.stateStore.findIssueStateByIssueRef({
+              repo: repoRef,
+              issueNumber: issue.number,
+              source: githubSource,
+            });
 
             if (local?.issue.updatedAt !== issue.updated_at) {
               events.push(normalizeTicketUpsert({
@@ -442,7 +453,11 @@ export function createGitHubIssuesWorkSource(deps: {
 
       const publishedAt = deps.now().toISOString();
       if (input.event.sourceEventType === 'wake.labels.requested') {
-        const projection = await deps.stateStore.readIssueState(repo, issueNumber, githubSource);
+        const projection = await deps.stateStore.findIssueStateByIssueRef({
+          repo,
+          issueNumber,
+          source: githubSource,
+        });
         const currentLabels = projection?.issue.labels ?? [];
         const nextStatusLabel =
           typeof input.event.payload.statusLabel === 'string'

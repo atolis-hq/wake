@@ -11,8 +11,41 @@ import { createStateStore } from '../../src/adapters/fs/state-store.js';
 import { createDefaultWakeConfig } from '../../src/config/defaults.js';
 import { createProjectionUpdater } from '../../src/core/projection-updater.js';
 import { createTickRunner } from '../../src/core/tick-runner.js';
-import { CORRELATION_PRIMARY_CONFLICT_EVENT, CORRELATION_REGISTERED_EVENT } from '../../src/domain/schema.js';
+import {
+  CORRELATION_PRIMARY_CONFLICT_EVENT,
+  CORRELATION_REGISTERED_EVENT,
+  WORK_ITEM_CREATED_EVENT,
+} from '../../src/domain/schema.js';
 import { createEventEnvelope } from '../../src/lib/event-log.js';
+import { isWorkId } from '../../src/lib/work-id.js';
+
+/**
+ * A stable, ULID-shaped work id per issue number, for fixtures that seed a
+ * projection directly rather than letting the resolver mint one. Real ids come
+ * from createWorkId() and are read back off the projection.
+ */
+function workId(issueNumber: number): string {
+  return `work-01JZ${String(issueNumber).padStart(22, '0')}`;
+}
+
+function githubIssueUri(issueNumber: number): string {
+  return `github:issue:atolis-hq/wake#${issueNumber}`;
+}
+
+/**
+ * A resource index already holding the origin-ticket registrations an earlier
+ * tick's mint would have written. Fixtures that seed a projection *and* poll
+ * events for the same ticket need this: without the index entry the resolver
+ * correctly treats the ticket as unseen and mints a second work item, because
+ * a miss means "mint" and nothing else.
+ */
+async function seededResourceIndex(issueNumbers: number[]) {
+  const resourceIndex = createFakeResourceIndex();
+  for (const issueNumber of issueNumbers) {
+    await resourceIndex.register(githubIssueUri(issueNumber), workId(issueNumber));
+  }
+  return resourceIndex;
+}
 
 describe('tick runner', () => {
   let root: string;
@@ -316,7 +349,6 @@ describe('tick runner', () => {
             {
               schemaVersion: 1,
               eventId: 'evt-issue',
-              workItemKey: 'atolis-hq/wake#12',
               streamScope: 'global-intake',
               direction: 'inbound',
               sourceSystem: 'github',
@@ -325,6 +357,7 @@ describe('tick runner', () => {
                 repo: 'atolis-hq/wake',
                 issueNumber: 12,
                 sourceUrl: 'https://github.com/atolis-hq/wake/issues/12',
+                resourceUri: githubIssueUri(12),
               },
               occurredAt: '2026-07-05T12:00:00.000Z',
               ingestedAt: '2026-07-05T12:00:00.000Z',
@@ -348,7 +381,6 @@ describe('tick runner', () => {
             {
               schemaVersion: 1,
               eventId: 'evt-comment',
-              workItemKey: 'atolis-hq/wake#12',
               streamScope: 'work-item',
               direction: 'inbound',
               sourceSystem: 'github',
@@ -357,6 +389,7 @@ describe('tick runner', () => {
                 repo: 'atolis-hq/wake',
                 issueNumber: 12,
                 commentId: 'c-1',
+                resourceUri: githubIssueUri(12),
               },
               occurredAt: '2026-07-05T12:05:00.000Z',
               ingestedAt: '2026-07-05T12:05:00.000Z',
@@ -398,7 +431,7 @@ describe('tick runner', () => {
 
     await store.writeIssueState({
       schemaVersion: 1,
-      workItemKey: 'atolis-hq/wake#14',
+      workItemKey: workId(14),
       issue: {
         repo: 'atolis-hq/wake',
         number: 14,
@@ -488,7 +521,7 @@ describe('tick runner', () => {
 
     await store.writeIssueState({
       schemaVersion: 1,
-      workItemKey: 'atolis-hq/wake#33',
+      workItemKey: workId(33),
       issue: {
         repo: 'atolis-hq/wake',
         number: 33,
@@ -552,7 +585,7 @@ describe('tick runner', () => {
     });
 
     const result = await tickRunner.runTick();
-    const projection = await store.readIssueState('atolis-hq/wake', 33);
+    const projection = await store.findIssueStateByIssueRef({ repo: 'atolis-hq/wake', issueNumber: 33 });
 
     expect(result.status).toBe('processed');
     expect((result as { sentinel?: string }).sentinel).toBe('AWAITING_APPROVAL');
@@ -581,7 +614,7 @@ describe('tick runner', () => {
 
     await store.writeIssueState({
       schemaVersion: 1,
-      workItemKey: 'atolis-hq/wake#30',
+      workItemKey: workId(30),
       issue: {
         repo: 'atolis-hq/wake',
         number: 30,
@@ -671,7 +704,7 @@ describe('tick runner', () => {
 
     await store.writeIssueState({
       schemaVersion: 1,
-      workItemKey: 'atolis-hq/wake#32',
+      workItemKey: workId(32),
       issue: {
         repo: 'atolis-hq/wake',
         number: 32,
@@ -730,7 +763,7 @@ describe('tick runner', () => {
 
     await store.writeIssueState({
       schemaVersion: 1,
-      workItemKey: 'atolis-hq/wake#31',
+      workItemKey: workId(31),
       issue: {
         repo: 'atolis-hq/wake',
         number: 31,
@@ -881,7 +914,7 @@ describe('tick runner', () => {
 
     await store.writeIssueState({
       schemaVersion: 1,
-      workItemKey: 'atolis-hq/wake#34',
+      workItemKey: workId(34),
       issue: {
         repo: 'atolis-hq/wake',
         number: 34,
@@ -959,7 +992,7 @@ describe('tick runner', () => {
     for (const issueNumber of [41, 42]) {
       await store.writeIssueState({
         schemaVersion: 1,
-        workItemKey: `atolis-hq/wake#${issueNumber}`,
+        workItemKey: workId(issueNumber),
         issue: {
           repo: 'atolis-hq/wake',
           number: issueNumber,
@@ -1001,7 +1034,6 @@ describe('tick runner', () => {
           return [41, 42].map((issueNumber) => ({
             schemaVersion: 1 as const,
             eventId: `evt-comment-${issueNumber}`,
-            workItemKey: `atolis-hq/wake#${issueNumber}`,
             streamScope: 'work-item' as const,
             direction: 'inbound' as const,
             sourceSystem: 'github',
@@ -1010,6 +1042,7 @@ describe('tick runner', () => {
               repo: 'atolis-hq/wake',
               issueNumber,
               commentId: `c-${issueNumber}`,
+              resourceUri: githubIssueUri(issueNumber),
             },
             occurredAt: '2026-07-05T12:09:00.000Z',
             ingestedAt: '2026-07-05T12:09:00.000Z',
@@ -1044,7 +1077,10 @@ describe('tick runner', () => {
           return { result: 'Revised.\nDONE', model: 'test-model', cli: 'test-cli' };
         },
       },
-      resourceIndex: createFakeResourceIndex(),
+      // Both projections were minted by an earlier tick, so their origin
+      // tickets already resolve; without these entries the resolver would
+      // correctly mint a second work item for each.
+      resourceIndex: await seededResourceIndex([41, 42]),
       workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
     });
 
@@ -1074,7 +1110,7 @@ describe('tick runner', () => {
 
     await store.writeIssueState({
       schemaVersion: 1,
-      workItemKey: 'atolis-hq/wake#43',
+      workItemKey: workId(43),
       issue: {
         repo: 'atolis-hq/wake',
         number: 43,
@@ -1115,7 +1151,6 @@ describe('tick runner', () => {
           return [{
             schemaVersion: 1 as const,
             eventId: 'evt-comment-43',
-            workItemKey: 'atolis-hq/wake#43',
             streamScope: 'work-item' as const,
             direction: 'inbound' as const,
             sourceSystem: 'github',
@@ -1124,6 +1159,7 @@ describe('tick runner', () => {
               repo: 'atolis-hq/wake',
               issueNumber: 43,
               commentId: 'c-43',
+              resourceUri: githubIssueUri(43),
             },
             occurredAt: '2026-07-05T12:09:00.000Z',
             ingestedAt: '2026-07-05T12:09:00.000Z',
@@ -1153,7 +1189,7 @@ describe('tick runner', () => {
           throw new Error('should not run');
         },
       },
-      resourceIndex: createFakeResourceIndex(),
+      resourceIndex: await seededResourceIndex([43]),
       workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
     });
 
@@ -1169,7 +1205,7 @@ describe('tick runner', () => {
 
     await store.writeIssueState({
       schemaVersion: 1,
-      workItemKey: 'atolis-hq/wake#35',
+      workItemKey: workId(35),
       issue: {
         repo: 'atolis-hq/wake',
         number: 35,
@@ -1246,7 +1282,7 @@ describe('tick runner', () => {
 
     await store.writeIssueState({
       schemaVersion: 1,
-      workItemKey: 'atolis-hq/wake#20',
+      workItemKey: workId(20),
       issue: {
         repo: 'atolis-hq/wake',
         number: 20,
@@ -1341,7 +1377,7 @@ describe('tick runner', () => {
 
     await store.writeIssueState({
       schemaVersion: 1,
-      workItemKey: 'atolis-hq/wake#15',
+      workItemKey: workId(15),
       issue: {
         repo: 'atolis-hq/wake',
         number: 15,
@@ -1423,7 +1459,7 @@ describe('tick runner', () => {
 
     await store.writeIssueState({
       schemaVersion: 1,
-      workItemKey: 'atolis-hq/wake#121',
+      workItemKey: workId(121),
       issue: {
         repo: 'atolis-hq/wake',
         number: 121,
@@ -1468,7 +1504,6 @@ describe('tick runner', () => {
             {
               schemaVersion: 1,
               eventId: 'evt-issue-121-resync',
-              workItemKey: 'atolis-hq/wake#121',
               streamScope: 'global-intake',
               direction: 'inbound',
               sourceSystem: 'github',
@@ -1477,6 +1512,7 @@ describe('tick runner', () => {
                 repo: 'atolis-hq/wake',
                 issueNumber: 121,
                 sourceUrl: 'https://example.test/issues/121',
+                resourceUri: githubIssueUri(121),
               },
               occurredAt: '2026-07-05T12:01:00.000Z',
               ingestedAt: '2026-07-05T12:01:00.000Z',
@@ -1506,13 +1542,13 @@ describe('tick runner', () => {
           return { result: 'Execution failed\nFAILED', model: 'test-model', cli: 'test-cli' };
         },
       },
-      resourceIndex: createFakeResourceIndex(),
+      resourceIndex: await seededResourceIndex([121]),
       workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
     });
 
     const first = await tickRunner.runTick();
     const second = await tickRunner.runTick();
-    const projection = await store.readIssueState('atolis-hq/wake', 121);
+    const projection = await store.findIssueStateByIssueRef({ repo: 'atolis-hq/wake', issueNumber: 121 });
 
     expect(first.status).toBe('processed');
     expect((first as { sentinel?: string }).sentinel).toBe('FAILED');
@@ -1529,7 +1565,7 @@ describe('tick runner', () => {
 
     await store.writeIssueState({
       schemaVersion: 1,
-      workItemKey: 'atolis-hq/wake#122',
+      workItemKey: workId(122),
       issue: {
         repo: 'atolis-hq/wake',
         number: 122,
@@ -1597,7 +1633,7 @@ describe('tick runner', () => {
     });
 
     const result = await tickRunner.runTick();
-    const projection = await store.readIssueState('atolis-hq/wake', 122);
+    const projection = await store.findIssueStateByIssueRef({ repo: 'atolis-hq/wake', issueNumber: 122 });
 
     expect(result.status).toBe('processed');
     expect(actionSeen).toBe('implement');
@@ -1618,7 +1654,7 @@ describe('tick runner', () => {
 
     await store.writeIssueState({
       schemaVersion: 1,
-      workItemKey: 'atolis-hq/wake#123',
+      workItemKey: workId(123),
       issue: {
         repo: 'atolis-hq/wake',
         number: 123,
@@ -1675,7 +1711,7 @@ describe('tick runner', () => {
 
     const result = await tickRunner.runTick();
     const runRecord = await store.readRunRecord('run-123-stale');
-    const projection = await store.readIssueState('atolis-hq/wake', 123);
+    const projection = await store.findIssueStateByIssueRef({ repo: 'atolis-hq/wake', issueNumber: 123 });
     const events = await readFile(join(root, 'events', '2026-07-05.jsonl'), 'utf8');
 
     expect(result.status).toBe('idle');
@@ -1737,7 +1773,7 @@ describe('tick runner', () => {
       },
     });
     expect(publishedKinds).toEqual([]);
-    const projection = await store.readIssueState('atolis-hq/wake', 112);
+    const projection = await store.findIssueStateByIssueRef({ repo: 'atolis-hq/wake', issueNumber: 112 });
     expect(projection?.context.lastFailureClass).toBe('quota');
   });
 
@@ -1753,7 +1789,7 @@ describe('tick runner', () => {
 
     await store.writeIssueState({
       schemaVersion: 1,
-      workItemKey: 'atolis-hq/wake#124',
+      workItemKey: workId(124),
       issue: {
         repo: 'atolis-hq/wake', number: 124, title: 'Recovered run', body: '',
         labels: ['wake'], assignees: [], isPullRequest: false, state: 'open',
@@ -1790,7 +1826,7 @@ describe('tick runner', () => {
 
     const result = await tickRunner.runTick();
     const staleRecord = await store.readRunRecord('run-124-stale');
-    const projection = await store.readIssueState('atolis-hq/wake', 124);
+    const projection = await store.findIssueStateByIssueRef({ repo: 'atolis-hq/wake', issueNumber: 124 });
 
     expect(result.status).toBe('idle');
     expect(staleRecord?.status).toBe('superseded');
@@ -1800,16 +1836,16 @@ describe('tick runner', () => {
 
   it('deletes the per-issue workspace and clears workspacePath when an issue is closed', async () => {
     const store = createStateStore({ wakeRoot: root });
-    const workspacePath = join(root, 'workspaces', 'atolis-hq__wake', '200');
-    const transcriptPath = join(root, 'transcripts', 'atolis-hq__wake', '200', 'run-200-1', 'run-200-1.codex.implement.prompt.txt');
+    const workspacePath = join(root, 'workspaces', workId(200));
+    const transcriptPath = join(root, 'transcripts', workId(200), 'run-200-1', 'run-200-1.codex.implement.prompt.txt');
     await mkdir(workspacePath, { recursive: true });
-    await mkdir(join(root, 'transcripts', 'atolis-hq__wake', '200', 'run-200-1'), { recursive: true });
+    await mkdir(join(root, 'transcripts', workId(200), 'run-200-1'), { recursive: true });
     await writeFile(transcriptPath, 'raw prompt', 'utf8');
 
     const nowIso = '2026-07-05T12:00:00.000Z';
     await store.writeIssueState({
       schemaVersion: 1,
-      workItemKey: 'atolis-hq/wake#200',
+      workItemKey: workId(200),
       issue: {
         repo: 'atolis-hq/wake',
         number: 200,
@@ -1851,22 +1887,22 @@ describe('tick runner', () => {
 
     await expect(access(workspacePath)).rejects.toThrow();
     await expect(access(transcriptPath)).rejects.toThrow();
-    const updatedProjection = await store.readIssueState('atolis-hq/wake', 200);
+    const updatedProjection = await store.findIssueStateByIssueRef({ repo: 'atolis-hq/wake', issueNumber: 200 });
     expect(updatedProjection?.wake.workspacePath).toBeUndefined();
   });
 
   it('retains transcripts for closed workspace cleanup when configured', async () => {
     const store = createStateStore({ wakeRoot: root });
-    const workspacePath = join(root, 'workspaces', 'atolis-hq__wake', '204');
-    const transcriptPath = join(root, 'transcripts', 'atolis-hq__wake', '204', 'run-204-1', 'run-204-1.codex.implement.prompt.txt');
+    const workspacePath = join(root, 'workspaces', workId(204));
+    const transcriptPath = join(root, 'transcripts', workId(204), 'run-204-1', 'run-204-1.codex.implement.prompt.txt');
     await mkdir(workspacePath, { recursive: true });
-    await mkdir(join(root, 'transcripts', 'atolis-hq__wake', '204', 'run-204-1'), { recursive: true });
+    await mkdir(join(root, 'transcripts', workId(204), 'run-204-1'), { recursive: true });
     await writeFile(transcriptPath, 'raw prompt', 'utf8');
 
     const nowIso = '2026-07-05T12:00:00.000Z';
     await store.writeIssueState({
       schemaVersion: 1,
-      workItemKey: 'atolis-hq/wake#204',
+      workItemKey: workId(204),
       issue: {
         repo: 'atolis-hq/wake',
         number: 204,
@@ -1919,7 +1955,7 @@ describe('tick runner', () => {
     const nowIso = '2026-07-05T12:00:00.000Z';
     await store.writeIssueState({
       schemaVersion: 1,
-      workItemKey: 'atolis-hq/wake#201',
+      workItemKey: workId(201),
       issue: {
         repo: 'atolis-hq/wake',
         number: 201,
@@ -1960,17 +1996,17 @@ describe('tick runner', () => {
     await tickRunner.runTick();
 
     await expect(access(canonicalClonePath)).resolves.toBeUndefined();
-    const updatedProjection = await store.readIssueState('atolis-hq/wake', 201);
+    const updatedProjection = await store.findIssueStateByIssueRef({ repo: 'atolis-hq/wake', issueNumber: 201 });
     expect(updatedProjection?.wake.workspacePath).toBe(canonicalClonePath);
   });
 
   it('records cleanup failure and continues dispatching eligible work', async () => {
     const store = createStateStore({ wakeRoot: root });
-    const workspacePath = join(root, 'workspaces', 'atolis-hq__wake', '202');
+    const workspacePath = join(root, 'workspaces', workId(202));
     const nowIso = '2026-07-05T12:00:00.000Z';
     await store.writeIssueState({
       schemaVersion: 1,
-      workItemKey: 'atolis-hq/wake#202',
+      workItemKey: workId(202),
       issue: {
         repo: 'atolis-hq/wake', number: 202, title: 'Locked workspace', body: '',
         labels: [], assignees: [], isPullRequest: false, state: 'closed',
@@ -2011,7 +2047,7 @@ describe('tick runner', () => {
     expect(result.status).toBe('processed');
     expect(events.some((event) =>
       event.sourceEventType === 'wake.workspace.cleanup-failed' &&
-      event.workItemKey === 'github:atolis-hq/wake#202' &&
+      event.workItemKey === workId(202) &&
       event.payload.error === 'EPERM: workspace is locked'
     )).toBe(true);
   });
@@ -2072,7 +2108,7 @@ describe('tick runner', () => {
 
     await store.writeIssueState({
       schemaVersion: 1,
-      workItemKey: 'atolis-hq/wake#41',
+      workItemKey: workId(41),
       issue: {
         repo: 'atolis-hq/wake', number: 41, title: 'Outbox retry', body: '',
         labels: [], assignees: [], isPullRequest: false, state: 'open',
@@ -2091,7 +2127,7 @@ describe('tick runner', () => {
     const orphanedIntent = {
       schemaVersion: 1 as const,
       eventId: 'run-41-publish-intent',
-      workItemKey: 'atolis-hq/wake#41',
+      workItemKey: workId(41),
       streamScope: 'work-item' as const,
       direction: 'outbound' as const,
       sourceSystem: 'wake',
@@ -2141,7 +2177,7 @@ describe('tick runner', () => {
 
     await store.writeIssueState({
       schemaVersion: 1,
-      workItemKey: 'atolis-hq/wake#50',
+      workItemKey: workId(50),
       issue: {
         repo: 'atolis-hq/wake', number: 50, title: 'Infra blip', body: '',
         labels: ['wake:queue'], assignees: [], isPullRequest: false, state: 'open',
@@ -2198,7 +2234,7 @@ describe('tick runner', () => {
     expect((first as { sentinel?: string }).sentinel).toBe('FAILED');
     expect(runnerCallCount).toBe(0);
 
-    const afterFirst = await store.readIssueState('atolis-hq/wake', 50);
+    const afterFirst = await store.findIssueStateByIssueRef({ repo: 'atolis-hq/wake', issueNumber: 50 });
     expect(afterFirst?.context.lastHandledCommentId).toBeUndefined();
     expect(afterFirst?.context.lastFailureClass).toBe('infra');
 
@@ -2245,7 +2281,7 @@ describe('tick runner', () => {
 
     await tickRunner.runTick();
 
-    const projection = await store.readIssueState('atolis-hq/wake', 60);
+    const projection = await store.findIssueStateByIssueRef({ repo: 'atolis-hq/wake', issueNumber: 60 });
     expect(projection?.correlatedResources).toEqual([
       {
         resourceUri: 'fake-ticketing:issue:atolis-hq/wake#60',
@@ -2313,7 +2349,7 @@ describe('tick runner', () => {
 
     await tickRunner.runTick();
 
-    const before = await store.readIssueState('atolis-hq/wake', 62);
+    const before = await store.findIssueStateByIssueRef({ repo: 'atolis-hq/wake', issueNumber: 62 });
     expect(before?.correlatedResources).toEqual([
       expect.objectContaining({
         resourceUri: 'fake-ticketing:issue:atolis-hq/wake#62',
@@ -2322,9 +2358,10 @@ describe('tick runner', () => {
         provenance: 'wake-created',
       }),
     ]);
-    expect(await resourceIndex.resolve('fake-ticketing:issue:atolis-hq/wake#62')).toBe(
-      'fake-ticketing:atolis-hq/wake#62',
-    );
+    // The work id is minted, so it is read off the projection, never spelled out.
+    const workItemKey = before?.workItemKey ?? '';
+    expect(isWorkId(workItemKey)).toBe(true);
+    expect(await resourceIndex.resolve('fake-ticketing:issue:atolis-hq/wake#62')).toBe(workItemKey);
 
     // state/ (projection AND index) is a rebuildable cache over events/.
     await rm(join(root, 'state'), { recursive: true, force: true });
@@ -2336,11 +2373,12 @@ describe('tick runner', () => {
     // against `current === null`, and be silently dropped — leaving these two
     // assertions empty/undefined while the registration event still on record
     // stops any later tick from re-registering it. Permanent, silent loss.
-    const after = await store.readIssueState('atolis-hq/wake', 62);
+    const after = await store.findIssueStateByIssueRef({ repo: 'atolis-hq/wake', issueNumber: 62 });
     expect(after?.correlatedResources).toEqual(before?.correlatedResources);
-    expect(await resourceIndex.resolve('fake-ticketing:issue:atolis-hq/wake#62')).toBe(
-      'fake-ticketing:atolis-hq/wake#62',
-    );
+    // Replay reproduces the *same* work id, because identity lives in the
+    // events, not in state/.
+    expect(after?.workItemKey).toBe(workItemKey);
+    expect(await resourceIndex.resolve('fake-ticketing:issue:atolis-hq/wake#62')).toBe(workItemKey);
 
     // And the mechanism that makes the above hold: the registration is stamped
     // max(origin upsert's ingestedAt, tick's nowIso), never the tick's nowIso
@@ -2402,14 +2440,14 @@ describe('tick runner', () => {
 
     await tickRunner.runTick();
 
-    const before = await store.readIssueState('atolis-hq/wake', 63);
+    const before = await store.findIssueStateByIssueRef({ repo: 'atolis-hq/wake', issueNumber: 63 });
     expect(before?.wake.stageHistory.map((entry) => entry.reason)).toContain('run:refine:claimed');
 
     // state/ is a rebuildable cache over events/ — nothing more.
     await rm(join(root, 'state'), { recursive: true, force: true });
     await createProjectionUpdater({ stateStore: store, resourceIndex })
       .rebuildFromEvents(await store.listEventEnvelopes());
-    const after = await store.readIssueState('atolis-hq/wake', 63);
+    const after = await store.findIssueStateByIssueRef({ repo: 'atolis-hq/wake', issueNumber: 63 });
 
     // Every event this tick stamps must be dated when it actually happened, so
     // none of them can sort ahead of the poll-time upsert that creates the
@@ -2423,7 +2461,7 @@ describe('tick runner', () => {
     expect(after).toEqual(before);
   });
 
-  it('fix E: does not resurrect a deliberate retraction — a work item that retracted all its resources is not re-auto-registered', async () => {
+  it('does not re-claim a deliberately retracted origin resource on a later tick', async () => {
     const store = createStateStore({ wakeRoot: root });
     const config = createDefaultWakeConfig(root);
     config.sources.github.policy.requiredLabels = ['wake:queue'];
@@ -2456,12 +2494,16 @@ describe('tick runner', () => {
       workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
     });
 
-    // First tick auto-registers the origin ticket.
+    // First tick mints the work item, which registers the origin ticket.
     await tickRunner.runTick();
     const registeredBefore = (await store.listEventEnvelopes()).filter(
       (event) => event.sourceEventType === CORRELATION_REGISTERED_EVENT,
     );
     expect(registeredBefore).toHaveLength(1);
+
+    const workItemKey =
+      (await store.findIssueStateByIssueRef({ repo: 'atolis-hq/wake', issueNumber: 61 }))
+        ?.workItemKey ?? '';
 
     // The operator (or a later `wake correlate` command) deliberately
     // retracts the only correlated resource, leaving correlatedResources[]
@@ -2470,7 +2512,7 @@ describe('tick runner', () => {
     const projectionUpdater = createProjectionUpdater({ stateStore: store, resourceIndex });
     const retraction = createEventEnvelope({
       eventId: 'wake-61-origin-retracted',
-      workItemKey: 'fake-ticketing:atolis-hq/wake#61',
+      workItemKey,
       streamScope: 'work-item',
       direction: 'internal',
       sourceSystem: 'wake',
@@ -2484,12 +2526,14 @@ describe('tick runner', () => {
     await store.appendEventEnvelope(retraction);
     await projectionUpdater.rebuildFromEvents([retraction]);
 
-    const afterRetraction = await store.readIssueState('atolis-hq/wake', 61);
+    const afterRetraction = await store.findIssueStateByIssueRef({ repo: 'atolis-hq/wake', issueNumber: 61 });
     expect(afterRetraction?.correlatedResources).toEqual([]);
 
-    // A later tick must not treat the now-empty correlatedResources[] as
-    // "never registered" and silently re-claim the origin uri as primary
-    // (finding E) — the length-based check this replaces would fail here.
+    // A later tick must not silently re-claim the retracted uri for this work
+    // item. There is no longer a back-fill pass that could: minting *is*
+    // registration, and this work item is never minted again. The re-polled
+    // upsert resolves by its already-persisted event id, so it folds back into
+    // the same work item without re-registering anything.
     await tickRunner.runTick();
 
     const registeredAfter = (await store.listEventEnvelopes()).filter(
@@ -2497,8 +2541,256 @@ describe('tick runner', () => {
     );
     expect(registeredAfter).toHaveLength(1);
 
-    const finalProjection = await store.readIssueState('atolis-hq/wake', 61);
+    const finalProjection = await store.findIssueStateByIssueRef({ repo: 'atolis-hq/wake', issueNumber: 61 });
     expect(finalProjection?.correlatedResources).toEqual([]);
+    expect(finalProjection?.workItemKey).toBe(workItemKey);
+
+    // And no second work item was forked for the now-unclaimed ticket.
+    expect(await store.listIssueStates()).toHaveLength(1);
+  });
+
+  it('mints a work id for a ticket discovered on a clean home, emitting created then registered, and keys state/ on it', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const resourceIndex = createResourceIndex({ paths: store.paths });
+    const config = createDefaultWakeConfig(root);
+    config.sources.github.policy.requiredLabels = ['wake:queue'];
+
+    const tickRunner = createTickRunner({
+      clock: { now: () => new Date('2026-07-05T12:00:00.000Z') },
+      config,
+      stateStore: store,
+      resourceIndex,
+      workSource: createFakeTicketingSystem({
+        tickets: [
+          {
+            repo: 'atolis-hq/wake',
+            number: 200,
+            title: 'Mint me',
+            body: 'Body',
+            labels: ['wake:queue'],
+            comments: [],
+          },
+        ],
+        // Offset from the tick clock, as production always is: the source
+        // stamps ingestedAt inside pollEvents(), after the tick's own start.
+        now: () => new Date('2026-07-05T12:00:01.000Z'),
+      }),
+      runner: {
+        async run() {
+          return { result: 'DONE', model: 'test-model', cli: 'test-cli' };
+        },
+      },
+      workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+    });
+
+    await tickRunner.runTick();
+
+    const projection = await store.findIssueStateByIssueRef({
+      repo: 'atolis-hq/wake',
+      issueNumber: 200,
+    });
+    expect(projection).not.toBeNull();
+    const workId = projection?.workItemKey ?? '';
+    expect(isWorkId(workId)).toBe(true);
+
+    // The projection lands at state/<workId>.json — no provider, repo, or
+    // issue segment anywhere in the path.
+    await access(join(root, 'state', `${workId}.json`));
+
+    // The index is what makes the *next* event resolve rather than re-mint.
+    expect(await resourceIndex.resolve('fake-ticketing:issue:atolis-hq/wake#200')).toBe(workId);
+
+    const events = await store.listEventEnvelopes();
+    const mintEventTypes = events
+      .filter(
+        (event) =>
+          event.workItemKey === workId &&
+          (event.sourceEventType === WORK_ITEM_CREATED_EVENT ||
+            event.sourceEventType === CORRELATION_REGISTERED_EVENT),
+      )
+      .map((event) => event.sourceEventType);
+    expect(mintEventTypes).toEqual([WORK_ITEM_CREATED_EVENT, CORRELATION_REGISTERED_EVENT]);
+
+    expect(projection?.correlatedResources).toEqual([
+      {
+        resourceUri: 'fake-ticketing:issue:atolis-hq/wake#200',
+        role: 'representation',
+        relation: 'primary',
+        provenance: 'wake-created',
+        registeredAt: '2026-07-05T12:00:01.000Z',
+      },
+    ]);
+  });
+
+  it('resolves a second event on the same ticket through the index to the same work id and mints nothing', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const resourceIndex = createResourceIndex({ paths: store.paths });
+    const config = createDefaultWakeConfig(root);
+    config.sources.github.policy.requiredLabels = ['wake:queue'];
+
+    // The second tick's ticket carries a comment, so the second poll emits a
+    // genuinely *new* event id for the same ticket. That is what forces the
+    // resolver down the index path — re-polling the identical event id would
+    // instead take the already-persisted shortcut and prove nothing about
+    // resolution.
+    const tickets = [
+      {
+        repo: 'atolis-hq/wake',
+        number: 201,
+        title: 'Mint once',
+        body: 'Body',
+        labels: ['wake:queue'],
+        comments: [] as Array<{ id: string; body: string; author: { login: string } }>,
+      },
+    ];
+
+    const tickRunner = createTickRunner({
+      clock: { now: () => new Date('2026-07-05T12:00:00.000Z') },
+      config,
+      stateStore: store,
+      resourceIndex,
+      workSource: createFakeTicketingSystem({
+        tickets,
+        now: () => new Date('2026-07-05T12:00:01.000Z'),
+      }),
+      runner: {
+        async run() {
+          return { result: 'DONE', model: 'test-model', cli: 'test-cli' };
+        },
+      },
+      workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+    });
+
+    await tickRunner.runTick();
+    const firstWorkId = (
+      await store.findIssueStateByIssueRef({ repo: 'atolis-hq/wake', issueNumber: 201 })
+    )?.workItemKey;
+    expect(isWorkId(firstWorkId ?? '')).toBe(true);
+
+    tickets[0]!.comments.push({ id: 'c-201', body: 'A new comment', author: { login: 'alice' } });
+    await tickRunner.runTick();
+
+    const projections = await store.listIssueStates();
+    expect(projections).toHaveLength(1);
+    expect(projections[0]?.workItemKey).toBe(firstWorkId);
+
+    const events = await store.listEventEnvelopes();
+    const commentEvent = events.find(
+      (event) => event.sourceEventType === 'fake.issue.comment.created',
+    );
+    expect(commentEvent?.workItemKey).toBe(firstWorkId);
+
+    expect(
+      events.filter((event) => event.sourceEventType === WORK_ITEM_CREATED_EVENT),
+    ).toHaveLength(1);
+    expect(
+      events.filter((event) => event.sourceEventType === CORRELATION_REGISTERED_EVENT),
+    ).toHaveLength(1);
+  });
+
+  it('mints two different work ids for two different tickets', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const resourceIndex = createResourceIndex({ paths: store.paths });
+    const config = createDefaultWakeConfig(root);
+    config.sources.github.policy.requiredLabels = ['wake:queue'];
+
+    const tickRunner = createTickRunner({
+      clock: { now: () => new Date('2026-07-05T12:00:00.000Z') },
+      config,
+      stateStore: store,
+      resourceIndex,
+      workSource: createFakeTicketingSystem({
+        tickets: [
+          {
+            repo: 'atolis-hq/wake',
+            number: 202,
+            title: 'First',
+            body: 'Body',
+            labels: ['wake:queue'],
+            comments: [],
+          },
+          {
+            repo: 'atolis-hq/wake',
+            number: 203,
+            title: 'Second',
+            body: 'Body',
+            labels: ['wake:queue'],
+            comments: [],
+          },
+        ],
+        now: () => new Date('2026-07-05T12:00:01.000Z'),
+      }),
+      runner: {
+        async run() {
+          return { result: 'DONE', model: 'test-model', cli: 'test-cli' };
+        },
+      },
+      workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+    });
+
+    await tickRunner.runTick();
+
+    const first = await store.findIssueStateByIssueRef({
+      repo: 'atolis-hq/wake',
+      issueNumber: 202,
+    });
+    const second = await store.findIssueStateByIssueRef({
+      repo: 'atolis-hq/wake',
+      issueNumber: 203,
+    });
+
+    expect(isWorkId(first?.workItemKey ?? '')).toBe(true);
+    expect(isWorkId(second?.workItemKey ?? '')).toBe(true);
+    expect(first?.workItemKey).not.toBe(second?.workItemKey);
+  });
+
+  it('fails loudly rather than minting when a polled event carries no sourceRefs.resourceUri', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const config = createDefaultWakeConfig(root);
+
+    // Deliberately ad-hoc rather than one of the fakes: both fakes stamp a
+    // resourceUri by construction, so no fake can produce this shape. An
+    // unkeyed event without a resourceUri is a programming error in the
+    // adapter — the resolver has nothing to resolve and must never guess an
+    // identity, because a guess forks a duplicate work item silently.
+    const brokenWorkSource = {
+      async pollEvents() {
+        return [
+          {
+            schemaVersion: 1 as const,
+            eventId: 'broken-1',
+            streamScope: 'global-intake' as const,
+            direction: 'inbound' as const,
+            sourceSystem: 'broken-source',
+            sourceEventType: 'ticket.upsert',
+            sourceRefs: { repo: 'atolis-hq/wake', issueNumber: 204 },
+            occurredAt: '2026-07-05T12:00:01.000Z',
+            ingestedAt: '2026-07-05T12:00:01.000Z',
+            trigger: 'immediate' as const,
+            payload: {},
+          },
+        ];
+      },
+    };
+
+    const tickRunner = createTickRunner({
+      clock: { now: () => new Date('2026-07-05T12:00:00.000Z') },
+      config,
+      stateStore: store,
+      resourceIndex: createFakeResourceIndex(),
+      workSource: brokenWorkSource,
+      runner: {
+        async run() {
+          return { result: 'DONE', model: 'test-model', cli: 'test-cli' };
+        },
+      },
+      workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+    });
+
+    await expect(tickRunner.runTick()).rejects.toThrow(/resourceUri/);
+
+    const events = await store.listEventEnvelopes();
+    expect(events.filter((event) => event.sourceEventType === WORK_ITEM_CREATED_EVENT)).toEqual([]);
   });
 
   it('reproduces projections and the resource index exactly after deleting state/ and replaying events/ (ADR 0001 rebuild guarantee)', async () => {
@@ -2548,8 +2840,15 @@ describe('tick runner', () => {
       workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
     });
 
-    // First tick auto-registers the origin ticket as a correlated resource.
+    // First tick mints the work item, registering the origin ticket as its
+    // primary representation.
     await tickRunner.runTick();
+
+    // Minted, so it is read back off the projection rather than spelled out.
+    const mintedWorkItemKey =
+      (await store.findIssueStateByIssueRef({ repo: 'atolis-hq/wake', issueNumber: 70 }))
+        ?.workItemKey ?? '';
+    expect(isWorkId(mintedWorkItemKey)).toBe(true);
 
     // Simulate additional correlated resources being discovered (e.g. an
     // implementation PR) via the same fold + index machinery a later
@@ -2558,7 +2857,7 @@ describe('tick runner', () => {
     const projectionUpdater = createProjectionUpdater({ stateStore: store, resourceIndex });
     const prRegistration = createEventEnvelope({
       eventId: 'wake-70-pr-registered',
-      workItemKey: 'fake-ticketing:atolis-hq/wake#70',
+      workItemKey: mintedWorkItemKey,
       streamScope: 'work-item',
       direction: 'internal',
       sourceSystem: 'wake',
@@ -2586,7 +2885,7 @@ describe('tick runner', () => {
     // would hide, so the rebuild guarantee below must hold across it too.
     const secondIssueUpsert = createEventEnvelope({
       eventId: 'fake-issue-atolis-hq-wake-90',
-      workItemKey: 'fake-ticketing:atolis-hq/wake#90',
+      workItemKey: workId(90),
       streamScope: 'global-intake',
       direction: 'inbound',
       sourceSystem: 'fake-ticketing',
@@ -2616,7 +2915,7 @@ describe('tick runner', () => {
     });
     const conflictingRegistration = createEventEnvelope({
       eventId: 'wake-90-pr-conflict-registered',
-      workItemKey: 'fake-ticketing:atolis-hq/wake#90',
+      workItemKey: workId(90),
       streamScope: 'work-item',
       direction: 'internal',
       sourceSystem: 'wake',
@@ -2654,7 +2953,7 @@ describe('tick runner', () => {
     // #100 the primary — silently disagreeing with the live result.
     const thirdIssueUpsert = createEventEnvelope({
       eventId: 'fake-issue-atolis-hq-wake-100',
-      workItemKey: 'fake-ticketing:atolis-hq/wake#100',
+      workItemKey: workId(100),
       streamScope: 'global-intake',
       direction: 'inbound',
       sourceSystem: 'fake-ticketing',
@@ -2684,7 +2983,7 @@ describe('tick runner', () => {
     });
     const fourthIssueUpsert = createEventEnvelope({
       eventId: 'fake-issue-atolis-hq-wake-101',
-      workItemKey: 'fake-ticketing:atolis-hq/wake#101',
+      workItemKey: workId(101),
       streamScope: 'global-intake',
       direction: 'inbound',
       sourceSystem: 'fake-ticketing',
@@ -2714,7 +3013,7 @@ describe('tick runner', () => {
     });
     const fourthWorkItemRegistersFirst = createEventEnvelope({
       eventId: 'wake-101-shared-registered',
-      workItemKey: 'fake-ticketing:atolis-hq/wake#101',
+      workItemKey: workId(101),
       streamScope: 'work-item',
       direction: 'internal',
       sourceSystem: 'wake',
@@ -2732,7 +3031,7 @@ describe('tick runner', () => {
     });
     const thirdWorkItemRegistersSecond = createEventEnvelope({
       eventId: 'wake-100-shared-registered',
-      workItemKey: 'fake-ticketing:atolis-hq/wake#100',
+      workItemKey: workId(100),
       streamScope: 'work-item',
       direction: 'internal',
       sourceSystem: 'wake',
@@ -2762,8 +3061,8 @@ describe('tick runner', () => {
       await projectionUpdater.rebuildFromEvents([event]);
     }
 
-    const beforeCreatedFirst = await store.readIssueState('atolis-hq/wake', 100);
-    const beforeCreatedSecond = await store.readIssueState('atolis-hq/wake', 101);
+    const beforeCreatedFirst = await store.findIssueStateByIssueRef({ repo: 'atolis-hq/wake', issueNumber: 100 });
+    const beforeCreatedSecond = await store.findIssueStateByIssueRef({ repo: 'atolis-hq/wake', issueNumber: 101 });
     expect(beforeCreatedSecond?.correlatedResources).toEqual([
       {
         resourceUri: 'github:pr:atolis-hq/wake#72',
@@ -2783,7 +3082,7 @@ describe('tick runner', () => {
       },
     ]);
     expect(await resourceIndex.resolve('github:pr:atolis-hq/wake#72')).toBe(
-      'fake-ticketing:atolis-hq/wake#101',
+      workId(101),
     );
 
     const disagreeingOrderConflictEventBefore = (await store.listEventEnvelopes()).find(
@@ -2794,10 +3093,10 @@ describe('tick runner', () => {
       'wake-100-shared-registered-primary-conflict',
     );
 
-    const beforeIncumbent = await store.readIssueState('atolis-hq/wake', 70);
+    const beforeIncumbent = await store.findIssueStateByIssueRef({ repo: 'atolis-hq/wake', issueNumber: 70 });
     expect(beforeIncumbent?.correlatedResources.length ?? 0).toBeGreaterThanOrEqual(2);
 
-    const beforeClaimant = await store.readIssueState('atolis-hq/wake', 90);
+    const beforeClaimant = await store.findIssueStateByIssueRef({ repo: 'atolis-hq/wake', issueNumber: 90 });
     expect(beforeClaimant?.correlatedResources).toEqual([
       {
         resourceUri: 'github:pr:atolis-hq/wake#71',
@@ -2808,7 +3107,7 @@ describe('tick runner', () => {
       },
     ]);
     expect(await resourceIndex.resolve('github:pr:atolis-hq/wake#71')).toBe(
-      'fake-ticketing:atolis-hq/wake#70',
+      mintedWorkItemKey,
     );
 
     const beforeAllEvents = await store.listEventEnvelopes();
@@ -2832,23 +3131,23 @@ describe('tick runner', () => {
     const allEvents = await store.listEventEnvelopes();
     await projectionUpdater.rebuildFromEvents(allEvents);
 
-    const afterIncumbent = await store.readIssueState('atolis-hq/wake', 70);
+    const afterIncumbent = await store.findIssueStateByIssueRef({ repo: 'atolis-hq/wake', issueNumber: 70 });
     expect(afterIncumbent).toEqual(beforeIncumbent);
 
-    const afterClaimant = await store.readIssueState('atolis-hq/wake', 90);
+    const afterClaimant = await store.findIssueStateByIssueRef({ repo: 'atolis-hq/wake', issueNumber: 90 });
     expect(afterClaimant).toEqual(beforeClaimant);
 
     // The disagreeing-order pair: replay must reproduce the *live* winner
     // (#101, who registered first chronologically), not whichever work item
     // a workItemKey-grouped rebuild happened to visit first.
-    const afterCreatedFirst = await store.readIssueState('atolis-hq/wake', 100);
+    const afterCreatedFirst = await store.findIssueStateByIssueRef({ repo: 'atolis-hq/wake', issueNumber: 100 });
     expect(afterCreatedFirst).toEqual(beforeCreatedFirst);
 
-    const afterCreatedSecond = await store.readIssueState('atolis-hq/wake', 101);
+    const afterCreatedSecond = await store.findIssueStateByIssueRef({ repo: 'atolis-hq/wake', issueNumber: 101 });
     expect(afterCreatedSecond).toEqual(beforeCreatedSecond);
 
     expect(await resourceIndex.resolve('github:pr:atolis-hq/wake#72')).toBe(
-      'fake-ticketing:atolis-hq/wake#101',
+      workId(101),
     );
 
     const disagreeingOrderConflictEventAfter = (await store.listEventEnvelopes()).find(

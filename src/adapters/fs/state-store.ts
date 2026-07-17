@@ -34,32 +34,6 @@ type EventFeedFilter = {
   type?: string;
 };
 
-function issueRefFromWorkItemKey(
-  workItemKey: string,
-): { source?: string; repo: string; issueNumber: number } | null {
-  const sourceMarker = workItemKey.indexOf(':');
-  const source =
-    sourceMarker === -1 ? undefined : workItemKey.slice(0, sourceMarker);
-  const unprefixedKey =
-    sourceMarker === -1 ? workItemKey : workItemKey.slice(sourceMarker + 1);
-  const marker = unprefixedKey.lastIndexOf('#');
-  if (marker === -1) {
-    return null;
-  }
-
-  const repo = unprefixedKey.slice(0, marker);
-  const issueNumber = Number(unprefixedKey.slice(marker + 1));
-  if (repo.length === 0 || !Number.isInteger(issueNumber) || issueNumber <= 0) {
-    return null;
-  }
-
-  return source === undefined ? { repo, issueNumber } : { source, repo, issueNumber };
-}
-
-function namespacedWorkItemKey(workItemKey: string, source = 'github'): string {
-  return workItemKey.includes(':') ? workItemKey : `${source}:${workItemKey}`;
-}
-
 async function readIssueStateFile(file: string): Promise<IssueStateRecord | null> {
   try {
     return parseIssueStateRecord(await readJsonFile(file));
@@ -252,76 +226,41 @@ export function createStateStore({ wakeRoot }: { wakeRoot: string }) {
     },
     async writeIssueState(record: IssueStateRecord): Promise<IssueStateRecord> {
       const parsed = parseIssueStateRecord(record);
-      await writeJsonFile(
-        paths.issueStateFile(parsed.origin ?? 'github', parsed.issue.repo, parsed.issue.number),
-        parsed,
-      );
+      await writeJsonFile(paths.workItemStateFile(parsed.workItemKey), parsed);
       return parsed;
     },
-    async readIssueState(
-      repo: string,
-      issueNumber: number,
-      source?: string,
-    ): Promise<IssueStateRecord | null> {
-      const sources = source === undefined ? ['github'] : [source];
-      for (const sourceName of sources) {
-        const record = await readIssueStateFile(
-          paths.issueStateFile(sourceName, repo, issueNumber),
-        );
-        if (record !== null) {
-          return record;
-        }
-      }
-
-      const legacy = await readIssueStateFile(paths.legacyIssueStateFile(repo, issueNumber));
-      if (legacy !== null) {
-        return legacy;
-      }
-
-      for (const sourceName of sources) {
-        const archived = await readIssueStateFile(
-          paths.archivedIssueStateFile(sourceName, repo, issueNumber),
-        );
-        if (archived !== null) {
-          return archived;
-        }
-      }
-
-      const archivedLegacy = await readIssueStateFile(
-        paths.archivedLegacyIssueStateFile(repo, issueNumber),
+    async readIssueState(workId: string): Promise<IssueStateRecord | null> {
+      return (
+        (await readIssueStateFile(paths.workItemStateFile(workId))) ??
+        (await readIssueStateFile(paths.archivedWorkItemStateFile(workId)))
       );
-      if (archivedLegacy !== null) {
-        return archivedLegacy;
-      }
-
-      if (source !== undefined) {
-        return null;
-      }
-
-      try {
-        const stateRoot = join(wakeRoot, 'state');
-        const sourceDirs = await readdir(stateRoot);
-        for (const sourceDir of sourceDirs) {
-          if (sourceDir === 'archive') {
-            continue;
-          }
-          const record = await readIssueStateFile(
-            paths.issueStateFile(sourceDir, repo, issueNumber),
-          );
-          if (record !== null) {
-            return record;
-          }
-          const archived = await readIssueStateFile(
-            paths.archivedIssueStateFile(sourceDir, repo, issueNumber),
-          );
-          if (archived !== null) {
-            return archived;
-          }
-        }
-      } catch {
-        return null;
-      }
-      return null;
+    },
+    /**
+     * Finds a projection by the ticket it originated from, by scanning the
+     * `issue` snapshot every projection retains as cached representation
+     * content (spec §9).
+     *
+     * This exists for the surfaces that are inherently ticket-shaped and have
+     * no work id to hand: the UI's /items/<repo>/<number> route, run records
+     * (which carry repo/issueNumber, not a work id), and the GitHub source's
+     * own poll-dedup/echo-suppression reads. It is a *representation lookup*,
+     * not an identity: nothing here parses a workItemKey or a path, and the
+     * result's `workItemKey` is always read from the record itself.
+     */
+    async findIssueStateByIssueRef(input: {
+      repo: string;
+      issueNumber: number;
+      source?: string;
+    }): Promise<IssueStateRecord | null> {
+      const candidates = await this.listIssueStates({ includeArchived: true });
+      return (
+        candidates.find(
+          (record) =>
+            record.issue.repo === input.repo &&
+            record.issue.number === input.issueNumber &&
+            (input.source === undefined || (record.origin ?? 'github') === input.source),
+        ) ?? null
+      );
     },
     async writeRunRecord(record: RunRecord): Promise<RunRecord> {
       const parsed = parseRunRecord(record);
@@ -389,14 +328,20 @@ export function createStateStore({ wakeRoot }: { wakeRoot: string }) {
               now: options.now ?? new Date(),
             };
 
-        const visit = async (dir: string, segments: string[]): Promise<void> => {
+        // state/ is flat: state/<workId>.json, plus state/archive/ and the
+        // reverse index's own state/index/ shards. Only those two subdirectories
+        // exist, and index/ holds `{ resourceUri: workItemKey }` maps that are
+        // not projections at all — skip it rather than parse-and-discard.
+        const visit = async (dir: string, isArchive: boolean): Promise<void> => {
           const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
           for (const entry of entries) {
             if (entry.isDirectory()) {
-              if (!includeArchived && entry.name === 'archive') {
+              if (entry.name === 'index') {
                 continue;
               }
-              await visit(join(dir, entry.name), [...segments, entry.name]);
+              if (entry.name === 'archive' && includeArchived) {
+                await visit(join(dir, entry.name), true);
+              }
               continue;
             }
 
@@ -410,14 +355,8 @@ export function createStateStore({ wakeRoot }: { wakeRoot: string }) {
               continue;
             }
 
-            const alreadyArchived = segments.includes('archive');
-            if (archiveOptions !== null && !alreadyArchived && shouldArchiveIssueState(record, archiveOptions)) {
-              const sourceName = record.origin ?? (segments[0] ?? 'github');
-              const archivePath = paths.archivedIssueStateFile(
-                sourceName,
-                record.issue.repo,
-                record.issue.number,
-              );
+            if (archiveOptions !== null && !isArchive && shouldArchiveIssueState(record, archiveOptions)) {
+              const archivePath = paths.archivedWorkItemStateFile(record.workItemKey);
               await mkdir(dirname(archivePath), { recursive: true });
               await rename(file, archivePath).catch(() => undefined);
               continue;
@@ -427,7 +366,7 @@ export function createStateStore({ wakeRoot }: { wakeRoot: string }) {
           }
         };
 
-        await visit(stateRoot, []);
+        await visit(stateRoot, false);
 
         const byWorkItemKey = new Map<string, IssueStateRecord>();
         for (const item of items) {
@@ -490,23 +429,13 @@ export function createStateStore({ wakeRoot }: { wakeRoot: string }) {
       workItemKey: string,
       limit = 10,
     ): Promise<EventEnvelope[]> {
-      const issueRef = issueRefFromWorkItemKey(workItemKey);
-      if (issueRef === null) {
-        return [];
-      }
-      const canonicalWorkItemKey = namespacedWorkItemKey(workItemKey, issueRef.source);
-
-      const projection = await this.readIssueState(
-        issueRef.repo,
-        issueRef.issueNumber,
-        issueRef.source,
-      );
+      const projection = await this.readIssueState(workItemKey);
       const recentEventIds = projection?.wake.recentEventIds.slice(-limit) ?? [];
       const envelopes: EventEnvelope[] = [];
 
       for (const eventId of recentEventIds) {
         const envelope = await this.readEventEnvelope(eventId);
-        if (envelope?.workItemKey === canonicalWorkItemKey) {
+        if (envelope?.workItemKey === workItemKey) {
           envelopes.push(envelope);
         }
       }

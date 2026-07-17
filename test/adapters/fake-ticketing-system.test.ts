@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { createFakeTicketingSystem } from '../../src/adapters/fake/fake-ticketing-system.js';
 
 describe('fake ticketing system', () => {
-  it('emits issue and comment events with shared work item correlation', async () => {
+  it('emits unkeyed issue and comment events carrying a resourceUri, never a workItemKey', async () => {
     const source = createFakeTicketingSystem({
       tickets: [
         {
@@ -25,9 +25,16 @@ describe('fake ticketing system', () => {
     const issueEvent = events.find((event) => event.sourceEventType === 'fake.issue.upsert');
     const commentEvents = events.filter((event) => event.sourceEventType === 'fake.issue.comment.created');
 
-    expect(issueEvent?.workItemKey).toBe('fake-ticketing:atolis-hq/wake#3');
+    // Sources do not self-key (spec D1): the resolver in tick-runner stamps
+    // the canonical workItemKey between poll and append. Every event carries
+    // the resourceUri it came from so the resolver has something to resolve.
+    for (const event of events) {
+      expect(event).not.toHaveProperty('workItemKey');
+      expect(event.sourceRefs.resourceUri).toBe('fake-ticketing:issue:atolis-hq/wake#3');
+    }
+
+    expect(issueEvent).toBeDefined();
     expect(commentEvents).toHaveLength(2);
-    expect(commentEvents[0]?.workItemKey).toBe('fake-ticketing:atolis-hq/wake#3');
     expect(commentEvents[1]?.derivedHints?.botAuthoredComment).toBe(false);
   });
 });

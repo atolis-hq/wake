@@ -4,6 +4,12 @@ import { createDefaultWakeConfig } from '../../src/config/defaults.js';
 import { parseIssueStateRecord } from '../../src/domain/schema.js';
 import { createPolicyEngine } from '../../src/core/policy-engine.js';
 
+/**
+ * Identity is minted by the resolver and stamped on the projection; these
+ * fixtures only need a well-formed one, and the policy engine never reads it.
+ */
+const workId = 'work-01JZ0000000000000000000050';
+
 function buildAwaitingApprovalIssue(options: {
   latestCommentBody?: string;
   pendingApprovalAction?: string;
@@ -11,6 +17,7 @@ function buildAwaitingApprovalIssue(options: {
   const pendingApprovalAction = options.pendingApprovalAction ?? 'implement';
   return parseIssueStateRecord({
     schemaVersion: 1,
+    workItemKey: workId,
     issue: {
       repo: 'atolis-hq/wake',
       number: 50,
@@ -56,6 +63,7 @@ function buildIssue(overrides: {
 }) {
   return parseIssueStateRecord({
     schemaVersion: 1,
+    workItemKey: workId,
     issue: {
       repo: 'atolis-hq/wake',
       number: 1,
@@ -86,6 +94,7 @@ function buildNeedsWakeActionIssue(overrides: {
 }) {
   return parseIssueStateRecord({
     schemaVersion: 1,
+    workItemKey: workId,
     issue: {
       repo: 'atolis-hq/wake',
       number: 61,
@@ -149,6 +158,7 @@ function buildBlockedOrFailedIssue(overrides: {
 }) {
   return parseIssueStateRecord({
     schemaVersion: 1,
+    workItemKey: workId,
     issue: {
       repo: 'atolis-hq/wake',
       number: 62,
@@ -246,6 +256,7 @@ describe('policy engine: requiredAssignees', () => {
     config.sources.github.policy.requiredAssignees = ['octocat', 'other-user'];
     const issue = parseIssueStateRecord({
       schemaVersion: 1,
+      workItemKey: workId,
       issue: {
         repo: 'atolis-hq/wake',
         number: 1,
@@ -365,6 +376,7 @@ describe('policy engine: resolveApprovalTransition', () => {
     const policy = createPolicyEngine();
     const issue = parseIssueStateRecord({
       schemaVersion: 1,
+      workItemKey: workId,
       issue: {
         repo: 'atolis-hq/wake',
         number: 50,
@@ -412,6 +424,7 @@ describe('policy engine: resolveApprovalTransition', () => {
     const policy = createPolicyEngine();
     const issue = parseIssueStateRecord({
       schemaVersion: 1,
+      workItemKey: workId,
       issue: {
         repo: 'atolis-hq/wake',
         number: 50,
@@ -460,6 +473,7 @@ describe('policy engine: resolveApprovalTransition', () => {
     const policy = createPolicyEngine();
     const issue = parseIssueStateRecord({
       schemaVersion: 1,
+      workItemKey: workId,
       issue: {
         repo: 'atolis-hq/wake',
         number: 50,

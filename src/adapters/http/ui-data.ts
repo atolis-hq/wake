@@ -290,7 +290,13 @@ export async function buildItemDetail(input: {
   repo: string;
   issueNumber: number;
 }) {
-  const item = await input.stateStore.readIssueState(input.repo, input.issueNumber);
+  // The UI addresses items by the ticket a human recognizes them by; work ids
+  // are opaque (spec D3). Resolved to the projection via its retained issue
+  // snapshot, then everything downstream keys off the record's own workItemKey.
+  const item = await input.stateStore.findIssueStateByIssueRef({
+    repo: input.repo,
+    issueNumber: input.issueNumber,
+  });
   if (item === null) {
     return null;
   }

@@ -55,11 +55,6 @@ function createProjectionFromIssueEvent(event: EventEnvelope): IssueStateRecord 
   });
 }
 
-function sourceFromWorkItemKey(workItemKey: string): string | undefined {
-  const marker = workItemKey.indexOf(':');
-  return marker > 0 ? workItemKey.slice(0, marker) : undefined;
-}
-
 async function applyEvent(
   current: IssueStateRecord | null,
   event: EventEnvelope,
@@ -508,15 +503,10 @@ export function createProjectionUpdater(deps: {
       for (const event of ordered) {
         if (!projections.has(event.workItemKey)) {
           touchedWorkItemKeys.push(event.workItemKey);
-          const initial =
-            event.sourceRefs.repo !== undefined && event.sourceRefs.issueNumber !== undefined
-              ? await deps.stateStore.readIssueState(
-                  event.sourceRefs.repo,
-                  event.sourceRefs.issueNumber,
-                  sourceFromWorkItemKey(event.workItemKey),
-                )
-              : null;
-          projections.set(event.workItemKey, initial);
+          projections.set(
+            event.workItemKey,
+            await deps.stateStore.readIssueState(event.workItemKey),
+          );
         }
 
         const current = projections.get(event.workItemKey) ?? null;

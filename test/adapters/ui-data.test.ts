@@ -8,6 +8,11 @@ import { createDefaultWakeConfig } from '../../src/config/defaults.js';
 import { buildBoard, buildConfigView, buildEventsFeed, buildStatus } from '../../src/adapters/http/ui-data.js';
 import type { IssueStateRecord, RunRecord } from '../../src/domain/types.js';
 
+/** A stable, ULID-shaped work id per issue number; real ids come from createWorkId(). */
+function workId(issueNumber: number): string {
+  return `work-01JZ${String(issueNumber).padStart(22, '0')}`;
+}
+
 function issueState(input: {
   number: number;
   stage: IssueStateRecord['wake']['stage'];
@@ -18,7 +23,7 @@ function issueState(input: {
   const syncedAt = input.syncedAt ?? '2026-07-05T12:00:00.000Z';
   return {
     schemaVersion: 1,
-    workItemKey: `atolis-hq/wake#${input.number}`,
+    workItemKey: workId(input.number),
     issue: {
       repo: 'atolis-hq/wake',
       number: input.number,
@@ -157,7 +162,7 @@ describe('ui-data', () => {
     await store.appendEventEnvelope({
       schemaVersion: 1,
       eventId: 'evt-latest',
-      workItemKey: 'atolis-hq/wake#2',
+      workItemKey: workId(2),
       streamScope: 'work-item',
       direction: 'inbound',
       sourceSystem: 'github',
@@ -189,7 +194,7 @@ describe('ui-data', () => {
     await store.appendEventEnvelope({
       schemaVersion: 1,
       eventId: 'evt-one',
-      workItemKey: 'atolis-hq/wake#1',
+      workItemKey: workId(1),
       streamScope: 'work-item',
       direction: 'inbound',
       sourceSystem: 'github',
@@ -203,7 +208,7 @@ describe('ui-data', () => {
     await store.appendEventEnvelope({
       schemaVersion: 1,
       eventId: 'evt-two',
-      workItemKey: 'atolis-hq/wake#1',
+      workItemKey: workId(1),
       streamScope: 'work-item',
       direction: 'inbound',
       sourceSystem: 'github',

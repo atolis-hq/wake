@@ -1,5 +1,5 @@
 import { execFile as nodeExecFile } from 'node:child_process';
-import { mkdir, readFile, rm } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -168,9 +168,21 @@ async function closeIssue(repo: string, issueNumber: number, cwd: string) {
 }
 
 async function readIssueState(wakeRoot: string, repo: string, issueNumber: number) {
-  const paths = createWakePaths(wakeRoot);
-  const raw = await readFile(paths.issueStateFile('github', repo, issueNumber), 'utf8');
-  return JSON.parse(raw) as IssueStateRecord;
+  // state/ is keyed by the opaque minted work id, so the projection is found
+  // by the ticket it represents, via its retained issue snapshot.
+  const stateRoot = join(wakeRoot, 'state');
+  const files = (await readdir(stateRoot).catch(() => []))
+    .filter((file) => file.endsWith('.json'));
+
+  for (const file of files) {
+    const raw = await readFile(join(stateRoot, file), 'utf8');
+    const record = JSON.parse(raw) as IssueStateRecord;
+    if (record.issue?.repo === repo && record.issue?.number === issueNumber) {
+      return record;
+    }
+  }
+
+  throw new Error(`No projection found for ${repo}#${issueNumber}`);
 }
 
 async function readLatestRun(wakeRoot: string): Promise<RunRecord> {

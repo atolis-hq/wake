@@ -43,8 +43,7 @@ export async function writeRunnerTranscript(input: {
 
   const paths = createWakePaths(input.config.paths.wakeRoot);
   const sessionDir = paths.transcriptSessionDir(
-    input.projection.issue.repo,
-    input.projection.issue.number,
+    input.projection.workItemKey,
     resolveSessionKey(input),
   );
   const file = join(sessionDir, transcriptFileName(input));

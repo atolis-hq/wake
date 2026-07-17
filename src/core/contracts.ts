@@ -18,8 +18,19 @@ export interface ResourceIndex {
   replaceAll(entries: ReadonlyMap<string, string>): Promise<void>;
 }
 
+/**
+ * An event as returned by a source: no workItemKey. Sources have no
+ * obligation to know the work item; the resolver in tick-runner stamps the
+ * canonical key between poll and append (ADR 0001 §5, spec D1).
+ *
+ * `sourceRefs.resourceUri` is what the resolver resolves, so every unkeyed
+ * event must carry one — an event without it is a programming error in the
+ * adapter, not a case for the resolver to guess an identity for.
+ */
+export type UnkeyedEventEnvelope = Omit<EventEnvelope, 'workItemKey'>;
+
 export interface WorkSource {
-  pollEvents(): Promise<EventEnvelope[]>;
+  pollEvents(): Promise<UnkeyedEventEnvelope[]>;
 }
 
 export interface OutboundSink {
@@ -66,7 +77,11 @@ export interface AgentRunner {
 
 export interface WorkspaceManager {
   prepareWorkspace(input: {
+    /** Keys the workspace path — one workspace per work item, not per ticket. */
+    workId: string;
+    /** Still needed to clone. */
     repo: string;
+    /** Still needed for the human-readable branch name (spec D2). */
     issueNumber: number;
   }): Promise<{ workspacePath: string; mergeConflictDetected: boolean; upstreamChanges?: string }>;
   prepareReadOnlyClone(input: { repo: string }): Promise<{ workspacePath: string }>;

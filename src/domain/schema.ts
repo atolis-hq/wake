@@ -143,33 +143,6 @@ const issueSnapshotSchema = z.object({
   updatedAt: isoTimestampSchema,
 });
 
-function sourceFromWorkItemKey(workItemKey: unknown): string | undefined {
-  if (typeof workItemKey !== 'string') {
-    return undefined;
-  }
-  const marker = workItemKey.indexOf(':');
-  return marker > 0 ? workItemKey.slice(0, marker) : undefined;
-}
-
-function namespacedWorkItemKey(input: {
-  source?: unknown;
-  workItemKey?: unknown;
-  repo?: unknown;
-  issueNumber?: unknown;
-}): unknown {
-  if (typeof input.workItemKey === 'string' && input.workItemKey.includes(':')) {
-    return input.workItemKey;
-  }
-  const source = typeof input.source === 'string' ? input.source : 'github';
-  if (typeof input.workItemKey === 'string') {
-    return `${source}:${input.workItemKey}`;
-  }
-  if (typeof input.repo === 'string' && typeof input.issueNumber === 'number') {
-    return `${source}:${input.repo}#${input.issueNumber}`;
-  }
-  return input.workItemKey;
-}
-
 export const sourceStateRecordSchema = z.object({
   schemaVersion: z.literal(1),
   source: z.string(),
@@ -231,28 +204,6 @@ export const correlatedResourceSchema = z.object({
   registeredAt: isoTimestampSchema,
 });
 
-function normalizeLegacyStage(stage: unknown, failedAction?: unknown): unknown {
-  if (stage === 'refined') {
-    return 'implement';
-  }
-  if (stage === 'blocked') {
-    return agentActionValues.includes(failedAction as (typeof agentActionValues)[number])
-      ? failedAction
-      : 'implement';
-  }
-  if (stage === 'awaiting-approval') {
-    return agentActionValues.includes(failedAction as (typeof agentActionValues)[number])
-      ? failedAction
-      : 'implement';
-  }
-  if (stage === 'failed') {
-    return agentActionValues.includes(failedAction as (typeof agentActionValues)[number])
-      ? failedAction
-      : 'queue';
-  }
-  return stage;
-}
-
 export const eventEnvelopeSchema = z.object({
   schemaVersion: z.literal(1),
   eventId: z.string(),
@@ -268,82 +219,9 @@ export const eventEnvelopeSchema = z.object({
   payload: z.record(z.string(), z.unknown()),
   raw: z.record(z.string(), z.unknown()).optional(),
   derivedHints: z.record(z.string(), z.unknown()).optional(),
-}).transform((event) => ({
-  ...event,
-  workItemKey: namespacedWorkItemKey({
-    source: event.direction === 'inbound' ? event.sourceSystem : undefined,
-    workItemKey: event.workItemKey,
-    repo: event.sourceRefs.repo,
-    issueNumber: event.sourceRefs.issueNumber,
-  }) as string,
-}));
+});
 
-export const issueStateRecordSchema = z.preprocess((input) => {
-  if (input === null || typeof input !== 'object') {
-    return input;
-  }
-
-  const record = input as Record<string, unknown>;
-  const issue = record.issue as
-    | { repo?: unknown; number?: unknown }
-    | undefined;
-  const rawWorkItemKey =
-    record.workItemKey ??
-    (issue !== undefined &&
-    typeof issue.repo === 'string' &&
-    typeof issue.number === 'number'
-      ? `${record.origin ?? 'github'}:${issue.repo}#${issue.number}`
-      : undefined);
-  const origin = record.origin ?? sourceFromWorkItemKey(rawWorkItemKey) ?? 'github';
-  const workItemKey = namespacedWorkItemKey({
-    source: origin,
-    workItemKey: rawWorkItemKey,
-    repo: issue?.repo,
-    issueNumber: issue?.number,
-  });
-  const context = record.context !== null && typeof record.context === 'object'
-    ? record.context as Record<string, unknown>
-    : {};
-  const normalizedContext = {
-    ...context,
-    ...(context.lastRunAction === undefined && context.blockedFromAction !== undefined
-      ? { lastRunAction: context.blockedFromAction }
-      : {}),
-  };
-
-  return {
-    comments: [],
-    ...record,
-    context: normalizedContext,
-    workItemKey,
-    origin,
-    wake:
-      record.wake !== null && typeof record.wake === 'object'
-        ? {
-            recentEventIds: [],
-            expectedEcho: { commentIds: [], labels: [] },
-            ...(record.wake as Record<string, unknown>),
-            stage: normalizeLegacyStage(
-              (record.wake as Record<string, unknown>).stage,
-              normalizedContext.lastRunAction,
-            ),
-            stageHistory: Array.isArray((record.wake as Record<string, unknown>).stageHistory)
-              ? ((record.wake as Record<string, unknown>).stageHistory as unknown[]).map((entry) =>
-                  entry !== null && typeof entry === 'object'
-                    ? {
-                        ...(entry as Record<string, unknown>),
-                        stage: normalizeLegacyStage(
-                          (entry as Record<string, unknown>).stage,
-                          normalizedContext.lastRunAction,
-                        ),
-                      }
-                    : entry,
-                )
-              : (record.wake as Record<string, unknown>).stageHistory,
-          }
-        : record.wake,
-  };
-}, z.object({
+export const issueStateRecordSchema = z.object({
   schemaVersion: z.literal(1),
   workItemKey: z.string(),
   origin: z.string().optional(),
@@ -367,7 +245,7 @@ export const issueStateRecordSchema = z.preprocess((input) => {
   }),
   context: z.record(z.string(), z.unknown()).default({}),
   correlatedResources: z.array(correlatedResourceSchema).default([]),
-}));
+});
 
 const runTokenUsageSchema = z.object({
   inputTokens: z.number().nonnegative(),

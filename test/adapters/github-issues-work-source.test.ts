@@ -8,6 +8,16 @@ import { createGitHubIssuesWorkSource } from '../../src/adapters/github/github-i
 import { createDefaultWakeConfig } from '../../src/config/defaults.js';
 import { createEventEnvelope } from '../../src/lib/event-log.js';
 
+/**
+ * A stable, ULID-shaped work id per issue number. The source never mints or
+ * reads these — the resolver in tick-runner does — but fixtures that seed a
+ * projection for the source's poll-dedup/echo reads still need one. Real ids
+ * come from createWorkId().
+ */
+function workId(issueNumber: number): string {
+  return `work-01JZ${String(issueNumber).padStart(22, '0')}`;
+}
+
 describe('github issues work source', () => {
   let root: string;
 
@@ -63,6 +73,56 @@ describe('github issues work source', () => {
       number: 12,
       isPullRequest: false,
     });
+  });
+
+  it('polls unkeyed events carrying github:issue:<repo>#<number> and never a workItemKey (spec D1)', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const config = createDefaultWakeConfig(root);
+    config.sources.github.enabled = true;
+    config.sources.github.repos = ['atolis-hq/wake'];
+
+    const workSource = createGitHubIssuesWorkSource({
+      client: {
+        listIssues: async () => [
+          {
+            number: 82,
+            title: 'Example',
+            body: 'Body',
+            state: 'open',
+            html_url: 'https://github.com/atolis-hq/wake/issues/82',
+            created_at: '2026-07-05T12:00:00.000Z',
+            updated_at: '2026-07-05T12:00:00.000Z',
+            labels: [{ name: 'wake:queue' }],
+            assignees: [],
+          },
+        ],
+        listComments: async () => [
+          {
+            id: 101,
+            body: 'Need more detail',
+            user: { login: 'alice' },
+            created_at: '2026-07-05T12:05:00.000Z',
+            updated_at: '2026-07-05T12:05:00.000Z',
+            html_url: 'https://github.com/atolis-hq/wake/issues/82#issuecomment-101',
+          },
+        ],
+        createComment: vi.fn(),
+        setLabels: vi.fn(),
+      },
+      stateStore: store,
+      config,
+      now: () => new Date('2026-07-05T12:10:00.000Z'),
+    });
+
+    const events = await workSource.pollEvents();
+    expect(events).toHaveLength(2);
+
+    // The source has no obligation to know the work item, and must not invent
+    // an identity: a central resolver stamps workItemKey after the poll.
+    for (const event of events) {
+      expect(event).not.toHaveProperty('workItemKey');
+      expect(event.sourceRefs.resourceUri).toBe('github:issue:atolis-hq/wake#82');
+    }
   });
 
   it('isolates a poll failure to the failing repo so other repos still poll this tick (E3)', async () => {
@@ -276,11 +336,13 @@ describe('github issues work source', () => {
 
     const firstPoll = await workSource.pollEvents();
     for (const event of firstPoll) {
-      await store.appendEventEnvelope(event);
+      // Stands in for the resolver: polled events are unkeyed, and the store
+      // only ever persists events a workItemKey has been stamped on.
+      await store.appendEventEnvelope({ ...event, workItemKey: workId(12) });
     }
     await store.writeIssueState({
       schemaVersion: 1,
-      workItemKey: 'atolis-hq/wake#12',
+      workItemKey: workId(12),
       issue: {
         repo: 'atolis-hq/wake',
         number: 12,
@@ -335,7 +397,7 @@ describe('github issues work source', () => {
 
     await store.writeIssueState({
       schemaVersion: 1,
-      workItemKey: 'atolis-hq/wake#12',
+      workItemKey: workId(12),
       issue: {
         repo: 'atolis-hq/wake',
         number: 12,
@@ -409,7 +471,7 @@ describe('github issues work source', () => {
 
     await store.writeIssueState({
       schemaVersion: 1,
-      workItemKey: 'atolis-hq/wake#13',
+      workItemKey: workId(13),
       issue: {
         repo: 'atolis-hq/wake',
         number: 13,
@@ -495,7 +557,7 @@ describe('github issues work source', () => {
     const deliveryEvents = await workSource.deliverIntent({
       event: createEventEnvelope({
         eventId: 'intent-1',
-        workItemKey: 'atolis-hq/wake#12',
+        workItemKey: workId(12),
         streamScope: 'work-item',
         direction: 'outbound',
         sourceSystem: 'wake',
@@ -543,7 +605,7 @@ describe('github issues work source', () => {
       workSource.deliverIntent({
         event: createEventEnvelope({
           eventId: 'intent-missing-refs',
-          workItemKey: 'atolis-hq/wake#12',
+          workItemKey: workId(12),
           streamScope: 'work-item',
           direction: 'outbound',
           sourceSystem: 'wake',
@@ -580,7 +642,7 @@ describe('github issues work source', () => {
     await workSource.deliverIntent({
       event: createEventEnvelope({
         eventId: 'intent-2',
-        workItemKey: 'atolis-hq/wake#12',
+        workItemKey: workId(12),
         streamScope: 'work-item',
         direction: 'outbound',
         sourceSystem: 'wake',
@@ -640,7 +702,7 @@ describe('github issues work source', () => {
     await workSource.deliverIntent({
       event: createEventEnvelope({
         eventId: 'intent-linked-ui',
-        workItemKey: 'atolis-hq/wake#12',
+        workItemKey: workId(12),
         streamScope: 'work-item',
         direction: 'outbound',
         sourceSystem: 'wake',
@@ -679,7 +741,7 @@ describe('github issues work source', () => {
     await workSource.deliverIntent({
       event: createEventEnvelope({
         eventId: 'intent-2b',
-        workItemKey: 'atolis-hq/wake#13',
+        workItemKey: workId(13),
         streamScope: 'work-item',
         direction: 'outbound',
         sourceSystem: 'wake',
@@ -729,7 +791,7 @@ describe('github issues work source', () => {
     await workSource.deliverIntent({
       event: createEventEnvelope({
         eventId: 'intent-2cursor',
-        workItemKey: 'atolis-hq/wake#16',
+        workItemKey: workId(16),
         streamScope: 'work-item',
         direction: 'outbound',
         sourceSystem: 'wake',
@@ -779,7 +841,7 @@ describe('github issues work source', () => {
     await workSource.deliverIntent({
       event: createEventEnvelope({
         eventId: 'intent-2c',
-        workItemKey: 'atolis-hq/wake#14',
+        workItemKey: workId(14),
         streamScope: 'work-item',
         direction: 'outbound',
         sourceSystem: 'wake',
@@ -825,7 +887,7 @@ describe('github issues work source', () => {
     await workSource.deliverIntent({
       event: createEventEnvelope({
         eventId: 'intent-2d',
-        workItemKey: 'atolis-hq/wake#15',
+        workItemKey: workId(15),
         streamScope: 'work-item',
         direction: 'outbound',
         sourceSystem: 'wake',
@@ -860,7 +922,7 @@ describe('github issues work source', () => {
 
     await store.writeIssueState({
       schemaVersion: 1,
-      workItemKey: 'atolis-hq/wake#12',
+      workItemKey: workId(12),
       issue: {
         repo: 'atolis-hq/wake',
         number: 12,
@@ -901,7 +963,7 @@ describe('github issues work source', () => {
     const deliveryEvents = await workSource.deliverIntent({
       event: createEventEnvelope({
         eventId: 'intent-labels-1',
-        workItemKey: 'atolis-hq/wake#12',
+        workItemKey: workId(12),
         streamScope: 'work-item',
         direction: 'outbound',
         sourceSystem: 'wake',
@@ -935,7 +997,7 @@ describe('github issues work source', () => {
 
     await store.writeIssueState({
       schemaVersion: 1,
-      workItemKey: 'atolis-hq/wake#13',
+      workItemKey: workId(13),
       issue: {
         repo: 'atolis-hq/wake',
         number: 13,
@@ -976,7 +1038,7 @@ describe('github issues work source', () => {
     await workSource.deliverIntent({
       event: createEventEnvelope({
         eventId: 'intent-labels-2',
-        workItemKey: 'atolis-hq/wake#13',
+        workItemKey: workId(13),
         streamScope: 'work-item',
         direction: 'outbound',
         sourceSystem: 'wake',
@@ -1009,7 +1071,7 @@ describe('github issues work source', () => {
 
     await store.writeIssueState({
       schemaVersion: 1,
-      workItemKey: 'atolis-hq/wake#14',
+      workItemKey: workId(14),
       issue: {
         repo: 'atolis-hq/wake',
         number: 14,
@@ -1050,7 +1112,7 @@ describe('github issues work source', () => {
     const deliveryEvents = await workSource.deliverIntent({
       event: createEventEnvelope({
         eventId: 'intent-labels-3',
-        workItemKey: 'atolis-hq/wake#14',
+        workItemKey: workId(14),
         streamScope: 'work-item',
         direction: 'outbound',
         sourceSystem: 'wake',
@@ -1090,7 +1152,7 @@ describe('github issues work source', () => {
     await workSource.deliverIntent({
       event: createEventEnvelope({
         eventId: 'intent-approval-1',
-        workItemKey: 'atolis-hq/wake#15',
+        workItemKey: workId(15),
         streamScope: 'work-item',
         direction: 'outbound',
         sourceSystem: 'wake',
@@ -1140,7 +1202,7 @@ describe('github issues work source', () => {
     await workSource.deliverIntent({
       event: createEventEnvelope({
         eventId: 'intent-status-1',
-        workItemKey: 'atolis-hq/wake#16',
+        workItemKey: workId(16),
         streamScope: 'work-item',
         direction: 'outbound',
         sourceSystem: 'wake',

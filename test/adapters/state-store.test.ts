@@ -6,6 +6,14 @@ import { join } from 'node:path';
 import { createStateStore } from '../../src/adapters/fs/state-store.js';
 import type { EventEnvelope, IssueStateRecord, RunRecord } from '../../src/domain/types.js';
 
+/**
+ * A stable, ULID-shaped work id per issue number, so a fixture can name the
+ * key it expects without minting. Real ids come from createWorkId().
+ */
+function workId(issueNumber: number): string {
+  return `work-01JZ${String(issueNumber).padStart(22, '0')}`;
+}
+
 function issueState(input?: {
   recentEventIds?: string[];
   number?: number;
@@ -18,7 +26,8 @@ function issueState(input?: {
 
   return {
     schemaVersion: 1,
-    workItemKey: `atolis-hq/wake#${number}`,
+    workItemKey: workId(number),
+    origin: 'github',
     issue: {
       repo: 'atolis-hq/wake',
       number,
@@ -71,7 +80,7 @@ function eventEnvelope(input: {
   return {
     schemaVersion: 1,
     eventId: input.eventId,
-    workItemKey: input.workItemKey ?? 'atolis-hq/wake#7',
+    workItemKey: input.workItemKey ?? workId(7),
     streamScope: 'work-item',
     direction: 'inbound',
     sourceSystem: 'github',
@@ -103,28 +112,36 @@ describe('state store', () => {
     root = await mkdtemp(join(tmpdir(), 'wake-state-store-'));
   });
 
-  it('writes and reads issue state records in the canonical layout', async () => {
+  it('writes and reads issue state records at a flat state/<workId>.json', async () => {
     const store = createStateStore({ wakeRoot: root });
 
     await store.writeIssueState(issueState());
 
-    const saved = await store.readIssueState('atolis-hq/wake', 7);
+    // No provider, repo, or issue segment anywhere in the path (spec §3).
+    await expect(readFile(join(root, 'state', `${workId(7)}.json`), 'utf8')).resolves.toContain(
+      'Spec',
+    );
+
+    const saved = await store.readIssueState(workId(7));
     expect(saved?.issue.number).toBe(7);
   });
 
-  it('falls back to the legacy non-namespaced issue state path on read', async () => {
+  it('finds a projection by the ticket it represents, via its retained issue snapshot', async () => {
     const store = createStateStore({ wakeRoot: root });
-    await mkdir(join(root, 'state', 'atolis-hq__wake'), { recursive: true });
-    await writeFile(
-      join(root, 'state', 'atolis-hq__wake', '7.json'),
-      JSON.stringify(issueState()),
-      'utf8',
-    );
 
-    const saved = await store.readIssueState('atolis-hq/wake', 7, 'github');
+    await store.writeIssueState(issueState({ number: 7 }));
+    await store.writeIssueState(issueState({ number: 8 }));
 
-    expect(saved?.workItemKey).toBe('github:atolis-hq/wake#7');
-    expect(saved?.issue.number).toBe(7);
+    const saved = await store.findIssueStateByIssueRef({
+      repo: 'atolis-hq/wake',
+      issueNumber: 8,
+      source: 'github',
+    });
+
+    expect(saved?.workItemKey).toBe(workId(8));
+    expect(
+      await store.findIssueStateByIssueRef({ repo: 'atolis-hq/wake', issueNumber: 404 }),
+    ).toBeNull();
   });
 
   it('buckets event log files by ingestedAt', async () => {
@@ -197,7 +214,7 @@ describe('state store', () => {
     await writeFile(join(root, 'events', '1999-01-01.jsonl'), '{not json\n', 'utf8');
     await store.writeIssueState(issueState({ recentEventIds: ['evt-one', 'evt-two'] }));
 
-    const recentEvents = await store.listEventEnvelopesForWorkItem('atolis-hq/wake#7', 1);
+    const recentEvents = await store.listEventEnvelopesForWorkItem(workId(7), 1);
 
     expect(recentEvents.map((event) => event.eventId)).toEqual(['evt-two']);
   });
@@ -234,9 +251,9 @@ describe('state store', () => {
     const store = createStateStore({ wakeRoot: root });
 
     await store.writeIssueState(issueState({ number: 7 }));
-    await mkdir(join(root, 'state', 'atolis-hq__wake'), { recursive: true });
+    await mkdir(join(root, 'state'), { recursive: true });
     await writeFile(
-      join(root, 'state', 'atolis-hq__wake', '8.json'),
+      join(root, 'state', `${workId(8)}.json`),
       JSON.stringify({
         ...issueState({ number: 8 }),
         wake: {
@@ -273,11 +290,27 @@ describe('state store', () => {
     });
 
     expect(states.map((state) => state.issue.number)).toEqual([8]);
-    await expect(readFile(join(root, 'state', 'github', 'archive', 'atolis-hq__wake', '7.json'), 'utf8'))
+    await expect(readFile(join(root, 'state', 'archive', `${workId(7)}.json`), 'utf8'))
       .resolves.toContain('Spec');
-    await expect(store.readIssueState('atolis-hq/wake', 7)).resolves.toMatchObject({
+    await expect(store.readIssueState(workId(7))).resolves.toMatchObject({
       issue: { number: 7 },
     });
+  });
+
+  it('does not mistake reverse-index shards for projections', async () => {
+    const store = createStateStore({ wakeRoot: root });
+
+    await store.writeIssueState(issueState({ number: 7 }));
+    await mkdir(join(root, 'state', 'index'), { recursive: true });
+    await writeFile(
+      join(root, 'state', 'index', 'ab.json'),
+      JSON.stringify({ 'github:issue:atolis-hq/wake#7': workId(7) }),
+      'utf8',
+    );
+
+    const states = await store.listIssueStates();
+
+    expect(states.map((state) => state.workItemKey)).toEqual([workId(7)]);
   });
 
   it('lists recent events by walking day files backward until the limit is satisfied', async () => {

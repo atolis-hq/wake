@@ -25,6 +25,8 @@ describe('issue state schema', () => {
   it('accepts canonical issue and comment fields plus extensible context', () => {
     const record = parseIssueStateRecord({
       schemaVersion: 1,
+      workItemKey: 'work-01JZ0000000000000000000012',
+      origin: 'github',
       issue: {
         repo: 'atolis-hq/wake',
         number: 12,
@@ -60,11 +62,43 @@ describe('issue state schema', () => {
     expect(record.context.agentBrief).toBe('Extra information for future prompts');
     expect(record.wake.expectedEcho).toEqual({ commentIds: [], labels: [] });
     expect(record.issue.isPullRequest).toBe(false);
+    // The key is taken verbatim: nothing derives, namespaces, or rewrites it.
+    expect(record.workItemKey).toBe('work-01JZ0000000000000000000012');
+  });
+
+  it('requires an explicit workItemKey rather than deriving one from the issue', () => {
+    // Identity is minted by the resolver and stamped on the record; a
+    // projection that arrives without one is a bug, not a record to guess a
+    // key for (spec §1/D1).
+    expect(() =>
+      parseIssueStateRecord({
+        schemaVersion: 1,
+        issue: {
+          repo: 'atolis-hq/wake',
+          number: 12,
+          title: 'Example',
+          body: 'Body',
+          labels: [],
+          assignees: [],
+          isPullRequest: false,
+          state: 'open',
+          url: 'https://example.test/issues/12',
+          createdAt: '2026-07-05T12:00:00.000Z',
+          updatedAt: '2026-07-05T12:00:00.000Z',
+        },
+        wake: {
+          stage: 'queue',
+          stageHistory: [],
+          syncedAt: '2026-07-05T12:00:00.000Z',
+        },
+      }),
+    ).toThrow(/workItemKey/);
   });
 
   it('accepts an explicit pull-request discriminator on canonical issues', () => {
     const record = parseIssueStateRecord({
       schemaVersion: 1,
+      workItemKey: 'work-01JZ0000000000000000000014',
       issue: {
         repo: 'atolis-hq/wake',
         number: 14,
@@ -99,88 +133,10 @@ describe('issue state schema', () => {
     ).toThrow(/stage/i);
   });
 
-  it('normalizes legacy refined stages in persisted issue state', () => {
-    const record = parseIssueStateRecord({
-      schemaVersion: 1,
-      issue: {
-        repo: 'atolis-hq/wake',
-        number: 13,
-        title: 'Example',
-        body: 'Body',
-        labels: ['wake:stage.refined'],
-        assignees: [],
-        isPullRequest: false,
-        state: 'open',
-        url: 'https://example.test/issues/13',
-        createdAt: '2026-07-05T12:00:00.000Z',
-        updatedAt: '2026-07-05T12:00:00.000Z',
-      },
-      comments: [],
-      wake: {
-        stage: 'refined',
-        stageHistory: [
-          {
-            stage: 'queue',
-            changedAt: '2026-07-05T12:00:00.000Z',
-            reason: 'seed',
-          },
-          {
-            stage: 'refined',
-            changedAt: '2026-07-05T12:05:00.000Z',
-            reason: 'runner:done',
-          },
-        ],
-        syncedAt: '2026-07-05T12:05:00.000Z',
-      },
-    });
-
-    expect(record.wake.stage).toBe('implement');
-    expect(record.wake.stageHistory).toEqual([
-      {
-        stage: 'queue',
-        changedAt: '2026-07-05T12:00:00.000Z',
-        reason: 'seed',
-      },
-      {
-        stage: 'implement',
-        changedAt: '2026-07-05T12:05:00.000Z',
-        reason: 'runner:done',
-      },
-    ]);
-  });
-
-  it('normalizes legacy failed stages back to the action that failed', () => {
-    const record = parseIssueStateRecord({
-      schemaVersion: 1,
-      issue: {
-        repo: 'atolis-hq/wake',
-        number: 14,
-        title: 'Legacy failure',
-        body: '',
-        labels: ['wake:status.failed'],
-        assignees: [],
-        isPullRequest: false,
-        state: 'open',
-        url: 'https://example.test/issues/14',
-        createdAt: '2026-07-05T12:00:00.000Z',
-        updatedAt: '2026-07-05T12:05:00.000Z',
-      },
-      comments: [],
-      wake: {
-        stage: 'failed',
-        stageHistory: [{
-          stage: 'failed',
-          changedAt: '2026-07-05T12:05:00.000Z',
-          reason: 'runner:failed',
-        }],
-        syncedAt: '2026-07-05T12:05:00.000Z',
-      },
-      context: { lastRunAction: 'refine', lastRunSentinel: 'FAILED' },
-    });
-
-    expect(record.wake.stage).toBe('refine');
-    expect(record.wake.stageHistory[0]?.stage).toBe('refine');
-  });
+  // The legacy-stage normalization tests ('refined'/'failed'/'blocked' →
+  // canonical stages) are gone with the .preprocess() that implemented them.
+  // The sanctioned fresh start of .wake/ means there is no event log or
+  // projection written under the old vocabulary left to read (spec §8).
 });
 
 describe('run and event schemas', () => {
@@ -224,7 +180,7 @@ describe('run and event schemas', () => {
     const event = parseEventEnvelope({
       schemaVersion: 1,
       eventId: 'evt-1',
-      workItemKey: 'atolis-hq/wake#12',
+      workItemKey: 'work-01JZ0000000000000000000012',
       streamScope: 'work-item',
       direction: 'inbound',
       sourceSystem: 'github',
@@ -248,7 +204,9 @@ describe('run and event schemas', () => {
       },
     });
 
-    expect(event.workItemKey).toBe('github:atolis-hq/wake#12');
+    // Taken verbatim from the envelope: the resolver stamped it, and nothing
+    // in the parse namespaces, derives, or rewrites it (spec §8).
+    expect(event.workItemKey).toBe('work-01JZ0000000000000000000012');
     expect(event.streamScope).toBe('work-item');
   });
 
@@ -415,62 +373,9 @@ describe('run and event schemas', () => {
     expect(parseRunnerResultSentinel('notes DONE more notes\nDONE')).toBe('DONE');
   });
 
-  it('normalizes legacy blockedFromAction context when lastRunAction is absent', () => {
-    const issue = parseIssueStateRecord({
-      schemaVersion: 1,
-      issue: {
-        repo: 'atolis-hq/wake',
-        number: 12,
-        title: 'Legacy blocked issue',
-        body: '',
-        labels: [],
-        assignees: [],
-        isPullRequest: false,
-        state: 'open',
-        url: 'https://example.test/issues/12',
-        createdAt: '2026-07-05T12:00:00.000Z',
-        updatedAt: '2026-07-05T12:00:00.000Z',
-      },
-      wake: {
-        stage: 'blocked',
-        syncedAt: '2026-07-05T12:00:00.000Z',
-        stageHistory: [],
-      },
-      context: { blockedFromAction: 'refine' },
-    });
-
-    expect(issue.context.lastRunAction).toBe('refine');
-    expect(issue.context.blockedFromAction).toBe('refine');
-    expect(issue.wake.stage).toBe('refine');
-  });
-
-  it('preserves lastRunAction when both current and legacy context keys exist', () => {
-    const issue = parseIssueStateRecord({
-      schemaVersion: 1,
-      issue: {
-        repo: 'atolis-hq/wake',
-        number: 12,
-        title: 'Migrated blocked issue',
-        body: '',
-        labels: [],
-        assignees: [],
-        isPullRequest: false,
-        state: 'open',
-        url: 'https://example.test/issues/12',
-        createdAt: '2026-07-05T12:00:00.000Z',
-        updatedAt: '2026-07-05T12:00:00.000Z',
-      },
-      wake: {
-        stage: 'blocked',
-        syncedAt: '2026-07-05T12:00:00.000Z',
-        stageHistory: [],
-      },
-      context: { blockedFromAction: 'refine', lastRunAction: 'implement' },
-    });
-
-    expect(issue.context.lastRunAction).toBe('implement');
-    expect(issue.wake.stage).toBe('implement');
-  });
+  // The legacy `blockedFromAction` → `lastRunAction` context normalization is
+  // gone with the .preprocess() that implemented it: the fresh start leaves no
+  // projection written under the old key (spec §8, "no migration code").
 
   it('parses the last valid wake-result envelope and keeps only prose before it as body', () => {
     const parsed = parseRunnerResult([

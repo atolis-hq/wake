@@ -15,6 +15,16 @@ import {
 import { stageLabelForStage, stageValues } from '../../src/domain/stages.js';
 import { createEventEnvelope } from '../../src/lib/event-log.js';
 
+/**
+ * A stable, ULID-shaped work id per issue number. These fixtures hand-build
+ * events, so they stand in for keys the resolver would have minted and
+ * stamped; the fold itself never inspects the key's shape. Real ids come from
+ * createWorkId().
+ */
+function workId(issueNumber: number): string {
+  return `work-01JZ${String(issueNumber).padStart(22, '0')}`;
+}
+
 function correlationRegistered(input: {
   eventId: string;
   workItemKey: string;
@@ -82,7 +92,7 @@ function issueUpsert(input: {
 
   return createEventEnvelope({
     eventId: input.eventId,
-    workItemKey: `atolis-hq/wake#${input.issueNumber}`,
+    workItemKey: workId(input.issueNumber),
     streamScope: 'global-intake',
     direction: 'inbound',
     sourceSystem: 'github',
@@ -125,7 +135,7 @@ describe('projection updater', () => {
     const updater = createProjectionUpdater({ stateStore: store, resourceIndex: createFakeResourceIndex() });
     const claimed = createEventEnvelope({
       eventId: 'run-7-claimed',
-      workItemKey: 'atolis-hq/wake#7',
+      workItemKey: workId(7),
       streamScope: 'work-item',
       direction: 'internal',
       sourceSystem: 'wake',
@@ -142,7 +152,7 @@ describe('projection updater', () => {
       claimed,
     ]);
 
-    const projection = await store.readIssueState('atolis-hq/wake', 7);
+    const projection = await store.readIssueState(workId(7));
     expect(projection?.wake.lastRunId).toBe('run-7');
   });
 
@@ -153,7 +163,7 @@ describe('projection updater', () => {
     const events = [
       createEventEnvelope({
         eventId: 'evt-issue',
-        workItemKey: 'atolis-hq/wake#7',
+        workItemKey: workId(7),
         streamScope: 'global-intake',
         direction: 'inbound',
         sourceSystem: 'fake-ticketing',
@@ -184,7 +194,7 @@ describe('projection updater', () => {
       }),
       createEventEnvelope({
         eventId: 'evt-comment',
-        workItemKey: 'atolis-hq/wake#7',
+        workItemKey: workId(7),
         streamScope: 'work-item',
         direction: 'inbound',
         sourceSystem: 'fake-ticketing',
@@ -217,8 +227,8 @@ describe('projection updater', () => {
 
     await updater.rebuildFromEvents(events);
 
-    const projection = await store.readIssueState('atolis-hq/wake', 7);
-    expect(projection?.workItemKey).toBe('fake-ticketing:atolis-hq/wake#7');
+    const projection = await store.readIssueState(workId(7));
+    expect(projection?.workItemKey).toBe(workId(7));
     expect(projection?.latestComment?.id).toBe('c-1');
     expect(projection?.wake.recentEventIds).toEqual(['evt-issue', 'evt-comment']);
   });
@@ -236,7 +246,7 @@ describe('projection updater', () => {
     });
     const staleComment = createEventEnvelope({
       eventId: 'evt-stale-comment',
-      workItemKey: 'atolis-hq/wake#8',
+      workItemKey: workId(8),
       streamScope: 'work-item',
       direction: 'inbound',
       sourceSystem: 'github',
@@ -262,7 +272,7 @@ describe('projection updater', () => {
 
     await updater.rebuildFromEvents([staleComment, issue]);
 
-    const projection = await store.readIssueState('atolis-hq/wake', 8);
+    const projection = await store.readIssueState(workId(8));
     expect(projection?.latestComment?.id).toBe('c-stale');
     expect(projection?.wake.recentEventIds).toEqual(['evt-stale-issue', 'evt-stale-comment']);
   });
@@ -279,7 +289,7 @@ describe('projection updater', () => {
 
     await updater.rebuildFromEvents([event]);
 
-    const projection = await store.readIssueState('atolis-hq/wake', 80);
+    const projection = await store.readIssueState(workId(80));
     expect(projection?.issue.isPullRequest).toBe(true);
   });
 
@@ -297,7 +307,7 @@ describe('projection updater', () => {
 
       await updater.rebuildFromEvents([event]);
 
-      const projection = await store.readIssueState('atolis-hq/wake', 100 + index);
+      const projection = await store.readIssueState(workId(100 + index));
       expect(projection?.wake.stage).toBe(stage);
     }
   });
@@ -313,7 +323,7 @@ describe('projection updater', () => {
 
     await updater.rebuildFromEvents([event]);
 
-    const projection = await store.readIssueState('atolis-hq/wake', 101);
+    const projection = await store.readIssueState(workId(101));
     expect(projection?.wake.stage).toBe('queue');
   });
 
@@ -328,7 +338,7 @@ describe('projection updater', () => {
 
     await updater.rebuildFromEvents([event]);
 
-    const projection = await store.readIssueState('atolis-hq/wake', 102);
+    const projection = await store.readIssueState(workId(102));
     expect(projection?.wake.stage).toBe('queue');
   });
 
@@ -353,7 +363,7 @@ describe('projection updater', () => {
     await updater.rebuildFromEvents([initial]);
     await updater.rebuildFromEvents([reconciled]);
 
-    const projection = await store.readIssueState('atolis-hq/wake', 103);
+    const projection = await store.readIssueState(workId(103));
     expect(projection?.wake.stage).toBe('done');
     expect(projection?.wake.stageHistory).toEqual([
       {
@@ -383,7 +393,7 @@ describe('projection updater', () => {
     await updater.rebuildFromEvents([initial]);
     await updater.rebuildFromEvents([ambiguous]);
 
-    const projection = await store.readIssueState('atolis-hq/wake', 104);
+    const projection = await store.readIssueState(workId(104));
     expect(projection?.wake.stage).toBe('implement');
     expect(projection?.wake.stageHistory).toEqual([]);
   });
@@ -394,7 +404,7 @@ describe('projection updater', () => {
 
     const initialUpsert = createEventEnvelope({
       eventId: 'evt-issue-1',
-      workItemKey: 'atolis-hq/wake#9',
+      workItemKey: workId(9),
       streamScope: 'global-intake',
       direction: 'inbound',
       sourceSystem: 'github',
@@ -429,7 +439,7 @@ describe('projection updater', () => {
 
     const runCompleted = createEventEnvelope({
       eventId: 'evt-run-completed',
-      workItemKey: 'atolis-hq/wake#9',
+      workItemKey: workId(9),
       streamScope: 'work-item',
       direction: 'internal',
       sourceSystem: 'wake',
@@ -451,14 +461,14 @@ describe('projection updater', () => {
     await store.appendEventEnvelope(runCompleted);
     await updater.rebuildFromEvents([runCompleted]);
 
-    let projection = await store.readIssueState('atolis-hq/wake', 9);
+    let projection = await store.readIssueState(workId(9));
     expect(projection?.wake.stage).toBe('implement');
 
     // Wake's own status comment bumps the GitHub issue's updatedAt, which
     // causes the next poll to re-ingest a ticket.upsert with no labels applied.
     const resync = createEventEnvelope({
       eventId: 'evt-issue-2',
-      workItemKey: 'atolis-hq/wake#9',
+      workItemKey: workId(9),
       streamScope: 'global-intake',
       direction: 'inbound',
       sourceSystem: 'github',
@@ -491,7 +501,7 @@ describe('projection updater', () => {
     await store.appendEventEnvelope(resync);
     await updater.rebuildFromEvents([resync]);
 
-    projection = await store.readIssueState('atolis-hq/wake', 9);
+    projection = await store.readIssueState(workId(9));
     expect(projection?.wake.stage).toBe('implement');
   });
 
@@ -501,7 +511,7 @@ describe('projection updater', () => {
 
     const initialUpsert = createEventEnvelope({
       eventId: 'evt-issue-echo-comment',
-      workItemKey: 'atolis-hq/wake#10',
+      workItemKey: workId(10),
       streamScope: 'global-intake',
       direction: 'inbound',
       sourceSystem: 'github',
@@ -532,7 +542,7 @@ describe('projection updater', () => {
     });
     const published = createEventEnvelope({
       eventId: 'evt-comment-published',
-      workItemKey: 'atolis-hq/wake#10',
+      workItemKey: workId(10),
       streamScope: 'work-item',
       direction: 'outbound',
       sourceSystem: 'github',
@@ -550,7 +560,7 @@ describe('projection updater', () => {
 
     await updater.rebuildFromEvents([initialUpsert, published]);
 
-    const projection = await store.readIssueState('atolis-hq/wake', 10);
+    const projection = await store.readIssueState(workId(10));
     expect(projection?.wake.expectedEcho.commentIds).toEqual(['c-wake']);
   });
 
@@ -560,7 +570,7 @@ describe('projection updater', () => {
 
     const initialUpsert = createEventEnvelope({
       eventId: 'evt-issue-echo-label',
-      workItemKey: 'atolis-hq/wake#11',
+      workItemKey: workId(11),
       streamScope: 'global-intake',
       direction: 'inbound',
       sourceSystem: 'github',
@@ -591,7 +601,7 @@ describe('projection updater', () => {
     });
     const labelsUpdated = createEventEnvelope({
       eventId: 'evt-labels-updated',
-      workItemKey: 'atolis-hq/wake#11',
+      workItemKey: workId(11),
       streamScope: 'work-item',
       direction: 'outbound',
       sourceSystem: 'github',
@@ -610,7 +620,7 @@ describe('projection updater', () => {
 
     await updater.rebuildFromEvents([initialUpsert, labelsUpdated]);
 
-    const projection = await store.readIssueState('atolis-hq/wake', 11);
+    const projection = await store.readIssueState(workId(11));
     expect(projection?.issue.labels).toEqual([
       'bug',
       'wake:status.working',
@@ -629,7 +639,7 @@ describe('projection updater', () => {
 
     const initialUpsert = createEventEnvelope({
       eventId: 'evt-issue-1',
-      workItemKey: 'atolis-hq/wake#20',
+      workItemKey: workId(20),
       streamScope: 'global-intake',
       direction: 'inbound',
       sourceSystem: 'github',
@@ -664,7 +674,7 @@ describe('projection updater', () => {
 
     const runCompleted = createEventEnvelope({
       eventId: 'evt-run-completed',
-      workItemKey: 'atolis-hq/wake#20',
+      workItemKey: workId(20),
       streamScope: 'work-item',
       direction: 'internal',
       sourceSystem: 'wake',
@@ -687,12 +697,12 @@ describe('projection updater', () => {
     await store.appendEventEnvelope(runCompleted);
     await updater.rebuildFromEvents([runCompleted]);
 
-    let projection = await store.readIssueState('atolis-hq/wake', 20);
+    let projection = await store.readIssueState(workId(20));
     expect(projection?.wake.stage).toBe('implement');
 
     const wakeQuestionComment = createEventEnvelope({
       eventId: 'evt-comment-wake',
-      workItemKey: 'atolis-hq/wake#20',
+      workItemKey: workId(20),
       streamScope: 'work-item',
       direction: 'inbound',
       sourceSystem: 'github',
@@ -722,12 +732,12 @@ describe('projection updater', () => {
     await store.appendEventEnvelope(wakeQuestionComment);
     await updater.rebuildFromEvents([wakeQuestionComment]);
 
-    projection = await store.readIssueState('atolis-hq/wake', 20);
+    projection = await store.readIssueState(workId(20));
     expect(projection?.wake.stage).toBe('implement');
 
     const ownerReply = createEventEnvelope({
       eventId: 'evt-comment-owner',
-      workItemKey: 'atolis-hq/wake#20',
+      workItemKey: workId(20),
       streamScope: 'work-item',
       direction: 'inbound',
       sourceSystem: 'github',
@@ -756,7 +766,7 @@ describe('projection updater', () => {
     await store.appendEventEnvelope(ownerReply);
     await updater.rebuildFromEvents([ownerReply]);
 
-    projection = await store.readIssueState('atolis-hq/wake', 20);
+    projection = await store.readIssueState(workId(20));
     expect(projection?.wake.stage).toBe('implement');
     expect(projection?.latestComment?.id).toBe('c-owner');
     expect(projection?.wake.stageHistory).toHaveLength(0);
@@ -768,7 +778,7 @@ describe('projection updater', () => {
 
     const initialUpsert = createEventEnvelope({
       eventId: 'evt-issue-1',
-      workItemKey: 'atolis-hq/wake#21',
+      workItemKey: workId(21),
       streamScope: 'global-intake',
       direction: 'inbound',
       sourceSystem: 'github',
@@ -803,7 +813,7 @@ describe('projection updater', () => {
 
     const runCompleted = createEventEnvelope({
       eventId: 'evt-run-completed',
-      workItemKey: 'atolis-hq/wake#21',
+      workItemKey: workId(21),
       streamScope: 'work-item',
       direction: 'internal',
       sourceSystem: 'wake',
@@ -826,12 +836,12 @@ describe('projection updater', () => {
     await store.appendEventEnvelope(runCompleted);
     await updater.rebuildFromEvents([runCompleted]);
 
-    let projection = await store.readIssueState('atolis-hq/wake', 21);
+    let projection = await store.readIssueState(workId(21));
     expect(projection?.wake.stage).toBe('implement');
 
     const ownerReply = createEventEnvelope({
       eventId: 'evt-comment-owner',
-      workItemKey: 'atolis-hq/wake#21',
+      workItemKey: workId(21),
       streamScope: 'work-item',
       direction: 'inbound',
       sourceSystem: 'github',
@@ -860,7 +870,7 @@ describe('projection updater', () => {
     await store.appendEventEnvelope(ownerReply);
     await updater.rebuildFromEvents([ownerReply]);
 
-    projection = await store.readIssueState('atolis-hq/wake', 21);
+    projection = await store.readIssueState(workId(21));
     expect(projection?.wake.stage).toBe('implement');
     expect(projection?.context.lastRunAction).toBe('implement');
   });
@@ -871,7 +881,7 @@ describe('projection updater', () => {
 
     const initialUpsert = createEventEnvelope({
       eventId: 'evt-issue-1',
-      workItemKey: 'atolis-hq/wake#22',
+      workItemKey: workId(22),
       streamScope: 'global-intake',
       direction: 'inbound',
       sourceSystem: 'github',
@@ -906,7 +916,7 @@ describe('projection updater', () => {
 
     const runCompleted = createEventEnvelope({
       eventId: 'evt-run-completed',
-      workItemKey: 'atolis-hq/wake#22',
+      workItemKey: workId(22),
       streamScope: 'work-item',
       direction: 'internal',
       sourceSystem: 'wake',
@@ -929,12 +939,12 @@ describe('projection updater', () => {
     await store.appendEventEnvelope(runCompleted);
     await updater.rebuildFromEvents([runCompleted]);
 
-    let projection = await store.readIssueState('atolis-hq/wake', 22);
+    let projection = await store.readIssueState(workId(22));
     expect(projection?.wake.stage).toBe('refine');
 
     const botComment = createEventEnvelope({
       eventId: 'evt-comment-bot',
-      workItemKey: 'atolis-hq/wake#22',
+      workItemKey: workId(22),
       streamScope: 'work-item',
       direction: 'inbound',
       sourceSystem: 'github',
@@ -964,7 +974,7 @@ describe('projection updater', () => {
     await store.appendEventEnvelope(botComment);
     await updater.rebuildFromEvents([botComment]);
 
-    projection = await store.readIssueState('atolis-hq/wake', 22);
+    projection = await store.readIssueState(workId(22));
     expect(projection?.wake.stage).toBe('refine');
   });
 
@@ -974,7 +984,7 @@ describe('projection updater', () => {
 
     const initialUpsert = createEventEnvelope({
       eventId: 'evt-issue-1',
-      workItemKey: 'atolis-hq/wake#23',
+      workItemKey: workId(23),
       streamScope: 'global-intake',
       direction: 'inbound',
       sourceSystem: 'github',
@@ -1009,7 +1019,7 @@ describe('projection updater', () => {
 
     const runCompleted = createEventEnvelope({
       eventId: 'evt-run-completed',
-      workItemKey: 'atolis-hq/wake#23',
+      workItemKey: workId(23),
       streamScope: 'work-item',
       direction: 'internal',
       sourceSystem: 'wake',
@@ -1032,12 +1042,12 @@ describe('projection updater', () => {
     await store.appendEventEnvelope(runCompleted);
     await updater.rebuildFromEvents([runCompleted]);
 
-    let projection = await store.readIssueState('atolis-hq/wake', 23);
+    let projection = await store.readIssueState(workId(23));
     expect(projection?.wake.stage).toBe('refine');
 
     const ownerReply = createEventEnvelope({
       eventId: 'evt-comment-owner',
-      workItemKey: 'atolis-hq/wake#23',
+      workItemKey: workId(23),
       streamScope: 'work-item',
       direction: 'inbound',
       sourceSystem: 'github',
@@ -1066,7 +1076,7 @@ describe('projection updater', () => {
     await store.appendEventEnvelope(ownerReply);
     await updater.rebuildFromEvents([ownerReply]);
 
-    projection = await store.readIssueState('atolis-hq/wake', 23);
+    projection = await store.readIssueState(workId(23));
     expect(projection?.wake.stage).toBe('refine');
     expect(projection?.latestComment?.id).toBe('c-owner');
     expect(projection?.wake.stageHistory).toHaveLength(0);
@@ -1078,7 +1088,7 @@ describe('projection updater', () => {
 
     const initialUpsert = createEventEnvelope({
       eventId: 'evt-issue-1',
-      workItemKey: 'atolis-hq/wake#24',
+      workItemKey: workId(24),
       streamScope: 'global-intake',
       direction: 'inbound',
       sourceSystem: 'github',
@@ -1113,7 +1123,7 @@ describe('projection updater', () => {
 
     const runCompleted = createEventEnvelope({
       eventId: 'evt-run-completed',
-      workItemKey: 'atolis-hq/wake#24',
+      workItemKey: workId(24),
       streamScope: 'work-item',
       direction: 'internal',
       sourceSystem: 'wake',
@@ -1136,12 +1146,12 @@ describe('projection updater', () => {
     await store.appendEventEnvelope(runCompleted);
     await updater.rebuildFromEvents([runCompleted]);
 
-    let projection = await store.readIssueState('atolis-hq/wake', 24);
+    let projection = await store.readIssueState(workId(24));
     expect(projection?.wake.stage).toBe('implement');
 
     const ownerReply = createEventEnvelope({
       eventId: 'evt-comment-owner',
-      workItemKey: 'atolis-hq/wake#24',
+      workItemKey: workId(24),
       streamScope: 'work-item',
       direction: 'inbound',
       sourceSystem: 'github',
@@ -1170,7 +1180,7 @@ describe('projection updater', () => {
     await store.appendEventEnvelope(ownerReply);
     await updater.rebuildFromEvents([ownerReply]);
 
-    projection = await store.readIssueState('atolis-hq/wake', 24);
+    projection = await store.readIssueState(workId(24));
     expect(projection?.wake.stage).toBe('implement');
     expect(projection?.context.lastRunAction).toBe('implement');
   });
@@ -1185,7 +1195,7 @@ describe('projection updater', () => {
 
     const blockedRun = createEventEnvelope({
       eventId: 'evt-sess-blocked-run',
-      workItemKey: 'atolis-hq/wake#50',
+      workItemKey: workId(50),
       streamScope: 'work-item',
       direction: 'internal',
       sourceSystem: 'wake',
@@ -1205,7 +1215,7 @@ describe('projection updater', () => {
 
     await updater.rebuildFromEvents([blockedRun]);
 
-    const projection = await store.readIssueState('atolis-hq/wake', 50);
+    const projection = await store.readIssueState(workId(50));
     expect(projection?.wake.stage).toBe('implement');
     expect(projection?.wake.sessionId).toBe('sess-xyz');
     expect(projection?.wake.sessionCli).toBe('Claude');
@@ -1222,7 +1232,7 @@ describe('projection updater', () => {
     // Refine completes with a session; stage advances to 'implement'
     const refineRun = createEventEnvelope({
       eventId: 'evt-sess-adv-refine',
-      workItemKey: 'atolis-hq/wake#51',
+      workItemKey: workId(51),
       streamScope: 'work-item',
       direction: 'internal',
       sourceSystem: 'wake',
@@ -1243,7 +1253,7 @@ describe('projection updater', () => {
 
     await updater.rebuildFromEvents([refineRun]);
 
-    const projection = await store.readIssueState('atolis-hq/wake', 51);
+    const projection = await store.readIssueState(workId(51));
     expect(projection?.wake.stage).toBe('implement');
     // Session from refine must be cleared so implement starts fresh
     expect(projection?.wake.sessionId).toBeUndefined();
@@ -1262,7 +1272,7 @@ describe('projection updater', () => {
     await updater.rebuildFromEvents([
       createEventEnvelope({
         eventId: 'evt-sess-fail-block',
-        workItemKey: 'atolis-hq/wake#52',
+        workItemKey: workId(52),
         streamScope: 'work-item',
         direction: 'internal',
         sourceSystem: 'wake',
@@ -1284,7 +1294,7 @@ describe('projection updater', () => {
     // Retry runs and fails outright — session must be cleared
     const failedRun = createEventEnvelope({
       eventId: 'evt-sess-fail-run',
-      workItemKey: 'atolis-hq/wake#52',
+      workItemKey: workId(52),
       streamScope: 'work-item',
       direction: 'internal',
       sourceSystem: 'wake',
@@ -1302,7 +1312,7 @@ describe('projection updater', () => {
 
     await updater.rebuildFromEvents([failedRun]);
 
-    const projection = await store.readIssueState('atolis-hq/wake', 52);
+    const projection = await store.readIssueState(workId(52));
     expect(projection?.wake.sessionId).toBeUndefined();
     expect(projection?.wake.sessionCli).toBeUndefined();
   });
@@ -1320,7 +1330,7 @@ describe('projection updater', () => {
       await updater.rebuildFromEvents([
         correlationRegistered({
           eventId: 'evt-c1-register',
-          workItemKey: 'github:atolis-hq/wake#200',
+          workItemKey: workId(200),
           issueNumber: 200,
           resourceUri: 'github:pr:atolis-hq/wake#201',
           role: 'implementation',
@@ -1330,7 +1340,7 @@ describe('projection updater', () => {
         }),
       ]);
 
-      const projection = await store.readIssueState('atolis-hq/wake', 200);
+      const projection = await store.readIssueState(workId(200));
       expect(projection?.correlatedResources).toEqual([
         {
           resourceUri: 'github:pr:atolis-hq/wake#201',
@@ -1341,7 +1351,7 @@ describe('projection updater', () => {
         },
       ]);
       expect(await resourceIndex.resolve('github:pr:atolis-hq/wake#201')).toBe(
-        'github:atolis-hq/wake#200',
+        workId(200),
       );
     });
 
@@ -1357,7 +1367,7 @@ describe('projection updater', () => {
       const register = (eventId: string, occurredAt: string) =>
         correlationRegistered({
           eventId,
-          workItemKey: 'github:atolis-hq/wake#201',
+          workItemKey: workId(201),
           issueNumber: 201,
           resourceUri: 'github:pr:atolis-hq/wake#301',
           role: 'implementation',
@@ -1369,7 +1379,7 @@ describe('projection updater', () => {
       await updater.rebuildFromEvents([register('evt-c2-register-1', '2026-07-05T13:00:00.000Z')]);
       await updater.rebuildFromEvents([register('evt-c2-register-2', '2026-07-05T13:01:00.000Z')]);
 
-      const projection = await store.readIssueState('atolis-hq/wake', 201);
+      const projection = await store.readIssueState(workId(201));
       expect(projection?.correlatedResources).toHaveLength(1);
     });
 
@@ -1388,7 +1398,7 @@ describe('projection updater', () => {
       await updater.rebuildFromEvents([
         correlationRegistered({
           eventId: 'evt-c3-register-1',
-          workItemKey: 'github:atolis-hq/wake#202',
+          workItemKey: workId(202),
           issueNumber: 202,
           resourceUri: 'github:pr:atolis-hq/wake#302',
           role: 'discussion',
@@ -1400,7 +1410,7 @@ describe('projection updater', () => {
       await updater.rebuildFromEvents([
         correlationRegistered({
           eventId: 'evt-c3-register-2',
-          workItemKey: 'github:atolis-hq/wake#202',
+          workItemKey: workId(202),
           issueNumber: 202,
           resourceUri: 'github:pr:atolis-hq/wake#302',
           role: 'review',
@@ -1410,7 +1420,7 @@ describe('projection updater', () => {
         }),
       ]);
 
-      const projection = await store.readIssueState('atolis-hq/wake', 202);
+      const projection = await store.readIssueState(workId(202));
       expect(projection?.correlatedResources).toEqual([
         {
           resourceUri: 'github:pr:atolis-hq/wake#302',
@@ -1433,7 +1443,7 @@ describe('projection updater', () => {
       await updater.rebuildFromEvents([
         correlationRegistered({
           eventId: 'evt-c4-register',
-          workItemKey: 'github:atolis-hq/wake#203',
+          workItemKey: workId(203),
           issueNumber: 203,
           resourceUri: 'github:pr:atolis-hq/wake#303',
           role: 'implementation',
@@ -1445,14 +1455,14 @@ describe('projection updater', () => {
       await updater.rebuildFromEvents([
         correlationRetracted({
           eventId: 'evt-c4-retract',
-          workItemKey: 'github:atolis-hq/wake#203',
+          workItemKey: workId(203),
           issueNumber: 203,
           resourceUri: 'github:pr:atolis-hq/wake#303',
           occurredAt: '2026-07-05T13:10:00.000Z',
         }),
       ]);
 
-      const projection = await store.readIssueState('atolis-hq/wake', 203);
+      const projection = await store.readIssueState(workId(203));
       expect(projection?.correlatedResources).toEqual([]);
       expect(await resourceIndex.resolve('github:pr:atolis-hq/wake#303')).toBeUndefined();
     });
@@ -1468,7 +1478,7 @@ describe('projection updater', () => {
       await updater.rebuildFromEvents([
         correlationRegistered({
           eventId: 'evt-c4b-register',
-          workItemKey: 'github:atolis-hq/wake#204',
+          workItemKey: workId(204),
           issueNumber: 204,
           resourceUri: 'slack:thread:C1',
           role: 'discussion',
@@ -1478,14 +1488,14 @@ describe('projection updater', () => {
         }),
         correlationRetracted({
           eventId: 'evt-c4b-retract',
-          workItemKey: 'github:atolis-hq/wake#204',
+          workItemKey: workId(204),
           issueNumber: 204,
           resourceUri: 'slack:thread:C1',
           occurredAt: '2026-07-05T13:01:00.000Z',
         }),
       ]);
 
-      const projection = await store.readIssueState('atolis-hq/wake', 204);
+      const projection = await store.readIssueState(workId(204));
       expect(projection?.correlatedResources).toEqual([]);
     });
 
@@ -1503,7 +1513,7 @@ describe('projection updater', () => {
       await updater.rebuildFromEvents([
         correlationRegistered({
           eventId: 'evt-c5-register-a',
-          workItemKey: 'github:atolis-hq/wake#205',
+          workItemKey: workId(205),
           issueNumber: 205,
           resourceUri: 'github:pr:atolis-hq/wake#999',
           role: 'implementation',
@@ -1516,7 +1526,7 @@ describe('projection updater', () => {
       // Work item 206 tries to claim the same uri as primary; must lose.
       const conflictingRegistration = correlationRegistered({
         eventId: 'evt-c5-register-b',
-        workItemKey: 'github:atolis-hq/wake#206',
+        workItemKey: workId(206),
         issueNumber: 206,
         resourceUri: 'github:pr:atolis-hq/wake#999',
         role: 'implementation',
@@ -1526,7 +1536,7 @@ describe('projection updater', () => {
       });
       await updater.rebuildFromEvents([conflictingRegistration]);
 
-      const loser = await store.readIssueState('atolis-hq/wake', 206);
+      const loser = await store.readIssueState(workId(206));
       expect(loser?.correlatedResources).toEqual([
         {
           resourceUri: 'github:pr:atolis-hq/wake#999',
@@ -1537,7 +1547,7 @@ describe('projection updater', () => {
         },
       ]);
       expect(await resourceIndex.resolve('github:pr:atolis-hq/wake#999')).toBe(
-        'github:atolis-hq/wake#205',
+        workId(205),
       );
 
       const conflictEvent = await store.readEventEnvelope(
@@ -1546,7 +1556,7 @@ describe('projection updater', () => {
       expect(conflictEvent?.sourceEventType).toBe(CORRELATION_PRIMARY_CONFLICT_EVENT);
       expect(conflictEvent?.payload).toMatchObject({
         resourceUri: 'github:pr:atolis-hq/wake#999',
-        incumbentWorkItemKey: 'github:atolis-hq/wake#205',
+        incumbentWorkItemKey: workId(205),
       });
     });
 
@@ -1568,7 +1578,7 @@ describe('projection updater', () => {
       await updater.rebuildFromEvents([
         correlationRegistered({
           eventId: 'evt-fixA-register',
-          workItemKey: 'github:atolis-hq/wake#300',
+          workItemKey: workId(300),
           issueNumber: 300,
           resourceUri: 'slack:thread:C900',
           role: 'discussion',
@@ -1578,7 +1588,7 @@ describe('projection updater', () => {
         }),
       ]);
 
-      const projection = await store.readIssueState('atolis-hq/wake', 300);
+      const projection = await store.readIssueState(workId(300));
       expect(projection?.correlatedResources).toEqual([
         {
           resourceUri: 'slack:thread:C900',
@@ -1606,7 +1616,7 @@ describe('projection updater', () => {
       await updater.rebuildFromEvents([
         correlationRegistered({
           eventId: 'evt-fixB-register-1',
-          workItemKey: 'github:atolis-hq/wake#301',
+          workItemKey: workId(301),
           issueNumber: 301,
           resourceUri: 'slack:thread:C901',
           role: 'discussion',
@@ -1615,7 +1625,7 @@ describe('projection updater', () => {
           occurredAt: '2026-07-05T13:00:00.000Z',
         }),
       ]);
-      expect(await resourceIndex.resolve('slack:thread:C901')).toBe('github:atolis-hq/wake#301');
+      expect(await resourceIndex.resolve('slack:thread:C901')).toBe(workId(301));
 
       // Re-register the same (workItemKey, uri) pair requesting 'secondary'
       // this time. Under the old code, `relation === 'primary'` gated the
@@ -1627,7 +1637,7 @@ describe('projection updater', () => {
       await updater.rebuildFromEvents([
         correlationRegistered({
           eventId: 'evt-fixB-register-2',
-          workItemKey: 'github:atolis-hq/wake#301',
+          workItemKey: workId(301),
           issueNumber: 301,
           resourceUri: 'slack:thread:C901',
           role: 'discussion',
@@ -1640,7 +1650,7 @@ describe('projection updater', () => {
       await updater.rebuildFromEvents([
         correlationRetracted({
           eventId: 'evt-fixB-retract',
-          workItemKey: 'github:atolis-hq/wake#301',
+          workItemKey: workId(301),
           issueNumber: 301,
           resourceUri: 'slack:thread:C901',
           occurredAt: '2026-07-05T13:02:00.000Z',
@@ -1648,7 +1658,7 @@ describe('projection updater', () => {
       ]);
 
       expect(await resourceIndex.resolve('slack:thread:C901')).toBeUndefined();
-      const projection = await store.readIssueState('atolis-hq/wake', 301);
+      const projection = await store.readIssueState(workId(301));
       expect(projection?.correlatedResources).toEqual([]);
     });
   });

@@ -11,12 +11,18 @@ import type {
   AgentRunTokenUsage,
   OutboundSink,
   ResourceIndex,
+  UnkeyedEventEnvelope,
   WorkSource,
   WorkspaceManager,
 } from './contracts.js';
 import type { Clock } from '../lib/clock.js';
 import { acquireFileLock } from '../lib/lock.js';
-import { CORRELATION_REGISTERED_EVENT, parseRunnerResult } from '../domain/schema.js';
+import { createWorkId } from '../lib/work-id.js';
+import {
+  CORRELATION_REGISTERED_EVENT,
+  WORK_ITEM_CREATED_EVENT,
+  parseRunnerResult,
+} from '../domain/schema.js';
 import { maxConfiguredRunnerTimeoutMs, resolveRunnerRouting } from '../domain/runner-routing.js';
 import { awaitingApprovalRunnerSentinel, stageLabelForStage } from '../domain/stages.js';
 import type { AgentAction, EventEnvelope, IssueStateRecord, RunRecord, WakeConfig } from '../domain/types.js';
@@ -290,115 +296,152 @@ export function createTickRunner(deps: {
   // `z.string().datetime({ offset: true })`, so a timestamp may legally carry a
   // non-UTC offset or differing sub-second precision, and lexicographic order
   // alone is not a reliable proxy for chronology across those formats. Falling
-  // back to `left` (the origin upsert's own exact string) is always safe: it
-  // ties with the upsert under localeCompare, and the stable sort then preserves
-  // append order, which puts the registration after it — exactly what we need.
+  // back to `left` (the source event's own exact string) is always safe: it
+  // ties with that event under localeCompare, and the stable sort then preserves
+  // append order, which puts the mint events after it — exactly what we need.
   function laterTimestamp(left: string, right: string): string {
     const isLater =
       Date.parse(right) > Date.parse(left) && right.localeCompare(left) > 0;
     return isLater ? right : left;
   }
 
-  // Registers each work item's originating ticket as its founding correlated
-  // resource the first time we ever see it, so correlatedResources[] is a
-  // complete inventory with no special-cased "founding surface" — the origin
-  // ticket is just the first entry, like any other later-discovered PR or
-  // thread. "First time we ever see it" is judged by event history — the
-  // absence of any prior wake.correlation.registered event for the work item
-  // — not by an empty correlatedResources[] array. A work item that later
-  // retracts every resource has a legitimately empty array; treating that as
-  // "not yet registered" would silently resurrect a deliberate retraction on
-  // the next tick and re-claim the origin uri as primary. The fold is also
-  // independently idempotent per uri, so this only needs to be a reasonable
-  // gate, not a perfectly tight one.
-  async function autoRegisterOriginatingTickets(
-    projections: IssueStateRecord[],
-  ): Promise<void> {
-    const allEvents = await deps.stateStore.listEventEnvelopes();
-    const workItemsWithRegistration = new Set(
-      allEvents
-        .filter((event) => event.sourceEventType === CORRELATION_REGISTERED_EVENT)
-        .map((event) => event.workItemKey),
-    );
-    // The originating ticket-upsert event is the event that created this
-    // projection in the first place, and both sources (github, fake) now
-    // stamp sourceRefs.resourceUri on it. Reusing that value — rather than
-    // rebuilding it here with a defaulted `origin ?? 'github'` — means there
-    // is exactly one place in the system that constructs this identity
-    // string, so the two can never disagree.
-    // The upsert's own ingestedAt is captured alongside it, because the
-    // registration event must never sort *before* the upsert that creates the
-    // projection it folds into. Reading the clock at stamping time (below) is
-    // already after pollEvents(), but that alone is not a guarantee: the
-    // upsert's ingestedAt comes from the *source's* clock, which is a different
-    // machine's clock for a real source and can legitimately run ahead of ours.
-    // Anchoring on the upsert's own timestamp makes the ordering hold by
-    // construction rather than by clock agreement. Dating the registration
-    // before the upsert would append it after but date it before, and
-    // rebuildFromEvents' globally-ordered replay would
-    // then fold it against a null projection and silently drop it, leaving
-    // correlatedResources[] empty and the index unpopulated after a
-    // `rm -rf state/` + replay — while the registration event still on record
-    // stops the next tick from re-registering. Permanent, self-concealing
-    // loss, so the timestamp is derived from durable event data instead.
-    const originByWorkItem = new Map<string, { resourceUri: string; ingestedAt: string }>();
-    for (const event of allEvents) {
-      if (
-        (event.sourceEventType === 'fake.issue.upsert' ||
-          event.sourceEventType === 'ticket.upsert') &&
-        event.sourceRefs.resourceUri !== undefined
-      ) {
-        originByWorkItem.set(event.workItemKey, {
-          resourceUri: event.sourceRefs.resourceUri,
-          ingestedAt: event.ingestedAt,
-        });
-      }
+  // The central resolver (spec D1): sources name the *resource* an event came
+  // from and never the work item, so between pollEvents() and the append every
+  // inbound event's sourceRefs.resourceUri is resolved through the reverse
+  // index to the canonical workItemKey, minting a work item on a miss. This is
+  // the one mechanism — there is no founding-surface special case, and no
+  // resolution is ever cached in process memory between ticks (CLAUDE.md: the
+  // tick is a pure function of durable state; the index on disk *is* that
+  // state).
+  //
+  // Minting appends, in order: wake.workitem.created, then the
+  // wake.correlation.registered that claims the originating resource as this
+  // work item's primary representation. Registration is not a separate
+  // back-fill pass — minting *is* the registration, so correlatedResources[]
+  // is a complete inventory from the work item's first event.
+  async function resolveInboundEvent(
+    unkeyed: UnkeyedEventEnvelope,
+  ): Promise<EventEnvelope[]> {
+    const { resourceUri } = unkeyed.sourceRefs;
+    if (resourceUri === undefined) {
+      // A programming error in the adapter, not a runtime condition to absorb.
+      // Guessing an identity here would silently fork a duplicate work item
+      // for work already in flight — exactly the corruption the reverse index
+      // exists to prevent — so fail loudly instead.
+      throw new Error(
+        `cannot resolve inbound event ${unkeyed.eventId} from ${unkeyed.sourceSystem}: ` +
+          'sourceRefs.resourceUri is required for every unkeyed source event',
+      );
     }
 
-    for (const projection of projections) {
-      if (workItemsWithRegistration.has(projection.workItemKey)) {
-        continue;
-      }
-
-      const origin = originByWorkItem.get(projection.workItemKey);
-      if (origin === undefined) {
-        // No source-provided resourceUri on record for this work item's
-        // origin ticket (e.g. its projection was constructed directly by a
-        // test fixture rather than folded from a real ticket-upsert event).
-        // Skip rather than reintroduce a defaulted guess; a future tick that
-        // does see the source event will register it then.
-        continue;
-      }
-
-      const { resourceUri } = origin;
-      const registeredAt = laterTimestamp(origin.ingestedAt, eventStampNow());
-
-      const registeredEvent = createEventEnvelope({
-        eventId: `${projection.workItemKey}-origin-correlation`,
-        workItemKey: projection.workItemKey,
-        streamScope: 'work-item',
-        direction: 'internal',
-        sourceSystem: 'wake',
-        sourceEventType: CORRELATION_REGISTERED_EVENT,
-        sourceRefs: {
-          repo: projection.issue.repo,
-          issueNumber: projection.issue.number,
-          resourceUri,
-        },
-        occurredAt: registeredAt,
-        ingestedAt: registeredAt,
-        trigger: 'context-only',
-        payload: {
-          resourceUri,
-          role: 'representation',
-          relation: 'primary',
-          provenance: 'wake-created',
-        },
-      });
-
-      await deps.stateStore.appendEventEnvelope(registeredEvent);
-      await projectionUpdater.rebuildFromEvents([registeredEvent]);
+    // An event we have already persisted was already resolved, on some earlier
+    // tick, and its stamped key is the durable answer. Re-resolving it through
+    // the index would be wrong as well as wasteful: if that work item has since
+    // retracted this resource, the index no longer holds it, the lookup misses,
+    // and a miss means mint — so a re-polled event (sources legitimately
+    // re-emit the same eventId, e.g. an unchanged issue) would fork a duplicate
+    // work item. Reusing the persisted key keeps resolution idempotent per
+    // event id, which is what the append-only log already promises.
+    const persisted = await deps.stateStore.readEventEnvelope(unkeyed.eventId);
+    if (persisted !== null) {
+      return [persisted];
     }
+
+    const existingWorkItemKey = await deps.resourceIndex.resolve(resourceUri);
+    if (existingWorkItemKey !== undefined) {
+      return [createEventEnvelope({ ...unkeyed, workItemKey: existingWorkItemKey })];
+    }
+
+    const workItemKey = createWorkId();
+    const keyed = createEventEnvelope({ ...unkeyed, workItemKey });
+
+    // Ordering matters, and not only for readability. Both mint events fold
+    // against the projection the source event creates, and applyEvent drops
+    // anything that folds while `current === null`. So they must never sort
+    // *before* that source event in rebuildFromEvents' globally-ordered replay
+    // — if they did, replay would silently discard the registration, leaving
+    // correlatedResources[] empty and the index unpopulated, while the events
+    // still on record stop any later tick from re-registering. Permanent,
+    // self-concealing loss (Task 5, round 3).
+    //
+    // Reading the clock here is already after pollEvents(), but that alone is
+    // not a guarantee: the source event's ingestedAt comes from the *source's*
+    // clock, which for a real source is another machine's and can legitimately
+    // run ahead of ours. Anchoring on the source event's own timestamp makes
+    // the ordering hold by construction rather than by clock agreement, and
+    // appending the source event first means a tie resolves in its favour
+    // (the sort is stable, so equal timestamps keep append order).
+    const mintedAt = laterTimestamp(unkeyed.ingestedAt, eventStampNow());
+    const sourceRefs = {
+      ...unkeyed.sourceRefs,
+      resourceUri,
+    };
+
+    const createdEvent = createEventEnvelope({
+      eventId: `${workItemKey}-created`,
+      workItemKey,
+      streamScope: 'work-item',
+      direction: 'internal',
+      sourceSystem: 'wake',
+      sourceEventType: WORK_ITEM_CREATED_EVENT,
+      sourceRefs,
+      occurredAt: mintedAt,
+      ingestedAt: mintedAt,
+      trigger: 'context-only',
+      // The envelope's workItemKey already carries the identity.
+      payload: {},
+    });
+
+    const registeredEvent = createEventEnvelope({
+      eventId: `${workItemKey}-origin-correlation`,
+      workItemKey,
+      streamScope: 'work-item',
+      direction: 'internal',
+      sourceSystem: 'wake',
+      sourceEventType: CORRELATION_REGISTERED_EVENT,
+      sourceRefs,
+      occurredAt: mintedAt,
+      ingestedAt: mintedAt,
+      trigger: 'context-only',
+      payload: {
+        resourceUri,
+        role: 'representation',
+        relation: 'primary',
+        provenance: 'wake-created',
+      },
+    });
+
+    return [keyed, createdEvent, registeredEvent];
+  }
+
+  async function ingestInboundEvents(
+    unkeyedEvents: UnkeyedEventEnvelope[],
+  ): Promise<EventEnvelope[]> {
+    const ingested: EventEnvelope[] = [];
+
+    for (const unkeyed of unkeyedEvents) {
+      const resolved = await resolveInboundEvent(unkeyed);
+      // Fold what was actually persisted, never the in-memory copy:
+      // appendEventEnvelope is id-deduplicated and returns the *existing*
+      // envelope when one is already on record. Folding our own copy instead
+      // would let state/ diverge from events/ — and replay is defined by
+      // events/, so the divergence would only surface after a rebuild.
+      const events: EventEnvelope[] = [];
+      for (const event of resolved) {
+        events.push(await deps.stateStore.appendEventEnvelope(event));
+      }
+      // Folded before the next event is resolved, because it is the fold of
+      // the registration event that writes the index entry the *next* event on
+      // the same resource resolves through. Deferring the fold to the end of
+      // the batch would let a second event for the same ticket miss and mint a
+      // duplicate work item. Every event in a poll batch shares the source's
+      // one ingestedAt, so folding per event preserves exactly the order a
+      // single batched fold would have produced.
+      await projectionUpdater.rebuildFromEvents(events);
+      ingested.push(...events);
+    }
+
+    return ingested;
   }
 
   function runnerTimeoutMs(): number {
@@ -424,10 +467,7 @@ export function createTickRunner(deps: {
         try {
           await deps.workspaceManager.cleanupWorkspace({ workspacePath });
           if (!deps.config.transcripts.retainAfterWorkspaceCleanup) {
-            await rm(deps.stateStore.paths.transcriptIssueDir(
-              projection.issue.repo,
-              projection.issue.number,
-            ), {
+            await rm(deps.stateStore.paths.transcriptWorkDir(projection.workItemKey), {
               recursive: true,
               force: true,
             });
@@ -498,7 +538,13 @@ export function createTickRunner(deps: {
       .filter((record) => isStaleRunningRecord(record, now));
 
     for (const record of staleRecords) {
-      const projection = await deps.stateStore.readIssueState(record.repo, record.issueNumber);
+      // Run records are ticket-shaped (repo + issueNumber) and carry no work
+      // id, so the projection is found by the ticket it represents and its own
+      // workItemKey is read off the record below — never reconstructed.
+      const projection = await deps.stateStore.findIssueStateByIssueRef({
+        repo: record.repo,
+        issueNumber: record.issueNumber,
+      });
       const newerCompletedRun = runRecords.some((candidate) =>
         candidate.repo === record.repo &&
         candidate.issueNumber === record.issueNumber &&
@@ -506,7 +552,10 @@ export function createTickRunner(deps: {
         candidate.status !== 'running' &&
         Date.parse(candidate.startedAt) > Date.parse(record.startedAt)
       );
-      if (projection?.wake.lastRunId !== record.runId || newerCompletedRun) {
+      // Equivalent to the previous `projection?.wake.lastRunId !== record.runId`,
+      // spelled out so the non-null projection is available below for its
+      // workItemKey.
+      if (projection === null || projection.wake.lastRunId !== record.runId || newerCompletedRun) {
         await deps.stateStore.writeRunRecord({
           ...record,
           status: 'superseded',
@@ -534,10 +583,9 @@ export function createTickRunner(deps: {
         },
       });
 
-      const workItemKey = `${record.repo}#${record.issueNumber}`;
       const runCompletedEvent = createEventEnvelope({
         eventId: `${record.runId}-stale-reconciled`,
-        workItemKey,
+        workItemKey: projection.workItemKey,
         streamScope: 'work-item',
         direction: 'internal',
         sourceSystem: 'wake',
@@ -561,7 +609,7 @@ export function createTickRunner(deps: {
       await deps.stateStore.appendEventEnvelope(runCompletedEvent);
       await projectionUpdater.rebuildFromEvents([runCompletedEvent]);
 
-      const updatedProjection = await deps.stateStore.readIssueState(record.repo, record.issueNumber);
+      const updatedProjection = await deps.stateStore.readIssueState(projection.workItemKey);
       if (updatedProjection !== null) {
         await deliverOutboundEvent(
           createLabelsEvent({
@@ -717,16 +765,9 @@ export function createTickRunner(deps: {
         const nowIso = tickStartedAt.toISOString();
         await reconcileStaleRunningRecords(tickStartedAt);
         await retryUnconfirmedDeliveries();
-        const inboundEvents = await deps.workSource.pollEvents();
-        if (inboundEvents.length > 0) {
-          for (const event of inboundEvents) {
-            await deps.stateStore.appendEventEnvelope(event);
-          }
-          await projectionUpdater.rebuildFromEvents(inboundEvents);
-        }
+        const inboundEvents = await ingestInboundEvents(await deps.workSource.pollEvents());
 
         const projections = await deps.stateStore.listIssueStates();
-        await autoRegisterOriginatingTickets(projections);
         await cleanupClosedIssueWorkspaces(projections);
         if (inboundEvents.length > 0) {
           await markPendingActionableIssues(projections);
@@ -891,6 +932,7 @@ export function createTickRunner(deps: {
           const prepareResult =
             action === 'implement'
               ? await deps.workspaceManager.prepareWorkspace({
+                  workId: candidate.workItemKey,
                   repo: candidate.issue.repo,
                   issueNumber: candidate.issue.number,
                 })
