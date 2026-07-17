@@ -63,6 +63,7 @@ function runRecord(input: {
   return {
     schemaVersion: 1,
     runId: input.runId,
+    workItemKey: workId(input.issueNumber ?? 7),
     repo: 'atolis-hq/wake',
     issueNumber: input.issueNumber ?? 7,
     action: 'implement',
@@ -124,24 +125,6 @@ describe('state store', () => {
 
     const saved = await store.readIssueState(workId(7));
     expect(saved?.issue.number).toBe(7);
-  });
-
-  it('finds a projection by the ticket it represents, via its retained issue snapshot', async () => {
-    const store = createStateStore({ wakeRoot: root });
-
-    await store.writeIssueState(issueState({ number: 7 }));
-    await store.writeIssueState(issueState({ number: 8 }));
-
-    const saved = await store.findIssueStateByIssueRef({
-      repo: 'atolis-hq/wake',
-      issueNumber: 8,
-      source: 'github',
-    });
-
-    expect(saved?.workItemKey).toBe(workId(8));
-    expect(
-      await store.findIssueStateByIssueRef({ repo: 'atolis-hq/wake', issueNumber: 404 }),
-    ).toBeNull();
   });
 
   it('buckets event log files by ingestedAt', async () => {

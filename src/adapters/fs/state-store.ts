@@ -235,33 +235,6 @@ export function createStateStore({ wakeRoot }: { wakeRoot: string }) {
         (await readIssueStateFile(paths.archivedWorkItemStateFile(workId)))
       );
     },
-    /**
-     * Finds a projection by the ticket it originated from, by scanning the
-     * `issue` snapshot every projection retains as cached representation
-     * content (spec §9).
-     *
-     * This exists for the surfaces that are inherently ticket-shaped and have
-     * no work id to hand: the UI's /items/<repo>/<number> route, run records
-     * (which carry repo/issueNumber, not a work id), and the GitHub source's
-     * own poll-dedup/echo-suppression reads. It is a *representation lookup*,
-     * not an identity: nothing here parses a workItemKey or a path, and the
-     * result's `workItemKey` is always read from the record itself.
-     */
-    async findIssueStateByIssueRef(input: {
-      repo: string;
-      issueNumber: number;
-      source?: string;
-    }): Promise<IssueStateRecord | null> {
-      const candidates = await this.listIssueStates({ includeArchived: true });
-      return (
-        candidates.find(
-          (record) =>
-            record.issue.repo === input.repo &&
-            record.issue.number === input.issueNumber &&
-            (input.source === undefined || (record.origin ?? 'github') === input.source),
-        ) ?? null
-      );
-    },
     async writeRunRecord(record: RunRecord): Promise<RunRecord> {
       const parsed = parseRunRecord(record);
       await writeJsonFile(paths.runFile(parsed.runId), parsed);

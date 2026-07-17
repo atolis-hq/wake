@@ -538,16 +538,12 @@ export function createTickRunner(deps: {
       .filter((record) => isStaleRunningRecord(record, now));
 
     for (const record of staleRecords) {
-      // Run records are ticket-shaped (repo + issueNumber) and carry no work
-      // id, so the projection is found by the ticket it represents and its own
-      // workItemKey is read off the record below — never reconstructed.
-      const projection = await deps.stateStore.findIssueStateByIssueRef({
-        repo: record.repo,
-        issueNumber: record.issueNumber,
-      });
+      // Run records carry the work item they belong to, so this is a direct
+      // O(1) read — no scan, no index, no source ambiguity. The record's
+      // repo/issueNumber are representation content and take no part in it.
+      const projection = await deps.stateStore.readIssueState(record.workItemKey);
       const newerCompletedRun = runRecords.some((candidate) =>
-        candidate.repo === record.repo &&
-        candidate.issueNumber === record.issueNumber &&
+        candidate.workItemKey === record.workItemKey &&
         candidate.runId !== record.runId &&
         candidate.status !== 'running' &&
         Date.parse(candidate.startedAt) > Date.parse(record.startedAt)
@@ -881,6 +877,7 @@ export function createTickRunner(deps: {
         const runningRecord = {
           schemaVersion: 1 as const,
           runId,
+          workItemKey: candidate.workItemKey,
           repo: candidate.issue.repo,
           issueNumber: candidate.issue.number,
           action,

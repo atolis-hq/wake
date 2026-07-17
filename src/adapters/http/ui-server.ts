@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 
+import type { ResourceIndex } from '../../core/contracts.js';
 import type { WakeConfig } from '../../domain/types.js';
 import type { createStateStore } from '../fs/state-store.js';
 import { indexHtml } from './ui-assets.js';
@@ -18,9 +19,20 @@ type StateStore = ReturnType<typeof createStateStore>;
 
 export interface UiServerOptions {
   stateStore: StateStore;
+  resourceIndex: ResourceIndex;
   config: WakeConfig;
   token?: string;
   now?: () => Date;
+}
+
+/**
+ * The uri provider segment for the configured ticket source — the same choice
+ * main.ts's buildRuntime makes when it names the source it wires in. The UI
+ * resolves tickets against the index that source's events registered, so the
+ * two must agree.
+ */
+function ticketProvider(config: WakeConfig): string {
+  return config.sources.github.enabled ? 'github' : 'fake-ticketing';
 }
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
@@ -114,7 +126,7 @@ async function handleRequest(
     return;
   }
 
-  const { stateStore, config } = options;
+  const { stateStore, resourceIndex, config } = options;
   const segments = url.pathname.slice('/api/v1/'.length).split('/').filter((part) => part.length > 0).map((s) => decodeURIComponent(s));
   const resource = segments[0];
 
@@ -135,13 +147,21 @@ async function handleRequest(
       return;
     }
 
+    const itemDetailInput = {
+      stateStore,
+      resourceIndex,
+      provider: ticketProvider(config),
+      repo: parsed.repo,
+      issueNumber: parsed.issueNumber,
+    };
+
     if (parsed.suffix === 'events') {
-      const detail = await buildItemDetail({ stateStore, repo: parsed.repo, issueNumber: parsed.issueNumber });
+      const detail = await buildItemDetail(itemDetailInput);
       sendJson(res, 200, detail?.events ?? []);
       return;
     }
 
-    const detail = await buildItemDetail({ stateStore, repo: parsed.repo, issueNumber: parsed.issueNumber });
+    const detail = await buildItemDetail(itemDetailInput);
     if (detail === null) {
       sendJson(res, 404, { error: 'item not found' });
       return;

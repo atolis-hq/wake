@@ -1,6 +1,8 @@
 import { readFile, readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 
+import type { ResourceIndex } from '../../core/contracts.js';
+import { buildResourceUri } from '../../domain/resource-uri.js';
 import { isTerminalStage } from '../../domain/stages.js';
 import type {
   EventEnvelope,
@@ -287,23 +289,30 @@ async function listSourceStates(sourceStateRoot: string) {
 
 export async function buildItemDetail(input: {
   stateStore: StateStore;
+  resourceIndex: ResourceIndex;
+  /** The active ticket source's registered name — the uri's provider segment. */
+  provider: string;
   repo: string;
   issueNumber: number;
 }) {
   // The UI addresses items by the ticket a human recognizes them by; work ids
-  // are opaque (spec D3). Resolved to the projection via its retained issue
-  // snapshot, then everything downstream keys off the record's own workItemKey.
-  const item = await input.stateStore.findIssueStateByIssueRef({
-    repo: input.repo,
-    issueNumber: input.issueNumber,
-  });
+  // are opaque (spec D3). The ticket's uri is *constructed* here (never parsed)
+  // and resolved through the reverse index in one shard read (spec D2), then
+  // everything downstream keys off the record's own workItemKey.
+  const uri = buildResourceUri(input.provider, 'issue', `${input.repo}#${input.issueNumber}`);
+  const workItemKey = await input.resourceIndex.resolve(uri);
+  if (workItemKey === undefined) {
+    return null;
+  }
+
+  const item = await input.stateStore.readIssueState(workItemKey);
   if (item === null) {
     return null;
   }
 
   const allRuns = await input.stateStore.listRunRecords();
   const runs = allRuns
-    .filter((run) => run.repo === input.repo && run.issueNumber === input.issueNumber)
+    .filter((run) => run.workItemKey === item.workItemKey)
     .sort((left, right) => left.startedAt.localeCompare(right.startedAt));
 
   const events = await input.stateStore.listEventEnvelopesForWorkItem(item.workItemKey, 50);

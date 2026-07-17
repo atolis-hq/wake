@@ -16,6 +16,7 @@ import {
   CORRELATION_REGISTERED_EVENT,
   WORK_ITEM_CREATED_EVENT,
 } from '../../src/domain/schema.js';
+import type { IssueStateRecord } from '../../src/domain/types.js';
 import { createEventEnvelope } from '../../src/lib/event-log.js';
 import { isWorkId } from '../../src/lib/work-id.js';
 
@@ -30,6 +31,25 @@ function workId(issueNumber: number): string {
 
 function githubIssueUri(issueNumber: number): string {
   return `github:issue:atolis-hq/wake#${issueNumber}`;
+}
+
+/**
+ * Test-only lookup of a projection by the ticket it represents, for assertions
+ * that are naturally written against an issue number rather than an opaque work
+ * id. Production never does this: it resolves the ticket's uri through the
+ * resource index in one shard read (spec D2). A scan is fine here — fixtures
+ * hold a handful of projections — but it must not creep back into src/.
+ */
+async function findByIssueRef(
+  store: ReturnType<typeof createStateStore>,
+  input: { repo: string; issueNumber: number },
+): Promise<IssueStateRecord | null> {
+  const candidates = await store.listIssueStates({ includeArchived: true });
+  return (
+    candidates.find(
+      (record) => record.issue.repo === input.repo && record.issue.number === input.issueNumber,
+    ) ?? null
+  );
 }
 
 /**
@@ -585,7 +605,7 @@ describe('tick runner', () => {
     });
 
     const result = await tickRunner.runTick();
-    const projection = await store.findIssueStateByIssueRef({ repo: 'atolis-hq/wake', issueNumber: 33 });
+    const projection = await findByIssueRef(store, { repo: 'atolis-hq/wake', issueNumber: 33 });
 
     expect(result.status).toBe('processed');
     expect((result as { sentinel?: string }).sentinel).toBe('AWAITING_APPROVAL');
@@ -1548,7 +1568,7 @@ describe('tick runner', () => {
 
     const first = await tickRunner.runTick();
     const second = await tickRunner.runTick();
-    const projection = await store.findIssueStateByIssueRef({ repo: 'atolis-hq/wake', issueNumber: 121 });
+    const projection = await findByIssueRef(store, { repo: 'atolis-hq/wake', issueNumber: 121 });
 
     expect(first.status).toBe('processed');
     expect((first as { sentinel?: string }).sentinel).toBe('FAILED');
@@ -1633,7 +1653,7 @@ describe('tick runner', () => {
     });
 
     const result = await tickRunner.runTick();
-    const projection = await store.findIssueStateByIssueRef({ repo: 'atolis-hq/wake', issueNumber: 122 });
+    const projection = await findByIssueRef(store, { repo: 'atolis-hq/wake', issueNumber: 122 });
 
     expect(result.status).toBe('processed');
     expect(actionSeen).toBe('implement');
@@ -1683,6 +1703,7 @@ describe('tick runner', () => {
     await store.writeRunRecord({
       schemaVersion: 1,
       runId: 'run-123-stale',
+      workItemKey: workId(123),
       repo: 'atolis-hq/wake',
       issueNumber: 123,
       action: 'implement',
@@ -1711,7 +1732,7 @@ describe('tick runner', () => {
 
     const result = await tickRunner.runTick();
     const runRecord = await store.readRunRecord('run-123-stale');
-    const projection = await store.findIssueStateByIssueRef({ repo: 'atolis-hq/wake', issueNumber: 123 });
+    const projection = await findByIssueRef(store, { repo: 'atolis-hq/wake', issueNumber: 123 });
     const events = await readFile(join(root, 'events', '2026-07-05.jsonl'), 'utf8');
 
     expect(result.status).toBe('idle');
@@ -1722,6 +1743,94 @@ describe('tick runner', () => {
     expect(events).toContain('"eventId":"run-123-stale-stale-reconciled"');
     expect(events).toContain('"sourceEventType":"wake.labels.requested"');
     expect(events).toContain('"stageLabel":"wake:stage.implement"');
+  });
+
+  // Identity proof, not a perf proof: the run record's repo/issueNumber are a
+  // human-readable snapshot, never the way its work item is found. Here the
+  // ticket has since moved repo (spec D3's motivating case — a GitHub transfer
+  // assigns a new number in the target repo), so the projection is reachable
+  // ONLY by the work id the record carries. Under a scan of `issue` snapshots
+  // this run orphans and is wrongly superseded instead of reconciled.
+  it('reconciles a stale run record through its workItemKey after the ticket moved repo', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const config = createDefaultWakeConfig(root);
+    config.sources.github.policy.requiredLabels = ['wake'];
+    const claudeHaikuEntry = config.runners['claude-haiku'];
+    if (claudeHaikuEntry?.kind === 'claude') {
+      claudeHaikuEntry.timeoutMs = 60_000;
+    }
+    // Staleness uses the max timeout across runners active in tiers, so the
+    // tiers must be pinned to the 60s runner for the run to read as stale.
+    config.tiers.light = ['claude-haiku'];
+    config.tiers.standard = ['claude-haiku'];
+
+    await store.writeIssueState({
+      schemaVersion: 1,
+      workItemKey: workId(300),
+      issue: {
+        repo: 'atolis-hq/wake-next',
+        number: 900,
+        title: 'Transferred',
+        body: 'Body',
+        labels: ['wake'],
+        assignees: [],
+        isPullRequest: false,
+        state: 'open',
+        url: 'https://example.test/issues/900',
+        createdAt: '2026-07-05T12:00:00.000Z',
+        updatedAt: '2026-07-05T12:00:00.000Z',
+      },
+      comments: [],
+      wake: {
+        stage: 'implement',
+        lastRunId: 'run-300-stale',
+        syncedAt: '2026-07-05T12:00:00.000Z',
+        stageHistory: [],
+        recentEventIds: [],
+        expectedEcho: { commentIds: [], labels: [] },
+      },
+      context: {},
+      correlatedResources: [],
+    });
+    // The representation the run was launched against, before the transfer.
+    await store.writeRunRecord({
+      schemaVersion: 1,
+      runId: 'run-300-stale',
+      workItemKey: workId(300),
+      repo: 'atolis-hq/wake',
+      issueNumber: 123,
+      action: 'implement',
+      status: 'running',
+      startedAt: '2026-07-05T12:00:00.000Z',
+    });
+
+    const tickRunner = createTickRunner({
+      clock: { now: () => new Date('2026-07-05T12:02:00.000Z') },
+      config,
+      stateStore: store,
+      workSource: {
+        async pollEvents() {
+          return [];
+        },
+      },
+      runner: {
+        async run() {
+          throw new Error('runner must not be invoked');
+        },
+      },
+      resourceIndex: createFakeResourceIndex(),
+      workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+    });
+
+    await tickRunner.runTick();
+
+    const runRecord = await store.readRunRecord('run-300-stale');
+    expect(runRecord?.status).toBe('failed');
+    expect(runRecord?.sentinel).toBe('FAILED');
+    expect(runRecord?.metadata?.reconciledBy).toBe('stale-running-record');
+
+    const reconciled = await store.readEventEnvelope('run-300-stale-stale-reconciled');
+    expect(reconciled?.workItemKey).toBe(workId(300));
   });
 
   it('pauses until the reported quota reset and suppresses quota failure comments', async () => {
@@ -1773,7 +1882,7 @@ describe('tick runner', () => {
       },
     });
     expect(publishedKinds).toEqual([]);
-    const projection = await store.findIssueStateByIssueRef({ repo: 'atolis-hq/wake', issueNumber: 112 });
+    const projection = await findByIssueRef(store, { repo: 'atolis-hq/wake', issueNumber: 112 });
     expect(projection?.context.lastFailureClass).toBe('quota');
   });
 
@@ -1805,11 +1914,13 @@ describe('tick runner', () => {
       correlatedResources: [],
     });
     await store.writeRunRecord({
-      schemaVersion: 1, runId: 'run-124-stale', repo: 'atolis-hq/wake', issueNumber: 124,
+      schemaVersion: 1, runId: 'run-124-stale', workItemKey: workId(124),
+      repo: 'atolis-hq/wake', issueNumber: 124,
       action: 'implement', status: 'running', startedAt: '2026-07-05T12:00:00.000Z',
     });
     await store.writeRunRecord({
-      schemaVersion: 1, runId: 'run-124-new', repo: 'atolis-hq/wake', issueNumber: 124,
+      schemaVersion: 1, runId: 'run-124-new', workItemKey: workId(124),
+      repo: 'atolis-hq/wake', issueNumber: 124,
       action: 'implement', status: 'completed', startedAt: '2026-07-05T12:00:30.000Z',
       finishedAt: '2026-07-05T12:01:00.000Z', sentinel: 'DONE',
     });
@@ -1826,7 +1937,7 @@ describe('tick runner', () => {
 
     const result = await tickRunner.runTick();
     const staleRecord = await store.readRunRecord('run-124-stale');
-    const projection = await store.findIssueStateByIssueRef({ repo: 'atolis-hq/wake', issueNumber: 124 });
+    const projection = await findByIssueRef(store, { repo: 'atolis-hq/wake', issueNumber: 124 });
 
     expect(result.status).toBe('idle');
     expect(staleRecord?.status).toBe('superseded');
@@ -1887,7 +1998,7 @@ describe('tick runner', () => {
 
     await expect(access(workspacePath)).rejects.toThrow();
     await expect(access(transcriptPath)).rejects.toThrow();
-    const updatedProjection = await store.findIssueStateByIssueRef({ repo: 'atolis-hq/wake', issueNumber: 200 });
+    const updatedProjection = await findByIssueRef(store, { repo: 'atolis-hq/wake', issueNumber: 200 });
     expect(updatedProjection?.wake.workspacePath).toBeUndefined();
   });
 
@@ -1996,7 +2107,7 @@ describe('tick runner', () => {
     await tickRunner.runTick();
 
     await expect(access(canonicalClonePath)).resolves.toBeUndefined();
-    const updatedProjection = await store.findIssueStateByIssueRef({ repo: 'atolis-hq/wake', issueNumber: 201 });
+    const updatedProjection = await findByIssueRef(store, { repo: 'atolis-hq/wake', issueNumber: 201 });
     expect(updatedProjection?.wake.workspacePath).toBe(canonicalClonePath);
   });
 
@@ -2234,7 +2345,7 @@ describe('tick runner', () => {
     expect((first as { sentinel?: string }).sentinel).toBe('FAILED');
     expect(runnerCallCount).toBe(0);
 
-    const afterFirst = await store.findIssueStateByIssueRef({ repo: 'atolis-hq/wake', issueNumber: 50 });
+    const afterFirst = await findByIssueRef(store, { repo: 'atolis-hq/wake', issueNumber: 50 });
     expect(afterFirst?.context.lastHandledCommentId).toBeUndefined();
     expect(afterFirst?.context.lastFailureClass).toBe('infra');
 
@@ -2281,7 +2392,7 @@ describe('tick runner', () => {
 
     await tickRunner.runTick();
 
-    const projection = await store.findIssueStateByIssueRef({ repo: 'atolis-hq/wake', issueNumber: 60 });
+    const projection = await findByIssueRef(store, { repo: 'atolis-hq/wake', issueNumber: 60 });
     expect(projection?.correlatedResources).toEqual([
       {
         resourceUri: 'fake-ticketing:issue:atolis-hq/wake#60',
@@ -2349,7 +2460,7 @@ describe('tick runner', () => {
 
     await tickRunner.runTick();
 
-    const before = await store.findIssueStateByIssueRef({ repo: 'atolis-hq/wake', issueNumber: 62 });
+    const before = await findByIssueRef(store, { repo: 'atolis-hq/wake', issueNumber: 62 });
     expect(before?.correlatedResources).toEqual([
       expect.objectContaining({
         resourceUri: 'fake-ticketing:issue:atolis-hq/wake#62',
@@ -2373,7 +2484,7 @@ describe('tick runner', () => {
     // against `current === null`, and be silently dropped — leaving these two
     // assertions empty/undefined while the registration event still on record
     // stops any later tick from re-registering it. Permanent, silent loss.
-    const after = await store.findIssueStateByIssueRef({ repo: 'atolis-hq/wake', issueNumber: 62 });
+    const after = await findByIssueRef(store, { repo: 'atolis-hq/wake', issueNumber: 62 });
     expect(after?.correlatedResources).toEqual(before?.correlatedResources);
     // Replay reproduces the *same* work id, because identity lives in the
     // events, not in state/.
@@ -2440,14 +2551,14 @@ describe('tick runner', () => {
 
     await tickRunner.runTick();
 
-    const before = await store.findIssueStateByIssueRef({ repo: 'atolis-hq/wake', issueNumber: 63 });
+    const before = await findByIssueRef(store, { repo: 'atolis-hq/wake', issueNumber: 63 });
     expect(before?.wake.stageHistory.map((entry) => entry.reason)).toContain('run:refine:claimed');
 
     // state/ is a rebuildable cache over events/ — nothing more.
     await rm(join(root, 'state'), { recursive: true, force: true });
     await createProjectionUpdater({ stateStore: store, resourceIndex })
       .rebuildFromEvents(await store.listEventEnvelopes());
-    const after = await store.findIssueStateByIssueRef({ repo: 'atolis-hq/wake', issueNumber: 63 });
+    const after = await findByIssueRef(store, { repo: 'atolis-hq/wake', issueNumber: 63 });
 
     // Every event this tick stamps must be dated when it actually happened, so
     // none of them can sort ahead of the poll-time upsert that creates the
@@ -2502,7 +2613,7 @@ describe('tick runner', () => {
     expect(registeredBefore).toHaveLength(1);
 
     const workItemKey =
-      (await store.findIssueStateByIssueRef({ repo: 'atolis-hq/wake', issueNumber: 61 }))
+      (await findByIssueRef(store, { repo: 'atolis-hq/wake', issueNumber: 61 }))
         ?.workItemKey ?? '';
 
     // The operator (or a later `wake correlate` command) deliberately
@@ -2526,7 +2637,7 @@ describe('tick runner', () => {
     await store.appendEventEnvelope(retraction);
     await projectionUpdater.rebuildFromEvents([retraction]);
 
-    const afterRetraction = await store.findIssueStateByIssueRef({ repo: 'atolis-hq/wake', issueNumber: 61 });
+    const afterRetraction = await findByIssueRef(store, { repo: 'atolis-hq/wake', issueNumber: 61 });
     expect(afterRetraction?.correlatedResources).toEqual([]);
 
     // A later tick must not silently re-claim the retracted uri for this work
@@ -2541,7 +2652,7 @@ describe('tick runner', () => {
     );
     expect(registeredAfter).toHaveLength(1);
 
-    const finalProjection = await store.findIssueStateByIssueRef({ repo: 'atolis-hq/wake', issueNumber: 61 });
+    const finalProjection = await findByIssueRef(store, { repo: 'atolis-hq/wake', issueNumber: 61 });
     expect(finalProjection?.correlatedResources).toEqual([]);
     expect(finalProjection?.workItemKey).toBe(workItemKey);
 
@@ -2585,7 +2696,7 @@ describe('tick runner', () => {
 
     await tickRunner.runTick();
 
-    const projection = await store.findIssueStateByIssueRef({
+    const projection = await findByIssueRef(store, {
       repo: 'atolis-hq/wake',
       issueNumber: 200,
     });
@@ -2663,7 +2774,7 @@ describe('tick runner', () => {
 
     await tickRunner.runTick();
     const firstWorkId = (
-      await store.findIssueStateByIssueRef({ repo: 'atolis-hq/wake', issueNumber: 201 })
+      await findByIssueRef(store, { repo: 'atolis-hq/wake', issueNumber: 201 })
     )?.workItemKey;
     expect(isWorkId(firstWorkId ?? '')).toBe(true);
 
@@ -2730,11 +2841,11 @@ describe('tick runner', () => {
 
     await tickRunner.runTick();
 
-    const first = await store.findIssueStateByIssueRef({
+    const first = await findByIssueRef(store, {
       repo: 'atolis-hq/wake',
       issueNumber: 202,
     });
-    const second = await store.findIssueStateByIssueRef({
+    const second = await findByIssueRef(store, {
       repo: 'atolis-hq/wake',
       issueNumber: 203,
     });
@@ -2846,7 +2957,7 @@ describe('tick runner', () => {
 
     // Minted, so it is read back off the projection rather than spelled out.
     const mintedWorkItemKey =
-      (await store.findIssueStateByIssueRef({ repo: 'atolis-hq/wake', issueNumber: 70 }))
+      (await findByIssueRef(store, { repo: 'atolis-hq/wake', issueNumber: 70 }))
         ?.workItemKey ?? '';
     expect(isWorkId(mintedWorkItemKey)).toBe(true);
 
@@ -3061,8 +3172,8 @@ describe('tick runner', () => {
       await projectionUpdater.rebuildFromEvents([event]);
     }
 
-    const beforeCreatedFirst = await store.findIssueStateByIssueRef({ repo: 'atolis-hq/wake', issueNumber: 100 });
-    const beforeCreatedSecond = await store.findIssueStateByIssueRef({ repo: 'atolis-hq/wake', issueNumber: 101 });
+    const beforeCreatedFirst = await findByIssueRef(store, { repo: 'atolis-hq/wake', issueNumber: 100 });
+    const beforeCreatedSecond = await findByIssueRef(store, { repo: 'atolis-hq/wake', issueNumber: 101 });
     expect(beforeCreatedSecond?.correlatedResources).toEqual([
       {
         resourceUri: 'github:pr:atolis-hq/wake#72',
@@ -3093,10 +3204,10 @@ describe('tick runner', () => {
       'wake-100-shared-registered-primary-conflict',
     );
 
-    const beforeIncumbent = await store.findIssueStateByIssueRef({ repo: 'atolis-hq/wake', issueNumber: 70 });
+    const beforeIncumbent = await findByIssueRef(store, { repo: 'atolis-hq/wake', issueNumber: 70 });
     expect(beforeIncumbent?.correlatedResources.length ?? 0).toBeGreaterThanOrEqual(2);
 
-    const beforeClaimant = await store.findIssueStateByIssueRef({ repo: 'atolis-hq/wake', issueNumber: 90 });
+    const beforeClaimant = await findByIssueRef(store, { repo: 'atolis-hq/wake', issueNumber: 90 });
     expect(beforeClaimant?.correlatedResources).toEqual([
       {
         resourceUri: 'github:pr:atolis-hq/wake#71',
@@ -3131,19 +3242,19 @@ describe('tick runner', () => {
     const allEvents = await store.listEventEnvelopes();
     await projectionUpdater.rebuildFromEvents(allEvents);
 
-    const afterIncumbent = await store.findIssueStateByIssueRef({ repo: 'atolis-hq/wake', issueNumber: 70 });
+    const afterIncumbent = await findByIssueRef(store, { repo: 'atolis-hq/wake', issueNumber: 70 });
     expect(afterIncumbent).toEqual(beforeIncumbent);
 
-    const afterClaimant = await store.findIssueStateByIssueRef({ repo: 'atolis-hq/wake', issueNumber: 90 });
+    const afterClaimant = await findByIssueRef(store, { repo: 'atolis-hq/wake', issueNumber: 90 });
     expect(afterClaimant).toEqual(beforeClaimant);
 
     // The disagreeing-order pair: replay must reproduce the *live* winner
     // (#101, who registered first chronologically), not whichever work item
     // a workItemKey-grouped rebuild happened to visit first.
-    const afterCreatedFirst = await store.findIssueStateByIssueRef({ repo: 'atolis-hq/wake', issueNumber: 100 });
+    const afterCreatedFirst = await findByIssueRef(store, { repo: 'atolis-hq/wake', issueNumber: 100 });
     expect(afterCreatedFirst).toEqual(beforeCreatedFirst);
 
-    const afterCreatedSecond = await store.findIssueStateByIssueRef({ repo: 'atolis-hq/wake', issueNumber: 101 });
+    const afterCreatedSecond = await findByIssueRef(store, { repo: 'atolis-hq/wake', issueNumber: 101 });
     expect(afterCreatedSecond).toEqual(beforeCreatedSecond);
 
     expect(await resourceIndex.resolve('github:pr:atolis-hq/wake#72')).toBe(

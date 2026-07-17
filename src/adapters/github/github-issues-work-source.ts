@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
-import type { UnkeyedEventEnvelope } from '../../core/contracts.js';
+import type { ResourceIndex, UnkeyedEventEnvelope } from '../../core/contracts.js';
 import type { EventEnvelope, IssueStateRecord, WakeConfig } from '../../domain/types.js';
 import { buildResourceUri } from '../../domain/resource-uri.js';
 import { wakeStageLabelPrefix } from '../../domain/stages.js';
@@ -332,8 +332,27 @@ export function createGitHubIssuesWorkSource(deps: {
   };
   stateStore: ReturnType<typeof import('../fs/state-store.js').createStateStore>;
   config: WakeConfig;
+  // Read-only resolution of uris this source constructs itself, for poll dedup
+  // and echo suppression. This is NOT self-keying (spec D1): pollEvents still
+  // returns UnkeyedEventEnvelope[] and the central resolver in tick-runner is
+  // still the only thing that stamps workItemKey. Required, never defaulted —
+  // a forgotten index must fail loudly, not silently degrade to a scan.
+  resourceIndex: ResourceIndex;
   now: () => Date;
 }) {
+  /** O(1): one shard read, then a direct projection read by work id. */
+  async function readProjectionForIssue(
+    repo: string,
+    issueNumber: number,
+  ): Promise<IssueStateRecord | null> {
+    const uri = buildResourceUri(githubSource, 'issue', `${repo}#${issueNumber}`);
+    const workItemKey = await deps.resourceIndex.resolve(uri);
+    if (workItemKey === undefined) {
+      return null;
+    }
+    return deps.stateStore.readIssueState(workItemKey);
+  }
+
   return {
     async pollEvents(): Promise<UnkeyedEventEnvelope[]> {
       const ingestedAt = deps.now().toISOString();
@@ -369,14 +388,11 @@ export function createGitHubIssuesWorkSource(deps: {
               );
 
           for (const issue of issues) {
-            // Looked up by the ticket it represents, not by work id: the
-            // source has no work id and is not owed one (spec D1). This read
-            // is only poll dedup + echo suppression, never identity.
-            const local = await deps.stateStore.findIssueStateByIssueRef({
-              repo: repoRef,
-              issueNumber: issue.number,
-              source: githubSource,
-            });
+            // Poll dedup + echo suppression only, never identity: the uri is
+            // constructed (never parsed) and resolved through the index, which
+            // keeps a poll flat in the number of work items rather than
+            // O(issues x projections) (spec D2).
+            const local = await readProjectionForIssue(repoRef, issue.number);
 
             if (local?.issue.updatedAt !== issue.updated_at) {
               events.push(normalizeTicketUpsert({
@@ -453,11 +469,9 @@ export function createGitHubIssuesWorkSource(deps: {
 
       const publishedAt = deps.now().toISOString();
       if (input.event.sourceEventType === 'wake.labels.requested') {
-        const projection = await deps.stateStore.findIssueStateByIssueRef({
-          repo,
-          issueNumber,
-          source: githubSource,
-        });
+        // Outbound intents are keyed envelopes Wake itself minted, so the work
+        // item is already named on the event — a direct read, not a lookup.
+        const projection = await deps.stateStore.readIssueState(input.event.workItemKey);
         const currentLabels = projection?.issue.labels ?? [];
         const nextStatusLabel =
           typeof input.event.payload.statusLabel === 'string'

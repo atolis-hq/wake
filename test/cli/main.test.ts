@@ -177,6 +177,7 @@ describe('main command routing', () => {
       formatTickFailureDetails({
         schemaVersion: 1,
         runId: 'run-29',
+        workItemKey: 'work-01JZ0000000000000000000029',
         repo: 'atolis-hq/wake',
         issueNumber: 29,
         action: 'refine',
@@ -212,6 +213,7 @@ describe('main command routing', () => {
       formatTickFailureDetails({
         schemaVersion: 1,
         runId: 'run-29',
+        workItemKey: 'work-01JZ0000000000000000000029',
         repo: 'atolis-hq/wake',
         issueNumber: 29,
         action: 'refine',

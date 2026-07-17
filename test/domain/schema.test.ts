@@ -166,6 +166,7 @@ describe('run and event schemas', () => {
     const run = parseRunRecord({
       schemaVersion: 1,
       runId: 'run-1',
+      workItemKey: 'work-01JZ0000000000000000000012',
       repo: 'atolis-hq/wake',
       issueNumber: 12,
       action: 'refine',
@@ -174,6 +175,25 @@ describe('run and event schemas', () => {
     });
 
     expect(run.status).toBe('running');
+    expect(run.workItemKey).toBe('work-01JZ0000000000000000000012');
+  });
+
+  // Run records are Wake-owned state that Wake itself writes, so the work id is
+  // always in hand at the write site. Required rather than optional: an optional
+  // key would let a record exist that can only be resolved by scanning issue
+  // snapshots — the ticket-shaped ambiguity minted identity exists to remove.
+  it('rejects run records with no workItemKey', () => {
+    expect(() =>
+      parseRunRecord({
+        schemaVersion: 1,
+        runId: 'run-1',
+        repo: 'atolis-hq/wake',
+        issueNumber: 12,
+        action: 'refine',
+        status: 'running',
+        startedAt: '2026-07-05T12:00:00.000Z',
+      }),
+    ).toThrow(/workItemKey/);
   });
 
   it('accepts canonical event envelopes with work item correlation', () => {

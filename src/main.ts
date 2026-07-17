@@ -211,11 +211,14 @@ async function buildRuntime(args: string[]) {
   });
   await stateStore.writeConfig(config);
 
+  const resourceIndex = createResourceIndex({ paths: stateStore.paths });
+
   const ticketingSystem = config.sources.github.enabled
     ? createGitHubIssuesWorkSource({
         client: createGitHubClient(await resolveGitHubToken()),
         stateStore,
         config,
+        resourceIndex,
         now: () => systemClock.now(),
       })
     : await createFileBackedFakeTicketingSystem({
@@ -261,7 +264,6 @@ async function buildRuntime(args: string[]) {
       : routesOnlyToFake(config))
       ? createFakeWorkspaceManager(stateStore.paths.workspaceRoot)
       : createGitWorkspaceManager({ wakeRoot });
-  const resourceIndex = createResourceIndex({ paths: stateStore.paths });
   const tickRunner = createTickRunner({
     clock: systemClock,
     config,
@@ -362,6 +364,7 @@ async function runUi(args: string[]) {
   const server = await runUiCommand({
     args,
     stateStore,
+    resourceIndex: createResourceIndex({ paths: stateStore.paths }),
     config,
     readFlag: readFlagBeforeCommandTerminator,
   });

@@ -3,6 +3,7 @@ import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { createFakeResourceIndex } from '../../src/adapters/fake/fake-resource-index.js';
 import { createStateStore } from '../../src/adapters/fs/state-store.js';
 import { createGitHubIssuesWorkSource } from '../../src/adapters/github/github-issues-work-source.js';
 import { createDefaultWakeConfig } from '../../src/config/defaults.js';
@@ -16,6 +17,23 @@ import { createEventEnvelope } from '../../src/lib/event-log.js';
  */
 function workId(issueNumber: number): string {
   return `work-01JZ${String(issueNumber).padStart(22, '0')}`;
+}
+
+/**
+ * A resource index already holding the origin-ticket registration an earlier
+ * tick's mint would have written. Fixtures that seed a projection and then poll
+ * the same ticket need this: the source resolves its poll-dedup/echo state
+ * through the index, so without the entry the ticket correctly reads as unseen.
+ */
+async function seededResourceIndex(issueNumbers: number[]) {
+  const resourceIndex = createFakeResourceIndex();
+  for (const issueNumber of issueNumbers) {
+    await resourceIndex.register(
+      `github:issue:atolis-hq/wake#${issueNumber}`,
+      workId(issueNumber),
+    );
+  }
+  return resourceIndex;
 }
 
 describe('github issues work source', () => {
@@ -61,6 +79,7 @@ describe('github issues work source', () => {
       },
       stateStore: store,
       config,
+      resourceIndex: createFakeResourceIndex(),
       now: () => new Date('2026-07-05T12:10:00.000Z'),
     });
 
@@ -111,6 +130,7 @@ describe('github issues work source', () => {
       },
       stateStore: store,
       config,
+      resourceIndex: createFakeResourceIndex(),
       now: () => new Date('2026-07-05T12:10:00.000Z'),
     });
 
@@ -159,6 +179,7 @@ describe('github issues work source', () => {
       },
       stateStore: store,
       config,
+      resourceIndex: createFakeResourceIndex(),
       now: () => new Date('2026-07-05T12:10:00.000Z'),
     });
 
@@ -213,6 +234,7 @@ describe('github issues work source', () => {
       },
       stateStore: store,
       config,
+      resourceIndex: createFakeResourceIndex(),
       now: () => new Date('2026-07-05T12:10:00.000Z'),
     });
 
@@ -249,6 +271,7 @@ describe('github issues work source', () => {
       },
       stateStore: store,
       config,
+      resourceIndex: createFakeResourceIndex(),
       now: () => new Date('2026-07-05T12:10:00.000Z'),
     });
 
@@ -282,6 +305,7 @@ describe('github issues work source', () => {
       },
       stateStore: store,
       config,
+      resourceIndex: createFakeResourceIndex(),
       now: () => new Date('2026-07-05T12:10:00.000Z'),
     });
 
@@ -331,6 +355,7 @@ describe('github issues work source', () => {
       },
       stateStore: store,
       config,
+      resourceIndex: await seededResourceIndex([12]),
       now: () => new Date('2026-07-05T12:10:00.000Z'),
     });
 
@@ -387,6 +412,119 @@ describe('github issues work source', () => {
 
     const secondPoll = await workSource.pollEvents();
     expect(secondPoll).toEqual([]);
+  });
+
+  // The poll path runs once per polled issue. Resolving each one by scanning
+  // every projection on disk makes a poll O(issues x projections) file reads,
+  // which is exactly the unbounded growth the 256-shard index exists to avoid
+  // ("don't assume the list of issues will remain small"). The source resolves
+  // its own constructed uri through the index instead: one shard read.
+  it('resolves poll-dedup state through the resource index, never by scanning every projection', async () => {
+    const config = createDefaultWakeConfig(root);
+    config.sources.github.enabled = true;
+    config.sources.github.repos = ['atolis-hq/wake'];
+
+    const store = createStateStore({ wakeRoot: root });
+    let listIssueStatesCalls = 0;
+    const countingStore = {
+      ...store,
+      async listIssueStates(...args: Parameters<typeof store.listIssueStates>) {
+        listIssueStatesCalls += 1;
+        return store.listIssueStates(...args);
+      },
+    };
+
+    await store.writeIssueState({
+      schemaVersion: 1,
+      workItemKey: workId(12),
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 12,
+        title: 'Example',
+        body: 'Body',
+        labels: ['wake:queue'],
+        assignees: [],
+        isPullRequest: false,
+        state: 'open',
+        url: 'https://github.com/atolis-hq/wake/issues/12',
+        createdAt: '2026-07-05T12:00:00.000Z',
+        updatedAt: '2026-07-05T12:00:00.000Z',
+      },
+      comments: [],
+      wake: {
+        stage: 'queue',
+        stageHistory: [],
+        recentEventIds: [],
+        syncedAt: '2026-07-05T12:10:00.000Z',
+        expectedEcho: { commentIds: [], labels: [] },
+      },
+      context: {},
+      correlatedResources: [],
+    });
+
+    // Unrelated work items: under a scan these are read on every poll; under
+    // the index they are never touched.
+    for (const other of [500, 501, 502]) {
+      await store.writeIssueState({
+        schemaVersion: 1,
+        workItemKey: workId(other),
+        issue: {
+          repo: 'atolis-hq/other',
+          number: other,
+          title: 'Other',
+          body: '',
+          labels: [],
+          assignees: [],
+          isPullRequest: false,
+          state: 'open',
+          url: `https://example.test/issues/${other}`,
+          createdAt: '2026-07-05T12:00:00.000Z',
+          updatedAt: '2026-07-05T12:00:00.000Z',
+        },
+        comments: [],
+        wake: {
+          stage: 'queue',
+          stageHistory: [],
+          recentEventIds: [],
+          syncedAt: '2026-07-05T12:10:00.000Z',
+          expectedEcho: { commentIds: [], labels: [] },
+        },
+        context: {},
+        correlatedResources: [],
+      });
+    }
+
+    const resourceIndex = createFakeResourceIndex();
+    await resourceIndex.register('github:issue:atolis-hq/wake#12', workId(12));
+
+    const workSource = createGitHubIssuesWorkSource({
+      client: {
+        listIssues: async () => [
+          {
+            number: 12,
+            title: 'Example',
+            body: 'Body',
+            state: 'open',
+            html_url: 'https://github.com/atolis-hq/wake/issues/12',
+            created_at: '2026-07-05T12:00:00.000Z',
+            updated_at: '2026-07-05T12:00:00.000Z',
+            labels: [{ name: 'wake:queue' }],
+            assignees: [],
+          },
+        ],
+        listComments: async () => [],
+        createComment: vi.fn(),
+        setLabels: vi.fn(),
+      },
+      stateStore: countingStore,
+      config,
+      resourceIndex,
+      now: () => new Date('2026-07-05T12:10:00.000Z'),
+    });
+
+    // Dedup still works: the issue is unchanged, so nothing is re-emitted.
+    expect(await workSource.pollEvents()).toEqual([]);
+    expect(listIssueStatesCalls).toBe(0);
   });
 
   it('drops inbound comments whose provider ids match expected echoes', async () => {
@@ -456,6 +594,7 @@ describe('github issues work source', () => {
       },
       stateStore: store,
       config,
+      resourceIndex: await seededResourceIndex([12]),
       now: () => new Date('2026-07-05T12:10:00.000Z'),
     });
 
@@ -525,6 +664,7 @@ describe('github issues work source', () => {
       },
       stateStore: store,
       config,
+      resourceIndex: await seededResourceIndex([13]),
       now: () => new Date('2026-07-05T12:10:00.000Z'),
     });
 
@@ -551,6 +691,7 @@ describe('github issues work source', () => {
       },
       stateStore: store,
       config,
+      resourceIndex: createFakeResourceIndex(),
       now: () => new Date('2026-07-05T12:10:00.000Z'),
     });
 
@@ -598,6 +739,7 @@ describe('github issues work source', () => {
       },
       stateStore: store,
       config,
+      resourceIndex: createFakeResourceIndex(),
       now: () => new Date('2026-07-05T12:10:00.000Z'),
     });
 
@@ -636,6 +778,7 @@ describe('github issues work source', () => {
       },
       stateStore: store,
       config,
+      resourceIndex: createFakeResourceIndex(),
       now: () => new Date('2026-07-05T12:10:00.000Z'),
     });
 
@@ -696,6 +839,7 @@ describe('github issues work source', () => {
       },
       stateStore: store,
       config,
+      resourceIndex: createFakeResourceIndex(),
       now: () => new Date('2026-07-05T12:10:00.000Z'),
     });
 
@@ -735,6 +879,7 @@ describe('github issues work source', () => {
       },
       stateStore: store,
       config,
+      resourceIndex: createFakeResourceIndex(),
       now: () => new Date('2026-07-05T12:10:00.000Z'),
     });
 
@@ -785,6 +930,7 @@ describe('github issues work source', () => {
       },
       stateStore: store,
       config,
+      resourceIndex: createFakeResourceIndex(),
       now: () => new Date('2026-07-05T12:10:00.000Z'),
     });
 
@@ -835,6 +981,7 @@ describe('github issues work source', () => {
       },
       stateStore: store,
       config,
+      resourceIndex: createFakeResourceIndex(),
       now: () => new Date('2026-07-05T12:10:00.000Z'),
     });
 
@@ -881,6 +1028,7 @@ describe('github issues work source', () => {
       },
       stateStore: store,
       config,
+      resourceIndex: createFakeResourceIndex(),
       now: () => new Date('2026-07-05T12:10:00.000Z'),
     });
 
@@ -957,6 +1105,7 @@ describe('github issues work source', () => {
       },
       stateStore: store,
       config,
+      resourceIndex: createFakeResourceIndex(),
       now: () => new Date('2026-07-05T12:10:00.000Z'),
     });
 
@@ -1032,6 +1181,7 @@ describe('github issues work source', () => {
       },
       stateStore: store,
       config,
+      resourceIndex: createFakeResourceIndex(),
       now: () => new Date('2026-07-05T12:10:00.000Z'),
     });
 
@@ -1106,6 +1256,7 @@ describe('github issues work source', () => {
       },
       stateStore: store,
       config,
+      resourceIndex: createFakeResourceIndex(),
       now: () => new Date('2026-07-05T12:10:00.000Z'),
     });
 
@@ -1146,6 +1297,7 @@ describe('github issues work source', () => {
       },
       stateStore: store,
       config,
+      resourceIndex: createFakeResourceIndex(),
       now: () => new Date('2026-07-05T12:10:00.000Z'),
     });
 
@@ -1196,6 +1348,7 @@ describe('github issues work source', () => {
       },
       stateStore: store,
       config,
+      resourceIndex: createFakeResourceIndex(),
       now: () => new Date('2026-07-05T12:10:00.000Z'),
     });
 

@@ -259,6 +259,15 @@ const runTokenUsageSchema = z.object({
 export const runRecordSchema = z.object({
   schemaVersion: z.literal(1),
   runId: z.string(),
+  // The work item this run belongs to. Required: run records are Wake-owned
+  // state that Wake itself writes, so the work id is always in hand at the
+  // write site, and an optional key would lie about runtime while re-admitting
+  // the ticket-shaped ambiguity minted identity exists to remove.
+  workItemKey: z.string(),
+  // Human-readable representation content only — the ticket this run was
+  // launched against (same reasoning as the projection's retained `issue`
+  // snapshot, spec §9). Never used to find the work item: a transferred issue
+  // gets a new repo/number while the work item and its runs persist (spec D3).
   repo: z.string(),
   issueNumber: z.number().int().positive(),
   action: agentActionSchema,
