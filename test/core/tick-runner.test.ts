@@ -2348,6 +2348,81 @@ describe('tick runner', () => {
     expect(before?.correlatedResources[0]?.registeredAt).toBe('2026-07-05T12:00:01.000Z');
   });
 
+  it('a tick that both discovers and dispatches an item survives rm -rf state/ + replay under an advancing clock (ADR 0001 rebuild guarantee)', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const resourceIndex = createResourceIndex({ paths: store.paths });
+    const config = createDefaultWakeConfig(root);
+    config.sources.github.policy.requiredLabels = ['wake:queue'];
+
+    // A *sequenced* clock, not a frozen one. Every other fixture in this file
+    // pins the tick clock and the source clock to the same instant, which makes
+    // every event in the tick tie on ingestedAt — and a tie is invisible here,
+    // because the sort in rebuildFromEvents is stable and therefore silently
+    // preserves append order, making replay accidentally correct. Only a clock
+    // that advances across calls reproduces the production relationship: the
+    // tick's own reads straddle pollEvents(), which stamps at 12:00:01.
+    //   1st read  (tick start / decision clock) -> 12:00:00
+    //   poll                                     -> 12:00:01 (source's clock)
+    //   every later read (event stamping)        -> 12:00:02, 12:00:03, ...
+    const clockBaseMs = Date.parse('2026-07-05T12:00:00.000Z');
+    let clockReads = 0;
+    const sequencedClock = {
+      now: () => {
+        const offsetMs = clockReads === 0 ? 0 : (clockReads + 1) * 1000;
+        clockReads += 1;
+        return new Date(clockBaseMs + offsetMs);
+      },
+    };
+
+    const tickRunner = createTickRunner({
+      clock: sequencedClock,
+      config,
+      stateStore: store,
+      resourceIndex,
+      workSource: createFakeTicketingSystem({
+        tickets: [
+          {
+            repo: 'atolis-hq/wake',
+            number: 63,
+            title: 'Discover and dispatch in one tick',
+            body: 'Body',
+            labels: ['wake:queue'],
+            comments: [],
+          },
+        ],
+        now: () => new Date('2026-07-05T12:00:01.000Z'),
+      }),
+      runner: {
+        async run() {
+          return { result: 'DONE', model: 'test-model', cli: 'test-cli' };
+        },
+      },
+      workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+    });
+
+    await tickRunner.runTick();
+
+    const before = await store.readIssueState('atolis-hq/wake', 63);
+    expect(before?.wake.stageHistory.map((entry) => entry.reason)).toContain('run:refine:claimed');
+
+    // state/ is a rebuildable cache over events/ — nothing more.
+    await rm(join(root, 'state'), { recursive: true, force: true });
+    await createProjectionUpdater({ stateStore: store, resourceIndex })
+      .rebuildFromEvents(await store.listEventEnvelopes());
+    const after = await store.readIssueState('atolis-hq/wake', 63);
+
+    // Every event this tick stamps must be dated when it actually happened, so
+    // none of them can sort ahead of the poll-time upsert that creates the
+    // projection they fold into. An event stamped from a frozen tick-start
+    // snapshot folds against `current === null` on replay and is silently
+    // discarded, costing the replayed projection its claimed stageHistory
+    // entry and recentEventIds — a divergence from the live fold.
+    expect(after?.wake.stageHistory).toEqual(before?.wake.stageHistory);
+    expect(after?.wake.lastRunId).toBe(before?.wake.lastRunId);
+    expect(after?.context).toEqual(before?.context);
+    expect(after).toEqual(before);
+  });
+
   it('fix E: does not resurrect a deliberate retraction — a work item that retracted all its resources is not re-auto-registered', async () => {
     const store = createStateStore({ wakeRoot: root });
     const config = createDefaultWakeConfig(root);

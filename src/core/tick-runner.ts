@@ -243,9 +243,23 @@ export function createTickRunner(deps: {
     });
   }
 
+  // Events are stamped by reading the clock at the moment of stamping, never
+  // from a frozen tick-start snapshot. `tickStartedAt` is the tick's *decision*
+  // clock (policy/staleness), and reusing it to date events inverts them
+  // against the work source's own poll-time ingestedAt — pollEvents() runs
+  // after tickStartedAt is captured, so in production every polled upsert is
+  // LATER than the tick's start. An event dated before the upsert that creates
+  // the projection it folds into sorts ahead of it in rebuildFromEvents' global
+  // replay, folds against `current === null`, and is silently dropped. Reading
+  // per event also stays correct once ticks work items in parallel, where a
+  // shared per-tick snapshot would tie every concurrent event on ingestedAt and
+  // leave append order as the only discriminator.
+  function eventStampNow(): string {
+    return deps.clock.now().toISOString();
+  }
+
   async function markPendingActionableIssues(
     projections: IssueStateRecord[],
-    occurredAt: string,
   ): Promise<void> {
     for (const projection of projections) {
       const statusLabel = statusLabelForStage(projection.wake.stage);
@@ -264,7 +278,7 @@ export function createTickRunner(deps: {
           runId: `pending-${projection.issue.number}-${deps.clock.now().getTime()}`,
           statusLabel,
           stageLabel,
-          occurredAt,
+          occurredAt: eventStampNow(),
         }),
       );
     }
@@ -299,7 +313,6 @@ export function createTickRunner(deps: {
   // gate, not a perfectly tight one.
   async function autoRegisterOriginatingTickets(
     projections: IssueStateRecord[],
-    nowIso: string,
   ): Promise<void> {
     const allEvents = await deps.stateStore.listEventEnvelopes();
     const workItemsWithRegistration = new Set(
@@ -315,11 +328,14 @@ export function createTickRunner(deps: {
     // string, so the two can never disagree.
     // The upsert's own ingestedAt is captured alongside it, because the
     // registration event must never sort *before* the upsert that creates the
-    // projection it folds into. `nowIso` is the tick's start time, captured
-    // before pollEvents() runs, while the work source stamps the upsert at
-    // poll time — so in production the upsert is always LATER than nowIso.
-    // Stamping the registration nowIso would append it after the upsert but
-    // date it before, and rebuildFromEvents' globally-ordered replay would
+    // projection it folds into. Reading the clock at stamping time (below) is
+    // already after pollEvents(), but that alone is not a guarantee: the
+    // upsert's ingestedAt comes from the *source's* clock, which is a different
+    // machine's clock for a real source and can legitimately run ahead of ours.
+    // Anchoring on the upsert's own timestamp makes the ordering hold by
+    // construction rather than by clock agreement. Dating the registration
+    // before the upsert would append it after but date it before, and
+    // rebuildFromEvents' globally-ordered replay would
     // then fold it against a null projection and silently drop it, leaving
     // correlatedResources[] empty and the index unpopulated after a
     // `rm -rf state/` + replay — while the registration event still on record
@@ -355,7 +371,7 @@ export function createTickRunner(deps: {
       }
 
       const { resourceUri } = origin;
-      const registeredAt = laterTimestamp(origin.ingestedAt, nowIso);
+      const registeredAt = laterTimestamp(origin.ingestedAt, eventStampNow());
 
       const registeredEvent = createEventEnvelope({
         eventId: `${projection.workItemKey}-origin-correlation`,
@@ -397,7 +413,6 @@ export function createTickRunner(deps: {
 
   async function cleanupClosedIssueWorkspaces(
     projections: import('../domain/types.js').IssueStateRecord[],
-    nowIso: string,
   ): Promise<void> {
     for (const projection of projections) {
       const { workspacePath } = projection.wake;
@@ -418,6 +433,7 @@ export function createTickRunner(deps: {
             });
           }
         } catch (error) {
+          const failedAt = eventStampNow();
           await deps.stateStore.appendEventEnvelope(createEventEnvelope({
             eventId: `workspace-cleanup-failed-${projection.issue.repo.replace(/[^a-z0-9]+/gi, '-')}-${projection.issue.number}`,
             workItemKey: projection.workItemKey,
@@ -429,8 +445,8 @@ export function createTickRunner(deps: {
               repo: projection.issue.repo,
               issueNumber: projection.issue.number,
             },
-            occurredAt: nowIso,
-            ingestedAt: nowIso,
+            occurredAt: failedAt,
+            ingestedAt: failedAt,
             trigger: 'context-only',
             payload: {
               workspacePath,
@@ -439,6 +455,7 @@ export function createTickRunner(deps: {
           }));
           continue;
         }
+        const cleanedAt = eventStampNow();
         const cleanupEvent = createEventEnvelope({
           eventId: `workspace-cleaned-${projection.issue.repo.replace(/[^a-z0-9]+/gi, '-')}-${projection.issue.number}-${deps.clock.now().getTime()}`,
           workItemKey: projection.workItemKey,
@@ -450,8 +467,8 @@ export function createTickRunner(deps: {
             repo: projection.issue.repo,
             issueNumber: projection.issue.number,
           },
-          occurredAt: nowIso,
-          ingestedAt: nowIso,
+          occurredAt: cleanedAt,
+          ingestedAt: cleanedAt,
           trigger: 'immediate',
           payload: { workspacePath },
         });
@@ -691,6 +708,11 @@ export function createTickRunner(deps: {
       }
 
       try {
+        // The tick's *decision* clock: one consistent "now" for staleness and
+        // policy, so a single tick's decisions can't disagree with themselves.
+        // It is deliberately NOT an event-stamping clock — see eventStampNow().
+        // Its only remaining uses are the run records' startedAt (run records
+        // are not events and take no part in the rebuild fold).
         const tickStartedAt = deps.clock.now();
         const nowIso = tickStartedAt.toISOString();
         await reconcileStaleRunningRecords(tickStartedAt);
@@ -704,10 +726,10 @@ export function createTickRunner(deps: {
         }
 
         const projections = await deps.stateStore.listIssueStates();
-        await autoRegisterOriginatingTickets(projections, nowIso);
-        await cleanupClosedIssueWorkspaces(projections, nowIso);
+        await autoRegisterOriginatingTickets(projections);
+        await cleanupClosedIssueWorkspaces(projections);
         if (inboundEvents.length > 0) {
-          await markPendingActionableIssues(projections, nowIso);
+          await markPendingActionableIssues(projections);
         }
 
         const candidate = projections.find((issue) => {
@@ -827,6 +849,7 @@ export function createTickRunner(deps: {
 
         await deps.stateStore.writeRunRecord(runningRecord);
         const claimedStage = action as import('../domain/types.js').Stage;
+        const claimedAt = eventStampNow();
         const claimedEvent = createEventEnvelope({
           eventId: `${runId}-claimed`,
           workItemKey: candidate.workItemKey,
@@ -839,8 +862,8 @@ export function createTickRunner(deps: {
             issueNumber: candidate.issue.number,
             runId,
           },
-          occurredAt: nowIso,
-          ingestedAt: nowIso,
+          occurredAt: claimedAt,
+          ingestedAt: claimedAt,
           trigger: 'immediate',
           payload: {
             action,
@@ -857,7 +880,7 @@ export function createTickRunner(deps: {
             runId,
             statusLabel: 'wake:status.working',
             stageLabel: stageLabelForStage(claimedStage),
-            occurredAt: nowIso,
+            occurredAt: eventStampNow(),
           }),
         );
 
