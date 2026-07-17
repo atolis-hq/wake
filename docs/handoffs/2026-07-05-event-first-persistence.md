@@ -1,5 +1,13 @@
 # Event-First Persistence Handoff
 
+> **Note (2026-07-17):** this is a dated handoff, kept as written. The layout it
+> describes is stale in one respect: projections now live at
+> `state/<workId>.json`, keyed on a minted `work-<ulid>` identity rather than
+> `state/<repo>/<issue>.json`. The event-first model it argues for is unchanged
+> and was adopted. See
+> [ADR 0001](../adrs/0001-correlating-external-resources-to-work-items.md) and the
+> [work identity and correlation design](../superpowers/specs/2026-07-16-work-identity-correlation-design.md).
+
 ## Purpose
 
 Wake's current skeleton persists:

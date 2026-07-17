@@ -223,8 +223,13 @@ Run one tick manually. The wrapper forwards this into the container:
 Resume a recorded runner session inside the container workspace:
 
 ```bash
-./wake.sh sandbox resume <session-id> --cwd "/wake/workspaces/<repo>/<issue>"
+./wake.sh sandbox resume <session-id> --cwd "/wake/workspaces/<workId>"
 ```
+
+`<workId>` is the work item's minted `work-<ulid>` identity — the same key used by
+`state/<workId>.json`. Find it in the control-plane UI, or by grepping `state/`
+for the issue number (the projection retains an `issue` snapshot for exactly this
+kind of human lookup).
 
 Tick locks include owner metadata and are self-healing. If a process dies while
 holding the tick lock, the next tick reclaims the lock when the owner PID is no

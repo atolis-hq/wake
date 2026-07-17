@@ -317,12 +317,13 @@ durably. The files on disk **are** the audit trail. Two principles govern this:
   config.json           # timing, quiet hours, models, repo allowlist, caps
   ledger.json           # per-run cost/duration, pause state
   events/<date>.jsonl   # canonical imported + internal event envelopes
-  state/<repo>/<issue>.json  # derived projection: stage, attempts, session refs, history
+  state/<workId>.json   # derived projection: stage, attempts, session refs, history
+  state/index/<xx>.json # reverse index: resourceUri -> workId, sharded by hash
   runs/<run-id>.json    # one record per invocation: model, prompt ref, sentinel,
                         #   session_id, cost, duration, timestamps, gate decisions
   logs/<date>.log       # what the control plane did each tick and why
   PAUSE                 # presence = stop starting new runs
-  workspaces/<repo>/<issue>/  # EPHEMERAL working copy for a run — code only, deleted after
+  workspaces/<workId>/  # EPHEMERAL working copy for a run — code only, deleted after
 ```
 
 Each imported or Wake-produced event should be written as a durable envelope

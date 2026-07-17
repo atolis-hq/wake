@@ -273,7 +273,9 @@ Re-authenticate inside the sandbox when the session expires by running
 Raw runner prompt and response capture for debugging.
 
 When enabled, Wake writes text files under
-`<wakeRoot>/transcripts/<repo>/<issue>/<session-or-run>/`. Each runner run
+`<wakeRoot>/transcripts/<workId>/<session-or-run>/`, where `<workId>` is the
+work item's minted `work-<ulid>` identity (the same key used by
+`state/<workId>.json`). Each runner run
 writes a separate `*.prompt.txt` file with the exact prompt text passed to the
 CLI prompt argument and a matching `*.response.txt` file with raw stdout from
 the CLI. Initial runs are grouped by Wake `runId`; resumed runs are grouped by
