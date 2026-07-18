@@ -92,6 +92,15 @@ export function createPolicyEngine() {
         return false;
       }
 
+      // Defense-in-depth: the issues source filters PR-shaped items at poll
+      // time, so no NEW projection can ever have isPullRequest: true. But a
+      // pre-existing state/<workId>.json written by a pre-this-branch
+      // version of Wake could still hold isPullRequest: true, since the old
+      // fold created projections regardless of eligibility.
+      if (issue.issue.isPullRequest) {
+        return false;
+      }
+
       return labelsAndAssigneesQualify({
         labels: issue.issue.labels,
         assignees: issue.issue.assignees,
