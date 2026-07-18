@@ -110,6 +110,6 @@ export interface WorkspaceManager {
 export interface ArtifactVerifier {
   verify(
     artifact: import('../domain/types.js').ReportedArtifact,
-    context: { branch: string },
+    context: { branch: string; repo: string },
   ): Promise<{ resourceUri: string } | null>;
 }

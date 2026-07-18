@@ -336,7 +336,10 @@ export function createTickRunner(deps: {
 
     const { artifacts } = parseRunnerArtifacts(input.runnerResult.result);
     for (const artifact of artifacts) {
-      const verified = await deps.artifactVerifier.verify(artifact, { branch: input.branch });
+      const verified = await deps.artifactVerifier.verify(artifact, {
+        branch: input.branch,
+        repo: input.projection.issue.repo,
+      });
       if (verified === null) {
         continue;
       }

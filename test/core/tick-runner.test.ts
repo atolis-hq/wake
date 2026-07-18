@@ -3919,6 +3919,92 @@ describe('tick runner', () => {
         projection?.correlatedResources.some((r) => r.resourceUri === 'github:pr:org/repo#91'),
       ).toBe(false);
     });
+
+    it('threads the work item\'s own repo into the artifact verifier context', async () => {
+      // Fix 3 regression: the artifact verifier must be able to confirm a
+      // reported PR's repo matches the work item's own repo, not just its
+      // branch — a low-entropy branch name like wake/issue-<n> could
+      // otherwise match a PR in an unrelated repo. This proves tick-runner
+      // actually threads the work item's repo (candidate.issue.repo) through
+      // to the verifier's context, using a verifier that records what it was
+      // called with rather than the shared fake (which ignores context).
+      const store = createStateStore({ wakeRoot: root });
+
+      await store.writeIssueState({
+        schemaVersion: 1,
+        workItemKey: workId(43),
+        issue: {
+          repo: 'atolis-hq/wake',
+          number: 43,
+          title: 'Implement',
+          body: 'Body',
+          labels: ['wake:implement'],
+          assignees: [],
+          isPullRequest: false,
+          state: 'open',
+          url: 'https://example.test/issues/43',
+          createdAt: '2026-07-05T12:00:00.000Z',
+          updatedAt: '2026-07-05T12:00:00.000Z',
+        },
+        comments: [],
+        wake: {
+          stage: 'implement',
+          stageHistory: [],
+          recentEventIds: [],
+          syncedAt: '2026-07-05T12:00:00.000Z',
+          expectedEcho: { commentIds: [], labels: [] },
+        },
+        context: {},
+        correlatedResources: [],
+      });
+
+      const config = createDefaultWakeConfig(root);
+      config.sources.github.policy.requiredLabels = ['wake:implement'];
+
+      const capturedContexts: Array<{ branch: string; repo: string }> = [];
+      const artifactVerifier = {
+        async verify(_artifact: unknown, context: { branch: string; repo: string }) {
+          capturedContexts.push(context);
+          return null;
+        },
+      };
+
+      const tickRunner = createTickRunner({
+        clock: { now: () => new Date('2026-07-05T12:00:00.000Z') },
+        config,
+        stateStore: store,
+        workSource: { async pollEvents() { return []; } },
+        runner: {
+          async run() {
+            return {
+              result: [
+                'Opened the PR.',
+                '',
+                '```wake-artifacts',
+                '{ "artifacts": [{ "kind": "pr", "url": "https://example.test/org/repo/pull/91" }] }',
+                '```',
+                '',
+                '```wake-result',
+                '{ "status": "AWAITING_APPROVAL" }',
+                '```',
+                'AWAITING_APPROVAL',
+              ].join('\n'),
+              model: 'fake',
+              cli: 'Fake',
+              session_id: 'fake-session-1',
+            };
+          },
+        },
+        resourceIndex: createFakeResourceIndex(),
+        workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+        artifactVerifier,
+      });
+
+      await tickRunner.runTick();
+
+      expect(capturedContexts).toHaveLength(1);
+      expect(capturedContexts[0]?.repo).toBe('atolis-hq/wake');
+    });
   });
 
   describe('mint qualification gate', () => {

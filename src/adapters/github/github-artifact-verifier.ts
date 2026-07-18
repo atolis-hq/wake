@@ -21,6 +21,10 @@ export function createGitHubArtifactVerifier(deps: {
         return null;
       }
 
+      if (`${owner}/${repo}` !== context.repo) {
+        return null;
+      }
+
       try {
         const pr = await deps.client.getPullRequest(owner, repo, Number(numberStr));
         if (pr.head.ref !== context.branch) {
