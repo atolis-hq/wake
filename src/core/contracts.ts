@@ -81,6 +81,7 @@ export interface AgentRunner {
     recentEvents: EventEnvelope[];
     config: WakeConfig;
     runId: string;
+    workspaceMode?: 'none' | 'read-only' | 'branch';
     workspacePath?: string;
     routing?: RunnerRouting;
     mergeConflictDetected?: boolean;

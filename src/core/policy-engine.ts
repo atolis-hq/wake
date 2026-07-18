@@ -192,15 +192,19 @@ export function createPolicyEngine() {
       }
 
       const context = issue.context as Record<string, unknown>;
-      const pendingAction: AgentAction =
+      const pendingAction: AgentAction | undefined =
         typeof context.pendingApprovalAction === 'string'
           ? context.pendingApprovalAction
-          : 'implement';
+          : undefined;
 
       // No new human comment since the last handled one; stay idle instead of
       // falling through to the LLM while awaiting explicit approval feedback.
       const latestHumanComment = latestUnhandledHumanComment(issue);
       if (latestHumanComment === undefined) {
+        return null;
+      }
+
+      if (pendingAction === undefined) {
         return null;
       }
 

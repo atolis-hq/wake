@@ -5,12 +5,12 @@
  *   (--output-format json), and session resume (--resume=<id>), so Wake maps
  *   those directly.
  * - Cursor's `--mode ask` enforces read-only access at the CLI boundary for
- *   refine-stage runs; implement-stage runs omit `--mode` (Cursor default is
- *   full agent/edit mode) and pass `--force` to auto-approve writes.
+ *   read-only runs; other runs omit `--mode` (Cursor default is full
+ *   agent/edit mode) and pass `--force` to auto-approve writes.
  * - Cursor does NOT expose a Claude-equivalent `--max-turns` cap, so Wake
  *   cannot enforce `maxTurns` at the CLI boundary for this runner today.
  * - Cursor does NOT expose a Claude-equivalent per-tool allowlist such as
- *   `--allowedTools`. Refine-stage confinement relies on `--mode ask` plus
+ *   `--allowedTools`. Read-only confinement relies on `--mode ask` plus
  *   prompt guidance rather than per-tool granularity.
  * - Cursor session naming is not supported via a CLI flag.
  * - Cursor remote-control is not available from the CLI; the path is desktop
@@ -201,14 +201,14 @@ export function classifyCursorCliFailure(input: {
   return 'infra';
 }
 
-// Cursor uses --mode ask for read-only refine stages, which already enforces
+// Cursor uses --mode ask for read-only stages, which already enforces
 // the constraint at the CLI boundary. The capability note explains to the agent
 // what tools are available in ask mode versus the default agent mode.
 export function buildCursorToolCapabilityNote(input: {
-  action: AgentAction;
+  workspaceMode?: 'none' | 'read-only' | 'branch';
   mode: 'start' | 'resume';
 }): string | undefined {
-  if (input.action !== 'refine') {
+  if (input.workspaceMode !== 'read-only') {
     return undefined;
   }
   const note =
@@ -217,8 +217,8 @@ export function buildCursorToolCapabilityNote(input: {
   return input.mode === 'resume' ? `Reminder: this is still a planning-only stage. ${note}` : note;
 }
 
-function resolveCursorMode(input: { action: AgentAction }): 'ask' | undefined {
-  return input.action === 'refine' ? 'ask' : undefined;
+function resolveCursorMode(input: { workspaceMode?: 'none' | 'read-only' | 'branch' }): 'ask' | undefined {
+  return input.workspaceMode === 'read-only' ? 'ask' : undefined;
 }
 
 function resolveModel(input: {
@@ -265,6 +265,7 @@ export function createCursorRunner(options: {
       recentEvents: EventEnvelope[];
       config: WakeConfig;
       runId: string;
+      workspaceMode?: 'none' | 'read-only' | 'branch';
       workspacePath?: string;
       mergeConflictDetected?: boolean;
       upstreamChanges?: string;
@@ -273,9 +274,11 @@ export function createCursorRunner(options: {
       const priorSessionCli = input.projection.wake.sessionCli;
       const isResume = priorSessionId !== undefined && priorSessionCli === CURSOR_CLI_NAME;
 
-      const cursorMode = resolveCursorMode({ action: input.action });
+      const cursorMode = resolveCursorMode({
+        ...(input.workspaceMode === undefined ? {} : { workspaceMode: input.workspaceMode }),
+      });
       const toolCapabilityNote = buildCursorToolCapabilityNote({
-        action: input.action,
+        ...(input.workspaceMode === undefined ? {} : { workspaceMode: input.workspaceMode }),
         mode: isResume ? 'resume' : 'start',
       });
 
@@ -284,6 +287,7 @@ export function createCursorRunner(options: {
         projection: input.projection,
         mode: isResume ? 'resume' : 'start',
         config: input.config,
+        ...(input.workspaceMode === undefined ? {} : { workspaceMode: input.workspaceMode }),
         ...(input.mergeConflictDetected === true ? { mergeConflictDetected: true } : {}),
         ...(input.upstreamChanges === undefined ? {} : { upstreamChanges: input.upstreamChanges }),
         ...(toolCapabilityNote !== undefined ? { contextOverrides: { toolCapabilityNote } } : {}),

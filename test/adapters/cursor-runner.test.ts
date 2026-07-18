@@ -86,8 +86,8 @@ describe('cursor runner command building', () => {
 });
 
 describe('cursor tool capability note', () => {
-  it('returns a read-only ask-mode note for the refine start action', () => {
-    const note = buildCursorToolCapabilityNote({ action: 'refine', mode: 'start' });
+  it('returns a read-only ask-mode note for read-only stages', () => {
+    const note = buildCursorToolCapabilityNote({ workspaceMode: 'read-only', mode: 'start' });
 
     expect(note).toBeDefined();
     expect(note).toContain('read-only');
@@ -96,15 +96,15 @@ describe('cursor tool capability note', () => {
   });
 
   it('prefixes the resume note with a planning-stage reminder', () => {
-    const start = buildCursorToolCapabilityNote({ action: 'refine', mode: 'start' });
-    const resume = buildCursorToolCapabilityNote({ action: 'refine', mode: 'resume' });
+    const start = buildCursorToolCapabilityNote({ workspaceMode: 'read-only', mode: 'start' });
+    const resume = buildCursorToolCapabilityNote({ workspaceMode: 'read-only', mode: 'resume' });
 
     expect(resume).toContain('planning-only stage');
     expect(resume).toContain(start!.slice(0, 30));
   });
 
-  it('returns undefined for implement so default note is used', () => {
-    const note = buildCursorToolCapabilityNote({ action: 'implement', mode: 'start' });
+  it('returns undefined outside read-only stages so the default note is used', () => {
+    const note = buildCursorToolCapabilityNote({ workspaceMode: 'branch', mode: 'start' });
 
     expect(note).toBeUndefined();
   });

@@ -65,7 +65,7 @@ function latestHumanCommentId(candidate: IssueStateRecord): string | undefined {
 // (any surface) and nothing ever resets it. So it means "the last comment
 // this work item has ever received," not "the comment that triggered the
 // currently completing run." Several needsWakeAction trigger paths (first
-// run, quota-failure retry, first refine/implement pass) complete a run
+// run, quota-failure retry, first workflow-stage pass) complete a run
 // with no fresh comment driving it at all — in those cases latestComment
 // may still be pointing at an older, already-handled comment from a
 // different surface (e.g. a PR) and must not be trusted as this run's
@@ -195,7 +195,7 @@ export function createTickRunner(deps: {
         //
         // Gated on isFreshTriggeringComment: latestComment is sticky (see
         // that function's comment) and several run-completion paths (first
-        // run, quota retry, first refine/implement pass) have no fresh
+        // run, quota retry, first workflow-stage pass) have no fresh
         // comment behind them at all — for those, threading the stale
         // latestComment.resourceUri would misroute the reply to whatever
         // surface last happened to comment, even long after that comment
@@ -1338,6 +1338,7 @@ export function createTickRunner(deps: {
             config: deps.config,
             runId,
             routing,
+            workspaceMode,
             ...(workspacePath === undefined ? {} : { workspacePath }),
             ...(mergeConflictDetected ? { mergeConflictDetected: true } : {}),
             ...(upstreamChanges === undefined ? {} : { upstreamChanges }),

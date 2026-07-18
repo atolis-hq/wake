@@ -7,7 +7,7 @@
  *   Wake cannot enforce `maxTurns` at the CLI boundary for this runner today.
  * - Codex does NOT expose a Claude-equivalent local-tool allowlist such as
  *   `--allowedTools`. Wake still renders the same stage prompt restrictions, but
- *   refine-stage tool limits are prompt-guided plus sandbox-limited, not
+ *   read-only stage tool limits are prompt-guided plus sandbox-limited, not
  *   CLI-enforced at per-tool granularity.
  * - Codex remote-control is app-driven rather than CLI-driven, so there is no
  *   honest equivalent to Claude's `smoke --remote-control` path here.
@@ -280,19 +280,19 @@ function readSandboxLogBreadcrumb(): { text: string; metadata: { sandboxContaine
 }
 
 function resolveSandboxMode(input: {
-  action: AgentAction;
+  workspaceMode?: 'none' | 'read-only' | 'branch';
 }): 'workspace-write' | 'danger-full-access' {
-  return input.action === 'implement' ? 'danger-full-access' : 'workspace-write';
+  return input.workspaceMode === 'branch' ? 'danger-full-access' : 'workspace-write';
 }
 
 // Codex uses shell execution rather than Claude Code's named tools (Read/Glob/Grep).
 // For read-only stages, override the tool capability note so the agent is told what it
 // can actually use instead of Claude-specific tool names it does not have.
 export function buildCodexToolCapabilityNote(input: {
-  action: AgentAction;
+  workspaceMode?: 'none' | 'read-only' | 'branch';
   mode: 'start' | 'resume';
 }): string | undefined {
-  if (input.action !== 'refine') {
+  if (input.workspaceMode !== 'read-only') {
     return undefined;
   }
   const note =
@@ -313,17 +313,22 @@ export function createCodexRunner(options: {
       recentEvents: EventEnvelope[];
       config: WakeConfig;
       runId: string;
+      workspaceMode?: 'none' | 'read-only' | 'branch';
       workspacePath?: string;
       mergeConflictDetected?: boolean;
       upstreamChanges?: string;
     }): Promise<AgentRunResult> {
       const runMode = 'start';
-      const toolCapabilityNote = buildCodexToolCapabilityNote({ action: input.action, mode: runMode });
+      const toolCapabilityNote = buildCodexToolCapabilityNote({
+        ...(input.workspaceMode === undefined ? {} : { workspaceMode: input.workspaceMode }),
+        mode: runMode,
+      });
       const stagePrompt = await buildStagePrompt({
         action: input.action,
         projection: input.projection,
         mode: runMode,
         config: input.config,
+        ...(input.workspaceMode === undefined ? {} : { workspaceMode: input.workspaceMode }),
         ...(input.mergeConflictDetected === true ? { mergeConflictDetected: true } : {}),
         ...(input.upstreamChanges === undefined ? {} : { upstreamChanges: input.upstreamChanges }),
         ...(toolCapabilityNote !== undefined ? { contextOverrides: { toolCapabilityNote } } : {}),
@@ -336,7 +341,7 @@ export function createCodexRunner(options: {
 
       const cwd = input.workspacePath ?? options.cwd;
       const sandboxMode = resolveSandboxMode({
-        action: input.action,
+        ...(input.workspaceMode === undefined ? {} : { workspaceMode: input.workspaceMode }),
       });
       const promptText = buildCodexPromptText({
         prompt: stagePrompt.prompt,

@@ -1,7 +1,5 @@
 export const stageValues = [
   'queue',
-  'refine',
-  'implement',
   'done',
 ] as const;
 
@@ -16,8 +14,6 @@ export const runnerSentinelValues = [
   failedRunnerSentinel,
   awaitingApprovalRunnerSentinel,
 ] as const;
-
-export const agentActionValues = ['refine', 'implement'] as const;
 
 export const terminalStageValues = ['done'] as const;
 

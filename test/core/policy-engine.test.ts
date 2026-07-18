@@ -14,7 +14,6 @@ function buildAwaitingApprovalIssue(options: {
   latestCommentBody?: string;
   pendingApprovalAction?: string;
 }) {
-  const pendingApprovalAction = options.pendingApprovalAction ?? 'implement';
   return parseIssueStateRecord({
     schemaVersion: 1,
     workItemKey: workId,
@@ -43,7 +42,7 @@ function buildAwaitingApprovalIssue(options: {
         ]
       : [],
     wake: {
-      stage: pendingApprovalAction === 'refine' ? 'refine' : 'implement',
+      stage: options.pendingApprovalAction === 'refine' ? 'refine' : 'implement',
       syncedAt: '2026-07-06T00:00:00.000Z',
       stageHistory: [],
     },
@@ -379,6 +378,15 @@ describe('policy engine: resolveApprovalTransition', () => {
     expect(policy.resolveApprovalTransition(issue)).toBeNull();
   });
 
+  it('does not infer a pending approval action when legacy state omitted it', () => {
+    const policy = createPolicyEngine();
+    const issue = buildAwaitingApprovalIssue({
+      latestCommentBody: '/approved',
+    });
+
+    expect(policy.resolveApprovalTransition(issue)).toBeNull();
+  });
+
   it('returns null when the latest human comment was already handled', () => {
     const policy = createPolicyEngine();
     const issue = parseIssueStateRecord({
@@ -418,13 +426,6 @@ describe('policy engine: resolveApprovalTransition', () => {
       },
     });
     expect(policy.resolveApprovalTransition(issue)).toBeNull();
-  });
-
-  it('defaults pendingAction to implement when context is missing', () => {
-    const policy = createPolicyEngine();
-    const issue = buildAwaitingApprovalIssue({ latestCommentBody: '/approved' });
-    const resolution = policy.resolveApprovalTransition(issue);
-    expect(resolution?.pendingAction).toBe('implement');
   });
 
   it('ignores a /approved comment that predates the last bot comment', () => {

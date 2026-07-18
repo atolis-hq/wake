@@ -6,7 +6,11 @@ import {
   parseIssueStateRecord,
 } from '../domain/schema.js';
 import { doneRunnerSentinel, stageFromLabels } from '../domain/stages.js';
-import { defaultWorkflowName, workflowStageVocabulary } from '../domain/workflows.js';
+import {
+  builtInDefaultWorkflowDefinition,
+  defaultWorkflowName,
+  workflowStageVocabulary,
+} from '../domain/workflows.js';
 import type {
   CorrelatedResource,
   CorrelationRegisteredPayload,
@@ -31,7 +35,7 @@ function stringArrayFromPayload(value: unknown): string[] {
 
 function configuredStagesForLabels(config?: WakeConfig): string[] | undefined {
   if (config === undefined) {
-    return undefined;
+    return workflowStageVocabulary(builtInDefaultWorkflowDefinition);
   }
 
   const workflow = config.workflows[defaultWorkflowName(config)];

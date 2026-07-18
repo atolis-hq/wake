@@ -4,6 +4,7 @@ import type {
   AgentAction,
   IssueStateRecord,
 } from '../../domain/types.js';
+import { chooseAction, workflowForProjection } from '../../domain/workflows.js';
 import { branchNameForIssue } from '../git/git-workspace-manager.js';
 import { loadPromptTemplate, renderPromptTemplate } from './prompt-templates.js';
 
@@ -253,11 +254,17 @@ export async function buildStagePrompt(input: {
   projection: IssueStateRecord;
   mode?: 'start' | 'resume';
   config?: WakeConfig;
+  workspaceMode?: 'none' | 'read-only' | 'branch';
   contextOverrides?: Record<string, unknown>;
   mergeConflictDetected?: boolean;
   upstreamChanges?: string;
 }): Promise<StagePromptResult> {
   const mode = input.mode ?? 'start';
+  const workflow =
+    input.config === undefined ? null : workflowForProjection(input.projection, input.config);
+  const resolvedWorkspaceMode =
+    input.workspaceMode ??
+    (workflow === null ? undefined : chooseAction(input.projection, workflow)?.workspace);
   const template = await loadPromptTemplate(input.action, mode, {
     ...(input.config?.paths.promptsRoot === undefined
       ? {}
@@ -274,7 +281,7 @@ export async function buildStagePrompt(input: {
     isResume: mode === 'resume',
   };
 
-  if (input.action === 'implement') {
+  if (resolvedWorkspaceMode === 'branch') {
     context.branch = branchNameForIssue(input.projection.issue.number);
   }
 
@@ -289,7 +296,7 @@ export async function buildStagePrompt(input: {
       `Reminder: this is still a planning-only stage - your only available tools are: ${allowedToolsListStr}. Do not attempt to use Edit, Write, or any Bash command other than the git commands listed above, or modify any file.`;
   } else {
     context.toolCapabilityNote =
-      `Your only available tools are: ${allowedToolsListStr}.\nDo not attempt to use Edit, Write, or any Bash command other than the git commands listed above — that capability is intentionally withheld at this stage and only becomes available in the later \`implement\` stage.`;
+      `Your only available tools are: ${allowedToolsListStr}.\nDo not attempt to use Edit, Write, or any Bash command other than the git commands listed above unless this stage's prompt and workspace mode explicitly allow it.`;
   }
 
   if (input.contextOverrides !== undefined) {
@@ -341,7 +348,7 @@ export async function buildStagePrompt(input: {
   const untrustedDataBlock = buildUntrustedDataBlock({
     projection: input.projection,
     commentSections,
-    includeRepoDetails: input.action === 'refine',
+    includeRepoDetails: resolvedWorkspaceMode === 'read-only',
   });
 
   return {

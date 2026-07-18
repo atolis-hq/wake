@@ -75,6 +75,7 @@ describe('claude runner command building', () => {
   it('assembles a stage prompt from a projection summary and its comments', async () => {
     const result = await buildStagePrompt({
       action: 'implement',
+      workspaceMode: 'branch',
       projection: {
         schemaVersion: 1,
         workItemKey: 'work-01JQZX9K2N4P6R8T0V2W4Y6A8C',
