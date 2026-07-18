@@ -198,6 +198,51 @@ describe('prompt templates', () => {
     expect(resultNoConfig.harnessPrompt).not.toContain('wake-artifacts');
   });
 
+  it('omits the wake-artifacts instruction when github.enabled is false, even if pullRequests.enabled is true', async () => {
+    // buildRuntime only constructs the artifact verifier when
+    // github.enabled && pullRequests.enabled, so this combination must not
+    // instruct the agent to report artifacts Wake has no way to verify.
+    const projection = {
+      schemaVersion: 1 as const,
+      workItemKey: 'work-01JQZX9K2N4P6R8T0V2W4Y6A8D',
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 13,
+        title: 'Example issue',
+        body: 'Body',
+        labels: ['wake:implement'],
+        assignees: [],
+        isPullRequest: false,
+        state: 'open' as const,
+        url: 'https://example.test/issues/13',
+        createdAt: '2026-07-05T12:00:00.000Z',
+        updatedAt: '2026-07-05T12:00:00.000Z',
+      },
+      comments: [],
+      wake: {
+        stage: 'implement' as const,
+        stageHistory: [],
+        recentEventIds: [],
+        syncedAt: '2026-07-05T12:00:00.000Z',
+        expectedEcho: { commentIds: [], labels: [] },
+      },
+      context: {},
+      correlatedResources: [],
+    };
+
+    const config = createDefaultWakeConfig(process.cwd());
+    config.sources.github.enabled = false;
+    config.sources.github.pullRequests.enabled = true;
+
+    const result = await buildStagePrompt({
+      action: 'implement',
+      projection,
+      config,
+    });
+
+    expect(result.harnessPrompt).not.toContain('wake-artifacts');
+  });
+
   it('renders review-thread anchoring for a PR review comment', async () => {
     const projection = {
       schemaVersion: 1 as const,

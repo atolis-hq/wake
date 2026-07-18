@@ -384,29 +384,14 @@ export function createTickRunner(deps: {
   }
 
   // The watchlist is every resource currently correlated to an open work
-  // item, deduplicated. It is derived once per tick from the pre-poll
-  // projection snapshot (see runTick's ordering note) and handed to every
-  // configured WorkSource; discovery sources (GitHub issues, the fake
-  // ticketing system) accept and ignore it, while a future PR-activity
-  // source uses it to know which PRs to poll for review/CI events.
-  const PR_URI_PREFIX = 'github:pr:';
-  const PR_REVIEW_THREAD_URI_PREFIX = 'github:pr-review-thread:';
-
-  // Resolves a correlated resource's owning PR resourceUri, or null if the
-  // resource is not PR-related. A `github:pr:...` entry owns itself; a
-  // `github:pr-review-thread:<repo>#<number>/rt_<id>` entry's owning PR is
-  // `github:pr:<repo>#<number>`, extracted by dropping the `/rt_<id>` suffix.
-  function owningPrUri(resourceUri: string): string | null {
-    if (resourceUri.startsWith(PR_URI_PREFIX)) {
-      return resourceUri;
-    }
-    if (resourceUri.startsWith(PR_REVIEW_THREAD_URI_PREFIX)) {
-      const repoAndNumber = resourceUri.slice(PR_REVIEW_THREAD_URI_PREFIX.length).split('/rt_')[0];
-      return `${PR_URI_PREFIX}${repoAndNumber}`;
-    }
-    return null;
-  }
-
+  // item, deduplicated by exact resourceUri. It is derived once per tick from
+  // the pre-poll projection snapshot (see runTick's ordering note) and handed
+  // to every configured WorkSource. Core never interprets these URIs — it's
+  // each source's own job to recognize and filter down to the resourceUri
+  // shapes it understands (e.g. the GitHub PR source only polls entries
+  // starting with `github:pr:`, ignoring everything else, including its own
+  // review-thread correlations) and never core's (CLAUDE.md: "Core compares
+  // resourceUri strings for equality and never parses a locator").
   function deriveWatchlist(projections: IssueStateRecord[]): { resourceUri: string }[] {
     const seen = new Set<string>();
     const watch: { resourceUri: string }[] = [];
@@ -416,12 +401,11 @@ export function createTickRunner(deps: {
         continue;
       }
       for (const resource of projection.correlatedResources) {
-        const prUri = owningPrUri(resource.resourceUri);
-        if (prUri === null || seen.has(prUri)) {
+        if (seen.has(resource.resourceUri)) {
           continue;
         }
-        seen.add(prUri);
-        watch.push({ resourceUri: prUri });
+        seen.add(resource.resourceUri);
+        watch.push({ resourceUri: resource.resourceUri });
       }
     }
 
@@ -614,6 +598,49 @@ export function createTickRunner(deps: {
           persisted: false,
         },
       ];
+    }
+
+    // resourceUri itself misses the index (e.g. a review-thread comment's
+    // resourceUri is unique per thread, never registered on its own), but the
+    // adapter may have named a parent resource this one belongs to. Resolve
+    // through that instead of minting — and register this exact resourceUri
+    // as a secondary correlation so it's on record on the work item, even
+    // though (being secondary) it still won't shortcut future lookups via the
+    // index itself (ADR 0001 §5: the index is primary-only).
+    if (unkeyed.sourceRefs.parentResourceUri !== undefined) {
+      const parentWorkItemKey = await deps.resourceIndex.resolve(
+        unkeyed.sourceRefs.parentResourceUri,
+      );
+      if (parentWorkItemKey !== undefined) {
+        const mintedAt = laterTimestamp(unkeyed.ingestedAt, eventStampNow());
+        return [
+          {
+            envelope: createEventEnvelope({ ...unkeyed, workItemKey: parentWorkItemKey }),
+            persisted: false,
+          },
+          {
+            envelope: createEventEnvelope({
+              eventId: `${parentWorkItemKey}-correlation-${resourceUri.replace(/[^a-z0-9]+/gi, '-')}`,
+              workItemKey: parentWorkItemKey,
+              streamScope: 'work-item',
+              direction: 'internal',
+              sourceSystem: 'wake',
+              sourceEventType: CORRELATION_REGISTERED_EVENT,
+              sourceRefs: unkeyed.sourceRefs,
+              occurredAt: mintedAt,
+              ingestedAt: mintedAt,
+              trigger: 'context-only',
+              payload: {
+                resourceUri,
+                role: 'review',
+                relation: 'secondary',
+                provenance: 'detected',
+              },
+            }),
+            persisted: false,
+          },
+        ];
+      }
     }
 
     if (!policy.qualifiesForMint(unkeyed, deps.config)) {

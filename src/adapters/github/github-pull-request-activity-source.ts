@@ -2,6 +2,7 @@ import type { ResourceIndex, UnkeyedEventEnvelope } from '../../core/contracts.j
 import type { EventEnvelope, WakeConfig } from '../../domain/types.js';
 import { buildResourceUri } from '../../domain/resource-uri.js';
 import { createUnkeyedEventEnvelope, createEventEnvelope } from '../../lib/event-log.js';
+import { formatWakeComment, readControlPlaneUiUrl } from './github-issues-work-source.js';
 
 const githubPrSource = 'github-pr';
 const wakeCommentMarker = '<!-- wake:agent -->';
@@ -128,10 +129,14 @@ export function createGitHubPullRequestActivitySource(deps: {
 
           events.push(
             createUnkeyedEventEnvelope({
-              // Stable, timestamp-free id: appendEventEnvelope dedups on this,
-              // so a PR that never qualifies is only ever appended once, not
-              // every tick.
-              eventId: `pr-seen-${repoRef.replace(/[^a-z0-9]+/gi, '-')}-${pr.number}`,
+              // Embeds updated_at (mirroring the issue path's ticket.upsert
+              // eventId) so a PR that fails mint qualification is re-offered
+              // for qualification whenever it actually changes — not
+              // permanently quarantined under UNRESOLVED_WORK_ITEM_KEY the
+              // first time it's seen, even after config or the PR itself
+              // changes. appendEventEnvelope still dedups on eventId, so an
+              // unchanged PR is only ever appended once per updated_at value.
+              eventId: `pr-seen-${repoRef.replace(/[^a-z0-9]+/gi, '-')}-${pr.number}-${pr.updated_at}`,
               streamScope: 'global-intake',
               direction: 'inbound',
               sourceSystem: githubPrSource,
@@ -205,9 +210,11 @@ export function createGitHubPullRequestActivitySource(deps: {
 
       const reviews = await deps.client.listReviews(ref.owner, ref.repo, ref.number, perPage);
       for (const review of reviews) {
-        if (review.body === undefined || review.body === null || review.body.trim().length === 0) {
-          continue;
-        }
+        // GitHub allows submitting a review (e.g. "Request changes" or
+        // "Approve") with no comment text — skipping those entirely would
+        // lose the state-change signal itself, not just a missing comment,
+        // so a bare state marker is still emitted.
+        const body = (review.body ?? '').trim();
         const submittedAt = review.submitted_at ?? ingestedAt;
         events.push(
           createUnkeyedEventEnvelope({
@@ -223,7 +230,7 @@ export function createGitHubPullRequestActivitySource(deps: {
             payload: {
               comment: {
                 id: `pr-review-${review.id}`,
-                body: `[${review.state}] ${review.body}`,
+                body: body.length === 0 ? `[${review.state}]` : `[${review.state}] ${body}`,
                 author: { login: review.user?.login ?? 'unknown' },
                 createdAt: submittedAt,
                 updatedAt: submittedAt,
@@ -247,7 +254,16 @@ export function createGitHubPullRequestActivitySource(deps: {
             direction: 'inbound',
             sourceSystem: githubPrSource,
             sourceEventType: 'pr.review-comment.created',
-            sourceRefs: { repo: ref.repoRef, commentId: String(comment.id), sourceUrl: comment.html_url, resourceUri: threadUri },
+            sourceRefs: {
+              repo: ref.repoRef,
+              commentId: String(comment.id),
+              sourceUrl: comment.html_url,
+              resourceUri: threadUri,
+              // The thread's own resourceUri is never registered on its own
+              // (each thread is unique), so core falls back to resolving via
+              // the owning PR when this misses the index on first sighting.
+              parentResourceUri: resourceUri,
+            },
             occurredAt: comment.updated_at,
             ingestedAt,
             trigger: 'context-only',
@@ -308,13 +324,12 @@ export function createGitHubPullRequestActivitySource(deps: {
           throw new Error(`cannot deliver intent ${input.event.eventId}: malformed review-thread uri ${resourceUri}`);
         }
 
-        const body = typeof input.event.payload.body === 'string' ? input.event.payload.body : '';
         const response = await deps.client.replyToReviewComment(
           owner,
           repo,
           Number(numberStr),
           Number(rootIdStr),
-          `${wakeCommentMarker}\n\n${body}`,
+          formatWakeComment(input.event.payload, await readControlPlaneUiUrl(deps.config.paths.wakeRoot)),
         );
 
         return [
@@ -339,8 +354,12 @@ export function createGitHubPullRequestActivitySource(deps: {
         throw new Error(`cannot deliver intent ${input.event.eventId}: malformed pr uri ${resourceUri}`);
       }
 
-      const body = typeof input.event.payload.body === 'string' ? input.event.payload.body : '';
-      await deps.client.createComment(ref.owner, ref.repo, ref.number, `${wakeCommentMarker}\n\n${body}`);
+      await deps.client.createComment(
+        ref.owner,
+        ref.repo,
+        ref.number,
+        formatWakeComment(input.event.payload, await readControlPlaneUiUrl(deps.config.paths.wakeRoot)),
+      );
       return [
         createEventEnvelope({
           eventId: `${input.event.eventId}-published`,

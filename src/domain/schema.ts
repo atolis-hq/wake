@@ -179,6 +179,13 @@ export const eventEnvelopeSourceRefsSchema = z.object({
   // Per-event provenance: which external resource this one event came from.
   // Item-level ownership lives only in the correlation registry, never here.
   resourceUri: resourceUriSchema.optional(),
+  // An adapter-supplied hint: the resourceUri of the resource this one
+  // "belongs to" for correlation purposes (e.g. a PR review-thread comment's
+  // parent PR). Opaque to core — never parsed, only used as a fallback key
+  // for resourceIndex.resolve() when resourceUri itself misses the index.
+  // The adapter that emits an event is the only party allowed to know its
+  // own locator grammar; this keeps that knowledge out of core/.
+  parentResourceUri: resourceUriSchema.optional(),
 });
 
 /** Event type constants for the correlation registry (ADR 0001 §5). */

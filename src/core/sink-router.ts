@@ -84,9 +84,14 @@ export function createOutboundSinkRouter(input: {
         event.sourceEventType === 'wake.publish.intent.requested' &&
         sourceOrigin !== undefined
       ) {
-        targetSinks.add(
-          resourceUri === undefined ? sourceOrigin : sinkNameForResourceUri(resourceUri, sourceOrigin),
-        );
+        const resourceSink =
+          resourceUri === undefined ? sourceOrigin : sinkNameForResourceUri(resourceUri, sourceOrigin);
+        // A resource-derived sink name (e.g. a PR surface) may not be
+        // registered — the source that owns it can be disabled independently
+        // of the origin sink. Falling back to sourceOrigin here, rather than
+        // silently skipping an unregistered sink below, is what keeps a reply
+        // from being dropped-but-marked-delivered when that happens.
+        targetSinks.add(sinksByName.has(resourceSink) ? resourceSink : sourceOrigin);
       }
 
       for (const [sinkName, sinkConfig] of Object.entries(input.config.sinks ?? {})) {

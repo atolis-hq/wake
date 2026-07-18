@@ -85,6 +85,25 @@ describe('qualifiesForMint', () => {
     expect(policy.qualifiesForMint(event, baseConfig())).toBe(false);
   });
 
+  it('does not qualify a github:pr event, even from a required author, when pullRequests.enabled is false', () => {
+    const event = createUnkeyedEventEnvelope({
+      eventId: 'e3b',
+      streamScope: 'global-intake',
+      direction: 'inbound',
+      sourceSystem: 'github-pr',
+      sourceEventType: 'pr.seen',
+      sourceRefs: { resourceUri: 'github:pr:org/repo#91' },
+      occurredAt: '2026-07-18T00:00:00Z',
+      ingestedAt: '2026-07-18T00:00:00Z',
+      trigger: 'context-only',
+      payload: { pr: { number: 91, author: 'trusted-human', headRef: 'feature-x' } },
+    });
+    const config = baseConfig({
+      pullRequests: { enabled: false, policy: { requiredAuthors: ['trusted-human'] } },
+    });
+    expect(policy.qualifiesForMint(event, config)).toBe(false);
+  });
+
   it('does not qualify an event with no resourceUri', () => {
     const event = createUnkeyedEventEnvelope({
       eventId: 'e5',

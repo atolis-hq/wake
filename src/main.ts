@@ -220,13 +220,22 @@ export async function buildRuntime(args: string[]) {
   const prTrackingEnabled =
     config.sources.github.enabled && config.sources.github.pullRequests.enabled;
 
-  const artifactVerifier = prTrackingEnabled
-    ? createGitHubArtifactVerifier({ client: createGitHubClient(await resolveGitHubToken()) })
+  // Resolved once and shared: resolveGitHubToken shells out to `gh auth
+  // token`, so building a separate client per consumer would triple that
+  // subprocess spawn on every startup for no benefit — all three consumers
+  // talk to the same GitHub account under the same config.
+  const githubClient = config.sources.github.enabled
+    ? createGitHubClient(await resolveGitHubToken())
     : undefined;
 
-  const ticketingSystem = config.sources.github.enabled
+  const artifactVerifier =
+    prTrackingEnabled && githubClient !== undefined
+      ? createGitHubArtifactVerifier({ client: githubClient })
+      : undefined;
+
+  const ticketingSystem = githubClient !== undefined
     ? createGitHubIssuesWorkSource({
-        client: createGitHubClient(await resolveGitHubToken()),
+        client: githubClient,
         stateStore,
         config,
         resourceIndex,
@@ -239,15 +248,16 @@ export async function buildRuntime(args: string[]) {
   const sourceName = configuredTicketSource(config);
   const sinkName = sourceName;
 
-  const pullRequestActivitySource = prTrackingEnabled
-    ? createGitHubPullRequestActivitySource({
-        client: createGitHubClient(await resolveGitHubToken()),
-        stateStore,
-        config,
-        resourceIndex,
-        now: () => systemClock.now(),
-      })
-    : null;
+  const pullRequestActivitySource =
+    prTrackingEnabled && githubClient !== undefined
+      ? createGitHubPullRequestActivitySource({
+          client: githubClient,
+          stateStore,
+          config,
+          resourceIndex,
+          now: () => systemClock.now(),
+        })
+      : null;
 
   const workSource = createWorkSourceFanIn([
     {

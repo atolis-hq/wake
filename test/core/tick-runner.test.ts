@@ -661,7 +661,7 @@ describe('tick runner', () => {
     });
   });
 
-  it('excludes non-PR correlated resources and collapses PR review threads to their owning PR', async () => {
+  it('passes every correlated resourceUri through to pollEvents verbatim, deduplicated, without interpreting them', async () => {
     const store = createStateStore({ wakeRoot: root });
     const pollEvents = vi.fn().mockResolvedValue([]);
 
@@ -739,7 +739,11 @@ describe('tick runner', () => {
     await tickRunner.runTick();
 
     expect(pollEvents).toHaveBeenCalledWith({
-      watch: [{ resourceUri: 'github:pr:org/repo#91' }],
+      watch: [
+        { resourceUri: 'github:issue:org/repo#91' },
+        { resourceUri: 'github:pr:org/repo#91' },
+        { resourceUri: 'github:pr-review-thread:org/repo#91/rt_501' },
+      ],
     });
   });
 
@@ -4091,6 +4095,117 @@ describe('tick runner', () => {
 
       const projections = await store.listIssueStates();
       expect(projections).toHaveLength(1);
+    });
+
+    it('resolves a first-sighting PR review-thread comment to the owning PR work item via sourceRefs.parentResourceUri, rather than quarantining it as unresolved', async () => {
+      // A review-thread comment's resourceUri is unique per thread and is
+      // never registered in the index on its own — only the owning PR's
+      // resourceUri is. Without the parentResourceUri fallback, resolving
+      // straight off the thread's resourceUri always misses the index and
+      // (since qualifiesForMint has no 'pr-review-thread' case) permanently
+      // quarantines the event under UNRESOLVED_WORK_ITEM_KEY.
+      const store = createStateStore({ wakeRoot: root });
+      const config = createDefaultWakeConfig(root);
+      const prResourceUri = 'github:pr:org/repo#91';
+      const threadResourceUri = 'github:pr-review-thread:org/repo#91/rt_501';
+      const key = workId(91);
+
+      const resourceIndex = createFakeResourceIndex();
+      await resourceIndex.register(prResourceUri, key);
+
+      await store.writeIssueState({
+        schemaVersion: 1,
+        workItemKey: key,
+        issue: {
+          repo: 'atolis-hq/wake',
+          number: 91,
+          title: 'Implement',
+          body: 'Body',
+          labels: ['wake:implement'],
+          assignees: [],
+          isPullRequest: false,
+          state: 'open',
+          url: 'https://example.test/issues/91',
+          createdAt: '2026-07-05T12:00:00.000Z',
+          updatedAt: '2026-07-05T12:00:00.000Z',
+        },
+        comments: [],
+        wake: {
+          stage: 'implement',
+          stageHistory: [],
+          recentEventIds: [],
+          syncedAt: '2026-07-05T12:00:00.000Z',
+          expectedEcho: { commentIds: [], labels: [] },
+        },
+        context: {},
+        correlatedResources: [
+          {
+            resourceUri: prResourceUri,
+            role: 'implementation',
+            relation: 'primary',
+            provenance: 'agent-reported',
+            registeredAt: '2026-07-05T12:00:00.000Z',
+          },
+        ],
+      });
+
+      const tickRunner = createTickRunner({
+        clock: { now: () => new Date('2026-07-05T12:00:00.000Z') },
+        config,
+        stateStore: store,
+        workSource: {
+          async pollEvents() {
+            return [
+              createUnkeyedEventEnvelope({
+                eventId: 'pr-review-comment-org-repo-91-601-2026-07-05T12:00:00.000Z',
+                streamScope: 'work-item',
+                direction: 'inbound',
+                sourceSystem: 'github-pr',
+                sourceEventType: 'pr.review-comment.created',
+                sourceRefs: {
+                  resourceUri: threadResourceUri,
+                  parentResourceUri: prResourceUri,
+                  commentId: '601',
+                },
+                occurredAt: '2026-07-05T12:00:00.000Z',
+                ingestedAt: '2026-07-05T12:00:00.000Z',
+                trigger: 'context-only',
+                payload: {
+                  comment: {
+                    id: 'pr-review-comment-601',
+                    body: 'Nit: rename this variable.',
+                    author: { login: 'reviewer' },
+                    createdAt: '2026-07-05T12:00:00.000Z',
+                    updatedAt: '2026-07-05T12:00:00.000Z',
+                    resourceUri: threadResourceUri,
+                  },
+                },
+              }),
+            ];
+          },
+        },
+        runner: {
+          async run() {
+            throw new Error('should not run');
+          },
+        },
+        resourceIndex,
+        workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+      });
+
+      await tickRunner.runTick();
+
+      const projections = await store.listIssueStates();
+      expect(projections).toHaveLength(1);
+      expect(projections[0]?.workItemKey).toBe(key);
+      expect(projections[0]?.latestComment?.id).toBe('pr-review-comment-601');
+      expect(projections[0]?.correlatedResources.map((r) => r.resourceUri)).toContain(
+        threadResourceUri,
+      );
+      expect(
+        projections[0]?.correlatedResources.find((r) => r.resourceUri === threadResourceUri)
+          ?.relation,
+      ).toBe('secondary');
     });
   });
 

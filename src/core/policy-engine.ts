@@ -261,6 +261,9 @@ export function createPolicyEngine() {
       }
 
       if (kind === 'pr') {
+        if (!config.sources.github.pullRequests.enabled) {
+          return false;
+        }
         const pr = unresolved.payload.pr as { author?: unknown } | undefined;
         const requiredAuthors = config.sources.github.pullRequests.policy.requiredAuthors;
         if (requiredAuthors.length === 0 || typeof pr?.author !== 'string') {

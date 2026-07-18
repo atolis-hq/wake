@@ -128,6 +128,44 @@ describe('sink router', () => {
     });
   });
 
+  it('falls back to the origin sink when the PR-resource sink is not registered, instead of dropping the reply', async () => {
+    const config = createDefaultWakeConfig('/tmp/wake-router-test');
+    const delivered: { github: string[] } = { github: [] };
+    const router = createOutboundSinkRouter({
+      config,
+      sinks: [
+        {
+          sink: 'github',
+          async deliverIntent({ event }) {
+            delivered.github.push(event.eventId);
+            return [];
+          },
+        },
+        // No 'github-pr' sink registered — e.g. pullRequests.enabled was
+        // flipped off after this work item's latestComment.resourceUri was
+        // already stamped to a PR surface.
+      ],
+    });
+
+    await router.deliverIntent({
+      event: createEventEnvelope({
+        eventId: 'pr-reply-orphaned',
+        workItemKey: 'work-01JQZX9K2N4P6R8T0V2W4Y6A70',
+        streamScope: 'work-item',
+        direction: 'outbound',
+        sourceSystem: 'wake',
+        sourceEventType: 'wake.publish.intent.requested',
+        sourceRefs: { resourceUri: 'github:pr:org/repo#91' },
+        occurredAt: '2026-07-18T00:00:00.000Z',
+        ingestedAt: '2026-07-18T00:00:00.000Z',
+        trigger: 'context-only',
+        payload: { kind: 'status-update', origin: 'github', body: 'hi' },
+      }),
+    });
+
+    expect(delivered.github).toEqual(['pr-reply-orphaned']);
+  });
+
   it('routes terminal-stage subscriptions only for terminal publish intents', async () => {
     const config = createDefaultWakeConfig('/tmp/wake-router-test');
     config.sinks = {

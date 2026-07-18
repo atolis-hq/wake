@@ -347,7 +347,9 @@ export async function buildStagePrompt(input: {
     prompt: `${renderedTemplate}\n\n${untrustedDataBlock}`,
     harnessPrompt: buildHarnessPrompt({
       skipApproval,
-      prTrackingEnabled: input.config?.sources.github.pullRequests.enabled === true,
+      prTrackingEnabled:
+        input.config?.sources.github.enabled === true &&
+        input.config?.sources.github.pullRequests.enabled === true,
       ...(input.mergeConflictDetected === true ? { mergeConflictDetected: true } : {}),
       ...(input.upstreamChanges === undefined ? {} : { upstreamChanges: input.upstreamChanges }),
     }),
