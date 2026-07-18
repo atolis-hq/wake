@@ -39,6 +39,14 @@ function subscriptionMatches(event: EventEnvelope, subscription: string): boolea
   return subscription === 'stage.terminal' && isTerminalStageIntent(event);
 }
 
+function sinkNameForResourceUri(resourceUri: string, fallback: string): string {
+  const [provider, kind] = resourceUri.split(':');
+  if (provider === undefined || kind === undefined) {
+    return fallback;
+  }
+  return kind === 'pr' || kind === 'pr-review-thread' ? `${provider}-pr` : fallback;
+}
+
 function withSinkRef(event: EventEnvelope, sink: string): EventEnvelope {
   return {
     ...event,
@@ -71,11 +79,14 @@ export function createOutboundSinkRouter(input: {
       }
 
       const kind = intentKind(event);
+      const resourceUri = event.sourceRefs.resourceUri;
       if (
         event.sourceEventType === 'wake.publish.intent.requested' &&
         sourceOrigin !== undefined
       ) {
-        targetSinks.add(sourceOrigin);
+        targetSinks.add(
+          resourceUri === undefined ? sourceOrigin : sinkNameForResourceUri(resourceUri, sourceOrigin),
+        );
       }
 
       for (const [sinkName, sinkConfig] of Object.entries(input.config.sinks ?? {})) {

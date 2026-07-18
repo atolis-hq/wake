@@ -83,6 +83,51 @@ describe('sink router', () => {
     });
   });
 
+  it('routes a publish intent targeting a PR resource to the github-pr sink', async () => {
+    const config = createDefaultWakeConfig('/tmp/wake-router-test');
+    const delivered: { github: string[]; 'github-pr': string[] } = { github: [], 'github-pr': [] };
+    const router = createOutboundSinkRouter({
+      config,
+      sinks: [
+        {
+          sink: 'github',
+          async deliverIntent({ event }) {
+            delivered.github.push(event.eventId);
+            return [];
+          },
+        },
+        {
+          sink: 'github-pr',
+          async deliverIntent({ event }) {
+            delivered['github-pr'].push(event.eventId);
+            return [];
+          },
+        },
+      ],
+    });
+
+    await router.deliverIntent({
+      event: createEventEnvelope({
+        eventId: 'pr-reply-1',
+        workItemKey: 'work-01JQZX9K2N4P6R8T0V2W4Y6A70',
+        streamScope: 'work-item',
+        direction: 'outbound',
+        sourceSystem: 'wake',
+        sourceEventType: 'wake.publish.intent.requested',
+        sourceRefs: { resourceUri: 'github:pr:org/repo#91' },
+        occurredAt: '2026-07-18T00:00:00.000Z',
+        ingestedAt: '2026-07-18T00:00:00.000Z',
+        trigger: 'context-only',
+        payload: { kind: 'status-update', origin: 'github', body: 'hi' },
+      }),
+    });
+
+    expect(delivered).toEqual({
+      github: [],
+      'github-pr': ['pr-reply-1'],
+    });
+  });
+
   it('routes terminal-stage subscriptions only for terminal publish intents', async () => {
     const config = createDefaultWakeConfig('/tmp/wake-router-test');
     config.sinks = {
