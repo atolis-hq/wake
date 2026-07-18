@@ -13,12 +13,10 @@ describe('runner registry routing', () => {
     config.runners['fake-deep'] = { kind: 'fake', cli: 'Fake Deep' };
     config.tiers.light = ['fake-light'];
     config.tiers.standard = ['fake-deep', 'fake-light'];
-    config.stages.queue = { action: 'refine', tier: 'light' };
-    config.stages.implement = { action: 'implement', tier: 'standard' };
 
     expect(resolveRunnerRouting({
       config,
-      stage: 'queue',
+      stage: 'refine',
       action: 'refine',
     })).toMatchObject({
       runnerName: 'fake-light',
@@ -42,7 +40,6 @@ describe('runner registry routing', () => {
     config.runners['fake-primary'] = { kind: 'fake', cli: 'Fake Primary' };
     config.runners['fake-secondary'] = { kind: 'fake', cli: 'Fake Secondary' };
     config.tiers.standard = ['fake-primary', 'fake-secondary'];
-    config.stages.implement = { action: 'implement', tier: 'standard' };
 
     const now = new Date('2026-07-07T22:30:00.000Z');
     const ledger = {
@@ -74,7 +71,6 @@ describe('runner registry routing', () => {
     const config = createDefaultWakeConfig('/tmp/wake');
     config.runners['fake-primary'] = { kind: 'fake', cli: 'Fake Primary' };
     config.tiers.standard = ['fake-primary'];
-    config.stages.implement = { action: 'implement', tier: 'standard' };
 
     const lastFailureAt = '2026-07-07T22:30:00.000Z';
     const ledger = {
@@ -117,7 +113,6 @@ describe('runner registry routing', () => {
     const config = createDefaultWakeConfig('/tmp/wake');
     config.runners['fake-primary'] = { kind: 'fake', cli: 'Fake Primary' };
     config.tiers.standard = ['fake-primary'];
-    config.stages.implement = { action: 'implement', tier: 'standard' };
 
     const ledger = {
       schemaVersion: 1 as const,
@@ -145,7 +140,6 @@ describe('runner registry routing', () => {
     config.runners['fake-primary'] = { kind: 'fake', cli: 'Fake Primary' };
     config.runners['fake-secondary'] = { kind: 'fake', cli: 'Fake Secondary' };
     config.tiers.standard = ['fake-primary', 'fake-secondary'];
-    config.stages.implement = { action: 'implement', tier: 'standard' };
 
     const now = new Date('2026-07-07T22:30:00.000Z');
     const ledger = {
@@ -168,7 +162,7 @@ describe('runner registry routing', () => {
   it('keeps explicit stage runner pins legal', () => {
     const config = createDefaultWakeConfig('/tmp/wake');
     config.runners.pinned = { kind: 'fake', cli: 'Pinned Fake' };
-    config.stages.implement = { action: 'implement', tier: 'standard', runner: 'pinned' };
+    config.workflows.default!.stages.implement!.runner = 'pinned';
 
     expect(resolveRunnerRouting({
       config,
@@ -181,11 +175,29 @@ describe('runner registry routing', () => {
     });
   });
 
+  it('uses workflow stage routing instead of legacy stage-name overrides', () => {
+    const config = createDefaultWakeConfig('/tmp/wake');
+    config.runners['fake-workflow'] = { kind: 'fake', cli: 'Fake Workflow' };
+    config.runners['fake-legacy'] = { kind: 'fake', cli: 'Fake Legacy' };
+    config.tiers.standard = ['fake-workflow'];
+    config.tiers.deep = ['fake-legacy'];
+    config.workflows.default!.stages.implement!.tier = 'standard';
+    config.stages.implement = { action: 'implement', tier: 'deep' };
+
+    expect(resolveRunnerRouting({
+      config,
+      stage: 'implement',
+      action: 'implement',
+    })).toMatchObject({
+      runnerName: 'fake-workflow',
+      tier: 'standard',
+    });
+  });
+
   it('executes through the registry path and stamps routing on the result', async () => {
     const config = createDefaultWakeConfig('/tmp/wake');
     config.runners['fake-light'] = { kind: 'fake', cli: 'Fake Light' };
     config.tiers.light = ['fake-light'];
-    config.stages.queue = { action: 'refine', tier: 'light' };
 
     const runner = createRegistryRunner({ config, cwd: process.cwd() });
     const result = await runner.run({

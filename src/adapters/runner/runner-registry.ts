@@ -4,6 +4,7 @@ import { createCursorRunner } from '../cursor/cursor-runner.js';
 import { createFakeRunner } from '../fake/fake-runner.js';
 import type { AgentRunner } from '../../core/contracts.js';
 import { resolveRunnerRouting } from '../../domain/runner-routing.js';
+import { chooseAction, workflowForProjection, workflowNameForProjection } from '../../domain/workflows.js';
 import type {
   RunnerEntry,
   RunnerKind,
@@ -136,11 +137,18 @@ export function createRegistryRunner(input: {
       // tests, sandbox exec) that never see quota state.
       const routing =
         runInput.routing ??
-        resolveRunnerRouting({
-          config: runInput.config,
-          stage: runInput.projection.wake.stage,
-          action: runInput.action,
-        });
+        (() => {
+          const workflow = workflowForProjection(runInput.projection, runInput.config);
+          const workflowAction = workflow === null
+            ? null
+            : chooseAction(runInput.projection, workflow);
+          return resolveRunnerRouting({
+            config: runInput.config,
+            stage: workflowAction?.stage ?? runInput.projection.wake.stage,
+            action: runInput.action,
+            workflowName: workflowNameForProjection(runInput.projection, runInput.config),
+          });
+        })();
       if (routing === null) {
         throw new Error(
           'No runner available: every candidate in the resolved tier is quota-paused.',

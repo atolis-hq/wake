@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import type { ResourceIndex } from '../../core/contracts.js';
 import { buildResourceUri } from '../../domain/resource-uri.js';
 import { isTerminalStage } from '../../domain/stages.js';
+import { workflowForProjection } from '../../domain/workflows.js';
 import type {
   EventEnvelope,
   IssueStateRecord,
@@ -97,7 +98,8 @@ function deriveCondition(
     return { condition: 'needs-human', reason: `sentinel ${lastRun?.sentinel ?? stage}` };
   }
 
-  const hasRoute = config.stages[stage] !== undefined;
+  const workflow = workflowForProjection(item, config);
+  const hasRoute = config.stages[stage] !== undefined || workflow?.stages[stage] !== undefined;
   if (!hasRoute) {
     return { condition: 'stalled', reason: `no route configured for stage "${stage}"` };
   }

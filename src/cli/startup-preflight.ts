@@ -3,7 +3,6 @@ import { access } from 'node:fs/promises';
 import { promisify } from 'node:util';
 
 import type { WorkspaceManager } from '../core/contracts.js';
-import { agentActionValues } from '../domain/stages.js';
 import type { RunnerEntry, WakeConfig } from '../domain/types.js';
 import { loadPromptTemplate } from '../adapters/runner/prompt-templates.js';
 
@@ -36,9 +35,11 @@ function activeRunnerNames(config: WakeConfig, runnerOverride: string | undefine
     }
   }
 
-  for (const route of Object.values(config.stages)) {
-    if (route.runner !== undefined) {
-      names.add(route.runner);
+  for (const workflow of Object.values(config.workflows)) {
+    for (const route of Object.values(workflow.stages)) {
+      if (route.runner !== undefined) {
+        names.add(route.runner);
+      }
     }
   }
 
@@ -108,7 +109,13 @@ export async function runStartupPreflight(
     failures.push(`promptsRoot "${config.paths.promptsRoot}" is not readable: ${message}`);
   }
 
-  for (const action of agentActionValues) {
+  const actions = new Set(
+    Object.values(config.workflows).flatMap((workflow) =>
+      Object.entries(workflow.stages).map(([stageName, stage]) => stage.action ?? stageName),
+    ),
+  );
+
+  for (const action of actions) {
     for (const mode of ['start', 'resume'] as const) {
       try {
         await loadPrompt(action, mode, config.paths.promptsRoot);

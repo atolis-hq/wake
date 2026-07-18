@@ -1,9 +1,17 @@
 import type { AgentAction, RunnerRouting, Stage, WakeConfig, WakeLedger } from './types.js';
+import { defaultWorkflowName } from './workflows.js';
 
 export function maxConfiguredRunnerTimeoutMs(config: WakeConfig): number {
   const activeRunnerNames = new Set(
     Object.values(config.tiers).flatMap((candidates) => candidates),
   );
+  for (const workflow of Object.values(config.workflows)) {
+    for (const stageRoute of Object.values(workflow.stages)) {
+      if (stageRoute.runner !== undefined) {
+        activeRunnerNames.add(stageRoute.runner);
+      }
+    }
+  }
   for (const stageRoute of Object.values(config.stages)) {
     if (stageRoute.runner !== undefined) {
       activeRunnerNames.add(stageRoute.runner);
@@ -64,10 +72,16 @@ export function resolveRunnerRouting(input: {
   config: WakeConfig;
   stage: Stage;
   action: AgentAction;
+  workflowName?: string;
   ledger?: WakeLedger;
   now?: Date;
 }): RunnerRouting | null {
-  const stageRoute = input.config.stages[input.stage];
+  const workflowName = input.workflowName ?? defaultWorkflowName(input.config);
+  const workflow = input.config.workflows[workflowName];
+  if (workflow === undefined) {
+    throw new Error(`Unknown workflow "${workflowName}".`);
+  }
+  const stageRoute = workflow.stages[input.stage];
 
   if (stageRoute?.runner !== undefined) {
     const entry = input.config.runners[stageRoute.runner];

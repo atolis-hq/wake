@@ -3386,6 +3386,76 @@ describe('tick runner', () => {
     expect(events.filter((event) => event.sourceEventType === WORK_ITEM_CREATED_EVENT)).toEqual([]);
   });
 
+  it('parks a projection as workflow-changed when its stored stage is no longer configured', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const config = createDefaultWakeConfig(root);
+    config.workflows = {
+      default: {
+        stages: {
+          refine: {
+            action: 'refine',
+            workspace: 'read-only',
+            tier: 'light',
+            onDone: 'done',
+          },
+        },
+      },
+    };
+
+    await store.writeIssueState({
+      schemaVersion: 1,
+      workItemKey: workId(92),
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 92,
+        title: 'Drifted',
+        body: 'Body',
+        labels: ['wake:stage.implement'],
+        assignees: [],
+        isPullRequest: false,
+        state: 'open',
+        url: 'https://github.com/atolis-hq/wake/issues/92',
+        createdAt: '2026-07-05T12:00:00.000Z',
+        updatedAt: '2026-07-05T12:00:00.000Z',
+      },
+      wake: {
+        stage: 'implement',
+        stageHistory: [],
+        recentEventIds: [],
+        expectedEcho: { commentIds: [], labels: [] },
+        syncedAt: '2026-07-05T12:00:00.000Z',
+      },
+      context: {},
+      correlatedResources: [],
+      comments: [],
+    });
+
+    let runs = 0;
+    const tickRunner = createTickRunner({
+      clock: { now: () => new Date('2026-07-05T12:30:00.000Z') },
+      config,
+      stateStore: store,
+      workSource: { async pollEvents() { return []; } },
+      runner: {
+        async run() {
+          runs += 1;
+          return { result: 'DONE', model: 'test-model', cli: 'test-cli' };
+        },
+      },
+      resourceIndex: createFakeResourceIndex(),
+      workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+    });
+
+    const result = await tickRunner.runTick();
+    const projection = await store.readIssueState(workId(92));
+
+    expect(result.status).toBe('processed');
+    expect(runs).toBe(0);
+    expect(projection?.wake.stage).toBe('implement');
+    expect(projection?.wake.blockReason).toBe('workflow-changed');
+    expect(projection?.context.lastRunSentinel).toBe('BLOCKED');
+  });
+
   it('reproduces projections and the resource index exactly after deleting state/ and replaying events/ (ADR 0001 rebuild guarantee)', async () => {
     const store = createStateStore({ wakeRoot: root });
     const resourceIndex = createResourceIndex({ paths: store.paths });

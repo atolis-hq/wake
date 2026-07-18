@@ -17,14 +17,12 @@ import {
   workItemCreatedPayloadSchema,
 } from './schema.js';
 import {
-  agentActionValues,
   runnerSentinelValues,
-  stageValues,
 } from './stages.js';
 
-export type Stage = (typeof stageValues)[number];
+export type Stage = string;
 export type RunnerSentinel = (typeof runnerSentinelValues)[number];
-export type AgentAction = (typeof agentActionValues)[number];
+export type AgentAction = string;
 
 // correlatedResources is always present on the schema's true parsed output
 // (zod's `.default([])` guarantees it), so the read type keeps it required —
@@ -37,6 +35,8 @@ export type RunRecord = z.infer<typeof runRecordSchema>;
 export type EventEnvelope = z.infer<typeof eventEnvelopeSchema>;
 export type WakeLedger = z.infer<typeof ledgerSchema>;
 export type WakeConfig = z.infer<typeof wakeConfigSchema>;
+export type WorkflowDefinition = WakeConfig['workflows'][string];
+export type WorkflowStageDefinition = WorkflowDefinition['stages'][string];
 export type RunnerFailureClass = 'task' | 'quota' | 'infra';
 export type RunnerRouting = NonNullable<RunRecord['routing']>;
 export type RunnerEntry = WakeConfig['runners'][string];
