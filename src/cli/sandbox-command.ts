@@ -100,7 +100,7 @@ export async function runSandboxCommand(input: {
 
     await input.docker.build({
       image: input.config.sandbox.image,
-      dockerfile: resolve(repoRoot, 'docker', 'Dockerfile'),
+      dockerfile: resolve(input.wakeRoot, 'docker', 'Dockerfile'),
       contextDir: repoRoot,
     });
     return;

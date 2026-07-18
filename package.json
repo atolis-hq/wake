@@ -1,11 +1,30 @@
 {
-  "name": "wake",
+  "name": "@atolis-hq/wake",
   "version": "0.1.0",
-  "private": true,
+  "description": "Local autonomous agent control plane for software development",
   "license": "Apache-2.0",
   "type": "module",
+  "bin": {
+    "wake": "./dist/src/main.js"
+  },
+  "main": "./dist/src/main.js",
+  "exports": "./dist/src/main.js",
+  "files": [
+    "dist/src",
+    "docker",
+    "prompts",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "prepack": "npm run build",
     "test": "vitest run",
     "test:watch": "vitest",
     "start": "tsx src/main.ts start",

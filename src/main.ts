@@ -1,5 +1,7 @@
+#!/usr/bin/env node
 import { spawn } from 'node:child_process';
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { createDockerCli } from './adapters/docker/docker-cli.js';
 import { createFileBackedFakeTicketingSystem } from './adapters/fake/fake-ticketing-system.js';
@@ -57,6 +59,10 @@ export function readFlagBeforeCommandTerminator(
 
 function hasFlag(name: string, args: string[]): boolean {
   return commandArgsBeforeTerminator(args).includes(name);
+}
+
+function resolvePackageRoot(): string {
+  return resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 }
 
 function routesOnlyToFake(config: WakeConfig): boolean {
@@ -477,7 +483,7 @@ async function main() {
       await runInitCommand({
         cwd: process.cwd(),
         args: commandArgs,
-        repoRoot: process.cwd(),
+        repoRoot: resolvePackageRoot(),
       });
     },
     runSandbox: async (commandArgs) => {

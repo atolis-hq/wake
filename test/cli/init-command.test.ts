@@ -76,7 +76,7 @@ describe('init command', () => {
     expect(shellLauncher).toContain('rewritten_args+=("--wake-root" "/wake")');
     expect(powerShellLauncher).toContain(repoRoot);
     expect(powerShellLauncher).toContain("switch ($command)");
-    expect(powerShellLauncher).toContain('sandbox exec -- node $containerMain');
+    expect(powerShellLauncher).toContain("'sandbox', 'exec', '--', 'node', $containerMain");
     expect(powerShellLauncher).toContain("$rewrittenArgs.Add('--wake-root')");
     expect(powerShellLauncher).toContain("$rewrittenArgs.Add('/wake')");
 

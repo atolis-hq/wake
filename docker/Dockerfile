@@ -39,7 +39,8 @@ RUN curl https://cursor.com/install -fsS | HOME=/home/wake bash \
 
 WORKDIR /app
 COPY package*.json ./
-RUN --mount=type=cache,target=/root/.npm npm ci
+RUN --mount=type=cache,target=/root/.npm \
+  if [ -f package-lock.json ]; then npm ci; else npm install; fi
 
 COPY . .
 RUN npm run build && chmod +x docker/entrypoint.sh
