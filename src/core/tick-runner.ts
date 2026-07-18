@@ -333,6 +333,32 @@ export function createTickRunner(deps: {
     return deps.clock.now().toISOString();
   }
 
+  // The watchlist is every resource currently correlated to an open work
+  // item, deduplicated. It is derived once per tick from the pre-poll
+  // projection snapshot (see runTick's ordering note) and handed to every
+  // configured WorkSource; discovery sources (GitHub issues, the fake
+  // ticketing system) accept and ignore it, while a future PR-activity
+  // source uses it to know which PRs to poll for review/CI events.
+  function deriveWatchlist(projections: IssueStateRecord[]): { resourceUri: string }[] {
+    const seen = new Set<string>();
+    const watch: { resourceUri: string }[] = [];
+
+    for (const projection of projections) {
+      if (projection.issue.state !== 'open') {
+        continue;
+      }
+      for (const resource of projection.correlatedResources) {
+        if (seen.has(resource.resourceUri)) {
+          continue;
+        }
+        seen.add(resource.resourceUri);
+        watch.push({ resourceUri: resource.resourceUri });
+      }
+    }
+
+    return watch;
+  }
+
   async function markPendingActionableIssues(
     projections: IssueStateRecord[],
   ): Promise<void> {
@@ -893,7 +919,10 @@ export function createTickRunner(deps: {
         const nowIso = tickStartedAt.toISOString();
         await reconcileStaleRunningRecords(tickStartedAt);
         await retryUnconfirmedDeliveries();
-        const inboundEvents = await ingestInboundEvents(await deps.workSource.pollEvents());
+        const watchlistProjections = await deps.stateStore.listIssueStates();
+        const inboundEvents = await ingestInboundEvents(
+          await deps.workSource.pollEvents({ watch: deriveWatchlist(watchlistProjections) }),
+        );
 
         const projections = await deps.stateStore.listIssueStates();
         await cleanupClosedIssueWorkspaces(projections);

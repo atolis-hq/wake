@@ -354,7 +354,9 @@ export function createGitHubIssuesWorkSource(deps: {
   }
 
   return {
-    async pollEvents(): Promise<UnkeyedEventEnvelope[]> {
+    async pollEvents(
+      _input?: { watch: Array<{ resourceUri: string }> },
+    ): Promise<UnkeyedEventEnvelope[]> {
       const ingestedAt = deps.now().toISOString();
       const events: UnkeyedEventEnvelope[] = [];
 

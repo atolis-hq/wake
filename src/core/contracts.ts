@@ -38,8 +38,12 @@ export interface ResourceIndex {
  */
 export type UnkeyedEventEnvelope = Omit<EventEnvelope, 'workItemKey'>;
 
+export interface ResourceRef {
+  resourceUri: string;
+}
+
 export interface WorkSource {
-  pollEvents(): Promise<UnkeyedEventEnvelope[]>;
+  pollEvents(input?: { watch: ResourceRef[] }): Promise<UnkeyedEventEnvelope[]>;
 }
 
 export interface OutboundSink {

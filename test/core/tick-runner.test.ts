@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { access, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -588,6 +588,74 @@ describe('tick runner', () => {
     expect(runRecords[0]?.summary).toBe('Implemented. The previous CI run FAILED, but this one passed.');
     expect(runRecords[0]?.metadata).toMatchObject({
       envelope: 'structured',
+    });
+  });
+
+  it('derives the watchlist from correlatedResources and passes it to pollEvents', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const pollEvents = vi.fn().mockResolvedValue([]);
+
+    await store.writeIssueState({
+      schemaVersion: 1,
+      workItemKey: workId(91),
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 91,
+        title: 'Implement',
+        body: 'Body',
+        labels: ['wake:implement'],
+        assignees: [],
+        isPullRequest: false,
+        state: 'open',
+        url: 'https://example.test/issues/91',
+        createdAt: '2026-07-05T12:00:00.000Z',
+        updatedAt: '2026-07-05T12:00:00.000Z',
+      },
+      comments: [],
+      wake: {
+        stage: 'implement',
+        stageHistory: [],
+        recentEventIds: [],
+        syncedAt: '2026-07-05T12:00:00.000Z',
+        expectedEcho: { commentIds: [], labels: [] },
+      },
+      context: {},
+      correlatedResources: [
+        {
+          resourceUri: 'github:pr:org/repo#91',
+          role: 'implementation',
+          relation: 'primary',
+          provenance: 'agent-reported',
+          registeredAt: '2026-07-05T12:00:00.000Z',
+        },
+      ],
+    });
+
+    const config = createDefaultWakeConfig(root);
+
+    const tickRunner = createTickRunner({
+      clock: { now: () => new Date('2026-07-05T12:00:00.000Z') },
+      config,
+      stateStore: store,
+      workSource: { pollEvents },
+      outboundSink: {
+        async deliverIntent() {
+          return [];
+        },
+      },
+      runner: {
+        async run() {
+          throw new Error('should not run');
+        },
+      },
+      resourceIndex: createFakeResourceIndex(),
+      workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+    });
+
+    await tickRunner.runTick();
+
+    expect(pollEvents).toHaveBeenCalledWith({
+      watch: expect.arrayContaining([{ resourceUri: 'github:pr:org/repo#91' }]),
     });
   });
 

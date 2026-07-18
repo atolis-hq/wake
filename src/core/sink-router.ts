@@ -11,8 +11,8 @@ export interface NamedOutboundSink extends OutboundSink {
 
 export function createWorkSourceFanIn(sources: NamedWorkSource[]): WorkSource {
   return {
-    async pollEvents(): Promise<UnkeyedEventEnvelope[]> {
-      const batches = await Promise.all(sources.map((source) => source.pollEvents()));
+    async pollEvents(input): Promise<UnkeyedEventEnvelope[]> {
+      const batches = await Promise.all(sources.map((source) => source.pollEvents(input)));
       return batches.flat();
     },
   };
