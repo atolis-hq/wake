@@ -55,11 +55,24 @@ describe('git workspace manager', () => {
   });
 
   afterEach(async () => {
-    // On Windows, a just-exited git subprocess (or AV/indexer) can briefly hold a
-    // handle on files it touched inside the cloned workspaces; a bare rm races
-    // that and fails EBUSY/EPERM. maxRetries/retryDelay retry with backoff
-    // instead of failing the test on unrelated teardown flakiness.
-    await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    // Best-effort, hard-capped teardown so it can never fail or time out the
+    // suite. On Windows a just-exited git subprocess (or an AV scanner / search
+    // indexer) can keep handles on files inside the clones, and because the
+    // workspace manager clones with --no-local the object stores are fully
+    // copied rather than hardlinked, so a recursive rm racing those handles
+    // crawls (it does not reject — it retries busy entries indefinitely-ish).
+    // Race it against a cap and abandon it if it hasn't finished: the root
+    // lives under the OS temp dir and is reclaimed regardless, and any leftover
+    // rm keeps running harmlessly against the old (now-unused) path. CI (Linux)
+    // rm's in milliseconds and never hits the cap; this only bounds the Windows
+    // pathology.
+    const cleanup = rm(root, {
+      recursive: true,
+      force: true,
+      maxRetries: 10,
+      retryDelay: 250,
+    }).catch(() => {});
+    await Promise.race([cleanup, new Promise((resolve) => setTimeout(resolve, 8_000))]);
   });
 
   it('prepares a workspace checked out on a wake/issue branch from main', async () => {

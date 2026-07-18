@@ -31,6 +31,11 @@ import { resolveQuotaPauseUntil } from './quota-backoff.js';
 
 type ParsedRunnerResult = ReturnType<typeof parseRunnerResult>;
 
+// A resolved inbound event plus whether it is already on record. `persisted`
+// events are folded but not re-appended (appendEventEnvelope would only re-read
+// and return the identical envelope).
+type ResolvedInboundEvent = { envelope: EventEnvelope; persisted: boolean };
+
 function latestHumanCommentId(candidate: IssueStateRecord): string | undefined {
   const human = candidate.comments.filter((c) => !c.isBotAuthored);
   return human.at(-1)?.id;
@@ -281,7 +286,7 @@ export function createTickRunner(deps: {
       await deliverOutboundEvent(
         createLabelsEvent({
           projection,
-          runId: `pending-${projection.issue.number}-${deps.clock.now().getTime()}`,
+          runId: `pending-${projection.workItemKey}-${deps.clock.now().getTime()}`,
           statusLabel,
           stageLabel,
           occurredAt: eventStampNow(),
@@ -305,72 +310,32 @@ export function createTickRunner(deps: {
     return isLater ? right : left;
   }
 
-  // The central resolver (spec D1): sources name the *resource* an event came
-  // from and never the work item, so between pollEvents() and the append every
-  // inbound event's sourceRefs.resourceUri is resolved through the reverse
-  // index to the canonical workItemKey, minting a work item on a miss. This is
-  // the one mechanism — there is no founding-surface special case, and no
-  // resolution is ever cached in process memory between ticks (CLAUDE.md: the
-  // tick is a pure function of durable state; the index on disk *is* that
-  // state).
-  //
-  // Minting appends, in order: wake.workitem.created, then the
+  // The two internal events a mint (or a heal) appends after the source event
+  // that founded a work item: wake.workitem.created, then the
   // wake.correlation.registered that claims the originating resource as this
-  // work item's primary representation. Registration is not a separate
-  // back-fill pass — minting *is* the registration, so correlatedResources[]
-  // is a complete inventory from the work item's first event.
-  async function resolveInboundEvent(
+  // work item's primary representation. Their ids are derived from the work id,
+  // so re-emitting them is idempotent — appendEventEnvelope dedups on the id.
+  //
+  // Ordering and timestamps matter, and not only for readability. Both fold
+  // against the projection the source event creates, and applyEvent drops
+  // anything that folds while `current === null`. So they must never sort
+  // *before* that source event in rebuildFromEvents' globally-ordered replay —
+  // if they did, replay would silently discard the registration, leaving
+  // correlatedResources[] empty and the index unpopulated, while the events
+  // still on record stop any later tick from re-registering. Permanent,
+  // self-concealing loss (Task 5, round 3). Reading the clock here is already
+  // after pollEvents(), but that alone is not a guarantee: the source event's
+  // ingestedAt comes from the *source's* clock, which for a real source is
+  // another machine's and can legitimately run ahead of ours. Anchoring on the
+  // source event's own timestamp makes the ordering hold by construction rather
+  // than by clock agreement; appending the source event first means a tie
+  // resolves in its favour (the sort is stable, so equal timestamps keep append
+  // order).
+  function buildOriginCorrelationEvents(
+    workItemKey: string,
     unkeyed: UnkeyedEventEnvelope,
-  ): Promise<EventEnvelope[]> {
-    const { resourceUri } = unkeyed.sourceRefs;
-    if (resourceUri === undefined) {
-      // A programming error in the adapter, not a runtime condition to absorb.
-      // Guessing an identity here would silently fork a duplicate work item
-      // for work already in flight — exactly the corruption the reverse index
-      // exists to prevent — so fail loudly instead.
-      throw new Error(
-        `cannot resolve inbound event ${unkeyed.eventId} from ${unkeyed.sourceSystem}: ` +
-          'sourceRefs.resourceUri is required for every unkeyed source event',
-      );
-    }
-
-    // An event we have already persisted was already resolved, on some earlier
-    // tick, and its stamped key is the durable answer. Re-resolving it through
-    // the index would be wrong as well as wasteful: if that work item has since
-    // retracted this resource, the index no longer holds it, the lookup misses,
-    // and a miss means mint — so a re-polled event (sources legitimately
-    // re-emit the same eventId, e.g. an unchanged issue) would fork a duplicate
-    // work item. Reusing the persisted key keeps resolution idempotent per
-    // event id, which is what the append-only log already promises.
-    const persisted = await deps.stateStore.readEventEnvelope(unkeyed.eventId);
-    if (persisted !== null) {
-      return [persisted];
-    }
-
-    const existingWorkItemKey = await deps.resourceIndex.resolve(resourceUri);
-    if (existingWorkItemKey !== undefined) {
-      return [createEventEnvelope({ ...unkeyed, workItemKey: existingWorkItemKey })];
-    }
-
-    const workItemKey = createWorkId();
-    const keyed = createEventEnvelope({ ...unkeyed, workItemKey });
-
-    // Ordering matters, and not only for readability. Both mint events fold
-    // against the projection the source event creates, and applyEvent drops
-    // anything that folds while `current === null`. So they must never sort
-    // *before* that source event in rebuildFromEvents' globally-ordered replay
-    // — if they did, replay would silently discard the registration, leaving
-    // correlatedResources[] empty and the index unpopulated, while the events
-    // still on record stop any later tick from re-registering. Permanent,
-    // self-concealing loss (Task 5, round 3).
-    //
-    // Reading the clock here is already after pollEvents(), but that alone is
-    // not a guarantee: the source event's ingestedAt comes from the *source's*
-    // clock, which for a real source is another machine's and can legitimately
-    // run ahead of ours. Anchoring on the source event's own timestamp makes
-    // the ordering hold by construction rather than by clock agreement, and
-    // appending the source event first means a tie resolves in its favour
-    // (the sort is stable, so equal timestamps keep append order).
+    resourceUri: string,
+  ): EventEnvelope[] {
     const mintedAt = laterTimestamp(unkeyed.ingestedAt, eventStampNow());
     const sourceRefs = {
       ...unkeyed.sourceRefs,
@@ -411,7 +376,96 @@ export function createTickRunner(deps: {
       },
     });
 
-    return [keyed, createdEvent, registeredEvent];
+    return [createdEvent, registeredEvent];
+  }
+
+  // The central resolver (spec D1): sources name the *resource* an event came
+  // from and never the work item, so between pollEvents() and the append every
+  // inbound event's sourceRefs.resourceUri is resolved through the reverse
+  // index to the canonical workItemKey, minting a work item on a miss. This is
+  // the one mechanism — there is no founding-surface special case, and no
+  // resolution is ever cached in process memory between ticks (CLAUDE.md: the
+  // tick is a pure function of durable state; the index on disk *is* that
+  // state).
+  //
+  // Each resolved event carries whether it is already `persisted`, so the
+  // caller can skip re-appending it (appendEventEnvelope would only re-read it
+  // and hand back the same envelope). Minting *is* registration, so a freshly
+  // minted work item's correlatedResources[] is complete from its first event.
+  async function resolveInboundEvent(
+    unkeyed: UnkeyedEventEnvelope,
+  ): Promise<ResolvedInboundEvent[]> {
+    const { resourceUri } = unkeyed.sourceRefs;
+    if (resourceUri === undefined) {
+      // A programming error in the adapter, not a runtime condition to absorb.
+      // Guessing an identity here would silently fork a duplicate work item
+      // for work already in flight — exactly the corruption the reverse index
+      // exists to prevent — so fail loudly instead.
+      throw new Error(
+        `cannot resolve inbound event ${unkeyed.eventId} from ${unkeyed.sourceSystem}: ` +
+          'sourceRefs.resourceUri is required for every unkeyed source event',
+      );
+    }
+
+    // An event we have already persisted was already resolved, on some earlier
+    // tick, and its stamped key is the durable answer. Re-resolving it through
+    // the index would be wrong as well as wasteful: if that work item has since
+    // retracted this resource, the index no longer holds it, the lookup misses,
+    // and a miss means mint — so a re-polled event (sources legitimately
+    // re-emit the same eventId, e.g. an unchanged issue) would fork a duplicate
+    // work item. Reusing the persisted key keeps resolution idempotent per
+    // event id, which is what the append-only log already promises.
+    const persisted = await deps.stateStore.readEventEnvelope(unkeyed.eventId);
+    if (persisted !== null) {
+      // Heal a partially minted work item. The index entry for a resource is
+      // written only when its origin wake.correlation.registered event is
+      // *folded*, several appends after the founding source event. A crash in
+      // that window leaves the source event durable — so this branch suppresses
+      // re-minting — while the index has no entry, and a later event on the
+      // same resource would miss the index and fork a duplicate work item
+      // (crash/restart safety, CLAUDE.md). If the index does not credit this
+      // event's work item *and* its origin correlation never landed, re-emit
+      // the mint tail (idempotent by id). The guard is the missing origin
+      // event, not merely an empty index: a deliberately *retracted* resource
+      // also resolves to undefined but keeps its origin-correlation event on
+      // record, and must not be silently re-registered.
+      const owner = await deps.resourceIndex.resolve(resourceUri);
+      if (
+        owner === undefined &&
+        (await deps.stateStore.readEventEnvelope(
+          `${persisted.workItemKey}-origin-correlation`,
+        )) === null
+      ) {
+        return [
+          { envelope: persisted, persisted: true },
+          ...buildOriginCorrelationEvents(persisted.workItemKey, unkeyed, resourceUri).map(
+            (envelope) => ({ envelope, persisted: false }),
+          ),
+        ];
+      }
+      return [{ envelope: persisted, persisted: true }];
+    }
+
+    const existingWorkItemKey = await deps.resourceIndex.resolve(resourceUri);
+    if (existingWorkItemKey !== undefined) {
+      return [
+        {
+          envelope: createEventEnvelope({ ...unkeyed, workItemKey: existingWorkItemKey }),
+          persisted: false,
+        },
+      ];
+    }
+
+    const workItemKey = createWorkId();
+    const keyed = createEventEnvelope({ ...unkeyed, workItemKey });
+
+    return [
+      { envelope: keyed, persisted: false },
+      ...buildOriginCorrelationEvents(workItemKey, unkeyed, resourceUri).map((envelope) => ({
+        envelope,
+        persisted: false,
+      })),
+    ];
   }
 
   async function ingestInboundEvents(
@@ -425,10 +479,14 @@ export function createTickRunner(deps: {
       // appendEventEnvelope is id-deduplicated and returns the *existing*
       // envelope when one is already on record. Folding our own copy instead
       // would let state/ diverge from events/ — and replay is defined by
-      // events/, so the divergence would only surface after a rebuild.
+      // events/, so the divergence would only surface after a rebuild. An event
+      // already flagged `persisted` needs no second append: appendEventEnvelope
+      // would only re-read it off disk and hand back the same envelope, and
+      // every unchanged issue is re-polled every tick, so that read is the
+      // dominant redundant cost this branch avoids.
       const events: EventEnvelope[] = [];
-      for (const event of resolved) {
-        events.push(await deps.stateStore.appendEventEnvelope(event));
+      for (const { envelope, persisted } of resolved) {
+        events.push(persisted ? envelope : await deps.stateStore.appendEventEnvelope(envelope));
       }
       // Folded before the next event is resolved, because it is the fold of
       // the registration event that writes the index entry the *next* event on

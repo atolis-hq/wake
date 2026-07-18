@@ -2855,6 +2855,273 @@ describe('tick runner', () => {
     expect(first?.workItemKey).not.toBe(second?.workItemKey);
   });
 
+  it('re-registers the origin resource when an earlier mint was interrupted before it landed, so a later event does not fork a duplicate', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const resourceIndex = createFakeResourceIndex();
+    const config = createDefaultWakeConfig(root);
+    config.sources.github.policy.requiredLabels = ['wake:queue'];
+
+    const tickets = [
+      {
+        repo: 'atolis-hq/wake',
+        number: 301,
+        title: 'Interrupted mint',
+        body: 'Body',
+        labels: ['wake:queue'],
+        comments: [] as Array<{ id: string; body: string; author: { login: string } }>,
+      },
+    ];
+
+    const tickRunner = createTickRunner({
+      clock: { now: () => new Date('2026-07-05T12:00:00.000Z') },
+      config,
+      stateStore: store,
+      resourceIndex,
+      workSource: createFakeTicketingSystem({
+        tickets,
+        now: () => new Date('2026-07-05T12:00:01.000Z'),
+      }),
+      runner: {
+        async run() {
+          return { result: 'DONE', model: 'test-model', cli: 'test-cli' };
+        },
+      },
+      workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+    });
+
+    // First tick mints the work item and registers its origin ticket.
+    await tickRunner.runTick();
+    const workItemKey =
+      (await findByIssueRef(store, { repo: 'atolis-hq/wake', issueNumber: 301 }))?.workItemKey ?? '';
+    expect(isWorkId(workItemKey)).toBe(true);
+    const uri = 'fake-ticketing:issue:atolis-hq/wake#301';
+    expect(await resourceIndex.resolve(uri)).toBe(workItemKey);
+
+    // Simulate a crash that landed between appending the origin ticket's source
+    // event and folding its origin correlation: the source event stays durable
+    // (so the resolver's persisted shortcut fires and it is never re-minted),
+    // but the index entry and the origin-correlation event never made it.
+    await resourceIndex.retract(uri);
+    await rm(join(root, 'events-by-id', `${workItemKey}-origin-correlation.json`), { force: true });
+    await rm(join(root, 'events-by-id', `${workItemKey}-created.json`), { force: true });
+
+    // A later poll re-emits the same upsert (heal path) and a brand-new comment
+    // on the same ticket. Without healing, the comment would miss the index and
+    // fork a second work item.
+    tickets[0]!.comments.push({ id: 'c-301', body: 'ping', author: { login: 'alice' } });
+    await tickRunner.runTick();
+
+    expect(await resourceIndex.resolve(uri)).toBe(workItemKey);
+    expect(await store.listIssueStates()).toHaveLength(1);
+    const commentEvent = (await store.listEventEnvelopes()).find(
+      (event) => event.sourceEventType === 'fake.issue.comment.created',
+    );
+    expect(commentEvent?.workItemKey).toBe(workItemKey);
+  });
+
+  it('does not re-claim a deliberately retracted origin resource via the heal path', async () => {
+    // Sibling of the retraction test above, guarding the heal specifically: a
+    // retracted resource resolves to undefined but keeps its origin-correlation
+    // event, so the heal must leave it alone rather than re-register it.
+    const store = createStateStore({ wakeRoot: root });
+    const resourceIndex = createFakeResourceIndex();
+    const config = createDefaultWakeConfig(root);
+    config.sources.github.policy.requiredLabels = ['wake:queue'];
+
+    const tickRunner = createTickRunner({
+      clock: { now: () => new Date('2026-07-05T12:00:00.000Z') },
+      config,
+      stateStore: store,
+      resourceIndex,
+      workSource: createFakeTicketingSystem({
+        tickets: [
+          {
+            repo: 'atolis-hq/wake',
+            number: 302,
+            title: 'Retracted then re-polled',
+            body: 'Body',
+            labels: ['wake:queue'],
+            comments: [],
+          },
+        ],
+        now: () => new Date('2026-07-05T12:00:01.000Z'),
+      }),
+      runner: {
+        async run() {
+          return { result: 'DONE', model: 'test-model', cli: 'test-cli' };
+        },
+      },
+      workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+    });
+
+    await tickRunner.runTick();
+    const uri = 'fake-ticketing:issue:atolis-hq/wake#302';
+    // Retract only the index entry, leaving the origin-correlation event on
+    // record — the durable signature of an intentional retraction, not a crash.
+    await resourceIndex.retract(uri);
+
+    await tickRunner.runTick();
+
+    // The heal must NOT fire: the resource stays unclaimed.
+    expect(await resourceIndex.resolve(uri)).toBeUndefined();
+    expect(await store.listIssueStates()).toHaveLength(1);
+  });
+
+  it('does not re-append an already-persisted inbound event on a later tick', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const resourceIndex = createResourceIndex({ paths: store.paths });
+    const config = createDefaultWakeConfig(root);
+    config.sources.github.policy.requiredLabels = ['wake:queue'];
+
+    const appendedIds: string[] = [];
+    const countingStore = {
+      ...store,
+      async appendEventEnvelope(event: Parameters<typeof store.appendEventEnvelope>[0]) {
+        appendedIds.push(event.eventId);
+        return store.appendEventEnvelope(event);
+      },
+    };
+
+    const tickRunner = createTickRunner({
+      clock: { now: () => new Date('2026-07-05T12:00:00.000Z') },
+      config,
+      stateStore: countingStore,
+      resourceIndex,
+      workSource: createFakeTicketingSystem({
+        tickets: [
+          {
+            repo: 'atolis-hq/wake',
+            number: 210,
+            title: 'Once',
+            body: 'Body',
+            labels: ['wake:queue'],
+            comments: [],
+          },
+        ],
+        now: () => new Date('2026-07-05T12:00:01.000Z'),
+      }),
+      runner: {
+        async run() {
+          return { result: 'DONE', model: 'test-model', cli: 'test-cli' };
+        },
+      },
+      workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+    });
+
+    await tickRunner.runTick();
+    await tickRunner.runTick();
+
+    // The upsert is durable after tick 1; tick 2 re-polls the identical event
+    // id and must resolve it straight from disk without a second append.
+    const upsertId = 'fake-issue-atolis-hq/wake-210';
+    expect(appendedIds.filter((id) => id === upsertId)).toHaveLength(1);
+  });
+
+  it('keys the pending-marking runId on the work id, not the bare ticket number', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const pendingRunIds: string[] = [];
+
+    for (const issueNumber of [41, 42]) {
+      await store.writeIssueState({
+        schemaVersion: 1,
+        workItemKey: workId(issueNumber),
+        issue: {
+          repo: 'atolis-hq/wake',
+          number: issueNumber,
+          title: `Approval ${issueNumber}`,
+          body: 'Body',
+          labels: ['wake:queue', 'wake:status.awaiting-approval', 'wake:stage.implement'],
+          assignees: [],
+          isPullRequest: false,
+          state: 'open',
+          url: `https://example.test/issues/${issueNumber}`,
+          createdAt: '2026-07-05T12:00:00.000Z',
+          updatedAt: '2026-07-05T12:00:00.000Z',
+        },
+        comments: [],
+        wake: {
+          stage: 'implement',
+          stageHistory: [],
+          recentEventIds: [],
+          syncedAt: '2026-07-05T12:00:00.000Z',
+          expectedEcho: { commentIds: [], labels: [] },
+        },
+        context: {
+          lastRunSentinel: 'AWAITING_APPROVAL',
+          pendingApprovalAction: 'implement',
+        },
+        correlatedResources: [],
+      });
+    }
+
+    const config = createDefaultWakeConfig(root);
+    config.sources.github.policy.requiredLabels = ['wake:queue'];
+
+    const tickRunner = createTickRunner({
+      clock: { now: () => new Date('2026-07-05T12:10:00.000Z') },
+      config,
+      stateStore: store,
+      workSource: {
+        async pollEvents() {
+          return [41, 42].map((issueNumber) => ({
+            schemaVersion: 1 as const,
+            eventId: `evt-comment-${issueNumber}`,
+            streamScope: 'work-item' as const,
+            direction: 'inbound' as const,
+            sourceSystem: 'github',
+            sourceEventType: 'ticket.comment.created',
+            sourceRefs: {
+              repo: 'atolis-hq/wake',
+              issueNumber,
+              commentId: `c-${issueNumber}`,
+              resourceUri: githubIssueUri(issueNumber),
+            },
+            occurredAt: '2026-07-05T12:09:00.000Z',
+            ingestedAt: '2026-07-05T12:09:00.000Z',
+            trigger: 'context-only' as const,
+            payload: {
+              comment: {
+                id: `c-${issueNumber}`,
+                body: issueNumber === 41 ? '/approved' : '/changes Please adjust this.',
+                author: { login: 'owner' },
+                createdAt: '2026-07-05T12:09:00.000Z',
+                updatedAt: '2026-07-05T12:09:00.000Z',
+              },
+            },
+          }));
+        },
+      },
+      outboundSink: {
+        async deliverIntent(input) {
+          if (
+            input.event.sourceEventType === 'wake.labels.requested' &&
+            input.event.payload.statusLabel === 'wake:status.pending'
+          ) {
+            pendingRunIds.push(String(input.event.sourceRefs.runId));
+          }
+          return [];
+        },
+      },
+      runner: {
+        async run() {
+          return { result: 'Revised.\nDONE', model: 'test-model', cli: 'test-cli' };
+        },
+      },
+      resourceIndex: await seededResourceIndex([41, 42]),
+      workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+    });
+
+    await tickRunner.runTick();
+
+    expect(pendingRunIds.length).toBeGreaterThanOrEqual(1);
+    for (const runId of pendingRunIds) {
+      expect(runId.startsWith('pending-work-')).toBe(true);
+    }
+    // The seeded work id appears; the bare "pending-41-"/"pending-42-" shape never does.
+    expect(pendingRunIds.some((id) => id.includes(workId(41)) || id.includes(workId(42)))).toBe(true);
+    expect(pendingRunIds.every((id) => !/^pending-4[12]-/.test(id))).toBe(true);
+  });
+
   it('fails loudly rather than minting when a polled event carries no sourceRefs.resourceUri', async () => {
     const store = createStateStore({ wakeRoot: root });
     const config = createDefaultWakeConfig(root);
