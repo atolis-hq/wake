@@ -4364,6 +4364,88 @@ describe('tick runner', () => {
 
       expect(prSinkPublished).toHaveLength(1);
       expect(prSinkPublished[0]?.sourceEventType).toBe('pr.comment.reply.published');
+
+      // Step 8 (review fix regression): `latestComment` is a sticky,
+      // per-work-item field (projection-updater.ts's comment fold overwrites
+      // it unconditionally and nothing ever resets it) — it still points at
+      // prc-1/prResourceUri here even though tick 3 already handled that
+      // comment (context.lastHandledCommentId === 'prc-1'). Simulate a run
+      // that completes for a reason OTHER than a fresh comment — an
+      // automatic quota-failure retry, one of needsWakeAction's non-comment
+      // trigger paths — and confirm the reply does NOT get misrouted to the
+      // PR sink just because the projection's stale latestComment still
+      // carries a PR resourceUri from a comment that was already replied to.
+      const preTick4Projection = await findByIssueRef(store, { repo, issueNumber });
+      expect(preTick4Projection).not.toBeNull();
+      await store.writeIssueState({
+        ...(preTick4Projection as IssueStateRecord),
+        context: {
+          ...(preTick4Projection as IssueStateRecord).context,
+          lastRunSentinel: 'FAILED',
+          lastFailureClass: 'quota',
+          lastRunAction: 'implement',
+        },
+      });
+
+      const tickRunner4 = createTickRunner({
+        clock: { now: () => new Date('2026-07-05T12:15:00.000Z') },
+        config,
+        stateStore: store,
+        workSource: createWorkSourceFanIn([
+          { source: 'fake-ticketing', async pollEvents() { return []; } },
+          { source: 'fake-github-pr', async pollEvents() { return []; } },
+        ]),
+        outboundSink,
+        runner: {
+          async run(input) {
+            runnerCallCount += 1;
+            capturedSessionIds.push(input.projection.wake.sessionId);
+            return {
+              result: [
+                'Retried after the quota backoff cleared; nothing new to report.',
+                '',
+                '```wake-result',
+                '{ "status": "DONE" }',
+                '```',
+                'DONE',
+              ].join('\n'),
+              model: 'test-model',
+              cli: 'test-cli',
+              session_id: 'session-91',
+            };
+          },
+        },
+        resourceIndex,
+        workspaceManager,
+        artifactVerifier,
+      });
+
+      const tick4Result = await tickRunner4.runTick();
+      expect(tick4Result.status).toBe('processed');
+      expect(runnerCallCount).toBe(4);
+      const tick4RunId = (tick4Result as { runId?: string }).runId;
+      expect(tick4RunId).toBeDefined();
+
+      // The quota-retry run wasn't triggered by a fresh comment, so its own
+      // reply must go to the issue sink, not the PR sink — even though the
+      // projection's sticky latestComment.resourceUri still names the PR.
+      // (retryUnconfirmedDeliveries may also re-attempt tick 3's still-
+      // unconfirmed PR delivery during this tick; identify tick 4's own
+      // intent by runId to avoid conflating the two.)
+      expect(
+        prSinkReceived.some(
+          (event) =>
+            event.sourceEventType === 'wake.publish.intent.requested' &&
+            event.sourceRefs.runId === tick4RunId,
+        ),
+      ).toBe(false);
+      const tick4GithubIntent = githubSinkReceived.find(
+        (event) =>
+          event.sourceEventType === 'wake.publish.intent.requested' &&
+          event.sourceRefs.runId === tick4RunId,
+      );
+      expect(tick4GithubIntent).toBeDefined();
+      expect(tick4GithubIntent?.sourceRefs.resourceUri).toBeUndefined();
     });
   });
 });

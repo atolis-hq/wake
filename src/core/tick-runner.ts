@@ -45,6 +45,34 @@ function latestHumanCommentId(candidate: IssueStateRecord): string | undefined {
   return human.at(-1)?.id;
 }
 
+// `latestComment` is a sticky, per-work-item field: projection-updater.ts's
+// comment fold overwrites it unconditionally on every inbound comment
+// (any surface) and nothing ever resets it. So it means "the last comment
+// this work item has ever received," not "the comment that triggered the
+// currently completing run." Several needsWakeAction trigger paths (first
+// run, quota-failure retry, first refine/implement pass) complete a run
+// with no fresh comment driving it at all — in those cases latestComment
+// may still be pointing at an older, already-handled comment from a
+// different surface (e.g. a PR) and must not be trusted as this run's
+// trigger. This mirrors policy-engine.ts's needsWakeAction "is there an
+// unhandled human comment" check exactly, so a comment is only treated as
+// having driven this run when it's human-authored and not yet the
+// candidate's own lastHandledCommentId (read from the pre-completion
+// projection passed in as `candidate`/`projection`, since the completion
+// event that would update lastHandledCommentId for *this* run hasn't been
+// folded yet at the point this runs).
+function isFreshTriggeringComment(candidate: IssueStateRecord): boolean {
+  const context = candidate.context as Record<string, unknown>;
+  const handledCommentId =
+    typeof context.lastHandledCommentId === 'string' ? context.lastHandledCommentId : undefined;
+
+  return (
+    candidate.latestComment !== undefined &&
+    !candidate.latestComment.isBotAuthored &&
+    candidate.latestComment.id !== handledCommentId
+  );
+}
+
 export function createTickRunner(deps: {
   clock: Clock;
   config: WakeConfig;
@@ -148,7 +176,16 @@ export function createTickRunner(deps: {
         // sink-router.ts) can send the reply back to that surface instead of
         // defaulting to the issue thread. Without this, every reply landed
         // on the origin sink regardless of which surface triggered the run.
-        ...(input.projection.latestComment?.resourceUri === undefined
+        //
+        // Gated on isFreshTriggeringComment: latestComment is sticky (see
+        // that function's comment) and several run-completion paths (first
+        // run, quota retry, first refine/implement pass) have no fresh
+        // comment behind them at all — for those, threading the stale
+        // latestComment.resourceUri would misroute the reply to whatever
+        // surface last happened to comment, even long after that comment
+        // was already replied to.
+        ...(input.projection.latestComment?.resourceUri === undefined ||
+        !isFreshTriggeringComment(input.projection)
           ? {}
           : { resourceUri: input.projection.latestComment.resourceUri }),
       },
