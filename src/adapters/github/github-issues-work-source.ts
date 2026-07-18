@@ -2,9 +2,10 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 import type { ResourceIndex, UnkeyedEventEnvelope } from '../../core/contracts.js';
-import type { EventEnvelope, IssueStateRecord, WakeConfig } from '../../domain/types.js';
+import { defaultAgentIdentity } from '../../domain/schema.js';
 import { buildResourceUri } from '../../domain/resource-uri.js';
 import { wakeStageLabelPrefix } from '../../domain/stages.js';
+import type { EventEnvelope, IssueStateRecord, WakeConfig } from '../../domain/types.js';
 import { createEventEnvelope, createUnkeyedEventEnvelope } from '../../lib/event-log.js';
 import { wakeVersion } from '../../version.js';
 import { buildResumeCommandForCli } from '../runner/runner-cli-adapter.js';
@@ -263,7 +264,7 @@ function formatWakeComment(payload: Record<string, unknown>, controlPlaneUrl?: s
     runId === undefined ? undefined : `run \`${runId}\``,
   ].filter((part): part is string => part !== undefined);
 
-  const name = controlPlaneUrl === undefined ? 'Eddy' : `[Eddy](${controlPlaneUrl})`;
+  const name = controlPlaneUrl === undefined ? defaultAgentIdentity : `[${defaultAgentIdentity}](${controlPlaneUrl})`;
   const header = `**${name}** _(Wake ${wakeVersion}${details.length > 0 ? ` · ${details.join(' · ')}` : ''})_`;
   const sections = [wakeCommentMarker, header, body];
 
@@ -293,7 +294,7 @@ function formatWakeComment(payload: Record<string, unknown>, controlPlaneUrl?: s
     sections.push(
       [
         '---',
-        '_Next steps: reply on this thread to continue, or resume this exact Eddy session locally:_',
+        `_Next steps: reply on this thread to continue, or resume this exact ${defaultAgentIdentity} session locally:_`,
         '```',
         resumeCommand,
         '```',

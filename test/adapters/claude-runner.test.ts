@@ -9,7 +9,7 @@ import {
   buildStagePrompt,
   buildClaudePrintArgs,
   buildClaudeRemoteControlArgs,
-  buildEddySessionName,
+  buildWakeSessionName,
   classifyClaudeCliFailure,
   createClaudeRunner,
   formatClaudeRunLogLine,
@@ -50,7 +50,7 @@ describe('claude runner command building', () => {
     const args = buildClaudePrintArgs({
       model: 'haiku',
       prompt: defaultSmokePrompt,
-      sessionName: 'Eddy',
+      sessionName: 'Wake',
     });
 
     expect(args).toContain('-p');
@@ -63,8 +63,8 @@ describe('claude runner command building', () => {
     const args = buildClaudeRemoteControlArgs({
       model: 'haiku',
       prompt: defaultSmokePrompt,
-      remoteControlName: 'Eddy',
-      sessionName: 'Eddy',
+      remoteControlName: 'Wake',
+      sessionName: 'Wake',
     });
 
     expect(args).toContain('--remote-control');
@@ -231,7 +231,7 @@ describe('claude runner command building', () => {
           {
             id: 'c-2',
             body: 'Wake status update',
-            author: { login: 'eddy-bot' },
+            author: { login: 'wake-bot' },
             createdAt: '2026-07-05T12:02:00.000Z',
             updatedAt: '2026-07-05T12:02:00.000Z',
             isBotAuthored: true,
@@ -378,7 +378,7 @@ describe('claude runner command building', () => {
           {
             id: 'c-2',
             body: 'Wake status update',
-            author: { login: 'eddy-bot' },
+            author: { login: 'wake-bot' },
             createdAt: '2026-07-05T12:02:00.000Z',
             updatedAt: '2026-07-05T12:02:00.000Z',
             isBotAuthored: true,
@@ -516,7 +516,7 @@ describe('claude runner command building', () => {
     const args = buildClaudePrintArgs({
       model: 'haiku',
       prompt: 'do work',
-      sessionName: 'Eddy',
+      sessionName: 'Wake',
       extraArgs: ['--dangerously-skip-permissions'],
     });
 
@@ -530,7 +530,7 @@ describe('claude runner command building', () => {
       model: 'haiku',
       prompt: 'do work',
       systemPrompt: 'Wake harness',
-      sessionName: 'Eddy',
+      sessionName: 'Wake',
       permissionMode: 'acceptEdits',
       allowedTools: ['Bash(git *)', 'Bash(gh *)'],
     });
@@ -549,26 +549,26 @@ describe('claude runner command building', () => {
     const args = buildClaudePrintArgs({
       model: 'haiku',
       prompt: 'do work',
-      sessionName: 'Eddy',
-      remoteControlName: 'Eddy-issue-8-run-1',
+      sessionName: 'Wake',
+      remoteControlName: 'Wake-issue-8-run-1',
     });
 
     expect(args).toContain('--remote-control');
-    expect(args).toContain('Eddy-issue-8-run-1');
+    expect(args).toContain('Wake-issue-8-run-1');
     expect(args).toContain('--');
     expect(args.at(-1)).toBe('do work');
   });
 
   it('builds a session name from the ticket id, title, and run id', () => {
-    const name = buildEddySessionName({
-      sessionName: 'Eddy',
+    const name = buildWakeSessionName({
+      sessionName: 'Wake',
       issueNumber: 8,
       title: 'Update README with runner config documentation',
       runId: 'run-8-1783282434129',
     });
 
     expect(name).toBe(
-      'Eddy-issue-8-update-readme-with-runner-config-documen-run-8-1783282434129',
+      'Wake-issue-8-update-readme-with-runner-config-documen-run-8-1783282434129',
     );
   });
 
@@ -600,7 +600,7 @@ describe('claude runner command building', () => {
     const args = buildClaudePrintArgs({
       model: 'haiku',
       prompt: 'do work',
-      sessionName: 'Eddy',
+      sessionName: 'Wake',
       resumeSessionId: 'session-abc-123',
     });
 
@@ -616,7 +616,7 @@ describe('claude runner command building', () => {
     const args = buildClaudePrintArgs({
       model: 'haiku',
       prompt: 'do work',
-      sessionName: 'Eddy',
+      sessionName: 'Wake',
     });
 
     expect(args).not.toContain('--resume');
@@ -626,7 +626,7 @@ describe('claude runner command building', () => {
     const args = buildClaudePrintArgs({
       model: 'haiku',
       prompt: 'do work',
-      sessionName: 'Eddy',
+      sessionName: 'Wake',
       maxTurns: 10,
     });
 
@@ -854,8 +854,8 @@ describe('claude runner command building', () => {
           model: 'haiku',
           models: { default: 'haiku' },
           smokeModel: 'haiku',
-          sessionName: 'Eddy',
-          remoteControlName: 'Eddy',
+          sessionName: 'Wake',
+          remoteControlName: 'Wake',
           smokePrompt: defaultSmokePrompt,
           timeoutMs: 10_000,
           remoteControl: { enabled: false },
@@ -930,8 +930,8 @@ describe('claude runner command building', () => {
         model: 'haiku',
         models: { default: 'haiku' },
         smokeModel: 'haiku',
-        sessionName: 'Eddy',
-        remoteControlName: 'Eddy',
+        sessionName: 'Wake',
+        remoteControlName: 'Wake',
         smokePrompt: defaultSmokePrompt,
         timeoutMs: 10_000,
         remoteControl: { enabled: false },
@@ -969,7 +969,7 @@ describe('model resolution', () => {
     const args = buildClaudePrintArgs({
       model: resolveTestModel(settings, 'implement'),
       prompt: 'test',
-      sessionName: 'Eddy',
+      sessionName: 'Wake',
     });
     expect(args).toContain('sonnet-4.6');
   });
@@ -979,7 +979,7 @@ describe('model resolution', () => {
     const args = buildClaudePrintArgs({
       model: resolveTestModel(settings, 'refine'),
       prompt: 'test',
-      sessionName: 'Eddy',
+      sessionName: 'Wake',
     });
     expect(args).toContain('opus');
   });
@@ -989,7 +989,7 @@ describe('model resolution', () => {
     const args = buildClaudePrintArgs({
       model: resolveTestModel(settings, 'implement'),
       prompt: 'test',
-      sessionName: 'Eddy',
+      sessionName: 'Wake',
     });
     expect(args).toContain('legacy-haiku');
   });
@@ -999,7 +999,7 @@ describe('model resolution', () => {
     const args = buildClaudePrintArgs({
       model: resolveTestModel(settings, 'implement'),
       prompt: 'test',
-      sessionName: 'Eddy',
+      sessionName: 'Wake',
     });
     expect(args).toContain('new-haiku');
   });

@@ -190,11 +190,11 @@ Every invocation also carries a hard `--max-turns` cap (small for refine, larger
 for implement); hitting the cap counts as `FAILED`. This is free runaway
 protection and should never be omitted.
 
-## Eddy and the session model
+## Wake Session Model
 
-**Eddy** is the execution identity of one work item: an issue, its workspace, its
-recorded session id(s), and its state files. It is **not** a persistent process
-and does not sit resident between ticks.
+Wake models each work item through its issue, workspace, recorded session id(s),
+and state files. The agent session itself is **not** a persistent process and
+does not sit resident between ticks.
 
 The session policy is the important nuance:
 
@@ -337,11 +337,11 @@ an agent asking a question should not post directly to GitHub or Slack. It
 should create or request a Wake event such as "question publish requested", and
 the control plane should route that event to the configured sink.
 
-**Eddy never owns state.** Wake keeps the full picture and injects the relevant
-slice into each run: a current projection plus selected recent events, the prior
-`session_id` to resume, and (later) applicable lessons. The agent may read event
-files directly when needed, but the default path should keep prompts compact by
-passing a curated slice rather than the entire stream.
+**Agent sessions never own state.** Wake keeps the full picture and injects the
+relevant slice into each run: a current projection plus selected recent events,
+the prior `session_id` to resume, and (later) applicable lessons. The agent may
+read event files directly when needed, but the default path should keep prompts
+compact by passing a curated slice rather than the entire stream.
 
 Every meaningful event is appended to the central store: which item was chosen
 and why, which model/stage/route the policy selected, each run's inputs/outputs/
@@ -481,8 +481,8 @@ foreclose, ordered roughly by expected value. Each is added only when justified.
   safeguards as any other change. Aspirational, never a dependency.
 
 - **Corum integration.** Corum understands software and architecture; Wake
-  changes it. Corum knowledge can feed refinement and planning stages so Eddies
-  start with context rather than rediscovering it.
+  changes it. Corum knowledge can feed refinement and planning stages so agent
+  sessions start with context rather than rediscovering it.
 
 - **Hosted service.** A plausible future, explicitly **out of scope** for this
   vision. The local-first design should not assume it, but the clean state model

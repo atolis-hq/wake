@@ -613,8 +613,8 @@ describe('run and event schemas', () => {
           command: 'claude',
           model: 'haiku',
           smokeModel: 'haiku',
-          sessionName: 'Eddy',
-          remoteControlName: 'Eddy',
+          sessionName: 'Wake',
+          remoteControlName: 'Wake',
           smokePrompt: 'hi',
           timeoutMs: 60_000,
           remoteControl: {
@@ -767,8 +767,8 @@ describe('run and event schemas', () => {
           command: 'claude',
           model: 'haiku',
           smokeModel: 'haiku',
-          sessionName: 'Eddy',
-          remoteControlName: 'Eddy',
+          sessionName: 'Wake',
+          remoteControlName: 'Wake',
           smokePrompt: 'hi',
           timeoutMs: 60_000,
           remoteControl: {
@@ -829,8 +829,8 @@ describe('run and event schemas', () => {
           command: 'claude',
           model: 'haiku',
           smokeModel: 'haiku',
-          sessionName: 'Eddy',
-          remoteControlName: 'Eddy',
+          sessionName: 'Wake',
+          remoteControlName: 'Wake',
           smokePrompt: 'hi',
           timeoutMs: 60_000,
           remoteControl: {

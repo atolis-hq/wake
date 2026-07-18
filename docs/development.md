@@ -170,7 +170,7 @@ To expose the same in-container UI through a public ngrok URL, set
 `ui.tunnel.enabled: true` and either provide `ui.tunnel.authToken` or export
 `NGROK_AUTHTOKEN` before `./wake.sh sandbox up` or `./wake.sh sandbox update`.
 The entrypoint starts the ngrok CLI and writes the generated URL to
-`<wake-root>/control-plane-ui-url`; GitHub comments link their `Eddy` header to
+`<wake-root>/control-plane-ui-url`; GitHub comments link their `Wake` header to
 that URL while the file exists.
 
 See [docs/configuration.md#ui](configuration.md#ui) for the full config shape.
@@ -332,10 +332,10 @@ capability tiers. `--runner fake` remains available as a global local override.
 GitHub Issues sync runs inside the normal tick path. Each tick polls GitHub,
 translates provider payloads into canonical ticket events, appends those events,
 rebuilds local projections, decides whether work is needed, and only then
-invokes Eddy.
+invokes Wake.
 
 The default smoke prompt is intentionally tiny:
 
 ```text
-This is Eddy, reply with "hi Eddy only"
+This is Wake, reply with "hi Wake only"
 ```

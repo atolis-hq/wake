@@ -50,7 +50,7 @@ describe('sink router', () => {
   it('routes replies to origin and additionally to subscribed sinks', async () => {
     const config = createDefaultWakeConfig('/tmp/wake-router-test');
     config.sinks = {
-      slack: { kind: 'slack', channel: '#eng-eddy', subscribe: ['question'] },
+      slack: { kind: 'slack', channel: '#eng-wake', subscribe: ['question'] },
     };
     const delivered: { github: string[]; slack: string[] } = { github: [], slack: [] };
     const router = createOutboundSinkRouter({

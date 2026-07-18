@@ -4,7 +4,7 @@
 
 Add the first real GitHub Issues-backed ticketing path to Wake so the control
 plane can poll configured repositories, synchronize relevant issue state
-locally, decide when work is needed, and invoke Eddy through the existing
+locally, decide when work is needed, and invoke Wake through the existing
 runner seam.
 
 ## Scope
@@ -15,7 +15,7 @@ This design covers the first real ticketing-source integration for Wake:
 - a polling GitHub Issues adapter that reads issues and comments
 - config-driven pickup policy based on repository and labels
 - local synchronization through canonical Wake ticket events
-- policy-driven Eddy invocation when new or changed work requires action
+- policy-driven Wake invocation when new or changed work requires action
 - minimal outbound GitHub status publication for active, blocked, and done work
 - support for `fake` and fixed-model `claude` runner modes
 
@@ -38,7 +38,7 @@ canonical inbound ticket events only for newly discovered or changed items.
 Wake policy will remain responsible for deciding whether work is needed. When an
 eligible issue is new, receives a new human comment, or becomes newly eligible
 through a label or state change, Wake should claim work, prepare a workspace,
-invoke Eddy using the configured runner mode, persist the run, and publish a
+invoke Wake using the configured runner mode, persist the run, and publish a
 minimal GitHub status update.
 
 The transport for this milestone should be an Octokit-based client that derives
@@ -51,7 +51,7 @@ or incomplete.
 GitHub Issues synchronization should run inside the normal tick path, not in a
 separate background sync loop. The resident loop should only schedule ticks.
 That keeps source polling, event persistence, projection rebuilds, candidate
-selection, and Eddy invocation inside one durable, lock-protected control-plane
+selection, and Wake invocation inside one durable, lock-protected control-plane
 cycle.
 
 ## Architecture
@@ -243,7 +243,7 @@ This keeps the data flow consistent:
 4. rebuild projections
 5. let policy decide whether work is needed
 
-## Policy And Eddy Invocation
+## Policy And Wake Invocation
 
 Policy should decide whether synchronized ticket change requires work. The
 adapter should not make this decision.
@@ -266,7 +266,7 @@ Wake should invoke work when it sees one of these cases:
 - an issue that becomes eligible because labels or state changed
 
 The policy layer should use synchronized projections plus newly ingested events
-to detect those cases. It should not repeatedly invoke Eddy for unchanged items
+to detect those cases. It should not repeatedly invoke Wake for unchanged items
 on every poll.
 
 ### Tick flow
@@ -279,7 +279,7 @@ The existing tick runner should remain structurally the same:
 4. select an actionable candidate
 5. write a `running` run record
 6. prepare workspace
-7. invoke Eddy through the configured runner
+7. invoke Wake through the configured runner
 8. persist run completion state and resulting events
 9. publish minimal outbound GitHub status
 
@@ -297,8 +297,8 @@ Outbound publication should stay deliberately small in this milestone.
 Wake should support:
 
 - a short comment or marker when work is claimed
-- a short comment when Eddy returns `BLOCKED`
-- a short comment when Eddy returns `DONE`
+- a short comment when Wake returns `BLOCKED`
+- a short comment when Wake returns `DONE`
 - optional application of a lightweight configured label for active handling
 
 Wake should not implement richer GitHub surfaces such as Checks or Projects in
@@ -320,7 +320,7 @@ existing skeleton contract coverage.
    - new human comments emit canonical `ticket.comment.*` events
    - already-synced comments do not re-emit
 3. policy-triggered execution
-   - a newly eligible issue triggers Eddy exactly once
+   - a newly eligible issue triggers Wake exactly once
    - a new human comment on an existing eligible issue triggers or resumes work
    - an unchanged eligible issue does not trigger repeat work
 4. outbound publication
@@ -369,7 +369,7 @@ This milestone is complete when:
 - label-based eligibility is configurable
 - new or changed eligible issues synchronize into local Wake state through
   canonical ticket events
-- Wake invokes Eddy only when policy determines work is needed
+- Wake invokes Wake only when policy determines work is needed
 - Wake can run the flow with either `fake` or fixed-model `claude`
 - Wake publishes minimal outbound GitHub status for active, blocked, or done
   work

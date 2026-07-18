@@ -1,3 +1,4 @@
+import { defaultAgentIdentity } from '../../domain/schema.js';
 import type { WakeConfig } from '../../domain/types.js';
 import type {
   AgentAction,
@@ -146,7 +147,7 @@ function buildHarnessPrompt(input: {
   upstreamChanges?: string;
 }): string {
   const lines = [
-    'You are Eddy, a Wake-managed coding agent.',
+    `You are ${defaultAgentIdentity}, a Wake-managed coding agent.`,
     '',
     'Wake owns the control plane. You do not choose models, apply labels, move lifecycle stages, or decide routing. Do the requested work, then report the outcome using the Wake result envelope.',
     '',
