@@ -8,6 +8,8 @@ import {
   loadPromptTemplate,
   renderPromptTemplate,
 } from '../../src/adapters/runner/prompt-templates.js';
+import { buildStagePrompt } from '../../src/adapters/runner/stage-prompt.js';
+import { createDefaultWakeConfig } from '../../src/config/defaults.js';
 
 describe('prompt templates', () => {
   it('parses frontmatter and body from a stage/mode template file', async () => {
@@ -102,5 +104,336 @@ describe('prompt templates', () => {
     );
 
     expect(rendered).toContain('"id": "evt-1"');
+  });
+
+  it('instructs the agent to report PR artifacts when PR tracking is enabled', async () => {
+    const projection = {
+      schemaVersion: 1 as const,
+      workItemKey: 'work-01JQZX9K2N4P6R8T0V2W4Y6A8C',
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 12,
+        title: 'Example issue',
+        body: 'Body',
+        labels: ['wake:implement'],
+        assignees: [],
+        isPullRequest: false,
+        state: 'open' as const,
+        url: 'https://example.test/issues/12',
+        createdAt: '2026-07-05T12:00:00.000Z',
+        updatedAt: '2026-07-05T12:00:00.000Z',
+      },
+      comments: [],
+      wake: {
+        stage: 'implement' as const,
+        stageHistory: [],
+        recentEventIds: [],
+        syncedAt: '2026-07-05T12:00:00.000Z',
+        expectedEcho: { commentIds: [], labels: [] },
+      },
+      context: {},
+      correlatedResources: [],
+    };
+
+    const config = createDefaultWakeConfig(process.cwd());
+    config.sources.github.enabled = true;
+    config.sources.github.pullRequests.enabled = true;
+
+    const result = await buildStagePrompt({
+      action: 'implement',
+      projection,
+      config,
+    });
+
+    expect(result.harnessPrompt).toContain('wake-artifacts');
+  });
+
+  it('omits the wake-artifacts instruction when PR tracking is disabled', async () => {
+    const projection = {
+      schemaVersion: 1 as const,
+      workItemKey: 'work-01JQZX9K2N4P6R8T0V2W4Y6A8C',
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 12,
+        title: 'Example issue',
+        body: 'Body',
+        labels: ['wake:implement'],
+        assignees: [],
+        isPullRequest: false,
+        state: 'open' as const,
+        url: 'https://example.test/issues/12',
+        createdAt: '2026-07-05T12:00:00.000Z',
+        updatedAt: '2026-07-05T12:00:00.000Z',
+      },
+      comments: [],
+      wake: {
+        stage: 'implement' as const,
+        stageHistory: [],
+        recentEventIds: [],
+        syncedAt: '2026-07-05T12:00:00.000Z',
+        expectedEcho: { commentIds: [], labels: [] },
+      },
+      context: {},
+      correlatedResources: [],
+    };
+
+    const config = createDefaultWakeConfig(process.cwd());
+    config.sources.github.enabled = true;
+    config.sources.github.pullRequests.enabled = false;
+
+    const result = await buildStagePrompt({
+      action: 'implement',
+      projection,
+      config,
+    });
+
+    expect(result.harnessPrompt).not.toContain('wake-artifacts');
+
+    // No config at all is the same as PR tracking not being configured on —
+    // it must not silently opt every caller in.
+    const resultNoConfig = await buildStagePrompt({
+      action: 'implement',
+      projection,
+    });
+    expect(resultNoConfig.harnessPrompt).not.toContain('wake-artifacts');
+  });
+
+  it('omits the wake-artifacts instruction when github.enabled is false, even if pullRequests.enabled is true', async () => {
+    // buildRuntime only constructs the artifact verifier when
+    // github.enabled && pullRequests.enabled, so this combination must not
+    // instruct the agent to report artifacts Wake has no way to verify.
+    const projection = {
+      schemaVersion: 1 as const,
+      workItemKey: 'work-01JQZX9K2N4P6R8T0V2W4Y6A8D',
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 13,
+        title: 'Example issue',
+        body: 'Body',
+        labels: ['wake:implement'],
+        assignees: [],
+        isPullRequest: false,
+        state: 'open' as const,
+        url: 'https://example.test/issues/13',
+        createdAt: '2026-07-05T12:00:00.000Z',
+        updatedAt: '2026-07-05T12:00:00.000Z',
+      },
+      comments: [],
+      wake: {
+        stage: 'implement' as const,
+        stageHistory: [],
+        recentEventIds: [],
+        syncedAt: '2026-07-05T12:00:00.000Z',
+        expectedEcho: { commentIds: [], labels: [] },
+      },
+      context: {},
+      correlatedResources: [],
+    };
+
+    const config = createDefaultWakeConfig(process.cwd());
+    config.sources.github.enabled = false;
+    config.sources.github.pullRequests.enabled = true;
+
+    const result = await buildStagePrompt({
+      action: 'implement',
+      projection,
+      config,
+    });
+
+    expect(result.harnessPrompt).not.toContain('wake-artifacts');
+  });
+
+  it('renders review-thread anchoring for a PR review comment', async () => {
+    const projection = {
+      schemaVersion: 1 as const,
+      workItemKey: 'work-01JQZX9K2N4P6R8T0V2W4Y6A8C',
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 12,
+        title: 'Example issue',
+        body: 'Body',
+        labels: ['wake:implement'],
+        assignees: [],
+        isPullRequest: false,
+        state: 'open' as const,
+        url: 'https://example.test/issues/12',
+        createdAt: '2026-07-05T12:00:00.000Z',
+        updatedAt: '2026-07-05T12:00:00.000Z',
+      },
+      comments: [
+        {
+          id: 'rc-1',
+          body: 'Please fix this null check',
+          author: { login: 'reviewer' },
+          createdAt: '2026-07-18T00:00:00Z',
+          updatedAt: '2026-07-18T00:00:00Z',
+          isBotAuthored: false,
+          resourceUri: 'github:pr-review-thread:org/repo#91/rt_1',
+          reviewThread: { path: 'src/foo.ts', line: 42 },
+        },
+      ],
+      wake: {
+        stage: 'implement' as const,
+        stageHistory: [],
+        recentEventIds: [],
+        syncedAt: '2026-07-05T12:00:00.000Z',
+        expectedEcho: { commentIds: [], labels: [] },
+      },
+      context: {},
+      correlatedResources: [],
+    };
+
+    const result = await buildStagePrompt({
+      action: 'implement',
+      mode: 'resume',
+      projection,
+    });
+
+    expect(result.prompt).toContain('src/foo.ts:42');
+  });
+
+  it('renders review-thread anchoring without line number', async () => {
+    const projection = {
+      schemaVersion: 1 as const,
+      workItemKey: 'work-01JQZX9K2N4P6R8T0V2W4Y6A8C',
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 12,
+        title: 'Example issue',
+        body: 'Body',
+        labels: ['wake:implement'],
+        assignees: [],
+        isPullRequest: false,
+        state: 'open' as const,
+        url: 'https://example.test/issues/12',
+        createdAt: '2026-07-05T12:00:00.000Z',
+        updatedAt: '2026-07-05T12:00:00.000Z',
+      },
+      comments: [
+        {
+          id: 'rc-2',
+          body: 'This needs review',
+          author: { login: 'reviewer' },
+          createdAt: '2026-07-18T00:00:00Z',
+          updatedAt: '2026-07-18T00:00:00Z',
+          isBotAuthored: false,
+          resourceUri: 'github:pr-review-thread:org/repo#91/rt_2',
+          reviewThread: { path: 'src/foo.ts' },
+        },
+      ],
+      wake: {
+        stage: 'implement' as const,
+        stageHistory: [],
+        recentEventIds: [],
+        syncedAt: '2026-07-05T12:00:00.000Z',
+        expectedEcho: { commentIds: [], labels: [] },
+      },
+      context: {},
+      correlatedResources: [],
+    };
+
+    const result = await buildStagePrompt({
+      action: 'implement',
+      mode: 'resume',
+      projection,
+    });
+
+    expect(result.prompt).toContain('Surface: review comment on src/foo.ts');
+    expect(result.prompt).not.toContain('src/foo.ts:');
+  });
+
+  it('renders resource URI surface when no review thread present', async () => {
+    const projection = {
+      schemaVersion: 1 as const,
+      workItemKey: 'work-01JQZX9K2N4P6R8T0V2W4Y6A8C',
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 12,
+        title: 'Example issue',
+        body: 'Body',
+        labels: ['wake:implement'],
+        assignees: [],
+        isPullRequest: false,
+        state: 'open' as const,
+        url: 'https://example.test/issues/12',
+        createdAt: '2026-07-05T12:00:00.000Z',
+        updatedAt: '2026-07-05T12:00:00.000Z',
+      },
+      comments: [
+        {
+          id: 'rc-3',
+          body: 'Comment from PR',
+          author: { login: 'reviewer' },
+          createdAt: '2026-07-18T00:00:00Z',
+          updatedAt: '2026-07-18T00:00:00Z',
+          isBotAuthored: false,
+          resourceUri: 'github:pr:org/repo#91',
+        },
+      ],
+      wake: {
+        stage: 'implement' as const,
+        stageHistory: [],
+        recentEventIds: [],
+        syncedAt: '2026-07-05T12:00:00.000Z',
+        expectedEcho: { commentIds: [], labels: [] },
+      },
+      context: {},
+      correlatedResources: [],
+    };
+
+    const result = await buildStagePrompt({
+      action: 'implement',
+      mode: 'resume',
+      projection,
+    });
+
+    expect(result.prompt).toContain('Surface: github:pr:org/repo#91');
+  });
+
+  it('renders default issue-thread surface when no review thread or resource URI', async () => {
+    const projection = {
+      schemaVersion: 1 as const,
+      workItemKey: 'work-01JQZX9K2N4P6R8T0V2W4Y6A8C',
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 12,
+        title: 'Example issue',
+        body: 'Body',
+        labels: ['wake:implement'],
+        assignees: [],
+        isPullRequest: false,
+        state: 'open' as const,
+        url: 'https://example.test/issues/12',
+        createdAt: '2026-07-05T12:00:00.000Z',
+        updatedAt: '2026-07-05T12:00:00.000Z',
+      },
+      comments: [
+        {
+          id: 'rc-4',
+          body: 'Regular issue comment',
+          author: { login: 'user' },
+          createdAt: '2026-07-18T00:00:00Z',
+          updatedAt: '2026-07-18T00:00:00Z',
+          isBotAuthored: false,
+        },
+      ],
+      wake: {
+        stage: 'implement' as const,
+        stageHistory: [],
+        recentEventIds: [],
+        syncedAt: '2026-07-05T12:00:00.000Z',
+        expectedEcho: { commentIds: [], labels: [] },
+      },
+      context: {},
+      correlatedResources: [],
+    };
+
+    const result = await buildStagePrompt({
+      action: 'implement',
+      mode: 'resume',
+      projection,
+    });
+
+    expect(result.prompt).toContain('Surface: issue thread');
   });
 });

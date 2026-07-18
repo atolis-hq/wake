@@ -4,6 +4,7 @@ import {
   failedRunnerSentinel,
 } from '../domain/stages.js';
 import type { AgentAction, IssueStateRecord, Stage, WakeConfig } from '../domain/types.js';
+import type { UnkeyedEventEnvelope } from './contracts.js';
 
 export interface ApprovalResolution {
   approved: boolean;
@@ -26,6 +27,35 @@ function matchesCommand(body: string, pattern: RegExp): boolean {
   return body
     .split(/\r?\n/)
     .some((line) => pattern.test(line.trim()));
+}
+
+function labelsAndAssigneesQualify(input: {
+  labels: string[];
+  assignees: string[];
+  requiredLabels: string[];
+  ignoredLabels: string[];
+  requiredAssignees: string[];
+}): boolean {
+  if (input.requiredLabels.length === 0 && input.requiredAssignees.length === 0) {
+    return false;
+  }
+
+  const labels = new Set(input.labels);
+  const assignees = new Set(input.assignees);
+
+  if (input.requiredLabels.some((label) => !labels.has(label))) {
+    return false;
+  }
+
+  if (input.ignoredLabels.some((label) => labels.has(label))) {
+    return false;
+  }
+
+  if (input.requiredAssignees.length > 0 && !input.requiredAssignees.some((login) => assignees.has(login))) {
+    return false;
+  }
+
+  return true;
 }
 
 function latestUnhandledHumanComment(issue: IssueStateRecord): IssueStateRecord['comments'][number] | undefined {
@@ -58,42 +88,26 @@ function latestUnhandledHumanComment(issue: IssueStateRecord): IssueStateRecord[
 export function createPolicyEngine() {
   return {
     isEligible(issue: IssueStateRecord, config: WakeConfig): boolean {
-      const requiredLabels = config.sources.github.policy.requiredLabels;
-      const requiredAssignees = config.sources.github.policy.requiredAssignees;
-
-      if (requiredLabels.length === 0 && requiredAssignees.length === 0) {
-        return false;
-      }
-
-      const labels = new Set(issue.issue.labels);
-      const assignees = new Set(issue.issue.assignees);
-
       if (issue.issue.state !== 'open') {
         return false;
       }
 
+      // Defense-in-depth: the issues source filters PR-shaped items at poll
+      // time, so no NEW projection can ever have isPullRequest: true. But a
+      // pre-existing state/<workId>.json written by a pre-this-branch
+      // version of Wake could still hold isPullRequest: true, since the old
+      // fold created projections regardless of eligibility.
       if (issue.issue.isPullRequest) {
         return false;
       }
 
-      if (requiredLabels.some((label) => !labels.has(label))) {
-        return false;
-      }
-
-      if (
-        config.sources.github.policy.ignoredLabels.some((label) => labels.has(label))
-      ) {
-        return false;
-      }
-
-      if (
-        requiredAssignees.length > 0 &&
-        !requiredAssignees.some((login) => assignees.has(login))
-      ) {
-        return false;
-      }
-
-      return true;
+      return labelsAndAssigneesQualify({
+        labels: issue.issue.labels,
+        assignees: issue.issue.assignees,
+        requiredLabels: config.sources.github.policy.requiredLabels,
+        ignoredLabels: config.sources.github.policy.ignoredLabels,
+        requiredAssignees: config.sources.github.policy.requiredAssignees,
+      });
     },
     needsWakeAction(issue: IssueStateRecord): boolean {
       const context = issue.context as Record<string, unknown>;
@@ -214,6 +228,51 @@ export function createPolicyEngine() {
       }
 
       return { approved, pendingAction };
+    },
+    qualifiesForMint(unresolved: UnkeyedEventEnvelope, config: WakeConfig): boolean {
+      const resourceUri = unresolved.sourceRefs.resourceUri;
+      if (resourceUri === undefined) {
+        return false;
+      }
+
+      const kind = resourceUri.split(':')[1];
+
+      if (kind === 'issue') {
+        // Real github source stamps payload.ticket (sourceEventType
+        // 'ticket.upsert'); the fake ticketing harness stamps payload.issue
+        // (sourceEventType 'fake.issue.upsert') — the same dual-key
+        // recognition projection-updater.ts's createProjectionFromIssueEvent
+        // already applies when folding these into a projection. Qualification
+        // must accept both or the fake never qualifies anything, which would
+        // silently defeat every fixture that exercises minting through it.
+        const ticket = (unresolved.payload.ticket ?? unresolved.payload.issue) as
+          | { labels?: unknown; assignees?: unknown }
+          | undefined;
+        if (ticket === undefined) {
+          return false;
+        }
+        return labelsAndAssigneesQualify({
+          labels: Array.isArray(ticket.labels) ? ticket.labels : [],
+          assignees: Array.isArray(ticket.assignees) ? ticket.assignees : [],
+          requiredLabels: config.sources.github.policy.requiredLabels,
+          ignoredLabels: config.sources.github.policy.ignoredLabels,
+          requiredAssignees: config.sources.github.policy.requiredAssignees,
+        });
+      }
+
+      if (kind === 'pr') {
+        if (!config.sources.github.pullRequests.enabled) {
+          return false;
+        }
+        const pr = unresolved.payload.pr as { author?: unknown } | undefined;
+        const requiredAuthors = config.sources.github.pullRequests.policy.requiredAuthors;
+        if (requiredAuthors.length === 0 || typeof pr?.author !== 'string') {
+          return false;
+        }
+        return requiredAuthors.includes(pr.author);
+      }
+
+      return false;
     },
   };
 }

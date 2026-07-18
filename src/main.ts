@@ -20,8 +20,10 @@ import {
   type SelfUpdateLedger,
 } from './adapters/fs/self-update-ledger.js';
 import { resolveGitHubToken } from './adapters/github/github-auth.js';
+import { createGitHubArtifactVerifier } from './adapters/github/github-artifact-verifier.js';
 import { createGitHubClient } from './adapters/github/github-client.js';
 import { createGitHubIssuesWorkSource } from './adapters/github/github-issues-work-source.js';
+import { createGitHubPullRequestActivitySource } from './adapters/github/github-pull-request-activity-source.js';
 import { runCorrelateCommand } from './cli/correlate-command.js';
 import { runInitCommand } from './cli/init-command.js';
 import { runSandboxCommand } from './cli/sandbox-command.js';
@@ -207,7 +209,7 @@ async function inspectDockerContainer(containerName: string): Promise<'running' 
   });
 }
 
-async function buildRuntime(args: string[]) {
+export async function buildRuntime(args: string[]) {
   const wakeRoot = resolve(
     readFlagBeforeCommandTerminator('--wake-root', args) ?? resolve(process.cwd(), '.wake'),
   );
@@ -222,9 +224,25 @@ async function buildRuntime(args: string[]) {
 
   const resourceIndex = createResourceIndex({ paths: stateStore.paths });
 
-  const ticketingSystem = config.sources.github.enabled
+  const prTrackingEnabled =
+    config.sources.github.enabled && config.sources.github.pullRequests.enabled;
+
+  // Resolved once and shared: resolveGitHubToken shells out to `gh auth
+  // token`, so building a separate client per consumer would triple that
+  // subprocess spawn on every startup for no benefit — all three consumers
+  // talk to the same GitHub account under the same config.
+  const githubClient = config.sources.github.enabled
+    ? createGitHubClient(await resolveGitHubToken())
+    : undefined;
+
+  const artifactVerifier =
+    prTrackingEnabled && githubClient !== undefined
+      ? createGitHubArtifactVerifier({ client: githubClient })
+      : undefined;
+
+  const ticketingSystem = githubClient !== undefined
     ? createGitHubIssuesWorkSource({
-        client: createGitHubClient(await resolveGitHubToken()),
+        client: githubClient,
         stateStore,
         config,
         resourceIndex,
@@ -236,11 +254,26 @@ async function buildRuntime(args: string[]) {
       });
   const sourceName = configuredTicketSource(config);
   const sinkName = sourceName;
+
+  const pullRequestActivitySource =
+    prTrackingEnabled && githubClient !== undefined
+      ? createGitHubPullRequestActivitySource({
+          client: githubClient,
+          stateStore,
+          config,
+          resourceIndex,
+          now: () => systemClock.now(),
+        })
+      : null;
+
   const workSource = createWorkSourceFanIn([
     {
       source: sourceName,
       pollEvents: ticketingSystem.pollEvents,
     },
+    ...(pullRequestActivitySource === null
+      ? []
+      : [{ source: 'github-pr', pollEvents: pullRequestActivitySource.pollEvents }]),
   ]);
   const outboundSink = createOutboundSinkRouter({
     sinks: [
@@ -248,6 +281,9 @@ async function buildRuntime(args: string[]) {
         sink: sinkName,
         deliverIntent: ticketingSystem.deliverIntent,
       },
+      ...(pullRequestActivitySource === null
+        ? []
+        : [{ sink: 'github-pr', deliverIntent: pullRequestActivitySource.deliverIntent }]),
     ],
     config,
   });
@@ -282,6 +318,7 @@ async function buildRuntime(args: string[]) {
     runner,
     workspaceManager,
     resourceIndex,
+    ...(artifactVerifier === undefined ? {} : { artifactVerifier }),
   });
 
   return {

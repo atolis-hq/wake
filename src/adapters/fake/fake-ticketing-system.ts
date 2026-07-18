@@ -102,7 +102,9 @@ export function createFakeTicketingSystem(options: {
   now?: () => Date;
 }) {
   return {
-    async pollEvents(): Promise<UnkeyedEventEnvelope[]> {
+    async pollEvents(
+      _input?: { watch: Array<{ resourceUri: string }> },
+    ): Promise<UnkeyedEventEnvelope[]> {
       const nowIso = (options.now ?? (() => new Date()))().toISOString();
       return options.tickets.flatMap((issue) => normalizeIssueEvents(issue, nowIso));
     },

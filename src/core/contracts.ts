@@ -38,8 +38,12 @@ export interface ResourceIndex {
  */
 export type UnkeyedEventEnvelope = Omit<EventEnvelope, 'workItemKey'>;
 
+export interface ResourceRef {
+  resourceUri: string;
+}
+
 export interface WorkSource {
-  pollEvents(): Promise<UnkeyedEventEnvelope[]>;
+  pollEvents(input?: { watch: ResourceRef[] }): Promise<UnkeyedEventEnvelope[]>;
 }
 
 export interface OutboundSink {
@@ -97,4 +101,15 @@ export interface WorkspaceManager {
   cleanupWorkspace(input: {
     workspacePath: string;
   }): Promise<void>;
+}
+
+// Verification needs a provider-specific client, but core/ never imports a
+// concrete adapter (this file's own boundary comment). Injected as an
+// optional dep — wired to the real GitHub client only in main.ts, with a
+// fake in tests — matching every other seam here.
+export interface ArtifactVerifier {
+  verify(
+    artifact: import('../domain/types.js').ReportedArtifact,
+    context: { branch: string; repo: string },
+  ): Promise<{ resourceUri: string } | null>;
 }

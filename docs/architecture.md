@@ -121,6 +121,25 @@ This preserves channel independence:
 - Wake owns routing and delivery policy
 - sink-specific formatting lives in adapters, not agent prompts
 
+## GitHub Sources
+
+Wake maintains two separate GitHub work sources:
+
+- **github-issues**: the primary source polling for issues matching configured
+  repositories and policies. When enabled, it discovers new issues for adoption
+  and polls activity (comments) on issues already correlated to work items.
+- **github-pr**: an optional secondary source for pull request activity. When
+  enabled, it is primarily **watchlist-driven**: it polls comments and reviews
+  on PRs already correlated to work items (e.g., PRs opened by Wake's agent as
+  artifacts). However, it also performs its own lightweight repository-level
+  discovery for uncorrelated PRs; whether a discovered PR can mint a new work
+  item is gated by the `policy.requiredAuthors` configuration — an empty list
+  means only PRs correlated through artifacts are polled, never standalone PRs.
+
+For the complete specification of the PR activity source including discovery
+qualification, artifact registration, and activity polling behavior, see
+[docs/superpowers/specs/2026-07-18-pr-activity-source-design.md](superpowers/specs/2026-07-18-pr-activity-source-design.md).
+
 ## Global Intake And Work-Item Streams
 
 Not every important event originates inside a single issue thread. Wake should

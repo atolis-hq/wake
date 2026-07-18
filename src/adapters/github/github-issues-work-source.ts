@@ -227,7 +227,7 @@ function formatControlPlaneLink(url: string): string | null {
   }
 }
 
-async function readControlPlaneUiUrl(wakeRoot: string): Promise<string | undefined> {
+export async function readControlPlaneUiUrl(wakeRoot: string): Promise<string | undefined> {
   try {
     const raw = await readFile(resolve(wakeRoot, 'control-plane-ui-url'), 'utf8');
     return formatControlPlaneLink(raw.trim()) ?? undefined;
@@ -236,7 +236,7 @@ async function readControlPlaneUiUrl(wakeRoot: string): Promise<string | undefin
   }
 }
 
-function formatWakeComment(payload: Record<string, unknown>, controlPlaneUrl?: string): string {
+export function formatWakeComment(payload: Record<string, unknown>, controlPlaneUrl?: string): string {
   const body = typeof payload.body === 'string' ? payload.body : '';
   const kind = typeof payload.kind === 'string' ? payload.kind : undefined;
   const action = typeof payload.action === 'string' ? payload.action : undefined;
@@ -356,7 +356,9 @@ export function createGitHubIssuesWorkSource(deps: {
   }
 
   return {
-    async pollEvents(): Promise<UnkeyedEventEnvelope[]> {
+    async pollEvents(
+      _input?: { watch: Array<{ resourceUri: string }> },
+    ): Promise<UnkeyedEventEnvelope[]> {
       const ingestedAt = deps.now().toISOString();
       const events: UnkeyedEventEnvelope[] = [];
 
@@ -390,6 +392,10 @@ export function createGitHubIssuesWorkSource(deps: {
               );
 
           for (const issue of issues) {
+            if (issue.pull_request !== undefined) {
+              continue;
+            }
+
             // Poll dedup + echo suppression only, never identity: the uri is
             // constructed (never parsed) and resolved through the index, which
             // keeps a poll flat in the number of work items rather than

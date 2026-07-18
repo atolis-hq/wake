@@ -2,6 +2,7 @@ import {
   CORRELATION_PRIMARY_CONFLICT_EVENT,
   CORRELATION_REGISTERED_EVENT,
   CORRELATION_RETRACTED_EVENT,
+  UNRESOLVED_WORK_ITEM_KEY,
   parseIssueStateRecord,
 } from '../domain/schema.js';
 import { doneRunnerSentinel, stageFromLabels } from '../domain/stages.js';
@@ -60,6 +61,18 @@ async function applyEvent(
   event: EventEnvelope,
   ctx: ApplyEventCtx,
 ): Promise<IssueStateRecord | null> {
+  // The shared sentinel for events whose resource failed mint qualification
+  // (tick-runner.ts's resolveInboundEvent, spec D1'). These are durable and
+  // inspectable via the event log but must never materialize a projection —
+  // otherwise every unqualified ticket.upsert/fake.issue.upsert would create
+  // one here on its first sighting (current === null), the same as a real
+  // mint, defeating the entire point of the gate. `current` is always null
+  // for this key (readIssueState(UNRESOLVED_WORK_ITEM_KEY) never has a file
+  // to read), so returning it unchanged is equivalent to "no projection".
+  if (event.workItemKey === UNRESOLVED_WORK_ITEM_KEY) {
+    return current;
+  }
+
   if (
     event.sourceEventType === 'fake.issue.upsert' ||
     event.sourceEventType === 'ticket.upsert'
@@ -107,7 +120,10 @@ async function applyEvent(
   if (
     event.sourceEventType === 'fake.issue.comment.created' ||
     event.sourceEventType === 'ticket.comment.created' ||
-    event.sourceEventType === 'ticket.comment.updated'
+    event.sourceEventType === 'ticket.comment.updated' ||
+    event.sourceEventType === 'pr.comment.created' ||
+    event.sourceEventType === 'pr.review.created' ||
+    event.sourceEventType === 'pr.review-comment.created'
   ) {
     const comment = event.payload.comment;
     if (comment === undefined || typeof comment !== 'object' || comment === null) {

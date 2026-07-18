@@ -9,6 +9,7 @@ import type {
   AgentRunner,
   AgentRunResult,
   AgentRunTokenUsage,
+  ArtifactVerifier,
   OutboundSink,
   ResourceIndex,
   UnkeyedEventEnvelope,
@@ -20,13 +21,16 @@ import { acquireFileLock } from '../lib/lock.js';
 import { createWorkId } from '../lib/work-id.js';
 import {
   CORRELATION_REGISTERED_EVENT,
+  UNRESOLVED_WORK_ITEM_KEY,
   WORK_ITEM_CREATED_EVENT,
+  parseRunnerArtifacts,
   parseRunnerResult,
 } from '../domain/schema.js';
 import { maxConfiguredRunnerTimeoutMs, resolveRunnerRouting } from '../domain/runner-routing.js';
 import { awaitingApprovalRunnerSentinel, stageLabelForStage } from '../domain/stages.js';
 import type { AgentAction, EventEnvelope, IssueStateRecord, RunRecord, WakeConfig } from '../domain/types.js';
 import { createEventEnvelope } from '../lib/event-log.js';
+import { branchNameForIssue } from '../domain/branch-naming.js';
 import { resolveQuotaPauseUntil } from './quota-backoff.js';
 
 type ParsedRunnerResult = ReturnType<typeof parseRunnerResult>;
@@ -41,6 +45,34 @@ function latestHumanCommentId(candidate: IssueStateRecord): string | undefined {
   return human.at(-1)?.id;
 }
 
+// `latestComment` is a sticky, per-work-item field: projection-updater.ts's
+// comment fold overwrites it unconditionally on every inbound comment
+// (any surface) and nothing ever resets it. So it means "the last comment
+// this work item has ever received," not "the comment that triggered the
+// currently completing run." Several needsWakeAction trigger paths (first
+// run, quota-failure retry, first refine/implement pass) complete a run
+// with no fresh comment driving it at all — in those cases latestComment
+// may still be pointing at an older, already-handled comment from a
+// different surface (e.g. a PR) and must not be trusted as this run's
+// trigger. This mirrors policy-engine.ts's needsWakeAction "is there an
+// unhandled human comment" check exactly, so a comment is only treated as
+// having driven this run when it's human-authored and not yet the
+// candidate's own lastHandledCommentId (read from the pre-completion
+// projection passed in as `candidate`/`projection`, since the completion
+// event that would update lastHandledCommentId for *this* run hasn't been
+// folded yet at the point this runs).
+function isFreshTriggeringComment(candidate: IssueStateRecord): boolean {
+  const context = candidate.context as Record<string, unknown>;
+  const handledCommentId =
+    typeof context.lastHandledCommentId === 'string' ? context.lastHandledCommentId : undefined;
+
+  return (
+    candidate.latestComment !== undefined &&
+    !candidate.latestComment.isBotAuthored &&
+    candidate.latestComment.id !== handledCommentId
+  );
+}
+
 export function createTickRunner(deps: {
   clock: Clock;
   config: WakeConfig;
@@ -53,6 +85,12 @@ export function createTickRunner(deps: {
   // resourceIndex: this is durable correlation state and must never be
   // cached in process memory across ticks or silently defaulted away.
   resourceIndex: ResourceIndex;
+  // Optional: verifies agent-reported PR artifacts against the real provider
+  // before they're registered as correlated resources. Undefined (e.g. no
+  // GitHub source configured) means artifact claims are never trusted —
+  // registerReportedArtifacts becomes a no-op rather than registering
+  // unverified free text.
+  artifactVerifier?: ArtifactVerifier;
 }) {
   const policy = createPolicyEngine();
   const lifecycle = createLifecycleService();
@@ -131,6 +169,25 @@ export function createTickRunner(deps: {
         repo: input.projection.issue.repo,
         issueNumber: input.projection.issue.number,
         runId: input.runId,
+        // Carries the triggering comment's surface (set only when the human
+        // reply that woke this run came from a correlated PR/review-thread
+        // resource, per the ad1cf45 comment fold) through to the sink
+        // router, so createOutboundSinkRouter's kind-based routing (Task 11,
+        // sink-router.ts) can send the reply back to that surface instead of
+        // defaulting to the issue thread. Without this, every reply landed
+        // on the origin sink regardless of which surface triggered the run.
+        //
+        // Gated on isFreshTriggeringComment: latestComment is sticky (see
+        // that function's comment) and several run-completion paths (first
+        // run, quota retry, first refine/implement pass) have no fresh
+        // comment behind them at all — for those, threading the stale
+        // latestComment.resourceUri would misroute the reply to whatever
+        // surface last happened to comment, even long after that comment
+        // was already replied to.
+        ...(input.projection.latestComment?.resourceUri === undefined ||
+        !isFreshTriggeringComment(input.projection)
+          ? {}
+          : { resourceUri: input.projection.latestComment.resourceUri }),
       },
       occurredAt: input.occurredAt,
       ingestedAt: input.occurredAt,
@@ -254,6 +311,63 @@ export function createTickRunner(deps: {
     });
   }
 
+  // Closes the loop on #82's review feedback: rather than scrape a PR link
+  // out of the agent's free text, the agent emits a `wake-artifacts` fence
+  // (domain/schema.ts's parseRunnerArtifacts) and Wake verifies each claim
+  // against the real provider before trusting it. No verifier configured (no
+  // GitHub source) means no claim is ever trusted — this is a no-op, not a
+  // silent "believe the agent" fallback.
+  //
+  // Uses a plain appendEventEnvelope + rebuildFromEvents pair, not
+  // deliverOutboundEvent: wake.correlation.registered is not a publish-intent
+  // type, so attemptDelivery's outbound sink call would be a no-op anyway —
+  // this matches the same plain-append pattern used elsewhere for
+  // internal-only events (see buildOriginCorrelationEvents' callers).
+  async function registerReportedArtifacts(input: {
+    projection: IssueStateRecord;
+    runId: string;
+    runnerResult: AgentRunResult;
+    branch: string;
+    occurredAt: string;
+  }): Promise<void> {
+    if (deps.artifactVerifier === undefined) {
+      return;
+    }
+
+    const { artifacts } = parseRunnerArtifacts(input.runnerResult.result);
+    for (const artifact of artifacts) {
+      const verified = await deps.artifactVerifier.verify(artifact, {
+        branch: input.branch,
+        repo: input.projection.issue.repo,
+      });
+      if (verified === null) {
+        continue;
+      }
+
+      const event = createEventEnvelope({
+        eventId: `${input.runId}-artifact-${artifact.kind}-${verified.resourceUri.replace(/[^a-z0-9]+/gi, '-')}`,
+        workItemKey: input.projection.workItemKey,
+        streamScope: 'work-item',
+        direction: 'internal',
+        sourceSystem: 'wake',
+        sourceEventType: CORRELATION_REGISTERED_EVENT,
+        sourceRefs: { runId: input.runId },
+        occurredAt: input.occurredAt,
+        ingestedAt: input.occurredAt,
+        trigger: 'context-only',
+        payload: {
+          resourceUri: verified.resourceUri,
+          role: 'implementation',
+          relation: 'primary',
+          provenance: 'agent-reported',
+          registeredBy: input.runId,
+        },
+      });
+      const appended = await deps.stateStore.appendEventEnvelope(event);
+      await projectionUpdater.rebuildFromEvents([appended]);
+    }
+  }
+
   // Events are stamped by reading the clock at the moment of stamping, never
   // from a frozen tick-start snapshot. `tickStartedAt` is the tick's *decision*
   // clock (policy/staleness), and reusing it to date events inverts them
@@ -267,6 +381,35 @@ export function createTickRunner(deps: {
   // leave append order as the only discriminator.
   function eventStampNow(): string {
     return deps.clock.now().toISOString();
+  }
+
+  // The watchlist is every resource currently correlated to an open work
+  // item, deduplicated by exact resourceUri. It is derived once per tick from
+  // the pre-poll projection snapshot (see runTick's ordering note) and handed
+  // to every configured WorkSource. Core never interprets these URIs — it's
+  // each source's own job to recognize and filter down to the resourceUri
+  // shapes it understands (e.g. the GitHub PR source only polls entries
+  // starting with `github:pr:`, ignoring everything else, including its own
+  // review-thread correlations) and never core's (CLAUDE.md: "Core compares
+  // resourceUri strings for equality and never parses a locator").
+  function deriveWatchlist(projections: IssueStateRecord[]): { resourceUri: string }[] {
+    const seen = new Set<string>();
+    const watch: { resourceUri: string }[] = [];
+
+    for (const projection of projections) {
+      if (projection.issue.state !== 'open') {
+        continue;
+      }
+      for (const resource of projection.correlatedResources) {
+        if (seen.has(resource.resourceUri)) {
+          continue;
+        }
+        seen.add(resource.resourceUri);
+        watch.push({ resourceUri: resource.resourceUri });
+      }
+    }
+
+    return watch;
   }
 
   async function markPendingActionableIssues(
@@ -431,6 +574,7 @@ export function createTickRunner(deps: {
       // record, and must not be silently re-registered.
       const owner = await deps.resourceIndex.resolve(resourceUri);
       if (
+        persisted.workItemKey !== UNRESOLVED_WORK_ITEM_KEY &&
         owner === undefined &&
         (await deps.stateStore.readEventEnvelope(
           `${persisted.workItemKey}-origin-correlation`,
@@ -451,6 +595,58 @@ export function createTickRunner(deps: {
       return [
         {
           envelope: createEventEnvelope({ ...unkeyed, workItemKey: existingWorkItemKey }),
+          persisted: false,
+        },
+      ];
+    }
+
+    // resourceUri itself misses the index (e.g. a review-thread comment's
+    // resourceUri is unique per thread, never registered on its own), but the
+    // adapter may have named a parent resource this one belongs to. Resolve
+    // through that instead of minting — and register this exact resourceUri
+    // as a secondary correlation so it's on record on the work item, even
+    // though (being secondary) it still won't shortcut future lookups via the
+    // index itself (ADR 0001 §5: the index is primary-only).
+    if (unkeyed.sourceRefs.parentResourceUri !== undefined) {
+      const parentWorkItemKey = await deps.resourceIndex.resolve(
+        unkeyed.sourceRefs.parentResourceUri,
+      );
+      if (parentWorkItemKey !== undefined) {
+        const mintedAt = laterTimestamp(unkeyed.ingestedAt, eventStampNow());
+        return [
+          {
+            envelope: createEventEnvelope({ ...unkeyed, workItemKey: parentWorkItemKey }),
+            persisted: false,
+          },
+          {
+            envelope: createEventEnvelope({
+              eventId: `${parentWorkItemKey}-correlation-${resourceUri.replace(/[^a-z0-9]+/gi, '-')}`,
+              workItemKey: parentWorkItemKey,
+              streamScope: 'work-item',
+              direction: 'internal',
+              sourceSystem: 'wake',
+              sourceEventType: CORRELATION_REGISTERED_EVENT,
+              sourceRefs: unkeyed.sourceRefs,
+              occurredAt: mintedAt,
+              ingestedAt: mintedAt,
+              trigger: 'context-only',
+              payload: {
+                resourceUri,
+                role: 'review',
+                relation: 'secondary',
+                provenance: 'detected',
+              },
+            }),
+            persisted: false,
+          },
+        ];
+      }
+    }
+
+    if (!policy.qualifiesForMint(unkeyed, deps.config)) {
+      return [
+        {
+          envelope: createEventEnvelope({ ...unkeyed, workItemKey: UNRESOLVED_WORK_ITEM_KEY }),
           persisted: false,
         },
       ];
@@ -758,6 +954,8 @@ export function createTickRunner(deps: {
     'ticket.reply.published',
     'ticket.labels.updated',
     'wake.publish.confirmed',
+    'pr.comment.reply.published',
+    'pr.review-comment.reply.published',
   ]);
 
   // Adopts the outbox pattern: an intent is only considered delivered once a
@@ -819,7 +1017,10 @@ export function createTickRunner(deps: {
         const nowIso = tickStartedAt.toISOString();
         await reconcileStaleRunningRecords(tickStartedAt);
         await retryUnconfirmedDeliveries();
-        const inboundEvents = await ingestInboundEvents(await deps.workSource.pollEvents());
+        const watchlistProjections = await deps.stateStore.listIssueStates();
+        const inboundEvents = await ingestInboundEvents(
+          await deps.workSource.pollEvents({ watch: deriveWatchlist(watchlistProjections) }),
+        );
 
         const projections = await deps.stateStore.listIssueStates();
         await cleanupClosedIssueWorkspaces(projections);
@@ -1030,6 +1231,20 @@ export function createTickRunner(deps: {
               : rawSentinel;
           const nextStage = lifecycle.nextStageFromSentinel(action, sentinel);
           const finishedAt = deps.clock.now().toISOString();
+
+          // Only 'implement' has a workspace/branch to verify a reported PR's
+          // head against — 'refine' never pushes anything, so there is
+          // nothing for a PR claim to have come from.
+          if (action === 'implement') {
+            await registerReportedArtifacts({
+              projection: candidate,
+              runId,
+              runnerResult,
+              branch: branchNameForIssue(candidate.issue.number),
+              occurredAt: finishedAt,
+            });
+          }
+
           const failedRunnerName = runnerResult.routing?.runnerName ?? routing.runnerName;
           const existingRunners = ledgerAtStart?.runners ?? {};
           if (runnerResult.failureClass === 'quota') {

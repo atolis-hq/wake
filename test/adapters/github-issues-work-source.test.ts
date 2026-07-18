@@ -243,7 +243,7 @@ describe('github issues work source', () => {
     expect(commentEvent?.derivedHints?.botAuthoredComment).toBe(true);
   });
 
-  it('marks normalized ticket upserts as pull requests when the GitHub payload is a PR', async () => {
+  it('never emits PR-shaped issues', async () => {
     const store = createStateStore({ wakeRoot: root });
     const config = createDefaultWakeConfig(root);
     config.sources.github.enabled = true;
@@ -253,16 +253,27 @@ describe('github issues work source', () => {
       client: {
         listIssues: async () => [
           {
-            number: 76,
-            title: 'Example PR',
+            number: 12,
+            title: 'Plain Issue',
             body: 'Body',
             state: 'open',
-            html_url: 'https://github.com/atolis-hq/wake/pull/76',
+            html_url: 'https://github.com/atolis-hq/wake/issues/12',
             created_at: '2026-07-05T12:00:00.000Z',
             updated_at: '2026-07-05T12:00:00.000Z',
             labels: [{ name: 'wake:queue' }],
             assignees: [],
-            pull_request: { url: 'https://api.github.com/repos/atolis-hq/wake/pulls/76' },
+          },
+          {
+            number: 999,
+            title: 'Example PR',
+            body: 'Body',
+            state: 'open',
+            html_url: 'https://github.com/atolis-hq/wake/pull/999',
+            created_at: '2026-07-05T12:00:00.000Z',
+            updated_at: '2026-07-05T12:00:00.000Z',
+            labels: [{ name: 'wake:queue' }],
+            assignees: [],
+            pull_request: { url: 'https://api.github.com/repos/atolis-hq/wake/pulls/999' },
           },
         ],
         listComments: async () => [],
@@ -276,11 +287,9 @@ describe('github issues work source', () => {
     });
 
     const events = await workSource.pollEvents();
-    expect(events).toHaveLength(1);
-    expect(events[0]?.payload.ticket).toMatchObject({
-      number: 76,
-      isPullRequest: true,
-    });
+    const upsertEvents = events.filter((e) => e.sourceEventType === 'ticket.upsert');
+    expect(upsertEvents).toHaveLength(1);
+    expect((upsertEvents[0]?.payload.ticket as { number: number }).number).not.toBe(999);
   });
 
   it('polls issues updated within the previous successful poll hour overlap', async () => {

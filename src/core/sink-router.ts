@@ -11,8 +11,8 @@ export interface NamedOutboundSink extends OutboundSink {
 
 export function createWorkSourceFanIn(sources: NamedWorkSource[]): WorkSource {
   return {
-    async pollEvents(): Promise<UnkeyedEventEnvelope[]> {
-      const batches = await Promise.all(sources.map((source) => source.pollEvents()));
+    async pollEvents(input): Promise<UnkeyedEventEnvelope[]> {
+      const batches = await Promise.all(sources.map((source) => source.pollEvents(input)));
       return batches.flat();
     },
   };
@@ -37,6 +37,14 @@ function subscriptionMatches(event: EventEnvelope, subscription: string): boolea
   }
 
   return subscription === 'stage.terminal' && isTerminalStageIntent(event);
+}
+
+function sinkNameForResourceUri(resourceUri: string, fallback: string): string {
+  const [provider, kind] = resourceUri.split(':');
+  if (provider === undefined || kind === undefined) {
+    return fallback;
+  }
+  return kind === 'pr' || kind === 'pr-review-thread' ? `${provider}-pr` : fallback;
 }
 
 function withSinkRef(event: EventEnvelope, sink: string): EventEnvelope {
@@ -71,11 +79,19 @@ export function createOutboundSinkRouter(input: {
       }
 
       const kind = intentKind(event);
+      const resourceUri = event.sourceRefs.resourceUri;
       if (
         event.sourceEventType === 'wake.publish.intent.requested' &&
         sourceOrigin !== undefined
       ) {
-        targetSinks.add(sourceOrigin);
+        const resourceSink =
+          resourceUri === undefined ? sourceOrigin : sinkNameForResourceUri(resourceUri, sourceOrigin);
+        // A resource-derived sink name (e.g. a PR surface) may not be
+        // registered — the source that owns it can be disabled independently
+        // of the origin sink. Falling back to sourceOrigin here, rather than
+        // silently skipping an unregistered sink below, is what keeps a reply
+        // from being dropped-but-marked-delivered when that happens.
+        targetSinks.add(sinksByName.has(resourceSink) ? resourceSink : sourceOrigin);
       }
 
       for (const [sinkName, sinkConfig] of Object.entries(input.config.sinks ?? {})) {

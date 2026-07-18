@@ -13,6 +13,15 @@ import {
 } from './resource-uri.js';
 
 const isoTimestampSchema = z.string().datetime({ offset: true });
+
+export const reportedArtifactSchema = z.object({
+  kind: z.literal('pr'),
+  url: z.string().url(),
+});
+
+export const wakeArtifactsEnvelopeSchema = z.object({
+  artifacts: z.array(reportedArtifactSchema).default([]),
+});
 const stageSchema = z.enum(stageValues);
 export const runnerSentinelSchema = z.enum(runnerSentinelValues);
 const agentActionSchema = z.enum(agentActionValues);
@@ -119,6 +128,11 @@ const stageHistoryEntrySchema = z.object({
   reason: z.string(),
 });
 
+const reviewThreadAnchorSchema = z.object({
+  path: z.string(),
+  line: z.number().int().positive().optional(),
+});
+
 const commentSnapshotSchema = z.object({
   id: z.string(),
   body: z.string(),
@@ -128,6 +142,10 @@ const commentSnapshotSchema = z.object({
   createdAt: isoTimestampSchema,
   updatedAt: isoTimestampSchema,
   isBotAuthored: z.boolean().default(false),
+  // Which correlated surface this comment came from; absent = the originating
+  // issue thread, keeping every pre-existing comment valid under this schema.
+  resourceUri: resourceUriSchema.optional(),
+  reviewThread: reviewThreadAnchorSchema.optional(),
 });
 
 const issueSnapshotSchema = z.object({
@@ -162,6 +180,13 @@ export const eventEnvelopeSourceRefsSchema = z.object({
   // Per-event provenance: which external resource this one event came from.
   // Item-level ownership lives only in the correlation registry, never here.
   resourceUri: resourceUriSchema.optional(),
+  // An adapter-supplied hint: the resourceUri of the resource this one
+  // "belongs to" for correlation purposes (e.g. a PR review-thread comment's
+  // parent PR). Opaque to core — never parsed, only used as a fallback key
+  // for resourceIndex.resolve() when resourceUri itself misses the index.
+  // The adapter that emits an event is the only party allowed to know its
+  // own locator grammar; this keeps that knowledge out of core/.
+  parentResourceUri: resourceUriSchema.optional(),
 });
 
 /** Event type constants for the correlation registry (ADR 0001 §5). */
@@ -169,6 +194,19 @@ export const WORK_ITEM_CREATED_EVENT = 'wake.workitem.created';
 export const CORRELATION_REGISTERED_EVENT = 'wake.correlation.registered';
 export const CORRELATION_RETRACTED_EVENT = 'wake.correlation.retracted';
 export const CORRELATION_PRIMARY_CONFLICT_EVENT = 'wake.correlation.primary-conflict';
+
+/**
+ * Shared key for events whose resource failed mint qualification (spec D1').
+ * Never a real work item: `readIssueState(UNRESOLVED_WORK_ITEM_KEY)` always
+ * returns null, so these events are durable and inspectable via the event
+ * log but must never materialize a projection or an index entry. Exported
+ * from here (rather than only living in tick-runner.ts, which mints these
+ * events) so projection-updater.ts's fold can also recognize and skip it —
+ * an unqualified event's sourceEventType is still `ticket.upsert` /
+ * `fake.issue.upsert` / etc., which the fold would otherwise happily turn
+ * into a projection the first time it sees this key with no current record.
+ */
+export const UNRESOLVED_WORK_ITEM_KEY = 'unresolved';
 
 // The envelope's `workItemKey` already carries the identity; this payload is
 // deliberately empty.
@@ -387,8 +425,16 @@ export const wakeConfigSchema = z.object({
         postStatusComments: z.boolean().default(true),
         activeLabel: z.string().optional(),
       }).default({ postStatusComments: true }),
-    }).default({ enabled: false, repos: [], polling: { maxIssuesPerRepo: 25, commentPageSize: 25, lookbackMs: 60_000 }, policy: { requiredLabels: [], ignoredLabels: [], requiredAssignees: [] }, publication: { postStatusComments: true } }),
-  }).default({ github: { enabled: false, repos: [], polling: { maxIssuesPerRepo: 25, commentPageSize: 25, lookbackMs: 60_000 }, policy: { requiredLabels: [], ignoredLabels: [], requiredAssignees: [] }, publication: { postStatusComments: true } } }),
+      pullRequests: z.object({
+        enabled: z.boolean().default(false),
+        maxPullRequestsPerRepo: z.number().int().positive().default(25),
+        commentPageSize: z.number().int().positive().default(25),
+        policy: z.object({
+          requiredAuthors: z.array(z.string()).default([]),
+        }).default({ requiredAuthors: [] }),
+      }).default({ enabled: false, maxPullRequestsPerRepo: 25, commentPageSize: 25, policy: { requiredAuthors: [] } }),
+    }).default({ enabled: false, repos: [], polling: { maxIssuesPerRepo: 25, commentPageSize: 25, lookbackMs: 60_000 }, policy: { requiredLabels: [], ignoredLabels: [], requiredAssignees: [] }, publication: { postStatusComments: true }, pullRequests: { enabled: false, maxPullRequestsPerRepo: 25, commentPageSize: 25, policy: { requiredAuthors: [] } } }),
+  }).default({ github: { enabled: false, repos: [], polling: { maxIssuesPerRepo: 25, commentPageSize: 25, lookbackMs: 60_000 }, policy: { requiredLabels: [], ignoredLabels: [], requiredAssignees: [] }, publication: { postStatusComments: true }, pullRequests: { enabled: false, maxPullRequestsPerRepo: 25, commentPageSize: 25, policy: { requiredAuthors: [] } } } }),
   sinks: z.record(z.string(), sinkEntrySchema).default({}),
 });
 
@@ -539,6 +585,27 @@ export function parseRunnerResult(
     body,
     envelope: 'degraded',
   };
+}
+
+export function parseRunnerArtifacts(result: string): z.infer<typeof wakeArtifactsEnvelopeSchema> {
+  const fencePattern = /^```wake-artifacts[^\n]*\n([\s\S]*?)^```[ \t]*$/gm;
+  let lastMatch: RegExpExecArray | null = null;
+  let match: RegExpExecArray | null;
+
+  while ((match = fencePattern.exec(result)) !== null) {
+    lastMatch = match;
+  }
+
+  if (lastMatch === null) {
+    return { artifacts: [] };
+  }
+
+  try {
+    const parsed = wakeArtifactsEnvelopeSchema.safeParse(JSON.parse(lastMatch[1] ?? '{}'));
+    return parsed.success ? parsed.data : { artifacts: [] };
+  } catch {
+    return { artifacts: [] };
+  }
 }
 
 export function parseRunnerResultSentinel(
