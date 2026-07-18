@@ -92,10 +92,6 @@ export function createPolicyEngine() {
         return false;
       }
 
-      if (issue.issue.isPullRequest) {
-        return false;
-      }
-
       return labelsAndAssigneesQualify({
         labels: issue.issue.labels,
         assignees: issue.issue.assignees,

@@ -388,6 +388,10 @@ export function createGitHubIssuesWorkSource(deps: {
               );
 
           for (const issue of issues) {
+            if (issue.pull_request !== undefined) {
+              continue;
+            }
+
             // Poll dedup + echo suppression only, never identity: the uri is
             // constructed (never parsed) and resolved through the index, which
             // keeps a poll flat in the number of work items rather than

@@ -231,15 +231,6 @@ describe('policy engine: requiredAssignees', () => {
     expect(policy.isEligible(issue, config)).toBe(false);
   });
 
-  it('is ineligible when the work item is a pull request', () => {
-    const policy = createPolicyEngine();
-    const config = createDefaultWakeConfig('/tmp/wake-root');
-    config.sources.github.policy.requiredLabels = ['wake'];
-    const issue = buildIssue({ labels: ['wake'], isPullRequest: true });
-
-    expect(policy.isEligible(issue, config)).toBe(false);
-  });
-
   it('is ineligible when issue is assigned to a non-listed login only', () => {
     const policy = createPolicyEngine();
     const config = createDefaultWakeConfig('/tmp/wake-root');
