@@ -21,6 +21,7 @@ import { resolveGitHubToken } from './adapters/github/github-auth.js';
 import { createGitHubArtifactVerifier } from './adapters/github/github-artifact-verifier.js';
 import { createGitHubClient } from './adapters/github/github-client.js';
 import { createGitHubIssuesWorkSource } from './adapters/github/github-issues-work-source.js';
+import { createGitHubPullRequestActivitySource } from './adapters/github/github-pull-request-activity-source.js';
 import { runCorrelateCommand } from './cli/correlate-command.js';
 import { runInitCommand } from './cli/init-command.js';
 import { runSandboxCommand } from './cli/sandbox-command.js';
@@ -234,11 +235,25 @@ async function buildRuntime(args: string[]) {
       });
   const sourceName = configuredTicketSource(config);
   const sinkName = sourceName;
+
+  const pullRequestActivitySource = config.sources.github.enabled
+    ? createGitHubPullRequestActivitySource({
+        client: createGitHubClient(await resolveGitHubToken()),
+        stateStore,
+        config,
+        resourceIndex,
+        now: () => systemClock.now(),
+      })
+    : null;
+
   const workSource = createWorkSourceFanIn([
     {
       source: sourceName,
       pollEvents: ticketingSystem.pollEvents,
     },
+    ...(pullRequestActivitySource === null
+      ? []
+      : [{ source: 'github-pr', pollEvents: pullRequestActivitySource.pollEvents }]),
   ]);
   const outboundSink = createOutboundSinkRouter({
     sinks: [
@@ -246,6 +261,9 @@ async function buildRuntime(args: string[]) {
         sink: sinkName,
         deliverIntent: ticketingSystem.deliverIntent,
       },
+      ...(pullRequestActivitySource === null
+        ? []
+        : [{ sink: 'github-pr', deliverIntent: pullRequestActivitySource.deliverIntent }]),
     ],
     config,
   });
