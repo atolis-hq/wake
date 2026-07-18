@@ -10,12 +10,19 @@ import type {
   AgentRunResult,
   AgentRunTokenUsage,
   OutboundSink,
+  ResourceIndex,
+  UnkeyedEventEnvelope,
   WorkSource,
   WorkspaceManager,
 } from './contracts.js';
 import type { Clock } from '../lib/clock.js';
 import { acquireFileLock } from '../lib/lock.js';
-import { parseRunnerResult } from '../domain/schema.js';
+import { createWorkId } from '../lib/work-id.js';
+import {
+  CORRELATION_REGISTERED_EVENT,
+  WORK_ITEM_CREATED_EVENT,
+  parseRunnerResult,
+} from '../domain/schema.js';
 import { maxConfiguredRunnerTimeoutMs, resolveRunnerRouting } from '../domain/runner-routing.js';
 import { awaitingApprovalRunnerSentinel, stageLabelForStage } from '../domain/stages.js';
 import type { AgentAction, EventEnvelope, IssueStateRecord, RunRecord, WakeConfig } from '../domain/types.js';
@@ -23,6 +30,11 @@ import { createEventEnvelope } from '../lib/event-log.js';
 import { resolveQuotaPauseUntil } from './quota-backoff.js';
 
 type ParsedRunnerResult = ReturnType<typeof parseRunnerResult>;
+
+// A resolved inbound event plus whether it is already on record. `persisted`
+// events are folded but not re-appended (appendEventEnvelope would only re-read
+// and return the identical envelope).
+type ResolvedInboundEvent = { envelope: EventEnvelope; persisted: boolean };
 
 function latestHumanCommentId(candidate: IssueStateRecord): string | undefined {
   const human = candidate.comments.filter((c) => !c.isBotAuthored);
@@ -37,11 +49,16 @@ export function createTickRunner(deps: {
   outboundSink?: OutboundSink;
   runner: AgentRunner;
   workspaceManager: WorkspaceManager;
+  // Required — see the matching note on createProjectionUpdater's
+  // resourceIndex: this is durable correlation state and must never be
+  // cached in process memory across ticks or silently defaulted away.
+  resourceIndex: ResourceIndex;
 }) {
   const policy = createPolicyEngine();
   const lifecycle = createLifecycleService();
   const projectionUpdater = createProjectionUpdater({
     stateStore: deps.stateStore,
+    resourceIndex: deps.resourceIndex,
   });
 
   function extractTokenCount(tokenUsage: AgentRunTokenUsage | undefined): number | undefined {
@@ -237,9 +254,23 @@ export function createTickRunner(deps: {
     });
   }
 
+  // Events are stamped by reading the clock at the moment of stamping, never
+  // from a frozen tick-start snapshot. `tickStartedAt` is the tick's *decision*
+  // clock (policy/staleness), and reusing it to date events inverts them
+  // against the work source's own poll-time ingestedAt — pollEvents() runs
+  // after tickStartedAt is captured, so in production every polled upsert is
+  // LATER than the tick's start. An event dated before the upsert that creates
+  // the projection it folds into sorts ahead of it in rebuildFromEvents' global
+  // replay, folds against `current === null`, and is silently dropped. Reading
+  // per event also stays correct once ticks work items in parallel, where a
+  // shared per-tick snapshot would tie every concurrent event on ingestedAt and
+  // leave append order as the only discriminator.
+  function eventStampNow(): string {
+    return deps.clock.now().toISOString();
+  }
+
   async function markPendingActionableIssues(
     projections: IssueStateRecord[],
-    occurredAt: string,
   ): Promise<void> {
     for (const projection of projections) {
       const statusLabel = statusLabelForStage(projection.wake.stage);
@@ -255,13 +286,220 @@ export function createTickRunner(deps: {
       await deliverOutboundEvent(
         createLabelsEvent({
           projection,
-          runId: `pending-${projection.issue.number}-${deps.clock.now().getTime()}`,
+          runId: `pending-${projection.workItemKey}-${deps.clock.now().getTime()}`,
           statusLabel,
           stageLabel,
-          occurredAt,
+          occurredAt: eventStampNow(),
         }),
       );
     }
+  }
+
+  // Returns whichever of the two timestamps is unambiguously later, defaulting
+  // to `left`. `right` wins only if it is later by BOTH the actual instant and
+  // the lexicographic order rebuildFromEvents sorts on — the envelope schema is
+  // `z.string().datetime({ offset: true })`, so a timestamp may legally carry a
+  // non-UTC offset or differing sub-second precision, and lexicographic order
+  // alone is not a reliable proxy for chronology across those formats. Falling
+  // back to `left` (the source event's own exact string) is always safe: it
+  // ties with that event under localeCompare, and the stable sort then preserves
+  // append order, which puts the mint events after it — exactly what we need.
+  function laterTimestamp(left: string, right: string): string {
+    const isLater =
+      Date.parse(right) > Date.parse(left) && right.localeCompare(left) > 0;
+    return isLater ? right : left;
+  }
+
+  // The two internal events a mint (or a heal) appends after the source event
+  // that founded a work item: wake.workitem.created, then the
+  // wake.correlation.registered that claims the originating resource as this
+  // work item's primary representation. Their ids are derived from the work id,
+  // so re-emitting them is idempotent — appendEventEnvelope dedups on the id.
+  //
+  // Ordering and timestamps matter, and not only for readability. Both fold
+  // against the projection the source event creates, and applyEvent drops
+  // anything that folds while `current === null`. So they must never sort
+  // *before* that source event in rebuildFromEvents' globally-ordered replay —
+  // if they did, replay would silently discard the registration, leaving
+  // correlatedResources[] empty and the index unpopulated, while the events
+  // still on record stop any later tick from re-registering. Permanent,
+  // self-concealing loss (Task 5, round 3). Reading the clock here is already
+  // after pollEvents(), but that alone is not a guarantee: the source event's
+  // ingestedAt comes from the *source's* clock, which for a real source is
+  // another machine's and can legitimately run ahead of ours. Anchoring on the
+  // source event's own timestamp makes the ordering hold by construction rather
+  // than by clock agreement; appending the source event first means a tie
+  // resolves in its favour (the sort is stable, so equal timestamps keep append
+  // order).
+  function buildOriginCorrelationEvents(
+    workItemKey: string,
+    unkeyed: UnkeyedEventEnvelope,
+    resourceUri: string,
+  ): EventEnvelope[] {
+    const mintedAt = laterTimestamp(unkeyed.ingestedAt, eventStampNow());
+    const sourceRefs = {
+      ...unkeyed.sourceRefs,
+      resourceUri,
+    };
+
+    const createdEvent = createEventEnvelope({
+      eventId: `${workItemKey}-created`,
+      workItemKey,
+      streamScope: 'work-item',
+      direction: 'internal',
+      sourceSystem: 'wake',
+      sourceEventType: WORK_ITEM_CREATED_EVENT,
+      sourceRefs,
+      occurredAt: mintedAt,
+      ingestedAt: mintedAt,
+      trigger: 'context-only',
+      // The envelope's workItemKey already carries the identity.
+      payload: {},
+    });
+
+    const registeredEvent = createEventEnvelope({
+      eventId: `${workItemKey}-origin-correlation`,
+      workItemKey,
+      streamScope: 'work-item',
+      direction: 'internal',
+      sourceSystem: 'wake',
+      sourceEventType: CORRELATION_REGISTERED_EVENT,
+      sourceRefs,
+      occurredAt: mintedAt,
+      ingestedAt: mintedAt,
+      trigger: 'context-only',
+      payload: {
+        resourceUri,
+        role: 'representation',
+        relation: 'primary',
+        provenance: 'wake-created',
+      },
+    });
+
+    return [createdEvent, registeredEvent];
+  }
+
+  // The central resolver (spec D1): sources name the *resource* an event came
+  // from and never the work item, so between pollEvents() and the append every
+  // inbound event's sourceRefs.resourceUri is resolved through the reverse
+  // index to the canonical workItemKey, minting a work item on a miss. This is
+  // the one mechanism — there is no founding-surface special case, and no
+  // resolution is ever cached in process memory between ticks (CLAUDE.md: the
+  // tick is a pure function of durable state; the index on disk *is* that
+  // state).
+  //
+  // Each resolved event carries whether it is already `persisted`, so the
+  // caller can skip re-appending it (appendEventEnvelope would only re-read it
+  // and hand back the same envelope). Minting *is* registration, so a freshly
+  // minted work item's correlatedResources[] is complete from its first event.
+  async function resolveInboundEvent(
+    unkeyed: UnkeyedEventEnvelope,
+  ): Promise<ResolvedInboundEvent[]> {
+    const { resourceUri } = unkeyed.sourceRefs;
+    if (resourceUri === undefined) {
+      // A programming error in the adapter, not a runtime condition to absorb.
+      // Guessing an identity here would silently fork a duplicate work item
+      // for work already in flight — exactly the corruption the reverse index
+      // exists to prevent — so fail loudly instead.
+      throw new Error(
+        `cannot resolve inbound event ${unkeyed.eventId} from ${unkeyed.sourceSystem}: ` +
+          'sourceRefs.resourceUri is required for every unkeyed source event',
+      );
+    }
+
+    // An event we have already persisted was already resolved, on some earlier
+    // tick, and its stamped key is the durable answer. Re-resolving it through
+    // the index would be wrong as well as wasteful: if that work item has since
+    // retracted this resource, the index no longer holds it, the lookup misses,
+    // and a miss means mint — so a re-polled event (sources legitimately
+    // re-emit the same eventId, e.g. an unchanged issue) would fork a duplicate
+    // work item. Reusing the persisted key keeps resolution idempotent per
+    // event id, which is what the append-only log already promises.
+    const persisted = await deps.stateStore.readEventEnvelope(unkeyed.eventId);
+    if (persisted !== null) {
+      // Heal a partially minted work item. The index entry for a resource is
+      // written only when its origin wake.correlation.registered event is
+      // *folded*, several appends after the founding source event. A crash in
+      // that window leaves the source event durable — so this branch suppresses
+      // re-minting — while the index has no entry, and a later event on the
+      // same resource would miss the index and fork a duplicate work item
+      // (crash/restart safety, CLAUDE.md). If the index does not credit this
+      // event's work item *and* its origin correlation never landed, re-emit
+      // the mint tail (idempotent by id). The guard is the missing origin
+      // event, not merely an empty index: a deliberately *retracted* resource
+      // also resolves to undefined but keeps its origin-correlation event on
+      // record, and must not be silently re-registered.
+      const owner = await deps.resourceIndex.resolve(resourceUri);
+      if (
+        owner === undefined &&
+        (await deps.stateStore.readEventEnvelope(
+          `${persisted.workItemKey}-origin-correlation`,
+        )) === null
+      ) {
+        return [
+          { envelope: persisted, persisted: true },
+          ...buildOriginCorrelationEvents(persisted.workItemKey, unkeyed, resourceUri).map(
+            (envelope) => ({ envelope, persisted: false }),
+          ),
+        ];
+      }
+      return [{ envelope: persisted, persisted: true }];
+    }
+
+    const existingWorkItemKey = await deps.resourceIndex.resolve(resourceUri);
+    if (existingWorkItemKey !== undefined) {
+      return [
+        {
+          envelope: createEventEnvelope({ ...unkeyed, workItemKey: existingWorkItemKey }),
+          persisted: false,
+        },
+      ];
+    }
+
+    const workItemKey = createWorkId();
+    const keyed = createEventEnvelope({ ...unkeyed, workItemKey });
+
+    return [
+      { envelope: keyed, persisted: false },
+      ...buildOriginCorrelationEvents(workItemKey, unkeyed, resourceUri).map((envelope) => ({
+        envelope,
+        persisted: false,
+      })),
+    ];
+  }
+
+  async function ingestInboundEvents(
+    unkeyedEvents: UnkeyedEventEnvelope[],
+  ): Promise<EventEnvelope[]> {
+    const ingested: EventEnvelope[] = [];
+
+    for (const unkeyed of unkeyedEvents) {
+      const resolved = await resolveInboundEvent(unkeyed);
+      // Fold what was actually persisted, never the in-memory copy:
+      // appendEventEnvelope is id-deduplicated and returns the *existing*
+      // envelope when one is already on record. Folding our own copy instead
+      // would let state/ diverge from events/ — and replay is defined by
+      // events/, so the divergence would only surface after a rebuild. An event
+      // already flagged `persisted` needs no second append: appendEventEnvelope
+      // would only re-read it off disk and hand back the same envelope, and
+      // every unchanged issue is re-polled every tick, so that read is the
+      // dominant redundant cost this branch avoids.
+      const events: EventEnvelope[] = [];
+      for (const { envelope, persisted } of resolved) {
+        events.push(persisted ? envelope : await deps.stateStore.appendEventEnvelope(envelope));
+      }
+      // Folded before the next event is resolved, because it is the fold of
+      // the registration event that writes the index entry the *next* event on
+      // the same resource resolves through. Deferring the fold to the end of
+      // the batch would let a second event for the same ticket miss and mint a
+      // duplicate work item. Every event in a poll batch shares the source's
+      // one ingestedAt, so folding per event preserves exactly the order a
+      // single batched fold would have produced.
+      await projectionUpdater.rebuildFromEvents(events);
+      ingested.push(...events);
+    }
+
+    return ingested;
   }
 
   function runnerTimeoutMs(): number {
@@ -276,7 +514,6 @@ export function createTickRunner(deps: {
 
   async function cleanupClosedIssueWorkspaces(
     projections: import('../domain/types.js').IssueStateRecord[],
-    nowIso: string,
   ): Promise<void> {
     for (const projection of projections) {
       const { workspacePath } = projection.wake;
@@ -288,15 +525,13 @@ export function createTickRunner(deps: {
         try {
           await deps.workspaceManager.cleanupWorkspace({ workspacePath });
           if (!deps.config.transcripts.retainAfterWorkspaceCleanup) {
-            await rm(deps.stateStore.paths.transcriptIssueDir(
-              projection.issue.repo,
-              projection.issue.number,
-            ), {
+            await rm(deps.stateStore.paths.transcriptWorkDir(projection.workItemKey), {
               recursive: true,
               force: true,
             });
           }
         } catch (error) {
+          const failedAt = eventStampNow();
           await deps.stateStore.appendEventEnvelope(createEventEnvelope({
             eventId: `workspace-cleanup-failed-${projection.issue.repo.replace(/[^a-z0-9]+/gi, '-')}-${projection.issue.number}`,
             workItemKey: projection.workItemKey,
@@ -308,8 +543,8 @@ export function createTickRunner(deps: {
               repo: projection.issue.repo,
               issueNumber: projection.issue.number,
             },
-            occurredAt: nowIso,
-            ingestedAt: nowIso,
+            occurredAt: failedAt,
+            ingestedAt: failedAt,
             trigger: 'context-only',
             payload: {
               workspacePath,
@@ -318,6 +553,7 @@ export function createTickRunner(deps: {
           }));
           continue;
         }
+        const cleanedAt = eventStampNow();
         const cleanupEvent = createEventEnvelope({
           eventId: `workspace-cleaned-${projection.issue.repo.replace(/[^a-z0-9]+/gi, '-')}-${projection.issue.number}-${deps.clock.now().getTime()}`,
           workItemKey: projection.workItemKey,
@@ -329,8 +565,8 @@ export function createTickRunner(deps: {
             repo: projection.issue.repo,
             issueNumber: projection.issue.number,
           },
-          occurredAt: nowIso,
-          ingestedAt: nowIso,
+          occurredAt: cleanedAt,
+          ingestedAt: cleanedAt,
           trigger: 'immediate',
           payload: { workspacePath },
         });
@@ -360,15 +596,20 @@ export function createTickRunner(deps: {
       .filter((record) => isStaleRunningRecord(record, now));
 
     for (const record of staleRecords) {
-      const projection = await deps.stateStore.readIssueState(record.repo, record.issueNumber);
+      // Run records carry the work item they belong to, so this is a direct
+      // O(1) read — no scan, no index, no source ambiguity. The record's
+      // repo/issueNumber are representation content and take no part in it.
+      const projection = await deps.stateStore.readIssueState(record.workItemKey);
       const newerCompletedRun = runRecords.some((candidate) =>
-        candidate.repo === record.repo &&
-        candidate.issueNumber === record.issueNumber &&
+        candidate.workItemKey === record.workItemKey &&
         candidate.runId !== record.runId &&
         candidate.status !== 'running' &&
         Date.parse(candidate.startedAt) > Date.parse(record.startedAt)
       );
-      if (projection?.wake.lastRunId !== record.runId || newerCompletedRun) {
+      // Equivalent to the previous `projection?.wake.lastRunId !== record.runId`,
+      // spelled out so the non-null projection is available below for its
+      // workItemKey.
+      if (projection === null || projection.wake.lastRunId !== record.runId || newerCompletedRun) {
         await deps.stateStore.writeRunRecord({
           ...record,
           status: 'superseded',
@@ -396,10 +637,9 @@ export function createTickRunner(deps: {
         },
       });
 
-      const workItemKey = `${record.repo}#${record.issueNumber}`;
       const runCompletedEvent = createEventEnvelope({
         eventId: `${record.runId}-stale-reconciled`,
-        workItemKey,
+        workItemKey: projection.workItemKey,
         streamScope: 'work-item',
         direction: 'internal',
         sourceSystem: 'wake',
@@ -423,7 +663,7 @@ export function createTickRunner(deps: {
       await deps.stateStore.appendEventEnvelope(runCompletedEvent);
       await projectionUpdater.rebuildFromEvents([runCompletedEvent]);
 
-      const updatedProjection = await deps.stateStore.readIssueState(record.repo, record.issueNumber);
+      const updatedProjection = await deps.stateStore.readIssueState(projection.workItemKey);
       if (updatedProjection !== null) {
         await deliverOutboundEvent(
           createLabelsEvent({
@@ -570,22 +810,21 @@ export function createTickRunner(deps: {
       }
 
       try {
+        // The tick's *decision* clock: one consistent "now" for staleness and
+        // policy, so a single tick's decisions can't disagree with themselves.
+        // It is deliberately NOT an event-stamping clock — see eventStampNow().
+        // Its only remaining uses are the run records' startedAt (run records
+        // are not events and take no part in the rebuild fold).
         const tickStartedAt = deps.clock.now();
         const nowIso = tickStartedAt.toISOString();
         await reconcileStaleRunningRecords(tickStartedAt);
         await retryUnconfirmedDeliveries();
-        const inboundEvents = await deps.workSource.pollEvents();
-        if (inboundEvents.length > 0) {
-          for (const event of inboundEvents) {
-            await deps.stateStore.appendEventEnvelope(event);
-          }
-          await projectionUpdater.rebuildFromEvents(inboundEvents);
-        }
+        const inboundEvents = await ingestInboundEvents(await deps.workSource.pollEvents());
 
         const projections = await deps.stateStore.listIssueStates();
-        await cleanupClosedIssueWorkspaces(projections, nowIso);
+        await cleanupClosedIssueWorkspaces(projections);
         if (inboundEvents.length > 0) {
-          await markPendingActionableIssues(projections, nowIso);
+          await markPendingActionableIssues(projections);
         }
 
         const candidate = projections.find((issue) => {
@@ -696,6 +935,7 @@ export function createTickRunner(deps: {
         const runningRecord = {
           schemaVersion: 1 as const,
           runId,
+          workItemKey: candidate.workItemKey,
           repo: candidate.issue.repo,
           issueNumber: candidate.issue.number,
           action,
@@ -705,6 +945,7 @@ export function createTickRunner(deps: {
 
         await deps.stateStore.writeRunRecord(runningRecord);
         const claimedStage = action as import('../domain/types.js').Stage;
+        const claimedAt = eventStampNow();
         const claimedEvent = createEventEnvelope({
           eventId: `${runId}-claimed`,
           workItemKey: candidate.workItemKey,
@@ -717,8 +958,8 @@ export function createTickRunner(deps: {
             issueNumber: candidate.issue.number,
             runId,
           },
-          occurredAt: nowIso,
-          ingestedAt: nowIso,
+          occurredAt: claimedAt,
+          ingestedAt: claimedAt,
           trigger: 'immediate',
           payload: {
             action,
@@ -735,7 +976,7 @@ export function createTickRunner(deps: {
             runId,
             statusLabel: 'wake:status.working',
             stageLabel: stageLabelForStage(claimedStage),
-            occurredAt: nowIso,
+            occurredAt: eventStampNow(),
           }),
         );
 
@@ -746,6 +987,7 @@ export function createTickRunner(deps: {
           const prepareResult =
             action === 'implement'
               ? await deps.workspaceManager.prepareWorkspace({
+                  workId: candidate.workItemKey,
                   repo: candidate.issue.repo,
                   issueNumber: candidate.issue.number,
                 })

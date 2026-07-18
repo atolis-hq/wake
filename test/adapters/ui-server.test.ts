@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
 
+import { createFakeResourceIndex } from '../../src/adapters/fake/fake-resource-index.js';
 import { createStateStore } from '../../src/adapters/fs/state-store.js';
 import { createDefaultWakeConfig } from '../../src/config/defaults.js';
 import { createUiServer } from '../../src/adapters/http/ui-server.js';
@@ -19,7 +20,7 @@ describe('ui-server', () => {
     await stateStore.ensureWakeRoot();
     const config = createDefaultWakeConfig(root);
 
-    server = createUiServer({ stateStore, config });
+    server = createUiServer({ stateStore, resourceIndex: createFakeResourceIndex(), config });
     await new Promise<void>((resolveListen) => {
       server.listen(0, '127.0.0.1', () => resolveListen());
     });
@@ -68,7 +69,12 @@ describe('ui-server token gating', () => {
     await stateStore.ensureWakeRoot();
     const config = createDefaultWakeConfig(root);
 
-    server = createUiServer({ stateStore, config, token: 'expected-token' });
+    server = createUiServer({
+      stateStore,
+      resourceIndex: createFakeResourceIndex(),
+      config,
+      token: 'expected-token',
+    });
     await new Promise<void>((resolveListen) => {
       server.listen(0, '127.0.0.1', () => resolveListen());
     });

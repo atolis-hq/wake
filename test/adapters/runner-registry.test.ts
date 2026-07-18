@@ -192,7 +192,7 @@ describe('runner registry routing', () => {
       action: 'refine',
       projection: {
         schemaVersion: 1,
-        workItemKey: 'atolis-hq/wake#1',
+        workItemKey: 'work-01JQZX9K2N4P6R8T0V2W4Y6A01',
         issue: {
           repo: 'atolis-hq/wake',
           number: 1,
@@ -215,6 +215,7 @@ describe('runner registry routing', () => {
           expectedEcho: { commentIds: [], labels: [] },
         },
         context: {},
+        correlatedResources: [],
       },
       recentEvents: [],
       config,

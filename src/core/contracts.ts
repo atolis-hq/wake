@@ -7,8 +7,39 @@ import type {
   WakeConfig,
 } from '../domain/types.js';
 
+// Declared here (not in the concrete fs adapter) so the seam direction
+// matches every other adapter contract in this file: core/ declares the
+// interface, the adapter imports and implements it. Only main.ts's
+// buildRuntime wires the concrete createResourceIndex() in.
+export interface ResourceIndex {
+  resolve(resourceUri: string): Promise<string | undefined>;
+  register(resourceUri: string, workItemKey: string): Promise<void>;
+  retract(resourceUri: string): Promise<void>;
+}
+
+/**
+ * An event as returned by a source: no workItemKey. Sources have no
+ * obligation to know the work item; the resolver in tick-runner stamps the
+ * canonical key between poll and append (ADR 0001 §5, spec D1).
+ *
+ * `sourceRefs.resourceUri` is what the resolver resolves, so every unkeyed
+ * event must carry one — an event without it is a programming error in the
+ * adapter, not a case for the resolver to guess an identity for.
+ *
+ * `ingestedAt` MUST be this process's own clock, read at poll time — never the
+ * provider's timestamp (that is what `occurredAt` is for). Replay ordering
+ * depends on it: `rebuildFromEvents` sorts on `ingestedAt`, and Wake stamps its
+ * own events (`wake.run.claimed`, label requests) from a clock read *after*
+ * pollEvents() returns. A source that reported a provider timestamp here could
+ * date an event later than Wake's own follow-on events, which would then sort
+ * before the upsert that creates their projection, fold against `null`, and be
+ * silently discarded on replay — losing stage, stageHistory and lastRunId.
+ * This has bitten three times; see `.superpowers/sdd/progress.md`.
+ */
+export type UnkeyedEventEnvelope = Omit<EventEnvelope, 'workItemKey'>;
+
 export interface WorkSource {
-  pollEvents(): Promise<EventEnvelope[]>;
+  pollEvents(): Promise<UnkeyedEventEnvelope[]>;
 }
 
 export interface OutboundSink {
@@ -55,7 +86,11 @@ export interface AgentRunner {
 
 export interface WorkspaceManager {
   prepareWorkspace(input: {
+    /** Keys the workspace path — one workspace per work item, not per ticket. */
+    workId: string;
+    /** Still needed to clone. */
     repo: string;
+    /** Still needed for the human-readable branch name (spec D2). */
     issueNumber: number;
   }): Promise<{ workspacePath: string; mergeConflictDetected: boolean; upstreamChanges?: string }>;
   prepareReadOnlyClone(input: { repo: string }): Promise<{ workspacePath: string }>;

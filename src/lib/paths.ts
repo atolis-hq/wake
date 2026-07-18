@@ -8,6 +8,8 @@ export function sanitizePathKey(value: string): string {
   return value.replace(/[^A-Za-z0-9._-]/g, '__');
 }
 
+export type WakePaths = ReturnType<typeof createWakePaths>;
+
 export function createWakePaths(wakeRoot: string) {
   return {
     wakeRoot,
@@ -22,14 +24,12 @@ export function createWakePaths(wakeRoot: string) {
     reposRoot: join(wakeRoot, 'repos'),
     repoRoot: (repo: string) => join(wakeRoot, 'repos', sanitizeRepo(repo)),
     sourceStateRoot: join(wakeRoot, 'sources'),
-    issueStateFile: (source: string, repo: string, issueNumber: number) =>
-      join(wakeRoot, 'state', sanitizePathKey(source), sanitizeRepo(repo), `${issueNumber}.json`),
-    archivedIssueStateFile: (source: string, repo: string, issueNumber: number) =>
-      join(wakeRoot, 'state', sanitizePathKey(source), 'archive', sanitizeRepo(repo), `${issueNumber}.json`),
-    legacyIssueStateFile: (repo: string, issueNumber: number) =>
-      join(wakeRoot, 'state', sanitizeRepo(repo), `${issueNumber}.json`),
-    archivedLegacyIssueStateFile: (repo: string, issueNumber: number) =>
-      join(wakeRoot, 'state', 'archive', 'legacy', sanitizeRepo(repo), `${issueNumber}.json`),
+    // Keyed on the minted work id, which is filename-safe by construction
+    // (src/lib/work-id.ts) — hence no sanitizePathKey here. No durable path
+    // embeds a provider, repo, or issue segment (spec §3).
+    workItemStateFile: (workId: string) => join(wakeRoot, 'state', `${workId}.json`),
+    archivedWorkItemStateFile: (workId: string) =>
+      join(wakeRoot, 'state', 'archive', `${workId}.json`),
     sourceStateFile: (source: string, key: string) =>
       join(wakeRoot, 'sources', sanitizePathKey(source), `${sanitizePathKey(key)}.json`),
     runFile: (runId: string) => join(wakeRoot, 'runs', `${runId}.json`),
@@ -38,11 +38,15 @@ export function createWakePaths(wakeRoot: string) {
     eventEnvelopeFile: (eventId: string) =>
       join(wakeRoot, 'events-by-id', `${sanitizePathKey(eventId)}.json`),
     logFile: (date: string) => join(wakeRoot, 'logs', `${date}.log`),
-    workspaceDir: (repo: string, issueNumber: number) =>
-      join(wakeRoot, 'workspaces', sanitizeRepo(repo), String(issueNumber)),
-    transcriptIssueDir: (repo: string, issueNumber: number) =>
-      join(wakeRoot, 'transcripts', sanitizeRepo(repo), String(issueNumber)),
-    transcriptSessionDir: (repo: string, issueNumber: number, sessionKey: string) =>
-      join(wakeRoot, 'transcripts', sanitizeRepo(repo), String(issueNumber), sanitizePathKey(sessionKey)),
+    // Workspaces and transcripts are ephemeral scratch rather than durable
+    // state, but they re-key to the work id anyway: they are 1:1 with a work
+    // item, not a ticket, and a ticket-shaped path here would preserve the
+    // second ticket-shaped identity this change exists to remove (spec §3).
+    workspaceDir: (workId: string) => join(wakeRoot, 'workspaces', workId),
+    transcriptWorkDir: (workId: string) => join(wakeRoot, 'transcripts', workId),
+    transcriptSessionDir: (workId: string, sessionKey: string) =>
+      join(wakeRoot, 'transcripts', workId, sanitizePathKey(sessionKey)),
+    resourceIndexRoot: join(wakeRoot, 'state', 'index'),
+    resourceIndexShardFile: (shard: string) => join(wakeRoot, 'state', 'index', `${shard}.json`),
   };
 }

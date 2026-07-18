@@ -159,9 +159,11 @@ export function createGitWorkspaceManager(options: {
 
   return {
     async prepareWorkspace({
+      workId,
       repo,
       issueNumber,
     }: {
+      workId: string;
       repo: string;
       issueNumber: number;
     }): Promise<{
@@ -169,7 +171,10 @@ export function createGitWorkspaceManager(options: {
       mergeConflictDetected: boolean;
       upstreamChanges?: string;
     }> {
-      const workspacePath = paths.workspaceDir(repo, issueNumber);
+      // The workspace is keyed by work item; `repo` still drives the clone and
+      // `issueNumber` still names the branch, which stays human-readable and
+      // provider-facing (spec D2).
+      const workspacePath = paths.workspaceDir(workId);
       if (await pathExists(workspacePath)) {
         const updateResult = await tryUpdateFromDefaultBranch(workspacePath);
         return { workspacePath, ...updateResult };

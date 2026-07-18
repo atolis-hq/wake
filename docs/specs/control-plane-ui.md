@@ -35,7 +35,8 @@ Principles, in priority order:
 | Pause file | `PAUSE` | Status bar, pause control |
 | Ledger | `ledger.json` (`pausedUntil`) | Status bar, pause control |
 | Tick lock | `locks/tick.lock` | Lock status, stale-lock action |
-| Projections | `state/<repo>/<issue>.json` | Kanban board, item detail |
+| Projections | `state/<workId>.json` | Kanban board, item detail |
+| Resource index | `state/index/<xx>.json` | Resolving a ticket/PR URL to its work item |
 | Run records | `runs/run-*.json` | Runs view, item detail, metrics |
 | Event log | `events/<date>.jsonl` (+ `events-by-id/`) | Activity feed, item timeline |
 | Source poll state | `sources/<source>/<key>.json` | Health view (poll freshness per repo) |
@@ -127,7 +128,7 @@ A reverse-chronological tail of the event log (last N days, default 2):
 
 ### 4.8 Workspaces view (secondary)
 
-List of `workspaces/<repo>/<issue>` directories joined against projections: issue state/stage, workspace size, git branch (cheap `git -C … rev-parse --abbrev-ref HEAD`), orphan/leak flags. Cleanup action per row (§6). The canonical clones under `repos/` are listed read-only, clearly separated, with no cleanup affordance.
+List of `workspaces/<workId>` directories joined against projections: issue state/stage, workspace size, git branch (cheap `git -C … rev-parse --abbrev-ref HEAD`), orphan/leak flags. Cleanup action per row (§6). The canonical clones under `repos/` are listed read-only, clearly separated, with no cleanup affordance.
 
 ## 5. API (JSON, versioned under `/api/v1`)
 

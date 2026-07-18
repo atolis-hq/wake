@@ -1,6 +1,11 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 
 import {
+  correlationPrimaryConflictPayloadSchema,
+  correlationRegisteredPayloadSchema,
+  correlationRetractedPayloadSchema,
+  eventEnvelopeSchema,
+  eventEnvelopeSourceRefsSchema,
   parseEventEnvelope,
   parseIssueStateRecord,
   parseSourceStateRecord,
@@ -8,6 +13,11 @@ import {
   parseRunRecord,
   parseRunnerResult,
   parseRunnerResultSentinel,
+  workItemCreatedPayloadSchema,
+  CORRELATION_PRIMARY_CONFLICT_EVENT,
+  CORRELATION_REGISTERED_EVENT,
+  CORRELATION_RETRACTED_EVENT,
+  WORK_ITEM_CREATED_EVENT,
 } from '../../src/domain/schema.js';
 import type { WakeDevConfig, WakeSandboxConfig } from '../../src/domain/types.js';
 
@@ -15,6 +25,8 @@ describe('issue state schema', () => {
   it('accepts canonical issue and comment fields plus extensible context', () => {
     const record = parseIssueStateRecord({
       schemaVersion: 1,
+      workItemKey: 'work-01JZ0000000000000000000012',
+      origin: 'github',
       issue: {
         repo: 'atolis-hq/wake',
         number: 12,
@@ -50,11 +62,43 @@ describe('issue state schema', () => {
     expect(record.context.agentBrief).toBe('Extra information for future prompts');
     expect(record.wake.expectedEcho).toEqual({ commentIds: [], labels: [] });
     expect(record.issue.isPullRequest).toBe(false);
+    // The key is taken verbatim: nothing derives, namespaces, or rewrites it.
+    expect(record.workItemKey).toBe('work-01JZ0000000000000000000012');
+  });
+
+  it('requires an explicit workItemKey rather than deriving one from the issue', () => {
+    // Identity is minted by the resolver and stamped on the record; a
+    // projection that arrives without one is a bug, not a record to guess a
+    // key for (spec §1/D1).
+    expect(() =>
+      parseIssueStateRecord({
+        schemaVersion: 1,
+        issue: {
+          repo: 'atolis-hq/wake',
+          number: 12,
+          title: 'Example',
+          body: 'Body',
+          labels: [],
+          assignees: [],
+          isPullRequest: false,
+          state: 'open',
+          url: 'https://example.test/issues/12',
+          createdAt: '2026-07-05T12:00:00.000Z',
+          updatedAt: '2026-07-05T12:00:00.000Z',
+        },
+        wake: {
+          stage: 'queue',
+          stageHistory: [],
+          syncedAt: '2026-07-05T12:00:00.000Z',
+        },
+      }),
+    ).toThrow(/workItemKey/);
   });
 
   it('accepts an explicit pull-request discriminator on canonical issues', () => {
     const record = parseIssueStateRecord({
       schemaVersion: 1,
+      workItemKey: 'work-01JZ0000000000000000000014',
       issue: {
         repo: 'atolis-hq/wake',
         number: 14,
@@ -89,88 +133,10 @@ describe('issue state schema', () => {
     ).toThrow(/stage/i);
   });
 
-  it('normalizes legacy refined stages in persisted issue state', () => {
-    const record = parseIssueStateRecord({
-      schemaVersion: 1,
-      issue: {
-        repo: 'atolis-hq/wake',
-        number: 13,
-        title: 'Example',
-        body: 'Body',
-        labels: ['wake:stage.refined'],
-        assignees: [],
-        isPullRequest: false,
-        state: 'open',
-        url: 'https://example.test/issues/13',
-        createdAt: '2026-07-05T12:00:00.000Z',
-        updatedAt: '2026-07-05T12:00:00.000Z',
-      },
-      comments: [],
-      wake: {
-        stage: 'refined',
-        stageHistory: [
-          {
-            stage: 'queue',
-            changedAt: '2026-07-05T12:00:00.000Z',
-            reason: 'seed',
-          },
-          {
-            stage: 'refined',
-            changedAt: '2026-07-05T12:05:00.000Z',
-            reason: 'runner:done',
-          },
-        ],
-        syncedAt: '2026-07-05T12:05:00.000Z',
-      },
-    });
-
-    expect(record.wake.stage).toBe('implement');
-    expect(record.wake.stageHistory).toEqual([
-      {
-        stage: 'queue',
-        changedAt: '2026-07-05T12:00:00.000Z',
-        reason: 'seed',
-      },
-      {
-        stage: 'implement',
-        changedAt: '2026-07-05T12:05:00.000Z',
-        reason: 'runner:done',
-      },
-    ]);
-  });
-
-  it('normalizes legacy failed stages back to the action that failed', () => {
-    const record = parseIssueStateRecord({
-      schemaVersion: 1,
-      issue: {
-        repo: 'atolis-hq/wake',
-        number: 14,
-        title: 'Legacy failure',
-        body: '',
-        labels: ['wake:status.failed'],
-        assignees: [],
-        isPullRequest: false,
-        state: 'open',
-        url: 'https://example.test/issues/14',
-        createdAt: '2026-07-05T12:00:00.000Z',
-        updatedAt: '2026-07-05T12:05:00.000Z',
-      },
-      comments: [],
-      wake: {
-        stage: 'failed',
-        stageHistory: [{
-          stage: 'failed',
-          changedAt: '2026-07-05T12:05:00.000Z',
-          reason: 'runner:failed',
-        }],
-        syncedAt: '2026-07-05T12:05:00.000Z',
-      },
-      context: { lastRunAction: 'refine', lastRunSentinel: 'FAILED' },
-    });
-
-    expect(record.wake.stage).toBe('refine');
-    expect(record.wake.stageHistory[0]?.stage).toBe('refine');
-  });
+  // The legacy-stage normalization tests ('refined'/'failed'/'blocked' →
+  // canonical stages) are gone with the .preprocess() that implemented them.
+  // The sanctioned fresh start of .wake/ means there is no event log or
+  // projection written under the old vocabulary left to read (spec §8).
 });
 
 describe('run and event schemas', () => {
@@ -200,6 +166,7 @@ describe('run and event schemas', () => {
     const run = parseRunRecord({
       schemaVersion: 1,
       runId: 'run-1',
+      workItemKey: 'work-01JZ0000000000000000000012',
       repo: 'atolis-hq/wake',
       issueNumber: 12,
       action: 'refine',
@@ -208,13 +175,32 @@ describe('run and event schemas', () => {
     });
 
     expect(run.status).toBe('running');
+    expect(run.workItemKey).toBe('work-01JZ0000000000000000000012');
+  });
+
+  // Run records are Wake-owned state that Wake itself writes, so the work id is
+  // always in hand at the write site. Required rather than optional: an optional
+  // key would let a record exist that can only be resolved by scanning issue
+  // snapshots — the ticket-shaped ambiguity minted identity exists to remove.
+  it('rejects run records with no workItemKey', () => {
+    expect(() =>
+      parseRunRecord({
+        schemaVersion: 1,
+        runId: 'run-1',
+        repo: 'atolis-hq/wake',
+        issueNumber: 12,
+        action: 'refine',
+        status: 'running',
+        startedAt: '2026-07-05T12:00:00.000Z',
+      }),
+    ).toThrow(/workItemKey/);
   });
 
   it('accepts canonical event envelopes with work item correlation', () => {
     const event = parseEventEnvelope({
       schemaVersion: 1,
       eventId: 'evt-1',
-      workItemKey: 'atolis-hq/wake#12',
+      workItemKey: 'work-01JZ0000000000000000000012',
       streamScope: 'work-item',
       direction: 'inbound',
       sourceSystem: 'github',
@@ -238,8 +224,168 @@ describe('run and event schemas', () => {
       },
     });
 
-    expect(event.workItemKey).toBe('github:atolis-hq/wake#12');
+    // Taken verbatim from the envelope: the resolver stamped it, and nothing
+    // in the parse namespaces, derives, or rewrites it (spec §8).
+    expect(event.workItemKey).toBe('work-01JZ0000000000000000000012');
     expect(event.streamScope).toBe('work-item');
+  });
+
+  it('accepts a valid resourceUri on sourceRefs', () => {
+    const refs = eventEnvelopeSourceRefsSchema.parse({
+      resourceUri: 'github:pr:atolis-hq/wake#91',
+    });
+
+    expect(refs.resourceUri).toBe('github:pr:atolis-hq/wake#91');
+  });
+
+  it('rejects a malformed resourceUri on sourceRefs', () => {
+    expect(() =>
+      eventEnvelopeSourceRefsSchema.parse({ resourceUri: 'not-a-resource-uri' }),
+    ).toThrow();
+  });
+
+  it('parses sourceRefs successfully when resourceUri is absent', () => {
+    const refs = eventEnvelopeSourceRefsSchema.parse({
+      repo: 'atolis-hq/wake',
+      issueNumber: 12,
+    });
+
+    expect(refs.resourceUri).toBeUndefined();
+  });
+
+  it('accepts a full correlation registered payload', () => {
+    const payload = correlationRegisteredPayloadSchema.parse({
+      resourceUri: 'github:pr:atolis-hq/wake#91',
+      role: 'implementation',
+      relation: 'primary',
+      provenance: 'operator-declared',
+      registeredBy: 'run-1',
+    });
+
+    expect(payload.registeredBy).toBe('run-1');
+  });
+
+  it('accepts a correlation registered payload with registeredBy omitted', () => {
+    const payload = correlationRegisteredPayloadSchema.parse({
+      resourceUri: 'github:pr:atolis-hq/wake#91',
+      role: 'implementation',
+      relation: 'primary',
+      provenance: 'operator-declared',
+    });
+
+    expect(payload.registeredBy).toBeUndefined();
+  });
+
+  it('rejects a correlation registered payload with an unknown role', () => {
+    expect(() =>
+      correlationRegisteredPayloadSchema.parse({
+        resourceUri: 'github:pr:atolis-hq/wake#91',
+        role: 'pr',
+        relation: 'primary',
+        provenance: 'operator-declared',
+      }),
+    ).toThrow();
+  });
+
+  it('rejects a correlation registered payload with an unknown relation', () => {
+    expect(() =>
+      correlationRegisteredPayloadSchema.parse({
+        resourceUri: 'github:pr:atolis-hq/wake#91',
+        role: 'implementation',
+        relation: 'tertiary',
+        provenance: 'operator-declared',
+      }),
+    ).toThrow();
+  });
+
+  it('rejects a correlation registered payload with an unknown provenance', () => {
+    expect(() =>
+      correlationRegisteredPayloadSchema.parse({
+        resourceUri: 'github:pr:atolis-hq/wake#91',
+        role: 'implementation',
+        relation: 'primary',
+        provenance: 'human-declared',
+      }),
+    ).toThrow();
+  });
+
+  it('rejects a correlation registered payload with a malformed resourceUri', () => {
+    expect(() =>
+      correlationRegisteredPayloadSchema.parse({
+        resourceUri: 'not-a-resource-uri',
+        role: 'implementation',
+        relation: 'primary',
+        provenance: 'operator-declared',
+      }),
+    ).toThrow();
+  });
+
+  it('accepts a correlation retracted payload', () => {
+    const payload = correlationRetractedPayloadSchema.parse({
+      resourceUri: 'github:pr:atolis-hq/wake#91',
+    });
+
+    expect(payload.resourceUri).toBe('github:pr:atolis-hq/wake#91');
+  });
+
+  it('rejects a correlation retracted payload missing resourceUri', () => {
+    expect(() => correlationRetractedPayloadSchema.parse({})).toThrow();
+  });
+
+  it('accepts an empty work item created payload', () => {
+    expect(workItemCreatedPayloadSchema.parse({})).toEqual({});
+  });
+
+  it('accepts a correlation primary-conflict payload', () => {
+    const payload = correlationPrimaryConflictPayloadSchema.parse({
+      resourceUri: 'github:pr:atolis-hq/wake#91',
+      incumbentWorkItemKey: 'work-01ABC',
+    });
+
+    expect(payload.incumbentWorkItemKey).toBe('work-01ABC');
+  });
+
+  it('round-trips a wake.correlation.registered envelope through eventEnvelopeSchema', () => {
+    const event = parseEventEnvelope({
+      schemaVersion: 1,
+      eventId: 'evt-2',
+      workItemKey: 'work-01JXYZ',
+      streamScope: 'work-item',
+      direction: 'internal',
+      sourceSystem: 'wake',
+      sourceEventType: CORRELATION_REGISTERED_EVENT,
+      sourceRefs: {
+        resourceUri: 'github:pr:atolis-hq/wake#91',
+      },
+      occurredAt: '2026-07-05T12:00:00.000Z',
+      ingestedAt: '2026-07-05T12:00:01.000Z',
+      trigger: 'context-only',
+      payload: correlationRegisteredPayloadSchema.parse({
+        resourceUri: 'github:pr:atolis-hq/wake#91',
+        role: 'implementation',
+        relation: 'primary',
+        provenance: 'operator-declared',
+        registeredBy: 'run-1',
+      }),
+    });
+
+    expect(event.sourceEventType).toBe(CORRELATION_REGISTERED_EVENT);
+    expect(event.sourceRefs.resourceUri).toBe('github:pr:atolis-hq/wake#91');
+    expect(event.payload).toEqual({
+      resourceUri: 'github:pr:atolis-hq/wake#91',
+      role: 'implementation',
+      relation: 'primary',
+      provenance: 'operator-declared',
+      registeredBy: 'run-1',
+    });
+  });
+
+  it('exposes the four correlation event type constants', () => {
+    expect(WORK_ITEM_CREATED_EVENT).toBe('wake.workitem.created');
+    expect(CORRELATION_REGISTERED_EVENT).toBe('wake.correlation.registered');
+    expect(CORRELATION_RETRACTED_EVENT).toBe('wake.correlation.retracted');
+    expect(CORRELATION_PRIMARY_CONFLICT_EVENT).toBe('wake.correlation.primary-conflict');
+    expect(eventEnvelopeSchema).toBeDefined();
   });
 
   it('parses the sentinel from the last non-empty line only', () => {
@@ -247,62 +393,9 @@ describe('run and event schemas', () => {
     expect(parseRunnerResultSentinel('notes DONE more notes\nDONE')).toBe('DONE');
   });
 
-  it('normalizes legacy blockedFromAction context when lastRunAction is absent', () => {
-    const issue = parseIssueStateRecord({
-      schemaVersion: 1,
-      issue: {
-        repo: 'atolis-hq/wake',
-        number: 12,
-        title: 'Legacy blocked issue',
-        body: '',
-        labels: [],
-        assignees: [],
-        isPullRequest: false,
-        state: 'open',
-        url: 'https://example.test/issues/12',
-        createdAt: '2026-07-05T12:00:00.000Z',
-        updatedAt: '2026-07-05T12:00:00.000Z',
-      },
-      wake: {
-        stage: 'blocked',
-        syncedAt: '2026-07-05T12:00:00.000Z',
-        stageHistory: [],
-      },
-      context: { blockedFromAction: 'refine' },
-    });
-
-    expect(issue.context.lastRunAction).toBe('refine');
-    expect(issue.context.blockedFromAction).toBe('refine');
-    expect(issue.wake.stage).toBe('refine');
-  });
-
-  it('preserves lastRunAction when both current and legacy context keys exist', () => {
-    const issue = parseIssueStateRecord({
-      schemaVersion: 1,
-      issue: {
-        repo: 'atolis-hq/wake',
-        number: 12,
-        title: 'Migrated blocked issue',
-        body: '',
-        labels: [],
-        assignees: [],
-        isPullRequest: false,
-        state: 'open',
-        url: 'https://example.test/issues/12',
-        createdAt: '2026-07-05T12:00:00.000Z',
-        updatedAt: '2026-07-05T12:00:00.000Z',
-      },
-      wake: {
-        stage: 'blocked',
-        syncedAt: '2026-07-05T12:00:00.000Z',
-        stageHistory: [],
-      },
-      context: { blockedFromAction: 'refine', lastRunAction: 'implement' },
-    });
-
-    expect(issue.context.lastRunAction).toBe('implement');
-    expect(issue.wake.stage).toBe('implement');
-  });
+  // The legacy `blockedFromAction` → `lastRunAction` context normalization is
+  // gone with the .preprocess() that implemented it: the fresh start leaves no
+  // projection written under the old key (spec §8, "no migration code").
 
   it('parses the last valid wake-result envelope and keeps only prose before it as body', () => {
     const parsed = parseRunnerResult([

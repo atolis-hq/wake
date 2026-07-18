@@ -126,6 +126,7 @@ describe('sandbox resume command', () => {
       await store.writeRunRecord({
         schemaVersion: 1,
         runId: 'run-22',
+        workItemKey: 'work-01JZ0000000000000000000022',
         repo: 'atolis-hq/wake',
         issueNumber: 22,
         action: 'implement',

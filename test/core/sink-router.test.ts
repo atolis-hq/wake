@@ -13,7 +13,10 @@ function publishIntent(input: {
 }): EventEnvelope {
   return createEventEnvelope({
     eventId: input.eventId,
-    workItemKey: `${input.origin}:atolis-hq/wake#70`,
+    // Opaque by design: routing reads `origin` below, never the key. The key
+    // used to encode `<source>:<repo>#<number>`, which is the grammar minted
+    // identity replaced.
+    workItemKey: 'work-01JQZX9K2N4P6R8T0V2W4Y6A70',
     streamScope: 'work-item',
     direction: 'outbound',
     sourceSystem: 'wake',

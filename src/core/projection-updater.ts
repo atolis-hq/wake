@@ -1,6 +1,24 @@
-import { parseIssueStateRecord } from '../domain/schema.js';
+import {
+  CORRELATION_PRIMARY_CONFLICT_EVENT,
+  CORRELATION_REGISTERED_EVENT,
+  CORRELATION_RETRACTED_EVENT,
+  parseIssueStateRecord,
+} from '../domain/schema.js';
 import { doneRunnerSentinel, stageFromLabels } from '../domain/stages.js';
-import type { EventEnvelope, IssueStateRecord } from '../domain/types.js';
+import type {
+  CorrelatedResource,
+  CorrelationRegisteredPayload,
+  CorrelationRetractedPayload,
+  EventEnvelope,
+  IssueStateRecord,
+} from '../domain/types.js';
+import { createEventEnvelope } from '../lib/event-log.js';
+import type { ResourceIndex } from './contracts.js';
+
+type ApplyEventCtx = {
+  resourceIndex: ResourceIndex;
+  appendEvent: (event: EventEnvelope) => Promise<EventEnvelope>;
+};
 
 function stringArrayFromPayload(value: unknown): string[] {
   return Array.isArray(value)
@@ -37,15 +55,11 @@ function createProjectionFromIssueEvent(event: EventEnvelope): IssueStateRecord 
   });
 }
 
-function sourceFromWorkItemKey(workItemKey: string): string | undefined {
-  const marker = workItemKey.indexOf(':');
-  return marker > 0 ? workItemKey.slice(0, marker) : undefined;
-}
-
-function applyEvent(
+async function applyEvent(
   current: IssueStateRecord | null,
   event: EventEnvelope,
-): IssueStateRecord | null {
+  ctx: ApplyEventCtx,
+): Promise<IssueStateRecord | null> {
   if (
     event.sourceEventType === 'fake.issue.upsert' ||
     event.sourceEventType === 'ticket.upsert'
@@ -295,6 +309,141 @@ function applyEvent(
     });
   }
 
+  // Purely an audit record; must never affect projection state, so a full
+  // event replay produces byte-identical output whether or not this
+  // synthesized event happens to be included in the batch being folded
+  // (it's created as a fold side effect, not iterated over on the original
+  // pass, but is naturally present on a later full replay).
+  if (event.sourceEventType === CORRELATION_PRIMARY_CONFLICT_EVENT) {
+    return current;
+  }
+
+  if (event.sourceEventType === CORRELATION_REGISTERED_EVENT) {
+    const payload = event.payload as unknown as CorrelationRegisteredPayload;
+
+    // ADR 0001 §6 is a *downgrade* rule, and only a downgrade rule: "a second
+    // `primary` registration on a claimed URI is downgraded to `secondary` and
+    // a warning event appended." It says nothing about promoting a requested
+    // `secondary`, and §5 lists `relation` as a payload input — so a requested
+    // `secondary` must stay `secondary`. Folding a requested `secondary` up to
+    // `primary` would silently rewrite the declaration the event made, and the
+    // downgrade rule is a corruption guard, not a merge rule — it exists to
+    // stop a second claim on a URI, not to promote unclaimed ones.
+    //
+    // (No shipped caller declares `secondary` yet — `wake correlate` hardcodes
+    // `primary`. The rule follows the spec's payload contract, which is the
+    // standard here; an emitter is #82's scope.)
+    //
+    //   requested primary + held by ANOTHER work item -> secondary + conflict
+    //   requested primary + unclaimed / held by THIS   -> primary, indexed
+    //   requested secondary                            -> secondary, unindexed
+    //
+    // A requested-secondary never touching the index is by design, not an
+    // orphan: the index is primary-only (ADR §5 — the resolver stamps the
+    // *primary* work item's canonical key), so a secondary has nothing to
+    // register. Promotion still requires the incumbent to retract first —
+    // never let a second registration silently steal a uri.
+    const incumbent = await ctx.resourceIndex.resolve(payload.resourceUri);
+    const heldByAnotherWorkItem = incumbent !== undefined && incumbent !== current.workItemKey;
+    const relation: CorrelatedResource['relation'] =
+      payload.relation === 'primary' && !heldByAnotherWorkItem ? 'primary' : 'secondary';
+
+    if (relation === 'primary') {
+      await ctx.resourceIndex.register(payload.resourceUri, current.workItemKey);
+    } else {
+      if (payload.relation === 'primary') {
+        await ctx.appendEvent(createEventEnvelope({
+          eventId: `${event.eventId}-primary-conflict`,
+          workItemKey: current.workItemKey,
+          streamScope: 'work-item',
+          direction: 'internal',
+          sourceSystem: 'wake',
+          sourceEventType: CORRELATION_PRIMARY_CONFLICT_EVENT,
+          sourceRefs: event.sourceRefs,
+          occurredAt: event.occurredAt,
+          ingestedAt: event.ingestedAt,
+          trigger: 'context-only',
+          payload: {
+            resourceUri: payload.resourceUri,
+            incumbentWorkItemKey: incumbent,
+          },
+        }));
+      }
+
+      // Coherent inverse of the retraction gate below: a registration that
+      // folds to non-primary must never leave the index stranded crediting
+      // this work item. This is reachable as a genuine *self-demotion* — a
+      // work item that holds a uri primary and then registers it `secondary`
+      // — where leaving the index pointing at us would contradict our own
+      // correlatedResources[] entry. Gated on actual index ownership, so the
+      // ordinary requested-secondary-on-an-unclaimed-uri case (owner
+      // undefined) correctly leaves the index untouched (finding B).
+      const owner = await ctx.resourceIndex.resolve(payload.resourceUri);
+      if (owner === current.workItemKey) {
+        await ctx.resourceIndex.retract(payload.resourceUri);
+      }
+    }
+
+    const entry: CorrelatedResource = {
+      resourceUri: payload.resourceUri,
+      role: payload.role,
+      relation,
+      provenance: payload.provenance,
+      ...(payload.registeredBy === undefined ? {} : { registeredBy: payload.registeredBy }),
+      registeredAt: event.occurredAt,
+    };
+
+    const currentCorrelatedResources = current.correlatedResources;
+    const existingIndex = currentCorrelatedResources.findIndex(
+      (resource) => resource.resourceUri === payload.resourceUri,
+    );
+    const correlatedResources =
+      existingIndex === -1
+        ? [...currentCorrelatedResources, entry]
+        : currentCorrelatedResources.map((resource, index) =>
+            index === existingIndex ? entry : resource,
+          );
+
+    return parseIssueStateRecord({
+      ...current,
+      correlatedResources,
+      wake: {
+        ...current.wake,
+        syncedAt: event.ingestedAt,
+        recentEventIds: [...current.wake.recentEventIds, event.eventId].slice(-10),
+      },
+    });
+  }
+
+  if (event.sourceEventType === CORRELATION_RETRACTED_EVENT) {
+    const payload = event.payload as unknown as CorrelationRetractedPayload;
+    const currentCorrelatedResources = current.correlatedResources;
+
+    // Retract whenever the index currently credits this work item —
+    // regardless of the locally stored relation — so the registration and
+    // retraction gates are coherent inverses across a demotion. Gating this
+    // on `existing?.relation === 'primary'` (the locally folded relation at
+    // *registration* time) can strand the index pointing at a work item that
+    // no longer holds the resource once that relation has drifted, which is
+    // exactly the identity-critical path `resolve()` depends on (finding B).
+    const owner = await ctx.resourceIndex.resolve(payload.resourceUri);
+    if (owner === current.workItemKey) {
+      await ctx.resourceIndex.retract(payload.resourceUri);
+    }
+
+    return parseIssueStateRecord({
+      ...current,
+      correlatedResources: currentCorrelatedResources.filter(
+        (resource) => resource.resourceUri !== payload.resourceUri,
+      ),
+      wake: {
+        ...current.wake,
+        syncedAt: event.ingestedAt,
+        recentEventIds: [...current.wake.recentEventIds, event.eventId].slice(-10),
+      },
+    });
+  }
+
   return parseIssueStateRecord({
     ...current,
     wake: {
@@ -307,37 +456,69 @@ function applyEvent(
 
 export function createProjectionUpdater(deps: {
   stateStore: ReturnType<typeof import('../adapters/fs/state-store.js').createStateStore>;
+  // Required, not defaulted: this is correlation state, and CLAUDE.md forbids
+  // caching durable state in process memory between ticks. A default here
+  // would (a) silently evaporate the one-primary guarantee across a process
+  // restart and (b) let a future caller who forgets to wire the real index
+  // get no failure at all — just resolve() -> undefined, which downstream
+  // means "mint a new work item". Tests pass an explicit fake
+  // (adapters/fake/fake-resource-index.ts); production always passes the
+  // real, disk-backed index via main.ts's buildRuntime.
+  resourceIndex: ResourceIndex;
 }) {
+  const applyEventCtx: ApplyEventCtx = {
+    resourceIndex: deps.resourceIndex,
+    appendEvent: (event) => deps.stateStore.appendEventEnvelope(event),
+  };
+
   return {
     async rebuildFromEvents(events: EventEnvelope[]): Promise<void> {
-      const grouped = new Map<string, EventEnvelope[]>();
+      // Correlation-index-affecting events (wake.correlation.registered in
+      // particular) must be folded in *globally* ordered time, not grouped by
+      // workItemKey and folded per-group. resourceIndex is shared/global
+      // across all work items, so whichever group happens to be visited first
+      // (Map insertion order — i.e. whichever work item's earliest event
+      // happens to appear first in the input array) would otherwise decide
+      // who wins a primary claim, independent of when the registration events
+      // actually occurred. That makes a full replay (this function, called
+      // with every event) diverge from the live/incremental fold (this
+      // function, called with one new event at a time as it happens) for any
+      // two work items whose creation order and registration order disagree
+      // — silently handing resumption for a resource to the wrong work item
+      // after `rm -rf state/` + replay. Sorting once, globally, by
+      // (ingestedAt, eventId) and folding in that single pass keeps replay
+      // and live agreeing by construction, for both the index and the
+      // per-work-item projection fold (a global sort is still a valid order
+      // for each individual work item's own events, since it's a stable
+      // sort over a total order that's consistent with each event's own
+      // ingestedAt).
+      // Sort is stable (ES2019+), so events sharing an ingestedAt keep their
+      // input order — which is append/arrival order, the same order the live
+      // fold saw them in. Do not add a tie-break on eventId: ids are not
+      // chronological, so that would reorder same-timestamp events within a
+      // work item against the order they actually happened.
+      const ordered = [...events].sort((left, right) =>
+        left.ingestedAt.localeCompare(right.ingestedAt),
+      );
 
-      for (const event of events) {
-        const bucket = grouped.get(event.workItemKey) ?? [];
-        bucket.push(event);
-        grouped.set(event.workItemKey, bucket);
-      }
+      const projections = new Map<string, IssueStateRecord | null>();
+      const touchedWorkItemKeys: string[] = [];
 
-      for (const workItemEvents of grouped.values()) {
-        const ordered = [...workItemEvents].sort((left, right) =>
-          left.ingestedAt.localeCompare(right.ingestedAt),
-        );
-
-        const firstEvent = ordered[0];
-        let projection =
-          firstEvent?.sourceRefs.repo !== undefined &&
-          firstEvent.sourceRefs.issueNumber !== undefined
-            ? await deps.stateStore.readIssueState(
-                firstEvent.sourceRefs.repo,
-                firstEvent.sourceRefs.issueNumber,
-                sourceFromWorkItemKey(firstEvent.workItemKey),
-              )
-            : null;
-
-        for (const event of ordered) {
-          projection = applyEvent(projection, event);
+      for (const event of ordered) {
+        if (!projections.has(event.workItemKey)) {
+          touchedWorkItemKeys.push(event.workItemKey);
+          projections.set(
+            event.workItemKey,
+            await deps.stateStore.readIssueState(event.workItemKey),
+          );
         }
 
+        const current = projections.get(event.workItemKey) ?? null;
+        projections.set(event.workItemKey, await applyEvent(current, event, applyEventCtx));
+      }
+
+      for (const workItemKey of touchedWorkItemKeys) {
+        const projection = projections.get(workItemKey) ?? null;
         if (projection !== null) {
           await deps.stateStore.writeIssueState(projection);
         }

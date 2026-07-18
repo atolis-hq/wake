@@ -10,7 +10,7 @@ import { createDefaultWakeConfig } from '../../src/config/defaults.js';
 describe('runner transcripts', () => {
   const projection = {
     schemaVersion: 1 as const,
-    workItemKey: 'github:atolis-hq/wake#223',
+    workItemKey: 'work-01JZ0000000000000000000223',
     origin: 'github',
     issue: {
       repo: 'atolis-hq/wake',
@@ -34,6 +34,7 @@ describe('runner transcripts', () => {
       expectedEcho: { commentIds: [], labels: [] },
     },
     context: {},
+    correlatedResources: [],
   };
 
   it('does nothing when transcript logging is disabled', async () => {
@@ -53,7 +54,7 @@ describe('runner transcripts', () => {
     expect(file).toBeUndefined();
   });
 
-  it('stores raw prompt text under repo, issue, and session folder', async () => {
+  it('stores raw prompt text under the work id and session folder', async () => {
     const root = await mkdtemp(join(tmpdir(), 'wake-transcripts-'));
     const config = createDefaultWakeConfig(root);
     config.transcripts.enabled = true;
@@ -71,8 +72,7 @@ describe('runner transcripts', () => {
     expect(file).toBe(join(
       root,
       'transcripts',
-      'atolis-hq__wake',
-      '223',
+      'work-01JZ0000000000000000000223',
       'run-223-1',
       'run-223-1.codex.implement.prompt.txt',
     ));
@@ -104,8 +104,7 @@ describe('runner transcripts', () => {
     expect(file).toBe(join(
       root,
       'transcripts',
-      'atolis-hq__wake',
-      '223',
+      'work-01JZ0000000000000000000223',
       'session__abc__123',
       'run-223-2.cursor.implement.response.txt',
     ));

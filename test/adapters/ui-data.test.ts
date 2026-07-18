@@ -3,10 +3,22 @@ import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { createFakeResourceIndex } from '../../src/adapters/fake/fake-resource-index.js';
 import { createStateStore } from '../../src/adapters/fs/state-store.js';
 import { createDefaultWakeConfig } from '../../src/config/defaults.js';
-import { buildBoard, buildConfigView, buildEventsFeed, buildStatus } from '../../src/adapters/http/ui-data.js';
+import {
+  buildBoard,
+  buildConfigView,
+  buildEventsFeed,
+  buildItemDetail,
+  buildStatus,
+} from '../../src/adapters/http/ui-data.js';
 import type { IssueStateRecord, RunRecord } from '../../src/domain/types.js';
+
+/** A stable, ULID-shaped work id per issue number; real ids come from createWorkId(). */
+function workId(issueNumber: number): string {
+  return `work-01JZ${String(issueNumber).padStart(22, '0')}`;
+}
 
 function issueState(input: {
   number: number;
@@ -18,7 +30,7 @@ function issueState(input: {
   const syncedAt = input.syncedAt ?? '2026-07-05T12:00:00.000Z';
   return {
     schemaVersion: 1,
-    workItemKey: `atolis-hq/wake#${input.number}`,
+    workItemKey: workId(input.number),
     issue: {
       repo: 'atolis-hq/wake',
       number: input.number,
@@ -43,6 +55,7 @@ function issueState(input: {
       ...(input.lastRunId === undefined ? {} : { lastRunId: input.lastRunId }),
     },
     context: {},
+    correlatedResources: [],
   };
 }
 
@@ -57,6 +70,7 @@ function runRecord(input: {
   return {
     schemaVersion: 1,
     runId: input.runId,
+    workItemKey: workId(input.issueNumber),
     repo: 'atolis-hq/wake',
     issueNumber: input.issueNumber,
     action: 'implement',
@@ -99,6 +113,52 @@ describe('ui-data', () => {
     expect(byNumber.get(2)?.condition).toBe('needs-human');
     expect(byNumber.get(3)?.condition).toBe('finished');
     expect(byNumber.get(4)?.condition).toBe('ready');
+  });
+
+  // The UI addresses items by the ticket a human recognizes (work ids are
+  // opaque, spec D3), but that must not cost a full projection scan per view.
+  // The route constructs the ticket's uri and resolves it through the index
+  // (spec D2), then keys everything downstream off the record's own work id.
+  it('resolves an item detail through the resource index without scanning every projection', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    let listIssueStatesCalls = 0;
+    const countingStore = {
+      ...store,
+      async listIssueStates(...args: Parameters<typeof store.listIssueStates>) {
+        listIssueStatesCalls += 1;
+        return store.listIssueStates(...args);
+      },
+    };
+
+    await store.writeIssueState(issueState({ number: 7, stage: 'implement', lastRunId: 'run-7' }));
+    await store.writeIssueState(issueState({ number: 8, stage: 'queue' }));
+    await store.writeRunRecord(runRecord({ runId: 'run-7', issueNumber: 7, status: 'running' }));
+
+    const resourceIndex = createFakeResourceIndex();
+    await resourceIndex.register('github:issue:atolis-hq/wake#7', workId(7));
+
+    const detail = await buildItemDetail({
+      stateStore: countingStore,
+      resourceIndex,
+      provider: 'github',
+      repo: 'atolis-hq/wake',
+      issueNumber: 7,
+    });
+
+    expect(detail?.item.workItemKey).toBe(workId(7));
+    expect(detail?.runs.map((run) => run.runId)).toEqual(['run-7']);
+    expect(listIssueStatesCalls).toBe(0);
+
+    // A ticket with no index entry is simply not found — never a scan.
+    const missing = await buildItemDetail({
+      stateStore: countingStore,
+      resourceIndex,
+      provider: 'github',
+      repo: 'atolis-hq/wake',
+      issueNumber: 404,
+    });
+    expect(missing).toBeNull();
+    expect(listIssueStatesCalls).toBe(0);
   });
 
   it('flags a stage with no configured route as stalled', async () => {
@@ -156,7 +216,7 @@ describe('ui-data', () => {
     await store.appendEventEnvelope({
       schemaVersion: 1,
       eventId: 'evt-latest',
-      workItemKey: 'atolis-hq/wake#2',
+      workItemKey: workId(2),
       streamScope: 'work-item',
       direction: 'inbound',
       sourceSystem: 'github',
@@ -188,7 +248,7 @@ describe('ui-data', () => {
     await store.appendEventEnvelope({
       schemaVersion: 1,
       eventId: 'evt-one',
-      workItemKey: 'atolis-hq/wake#1',
+      workItemKey: workId(1),
       streamScope: 'work-item',
       direction: 'inbound',
       sourceSystem: 'github',
@@ -202,7 +262,7 @@ describe('ui-data', () => {
     await store.appendEventEnvelope({
       schemaVersion: 1,
       eventId: 'evt-two',
-      workItemKey: 'atolis-hq/wake#1',
+      workItemKey: workId(1),
       streamScope: 'work-item',
       direction: 'inbound',
       sourceSystem: 'github',

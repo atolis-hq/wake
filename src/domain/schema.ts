@@ -5,6 +5,12 @@ import {
   runnerSentinelValues,
   stageValues,
 } from './stages.js';
+import {
+  correlationProvenanceSchema,
+  correlationRelationSchema,
+  correlationRoleSchema,
+  resourceUriSchema,
+} from './resource-uri.js';
 
 const isoTimestampSchema = z.string().datetime({ offset: true });
 const stageSchema = z.enum(stageValues);
@@ -137,33 +143,6 @@ const issueSnapshotSchema = z.object({
   updatedAt: isoTimestampSchema,
 });
 
-function sourceFromWorkItemKey(workItemKey: unknown): string | undefined {
-  if (typeof workItemKey !== 'string') {
-    return undefined;
-  }
-  const marker = workItemKey.indexOf(':');
-  return marker > 0 ? workItemKey.slice(0, marker) : undefined;
-}
-
-function namespacedWorkItemKey(input: {
-  source?: unknown;
-  workItemKey?: unknown;
-  repo?: unknown;
-  issueNumber?: unknown;
-}): unknown {
-  if (typeof input.workItemKey === 'string' && input.workItemKey.includes(':')) {
-    return input.workItemKey;
-  }
-  const source = typeof input.source === 'string' ? input.source : 'github';
-  if (typeof input.workItemKey === 'string') {
-    return `${source}:${input.workItemKey}`;
-  }
-  if (typeof input.repo === 'string' && typeof input.issueNumber === 'number') {
-    return `${source}:${input.repo}#${input.issueNumber}`;
-  }
-  return input.workItemKey;
-}
-
 export const sourceStateRecordSchema = z.object({
   schemaVersion: z.literal(1),
   source: z.string(),
@@ -171,7 +150,7 @@ export const sourceStateRecordSchema = z.object({
   lastSuccessfulPollAt: isoTimestampSchema,
 });
 
-const eventEnvelopeSourceRefsSchema = z.object({
+export const eventEnvelopeSourceRefsSchema = z.object({
   repo: z.string().optional(),
   issueNumber: z.number().int().positive().optional(),
   commentId: z.string().optional(),
@@ -179,29 +158,51 @@ const eventEnvelopeSourceRefsSchema = z.object({
   runId: z.string().optional(),
   sink: z.string().optional(),
   sourceUrl: z.string().optional(),
+  // Per-event provenance: which external resource this one event came from.
+  // Item-level ownership lives only in the correlation registry, never here.
+  resourceUri: resourceUriSchema.optional(),
 });
 
-function normalizeLegacyStage(stage: unknown, failedAction?: unknown): unknown {
-  if (stage === 'refined') {
-    return 'implement';
-  }
-  if (stage === 'blocked') {
-    return agentActionValues.includes(failedAction as (typeof agentActionValues)[number])
-      ? failedAction
-      : 'implement';
-  }
-  if (stage === 'awaiting-approval') {
-    return agentActionValues.includes(failedAction as (typeof agentActionValues)[number])
-      ? failedAction
-      : 'implement';
-  }
-  if (stage === 'failed') {
-    return agentActionValues.includes(failedAction as (typeof agentActionValues)[number])
-      ? failedAction
-      : 'queue';
-  }
-  return stage;
-}
+/** Event type constants for the correlation registry (ADR 0001 §5). */
+export const WORK_ITEM_CREATED_EVENT = 'wake.workitem.created';
+export const CORRELATION_REGISTERED_EVENT = 'wake.correlation.registered';
+export const CORRELATION_RETRACTED_EVENT = 'wake.correlation.retracted';
+export const CORRELATION_PRIMARY_CONFLICT_EVENT = 'wake.correlation.primary-conflict';
+
+// The envelope's `workItemKey` already carries the identity; this payload is
+// deliberately empty.
+export const workItemCreatedPayloadSchema = z.object({});
+
+export const correlationRegisteredPayloadSchema = z.object({
+  resourceUri: resourceUriSchema,
+  role: correlationRoleSchema,
+  relation: correlationRelationSchema,
+  provenance: correlationProvenanceSchema,
+  registeredBy: z.string().optional(),
+});
+
+export const correlationRetractedPayloadSchema = z.object({
+  resourceUri: resourceUriSchema,
+});
+
+// Warning event emitted when a second `primary` registration lands on an
+// already-claimed URI (ADR 0001 §6). Fold behavior lives in the projection.
+export const correlationPrimaryConflictPayloadSchema = z.object({
+  resourceUri: resourceUriSchema,
+  incumbentWorkItemKey: z.string(),
+});
+
+// Folded shape of a `wake.correlation.registered`/`wake.correlation.retracted`
+// event, one entry per resourceUri currently held by this work item
+// (ADR 0001 §5). `registeredAt` comes from the folding event's `occurredAt`.
+export const correlatedResourceSchema = z.object({
+  resourceUri: resourceUriSchema,
+  role: correlationRoleSchema,
+  relation: correlationRelationSchema,
+  provenance: correlationProvenanceSchema,
+  registeredBy: z.string().optional(),
+  registeredAt: isoTimestampSchema,
+});
 
 export const eventEnvelopeSchema = z.object({
   schemaVersion: z.literal(1),
@@ -218,82 +219,9 @@ export const eventEnvelopeSchema = z.object({
   payload: z.record(z.string(), z.unknown()),
   raw: z.record(z.string(), z.unknown()).optional(),
   derivedHints: z.record(z.string(), z.unknown()).optional(),
-}).transform((event) => ({
-  ...event,
-  workItemKey: namespacedWorkItemKey({
-    source: event.direction === 'inbound' ? event.sourceSystem : undefined,
-    workItemKey: event.workItemKey,
-    repo: event.sourceRefs.repo,
-    issueNumber: event.sourceRefs.issueNumber,
-  }) as string,
-}));
+});
 
-export const issueStateRecordSchema = z.preprocess((input) => {
-  if (input === null || typeof input !== 'object') {
-    return input;
-  }
-
-  const record = input as Record<string, unknown>;
-  const issue = record.issue as
-    | { repo?: unknown; number?: unknown }
-    | undefined;
-  const rawWorkItemKey =
-    record.workItemKey ??
-    (issue !== undefined &&
-    typeof issue.repo === 'string' &&
-    typeof issue.number === 'number'
-      ? `${record.origin ?? 'github'}:${issue.repo}#${issue.number}`
-      : undefined);
-  const origin = record.origin ?? sourceFromWorkItemKey(rawWorkItemKey) ?? 'github';
-  const workItemKey = namespacedWorkItemKey({
-    source: origin,
-    workItemKey: rawWorkItemKey,
-    repo: issue?.repo,
-    issueNumber: issue?.number,
-  });
-  const context = record.context !== null && typeof record.context === 'object'
-    ? record.context as Record<string, unknown>
-    : {};
-  const normalizedContext = {
-    ...context,
-    ...(context.lastRunAction === undefined && context.blockedFromAction !== undefined
-      ? { lastRunAction: context.blockedFromAction }
-      : {}),
-  };
-
-  return {
-    comments: [],
-    ...record,
-    context: normalizedContext,
-    workItemKey,
-    origin,
-    wake:
-      record.wake !== null && typeof record.wake === 'object'
-        ? {
-            recentEventIds: [],
-            expectedEcho: { commentIds: [], labels: [] },
-            ...(record.wake as Record<string, unknown>),
-            stage: normalizeLegacyStage(
-              (record.wake as Record<string, unknown>).stage,
-              normalizedContext.lastRunAction,
-            ),
-            stageHistory: Array.isArray((record.wake as Record<string, unknown>).stageHistory)
-              ? ((record.wake as Record<string, unknown>).stageHistory as unknown[]).map((entry) =>
-                  entry !== null && typeof entry === 'object'
-                    ? {
-                        ...(entry as Record<string, unknown>),
-                        stage: normalizeLegacyStage(
-                          (entry as Record<string, unknown>).stage,
-                          normalizedContext.lastRunAction,
-                        ),
-                      }
-                    : entry,
-                )
-              : (record.wake as Record<string, unknown>).stageHistory,
-          }
-        : record.wake,
-  };
-}, z.object({
+export const issueStateRecordSchema = z.object({
   schemaVersion: z.literal(1),
   workItemKey: z.string(),
   origin: z.string().optional(),
@@ -316,7 +244,8 @@ export const issueStateRecordSchema = z.preprocess((input) => {
     }).default({ commentIds: [], labels: [] }),
   }),
   context: z.record(z.string(), z.unknown()).default({}),
-}));
+  correlatedResources: z.array(correlatedResourceSchema).default([]),
+});
 
 const runTokenUsageSchema = z.object({
   inputTokens: z.number().nonnegative(),
@@ -330,6 +259,15 @@ const runTokenUsageSchema = z.object({
 export const runRecordSchema = z.object({
   schemaVersion: z.literal(1),
   runId: z.string(),
+  // The work item this run belongs to. Required: run records are Wake-owned
+  // state that Wake itself writes, so the work id is always in hand at the
+  // write site, and an optional key would lie about runtime while re-admitting
+  // the ticket-shaped ambiguity minted identity exists to remove.
+  workItemKey: z.string(),
+  // Human-readable representation content only — the ticket this run was
+  // launched against (same reasoning as the projection's retained `issue`
+  // snapshot, spec §9). Never used to find the work item: a transferred issue
+  // gets a new repo/number while the work item and its runs persist (spec D3).
   repo: z.string(),
   issueNumber: z.number().int().positive(),
   action: agentActionSchema,

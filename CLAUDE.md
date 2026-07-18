@@ -54,8 +54,8 @@ Fake adapters are permanent test harnesses, not throwaway stubs — they exist s
 
 The durable record is an append-only event stream, not the projection:
 
-1. an inbound source event (e.g. GitHub issue/comment) is ingested and written as an immutable event envelope (`events/<date>.jsonl`)
-2. `projection-updater.ts` folds relevant events into a per-item projection (`state/<repo>/<issue>.json`)
+1. an inbound source event (e.g. GitHub issue/comment) is polled *unkeyed* — sources never assign identity — and `tick-runner.ts` resolves its `sourceRefs.resourceUri` through the reverse index (`state/index/<xx>.json`) to stamp the owning `workItemKey`, minting a new work item on a miss. It is then written as an immutable event envelope (`events/<date>.jsonl`)
+2. `projection-updater.ts` folds relevant events into a per-item projection (`state/<workId>.json`)
 3. `policy-engine.ts` reads the projection (plus a relevant event slice) and deterministically decides the next `AgentAction` / stage transition — no tokens spent here
 4. `lifecycle-service.ts` applies the resulting stage transition
 5. `tick-runner.ts` orchestrates one pass of the above and, when agentic work is required, invokes the `AgentRunner` with a compact projection summary plus recent events (not the full event log)
@@ -65,7 +65,11 @@ Stages (`domain/stages.ts`): `queue -> refine -> implement -> done`, with `block
 
 ### Wake home (`.wake/`)
 
-Wake owns a `.wake/` (or scaffolded `wake-home/`) directory: `config.json`, `ledger.json` (pause windows), `events/`, `state/`, `runs/`. Treat `state/` as a rebuildable projection, not source of truth — if projection logic changes, it should be derivable again from `events/`.
+Wake owns a `.wake/` (or scaffolded `wake-home/`) directory: `config.json`, `ledger.json` (pause windows), `events/`, `state/`, `runs/`. Treat `state/` as a rebuildable projection, not source of truth — if projection logic changes, it should be derivable again from `events/`. That guarantee is exact and load-bearing: `rm -rf state/` + replay must reproduce projections **and** the reverse index identically to the live fold. Two traps have already broken it, so check both when touching the fold or event stamping:
+- **Event stamping.** Stamp `occurredAt`/`ingestedAt` via `eventStampNow()` at the moment of stamping. A frozen per-tick timestamp reused across a tick sorts Wake's own events *before* the polled event that creates their projection (sources stamp at poll time, which is later), so replay folds them against `null` and silently discards them. Also note **parallel work is coming** — the tick will not lock on a single item forever.
+- **`rebuildFromEvents` ordering.** The sort is stable on `ingestedAt` with deliberately **no `eventId` tie-break** — ids are not chronological, and tie-breaking on them reorders same-timestamp events against what actually happened. Equal timestamps must keep append order.
+
+**Identity is minted, not borrowed.** A work item is a `work-<ulid>`; the ticket that started it is just its first correlated resource. No durable path embeds a provider, repo, or issue number. Core compares `resourceUri` strings for equality and **never parses a locator**. See `docs/adrs/0001-correlating-external-resources-to-work-items.md`.
 
 ### Sandbox / Docker flow
 

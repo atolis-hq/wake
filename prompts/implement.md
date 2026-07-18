@@ -19,7 +19,11 @@ Completion requirements:
   commit message.
 - Push the branch with `git push -u origin {{branch}}`.
 - Open a pull request against main with `gh pr create --base main --head
-  {{branch}} --title "<summary>" --body "Closes #{{issueNumber}}"`.
+  {{branch}} --title "<summary>" --body "Closes #{{issueNumber}}
+
+  <!-- wake:work-item {{workItemKey}} -->"`. Include the
+  `<!-- wake:work-item {{workItemKey}} -->` marker verbatim in the PR body,
+  exactly as written here.
 - Do not merge the pull request yourself; a human reviews and merges it.
 - Include the pull request URL in your prose response.
 - If you cannot safely complete the change, leave the workspace as-is and end
@@ -39,5 +43,7 @@ New comments since your last turn (excludes Wake/bot comments):
 Wake will provide them below in a delimited untrusted data block.
 
 Reminder of the completion requirements: commit, push {{branch}}, open a PR
-with `gh pr create` closing #{{issueNumber}}, and never merge it yourself.
+with `gh pr create` closing #{{issueNumber}}, and never merge it yourself. The
+PR body must include the `<!-- wake:work-item {{workItemKey}} -->` marker
+verbatim.
 {{/if}}

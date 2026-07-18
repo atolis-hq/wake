@@ -2,6 +2,10 @@ import { z } from 'zod';
 
 import {
   claudePrintResultSchema,
+  correlatedResourceSchema,
+  correlationPrimaryConflictPayloadSchema,
+  correlationRegisteredPayloadSchema,
+  correlationRetractedPayloadSchema,
   eventEnvelopeSchema,
   issueStateRecordSchema,
   ledgerSchema,
@@ -9,6 +13,7 @@ import {
   sourceStateRecordSchema,
   wakeConfigSchema,
   wakeResultEnvelopeSchema,
+  workItemCreatedPayloadSchema,
 } from './schema.js';
 import {
   agentActionValues,
@@ -20,6 +25,12 @@ export type Stage = (typeof stageValues)[number];
 export type RunnerSentinel = (typeof runnerSentinelValues)[number];
 export type AgentAction = (typeof agentActionValues)[number];
 
+// correlatedResources is always present on the schema's true parsed output
+// (zod's `.default([])` guarantees it), so the read type keeps it required —
+// an optional marker here would be a lie about runtime and would push
+// pointless `?? []` guards onto every consumer. Call sites that build a raw
+// IssueStateRecord literal without going through parseIssueStateRecord
+// (test fixtures) simply include `correlatedResources: []` explicitly.
 export type IssueStateRecord = z.infer<typeof issueStateRecordSchema>;
 export type RunRecord = z.infer<typeof runRecordSchema>;
 export type EventEnvelope = z.infer<typeof eventEnvelopeSchema>;
@@ -35,3 +46,8 @@ export type WakeDevConfig = NonNullable<WakeConfig['dev']>;
 export type ClaudePrintResult = z.infer<typeof claudePrintResultSchema>;
 export type SourceStateRecord = z.infer<typeof sourceStateRecordSchema>;
 export type WakeResultEnvelope = z.infer<typeof wakeResultEnvelopeSchema>;
+export type WorkItemCreatedPayload = z.infer<typeof workItemCreatedPayloadSchema>;
+export type CorrelationRegisteredPayload = z.infer<typeof correlationRegisteredPayloadSchema>;
+export type CorrelationRetractedPayload = z.infer<typeof correlationRetractedPayloadSchema>;
+export type CorrelationPrimaryConflictPayload = z.infer<typeof correlationPrimaryConflictPayloadSchema>;
+export type CorrelatedResource = z.infer<typeof correlatedResourceSchema>;

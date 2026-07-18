@@ -1,11 +1,13 @@
 import { execFile as nodeExecFile } from 'node:child_process';
-import { mkdir, readFile, rm } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 
+import { createResourceIndex } from '../src/adapters/fs/resource-index.js';
 import { createDefaultWakeConfig } from '../src/config/defaults.js';
+import { buildResourceUri } from '../src/domain/resource-uri.js';
 import type { IssueStateRecord, RunRecord, WakeConfig } from '../src/domain/types.js';
 import { writeJsonFile } from '../src/lib/json-file.js';
 import { createWakePaths } from '../src/lib/paths.js';
@@ -168,8 +170,22 @@ async function closeIssue(repo: string, issueNumber: number, cwd: string) {
 }
 
 async function readIssueState(wakeRoot: string, repo: string, issueNumber: number) {
+  // state/ is keyed by the opaque minted work id, so resolve the ticket to its
+  // work item the way the rest of Wake does: construct the resource uri and
+  // look it up in the reverse index. Do NOT scan state/ matching on the
+  // retained `issue` snapshot — that snapshot is representation content, not
+  // identity, and using it to *find* a work item is the O(n) pattern this
+  // change deleted (findIssueStateByIssueRef).
   const paths = createWakePaths(wakeRoot);
-  const raw = await readFile(paths.issueStateFile('github', repo, issueNumber), 'utf8');
+  const resourceIndex = createResourceIndex({ paths });
+  const uri = buildResourceUri('github', 'issue', `${repo}#${issueNumber}`);
+  const workId = await resourceIndex.resolve(uri);
+
+  if (workId === undefined) {
+    throw new Error(`No work item registered for ${uri}`);
+  }
+
+  const raw = await readFile(paths.workItemStateFile(workId), 'utf8');
   return JSON.parse(raw) as IssueStateRecord;
 }
 

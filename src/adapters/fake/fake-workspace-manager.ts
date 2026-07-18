@@ -4,13 +4,14 @@ import { join } from 'node:path';
 export function createFakeWorkspaceManager(root: string) {
   return {
     async prepareWorkspace({
-      repo,
-      issueNumber,
+      workId,
     }: {
+      workId: string;
       repo: string;
       issueNumber: number;
     }) {
-      const workspacePath = join(root, repo.replace(/[\\/]/g, '__'), String(issueNumber));
+      // Keyed on the work id, symmetrically with the real git-backed manager.
+      const workspacePath = join(root, workId);
       await mkdir(workspacePath, { recursive: true });
       return { workspacePath, mergeConflictDetected: false };
     },

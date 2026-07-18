@@ -1,9 +1,11 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
+import type { ResourceIndex, UnkeyedEventEnvelope } from '../../core/contracts.js';
 import type { EventEnvelope, IssueStateRecord, WakeConfig } from '../../domain/types.js';
+import { buildResourceUri } from '../../domain/resource-uri.js';
 import { wakeStageLabelPrefix } from '../../domain/stages.js';
-import { createEventEnvelope } from '../../lib/event-log.js';
+import { createEventEnvelope, createUnkeyedEventEnvelope } from '../../lib/event-log.js';
 import { buildResumeCommandForCli } from '../runner/runner-cli-adapter.js';
 
 const wakeStatusLabelPrefix = 'wake:status.';
@@ -46,10 +48,11 @@ function normalizeTicketUpsert(input: {
   issue: GitHubIssue;
   ingestedAt: string;
   expectedEcho?: boolean;
-}): EventEnvelope {
-  return createEventEnvelope({
+}): UnkeyedEventEnvelope {
+  // Names the resource, never the work item — the resolver stamps the
+  // canonical workItemKey after the poll (spec D1).
+  return createUnkeyedEventEnvelope({
     eventId: `github-issue-${input.repo}-${input.issue.number}-${input.issue.updated_at}`,
-    workItemKey: `${githubSource}:${input.repo}#${input.issue.number}`,
     streamScope: 'global-intake',
     direction: 'inbound',
     sourceSystem: 'github',
@@ -58,6 +61,7 @@ function normalizeTicketUpsert(input: {
       repo: input.repo,
       issueNumber: input.issue.number,
       sourceUrl: input.issue.html_url,
+      resourceUri: buildResourceUri(githubSource, 'issue', `${input.repo}#${input.issue.number}`),
     },
     occurredAt: input.issue.updated_at,
     ingestedAt: input.ingestedAt,
@@ -99,14 +103,13 @@ function normalizeTicketCommentEvent(input: {
   comment: GitHubComment;
   ingestedAt: string;
   existingUpdatedAt?: string;
-}): EventEnvelope {
+}): UnkeyedEventEnvelope {
   const isUpdate =
     input.existingUpdatedAt !== undefined &&
     input.existingUpdatedAt !== input.comment.updated_at;
 
-  return createEventEnvelope({
+  return createUnkeyedEventEnvelope({
     eventId: `github-comment-${input.repo}-${input.issueNumber}-${input.comment.id}-${input.comment.updated_at}`,
-    workItemKey: `${githubSource}:${input.repo}#${input.issueNumber}`,
     streamScope: 'work-item',
     direction: 'inbound',
     sourceSystem: 'github',
@@ -116,6 +119,9 @@ function normalizeTicketCommentEvent(input: {
       issueNumber: input.issueNumber,
       commentId: String(input.comment.id),
       sourceUrl: input.comment.html_url,
+      // The comment belongs to the issue's work item; the issue is the
+      // resource the resolver knows it by.
+      resourceUri: buildResourceUri(githubSource, 'issue', `${input.repo}#${input.issueNumber}`),
     },
     occurredAt: input.comment.updated_at,
     ingestedAt: input.ingestedAt,
@@ -326,12 +332,31 @@ export function createGitHubIssuesWorkSource(deps: {
   };
   stateStore: ReturnType<typeof import('../fs/state-store.js').createStateStore>;
   config: WakeConfig;
+  // Read-only resolution of uris this source constructs itself, for poll dedup
+  // and echo suppression. This is NOT self-keying (spec D1): pollEvents still
+  // returns UnkeyedEventEnvelope[] and the central resolver in tick-runner is
+  // still the only thing that stamps workItemKey. Required, never defaulted —
+  // a forgotten index must fail loudly, not silently degrade to a scan.
+  resourceIndex: ResourceIndex;
   now: () => Date;
 }) {
+  /** O(1): one shard read, then a direct projection read by work id. */
+  async function readProjectionForIssue(
+    repo: string,
+    issueNumber: number,
+  ): Promise<IssueStateRecord | null> {
+    const uri = buildResourceUri(githubSource, 'issue', `${repo}#${issueNumber}`);
+    const workItemKey = await deps.resourceIndex.resolve(uri);
+    if (workItemKey === undefined) {
+      return null;
+    }
+    return deps.stateStore.readIssueState(workItemKey);
+  }
+
   return {
-    async pollEvents(): Promise<EventEnvelope[]> {
+    async pollEvents(): Promise<UnkeyedEventEnvelope[]> {
       const ingestedAt = deps.now().toISOString();
-      const events: EventEnvelope[] = [];
+      const events: UnkeyedEventEnvelope[] = [];
 
       for (const repoRef of deps.config.sources.github.repos) {
         const [owner, repo] = repoRef.split('/');
@@ -363,7 +388,11 @@ export function createGitHubIssuesWorkSource(deps: {
               );
 
           for (const issue of issues) {
-            const local = await deps.stateStore.readIssueState(repoRef, issue.number, githubSource);
+            // Poll dedup + echo suppression only, never identity: the uri is
+            // constructed (never parsed) and resolved through the index, which
+            // keeps a poll flat in the number of work items rather than
+            // O(issues x projections) (spec D2).
+            const local = await readProjectionForIssue(repoRef, issue.number);
 
             if (local?.issue.updatedAt !== issue.updated_at) {
               events.push(normalizeTicketUpsert({
@@ -440,7 +469,9 @@ export function createGitHubIssuesWorkSource(deps: {
 
       const publishedAt = deps.now().toISOString();
       if (input.event.sourceEventType === 'wake.labels.requested') {
-        const projection = await deps.stateStore.readIssueState(repo, issueNumber, githubSource);
+        // Outbound intents are keyed envelopes Wake itself minted, so the work
+        // item is already named on the event — a direct read, not a lookup.
+        const projection = await deps.stateStore.readIssueState(input.event.workItemKey);
         const currentLabels = projection?.issue.labels ?? [];
         const nextStatusLabel =
           typeof input.event.payload.statusLabel === 'string'

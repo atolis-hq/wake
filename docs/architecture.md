@@ -28,13 +28,24 @@ event stream; projections and summaries are derived from it:
 - `config.json` for versioned config
 - `ledger.json` for pause windows and future budget state
 - `events/<date>.jsonl` for immutable imported and internal event envelopes
-- `state/<repo>/<issue>.json` for a derived projection of the current work item
+- `state/<workId>.json` for a derived projection of the current work item
+- `state/index/<xx>.json` for the reverse index that resolves a resource to its work item
 - `runs/<run-id>.json` for per-invocation records
 - optional future prompt/context artifacts derived from events plus projections
 
 The projection file is no longer the source of truth. It is a materialized view
 used for fast deterministic routing. If projection logic changes, Wake should be
 able to rebuild `state/` from the canonical event stream.
+
+A work item's identity is a minted `work-<ulid>`, not the ticket that started it.
+Sources do not assign it: they stamp `sourceRefs.resourceUri` (a
+`<provider>:<kind>:<locator>` string, e.g. `github:issue:owner/repo#82`), and the
+control plane resolves that through the reverse index to the owning work item,
+minting a new one on a miss. This is why no durable path embeds a provider, repo,
+or issue number — a ticket can be transferred or renumbered, and one work item may
+have several representations. See
+[ADR 0001](adrs/0001-correlating-external-resources-to-work-items.md) and the
+[work identity and correlation design](superpowers/specs/2026-07-16-work-identity-correlation-design.md).
 
 Each event envelope should carry:
 
@@ -72,10 +83,12 @@ without destabilizing scripts.
 The intended flow is:
 
 1. ingest a source event from GitHub, Jira, or another system
-2. write an immutable event envelope
-3. update one or more projections such as `state/<repo>/<issue>.json`
-4. let deterministic policy read projections and selected event slices
-5. let the runner prompt receive a compact projection summary plus relevant
+2. resolve its `sourceRefs.resourceUri` to a work item through the reverse index,
+   minting a new work item on a miss, and stamp the resulting `workItemKey`
+3. write an immutable event envelope
+4. update one or more projections such as `state/<workId>.json`
+5. let deterministic policy read projections and selected event slices
+6. let the runner prompt receive a compact projection summary plus relevant
    recent events, with direct event-file reading available when needed
 
 Wake should not require the model to scan a full raw event stream by default.

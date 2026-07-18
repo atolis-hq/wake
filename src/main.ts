@@ -10,6 +10,7 @@ import {
   createRegistryRunner,
   runnerKindForOverride,
 } from './adapters/runner/runner-registry.js';
+import { createResourceIndex } from './adapters/fs/resource-index.js';
 import { createStateStore } from './adapters/fs/state-store.js';
 import {
   readSelfUpdateLedger,
@@ -19,6 +20,7 @@ import {
 import { resolveGitHubToken } from './adapters/github/github-auth.js';
 import { createGitHubClient } from './adapters/github/github-client.js';
 import { createGitHubIssuesWorkSource } from './adapters/github/github-issues-work-source.js';
+import { runCorrelateCommand } from './cli/correlate-command.js';
 import { runInitCommand } from './cli/init-command.js';
 import { runSandboxCommand } from './cli/sandbox-command.js';
 import { runStartupPreflight } from './cli/startup-preflight.js';
@@ -28,6 +30,7 @@ import { createControlPlane } from './core/control-plane.js';
 import { createOutboundSinkRouter, createWorkSourceFanIn } from './core/sink-router.js';
 import { createTickRunner } from './core/tick-runner.js';
 import { systemClock } from './lib/clock.js';
+import { configuredTicketSource } from './domain/sources.js';
 import type { RunRecord, WakeConfig } from './domain/types.js';
 
 function commandArgsBeforeTerminator(args: string[]): string[] {
@@ -210,19 +213,22 @@ async function buildRuntime(args: string[]) {
   });
   await stateStore.writeConfig(config);
 
+  const resourceIndex = createResourceIndex({ paths: stateStore.paths });
+
   const ticketingSystem = config.sources.github.enabled
     ? createGitHubIssuesWorkSource({
         client: createGitHubClient(await resolveGitHubToken()),
         stateStore,
         config,
+        resourceIndex,
         now: () => systemClock.now(),
       })
     : await createFileBackedFakeTicketingSystem({
         fixturePath: stateStore.paths.issueFixtureFile,
         now: () => systemClock.now(),
       });
-  const sourceName = config.sources.github.enabled ? 'github' : 'fake-ticketing';
-  const sinkName = config.sources.github.enabled ? 'github' : 'fake-ticketing';
+  const sourceName = configuredTicketSource(config);
+  const sinkName = sourceName;
   const workSource = createWorkSourceFanIn([
     {
       source: sourceName,
@@ -268,6 +274,7 @@ async function buildRuntime(args: string[]) {
     outboundSink,
     runner,
     workspaceManager,
+    resourceIndex,
   });
 
   return {
@@ -359,6 +366,7 @@ async function runUi(args: string[]) {
   const server = await runUiCommand({
     args,
     stateStore,
+    resourceIndex: createResourceIndex({ paths: stateStore.paths }),
     config,
     readFlag: readFlagBeforeCommandTerminator,
   });
@@ -370,6 +378,22 @@ async function runUi(args: string[]) {
   process.on('SIGTERM', stop);
 
   await new Promise(() => {});
+}
+
+async function runCorrelate(args: string[]) {
+  const wakeRoot = resolve(
+    readFlagBeforeCommandTerminator('--wake-root', args) ?? resolve(process.cwd(), '.wake'),
+  );
+  const stateStore = createStateStore({ wakeRoot });
+  await stateStore.ensureWakeRoot();
+
+  await runCorrelateCommand({
+    args,
+    stateStore,
+    resourceIndex: createResourceIndex({ paths: stateStore.paths }),
+    clock: systemClock,
+    readFlag: readFlagBeforeCommandTerminator,
+  });
 }
 
 async function runSmoke(args: string[]) {
@@ -399,6 +423,7 @@ export async function dispatchMainCommand(input: {
   runStart: (args: string[]) => Promise<unknown>;
   runSmoke: (args: string[]) => Promise<unknown>;
   runUi: (args: string[]) => Promise<unknown>;
+  runCorrelate: (args: string[]) => Promise<unknown>;
 }) {
   const command = input.args[0] ?? 'tick';
   if (command === 'tick') {
@@ -433,6 +458,11 @@ export async function dispatchMainCommand(input: {
 
   if (command === 'ui') {
     await input.runUi(input.args.slice(1));
+    return;
+  }
+
+  if (command === 'correlate') {
+    await input.runCorrelate(input.args.slice(1));
     return;
   }
 
@@ -555,6 +585,7 @@ async function main() {
     runStart,
     runSmoke,
     runUi,
+    runCorrelate,
   });
 }
 

@@ -1,5 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 
+import type { ResourceIndex } from '../../core/contracts.js';
+import { configuredTicketSource } from '../../domain/sources.js';
 import type { WakeConfig } from '../../domain/types.js';
 import type { createStateStore } from '../fs/state-store.js';
 import { indexHtml } from './ui-assets.js';
@@ -18,6 +20,7 @@ type StateStore = ReturnType<typeof createStateStore>;
 
 export interface UiServerOptions {
   stateStore: StateStore;
+  resourceIndex: ResourceIndex;
   config: WakeConfig;
   token?: string;
   now?: () => Date;
@@ -114,7 +117,7 @@ async function handleRequest(
     return;
   }
 
-  const { stateStore, config } = options;
+  const { stateStore, resourceIndex, config } = options;
   const segments = url.pathname.slice('/api/v1/'.length).split('/').filter((part) => part.length > 0).map((s) => decodeURIComponent(s));
   const resource = segments[0];
 
@@ -135,13 +138,21 @@ async function handleRequest(
       return;
     }
 
+    const itemDetailInput = {
+      stateStore,
+      resourceIndex,
+      provider: configuredTicketSource(config),
+      repo: parsed.repo,
+      issueNumber: parsed.issueNumber,
+    };
+
     if (parsed.suffix === 'events') {
-      const detail = await buildItemDetail({ stateStore, repo: parsed.repo, issueNumber: parsed.issueNumber });
+      const detail = await buildItemDetail(itemDetailInput);
       sendJson(res, 200, detail?.events ?? []);
       return;
     }
 
-    const detail = await buildItemDetail({ stateStore, repo: parsed.repo, issueNumber: parsed.issueNumber });
+    const detail = await buildItemDetail(itemDetailInput);
     if (detail === null) {
       sendJson(res, 404, { error: 'item not found' });
       return;

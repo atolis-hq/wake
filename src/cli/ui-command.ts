@@ -1,5 +1,6 @@
 import { createUiServer } from '../adapters/http/ui-server.js';
 import type { createStateStore } from '../adapters/fs/state-store.js';
+import type { ResourceIndex } from '../core/contracts.js';
 import type { WakeConfig } from '../domain/types.js';
 
 type StateStore = ReturnType<typeof createStateStore>;
@@ -7,6 +8,7 @@ type StateStore = ReturnType<typeof createStateStore>;
 export async function runUiCommand(input: {
   args: string[];
   stateStore: StateStore;
+  resourceIndex: ResourceIndex;
   config: WakeConfig;
   readFlag: (name: string, args: string[]) => string | undefined;
   log?: (message: string) => void;
@@ -24,6 +26,7 @@ export async function runUiCommand(input: {
 
   const server = createUiServer({
     stateStore: input.stateStore,
+    resourceIndex: input.resourceIndex,
     config: input.config,
     ...(token === undefined ? {} : { token }),
   });

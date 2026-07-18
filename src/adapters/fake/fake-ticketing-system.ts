@@ -1,7 +1,9 @@
 import { access } from 'node:fs/promises';
 
+import type { UnkeyedEventEnvelope } from '../../core/contracts.js';
 import type { EventEnvelope } from '../../domain/types.js';
-import { createEventEnvelope } from '../../lib/event-log.js';
+import { buildResourceUri } from '../../domain/resource-uri.js';
+import { createEventEnvelope, createUnkeyedEventEnvelope } from '../../lib/event-log.js';
 import { readJsonFile } from '../../lib/json-file.js';
 
 const fakeSource = 'fake-ticketing';
@@ -21,18 +23,15 @@ export interface FakeTicketSeed {
   }>;
 }
 
-function workItemKeyForIssue(issue: { repo: string; number: number }): string {
-  return `${fakeSource}:${issue.repo}#${issue.number}`;
-}
-
-function normalizeIssueEvents(issue: FakeTicketSeed, nowIso: string): EventEnvelope[] {
-  const workItemKey = workItemKeyForIssue(issue);
+function normalizeIssueEvents(issue: FakeTicketSeed, nowIso: string): UnkeyedEventEnvelope[] {
   const sourceUrl = `https://example.test/${issue.repo}/issues/${issue.number}`;
+  // The source names the *resource* it saw, never the work item: the resolver
+  // in tick-runner turns this into the canonical workItemKey (spec D1).
+  const resourceUri = buildResourceUri(fakeSource, 'issue', `${issue.repo}#${issue.number}`);
 
   return [
-    createEventEnvelope({
+    createUnkeyedEventEnvelope({
       eventId: `fake-issue-${issue.repo}-${issue.number}`,
-      workItemKey,
       streamScope: 'global-intake',
       direction: 'inbound',
       sourceSystem: 'fake-ticketing',
@@ -41,6 +40,7 @@ function normalizeIssueEvents(issue: FakeTicketSeed, nowIso: string): EventEnvel
         repo: issue.repo,
         issueNumber: issue.number,
         sourceUrl,
+        resourceUri,
       },
       occurredAt: nowIso,
       ingestedAt: nowIso,
@@ -66,9 +66,8 @@ function normalizeIssueEvents(issue: FakeTicketSeed, nowIso: string): EventEnvel
       },
     }),
     ...issue.comments.map((comment, index) =>
-      createEventEnvelope({
+      createUnkeyedEventEnvelope({
         eventId: `fake-comment-${issue.repo}-${issue.number}-${comment.id}-${index}`,
-        workItemKey,
         streamScope: 'work-item',
         direction: 'inbound',
         sourceSystem: 'fake-ticketing',
@@ -78,6 +77,7 @@ function normalizeIssueEvents(issue: FakeTicketSeed, nowIso: string): EventEnvel
           issueNumber: issue.number,
           commentId: comment.id,
           sourceUrl,
+          resourceUri,
         },
         occurredAt: nowIso,
         ingestedAt: nowIso,
@@ -102,7 +102,7 @@ export function createFakeTicketingSystem(options: {
   now?: () => Date;
 }) {
   return {
-    async pollEvents(): Promise<EventEnvelope[]> {
+    async pollEvents(): Promise<UnkeyedEventEnvelope[]> {
       const nowIso = (options.now ?? (() => new Date()))().toISOString();
       return options.tickets.flatMap((issue) => normalizeIssueEvents(issue, nowIso));
     },

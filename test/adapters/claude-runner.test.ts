@@ -20,7 +20,7 @@ import { createDefaultWakeConfig, defaultSmokePrompt } from '../../src/config/de
 describe('claude runner command building', () => {
   const baseProjection = {
     schemaVersion: 1 as const,
-    workItemKey: 'atolis-hq/wake#12',
+    workItemKey: 'work-01JQZX9K2N4P6R8T0V2W4Y6A12',
     issue: {
       repo: 'atolis-hq/wake',
       number: 12,
@@ -43,6 +43,7 @@ describe('claude runner command building', () => {
           expectedEcho: { commentIds: [], labels: [] },
     },
     context: {},
+    correlatedResources: [],
   };
 
   it('builds a minimal haiku print invocation for smoke tests', () => {
@@ -76,7 +77,7 @@ describe('claude runner command building', () => {
       action: 'implement',
       projection: {
         schemaVersion: 1,
-        workItemKey: 'atolis-hq/wake#12',
+        workItemKey: 'work-01JQZX9K2N4P6R8T0V2W4Y6A8C',
         issue: {
           repo: 'atolis-hq/wake',
           number: 12,
@@ -116,11 +117,22 @@ describe('claude runner command building', () => {
           expectedEcho: { commentIds: [], labels: [] },
         },
         context: {},
+        correlatedResources: [],
       },
     });
 
     expect(result.prompt).toContain('IMPLEMENT stage');
-    expect(result.prompt).toContain('atolis-hq/wake#12');
+    expect(result.prompt).toContain('atolis-hq/wake');
+    // The PR-body marker must carry the real work id. renderPromptTemplate
+    // leaves an unknown token untouched instead of failing, so if workItemKey
+    // ever dropped out of buildStagePrompt's render context, PR bodies would
+    // ship `<!-- wake:work-item {{workItemKey}} -->` literally — present-looking
+    // and useless — with nothing to catch it. This is the end-to-end guard:
+    // real projection in, substituted marker out.
+    expect(result.prompt).toContain(
+      '<!-- wake:work-item work-01JQZX9K2N4P6R8T0V2W4Y6A8C -->',
+    );
+    expect(result.prompt).not.toContain('{{workItemKey}}');
     expect(result.prompt).toContain('shared-user');
     expect(result.prompt).toContain('Please proceed');
     expect(result.prompt).toContain('<wake-untrusted-data>');
@@ -182,7 +194,9 @@ describe('claude runner command building', () => {
     expect(result.harnessPrompt).toContain('DONE, BLOCKED, FAILED');
     expect(result.harnessPrompt).toContain('- DONE: the stage objective is complete.');
     expect(result.harnessPrompt).not.toContain('AWAITING_APPROVAL');
-    expect(result.prompt).toContain('Custom stage instruction for atolis-hq/wake#12.');
+    expect(result.prompt).toContain(
+      'Custom stage instruction for work-01JQZX9K2N4P6R8T0V2W4Y6A12.',
+    );
   });
 
   it('resume prompts only surface new human comments since the last handled one, not the full history', async () => {
@@ -191,7 +205,7 @@ describe('claude runner command building', () => {
       mode: 'resume',
       projection: {
         schemaVersion: 1,
-        workItemKey: 'atolis-hq/wake#20',
+        workItemKey: 'work-01JQZX9K2N4P6R8T0V2W4Y6A20',
         issue: {
           repo: 'atolis-hq/wake',
           number: 20,
@@ -247,6 +261,7 @@ describe('claude runner command building', () => {
           expectedEcho: { commentIds: [], labels: [] },
         },
         context: { lastHandledCommentId: 'c-1' },
+        correlatedResources: [],
       },
     });
 
@@ -307,6 +322,7 @@ describe('claude runner command building', () => {
           expectedEcho: { commentIds: [], labels: [] },
         },
         context: { lastHandledCommentId: 'c-1' },
+        correlatedResources: [],
       },
     });
 
@@ -336,7 +352,7 @@ describe('claude runner command building', () => {
       mode: 'start',
       projection: {
         schemaVersion: 1,
-        workItemKey: 'atolis-hq/wake#21',
+        workItemKey: 'work-01JQZX9K2N4P6R8T0V2W4Y6A21',
         issue: {
           repo: 'atolis-hq/wake',
           number: 21,
@@ -384,6 +400,7 @@ describe('claude runner command building', () => {
           expectedEcho: { commentIds: [], labels: [] },
         },
         context: { lastHandledCommentId: 'c-2' },
+        correlatedResources: [],
       },
     });
 
@@ -400,7 +417,7 @@ describe('claude runner command building', () => {
       action: 'refine',
       projection: {
         schemaVersion: 1,
-        workItemKey: 'atolis-hq/wake#13',
+        workItemKey: 'work-01JQZX9K2N4P6R8T0V2W4Y6A13',
         issue: {
           repo: 'atolis-hq/wake',
           number: 13,
@@ -423,6 +440,7 @@ describe('claude runner command building', () => {
           expectedEcho: { commentIds: [], labels: [] },
         },
         context: {},
+        correlatedResources: [],
       },
     });
 
@@ -459,7 +477,7 @@ describe('claude runner command building', () => {
       action: 'refine',
       projection: {
         schemaVersion: 1,
-        workItemKey: 'atolis-hq/wake#14',
+        workItemKey: 'work-01JQZX9K2N4P6R8T0V2W4Y6A14',
         issue: {
           repo: 'atolis-hq/wake',
           number: 14,
@@ -482,6 +500,7 @@ describe('claude runner command building', () => {
           expectedEcho: { commentIds: [], labels: [] },
         },
         context: {},
+        correlatedResources: [],
       },
       config: {
         ...createDefaultWakeConfig('/tmp/wake'),
@@ -489,7 +508,7 @@ describe('claude runner command building', () => {
       },
     });
 
-    expect(result.prompt).toContain('Custom template for atolis-hq/wake#14');
+    expect(result.prompt).toContain('Custom template for work-01JQZX9K2N4P6R8T0V2W4Y6A14');
     expect(result.allowedTools).toEqual(['Read']);
   });
 
@@ -620,7 +639,7 @@ describe('claude runner command building', () => {
       action: 'refine',
       projection: {
         schemaVersion: 1,
-        workItemKey: 'atolis-hq/wake#20',
+        workItemKey: 'work-01JQZX9K2N4P6R8T0V2W4Y6A20',
         issue: {
           repo: 'atolis-hq/wake',
           number: 20,
@@ -643,6 +662,7 @@ describe('claude runner command building', () => {
           expectedEcho: { commentIds: [], labels: [] },
         },
         context: {},
+        correlatedResources: [],
       },
     });
 
@@ -659,7 +679,7 @@ describe('claude runner command building', () => {
       action: 'refine',
       projection: {
         schemaVersion: 1,
-        workItemKey: 'atolis-hq/wake#20',
+        workItemKey: 'work-01JQZX9K2N4P6R8T0V2W4Y6A20',
         issue: {
           repo: 'atolis-hq/wake',
           number: 20,
@@ -682,6 +702,7 @@ describe('claude runner command building', () => {
           expectedEcho: { commentIds: [], labels: [] },
         },
         context: {},
+        correlatedResources: [],
       },
       contextOverrides: { toolCapabilityNote: codexNote },
     });
@@ -696,7 +717,7 @@ describe('claude runner command building', () => {
       action: 'refine',
       projection: {
         schemaVersion: 1,
-        workItemKey: 'atolis-hq/wake#20',
+        workItemKey: 'work-01JQZX9K2N4P6R8T0V2W4Y6A20',
         issue: {
           repo: 'atolis-hq/wake',
           number: 20,
@@ -719,6 +740,7 @@ describe('claude runner command building', () => {
           expectedEcho: { commentIds: [], labels: [] },
         },
         context: {},
+        correlatedResources: [],
       },
     });
 
@@ -740,7 +762,7 @@ describe('claude runner command building', () => {
         action: 'refine',
         projection: {
           schemaVersion: 1,
-          workItemKey: 'atolis-hq/wake#21',
+          workItemKey: 'work-01JQZX9K2N4P6R8T0V2W4Y6A21',
           issue: {
             repo: 'atolis-hq/wake',
             number: 21,
@@ -763,6 +785,7 @@ describe('claude runner command building', () => {
           expectedEcho: { commentIds: [], labels: [] },
           },
           context: {},
+          correlatedResources: [],
         },
         config: {
           ...createDefaultWakeConfig('/tmp/wake'),
