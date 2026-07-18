@@ -9,6 +9,7 @@ import type {
   AgentRunner,
   AgentRunResult,
   AgentRunTokenUsage,
+  ArtifactVerifier,
   OutboundSink,
   ResourceIndex,
   UnkeyedEventEnvelope,
@@ -21,12 +22,14 @@ import { createWorkId } from '../lib/work-id.js';
 import {
   CORRELATION_REGISTERED_EVENT,
   WORK_ITEM_CREATED_EVENT,
+  parseRunnerArtifacts,
   parseRunnerResult,
 } from '../domain/schema.js';
 import { maxConfiguredRunnerTimeoutMs, resolveRunnerRouting } from '../domain/runner-routing.js';
 import { awaitingApprovalRunnerSentinel, stageLabelForStage } from '../domain/stages.js';
 import type { AgentAction, EventEnvelope, IssueStateRecord, RunRecord, WakeConfig } from '../domain/types.js';
 import { createEventEnvelope } from '../lib/event-log.js';
+import { branchNameForIssue } from '../domain/branch-naming.js';
 import { resolveQuotaPauseUntil } from './quota-backoff.js';
 
 type ParsedRunnerResult = ReturnType<typeof parseRunnerResult>;
@@ -53,6 +56,12 @@ export function createTickRunner(deps: {
   // resourceIndex: this is durable correlation state and must never be
   // cached in process memory across ticks or silently defaulted away.
   resourceIndex: ResourceIndex;
+  // Optional: verifies agent-reported PR artifacts against the real provider
+  // before they're registered as correlated resources. Undefined (e.g. no
+  // GitHub source configured) means artifact claims are never trusted —
+  // registerReportedArtifacts becomes a no-op rather than registering
+  // unverified free text.
+  artifactVerifier?: ArtifactVerifier;
 }) {
   const policy = createPolicyEngine();
   const lifecycle = createLifecycleService();
@@ -252,6 +261,60 @@ export function createTickRunner(deps: {
         origin: input.projection.origin ?? 'github',
       },
     });
+  }
+
+  // Closes the loop on #82's review feedback: rather than scrape a PR link
+  // out of the agent's free text, the agent emits a `wake-artifacts` fence
+  // (domain/schema.ts's parseRunnerArtifacts) and Wake verifies each claim
+  // against the real provider before trusting it. No verifier configured (no
+  // GitHub source) means no claim is ever trusted — this is a no-op, not a
+  // silent "believe the agent" fallback.
+  //
+  // Uses a plain appendEventEnvelope + rebuildFromEvents pair, not
+  // deliverOutboundEvent: wake.correlation.registered is not a publish-intent
+  // type, so attemptDelivery's outbound sink call would be a no-op anyway —
+  // this matches the same plain-append pattern used elsewhere for
+  // internal-only events (see buildOriginCorrelationEvents' callers).
+  async function registerReportedArtifacts(input: {
+    projection: IssueStateRecord;
+    runId: string;
+    runnerResult: AgentRunResult;
+    branch: string;
+    occurredAt: string;
+  }): Promise<void> {
+    if (deps.artifactVerifier === undefined) {
+      return;
+    }
+
+    const { artifacts } = parseRunnerArtifacts(input.runnerResult.result);
+    for (const artifact of artifacts) {
+      const verified = await deps.artifactVerifier.verify(artifact, { branch: input.branch });
+      if (verified === null) {
+        continue;
+      }
+
+      const event = createEventEnvelope({
+        eventId: `${input.runId}-artifact-${artifact.kind}-${verified.resourceUri.replace(/[^a-z0-9]+/gi, '-')}`,
+        workItemKey: input.projection.workItemKey,
+        streamScope: 'work-item',
+        direction: 'internal',
+        sourceSystem: 'wake',
+        sourceEventType: CORRELATION_REGISTERED_EVENT,
+        sourceRefs: { runId: input.runId },
+        occurredAt: input.occurredAt,
+        ingestedAt: input.occurredAt,
+        trigger: 'context-only',
+        payload: {
+          resourceUri: verified.resourceUri,
+          role: 'implementation',
+          relation: 'primary',
+          provenance: 'agent-reported',
+          registeredBy: input.runId,
+        },
+      });
+      const appended = await deps.stateStore.appendEventEnvelope(event);
+      await projectionUpdater.rebuildFromEvents([appended]);
+    }
   }
 
   // Events are stamped by reading the clock at the moment of stamping, never
@@ -1030,6 +1093,20 @@ export function createTickRunner(deps: {
               : rawSentinel;
           const nextStage = lifecycle.nextStageFromSentinel(action, sentinel);
           const finishedAt = deps.clock.now().toISOString();
+
+          // Only 'implement' has a workspace/branch to verify a reported PR's
+          // head against — 'refine' never pushes anything, so there is
+          // nothing for a PR claim to have come from.
+          if (action === 'implement') {
+            await registerReportedArtifacts({
+              projection: candidate,
+              runId,
+              runnerResult,
+              branch: branchNameForIssue(candidate.issue.number),
+              occurredAt: finishedAt,
+            });
+          }
+
           const failedRunnerName = runnerResult.routing?.runnerName ?? routing.runnerName;
           const existingRunners = ledgerAtStart?.runners ?? {};
           if (runnerResult.failureClass === 'quota') {

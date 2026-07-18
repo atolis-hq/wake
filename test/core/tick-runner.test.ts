@@ -3,6 +3,7 @@ import { access, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:f
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { createFakeArtifactVerifier } from '../../src/adapters/fake/fake-artifact-verifier.js';
 import { createFakeResourceIndex } from '../../src/adapters/fake/fake-resource-index.js';
 import { createFakeTicketingSystem } from '../../src/adapters/fake/fake-ticketing-system.js';
 import { createFakeWorkspaceManager } from '../../src/adapters/fake/fake-workspace-manager.js';
@@ -3549,5 +3550,166 @@ describe('tick runner', () => {
       (event) => event.sourceEventType === CORRELATION_PRIMARY_CONFLICT_EVENT,
     ).length;
     expect(conflictEventCountAfter).toBe(conflictEventCountBefore);
+  });
+
+  describe('artifact reporting', () => {
+    it('registers a verified PR artifact reported by the agent', async () => {
+      const store = createStateStore({ wakeRoot: root });
+
+      await store.writeIssueState({
+        schemaVersion: 1,
+        workItemKey: workId(41),
+        issue: {
+          repo: 'atolis-hq/wake',
+          number: 41,
+          title: 'Implement',
+          body: 'Body',
+          labels: ['wake:implement'],
+          assignees: [],
+          isPullRequest: false,
+          state: 'open',
+          url: 'https://example.test/issues/41',
+          createdAt: '2026-07-05T12:00:00.000Z',
+          updatedAt: '2026-07-05T12:00:00.000Z',
+        },
+        comments: [],
+        wake: {
+          stage: 'implement',
+          stageHistory: [],
+          recentEventIds: [],
+          syncedAt: '2026-07-05T12:00:00.000Z',
+          expectedEcho: { commentIds: [], labels: [] },
+        },
+        context: {},
+        correlatedResources: [],
+      });
+
+      const config = createDefaultWakeConfig(root);
+      config.sources.github.policy.requiredLabels = ['wake:implement'];
+
+      const artifactVerifier = createFakeArtifactVerifier({
+        verifies: [{ url: 'https://example.test/org/repo/pull/91', resourceUri: 'github:pr:org/repo#91' }],
+      });
+
+      const tickRunner = createTickRunner({
+        clock: { now: () => new Date('2026-07-05T12:00:00.000Z') },
+        config,
+        stateStore: store,
+        workSource: { async pollEvents() { return []; } },
+        runner: {
+          async run() {
+            return {
+              result: [
+                'Opened the PR.',
+                '',
+                '```wake-artifacts',
+                '{ "artifacts": [{ "kind": "pr", "url": "https://example.test/org/repo/pull/91" }] }',
+                '```',
+                '',
+                '```wake-result',
+                '{ "status": "AWAITING_APPROVAL" }',
+                '```',
+                'AWAITING_APPROVAL',
+              ].join('\n'),
+              model: 'fake',
+              cli: 'Fake',
+              session_id: 'fake-session-1',
+            };
+          },
+        },
+        resourceIndex: createFakeResourceIndex(),
+        workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+        artifactVerifier,
+      });
+
+      await tickRunner.runTick();
+
+      const projection = await findByIssueRef(store, { repo: 'atolis-hq/wake', issueNumber: 41 });
+      expect(projection?.correlatedResources).toContainEqual(
+        expect.objectContaining({
+          resourceUri: 'github:pr:org/repo#91',
+          role: 'implementation',
+          relation: 'primary',
+          provenance: 'agent-reported',
+        }),
+      );
+    });
+
+    it('does not register an artifact that fails verification', async () => {
+      const store = createStateStore({ wakeRoot: root });
+
+      await store.writeIssueState({
+        schemaVersion: 1,
+        workItemKey: workId(42),
+        issue: {
+          repo: 'atolis-hq/wake',
+          number: 42,
+          title: 'Implement',
+          body: 'Body',
+          labels: ['wake:implement'],
+          assignees: [],
+          isPullRequest: false,
+          state: 'open',
+          url: 'https://example.test/issues/42',
+          createdAt: '2026-07-05T12:00:00.000Z',
+          updatedAt: '2026-07-05T12:00:00.000Z',
+        },
+        comments: [],
+        wake: {
+          stage: 'implement',
+          stageHistory: [],
+          recentEventIds: [],
+          syncedAt: '2026-07-05T12:00:00.000Z',
+          expectedEcho: { commentIds: [], labels: [] },
+        },
+        context: {},
+        correlatedResources: [],
+      });
+
+      const config = createDefaultWakeConfig(root);
+      config.sources.github.policy.requiredLabels = ['wake:implement'];
+
+      // verifies: [] — verify() always returns null, exercising the failed-
+      // verification path.
+      const artifactVerifier = createFakeArtifactVerifier({ verifies: [] });
+
+      const tickRunner = createTickRunner({
+        clock: { now: () => new Date('2026-07-05T12:00:00.000Z') },
+        config,
+        stateStore: store,
+        workSource: { async pollEvents() { return []; } },
+        runner: {
+          async run() {
+            return {
+              result: [
+                'Opened the PR.',
+                '',
+                '```wake-artifacts',
+                '{ "artifacts": [{ "kind": "pr", "url": "https://example.test/org/repo/pull/91" }] }',
+                '```',
+                '',
+                '```wake-result',
+                '{ "status": "AWAITING_APPROVAL" }',
+                '```',
+                'AWAITING_APPROVAL',
+              ].join('\n'),
+              model: 'fake',
+              cli: 'Fake',
+              session_id: 'fake-session-1',
+            };
+          },
+        },
+        resourceIndex: createFakeResourceIndex(),
+        workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+        artifactVerifier,
+      });
+
+      await tickRunner.runTick();
+
+      const projection = await findByIssueRef(store, { repo: 'atolis-hq/wake', issueNumber: 42 });
+      expect(
+        projection?.correlatedResources.some((r) => r.resourceUri === 'github:pr:org/repo#91'),
+      ).toBe(false);
+    });
   });
 });

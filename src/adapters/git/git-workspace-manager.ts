@@ -4,8 +4,15 @@ import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 
 import { createWakePaths } from '../../lib/paths.js';
+import { branchNameForIssue } from '../../domain/branch-naming.js';
 
 const execFile = promisify(nodeExecFile);
+
+// Re-exported for existing callers (this adapter's own use below, plus
+// adapters/runner/stage-prompt.ts and tests) — the canonical definition now
+// lives in domain/branch-naming.ts so core/ can use it without importing a
+// concrete adapter.
+export { branchNameForIssue };
 
 async function git(args: string[], cwd: string): Promise<{ stdout: string; stderr: string }> {
   const result = await execFile('git', args, {
@@ -38,10 +45,6 @@ async function pathExists(path: string): Promise<boolean> {
   } catch {
     return false;
   }
-}
-
-export function branchNameForIssue(issueNumber: number): string {
-  return `wake/issue-${issueNumber}`;
 }
 
 export function defaultRemoteUrlForRepo(repo: string): string {

@@ -18,6 +18,7 @@ import {
   type SelfUpdateLedger,
 } from './adapters/fs/self-update-ledger.js';
 import { resolveGitHubToken } from './adapters/github/github-auth.js';
+import { createGitHubArtifactVerifier } from './adapters/github/github-artifact-verifier.js';
 import { createGitHubClient } from './adapters/github/github-client.js';
 import { createGitHubIssuesWorkSource } from './adapters/github/github-issues-work-source.js';
 import { runCorrelateCommand } from './cli/correlate-command.js';
@@ -215,6 +216,10 @@ async function buildRuntime(args: string[]) {
 
   const resourceIndex = createResourceIndex({ paths: stateStore.paths });
 
+  const artifactVerifier = config.sources.github.enabled
+    ? createGitHubArtifactVerifier({ client: createGitHubClient(await resolveGitHubToken()) })
+    : undefined;
+
   const ticketingSystem = config.sources.github.enabled
     ? createGitHubIssuesWorkSource({
         client: createGitHubClient(await resolveGitHubToken()),
@@ -275,6 +280,7 @@ async function buildRuntime(args: string[]) {
     runner,
     workspaceManager,
     resourceIndex,
+    ...(artifactVerifier === undefined ? {} : { artifactVerifier }),
   });
 
   return {
