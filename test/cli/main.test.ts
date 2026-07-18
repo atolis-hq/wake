@@ -7,6 +7,24 @@ import {
 } from '../../src/main.js';
 
 describe('main command routing', () => {
+  it('prints the embedded version for --version', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await dispatchMainCommand({
+      args: ['--version'],
+      runInit: async () => {},
+      runSandbox: async () => {},
+      runTick: async () => {},
+      runStart: async () => {},
+      runSmoke: async () => {},
+      runUi: async () => {},
+      runCorrelate: async () => {},
+    });
+
+    expect(log).toHaveBeenCalledWith('0.1.0-dev');
+    log.mockRestore();
+  });
+
   it('routes init and sandbox through the public CLI surface', async () => {
     const calls: string[] = [];
 

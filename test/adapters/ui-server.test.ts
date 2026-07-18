@@ -35,7 +35,9 @@ describe('ui-server', () => {
   it('serves the static index page at /', async () => {
     const res = await fetch(`${baseUrl}/`);
     expect(res.status).toBe(200);
-    expect(await res.text()).toContain('Wake control plane');
+    const html = await res.text();
+    expect(html).toContain('Wake control plane');
+    expect(html).toContain('0.1.0-dev');
   });
 
   it('serves status and board JSON under /api/v1', async () => {
