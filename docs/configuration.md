@@ -108,6 +108,14 @@ All configuration uses `schemaVersion: 1`.
       },
       "publication": {
         "postStatusComments": true
+      },
+      "pullRequests": {
+        "enabled": false,
+        "maxPullRequestsPerRepo": 25,
+        "commentPageSize": 25,
+        "policy": {
+          "requiredAuthors": []
+        }
       }
     }
   }
@@ -467,6 +475,26 @@ Wake also owns one derived status label while it works a ticket:
 - `wake:status.completed`
 
 Wake replaces only the `wake:status.*` label family and preserves unrelated issue labels.
+
+#### pullRequests
+
+GitHub Pull Requests activity monitoring and correlation.
+
+When enabled, Wake monitors pull requests for activity (comments, reviews) on PRs
+already correlated to work items, and optionally discovers new uncorrelated PRs
+for standalone work adoption if they match the qualification policy.
+
+| Property | Type | Description | Default |
+|----------|------|-------------|---------|
+| `enabled` | boolean | Enable PR activity polling and optional PR discovery | `false` |
+| `maxPullRequestsPerRepo` | number | Maximum PRs to fetch per repository per poll (minimum 1) | `25` |
+| `commentPageSize` | number | Page size for fetching PR comments and reviews (minimum 1) | `25` |
+| `policy.requiredAuthors` | string[] | GitHub logins allowed to author new standalone PRs; empty means no uncorrelated PR will mint a new work item | `[]` |
+
+**Important:** A pull request opened by Wake's own agent as an artifact from an issue
+never requires author qualification — it is registered through artifact verification,
+not the `requiredAuthors` gate. Author qualification applies only to PRs already in
+the repository that Wake did not create.
 
 ## Loading and Merging
 
