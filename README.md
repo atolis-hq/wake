@@ -72,15 +72,60 @@ Current runner capability differences are documented in
 
 ## Getting Started
 
-Wake does not have a paved install path yet. The intended getting-started flow
-will be based on published packages and a simpler setup path than this source
-checkout currently provides.
+Wake is distributed as the `@atolis-hq/wake` npm package. You can run the CLI
+with `npx` or install it globally:
 
-Until that exists, use the local development guide:
+```sh
+npx @atolis-hq/wake init ./wake-home
+```
+
+```sh
+npm install -g @atolis-hq/wake
+wake init ./wake-home
+```
+
+`wake init` creates a Wake home directory with `config.json`, prompt templates,
+Docker sandbox assets, runtime directories, and shell launchers:
+
+- `wake.sh` for bash, Git Bash, WSL, and similar shells.
+- `wake.ps1` for PowerShell.
+
+Use the generated launcher from the Wake home for day-to-day operation. The
+launcher runs host setup commands locally and forwards runtime commands into the
+sandbox with the correct Wake home mounted at `/wake`.
+
+```sh
+cd ./wake-home
+./wake.sh sandbox build
+./wake.sh sandbox up
+./wake.sh sandbox setup
+./wake.sh tick
+./wake.sh start
+```
+
+The default sandbox image includes Node, Git, GitHub CLI, Claude Code, Codex,
+Cursor, and the Wake runtime. Treat the generated `docker/Dockerfile` as a
+starting point for your own environment: add the tools your repositories need,
+then rebuild with `./wake.sh sandbox build`. Wake writes the package location to
+`config.json` as `dev.repoRoot` so sandbox rebuilds use the same bundled assets;
+editing your generated Dockerfile or prompts is expected and future package
+upgrades should not overwrite that Wake home.
+
+Common commands:
+
+```sh
+./wake.sh ui
+./wake.sh tick
+./wake.sh start
+./wake.sh stop
+./wake.sh sandbox resume <session-id> --cwd "/wake/workspaces/<workId>"
+```
+
+For a source checkout development workflow, use:
 
 - [docs/development.md](docs/development.md)
 
-Recommended local practices for the current development flow:
+Recommended local practices:
 
 - Use a separate git identity for Wake-managed agent work so automated commits
   and human commits are easy to distinguish.

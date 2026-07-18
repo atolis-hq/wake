@@ -23,7 +23,7 @@ describe('sandbox command', () => {
     };
   }
 
-  it('dispatches build with repo-root docker paths', async () => {
+  it('dispatches build with the generated Dockerfile and repo-root context', async () => {
     const docker = createDockerMock();
     const config = {
       ...createDefaultWakeConfig(wakeRoot),
@@ -45,7 +45,7 @@ describe('sandbox command', () => {
 
     expect(docker.build).toHaveBeenCalledWith({
       image: 'wake-sandbox',
-      dockerfile: resolve(repoRoot, 'docker', 'Dockerfile'),
+      dockerfile: resolve(wakeRoot, 'docker', 'Dockerfile'),
       contextDir: '/repo/wake',
     });
   });
