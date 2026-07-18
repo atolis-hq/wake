@@ -225,7 +225,7 @@ function formatControlPlaneLink(url: string): string | null {
   }
 }
 
-async function readControlPlaneUiUrl(wakeRoot: string): Promise<string | undefined> {
+export async function readControlPlaneUiUrl(wakeRoot: string): Promise<string | undefined> {
   try {
     const raw = await readFile(resolve(wakeRoot, 'control-plane-ui-url'), 'utf8');
     return formatControlPlaneLink(raw.trim()) ?? undefined;
@@ -234,7 +234,7 @@ async function readControlPlaneUiUrl(wakeRoot: string): Promise<string | undefin
   }
 }
 
-function formatWakeComment(payload: Record<string, unknown>, controlPlaneUrl?: string): string {
+export function formatWakeComment(payload: Record<string, unknown>, controlPlaneUrl?: string): string {
   const body = typeof payload.body === 'string' ? payload.body : '';
   const kind = typeof payload.kind === 'string' ? payload.kind : undefined;
   const action = typeof payload.action === 'string' ? payload.action : undefined;

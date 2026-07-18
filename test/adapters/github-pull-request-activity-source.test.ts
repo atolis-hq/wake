@@ -55,6 +55,10 @@ describe('createGitHubPullRequestActivitySource', () => {
     expect(seenEvents).toHaveLength(1);
     expect(seenEvents[0]?.sourceRefs.resourceUri).toBe('github:pr:org/repo#91');
     expect(seenEvents[0]?.payload.pr).toEqual({ number: 91, author: 'trusted-human', headRef: 'feature-x' });
+    // Embeds updated_at so a PR that fails mint qualification is re-offered
+    // for qualification once it actually changes, instead of being
+    // permanently quarantined under its first-seen eventId.
+    expect(seenEvents[0]?.eventId).toContain('2026-07-18T00:00:00Z');
   });
 
   it('does not re-emit pr.seen once the PR is already correlated', async () => {
@@ -148,6 +152,124 @@ describe('createGitHubPullRequestActivitySource', () => {
     expect(client.listReviews).not.toHaveBeenCalled();
     expect(client.listReviewComments).not.toHaveBeenCalled();
     expect(events).toHaveLength(0);
+  });
+
+  it('still emits a review event when the review body is empty, so a bare approve/request-changes is not lost', async () => {
+    const client = {
+      listPullRequests: vi.fn().mockResolvedValue([]),
+      getPullRequest: vi.fn(),
+      listComments: vi.fn().mockResolvedValue([]),
+      listReviews: vi.fn().mockResolvedValue([
+        {
+          id: 701,
+          body: '',
+          state: 'CHANGES_REQUESTED',
+          user: { login: 'reviewer' },
+          submitted_at: '2026-07-18T00:00:00Z',
+          html_url: 'https://github.com/org/repo/pull/91#pullrequestreview-701',
+        },
+      ]),
+      listReviewComments: vi.fn().mockResolvedValue([]),
+      replyToReviewComment: vi.fn(),
+      createComment: vi.fn(),
+    };
+    const source = createGitHubPullRequestActivitySource({
+      client,
+      stateStore: createStateStore({ wakeRoot: root }),
+      config: buildConfig(),
+      resourceIndex: createFakeResourceIndex(),
+      now: () => new Date('2026-07-18T00:00:00Z'),
+    });
+
+    const events = await source.pollEvents({ watch: [{ resourceUri: 'github:pr:org/repo#91' }] });
+    const reviewEvents = events.filter((e) => e.sourceEventType === 'pr.review.created');
+    expect(reviewEvents).toHaveLength(1);
+    expect((reviewEvents[0]?.payload.comment as { body: string }).body).toBe('[CHANGES_REQUESTED]');
+  });
+
+  it('tags review-thread comment events with sourceRefs.parentResourceUri pointing at the owning PR', async () => {
+    const client = {
+      listPullRequests: vi.fn().mockResolvedValue([]),
+      getPullRequest: vi.fn(),
+      listComments: vi.fn().mockResolvedValue([]),
+      listReviews: vi.fn().mockResolvedValue([]),
+      listReviewComments: vi.fn().mockResolvedValue([
+        {
+          id: 501,
+          in_reply_to_id: undefined,
+          path: 'src/foo.ts',
+          line: 42,
+          body: 'root comment',
+          user: { login: 'reviewer' },
+          created_at: '2026-07-18T00:00:00Z',
+          updated_at: '2026-07-18T00:00:00Z',
+          html_url: 'https://github.com/org/repo/pull/91#discussion_r501',
+        },
+      ]),
+      replyToReviewComment: vi.fn(),
+      createComment: vi.fn(),
+    };
+    const source = createGitHubPullRequestActivitySource({
+      client,
+      stateStore: createStateStore({ wakeRoot: root }),
+      config: buildConfig(),
+      resourceIndex: createFakeResourceIndex(),
+      now: () => new Date('2026-07-18T00:00:00Z'),
+    });
+
+    const events = await source.pollEvents({ watch: [{ resourceUri: 'github:pr:org/repo#91' }] });
+    const threadEvents = events.filter((e) => e.sourceEventType === 'pr.review-comment.created');
+    expect(threadEvents).toHaveLength(1);
+    expect(threadEvents[0]?.sourceRefs.parentResourceUri).toBe('github:pr:org/repo#91');
+  });
+
+  it('formats PR comment replies with formatWakeComment, including the approval-instructions footer, not a bare marker+body', async () => {
+    const client = {
+      listPullRequests: vi.fn(),
+      getPullRequest: vi.fn(),
+      listComments: vi.fn(),
+      listReviews: vi.fn(),
+      listReviewComments: vi.fn(),
+      replyToReviewComment: vi.fn().mockResolvedValue({ html_url: 'https://github.com/org/repo/pull/91#discussion_r501' }),
+      createComment: vi.fn().mockResolvedValue({ html_url: 'https://github.com/org/repo/pull/91#issuecomment-1' }),
+    };
+    const source = createGitHubPullRequestActivitySource({
+      client,
+      stateStore: createStateStore({ wakeRoot: root }),
+      config: buildConfig(),
+      resourceIndex: createFakeResourceIndex(),
+      now: () => new Date('2026-07-18T00:00:00Z'),
+    });
+
+    await source.deliverIntent({
+      event: {
+        schemaVersion: 1,
+        eventId: 'intent-1',
+        workItemKey: 'work-01JZ0000000000000000000000',
+        streamScope: 'work-item',
+        direction: 'outbound',
+        sourceSystem: 'wake',
+        sourceEventType: 'wake.publish.intent.requested',
+        sourceRefs: { resourceUri: 'github:pr:org/repo#91' },
+        occurredAt: '2026-07-18T00:00:00Z',
+        ingestedAt: '2026-07-18T00:00:00Z',
+        trigger: 'context-only',
+        payload: { kind: 'approval-request', body: 'Please review.' },
+      },
+    });
+
+    expect(client.createComment).toHaveBeenCalledWith(
+      'org',
+      'repo',
+      91,
+      expect.stringContaining('/approved'),
+    );
+    expect(client.createComment).toHaveBeenCalledWith(
+      'org',
+      'repo',
+      91,
+      expect.stringContaining('<!-- wake:agent -->'),
+    );
   });
 
   it('derives a stable review-thread resourceUri from review comment thread roots', async () => {

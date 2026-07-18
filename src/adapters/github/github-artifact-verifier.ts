@@ -21,7 +21,10 @@ export function createGitHubArtifactVerifier(deps: {
         return null;
       }
 
-      if (`${owner}/${repo}` !== context.repo) {
+      // GitHub owner/repo names are case-insensitive, so the URL's rendered
+      // casing (owner/repo, as linked by the agent) can legitimately differ
+      // from the configured context.repo string.
+      if (`${owner}/${repo}`.toLowerCase() !== context.repo.toLowerCase()) {
         return null;
       }
 
@@ -30,7 +33,10 @@ export function createGitHubArtifactVerifier(deps: {
         if (pr.head.ref !== context.branch) {
           return null;
         }
-        return { resourceUri: buildResourceUri('github', 'pr', `${owner}/${repo}#${numberStr}`) };
+        // Built from context.repo, not the URL's owner/repo casing, so this
+        // resourceUri exact-matches the one discoverPullRequests/pollWatchedPr
+        // build from the same configured repo string.
+        return { resourceUri: buildResourceUri('github', 'pr', `${context.repo}#${numberStr}`) };
       } catch {
         return null;
       }
