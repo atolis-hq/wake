@@ -25,7 +25,7 @@ function slugify(value: string, maxLength = 40): string {
     .replace(/-+$/g, '');
 }
 
-export function buildEddySessionName(input: {
+export function buildWakeSessionName(input: {
   sessionName: string;
   issueNumber: number;
   title: string;
@@ -264,7 +264,7 @@ export function createClaudeRunner(options: {
       mergeConflictDetected?: boolean;
       upstreamChanges?: string;
     }): Promise<AgentRunResult> {
-      const sessionName = buildEddySessionName({
+      const sessionName = buildWakeSessionName({
         sessionName: options.settings.sessionName,
         issueNumber: input.projection.issue.number,
         title: input.projection.issue.title,

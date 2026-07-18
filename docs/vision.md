@@ -8,7 +8,7 @@
 
 Wake exists to make end-to-end development automation practical on a local machine. It should begin as a simple loop that can pick work, decide the next step, invoke the right local tool or deterministic process, persist state, and resume later. If Wake cannot create value in that minimal form, it is difficult to justify adding finer controls, richer lifecycle stages, or more advanced orchestration.
 
-Wake is the control plane and the decider. It owns workflow progression, policy rules, CLI and model selection, token-aware execution choices, deterministic side processes, and session lifecycle management. Eddy is not a second decision-making system. It is a thin local execution identity or wrapper that Wake launches, resumes, hands off, and terminates as work moves through its lifecycle.
+Wake is the control plane and the decider. It owns workflow progression, policy rules, CLI and model selection, token-aware execution choices, deterministic side processes, and session lifecycle management. The local agent sessions it launches are execution contexts, not a second decision-making system.
 
 ## Problem
 
@@ -39,15 +39,13 @@ Wake is the system responsible for deciding what should happen next. It owns:
 
 Wake should be model-agnostic and CLI-agnostic. Claude Code, Codex, and future tools are execution surfaces that Wake can invoke as part of a broader workflow. The durable intelligence of the system lives in Wake's policies, workflow definitions, state model, and routing rules, not in any single model provider or CLI.
 
-## What Eddy Is
+## Agent Sessions
 
-Eddy is the runtime identity Wake uses for a unit of agentic execution. It may correspond to a local CLI session, a sandboxed container, a transcript, or a resumable execution context associated with a specific objective or lifecycle step.
+Wake uses local agent sessions for units of agentic execution. A session may correspond to a CLI invocation, a sandboxed container, a transcript, or a resumable execution context associated with a specific objective or lifecycle step.
 
-Eddy is not a persistent, long-running process. It does not sit resident for hours or days waiting for work. It is a resumable execution context: Wake starts it for a step, lets it finish, and records enough to bring it back. Equally, Wake should not blindly start a brand-new session for every step. Where continuity is valuable, a later lifecycle stage should be able to resume the same underlying session with its prior context intact, rather than rebuilding understanding from scratch. Whether to resume an existing session or begin a fresh one is a policy decision Wake owns.
+An agent session is not a persistent worker that sits resident for hours or days waiting for work. Wake starts it for a step, lets it finish, and records enough to bring it back. Equally, Wake should not blindly start a brand-new session for every step. Where continuity is valuable, a later lifecycle stage should be able to resume the same underlying session with its prior context intact, rather than rebuilding understanding from scratch. Whether to resume an existing session or begin a fresh one is a policy decision Wake owns.
 
-Eddy should remain thin. It does not own policy, prioritisation, or execution strategy. It does not decide which model to use, which CLI to invoke, or how work should progress. Wake makes those decisions and uses Eddy as the local wrapper or handle through which the chosen step is executed.
-
-This distinction matters because it keeps agency in one place. Wake decides. Eddy runs.
+This distinction matters because it keeps agency in one place. Wake decides, launches, resumes, and records the execution context.
 
 ## Operating Model
 
@@ -171,7 +169,5 @@ If Wake can do those things reliably, it has established the basis for additiona
 The name "Wake" fits for two reasons. A wake is the visible path and organised movement left behind by something progressing through water. That matches the role of the system: not to do every piece of work itself, but to create directed motion, coordination, and momentum across development activity.
 
 "Wake" also carries the sense of resuming activity or bringing something back into motion. That aligns with one of the system's key properties: work, sessions, and workflows should be able to pause and continue later without losing continuity. The dual meaning is useful because Wake is both the force that creates forward motion and the mechanism that brings execution back to life.
-
-"Eddy" fits as the local execution identity created within that larger flow. An eddy is a contained current formed by a wider movement around it. In the product, Eddy is not the source of direction. Wake creates the flow, and Eddy is the bounded local execution context operating within it.
 
 The naming also fits the broader `atolis-hq` theme, where movement, flow, and navigation metaphors help keep system roles distinct without making them feel arbitrary.

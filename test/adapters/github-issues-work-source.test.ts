@@ -219,7 +219,7 @@ describe('github issues work source', () => {
         listComments: async () => [
           {
             id: 102,
-            body: '<!-- wake:agent -->\n\n**Eddy** _(Wake)_\n\nWorking on it.',
+            body: '<!-- wake:agent -->\n\n**Wake** _(Wake)_\n\nWorking on it.',
             // Wake's own GitHub account is a normal 'User', not a 'Bot' — the
             // marker is the only signal available if expectedEcho missed this
             // comment (e.g. Wake crashed before recording delivery).
@@ -810,7 +810,7 @@ describe('github issues work source', () => {
     });
 
     const [, , , postedBody] = createComment.mock.calls[0] as [string, string, number, string];
-    expect(postedBody).toContain('**Eddy**');
+    expect(postedBody).toContain('**Wake**');
     expect(postedBody).toContain('Wake 0.1.0-dev');
     expect(postedBody).toContain('stage `implement`');
     expect(postedBody).toContain('cli Claude');
@@ -823,7 +823,7 @@ describe('github issues work source', () => {
     expect(postedBody).not.toContain('<!-- wake -->');
   });
 
-  it('links Eddy to the control plane URL when ngrok has published one', async () => {
+  it('links Wake to the control plane URL when ngrok has published one', async () => {
     const createComment = vi.fn();
     const store = createStateStore({ wakeRoot: root });
     const config = createDefaultWakeConfig(root);
@@ -861,7 +861,7 @@ describe('github issues work source', () => {
     });
 
     const [, , , postedBody] = createComment.mock.calls[0] as [string, string, number, string];
-    expect(postedBody).toContain('**[Eddy](https://example.ngrok-free.app/)**');
+    expect(postedBody).toContain('**[Wake](https://example.ngrok-free.app/)**');
   });
 
   it('formats Codex resume instructions when the run came from Codex', async () => {

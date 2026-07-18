@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add a real GitHub Issues ticketing source that syncs issues into Wake through canonical ticket events, applies Wake-owned label policy, and invokes Eddy through either the fake or Claude runner when actionable ticket changes arrive.
+**Goal:** Add a real GitHub Issues ticketing source that syncs issues into Wake through canonical ticket events, applies Wake-owned label policy, and invokes Wake through either the fake or Claude runner when actionable ticket changes arrive.
 
 **Architecture:** Keep GitHub Issues transport in a new adapter that resolves a token via `gh auth token` and uses Octokit for structured reads and writes. The adapter must translate provider-specific payloads into canonical Wake ticket events before they enter core. Let `tick` remain the single durable control-plane cycle: poll GitHub Issues, append canonical ticket events, rebuild projections, select actionable work, invoke the configured runner, and publish minimal ticket status back out.
 
@@ -685,7 +685,7 @@ via `gh auth token`, and Wake uses a fixed runner mode of either `fake` or
 GitHub Issues sync runs inside the normal tick path. Each tick polls GitHub,
 translates provider payloads into canonical ticket events, appends those
 events, rebuilds local projections, decides whether work is needed, and only
-then invokes Eddy.
+then invokes Wake.
 ```
 
 - [ ] **Step 2: Run the full verification suite**

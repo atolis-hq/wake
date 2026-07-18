@@ -17,7 +17,8 @@ const stageSchema = z.enum(stageValues);
 export const runnerSentinelSchema = z.enum(runnerSentinelValues);
 const agentActionSchema = z.enum(agentActionValues);
 
-export const defaultSmokePrompt = 'This is Eddy, reply with "hi Eddy only"';
+export const defaultAgentIdentity = 'Wake';
+export const defaultSmokePrompt = `This is ${defaultAgentIdentity}, reply with "hi ${defaultAgentIdentity} only"`;
 
 const runnerFailureClassSchema = z.enum(['task', 'quota', 'infra']);
 
@@ -35,8 +36,8 @@ const claudeRunnerSettingsSchema = z.object({
   command: z.string().default('claude'),
   model: z.string().default('haiku'),
   smokeModel: z.string().default('haiku'),
-  sessionName: z.string().default('Eddy'),
-  remoteControlName: z.string().default('Eddy'),
+  sessionName: z.string().default(defaultAgentIdentity),
+  remoteControlName: z.string().default(defaultAgentIdentity),
   smokePrompt: z.string().default(defaultSmokePrompt),
   timeoutMs: z.number().int().positive().default(30 * 60 * 1000),
   remoteControl: z.object({
@@ -342,8 +343,8 @@ export const wakeConfigSchema = z.object({
   }).default({ enabled: false, retainAfterWorkspaceCleanup: false }),
   runners: z.record(z.string(), runnerEntrySchema).default({
     fake: { kind: 'fake', cli: 'Fake' },
-    'claude-haiku': { kind: 'claude', command: 'claude', model: 'haiku', smokeModel: 'haiku', sessionName: 'Eddy', remoteControlName: 'Eddy', smokePrompt: defaultSmokePrompt, timeoutMs: 30 * 60 * 1000, remoteControl: { enabled: false }, models: { default: 'haiku' } },
-    'claude-opus': { kind: 'claude', command: 'claude', model: 'claude-opus-4-8', smokeModel: 'haiku', sessionName: 'Eddy', remoteControlName: 'Eddy', smokePrompt: defaultSmokePrompt, timeoutMs: 30 * 60 * 1000, remoteControl: { enabled: false }, models: { default: 'claude-opus-4-8' } },
+    'claude-haiku': { kind: 'claude', command: 'claude', model: 'haiku', smokeModel: 'haiku', sessionName: defaultAgentIdentity, remoteControlName: defaultAgentIdentity, smokePrompt: defaultSmokePrompt, timeoutMs: 30 * 60 * 1000, remoteControl: { enabled: false }, models: { default: 'haiku' } },
+    'claude-opus': { kind: 'claude', command: 'claude', model: 'claude-opus-4-8', smokeModel: 'haiku', sessionName: defaultAgentIdentity, remoteControlName: defaultAgentIdentity, smokePrompt: defaultSmokePrompt, timeoutMs: 30 * 60 * 1000, remoteControl: { enabled: false }, models: { default: 'claude-opus-4-8' } },
     'codex-mini': { kind: 'codex', command: 'codex', model: 'gpt-5.4-mini', smokeModel: 'gpt-5.4-mini', smokePrompt: defaultSmokePrompt, timeoutMs: 30 * 60 * 1000, models: { default: 'gpt-5.4-mini', implement: 'gpt-5.4-mini' } },
     'codex-flagship': { kind: 'codex', command: 'codex', model: 'gpt-5.5', smokeModel: 'gpt-5.4-mini', smokePrompt: defaultSmokePrompt, timeoutMs: 30 * 60 * 1000, models: { default: 'gpt-5.5', implement: 'gpt-5.5' } },
     'cursor-composer': { kind: 'cursor', command: 'cursor', model: 'composer-2.5', smokeModel: 'auto', smokePrompt: defaultSmokePrompt, timeoutMs: 30 * 60 * 1000, models: { default: 'composer-2.5', implement: 'composer-2.5' } },

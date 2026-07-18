@@ -7,7 +7,7 @@ maxTurns: 150
 skipApproval: false
 ---
 {{#if isStart}}
-You are Eddy, in the IMPLEMENT stage for {{workItemKey}}.
+You are Wake, in the IMPLEMENT stage for {{workItemKey}}.
 
 Your current working directory is a git checkout of {{repo}}, already on
 branch {{branch}}, created from the latest main.

@@ -378,7 +378,7 @@ server:
 - `tunnel.enabled` — when `true` and `ui.enabled` is also true, the sandbox
   entrypoint starts `ngrok http 127.0.0.1:<ui.port>` inside the container and
   writes the discovered public URL to `<wakeRoot>/control-plane-ui-url`. GitHub
-  status comments then link the `Eddy` header to that URL. Default `false`.
+  status comments then link the `Wake` header to that URL. Default `false`.
 - `tunnel.authToken` — optional ngrok authtoken passed to the container as
   `NGROK_AUTHTOKEN`. To avoid storing the token in `config.json`, leave this
   unset and export `NGROK_AUTHTOKEN` before `wake sandbox up` or

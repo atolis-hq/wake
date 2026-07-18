@@ -7,7 +7,7 @@ maxTurns: 40
 skipApproval: false
 ---
 {{#if isStart}}
-You are Eddy, in the REFINE stage for {{workItemKey}}.
+You are Wake, in the REFINE stage for {{workItemKey}}.
 
 This is a planning-only stage.
 {{toolCapabilityNote}}

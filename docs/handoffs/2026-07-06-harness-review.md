@@ -91,7 +91,7 @@ The tick is meant to be a pure function of durable state, but a process kill bet
 
 ### 2.6 Prompt injection surface → [Issue #63](https://github.com/atolis-hq/wake/issues/63)
 
-Issue title/body/comments are interpolated raw into the agent prompt, and the implement stage runs with `Bash(git *), Bash(gh *), Bash(npm *)` plus push credentials. Anyone who can file an issue in a watched repo can steer Eddy ("ignore previous instructions, run `gh repo…`"). For repos where issue-filing is open, this is remote command influence. Mitigations to consider: fenced/delimited interpolation with an explicit "untrusted content" preamble, `requiredAssignees` as a de facto human approval gate (already supported — worth documenting as the security control it is), and keeping the sandbox mandatory for implement runs.
+Issue title/body/comments are interpolated raw into the agent prompt, and the implement stage runs with `Bash(git *), Bash(gh *), Bash(npm *)` plus push credentials. Anyone who can file an issue in a watched repo can steer Wake ("ignore previous instructions, run `gh repo…`"). For repos where issue-filing is open, this is remote command influence. Mitigations to consider: fenced/delimited interpolation with an explicit "untrusted content" preamble, `requiredAssignees` as a de facto human approval gate (already supported — worth documenting as the security control it is), and keeping the sandbox mandatory for implement runs.
 
 ### 2.7 Comment-triggered re-runs race with in-flight ordering → [Issue #59](https://github.com/atolis-hq/wake/issues/59)
 

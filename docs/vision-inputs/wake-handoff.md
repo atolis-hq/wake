@@ -3,8 +3,8 @@
 > raw ideas and framing captured before the vision was settled. It is kept for
 > provenance only. Where it conflicts with [`../vision.md`](../vision.md) or
 > [`../implementation.md`](../implementation.md), those documents win. In
-> particular, the "long-lived, persistent, multi-day worker" framing of Eddy and
-> the parallel-Eddy diagram below have been superseded — see the vision and
+> particular, the "long-lived, persistent, multi-day worker" framing of Wake and
+> the parallel-Wake diagram below have been superseded — see the vision and
 > implementation guide for the accepted model.
 
 # Wake Vision
@@ -55,11 +55,11 @@ Claude, Codex, OpenAI or future models are simply execution engines available to
 
 ---
 
-## Eddy
+## Agent Session
 
-An **Eddy** is a persistent autonomous engineering worker managed by Wake.
+An agent session is a persistent autonomous engineering worker managed by Wake.
 
-An Eddy owns a single objective.
+An agent session owns a single objective.
 
 It may:
 
@@ -73,11 +73,11 @@ It may:
 * resume days later
 * switch between different models
 
-The Eddy maintains the identity.
+Wake maintains the identity.
 
 The underlying model is an implementation detail.
 
-Every issue is ultimately completed by one or more Eddies.
+Every issue is ultimately completed by one or more agent sessions.
 
 ---
 
@@ -89,7 +89,7 @@ Humans create objectives.
 
 Wake determines execution.
 
-Eddies perform the work.
+Agent sessions perform the work.
 
 ---
 
@@ -108,7 +108,7 @@ Eddies perform the work.
           ┌───────┘    │    └────────┐
           ▼            ▼             ▼
       +-------+    +-------+     +-------+
-      | Eddy  |    | Eddy  |     | Eddy  |
+      | Wake  |    | Wake  |     | Wake  |
       +-------+    +-------+     +-------+
           │            │             │
    Claude / Codex / OpenAI / Future Models
@@ -141,13 +141,11 @@ Instead, it creates the conditions for autonomous execution.
 
 ---
 
-# Why "Eddy"?
+# Agent Sessions
 
-An eddy is a small circular current naturally formed by larger flows.
+Wake creates agent sessions.
 
-Wake creates Eddies.
-
-Each Eddy is:
+Each session is:
 
 * autonomous
 * persistent
@@ -155,7 +153,7 @@ Each Eddy is:
 * long-lived
 * capable of adapting as conditions change
 
-Like a real ocean eddy, it forms, performs useful work, exchanges information with the wider system and eventually dissipates once its purpose has been fulfilled.
+Each session forms, performs useful work, exchanges information with the wider system and eventually dissipates once its purpose has been fulfilled.
 
 ---
 
@@ -177,7 +175,7 @@ Wake should orchestrate capability, not vendors.
 
 Engineering work often takes hours or days.
 
-Eddies should survive:
+Agent sessions should survive:
 
 * model usage limits
 * machine restarts
@@ -269,12 +267,12 @@ The Atolis ecosystem separates understanding from execution.
 | --------- | ------------------------------------ |
 | **Corum** | Understand software and architecture |
 | **Wake**  | Change software autonomously         |
-| **Eddy**  | Execute autonomous engineering work  |
+| **Agent sessions** | Execute autonomous engineering work |
 
 Corum provides knowledge.
 
 Wake provides orchestration.
 
-Eddies provide execution.
+Agent sessions provide execution.
 
 Together they create an engineering platform that understands software and continuously improves it.

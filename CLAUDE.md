@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What Wake is
 
-Wake is an autonomous agent control plane for software development. It coordinates local agent execution (`Eddy`) by taking work from external channels (e.g. GitHub issues), deciding the next lifecycle step deterministically, and launching/resuming local agent CLI sessions (Claude Code, Codex) only when agentic execution is actually needed. See `README.md` and `docs/vision.md`/`docs/architecture.md` for the full rationale; this file focuses on what's needed to work in the code.
+Wake is an autonomous agent control plane for software development. It coordinates local agent execution (`Wake`) by taking work from external channels (e.g. GitHub issues), deciding the next lifecycle step deterministically, and launching/resuming local agent CLI sessions (Claude Code, Codex) only when agentic execution is actually needed. See `README.md` and `docs/vision.md`/`docs/architecture.md` for the full rationale; this file focuses on what's needed to work in the code.
 
 ## Commands
 
@@ -77,7 +77,7 @@ Wake owns a `.wake/` (or scaffolded `wake-home/`) directory: `config.json`, `led
 
 ### Claude smoke test
 
-The minimal smoke prompt used by `smoke:claude` is intentionally trivial (`This is Eddy, reply with "hi Eddy only"`) to prove the CLI/session/remote-control plumbing without spending meaningful tokens — don't make it more elaborate.
+The minimal smoke prompt used by `smoke:claude` is intentionally trivial (`This is Wake, reply with "hi Wake only"`) to prove the CLI/session/remote-control plumbing without spending meaningful tokens — don't make it more elaborate.
 
 ## Working within the pluggable architecture
 

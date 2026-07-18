@@ -5,8 +5,8 @@ watches the work channels your team already uses, such as GitHub Issues,
 decides each item's next lifecycle step with deterministic rules, and launches
 local coding-agent CLIs only when agentic execution is actually needed.
 
-Wake is the control plane and decision-maker. Eddy is the execution identity
-Wake launches and manages for a unit of local agentic work.
+Wake is the control plane and decision-maker. It launches and manages local
+agent sessions for each unit of agentic work.
 
 ## The Problem
 

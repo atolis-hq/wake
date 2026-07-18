@@ -91,8 +91,8 @@ it('accepts sandbox configuration and an explicit prompts root', () => {
         command: 'claude',
         model: 'haiku',
         smokeModel: 'haiku',
-        sessionName: 'Eddy',
-        remoteControlName: 'Eddy',
+        sessionName: 'Wake',
+        remoteControlName: 'Wake',
         smokePrompt: 'hi',
         remoteControl: {
           enabled: false,
@@ -186,8 +186,8 @@ export function createDefaultWakeConfig(
         command: 'claude',
         model: 'haiku',
         smokeModel: 'haiku',
-        sessionName: 'Eddy',
-        remoteControlName: 'Eddy',
+        sessionName: 'Wake',
+        remoteControlName: 'Wake',
         smokePrompt: defaultSmokePrompt,
         remoteControl: {
           enabled: false,
