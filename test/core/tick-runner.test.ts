@@ -4446,6 +4446,47 @@ describe('tick runner', () => {
       );
       expect(tick4GithubIntent).toBeDefined();
       expect(tick4GithubIntent?.sourceRefs.resourceUri).toBeUndefined();
+
+      // Fix 1 regression: 'pr.comment.reply.published' (the confirmation
+      // event the PR sink's deliverIntent returns on success, asserted at
+      // line ~4366) must be recognized by
+      // outboundConfirmationEventTypes — otherwise retryUnconfirmedDeliveries
+      // never sees tick 3's PR reply as confirmed and re-delivers it on every
+      // subsequent tick, forever, reposting the same comment to the real PR
+      // thread with no bound. tick 4 above already re-triggered
+      // retryUnconfirmedDeliveries once; a fixed implementation must not have
+      // redelivered tick 3's reply during that pass.
+      expect(prSinkPublished).toHaveLength(1);
+
+      // Step 9: one more tick with no new triggering activity at all (no
+      // fresh comment, no failed run to retry) — the strongest form of the
+      // regression check. If the fix is missing, retryUnconfirmedDeliveries
+      // finds tick 3's PR reply intent still unconfirmed and redelivers it
+      // yet again here.
+      const tickRunner5 = createTickRunner({
+        clock: { now: () => new Date('2026-07-05T12:20:00.000Z') },
+        config,
+        stateStore: store,
+        workSource: createWorkSourceFanIn([
+          { source: 'fake-ticketing', async pollEvents() { return []; } },
+          { source: 'fake-github-pr', async pollEvents() { return []; } },
+        ]),
+        outboundSink,
+        runner: {
+          async run() {
+            throw new Error('no eligible work item should trigger a run on tick 5');
+          },
+        },
+        resourceIndex,
+        workspaceManager,
+        artifactVerifier,
+      });
+
+      await tickRunner5.runTick();
+
+      // Still exactly one PR-sink delivery across all five ticks: tick 3's
+      // reply was never redelivered by any later tick's outbox retry.
+      expect(prSinkPublished).toHaveLength(1);
     });
   });
 });

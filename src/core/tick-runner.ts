@@ -924,6 +924,8 @@ export function createTickRunner(deps: {
     'ticket.reply.published',
     'ticket.labels.updated',
     'wake.publish.confirmed',
+    'pr.comment.reply.published',
+    'pr.review-comment.reply.published',
   ]);
 
   // Adopts the outbox pattern: an intent is only considered delivered once a
