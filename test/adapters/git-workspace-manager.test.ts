@@ -235,7 +235,7 @@ describe('git workspace manager', () => {
     expect(mergeConflictDetected).toBe(false);
   }, 20_000);
 
-  it('returns mergeConflictDetected: false and does not auto-merge when default branch is ahead with no conflicts', async () => {
+  it('pulls latest default-branch changes into an existing clean workspace', async () => {
     const wakeRoot = join(root, '.wake');
     const manager = createGitWorkspaceManager({
       wakeRoot,
@@ -254,14 +254,16 @@ describe('git workspace manager', () => {
     await git(['-C', seedPath, 'commit', '-m', 'add newfile'], root);
     await git(['-C', seedPath, 'push', 'origin', 'main'], root);
 
-    const { mergeConflictDetected } = await manager.prepareWorkspace({
+    const { mergeConflictDetected, upstreamChanges } = await manager.prepareWorkspace({
       repo: 'acme/example',
       issueNumber: 42,
     });
 
     expect(mergeConflictDetected).toBe(false);
-    // No auto-merge — workspace is unchanged, agent merges if they choose to
-    await expect(access(join(workspacePath, 'newfile.txt'))).rejects.toThrow();
+    expect(upstreamChanges).toContain('add newfile');
+    expect(upstreamChanges).toContain('Wake Test <wake@example.test>');
+    const newFile = await readFile(join(workspacePath, 'newfile.txt'), 'utf8');
+    expect(newFile).toBe('new content\n');
   }, 20_000);
 
   it('skips merge update when workspace has pending changes', async () => {

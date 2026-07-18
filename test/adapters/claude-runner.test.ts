@@ -315,6 +315,21 @@ describe('claude runner command building', () => {
     expect(result.prompt).toContain('/question What did you change?');
   });
 
+  it('adds pulled upstream commit details to the trusted harness prompt', async () => {
+    const result = await buildStagePrompt({
+      action: 'implement',
+      mode: 'resume',
+      projection: baseProjection,
+      upstreamChanges: 'abc1234 2026-07-18 Wake Test <wake@example.test>\n    Add latest feature',
+    });
+
+    expect(result.harnessPrompt).toContain('Upstream update notice:');
+    expect(result.harnessPrompt).toContain('Before resuming this session, Wake pulled');
+    expect(result.harnessPrompt).toContain('abc1234 2026-07-18 Wake Test <wake@example.test>');
+    expect(result.harnessPrompt).toContain('Add latest feature');
+    expect(result.prompt).not.toContain('Upstream update notice:');
+  });
+
   it('start prompts make new comments prominent while preserving prior comment context', async () => {
     const result = await buildStagePrompt({
       action: 'implement',
