@@ -336,7 +336,7 @@ async function runTick(args: string[]) {
   const outcome = await runtime.tickRunner.runTick();
   console.log(JSON.stringify(outcome, null, 2));
 
-  if (outcome.status !== 'processed' || outcome.sentinel !== 'FAILED') {
+  if (outcome.status !== 'processed' || outcome.sentinel !== 'FAILED' || outcome.runId === undefined) {
     return;
   }
 

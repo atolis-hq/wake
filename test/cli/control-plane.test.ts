@@ -172,4 +172,39 @@ describe('control plane', () => {
     // idle, idle (backed off) -> processed (no sleep, resets) -> idle back at base interval
     expect(sleepCalls).toEqual([1000, 2000, 1000]);
   });
+
+  it('keeps intake ticking while a runner tick is still active', async () => {
+    let resolveRunner: ((value: { status: string }) => void) | undefined;
+    let sleepCalls = 0;
+
+    const tickRunner = {
+      runTick: vi.fn(),
+      runIntakeTick: vi.fn().mockResolvedValue({ status: 'idle' }),
+      runRunnerTick: vi.fn().mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveRunner = resolve;
+          }),
+      ),
+    };
+
+    const controlPlane = createControlPlane({
+      tickRunner,
+      intervalMs: 1,
+      isPaused: () => false,
+      logger: { info() {}, error() {} },
+      sleep: async () => {
+        sleepCalls++;
+        if (sleepCalls >= 2) {
+          controlPlane.stop();
+          resolveRunner?.({ status: 'processed' });
+        }
+      },
+    });
+
+    await controlPlane.start();
+
+    expect(tickRunner.runRunnerTick).toHaveBeenCalledTimes(1);
+    expect(tickRunner.runIntakeTick.mock.calls.length).toBeGreaterThan(1);
+  });
 });

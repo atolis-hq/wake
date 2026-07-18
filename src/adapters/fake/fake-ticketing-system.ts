@@ -112,10 +112,33 @@ export function createFakeTicketingSystem(options: {
       const publishedAt = (options.now ?? (() => new Date()))().toISOString();
 
       if (input.event.sourceEventType === 'wake.labels.requested') {
+        const ticket = options.tickets.find(
+          (issue) =>
+            issue.repo === input.event.sourceRefs.repo &&
+            issue.number === input.event.sourceRefs.issueNumber,
+        );
+        const currentLabels = ticket?.labels ?? [];
+        const statusLabel =
+          typeof input.event.payload.statusLabel === 'string'
+            ? input.event.payload.statusLabel
+            : undefined;
+        const stageLabel =
+          typeof input.event.payload.stageLabel === 'string'
+            ? input.event.payload.stageLabel
+            : undefined;
         const labels = [
-          input.event.payload.statusLabel,
-          input.event.payload.stageLabel,
-        ].filter((label): label is string => typeof label === 'string');
+          ...currentLabels.filter(
+            (label) =>
+              !label.startsWith('wake:status.') &&
+              !label.startsWith('wake:stage.'),
+          ),
+          ...(statusLabel === undefined
+            ? currentLabels.filter((label) => label.startsWith('wake:status.'))
+            : [statusLabel]),
+          ...(stageLabel === undefined
+            ? currentLabels.filter((label) => label.startsWith('wake:stage.'))
+            : [stageLabel]),
+        ];
 
         return [
           createEventEnvelope({

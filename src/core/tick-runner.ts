@@ -28,12 +28,20 @@ import {
 } from '../domain/schema.js';
 import { maxConfiguredRunnerTimeoutMs, resolveRunnerRouting } from '../domain/runner-routing.js';
 import { awaitingApprovalRunnerSentinel, stageLabelForStage } from '../domain/stages.js';
-import type { AgentAction, EventEnvelope, IssueStateRecord, RunRecord, WakeConfig } from '../domain/types.js';
+import type { AgentAction, EventEnvelope, IssueStateRecord, RunRecord, Stage, WakeConfig } from '../domain/types.js';
 import { createEventEnvelope } from '../lib/event-log.js';
 import { branchNameForIssue } from '../domain/branch-naming.js';
 import { resolveQuotaPauseUntil } from './quota-backoff.js';
 
 type ParsedRunnerResult = ReturnType<typeof parseRunnerResult>;
+type TickOutcome =
+  | { status: 'locked' | 'idle' }
+  | {
+      status: 'processed';
+      runId?: string;
+      sentinel?: 'DONE' | 'BLOCKED' | 'FAILED' | 'AWAITING_APPROVAL';
+      nextStage?: Stage | null;
+    };
 
 // A resolved inbound event plus whether it is already on record. `persisted`
 // events are folded but not re-appended (appendEventEnvelope would only re-read
@@ -998,16 +1006,46 @@ export function createTickRunner(deps: {
     }
   }
 
-  return {
-    async runTick() {
-      const lock = await acquireFileLock(deps.stateStore.paths.tickLockFile, {
-        staleAfterMs: runnerTimeoutMs(),
-      });
-      if (!lock.acquired) {
-        return { status: 'locked' as const };
+  async function runIntakeTick(): Promise<TickOutcome> {
+    const lock = await acquireFileLock(deps.stateStore.paths.tickLockFile, {
+      staleAfterMs: Math.min(runnerTimeoutMs(), 5 * 60 * 1000),
+    });
+    if (!lock.acquired) {
+      return { status: 'locked' as const };
+    }
+
+    try {
+      const tickStartedAt = deps.clock.now();
+      await reconcileStaleRunningRecords(tickStartedAt);
+      await retryUnconfirmedDeliveries();
+      const watchlistProjections = await deps.stateStore.listIssueStates();
+      const inboundEvents = await ingestInboundEvents(
+        await deps.workSource.pollEvents({ watch: deriveWatchlist(watchlistProjections) }),
+      );
+
+      const projections = await deps.stateStore.listIssueStates();
+      await cleanupClosedIssueWorkspaces(projections);
+      if (inboundEvents.length > 0) {
+        await markPendingActionableIssues(projections);
       }
 
-      try {
+      return {
+        status: inboundEvents.length > 0 ? 'processed' as const : 'idle' as const,
+      };
+    } finally {
+      await lock.release();
+    }
+  }
+
+  async function runRunnerTick(): Promise<TickOutcome> {
+    const lock = await acquireFileLock(deps.stateStore.paths.runnerLockFile, {
+      staleAfterMs: runnerTimeoutMs(),
+    });
+    if (!lock.acquired) {
+      return { status: 'locked' as const };
+    }
+
+    try {
         // The tick's *decision* clock: one consistent "now" for staleness and
         // policy, so a single tick's decisions can't disagree with themselves.
         // It is deliberately NOT an event-stamping clock — see eventStampNow().
@@ -1016,17 +1054,8 @@ export function createTickRunner(deps: {
         const tickStartedAt = deps.clock.now();
         const nowIso = tickStartedAt.toISOString();
         await reconcileStaleRunningRecords(tickStartedAt);
-        await retryUnconfirmedDeliveries();
-        const watchlistProjections = await deps.stateStore.listIssueStates();
-        const inboundEvents = await ingestInboundEvents(
-          await deps.workSource.pollEvents({ watch: deriveWatchlist(watchlistProjections) }),
-        );
 
         const projections = await deps.stateStore.listIssueStates();
-        await cleanupClosedIssueWorkspaces(projections);
-        if (inboundEvents.length > 0) {
-          await markPendingActionableIssues(projections);
-        }
 
         const candidate = projections.find((issue) => {
           if (!policy.isEligible(issue, deps.config)) {
@@ -1462,9 +1491,22 @@ export function createTickRunner(deps: {
             nextStage: null,
           };
         }
-      } finally {
-        await lock.release();
+    } finally {
+      await lock.release();
+    }
+  }
+
+  return {
+    runIntakeTick,
+    runRunnerTick,
+    async runTick(): Promise<TickOutcome> {
+      const intakeResult = await runIntakeTick();
+      if (intakeResult.status === 'locked') {
+        return intakeResult;
       }
+
+      const runnerResult = await runRunnerTick();
+      return runnerResult;
     },
   };
 }
