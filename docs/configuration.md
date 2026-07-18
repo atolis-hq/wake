@@ -1,6 +1,6 @@
 # Configuration
 
-Wake's behavior is configured through a `configuration.json` file located at `.wake/configuration.json`. This document describes the configuration structure, properties, and defaults.
+Wake's behavior is configured through a `config.json` file located at `.wake/config.json`. This document describes the configuration structure, properties, and defaults.
 
 ## Overview
 
@@ -138,6 +138,10 @@ example `prompts/refine.md`. Wake passes `mode`, `isStart`, and `isResume` into
 the template so start/resume wording can branch inside one file. Legacy
 `<action>.start.md` and `<action>.resume.md` files are still read when no
 combined `<action>.md` file exists.
+
+Workflow stages reference these prompt templates through their `action` field.
+For a workflow-focused guide, including how workflows are selected and how stage
+transitions work, see [docs/workflows.md](workflows.md).
 
 ### sandbox
 
@@ -498,7 +502,7 @@ the repository that Wake did not create.
 
 ## Loading and Merging
 
-Wake loads configuration from `.wake/configuration.json` relative to the current working directory. If the file does not exist, Wake uses built-in defaults. Configuration is merged with defaults, so you only need to specify the properties you want to override.
+Wake loads configuration from `.wake/config.json` relative to the current working directory. If the file does not exist, Wake uses built-in defaults. Configuration is merged with defaults, so you only need to specify the properties you want to override.
 
 For sandbox debugging, `wake sandbox logs` tails Docker container logs for the durable sandbox. Wake keeps structured run/event records durably, but raw sandbox stdout/stderr is treated as container log output rather than a Wake-managed on-disk archive.
 
