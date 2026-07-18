@@ -116,7 +116,7 @@ export async function runStartupPreflight(
         const message = error instanceof Error ? error.message : String(error);
         const root = config.paths.promptsRoot ?? '(bundled prompts)';
         failures.push(
-          `prompt template ${action}.${mode}.md under ${root} is not readable: ${message}`,
+          `prompt template ${action}.md or ${action}.${mode}.md under ${root} is not readable: ${message}`,
         );
       }
     }

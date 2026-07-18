@@ -20,13 +20,11 @@ function baseConfig(): WakeConfig {
 
 async function writePromptSet(root: string): Promise<void> {
   for (const action of ['refine', 'implement']) {
-    for (const mode of ['start', 'resume']) {
-      await writeFile(
-        join(root, `${action}.${mode}.md`),
-        `---\nstage: ${action}\nmode: ${mode}\nmaxTurns: 1\n---\n${action} ${mode}`,
-        'utf8',
-      );
-    }
+    await writeFile(
+      join(root, `${action}.md`),
+      `---\nstage: ${action}\nmaxTurns: 1\n---\n${action} {{mode}}`,
+      'utf8',
+    );
   }
 }
 
@@ -51,7 +49,7 @@ describe('startup preflight', () => {
     };
 
     await expect(runStartupPreflight(config)).rejects.toThrow(
-      /Wake startup preflight failed:[\s\S]*prompt template refine\.resume\.md/,
+      /Wake startup preflight failed:[\s\S]*prompt template refine\.md or refine\.resume\.md/,
     );
   });
 

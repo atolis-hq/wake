@@ -125,6 +125,12 @@ Runtime and storage directories.
 | `wakeRoot` | string | Root directory where Wake stores state, fixtures, and persistent data | `.wake` |
 | `promptsRoot` | string (optional) | Explicit prompt-template root; defaults to `<wakeRoot>/prompts` | `<wakeRoot>/prompts` |
 
+Prompt templates are Handlebars markdown files named `prompts/<action>.md`, for
+example `prompts/refine.md`. Wake passes `mode`, `isStart`, and `isResume` into
+the template so start/resume wording can branch inside one file. Legacy
+`<action>.start.md` and `<action>.resume.md` files are still read when no
+combined `<action>.md` file exists.
+
 ### sandbox
 
 Docker sandbox settings for the durable Wake container.

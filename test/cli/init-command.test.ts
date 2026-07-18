@@ -7,12 +7,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { runInitCommand } from '../../src/cli/init-command.js';
 
 describe('init command', () => {
-  const promptFiles = [
-    'refine.start.md',
-    'refine.resume.md',
-    'implement.start.md',
-    'implement.resume.md',
-  ] as const;
+  const promptFiles = ['refine.md', 'implement.md'] as const;
   const dockerAssets = ['Dockerfile', 'setup.sh', 'log-command.sh'] as const;
   const launcherScripts = ['wake.sh', 'wake.ps1'] as const;
   const runtimeDirectories = [
@@ -91,7 +86,7 @@ describe('init command', () => {
     }
 
     expect(
-      await readFile(join(result.wakeRoot, 'prompts', 'refine.start.md'), 'utf8'),
+      await readFile(join(result.wakeRoot, 'prompts', 'refine.md'), 'utf8'),
     ).toContain('stage: refine');
 
     for (const dockerAsset of dockerAssets) {

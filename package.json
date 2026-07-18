@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@octokit/rest": "^22.0.0",
+    "handlebars": "^4.7.9",
     "zod": "^4.1.5"
   },
   "devDependencies": {

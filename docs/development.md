@@ -77,7 +77,8 @@ npx tsx src/main.ts init "$WAKE_HOME"
 That creates a self-contained home with:
 
 - `config.json`
-- `prompts/`
+- `prompts/` with one Handlebars template per action, such as `refine.md`
+  and `implement.md`
 - `docker/Dockerfile`
 - `docker/setup.sh`
 - `events/`, `state/`, `runs/`, `workspaces/`, `repos/`, `sources/`, `locks/`
