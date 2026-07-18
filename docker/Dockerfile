@@ -43,7 +43,8 @@ RUN --mount=type=cache,target=/root/.npm \
   if [ -f package-lock.json ]; then npm ci; else npm install; fi
 
 COPY . .
-RUN npm run build && chmod +x docker/entrypoint.sh
+ARG WAKE_BUILD_TAG
+RUN WAKE_BUILD_TAG="$WAKE_BUILD_TAG" npm run build && chmod +x docker/entrypoint.sh
 
 USER wake
 WORKDIR /home/wake

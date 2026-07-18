@@ -33,6 +33,7 @@ import { createOutboundSinkRouter, createWorkSourceFanIn } from './core/sink-rou
 import { createTickRunner } from './core/tick-runner.js';
 import { systemClock } from './lib/clock.js';
 import { configuredTicketSource } from './domain/sources.js';
+import { wakeVersion } from './version.js';
 import type { RunRecord, WakeConfig } from './domain/types.js';
 
 function commandArgsBeforeTerminator(args: string[]): string[] {
@@ -432,6 +433,11 @@ export async function dispatchMainCommand(input: {
   runCorrelate: (args: string[]) => Promise<unknown>;
 }) {
   const command = input.args[0] ?? 'tick';
+  if (command === '--version' || command === '-v' || command === 'version') {
+    console.log(wakeVersion);
+    return;
+  }
+
   if (command === 'tick') {
     await input.runTick(input.args.slice(1));
     return;

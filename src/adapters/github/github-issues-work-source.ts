@@ -6,6 +6,7 @@ import type { EventEnvelope, IssueStateRecord, WakeConfig } from '../../domain/t
 import { buildResourceUri } from '../../domain/resource-uri.js';
 import { wakeStageLabelPrefix } from '../../domain/stages.js';
 import { createEventEnvelope, createUnkeyedEventEnvelope } from '../../lib/event-log.js';
+import { wakeVersion } from '../../version.js';
 import { buildResumeCommandForCli } from '../runner/runner-cli-adapter.js';
 
 const wakeStatusLabelPrefix = 'wake:status.';
@@ -263,7 +264,7 @@ function formatWakeComment(payload: Record<string, unknown>, controlPlaneUrl?: s
   ].filter((part): part is string => part !== undefined);
 
   const name = controlPlaneUrl === undefined ? 'Eddy' : `[Eddy](${controlPlaneUrl})`;
-  const header = `**${name}** _(Wake${details.length > 0 ? ` · ${details.join(' · ')}` : ''})_`;
+  const header = `**${name}** _(Wake ${wakeVersion}${details.length > 0 ? ` · ${details.join(' · ')}` : ''})_`;
   const sections = [wakeCommentMarker, header, body];
 
   if (kind === 'approval-request') {

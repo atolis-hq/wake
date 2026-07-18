@@ -811,6 +811,7 @@ describe('github issues work source', () => {
 
     const [, , , postedBody] = createComment.mock.calls[0] as [string, string, number, string];
     expect(postedBody).toContain('**Eddy**');
+    expect(postedBody).toContain('Wake 0.1.0-dev');
     expect(postedBody).toContain('stage `implement`');
     expect(postedBody).toContain('cli Claude');
     expect(postedBody).toContain('model `haiku`');

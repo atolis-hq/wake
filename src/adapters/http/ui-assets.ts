@@ -1,3 +1,5 @@
+import { wakeVersion } from '../../version.js';
+
 export const indexHtml = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -9,6 +11,7 @@ export const indexHtml = `<!DOCTYPE html>
   body { font-family: -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; background: #14161a; color: #e8e8e8; }
   header { display: flex; align-items: center; gap: 1rem; padding: 0.6rem 1rem; background: #1d2026; border-bottom: 1px solid #2c313a; flex-wrap: wrap; }
   header h1 { font-size: 1rem; margin: 0; font-weight: 600; }
+  .version { color: #9aa2ad; font-size: 0.78rem; }
   .pill { padding: 0.15rem 0.5rem; border-radius: 999px; font-size: 0.75rem; font-weight: 600; }
   .pill-idle { background: #1f3d2c; color: #7fe3a3; }
   .pill-ticking { background: #1f3350; color: #7fb3ff; }
@@ -45,6 +48,7 @@ export const indexHtml = `<!DOCTYPE html>
 <body>
 <header>
   <h1>Wake control plane</h1>
+  <span class="version">${wakeVersion}</span>
   <span id="loop-pill" class="pill">…</span>
   <span id="status-summary" class="meta"></span>
 </header>
