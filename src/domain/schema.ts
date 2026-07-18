@@ -178,6 +178,19 @@ export const CORRELATION_REGISTERED_EVENT = 'wake.correlation.registered';
 export const CORRELATION_RETRACTED_EVENT = 'wake.correlation.retracted';
 export const CORRELATION_PRIMARY_CONFLICT_EVENT = 'wake.correlation.primary-conflict';
 
+/**
+ * Shared key for events whose resource failed mint qualification (spec D1').
+ * Never a real work item: `readIssueState(UNRESOLVED_WORK_ITEM_KEY)` always
+ * returns null, so these events are durable and inspectable via the event
+ * log but must never materialize a projection or an index entry. Exported
+ * from here (rather than only living in tick-runner.ts, which mints these
+ * events) so projection-updater.ts's fold can also recognize and skip it —
+ * an unqualified event's sourceEventType is still `ticket.upsert` /
+ * `fake.issue.upsert` / etc., which the fold would otherwise happily turn
+ * into a projection the first time it sees this key with no current record.
+ */
+export const UNRESOLVED_WORK_ITEM_KEY = 'unresolved';
+
 // The envelope's `workItemKey` already carries the identity; this payload is
 // deliberately empty.
 export const workItemCreatedPayloadSchema = z.object({});

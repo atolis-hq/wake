@@ -233,7 +233,14 @@ export function createPolicyEngine() {
       const kind = resourceUri.split(':')[1];
 
       if (kind === 'issue') {
-        const ticket = unresolved.payload.ticket as
+        // Real github source stamps payload.ticket (sourceEventType
+        // 'ticket.upsert'); the fake ticketing harness stamps payload.issue
+        // (sourceEventType 'fake.issue.upsert') — the same dual-key
+        // recognition projection-updater.ts's createProjectionFromIssueEvent
+        // already applies when folding these into a projection. Qualification
+        // must accept both or the fake never qualifies anything, which would
+        // silently defeat every fixture that exercises minting through it.
+        const ticket = (unresolved.payload.ticket ?? unresolved.payload.issue) as
           | { labels?: unknown; assignees?: unknown }
           | undefined;
         if (ticket === undefined) {

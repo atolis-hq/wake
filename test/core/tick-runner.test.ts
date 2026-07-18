@@ -18,7 +18,7 @@ import {
   WORK_ITEM_CREATED_EVENT,
 } from '../../src/domain/schema.js';
 import type { IssueStateRecord } from '../../src/domain/types.js';
-import { createEventEnvelope } from '../../src/lib/event-log.js';
+import { createEventEnvelope, createUnkeyedEventEnvelope } from '../../src/lib/event-log.js';
 import { isWorkId } from '../../src/lib/work-id.js';
 
 /**
@@ -66,6 +66,62 @@ async function seededResourceIndex(issueNumbers: number[]) {
     await resourceIndex.register(githubIssueUri(issueNumber), workId(issueNumber));
   }
   return resourceIndex;
+}
+
+/**
+ * A single ticket.upsert-shaped inbound event, carrying payload.ticket — the
+ * shape the real github-issues-work-source stamps (and the shape
+ * policy.qualifiesForMint reads for 'issue'-kind resources). The fake
+ * ticketing harness (createFakeTicketingSystem) stamps payload.issue under
+ * sourceEventType 'fake.issue.upsert' instead, so it cannot exercise the
+ * qualification gate directly — this builds the real shape.
+ */
+function ticketUpsertWorkSource(input: {
+  repo: string;
+  issueNumber: number;
+  labels: string[];
+  now: Date;
+}) {
+  const nowIso = input.now.toISOString();
+  const sourceUrl = `https://example.test/${input.repo}/issues/${input.issueNumber}`;
+
+  return {
+    async pollEvents() {
+      return [
+        createUnkeyedEventEnvelope({
+          eventId: `ticket-upsert-${input.repo}-${input.issueNumber}`,
+          streamScope: 'global-intake',
+          direction: 'inbound',
+          sourceSystem: 'github',
+          sourceEventType: 'ticket.upsert',
+          sourceRefs: {
+            repo: input.repo,
+            issueNumber: input.issueNumber,
+            sourceUrl,
+            resourceUri: githubIssueUri(input.issueNumber),
+          },
+          occurredAt: nowIso,
+          ingestedAt: nowIso,
+          trigger: 'immediate',
+          payload: {
+            ticket: {
+              repo: input.repo,
+              number: input.issueNumber,
+              title: 'Ticket',
+              body: 'Body',
+              labels: input.labels,
+              assignees: [],
+              isPullRequest: false,
+              state: 'open',
+              url: sourceUrl,
+              createdAt: nowIso,
+              updatedAt: nowIso,
+            },
+          },
+        }),
+      ];
+    },
+  };
 }
 
 describe('tick runner', () => {
@@ -3710,6 +3766,93 @@ describe('tick runner', () => {
       expect(
         projection?.correlatedResources.some((r) => r.resourceUri === 'github:pr:org/repo#91'),
       ).toBe(false);
+    });
+  });
+
+  describe('mint qualification gate', () => {
+    it('parks an unqualified unresolved event in global-intake instead of minting', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const config = createDefaultWakeConfig(root);
+      config.sources.github.policy.requiredLabels = ['wake:assign'];
+
+      const now = new Date('2026-07-05T12:00:00.000Z');
+
+      const tickRunner = createTickRunner({
+        clock: { now: () => now },
+        config,
+        stateStore: store,
+        workSource: ticketUpsertWorkSource({
+          repo: 'atolis-hq/wake',
+          issueNumber: 501,
+          labels: [],
+          now,
+        }),
+        runner: {
+          async run() {
+            throw new Error('runner must not be invoked for an unqualified event');
+          },
+        },
+        resourceIndex: createFakeResourceIndex(),
+        workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+      });
+
+      const outcome = await tickRunner.runTick();
+      expect(outcome.status).toBe('idle');
+
+      const projections = await store.listIssueStates();
+      expect(projections).toHaveLength(0);
+
+      // listEventEnvelopesForWorkItem reads recentEventIds off a projection,
+      // which the 'unresolved' sentinel key never has — read the raw JSONL
+      // event log directly instead, the same pattern used elsewhere in this
+      // file (e.g. "creates event audit records for sync and completion").
+      const lines = (await readFile(join(root, 'events', '2026-07-05.jsonl'), 'utf8'))
+        .split('\n')
+        .filter(Boolean)
+        .map(
+          (line) =>
+            JSON.parse(line) as {
+              workItemKey: string;
+              sourceRefs: { resourceUri?: string };
+            },
+        );
+      const unresolvedEvents = lines.filter((event) => event.workItemKey === 'unresolved');
+
+      expect(unresolvedEvents).toHaveLength(1);
+      expect(unresolvedEvents[0]?.sourceRefs.resourceUri).toBe(githubIssueUri(501));
+    });
+
+    it('still mints a work item for a qualifying unresolved event', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const config = createDefaultWakeConfig(root);
+      config.sources.github.policy.requiredLabels = ['wake:queue'];
+
+      const now = new Date('2026-07-05T12:00:00.000Z');
+
+      const tickRunner = createTickRunner({
+        clock: { now: () => now },
+        config,
+        stateStore: store,
+        workSource: ticketUpsertWorkSource({
+          repo: 'atolis-hq/wake',
+          issueNumber: 502,
+          labels: ['wake:queue'],
+          now,
+        }),
+        runner: {
+          async run() {
+            return { result: 'DONE', model: 'test-model', cli: 'test-cli' };
+          },
+        },
+        resourceIndex: createFakeResourceIndex(),
+        workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+      });
+
+      const outcome = await tickRunner.runTick();
+      expect(outcome.status).not.toBe('idle');
+
+      const projections = await store.listIssueStates();
+      expect(projections).toHaveLength(1);
     });
   });
 });

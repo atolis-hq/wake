@@ -21,6 +21,7 @@ import { acquireFileLock } from '../lib/lock.js';
 import { createWorkId } from '../lib/work-id.js';
 import {
   CORRELATION_REGISTERED_EVENT,
+  UNRESOLVED_WORK_ITEM_KEY,
   WORK_ITEM_CREATED_EVENT,
   parseRunnerArtifacts,
   parseRunnerResult,
@@ -494,6 +495,7 @@ export function createTickRunner(deps: {
       // record, and must not be silently re-registered.
       const owner = await deps.resourceIndex.resolve(resourceUri);
       if (
+        persisted.workItemKey !== UNRESOLVED_WORK_ITEM_KEY &&
         owner === undefined &&
         (await deps.stateStore.readEventEnvelope(
           `${persisted.workItemKey}-origin-correlation`,
@@ -514,6 +516,15 @@ export function createTickRunner(deps: {
       return [
         {
           envelope: createEventEnvelope({ ...unkeyed, workItemKey: existingWorkItemKey }),
+          persisted: false,
+        },
+      ];
+    }
+
+    if (!policy.qualifiesForMint(unkeyed, deps.config)) {
+      return [
+        {
+          envelope: createEventEnvelope({ ...unkeyed, workItemKey: UNRESOLVED_WORK_ITEM_KEY }),
           persisted: false,
         },
       ];
