@@ -13,6 +13,7 @@ import {
   parseRunRecord,
   parseRunnerResult,
   parseRunnerResultSentinel,
+  parseRunnerArtifacts,
   workItemCreatedPayloadSchema,
   CORRELATION_PRIMARY_CONFLICT_EVENT,
   CORRELATION_REGISTERED_EVENT,
@@ -860,5 +861,35 @@ describe('run and event schemas', () => {
     });
 
     expect(config.sources.github.policy.requiredAssignees).toEqual(['octocat']);
+  });
+});
+
+describe('parseRunnerArtifacts', () => {
+  it('parses a wake-artifacts fence', () => {
+    const result = [
+      'I opened a PR.',
+      '',
+      '```wake-artifacts',
+      '{ "artifacts": [{ "kind": "pr", "url": "https://github.com/org/repo/pull/91" }] }',
+      '```',
+      '',
+      '```wake-result',
+      '{ "status": "AWAITING_APPROVAL" }',
+      '```',
+      'AWAITING_APPROVAL',
+    ].join('\n');
+
+    expect(parseRunnerArtifacts(result)).toEqual({
+      artifacts: [{ kind: 'pr', url: 'https://github.com/org/repo/pull/91' }],
+    });
+  });
+
+  it('returns no artifacts when the fence is absent', () => {
+    expect(parseRunnerArtifacts('Nothing to report.\n\nDONE')).toEqual({ artifacts: [] });
+  });
+
+  it('returns no artifacts when the fence is malformed', () => {
+    const result = ['```wake-artifacts', 'not json', '```', 'DONE'].join('\n');
+    expect(parseRunnerArtifacts(result)).toEqual({ artifacts: [] });
   });
 });

@@ -9,6 +9,7 @@ import {
   eventEnvelopeSchema,
   issueStateRecordSchema,
   ledgerSchema,
+  reportedArtifactSchema,
   runRecordSchema,
   sourceStateRecordSchema,
   wakeConfigSchema,
@@ -51,3 +52,4 @@ export type CorrelationRegisteredPayload = z.infer<typeof correlationRegisteredP
 export type CorrelationRetractedPayload = z.infer<typeof correlationRetractedPayloadSchema>;
 export type CorrelationPrimaryConflictPayload = z.infer<typeof correlationPrimaryConflictPayloadSchema>;
 export type CorrelatedResource = z.infer<typeof correlatedResourceSchema>;
+export type ReportedArtifact = z.infer<typeof reportedArtifactSchema>;

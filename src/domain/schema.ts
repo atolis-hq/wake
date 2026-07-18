@@ -13,6 +13,15 @@ import {
 } from './resource-uri.js';
 
 const isoTimestampSchema = z.string().datetime({ offset: true });
+
+export const reportedArtifactSchema = z.object({
+  kind: z.literal('pr'),
+  url: z.string().url(),
+});
+
+export const wakeArtifactsEnvelopeSchema = z.object({
+  artifacts: z.array(reportedArtifactSchema).default([]),
+});
 const stageSchema = z.enum(stageValues);
 export const runnerSentinelSchema = z.enum(runnerSentinelValues);
 const agentActionSchema = z.enum(agentActionValues);
@@ -538,6 +547,27 @@ export function parseRunnerResult(
     body,
     envelope: 'degraded',
   };
+}
+
+export function parseRunnerArtifacts(result: string): z.infer<typeof wakeArtifactsEnvelopeSchema> {
+  const fencePattern = /^```wake-artifacts[^\n]*\n([\s\S]*?)^```[ \t]*$/gm;
+  let lastMatch: RegExpExecArray | null = null;
+  let match: RegExpExecArray | null;
+
+  while ((match = fencePattern.exec(result)) !== null) {
+    lastMatch = match;
+  }
+
+  if (lastMatch === null) {
+    return { artifacts: [] };
+  }
+
+  try {
+    const parsed = wakeArtifactsEnvelopeSchema.safeParse(JSON.parse(lastMatch[1] ?? '{}'));
+    return parsed.success ? parsed.data : { artifacts: [] };
+  } catch {
+    return { artifacts: [] };
+  }
 }
 
 export function parseRunnerResultSentinel(
