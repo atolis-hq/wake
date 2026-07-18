@@ -26,10 +26,12 @@ This is not a plugin system. Do not build hooks, middleware, or a scripting laye
 Issue #64 should now be scoped as a small evolution of the current `stages`
 configuration, not as a second workflow language with distinct "steps" and
 "stages". Wake already treats the stage name as the durable workflow position
-(`queue`, `implement`, `done`) and uses `config.stages[stage]` for route data
-such as `action`, `tier`, and `runner`. The next shape should keep that single
-identifier: a workflow is an ordered set of named stages, and the stage key is
-the convention anchor for related prompt templates and stage-specific files.
+and uses `config.stages[stage]` for route data such as `action`, `tier`, and
+`runner`. The next shape should keep that single identifier: a workflow is an
+ordered set of named runnable stages, and the stage key is the convention anchor
+for related prompt templates and stage-specific files. `queue` stays the
+universal intake stage before workflow-specific work begins, and `done` stays
+the universal completed terminal stage.
 
 Sketch (zod-validated, lives in config):
 
@@ -37,9 +39,8 @@ Sketch (zod-validated, lives in config):
 {
   "workflows": {
     "default": {
-      "entryStage": "queue",
       "stages": {
-        "queue": {
+        "refine": {
           "action": "refine",
           "workspace": "read-only",
           "tier": "light",
@@ -50,8 +51,7 @@ Sketch (zod-validated, lives in config):
           "workspace": "branch",
           "tier": "standard",
           "onDone": "done"
-        },
-        "done": { "terminal": true }
+        }
       }
     }
   }
@@ -63,19 +63,24 @@ Key vocabulary decisions:
 - **The stage name is the workflow step id.** There is no separate `step` object
   or `stepId` field. Durable projection state, `wake:stage.<name>` labels,
   stage history entries, and workflow config all speak the same stage name.
+- **`queue` is implicit.** Every workflow starts in the universal queue stage,
+  then moves to the first configured stage. Workflow JSON should not define
+  `queue`, set an `entryStage: "queue"`, or use `queue` as an `onDone` target.
+- **`done` is implicit.** Workflow JSON should not define a `done` stage.
+  `onDone: "done"` is the universal terminal completion transition.
 - **A stage's `action` is a prompt-template name.** `action: "reproduce"` means
   `prompts/reproduce.md` must exist. If a stage omits `action`, the loader may
   default to the stage name when that prompt exists; otherwise it must fail
-  early unless the stage is terminal. Adding a stage = adding a template + a
-  config entry, zero code. The template can branch on start/resume mode with
-  Handlebars context such as `isStart` and `isResume`.
+  early. Adding a stage = adding a template + a config entry, zero code. The
+  template can branch on start/resume mode with Handlebars context such as
+  `isStart` and `isResume`.
 - **`onDone` is the only transition a workflow defines.** `BLOCKED` and `FAILED` are *universal pseudo-states*, not per-workflow stages: BLOCKED parks the item until a human replies (which routes back to the stage that blocked — see 1.3), FAILED parks it terminally until a human replies. Letting workflows redefine blocked/failed semantics buys nothing and breaks the uniform unblock story.
 - **The status vocabulary (`DONE`, `BLOCKED`, `FAILED`, `AWAITING_APPROVAL`) is frozen.** It is the ABI between Wake and every agent CLI. Workflows must not add statuses; richer outcomes ride in the result envelope's optional fields (§2.6), not in new control values. This is what keeps N workflows × M CLIs from becoming N×M contracts.
 - **`workspace` is an enum** (`none | read-only | branch`), replacing the `action === 'implement'` special case in `tick-runner.ts:301`. It maps directly onto the existing `WorkspaceManager` contract methods.
 - **Workflow selection remains out of scope for #64.** The first implementation
-  should ship a `default` workflow that reproduces today's `queue → implement
-  → done` behavior. Selector rules and intake-time workflow pinning stay in
-  Issue #65.
+  should ship a `default` workflow that reproduces today's `queue → refine →
+  implement → done` behavior, with `queue` and `done` implicit. Selector rules
+  and intake-time workflow pinning stay in Issue #65.
 
 ### 1.2 The interpreter → [Issue #64](https://github.com/atolis-hq/wake/issues/64)
 
@@ -103,7 +108,13 @@ Workflows-as-config means config edits can now strand in-flight items. Handle ex
 - **Unknown stage** (workflow renamed/removed a stage that a projection currently sits in): transition the item to `blocked` with reason `workflow-changed`, emit an event, notify the origin channel. Never guess a mapping.
 - **Unknown workflow** (pin references a deleted workflow): same treatment.
 
-Also validate the graph at load: every `onDone` target exists, every non-terminal stage has an action + template, the graph reaches a terminal stage (reject cycles without human decision points only if you want to be strict — a cycle through `blocked` is fine since it requires a human reply per loop). Cheap validation here prevents the worst class of config-as-code incidents.
+Also validate the graph at load: every configured stage has `onDone`, every
+`onDone` target is another configured stage or the implicit `done`, no transition
+targets `queue`, every configured stage has an action + template, and the graph
+reaches `done` (reject cycles without human decision points only if you want to
+be strict — a cycle through `blocked` is fine since it requires a human reply per
+loop). Cheap validation here prevents the worst class of config-as-code
+incidents.
 
 ### 1.5 Stage labels → folds into [Issue #64](https://github.com/atolis-hq/wake/issues/64) (label-clobber fix tracked separately as [Issue #50](https://github.com/atolis-hq/wake/issues/50); label-vocabulary fix as [Issue #57](https://github.com/atolis-hq/wake/issues/57))
 
