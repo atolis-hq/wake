@@ -335,6 +335,17 @@ describe('policy engine: resolveApprovalTransition', () => {
     expect(resolution?.pendingAction).toBe('implement');
   });
 
+  it('returns approved=false when latest comment is an explicit /question command', () => {
+    const policy = createPolicyEngine();
+    const issue = buildAwaitingApprovalIssue({
+      latestCommentBody: '/question What tradeoff did you make here?',
+      pendingApprovalAction: 'implement',
+    });
+    const resolution = policy.resolveApprovalTransition(issue);
+    expect(resolution?.approved).toBe(false);
+    expect(resolution?.pendingAction).toBe('implement');
+  });
+
   it('returns null (holds state) when the latest comment is conversation, not a command (S2)', () => {
     const policy = createPolicyEngine();
     const issue = buildAwaitingApprovalIssue({

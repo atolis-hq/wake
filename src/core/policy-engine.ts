@@ -20,6 +20,7 @@ function isAwaitingApproval(issue: IssueStateRecord): boolean {
 // quoted reply containing /approved does not approve the gate.
 const approvedCommandPattern = /^\/approved\b/i;
 const changesCommandPattern = /^\/changes\b/i;
+const questionCommandPattern = /^\/question\b/i;
 
 function matchesCommand(body: string, pattern: RegExp): boolean {
   return body
@@ -201,13 +202,14 @@ export function createPolicyEngine() {
 
       const approved = matchesCommand(latestHumanComment.body, approvedCommandPattern);
       const changesRequested = matchesCommand(latestHumanComment.body, changesCommandPattern);
+      const questionAsked = matchesCommand(latestHumanComment.body, questionCommandPattern);
 
-      // Neither an explicit /approved nor an explicit /changes: treat this as
+      // Neither an explicit /approved, /changes, nor /question: treat this as
       // conversation, not a decision. Stay idle rather than re-running the
-      // pending action off the back of a clarifying question (S2). The comment
-      // stays unhandled, so it's reconsidered on the next tick and by a human
-      // who follows up with an explicit command.
-      if (!approved && !changesRequested) {
+      // pending action off the back of an unmarked clarifying question (S2).
+      // The comment stays unhandled, so it's reconsidered on the next tick and
+      // by a human who follows up with an explicit command.
+      if (!approved && !changesRequested && !questionAsked) {
         return null;
       }
 
