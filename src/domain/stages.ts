@@ -21,7 +21,7 @@ export const agentActionValues = ['refine', 'implement'] as const;
 
 export const terminalStageValues = ['done'] as const;
 
-type Stage = (typeof stageValues)[number];
+type Stage = string;
 
 export function isTerminalStage(stage: Stage): boolean {
   return (terminalStageValues as readonly string[]).includes(stage);
@@ -33,20 +33,26 @@ export function stageLabelForStage(stage: Stage): string {
   return `${wakeStageLabelPrefix}${stage}`;
 }
 
-export function stageFromStageLabel(label: string): Stage | undefined {
+export function stageFromStageLabel(
+  label: string,
+  configuredStages: Iterable<string> = stageValues,
+): Stage | undefined {
   if (!label.startsWith(wakeStageLabelPrefix)) {
     return undefined;
   }
 
   const stage = label.slice(wakeStageLabelPrefix.length);
-  return stageValues.includes(stage as Stage) ? (stage as Stage) : undefined;
+  return new Set(configuredStages).has(stage) ? stage : undefined;
 }
 
-export function stageFromLabels(labels: string[]): Stage | undefined {
+export function stageFromLabels(
+  labels: string[],
+  configuredStages: Iterable<string> = stageValues,
+): Stage | undefined {
   const stages = new Set<Stage>();
 
   for (const label of labels) {
-    const stage = stageFromStageLabel(label);
+    const stage = stageFromStageLabel(label, configuredStages);
     if (stage !== undefined) {
       stages.add(stage);
     }

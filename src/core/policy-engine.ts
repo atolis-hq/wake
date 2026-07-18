@@ -1,9 +1,9 @@
 import {
-  agentActionValues,
   awaitingApprovalRunnerSentinel,
   failedRunnerSentinel,
 } from '../domain/stages.js';
-import type { AgentAction, IssueStateRecord, Stage, WakeConfig } from '../domain/types.js';
+import { builtInDefaultWorkflowDefinition, chooseAction as chooseWorkflowAction } from '../domain/workflows.js';
+import type { AgentAction, IssueStateRecord, WakeConfig, WorkflowDefinition } from '../domain/types.js';
 import type { UnkeyedEventEnvelope } from './contracts.js';
 
 export interface ApprovalResolution {
@@ -109,7 +109,10 @@ export function createPolicyEngine() {
         requiredAssignees: config.sources.github.policy.requiredAssignees,
       });
     },
-    needsWakeAction(issue: IssueStateRecord): boolean {
+    needsWakeAction(
+      issue: IssueStateRecord,
+      workflow: WorkflowDefinition = builtInDefaultWorkflowDefinition,
+    ): boolean {
       const context = issue.context as Record<string, unknown>;
       const handledCommentId =
         typeof context.lastHandledCommentId === 'string'
@@ -148,39 +151,29 @@ export function createPolicyEngine() {
         return false;
       }
 
+      if (lastRunSentinel === 'BLOCKED') {
+        return false;
+      }
+
       if (lastFailureClass === 'quota') {
         return true;
       }
 
-      if (issue.wake.stage === 'queue' && lastCompletedAction !== 'refine') {
-        return true;
-      }
-
-      if (issue.wake.stage === 'implement' && lastCompletedAction !== 'implement') {
-        return true;
-      }
-
-      return false;
+      const workflowAction = chooseWorkflowAction(issue, workflow);
+      return workflowAction !== null && lastCompletedAction !== workflowAction.action;
     },
-    chooseAction(stage: Stage): AgentAction | null {
-      if (stage === 'queue') {
-        return 'refine';
-      }
-
-      if (stage === 'implement') {
-        return 'implement';
-      }
-
-      return null;
+    chooseAction(
+      issue: IssueStateRecord,
+      workflow: WorkflowDefinition = builtInDefaultWorkflowDefinition,
+    ): AgentAction | null {
+      return chooseWorkflowAction(issue, workflow)?.action ?? null;
     },
     chooseRetryActionAfterHumanReply(issue: IssueStateRecord): AgentAction | null {
       const context = issue.context as Record<string, unknown>;
       const failed = context.lastRunSentinel === failedRunnerSentinel;
       const blocked = context.lastRunSentinel === 'BLOCKED';
       if (failed && context.lastFailureClass === 'quota') {
-        return agentActionValues.includes(context.lastRunAction as AgentAction)
-          ? (context.lastRunAction as AgentAction)
-          : null;
+        return typeof context.lastRunAction === 'string' ? context.lastRunAction : null;
       }
 
       if (!blocked && !failed) {
@@ -191,9 +184,7 @@ export function createPolicyEngine() {
         return null;
       }
 
-      return agentActionValues.includes(context.lastRunAction as AgentAction)
-        ? (context.lastRunAction as AgentAction)
-        : null;
+      return typeof context.lastRunAction === 'string' ? context.lastRunAction : null;
     },
     resolveApprovalTransition(issue: IssueStateRecord): ApprovalResolution | null {
       if (!isAwaitingApproval(issue)) {
@@ -201,11 +192,10 @@ export function createPolicyEngine() {
       }
 
       const context = issue.context as Record<string, unknown>;
-      const pendingAction: AgentAction = agentActionValues.includes(
-        context.pendingApprovalAction as AgentAction,
-      )
-        ? (context.pendingApprovalAction as AgentAction)
-        : 'implement';
+      const pendingAction: AgentAction =
+        typeof context.pendingApprovalAction === 'string'
+          ? context.pendingApprovalAction
+          : 'implement';
 
       // No new human comment since the last handled one; stay idle instead of
       // falling through to the LLM while awaiting explicit approval feedback.

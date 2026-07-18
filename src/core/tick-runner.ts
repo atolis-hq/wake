@@ -29,6 +29,13 @@ import {
 import { maxConfiguredRunnerTimeoutMs, resolveRunnerRouting } from '../domain/runner-routing.js';
 import { awaitingApprovalRunnerSentinel, stageLabelForStage } from '../domain/stages.js';
 import type { AgentAction, EventEnvelope, IssueStateRecord, RunRecord, Stage, WakeConfig } from '../domain/types.js';
+import {
+  chooseAction as chooseWorkflowAction,
+  isKnownWorkflowStage,
+  workflowChangedBlockReason,
+  workflowForProjection,
+  workflowNameForProjection,
+} from '../domain/workflows.js';
 import { createEventEnvelope } from '../lib/event-log.js';
 import { branchNameForIssue } from '../domain/branch-naming.js';
 import { resolveQuotaPauseUntil } from './quota-backoff.js';
@@ -105,6 +112,7 @@ export function createTickRunner(deps: {
   const projectionUpdater = createProjectionUpdater({
     stateStore: deps.stateStore,
     resourceIndex: deps.resourceIndex,
+    config: deps.config,
   });
 
   function extractTokenCount(tokenUsage: AgentRunTokenUsage | undefined): number | undefined {
@@ -277,16 +285,20 @@ export function createTickRunner(deps: {
     if (!policy.isEligible(projection, deps.config)) {
       return false;
     }
+    const workflow = workflowForProjection(projection, deps.config);
+    if (workflow === null || !isKnownWorkflowStage(projection.wake.stage, workflow)) {
+      return false;
+    }
 
     if (isAwaitingApproval(projection)) {
       return policy.resolveApprovalTransition(projection) !== null;
     }
 
     const nextAction =
-      policy.chooseAction(projection.wake.stage) ??
+      policy.chooseAction(projection, workflow) ??
       policy.chooseRetryActionAfterHumanReply(projection);
 
-    return nextAction !== null && policy.needsWakeAction(projection);
+    return nextAction !== null && policy.needsWakeAction(projection, workflow);
   }
 
   function createLabelsEvent(input: {
@@ -882,6 +894,63 @@ export function createTickRunner(deps: {
     }
   }
 
+  async function parkConfigDriftedProjections(
+    projections: IssueStateRecord[],
+  ): Promise<boolean> {
+    let parked = false;
+
+    for (const projection of projections) {
+      if (projection.wake.blockReason === workflowChangedBlockReason) {
+        continue;
+      }
+
+      const workflow = workflowForProjection(projection, deps.config);
+      if (workflow !== null && isKnownWorkflowStage(projection.wake.stage, workflow)) {
+        continue;
+      }
+
+      const occurredAt = eventStampNow();
+      const eventId = `workflow-changed-${projection.workItemKey}-${deps.clock.now().getTime()}`;
+      const event = createEventEnvelope({
+        eventId,
+        workItemKey: projection.workItemKey,
+        streamScope: 'work-item',
+        direction: 'internal',
+        sourceSystem: 'wake',
+        sourceEventType: 'wake.run.completed',
+        sourceRefs: {
+          repo: projection.issue.repo,
+          issueNumber: projection.issue.number,
+          runId: eventId,
+        },
+        occurredAt,
+        ingestedAt: occurredAt,
+        trigger: 'immediate',
+        payload: {
+          sentinel: 'BLOCKED',
+          runId: eventId,
+          reason: workflowChangedBlockReason,
+          blockReason: workflowChangedBlockReason,
+          body: `Workflow configuration changed; stored workflow or stage is no longer configured.`,
+        },
+      });
+      await deps.stateStore.appendEventEnvelope(event);
+      await projectionUpdater.rebuildFromEvents([event]);
+      await deliverOutboundEvent(
+        createLabelsEvent({
+          projection,
+          runId: eventId,
+          statusLabel: 'wake:status.blocked',
+          stageLabel: stageLabelForStage(projection.wake.stage),
+          occurredAt,
+        }),
+      );
+      parked = true;
+    }
+
+    return parked;
+  }
+
   const outboxMaxAttempts = 3;
 
   async function recordDeliveryFailure(intentEvent: EventEnvelope, err: unknown): Promise<void> {
@@ -1056,27 +1125,41 @@ export function createTickRunner(deps: {
         await reconcileStaleRunningRecords(tickStartedAt);
 
         const projections = await deps.stateStore.listIssueStates();
+        if (await parkConfigDriftedProjections(projections)) {
+          return { status: 'processed' as const };
+        }
 
         const candidate = projections.find((issue) => {
           if (!policy.isEligible(issue, deps.config)) {
             return false;
           }
+          const workflow = workflowForProjection(issue, deps.config);
+          if (workflow === null || !isKnownWorkflowStage(issue.wake.stage, workflow)) {
+            return false;
+          }
 
           if (isAwaitingApproval(issue)) {
-            return policy.needsWakeAction(issue);
+            return policy.needsWakeAction(issue, workflow);
           }
 
           const nextAction =
-            policy.chooseAction(issue.wake.stage) ??
+            policy.chooseAction(issue, workflow) ??
             policy.chooseRetryActionAfterHumanReply(issue);
-          return nextAction !== null && policy.needsWakeAction(issue);
+          return nextAction !== null && policy.needsWakeAction(issue, workflow);
         });
 
         if (candidate === undefined) {
           return { status: 'idle' as const };
         }
 
+        const workflow = workflowForProjection(candidate, deps.config);
+        if (workflow === null) {
+          return { status: 'idle' as const };
+        }
+        const workflowName = workflowNameForProjection(candidate, deps.config);
         let action: AgentAction;
+        let claimedStage = candidate.wake.stage;
+        let workspaceMode: 'none' | 'read-only' | 'branch' = 'none';
 
         if (isAwaitingApproval(candidate)) {
           const approvalResolution = policy.resolveApprovalTransition(candidate);
@@ -1087,8 +1170,10 @@ export function createTickRunner(deps: {
           if (approvalResolution.approved) {
             const approvalId = `approval-${candidate.issue.number}-${deps.clock.now().getTime()}`;
             const approvedAt = deps.clock.now().toISOString();
-            // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-            const nextStage = lifecycle.nextStageFromSentinel(approvalResolution.pendingAction, 'DONE')!;
+            const nextStage = lifecycle.nextStageFromSentinel(candidate.wake.stage, 'DONE', workflow);
+            if (nextStage === null) {
+              return { status: 'idle' as const };
+            }
 
             const approvalCompletedEvent = createEventEnvelope({
               eventId: `${approvalId}-completed`,
@@ -1136,14 +1221,20 @@ export function createTickRunner(deps: {
           }
 
           action = approvalResolution.pendingAction;
+          const workflowAction = chooseWorkflowAction(candidate, workflow);
+          claimedStage = workflowAction?.stage ?? candidate.wake.stage;
+          workspaceMode = workflowAction?.workspace ?? 'none';
         } else {
+          const workflowAction = chooseWorkflowAction(candidate, workflow);
           const nextAction =
-            policy.chooseAction(candidate.wake.stage) ??
+            workflowAction?.action ??
             policy.chooseRetryActionAfterHumanReply(candidate);
           if (nextAction === null) {
             return { status: 'idle' as const };
           }
           action = nextAction;
+          claimedStage = workflowAction?.stage ?? candidate.wake.stage;
+          workspaceMode = workflowAction?.workspace ?? 'none';
         }
 
         // Resolve routing (with sideways fallback across quota-paused runners,
@@ -1152,8 +1243,9 @@ export function createTickRunner(deps: {
         const ledgerAtStart = await deps.stateStore.readLedger();
         const routing = resolveRunnerRouting({
           config: deps.config,
-          stage: candidate.wake.stage,
+          stage: claimedStage,
           action,
+          workflowName,
           now: tickStartedAt,
           ...(ledgerAtStart === null ? {} : { ledger: ledgerAtStart }),
         });
@@ -1174,7 +1266,6 @@ export function createTickRunner(deps: {
         };
 
         await deps.stateStore.writeRunRecord(runningRecord);
-        const claimedStage = action as import('../domain/types.js').Stage;
         const claimedAt = eventStampNow();
         const claimedEvent = createEventEnvelope({
           eventId: `${runId}-claimed`,
@@ -1211,19 +1302,22 @@ export function createTickRunner(deps: {
         );
 
         try {
-          // 'implement' gets its own branch/workspace; 'refine' only reads
-          // the issue and, at most, the canonical clone read-only - it never
-          // pays per-issue workspace-preparation cost.
-          const prepareResult =
-            action === 'implement'
+          const prepareResult: {
+            workspacePath?: string;
+            mergeConflictDetected?: boolean;
+            upstreamChanges?: string;
+          } =
+            workspaceMode === 'branch'
               ? await deps.workspaceManager.prepareWorkspace({
                   workId: candidate.workItemKey,
                   repo: candidate.issue.repo,
                   issueNumber: candidate.issue.number,
                 })
-              : await deps.workspaceManager.prepareReadOnlyClone({
+              : workspaceMode === 'read-only'
+                ? await deps.workspaceManager.prepareReadOnlyClone({
                   repo: candidate.issue.repo,
-                });
+                })
+                : {};
 
           const { workspacePath } = prepareResult;
           const mergeConflictDetected =
@@ -1258,13 +1352,10 @@ export function createTickRunner(deps: {
             rawSentinel === 'DONE' && skipApproval === false
               ? 'AWAITING_APPROVAL'
               : rawSentinel;
-          const nextStage = lifecycle.nextStageFromSentinel(action, sentinel);
+          const nextStage = lifecycle.nextStageFromSentinel(claimedStage, sentinel, workflow);
           const finishedAt = deps.clock.now().toISOString();
 
-          // Only 'implement' has a workspace/branch to verify a reported PR's
-          // head against — 'refine' never pushes anything, so there is
-          // nothing for a PR claim to have come from.
-          if (action === 'implement') {
+          if (workspaceMode === 'branch') {
             await registerReportedArtifacts({
               projection: candidate,
               runId,

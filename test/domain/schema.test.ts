@@ -1,3 +1,6 @@
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, expectTypeOf, it } from 'vitest';
 
 import {
@@ -861,6 +864,82 @@ describe('run and event schemas', () => {
     });
 
     expect(config.sources.github.policy.requiredAssignees).toEqual(['octocat']);
+  });
+});
+
+describe('workflow config schema', () => {
+  function parseWorkflow(workflow: unknown) {
+    return parseWakeConfig({
+      paths: { wakeRoot: '/tmp/wake' },
+      workflows: { custom: workflow },
+    });
+  }
+
+  it('defines the built-in default workflow without queue or done stages', () => {
+    const config = parseWakeConfig({ paths: { wakeRoot: '/tmp/wake' } });
+
+    expect(config.workflows.default?.stages).toEqual({
+      refine: {
+        action: 'refine',
+        workspace: 'read-only',
+        tier: 'light',
+        onDone: 'implement',
+      },
+      implement: {
+        action: 'implement',
+        workspace: 'branch',
+        tier: 'standard',
+        onDone: 'done',
+      },
+    });
+  });
+
+  it.each([
+    ['missing onDone', { stages: { refine: { action: 'refine', workspace: 'read-only' } } }, /onDone/],
+    ['defined queue stage', { stages: { queue: { action: 'refine', workspace: 'read-only', onDone: 'done' } } }, /queue/],
+    ['defined done stage', { stages: { done: { action: 'refine', workspace: 'read-only', onDone: 'done' } } }, /done/],
+    ['entryStage queue', { entryStage: 'queue', stages: { refine: { action: 'refine', workspace: 'read-only', onDone: 'done' } } }, /entryStage/],
+    ['transition to queue', { stages: { refine: { action: 'refine', workspace: 'read-only', onDone: 'queue' } } }, /queue/],
+    ['unknown transition target', { stages: { refine: { action: 'refine', workspace: 'read-only', onDone: 'missing' } } }, /unknown stage/],
+    ['no path to done', { stages: { refine: { action: 'refine', workspace: 'read-only', onDone: 'refine' } } }, /cannot reach done/],
+  ])('rejects %s', (_name, workflow, message) => {
+    expect(() => parseWorkflow(workflow)).toThrow(message);
+  });
+
+  it('allows omitted action when a stage-named prompt exists', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wake-workflow-prompts-'));
+    const promptsRoot = join(root, 'prompts');
+    await mkdir(promptsRoot);
+    await writeFile(join(promptsRoot, 'triage.md'), '---\nmaxTurns: 1\n---\nTriage', 'utf8');
+
+    const config = parseWakeConfig({
+      paths: { wakeRoot: root, promptsRoot },
+      workflows: {
+        custom: {
+          stages: {
+            triage: {
+              workspace: 'read-only',
+              onDone: 'done',
+            },
+          },
+        },
+      },
+    });
+
+    expect(config.workflows.custom?.stages.triage?.action).toBeUndefined();
+  });
+
+  it('rejects omitted action when no stage-named prompt exists', () => {
+    expect(() =>
+      parseWorkflow({
+        stages: {
+          triage: {
+            workspace: 'read-only',
+            onDone: 'done',
+          },
+        },
+      }),
+    ).toThrow(/omits action/);
   });
 });
 

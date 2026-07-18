@@ -1,24 +1,14 @@
-import type { AgentAction, RunnerSentinel, Stage } from '../domain/types.js';
+import { builtInDefaultWorkflowDefinition, nextStage } from '../domain/workflows.js';
+import type { RunnerSentinel, Stage, WorkflowDefinition } from '../domain/types.js';
 
 export function createLifecycleService() {
   return {
     nextStageFromSentinel(
-      action: AgentAction,
+      stage: Stage,
       sentinel: RunnerSentinel,
+      workflow: WorkflowDefinition = builtInDefaultWorkflowDefinition,
     ): Stage | null {
-      if (sentinel === 'BLOCKED') {
-        return null;
-      }
-
-      if (sentinel === 'FAILED') {
-        return null;
-      }
-
-      if (sentinel === 'AWAITING_APPROVAL') {
-        return null;
-      }
-
-      return action === 'refine' ? 'implement' : 'done';
+      return nextStage(stage, sentinel, workflow);
     },
   };
 }

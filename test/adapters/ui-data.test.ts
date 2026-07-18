@@ -174,7 +174,7 @@ describe('ui-data', () => {
     }));
     // Use a stage with no route to hit stalled.
     await store.writeIssueState(
-      issueState({ number: 10, stage: 'refine' }),
+      issueState({ number: 10, stage: 'unknown-stage' }),
     );
 
     const board = await buildBoard({ stateStore: store, config, now: new Date() });

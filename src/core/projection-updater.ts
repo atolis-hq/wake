@@ -6,12 +6,14 @@ import {
   parseIssueStateRecord,
 } from '../domain/schema.js';
 import { doneRunnerSentinel, stageFromLabels } from '../domain/stages.js';
+import { defaultWorkflowName, workflowStageVocabulary } from '../domain/workflows.js';
 import type {
   CorrelatedResource,
   CorrelationRegisteredPayload,
   CorrelationRetractedPayload,
   EventEnvelope,
   IssueStateRecord,
+  WakeConfig,
 } from '../domain/types.js';
 import { createEventEnvelope } from '../lib/event-log.js';
 import type { ResourceIndex } from './contracts.js';
@@ -27,7 +29,16 @@ function stringArrayFromPayload(value: unknown): string[] {
     : [];
 }
 
-function createProjectionFromIssueEvent(event: EventEnvelope): IssueStateRecord | null {
+function configuredStagesForLabels(config?: WakeConfig): string[] | undefined {
+  if (config === undefined) {
+    return undefined;
+  }
+
+  const workflow = config.workflows[defaultWorkflowName(config)];
+  return workflow === undefined ? undefined : workflowStageVocabulary(workflow);
+}
+
+function createProjectionFromIssueEvent(event: EventEnvelope, config?: WakeConfig): IssueStateRecord | null {
   const issue =
     event.sourceEventType === 'ticket.upsert'
       ? event.payload.ticket
@@ -47,7 +58,7 @@ function createProjectionFromIssueEvent(event: EventEnvelope): IssueStateRecord 
     origin: event.sourceSystem,
     issue,
     wake: {
-      stage: stageFromLabels(labels) ?? 'queue',
+      stage: stageFromLabels(labels, configuredStagesForLabels(config)) ?? 'queue',
       stageHistory: [],
       recentEventIds: [event.eventId],
       syncedAt: event.ingestedAt,
@@ -60,6 +71,7 @@ async function applyEvent(
   current: IssueStateRecord | null,
   event: EventEnvelope,
   ctx: ApplyEventCtx,
+  config?: WakeConfig,
 ): Promise<IssueStateRecord | null> {
   // The shared sentinel for events whose resource failed mint qualification
   // (tick-runner.ts's resolveInboundEvent, spec D1'). These are durable and
@@ -77,7 +89,7 @@ async function applyEvent(
     event.sourceEventType === 'fake.issue.upsert' ||
     event.sourceEventType === 'ticket.upsert'
   ) {
-    const next = createProjectionFromIssueEvent(event);
+    const next = createProjectionFromIssueEvent(event, config);
     if (next === null) {
       return current;
     }
@@ -86,7 +98,7 @@ async function applyEvent(
       return next;
     }
 
-    const nextStageFromLabels = stageFromLabels(next.issue.labels);
+    const nextStageFromLabels = stageFromLabels(next.issue.labels, configuredStagesForLabels(config));
     const shouldReconcileStage =
       nextStageFromLabels !== undefined && nextStageFromLabels !== current.wake.stage;
 
@@ -200,6 +212,7 @@ async function applyEvent(
       reason?: string;
       handledCommentId?: string;
       failureClass?: string;
+      blockReason?: string;
     };
 
     // Clear the session when the stage moves forward (new action needed) or the
@@ -247,6 +260,7 @@ async function applyEvent(
           ? undefined
           : (payload.sessionCli ?? current.wake.sessionCli),
         workspacePath: payload.workspacePath ?? current.wake.workspacePath,
+        blockReason: payload.blockReason ?? current.wake.blockReason,
         syncedAt: event.ingestedAt,
         stageHistory: stageChanged
           ? [
@@ -481,6 +495,7 @@ export function createProjectionUpdater(deps: {
   // (adapters/fake/fake-resource-index.ts); production always passes the
   // real, disk-backed index via main.ts's buildRuntime.
   resourceIndex: ResourceIndex;
+  config?: WakeConfig;
 }) {
   const applyEventCtx: ApplyEventCtx = {
     resourceIndex: deps.resourceIndex,
@@ -530,7 +545,7 @@ export function createProjectionUpdater(deps: {
         }
 
         const current = projections.get(event.workItemKey) ?? null;
-        projections.set(event.workItemKey, await applyEvent(current, event, applyEventCtx));
+        projections.set(event.workItemKey, await applyEvent(current, event, applyEventCtx, deps.config));
       }
 
       for (const workItemKey of touchedWorkItemKeys) {

@@ -1,9 +1,10 @@
+import { existsSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 
 import {
-  agentActionValues,
   runnerSentinelValues,
-  stageValues,
 } from './stages.js';
 import {
   correlationProvenanceSchema,
@@ -13,6 +14,7 @@ import {
 } from './resource-uri.js';
 
 const isoTimestampSchema = z.string().datetime({ offset: true });
+const identifierSchema = z.string().min(1);
 
 export const reportedArtifactSchema = z.object({
   kind: z.literal('pr'),
@@ -22,9 +24,7 @@ export const reportedArtifactSchema = z.object({
 export const wakeArtifactsEnvelopeSchema = z.object({
   artifacts: z.array(reportedArtifactSchema).default([]),
 });
-const stageSchema = z.enum(stageValues);
 export const runnerSentinelSchema = z.enum(runnerSentinelValues);
-const agentActionSchema = z.enum(agentActionValues);
 
 export const defaultAgentIdentity = 'Wake';
 export const defaultSmokePrompt = `This is ${defaultAgentIdentity}, reply with "hi ${defaultAgentIdentity} only"`;
@@ -33,9 +33,7 @@ const runnerFailureClassSchema = z.enum(['task', 'quota', 'infra']);
 
 const modelOverridesSchema = z.object({
   default: z.string().optional(),
-  refine: z.string().optional(),
-  implement: z.string().optional(),
-}).default({});
+}).catchall(z.string()).default({});
 
 const claudeEffortSchema = z.enum(['low', 'medium', 'high', 'xhigh', 'max']);
 const codexReasoningEffortSchema = z.enum(['low', 'medium', 'high']);
@@ -101,7 +99,7 @@ const runnerEntrySchema = z.discriminatedUnion('kind', [
 ]);
 
 const stageRouteSchema = z.object({
-  action: agentActionSchema.optional(),
+  action: identifierSchema.optional(),
   tier: z.string().optional(),
   runner: z.string().optional(),
 });
@@ -123,7 +121,7 @@ export const wakeResultEnvelopeSchema = z.object({
 });
 
 const stageHistoryEntrySchema = z.object({
-  stage: stageSchema,
+  stage: identifierSchema,
   changedAt: isoTimestampSchema,
   reason: z.string(),
 });
@@ -268,7 +266,7 @@ export const issueStateRecordSchema = z.object({
   comments: z.array(commentSnapshotSchema).default([]),
   latestComment: commentSnapshotSchema.optional(),
   wake: z.object({
-    stage: stageSchema,
+    stage: identifierSchema,
     lastRunId: z.string().optional(),
     sessionId: z.string().optional(),
     sessionCli: z.string().optional(),
@@ -309,7 +307,7 @@ export const runRecordSchema = z.object({
   // gets a new repo/number while the work item and its runs persist (spec D3).
   repo: z.string(),
   issueNumber: z.number().int().positive(),
-  action: agentActionSchema,
+  action: identifierSchema,
   status: z.enum(['running', 'completed', 'awaiting-approval', 'blocked', 'failed', 'superseded']),
   startedAt: isoTimestampSchema,
   finishedAt: isoTimestampSchema.optional(),
@@ -330,6 +328,76 @@ const runnerHealthEntrySchema = z.object({
   failureCount: z.number().int().nonnegative().default(0),
   lastFailureAt: isoTimestampSchema.optional(),
 });
+
+const workflowWorkspaceSchema = z.enum(['none', 'read-only', 'branch']);
+
+const workflowStageSchema = stageRouteSchema.extend({
+  workspace: workflowWorkspaceSchema,
+  onDone: identifierSchema,
+});
+
+const workflowDefinitionSchema = z.object({
+  entryStage: identifierSchema.optional(),
+  stages: z.record(identifierSchema, workflowStageSchema),
+});
+
+function defaultPromptsRoot(): string {
+  const sourceDir = dirname(fileURLToPath(import.meta.url));
+  for (const candidate of [
+    join(process.cwd(), 'prompts'),
+    join(sourceDir, '..', '..', 'prompts'),
+    join(sourceDir, '..', '..', '..', 'prompts'),
+  ]) {
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  let dir = sourceDir;
+  for (let depth = 0; depth < 8; depth += 1) {
+    if (existsSync(join(dir, 'package.json'))) {
+      return join(dir, 'prompts');
+    }
+    const parent = dirname(dir);
+    if (parent === dir) {
+      break;
+    }
+    dir = parent;
+  }
+
+  return join(process.cwd(), 'prompts');
+}
+
+function promptExists(promptsRoot: string, stageOrAction: string): boolean {
+  return (
+    existsSync(join(promptsRoot, `${stageOrAction}.md`)) ||
+    existsSync(join(promptsRoot, `${stageOrAction}.start.md`)) ||
+    existsSync(join(promptsRoot, `${stageOrAction}.resume.md`))
+  );
+}
+
+function canReachDone(
+  start: string,
+  stages: Record<string, { onDone: string }>,
+): boolean {
+  const seen = new Set<string>();
+  let current = start;
+
+  while (current !== 'done') {
+    if (seen.has(current)) {
+      return false;
+    }
+    seen.add(current);
+
+    const next = stages[current]?.onDone;
+    if (next === undefined) {
+      return false;
+    }
+    current = next;
+  }
+
+  return true;
+}
 
 export const ledgerSchema = z.object({
   schemaVersion: z.literal(1),
@@ -393,6 +461,24 @@ export const wakeConfigSchema = z.object({
     deep: ['fake'],
   }),
   defaultTier: z.string().default('standard'),
+  workflows: z.record(identifierSchema, workflowDefinitionSchema).default({
+    default: {
+      stages: {
+        refine: {
+          action: 'refine',
+          workspace: 'read-only',
+          tier: 'light',
+          onDone: 'implement',
+        },
+        implement: {
+          action: 'implement',
+          workspace: 'branch',
+          tier: 'standard',
+          onDone: 'done',
+        },
+      },
+    },
+  }),
   stages: z.record(z.string(), stageRouteSchema).default({
     queue: { action: 'refine', tier: 'light' },
     implement: { action: 'implement', tier: 'standard' },
@@ -436,6 +522,88 @@ export const wakeConfigSchema = z.object({
     }).default({ enabled: false, repos: [], polling: { maxIssuesPerRepo: 25, commentPageSize: 25, lookbackMs: 60_000 }, policy: { requiredLabels: [], ignoredLabels: [], requiredAssignees: [] }, publication: { postStatusComments: true }, pullRequests: { enabled: false, maxPullRequestsPerRepo: 25, commentPageSize: 25, policy: { requiredAuthors: [] } } }),
   }).default({ github: { enabled: false, repos: [], polling: { maxIssuesPerRepo: 25, commentPageSize: 25, lookbackMs: 60_000 }, policy: { requiredLabels: [], ignoredLabels: [], requiredAssignees: [] }, publication: { postStatusComments: true }, pullRequests: { enabled: false, maxPullRequestsPerRepo: 25, commentPageSize: 25, policy: { requiredAuthors: [] } } } }),
   sinks: z.record(z.string(), sinkEntrySchema).default({}),
+}).superRefine((config, ctx) => {
+  const promptsRoot = config.paths.promptsRoot ?? defaultPromptsRoot();
+  const workflowEntries = Object.entries(config.workflows);
+  if (workflowEntries.length === 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['workflows'],
+      message: 'At least one workflow must be configured.',
+    });
+  }
+
+  for (const [workflowName, workflow] of workflowEntries) {
+    const stageNames = Object.keys(workflow.stages);
+    const stageSet = new Set(stageNames);
+
+    if (stageNames.length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['workflows', workflowName, 'stages'],
+        message: 'Workflow must define at least one runnable stage.',
+      });
+      continue;
+    }
+
+    for (const reserved of ['queue', 'done']) {
+      if (stageSet.has(reserved)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['workflows', workflowName, 'stages', reserved],
+          message: `Workflow must not define implicit ${reserved} stage.`,
+        });
+      }
+    }
+
+    const actualEntryStage = workflow.entryStage ?? stageNames[0];
+    if (workflow.entryStage === 'queue') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['workflows', workflowName, 'entryStage'],
+        message: 'Workflow entryStage must not be queue.',
+      });
+    }
+    if (actualEntryStage !== undefined && !stageSet.has(actualEntryStage)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['workflows', workflowName, 'entryStage'],
+        message: `Workflow entryStage "${actualEntryStage}" is not a configured stage.`,
+      });
+    }
+
+    for (const [stageName, stage] of Object.entries(workflow.stages)) {
+      if (stage.onDone === 'queue') {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['workflows', workflowName, 'stages', stageName, 'onDone'],
+          message: 'Workflow transitions must not target queue.',
+        });
+      }
+      if (stage.onDone !== 'done' && !stageSet.has(stage.onDone)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['workflows', workflowName, 'stages', stageName, 'onDone'],
+          message: `Workflow transition targets unknown stage "${stage.onDone}".`,
+        });
+      }
+      if (stage.action === undefined && !promptExists(promptsRoot, stageName)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['workflows', workflowName, 'stages', stageName, 'action'],
+          message: `Workflow stage "${stageName}" omits action but no prompts/${stageName}.md template exists.`,
+        });
+      }
+    }
+
+    if (actualEntryStage !== undefined && stageSet.has(actualEntryStage) && !canReachDone(actualEntryStage, workflow.stages)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['workflows', workflowName],
+        message: 'Workflow cannot reach done from its entry stage.',
+      });
+    }
+  }
 });
 
 export const claudePrintResultSchema = z.object({

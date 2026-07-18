@@ -241,7 +241,7 @@ describe('state store', () => {
         ...issueState({ number: 8 }),
         wake: {
           ...issueState({ number: 8 }).wake,
-          stage: 'not-a-stage',
+          stage: 8,
         },
       }),
       'utf8',
