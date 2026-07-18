@@ -140,7 +140,11 @@ function sentinelInstructionsForApproval(skipApproval: boolean): string {
   ].join('\n');
 }
 
-function buildHarnessPrompt(input: { skipApproval: boolean; mergeConflictDetected?: boolean }): string {
+function buildHarnessPrompt(input: {
+  skipApproval: boolean;
+  mergeConflictDetected?: boolean;
+  upstreamChanges?: string;
+}): string {
   const lines = [
     'You are Eddy, a Wake-managed coding agent.',
     '',
@@ -162,6 +166,15 @@ function buildHarnessPrompt(input: { skipApproval: boolean; mergeConflictDetecte
       '',
       'Merge conflict notice:',
       'A conflict check against the upstream default branch detected that merging it into your workspace would cause conflicts. Your workspace is in a clean state. Before proceeding with your task, run `git fetch origin` and then merge the default branch manually (e.g. `git merge origin/HEAD`) and resolve any conflicts before committing.',
+    );
+  }
+
+  if (input.upstreamChanges !== undefined && input.upstreamChanges.trim().length > 0) {
+    lines.push(
+      '',
+      'Upstream update notice:',
+      'Before resuming this session, Wake pulled the latest default-branch changes into your workspace. New commits included:',
+      input.upstreamChanges.trimEnd(),
     );
   }
 
@@ -221,6 +234,7 @@ export async function buildStagePrompt(input: {
   config?: WakeConfig;
   contextOverrides?: Record<string, unknown>;
   mergeConflictDetected?: boolean;
+  upstreamChanges?: string;
 }): Promise<StagePromptResult> {
   const mode = input.mode ?? 'start';
   const template = await loadPromptTemplate(input.action, mode, {
@@ -311,7 +325,11 @@ export async function buildStagePrompt(input: {
 
   return {
     prompt: `${renderedTemplate}\n\n${untrustedDataBlock}`,
-    harnessPrompt: buildHarnessPrompt({ skipApproval, ...(input.mergeConflictDetected === true ? { mergeConflictDetected: true } : {}) }),
+    harnessPrompt: buildHarnessPrompt({
+      skipApproval,
+      ...(input.mergeConflictDetected === true ? { mergeConflictDetected: true } : {}),
+      ...(input.upstreamChanges === undefined ? {} : { upstreamChanges: input.upstreamChanges }),
+    }),
     allowedTools,
     extraArgs: parseFrontmatterArgs(template.frontmatter.extraArgs),
     maxTurns: parseFrontmatterMaxTurns({ action: input.action, value: template.frontmatter.maxTurns }),

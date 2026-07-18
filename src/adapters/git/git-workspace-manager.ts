@@ -63,11 +63,14 @@ export function buildWorkspaceCloneArgs(input: {
   ];
 }
 
-async function tryDetectMergeConflict(workspacePath: string): Promise<boolean> {
+async function tryUpdateFromDefaultBranch(workspacePath: string): Promise<{
+  mergeConflictDetected: boolean;
+  upstreamChanges?: string;
+}> {
   try {
     const { stdout: status } = await git(['status', '--porcelain'], workspacePath);
     if (status.length > 0) {
-      return false;
+      return { mergeConflictDetected: false };
     }
 
     await git(['fetch', 'origin'], workspacePath);
@@ -79,20 +82,45 @@ async function tryDetectMergeConflict(workspacePath: string): Promise<boolean> {
     );
 
     if (parseInt(count.trim(), 10) === 0) {
-      return false;
+      return { mergeConflictDetected: false };
     }
+
+    const { stdout: upstreamChanges } = await git(
+      [
+        'log',
+        '--date=short',
+        '--pretty=format:%h %ad %an <%ae>%n    %s',
+        `HEAD..origin/${defaultBranch}`,
+      ],
+      workspacePath,
+    );
 
     // Probe for conflicts without touching the index or worktree. A real merge
     // would need committer identity even with --no-commit on some Git versions.
     try {
       await git(['merge-tree', '--write-tree', 'HEAD', `origin/${defaultBranch}`], workspacePath);
-      return false;
+      await git(
+        [
+          '-c',
+          'user.email=wake@example.invalid',
+          '-c',
+          'user.name=Wake',
+          'merge',
+          '--no-edit',
+          `origin/${defaultBranch}`,
+        ],
+        workspacePath,
+      );
+      return {
+        mergeConflictDetected: false,
+        ...(upstreamChanges.length === 0 ? {} : { upstreamChanges }),
+      };
     } catch {
-      return true;
+      return { mergeConflictDetected: true };
     }
   } catch {
     // Fetch or branch detection failed — leave workspace as-is, no conflict reported
-    return false;
+    return { mergeConflictDetected: false };
   }
 }
 
@@ -136,11 +164,15 @@ export function createGitWorkspaceManager(options: {
     }: {
       repo: string;
       issueNumber: number;
-    }): Promise<{ workspacePath: string; mergeConflictDetected: boolean }> {
+    }): Promise<{
+      workspacePath: string;
+      mergeConflictDetected: boolean;
+      upstreamChanges?: string;
+    }> {
       const workspacePath = paths.workspaceDir(repo, issueNumber);
       if (await pathExists(workspacePath)) {
-        const mergeConflictDetected = await tryDetectMergeConflict(workspacePath);
-        return { workspacePath, mergeConflictDetected };
+        const updateResult = await tryUpdateFromDefaultBranch(workspacePath);
+        return { workspacePath, ...updateResult };
       }
 
       const { repoPath, defaultBranch } = await ensureCanonicalClone(repo);

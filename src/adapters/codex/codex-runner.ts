@@ -315,6 +315,7 @@ export function createCodexRunner(options: {
       runId: string;
       workspacePath?: string;
       mergeConflictDetected?: boolean;
+      upstreamChanges?: string;
     }): Promise<AgentRunResult> {
       const runMode = 'start';
       const toolCapabilityNote = buildCodexToolCapabilityNote({ action: input.action, mode: runMode });
@@ -324,6 +325,7 @@ export function createCodexRunner(options: {
         mode: runMode,
         config: input.config,
         ...(input.mergeConflictDetected === true ? { mergeConflictDetected: true } : {}),
+        ...(input.upstreamChanges === undefined ? {} : { upstreamChanges: input.upstreamChanges }),
         ...(toolCapabilityNote !== undefined ? { contextOverrides: { toolCapabilityNote } } : {}),
       });
 

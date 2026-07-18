@@ -756,6 +756,10 @@ export function createTickRunner(deps: {
           const { workspacePath } = prepareResult;
           const mergeConflictDetected =
             'mergeConflictDetected' in prepareResult ? prepareResult.mergeConflictDetected : false;
+          const upstreamChanges =
+            'upstreamChanges' in prepareResult && typeof prepareResult.upstreamChanges === 'string'
+              ? prepareResult.upstreamChanges
+              : undefined;
 
           const recentEvents = await deps.stateStore.listEventEnvelopesForWorkItem(
             candidate.workItemKey,
@@ -770,6 +774,7 @@ export function createTickRunner(deps: {
             routing,
             ...(workspacePath === undefined ? {} : { workspacePath }),
             ...(mergeConflictDetected ? { mergeConflictDetected: true } : {}),
+            ...(upstreamChanges === undefined ? {} : { upstreamChanges }),
           });
           const parsedRunnerResult = parseRunnerResult(runnerResult.result);
           const rawSentinel = parsedRunnerResult.status;
