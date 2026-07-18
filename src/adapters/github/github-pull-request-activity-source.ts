@@ -162,6 +162,10 @@ export function createGitHubPullRequestActivitySource(deps: {
     resourceUri: string,
     ingestedAt: string,
   ): Promise<UnkeyedEventEnvelope[]> {
+    if (!deps.config.sources.github.pullRequests.enabled) {
+      return [];
+    }
+
     const ref = repoAndNumberFromPrUri(resourceUri);
     if (ref === null) {
       return [];

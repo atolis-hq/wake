@@ -151,6 +151,7 @@ function buildHarnessPrompt(input: {
   skipApproval: boolean;
   mergeConflictDetected?: boolean;
   upstreamChanges?: string;
+  prTrackingEnabled: boolean;
 }): string {
   const lines = [
     'You are Eddy, a Wake-managed coding agent.',
@@ -194,15 +195,17 @@ function buildHarnessPrompt(input: {
     'The JSON object must contain only the `status` field. Do not add other fields.',
   );
 
-  lines.push(
-    '',
-    'Artifact reporting:',
-    'If you created a pull request during this stage, report it before the result envelope by adding a fenced `wake-artifacts` JSON block:',
-    '```wake-artifacts',
-    '{ "artifacts": [{ "kind": "pr", "url": "<the PR URL>" }] }',
-    '```',
-    'Only report a PR you actually created in this run. Omit the block entirely if you created no PR.',
-  );
+  if (input.prTrackingEnabled) {
+    lines.push(
+      '',
+      'Artifact reporting:',
+      'If you created a pull request during this stage, report it before the result envelope by adding a fenced `wake-artifacts` JSON block:',
+      '```wake-artifacts',
+      '{ "artifacts": [{ "kind": "pr", "url": "<the PR URL>" }] }',
+      '```',
+      'Only report a PR you actually created in this run. Omit the block entirely if you created no PR.',
+    );
+  }
 
   return lines.join('\n');
 }
@@ -344,6 +347,7 @@ export async function buildStagePrompt(input: {
     prompt: `${renderedTemplate}\n\n${untrustedDataBlock}`,
     harnessPrompt: buildHarnessPrompt({
       skipApproval,
+      prTrackingEnabled: input.config?.sources.github.pullRequests.enabled === true,
       ...(input.mergeConflictDetected === true ? { mergeConflictDetected: true } : {}),
       ...(input.upstreamChanges === undefined ? {} : { upstreamChanges: input.upstreamChanges }),
     }),

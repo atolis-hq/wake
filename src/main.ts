@@ -202,7 +202,7 @@ async function inspectDockerContainer(containerName: string): Promise<'running' 
   });
 }
 
-async function buildRuntime(args: string[]) {
+export async function buildRuntime(args: string[]) {
   const wakeRoot = resolve(
     readFlagBeforeCommandTerminator('--wake-root', args) ?? resolve(process.cwd(), '.wake'),
   );
@@ -217,7 +217,10 @@ async function buildRuntime(args: string[]) {
 
   const resourceIndex = createResourceIndex({ paths: stateStore.paths });
 
-  const artifactVerifier = config.sources.github.enabled
+  const prTrackingEnabled =
+    config.sources.github.enabled && config.sources.github.pullRequests.enabled;
+
+  const artifactVerifier = prTrackingEnabled
     ? createGitHubArtifactVerifier({ client: createGitHubClient(await resolveGitHubToken()) })
     : undefined;
 
@@ -236,7 +239,7 @@ async function buildRuntime(args: string[]) {
   const sourceName = configuredTicketSource(config);
   const sinkName = sourceName;
 
-  const pullRequestActivitySource = config.sources.github.enabled
+  const pullRequestActivitySource = prTrackingEnabled
     ? createGitHubPullRequestActivitySource({
         client: createGitHubClient(await resolveGitHubToken()),
         stateStore,

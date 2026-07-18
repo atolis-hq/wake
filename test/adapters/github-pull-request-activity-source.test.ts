@@ -123,6 +123,33 @@ describe('createGitHubPullRequestActivitySource', () => {
     expect(commentEvents[0]?.sourceRefs.resourceUri).toBe('github:pr:org/repo#91');
   });
 
+  it('does not poll watchlisted PR activity when pullRequests.enabled is false', async () => {
+    const client = {
+      listPullRequests: vi.fn().mockResolvedValue([]),
+      getPullRequest: vi.fn(),
+      listComments: vi.fn().mockResolvedValue([]),
+      listReviews: vi.fn().mockResolvedValue([]),
+      listReviewComments: vi.fn().mockResolvedValue([]),
+      replyToReviewComment: vi.fn(),
+      createComment: vi.fn(),
+    };
+    const config = buildConfig();
+    config.sources.github.pullRequests.enabled = false;
+    const source = createGitHubPullRequestActivitySource({
+      client,
+      stateStore: createStateStore({ wakeRoot: root }),
+      config,
+      resourceIndex: createFakeResourceIndex(),
+      now: () => new Date('2026-07-18T00:00:00Z'),
+    });
+
+    const events = await source.pollEvents({ watch: [{ resourceUri: 'github:pr:org/repo#91' }] });
+    expect(client.listComments).not.toHaveBeenCalled();
+    expect(client.listReviews).not.toHaveBeenCalled();
+    expect(client.listReviewComments).not.toHaveBeenCalled();
+    expect(events).toHaveLength(0);
+  });
+
   it('derives a stable review-thread resourceUri from review comment thread roots', async () => {
     const client = {
       listPullRequests: vi.fn().mockResolvedValue([]),

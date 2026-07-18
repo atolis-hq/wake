@@ -9,6 +9,7 @@ import {
   renderPromptTemplate,
 } from '../../src/adapters/runner/prompt-templates.js';
 import { buildStagePrompt } from '../../src/adapters/runner/stage-prompt.js';
+import { createDefaultWakeConfig } from '../../src/config/defaults.js';
 
 describe('prompt templates', () => {
   it('parses frontmatter and body from a stage/mode template file', async () => {
@@ -105,7 +106,7 @@ describe('prompt templates', () => {
     expect(rendered).toContain('"id": "evt-1"');
   });
 
-  it('instructs the agent to report PR artifacts', async () => {
+  it('instructs the agent to report PR artifacts when PR tracking is enabled', async () => {
     const projection = {
       schemaVersion: 1 as const,
       workItemKey: 'work-01JQZX9K2N4P6R8T0V2W4Y6A8C',
@@ -134,12 +135,67 @@ describe('prompt templates', () => {
       correlatedResources: [],
     };
 
+    const config = createDefaultWakeConfig(process.cwd());
+    config.sources.github.enabled = true;
+    config.sources.github.pullRequests.enabled = true;
+
     const result = await buildStagePrompt({
       action: 'implement',
       projection,
+      config,
     });
 
     expect(result.harnessPrompt).toContain('wake-artifacts');
+  });
+
+  it('omits the wake-artifacts instruction when PR tracking is disabled', async () => {
+    const projection = {
+      schemaVersion: 1 as const,
+      workItemKey: 'work-01JQZX9K2N4P6R8T0V2W4Y6A8C',
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 12,
+        title: 'Example issue',
+        body: 'Body',
+        labels: ['wake:implement'],
+        assignees: [],
+        isPullRequest: false,
+        state: 'open' as const,
+        url: 'https://example.test/issues/12',
+        createdAt: '2026-07-05T12:00:00.000Z',
+        updatedAt: '2026-07-05T12:00:00.000Z',
+      },
+      comments: [],
+      wake: {
+        stage: 'implement' as const,
+        stageHistory: [],
+        recentEventIds: [],
+        syncedAt: '2026-07-05T12:00:00.000Z',
+        expectedEcho: { commentIds: [], labels: [] },
+      },
+      context: {},
+      correlatedResources: [],
+    };
+
+    const config = createDefaultWakeConfig(process.cwd());
+    config.sources.github.enabled = true;
+    config.sources.github.pullRequests.enabled = false;
+
+    const result = await buildStagePrompt({
+      action: 'implement',
+      projection,
+      config,
+    });
+
+    expect(result.harnessPrompt).not.toContain('wake-artifacts');
+
+    // No config at all is the same as PR tracking not being configured on —
+    // it must not silently opt every caller in.
+    const resultNoConfig = await buildStagePrompt({
+      action: 'implement',
+      projection,
+    });
+    expect(resultNoConfig.harnessPrompt).not.toContain('wake-artifacts');
   });
 
   it('renders review-thread anchoring for a PR review comment', async () => {
