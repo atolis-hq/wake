@@ -395,8 +395,16 @@ export const wakeConfigSchema = z.object({
         postStatusComments: z.boolean().default(true),
         activeLabel: z.string().optional(),
       }).default({ postStatusComments: true }),
-    }).default({ enabled: false, repos: [], polling: { maxIssuesPerRepo: 25, commentPageSize: 25, lookbackMs: 60_000 }, policy: { requiredLabels: [], ignoredLabels: [], requiredAssignees: [] }, publication: { postStatusComments: true } }),
-  }).default({ github: { enabled: false, repos: [], polling: { maxIssuesPerRepo: 25, commentPageSize: 25, lookbackMs: 60_000 }, policy: { requiredLabels: [], ignoredLabels: [], requiredAssignees: [] }, publication: { postStatusComments: true } } }),
+      pullRequests: z.object({
+        enabled: z.boolean().default(false),
+        maxPullRequestsPerRepo: z.number().int().positive().default(25),
+        commentPageSize: z.number().int().positive().default(25),
+        policy: z.object({
+          requiredAuthors: z.array(z.string()).default([]),
+        }).default({ requiredAuthors: [] }),
+      }).default({ enabled: false, maxPullRequestsPerRepo: 25, commentPageSize: 25, policy: { requiredAuthors: [] } }),
+    }).default({ enabled: false, repos: [], polling: { maxIssuesPerRepo: 25, commentPageSize: 25, lookbackMs: 60_000 }, policy: { requiredLabels: [], ignoredLabels: [], requiredAssignees: [] }, publication: { postStatusComments: true }, pullRequests: { enabled: false, maxPullRequestsPerRepo: 25, commentPageSize: 25, policy: { requiredAuthors: [] } } }),
+  }).default({ github: { enabled: false, repos: [], polling: { maxIssuesPerRepo: 25, commentPageSize: 25, lookbackMs: 60_000 }, policy: { requiredLabels: [], ignoredLabels: [], requiredAssignees: [] }, publication: { postStatusComments: true }, pullRequests: { enabled: false, maxPullRequestsPerRepo: 25, commentPageSize: 25, policy: { requiredAuthors: [] } } } }),
   sinks: z.record(z.string(), sinkEntrySchema).default({}),
 });
 
