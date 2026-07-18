@@ -141,6 +141,16 @@ export function createTickRunner(deps: {
         repo: input.projection.issue.repo,
         issueNumber: input.projection.issue.number,
         runId: input.runId,
+        // Carries the triggering comment's surface (set only when the human
+        // reply that woke this run came from a correlated PR/review-thread
+        // resource, per the ad1cf45 comment fold) through to the sink
+        // router, so createOutboundSinkRouter's kind-based routing (Task 11,
+        // sink-router.ts) can send the reply back to that surface instead of
+        // defaulting to the issue thread. Without this, every reply landed
+        // on the origin sink regardless of which surface triggered the run.
+        ...(input.projection.latestComment?.resourceUri === undefined
+          ? {}
+          : { resourceUri: input.projection.latestComment.resourceUri }),
       },
       occurredAt: input.occurredAt,
       ingestedAt: input.occurredAt,

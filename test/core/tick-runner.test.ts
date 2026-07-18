@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { createFakeArtifactVerifier } from '../../src/adapters/fake/fake-artifact-verifier.js';
+import { createFakeGitHubPullRequestActivitySource } from '../../src/adapters/fake/fake-github-pull-request-activity-source.js';
 import { createFakeResourceIndex } from '../../src/adapters/fake/fake-resource-index.js';
 import { createFakeTicketingSystem } from '../../src/adapters/fake/fake-ticketing-system.js';
 import { createFakeWorkspaceManager } from '../../src/adapters/fake/fake-workspace-manager.js';
@@ -11,13 +12,14 @@ import { createResourceIndex } from '../../src/adapters/fs/resource-index.js';
 import { createStateStore } from '../../src/adapters/fs/state-store.js';
 import { createDefaultWakeConfig } from '../../src/config/defaults.js';
 import { createProjectionUpdater } from '../../src/core/projection-updater.js';
+import { createOutboundSinkRouter, createWorkSourceFanIn } from '../../src/core/sink-router.js';
 import { createTickRunner } from '../../src/core/tick-runner.js';
 import {
   CORRELATION_PRIMARY_CONFLICT_EVENT,
   CORRELATION_REGISTERED_EVENT,
   WORK_ITEM_CREATED_EVENT,
 } from '../../src/domain/schema.js';
-import type { IssueStateRecord } from '../../src/domain/types.js';
+import type { EventEnvelope, IssueStateRecord } from '../../src/domain/types.js';
 import { createEventEnvelope, createUnkeyedEventEnvelope } from '../../src/lib/event-log.js';
 import { isWorkId } from '../../src/lib/work-id.js';
 
@@ -4003,6 +4005,365 @@ describe('tick runner', () => {
 
       const projections = await store.listIssueStates();
       expect(projections).toHaveLength(1);
+    });
+  });
+
+  describe('end-to-end: issue -> implement -> PR review comment -> resume -> reply on the thread', () => {
+    it('resumes the issue work item from a PR review comment and replies on the PR sink, not the issue sink', async () => {
+      // Adaptation 1 (brief step 6/7 named a review-thread comment routed to
+      // `github:pr-review-thread:...`): the fake PR activity source (Task
+      // 10, fake-github-pull-request-activity-source.ts) only emits plain
+      // `pr.comment.created` conversation events, never
+      // `pr.review-comment.created` review-thread events. Per this task's
+      // brief guidance (option a), this scenario uses a plain PR
+      // conversation comment (`github:pr:org/repo#91`) instead. It still
+      // proves every load-bearing claim: an agent-reported PR is verified
+      // and registered (step 3), a human reply resumes the SAME session
+      // (steps 1-4), and a later comment on the PR surface resumes that
+      // same session again and gets its reply routed to the PR sink instead
+      // of the issue sink (steps 5-7) — extending a review thread instead of
+      // the top-level conversation would exercise the same routing code
+      // path (sinkNameForResourceUri treats 'pr' and 'pr-review-thread'
+      // identically), so nothing about the routing claim is weakened.
+      //
+      // Adaptation 2 (brief step 4 imagines a literal '/approved' comment
+      // leaving the item "in 'implement' with a live session"): tracing the
+      // real approval path shows this can't hold. Approving an
+      // implement-stage AWAITING_APPROVAL always resolves via
+      // lifecycle-service's `nextStageFromSentinel('implement', 'DONE')`,
+      // which unconditionally returns 'done' — see the existing test
+      // "transitions an awaiting-approval status to done when /approved
+      // comment is present" above. Moving stage forward always clears
+      // `wake.sessionId` (projection-updater.ts's `shouldClearSession`), so
+      // a full approval leaves nothing for a later PR comment to resume.
+      // This scenario instead uses the BLOCKED / human-reply resume cycle
+      // this file already exercises elsewhere (e.g. "runs once when a new
+      // human comment arrives on an eligible issue"), which is
+      // session-preserving by design — while still posting a comment
+      // literally worded '/approved' so the human step stays recognisable.
+      //
+      // PRODUCTION FIX NOTE: writing this scenario surfaced a real gap —
+      // src/core/tick-runner.ts's createPublishIntentEvent never carried a
+      // `resourceUri` on the outbound wake.publish.intent.requested event,
+      // so createOutboundSinkRouter's PR-vs-issue routing (Task 11,
+      // sink-router.ts, commit 7512226) had no signal to route on and every
+      // reply landed on the issue sink regardless of which surface
+      // triggered the run. Fixed narrowly by threading
+      // `projection.latestComment?.resourceUri` (already populated by the
+      // ad1cf45 comment fold when the triggering comment came from a
+      // correlated PR/review surface) into that event's sourceRefs. See the
+      // task report for detail.
+      const repo = 'atolis-hq/wake';
+      const issueNumber = 91;
+      const workKey = workId(issueNumber);
+      const prUrl = 'https://example.test/org/repo/pull/91';
+      const prResourceUri = 'github:pr:org/repo#91';
+
+      const store = createStateStore({ wakeRoot: root });
+      const resourceIndex = createFakeResourceIndex();
+      await resourceIndex.register(githubIssueUri(issueNumber), workKey);
+      const workspaceManager = createFakeWorkspaceManager(join(root, 'workspaces'));
+
+      const config = createDefaultWakeConfig(root);
+      config.sources.github.policy.requiredLabels = ['wake:implement'];
+
+      const artifactVerifier = createFakeArtifactVerifier({
+        verifies: [{ url: prUrl, resourceUri: prResourceUri }],
+      });
+
+      // One shared issue-thread sink across all three ticks — every tick
+      // must confirm its own outbound intents (deliverOutboundEvent ->
+      // attemptDelivery) as it goes, or a later tick's
+      // retryUnconfirmedDeliveries replays them in a batch instead. This
+      // mirrors the no-op-reply outboundSink shape used throughout this
+      // file (e.g. "publishes working then completed status labels...")
+      // rather than createFakeTicketingSystem's full echo, which replaces
+      // issue.labels with exactly `[statusLabel, stageLabel]` on delivery —
+      // that would wipe this fixture's 'wake:implement' qualifying label,
+      // which isn't one of Wake's own status/stage labels.
+      const githubIssueSink = {
+        async deliverIntent(_input: { event: EventEnvelope }): Promise<EventEnvelope[]> {
+          return [];
+        },
+      };
+
+      let runnerCallCount = 0;
+      const capturedSessionIds: Array<string | undefined> = [];
+
+      // Step 1: seed a ticket already in 'implement' with no prior run,
+      // mirroring this file's implement-stage fixtures (e.g. "artifact
+      // reporting" above).
+      await store.writeIssueState({
+        schemaVersion: 1,
+        workItemKey: workKey,
+        issue: {
+          repo,
+          number: issueNumber,
+          title: 'Implement PR review flow',
+          body: 'Body',
+          labels: ['wake:implement'],
+          assignees: [],
+          isPullRequest: false,
+          state: 'open',
+          url: `https://example.test/${repo}/issues/${issueNumber}`,
+          createdAt: '2026-07-05T12:00:00.000Z',
+          updatedAt: '2026-07-05T12:00:00.000Z',
+        },
+        comments: [],
+        wake: {
+          stage: 'implement',
+          stageHistory: [],
+          recentEventIds: [],
+          syncedAt: '2026-07-05T12:00:00.000Z',
+          expectedEcho: { commentIds: [], labels: [] },
+        },
+        context: {},
+        correlatedResources: [],
+      });
+
+      // Step 2: first tick — the agent opens a PR (reported via the
+      // wake-artifacts fence, Task 4's pattern) but comes back BLOCKED with
+      // a clarifying question rather than AWAITING_APPROVAL/DONE, so the
+      // session survives to be resumed later (see adaptation 2 above).
+      const tickRunner1 = createTickRunner({
+        clock: { now: () => new Date('2026-07-05T12:00:00.000Z') },
+        config,
+        stateStore: store,
+        workSource: { async pollEvents() { return []; } },
+        outboundSink: githubIssueSink,
+        runner: {
+          async run(input) {
+            runnerCallCount += 1;
+            capturedSessionIds.push(input.projection.wake.sessionId);
+            return {
+              result: [
+                'Opened the PR. Quick question before I finish up: should the retry cap be configurable?',
+                '',
+                '```wake-artifacts',
+                `{ "artifacts": [{ "kind": "pr", "url": "${prUrl}" }] }`,
+                '```',
+                '',
+                '```wake-result',
+                '{ "status": "BLOCKED" }',
+                '```',
+                'BLOCKED',
+              ].join('\n'),
+              model: 'test-model',
+              cli: 'test-cli',
+              session_id: 'session-91',
+            };
+          },
+        },
+        resourceIndex,
+        workspaceManager,
+        artifactVerifier,
+      });
+
+      const tick1Result = await tickRunner1.runTick();
+      expect(tick1Result.status).toBe('processed');
+      expect((tick1Result as { sentinel?: string }).sentinel).toBe('BLOCKED');
+      expect(runnerCallCount).toBe(1);
+
+      // Step 3: correlatedResources holds the verified, agent-reported PR.
+      let projection = await findByIssueRef(store, { repo, issueNumber });
+      expect(projection?.correlatedResources).toContainEqual(
+        expect.objectContaining({
+          resourceUri: prResourceUri,
+          role: 'implementation',
+          relation: 'primary',
+          provenance: 'agent-reported',
+        }),
+      );
+      expect(projection?.wake.stage).toBe('implement');
+      expect(projection?.wake.sessionId).toBe('session-91');
+      expect(projection?.context.lastRunSentinel).toBe('BLOCKED');
+
+      // Step 4: a human replies with a plain ticket comment (the same
+      // inbound shape the fake ticketing system's comment-seed path
+      // produces) — this resumes the SAME session rather than a fresh one.
+      const tickRunner2 = createTickRunner({
+        clock: { now: () => new Date('2026-07-05T12:05:00.000Z') },
+        config,
+        stateStore: store,
+        outboundSink: githubIssueSink,
+        workSource: {
+          async pollEvents() {
+            return [
+              {
+                schemaVersion: 1,
+                eventId: 'evt-comment-91-approved',
+                streamScope: 'work-item',
+                direction: 'inbound',
+                sourceSystem: 'github',
+                sourceEventType: 'ticket.comment.created',
+                sourceRefs: {
+                  repo,
+                  issueNumber,
+                  commentId: 'c-91-approved',
+                  resourceUri: githubIssueUri(issueNumber),
+                },
+                occurredAt: '2026-07-05T12:05:00.000Z',
+                ingestedAt: '2026-07-05T12:05:00.000Z',
+                trigger: 'context-only',
+                payload: {
+                  comment: {
+                    id: 'c-91-approved',
+                    body: '/approved',
+                    author: { login: 'owner' },
+                    createdAt: '2026-07-05T12:05:00.000Z',
+                    updatedAt: '2026-07-05T12:05:00.000Z',
+                  },
+                },
+              },
+            ];
+          },
+        },
+        runner: {
+          async run(input) {
+            runnerCallCount += 1;
+            capturedSessionIds.push(input.projection.wake.sessionId);
+            return {
+              result: [
+                'Thanks — keeping the retry cap fixed for now. One more thing to confirm before this is fully done.',
+                '',
+                '```wake-result',
+                '{ "status": "BLOCKED" }',
+                '```',
+                'BLOCKED',
+              ].join('\n'),
+              model: 'test-model',
+              cli: 'test-cli',
+              session_id: 'session-91',
+            };
+          },
+        },
+        resourceIndex,
+        workspaceManager,
+        artifactVerifier,
+      });
+
+      const tick2Result = await tickRunner2.runTick();
+      expect(tick2Result.status).toBe('processed');
+      expect(runnerCallCount).toBe(2);
+      // Same session resumed, not a fresh one.
+      expect(capturedSessionIds[1]).toBe('session-91');
+
+      projection = await findByIssueRef(store, { repo, issueNumber });
+      expect(projection?.wake.stage).toBe('implement');
+      expect(projection?.wake.sessionId).toBe('session-91');
+
+      // Step 5: a fake PR activity source (Task 10) seeded with one PR
+      // conversation comment on the now-correlated PR, fanned in alongside
+      // the issue source, with an outbound sink router registering the
+      // issue sink under 'github' (the projection's origin fallback) and
+      // the PR sink under 'github-pr' (the name sinkNameForResourceUri
+      // derives from a `github:pr:...`/`github:pr-review-thread:...`
+      // resourceUri, per Task 11).
+      const prActivitySource = createFakeGitHubPullRequestActivitySource({
+        prs: [
+          {
+            repo: 'org/repo',
+            number: 91,
+            author: 'contributor',
+            headRef: 'wake/91',
+            comments: [
+              { id: 'prc-1', body: 'Please also handle the null case on line 42.', author: 'reviewer' },
+            ],
+          },
+        ],
+        now: () => new Date('2026-07-05T12:10:00.000Z'),
+      });
+
+      const githubSinkReceived: EventEnvelope[] = [];
+      const prSinkReceived: EventEnvelope[] = [];
+      const prSinkPublished: EventEnvelope[] = [];
+
+      const outboundSink = createOutboundSinkRouter({
+        config,
+        sinks: [
+          {
+            sink: 'github',
+            async deliverIntent(input) {
+              githubSinkReceived.push(input.event);
+              return githubIssueSink.deliverIntent(input);
+            },
+          },
+          {
+            sink: 'github-pr',
+            async deliverIntent(input) {
+              prSinkReceived.push(input.event);
+              const delivered = await prActivitySource.deliverIntent(input);
+              prSinkPublished.push(...delivered);
+              return delivered;
+            },
+          },
+        ],
+      });
+
+      const workSource = createWorkSourceFanIn([
+        { source: 'fake-ticketing', async pollEvents() { return []; } },
+        { source: 'fake-github-pr', pollEvents: prActivitySource.pollEvents },
+      ]);
+
+      const tickRunner3 = createTickRunner({
+        clock: { now: () => new Date('2026-07-05T12:10:00.000Z') },
+        config,
+        stateStore: store,
+        workSource,
+        outboundSink,
+        runner: {
+          async run(input) {
+            runnerCallCount += 1;
+            capturedSessionIds.push(input.projection.wake.sessionId);
+            return {
+              result: [
+                'Handled the null check on line 42, thanks for the catch.',
+                '',
+                '```wake-result',
+                '{ "status": "BLOCKED" }',
+                '```',
+                'BLOCKED',
+              ].join('\n'),
+              model: 'test-model',
+              cli: 'test-cli',
+              session_id: 'session-91',
+            };
+          },
+        },
+        resourceIndex,
+        workspaceManager,
+        artifactVerifier,
+      });
+
+      // Step 6: second tick against the PR-aware runtime. The watchlist
+      // (derived from correlatedResources registered in step 3) now
+      // includes github:pr:org/repo#91, so the fake PR source emits the
+      // conversation comment instead of a bare pr.seen event, and the work
+      // item resumes with the SAME session rather than minting a new run.
+      const tick3Result = await tickRunner3.runTick();
+      expect(tick3Result.status).toBe('processed');
+      expect(runnerCallCount).toBe(3);
+      expect(capturedSessionIds[2]).toBe('session-91');
+
+      projection = await findByIssueRef(store, { repo, issueNumber });
+      expect(projection?.comments.some((c) => c.id === 'prc-1')).toBe(true);
+      // The triggering comment is tagged with the PR surface it came from
+      // (ad1cf45's comment fold) — this is exactly the signal the
+      // production fix above threads onto the reply's publish intent.
+      expect(projection?.latestComment?.resourceUri).toBe(prResourceUri);
+
+      // Step 7: the reply was routed to the PR sink, not the issue sink —
+      // the resourceUri on the triggering run's publish intent carries the
+      // PR surface, and only the 'github-pr' sink received it.
+      expect(
+        githubSinkReceived.some((event) => event.sourceEventType === 'wake.publish.intent.requested'),
+      ).toBe(false);
+      expect(prSinkReceived).toHaveLength(1);
+      expect(prSinkReceived[0]?.sourceEventType).toBe('wake.publish.intent.requested');
+      expect(prSinkReceived[0]?.sourceRefs.resourceUri).toBe(prResourceUri);
+
+      expect(prSinkPublished).toHaveLength(1);
+      expect(prSinkPublished[0]?.sourceEventType).toBe('pr.comment.reply.published');
     });
   });
 });
