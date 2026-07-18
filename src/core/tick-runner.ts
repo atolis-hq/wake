@@ -339,6 +339,24 @@ export function createTickRunner(deps: {
   // configured WorkSource; discovery sources (GitHub issues, the fake
   // ticketing system) accept and ignore it, while a future PR-activity
   // source uses it to know which PRs to poll for review/CI events.
+  const PR_URI_PREFIX = 'github:pr:';
+  const PR_REVIEW_THREAD_URI_PREFIX = 'github:pr-review-thread:';
+
+  // Resolves a correlated resource's owning PR resourceUri, or null if the
+  // resource is not PR-related. A `github:pr:...` entry owns itself; a
+  // `github:pr-review-thread:<repo>#<number>/rt_<id>` entry's owning PR is
+  // `github:pr:<repo>#<number>`, extracted by dropping the `/rt_<id>` suffix.
+  function owningPrUri(resourceUri: string): string | null {
+    if (resourceUri.startsWith(PR_URI_PREFIX)) {
+      return resourceUri;
+    }
+    if (resourceUri.startsWith(PR_REVIEW_THREAD_URI_PREFIX)) {
+      const repoAndNumber = resourceUri.slice(PR_REVIEW_THREAD_URI_PREFIX.length).split('/rt_')[0];
+      return `${PR_URI_PREFIX}${repoAndNumber}`;
+    }
+    return null;
+  }
+
   function deriveWatchlist(projections: IssueStateRecord[]): { resourceUri: string }[] {
     const seen = new Set<string>();
     const watch: { resourceUri: string }[] = [];
@@ -348,11 +366,12 @@ export function createTickRunner(deps: {
         continue;
       }
       for (const resource of projection.correlatedResources) {
-        if (seen.has(resource.resourceUri)) {
+        const prUri = owningPrUri(resource.resourceUri);
+        if (prUri === null || seen.has(prUri)) {
           continue;
         }
-        seen.add(resource.resourceUri);
-        watch.push({ resourceUri: resource.resourceUri });
+        seen.add(prUri);
+        watch.push({ resourceUri: prUri });
       }
     }
 

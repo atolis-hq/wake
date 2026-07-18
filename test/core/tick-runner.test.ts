@@ -659,6 +659,88 @@ describe('tick runner', () => {
     });
   });
 
+  it('excludes non-PR correlated resources and collapses PR review threads to their owning PR', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const pollEvents = vi.fn().mockResolvedValue([]);
+
+    await store.writeIssueState({
+      schemaVersion: 1,
+      workItemKey: workId(91),
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 91,
+        title: 'Implement',
+        body: 'Body',
+        labels: ['wake:implement'],
+        assignees: [],
+        isPullRequest: false,
+        state: 'open',
+        url: 'https://example.test/issues/91',
+        createdAt: '2026-07-05T12:00:00.000Z',
+        updatedAt: '2026-07-05T12:00:00.000Z',
+      },
+      comments: [],
+      wake: {
+        stage: 'implement',
+        stageHistory: [],
+        recentEventIds: [],
+        syncedAt: '2026-07-05T12:00:00.000Z',
+        expectedEcho: { commentIds: [], labels: [] },
+      },
+      context: {},
+      correlatedResources: [
+        {
+          resourceUri: 'github:issue:org/repo#91',
+          role: 'representation',
+          relation: 'primary',
+          provenance: 'agent-reported',
+          registeredAt: '2026-07-05T12:00:00.000Z',
+        },
+        {
+          resourceUri: 'github:pr:org/repo#91',
+          role: 'implementation',
+          relation: 'primary',
+          provenance: 'agent-reported',
+          registeredAt: '2026-07-05T12:00:00.000Z',
+        },
+        {
+          resourceUri: 'github:pr-review-thread:org/repo#91/rt_501',
+          role: 'implementation',
+          relation: 'secondary',
+          provenance: 'agent-reported',
+          registeredAt: '2026-07-05T12:00:00.000Z',
+        },
+      ],
+    });
+
+    const config = createDefaultWakeConfig(root);
+
+    const tickRunner = createTickRunner({
+      clock: { now: () => new Date('2026-07-05T12:00:00.000Z') },
+      config,
+      stateStore: store,
+      workSource: { pollEvents },
+      outboundSink: {
+        async deliverIntent() {
+          return [];
+        },
+      },
+      runner: {
+        async run() {
+          throw new Error('should not run');
+        },
+      },
+      resourceIndex: createFakeResourceIndex(),
+      workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+    });
+
+    await tickRunner.runTick();
+
+    expect(pollEvents).toHaveBeenCalledWith({
+      watch: [{ resourceUri: 'github:pr:org/repo#91' }],
+    });
+  });
+
   it('sets awaiting-approval status and posts an approval request when a run requests sign-off', async () => {
     const store = createStateStore({ wakeRoot: root });
     const deliveredEvents: string[] = [];
