@@ -633,7 +633,7 @@ export function parseLedger(input: unknown) {
 }
 
 export function parseWakeConfig(input: unknown) {
-  return wakeConfigSchema.parse(input);
+  return structuredClone(wakeConfigSchema.parse(input));
 }
 
 export function parseSourceStateRecord(input: unknown) {

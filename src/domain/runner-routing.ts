@@ -81,7 +81,7 @@ export function resolveRunnerRouting(input: {
   if (workflow === undefined) {
     throw new Error(`Unknown workflow "${workflowName}".`);
   }
-  const stageRoute = input.config.stages[input.stage] ?? workflow.stages[input.stage];
+  const stageRoute = workflow.stages[input.stage];
 
   if (stageRoute?.runner !== undefined) {
     const entry = input.config.runners[stageRoute.runner];

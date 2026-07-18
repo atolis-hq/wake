@@ -894,6 +894,15 @@ describe('workflow config schema', () => {
     });
   });
 
+  it('returns isolated default workflow objects for each parsed config', () => {
+    const first = parseWakeConfig({ paths: { wakeRoot: '/tmp/wake-1' } });
+    first.workflows.default!.stages.implement!.runner = 'pinned';
+
+    const second = parseWakeConfig({ paths: { wakeRoot: '/tmp/wake-2' } });
+
+    expect(second.workflows.default?.stages.implement?.runner).toBeUndefined();
+  });
+
   it.each([
     ['missing onDone', { stages: { refine: { action: 'refine', workspace: 'read-only' } } }, /onDone/],
     ['defined queue stage', { stages: { queue: { action: 'refine', workspace: 'read-only', onDone: 'done' } } }, /queue/],
