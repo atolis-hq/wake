@@ -187,6 +187,16 @@ function buildHarnessPrompt(input: {
     'The JSON object must contain only the `status` field. Do not add other fields.',
   );
 
+  lines.push(
+    '',
+    'Artifact reporting:',
+    'If you created a pull request during this stage, report it before the result envelope by adding a fenced `wake-artifacts` JSON block:',
+    '```wake-artifacts',
+    '{ "artifacts": [{ "kind": "pr", "url": "<the PR URL>" }] }',
+    '```',
+    'Only report a PR you actually created in this run. Omit the block entirely if you created no PR.',
+  );
+
   return lines.join('\n');
 }
 
