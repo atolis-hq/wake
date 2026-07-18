@@ -66,5 +66,62 @@ export function createGitHubClient(token: string) {
         labels,
       });
     },
+    async getPullRequest(owner: string, repo: string, pullNumber: number) {
+      const { data } = await octokit.rest.pulls.get({
+        owner,
+        repo,
+        pull_number: pullNumber,
+      });
+      return data;
+    },
+    async listPullRequests(owner: string, repo: string, maxResults: number) {
+      const perPage = Math.min(maxResults, 100);
+      const results: Awaited<ReturnType<typeof octokit.rest.pulls.list>>['data'] = [];
+
+      for await (const { data } of octokit.paginate.iterator(octokit.rest.pulls.list, {
+        owner,
+        repo,
+        state: 'open',
+        per_page: perPage,
+      })) {
+        results.push(...data);
+        if (results.length >= maxResults) {
+          break;
+        }
+      }
+
+      return results.slice(0, maxResults);
+    },
+    async listReviews(owner: string, repo: string, pullNumber: number, perPage: number) {
+      return octokit.paginate(octokit.rest.pulls.listReviews, {
+        owner,
+        repo,
+        pull_number: pullNumber,
+        per_page: perPage,
+      });
+    },
+    async listReviewComments(owner: string, repo: string, pullNumber: number, perPage: number) {
+      return octokit.paginate(octokit.rest.pulls.listReviewComments, {
+        owner,
+        repo,
+        pull_number: pullNumber,
+        per_page: perPage,
+      });
+    },
+    async replyToReviewComment(
+      owner: string,
+      repo: string,
+      pullNumber: number,
+      commentId: number,
+      body: string,
+    ) {
+      return octokit.rest.pulls.createReplyForReviewComment({
+        owner,
+        repo,
+        pull_number: pullNumber,
+        comment_id: commentId,
+        body,
+      });
+    },
   };
 }
