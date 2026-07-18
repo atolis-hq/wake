@@ -127,6 +127,11 @@ const stageHistoryEntrySchema = z.object({
   reason: z.string(),
 });
 
+const reviewThreadAnchorSchema = z.object({
+  path: z.string(),
+  line: z.number().int().positive().optional(),
+});
+
 const commentSnapshotSchema = z.object({
   id: z.string(),
   body: z.string(),
@@ -136,6 +141,10 @@ const commentSnapshotSchema = z.object({
   createdAt: isoTimestampSchema,
   updatedAt: isoTimestampSchema,
   isBotAuthored: z.boolean().default(false),
+  // Which correlated surface this comment came from; absent = the originating
+  // issue thread, keeping every pre-existing comment valid under this schema.
+  resourceUri: resourceUriSchema.optional(),
+  reviewThread: reviewThreadAnchorSchema.optional(),
 });
 
 const issueSnapshotSchema = z.object({

@@ -1317,6 +1317,49 @@ describe('projection updater', () => {
     expect(projection?.wake.sessionCli).toBeUndefined();
   });
 
+  it('folds a PR review-thread comment into comments[] with surface tagging', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const updater = createProjectionUpdater({ stateStore: store, resourceIndex: createFakeResourceIndex() });
+    const workItemKey = workId(150);
+
+    const initialUpsert = issueUpsert({
+      eventId: 'evt-pr-review-comment-issue',
+      issueNumber: 150,
+      labels: ['wake:queue'],
+    });
+
+    const commentEvent = createEventEnvelope({
+      eventId: 'pr-review-comment-1',
+      workItemKey,
+      streamScope: 'work-item',
+      direction: 'inbound',
+      sourceSystem: 'github-pr',
+      sourceEventType: 'pr.review-comment.created',
+      sourceRefs: { resourceUri: 'github:pr-review-thread:org/repo#91/rt_1' },
+      occurredAt: '2026-07-18T00:00:00Z',
+      ingestedAt: '2026-07-18T00:00:00Z',
+      trigger: 'context-only',
+      payload: {
+        comment: {
+          id: 'rc-1',
+          body: 'Please fix this null check',
+          author: { login: 'reviewer' },
+          createdAt: '2026-07-18T00:00:00Z',
+          updatedAt: '2026-07-18T00:00:00Z',
+          resourceUri: 'github:pr-review-thread:org/repo#91/rt_1',
+          reviewThread: { path: 'src/foo.ts', line: 42 },
+        },
+      },
+      derivedHints: { botAuthoredComment: false },
+    });
+
+    await updater.rebuildFromEvents([initialUpsert, commentEvent]);
+    const projection = await store.readIssueState(workItemKey);
+    const comment = projection?.comments.find((c) => c.id === 'rc-1');
+    expect(comment?.resourceUri).toBe('github:pr-review-thread:org/repo#91/rt_1');
+    expect(comment?.reviewThread).toEqual({ path: 'src/foo.ts', line: 42 });
+  });
+
   describe('correlation fold (ADR 0001 §5-6)', () => {
     it('rule 1: wake.correlation.registered appends to correlatedResources[] and registers in the index', async () => {
       const store = createStateStore({ wakeRoot: root });
