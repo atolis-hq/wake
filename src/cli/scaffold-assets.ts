@@ -15,12 +15,7 @@ const runtimeDirectoryNames = [
   'logs',
 ] as const;
 
-const promptFileNames = [
-  'refine.start.md',
-  'refine.resume.md',
-  'implement.start.md',
-  'implement.resume.md',
-] as const;
+const promptFileNames = ['refine.md', 'implement.md'] as const;
 
 const dockerAssetNames = ['Dockerfile', 'setup.sh', 'log-command.sh'] as const;
 

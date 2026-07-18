@@ -13,7 +13,7 @@ Look at what the three "decision" modules actually contain today:
 - `lifecycle-service.ts` — `nextStageFromSentinel`: DONE → (`refined` | `done`), BLOCKED → `blocked`, FAILED → `failed`. Twelve lines.
 - `tick-runner.ts` — `implement` gets a branch workspace, `refine` gets a read-only clone.
 
-That is a workflow definition, hand-compiled into code. The prompts are already externalized per action (`prompts/<action>.<mode>.md` with frontmatter for tools/permissions/maxTurns). So the design move for both features is the same: **replace the hard-coded vocabulary with a declarative workflow definition, and make policy-engine/lifecycle-service its interpreter.** The runner-routing feature then falls out for free, because "which CLI/model runs this stage" is just another per-stage attribute of that definition.
+That is a workflow definition, hand-compiled into code. The prompts are already externalized per action (`prompts/<action>.md` with frontmatter for tools/permissions/maxTurns and Handlebars branches for start/resume mode). So the design move for both features is the same: **replace the hard-coded vocabulary with a declarative workflow definition, and make policy-engine/lifecycle-service its interpreter.** The runner-routing feature then falls out for free, because "which CLI/model runs this stage" is just another per-stage attribute of that definition.
 
 This is not a plugin system. Do not build hooks, middleware, or a scripting layer. Build one data structure and one interpreter, with a code escape hatch at the end (§1.6).
 
@@ -58,7 +58,7 @@ A workflow is a set of named stages; each stage either dispatches an agent actio
 
 Key vocabulary decisions:
 
-- **A stage's `action` is a prompt-template name.** `action: "reproduce"` means `prompts/reproduce.start.md` must exist. Adding a stage = adding a template + a config entry, zero code. Validate template existence at config load, not at dispatch time.
+- **A stage's `action` is a prompt-template name.** `action: "reproduce"` means `prompts/reproduce.md` must exist. Adding a stage = adding a template + a config entry, zero code. The template can branch on start/resume mode with Handlebars context such as `isStart` and `isResume`. Validate template existence at config load, not at dispatch time.
 - **`onDone` is the only transition a workflow defines.** `BLOCKED` and `FAILED` are *universal pseudo-states*, not per-workflow stages: BLOCKED parks the item until a human replies (which routes back to the stage that blocked — see 1.3), FAILED parks it terminally until a human replies. Letting workflows redefine blocked/failed semantics buys nothing and breaks the uniform unblock story.
 - **The status vocabulary (DONE/BLOCKED/FAILED) is frozen.** It is the ABI between Wake and every agent CLI. Workflows must not add statuses; richer outcomes ride in the result envelope's optional fields (§2.6), not in new control values. This is what keeps N workflows × M CLIs from becoming N×M contracts.
 - **`workspace` is an enum** (`none | read-only | branch`), replacing the `action === 'implement'` special case in `tick-runner.ts:301`. It maps directly onto the existing `WorkspaceManager` contract methods.

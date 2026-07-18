@@ -234,6 +234,9 @@ export async function buildStagePrompt(input: {
     repo: input.projection.issue.repo,
     issueNumber: input.projection.issue.number,
     stage: input.projection.wake.stage,
+    mode,
+    isStart: mode === 'start',
+    isResume: mode === 'resume',
   };
 
   if (input.action === 'implement') {

@@ -14,21 +14,22 @@ describe('prompt templates', () => {
     const template = await loadPromptTemplate('refine', 'start');
 
     expect(template.frontmatter.stage).toBe('refine');
-    expect(template.frontmatter.mode).toBe('start');
+    expect(template.frontmatter.permissionMode).toBe('default');
     expect(template.body).toContain('{{workItemKey}}');
   });
 
-  it('loads all four stage/mode combinations wake ships', async () => {
+  it('loads all bundled stage/mode combinations from combined templates', async () => {
+    await expect(loadPromptTemplate('refine', 'start')).resolves.toBeDefined();
     await expect(loadPromptTemplate('refine', 'resume')).resolves.toBeDefined();
     await expect(loadPromptTemplate('implement', 'start')).resolves.toBeDefined();
     await expect(loadPromptTemplate('implement', 'resume')).resolves.toBeDefined();
   });
 
-  it('loads a template from an explicit prompts root', async () => {
+  it('loads a combined template from an explicit prompts root', async () => {
     const promptsDir = await mkdtemp(join(tmpdir(), 'wake-prompts-'));
     await writeFile(
-      join(promptsDir, 'refine.start.md'),
-      '---\nstage: refine\nmode: start\n---\nCustom prompt body',
+      join(promptsDir, 'refine.md'),
+      '---\nstage: refine\n---\nCustom {{mode}} prompt body',
       'utf8',
     );
 
@@ -36,16 +37,35 @@ describe('prompt templates', () => {
       promptsRoot: promptsDir,
     });
 
-    expect(template.body).toBe('Custom prompt body');
+    expect(template.body).toBe('Custom {{mode}} prompt body');
   });
 
-  it('substitutes known tokens and leaves unknown ones untouched', () => {
-    const rendered = renderPromptTemplate(
-      { frontmatter: {}, body: 'Issue #{{issueNumber}}: {{title}}. Unknown: {{missing}}' },
-      { issueNumber: 8, title: 'Fix the thing' },
+  it('falls back to legacy stage/mode templates when no combined template exists', async () => {
+    const promptsDir = await mkdtemp(join(tmpdir(), 'wake-prompts-'));
+    await writeFile(
+      join(promptsDir, 'refine.start.md'),
+      '---\nstage: refine\nmode: start\n---\nLegacy prompt body',
+      'utf8',
     );
 
-    expect(rendered).toBe('Issue #8: Fix the thing. Unknown: {{missing}}');
+    const template = await loadPromptTemplate('refine', 'start', {
+      promptsRoot: promptsDir,
+    });
+
+    expect(template.frontmatter.mode).toBe('start');
+    expect(template.body).toBe('Legacy prompt body');
+  });
+
+  it('renders handlebars conditionals and lists', () => {
+    const rendered = renderPromptTemplate(
+      {
+        frontmatter: {},
+        body: '{{#if isStart}}Start{{else}}Resume{{/if}}:{{#each tools}} {{this}}{{/each}}',
+      },
+      { isStart: false, tools: ['Read', 'Grep'] },
+    );
+
+    expect(rendered).toBe('Resume: Read Grep');
   });
 
   it('stringifies non-string values passed as context', () => {

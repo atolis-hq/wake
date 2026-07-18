@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import Handlebars from 'handlebars';
 
 export interface PromptTemplate {
   frontmatter: Record<string, string>;
@@ -62,8 +63,22 @@ export async function loadPromptTemplate(
     promptsRoot?: string;
   },
 ): Promise<PromptTemplate> {
-  const filePath = join(promptsRoot(options?.promptsRoot), `${stage}.${mode}.md`);
-  const raw = await readFile(filePath, 'utf8');
+  const root = promptsRoot(options?.promptsRoot);
+  const combinedFilePath = join(root, `${stage}.md`);
+  const modeFilePath = join(root, `${stage}.${mode}.md`);
+
+  let raw: string;
+  try {
+    raw = await readFile(combinedFilePath, 'utf8');
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code !== 'ENOENT') {
+      throw error;
+    }
+
+    raw = await readFile(modeFilePath, 'utf8');
+  }
+
   return parseFrontmatter(raw);
 }
 
@@ -71,16 +86,25 @@ export function renderPromptTemplate(
   template: PromptTemplate,
   context: Record<string, unknown>,
 ): string {
-  return template.body.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (fullMatch, token: string) => {
-    if (!(token in context)) {
-      return fullMatch;
-    }
+  const renderContext = Object.fromEntries(
+    Object.entries(context).map(([key, value]) => {
+      if (Array.isArray(value)) {
+        return [key, Object.assign([...value], { toString: () => JSON.stringify(value, null, 2) })];
+      }
 
-    const value = context[token];
-    if (value === undefined) {
-      return '';
-    }
+      if (value !== null && typeof value === 'object') {
+        return [
+          key,
+          Object.assign({ ...value }, { toString: () => JSON.stringify(value, null, 2) }),
+        ];
+      }
 
-    return typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+      return [key, value];
+    }),
+  );
+  const compiled = Handlebars.compile(template.body, {
+    noEscape: true,
   });
+
+  return compiled(renderContext);
 }
