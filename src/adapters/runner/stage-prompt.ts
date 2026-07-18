@@ -10,11 +10,18 @@ type CommentSnapshot = IssueStateRecord['comments'][number];
 const questionCommandPattern = /^\/question\b/i;
 
 function formatComment(comment: CommentSnapshot): string {
+  const surfaceLine = comment.reviewThread !== undefined
+    ? `Surface: review comment on ${comment.reviewThread.path}${comment.reviewThread.line === undefined ? '' : `:${comment.reviewThread.line}`}`
+    : comment.resourceUri !== undefined
+      ? `Surface: ${comment.resourceUri}`
+      : 'Surface: issue thread';
+
   return [
     '<wake-comment>',
     `Author: ${comment.author.login}`,
     `Created: ${comment.createdAt}`,
     `Bot-authored: ${comment.isBotAuthored ? 'yes' : 'no'}`,
+    surfaceLine,
     'Body:',
     comment.body,
     '</wake-comment>',
