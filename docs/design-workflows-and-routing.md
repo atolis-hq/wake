@@ -23,7 +23,15 @@ This is not a plugin system. Do not build hooks, middleware, or a scripting laye
 
 ### 1.1 The workflow definition → [Issue #64](https://github.com/atolis-hq/wake/issues/64)
 
-A workflow is a set of named stages; each stage either dispatches an agent action or is terminal. Sketch (zod-validated, lives in config):
+Issue #64 should now be scoped as a small evolution of the current `stages`
+configuration, not as a second workflow language with distinct "steps" and
+"stages". Wake already treats the stage name as the durable workflow position
+(`queue`, `implement`, `done`) and uses `config.stages[stage]` for route data
+such as `action`, `tier`, and `runner`. The next shape should keep that single
+identifier: a workflow is an ordered set of named stages, and the stage key is
+the convention anchor for related prompt templates and stage-specific files.
+
+Sketch (zod-validated, lives in config):
 
 ```jsonc
 {
@@ -31,37 +39,43 @@ A workflow is a set of named stages; each stage either dispatches an agent actio
     "default": {
       "entryStage": "queue",
       "stages": {
-        "queue":   { "action": "refine",    "workspace": "read-only", "onDone": "implement" },
-        "implement": { "action": "implement", "workspace": "branch",    "onDone": "done" },
-        "done":    { "terminal": true },
-        "failed":  { "terminal": true }
-      }
-    },
-    "bug": {
-      "entryStage": "queue",
-      "stages": {
-        "queue":     { "action": "reproduce", "workspace": "branch", "onDone": "confirmed" },
-        "confirmed": { "action": "implement", "workspace": "branch", "onDone": "verify" },
-        "verify":    { "action": "verify",    "workspace": "branch", "onDone": "done" },
-        "done":      { "terminal": true },
-        "failed":    { "terminal": true }
+        "queue": {
+          "action": "refine",
+          "workspace": "read-only",
+          "tier": "light",
+          "onDone": "implement"
+        },
+        "implement": {
+          "action": "implement",
+          "workspace": "branch",
+          "tier": "standard",
+          "onDone": "done"
+        },
+        "done": { "terminal": true }
       }
     }
-  },
-  "workflowSelectors": [
-    { "match": { "labels": ["bug"] },              "workflow": "bug" },
-    { "match": { "labels": ["wake:workflow.bug"] }, "workflow": "bug" },
-    { "match": {},                                  "workflow": "default" }
-  ]
+  }
 }
 ```
 
 Key vocabulary decisions:
 
-- **A stage's `action` is a prompt-template name.** `action: "reproduce"` means `prompts/reproduce.md` must exist. Adding a stage = adding a template + a config entry, zero code. The template can branch on start/resume mode with Handlebars context such as `isStart` and `isResume`. Validate template existence at config load, not at dispatch time.
+- **The stage name is the workflow step id.** There is no separate `step` object
+  or `stepId` field. Durable projection state, `wake:stage.<name>` labels,
+  stage history entries, and workflow config all speak the same stage name.
+- **A stage's `action` is a prompt-template name.** `action: "reproduce"` means
+  `prompts/reproduce.md` must exist. If a stage omits `action`, the loader may
+  default to the stage name when that prompt exists; otherwise it must fail
+  early unless the stage is terminal. Adding a stage = adding a template + a
+  config entry, zero code. The template can branch on start/resume mode with
+  Handlebars context such as `isStart` and `isResume`.
 - **`onDone` is the only transition a workflow defines.** `BLOCKED` and `FAILED` are *universal pseudo-states*, not per-workflow stages: BLOCKED parks the item until a human replies (which routes back to the stage that blocked — see 1.3), FAILED parks it terminally until a human replies. Letting workflows redefine blocked/failed semantics buys nothing and breaks the uniform unblock story.
-- **The status vocabulary (DONE/BLOCKED/FAILED) is frozen.** It is the ABI between Wake and every agent CLI. Workflows must not add statuses; richer outcomes ride in the result envelope's optional fields (§2.6), not in new control values. This is what keeps N workflows × M CLIs from becoming N×M contracts.
+- **The status vocabulary (`DONE`, `BLOCKED`, `FAILED`, `AWAITING_APPROVAL`) is frozen.** It is the ABI between Wake and every agent CLI. Workflows must not add statuses; richer outcomes ride in the result envelope's optional fields (§2.6), not in new control values. This is what keeps N workflows × M CLIs from becoming N×M contracts.
 - **`workspace` is an enum** (`none | read-only | branch`), replacing the `action === 'implement'` special case in `tick-runner.ts:301`. It maps directly onto the existing `WorkspaceManager` contract methods.
+- **Workflow selection remains out of scope for #64.** The first implementation
+  should ship a `default` workflow that reproduces today's `queue → implement
+  → done` behavior. Selector rules and intake-time workflow pinning stay in
+  Issue #65.
 
 ### 1.2 The interpreter → [Issue #64](https://github.com/atolis-hq/wake/issues/64)
 
