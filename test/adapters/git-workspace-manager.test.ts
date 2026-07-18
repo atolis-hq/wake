@@ -296,8 +296,10 @@ describe('git workspace manager', () => {
     expect(mergeConflictDetected).toBe(false);
     expect(upstreamChanges).toContain('add newfile');
     expect(upstreamChanges).toContain('Wake Test <wake@example.test>');
+    // Windows checks this out through core.autocrlf, so the working-tree copy
+    // may have CRLF even though the source commit and remote log are LF.
     const newFile = await readFile(join(workspacePath, 'newfile.txt'), 'utf8');
-    expect(newFile).toBe('new content\n');
+    expect(newFile.replace(/\r\n/g, '\n')).toBe('new content\n');
   }, 20_000);
 
   it('skips merge update when workspace has pending changes', async () => {
