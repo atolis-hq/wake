@@ -859,7 +859,7 @@ describe('tick runner', () => {
 
     await store.writeIssueState({
       schemaVersion: 1,
-      workItemKey: 'atolis-hq/wake#33',
+      workItemKey: workId(33),
       issue: {
         repo: 'atolis-hq/wake',
         number: 33,
@@ -902,6 +902,7 @@ describe('tick runner', () => {
         lastRunSentinel: 'AWAITING_APPROVAL',
         pendingApprovalAction: 'refine',
       },
+      correlatedResources: [],
     });
 
     const config = createDefaultWakeConfig(root);
@@ -919,6 +920,7 @@ describe('tick runner', () => {
           return { result: 'The implementation updates the parser only.\nAWAITING_APPROVAL', model: 'test-model', cli: 'test-cli' };
         },
       },
+      resourceIndex: createFakeResourceIndex(),
       workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
     });
 

@@ -322,6 +322,7 @@ describe('claude runner command building', () => {
           expectedEcho: { commentIds: [], labels: [] },
         },
         context: { lastHandledCommentId: 'c-1' },
+        correlatedResources: [],
       },
     });
 
