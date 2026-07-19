@@ -493,6 +493,7 @@ for standalone work adoption if they match the qualification policy.
 | `enabled` | boolean | Enable PR activity polling and optional PR discovery | `false` |
 | `maxPullRequestsPerRepo` | number | Maximum PRs to fetch per repository per poll (minimum 1) | `25` |
 | `commentPageSize` | number | Page size for fetching PR comments and reviews (minimum 1) | `25` |
+| `checks.enabled` | boolean | Poll correlated PRs for failing required check runs and legacy statuses | `true` |
 | `policy.requiredAuthors` | string[] | GitHub logins allowed to author new standalone PRs; empty means no uncorrelated PR will mint a new work item | `[]` |
 
 **Important:** A pull request opened by Wake's own agent as an artifact from an issue
@@ -502,7 +503,8 @@ the repository that Wake did not create.
 
 **Reviewer feedback on Wake's own PRs:** while a work item is
 `awaiting-approval`, a new comment on a correlated PR (a review, a
-review-thread reply, or a plain PR comment) is treated as reviewer feedback
+review-thread reply, a plain PR comment, or a newly failing required check)
+is treated as reviewer feedback
 and automatically triggers Wake's `revise` action — unlike comments on the
 originating issue, no `/approved`, `/changes`, or `/question` command is
 required. The agent judges each comment independently: it may make the

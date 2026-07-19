@@ -127,6 +127,154 @@ describe('createGitHubPullRequestActivitySource', () => {
     expect(commentEvents[0]?.sourceRefs.resourceUri).toBe('github:pr:org/repo#91');
   });
 
+  it('emits PR feedback when a required check run fails', async () => {
+    const client = {
+      listPullRequests: vi.fn().mockResolvedValue([]),
+      getPullRequest: vi.fn().mockResolvedValue({
+        number: 91,
+        html_url: 'https://github.com/org/repo/pull/91',
+        head: { ref: 'wake/issue-240', sha: 'abc123' },
+        base: { ref: 'main' },
+        user: { login: 'trusted-human' },
+        updated_at: '2026-07-18T00:00:00Z',
+      }),
+      listComments: vi.fn().mockResolvedValue([]),
+      listReviews: vi.fn().mockResolvedValue([]),
+      listReviewComments: vi.fn().mockResolvedValue([]),
+      getRequiredStatusChecks: vi.fn().mockResolvedValue({
+        contexts: [],
+        checks: ['test'],
+      }),
+      listCheckRunsForRef: vi.fn().mockResolvedValue([
+        {
+          id: 8001,
+          name: 'test',
+          status: 'completed',
+          conclusion: 'failure',
+          html_url: 'https://github.com/org/repo/actions/runs/8001',
+          completed_at: '2026-07-18T00:02:00Z',
+        },
+        {
+          id: 8002,
+          name: 'optional-smoke',
+          status: 'completed',
+          conclusion: 'failure',
+          completed_at: '2026-07-18T00:03:00Z',
+        },
+      ]),
+      getCombinedStatusForRef: vi.fn().mockResolvedValue([]),
+      replyToReviewComment: vi.fn(),
+      createComment: vi.fn(),
+    };
+    const source = createGitHubPullRequestActivitySource({
+      client,
+      stateStore: createStateStore({ wakeRoot: root }),
+      config: buildConfig(),
+      resourceIndex: createFakeResourceIndex(),
+      now: () => new Date('2026-07-18T00:00:00Z'),
+    });
+
+    const events = await source.pollEvents({ watch: [{ resourceUri: 'github:pr:org/repo#91' }] });
+    const checkEvents = events.filter((e) => e.sourceEventType === 'pr.checks.failed');
+
+    expect(client.getRequiredStatusChecks).toHaveBeenCalledWith('org', 'repo', 'main');
+    expect(client.listCheckRunsForRef).toHaveBeenCalledWith('org', 'repo', 'abc123');
+    expect(checkEvents).toHaveLength(1);
+    expect(checkEvents[0]?.sourceRefs.resourceUri).toBe('github:pr:org/repo#91');
+    expect(checkEvents[0]?.payload.comment).toMatchObject({
+      id: 'pr-check-failed-abc123-8001-failure',
+      body: 'Required check failed: test (failure).',
+      author: { login: 'github-checks' },
+      resourceUri: 'github:pr:org/repo#91',
+    });
+  });
+
+  it('emits PR feedback when a required legacy status fails', async () => {
+    const client = {
+      listPullRequests: vi.fn().mockResolvedValue([]),
+      getPullRequest: vi.fn().mockResolvedValue({
+        number: 91,
+        html_url: 'https://github.com/org/repo/pull/91',
+        head: { ref: 'wake/issue-240', sha: 'abc123' },
+        base: { ref: 'main' },
+        user: { login: 'trusted-human' },
+        updated_at: '2026-07-18T00:00:00Z',
+      }),
+      listComments: vi.fn().mockResolvedValue([]),
+      listReviews: vi.fn().mockResolvedValue([]),
+      listReviewComments: vi.fn().mockResolvedValue([]),
+      getRequiredStatusChecks: vi.fn().mockResolvedValue({
+        contexts: ['ci/lint'],
+        checks: [],
+      }),
+      listCheckRunsForRef: vi.fn().mockResolvedValue([]),
+      getCombinedStatusForRef: vi.fn().mockResolvedValue([
+        {
+          context: 'ci/lint',
+          state: 'error',
+          description: 'Command exited 1',
+          target_url: 'https://ci.example.test/build/1',
+          created_at: '2026-07-18T00:01:00Z',
+          updated_at: '2026-07-18T00:02:00Z',
+        },
+      ]),
+      replyToReviewComment: vi.fn(),
+      createComment: vi.fn(),
+    };
+    const source = createGitHubPullRequestActivitySource({
+      client,
+      stateStore: createStateStore({ wakeRoot: root }),
+      config: buildConfig(),
+      resourceIndex: createFakeResourceIndex(),
+      now: () => new Date('2026-07-18T00:00:00Z'),
+    });
+
+    const events = await source.pollEvents({ watch: [{ resourceUri: 'github:pr:org/repo#91' }] });
+    const checkEvents = events.filter((e) => e.sourceEventType === 'pr.checks.failed');
+
+    expect(checkEvents).toHaveLength(1);
+    expect(checkEvents[0]?.payload.comment).toMatchObject({
+      id: 'pr-status-failed-abc123-ci/lint-error',
+      body: 'Required status failed: ci/lint (error): Command exited 1',
+      author: { login: 'github-status' },
+      resourceUri: 'github:pr:org/repo#91',
+    });
+  });
+
+  it('does not poll required checks when pullRequests.checks.enabled is false', async () => {
+    const client = {
+      listPullRequests: vi.fn().mockResolvedValue([]),
+      getPullRequest: vi.fn().mockResolvedValue({
+        head: { ref: 'wake/issue-240', sha: 'abc123' },
+        base: { ref: 'main' },
+      }),
+      listComments: vi.fn().mockResolvedValue([]),
+      listReviews: vi.fn().mockResolvedValue([]),
+      listReviewComments: vi.fn().mockResolvedValue([]),
+      getRequiredStatusChecks: vi.fn().mockResolvedValue({ contexts: ['test'], checks: [] }),
+      listCheckRunsForRef: vi.fn().mockResolvedValue([]),
+      getCombinedStatusForRef: vi.fn().mockResolvedValue([]),
+      replyToReviewComment: vi.fn(),
+      createComment: vi.fn(),
+    };
+    const config = buildConfig();
+    config.sources.github.pullRequests.checks.enabled = false;
+    const source = createGitHubPullRequestActivitySource({
+      client,
+      stateStore: createStateStore({ wakeRoot: root }),
+      config,
+      resourceIndex: createFakeResourceIndex(),
+      now: () => new Date('2026-07-18T00:00:00Z'),
+    });
+
+    const events = await source.pollEvents({ watch: [{ resourceUri: 'github:pr:org/repo#91' }] });
+
+    expect(client.getRequiredStatusChecks).not.toHaveBeenCalled();
+    expect(client.listCheckRunsForRef).not.toHaveBeenCalled();
+    expect(client.getCombinedStatusForRef).not.toHaveBeenCalled();
+    expect(events.filter((e) => e.sourceEventType === 'pr.checks.failed')).toHaveLength(0);
+  });
+
   it('marks an unmarked review-comment reply from Wake\'s own login as bot-authored (#258 follow-up)', async () => {
     // A revise run replies directly via `gh api .../replies`, bypassing
     // formatWakeComment entirely — no wake:agent marker, account type
@@ -210,6 +358,9 @@ describe('createGitHubPullRequestActivitySource', () => {
       listComments: vi.fn().mockResolvedValue([]),
       listReviews: vi.fn().mockResolvedValue([]),
       listReviewComments: vi.fn().mockResolvedValue([]),
+      getRequiredStatusChecks: vi.fn().mockResolvedValue({ contexts: ['test'], checks: [] }),
+      listCheckRunsForRef: vi.fn().mockResolvedValue([]),
+      getCombinedStatusForRef: vi.fn().mockResolvedValue([]),
       replyToReviewComment: vi.fn(),
       createComment: vi.fn(),
     };
@@ -227,6 +378,9 @@ describe('createGitHubPullRequestActivitySource', () => {
     expect(client.listComments).not.toHaveBeenCalled();
     expect(client.listReviews).not.toHaveBeenCalled();
     expect(client.listReviewComments).not.toHaveBeenCalled();
+    expect(client.getRequiredStatusChecks).not.toHaveBeenCalled();
+    expect(client.listCheckRunsForRef).not.toHaveBeenCalled();
+    expect(client.getCombinedStatusForRef).not.toHaveBeenCalled();
     expect(events).toHaveLength(0);
   });
 

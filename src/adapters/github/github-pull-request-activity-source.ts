@@ -11,7 +11,8 @@ type GitHubPullRequest = {
   number: number;
   html_url: string;
   user: { login?: string } | null;
-  head: { ref: string };
+  head: { ref: string; sha?: string };
+  base?: { ref?: string };
   updated_at: string;
 };
 
@@ -46,6 +47,31 @@ type GitHubReviewComment = {
   html_url?: string;
 };
 
+type GitHubRequiredStatusChecks = {
+  contexts: string[];
+  checks: string[];
+};
+
+type GitHubCheckRun = {
+  id: number;
+  name: string;
+  status?: string | null;
+  conclusion?: string | null;
+  html_url?: string | null;
+  details_url?: string | null;
+  completed_at?: string | null;
+  started_at?: string | null;
+};
+
+type GitHubStatus = {
+  context: string;
+  state: string;
+  description?: string | null;
+  target_url?: string | null;
+  updated_at: string;
+  created_at: string;
+};
+
 function prResourceUri(repo: string, number: number): string {
   return buildResourceUri('github', 'pr', `${repo}#${number}`);
 }
@@ -66,6 +92,24 @@ function reviewThreadRootId(comment: GitHubReviewComment, byId: Map<number, GitH
 
 function reviewThreadResourceUri(repo: string, prNumber: number, rootId: number): string {
   return buildResourceUri('github', 'pr-review-thread', `${repo}#${prNumber}/rt_${rootId}`);
+}
+
+function safeEventToken(value: string): string {
+  return value.replace(/[^a-z0-9]+/gi, '-');
+}
+
+function isFailingCheckRun(run: GitHubCheckRun): boolean {
+  return (
+    run.status === 'completed' &&
+    (run.conclusion === 'failure' ||
+      run.conclusion === 'timed_out' ||
+      run.conclusion === 'cancelled' ||
+      run.conclusion === 'action_required')
+  );
+}
+
+function isFailingStatus(status: GitHubStatus): boolean {
+  return status.state === 'failure' || status.state === 'error';
 }
 
 // selfLogin is the only reliable signal for an agent-authored comment posted
@@ -93,6 +137,9 @@ export function createGitHubPullRequestActivitySource(deps: {
     listComments: (owner: string, repo: string, prNumber: number, perPage: number) => Promise<GitHubComment[]>;
     listReviews: (owner: string, repo: string, prNumber: number, perPage: number) => Promise<GitHubReview[]>;
     listReviewComments: (owner: string, repo: string, prNumber: number, perPage: number) => Promise<GitHubReviewComment[]>;
+    getRequiredStatusChecks?: (owner: string, repo: string, branch: string) => Promise<GitHubRequiredStatusChecks>;
+    listCheckRunsForRef?: (owner: string, repo: string, ref: string) => Promise<GitHubCheckRun[]>;
+    getCombinedStatusForRef?: (owner: string, repo: string, ref: string) => Promise<GitHubStatus[]>;
     replyToReviewComment: (owner: string, repo: string, prNumber: number, commentId: number, body: string) => Promise<unknown>;
     createComment: (owner: string, repo: string, prNumber: number, body: string) => Promise<unknown>;
   };
@@ -308,6 +355,117 @@ export function createGitHubPullRequestActivitySource(deps: {
     return events;
   }
 
+  async function pollRequiredCheckFailures(
+    ref: { owner: string; repo: string; repoRef: string; number: number },
+    resourceUri: string,
+    ingestedAt: string,
+  ): Promise<UnkeyedEventEnvelope[]> {
+    if (
+      !deps.config.sources.github.pullRequests.enabled ||
+      !deps.config.sources.github.pullRequests.checks.enabled ||
+      deps.client.getRequiredStatusChecks === undefined ||
+      deps.client.listCheckRunsForRef === undefined ||
+      deps.client.getCombinedStatusForRef === undefined
+    ) {
+      return [];
+    }
+
+    const pr = await deps.client.getPullRequest(ref.owner, ref.repo, ref.number);
+    const headSha = pr.head.sha;
+    const baseRef = pr.base?.ref;
+    if (headSha === undefined || baseRef === undefined) {
+      return [];
+    }
+
+    const required = await deps.client.getRequiredStatusChecks(ref.owner, ref.repo, baseRef);
+    const requiredContexts = new Set([...required.contexts, ...required.checks]);
+    if (requiredContexts.size === 0) {
+      return [];
+    }
+
+    const [checkRuns, statuses] = await Promise.all([
+      deps.client.listCheckRunsForRef(ref.owner, ref.repo, headSha),
+      deps.client.getCombinedStatusForRef(ref.owner, ref.repo, headSha),
+    ]);
+
+    const events: UnkeyedEventEnvelope[] = [];
+    for (const run of checkRuns) {
+      if (!requiredContexts.has(run.name) || !isFailingCheckRun(run)) {
+        continue;
+      }
+
+      const occurredAt = run.completed_at ?? run.started_at ?? ingestedAt;
+      const sourceUrl = run.html_url ?? run.details_url ?? pr.html_url;
+      events.push(
+        createUnkeyedEventEnvelope({
+          eventId: `pr-check-failed-${safeEventToken(ref.repoRef)}-${ref.number}-${safeEventToken(run.name)}-${headSha}-${safeEventToken(occurredAt)}-${run.conclusion}`,
+          streamScope: 'work-item',
+          direction: 'inbound',
+          sourceSystem: githubPrSource,
+          sourceEventType: 'pr.checks.failed',
+          sourceRefs: { repo: ref.repoRef, sourceUrl, resourceUri },
+          occurredAt,
+          ingestedAt,
+          trigger: 'context-only',
+          payload: {
+            comment: {
+              id: `pr-check-failed-${headSha}-${run.id}-${run.conclusion}`,
+              body: `Required check failed: ${run.name} (${run.conclusion}).`,
+              author: { login: 'github-checks' },
+              createdAt: occurredAt,
+              updatedAt: occurredAt,
+              resourceUri,
+            },
+            checkFailure: {
+              kind: 'check_run',
+              name: run.name,
+              conclusion: run.conclusion,
+              headSha,
+            },
+          },
+        }),
+      );
+    }
+
+    for (const status of statuses) {
+      if (!requiredContexts.has(status.context) || !isFailingStatus(status)) {
+        continue;
+      }
+
+      events.push(
+        createUnkeyedEventEnvelope({
+          eventId: `pr-status-failed-${safeEventToken(ref.repoRef)}-${ref.number}-${safeEventToken(status.context)}-${headSha}-${safeEventToken(status.updated_at)}-${status.state}`,
+          streamScope: 'work-item',
+          direction: 'inbound',
+          sourceSystem: githubPrSource,
+          sourceEventType: 'pr.checks.failed',
+          sourceRefs: { repo: ref.repoRef, sourceUrl: status.target_url ?? pr.html_url, resourceUri },
+          occurredAt: status.updated_at,
+          ingestedAt,
+          trigger: 'context-only',
+          payload: {
+            comment: {
+              id: `pr-status-failed-${headSha}-${status.context}-${status.state}`,
+              body: `Required status failed: ${status.context} (${status.state})${status.description === undefined || status.description === null ? '.' : `: ${status.description}`}`,
+              author: { login: 'github-status' },
+              createdAt: status.created_at,
+              updatedAt: status.updated_at,
+              resourceUri,
+            },
+            checkFailure: {
+              kind: 'status',
+              name: status.context,
+              conclusion: status.state,
+              headSha,
+            },
+          },
+        }),
+      );
+    }
+
+    return events;
+  }
+
   return {
     async pollEvents(input?: { watch: Array<{ resourceUri: string }> }): Promise<UnkeyedEventEnvelope[]> {
       const ingestedAt = deps.now().toISOString();
@@ -317,8 +475,26 @@ export function createGitHubPullRequestActivitySource(deps: {
       const activityBatches = await Promise.all(
         watched.map((ref) => pollWatchedPr(ref.resourceUri, ingestedAt)),
       );
+      const checkBatches = await Promise.all(
+        watched.map(async (watchRef) => {
+          const ref = repoAndNumberFromPrUri(watchRef.resourceUri);
+          if (ref === null) {
+            return [];
+          }
+          try {
+            return await pollRequiredCheckFailures(ref, watchRef.resourceUri, ingestedAt);
+          } catch (error) {
+            console.error(
+              `[github-pr-activity-source] check poll failed for ${watchRef.resourceUri}, skipping this tick: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+            );
+            return [];
+          }
+        }),
+      );
 
-      return [...discovered, ...activityBatches.flat()];
+      return [...discovered, ...activityBatches.flat(), ...checkBatches.flat()];
     },
     async deliverIntent(input: { event: EventEnvelope }): Promise<EventEnvelope[]> {
       const resourceUri = input.event.sourceRefs.resourceUri;

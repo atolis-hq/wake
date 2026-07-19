@@ -277,6 +277,48 @@ describe('projection updater', () => {
     expect(projection?.wake.recentEventIds).toEqual(['evt-stale-issue', 'evt-stale-comment']);
   });
 
+  it('folds required PR check failures as PR-sourced comments', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const updater = createProjectionUpdater({ stateStore: store, resourceIndex: createFakeResourceIndex() });
+    const issue = issueUpsert({
+      eventId: 'evt-check-issue',
+      issueNumber: 9,
+      labels: ['wake:queue'],
+    });
+    const checkFailure = createEventEnvelope({
+      eventId: 'evt-check-failed',
+      workItemKey: workId(9),
+      streamScope: 'work-item',
+      direction: 'inbound',
+      sourceSystem: 'github-pr',
+      sourceEventType: 'pr.checks.failed',
+      sourceRefs: {
+        repo: 'atolis-hq/wake',
+        resourceUri: 'github:pr:atolis-hq/wake#10',
+      },
+      occurredAt: '2026-07-05T12:05:00.000Z',
+      ingestedAt: '2026-07-05T12:05:00.000Z',
+      trigger: 'context-only',
+      payload: {
+        comment: {
+          id: 'pr-check-failed-abc123-8001-failure',
+          body: 'Required check failed: test (failure).',
+          author: { login: 'github-checks' },
+          createdAt: '2026-07-05T12:05:00.000Z',
+          updatedAt: '2026-07-05T12:05:00.000Z',
+          resourceUri: 'github:pr:atolis-hq/wake#10',
+        },
+      },
+    });
+
+    await updater.rebuildFromEvents([issue, checkFailure]);
+
+    const projection = await store.readIssueState(workId(9));
+    expect(projection?.latestComment?.id).toBe('pr-check-failed-abc123-8001-failure');
+    expect(projection?.latestComment?.resourceUri).toBe('github:pr:atolis-hq/wake#10');
+    expect(projection?.latestComment?.isBotAuthored).toBe(false);
+  });
+
   it('preserves pull-request identity from ticket upserts in the local projection', async () => {
     const store = createStateStore({ wakeRoot: root });
     const updater = createProjectionUpdater({ stateStore: store, resourceIndex: createFakeResourceIndex() });
