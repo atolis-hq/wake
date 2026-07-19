@@ -1394,6 +1394,94 @@ describe('tick runner', () => {
     expect(publishIntents[0]?.sourceRefs.resourceUri).toBeUndefined();
   });
 
+  it('retries the failed action itself (not the stage default) after a FAILED sentinel with a fresh human reply', async () => {
+    // Reproduces two production incidents in one tick: a `revise` run FAILED
+    // (crash / stale-run reconciliation) while a fresh PR review comment was
+    // still unhandled. lastRunSentinel !== AWAITING_APPROVAL after FAILED, so
+    // dispatch falls into the non-awaiting-approval branch — which used to
+    // pick the *stage's* default action (`implement`) instead of retrying the
+    // action that actually failed (`revise`), silently discarding the
+    // in-flight PR-feedback work and running a full fresh implement instead.
+    const store = createStateStore({ wakeRoot: root });
+    let capturedAction: string | undefined;
+
+    await store.writeIssueState({
+      schemaVersion: 1,
+      workItemKey: workId(96),
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 96,
+        title: 'Retry Same Action Test',
+        body: 'Body',
+        labels: ['wake:queue'],
+        assignees: [],
+        isPullRequest: false,
+        state: 'open',
+        url: 'https://example.test/issues/96',
+        createdAt: '2026-07-05T12:00:00.000Z',
+        updatedAt: '2026-07-05T12:05:00.000Z',
+      },
+      comments: [
+        {
+          id: 'pr-review-comment-801',
+          body: 'Please also update the docs link.',
+          author: { login: 'reviewer' },
+          createdAt: '2026-07-05T12:05:00.000Z',
+          updatedAt: '2026-07-05T12:05:00.000Z',
+          isBotAuthored: false,
+          resourceUri: 'github:pr-review-thread:atolis-hq/wake#100/rt_801',
+          reviewThread: { path: 'docs/example.md', line: 3 },
+        },
+      ],
+      latestComment: {
+        id: 'pr-review-comment-801',
+        body: 'Please also update the docs link.',
+        author: { login: 'reviewer' },
+        createdAt: '2026-07-05T12:05:00.000Z',
+        updatedAt: '2026-07-05T12:05:00.000Z',
+        isBotAuthored: false,
+        resourceUri: 'github:pr-review-thread:atolis-hq/wake#100/rt_801',
+        reviewThread: { path: 'docs/example.md', line: 3 },
+      },
+      wake: {
+        stage: 'implement',
+        stageHistory: [],
+        recentEventIds: [],
+        syncedAt: '2026-07-05T12:00:00.000Z',
+        expectedEcho: { commentIds: [], labels: [] },
+      },
+      context: {
+        lastRunSentinel: 'FAILED',
+        lastFailureClass: 'infra',
+        lastRunAction: 'revise',
+      },
+      correlatedResources: [],
+    });
+
+    const config = createDefaultWakeConfig(root);
+    config.sources.github.policy.requiredLabels = ['wake:queue'];
+
+    const tickRunner = createTickRunner({
+      clock: { now: () => new Date('2026-07-05T12:10:00.000Z') },
+      config,
+      stateStore: store,
+      workSource: { async pollEvents() { return []; } },
+      runner: {
+        async run(input) {
+          capturedAction = input.action;
+          return { result: 'Updated the docs link.\nAWAITING_APPROVAL', model: 'test-model', cli: 'test-cli' };
+        },
+      },
+      resourceIndex: createFakeResourceIndex(),
+      workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+    });
+
+    const result = await tickRunner.runTick();
+
+    expect(result.status).toBe('processed');
+    expect(capturedAction).toBe('revise');
+  });
+
   it('stays idle when awaiting approval and the latest PR-sourced comment was already handled', async () => {
     const store = createStateStore({ wakeRoot: root });
     let runnerCallCount = 0;

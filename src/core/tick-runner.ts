@@ -1252,9 +1252,20 @@ export function createTickRunner(deps: {
           }
         } else {
           const workflowAction = chooseWorkflowAction(candidate, workflow);
+          // Retry takes priority over the stage's fresh default action.
+          // chooseWorkflowAction almost always returns a non-null action for
+          // any valid stage (e.g. 'implement'), so checking it first would
+          // silently discard chooseRetryActionAfterHumanReply's decision
+          // whenever a FAILED/BLOCKED run left a lateral action (like
+          // `revise`) unfinished with a fresh human reply waiting — instead
+          // of resuming that action, it would restart the stage from
+          // scratch (#258 follow-up incident: a FAILED `revise` run fell
+          // back to a full fresh `implement` run and lost the PR-feedback
+          // context).
           const nextAction =
+            policy.chooseRetryActionAfterHumanReply(candidate) ??
             workflowAction?.action ??
-            policy.chooseRetryActionAfterHumanReply(candidate);
+            null;
           if (nextAction === null) {
             return { status: 'idle' as const };
           }
