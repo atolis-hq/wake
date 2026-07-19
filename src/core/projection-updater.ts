@@ -229,6 +229,7 @@ async function applyEvent(
     const stageChanged =
       payload.nextStage !== undefined && payload.nextStage !== current.wake.stage;
     const isFailed = payload.sentinel === 'FAILED';
+    const isCompletedCodeReview = payload.action === 'codereview' && payload.sentinel === doneRunnerSentinel;
     const shouldClearSession = isForwardProgression || isFailed;
 
     return parseIssueStateRecord({
@@ -239,13 +240,13 @@ async function applyEvent(
         ...(payload.handledCommentId === undefined
           ? {}
           : { lastHandledCommentId: payload.handledCommentId }),
-        ...(payload.sentinel === undefined
+        ...(payload.sentinel === undefined || isCompletedCodeReview
           ? {}
           : { lastRunSentinel: payload.sentinel }),
-        ...(payload.action === undefined
+        ...(payload.action === undefined || isCompletedCodeReview
           ? {}
           : { lastRunAction: payload.action }),
-        ...(payload.sentinel === doneRunnerSentinel && payload.action !== undefined
+        ...(payload.sentinel === doneRunnerSentinel && payload.action !== undefined && !isCompletedCodeReview
           ? { lastCompletedAction: payload.action }
           : {}),
         // Remembered so the approval path knows which action to resume or
