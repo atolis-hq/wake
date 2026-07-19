@@ -23,6 +23,11 @@ const approvedCommandPattern = /^\/approved\b/i;
 const changesCommandPattern = /^\/changes\b/i;
 const questionCommandPattern = /^\/question\b/i;
 
+// The action Wake runs when a correlated PR gets new reviewer feedback while
+// the work item is awaiting approval. Not configurable per workflow: it's a
+// lateral response to a PR surface, not a workflow stage.
+const reviewFeedbackAction = 'revise';
+
 function matchesCommand(body: string, pattern: RegExp): boolean {
   return body
     .split(/\r?\n/)
@@ -222,6 +227,24 @@ export function createPolicyEngine() {
       }
 
       return { approved, pendingAction };
+    },
+    resolvePendingReviewFeedback(issue: IssueStateRecord): AgentAction | null {
+      if (!isAwaitingApproval(issue)) {
+        return null;
+      }
+
+      const latestHumanComment = latestUnhandledHumanComment(issue);
+
+      // resourceUri is set only on comments folded from a correlated PR/review
+      // surface (schema.ts's commentSnapshotSchema: "absent = the originating
+      // issue thread"). A comment on that surface is itself the deliberate
+      // act — unlike an issue-thread reply, it doesn't need an explicit
+      // /approved-style command to count as a decision.
+      if (latestHumanComment === undefined || latestHumanComment.resourceUri === undefined) {
+        return null;
+      }
+
+      return reviewFeedbackAction;
     },
     qualifiesForMint(unresolved: UnkeyedEventEnvelope, config: WakeConfig): boolean {
       const resourceUri = unresolved.sourceRefs.resourceUri;
