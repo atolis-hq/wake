@@ -34,7 +34,7 @@ All configuration uses `schemaVersion: 1`.
   },
   "scheduler": {
     "intervalMs": 60000,
-    "maxIntervalMs": 600000
+    "maxIntervalMs": 300000
   },
   "transcripts": {
     "enabled": false,
@@ -301,7 +301,7 @@ Control plane tick frequency and timing.
 | Property | Type | Description | Default |
 |----------|------|-------------|---------|
 | `intervalMs` | number | Milliseconds between control-plane ticks (minimum 1) | `60000` (60 seconds) |
-| `maxIntervalMs` | number | Ceiling for the idle-cadence backoff: each consecutive idle tick doubles the sleep (starting from `intervalMs`) up to this value, and any `processed` tick resets it back to `intervalMs` | `600000` (10 minutes) |
+| `maxIntervalMs` | number | Ceiling for the idle-cadence backoff: each consecutive idle tick doubles the sleep (starting from `intervalMs`) up to this value, and any `processed` tick resets it back to `intervalMs` | `300000` (5 minutes) |
 
 ### runners
 

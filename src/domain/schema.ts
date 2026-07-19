@@ -441,8 +441,8 @@ export const wakeConfigSchema = z.object({
     intervalMs: z.number().int().positive().default(60 * 1000),
     // Cap for the idle-cadence backoff (#81): consecutive idle ticks double the
     // sleep, up to this ceiling, so a quiet repo doesn't poll every intervalMs.
-    maxIntervalMs: z.number().int().positive().default(10 * 60 * 1000),
-  }).default({ intervalMs: 60 * 1000, maxIntervalMs: 10 * 60 * 1000 }),
+    maxIntervalMs: z.number().int().positive().default(5 * 60 * 1000),
+  }).default({ intervalMs: 60 * 1000, maxIntervalMs: 5 * 60 * 1000 }),
   transcripts: z.object({
     enabled: z.boolean().default(false),
     retainAfterWorkspaceCleanup: z.boolean().default(false),
