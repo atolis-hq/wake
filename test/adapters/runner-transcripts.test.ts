@@ -69,13 +69,15 @@ describe('runner transcripts', () => {
       text: 'raw prompt\nexactly as sent',
     });
 
-    expect(file).toBe(join(
-      root,
-      'transcripts',
-      'work-01JZ0000000000000000000223',
-      'run-223-1',
-      'run-223-1.codex.implement.prompt.txt',
-    ));
+    expect(file).toBe(
+      join(
+        root,
+        'transcripts',
+        'work-01JZ0000000000000000000223',
+        'run-223-1',
+        'run-223-1.codex.implement.prompt.txt',
+      ),
+    );
     await expect(readFile(file!, 'utf8')).resolves.toBe('raw prompt\nexactly as sent');
   });
 
@@ -101,13 +103,15 @@ describe('runner transcripts', () => {
       text: 'raw response',
     });
 
-    expect(file).toBe(join(
-      root,
-      'transcripts',
-      'work-01JZ0000000000000000000223',
-      'session__abc__123',
-      'run-223-2.cursor.implement.response.txt',
-    ));
+    expect(file).toBe(
+      join(
+        root,
+        'transcripts',
+        'work-01JZ0000000000000000000223',
+        'session__abc__123',
+        'run-223-2.cursor.implement.response.txt',
+      ),
+    );
     await expect(readFile(file!, 'utf8')).resolves.toBe('raw response');
   });
 });

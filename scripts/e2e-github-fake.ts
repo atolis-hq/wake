@@ -1,5 +1,5 @@
 import { execFile as nodeExecFile } from 'node:child_process';
-import { mkdir, readdir, readFile, rm } from 'node:fs/promises';
+import { mkdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -58,9 +58,7 @@ export function validateTickOutcome(
 
   const status = (outcome as { status?: unknown }).status;
   if (status !== input.expectedStatus) {
-    throw new Error(
-      `Expected tick status ${input.expectedStatus} but received ${String(status)}`,
-    );
+    throw new Error(`Expected tick status ${input.expectedStatus} but received ${String(status)}`);
   }
 
   if (input.expectedSentinel !== undefined) {
@@ -130,7 +128,21 @@ async function runTick(repoRoot: string, wakeRoot: string) {
 
 async function ensureLabel(repo: string, label: string, cwd: string) {
   try {
-    await runCommand('gh', ['label', 'create', label, '--repo', repo, '--color', 'BFD4F2', '--description', 'Wake E2E test label'], cwd);
+    await runCommand(
+      'gh',
+      [
+        'label',
+        'create',
+        label,
+        '--repo',
+        repo,
+        '--color',
+        'BFD4F2',
+        '--description',
+        'Wake E2E test label',
+      ],
+      cwd,
+    );
   } catch {
     // Label already exists or user lacks permission; the later issue create step will fail clearly if unusable.
   }
@@ -190,7 +202,6 @@ async function readIssueState(wakeRoot: string, repo: string, issueNumber: numbe
 }
 
 async function readLatestRun(wakeRoot: string): Promise<RunRecord> {
-  const paths = createWakePaths(wakeRoot);
   const files = await (await import('node:fs/promises')).readdir(join(wakeRoot, 'runs'));
   const latest = files.sort().at(-1);
   if (latest === undefined) {
@@ -249,11 +260,16 @@ async function main() {
 
     const issueState = await readIssueState(wakeRoot, repo, issue.issueNumber);
     if (issueState.wake.stage !== 'implement') {
-      throw new Error(`Expected synced issue stage to be implement but received ${issueState.wake.stage}`);
+      throw new Error(
+        `Expected synced issue stage to be implement but received ${issueState.wake.stage}`,
+      );
     }
 
     const latestRun = await readLatestRun(wakeRoot);
-    if (latestRun.status !== 'completed' || latestRun.summary?.includes('Fake runner completed') !== true) {
+    if (
+      latestRun.status !== 'completed' ||
+      latestRun.summary?.includes('Fake runner completed') !== true
+    ) {
       throw new Error('Expected a completed fake runner run record');
     }
 

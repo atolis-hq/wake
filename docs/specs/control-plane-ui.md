@@ -8,15 +8,15 @@
 
 ## 1. Purpose and principles
 
-Wake's durable state is already fully inspectable — it's plain JSON under the Wake home. What's missing is the *joined view*: "what is Wake doing right now, what is each work item waiting on, and why hasn't X been picked up?" Today answering those questions means reading `state/*.json`, `runs/*.json`, and grepping `events/*.jsonl` by hand.
+Wake's durable state is already fully inspectable — it's plain JSON under the Wake home. What's missing is the _joined view_: "what is Wake doing right now, what is each work item waiting on, and why hasn't X been picked up?" Today answering those questions means reading `state/*.json`, `runs/*.json`, and grepping `events/*.jsonl` by hand.
 
 Principles, in priority order:
 
 1. **The UI is a sidecar, not a participant.** It reads the same files the tick reads and writes nothing the control plane doesn't already understand. It never calls into a running Wake process, holds no state of its own, and can be killed at any time with zero effect on the loop.
 2. **Mutations go through durable state only.** Every write the UI performs must be something a crash/restart-safe tick would naturally observe: a file the policy already reads (`PAUSE`, `ledger.json`, the tick lock) or an event appended to the log that the projection fold understands. No in-memory signaling, no bypassing the event model.
 3. **Read-only by default, mutations behind explicit affordances.** Every mutation is a deliberate button with a confirmation and a recorded operator event — never inline editing.
-4. **Boring technology.** One small Node HTTP process, no database (the Wake home *is* the database), no build-step-heavy frontend. It should be reviewable in one sitting, like the rest of Wake.
-5. **Workflow-agnostic.** Wake's stage set is becoming configurable (arbitrary stages, potentially multiple workflows selected per ticket). The UI must not hardcode any stage name, stage order, or stage count anywhere — every stage the UI shows is read from config (workflow definitions) or observed in the data (projections, stage history), and an unknown stage must render as gracefully as a known one. Grouping and prioritization are built on *derived item conditions* (§4.2) that hold for any workflow, with stage displayed as data on the item rather than structure of the page.
+4. **Boring technology.** One small Node HTTP process, no database (the Wake home _is_ the database), no build-step-heavy frontend. It should be reviewable in one sitting, like the rest of Wake.
+5. **Workflow-agnostic.** Wake's stage set is becoming configurable (arbitrary stages, potentially multiple workflows selected per ticket). The UI must not hardcode any stage name, stage order, or stage count anywhere — every stage the UI shows is read from config (workflow definitions) or observed in the data (projections, stage history), and an unknown stage must render as gracefully as a known one. Grouping and prioritization are built on _derived item conditions_ (§4.2) that hold for any workflow, with stage displayed as data on the item rather than structure of the page.
 
 ## 2. Deployment and architecture
 
@@ -24,24 +24,24 @@ Principles, in priority order:
 - **Data access:** reads the Wake home directly from the shared volume (`--wake-root`, same flag semantics as `tick`/`start`). Reuses the existing read paths: `createStateStore` readers, `domain/schema.ts` zod parsers, and `lib/lock.ts` metadata reading. It must not import anything that mutates state except the specific mutation handlers in §6.
 - **Freshness:** polling, not file-watching, for v1. The API reads from disk per request (with a short in-process cache, ~2s, to avoid re-parsing the event log on every keystroke). The frontend polls active views every 5–10s. SSE/live-tail is a v2 nicety, not required.
 - **Network exposure:** binds `127.0.0.1` by default for local runs. The sandbox entrypoint binds the UI to `0.0.0.0` only when `ui.enabled` is true, publishes it to host loopback, and can optionally start an ngrok CLI tunnel when `ui.tunnel.enabled` is true. A configured shared-secret token (env `WAKE_UI_TOKEN`, sent as a bearer header / cookie) gates every request; tokenless public tunnels should only be used in trusted testing setups until the planned ngrok query-token flow exists.
-- **Resilience to bad data:** every file read tolerates missing, truncated, or schema-invalid JSON (this is real: the state store today swallows corruption — report items S5/E11). Invalid files are *surfaced*, not hidden: the health view lists unreadable files rather than silently dropping them, which makes the UI a corruption detector the CLI currently lacks.
+- **Resilience to bad data:** every file read tolerates missing, truncated, or schema-invalid JSON (this is real: the state store today swallows corruption — report items S5/E11). Invalid files are _surfaced_, not hidden: the health view lists unreadable files rather than silently dropping them, which makes the UI a corruption detector the CLI currently lacks.
 - **Config surface change:** `wake init` scaffolding gains an optional `ui` block (`{ enabled, port, token?, tunnel? }`) and the sandbox docs gain the port mapping/tunnel behavior. Per repo policy, `README.md` / `docs/configuration.md` must be updated in the same change.
 
 ## 3. Data sources (all existing, no new state)
 
-| Source | Path | Feeds |
-|---|---|---|
-| Config | `config.json` | Config view, routing table, policy display |
-| Pause file | `PAUSE` | Status bar, pause control |
-| Ledger | `ledger.json` (`pausedUntil`) | Status bar, pause control |
-| Tick lock | `locks/tick.lock` | Lock status, stale-lock action |
-| Projections | `state/<workId>.json` | Kanban board, item detail |
-| Resource index | `state/index/<xx>.json` | Resolving a ticket/PR URL to its work item |
-| Run records | `runs/run-*.json` | Runs view, item detail, metrics |
-| Event log | `events/<date>.jsonl` (+ `events-by-id/`) | Activity feed, item timeline |
-| Source poll state | `sources/<source>/<key>.json` | Health view (poll freshness per repo) |
-| Workspaces | `workspaces/**`, `repos/**` (directory listing only) | Workspaces view, orphan detection |
-| Logs | `logs/<date>.log` | Raw log tail (secondary) |
+| Source            | Path                                                 | Feeds                                      |
+| ----------------- | ---------------------------------------------------- | ------------------------------------------ |
+| Config            | `config.json`                                        | Config view, routing table, policy display |
+| Pause file        | `PAUSE`                                              | Status bar, pause control                  |
+| Ledger            | `ledger.json` (`pausedUntil`)                        | Status bar, pause control                  |
+| Tick lock         | `locks/tick.lock`                                    | Lock status, stale-lock action             |
+| Projections       | `state/<workId>.json`                                | Kanban board, item detail                  |
+| Resource index    | `state/index/<xx>.json`                              | Resolving a ticket/PR URL to its work item |
+| Run records       | `runs/run-*.json`                                    | Runs view, item detail, metrics            |
+| Event log         | `events/<date>.jsonl` (+ `events-by-id/`)            | Activity feed, item timeline               |
+| Source poll state | `sources/<source>/<key>.json`                        | Health view (poll freshness per repo)      |
+| Workspaces        | `workspaces/**`, `repos/**` (directory listing only) | Workspaces view, orphan detection          |
+| Logs              | `logs/<date>.log`                                    | Raw log tail (secondary)                   |
 
 ## 4. Views
 
@@ -56,18 +56,18 @@ The one-glance answer to "is Wake alive and doing the right thing":
 
 ### 4.2 Board (default view) — conditions, not stages
 
-A classic kanban assumes one fixed, ordered stage pipeline. Wake's workflows are becoming configurable — arbitrary stages, possibly a different workflow per ticket — so stage cannot be the board's structure. Instead, the board's columns are **derived item conditions**: a small, closed set of answers to "what is this item waiting for right now?" that can be computed for *any* workflow from control-plane semantics alone (run records, sentinels, eligibility, and whether the policy has any next action). Stage is shown as a chip on the card, not as a column.
+A classic kanban assumes one fixed, ordered stage pipeline. Wake's workflows are becoming configurable — arbitrary stages, possibly a different workflow per ticket — so stage cannot be the board's structure. Instead, the board's columns are **derived item conditions**: a small, closed set of answers to "what is this item waiting for right now?" that can be computed for _any_ workflow from control-plane semantics alone (run records, sentinels, eligibility, and whether the policy has any next action). Stage is shown as a chip on the card, not as a column.
 
 The conditions, in operator-priority order (left to right):
 
-| Column | Meaning | Derivation (workflow-independent) |
-|---|---|---|
-| **Needs human** | Wake is explicitly waiting on a person | last sentinel `BLOCKED` or `AWAITING_APPROVAL`, with no unhandled human reply yet |
-| **Active** | a run is in flight right now | a `running` run record exists for the item |
-| **Ready** | Wake will act on the next tick | eligible + policy yields a next action + `needsWakeAction` true |
-| **Waiting** | healthy but nothing to do yet | not eligible or nothing actionable, with a *named reason* (missing required label, ignored label, human reply already handled, quota-paused…) |
-| **Stalled** | not terminal, yet no possible path forward | not terminal, not eligible-for-human-input, and no action can ever fire from the current state — the generic form of the report's E8/E14 dead-ends, detectable without knowing the workflow |
-| **Finished** | terminal | terminal stage per the item's workflow definition (or issue closed); collapsed by default |
+| Column          | Meaning                                    | Derivation (workflow-independent)                                                                                                                                                           |
+| --------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Needs human** | Wake is explicitly waiting on a person     | last sentinel `BLOCKED` or `AWAITING_APPROVAL`, with no unhandled human reply yet                                                                                                           |
+| **Active**      | a run is in flight right now               | a `running` run record exists for the item                                                                                                                                                  |
+| **Ready**       | Wake will act on the next tick             | eligible + policy yields a next action + `needsWakeAction` true                                                                                                                             |
+| **Waiting**     | healthy but nothing to do yet              | not eligible or nothing actionable, with a _named reason_ (missing required label, ignored label, human reply already handled, quota-paused…)                                               |
+| **Stalled**     | not terminal, yet no possible path forward | not terminal, not eligible-for-human-input, and no action can ever fire from the current state — the generic form of the report's E8/E14 dead-ends, detectable without knowing the workflow |
+| **Finished**    | terminal                                   | terminal stage per the item's workflow definition (or issue closed); collapsed by default                                                                                                   |
 
 Notes on the two subtle columns:
 
@@ -82,7 +82,7 @@ Each card shows:
 - last run outcome chip: sentinel + `envelope: degraded` badge + `failureClass` when failed
 - small icons: session resumable, workspace attached, unhandled human comment present
 
-Grouping and filters: filter by repo, workflow, stage (values populated dynamically from config ∪ observed), "needs attention" preset (Needs human + Stalled), free-text on title. When a filter narrows the board to a **single workflow**, the operator can switch to an optional **stage view**: the same cards re-columned by that workflow's stages in definition order. This gives back the familiar kanban *only* where a fixed pipeline actually exists, as a lens rather than an assumption; it is unavailable (not degraded) for mixed-workflow selections.
+Grouping and filters: filter by repo, workflow, stage (values populated dynamically from config ∪ observed), "needs attention" preset (Needs human + Stalled), free-text on title. When a filter narrows the board to a **single workflow**, the operator can switch to an optional **stage view**: the same cards re-columned by that workflow's stages in definition order. This gives back the familiar kanban _only_ where a fixed pipeline actually exists, as a lens rather than an assumption; it is unavailable (not degraded) for mixed-workflow selections.
 
 Stages that exist in projections but not in any configured workflow (renamed/removed stages, hand-applied labels) are rendered with an "unknown stage" marker and surface in the health view — historical data must never crash or vanish from the board.
 
@@ -165,16 +165,18 @@ Every mutation response includes what was written (file path or event id) so the
 
 Ordered by value. Everything else stays read-only in v1.
 
-1. **Pause / resume** — *no new mechanics.* Pause-now writes the `PAUSE` file; pause-until writes `ledger.pausedUntil` (note: `pausedUntil` is currently never read by `isPaused()` — report E13 wires it; this spec depends on that fix or ships the same two-line change). Resume deletes both. Value: the safe "stop the world" button during incidents, and the manual fallback for quota exhaustion until E13's automatic backoff lands.
+1. **Pause / resume** — _no new mechanics._ Pause-now writes the `PAUSE` file; pause-until writes `ledger.pausedUntil` (note: `pausedUntil` is currently never read by `isPaused()` — report E13 wires it; this spec depends on that fix or ships the same two-line change). Resume deletes both. Value: the safe "stop the world" button during incidents, and the manual fallback for quota exhaustion until E13's automatic backoff lands.
 
-2. **Release stale tick lock** — deletes `locks/tick.lock` only after re-running the same staleness logic as `lib/lock.ts` server-side (age past threshold *or* holder pid dead) at the moment of the request. Refuses if the lock looks live. Value: today a wedged lock means shelling into the container; this makes the recovery observable and safe.
+2. **Release stale tick lock** — deletes `locks/tick.lock` only after re-running the same staleness logic as `lib/lock.ts` server-side (age past threshold _or_ holder pid dead) at the moment of the request. Refuses if the lock looks live. Value: today a wedged lock means shelling into the container; this makes the recovery observable and safe.
 
 3. **Requeue to stage** — appends an operator event to the log, e.g.:
 
    ```json
-   { "sourceEventType": "wake.operator.requeue",
+   {
+     "sourceEventType": "wake.operator.requeue",
      "direction": "internal",
-     "payload": { "targetStage": "queue", "operator": "ui", "note": "…" } }
+     "payload": { "targetStage": "queue", "operator": "ui", "note": "…" }
+   }
    ```
 
    with a small new branch in `projection-updater` that folds it (set stage, append stageHistory with reason `operator:requeue`, clear `lastRunSentinel` so `needsWakeAction` can fire). **This is the only mutation requiring a core change**, and it is worth it: it is the manual escape hatch for every stranded-state finding in the report (E8, E14, legacy `blockedFromAction` items) — an operator seeing a Stalled card moves it back to an actionable stage instead of hand-editing labels on the ticket and hoping label-sync cooperates. Allowed targets are **derived from the item's workflow definition, never hardcoded**: any stage of that workflow that has an action or entry semantics (i.e. a stage the policy could act from), excluding transient in-run stages and terminal stages. When the item's workflow is unknown (unconfigured/legacy stage), the target list falls back to the configured workflows' entry stages, and the UI says so.
@@ -187,7 +189,7 @@ Explicit **non-mutations** (rejected for v1): approving work (`/approved` must s
 
 ## 7. Non-goals
 
-- Not a multi-user product: no auth beyond the shared token, no audit log beyond the operator events themselves (which *are* the audit log).
+- Not a multi-user product: no auth beyond the shared token, no audit log beyond the operator events themselves (which _are_ the audit log).
 - Not a log browser for agent transcripts: run `summary`/`stdout` stored in run records is shown, but full session transcripts belong to the agent CLIs.
 - Not real-time: seconds-stale is fine everywhere.
 - Not a write path to GitHub or any external system.

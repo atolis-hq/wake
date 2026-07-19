@@ -1,5 +1,4 @@
 import { createHash } from 'node:crypto';
-import { rm } from 'node:fs/promises';
 
 import { acquireFileLock } from '../../lib/lock.js';
 import { readJsonFile, writeJsonFile } from '../../lib/json-file.js';
@@ -97,6 +96,5 @@ export function createResourceIndex({ paths }: { paths: WakePaths }): ResourceIn
         await writeJsonFile(file, contents);
       });
     },
-
   };
 }

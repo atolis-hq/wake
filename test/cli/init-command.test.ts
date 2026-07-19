@@ -75,7 +75,7 @@ describe('init command', () => {
     expect(shellLauncher).toContain('sandbox exec -- node "$CONTAINER_MAIN"');
     expect(shellLauncher).toContain('rewritten_args+=("--wake-root" "/wake")');
     expect(powerShellLauncher).toContain(repoRoot);
-    expect(powerShellLauncher).toContain("switch ($command)");
+    expect(powerShellLauncher).toContain('switch ($command)');
     expect(powerShellLauncher).toContain("'sandbox', 'exec', '--', 'node', $containerMain");
     expect(powerShellLauncher).toContain("$rewrittenArgs.Add('--wake-root')");
     expect(powerShellLauncher).toContain("$rewrittenArgs.Add('/wake')");
@@ -85,9 +85,9 @@ describe('init command', () => {
       expect(prompt.length).toBeGreaterThan(0);
     }
 
-    expect(
-      await readFile(join(result.wakeRoot, 'prompts', 'refine.md'), 'utf8'),
-    ).toContain('stage: refine');
+    expect(await readFile(join(result.wakeRoot, 'prompts', 'refine.md'), 'utf8')).toContain(
+      'stage: refine',
+    );
 
     for (const dockerAsset of dockerAssets) {
       expect((await stat(join(result.wakeRoot, 'docker', dockerAsset))).isFile()).toBe(true);

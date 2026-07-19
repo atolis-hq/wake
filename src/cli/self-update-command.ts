@@ -99,12 +99,16 @@ export async function runSelfUpdateCommand(input: {
   }
 
   if (!force && ledger.badTags.some((bad) => bad.tag === tag)) {
-    input.logger.info(`[self-update] ${tag} is recorded as a bad tag; skipping (use --force to retry)`);
+    input.logger.info(
+      `[self-update] ${tag} is recorded as a bad tag; skipping (use --force to retry)`,
+    );
     return;
   }
 
   if (!(await input.git.isWorkingTreeClean())) {
-    throw new Error(`[self-update] repo working tree has local changes; refusing to update to ${tag}`);
+    throw new Error(
+      `[self-update] repo working tree has local changes; refusing to update to ${tag}`,
+    );
   }
 
   await waitForActiveRuns({
@@ -155,7 +159,9 @@ export async function runSelfUpdateCommand(input: {
       const rollbackImage = `${input.imageRepository}:${ledger.lastKnownGoodTag}`;
       await input.git.checkoutTag(ledger.lastKnownGoodTag);
       await input.docker.update({ ...updateInput, image: rollbackImage });
-      input.logger.info('[self-update] recreated rollback container; entrypoint will keep wake start running');
+      input.logger.info(
+        '[self-update] recreated rollback container; entrypoint will keep wake start running',
+      );
       await verifyResidentStart({
         docker: input.docker,
         containerName: input.containerName,
@@ -215,7 +221,8 @@ export async function runSelfUpdateCommand(input: {
 export async function runSelfUpdateLoop(
   input: Parameters<typeof runSelfUpdateCommand>[0],
 ): Promise<void> {
-  const loopIntervalMs = readNumberFlag('--loop-interval-ms', input.args) ?? DEFAULT_LOOP_INTERVAL_MS;
+  const loopIntervalMs =
+    readNumberFlag('--loop-interval-ms', input.args) ?? DEFAULT_LOOP_INTERVAL_MS;
 
   for (;;) {
     try {

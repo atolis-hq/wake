@@ -102,8 +102,8 @@ describe('git workspace manager', () => {
       env: process.env,
     });
     expect(remoteUrl.trim()).toBe(remotePath);
-  // git subprocess work (clone/fetch/reset) is routinely slower than vitest's
-  // default 5s timeout on Windows (AV/indexer contention); give these room.
+    // git subprocess work (clone/fetch/reset) is routinely slower than vitest's
+    // default 5s timeout on Windows (AV/indexer contention); give these room.
   }, 20_000);
 
   it('resets an existing canonical clone to the latest main on re-prepare', async () => {
@@ -157,10 +157,14 @@ describe('git workspace manager', () => {
     const { workspacePath: readOnlyPath } = await manager.prepareReadOnlyClone({
       repo: 'acme/trunk-example',
     });
-    const { stdout: readOnlyBranch } = await execFile('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
-      cwd: readOnlyPath,
-      env: process.env,
-    });
+    const { stdout: readOnlyBranch } = await execFile(
+      'git',
+      ['rev-parse', '--abbrev-ref', 'HEAD'],
+      {
+        cwd: readOnlyPath,
+        env: process.env,
+      },
+    );
     expect(readOnlyBranch.trim()).toBe('trunk');
   }, 20_000);
 
@@ -354,7 +358,20 @@ describe('git workspace manager', () => {
     // Commit a conflicting change in the workspace branch
     await writeFile(join(workspacePath, 'README.md'), '# workspace version\n', 'utf8');
     await git(['-C', workspacePath, 'add', 'README.md'], root);
-    await git(['-C', workspacePath, '-c', 'user.email=test@test.local', '-c', 'user.name=Test', 'commit', '-m', 'workspace change'], root);
+    await git(
+      [
+        '-C',
+        workspacePath,
+        '-c',
+        'user.email=test@test.local',
+        '-c',
+        'user.name=Test',
+        'commit',
+        '-m',
+        'workspace change',
+      ],
+      root,
+    );
 
     // Push a conflicting change to remote main (same file, different content)
     const seedPath = join(root, 'seed-main');

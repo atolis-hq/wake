@@ -70,22 +70,19 @@ export function createOutboundSinkRouter(input: {
       const sourceOrigin = event.sourceRefs.sink ?? origin;
 
       if (event.sourceEventType === 'wake.labels.requested') {
-        const projectionOrigin = typeof event.payload.origin === 'string'
-          ? event.payload.origin
-          : undefined;
+        const projectionOrigin =
+          typeof event.payload.origin === 'string' ? event.payload.origin : undefined;
         if (projectionOrigin !== undefined) {
           targetSinks.add(projectionOrigin);
         }
       }
 
-      const kind = intentKind(event);
       const resourceUri = event.sourceRefs.resourceUri;
-      if (
-        event.sourceEventType === 'wake.publish.intent.requested' &&
-        sourceOrigin !== undefined
-      ) {
+      if (event.sourceEventType === 'wake.publish.intent.requested' && sourceOrigin !== undefined) {
         const resourceSink =
-          resourceUri === undefined ? sourceOrigin : sinkNameForResourceUri(resourceUri, sourceOrigin);
+          resourceUri === undefined
+            ? sourceOrigin
+            : sinkNameForResourceUri(resourceUri, sourceOrigin);
         // A resource-derived sink name (e.g. a PR surface) may not be
         // registered — the source that owns it can be disabled independently
         // of the origin sink. Falling back to sourceOrigin here, rather than

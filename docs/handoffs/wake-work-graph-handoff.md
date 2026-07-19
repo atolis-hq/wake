@@ -395,13 +395,13 @@ Surface links all arrive as the generic registration event from ADR 0001:
 
 ```typescript
 type CorrelationRegistered = {
-  sourceEventType: "wake.correlation.registered";
+  sourceEventType: 'wake.correlation.registered';
   workItemKey: string;
   payload: {
-    resourceUri: string;              // e.g. "github:issue:atolis-hq/quorum#42"
-    role: string;                     // e.g. "representation"
-    relation: "primary" | "secondary";
-    registeredBy?: string;            // e.g. the run that produced the artifact
+    resourceUri: string; // e.g. "github:issue:atolis-hq/quorum#42"
+    role: string; // e.g. "representation"
+    relation: 'primary' | 'secondary';
+    registeredBy?: string; // e.g. the run that produced the artifact
   };
 };
 ```
@@ -418,7 +418,7 @@ An execution event:
 
 ```typescript
 type AgentExecutionStarted = {
-  type: "AgentExecutionStarted";
+  type: 'AgentExecutionStarted';
   workId: string;
   executionId: string;
   runner: string;
@@ -506,9 +506,9 @@ An event in `work-123` can record:
 
 ```typescript
 type WorkDependencyAdded = {
-  type: "WorkDependencyAdded";
-  workId: "work-123";
-  dependsOnWorkId: "work-98";
+  type: 'WorkDependencyAdded';
+  workId: 'work-123';
+  dependsOnWorkId: 'work-98';
 };
 ```
 
@@ -1101,7 +1101,7 @@ RunnerChanged
 
 ### Source control
 
-Pull requests and branches enter the graph as registrations (`role: implementation`); the events below record activity *on* them:
+Pull requests and branches enter the graph as registrations (`role: implementation`); the events below record activity _on_ them:
 
 ```text
 BranchCreated

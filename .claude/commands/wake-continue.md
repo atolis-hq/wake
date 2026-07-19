@@ -24,6 +24,7 @@ Do work in this interactive session only if the item is one the hosted runner ca
 ## 4. Hand off (always end with this)
 
 Finish with a short **Operator handoff** section:
+
 - What was dispatched or done (issue assigned, issues filed, PRs touched).
 - What needs the operator: reviews, questions to answer, update script to run.
 - Whether and when to run `/wake-continue` again (e.g. "after you merge PR #X" or "after Wake finishes issue #Y").

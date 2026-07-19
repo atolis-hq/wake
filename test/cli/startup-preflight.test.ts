@@ -145,7 +145,12 @@ describe('startup preflight', () => {
           polling: { maxIssuesPerRepo: 25, commentPageSize: 25, lookbackMs: 60_000 },
           policy: { requiredLabels: [], ignoredLabels: [], requiredAssignees: [] },
           publication: { postStatusComments: true },
-          pullRequests: { enabled: false, maxPullRequestsPerRepo: 25, commentPageSize: 25, policy: { requiredAuthors: [] } },
+          pullRequests: {
+            enabled: false,
+            maxPullRequestsPerRepo: 25,
+            commentPageSize: 25,
+            policy: { requiredAuthors: [] },
+          },
         },
       },
     };

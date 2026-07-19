@@ -160,18 +160,23 @@ describe('state store', () => {
   it('writes run records into date buckets while preserving id reads and full listing', async () => {
     const store = createStateStore({ wakeRoot: root });
 
-    await store.writeRunRecord(runRecord({
-      runId: 'run-old',
-      startedAt: '2026-07-04T12:00:00.000Z',
-    }));
-    await store.writeRunRecord(runRecord({
-      runId: 'run-today',
-      startedAt: '2026-07-05T12:00:00.000Z',
-      status: 'failed',
-    }));
+    await store.writeRunRecord(
+      runRecord({
+        runId: 'run-old',
+        startedAt: '2026-07-04T12:00:00.000Z',
+      }),
+    );
+    await store.writeRunRecord(
+      runRecord({
+        runId: 'run-today',
+        startedAt: '2026-07-05T12:00:00.000Z',
+        status: 'failed',
+      }),
+    );
 
-    await expect(readFile(join(root, 'runs', 'by-date', '2026-07-05', 'run-today.json'), 'utf8'))
-      .resolves.toContain('run-today');
+    await expect(
+      readFile(join(root, 'runs', 'by-date', '2026-07-05', 'run-today.json'), 'utf8'),
+    ).resolves.toContain('run-today');
     await expect(store.readRunRecord('run-today')).resolves.toMatchObject({ status: 'failed' });
     await expect(store.listRunRecordsForDate('2026-07-05')).resolves.toHaveLength(1);
     await expect(store.listRunRecords()).resolves.toHaveLength(2);
@@ -256,16 +261,20 @@ describe('state store', () => {
   it('archives old terminal issue states out of the default scan but keeps direct reads working', async () => {
     const store = createStateStore({ wakeRoot: root });
 
-    await store.writeIssueState(issueState({
-      number: 7,
-      stage: 'done',
-      syncedAt: '2026-07-01T12:00:00.000Z',
-    }));
-    await store.writeIssueState(issueState({
-      number: 8,
-      stage: 'implement',
-      syncedAt: '2026-06-01T12:00:00.000Z',
-    }));
+    await store.writeIssueState(
+      issueState({
+        number: 7,
+        stage: 'done',
+        syncedAt: '2026-07-01T12:00:00.000Z',
+      }),
+    );
+    await store.writeIssueState(
+      issueState({
+        number: 8,
+        stage: 'implement',
+        syncedAt: '2026-06-01T12:00:00.000Z',
+      }),
+    );
 
     const states = await store.listIssueStates({
       archiveFreshnessDays: 5,
@@ -273,8 +282,9 @@ describe('state store', () => {
     });
 
     expect(states.map((state) => state.issue.number)).toEqual([8]);
-    await expect(readFile(join(root, 'state', 'archive', `${workId(7)}.json`), 'utf8'))
-      .resolves.toContain('Spec');
+    await expect(
+      readFile(join(root, 'state', 'archive', `${workId(7)}.json`), 'utf8'),
+    ).resolves.toContain('Spec');
     await expect(store.readIssueState(workId(7))).resolves.toMatchObject({
       issue: { number: 7 },
     });
@@ -299,18 +309,24 @@ describe('state store', () => {
   it('lists recent events by walking day files backward until the limit is satisfied', async () => {
     const store = createStateStore({ wakeRoot: root });
 
-    await store.appendEventEnvelope(eventEnvelope({
-      eventId: 'evt-old',
-      ingestedAt: '2026-07-01T12:00:00.000Z',
-    }));
-    await store.appendEventEnvelope(eventEnvelope({
-      eventId: 'evt-new-1',
-      ingestedAt: '2026-07-05T12:00:00.000Z',
-    }));
-    await store.appendEventEnvelope(eventEnvelope({
-      eventId: 'evt-new-2',
-      ingestedAt: '2026-07-05T12:00:01.000Z',
-    }));
+    await store.appendEventEnvelope(
+      eventEnvelope({
+        eventId: 'evt-old',
+        ingestedAt: '2026-07-01T12:00:00.000Z',
+      }),
+    );
+    await store.appendEventEnvelope(
+      eventEnvelope({
+        eventId: 'evt-new-1',
+        ingestedAt: '2026-07-05T12:00:00.000Z',
+      }),
+    );
+    await store.appendEventEnvelope(
+      eventEnvelope({
+        eventId: 'evt-new-2',
+        ingestedAt: '2026-07-05T12:00:01.000Z',
+      }),
+    );
 
     const events = await store.listRecentEventEnvelopes({ limit: 2 });
 

@@ -34,9 +34,7 @@ function compareRunRecordsDescending(left: RunRecord, right: RunRecord): number 
   return rightTimestamp.localeCompare(leftTimestamp);
 }
 
-export async function promptResumeSelection(
-  options: ResumeOption[],
-): Promise<ResumeOption | null> {
+export async function promptResumeSelection(options: ResumeOption[]): Promise<ResumeOption | null> {
   if (options.length === 0) {
     return null;
   }

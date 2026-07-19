@@ -42,7 +42,10 @@ function extractBearerToken(req: IncomingMessage): string | undefined {
   }
   const cookie = req.headers.cookie;
   if (typeof cookie === 'string') {
-    const match = cookie.split(';').map((part) => part.trim()).find((part) => part.startsWith('wake_ui_token='));
+    const match = cookie
+      .split(';')
+      .map((part) => part.trim())
+      .find((part) => part.startsWith('wake_ui_token='));
     if (match !== undefined) {
       return match.slice('wake_ui_token='.length);
     }
@@ -54,7 +57,9 @@ function extractBearerToken(req: IncomingMessage): string | undefined {
  * Parses `/items/<repo-with-slashes>/<issueNumber>[/events]` where repo itself
  * may contain a `/` (e.g. `owner/name`), so the split can't assume a fixed arity.
  */
-function parseItemPath(segments: string[]): { repo: string; issueNumber: number; suffix?: string } | null {
+function parseItemPath(
+  segments: string[],
+): { repo: string; issueNumber: number; suffix?: string } | null {
   const trailingIsEvents = segments.at(-1) === 'events';
   const numberIndex = trailingIsEvents ? segments.length - 2 : segments.length - 1;
   const issueNumberRaw = segments[numberIndex];
@@ -113,12 +118,18 @@ async function handleRequest(
   }
 
   if (req.method !== 'GET') {
-    sendJson(res, 405, { error: 'this build only serves read endpoints; mutations are not implemented' });
+    sendJson(res, 405, {
+      error: 'this build only serves read endpoints; mutations are not implemented',
+    });
     return;
   }
 
   const { stateStore, resourceIndex, config } = options;
-  const segments = url.pathname.slice('/api/v1/'.length).split('/').filter((part) => part.length > 0).map((s) => decodeURIComponent(s));
+  const segments = url.pathname
+    .slice('/api/v1/'.length)
+    .split('/')
+    .filter((part) => part.length > 0)
+    .map((s) => decodeURIComponent(s));
   const resource = segments[0];
 
   if (resource === 'status' && segments.length === 1) {
@@ -162,24 +173,34 @@ async function handleRequest(
   }
 
   if (resource === 'runs' && segments.length === 1) {
-    sendJson(res, 200, await buildRuns({
-      stateStore,
-      status: url.searchParams.get('status') ?? undefined,
-      action: url.searchParams.get('action') ?? undefined,
-      repo: url.searchParams.get('repo') ?? undefined,
-    }));
+    sendJson(
+      res,
+      200,
+      await buildRuns({
+        stateStore,
+        status: url.searchParams.get('status') ?? undefined,
+        action: url.searchParams.get('action') ?? undefined,
+        repo: url.searchParams.get('repo') ?? undefined,
+      }),
+    );
     return;
   }
 
   if (resource === 'events' && segments.length === 1) {
     const limitParam = url.searchParams.get('limit');
-    sendJson(res, 200, await buildEventsFeed({
-      stateStore,
-      workItemKey: url.searchParams.get('workItemKey') ?? undefined,
-      direction: (url.searchParams.get('direction') as 'inbound' | 'outbound' | 'internal' | null) ?? undefined,
-      type: url.searchParams.get('type') ?? undefined,
-      limit: limitParam === null ? undefined : Number(limitParam),
-    }));
+    sendJson(
+      res,
+      200,
+      await buildEventsFeed({
+        stateStore,
+        workItemKey: url.searchParams.get('workItemKey') ?? undefined,
+        direction:
+          (url.searchParams.get('direction') as 'inbound' | 'outbound' | 'internal' | null) ??
+          undefined,
+        type: url.searchParams.get('type') ?? undefined,
+        limit: limitParam === null ? undefined : Number(limitParam),
+      }),
+    );
     return;
   }
 

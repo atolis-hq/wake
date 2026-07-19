@@ -6,6 +6,7 @@ extraArgs:
 maxTurns: 40
 skipApproval: false
 ---
+
 {{#if isStart}}
 You are Wake, in the REFINE stage for {{workItemKey}}.
 
@@ -17,6 +18,7 @@ by Wake before this session started - you do not need to run `git fetch`. You ma
 run `git status` to inspect repository state.
 
 Your job here is only to:
+
 - Read the repository (via your available tools) and decide whether the
   issue is well-specified enough to implement as-is.
 - If well-specified, write a short implementation plan as plain text in your

@@ -13,6 +13,7 @@
 ### Task 1: Bootstrap the Node and TypeScript project
 
 **Files:**
+
 - Create: `package.json`
 - Create: `tsconfig.json`
 - Create: `vitest.config.ts`
@@ -142,6 +143,7 @@ git commit -m "chore: bootstrap wake node skeleton"
 ### Task 2: Define the versioned domain schemas and durable record shapes
 
 **Files:**
+
 - Create: `src/domain/types.ts`
 - Create: `src/domain/schema.ts`
 - Create: `src/domain/stages.ts`
@@ -347,7 +349,7 @@ export function parseEventRecord(input: unknown) {
 
 export function parseRunnerResultSentinel(result: string): 'DONE' | 'BLOCKED' | 'FAILED' {
   const matches = result.match(/DONE|BLOCKED|FAILED/g);
-  return matches?.at(-1) as 'DONE' | 'BLOCKED' | 'FAILED' | undefined ?? 'FAILED';
+  return (matches?.at(-1) as 'DONE' | 'BLOCKED' | 'FAILED' | undefined) ?? 'FAILED';
 }
 ```
 
@@ -369,6 +371,7 @@ git commit -m "feat: add durable wake domain schemas"
 ### Task 3: Build the filesystem pathing, state store, and event audit layer
 
 **Files:**
+
 - Create: `src/config/defaults.ts`
 - Create: `src/config/load-config.ts`
 - Create: `src/lib/paths.ts`
@@ -537,6 +540,7 @@ git commit -m "feat: add wake filesystem state store"
 ### Task 4: Add fake ticketing-system sync, Wake comment detection, and the workspace and runner adapters
 
 **Files:**
+
 - Create: `src/core/contracts.ts`
 - Create: `src/adapters/fake/fake-ticketing-system.ts`
 - Create: `src/adapters/fake/fake-runner.ts`
@@ -588,10 +592,7 @@ export interface WorkSource {
 }
 
 export interface AgentRunner {
-  run(input: {
-    action: 'refine' | 'implement';
-    issue: IssueStateRecord;
-  }): Promise<{
+  run(input: { action: 'refine' | 'implement'; issue: IssueStateRecord }): Promise<{
     result: string;
     session_id?: string;
     metadata?: Record<string, unknown>;
@@ -599,7 +600,10 @@ export interface AgentRunner {
 }
 
 export interface WorkspaceManager {
-  prepareWorkspace(input: { repo: string; issueNumber: number }): Promise<{ workspacePath: string }>;
+  prepareWorkspace(input: {
+    repo: string;
+    issueNumber: number;
+  }): Promise<{ workspacePath: string }>;
   cleanupWorkspace(input: { workspacePath: string }): Promise<void>;
 }
 ```
@@ -705,6 +709,7 @@ git commit -m "feat: add fake wake adapters"
 ### Task 5: Implement the tick runner, lock handling, lifecycle decisions, and crash-safe run persistence
 
 **Files:**
+
 - Create: `src/lib/clock.ts`
 - Create: `src/lib/lock.ts`
 - Create: `src/core/policy-engine.ts`
@@ -869,7 +874,9 @@ export function createTickRunner(deps: {
         });
       }
 
-      const candidate = synced.find((issue) => issue.wake.stage === 'queue' || issue.wake.stage === 'refined');
+      const candidate = synced.find(
+        (issue) => issue.wake.stage === 'queue' || issue.wake.stage === 'refined',
+      );
       if (!candidate) {
         return { status: 'idle' as const };
       }
@@ -958,6 +965,7 @@ git commit -m "feat: add wake tick orchestration"
 ### Task 6: Add the CLI entrypoints, resident loop, and pause gate behavior
 
 **Files:**
+
 - Create: `src/core/control-plane.ts`
 - Create: `src/main.ts`
 - Create: `test/cli/control-plane.test.ts`
@@ -1066,6 +1074,7 @@ git commit -m "feat: add wake cli control plane"
 ### Task 7: Document the core architecture and keep the repo consistent
 
 **Files:**
+
 - Create: `docs/architecture.md`
 - Modify: `README.md`
 - Test: `README.md`
@@ -1123,6 +1132,7 @@ git commit -m "docs: add wake architecture guide"
 ### Task 8: Run the full verification suite and close the skeleton
 
 **Files:**
+
 - Modify: `package.json`
 - Test: `test/domain/schema.test.ts`
 - Test: `test/adapters/state-store.test.ts`

@@ -26,7 +26,9 @@ describe('self-update ledger', () => {
     await writeSelfUpdateLedger(ledgerPath, {
       lastAppliedTag: 'v0.0.80',
       lastKnownGoodTag: 'v0.0.79',
-      badTags: [{ tag: 'v0.0.80', reason: 'health check failed', recordedAt: '2026-07-11T00:00:00.000Z' }],
+      badTags: [
+        { tag: 'v0.0.80', reason: 'health check failed', recordedAt: '2026-07-11T00:00:00.000Z' },
+      ],
     });
 
     const ledger = await readSelfUpdateLedger(ledgerPath);

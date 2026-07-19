@@ -1,9 +1,14 @@
+import { awaitingApprovalRunnerSentinel, failedRunnerSentinel } from '../domain/stages.js';
 import {
-  awaitingApprovalRunnerSentinel,
-  failedRunnerSentinel,
-} from '../domain/stages.js';
-import { builtInDefaultWorkflowDefinition, chooseAction as chooseWorkflowAction } from '../domain/workflows.js';
-import type { AgentAction, IssueStateRecord, WakeConfig, WorkflowDefinition } from '../domain/types.js';
+  builtInDefaultWorkflowDefinition,
+  chooseAction as chooseWorkflowAction,
+} from '../domain/workflows.js';
+import type {
+  AgentAction,
+  IssueStateRecord,
+  WakeConfig,
+  WorkflowDefinition,
+} from '../domain/types.js';
 import type { UnkeyedEventEnvelope } from './contracts.js';
 
 export interface ApprovalResolution {
@@ -29,9 +34,7 @@ const questionCommandPattern = /^\/question\b/i;
 const reviewFeedbackAction = 'revise';
 
 function matchesCommand(body: string, pattern: RegExp): boolean {
-  return body
-    .split(/\r?\n/)
-    .some((line) => pattern.test(line.trim()));
+  return body.split(/\r?\n/).some((line) => pattern.test(line.trim()));
 }
 
 function labelsAndAssigneesQualify(input: {
@@ -56,27 +59,27 @@ function labelsAndAssigneesQualify(input: {
     return false;
   }
 
-  if (input.requiredAssignees.length > 0 && !input.requiredAssignees.some((login) => assignees.has(login))) {
+  if (
+    input.requiredAssignees.length > 0 &&
+    !input.requiredAssignees.some((login) => assignees.has(login))
+  ) {
     return false;
   }
 
   return true;
 }
 
-function latestUnhandledHumanComment(issue: IssueStateRecord): IssueStateRecord['comments'][number] | undefined {
+function latestUnhandledHumanComment(
+  issue: IssueStateRecord,
+): IssueStateRecord['comments'][number] | undefined {
   const context = issue.context as Record<string, unknown>;
   const handledCommentId =
-    typeof context.lastHandledCommentId === 'string'
-      ? context.lastHandledCommentId
-      : undefined;
+    typeof context.lastHandledCommentId === 'string' ? context.lastHandledCommentId : undefined;
 
   // Only consider human comments that appear after the last bot comment.
   // A human /approved posted before Wake's approval-request comment must not
   // be re-consumed as approval for a later awaiting-approval cycle.
-  const lastBotIndex = issue.comments.reduce(
-    (acc, c, i) => (c.isBotAuthored ? i : acc),
-    -1,
-  );
+  const lastBotIndex = issue.comments.reduce((acc, c, i) => (c.isBotAuthored ? i : acc), -1);
   const humanCommentsAfterBot = issue.comments
     .slice(lastBotIndex + 1)
     .filter((c) => !c.isBotAuthored);
@@ -120,21 +123,13 @@ export function createPolicyEngine() {
     ): boolean {
       const context = issue.context as Record<string, unknown>;
       const handledCommentId =
-        typeof context.lastHandledCommentId === 'string'
-          ? context.lastHandledCommentId
-          : undefined;
+        typeof context.lastHandledCommentId === 'string' ? context.lastHandledCommentId : undefined;
       const lastCompletedAction =
-        typeof context.lastCompletedAction === 'string'
-          ? context.lastCompletedAction
-          : undefined;
+        typeof context.lastCompletedAction === 'string' ? context.lastCompletedAction : undefined;
       const lastRunSentinel =
-        typeof context.lastRunSentinel === 'string'
-          ? context.lastRunSentinel
-          : undefined;
+        typeof context.lastRunSentinel === 'string' ? context.lastRunSentinel : undefined;
       const lastFailureClass =
-        typeof context.lastFailureClass === 'string'
-          ? context.lastFailureClass
-          : undefined;
+        typeof context.lastFailureClass === 'string' ? context.lastFailureClass : undefined;
 
       if (issue.wake.lastRunId === undefined) {
         return true;
@@ -269,8 +264,7 @@ export function createPolicyEngine() {
         // must accept both or the fake never qualifies anything, which would
         // silently defeat every fixture that exercises minting through it.
         const ticket = (unresolved.payload.ticket ?? unresolved.payload.issue) as
-          | { labels?: unknown; assignees?: unknown }
-          | undefined;
+          { labels?: unknown; assignees?: unknown } | undefined;
         if (ticket === undefined) {
           return false;
         }

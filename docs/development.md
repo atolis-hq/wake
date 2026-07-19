@@ -11,6 +11,7 @@ From the Wake repo root:
 
 ```bash
 npm install
+npm run verify
 npm test
 npm run tick
 ```
@@ -19,6 +20,11 @@ Useful commands:
 
 - `npm run tick` runs one control-plane tick using fake ticketing-system data
   from `.wake/fixtures/issues.json` when present.
+- `npm run lint` runs ESLint over the TypeScript and JavaScript source files.
+- `npm run format` rewrites supported files with Prettier.
+- `npm run format:check` verifies Prettier formatting without changing files.
+- `npm run verify` runs linting, formatting checks, a TypeScript build, and the
+  test suite. CI runs this command for pull requests and pushes to `main`.
 - `npm run start` runs the resident loop.
 - `npm run ui` runs the read-only control-plane UI, including the status bar,
   condition board, item detail, activity feed, config, and health views. It
@@ -32,6 +38,19 @@ Useful commands:
 - `npm run smoke:cursor` runs a minimal Cursor smoke test.
 - `npm run smoke:claude -- --remote-control` starts a minimal remote-control
   Claude smoke session.
+
+## Formatting Workflow
+
+Use editor save hooks for formatting when available. They give both humans and
+agents immediate feedback before changes are staged, which keeps review diffs
+focused on the actual code change.
+
+Commit hooks are useful as a final local guard, but they are intentionally not
+required by this repo yet because Wake often commits from non-interactive agent
+sessions where hook installation and shell startup behavior can vary. If hooks
+are added later, prefer a lightweight pre-commit hook that runs `npm run lint`
+and `npm run format:check`, leaving `npm run verify` and CI as the authoritative
+full check.
 
 ## Configuration
 
@@ -282,6 +301,7 @@ it's never silently retried, and files a GitHub issue with the failure detail
 via `gh issue create`.
 
 Flags:
+
 - `--force` — proceed even if the tag matches what's already applied, or is
   recorded as a known-bad tag.
 - `--tag <tag>` — target an explicit tag instead of discovering the latest

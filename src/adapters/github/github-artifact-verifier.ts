@@ -4,7 +4,13 @@ import { buildResourceUri } from '../../domain/resource-uri.js';
 const githubPrUrlPattern = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/;
 
 export function createGitHubArtifactVerifier(deps: {
-  client: { getPullRequest: (owner: string, repo: string, pullNumber: number) => Promise<{ head: { ref: string } }> };
+  client: {
+    getPullRequest: (
+      owner: string,
+      repo: string,
+      pullNumber: number,
+    ) => Promise<{ head: { ref: string } }>;
+  };
 }): ArtifactVerifier {
   return {
     async verify(artifact, context) {

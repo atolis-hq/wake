@@ -21,9 +21,7 @@ describe('e2e github fake helpers', () => {
   });
 
   it('parses the issue number from a github issue url', () => {
-    expect(
-      parseIssueNumberFromUrl('https://github.com/atolis-hq/wake/issues/123'),
-    ).toBe(123);
+    expect(parseIssueNumberFromUrl('https://github.com/atolis-hq/wake/issues/123')).toBe(123);
   });
 
   it('rejects a non-processed second tick outcome', () => {
@@ -43,9 +41,7 @@ describe('e2e github fake helpers', () => {
       delayMs: 0,
       runTick: async () => {
         attempts += 1;
-        return attempts < 3
-          ? { status: 'idle' }
-          : { status: 'processed', sentinel: 'DONE' };
+        return attempts < 3 ? { status: 'idle' } : { status: 'processed', sentinel: 'DONE' };
       },
     });
 

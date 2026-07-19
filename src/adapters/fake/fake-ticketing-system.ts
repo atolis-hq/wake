@@ -102,9 +102,9 @@ export function createFakeTicketingSystem(options: {
   now?: () => Date;
 }) {
   return {
-    async pollEvents(
-      _input?: { watch: Array<{ resourceUri: string }> },
-    ): Promise<UnkeyedEventEnvelope[]> {
+    async pollEvents(_input?: {
+      watch: Array<{ resourceUri: string }>;
+    }): Promise<UnkeyedEventEnvelope[]> {
       const nowIso = (options.now ?? (() => new Date()))().toISOString();
       return options.tickets.flatMap((issue) => normalizeIssueEvents(issue, nowIso));
     },
@@ -128,9 +128,7 @@ export function createFakeTicketingSystem(options: {
             : undefined;
         const labels = [
           ...currentLabels.filter(
-            (label) =>
-              !label.startsWith('wake:status.') &&
-              !label.startsWith('wake:stage.'),
+            (label) => !label.startsWith('wake:status.') && !label.startsWith('wake:stage.'),
           ),
           ...(statusLabel === undefined
             ? currentLabels.filter((label) => label.startsWith('wake:status.'))
@@ -200,16 +198,12 @@ export async function createFileBackedFakeTicketingSystem(options: {
     await access(options.fixturePath);
   } catch {
     return createFakeTicketingSystem(
-      options.now === undefined
-        ? { tickets: [] }
-        : { tickets: [], now: options.now },
+      options.now === undefined ? { tickets: [] } : { tickets: [], now: options.now },
     );
   }
 
   const raw = await readJsonFile<FakeTicketSeed[]>(options.fixturePath);
   return createFakeTicketingSystem(
-    options.now === undefined
-      ? { tickets: raw }
-      : { tickets: raw, now: options.now },
+    options.now === undefined ? { tickets: raw } : { tickets: raw, now: options.now },
   );
 }

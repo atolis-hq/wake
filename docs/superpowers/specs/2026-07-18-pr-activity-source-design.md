@@ -1,10 +1,10 @@
 # PR activity source: design
 
-* Date: 2026-07-18
-* Status: proposed
-* Implements: [Issue #82](https://github.com/atolis-hq/wake/issues/82), [work graph implementation plan](../../plans/2026-07-12-work-graph-implementation-plan.md) §3 ("Correlation core, bundled with #82")
-* Governed by: [ADR 0001](../../adrs/0001-correlating-external-resources-to-work-items.md)
-* Builds on: [work identity and correlation vocabulary design](2026-07-16-work-identity-correlation-design.md) (identity cutover, landed in #235)
+- Date: 2026-07-18
+- Status: proposed
+- Implements: [Issue #82](https://github.com/atolis-hq/wake/issues/82), [work graph implementation plan](../../plans/2026-07-12-work-graph-implementation-plan.md) §3 ("Correlation core, bundled with #82")
+- Governed by: [ADR 0001](../../adrs/0001-correlating-external-resources-to-work-items.md)
+- Builds on: [work identity and correlation vocabulary design](2026-07-16-work-identity-correlation-design.md) (identity cutover, landed in #235)
 
 ## Purpose
 
@@ -12,9 +12,9 @@ Let PR comments and reviews resume the issue's lifecycle the same way issue comm
 
 ## Prerequisites (already met)
 
-* #54 (unified echo suppression) — CLOSED
-* #76 (PR exclusion moved to policy engine) — CLOSED
-* Work identity + correlation registry (#235) — landed; `correlatedResources[]`, the reverse index, and the central resolver already exist.
+- #54 (unified echo suppression) — CLOSED
+- #76 (PR exclusion moved to policy engine) — CLOSED
+- Work identity + correlation registry (#235) — landed; `correlatedResources[]`, the reverse index, and the central resolver already exist.
 
 ## Governing decisions
 
@@ -59,9 +59,9 @@ PR conversation comments and reviews are small and conversational — `inline` d
 
 `policy-engine.ts`'s retry trigger (`latestUnhandledHumanComment` / `chooseRetryActionAfterHumanReply`) scans `IssueStateRecord.comments[]`, which today only ever holds issue-thread comments. PR conversation comments and review comments fold into the **same** `comments[]` array rather than a parallel list:
 
-* `commentSnapshotSchema` gains an optional `resourceUri` (which correlated surface this comment came from; absent = issue thread, keeping today's shape valid) and an optional `reviewThread` object (`{ path: string; line?: number }`) for review-thread anchoring.
-* `comments[]` becomes "unified pending conversation across every correlated surface, in provider timestamp order." The existing bot/human split and last-bot-index windowing keep working unmodified — they already operate on the array element shape, not on which surface it came from.
-* The resume prompt renders each pending item with its surface and (if present) file/line, and the agent's structured reply cites which item it's answering (ADR 0001 §6); Wake maps that citation back to a `resourceUri` for routing.
+- `commentSnapshotSchema` gains an optional `resourceUri` (which correlated surface this comment came from; absent = issue thread, keeping today's shape valid) and an optional `reviewThread` object (`{ path: string; line?: number }`) for review-thread anchoring.
+- `comments[]` becomes "unified pending conversation across every correlated surface, in provider timestamp order." The existing bot/human split and last-bot-index windowing keep working unmodified — they already operate on the array element shape, not on which surface it came from.
+- The resume prompt renders each pending item with its surface and (if present) file/line, and the agent's structured reply cites which item it's answering (ADR 0001 §6); Wake maps that citation back to a `resourceUri` for routing.
 
 This was the one schema fork worth naming explicitly: a parallel `activity[]` array was considered and rejected because it would duplicate the retry-trigger scan and force the prompt to merge two lists back into one chronological view — the thing `comments[]` already is.
 
@@ -71,10 +71,11 @@ This was the one schema fork worth naming explicitly: a parallel `activity[]` ar
 
 `domain/schema.ts` gains a structured `artifacts` block, parsed the same way as the `wake-result` sentinel fence:
 
-```
+````
 ```wake-artifacts
 { "artifacts": [{ "kind": "pr", "url": "https://github.com/org/repo/pull/91" }] }
-```
+````
+
 ```
 
 * Parsed by a new `parseRunnerArtifacts()` alongside `parseRunnerResult()`.
@@ -144,3 +145,4 @@ Docs to update alongside implementation: `README.md` (new `sources.github.pullRe
 * `sources.github.pullRequests.policy.requiredAuthors` defaulting to empty means standalone PR adoption is opt-in and requires explicit config — acceptable since the primary use case (PR opened by Wake's own agent from an issue) never depends on it; only human-initiated standalone PRs need it configured.
 * Detection/marker recovery for out-of-band PRs (ADR §4) is not built here — `wake correlate` remains the manual escape hatch. Automated detection scanning stays deferred per the work-graph implementation plan.
 * Slack/Jira adapters are unaffected and out of scope, as before.
+```

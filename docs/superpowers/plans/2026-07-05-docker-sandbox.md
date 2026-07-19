@@ -58,6 +58,7 @@
 ### Task 1: Extend Wake config and prompt loading for sandbox-aware homes
 
 **Files:**
+
 - Modify: `src/domain/schema.ts`
 - Modify: `src/domain/types.ts`
 - Modify: `src/config/defaults.ts`
@@ -162,9 +163,7 @@ sandbox: z.object({
 ```
 
 ```ts
-export function createDefaultWakeConfig(
-  wakeRoot = resolve(process.cwd(), '.wake'),
-): WakeConfig {
+export function createDefaultWakeConfig(wakeRoot = resolve(process.cwd(), '.wake')): WakeConfig {
   return parseWakeConfig({
     schemaVersion: 1,
     paths: {
@@ -254,6 +253,7 @@ git commit -m "feat: add sandbox-aware wake config and prompt roots"
 ### Task 2: Add scaffold assets and implement `wake init`
 
 **Files:**
+
 - Create: `docker/Dockerfile`
 - Create: `docker/setup.sh`
 - Create: `src/cli/scaffold-assets.ts`
@@ -276,9 +276,15 @@ it('scaffolds a self-contained wake home with config, prompts, docker assets, an
   });
 
   await expect(readFile(join(homeDir, 'config.json'), 'utf8')).resolves.toContain('"sandbox"');
-  await expect(readFile(join(homeDir, 'docker', 'Dockerfile'), 'utf8')).resolves.toContain('node dist/src/main.js start');
-  await expect(readFile(join(homeDir, 'docker', 'setup.sh'), 'utf8')).resolves.toContain('gh auth login');
-  await expect(readFile(join(homeDir, 'prompts', 'refine.start.md'), 'utf8')).resolves.toContain('stage: refine');
+  await expect(readFile(join(homeDir, 'docker', 'Dockerfile'), 'utf8')).resolves.toContain(
+    'node dist/src/main.js start',
+  );
+  await expect(readFile(join(homeDir, 'docker', 'setup.sh'), 'utf8')).resolves.toContain(
+    'gh auth login',
+  );
+  await expect(readFile(join(homeDir, 'prompts', 'refine.start.md'), 'utf8')).resolves.toContain(
+    'stage: refine',
+  );
   await expect(access(join(homeDir, 'workspaces'))).resolves.toBeUndefined();
 });
 ```
@@ -369,7 +375,12 @@ Copy these files from the repo into the scaffolded home:
 
 ```ts
 const runtimeDirs = ['events', 'state', 'runs', 'workspaces', 'repos', 'sources', 'locks'];
-const promptFiles = ['refine.start.md', 'refine.resume.md', 'implement.start.md', 'implement.resume.md'];
+const promptFiles = [
+  'refine.start.md',
+  'refine.resume.md',
+  'implement.start.md',
+  'implement.resume.md',
+];
 const dockerAssets = ['Dockerfile', 'setup.sh'];
 ```
 
@@ -391,6 +402,7 @@ git commit -m "feat: add wake home scaffolding"
 ### Task 3: Add a Docker adapter and implement build/up/down/setup/exec lifecycle commands
 
 **Files:**
+
 - Create: `src/adapters/docker/docker-cli.ts`
 - Create: `src/cli/sandbox-command.ts`
 - Create: `test/adapters/docker-cli.test.ts`
@@ -512,7 +524,10 @@ export function createDockerCli(deps: {
       ]);
     },
     down: (containerName: string) => deps.run(['stop', containerName]),
-    setup: (containerName: string) => deps.run(['exec', '-it', containerName, 'bash', '/wake/docker/setup.sh'], { interactive: true }),
+    setup: (containerName: string) =>
+      deps.run(['exec', '-it', containerName, 'bash', '/wake/docker/setup.sh'], {
+        interactive: true,
+      }),
     exec: (containerName: string, command: string[]) =>
       deps.run(['exec', '-it', containerName, ...(command.length > 0 ? command : ['bash'])], {
         interactive: true,
@@ -556,6 +571,7 @@ git commit -m "feat: add wake sandbox docker lifecycle commands"
 ### Task 4: Implement `wake sandbox resume` with explicit and discovery-based flows
 
 **Files:**
+
 - Create: `src/cli/sandbox-resume.ts`
 - Create: `test/cli/sandbox-resume.test.ts`
 - Modify: `src/adapters/fs/state-store.ts`
@@ -650,11 +666,13 @@ export async function listRunRecords(wakeRoot: string): Promise<RunRecord[]> {
 ```ts
 export async function chooseResumeTarget(input: {
   wakeRoot: string;
-  select: (options: Array<{
-    label: string;
-    sessionId: string;
-    workspacePath: string;
-  }>) => Promise<{
+  select: (
+    options: Array<{
+      label: string;
+      sessionId: string;
+      workspacePath: string;
+    }>,
+  ) => Promise<{
     label: string;
     sessionId: string;
     workspacePath: string;
@@ -666,7 +684,9 @@ export async function chooseResumeTarget(input: {
   const runs = await listRunRecords(wakeRoot);
   const options = runs
     .filter((run) => run.sessionId !== undefined)
-    .sort((left, right) => (right.finishedAt ?? right.startedAt).localeCompare(left.finishedAt ?? left.startedAt))
+    .sort((left, right) =>
+      (right.finishedAt ?? right.startedAt).localeCompare(left.finishedAt ?? left.startedAt),
+    )
     .map((run) => ({
       label: `${run.repo}#${run.issueNumber} · ${run.action} · ${run.finishedAt ?? run.startedAt}`,
       sessionId: run.sessionId as string,
@@ -730,6 +750,7 @@ git commit -m "feat: add wake sandbox resume flow"
 ### Task 5: Route the new CLI surface through `src/main.ts` and align Wake's published resume instructions
 
 **Files:**
+
 - Modify: `src/main.ts`
 - Modify: `src/adapters/github/github-issues-work-source.ts`
 - Create: `test/cli/main.test.ts`
@@ -811,7 +832,9 @@ it('publishes sandbox-aware resume guidance in wake comments', async () => {
     }),
   });
 
-  expect(comments[0]).toContain('wake sandbox resume session-12 --cwd "/wake/workspaces/atolis-hq__wake/12"');
+  expect(comments[0]).toContain(
+    'wake sandbox resume session-12 --cwd "/wake/workspaces/atolis-hq__wake/12"',
+  );
 });
 ```
 
@@ -884,6 +907,7 @@ git commit -m "feat: route sandbox cli and publish sandbox resume guidance"
 ### Task 6: Document the sandbox workflow and run automated plus manual verification
 
 **Files:**
+
 - Modify: `README.md`
 - Modify: `docs/implementation.md`
 

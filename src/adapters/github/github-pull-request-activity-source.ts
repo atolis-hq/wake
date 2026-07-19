@@ -50,7 +50,10 @@ function prResourceUri(repo: string, number: number): string {
   return buildResourceUri('github', 'pr', `${repo}#${number}`);
 }
 
-function reviewThreadRootId(comment: GitHubReviewComment, byId: Map<number, GitHubReviewComment>): number {
+function reviewThreadRootId(
+  comment: GitHubReviewComment,
+  byId: Map<number, GitHubReviewComment>,
+): number {
   let current = comment;
   const visited = new Set<number>();
   while (current.in_reply_to_id !== undefined && !visited.has(current.id)) {
@@ -88,13 +91,43 @@ function isBotAuthored(
 
 export function createGitHubPullRequestActivitySource(deps: {
   client: {
-    listPullRequests: (owner: string, repo: string, maxResults: number) => Promise<GitHubPullRequest[]>;
+    listPullRequests: (
+      owner: string,
+      repo: string,
+      maxResults: number,
+    ) => Promise<GitHubPullRequest[]>;
     getPullRequest: (owner: string, repo: string, pullNumber: number) => Promise<GitHubPullRequest>;
-    listComments: (owner: string, repo: string, prNumber: number, perPage: number) => Promise<GitHubComment[]>;
-    listReviews: (owner: string, repo: string, prNumber: number, perPage: number) => Promise<GitHubReview[]>;
-    listReviewComments: (owner: string, repo: string, prNumber: number, perPage: number) => Promise<GitHubReviewComment[]>;
-    replyToReviewComment: (owner: string, repo: string, prNumber: number, commentId: number, body: string) => Promise<unknown>;
-    createComment: (owner: string, repo: string, prNumber: number, body: string) => Promise<unknown>;
+    listComments: (
+      owner: string,
+      repo: string,
+      prNumber: number,
+      perPage: number,
+    ) => Promise<GitHubComment[]>;
+    listReviews: (
+      owner: string,
+      repo: string,
+      prNumber: number,
+      perPage: number,
+    ) => Promise<GitHubReview[]>;
+    listReviewComments: (
+      owner: string,
+      repo: string,
+      prNumber: number,
+      perPage: number,
+    ) => Promise<GitHubReviewComment[]>;
+    replyToReviewComment: (
+      owner: string,
+      repo: string,
+      prNumber: number,
+      commentId: number,
+      body: string,
+    ) => Promise<unknown>;
+    createComment: (
+      owner: string,
+      repo: string,
+      prNumber: number,
+      body: string,
+    ) => Promise<unknown>;
   };
   stateStore: ReturnType<typeof import('../fs/state-store.js').createStateStore>;
   config: WakeConfig;
@@ -102,7 +135,9 @@ export function createGitHubPullRequestActivitySource(deps: {
   now: () => Date;
   selfLogin?: string;
 }) {
-  function repoAndNumberFromPrUri(resourceUri: string): { owner: string; repo: string; repoRef: string; number: number } | null {
+  function repoAndNumberFromPrUri(
+    resourceUri: string,
+  ): { owner: string; repo: string; repoRef: string; number: number } | null {
     // github:pr:<owner>/<repo>#<number>
     const locator = resourceUri.split(':').slice(2).join(':');
     const match = /^([^/]+)\/([^#]+)#(\d+)$/.exec(locator);
@@ -161,7 +196,11 @@ export function createGitHubPullRequestActivitySource(deps: {
               ingestedAt,
               trigger: 'context-only',
               payload: {
-                pr: { number: pr.number, author: pr.user?.login ?? 'unknown', headRef: pr.head.ref },
+                pr: {
+                  number: pr.number,
+                  author: pr.user?.login ?? 'unknown',
+                  headRef: pr.head.ref,
+                },
               },
             }),
           );
@@ -204,7 +243,12 @@ export function createGitHubPullRequestActivitySource(deps: {
             direction: 'inbound',
             sourceSystem: githubPrSource,
             sourceEventType: 'pr.comment.created',
-            sourceRefs: { repo: ref.repoRef, commentId: String(comment.id), sourceUrl: comment.html_url, resourceUri },
+            sourceRefs: {
+              repo: ref.repoRef,
+              commentId: String(comment.id),
+              sourceUrl: comment.html_url,
+              resourceUri,
+            },
             occurredAt: comment.updated_at,
             ingestedAt,
             trigger: 'context-only',
@@ -238,7 +282,12 @@ export function createGitHubPullRequestActivitySource(deps: {
             direction: 'inbound',
             sourceSystem: githubPrSource,
             sourceEventType: 'pr.review.created',
-            sourceRefs: { repo: ref.repoRef, commentId: `review-${review.id}`, sourceUrl: review.html_url, resourceUri },
+            sourceRefs: {
+              repo: ref.repoRef,
+              commentId: `review-${review.id}`,
+              sourceUrl: review.html_url,
+              resourceUri,
+            },
             occurredAt: submittedAt,
             ingestedAt,
             trigger: 'context-only',
@@ -257,7 +306,12 @@ export function createGitHubPullRequestActivitySource(deps: {
         );
       }
 
-      const reviewComments = await deps.client.listReviewComments(ref.owner, ref.repo, ref.number, perPage);
+      const reviewComments = await deps.client.listReviewComments(
+        ref.owner,
+        ref.repo,
+        ref.number,
+        perPage,
+      );
       const byId = new Map(reviewComments.map((c) => [c.id, c]));
       for (const comment of reviewComments) {
         const rootId = reviewThreadRootId(comment, byId);
@@ -290,7 +344,10 @@ export function createGitHubPullRequestActivitySource(deps: {
                 createdAt: comment.created_at,
                 updatedAt: comment.updated_at,
                 resourceUri: threadUri,
-                reviewThread: { path: comment.path, line: comment.line ?? comment.original_line ?? undefined },
+                reviewThread: {
+                  path: comment.path,
+                  line: comment.line ?? comment.original_line ?? undefined,
+                },
               },
             },
             derivedHints: { botAuthoredComment: isBotAuthored(comment, deps.selfLogin) },
@@ -309,9 +366,13 @@ export function createGitHubPullRequestActivitySource(deps: {
   }
 
   return {
-    async pollEvents(input?: { watch: Array<{ resourceUri: string }> }): Promise<UnkeyedEventEnvelope[]> {
+    async pollEvents(input?: {
+      watch: Array<{ resourceUri: string }>;
+    }): Promise<UnkeyedEventEnvelope[]> {
       const ingestedAt = deps.now().toISOString();
-      const watched = (input?.watch ?? []).filter((ref) => ref.resourceUri.startsWith('github:pr:'));
+      const watched = (input?.watch ?? []).filter((ref) =>
+        ref.resourceUri.startsWith('github:pr:'),
+      );
 
       const discovered = await discoverPullRequests(ingestedAt);
       const activityBatches = await Promise.all(
@@ -323,7 +384,9 @@ export function createGitHubPullRequestActivitySource(deps: {
     async deliverIntent(input: { event: EventEnvelope }): Promise<EventEnvelope[]> {
       const resourceUri = input.event.sourceRefs.resourceUri;
       if (resourceUri === undefined) {
-        throw new Error(`cannot deliver intent ${input.event.eventId}: missing sourceRefs.resourceUri`);
+        throw new Error(
+          `cannot deliver intent ${input.event.eventId}: missing sourceRefs.resourceUri`,
+        );
       }
 
       const publishedAt = deps.now().toISOString();
@@ -332,11 +395,20 @@ export function createGitHubPullRequestActivitySource(deps: {
         const locator = resourceUri.split(':').slice(2).join(':');
         const match = /^([^/]+)\/([^#]+)#(\d+)\/rt_(\d+)$/.exec(locator);
         if (match === null) {
-          throw new Error(`cannot deliver intent ${input.event.eventId}: malformed review-thread uri ${resourceUri}`);
+          throw new Error(
+            `cannot deliver intent ${input.event.eventId}: malformed review-thread uri ${resourceUri}`,
+          );
         }
         const [, owner, repo, numberStr, rootIdStr] = match;
-        if (owner === undefined || repo === undefined || numberStr === undefined || rootIdStr === undefined) {
-          throw new Error(`cannot deliver intent ${input.event.eventId}: malformed review-thread uri ${resourceUri}`);
+        if (
+          owner === undefined ||
+          repo === undefined ||
+          numberStr === undefined ||
+          rootIdStr === undefined
+        ) {
+          throw new Error(
+            `cannot deliver intent ${input.event.eventId}: malformed review-thread uri ${resourceUri}`,
+          );
         }
 
         const response = await deps.client.replyToReviewComment(
@@ -344,7 +416,10 @@ export function createGitHubPullRequestActivitySource(deps: {
           repo,
           Number(numberStr),
           Number(rootIdStr),
-          formatWakeComment(input.event.payload, await readControlPlaneUiUrl(deps.config.paths.wakeRoot)),
+          formatWakeComment(
+            input.event.payload,
+            await readControlPlaneUiUrl(deps.config.paths.wakeRoot),
+          ),
         );
 
         return [
@@ -355,25 +430,37 @@ export function createGitHubPullRequestActivitySource(deps: {
             direction: 'outbound',
             sourceSystem: githubPrSource,
             sourceEventType: 'pr.review-comment.reply.published',
-            sourceRefs: { resourceUri, sourceUrl: (response as { html_url?: string } | undefined)?.html_url },
+            sourceRefs: {
+              resourceUri,
+              sourceUrl: (response as { html_url?: string } | undefined)?.html_url,
+            },
             occurredAt: publishedAt,
             ingestedAt: publishedAt,
             trigger: 'context-only',
-            payload: { intentEventId: input.event.eventId, kind: input.event.payload.kind, body: input.event.payload.body },
+            payload: {
+              intentEventId: input.event.eventId,
+              kind: input.event.payload.kind,
+              body: input.event.payload.body,
+            },
           }),
         ];
       }
 
       const ref = repoAndNumberFromPrUri(resourceUri);
       if (ref === null) {
-        throw new Error(`cannot deliver intent ${input.event.eventId}: malformed pr uri ${resourceUri}`);
+        throw new Error(
+          `cannot deliver intent ${input.event.eventId}: malformed pr uri ${resourceUri}`,
+        );
       }
 
       await deps.client.createComment(
         ref.owner,
         ref.repo,
         ref.number,
-        formatWakeComment(input.event.payload, await readControlPlaneUiUrl(deps.config.paths.wakeRoot)),
+        formatWakeComment(
+          input.event.payload,
+          await readControlPlaneUiUrl(deps.config.paths.wakeRoot),
+        ),
       );
       return [
         createEventEnvelope({
@@ -387,7 +474,11 @@ export function createGitHubPullRequestActivitySource(deps: {
           occurredAt: publishedAt,
           ingestedAt: publishedAt,
           trigger: 'context-only',
-          payload: { intentEventId: input.event.eventId, kind: input.event.payload.kind, body: input.event.payload.body },
+          payload: {
+            intentEventId: input.event.eventId,
+            kind: input.event.payload.kind,
+            body: input.event.payload.body,
+          },
         }),
       ];
     },

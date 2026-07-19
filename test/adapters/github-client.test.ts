@@ -47,20 +47,17 @@ vi.mock('@octokit/rest', () => ({
 
 describe('github client', () => {
   it('passes through GitHub issues API results, including pull requests', async () => {
-    paginateIterator.mockReturnValueOnce(pagesOf([
-      { number: 5, title: 'A real issue' },
-      { number: 6, title: 'An open PR', pull_request: { url: 'https://example.test/pulls/6' } },
-    ]));
+    paginateIterator.mockReturnValueOnce(
+      pagesOf([
+        { number: 5, title: 'A real issue' },
+        { number: 6, title: 'An open PR', pull_request: { url: 'https://example.test/pulls/6' } },
+      ]),
+    );
 
     const { createGitHubClient } = await import('../../src/adapters/github/github-client.js');
     const client = createGitHubClient('fake-token');
 
-    const issues = await client.listIssues(
-      'atolis-hq',
-      'wake',
-      25,
-      '2026-07-11T11:00:00.000Z',
-    );
+    const issues = await client.listIssues('atolis-hq', 'wake', 25, '2026-07-11T11:00:00.000Z');
 
     expect(issues).toHaveLength(2);
     expect(issues[0]?.number).toBe(5);
@@ -76,11 +73,13 @@ describe('github client', () => {
   });
 
   it('stops paginating once maxResults is reached instead of walking every page (E4)', async () => {
-    paginateIterator.mockReturnValueOnce(pagesOf(
-      [{ number: 1 }, { number: 2 }],
-      [{ number: 3 }, { number: 4 }],
-      [{ number: 5 }, { number: 6 }],
-    ));
+    paginateIterator.mockReturnValueOnce(
+      pagesOf(
+        [{ number: 1 }, { number: 2 }],
+        [{ number: 3 }, { number: 4 }],
+        [{ number: 5 }, { number: 6 }],
+      ),
+    );
 
     const { createGitHubClient } = await import('../../src/adapters/github/github-client.js');
     const client = createGitHubClient('fake-token');
@@ -88,9 +87,12 @@ describe('github client', () => {
     const issues = await client.listIssues('atolis-hq', 'wake', 3);
 
     expect(issues.map((issue) => (issue as { number: number }).number)).toEqual([1, 2, 3]);
-    expect(paginateIterator).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
-      per_page: 3,
-    }));
+    expect(paginateIterator).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        per_page: 3,
+      }),
+    );
   });
 
   it('replaces issue labels via the dedicated setLabels endpoint', async () => {
@@ -140,10 +142,18 @@ describe('github client', () => {
   });
 
   it('lists pull requests with pagination stopping at maxResults', async () => {
-    paginateIterator.mockReturnValueOnce(pagesOf(
-      [{ number: 1, title: 'PR 1' }, { number: 2, title: 'PR 2' }],
-      [{ number: 3, title: 'PR 3' }, { number: 4, title: 'PR 4' }],
-    ));
+    paginateIterator.mockReturnValueOnce(
+      pagesOf(
+        [
+          { number: 1, title: 'PR 1' },
+          { number: 2, title: 'PR 2' },
+        ],
+        [
+          { number: 3, title: 'PR 3' },
+          { number: 4, title: 'PR 4' },
+        ],
+      ),
+    );
 
     const { createGitHubClient } = await import('../../src/adapters/github/github-client.js');
     const client = createGitHubClient('fake-token');

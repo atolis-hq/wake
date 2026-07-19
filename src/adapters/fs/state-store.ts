@@ -78,10 +78,12 @@ async function readEventFile(file: string): Promise<EventEnvelope[]> {
 
 function issueArchiveAgeDate(item: IssueStateRecord): string {
   const stageChangedAt = item.wake.stageHistory.at(-1)?.changedAt;
-  return [stageChangedAt, item.wake.syncedAt, item.issue.updatedAt]
-    .filter((value): value is string => value !== undefined)
-    .sort()
-    .at(-1) ?? item.wake.syncedAt;
+  return (
+    [stageChangedAt, item.wake.syncedAt, item.issue.updatedAt]
+      .filter((value): value is string => value !== undefined)
+      .sort()
+      .at(-1) ?? item.wake.syncedAt
+  );
 }
 
 function shouldArchiveIssueState(
@@ -101,9 +103,7 @@ export async function listRunRecords(wakeRoot: string): Promise<RunRecord[]> {
   const recordsById = new Map<string, RunRecord>();
 
   try {
-    const files = (await readdir(runsRoot))
-      .filter((file) => file.endsWith('.json'))
-      .sort();
+    const files = (await readdir(runsRoot)).filter((file) => file.endsWith('.json')).sort();
 
     for (const file of files) {
       const record = await readRunRecordFile(join(runsRoot, file));
@@ -172,9 +172,7 @@ async function listRunRecordsForDate(wakeRoot: string, date: string): Promise<Ru
 async function listRecentRunRecords(wakeRoot: string, limit: number): Promise<RunRecord[]> {
   const runsRoot = join(wakeRoot, 'runs');
   const recordsById = new Map<string, RunRecord>();
-  const dateDirs = (await readdir(join(runsRoot, 'by-date')).catch(() => []))
-    .sort()
-    .reverse();
+  const dateDirs = (await readdir(join(runsRoot, 'by-date')).catch(() => [])).sort().reverse();
 
   for (const dateDir of dateDirs) {
     const records = await listRunRecordsForDate(wakeRoot, dateDir);
@@ -265,9 +263,7 @@ export function createStateStore({ wakeRoot }: { wakeRoot: string }) {
     },
     async readSourceState(source: string, key: string): Promise<SourceStateRecord | null> {
       try {
-        return parseSourceStateRecord(
-          await readJsonFile(paths.sourceStateFile(source, key)),
-        );
+        return parseSourceStateRecord(await readJsonFile(paths.sourceStateFile(source, key)));
       } catch {
         return null;
       }
@@ -294,12 +290,13 @@ export function createStateStore({ wakeRoot }: { wakeRoot: string }) {
       try {
         const items: IssueStateRecord[] = [];
         const includeArchived = options.includeArchived ?? false;
-        const archiveOptions = options.archiveFreshnessDays === undefined
-          ? null
-          : {
-              archiveFreshnessDays: options.archiveFreshnessDays,
-              now: options.now ?? new Date(),
-            };
+        const archiveOptions =
+          options.archiveFreshnessDays === undefined
+            ? null
+            : {
+                archiveFreshnessDays: options.archiveFreshnessDays,
+                now: options.now ?? new Date(),
+              };
 
         // state/ is flat: state/<workId>.json, plus state/archive/ and the
         // reverse index's own state/index/ shards. Only those two subdirectories
@@ -328,7 +325,11 @@ export function createStateStore({ wakeRoot }: { wakeRoot: string }) {
               continue;
             }
 
-            if (archiveOptions !== null && !isArchive && shouldArchiveIssueState(record, archiveOptions)) {
+            if (
+              archiveOptions !== null &&
+              !isArchive &&
+              shouldArchiveIssueState(record, archiveOptions)
+            ) {
               const archivePath = paths.archivedWorkItemStateFile(record.workItemKey);
               await mkdir(dirname(archivePath), { recursive: true });
               await rename(file, archivePath).catch(() => undefined);
@@ -360,7 +361,7 @@ export function createStateStore({ wakeRoot }: { wakeRoot: string }) {
         const envelopes: EventEnvelope[] = [];
 
         for (const file of files) {
-          envelopes.push(...await readEventFile(join(eventsRoot, file)));
+          envelopes.push(...(await readEventFile(join(eventsRoot, file))));
         }
 
         return envelopes;
@@ -398,10 +399,7 @@ export function createStateStore({ wakeRoot }: { wakeRoot: string }) {
 
       return results;
     },
-    async listEventEnvelopesForWorkItem(
-      workItemKey: string,
-      limit = 10,
-    ): Promise<EventEnvelope[]> {
+    async listEventEnvelopesForWorkItem(workItemKey: string, limit = 10): Promise<EventEnvelope[]> {
       const projection = await this.readIssueState(workItemKey);
       const recentEventIds = projection?.wake.recentEventIds.slice(-limit) ?? [];
       const envelopes: EventEnvelope[] = [];

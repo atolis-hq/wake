@@ -139,8 +139,7 @@ describe('sandbox resume command', () => {
       await mkdir(join(root, 'workspaces', 'atolis-hq__wake', '22'), { recursive: true });
 
       let seenOptions:
-        | Array<{ label: string; value: { sessionId: string; workspacePath: string } }>
-        | undefined;
+        Array<{ label: string; value: { sessionId: string; workspacePath: string } }> | undefined;
       const target = await chooseResumeTarget({
         wakeRoot: root,
         select: async (options) => {

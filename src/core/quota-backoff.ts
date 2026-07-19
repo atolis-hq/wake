@@ -87,7 +87,7 @@ export function resolveQuotaPauseUntil(input: {
   }
 
   const boundedFailureCount = Math.max(1, Math.min(input.failureCount, 6));
-  const delayMs = Math.min(15 * 60_000 * (2 ** (boundedFailureCount - 1)), maxEstimatedPauseMs);
+  const delayMs = Math.min(15 * 60_000 * 2 ** (boundedFailureCount - 1), maxEstimatedPauseMs);
   return {
     pausedUntil: new Date(input.now.getTime() + delayMs).toISOString(),
     source: 'estimated',

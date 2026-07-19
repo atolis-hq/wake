@@ -18,7 +18,9 @@ export function createFakeGitHubPullRequestActivitySource(options: {
   const now = options.now ?? (() => new Date());
 
   return {
-    async pollEvents(input?: { watch: Array<{ resourceUri: string }> }): Promise<UnkeyedEventEnvelope[]> {
+    async pollEvents(input?: {
+      watch: Array<{ resourceUri: string }>;
+    }): Promise<UnkeyedEventEnvelope[]> {
       const nowIso = now().toISOString();
       const watched = new Set((input?.watch ?? []).map((ref) => ref.resourceUri));
       const events: UnkeyedEventEnvelope[] = [];
@@ -88,7 +90,11 @@ export function createFakeGitHubPullRequestActivitySource(options: {
           occurredAt: publishedAt,
           ingestedAt: publishedAt,
           trigger: 'context-only',
-          payload: { intentEventId: input.event.eventId, kind: input.event.payload.kind, body: input.event.payload.body },
+          payload: {
+            intentEventId: input.event.eventId,
+            kind: input.event.payload.kind,
+            body: input.event.payload.body,
+          },
         }),
       ];
     },

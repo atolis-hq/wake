@@ -10,55 +10,59 @@
 
 ## Global Constraints
 
-* Every runner invocation keeps `--max-turns` and a wall-clock timeout — untouched by this plan (no new runner invocations are added).
-* `core/` never imports a concrete adapter; all new source/sink logic lives in `src/adapters/github/`.
-* Every event append goes through `stateStore.appendEventEnvelope`, and every projection change goes through `projectionUpdater.rebuildFromEvents` — no direct `state/` writes.
-* Fakes move symmetrically with real adapters in the same task, per repo convention — no task ships a real adapter change without its fake counterpart landing in the same commit.
-* `rm -rf state/` + replay must still reproduce `state/` and the reverse index identically (CLAUDE.md invariant) — every new event type's fold must be replay-safe.
-* Design doc: `docs/superpowers/specs/2026-07-18-pr-activity-source-design.md` — this plan implements it; deviations found during planning are called out per-task below with a **Design note**.
+- Every runner invocation keeps `--max-turns` and a wall-clock timeout — untouched by this plan (no new runner invocations are added).
+- `core/` never imports a concrete adapter; all new source/sink logic lives in `src/adapters/github/`.
+- Every event append goes through `stateStore.appendEventEnvelope`, and every projection change goes through `projectionUpdater.rebuildFromEvents` — no direct `state/` writes.
+- Fakes move symmetrically with real adapters in the same task, per repo convention — no task ships a real adapter change without its fake counterpart landing in the same commit.
+- `rm -rf state/` + replay must still reproduce `state/` and the reverse index identically (CLAUDE.md invariant) — every new event type's fold must be replay-safe.
+- Design doc: `docs/superpowers/specs/2026-07-18-pr-activity-source-design.md` — this plan implements it; deviations found during planning are called out per-task below with a **Design note**.
 
 ---
 
 ## File Structure
 
 New files:
-* `src/adapters/github/github-pull-request-activity-source.ts` — the new `WorkSource`/sink adapter.
-* `src/adapters/fake/fake-github-pull-request-activity-source.ts` — its zero-token test fake.
-* `test/adapters/github-pull-request-activity-source.test.ts`
-* `test/adapters/artifact-verification.test.ts`
-* `test/core/mint-qualification.test.ts`
+
+- `src/adapters/github/github-pull-request-activity-source.ts` — the new `WorkSource`/sink adapter.
+- `src/adapters/fake/fake-github-pull-request-activity-source.ts` — its zero-token test fake.
+- `test/adapters/github-pull-request-activity-source.test.ts`
+- `test/adapters/artifact-verification.test.ts`
+- `test/core/mint-qualification.test.ts`
 
 Modified files (by task):
-* `src/domain/schema.ts` — `parseRunnerArtifacts`, `commentSnapshotSchema` fields, `sources.github.pullRequests` config, `sourceRefs.resourceUri` kind helpers.
-* `src/domain/types.ts` — new exported types.
-* `src/domain/resource-uri.ts` — `pr-review-thread` kind helper (no schema change; kind is already opaque per the grammar).
-* `src/core/contracts.ts` — `WorkSource.pollEvents({ watch })`.
-* `src/core/tick-runner.ts` — artifact verification/registration, mint qualification gate, watchlist derivation.
-* `src/core/policy-engine.ts` — `qualifiesForMint`.
-* `src/core/sink-router.ts` — resourceUri-based sink targeting.
-* `src/adapters/github/github-client.ts` — `getPullRequest`, `listPullRequests`, `listReviews`, `listReviewComments`, `replyToReviewComment`.
-* `src/adapters/github/github-issues-work-source.ts` — filter out PR-shaped issues.
-* `src/adapters/fake/fake-ticketing-system.ts` — `pollEvents({ watch })` signature (ignores it).
-* `src/adapters/fake/fake-resource-index.ts` — no change needed (already generic).
-* `src/adapters/runner/stage-prompt.ts` — surface/anchoring rendering in `formatComment`.
-* `src/main.ts` — wire the new source/sink into `buildRuntime`.
-* `README.md`, `docs/configuration.md`, `docs/architecture.md` — new config surface.
+
+- `src/domain/schema.ts` — `parseRunnerArtifacts`, `commentSnapshotSchema` fields, `sources.github.pullRequests` config, `sourceRefs.resourceUri` kind helpers.
+- `src/domain/types.ts` — new exported types.
+- `src/domain/resource-uri.ts` — `pr-review-thread` kind helper (no schema change; kind is already opaque per the grammar).
+- `src/core/contracts.ts` — `WorkSource.pollEvents({ watch })`.
+- `src/core/tick-runner.ts` — artifact verification/registration, mint qualification gate, watchlist derivation.
+- `src/core/policy-engine.ts` — `qualifiesForMint`.
+- `src/core/sink-router.ts` — resourceUri-based sink targeting.
+- `src/adapters/github/github-client.ts` — `getPullRequest`, `listPullRequests`, `listReviews`, `listReviewComments`, `replyToReviewComment`.
+- `src/adapters/github/github-issues-work-source.ts` — filter out PR-shaped issues.
+- `src/adapters/fake/fake-ticketing-system.ts` — `pollEvents({ watch })` signature (ignores it).
+- `src/adapters/fake/fake-resource-index.ts` — no change needed (already generic).
+- `src/adapters/runner/stage-prompt.ts` — surface/anchoring rendering in `formatComment`.
+- `src/main.ts` — wire the new source/sink into `buildRuntime`.
+- `README.md`, `docs/configuration.md`, `docs/architecture.md` — new config surface.
 
 ---
 
 ## Task 1: Runner artifact reporting — parse and verify
 
 **Files:**
+
 - Modify: `src/domain/schema.ts` (add near `parseRunnerResult`, after line 541)
 - Modify: `src/domain/types.ts` (export new type)
 - Test: `test/domain/schema.test.ts` (new describe block — check existing file first; create if absent at this path)
 
 **Interfaces:**
+
 - Produces: `parseRunnerArtifacts(result: string): { artifacts: Array<{ kind: 'pr'; url: string }> }` in `src/domain/schema.ts`, and `ReportedArtifact` type in `src/domain/types.ts`.
 
 - [ ] **Step 1: Write the failing test**
 
-```typescript
+````typescript
 // test/domain/schema.test.ts
 import { describe, expect, it } from 'vitest';
 import { parseRunnerArtifacts } from '../../src/domain/schema.js';
@@ -92,7 +96,7 @@ describe('parseRunnerArtifacts', () => {
     expect(parseRunnerArtifacts(result)).toEqual({ artifacts: [] });
   });
 });
-```
+````
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -116,7 +120,7 @@ export const wakeArtifactsEnvelopeSchema = z.object({
 
 Add after `parseRunnerResult` (after line 541, before `parseRunnerResultSentinel`):
 
-```typescript
+````typescript
 export function parseRunnerArtifacts(result: string): z.infer<typeof wakeArtifactsEnvelopeSchema> {
   const fencePattern = /^```wake-artifacts[^\n]*\n([\s\S]*?)^```[ \t]*$/gm;
   let lastMatch: RegExpExecArray | null = null;
@@ -137,7 +141,7 @@ export function parseRunnerArtifacts(result: string): z.infer<typeof wakeArtifac
     return { artifacts: [] };
   }
 }
-```
+````
 
 In `src/domain/types.ts`, add near the other payload type exports (after `CorrelatedResource`, line 53):
 
@@ -174,10 +178,12 @@ git commit -m "Add parseRunnerArtifacts for structured PR reporting"
 ## Task 2: Prompt instructs the agent to report artifacts
 
 **Files:**
+
 - Modify: `src/adapters/runner/stage-prompt.ts:143-191` (`buildHarnessPrompt`)
 - Test: `test/adapters/prompt-templates.test.ts` (check existing content first; add a case)
 
 **Interfaces:**
+
 - Consumes: nothing new.
 - Produces: harness prompt text containing `wake-artifacts` instructions, read by Task 3's verification step only implicitly (the agent's raw text output is parsed by `parseRunnerArtifacts`, not by anything in this task).
 
@@ -205,17 +211,17 @@ Expected: FAIL — harness prompt does not contain `wake-artifacts`.
 
 In `src/adapters/runner/stage-prompt.ts`, modify `buildHarnessPrompt` (lines 143-191): insert a new block after the "Result envelope ABI" block (after line 187, before the final `return lines.join('\n')`):
 
-```typescript
-  lines.push(
-    '',
-    'Artifact reporting:',
-    'If you created a pull request during this stage, report it before the result envelope by adding a fenced `wake-artifacts` JSON block:',
-    '```wake-artifacts',
-    '{ "artifacts": [{ "kind": "pr", "url": "<the PR URL>" }] }',
-    '```',
-    'Only report a PR you actually created in this run. Omit the block entirely if you created no PR.',
-  );
-```
+````typescript
+lines.push(
+  '',
+  'Artifact reporting:',
+  'If you created a pull request during this stage, report it before the result envelope by adding a fenced `wake-artifacts` JSON block:',
+  '```wake-artifacts',
+  '{ "artifacts": [{ "kind": "pr", "url": "<the PR URL>" }] }',
+  '```',
+  'Only report a PR you actually created in this run. Omit the block entirely if you created no PR.',
+);
+````
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -234,10 +240,12 @@ git commit -m "Instruct agents to report PR artifacts via wake-artifacts fence"
 ## Task 3: `getPullRequest` on the GitHub client + fake equivalent
 
 **Files:**
+
 - Modify: `src/adapters/github/github-client.ts:1-70`
 - Test: `test/adapters/github-client.test.ts` (check for an existing file; if none exists, create one covering just this method with a mocked Octokit, matching whatever mocking pattern `test/adapters/github-issues-work-source.test.ts` already uses for `deps.client`)
 
 **Interfaces:**
+
 - Produces: `client.getPullRequest(owner: string, repo: string, pullNumber: number): Promise<{ number: number; html_url: string; head: { ref: string; sha: string }; user: { login: string } | null; state: string }>`
 
 - [ ] **Step 1: Write the failing test**
@@ -359,6 +367,7 @@ git commit -m "Add PR read/reply methods to the GitHub client"
 **Design note:** verification needs a GitHub client, but `tick-runner.ts` is provider-agnostic (`core/` never imports a concrete adapter). Verification is therefore injected as an optional dependency shaped like a small interface, wired to the real GitHub client only in `main.ts`, with a fake in tests — matching every other seam in this codebase.
 
 **Files:**
+
 - Modify: `src/core/contracts.ts` (new `ArtifactVerifier` interface)
 - Modify: `src/core/tick-runner.ts` (call verification + registration after a successful run)
 - Modify: `src/adapters/fake/fake-artifact-verifier.ts` (new file)
@@ -367,12 +376,13 @@ git commit -m "Add PR read/reply methods to the GitHub client"
 - Test: `test/core/tick-runner.test.ts` (existing file — add a new describe block)
 
 **Interfaces:**
+
 - Consumes: `parseRunnerArtifacts` (Task 1), `CORRELATION_REGISTERED_EVENT` (existing).
 - Produces: `ArtifactVerifier.verify(artifact: ReportedArtifact, context: { branch: string }): Promise<{ resourceUri: string } | null>` in `src/core/contracts.ts`. `createTickRunner` gains an optional `deps.artifactVerifier?: ArtifactVerifier`.
 
 - [ ] **Step 1: Write the failing test**
 
-```typescript
+````typescript
 // test/core/tick-runner.test.ts — new describe block, using this file's existing
 // createFakeRunner/createFakeTicketingSystem/createFakeWorkspaceManager/createFakeResourceIndex
 // harness setup (copy the existing "implement stage completes" setup as a base).
@@ -381,7 +391,9 @@ import { createFakeArtifactVerifier } from '../../src/adapters/fake/fake-artifac
 describe('artifact reporting', () => {
   it('registers a verified PR artifact reported by the agent', async () => {
     const artifactVerifier = createFakeArtifactVerifier({
-      verifies: [{ url: 'https://example.test/org/repo/pull/91', resourceUri: 'github:pr:org/repo#91' }],
+      verifies: [
+        { url: 'https://example.test/org/repo/pull/91', resourceUri: 'github:pr:org/repo#91' },
+      ],
     });
     const runner = createFakeRunner({
       result: [
@@ -420,10 +432,12 @@ describe('artifact reporting', () => {
     const artifactVerifier = createFakeArtifactVerifier({ verifies: [] }); // verify() always returns null
     // ... same runner reporting the same artifact, same setup ...
     const projection = await stateStore.readIssueState(workItemKey);
-    expect(projection?.correlatedResources.some((r) => r.resourceUri === 'github:pr:org/repo#91')).toBe(false);
+    expect(
+      projection?.correlatedResources.some((r) => r.resourceUri === 'github:pr:org/repo#91'),
+    ).toBe(false);
   });
 });
-```
+````
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -478,7 +492,13 @@ import { buildResourceUri } from '../../domain/resource-uri.js';
 const githubPrUrlPattern = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/;
 
 export function createGitHubArtifactVerifier(deps: {
-  client: { getPullRequest: (owner: string, repo: string, pullNumber: number) => Promise<{ head: { ref: string } }> };
+  client: {
+    getPullRequest: (
+      owner: string,
+      repo: string,
+      pullNumber: number,
+    ) => Promise<{ head: { ref: string } }>;
+  };
 }): ArtifactVerifier {
   return {
     async verify(artifact, context) {
@@ -522,69 +542,71 @@ import { parseRunnerArtifacts } from '../domain/schema.js';
 Add a helper function above `runTick` (near `createLabelsEvent`, e.g. after line 255):
 
 ```typescript
-  async function registerReportedArtifacts(input: {
-    projection: IssueStateRecord;
-    runId: string;
-    runnerResult: AgentRunResult;
-    branch: string;
-    occurredAt: string;
-  }): Promise<void> {
-    if (deps.artifactVerifier === undefined) {
-      return;
-    }
-
-    const { artifacts } = parseRunnerArtifacts(input.runnerResult.result);
-    for (const artifact of artifacts) {
-      const verified = await deps.artifactVerifier.verify(artifact, { branch: input.branch });
-      if (verified === null) {
-        continue;
-      }
-
-      await deliverOutboundEvent(
-        createEventEnvelope({
-          eventId: `${input.runId}-artifact-${artifact.kind}-${verified.resourceUri.replace(/[^a-z0-9]+/gi, '-')}`,
-          workItemKey: input.projection.workItemKey,
-          streamScope: 'work-item',
-          direction: 'internal',
-          sourceSystem: 'wake',
-          sourceEventType: CORRELATION_REGISTERED_EVENT,
-          sourceRefs: { runId: input.runId },
-          occurredAt: input.occurredAt,
-          ingestedAt: input.occurredAt,
-          trigger: 'context-only',
-          payload: {
-            resourceUri: verified.resourceUri,
-            role: 'implementation',
-            relation: 'primary',
-            provenance: 'agent-reported',
-            registeredBy: input.runId,
-          },
-        }),
-      );
-    }
+async function registerReportedArtifacts(input: {
+  projection: IssueStateRecord;
+  runId: string;
+  runnerResult: AgentRunResult;
+  branch: string;
+  occurredAt: string;
+}): Promise<void> {
+  if (deps.artifactVerifier === undefined) {
+    return;
   }
+
+  const { artifacts } = parseRunnerArtifacts(input.runnerResult.result);
+  for (const artifact of artifacts) {
+    const verified = await deps.artifactVerifier.verify(artifact, { branch: input.branch });
+    if (verified === null) {
+      continue;
+    }
+
+    await deliverOutboundEvent(
+      createEventEnvelope({
+        eventId: `${input.runId}-artifact-${artifact.kind}-${verified.resourceUri.replace(/[^a-z0-9]+/gi, '-')}`,
+        workItemKey: input.projection.workItemKey,
+        streamScope: 'work-item',
+        direction: 'internal',
+        sourceSystem: 'wake',
+        sourceEventType: CORRELATION_REGISTERED_EVENT,
+        sourceRefs: { runId: input.runId },
+        occurredAt: input.occurredAt,
+        ingestedAt: input.occurredAt,
+        trigger: 'context-only',
+        payload: {
+          resourceUri: verified.resourceUri,
+          role: 'implementation',
+          relation: 'primary',
+          provenance: 'agent-reported',
+          registeredBy: input.runId,
+        },
+      }),
+    );
+  }
+}
 ```
 
 Note `deliverOutboundEvent` also attempts sink delivery for this event — `wake.correlation.registered` is not a publish-intent type, so `attemptDelivery`'s outbound sink call is harmless (no sink subscribes to it) but does append it via `stateStore.appendEventEnvelope` + fold, which is what's needed. If this proves noisy in practice, switch to the plain `appendEventEnvelope` + `rebuildFromEvents` pair used elsewhere for internal-only events (see `buildOriginCorrelationEvents`' callers) instead of `deliverOutboundEvent` — do this now rather than deferring, since it's a one-line difference: replace the `deliverOutboundEvent(...)` call above with:
 
 ```typescript
-      const event = createEventEnvelope({ /* same fields as above */ });
-      const appended = await deps.stateStore.appendEventEnvelope(event);
-      await projectionUpdater.rebuildFromEvents([appended]);
+const event = createEventEnvelope({/* same fields as above */});
+const appended = await deps.stateStore.appendEventEnvelope(event);
+await projectionUpdater.rebuildFromEvents([appended]);
 ```
 
 Call `registerReportedArtifacts` in the success path of `runTick`, right after `parsedRunnerResult` is computed and before `nextStage` is used for the run record (after line 1021, `const rawSentinel = parsedRunnerResult.status;`), only for the `implement` action (only implement has a workspace/branch):
 
 ```typescript
-          if (action === 'implement') {
-            await registerReportedArtifacts({
-              projection: candidate,
-              runId,
-              runnerResult,
-              branch: (await import('../adapters/git/git-workspace-manager.js')).branchNameForIssue(candidate.issue.number),
-              occurredAt: finishedAt,
-            });
-          }
+if (action === 'implement') {
+  await registerReportedArtifacts({
+    projection: candidate,
+    runId,
+    runnerResult,
+    branch: (await import('../adapters/git/git-workspace-manager.js')).branchNameForIssue(
+      candidate.issue.number,
+    ),
+    occurredAt: finishedAt,
+  });
+}
 ```
 
 (`finishedAt` is defined two lines below at line 1032 in the current file — move this call to just after `const finishedAt = deps.clock.now().toISOString();` instead, so `finishedAt` is in scope. Use a static top-of-file import for `branchNameForIssue` instead of a dynamic import — add `import { branchNameForIssue } from '../adapters/git/git-workspace-manager.js';` near the other top-of-file imports.)
@@ -594,9 +616,9 @@ Call `registerReportedArtifacts` in the success path of `runTick`, right after `
 In `src/main.ts`, inside `buildRuntime` (after `const resourceIndex = ...` at line 216), add:
 
 ```typescript
-  const artifactVerifier = config.sources.github.enabled
-    ? createGitHubArtifactVerifier({ client: createGitHubClient(await resolveGitHubToken()) })
-    : undefined;
+const artifactVerifier = config.sources.github.enabled
+  ? createGitHubArtifactVerifier({ client: createGitHubClient(await resolveGitHubToken()) })
+  : undefined;
 ```
 
 Add the import near the other adapter imports (after the `createGitHubIssuesWorkSource` import, line 22):
@@ -608,17 +630,17 @@ import { createGitHubArtifactVerifier } from './adapters/github/github-artifact-
 Pass it to `createTickRunner` (in the call around line 269-278):
 
 ```typescript
-  const tickRunner = createTickRunner({
-    clock: systemClock,
-    config,
-    stateStore,
-    workSource,
-    outboundSink,
-    runner,
-    workspaceManager,
-    resourceIndex,
-    artifactVerifier,
-  });
+const tickRunner = createTickRunner({
+  clock: systemClock,
+  config,
+  stateStore,
+  workSource,
+  outboundSink,
+  runner,
+  workspaceManager,
+  resourceIndex,
+  artifactVerifier,
+});
 ```
 
 - [ ] **Step 8: Run tests to verify they pass**
@@ -641,11 +663,13 @@ git commit -m "Verify and register agent-reported PR artifacts"
 ## Task 5: Mint qualification config + `qualifiesForMint`
 
 **Files:**
+
 - Modify: `src/domain/schema.ts:371-390` (`sources.github` schema — add `pullRequests`)
 - Modify: `src/core/policy-engine.ts` (extract shared label/assignee check, add `qualifiesForMint`)
 - Test: `test/core/mint-qualification.test.ts` (new)
 
 **Interfaces:**
+
 - Consumes: `UnkeyedEventEnvelope` shape (existing), `WakeConfig` (existing).
 - Produces: `policy.qualifiesForMint(unresolved: UnkeyedEventEnvelope, config: WakeConfig): boolean`, used by Task 6.
 
@@ -825,7 +849,10 @@ function labelsAndAssigneesQualify(input: {
     return false;
   }
 
-  if (input.requiredAssignees.length > 0 && !input.requiredAssignees.some((login) => assignees.has(login))) {
+  if (
+    input.requiredAssignees.length > 0 &&
+    !input.requiredAssignees.some((login) => assignees.has(login))
+  ) {
     return false;
   }
 
@@ -836,13 +863,13 @@ function labelsAndAssigneesQualify(input: {
 Update `isEligible` (lines 60-97) to use it — replace the body from `const labels = new Set(...)` (line 68) through the `return true;` label/assignee checks (lines 79-96) with:
 
 ```typescript
-      return labelsAndAssigneesQualify({
-        labels: issue.issue.labels,
-        assignees: issue.issue.assignees,
-        requiredLabels,
-        ignoredLabels: config.sources.github.policy.ignoredLabels,
-        requiredAssignees,
-      });
+return labelsAndAssigneesQualify({
+  labels: issue.issue.labels,
+  assignees: issue.issue.assignees,
+  requiredLabels,
+  ignoredLabels: config.sources.github.policy.ignoredLabels,
+  requiredAssignees,
+});
 ```
 
 (Keep the `state !== 'open'` and `isPullRequest` early returns above it as-is for now — `isPullRequest` removal is Task 7.)
@@ -913,10 +940,12 @@ git commit -m "Add per-source mint qualification policy"
 **Design note:** introduces a shared sentinel `UNRESOLVED_WORK_ITEM_KEY = 'unresolved'` for events that fail qualification. `rebuildFromEvents` looks up `readIssueState('unresolved')`, which is always `null` (no such file is ever written), and `applyEvent` returns `null` for any non-upsert event type when `current === null` — so these events are durable and queryable via the event log, but never materialize a projection file. The persisted-event healing branch (lines 419-446 of the current `tick-runner.ts`) must skip this sentinel key entirely, or it will spuriously attempt to re-mint on every tick.
 
 **Files:**
+
 - Modify: `src/core/tick-runner.ts:382-469` (`resolveInboundEvent`)
 - Test: `test/core/tick-runner.test.ts` (new describe block)
 
 **Interfaces:**
+
 - Consumes: `policy.qualifiesForMint` (Task 5).
 - Produces: events with `workItemKey === 'unresolved'` and `streamScope: 'global-intake'` for unqualified misses — consumed by nothing yet in this plan (recovery via `wake correlate` is manual, per the design's deferred scope).
 
@@ -1004,60 +1033,60 @@ to:
 Then, in the miss branch (lines 449-468), gate minting on qualification — replace:
 
 ```typescript
-    const existingWorkItemKey = await deps.resourceIndex.resolve(resourceUri);
-    if (existingWorkItemKey !== undefined) {
-      return [
-        {
-          envelope: createEventEnvelope({ ...unkeyed, workItemKey: existingWorkItemKey }),
-          persisted: false,
-        },
-      ];
-    }
+const existingWorkItemKey = await deps.resourceIndex.resolve(resourceUri);
+if (existingWorkItemKey !== undefined) {
+  return [
+    {
+      envelope: createEventEnvelope({ ...unkeyed, workItemKey: existingWorkItemKey }),
+      persisted: false,
+    },
+  ];
+}
 
-    const workItemKey = createWorkId();
-    const keyed = createEventEnvelope({ ...unkeyed, workItemKey });
+const workItemKey = createWorkId();
+const keyed = createEventEnvelope({ ...unkeyed, workItemKey });
 
-    return [
-      { envelope: keyed, persisted: false },
-      ...buildOriginCorrelationEvents(workItemKey, unkeyed, resourceUri).map((envelope) => ({
-        envelope,
-        persisted: false,
-      })),
-    ];
+return [
+  { envelope: keyed, persisted: false },
+  ...buildOriginCorrelationEvents(workItemKey, unkeyed, resourceUri).map((envelope) => ({
+    envelope,
+    persisted: false,
+  })),
+];
 ```
 
 with:
 
 ```typescript
-    const existingWorkItemKey = await deps.resourceIndex.resolve(resourceUri);
-    if (existingWorkItemKey !== undefined) {
-      return [
-        {
-          envelope: createEventEnvelope({ ...unkeyed, workItemKey: existingWorkItemKey }),
-          persisted: false,
-        },
-      ];
-    }
+const existingWorkItemKey = await deps.resourceIndex.resolve(resourceUri);
+if (existingWorkItemKey !== undefined) {
+  return [
+    {
+      envelope: createEventEnvelope({ ...unkeyed, workItemKey: existingWorkItemKey }),
+      persisted: false,
+    },
+  ];
+}
 
-    if (!policy.qualifiesForMint(unkeyed, deps.config)) {
-      return [
-        {
-          envelope: createEventEnvelope({ ...unkeyed, workItemKey: UNRESOLVED_WORK_ITEM_KEY }),
-          persisted: false,
-        },
-      ];
-    }
+if (!policy.qualifiesForMint(unkeyed, deps.config)) {
+  return [
+    {
+      envelope: createEventEnvelope({ ...unkeyed, workItemKey: UNRESOLVED_WORK_ITEM_KEY }),
+      persisted: false,
+    },
+  ];
+}
 
-    const workItemKey = createWorkId();
-    const keyed = createEventEnvelope({ ...unkeyed, workItemKey });
+const workItemKey = createWorkId();
+const keyed = createEventEnvelope({ ...unkeyed, workItemKey });
 
-    return [
-      { envelope: keyed, persisted: false },
-      ...buildOriginCorrelationEvents(workItemKey, unkeyed, resourceUri).map((envelope) => ({
-        envelope,
-        persisted: false,
-      })),
-    ];
+return [
+  { envelope: keyed, persisted: false },
+  ...buildOriginCorrelationEvents(workItemKey, unkeyed, resourceUri).map((envelope) => ({
+    envelope,
+    persisted: false,
+  })),
+];
 ```
 
 `policy` is already in scope inside `createTickRunner` (defined at the top via `createPolicyEngine()`, line 57) — no new wiring needed.
@@ -1079,11 +1108,13 @@ git commit -m "Gate work-item minting on per-source qualification"
 ## Task 7: Issues source stops emitting PR-shaped items
 
 **Files:**
+
 - Modify: `src/adapters/github/github-issues-work-source.ts:390-436` (the polling loop)
 - Modify: `src/core/policy-engine.ts:71-77` (remove now-dead `isPullRequest` check — optional cleanup, do it since the design calls it out explicitly)
 - Test: `test/adapters/github-issues-work-source.test.ts` (new case)
 
 **Interfaces:**
+
 - No signature changes — behavior only.
 
 - [ ] **Step 1: Write the failing test**
@@ -1126,9 +1157,9 @@ In `src/adapters/github/github-issues-work-source.ts`, in the `pollEvents` loop 
 In `src/core/policy-engine.ts`, `isEligible` (around line 71-77 as originally read, now shifted slightly by Task 5's refactor — locate by content, not line number): remove the block
 
 ```typescript
-      if (issue.issue.isPullRequest) {
-        return false;
-      }
+if (issue.issue.isPullRequest) {
+  return false;
+}
 ```
 
 The `isPullRequest` field itself stays in the schema (still useful as descriptive metadata / for any future direct-PR-as-work-item projection), only the policy rejection is removed.
@@ -1153,6 +1184,7 @@ git commit -m "Stop the issues source from emitting PR-shaped items"
 ## Task 8: `WorkSource.pollEvents({ watch })` contract + watchlist derivation
 
 **Files:**
+
 - Modify: `src/core/contracts.ts:31-33` (`WorkSource` interface)
 - Modify: `src/core/tick-runner.ts` (derive watchlist before polling; pass to `workSource.pollEvents`)
 - Modify: `src/core/sink-router.ts:12-19` (`createWorkSourceFanIn` passes `watch` through)
@@ -1161,6 +1193,7 @@ git commit -m "Stop the issues source from emitting PR-shaped items"
 - Test: `test/core/tick-runner.test.ts`, `test/core/sink-router.test.ts` (check existing file name — may be `test/core/work-source-fan-in.test.ts`; use whichever file already covers `createWorkSourceFanIn`)
 
 **Interfaces:**
+
 - Produces: `WorkSource.pollEvents(input?: { watch: Array<{ resourceUri: string }> }): Promise<UnkeyedEventEnvelope[]>`
 
 - [ ] **Step 1: Write the failing test**
@@ -1215,48 +1248,48 @@ export interface WorkSource {
 Add a helper near `markPendingActionableIssues` (before it, ~line 270):
 
 ```typescript
-  function deriveWatchlist(projections: IssueStateRecord[]): { resourceUri: string }[] {
-    const seen = new Set<string>();
-    const watch: { resourceUri: string }[] = [];
+function deriveWatchlist(projections: IssueStateRecord[]): { resourceUri: string }[] {
+  const seen = new Set<string>();
+  const watch: { resourceUri: string }[] = [];
 
-    for (const projection of projections) {
-      if (projection.issue.state !== 'open') {
+  for (const projection of projections) {
+    if (projection.issue.state !== 'open') {
+      continue;
+    }
+    for (const resource of projection.correlatedResources) {
+      if (seen.has(resource.resourceUri)) {
         continue;
       }
-      for (const resource of projection.correlatedResources) {
-        if (seen.has(resource.resourceUri)) {
-          continue;
-        }
-        seen.add(resource.resourceUri);
-        watch.push({ resourceUri: resource.resourceUri });
-      }
+      seen.add(resource.resourceUri);
+      watch.push({ resourceUri: resource.resourceUri });
     }
-
-    return watch;
   }
+
+  return watch;
+}
 ```
 
-In `runTick`, the watchlist must be derived from projections read *before* this tick's poll (a chicken-and-egg is fine — this tick's poll watches what last tick's fold produced; a newly-registered PR is watched starting next tick, which matches the existing pattern where `markPendingActionableIssues` also reads pre-poll `projections`). Reorder the relevant lines (currently lines 822-824):
+In `runTick`, the watchlist must be derived from projections read _before_ this tick's poll (a chicken-and-egg is fine — this tick's poll watches what last tick's fold produced; a newly-registered PR is watched starting next tick, which matches the existing pattern where `markPendingActionableIssues` also reads pre-poll `projections`). Reorder the relevant lines (currently lines 822-824):
 
 ```typescript
-        await reconcileStaleRunningRecords(tickStartedAt);
-        await retryUnconfirmedDeliveries();
-        const inboundEvents = await ingestInboundEvents(await deps.workSource.pollEvents());
+await reconcileStaleRunningRecords(tickStartedAt);
+await retryUnconfirmedDeliveries();
+const inboundEvents = await ingestInboundEvents(await deps.workSource.pollEvents());
 
-        const projections = await deps.stateStore.listIssueStates();
+const projections = await deps.stateStore.listIssueStates();
 ```
 
 to:
 
 ```typescript
-        await reconcileStaleRunningRecords(tickStartedAt);
-        await retryUnconfirmedDeliveries();
-        const watchlistProjections = await deps.stateStore.listIssueStates();
-        const inboundEvents = await ingestInboundEvents(
-          await deps.workSource.pollEvents({ watch: deriveWatchlist(watchlistProjections) }),
-        );
+await reconcileStaleRunningRecords(tickStartedAt);
+await retryUnconfirmedDeliveries();
+const watchlistProjections = await deps.stateStore.listIssueStates();
+const inboundEvents = await ingestInboundEvents(
+  await deps.workSource.pollEvents({ watch: deriveWatchlist(watchlistProjections) }),
+);
 
-        const projections = await deps.stateStore.listIssueStates();
+const projections = await deps.stateStore.listIssueStates();
 ```
 
 (`projections` is re-read after ingestion, as before — the watchlist read is a separate, earlier snapshot. This costs one extra `listIssueStates()` call per tick; acceptable, matches the existing pattern of re-reading state after mutation elsewhere in this function.)
@@ -1315,11 +1348,13 @@ git commit -m "Add watchlist plumbing to the WorkSource contract"
 ## Task 9: `commentSnapshotSchema` gains surface tagging; projection fold accepts PR/review events
 
 **Files:**
+
 - Modify: `src/domain/schema.ts:121-130` (`commentSnapshotSchema`)
 - Modify: `src/core/projection-updater.ts:107-136` (comment fold branch)
 - Test: `test/core/projection-updater.test.ts` (new case)
 
 **Interfaces:**
+
 - Produces: `commentSnapshotSchema` gains optional `resourceUri: string` and `reviewThread: { path: string; line?: number }`. Projection fold accepts `sourceEventType` values `pr.comment.created`, `pr.review.created`, `pr.review-comment.created` (new, defined in Task 10) using the same shape as `fake.issue.comment.created`.
 
 - [ ] **Step 1: Write the failing test**
@@ -1427,14 +1462,16 @@ git commit -m "Fold PR/review comments into comments[] with surface tagging"
 
 ## Task 10: `createGitHubPullRequestActivitySource` — discovery + watchlisted activity polling
 
-**Design note (deviation from the design doc, discovered during planning):** the design doc's §3/§4 assume the PR source only polls watchlisted PRs. That alone can never surface a *new*, uncorrelated PR for qualification (Task 5/6) — nothing would ever call the resolver with a fresh `github:pr:…` URI. This task adds a lightweight **discovery** pass, symmetric to `github-issues-work-source.ts`'s repo-level `listIssues` polling: for each configured repo, list open PRs and emit one lightweight `pr.seen` event per PR not already known, carrying just enough (`author`, `headRef`) for `qualifiesForMint`. `pr.seen` events use a **stable, timestamp-free `eventId`** (`pr-seen-<repo>-<number>`) so `appendEventEnvelope`'s id-dedup naturally caps this to one append ever per PR — it is not re-emitted every tick once the PR is either minted or parked.
+**Design note (deviation from the design doc, discovered during planning):** the design doc's §3/§4 assume the PR source only polls watchlisted PRs. That alone can never surface a _new_, uncorrelated PR for qualification (Task 5/6) — nothing would ever call the resolver with a fresh `github:pr:…` URI. This task adds a lightweight **discovery** pass, symmetric to `github-issues-work-source.ts`'s repo-level `listIssues` polling: for each configured repo, list open PRs and emit one lightweight `pr.seen` event per PR not already known, carrying just enough (`author`, `headRef`) for `qualifiesForMint`. `pr.seen` events use a **stable, timestamp-free `eventId`** (`pr-seen-<repo>-<number>`) so `appendEventEnvelope`'s id-dedup naturally caps this to one append ever per PR — it is not re-emitted every tick once the PR is either minted or parked.
 
 **Files:**
+
 - Create: `src/adapters/github/github-pull-request-activity-source.ts`
 - Create: `src/adapters/fake/fake-github-pull-request-activity-source.ts`
 - Test: `test/adapters/github-pull-request-activity-source.test.ts`
 
 **Interfaces:**
+
 - Consumes: `github-client.ts`'s `listPullRequests`, `getPullRequest`, `listComments`, `listReviews`, `listReviewComments`, `replyToReviewComment` (Task 3); `buildResourceUri` (existing); `WorkSource`/`OutboundSink` contracts (Task 8).
 - Produces: `createGitHubPullRequestActivitySource(deps): WorkSource & OutboundSink`, registered in `main.ts` (Task 12) as a second named source/sink.
 
@@ -1590,7 +1627,10 @@ function prResourceUri(repo: string, number: number): string {
   return buildResourceUri('github', 'pr', `${repo}#${number}`);
 }
 
-function reviewThreadRootId(comment: GitHubReviewComment, byId: Map<number, GitHubReviewComment>): number {
+function reviewThreadRootId(
+  comment: GitHubReviewComment,
+  byId: Map<number, GitHubReviewComment>,
+): number {
   let current = comment;
   const visited = new Set<number>();
   while (current.in_reply_to_id !== undefined && !visited.has(current.id)) {
@@ -1614,19 +1654,46 @@ function isBotAuthored(comment: { user?: { type?: string } | null; body?: string
 
 export function createGitHubPullRequestActivitySource(deps: {
   client: {
-    listPullRequests: (owner: string, repo: string, maxResults: number) => Promise<GitHubPullRequest[]>;
+    listPullRequests: (
+      owner: string,
+      repo: string,
+      maxResults: number,
+    ) => Promise<GitHubPullRequest[]>;
     getPullRequest: (owner: string, repo: string, pullNumber: number) => Promise<GitHubPullRequest>;
-    listComments: (owner: string, repo: string, prNumber: number, perPage: number) => Promise<GitHubComment[]>;
-    listReviews: (owner: string, repo: string, prNumber: number, perPage: number) => Promise<GitHubReview[]>;
-    listReviewComments: (owner: string, repo: string, prNumber: number, perPage: number) => Promise<GitHubReviewComment[]>;
-    replyToReviewComment: (owner: string, repo: string, prNumber: number, commentId: number, body: string) => Promise<unknown>;
+    listComments: (
+      owner: string,
+      repo: string,
+      prNumber: number,
+      perPage: number,
+    ) => Promise<GitHubComment[]>;
+    listReviews: (
+      owner: string,
+      repo: string,
+      prNumber: number,
+      perPage: number,
+    ) => Promise<GitHubReview[]>;
+    listReviewComments: (
+      owner: string,
+      repo: string,
+      prNumber: number,
+      perPage: number,
+    ) => Promise<GitHubReviewComment[]>;
+    replyToReviewComment: (
+      owner: string,
+      repo: string,
+      prNumber: number,
+      commentId: number,
+      body: string,
+    ) => Promise<unknown>;
   };
   stateStore: ReturnType<typeof import('../fs/state-store.js').createStateStore>;
   config: WakeConfig;
   resourceIndex: ResourceIndex;
   now: () => Date;
 }) {
-  function repoAndNumberFromPrUri(resourceUri: string): { owner: string; repo: string; repoRef: string; number: number } | null {
+  function repoAndNumberFromPrUri(
+    resourceUri: string,
+  ): { owner: string; repo: string; repoRef: string; number: number } | null {
     // github:pr:<owner>/<repo>#<number>
     const locator = resourceUri.split(':').slice(2).join(':');
     const match = /^([^/]+)\/([^#]+)#(\d+)$/.exec(locator);
@@ -1681,7 +1748,11 @@ export function createGitHubPullRequestActivitySource(deps: {
               ingestedAt,
               trigger: 'context-only',
               payload: {
-                pr: { number: pr.number, author: pr.user?.login ?? 'unknown', headRef: pr.head.ref },
+                pr: {
+                  number: pr.number,
+                  author: pr.user?.login ?? 'unknown',
+                  headRef: pr.head.ref,
+                },
               },
             }),
           );
@@ -1720,7 +1791,12 @@ export function createGitHubPullRequestActivitySource(deps: {
             direction: 'inbound',
             sourceSystem: githubPrSource,
             sourceEventType: 'pr.comment.created',
-            sourceRefs: { repo: ref.repoRef, commentId: String(comment.id), sourceUrl: comment.html_url, resourceUri },
+            sourceRefs: {
+              repo: ref.repoRef,
+              commentId: String(comment.id),
+              sourceUrl: comment.html_url,
+              resourceUri,
+            },
             occurredAt: comment.updated_at,
             ingestedAt,
             trigger: 'context-only',
@@ -1752,7 +1828,12 @@ export function createGitHubPullRequestActivitySource(deps: {
             direction: 'inbound',
             sourceSystem: githubPrSource,
             sourceEventType: 'pr.review.created',
-            sourceRefs: { repo: ref.repoRef, commentId: `review-${review.id}`, sourceUrl: review.html_url, resourceUri },
+            sourceRefs: {
+              repo: ref.repoRef,
+              commentId: `review-${review.id}`,
+              sourceUrl: review.html_url,
+              resourceUri,
+            },
             occurredAt: submittedAt,
             ingestedAt,
             trigger: 'context-only',
@@ -1771,7 +1852,12 @@ export function createGitHubPullRequestActivitySource(deps: {
         );
       }
 
-      const reviewComments = await deps.client.listReviewComments(ref.owner, ref.repo, ref.number, perPage);
+      const reviewComments = await deps.client.listReviewComments(
+        ref.owner,
+        ref.repo,
+        ref.number,
+        perPage,
+      );
       const byId = new Map(reviewComments.map((c) => [c.id, c]));
       for (const comment of reviewComments) {
         const rootId = reviewThreadRootId(comment, byId);
@@ -1783,7 +1869,12 @@ export function createGitHubPullRequestActivitySource(deps: {
             direction: 'inbound',
             sourceSystem: githubPrSource,
             sourceEventType: 'pr.review-comment.created',
-            sourceRefs: { repo: ref.repoRef, commentId: String(comment.id), sourceUrl: comment.html_url, resourceUri: threadUri },
+            sourceRefs: {
+              repo: ref.repoRef,
+              commentId: String(comment.id),
+              sourceUrl: comment.html_url,
+              resourceUri: threadUri,
+            },
             occurredAt: comment.updated_at,
             ingestedAt,
             trigger: 'context-only',
@@ -1795,7 +1886,10 @@ export function createGitHubPullRequestActivitySource(deps: {
                 createdAt: comment.created_at,
                 updatedAt: comment.updated_at,
                 resourceUri: threadUri,
-                reviewThread: { path: comment.path, line: comment.line ?? comment.original_line ?? undefined },
+                reviewThread: {
+                  path: comment.path,
+                  line: comment.line ?? comment.original_line ?? undefined,
+                },
               },
             },
             derivedHints: { botAuthoredComment: isBotAuthored(comment) },
@@ -1814,9 +1908,13 @@ export function createGitHubPullRequestActivitySource(deps: {
   }
 
   return {
-    async pollEvents(input?: { watch: Array<{ resourceUri: string }> }): Promise<UnkeyedEventEnvelope[]> {
+    async pollEvents(input?: {
+      watch: Array<{ resourceUri: string }>;
+    }): Promise<UnkeyedEventEnvelope[]> {
       const ingestedAt = deps.now().toISOString();
-      const watched = (input?.watch ?? []).filter((ref) => ref.resourceUri.startsWith('github:pr:'));
+      const watched = (input?.watch ?? []).filter((ref) =>
+        ref.resourceUri.startsWith('github:pr:'),
+      );
 
       const discovered = await discoverPullRequests(ingestedAt);
       const activityBatches = await Promise.all(
@@ -1828,7 +1926,9 @@ export function createGitHubPullRequestActivitySource(deps: {
     async deliverIntent(input: { event: EventEnvelope }): Promise<EventEnvelope[]> {
       const resourceUri = input.event.sourceRefs.resourceUri;
       if (resourceUri === undefined) {
-        throw new Error(`cannot deliver intent ${input.event.eventId}: missing sourceRefs.resourceUri`);
+        throw new Error(
+          `cannot deliver intent ${input.event.eventId}: missing sourceRefs.resourceUri`,
+        );
       }
 
       const publishedAt = deps.now().toISOString();
@@ -1837,11 +1937,20 @@ export function createGitHubPullRequestActivitySource(deps: {
         const locator = resourceUri.split(':').slice(2).join(':');
         const match = /^([^/]+)\/([^#]+)#(\d+)\/rt_(\d+)$/.exec(locator);
         if (match === null) {
-          throw new Error(`cannot deliver intent ${input.event.eventId}: malformed review-thread uri ${resourceUri}`);
+          throw new Error(
+            `cannot deliver intent ${input.event.eventId}: malformed review-thread uri ${resourceUri}`,
+          );
         }
         const [, owner, repo, numberStr, rootIdStr] = match;
-        if (owner === undefined || repo === undefined || numberStr === undefined || rootIdStr === undefined) {
-          throw new Error(`cannot deliver intent ${input.event.eventId}: malformed review-thread uri ${resourceUri}`);
+        if (
+          owner === undefined ||
+          repo === undefined ||
+          numberStr === undefined ||
+          rootIdStr === undefined
+        ) {
+          throw new Error(
+            `cannot deliver intent ${input.event.eventId}: malformed review-thread uri ${resourceUri}`,
+          );
         }
 
         const body = typeof input.event.payload.body === 'string' ? input.event.payload.body : '';
@@ -1861,18 +1970,27 @@ export function createGitHubPullRequestActivitySource(deps: {
             direction: 'outbound',
             sourceSystem: githubPrSource,
             sourceEventType: 'pr.review-comment.reply.published',
-            sourceRefs: { resourceUri, sourceUrl: (response as { html_url?: string } | undefined)?.html_url },
+            sourceRefs: {
+              resourceUri,
+              sourceUrl: (response as { html_url?: string } | undefined)?.html_url,
+            },
             occurredAt: publishedAt,
             ingestedAt: publishedAt,
             trigger: 'context-only',
-            payload: { intentEventId: input.event.eventId, kind: input.event.payload.kind, body: input.event.payload.body },
+            payload: {
+              intentEventId: input.event.eventId,
+              kind: input.event.payload.kind,
+              body: input.event.payload.body,
+            },
           }),
         ];
       }
 
       const ref = repoAndNumberFromPrUri(resourceUri);
       if (ref === null) {
-        throw new Error(`cannot deliver intent ${input.event.eventId}: malformed pr uri ${resourceUri}`);
+        throw new Error(
+          `cannot deliver intent ${input.event.eventId}: malformed pr uri ${resourceUri}`,
+        );
       }
 
       const body = typeof input.event.payload.body === 'string' ? input.event.payload.body : '';
@@ -1889,7 +2007,11 @@ export function createGitHubPullRequestActivitySource(deps: {
           occurredAt: publishedAt,
           ingestedAt: publishedAt,
           trigger: 'context-only',
-          payload: { intentEventId: input.event.eventId, kind: input.event.payload.kind, body: input.event.payload.body },
+          payload: {
+            intentEventId: input.event.eventId,
+            kind: input.event.payload.kind,
+            body: input.event.payload.body,
+          },
         }),
       ];
     },
@@ -1923,7 +2045,9 @@ export function createFakeGitHubPullRequestActivitySource(options: {
   const now = options.now ?? (() => new Date());
 
   return {
-    async pollEvents(input?: { watch: Array<{ resourceUri: string }> }): Promise<UnkeyedEventEnvelope[]> {
+    async pollEvents(input?: {
+      watch: Array<{ resourceUri: string }>;
+    }): Promise<UnkeyedEventEnvelope[]> {
       const nowIso = now().toISOString();
       const watched = new Set((input?.watch ?? []).map((ref) => ref.resourceUri));
       const events: UnkeyedEventEnvelope[] = [];
@@ -1993,7 +2117,11 @@ export function createFakeGitHubPullRequestActivitySource(options: {
           occurredAt: publishedAt,
           ingestedAt: publishedAt,
           trigger: 'context-only',
-          payload: { intentEventId: input.event.eventId, kind: input.event.payload.kind, body: input.event.payload.body },
+          payload: {
+            intentEventId: input.event.eventId,
+            kind: input.event.payload.kind,
+            body: input.event.payload.body,
+          },
         }),
       ];
     },
@@ -2018,10 +2146,12 @@ git commit -m "Add GitHub PR activity source: discovery + watchlisted polling"
 ## Task 11: Sink routing by `resourceUri`
 
 **Files:**
+
 - Modify: `src/core/sink-router.ts:52-103` (`createOutboundSinkRouter`)
 - Test: whichever existing test file covers `createOutboundSinkRouter` (locate via `grep -rl createOutboundSinkRouter test/`)
 
 **Interfaces:**
+
 - Consumes: `sourceRefs.resourceUri` (existing field).
 - Produces: routing behavior only — no signature change to `OutboundSink` or `createOutboundSinkRouter`'s own signature.
 
@@ -2076,16 +2206,13 @@ function sinkNameForResourceUri(resourceUri: string, fallback: string): string {
 In the `deliverIntent` body, after the existing `sourceOrigin`/`targetSinks.add(sourceOrigin)` block (lines 73-79), change the target-add logic so a present `resourceUri` overrides the origin-derived sink name for the default single-trigger case:
 
 ```typescript
-      const kind = intentKind(event);
-      const resourceUri = event.sourceRefs.resourceUri;
-      if (
-        event.sourceEventType === 'wake.publish.intent.requested' &&
-        sourceOrigin !== undefined
-      ) {
-        targetSinks.add(
-          resourceUri === undefined ? sourceOrigin : sinkNameForResourceUri(resourceUri, sourceOrigin),
-        );
-      }
+const kind = intentKind(event);
+const resourceUri = event.sourceRefs.resourceUri;
+if (event.sourceEventType === 'wake.publish.intent.requested' && sourceOrigin !== undefined) {
+  targetSinks.add(
+    resourceUri === undefined ? sourceOrigin : sinkNameForResourceUri(resourceUri, sourceOrigin),
+  );
+}
 ```
 
 (This replaces the existing 4-line block at lines 73-79 that just does `targetSinks.add(sourceOrigin)`.)
@@ -2107,9 +2234,11 @@ git commit -m "Route publish intents to PR surfaces by resourceUri"
 ## Task 12: Wire the PR source/sink into `main.ts`
 
 **Files:**
+
 - Modify: `src/main.ts:203-288` (`buildRuntime`)
 
 **Interfaces:**
+
 - No new exported interfaces — wiring only.
 
 - [ ] **Step 1: Write the failing test**
@@ -2127,46 +2256,46 @@ import { createGitHubPullRequestActivitySource } from './adapters/github/github-
 In `buildRuntime`, after the existing `ticketingSystem`/`sourceName`/`sinkName` block (lines 218-246), add:
 
 ```typescript
-  const pullRequestActivitySource = config.sources.github.enabled
-    ? createGitHubPullRequestActivitySource({
-        client: createGitHubClient(await resolveGitHubToken()),
-        stateStore,
-        config,
-        resourceIndex,
-        now: () => systemClock.now(),
-      })
-    : null;
+const pullRequestActivitySource = config.sources.github.enabled
+  ? createGitHubPullRequestActivitySource({
+      client: createGitHubClient(await resolveGitHubToken()),
+      stateStore,
+      config,
+      resourceIndex,
+      now: () => systemClock.now(),
+    })
+  : null;
 ```
 
 Change the `workSource` construction (lines 232-237) to fan in the second source when present:
 
 ```typescript
-  const workSource = createWorkSourceFanIn([
-    {
-      source: sourceName,
-      pollEvents: ticketingSystem.pollEvents,
-    },
-    ...(pullRequestActivitySource === null
-      ? []
-      : [{ source: 'github-pr', pollEvents: pullRequestActivitySource.pollEvents }]),
-  ]);
+const workSource = createWorkSourceFanIn([
+  {
+    source: sourceName,
+    pollEvents: ticketingSystem.pollEvents,
+  },
+  ...(pullRequestActivitySource === null
+    ? []
+    : [{ source: 'github-pr', pollEvents: pullRequestActivitySource.pollEvents }]),
+]);
 ```
 
 Change the `outboundSink` construction (lines 238-246) to register the PR sink alongside the existing one:
 
 ```typescript
-  const outboundSink = createOutboundSinkRouter({
-    sinks: [
-      {
-        sink: sinkName,
-        deliverIntent: ticketingSystem.deliverIntent,
-      },
-      ...(pullRequestActivitySource === null
-        ? []
-        : [{ sink: 'github-pr', deliverIntent: pullRequestActivitySource.deliverIntent }]),
-    ],
-    config,
-  });
+const outboundSink = createOutboundSinkRouter({
+  sinks: [
+    {
+      sink: sinkName,
+      deliverIntent: ticketingSystem.deliverIntent,
+    },
+    ...(pullRequestActivitySource === null
+      ? []
+      : [{ sink: 'github-pr', deliverIntent: pullRequestActivitySource.deliverIntent }]),
+  ],
+  config,
+});
 ```
 
 - [ ] **Step 3: Run tests to verify no regressions**
@@ -2189,10 +2318,12 @@ git commit -m "Wire the GitHub PR activity source into buildRuntime"
 ## Task 13: Resume prompt renders surface + review-thread anchoring
 
 **Files:**
+
 - Modify: `src/adapters/runner/stage-prompt.ts:12-22` (`formatComment`)
 - Test: `test/adapters/prompt-templates.test.ts`
 
 **Interfaces:**
+
 - No signature change — rendering only.
 
 - [ ] **Step 1: Write the failing test**
@@ -2234,11 +2365,12 @@ In `src/adapters/runner/stage-prompt.ts`, modify `formatComment` (lines 12-22):
 
 ```typescript
 function formatComment(comment: CommentSnapshot): string {
-  const surfaceLine = comment.reviewThread !== undefined
-    ? `Surface: review comment on ${comment.reviewThread.path}${comment.reviewThread.line === undefined ? '' : `:${comment.reviewThread.line}`}`
-    : comment.resourceUri !== undefined
-      ? `Surface: ${comment.resourceUri}`
-      : 'Surface: issue thread';
+  const surfaceLine =
+    comment.reviewThread !== undefined
+      ? `Surface: review comment on ${comment.reviewThread.path}${comment.reviewThread.line === undefined ? '' : `:${comment.reviewThread.line}`}`
+      : comment.resourceUri !== undefined
+        ? `Surface: ${comment.resourceUri}`
+        : 'Surface: issue thread';
 
   return [
     '<wake-comment>',
@@ -2270,9 +2402,11 @@ git commit -m "Render surface and review-thread anchoring in the resume prompt"
 ## Task 14: End-to-end fake-adapter scenario
 
 **Files:**
+
 - Test: `test/core/tick-runner.test.ts` (new describe block — the confirmation scenario from ADR 0001's "Confirmation" section and the design doc's phase 8)
 
 **Interfaces:**
+
 - Consumes: everything above. No production code changes in this task unless the scenario surfaces a gap — if so, fix it in the relevant existing file and note the fix in the commit message rather than opening a new task.
 
 - [ ] **Step 1: Write the scenario test**
@@ -2337,6 +2471,7 @@ git commit -m "Add end-to-end PR review-comment resume scenario"
 ## Task 15: Documentation
 
 **Files:**
+
 - Modify: `README.md`
 - Modify: `docs/configuration.md`
 - Modify: `docs/architecture.md`
@@ -2364,7 +2499,7 @@ git commit -m "Document the PR activity source configuration"
 
 ## Self-Review Notes
 
-* **Spec coverage:** D1' → Tasks 5-6. D2 → Task 7. D3 → no task (confirmed no code change needed; the existing `sessionId`-presence resume rule already generalizes once Task 9 lands). D4 → Task 13 (anchoring only, no materialization added anywhere in this plan). D5 → Task 9. §1 (artifacts) → Tasks 1-2, 4. §2 (mint qualification) → Tasks 5-6. §3 (PR source) → Task 10. §4 (watchlist) → Task 8. §5 (routing) → Task 11. §6 (prompt) → Task 13. Sequencing phases 1-8 → Tasks 1-2 / 5-6 / 7 / 8 / 10 / 9 / 11 / 13-14 respectively (task numbers don't map 1:1 to phase numbers because Task 3's client methods and Task 4's verifier were split out of "phase 1" for independent testability, and Task 12's wiring was made explicit).
-* **Discovery gap:** flagged in Task 10's design note — this is new relative to the approved design doc and should be called out to the user when this plan is handed back for review, not silently included.
-* **Type consistency check:** `ArtifactVerifier.verify` (Task 4) takes `ReportedArtifact` (Task 1) — confirmed same shape. `qualifiesForMint` (Task 5) takes `UnkeyedEventEnvelope` — confirmed this is the same type `resolveInboundEvent` (Task 6) already handles. `WorkSource.pollEvents({ watch })` (Task 8) — confirmed the PR source (Task 10), the issues source (Task 7), and both fakes all implement the same optional-arg signature. `commentSnapshotSchema`'s `resourceUri`/`reviewThread` (Task 9) — confirmed `stage-prompt.ts`'s `CommentSnapshot` type alias (`IssueStateRecord['comments'][number]`, Task 13) picks up the new fields automatically since it's derived from the schema, not redeclared.
-* **No placeholders:** one was caught and fixed inline during drafting — Task 10 Step 3's `deliverIntent` PR-conversation branch initially stubbed comment creation; the step's own "Correction" paragraph replaces it with real `client.createComment` wiring before the task is considered complete.
+- **Spec coverage:** D1' → Tasks 5-6. D2 → Task 7. D3 → no task (confirmed no code change needed; the existing `sessionId`-presence resume rule already generalizes once Task 9 lands). D4 → Task 13 (anchoring only, no materialization added anywhere in this plan). D5 → Task 9. §1 (artifacts) → Tasks 1-2, 4. §2 (mint qualification) → Tasks 5-6. §3 (PR source) → Task 10. §4 (watchlist) → Task 8. §5 (routing) → Task 11. §6 (prompt) → Task 13. Sequencing phases 1-8 → Tasks 1-2 / 5-6 / 7 / 8 / 10 / 9 / 11 / 13-14 respectively (task numbers don't map 1:1 to phase numbers because Task 3's client methods and Task 4's verifier were split out of "phase 1" for independent testability, and Task 12's wiring was made explicit).
+- **Discovery gap:** flagged in Task 10's design note — this is new relative to the approved design doc and should be called out to the user when this plan is handed back for review, not silently included.
+- **Type consistency check:** `ArtifactVerifier.verify` (Task 4) takes `ReportedArtifact` (Task 1) — confirmed same shape. `qualifiesForMint` (Task 5) takes `UnkeyedEventEnvelope` — confirmed this is the same type `resolveInboundEvent` (Task 6) already handles. `WorkSource.pollEvents({ watch })` (Task 8) — confirmed the PR source (Task 10), the issues source (Task 7), and both fakes all implement the same optional-arg signature. `commentSnapshotSchema`'s `resourceUri`/`reviewThread` (Task 9) — confirmed `stage-prompt.ts`'s `CommentSnapshot` type alias (`IssueStateRecord['comments'][number]`, Task 13) picks up the new fields automatically since it's derived from the schema, not redeclared.
+- **No placeholders:** one was caught and fixed inline during drafting — Task 10 Step 3's `deliverIntent` PR-conversation branch initially stubbed comment creation; the step's own "Correction" paragraph replaces it with real `client.createComment` wiring before the task is considered complete.

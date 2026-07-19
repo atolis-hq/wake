@@ -20,9 +20,7 @@ export function maxConfiguredRunnerTimeoutMs(config: WakeConfig): number {
 
   const registryTimeouts = [...activeRunnerNames]
     .map((name) => config.runners[name])
-    .map((entry) =>
-      entry === undefined || entry.kind === 'fake' ? undefined : entry.timeoutMs,
-    )
+    .map((entry) => (entry === undefined || entry.kind === 'fake' ? undefined : entry.timeoutMs))
     .filter((timeout): timeout is number => timeout !== undefined);
 
   return registryTimeouts.length > 0 ? Math.max(...registryTimeouts) : Infinity;
@@ -35,11 +33,10 @@ export function maxConfiguredRunnerTimeoutMs(config: WakeConfig): number {
 // probing needed since we already know when they clear.
 const recoveryProbeIntervalMs = 15 * 60_000;
 
-function isRunnerPaused(input: {
-  runnerName: string;
-  ledger: WakeLedger | undefined;
-  now: Date;
-}): { paused: boolean; isProbe: boolean } {
+function isRunnerPaused(input: { runnerName: string; ledger: WakeLedger | undefined; now: Date }): {
+  paused: boolean;
+  isProbe: boolean;
+} {
   const health = input.ledger?.runners?.[input.runnerName];
   const pausedUntil = health?.pausedUntil;
   if (pausedUntil === undefined || Date.parse(pausedUntil) <= input.now.getTime()) {

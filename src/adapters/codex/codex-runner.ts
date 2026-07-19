@@ -63,18 +63,13 @@ export function buildCodexExecArgs(input: {
   ];
 }
 
-export function buildCodexPromptText(input: {
-  prompt: string;
-  harnessPrompt?: string;
-}): string {
+export function buildCodexPromptText(input: { prompt: string; harnessPrompt?: string }): string {
   return input.harnessPrompt === undefined
     ? input.prompt
     : `${input.harnessPrompt}\n\n${input.prompt}`;
 }
 
-export function buildCodexResumeArgs(input: {
-  sessionId: string;
-}): string[] {
+export function buildCodexResumeArgs(input: { sessionId: string }): string[] {
   return ['resume', input.sessionId];
 }
 
@@ -103,9 +98,7 @@ export function formatCodexRunLogLine(input: {
     `repo=${input.repo}`,
     `issueNumber=${input.issueNumber}`,
     `action=${input.action}`,
-    `recentEventIds=${
-      input.recentEventIds.length > 0 ? input.recentEventIds.join(',') : '(none)'
-    }`,
+    `recentEventIds=${input.recentEventIds.length > 0 ? input.recentEventIds.join(',') : '(none)'}`,
     ...(input.workspacePath === undefined
       ? []
       : [`workspacePath=${compactLogValue(input.workspacePath)}`]),
@@ -161,8 +154,7 @@ export function extractCodexExecResult(stdout: string): {
         // this adapter was written), so it is read defensively and simply
         // omitted if absent rather than assumed to exist.
         const inputTokensDetails = usage.input_tokens_details as
-          | Record<string, unknown>
-          | undefined;
+          Record<string, unknown> | undefined;
         if (typeof inputTokensDetails?.cached_tokens === 'number') {
           cachedInputTokens += inputTokensDetails.cached_tokens;
         }
@@ -247,10 +239,7 @@ export function classifyCodexCliFailure(input: {
   return 'infra';
 }
 
-function resolveModel(input: {
-  action: AgentAction;
-  settings: CodexRunnerSettings;
-}): string {
+function resolveModel(input: { action: AgentAction; settings: CodexRunnerSettings }): string {
   const { models, model } = input.settings;
 
   const actionSpecificModel = models[input.action];
@@ -265,7 +254,10 @@ function resolveModel(input: {
   return model;
 }
 
-function readSandboxLogBreadcrumb(): { text: string; metadata: { sandboxContainerName: string } } | null {
+function readSandboxLogBreadcrumb(): {
+  text: string;
+  metadata: { sandboxContainerName: string };
+} | null {
   const containerName = process.env.WAKE_SANDBOX_CONTAINER_NAME;
   if (containerName === undefined || containerName.length === 0) {
     return null;
@@ -365,9 +357,7 @@ export function createCodexRunner(options: {
           repo: input.projection.issue.repo,
           recentEventIds: input.recentEvents.map((event) => event.eventId),
           model,
-          ...(input.workspacePath === undefined
-            ? {}
-            : { workspacePath: input.workspacePath }),
+          ...(input.workspacePath === undefined ? {} : { workspacePath: input.workspacePath }),
         }),
       );
       const result = await runAgentCliCommand({
@@ -413,9 +403,7 @@ export function createCodexRunner(options: {
             repo: input.projection.issue.repo,
             recentEventIds: input.recentEvents.map((event) => event.eventId),
             model,
-            ...(input.workspacePath === undefined
-              ? {}
-              : { workspacePath: input.workspacePath }),
+            ...(input.workspacePath === undefined ? {} : { workspacePath: input.workspacePath }),
             exitCode: result.exitCode,
           }),
         );
@@ -424,9 +412,10 @@ export function createCodexRunner(options: {
             result.timedOut
               ? `Codex runner timed out after ${options.settings.timeoutMs}ms and was killed`
               : structuredMessage !== undefined
-              ? `Codex runner failed: ${structuredMessage}`
-              : result.stdout.trim().length === 0 ? 'Codex runner produced no output'
-              : 'Codex runner failed',
+                ? `Codex runner failed: ${structuredMessage}`
+                : result.stdout.trim().length === 0
+                  ? 'Codex runner produced no output'
+                  : 'Codex runner failed',
             result.stderr,
             sandboxLog?.text,
             'FAILED',
@@ -459,9 +448,7 @@ export function createCodexRunner(options: {
           repo: input.projection.issue.repo,
           recentEventIds: input.recentEvents.map((event) => event.eventId),
           model,
-          ...(input.workspacePath === undefined
-            ? {}
-            : { workspacePath: input.workspacePath }),
+          ...(input.workspacePath === undefined ? {} : { workspacePath: input.workspacePath }),
           ...(parsed.sessionId === undefined ? {} : { sessionId: parsed.sessionId }),
         }),
       );

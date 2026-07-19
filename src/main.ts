@@ -8,10 +8,7 @@ import { createFileBackedFakeTicketingSystem } from './adapters/fake/fake-ticket
 import { createFakeWorkspaceManager } from './adapters/fake/fake-workspace-manager.js';
 import { createGitWorkspaceManager } from './adapters/git/git-workspace-manager.js';
 import { createRunnerCliAdapter } from './adapters/runner/runner-cli-adapter.js';
-import {
-  createRegistryRunner,
-  runnerKindForOverride,
-} from './adapters/runner/runner-registry.js';
+import { createRegistryRunner, runnerKindForOverride } from './adapters/runner/runner-registry.js';
 import { createResourceIndex } from './adapters/fs/resource-index.js';
 import { createStateStore } from './adapters/fs/state-store.js';
 import {
@@ -47,10 +44,7 @@ function commandArgsBeforeTerminator(args: string[]): string[] {
   return args.slice(0, terminatorIndex);
 }
 
-export function readFlagBeforeCommandTerminator(
-  name: string,
-  args: string[],
-): string | undefined {
+export function readFlagBeforeCommandTerminator(name: string, args: string[]): string | undefined {
   const scopedArgs = commandArgsBeforeTerminator(args);
   const index = scopedArgs.indexOf(name);
   if (index === -1) {
@@ -58,10 +52,6 @@ export function readFlagBeforeCommandTerminator(
   }
 
   return scopedArgs[index + 1];
-}
-
-function hasFlag(name: string, args: string[]): boolean {
-  return commandArgsBeforeTerminator(args).includes(name);
 }
 
 function resolvePackageRoot(): string {
@@ -184,13 +174,19 @@ async function inspectDockerImage(image: string): Promise<boolean> {
   });
 }
 
-async function inspectDockerContainer(containerName: string): Promise<'running' | 'stopped' | null> {
+async function inspectDockerContainer(
+  containerName: string,
+): Promise<'running' | 'stopped' | null> {
   return await new Promise<'running' | 'stopped' | null>((resolveInspect, reject) => {
-    const child = spawn('docker', ['container', 'inspect', '-f', '{{.State.Running}}', containerName], {
-      cwd: process.cwd(),
-      env: process.env,
-      stdio: ['ignore', 'pipe', 'ignore'],
-    });
+    const child = spawn(
+      'docker',
+      ['container', 'inspect', '-f', '{{.State.Running}}', containerName],
+      {
+        cwd: process.cwd(),
+        env: process.env,
+        stdio: ['ignore', 'pipe', 'ignore'],
+      },
+    );
 
     let stdout = '';
     child.stdout.on('data', (chunk) => {
@@ -240,28 +236,28 @@ export async function buildRuntime(args: string[]) {
   // by direct API/CLI call (not through formatWakeComment, so it never
   // carries the wake:agent marker) as bot-authored instead of a fresh human
   // reply that would re-trigger another run against itself.
-  const selfLogin = githubClient !== undefined
-    ? await githubClient.getAuthenticatedLogin()
-    : undefined;
+  const selfLogin =
+    githubClient !== undefined ? await githubClient.getAuthenticatedLogin() : undefined;
 
   const artifactVerifier =
     prTrackingEnabled && githubClient !== undefined
       ? createGitHubArtifactVerifier({ client: githubClient })
       : undefined;
 
-  const ticketingSystem = githubClient !== undefined
-    ? createGitHubIssuesWorkSource({
-        client: githubClient,
-        stateStore,
-        config,
-        resourceIndex,
-        now: () => systemClock.now(),
-        ...(selfLogin === undefined ? {} : { selfLogin }),
-      })
-    : await createFileBackedFakeTicketingSystem({
-        fixturePath: stateStore.paths.issueFixtureFile,
-        now: () => systemClock.now(),
-      });
+  const ticketingSystem =
+    githubClient !== undefined
+      ? createGitHubIssuesWorkSource({
+          client: githubClient,
+          stateStore,
+          config,
+          resourceIndex,
+          now: () => systemClock.now(),
+          ...(selfLogin === undefined ? {} : { selfLogin }),
+        })
+      : await createFileBackedFakeTicketingSystem({
+          fixturePath: stateStore.paths.issueFixtureFile,
+          now: () => systemClock.now(),
+        });
   const sourceName = configuredTicketSource(config);
   const sinkName = sourceName;
 
@@ -314,12 +310,13 @@ export async function buildRuntime(args: string[]) {
     ...(runnerOverride === undefined ? {} : { override: runnerOverride }),
   });
 
-  const workspaceManager =
-    (runnerOverride !== undefined
+  const workspaceManager = (
+    runnerOverride !== undefined
       ? runnerKindForOverride(config, runnerOverride) === 'fake'
-      : routesOnlyToFake(config))
-      ? createFakeWorkspaceManager(stateStore.paths.workspaceRoot)
-      : createGitWorkspaceManager({ wakeRoot });
+      : routesOnlyToFake(config)
+  )
+    ? createFakeWorkspaceManager(stateStore.paths.workspaceRoot)
+    : createGitWorkspaceManager({ wakeRoot });
   const tickRunner = createTickRunner({
     clock: systemClock,
     config,
@@ -347,7 +344,11 @@ async function runTick(args: string[]) {
   const outcome = await runtime.tickRunner.runTick();
   console.log(JSON.stringify(outcome, null, 2));
 
-  if (outcome.status !== 'processed' || outcome.sentinel !== 'FAILED' || outcome.runId === undefined) {
+  if (
+    outcome.status !== 'processed' ||
+    outcome.sentinel !== 'FAILED' ||
+    outcome.runId === undefined
+  ) {
     return;
   }
 
@@ -459,7 +460,9 @@ async function runSmoke(args: string[]) {
 
   const entry = resolveSmokEntry(runtime.config, explicitKind);
   if (entry === null) {
-    throw new Error('Smoke tests require a real runner entry (`claude`, `codex`, or `cursor`) in config.runners.');
+    throw new Error(
+      'Smoke tests require a real runner entry (`claude`, `codex`, or `cursor`) in config.runners.',
+    );
   }
 
   const runnerAdapter = createRunnerCliAdapter({

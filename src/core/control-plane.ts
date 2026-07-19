@@ -124,13 +124,17 @@ export function createControlPlane(deps: {
             run: deps.tickRunner.runIntakeTick,
             label: 'intake',
             getIdleTicks: () => consecutiveIntakeIdleTicks,
-            setIdleTicks: (value) => { consecutiveIntakeIdleTicks = value; },
+            setIdleTicks: (value) => {
+              consecutiveIntakeIdleTicks = value;
+            },
           }),
           startLoop({
             run: deps.tickRunner.runRunnerTick,
             label: 'runner',
             getIdleTicks: () => consecutiveRunnerIdleTicks,
-            setIdleTicks: (value) => { consecutiveRunnerIdleTicks = value; },
+            setIdleTicks: (value) => {
+              consecutiveRunnerIdleTicks = value;
+            },
           }),
         ]);
         return;

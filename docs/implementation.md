@@ -136,7 +136,7 @@ is an execution status, not a workflow stage.
 - **Questions are issue comments**; the worker @mentions the owner so mobile
   pushes a notification, and Wake applies `wake:blocked`.
 - **Wake-authored comments carry a marker.** In a personal setup the agent and
-  the human share the same GitHub account (`gh` auth), so comment *author* cannot
+  the human share the same GitHub account (`gh` auth), so comment _author_ cannot
   distinguish them. Every comment Wake or the worker posts must embed a marker
   (e.g. an HTML comment `<!-- wake -->` — invisible in the UI). Without this,
   unblock detection cannot work at all.
@@ -154,7 +154,7 @@ Stages are explicit and pluggable, but the MVP uses a deliberately small set:
 
 1. **refine** — cheap model, **may be batched** (e.g. up to the 3 oldest queued
    issues per tick). Rewrite the issue into the full spec template; if anything
-   is ambiguous, post questions and block *now*, before any expensive run.
+   is ambiguous, post questions and block _now_, before any expensive run.
    Otherwise Wake advances the stage to `wake:implement`. Batching cheap triage means your answers to
    questions arrive while implementation proceeds on already-ready tasks — the
    pipeline never stalls waiting on you, and ambiguity costs a cheap triage
@@ -216,7 +216,7 @@ not blindly-fresh-every-time either.
 ## Execution environment (a single persistent Docker container)
 
 The MVP runs inside **one persistent, shared Docker container** — a durable
-sandbox that stays up between sessions, *not* a container spun up per run or per
+sandbox that stays up between sessions, _not_ a container spun up per run or per
 task. **Everything runs inside it:** the Wake control-plane Node process, every
 agent CLI run, git, and `gh`. There is no host↔container coordination to build —
 the host's only jobs are to run the container and provide a volume mount.
@@ -224,7 +224,7 @@ the host's only jobs are to run the container and provide a volume mount.
 - **One durable sandbox, reused.** This matches the vision's preference for a
   single reusable environment over a fleet of per-task containers. Isolation
   between work items is still the workspace + branch (folder or worktree)
-  *inside* the container — not a separate container each.
+  _inside_ the container — not a separate container each.
 - **Volume-mounted durable state.** The central Wake home (`~/.wake/`) and the
   git repos/workspaces live on a mounted volume, so state, audit trail, and
   in-progress work **survive container restart or recreation**. The container is
@@ -301,8 +301,8 @@ The control plane holds the **complete** state of every task, centrally and
 durably. The files on disk **are** the audit trail. Two principles govern this:
 
 1. **Central and single-owner.** All task/run state lives in one central Wake
-   home (`~/.wake/`, on the mounted volume — *not* scattered inside each managed
-   repo, and *never* inside a workspace). Wake is the sole owner and reader of
+   home (`~/.wake/`, on the mounted volume — _not_ scattered inside each managed
+   repo, and _never_ inside a workspace). Wake is the sole owner and reader of
    that state.
 2. **Event-first durability.** Imported and internal events are the primary
    record. Current-state files are projections derived from those events, not
@@ -380,7 +380,7 @@ they still need to be available to Wake for pickup decisions and prioritization.
   record and posted on block/fail, so the human can attach a shell to the
   container (`docker exec -it wake ...`) and `claude --resume <session_id>` to
   see exactly what the agent saw — ideal for post-mortems on failed runs and odd
-  PRs. Guidance: *resume to understand; comment to unblock.*
+  PRs. Guidance: _resume to understand; comment to unblock._
 - Control commands (`/pause`, `/resume`, priority) can start as just the PAUSE
   flag file in the MVP; comment-driven control is an easy later add.
 
@@ -408,7 +408,7 @@ Each step is independently testable.
 The only real unknowns — everything else is conventional plumbing:
 
 1. Capture a **real** usage-limit error shape from `claude -p --output-format
-   json` (don't guess the format — grab one and parse against it).
+json` (don't guess the format — grab one and parse against it).
 2. Confirm `claude --resume <session_id>` reopens a **headless** session and
    behaves sensibly when a later stage resumes an earlier one.
 3. **Persist credentials in the container:** get Claude Code login and `gh` auth

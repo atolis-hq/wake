@@ -5,6 +5,7 @@ Wake's behavior is configured through a `config.json` file located at `.wake/con
 ## Overview
 
 The configuration file defines:
+
 - Where Wake stores runtime data and state
 - How the Docker sandbox is mounted and debugged
 - How frequently the control plane checks for new work
@@ -128,10 +129,10 @@ All configuration uses `schemaVersion: 1`.
 
 Runtime and storage directories.
 
-| Property | Type | Description | Default |
-|----------|------|-------------|---------|
-| `wakeRoot` | string | Root directory where Wake stores state, fixtures, and persistent data | `.wake` |
-| `promptsRoot` | string (optional) | Explicit prompt-template root; defaults to `<wakeRoot>/prompts` | `<wakeRoot>/prompts` |
+| Property      | Type              | Description                                                           | Default              |
+| ------------- | ----------------- | --------------------------------------------------------------------- | -------------------- |
+| `wakeRoot`    | string            | Root directory where Wake stores state, fixtures, and persistent data | `.wake`              |
+| `promptsRoot` | string (optional) | Explicit prompt-template root; defaults to `<wakeRoot>/prompts`       | `<wakeRoot>/prompts` |
 
 Prompt templates are Handlebars markdown files named `prompts/<action>.md`, for
 example `prompts/refine.md`. Wake passes `mode`, `isStart`, and `isResume` into
@@ -147,15 +148,15 @@ transitions work, see [docs/workflows.md](workflows.md).
 
 Docker sandbox settings for the durable Wake container.
 
-| Property | Type | Description | Default |
-|----------|------|-------------|---------|
-| `image` | string | Docker image (including tag) Wake uses for the sandbox | `"wake-sandbox"` |
-| `imageRepository` | string | Base image name (no tag) that `wake sandbox self-update` appends a release tag to, e.g. `wake-sandbox:v0.0.80`; old tags are kept so a failed update can roll back to the previous image without a rebuild | `"wake-sandbox"` |
-| `containerName` | string | Container name Wake starts and reuses | `"wake-sandbox"` |
-| `containerMountPath` | string | Container path where the Wake home is bind-mounted | `"/wake"` |
-| `containerHomeMountPath` | string | Container path where the sandbox home directory is bind-mounted | `"/home/wake"` |
-| `start.enabled` | boolean | Whether the sandbox entrypoint starts the resident `wake start` loop automatically | `true` |
-| `extraMounts` | `{ source: string, target: string, readOnly?: boolean }[]` | Additional host paths to mount into the sandbox, for example Claude or Codex config from the host home directory | `[]` |
+| Property                 | Type                                                       | Description                                                                                                                                                                                                | Default          |
+| ------------------------ | ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| `image`                  | string                                                     | Docker image (including tag) Wake uses for the sandbox                                                                                                                                                     | `"wake-sandbox"` |
+| `imageRepository`        | string                                                     | Base image name (no tag) that `wake sandbox self-update` appends a release tag to, e.g. `wake-sandbox:v0.0.80`; old tags are kept so a failed update can roll back to the previous image without a rebuild | `"wake-sandbox"` |
+| `containerName`          | string                                                     | Container name Wake starts and reuses                                                                                                                                                                      | `"wake-sandbox"` |
+| `containerMountPath`     | string                                                     | Container path where the Wake home is bind-mounted                                                                                                                                                         | `"/wake"`        |
+| `containerHomeMountPath` | string                                                     | Container path where the sandbox home directory is bind-mounted                                                                                                                                            | `"/home/wake"`   |
+| `start.enabled`          | boolean                                                    | Whether the sandbox entrypoint starts the resident `wake start` loop automatically                                                                                                                         | `true`           |
+| `extraMounts`            | `{ source: string, target: string, readOnly?: boolean }[]` | Additional host paths to mount into the sandbox, for example Claude or Codex config from the host home directory                                                                                           | `[]`             |
 
 To expose host Claude auth inside the sandbox, mount individual files rather
 than the whole `~/.claude` directory:
@@ -187,8 +188,8 @@ sandbox's Linux container.
 
 **Do not mount the whole `~/.claude` directory.** Plugin bookkeeping files
 under `~/.claude/plugins/` (`installed_plugins.json`,
-`known_marketplaces.json`, `plugin-catalog-cache.json`) record *absolute
-install paths* written by whichever OS's Claude process touched them last —
+`known_marketplaces.json`, `plugin-catalog-cache.json`) record _absolute
+install paths_ written by whichever OS's Claude process touched them last —
 e.g. `C:\Users\alice\.claude\plugins\cache\...` on Windows. If the entire
 directory is bind-mounted into the Linux container, the container's Claude
 CLI reads those same Windows paths and can't resolve them, so it reports the
@@ -293,18 +294,18 @@ CLI prompt argument and a matching `*.response.txt` file with raw stdout from
 the CLI. Initial runs are grouped by Wake `runId`; resumed runs are grouped by
 the previously recorded agent session ID when Wake has one.
 
-| Property | Type | Description | Default |
-|----------|------|-------------|---------|
-| `enabled` | boolean | Write raw runner prompt and response text files | `false` |
+| Property                      | Type    | Description                                                                          | Default |
+| ----------------------------- | ------- | ------------------------------------------------------------------------------------ | ------- |
+| `enabled`                     | boolean | Write raw runner prompt and response text files                                      | `false` |
 | `retainAfterWorkspaceCleanup` | boolean | Keep transcript directories when Wake cleans up a closed issue's per-issue workspace | `false` |
 
 ### scheduler
 
 Control plane tick frequency and timing.
 
-| Property | Type | Description | Default |
-|----------|------|-------------|---------|
-| `intervalMs` | number | Milliseconds between control-plane ticks (minimum 1) | `60000` (60 seconds) |
+| Property        | Type   | Description                                                                                                                                                                               | Default              |
+| --------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
+| `intervalMs`    | number | Milliseconds between control-plane ticks (minimum 1)                                                                                                                                      | `60000` (60 seconds) |
 | `maxIntervalMs` | number | Ceiling for the idle-cadence backoff: each consecutive idle tick doubles the sleep (starting from `intervalMs`) up to this value, and any `processed` tick resets it back to `intervalMs` | `300000` (5 minutes) |
 
 ### runners
@@ -313,14 +314,14 @@ Named runner registry. The object key is the routing target; `kind` selects the
 adapter implementation. Multiple entries can share the same `kind` with
 different models, commands, or timeouts.
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `kind` | `"fake"` \| `"claude"` \| `"codex"` \| `"cursor"` | Adapter kind to use for this named runner |
-| `command` | string | CLI command for real runner kinds |
-| `model` | string | Default model for this named runner |
-| `timeoutMs` | number | Wall-clock timeout for this named runner |
-| `effort` | `"low"` \| `"medium"` \| `"high"` \| `"xhigh"` \| `"max"` (optional) | **Claude only.** Thinking effort level passed as `--effort` to the CLI. Controls extended reasoning depth. |
-| `reasoningEffort` | `"low"` \| `"medium"` \| `"high"` (optional) | **Codex only.** Reasoning effort passed as `-c model_reasoning_effort=<level>`. Controls how much compute the model spends on planning before responding. |
+| Property          | Type                                                                 | Description                                                                                                                                               |
+| ----------------- | -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `kind`            | `"fake"` \| `"claude"` \| `"codex"` \| `"cursor"`                    | Adapter kind to use for this named runner                                                                                                                 |
+| `command`         | string                                                               | CLI command for real runner kinds                                                                                                                         |
+| `model`           | string                                                               | Default model for this named runner                                                                                                                       |
+| `timeoutMs`       | number                                                               | Wall-clock timeout for this named runner                                                                                                                  |
+| `effort`          | `"low"` \| `"medium"` \| `"high"` \| `"xhigh"` \| `"max"` (optional) | **Claude only.** Thinking effort level passed as `--effort` to the CLI. Controls extended reasoning depth.                                                |
+| `reasoningEffort` | `"low"` \| `"medium"` \| `"high"` (optional)                         | **Codex only.** Reasoning effort passed as `-c model_reasoning_effort=<level>`. Controls how much compute the model spends on planning before responding. |
 
 The **Cursor runner** uses `cursor agent -p --output-format json` for
 non-interactive runs. Refine-stage runs pass `--mode ask` (read-only) and
@@ -423,7 +424,7 @@ correlation automatically.
   one of the closed vocabulary: `representation`, `implementation`,
   `discussion`, `review`, `documentation`, `decision`.
 - The declaration is always requested as `primary`, `provenance:
-  operator-declared`. If another work item already holds the URI as
+operator-declared`. If another work item already holds the URI as
   `primary`, the fold downgrades this registration to `secondary` and emits a
   `wake.correlation.primary-conflict` event rather than stealing the URI.
 
@@ -438,41 +439,42 @@ GitHub Issues integration and polling configuration.
 
 #### Core Settings
 
-| Property | Type | Description | Default |
-|----------|------|-------------|---------|
-| `enabled` | boolean | Enable GitHub Issues polling | `false` |
-| `repos` | string[] | List of repositories to monitor (format: `"owner/repo"`) | `[]` |
+| Property  | Type     | Description                                              | Default |
+| --------- | -------- | -------------------------------------------------------- | ------- |
+| `enabled` | boolean  | Enable GitHub Issues polling                             | `false` |
+| `repos`   | string[] | List of repositories to monitor (format: `"owner/repo"`) | `[]`    |
 
 #### polling
 
 GitHub API polling behavior.
 
-| Property | Type | Description | Default |
-|----------|------|-------------|---------|
-| `maxIssuesPerRepo` | number | Maximum issues to fetch per repository per poll (minimum 1) | `25` |
-| `commentPageSize` | number | Page size for fetching issue comments (minimum 1) | `25` |
-| `lookbackMs` | number | Only fetch issues and comments modified in the last N milliseconds (0 = all) | `60000` (1 minute) |
+| Property           | Type   | Description                                                                  | Default            |
+| ------------------ | ------ | ---------------------------------------------------------------------------- | ------------------ |
+| `maxIssuesPerRepo` | number | Maximum issues to fetch per repository per poll (minimum 1)                  | `25`               |
+| `commentPageSize`  | number | Page size for fetching issue comments (minimum 1)                            | `25`               |
+| `lookbackMs`       | number | Only fetch issues and comments modified in the last N milliseconds (0 = all) | `60000` (1 minute) |
 
 #### policy
 
 Filtering rules for which issues to process.
 
-| Property | Type | Description | Default |
-|----------|------|-------------|---------|
-| `requiredLabels` | string[] | Only process issues with all of these labels (empty = no requirement) | `[]` |
-| `ignoredLabels` | string[] | Ignore issues with any of these labels | `[]` |
-| `requiredAssignees` | string[] | Only process issues assigned to at least one of these GitHub logins (empty = no requirement) | `[]` |
+| Property            | Type     | Description                                                                                  | Default |
+| ------------------- | -------- | -------------------------------------------------------------------------------------------- | ------- |
+| `requiredLabels`    | string[] | Only process issues with all of these labels (empty = no requirement)                        | `[]`    |
+| `ignoredLabels`     | string[] | Ignore issues with any of these labels                                                       | `[]`    |
+| `requiredAssignees` | string[] | Only process issues assigned to at least one of these GitHub logins (empty = no requirement) | `[]`    |
 
 #### publication
 
 How Wake publishes work status back to GitHub.
 
-| Property | Type | Description | Default |
-|----------|------|-------------|---------|
-| `postStatusComments` | boolean | Post stage updates and run completion as issue comments | `true` |
-| `activeLabel` | string (optional) | Label to add when work is assigned to a stage; removed when completed | (not set) |
+| Property             | Type              | Description                                                           | Default   |
+| -------------------- | ----------------- | --------------------------------------------------------------------- | --------- |
+| `postStatusComments` | boolean           | Post stage updates and run completion as issue comments               | `true`    |
+| `activeLabel`        | string (optional) | Label to add when work is assigned to a stage; removed when completed | (not set) |
 
 Wake also owns one derived status label while it works a ticket:
+
 - `wake:status.pending`
 - `wake:status.working`
 - `wake:status.failed`
@@ -488,12 +490,12 @@ When enabled, Wake monitors pull requests for activity (comments, reviews) on PR
 already correlated to work items, and optionally discovers new uncorrelated PRs
 for standalone work adoption if they match the qualification policy.
 
-| Property | Type | Description | Default |
-|----------|------|-------------|---------|
-| `enabled` | boolean | Enable PR activity polling and optional PR discovery | `false` |
-| `maxPullRequestsPerRepo` | number | Maximum PRs to fetch per repository per poll (minimum 1) | `25` |
-| `commentPageSize` | number | Page size for fetching PR comments and reviews (minimum 1) | `25` |
-| `policy.requiredAuthors` | string[] | GitHub logins allowed to author new standalone PRs; empty means no uncorrelated PR will mint a new work item | `[]` |
+| Property                 | Type     | Description                                                                                                  | Default |
+| ------------------------ | -------- | ------------------------------------------------------------------------------------------------------------ | ------- |
+| `enabled`                | boolean  | Enable PR activity polling and optional PR discovery                                                         | `false` |
+| `maxPullRequestsPerRepo` | number   | Maximum PRs to fetch per repository per poll (minimum 1)                                                     | `25`    |
+| `commentPageSize`        | number   | Page size for fetching PR comments and reviews (minimum 1)                                                   | `25`    |
+| `policy.requiredAuthors` | string[] | GitHub logins allowed to author new standalone PRs; empty means no uncorrelated PR will mint a new work item | `[]`    |
 
 **Important:** A pull request opened by Wake's own agent as an artifact from an issue
 never requires author qualification — it is registered through artifact verification,

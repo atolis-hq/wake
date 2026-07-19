@@ -3,9 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 
-import {
-  runnerSentinelValues,
-} from './stages.js';
+import { runnerSentinelValues } from './stages.js';
 import {
   correlationProvenanceSchema,
   correlationRelationSchema,
@@ -29,11 +27,12 @@ export const runnerSentinelSchema = z.enum(runnerSentinelValues);
 export const defaultAgentIdentity = 'Wake';
 export const defaultSmokePrompt = `This is ${defaultAgentIdentity}, reply with "hi ${defaultAgentIdentity} only"`;
 
-const runnerFailureClassSchema = z.enum(['task', 'quota', 'infra']);
-
-const modelOverridesSchema = z.object({
-  default: z.string().optional(),
-}).catchall(z.string()).default({});
+const modelOverridesSchema = z
+  .object({
+    default: z.string().optional(),
+  })
+  .catchall(z.string())
+  .default({});
 
 const claudeEffortSchema = z.enum(['low', 'medium', 'high', 'xhigh', 'max']);
 const codexReasoningEffortSchema = z.enum(['low', 'medium', 'high']);
@@ -46,10 +45,16 @@ const claudeRunnerSettingsSchema = z.object({
   sessionName: z.string().default(defaultAgentIdentity),
   remoteControlName: z.string().default(defaultAgentIdentity),
   smokePrompt: z.string().default(defaultSmokePrompt),
-  timeoutMs: z.number().int().positive().default(30 * 60 * 1000),
-  remoteControl: z.object({
-    enabled: z.boolean().default(false),
-  }).default({ enabled: false }),
+  timeoutMs: z
+    .number()
+    .int()
+    .positive()
+    .default(30 * 60 * 1000),
+  remoteControl: z
+    .object({
+      enabled: z.boolean().default(false),
+    })
+    .default({ enabled: false }),
   models: modelOverridesSchema.default({ default: 'haiku', implement: 'claude-sonnet-4-6' }),
   effort: claudeEffortSchema.optional(),
 });
@@ -59,7 +64,11 @@ const codexRunnerSettingsSchema = z.object({
   model: z.string().default('gpt-5.5'),
   smokeModel: z.string().default('gpt-5.4-mini'),
   smokePrompt: z.string().default(defaultSmokePrompt),
-  timeoutMs: z.number().int().positive().default(30 * 60 * 1000),
+  timeoutMs: z
+    .number()
+    .int()
+    .positive()
+    .default(30 * 60 * 1000),
   models: modelOverridesSchema.default({ default: 'gpt-5.5', implement: 'gpt-5.5' }),
   reasoningEffort: codexReasoningEffortSchema.optional(),
 });
@@ -82,7 +91,11 @@ const cursorRunnerSettingsSchema = z.object({
   model: z.string().default('composer-2.5'),
   smokeModel: z.string().default('auto'),
   smokePrompt: z.string().default(defaultSmokePrompt),
-  timeoutMs: z.number().int().positive().default(30 * 60 * 1000),
+  timeoutMs: z
+    .number()
+    .int()
+    .positive()
+    .default(30 * 60 * 1000),
   models: modelOverridesSchema.default({ default: 'composer-2.5', implement: 'composer-2.5' }),
   defaultMode: cursorModeSchema.optional(),
 });
@@ -111,10 +124,12 @@ const runnerRoutingSchema = z.object({
   reason: z.string(),
 });
 
-const sinkEntrySchema = z.object({
-  kind: z.string().min(1),
-  subscribe: z.array(z.string().min(1)).default([]),
-}).passthrough();
+const sinkEntrySchema = z
+  .object({
+    kind: z.string().min(1),
+    subscribe: z.array(z.string().min(1)).default([]),
+  })
+  .passthrough();
 
 export const wakeResultEnvelopeSchema = z.object({
   status: runnerSentinelSchema,
@@ -275,10 +290,12 @@ export const issueStateRecordSchema = z.object({
     syncedAt: isoTimestampSchema,
     stageHistory: z.array(stageHistoryEntrySchema),
     recentEventIds: z.array(z.string()).default([]),
-    expectedEcho: z.object({
-      commentIds: z.array(z.string()).default([]),
-      labels: z.array(z.string()).default([]),
-    }).default({ commentIds: [], labels: [] }),
+    expectedEcho: z
+      .object({
+        commentIds: z.array(z.string()).default([]),
+        labels: z.array(z.string()).default([]),
+      })
+      .default({ commentIds: [], labels: [] }),
   }),
   context: z.record(z.string(), z.unknown()).default({}),
   correlatedResources: z.array(correlatedResourceSchema).default([]),
@@ -376,10 +393,7 @@ function promptExists(promptsRoot: string, stageOrAction: string): boolean {
   );
 }
 
-function canReachDone(
-  start: string,
-  stages: Record<string, { onDone: string }>,
-): boolean {
+function canReachDone(start: string, stages: Record<string, { onDone: string }>): boolean {
   const seen = new Set<string>();
   let current = start;
 
@@ -410,211 +424,344 @@ export const ledgerSchema = z.object({
   runners: z.record(z.string(), runnerHealthEntrySchema).default({}),
 });
 
-export const wakeConfigSchema = z.object({
-  schemaVersion: z.literal(1).default(1),
-  paths: z.object({
-    wakeRoot: z.string(),
-    promptsRoot: z.string().optional(),
-  }),
-  sandbox: z.object({
-    image: z.string().min(1).default('wake-sandbox'),
-    // Base image name (no tag) that `wake sandbox self-update` appends a
-    // release tag to, e.g. "wake-sandbox:v0.0.80". `image` above stays the
-    // resolved ref that `build`/`up`/`update` actually run.
-    imageRepository: z.string().min(1).default('wake-sandbox'),
-    containerName: z.string().min(1).default('wake-sandbox'),
-    containerMountPath: z.string().min(1).default('/wake'),
-    containerHomeMountPath: z.string().min(1).default('/home/wake'),
-    start: z.object({
-      enabled: z.boolean().default(true),
-    }).default({ enabled: true }),
-    extraMounts: z.array(z.object({
-      source: z.string().min(1),
-      target: z.string().min(1),
-      readOnly: z.boolean().optional(),
-    })).default([]),
-  }).default({ image: 'wake-sandbox', imageRepository: 'wake-sandbox', containerName: 'wake-sandbox', containerMountPath: '/wake', containerHomeMountPath: '/home/wake', start: { enabled: true }, extraMounts: [] }),
-  dev: z.object({
-    repoRoot: z.string().optional(),
-  }).default({}),
-  scheduler: z.object({
-    intervalMs: z.number().int().positive().default(60 * 1000),
-    // Cap for the idle-cadence backoff (#81): consecutive idle ticks double the
-    // sleep, up to this ceiling, so a quiet repo doesn't poll every intervalMs.
-    maxIntervalMs: z.number().int().positive().default(5 * 60 * 1000),
-  }).default({ intervalMs: 60 * 1000, maxIntervalMs: 5 * 60 * 1000 }),
-  transcripts: z.object({
-    enabled: z.boolean().default(false),
-    retainAfterWorkspaceCleanup: z.boolean().default(false),
-  }).default({ enabled: false, retainAfterWorkspaceCleanup: false }),
-  runners: z.record(z.string(), runnerEntrySchema).default({
-    fake: { kind: 'fake', cli: 'Fake' },
-    'claude-haiku': { kind: 'claude', command: 'claude', model: 'haiku', smokeModel: 'haiku', sessionName: defaultAgentIdentity, remoteControlName: defaultAgentIdentity, smokePrompt: defaultSmokePrompt, timeoutMs: 30 * 60 * 1000, remoteControl: { enabled: false }, models: { default: 'haiku' } },
-    'claude-opus': { kind: 'claude', command: 'claude', model: 'claude-opus-4-8', smokeModel: 'haiku', sessionName: defaultAgentIdentity, remoteControlName: defaultAgentIdentity, smokePrompt: defaultSmokePrompt, timeoutMs: 30 * 60 * 1000, remoteControl: { enabled: false }, models: { default: 'claude-opus-4-8' } },
-    'codex-mini': { kind: 'codex', command: 'codex', model: 'gpt-5.4-mini', smokeModel: 'gpt-5.4-mini', smokePrompt: defaultSmokePrompt, timeoutMs: 30 * 60 * 1000, models: { default: 'gpt-5.4-mini', implement: 'gpt-5.4-mini' } },
-    'codex-flagship': { kind: 'codex', command: 'codex', model: 'gpt-5.5', smokeModel: 'gpt-5.4-mini', smokePrompt: defaultSmokePrompt, timeoutMs: 30 * 60 * 1000, models: { default: 'gpt-5.5', implement: 'gpt-5.5' } },
-    'cursor-composer': { kind: 'cursor', command: 'cursor', model: 'composer-2.5', smokeModel: 'auto', smokePrompt: defaultSmokePrompt, timeoutMs: 30 * 60 * 1000, models: { default: 'composer-2.5', implement: 'composer-2.5' } },
-  }),
-  tiers: z.record(z.string(), z.array(z.string().min(1)).min(1)).default({
-    light: ['fake'],
-    standard: ['fake'],
-    deep: ['fake'],
-  }),
-  defaultTier: z.string().default('standard'),
-  workflows: z.record(identifierSchema, workflowDefinitionSchema).default({
-    default: {
-      stages: {
-        refine: {
-          action: 'refine',
-          workspace: 'read-only',
-          tier: 'light',
-          onDone: 'implement',
-        },
-        implement: {
-          action: 'implement',
-          workspace: 'branch',
-          tier: 'standard',
-          onDone: 'done',
+export const wakeConfigSchema = z
+  .object({
+    schemaVersion: z.literal(1).default(1),
+    paths: z.object({
+      wakeRoot: z.string(),
+      promptsRoot: z.string().optional(),
+    }),
+    sandbox: z
+      .object({
+        image: z.string().min(1).default('wake-sandbox'),
+        // Base image name (no tag) that `wake sandbox self-update` appends a
+        // release tag to, e.g. "wake-sandbox:v0.0.80". `image` above stays the
+        // resolved ref that `build`/`up`/`update` actually run.
+        imageRepository: z.string().min(1).default('wake-sandbox'),
+        containerName: z.string().min(1).default('wake-sandbox'),
+        containerMountPath: z.string().min(1).default('/wake'),
+        containerHomeMountPath: z.string().min(1).default('/home/wake'),
+        start: z
+          .object({
+            enabled: z.boolean().default(true),
+          })
+          .default({ enabled: true }),
+        extraMounts: z
+          .array(
+            z.object({
+              source: z.string().min(1),
+              target: z.string().min(1),
+              readOnly: z.boolean().optional(),
+            }),
+          )
+          .default([]),
+      })
+      .default({
+        image: 'wake-sandbox',
+        imageRepository: 'wake-sandbox',
+        containerName: 'wake-sandbox',
+        containerMountPath: '/wake',
+        containerHomeMountPath: '/home/wake',
+        start: { enabled: true },
+        extraMounts: [],
+      }),
+    dev: z
+      .object({
+        repoRoot: z.string().optional(),
+      })
+      .default({}),
+    scheduler: z
+      .object({
+        intervalMs: z
+          .number()
+          .int()
+          .positive()
+          .default(60 * 1000),
+        // Cap for the idle-cadence backoff (#81): consecutive idle ticks double the
+        // sleep, up to this ceiling, so a quiet repo doesn't poll every intervalMs.
+        maxIntervalMs: z
+          .number()
+          .int()
+          .positive()
+          .default(5 * 60 * 1000),
+      })
+      .default({ intervalMs: 60 * 1000, maxIntervalMs: 5 * 60 * 1000 }),
+    transcripts: z
+      .object({
+        enabled: z.boolean().default(false),
+        retainAfterWorkspaceCleanup: z.boolean().default(false),
+      })
+      .default({ enabled: false, retainAfterWorkspaceCleanup: false }),
+    runners: z.record(z.string(), runnerEntrySchema).default({
+      fake: { kind: 'fake', cli: 'Fake' },
+      'claude-haiku': {
+        kind: 'claude',
+        command: 'claude',
+        model: 'haiku',
+        smokeModel: 'haiku',
+        sessionName: defaultAgentIdentity,
+        remoteControlName: defaultAgentIdentity,
+        smokePrompt: defaultSmokePrompt,
+        timeoutMs: 30 * 60 * 1000,
+        remoteControl: { enabled: false },
+        models: { default: 'haiku' },
+      },
+      'claude-opus': {
+        kind: 'claude',
+        command: 'claude',
+        model: 'claude-opus-4-8',
+        smokeModel: 'haiku',
+        sessionName: defaultAgentIdentity,
+        remoteControlName: defaultAgentIdentity,
+        smokePrompt: defaultSmokePrompt,
+        timeoutMs: 30 * 60 * 1000,
+        remoteControl: { enabled: false },
+        models: { default: 'claude-opus-4-8' },
+      },
+      'codex-mini': {
+        kind: 'codex',
+        command: 'codex',
+        model: 'gpt-5.4-mini',
+        smokeModel: 'gpt-5.4-mini',
+        smokePrompt: defaultSmokePrompt,
+        timeoutMs: 30 * 60 * 1000,
+        models: { default: 'gpt-5.4-mini', implement: 'gpt-5.4-mini' },
+      },
+      'codex-flagship': {
+        kind: 'codex',
+        command: 'codex',
+        model: 'gpt-5.5',
+        smokeModel: 'gpt-5.4-mini',
+        smokePrompt: defaultSmokePrompt,
+        timeoutMs: 30 * 60 * 1000,
+        models: { default: 'gpt-5.5', implement: 'gpt-5.5' },
+      },
+      'cursor-composer': {
+        kind: 'cursor',
+        command: 'cursor',
+        model: 'composer-2.5',
+        smokeModel: 'auto',
+        smokePrompt: defaultSmokePrompt,
+        timeoutMs: 30 * 60 * 1000,
+        models: { default: 'composer-2.5', implement: 'composer-2.5' },
+      },
+    }),
+    tiers: z.record(z.string(), z.array(z.string().min(1)).min(1)).default({
+      light: ['fake'],
+      standard: ['fake'],
+      deep: ['fake'],
+    }),
+    defaultTier: z.string().default('standard'),
+    workflows: z.record(identifierSchema, workflowDefinitionSchema).default({
+      default: {
+        stages: {
+          refine: {
+            action: 'refine',
+            workspace: 'read-only',
+            tier: 'light',
+            onDone: 'implement',
+          },
+          implement: {
+            action: 'implement',
+            workspace: 'branch',
+            tier: 'standard',
+            onDone: 'done',
+          },
         },
       },
-    },
-  }),
-  stages: z.record(z.string(), stageRouteSchema).default({
-    queue: { action: 'refine', tier: 'light' },
-    implement: { action: 'implement', tier: 'standard' },
-  }),
-  ui: z.object({
-    enabled: z.boolean().default(false),
-    port: z.number().int().positive().default(4317),
-    token: z.string().optional(),
-    tunnel: z.object({
-      enabled: z.boolean().default(false),
-      authToken: z.string().optional(),
-    }).default({ enabled: false }),
-    archiveFreshnessDays: z.number().int().nonnegative().default(5),
-  }).default({ enabled: false, port: 4317, tunnel: { enabled: false }, archiveFreshnessDays: 5 }),
-  sources: z.object({
-    github: z.object({
-      enabled: z.boolean().default(false),
-      repos: z.array(z.string().min(1)).default([]),
-      polling: z.object({
-        maxIssuesPerRepo: z.number().int().positive().default(25),
-        commentPageSize: z.number().int().positive().default(25),
-        lookbackMs: z.number().int().nonnegative().default(60_000),
-      }).default({ maxIssuesPerRepo: 25, commentPageSize: 25, lookbackMs: 60_000 }),
-      policy: z.object({
-        requiredLabels: z.array(z.string()).default([]),
-        ignoredLabels: z.array(z.string()).default([]),
-        requiredAssignees: z.array(z.string()).default([]),
-      }).default({ requiredLabels: [], ignoredLabels: [], requiredAssignees: [] }),
-      publication: z.object({
-        postStatusComments: z.boolean().default(true),
-        activeLabel: z.string().optional(),
-      }).default({ postStatusComments: true }),
-      pullRequests: z.object({
+    }),
+    stages: z.record(z.string(), stageRouteSchema).default({
+      queue: { action: 'refine', tier: 'light' },
+      implement: { action: 'implement', tier: 'standard' },
+    }),
+    ui: z
+      .object({
         enabled: z.boolean().default(false),
-        maxPullRequestsPerRepo: z.number().int().positive().default(25),
-        commentPageSize: z.number().int().positive().default(25),
-        policy: z.object({
-          requiredAuthors: z.array(z.string()).default([]),
-        }).default({ requiredAuthors: [] }),
-      }).default({ enabled: false, maxPullRequestsPerRepo: 25, commentPageSize: 25, policy: { requiredAuthors: [] } }),
-    }).default({ enabled: false, repos: [], polling: { maxIssuesPerRepo: 25, commentPageSize: 25, lookbackMs: 60_000 }, policy: { requiredLabels: [], ignoredLabels: [], requiredAssignees: [] }, publication: { postStatusComments: true }, pullRequests: { enabled: false, maxPullRequestsPerRepo: 25, commentPageSize: 25, policy: { requiredAuthors: [] } } }),
-  }).default({ github: { enabled: false, repos: [], polling: { maxIssuesPerRepo: 25, commentPageSize: 25, lookbackMs: 60_000 }, policy: { requiredLabels: [], ignoredLabels: [], requiredAssignees: [] }, publication: { postStatusComments: true }, pullRequests: { enabled: false, maxPullRequestsPerRepo: 25, commentPageSize: 25, policy: { requiredAuthors: [] } } } }),
-  sinks: z.record(z.string(), sinkEntrySchema).default({}),
-}).superRefine((config, ctx) => {
-  const promptsRoot = config.paths.promptsRoot ?? defaultPromptsRoot();
-  const workflowEntries = Object.entries(config.workflows);
-  if (workflowEntries.length === 0) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ['workflows'],
-      message: 'At least one workflow must be configured.',
-    });
-  }
-
-  for (const [workflowName, workflow] of workflowEntries) {
-    const stageNames = Object.keys(workflow.stages);
-    const stageSet = new Set(stageNames);
-
-    if (stageNames.length === 0) {
+        port: z.number().int().positive().default(4317),
+        token: z.string().optional(),
+        tunnel: z
+          .object({
+            enabled: z.boolean().default(false),
+            authToken: z.string().optional(),
+          })
+          .default({ enabled: false }),
+        archiveFreshnessDays: z.number().int().nonnegative().default(5),
+      })
+      .default({ enabled: false, port: 4317, tunnel: { enabled: false }, archiveFreshnessDays: 5 }),
+    sources: z
+      .object({
+        github: z
+          .object({
+            enabled: z.boolean().default(false),
+            repos: z.array(z.string().min(1)).default([]),
+            polling: z
+              .object({
+                maxIssuesPerRepo: z.number().int().positive().default(25),
+                commentPageSize: z.number().int().positive().default(25),
+                lookbackMs: z.number().int().nonnegative().default(60_000),
+              })
+              .default({ maxIssuesPerRepo: 25, commentPageSize: 25, lookbackMs: 60_000 }),
+            policy: z
+              .object({
+                requiredLabels: z.array(z.string()).default([]),
+                ignoredLabels: z.array(z.string()).default([]),
+                requiredAssignees: z.array(z.string()).default([]),
+              })
+              .default({ requiredLabels: [], ignoredLabels: [], requiredAssignees: [] }),
+            publication: z
+              .object({
+                postStatusComments: z.boolean().default(true),
+                activeLabel: z.string().optional(),
+              })
+              .default({ postStatusComments: true }),
+            pullRequests: z
+              .object({
+                enabled: z.boolean().default(false),
+                maxPullRequestsPerRepo: z.number().int().positive().default(25),
+                commentPageSize: z.number().int().positive().default(25),
+                policy: z
+                  .object({
+                    requiredAuthors: z.array(z.string()).default([]),
+                  })
+                  .default({ requiredAuthors: [] }),
+              })
+              .default({
+                enabled: false,
+                maxPullRequestsPerRepo: 25,
+                commentPageSize: 25,
+                policy: { requiredAuthors: [] },
+              }),
+          })
+          .default({
+            enabled: false,
+            repos: [],
+            polling: { maxIssuesPerRepo: 25, commentPageSize: 25, lookbackMs: 60_000 },
+            policy: { requiredLabels: [], ignoredLabels: [], requiredAssignees: [] },
+            publication: { postStatusComments: true },
+            pullRequests: {
+              enabled: false,
+              maxPullRequestsPerRepo: 25,
+              commentPageSize: 25,
+              policy: { requiredAuthors: [] },
+            },
+          }),
+      })
+      .default({
+        github: {
+          enabled: false,
+          repos: [],
+          polling: { maxIssuesPerRepo: 25, commentPageSize: 25, lookbackMs: 60_000 },
+          policy: { requiredLabels: [], ignoredLabels: [], requiredAssignees: [] },
+          publication: { postStatusComments: true },
+          pullRequests: {
+            enabled: false,
+            maxPullRequestsPerRepo: 25,
+            commentPageSize: 25,
+            policy: { requiredAuthors: [] },
+          },
+        },
+      }),
+    sinks: z.record(z.string(), sinkEntrySchema).default({}),
+  })
+  .superRefine((config, ctx) => {
+    const promptsRoot = config.paths.promptsRoot ?? defaultPromptsRoot();
+    const workflowEntries = Object.entries(config.workflows);
+    if (workflowEntries.length === 0) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ['workflows', workflowName, 'stages'],
-        message: 'Workflow must define at least one runnable stage.',
+        path: ['workflows'],
+        message: 'At least one workflow must be configured.',
       });
-      continue;
     }
 
-    for (const reserved of ['queue', 'done']) {
-      if (stageSet.has(reserved)) {
+    for (const [workflowName, workflow] of workflowEntries) {
+      const stageNames = Object.keys(workflow.stages);
+      const stageSet = new Set(stageNames);
+
+      if (stageNames.length === 0) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          path: ['workflows', workflowName, 'stages', reserved],
-          message: `Workflow must not define implicit ${reserved} stage.`,
+          path: ['workflows', workflowName, 'stages'],
+          message: 'Workflow must define at least one runnable stage.',
+        });
+        continue;
+      }
+
+      for (const reserved of ['queue', 'done']) {
+        if (stageSet.has(reserved)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['workflows', workflowName, 'stages', reserved],
+            message: `Workflow must not define implicit ${reserved} stage.`,
+          });
+        }
+      }
+
+      const actualEntryStage = workflow.entryStage ?? stageNames[0];
+      if (workflow.entryStage === 'queue') {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['workflows', workflowName, 'entryStage'],
+          message: 'Workflow entryStage must not be queue.',
+        });
+      }
+      if (actualEntryStage !== undefined && !stageSet.has(actualEntryStage)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['workflows', workflowName, 'entryStage'],
+          message: `Workflow entryStage "${actualEntryStage}" is not a configured stage.`,
+        });
+      }
+
+      for (const [stageName, stage] of Object.entries(workflow.stages)) {
+        if (stage.onDone === 'queue') {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['workflows', workflowName, 'stages', stageName, 'onDone'],
+            message: 'Workflow transitions must not target queue.',
+          });
+        }
+        if (stage.onDone !== 'done' && !stageSet.has(stage.onDone)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['workflows', workflowName, 'stages', stageName, 'onDone'],
+            message: `Workflow transition targets unknown stage "${stage.onDone}".`,
+          });
+        }
+        if (stage.action === undefined && !promptExists(promptsRoot, stageName)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['workflows', workflowName, 'stages', stageName, 'action'],
+            message: `Workflow stage "${stageName}" omits action but no prompts/${stageName}.md template exists.`,
+          });
+        }
+      }
+
+      if (
+        actualEntryStage !== undefined &&
+        stageSet.has(actualEntryStage) &&
+        !canReachDone(actualEntryStage, workflow.stages)
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['workflows', workflowName],
+          message: 'Workflow cannot reach done from its entry stage.',
         });
       }
     }
+  });
 
-    const actualEntryStage = workflow.entryStage ?? stageNames[0];
-    if (workflow.entryStage === 'queue') {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['workflows', workflowName, 'entryStage'],
-        message: 'Workflow entryStage must not be queue.',
-      });
-    }
-    if (actualEntryStage !== undefined && !stageSet.has(actualEntryStage)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['workflows', workflowName, 'entryStage'],
-        message: `Workflow entryStage "${actualEntryStage}" is not a configured stage.`,
-      });
-    }
-
-    for (const [stageName, stage] of Object.entries(workflow.stages)) {
-      if (stage.onDone === 'queue') {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['workflows', workflowName, 'stages', stageName, 'onDone'],
-          message: 'Workflow transitions must not target queue.',
-        });
-      }
-      if (stage.onDone !== 'done' && !stageSet.has(stage.onDone)) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['workflows', workflowName, 'stages', stageName, 'onDone'],
-          message: `Workflow transition targets unknown stage "${stage.onDone}".`,
-        });
-      }
-      if (stage.action === undefined && !promptExists(promptsRoot, stageName)) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['workflows', workflowName, 'stages', stageName, 'action'],
-          message: `Workflow stage "${stageName}" omits action but no prompts/${stageName}.md template exists.`,
-        });
-      }
-    }
-
-    if (actualEntryStage !== undefined && stageSet.has(actualEntryStage) && !canReachDone(actualEntryStage, workflow.stages)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['workflows', workflowName],
-        message: 'Workflow cannot reach done from its entry stage.',
-      });
-    }
-  }
-});
-
-export const claudePrintResultSchema = z.object({
-  type: z.string().optional(),
-  subtype: z.string().optional(),
-  result: z.string(),
-  session_id: z.string().optional(),
-  total_cost_usd: z.number().optional(),
-  num_turns: z.number().optional(),
-  usage: z.record(z.string(), z.unknown()).optional(),
-}).passthrough();
+export const claudePrintResultSchema = z
+  .object({
+    type: z.string().optional(),
+    subtype: z.string().optional(),
+    result: z.string(),
+    session_id: z.string().optional(),
+    total_cost_usd: z.number().optional(),
+    num_turns: z.number().optional(),
+    usage: z.record(z.string(), z.unknown()).optional(),
+  })
+  .passthrough();
 
 export function parseIssueStateRecord(input: unknown) {
   return issueStateRecordSchema.parse(input);
@@ -654,15 +801,14 @@ function synthesizeBodyFromEnvelope(envelope: z.infer<typeof wakeResultEnvelopeS
   return labels[envelope.status] ?? 'Run finished.';
 }
 
-export function parseRunnerResult(
-  result: string,
-): {
+export function parseRunnerResult(result: string): {
   status: 'DONE' | 'BLOCKED' | 'FAILED' | 'AWAITING_APPROVAL';
   body: string;
   envelope: 'structured' | 'degraded';
   result?: z.infer<typeof wakeResultEnvelopeSchema>;
 } {
-  const wakeResultFencePattern = /^```(?:wake-result[^\n]*\n|[ \t]*\n[ \t]*wake-result[ \t]*\n)([\s\S]*?)^```[ \t]*$/gm;
+  const wakeResultFencePattern =
+    /^```(?:wake-result[^\n]*\n|[ \t]*\n[ \t]*wake-result[ \t]*\n)([\s\S]*?)^```[ \t]*$/gm;
   let lastMatch: RegExpExecArray | null = null;
   let match: RegExpExecArray | null;
 
@@ -677,7 +823,8 @@ export function parseRunnerResult(
       // the closing fence. Strip a trailing sentinel line so JSON.parse sees only the JSON.
       // The capture group includes the newline before the closing fence, so allow \n? after.
       const jsonContent =
-        rawContent.replace(/\n(?:DONE|BLOCKED|FAILED|AWAITING_APPROVAL)[ \t]*\n?$/, '') || rawContent;
+        rawContent.replace(/\n(?:DONE|BLOCKED|FAILED|AWAITING_APPROVAL)[ \t]*\n?$/, '') ||
+        rawContent;
       const parsed = wakeResultEnvelopeSchema.safeParse(JSON.parse(jsonContent));
       if (parsed.success) {
         const proseBody = result.slice(0, lastMatch.index).trim();
@@ -704,7 +851,8 @@ export function parseRunnerResult(
       if (parsed.success) {
         return {
           status: parsed.data.status,
-          body: result.slice(0, offFenceMatch.index).trim() || synthesizeBodyFromEnvelope(parsed.data),
+          body:
+            result.slice(0, offFenceMatch.index).trim() || synthesizeBodyFromEnvelope(parsed.data),
           envelope: 'structured',
           result: parsed.data,
         };

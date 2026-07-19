@@ -21,10 +21,12 @@
 ### Task 1: Schema — add `requiredAssignees` to the policy config
 
 **Files:**
+
 - Modify: `src/domain/schema.ts:206-209`
 - Test: `test/domain/schema.test.ts`
 
 **Interfaces:**
+
 - Produces: `wakeConfigSchema` shape gains `sources.github.policy.requiredAssignees: string[]`. `WakeConfig` (inferred type in `src/domain/types.ts:28`, no manual edit needed — it's `z.infer<typeof wakeConfigSchema>`) automatically picks this up.
 
 - [ ] **Step 1: Read the existing policy schema test for the config shape**
@@ -95,10 +97,12 @@ git commit -m "feat: add requiredAssignees to ticket intake policy schema"
 ### Task 2: Defaults — default `requiredAssignees` to `[]`
 
 **Files:**
+
 - Modify: `src/config/defaults.ts:49-52`
 - Test: none new (covered by existing default-config tests; verify they still pass)
 
 **Interfaces:**
+
 - Consumes: `wakeConfigSchema` from Task 1 (now requires `requiredAssignees` on the `policy` object — without this change, `createDefaultWakeConfig()` will throw a zod validation error).
 
 - [ ] **Step 1: Run the existing default-config test suite to confirm it currently breaks**
@@ -144,10 +148,12 @@ git commit -m "feat: default requiredAssignees to empty array"
 ### Task 3: Policy engine — enforce `requiredAssignees` in `isEligible()`
 
 **Files:**
+
 - Modify: `src/core/policy-engine.ts:5-25`
 - Test: Create `test/core/policy-engine.test.ts` (no test file exists yet for this module)
 
 **Interfaces:**
+
 - Consumes: `createPolicyEngine()` from `src/core/policy-engine.ts` (`isEligible(issue: IssueStateRecord, config: WakeConfig): boolean`); `parseIssueStateRecord` from `src/domain/schema.ts` (used in tests to build fixtures — see `test/domain/schema.test.ts` for usage pattern); `createDefaultWakeConfig` from `src/config/defaults.ts`.
 - Produces: `isEligible()` now also rejects issues that don't match `requiredAssignees` when it's non-empty.
 
@@ -162,10 +168,7 @@ import { createDefaultWakeConfig } from '../../src/config/defaults.js';
 import { parseIssueStateRecord } from '../../src/domain/schema.js';
 import { createPolicyEngine } from '../../src/core/policy-engine.js';
 
-function buildIssue(overrides: {
-  labels?: string[];
-  assignees?: string[];
-}) {
+function buildIssue(overrides: { labels?: string[]; assignees?: string[] }) {
   return parseIssueStateRecord({
     schemaVersion: 1,
     issue: {
@@ -341,18 +344,22 @@ git commit -m "feat: enforce requiredAssignees in ticket intake eligibility chec
 ### Task 4: Documentation — document `requiredAssignees`
 
 **Files:**
+
 - Modify: `docs/configuration.md:217-224` (the `policy` table) and `docs/configuration.md:49-61` (the example config block, if it enumerates `policy` fields)
 
 **Interfaces:**
+
 - None (documentation only).
 
 - [ ] **Step 1: Read the current example config block**
 
 Read `docs/configuration.md` lines 40-65 to see the exact JSON example that currently shows:
+
 ```json
         "requiredLabels": [],
         "ignoredLabels": []
 ```
+
 and confirm whether it's a full-config example (needs the new field added for completeness) or a partial snippet.
 
 - [ ] **Step 2: Update the example config block**
@@ -377,20 +384,20 @@ to:
 In `docs/configuration.md`, change:
 
 ```markdown
-| Property | Type | Description | Default |
-|----------|------|-------------|---------|
-| `requiredLabels` | string[] | Only process issues with all of these labels (empty = no requirement) | `[]` |
-| `ignoredLabels` | string[] | Ignore issues with any of these labels | `[]` |
+| Property         | Type     | Description                                                           | Default |
+| ---------------- | -------- | --------------------------------------------------------------------- | ------- |
+| `requiredLabels` | string[] | Only process issues with all of these labels (empty = no requirement) | `[]`    |
+| `ignoredLabels`  | string[] | Ignore issues with any of these labels                                | `[]`    |
 ```
 
 to:
 
 ```markdown
-| Property | Type | Description | Default |
-|----------|------|-------------|---------|
-| `requiredLabels` | string[] | Only process issues with all of these labels (empty = no requirement) | `[]` |
-| `ignoredLabels` | string[] | Ignore issues with any of these labels | `[]` |
-| `requiredAssignees` | string[] | Only process issues assigned to at least one of these GitHub logins (empty = no requirement) | `[]` |
+| Property            | Type     | Description                                                                                  | Default |
+| ------------------- | -------- | -------------------------------------------------------------------------------------------- | ------- |
+| `requiredLabels`    | string[] | Only process issues with all of these labels (empty = no requirement)                        | `[]`    |
+| `ignoredLabels`     | string[] | Ignore issues with any of these labels                                                       | `[]`    |
+| `requiredAssignees` | string[] | Only process issues assigned to at least one of these GitHub logins (empty = no requirement) | `[]`    |
 ```
 
 - [ ] **Step 4: Commit**
