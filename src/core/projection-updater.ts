@@ -140,7 +140,8 @@ async function applyEvent(
     event.sourceEventType === 'ticket.comment.updated' ||
     event.sourceEventType === 'pr.comment.created' ||
     event.sourceEventType === 'pr.review.created' ||
-    event.sourceEventType === 'pr.review-comment.created'
+    event.sourceEventType === 'pr.review-comment.created' ||
+    event.sourceEventType === 'pr.checks.failed'
   ) {
     const comment = event.payload.comment;
     if (comment === undefined || typeof comment !== 'object' || comment === null) {

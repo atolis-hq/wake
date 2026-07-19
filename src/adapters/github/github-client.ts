@@ -63,6 +63,37 @@ export function createGitHubClient(token: string) {
       });
       return data;
     },
+    async getRequiredStatusChecks(owner: string, repo: string, branch: string) {
+      const { data } = await octokit.rest.repos.getBranch({
+        owner,
+        repo,
+        branch,
+      });
+      const requiredStatusChecks = data.protection?.required_status_checks;
+      return {
+        contexts: requiredStatusChecks?.contexts ?? [],
+        checks: (requiredStatusChecks?.checks ?? [])
+          .map((check) => check.context)
+          .filter((context): context is string => typeof context === 'string'),
+      };
+    },
+    async listCheckRunsForRef(owner: string, repo: string, ref: string) {
+      const { data } = await octokit.rest.checks.listForRef({
+        owner,
+        repo,
+        ref,
+        per_page: 100,
+      });
+      return data.check_runs;
+    },
+    async getCombinedStatusForRef(owner: string, repo: string, ref: string) {
+      const { data } = await octokit.rest.repos.getCombinedStatusForRef({
+        owner,
+        repo,
+        ref,
+      });
+      return data.statuses;
+    },
     async listPullRequests(owner: string, repo: string, maxResults: number) {
       const perPage = Math.min(maxResults, 100);
       const results: Awaited<ReturnType<typeof octokit.rest.pulls.list>>['data'] = [];

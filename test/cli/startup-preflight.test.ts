@@ -149,6 +149,7 @@ describe('startup preflight', () => {
             enabled: false,
             maxPullRequestsPerRepo: 25,
             commentPageSize: 25,
+            checks: { enabled: true },
             policy: { requiredAuthors: [] },
           },
         },

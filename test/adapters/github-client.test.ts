@@ -10,6 +10,9 @@ const listReviews = vi.fn();
 const listReviewComments = vi.fn();
 const createReplyForReviewComment = vi.fn();
 const getAuthenticated = vi.fn();
+const getBranch = vi.fn();
+const listCheckRunsForRef = vi.fn();
+const getCombinedStatusForRef = vi.fn();
 
 function pagesOf(...pages: unknown[][]) {
   return {
@@ -37,6 +40,13 @@ vi.mock('@octokit/rest', () => ({
         listReviews,
         listReviewComments,
         createReplyForReviewComment,
+      },
+      repos: {
+        getBranch,
+        getCombinedStatusForRef,
+      },
+      checks: {
+        listForRef: listCheckRunsForRef,
       },
       users: {
         getAuthenticated,
@@ -240,5 +250,67 @@ describe('github client', () => {
     const login = await client.getAuthenticatedLogin();
 
     expect(login).toBe('atolis-hq-agent');
+  });
+
+  it('fetches required status check contexts from the base branch', async () => {
+    getBranch.mockResolvedValueOnce({
+      data: {
+        protection: {
+          required_status_checks: {
+            contexts: ['lint'],
+            checks: [{ context: 'test' }],
+          },
+        },
+      },
+    });
+
+    const { createGitHubClient } = await import('../../src/adapters/github/github-client.js');
+    const client = createGitHubClient('fake-token');
+
+    const required = await client.getRequiredStatusChecks('org', 'repo', 'main');
+
+    expect(getBranch).toHaveBeenCalledWith({
+      owner: 'org',
+      repo: 'repo',
+      branch: 'main',
+    });
+    expect(required).toEqual({ contexts: ['lint'], checks: ['test'] });
+  });
+
+  it('lists check runs for a ref', async () => {
+    listCheckRunsForRef.mockResolvedValueOnce({
+      data: { check_runs: [{ id: 1, name: 'test' }] },
+    });
+
+    const { createGitHubClient } = await import('../../src/adapters/github/github-client.js');
+    const client = createGitHubClient('fake-token');
+
+    const runs = await client.listCheckRunsForRef('org', 'repo', 'abc123');
+
+    expect(listCheckRunsForRef).toHaveBeenCalledWith({
+      owner: 'org',
+      repo: 'repo',
+      ref: 'abc123',
+      per_page: 100,
+    });
+    expect(runs).toEqual([{ id: 1, name: 'test' }]);
+  });
+
+  it('fetches combined statuses for a ref', async () => {
+    getCombinedStatusForRef.mockResolvedValueOnce({
+      data: { statuses: [{ context: 'lint', state: 'failure' }] },
+    });
+
+    const { createGitHubClient } = await import('../../src/adapters/github/github-client.js');
+    const client = createGitHubClient('fake-token');
+
+    const statuses = await client.getCombinedStatusForRef('org', 'repo', 'abc123');
+
+    expect(getCombinedStatusForRef).toHaveBeenCalledWith({
+      owner: 'org',
+      repo: 'repo',
+      ref: 'abc123',
+    });
+    expect(statuses).toEqual([{ context: 'lint', state: 'failure' }]);
   });
 });

@@ -619,6 +619,11 @@ export const wakeConfigSchema = z
                 enabled: z.boolean().default(false),
                 maxPullRequestsPerRepo: z.number().int().positive().default(25),
                 commentPageSize: z.number().int().positive().default(25),
+                checks: z
+                  .object({
+                    enabled: z.boolean().default(true),
+                  })
+                  .default({ enabled: true }),
                 policy: z
                   .object({
                     requiredAuthors: z.array(z.string()).default([]),
@@ -629,6 +634,7 @@ export const wakeConfigSchema = z
                 enabled: false,
                 maxPullRequestsPerRepo: 25,
                 commentPageSize: 25,
+                checks: { enabled: true },
                 policy: { requiredAuthors: [] },
               }),
           })
@@ -642,6 +648,7 @@ export const wakeConfigSchema = z
               enabled: false,
               maxPullRequestsPerRepo: 25,
               commentPageSize: 25,
+              checks: { enabled: true },
               policy: { requiredAuthors: [] },
             },
           }),
@@ -657,6 +664,7 @@ export const wakeConfigSchema = z
             enabled: false,
             maxPullRequestsPerRepo: 25,
             commentPageSize: 25,
+            checks: { enabled: true },
             policy: { requiredAuthors: [] },
           },
         },
