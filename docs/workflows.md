@@ -99,7 +99,13 @@ reach `done`.
 
 ## Prompt files
 
-A stage's `action` is the prompt-template name. For example:
+A stage's `action` is the prompt-template name. If a stage omits `action`,
+Wake looks for a prompt named after the stage.
+
+See [Prompt Files](prompts.md) for prompt template location, frontmatter, and
+Handlebars context details.
+
+For example:
 
 ```json
 {
@@ -119,34 +125,6 @@ requires a `verify` prompt template under `paths.promptsRoot`, normally
 ```text
 prompts/verify.md
 ```
-
-Prompt files are Handlebars Markdown files with frontmatter. Wake passes common
-context values such as `mode`, `isStart`, `isResume`, `stage`, `workItemKey`,
-`repo`, and `issueNumber`. Branch workspaces also receive `branch`.
-
-Every prompt template must include a positive integer `maxTurns` frontmatter
-value so Wake can cap runner execution. Other frontmatter such as
-`allowedTools`, `permissionMode`, `extraArgs`, and `skipApproval` is consumed by
-runner adapters and the Wake harness.
-
-Example:
-
-```markdown
----
-maxTurns: 20
-allowedTools: Bash, Read
-permissionMode: acceptEdits
----
-
-{{#if isResume}}
-Resume verification for {{repo}}#{{issueNumber}}.
-{{else}}
-Verify the implementation for {{repo}}#{{issueNumber}}.
-{{/if}}
-```
-
-If a stage omits `action`, Wake looks for a prompt named after the stage. For a
-stage named `triage`, that means `prompts/triage.md`.
 
 ## How Wake determines the workflow
 
