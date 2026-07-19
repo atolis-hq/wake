@@ -102,7 +102,7 @@ reach `done`.
 A stage's `action` is the prompt-template name. If a stage omits `action`,
 Wake looks for a prompt named after the stage.
 
-See [Prompt Files](prompts.md) for prompt template location, frontmatter, and
+See [Prompt Templates](prompts.md) for prompt template location, frontmatter, and
 Handlebars context details.
 
 For example:

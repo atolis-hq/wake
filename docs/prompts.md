@@ -1,4 +1,4 @@
-# Prompt Files
+# Prompt Templates
 
 Wake prompt files define the runner instructions used by workflow stages. A
 workflow stage chooses a prompt by setting `action`; if `action` is omitted,
