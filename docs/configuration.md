@@ -504,7 +504,8 @@ originating issue, no `/approved`, `/changes`, or `/question` command is
 required. The agent judges each comment independently: it may make the
 change, answer a question, or push back with justification or an
 alternative. The work item stays `awaiting-approval` afterward; only an
-explicit `/approved` reply on the issue advances it to `done`.
+explicit `/approved` command (on the issue or the PR) advances it to
+`done`.
 
 ## Loading and Merging
 

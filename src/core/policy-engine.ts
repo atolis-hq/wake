@@ -228,6 +228,12 @@ export function createPolicyEngine() {
 
       return { approved, pendingAction };
     },
+    // Callers must try resolveApprovalTransition first and only fall back to
+    // this when it returns null. resolveApprovalTransition doesn't check
+    // resourceUri, so a PR-surface comment that happens to carry an explicit
+    // /approved, /changes, or /question command is deliberately still routed
+    // there — this function only ever sees comments resolveApprovalTransition
+    // already passed on (plain PR feedback with no command).
     resolvePendingReviewFeedback(issue: IssueStateRecord): AgentAction | null {
       if (!isAwaitingApproval(issue)) {
         return null;
