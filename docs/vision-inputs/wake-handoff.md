@@ -35,17 +35,17 @@ Wake is the autonomous engineering control plane.
 
 Its responsibilities include:
 
-* Monitoring GitHub Issues (and future work sources such as Jira)
-* Prioritising work
-* Selecting workflows
-* Scheduling execution
-* Managing long-running sessions
-* Routing work between different LLMs
-* Managing human approvals
-* Running evaluations
-* Recovering from failures
-* Producing pull requests
-* Completing work autonomously
+- Monitoring GitHub Issues (and future work sources such as Jira)
+- Prioritising work
+- Selecting workflows
+- Scheduling execution
+- Managing long-running sessions
+- Routing work between different LLMs
+- Managing human approvals
+- Running evaluations
+- Recovering from failures
+- Producing pull requests
+- Completing work autonomously
 
 Wake decides **what should happen next**.
 
@@ -63,15 +63,15 @@ An agent session owns a single objective.
 
 It may:
 
-* analyse requirements
-* write code
-* run tests
-* ask for clarification
-* review code
-* update documentation
-* pause
-* resume days later
-* switch between different models
+- analyse requirements
+- write code
+- run tests
+- ask for clarification
+- review code
+- update documentation
+- pause
+- resume days later
+- switch between different models
 
 Wake maintains the identity.
 
@@ -127,11 +127,11 @@ A wake is the organised movement created by an object travelling through water.
 
 It represents:
 
-* progress
-* movement
-* coordination
-* propagation
-* momentum
+- progress
+- movement
+- coordination
+- propagation
+- momentum
 
 Wake is the force that continuously moves engineering work forward.
 
@@ -147,11 +147,11 @@ Wake creates agent sessions.
 
 Each session is:
 
-* autonomous
-* persistent
-* self-contained
-* long-lived
-* capable of adapting as conditions change
+- autonomous
+- persistent
+- self-contained
+- long-lived
+- capable of adapting as conditions change
 
 Each session forms, performs useful work, exchanges information with the wider system and eventually dissipates once its purpose has been fulfilled.
 
@@ -177,11 +177,11 @@ Engineering work often takes hours or days.
 
 Agent sessions should survive:
 
-* model usage limits
-* machine restarts
-* Docker recreation
-* host failures
-* human interruptions
+- model usage limits
+- machine restarts
+- Docker recreation
+- host failures
+- human interruptions
 
 Execution should resume naturally.
 
@@ -191,11 +191,11 @@ Execution should resume naturally.
 
 Humans should provide:
 
-* objectives
-* priorities
-* approvals
-* clarification
-* strategic decisions
+- objectives
+- priorities
+- approvals
+- clarification
+- strategic decisions
 
 Everything else should be automated where possible.
 
@@ -207,14 +207,14 @@ Wake should execute reusable workflows rather than bespoke prompts.
 
 Examples include:
 
-* Feature implementation
-* Bug fixing
-* Refactoring
-* Dependency upgrades
-* Code review
-* Documentation
-* Security remediation
-* Architecture analysis
+- Feature implementation
+- Bug fixing
+- Refactoring
+- Dependency upgrades
+- Code review
+- Documentation
+- Security remediation
+- Architecture analysis
 
 Workflows should evolve independently of the models that execute them.
 
@@ -226,13 +226,13 @@ Every decision should be visible.
 
 Wake should provide:
 
-* execution history
-* reasoning
-* evaluation results
-* model usage
-* costs
-* timelines
-* audit trails
+- execution history
+- reasoning
+- evaluation results
+- model usage
+- costs
+- timelines
+- audit trails
 
 Autonomous systems must be transparent before they can be trusted.
 
@@ -244,16 +244,16 @@ Wake should evolve into a complete autonomous engineering platform.
 
 Potential capabilities include:
 
-* Multi-agent collaboration
-* Planning and decomposition
-* Background execution
-* Automatic model routing
-* Cost optimisation
-* Evaluation-driven development
-* Human approval gates
-* Distributed execution
-* Multiple repositories
-* Organisation-wide engineering automation
+- Multi-agent collaboration
+- Planning and decomposition
+- Background execution
+- Automatic model routing
+- Cost optimisation
+- Evaluation-driven development
+- Human approval gates
+- Distributed execution
+- Multiple repositories
+- Organisation-wide engineering automation
 
 Ultimately, Wake should become the control plane for autonomous software engineering.
 
@@ -263,11 +263,11 @@ Ultimately, Wake should become the control plane for autonomous software enginee
 
 The Atolis ecosystem separates understanding from execution.
 
-| Product   | Responsibility                       |
-| --------- | ------------------------------------ |
-| **Corum** | Understand software and architecture |
-| **Wake**  | Change software autonomously         |
-| **Agent sessions** | Execute autonomous engineering work |
+| Product            | Responsibility                       |
+| ------------------ | ------------------------------------ |
+| **Corum**          | Understand software and architecture |
+| **Wake**           | Change software autonomously         |
+| **Agent sessions** | Execute autonomous engineering work  |
 
 Corum provides knowledge.
 

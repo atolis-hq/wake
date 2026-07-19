@@ -134,7 +134,9 @@ export function createGitWorkspaceManager(options: {
   const paths = createWakePaths(options.wakeRoot);
   const remoteUrlForRepo = options.remoteUrlForRepo ?? defaultRemoteUrlForRepo;
 
-  async function ensureCanonicalClone(repo: string): Promise<{ repoPath: string; defaultBranch: string }> {
+  async function ensureCanonicalClone(
+    repo: string,
+  ): Promise<{ repoPath: string; defaultBranch: string }> {
     const repoPath = paths.repoRoot(repo);
     const remoteUrl = remoteUrlForRepo(repo);
 

@@ -40,8 +40,18 @@ function publishIntent(input: {
 describe('sink router', () => {
   it('fans in events from all work sources in order', async () => {
     const events = await createWorkSourceFanIn([
-      { source: 'one', async pollEvents() { return [publishIntent({ eventId: 'one', kind: 'status-update', origin: 'github' })]; } },
-      { source: 'two', async pollEvents() { return [publishIntent({ eventId: 'two', kind: 'question', origin: 'slack' })]; } },
+      {
+        source: 'one',
+        async pollEvents() {
+          return [publishIntent({ eventId: 'one', kind: 'status-update', origin: 'github' })];
+        },
+      },
+      {
+        source: 'two',
+        async pollEvents() {
+          return [publishIntent({ eventId: 'two', kind: 'question', origin: 'slack' })];
+        },
+      },
     ]).pollEvents();
 
     expect(events.map((event) => event.eventId)).toEqual(['one', 'two']);
@@ -192,10 +202,20 @@ describe('sink router', () => {
     });
 
     await router.deliverIntent({
-      event: publishIntent({ eventId: 'implement-status', kind: 'status-update', origin: 'github', stage: 'implement' }),
+      event: publishIntent({
+        eventId: 'implement-status',
+        kind: 'status-update',
+        origin: 'github',
+        stage: 'implement',
+      }),
     });
     await router.deliverIntent({
-      event: publishIntent({ eventId: 'done-status', kind: 'status-update', origin: 'github', stage: 'done' }),
+      event: publishIntent({
+        eventId: 'done-status',
+        kind: 'status-update',
+        origin: 'github',
+        stage: 'done',
+      }),
     });
 
     expect(delivered).toEqual(['done-status']);

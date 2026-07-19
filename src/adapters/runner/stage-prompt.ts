@@ -1,9 +1,6 @@
 import { defaultAgentIdentity } from '../../domain/schema.js';
 import type { WakeConfig } from '../../domain/types.js';
-import type {
-  AgentAction,
-  IssueStateRecord,
-} from '../../domain/types.js';
+import type { AgentAction, IssueStateRecord } from '../../domain/types.js';
 import { chooseAction, workflowForProjection } from '../../domain/workflows.js';
 import { branchNameForIssue } from '../git/git-workspace-manager.js';
 import { loadPromptTemplate, renderPromptTemplate } from './prompt-templates.js';
@@ -24,11 +21,12 @@ function reviewCommentApiId(comment: CommentSnapshot): string | undefined {
 }
 
 function formatComment(comment: CommentSnapshot): string {
-  const surfaceLine = comment.reviewThread !== undefined
-    ? `Surface: review comment on ${comment.reviewThread.path}${comment.reviewThread.line === undefined ? '' : `:${comment.reviewThread.line}`}`
-    : comment.resourceUri !== undefined
-      ? `Surface: ${comment.resourceUri}`
-      : 'Surface: issue thread';
+  const surfaceLine =
+    comment.reviewThread !== undefined
+      ? `Surface: review comment on ${comment.reviewThread.path}${comment.reviewThread.line === undefined ? '' : `:${comment.reviewThread.line}`}`
+      : comment.resourceUri !== undefined
+        ? `Surface: ${comment.resourceUri}`
+        : 'Surface: issue thread';
   const reviewCommentId = reviewCommentApiId(comment);
 
   return [
@@ -71,9 +69,7 @@ function previousCommentsThroughLastRun(projection: IssueStateRecord): CommentSn
 }
 
 function matchesCommand(body: string, pattern: RegExp): boolean {
-  return body
-    .split(/\r?\n/)
-    .some((line) => pattern.test(line.trim()));
+  return body.split(/\r?\n/).some((line) => pattern.test(line.trim()));
 }
 
 function latestQuestionCommandNote(input: {
@@ -115,7 +111,10 @@ function parseFrontmatterArgs(value: string | undefined): string[] {
   return value.trim().split(/\s+/);
 }
 
-function parseFrontmatterMaxTurns(input: { action: AgentAction; value: string | undefined }): number {
+function parseFrontmatterMaxTurns(input: {
+  action: AgentAction;
+  value: string | undefined;
+}): number {
   if (input.value === undefined || input.value.trim().length === 0) {
     throw new Error(
       `Prompt template for action "${input.action}" is missing a required "maxTurns" frontmatter value. ` +
@@ -241,10 +240,7 @@ function buildUntrustedDataBlock(input: {
     '',
     'Issue:',
     ...(input.includeRepoDetails
-      ? [
-          `- Repo: ${input.projection.issue.repo}`,
-          `- Number: ${input.projection.issue.number}`,
-        ]
+      ? [`- Repo: ${input.projection.issue.repo}`, `- Number: ${input.projection.issue.number}`]
       : []),
     `- Title: ${input.projection.issue.title}`,
     `- Stage: ${input.projection.wake.stage}`,
@@ -306,11 +302,9 @@ export async function buildStagePrompt(input: {
   // Default tool capability note — runner adapters can override this via contextOverrides
   // when the runner's tool model differs from Claude Code's named-tool model (e.g. Codex).
   if (mode === 'resume') {
-    context.toolCapabilityNote =
-      `Reminder: this is still a planning-only stage - your only available tools are: ${allowedToolsListStr}. Do not attempt to use Edit, Write, or any Bash command other than the git commands listed above, or modify any file.`;
+    context.toolCapabilityNote = `Reminder: this is still a planning-only stage - your only available tools are: ${allowedToolsListStr}. Do not attempt to use Edit, Write, or any Bash command other than the git commands listed above, or modify any file.`;
   } else {
-    context.toolCapabilityNote =
-      `Your only available tools are: ${allowedToolsListStr}.\nDo not attempt to use Edit, Write, or any Bash command other than the git commands listed above unless this stage's prompt and workspace mode explicitly allow it.`;
+    context.toolCapabilityNote = `Your only available tools are: ${allowedToolsListStr}.\nDo not attempt to use Edit, Write, or any Bash command other than the git commands listed above unless this stage's prompt and workspace mode explicitly allow it.`;
   }
 
   if (input.contextOverrides !== undefined) {
@@ -321,12 +315,13 @@ export async function buildStagePrompt(input: {
   const permissionMode = template.frontmatter.permissionMode;
   const commentsToAddress = newCommentsSinceLastRun(input.projection);
   const priorComments = previousCommentsThroughLastRun(input.projection);
-  context.feedbackCommandNote = mode === 'resume'
-    ? latestQuestionCommandNote({
-        comments: commentsToAddress,
-        successSentinel: skipApproval ? 'DONE' : 'AWAITING_APPROVAL',
-      })
-    : '';
+  context.feedbackCommandNote =
+    mode === 'resume'
+      ? latestQuestionCommandNote({
+          comments: commentsToAddress,
+          successSentinel: skipApproval ? 'DONE' : 'AWAITING_APPROVAL',
+        })
+      : '';
   const commentSections =
     mode === 'resume'
       ? [
@@ -377,7 +372,10 @@ export async function buildStagePrompt(input: {
     }),
     allowedTools,
     extraArgs: parseFrontmatterArgs(template.frontmatter.extraArgs),
-    maxTurns: parseFrontmatterMaxTurns({ action: input.action, value: template.frontmatter.maxTurns }),
+    maxTurns: parseFrontmatterMaxTurns({
+      action: input.action,
+      value: template.frontmatter.maxTurns,
+    }),
     skipApproval,
     ...(permissionMode === undefined ? {} : { permissionMode }),
   };

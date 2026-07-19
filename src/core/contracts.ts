@@ -99,9 +99,7 @@ export interface WorkspaceManager {
     issueNumber: number;
   }): Promise<{ workspacePath: string; mergeConflictDetected: boolean; upstreamChanges?: string }>;
   prepareReadOnlyClone(input: { repo: string }): Promise<{ workspacePath: string }>;
-  cleanupWorkspace(input: {
-    workspacePath: string;
-  }): Promise<void>;
+  cleanupWorkspace(input: { workspacePath: string }): Promise<void>;
 }
 
 // Verification needs a provider-specific client, but core/ never imports a

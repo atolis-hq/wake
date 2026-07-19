@@ -6,7 +6,11 @@ function normalizePath(value: string): string {
   return value.replaceAll('\\', '/').replace(/^[A-Za-z]:/, '');
 }
 
-function toContainerPath(pathValue: string, hostWakeRoot: string, containerWakeRoot: string): string {
+function toContainerPath(
+  pathValue: string,
+  hostWakeRoot: string,
+  containerWakeRoot: string,
+): string {
   const normalizedPath = normalizePath(pathValue);
   const normalizedHostRoot = normalizePath(hostWakeRoot);
   const normalizedContainerRoot = normalizePath(containerWakeRoot);

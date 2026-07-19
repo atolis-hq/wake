@@ -1,7 +1,4 @@
-export const stageValues = [
-  'queue',
-  'done',
-] as const;
+export const stageValues = ['queue', 'done'] as const;
 
 export const doneRunnerSentinel = 'DONE';
 export const blockedRunnerSentinel = 'BLOCKED';

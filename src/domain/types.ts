@@ -16,9 +16,7 @@ import {
   wakeResultEnvelopeSchema,
   workItemCreatedPayloadSchema,
 } from './schema.js';
-import {
-  runnerSentinelValues,
-} from './stages.js';
+import { runnerSentinelValues } from './stages.js';
 
 export type Stage = string;
 export type RunnerSentinel = (typeof runnerSentinelValues)[number];
@@ -50,6 +48,8 @@ export type WakeResultEnvelope = z.infer<typeof wakeResultEnvelopeSchema>;
 export type WorkItemCreatedPayload = z.infer<typeof workItemCreatedPayloadSchema>;
 export type CorrelationRegisteredPayload = z.infer<typeof correlationRegisteredPayloadSchema>;
 export type CorrelationRetractedPayload = z.infer<typeof correlationRetractedPayloadSchema>;
-export type CorrelationPrimaryConflictPayload = z.infer<typeof correlationPrimaryConflictPayloadSchema>;
+export type CorrelationPrimaryConflictPayload = z.infer<
+  typeof correlationPrimaryConflictPayloadSchema
+>;
 export type CorrelatedResource = z.infer<typeof correlatedResourceSchema>;
 export type ReportedArtifact = z.infer<typeof reportedArtifactSchema>;

@@ -110,12 +110,14 @@ describe('codex tool capability note', () => {
 
 describe('codex runner output parsing', () => {
   it('extracts the final agent message, usage, and thread id from jsonl output', () => {
-    const parsed = extractCodexExecResult([
-      '{"type":"thread.started","thread_id":"thread-123"}',
-      '{"type":"turn.started"}',
-      '{"type":"item.completed","item":{"id":"item_3","type":"agent_message","text":"Implemented change\\nDONE"}}',
-      '{"type":"turn.completed","usage":{"input_tokens":24763,"output_tokens":122}}',
-    ].join('\n'));
+    const parsed = extractCodexExecResult(
+      [
+        '{"type":"thread.started","thread_id":"thread-123"}',
+        '{"type":"turn.started"}',
+        '{"type":"item.completed","item":{"id":"item_3","type":"agent_message","text":"Implemented change\\nDONE"}}',
+        '{"type":"turn.completed","usage":{"input_tokens":24763,"output_tokens":122}}',
+      ].join('\n'),
+    );
 
     expect(parsed.result).toBe('Implemented change\nDONE');
     expect(parsed.sessionId).toBe('thread-123');
@@ -123,12 +125,14 @@ describe('codex runner output parsing', () => {
   });
 
   it('accumulates usage across multiple turn.completed events instead of keeping only the last', () => {
-    const parsed = extractCodexExecResult([
-      '{"type":"thread.started","thread_id":"thread-123"}',
-      '{"type":"turn.completed","usage":{"input_tokens":100,"output_tokens":10}}',
-      '{"type":"turn.completed","usage":{"input_tokens":50,"output_tokens":5}}',
-      '{"type":"item.completed","item":{"id":"item_3","type":"agent_message","text":"DONE"}}',
-    ].join('\n'));
+    const parsed = extractCodexExecResult(
+      [
+        '{"type":"thread.started","thread_id":"thread-123"}',
+        '{"type":"turn.completed","usage":{"input_tokens":100,"output_tokens":10}}',
+        '{"type":"turn.completed","usage":{"input_tokens":50,"output_tokens":5}}',
+        '{"type":"item.completed","item":{"id":"item_3","type":"agent_message","text":"DONE"}}',
+      ].join('\n'),
+    );
 
     expect(parsed.tokenUsage).toEqual({ inputTokens: 150, outputTokens: 15, turns: 2 });
   });
@@ -173,10 +177,12 @@ describe('codex runner failure classification', () => {
   });
 
   it('classifies an unrecognized failure as infra', () => {
-    expect(classifyCodexCliFailure({
-      stdout: '{"type":"error","message":"internal server error"}',
-      stderr: '',
-      timedOut: false,
-    })).toBe('infra');
+    expect(
+      classifyCodexCliFailure({
+        stdout: '{"type":"error","message":"internal server error"}',
+        stderr: '',
+        timedOut: false,
+      }),
+    ).toBe('infra');
   });
 });

@@ -31,12 +31,7 @@ export function buildWakeSessionName(input: {
   title: string;
   runId: string;
 }): string {
-  return [
-    input.sessionName,
-    `issue-${input.issueNumber}`,
-    slugify(input.title),
-    input.runId,
-  ]
+  return [input.sessionName, `issue-${input.issueNumber}`, slugify(input.title), input.runId]
     .filter((part) => part.length > 0)
     .join('-');
 }
@@ -66,9 +61,7 @@ export function formatClaudeRunLogLine(input: {
     `repo=${input.repo}`,
     `issueNumber=${input.issueNumber}`,
     `action=${input.action}`,
-    `recentEventIds=${
-      input.recentEventIds.length > 0 ? input.recentEventIds.join(',') : '(none)'
-    }`,
+    `recentEventIds=${input.recentEventIds.length > 0 ? input.recentEventIds.join(',') : '(none)'}`,
     ...(input.workspacePath === undefined
       ? []
       : [`workspacePath=${compactLogValue(input.workspacePath)}`]),
@@ -102,13 +95,9 @@ export function buildClaudePrintArgs(options: {
     options.sessionName,
     ...(options.resumeSessionId === undefined ? [] : ['--resume', options.resumeSessionId]),
     ...(options.effort === undefined ? [] : ['--effort', options.effort]),
-    ...(options.systemPrompt === undefined
-      ? []
-      : ['--append-system-prompt', options.systemPrompt]),
+    ...(options.systemPrompt === undefined ? [] : ['--append-system-prompt', options.systemPrompt]),
     ...(options.maxTurns === undefined ? [] : ['--max-turns', String(options.maxTurns)]),
-    ...(options.permissionMode === undefined
-      ? []
-      : ['--permission-mode', options.permissionMode]),
+    ...(options.permissionMode === undefined ? [] : ['--permission-mode', options.permissionMode]),
     ...(options.allowedTools === undefined || options.allowedTools.length === 0
       ? []
       : ['--allowedTools', options.allowedTools.join(' ')]),
@@ -158,10 +147,7 @@ export function runClaudeCommand(input: {
   return runAgentCliCommand(input);
 }
 
-function resolveModel(options: {
-  action: AgentAction;
-  settings: ClaudeRunnerSettings;
-}): string {
+function resolveModel(options: { action: AgentAction; settings: ClaudeRunnerSettings }): string {
   const { models, model } = options.settings;
 
   const actionSpecificModel = models[options.action];
@@ -234,7 +220,10 @@ export function classifyClaudeCliFailure(input: {
   return 'infra';
 }
 
-function readSandboxLogBreadcrumb(): { text: string; metadata: { sandboxContainerName: string } } | null {
+function readSandboxLogBreadcrumb(): {
+  text: string;
+  metadata: { sandboxContainerName: string };
+} | null {
   const containerName = process.env.WAKE_SANDBOX_CONTAINER_NAME;
   if (containerName === undefined || containerName.length === 0) {
     return null;
@@ -305,9 +294,7 @@ export function createClaudeRunner(options: {
         ...(stagePrompt.permissionMode === undefined
           ? {}
           : { permissionMode: stagePrompt.permissionMode }),
-        ...(options.settings.remoteControl.enabled
-          ? { remoteControlName: sessionName }
-          : {}),
+        ...(options.settings.remoteControl.enabled ? { remoteControlName: sessionName } : {}),
         ...(options.settings.effort === undefined ? {} : { effort: options.settings.effort }),
         ...(isResume ? { resumeSessionId: priorSessionId } : {}),
       });
@@ -330,9 +317,7 @@ export function createClaudeRunner(options: {
           repo: input.projection.issue.repo,
           recentEventIds: input.recentEvents.map((event) => event.eventId),
           model,
-          ...(input.workspacePath === undefined
-            ? {}
-            : { workspacePath: input.workspacePath }),
+          ...(input.workspacePath === undefined ? {} : { workspacePath: input.workspacePath }),
         }),
       );
 
@@ -368,9 +353,7 @@ export function createClaudeRunner(options: {
             repo: input.projection.issue.repo,
             recentEventIds: input.recentEvents.map((event) => event.eventId),
             model,
-            ...(input.workspacePath === undefined
-              ? {}
-              : { workspacePath: input.workspacePath }),
+            ...(input.workspacePath === undefined ? {} : { workspacePath: input.workspacePath }),
             exitCode: result.exitCode,
           }),
         );
@@ -391,10 +374,10 @@ export function createClaudeRunner(options: {
             result.timedOut
               ? `Claude runner timed out after ${options.settings.timeoutMs}ms and was killed`
               : trimmedStdout.length === 0
-              ? 'Claude runner produced no output'
-              : parsedReason !== undefined
-              ? `Claude runner failed: ${parsedReason}`
-              : 'Claude runner failed',
+                ? 'Claude runner produced no output'
+                : parsedReason !== undefined
+                  ? `Claude runner failed: ${parsedReason}`
+                  : 'Claude runner failed',
             result.stderr,
             stdoutFailureDetail,
             sandboxLog?.text,
@@ -428,9 +411,7 @@ export function createClaudeRunner(options: {
           repo: input.projection.issue.repo,
           recentEventIds: input.recentEvents.map((event) => event.eventId),
           model,
-          ...(input.workspacePath === undefined
-            ? {}
-            : { workspacePath: input.workspacePath }),
+          ...(input.workspacePath === undefined ? {} : { workspacePath: input.workspacePath }),
           ...(parsed.session_id === undefined ? {} : { sessionId: parsed.session_id }),
         }),
       );
@@ -442,9 +423,7 @@ export function createClaudeRunner(options: {
         ...(parseRunnerResult(parsed.result).status === 'FAILED'
           ? { failureClass: 'task' as const }
           : {}),
-        ...(parsed.session_id === undefined
-          ? {}
-          : { session_id: parsed.session_id }),
+        ...(parsed.session_id === undefined ? {} : { session_id: parsed.session_id }),
         ...(tokenUsage === undefined ? {} : { tokenUsage }),
         metadata: {
           stdout: result.stdout,
@@ -483,9 +462,7 @@ export function createClaudeRunner(options: {
 
       return {
         text: parsed?.result ?? '',
-        ...(parsed?.session_id === undefined
-          ? {}
-          : { sessionId: parsed.session_id }),
+        ...(parsed?.session_id === undefined ? {} : { sessionId: parsed.session_id }),
         stdout: result.stdout,
         stderr: result.stderr,
         exitCode: result.exitCode,

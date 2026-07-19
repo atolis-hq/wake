@@ -54,7 +54,11 @@ describe('createGitHubPullRequestActivitySource', () => {
     const seenEvents = events.filter((e) => e.sourceEventType === 'pr.seen');
     expect(seenEvents).toHaveLength(1);
     expect(seenEvents[0]?.sourceRefs.resourceUri).toBe('github:pr:org/repo#91');
-    expect(seenEvents[0]?.payload.pr).toEqual({ number: 91, author: 'trusted-human', headRef: 'feature-x' });
+    expect(seenEvents[0]?.payload.pr).toEqual({
+      number: 91,
+      author: 'trusted-human',
+      headRef: 'feature-x',
+    });
     // Embeds updated_at so a PR that fails mint qualification is re-offered
     // for qualification once it actually changes, instead of being
     // permanently quarantined under its first-seen eventId.
@@ -275,7 +279,7 @@ describe('createGitHubPullRequestActivitySource', () => {
     expect(events.filter((e) => e.sourceEventType === 'pr.checks.failed')).toHaveLength(0);
   });
 
-  it('marks an unmarked review-comment reply from Wake\'s own login as bot-authored (#258 follow-up)', async () => {
+  it("marks an unmarked review-comment reply from Wake's own login as bot-authored (#258 follow-up)", async () => {
     // A revise run replies directly via `gh api .../replies`, bypassing
     // formatWakeComment entirely — no wake:agent marker, account type
     // 'User'. Without a selfLogin check this looks like a fresh human
@@ -311,7 +315,9 @@ describe('createGitHubPullRequestActivitySource', () => {
     });
 
     const events = await source.pollEvents({ watch: [{ resourceUri: 'github:pr:org/repo#91' }] });
-    const reviewCommentEvent = events.find((e) => e.sourceEventType === 'pr.review-comment.created');
+    const reviewCommentEvent = events.find(
+      (e) => e.sourceEventType === 'pr.review-comment.created',
+    );
     expect(reviewCommentEvent?.derivedHints?.botAuthoredComment).toBe(true);
   });
 
@@ -347,7 +353,9 @@ describe('createGitHubPullRequestActivitySource', () => {
     });
 
     const events = await source.pollEvents({ watch: [{ resourceUri: 'github:pr:org/repo#91' }] });
-    const reviewCommentEvent = events.find((e) => e.sourceEventType === 'pr.review-comment.created');
+    const reviewCommentEvent = events.find(
+      (e) => e.sourceEventType === 'pr.review-comment.created',
+    );
     expect(reviewCommentEvent?.derivedHints?.botAuthoredComment).toBe(false);
   });
 
@@ -460,8 +468,12 @@ describe('createGitHubPullRequestActivitySource', () => {
       listComments: vi.fn(),
       listReviews: vi.fn(),
       listReviewComments: vi.fn(),
-      replyToReviewComment: vi.fn().mockResolvedValue({ html_url: 'https://github.com/org/repo/pull/91#discussion_r501' }),
-      createComment: vi.fn().mockResolvedValue({ html_url: 'https://github.com/org/repo/pull/91#issuecomment-1' }),
+      replyToReviewComment: vi
+        .fn()
+        .mockResolvedValue({ html_url: 'https://github.com/org/repo/pull/91#discussion_r501' }),
+      createComment: vi
+        .fn()
+        .mockResolvedValue({ html_url: 'https://github.com/org/repo/pull/91#issuecomment-1' }),
     };
     const source = createGitHubPullRequestActivitySource({
       client,
@@ -546,9 +558,16 @@ describe('createGitHubPullRequestActivitySource', () => {
     const events = await source.pollEvents({ watch: [{ resourceUri: 'github:pr:org/repo#91' }] });
     const threadEvents = events.filter((e) => e.sourceEventType === 'pr.review-comment.created');
     expect(threadEvents).toHaveLength(2);
-    expect(threadEvents[0]?.sourceRefs.resourceUri).toBe('github:pr-review-thread:org/repo#91/rt_501');
-    expect(threadEvents[1]?.sourceRefs.resourceUri).toBe('github:pr-review-thread:org/repo#91/rt_501');
-    expect((threadEvents[0]?.payload.comment as { reviewThread: { path: string; line: number } }).reviewThread).toEqual({
+    expect(threadEvents[0]?.sourceRefs.resourceUri).toBe(
+      'github:pr-review-thread:org/repo#91/rt_501',
+    );
+    expect(threadEvents[1]?.sourceRefs.resourceUri).toBe(
+      'github:pr-review-thread:org/repo#91/rt_501',
+    );
+    expect(
+      (threadEvents[0]?.payload.comment as { reviewThread: { path: string; line: number } })
+        .reviewThread,
+    ).toEqual({
       path: 'src/foo.ts',
       line: 42,
     });

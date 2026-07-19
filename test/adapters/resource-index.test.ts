@@ -105,10 +105,7 @@ describe('ResourceIndex', () => {
     // minted for work that already exists.
     const index = createResourceIndex({ paths: freshPaths() });
     const [a, b] = findCollidingUris();
-    await Promise.all([
-      index.register(a, 'work-AAA'),
-      index.register(b, 'work-BBB'),
-    ]);
+    await Promise.all([index.register(a, 'work-AAA'), index.register(b, 'work-BBB')]);
     expect(await index.resolve(a)).toBe('work-AAA');
     expect(await index.resolve(b)).toBe('work-BBB');
   });

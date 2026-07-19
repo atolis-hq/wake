@@ -20,9 +20,6 @@ export async function readSelfUpdateLedger(path: string): Promise<SelfUpdateLedg
   }
 }
 
-export async function writeSelfUpdateLedger(
-  path: string,
-  ledger: SelfUpdateLedger,
-): Promise<void> {
+export async function writeSelfUpdateLedger(path: string, ledger: SelfUpdateLedger): Promise<void> {
   await writeJsonFile(path, ledger);
 }

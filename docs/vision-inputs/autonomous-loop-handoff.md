@@ -50,7 +50,7 @@ around scraping /usage or OAuth endpoints — they're unstable. Instead, two lay
    reset time can be parsed, back off a fixed 5 hours (the session-window length).
 2. **Proactive (the "% of weekly allowance" control):** every successful
    `--output-format json` result includes `total_cost_usd` and token usage.
-   On a subscription this is *notional*, but it is a faithful **proportional
+   On a subscription this is _notional_, but it is a faithful **proportional
    proxy** for allowance consumption. Keep a rolling ledger
    (`.autoloop/ledger.json`): per-run cost, per-ISO-week totals. Config value
    `weeklyBudgetUsd` (start at ~$4–5 notional for a Pro plan and tune) and
@@ -86,18 +86,22 @@ acceptance criteria:
 ```markdown
 ---
 title: Add branch filter to list_nodes MCP tool
-model: sonnet          # haiku | sonnet | opus — human sets; default sonnet
+model: sonnet # haiku | sonnet | opus — human sets; default sonnet
 maxAttempts: 3
 repo: C:\git\atolis-hq\corum
 ---
+
 ## Context
+
 (why, links to ADRs/files)
 
 ## Acceptance criteria
+
 - [ ] concrete, verifiable outcomes
 - [ ] tests pass: `npm test`
 
 ## Out of scope
+
 (explicit non-goals — prevents scope creep, the top autonomous failure mode)
 ```
 
@@ -170,7 +174,7 @@ the task spec is bad, not that the model is too small; that's what blocked/ is f
 5. **Task Scheduler registration:** `schtasks` or `Register-ScheduledTask`,
    every 30 min, run whether user logged in or not, no window.
 6. **Niceties (optional):** toast on BLOCKED, NEEDS-INPUT.md digest, `autoloop
-   status` subcommand printing queue depth + week-to-date spend vs budget.
+status` subcommand printing queue depth + week-to-date spend vs budget.
 
 ## Acceptance test for the whole system
 
@@ -227,6 +231,7 @@ comment so GitHub mobile pushes a notification.
 **Stage 1 — Refine (haiku, batched):** a tick may take up to the 3 oldest
 `autoloop:queue` issues and run ONE haiku pass over each (small, cheap, strict
 `--max-turns` cap ~10). The refiner:
+
 - rewrites the body into the full spec template (acceptance criteria,
   files likely touched, out-of-scope),
 - if anything is ambiguous, posts the questions comment and labels
@@ -264,7 +269,7 @@ implementation — this is the largest single token saving available.
 
 - Claude mobile app / claude.ai as the interface: it cannot drive the local
   machine's headless runs. (Claude Code's interactive `/remote-control` exists
-  for steering a *live local session* from the mobile app — useful for manual
+  for steering a _live local session_ from the mobile app — useful for manual
   work, irrelevant to the scheduled loop.)
 - Hooks/webhooks reacting to GitHub events in real time: nice, but the 30-min
   poll via `gh` is simpler and the loop is latency-insensitive. Revisit only
@@ -302,7 +307,7 @@ Extend the D4 runner contract with one clause:
    Most runs should append nothing. Never append generic advice.
 ```
 
-The refiner (Stage 1) gets the same clause with lessons about *specs*
+The refiner (Stage 1) gets the same clause with lessons about _specs_
 ("tasks touching src/loader/ need an ADR reference or they get blocked").
 Cost: a few dozen output tokens, only on runs that learned something.
 
@@ -372,7 +377,7 @@ loop is budget-paused. Ordered by impact.
    "main is red: <first failing test>" so fixing it becomes the next task.
 2. **Spec pre-flight validation (each tick, before refinement).** Regex-check
    new `autoloop:queue` issues for the required sections (`## Acceptance
-   criteria` with at least one checkbox, `## Out of scope`). Missing → comment
+criteria` with at least one checkbox, `## Out of scope`). Missing → comment
    a template with what's absent, label `autoloop:needs-spec`, @mention the
    human. Catches malformed tasks for free instead of spending a haiku run to
    discover the same thing.
@@ -458,7 +463,7 @@ to record.
 Guidance on when NOT to resume: for BLOCKED tasks, answering the issue
 comment is almost always better than resuming — the fresh-context re-run
 (D1) with your answer folded into the spec is cheaper and cleaner than
-reviving a long transcript. Resume to *understand*; comment to *unblock*.
+reviving a long transcript. Resume to _understand_; comment to _unblock_.
 
 **Interrupting an in-flight run:** don't inject into a running headless
 process. Instead: a `.autoloop/PAUSE` flag file — the dispatcher checks it
@@ -492,6 +497,7 @@ event-driven behavior with a second, cheaper timer:
   the fallback if the trigger poll ever breaks).
 
 Rules for `/actionnow`:
+
 - Only honored from the repo-owner account (check comment author) — anyone
   else who can comment on your issues must not be able to spend your budget.
 - Overrides **quiet hours** (an explicit human request beats the schedule)

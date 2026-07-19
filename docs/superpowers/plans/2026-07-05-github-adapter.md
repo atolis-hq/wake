@@ -67,6 +67,7 @@
 ### Task 1: Extend config and durable state for GitHub Issues polling
 
 **Files:**
+
 - Modify: `package.json`
 - Modify: `src/domain/schema.ts`
 - Modify: `src/domain/types.ts`
@@ -223,6 +224,7 @@ git commit -m "feat: add github issues source config and state"
 ### Task 2: Add the GitHub auth bridge and Octokit client
 
 **Files:**
+
 - Create: `src/adapters/github/github-auth.ts`
 - Create: `src/adapters/github/github-client.ts`
 - Test: `test/adapters/github-auth.test.ts`
@@ -262,9 +264,7 @@ import { promisify } from 'node:util';
 
 const execFile = promisify(nodeExecFile);
 
-export async function resolveGitHubToken(deps?: {
-  execFile?: typeof execFile;
-}): Promise<string> {
+export async function resolveGitHubToken(deps?: { execFile?: typeof execFile }): Promise<string> {
   try {
     const result = await (deps?.execFile ?? execFile)('gh', ['auth', 'token']);
     const token = result.stdout.trim();
@@ -332,6 +332,7 @@ git commit -m "feat: add github auth bridge"
 ### Task 3: Implement the GitHub Issues work source and outbound publication
 
 **Files:**
+
 - Create: `src/adapters/github/github-issues-work-source.ts`
 - Modify: `src/core/contracts.ts`
 - Modify: `src/core/projection-updater.ts`
@@ -463,12 +464,14 @@ export function createGitHubIssuesWorkSource(deps: {
               continue;
             }
 
-            events.push(normalizeTicketCommentEvent({
-              repo: repoRef,
-              issueNumber: issue.number,
-              comment,
-              ingestedAt,
-            }));
+            events.push(
+              normalizeTicketCommentEvent({
+                repo: repoRef,
+                issueNumber: issue.number,
+                comment,
+                ingestedAt,
+              }),
+            );
           }
         }
 
@@ -494,27 +497,29 @@ export function createGitHubIssuesWorkSource(deps: {
         `${String(input.event.payload.body)}\n\n<!-- wake -->`,
       );
 
-      return [createEventEnvelope({
-        eventId: `${input.event.eventId}-published`,
-        workItemKey: input.event.workItemKey,
-        streamScope: 'work-item',
-        direction: 'outbound',
-        sourceSystem: 'github',
-        sourceEventType: 'ticket.reply.published',
-        sourceRefs: {
-          repo,
-          issueNumber,
-        },
-        occurredAt: deps.now().toISOString(),
-        ingestedAt: deps.now().toISOString(),
-        trigger: 'context-only',
-        payload: {
-          intentEventId: input.event.eventId,
-          kind: input.event.payload.kind,
-          body: input.event.payload.body,
-          providerEventType: 'github.issue.comment.published',
-        },
-      })];
+      return [
+        createEventEnvelope({
+          eventId: `${input.event.eventId}-published`,
+          workItemKey: input.event.workItemKey,
+          streamScope: 'work-item',
+          direction: 'outbound',
+          sourceSystem: 'github',
+          sourceEventType: 'ticket.reply.published',
+          sourceRefs: {
+            repo,
+            issueNumber,
+          },
+          occurredAt: deps.now().toISOString(),
+          ingestedAt: deps.now().toISOString(),
+          trigger: 'context-only',
+          payload: {
+            intentEventId: input.event.eventId,
+            kind: input.event.payload.kind,
+            body: input.event.payload.body,
+            providerEventType: 'github.issue.comment.published',
+          },
+        }),
+      ];
     },
   };
 }
@@ -553,6 +558,7 @@ git commit -m "feat: add github issues work source"
 ### Task 4: Make policy and tick execution act on new or changed ticket work
 
 **Files:**
+
 - Modify: `src/core/policy-engine.ts`
 - Modify: `src/core/tick-runner.ts`
 - Modify: `src/main.ts`
@@ -603,9 +609,10 @@ export function createPolicyEngine() {
     needsWakeAction(issue: IssueStateRecord): boolean {
       const latest = issue.latestComment;
       const context = issue.context as Record<string, unknown>;
-      const lastActionEventId = typeof context.lastWakeActionEventId === 'string'
-        ? context.lastWakeActionEventId
-        : undefined;
+      const lastActionEventId =
+        typeof context.lastWakeActionEventId === 'string'
+          ? context.lastWakeActionEventId
+          : undefined;
 
       if (issue.wake.lastRunId === undefined) {
         return true;
@@ -665,6 +672,7 @@ git commit -m "feat: trigger wake runs from ticket changes"
 ### Task 5: Finish docs and full verification
 
 **Files:**
+
 - Modify: `README.md`
 - Modify: `docs/architecture.md`
 - Test: `test/adapters/github-auth.test.ts`

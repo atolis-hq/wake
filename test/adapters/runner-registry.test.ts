@@ -14,21 +14,25 @@ describe('runner registry routing', () => {
     config.tiers.light = ['fake-light'];
     config.tiers.standard = ['fake-deep', 'fake-light'];
 
-    expect(resolveRunnerRouting({
-      config,
-      stage: 'refine',
-      action: 'refine',
-    })).toMatchObject({
+    expect(
+      resolveRunnerRouting({
+        config,
+        stage: 'refine',
+        action: 'refine',
+      }),
+    ).toMatchObject({
       runnerName: 'fake-light',
       runnerKind: 'fake',
       tier: 'light',
     });
 
-    expect(resolveRunnerRouting({
-      config,
-      stage: 'implement',
-      action: 'implement',
-    })).toMatchObject({
+    expect(
+      resolveRunnerRouting({
+        config,
+        stage: 'implement',
+        action: 'implement',
+      }),
+    ).toMatchObject({
       runnerName: 'fake-deep',
       runnerKind: 'fake',
       tier: 'standard',
@@ -49,22 +53,26 @@ describe('runner registry routing', () => {
       },
     };
 
-    expect(resolveRunnerRouting({
-      config,
-      stage: 'implement',
-      action: 'implement',
-      ledger,
-      now,
-    })).toMatchObject({ runnerName: 'fake-secondary' });
+    expect(
+      resolveRunnerRouting({
+        config,
+        stage: 'implement',
+        action: 'implement',
+        ledger,
+        now,
+      }),
+    ).toMatchObject({ runnerName: 'fake-secondary' });
 
     // Rotation: once the pause expires, the primary is preferred again.
-    expect(resolveRunnerRouting({
-      config,
-      stage: 'implement',
-      action: 'implement',
-      ledger,
-      now: new Date('2026-07-07T23:00:01.000Z'),
-    })).toMatchObject({ runnerName: 'fake-primary' });
+    expect(
+      resolveRunnerRouting({
+        config,
+        stage: 'implement',
+        action: 'implement',
+        ledger,
+        now: new Date('2026-07-07T23:00:01.000Z'),
+      }),
+    ).toMatchObject({ runnerName: 'fake-primary' });
   });
 
   it('allows an early recovery probe on an estimated pause once the probe interval elapses', () => {
@@ -87,23 +95,27 @@ describe('runner registry routing', () => {
     };
 
     // Before the 15-minute probe interval: still fully paused.
-    expect(resolveRunnerRouting({
-      config,
-      stage: 'implement',
-      action: 'implement',
-      ledger,
-      now: new Date('2026-07-07T22:40:00.000Z'),
-    })).toBeNull();
+    expect(
+      resolveRunnerRouting({
+        config,
+        stage: 'implement',
+        action: 'implement',
+        ledger,
+        now: new Date('2026-07-07T22:40:00.000Z'),
+      }),
+    ).toBeNull();
 
     // After the probe interval, but before the estimated pause fully elapses:
     // let a real attempt through as a recovery probe in case the guess overshot.
-    expect(resolveRunnerRouting({
-      config,
-      stage: 'implement',
-      action: 'implement',
-      ledger,
-      now: new Date('2026-07-07T22:46:00.000Z'),
-    })).toMatchObject({
+    expect(
+      resolveRunnerRouting({
+        config,
+        stage: 'implement',
+        action: 'implement',
+        ledger,
+        now: new Date('2026-07-07T22:46:00.000Z'),
+      }),
+    ).toMatchObject({
       runnerName: 'fake-primary',
       reason: expect.stringContaining('recovery probe'),
     });
@@ -126,13 +138,15 @@ describe('runner registry routing', () => {
       },
     };
 
-    expect(resolveRunnerRouting({
-      config,
-      stage: 'implement',
-      action: 'implement',
-      ledger,
-      now: new Date('2026-07-07T23:00:00.000Z'),
-    })).toBeNull();
+    expect(
+      resolveRunnerRouting({
+        config,
+        stage: 'implement',
+        action: 'implement',
+        ledger,
+        now: new Date('2026-07-07T23:00:00.000Z'),
+      }),
+    ).toBeNull();
   });
 
   it('returns null when every tier candidate is quota-paused', () => {
@@ -150,13 +164,15 @@ describe('runner registry routing', () => {
       },
     };
 
-    expect(resolveRunnerRouting({
-      config,
-      stage: 'implement',
-      action: 'implement',
-      ledger,
-      now,
-    })).toBeNull();
+    expect(
+      resolveRunnerRouting({
+        config,
+        stage: 'implement',
+        action: 'implement',
+        ledger,
+        now,
+      }),
+    ).toBeNull();
   });
 
   it('keeps explicit stage runner pins legal', () => {
@@ -164,11 +180,13 @@ describe('runner registry routing', () => {
     config.runners.pinned = { kind: 'fake', cli: 'Pinned Fake' };
     config.workflows.default!.stages.implement!.runner = 'pinned';
 
-    expect(resolveRunnerRouting({
-      config,
-      stage: 'implement',
-      action: 'implement',
-    })).toMatchObject({
+    expect(
+      resolveRunnerRouting({
+        config,
+        stage: 'implement',
+        action: 'implement',
+      }),
+    ).toMatchObject({
       runnerName: 'pinned',
       runnerKind: 'fake',
       reason: 'stage implement pins runner pinned',
@@ -184,11 +202,13 @@ describe('runner registry routing', () => {
     config.workflows.default!.stages.implement!.tier = 'standard';
     config.stages.implement = { action: 'implement', tier: 'deep' };
 
-    expect(resolveRunnerRouting({
-      config,
-      stage: 'implement',
-      action: 'implement',
-    })).toMatchObject({
+    expect(
+      resolveRunnerRouting({
+        config,
+        stage: 'implement',
+        action: 'implement',
+      }),
+    ).toMatchObject({
       runnerName: 'fake-workflow',
       tier: 'standard',
     });

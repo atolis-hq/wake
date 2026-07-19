@@ -139,9 +139,16 @@ describe('tick runner', () => {
 
     const runner = {
       async run() {
-        const runFiles = (await readdir(join(root, 'runs'))).filter((file) => file.endsWith('.json'));
+        const runFiles = (await readdir(join(root, 'runs'))).filter((file) =>
+          file.endsWith('.json'),
+        );
         runFileSnapshot = await readFile(join(root, 'runs', runFiles[0]!), 'utf8');
-        return { result: 'Runner output\nDONE', model: 'test-model', cli: 'test-cli', session_id: 'session-1' };
+        return {
+          result: 'Runner output\nDONE',
+          model: 'test-model',
+          cli: 'test-cli',
+          session_id: 'session-1',
+        };
       },
     };
 
@@ -289,7 +296,12 @@ describe('tick runner', () => {
       }),
       runner: {
         async run() {
-          return { result: 'Fake runner completed\nDONE', model: 'test-model', cli: 'test-cli', session_id: 'fake-session-1' };
+          return {
+            result: 'Fake runner completed\nDONE',
+            model: 'test-model',
+            cli: 'test-cli',
+            session_id: 'fake-session-1',
+          };
         },
       },
       resourceIndex: createFakeResourceIndex(),
@@ -355,7 +367,9 @@ describe('tick runner', () => {
     });
 
     const events = await readFile(join(root, 'events', '2026-07-05.jsonl'), 'utf8');
-    expect(events).toContain('"routing":{"runnerName":"fake-light","runnerKind":"fake","tier":"light"');
+    expect(events).toContain(
+      '"routing":{"runnerName":"fake-light","runnerKind":"fake","tier":"light"',
+    );
   });
 
   it('persists outbound publish intents before sink delivery', async () => {
@@ -482,8 +496,7 @@ describe('tick runner', () => {
                   updatedAt: '2026-07-05T12:05:00.000Z',
                 },
               },
-              derivedHints: {
-              },
+              derivedHints: {},
             },
           ];
         },
@@ -491,7 +504,12 @@ describe('tick runner', () => {
       runner: {
         async run() {
           callCount += 1;
-          return { result: 'Need more detail\nBLOCKED', model: 'test-model', cli: 'test-cli', session_id: 'session-2' };
+          return {
+            result: 'Need more detail\nBLOCKED',
+            model: 'test-model',
+            cli: 'test-cli',
+            session_id: 'session-2',
+          };
         },
       },
       resourceIndex: createFakeResourceIndex(),
@@ -530,7 +548,7 @@ describe('tick runner', () => {
         stageHistory: [],
         recentEventIds: [],
         syncedAt: '2026-07-05T12:00:00.000Z',
-          expectedEcho: { commentIds: [], labels: [] },
+        expectedEcho: { commentIds: [], labels: [] },
       },
       context: {},
       correlatedResources: [],
@@ -587,7 +605,9 @@ describe('tick runner', () => {
       'wake:status.completed',
       'wake:stage.done',
     ]);
-    expect(runRecords[0]?.summary).toBe('Implemented. The previous CI run FAILED, but this one passed.');
+    expect(runRecords[0]?.summary).toBe(
+      'Implemented. The previous CI run FAILED, but this one passed.',
+    );
     expect(runRecords[0]?.metadata).toMatchObject({
       envelope: 'structured',
     });
@@ -774,7 +794,7 @@ describe('tick runner', () => {
         stageHistory: [],
         recentEventIds: [],
         syncedAt: '2026-07-05T12:00:00.000Z',
-          expectedEcho: { commentIds: [], labels: [] },
+        expectedEcho: { commentIds: [], labels: [] },
       },
       context: {},
       correlatedResources: [],
@@ -787,7 +807,11 @@ describe('tick runner', () => {
       clock: { now: () => new Date('2026-07-05T12:10:00.000Z') },
       config,
       stateStore: store,
-      workSource: { async pollEvents() { return []; } },
+      workSource: {
+        async pollEvents() {
+          return [];
+        },
+      },
       outboundSink: {
         async deliverIntent(input) {
           if (input.event.sourceEventType === 'wake.labels.requested') {
@@ -806,7 +830,8 @@ describe('tick runner', () => {
       runner: {
         async run() {
           return {
-            result: 'Issue is well-specified. Please reply with /approved to proceed.\nAWAITING_APPROVAL',
+            result:
+              'Issue is well-specified. Please reply with /approved to proceed.\nAWAITING_APPROVAL',
             model: 'test-model',
             cli: 'test-cli',
             session_id: 'session-33',
@@ -884,7 +909,7 @@ describe('tick runner', () => {
         stageHistory: [],
         recentEventIds: [],
         syncedAt: '2026-07-05T12:00:00.000Z',
-          expectedEcho: { commentIds: [], labels: [] },
+        expectedEcho: { commentIds: [], labels: [] },
       },
       context: {
         lastRunSentinel: 'AWAITING_APPROVAL',
@@ -900,7 +925,11 @@ describe('tick runner', () => {
       clock: { now: () => new Date('2026-07-05T12:10:00.000Z') },
       config,
       stateStore: store,
-      workSource: { async pollEvents() { return []; } },
+      workSource: {
+        async pollEvents() {
+          return [];
+        },
+      },
       outboundSink: {
         async deliverIntent(input) {
           if (input.event.sourceEventType === 'wake.labels.requested') {
@@ -957,7 +986,7 @@ describe('tick runner', () => {
         stageHistory: [],
         recentEventIds: [],
         syncedAt: '2026-07-05T12:00:00.000Z',
-          expectedEcho: { commentIds: [], labels: [] },
+        expectedEcho: { commentIds: [], labels: [] },
       },
       context: {
         lastRunSentinel: 'AWAITING_APPROVAL',
@@ -973,7 +1002,11 @@ describe('tick runner', () => {
       clock: { now: () => new Date('2026-07-05T12:10:00.000Z') },
       config,
       stateStore: store,
-      workSource: { async pollEvents() { return []; } },
+      workSource: {
+        async pollEvents() {
+          return [];
+        },
+      },
       runner: {
         async run() {
           runnerCallCount += 1;
@@ -1033,7 +1066,7 @@ describe('tick runner', () => {
         stageHistory: [],
         recentEventIds: [],
         syncedAt: '2026-07-05T12:00:00.000Z',
-          expectedEcho: { commentIds: [], labels: [] },
+        expectedEcho: { commentIds: [], labels: [] },
       },
       context: {
         lastRunSentinel: 'AWAITING_APPROVAL',
@@ -1049,7 +1082,11 @@ describe('tick runner', () => {
       clock: { now: () => new Date('2026-07-05T12:10:00.000Z') },
       config,
       stateStore: store,
-      workSource: { async pollEvents() { return []; } },
+      workSource: {
+        async pollEvents() {
+          return [];
+        },
+      },
       runner: {
         async run() {
           runnerCallCount += 1;
@@ -1125,12 +1162,20 @@ describe('tick runner', () => {
       clock: { now: () => new Date('2026-07-05T12:10:00.000Z') },
       config,
       stateStore: store,
-      workSource: { async pollEvents() { return []; } },
+      workSource: {
+        async pollEvents() {
+          return [];
+        },
+      },
       runner: {
         async run(input) {
           runnerCallCount += 1;
           expect(input.action).toBe('refine');
-          return { result: 'The implementation updates the parser only.\nAWAITING_APPROVAL', model: 'test-model', cli: 'test-cli' };
+          return {
+            result: 'The implementation updates the parser only.\nAWAITING_APPROVAL',
+            model: 'test-model',
+            cli: 'test-cli',
+          };
         },
       },
       resourceIndex: createFakeResourceIndex(),
@@ -1205,7 +1250,11 @@ describe('tick runner', () => {
       clock: { now: () => new Date('2026-07-05T12:10:00.000Z') },
       config,
       stateStore: store,
-      workSource: { async pollEvents() { return []; } },
+      workSource: {
+        async pollEvents() {
+          return [];
+        },
+      },
       runner: {
         async run(input) {
           capturedAction = input.action;
@@ -1288,7 +1337,7 @@ describe('tick runner', () => {
         stageHistory: [],
         recentEventIds: [],
         syncedAt: '2026-07-05T12:00:00.000Z',
-          expectedEcho: { commentIds: [], labels: [] },
+        expectedEcho: { commentIds: [], labels: [] },
       },
       context: {
         lastRunSentinel: 'AWAITING_APPROVAL',
@@ -1304,7 +1353,11 @@ describe('tick runner', () => {
       clock: { now: () => new Date('2026-07-05T12:10:00.000Z') },
       config,
       stateStore: store,
-      workSource: { async pollEvents() { return []; } },
+      workSource: {
+        async pollEvents() {
+          return [];
+        },
+      },
       runner: {
         async run() {
           runnerCallCount += 1;
@@ -1385,12 +1438,20 @@ describe('tick runner', () => {
       clock: { now: () => new Date('2026-07-05T12:10:00.000Z') },
       config,
       stateStore: store,
-      workSource: { async pollEvents() { return []; } },
+      workSource: {
+        async pollEvents() {
+          return [];
+        },
+      },
       runner: {
         async run(input) {
           runnerCallCount += 1;
           capturedAction = input.action;
-          return { result: 'Renamed it and pushed.\nAWAITING_APPROVAL', model: 'test-model', cli: 'test-cli' };
+          return {
+            result: 'Renamed it and pushed.\nAWAITING_APPROVAL',
+            model: 'test-model',
+            cli: 'test-cli',
+          };
         },
       },
       resourceIndex: createFakeResourceIndex(),
@@ -1408,7 +1469,7 @@ describe('tick runner', () => {
     expect(projection?.context.lastRunSentinel).toBe('AWAITING_APPROVAL');
   });
 
-  it('does not route the revise run\'s status card to the triggering review thread (agent replies to threads itself)', async () => {
+  it("does not route the revise run's status card to the triggering review thread (agent replies to threads itself)", async () => {
     const store = createStateStore({ wakeRoot: root });
     const publishIntents: EventEnvelope[] = [];
 
@@ -1471,7 +1532,11 @@ describe('tick runner', () => {
       clock: { now: () => new Date('2026-07-05T12:10:00.000Z') },
       config,
       stateStore: store,
-      workSource: { async pollEvents() { return []; } },
+      workSource: {
+        async pollEvents() {
+          return [];
+        },
+      },
       outboundSink: {
         async deliverIntent(input) {
           if (input.event.sourceEventType === 'wake.publish.intent.requested') {
@@ -1482,7 +1547,11 @@ describe('tick runner', () => {
       },
       runner: {
         async run() {
-          return { result: 'Renamed it and pushed.\nAWAITING_APPROVAL', model: 'test-model', cli: 'test-cli' };
+          return {
+            result: 'Renamed it and pushed.\nAWAITING_APPROVAL',
+            model: 'test-model',
+            cli: 'test-cli',
+          };
         },
       },
       resourceIndex: createFakeResourceIndex(),
@@ -1567,11 +1636,19 @@ describe('tick runner', () => {
       clock: { now: () => new Date('2026-07-05T12:10:00.000Z') },
       config,
       stateStore: store,
-      workSource: { async pollEvents() { return []; } },
+      workSource: {
+        async pollEvents() {
+          return [];
+        },
+      },
       runner: {
         async run(input) {
           capturedAction = input.action;
-          return { result: 'Updated the docs link.\nAWAITING_APPROVAL', model: 'test-model', cli: 'test-cli' };
+          return {
+            result: 'Updated the docs link.\nAWAITING_APPROVAL',
+            model: 'test-model',
+            cli: 'test-cli',
+          };
         },
       },
       resourceIndex: createFakeResourceIndex(),
@@ -1646,7 +1723,11 @@ describe('tick runner', () => {
       clock: { now: () => new Date('2026-07-05T12:10:00.000Z') },
       config,
       stateStore: store,
-      workSource: { async pollEvents() { return []; } },
+      workSource: {
+        async pollEvents() {
+          return [];
+        },
+      },
       runner: {
         async run() {
           runnerCallCount += 1;
@@ -1665,7 +1746,11 @@ describe('tick runner', () => {
 
   it('marks synced approval replies pending before the next item is claimed', async () => {
     const store = createStateStore({ wakeRoot: root });
-    const deliveredEvents: Array<{ issueNumber: number | undefined; statusLabel: string; stageLabel: string }> = [];
+    const deliveredEvents: Array<{
+      issueNumber: number | undefined;
+      statusLabel: string;
+      stageLabel: string;
+    }> = [];
     let runnerCallCount = 0;
 
     for (const issueNumber of [41, 42]) {
@@ -1827,32 +1912,34 @@ describe('tick runner', () => {
       stateStore: store,
       workSource: {
         async pollEvents() {
-          return [{
-            schemaVersion: 1 as const,
-            eventId: 'evt-comment-43',
-            streamScope: 'work-item' as const,
-            direction: 'inbound' as const,
-            sourceSystem: 'github',
-            sourceEventType: 'ticket.comment.created',
-            sourceRefs: {
-              repo: 'atolis-hq/wake',
-              issueNumber: 43,
-              commentId: 'c-43',
-              resourceUri: githubIssueUri(43),
-            },
-            occurredAt: '2026-07-05T12:09:00.000Z',
-            ingestedAt: '2026-07-05T12:09:00.000Z',
-            trigger: 'context-only' as const,
-            payload: {
-              comment: {
-                id: 'c-43',
-                body: 'What is included in this change?',
-                author: { login: 'owner' },
-                createdAt: '2026-07-05T12:09:00.000Z',
-                updatedAt: '2026-07-05T12:09:00.000Z',
+          return [
+            {
+              schemaVersion: 1 as const,
+              eventId: 'evt-comment-43',
+              streamScope: 'work-item' as const,
+              direction: 'inbound' as const,
+              sourceSystem: 'github',
+              sourceEventType: 'ticket.comment.created',
+              sourceRefs: {
+                repo: 'atolis-hq/wake',
+                issueNumber: 43,
+                commentId: 'c-43',
+                resourceUri: githubIssueUri(43),
+              },
+              occurredAt: '2026-07-05T12:09:00.000Z',
+              ingestedAt: '2026-07-05T12:09:00.000Z',
+              trigger: 'context-only' as const,
+              payload: {
+                comment: {
+                  id: 'c-43',
+                  body: 'What is included in this change?',
+                  author: { login: 'owner' },
+                  createdAt: '2026-07-05T12:09:00.000Z',
+                  updatedAt: '2026-07-05T12:09:00.000Z',
+                },
               },
             },
-          }];
+          ];
         },
       },
       outboundSink: {
@@ -1921,7 +2008,7 @@ describe('tick runner', () => {
         stageHistory: [],
         recentEventIds: [],
         syncedAt: '2026-07-05T12:00:00.000Z',
-          expectedEcho: { commentIds: [], labels: [] },
+        expectedEcho: { commentIds: [], labels: [] },
       },
       context: {
         lastRunSentinel: 'AWAITING_APPROVAL',
@@ -1937,7 +2024,11 @@ describe('tick runner', () => {
       clock: { now: () => new Date('2026-07-05T12:10:00.000Z') },
       config,
       stateStore: store,
-      workSource: { async pollEvents() { return []; } },
+      workSource: {
+        async pollEvents() {
+          return [];
+        },
+      },
       runner: {
         async run() {
           runnerCallCount += 1;
@@ -1981,7 +2072,7 @@ describe('tick runner', () => {
         stageHistory: [],
         recentEventIds: [],
         syncedAt: '2026-07-05T12:00:00.000Z',
-          expectedEcho: { commentIds: [], labels: [] },
+        expectedEcho: { commentIds: [], labels: [] },
       },
       context: {},
       correlatedResources: [],
@@ -1994,7 +2085,11 @@ describe('tick runner', () => {
       clock: { now: () => new Date('2026-07-05T12:00:00.000Z') },
       config,
       stateStore: store,
-      workSource: { async pollEvents() { return []; } },
+      workSource: {
+        async pollEvents() {
+          return [];
+        },
+      },
       outboundSink: {
         async deliverIntent(input) {
           if (input.event.sourceEventType === 'wake.labels.requested') {
@@ -2017,8 +2112,12 @@ describe('tick runner', () => {
       },
       resourceIndex: createFakeResourceIndex(),
       workspaceManager: {
-        async prepareWorkspace() { throw new Error('git network failure'); },
-        async prepareReadOnlyClone() { throw new Error('git network failure'); },
+        async prepareWorkspace() {
+          throw new Error('git network failure');
+        },
+        async prepareReadOnlyClone() {
+          throw new Error('git network failure');
+        },
         async cleanupWorkspace() {},
       },
     });
@@ -2039,8 +2138,14 @@ describe('tick runner', () => {
     expect(publishedIntents[0]!.body).toContain('git network failure');
 
     const events = await readFile(join(root, 'events', '2026-07-05.jsonl'), 'utf8');
-    const completedEvent = events.split('\n').filter(Boolean).map((l: string) => JSON.parse(l))
-      .find((e: { payload?: { reason?: string } }) => e.payload?.reason === 'runner:infrastructure-error');
+    const completedEvent = events
+      .split('\n')
+      .filter(Boolean)
+      .map((l: string) => JSON.parse(l))
+      .find(
+        (e: { payload?: { reason?: string } }) =>
+          e.payload?.reason === 'runner:infrastructure-error',
+      );
     expect(completedEvent).toBeDefined();
     expect(completedEvent.payload.sentinel).toBe('FAILED');
 
@@ -2076,7 +2181,7 @@ describe('tick runner', () => {
         stageHistory: [],
         recentEventIds: [],
         syncedAt: '2026-07-05T12:00:00.000Z',
-          expectedEcho: { commentIds: [], labels: [] },
+        expectedEcho: { commentIds: [], labels: [] },
       },
       context: {},
       correlatedResources: [],
@@ -2111,7 +2216,12 @@ describe('tick runner', () => {
       },
       runner: {
         async run() {
-          return { result: 'Nope\nFAILED', model: 'test-model', cli: 'test-cli', session_id: 'session-4' };
+          return {
+            result: 'Nope\nFAILED',
+            model: 'test-model',
+            cli: 'test-cli',
+            session_id: 'session-4',
+          };
         },
       },
       resourceIndex: createFakeResourceIndex(),
@@ -2158,7 +2268,7 @@ describe('tick runner', () => {
         stageHistory: [],
         recentEventIds: [],
         syncedAt: '2026-07-05T12:00:00.000Z',
-          expectedEcho: { commentIds: [], labels: [] },
+        expectedEcho: { commentIds: [], labels: [] },
       },
       context: {},
       correlatedResources: [],
@@ -2503,10 +2613,16 @@ describe('tick runner', () => {
       config,
       stateStore: store,
       workSource: createFakeTicketingSystem({
-        tickets: [{
-          repo: 'atolis-hq/wake', number: 112, title: 'Quota pause', body: '',
-          labels: ['wake:queue'], comments: [],
-        }],
+        tickets: [
+          {
+            repo: 'atolis-hq/wake',
+            number: 112,
+            title: 'Quota pause',
+            body: '',
+            labels: ['wake:queue'],
+            comments: [],
+          },
+        ],
       }),
       outboundSink: {
         async deliverIntent({ event }) {
@@ -2519,7 +2635,8 @@ describe('tick runner', () => {
       runner: {
         async run() {
           return {
-            result: "Claude runner failed: You've hit your session limit - resets 1:10am (UTC)\nFAILED",
+            result:
+              "Claude runner failed: You've hit your session limit - resets 1:10am (UTC)\nFAILED",
             model: 'test-model',
             cli: 'Claude',
             failureClass: 'quota' as const,
@@ -2559,37 +2676,67 @@ describe('tick runner', () => {
       schemaVersion: 1,
       workItemKey: workId(124),
       issue: {
-        repo: 'atolis-hq/wake', number: 124, title: 'Recovered run', body: '',
-        labels: ['wake'], assignees: [], isPullRequest: false, state: 'open',
+        repo: 'atolis-hq/wake',
+        number: 124,
+        title: 'Recovered run',
+        body: '',
+        labels: ['wake'],
+        assignees: [],
+        isPullRequest: false,
+        state: 'open',
         url: 'https://example.test/issues/124',
-        createdAt: '2026-07-05T12:00:00.000Z', updatedAt: '2026-07-05T12:01:00.000Z',
+        createdAt: '2026-07-05T12:00:00.000Z',
+        updatedAt: '2026-07-05T12:01:00.000Z',
       },
       comments: [],
       wake: {
-        stage: 'done', lastRunId: 'run-124-new', syncedAt: '2026-07-05T12:01:00.000Z',
-        stageHistory: [], recentEventIds: [], expectedEcho: { commentIds: [], labels: [] },
+        stage: 'done',
+        lastRunId: 'run-124-new',
+        syncedAt: '2026-07-05T12:01:00.000Z',
+        stageHistory: [],
+        recentEventIds: [],
+        expectedEcho: { commentIds: [], labels: [] },
       },
       context: { lastRunAction: 'implement', lastRunSentinel: 'DONE' },
       correlatedResources: [],
     });
     await store.writeRunRecord({
-      schemaVersion: 1, runId: 'run-124-stale', workItemKey: workId(124),
-      repo: 'atolis-hq/wake', issueNumber: 124,
-      action: 'implement', status: 'running', startedAt: '2026-07-05T12:00:00.000Z',
+      schemaVersion: 1,
+      runId: 'run-124-stale',
+      workItemKey: workId(124),
+      repo: 'atolis-hq/wake',
+      issueNumber: 124,
+      action: 'implement',
+      status: 'running',
+      startedAt: '2026-07-05T12:00:00.000Z',
     });
     await store.writeRunRecord({
-      schemaVersion: 1, runId: 'run-124-new', workItemKey: workId(124),
-      repo: 'atolis-hq/wake', issueNumber: 124,
-      action: 'implement', status: 'completed', startedAt: '2026-07-05T12:00:30.000Z',
-      finishedAt: '2026-07-05T12:01:00.000Z', sentinel: 'DONE',
+      schemaVersion: 1,
+      runId: 'run-124-new',
+      workItemKey: workId(124),
+      repo: 'atolis-hq/wake',
+      issueNumber: 124,
+      action: 'implement',
+      status: 'completed',
+      startedAt: '2026-07-05T12:00:30.000Z',
+      finishedAt: '2026-07-05T12:01:00.000Z',
+      sentinel: 'DONE',
     });
 
     const tickRunner = createTickRunner({
       clock: { now: () => new Date('2026-07-05T12:02:00.000Z') },
       config,
       stateStore: store,
-      workSource: { async pollEvents() { return []; } },
-      runner: { async run() { throw new Error('should not run'); } },
+      workSource: {
+        async pollEvents() {
+          return [];
+        },
+      },
+      runner: {
+        async run() {
+          throw new Error('should not run');
+        },
+      },
       resourceIndex: createFakeResourceIndex(),
       workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
     });
@@ -2607,7 +2754,13 @@ describe('tick runner', () => {
   it('deletes the per-issue workspace and clears workspacePath when an issue is closed', async () => {
     const store = createStateStore({ wakeRoot: root });
     const workspacePath = join(root, 'workspaces', workId(200));
-    const transcriptPath = join(root, 'transcripts', workId(200), 'run-200-1', 'run-200-1.codex.implement.prompt.txt');
+    const transcriptPath = join(
+      root,
+      'transcripts',
+      workId(200),
+      'run-200-1',
+      'run-200-1.codex.implement.prompt.txt',
+    );
     await mkdir(workspacePath, { recursive: true });
     await mkdir(join(root, 'transcripts', workId(200), 'run-200-1'), { recursive: true });
     await writeFile(transcriptPath, 'raw prompt', 'utf8');
@@ -2647,8 +2800,16 @@ describe('tick runner', () => {
       clock: { now: () => new Date(nowIso) },
       config,
       stateStore: store,
-      workSource: { async pollEvents() { return []; } },
-      runner: { async run() { return { result: 'DONE', model: 'test', cli: 'test' }; } },
+      workSource: {
+        async pollEvents() {
+          return [];
+        },
+      },
+      runner: {
+        async run() {
+          return { result: 'DONE', model: 'test', cli: 'test' };
+        },
+      },
       resourceIndex: createFakeResourceIndex(),
       workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
     });
@@ -2657,14 +2818,23 @@ describe('tick runner', () => {
 
     await expect(access(workspacePath)).rejects.toThrow();
     await expect(access(transcriptPath)).rejects.toThrow();
-    const updatedProjection = await findByIssueRef(store, { repo: 'atolis-hq/wake', issueNumber: 200 });
+    const updatedProjection = await findByIssueRef(store, {
+      repo: 'atolis-hq/wake',
+      issueNumber: 200,
+    });
     expect(updatedProjection?.wake.workspacePath).toBeUndefined();
   });
 
   it('retains transcripts for closed workspace cleanup when configured', async () => {
     const store = createStateStore({ wakeRoot: root });
     const workspacePath = join(root, 'workspaces', workId(204));
-    const transcriptPath = join(root, 'transcripts', workId(204), 'run-204-1', 'run-204-1.codex.implement.prompt.txt');
+    const transcriptPath = join(
+      root,
+      'transcripts',
+      workId(204),
+      'run-204-1',
+      'run-204-1.codex.implement.prompt.txt',
+    );
     await mkdir(workspacePath, { recursive: true });
     await mkdir(join(root, 'transcripts', workId(204), 'run-204-1'), { recursive: true });
     await writeFile(transcriptPath, 'raw prompt', 'utf8');
@@ -2705,8 +2875,16 @@ describe('tick runner', () => {
       clock: { now: () => new Date(nowIso) },
       config,
       stateStore: store,
-      workSource: { async pollEvents() { return []; } },
-      runner: { async run() { return { result: 'DONE', model: 'test', cli: 'test' }; } },
+      workSource: {
+        async pollEvents() {
+          return [];
+        },
+      },
+      runner: {
+        async run() {
+          return { result: 'DONE', model: 'test', cli: 'test' };
+        },
+      },
       resourceIndex: createFakeResourceIndex(),
       workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
     });
@@ -2757,8 +2935,16 @@ describe('tick runner', () => {
       clock: { now: () => new Date(nowIso) },
       config,
       stateStore: store,
-      workSource: { async pollEvents() { return []; } },
-      runner: { async run() { return { result: 'DONE', model: 'test', cli: 'test' }; } },
+      workSource: {
+        async pollEvents() {
+          return [];
+        },
+      },
+      runner: {
+        async run() {
+          return { result: 'DONE', model: 'test', cli: 'test' };
+        },
+      },
       resourceIndex: createFakeResourceIndex(),
       workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
     });
@@ -2766,7 +2952,10 @@ describe('tick runner', () => {
     await tickRunner.runTick();
 
     await expect(access(canonicalClonePath)).resolves.toBeUndefined();
-    const updatedProjection = await findByIssueRef(store, { repo: 'atolis-hq/wake', issueNumber: 201 });
+    const updatedProjection = await findByIssueRef(store, {
+      repo: 'atolis-hq/wake',
+      issueNumber: 201,
+    });
     expect(updatedProjection?.wake.workspacePath).toBe(canonicalClonePath);
   });
 
@@ -2778,14 +2967,26 @@ describe('tick runner', () => {
       schemaVersion: 1,
       workItemKey: workId(202),
       issue: {
-        repo: 'atolis-hq/wake', number: 202, title: 'Locked workspace', body: '',
-        labels: [], assignees: [], isPullRequest: false, state: 'closed',
-        url: 'https://example.test/issues/202', createdAt: nowIso, updatedAt: nowIso,
+        repo: 'atolis-hq/wake',
+        number: 202,
+        title: 'Locked workspace',
+        body: '',
+        labels: [],
+        assignees: [],
+        isPullRequest: false,
+        state: 'closed',
+        url: 'https://example.test/issues/202',
+        createdAt: nowIso,
+        updatedAt: nowIso,
       },
       comments: [],
       wake: {
-        stage: 'done', workspacePath, syncedAt: nowIso, stageHistory: [],
-        recentEventIds: [], expectedEcho: { commentIds: [], labels: [] },
+        stage: 'done',
+        workspacePath,
+        syncedAt: nowIso,
+        stageHistory: [],
+        recentEventIds: [],
+        expectedEcho: { commentIds: [], labels: [] },
       },
       context: {},
       correlatedResources: [],
@@ -2798,16 +2999,28 @@ describe('tick runner', () => {
       config,
       stateStore: store,
       workSource: createFakeTicketingSystem({
-        tickets: [{
-          repo: 'atolis-hq/wake', number: 203, title: 'Runnable', body: '',
-          labels: ['wake:queue'], comments: [],
-        }],
+        tickets: [
+          {
+            repo: 'atolis-hq/wake',
+            number: 203,
+            title: 'Runnable',
+            body: '',
+            labels: ['wake:queue'],
+            comments: [],
+          },
+        ],
       }),
-      runner: { async run() { return { result: 'Refined\nDONE', model: 'test', cli: 'test' }; } },
+      runner: {
+        async run() {
+          return { result: 'Refined\nDONE', model: 'test', cli: 'test' };
+        },
+      },
       resourceIndex: createFakeResourceIndex(),
       workspaceManager: {
         ...fakeWorkspace,
-        async cleanupWorkspace() { throw new Error('EPERM: workspace is locked'); },
+        async cleanupWorkspace() {
+          throw new Error('EPERM: workspace is locked');
+        },
       },
     });
 
@@ -2815,11 +3028,14 @@ describe('tick runner', () => {
     const events = await store.listEventEnvelopes();
 
     expect(result.status).toBe('processed');
-    expect(events.some((event) =>
-      event.sourceEventType === 'wake.workspace.cleanup-failed' &&
-      event.workItemKey === workId(202) &&
-      event.payload.error === 'EPERM: workspace is locked'
-    )).toBe(true);
+    expect(
+      events.some(
+        (event) =>
+          event.sourceEventType === 'wake.workspace.cleanup-failed' &&
+          event.workItemKey === workId(202) &&
+          event.payload.error === 'EPERM: workspace is locked',
+      ),
+    ).toBe(true);
   });
 
   it('does not overwrite a completed run record when outbound delivery fails (S1)', async () => {
@@ -2832,10 +3048,16 @@ describe('tick runner', () => {
       config,
       stateStore: store,
       workSource: createFakeTicketingSystem({
-        tickets: [{
-          repo: 'atolis-hq/wake', number: 40, title: 'Delivery failure', body: '',
-          labels: ['wake:queue'], comments: [],
-        }],
+        tickets: [
+          {
+            repo: 'atolis-hq/wake',
+            number: 40,
+            title: 'Delivery failure',
+            body: '',
+            labels: ['wake:queue'],
+            comments: [],
+          },
+        ],
       }),
       outboundSink: {
         async deliverIntent() {
@@ -2844,7 +3066,12 @@ describe('tick runner', () => {
       },
       runner: {
         async run() {
-          return { result: 'Refined\nDONE', model: 'test-model', cli: 'test-cli', session_id: 'session-40' };
+          return {
+            result: 'Refined\nDONE',
+            model: 'test-model',
+            cli: 'test-cli',
+            session_id: 'session-40',
+          };
         },
       },
       resourceIndex: createFakeResourceIndex(),
@@ -2880,15 +3107,25 @@ describe('tick runner', () => {
       schemaVersion: 1,
       workItemKey: workId(41),
       issue: {
-        repo: 'atolis-hq/wake', number: 41, title: 'Outbox retry', body: '',
-        labels: [], assignees: [], isPullRequest: false, state: 'open',
+        repo: 'atolis-hq/wake',
+        number: 41,
+        title: 'Outbox retry',
+        body: '',
+        labels: [],
+        assignees: [],
+        isPullRequest: false,
+        state: 'open',
         url: 'https://example.test/issues/41',
-        createdAt: '2026-07-05T12:00:00.000Z', updatedAt: '2026-07-05T12:00:00.000Z',
+        createdAt: '2026-07-05T12:00:00.000Z',
+        updatedAt: '2026-07-05T12:00:00.000Z',
       },
       comments: [],
       wake: {
-        stage: 'implement', syncedAt: '2026-07-05T12:00:00.000Z',
-        stageHistory: [], recentEventIds: [], expectedEcho: { commentIds: [], labels: [] },
+        stage: 'implement',
+        syncedAt: '2026-07-05T12:00:00.000Z',
+        stageHistory: [],
+        recentEventIds: [],
+        expectedEcho: { commentIds: [], labels: [] },
       },
       context: {},
       correlatedResources: [],
@@ -2906,7 +3143,12 @@ describe('tick runner', () => {
       occurredAt: '2026-07-05T11:00:00.000Z',
       ingestedAt: '2026-07-05T11:00:00.000Z',
       trigger: 'context-only' as const,
-      payload: { kind: 'question', body: 'What should happen here?', action: 'refine', runId: 'run-41' },
+      payload: {
+        kind: 'question',
+        body: 'What should happen here?',
+        action: 'refine',
+        runId: 'run-41',
+      },
     };
     await store.appendEventEnvelope(orphanedIntent);
 
@@ -2914,14 +3156,22 @@ describe('tick runner', () => {
       clock: { now: () => new Date('2026-07-05T12:00:00.000Z') },
       config,
       stateStore: store,
-      workSource: { async pollEvents() { return []; } },
+      workSource: {
+        async pollEvents() {
+          return [];
+        },
+      },
       outboundSink: {
         async deliverIntent() {
           deliverAttempts += 1;
           throw new Error('still down');
         },
       },
-      runner: { async run() { throw new Error('should not run'); } },
+      runner: {
+        async run() {
+          throw new Error('should not run');
+        },
+      },
       resourceIndex: createFakeResourceIndex(),
       workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
     });
@@ -2949,26 +3199,42 @@ describe('tick runner', () => {
       schemaVersion: 1,
       workItemKey: workId(50),
       issue: {
-        repo: 'atolis-hq/wake', number: 50, title: 'Infra blip', body: '',
-        labels: ['wake:queue'], assignees: [], isPullRequest: false, state: 'open',
+        repo: 'atolis-hq/wake',
+        number: 50,
+        title: 'Infra blip',
+        body: '',
+        labels: ['wake:queue'],
+        assignees: [],
+        isPullRequest: false,
+        state: 'open',
         url: 'https://example.test/issues/50',
-        createdAt: '2026-07-05T12:00:00.000Z', updatedAt: '2026-07-05T12:00:00.000Z',
+        createdAt: '2026-07-05T12:00:00.000Z',
+        updatedAt: '2026-07-05T12:00:00.000Z',
       },
       comments: [
         {
-          id: 'c-trigger', body: 'Please pick this up.', author: { login: 'owner' },
-          createdAt: '2026-07-05T12:00:00.000Z', updatedAt: '2026-07-05T12:00:00.000Z',
+          id: 'c-trigger',
+          body: 'Please pick this up.',
+          author: { login: 'owner' },
+          createdAt: '2026-07-05T12:00:00.000Z',
+          updatedAt: '2026-07-05T12:00:00.000Z',
           isBotAuthored: false,
         },
       ],
       latestComment: {
-        id: 'c-trigger', body: 'Please pick this up.', author: { login: 'owner' },
-        createdAt: '2026-07-05T12:00:00.000Z', updatedAt: '2026-07-05T12:00:00.000Z',
+        id: 'c-trigger',
+        body: 'Please pick this up.',
+        author: { login: 'owner' },
+        createdAt: '2026-07-05T12:00:00.000Z',
+        updatedAt: '2026-07-05T12:00:00.000Z',
         isBotAuthored: false,
       },
       wake: {
-        stage: 'queue', stageHistory: [], recentEventIds: [],
-        syncedAt: '2026-07-05T12:00:00.000Z', expectedEcho: { commentIds: [], labels: [] },
+        stage: 'queue',
+        stageHistory: [],
+        recentEventIds: [],
+        syncedAt: '2026-07-05T12:00:00.000Z',
+        expectedEcho: { commentIds: [], labels: [] },
       },
       context: {},
       correlatedResources: [],
@@ -2978,7 +3244,11 @@ describe('tick runner', () => {
       clock: { now: () => new Date('2026-07-05T12:00:00.000Z') },
       config,
       stateStore: store,
-      workSource: { async pollEvents() { return []; } },
+      workSource: {
+        async pollEvents() {
+          return [];
+        },
+      },
       runner: {
         async run() {
           runnerCallCount += 1;
@@ -2987,7 +3257,9 @@ describe('tick runner', () => {
       },
       resourceIndex: createFakeResourceIndex(),
       workspaceManager: {
-        async prepareWorkspace() { return { workspacePath: 'unused', mergeConflictDetected: false }; },
+        async prepareWorkspace() {
+          return { workspacePath: 'unused', mergeConflictDetected: false };
+        },
         async prepareReadOnlyClone() {
           prepareCallCount += 1;
           if (prepareCallCount === 1) {
@@ -3135,8 +3407,9 @@ describe('tick runner', () => {
 
     // state/ (projection AND index) is a rebuildable cache over events/.
     await rm(join(root, 'state'), { recursive: true, force: true });
-    await createProjectionUpdater({ stateStore: store, resourceIndex })
-      .rebuildFromEvents(await store.listEventEnvelopes());
+    await createProjectionUpdater({ stateStore: store, resourceIndex }).rebuildFromEvents(
+      await store.listEventEnvelopes(),
+    );
 
     // If the registration were stamped with the tick's own `nowIso` it would
     // sort before the 12:00:01 upsert that creates the projection, fold
@@ -3215,8 +3488,9 @@ describe('tick runner', () => {
 
     // state/ is a rebuildable cache over events/ — nothing more.
     await rm(join(root, 'state'), { recursive: true, force: true });
-    await createProjectionUpdater({ stateStore: store, resourceIndex })
-      .rebuildFromEvents(await store.listEventEnvelopes());
+    await createProjectionUpdater({ stateStore: store, resourceIndex }).rebuildFromEvents(
+      await store.listEventEnvelopes(),
+    );
     const after = await findByIssueRef(store, { repo: 'atolis-hq/wake', issueNumber: 63 });
 
     // Every event this tick stamps must be dated when it actually happened, so
@@ -3272,8 +3546,7 @@ describe('tick runner', () => {
     expect(registeredBefore).toHaveLength(1);
 
     const workItemKey =
-      (await findByIssueRef(store, { repo: 'atolis-hq/wake', issueNumber: 61 }))
-        ?.workItemKey ?? '';
+      (await findByIssueRef(store, { repo: 'atolis-hq/wake', issueNumber: 61 }))?.workItemKey ?? '';
 
     // The operator (or a later `wake correlate` command) deliberately
     // retracts the only correlated resource, leaving correlatedResources[]
@@ -3296,7 +3569,10 @@ describe('tick runner', () => {
     await store.appendEventEnvelope(retraction);
     await projectionUpdater.rebuildFromEvents([retraction]);
 
-    const afterRetraction = await findByIssueRef(store, { repo: 'atolis-hq/wake', issueNumber: 61 });
+    const afterRetraction = await findByIssueRef(store, {
+      repo: 'atolis-hq/wake',
+      issueNumber: 61,
+    });
     expect(afterRetraction?.correlatedResources).toEqual([]);
 
     // A later tick must not silently re-claim the retracted uri for this work
@@ -3311,7 +3587,10 @@ describe('tick runner', () => {
     );
     expect(registeredAfter).toHaveLength(1);
 
-    const finalProjection = await findByIssueRef(store, { repo: 'atolis-hq/wake', issueNumber: 61 });
+    const finalProjection = await findByIssueRef(store, {
+      repo: 'atolis-hq/wake',
+      issueNumber: 61,
+    });
     expect(finalProjection?.correlatedResources).toEqual([]);
     expect(finalProjection?.workItemKey).toBe(workItemKey);
 
@@ -3432,9 +3711,8 @@ describe('tick runner', () => {
     });
 
     await tickRunner.runTick();
-    const firstWorkId = (
-      await findByIssueRef(store, { repo: 'atolis-hq/wake', issueNumber: 201 })
-    )?.workItemKey;
+    const firstWorkId = (await findByIssueRef(store, { repo: 'atolis-hq/wake', issueNumber: 201 }))
+      ?.workItemKey;
     expect(isWorkId(firstWorkId ?? '')).toBe(true);
 
     tickets[0]!.comments.push({ id: 'c-201', body: 'A new comment', author: { login: 'alice' } });
@@ -3551,7 +3829,8 @@ describe('tick runner', () => {
     // First tick mints the work item and registers its origin ticket.
     await tickRunner.runTick();
     const workItemKey =
-      (await findByIssueRef(store, { repo: 'atolis-hq/wake', issueNumber: 301 }))?.workItemKey ?? '';
+      (await findByIssueRef(store, { repo: 'atolis-hq/wake', issueNumber: 301 }))?.workItemKey ??
+      '';
     expect(isWorkId(workItemKey)).toBe(true);
     const uri = 'fake-ticketing:issue:atolis-hq/wake#301';
     expect(await resourceIndex.resolve(uri)).toBe(workItemKey);
@@ -3777,7 +4056,9 @@ describe('tick runner', () => {
       expect(runId.startsWith('pending-work-')).toBe(true);
     }
     // The seeded work id appears; the bare "pending-41-"/"pending-42-" shape never does.
-    expect(pendingRunIds.some((id) => id.includes(workId(41)) || id.includes(workId(42)))).toBe(true);
+    expect(pendingRunIds.some((id) => id.includes(workId(41)) || id.includes(workId(42)))).toBe(
+      true,
+    );
     expect(pendingRunIds.every((id) => !/^pending-4[12]-/.test(id))).toBe(true);
   });
 
@@ -3879,7 +4160,11 @@ describe('tick runner', () => {
       clock: { now: () => new Date('2026-07-05T12:30:00.000Z') },
       config,
       stateStore: store,
-      workSource: { async pollEvents() { return []; } },
+      workSource: {
+        async pollEvents() {
+          return [];
+        },
+      },
       runner: {
         async run() {
           runs += 1;
@@ -3953,8 +4238,7 @@ describe('tick runner', () => {
 
     // Minted, so it is read back off the projection rather than spelled out.
     const mintedWorkItemKey =
-      (await findByIssueRef(store, { repo: 'atolis-hq/wake', issueNumber: 70 }))
-        ?.workItemKey ?? '';
+      (await findByIssueRef(store, { repo: 'atolis-hq/wake', issueNumber: 70 }))?.workItemKey ?? '';
     expect(isWorkId(mintedWorkItemKey)).toBe(true);
 
     // Simulate additional correlated resources being discovered (e.g. an
@@ -3969,7 +4253,11 @@ describe('tick runner', () => {
       direction: 'internal',
       sourceSystem: 'wake',
       sourceEventType: CORRELATION_REGISTERED_EVENT,
-      sourceRefs: { repo: 'atolis-hq/wake', issueNumber: 70, resourceUri: 'github:pr:atolis-hq/wake#71' },
+      sourceRefs: {
+        repo: 'atolis-hq/wake',
+        issueNumber: 70,
+        resourceUri: 'github:pr:atolis-hq/wake#71',
+      },
       occurredAt: '2026-07-05T12:05:00.000Z',
       ingestedAt: '2026-07-05T12:05:00.000Z',
       trigger: 'context-only',
@@ -4027,7 +4315,11 @@ describe('tick runner', () => {
       direction: 'internal',
       sourceSystem: 'wake',
       sourceEventType: CORRELATION_REGISTERED_EVENT,
-      sourceRefs: { repo: 'atolis-hq/wake', issueNumber: 90, resourceUri: 'github:pr:atolis-hq/wake#71' },
+      sourceRefs: {
+        repo: 'atolis-hq/wake',
+        issueNumber: 90,
+        resourceUri: 'github:pr:atolis-hq/wake#71',
+      },
       occurredAt: '2026-07-05T12:08:00.000Z',
       ingestedAt: '2026-07-05T12:08:00.000Z',
       trigger: 'context-only',
@@ -4125,7 +4417,11 @@ describe('tick runner', () => {
       direction: 'internal',
       sourceSystem: 'wake',
       sourceEventType: CORRELATION_REGISTERED_EVENT,
-      sourceRefs: { repo: 'atolis-hq/wake', issueNumber: 101, resourceUri: 'github:pr:atolis-hq/wake#72' },
+      sourceRefs: {
+        repo: 'atolis-hq/wake',
+        issueNumber: 101,
+        resourceUri: 'github:pr:atolis-hq/wake#72',
+      },
       occurredAt: '2026-07-05T12:20:00.000Z',
       ingestedAt: '2026-07-05T12:20:00.000Z',
       trigger: 'context-only',
@@ -4143,7 +4439,11 @@ describe('tick runner', () => {
       direction: 'internal',
       sourceSystem: 'wake',
       sourceEventType: CORRELATION_REGISTERED_EVENT,
-      sourceRefs: { repo: 'atolis-hq/wake', issueNumber: 100, resourceUri: 'github:pr:atolis-hq/wake#72' },
+      sourceRefs: {
+        repo: 'atolis-hq/wake',
+        issueNumber: 100,
+        resourceUri: 'github:pr:atolis-hq/wake#72',
+      },
       occurredAt: '2026-07-05T12:30:00.000Z',
       ingestedAt: '2026-07-05T12:30:00.000Z',
       trigger: 'context-only',
@@ -4168,8 +4468,14 @@ describe('tick runner', () => {
       await projectionUpdater.rebuildFromEvents([event]);
     }
 
-    const beforeCreatedFirst = await findByIssueRef(store, { repo: 'atolis-hq/wake', issueNumber: 100 });
-    const beforeCreatedSecond = await findByIssueRef(store, { repo: 'atolis-hq/wake', issueNumber: 101 });
+    const beforeCreatedFirst = await findByIssueRef(store, {
+      repo: 'atolis-hq/wake',
+      issueNumber: 100,
+    });
+    const beforeCreatedSecond = await findByIssueRef(store, {
+      repo: 'atolis-hq/wake',
+      issueNumber: 101,
+    });
     expect(beforeCreatedSecond?.correlatedResources).toEqual([
       {
         resourceUri: 'github:pr:atolis-hq/wake#72',
@@ -4188,19 +4494,21 @@ describe('tick runner', () => {
         registeredAt: '2026-07-05T12:30:00.000Z',
       },
     ]);
-    expect(await resourceIndex.resolve('github:pr:atolis-hq/wake#72')).toBe(
-      workId(101),
-    );
+    expect(await resourceIndex.resolve('github:pr:atolis-hq/wake#72')).toBe(workId(101));
 
     const disagreeingOrderConflictEventBefore = (await store.listEventEnvelopes()).find(
-      (event) => event.sourceEventType === CORRELATION_PRIMARY_CONFLICT_EVENT
-        && (event.payload as { resourceUri?: string }).resourceUri === 'github:pr:atolis-hq/wake#72',
+      (event) =>
+        event.sourceEventType === CORRELATION_PRIMARY_CONFLICT_EVENT &&
+        (event.payload as { resourceUri?: string }).resourceUri === 'github:pr:atolis-hq/wake#72',
     );
     expect(disagreeingOrderConflictEventBefore?.eventId).toBe(
       'wake-100-shared-registered-primary-conflict',
     );
 
-    const beforeIncumbent = await findByIssueRef(store, { repo: 'atolis-hq/wake', issueNumber: 70 });
+    const beforeIncumbent = await findByIssueRef(store, {
+      repo: 'atolis-hq/wake',
+      issueNumber: 70,
+    });
     expect(beforeIncumbent?.correlatedResources.length ?? 0).toBeGreaterThanOrEqual(2);
 
     const beforeClaimant = await findByIssueRef(store, { repo: 'atolis-hq/wake', issueNumber: 90 });
@@ -4213,9 +4521,7 @@ describe('tick runner', () => {
         registeredAt: '2026-07-05T12:08:00.000Z',
       },
     ]);
-    expect(await resourceIndex.resolve('github:pr:atolis-hq/wake#71')).toBe(
-      mintedWorkItemKey,
-    );
+    expect(await resourceIndex.resolve('github:pr:atolis-hq/wake#71')).toBe(mintedWorkItemKey);
 
     const beforeAllEvents = await store.listEventEnvelopes();
     const conflictEventCountBefore = beforeAllEvents.filter(
@@ -4247,19 +4553,24 @@ describe('tick runner', () => {
     // The disagreeing-order pair: replay must reproduce the *live* winner
     // (#101, who registered first chronologically), not whichever work item
     // a workItemKey-grouped rebuild happened to visit first.
-    const afterCreatedFirst = await findByIssueRef(store, { repo: 'atolis-hq/wake', issueNumber: 100 });
+    const afterCreatedFirst = await findByIssueRef(store, {
+      repo: 'atolis-hq/wake',
+      issueNumber: 100,
+    });
     expect(afterCreatedFirst).toEqual(beforeCreatedFirst);
 
-    const afterCreatedSecond = await findByIssueRef(store, { repo: 'atolis-hq/wake', issueNumber: 101 });
+    const afterCreatedSecond = await findByIssueRef(store, {
+      repo: 'atolis-hq/wake',
+      issueNumber: 101,
+    });
     expect(afterCreatedSecond).toEqual(beforeCreatedSecond);
 
-    expect(await resourceIndex.resolve('github:pr:atolis-hq/wake#72')).toBe(
-      workId(101),
-    );
+    expect(await resourceIndex.resolve('github:pr:atolis-hq/wake#72')).toBe(workId(101));
 
     const disagreeingOrderConflictEventAfter = (await store.listEventEnvelopes()).find(
-      (event) => event.sourceEventType === CORRELATION_PRIMARY_CONFLICT_EVENT
-        && (event.payload as { resourceUri?: string }).resourceUri === 'github:pr:atolis-hq/wake#72',
+      (event) =>
+        event.sourceEventType === CORRELATION_PRIMARY_CONFLICT_EVENT &&
+        (event.payload as { resourceUri?: string }).resourceUri === 'github:pr:atolis-hq/wake#72',
     );
     expect(disagreeingOrderConflictEventAfter?.eventId).toBe(
       disagreeingOrderConflictEventBefore?.eventId,
@@ -4314,14 +4625,20 @@ describe('tick runner', () => {
       config.sources.github.policy.requiredLabels = ['wake:implement'];
 
       const artifactVerifier = createFakeArtifactVerifier({
-        verifies: [{ url: 'https://example.test/org/repo/pull/91', resourceUri: 'github:pr:org/repo#91' }],
+        verifies: [
+          { url: 'https://example.test/org/repo/pull/91', resourceUri: 'github:pr:org/repo#91' },
+        ],
       });
 
       const tickRunner = createTickRunner({
         clock: { now: () => new Date('2026-07-05T12:00:00.000Z') },
         config,
         stateStore: store,
-        workSource: { async pollEvents() { return []; } },
+        workSource: {
+          async pollEvents() {
+            return [];
+          },
+        },
         runner: {
           async run() {
             return {
@@ -4403,7 +4720,11 @@ describe('tick runner', () => {
         clock: { now: () => new Date('2026-07-05T12:00:00.000Z') },
         config,
         stateStore: store,
-        workSource: { async pollEvents() { return []; } },
+        workSource: {
+          async pollEvents() {
+            return [];
+          },
+        },
         runner: {
           async run() {
             return {
@@ -4438,7 +4759,7 @@ describe('tick runner', () => {
       ).toBe(false);
     });
 
-    it('threads the work item\'s own repo into the artifact verifier context', async () => {
+    it("threads the work item's own repo into the artifact verifier context", async () => {
       // Fix 3 regression: the artifact verifier must be able to confirm a
       // reported PR's repo matches the work item's own repo, not just its
       // branch — a low-entropy branch name like wake/issue-<n> could
@@ -4491,7 +4812,11 @@ describe('tick runner', () => {
         clock: { now: () => new Date('2026-07-05T12:00:00.000Z') },
         config,
         stateStore: store,
-        workSource: { async pollEvents() { return []; } },
+        workSource: {
+          async pollEvents() {
+            return [];
+          },
+        },
         runner: {
           async run() {
             return {
@@ -4844,7 +5169,11 @@ describe('tick runner', () => {
         clock: { now: () => new Date('2026-07-05T12:00:00.000Z') },
         config,
         stateStore: store,
-        workSource: { async pollEvents() { return []; } },
+        workSource: {
+          async pollEvents() {
+            return [];
+          },
+        },
         outboundSink: githubIssueSink,
         runner: {
           async run(input) {
@@ -4982,7 +5311,11 @@ describe('tick runner', () => {
             author: 'contributor',
             headRef: 'wake/91',
             comments: [
-              { id: 'prc-1', body: 'Please also handle the null case on line 42.', author: 'reviewer' },
+              {
+                id: 'prc-1',
+                body: 'Please also handle the null case on line 42.',
+                author: 'reviewer',
+              },
             ],
           },
         ],
@@ -5016,7 +5349,12 @@ describe('tick runner', () => {
       });
 
       const workSource = createWorkSourceFanIn([
-        { source: 'fake-ticketing', async pollEvents() { return []; } },
+        {
+          source: 'fake-ticketing',
+          async pollEvents() {
+            return [];
+          },
+        },
         { source: 'fake-github-pr', pollEvents: prActivitySource.pollEvents },
       ]);
 
@@ -5071,7 +5409,9 @@ describe('tick runner', () => {
       // the resourceUri on the triggering run's publish intent carries the
       // PR surface, and only the 'github-pr' sink received it.
       expect(
-        githubSinkReceived.some((event) => event.sourceEventType === 'wake.publish.intent.requested'),
+        githubSinkReceived.some(
+          (event) => event.sourceEventType === 'wake.publish.intent.requested',
+        ),
       ).toBe(false);
       expect(prSinkReceived).toHaveLength(1);
       expect(prSinkReceived[0]?.sourceEventType).toBe('wake.publish.intent.requested');
@@ -5107,8 +5447,18 @@ describe('tick runner', () => {
         config,
         stateStore: store,
         workSource: createWorkSourceFanIn([
-          { source: 'fake-ticketing', async pollEvents() { return []; } },
-          { source: 'fake-github-pr', async pollEvents() { return []; } },
+          {
+            source: 'fake-ticketing',
+            async pollEvents() {
+              return [];
+            },
+          },
+          {
+            source: 'fake-github-pr',
+            async pollEvents() {
+              return [];
+            },
+          },
         ]),
         outboundSink,
         runner: {
@@ -5183,8 +5533,18 @@ describe('tick runner', () => {
         config,
         stateStore: store,
         workSource: createWorkSourceFanIn([
-          { source: 'fake-ticketing', async pollEvents() { return []; } },
-          { source: 'fake-github-pr', async pollEvents() { return []; } },
+          {
+            source: 'fake-ticketing',
+            async pollEvents() {
+              return [];
+            },
+          },
+          {
+            source: 'fake-github-pr',
+            async pollEvents() {
+              return [];
+            },
+          },
         ]),
         outboundSink,
         runner: {

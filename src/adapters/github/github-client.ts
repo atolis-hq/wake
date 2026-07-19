@@ -31,12 +31,7 @@ export function createGitHubClient(token: string) {
 
       return results.slice(0, maxResults);
     },
-    async listComments(
-      owner: string,
-      repo: string,
-      issueNumber: number,
-      perPage: number,
-    ) {
+    async listComments(owner: string, repo: string, issueNumber: number, perPage: number) {
       return octokit.paginate(octokit.rest.issues.listComments, {
         owner,
         repo,
@@ -44,12 +39,7 @@ export function createGitHubClient(token: string) {
         per_page: perPage,
       });
     },
-    async createComment(
-      owner: string,
-      repo: string,
-      issueNumber: number,
-      body: string,
-    ) {
+    async createComment(owner: string, repo: string, issueNumber: number, body: string) {
       return octokit.rest.issues.createComment({
         owner,
         repo,
@@ -57,12 +47,7 @@ export function createGitHubClient(token: string) {
         body,
       });
     },
-    async setLabels(
-      owner: string,
-      repo: string,
-      issueNumber: number,
-      labels: string[],
-    ) {
+    async setLabels(owner: string, repo: string, issueNumber: number, labels: string[]) {
       return octokit.rest.issues.setLabels({
         owner,
         repo,

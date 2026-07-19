@@ -40,7 +40,7 @@ describe('claude runner command building', () => {
       stageHistory: [],
       recentEventIds: [],
       syncedAt: '2026-07-05T12:00:00.000Z',
-          expectedEcho: { commentIds: [], labels: [] },
+      expectedEcho: { commentIds: [], labels: [] },
     },
     context: {},
     correlatedResources: [],
@@ -130,9 +130,7 @@ describe('claude runner command building', () => {
     // ship `<!-- wake:work-item {{workItemKey}} -->` literally — present-looking
     // and useless — with nothing to catch it. This is the end-to-end guard:
     // real projection in, substituted marker out.
-    expect(result.prompt).toContain(
-      '<!-- wake:work-item work-01JQZX9K2N4P6R8T0V2W4Y6A8C -->',
-    );
+    expect(result.prompt).toContain('<!-- wake:work-item work-01JQZX9K2N4P6R8T0V2W4Y6A8C -->');
     expect(result.prompt).not.toContain('{{workItemKey}}');
     expect(result.prompt).toContain('shared-user');
     expect(result.prompt).toContain('Please proceed');
@@ -248,7 +246,9 @@ describe('claude runner command building', () => {
         expect(result.harnessPrompt).toContain('must be exactly one of:');
         expect(result.harnessPrompt).toContain('AWAITING_APPROVAL, BLOCKED, FAILED');
         expect(result.harnessPrompt).not.toContain('DONE, BLOCKED, FAILED');
-        expect(result.harnessPrompt).toContain('- AWAITING_APPROVAL: the stage objective is complete');
+        expect(result.harnessPrompt).toContain(
+          '- AWAITING_APPROVAL: the stage objective is complete',
+        );
         expect(result.harnessPrompt).not.toContain('- DONE:');
         expect(result.prompt).not.toContain('must be exactly one of:');
         expect(result.prompt).not.toContain('AWAITING_APPROVAL, BLOCKED, FAILED');
@@ -657,9 +657,7 @@ describe('claude runner command building', () => {
       runId: 'run-8-1783282434129',
     });
 
-    expect(name).toBe(
-      'Wake-issue-8-update-readme-with-runner-config-documen-run-8-1783282434129',
-    );
+    expect(name).toBe('Wake-issue-8-update-readme-with-runner-config-documen-run-8-1783282434129');
   });
 
   it('formats a run correlation log line with run and recent event ids', () => {
@@ -872,7 +870,7 @@ describe('claude runner command building', () => {
             stageHistory: [],
             recentEventIds: [],
             syncedAt: '2026-07-05T12:00:00.000Z',
-          expectedEcho: { commentIds: [], labels: [] },
+            expectedEcho: { commentIds: [], labels: [] },
           },
           context: {},
           correlatedResources: [],
@@ -972,17 +970,21 @@ describe('claude runner command building', () => {
   );
 
   it('classifies Claude CLI quota failures separately from infra failures', () => {
-    expect(classifyClaudeCliFailure({
-      stdout: '',
-      stderr: 'Error: rate limit exceeded',
-      timedOut: false,
-    })).toBe('quota');
+    expect(
+      classifyClaudeCliFailure({
+        stdout: '',
+        stderr: 'Error: rate limit exceeded',
+        timedOut: false,
+      }),
+    ).toBe('quota');
 
-    expect(classifyClaudeCliFailure({
-      stdout: '',
-      stderr: 'spawn claude ENOENT',
-      timedOut: false,
-    })).toBe('infra');
+    expect(
+      classifyClaudeCliFailure({
+        stdout: '',
+        stderr: 'spawn claude ENOENT',
+        timedOut: false,
+      }),
+    ).toBe('infra');
   });
 
   it('classifies session limit (429) as quota not infra', () => {
@@ -997,50 +999,53 @@ describe('claude runner command building', () => {
     expect(classifyClaudeCliFailure({ stdout, stderr: '', timedOut: false })).toBe('quota');
   });
 
-  it.skipIf(platform === 'win32')('surfaces non-JSON stdout from failed Claude invocations', async () => {
-    const commandDir = await mkdtemp(join(tmpdir(), 'wake-claude-cli-'));
-    const command = join(commandDir, 'claude-fails');
-    await writeFile(
-      command,
-      [
-        '#!/usr/bin/env bash',
-        'printf "%s\\n" "Claude Code login required"',
-        'printf "%s\\n" "stderr detail" >&2',
-        'exit 1',
-      ].join('\n'),
-      'utf8',
-    );
-    await chmod(command, 0o755);
-
-    const runner = createClaudeRunner({
-      command,
-      cwd: process.cwd(),
-      settings: {
+  it.skipIf(platform === 'win32')(
+    'surfaces non-JSON stdout from failed Claude invocations',
+    async () => {
+      const commandDir = await mkdtemp(join(tmpdir(), 'wake-claude-cli-'));
+      const command = join(commandDir, 'claude-fails');
+      await writeFile(
         command,
-        model: 'haiku',
-        models: { default: 'haiku' },
-        smokeModel: 'haiku',
-        sessionName: 'Wake',
-        remoteControlName: 'Wake',
-        smokePrompt: defaultSmokePrompt,
-        timeoutMs: 10_000,
-        remoteControl: { enabled: false },
-      },
-    });
+        [
+          '#!/usr/bin/env bash',
+          'printf "%s\\n" "Claude Code login required"',
+          'printf "%s\\n" "stderr detail" >&2',
+          'exit 1',
+        ].join('\n'),
+        'utf8',
+      );
+      await chmod(command, 0o755);
 
-    const result = await runner.run({
-      action: 'implement',
-      projection: baseProjection,
-      recentEvents: [],
-      config: createDefaultWakeConfig(process.cwd()),
-      runId: 'run-12-stdout-failure',
-    });
+      const runner = createClaudeRunner({
+        command,
+        cwd: process.cwd(),
+        settings: {
+          command,
+          model: 'haiku',
+          models: { default: 'haiku' },
+          smokeModel: 'haiku',
+          sessionName: 'Wake',
+          remoteControlName: 'Wake',
+          smokePrompt: defaultSmokePrompt,
+          timeoutMs: 10_000,
+          remoteControl: { enabled: false },
+        },
+      });
 
-    expect(result.result).toContain('Claude runner failed');
-    expect(result.result).toContain('stderr detail');
-    expect(result.result).toContain('Claude Code login required');
-    expect(result.metadata?.stdout).toBe('Claude Code login required\n');
-  });
+      const result = await runner.run({
+        action: 'implement',
+        projection: baseProjection,
+        recentEvents: [],
+        config: createDefaultWakeConfig(process.cwd()),
+        runId: 'run-12-stdout-failure',
+      });
+
+      expect(result.result).toContain('Claude runner failed');
+      expect(result.result).toContain('stderr detail');
+      expect(result.result).toContain('Claude Code login required');
+      expect(result.metadata?.stdout).toBe('Claude Code login required\n');
+    },
+  );
 });
 
 describe('model resolution', () => {
@@ -1065,7 +1070,10 @@ describe('model resolution', () => {
   });
 
   it('falls back to default model when action-specific model is not set', () => {
-    const settings: ClaudeSettings = { model: 'haiku', models: { default: 'opus', implement: 'sonnet-4.6' } };
+    const settings: ClaudeSettings = {
+      model: 'haiku',
+      models: { default: 'opus', implement: 'sonnet-4.6' },
+    };
     const args = buildClaudePrintArgs({
       model: resolveTestModel(settings, 'refine'),
       prompt: 'test',

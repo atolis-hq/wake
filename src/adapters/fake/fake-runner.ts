@@ -6,10 +6,7 @@ import type {
   WakeConfig,
 } from '../../domain/types.js';
 
-export function createFakeRunner(
-  result?: AgentRunResult,
-  options?: { cli?: string },
-) {
+export function createFakeRunner(result?: AgentRunResult, options?: { cli?: string }) {
   return {
     async run(_: {
       action: AgentAction;
@@ -20,22 +17,24 @@ export function createFakeRunner(
       workspacePath?: string;
       mergeConflictDetected?: boolean;
     }): Promise<AgentRunResult> {
-      return result ?? {
-        result: [
-          'Fake runner completed',
-          '',
-          '```wake-result',
-          '{ "status": "DONE" }',
-          '```',
-          'DONE',
-        ].join('\n'),
-        model: 'fake',
-        cli: options?.cli ?? 'Fake',
-        session_id: 'fake-session-1',
-        metadata: {
-          source: 'fake-runner',
-        },
-      };
+      return (
+        result ?? {
+          result: [
+            'Fake runner completed',
+            '',
+            '```wake-result',
+            '{ "status": "DONE" }',
+            '```',
+            'DONE',
+          ].join('\n'),
+          model: 'fake',
+          cli: options?.cli ?? 'Fake',
+          session_id: 'fake-session-1',
+          metadata: {
+            source: 'fake-runner',
+          },
+        }
+      );
     },
   };
 }

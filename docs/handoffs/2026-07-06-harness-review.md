@@ -16,16 +16,16 @@ Date: 2026-07-06. Scope: full read of `src/` (core, adapters, cli, domain, lib),
 
 Wake writes to GitHub, then polls GitHub, so every outbound action re-enters as an inbound event. Current suppression mechanisms:
 
-| Echo | Suppression | Location |
-|---|---|---|
-| Wake's own comments | `<!-- wake -->` marker + `isWakeAuthored` | `schema.ts`, work source, projection |
-| Bot comments unblocking issues | `botAuthoredComment` hint | work source `derivedHints` |
-| Label writes bumping `updated_at` → re-trigger | `lastHandledIssueUpdatedAt` cursor | policy engine + `wake.run.completed` payload |
-| Re-synced labels regressing stage to `queue` | "labels only set stage at projection creation" | `projection-updater.ts` (the infinite-refine-loop comment) |
+| Echo                                           | Suppression                                    | Location                                                   |
+| ---------------------------------------------- | ---------------------------------------------- | ---------------------------------------------------------- |
+| Wake's own comments                            | `<!-- wake -->` marker + `isWakeAuthored`      | `schema.ts`, work source, projection                       |
+| Bot comments unblocking issues                 | `botAuthoredComment` hint                      | work source `derivedHints`                                 |
+| Label writes bumping `updated_at` → re-trigger | `lastHandledIssueUpdatedAt` cursor             | policy engine + `wake.run.completed` payload               |
+| Re-synced labels regressing stage to `queue`   | "labels only set stage at projection creation" | `projection-updater.ts` (the infinite-refine-loop comment) |
 
 Each of these was discovered as a production incident (the code comments say so). The pattern will recur for every new outbound surface (PR comments are already on the roadmap — [Issue #82](https://github.com/atolis-hq/wake/issues/82)).
 
-**Recommendation:** make echo suppression a single first-class concept at the ingestion boundary. When Wake performs an outbound side effect, record what it expects to see back (comment ID, label set, approximate `updated_at` bump). At `pollEvents`, drop or mark inbound events that match a recorded expectation. Then `needsWakeAction` can shrink to "is there an unhandled *human* event", and the projection-updater's special cases disappear. This is the single change that most reduces future incident surface.
+**Recommendation:** make echo suppression a single first-class concept at the ingestion boundary. When Wake performs an outbound side effect, record what it expects to see back (comment ID, label set, approximate `updated_at` bump). At `pollEvents`, drop or mark inbound events that match a recorded expectation. Then `needsWakeAction` can shrink to "is there an unhandled _human_ event", and the projection-updater's special cases disappear. This is the single change that most reduces future incident surface.
 
 ### 1.2 Stage transitions live in three places → [Issue #55](https://github.com/atolis-hq/wake/issues/55)
 
@@ -47,11 +47,11 @@ The projection fold is supposed to be a mechanical record of what happened; deci
 
 `defaults.ts` (values), `schema.ts` (shape), and `mergeWakeConfig` in `load-config.ts` (a hand-written deep merge that must be extended for every new nested field — it's already 8 spread-blocks deep). A forgotten merge branch silently drops user config.
 
-**Recommendation:** put defaults on the zod schema (`.default(...)` at each level) and delete `mergeWakeConfig` entirely; `parseWakeConfig(rawUserConfig)` then *is* the merge. One source of truth, and new fields can't be forgotten.
+**Recommendation:** put defaults on the zod schema (`.default(...)` at each level) and delete `mergeWakeConfig` entirely; `parseWakeConfig(rawUserConfig)` then _is_ the merge. One source of truth, and new fields can't be forgotten.
 
 ### 1.5 Free-text sentinel parsing is the weakest link in the control loop → [Issue #52](https://github.com/atolis-hq/wake/issues/52)
 
-`parseRunnerResultSentinel` regex-matches the *last* occurrence of `DONE|BLOCKED|FAILED` anywhere in the agent's prose. An agent writing "the previous run FAILED, so I re-ran the tests… DONE. If they had FAILED again…" is misclassified. Worse, `createPublishIntentEvent` strips **every** occurrence of those three words from the comment body (`replace(/\b(DONE|BLOCKED|FAILED)\b/g, '')`), mangling legitimate sentences in the posted GitHub comment ("the CI build FAILED because" → "the CI build  because").
+`parseRunnerResultSentinel` regex-matches the _last_ occurrence of `DONE|BLOCKED|FAILED` anywhere in the agent's prose. An agent writing "the previous run FAILED, so I re-ran the tests… DONE. If they had FAILED again…" is misclassified. Worse, `createPublishIntentEvent` strips **every** occurrence of those three words from the comment body (`replace(/\b(DONE|BLOCKED|FAILED)\b/g, '')`), mangling legitimate sentences in the posted GitHub comment ("the CI build FAILED because" → "the CI build because").
 
 **Recommendation:** the prompts already demand "the last line of your response must be exactly one of: DONE, BLOCKED, FAILED". Parse exactly that — last non-empty line equals a sentinel; anything else is `FAILED` — and strip only that line from the published body. Small change, removes both misclassification and comment mangling. (Longer term the Claude CLI's JSON output could carry a structured field, but last-line parsing is 90% of the value for 2% of the work.)
 
@@ -61,7 +61,7 @@ The projection fold is supposed to be a mechanical record of what happened; deci
 
 ### 2.1 CONFIRMED BUG: stage-label delivery reverts the status label → [Issue #50](https://github.com/atolis-hq/wake/issues/50)
 
-`tick-runner` delivers a `wake.status.label.requested` then a `wake.stage.label.requested` (both at run start and at completion). Each `deliverIntent` branch in `github-issues-work-source.ts` recomputes the full label set from `readIssueState(...).issue.labels` — but the `ticket.labels.updated` delivery event falls through to `applyEvent`'s default branch in `projection-updater.ts:203`, which only bumps `syncedAt` and never updates `issue.labels`. So the second intent reads the **pre-run** label snapshot: it preserves the *old* status label (`wake:status.pending`) and calls `setLabels`, reverting the `wake:status.working` / `wake:status.completed` that was set milliseconds earlier. Net effect: on GitHub the status label is almost always stale; it only self-corrects after the next poll re-ingests labels — and each correction costs two more `setLabels` round-trips.
+`tick-runner` delivers a `wake.status.label.requested` then a `wake.stage.label.requested` (both at run start and at completion). Each `deliverIntent` branch in `github-issues-work-source.ts` recomputes the full label set from `readIssueState(...).issue.labels` — but the `ticket.labels.updated` delivery event falls through to `applyEvent`'s default branch in `projection-updater.ts:203`, which only bumps `syncedAt` and never updates `issue.labels`. So the second intent reads the **pre-run** label snapshot: it preserves the _old_ status label (`wake:status.pending`) and calls `setLabels`, reverting the `wake:status.working` / `wake:status.completed` that was set milliseconds earlier. Net effect: on GitHub the status label is almost always stale; it only self-corrects after the next poll re-ingests labels — and each correction costs two more `setLabels` round-trips.
 
 **Fix (also a simplification):** one `wake.labels.requested` intent carrying both status and stage, applied in one read-compute-set. Two event types, two tick-runner blocks, and one race all disappear. If you keep two events, make `applyEvent` fold `ticket.labels.updated`'s `payload.labels` into `issue.labels`.
 
@@ -95,7 +95,7 @@ Issue title/body/comments are interpolated raw into the agent prompt, and the im
 
 ### 2.7 Comment-triggered re-runs race with in-flight ordering → [Issue #59](https://github.com/atolis-hq/wake/issues/59)
 
-`pollEvents` fetches issues then comments per issue with no lookback bound in use (see [Issue #59](https://github.com/atolis-hq/wake/issues/59)) and no pagination beyond one page of size `commentPageSize`; a busy issue with more comments than the page size silently misses old comments (dedupe is by ID against the projection, so *missed* ones never arrive). Low priority, but the failure is silent.
+`pollEvents` fetches issues then comments per issue with no lookback bound in use (see [Issue #59](https://github.com/atolis-hq/wake/issues/59)) and no pagination beyond one page of size `commentPageSize`; a busy issue with more comments than the page size silently misses old comments (dedupe is by ID against the projection, so _missed_ ones never arrive). Low priority, but the failure is silent.
 
 ---
 
@@ -109,7 +109,7 @@ Issue title/body/comments are interpolated raw into the agent prompt, and the im
 ## 4. What's already good (don't break it)
 
 - The adapter seams (`contracts.ts`) are real: core never imports a concrete adapter, and the fakes genuinely exercise the contract. This is the repo's core asset — the recommendations above deliberately stay behind these seams.
-- Event-first persistence with rebuildable projections is the right call and is what makes §1.1's unified echo suppression *possible* — the raw truth is already durable.
+- Event-first persistence with rebuildable projections is the right call and is what makes §1.1's unified echo suppression _possible_ — the raw truth is already durable.
 - The runaway-cost protections (mandatory `maxTurns` frontmatter with a hard error, wall-clock kill with SIGTERM→SIGKILL grace) are exactly right.
 - `--` terminator before the prompt in `buildClaudePrintArgs`, and the "Wake decides, the agent runs" prompt discipline, are both well-executed.
 

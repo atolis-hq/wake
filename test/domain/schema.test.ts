@@ -224,8 +224,7 @@ describe('run and event schemas', () => {
       raw: {
         body: 'Need more detail',
       },
-      derivedHints: {
-      },
+      derivedHints: {},
     });
 
     // Taken verbatim from the envelope: the resolver stamped it, and nothing
@@ -402,20 +401,22 @@ describe('run and event schemas', () => {
   // projection written under the old key (spec §8, "no migration code").
 
   it('parses the last valid wake-result envelope and keeps only prose before it as body', () => {
-    const parsed = parseRunnerResult([
-      'The prose mentions FAILED legitimately.',
-      '',
-      '```wake-result',
-      '{ "status": "BLOCKED" }',
-      '```',
-      '',
-      'Updated summary after an earlier sample.',
-      '',
-      '```wake-result',
-      '{ "status": "DONE", "ignored": true }',
-      '```',
-      'DONE',
-    ].join('\n'));
+    const parsed = parseRunnerResult(
+      [
+        'The prose mentions FAILED legitimately.',
+        '',
+        '```wake-result',
+        '{ "status": "BLOCKED" }',
+        '```',
+        '',
+        'Updated summary after an earlier sample.',
+        '',
+        '```wake-result',
+        '{ "status": "DONE", "ignored": true }',
+        '```',
+        'DONE',
+      ].join('\n'),
+    );
 
     expect(parsed).toEqual({
       status: 'DONE',
@@ -436,12 +437,9 @@ describe('run and event schemas', () => {
   });
 
   it('synthesizes a generic status body for AWAITING_APPROVAL when structured envelope has no prose', () => {
-    const parsed = parseRunnerResult([
-      '```wake-result',
-      '{"status":"AWAITING_APPROVAL"}',
-      '```',
-      'AWAITING_APPROVAL',
-    ].join('\n'));
+    const parsed = parseRunnerResult(
+      ['```wake-result', '{"status":"AWAITING_APPROVAL"}', '```', 'AWAITING_APPROVAL'].join('\n'),
+    );
 
     expect(parsed.status).toBe('AWAITING_APPROVAL');
     expect(parsed.envelope).toBe('structured');
@@ -449,12 +447,9 @@ describe('run and event schemas', () => {
   });
 
   it('synthesizes a generic status sentence when structured envelope has no prose', () => {
-    const parsed = parseRunnerResult([
-      '```wake-result',
-      '{"status":"DONE"}',
-      '```',
-      'DONE',
-    ].join('\n'));
+    const parsed = parseRunnerResult(
+      ['```wake-result', '{"status":"DONE"}', '```', 'DONE'].join('\n'),
+    );
 
     expect(parsed.status).toBe('DONE');
     expect(parsed.envelope).toBe('structured');
@@ -462,27 +457,26 @@ describe('run and event schemas', () => {
   });
 
   it('does not synthesize body when prose already precedes the structured envelope', () => {
-    const parsed = parseRunnerResult([
-      'Here is my plan.',
-      '',
-      '```wake-result',
-      '{"status":"AWAITING_APPROVAL"}',
-      '```',
-      'AWAITING_APPROVAL',
-    ].join('\n'));
+    const parsed = parseRunnerResult(
+      [
+        'Here is my plan.',
+        '',
+        '```wake-result',
+        '{"status":"AWAITING_APPROVAL"}',
+        '```',
+        'AWAITING_APPROVAL',
+      ].join('\n'),
+    );
 
     expect(parsed.body).toBe('Here is my plan.');
   });
 
   it('degrades to the final bare sentinel when the wake-result envelope is malformed', () => {
-    const parsed = parseRunnerResult([
-      'Summary',
-      '',
-      '```wake-result',
-      '{ "status": "NOT_A_STATUS" }',
-      '```',
-      'BLOCKED',
-    ].join('\n'));
+    const parsed = parseRunnerResult(
+      ['Summary', '', '```wake-result', '{ "status": "NOT_A_STATUS" }', '```', 'BLOCKED'].join(
+        '\n',
+      ),
+    );
 
     expect(parsed.status).toBe('BLOCKED');
     expect(parsed.envelope).toBe('degraded');
@@ -490,14 +484,16 @@ describe('run and event schemas', () => {
   });
 
   it('parses structured envelope when sentinel is inside the fenced block', () => {
-    const parsed = parseRunnerResult([
-      'PR opened and ready for review.',
-      '',
-      '```wake-result',
-      '{"status": "AWAITING_APPROVAL"}',
-      'AWAITING_APPROVAL',
-      '```',
-    ].join('\n'));
+    const parsed = parseRunnerResult(
+      [
+        'PR opened and ready for review.',
+        '',
+        '```wake-result',
+        '{"status": "AWAITING_APPROVAL"}',
+        'AWAITING_APPROVAL',
+        '```',
+      ].join('\n'),
+    );
 
     expect(parsed.status).toBe('AWAITING_APPROVAL');
     expect(parsed.envelope).toBe('structured');
@@ -505,14 +501,11 @@ describe('run and event schemas', () => {
   });
 
   it('falls back to sentinel inside block when structured parse fails and closing fence is last line', () => {
-    const parsed = parseRunnerResult([
-      'Summary.',
-      '',
-      '```wake-result',
-      '{ "status": "NOT_A_STATUS" }',
-      'BLOCKED',
-      '```',
-    ].join('\n'));
+    const parsed = parseRunnerResult(
+      ['Summary.', '', '```wake-result', '{ "status": "NOT_A_STATUS" }', 'BLOCKED', '```'].join(
+        '\n',
+      ),
+    );
 
     expect(parsed.status).toBe('BLOCKED');
     expect(parsed.envelope).toBe('degraded');
@@ -527,13 +520,11 @@ describe('run and event schemas', () => {
   });
 
   it('parses an off-fence wake-result envelope', () => {
-    const parsed = parseRunnerResult([
-      'I need one missing detail.',
-      '',
-      '```wake-result',
-      '```',
-      '{"status":"BLOCKED"}',
-    ].join('\n'));
+    const parsed = parseRunnerResult(
+      ['I need one missing detail.', '', '```wake-result', '```', '{"status":"BLOCKED"}'].join(
+        '\n',
+      ),
+    );
 
     expect(parsed.status).toBe('BLOCKED');
     expect(parsed.body).toBe('I need one missing detail.');
@@ -541,14 +532,11 @@ describe('run and event schemas', () => {
   });
 
   it('parses wake-result when its marker is on the line after the fence opener', () => {
-    const parsed = parseRunnerResult([
-      'I need one missing detail.',
-      '',
-      '```',
-      'wake-result',
-      '{"status":"BLOCKED"}',
-      '```',
-    ].join('\n'));
+    const parsed = parseRunnerResult(
+      ['I need one missing detail.', '', '```', 'wake-result', '{"status":"BLOCKED"}', '```'].join(
+        '\n',
+      ),
+    );
 
     expect(parsed.status).toBe('BLOCKED');
     expect(parsed.body).toBe('I need one missing detail.');
@@ -565,15 +553,23 @@ describe('run and event schemas', () => {
   it('does not match a sentinel word embedded in prose on the last line', () => {
     // Last line contains prose, not an exact sentinel — should fall back to FAILED
     expect(parseRunnerResultSentinel('notes DONE more notes FAILED')).toBe('BLOCKED');
-    expect(parseRunnerResultSentinel('the previous run FAILED, so I re-ran the tests\nIf they had FAILED again it would be bad\nDONE. Finished.')).toBe('BLOCKED');
+    expect(
+      parseRunnerResultSentinel(
+        'the previous run FAILED, so I re-ran the tests\nIf they had FAILED again it would be bad\nDONE. Finished.',
+      ),
+    ).toBe('BLOCKED');
   });
 
   it('parses AWAITING_APPROVAL sentinel from last line', () => {
-    expect(parseRunnerResultSentinel('Work complete, awaiting sign-off\nAWAITING_APPROVAL')).toBe('AWAITING_APPROVAL');
+    expect(parseRunnerResultSentinel('Work complete, awaiting sign-off\nAWAITING_APPROVAL')).toBe(
+      'AWAITING_APPROVAL',
+    );
   });
 
   it('blocks on substantive output and fails on empty output when no sentinel is present', () => {
-    expect(parseRunnerResultSentinel('Should I proceed with creating the worktree?')).toBe('BLOCKED');
+    expect(parseRunnerResultSentinel('Should I proceed with creating the worktree?')).toBe(
+      'BLOCKED',
+    );
     expect(parseRunnerResultSentinel('')).toBe('FAILED');
   });
 
@@ -904,13 +900,44 @@ describe('workflow config schema', () => {
   });
 
   it.each([
-    ['missing onDone', { stages: { refine: { action: 'refine', workspace: 'read-only' } } }, /onDone/],
-    ['defined queue stage', { stages: { queue: { action: 'refine', workspace: 'read-only', onDone: 'done' } } }, /queue/],
-    ['defined done stage', { stages: { done: { action: 'refine', workspace: 'read-only', onDone: 'done' } } }, /done/],
-    ['entryStage queue', { entryStage: 'queue', stages: { refine: { action: 'refine', workspace: 'read-only', onDone: 'done' } } }, /entryStage/],
-    ['transition to queue', { stages: { refine: { action: 'refine', workspace: 'read-only', onDone: 'queue' } } }, /queue/],
-    ['unknown transition target', { stages: { refine: { action: 'refine', workspace: 'read-only', onDone: 'missing' } } }, /unknown stage/],
-    ['no path to done', { stages: { refine: { action: 'refine', workspace: 'read-only', onDone: 'refine' } } }, /cannot reach done/],
+    [
+      'missing onDone',
+      { stages: { refine: { action: 'refine', workspace: 'read-only' } } },
+      /onDone/,
+    ],
+    [
+      'defined queue stage',
+      { stages: { queue: { action: 'refine', workspace: 'read-only', onDone: 'done' } } },
+      /queue/,
+    ],
+    [
+      'defined done stage',
+      { stages: { done: { action: 'refine', workspace: 'read-only', onDone: 'done' } } },
+      /done/,
+    ],
+    [
+      'entryStage queue',
+      {
+        entryStage: 'queue',
+        stages: { refine: { action: 'refine', workspace: 'read-only', onDone: 'done' } },
+      },
+      /entryStage/,
+    ],
+    [
+      'transition to queue',
+      { stages: { refine: { action: 'refine', workspace: 'read-only', onDone: 'queue' } } },
+      /queue/,
+    ],
+    [
+      'unknown transition target',
+      { stages: { refine: { action: 'refine', workspace: 'read-only', onDone: 'missing' } } },
+      /unknown stage/,
+    ],
+    [
+      'no path to done',
+      { stages: { refine: { action: 'refine', workspace: 'read-only', onDone: 'refine' } } },
+      /cannot reach done/,
+    ],
   ])('rejects %s', (_name, workflow, message) => {
     expect(() => parseWorkflow(workflow)).toThrow(message);
   });

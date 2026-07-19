@@ -30,17 +30,18 @@ function buildAwaitingApprovalIssue(options: {
       createdAt: '2026-07-06T00:00:00.000Z',
       updatedAt: '2026-07-06T00:00:00.000Z',
     },
-    comments: options.latestCommentBody !== undefined
-      ? [
-          {
-            id: 'c-1',
-            body: options.latestCommentBody,
-            author: { login: 'owner' },
-            createdAt: '2026-07-06T01:00:00.000Z',
-            updatedAt: '2026-07-06T01:00:00.000Z',
-          },
-        ]
-      : [],
+    comments:
+      options.latestCommentBody !== undefined
+        ? [
+            {
+              id: 'c-1',
+              body: options.latestCommentBody,
+              author: { login: 'owner' },
+              createdAt: '2026-07-06T01:00:00.000Z',
+              updatedAt: '2026-07-06T01:00:00.000Z',
+            },
+          ]
+        : [],
     wake: {
       stage: options.pendingApprovalAction === 'refine' ? 'refine' : 'implement',
       syncedAt: '2026-07-06T00:00:00.000Z',
@@ -107,26 +108,28 @@ function buildNeedsWakeActionIssue(overrides: {
       createdAt: '2026-07-06T00:00:00.000Z',
       updatedAt: overrides.updatedAt ?? '2026-07-07T00:00:00.000Z',
     },
-    comments: overrides.latestCommentId === undefined
-      ? []
-      : [
-          {
+    comments:
+      overrides.latestCommentId === undefined
+        ? []
+        : [
+            {
+              id: overrides.latestCommentId,
+              body: 'Comment',
+              author: { login: 'owner' },
+              createdAt: '2026-07-06T01:00:00.000Z',
+              updatedAt: '2026-07-06T01:00:00.000Z',
+            },
+          ],
+    latestComment:
+      overrides.latestCommentId === undefined
+        ? undefined
+        : {
             id: overrides.latestCommentId,
             body: 'Comment',
             author: { login: 'owner' },
             createdAt: '2026-07-06T01:00:00.000Z',
             updatedAt: '2026-07-06T01:00:00.000Z',
           },
-        ],
-    latestComment: overrides.latestCommentId === undefined
-      ? undefined
-      : {
-          id: overrides.latestCommentId,
-          body: 'Comment',
-          author: { login: 'owner' },
-          createdAt: '2026-07-06T01:00:00.000Z',
-          updatedAt: '2026-07-06T01:00:00.000Z',
-        },
     wake: {
       stage: 'implement',
       lastRunId: 'run-61-1',
@@ -171,18 +174,19 @@ function buildBlockedOrFailedIssue(overrides: {
       createdAt: '2026-07-06T00:00:00.000Z',
       updatedAt: '2026-07-07T00:00:00.000Z',
     },
-    comments: overrides.latestCommentId === undefined
-      ? []
-      : [
-          {
-            id: overrides.latestCommentId,
-            body: 'Here is the missing context.',
-            author: { login: overrides.latestCommentIsBotAuthored ? 'wake-bot' : 'owner' },
-            createdAt: '2026-07-06T01:00:00.000Z',
-            updatedAt: '2026-07-06T01:00:00.000Z',
-            isBotAuthored: overrides.latestCommentIsBotAuthored ?? false,
-          },
-        ],
+    comments:
+      overrides.latestCommentId === undefined
+        ? []
+        : [
+            {
+              id: overrides.latestCommentId,
+              body: 'Here is the missing context.',
+              author: { login: overrides.latestCommentIsBotAuthored ? 'wake-bot' : 'owner' },
+              createdAt: '2026-07-06T01:00:00.000Z',
+              updatedAt: '2026-07-06T01:00:00.000Z',
+              isBotAuthored: overrides.latestCommentIsBotAuthored ?? false,
+            },
+          ],
     wake: {
       stage: overrides.stage,
       lastRunId: 'run-62-1',
@@ -193,9 +197,7 @@ function buildBlockedOrFailedIssue(overrides: {
       ...(overrides.lastHandledCommentId === undefined
         ? {}
         : { lastHandledCommentId: overrides.lastHandledCommentId }),
-      ...(overrides.lastRunAction === undefined
-        ? {}
-        : { lastRunAction: overrides.lastRunAction }),
+      ...(overrides.lastRunAction === undefined ? {} : { lastRunAction: overrides.lastRunAction }),
       ...(overrides.lastRunSentinel === undefined
         ? {}
         : { lastRunSentinel: overrides.lastRunSentinel }),
@@ -287,7 +289,6 @@ describe('policy engine: requiredAssignees', () => {
   });
 
   it('combines requiredAssignees and requiredLabels with AND semantics', () => {
-
     const policy = createPolicyEngine();
     const config = createDefaultWakeConfig('/tmp/wake-root');
     config.sources.github.policy.requiredAssignees = ['octocat'];
