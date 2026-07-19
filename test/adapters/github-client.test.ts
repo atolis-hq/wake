@@ -9,6 +9,7 @@ const listPulls = vi.fn();
 const listReviews = vi.fn();
 const listReviewComments = vi.fn();
 const createReplyForReviewComment = vi.fn();
+const getAuthenticated = vi.fn();
 
 function pagesOf(...pages: unknown[][]) {
   return {
@@ -36,6 +37,9 @@ vi.mock('@octokit/rest', () => ({
         listReviews,
         listReviewComments,
         createReplyForReviewComment,
+      },
+      users: {
+        getAuthenticated,
       },
     },
   })),
@@ -215,5 +219,16 @@ describe('github client', () => {
       body: 'Reply to comment',
     });
     expect(reply.data.id).toBe(102);
+  });
+
+  it('resolves the authenticated login', async () => {
+    getAuthenticated.mockResolvedValueOnce({ data: { login: 'atolis-hq-agent' } });
+
+    const { createGitHubClient } = await import('../../src/adapters/github/github-client.js');
+    const client = createGitHubClient('fake-token');
+
+    const login = await client.getAuthenticatedLogin();
+
+    expect(login).toBe('atolis-hq-agent');
   });
 });

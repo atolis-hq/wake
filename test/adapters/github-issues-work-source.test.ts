@@ -243,6 +243,102 @@ describe('github issues work source', () => {
     expect(commentEvent?.derivedHints?.botAuthoredComment).toBe(true);
   });
 
+  it('marks a comment from Wake\'s own authenticated login as bot-authored even with no marker (#258 follow-up)', async () => {
+    // A comment posted by direct API/CLI call (not through formatWakeComment)
+    // carries neither the marker nor a 'Bot' account type — without a
+    // selfLogin check this looks like a fresh human reply and re-triggers
+    // another Wake run against itself.
+    const store = createStateStore({ wakeRoot: root });
+    const config = createDefaultWakeConfig(root);
+    config.sources.github.enabled = true;
+    config.sources.github.repos = ['atolis-hq/wake'];
+
+    const workSource = createGitHubIssuesWorkSource({
+      client: {
+        listIssues: async () => [
+          {
+            number: 12,
+            title: 'Example',
+            body: 'Body',
+            state: 'open',
+            html_url: 'https://github.com/atolis-hq/wake/issues/12',
+            created_at: '2026-07-05T12:00:00.000Z',
+            updated_at: '2026-07-05T12:00:00.000Z',
+            labels: [{ name: 'wake:queue' }],
+            assignees: [],
+          },
+        ],
+        listComments: async () => [
+          {
+            id: 103,
+            body: 'Done in abc123. No marker, posted via gh api directly.',
+            user: { login: 'atolis-hq-agent', type: 'User' },
+            created_at: '2026-07-05T12:05:00.000Z',
+            updated_at: '2026-07-05T12:05:00.000Z',
+            html_url: 'https://github.com/atolis-hq/wake/issues/12#issuecomment-103',
+          },
+        ],
+        createComment: vi.fn(),
+        setLabels: vi.fn(),
+      },
+      stateStore: store,
+      config,
+      resourceIndex: createFakeResourceIndex(),
+      now: () => new Date('2026-07-05T12:10:00.000Z'),
+      selfLogin: 'atolis-hq-agent',
+    });
+
+    const events = await workSource.pollEvents();
+    const commentEvent = events.find((event) => event.sourceEventType === 'ticket.comment.created');
+    expect(commentEvent?.derivedHints?.botAuthoredComment).toBe(true);
+  });
+
+  it('does not mark an unmarked comment from a different login as bot-authored', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const config = createDefaultWakeConfig(root);
+    config.sources.github.enabled = true;
+    config.sources.github.repos = ['atolis-hq/wake'];
+
+    const workSource = createGitHubIssuesWorkSource({
+      client: {
+        listIssues: async () => [
+          {
+            number: 12,
+            title: 'Example',
+            body: 'Body',
+            state: 'open',
+            html_url: 'https://github.com/atolis-hq/wake/issues/12',
+            created_at: '2026-07-05T12:00:00.000Z',
+            updated_at: '2026-07-05T12:00:00.000Z',
+            labels: [{ name: 'wake:queue' }],
+            assignees: [],
+          },
+        ],
+        listComments: async () => [
+          {
+            id: 104,
+            body: 'Please also handle the null case.',
+            user: { login: 'a-real-reviewer', type: 'User' },
+            created_at: '2026-07-05T12:05:00.000Z',
+            updated_at: '2026-07-05T12:05:00.000Z',
+            html_url: 'https://github.com/atolis-hq/wake/issues/12#issuecomment-104',
+          },
+        ],
+        createComment: vi.fn(),
+        setLabels: vi.fn(),
+      },
+      stateStore: store,
+      config,
+      resourceIndex: createFakeResourceIndex(),
+      now: () => new Date('2026-07-05T12:10:00.000Z'),
+      selfLogin: 'atolis-hq-agent',
+    });
+
+    const events = await workSource.pollEvents();
+    const commentEvent = events.find((event) => event.sourceEventType === 'ticket.comment.created');
+    expect(commentEvent?.derivedHints?.botAuthoredComment).toBe(false);
+  });
+
   it('never emits PR-shaped issues', async () => {
     const store = createStateStore({ wakeRoot: root });
     const config = createDefaultWakeConfig(root);

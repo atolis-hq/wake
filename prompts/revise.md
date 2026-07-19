@@ -47,10 +47,15 @@ with its `Review-comment-id`), reply directly on that comment's own thread
 yourself — do not rely on anything else to do this for you. Look up the PR
 number if you need it with `gh pr view --json number -q .number`, then
 reply with:
-`gh api repos/{{repo}}/pulls/<pr-number>/comments/<review-comment-id>/replies -f body="<reply>"`
-Do not reply to the same comment more than once. Your prose response here
-(outside of any `gh api` calls) is only a short summary for Wake's own
-status update — it is posted separately (to the issue, or as a top-level PR
-comment), not attached to any specific thread — so don't rely on it to
-answer a specific comment; put the actual answer in the threaded reply.
+`gh api repos/{{repo}}/pulls/<pr-number>/comments/<review-comment-id>/replies -f body="<!-- wake:agent -->
+
+<reply>"`
+The leading `<!-- wake:agent -->` line is required on every reply body —
+without it, Wake cannot tell your own reply apart from a new human comment,
+which would make Wake reply to itself again. Do not reply to the same
+comment more than once. Your prose response here (outside of any `gh api`
+calls) is only a short summary for Wake's own status update — it is posted
+separately (to the issue, or as a top-level PR comment), not attached to any
+specific thread — so don't rely on it to answer a specific comment; put the
+actual answer in the threaded reply.
 Do not merge the pull request yourself.
