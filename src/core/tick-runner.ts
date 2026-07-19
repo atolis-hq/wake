@@ -291,7 +291,10 @@ export function createTickRunner(deps: {
     }
 
     if (isAwaitingApproval(projection)) {
-      return policy.resolveApprovalTransition(projection) !== null;
+      return (
+        policy.resolveApprovalTransition(projection) !== null ||
+        policy.resolvePendingReviewFeedback(projection) !== null
+      );
     }
 
     const nextAction =
@@ -1163,11 +1166,18 @@ export function createTickRunner(deps: {
 
         if (isAwaitingApproval(candidate)) {
           const approvalResolution = policy.resolveApprovalTransition(candidate);
-          if (approvalResolution === null) {
-            return { status: 'idle' as const };
-          }
 
-          if (approvalResolution.approved) {
+          if (approvalResolution === null) {
+            const reviewAction = policy.resolvePendingReviewFeedback(candidate);
+            if (reviewAction === null) {
+              return { status: 'idle' as const };
+            }
+
+            action = reviewAction;
+            const workflowAction = chooseWorkflowAction(candidate, workflow);
+            claimedStage = workflowAction?.stage ?? candidate.wake.stage;
+            workspaceMode = workflowAction?.workspace ?? 'none';
+          } else if (approvalResolution.approved) {
             const approvalId = `approval-${candidate.issue.number}-${deps.clock.now().getTime()}`;
             const approvedAt = deps.clock.now().toISOString();
             const nextStage = lifecycle.nextStageFromSentinel(candidate.wake.stage, 'DONE', workflow);
@@ -1218,12 +1228,12 @@ export function createTickRunner(deps: {
               sentinel: 'DONE' as const,
               nextStage,
             };
+          } else {
+            action = approvalResolution.pendingAction;
+            const workflowAction = chooseWorkflowAction(candidate, workflow);
+            claimedStage = workflowAction?.stage ?? candidate.wake.stage;
+            workspaceMode = workflowAction?.workspace ?? 'none';
           }
-
-          action = approvalResolution.pendingAction;
-          const workflowAction = chooseWorkflowAction(candidate, workflow);
-          claimedStage = workflowAction?.stage ?? candidate.wake.stage;
-          workspaceMode = workflowAction?.workspace ?? 'none';
         } else {
           const workflowAction = chooseWorkflowAction(candidate, workflow);
           const nextAction =
