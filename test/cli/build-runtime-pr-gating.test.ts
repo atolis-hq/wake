@@ -8,6 +8,16 @@ vi.mock('../../src/adapters/github/github-auth.js', () => ({
   resolveGitHubToken: vi.fn(async () => 'fake-token'),
 }));
 
+// buildRuntime resolves its own authenticated login (for agent-authored
+// bot-detection) as soon as a GitHub client exists, before any of the
+// mocked-below adapters are constructed — a real Octokit client would hit
+// the network with the fake token above.
+vi.mock('../../src/adapters/github/github-client.js', () => ({
+  createGitHubClient: vi.fn(() => ({
+    getAuthenticatedLogin: vi.fn(async () => 'atolis-hq-agent'),
+  })),
+}));
+
 const createGitHubArtifactVerifier = vi.fn(() => ({
   async verify() {
     return null;

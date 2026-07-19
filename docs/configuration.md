@@ -34,7 +34,7 @@ All configuration uses `schemaVersion: 1`.
   },
   "scheduler": {
     "intervalMs": 60000,
-    "maxIntervalMs": 600000
+    "maxIntervalMs": 300000
   },
   "transcripts": {
     "enabled": false,
@@ -305,7 +305,7 @@ Control plane tick frequency and timing.
 | Property | Type | Description | Default |
 |----------|------|-------------|---------|
 | `intervalMs` | number | Milliseconds between control-plane ticks (minimum 1) | `60000` (60 seconds) |
-| `maxIntervalMs` | number | Ceiling for the idle-cadence backoff: each consecutive idle tick doubles the sleep (starting from `intervalMs`) up to this value, and any `processed` tick resets it back to `intervalMs` | `600000` (10 minutes) |
+| `maxIntervalMs` | number | Ceiling for the idle-cadence backoff: each consecutive idle tick doubles the sleep (starting from `intervalMs`) up to this value, and any `processed` tick resets it back to `intervalMs` | `300000` (5 minutes) |
 
 ### runners
 
@@ -499,6 +499,17 @@ for standalone work adoption if they match the qualification policy.
 never requires author qualification — it is registered through artifact verification,
 not the `requiredAuthors` gate. Author qualification applies only to PRs already in
 the repository that Wake did not create.
+
+**Reviewer feedback on Wake's own PRs:** while a work item is
+`awaiting-approval`, a new comment on a correlated PR (a review, a
+review-thread reply, or a plain PR comment) is treated as reviewer feedback
+and automatically triggers Wake's `revise` action — unlike comments on the
+originating issue, no `/approved`, `/changes`, or `/question` command is
+required. The agent judges each comment independently: it may make the
+change, answer a question, or push back with justification or an
+alternative. The work item stays `awaiting-approval` afterward; only an
+explicit `/approved` command (on the issue or the PR) advances it to
+`done`.
 
 ## Loading and Merging
 

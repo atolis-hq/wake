@@ -235,6 +235,15 @@ export async function buildRuntime(args: string[]) {
     ? createGitHubClient(await resolveGitHubToken())
     : undefined;
 
+  // Resolved once alongside the client: the login Wake itself posts as, so
+  // both GitHub work sources can recognize a comment Wake's own agent posted
+  // by direct API/CLI call (not through formatWakeComment, so it never
+  // carries the wake:agent marker) as bot-authored instead of a fresh human
+  // reply that would re-trigger another run against itself.
+  const selfLogin = githubClient !== undefined
+    ? await githubClient.getAuthenticatedLogin()
+    : undefined;
+
   const artifactVerifier =
     prTrackingEnabled && githubClient !== undefined
       ? createGitHubArtifactVerifier({ client: githubClient })
@@ -247,6 +256,7 @@ export async function buildRuntime(args: string[]) {
         config,
         resourceIndex,
         now: () => systemClock.now(),
+        ...(selfLogin === undefined ? {} : { selfLogin }),
       })
     : await createFileBackedFakeTicketingSystem({
         fixturePath: stateStore.paths.issueFixtureFile,
@@ -263,6 +273,7 @@ export async function buildRuntime(args: string[]) {
           config,
           resourceIndex,
           now: () => systemClock.now(),
+          ...(selfLogin === undefined ? {} : { selfLogin }),
         })
       : null;
 

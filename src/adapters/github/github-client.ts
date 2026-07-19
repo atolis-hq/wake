@@ -4,6 +4,10 @@ export function createGitHubClient(token: string) {
   const octokit = new Octokit({ auth: token });
 
   return {
+    async getAuthenticatedLogin(): Promise<string> {
+      const { data } = await octokit.rest.users.getAuthenticated();
+      return data.login;
+    },
     // `maxResults` is a hard cap on issues returned, not just a page size:
     // octokit.paginate otherwise walks every page regardless of page size,
     // which burns GitHub's rate limit (a "fourth budget") on repos with many

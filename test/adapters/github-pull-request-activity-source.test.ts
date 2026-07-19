@@ -127,6 +127,82 @@ describe('createGitHubPullRequestActivitySource', () => {
     expect(commentEvents[0]?.sourceRefs.resourceUri).toBe('github:pr:org/repo#91');
   });
 
+  it('marks an unmarked review-comment reply from Wake\'s own login as bot-authored (#258 follow-up)', async () => {
+    // A revise run replies directly via `gh api .../replies`, bypassing
+    // formatWakeComment entirely — no wake:agent marker, account type
+    // 'User'. Without a selfLogin check this looks like a fresh human
+    // reply and re-triggers another Wake run against itself.
+    const client = {
+      listPullRequests: vi.fn().mockResolvedValue([]),
+      getPullRequest: vi.fn(),
+      listComments: vi.fn().mockResolvedValue([]),
+      listReviews: vi.fn().mockResolvedValue([]),
+      listReviewComments: vi.fn().mockResolvedValue([
+        {
+          id: 501,
+          in_reply_to_id: 500,
+          path: 'docs/example.md',
+          line: 3,
+          body: 'Done in abc123. No marker, posted via gh api directly.',
+          user: { login: 'atolis-hq-agent', type: 'User' },
+          created_at: '2026-07-18T00:05:00Z',
+          updated_at: '2026-07-18T00:05:00Z',
+          html_url: 'https://github.com/org/repo/pull/91#discussion_r501',
+        },
+      ]),
+      replyToReviewComment: vi.fn(),
+      createComment: vi.fn(),
+    };
+    const source = createGitHubPullRequestActivitySource({
+      client,
+      stateStore: createStateStore({ wakeRoot: root }),
+      config: buildConfig(),
+      resourceIndex: createFakeResourceIndex(),
+      now: () => new Date('2026-07-18T00:00:00Z'),
+      selfLogin: 'atolis-hq-agent',
+    });
+
+    const events = await source.pollEvents({ watch: [{ resourceUri: 'github:pr:org/repo#91' }] });
+    const reviewCommentEvent = events.find((e) => e.sourceEventType === 'pr.review-comment.created');
+    expect(reviewCommentEvent?.derivedHints?.botAuthoredComment).toBe(true);
+  });
+
+  it('does not mark an unmarked review-comment reply from a different login as bot-authored', async () => {
+    const client = {
+      listPullRequests: vi.fn().mockResolvedValue([]),
+      getPullRequest: vi.fn(),
+      listComments: vi.fn().mockResolvedValue([]),
+      listReviews: vi.fn().mockResolvedValue([]),
+      listReviewComments: vi.fn().mockResolvedValue([
+        {
+          id: 502,
+          in_reply_to_id: 500,
+          path: 'docs/example.md',
+          line: 3,
+          body: 'Actually, please also rename the other occurrence.',
+          user: { login: 'a-real-reviewer', type: 'User' },
+          created_at: '2026-07-18T00:06:00Z',
+          updated_at: '2026-07-18T00:06:00Z',
+          html_url: 'https://github.com/org/repo/pull/91#discussion_r502',
+        },
+      ]),
+      replyToReviewComment: vi.fn(),
+      createComment: vi.fn(),
+    };
+    const source = createGitHubPullRequestActivitySource({
+      client,
+      stateStore: createStateStore({ wakeRoot: root }),
+      config: buildConfig(),
+      resourceIndex: createFakeResourceIndex(),
+      now: () => new Date('2026-07-18T00:00:00Z'),
+      selfLogin: 'atolis-hq-agent',
+    });
+
+    const events = await source.pollEvents({ watch: [{ resourceUri: 'github:pr:org/repo#91' }] });
+    const reviewCommentEvent = events.find((e) => e.sourceEventType === 'pr.review-comment.created');
+    expect(reviewCommentEvent?.derivedHints?.botAuthoredComment).toBe(false);
+  });
+
   it('does not poll watchlisted PR activity when pullRequests.enabled is false', async () => {
     const client = {
       listPullRequests: vi.fn().mockResolvedValue([]),

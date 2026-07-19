@@ -105,6 +105,7 @@ function normalizeTicketCommentEvent(input: {
   comment: GitHubComment;
   ingestedAt: string;
   existingUpdatedAt?: string;
+  selfLogin?: string;
 }): UnkeyedEventEnvelope {
   const isUpdate =
     input.existingUpdatedAt !== undefined &&
@@ -147,9 +148,15 @@ function normalizeTicketCommentEvent(input: {
       // not be able to unblock a blocked issue; only an actual human reply should.
       // The marker check catches Wake's own comments even when expectedEcho
       // missed them (crash-recovery gap) or the agent account type is 'User'.
+      // The selfLogin check catches a comment posted by direct API/CLI call
+      // (e.g. a `revise` run replying via `gh api`) that never carries the
+      // marker at all — without it, Wake's own reply looks human and
+      // re-triggers another run against itself (#258 follow-up incident: 99
+      // duplicate replies from exactly this gap).
       botAuthoredComment:
         input.comment.user?.type === 'Bot' ||
-        (input.comment.body ?? '').includes(wakeCommentMarker),
+        (input.comment.body ?? '').includes(wakeCommentMarker) ||
+        (input.selfLogin !== undefined && input.comment.user?.login === input.selfLogin),
     },
   });
 }
@@ -341,6 +348,11 @@ export function createGitHubIssuesWorkSource(deps: {
   // a forgotten index must fail loudly, not silently degrade to a scan.
   resourceIndex: ResourceIndex;
   now: () => Date;
+  // The GitHub login Wake itself authenticates as, used as a third signal
+  // (alongside account type and the wake:agent marker) for bot-authored
+  // detection — see normalizeTicketCommentEvent. Optional because it's
+  // undefined when the GitHub client is a fake/test double.
+  selfLogin?: string;
 }) {
   /** O(1): one shard read, then a direct projection read by work id. */
   async function readProjectionForIssue(
@@ -436,6 +448,7 @@ export function createGitHubIssuesWorkSource(deps: {
                 issueNumber: issue.number,
                 comment,
                 ingestedAt,
+                ...(deps.selfLogin === undefined ? {} : { selfLogin: deps.selfLogin }),
                 ...(known?.updatedAt === undefined
                   ? {}
                   : { existingUpdatedAt: known.updatedAt }),

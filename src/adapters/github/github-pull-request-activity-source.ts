@@ -68,8 +68,22 @@ function reviewThreadResourceUri(repo: string, prNumber: number, rootId: number)
   return buildResourceUri('github', 'pr-review-thread', `${repo}#${prNumber}/rt_${rootId}`);
 }
 
-function isBotAuthored(comment: { user?: { type?: string } | null; body?: string | null }): boolean {
-  return comment.user?.type === 'Bot' || (comment.body ?? '').includes(wakeCommentMarker);
+// selfLogin is the only reliable signal for an agent-authored comment posted
+// by direct API/CLI call (e.g. a `revise` run replying via `gh api
+// .../replies`), which never carries the marker and whose account `type` is
+// `User`, not `Bot` — checking only those two would let the agent's own
+// replies look human and re-trigger another run against themselves (#258
+// follow-up incident: 99 duplicate replies from exactly this gap). Optional
+// because it's undefined when the GitHub client is a fake/test double.
+function isBotAuthored(
+  comment: { user?: { login?: string; type?: string } | null; body?: string | null },
+  selfLogin: string | undefined,
+): boolean {
+  return (
+    comment.user?.type === 'Bot' ||
+    (comment.body ?? '').includes(wakeCommentMarker) ||
+    (selfLogin !== undefined && comment.user?.login === selfLogin)
+  );
 }
 
 export function createGitHubPullRequestActivitySource(deps: {
@@ -86,6 +100,7 @@ export function createGitHubPullRequestActivitySource(deps: {
   config: WakeConfig;
   resourceIndex: ResourceIndex;
   now: () => Date;
+  selfLogin?: string;
 }) {
   function repoAndNumberFromPrUri(resourceUri: string): { owner: string; repo: string; repoRef: string; number: number } | null {
     // github:pr:<owner>/<repo>#<number>
@@ -203,7 +218,7 @@ export function createGitHubPullRequestActivitySource(deps: {
                 resourceUri,
               },
             },
-            derivedHints: { botAuthoredComment: isBotAuthored(comment) },
+            derivedHints: { botAuthoredComment: isBotAuthored(comment, deps.selfLogin) },
           }),
         );
       }
@@ -237,7 +252,7 @@ export function createGitHubPullRequestActivitySource(deps: {
                 resourceUri,
               },
             },
-            derivedHints: { botAuthoredComment: isBotAuthored(review) },
+            derivedHints: { botAuthoredComment: isBotAuthored(review, deps.selfLogin) },
           }),
         );
       }
@@ -278,7 +293,7 @@ export function createGitHubPullRequestActivitySource(deps: {
                 reviewThread: { path: comment.path, line: comment.line ?? comment.original_line ?? undefined },
               },
             },
-            derivedHints: { botAuthoredComment: isBotAuthored(comment) },
+            derivedHints: { botAuthoredComment: isBotAuthored(comment, deps.selfLogin) },
           }),
         );
       }

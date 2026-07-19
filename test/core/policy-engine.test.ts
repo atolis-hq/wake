@@ -528,6 +528,109 @@ describe('policy engine: resolveApprovalTransition', () => {
   });
 });
 
+describe('policy engine: resolvePendingReviewFeedback', () => {
+  it('returns null when issue is not awaiting approval', () => {
+    const policy = createPolicyEngine();
+    const issue = buildIssue({ labels: ['wake'] });
+    expect(policy.resolvePendingReviewFeedback(issue)).toBeNull();
+  });
+
+  it('returns null when the latest unhandled comment has no resourceUri (issue thread, not a PR surface)', () => {
+    const policy = createPolicyEngine();
+    const issue = buildAwaitingApprovalIssue({
+      latestCommentBody: 'Looks reasonable to me.',
+      pendingApprovalAction: 'implement',
+    });
+    expect(policy.resolvePendingReviewFeedback(issue)).toBeNull();
+  });
+
+  it('returns "revise" when the latest unhandled comment came from a correlated PR surface, even without a pendingApprovalAction (legacy state)', () => {
+    const policy = createPolicyEngine();
+    const issue = parseIssueStateRecord({
+      schemaVersion: 1,
+      workItemKey: workId,
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 50,
+        title: 'Example',
+        body: 'Body',
+        labels: [],
+        assignees: [],
+        isPullRequest: false,
+        state: 'open',
+        url: 'https://example.test/issues/50',
+        createdAt: '2026-07-06T00:00:00.000Z',
+        updatedAt: '2026-07-06T00:00:00.000Z',
+      },
+      comments: [
+        {
+          id: 'pr-review-comment-501',
+          body: 'Rename "item" to "work item"',
+          author: { login: 'reviewer' },
+          createdAt: '2026-07-06T01:00:00.000Z',
+          updatedAt: '2026-07-06T01:00:00.000Z',
+          isBotAuthored: false,
+          resourceUri: 'github:pr-review-thread:atolis-hq/wake#51/rt_501',
+          reviewThread: { path: 'docs/example.md', line: 3 },
+        },
+      ],
+      wake: {
+        stage: 'implement',
+        syncedAt: '2026-07-06T00:00:00.000Z',
+        stageHistory: [],
+      },
+      context: {
+        lastRunSentinel: 'AWAITING_APPROVAL',
+      },
+    });
+
+    expect(policy.resolvePendingReviewFeedback(issue)).toBe('revise');
+  });
+
+  it('returns null when the latest PR-sourced comment was already handled', () => {
+    const policy = createPolicyEngine();
+    const issue = parseIssueStateRecord({
+      schemaVersion: 1,
+      workItemKey: workId,
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 50,
+        title: 'Example',
+        body: 'Body',
+        labels: [],
+        assignees: [],
+        isPullRequest: false,
+        state: 'open',
+        url: 'https://example.test/issues/50',
+        createdAt: '2026-07-06T00:00:00.000Z',
+        updatedAt: '2026-07-06T00:00:00.000Z',
+      },
+      comments: [
+        {
+          id: 'pr-review-comment-501',
+          body: 'Rename "item" to "work item"',
+          author: { login: 'reviewer' },
+          createdAt: '2026-07-06T01:00:00.000Z',
+          updatedAt: '2026-07-06T01:00:00.000Z',
+          isBotAuthored: false,
+          resourceUri: 'github:pr-review-thread:atolis-hq/wake#51/rt_501',
+        },
+      ],
+      wake: {
+        stage: 'implement',
+        syncedAt: '2026-07-06T00:00:00.000Z',
+        stageHistory: [],
+      },
+      context: {
+        lastRunSentinel: 'AWAITING_APPROVAL',
+        lastHandledCommentId: 'pr-review-comment-501',
+      },
+    });
+
+    expect(policy.resolvePendingReviewFeedback(issue)).toBeNull();
+  });
+});
+
 describe('policy engine: needsWakeAction', () => {
   it('ignores updatedAt-only changes while waiting for a human reply after a failed run', () => {
     const policy = createPolicyEngine();

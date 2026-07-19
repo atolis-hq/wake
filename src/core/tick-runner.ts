@@ -76,6 +76,10 @@ function latestHumanCommentId(candidate: IssueStateRecord): string | undefined {
 // projection passed in as `candidate`/`projection`, since the completion
 // event that would update lastHandledCommentId for *this* run hasn't been
 // folded yet at the point this runs).
+function isReviewThreadResourceUri(resourceUri: string): boolean {
+  return resourceUri.split(':')[1] === 'pr-review-thread';
+}
+
 function isFreshTriggeringComment(candidate: IssueStateRecord): boolean {
   const context = candidate.context as Record<string, unknown>;
   const handledCommentId =
@@ -200,8 +204,20 @@ export function createTickRunner(deps: {
         // latestComment.resourceUri would misroute the reply to whatever
         // surface last happened to comment, even long after that comment
         // was already replied to.
+        //
+        // Never threads a pr-review-thread surface specifically: this is
+        // Wake's own status/approval-request/question card, a milestone
+        // message, not a targeted reply to one inline comment — burying it
+        // as a reply deep in a single review thread makes it easy to miss.
+        // Omitting resourceUri here falls back to sourceOrigin in
+        // sink-router.ts, landing it on the correlated issue (or, for a
+        // standalone PR-only work item, GitHub's shared issue/PR comments
+        // endpoint posts it as a top-level PR comment instead). Replies to
+        // individual review threads are the agent's own job now — see
+        // prompts/revise.md — via `gh api .../replies`, not this card.
         ...(input.projection.latestComment?.resourceUri === undefined ||
-        !isFreshTriggeringComment(input.projection)
+        !isFreshTriggeringComment(input.projection) ||
+        isReviewThreadResourceUri(input.projection.latestComment.resourceUri)
           ? {}
           : { resourceUri: input.projection.latestComment.resourceUri }),
       },
@@ -291,7 +307,10 @@ export function createTickRunner(deps: {
     }
 
     if (isAwaitingApproval(projection)) {
-      return policy.resolveApprovalTransition(projection) !== null;
+      return (
+        policy.resolveApprovalTransition(projection) !== null ||
+        policy.resolvePendingReviewFeedback(projection) !== null
+      );
     }
 
     const nextAction =
@@ -1163,11 +1182,18 @@ export function createTickRunner(deps: {
 
         if (isAwaitingApproval(candidate)) {
           const approvalResolution = policy.resolveApprovalTransition(candidate);
-          if (approvalResolution === null) {
-            return { status: 'idle' as const };
-          }
 
-          if (approvalResolution.approved) {
+          if (approvalResolution === null) {
+            const reviewAction = policy.resolvePendingReviewFeedback(candidate);
+            if (reviewAction === null) {
+              return { status: 'idle' as const };
+            }
+
+            action = reviewAction;
+            const workflowAction = chooseWorkflowAction(candidate, workflow);
+            claimedStage = workflowAction?.stage ?? candidate.wake.stage;
+            workspaceMode = workflowAction?.workspace ?? 'none';
+          } else if (approvalResolution.approved) {
             const approvalId = `approval-${candidate.issue.number}-${deps.clock.now().getTime()}`;
             const approvedAt = deps.clock.now().toISOString();
             const nextStage = lifecycle.nextStageFromSentinel(candidate.wake.stage, 'DONE', workflow);
@@ -1218,17 +1244,28 @@ export function createTickRunner(deps: {
               sentinel: 'DONE' as const,
               nextStage,
             };
+          } else {
+            action = approvalResolution.pendingAction;
+            const workflowAction = chooseWorkflowAction(candidate, workflow);
+            claimedStage = workflowAction?.stage ?? candidate.wake.stage;
+            workspaceMode = workflowAction?.workspace ?? 'none';
           }
-
-          action = approvalResolution.pendingAction;
-          const workflowAction = chooseWorkflowAction(candidate, workflow);
-          claimedStage = workflowAction?.stage ?? candidate.wake.stage;
-          workspaceMode = workflowAction?.workspace ?? 'none';
         } else {
           const workflowAction = chooseWorkflowAction(candidate, workflow);
+          // Retry takes priority over the stage's fresh default action.
+          // chooseWorkflowAction almost always returns a non-null action for
+          // any valid stage (e.g. 'implement'), so checking it first would
+          // silently discard chooseRetryActionAfterHumanReply's decision
+          // whenever a FAILED/BLOCKED run left a lateral action (like
+          // `revise`) unfinished with a fresh human reply waiting — instead
+          // of resuming that action, it would restart the stage from
+          // scratch (#258 follow-up incident: a FAILED `revise` run fell
+          // back to a full fresh `implement` run and lost the PR-feedback
+          // context).
           const nextAction =
+            policy.chooseRetryActionAfterHumanReply(candidate) ??
             workflowAction?.action ??
-            policy.chooseRetryActionAfterHumanReply(candidate);
+            null;
           if (nextAction === null) {
             return { status: 'idle' as const };
           }
