@@ -1188,7 +1188,7 @@ describe('tick runner', () => {
     expect(runnerCallCount).toBe(1);
   });
 
-  it('runs /codereview read-only without advancing or clearing awaiting approval', async () => {
+  it('runs a custom command without advancing or clearing awaiting approval', async () => {
     const store = createStateStore({ wakeRoot: root });
     let capturedAction: string | undefined;
     let capturedWorkspaceMode: string | undefined;
@@ -1214,7 +1214,7 @@ describe('tick runner', () => {
       comments: [
         {
           id: 'c-codereview',
-          body: '/codereview check just the data layer',
+          body: '/inspect check just the data layer',
           author: { login: 'owner' },
           createdAt: '2026-07-05T12:05:00.000Z',
           updatedAt: '2026-07-05T12:05:00.000Z',
@@ -1223,7 +1223,7 @@ describe('tick runner', () => {
       ],
       latestComment: {
         id: 'c-codereview',
-        body: '/codereview check just the data layer',
+        body: '/inspect check just the data layer',
         author: { login: 'owner' },
         createdAt: '2026-07-05T12:05:00.000Z',
         updatedAt: '2026-07-05T12:05:00.000Z',
@@ -1245,6 +1245,11 @@ describe('tick runner', () => {
 
     const config = createDefaultWakeConfig(root);
     config.sources.github.policy.requiredLabels = ['wake:queue'];
+    config.commands.inspect = {
+      action: 'codereview',
+      workspace: 'read-only',
+      tier: 'standard',
+    };
 
     const tickRunner = createTickRunner({
       clock: { now: () => new Date('2026-07-05T12:10:00.000Z') },

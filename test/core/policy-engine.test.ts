@@ -685,22 +685,30 @@ describe('policy engine: needsWakeAction', () => {
   });
 });
 
-describe('policy engine: resolveCodeReviewRequest', () => {
-  it('returns the codereview action for an unhandled /codereview command', () => {
+describe('policy engine: resolveCustomCommandRequest', () => {
+  it('returns the configured action for an unhandled custom command', () => {
     const policy = createPolicyEngine();
+    const config = createDefaultWakeConfig();
+    config.commands.inspect = {
+      action: 'codereview',
+      workspace: 'read-only',
+      tier: 'standard',
+    };
     const issue = buildNeedsWakeActionIssue({
       latestCommentId: 'c-2',
       lastHandledCommentId: 'c-1',
       lastRunSentinel: 'AWAITING_APPROVAL',
     });
-    issue.latestComment!.body = '/codereview check just the data layer';
-    issue.comments[0]!.body = '/codereview check just the data layer';
+    issue.latestComment!.body = '/inspect check just the data layer';
+    issue.comments[0]!.body = '/inspect check just the data layer';
 
-    expect(policy.resolveCodeReviewRequest(issue)).toBe('codereview');
+    expect(policy.resolveCustomCommandRequest(issue, config)?.action).toBe('codereview');
+    expect(policy.resolveCustomCommandRequest(issue, config)?.command).toBe('inspect');
   });
 
-  it('ignores already handled code review commands and inline mentions', () => {
+  it('ignores already handled custom commands and inline mentions', () => {
     const policy = createPolicyEngine();
+    const config = createDefaultWakeConfig();
     const handled = buildNeedsWakeActionIssue({
       latestCommentId: 'c-2',
       lastHandledCommentId: 'c-2',
@@ -717,8 +725,8 @@ describe('policy engine: resolveCodeReviewRequest', () => {
     inline.latestComment!.body = 'Could you run /codereview on this?';
     inline.comments[0]!.body = 'Could you run /codereview on this?';
 
-    expect(policy.resolveCodeReviewRequest(handled)).toBeNull();
-    expect(policy.resolveCodeReviewRequest(inline)).toBeNull();
+    expect(policy.resolveCustomCommandRequest(handled, config)).toBeNull();
+    expect(policy.resolveCustomCommandRequest(inline, config)).toBeNull();
   });
 });
 

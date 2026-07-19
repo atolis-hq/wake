@@ -11,6 +11,7 @@ import {
   defaultWorkflowName,
   workflowStageVocabulary,
 } from '../domain/workflows.js';
+import { isCustomCommandAction } from '../domain/custom-commands.js';
 import type {
   CorrelatedResource,
   CorrelationRegisteredPayload,
@@ -229,8 +230,11 @@ async function applyEvent(
     const stageChanged =
       payload.nextStage !== undefined && payload.nextStage !== current.wake.stage;
     const isFailed = payload.sentinel === 'FAILED';
-    const isCompletedCodeReview =
-      payload.action === 'codereview' && payload.sentinel === doneRunnerSentinel;
+    const isCompletedCustomCommand =
+      payload.action !== undefined &&
+      payload.sentinel === doneRunnerSentinel &&
+      config !== undefined &&
+      isCustomCommandAction(payload.action, config);
     const shouldClearSession = isForwardProgression || isFailed;
 
     return parseIssueStateRecord({
@@ -241,15 +245,15 @@ async function applyEvent(
         ...(payload.handledCommentId === undefined
           ? {}
           : { lastHandledCommentId: payload.handledCommentId }),
-        ...(payload.sentinel === undefined || isCompletedCodeReview
+        ...(payload.sentinel === undefined || isCompletedCustomCommand
           ? {}
           : { lastRunSentinel: payload.sentinel }),
-        ...(payload.action === undefined || isCompletedCodeReview
+        ...(payload.action === undefined || isCompletedCustomCommand
           ? {}
           : { lastRunAction: payload.action }),
         ...(payload.sentinel === doneRunnerSentinel &&
         payload.action !== undefined &&
-        !isCompletedCodeReview
+        !isCompletedCustomCommand
           ? { lastCompletedAction: payload.action }
           : {}),
         // Remembered so the approval path knows which action to resume or

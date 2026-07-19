@@ -144,6 +144,35 @@ Workflow stages reference these prompt templates through their `action` field.
 For a workflow-focused guide, including how workflows are selected and how stage
 transitions work, see [docs/workflows.md](workflows.md).
 
+### commands
+
+Custom slash commands map issue or correlated-PR comments to runner actions.
+The object key is the command name without the leading slash. Wake matches a
+configured command only when it appears as a token at the start of a trimmed
+comment line, so inline mentions like `please run /codereview` are ignored.
+
+```json
+"commands": {
+  "codereview": {
+    "action": "codereview",
+    "workspace": "read-only",
+    "tier": "standard"
+  }
+}
+```
+
+| Property    | Type                                    | Description                                                                           | Default       |
+| ----------- | --------------------------------------- | ------------------------------------------------------------------------------------- | ------------- |
+| `action`    | string (optional)                       | Prompt action to run; defaults to the command name and expects `prompts/<command>.md` | command name  |
+| `workspace` | `"none"` \| `"read-only"` \| `"branch"` | Workspace kind prepared for the command run                                           | `"read-only"` |
+| `tier`      | string (optional)                       | Runner tier for this command; falls back to `defaultTier` when omitted                | unset         |
+| `runner`    | string (optional)                       | Concrete runner to use for this command; takes precedence over `tier`                 | unset         |
+
+`/approved`, `/changes`, and `/question` are reserved for Wake's approval
+control flow and cannot be redefined as custom commands. Completed custom
+commands do not advance the work item's workflow stage; they handle the command
+comment and leave the current lifecycle state in place.
+
 ### sandbox
 
 Docker sandbox settings for the durable Wake container.
