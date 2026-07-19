@@ -515,12 +515,15 @@ export const wakeConfigSchema = z.object({
         enabled: z.boolean().default(false),
         maxPullRequestsPerRepo: z.number().int().positive().default(25),
         commentPageSize: z.number().int().positive().default(25),
+        checks: z.object({
+          enabled: z.boolean().default(true),
+        }).default({ enabled: true }),
         policy: z.object({
           requiredAuthors: z.array(z.string()).default([]),
         }).default({ requiredAuthors: [] }),
-      }).default({ enabled: false, maxPullRequestsPerRepo: 25, commentPageSize: 25, policy: { requiredAuthors: [] } }),
-    }).default({ enabled: false, repos: [], polling: { maxIssuesPerRepo: 25, commentPageSize: 25, lookbackMs: 60_000 }, policy: { requiredLabels: [], ignoredLabels: [], requiredAssignees: [] }, publication: { postStatusComments: true }, pullRequests: { enabled: false, maxPullRequestsPerRepo: 25, commentPageSize: 25, policy: { requiredAuthors: [] } } }),
-  }).default({ github: { enabled: false, repos: [], polling: { maxIssuesPerRepo: 25, commentPageSize: 25, lookbackMs: 60_000 }, policy: { requiredLabels: [], ignoredLabels: [], requiredAssignees: [] }, publication: { postStatusComments: true }, pullRequests: { enabled: false, maxPullRequestsPerRepo: 25, commentPageSize: 25, policy: { requiredAuthors: [] } } } }),
+      }).default({ enabled: false, maxPullRequestsPerRepo: 25, commentPageSize: 25, checks: { enabled: true }, policy: { requiredAuthors: [] } }),
+    }).default({ enabled: false, repos: [], polling: { maxIssuesPerRepo: 25, commentPageSize: 25, lookbackMs: 60_000 }, policy: { requiredLabels: [], ignoredLabels: [], requiredAssignees: [] }, publication: { postStatusComments: true }, pullRequests: { enabled: false, maxPullRequestsPerRepo: 25, commentPageSize: 25, checks: { enabled: true }, policy: { requiredAuthors: [] } } }),
+  }).default({ github: { enabled: false, repos: [], polling: { maxIssuesPerRepo: 25, commentPageSize: 25, lookbackMs: 60_000 }, policy: { requiredLabels: [], ignoredLabels: [], requiredAssignees: [] }, publication: { postStatusComments: true }, pullRequests: { enabled: false, maxPullRequestsPerRepo: 25, commentPageSize: 25, checks: { enabled: true }, policy: { requiredAuthors: [] } } } }),
   sinks: z.record(z.string(), sinkEntrySchema).default({}),
 }).superRefine((config, ctx) => {
   const promptsRoot = config.paths.promptsRoot ?? defaultPromptsRoot();
