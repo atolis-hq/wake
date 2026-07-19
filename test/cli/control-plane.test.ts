@@ -31,7 +31,12 @@ describe('control plane', () => {
       tickRunner,
       intervalMs: 0,
       isPaused: () => false,
-      logger: { info(msg) { logged.push(msg); }, error() {} },
+      logger: {
+        info(msg) {
+          logged.push(msg);
+        },
+        error() {},
+      },
       sleep: async () => {},
     });
 
@@ -54,7 +59,12 @@ describe('control plane', () => {
       tickRunner,
       intervalMs: 0,
       isPaused: () => false,
-      logger: { info(msg) { logged.push(msg); }, error() {} },
+      logger: {
+        info(msg) {
+          logged.push(msg);
+        },
+        error() {},
+      },
       sleep: async () => {},
     });
 
@@ -83,7 +93,9 @@ describe('control plane', () => {
       intervalMs: 30000,
       isPaused: () => false,
       logger: { info() {}, error() {} },
-      sleep: async (ms) => { sleepCalls.push(ms); },
+      sleep: async (ms) => {
+        sleepCalls.push(ms);
+      },
     });
 
     await controlPlane.start();
@@ -110,7 +122,9 @@ describe('control plane', () => {
       intervalMs: 5000,
       isPaused: () => false,
       logger: { info() {}, error() {} },
-      sleep: async (ms) => { sleepCalls.push(ms); },
+      sleep: async (ms) => {
+        sleepCalls.push(ms);
+      },
     });
 
     await controlPlane.start();
@@ -137,7 +151,9 @@ describe('control plane', () => {
       maxIntervalMs: 5000,
       isPaused: () => false,
       logger: { info() {}, error() {} },
-      sleep: async (ms) => { sleepCalls.push(ms); },
+      sleep: async (ms) => {
+        sleepCalls.push(ms);
+      },
     });
 
     await controlPlane.start();
@@ -164,7 +180,9 @@ describe('control plane', () => {
       intervalMs: 1000,
       isPaused: () => false,
       logger: { info() {}, error() {} },
-      sleep: async (ms) => { sleepCalls.push(ms); },
+      sleep: async (ms) => {
+        sleepCalls.push(ms);
+      },
     });
 
     await controlPlane.start();

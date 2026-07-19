@@ -82,6 +82,7 @@ async function defaultCheckRunnerCommand(
     const message = error instanceof Error ? error.message : String(error);
     throw new Error(
       `runner "${runnerName}" (${entry.kind}) command "${entry.command}" is not invocable: ${message}`,
+      { cause: error },
     );
   }
 }
@@ -153,7 +154,9 @@ export async function runStartupPreflight(
 
   if (usesRealRunner && config.sources.github.enabled && config.sources.github.repos.length > 0) {
     if (deps.workspaceManager === undefined) {
-      failures.push('canonical clone health could not be checked: no workspace manager was provided');
+      failures.push(
+        'canonical clone health could not be checked: no workspace manager was provided',
+      );
     } else {
       for (const repo of config.sources.github.repos) {
         try {

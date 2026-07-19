@@ -5,23 +5,13 @@ import type { ResourceIndex } from '../../core/contracts.js';
 import { buildResourceUri } from '../../domain/resource-uri.js';
 import { isTerminalStage } from '../../domain/stages.js';
 import { workflowForProjection } from '../../domain/workflows.js';
-import type {
-  EventEnvelope,
-  IssueStateRecord,
-  RunRecord,
-  WakeConfig,
-} from '../../domain/types.js';
+import type { EventEnvelope, IssueStateRecord, RunRecord, WakeConfig } from '../../domain/types.js';
 import type { createStateStore } from '../fs/state-store.js';
 
 type StateStore = ReturnType<typeof createStateStore>;
 
 export type BoardCondition =
-  | 'needs-human'
-  | 'active'
-  | 'ready'
-  | 'waiting'
-  | 'stalled'
-  | 'finished';
+  'needs-human' | 'active' | 'ready' | 'waiting' | 'stalled' | 'finished';
 
 interface LockMetadata {
   pid: number;
@@ -52,7 +42,13 @@ function isPidAlive(pid: number): boolean {
 async function readLockInfo(
   lockFile: string,
   now: Date,
-): Promise<{ present: boolean; pid?: number; acquiredAt?: string; ageMs?: number; pidAlive?: boolean }> {
+): Promise<{
+  present: boolean;
+  pid?: number;
+  acquiredAt?: string;
+  ageMs?: number;
+  pidAlive?: boolean;
+}> {
   try {
     const metadata = parseLockMetadata(await readFile(lockFile, 'utf8'));
     if (metadata === null) {
@@ -116,11 +112,7 @@ function timeInStageMs(item: IssueStateRecord, now: Date): number {
   return now.getTime() - Date.parse(lastChange);
 }
 
-export async function buildBoard(input: {
-  stateStore: StateStore;
-  config: WakeConfig;
-  now: Date;
-}) {
+export async function buildBoard(input: { stateStore: StateStore; config: WakeConfig; now: Date }) {
   const items = await input.stateStore.listIssueStates({
     archiveFreshnessDays: input.config.ui.archiveFreshnessDays,
     now: input.now,
@@ -200,39 +192,57 @@ export async function buildStatus(input: {
 
   const intervalMs = input.config.scheduler.intervalMs;
   const sourceStates = await listSourceStates(input.stateStore.paths.sourceStateRoot);
-  const worstAgeMs = sourceStates.length === 0
-    ? undefined
-    : Math.max(
-        ...sourceStates.map((source) => input.now.getTime() - Date.parse(source.lastSuccessfulPollAt)),
-      );
+  const worstAgeMs =
+    sourceStates.length === 0
+      ? undefined
+      : Math.max(
+          ...sourceStates.map(
+            (source) => input.now.getTime() - Date.parse(source.lastSuccessfulPollAt),
+          ),
+        );
 
-  const sourceFreshness = worstAgeMs === undefined
-    ? { level: 'unknown' as const }
-    : {
-        ageMs: worstAgeMs,
-        level: worstAgeMs > intervalMs * 10 ? ('red' as const) : worstAgeMs > intervalMs * 3 ? ('amber' as const) : ('ok' as const),
-      };
+  const sourceFreshness =
+    worstAgeMs === undefined
+      ? { level: 'unknown' as const }
+      : {
+          ageMs: worstAgeMs,
+          level:
+            worstAgeMs > intervalMs * 10
+              ? ('red' as const)
+              : worstAgeMs > intervalMs * 3
+                ? ('amber' as const)
+                : ('ok' as const),
+        };
 
   return {
     loopState,
     paused,
     runnerHealth,
     lock,
-    lastEvent: lastEvent === undefined
-      ? undefined
-      : { at: lastEvent.ingestedAt, type: lastEvent.sourceEventType, workItemKey: lastEvent.workItemKey },
-    lastRun: lastRun === undefined
-      ? undefined
-      : {
-          repo: lastRun.repo,
-          issueNumber: lastRun.issueNumber,
-          action: lastRun.action,
-          sentinel: lastRun.sentinel,
-          status: lastRun.status,
-        },
+    lastEvent:
+      lastEvent === undefined
+        ? undefined
+        : {
+            at: lastEvent.ingestedAt,
+            type: lastEvent.sourceEventType,
+            workItemKey: lastEvent.workItemKey,
+          },
+    lastRun:
+      lastRun === undefined
+        ? undefined
+        : {
+            repo: lastRun.repo,
+            issueNumber: lastRun.issueNumber,
+            action: lastRun.action,
+            sentinel: lastRun.sentinel,
+            status: lastRun.status,
+          },
     sourceFreshness,
     counters,
-    runsToday: countToday(todaysRuns.map((run) => run.startedAt), input.now),
+    runsToday: countToday(
+      todaysRuns.map((run) => run.startedAt),
+      input.now,
+    ),
     failuresToday: countToday(
       todaysRuns.filter((run) => run.status === 'failed').map((run) => run.startedAt),
       input.now,
@@ -267,10 +277,9 @@ async function listSourceStates(sourceStateRoot: string) {
           continue;
         }
         try {
-          const raw = JSON.parse(await readFile(join(sourceStateRoot, sourceDir, file), 'utf8')) as Record<
-            string,
-            unknown
-          >;
+          const raw = JSON.parse(
+            await readFile(join(sourceStateRoot, sourceDir, file), 'utf8'),
+          ) as Record<string, unknown>;
           if (typeof raw.lastSuccessfulPollAt === 'string') {
             results.push({
               source: sourceDir,
@@ -459,11 +468,20 @@ export async function buildHealth(input: {
     items
       .filter((item) => item.wake.workspacePath !== undefined)
       .map(async (item) => {
-        const exists = await stat(item.wake.workspacePath!).then(() => true).catch(() => false);
-        return exists ? null : { path: item.wake.workspacePath!, problem: `workspacePath missing for ${item.workItemKey}` };
+        const exists = await stat(item.wake.workspacePath!)
+          .then(() => true)
+          .catch(() => false);
+        return exists
+          ? null
+          : {
+              path: item.wake.workspacePath!,
+              problem: `workspacePath missing for ${item.workItemKey}`,
+            };
       }),
   );
-  const integrityIssues = integrityChecks.filter((issue): issue is { path: string; problem: string } => issue !== null);
+  const integrityIssues = integrityChecks.filter(
+    (issue): issue is { path: string; problem: string } => issue !== null,
+  );
 
   return {
     lock: {
@@ -484,18 +502,21 @@ export async function buildHealth(input: {
 export async function buildWorkspaces(input: { stateStore: StateStore }) {
   const items = await input.stateStore.listIssueStates();
   const byWorkspacePath = new Map(
-    items.filter((item) => item.wake.workspacePath !== undefined).map((item) => [item.wake.workspacePath, item]),
+    items
+      .filter((item) => item.wake.workspacePath !== undefined)
+      .map((item) => [item.wake.workspacePath, item]),
   );
 
   const workspaceRoot = input.stateStore.paths.workspaceRoot;
-  const workspaces: { path: string; repo?: string | undefined; issueNumber?: number | undefined; size: number; orphan: boolean }[] = [];
+  const workspaces: {
+    path: string;
+    repo?: string | undefined;
+    issueNumber?: number | undefined;
+    size: number;
+    orphan: boolean;
+  }[] = [];
 
-  let repoDirs: string[] = [];
-  try {
-    repoDirs = await readdir(workspaceRoot);
-  } catch {
-    repoDirs = [];
-  }
+  const repoDirs = await readdir(workspaceRoot).catch(() => []);
 
   for (const repoDir of repoDirs) {
     const repoPath = join(workspaceRoot, repoDir);

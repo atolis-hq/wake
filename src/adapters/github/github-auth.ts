@@ -9,10 +9,7 @@ type ExecFileResult = {
 };
 
 export async function resolveGitHubToken(deps?: {
-  execFile?: (
-    file: string,
-    args: string[],
-  ) => Promise<ExecFileResult>;
+  execFile?: (file: string, args: string[]) => Promise<ExecFileResult>;
 }): Promise<string> {
   try {
     const result = await (deps?.execFile ?? execFile)('gh', ['auth', 'token']);
@@ -28,6 +25,7 @@ export async function resolveGitHubToken(deps?: {
       `Failed to resolve GitHub token via gh auth token: ${
         error instanceof Error ? error.message : String(error)
       }`,
+      { cause: error },
     );
   }
 }

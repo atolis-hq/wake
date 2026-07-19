@@ -19,7 +19,7 @@ sandbox home directory layout.
 ## Goals
 
 - A `wake init` command that scaffolds a clean, non-repo host directory
-  that *is* Wake's root (no nested hidden `.wake/`).
+  that _is_ Wake's root (no nested hidden `.wake/`).
 - A Dockerfile + build/up/down/exec/resume commands that run Wake's full
   control plane inside one persistent, named container per host.
 - A first-run interactive setup path for `gh auth login`, SSH key
@@ -101,7 +101,7 @@ repo root):
 - Runs as a non-root user (e.g. `wake`) with its own home directory, so
   `gh`, `ssh`, and `claude` config all land in predictable, per-user paths
 - Entrypoint: `node dist/src/main.js start --wake-root <containerMountPath>`
-  — the container's main process *is* Wake's resident loop
+  — the container's main process _is_ Wake's resident loop
 
 **First-run setup** (`wake sandbox setup`, backed by `docker/setup.sh`,
 copied into every scaffolded home directory so the process is documented
@@ -163,6 +163,7 @@ prompt.
 ## D. Lifecycle commands
 
 **`wake sandbox up`:**
+
 - Errors (suggesting `wake sandbox build`) if the image doesn't exist
 - If the named container exists but is stopped, `docker start`s it
 - If it doesn't exist, runs
@@ -176,6 +177,7 @@ its mounted state persist; only the running process stops.
 `docker exec -it <containerName> ${cmd:-bash}`.
 
 **`wake sandbox resume [sessionId] [--cwd <workspacePath>]`:**
+
 - With both `sessionId` and `--cwd` given: exec directly —
   `docker exec -it <containerName> bash -lc 'cd "<workspacePath>" && claude --resume <sessionId>'`
   — this mirrors exactly what Wake's GitHub comment already tells a human
@@ -193,7 +195,7 @@ its mounted state persist; only the running process stops.
   the `promptsRoot` fallback logic — pure functions, following the
   existing vitest conventions used elsewhere in the repo.
 - Wrap `docker` invocations behind a small adapter under `src/adapters/`
-  (mirroring the existing adapter boundary pattern), so the *arguments*
+  (mirroring the existing adapter boundary pattern), so the _arguments_
   passed to `docker build` / `run` / `exec` / `stop` can be unit tested
   against a fake, without needing a real Docker daemon in CI.
 - Actual Docker build/run/exec behavior is verified manually (or via a

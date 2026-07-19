@@ -42,18 +42,19 @@ function configuredStagesForLabels(config?: WakeConfig): string[] | undefined {
   return workflow === undefined ? undefined : workflowStageVocabulary(workflow);
 }
 
-function createProjectionFromIssueEvent(event: EventEnvelope, config?: WakeConfig): IssueStateRecord | null {
+function createProjectionFromIssueEvent(
+  event: EventEnvelope,
+  config?: WakeConfig,
+): IssueStateRecord | null {
   const issue =
-    event.sourceEventType === 'ticket.upsert'
-      ? event.payload.ticket
-      : event.payload.issue;
+    event.sourceEventType === 'ticket.upsert' ? event.payload.ticket : event.payload.issue;
 
   if (issue === undefined || typeof issue !== 'object' || issue === null) {
     return null;
   }
 
   const labels = Array.isArray((issue as { labels?: unknown }).labels)
-    ? ((issue as { labels: string[] }).labels)
+    ? (issue as { labels: string[] }).labels
     : [];
 
   return parseIssueStateRecord({
@@ -89,10 +90,7 @@ async function applyEvent(
     return current;
   }
 
-  if (
-    event.sourceEventType === 'fake.issue.upsert' ||
-    event.sourceEventType === 'ticket.upsert'
-  ) {
+  if (event.sourceEventType === 'fake.issue.upsert' || event.sourceEventType === 'ticket.upsert') {
     const next = createProjectionFromIssueEvent(event, config);
     if (next === null) {
       return current;
@@ -102,7 +100,10 @@ async function applyEvent(
       return next;
     }
 
-    const nextStageFromLabels = stageFromLabels(next.issue.labels, configuredStagesForLabels(config));
+    const nextStageFromLabels = stageFromLabels(
+      next.issue.labels,
+      configuredStagesForLabels(config),
+    );
     const shouldReconcileStage =
       nextStageFromLabels !== undefined && nextStageFromLabels !== current.wake.stage;
 
@@ -224,8 +225,7 @@ async function applyEvent(
     // run failed outright. Keep it for BLOCKED so the same action can resume
     // the in-progress session after a human replies.
     const isForwardProgression =
-      payload.nextStage !== undefined &&
-      payload.nextStage !== current.wake.stage;
+      payload.nextStage !== undefined && payload.nextStage !== current.wake.stage;
     const stageChanged =
       payload.nextStage !== undefined && payload.nextStage !== current.wake.stage;
     const isFailed = payload.sentinel === 'FAILED';
@@ -239,12 +239,8 @@ async function applyEvent(
         ...(payload.handledCommentId === undefined
           ? {}
           : { lastHandledCommentId: payload.handledCommentId }),
-        ...(payload.sentinel === undefined
-          ? {}
-          : { lastRunSentinel: payload.sentinel }),
-        ...(payload.action === undefined
-          ? {}
-          : { lastRunAction: payload.action }),
+        ...(payload.sentinel === undefined ? {} : { lastRunSentinel: payload.sentinel }),
+        ...(payload.action === undefined ? {} : { lastRunAction: payload.action }),
         ...(payload.sentinel === doneRunnerSentinel && payload.action !== undefined
           ? { lastCompletedAction: payload.action }
           : {}),
@@ -258,9 +254,7 @@ async function applyEvent(
         ...current.wake,
         stage: payload.nextStage ?? current.wake.stage,
         lastRunId: payload.runId ?? current.wake.lastRunId,
-        sessionId: shouldClearSession
-          ? undefined
-          : (payload.sessionId ?? current.wake.sessionId),
+        sessionId: shouldClearSession ? undefined : (payload.sessionId ?? current.wake.sessionId),
         sessionCli: shouldClearSession
           ? undefined
           : (payload.sessionCli ?? current.wake.sessionCli),
@@ -301,9 +295,7 @@ async function applyEvent(
         ...current.wake,
         expectedEcho: {
           ...current.wake.expectedEcho,
-          commentIds: Array.from(
-            new Set([...current.wake.expectedEcho.commentIds, commentId]),
-          ),
+          commentIds: Array.from(new Set([...current.wake.expectedEcho.commentIds, commentId])),
         },
         syncedAt: event.ingestedAt,
         recentEventIds: [...current.wake.recentEventIds, event.eventId].slice(-10),
@@ -387,22 +379,24 @@ async function applyEvent(
       await ctx.resourceIndex.register(payload.resourceUri, current.workItemKey);
     } else {
       if (payload.relation === 'primary') {
-        await ctx.appendEvent(createEventEnvelope({
-          eventId: `${event.eventId}-primary-conflict`,
-          workItemKey: current.workItemKey,
-          streamScope: 'work-item',
-          direction: 'internal',
-          sourceSystem: 'wake',
-          sourceEventType: CORRELATION_PRIMARY_CONFLICT_EVENT,
-          sourceRefs: event.sourceRefs,
-          occurredAt: event.occurredAt,
-          ingestedAt: event.ingestedAt,
-          trigger: 'context-only',
-          payload: {
-            resourceUri: payload.resourceUri,
-            incumbentWorkItemKey: incumbent,
-          },
-        }));
+        await ctx.appendEvent(
+          createEventEnvelope({
+            eventId: `${event.eventId}-primary-conflict`,
+            workItemKey: current.workItemKey,
+            streamScope: 'work-item',
+            direction: 'internal',
+            sourceSystem: 'wake',
+            sourceEventType: CORRELATION_PRIMARY_CONFLICT_EVENT,
+            sourceRefs: event.sourceRefs,
+            occurredAt: event.occurredAt,
+            ingestedAt: event.ingestedAt,
+            trigger: 'context-only',
+            payload: {
+              resourceUri: payload.resourceUri,
+              incumbentWorkItemKey: incumbent,
+            },
+          }),
+        );
       }
 
       // Coherent inverse of the retraction gate below: a registration that
@@ -550,7 +544,10 @@ export function createProjectionUpdater(deps: {
         }
 
         const current = projections.get(event.workItemKey) ?? null;
-        projections.set(event.workItemKey, await applyEvent(current, event, applyEventCtx, deps.config));
+        projections.set(
+          event.workItemKey,
+          await applyEvent(current, event, applyEventCtx, deps.config),
+        );
       }
 
       for (const workItemKey of touchedWorkItemKeys) {

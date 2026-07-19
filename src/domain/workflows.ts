@@ -1,4 +1,10 @@
-import type { IssueStateRecord, RunnerRouting, RunnerSentinel, Stage, WakeConfig, WorkflowDefinition } from './types.js';
+import type {
+  IssueStateRecord,
+  RunnerSentinel,
+  Stage,
+  WakeConfig,
+  WorkflowDefinition,
+} from './types.js';
 import { stageLabelForStage } from './stages.js';
 
 export const universalQueueStage = 'queue';
@@ -61,11 +67,7 @@ export function workflowNameForProjection(
   config: WakeConfig,
 ): string {
   const context = projection.context as Record<string, unknown>;
-  return (
-    typeof context.workflow === 'string'
-      ? context.workflow
-      : defaultWorkflowName(config)
-  );
+  return typeof context.workflow === 'string' ? context.workflow : defaultWorkflowName(config);
 }
 
 export function configuredStageNames(workflow: WorkflowDefinition): string[] {

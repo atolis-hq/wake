@@ -23,7 +23,9 @@ describe('fake ticketing system', () => {
 
     const events = await source.pollEvents();
     const issueEvent = events.find((event) => event.sourceEventType === 'fake.issue.upsert');
-    const commentEvents = events.filter((event) => event.sourceEventType === 'fake.issue.comment.created');
+    const commentEvents = events.filter(
+      (event) => event.sourceEventType === 'fake.issue.comment.created',
+    );
 
     // Sources do not self-key (spec D1): the resolver in tick-runner stamps
     // the canonical workItemKey between poll and append. Every event carries

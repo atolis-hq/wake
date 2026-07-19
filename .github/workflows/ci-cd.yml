@@ -15,9 +15,9 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v6
         with:
-          node-version: "24"
+          node-version: '24'
       - run: npm ci
-      - run: npm test
+      - run: npm run verify
 
   docker-smoke:
     if: "!startsWith(github.ref, 'refs/tags/')"
@@ -57,9 +57,9 @@ jobs:
         id: semver
         uses: paulhatch/semantic-version@v6.0.2
         with:
-          tag_prefix: "v"
-          major_pattern: "(MAJOR)"
-          minor_pattern: "(MINOR)"
+          tag_prefix: 'v'
+          major_pattern: '(MAJOR)'
+          minor_pattern: '(MINOR)'
       - name: Push tag
         run: |
           git config user.name "github-actions[bot]"
@@ -78,7 +78,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
         with:
-          node-version: "24"
+          node-version: '24'
       - run: npm ci
       - run: npm run build
       - name: Set version from tag

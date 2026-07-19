@@ -61,10 +61,7 @@ export function buildCursorAgentArgs(input: {
   ];
 }
 
-export function buildCursorPromptText(input: {
-  prompt: string;
-  harnessPrompt?: string;
-}): string {
+export function buildCursorPromptText(input: { prompt: string; harnessPrompt?: string }): string {
   return input.harnessPrompt === undefined
     ? input.prompt
     : `${input.harnessPrompt}\n\n${input.prompt}`;
@@ -99,9 +96,7 @@ export function formatCursorRunLogLine(input: {
     `repo=${input.repo}`,
     `issueNumber=${input.issueNumber}`,
     `action=${input.action}`,
-    `recentEventIds=${
-      input.recentEventIds.length > 0 ? input.recentEventIds.join(',') : '(none)'
-    }`,
+    `recentEventIds=${input.recentEventIds.length > 0 ? input.recentEventIds.join(',') : '(none)'}`,
     ...(input.workspacePath === undefined
       ? []
       : [`workspacePath=${compactLogValue(input.workspacePath)}`]),
@@ -217,14 +212,13 @@ export function buildCursorToolCapabilityNote(input: {
   return input.mode === 'resume' ? `Reminder: this is still a planning-only stage. ${note}` : note;
 }
 
-function resolveCursorMode(input: { workspaceMode?: 'none' | 'read-only' | 'branch' }): 'ask' | undefined {
+function resolveCursorMode(input: {
+  workspaceMode?: 'none' | 'read-only' | 'branch';
+}): 'ask' | undefined {
   return input.workspaceMode === 'read-only' ? 'ask' : undefined;
 }
 
-function resolveModel(input: {
-  action: AgentAction;
-  settings: CursorRunnerSettings;
-}): string {
+function resolveModel(input: { action: AgentAction; settings: CursorRunnerSettings }): string {
   const { models, model } = input.settings;
 
   const actionSpecificModel = models[input.action];
@@ -239,7 +233,10 @@ function resolveModel(input: {
   return model;
 }
 
-function readSandboxLogBreadcrumb(): { text: string; metadata: { sandboxContainerName: string } } | null {
+function readSandboxLogBreadcrumb(): {
+  text: string;
+  metadata: { sandboxContainerName: string };
+} | null {
   const containerName = process.env.WAKE_SANDBOX_CONTAINER_NAME;
   if (containerName === undefined || containerName.length === 0) {
     return null;

@@ -8,9 +8,7 @@ import type { RunnerEntry, RunRecord } from '../domain/types.js';
 import { runSandboxResumeCommand } from './sandbox-resume.js';
 import { runSelfUpdateCommand, runSelfUpdateLoop } from './self-update-command.js';
 import { runStopCommand } from './stop-command.js';
-import {
-  buildSandboxLoggedCommand,
-} from './sandbox-logging.js';
+import { buildSandboxLoggedCommand } from './sandbox-logging.js';
 import type { WakeConfig } from '../domain/types.js';
 
 async function ensureContainerHomeMountParents(input: {
@@ -20,11 +18,7 @@ async function ensureContainerHomeMountParents(input: {
 }): Promise<void> {
   for (const mount of input.extraMounts) {
     const relativeTarget = posix.relative(input.containerHomeMountPath, mount.target);
-    if (
-      relativeTarget.length === 0 ||
-      relativeTarget === '.' ||
-      relativeTarget.startsWith('..')
-    ) {
+    if (relativeTarget.length === 0 || relativeTarget === '.' || relativeTarget.startsWith('..')) {
       continue;
     }
 
@@ -173,7 +167,9 @@ export async function runSandboxCommand(input: {
     }
 
     const selfUpdateArgs = input.args.slice(1);
-    const runSelfUpdate = selfUpdateArgs.includes('--loop') ? runSelfUpdateLoop : runSelfUpdateCommand;
+    const runSelfUpdate = selfUpdateArgs.includes('--loop')
+      ? runSelfUpdateLoop
+      : runSelfUpdateCommand;
 
     await runSelfUpdate({
       args: selfUpdateArgs,
@@ -203,11 +199,9 @@ export async function runSandboxCommand(input: {
   }
 
   if (subcommand === 'setup') {
-    await input.docker.exec(
-      input.config.sandbox.containerName,
-      ['bash', '/wake/docker/setup.sh'],
-      { interactive: true },
-    );
+    await input.docker.exec(input.config.sandbox.containerName, ['bash', '/wake/docker/setup.sh'], {
+      interactive: true,
+    });
     return;
   }
 
@@ -243,7 +237,9 @@ export async function runSandboxCommand(input: {
       (e): e is Exclude<RunnerEntry, { kind: 'fake' }> => e.kind !== 'fake',
     );
     if (realEntry === undefined) {
-      throw new Error('Sandbox resume requires a real runner entry (`claude` or `codex`) in config.runners.');
+      throw new Error(
+        'Sandbox resume requires a real runner entry (`claude` or `codex`) in config.runners.',
+      );
     }
 
     const runnerAdapter = createRunnerCliAdapter({

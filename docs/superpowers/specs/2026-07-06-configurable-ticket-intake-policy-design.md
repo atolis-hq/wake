@@ -33,6 +33,7 @@ GitHub API and stored on `IssueStateRecord.issue.assignees`
 numeric `id` GitHub also returns).
 
 Semantics, matching the existing `requiredLabels` convention:
+
 - Empty array (default) = no restriction.
 - Non-empty = ticket must be assigned to **at least one** (OR) of the listed
   GitHub logins. (Assignee is naturally OR-of-list; `requiredLabels` is

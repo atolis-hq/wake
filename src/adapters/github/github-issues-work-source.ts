@@ -93,9 +93,7 @@ function normalizeTicketUpsert(input: {
         issueUpdatedAt: input.issue.updated_at,
       },
     },
-    ...(input.expectedEcho === true
-      ? { derivedHints: { expectedEcho: true } }
-      : {}),
+    ...(input.expectedEcho === true ? { derivedHints: { expectedEcho: true } } : {}),
   });
 }
 
@@ -108,8 +106,7 @@ function normalizeTicketCommentEvent(input: {
   selfLogin?: string;
 }): UnkeyedEventEnvelope {
   const isUpdate =
-    input.existingUpdatedAt !== undefined &&
-    input.existingUpdatedAt !== input.comment.updated_at;
+    input.existingUpdatedAt !== undefined && input.existingUpdatedAt !== input.comment.updated_at;
 
   return createUnkeyedEventEnvelope({
     eventId: `github-comment-${input.repo}-${input.issueNumber}-${input.comment.id}-${input.comment.updated_at}`,
@@ -139,9 +136,7 @@ function normalizeTicketCommentEvent(input: {
         createdAt: input.comment.created_at,
         updatedAt: input.comment.updated_at,
       },
-      providerEventType: isUpdate
-        ? 'github.issue.comment.updated'
-        : 'github.issue.comment.created',
+      providerEventType: isUpdate ? 'github.issue.comment.updated' : 'github.issue.comment.created',
     },
     derivedHints: {
       // Third-party bots/integrations (CI, Dependabot, Renovate, etc.) must
@@ -243,7 +238,10 @@ export async function readControlPlaneUiUrl(wakeRoot: string): Promise<string | 
   }
 }
 
-export function formatWakeComment(payload: Record<string, unknown>, controlPlaneUrl?: string): string {
+export function formatWakeComment(
+  payload: Record<string, unknown>,
+  controlPlaneUrl?: string,
+): string {
   const body = typeof payload.body === 'string' ? payload.body : '';
   const kind = typeof payload.kind === 'string' ? payload.kind : undefined;
   const action = typeof payload.action === 'string' ? payload.action : undefined;
@@ -271,12 +269,17 @@ export function formatWakeComment(payload: Record<string, unknown>, controlPlane
     runId === undefined ? undefined : `run \`${runId}\``,
   ].filter((part): part is string => part !== undefined);
 
-  const name = controlPlaneUrl === undefined ? defaultAgentIdentity : `[${defaultAgentIdentity}](${controlPlaneUrl})`;
+  const name =
+    controlPlaneUrl === undefined
+      ? defaultAgentIdentity
+      : `[${defaultAgentIdentity}](${controlPlaneUrl})`;
   const header = `**${name}** _(Wake ${wakeVersion}${details.length > 0 ? ` · ${details.join(' · ')}` : ''})_`;
   const sections = [wakeCommentMarker, header, body];
 
   if (kind === 'approval-request') {
-    sections.push('_To approve this work, reply with `/approved`. To request changes, reply with `/changes` followed by your feedback. To ask a question without requesting changes, reply with `/question` followed by your question._');
+    sections.push(
+      '_To approve this work, reply with `/approved`. To request changes, reply with `/changes` followed by your feedback. To ask a question without requesting changes, reply with `/question` followed by your question._',
+    );
   }
 
   if (sessionId !== undefined) {
@@ -291,8 +294,8 @@ export function formatWakeComment(payload: Record<string, unknown>, controlPlane
       cli === undefined
         ? `<resume command unavailable: missing runner identity for session ${sessionId}>`
         : resumeCommandArgs === null
-        ? `<resume command unavailable: unsupported runner identity for session ${sessionId}>`
-        : resumeCommandArgs.join(' ');
+          ? `<resume command unavailable: unsupported runner identity for session ${sessionId}>`
+          : resumeCommandArgs.join(' ');
     const resumeCommand =
       workspacePath === undefined
         ? resumeCommandText
@@ -368,9 +371,9 @@ export function createGitHubIssuesWorkSource(deps: {
   }
 
   return {
-    async pollEvents(
-      _input?: { watch: Array<{ resourceUri: string }> },
-    ): Promise<UnkeyedEventEnvelope[]> {
+    async pollEvents(_input?: {
+      watch: Array<{ resourceUri: string }>;
+    }): Promise<UnkeyedEventEnvelope[]> {
       const ingestedAt = deps.now().toISOString();
       const events: UnkeyedEventEnvelope[] = [];
 
@@ -387,21 +390,25 @@ export function createGitHubIssuesWorkSource(deps: {
         // same point instead of silently losing the gap.
         try {
           const previousPoll = await deps.stateStore.readSourceState('github', repoRef);
-          const since = previousPoll === null
-            ? undefined
-            : new Date(Date.parse(previousPoll.lastSuccessfulPollAt) - pollOverlapMs).toISOString();
-          const issues = since === undefined
-            ? await deps.client.listIssues(
-                owner,
-                repo,
-                deps.config.sources.github.polling.maxIssuesPerRepo,
-              )
-            : await deps.client.listIssues(
-                owner,
-                repo,
-                deps.config.sources.github.polling.maxIssuesPerRepo,
-                since,
-              );
+          const since =
+            previousPoll === null
+              ? undefined
+              : new Date(
+                  Date.parse(previousPoll.lastSuccessfulPollAt) - pollOverlapMs,
+                ).toISOString();
+          const issues =
+            since === undefined
+              ? await deps.client.listIssues(
+                  owner,
+                  repo,
+                  deps.config.sources.github.polling.maxIssuesPerRepo,
+                )
+              : await deps.client.listIssues(
+                  owner,
+                  repo,
+                  deps.config.sources.github.polling.maxIssuesPerRepo,
+                  since,
+                );
 
           for (const issue of issues) {
             if (issue.pull_request !== undefined) {
@@ -415,12 +422,14 @@ export function createGitHubIssuesWorkSource(deps: {
             const local = await readProjectionForIssue(repoRef, issue.number);
 
             if (local?.issue.updatedAt !== issue.updated_at) {
-              events.push(normalizeTicketUpsert({
-                repo: repoRef,
-                issue,
-                ingestedAt,
-                expectedEcho: isExpectedLabelEcho(issue, local ?? null),
-              }));
+              events.push(
+                normalizeTicketUpsert({
+                  repo: repoRef,
+                  issue,
+                  ingestedAt,
+                  expectedEcho: isExpectedLabelEcho(issue, local ?? null),
+                }),
+              );
             }
 
             const comments = await deps.client.listComments(
@@ -431,9 +440,7 @@ export function createGitHubIssuesWorkSource(deps: {
             );
 
             for (const comment of comments) {
-              const known = local?.comments.find(
-                (entry) => entry.id === String(comment.id),
-              );
+              const known = local?.comments.find((entry) => entry.id === String(comment.id));
 
               if (known?.updatedAt === comment.updated_at) {
                 continue;
@@ -443,16 +450,16 @@ export function createGitHubIssuesWorkSource(deps: {
                 continue;
               }
 
-              events.push(normalizeTicketCommentEvent({
-                repo: repoRef,
-                issueNumber: issue.number,
-                comment,
-                ingestedAt,
-                ...(deps.selfLogin === undefined ? {} : { selfLogin: deps.selfLogin }),
-                ...(known?.updatedAt === undefined
-                  ? {}
-                  : { existingUpdatedAt: known.updatedAt }),
-              }));
+              events.push(
+                normalizeTicketCommentEvent({
+                  repo: repoRef,
+                  issueNumber: issue.number,
+                  comment,
+                  ingestedAt,
+                  ...(deps.selfLogin === undefined ? {} : { selfLogin: deps.selfLogin }),
+                  ...(known?.updatedAt === undefined ? {} : { existingUpdatedAt: known.updatedAt }),
+                }),
+              );
             }
           }
 
@@ -506,8 +513,7 @@ export function createGitHubIssuesWorkSource(deps: {
         const nextLabels = [
           ...currentLabels.filter(
             (label) =>
-              !label.startsWith(wakeStatusLabelPrefix) &&
-              !label.startsWith(wakeStageLabelPrefix),
+              !label.startsWith(wakeStatusLabelPrefix) && !label.startsWith(wakeStageLabelPrefix),
           ),
           ...(nextStatusLabel !== undefined
             ? [nextStatusLabel]
@@ -557,7 +563,10 @@ export function createGitHubIssuesWorkSource(deps: {
         owner,
         repoName,
         issueNumber,
-        formatWakeComment(input.event.payload, await readControlPlaneUiUrl(deps.config.paths.wakeRoot)),
+        formatWakeComment(
+          input.event.payload,
+          await readControlPlaneUiUrl(deps.config.paths.wakeRoot),
+        ),
       );
       const commentId = extractCreatedCommentId(response);
 

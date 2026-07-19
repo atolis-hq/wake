@@ -75,12 +75,7 @@ describe('correlation vocabularies', () => {
   });
 
   it('accepts every provenance, and nothing else', () => {
-    for (const provenance of [
-      'wake-created',
-      'agent-reported',
-      'detected',
-      'operator-declared',
-    ]) {
+    for (const provenance of ['wake-created', 'agent-reported', 'detected', 'operator-declared']) {
       expect(correlationProvenanceSchema.parse(provenance)).toBe(provenance);
     }
     expect(() => correlationProvenanceSchema.parse('guessed')).toThrow();

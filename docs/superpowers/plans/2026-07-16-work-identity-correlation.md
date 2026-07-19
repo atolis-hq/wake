@@ -4,7 +4,7 @@
 
 **Goal:** Replace Wake's ticket-coupled work identity with a minted provider-independent work ID, and lock the durable correlation event shapes, while the one-time fresh start of `.wake/` makes the cutover free.
 
-**Architecture:** Correlation lands first as an event-sourced registry (registration events → projection fold → hash-sharded reverse index) on today's ticket-shaped keys, so it ships green and fully tested. The identity flip then only changes which *values* flow through that existing machinery: sources stop self-keying and emit `sourceRefs.resourceUri` on unkeyed events, a central resolver in `tick-runner` resolves the URI through the index (minting `work-<ulid>` on a miss), and all `.wake/` paths flatten to the opaque work ID.
+**Architecture:** Correlation lands first as an event-sourced registry (registration events → projection fold → hash-sharded reverse index) on today's ticket-shaped keys, so it ships green and fully tested. The identity flip then only changes which _values_ flow through that existing machinery: sources stop self-keying and emit `sourceRefs.resourceUri` on unkeyed events, a central resolver in `tick-runner` resolves the URI through the index (minting `work-<ulid>` on a miss), and all `.wake/` paths flatten to the opaque work ID.
 
 **Tech Stack:** TypeScript, zod, vitest, `ulid` (new dependency), `node:crypto` (sha256, stdlib).
 
@@ -14,52 +14,56 @@
 
 These bind every task. Copied verbatim from the spec and CLAUDE.md.
 
-* **`workItemKey` keeps its name.** Only its value changes, from `<source>:<repo>#<number>` to `work-<ulid>`. Do not rename the envelope or projection field.
-* **Core compares resource URIs for equality only, and never parses a `<locator>`.** Hashing the whole URI string is permitted (it treats the URI as opaque bytes); splitting it to reach the locator is not.
-* **The registry is events, not state.** `correlatedResources[]` and the reverse index are folds over `wake.correlation.registered` / `wake.correlation.retracted`. Deleting `state/` and replaying `events/` must reproduce both exactly. Never cache correlation in process memory between ticks.
-* **Core never imports a concrete adapter.** Only `main.ts`'s `buildRuntime` wires concrete adapters in.
-* **Fakes and reals move together.** Any change to a `src/core/contracts.ts` interface updates the fake and the real implementation in the same task, plus `buildRuntime`. The fake must genuinely exercise the contract, never ignore a new argument.
-* **Adapters get no read access to core state.** Sources have no obligation to know the work item.
-* **No migration code, no back-compat, no schema-versioning machinery.** The fresh start is sanctioned. Delete legacy paths outright.
-* **Role vocabulary is Wake-owned and closed:** `representation | implementation | discussion | review | documentation | decision`. Relation: `primary | secondary`. Provenance: `wake-created | agent-reported | detected | operator-declared`.
-* **Git branch names stay human-readable**, derived from `repo` + `issueNumber` (spec D2). Only `.wake/` paths key on the work ID.
-* **Out of scope** (do not build): watchlists / `pollEvents({ watch })`, `createGitHubPullRequestActivitySource`, runner `artifacts` block and provider verification, per-`resourceUri` echo suppression, `resourceUri` sink routing, graph projection store, work-to-work topology, context delivery modes beyond `inline`, detection *scanning*, secondary-relation policy beyond context-only fan-out.
-* **Verify before done:** `npm run verify` (build + test) must pass.
-* **Docs are required** when the CLI or config surface changes (CLAUDE.md).
+- **`workItemKey` keeps its name.** Only its value changes, from `<source>:<repo>#<number>` to `work-<ulid>`. Do not rename the envelope or projection field.
+- **Core compares resource URIs for equality only, and never parses a `<locator>`.** Hashing the whole URI string is permitted (it treats the URI as opaque bytes); splitting it to reach the locator is not.
+- **The registry is events, not state.** `correlatedResources[]` and the reverse index are folds over `wake.correlation.registered` / `wake.correlation.retracted`. Deleting `state/` and replaying `events/` must reproduce both exactly. Never cache correlation in process memory between ticks.
+- **Core never imports a concrete adapter.** Only `main.ts`'s `buildRuntime` wires concrete adapters in.
+- **Fakes and reals move together.** Any change to a `src/core/contracts.ts` interface updates the fake and the real implementation in the same task, plus `buildRuntime`. The fake must genuinely exercise the contract, never ignore a new argument.
+- **Adapters get no read access to core state.** Sources have no obligation to know the work item.
+- **No migration code, no back-compat, no schema-versioning machinery.** The fresh start is sanctioned. Delete legacy paths outright.
+- **Role vocabulary is Wake-owned and closed:** `representation | implementation | discussion | review | documentation | decision`. Relation: `primary | secondary`. Provenance: `wake-created | agent-reported | detected | operator-declared`.
+- **Git branch names stay human-readable**, derived from `repo` + `issueNumber` (spec D2). Only `.wake/` paths key on the work ID.
+- **Out of scope** (do not build): watchlists / `pollEvents({ watch })`, `createGitHubPullRequestActivitySource`, runner `artifacts` block and provider verification, per-`resourceUri` echo suppression, `resourceUri` sink routing, graph projection store, work-to-work topology, context delivery modes beyond `inline`, detection _scanning_, secondary-relation policy beyond context-only fan-out.
+- **Verify before done:** `npm run verify` (build + test) must pass.
+- **Docs are required** when the CLI or config surface changes (CLAUDE.md).
 
 ## File Structure
 
 **New files:**
-| File | Responsibility |
-|---|---|
-| `src/lib/work-id.ts` | Mint and recognise `work-<ulid>` identifiers. Nothing else. |
-| `src/domain/resource-uri.ts` | Resource URI zod schema + the closed role/relation/provenance vocabularies. Pure types, no IO, no parsing of locators. |
-| `src/adapters/fs/resource-index.ts` | Hash-sharded `resourceUri → workItemKey` store: shard addressing, read, write, rebuild. |
-| `test/lib/work-id.test.ts`, `test/domain/resource-uri.test.ts`, `test/adapters/resource-index.test.ts` | Unit tests for the above. |
+
+| File                                                                                                   | Responsibility                                                                                                         |
+| ------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| `src/lib/work-id.ts`                                                                                   | Mint and recognise `work-<ulid>` identifiers. Nothing else.                                                            |
+| `src/domain/resource-uri.ts`                                                                           | Resource URI zod schema + the closed role/relation/provenance vocabularies. Pure types, no IO, no parsing of locators. |
+| `src/adapters/fs/resource-index.ts`                                                                    | Hash-sharded `resourceUri → workItemKey` store: shard addressing, read, write, rebuild.                                |
+| `test/lib/work-id.test.ts`, `test/domain/resource-uri.test.ts`, `test/adapters/resource-index.test.ts` | Unit tests for the above.                                                                                              |
 
 **Modified files:**
-| File | Change |
-|---|---|
-| `src/lib/paths.ts` | Add index shard path; flatten state paths to work ID; re-key workspace/transcripts; delete legacy paths. |
-| `src/domain/schema.ts` | Add correlation/work-item payload schemas + `sourceRefs.resourceUri` + `correlatedResources[]`; delete `namespacedWorkItemKey`, `sourceFromWorkItemKey`, the envelope `.transform()`, and the projection `.preprocess()`. |
-| `src/core/projection-updater.ts` | Fold correlation events; enforce one-primary; delete its `sourceFromWorkItemKey` copy. |
-| `src/adapters/fs/state-store.ts` | Re-key to work ID; delete `issueRefFromWorkItemKey` and its `namespacedWorkItemKey` copy. |
-| `src/core/contracts.ts` | `WorkSource.pollEvents()` returns unkeyed events; `WorkspaceManager.prepareWorkspace` gains `workId`. |
-| `src/core/tick-runner.ts` | Central resolver + minting between poll and append. |
-| `src/adapters/github/github-issues-work-source.ts`, `src/adapters/fake/fake-ticketing-system.ts` | Stop self-keying; emit `sourceRefs.resourceUri`. |
-| `src/adapters/git/git-workspace-manager.ts`, `src/adapters/fake/fake-workspace-manager.ts` | Accept `workId` for pathing; keep `repo`/`issueNumber` for clone + branch. |
-| `src/main.ts` | Wire `wake correlate`; wire the index into `buildRuntime`. |
+
+| File                                                                                             | Change                                                                                                                                                                                                                    |
+| ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/lib/paths.ts`                                                                               | Add index shard path; flatten state paths to work ID; re-key workspace/transcripts; delete legacy paths.                                                                                                                  |
+| `src/domain/schema.ts`                                                                           | Add correlation/work-item payload schemas + `sourceRefs.resourceUri` + `correlatedResources[]`; delete `namespacedWorkItemKey`, `sourceFromWorkItemKey`, the envelope `.transform()`, and the projection `.preprocess()`. |
+| `src/core/projection-updater.ts`                                                                 | Fold correlation events; enforce one-primary; delete its `sourceFromWorkItemKey` copy.                                                                                                                                    |
+| `src/adapters/fs/state-store.ts`                                                                 | Re-key to work ID; delete `issueRefFromWorkItemKey` and its `namespacedWorkItemKey` copy.                                                                                                                                 |
+| `src/core/contracts.ts`                                                                          | `WorkSource.pollEvents()` returns unkeyed events; `WorkspaceManager.prepareWorkspace` gains `workId`.                                                                                                                     |
+| `src/core/tick-runner.ts`                                                                        | Central resolver + minting between poll and append.                                                                                                                                                                       |
+| `src/adapters/github/github-issues-work-source.ts`, `src/adapters/fake/fake-ticketing-system.ts` | Stop self-keying; emit `sourceRefs.resourceUri`.                                                                                                                                                                          |
+| `src/adapters/git/git-workspace-manager.ts`, `src/adapters/fake/fake-workspace-manager.ts`       | Accept `workId` for pathing; keep `repo`/`issueNumber` for clone + branch.                                                                                                                                                |
+| `src/main.ts`                                                                                    | Wire `wake correlate`; wire the index into `buildRuntime`.                                                                                                                                                                |
 
 ---
 
 ### Task 1: Work ID minter
 
 **Files:**
+
 - Create: `src/lib/work-id.ts`
 - Create: `test/lib/work-id.test.ts`
 - Modify: `package.json` (add `ulid` dependency)
 
 **Interfaces:**
+
 - Consumes: nothing.
 - Produces: `createWorkId(): string` and `isWorkId(value: string): boolean`, imported by `tick-runner.ts` (Task 6).
 
@@ -169,10 +173,12 @@ git commit -m "Add work-<ulid> identifier minter"
 ### Task 2: Resource URI and correlation vocabulary
 
 **Files:**
+
 - Create: `src/domain/resource-uri.ts`
 - Create: `test/domain/resource-uri.test.ts`
 
 **Interfaces:**
+
 - Consumes: nothing.
 - Produces, all imported by `src/domain/schema.ts` (Task 3):
   - `resourceUriSchema: z.ZodString`
@@ -265,12 +271,7 @@ describe('correlation vocabularies', () => {
   });
 
   it('accepts every provenance, and nothing else', () => {
-    for (const provenance of [
-      'wake-created',
-      'agent-reported',
-      'detected',
-      'operator-declared',
-    ]) {
+    for (const provenance of ['wake-created', 'agent-reported', 'detected', 'operator-declared']) {
       expect(correlationProvenanceSchema.parse(provenance)).toBe(provenance);
     }
     expect(() => correlationProvenanceSchema.parse('guessed')).toThrow();
@@ -354,11 +355,13 @@ git commit -m "Add resource URI grammar and correlation vocabulary"
 ### Task 3: Durable event shapes
 
 **Files:**
+
 - Modify: `src/domain/schema.ts` (add to `eventEnvelopeSourceRefsSchema` ~line 174-182; add new payload schemas)
 - Modify: `src/domain/types.ts` (re-export the new types, following the existing `z.infer` pattern at line 23-25)
 - Modify: `test/domain/schema.test.ts`
 
 **Interfaces:**
+
 - Consumes: everything exported from `src/domain/resource-uri.ts` (Task 2).
 - Produces:
   - Event type constants: `WORK_ITEM_CREATED_EVENT = 'wake.workitem.created'`, `CORRELATION_REGISTERED_EVENT = 'wake.correlation.registered'`, `CORRELATION_RETRACTED_EVENT = 'wake.correlation.retracted'`, `CORRELATION_PRIMARY_CONFLICT_EVENT = 'wake.correlation.primary-conflict'`
@@ -366,7 +369,7 @@ git commit -m "Add resource URI grammar and correlation vocabulary"
   - `correlationRetractedPayloadSchema` → `{ resourceUri }`
   - `workItemCreatedPayloadSchema` → `{}` (the envelope's `workItemKey` carries the identity; the payload is deliberately empty)
   - `correlationPrimaryConflictPayloadSchema` → `{ resourceUri, incumbentWorkItemKey }`
-  - Types `CorrelationRegisteredPayload`, `CorrelationRetractedPayload` consumed by Task 5. (`CorrelatedResource` is the *projection* field's type and is defined in Task 5, not here.)
+  - Types `CorrelationRegisteredPayload`, `CorrelationRetractedPayload` consumed by Task 5. (`CorrelatedResource` is the _projection_ field's type and is defined in Task 5, not here.)
 - `sourceRefs` gains **one** optional field: `resourceUri`. It stays per-event provenance; item-level ownership lives only in the registry.
 
 **Note on the conflict event:** `wake.correlation.primary-conflict` is the warning event required when a second `primary` registration lands on a claimed URI (spec §6). It is durable, so its shape is fixed here alongside the others.
@@ -402,6 +405,7 @@ git commit -m "Add resource URI grammar and correlation vocabulary"
 - [ ] **Step 1: Write the failing tests**
 
 Add to `test/domain/schema.test.ts`. Cover, one test each:
+
 - `eventEnvelopeSourceRefsSchema` accepts a valid `resourceUri`; rejects a malformed one; **parses successfully when `resourceUri` is absent** (it is optional — existing envelopes must keep validating).
 - `correlationRegisteredPayloadSchema` accepts the full payload above; accepts it with `registeredBy` omitted; rejects an unknown `role` (`'pr'`), an unknown `relation`, an unknown `provenance`, and a malformed `resourceUri`.
 - `correlationRetractedPayloadSchema` accepts `{ resourceUri }`; rejects a missing `resourceUri`.
@@ -436,11 +440,13 @@ git commit -m "Add correlation event shapes and sourceRefs.resourceUri"
 ### Task 4: Hash-sharded reverse index
 
 **Files:**
+
 - Create: `src/adapters/fs/resource-index.ts`
 - Create: `test/adapters/resource-index.test.ts`
 - Modify: `src/lib/paths.ts` (add one path function)
 
 **Interfaces:**
+
 - Consumes: `resourceUriSchema` (Task 2).
 - Produces, consumed by `tick-runner.ts` (Task 5, Task 6):
   ```typescript
@@ -471,6 +477,7 @@ export type WakePaths = ReturnType<typeof createWakePaths>;
 Import it in `resource-index.ts` as `import type { WakePaths } from '../../lib/paths.js';`.
 
 **Design constraints:**
+
 - `shardFor(uri)` = first 2 hex chars of `sha256(uri)` → 256 shards (`00`–`ff`).
 - Hashing consumes the URI as opaque bytes. It never splits on `:` and never inspects the locator — this is what keeps sharding compliant with "core never parses a locator".
 - Shard files hold `{ "<full resourceUri>": "<workItemKey>" }`. Two URIs sharing a shard is expected and harmless; reads match on the **full URI string**.
@@ -625,9 +632,10 @@ git commit -m "Add hash-sharded resourceUri to workItemKey index"
 
 ### Task 5: Correlation fold, auto-registration, and rebuild
 
-**This task deliberately leaves keys ticket-shaped.** The index maps `resourceUri → workItemKey` and does not care what shape the key is, so the whole registry — events, fold, one-primary rule, rebuild — lands and is proven green on today's keys. Task 6 then only changes which *values* flow through it. Do not mint work IDs here.
+**This task deliberately leaves keys ticket-shaped.** The index maps `resourceUri → workItemKey` and does not care what shape the key is, so the whole registry — events, fold, one-primary rule, rebuild — lands and is proven green on today's keys. Task 6 then only changes which _values_ flow through it. Do not mint work IDs here.
 
 **Files:**
+
 - Modify: `src/domain/schema.ts` — add `correlatedResources[]` to `issueStateRecordSchema` (~line 296-319)
 - Modify: `src/core/projection-updater.ts` — fold the correlation events
 - Modify: `src/core/tick-runner.ts` — auto-register the originating ticket on first sight
@@ -636,6 +644,7 @@ git commit -m "Add hash-sharded resourceUri to workItemKey index"
 - Modify: `test/core/projection-updater.test.ts`, `test/core/tick-runner.test.ts`
 
 **Interfaces:**
+
 - Consumes: `ResourceIndex` (Task 4); payload schemas and event constants (Task 3); `buildResourceUri` (Task 2).
 - Produces: `correlatedResources: CorrelatedResource[]` on the projection, where
   ```typescript
@@ -645,17 +654,18 @@ git commit -m "Add hash-sharded resourceUri to workItemKey index"
     relation: CorrelationRelation;
     provenance: CorrelationProvenance;
     registeredBy?: string;
-    registeredAt: string;   // ISO, from the folding event's occurredAt
+    registeredAt: string; // ISO, from the folding event's occurredAt
   }
   ```
   Task 6 relies on this field and on the resolver seam.
 
 **Fold rules (spec §5, §6) — implement exactly:**
+
 1. `wake.correlation.registered` appends to `correlatedResources[]` and registers in the index.
 2. **Idempotent:** re-registering an existing `(workItemKey, resourceUri)` pair is a no-op at fold time — no duplicate array entry.
 3. **Last-write-wins per `resourceUri`** within a work item: a registration changing `role` on an already-registered URI updates the entry in place.
 4. `wake.correlation.retracted` removes the entry and the index entry.
-5. **One primary per URI:** a `primary` registration on a URI already held as `primary` by a *different* work item is folded as `secondary`, and a `wake.correlation.primary-conflict` event is appended naming the incumbent. Promotion requires an explicit retraction first. Silent re-mapping is corruption, not a merge — never let the second registration win.
+5. **One primary per URI:** a `primary` registration on a URI already held as `primary` by a _different_ work item is folded as `secondary`, and a `wake.correlation.primary-conflict` event is appended naming the incumbent. Promotion requires an explicit retraction first. Silent re-mapping is corruption, not a merge — never let the second registration win.
 
 **Auto-registration:** when `tick-runner` first sees a work item with no existing projection, append `wake.correlation.registered` for the originating ticket with `role: 'representation'`, `relation: 'primary'`, `provenance: 'wake-created'`. Build the URI with `buildResourceUri('github', 'issue', `${repo}#${number}`)` in the GitHub source, and the fake's equivalent in the fake. This makes `correlatedResources[]` a complete inventory with no founding-surface special case.
 
@@ -710,6 +720,7 @@ git commit -m "Add correlation registry: fold, one-primary rule, and rebuild"
 Tasks 1-5 exist to shrink this: the minter, URI grammar, event shapes, index, and fold are all already built and green. This task changes which values flow through them, and deletes what they replace.
 
 **Files:**
+
 - Modify: `src/core/contracts.ts` — seam changes
 - Modify: `src/lib/paths.ts` — flatten and re-key; delete legacy
 - Modify: `src/domain/schema.ts` — delete key helpers and transforms
@@ -739,8 +750,8 @@ export interface WorkSource {
 
 export interface WorkspaceManager {
   prepareWorkspace(input: {
-    workId: string;      // keys the workspace path
-    repo: string;        // still needed to clone
+    workId: string; // keys the workspace path
+    repo: string; // still needed to clone
     issueNumber: number; // still needed for the human-readable branch name
   }): Promise<{ workspacePath: string; mergeConflictDetected: boolean }>;
   prepareReadOnlyClone(input: { repo: string }): Promise<{ workspacePath: string }>;
@@ -764,12 +775,14 @@ transcriptSessionDir: (workId: string, sessionKey: string) =>
 Work IDs are filename-safe by construction (Task 1 proves it), so these take no `sanitizePathKey`. Keep `sanitizeRepo`/`sanitizePathKey` — `repoRoot` and `sourceStateFile` still use them.
 
 **Resolver — the core of this task.** In `tick-runner.ts`, between `pollEvents()` and `appendEventEnvelope` (~line 567), for each unkeyed event:
+
 1. Read `sourceRefs.resourceUri`. An event without one is a programming error in the adapter — fail loudly, do not guess.
 2. `await index.resolve(uri)`. **Hit** → stamp that `workItemKey`.
-3. **Miss** → mint: `createWorkId()`, append `wake.workitem.created`, then append `wake.correlation.registered` (`representation`/`primary`/`wake-created`) for the URI, then stamp the new key. This replaces Task 5's separate auto-registration path — minting *is* auto-registration now.
+3. **Miss** → mint: `createWorkId()`, append `wake.workitem.created`, then append `wake.correlation.registered` (`representation`/`primary`/`wake-created`) for the URI, then stamp the new key. This replaces Task 5's separate auto-registration path — minting _is_ auto-registration now.
 4. Resolution must be a pure function of durable state. Never cache resolutions in process memory between ticks (CLAUDE.md).
 
 **Deletions (spec §8) — all of these go:**
+
 - `sourceFromWorkItemKey` in `src/domain/schema.ts` (~140-146) **and** its copy in `src/core/projection-updater.ts` (~40-43)
 - `namespacedWorkItemKey` in `src/domain/schema.ts` (~148-165) **and** its copy in `src/adapters/fs/state-store.ts` (~59-60)
 - `issueRefFromWorkItemKey` in `src/adapters/fs/state-store.ts` (~38-56)
@@ -787,6 +800,7 @@ After this task, `grep -rn "workItemKey.split\|sourceFromWorkItemKey\|namespaced
 - [ ] **Step 1: Write the failing resolver tests**
 
 In `test/core/tick-runner.test.ts`, via the fakes:
+
 - A ticket discovered on a clean home mints a `work-<ulid>`, emits `wake.workitem.created` then `wake.correlation.registered` **in that order**, and writes `state/<workId>.json`.
 - A second event on the same ticket resolves through the index to the **same** work ID and mints nothing (no second `wake.workitem.created`).
 - Two different tickets mint two different work IDs.
@@ -837,11 +851,13 @@ copies of the key parse, the namespacing transform, and the legacy paths."
 ### Task 7: `wake correlate` operator command
 
 **Files:**
+
 - Modify: `src/main.ts` (command dispatch; `tick`/`start`/`init`/`sandbox`/`smoke` live here)
 - Modify: `README.md`, `docs/configuration.md`
 - Test: `test/` — follow the existing CLI command test pattern
 
 **Interfaces:**
+
 - Consumes: `ResourceIndex` (Task 4), correlation schemas (Task 3), the fold (Task 5).
 - Produces: nothing downstream.
 
@@ -885,6 +901,7 @@ git commit -m "Add wake correlate operator command"
 ### Task 8: PR-body work item marker
 
 **Files:**
+
 - Modify: `src/adapters/runner/stage-prompt.ts` — the PR-creation instructions live here (it is the file under `src/` referencing pull requests); `src/adapters/runner/prompt-templates.ts` is the sibling template surface. Read both and put the marker where the PR body is described.
 - Modify: `test/adapters/prompt-templates.test.ts`
 - Check: the scaffolded `prompts/` directory at the repo root — if it carries a PR-body template too, it needs the same marker.
@@ -925,6 +942,7 @@ git commit -m "Write work item marker into PR bodies"
 ### Task 9: Refresh stale documentation
 
 **Files:**
+
 - Modify: `docs/architecture.md` (~line 31 and ~line 120)
 - Modify: `docs/handoffs/2026-07-05-event-first-persistence.md` (~line 23)
 

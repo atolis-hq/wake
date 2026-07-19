@@ -34,7 +34,8 @@ export function createWakePaths(wakeRoot: string) {
     sourceStateFile: (source: string, key: string) =>
       join(wakeRoot, 'sources', sanitizePathKey(source), `${sanitizePathKey(key)}.json`),
     runFile: (runId: string) => join(wakeRoot, 'runs', `${runId}.json`),
-    runDateFile: (date: string, runId: string) => join(wakeRoot, 'runs', 'by-date', date, `${runId}.json`),
+    runDateFile: (date: string, runId: string) =>
+      join(wakeRoot, 'runs', 'by-date', date, `${runId}.json`),
     eventFile: (date: string) => join(wakeRoot, 'events', `${date}.jsonl`),
     eventEnvelopeFile: (eventId: string) =>
       join(wakeRoot, 'events-by-id', `${sanitizePathKey(eventId)}.json`),

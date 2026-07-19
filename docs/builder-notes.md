@@ -7,7 +7,7 @@ miss and expensive to discover. Do not re-litigate decisions recorded there.
 ## Traps that will silently break the system
 
 1. **One GitHub account, two authors.** The worker and the human comment as the
-   *same* account. Any logic keyed on comment author (unblock detection,
+   _same_ account. Any logic keyed on comment author (unblock detection,
    `/pause`-style commands later) is dead on arrival. Every Wake-authored
    comment must embed `<!-- wake -->`; "human replied" = latest comment lacks
    the marker. Test this first — it gates the whole blocked→queue flow.
@@ -27,7 +27,7 @@ miss and expensive to discover. Do not re-litigate decisions recorded there.
    Mount `~/.claude` from the volume. Do not mount host `~/.config/gh` by
    default; that would make the sandbox reuse the host GitHub identity.
    First login must be done interactively via `docker exec`. Verify Claude
-   auth survives container *recreation*, not just restart, and authenticate
+   auth survives container _recreation_, not just restart, and authenticate
    GitHub separately inside the sandbox if Wake needs it there.
 6. **Windows host filesystem.** Bind-mounting NTFS into the container makes
    `npm install` and git 5–20× slower and breaks some file modes. Use a named
@@ -45,7 +45,7 @@ miss and expensive to discover. Do not re-litigate decisions recorded there.
   process memory. If you find yourself caching "what happened last tick" in a
   variable, put it in a file instead. This is what makes crash/restart free.
 - **Crash-safe run claim.** Write the run record (status `running`, started-at)
-  *before* invoking the CLI. On startup, any `running` record older than the
+  _before_ invoking the CLI. On startup, any `running` record older than the
   wall-clock timeout is a failed attempt. This replaces any in-memory lock.
 - **Refine is cheap by construction:** no workspace, `--max-turns ~10`, batched.
   If refine ever needs `npm install`, the design is wrong — it reads the issue
@@ -54,7 +54,7 @@ miss and expensive to discover. Do not re-litigate decisions recorded there.
   that's what BLOCKED is for. Escalation is per-issue opt-in only.
 - **GitHub is half the state.** Labels can be edited by the human at any time;
   reconcile labels→local state at the start of every tick and treat GitHub as
-  the winner for *stage*, local files as the winner for *history/attempts*.
+  the winner for _stage_, local files as the winner for _history/attempts_.
 
 ## Sequencing advice
 
@@ -66,5 +66,5 @@ miss and expensive to discover. Do not re-litigate decisions recorded there.
 - Pull the baseline health gate (skip implement when `main` is red) in as soon
   as the implement stage exists — it is a few lines and prevents the single
   most wasteful failure mode.
-- `--max-turns` and the wall-clock timeout on *every* invocation from day one.
+- `--max-turns` and the wall-clock timeout on _every_ invocation from day one.
   These are the only runaway protections; they are free; never omit them.

@@ -74,10 +74,13 @@ async function lockIsStale(path: string, staleAfterMs: number, now: Date): Promi
   return ageMs >= staleAfterMs || !isPidAlive(metadata.pid);
 }
 
-export async function acquireFileLock(path: string, options?: {
-  staleAfterMs?: number;
-  now?: Date;
-}): Promise<{
+export async function acquireFileLock(
+  path: string,
+  options?: {
+    staleAfterMs?: number;
+    now?: Date;
+  },
+): Promise<{
   acquired: boolean;
   metadata?: FileLockMetadata;
   release(): Promise<void>;
@@ -129,7 +132,7 @@ export async function acquireFileLock(path: string, options?: {
     if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
       if (
         options?.staleAfterMs !== undefined &&
-        await lockIsStale(path, options.staleAfterMs, options.now ?? new Date())
+        (await lockIsStale(path, options.staleAfterMs, options.now ?? new Date()))
       ) {
         await rm(path, { force: true });
         try {

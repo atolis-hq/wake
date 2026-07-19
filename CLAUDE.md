@@ -54,7 +54,7 @@ Fake adapters are permanent test harnesses, not throwaway stubs — they exist s
 
 The durable record is an append-only event stream, not the projection:
 
-1. an inbound source event (e.g. GitHub issue/comment) is polled *unkeyed* — sources never assign identity — and `tick-runner.ts` resolves its `sourceRefs.resourceUri` through the reverse index (`state/index/<xx>.json`) to stamp the owning `workItemKey`, minting a new work item on a miss. It is then written as an immutable event envelope (`events/<date>.jsonl`)
+1. an inbound source event (e.g. GitHub issue/comment) is polled _unkeyed_ — sources never assign identity — and `tick-runner.ts` resolves its `sourceRefs.resourceUri` through the reverse index (`state/index/<xx>.json`) to stamp the owning `workItemKey`, minting a new work item on a miss. It is then written as an immutable event envelope (`events/<date>.jsonl`)
 2. `projection-updater.ts` folds relevant events into a per-item projection (`state/<workId>.json`)
 3. `policy-engine.ts` reads the projection (plus a relevant event slice) and deterministically decides the next `AgentAction` / stage transition — no tokens spent here
 4. `lifecycle-service.ts` applies the resulting stage transition
@@ -66,7 +66,8 @@ Stages (`domain/stages.ts`): `queue -> refine -> implement -> done`, with `block
 ### Wake home (`.wake/`)
 
 Wake owns a `.wake/` (or scaffolded `wake-home/`) directory: `config.json`, `ledger.json` (pause windows), `events/`, `state/`, `runs/`. Treat `state/` as a rebuildable projection, not source of truth — if projection logic changes, it should be derivable again from `events/`. That guarantee is exact and load-bearing: `rm -rf state/` + replay must reproduce projections **and** the reverse index identically to the live fold. Two traps have already broken it, so check both when touching the fold or event stamping:
-- **Event stamping.** Stamp `occurredAt`/`ingestedAt` via `eventStampNow()` at the moment of stamping. A frozen per-tick timestamp reused across a tick sorts Wake's own events *before* the polled event that creates their projection (sources stamp at poll time, which is later), so replay folds them against `null` and silently discards them. Also note **parallel work is coming** — the tick will not lock on a single item forever.
+
+- **Event stamping.** Stamp `occurredAt`/`ingestedAt` via `eventStampNow()` at the moment of stamping. A frozen per-tick timestamp reused across a tick sorts Wake's own events _before_ the polled event that creates their projection (sources stamp at poll time, which is later), so replay folds them against `null` and silently discards them. Also note **parallel work is coming** — the tick will not lock on a single item forever.
 - **`rebuildFromEvents` ordering.** The sort is stable on `ingestedAt` with deliberately **no `eventId` tie-break** — ids are not chronological, and tie-breaking on them reorders same-timestamp events against what actually happened. Equal timestamps must keep append order.
 
 **Identity is minted, not borrowed.** A work item is a `work-<ulid>`; the ticket that started it is just its first correlated resource. No durable path embeds a provider, repo, or issue number. Core compares `resourceUri` strings for equality and **never parses a locator**. See `docs/adrs/0001-correlating-external-resources-to-work-items.md`.
@@ -87,8 +88,7 @@ Wake's core selling point is being model/CLI/workflow-agnostic. This only holds 
 - If you change one of those interfaces, update the fake and the real implementation together (e.g. `fake-runner.ts` and `claude-runner.ts`), plus `buildRuntime`. They're kept deliberately symmetric so `tick`/`start` stay testable at zero token cost — don't let the fake drift into a stub that no longer exercises the real contract.
 - **Wake decides, the agent runs.** The runner prompt must never ask the agent to choose a model, apply labels, or move stage. The agent's only outputs are code/PR/comments plus the sentinel (`DONE`/`BLOCKED`/`FAILED`); only the control plane applies state transitions, after parsing that result.
 - **The tick is a pure function of durable state.** Never cache "what happened last tick" in process memory — if a decision needs it, persist it under `.wake/` first. This is what makes the resident loop crash/restart safe; don't add logic that only works if the process stays alive between ticks.
-- **GitHub is half the state.** Labels can be edited by a human at any time. Reconcile labels → local projection at the start of every tick; GitHub wins for *stage*, local files win for *history/attempts*.
-
+- **GitHub is half the state.** Labels can be edited by a human at any time. Reconcile labels → local projection at the start of every tick; GitHub wins for _stage_, local files win for _history/attempts_.
 
 ## Testing conventions specific to this repo
 
@@ -97,4 +97,5 @@ Wake's core selling point is being model/CLI/workflow-agnostic. This only holds 
 - Don't add retry-with-bigger-model logic on a failed run; a failed attempt should surface as `BLOCKED` (bad spec), not trigger silent model escalation.
 
 # Documentation requirements
+
 Whenever changing the cli command surface or config file options, you must update the relevant documentation, such as the `README.md` or `docs\configuration.md`. Keep changes minimal and scoped only to changes you made.

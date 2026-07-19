@@ -4,7 +4,7 @@
 
 **Goal:** While a work item is `awaiting-approval`, a new comment arriving on the PR Wake already correlated to it (a review, a review-thread reply, or a plain PR comment) should automatically trigger a dedicated `revise` action — no `/approved`/`/changes`/`/question` slash command required — where the agent judges each comment independently and either makes the change, answers a question, or pushes back with justification.
 
-**Architecture:** `policy-engine.ts` already gates the `awaiting-approval` state behind `resolveApprovalTransition`, which requires an explicit slash command and is correct for *issue*-thread comments (approving the merge is a real decision that needs an explicit human act). PR-sourced comments are a different signal — leaving a comment on a PR is already the deliberate act, and `commentSnapshotSchema.resourceUri` (schema.ts:143-145) already discriminates them ("absent = the originating issue thread"). This plan adds a second, narrower policy gate — `resolvePendingReviewFeedback` — that fires only when the latest unhandled comment carries a `resourceUri`, selects a new built-in action (`revise`) instead of resuming the workflow's own action, and leaves the work item in `implement`/`awaiting-approval` afterward (approval to merge is still issue-only). The prompt-building pipeline (`stage-prompt.ts`) already surfaces new comments generically by action name and already auto-replies the agent's prose response to the triggering PR/review-thread surface (`createPublishIntentEvent` in tick-runner.ts) — no changes needed there beyond a prompt file and one small formatting addition so the agent can address a second thread in the same batch.
+**Architecture:** `policy-engine.ts` already gates the `awaiting-approval` state behind `resolveApprovalTransition`, which requires an explicit slash command and is correct for _issue_-thread comments (approving the merge is a real decision that needs an explicit human act). PR-sourced comments are a different signal — leaving a comment on a PR is already the deliberate act, and `commentSnapshotSchema.resourceUri` (schema.ts:143-145) already discriminates them ("absent = the originating issue thread"). This plan adds a second, narrower policy gate — `resolvePendingReviewFeedback` — that fires only when the latest unhandled comment carries a `resourceUri`, selects a new built-in action (`revise`) instead of resuming the workflow's own action, and leaves the work item in `implement`/`awaiting-approval` afterward (approval to merge is still issue-only). The prompt-building pipeline (`stage-prompt.ts`) already surfaces new comments generically by action name and already auto-replies the agent's prose response to the triggering PR/review-thread surface (`createPublishIntentEvent` in tick-runner.ts) — no changes needed there beyond a prompt file and one small formatting addition so the agent can address a second thread in the same batch.
 
 **Tech Stack:** TypeScript, vitest, zod, Handlebars prompt templates.
 
@@ -21,10 +21,12 @@
 ### Task 1: Add `resolvePendingReviewFeedback` to the policy engine
 
 **Files:**
+
 - Modify: `src/core/policy-engine.ts`
 - Test: `test/core/policy-engine.test.ts`
 
 **Interfaces:**
+
 - Consumes: `IssueStateRecord` (`src/domain/types.js`), the private `isAwaitingApproval`/`latestUnhandledHumanComment` helpers already in this file.
 - Produces: `createPolicyEngine().resolvePendingReviewFeedback(issue: IssueStateRecord): AgentAction | null` — returns the literal string `'revise'` when the latest unhandled human comment carries a `resourceUri` (i.e. came from a correlated PR/review-thread surface, not the issue thread), otherwise `null`. Consumed by Task 2.
 
@@ -193,10 +195,12 @@ git commit -m "policy: add resolvePendingReviewFeedback for PR-sourced review co
 ### Task 2: Wire the `revise` action into tick-runner's awaiting-approval dispatch
 
 **Files:**
+
 - Modify: `src/core/tick-runner.ts`
 - Test: `test/core/tick-runner.test.ts`
 
 **Interfaces:**
+
 - Consumes: `policy.resolvePendingReviewFeedback` from Task 1.
 - Produces: when a candidate is `awaiting-approval` with no slash-command resolution but a fresh PR-sourced comment, the tick runner now calls `deps.runner.run({ action: 'revise', ... })` with `claimedStage` left at the candidate's current stage, instead of returning idle.
 
@@ -205,40 +209,29 @@ git commit -m "policy: add resolvePendingReviewFeedback for PR-sourced review co
 Open `test/core/tick-runner.test.ts` and add these two tests immediately after the existing test `'stays idle when awaiting approval and the comment is conversation, not an explicit command (S2)'` (search for that string to find the end of its `it(...)` block, and insert after its closing `});`):
 
 ```ts
-  it('invokes the revise action (not idle) when awaiting approval and the latest unhandled comment is PR-sourced (no slash command required)', async () => {
-    const store = createStateStore({ wakeRoot: root });
-    let runnerCallCount = 0;
-    let capturedAction: string | undefined;
+it('invokes the revise action (not idle) when awaiting approval and the latest unhandled comment is PR-sourced (no slash command required)', async () => {
+  const store = createStateStore({ wakeRoot: root });
+  let runnerCallCount = 0;
+  let capturedAction: string | undefined;
 
-    await store.writeIssueState({
-      schemaVersion: 1,
-      workItemKey: workId(99),
-      issue: {
-        repo: 'atolis-hq/wake',
-        number: 99,
-        title: 'Review Feedback Test',
-        body: 'Body',
-        labels: ['wake:queue'],
-        assignees: [],
-        isPullRequest: false,
-        state: 'open',
-        url: 'https://example.test/issues/99',
-        createdAt: '2026-07-05T12:00:00.000Z',
-        updatedAt: '2026-07-05T12:05:00.000Z',
-      },
-      comments: [
-        {
-          id: 'pr-review-comment-501',
-          body: 'Rename "item" to "work item"',
-          author: { login: 'reviewer' },
-          createdAt: '2026-07-05T12:05:00.000Z',
-          updatedAt: '2026-07-05T12:05:00.000Z',
-          isBotAuthored: false,
-          resourceUri: 'github:pr-review-thread:atolis-hq/wake#100/rt_501',
-          reviewThread: { path: 'docs/example.md', line: 3 },
-        },
-      ],
-      latestComment: {
+  await store.writeIssueState({
+    schemaVersion: 1,
+    workItemKey: workId(99),
+    issue: {
+      repo: 'atolis-hq/wake',
+      number: 99,
+      title: 'Review Feedback Test',
+      body: 'Body',
+      labels: ['wake:queue'],
+      assignees: [],
+      isPullRequest: false,
+      state: 'open',
+      url: 'https://example.test/issues/99',
+      createdAt: '2026-07-05T12:00:00.000Z',
+      updatedAt: '2026-07-05T12:05:00.000Z',
+    },
+    comments: [
+      {
         id: 'pr-review-comment-501',
         body: 'Rename "item" to "work item"',
         author: { login: 'reviewer' },
@@ -248,82 +241,91 @@ Open `test/core/tick-runner.test.ts` and add these two tests immediately after t
         resourceUri: 'github:pr-review-thread:atolis-hq/wake#100/rt_501',
         reviewThread: { path: 'docs/example.md', line: 3 },
       },
-      wake: {
-        stage: 'implement',
-        stageHistory: [],
-        recentEventIds: [],
-        syncedAt: '2026-07-05T12:00:00.000Z',
-        expectedEcho: { commentIds: [], labels: [] },
-      },
-      context: {
-        lastRunSentinel: 'AWAITING_APPROVAL',
-        pendingApprovalAction: 'implement',
-      },
-      correlatedResources: [],
-    });
-
-    const config = createDefaultWakeConfig(root);
-    config.sources.github.policy.requiredLabels = ['wake:queue'];
-
-    const tickRunner = createTickRunner({
-      clock: { now: () => new Date('2026-07-05T12:10:00.000Z') },
-      config,
-      stateStore: store,
-      workSource: { async pollEvents() { return []; } },
-      runner: {
-        async run(input) {
-          runnerCallCount += 1;
-          capturedAction = input.action;
-          return { result: 'Renamed it and pushed.\nAWAITING_APPROVAL', model: 'test-model', cli: 'test-cli' };
-        },
-      },
-      resourceIndex: createFakeResourceIndex(),
-      workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
-    });
-
-    const result = await tickRunner.runTick();
-
-    expect(result.status).toBe('processed');
-    expect(runnerCallCount).toBe(1);
-    expect(capturedAction).toBe('revise');
-
-    const projection = await findByIssueRef(store, { repo: 'atolis-hq/wake', issueNumber: 99 });
-    expect(projection?.wake.stage).toBe('implement');
-    expect(projection?.context.lastRunSentinel).toBe('AWAITING_APPROVAL');
+    ],
+    latestComment: {
+      id: 'pr-review-comment-501',
+      body: 'Rename "item" to "work item"',
+      author: { login: 'reviewer' },
+      createdAt: '2026-07-05T12:05:00.000Z',
+      updatedAt: '2026-07-05T12:05:00.000Z',
+      isBotAuthored: false,
+      resourceUri: 'github:pr-review-thread:atolis-hq/wake#100/rt_501',
+      reviewThread: { path: 'docs/example.md', line: 3 },
+    },
+    wake: {
+      stage: 'implement',
+      stageHistory: [],
+      recentEventIds: [],
+      syncedAt: '2026-07-05T12:00:00.000Z',
+      expectedEcho: { commentIds: [], labels: [] },
+    },
+    context: {
+      lastRunSentinel: 'AWAITING_APPROVAL',
+      pendingApprovalAction: 'implement',
+    },
+    correlatedResources: [],
   });
 
-  it('stays idle when awaiting approval and the latest PR-sourced comment was already handled', async () => {
-    const store = createStateStore({ wakeRoot: root });
-    let runnerCallCount = 0;
+  const config = createDefaultWakeConfig(root);
+  config.sources.github.policy.requiredLabels = ['wake:queue'];
 
-    await store.writeIssueState({
-      schemaVersion: 1,
-      workItemKey: workId(98),
-      issue: {
-        repo: 'atolis-hq/wake',
-        number: 98,
-        title: 'Review Feedback Idle Test',
-        body: 'Body',
-        labels: ['wake:queue'],
-        assignees: [],
-        isPullRequest: false,
-        state: 'open',
-        url: 'https://example.test/issues/98',
-        createdAt: '2026-07-05T12:00:00.000Z',
-        updatedAt: '2026-07-05T12:05:00.000Z',
+  const tickRunner = createTickRunner({
+    clock: { now: () => new Date('2026-07-05T12:10:00.000Z') },
+    config,
+    stateStore: store,
+    workSource: {
+      async pollEvents() {
+        return [];
       },
-      comments: [
-        {
-          id: 'pr-review-comment-402',
-          body: 'Already addressed this.',
-          author: { login: 'reviewer' },
-          createdAt: '2026-07-05T12:05:00.000Z',
-          updatedAt: '2026-07-05T12:05:00.000Z',
-          isBotAuthored: false,
-          resourceUri: 'github:pr:atolis-hq/wake#100',
-        },
-      ],
-      latestComment: {
+    },
+    runner: {
+      async run(input) {
+        runnerCallCount += 1;
+        capturedAction = input.action;
+        return {
+          result: 'Renamed it and pushed.\nAWAITING_APPROVAL',
+          model: 'test-model',
+          cli: 'test-cli',
+        };
+      },
+    },
+    resourceIndex: createFakeResourceIndex(),
+    workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+  });
+
+  const result = await tickRunner.runTick();
+
+  expect(result.status).toBe('processed');
+  expect(runnerCallCount).toBe(1);
+  expect(capturedAction).toBe('revise');
+
+  const projection = await findByIssueRef(store, { repo: 'atolis-hq/wake', issueNumber: 99 });
+  expect(projection?.wake.stage).toBe('implement');
+  expect(projection?.context.lastRunSentinel).toBe('AWAITING_APPROVAL');
+});
+
+it('stays idle when awaiting approval and the latest PR-sourced comment was already handled', async () => {
+  const store = createStateStore({ wakeRoot: root });
+  let runnerCallCount = 0;
+
+  await store.writeIssueState({
+    schemaVersion: 1,
+    workItemKey: workId(98),
+    issue: {
+      repo: 'atolis-hq/wake',
+      number: 98,
+      title: 'Review Feedback Idle Test',
+      body: 'Body',
+      labels: ['wake:queue'],
+      assignees: [],
+      isPullRequest: false,
+      state: 'open',
+      url: 'https://example.test/issues/98',
+      createdAt: '2026-07-05T12:00:00.000Z',
+      updatedAt: '2026-07-05T12:05:00.000Z',
+    },
+    comments: [
+      {
         id: 'pr-review-comment-402',
         body: 'Already addressed this.',
         author: { login: 'reviewer' },
@@ -332,44 +334,58 @@ Open `test/core/tick-runner.test.ts` and add these two tests immediately after t
         isBotAuthored: false,
         resourceUri: 'github:pr:atolis-hq/wake#100',
       },
-      wake: {
-        stage: 'implement',
-        stageHistory: [],
-        recentEventIds: [],
-        syncedAt: '2026-07-05T12:00:00.000Z',
-        expectedEcho: { commentIds: [], labels: [] },
-      },
-      context: {
-        lastRunSentinel: 'AWAITING_APPROVAL',
-        pendingApprovalAction: 'implement',
-        lastHandledCommentId: 'pr-review-comment-402',
-      },
-      correlatedResources: [],
-    });
-
-    const config = createDefaultWakeConfig(root);
-    config.sources.github.policy.requiredLabels = ['wake:queue'];
-
-    const tickRunner = createTickRunner({
-      clock: { now: () => new Date('2026-07-05T12:10:00.000Z') },
-      config,
-      stateStore: store,
-      workSource: { async pollEvents() { return []; } },
-      runner: {
-        async run() {
-          runnerCallCount += 1;
-          return { result: 'DONE', model: 'test-model', cli: 'test-cli' };
-        },
-      },
-      resourceIndex: createFakeResourceIndex(),
-      workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
-    });
-
-    const result = await tickRunner.runTick();
-
-    expect(result.status).toBe('idle');
-    expect(runnerCallCount).toBe(0);
+    ],
+    latestComment: {
+      id: 'pr-review-comment-402',
+      body: 'Already addressed this.',
+      author: { login: 'reviewer' },
+      createdAt: '2026-07-05T12:05:00.000Z',
+      updatedAt: '2026-07-05T12:05:00.000Z',
+      isBotAuthored: false,
+      resourceUri: 'github:pr:atolis-hq/wake#100',
+    },
+    wake: {
+      stage: 'implement',
+      stageHistory: [],
+      recentEventIds: [],
+      syncedAt: '2026-07-05T12:00:00.000Z',
+      expectedEcho: { commentIds: [], labels: [] },
+    },
+    context: {
+      lastRunSentinel: 'AWAITING_APPROVAL',
+      pendingApprovalAction: 'implement',
+      lastHandledCommentId: 'pr-review-comment-402',
+    },
+    correlatedResources: [],
   });
+
+  const config = createDefaultWakeConfig(root);
+  config.sources.github.policy.requiredLabels = ['wake:queue'];
+
+  const tickRunner = createTickRunner({
+    clock: { now: () => new Date('2026-07-05T12:10:00.000Z') },
+    config,
+    stateStore: store,
+    workSource: {
+      async pollEvents() {
+        return [];
+      },
+    },
+    runner: {
+      async run() {
+        runnerCallCount += 1;
+        return { result: 'DONE', model: 'test-model', cli: 'test-cli' };
+      },
+    },
+    resourceIndex: createFakeResourceIndex(),
+    workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+  });
+
+  const result = await tickRunner.runTick();
+
+  expect(result.status).toBe('idle');
+  expect(runnerCallCount).toBe(0);
+});
 ```
 
 - [ ] **Step 2: Run the tests to verify they fail**
@@ -384,20 +400,20 @@ Expected: FAIL on the first new test — `capturedAction` will be `undefined` (r
 In `src/core/tick-runner.ts`, find `shouldMarkPending` (search for `function shouldMarkPending`). Replace:
 
 ```ts
-    if (isAwaitingApproval(projection)) {
-      return policy.resolveApprovalTransition(projection) !== null;
-    }
+if (isAwaitingApproval(projection)) {
+  return policy.resolveApprovalTransition(projection) !== null;
+}
 ```
 
 with:
 
 ```ts
-    if (isAwaitingApproval(projection)) {
-      return (
-        policy.resolveApprovalTransition(projection) !== null ||
-        policy.resolvePendingReviewFeedback(projection) !== null
-      );
-    }
+if (isAwaitingApproval(projection)) {
+  return (
+    policy.resolveApprovalTransition(projection) !== null ||
+    policy.resolvePendingReviewFeedback(projection) !== null
+  );
+}
 ```
 
 - [ ] **Step 4: Wire the review-feedback branch into the run-dispatch block**
@@ -566,10 +582,12 @@ git commit -m "tick-runner: dispatch the revise action for PR-sourced review fee
 ### Task 3: Surface the review comment's raw id so the agent can reply to other threads
 
 **Files:**
+
 - Modify: `src/adapters/runner/stage-prompt.ts`
 - Test: `test/adapters/claude-runner.test.ts`
 
 **Interfaces:**
+
 - Consumes: `CommentSnapshot` (local type alias for `IssueStateRecord['comments'][number]`), specifically `comment.id` and `comment.reviewThread`.
 - Produces: `formatComment` now emits a `Review-comment-id: <raw-id>` line for any comment with `reviewThread` set, giving the `revise` prompt (Task 4) the id it needs for `gh api .../replies` calls to threads other than the one Wake auto-replies to.
 
@@ -580,35 +598,24 @@ git commit -m "tick-runner: dispatch the revise action for PR-sourced review fee
 In `test/adapters/claude-runner.test.ts`, add this test right after the existing test `'assembles a stage prompt from a projection summary and its comments'` (after its closing `});`):
 
 ```ts
-  it('surfaces the review-comment id for review-thread comments so the agent can reply to other threads', async () => {
-    const result = await buildStagePrompt({
-      action: 'implement',
-      mode: 'resume',
-      projection: {
-        ...baseProjection,
-        wake: { ...baseProjection.wake, stage: 'implement' as const },
-        context: { lastHandledCommentId: 'c-0' },
-        comments: [
-          {
-            id: 'c-0',
-            body: 'Original comment.',
-            author: { login: 'shared-user' },
-            createdAt: '2026-07-05T12:00:00.000Z',
-            updatedAt: '2026-07-05T12:00:00.000Z',
-            isBotAuthored: false,
-          },
-          {
-            id: 'pr-review-comment-3609425102',
-            body: 'Rename "item" to "work item"',
-            author: { login: 'reviewer' },
-            createdAt: '2026-07-05T12:05:00.000Z',
-            updatedAt: '2026-07-05T12:05:00.000Z',
-            isBotAuthored: false,
-            resourceUri: 'github:pr-review-thread:atolis-hq/wake#254/rt_3609425102',
-            reviewThread: { path: 'docs/workflows.md', line: 3 },
-          },
-        ],
-        latestComment: {
+it('surfaces the review-comment id for review-thread comments so the agent can reply to other threads', async () => {
+  const result = await buildStagePrompt({
+    action: 'implement',
+    mode: 'resume',
+    projection: {
+      ...baseProjection,
+      wake: { ...baseProjection.wake, stage: 'implement' as const },
+      context: { lastHandledCommentId: 'c-0' },
+      comments: [
+        {
+          id: 'c-0',
+          body: 'Original comment.',
+          author: { login: 'shared-user' },
+          createdAt: '2026-07-05T12:00:00.000Z',
+          updatedAt: '2026-07-05T12:00:00.000Z',
+          isBotAuthored: false,
+        },
+        {
           id: 'pr-review-comment-3609425102',
           body: 'Rename "item" to "work item"',
           author: { login: 'reviewer' },
@@ -618,12 +625,23 @@ In `test/adapters/claude-runner.test.ts`, add this test right after the existing
           resourceUri: 'github:pr-review-thread:atolis-hq/wake#254/rt_3609425102',
           reviewThread: { path: 'docs/workflows.md', line: 3 },
         },
+      ],
+      latestComment: {
+        id: 'pr-review-comment-3609425102',
+        body: 'Rename "item" to "work item"',
+        author: { login: 'reviewer' },
+        createdAt: '2026-07-05T12:05:00.000Z',
+        updatedAt: '2026-07-05T12:05:00.000Z',
+        isBotAuthored: false,
+        resourceUri: 'github:pr-review-thread:atolis-hq/wake#254/rt_3609425102',
+        reviewThread: { path: 'docs/workflows.md', line: 3 },
       },
-    });
-
-    expect(result.prompt).toContain('Surface: review comment on docs/workflows.md:3');
-    expect(result.prompt).toContain('Review-comment-id: 3609425102');
+    },
   });
+
+  expect(result.prompt).toContain('Surface: review comment on docs/workflows.md:3');
+  expect(result.prompt).toContain('Review-comment-id: 3609425102');
+});
 ```
 
 - [ ] **Step 2: Run the test to verify it fails**
@@ -649,11 +667,12 @@ function reviewCommentApiId(comment: CommentSnapshot): string | undefined {
 }
 
 function formatComment(comment: CommentSnapshot): string {
-  const surfaceLine = comment.reviewThread !== undefined
-    ? `Surface: review comment on ${comment.reviewThread.path}${comment.reviewThread.line === undefined ? '' : `:${comment.reviewThread.line}`}`
-    : comment.resourceUri !== undefined
-      ? `Surface: ${comment.resourceUri}`
-      : 'Surface: issue thread';
+  const surfaceLine =
+    comment.reviewThread !== undefined
+      ? `Surface: review comment on ${comment.reviewThread.path}${comment.reviewThread.line === undefined ? '' : `:${comment.reviewThread.line}`}`
+      : comment.resourceUri !== undefined
+        ? `Surface: ${comment.resourceUri}`
+        : 'Surface: issue thread';
   const reviewCommentId = reviewCommentApiId(comment);
 
   return [
@@ -687,40 +706,31 @@ git commit -m "stage-prompt: surface the raw review-comment id for review-thread
 ### Task 4: Add the `revise` prompt template
 
 **Files:**
+
 - Create: `prompts/revise.md`
 - Test: `test/adapters/claude-runner.test.ts`
 
 **Interfaces:**
+
 - Consumes: the Handlebars context `buildStagePrompt` already builds (`workItemKey`, `repo`, `issueNumber`, `branch`, `isStart`/`isResume`, `allowedToolsList`, `toolCapabilityNote`, `feedbackCommandNote`) — same context every other prompt template gets, no changes needed to `stage-prompt.ts` for this task.
-- Produces: `loadPromptTemplate('revise', mode, ...)` resolves to this file. No workflow/config wiring is needed for it to load — `buildStagePrompt`'s workspace-mode resolution comes from the *stage* (`chooseAction(projection, workflow)`), not the action, and `claimedStage` stays `implement` when `revise` runs (Task 2), so this template automatically gets `workspaceMode: 'branch'` and the harness's `skipApproval:false` sentinel contract.
+- Produces: `loadPromptTemplate('revise', mode, ...)` resolves to this file. No workflow/config wiring is needed for it to load — `buildStagePrompt`'s workspace-mode resolution comes from the _stage_ (`chooseAction(projection, workflow)`), not the action, and `claimedStage` stays `implement` when `revise` runs (Task 2), so this template automatically gets `workspaceMode: 'branch'` and the harness's `skipApproval:false` sentinel contract.
 
 - [ ] **Step 1: Write the failing test**
 
 In `test/adapters/claude-runner.test.ts`, add this test after the test added in Task 3:
 
 ```ts
-  it('renders the revise prompt with judgment instructions and reply-routing guidance', async () => {
-    const result = await buildStagePrompt({
-      action: 'revise',
-      mode: 'resume',
-      workspaceMode: 'branch',
-      projection: {
-        ...baseProjection,
-        wake: { ...baseProjection.wake, stage: 'implement' as const },
-        context: { lastHandledCommentId: 'c-0' },
-        comments: [
-          {
-            id: 'pr-review-comment-3609425102',
-            body: 'Rename "item" to "work item"',
-            author: { login: 'reviewer' },
-            createdAt: '2026-07-05T12:05:00.000Z',
-            updatedAt: '2026-07-05T12:05:00.000Z',
-            isBotAuthored: false,
-            resourceUri: 'github:pr-review-thread:atolis-hq/wake#254/rt_3609425102',
-            reviewThread: { path: 'docs/workflows.md', line: 3 },
-          },
-        ],
-        latestComment: {
+it('renders the revise prompt with judgment instructions and reply-routing guidance', async () => {
+  const result = await buildStagePrompt({
+    action: 'revise',
+    mode: 'resume',
+    workspaceMode: 'branch',
+    projection: {
+      ...baseProjection,
+      wake: { ...baseProjection.wake, stage: 'implement' as const },
+      context: { lastHandledCommentId: 'c-0' },
+      comments: [
+        {
           id: 'pr-review-comment-3609425102',
           body: 'Rename "item" to "work item"',
           author: { login: 'reviewer' },
@@ -730,18 +740,29 @@ In `test/adapters/claude-runner.test.ts`, add this test after the test added in 
           resourceUri: 'github:pr-review-thread:atolis-hq/wake#254/rt_3609425102',
           reviewThread: { path: 'docs/workflows.md', line: 3 },
         },
+      ],
+      latestComment: {
+        id: 'pr-review-comment-3609425102',
+        body: 'Rename "item" to "work item"',
+        author: { login: 'reviewer' },
+        createdAt: '2026-07-05T12:05:00.000Z',
+        updatedAt: '2026-07-05T12:05:00.000Z',
+        isBotAuthored: false,
+        resourceUri: 'github:pr-review-thread:atolis-hq/wake#254/rt_3609425102',
+        reviewThread: { path: 'docs/workflows.md', line: 3 },
       },
-    });
-
-    expect(result.prompt).toContain('REVISE');
-    expect(result.prompt).toContain('make it, commit, and push');
-    expect(result.prompt).toContain('Do not change code solely because');
-    expect(result.prompt).toContain('propose an alternative');
-    expect(result.prompt).toContain('/replies');
-    expect(result.prompt).toContain('Rename "item" to "work item"');
-    expect(result.harnessPrompt).toContain('AWAITING_APPROVAL, BLOCKED, FAILED');
-    expect(result.maxTurns).toBeGreaterThan(0);
+    },
   });
+
+  expect(result.prompt).toContain('REVISE');
+  expect(result.prompt).toContain('make it, commit, and push');
+  expect(result.prompt).toContain('Do not change code solely because');
+  expect(result.prompt).toContain('propose an alternative');
+  expect(result.prompt).toContain('/replies');
+  expect(result.prompt).toContain('Rename "item" to "work item"');
+  expect(result.harnessPrompt).toContain('AWAITING_APPROVAL, BLOCKED, FAILED');
+  expect(result.maxTurns).toBeGreaterThan(0);
+});
 ```
 
 - [ ] **Step 2: Run the test to verify it fails**
@@ -762,6 +783,7 @@ extraArgs:
 maxTurns: 100
 skipApproval: false
 ---
+
 {{#if isStart}}
 You are Wake, running the REVISE action for {{workItemKey}}, responding to
 feedback on the pull request already open for this work item.
@@ -787,6 +809,7 @@ came from.
 
 For each new comment, decide independently what it actually needs — do not
 apply one blanket response to the whole batch:
+
 - A concrete, reasonable change: make it, commit, and push to {{branch}}.
 - A question, or something you'd want clarified before acting on it: answer
   it in your response. Do not change code solely because a question was
@@ -827,6 +850,7 @@ git commit -m "prompts: add revise.md for PR review-feedback judgment"
 ### Task 5: Document the behavior and run full verification
 
 **Files:**
+
 - Modify: `docs/configuration.md`
 
 - [ ] **Step 1: Add a doc note to the `pullRequests` config section**

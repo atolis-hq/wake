@@ -10,10 +10,12 @@ export type DockerUiInput = {
   enabled: boolean;
   port: number;
   token?: string | undefined;
-  tunnel?: {
-    enabled: boolean;
-    authToken?: string | undefined;
-  } | undefined;
+  tunnel?:
+    | {
+        enabled: boolean;
+        authToken?: string | undefined;
+      }
+    | undefined;
 };
 
 export type DockerStartInput = {

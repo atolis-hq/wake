@@ -76,10 +76,13 @@ function runRecord(input: {
     action: 'implement',
     status: input.status,
     startedAt: input.startedAt ?? '2026-07-05T12:00:00.000Z',
-    tokenUsage: input.costUsd === undefined
-      ? undefined
-      : { inputTokens: 1, outputTokens: 1, costUsd: input.costUsd },
-    ...(input.sentinel === undefined ? {} : { sentinel: input.sentinel, finishedAt: '2026-07-05T12:05:00.000Z' }),
+    tokenUsage:
+      input.costUsd === undefined
+        ? undefined
+        : { inputTokens: 1, outputTokens: 1, costUsd: input.costUsd },
+    ...(input.sentinel === undefined
+      ? {}
+      : { sentinel: input.sentinel, finishedAt: '2026-07-05T12:05:00.000Z' }),
   };
 }
 
@@ -99,14 +102,20 @@ describe('ui-data', () => {
     await store.writeIssueState(issueState({ number: 3, stage: 'done' }));
     await store.writeIssueState(issueState({ number: 4, stage: 'queue' }));
     await store.writeRunRecord(runRecord({ runId: 'run-1', issueNumber: 1, status: 'running' }));
-    await store.writeRunRecord(runRecord({
-      runId: 'run-2',
-      issueNumber: 2,
-      status: 'blocked',
-      sentinel: 'BLOCKED',
-    }));
+    await store.writeRunRecord(
+      runRecord({
+        runId: 'run-2',
+        issueNumber: 2,
+        status: 'blocked',
+        sentinel: 'BLOCKED',
+      }),
+    );
 
-    const board = await buildBoard({ stateStore: store, config, now: new Date('2026-07-05T13:00:00.000Z') });
+    const board = await buildBoard({
+      stateStore: store,
+      config,
+      now: new Date('2026-07-05T13:00:00.000Z'),
+    });
     const byNumber = new Map(board.map((card) => [card.number, card]));
 
     expect(byNumber.get(1)?.condition).toBe('active');
@@ -166,16 +175,16 @@ describe('ui-data', () => {
     const config = createDefaultWakeConfig(root);
 
     await store.writeIssueState(issueState({ number: 9, stage: 'implement', lastRunId: 'run-9' }));
-    await store.writeRunRecord(runRecord({
-      runId: 'run-9',
-      issueNumber: 9,
-      status: 'awaiting-approval',
-      sentinel: 'AWAITING_APPROVAL',
-    }));
-    // Use a stage with no route to hit stalled.
-    await store.writeIssueState(
-      issueState({ number: 10, stage: 'unknown-stage' }),
+    await store.writeRunRecord(
+      runRecord({
+        runId: 'run-9',
+        issueNumber: 9,
+        status: 'awaiting-approval',
+        sentinel: 'AWAITING_APPROVAL',
+      }),
     );
+    // Use a stage with no route to hit stalled.
+    await store.writeIssueState(issueState({ number: 10, stage: 'unknown-stage' }));
 
     const board = await buildBoard({ stateStore: store, config, now: new Date() });
     const byNumber = new Map(board.map((card) => [card.number, card]));
@@ -199,20 +208,24 @@ describe('ui-data', () => {
     const store = createStateStore({ wakeRoot: root });
     const config = createDefaultWakeConfig(root);
 
-    await store.writeRunRecord(runRecord({
-      runId: 'run-yesterday',
-      issueNumber: 1,
-      status: 'completed',
-      startedAt: '2026-07-04T23:59:00.000Z',
-      costUsd: 10,
-    }));
-    await store.writeRunRecord(runRecord({
-      runId: 'run-today',
-      issueNumber: 2,
-      status: 'failed',
-      startedAt: '2026-07-05T01:00:00.000Z',
-      costUsd: 2,
-    }));
+    await store.writeRunRecord(
+      runRecord({
+        runId: 'run-yesterday',
+        issueNumber: 1,
+        status: 'completed',
+        startedAt: '2026-07-04T23:59:00.000Z',
+        costUsd: 10,
+      }),
+    );
+    await store.writeRunRecord(
+      runRecord({
+        runId: 'run-today',
+        issueNumber: 2,
+        status: 'failed',
+        startedAt: '2026-07-05T01:00:00.000Z',
+        costUsd: 2,
+      }),
+    );
     await store.appendEventEnvelope({
       schemaVersion: 1,
       eventId: 'evt-latest',

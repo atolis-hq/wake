@@ -28,10 +28,7 @@ function workId(issueNumber: number): string {
 async function seededResourceIndex(issueNumbers: number[]) {
   const resourceIndex = createFakeResourceIndex();
   for (const issueNumber of issueNumbers) {
-    await resourceIndex.register(
-      `github:issue:atolis-hq/wake#${issueNumber}`,
-      workId(issueNumber),
-    );
+    await resourceIndex.register(`github:issue:atolis-hq/wake#${issueNumber}`, workId(issueNumber));
   }
   return resourceIndex;
 }
@@ -243,7 +240,7 @@ describe('github issues work source', () => {
     expect(commentEvent?.derivedHints?.botAuthoredComment).toBe(true);
   });
 
-  it('marks a comment from Wake\'s own authenticated login as bot-authored even with no marker (#258 follow-up)', async () => {
+  it("marks a comment from Wake's own authenticated login as bot-authored even with no marker (#258 follow-up)", async () => {
     // A comment posted by direct API/CLI call (not through formatWakeComment)
     // carries neither the marker nor a 'Bot' account type — without a
     // selfLogin check this looks like a fresh human reply and re-triggers
@@ -509,7 +506,7 @@ describe('github issues work source', () => {
         stageHistory: [],
         recentEventIds: [],
         syncedAt: '2026-07-05T12:10:00.000Z',
-          expectedEcho: { commentIds: [], labels: [] },
+        expectedEcho: { commentIds: [], labels: [] },
       },
       context: {},
       correlatedResources: [],
@@ -1196,7 +1193,7 @@ describe('github issues work source', () => {
         stageHistory: [],
         recentEventIds: [],
         syncedAt: '2026-07-05T12:10:00.000Z',
-          expectedEcho: { commentIds: [], labels: [] },
+        expectedEcho: { commentIds: [], labels: [] },
       },
       context: {},
       correlatedResources: [],
@@ -1233,12 +1230,11 @@ describe('github issues work source', () => {
 
     expect(createComment).not.toHaveBeenCalled();
     expect(setLabels).toHaveBeenCalledOnce();
-    expect(setLabels).toHaveBeenCalledWith(
-      'atolis-hq',
-      'wake',
-      12,
-      ['bug', 'wake:status.working', 'wake:stage.queue'],
-    );
+    expect(setLabels).toHaveBeenCalledWith('atolis-hq', 'wake', 12, [
+      'bug',
+      'wake:status.working',
+      'wake:stage.queue',
+    ]);
     expect(deliveryEvents[0]?.sourceEventType).toBe('ticket.labels.updated');
   });
 
@@ -1272,7 +1268,7 @@ describe('github issues work source', () => {
         stageHistory: [],
         recentEventIds: [],
         syncedAt: '2026-07-05T12:10:00.000Z',
-          expectedEcho: { commentIds: [], labels: [] },
+        expectedEcho: { commentIds: [], labels: [] },
       },
       context: {},
       correlatedResources: [],
@@ -1309,12 +1305,11 @@ describe('github issues work source', () => {
 
     expect(createComment).not.toHaveBeenCalled();
     expect(setLabels).toHaveBeenCalledOnce();
-    expect(setLabels).toHaveBeenCalledWith(
-      'atolis-hq',
-      'wake',
-      13,
-      ['bug', 'wake:status.completed', 'wake:stage.done'],
-    );
+    expect(setLabels).toHaveBeenCalledWith('atolis-hq', 'wake', 13, [
+      'bug',
+      'wake:status.completed',
+      'wake:stage.done',
+    ]);
   });
 
   it('does not call setLabels when no labels change', async () => {
@@ -1347,7 +1342,7 @@ describe('github issues work source', () => {
         stageHistory: [],
         recentEventIds: [],
         syncedAt: '2026-07-05T12:10:00.000Z',
-          expectedEcho: { commentIds: [], labels: [] },
+        expectedEcho: { commentIds: [], labels: [] },
       },
       context: {},
       correlatedResources: [],

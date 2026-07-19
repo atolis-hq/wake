@@ -5,7 +5,7 @@ Implements [ADR 0001](../adrs/0001-correlating-external-resources-to-work-items.
 ## Non-negotiable invariants
 
 1. **The registry is events, not state.** Correlation lives in `wake.correlation.registered` / `wake.correlation.retracted` envelopes under `events/`; `correlatedResources[]` on the projection and the reverse index (`resourceUri → workItemKey`) are folds over those events. Deleting `state/` and replaying `events/` must reproduce both exactly. Never persist correlation only in the projection, and never cache it in process memory between ticks.
-2. **Core resolves; adapters never touch the registry.** Sources return events carrying `sourceRefs.resourceUri` with *no* obligation to know the work item. A resolver step in `tick-runner.ts` (between `pollEvents()` and `appendEventEnvelope`, currently ~line 567) stamps the canonical `workItemKey`. Do not give any adapter read access to core state — watchlists are handed to sources as plain data arguments, not fetched by them.
+2. **Core resolves; adapters never touch the registry.** Sources return events carrying `sourceRefs.resourceUri` with _no_ obligation to know the work item. A resolver step in `tick-runner.ts` (between `pollEvents()` and `appendEventEnvelope`, currently ~line 567) stamps the canonical `workItemKey`. Do not give any adapter read access to core state — watchlists are handed to sources as plain data arguments, not fetched by them.
 3. **One primary per resource URI.** The fold enforces it: a second `primary` registration on a claimed URI is downgraded to `secondary` and a warning event is appended. Promotion requires an explicit retraction of the incumbent first. Silent re-mapping moves conversation history between work items — treat it as corruption, not a merge.
 4. **Secondaries never wake a lifecycle.** Activity on a shared resource resumes only the primary item; copies appended to secondary items' streams must carry `trigger: 'context-only'`.
 5. **Agent-reported artifacts are verified before registration.** The runner-result `artifacts` block is parsed exactly like sentinels (`domain/schema.ts`). Before emitting the registration event, the owning adapter must resolve the claimed URL to a live resource and check its head branch matches the run's workspace branch. An unverifiable claim is a malformed result — do not register, do not trust, surface it like a bad sentinel.
@@ -16,7 +16,7 @@ Implements [ADR 0001](../adrs/0001-correlating-external-resources-to-work-items.
 ## Seam changes (fakes and reals move together)
 
 - `WorkSource.pollEvents()` gains a watchlist argument (e.g. `pollEvents({ watch: ResourceRef[] })`). Update `fake-ticketing-system.ts` and `github-issues-work-source.ts` symmetrically; the fake must genuinely exercise watch-driven polling, not ignore the argument.
-- PR activity is a **separate adapter** (`createGitHubPullRequestActivitySource`), sharing `github-client` with the issues source but implementing its own `WorkSource`. Do not fold PR behavior into the issues source — the issue source is a *discovery* source (mints work items, self-keys); activity sources poll only watched resources.
+- PR activity is a **separate adapter** (`createGitHubPullRequestActivitySource`), sharing `github-client` with the issues source but implementing its own `WorkSource`. Do not fold PR behavior into the issues source — the issue source is a _discovery_ source (mints work items, self-keys); activity sources poll only watched resources.
 - `AgentRunResult` gains the structured `artifacts` section. All runners must change together: `claude-runner`, Codex, Cursor, and `fake-runner`. The fake must emit parseable artifacts so `tick` tests exercise the full verify-and-register path at zero token cost.
 - Sink routing extends `sink-router.ts`'s existing `sourceRefs.sink` mechanism to `resourceUri` targets; the owning adapter is matched by the URI's `provider` segment.
 - Any new runner invocation must set `--max-turns` and a wall-clock timeout; a failed run surfaces as `BLOCKED`, never retry-with-bigger-model.
@@ -31,7 +31,7 @@ Implements [ADR 0001](../adrs/0001-correlating-external-resources-to-work-items.
 
 ## Detection (build second, not first)
 
-Contract flows (Wake-created, agent-reported, operator-declared) are the mechanism; detection is recovery. Wake-influenced PR bodies get `<!-- wake:work-item <key> -->`; the branch-name convention from `git-workspace-manager` already identifies the work item from a PR's head branch. `Closes #N` links are hints that surface a *proposed* correlation — never auto-register from them. Everything detection finds goes through the same event with `provenance: 'detected'`.
+Contract flows (Wake-created, agent-reported, operator-declared) are the mechanism; detection is recovery. Wake-influenced PR bodies get `<!-- wake:work-item <key> -->`; the branch-name convention from `git-workspace-manager` already identifies the work item from a PR's head branch. `Closes #N` links are hints that surface a _proposed_ correlation — never auto-register from them. Everything detection finds goes through the same event with `provenance: 'detected'`.
 
 ## Echo suppression interplay (#54)
 
@@ -41,7 +41,7 @@ Record provider IDs of outbound deliveries **per `resourceUri`**. Suppression is
 
 1. Agent-created PR → registered via `artifacts` path with `provenance: 'agent-reported'` only after provider verification.
 2. `rm -rf state/` + replay reproduces registry and reverse index exactly.
-3. A PR-conversation comment and a review-thread comment each resume the *issue's* lifecycle and are answered on their own surface.
+3. A PR-conversation comment and a review-thread comment each resume the _issue's_ lifecycle and are answered on their own surface.
 4. Out-of-band PR recovered by branch-name/marker detection, or adoptable via operator declaration.
 5. Wake's own PR comments suppressed by the per-URI rule with zero PR-specific suppression code.
 6. Slack comment + issue comment pending together → one run, two publish intents, each delivered to its own surface.

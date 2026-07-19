@@ -21,8 +21,8 @@ export async function runUiCommand(input: {
   }
 
   const host = input.readFlag('--host', input.args) ?? '127.0.0.1';
-  const token = input.readFlag('--token', input.args) ?? input.config.ui.token ?? process.env.WAKE_UI_TOKEN;
-
+  const token =
+    input.readFlag('--token', input.args) ?? input.config.ui.token ?? process.env.WAKE_UI_TOKEN;
 
   const server = createUiServer({
     stateStore: input.stateStore,
