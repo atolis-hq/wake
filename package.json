@@ -5,7 +5,7 @@
   "license": "Apache-2.0",
   "type": "module",
   "bin": {
-    "wake": "./dist/src/main.js"
+    "wake": "dist/src/main.js"
   },
   "main": "./dist/src/main.js",
   "exports": "./dist/src/main.js",
