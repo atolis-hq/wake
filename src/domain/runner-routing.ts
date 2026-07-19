@@ -17,6 +17,11 @@ export function maxConfiguredRunnerTimeoutMs(config: WakeConfig): number {
       activeRunnerNames.add(stageRoute.runner);
     }
   }
+  for (const commandRoute of Object.values(config.commands)) {
+    if (commandRoute.runner !== undefined) {
+      activeRunnerNames.add(commandRoute.runner);
+    }
+  }
 
   const registryTimeouts = [...activeRunnerNames]
     .map((name) => config.runners[name])
@@ -69,6 +74,7 @@ export function resolveRunnerRouting(input: {
   config: WakeConfig;
   stage: Stage;
   action: AgentAction;
+  command?: string;
   workflowName?: string;
   ledger?: WakeLedger;
   now?: Date;
@@ -78,6 +84,29 @@ export function resolveRunnerRouting(input: {
   if (workflow === undefined) {
     throw new Error(`Unknown workflow "${workflowName}".`);
   }
+  const commandRouteEntry =
+    input.command === undefined
+      ? Object.entries(input.config.commands).find(
+          ([name, route]) => (route.action ?? name) === input.action,
+        )
+      : Object.entries(input.config.commands).find(
+          ([name]) => name.toLowerCase() === input.command?.toLowerCase(),
+        );
+  const commandRoute = commandRouteEntry?.[1];
+  if (commandRoute?.runner !== undefined) {
+    const runnerName = commandRoute.runner;
+    const entry = input.config.runners[runnerName];
+    if (entry === undefined) {
+      throw new Error(`Command ${input.action} pins unknown runner "${runnerName}".`);
+    }
+    return {
+      runnerName,
+      runnerKind: entry.kind,
+      ...(commandRoute.tier === undefined ? {} : { tier: commandRoute.tier }),
+      reason: `command ${input.action} pins runner ${runnerName}`,
+    };
+  }
+
   const stageRoute = workflow.stages[input.stage];
 
   if (stageRoute?.runner !== undefined) {
@@ -93,7 +122,7 @@ export function resolveRunnerRouting(input: {
     };
   }
 
-  const tier = stageRoute?.tier ?? input.config.defaultTier;
+  const tier = commandRoute?.tier ?? stageRoute?.tier ?? input.config.defaultTier;
   const candidates = input.config.tiers[tier];
   if (candidates === undefined || candidates.length === 0) {
     throw new Error(`Stage ${input.stage} routes to unknown or empty tier "${tier}".`);
@@ -128,8 +157,10 @@ export function resolveRunnerRouting(input: {
       ? `tier ${tier} recovery probe on ${runnerName} (estimated pause not yet elapsed)`
       : isFallback
         ? `tier ${tier} fell back to ${runnerName} (higher-priority candidates paused)`
-        : stageRoute?.tier === undefined
-          ? `defaultTier ${tier} selected runner ${runnerName}`
-          : `stage ${input.stage} tier ${tier} selected runner ${runnerName}`,
+        : commandRoute?.tier !== undefined
+          ? `command ${input.action} tier ${tier} selected runner ${runnerName}`
+          : stageRoute?.tier === undefined
+            ? `defaultTier ${tier} selected runner ${runnerName}`
+            : `stage ${input.stage} tier ${tier} selected runner ${runnerName}`,
   };
 }

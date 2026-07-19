@@ -45,6 +45,7 @@ import {
 } from '../domain/workflows.js';
 import { createEventEnvelope } from '../lib/event-log.js';
 import { branchNameForIssue } from '../domain/branch-naming.js';
+import { customCommandWorkspace, isCustomCommandAction } from '../domain/custom-commands.js';
 import { resolveQuotaPauseUntil } from './quota-backoff.js';
 
 type ParsedRunnerResult = ReturnType<typeof parseRunnerResult>;
@@ -87,8 +88,15 @@ function isReviewThreadResourceUri(resourceUri: string): boolean {
   return resourceUri.split(':')[1] === 'pr-review-thread';
 }
 
-function isLateralReadOnlyAction(action: AgentAction): boolean {
-  return action === 'codereview';
+function isLateralReadOnlyAction(action: AgentAction, config: WakeConfig): boolean {
+  return isCustomCommandAction(action, config);
+}
+
+function workspaceModeForCustomCommand(
+  action: AgentAction,
+  config: WakeConfig,
+): 'none' | 'read-only' | 'branch' | undefined {
+  return customCommandWorkspace(action, config);
 }
 
 function isFreshTriggeringComment(candidate: IssueStateRecord): boolean {
@@ -318,14 +326,14 @@ export function createTickRunner(deps: {
 
     if (isAwaitingApproval(projection)) {
       return (
-        policy.resolveCodeReviewRequest(projection) !== null ||
+        policy.resolveCustomCommandRequest(projection, deps.config) !== null ||
         policy.resolveApprovalTransition(projection) !== null ||
         policy.resolvePendingReviewFeedback(projection) !== null
       );
     }
 
     const nextAction =
-      policy.resolveCodeReviewRequest(projection) ??
+      policy.resolveCustomCommandRequest(projection, deps.config)?.action ??
       policy.chooseAction(projection, workflow) ??
       policy.chooseRetryActionAfterHumanReply(projection);
 
@@ -1170,7 +1178,7 @@ export function createTickRunner(deps: {
         }
 
         const nextAction =
-          policy.resolveCodeReviewRequest(issue) ??
+          policy.resolveCustomCommandRequest(issue, deps.config)?.action ??
           policy.chooseAction(issue, workflow) ??
           policy.chooseRetryActionAfterHumanReply(issue);
         return nextAction !== null && policy.needsWakeAction(issue, workflow);
@@ -1186,16 +1194,18 @@ export function createTickRunner(deps: {
       }
       const workflowName = workflowNameForProjection(candidate, deps.config);
       let action: AgentAction;
+      let command: string | undefined;
       let claimedStage = candidate.wake.stage;
       let workspaceMode: 'none' | 'read-only' | 'branch' = 'none';
 
       if (isAwaitingApproval(candidate)) {
-        const codeReviewRequest = policy.resolveCodeReviewRequest(candidate);
+        const customCommandRequest = policy.resolveCustomCommandRequest(candidate, deps.config);
 
-        if (codeReviewRequest !== null) {
-          action = codeReviewRequest;
+        if (customCommandRequest !== null) {
+          action = customCommandRequest.action;
+          command = customCommandRequest.command;
           claimedStage = candidate.wake.stage;
-          workspaceMode = 'read-only';
+          workspaceMode = customCommandRequest.workspace;
         } else {
           const approvalResolution = policy.resolveApprovalTransition(candidate);
 
@@ -1284,7 +1294,7 @@ export function createTickRunner(deps: {
         // back to a full fresh `implement` run and lost the PR-feedback
         // context).
         const nextAction =
-          policy.resolveCodeReviewRequest(candidate) ??
+          policy.resolveCustomCommandRequest(candidate, deps.config)?.action ??
           policy.chooseRetryActionAfterHumanReply(candidate) ??
           workflowAction?.action ??
           null;
@@ -1292,10 +1302,10 @@ export function createTickRunner(deps: {
           return { status: 'idle' as const };
         }
         action = nextAction;
+        command = policy.resolveCustomCommandRequest(candidate, deps.config)?.command;
         claimedStage = workflowAction?.stage ?? candidate.wake.stage;
-        workspaceMode = isLateralReadOnlyAction(action)
-          ? 'read-only'
-          : (workflowAction?.workspace ?? 'none');
+        workspaceMode =
+          workspaceModeForCustomCommand(action, deps.config) ?? workflowAction?.workspace ?? 'none';
       }
 
       // Resolve routing (with sideways fallback across quota-paused runners,
@@ -1307,6 +1317,7 @@ export function createTickRunner(deps: {
         stage: claimedStage,
         action,
         workflowName,
+        ...(command === undefined ? {} : { command }),
         now: tickStartedAt,
         ...(ledgerAtStart === null ? {} : { ledger: ledgerAtStart }),
       });
@@ -1413,7 +1424,7 @@ export function createTickRunner(deps: {
         const sentinel =
           rawSentinel === 'DONE' && skipApproval === false ? 'AWAITING_APPROVAL' : rawSentinel;
         const nextStage =
-          isLateralReadOnlyAction(action) && sentinel === 'DONE'
+          isLateralReadOnlyAction(action, deps.config) && sentinel === 'DONE'
             ? null
             : lifecycle.nextStageFromSentinel(claimedStage, sentinel, workflow);
         const finishedAt = deps.clock.now().toISOString();

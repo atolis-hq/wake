@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 
+import { reservedCommandNames } from './custom-commands.js';
 import { runnerSentinelValues } from './stages.js';
 import {
   correlationProvenanceSchema,
@@ -353,6 +354,10 @@ const workflowStageSchema = stageRouteSchema.extend({
   onDone: identifierSchema,
 });
 
+const customCommandSchema = stageRouteSchema.extend({
+  workspace: workflowWorkspaceSchema.default('read-only'),
+});
+
 const workflowDefinitionSchema = z.object({
   entryStage: identifierSchema.optional(),
   stages: z.record(identifierSchema, workflowStageSchema),
@@ -570,6 +575,13 @@ export const wakeConfigSchema = z
         },
       },
     }),
+    commands: z.record(identifierSchema, customCommandSchema).default({
+      codereview: {
+        action: 'codereview',
+        workspace: 'read-only',
+        tier: 'standard',
+      },
+    }),
     stages: z.record(z.string(), stageRouteSchema).default({
       queue: { action: 'refine', tier: 'light' },
       implement: { action: 'implement', tier: 'standard' },
@@ -674,6 +686,7 @@ export const wakeConfigSchema = z
   .superRefine((config, ctx) => {
     const promptsRoot = config.paths.promptsRoot ?? defaultPromptsRoot();
     const workflowEntries = Object.entries(config.workflows);
+    const commandEntries = Object.entries(config.commands);
     if (workflowEntries.length === 0) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -754,6 +767,24 @@ export const wakeConfigSchema = z
           code: z.ZodIssueCode.custom,
           path: ['workflows', workflowName],
           message: 'Workflow cannot reach done from its entry stage.',
+        });
+      }
+    }
+
+    for (const [commandName, command] of commandEntries) {
+      if (reservedCommandNames.includes(commandName.toLowerCase())) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['commands', commandName],
+          message: `Command "/${commandName}" is reserved for Wake approval control.`,
+        });
+      }
+
+      if (command.action === undefined && !promptExists(promptsRoot, commandName)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['commands', commandName, 'action'],
+          message: `Command "/${commandName}" omits action but no prompts/${commandName}.md template exists.`,
         });
       }
     }

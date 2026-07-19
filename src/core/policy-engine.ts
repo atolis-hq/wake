@@ -1,4 +1,6 @@
 import { awaitingApprovalRunnerSentinel, failedRunnerSentinel } from '../domain/stages.js';
+import { resolveCustomCommand } from '../domain/custom-commands.js';
+import type { CustomCommandResolution } from '../domain/custom-commands.js';
 import {
   builtInDefaultWorkflowDefinition,
   chooseAction as chooseWorkflowAction,
@@ -27,13 +29,11 @@ function isAwaitingApproval(issue: IssueStateRecord): boolean {
 const approvedCommandPattern = /^\/approved\b/i;
 const changesCommandPattern = /^\/changes\b/i;
 const questionCommandPattern = /^\/question\b/i;
-const codeReviewCommandPattern = /^\/codereview\b/i;
 
 // The action Wake runs when a correlated PR gets new reviewer feedback while
 // the work item is awaiting approval. Not configurable per workflow: it's a
 // lateral response to a PR surface, not a workflow stage.
 const reviewFeedbackAction = 'revise';
-const codeReviewAction = 'codereview';
 
 function matchesCommand(body: string, pattern: RegExp): boolean {
   return body.split(/\r?\n/).some((line) => pattern.test(line.trim()));
@@ -249,16 +249,11 @@ export function createPolicyEngine() {
 
       return reviewFeedbackAction;
     },
-    resolveCodeReviewRequest(issue: IssueStateRecord): AgentAction | null {
-      const latestHumanComment = latestUnhandledHumanComment(issue);
-      if (
-        latestHumanComment === undefined ||
-        !matchesCommand(latestHumanComment.body, codeReviewCommandPattern)
-      ) {
-        return null;
-      }
-
-      return codeReviewAction;
+    resolveCustomCommandRequest(
+      issue: IssueStateRecord,
+      config: WakeConfig,
+    ): CustomCommandResolution | null {
+      return resolveCustomCommand(issue, config);
     },
     qualifiesForMint(unresolved: UnkeyedEventEnvelope, config: WakeConfig): boolean {
       const resourceUri = unresolved.sourceRefs.resourceUri;

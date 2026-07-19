@@ -193,6 +193,37 @@ describe('runner registry routing', () => {
     });
   });
 
+  it('uses the exact custom command route before falling back to shared action routing', () => {
+    const config = createDefaultWakeConfig('/tmp/wake');
+    config.runners['fake-review'] = { kind: 'fake', cli: 'Fake Review' };
+    config.runners['fake-inspect'] = { kind: 'fake', cli: 'Fake Inspect' };
+    config.tiers.standard = ['fake-review'];
+    config.tiers.deep = ['fake-inspect'];
+    config.commands.codereview = {
+      action: 'codereview',
+      workspace: 'read-only',
+      tier: 'standard',
+    };
+    config.commands.inspect = {
+      action: 'codereview',
+      workspace: 'read-only',
+      tier: 'deep',
+    };
+
+    expect(
+      resolveRunnerRouting({
+        config,
+        stage: 'implement',
+        action: 'codereview',
+        command: 'inspect',
+      }),
+    ).toMatchObject({
+      runnerName: 'fake-inspect',
+      tier: 'deep',
+      reason: 'command codereview tier deep selected runner fake-inspect',
+    });
+  });
+
   it('uses workflow stage routing instead of legacy stage-name overrides', () => {
     const config = createDefaultWakeConfig('/tmp/wake');
     config.runners['fake-workflow'] = { kind: 'fake', cli: 'Fake Workflow' };

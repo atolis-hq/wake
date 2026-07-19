@@ -899,6 +899,30 @@ describe('workflow config schema', () => {
     expect(second.workflows.default?.stages.implement?.runner).toBeUndefined();
   });
 
+  it('defines the built-in codereview custom command', () => {
+    const config = parseWakeConfig({ paths: { wakeRoot: '/tmp/wake' } });
+
+    expect(config.commands.codereview).toEqual({
+      action: 'codereview',
+      workspace: 'read-only',
+      tier: 'standard',
+    });
+  });
+
+  it('rejects custom commands that shadow approval control commands', () => {
+    expect(() =>
+      parseWakeConfig({
+        paths: { wakeRoot: '/tmp/wake' },
+        commands: {
+          approved: {
+            action: 'codereview',
+            workspace: 'read-only',
+          },
+        },
+      }),
+    ).toThrow(/reserved/);
+  });
+
   it.each([
     [
       'missing onDone',
