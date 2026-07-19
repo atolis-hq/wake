@@ -11,12 +11,25 @@ import { loadPromptTemplate, renderPromptTemplate } from './prompt-templates.js'
 type CommentSnapshot = IssueStateRecord['comments'][number];
 const questionCommandPattern = /^\/question\b/i;
 
+function reviewCommentApiId(comment: CommentSnapshot): string | undefined {
+  // github-pull-request-activity-source.ts composites review-comment ids as
+  // `pr-review-comment-<id>`; strip that prefix back off to recover the raw
+  // id `gh api .../pulls/comments/<id>/replies` needs.
+  if (comment.reviewThread === undefined) {
+    return undefined;
+  }
+
+  const match = /^pr-review-comment-(.+)$/.exec(comment.id);
+  return match?.[1];
+}
+
 function formatComment(comment: CommentSnapshot): string {
   const surfaceLine = comment.reviewThread !== undefined
     ? `Surface: review comment on ${comment.reviewThread.path}${comment.reviewThread.line === undefined ? '' : `:${comment.reviewThread.line}`}`
     : comment.resourceUri !== undefined
       ? `Surface: ${comment.resourceUri}`
       : 'Surface: issue thread';
+  const reviewCommentId = reviewCommentApiId(comment);
 
   return [
     '<wake-comment>',
@@ -24,6 +37,7 @@ function formatComment(comment: CommentSnapshot): string {
     `Created: ${comment.createdAt}`,
     `Bot-authored: ${comment.isBotAuthored ? 'yes' : 'no'}`,
     surfaceLine,
+    ...(reviewCommentId === undefined ? [] : [`Review-comment-id: ${reviewCommentId}`]),
     'Body:',
     comment.body,
     '</wake-comment>',

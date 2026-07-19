@@ -147,6 +147,51 @@ describe('claude runner command building', () => {
     expect(result.extraArgs).toEqual([]);
   });
 
+  it('surfaces the review-comment id for review-thread comments so the agent can reply to other threads', async () => {
+    const result = await buildStagePrompt({
+      action: 'implement',
+      mode: 'resume',
+      projection: {
+        ...baseProjection,
+        wake: { ...baseProjection.wake, stage: 'implement' as const },
+        context: { lastHandledCommentId: 'c-0' },
+        comments: [
+          {
+            id: 'c-0',
+            body: 'Original comment.',
+            author: { login: 'shared-user' },
+            createdAt: '2026-07-05T12:00:00.000Z',
+            updatedAt: '2026-07-05T12:00:00.000Z',
+            isBotAuthored: false,
+          },
+          {
+            id: 'pr-review-comment-3609425102',
+            body: 'Rename "item" to "work item"',
+            author: { login: 'reviewer' },
+            createdAt: '2026-07-05T12:05:00.000Z',
+            updatedAt: '2026-07-05T12:05:00.000Z',
+            isBotAuthored: false,
+            resourceUri: 'github:pr-review-thread:atolis-hq/wake#254/rt_3609425102',
+            reviewThread: { path: 'docs/workflows.md', line: 3 },
+          },
+        ],
+        latestComment: {
+          id: 'pr-review-comment-3609425102',
+          body: 'Rename "item" to "work item"',
+          author: { login: 'reviewer' },
+          createdAt: '2026-07-05T12:05:00.000Z',
+          updatedAt: '2026-07-05T12:05:00.000Z',
+          isBotAuthored: false,
+          resourceUri: 'github:pr-review-thread:atolis-hq/wake#254/rt_3609425102',
+          reviewThread: { path: 'docs/workflows.md', line: 3 },
+        },
+      },
+    });
+
+    expect(result.prompt).toContain('Surface: review comment on docs/workflows.md:3');
+    expect(result.prompt).toContain('Review-comment-id: 3609425102');
+  });
+
   it('requires AWAITING_APPROVAL, not DONE, for successful built-in prompts when approval is required', async () => {
     for (const action of ['refine', 'implement'] as const) {
       for (const mode of ['start', 'resume'] as const) {
