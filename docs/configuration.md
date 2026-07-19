@@ -496,6 +496,16 @@ never requires author qualification — it is registered through artifact verifi
 not the `requiredAuthors` gate. Author qualification applies only to PRs already in
 the repository that Wake did not create.
 
+**Reviewer feedback on Wake's own PRs:** while a work item is
+`awaiting-approval`, a new comment on a correlated PR (a review, a
+review-thread reply, or a plain PR comment) is treated as reviewer feedback
+and automatically triggers Wake's `revise` action — unlike comments on the
+originating issue, no `/approved`, `/changes`, or `/question` command is
+required. The agent judges each comment independently: it may make the
+change, answer a question, or push back with justification or an
+alternative. The work item stays `awaiting-approval` afterward; only an
+explicit `/approved` reply on the issue advances it to `done`.
+
 ## Loading and Merging
 
 Wake loads configuration from `.wake/configuration.json` relative to the current working directory. If the file does not exist, Wake uses built-in defaults. Configuration is merged with defaults, so you only need to specify the properties you want to override.
