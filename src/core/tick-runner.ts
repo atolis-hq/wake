@@ -76,6 +76,10 @@ function latestHumanCommentId(candidate: IssueStateRecord): string | undefined {
 // projection passed in as `candidate`/`projection`, since the completion
 // event that would update lastHandledCommentId for *this* run hasn't been
 // folded yet at the point this runs).
+function isReviewThreadResourceUri(resourceUri: string): boolean {
+  return resourceUri.split(':')[1] === 'pr-review-thread';
+}
+
 function isFreshTriggeringComment(candidate: IssueStateRecord): boolean {
   const context = candidate.context as Record<string, unknown>;
   const handledCommentId =
@@ -200,8 +204,20 @@ export function createTickRunner(deps: {
         // latestComment.resourceUri would misroute the reply to whatever
         // surface last happened to comment, even long after that comment
         // was already replied to.
+        //
+        // Never threads a pr-review-thread surface specifically: this is
+        // Wake's own status/approval-request/question card, a milestone
+        // message, not a targeted reply to one inline comment — burying it
+        // as a reply deep in a single review thread makes it easy to miss.
+        // Omitting resourceUri here falls back to sourceOrigin in
+        // sink-router.ts, landing it on the correlated issue (or, for a
+        // standalone PR-only work item, GitHub's shared issue/PR comments
+        // endpoint posts it as a top-level PR comment instead). Replies to
+        // individual review threads are the agent's own job now — see
+        // prompts/revise.md — via `gh api .../replies`, not this card.
         ...(input.projection.latestComment?.resourceUri === undefined ||
-        !isFreshTriggeringComment(input.projection)
+        !isFreshTriggeringComment(input.projection) ||
+        isReviewThreadResourceUri(input.projection.latestComment.resourceUri)
           ? {}
           : { resourceUri: input.projection.latestComment.resourceUri }),
       },

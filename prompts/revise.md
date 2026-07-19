@@ -42,13 +42,15 @@ apply one blanket response to the whole batch:
   disagree with — when a reasonable person could go either way, prefer
   making the change over defending your original choice.
 
-Reply routing: Wake automatically posts your prose response (this message,
-not a git commit) as a reply to the surface of the single most recent
-comment in this batch. If this batch includes review comments on more than
-one thread, reply to every thread besides the most recent one yourself. Each
-review comment below that needs a reply is tagged with its
-`Review-comment-id`. Look up the PR number if you need it with `gh pr view
---json number -q .number`, then reply with:
+Reply routing: for every review comment in this batch (each is tagged below
+with its `Review-comment-id`), reply directly on that comment's own thread
+yourself — do not rely on anything else to do this for you. Look up the PR
+number if you need it with `gh pr view --json number -q .number`, then
+reply with:
 `gh api repos/{{repo}}/pulls/<pr-number>/comments/<review-comment-id>/replies -f body="<reply>"`
-Do not reply to the same comment more than once, and do not merge the pull
-request yourself.
+Do not reply to the same comment more than once. Your prose response here
+(outside of any `gh api` calls) is only a short summary for Wake's own
+status update — it is posted separately (to the issue, or as a top-level PR
+comment), not attached to any specific thread — so don't rely on it to
+answer a specific comment; put the actual answer in the threaded reply.
+Do not merge the pull request yourself.
