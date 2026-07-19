@@ -67,20 +67,20 @@ jobs:
           git tag v${{ steps.semver.outputs.version }}
           git push origin v${{ steps.semver.outputs.version }}
 
-  # publish:
-  #   needs: [tag]
-  #   if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-  #   runs-on: ubuntu-latest
-  #   permissions:
-  #     contents: read
-  #     id-token: write
-  #   steps:
-  #     - uses: actions/checkout@v7
-  #     - uses: actions/setup-node@v6
-  #       with:
-  #         node-version: "24"
-  #     - run: npm ci
-  #     - run: npm run build
-  #     - name: Set version from tag
-  #       run: npm version ${{ needs.tag.outputs.version }} --no-git-tag-version
-  #     - run: npm publish --access public --provenance
+  publish:
+    needs: [tag]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+      - run: npm ci
+      - run: npm run build
+      - name: Set version from tag
+        run: npm version ${{ needs.tag.outputs.version }} --no-git-tag-version
+      - run: npm publish --access public --provenance
