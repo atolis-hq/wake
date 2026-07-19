@@ -192,6 +192,50 @@ describe('claude runner command building', () => {
     expect(result.prompt).toContain('Review-comment-id: 3609425102');
   });
 
+  it('renders the revise prompt with judgment instructions and reply-routing guidance', async () => {
+    const result = await buildStagePrompt({
+      action: 'revise',
+      mode: 'resume',
+      workspaceMode: 'branch',
+      projection: {
+        ...baseProjection,
+        wake: { ...baseProjection.wake, stage: 'implement' as const },
+        context: { lastHandledCommentId: 'c-0' },
+        comments: [
+          {
+            id: 'pr-review-comment-3609425102',
+            body: 'Rename "item" to "work item"',
+            author: { login: 'reviewer' },
+            createdAt: '2026-07-05T12:05:00.000Z',
+            updatedAt: '2026-07-05T12:05:00.000Z',
+            isBotAuthored: false,
+            resourceUri: 'github:pr-review-thread:atolis-hq/wake#254/rt_3609425102',
+            reviewThread: { path: 'docs/workflows.md', line: 3 },
+          },
+        ],
+        latestComment: {
+          id: 'pr-review-comment-3609425102',
+          body: 'Rename "item" to "work item"',
+          author: { login: 'reviewer' },
+          createdAt: '2026-07-05T12:05:00.000Z',
+          updatedAt: '2026-07-05T12:05:00.000Z',
+          isBotAuthored: false,
+          resourceUri: 'github:pr-review-thread:atolis-hq/wake#254/rt_3609425102',
+          reviewThread: { path: 'docs/workflows.md', line: 3 },
+        },
+      },
+    });
+
+    expect(result.prompt).toContain('REVISE');
+    expect(result.prompt).toContain('make it, commit, and push');
+    expect(result.prompt).toContain('Do not change code solely because');
+    expect(result.prompt).toContain('propose an alternative');
+    expect(result.prompt).toContain('/replies');
+    expect(result.prompt).toContain('Rename "item" to "work item"');
+    expect(result.harnessPrompt).toContain('AWAITING_APPROVAL, BLOCKED, FAILED');
+    expect(result.maxTurns).toBeGreaterThan(0);
+  });
+
   it('requires AWAITING_APPROVAL, not DONE, for successful built-in prompts when approval is required', async () => {
     for (const action of ['refine', 'implement'] as const) {
       for (const mode of ['start', 'resume'] as const) {
