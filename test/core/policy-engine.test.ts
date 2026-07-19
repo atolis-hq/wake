@@ -685,6 +685,43 @@ describe('policy engine: needsWakeAction', () => {
   });
 });
 
+describe('policy engine: resolveCodeReviewRequest', () => {
+  it('returns the codereview action for an unhandled /codereview command', () => {
+    const policy = createPolicyEngine();
+    const issue = buildNeedsWakeActionIssue({
+      latestCommentId: 'c-2',
+      lastHandledCommentId: 'c-1',
+      lastRunSentinel: 'AWAITING_APPROVAL',
+    });
+    issue.latestComment!.body = '/codereview check just the data layer';
+    issue.comments[0]!.body = '/codereview check just the data layer';
+
+    expect(policy.resolveCodeReviewRequest(issue)).toBe('codereview');
+  });
+
+  it('ignores already handled code review commands and inline mentions', () => {
+    const policy = createPolicyEngine();
+    const handled = buildNeedsWakeActionIssue({
+      latestCommentId: 'c-2',
+      lastHandledCommentId: 'c-2',
+      lastRunSentinel: 'AWAITING_APPROVAL',
+    });
+    handled.latestComment!.body = '/codereview';
+    handled.comments[0]!.body = '/codereview';
+
+    const inline = buildNeedsWakeActionIssue({
+      latestCommentId: 'c-3',
+      lastHandledCommentId: 'c-2',
+      lastRunSentinel: 'AWAITING_APPROVAL',
+    });
+    inline.latestComment!.body = 'Could you run /codereview on this?';
+    inline.comments[0]!.body = 'Could you run /codereview on this?';
+
+    expect(policy.resolveCodeReviewRequest(handled)).toBeNull();
+    expect(policy.resolveCodeReviewRequest(inline)).toBeNull();
+  });
+});
+
 describe('policy engine: chooseRetryActionAfterHumanReply', () => {
   it('retries the last run action for a blocked issue with an unhandled human reply', () => {
     const policy = createPolicyEngine();

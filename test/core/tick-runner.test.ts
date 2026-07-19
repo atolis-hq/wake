@@ -1188,6 +1188,112 @@ describe('tick runner', () => {
     expect(runnerCallCount).toBe(1);
   });
 
+  it('runs /codereview read-only without advancing or clearing awaiting approval', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    let capturedAction: string | undefined;
+    let capturedWorkspaceMode: string | undefined;
+    let branchWorkspaceCalls = 0;
+    let readOnlyWorkspaceCalls = 0;
+
+    await store.writeIssueState({
+      schemaVersion: 1,
+      workItemKey: workId(35),
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 35,
+        title: 'Code Review Command Test',
+        body: 'Body',
+        labels: ['wake:queue'],
+        assignees: [],
+        isPullRequest: false,
+        state: 'open',
+        url: 'https://example.test/issues/35',
+        createdAt: '2026-07-05T12:00:00.000Z',
+        updatedAt: '2026-07-05T12:05:00.000Z',
+      },
+      comments: [
+        {
+          id: 'c-codereview',
+          body: '/codereview check just the data layer',
+          author: { login: 'owner' },
+          createdAt: '2026-07-05T12:05:00.000Z',
+          updatedAt: '2026-07-05T12:05:00.000Z',
+          isBotAuthored: false,
+        },
+      ],
+      latestComment: {
+        id: 'c-codereview',
+        body: '/codereview check just the data layer',
+        author: { login: 'owner' },
+        createdAt: '2026-07-05T12:05:00.000Z',
+        updatedAt: '2026-07-05T12:05:00.000Z',
+        isBotAuthored: false,
+      },
+      wake: {
+        stage: 'implement',
+        stageHistory: [],
+        recentEventIds: [],
+        syncedAt: '2026-07-05T12:00:00.000Z',
+        expectedEcho: { commentIds: [], labels: [] },
+      },
+      context: {
+        lastRunSentinel: 'AWAITING_APPROVAL',
+        pendingApprovalAction: 'implement',
+      },
+      correlatedResources: [],
+    });
+
+    const config = createDefaultWakeConfig(root);
+    config.sources.github.policy.requiredLabels = ['wake:queue'];
+
+    const tickRunner = createTickRunner({
+      clock: { now: () => new Date('2026-07-05T12:10:00.000Z') },
+      config,
+      stateStore: store,
+      workSource: {
+        async pollEvents() {
+          return [];
+        },
+      },
+      runner: {
+        async run(input) {
+          capturedAction = input.action;
+          capturedWorkspaceMode = input.workspaceMode;
+          return { result: 'No findings.\nDONE', model: 'test-model', cli: 'test-cli' };
+        },
+      },
+      resourceIndex: createFakeResourceIndex(),
+      workspaceManager: {
+        async prepareWorkspace() {
+          branchWorkspaceCalls += 1;
+          return { workspacePath: join(root, 'branch'), mergeConflictDetected: false };
+        },
+        async prepareReadOnlyClone() {
+          readOnlyWorkspaceCalls += 1;
+          return { workspacePath: join(root, 'readonly') };
+        },
+        async cleanupWorkspace() {},
+      },
+    });
+
+    const result = await tickRunner.runTick();
+
+    expect(result.status).toBe('processed');
+    expect(capturedAction).toBe('codereview');
+    expect(capturedWorkspaceMode).toBe('read-only');
+    expect(branchWorkspaceCalls).toBe(0);
+    expect(readOnlyWorkspaceCalls).toBe(1);
+    if (result.status === 'processed') {
+      expect(result.nextStage).toBeNull();
+    }
+
+    const projection = await findByIssueRef(store, { repo: 'atolis-hq/wake', issueNumber: 35 });
+    expect(projection?.wake.stage).toBe('implement');
+    expect(projection?.context.lastRunSentinel).toBe('AWAITING_APPROVAL');
+    expect(projection?.context.pendingApprovalAction).toBe('implement');
+    expect(projection?.context.lastHandledCommentId).toBe('c-codereview');
+  });
+
   it('stays idle when awaiting approval and the comment is conversation, not an explicit command (S2)', async () => {
     const store = createStateStore({ wakeRoot: root });
     let runnerCallCount = 0;

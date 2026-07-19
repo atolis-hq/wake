@@ -87,6 +87,10 @@ function isReviewThreadResourceUri(resourceUri: string): boolean {
   return resourceUri.split(':')[1] === 'pr-review-thread';
 }
 
+function isLateralReadOnlyAction(action: AgentAction): boolean {
+  return action === 'codereview';
+}
+
 function isFreshTriggeringComment(candidate: IssueStateRecord): boolean {
   const context = candidate.context as Record<string, unknown>;
   const handledCommentId =
@@ -314,12 +318,14 @@ export function createTickRunner(deps: {
 
     if (isAwaitingApproval(projection)) {
       return (
+        policy.resolveCodeReviewRequest(projection) !== null ||
         policy.resolveApprovalTransition(projection) !== null ||
         policy.resolvePendingReviewFeedback(projection) !== null
       );
     }
 
     const nextAction =
+      policy.resolveCodeReviewRequest(projection) ??
       policy.chooseAction(projection, workflow) ??
       policy.chooseRetryActionAfterHumanReply(projection);
 
@@ -1164,7 +1170,9 @@ export function createTickRunner(deps: {
         }
 
         const nextAction =
-          policy.chooseAction(issue, workflow) ?? policy.chooseRetryActionAfterHumanReply(issue);
+          policy.resolveCodeReviewRequest(issue) ??
+          policy.chooseAction(issue, workflow) ??
+          policy.chooseRetryActionAfterHumanReply(issue);
         return nextAction !== null && policy.needsWakeAction(issue, workflow);
       });
 
@@ -1182,74 +1190,86 @@ export function createTickRunner(deps: {
       let workspaceMode: 'none' | 'read-only' | 'branch' = 'none';
 
       if (isAwaitingApproval(candidate)) {
-        const approvalResolution = policy.resolveApprovalTransition(candidate);
+        const codeReviewRequest = policy.resolveCodeReviewRequest(candidate);
 
-        if (approvalResolution === null) {
-          const reviewAction = policy.resolvePendingReviewFeedback(candidate);
-          if (reviewAction === null) {
-            return { status: 'idle' as const };
-          }
-
-          action = reviewAction;
-          const workflowAction = chooseWorkflowAction(candidate, workflow);
-          claimedStage = workflowAction?.stage ?? candidate.wake.stage;
-          workspaceMode = workflowAction?.workspace ?? 'none';
-        } else if (approvalResolution.approved) {
-          const approvalId = `approval-${candidate.issue.number}-${deps.clock.now().getTime()}`;
-          const approvedAt = deps.clock.now().toISOString();
-          const nextStage = lifecycle.nextStageFromSentinel(candidate.wake.stage, 'DONE', workflow);
-          if (nextStage === null) {
-            return { status: 'idle' as const };
-          }
-
-          const approvalCompletedEvent = createEventEnvelope({
-            eventId: `${approvalId}-completed`,
-            workItemKey: candidate.workItemKey,
-            streamScope: 'work-item',
-            direction: 'internal',
-            sourceSystem: 'wake',
-            sourceEventType: 'wake.run.completed',
-            sourceRefs: {
-              repo: candidate.issue.repo,
-              issueNumber: candidate.issue.number,
-              runId: approvalId,
-            },
-            occurredAt: approvedAt,
-            ingestedAt: approvedAt,
-            trigger: 'immediate',
-            payload: {
-              action: approvalResolution.pendingAction,
-              sentinel: 'DONE',
-              nextStage,
-              runId: approvalId,
-              reason: 'human:approved',
-              handledCommentId: latestHumanCommentId(candidate),
-            },
-          });
-          await deps.stateStore.appendEventEnvelope(approvalCompletedEvent);
-          await projectionUpdater.rebuildFromEvents([approvalCompletedEvent]);
-
-          await deliverOutboundEvent(
-            createLabelsEvent({
-              projection: candidate,
-              runId: approvalId,
-              statusLabel: statusLabelForStage(nextStage),
-              stageLabel: stageLabelForStage(nextStage),
-              occurredAt: approvedAt,
-            }),
-          );
-
-          return {
-            status: 'processed' as const,
-            runId: approvalId,
-            sentinel: 'DONE' as const,
-            nextStage,
-          };
+        if (codeReviewRequest !== null) {
+          action = codeReviewRequest;
+          claimedStage = candidate.wake.stage;
+          workspaceMode = 'read-only';
         } else {
-          action = approvalResolution.pendingAction;
-          const workflowAction = chooseWorkflowAction(candidate, workflow);
-          claimedStage = workflowAction?.stage ?? candidate.wake.stage;
-          workspaceMode = workflowAction?.workspace ?? 'none';
+          const approvalResolution = policy.resolveApprovalTransition(candidate);
+
+          if (approvalResolution === null) {
+            const reviewAction = policy.resolvePendingReviewFeedback(candidate);
+            if (reviewAction === null) {
+              return { status: 'idle' as const };
+            }
+
+            action = reviewAction;
+            const workflowAction = chooseWorkflowAction(candidate, workflow);
+            claimedStage = workflowAction?.stage ?? candidate.wake.stage;
+            workspaceMode = workflowAction?.workspace ?? 'none';
+          } else if (approvalResolution.approved) {
+            const approvalId = `approval-${candidate.issue.number}-${deps.clock.now().getTime()}`;
+            const approvedAt = deps.clock.now().toISOString();
+            const nextStage = lifecycle.nextStageFromSentinel(
+              candidate.wake.stage,
+              'DONE',
+              workflow,
+            );
+            if (nextStage === null) {
+              return { status: 'idle' as const };
+            }
+
+            const approvalCompletedEvent = createEventEnvelope({
+              eventId: `${approvalId}-completed`,
+              workItemKey: candidate.workItemKey,
+              streamScope: 'work-item',
+              direction: 'internal',
+              sourceSystem: 'wake',
+              sourceEventType: 'wake.run.completed',
+              sourceRefs: {
+                repo: candidate.issue.repo,
+                issueNumber: candidate.issue.number,
+                runId: approvalId,
+              },
+              occurredAt: approvedAt,
+              ingestedAt: approvedAt,
+              trigger: 'immediate',
+              payload: {
+                action: approvalResolution.pendingAction,
+                sentinel: 'DONE',
+                nextStage,
+                runId: approvalId,
+                reason: 'human:approved',
+                handledCommentId: latestHumanCommentId(candidate),
+              },
+            });
+            await deps.stateStore.appendEventEnvelope(approvalCompletedEvent);
+            await projectionUpdater.rebuildFromEvents([approvalCompletedEvent]);
+
+            await deliverOutboundEvent(
+              createLabelsEvent({
+                projection: candidate,
+                runId: approvalId,
+                statusLabel: statusLabelForStage(nextStage),
+                stageLabel: stageLabelForStage(nextStage),
+                occurredAt: approvedAt,
+              }),
+            );
+
+            return {
+              status: 'processed' as const,
+              runId: approvalId,
+              sentinel: 'DONE' as const,
+              nextStage,
+            };
+          } else {
+            action = approvalResolution.pendingAction;
+            const workflowAction = chooseWorkflowAction(candidate, workflow);
+            claimedStage = workflowAction?.stage ?? candidate.wake.stage;
+            workspaceMode = workflowAction?.workspace ?? 'none';
+          }
         }
       } else {
         const workflowAction = chooseWorkflowAction(candidate, workflow);
@@ -1264,13 +1284,18 @@ export function createTickRunner(deps: {
         // back to a full fresh `implement` run and lost the PR-feedback
         // context).
         const nextAction =
-          policy.chooseRetryActionAfterHumanReply(candidate) ?? workflowAction?.action ?? null;
+          policy.resolveCodeReviewRequest(candidate) ??
+          policy.chooseRetryActionAfterHumanReply(candidate) ??
+          workflowAction?.action ??
+          null;
         if (nextAction === null) {
           return { status: 'idle' as const };
         }
         action = nextAction;
         claimedStage = workflowAction?.stage ?? candidate.wake.stage;
-        workspaceMode = workflowAction?.workspace ?? 'none';
+        workspaceMode = isLateralReadOnlyAction(action)
+          ? 'read-only'
+          : (workflowAction?.workspace ?? 'none');
       }
 
       // Resolve routing (with sideways fallback across quota-paused runners,
@@ -1387,7 +1412,10 @@ export function createTickRunner(deps: {
         const skipApproval = runnerResult.metadata?.skipApproval;
         const sentinel =
           rawSentinel === 'DONE' && skipApproval === false ? 'AWAITING_APPROVAL' : rawSentinel;
-        const nextStage = lifecycle.nextStageFromSentinel(claimedStage, sentinel, workflow);
+        const nextStage =
+          isLateralReadOnlyAction(action) && sentinel === 'DONE'
+            ? null
+            : lifecycle.nextStageFromSentinel(claimedStage, sentinel, workflow);
         const finishedAt = deps.clock.now().toISOString();
 
         if (workspaceMode === 'branch') {
