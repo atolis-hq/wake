@@ -12,9 +12,11 @@ vi.mock('../../src/adapters/github/github-auth.js', () => ({
 // bot-detection) as soon as a GitHub client exists, before any of the
 // mocked-below adapters are constructed — a real Octokit client would hit
 // the network with the fake token above.
+const getAuthenticatedLogin = vi.fn(async () => 'atolis-hq-agent');
+
 vi.mock('../../src/adapters/github/github-client.js', () => ({
   createGitHubClient: vi.fn(() => ({
-    getAuthenticatedLogin: vi.fn(async () => 'atolis-hq-agent'),
+    getAuthenticatedLogin,
   })),
 }));
 
@@ -51,6 +53,8 @@ describe('buildRuntime PR tracking gating', () => {
   beforeEach(() => {
     createGitHubArtifactVerifier.mockClear();
     createGitHubPullRequestActivitySource.mockClear();
+    getAuthenticatedLogin.mockReset();
+    getAuthenticatedLogin.mockResolvedValue('atolis-hq-agent');
   });
 
   it('does not construct the PR activity source or artifact verifier when pullRequests.enabled is false', async () => {
@@ -88,6 +92,34 @@ describe('buildRuntime PR tracking gating', () => {
     await buildRuntime(['tick', '--wake-root', wakeRoot]);
 
     expect(createGitHubPullRequestActivitySource).toHaveBeenCalledTimes(1);
+    expect(createGitHubArtifactVerifier).toHaveBeenCalledTimes(1);
+  });
+
+  it('continues building the runtime when resolving the authenticated login fails', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wake-build-runtime-'));
+    const wakeRoot = join(root, '.wake');
+    await writeConfig(wakeRoot, {
+      sources: {
+        github: {
+          enabled: true,
+          repos: ['org/repo'],
+          pullRequests: { enabled: true },
+        },
+      },
+    });
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    getAuthenticatedLogin.mockRejectedValue(new Error('rate limit exceeded'));
+
+    try {
+      await buildRuntime(['tick', '--wake-root', wakeRoot]);
+    } finally {
+      errorSpy.mockRestore();
+    }
+
+    expect(createGitHubPullRequestActivitySource).toHaveBeenCalledTimes(1);
+    expect(createGitHubPullRequestActivitySource).toHaveBeenCalledWith(
+      expect.not.objectContaining({ selfLogin: expect.any(String) }),
+    );
     expect(createGitHubArtifactVerifier).toHaveBeenCalledTimes(1);
   });
 });

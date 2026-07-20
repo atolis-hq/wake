@@ -44,6 +44,25 @@ req.setTimeout(1000, () => req.destroy());
   echo "wake ui: ngrok tunnel started but public URL was not discovered; see /wake/logs/ngrok.log"
 }
 
+supervise_wake_start() {
+  local restart_delay="${WAKE_START_RESTART_DELAY_SECONDS:-10}"
+
+  while true; do
+    echo "wake start: starting resident loop"
+    node /app/dist/src/main.js start \
+      --wake-root /wake \
+      >> /wake/logs/start.log 2>&1 &
+
+    local child_pid="$!"
+    echo "${child_pid}" > /wake/logs/start.pid
+
+    wait "${child_pid}"
+    local exit_code="$?"
+    echo "wake start: resident loop exited with status ${exit_code}; restarting in ${restart_delay}s"
+    sleep "${restart_delay}"
+  done
+}
+
 if [ "${WAKE_UI_ENABLED:-false}" = "true" ]; then
   echo "wake ui: starting on 0.0.0.0:${WAKE_UI_PORT:-4317}"
   node /app/dist/src/main.js ui \
@@ -65,11 +84,7 @@ if [ "${WAKE_UI_ENABLED:-false}" = "true" ]; then
 fi
 
 if [ "${WAKE_START_ENABLED:-false}" = "true" ]; then
-  echo "wake start: starting resident loop"
-  node /app/dist/src/main.js start \
-    --wake-root /wake \
-    >> /wake/logs/start.log 2>&1 &
-  echo "$!" > /wake/logs/start.pid
+  supervise_wake_start &
 fi
 
 exec sleep infinity
