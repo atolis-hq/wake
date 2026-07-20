@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** While a work item is `awaiting-approval`, a new comment arriving on the PR Wake already correlated to it (a review, a review-thread reply, or a plain PR comment) should automatically trigger a dedicated `revise` action — no `/approved`/`/changes`/`/question` slash command required — where the agent judges each comment independently and either makes the change, answers a question, or pushes back with justification.
+**Goal:** While a work item is `awaiting-approval`, a new comment arriving on the PR Wake already correlated to it (a review, a review-thread reply, or a plain PR comment) should automatically trigger a dedicated `revise` action — no `/approved`/`/changes`/`/ask` slash command required — where the agent judges each comment independently and either makes the change, answers a question, or pushes back with justification.
 
 **Architecture:** `policy-engine.ts` already gates the `awaiting-approval` state behind `resolveApprovalTransition`, which requires an explicit slash command and is correct for _issue_-thread comments (approving the merge is a real decision that needs an explicit human act). PR-sourced comments are a different signal — leaving a comment on a PR is already the deliberate act, and `commentSnapshotSchema.resourceUri` (schema.ts:143-145) already discriminates them ("absent = the originating issue thread"). This plan adds a second, narrower policy gate — `resolvePendingReviewFeedback` — that fires only when the latest unhandled comment carries a `resourceUri`, selects a new built-in action (`revise`) instead of resuming the workflow's own action, and leaves the work item in `implement`/`awaiting-approval` afterward (approval to merge is still issue-only). The prompt-building pipeline (`stage-prompt.ts`) already surfaces new comments generically by action name and already auto-replies the agent's prose response to the triggering PR/review-thread surface (`createPublishIntentEvent` in tick-runner.ts) — no changes needed there beyond a prompt file and one small formatting addition so the agent can address a second thread in the same batch.
 
@@ -568,7 +568,7 @@ with:
 - [ ] **Step 5: Run the tests to verify they pass**
 
 Run: `npx vitest run test/core/tick-runner.test.ts`
-Expected: PASS — the full file, including the 2 new tests and all pre-existing awaiting-approval tests (`/approved`, `/changes`, `/question`, conversation-idle, updatedAt-false-positive).
+Expected: PASS — the full file, including the 2 new tests and all pre-existing awaiting-approval tests (`/approved`, `/changes`, `/ask`, conversation-idle, updatedAt-false-positive).
 
 - [ ] **Step 6: Commit**
 
@@ -862,7 +862,7 @@ In `docs/configuration.md`, find the `#### pullRequests` section's `**Important:
 `awaiting-approval`, a new comment on a correlated PR (a review, a
 review-thread reply, or a plain PR comment) is treated as reviewer feedback
 and automatically triggers Wake's `revise` action — unlike comments on the
-originating issue, no `/approved`, `/changes`, or `/question` command is
+originating issue, no `/approved`, `/changes`, or `/ask` command is
 required. The agent judges each comment independently: it may make the
 change, answer a question, or push back with justification or an
 alternative. The work item stays `awaiting-approval` afterward; only an
@@ -883,6 +883,6 @@ git commit -m "docs: document the revise action for PR review feedback"
 
 ## Self-Review Notes
 
-- **Spec coverage:** "keep in mind someone may ask for a suboptimal change, the agent should decide whether to make the change, reply to a question, or push back justifying approach/proposing an alternative" → covered by `prompts/revise.md`'s three-way judgment instructions (Task 4). "Do we need a separate prompt file for PR comments?" → yes, `prompts/revise.md`, loaded via the existing `loadPromptTemplate(action, mode)` convention, no new plumbing (Task 4). "Change the mechanism specifically for PRs" → `resolvePendingReviewFeedback` (Task 1) only fires for comments carrying a `resourceUri` (PR/review-thread surface); issue-thread comments keep requiring `/approved`/`/changes`/`/question` (`resolveApprovalTransition`, unchanged).
+- **Spec coverage:** "keep in mind someone may ask for a suboptimal change, the agent should decide whether to make the change, reply to a question, or push back justifying approach/proposing an alternative" → covered by `prompts/revise.md`'s three-way judgment instructions (Task 4). "Do we need a separate prompt file for PR comments?" → yes, `prompts/revise.md`, loaded via the existing `loadPromptTemplate(action, mode)` convention, no new plumbing (Task 4). "Change the mechanism specifically for PRs" → `resolvePendingReviewFeedback` (Task 1) only fires for comments carrying a `resourceUri` (PR/review-thread surface); issue-thread comments keep requiring `/approved`/`/changes`/`/ask` (`resolveApprovalTransition`, unchanged).
 - **Out of scope, by design:** the "auto-reply asking whether to action the comment" option from the earlier discussion — deliberately not implemented; discussed and rejected in favor of direct action.
 - **No config/schema changes:** `revise` is a plain string `AgentAction`; routing (`resolveRunnerRouting`) keys off `claimedStage` (unchanged, stays `implement`), not `action`, and model selection (`resolveModel`) already falls back to `models.default` for action names with no explicit entry — verified against current source before writing this plan.

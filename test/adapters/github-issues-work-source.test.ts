@@ -1429,7 +1429,7 @@ describe('github issues work source', () => {
     expect(postedBody).toContain('/approved');
     expect(postedBody.split('/approved')).toHaveLength(2);
     expect(postedBody).toContain('/changes');
-    expect(postedBody).toContain('/question');
+    expect(postedBody).toContain('/ask');
     expect(postedBody).toContain('Work is ready for review.');
   });
 

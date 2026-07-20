@@ -278,7 +278,7 @@ export function formatWakeComment(
 
   if (kind === 'approval-request') {
     sections.push(
-      '_To approve this work, reply with `/approved`. To request changes, reply with `/changes` followed by your feedback. To ask a question without requesting changes, reply with `/question` followed by your question._',
+      '_To approve this work, reply with `/approved`. To request changes, reply with `/changes` followed by your feedback. To ask a question without requesting changes, reply with `/ask` followed by your question._',
     );
   }
 

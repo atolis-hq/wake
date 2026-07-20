@@ -225,7 +225,7 @@ export function createTickRunner(deps: {
         // was already replied to.
         //
         // Never threads a pr-review-thread surface specifically: this is
-        // Wake's own status/approval-request/question card, a milestone
+        // Wake's own status, approval-request, or question card: a milestone
         // message, not a targeted reply to one inline comment — burying it
         // as a reply deep in a single review thread makes it easy to miss.
         // Omitting resourceUri here falls back to sourceOrigin in

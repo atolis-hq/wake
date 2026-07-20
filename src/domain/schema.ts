@@ -576,6 +576,11 @@ export const wakeConfigSchema = z
       },
     }),
     commands: z.record(identifierSchema, customCommandSchema).default({
+      ask: {
+        action: 'ask',
+        workspace: 'read-only',
+        tier: 'light',
+      },
       codereview: {
         action: 'codereview',
         workspace: 'read-only',

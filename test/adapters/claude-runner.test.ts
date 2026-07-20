@@ -366,9 +366,9 @@ describe('claude runner command building', () => {
     expect(result.prompt).toContain('New human reply');
   });
 
-  it('adds a trusted resume note for explicit /question comments', async () => {
+  it('renders the read-only ask prompt for explicit /ask comments', async () => {
     const result = await buildStagePrompt({
-      action: 'implement',
+      action: 'ask',
       mode: 'resume',
       projection: {
         schemaVersion: 1,
@@ -397,7 +397,7 @@ describe('claude runner command building', () => {
           },
           {
             id: 'c-2',
-            body: '/question What did you change?',
+            body: '/ask What did you change?',
             author: { login: 'bob' },
             createdAt: '2026-07-05T12:04:00.000Z',
             updatedAt: '2026-07-05T12:04:00.000Z',
@@ -414,11 +414,13 @@ describe('claude runner command building', () => {
         context: { lastHandledCommentId: 'c-1' },
         correlatedResources: [],
       },
+      workspaceMode: 'read-only',
     });
 
-    expect(result.prompt).toContain('The latest actionable command is `/question`.');
-    expect(result.prompt).toContain('Do not make code changes solely because of this command');
-    expect(result.prompt).toContain('/question What did you change?');
+    expect(result.prompt).toContain('Resuming the read-only ASK action');
+    expect(result.prompt).toContain('Do not edit files');
+    expect(result.prompt).toContain('/ask What did you change?');
+    expect(result.skipApproval).toBe(true);
   });
 
   it('adds pulled upstream commit details to the trusted harness prompt', async () => {
