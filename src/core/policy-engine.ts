@@ -28,7 +28,6 @@ function isAwaitingApproval(issue: IssueStateRecord): boolean {
 // quoted reply containing /approved does not approve the gate.
 const approvedCommandPattern = /^\/approved\b/i;
 const changesCommandPattern = /^\/changes\b/i;
-const questionCommandPattern = /^\/question\b/i;
 
 // The action Wake runs when a correlated PR gets new reviewer feedback while
 // the work item is awaiting approval. Not configurable per workflow: it's a
@@ -212,14 +211,13 @@ export function createPolicyEngine() {
 
       const approved = matchesCommand(latestHumanComment.body, approvedCommandPattern);
       const changesRequested = matchesCommand(latestHumanComment.body, changesCommandPattern);
-      const questionAsked = matchesCommand(latestHumanComment.body, questionCommandPattern);
 
-      // Neither an explicit /approved, /changes, nor /question: treat this as
+      // Neither an explicit /approved nor /changes: treat this as
       // conversation, not a decision. Stay idle rather than re-running the
       // pending action off the back of an unmarked clarifying question (S2).
       // The comment stays unhandled, so it's reconsidered on the next tick and
       // by a human who follows up with an explicit command.
-      if (!approved && !changesRequested && !questionAsked) {
+      if (!approved && !changesRequested) {
         return null;
       }
 
@@ -228,7 +226,7 @@ export function createPolicyEngine() {
     // Callers must try resolveApprovalTransition first and only fall back to
     // this when it returns null. resolveApprovalTransition doesn't check
     // resourceUri, so a PR-surface comment that happens to carry an explicit
-    // /approved, /changes, or /question command is deliberately still routed
+    // /approved or /changes command is deliberately still routed
     // there — this function only ever sees comments resolveApprovalTransition
     // already passed on (plain PR feedback with no command).
     resolvePendingReviewFeedback(issue: IssueStateRecord): AgentAction | null {

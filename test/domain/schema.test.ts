@@ -899,9 +899,14 @@ describe('workflow config schema', () => {
     expect(second.workflows.default?.stages.implement?.runner).toBeUndefined();
   });
 
-  it('defines the built-in codereview custom command', () => {
+  it('defines the built-in ask and codereview custom commands', () => {
     const config = parseWakeConfig({ paths: { wakeRoot: '/tmp/wake' } });
 
+    expect(config.commands.ask).toEqual({
+      action: 'ask',
+      workspace: 'read-only',
+      tier: 'light',
+    });
     expect(config.commands.codereview).toEqual({
       action: 'codereview',
       workspace: 'read-only',

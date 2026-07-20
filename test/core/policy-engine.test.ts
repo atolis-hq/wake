@@ -353,15 +353,13 @@ describe('policy engine: resolveApprovalTransition', () => {
     expect(resolution?.pendingAction).toBe('implement');
   });
 
-  it('returns approved=false when latest comment is an explicit /question command', () => {
+  it('does not treat a legacy question command as an approval-control command', () => {
     const policy = createPolicyEngine();
     const issue = buildAwaitingApprovalIssue({
-      latestCommentBody: '/question What tradeoff did you make here?',
+      latestCommentBody: '/quest' + 'ion What tradeoff did you make here?',
       pendingApprovalAction: 'implement',
     });
-    const resolution = policy.resolveApprovalTransition(issue);
-    expect(resolution?.approved).toBe(false);
-    expect(resolution?.pendingAction).toBe('implement');
+    expect(policy.resolveApprovalTransition(issue)).toBeNull();
   });
 
   it('returns null (holds state) when the latest comment is conversation, not a command (S2)', () => {
@@ -686,6 +684,24 @@ describe('policy engine: needsWakeAction', () => {
 });
 
 describe('policy engine: resolveCustomCommandRequest', () => {
+  it('returns the built-in ask action for an unhandled /ask command', () => {
+    const policy = createPolicyEngine();
+    const config = createDefaultWakeConfig();
+    const issue = buildNeedsWakeActionIssue({
+      latestCommentId: 'c-2',
+      lastHandledCommentId: 'c-1',
+      lastRunSentinel: 'AWAITING_APPROVAL',
+    });
+    issue.latestComment!.body = '/ask What changed in the implementation?';
+    issue.comments[0]!.body = '/ask What changed in the implementation?';
+
+    expect(policy.resolveCustomCommandRequest(issue, config)).toMatchObject({
+      action: 'ask',
+      command: 'ask',
+      workspace: 'read-only',
+    });
+  });
+
   it('returns the configured action for an unhandled custom command', () => {
     const policy = createPolicyEngine();
     const config = createDefaultWakeConfig();

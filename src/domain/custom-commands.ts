@@ -9,7 +9,7 @@ export interface CustomCommandResolution {
   workspace: 'none' | 'read-only' | 'branch';
 }
 
-export const reservedCommandNames = ['approved', 'changes', 'question'];
+export const reservedCommandNames = ['approved', 'changes'];
 
 function latestUnhandledHumanComment(
   issue: IssueStateRecord,

@@ -1103,9 +1103,10 @@ describe('tick runner', () => {
     expect(runnerCallCount).toBe(1);
   });
 
-  it('invokes the agent when awaiting approval and comment is an explicit /question command', async () => {
+  it('invokes the ask custom command when awaiting approval and comment is /ask', async () => {
     const store = createStateStore({ wakeRoot: root });
     let runnerCallCount = 0;
+    let capturedWorkspaceMode: string | undefined;
 
     await store.writeIssueState({
       schemaVersion: 1,
@@ -1126,7 +1127,7 @@ describe('tick runner', () => {
       comments: [
         {
           id: 'c-question',
-          body: '/question What changed in the implementation?',
+          body: '/ask What changed in the implementation?',
           author: { login: 'owner' },
           createdAt: '2026-07-05T12:05:00.000Z',
           updatedAt: '2026-07-05T12:05:00.000Z',
@@ -1135,7 +1136,7 @@ describe('tick runner', () => {
       ],
       latestComment: {
         id: 'c-question',
-        body: '/question What changed in the implementation?',
+        body: '/ask What changed in the implementation?',
         author: { login: 'owner' },
         createdAt: '2026-07-05T12:05:00.000Z',
         updatedAt: '2026-07-05T12:05:00.000Z',
@@ -1170,9 +1171,10 @@ describe('tick runner', () => {
       runner: {
         async run(input) {
           runnerCallCount += 1;
-          expect(input.action).toBe('refine');
+          expect(input.action).toBe('ask');
+          capturedWorkspaceMode = input.workspaceMode;
           return {
-            result: 'The implementation updates the parser only.\nAWAITING_APPROVAL',
+            result: 'The implementation updates the parser only.\nDONE',
             model: 'test-model',
             cli: 'test-cli',
           };
@@ -1186,6 +1188,7 @@ describe('tick runner', () => {
 
     expect(result.status).toBe('processed');
     expect(runnerCallCount).toBe(1);
+    expect(capturedWorkspaceMode).toBe('read-only');
   });
 
   it('runs a custom command without advancing or clearing awaiting approval', async () => {

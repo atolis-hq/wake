@@ -153,6 +153,11 @@ comment line, so inline mentions like `please run /codereview` are ignored.
 
 ```json
 "commands": {
+  "ask": {
+    "action": "ask",
+    "workspace": "read-only",
+    "tier": "light"
+  },
   "codereview": {
     "action": "codereview",
     "workspace": "read-only",
@@ -168,10 +173,11 @@ comment line, so inline mentions like `please run /codereview` are ignored.
 | `tier`      | string (optional)                       | Runner tier for this command; falls back to `defaultTier` when omitted                | unset         |
 | `runner`    | string (optional)                       | Concrete runner to use for this command; takes precedence over `tier`                 | unset         |
 
-`/approved`, `/changes`, and `/question` are reserved for Wake's approval
-control flow and cannot be redefined as custom commands. Completed custom
-commands do not advance the work item's workflow stage; they handle the command
-comment and leave the current lifecycle state in place.
+`/ask` and `/codereview` are built-in custom commands. `/approved` and
+`/changes` are reserved for Wake's approval control flow and cannot be
+redefined as custom commands. Completed custom commands do not advance the work
+item's workflow stage; they handle the command comment and leave the current
+lifecycle state in place.
 
 ### sandbox
 
@@ -537,10 +543,10 @@ the repository that Wake did not create.
 review-thread reply, a plain PR comment, or a newly failing required check)
 is treated as reviewer feedback
 and automatically triggers Wake's `revise` action — unlike comments on the
-originating issue, no `/approved`, `/changes`, or `/question` command is
-required. The agent judges each comment independently: it may make the
-change, answer a question, or push back with justification or an
-alternative. The work item stays `awaiting-approval` afterward; only an
+originating issue, no slash command is required. The agent judges each comment
+independently: it may make the change, answer a question, or push back with
+justification or an alternative. The work item stays `awaiting-approval`
+afterward; only an
 explicit `/approved` command (on the issue or the PR) advances it to
 `done`.
 
