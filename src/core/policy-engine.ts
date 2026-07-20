@@ -4,6 +4,7 @@ import type { CustomCommandResolution } from '../domain/custom-commands.js';
 import {
   builtInDefaultWorkflowDefinition,
   chooseAction as chooseWorkflowAction,
+  selectWorkflowForEvent,
 } from '../domain/workflows.js';
 import type {
   AgentAction,
@@ -101,6 +102,11 @@ export function createPolicyEngine() {
         return false;
       }
 
+      const context = issue.context as Record<string, unknown>;
+      if (config.workflowSelectors.length > 0) {
+        return typeof context.workflow === 'string';
+      }
+
       // Defense-in-depth: the issues source filters PR-shaped items at poll
       // time, so no NEW projection can ever have isPullRequest: true. But a
       // pre-existing state/<workId>.json written by a pre-this-branch
@@ -169,7 +175,10 @@ export function createPolicyEngine() {
     ): AgentAction | null {
       return chooseWorkflowAction(issue, workflow)?.action ?? null;
     },
-    chooseRetryActionAfterHumanReply(issue: IssueStateRecord): AgentAction | null {
+    chooseRetryActionAfterHumanReply(
+      issue: IssueStateRecord,
+      workflow: WorkflowDefinition = builtInDefaultWorkflowDefinition,
+    ): AgentAction | null {
       const context = issue.context as Record<string, unknown>;
       const failed = context.lastRunSentinel === failedRunnerSentinel;
       const blocked = context.lastRunSentinel === 'BLOCKED';
@@ -185,7 +194,22 @@ export function createPolicyEngine() {
         return null;
       }
 
-      return typeof context.lastRunAction === 'string' ? context.lastRunAction : null;
+      if (typeof context.blockedFromStage !== 'string') {
+        return null;
+      }
+
+      return (
+        chooseWorkflowAction(
+          {
+            ...issue,
+            wake: {
+              ...issue.wake,
+              stage: context.blockedFromStage,
+            },
+          },
+          workflow,
+        )?.action ?? null
+      );
     },
     resolveApprovalTransition(issue: IssueStateRecord): ApprovalResolution | null {
       if (!isAwaitingApproval(issue)) {
@@ -260,6 +284,9 @@ export function createPolicyEngine() {
       }
 
       const kind = resourceUri.split(':')[1];
+      if (config.workflowSelectors.length > 0) {
+        return selectWorkflowForEvent(unresolved, config) !== null;
+      }
 
       if (kind === 'issue') {
         // Real github source stamps payload.ticket (sourceEventType

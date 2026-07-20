@@ -151,11 +151,12 @@ function buildNeedsWakeActionIssue(overrides: {
 }
 
 function buildBlockedOrFailedIssue(overrides: {
-  stage: 'refine' | 'implement' | 'queue';
+  stage: string;
   latestCommentId?: string;
   latestCommentIsBotAuthored?: boolean;
   lastHandledCommentId?: string;
   lastRunAction?: string;
+  blockedFromStage?: string;
   lastRunSentinel?: string;
 }) {
   return parseIssueStateRecord({
@@ -198,6 +199,9 @@ function buildBlockedOrFailedIssue(overrides: {
         ? {}
         : { lastHandledCommentId: overrides.lastHandledCommentId }),
       ...(overrides.lastRunAction === undefined ? {} : { lastRunAction: overrides.lastRunAction }),
+      ...(overrides.blockedFromStage === undefined
+        ? {}
+        : { blockedFromStage: overrides.blockedFromStage }),
       ...(overrides.lastRunSentinel === undefined
         ? {}
         : { lastRunSentinel: overrides.lastRunSentinel }),
@@ -301,6 +305,29 @@ describe('policy engine: requiredAssignees', () => {
     expect(policy.isEligible(matchesAssigneeOnly, config)).toBe(false);
     expect(policy.isEligible(matchesLabelOnly, config)).toBe(false);
     expect(policy.isEligible(matchesBoth, config)).toBe(true);
+  });
+
+  it('uses a pinned workflow as the eligibility fact when workflowSelectors are configured', () => {
+    const policy = createPolicyEngine();
+    const config = createDefaultWakeConfig('/tmp/wake-root');
+    config.sources.github.policy.requiredLabels = ['legacy-label'];
+    config.workflowSelectors = [
+      {
+        workflow: 'default',
+        match: {
+          kind: 'issue',
+          requiredLabels: ['bug'],
+          ignoredLabels: [],
+          requiredAssignees: [],
+          requiredAuthors: [],
+        },
+      },
+    ];
+    const issue = buildIssue({ labels: ['bug'] });
+
+    expect(policy.isEligible(issue, config)).toBe(false);
+    issue.context.workflow = 'default';
+    expect(policy.isEligible(issue, config)).toBe(true);
   });
 });
 
@@ -747,26 +774,26 @@ describe('policy engine: resolveCustomCommandRequest', () => {
 });
 
 describe('policy engine: chooseRetryActionAfterHumanReply', () => {
-  it('retries the last run action for a blocked issue with an unhandled human reply', () => {
+  it('retries the blocked-from stage action for a blocked issue with an unhandled human reply', () => {
     const policy = createPolicyEngine();
     const issue = buildBlockedOrFailedIssue({
       stage: 'implement',
       latestCommentId: 'c-2',
       lastHandledCommentId: 'c-1',
-      lastRunAction: 'implement',
+      blockedFromStage: 'implement',
       lastRunSentinel: 'BLOCKED',
     });
 
     expect(policy.chooseRetryActionAfterHumanReply(issue)).toBe('implement');
   });
 
-  it('retries the last run action for a failed issue with an unhandled human reply', () => {
+  it('retries the blocked-from stage action for a failed issue with an unhandled human reply', () => {
     const policy = createPolicyEngine();
     const issue = buildBlockedOrFailedIssue({
       stage: 'refine',
       latestCommentId: 'c-2',
       lastHandledCommentId: 'c-1',
-      lastRunAction: 'refine',
+      blockedFromStage: 'refine',
     });
     issue.context.lastRunSentinel = 'FAILED';
 
@@ -792,7 +819,7 @@ describe('policy engine: chooseRetryActionAfterHumanReply', () => {
       stage: 'implement',
       latestCommentId: 'c-1',
       lastHandledCommentId: 'c-1',
-      lastRunAction: 'implement',
+      blockedFromStage: 'implement',
       lastRunSentinel: 'BLOCKED',
     });
 
@@ -805,16 +832,40 @@ describe('policy engine: chooseRetryActionAfterHumanReply', () => {
       stage: 'implement',
       latestCommentId: 'c-2',
       latestCommentIsBotAuthored: true,
-      lastRunAction: 'implement',
+      blockedFromStage: 'implement',
       lastRunSentinel: 'BLOCKED',
     });
     const queued = buildBlockedOrFailedIssue({
       stage: 'queue',
       latestCommentId: 'c-2',
-      lastRunAction: 'refine',
+      blockedFromStage: 'queue',
     });
 
     expect(policy.chooseRetryActionAfterHumanReply(botReply)).toBeNull();
     expect(policy.chooseRetryActionAfterHumanReply(queued)).toBeNull();
+  });
+
+  it('maps blockedFromStage through the selected workflow stage action', () => {
+    const policy = createPolicyEngine();
+    const issue = buildBlockedOrFailedIssue({
+      stage: 'qa',
+      latestCommentId: 'c-2',
+      lastHandledCommentId: 'c-1',
+      blockedFromStage: 'qa',
+      lastRunSentinel: 'BLOCKED',
+    });
+
+    expect(
+      policy.chooseRetryActionAfterHumanReply(issue, {
+        stages: {
+          qa: {
+            action: 'verify',
+            workspace: 'read-only',
+            tier: 'light',
+            onDone: 'done',
+          },
+        },
+      }),
+    ).toBe('verify');
   });
 });

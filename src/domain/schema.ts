@@ -363,6 +363,28 @@ const workflowDefinitionSchema = z.object({
   stages: z.record(identifierSchema, workflowStageSchema),
 });
 
+const workflowSelectorMatchSchema = z
+  .object({
+    kind: z.string().min(1).optional(),
+    sourceEventType: z.string().min(1).optional(),
+    repo: z.string().min(1).optional(),
+    requiredLabels: z.array(z.string()).default([]),
+    ignoredLabels: z.array(z.string()).default([]),
+    requiredAssignees: z.array(z.string()).default([]),
+    requiredAuthors: z.array(z.string()).default([]),
+  })
+  .default({
+    requiredLabels: [],
+    ignoredLabels: [],
+    requiredAssignees: [],
+    requiredAuthors: [],
+  });
+
+const workflowSelectorSchema = z.object({
+  workflow: identifierSchema,
+  match: workflowSelectorMatchSchema,
+});
+
 function defaultPromptsRoot(): string {
   const sourceDir = dirname(fileURLToPath(import.meta.url));
   for (const candidate of [
@@ -575,6 +597,7 @@ export const wakeConfigSchema = z
         },
       },
     }),
+    workflowSelectors: z.array(workflowSelectorSchema).default([]),
     commands: z.record(identifierSchema, customCommandSchema).default({
       ask: {
         action: 'ask',
@@ -772,6 +795,16 @@ export const wakeConfigSchema = z
           code: z.ZodIssueCode.custom,
           path: ['workflows', workflowName],
           message: 'Workflow cannot reach done from its entry stage.',
+        });
+      }
+    }
+
+    for (const [index, selector] of config.workflowSelectors.entries()) {
+      if (config.workflows[selector.workflow] === undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['workflowSelectors', index, 'workflow'],
+          message: `Workflow selector targets unknown workflow "${selector.workflow}".`,
         });
       }
     }

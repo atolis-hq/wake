@@ -132,7 +132,36 @@ Wake stores work item state in an issue projection. The workflow name is
 determined from that projection:
 
 1. If `projection.context.workflow` is a string, Wake uses that workflow name.
-2. Otherwise, Wake uses the first workflow configured in `config.workflows`.
+2. Otherwise, when `workflowSelectors` is configured, Wake selects the first
+   matching workflow when the item first qualifies for intake and records a
+   `wake.workflow.selected` event.
+3. Otherwise, Wake uses the first workflow configured in `config.workflows`.
+
+Selectors match source-level facts, so the same config can classify issues, PRs,
+or future event sources:
+
+```json
+{
+  "workflowSelectors": [
+    {
+      "workflow": "bug",
+      "match": {
+        "kind": "issue",
+        "repo": "atolis-hq/wake",
+        "requiredLabels": ["bug"],
+        "ignoredLabels": ["wontfix"]
+      }
+    },
+    {
+      "workflow": "pr-review",
+      "match": {
+        "kind": "pr",
+        "requiredAuthors": ["trusted-human"]
+      }
+    }
+  ]
+}
+```
 
 Wake then looks up that workflow in config. If the named workflow no longer
 exists, or if the work item's current stage is not known to that workflow, Wake

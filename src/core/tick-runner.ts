@@ -335,7 +335,7 @@ export function createTickRunner(deps: {
     const nextAction =
       policy.resolveCustomCommandRequest(projection, deps.config)?.action ??
       policy.chooseAction(projection, workflow) ??
-      policy.chooseRetryActionAfterHumanReply(projection);
+      policy.chooseRetryActionAfterHumanReply(projection, workflow);
 
     return nextAction !== null && policy.needsWakeAction(projection, workflow);
   }
@@ -1180,7 +1180,7 @@ export function createTickRunner(deps: {
         const nextAction =
           policy.resolveCustomCommandRequest(issue, deps.config)?.action ??
           policy.chooseAction(issue, workflow) ??
-          policy.chooseRetryActionAfterHumanReply(issue);
+          policy.chooseRetryActionAfterHumanReply(issue, workflow);
         return nextAction !== null && policy.needsWakeAction(issue, workflow);
       });
 
@@ -1295,7 +1295,7 @@ export function createTickRunner(deps: {
         // context).
         const nextAction =
           policy.resolveCustomCommandRequest(candidate, deps.config)?.action ??
-          policy.chooseRetryActionAfterHumanReply(candidate) ??
+          policy.chooseRetryActionAfterHumanReply(candidate, workflow) ??
           workflowAction?.action ??
           null;
         if (nextAction === null) {
