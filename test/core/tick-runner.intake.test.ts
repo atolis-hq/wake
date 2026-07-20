@@ -1,10 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { access, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-
-import { createFakeArtifactVerifier } from '../../src/adapters/fake/fake-artifact-verifier.js';
-import { createFakeGitHubPullRequestActivitySource } from '../../src/adapters/fake/fake-github-pull-request-activity-source.js';
 import { createFakeResourceIndex } from '../../src/adapters/fake/fake-resource-index.js';
 import { createFakeTicketingSystem } from '../../src/adapters/fake/fake-ticketing-system.js';
 import { createFakeWorkspaceManager } from '../../src/adapters/fake/fake-workspace-manager.js';
@@ -12,21 +9,14 @@ import { createResourceIndex } from '../../src/adapters/fs/resource-index.js';
 import { createStateStore } from '../../src/adapters/fs/state-store.js';
 import { createDefaultWakeConfig } from '../../src/config/defaults.js';
 import { createProjectionUpdater } from '../../src/core/projection-updater.js';
-import { createOutboundSinkRouter, createWorkSourceFanIn } from '../../src/core/sink-router.js';
 import { createTickRunner } from '../../src/core/tick-runner.js';
-import {
-  CORRELATION_PRIMARY_CONFLICT_EVENT,
-  CORRELATION_REGISTERED_EVENT,
-  WORK_ITEM_CREATED_EVENT,
-} from '../../src/domain/schema.js';
-import type { EventEnvelope, IssueStateRecord } from '../../src/domain/types.js';
-import { createEventEnvelope, createUnkeyedEventEnvelope } from '../../src/lib/event-log.js';
+import { CORRELATION_REGISTERED_EVENT, WORK_ITEM_CREATED_EVENT } from '../../src/domain/schema.js';
+import { createEventEnvelope } from '../../src/lib/event-log.js';
 import { isWorkId } from '../../src/lib/work-id.js';
 import {
   findByIssueRef,
   githubIssueUri,
   seededResourceIndex,
-  ticketUpsertWorkSource,
   workId,
 } from './support/tick-runner-fixtures.js';
 
