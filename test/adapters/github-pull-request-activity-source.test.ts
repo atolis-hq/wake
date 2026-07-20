@@ -23,6 +23,20 @@ describe('createGitHubPullRequestActivitySource', () => {
     return config;
   }
 
+  // A watched PR must be present in the discovery pass's open-PR listing to
+  // stay actively polled — listPullRequests only ever returns open PRs, so
+  // this represents "PR #91 is open" the same way real discovery would.
+  function openPr91(head: { ref?: string; sha?: string } = {}, base: { ref?: string } = {}) {
+    return {
+      number: 91,
+      html_url: 'https://github.com/org/repo/pull/91',
+      user: { login: 'trusted-human' },
+      head: { ref: head.ref ?? 'wake/issue-240', sha: head.sha ?? 'abc123' },
+      base: { ref: base.ref ?? 'main' },
+      updated_at: '2026-07-18T00:00:00Z',
+    };
+  }
+
   it('discovers open PRs not yet correlated and emits a pr.seen event per PR', async () => {
     const client = {
       listPullRequests: vi.fn().mockResolvedValue([
@@ -99,7 +113,7 @@ describe('createGitHubPullRequestActivitySource', () => {
 
   it('polls conversation comments, reviews, and review comments only for watchlisted PRs', async () => {
     const client = {
-      listPullRequests: vi.fn().mockResolvedValue([]),
+      listPullRequests: vi.fn().mockResolvedValue([openPr91()]),
       getPullRequest: vi.fn(),
       listComments: vi.fn().mockResolvedValue([
         {
@@ -133,7 +147,7 @@ describe('createGitHubPullRequestActivitySource', () => {
 
   it('emits PR feedback when a required check run fails', async () => {
     const client = {
-      listPullRequests: vi.fn().mockResolvedValue([]),
+      listPullRequests: vi.fn().mockResolvedValue([openPr91()]),
       getPullRequest: vi.fn().mockResolvedValue({
         number: 91,
         html_url: 'https://github.com/org/repo/pull/91',
@@ -181,6 +195,9 @@ describe('createGitHubPullRequestActivitySource', () => {
     const events = await source.pollEvents({ watch: [{ resourceUri: 'github:pr:org/repo#91' }] });
     const checkEvents = events.filter((e) => e.sourceEventType === 'pr.checks.failed');
 
+    // headSha/baseRef come from this tick's discovery pass, not a dedicated
+    // getPullRequest call.
+    expect(client.getPullRequest).not.toHaveBeenCalled();
     expect(client.getRequiredStatusChecks).toHaveBeenCalledWith('org', 'repo', 'main');
     expect(client.listCheckRunsForRef).toHaveBeenCalledWith('org', 'repo', 'abc123');
     expect(checkEvents).toHaveLength(1);
@@ -195,7 +212,7 @@ describe('createGitHubPullRequestActivitySource', () => {
 
   it('emits PR feedback when a required legacy status fails', async () => {
     const client = {
-      listPullRequests: vi.fn().mockResolvedValue([]),
+      listPullRequests: vi.fn().mockResolvedValue([openPr91()]),
       getPullRequest: vi.fn().mockResolvedValue({
         number: 91,
         html_url: 'https://github.com/org/repo/pull/91',
@@ -236,6 +253,7 @@ describe('createGitHubPullRequestActivitySource', () => {
     const events = await source.pollEvents({ watch: [{ resourceUri: 'github:pr:org/repo#91' }] });
     const checkEvents = events.filter((e) => e.sourceEventType === 'pr.checks.failed');
 
+    expect(client.getPullRequest).not.toHaveBeenCalled();
     expect(checkEvents).toHaveLength(1);
     expect(checkEvents[0]?.payload.comment).toMatchObject({
       id: 'pr-status-failed-abc123-ci/lint-error',
@@ -247,7 +265,7 @@ describe('createGitHubPullRequestActivitySource', () => {
 
   it('does not poll required checks when pullRequests.checks.enabled is false', async () => {
     const client = {
-      listPullRequests: vi.fn().mockResolvedValue([]),
+      listPullRequests: vi.fn().mockResolvedValue([openPr91()]),
       getPullRequest: vi.fn().mockResolvedValue({
         head: { ref: 'wake/issue-240', sha: 'abc123' },
         base: { ref: 'main' },
@@ -285,7 +303,7 @@ describe('createGitHubPullRequestActivitySource', () => {
     // 'User'. Without a selfLogin check this looks like a fresh human
     // reply and re-triggers another Wake run against itself.
     const client = {
-      listPullRequests: vi.fn().mockResolvedValue([]),
+      listPullRequests: vi.fn().mockResolvedValue([openPr91()]),
       getPullRequest: vi.fn(),
       listComments: vi.fn().mockResolvedValue([]),
       listReviews: vi.fn().mockResolvedValue([]),
@@ -323,7 +341,7 @@ describe('createGitHubPullRequestActivitySource', () => {
 
   it('does not mark an unmarked review-comment reply from a different login as bot-authored', async () => {
     const client = {
-      listPullRequests: vi.fn().mockResolvedValue([]),
+      listPullRequests: vi.fn().mockResolvedValue([openPr91()]),
       getPullRequest: vi.fn(),
       listComments: vi.fn().mockResolvedValue([]),
       listReviews: vi.fn().mockResolvedValue([]),
@@ -357,6 +375,83 @@ describe('createGitHubPullRequestActivitySource', () => {
       (e) => e.sourceEventType === 'pr.review-comment.created',
     );
     expect(reviewCommentEvent?.derivedHints?.botAuthoredComment).toBe(false);
+  });
+
+  it('skips activity and checks polling for a watched PR no longer in the open-PR listing (merged/closed)', async () => {
+    const client = {
+      // Complete open-PR listing (fewer results than maxPullRequestsPerRepo)
+      // that does not include #91 — confirms it has closed/merged.
+      listPullRequests: vi.fn().mockResolvedValue([]),
+      getPullRequest: vi.fn(),
+      listComments: vi.fn(),
+      listReviews: vi.fn(),
+      listReviewComments: vi.fn(),
+      getRequiredStatusChecks: vi.fn(),
+      listCheckRunsForRef: vi.fn(),
+      getCombinedStatusForRef: vi.fn(),
+      replyToReviewComment: vi.fn(),
+      createComment: vi.fn(),
+    };
+    const source = createGitHubPullRequestActivitySource({
+      client,
+      stateStore: createStateStore({ wakeRoot: root }),
+      config: buildConfig(),
+      resourceIndex: createFakeResourceIndex(),
+      now: () => new Date('2026-07-18T00:00:00Z'),
+    });
+
+    const events = await source.pollEvents({ watch: [{ resourceUri: 'github:pr:org/repo#91' }] });
+
+    expect(client.listComments).not.toHaveBeenCalled();
+    expect(client.listReviews).not.toHaveBeenCalled();
+    expect(client.listReviewComments).not.toHaveBeenCalled();
+    expect(client.getPullRequest).not.toHaveBeenCalled();
+    expect(client.getRequiredStatusChecks).not.toHaveBeenCalled();
+    expect(events).toHaveLength(0);
+  });
+
+  it('keeps polling a watched PR truncated out of a maxPullRequestsPerRepo-limited discovery, falling back to getPullRequest', async () => {
+    const client = {
+      // Discovery is truncated at the configured cap, so an untruncated
+      // absence can't be inferred — #91 stays active and its head/base data
+      // falls back to a dedicated getPullRequest call.
+      listPullRequests: vi
+        .fn()
+        .mockResolvedValue([
+          { number: 92, html_url: 'x', user: { login: 'a' }, head: { ref: 'y' }, updated_at: 't' },
+        ]),
+      getPullRequest: vi.fn().mockResolvedValue({
+        number: 91,
+        html_url: 'https://github.com/org/repo/pull/91',
+        head: { ref: 'wake/issue-240', sha: 'abc123' },
+        base: { ref: 'main' },
+        user: { login: 'trusted-human' },
+        updated_at: '2026-07-18T00:00:00Z',
+      }),
+      listComments: vi.fn().mockResolvedValue([]),
+      listReviews: vi.fn().mockResolvedValue([]),
+      listReviewComments: vi.fn().mockResolvedValue([]),
+      getRequiredStatusChecks: vi.fn().mockResolvedValue({ contexts: ['test'], checks: [] }),
+      listCheckRunsForRef: vi.fn().mockResolvedValue([]),
+      getCombinedStatusForRef: vi.fn().mockResolvedValue([]),
+      replyToReviewComment: vi.fn(),
+      createComment: vi.fn(),
+    };
+    const config = buildConfig();
+    config.sources.github.pullRequests.maxPullRequestsPerRepo = 1;
+    const source = createGitHubPullRequestActivitySource({
+      client,
+      stateStore: createStateStore({ wakeRoot: root }),
+      config,
+      resourceIndex: createFakeResourceIndex(),
+      now: () => new Date('2026-07-18T00:00:00Z'),
+    });
+
+    await source.pollEvents({ watch: [{ resourceUri: 'github:pr:org/repo#91' }] });
+
+    expect(client.listComments).toHaveBeenCalledWith('org', 'repo', 91, expect.any(Number));
+    expect(client.getPullRequest).toHaveBeenCalledWith('org', 'repo', 91);
+    expect(client.getRequiredStatusChecks).toHaveBeenCalledWith('org', 'repo', 'main');
   });
 
   it('does not poll watchlisted PR activity when pullRequests.enabled is false', async () => {
@@ -394,7 +489,7 @@ describe('createGitHubPullRequestActivitySource', () => {
 
   it('still emits a review event when the review body is empty, so a bare approve/request-changes is not lost', async () => {
     const client = {
-      listPullRequests: vi.fn().mockResolvedValue([]),
+      listPullRequests: vi.fn().mockResolvedValue([openPr91()]),
       getPullRequest: vi.fn(),
       listComments: vi.fn().mockResolvedValue([]),
       listReviews: vi.fn().mockResolvedValue([
@@ -427,7 +522,7 @@ describe('createGitHubPullRequestActivitySource', () => {
 
   it('tags review-thread comment events with sourceRefs.parentResourceUri pointing at the owning PR', async () => {
     const client = {
-      listPullRequests: vi.fn().mockResolvedValue([]),
+      listPullRequests: vi.fn().mockResolvedValue([openPr91()]),
       getPullRequest: vi.fn(),
       listComments: vi.fn().mockResolvedValue([]),
       listReviews: vi.fn().mockResolvedValue([]),
@@ -516,7 +611,7 @@ describe('createGitHubPullRequestActivitySource', () => {
 
   it('derives a stable review-thread resourceUri from review comment thread roots', async () => {
     const client = {
-      listPullRequests: vi.fn().mockResolvedValue([]),
+      listPullRequests: vi.fn().mockResolvedValue([openPr91()]),
       getPullRequest: vi.fn(),
       listComments: vi.fn().mockResolvedValue([]),
       listReviews: vi.fn().mockResolvedValue([]),
