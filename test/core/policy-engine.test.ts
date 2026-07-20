@@ -869,3 +869,40 @@ describe('policy engine: chooseRetryActionAfterHumanReply', () => {
     ).toBe('verify');
   });
 });
+
+describe('policy engine: resolveNextEligibleAction', () => {
+  it('resolves the next action for an eligible issue with a fresh human comment', () => {
+    const policy = createPolicyEngine();
+    const config = createDefaultWakeConfig('/tmp/wake-root');
+    config.sources.github.policy.requiredLabels = ['wake:implement'];
+    const issue = buildNeedsWakeActionIssue({ latestCommentId: 'c-2' });
+
+    const resolution = policy.resolveNextEligibleAction(issue, config);
+
+    expect(resolution).not.toBeNull();
+    expect(resolution?.action).toBe('implement');
+    expect(resolution?.workflow).toBeDefined();
+  });
+
+  it('returns null when the issue is not eligible', () => {
+    const policy = createPolicyEngine();
+    const config = createDefaultWakeConfig('/tmp/wake-root');
+    config.sources.github.policy.requiredLabels = ['some-other-label'];
+    const issue = buildNeedsWakeActionIssue({ latestCommentId: 'c-2' });
+
+    expect(policy.resolveNextEligibleAction(issue, config)).toBeNull();
+  });
+
+  it('returns null for an awaiting-approval issue whose latest comment is not a decision', () => {
+    const policy = createPolicyEngine();
+    const config = createDefaultWakeConfig('/tmp/wake-root');
+    config.sources.github.policy.requiredAssignees = ['owner'];
+    const issue = buildAwaitingApprovalIssue({
+      latestCommentBody: 'just thinking out loud',
+      pendingApprovalAction: 'implement',
+    });
+    issue.issue.assignees = ['owner'];
+
+    expect(policy.resolveNextEligibleAction(issue, config)).toBeNull();
+  });
+});
