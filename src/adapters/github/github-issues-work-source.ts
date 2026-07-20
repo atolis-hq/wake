@@ -5,6 +5,7 @@ import type { ResourceIndex, UnkeyedEventEnvelope } from '../../core/contracts.j
 import { defaultAgentIdentity } from '../../domain/schema.js';
 import { buildResourceUri } from '../../domain/resource-uri.js';
 import { wakeStageLabelPrefix } from '../../domain/stages.js';
+import { wakeWorkflowLabelPrefix } from '../../domain/workflows.js';
 import type { EventEnvelope, IssueStateRecord, WakeConfig } from '../../domain/types.js';
 import { createEventEnvelope, createUnkeyedEventEnvelope } from '../../lib/event-log.js';
 import { wakeVersion } from '../../version.js';
@@ -509,11 +510,17 @@ export function createGitHubIssuesWorkSource(deps: {
           typeof input.event.payload.stageLabel === 'string'
             ? input.event.payload.stageLabel
             : undefined;
+        const nextWorkflowLabel =
+          typeof input.event.payload.workflowLabel === 'string'
+            ? input.event.payload.workflowLabel
+            : undefined;
 
         const nextLabels = [
           ...currentLabels.filter(
             (label) =>
-              !label.startsWith(wakeStatusLabelPrefix) && !label.startsWith(wakeStageLabelPrefix),
+              !label.startsWith(wakeStatusLabelPrefix) &&
+              !label.startsWith(wakeStageLabelPrefix) &&
+              !label.startsWith(wakeWorkflowLabelPrefix),
           ),
           ...(nextStatusLabel !== undefined
             ? [nextStatusLabel]
@@ -521,6 +528,9 @@ export function createGitHubIssuesWorkSource(deps: {
           ...(nextStageLabel !== undefined
             ? [nextStageLabel]
             : currentLabels.filter((label) => label.startsWith(wakeStageLabelPrefix))),
+          ...(nextWorkflowLabel !== undefined
+            ? [nextWorkflowLabel]
+            : currentLabels.filter((label) => label.startsWith(wakeWorkflowLabelPrefix))),
         ];
 
         const labelsChanged =
@@ -549,6 +559,7 @@ export function createGitHubIssuesWorkSource(deps: {
                 intentEventId: input.event.eventId,
                 ...(nextStatusLabel !== undefined ? { statusLabel: nextStatusLabel } : {}),
                 ...(nextStageLabel !== undefined ? { stageLabel: nextStageLabel } : {}),
+                ...(nextWorkflowLabel !== undefined ? { workflowLabel: nextWorkflowLabel } : {}),
                 labels: nextLabels,
                 providerEventType: 'github.issue.labels.updated',
               },

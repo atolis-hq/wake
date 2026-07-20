@@ -10,6 +10,7 @@ import { stageLabelForStage } from './stages.js';
 export const universalQueueStage = 'queue';
 export const universalDoneStage = 'done';
 export const workflowChangedBlockReason = 'workflow-changed';
+export const wakeWorkflowLabelPrefix = 'wake:workflow.';
 
 export const builtInDefaultWorkflowDefinition: WorkflowDefinition = {
   stages: {
@@ -80,6 +81,10 @@ export function workflowStageVocabulary(workflow: WorkflowDefinition): string[] 
 
 export function stageLabelsForWorkflow(workflow: WorkflowDefinition): string[] {
   return workflowStageVocabulary(workflow).map((stage) => stageLabelForStage(stage));
+}
+
+export function workflowLabelForWorkflowName(workflowName: string): string {
+  return `${wakeWorkflowLabelPrefix}${workflowName}`;
 }
 
 export function isKnownWorkflowStage(stage: string, workflow: WorkflowDefinition): boolean {

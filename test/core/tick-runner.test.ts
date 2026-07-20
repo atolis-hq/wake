@@ -571,6 +571,7 @@ describe('tick runner', () => {
           if (input.event.sourceEventType === 'wake.labels.requested') {
             deliveredEvents.push(String(input.event.payload.statusLabel));
             deliveredEvents.push(String(input.event.payload.stageLabel));
+            deliveredEvents.push(String(input.event.payload.workflowLabel));
           }
           return [];
         },
@@ -602,8 +603,10 @@ describe('tick runner', () => {
     expect(deliveredEvents).toEqual([
       'wake:status.working',
       'wake:stage.implement',
+      'wake:workflow.default',
       'wake:status.completed',
       'wake:stage.done',
+      'wake:workflow.default',
     ]);
     expect(runRecords[0]?.summary).toBe(
       'Implemented. The previous CI run FAILED, but this one passed.',

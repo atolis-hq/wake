@@ -41,6 +41,7 @@ import {
   isKnownWorkflowStage,
   workflowChangedBlockReason,
   workflowForProjection,
+  workflowLabelForWorkflowName,
   workflowNameForProjection,
 } from '../domain/workflows.js';
 import { createEventEnvelope } from '../lib/event-log.js';
@@ -345,10 +346,11 @@ export function createTickRunner(deps: {
     runId: string;
     statusLabel: string;
     stageLabel: string;
+    workflowLabel: string;
     occurredAt: string;
   }): EventEnvelope {
     return createEventEnvelope({
-      eventId: `${input.runId}-labels-${input.statusLabel.replace(/[^a-z0-9]+/gi, '-')}-${input.stageLabel.replace(/[^a-z0-9]+/gi, '-')}`,
+      eventId: `${input.runId}-labels-${input.statusLabel.replace(/[^a-z0-9]+/gi, '-')}-${input.stageLabel.replace(/[^a-z0-9]+/gi, '-')}-${input.workflowLabel.replace(/[^a-z0-9]+/gi, '-')}`,
       workItemKey: input.projection.workItemKey,
       streamScope: 'work-item',
       direction: 'outbound',
@@ -365,6 +367,7 @@ export function createTickRunner(deps: {
       payload: {
         statusLabel: input.statusLabel,
         stageLabel: input.stageLabel,
+        workflowLabel: input.workflowLabel,
         origin: input.projection.origin ?? 'github',
       },
     });
@@ -475,10 +478,15 @@ export function createTickRunner(deps: {
     for (const projection of projections) {
       const statusLabel = statusLabelForStage(projection.wake.stage);
       const stageLabel = stageLabelForStage(projection.wake.stage);
+      const workflowLabel = workflowLabelForWorkflowName(
+        workflowNameForProjection(projection, deps.config),
+      );
 
       if (
         !shouldMarkPending(projection) ||
-        (hasLabel(projection, statusLabel) && hasLabel(projection, stageLabel))
+        (hasLabel(projection, statusLabel) &&
+          hasLabel(projection, stageLabel) &&
+          hasLabel(projection, workflowLabel))
       ) {
         continue;
       }
@@ -489,6 +497,7 @@ export function createTickRunner(deps: {
           runId: `pending-${projection.workItemKey}-${deps.clock.now().getTime()}`,
           statusLabel,
           stageLabel,
+          workflowLabel,
           occurredAt: eventStampNow(),
         }),
       );
@@ -924,6 +933,9 @@ export function createTickRunner(deps: {
             runId: record.runId,
             statusLabel: 'wake:status.failed',
             stageLabel: stageLabelForStage(updatedProjection.wake.stage),
+            workflowLabel: workflowLabelForWorkflowName(
+              workflowNameForProjection(updatedProjection, deps.config),
+            ),
             occurredAt: finishedAt,
           }),
         );
@@ -977,6 +989,9 @@ export function createTickRunner(deps: {
           runId: eventId,
           statusLabel: 'wake:status.blocked',
           stageLabel: stageLabelForStage(projection.wake.stage),
+          workflowLabel: workflowLabelForWorkflowName(
+            workflowNameForProjection(projection, deps.config),
+          ),
           occurredAt,
         }),
       );
@@ -1264,6 +1279,7 @@ export function createTickRunner(deps: {
                 runId: approvalId,
                 statusLabel: statusLabelForStage(nextStage),
                 stageLabel: stageLabelForStage(nextStage),
+                workflowLabel: workflowLabelForWorkflowName(workflowName),
                 occurredAt: approvedAt,
               }),
             );
@@ -1369,6 +1385,7 @@ export function createTickRunner(deps: {
           runId,
           statusLabel: 'wake:status.working',
           stageLabel: stageLabelForStage(claimedStage),
+          workflowLabel: workflowLabelForWorkflowName(workflowName),
           occurredAt: eventStampNow(),
         }),
       );
@@ -1549,6 +1566,7 @@ export function createTickRunner(deps: {
               stage: nextStage ?? claimedStage,
             }),
             stageLabel: stageLabelForStage(nextStage ?? claimedStage),
+            workflowLabel: workflowLabelForWorkflowName(workflowName),
             occurredAt: finishedAt,
           }),
         );
@@ -1626,6 +1644,7 @@ export function createTickRunner(deps: {
             runId,
             statusLabel: 'wake:status.failed',
             stageLabel: stageLabelForStage(claimedStage),
+            workflowLabel: workflowLabelForWorkflowName(workflowName),
             occurredAt: finishedAt,
           }),
         );

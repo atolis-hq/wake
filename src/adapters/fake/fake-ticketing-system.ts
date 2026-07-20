@@ -126,9 +126,16 @@ export function createFakeTicketingSystem(options: {
           typeof input.event.payload.stageLabel === 'string'
             ? input.event.payload.stageLabel
             : undefined;
+        const workflowLabel =
+          typeof input.event.payload.workflowLabel === 'string'
+            ? input.event.payload.workflowLabel
+            : undefined;
         const labels = [
           ...currentLabels.filter(
-            (label) => !label.startsWith('wake:status.') && !label.startsWith('wake:stage.'),
+            (label) =>
+              !label.startsWith('wake:status.') &&
+              !label.startsWith('wake:stage.') &&
+              !label.startsWith('wake:workflow.'),
           ),
           ...(statusLabel === undefined
             ? currentLabels.filter((label) => label.startsWith('wake:status.'))
@@ -136,6 +143,9 @@ export function createFakeTicketingSystem(options: {
           ...(stageLabel === undefined
             ? currentLabels.filter((label) => label.startsWith('wake:stage.'))
             : [stageLabel]),
+          ...(workflowLabel === undefined
+            ? currentLabels.filter((label) => label.startsWith('wake:workflow.'))
+            : [workflowLabel]),
         ];
 
         return [
