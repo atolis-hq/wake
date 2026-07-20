@@ -65,6 +65,23 @@ function routesOnlyToFake(config: WakeConfig): boolean {
   });
 }
 
+async function resolveSelfLogin(
+  githubClient: ReturnType<typeof createGitHubClient> | undefined,
+): Promise<string | undefined> {
+  if (githubClient === undefined) {
+    return undefined;
+  }
+
+  try {
+    return await githubClient.getAuthenticatedLogin();
+  } catch (error) {
+    console.error(
+      `wake: failed to resolve authenticated GitHub login; continuing without self-login bot detection: ${String(error)}`,
+    );
+    return undefined;
+  }
+}
+
 export function formatTickFailureDetails(runRecord: RunRecord | null): string | null {
   if (runRecord === null) {
     return null;
@@ -236,8 +253,7 @@ export async function buildRuntime(args: string[]) {
   // by direct API/CLI call (not through formatWakeComment, so it never
   // carries the wake:agent marker) as bot-authored instead of a fresh human
   // reply that would re-trigger another run against itself.
-  const selfLogin =
-    githubClient !== undefined ? await githubClient.getAuthenticatedLogin() : undefined;
+  const selfLogin = await resolveSelfLogin(githubClient);
 
   const artifactVerifier =
     prTrackingEnabled && githubClient !== undefined

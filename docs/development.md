@@ -171,7 +171,9 @@ By default, `sandbox.start.enabled: true` makes the container entrypoint start
 `sandbox self-update` creates the container. Output is written to
 `<wake-root>/logs/start.log`, and the entrypoint records the process id in
 `<wake-root>/logs/start.pid` so self-update can verify the loop survived a
-container replacement.
+container replacement. If the resident loop exits unexpectedly, the entrypoint
+restarts it after a short delay and refreshes `start.pid` with the new process
+id.
 
 ### Auto-Starting The Control-Plane UI
 
