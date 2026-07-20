@@ -119,4 +119,98 @@ describe('qualifiesForMint', () => {
     });
     expect(policy.qualifiesForMint(event, baseConfig())).toBe(false);
   });
+
+  it('qualifies matching events through workflowSelectors when configured', () => {
+    const event = createUnkeyedEventEnvelope({
+      eventId: 'e6',
+      streamScope: 'global-intake',
+      direction: 'inbound',
+      sourceSystem: 'github',
+      sourceEventType: 'ticket.upsert',
+      sourceRefs: { resourceUri: 'github:issue:org/repo#6' },
+      occurredAt: '2026-07-18T00:00:00Z',
+      ingestedAt: '2026-07-18T00:00:00Z',
+      trigger: 'immediate',
+      payload: { ticket: { repo: 'org/repo', labels: ['bug'], assignees: [] } },
+    });
+    const config = baseConfig({
+      policy: { requiredLabels: ['wake:assign'], requiredAssignees: [] },
+    });
+    config.workflowSelectors = [
+      {
+        workflow: 'default',
+        match: {
+          kind: 'issue',
+          requiredLabels: ['bug'],
+          ignoredLabels: [],
+          requiredAssignees: [],
+          requiredAuthors: [],
+        },
+      },
+    ];
+
+    expect(policy.qualifiesForMint(event, config)).toBe(true);
+  });
+
+  it('qualifies PR events through event-kind workflowSelectors without GitHub PR author policy', () => {
+    const event = createUnkeyedEventEnvelope({
+      eventId: 'e7',
+      streamScope: 'global-intake',
+      direction: 'inbound',
+      sourceSystem: 'github-pr',
+      sourceEventType: 'pr.seen',
+      sourceRefs: { resourceUri: 'github:pr:org/repo#97' },
+      occurredAt: '2026-07-18T00:00:00Z',
+      ingestedAt: '2026-07-18T00:00:00Z',
+      trigger: 'context-only',
+      payload: { pr: { number: 97, author: 'trusted-human', headRef: 'feature-x' } },
+    });
+    const config = baseConfig({
+      pullRequests: { enabled: true, policy: { requiredAuthors: [] } },
+    });
+    config.workflowSelectors = [
+      {
+        workflow: 'default',
+        match: {
+          kind: 'pr',
+          requiredLabels: [],
+          ignoredLabels: [],
+          requiredAssignees: [],
+          requiredAuthors: ['trusted-human'],
+        },
+      },
+    ];
+
+    expect(policy.qualifiesForMint(event, config)).toBe(true);
+  });
+
+  it('does not qualify selector-configured events when no selector matches', () => {
+    const event = createUnkeyedEventEnvelope({
+      eventId: 'e8',
+      streamScope: 'global-intake',
+      direction: 'inbound',
+      sourceSystem: 'github',
+      sourceEventType: 'ticket.upsert',
+      sourceRefs: { resourceUri: 'github:issue:org/repo#8' },
+      occurredAt: '2026-07-18T00:00:00Z',
+      ingestedAt: '2026-07-18T00:00:00Z',
+      trigger: 'immediate',
+      payload: { ticket: { repo: 'org/repo', labels: ['feature'], assignees: [] } },
+    });
+    const config = baseConfig();
+    config.workflowSelectors = [
+      {
+        workflow: 'default',
+        match: {
+          kind: 'issue',
+          requiredLabels: ['bug'],
+          ignoredLabels: [],
+          requiredAssignees: [],
+          requiredAuthors: [],
+        },
+      },
+    ];
+
+    expect(policy.qualifiesForMint(event, config)).toBe(false);
+  });
 });

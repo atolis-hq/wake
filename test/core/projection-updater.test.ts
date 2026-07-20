@@ -11,6 +11,7 @@ import {
   CORRELATION_PRIMARY_CONFLICT_EVENT,
   CORRELATION_REGISTERED_EVENT,
   CORRELATION_RETRACTED_EVENT,
+  parseWakeConfig,
 } from '../../src/domain/schema.js';
 import { stageLabelForStage, stageValues } from '../../src/domain/stages.js';
 import { createEventEnvelope } from '../../src/lib/event-log.js';
@@ -707,6 +708,125 @@ describe('projection updater', () => {
       'wake:status.working',
       'wake:stage.queue',
     ]);
+  });
+
+  it('pins the selected workflow when selector-matched work is first folded', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const config = parseWakeConfig({
+      paths: { wakeRoot: root },
+      workflows: {
+        default: {
+          stages: {
+            refine: {
+              action: 'refine',
+              workspace: 'read-only',
+              tier: 'light',
+              onDone: 'implement',
+            },
+            implement: {
+              action: 'implement',
+              workspace: 'branch',
+              tier: 'standard',
+              onDone: 'done',
+            },
+          },
+        },
+        bug: {
+          stages: {
+            reproduce: {
+              action: 'refine',
+              workspace: 'read-only',
+              tier: 'light',
+              onDone: 'fix',
+            },
+            fix: {
+              action: 'implement',
+              workspace: 'branch',
+              tier: 'standard',
+              onDone: 'done',
+            },
+          },
+        },
+      },
+      workflowSelectors: [
+        {
+          workflow: 'bug',
+          match: { kind: 'issue', repo: 'atolis-hq/wake', requiredLabels: ['bug'] },
+        },
+      ],
+    });
+    const updater = createProjectionUpdater({
+      stateStore: store,
+      resourceIndex: createFakeResourceIndex(),
+      config,
+    });
+
+    const initialUpsert = createEventEnvelope({
+      eventId: 'evt-workflow-issue-1',
+      workItemKey: workId(65),
+      streamScope: 'global-intake',
+      direction: 'inbound',
+      sourceSystem: 'github',
+      sourceEventType: 'ticket.upsert',
+      sourceRefs: {
+        repo: 'atolis-hq/wake',
+        issueNumber: 65,
+        sourceUrl: 'https://example.test/issues/65',
+        resourceUri: 'github:issue:atolis-hq/wake#65',
+      },
+      occurredAt: '2026-07-05T12:00:00.000Z',
+      ingestedAt: '2026-07-05T12:00:01.000Z',
+      trigger: 'immediate',
+      payload: {
+        ticket: {
+          repo: 'atolis-hq/wake',
+          number: 65,
+          title: 'Bug',
+          body: 'Body',
+          labels: ['bug'],
+          assignees: [],
+          isPullRequest: false,
+          state: 'open',
+          url: 'https://example.test/issues/65',
+          createdAt: '2026-07-05T12:00:00.000Z',
+          updatedAt: '2026-07-05T12:00:00.000Z',
+        },
+      },
+    });
+
+    await updater.rebuildFromEvents([initialUpsert]);
+
+    let projection = await store.readIssueState(workId(65));
+    expect(projection?.context.workflow).toBe('bug');
+    await expect(store.readEventEnvelope(`workflow-selected-${workId(65)}`)).resolves.toMatchObject(
+      {
+        sourceEventType: 'wake.workflow.selected',
+        payload: {
+          workflow: 'bug',
+          selectedFromEventId: 'evt-workflow-issue-1',
+        },
+      },
+    );
+
+    const editedUpsert = createEventEnvelope({
+      ...initialUpsert,
+      eventId: 'evt-workflow-issue-2',
+      occurredAt: '2026-07-05T12:05:00.000Z',
+      ingestedAt: '2026-07-05T12:05:01.000Z',
+      payload: {
+        ticket: {
+          ...(initialUpsert.payload.ticket as Record<string, unknown>),
+          labels: ['feature'],
+          updatedAt: '2026-07-05T12:05:00.000Z',
+        },
+      },
+    });
+
+    await updater.rebuildFromEvents([editedUpsert]);
+
+    projection = await store.readIssueState(workId(65));
+    expect(projection?.issue.labels).toEqual(['feature']);
+    expect(projection?.context.workflow).toBe('bug');
   });
 
   it('records a human reply on a blocked issue without changing stage', async () => {

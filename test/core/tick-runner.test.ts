@@ -1576,14 +1576,11 @@ describe('tick runner', () => {
     expect(publishIntents[0]?.sourceRefs.resourceUri).toBeUndefined();
   });
 
-  it('retries the failed action itself (not the stage default) after a FAILED sentinel with a fresh human reply', async () => {
-    // Reproduces two production incidents in one tick: a `revise` run FAILED
-    // (crash / stale-run reconciliation) while a fresh PR review comment was
-    // still unhandled. lastRunSentinel !== AWAITING_APPROVAL after FAILED, so
-    // dispatch falls into the non-awaiting-approval branch — which used to
-    // pick the *stage's* default action (`implement`) instead of retrying the
-    // action that actually failed (`revise`), silently discarding the
-    // in-flight PR-feedback work and running a full fresh implement instead.
+  it('retries the blocked-from stage after a FAILED sentinel with a fresh human reply', async () => {
+    // Custom workflows make the resume target a stage-level policy decision:
+    // when a FAILED/BLOCKED run gets an unhandled human reply, Wake re-runs
+    // the stage recorded in context.blockedFromStage instead of trusting the
+    // last action string.
     const store = createStateStore({ wakeRoot: root });
     let capturedAction: string | undefined;
 
@@ -1636,6 +1633,7 @@ describe('tick runner', () => {
         lastRunSentinel: 'FAILED',
         lastFailureClass: 'infra',
         lastRunAction: 'revise',
+        blockedFromStage: 'implement',
       },
       correlatedResources: [],
     });
@@ -1669,7 +1667,7 @@ describe('tick runner', () => {
     const result = await tickRunner.runTick();
 
     expect(result.status).toBe('processed');
-    expect(capturedAction).toBe('revise');
+    expect(capturedAction).toBe('implement');
   });
 
   it('stays idle when awaiting approval and the latest PR-sourced comment was already handled', async () => {

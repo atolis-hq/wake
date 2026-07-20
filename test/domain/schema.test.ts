@@ -890,6 +890,77 @@ describe('workflow config schema', () => {
     });
   });
 
+  it('parses workflow selectors with source and metadata matches', () => {
+    const config = parseWakeConfig({
+      paths: { wakeRoot: '/tmp/wake' },
+      workflows: {
+        default: {
+          stages: {
+            refine: {
+              action: 'refine',
+              workspace: 'read-only',
+              tier: 'light',
+              onDone: 'implement',
+            },
+            implement: {
+              action: 'implement',
+              workspace: 'branch',
+              tier: 'standard',
+              onDone: 'done',
+            },
+          },
+        },
+        bug: {
+          stages: {
+            triage: {
+              action: 'refine',
+              workspace: 'read-only',
+              tier: 'light',
+              onDone: 'done',
+            },
+          },
+        },
+      },
+      workflowSelectors: [
+        {
+          workflow: 'bug',
+          match: {
+            kind: 'issue',
+            sourceEventType: 'ticket.upsert',
+            repo: 'atolis-hq/wake',
+            requiredLabels: ['bug'],
+            ignoredLabels: ['wontfix'],
+            requiredAssignees: ['octocat'],
+          },
+        },
+      ],
+    });
+
+    expect(config.workflowSelectors).toEqual([
+      {
+        workflow: 'bug',
+        match: {
+          kind: 'issue',
+          sourceEventType: 'ticket.upsert',
+          repo: 'atolis-hq/wake',
+          requiredLabels: ['bug'],
+          ignoredLabels: ['wontfix'],
+          requiredAssignees: ['octocat'],
+          requiredAuthors: [],
+        },
+      },
+    ]);
+  });
+
+  it('rejects workflow selectors that target an unknown workflow', () => {
+    expect(() =>
+      parseWakeConfig({
+        paths: { wakeRoot: '/tmp/wake' },
+        workflowSelectors: [{ workflow: 'missing', match: { kind: 'issue' } }],
+      }),
+    ).toThrow(/Workflow selector targets unknown workflow/);
+  });
+
   it('returns isolated default workflow objects for each parsed config', () => {
     const first = parseWakeConfig({ paths: { wakeRoot: '/tmp/wake-1' } });
     first.workflows.default!.stages.implement!.runner = 'pinned';

@@ -9,6 +9,7 @@ import { doneRunnerSentinel, stageFromLabels } from '../domain/stages.js';
 import {
   builtInDefaultWorkflowDefinition,
   defaultWorkflowName,
+  selectWorkflowForEvent,
   workflowStageVocabulary,
 } from '../domain/workflows.js';
 import { isCustomCommandAction } from '../domain/custom-commands.js';
@@ -27,6 +28,8 @@ type ApplyEventCtx = {
   resourceIndex: ResourceIndex;
   appendEvent: (event: EventEnvelope) => Promise<EventEnvelope>;
 };
+
+const WORKFLOW_SELECTED_EVENT = 'wake.workflow.selected';
 
 function stringArrayFromPayload(value: unknown): string[] {
   return Array.isArray(value)
@@ -73,6 +76,44 @@ function createProjectionFromIssueEvent(
   });
 }
 
+async function pinSelectedWorkflow(
+  projection: IssueStateRecord,
+  event: EventEnvelope,
+  ctx: ApplyEventCtx,
+  config?: WakeConfig,
+): Promise<IssueStateRecord> {
+  const context = projection.context as Record<string, unknown>;
+  if (config === undefined || typeof context.workflow === 'string') {
+    return projection;
+  }
+
+  const workflow = selectWorkflowForEvent(event, config);
+  if (workflow === null) {
+    return projection;
+  }
+
+  const selectedEvent = await ctx.appendEvent(
+    createEventEnvelope({
+      eventId: `workflow-selected-${projection.workItemKey}`,
+      workItemKey: projection.workItemKey,
+      streamScope: 'work-item',
+      direction: 'internal',
+      sourceSystem: 'wake',
+      sourceEventType: WORKFLOW_SELECTED_EVENT,
+      sourceRefs: event.sourceRefs,
+      occurredAt: event.occurredAt,
+      ingestedAt: event.ingestedAt,
+      trigger: 'context-only',
+      payload: {
+        workflow,
+        selectedFromEventId: event.eventId,
+      },
+    }),
+  );
+
+  return applyEvent(projection, selectedEvent, ctx, config) as Promise<IssueStateRecord>;
+}
+
 async function applyEvent(
   current: IssueStateRecord | null,
   event: EventEnvelope,
@@ -98,7 +139,7 @@ async function applyEvent(
     }
 
     if (current === null) {
-      return next;
+      return pinSelectedWorkflow(next, event, ctx, config);
     }
 
     const nextStageFromLabels = stageFromLabels(
@@ -108,7 +149,7 @@ async function applyEvent(
     const shouldReconcileStage =
       nextStageFromLabels !== undefined && nextStageFromLabels !== current.wake.stage;
 
-    return parseIssueStateRecord({
+    const updated = parseIssueStateRecord({
       ...current,
       origin: current.origin,
       issue: next.issue,
@@ -129,10 +170,31 @@ async function applyEvent(
         recentEventIds: [...current.wake.recentEventIds, event.eventId].slice(-10),
       },
     });
+    return pinSelectedWorkflow(updated, event, ctx, config);
   }
 
   if (current === null) {
     return null;
+  }
+
+  if (event.sourceEventType === WORKFLOW_SELECTED_EVENT) {
+    const workflow = event.payload.workflow;
+    if (typeof workflow !== 'string') {
+      return current;
+    }
+
+    return parseIssueStateRecord({
+      ...current,
+      context: {
+        ...current.context,
+        workflow,
+      },
+      wake: {
+        ...current.wake,
+        syncedAt: event.ingestedAt,
+        recentEventIds: [...current.wake.recentEventIds, event.eventId].slice(-10),
+      },
+    });
   }
 
   if (
@@ -236,32 +298,39 @@ async function applyEvent(
       config !== undefined &&
       isCustomCommandAction(payload.action, config);
     const shouldClearSession = isForwardProgression || isFailed;
+    const nextContext: Record<string, unknown> = {
+      ...current.context,
+      lastFailureClass: payload.failureClass,
+      ...(payload.handledCommentId === undefined
+        ? {}
+        : { lastHandledCommentId: payload.handledCommentId }),
+      ...(payload.sentinel === undefined || isCompletedCustomCommand
+        ? {}
+        : { lastRunSentinel: payload.sentinel }),
+      ...(payload.action === undefined || isCompletedCustomCommand
+        ? {}
+        : { lastRunAction: payload.action }),
+      ...(payload.sentinel === doneRunnerSentinel &&
+      payload.action !== undefined &&
+      !isCompletedCustomCommand
+        ? { lastCompletedAction: payload.action }
+        : {}),
+      // Remembered so the approval path knows which action to resume or
+      // skip when a human posts /approved.
+      ...(payload.sentinel === 'AWAITING_APPROVAL' && payload.action !== undefined
+        ? { pendingApprovalAction: payload.action }
+        : {}),
+    };
+
+    if (payload.sentinel === 'BLOCKED' || payload.sentinel === 'FAILED') {
+      nextContext.blockedFromStage = current.wake.stage;
+    } else if (payload.sentinel !== undefined) {
+      delete nextContext.blockedFromStage;
+    }
 
     return parseIssueStateRecord({
       ...current,
-      context: {
-        ...current.context,
-        lastFailureClass: payload.failureClass,
-        ...(payload.handledCommentId === undefined
-          ? {}
-          : { lastHandledCommentId: payload.handledCommentId }),
-        ...(payload.sentinel === undefined || isCompletedCustomCommand
-          ? {}
-          : { lastRunSentinel: payload.sentinel }),
-        ...(payload.action === undefined || isCompletedCustomCommand
-          ? {}
-          : { lastRunAction: payload.action }),
-        ...(payload.sentinel === doneRunnerSentinel &&
-        payload.action !== undefined &&
-        !isCompletedCustomCommand
-          ? { lastCompletedAction: payload.action }
-          : {}),
-        // Remembered so the approval path knows which action to resume or
-        // skip when a human posts /approved.
-        ...(payload.sentinel === 'AWAITING_APPROVAL' && payload.action !== undefined
-          ? { pendingApprovalAction: payload.action }
-          : {}),
-      },
+      context: nextContext,
       wake: {
         ...current.wake,
         stage: payload.nextStage ?? current.wake.stage,
