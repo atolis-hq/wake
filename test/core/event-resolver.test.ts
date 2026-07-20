@@ -93,8 +93,9 @@ describe('event resolver', () => {
 
     const projections = await store.listIssueStates();
     expect(projections).toHaveLength(1);
-    expect(projections[0].workItemKey).toBe(owner);
-    expect(projections[0].correlatedResources.map((r) => r.resourceUri)).toContain(issueUri(1));
+    const minted = projections[0]!;
+    expect(minted.workItemKey).toBe(owner);
+    expect(minted.correlatedResources.map((r) => r.resourceUri)).toContain(issueUri(1));
   });
 
   it('does not mint when the event does not qualify', async () => {
@@ -112,7 +113,7 @@ describe('event resolver', () => {
 
     const projections = await store.listIssueStates();
     expect(projections).toHaveLength(1);
-    expect(projections[0].workItemKey).toBe('work-01JZ0000000000000000000003');
+    expect(projections[0]!.workItemKey).toBe('work-01JZ0000000000000000000003');
     const persisted = await store.readEventEnvelope('ticket-upsert-3');
     expect(persisted?.workItemKey).toBe('work-01JZ0000000000000000000003');
   });
