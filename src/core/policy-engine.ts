@@ -4,7 +4,9 @@ import type { CustomCommandResolution } from '../domain/custom-commands.js';
 import {
   builtInDefaultWorkflowDefinition,
   chooseAction as chooseWorkflowAction,
+  isKnownWorkflowStage,
   selectWorkflowForEvent,
+  workflowForProjection,
 } from '../domain/workflows.js';
 import type {
   AgentAction,
@@ -276,6 +278,51 @@ export function createPolicyEngine() {
       config: WakeConfig,
     ): CustomCommandResolution | null {
       return resolveCustomCommand(issue, config);
+    },
+    // The single eligibility predicate: is this issue open, on a known workflow
+    // stage, and does it have a next action Wake should run? Returns the
+    // resolved action plus the workflow it belongs to, or null when there is
+    // nothing to do. This used to be duplicated as two independently-drifting
+    // copies (the pending-label marker and the runner's candidate `find`), which
+    // is exactly the class of "a rule change didn't propagate everywhere" that
+    // caused the #258 incident — keep it as the one source of truth.
+    resolveNextEligibleAction(
+      issue: IssueStateRecord,
+      config: WakeConfig,
+    ): { action: AgentAction; workflow: WorkflowDefinition } | null {
+      if (!this.isEligible(issue, config)) {
+        return null;
+      }
+      const workflow = workflowForProjection(issue, config);
+      if (workflow === null || !isKnownWorkflowStage(issue.wake.stage, workflow)) {
+        return null;
+      }
+
+      if (isAwaitingApproval(issue)) {
+        const customCommand = resolveCustomCommand(issue, config);
+        if (customCommand !== null) {
+          return { action: customCommand.action, workflow };
+        }
+        const approval = this.resolveApprovalTransition(issue);
+        if (approval !== null) {
+          return { action: approval.pendingAction, workflow };
+        }
+        const reviewAction = this.resolvePendingReviewFeedback(issue);
+        if (reviewAction !== null) {
+          return { action: reviewAction, workflow };
+        }
+        return null;
+      }
+
+      const nextAction =
+        resolveCustomCommand(issue, config)?.action ??
+        this.chooseAction(issue, workflow) ??
+        this.chooseRetryActionAfterHumanReply(issue, workflow);
+      if (nextAction === null || !this.needsWakeAction(issue, workflow)) {
+        return null;
+      }
+
+      return { action: nextAction, workflow };
     },
     qualifiesForMint(unresolved: UnkeyedEventEnvelope, config: WakeConfig): boolean {
       const resourceUri = unresolved.sourceRefs.resourceUri;
