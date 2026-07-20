@@ -1224,7 +1224,11 @@ describe('github issues work source', () => {
         occurredAt: '2026-07-05T12:00:00.000Z',
         ingestedAt: '2026-07-05T12:00:00.000Z',
         trigger: 'context-only',
-        payload: { statusLabel: 'wake:status.working', stageLabel: 'wake:stage.queue' },
+        payload: {
+          statusLabel: 'wake:status.working',
+          stageLabel: 'wake:stage.queue',
+          workflowLabel: 'wake:workflow.default',
+        },
       }),
     });
 
@@ -1234,11 +1238,12 @@ describe('github issues work source', () => {
       'bug',
       'wake:status.working',
       'wake:stage.queue',
+      'wake:workflow.default',
     ]);
     expect(deliveryEvents[0]?.sourceEventType).toBe('ticket.labels.updated');
   });
 
-  it('replaces old status and stage labels when both change', async () => {
+  it('replaces old status, stage, and workflow labels when they change', async () => {
     const createComment = vi.fn();
     const setLabels = vi.fn();
     const store = createStateStore({ wakeRoot: root });
@@ -1254,7 +1259,12 @@ describe('github issues work source', () => {
         number: 13,
         title: 'Example',
         body: 'Body',
-        labels: ['bug', 'wake:status.working', 'wake:stage.implement'],
+        labels: [
+          'bug',
+          'wake:status.working',
+          'wake:stage.implement',
+          'wake:workflow.old-workflow',
+        ],
         assignees: [],
         isPullRequest: false,
         state: 'open',
@@ -1299,7 +1309,11 @@ describe('github issues work source', () => {
         occurredAt: '2026-07-05T12:00:00.000Z',
         ingestedAt: '2026-07-05T12:00:00.000Z',
         trigger: 'context-only',
-        payload: { statusLabel: 'wake:status.completed', stageLabel: 'wake:stage.done' },
+        payload: {
+          statusLabel: 'wake:status.completed',
+          stageLabel: 'wake:stage.done',
+          workflowLabel: 'wake:workflow.default',
+        },
       }),
     });
 
@@ -1309,6 +1323,7 @@ describe('github issues work source', () => {
       'bug',
       'wake:status.completed',
       'wake:stage.done',
+      'wake:workflow.default',
     ]);
   });
 
@@ -1328,7 +1343,7 @@ describe('github issues work source', () => {
         number: 14,
         title: 'Example',
         body: 'Body',
-        labels: ['bug', 'wake:status.pending', 'wake:stage.implement'],
+        labels: ['bug', 'wake:status.pending', 'wake:stage.implement', 'wake:workflow.default'],
         assignees: [],
         isPullRequest: false,
         state: 'open',
@@ -1373,7 +1388,11 @@ describe('github issues work source', () => {
         occurredAt: '2026-07-05T12:00:00.000Z',
         ingestedAt: '2026-07-05T12:00:00.000Z',
         trigger: 'context-only',
-        payload: { statusLabel: 'wake:status.pending', stageLabel: 'wake:stage.implement' },
+        payload: {
+          statusLabel: 'wake:status.pending',
+          stageLabel: 'wake:stage.implement',
+          workflowLabel: 'wake:workflow.default',
+        },
       }),
     });
 
