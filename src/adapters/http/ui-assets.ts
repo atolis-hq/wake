@@ -1,30 +1,57 @@
 import { wakeVersion } from '../../version.js';
 
+const logoSvg = `<svg viewBox="0 0 110 110" xmlns="http://www.w3.org/2000/svg">
+  <g transform="translate(55 55)">
+    <circle r="54" fill="none" stroke="#0F766E" opacity=".10"></circle>
+    <path d="M-42.5-11.5 A44 44 0 1 0 42.5-11.5" fill="none" stroke="#2DD4BF" stroke-width="7.5" stroke-linecap="round"></path>
+    <path d="M-36-25.2 A44 44 0 0 1-25.2-36" fill="none" stroke="#5EEAD4" stroke-width="7.5" stroke-linecap="round"></path>
+    <path d="M25.2-36 A44 44 0 0 1 36-25.2" fill="none" stroke="#5EEAD4" stroke-width="7.5" stroke-linecap="round"></path>
+    <circle r="25" fill="#2DD4BF" opacity=".08"></circle>
+    <circle r="11" fill="#2DD4BF" opacity=".25"></circle>
+    <path d="M-18 23 C-9 22 -8 2 0-2 C8 2 9 22 18 23" fill="none" stroke="#2DD4BF" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"></path>
+  </g>
+</svg>`;
+
+const faviconHref = `data:image/svg+xml,${encodeURIComponent(logoSvg)}`;
+
 export const indexHtml = `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8" />
 <title>Wake control plane</title>
+<link rel="icon" type="image/svg+xml" href="${faviconHref}" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <style>
-  :root { color-scheme: dark light; }
+  :root {
+    color-scheme: dark light;
+    --brand: #0f766e;
+    --brand-dark: #134e4a;
+    --brand-darker: #103a37;
+    --accent: #2dd4bf;
+    --accent-light: #5eead4;
+  }
   body { font-family: -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; background: #14161a; color: #e8e8e8; }
-  header { display: flex; align-items: center; gap: 1rem; padding: 0.6rem 1rem; background: #1d2026; border-bottom: 1px solid #2c313a; flex-wrap: wrap; }
-  header h1 { font-size: 1rem; margin: 0; font-weight: 600; }
-  .version { color: #9aa2ad; font-size: 0.78rem; }
+  .topbar { display: flex; align-items: center; gap: 0.55rem; padding: 0.55rem 1rem; background: var(--brand); }
+  .topbar .logo { display: flex; width: 24px; height: 24px; flex-shrink: 0; }
+  .topbar .logo svg { width: 100%; height: 100%; display: block; }
+  .topbar .brand-name { font-size: 1.05rem; font-weight: 700; color: #fff; letter-spacing: 0.01em; }
+  .topbar .version { color: rgba(255, 255, 255, 0.7); font-size: 0.78rem; }
+  .statusbar { display: flex; align-items: center; gap: 1rem; padding: 0.45rem 1rem; background: var(--brand-dark); border-top: 1px solid rgba(0, 0, 0, 0.18); flex-wrap: wrap; font-size: 0.8rem; }
+  .statusbar .meta { color: rgba(255, 255, 255, 0.72); }
   .pill { padding: 0.15rem 0.5rem; border-radius: 999px; font-size: 0.75rem; font-weight: 600; }
   .pill-idle { background: #1f3d2c; color: #7fe3a3; }
   .pill-ticking { background: #1f3350; color: #7fb3ff; }
   .pill-paused { background: #4a3510; color: #ffcf7f; }
-  nav { display: flex; gap: 0.25rem; padding: 0.5rem 1rem; background: #191c22; border-bottom: 1px solid #2c313a; }
-  nav button { background: none; border: none; color: #9aa2ad; padding: 0.4rem 0.8rem; cursor: pointer; border-radius: 6px; font-size: 0.85rem; }
-  nav button.active { background: #262b33; color: #fff; }
+  nav { display: flex; gap: 0.25rem; padding: 0.4rem 1rem 0 0.3rem; background: var(--brand-darker); border-bottom: 1px solid #2c313a; }
+  nav button { background: none; border: none; border-bottom: 2px solid transparent; color: rgba(255, 255, 255, 0.65); padding: 0.4rem 0.7rem 0.45rem; margin-bottom: -1px; cursor: pointer; font-size: 0.85rem; transition: color 0.12s ease; }
+  nav button:hover { color: #fff; }
+  nav button.active { color: var(--accent-light); border-bottom-color: var(--accent); }
   main { padding: 1rem; }
   .columns { display: grid; grid-template-columns: repeat(6, minmax(180px, 1fr)); gap: 0.6rem; overflow-x: auto; }
-  .col { background: #1a1d23; border-radius: 8px; padding: 0.5rem; min-height: 200px; }
+  .col { background: #1a1d23; border-radius: 10px; padding: 0.5rem; min-height: 200px; }
   .col h2 { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; color: #9aa2ad; margin: 0.2rem 0.4rem 0.5rem; }
-  .card { background: #22262e; border: 1px solid #2c313a; border-radius: 6px; padding: 0.5rem; margin-bottom: 0.5rem; cursor: pointer; font-size: 0.8rem; }
-  .card:hover { border-color: #4d5866; }
+  .card { background: #22262e; border: 1px solid #2c313a; border-radius: 8px; padding: 0.5rem; margin-bottom: 0.5rem; cursor: pointer; font-size: 0.8rem; transition: border-color 0.12s ease; }
+  .card:hover { border-color: var(--accent); }
   .card .title { font-weight: 600; margin-bottom: 0.25rem; }
   .card .meta { color: #9aa2ad; font-size: 0.72rem; }
   .chip { display: inline-block; background: #2c313a; border-radius: 4px; padding: 0.05rem 0.35rem; font-size: 0.68rem; margin-right: 0.2rem; }
@@ -35,23 +62,28 @@ export const indexHtml = `<!DOCTYPE html>
   .drawer { position: fixed; top: 0; right: 0; width: min(560px, 100%); height: 100%; background: #191c22; border-left: 1px solid #2c313a; overflow-y: auto; padding: 1rem; transform: translateX(100%); transition: transform 0.15s ease; }
   .drawer.open { transform: translateX(0); }
   .drawer .close { float: right; cursor: pointer; color: #9aa2ad; }
+  .drawer .close:hover { color: var(--accent-light); }
   .tiles { display: flex; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 1rem; }
-  .tile { background: #1a1d23; border-radius: 8px; padding: 0.6rem 0.9rem; min-width: 120px; }
+  .tile { background: #1a1d23; border-radius: 10px; padding: 0.6rem 0.9rem; min-width: 120px; }
   .tile .n { font-size: 1.3rem; font-weight: 700; }
   .tile .l { color: #9aa2ad; font-size: 0.72rem; text-transform: uppercase; }
   .amber { color: #ffcf7f; }
   .red { color: #ff8f7f; }
   .ok { color: #7fe3a3; }
-  input[type=text] { background: #1a1d23; border: 1px solid #2c313a; color: #e8e8e8; padding: 0.3rem 0.5rem; border-radius: 6px; margin-bottom: 0.6rem; width: 260px; }
+  input[type=text] { background: #1a1d23; border: 1px solid #2c313a; color: #e8e8e8; padding: 0.3rem 0.5rem; border-radius: 6px; margin-bottom: 0.6rem; width: 260px; transition: border-color 0.12s ease, box-shadow 0.12s ease; }
+  input[type=text]:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(45, 212, 191, 0.15); }
 </style>
 </head>
 <body>
-<header>
-  <h1>Wake control plane</h1>
+<header class="topbar">
+  <span class="logo">${logoSvg}</span>
+  <span class="brand-name">Wake</span>
   <span class="version">${wakeVersion}</span>
+</header>
+<div class="statusbar">
   <span id="loop-pill" class="pill">…</span>
   <span id="status-summary" class="meta"></span>
-</header>
+</div>
 <nav>
   <button data-view="board" class="active">Board</button>
   <button data-view="activity">Activity</button>
