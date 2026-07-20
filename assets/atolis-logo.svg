@@ -1,0 +1,10 @@
+<svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink" transform="matrix(-1.8369701987210297e-16,-1,1,-1.8369701987210297e-16,0,0)">
+  <g transform="translate(60 60)">
+    <circle r="55" fill="none" stroke="#082b5e" opacity=".14"></circle>
+    <path d="M-36-25.2A44 44 0 0 1-25.2-36" fill="none" stroke="#8ddedd" stroke-width="7.5" stroke-linecap="round"></path>
+    <path d="M-25.2-36A44 44 0 1 1-36 25.2" fill="none" stroke="#00bed0" stroke-width="7.5" stroke-linecap="round"></path>
+    <circle r="25" fill="#00bed0" opacity=".08"></circle>
+    <circle r="11" fill="#00bed0" opacity=".25"></circle>
+    <circle r="3.5" fill="#082b5e" opacity=".72"></circle>
+  </g>
+</svg>
