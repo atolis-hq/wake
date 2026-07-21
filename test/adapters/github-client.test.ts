@@ -14,11 +14,11 @@ const getBranch = vi.fn();
 const listCheckRunsForRef = vi.fn();
 const getCombinedStatusForRef = vi.fn();
 
-function pagesOf(...pages: unknown[][]) {
+function pagesOf(...pages: Array<{ data: unknown[]; headers?: Record<string, unknown> }>) {
   return {
     async *[Symbol.asyncIterator]() {
-      for (const data of pages) {
-        yield { data };
+      for (const page of pages) {
+        yield { data: page.data, headers: page.headers ?? {} };
       }
     },
   };
@@ -62,10 +62,16 @@ describe('github client', () => {
 
   it('passes through GitHub issues API results, including pull requests', async () => {
     paginateIterator.mockReturnValueOnce(
-      pagesOf([
-        { number: 5, title: 'A real issue' },
-        { number: 6, title: 'An open PR', pull_request: { url: 'https://example.test/pulls/6' } },
-      ]),
+      pagesOf({
+        data: [
+          { number: 5, title: 'A real issue' },
+          {
+            number: 6,
+            title: 'An open PR',
+            pull_request: { url: 'https://example.test/pulls/6' },
+          },
+        ],
+      }),
     );
 
     const { createGitHubClient } = await import('../../src/adapters/github/github-client.js');
@@ -89,9 +95,9 @@ describe('github client', () => {
   it('stops paginating once maxResults is reached instead of walking every page (E4)', async () => {
     paginateIterator.mockReturnValueOnce(
       pagesOf(
-        [{ number: 1 }, { number: 2 }],
-        [{ number: 3 }, { number: 4 }],
-        [{ number: 5 }, { number: 6 }],
+        { data: [{ number: 1 }, { number: 2 }] },
+        { data: [{ number: 3 }, { number: 4 }] },
+        { data: [{ number: 5 }, { number: 6 }] },
       ),
     );
 
@@ -158,14 +164,18 @@ describe('github client', () => {
   it('lists pull requests with pagination stopping at maxResults', async () => {
     paginateIterator.mockReturnValueOnce(
       pagesOf(
-        [
-          { number: 1, title: 'PR 1' },
-          { number: 2, title: 'PR 2' },
-        ],
-        [
-          { number: 3, title: 'PR 3' },
-          { number: 4, title: 'PR 4' },
-        ],
+        {
+          data: [
+            { number: 1, title: 'PR 1' },
+            { number: 2, title: 'PR 2' },
+          ],
+        },
+        {
+          data: [
+            { number: 3, title: 'PR 3' },
+            { number: 4, title: 'PR 4' },
+          ],
+        },
       ),
     );
 
@@ -186,17 +196,21 @@ describe('github client', () => {
   });
 
   it('lists reviews for a pull request', async () => {
-    paginate.mockResolvedValueOnce([
-      { id: 1, state: 'APPROVED' },
-      { id: 2, state: 'REQUESTED_CHANGES' },
-    ]);
+    paginateIterator.mockReturnValueOnce(
+      pagesOf({
+        data: [
+          { id: 1, state: 'APPROVED' },
+          { id: 2, state: 'REQUESTED_CHANGES' },
+        ],
+      }),
+    );
 
     const { createGitHubClient } = await import('../../src/adapters/github/github-client.js');
     const client = createGitHubClient('fake-token');
 
     const reviews = await client.listReviews('org', 'repo', 91, 30);
 
-    expect(paginate).toHaveBeenCalledWith(listReviews, {
+    expect(paginateIterator).toHaveBeenCalledWith(listReviews, {
       owner: 'org',
       repo: 'repo',
       pull_number: 91,
@@ -206,23 +220,75 @@ describe('github client', () => {
   });
 
   it('lists review comments for a pull request', async () => {
-    paginate.mockResolvedValueOnce([
-      { id: 100, body: 'Comment 1' },
-      { id: 101, body: 'Comment 2' },
-    ]);
+    paginateIterator.mockReturnValueOnce(
+      pagesOf({
+        data: [
+          { id: 100, body: 'Comment 1' },
+          { id: 101, body: 'Comment 2' },
+        ],
+      }),
+    );
 
     const { createGitHubClient } = await import('../../src/adapters/github/github-client.js');
     const client = createGitHubClient('fake-token');
 
     const comments = await client.listReviewComments('org', 'repo', 91, 30);
 
-    expect(paginate).toHaveBeenCalledWith(listReviewComments, {
+    expect(paginateIterator).toHaveBeenCalledWith(listReviewComments, {
       owner: 'org',
       repo: 'repo',
       pull_number: 91,
       per_page: 30,
     });
     expect(comments).toHaveLength(2);
+  });
+
+  it('lists comments for an issue', async () => {
+    paginateIterator.mockReturnValueOnce(pagesOf({ data: [{ id: 1, body: 'hi' }] }));
+
+    const { createGitHubClient } = await import('../../src/adapters/github/github-client.js');
+    const client = createGitHubClient('fake-token');
+
+    const comments = await client.listComments('org', 'repo', 74, 30);
+
+    expect(paginateIterator).toHaveBeenCalledWith(expect.anything(), {
+      owner: 'org',
+      repo: 'repo',
+      issue_number: 74,
+      per_page: 30,
+    });
+    expect(comments).toEqual([{ id: 1, body: 'hi' }]);
+  });
+
+  it('sends If-None-Match on a repeat listPullRequests call and reuses cached data on 304', async () => {
+    paginateIterator
+      .mockReturnValueOnce(
+        pagesOf({
+          data: [{ number: 1, title: 'PR 1' }],
+          headers: { etag: '"prs-v1"' },
+        }),
+      )
+      .mockImplementationOnce(() => ({
+        // eslint-disable-next-line require-yield -- simulates a 304 thrown before any page is yielded
+        async *[Symbol.asyncIterator]() {
+          throw { status: 304 };
+        },
+      }));
+
+    const { createGitHubClient } = await import('../../src/adapters/github/github-client.js');
+    const client = createGitHubClient('fake-token');
+
+    const first = await client.listPullRequests('org', 'repo', 10);
+    const second = await client.listPullRequests('org', 'repo', 10);
+
+    expect(paginateIterator).toHaveBeenNthCalledWith(2, listPulls, {
+      owner: 'org',
+      repo: 'repo',
+      state: 'open',
+      per_page: 10,
+      headers: { 'if-none-match': '"prs-v1"' },
+    });
+    expect(second).toEqual(first);
   });
 
   it('replies to a review comment', async () => {
