@@ -72,6 +72,8 @@ type GitHubStatus = {
   created_at: string;
 };
 
+type PrSnapshot = { headSha: string | undefined; baseRef: string | undefined; htmlUrl: string };
+
 function prResourceUri(repo: string, number: number): string {
   return buildResourceUri('github', 'pr', `${repo}#${number}`);
 }
@@ -202,9 +204,15 @@ export function createGitHubPullRequestActivitySource(deps: {
     return { owner, repo, repoRef: `${owner}/${repo}`, number: Number(numberStr) };
   }
 
-  async function discoverPullRequests(ingestedAt: string): Promise<UnkeyedEventEnvelope[]> {
+  async function discoverPullRequests(ingestedAt: string): Promise<{
+    events: UnkeyedEventEnvelope[];
+    seenPrData: Map<string, PrSnapshot>;
+    confirmedOpenRepos: Set<string>;
+  }> {
+    const seenPrData = new Map<string, PrSnapshot>();
+    const confirmedOpenRepos = new Set<string>();
     if (!deps.config.sources.github.pullRequests.enabled) {
-      return [];
+      return { events: [], seenPrData, confirmedOpenRepos };
     }
 
     const events: UnkeyedEventEnvelope[] = [];
@@ -215,14 +223,24 @@ export function createGitHubPullRequestActivitySource(deps: {
       }
 
       try {
-        const prs = await deps.client.listPullRequests(
-          owner,
-          repo,
-          deps.config.sources.github.pullRequests.maxPullRequestsPerRepo,
-        );
+        const maxResults = deps.config.sources.github.pullRequests.maxPullRequestsPerRepo;
+        const prs = await deps.client.listPullRequests(owner, repo, maxResults);
+        // listPullRequests only ever returns open PRs (state: 'open'), so an
+        // uncapped result set here is a complete picture of what's currently
+        // open — used below to confirm a watched PR has actually closed
+        // rather than merely being truncated by maxResults.
+        if (prs.length < maxResults) {
+          confirmedOpenRepos.add(repoRef);
+        }
 
         for (const pr of prs) {
           const resourceUri = prResourceUri(repoRef, pr.number);
+          seenPrData.set(resourceUri, {
+            headSha: pr.head.sha,
+            baseRef: pr.base?.ref,
+            htmlUrl: pr.html_url,
+          });
+
           const known = await deps.resourceIndex.resolve(resourceUri);
           if (known !== undefined) {
             continue;
@@ -265,7 +283,7 @@ export function createGitHubPullRequestActivitySource(deps: {
       }
     }
 
-    return events;
+    return { events, seenPrData, confirmedOpenRepos };
   }
 
   async function pollWatchedPr(
@@ -420,6 +438,7 @@ export function createGitHubPullRequestActivitySource(deps: {
     ref: { owner: string; repo: string; repoRef: string; number: number },
     resourceUri: string,
     ingestedAt: string,
+    cachedPr?: PrSnapshot,
   ): Promise<UnkeyedEventEnvelope[]> {
     if (
       !deps.config.sources.github.pullRequests.enabled ||
@@ -431,9 +450,24 @@ export function createGitHubPullRequestActivitySource(deps: {
       return [];
     }
 
-    const pr = await deps.client.getPullRequest(ref.owner, ref.repo, ref.number);
-    const headSha = pr.head.sha;
-    const baseRef = pr.base?.ref;
+    // headSha/baseRef/htmlUrl are already returned by this tick's PR
+    // discovery pass (listPullRequests) — reuse that instead of spending a
+    // dedicated getPullRequest call per watched PR. Falls back only when the
+    // watched PR wasn't present in discovery (e.g. truncated by
+    // maxPullRequestsPerRepo, or pullRequests polling failed this tick).
+    let headSha: string | undefined;
+    let baseRef: string | undefined;
+    let htmlUrl: string;
+    if (cachedPr?.headSha !== undefined && cachedPr.baseRef !== undefined) {
+      headSha = cachedPr.headSha;
+      baseRef = cachedPr.baseRef;
+      htmlUrl = cachedPr.htmlUrl;
+    } else {
+      const pr = await deps.client.getPullRequest(ref.owner, ref.repo, ref.number);
+      headSha = pr.head.sha;
+      baseRef = pr.base?.ref;
+      htmlUrl = pr.html_url;
+    }
     if (headSha === undefined || baseRef === undefined) {
       return [];
     }
@@ -456,7 +490,7 @@ export function createGitHubPullRequestActivitySource(deps: {
       }
 
       const occurredAt = run.completed_at ?? run.started_at ?? ingestedAt;
-      const sourceUrl = run.html_url ?? run.details_url ?? pr.html_url;
+      const sourceUrl = run.html_url ?? run.details_url ?? htmlUrl;
       events.push(
         createUnkeyedEventEnvelope({
           eventId: `pr-check-failed-${safeEventToken(ref.repoRef)}-${ref.number}-${safeEventToken(run.name)}-${headSha}-${safeEventToken(occurredAt)}-${run.conclusion}`,
@@ -502,7 +536,7 @@ export function createGitHubPullRequestActivitySource(deps: {
           sourceEventType: 'pr.checks.failed',
           sourceRefs: {
             repo: ref.repoRef,
-            sourceUrl: status.target_url ?? pr.html_url,
+            sourceUrl: status.target_url ?? htmlUrl,
             resourceUri,
           },
           occurredAt: status.updated_at,
@@ -540,18 +574,42 @@ export function createGitHubPullRequestActivitySource(deps: {
         ref.resourceUri.startsWith('github:pr:'),
       );
 
-      const discovered = await discoverPullRequests(ingestedAt);
+      const {
+        events: discovered,
+        seenPrData,
+        confirmedOpenRepos,
+      } = await discoverPullRequests(ingestedAt);
+
+      // A watched PR absent from this tick's complete open-PR listing has
+      // closed or merged — stop spending its 7 activity/checks calls every
+      // tick. `confirmedOpenRepos` only covers repos where discovery
+      // succeeded and wasn't truncated, so an untruncated miss or a failed
+      // repo poll leaves the PR in the active set rather than risking a
+      // false drop.
+      const activeWatched = watched.filter((ref) => {
+        const parsed = repoAndNumberFromPrUri(ref.resourceUri);
+        if (parsed === null) {
+          return true;
+        }
+        return !confirmedOpenRepos.has(parsed.repoRef) || seenPrData.has(ref.resourceUri);
+      });
+
       const activityBatches = await Promise.all(
-        watched.map((ref) => pollWatchedPr(ref.resourceUri, ingestedAt)),
+        activeWatched.map((ref) => pollWatchedPr(ref.resourceUri, ingestedAt)),
       );
       const checkBatches = await Promise.all(
-        watched.map(async (watchRef) => {
+        activeWatched.map(async (watchRef) => {
           const ref = repoAndNumberFromPrUri(watchRef.resourceUri);
           if (ref === null) {
             return [];
           }
           try {
-            return await pollRequiredCheckFailures(ref, watchRef.resourceUri, ingestedAt);
+            return await pollRequiredCheckFailures(
+              ref,
+              watchRef.resourceUri,
+              ingestedAt,
+              seenPrData.get(watchRef.resourceUri),
+            );
           } catch (error) {
             console.error(
               `[github-pr-activity-source] check poll failed for ${watchRef.resourceUri}, skipping this tick: ${
