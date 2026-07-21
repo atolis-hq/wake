@@ -119,7 +119,6 @@ describe('fetchPaginatedWithEtag', () => {
     async function* throwing(headers?: { 'if-none-match': string }) {
       expect(headers).toEqual({ 'if-none-match': '"v1"' });
       notModified();
-      // eslint-disable-next-line no-unreachable
       yield { data: [], headers: {} };
     }
 
