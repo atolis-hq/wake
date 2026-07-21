@@ -1,3 +1,6 @@
+// `link` is retained for shape-compat with Octokit's response headers; it is
+// never read here — single-page detection is driven by pageCount, not by
+// parsing the Link header.
 type ResponseHeaders = { etag?: string; link?: string };
 type EtagCacheEntry<T> = { etag: string; data: T };
 export type EtagCache = Map<string, EtagCacheEntry<unknown>>;
