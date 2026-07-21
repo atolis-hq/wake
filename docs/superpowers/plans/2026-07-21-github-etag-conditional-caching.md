@@ -21,10 +21,12 @@
 ### Task 1: ETag cache helper module
 
 **Files:**
+
 - Create: `src/adapters/github/github-etag-cache.ts`
 - Test: `test/adapters/github-etag-cache.test.ts`
 
 **Interfaces:**
+
 - Produces: `createEtagCache(): EtagCache`, `fetchSingleWithEtag<T>(input): Promise<T>`, `fetchPaginatedWithEtag<T>(input): Promise<T[]>`, exported from `src/adapters/github/github-etag-cache.ts`. `EtagCache = Map<string, { etag: string; data: unknown }>`. Response headers are typed as `{ etag?: string; link?: string }` throughout (not `Record<string, unknown>`), matching the subset of Octokit's response headers actually used.
 
 - [ ] **Step 1: Write the failing tests**
@@ -196,9 +198,9 @@ function isNotModifiedError(error: unknown): boolean {
 export async function fetchSingleWithEtag<T>(input: {
   cache: EtagCache;
   cacheKey: string;
-  request: (
-    headers?: { 'if-none-match': string },
-  ) => Promise<{ data: T; headers: ResponseHeaders }>;
+  request: (headers?: {
+    'if-none-match': string;
+  }) => Promise<{ data: T; headers: ResponseHeaders }>;
 }): Promise<T> {
   const cached = input.cache.get(input.cacheKey) as EtagCacheEntry<T> | undefined;
 
@@ -221,9 +223,9 @@ export async function fetchSingleWithEtag<T>(input: {
 export async function fetchPaginatedWithEtag<T>(input: {
   cache: EtagCache;
   cacheKey: string;
-  pages: (
-    headers?: { 'if-none-match': string },
-  ) => AsyncIterable<{ data: T[]; headers: ResponseHeaders }>;
+  pages: (headers?: {
+    'if-none-match': string;
+  }) => AsyncIterable<{ data: T[]; headers: ResponseHeaders }>;
   maxResults?: number;
 }): Promise<T[]> {
   const cached = input.cache.get(input.cacheKey) as EtagCacheEntry<T[]> | undefined;
@@ -244,9 +246,7 @@ export async function fetchPaginatedWithEtag<T>(input: {
     }
   } catch (error) {
     if (isNotModifiedError(error) && cached !== undefined) {
-      return input.maxResults === undefined
-        ? cached.data
-        : cached.data.slice(0, input.maxResults);
+      return input.maxResults === undefined ? cached.data : cached.data.slice(0, input.maxResults);
     }
     throw error;
   }
@@ -283,10 +283,12 @@ git commit -m "Add ETag conditional-request cache helpers for GitHub client"
 ### Task 2: Wire ETag caching into single-request endpoints
 
 **Files:**
+
 - Modify: `src/adapters/github/github-client.ts:66-96` (`getRequiredStatusChecks`, `listCheckRunsForRef`, `getCombinedStatusForRef`)
 - Test: `test/adapters/github-client.test.ts`
 
 **Interfaces:**
+
 - Consumes: `createEtagCache`, `fetchSingleWithEtag` from Task 1 (`src/adapters/github/github-etag-cache.js`).
 
 - [ ] **Step 1: Write the failing tests**
@@ -294,74 +296,74 @@ git commit -m "Add ETag conditional-request cache helpers for GitHub client"
 Add to `test/adapters/github-client.test.ts` (alongside the existing `getBranch`/`listCheckRunsForRef`/`getCombinedStatusForRef` tests — do not remove those, they should keep passing unmodified since they exercise the uncached first-call path):
 
 ```typescript
-  it('sends If-None-Match on a repeat listCheckRunsForRef call and reuses cached data on 304', async () => {
-    listCheckRunsForRef.mockResolvedValueOnce({
-      data: { check_runs: [{ id: 1, name: 'test' }] },
-      headers: { etag: '"runs-v1"' },
-    });
-    listCheckRunsForRef.mockRejectedValueOnce({ status: 304 });
-
-    const { createGitHubClient } = await import('../../src/adapters/github/github-client.js');
-    const client = createGitHubClient('fake-token');
-
-    const first = await client.listCheckRunsForRef('org', 'repo', 'abc123');
-    const second = await client.listCheckRunsForRef('org', 'repo', 'abc123');
-
-    expect(listCheckRunsForRef).toHaveBeenNthCalledWith(2, {
-      owner: 'org',
-      repo: 'repo',
-      ref: 'abc123',
-      per_page: 100,
-      headers: { 'if-none-match': '"runs-v1"' },
-    });
-    expect(second).toEqual(first);
+it('sends If-None-Match on a repeat listCheckRunsForRef call and reuses cached data on 304', async () => {
+  listCheckRunsForRef.mockResolvedValueOnce({
+    data: { check_runs: [{ id: 1, name: 'test' }] },
+    headers: { etag: '"runs-v1"' },
   });
+  listCheckRunsForRef.mockRejectedValueOnce({ status: 304 });
 
-  it('sends If-None-Match on a repeat getCombinedStatusForRef call and reuses cached data on 304', async () => {
-    getCombinedStatusForRef.mockResolvedValueOnce({
-      data: { statuses: [{ context: 'lint', state: 'failure' }] },
-      headers: { etag: '"status-v1"' },
-    });
-    getCombinedStatusForRef.mockRejectedValueOnce({ status: 304 });
+  const { createGitHubClient } = await import('../../src/adapters/github/github-client.js');
+  const client = createGitHubClient('fake-token');
 
-    const { createGitHubClient } = await import('../../src/adapters/github/github-client.js');
-    const client = createGitHubClient('fake-token');
+  const first = await client.listCheckRunsForRef('org', 'repo', 'abc123');
+  const second = await client.listCheckRunsForRef('org', 'repo', 'abc123');
 
-    const first = await client.getCombinedStatusForRef('org', 'repo', 'abc123');
-    const second = await client.getCombinedStatusForRef('org', 'repo', 'abc123');
-
-    expect(getCombinedStatusForRef).toHaveBeenNthCalledWith(2, {
-      owner: 'org',
-      repo: 'repo',
-      ref: 'abc123',
-      headers: { 'if-none-match': '"status-v1"' },
-    });
-    expect(second).toEqual(first);
+  expect(listCheckRunsForRef).toHaveBeenNthCalledWith(2, {
+    owner: 'org',
+    repo: 'repo',
+    ref: 'abc123',
+    per_page: 100,
+    headers: { 'if-none-match': '"runs-v1"' },
   });
+  expect(second).toEqual(first);
+});
 
-  it('sends If-None-Match on a repeat getRequiredStatusChecks call and reuses cached data on 304', async () => {
-    getBranch.mockResolvedValueOnce({
-      data: {
-        protection: { required_status_checks: { contexts: ['lint'], checks: [] } },
-      },
-      headers: { etag: '"branch-v1"' },
-    });
-    getBranch.mockRejectedValueOnce({ status: 304 });
-
-    const { createGitHubClient } = await import('../../src/adapters/github/github-client.js');
-    const client = createGitHubClient('fake-token');
-
-    const first = await client.getRequiredStatusChecks('org', 'repo', 'main');
-    const second = await client.getRequiredStatusChecks('org', 'repo', 'main');
-
-    expect(getBranch).toHaveBeenNthCalledWith(2, {
-      owner: 'org',
-      repo: 'repo',
-      branch: 'main',
-      headers: { 'if-none-match': '"branch-v1"' },
-    });
-    expect(second).toEqual(first);
+it('sends If-None-Match on a repeat getCombinedStatusForRef call and reuses cached data on 304', async () => {
+  getCombinedStatusForRef.mockResolvedValueOnce({
+    data: { statuses: [{ context: 'lint', state: 'failure' }] },
+    headers: { etag: '"status-v1"' },
   });
+  getCombinedStatusForRef.mockRejectedValueOnce({ status: 304 });
+
+  const { createGitHubClient } = await import('../../src/adapters/github/github-client.js');
+  const client = createGitHubClient('fake-token');
+
+  const first = await client.getCombinedStatusForRef('org', 'repo', 'abc123');
+  const second = await client.getCombinedStatusForRef('org', 'repo', 'abc123');
+
+  expect(getCombinedStatusForRef).toHaveBeenNthCalledWith(2, {
+    owner: 'org',
+    repo: 'repo',
+    ref: 'abc123',
+    headers: { 'if-none-match': '"status-v1"' },
+  });
+  expect(second).toEqual(first);
+});
+
+it('sends If-None-Match on a repeat getRequiredStatusChecks call and reuses cached data on 304', async () => {
+  getBranch.mockResolvedValueOnce({
+    data: {
+      protection: { required_status_checks: { contexts: ['lint'], checks: [] } },
+    },
+    headers: { etag: '"branch-v1"' },
+  });
+  getBranch.mockRejectedValueOnce({ status: 304 });
+
+  const { createGitHubClient } = await import('../../src/adapters/github/github-client.js');
+  const client = createGitHubClient('fake-token');
+
+  const first = await client.getRequiredStatusChecks('org', 'repo', 'main');
+  const second = await client.getRequiredStatusChecks('org', 'repo', 'main');
+
+  expect(getBranch).toHaveBeenNthCalledWith(2, {
+    owner: 'org',
+    repo: 'repo',
+    branch: 'main',
+    headers: { 'if-none-match': '"branch-v1"' },
+  });
+  expect(second).toEqual(first);
+});
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -456,7 +458,7 @@ export function createGitHubClient(token: string) {
 Note: the existing `getBranch.mockResolvedValueOnce({ data: {...} })` (no `headers`) test still passes because `response.headers` is `undefined` there, and `typeof undefined.etag` — wait, accessing `.etag` on `undefined` throws. Guard against a missing `headers` object on the response too:
 
 ```typescript
-            return { data: response.data, headers: response.headers ?? {} };
+return { data: response.data, headers: response.headers ?? {} };
 ```
 
 Apply that same `?? {}` guard in all three methods above (`getRequiredStatusChecks`, `listCheckRunsForRef`, `getCombinedStatusForRef`) so the pre-existing tests (which mock responses without a `headers` field) keep working unmodified.
@@ -483,10 +485,12 @@ git commit -m "Add ETag conditional caching to check-run and status GitHub endpo
 ### Task 3: Wire ETag caching into paginated endpoints
 
 **Files:**
+
 - Modify: `src/adapters/github/github-client.ts:15-33,34-41,97-130` (`listIssues`, `listComments`, `listPullRequests`, `listReviews`, `listReviewComments`)
 - Test: `test/adapters/github-client.test.ts`
 
 **Interfaces:**
+
 - Consumes: `fetchPaginatedWithEtag` from Task 1.
 
 - [ ] **Step 1: Write the failing tests**
@@ -510,96 +514,104 @@ Update every existing call site of `pagesOf(...)` in the file to pass `{ data: [
 Rewrite the `listReviews` and `listReviewComments` tests to use the iterator (mirroring how `listIssues`/`listPullRequests` are already tested), since the implementation switches from `octokit.paginate(...)` to `octokit.paginate.iterator(...)`:
 
 ```typescript
-  it('lists reviews for a pull request', async () => {
-    paginateIterator.mockReturnValueOnce(
-      pagesOf({ data: [{ id: 1, state: 'APPROVED' }, { id: 2, state: 'REQUESTED_CHANGES' }] }),
-    );
+it('lists reviews for a pull request', async () => {
+  paginateIterator.mockReturnValueOnce(
+    pagesOf({
+      data: [
+        { id: 1, state: 'APPROVED' },
+        { id: 2, state: 'REQUESTED_CHANGES' },
+      ],
+    }),
+  );
 
-    const { createGitHubClient } = await import('../../src/adapters/github/github-client.js');
-    const client = createGitHubClient('fake-token');
+  const { createGitHubClient } = await import('../../src/adapters/github/github-client.js');
+  const client = createGitHubClient('fake-token');
 
-    const reviews = await client.listReviews('org', 'repo', 91, 30);
+  const reviews = await client.listReviews('org', 'repo', 91, 30);
 
-    expect(paginateIterator).toHaveBeenCalledWith(listReviews, {
-      owner: 'org',
-      repo: 'repo',
-      pull_number: 91,
-      per_page: 30,
-    });
-    expect(reviews).toHaveLength(2);
+  expect(paginateIterator).toHaveBeenCalledWith(listReviews, {
+    owner: 'org',
+    repo: 'repo',
+    pull_number: 91,
+    per_page: 30,
   });
+  expect(reviews).toHaveLength(2);
+});
 
-  it('lists review comments for a pull request', async () => {
-    paginateIterator.mockReturnValueOnce(
-      pagesOf({ data: [{ id: 100, body: 'Comment 1' }, { id: 101, body: 'Comment 2' }] }),
-    );
+it('lists review comments for a pull request', async () => {
+  paginateIterator.mockReturnValueOnce(
+    pagesOf({
+      data: [
+        { id: 100, body: 'Comment 1' },
+        { id: 101, body: 'Comment 2' },
+      ],
+    }),
+  );
 
-    const { createGitHubClient } = await import('../../src/adapters/github/github-client.js');
-    const client = createGitHubClient('fake-token');
+  const { createGitHubClient } = await import('../../src/adapters/github/github-client.js');
+  const client = createGitHubClient('fake-token');
 
-    const comments = await client.listReviewComments('org', 'repo', 91, 30);
+  const comments = await client.listReviewComments('org', 'repo', 91, 30);
 
-    expect(paginateIterator).toHaveBeenCalledWith(listReviewComments, {
-      owner: 'org',
-      repo: 'repo',
-      pull_number: 91,
-      per_page: 30,
-    });
-    expect(comments).toHaveLength(2);
+  expect(paginateIterator).toHaveBeenCalledWith(listReviewComments, {
+    owner: 'org',
+    repo: 'repo',
+    pull_number: 91,
+    per_page: 30,
   });
+  expect(comments).toHaveLength(2);
+});
 ```
 
 Add a new `listComments` test (there wasn't one before) plus caching-behavior tests for `listIssues` and `listPullRequests`:
 
 ```typescript
-  it('lists comments for an issue', async () => {
-    paginateIterator.mockReturnValueOnce(
-      pagesOf({ data: [{ id: 1, body: 'hi' }] }),
-    );
+it('lists comments for an issue', async () => {
+  paginateIterator.mockReturnValueOnce(pagesOf({ data: [{ id: 1, body: 'hi' }] }));
 
-    const { createGitHubClient } = await import('../../src/adapters/github/github-client.js');
-    const client = createGitHubClient('fake-token');
+  const { createGitHubClient } = await import('../../src/adapters/github/github-client.js');
+  const client = createGitHubClient('fake-token');
 
-    const comments = await client.listComments('org', 'repo', 74, 30);
+  const comments = await client.listComments('org', 'repo', 74, 30);
 
-    expect(paginateIterator).toHaveBeenCalledWith(expect.anything(), {
-      owner: 'org',
-      repo: 'repo',
-      issue_number: 74,
-      per_page: 30,
-    });
-    expect(comments).toEqual([{ id: 1, body: 'hi' }]);
+  expect(paginateIterator).toHaveBeenCalledWith(expect.anything(), {
+    owner: 'org',
+    repo: 'repo',
+    issue_number: 74,
+    per_page: 30,
   });
+  expect(comments).toEqual([{ id: 1, body: 'hi' }]);
+});
 
-  it('sends If-None-Match on a repeat listPullRequests call and reuses cached data on 304', async () => {
-    paginateIterator
-      .mockReturnValueOnce(
-        pagesOf({
-          data: [{ number: 1, title: 'PR 1' }],
-          headers: { etag: '"prs-v1"' },
-        }),
-      )
-      .mockImplementationOnce(() => ({
-        async *[Symbol.asyncIterator]() {
-          throw { status: 304 };
-        },
-      }));
+it('sends If-None-Match on a repeat listPullRequests call and reuses cached data on 304', async () => {
+  paginateIterator
+    .mockReturnValueOnce(
+      pagesOf({
+        data: [{ number: 1, title: 'PR 1' }],
+        headers: { etag: '"prs-v1"' },
+      }),
+    )
+    .mockImplementationOnce(() => ({
+      async *[Symbol.asyncIterator]() {
+        throw { status: 304 };
+      },
+    }));
 
-    const { createGitHubClient } = await import('../../src/adapters/github/github-client.js');
-    const client = createGitHubClient('fake-token');
+  const { createGitHubClient } = await import('../../src/adapters/github/github-client.js');
+  const client = createGitHubClient('fake-token');
 
-    const first = await client.listPullRequests('org', 'repo', 10);
-    const second = await client.listPullRequests('org', 'repo', 10);
+  const first = await client.listPullRequests('org', 'repo', 10);
+  const second = await client.listPullRequests('org', 'repo', 10);
 
-    expect(paginateIterator).toHaveBeenNthCalledWith(2, listPulls, {
-      owner: 'org',
-      repo: 'repo',
-      state: 'open',
-      per_page: 10,
-      headers: { 'if-none-match': '"prs-v1"' },
-    });
-    expect(second).toEqual(first);
+  expect(paginateIterator).toHaveBeenNthCalledWith(2, listPulls, {
+    owner: 'org',
+    repo: 'repo',
+    state: 'open',
+    per_page: 10,
+    headers: { 'if-none-match': '"prs-v1"' },
   });
+  expect(second).toEqual(first);
+});
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
