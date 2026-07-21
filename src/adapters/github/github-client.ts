@@ -1,7 +1,10 @@
 import { Octokit } from '@octokit/rest';
 
+import { createEtagCache, fetchSingleWithEtag } from './github-etag-cache.js';
+
 export function createGitHubClient(token: string) {
   const octokit = new Octokit({ auth: token });
+  const etagCache = createEtagCache();
 
   return {
     async getAuthenticatedLogin(): Promise<string> {
@@ -64,10 +67,18 @@ export function createGitHubClient(token: string) {
       return data;
     },
     async getRequiredStatusChecks(owner: string, repo: string, branch: string) {
-      const { data } = await octokit.rest.repos.getBranch({
-        owner,
-        repo,
-        branch,
+      const data = await fetchSingleWithEtag({
+        cache: etagCache,
+        cacheKey: `required-status-checks:${owner}/${repo}@${branch}`,
+        request: async (headers) => {
+          const response = await octokit.rest.repos.getBranch({
+            owner,
+            repo,
+            branch,
+            ...(headers === undefined ? {} : { headers }),
+          });
+          return { data: response.data, headers: response.headers ?? {} };
+        },
       });
       const requiredStatusChecks = data.protection?.required_status_checks;
       return {
@@ -78,19 +89,35 @@ export function createGitHubClient(token: string) {
       };
     },
     async listCheckRunsForRef(owner: string, repo: string, ref: string) {
-      const { data } = await octokit.rest.checks.listForRef({
-        owner,
-        repo,
-        ref,
-        per_page: 100,
+      const data = await fetchSingleWithEtag({
+        cache: etagCache,
+        cacheKey: `check-runs:${owner}/${repo}@${ref}`,
+        request: async (headers) => {
+          const response = await octokit.rest.checks.listForRef({
+            owner,
+            repo,
+            ref,
+            per_page: 100,
+            ...(headers === undefined ? {} : { headers }),
+          });
+          return { data: response.data, headers: response.headers ?? {} };
+        },
       });
       return data.check_runs;
     },
     async getCombinedStatusForRef(owner: string, repo: string, ref: string) {
-      const { data } = await octokit.rest.repos.getCombinedStatusForRef({
-        owner,
-        repo,
-        ref,
+      const data = await fetchSingleWithEtag({
+        cache: etagCache,
+        cacheKey: `combined-status:${owner}/${repo}@${ref}`,
+        request: async (headers) => {
+          const response = await octokit.rest.repos.getCombinedStatusForRef({
+            owner,
+            repo,
+            ref,
+            ...(headers === undefined ? {} : { headers }),
+          });
+          return { data: response.data, headers: response.headers ?? {} };
+        },
       });
       return data.statuses;
     },

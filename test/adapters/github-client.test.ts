@@ -313,4 +313,76 @@ describe('github client', () => {
     });
     expect(statuses).toEqual([{ context: 'lint', state: 'failure' }]);
   });
+
+  it('sends If-None-Match on a repeat listCheckRunsForRef call and reuses cached data on 304', async () => {
+    listCheckRunsForRef.mockClear();
+    listCheckRunsForRef.mockResolvedValueOnce({
+      data: { check_runs: [{ id: 1, name: 'test' }] },
+      headers: { etag: '"runs-v1"' },
+    });
+    listCheckRunsForRef.mockRejectedValueOnce({ status: 304 });
+
+    const { createGitHubClient } = await import('../../src/adapters/github/github-client.js');
+    const client = createGitHubClient('fake-token');
+
+    const first = await client.listCheckRunsForRef('org', 'repo', 'abc123');
+    const second = await client.listCheckRunsForRef('org', 'repo', 'abc123');
+
+    expect(listCheckRunsForRef).toHaveBeenNthCalledWith(2, {
+      owner: 'org',
+      repo: 'repo',
+      ref: 'abc123',
+      per_page: 100,
+      headers: { 'if-none-match': '"runs-v1"' },
+    });
+    expect(second).toEqual(first);
+  });
+
+  it('sends If-None-Match on a repeat getCombinedStatusForRef call and reuses cached data on 304', async () => {
+    getCombinedStatusForRef.mockClear();
+    getCombinedStatusForRef.mockResolvedValueOnce({
+      data: { statuses: [{ context: 'lint', state: 'failure' }] },
+      headers: { etag: '"status-v1"' },
+    });
+    getCombinedStatusForRef.mockRejectedValueOnce({ status: 304 });
+
+    const { createGitHubClient } = await import('../../src/adapters/github/github-client.js');
+    const client = createGitHubClient('fake-token');
+
+    const first = await client.getCombinedStatusForRef('org', 'repo', 'abc123');
+    const second = await client.getCombinedStatusForRef('org', 'repo', 'abc123');
+
+    expect(getCombinedStatusForRef).toHaveBeenNthCalledWith(2, {
+      owner: 'org',
+      repo: 'repo',
+      ref: 'abc123',
+      headers: { 'if-none-match': '"status-v1"' },
+    });
+    expect(second).toEqual(first);
+  });
+
+  it('sends If-None-Match on a repeat getRequiredStatusChecks call and reuses cached data on 304', async () => {
+    getBranch.mockClear();
+    getBranch.mockResolvedValueOnce({
+      data: {
+        protection: { required_status_checks: { contexts: ['lint'], checks: [] } },
+      },
+      headers: { etag: '"branch-v1"' },
+    });
+    getBranch.mockRejectedValueOnce({ status: 304 });
+
+    const { createGitHubClient } = await import('../../src/adapters/github/github-client.js');
+    const client = createGitHubClient('fake-token');
+
+    const first = await client.getRequiredStatusChecks('org', 'repo', 'main');
+    const second = await client.getRequiredStatusChecks('org', 'repo', 'main');
+
+    expect(getBranch).toHaveBeenNthCalledWith(2, {
+      owner: 'org',
+      repo: 'repo',
+      branch: 'main',
+      headers: { 'if-none-match': '"branch-v1"' },
+    });
+    expect(second).toEqual(first);
+  });
 });
