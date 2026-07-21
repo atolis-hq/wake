@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const paginateIterator = vi.fn();
 const paginate = Object.assign(vi.fn(), { iterator: paginateIterator });
@@ -56,6 +56,10 @@ vi.mock('@octokit/rest', () => ({
 }));
 
 describe('github client', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it('passes through GitHub issues API results, including pull requests', async () => {
     paginateIterator.mockReturnValueOnce(
       pagesOf([
@@ -315,7 +319,6 @@ describe('github client', () => {
   });
 
   it('sends If-None-Match on a repeat listCheckRunsForRef call and reuses cached data on 304', async () => {
-    listCheckRunsForRef.mockClear();
     listCheckRunsForRef.mockResolvedValueOnce({
       data: { check_runs: [{ id: 1, name: 'test' }] },
       headers: { etag: '"runs-v1"' },
@@ -339,7 +342,6 @@ describe('github client', () => {
   });
 
   it('sends If-None-Match on a repeat getCombinedStatusForRef call and reuses cached data on 304', async () => {
-    getCombinedStatusForRef.mockClear();
     getCombinedStatusForRef.mockResolvedValueOnce({
       data: { statuses: [{ context: 'lint', state: 'failure' }] },
       headers: { etag: '"status-v1"' },
@@ -362,7 +364,6 @@ describe('github client', () => {
   });
 
   it('sends If-None-Match on a repeat getRequiredStatusChecks call and reuses cached data on 304', async () => {
-    getBranch.mockClear();
     getBranch.mockResolvedValueOnce({
       data: {
         protection: { required_status_checks: { contexts: ['lint'], checks: [] } },
