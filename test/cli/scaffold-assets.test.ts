@@ -1,4 +1,4 @@
-import { copyFile, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { access, copyFile, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -91,6 +91,33 @@ describe('scaffoldWakeHome config.json', () => {
     const config = JSON.parse(await readFile(join(wakeRoot, 'config.json'), 'utf8'));
 
     expect(config.sandbox.containerName).toBe('wake-sandbox-my_project');
+  });
+});
+
+describe('scaffoldWakeHome runtime directories', () => {
+  it('creates .wake/-nested runtime directories, not flat top-level ones', async () => {
+    const wakeRoot = await makeTempWakeRoot();
+    const repoRoot = process.cwd();
+
+    await scaffoldWakeHome({ wakeRoot, repoRoot });
+
+    await expect(access(join(wakeRoot, '.wake', 'events'))).resolves.toBeUndefined();
+    await expect(access(join(wakeRoot, '.wake', 'state'))).resolves.toBeUndefined();
+    await expect(access(join(wakeRoot, '.wake', 'runs'))).resolves.toBeUndefined();
+    await expect(access(join(wakeRoot, '.wake', 'sources'))).resolves.toBeUndefined();
+    await expect(access(join(wakeRoot, '.wake', 'locks'))).resolves.toBeUndefined();
+    await expect(access(join(wakeRoot, '.wake', 'logs'))).resolves.toBeUndefined();
+    await expect(access(join(wakeRoot, 'workspaces'))).resolves.toBeUndefined();
+    await expect(access(join(wakeRoot, 'events'))).rejects.toThrow();
+  });
+
+  it('does not scaffold docker/ at all', async () => {
+    const wakeRoot = await makeTempWakeRoot();
+    const repoRoot = process.cwd();
+
+    await scaffoldWakeHome({ wakeRoot, repoRoot });
+
+    await expect(access(join(wakeRoot, 'docker'))).rejects.toThrow();
   });
 });
 

@@ -3,21 +3,9 @@ import { basename, dirname, join, resolve } from 'node:path';
 
 import { createDefaultWakeConfig } from '../config/defaults.js';
 import { writeJsonFile } from '../lib/json-file.js';
-
-const runtimeDirectoryNames = [
-  'events',
-  'state',
-  'runs',
-  'workspaces',
-  'repos',
-  'sources',
-  'locks',
-  'logs',
-] as const;
+import { createWakePaths } from '../lib/paths.js';
 
 const promptFileNames = ['refine.md', 'implement.md'] as const;
-
-const dockerAssetNames = ['Dockerfile', 'setup.sh', 'log-command.sh'] as const;
 
 function sanitizeContainerName(name: string): string {
   const sanitized = name
@@ -212,15 +200,28 @@ export async function scaffoldWakeHome(input: {
     },
   };
 
+  const paths = createWakePaths(wakeRoot);
+  const runtimeDirectories = [
+    paths.dataRoot,
+    join(paths.dataRoot, 'events'),
+    join(paths.dataRoot, 'state'),
+    join(paths.dataRoot, 'runs'),
+    join(paths.dataRoot, 'sources'),
+    join(paths.dataRoot, 'repos'),
+    join(paths.dataRoot, 'locks'),
+    join(paths.dataRoot, 'logs'),
+    join(paths.dataRoot, 'control'),
+    join(paths.dataRoot, 'container-home'),
+    join(paths.dataRoot, 'transcripts'),
+    paths.workspaceRoot,
+  ];
+
   await Promise.all(
-    runtimeDirectoryNames.map((directoryName) =>
-      mkdir(join(wakeRoot, directoryName), { recursive: true }),
-    ),
+    runtimeDirectories.map((directoryPath) => mkdir(directoryPath, { recursive: true })),
   );
 
   await Promise.all([
     copyAssets(repoRoot, 'prompts', join(wakeRoot, 'prompts'), promptFileNames),
-    copyAssets(repoRoot, 'docker', join(wakeRoot, 'docker'), dockerAssetNames),
     writeJsonFile(join(wakeRoot, 'config.json'), config),
     writeLaunchers(wakeRoot, repoRoot),
   ]);
