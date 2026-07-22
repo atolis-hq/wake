@@ -39,6 +39,7 @@ describe('main command routing', () => {
       runUi: async () => {},
       runCorrelate: async () => {},
       execIntoSandbox: async () => {},
+      runDoctor: async () => {},
     });
 
     expect(log).toHaveBeenCalledWith('0.1.0-dev');
@@ -76,6 +77,7 @@ describe('main command routing', () => {
       execIntoSandbox: async () => {
         calls.push('exec-into-sandbox');
       },
+      runDoctor: async () => {},
     });
 
     await dispatchMainCommand({
@@ -106,6 +108,7 @@ describe('main command routing', () => {
       execIntoSandbox: async () => {
         calls.push('exec-into-sandbox-again');
       },
+      runDoctor: async () => {},
     });
 
     expect(calls).toEqual(['init:/tmp/wake-home', 'sandbox:build']);
@@ -142,6 +145,7 @@ describe('main command routing', () => {
       execIntoSandbox: async () => {
         calls.push('exec-into-sandbox');
       },
+      runDoctor: async () => {},
     });
 
     expect(calls).toEqual(['sandbox:stop --timeout-ms 5000']);
@@ -163,6 +167,7 @@ describe('main command routing', () => {
       runUi: async () => {},
       runCorrelate: async () => {},
       execIntoSandbox: async () => {},
+      runDoctor: async () => {},
     });
 
     await dispatchMainCommand({
@@ -177,6 +182,7 @@ describe('main command routing', () => {
       runUi: async () => {},
       runCorrelate: async () => {},
       execIntoSandbox: async () => {},
+      runDoctor: async () => {},
     });
 
     expect(runSmoke).toHaveBeenNthCalledWith(1, [
@@ -203,6 +209,7 @@ describe('main command routing', () => {
       runUi: async () => {},
       runCorrelate: async () => {},
       execIntoSandbox: async () => {},
+      runDoctor: async () => {},
     });
 
     expect(runSmoke).toHaveBeenCalledWith(['--wake-root', '/tmp/wake-home']);
@@ -224,6 +231,7 @@ describe('main command routing', () => {
       runUi,
       runCorrelate: async () => {},
       execIntoSandbox: async () => {},
+      runDoctor: async () => {},
     });
 
     expect(runUi).toHaveBeenCalledWith(['--port', '4400', '--wake-root', wakeRoot]);
@@ -253,6 +261,7 @@ describe('main command routing', () => {
       runUi: async () => {},
       runCorrelate,
       execIntoSandbox: async () => {},
+      runDoctor: async () => {},
     });
 
     expect(runCorrelate).toHaveBeenCalledWith([
@@ -263,6 +272,27 @@ describe('main command routing', () => {
       '--wake-root',
       wakeRoot,
     ]);
+  });
+
+  it('routes doctor to the doctor handler', async () => {
+    const runDoctor = vi.fn(async () => {});
+
+    await dispatchMainCommand({
+      args: ['doctor', '--wake-root', '/tmp/wake-home'],
+      runInit: async () => {},
+      runSandbox: async () => {},
+      runSandboxSetup: async () => {},
+      runSandboxEntrypoint: async () => {},
+      runTick: async () => {},
+      runStart: async () => {},
+      runSmoke: async () => {},
+      runUi: async () => {},
+      runCorrelate: async () => {},
+      execIntoSandbox: async () => {},
+      runDoctor,
+    });
+
+    expect(runDoctor).toHaveBeenCalledWith(['--wake-root', '/tmp/wake-home']);
   });
 
   it('ignores inner exec payload flags after command terminator', () => {
@@ -392,6 +422,7 @@ describe('help and unknown-command handling', () => {
       runUi: async () => {},
       runCorrelate: async () => {},
       execIntoSandbox: async () => {},
+      runDoctor: async () => {},
     };
   }
 
@@ -447,6 +478,7 @@ describe('sandbox auto-delegation', () => {
       runUi: async () => {},
       runCorrelate: async () => {},
       execIntoSandbox,
+      runDoctor: async () => {},
     });
 
     expect(execIntoSandbox).toHaveBeenCalled();
@@ -470,6 +502,7 @@ describe('sandbox auto-delegation', () => {
       runUi: async () => {},
       runCorrelate: async () => {},
       execIntoSandbox,
+      runDoctor: async () => {},
     });
 
     expect(runTick).toHaveBeenCalled();
@@ -493,6 +526,7 @@ describe('sandbox auto-delegation', () => {
       runUi: async () => {},
       runCorrelate: async () => {},
       execIntoSandbox,
+      runDoctor: async () => {},
     });
 
     expect(runTick).toHaveBeenCalled();
@@ -516,6 +550,7 @@ describe('sandbox auto-delegation', () => {
       runUi: async () => {},
       runCorrelate: async () => {},
       execIntoSandbox,
+      runDoctor: async () => {},
     });
 
     expect(runSandbox).toHaveBeenCalled();

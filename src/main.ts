@@ -1,12 +1,16 @@
 #!/usr/bin/env node
 import { spawn, type ChildProcess } from 'node:child_process';
 import { closeSync, existsSync, openSync } from 'node:fs';
-import { access, chmod, copyFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, chmod, copyFile, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { fileURLToPath } from 'node:url';
 
-import { createDockerCli, type DockerExecProcess } from './adapters/docker/docker-cli.js';
+import {
+  createDockerCli,
+  type DockerCli,
+  type DockerExecProcess,
+} from './adapters/docker/docker-cli.js';
 import { createFileBackedFakeTicketingSystem } from './adapters/fake/fake-ticketing-system.js';
 import { createFakeWorkspaceManager } from './adapters/fake/fake-workspace-manager.js';
 import { createGitWorkspaceManager } from './adapters/git/git-workspace-manager.js';
@@ -25,11 +29,12 @@ import { createGitHubClient } from './adapters/github/github-client.js';
 import { createGitHubIssuesWorkSource } from './adapters/github/github-issues-work-source.js';
 import { createGitHubPullRequestActivitySource } from './adapters/github/github-pull-request-activity-source.js';
 import { runCorrelateCommand } from './cli/correlate-command.js';
+import { runDoctorCommand, type DoctorDeps } from './cli/doctor-command.js';
 import { runInitCommand } from './cli/init-command.js';
 import { runSandboxCommand } from './cli/sandbox-command.js';
 import { runSandboxEntrypointCommand } from './cli/sandbox-entrypoint-command.js';
 import { runSandboxSetupCommand } from './cli/sandbox-setup-command.js';
-import { runStartupPreflight } from './cli/startup-preflight.js';
+import { collectStartupPreflightFailures, runStartupPreflight } from './cli/startup-preflight.js';
 import { runUiCommand } from './cli/ui-command.js';
 import { loadWakeConfig } from './config/load-config.js';
 import { createControlPlane } from './core/control-plane.js';
@@ -395,6 +400,124 @@ async function inspectDockerContainer(
   });
 }
 
+async function dockerDaemonReachable(): Promise<boolean> {
+  return await new Promise<boolean>((resolveReachable) => {
+    const child = spawn('docker', ['info'], {
+      cwd: process.cwd(),
+      env: process.env,
+      stdio: 'ignore',
+    });
+
+    child.on('error', () => resolveReachable(false));
+    child.on('close', (exitCode) => resolveReachable(exitCode === 0));
+  });
+}
+
+/**
+ * Builds the same `DockerCli` client the `sandbox` command path uses, so
+ * `wake doctor`'s Docker/sandbox reachability checks reuse one Docker CLI
+ * invocation implementation instead of duplicating it.
+ */
+function createHostDockerCli(): DockerCli {
+  return createDockerCli({
+    // BuildKit is required for the Dockerfile's cache-mount syntax
+    // (`RUN --mount=type=cache`), which keeps `npm`/`apt` package
+    // caches warm across builds even when a layer above them changes.
+    run: (dockerArgs) => runCommand('docker', dockerArgs, { ...process.env, DOCKER_BUILDKIT: '1' }),
+    inspectImage: inspectDockerImage,
+    inspectContainer: inspectDockerContainer,
+    spawnExec: (dockerArgs) => {
+      const child = spawn('docker', dockerArgs, {
+        cwd: process.cwd(),
+        env: process.env,
+        stdio: ['inherit', 'pipe', 'pipe'],
+      });
+
+      // stdio: ['inherit', 'pipe', 'pipe'] guarantees stdout/stderr are
+      // non-null pipes; child_process's types don't encode that.
+      return child as unknown as DockerExecProcess;
+    },
+  });
+}
+
+/**
+ * Runs `wake version` inside the sandbox container via `docker exec` and
+ * returns the trimmed stdout, so `wake doctor` can compare it against the
+ * installed host CLI version. Stderr is discarded (surfaced only as an
+ * empty/mismatched version, which the caller already treats as a notice).
+ */
+async function execVersionInContainer(docker: DockerCli, containerName: string): Promise<string> {
+  let stdout = '';
+  await docker.execCaptured(containerName, ['node', '/app/dist/src/main.js', 'version'], {
+    onStdout: (line) => {
+      stdout += line;
+    },
+    onStderr: () => {},
+  });
+  return stdout.trim();
+}
+
+async function readFileIfExists(path: string): Promise<string | null> {
+  try {
+    return await readFile(path, 'utf8');
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Compares the wake-home's `prompts/*.md` and `docker/Dockerfile` (both
+ * user-owned files, never auto-overwritten after scaffolding — see
+ * `scaffold-assets.ts`/`sandbox-command.ts`'s `ensureDockerfile`) against the
+ * currently-shipped defaults under `resolvePackageRoot()`, byte-for-byte.
+ * Only files present in *both* locations are compared: a prompt file the
+ * user hasn't customized locally, or one only shipped in a newer/older CLI
+ * version, is not drift.
+ */
+async function diffPromptsAndDockerfile(input: {
+  wakeRoot: string;
+  packageRoot: string;
+  devMode: 'source' | 'packaged' | undefined;
+}): Promise<string[]> {
+  const drifted: string[] = [];
+
+  let promptFileNames: string[];
+  try {
+    promptFileNames = (await readdir(resolve(input.wakeRoot, 'prompts'))).filter((name) =>
+      name.endsWith('.md'),
+    );
+  } catch {
+    promptFileNames = [];
+  }
+
+  for (const fileName of promptFileNames) {
+    const local = await readFileIfExists(resolve(input.wakeRoot, 'prompts', fileName));
+    const shipped = await readFileIfExists(resolve(input.packageRoot, 'prompts', fileName));
+    if (local !== null && shipped !== null && local !== shipped) {
+      drifted.push(`prompts/${fileName}`);
+    }
+  }
+
+  // Mirrors ensureDockerfile's template selection in sandbox-command.ts: a
+  // "source" dev mode wake-home was seeded from docker/Dockerfile, a
+  // "packaged" one from docker/Dockerfile.packaged.
+  const dockerfileTemplateName =
+    (input.devMode ?? 'packaged') === 'source' ? 'Dockerfile' : 'Dockerfile.packaged';
+  const localDockerfile = await readFileIfExists(resolve(input.wakeRoot, 'docker', 'Dockerfile'));
+  const shippedDockerfile = await readFileIfExists(
+    resolve(input.packageRoot, 'docker', dockerfileTemplateName),
+  );
+  if (
+    localDockerfile !== null &&
+    shippedDockerfile !== null &&
+    localDockerfile !== shippedDockerfile
+  ) {
+    drifted.push('docker/Dockerfile');
+  }
+
+  return drifted;
+}
+
 export async function buildRuntime(args: string[]) {
   const wakeRoot = resolve(readFlagBeforeCommandTerminator('--wake-root', args) ?? process.cwd());
   const stateStore = createStateStore({ wakeRoot });
@@ -659,6 +782,66 @@ async function runSmoke(args: string[]) {
   console.log(JSON.stringify(result, null, 2));
 }
 
+async function runDoctor(args: string[]) {
+  const wakeRoot = resolve(readFlagBeforeCommandTerminator('--wake-root', args) ?? process.cwd());
+  const stateStore = createStateStore({ wakeRoot });
+  await stateStore.ensureWakeRoot();
+  const config = await loadWakeConfig({
+    wakeRoot,
+    configFile: stateStore.paths.configFile,
+  });
+
+  const docker = createHostDockerCli();
+  const packageRoot = resolvePackageRoot();
+  const containerName = config.sandbox.containerName;
+  const image = config.sandbox.image;
+
+  const deps: DoctorDeps = {
+    collectPreflightFailures: (doctorConfig) => collectStartupPreflightFailures(doctorConfig),
+    resolveGitHubToken,
+    hasDockerfile,
+    dockerReachable: dockerDaemonReachable,
+    inspectImage: async (imageToInspect) => {
+      try {
+        return await inspectDockerImage(imageToInspect);
+      } catch {
+        return false;
+      }
+    },
+    wakeRoot,
+    image,
+    containerRunning: async () => (await inspectDockerContainer(containerName)) === 'running',
+    execVersionInContainer: () => execVersionInContainer(docker, containerName),
+    installedVersion: wakeVersion,
+    diffPromptsAndDockerfile: () =>
+      diffPromptsAndDockerfile({ wakeRoot, packageRoot, devMode: config.dev?.mode }),
+  };
+
+  const report = await runDoctorCommand(config, deps);
+
+  if (report.failures.length > 0) {
+    console.log('Failures:');
+    for (const failure of report.failures) {
+      console.log(`  - ${failure}`);
+    }
+  }
+
+  if (report.notices.length > 0) {
+    console.log('Notices:');
+    for (const notice of report.notices) {
+      console.log(`  - ${notice}`);
+    }
+  }
+
+  if (report.failures.length === 0 && report.notices.length === 0) {
+    console.log('wake doctor: no issues found');
+  }
+
+  if (report.failures.length > 0) {
+    process.exitCode = 1;
+  }
+}
+
 export class CliUsageError extends Error {}
 
 export function printUsage(stream: NodeJS.WritableStream): void {
@@ -675,6 +858,7 @@ export function printUsage(stream: NodeJS.WritableStream): void {
       '  wake smoke                 Smoke-test the configured runner',
       '  wake ui                    Run the control-plane UI server',
       '  wake correlate             Manually correlate a resource to a work item',
+      '  wake doctor                Diagnose config/GitHub/Docker/sandbox setup problems',
       '  wake version               Print the installed Wake version',
       '  wake --help                Show this message',
       '',
@@ -705,6 +889,7 @@ export async function dispatchMainCommand(input: {
   runUi: (args: string[]) => Promise<unknown>;
   runCorrelate: (args: string[]) => Promise<unknown>;
   execIntoSandbox: (args: string[]) => Promise<unknown>;
+  runDoctor: (args: string[]) => Promise<unknown>;
 }) {
   const command = input.args[0] ?? 'help';
   if (command === '--version' || command === '-v' || command === 'version') {
@@ -739,6 +924,14 @@ export async function dispatchMainCommand(input: {
 
   if (command === 'stop') {
     await input.runSandbox(['stop', ...input.args.slice(1)]);
+    return;
+  }
+
+  if (command === 'doctor') {
+    // Host-only, like init/sandbox/stop above: doctor's job is to report on
+    // sandbox reachability from the outside, so it must never auto-delegate
+    // into the sandbox the way runtimeCommands below does.
+    await input.runDoctor(input.args.slice(1));
     return;
   }
 
@@ -786,26 +979,7 @@ async function main() {
       wakeRoot,
       configFile: stateStore.paths.configFile,
     });
-    const docker = createDockerCli({
-      // BuildKit is required for the Dockerfile's cache-mount syntax
-      // (`RUN --mount=type=cache`), which keeps `npm`/`apt` package
-      // caches warm across builds even when a layer above them changes.
-      run: (dockerArgs) =>
-        runCommand('docker', dockerArgs, { ...process.env, DOCKER_BUILDKIT: '1' }),
-      inspectImage: inspectDockerImage,
-      inspectContainer: inspectDockerContainer,
-      spawnExec: (dockerArgs) => {
-        const child = spawn('docker', dockerArgs, {
-          cwd: process.cwd(),
-          env: process.env,
-          stdio: ['inherit', 'pipe', 'pipe'],
-        });
-
-        // stdio: ['inherit', 'pipe', 'pipe'] guarantees stdout/stderr are
-        // non-null pipes; child_process's types don't encode that.
-        return child as unknown as DockerExecProcess;
-      },
-    });
+    const docker = createHostDockerCli();
 
     const repoRoot = config.dev?.repoRoot;
     const selfUpdate =
@@ -924,6 +1098,7 @@ async function main() {
 
       await runSandbox(['exec', '--', 'node', '/app/dist/src/main.js', ...rewritten]);
     },
+    runDoctor,
   });
 }
 
