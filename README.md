@@ -196,6 +196,12 @@ when a sandbox is available.
 
 Run `wake --help` at any time for the full command list.
 
+Run `wake doctor` after `wake init` and `wake sandbox build` to check your
+setup: prompt/runner config, GitHub token resolvability, and Docker/sandbox
+reachability. It also reports (without failing) sandbox-vs-CLI version
+drift and any prompt/Dockerfile customizations that have drifted from the
+shipped defaults.
+
 `wake init` auto-detects whether it's running from a source checkout or a
 packaged `npm install -g` install and records this as `dev.mode` in
 `config.json`, so `wake sandbox build` works out of the box either way —
