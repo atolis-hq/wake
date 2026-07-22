@@ -238,9 +238,11 @@ export async function runSandboxCommand(input: {
   }
 
   if (subcommand === 'setup') {
-    await input.docker.exec(input.config.sandbox.containerName, ['bash', '/wake/docker/setup.sh'], {
-      interactive: true,
-    });
+    await input.docker.exec(
+      input.config.sandbox.containerName,
+      ['node', '/app/dist/src/main.js', 'sandbox-setup'],
+      { interactive: true },
+    );
     return;
   }
 

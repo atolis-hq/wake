@@ -483,9 +483,11 @@ describe('sandbox command', () => {
       logger: { info: () => {} },
     });
 
-    expect(docker.exec).toHaveBeenCalledWith('wake-sandbox', ['bash', '/wake/docker/setup.sh'], {
-      interactive: true,
-    });
+    expect(docker.exec).toHaveBeenCalledWith(
+      'wake-sandbox',
+      ['node', '/app/dist/src/main.js', 'sandbox-setup'],
+      { interactive: true },
+    );
   });
 
   it('dispatches exec with the remaining command arguments', async () => {
