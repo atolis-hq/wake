@@ -24,6 +24,13 @@ describe('sandbox command', () => {
       update: vi.fn(async () => {}),
       down: vi.fn(async () => {}),
       exec: vi.fn(async () => {}),
+      execCaptured: vi.fn(
+        async (
+          _containerName: string,
+          _command: string[],
+          _handlers: { onStdout: (line: string) => void; onStderr: (line: string) => void },
+        ) => {},
+      ),
       logs: vi.fn(async () => {}),
     };
   }
@@ -490,7 +497,7 @@ describe('sandbox command', () => {
     );
   });
 
-  it('dispatches exec with the remaining command arguments', async () => {
+  it('dispatches exec with the remaining command arguments through execCaptured', async () => {
     const docker = createDockerMock();
 
     await runSandboxCommand({
@@ -505,19 +512,15 @@ describe('sandbox command', () => {
       logger: { info: () => {} },
     });
 
-    expect(docker.exec).toHaveBeenCalledWith(
+    expect(docker.execCaptured).toHaveBeenCalledWith(
       'wake-sandbox',
-      expect.arrayContaining([
-        'env',
-        'WAKE_SANDBOX_LABEL=sandbox.exec',
-        '/wake/docker/log-command.sh',
-        '--',
-        'pwd',
-      ]),
+      ['pwd'],
+      expect.objectContaining({ onStdout: expect.any(Function), onStderr: expect.any(Function) }),
     );
+    expect(docker.exec).not.toHaveBeenCalled();
   });
 
-  it('strips the command terminator before dispatching exec payload', async () => {
+  it('strips the command terminator before dispatching the exec payload', async () => {
     const docker = createDockerMock();
 
     await runSandboxCommand({
@@ -532,18 +535,55 @@ describe('sandbox command', () => {
       logger: { info: () => {} },
     });
 
-    expect(docker.exec).toHaveBeenCalledWith(
+    expect(docker.execCaptured).toHaveBeenCalledWith(
       'wake-sandbox',
-      expect.arrayContaining([
-        '/wake/docker/log-command.sh',
-        '--',
-        'node',
-        '/app/dist/src/main.js',
-        'tick',
-        '--wake-root',
-        '/wake',
-      ]),
+      ['node', '/app/dist/src/main.js', 'tick', '--wake-root', '/wake'],
+      expect.objectContaining({ onStdout: expect.any(Function), onStderr: expect.any(Function) }),
     );
+  });
+
+  it('falls back to an interactive shell via docker.exec when no exec command is given', async () => {
+    const docker = createDockerMock();
+
+    await runSandboxCommand({
+      args: ['exec'],
+      config: createDefaultWakeConfig(wakeRoot),
+      wakeRoot,
+      containerHomeRoot,
+      docker,
+      packagedTemplatesRoot,
+      stateStore: { listRunRecords: async () => [] },
+      sleep: async () => {},
+      logger: { info: () => {} },
+    });
+
+    expect(docker.exec).toHaveBeenCalledWith('wake-sandbox', []);
+    expect(docker.execCaptured).not.toHaveBeenCalled();
+  });
+
+  it('forwards execCaptured stdout/stderr lines to the logger in real time', async () => {
+    const docker = createDockerMock();
+    docker.execCaptured.mockImplementation(async (_containerName, _command, handlers) => {
+      handlers.onStdout('build ok');
+      handlers.onStderr('warning: something');
+    });
+    const info = vi.fn();
+    const error = vi.fn();
+
+    await runSandboxCommand({
+      args: ['exec', 'pwd'],
+      config: createDefaultWakeConfig(wakeRoot),
+      wakeRoot,
+      containerHomeRoot,
+      docker,
+      packagedTemplatesRoot,
+      stateStore: { listRunRecords: async () => [] },
+      sleep: async () => {},
+      logger: { info, error },
+    });
+
+    expect(info).toHaveBeenCalledWith('build ok');
+    expect(error).toHaveBeenCalledWith('warning: something');
   });
 
   it('dispatches resume through the sandbox resume command flow', async () => {

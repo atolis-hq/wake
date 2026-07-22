@@ -6,7 +6,7 @@ import { dirname, join, resolve } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { fileURLToPath } from 'node:url';
 
-import { createDockerCli } from './adapters/docker/docker-cli.js';
+import { createDockerCli, type DockerExecProcess } from './adapters/docker/docker-cli.js';
 import { createFileBackedFakeTicketingSystem } from './adapters/fake/fake-ticketing-system.js';
 import { createFakeWorkspaceManager } from './adapters/fake/fake-workspace-manager.js';
 import { createGitWorkspaceManager } from './adapters/git/git-workspace-manager.js';
@@ -695,6 +695,17 @@ async function main() {
         runCommand('docker', dockerArgs, { ...process.env, DOCKER_BUILDKIT: '1' }),
       inspectImage: inspectDockerImage,
       inspectContainer: inspectDockerContainer,
+      spawnExec: (dockerArgs) => {
+        const child = spawn('docker', dockerArgs, {
+          cwd: process.cwd(),
+          env: process.env,
+          stdio: ['inherit', 'pipe', 'pipe'],
+        });
+
+        // stdio: ['inherit', 'pipe', 'pipe'] guarantees stdout/stderr are
+        // non-null pipes; child_process's types don't encode that.
+        return child as unknown as DockerExecProcess;
+      },
     });
 
     const repoRoot = config.dev?.repoRoot;

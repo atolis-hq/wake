@@ -8,7 +8,6 @@ import type { RunnerEntry, RunRecord } from '../domain/types.js';
 import { runSandboxResumeCommand } from './sandbox-resume.js';
 import { runSelfUpdateCommand, runSelfUpdateLoop } from './self-update-command.js';
 import { runStopCommand } from './stop-command.js';
-import { buildSandboxLoggedCommand } from './sandbox-logging.js';
 import type { WakeConfig } from '../domain/types.js';
 import { wakeVersion } from '../version.js';
 
@@ -249,18 +248,20 @@ export async function runSandboxCommand(input: {
   if (subcommand === 'exec') {
     const commandArgs = input.args.slice(1);
     const wrappedCommand = commandArgs[0] === '--' ? commandArgs.slice(1) : commandArgs;
-    await input.docker.exec(
-      input.config.sandbox.containerName,
-      wrappedCommand.length === 0
-        ? []
-        : buildSandboxLoggedCommand({
-            label: 'sandbox.exec',
-            config: input.config,
-            wakeRoot: input.wakeRoot,
-            containerHomeRoot: input.containerHomeRoot,
-            command: wrappedCommand,
-          }),
-    );
+
+    if (wrappedCommand.length === 0) {
+      // No command given: drop into an interactive shell with a real TTY,
+      // same as `docker exec -it ... bash`. That's a genuine interactive
+      // use case, so it stays on the inherited-stdio path rather than the
+      // piped/scrubbed one below (which would break TTY behavior).
+      await input.docker.exec(input.config.sandbox.containerName, []);
+      return;
+    }
+
+    await input.docker.execCaptured(input.config.sandbox.containerName, wrappedCommand, {
+      onStdout: (line) => input.logger.info(line),
+      onStderr: (line) => (input.logger.error ?? input.logger.info)(line),
+    });
     return;
   }
 

@@ -1,4 +1,20 @@
+import { createInterface } from 'node:readline';
+
+import { scrubSecrets } from '../../cli/sandbox-exec-logging.js';
+
 export type DockerContainerState = 'running' | 'stopped' | null;
+
+/**
+ * Minimal shape of a spawned child process needed by `execCaptured` — just
+ * enough of `child_process.ChildProcess` to read piped stdout/stderr and
+ * learn how the process exited, so tests can fake it without a real spawn.
+ */
+export type DockerExecProcess = {
+  stdout: NodeJS.ReadableStream;
+  stderr: NodeJS.ReadableStream;
+  on(event: 'error', listener: (error: Error) => void): void;
+  on(event: 'close', listener: (exitCode: number | null) => void): void;
+};
 
 export type DockerBuildInput = {
   image: string;
@@ -97,6 +113,7 @@ export function createDockerCli(deps: {
   run(args: string[]): Promise<void>;
   inspectImage(image: string): Promise<boolean>;
   inspectContainer(containerName: string): Promise<DockerContainerState>;
+  spawnExec?(args: string[]): DockerExecProcess;
 }) {
   return {
     async build(input: DockerBuildInput): Promise<void> {
@@ -167,6 +184,47 @@ export function createDockerCli(deps: {
           ? ['exec', interactive ? '-it' : '-i', containerName, ...command]
           : ['exec', '-it', containerName, 'bash'],
       );
+    },
+
+    /**
+     * Runs `docker exec -i <containerName> <command>` with piped (not
+     * inherited) stdio, line-buffers stdout/stderr, scrubs secrets from each
+     * line, and forwards it to the caller's handlers in real time. Used by
+     * `sandbox exec` so live output is observed and redacted on the host
+     * instead of being wrapped by a mounted in-container script.
+     */
+    async execCaptured(
+      containerName: string,
+      command: string[],
+      handlers: { onStdout: (line: string) => void; onStderr: (line: string) => void },
+    ): Promise<void> {
+      if (deps.spawnExec === undefined) {
+        throw new Error('docker cli adapter was not configured with spawnExec');
+      }
+
+      const args = ['exec', '-i', containerName, ...command];
+      const child = deps.spawnExec(args);
+
+      const stdoutReader = createInterface({ input: child.stdout });
+      stdoutReader.on('line', (line) => handlers.onStdout(scrubSecrets(line)));
+
+      const stderrReader = createInterface({ input: child.stderr });
+      stderrReader.on('line', (line) => handlers.onStderr(scrubSecrets(line)));
+
+      await new Promise<void>((resolveExec, reject) => {
+        child.on('error', reject);
+        child.on('close', (exitCode) => {
+          stdoutReader.close();
+          stderrReader.close();
+
+          if (exitCode === 0) {
+            resolveExec();
+            return;
+          }
+
+          reject(new Error(`docker ${args.join(' ')} failed with exit code ${exitCode ?? 1}`));
+        });
+      });
     },
 
     async logs(containerName: string, tailLines: number): Promise<void> {
