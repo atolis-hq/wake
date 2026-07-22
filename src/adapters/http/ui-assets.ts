@@ -40,7 +40,8 @@ export const indexHtml = `<!DOCTYPE html>
   .statusbar .meta { color: rgba(255, 255, 255, 0.72); }
   .pill { padding: 0.15rem 0.5rem; border-radius: 999px; font-size: 0.75rem; font-weight: 600; }
   .pill-idle { background: #1f3d2c; color: #7fe3a3; }
-  .pill-ticking { background: #1f3350; color: #7fb3ff; }
+  .pill-polling { background: #1f3350; color: #7fb3ff; }
+  .pill-working { background: #2d1f50; color: #c79bff; }
   .pill-paused { background: #4a3510; color: #ffcf7f; }
   nav { display: flex; gap: 0.25rem; padding: 0.4rem 1rem 0 0.3rem; background: var(--brand-darker); border-bottom: 1px solid #2c313a; }
   nav button { background: none; border: none; border-bottom: 2px solid transparent; color: rgba(255, 255, 255, 0.65); padding: 0.4rem 0.7rem 0.45rem; margin-bottom: -1px; cursor: pointer; font-size: 0.85rem; transition: color 0.12s ease; }

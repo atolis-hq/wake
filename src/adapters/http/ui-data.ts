@@ -162,17 +162,27 @@ export async function buildStatus(input: {
     buildBoard(input),
   ]);
 
-  const lock = await readLockInfo(input.stateStore.paths.tickLockFile, input.now);
-  const lockLive = lock.present && lock.pidAlive === true;
+  const [tickLock, runnerLock] = await Promise.all([
+    readLockInfo(input.stateStore.paths.tickLockFile, input.now),
+    readLockInfo(input.stateStore.paths.runnerLockFile, input.now),
+  ]);
+  const tickLockLive = tickLock.present && tickLock.pidAlive === true;
+  const runnerLockLive = runnerLock.present && runnerLock.pidAlive === true;
 
   // A quota-paused runner (#67) no longer stops the loop - routing falls
   // sideways to another candidate in the tier, so only the manual pause file
   // is a hard stop here. Per-runner health is surfaced separately below.
-  const loopState: 'paused' | 'ticking' | 'idle' = paused
+  //
+  // Intake (tick.lock) and agent execution (runner.lock) are separate locks -
+  // an in-flight agent run holds only runner.lock, so both must be checked or
+  // the pill reads "idle" for the entire duration of a run.
+  const loopState: 'paused' | 'working' | 'polling' | 'idle' = paused
     ? 'paused'
-    : lockLive
-      ? 'ticking'
-      : 'idle';
+    : runnerLockLive
+      ? 'working'
+      : tickLockLive
+        ? 'polling'
+        : 'idle';
   const runnerHealth = ledger?.runners ?? {};
 
   const lastEvent = recentEvents[0];
@@ -218,7 +228,8 @@ export async function buildStatus(input: {
     loopState,
     paused,
     runnerHealth,
-    lock,
+    lock: tickLock,
+    runnerLock,
     lastEvent:
       lastEvent === undefined
         ? undefined
