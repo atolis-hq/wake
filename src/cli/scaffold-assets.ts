@@ -1,5 +1,5 @@
 import { chmod, copyFile, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 
 import { createDefaultWakeConfig } from '../config/defaults.js';
 import { writeJsonFile } from '../lib/json-file.js';
@@ -18,6 +18,15 @@ const runtimeDirectoryNames = [
 const promptFileNames = ['refine.md', 'implement.md'] as const;
 
 const dockerAssetNames = ['Dockerfile', 'setup.sh', 'log-command.sh'] as const;
+
+function sanitizeContainerName(name: string): string {
+  const sanitized = name
+    .toLowerCase()
+    .replace(/[^a-z0-9_.-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^[-.]+|[-.]+$/g, '');
+  return sanitized.length > 0 ? sanitized : 'wake';
+}
 
 export async function assertEmptyDirectory(targetDir: string): Promise<void> {
   try {
@@ -178,8 +187,13 @@ export async function scaffoldWakeHome(input: {
 }): Promise<void> {
   const wakeRoot = resolve(input.wakeRoot);
   const repoRoot = resolve(input.repoRoot);
+  const defaults = createDefaultWakeConfig(wakeRoot);
   const config = {
-    ...createDefaultWakeConfig(wakeRoot),
+    ...defaults,
+    sandbox: {
+      ...defaults.sandbox,
+      containerName: `wake-sandbox-${sanitizeContainerName(basename(wakeRoot))}`,
+    },
     dev: {
       repoRoot,
     },

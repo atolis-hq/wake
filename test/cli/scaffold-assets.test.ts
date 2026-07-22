@@ -1,6 +1,6 @@
 import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { resolve } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
@@ -18,5 +18,33 @@ describe('scaffoldWakeHome launchers', () => {
 
     expect(shellLauncher).toContain('init|sandbox|stop)');
     expect(powerShellLauncher).toContain('"stop" {');
+  });
+});
+
+describe('scaffoldWakeHome config.json', () => {
+  it('derives sandbox.containerName from the wake-root directory name', async () => {
+    const tempBase = await mkdtemp(resolve(tmpdir(), 'wake-scaffold-'));
+    const wakeRoot = join(tempBase, 'my-project');
+    const repoRoot = process.cwd();
+
+    await scaffoldWakeHome({ wakeRoot, repoRoot });
+
+    const config = JSON.parse(await readFile(join(wakeRoot, 'config.json'), 'utf8'));
+
+    expect(config.sandbox.containerName).toBe('wake-sandbox-my-project');
+    expect(config.sandbox.image).toBe('wake-sandbox');
+    expect(config.sandbox.imageRepository).toBe('wake-sandbox');
+  });
+
+  it('sanitizes an uppercase/space/special-character directory name for containerName', async () => {
+    const tempBase = await mkdtemp(resolve(tmpdir(), 'wake-scaffold-'));
+    const wakeRoot = join(tempBase, 'My Project! (v2)');
+    const repoRoot = process.cwd();
+
+    await scaffoldWakeHome({ wakeRoot, repoRoot });
+
+    const config = JSON.parse(await readFile(join(wakeRoot, 'config.json'), 'utf8'));
+
+    expect(config.sandbox.containerName).toBe('wake-sandbox-my-project-v2');
   });
 });
