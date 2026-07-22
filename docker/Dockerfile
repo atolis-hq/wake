@@ -44,11 +44,11 @@ RUN --mount=type=cache,target=/root/.npm \
 
 COPY . .
 ARG WAKE_BUILD_TAG
-RUN WAKE_BUILD_TAG="$WAKE_BUILD_TAG" npm run build && chmod +x docker/entrypoint.sh
+RUN WAKE_BUILD_TAG="$WAKE_BUILD_TAG" npm run build
 
 USER wake
 WORKDIR /home/wake
 
 EXPOSE 4317
 
-ENTRYPOINT ["/app/docker/entrypoint.sh"]
+ENTRYPOINT ["node", "/app/dist/src/main.js", "sandbox-entrypoint"]

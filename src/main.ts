@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { access, chmod, copyFile, mkdir, readFile } from 'node:fs/promises';
+import { access, chmod, copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { fileURLToPath } from 'node:url';
@@ -27,6 +27,7 @@ import { createGitHubPullRequestActivitySource } from './adapters/github/github-
 import { runCorrelateCommand } from './cli/correlate-command.js';
 import { runInitCommand } from './cli/init-command.js';
 import { runSandboxCommand } from './cli/sandbox-command.js';
+import { runSandboxEntrypointCommand } from './cli/sandbox-entrypoint-command.js';
 import { runSandboxSetupCommand } from './cli/sandbox-setup-command.js';
 import { runStartupPreflight } from './cli/startup-preflight.js';
 import { runUiCommand } from './cli/ui-command.js';
@@ -243,6 +244,77 @@ async function runSandboxSetup(): Promise<void> {
     prepareCodexHome,
     log: (message) => console.log(message),
   });
+}
+
+const NGROK_TUNNELS_URL = 'http://127.0.0.1:4040/api/tunnels';
+const NGROK_DISCOVERY_ATTEMPTS = 30;
+const NGROK_DISCOVERY_INTERVAL_MS = 1000;
+
+async function discoverNgrokUrl(): Promise<string | undefined> {
+  for (let attempt = 0; attempt < NGROK_DISCOVERY_ATTEMPTS; attempt++) {
+    try {
+      const response = await fetch(NGROK_TUNNELS_URL, { signal: AbortSignal.timeout(1000) });
+      if (response.ok) {
+        const body = (await response.json()) as { tunnels?: Array<{ public_url?: unknown }> };
+        const tunnels = body.tunnels ?? [];
+        const httpsTunnel = tunnels.find(
+          (tunnel) =>
+            typeof tunnel.public_url === 'string' && tunnel.public_url.startsWith('https://'),
+        );
+        const anyTunnel =
+          httpsTunnel ?? tunnels.find((tunnel) => typeof tunnel.public_url === 'string');
+        if (typeof anyTunnel?.public_url === 'string') {
+          return anyTunnel.public_url;
+        }
+      }
+    } catch {
+      // ignore and retry
+    }
+
+    await new Promise((resolveSleep) => setTimeout(resolveSleep, NGROK_DISCOVERY_INTERVAL_MS));
+  }
+
+  return undefined;
+}
+
+function createSandboxEntrypointDeps(): Parameters<typeof runSandboxEntrypointCommand>[0] {
+  const children = new Map<number, ChildProcess>();
+
+  return {
+    env: process.env,
+    spawnDetached: (command, args) => {
+      const child = spawn(command, args, {
+        cwd: process.cwd(),
+        env: process.env,
+        stdio: 'ignore',
+        detached: true,
+      });
+
+      if (typeof child.pid === 'number') {
+        children.set(child.pid, child);
+      }
+
+      return { pid: child.pid ?? -1 };
+    },
+    waitForExit: (pid) =>
+      new Promise((resolveExit) => {
+        const child = children.get(pid);
+        if (child === undefined) {
+          resolveExit(1);
+          return;
+        }
+
+        child.on('exit', (code) => resolveExit(code ?? 1));
+      }),
+    writeFile: (path, content) => writeFile(path, content, 'utf-8'),
+    sleep: (ms) => new Promise((resolveSleep) => setTimeout(resolveSleep, ms)),
+    discoverNgrokUrl,
+    log: (message) => console.log(message),
+  };
+}
+
+async function runSandboxEntrypoint(): Promise<void> {
+  await runSandboxEntrypointCommand(createSandboxEntrypointDeps());
 }
 
 async function readTickRequestId(path: string): Promise<string | null> {
@@ -605,6 +677,7 @@ export async function dispatchMainCommand(input: {
   runInit: (args: string[]) => Promise<unknown>;
   runSandbox: (args: string[]) => Promise<unknown>;
   runSandboxSetup: (args: string[]) => Promise<unknown>;
+  runSandboxEntrypoint: (args: string[]) => Promise<unknown>;
   runTick: (args: string[]) => Promise<unknown>;
   runStart: (args: string[]) => Promise<unknown>;
   runSmoke: (args: string[]) => Promise<unknown>;
@@ -635,6 +708,11 @@ export async function dispatchMainCommand(input: {
 
   if (command === 'sandbox-setup') {
     await input.runSandboxSetup(input.args.slice(1));
+    return;
+  }
+
+  if (command === 'sandbox-entrypoint') {
+    await input.runSandboxEntrypoint(input.args.slice(1));
     return;
   }
 
@@ -806,6 +884,9 @@ async function main() {
     runSandbox,
     runSandboxSetup: async () => {
       await runSandboxSetup();
+    },
+    runSandboxEntrypoint: async () => {
+      await runSandboxEntrypoint();
     },
     runTick,
     runStart,

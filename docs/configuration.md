@@ -415,8 +415,8 @@ server:
 - `enabled` — when `true`, `wake sandbox up`/`wake sandbox update` publish
   `ui.port` from the container to `127.0.0.1:<ui.port>` on the host and pass
   `WAKE_UI_ENABLED`/`WAKE_UI_PORT`/`WAKE_UI_TOKEN` into the container; the
-  container's `docker/entrypoint.sh` then starts `wake ui --host 0.0.0.0`
-  automatically alongside the resident loop. `false` (the default) leaves the
+  container's `wake sandbox-entrypoint` process then starts `wake ui --host
+  0.0.0.0` automatically alongside the resident loop. `false` (the default) leaves the
   container exactly as before — no published port, no auto-started process.
 - `port` — port `wake ui` binds (`--port` overrides this), and the port
   published from the container when `enabled` is true. Default `4317`.
