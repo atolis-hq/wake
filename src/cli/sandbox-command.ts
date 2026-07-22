@@ -119,9 +119,11 @@ export async function runSandboxCommand(input: {
       throw new Error('Sandbox build requires config.dev.repoRoot');
     }
 
+    const effectiveDevMode = input.config.dev?.mode ?? 'packaged';
+
     await ensureDockerfile({
       wakeRoot: input.wakeRoot,
-      devMode: input.config.dev?.mode,
+      devMode: effectiveDevMode,
       packagedTemplatesRoot: input.packagedTemplatesRoot,
     });
 
@@ -129,9 +131,7 @@ export async function runSandboxCommand(input: {
       image: input.config.sandbox.image,
       dockerfile: resolve(input.wakeRoot, 'docker', 'Dockerfile'),
       contextDir: repoRoot,
-      ...(input.config.dev?.mode === 'packaged'
-        ? { buildArgs: { WAKE_VERSION: wakeVersion } }
-        : {}),
+      ...(effectiveDevMode === 'packaged' ? { buildArgs: { WAKE_VERSION: wakeVersion } } : {}),
     });
     return;
   }

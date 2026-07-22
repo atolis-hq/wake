@@ -37,6 +37,7 @@ describe('sandbox command', () => {
       ...createDefaultWakeConfig(tempWakeRoot),
       dev: {
         repoRoot,
+        mode: 'source' as const,
       },
     };
 
@@ -57,6 +58,35 @@ describe('sandbox command', () => {
       dockerfile: resolve(tempWakeRoot, 'docker', 'Dockerfile'),
       contextDir: '/repo/wake',
     });
+  });
+
+  it('defaults to packaged mode (Dockerfile.packaged template, WAKE_VERSION build arg) when dev.mode is unset', async () => {
+    const tempWakeRoot = await makeTempWakeRoot();
+    const docker = createDockerMock();
+    const config = {
+      ...createDefaultWakeConfig(tempWakeRoot),
+      dev: { repoRoot },
+    };
+
+    await runSandboxCommand({
+      args: ['build'],
+      config,
+      wakeRoot: tempWakeRoot,
+      containerHomeRoot,
+      docker,
+      packagedTemplatesRoot,
+      stateStore: { listRunRecords: async () => [] },
+      sleep: async () => {},
+      logger: { info: () => {} },
+    });
+
+    const written = await readFile(resolve(tempWakeRoot, 'docker', 'Dockerfile'), 'utf8');
+    expect(written).toContain('"@atolis-hq/wake@');
+    expect(docker.build).toHaveBeenCalledWith(
+      expect.objectContaining({
+        buildArgs: { WAKE_VERSION: expect.any(String) },
+      }),
+    );
   });
 
   it('rejects build when local-development repo root is missing', async () => {
