@@ -3,7 +3,29 @@ name: CI/CD
 on:
   push:
     branches: [main]
+    paths:
+      - '.github/workflows/ci-cd.yml'
+      - 'docker/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'prompts/**'
+      - 'scripts/**'
+      - 'src/**'
+      - 'test/**'
+      - 'tsconfig.json'
+      - 'vitest.config.ts'
   pull_request:
+    paths:
+      - '.github/workflows/ci-cd.yml'
+      - 'docker/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'prompts/**'
+      - 'scripts/**'
+      - 'src/**'
+      - 'test/**'
+      - 'tsconfig.json'
+      - 'vitest.config.ts'
 
 jobs:
   test:
