@@ -282,7 +282,12 @@ describe('main command routing', () => {
 describe('printUsage', () => {
   it('writes a usage summary mentioning every command and both entry points', () => {
     const chunks: string[] = [];
-    const stream = { write: (chunk: string) => { chunks.push(chunk); return true; } } as unknown as NodeJS.WritableStream;
+    const stream = {
+      write: (chunk: string) => {
+        chunks.push(chunk);
+        return true;
+      },
+    } as unknown as NodeJS.WritableStream;
 
     printUsage(stream);
 
