@@ -163,6 +163,7 @@ describe('run and event schemas', () => {
   it('exports an explicit local-development config helper type', () => {
     expectTypeOf<WakeDevConfig>().toEqualTypeOf<{
       repoRoot?: string;
+      mode?: 'source' | 'packaged';
     }>();
   });
 
@@ -860,6 +861,23 @@ describe('run and event schemas', () => {
     });
 
     expect(config.sources.github.policy.requiredAssignees).toEqual(['octocat']);
+  });
+
+  it('accepts dev.mode as "source" or "packaged", and leaves it undefined by default', () => {
+    const withSource = parseWakeConfig({
+      paths: { wakeRoot: '/tmp/wake' },
+      dev: { mode: 'source' },
+    });
+    expect(withSource.dev?.mode).toBe('source');
+
+    const withPackaged = parseWakeConfig({
+      paths: { wakeRoot: '/tmp/wake' },
+      dev: { mode: 'packaged' },
+    });
+    expect(withPackaged.dev?.mode).toBe('packaged');
+
+    const withoutMode = parseWakeConfig({ paths: { wakeRoot: '/tmp/wake' } });
+    expect(withoutMode.dev?.mode).toBeUndefined();
   });
 });
 
