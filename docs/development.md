@@ -122,15 +122,14 @@ local-development launchers there:
 - `wake.sh` for bash, Git Bash, WSL, and similar shells.
 - `wake.ps1` for PowerShell.
 
-Both wrappers call back into the repo checkout recorded at scaffold time, so
-you can operate from `wake-home` instead of repeating the full `npx tsx
-.../src/main.ts` path.
+Both wrappers are a one-line convenience that delegates to the global `wake`
+binary with `--wake-root` set to the wrapper's own directory, so you can run
+`./wake.sh tick` from inside `wake-home` instead of typing
+`wake tick --wake-root .` yourself.
 
-`init` and explicit `sandbox ...` commands run on the host. Other runtime
-commands such as `start`, `tick`, and `smoke` are automatically forwarded into
-the running container via `sandbox exec`. The wrappers default the in-container
-Wake home to `/wake`, so you do not need to pass `--wake-root` for normal
-scaffolded usage.
+Routing — whether a command runs on the host or is forwarded into the sandbox
+container via `sandbox exec` — is decided by `wake` itself based on
+`--wake-root`, not by the wrapper scripts; see `wake --help` for details.
 
 The build command reads `config.json`, uses `dev.repoRoot` for the Docker build
 context, and keeps the operator flow rooted in `wake-home`.
@@ -338,9 +337,8 @@ authenticated with permission to create issues on the repo.
 sandbox container.** It has to be able to stop and replace the very container
 it might be updating, and the host `docker`/`git` CLIs aren't reachable from
 inside the container. `wake stop`/`sandbox` are already routed to the host by
-the generated launchers (`wake.sh`/`wake.ps1`), so this falls out of the
-existing routing — you just need something on the host keeping the process
-alive.
+`dispatchMainCommand` itself, so this falls out of the existing routing — you
+just need something on the host keeping the process alive.
 
 To run it continuously with no external scheduler, start the loop as a
 long-lived host process from your wake-home directory:

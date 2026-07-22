@@ -40,17 +40,34 @@ async function makeTempWakeRoot(): Promise<string> {
 }
 
 describe('scaffoldWakeHome launchers', () => {
-  it('routes stop to the host in the bash and PowerShell launchers', async () => {
+  it('generates a one-line delegation to the global wake binary in wake.sh', async () => {
     const wakeRoot = await mkdtemp(resolve(tmpdir(), 'wake-scaffold-'));
     const repoRoot = process.cwd();
 
     await scaffoldWakeHome({ wakeRoot, repoRoot });
 
     const shellLauncher = await readFile(resolve(wakeRoot, 'wake.sh'), 'utf8');
+
+    expect(shellLauncher).toBe(
+      [
+        '#!/usr/bin/env bash',
+        'exec wake "$@" --wake-root "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"',
+        '',
+      ].join('\n'),
+    );
+  });
+
+  it('generates a one-line delegation to the global wake binary in wake.ps1', async () => {
+    const wakeRoot = await mkdtemp(resolve(tmpdir(), 'wake-scaffold-'));
+    const repoRoot = process.cwd();
+
+    await scaffoldWakeHome({ wakeRoot, repoRoot });
+
     const powerShellLauncher = await readFile(resolve(wakeRoot, 'wake.ps1'), 'utf8');
 
-    expect(shellLauncher).toContain('init|sandbox|stop)');
-    expect(powerShellLauncher).toContain('"stop" {');
+    expect(powerShellLauncher).toBe(
+      ['& wake @args --wake-root $PSScriptRoot', 'exit $LASTEXITCODE', ''].join('\n'),
+    );
   });
 });
 

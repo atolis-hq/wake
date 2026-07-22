@@ -45,17 +45,12 @@ describe('init command', () => {
     expect(config).toContain('"sandbox"');
     expect(config).toContain(`"repoRoot": "${repoRoot.replaceAll('\\', '\\\\')}"`);
     await expect(stat(join(result.wakeRoot, 'docker'))).rejects.toThrow();
-    expect(shellLauncher).toContain(repoRoot.replaceAll('\\', '/'));
-    expect(shellLauncher).toContain('case "${1:-}" in');
-    expect(shellLauncher).toContain('MSYS_NO_PATHCONV=1');
-    expect(shellLauncher).toContain("MSYS2_ARG_CONV_EXCL='*'");
-    expect(shellLauncher).toContain('sandbox exec -- node "$CONTAINER_MAIN"');
-    expect(shellLauncher).toContain('rewritten_args+=("--wake-root" "/wake")');
-    expect(powerShellLauncher).toContain(repoRoot);
-    expect(powerShellLauncher).toContain('switch ($command)');
-    expect(powerShellLauncher).toContain("'sandbox', 'exec', '--', 'node', $containerMain");
-    expect(powerShellLauncher).toContain("$rewrittenArgs.Add('--wake-root')");
-    expect(powerShellLauncher).toContain("$rewrittenArgs.Add('/wake')");
+    expect(shellLauncher).toContain('#!/usr/bin/env bash');
+    expect(shellLauncher).toContain(
+      'exec wake "$@" --wake-root "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"',
+    );
+    expect(powerShellLauncher).toContain('& wake @args --wake-root $PSScriptRoot');
+    expect(powerShellLauncher).toContain('exit $LASTEXITCODE');
 
     for (const promptFile of promptFiles) {
       const prompt = await readFile(join(result.wakeRoot, 'prompts', promptFile), 'utf8');

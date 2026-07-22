@@ -180,9 +180,10 @@ Docker sandbox assets, runtime directories, and shell launchers:
 - `wake.sh` for bash, Git Bash, WSL, and similar shells.
 - `wake.ps1` for PowerShell.
 
-Use the generated launcher from the Wake home for day-to-day operation. The
-launcher runs host setup commands locally and forwards runtime commands into the
-sandbox with the correct Wake home mounted at `/wake`.
+Use the generated launcher from the Wake home for day-to-day operation. It's a
+one-line convenience that delegates to the global `wake` binary with
+`--wake-root` set to the Wake home directory, so you don't need to type
+`--wake-root` yourself.
 
 The bare `wake` binary does the same auto-delegation itself: once
 `docker/Dockerfile` exists under `--wake-root` (i.e. after `wake sandbox
