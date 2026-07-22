@@ -8,6 +8,10 @@ export type DoctorDeps = {
   inspectImage: (image: string) => Promise<boolean>;
   wakeRoot: string;
   image: string;
+  containerRunning: () => Promise<boolean>;
+  execVersionInContainer: () => Promise<string>;
+  installedVersion: string;
+  diffPromptsAndDockerfile: () => Promise<string[]>;
 };
 
 export type DoctorReport = {
@@ -41,6 +45,20 @@ export async function runDoctorCommand(
         failures.push(`sandbox image "${deps.image}" not found — run \`wake sandbox build\``);
       }
     }
+  }
+
+  if (await deps.containerRunning()) {
+    const sandboxVersion = await deps.execVersionInContainer();
+    if (sandboxVersion !== '' && sandboxVersion !== deps.installedVersion) {
+      notices.push(
+        `sandbox is running version ${sandboxVersion}, installed CLI is ${deps.installedVersion} — run \`wake sandbox build && wake sandbox update\` to sync`,
+      );
+    }
+  }
+
+  const driftedFiles = await deps.diffPromptsAndDockerfile();
+  for (const file of driftedFiles) {
+    notices.push(`${file} differs from the currently-shipped default (not auto-overwritten)`);
   }
 
   return { failures, notices };

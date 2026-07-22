@@ -6,7 +6,15 @@ import type { WakeConfig } from '../../src/domain/types.js';
 
 function baseDockerDeps(): Pick<
   DoctorDeps,
-  'hasDockerfile' | 'dockerReachable' | 'inspectImage' | 'wakeRoot' | 'image'
+  | 'hasDockerfile'
+  | 'dockerReachable'
+  | 'inspectImage'
+  | 'wakeRoot'
+  | 'image'
+  | 'containerRunning'
+  | 'execVersionInContainer'
+  | 'installedVersion'
+  | 'diffPromptsAndDockerfile'
 > {
   return {
     hasDockerfile: async () => false,
@@ -14,6 +22,10 @@ function baseDockerDeps(): Pick<
     inspectImage: async () => true,
     wakeRoot: '/tmp/wake',
     image: 'wake-sandbox-x',
+    containerRunning: async () => false,
+    execVersionInContainer: async () => '',
+    installedVersion: '0.1.22',
+    diffPromptsAndDockerfile: async () => [],
   };
 }
 
@@ -82,6 +94,10 @@ describe('runDoctorCommand — Docker/sandbox reachability check', () => {
       inspectImage: async () => false,
       wakeRoot: '/tmp/wake',
       image: 'wake-sandbox-x',
+      containerRunning: async () => false,
+      execVersionInContainer: async () => '',
+      installedVersion: '0.1.22',
+      diffPromptsAndDockerfile: async () => [],
     });
 
     expect(report.failures.some((f) => f.includes('Docker'))).toBe(true);
@@ -98,8 +114,53 @@ describe('runDoctorCommand — Docker/sandbox reachability check', () => {
       inspectImage: async () => true,
       wakeRoot: '/tmp/wake',
       image: 'wake-sandbox-x',
+      containerRunning: async () => false,
+      execVersionInContainer: async () => '',
+      installedVersion: '0.1.22',
+      diffPromptsAndDockerfile: async () => [],
     });
 
     expect(dockerReachable).not.toHaveBeenCalled();
+  });
+});
+
+describe('runDoctorCommand — version and prompt/Dockerfile drift notices', () => {
+  it('adds an informational notice (not a failure) on a version mismatch', async () => {
+    const report = await runDoctorCommand(baseConfig(), {
+      collectPreflightFailures: async () => [],
+      resolveGitHubToken: async () => 'tok',
+      hasDockerfile: async () => false,
+      dockerReachable: async () => true,
+      inspectImage: async () => true,
+      wakeRoot: '/tmp/wake',
+      image: 'x',
+      containerRunning: async () => true,
+      execVersionInContainer: async () => '0.1.20',
+      installedVersion: '0.1.22',
+      diffPromptsAndDockerfile: async () => [],
+    });
+
+    expect(report.failures).toEqual([]);
+    expect(report.notices.some((n) => n.includes('0.1.20') && n.includes('0.1.22'))).toBe(true);
+  });
+
+  it('adds an informational notice per drifted file, never a failure', async () => {
+    const report = await runDoctorCommand(baseConfig(), {
+      collectPreflightFailures: async () => [],
+      resolveGitHubToken: async () => 'tok',
+      hasDockerfile: async () => false,
+      dockerReachable: async () => true,
+      inspectImage: async () => true,
+      wakeRoot: '/tmp/wake',
+      image: 'x',
+      containerRunning: async () => false,
+      execVersionInContainer: async () => '',
+      installedVersion: '0.1.22',
+      diffPromptsAndDockerfile: async () => ['prompts/refine.md', 'docker/Dockerfile'],
+    });
+
+    expect(report.failures).toEqual([]);
+    expect(report.notices.some((n) => n.includes('prompts/refine.md'))).toBe(true);
+    expect(report.notices.some((n) => n.includes('docker/Dockerfile'))).toBe(true);
   });
 });
