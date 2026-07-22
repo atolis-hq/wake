@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawn, type ChildProcess } from 'node:child_process';
-import { existsSync, openSync } from 'node:fs';
+import { closeSync, existsSync, openSync } from 'node:fs';
 import { access, chmod, copyFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { createInterface } from 'node:readline/promises';
@@ -294,6 +294,22 @@ function createSandboxEntrypointDeps(): Parameters<typeof runSandboxEntrypointCo
       if (typeof child.pid === 'number') {
         children.set(child.pid, child);
       }
+
+      // Registered here (at spawn time) so it runs before any exit listener
+      // waitForExit attaches later — though it wouldn't matter either way:
+      // waitForExit captures the ChildProcess reference synchronously from
+      // `children` when it's called (before the child can possibly have
+      // exited) and attaches its own listener directly to that reference,
+      // so it never re-reads `children` inside the exit callback. Deleting
+      // the map entry here is therefore safe regardless of ordering.
+      child.on('exit', () => {
+        if (typeof child.pid === 'number') {
+          children.delete(child.pid);
+        }
+        if (logFd !== 'ignore') {
+          closeSync(logFd);
+        }
+      });
 
       return { pid: child.pid ?? -1 };
     },
