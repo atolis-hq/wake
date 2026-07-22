@@ -5,15 +5,23 @@ const DEFAULT_START_RESTART_DELAY_SECONDS = 10;
 
 export interface SandboxEntrypointDeps {
   env: NodeJS.ProcessEnv;
-  spawnDetached: (command: string, args: string[]) => { pid: number };
+  spawnDetached: (
+    command: string,
+    args: string[],
+    options?: { logFile?: string },
+  ) => { pid: number };
   waitForExit: (pid: number) => Promise<number>;
   writeFile: (path: string, content: string) => Promise<void>;
   sleep: (ms: number) => Promise<void>;
   discoverNgrokUrl: () => Promise<string | undefined>;
   log: (message: string) => void;
+  ensureDir: (path: string) => Promise<void>;
+  removeFile: (path: string) => Promise<void>;
 }
 
 async function discoverAndWriteNgrokUrl(deps: SandboxEntrypointDeps): Promise<void> {
+  await deps.removeFile(CONTROL_PLANE_UI_URL_FILE);
+
   const publicUrl = await deps.discoverNgrokUrl();
 
   if (publicUrl !== undefined) {
@@ -33,7 +41,9 @@ async function superviseWakeStart(
 ): Promise<void> {
   for (;;) {
     deps.log('wake start: starting resident loop');
-    const { pid } = deps.spawnDetached('node', [MAIN_JS_PATH, 'start', '--wake-root', '/wake']);
+    const { pid } = deps.spawnDetached('node', [MAIN_JS_PATH, 'start', '--wake-root', '/wake'], {
+      logFile: '/wake/logs/start.log',
+    });
     const exitCode = await deps.waitForExit(pid);
     deps.log(
       `wake start: resident loop exited with status ${exitCode}; restarting in ${restartDelaySeconds}s`,
@@ -44,6 +54,8 @@ async function superviseWakeStart(
 
 export async function runSandboxEntrypointCommand(deps: SandboxEntrypointDeps): Promise<void> {
   const { env } = deps;
+
+  await deps.ensureDir('/wake/logs');
 
   if (env.WAKE_UI_ENABLED === 'true') {
     const port = env.WAKE_UI_PORT ?? DEFAULT_UI_PORT;
@@ -62,15 +74,22 @@ export async function runSandboxEntrypointCommand(deps: SandboxEntrypointDeps): 
     if (env.WAKE_UI_TOKEN) {
       uiArgs.push('--token', env.WAKE_UI_TOKEN);
     }
-    deps.spawnDetached('node', uiArgs);
+    deps.spawnDetached('node', uiArgs, { logFile: '/wake/logs/ui.log' });
 
     if (env.WAKE_UI_TUNNEL_ENABLED === 'true') {
       if (env.NGROK_AUTHTOKEN) {
-        deps.spawnDetached('ngrok', ['config', 'add-authtoken', env.NGROK_AUTHTOKEN]);
+        const { pid } = deps.spawnDetached(
+          'ngrok',
+          ['config', 'add-authtoken', env.NGROK_AUTHTOKEN],
+          { logFile: '/wake/logs/ngrok.log' },
+        );
+        await deps.waitForExit(pid);
       }
 
       deps.log(`wake ui: starting ngrok tunnel for 127.0.0.1:${port}`);
-      deps.spawnDetached('ngrok', ['http', `127.0.0.1:${port}`, '--log=stdout']);
+      deps.spawnDetached('ngrok', ['http', `127.0.0.1:${port}`, '--log=stdout'], {
+        logFile: '/wake/logs/ngrok.log',
+      });
       void discoverAndWriteNgrokUrl(deps);
     }
   }

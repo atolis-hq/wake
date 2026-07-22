@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { spawn, type ChildProcess } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { access, chmod, copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { existsSync, openSync } from 'node:fs';
+import { access, chmod, copyFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { fileURLToPath } from 'node:url';
@@ -282,11 +282,12 @@ function createSandboxEntrypointDeps(): Parameters<typeof runSandboxEntrypointCo
 
   return {
     env: process.env,
-    spawnDetached: (command, args) => {
+    spawnDetached: (command, args, options) => {
+      const logFd = options?.logFile !== undefined ? openSync(options.logFile, 'a') : 'ignore';
       const child = spawn(command, args, {
         cwd: process.cwd(),
         env: process.env,
-        stdio: 'ignore',
+        stdio: ['ignore', logFd, logFd],
         detached: true,
       });
 
@@ -310,6 +311,10 @@ function createSandboxEntrypointDeps(): Parameters<typeof runSandboxEntrypointCo
     sleep: (ms) => new Promise((resolveSleep) => setTimeout(resolveSleep, ms)),
     discoverNgrokUrl,
     log: (message) => console.log(message),
+    ensureDir: async (path) => {
+      await mkdir(path, { recursive: true });
+    },
+    removeFile: (path) => rm(path, { force: true }),
   };
 }
 

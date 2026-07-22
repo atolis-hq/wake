@@ -17,12 +17,33 @@ describe('runSandboxEntrypointCommand', () => {
       sleep: vi.fn(async () => {}),
       discoverNgrokUrl: vi.fn(async () => undefined),
       log: vi.fn(),
+      ensureDir: vi.fn(async () => {}),
+      removeFile: vi.fn(async () => {}),
     });
 
     expect(spawnDetached).toHaveBeenCalledWith(
       'node',
       expect.arrayContaining(['ui', '--wake-root', '/wake', '--host', '0.0.0.0', '--port', '4317']),
+      { logFile: '/wake/logs/ui.log' },
     );
+  });
+
+  it('ensures /wake/logs exists before spawning any process', async () => {
+    const ensureDir = vi.fn(async () => {});
+
+    await runSandboxEntrypointCommand({
+      env: { WAKE_UI_ENABLED: 'true', WAKE_UI_PORT: '4317' },
+      spawnDetached: vi.fn(() => ({ pid: 123 })),
+      waitForExit: vi.fn(neverExits),
+      writeFile: vi.fn(async () => {}),
+      sleep: vi.fn(async () => {}),
+      discoverNgrokUrl: vi.fn(async () => undefined),
+      log: vi.fn(),
+      ensureDir,
+      removeFile: vi.fn(async () => {}),
+    });
+
+    expect(ensureDir).toHaveBeenCalledWith('/wake/logs');
   });
 
   it('does not start the UI process when WAKE_UI_ENABLED is unset', async () => {
@@ -36,6 +57,8 @@ describe('runSandboxEntrypointCommand', () => {
       sleep: vi.fn(async () => {}),
       discoverNgrokUrl: vi.fn(async () => undefined),
       log: vi.fn(),
+      ensureDir: vi.fn(async () => {}),
+      removeFile: vi.fn(async () => {}),
     });
 
     expect(spawnDetached).not.toHaveBeenCalledWith('node', expect.arrayContaining(['ui']));
@@ -52,11 +75,14 @@ describe('runSandboxEntrypointCommand', () => {
       sleep: vi.fn(async () => {}),
       discoverNgrokUrl: vi.fn(async () => undefined),
       log: vi.fn(),
+      ensureDir: vi.fn(async () => {}),
+      removeFile: vi.fn(async () => {}),
     });
 
     expect(spawnDetached).toHaveBeenCalledWith(
       'node',
       expect.arrayContaining(['start', '--wake-root', '/wake']),
+      { logFile: '/wake/logs/start.log' },
     );
   });
 
@@ -71,9 +97,13 @@ describe('runSandboxEntrypointCommand', () => {
       sleep: vi.fn(async () => {}),
       discoverNgrokUrl: vi.fn(async () => undefined),
       log: vi.fn(),
+      ensureDir: vi.fn(async () => {}),
+      removeFile: vi.fn(async () => {}),
     });
 
-    expect(spawnDetached).toHaveBeenCalledWith('node', expect.arrayContaining(['--port', '4317']));
+    expect(spawnDetached).toHaveBeenCalledWith('node', expect.arrayContaining(['--port', '4317']), {
+      logFile: '/wake/logs/ui.log',
+    });
   });
 
   it('passes --token when WAKE_UI_TOKEN is set', async () => {
@@ -87,11 +117,14 @@ describe('runSandboxEntrypointCommand', () => {
       sleep: vi.fn(async () => {}),
       discoverNgrokUrl: vi.fn(async () => undefined),
       log: vi.fn(),
+      ensureDir: vi.fn(async () => {}),
+      removeFile: vi.fn(async () => {}),
     });
 
     expect(spawnDetached).toHaveBeenCalledWith(
       'node',
       expect.arrayContaining(['--token', 'secret-token']),
+      { logFile: '/wake/logs/ui.log' },
     );
   });
 
@@ -106,6 +139,8 @@ describe('runSandboxEntrypointCommand', () => {
       sleep: vi.fn(async () => {}),
       discoverNgrokUrl: vi.fn(async () => undefined),
       log: vi.fn(),
+      ensureDir: vi.fn(async () => {}),
+      removeFile: vi.fn(async () => {}),
     });
 
     expect(spawnDetached).not.toHaveBeenCalledWith('node', expect.arrayContaining(['--token']));
@@ -122,15 +157,76 @@ describe('runSandboxEntrypointCommand', () => {
         NGROK_AUTHTOKEN: 'ngrok-token',
       },
       spawnDetached,
-      waitForExit: vi.fn(neverExits),
+      waitForExit: vi.fn(async () => 0),
       writeFile: vi.fn(async () => {}),
       sleep: vi.fn(async () => {}),
       discoverNgrokUrl: vi.fn(async () => undefined),
       log: vi.fn(),
+      ensureDir: vi.fn(async () => {}),
+      removeFile: vi.fn(async () => {}),
     });
 
-    expect(spawnDetached).toHaveBeenCalledWith('ngrok', ['config', 'add-authtoken', 'ngrok-token']);
-    expect(spawnDetached).toHaveBeenCalledWith('ngrok', ['http', '127.0.0.1:4317', '--log=stdout']);
+    expect(spawnDetached).toHaveBeenCalledWith(
+      'ngrok',
+      ['config', 'add-authtoken', 'ngrok-token'],
+      { logFile: '/wake/logs/ngrok.log' },
+    );
+    expect(spawnDetached).toHaveBeenCalledWith(
+      'ngrok',
+      ['http', '127.0.0.1:4317', '--log=stdout'],
+      { logFile: '/wake/logs/ngrok.log' },
+    );
+  });
+
+  it('awaits the authtoken-config process before spawning the ngrok tunnel', async () => {
+    const callOrder: string[] = [];
+    const spawnDetached = vi.fn((command: string, args: string[]) => {
+      if (command === 'ngrok' && args[0] === 'config') {
+        callOrder.push('spawn-authtoken');
+        return { pid: 222 };
+      }
+      if (command === 'ngrok' && args[0] === 'http') {
+        callOrder.push('spawn-tunnel');
+        return { pid: 333 };
+      }
+      return { pid: 111 };
+    });
+    let resolveAuthtokenExit: ((code: number) => void) | undefined;
+    const waitForExit = vi.fn((pid: number) => {
+      expect(pid).toBe(222);
+      callOrder.push('waitForExit-called');
+      return new Promise<number>((resolve) => {
+        resolveAuthtokenExit = resolve;
+      });
+    });
+
+    const donePromise = runSandboxEntrypointCommand({
+      env: {
+        WAKE_UI_ENABLED: 'true',
+        WAKE_UI_PORT: '4317',
+        WAKE_UI_TUNNEL_ENABLED: 'true',
+        NGROK_AUTHTOKEN: 'ngrok-token',
+      },
+      spawnDetached,
+      waitForExit,
+      writeFile: vi.fn(async () => {}),
+      sleep: vi.fn(async () => {}),
+      discoverNgrokUrl: vi.fn(async () => undefined),
+      log: vi.fn(),
+      ensureDir: vi.fn(async () => {}),
+      removeFile: vi.fn(async () => {}),
+    });
+
+    // Flush microtasks so the authtoken spawn + waitForExit call land, but
+    // the tunnel spawn must still be pending on the unresolved waitForExit promise.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(callOrder).toEqual(['spawn-authtoken', 'waitForExit-called']);
+
+    resolveAuthtokenExit?.(0);
+    await donePromise;
+
+    expect(callOrder).toEqual(['spawn-authtoken', 'waitForExit-called', 'spawn-tunnel']);
   });
 
   it('does not start ngrok when WAKE_UI_TUNNEL_ENABLED is unset', async () => {
@@ -144,6 +240,8 @@ describe('runSandboxEntrypointCommand', () => {
       sleep: vi.fn(async () => {}),
       discoverNgrokUrl: vi.fn(async () => undefined),
       log: vi.fn(),
+      ensureDir: vi.fn(async () => {}),
+      removeFile: vi.fn(async () => {}),
     });
 
     expect(spawnDetached).not.toHaveBeenCalledWith('ngrok', expect.anything());
@@ -151,6 +249,7 @@ describe('runSandboxEntrypointCommand', () => {
 
   it('writes the discovered ngrok public url to the control-plane-ui-url file', async () => {
     const writeFile = vi.fn(async () => {});
+    const removeFile = vi.fn(async () => {});
     const log = vi.fn();
 
     await runSandboxEntrypointCommand({
@@ -161,11 +260,14 @@ describe('runSandboxEntrypointCommand', () => {
       sleep: vi.fn(async () => {}),
       discoverNgrokUrl: vi.fn(async () => 'https://example.ngrok.io'),
       log,
+      ensureDir: vi.fn(async () => {}),
+      removeFile,
     });
 
     // discovery runs in the background (fire-and-forget), so flush microtasks.
     await new Promise((resolve) => setTimeout(resolve, 0));
 
+    expect(removeFile).toHaveBeenCalledWith('/wake/control-plane-ui-url');
     expect(writeFile).toHaveBeenCalledWith(
       '/wake/control-plane-ui-url',
       expect.stringContaining('https://example.ngrok.io'),
@@ -185,6 +287,8 @@ describe('runSandboxEntrypointCommand', () => {
       sleep: vi.fn(async () => {}),
       discoverNgrokUrl: vi.fn(async () => undefined),
       log,
+      ensureDir: vi.fn(async () => {}),
+      removeFile: vi.fn(async () => {}),
     });
 
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -204,6 +308,8 @@ describe('runSandboxEntrypointCommand', () => {
       sleep: vi.fn(async () => {}),
       discoverNgrokUrl: vi.fn(async () => undefined),
       log: vi.fn(),
+      ensureDir: vi.fn(async () => {}),
+      removeFile: vi.fn(async () => {}),
     });
 
     expect(spawnDetached).not.toHaveBeenCalledWith('node', expect.arrayContaining(['start']));
@@ -231,6 +337,8 @@ describe('runSandboxEntrypointCommand', () => {
       sleep,
       discoverNgrokUrl: vi.fn(async () => undefined),
       log: vi.fn(),
+      ensureDir: vi.fn(async () => {}),
+      removeFile: vi.fn(async () => {}),
     });
 
     expect(spawnDetached).toHaveBeenCalledTimes(1);
