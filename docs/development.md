@@ -71,11 +71,13 @@ The sandbox flow on this branch has three parts:
 2. Build and start the persistent Docker sandbox from this repo checkout.
 3. Run the first-time auth setup inside the container.
 
-Today, the top-level `wake init` and `wake sandbox ...` CLI routing is not wired
-through [`src/main.ts`](../src/main.ts). The only local-development detail that
-still points back at the repo checkout is `dev.repoRoot`, which `wake init`
-stores in `wake-home/config.json` so `wake sandbox build` can build the Docker
-image from source.
+`wake init` and `wake sandbox ...` always run on the host; `dispatchMainCommand`
+in [`src/main.ts`](../src/main.ts) routes runtime commands (`tick`/`start`/`ui`/
+`smoke`/`correlate`) into the sandbox automatically once `docker/Dockerfile`
+exists, unless `--host` is passed. The only local-development detail that still
+points back at the repo checkout is `dev.repoRoot`, which `wake init` stores in
+`wake-home/config.json` so `wake sandbox build` can build the Docker image from
+source.
 
 ## 1. Scaffold A Clean Wake Home
 
@@ -98,11 +100,29 @@ That creates a self-contained home with:
 - `config.json`
 - `prompts/` with one Handlebars template per action, such as `refine.md`
   and `implement.md`
-- `docker/Dockerfile`
-- `docker/setup.sh`
-- `events/`, `state/`, `runs/`, `workspaces/`, `repos/`, `sources/`, `locks/`
+- `wake.sh` / `wake.ps1` launchers
+- `workspaces/`
+- `.wake/` — hidden, holds everything internal/durable: `events/`, `state/`,
+  `runs/`, `sources/`, `repos/`, `locks/`, `logs/`, `container-home/`
+
+Note that `wake init` does not scaffold `docker/` at all — `docker/Dockerfile`
+is written the first time you run `wake sandbox build` (see step 2 below),
+from whichever `dev.mode` template applies.
 
 Use an absolute path in `WAKE_HOME`.
+
+**Upgrading an existing wake-home from the old flat layout:** this was a
+breaking layout change with no migration tooling (a pre-release decision — see
+`docs/superpowers/specs/2026-07-22-wake-home-restructure-design.md`). To
+upgrade an existing wake-home by hand: create a `.wake/` directory inside it,
+move `container-home/`, `logs/`, `events/`, `events-by-id/`, `state/`, `runs/`,
+`sources/`, `locks/`, `control/`, `ledger.json`, `PAUSE`, and `transcripts/`
+into it (`config.json`, `prompts/`, `workspaces/`, and the launchers stay where
+they are); delete `docker/setup.sh` and `docker/log-command.sh` if present
+(unused now — folded into the CLI); confirm `docker/Dockerfile`'s `ENTRYPOINT`
+points at `sandbox-entrypoint`, hand-editing it if not (it's user-owned and
+never auto-rewritten); then re-run `wake sandbox build` to pick up the new
+entrypoint.
 
 `wake init` records `dev.mode` in `config.json` — `"source"` when the
 `repoRoot` it was run from is a full checkout (has `src/main.ts` and
