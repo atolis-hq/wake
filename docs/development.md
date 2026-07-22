@@ -104,6 +104,16 @@ That creates a self-contained home with:
 
 Use an absolute path in `WAKE_HOME`.
 
+`wake init` records `dev.mode` in `config.json` — `"source"` when the
+`repoRoot` it was run from is a full checkout (has `src/main.ts` and
+`tsconfig.json`, i.e. this dev-checkout workflow), or `"packaged"` otherwise
+(a plain `npm install -g @atolis-hq/wake` install). This governs which
+`docker/Dockerfile` template `wake sandbox build` writes and whether
+`wake sandbox self-update` is available (source mode only — see below). Force
+a specific mode with `wake init --dev` or `wake init --packaged` if the
+auto-detected mode doesn't match your intent, e.g. testing a local
+`npm pack` install from a source checkout.
+
 ## 2. Build The Sandbox Image
 
 After scaffolding, switch to the Wake home directory. `wake init` drops two
@@ -279,6 +289,12 @@ container with a 60s grace period. Flags: `--timeout-ms` (give up waiting
 after this long instead of blocking forever) and `--poll-interval-ms`.
 
 ### Self-update
+
+Only available when `config.dev.mode` is `"source"` (the dev-checkout
+workflow above) — a packaged install (`dev.mode: "packaged"`, or unset on an
+older wake-home) gets a clear error pointing at the packaged-mode update path
+instead: `npm install -g @atolis-hq/wake@latest && wake sandbox build && wake
+sandbox update`.
 
 Run from inside your **wake-home** directory (the one scaffolded by `wake
 init`, containing `wake.sh`/`wake.ps1`/`config.json`) — like every other

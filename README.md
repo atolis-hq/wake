@@ -186,6 +186,13 @@ sandbox with the correct Wake home mounted at `/wake`.
 
 Run `wake --help` at any time for the full command list.
 
+`wake init` auto-detects whether it's running from a source checkout or a
+packaged `npm install -g` install and records this as `dev.mode` in
+`config.json`, so `wake sandbox build` works out of the box either way —
+no separate setup needed for a plain global install. Override the detected
+mode with `wake init --dev` (force source mode) or `wake init --packaged`
+(force packaged mode) if auto-detection doesn't match your intent.
+
 ```sh
 cd ./wake-home
 ./wake.sh sandbox build
