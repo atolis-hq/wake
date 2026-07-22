@@ -7,12 +7,19 @@ export async function runInitCommand(input: {
   args: string[];
   repoRoot: string;
 }): Promise<{ wakeRoot: string }> {
-  const wakeRoot = resolve(input.cwd, input.args[0] ?? '.');
+  const positionalArgs = input.args.filter((arg) => arg !== '--dev' && arg !== '--packaged');
+  const wakeRoot = resolve(input.cwd, positionalArgs[0] ?? '.');
+  const devModeOverride = input.args.includes('--dev')
+    ? 'source'
+    : input.args.includes('--packaged')
+      ? 'packaged'
+      : undefined;
 
   await assertEmptyDirectory(wakeRoot);
   await scaffoldWakeHome({
     wakeRoot,
     repoRoot: input.repoRoot,
+    ...(devModeOverride === undefined ? {} : { devModeOverride }),
   });
 
   return { wakeRoot };

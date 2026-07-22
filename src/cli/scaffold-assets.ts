@@ -1,4 +1,4 @@
-import { chmod, copyFile, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { access, chmod, copyFile, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 
 import { createDefaultWakeConfig } from '../config/defaults.js';
@@ -26,6 +26,16 @@ function sanitizeContainerName(name: string): string {
     .replace(/-+/g, '-')
     .replace(/^[-._]+|[-._]+$/g, '');
   return sanitized.length > 0 ? sanitized : 'wake';
+}
+
+export async function detectDevMode(repoRoot: string): Promise<'source' | 'packaged'> {
+  try {
+    await access(join(repoRoot, 'src', 'main.ts'));
+    await access(join(repoRoot, 'tsconfig.json'));
+    return 'source';
+  } catch {
+    return 'packaged';
+  }
 }
 
 export async function assertEmptyDirectory(targetDir: string): Promise<void> {
@@ -184,9 +194,11 @@ async function writeLaunchers(wakeRoot: string, repoRoot: string): Promise<void>
 export async function scaffoldWakeHome(input: {
   wakeRoot: string;
   repoRoot: string;
+  devModeOverride?: 'source' | 'packaged';
 }): Promise<void> {
   const wakeRoot = resolve(input.wakeRoot);
   const repoRoot = resolve(input.repoRoot);
+  const devMode = input.devModeOverride ?? (await detectDevMode(repoRoot));
   const defaults = createDefaultWakeConfig(wakeRoot);
   const config = {
     ...defaults,
@@ -196,6 +208,7 @@ export async function scaffoldWakeHome(input: {
     },
     dev: {
       repoRoot,
+      mode: devMode,
     },
   };
 
