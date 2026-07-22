@@ -1,4 +1,48 @@
-# Wake
+<div align="center">
+
+
+  <img src="https://raw.githubusercontent.com/atolis-hq/wake/refs/heads/main/assets/wake-logo.svg" alt="logo" width="200" height="auto" />
+  <h1>Wake</h1>
+  
+  <p>
+    Autonomous software engineering control plane
+  </p>
+  
+  
+<!-- Badges -->
+<p>
+  <a href="https://github.com/atolis-hq/wake/commits/main">
+    <img src="https://img.shields.io/github/last-commit/atolis-hq/wake" alt="last update" />
+  </a>
+  <a href="https://github.com/atolis-hq/wake/actions/workflows/ci-cd.yml">
+    <img src="https://github.com/atolis-hq/wake/actions/workflows/ci-cd.yml/badge.svg" alt="CI/CD status" />
+  </a>
+  <!-- <a href="https://github.com/atolis-hq/wake/network/members">
+    <img src="https://img.shields.io/github/forks/atolis-hq/wake" alt="forks" />
+  </a>
+  <a href="https://github.com/atolis-hq/wake/stargazers">
+    <img src="https://img.shields.io/github/stars/atolis-hq/wake" alt="stars" />
+  </a> -->
+  <a href="https://github.com/atolis-hq/wake/issues/">
+    <img src="https://img.shields.io/github/issues/atolis-hq/wake" alt="open issues" />
+  </a>
+  <a href="https://github.com/atolis-hq/wake/blob/main/LICENSE">
+    <img src="https://img.shields.io/github/license/atolis-hq/wake.svg" alt="license" />
+  </a>
+  <a href="https://github.com/atolis-hq/wake/tags">
+    <img src="https://img.shields.io/github/v/tag/atolis-hq/wake" alt="latest tag" />
+  </a>
+  <a href="https://www.npmjs.com/package/@atolis-hq/wake">
+    <img src="https://img.shields.io/npm/v/%40atolis-hq%2Fwake" alt="npm version" />
+  </a>
+  <a href="docker/Dockerfile">
+    <img src="https://img.shields.io/badge/sandbox-docker-2496ED?logo=docker&logoColor=white" alt="runs in docker" />
+  </a>
+</p>
+</div>
+
+<br />
+
 
 Wake is a control plane for autonomous software engineering. It watches the
 channels your team already uses, coordinates agent activity and involves humans
@@ -10,7 +54,20 @@ asks for input when human judgment matters, proposes a plan, launches local
 coding-agent CLIs to implement changes, opens pull requests, and carries the
 conversation forward wherever the work is already happening.
 
-Wake owns coordination. Coding agents execute the work.
+
+## Table of Contents
+
+- [The Problem](#the-problem)
+- [Vision](#vision)
+- [Feature Overview](#feature-overview)
+- [Where the Work Happens](#where-the-work-happens)
+- [Supported Agent CLIs](#supported-agent-clis)
+- [Getting Started](#getting-started)
+- [Development](#development)
+- [Documentation](#documentation)
+- [Issues & Feature Requests](#issues--feature-requests)
+- [License](#license)
+
 
 ## The Problem
 
@@ -74,6 +131,34 @@ For more detail, see [docs/vision.md](docs/vision.md) and
 
 Current runner capability differences are documented in
 [docs/runner-comparison.md](docs/runner-comparison.md).
+
+## Where the Work Happens
+
+Wake has no chat UI you need to check for status. Your ticketing system is the
+interface: Wake posts progress updates, asks clarifying questions, and reports
+results as comments on the ticket, and reflects stage and status as labels on
+it. When it's ready, it opens a pull request against your repo the normal way.
+Reviewing, approving, and merging happen exactly where they already do today —
+nothing new to learn, no separate dashboard to babysit.
+
+A local control-plane UI exists for operators who want to watch runs, inspect
+events, or resume a session directly, but it's a window into the same state —
+not a required part of the workflow.
+
+## Supported Agent CLIs
+
+Wake wraps existing coding-agent CLIs rather than replacing them. Runner
+adapters currently exist for:
+
+- **[Claude Code](https://claude.com/claude-code)**
+- **[Codex](https://openai.com/codex/)**
+- **[Cursor](https://cursor.com/cli)**
+
+Each runner sits behind the same `AgentRunner` contract, so Wake's routing,
+lifecycle, and sandbox behavior stay the same regardless of which CLI executes
+a given step. A fake runner adapter also exists for zero-token testing of the
+control plane itself. See [docs/runner-comparison.md](docs/runner-comparison.md)
+for capability differences between runners.
 
 ## Getting Started
 
@@ -143,3 +228,23 @@ Recommended local practices:
 
 Local setup, commands, sandbox operation, auth setup, UI notes, and GitHub
 polling details are documented in [docs/development.md](docs/development.md).
+
+## Documentation
+
+- [docs/vision.md](docs/vision.md) — the rationale and long-term direction for Wake.
+- [docs/architecture.md](docs/architecture.md) — module boundaries and the event-sourced core.
+- [docs/implementation.md](docs/implementation.md) — the accepted implementation plan.
+- [docs/workflows.md](docs/workflows.md) — how stages, prompts, and runner routes are configured.
+- [docs/prompts.md](docs/prompts.md) — how prompt templates map to workflow stages.
+- [docs/configuration.md](docs/configuration.md) — `config.json` options and the operator correlation escape hatch.
+- [docs/development.md](docs/development.md) — local setup and sandbox development workflow.
+- [docs/runner-comparison.md](docs/runner-comparison.md) — capability differences between supported runners.
+
+## Issues & Feature Requests
+
+Found a bug or have an idea for Wake? [Open an issue](https://github.com/atolis-hq/wake/issues/new) —
+bug reports and feature requests are both welcome.
+
+## License
+
+Wake is licensed under the [Apache License 2.0](LICENSE).
