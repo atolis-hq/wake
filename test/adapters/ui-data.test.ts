@@ -5,6 +5,7 @@ import { join } from 'node:path';
 
 import { createFakeResourceIndex } from '../../src/adapters/fake/fake-resource-index.js';
 import { createStateStore } from '../../src/adapters/fs/state-store.js';
+import { acquireFileLock } from '../../src/lib/lock.js';
 import { createDefaultWakeConfig } from '../../src/config/defaults.js';
 import {
   buildBoard,
@@ -202,6 +203,28 @@ describe('ui-data', () => {
     expect(status.loopState).toBe('idle');
     expect(status.paused).toBe(false);
     expect(status.counters.finished).toBe(0);
+  });
+
+  it('reports polling loop state while only the intake tick lock is held', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const config = createDefaultWakeConfig(root);
+
+    const lock = await acquireFileLock(store.paths.tickLockFile);
+    const status = await buildStatus({ stateStore: store, config, now: new Date() });
+    await lock.release();
+
+    expect(status.loopState).toBe('polling');
+  });
+
+  it('reports working loop state while an agent run holds the runner lock, even if the tick lock is free', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const config = createDefaultWakeConfig(root);
+
+    const lock = await acquireFileLock(store.paths.runnerLockFile);
+    const status = await buildStatus({ stateStore: store, config, now: new Date() });
+    await lock.release();
+
+    expect(status.loopState).toBe('working');
   });
 
   it('builds status from recent events and today run buckets without a full history run scan', async () => {

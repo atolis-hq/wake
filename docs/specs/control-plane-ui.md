@@ -49,7 +49,7 @@ Principles, in priority order:
 
 The one-glance answer to "is Wake alive and doing the right thing":
 
-- **Loop state:** derived, in order: `paused` (PAUSE file present or `pausedUntil` in the future — show which, and until when) → `ticking` (lock currently held; show holder pid and age) → `idle` (lock free; show time since the last event of any kind).
+- **Loop state:** derived, in order: `paused` (PAUSE file present or `pausedUntil` in the future — show which, and until when) → `working` (`runner.lock` currently held — an agent run is in flight; show holder pid and age) → `polling` (`tick.lock` currently held — intake is polling/reconciling; show holder pid and age) → `idle` (neither lock held; show time since the last event of any kind). The two locks are checked independently because an in-flight agent run holds only `runner.lock`, not `tick.lock`.
 - **Last activity:** timestamp + type of the most recent event, and the most recent run's outcome (`repo#issue action → sentinel`).
 - **Source freshness:** worst-case `lastSuccessfulPollAt` across configured repos, amber above 3× the scheduler interval, red above 10×.
 - **Counters:** items per condition (mirrors the board: needs-attention / active / ready / waiting / stalled), runs today, failures today.
