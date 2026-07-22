@@ -3,6 +3,11 @@ import type { WakeConfig } from '../domain/types.js';
 export type DoctorDeps = {
   collectPreflightFailures: (config: WakeConfig) => Promise<string[]>;
   resolveGitHubToken: () => Promise<string>;
+  hasDockerfile: (wakeRoot: string) => Promise<boolean>;
+  dockerReachable: () => Promise<boolean>;
+  inspectImage: (image: string) => Promise<boolean>;
+  wakeRoot: string;
+  image: string;
 };
 
 export type DoctorReport = {
@@ -23,6 +28,18 @@ export async function runDoctorCommand(
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       failures.push(`GitHub token could not be resolved: ${message}`);
+    }
+  }
+
+  if (await deps.hasDockerfile(deps.wakeRoot)) {
+    const reachable = await deps.dockerReachable();
+    if (!reachable) {
+      failures.push('Docker daemon is not reachable');
+    } else {
+      const imageExists = await deps.inspectImage(deps.image);
+      if (!imageExists) {
+        failures.push(`sandbox image "${deps.image}" not found — run \`wake sandbox build\``);
+      }
     }
   }
 
