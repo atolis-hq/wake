@@ -327,27 +327,27 @@ describe('help and unknown-command handling', () => {
   }
 
   it.each(['--help', '-h', 'help'])('prints usage for %s and calls no handler', async (flag) => {
-    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const write = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
 
     await dispatchMainCommand({ args: [flag], ...noopHandlers() });
 
-    expect(log).toHaveBeenCalled();
-    log.mockRestore();
+    expect(write).toHaveBeenCalled();
+    write.mockRestore();
   });
 
   it('prints usage for bare args (no command) and calls no handler', async () => {
-    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const write = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
     const runTick = vi.fn(async () => {});
 
     await dispatchMainCommand({ args: [], ...noopHandlers(), runTick });
 
-    expect(log).toHaveBeenCalled();
+    expect(write).toHaveBeenCalled();
     expect(runTick).not.toHaveBeenCalled();
-    log.mockRestore();
+    write.mockRestore();
   });
 
   it('throws CliUsageError with the offending command for an unknown command', async () => {
-    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const write = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
 
     await expect(
       dispatchMainCommand({ args: ['bogus-command'], ...noopHandlers() }),
@@ -356,6 +356,6 @@ describe('help and unknown-command handling', () => {
       dispatchMainCommand({ args: ['bogus-command'], ...noopHandlers() }),
     ).rejects.toThrow('Unknown command: bogus-command');
 
-    log.mockRestore();
+    write.mockRestore();
   });
 });
