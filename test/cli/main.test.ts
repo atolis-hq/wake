@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import {
+  CliUsageError,
   dispatchMainCommand,
   formatTickFailureDetails,
+  printUsage,
   readFlagBeforeCommandTerminator,
 } from '../../src/main.js';
 
@@ -274,5 +276,34 @@ describe('main command routing', () => {
         startedAt: '2026-07-06T12:28:12.000Z',
       }),
     ).toBeNull();
+  });
+});
+
+describe('printUsage', () => {
+  it('writes a usage summary mentioning every command and both entry points', () => {
+    const chunks: string[] = [];
+    const stream = { write: (chunk: string) => { chunks.push(chunk); return true; } } as unknown as NodeJS.WritableStream;
+
+    printUsage(stream);
+
+    const output = chunks.join('');
+    expect(output).toContain('wake init');
+    expect(output).toContain('wake.sh');
+    expect(output).toContain('tick');
+    expect(output).toContain('start');
+    expect(output).toContain('sandbox');
+    expect(output).toContain('stop');
+    expect(output).toContain('smoke');
+    expect(output).toContain('ui');
+    expect(output).toContain('correlate');
+    expect(output).toContain('version');
+  });
+});
+
+describe('CliUsageError', () => {
+  it('is an Error subclass carrying its message', () => {
+    const error = new CliUsageError('Unknown command: bogus');
+    expect(error).toBeInstanceOf(Error);
+    expect(error.message).toBe('Unknown command: bogus');
   });
 });

@@ -504,6 +504,36 @@ async function runSmoke(args: string[]) {
   console.log(JSON.stringify(result, null, 2));
 }
 
+export class CliUsageError extends Error {}
+
+export function printUsage(stream: NodeJS.WritableStream): void {
+  stream.write(
+    [
+      'Wake — an autonomous agent control plane for software development.',
+      '',
+      'Usage:',
+      '  wake init <path>           Scaffold a new Wake home directory',
+      '  wake sandbox <subcommand>  Build/run/manage the Docker sandbox (build, up, update, down, stop, self-update, setup, exec, logs, resume)',
+      '  wake tick                  Run one control-plane tick',
+      '  wake start                 Run the resident loop',
+      '  wake stop                  Stop the sandbox container gracefully',
+      '  wake smoke                 Smoke-test the configured runner',
+      '  wake ui                    Run the control-plane UI server',
+      '  wake correlate             Manually correlate a resource to a work item',
+      '  wake version               Print the installed Wake version',
+      '  wake --help                Show this message',
+      '',
+      'Getting started:',
+      '  1. wake init ./wake-home',
+      '  2. cd wake-home && ./wake.sh start   (or ./wake.ps1 start on Windows)',
+      '',
+      'The bare `wake` binary runs directly on the host. The generated wake.sh/wake.ps1',
+      'launcher routes runtime commands (tick/start/ui/smoke/correlate) into the sandbox.',
+      '',
+    ].join('\n'),
+  );
+}
+
 export async function dispatchMainCommand(input: {
   args: string[];
   runInit: (args: string[]) => Promise<unknown>;
