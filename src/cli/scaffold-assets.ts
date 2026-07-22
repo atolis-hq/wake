@@ -24,7 +24,7 @@ function sanitizeContainerName(name: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9_.-]+/g, '-')
     .replace(/-+/g, '-')
-    .replace(/^[-.]+|[-.]+$/g, '');
+    .replace(/^[-._]+|[-._]+$/g, '');
   return sanitized.length > 0 ? sanitized : 'wake';
 }
 

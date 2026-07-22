@@ -47,4 +47,16 @@ describe('scaffoldWakeHome config.json', () => {
 
     expect(config.sandbox.containerName).toBe('wake-sandbox-my-project-v2');
   });
+
+  it('trims leading and trailing underscores from containerName', async () => {
+    const tempBase = await mkdtemp(resolve(tmpdir(), 'wake-scaffold-'));
+    const wakeRoot = join(tempBase, '_my_project_');
+    const repoRoot = process.cwd();
+
+    await scaffoldWakeHome({ wakeRoot, repoRoot });
+
+    const config = JSON.parse(await readFile(join(wakeRoot, 'config.json'), 'utf8'));
+
+    expect(config.sandbox.containerName).toBe('wake-sandbox-my_project');
+  });
 });

@@ -27,7 +27,7 @@ All configuration uses `schemaVersion: 1`.
   "sandbox": {
     "image": "wake-sandbox",
     "imageRepository": "wake-sandbox",
-    "containerName": "wake-sandbox",
+    "containerName": "wake-sandbox-my-project",
     "containerMountPath": "/wake",
     "containerHomeMountPath": "/home/wake",
     "start": { "enabled": true },
@@ -187,7 +187,7 @@ Docker sandbox settings for the durable Wake container.
 | ------------------------ | ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
 | `image`                  | string                                                     | Docker image (including tag) Wake uses for the sandbox                                                                                                                                                     | `"wake-sandbox"` |
 | `imageRepository`        | string                                                     | Base image name (no tag) that `wake sandbox self-update` appends a release tag to, e.g. `wake-sandbox:v0.0.80`; old tags are kept so a failed update can roll back to the previous image without a rebuild | `"wake-sandbox"` |
-| `containerName`          | string                                                     | Container name Wake starts and reuses                                                                                                                                                                      | `"wake-sandbox"` |
+| `containerName`          | string                                                     | Container name Wake starts and reuses; derived from the wake-root directory name at `init` time (e.g., `wake-sandbox-<dirname>`) rather than a fixed literal | `wake-sandbox-<dirname>` |
 | `containerMountPath`     | string                                                     | Container path where the Wake home is bind-mounted                                                                                                                                                         | `"/wake"`        |
 | `containerHomeMountPath` | string                                                     | Container path where the sandbox home directory is bind-mounted                                                                                                                                            | `"/home/wake"`   |
 | `start.enabled`          | boolean                                                    | Whether the sandbox entrypoint starts the resident `wake start` loop automatically                                                                                                                         | `true`           |
