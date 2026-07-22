@@ -720,6 +720,10 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error(error);
+  if (error instanceof CliUsageError) {
+    console.error(error.message);
+  } else {
+    console.error(error);
+  }
   process.exitCode = 1;
 });
