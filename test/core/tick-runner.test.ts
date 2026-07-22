@@ -325,7 +325,7 @@ describe('tick runner', () => {
       // which the 'unresolved' sentinel key never has — read the raw JSONL
       // event log directly instead, the same pattern used elsewhere in this
       // file (e.g. "creates event audit records for sync and completion").
-      const lines = (await readFile(join(root, 'events', '2026-07-05.jsonl'), 'utf8'))
+      const lines = (await readFile(store.paths.eventFile('2026-07-05'), 'utf8'))
         .split('\n')
         .filter(Boolean)
         .map(

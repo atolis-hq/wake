@@ -389,7 +389,7 @@ describe('tick runner', () => {
 
       // The projection lands at state/<workId>.json — no provider, repo, or
       // issue segment anywhere in the path.
-      await access(join(root, 'state', `${workId}.json`));
+      await access(store.paths.workItemStateFile(workId));
 
       // The index is what makes the *next* event resolve rather than re-mint.
       expect(await resourceIndex.resolve('fake-ticketing:issue:atolis-hq/wake#200')).toBe(workId);
@@ -586,10 +586,10 @@ describe('tick runner', () => {
       // (so the resolver's persisted shortcut fires and it is never re-minted),
       // but the index entry and the origin-correlation event never made it.
       await resourceIndex.retract(uri);
-      await rm(join(root, 'events-by-id', `${workItemKey}-origin-correlation.json`), {
+      await rm(store.paths.eventEnvelopeFile(`${workItemKey}-origin-correlation`), {
         force: true,
       });
-      await rm(join(root, 'events-by-id', `${workItemKey}-created.json`), { force: true });
+      await rm(store.paths.eventEnvelopeFile(`${workItemKey}-created`), { force: true });
 
       // A later poll re-emits the same upsert (heal path) and a brand-new comment
       // on the same ticket. Without healing, the comment would miss the index and

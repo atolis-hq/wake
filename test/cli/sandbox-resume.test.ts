@@ -135,7 +135,7 @@ describe('sandbox resume command', () => {
         finishedAt: '2026-07-06T10:05:00.000Z',
         sessionId: 'session-22',
       });
-      await writeFile(join(root, 'runs', 'notes.txt'), 'ignore me', 'utf8');
+      await writeFile(join(store.paths.dataRoot, 'runs', 'notes.txt'), 'ignore me', 'utf8');
       await mkdir(join(root, 'workspaces', 'atolis-hq__wake', '22'), { recursive: true });
 
       let seenOptions:

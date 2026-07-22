@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { createStateStore } from '../../src/adapters/fs/state-store.js';
+import { createWakePaths } from '../../src/lib/paths.js';
 import type { EventEnvelope, IssueStateRecord, RunRecord } from '../../src/domain/types.js';
 
 /**
@@ -115,13 +116,12 @@ describe('state store', () => {
 
   it('writes and reads issue state records at a flat state/<workId>.json', async () => {
     const store = createStateStore({ wakeRoot: root });
+    const paths = createWakePaths(root);
 
     await store.writeIssueState(issueState());
 
     // No provider, repo, or issue segment anywhere in the path (spec §3).
-    await expect(readFile(join(root, 'state', `${workId(7)}.json`), 'utf8')).resolves.toContain(
-      'Spec',
-    );
+    await expect(readFile(paths.workItemStateFile(workId(7)), 'utf8')).resolves.toContain('Spec');
 
     const saved = await store.readIssueState(workId(7));
     expect(saved?.issue.number).toBe(7);
@@ -129,6 +129,7 @@ describe('state store', () => {
 
   it('buckets event log files by ingestedAt', async () => {
     const store = createStateStore({ wakeRoot: root });
+    const paths = createWakePaths(root);
 
     await store.appendEventEnvelope(
       eventEnvelope({
@@ -138,20 +139,19 @@ describe('state store', () => {
       }),
     );
 
-    await expect(readFile(join(root, 'events', '2026-06-01.jsonl'), 'utf8')).rejects.toThrow();
-    expect(await readFile(join(root, 'events', '2026-07-05.jsonl'), 'utf8')).toContain(
-      'evt-stale-upstream',
-    );
+    await expect(readFile(paths.eventFile('2026-06-01'), 'utf8')).rejects.toThrow();
+    expect(await readFile(paths.eventFile('2026-07-05'), 'utf8')).toContain('evt-stale-upstream');
   });
 
   it('does not append an event whose id is already persisted', async () => {
     const store = createStateStore({ wakeRoot: root });
+    const paths = createWakePaths(root);
     const event = eventEnvelope({ eventId: 'evt-once' });
 
     await store.appendEventEnvelope(event);
     await store.appendEventEnvelope(event);
 
-    const lines = (await readFile(join(root, 'events', '2026-07-05.jsonl'), 'utf8'))
+    const lines = (await readFile(paths.eventFile('2026-07-05'), 'utf8'))
       .split('\n')
       .filter(Boolean);
     expect(lines).toHaveLength(1);
@@ -159,6 +159,7 @@ describe('state store', () => {
 
   it('writes run records into date buckets while preserving id reads and full listing', async () => {
     const store = createStateStore({ wakeRoot: root });
+    const paths = createWakePaths(root);
 
     await store.writeRunRecord(
       runRecord({
@@ -174,9 +175,9 @@ describe('state store', () => {
       }),
     );
 
-    await expect(
-      readFile(join(root, 'runs', 'by-date', '2026-07-05', 'run-today.json'), 'utf8'),
-    ).resolves.toContain('run-today');
+    await expect(readFile(paths.runDateFile('2026-07-05', 'run-today'), 'utf8')).resolves.toContain(
+      'run-today',
+    );
     await expect(store.readRunRecord('run-today')).resolves.toMatchObject({ status: 'failed' });
     await expect(store.listRunRecordsForDate('2026-07-05')).resolves.toHaveLength(1);
     await expect(store.listRunRecords()).resolves.toHaveLength(2);
@@ -184,6 +185,7 @@ describe('state store', () => {
 
   it('lists recent work-item events from projection ids without scanning event history', async () => {
     const store = createStateStore({ wakeRoot: root });
+    const paths = createWakePaths(root);
 
     await store.appendEventEnvelope(
       eventEnvelope({
@@ -199,7 +201,7 @@ describe('state store', () => {
         ingestedAt: '2026-07-05T12:00:02.000Z',
       }),
     );
-    await writeFile(join(root, 'events', '1999-01-01.jsonl'), '{not json\n', 'utf8');
+    await writeFile(paths.eventFile('1999-01-01'), '{not json\n', 'utf8');
     await store.writeIssueState(issueState({ recentEventIds: ['evt-one', 'evt-two'] }));
 
     const recentEvents = await store.listEventEnvelopesForWorkItem(workId(7), 1);
@@ -237,11 +239,12 @@ describe('state store', () => {
 
   it('skips invalid issue-state files instead of returning an empty list', async () => {
     const store = createStateStore({ wakeRoot: root });
+    const paths = createWakePaths(root);
 
     await store.writeIssueState(issueState({ number: 7 }));
-    await mkdir(join(root, 'state'), { recursive: true });
+    await mkdir(join(paths.dataRoot, 'state'), { recursive: true });
     await writeFile(
-      join(root, 'state', `${workId(8)}.json`),
+      paths.workItemStateFile(workId(8)),
       JSON.stringify({
         ...issueState({ number: 8 }),
         wake: {
@@ -260,6 +263,7 @@ describe('state store', () => {
 
   it('archives old terminal issue states out of the default scan but keeps direct reads working', async () => {
     const store = createStateStore({ wakeRoot: root });
+    const paths = createWakePaths(root);
 
     await store.writeIssueState(
       issueState({
@@ -282,9 +286,9 @@ describe('state store', () => {
     });
 
     expect(states.map((state) => state.issue.number)).toEqual([8]);
-    await expect(
-      readFile(join(root, 'state', 'archive', `${workId(7)}.json`), 'utf8'),
-    ).resolves.toContain('Spec');
+    await expect(readFile(paths.archivedWorkItemStateFile(workId(7)), 'utf8')).resolves.toContain(
+      'Spec',
+    );
     await expect(store.readIssueState(workId(7))).resolves.toMatchObject({
       issue: { number: 7 },
     });
@@ -292,11 +296,12 @@ describe('state store', () => {
 
   it('does not mistake reverse-index shards for projections', async () => {
     const store = createStateStore({ wakeRoot: root });
+    const paths = createWakePaths(root);
 
     await store.writeIssueState(issueState({ number: 7 }));
-    await mkdir(join(root, 'state', 'index'), { recursive: true });
+    await mkdir(paths.resourceIndexRoot, { recursive: true });
     await writeFile(
-      join(root, 'state', 'index', 'ab.json'),
+      paths.resourceIndexShardFile('ab'),
       JSON.stringify({ 'github:issue:atolis-hq/wake#7': workId(7) }),
       'utf8',
     );

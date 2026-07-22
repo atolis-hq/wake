@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 
 import { writeRunnerTranscript } from '../../src/adapters/runner/transcripts.js';
 import { createDefaultWakeConfig } from '../../src/config/defaults.js';
+import { createWakePaths } from '../../src/lib/paths.js';
 
 describe('runner transcripts', () => {
   const projection = {
@@ -71,9 +72,7 @@ describe('runner transcripts', () => {
 
     expect(file).toBe(
       join(
-        root,
-        'transcripts',
-        'work-01JZ0000000000000000000223',
+        createWakePaths(root).transcriptWorkDir('work-01JZ0000000000000000000223'),
         'run-223-1',
         'run-223-1.codex.implement.prompt.txt',
       ),
@@ -105,9 +104,7 @@ describe('runner transcripts', () => {
 
     expect(file).toBe(
       join(
-        root,
-        'transcripts',
-        'work-01JZ0000000000000000000223',
+        createWakePaths(root).transcriptWorkDir('work-01JZ0000000000000000000223'),
         'session__abc__123',
         'run-223-2.cursor.implement.response.txt',
       ),

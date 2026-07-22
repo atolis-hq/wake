@@ -90,7 +90,7 @@ describe('tick runner', () => {
       const result = await tickRunner.runTick();
       const runRecord = await store.readRunRecord('run-123-stale');
       const projection = await findByIssueRef(store, { repo: 'atolis-hq/wake', issueNumber: 123 });
-      const events = await readFile(join(root, 'events', '2026-07-05.jsonl'), 'utf8');
+      const events = await readFile(store.paths.eventFile('2026-07-05'), 'utf8');
 
       expect(result.status).toBe('idle');
       expect(runnerCallCount).toBe(0);

@@ -99,7 +99,7 @@ function shouldArchiveIssueState(
 }
 
 export async function listRunRecords(wakeRoot: string): Promise<RunRecord[]> {
-  const runsRoot = join(wakeRoot, 'runs');
+  const runsRoot = join(createWakePaths(wakeRoot).dataRoot, 'runs');
   const recordsById = new Map<string, RunRecord>();
 
   try {
@@ -139,7 +139,7 @@ export async function listRunRecords(wakeRoot: string): Promise<RunRecord[]> {
 }
 
 async function listRunRecordsForDate(wakeRoot: string, date: string): Promise<RunRecord[]> {
-  const runsRoot = join(wakeRoot, 'runs');
+  const runsRoot = join(createWakePaths(wakeRoot).dataRoot, 'runs');
   const recordsById = new Map<string, RunRecord>();
 
   const bucketFiles = (await readdir(join(runsRoot, 'by-date', date)).catch(() => []))
@@ -170,7 +170,7 @@ async function listRunRecordsForDate(wakeRoot: string, date: string): Promise<Ru
 }
 
 async function listRecentRunRecords(wakeRoot: string, limit: number): Promise<RunRecord[]> {
-  const runsRoot = join(wakeRoot, 'runs');
+  const runsRoot = join(createWakePaths(wakeRoot).dataRoot, 'runs');
   const recordsById = new Map<string, RunRecord>();
   const dateDirs = (await readdir(join(runsRoot, 'by-date')).catch(() => [])).sort().reverse();
 
@@ -286,7 +286,7 @@ export function createStateStore({ wakeRoot }: { wakeRoot: string }) {
       }
     },
     async listIssueStates(options: ListIssueStatesOptions = {}): Promise<IssueStateRecord[]> {
-      const stateRoot = join(wakeRoot, 'state');
+      const stateRoot = join(paths.dataRoot, 'state');
       try {
         const items: IssueStateRecord[] = [];
         const includeArchived = options.includeArchived ?? false;
@@ -355,7 +355,7 @@ export function createStateStore({ wakeRoot }: { wakeRoot: string }) {
       }
     },
     async listEventEnvelopes(): Promise<EventEnvelope[]> {
-      const eventsRoot = join(wakeRoot, 'events');
+      const eventsRoot = join(paths.dataRoot, 'events');
       try {
         const files = (await readdir(eventsRoot)).sort();
         const envelopes: EventEnvelope[] = [];
@@ -371,7 +371,7 @@ export function createStateStore({ wakeRoot }: { wakeRoot: string }) {
     },
     async listRecentEventEnvelopes(filter: EventFeedFilter = {}): Promise<EventEnvelope[]> {
       const limit = filter.limit ?? 200;
-      const eventsRoot = join(wakeRoot, 'events');
+      const eventsRoot = join(paths.dataRoot, 'events');
       const files = (await readdir(eventsRoot).catch(() => []))
         .filter((file) => file.endsWith('.jsonl'))
         .sort()

@@ -24,10 +24,9 @@ describe('tick runner', () => {
 
       const runner = {
         async run() {
-          const runFiles = (await readdir(join(root, 'runs'))).filter((file) =>
-            file.endsWith('.json'),
-          );
-          runFileSnapshot = await readFile(join(root, 'runs', runFiles[0]!), 'utf8');
+          const runsRoot = join(store.paths.dataRoot, 'runs');
+          const runFiles = (await readdir(runsRoot)).filter((file) => file.endsWith('.json'));
+          runFileSnapshot = await readFile(join(runsRoot, runFiles[0]!), 'utf8');
           return {
             result: 'Runner output\nDONE',
             model: 'test-model',
@@ -104,7 +103,7 @@ describe('tick runner', () => {
 
       await tickRunner.runTick();
 
-      const events = await readFile(join(root, 'events', '2026-07-05.jsonl'), 'utf8');
+      const events = await readFile(store.paths.eventFile('2026-07-05'), 'utf8');
       expect(events).toContain('"sourceEventType":"fake.issue.upsert"');
       expect(events).toContain('"sourceEventType":"wake.run.completed"');
     });
@@ -150,7 +149,7 @@ describe('tick runner', () => {
 
       await tickRunner.runTick();
 
-      const events = await readFile(join(root, 'events', '2026-07-05.jsonl'), 'utf8');
+      const events = await readFile(store.paths.eventFile('2026-07-05'), 'utf8');
       expect(events).toContain('"sourceEventType":"wake.publish.intent.requested"');
       expect(events).toContain('"sourceEventType":"ticket.reply.published"');
     });
@@ -341,7 +340,7 @@ describe('tick runner', () => {
       expect(publishedIntents[0]!.kind).toBe('failure');
       expect(publishedIntents[0]!.body).toContain('git network failure');
 
-      const events = await readFile(join(root, 'events', '2026-07-05.jsonl'), 'utf8');
+      const events = await readFile(store.paths.eventFile('2026-07-05'), 'utf8');
       const completedEvent = events
         .split('\n')
         .filter(Boolean)
@@ -353,8 +352,9 @@ describe('tick runner', () => {
       expect(completedEvent).toBeDefined();
       expect(completedEvent.payload.sentinel).toBe('FAILED');
 
-      const runFiles = (await readdir(join(root, 'runs'))).filter((file) => file.endsWith('.json'));
-      const runRecord = JSON.parse(await readFile(join(root, 'runs', runFiles[0]!), 'utf8'));
+      const runsRoot = join(store.paths.dataRoot, 'runs');
+      const runFiles = (await readdir(runsRoot)).filter((file) => file.endsWith('.json'));
+      const runRecord = JSON.parse(await readFile(join(runsRoot, runFiles[0]!), 'utf8'));
       expect(runRecord.status).toBe('failed');
     });
 
