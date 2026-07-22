@@ -4,6 +4,7 @@ export type DockerBuildInput = {
   image: string;
   dockerfile: string;
   contextDir: string;
+  buildArgs?: Record<string, string>;
 };
 
 export type DockerUiInput = {
@@ -99,7 +100,19 @@ export function createDockerCli(deps: {
 }) {
   return {
     async build(input: DockerBuildInput): Promise<void> {
-      await deps.run(['build', '-t', input.image, '-f', input.dockerfile, input.contextDir]);
+      const buildArgFlags = Object.entries(input.buildArgs ?? {}).flatMap(([key, value]) => [
+        '--build-arg',
+        `${key}=${value}`,
+      ]);
+      await deps.run([
+        'build',
+        '-t',
+        input.image,
+        '-f',
+        input.dockerfile,
+        ...buildArgFlags,
+        input.contextDir,
+      ]);
     },
 
     async up(input: DockerUpInput): Promise<void> {

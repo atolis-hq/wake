@@ -24,6 +24,37 @@ describe('docker cli adapter', () => {
     ]);
   });
 
+  it('passes build args as --build-arg flags before the context dir', async () => {
+    const calls: string[][] = [];
+    const docker = createDockerCli({
+      inspectContainer: async () => null,
+      inspectImage: async () => false,
+      run: async (args) => {
+        calls.push(args);
+      },
+    });
+
+    await docker.build({
+      image: 'wake-sandbox',
+      dockerfile: 'docker/Dockerfile',
+      contextDir: '/repo/wake',
+      buildArgs: { WAKE_VERSION: '1.2.3' },
+    });
+
+    expect(calls).toEqual([
+      [
+        'build',
+        '-t',
+        'wake-sandbox',
+        '-f',
+        'docker/Dockerfile',
+        '--build-arg',
+        'WAKE_VERSION=1.2.3',
+        '/repo/wake',
+      ],
+    ]);
+  });
+
   it('runs a new container with the expected mounts when none exists', async () => {
     const calls: string[][] = [];
     const docker = createDockerCli({

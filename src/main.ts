@@ -698,6 +698,7 @@ async function main() {
         wakeRoot,
         containerHomeRoot: stateStore.paths.containerHomeRoot,
         docker,
+        packagedTemplatesRoot: resolve(resolvePackageRoot(), 'docker'),
         stateStore,
         sleep: (ms) => new Promise((resolveSleep) => setTimeout(resolveSleep, ms)),
         logger: {

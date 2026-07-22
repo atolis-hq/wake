@@ -1,5 +1,5 @@
 ﻿import { resolve } from 'node:path';
-import { mkdtemp, stat } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 
 import { describe, expect, it, vi } from 'vitest';
@@ -11,6 +11,11 @@ describe('sandbox command', () => {
   const repoRoot = '/repo/wake';
   const wakeRoot = '/host/wake-home';
   const containerHomeRoot = '/host/wake-home/container-home';
+  const packagedTemplatesRoot = resolve(process.cwd(), 'docker');
+
+  async function makeTempWakeRoot(): Promise<string> {
+    return mkdtemp(resolve(tmpdir(), 'wake-sandbox-command-dockerfile-'));
+  }
 
   function createDockerMock() {
     return {
@@ -25,8 +30,11 @@ describe('sandbox command', () => {
 
   it('dispatches build with the generated Dockerfile and repo-root context', async () => {
     const docker = createDockerMock();
+    const tempWakeRoot = await makeTempWakeRoot();
+    await mkdir(resolve(tempWakeRoot, 'docker'), { recursive: true });
+    await writeFile(resolve(tempWakeRoot, 'docker', 'Dockerfile'), 'EXISTING', 'utf8');
     const config = {
-      ...createDefaultWakeConfig(wakeRoot),
+      ...createDefaultWakeConfig(tempWakeRoot),
       dev: {
         repoRoot,
       },
@@ -35,9 +43,10 @@ describe('sandbox command', () => {
     await runSandboxCommand({
       args: ['build'],
       config,
-      wakeRoot,
+      wakeRoot: tempWakeRoot,
       containerHomeRoot,
       docker,
+      packagedTemplatesRoot,
       stateStore: { listRunRecords: async () => [] },
       sleep: async () => {},
       logger: { info: () => {} },
@@ -45,7 +54,7 @@ describe('sandbox command', () => {
 
     expect(docker.build).toHaveBeenCalledWith({
       image: 'wake-sandbox',
-      dockerfile: resolve(wakeRoot, 'docker', 'Dockerfile'),
+      dockerfile: resolve(tempWakeRoot, 'docker', 'Dockerfile'),
       contextDir: '/repo/wake',
     });
   });
@@ -60,11 +69,93 @@ describe('sandbox command', () => {
         wakeRoot,
         containerHomeRoot,
         docker,
+        packagedTemplatesRoot,
         stateStore: { listRunRecords: async () => [] },
         sleep: async () => {},
         logger: { info: () => {} },
       }),
     ).rejects.toThrow('Sandbox build requires config.dev.repoRoot');
+  });
+
+  it('writes docker/Dockerfile from the source template when missing and dev.mode is "source"', async () => {
+    const tempWakeRoot = await makeTempWakeRoot();
+    const dockerBuild = vi.fn(async () => {});
+    const docker = { ...createDockerMock(), build: dockerBuild };
+    const config = {
+      ...createDefaultWakeConfig(tempWakeRoot),
+      dev: { repoRoot, mode: 'source' as const },
+    };
+
+    await runSandboxCommand({
+      args: ['build'],
+      config,
+      wakeRoot: tempWakeRoot,
+      containerHomeRoot,
+      docker,
+      packagedTemplatesRoot,
+      stateStore: { listRunRecords: async () => [] },
+      sleep: async () => {},
+      logger: { info: () => {} },
+    });
+
+    const written = await readFile(resolve(tempWakeRoot, 'docker', 'Dockerfile'), 'utf8');
+    expect(written).toContain('npm run build');
+    expect(dockerBuild).toHaveBeenCalled();
+  });
+
+  it('writes docker/Dockerfile from the packaged template when missing and dev.mode is "packaged"', async () => {
+    const tempWakeRoot = await makeTempWakeRoot();
+    const docker = createDockerMock();
+    const config = {
+      ...createDefaultWakeConfig(tempWakeRoot),
+      dev: { repoRoot, mode: 'packaged' as const },
+    };
+
+    await runSandboxCommand({
+      args: ['build'],
+      config,
+      wakeRoot: tempWakeRoot,
+      containerHomeRoot,
+      docker,
+      packagedTemplatesRoot,
+      stateStore: { listRunRecords: async () => [] },
+      sleep: async () => {},
+      logger: { info: () => {} },
+    });
+
+    const written = await readFile(resolve(tempWakeRoot, 'docker', 'Dockerfile'), 'utf8');
+    expect(written).toContain('"@atolis-hq/wake@');
+    expect(docker.build).toHaveBeenCalledWith(
+      expect.objectContaining({
+        buildArgs: { WAKE_VERSION: expect.any(String) },
+      }),
+    );
+  });
+
+  it('leaves an existing docker/Dockerfile untouched on a second build', async () => {
+    const tempWakeRoot = await makeTempWakeRoot();
+    const docker = createDockerMock();
+    await mkdir(resolve(tempWakeRoot, 'docker'), { recursive: true });
+    await writeFile(resolve(tempWakeRoot, 'docker', 'Dockerfile'), 'CUSTOM CONTENT', 'utf8');
+    const config = {
+      ...createDefaultWakeConfig(tempWakeRoot),
+      dev: { repoRoot, mode: 'packaged' as const },
+    };
+
+    await runSandboxCommand({
+      args: ['build'],
+      config,
+      wakeRoot: tempWakeRoot,
+      containerHomeRoot,
+      docker,
+      packagedTemplatesRoot,
+      stateStore: { listRunRecords: async () => [] },
+      sleep: async () => {},
+      logger: { info: () => {} },
+    });
+
+    const written = await readFile(resolve(tempWakeRoot, 'docker', 'Dockerfile'), 'utf8');
+    expect(written).toBe('CUSTOM CONTENT');
   });
 
   it('dispatches up with config-derived container settings', async () => {
@@ -76,6 +167,7 @@ describe('sandbox command', () => {
       wakeRoot,
       containerHomeRoot,
       docker,
+      packagedTemplatesRoot,
       stateStore: { listRunRecords: async () => [] },
       sleep: async () => {},
       logger: { info: () => {} },
@@ -111,6 +203,7 @@ describe('sandbox command', () => {
       wakeRoot,
       containerHomeRoot,
       docker,
+      packagedTemplatesRoot,
       stateStore: { listRunRecords: async () => [] },
       sleep: async () => {},
       logger: { info: () => {} },
@@ -152,6 +245,7 @@ describe('sandbox command', () => {
       wakeRoot,
       containerHomeRoot: tempContainerHomeRoot,
       docker,
+      packagedTemplatesRoot,
       stateStore: { listRunRecords: async () => [] },
       sleep: async () => {},
       logger: { info: () => {} },
@@ -174,6 +268,7 @@ describe('sandbox command', () => {
       wakeRoot,
       containerHomeRoot,
       docker,
+      packagedTemplatesRoot,
       stateStore: { listRunRecords: async () => [] },
       sleep: async () => {},
       logger: { info: () => {} },
@@ -196,6 +291,7 @@ describe('sandbox command', () => {
       wakeRoot,
       containerHomeRoot,
       docker,
+      packagedTemplatesRoot,
       stateStore: { listRunRecords } as never,
       sleep: vi.fn(async () => {}),
       logger: { info: () => {} },
@@ -214,6 +310,7 @@ describe('sandbox command', () => {
       wakeRoot,
       containerHomeRoot,
       docker,
+      packagedTemplatesRoot,
       stateStore: { listRunRecords: async () => [] },
       sleep: async () => {},
       logger: { info: () => {} },
@@ -255,6 +352,7 @@ describe('sandbox command', () => {
       wakeRoot,
       containerHomeRoot,
       docker,
+      packagedTemplatesRoot,
       stateStore: { listRunRecords: async () => [] } as never,
       sleep: vi.fn(async () => {}),
       logger: { info: () => {} },
@@ -313,6 +411,7 @@ describe('sandbox command', () => {
         wakeRoot,
         containerHomeRoot,
         docker,
+        packagedTemplatesRoot,
         stateStore: { listRunRecords: async () => [] } as never,
         sleep,
         logger: { info: () => {}, error: () => {} },
@@ -348,6 +447,7 @@ describe('sandbox command', () => {
       wakeRoot,
       containerHomeRoot,
       docker,
+      packagedTemplatesRoot,
       stateStore: { listRunRecords: async () => [] },
       sleep: async () => {},
       logger: { info: () => {} },
@@ -367,6 +467,7 @@ describe('sandbox command', () => {
       wakeRoot,
       containerHomeRoot,
       docker,
+      packagedTemplatesRoot,
       stateStore: { listRunRecords: async () => [] },
       sleep: async () => {},
       logger: { info: () => {} },
@@ -393,6 +494,7 @@ describe('sandbox command', () => {
       wakeRoot,
       containerHomeRoot,
       docker,
+      packagedTemplatesRoot,
       stateStore: { listRunRecords: async () => [] },
       sleep: async () => {},
       logger: { info: () => {} },
@@ -434,6 +536,7 @@ describe('sandbox command', () => {
       wakeRoot,
       containerHomeRoot,
       docker,
+      packagedTemplatesRoot,
       stateStore: { listRunRecords: async () => [] },
       sleep: async () => {},
       logger: { info: () => {} },
@@ -463,6 +566,7 @@ describe('sandbox command', () => {
       wakeRoot,
       containerHomeRoot,
       docker,
+      packagedTemplatesRoot,
       stateStore: { listRunRecords: async () => [] },
       sleep: async () => {},
       logger: { info: () => {} },
@@ -481,6 +585,7 @@ describe('sandbox command', () => {
         wakeRoot,
         containerHomeRoot,
         docker,
+        packagedTemplatesRoot,
         stateStore: { listRunRecords: async () => [] },
         sleep: async () => {},
         logger: { info: () => {} },

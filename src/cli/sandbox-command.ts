@@ -1,4 +1,4 @@
-import { mkdir } from 'node:fs/promises';
+import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { posix, resolve } from 'node:path';
 
 import type { DockerCli } from '../adapters/docker/docker-cli.js';
@@ -10,6 +10,32 @@ import { runSelfUpdateCommand, runSelfUpdateLoop } from './self-update-command.j
 import { runStopCommand } from './stop-command.js';
 import { buildSandboxLoggedCommand } from './sandbox-logging.js';
 import type { WakeConfig } from '../domain/types.js';
+import { wakeVersion } from '../version.js';
+
+async function ensureDockerfile(input: {
+  wakeRoot: string;
+  devMode: 'source' | 'packaged' | undefined;
+  packagedTemplatesRoot: string;
+}): Promise<void> {
+  const targetPath = resolve(input.wakeRoot, 'docker', 'Dockerfile');
+
+  try {
+    await access(targetPath);
+    return; // already present — user-owned, never overwritten
+  } catch {
+    // fall through to write it
+  }
+
+  const mode = input.devMode ?? 'packaged';
+  const templatePath = resolve(
+    input.packagedTemplatesRoot,
+    mode === 'source' ? 'Dockerfile' : 'Dockerfile.packaged',
+  );
+  const content = await readFile(templatePath, 'utf8');
+
+  await mkdir(resolve(input.wakeRoot, 'docker'), { recursive: true });
+  await writeFile(targetPath, content, 'utf8');
+}
 
 async function ensureContainerHomeMountParents(input: {
   containerHomeRoot: string;
@@ -64,6 +90,7 @@ export async function runSandboxCommand(input: {
   wakeRoot: string;
   containerHomeRoot: string;
   docker: DockerCli;
+  packagedTemplatesRoot: string;
   stateStore: { listRunRecords: () => Promise<RunRecord[]> };
   sleep: (ms: number) => Promise<void>;
   logger: { info: (message: string) => void; error?: (message: string) => void };
@@ -92,10 +119,19 @@ export async function runSandboxCommand(input: {
       throw new Error('Sandbox build requires config.dev.repoRoot');
     }
 
+    await ensureDockerfile({
+      wakeRoot: input.wakeRoot,
+      devMode: input.config.dev?.mode,
+      packagedTemplatesRoot: input.packagedTemplatesRoot,
+    });
+
     await input.docker.build({
       image: input.config.sandbox.image,
       dockerfile: resolve(input.wakeRoot, 'docker', 'Dockerfile'),
       contextDir: repoRoot,
+      ...(input.config.dev?.mode === 'packaged'
+        ? { buildArgs: { WAKE_VERSION: wakeVersion } }
+        : {}),
     });
     return;
   }
