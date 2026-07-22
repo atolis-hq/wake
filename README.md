@@ -1,9 +1,9 @@
 # Wake
 
-Wake is a local control plane for autonomous software work. It watches the work
-channels your team already uses, such as GitHub Issues, brings each item to the
-right coding agent or human reviewer, and keeps the durable record attached to
-the work instead of the terminal session that happened to run it.
+Wake is a control plane for autonomous software engineering. It watches the
+channels your team already uses, coordinates agent activity and involves humans
+when needed, and keeps the durable record attached to the work instead of the
+terminal session that happened to run it.
 
 Create an issue, assign Wake, and keep doing your own work. Wake investigates,
 asks for input when human judgment matters, proposes a plan, launches local
