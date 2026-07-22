@@ -37,7 +37,7 @@ The repo's own `docker/` directory (published under the package's `files` allowl
 - `docker/Dockerfile` (existing, unchanged): `WORKDIR /app`, `COPY package*.json ./`, `RUN npm ci`, `COPY . .`, `RUN npm run build`.
 - `docker/Dockerfile.packaged` (new): `RUN npm install -g @atolis-hq/wake@<version>`, where `<version>` is the exact version of the CLI that ran `wake init` (read from the running CLI's own `wakeVersion`/`package.json` at scaffold time, not `latest` — the container must match what the user had installed when they scaffolded, not drift on rebuild). No `tsc`, no `src/` copy.
 
-`scaffoldWakeHome` (`src/cli/scaffold-assets.ts`) copies whichever template matches the decided `dev.mode` as `wake-home/docker/Dockerfile` — a wake-home always ends up with exactly one Dockerfile, matching today's scaffold shape (finding #14's Dockerfile-is-user-owned-and-never-auto-overwritten property is unchanged; this only affects what gets written once at `init` time).
+**`dev.mode` is decided at `init` time, but the Dockerfile itself is written lazily** — see the [wake-home restructure design](2026-07-22-wake-home-restructure-design.md)'s §3 revision: `wake init` no longer scaffolds `docker/` at all (this was revised after the initial design pass — see that doc's changelog). `wake sandbox build` writes `wake-home/docker/Dockerfile` from whichever template matches `config.dev.mode` the first time it's missing, then builds. A wake-home still always ends up with exactly one Dockerfile once the user has actually opted into sandbox use (finding #14's Dockerfile-is-user-owned-and-never-auto-overwritten property is unchanged — this only changes *when* the one-time write happens, from `init` to first `sandbox build`).
 
 Switching modes for an existing wake-home is not supported as a live operation — re-run `wake init` into a fresh directory, or hand-edit `dev.mode` and `docker/Dockerfile` together. No mode-switch tooling is built, consistent with finding #15's "no migration tooling for a pre-release layout/config change" decision.
 
@@ -64,8 +64,8 @@ Existing `config.json` files (e.g. `wake-test`) predate this field and have no `
 
 ## Testing
 
-- `scaffold-assets.test.ts`: mode detection for a source checkout (has `src/main.ts` + `tsconfig.json`) vs. a pruned package tree (doesn't), the `--dev`/`--packaged` override flags, and that the correct Dockerfile template is written to `wake-home/docker/Dockerfile` in each case with the version placeholder substituted correctly in packaged mode.
-- `sandbox-command.test.ts`: `self-update` with `dev.mode: 'packaged'` (and with `dev.mode` unset) throws the new message and performs zero git calls; `dev.mode: 'source'` preserves today's behavior unchanged.
+- `scaffold-assets.test.ts`: mode detection for a source checkout (has `src/main.ts` + `tsconfig.json`) vs. a pruned package tree (doesn't), and the `--dev`/`--packaged` override flags, asserting the decided `dev.mode` is written into `config.json` (no Dockerfile-writing assertion here — that moved to `sandbox-command.test.ts`, see below).
+- `sandbox-command.test.ts`: `sandbox build` writes the correct Dockerfile template to `wake-home/docker/Dockerfile` the first time it's missing, with the version placeholder substituted correctly in packaged mode, and leaves an existing `docker/Dockerfile` untouched on subsequent builds (user-owned, never overwritten); `self-update` with `dev.mode: 'packaged'` (and with `dev.mode` unset) throws the new message and performs zero git calls; `dev.mode: 'source'` preserves today's behavior unchanged.
 
 ## Documentation
 
