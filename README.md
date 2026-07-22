@@ -184,6 +184,8 @@ Use the generated launcher from the Wake home for day-to-day operation. The
 launcher runs host setup commands locally and forwards runtime commands into the
 sandbox with the correct Wake home mounted at `/wake`.
 
+Run `wake --help` at any time for the full command list.
+
 ```sh
 cd ./wake-home
 ./wake.sh sandbox build
