@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { spawn } from 'node:child_process';
+import { access } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -57,6 +58,15 @@ export function readFlagBeforeCommandTerminator(name: string, args: string[]): s
 
 function resolvePackageRoot(): string {
   return resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+}
+
+export async function hasDockerfile(wakeRoot: string): Promise<boolean> {
+  try {
+    await access(resolve(wakeRoot, 'docker', 'Dockerfile'));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function routesOnlyToFake(config: WakeConfig): boolean {
@@ -235,9 +245,7 @@ async function inspectDockerContainer(
 }
 
 export async function buildRuntime(args: string[]) {
-  const wakeRoot = resolve(
-    readFlagBeforeCommandTerminator('--wake-root', args) ?? resolve(process.cwd(), '.wake'),
-  );
+  const wakeRoot = resolve(readFlagBeforeCommandTerminator('--wake-root', args) ?? process.cwd());
   const stateStore = createStateStore({ wakeRoot });
   await stateStore.ensureWakeRoot();
 
@@ -440,9 +448,7 @@ function resolveSmokEntry(
 }
 
 async function runUi(args: string[]) {
-  const wakeRoot = resolve(
-    readFlagBeforeCommandTerminator('--wake-root', args) ?? resolve(process.cwd(), '.wake'),
-  );
+  const wakeRoot = resolve(readFlagBeforeCommandTerminator('--wake-root', args) ?? process.cwd());
   const stateStore = createStateStore({ wakeRoot });
   await stateStore.ensureWakeRoot();
   const config = await loadWakeConfig({
@@ -468,9 +474,7 @@ async function runUi(args: string[]) {
 }
 
 async function runCorrelate(args: string[]) {
-  const wakeRoot = resolve(
-    readFlagBeforeCommandTerminator('--wake-root', args) ?? resolve(process.cwd(), '.wake'),
-  );
+  const wakeRoot = resolve(readFlagBeforeCommandTerminator('--wake-root', args) ?? process.cwd());
   const stateStore = createStateStore({ wakeRoot });
   await stateStore.ensureWakeRoot();
 
@@ -527,12 +531,16 @@ export function printUsage(stream: NodeJS.WritableStream): void {
       '  1. wake init ./wake-home',
       '  2. cd wake-home && ./wake.sh start   (or ./wake.ps1 start on Windows)',
       '',
-      'The bare `wake` binary runs directly on the host. The generated wake.sh/wake.ps1',
-      'launcher routes runtime commands (tick/start/ui/smoke/correlate) into the sandbox.',
+      'Runtime commands (tick/start/ui/smoke/correlate) auto-delegate into the sandbox',
+      'when docker/Dockerfile exists at --wake-root (i.e. after `wake sandbox build`),',
+      'the same way the generated wake.sh/wake.ps1 launcher does. Pass --host to run',
+      'directly on the host instead.',
       '',
     ].join('\n'),
   );
 }
+
+const runtimeCommands = new Set(['tick', 'start', 'ui', 'smoke', 'correlate']);
 
 export async function dispatchMainCommand(input: {
   args: string[];
@@ -543,6 +551,7 @@ export async function dispatchMainCommand(input: {
   runSmoke: (args: string[]) => Promise<unknown>;
   runUi: (args: string[]) => Promise<unknown>;
   runCorrelate: (args: string[]) => Promise<unknown>;
+  execIntoSandbox: (args: string[]) => Promise<unknown>;
 }) {
   const command = input.args[0] ?? 'help';
   if (command === '--version' || command === '-v' || command === 'version') {
@@ -552,16 +561,6 @@ export async function dispatchMainCommand(input: {
 
   if (command === '--help' || command === '-h' || command === 'help') {
     printUsage(process.stdout);
-    return;
-  }
-
-  if (command === 'tick') {
-    await input.runTick(input.args.slice(1));
-    return;
-  }
-
-  if (command === 'start') {
-    await input.runStart(input.args.slice(1));
     return;
   }
 
@@ -580,18 +579,30 @@ export async function dispatchMainCommand(input: {
     return;
   }
 
-  if (command === 'smoke') {
-    await input.runSmoke(input.args.slice(1));
-    return;
-  }
+  if (runtimeCommands.has(command)) {
+    const commandArgs = input.args.slice(1);
+    const wakeRoot = resolve(
+      readFlagBeforeCommandTerminator('--wake-root', commandArgs) ?? process.cwd(),
+    );
+    const host = commandArgs.includes('--host');
 
-  if (command === 'ui') {
-    await input.runUi(input.args.slice(1));
-    return;
-  }
+    if (!host && (await hasDockerfile(wakeRoot))) {
+      await input.execIntoSandbox(input.args);
+      return;
+    }
 
-  if (command === 'correlate') {
-    await input.runCorrelate(input.args.slice(1));
+    const hostArgs = commandArgs.filter((arg) => arg !== '--host');
+    if (command === 'tick') {
+      await input.runTick(hostArgs);
+    } else if (command === 'start') {
+      await input.runStart(hostArgs);
+    } else if (command === 'ui') {
+      await input.runUi(hostArgs);
+    } else if (command === 'smoke') {
+      await input.runSmoke(hostArgs);
+    } else {
+      await input.runCorrelate(hostArgs);
+    }
     return;
   }
 
@@ -601,6 +612,113 @@ export async function dispatchMainCommand(input: {
 
 async function main() {
   const args = process.argv.slice(2);
+
+  const runSandbox = async (commandArgs: string[]) => {
+    const wakeRoot = resolve(
+      readFlagBeforeCommandTerminator('--wake-root', commandArgs) ?? process.cwd(),
+    );
+    const stateStore = createStateStore({ wakeRoot });
+    await stateStore.ensureWakeRoot();
+    const config = await loadWakeConfig({
+      wakeRoot,
+      configFile: stateStore.paths.configFile,
+    });
+    const docker = createDockerCli({
+      // BuildKit is required for the Dockerfile's cache-mount syntax
+      // (`RUN --mount=type=cache`), which keeps `npm`/`apt` package
+      // caches warm across builds even when a layer above them changes.
+      run: (dockerArgs) =>
+        runCommand('docker', dockerArgs, { ...process.env, DOCKER_BUILDKIT: '1' }),
+      inspectImage: inspectDockerImage,
+      inspectContainer: inspectDockerContainer,
+    });
+
+    const repoRoot = config.dev?.repoRoot;
+    const selfUpdate =
+      commandArgs[0] === 'self-update' &&
+      config.dev?.mode === 'source' &&
+      repoRoot !== undefined &&
+      repoRoot.length > 0
+        ? {
+            git: {
+              latestTag: async () => {
+                await runCommand('git', ['-C', repoRoot, 'fetch', '--tags']);
+                const output = await runCommandCapture('git', [
+                  '-C',
+                  repoRoot,
+                  'tag',
+                  '--list',
+                  'v*',
+                  '--sort=-v:refname',
+                ]);
+                const [latest] = output.split('\n').filter((line) => line.trim().length > 0);
+                if (latest === undefined) {
+                  throw new Error('No version tags found in repo');
+                }
+                return latest.trim();
+              },
+              isWorkingTreeClean: async () => {
+                const output = await runCommandCapture('git', [
+                  '-C',
+                  repoRoot,
+                  'status',
+                  '--porcelain',
+                ]);
+                return output.trim().length === 0;
+              },
+              checkoutTag: async (tag: string) => {
+                await runCommand('git', ['-C', repoRoot, 'checkout', tag]);
+              },
+            },
+            issueReporter: {
+              createIssue: async (issue: { title: string; body: string }) => {
+                const remoteUrl = await runCommandCapture('git', [
+                  '-C',
+                  repoRoot,
+                  'remote',
+                  'get-url',
+                  'origin',
+                ]);
+                const repoSlug = parseGithubRepoSlug(remoteUrl);
+                await runCommand('gh', [
+                  'issue',
+                  'create',
+                  '--repo',
+                  repoSlug,
+                  '--title',
+                  issue.title,
+                  '--body',
+                  issue.body,
+                ]);
+              },
+            },
+            readLedger: () => readSelfUpdateLedger(resolve(wakeRoot, 'self-update-ledger.json')),
+            writeLedger: (ledger: SelfUpdateLedger) =>
+              writeSelfUpdateLedger(resolve(wakeRoot, 'self-update-ledger.json'), ledger),
+          }
+        : undefined;
+
+    await runSandboxCommand({
+      args: commandArgs,
+      config,
+      wakeRoot,
+      containerHomeRoot: stateStore.paths.containerHomeRoot,
+      docker,
+      packagedTemplatesRoot: resolve(resolvePackageRoot(), 'docker'),
+      stateStore,
+      sleep: (ms) => new Promise((resolveSleep) => setTimeout(resolveSleep, ms)),
+      logger: {
+        info(message) {
+          console.log(message);
+        },
+        error(message) {
+          console.error(message);
+        },
+      },
+      selfUpdate,
+    });
+  };
+
   await dispatchMainCommand({
     args,
     runInit: async (commandArgs) => {
@@ -610,116 +728,22 @@ async function main() {
         repoRoot: resolvePackageRoot(),
       });
     },
-    runSandbox: async (commandArgs) => {
-      const wakeRoot = resolve(
-        readFlagBeforeCommandTerminator('--wake-root', commandArgs) ?? process.cwd(),
-      );
-      const stateStore = createStateStore({ wakeRoot });
-      await stateStore.ensureWakeRoot();
-      const config = await loadWakeConfig({
-        wakeRoot,
-        configFile: stateStore.paths.configFile,
-      });
-      const docker = createDockerCli({
-        // BuildKit is required for the Dockerfile's cache-mount syntax
-        // (`RUN --mount=type=cache`), which keeps `npm`/`apt` package
-        // caches warm across builds even when a layer above them changes.
-        run: (dockerArgs) =>
-          runCommand('docker', dockerArgs, { ...process.env, DOCKER_BUILDKIT: '1' }),
-        inspectImage: inspectDockerImage,
-        inspectContainer: inspectDockerContainer,
-      });
-
-      const repoRoot = config.dev?.repoRoot;
-      const selfUpdate =
-        commandArgs[0] === 'self-update' &&
-        config.dev?.mode === 'source' &&
-        repoRoot !== undefined &&
-        repoRoot.length > 0
-          ? {
-              git: {
-                latestTag: async () => {
-                  await runCommand('git', ['-C', repoRoot, 'fetch', '--tags']);
-                  const output = await runCommandCapture('git', [
-                    '-C',
-                    repoRoot,
-                    'tag',
-                    '--list',
-                    'v*',
-                    '--sort=-v:refname',
-                  ]);
-                  const [latest] = output.split('\n').filter((line) => line.trim().length > 0);
-                  if (latest === undefined) {
-                    throw new Error('No version tags found in repo');
-                  }
-                  return latest.trim();
-                },
-                isWorkingTreeClean: async () => {
-                  const output = await runCommandCapture('git', [
-                    '-C',
-                    repoRoot,
-                    'status',
-                    '--porcelain',
-                  ]);
-                  return output.trim().length === 0;
-                },
-                checkoutTag: async (tag: string) => {
-                  await runCommand('git', ['-C', repoRoot, 'checkout', tag]);
-                },
-              },
-              issueReporter: {
-                createIssue: async (issue: { title: string; body: string }) => {
-                  const remoteUrl = await runCommandCapture('git', [
-                    '-C',
-                    repoRoot,
-                    'remote',
-                    'get-url',
-                    'origin',
-                  ]);
-                  const repoSlug = parseGithubRepoSlug(remoteUrl);
-                  await runCommand('gh', [
-                    'issue',
-                    'create',
-                    '--repo',
-                    repoSlug,
-                    '--title',
-                    issue.title,
-                    '--body',
-                    issue.body,
-                  ]);
-                },
-              },
-              readLedger: () => readSelfUpdateLedger(resolve(wakeRoot, 'self-update-ledger.json')),
-              writeLedger: (ledger: SelfUpdateLedger) =>
-                writeSelfUpdateLedger(resolve(wakeRoot, 'self-update-ledger.json'), ledger),
-            }
-          : undefined;
-
-      await runSandboxCommand({
-        args: commandArgs,
-        config,
-        wakeRoot,
-        containerHomeRoot: stateStore.paths.containerHomeRoot,
-        docker,
-        packagedTemplatesRoot: resolve(resolvePackageRoot(), 'docker'),
-        stateStore,
-        sleep: (ms) => new Promise((resolveSleep) => setTimeout(resolveSleep, ms)),
-        logger: {
-          info(message) {
-            console.log(message);
-          },
-          error(message) {
-            console.error(message);
-          },
-        },
-        selfUpdate,
-      });
-    },
+    runSandbox,
     runTick,
     runStart,
     runSmoke,
     runUi,
     runCorrelate,
+    execIntoSandbox: async (commandArgs) => {
+      const withoutHostFlag = commandArgs.filter((arg) => arg !== '--host');
+      const wakeRootIndex = withoutHostFlag.indexOf('--wake-root');
+      const rewritten =
+        wakeRootIndex === -1
+          ? [...withoutHostFlag, '--wake-root', '/wake']
+          : withoutHostFlag.map((arg, index) => (index === wakeRootIndex + 1 ? '/wake' : arg));
+
+      await runSandbox(['exec', '--', 'node', '/app/dist/src/main.js', ...rewritten]);
+    },
   });
 }
 

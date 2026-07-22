@@ -1,3 +1,7 @@
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import { describe, expect, it, vi } from 'vitest';
 
 import {
@@ -7,6 +11,17 @@ import {
   printUsage,
   readFlagBeforeCommandTerminator,
 } from '../../src/main.js';
+
+async function makeTempWakeRootWithDockerfile(): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), 'wake-main-test-'));
+  await mkdir(join(dir, 'docker'), { recursive: true });
+  await writeFile(join(dir, 'docker', 'Dockerfile'), 'FROM node:20-slim\n', 'utf8');
+  return dir;
+}
+
+async function makeTempWakeRootWithoutDockerfile(): Promise<string> {
+  return await mkdtemp(join(tmpdir(), 'wake-main-test-'));
+}
 
 describe('main command routing', () => {
   it('prints the embedded version for --version', async () => {
@@ -21,6 +36,7 @@ describe('main command routing', () => {
       runSmoke: async () => {},
       runUi: async () => {},
       runCorrelate: async () => {},
+      execIntoSandbox: async () => {},
     });
 
     expect(log).toHaveBeenCalledWith('0.1.0-dev');
@@ -53,6 +69,9 @@ describe('main command routing', () => {
       runCorrelate: async () => {
         calls.push('correlate');
       },
+      execIntoSandbox: async () => {
+        calls.push('exec-into-sandbox');
+      },
     });
 
     await dispatchMainCommand({
@@ -77,6 +96,9 @@ describe('main command routing', () => {
       },
       runCorrelate: async () => {
         calls.push('correlate-again');
+      },
+      execIntoSandbox: async () => {
+        calls.push('exec-into-sandbox-again');
       },
     });
 
@@ -109,16 +131,20 @@ describe('main command routing', () => {
       runCorrelate: async () => {
         calls.push('correlate');
       },
+      execIntoSandbox: async () => {
+        calls.push('exec-into-sandbox');
+      },
     });
 
     expect(calls).toEqual(['sandbox:stop --timeout-ms 5000']);
   });
 
   it('routes explicit smoke targets through the smoke path', async () => {
+    const wakeRoot = await makeTempWakeRootWithoutDockerfile();
     const runSmoke = vi.fn(async () => {});
 
     await dispatchMainCommand({
-      args: ['smoke', 'claude', '--remote-control'],
+      args: ['smoke', 'claude', '--remote-control', '--wake-root', wakeRoot],
       runInit: async () => {},
       runSandbox: async () => {},
       runTick: async () => {},
@@ -126,10 +152,11 @@ describe('main command routing', () => {
       runSmoke,
       runUi: async () => {},
       runCorrelate: async () => {},
+      execIntoSandbox: async () => {},
     });
 
     await dispatchMainCommand({
-      args: ['smoke', 'codex', '--json'],
+      args: ['smoke', 'codex', '--json', '--wake-root', wakeRoot],
       runInit: async () => {},
       runSandbox: async () => {},
       runTick: async () => {},
@@ -137,10 +164,16 @@ describe('main command routing', () => {
       runSmoke,
       runUi: async () => {},
       runCorrelate: async () => {},
+      execIntoSandbox: async () => {},
     });
 
-    expect(runSmoke).toHaveBeenNthCalledWith(1, ['claude', '--remote-control']);
-    expect(runSmoke).toHaveBeenNthCalledWith(2, ['codex', '--json']);
+    expect(runSmoke).toHaveBeenNthCalledWith(1, [
+      'claude',
+      '--remote-control',
+      '--wake-root',
+      wakeRoot,
+    ]);
+    expect(runSmoke).toHaveBeenNthCalledWith(2, ['codex', '--json', '--wake-root', wakeRoot]);
   });
 
   it('routes smoke with no explicit target through the smoke path', async () => {
@@ -155,16 +188,18 @@ describe('main command routing', () => {
       runSmoke,
       runUi: async () => {},
       runCorrelate: async () => {},
+      execIntoSandbox: async () => {},
     });
 
     expect(runSmoke).toHaveBeenCalledWith(['--wake-root', '/tmp/wake-home']);
   });
 
   it('routes the ui command through the ui path', async () => {
+    const wakeRoot = await makeTempWakeRootWithoutDockerfile();
     const runUi = vi.fn(async () => {});
 
     await dispatchMainCommand({
-      args: ['ui', '--port', '4400'],
+      args: ['ui', '--port', '4400', '--wake-root', wakeRoot],
       runInit: async () => {},
       runSandbox: async () => {},
       runTick: async () => {},
@@ -172,16 +207,26 @@ describe('main command routing', () => {
       runSmoke: async () => {},
       runUi,
       runCorrelate: async () => {},
+      execIntoSandbox: async () => {},
     });
 
-    expect(runUi).toHaveBeenCalledWith(['--port', '4400']);
+    expect(runUi).toHaveBeenCalledWith(['--port', '4400', '--wake-root', wakeRoot]);
   });
 
   it('routes the correlate command through the correlate path', async () => {
+    const wakeRoot = await makeTempWakeRootWithoutDockerfile();
     const runCorrelate = vi.fn(async () => {});
 
     await dispatchMainCommand({
-      args: ['correlate', 'work-01JZ0000000000000000000029', 'github:pr:456', '--role', 'review'],
+      args: [
+        'correlate',
+        'work-01JZ0000000000000000000029',
+        'github:pr:456',
+        '--role',
+        'review',
+        '--wake-root',
+        wakeRoot,
+      ],
       runInit: async () => {},
       runSandbox: async () => {},
       runTick: async () => {},
@@ -189,6 +234,7 @@ describe('main command routing', () => {
       runSmoke: async () => {},
       runUi: async () => {},
       runCorrelate,
+      execIntoSandbox: async () => {},
     });
 
     expect(runCorrelate).toHaveBeenCalledWith([
@@ -196,6 +242,8 @@ describe('main command routing', () => {
       'github:pr:456',
       '--role',
       'review',
+      '--wake-root',
+      wakeRoot,
     ]);
   });
 
@@ -323,6 +371,7 @@ describe('help and unknown-command handling', () => {
       runSmoke: async () => {},
       runUi: async () => {},
       runCorrelate: async () => {},
+      execIntoSandbox: async () => {},
     };
   }
 
@@ -357,5 +406,91 @@ describe('help and unknown-command handling', () => {
     ).rejects.toThrow('Unknown command: bogus-command');
 
     write.mockRestore();
+  });
+});
+
+describe('sandbox auto-delegation', () => {
+  it('auto-delegates a runtime command into the sandbox when docker/Dockerfile exists', async () => {
+    const wakeRoot = await makeTempWakeRootWithDockerfile();
+    const execIntoSandbox = vi.fn(async () => {});
+    const runTick = vi.fn(async () => {});
+
+    await dispatchMainCommand({
+      args: ['tick', '--wake-root', wakeRoot],
+      runInit: async () => {},
+      runSandbox: async () => {},
+      runTick,
+      runStart: async () => {},
+      runSmoke: async () => {},
+      runUi: async () => {},
+      runCorrelate: async () => {},
+      execIntoSandbox,
+    });
+
+    expect(execIntoSandbox).toHaveBeenCalled();
+    expect(runTick).not.toHaveBeenCalled();
+  });
+
+  it('runs on the host when docker/Dockerfile does not exist', async () => {
+    const wakeRoot = await makeTempWakeRootWithoutDockerfile();
+    const execIntoSandbox = vi.fn(async () => {});
+    const runTick = vi.fn(async () => {});
+
+    await dispatchMainCommand({
+      args: ['tick', '--wake-root', wakeRoot],
+      runInit: async () => {},
+      runSandbox: async () => {},
+      runTick,
+      runStart: async () => {},
+      runSmoke: async () => {},
+      runUi: async () => {},
+      runCorrelate: async () => {},
+      execIntoSandbox,
+    });
+
+    expect(runTick).toHaveBeenCalled();
+    expect(execIntoSandbox).not.toHaveBeenCalled();
+  });
+
+  it('--host bypasses auto-delegation even when docker/Dockerfile exists', async () => {
+    const wakeRoot = await makeTempWakeRootWithDockerfile();
+    const execIntoSandbox = vi.fn(async () => {});
+    const runTick = vi.fn(async () => {});
+
+    await dispatchMainCommand({
+      args: ['tick', '--wake-root', wakeRoot, '--host'],
+      runInit: async () => {},
+      runSandbox: async () => {},
+      runTick,
+      runStart: async () => {},
+      runSmoke: async () => {},
+      runUi: async () => {},
+      runCorrelate: async () => {},
+      execIntoSandbox,
+    });
+
+    expect(runTick).toHaveBeenCalled();
+    expect(execIntoSandbox).not.toHaveBeenCalled();
+  });
+
+  it('does not auto-delegate init/sandbox/stop even when docker/Dockerfile exists', async () => {
+    const wakeRoot = await makeTempWakeRootWithDockerfile();
+    const execIntoSandbox = vi.fn(async () => {});
+    const runSandbox = vi.fn(async () => {});
+
+    await dispatchMainCommand({
+      args: ['sandbox', 'build', '--wake-root', wakeRoot],
+      runInit: async () => {},
+      runSandbox,
+      runTick: async () => {},
+      runStart: async () => {},
+      runSmoke: async () => {},
+      runUi: async () => {},
+      runCorrelate: async () => {},
+      execIntoSandbox,
+    });
+
+    expect(runSandbox).toHaveBeenCalled();
+    expect(execIntoSandbox).not.toHaveBeenCalled();
   });
 });

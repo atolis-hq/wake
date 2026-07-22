@@ -184,6 +184,13 @@ Use the generated launcher from the Wake home for day-to-day operation. The
 launcher runs host setup commands locally and forwards runtime commands into the
 sandbox with the correct Wake home mounted at `/wake`.
 
+The bare `wake` binary does the same auto-delegation itself: once
+`docker/Dockerfile` exists under `--wake-root` (i.e. after `wake sandbox
+build` has run), runtime commands (`tick`/`start`/`ui`/`smoke`/`correlate`)
+automatically exec into `wake sandbox exec` instead of running on the host.
+Pass `--host` to force a runtime command to run directly on the host even
+when a sandbox is available.
+
 Run `wake --help` at any time for the full command list.
 
 `wake init` auto-detects whether it's running from a source checkout or a
