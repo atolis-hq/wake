@@ -4,7 +4,10 @@ import { join } from 'node:path';
 
 import { describe, expect, it, vi } from 'vitest';
 
-import { runStartupPreflight } from '../../src/cli/startup-preflight.js';
+import {
+  collectStartupPreflightFailures,
+  runStartupPreflight,
+} from '../../src/cli/startup-preflight.js';
 import { createDefaultWakeConfig } from '../../src/config/defaults.js';
 import type { WakeConfig } from '../../src/domain/types.js';
 
@@ -51,6 +54,32 @@ describe('startup preflight', () => {
     await expect(runStartupPreflight(config)).rejects.toThrow(
       /Wake startup preflight failed:[\s\S]*prompt template refine\.md or refine\.resume\.md/,
     );
+  });
+
+  it('collectStartupPreflightFailures returns the same failures runStartupPreflight would throw, without throwing', async () => {
+    const promptsRoot = await mkdtemp(join(tmpdir(), 'wake-preflight-prompts-'));
+    await writeFile(
+      join(promptsRoot, 'refine.start.md'),
+      '---\nstage: refine\nmode: start\nmaxTurns: 1\n---\nrefine',
+      'utf8',
+    );
+    const config: WakeConfig = {
+      ...baseConfig(),
+      paths: {
+        ...baseConfig().paths,
+        promptsRoot,
+      },
+    };
+
+    const failures = await collectStartupPreflightFailures(config);
+
+    expect(failures.length).toBeGreaterThan(0);
+    expect(failures[0]).toContain('prompt template refine.md or refine.resume.md');
+  });
+
+  it('collectStartupPreflightFailures returns an empty array for a fully valid config', async () => {
+    const failures = await collectStartupPreflightFailures(baseConfig());
+    expect(failures).toEqual([]);
   });
 
   it('checks only real runners that are reachable through configured routing', async () => {
