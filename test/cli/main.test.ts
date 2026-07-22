@@ -31,6 +31,7 @@ describe('main command routing', () => {
       args: ['--version'],
       runInit: async () => {},
       runSandbox: async () => {},
+      runSandboxSetup: async () => {},
       runTick: async () => {},
       runStart: async () => {},
       runSmoke: async () => {},
@@ -54,6 +55,7 @@ describe('main command routing', () => {
       runSandbox: async (args) => {
         calls.push(`sandbox:${args.join(' ')}`);
       },
+      runSandboxSetup: async () => {},
       runTick: async () => {
         calls.push('tick');
       },
@@ -82,6 +84,7 @@ describe('main command routing', () => {
       runSandbox: async (args) => {
         calls.push(`sandbox:${args.join(' ')}`);
       },
+      runSandboxSetup: async () => {},
       runTick: async () => {
         calls.push('tick-again');
       },
@@ -116,6 +119,7 @@ describe('main command routing', () => {
       runSandbox: async (args) => {
         calls.push(`sandbox:${args.join(' ')}`);
       },
+      runSandboxSetup: async () => {},
       runTick: async () => {
         calls.push('tick');
       },
@@ -147,6 +151,7 @@ describe('main command routing', () => {
       args: ['smoke', 'claude', '--remote-control', '--wake-root', wakeRoot],
       runInit: async () => {},
       runSandbox: async () => {},
+      runSandboxSetup: async () => {},
       runTick: async () => {},
       runStart: async () => {},
       runSmoke,
@@ -159,6 +164,7 @@ describe('main command routing', () => {
       args: ['smoke', 'codex', '--json', '--wake-root', wakeRoot],
       runInit: async () => {},
       runSandbox: async () => {},
+      runSandboxSetup: async () => {},
       runTick: async () => {},
       runStart: async () => {},
       runSmoke,
@@ -183,6 +189,7 @@ describe('main command routing', () => {
       args: ['smoke', '--wake-root', '/tmp/wake-home'],
       runInit: async () => {},
       runSandbox: async () => {},
+      runSandboxSetup: async () => {},
       runTick: async () => {},
       runStart: async () => {},
       runSmoke,
@@ -202,6 +209,7 @@ describe('main command routing', () => {
       args: ['ui', '--port', '4400', '--wake-root', wakeRoot],
       runInit: async () => {},
       runSandbox: async () => {},
+      runSandboxSetup: async () => {},
       runTick: async () => {},
       runStart: async () => {},
       runSmoke: async () => {},
@@ -229,6 +237,7 @@ describe('main command routing', () => {
       ],
       runInit: async () => {},
       runSandbox: async () => {},
+      runSandboxSetup: async () => {},
       runTick: async () => {},
       runStart: async () => {},
       runSmoke: async () => {},
@@ -366,6 +375,7 @@ describe('help and unknown-command handling', () => {
     return {
       runInit: async () => {},
       runSandbox: async () => {},
+      runSandboxSetup: async () => {},
       runTick: async () => {},
       runStart: async () => {},
       runSmoke: async () => {},
@@ -419,6 +429,7 @@ describe('sandbox auto-delegation', () => {
       args: ['tick', '--wake-root', wakeRoot],
       runInit: async () => {},
       runSandbox: async () => {},
+      runSandboxSetup: async () => {},
       runTick,
       runStart: async () => {},
       runSmoke: async () => {},
@@ -440,6 +451,7 @@ describe('sandbox auto-delegation', () => {
       args: ['tick', '--wake-root', wakeRoot],
       runInit: async () => {},
       runSandbox: async () => {},
+      runSandboxSetup: async () => {},
       runTick,
       runStart: async () => {},
       runSmoke: async () => {},
@@ -461,6 +473,7 @@ describe('sandbox auto-delegation', () => {
       args: ['tick', '--wake-root', wakeRoot, '--host'],
       runInit: async () => {},
       runSandbox: async () => {},
+      runSandboxSetup: async () => {},
       runTick,
       runStart: async () => {},
       runSmoke: async () => {},
@@ -482,6 +495,7 @@ describe('sandbox auto-delegation', () => {
       args: ['sandbox', 'build', '--wake-root', wakeRoot],
       runInit: async () => {},
       runSandbox,
+      runSandboxSetup: async () => {},
       runTick: async () => {},
       runStart: async () => {},
       runSmoke: async () => {},

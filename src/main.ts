@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 import { spawn } from 'node:child_process';
-import { access } from 'node:fs/promises';
-import { dirname, resolve } from 'node:path';
+import { existsSync } from 'node:fs';
+import { access, chmod, copyFile, mkdir } from 'node:fs/promises';
+import { dirname, join, resolve } from 'node:path';
+import { createInterface } from 'node:readline/promises';
 import { fileURLToPath } from 'node:url';
 
 import { createDockerCli } from './adapters/docker/docker-cli.js';
@@ -25,6 +27,7 @@ import { createGitHubPullRequestActivitySource } from './adapters/github/github-
 import { runCorrelateCommand } from './cli/correlate-command.js';
 import { runInitCommand } from './cli/init-command.js';
 import { runSandboxCommand } from './cli/sandbox-command.js';
+import { runSandboxSetupCommand } from './cli/sandbox-setup-command.js';
 import { runStartupPreflight } from './cli/startup-preflight.js';
 import { runUiCommand } from './cli/ui-command.js';
 import { loadWakeConfig } from './config/load-config.js';
@@ -184,6 +187,58 @@ async function runCommandCapture(command: string, args: string[]): Promise<strin
 
       reject(new Error(`${command} ${args.join(' ')} failed with exit code ${exitCode ?? 1}`));
     });
+  });
+}
+
+const codexBootstrapHome = '/home/wake/.codex';
+const codexRuntimeHome = '/home/wake/.codex-runtime';
+const sshHome = '/home/wake/.ssh';
+const sshKeyPath = join(sshHome, 'id_ed25519');
+
+async function prepareCodexHome(): Promise<void> {
+  await mkdir(codexRuntimeHome, { recursive: true });
+
+  const bootstrapConfig = join(codexBootstrapHome, 'config.toml');
+  if (existsSync(bootstrapConfig)) {
+    await copyFile(bootstrapConfig, join(codexRuntimeHome, 'config.toml'));
+  }
+
+  const bootstrapAuth = join(codexBootstrapHome, 'auth.json');
+  const runtimeAuth = join(codexRuntimeHome, 'auth.json');
+  if (existsSync(bootstrapAuth) && !existsSync(runtimeAuth)) {
+    await copyFile(bootstrapAuth, runtimeAuth);
+  }
+
+  process.env.CODEX_HOME = codexRuntimeHome;
+}
+
+async function ensureSshKey(): Promise<void> {
+  if (existsSync(sshKeyPath)) {
+    return;
+  }
+
+  await mkdir(sshHome, { recursive: true, mode: 0o700 });
+  await chmod(sshHome, 0o700);
+  await runCommand('ssh-keygen', ['-t', 'ed25519', '-f', sshKeyPath, '-N', '']);
+}
+
+async function promptYesNo(message: string): Promise<boolean> {
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    const answer = (await rl.question(`${message} `)).trim().toLowerCase();
+    return answer === 'y' || answer === 'yes';
+  } finally {
+    rl.close();
+  }
+}
+
+async function runSandboxSetup(): Promise<void> {
+  await runSandboxSetupCommand({
+    prompt: promptYesNo,
+    runInteractive: (command, args) => runCommand(command, args),
+    ensureSshKey,
+    prepareCodexHome,
+    log: (message) => console.log(message),
   });
 }
 
@@ -546,6 +601,7 @@ export async function dispatchMainCommand(input: {
   args: string[];
   runInit: (args: string[]) => Promise<unknown>;
   runSandbox: (args: string[]) => Promise<unknown>;
+  runSandboxSetup: (args: string[]) => Promise<unknown>;
   runTick: (args: string[]) => Promise<unknown>;
   runStart: (args: string[]) => Promise<unknown>;
   runSmoke: (args: string[]) => Promise<unknown>;
@@ -571,6 +627,11 @@ export async function dispatchMainCommand(input: {
 
   if (command === 'sandbox') {
     await input.runSandbox(input.args.slice(1));
+    return;
+  }
+
+  if (command === 'sandbox-setup') {
+    await input.runSandboxSetup(input.args.slice(1));
     return;
   }
 
@@ -729,6 +790,9 @@ async function main() {
       });
     },
     runSandbox,
+    runSandboxSetup: async () => {
+      await runSandboxSetup();
+    },
     runTick,
     runStart,
     runSmoke,
