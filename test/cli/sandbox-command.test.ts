@@ -605,6 +605,29 @@ describe('sandbox command', () => {
     expect(docker.logs).toHaveBeenCalledWith('wake-sandbox', 200);
   });
 
+  it('throws a dev.mode-specific error for self-update when selfUpdate deps are undefined', async () => {
+    const docker = createDockerMock();
+    const config = {
+      ...createDefaultWakeConfig(wakeRoot),
+      dev: { repoRoot: '/repo', mode: 'packaged' as const },
+    };
+
+    await expect(
+      runSandboxCommand({
+        args: ['self-update'],
+        config,
+        wakeRoot,
+        containerHomeRoot,
+        docker,
+        packagedTemplatesRoot,
+        stateStore: { listRunRecords: async () => [] },
+        sleep: async () => {},
+        logger: { info: () => {} },
+        selfUpdate: undefined,
+      }),
+    ).rejects.toThrow(/dev\.mode: "source"/);
+  });
+
   it('rejects unknown sandbox subcommands', async () => {
     const docker = createDockerMock();
 

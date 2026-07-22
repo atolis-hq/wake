@@ -199,7 +199,10 @@ export async function runSandboxCommand(input: {
       throw new Error('Sandbox self-update requires config.dev.repoRoot');
     }
     if (input.selfUpdate === undefined) {
-      throw new Error('Sandbox self-update requires git/issueReporter/ledger dependencies');
+      throw new Error(
+        'Sandbox self-update requires dev.mode: "source". For a packaged install, update instead with:\n' +
+          '  npm install -g @atolis-hq/wake@latest && wake sandbox build && wake sandbox update',
+      );
     }
 
     const selfUpdateArgs = input.args.slice(1);

@@ -632,7 +632,10 @@ async function main() {
 
       const repoRoot = config.dev?.repoRoot;
       const selfUpdate =
-        commandArgs[0] === 'self-update' && repoRoot !== undefined && repoRoot.length > 0
+        commandArgs[0] === 'self-update' &&
+        config.dev?.mode === 'source' &&
+        repoRoot !== undefined &&
+        repoRoot.length > 0
           ? {
               git: {
                 latestTag: async () => {
