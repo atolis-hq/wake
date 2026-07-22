@@ -163,4 +163,44 @@ describe('runDoctorCommand — version and prompt/Dockerfile drift notices', () 
     expect(report.notices.some((n) => n.includes('prompts/refine.md'))).toBe(true);
     expect(report.notices.some((n) => n.includes('docker/Dockerfile'))).toBe(true);
   });
+
+  it('still returns a report when containerRunning throws, and does not add a failure', async () => {
+    const report = await runDoctorCommand(baseConfig(), {
+      collectPreflightFailures: async () => [],
+      resolveGitHubToken: async () => 'tok',
+      ...baseDockerDeps(),
+      containerRunning: async () => {
+        throw new Error('docker not found');
+      },
+    });
+
+    expect(report.failures).toEqual([]);
+  });
+
+  it('still returns a report when execVersionInContainer throws, and does not add a failure', async () => {
+    const report = await runDoctorCommand(baseConfig(), {
+      collectPreflightFailures: async () => [],
+      resolveGitHubToken: async () => 'tok',
+      ...baseDockerDeps(),
+      containerRunning: async () => true,
+      execVersionInContainer: async () => {
+        throw new Error('exec failed');
+      },
+    });
+
+    expect(report.failures).toEqual([]);
+  });
+
+  it('still returns a report when diffPromptsAndDockerfile throws, and does not add a failure', async () => {
+    const report = await runDoctorCommand(baseConfig(), {
+      collectPreflightFailures: async () => [],
+      resolveGitHubToken: async () => 'tok',
+      ...baseDockerDeps(),
+      diffPromptsAndDockerfile: async () => {
+        throw new Error('fs error');
+      },
+    });
+
+    expect(report.failures).toEqual([]);
+  });
 });

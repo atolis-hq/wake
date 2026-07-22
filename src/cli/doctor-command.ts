@@ -47,18 +47,28 @@ export async function runDoctorCommand(
     }
   }
 
-  if (await deps.containerRunning()) {
-    const sandboxVersion = await deps.execVersionInContainer();
-    if (sandboxVersion !== '' && sandboxVersion !== deps.installedVersion) {
-      notices.push(
-        `sandbox is running version ${sandboxVersion}, installed CLI is ${deps.installedVersion} — run \`wake sandbox build && wake sandbox update\` to sync`,
-      );
+  try {
+    if (await deps.containerRunning()) {
+      const sandboxVersion = await deps.execVersionInContainer();
+      if (sandboxVersion !== '' && sandboxVersion !== deps.installedVersion) {
+        notices.push(
+          `sandbox is running version ${sandboxVersion}, installed CLI is ${deps.installedVersion} — run \`wake sandbox build && wake sandbox update\` to sync`,
+        );
+      }
     }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    notices.push(`could not check sandbox version: ${message}`);
   }
 
-  const driftedFiles = await deps.diffPromptsAndDockerfile();
-  for (const file of driftedFiles) {
-    notices.push(`${file} differs from the currently-shipped default (not auto-overwritten)`);
+  try {
+    const driftedFiles = await deps.diffPromptsAndDockerfile();
+    for (const file of driftedFiles) {
+      notices.push(`${file} differs from the currently-shipped default (not auto-overwritten)`);
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    notices.push(`could not check prompt/Dockerfile drift: ${message}`);
   }
 
   return { failures, notices };
