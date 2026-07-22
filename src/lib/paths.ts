@@ -17,6 +17,7 @@ export function createWakePaths(wakeRoot: string) {
     configFile: join(wakeRoot, 'config.json'),
     ledgerFile: join(wakeRoot, 'ledger.json'),
     pauseFile: join(wakeRoot, 'PAUSE'),
+    tickRequestFile: join(wakeRoot, 'control', 'tick-request.json'),
     tickLockFile: join(wakeRoot, 'locks', 'tick.lock'),
     runnerLockFile: join(wakeRoot, 'locks', 'runner.lock'),
     issueFixtureFile: join(wakeRoot, 'fixtures', 'issues.json'),

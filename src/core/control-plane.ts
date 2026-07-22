@@ -15,6 +15,7 @@ export function createControlPlane(deps: {
     error: (message: string) => void;
   };
   sleep: (ms: number) => Promise<void>;
+  readTickRequest?: () => Promise<string | null>;
 }) {
   let running = true;
   let lastStatus: string | undefined;
@@ -23,11 +24,59 @@ export function createControlPlane(deps: {
   let consecutiveIdleTicks = 0;
   let consecutiveIntakeIdleTicks = 0;
   let consecutiveRunnerIdleTicks = 0;
+  let lastSingleTickRequest: string | undefined;
+  let lastIntakeTickRequest: string | undefined;
+  let lastRunnerTickRequest: string | undefined;
   const maxIntervalMs = deps.maxIntervalMs ?? deps.intervalMs * 16;
 
   function nextSleepMs(consecutiveTicks: number): number {
     const backoffMs = deps.intervalMs * 2 ** Math.min(consecutiveTicks, 20);
     return Math.min(backoffMs, maxIntervalMs);
+  }
+
+  async function tickRequestPending(input: {
+    getLastRequest: () => string | undefined;
+    setLastRequest: (value: string) => void;
+  }): Promise<boolean> {
+    const request = (await deps.readTickRequest?.()) ?? null;
+    if (request === null || request === input.getLastRequest()) {
+      return false;
+    }
+
+    input.setLastRequest(request);
+    return true;
+  }
+
+  async function sleepUntilNextTick(
+    ms: number,
+    requestState: {
+      getLastRequest: () => string | undefined;
+      setLastRequest: (value: string) => void;
+    },
+  ): Promise<{ forced: boolean }> {
+    if (deps.readTickRequest === undefined || ms <= 0) {
+      await deps.sleep(ms);
+      return { forced: false };
+    }
+
+    if (await tickRequestPending(requestState)) {
+      return { forced: true };
+    }
+
+    const deadline = Date.now() + ms;
+    while (running) {
+      const remainingMs = deadline - Date.now();
+      if (remainingMs <= 0) {
+        return { forced: false };
+      }
+
+      await deps.sleep(Math.min(remainingMs, 250));
+      if (await tickRequestPending(requestState)) {
+        return { forced: true };
+      }
+    }
+
+    return { forced: false };
   }
 
   async function isPaused(): Promise<boolean> {
@@ -70,6 +119,8 @@ export function createControlPlane(deps: {
     label: 'intake' | 'runner';
     getIdleTicks: () => number;
     setIdleTicks: (value: number) => void;
+    getLastRequest: () => string | undefined;
+    setLastRequest: (value: string) => void;
   }): Promise<void> {
     while (running) {
       let result: unknown;
@@ -87,8 +138,13 @@ export function createControlPlane(deps: {
       if (status === 'processed') {
         input.setIdleTicks(0);
       } else {
-        await deps.sleep(nextSleepMs(input.getIdleTicks()));
-        input.setIdleTicks(input.getIdleTicks() + 1);
+        const wait = await sleepUntilNextTick(nextSleepMs(input.getIdleTicks()), {
+          getLastRequest: input.getLastRequest,
+          setLastRequest: input.setLastRequest,
+        });
+        if (!wait.forced) {
+          input.setIdleTicks(input.getIdleTicks() + 1);
+        }
       }
     }
   }
@@ -127,6 +183,10 @@ export function createControlPlane(deps: {
             setIdleTicks: (value) => {
               consecutiveIntakeIdleTicks = value;
             },
+            getLastRequest: () => lastIntakeTickRequest,
+            setLastRequest: (value) => {
+              lastIntakeTickRequest = value;
+            },
           }),
           startLoop({
             run: deps.tickRunner.runRunnerTick,
@@ -134,6 +194,10 @@ export function createControlPlane(deps: {
             getIdleTicks: () => consecutiveRunnerIdleTicks,
             setIdleTicks: (value) => {
               consecutiveRunnerIdleTicks = value;
+            },
+            getLastRequest: () => lastRunnerTickRequest,
+            setLastRequest: (value) => {
+              lastRunnerTickRequest = value;
             },
           }),
         ]);
@@ -156,8 +220,15 @@ export function createControlPlane(deps: {
         if (status === 'processed') {
           consecutiveIdleTicks = 0;
         } else {
-          await deps.sleep(nextSleepMs(consecutiveIdleTicks));
-          consecutiveIdleTicks += 1;
+          const wait = await sleepUntilNextTick(nextSleepMs(consecutiveIdleTicks), {
+            getLastRequest: () => lastSingleTickRequest,
+            setLastRequest: (value) => {
+              lastSingleTickRequest = value;
+            },
+          });
+          if (!wait.forced) {
+            consecutiveIdleTicks += 1;
+          }
         }
       }
     },

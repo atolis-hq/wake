@@ -38,6 +38,9 @@ export const indexHtml = `<!DOCTYPE html>
   .topbar .version { color: rgba(255, 255, 255, 0.7); font-size: 0.78rem; }
   .statusbar { display: flex; align-items: center; gap: 1rem; padding: 0.45rem 1rem; background: var(--brand-dark); border-top: 1px solid rgba(0, 0, 0, 0.18); flex-wrap: wrap; font-size: 0.8rem; }
   .statusbar .meta { color: rgba(255, 255, 255, 0.72); }
+  .statusbar button { background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.18); color: #fff; border-radius: 6px; padding: 0.22rem 0.55rem; cursor: pointer; font-size: 0.78rem; }
+  .statusbar button:hover:not(:disabled) { border-color: var(--accent-light); background: rgba(45, 212, 191, 0.16); }
+  .statusbar button:disabled { cursor: wait; opacity: 0.62; }
   .pill { padding: 0.15rem 0.5rem; border-radius: 999px; font-size: 0.75rem; font-weight: 600; }
   .pill-idle { background: #1f3d2c; color: #7fe3a3; }
   .pill-polling { background: #1f3350; color: #7fb3ff; }
@@ -83,6 +86,7 @@ export const indexHtml = `<!DOCTYPE html>
 </header>
 <div class="statusbar">
   <span id="loop-pill" class="pill">…</span>
+  <button id="force-tick" type="button">Tick now</button>
   <span id="status-summary" class="meta"></span>
 </div>
 <nav>
@@ -101,6 +105,12 @@ let currentView = 'board';
 
 async function getJson(path) {
   const res = await fetch(API + path);
+  if (!res.ok) throw new Error(path + ' -> ' + res.status);
+  return res.json();
+}
+
+async function postJson(path) {
+  const res = await fetch(API + path, { method: 'POST' });
   if (!res.ok) throw new Error(path + ' -> ' + res.status);
   return res.json();
 }
@@ -142,6 +152,24 @@ async function renderStatusBar() {
       (status.lastRun ? ' · last run: ' + status.lastRun.repo + '#' + status.lastRun.issueNumber + ' ' + status.lastRun.action + ' → ' + (status.lastRun.sentinel ?? status.lastRun.status) : '');
   } catch (err) {
     document.getElementById('status-summary').textContent = 'status unavailable: ' + err.message;
+  }
+}
+
+async function forceTickNow() {
+  const button = document.getElementById('force-tick');
+  button.disabled = true;
+  const original = button.textContent;
+  button.textContent = 'Requested';
+  try {
+    await postJson('/tick');
+    await renderStatusBar();
+  } catch (err) {
+    document.getElementById('status-summary').textContent = 'tick request failed: ' + err.message;
+  } finally {
+    setTimeout(() => {
+      button.disabled = false;
+      button.textContent = original;
+    }, 900);
   }
 }
 
@@ -323,6 +351,7 @@ for (const btn of document.querySelectorAll('nav button')) {
 document.getElementById('drawer-close').addEventListener('click', () => {
   document.getElementById('drawer').classList.remove('open');
 });
+document.getElementById('force-tick').addEventListener('click', forceTickNow);
 
 renderStatusBar();
 switchView('board');

@@ -1,8 +1,10 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { randomUUID } from 'node:crypto';
 
 import type { ResourceIndex } from '../../core/contracts.js';
 import { configuredTicketSource } from '../../domain/sources.js';
 import type { WakeConfig } from '../../domain/types.js';
+import { writeJsonFile } from '../../lib/json-file.js';
 import type { createStateStore } from '../fs/state-store.js';
 import { indexHtml } from './ui-assets.js';
 import {
@@ -117,13 +119,6 @@ async function handleRequest(
     return;
   }
 
-  if (req.method !== 'GET') {
-    sendJson(res, 405, {
-      error: 'this build only serves read endpoints; mutations are not implemented',
-    });
-    return;
-  }
-
   const { stateStore, resourceIndex, config } = options;
   const segments = url.pathname
     .slice('/api/v1/'.length)
@@ -131,6 +126,22 @@ async function handleRequest(
     .filter((part) => part.length > 0)
     .map((s) => decodeURIComponent(s));
   const resource = segments[0];
+
+  if (req.method === 'POST' && resource === 'tick' && segments.length === 1) {
+    const request = {
+      requestId: randomUUID(),
+      requestedAt: now().toISOString(),
+      requestedBy: 'ui',
+    };
+    await writeJsonFile(stateStore.paths.tickRequestFile, request);
+    sendJson(res, 202, request);
+    return;
+  }
+
+  if (req.method !== 'GET') {
+    sendJson(res, 405, { error: `method not allowed for ${url.pathname}` });
+    return;
+  }
 
   if (resource === 'status' && segments.length === 1) {
     sendJson(res, 200, await buildStatus({ stateStore, config, now: now() }));
