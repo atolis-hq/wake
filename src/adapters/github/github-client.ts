@@ -6,8 +6,34 @@ import {
   fetchSingleWithEtag,
 } from './github-etag-cache.js';
 
+// Octokit's built-in request-log plugin routes every non-2xx response
+// through `log.error` (console.error by default) before the error reaches
+// our code, including the 304s that ETag-based conditional requests are
+// *expected* to produce (see github-etag-cache.ts). Without this override,
+// normal cache-hit traffic prints as spurious stderr errors. The plugin only
+// hands `log.error` a pre-formatted string (`METHOD path - STATUS with id
+// ID in Nms`), not the response object, so we extract the actual status
+// code from that fixed format rather than substring-matching "304"
+// anywhere in the message.
+function requestLogStatus(message: string): number | undefined {
+  const match = / - (\d{3}) with id /.exec(message);
+  return match === null ? undefined : Number(match[1]);
+}
+
 export function createGitHubClient(token: string) {
-  const octokit = new Octokit({ auth: token });
+  const octokit = new Octokit({
+    auth: token,
+    log: {
+      debug: () => {},
+      info: () => {},
+      warn: console.warn.bind(console),
+      error: (message: string) => {
+        if (requestLogStatus(message) !== 304) {
+          console.error(message);
+        }
+      },
+    },
+  });
   const etagCache = createEtagCache();
 
   return {
