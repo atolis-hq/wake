@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { access, chmod, copyFile, mkdir } from 'node:fs/promises';
+import { access, chmod, copyFile, mkdir, readFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { fileURLToPath } from 'node:url';
@@ -213,13 +213,16 @@ async function prepareCodexHome(): Promise<void> {
 }
 
 async function ensureSshKey(): Promise<void> {
-  if (existsSync(sshKeyPath)) {
-    return;
+  if (!existsSync(sshKeyPath)) {
+    await mkdir(sshHome, { recursive: true, mode: 0o700 });
+    await chmod(sshHome, 0o700);
+    await runCommand('ssh-keygen', ['-t', 'ed25519', '-f', sshKeyPath, '-N', '']);
   }
 
-  await mkdir(sshHome, { recursive: true, mode: 0o700 });
-  await chmod(sshHome, 0o700);
-  await runCommand('ssh-keygen', ['-t', 'ed25519', '-f', sshKeyPath, '-N', '']);
+  // Display the public key to the user
+  const publicKeyPath = join(sshHome, 'id_ed25519.pub');
+  const publicKey = await readFile(publicKeyPath, 'utf-8');
+  console.log(publicKey);
 }
 
 async function promptYesNo(message: string): Promise<boolean> {
