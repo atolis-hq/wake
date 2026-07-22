@@ -8,19 +8,27 @@ import { createFakeResourceIndex } from '../../src/adapters/fake/fake-resource-i
 import { createStateStore } from '../../src/adapters/fs/state-store.js';
 import { createDefaultWakeConfig } from '../../src/config/defaults.js';
 import { createUiServer } from '../../src/adapters/http/ui-server.js';
+import { readJsonFile } from '../../src/lib/json-file.js';
+
+type StateStore = ReturnType<typeof createStateStore>;
 
 describe('ui-server', () => {
   let root: string;
+  let store: StateStore;
   let server: ReturnType<typeof createUiServer>;
   let baseUrl: string;
 
   beforeEach(async () => {
     root = await mkdtemp(join(tmpdir(), 'wake-ui-server-'));
-    const stateStore = createStateStore({ wakeRoot: root });
-    await stateStore.ensureWakeRoot();
+    store = createStateStore({ wakeRoot: root });
+    await store.ensureWakeRoot();
     const config = createDefaultWakeConfig(root);
 
-    server = createUiServer({ stateStore, resourceIndex: createFakeResourceIndex(), config });
+    server = createUiServer({
+      stateStore: store,
+      resourceIndex: createFakeResourceIndex(),
+      config,
+    });
     await new Promise<void>((resolveListen) => {
       server.listen(0, '127.0.0.1', () => resolveListen());
     });
@@ -57,6 +65,20 @@ describe('ui-server', () => {
 
     const post = await fetch(`${baseUrl}/api/v1/pause`, { method: 'POST' });
     expect(post.status).toBe(405);
+  });
+
+  it('records a force-tick request through the mutation endpoint', async () => {
+    const res = await fetch(`${baseUrl}/api/v1/tick`, { method: 'POST' });
+    expect(res.status).toBe(202);
+
+    const body = (await res.json()) as { requestId: string; requestedAt: string };
+    expect(body.requestId).toMatch(/[0-9a-f-]{36}/i);
+    expect(body.requestedAt).toBeTruthy();
+
+    await expect(readJsonFile(store.paths.tickRequestFile)).resolves.toMatchObject({
+      requestId: body.requestId,
+      requestedBy: 'ui',
+    });
   });
 });
 

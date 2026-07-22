@@ -31,6 +31,7 @@ import { createControlPlane } from './core/control-plane.js';
 import { createOutboundSinkRouter, createWorkSourceFanIn } from './core/sink-router.js';
 import { createTickRunner } from './core/tick-runner.js';
 import { systemClock } from './lib/clock.js';
+import { readJsonFile } from './lib/json-file.js';
 import { configuredTicketSource } from './domain/sources.js';
 import { wakeVersion } from './version.js';
 import type { RunRecord, WakeConfig } from './domain/types.js';
@@ -174,6 +175,17 @@ async function runCommandCapture(command: string, args: string[]): Promise<strin
       reject(new Error(`${command} ${args.join(' ')} failed with exit code ${exitCode ?? 1}`));
     });
   });
+}
+
+async function readTickRequestId(path: string): Promise<string | null> {
+  try {
+    const request = await readJsonFile<{ requestId?: unknown }>(path);
+    return typeof request.requestId === 'string' && request.requestId.length > 0
+      ? request.requestId
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 async function inspectDockerImage(image: string): Promise<boolean> {
@@ -399,6 +411,9 @@ async function runStart(args: string[]) {
       return new Promise((resolveSleep) => {
         setTimeout(resolveSleep, ms);
       });
+    },
+    readTickRequest() {
+      return readTickRequestId(runtime.stateStore.paths.tickRequestFile);
     },
   });
 
