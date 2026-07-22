@@ -1,12 +1,16 @@
 # Wake
 
-Wake is a local autonomous agent control plane for software development. It
-watches the work channels your team already uses, such as GitHub Issues,
-decides each item's next lifecycle step with deterministic rules, and launches
-local coding-agent CLIs only when agentic execution is actually needed.
+Wake is a control plane for autonomous software engineering. It watches the
+channels your team already uses, coordinates agent activity and involves humans
+when needed, and keeps the durable record attached to the work instead of the
+terminal session that happened to run it.
 
-Wake is the control plane and decision-maker. It launches and manages local
-agent sessions for each unit of agentic work.
+Create an issue, assign Wake, and keep doing your own work. Wake investigates,
+asks for input when human judgment matters, proposes a plan, launches local
+coding-agent CLIs to implement changes, opens pull requests, and carries the
+conversation forward wherever the work is already happening.
+
+Wake owns coordination. Coding agents execute the work.
 
 ## The Problem
 
@@ -27,10 +31,11 @@ out of the token-burning path wherever possible.
 
 ## Vision
 
-Wake should make reliable, resumable, token-aware local agent execution
+Wake should make reliable, resumable, token-aware autonomous engineering
 practical. The default operating model is asynchronous and channel-driven: work
-enters and progresses through durable external systems, while execution happens
-locally in an inspectable workspace or sandbox.
+enters through durable external systems, Wake keeps humans in the loop at useful
+decision points, and execution happens locally in an inspectable workspace or
+sandbox.
 
 Wake is not trying to replace coding agents, issue trackers, or source control.
 It coordinates across them. Over time it should become the layer that picks
