@@ -98,7 +98,7 @@ describe('runSelfUpdateCommand', () => {
     expect(docker.exec).toHaveBeenNthCalledWith(1, 'wake-sandbox', [
       'sh',
       '-lc',
-      expect.stringContaining('/wake/logs/start.pid'),
+      expect.stringContaining('/wake/.wake/logs/start.pid'),
     ]);
     expect(docker.exec).toHaveBeenNthCalledWith(2, 'wake-sandbox', [
       'node',

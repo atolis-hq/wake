@@ -198,8 +198,8 @@ SSH credentials.
 By default, `sandbox.start.enabled: true` makes the container entrypoint start
 `wake start --wake-root /wake` whenever `sandbox up`, `sandbox update`, or
 `sandbox self-update` creates the container. Output is written to
-`<wake-root>/logs/start.log`, and the entrypoint records the process id in
-`<wake-root>/logs/start.pid` so self-update can verify the loop survived a
+`<wake-root>/.wake/logs/start.log`, and the entrypoint records the process id in
+`<wake-root>/.wake/logs/start.pid` so self-update can verify the loop survived a
 container replacement. If the resident loop exits unexpectedly, the entrypoint
 restarts it after a short delay and refreshes `start.pid` with the new process
 id.

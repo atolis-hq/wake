@@ -24,11 +24,11 @@ describe('runSandboxEntrypointCommand', () => {
     expect(spawnDetached).toHaveBeenCalledWith(
       'node',
       expect.arrayContaining(['ui', '--wake-root', '/wake', '--host', '0.0.0.0', '--port', '4317']),
-      { logFile: '/wake/logs/ui.log' },
+      { logFile: '/wake/.wake/logs/ui.log' },
     );
   });
 
-  it('ensures /wake/logs exists before spawning any process', async () => {
+  it('ensures /wake/.wake/logs exists before spawning any process', async () => {
     const ensureDir = vi.fn(async () => {});
 
     await runSandboxEntrypointCommand({
@@ -43,7 +43,7 @@ describe('runSandboxEntrypointCommand', () => {
       removeFile: vi.fn(async () => {}),
     });
 
-    expect(ensureDir).toHaveBeenCalledWith('/wake/logs');
+    expect(ensureDir).toHaveBeenCalledWith('/wake/.wake/logs');
   });
 
   it('does not start the UI process when WAKE_UI_ENABLED is unset', async () => {
@@ -66,12 +66,13 @@ describe('runSandboxEntrypointCommand', () => {
 
   it('starts the resident wake start loop when WAKE_START_ENABLED=true', async () => {
     const spawnDetached = vi.fn(() => ({ pid: 456 }));
+    const writeFile = vi.fn(async () => {});
 
     await runSandboxEntrypointCommand({
       env: { WAKE_START_ENABLED: 'true' },
       spawnDetached,
       waitForExit: vi.fn(neverExits),
-      writeFile: vi.fn(async () => {}),
+      writeFile,
       sleep: vi.fn(async () => {}),
       discoverNgrokUrl: vi.fn(async () => undefined),
       log: vi.fn(),
@@ -82,8 +83,14 @@ describe('runSandboxEntrypointCommand', () => {
     expect(spawnDetached).toHaveBeenCalledWith(
       'node',
       expect.arrayContaining(['start', '--wake-root', '/wake']),
-      { logFile: '/wake/logs/start.log' },
+      { logFile: '/wake/.wake/logs/start.log' },
     );
+
+    // Flush microtasks so the fire-and-forget supervise loop's initial spawn
+    // has a chance to write the pid file before we assert on it.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(writeFile).toHaveBeenCalledWith('/wake/.wake/logs/start.pid', '456');
   });
 
   it('defaults WAKE_UI_PORT to 4317 when unset', async () => {
@@ -102,7 +109,7 @@ describe('runSandboxEntrypointCommand', () => {
     });
 
     expect(spawnDetached).toHaveBeenCalledWith('node', expect.arrayContaining(['--port', '4317']), {
-      logFile: '/wake/logs/ui.log',
+      logFile: '/wake/.wake/logs/ui.log',
     });
   });
 
@@ -124,7 +131,7 @@ describe('runSandboxEntrypointCommand', () => {
     expect(spawnDetached).toHaveBeenCalledWith(
       'node',
       expect.arrayContaining(['--token', 'secret-token']),
-      { logFile: '/wake/logs/ui.log' },
+      { logFile: '/wake/.wake/logs/ui.log' },
     );
   });
 
@@ -169,12 +176,12 @@ describe('runSandboxEntrypointCommand', () => {
     expect(spawnDetached).toHaveBeenCalledWith(
       'ngrok',
       ['config', 'add-authtoken', 'ngrok-token'],
-      { logFile: '/wake/logs/ngrok.log' },
+      { logFile: '/wake/.wake/logs/ngrok.log' },
     );
     expect(spawnDetached).toHaveBeenCalledWith(
       'ngrok',
       ['http', '127.0.0.1:4317', '--log=stdout'],
-      { logFile: '/wake/logs/ngrok.log' },
+      { logFile: '/wake/.wake/logs/ngrok.log' },
     );
   });
 
@@ -267,9 +274,9 @@ describe('runSandboxEntrypointCommand', () => {
     // discovery runs in the background (fire-and-forget), so flush microtasks.
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(removeFile).toHaveBeenCalledWith('/wake/control-plane-ui-url');
+    expect(removeFile).toHaveBeenCalledWith('/wake/.wake/control-plane-ui-url');
     expect(writeFile).toHaveBeenCalledWith(
-      '/wake/control-plane-ui-url',
+      '/wake/.wake/control-plane-ui-url',
       expect.stringContaining('https://example.ngrok.io'),
     );
     expect(log).toHaveBeenCalledWith(expect.stringContaining('https://example.ngrok.io'));
@@ -316,7 +323,10 @@ describe('runSandboxEntrypointCommand', () => {
   });
 
   it('restarts the wake start loop after the process exits, waiting the configured delay', async () => {
-    const spawnDetached = vi.fn(() => ({ pid: 456 }));
+    const spawnDetached = vi.fn().mockReturnValueOnce({ pid: 456 }).mockReturnValueOnce({
+      pid: 789,
+    });
+    const writeFile = vi.fn(async () => {});
     const sleep = vi.fn(async () => {});
     let resolveExit: ((code: number) => void) | undefined;
     const waitForExit = vi
@@ -333,7 +343,7 @@ describe('runSandboxEntrypointCommand', () => {
       env: { WAKE_START_ENABLED: 'true', WAKE_START_RESTART_DELAY_SECONDS: '5' },
       spawnDetached,
       waitForExit,
-      writeFile: vi.fn(async () => {}),
+      writeFile,
       sleep,
       discoverNgrokUrl: vi.fn(async () => undefined),
       log: vi.fn(),
@@ -343,6 +353,10 @@ describe('runSandboxEntrypointCommand', () => {
 
     expect(spawnDetached).toHaveBeenCalledTimes(1);
 
+    // Flush microtasks so the pid file from the first spawn is written before restart.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(writeFile).toHaveBeenCalledWith('/wake/.wake/logs/start.pid', '456');
+
     resolveExit?.(1);
     // Flush the microtask queue so the loop's continuation runs.
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -350,5 +364,6 @@ describe('runSandboxEntrypointCommand', () => {
 
     expect(sleep).toHaveBeenCalledWith(5000);
     expect(spawnDetached).toHaveBeenCalledTimes(2);
+    expect(writeFile).toHaveBeenCalledWith('/wake/.wake/logs/start.pid', '789');
   });
 });

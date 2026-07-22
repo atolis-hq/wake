@@ -1,5 +1,5 @@
 const MAIN_JS_PATH = '/app/dist/src/main.js';
-const CONTROL_PLANE_UI_URL_FILE = '/wake/control-plane-ui-url';
+const CONTROL_PLANE_UI_URL_FILE = '/wake/.wake/control-plane-ui-url';
 const DEFAULT_UI_PORT = '4317';
 const DEFAULT_START_RESTART_DELAY_SECONDS = 10;
 
@@ -31,7 +31,7 @@ async function discoverAndWriteNgrokUrl(deps: SandboxEntrypointDeps): Promise<vo
   }
 
   deps.log(
-    'wake ui: ngrok tunnel started but public URL was not discovered; see /wake/logs/ngrok.log',
+    'wake ui: ngrok tunnel started but public URL was not discovered; see /wake/.wake/logs/ngrok.log',
   );
 }
 
@@ -42,8 +42,9 @@ async function superviseWakeStart(
   for (;;) {
     deps.log('wake start: starting resident loop');
     const { pid } = deps.spawnDetached('node', [MAIN_JS_PATH, 'start', '--wake-root', '/wake'], {
-      logFile: '/wake/logs/start.log',
+      logFile: '/wake/.wake/logs/start.log',
     });
+    await deps.writeFile('/wake/.wake/logs/start.pid', String(pid));
     const exitCode = await deps.waitForExit(pid);
     deps.log(
       `wake start: resident loop exited with status ${exitCode}; restarting in ${restartDelaySeconds}s`,
@@ -55,7 +56,7 @@ async function superviseWakeStart(
 export async function runSandboxEntrypointCommand(deps: SandboxEntrypointDeps): Promise<void> {
   const { env } = deps;
 
-  await deps.ensureDir('/wake/logs');
+  await deps.ensureDir('/wake/.wake/logs');
 
   if (env.WAKE_UI_ENABLED === 'true') {
     const port = env.WAKE_UI_PORT ?? DEFAULT_UI_PORT;
@@ -74,21 +75,21 @@ export async function runSandboxEntrypointCommand(deps: SandboxEntrypointDeps): 
     if (env.WAKE_UI_TOKEN) {
       uiArgs.push('--token', env.WAKE_UI_TOKEN);
     }
-    deps.spawnDetached('node', uiArgs, { logFile: '/wake/logs/ui.log' });
+    deps.spawnDetached('node', uiArgs, { logFile: '/wake/.wake/logs/ui.log' });
 
     if (env.WAKE_UI_TUNNEL_ENABLED === 'true') {
       if (env.NGROK_AUTHTOKEN) {
         const { pid } = deps.spawnDetached(
           'ngrok',
           ['config', 'add-authtoken', env.NGROK_AUTHTOKEN],
-          { logFile: '/wake/logs/ngrok.log' },
+          { logFile: '/wake/.wake/logs/ngrok.log' },
         );
         await deps.waitForExit(pid);
       }
 
       deps.log(`wake ui: starting ngrok tunnel for 127.0.0.1:${port}`);
       deps.spawnDetached('ngrok', ['http', `127.0.0.1:${port}`, '--log=stdout'], {
-        logFile: '/wake/logs/ngrok.log',
+        logFile: '/wake/.wake/logs/ngrok.log',
       });
       void discoverAndWriteNgrokUrl(deps);
     }

@@ -7,7 +7,7 @@ const START_PROCESS_CHECK = [
   'sh',
   '-lc',
   [
-    'pid="$(cat /wake/logs/start.pid)"',
+    'pid="$(cat /wake/.wake/logs/start.pid)"',
     'test -n "$pid"',
     'kill -0 "$pid"',
     'tr "\\0" " " < "/proc/$pid/cmdline" | grep -F "node /app/dist/src/main.js start --wake-root /wake" >/dev/null',
