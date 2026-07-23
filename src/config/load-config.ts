@@ -27,7 +27,17 @@ export async function loadWakeConfig(options?: { wakeRoot?: string }): Promise<W
   if (configFiles.length > 0) {
     raw = {};
     for (const configFile of configFiles) {
-      raw = deepMergeRaw(raw, await readYamlFile<Record<string, unknown>>(configFile));
+      let parsed: Record<string, unknown>;
+      try {
+        // yaml.parse returns null for empty/comment-only files rather than
+        // {}, so coalesce before merging.
+        parsed = (await readYamlFile<Record<string, unknown>>(configFile)) ?? {};
+      } catch (error) {
+        throw new Error(`Failed to parse ${configFile}: ${(error as Error).message}`, {
+          cause: error,
+        });
+      }
+      raw = deepMergeRaw(raw, parsed);
     }
   } else {
     // Pre-split Wake homes only have a single config.json — Wake reads it

@@ -1,10 +1,11 @@
 import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
 import { loadWakeConfig } from '../../src/config/load-config.js';
+import { scaffoldWakeHome } from '../../src/cli/scaffold-assets.js';
 
 describe('loadWakeConfig', () => {
   it('always resolves paths.wakeRoot from the passed-in wakeRoot, never from a stale config file value', async () => {
@@ -82,5 +83,47 @@ describe('loadWakeConfig', () => {
     const config = await loadWakeConfig({ wakeRoot: dir });
 
     expect(config.sandbox.image).toBe('current-image');
+  });
+
+  it('tolerates an empty or comment-only config*.yaml file without throwing', async () => {
+    const dir = await mkdtemp(resolve(tmpdir(), 'wake-load-config-'));
+    await writeFile(join(dir, 'config.yaml'), 'sandbox:\n  image: custom-image\n', 'utf8');
+    await writeFile(join(dir, 'config.local.yaml'), '# nothing here\n', 'utf8');
+
+    const config = await loadWakeConfig({ wakeRoot: dir });
+
+    expect(config.sandbox.image).toBe('custom-image');
+  });
+
+  it('names the offending file when a config*.yaml fails to parse', async () => {
+    const dir = await mkdtemp(resolve(tmpdir(), 'wake-load-config-'));
+    await writeFile(join(dir, 'config.yaml'), 'sandbox:\n  image: custom-image\n', 'utf8');
+    const badFile = join(dir, 'config.broken.yaml');
+    await writeFile(badFile, 'sandbox:\n  image: [unterminated\n', 'utf8');
+
+    await expect(loadWakeConfig({ wakeRoot: dir })).rejects.toThrow(badFile);
+  });
+
+  it('loads correctly from a wake home produced by scaffoldWakeHome', async () => {
+    const dir = await mkdtemp(resolve(tmpdir(), 'wake-load-config-'));
+    const repoRoot = resolve(__dirname, '..', '..');
+
+    await scaffoldWakeHome({ wakeRoot: dir, repoRoot });
+
+    const config = await loadWakeConfig({ wakeRoot: dir });
+
+    expect(config.sandbox.containerName).toBe(`wake-sandbox-${basename(dir).toLowerCase()}`);
+    expect(Object.keys(config.runners).length).toBeGreaterThan(0);
+    expect(config.defaultTier).toBe('standard');
+  });
+
+  it('lets the later-sorted config*.yaml file win when both set the same key', async () => {
+    const dir = await mkdtemp(resolve(tmpdir(), 'wake-load-config-'));
+    await writeFile(join(dir, 'config.yaml'), 'defaultTier: standard\n', 'utf8');
+    await writeFile(join(dir, 'config.zzz-override.yaml'), 'defaultTier: deep\n', 'utf8');
+
+    const config = await loadWakeConfig({ wakeRoot: dir });
+
+    expect(config.defaultTier).toBe('deep');
   });
 });
