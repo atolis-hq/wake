@@ -239,6 +239,24 @@ export async function readControlPlaneUiUrl(wakeRoot: string): Promise<string | 
   }
 }
 
+type OctokitError = Error & { status?: number; response?: { headers?: Record<string, string> } };
+
+export function formatGitHubError(error: unknown): string {
+  if (error instanceof Error) {
+    const octokit = error as OctokitError;
+    if (octokit.status !== undefined) {
+      const headers = octokit.response?.headers ?? {};
+      const parts = [`status=${octokit.status}`];
+      if (headers['x-ratelimit-remaining'] !== undefined)
+        parts.push(`ratelimit-remaining=${headers['x-ratelimit-remaining']}`);
+      if (headers['retry-after'] !== undefined) parts.push(`retry-after=${headers['retry-after']}`);
+      return parts.join(' ');
+    }
+    return error.message.slice(0, 300);
+  }
+  return String(error).slice(0, 300);
+}
+
 export function formatWakeComment(
   payload: Record<string, unknown>,
   controlPlaneUrl?: string,
@@ -472,9 +490,9 @@ export function createGitHubIssuesWorkSource(deps: {
           });
         } catch (error) {
           console.error(
-            `[github-work-source] poll failed for ${repoRef}, skipping this tick: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
+            `[github-work-source] poll failed for ${repoRef}, skipping this tick: ${formatGitHubError(
+              error,
+            )}`,
           );
         }
       }
