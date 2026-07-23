@@ -36,5 +36,6 @@ describe('createWakePaths', () => {
     expect(paths.logFile('2026-07-22')).toBe(join(dataRoot, 'logs', '2026-07-22.log'));
     expect(paths.resourceIndexRoot).toBe(join(dataRoot, 'state', 'index'));
     expect(paths.resourceIndexShardFile('a1')).toBe(join(dataRoot, 'state', 'index', 'a1.json'));
+    expect(paths.controlPlaneUiUrlFile).toBe(join(dataRoot, 'control-plane-ui-url'));
   });
 });

@@ -1,13 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { createFakeResourceIndex } from '../../src/adapters/fake/fake-resource-index.js';
 import { createStateStore } from '../../src/adapters/fs/state-store.js';
-import { createGitHubIssuesWorkSource } from '../../src/adapters/github/github-issues-work-source.js';
+import {
+  createGitHubIssuesWorkSource,
+  readControlPlaneUiUrl,
+} from '../../src/adapters/github/github-issues-work-source.js';
 import { createDefaultWakeConfig } from '../../src/config/defaults.js';
 import { createEventEnvelope } from '../../src/lib/event-log.js';
+import { createWakePaths } from '../../src/lib/paths.js';
 
 /**
  * A stable, ULID-shaped work id per issue number. The source never mints or
@@ -931,7 +935,9 @@ describe('github issues work source', () => {
     const config = createDefaultWakeConfig(root);
     config.sources.github.enabled = true;
     config.sources.github.repos = ['atolis-hq/wake'];
-    await writeFile(join(root, 'control-plane-ui-url'), 'https://example.ngrok-free.app\n');
+    const paths = createWakePaths(root);
+    await mkdir(paths.dataRoot, { recursive: true });
+    await writeFile(paths.controlPlaneUiUrlFile, 'https://example.ngrok-free.app\n');
 
     const workSource = createGitHubIssuesWorkSource({
       client: {
@@ -1493,5 +1499,31 @@ describe('github issues work source', () => {
 
     const [, , , postedBody] = createComment.mock.calls[0] as [string, string, number, string];
     expect(postedBody).not.toContain('/approved');
+  });
+});
+
+describe('readControlPlaneUiUrl', () => {
+  let root: string;
+
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), 'wake-control-plane-ui-url-'));
+  });
+
+  it('reads the url from the .wake/-nested location the entrypoint writes to', async () => {
+    const paths = createWakePaths(root);
+    await mkdir(paths.dataRoot, { recursive: true });
+    await writeFile(paths.controlPlaneUiUrlFile, 'https://example.ngrok-free.app\n');
+
+    expect(await readControlPlaneUiUrl(root)).toBe('https://example.ngrok-free.app/');
+  });
+
+  it('returns undefined when only the legacy flat-root location has the file', async () => {
+    await writeFile(join(root, 'control-plane-ui-url'), 'https://example.ngrok-free.app\n');
+
+    expect(await readControlPlaneUiUrl(root)).toBeUndefined();
+  });
+
+  it('returns undefined when no file exists', async () => {
+    expect(await readControlPlaneUiUrl(root)).toBeUndefined();
   });
 });

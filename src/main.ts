@@ -446,9 +446,15 @@ function createHostDockerCli(): DockerCli {
  * installed host CLI version. Stderr is discarded (surfaced only as an
  * empty/mismatched version, which the caller already treats as a notice).
  */
-async function execVersionInContainer(docker: DockerCli, containerName: string): Promise<string> {
+async function execVersionInContainer(
+  docker: DockerCli,
+  containerName: string,
+  devMode: 'source' | 'packaged' | undefined,
+): Promise<string> {
   let stdout = '';
-  await docker.execCaptured(containerName, ['node', '/app/dist/src/main.js', 'version'], {
+  const command =
+    devMode === 'source' ? ['node', '/app/dist/src/main.js', 'version'] : ['wake', 'version'];
+  await docker.execCaptured(containerName, command, {
     onStdout: (line) => {
       stdout += line;
     },
@@ -811,7 +817,7 @@ async function runDoctor(args: string[]) {
     wakeRoot,
     image,
     containerRunning: async () => (await inspectDockerContainer(containerName)) === 'running',
-    execVersionInContainer: () => execVersionInContainer(docker, containerName),
+    execVersionInContainer: () => execVersionInContainer(docker, containerName, config.dev?.mode),
     installedVersion: wakeVersion,
     diffPromptsAndDockerfile: () =>
       diffPromptsAndDockerfile({ wakeRoot, packageRoot, devMode: config.dev?.mode }),
@@ -1096,7 +1102,19 @@ async function main() {
           ? [...withoutHostFlag, '--wake-root', '/wake']
           : withoutHostFlag.map((arg, index) => (index === wakeRootIndex + 1 ? '/wake' : arg));
 
-      await runSandbox(['exec', '--', 'node', '/app/dist/src/main.js', ...rewritten]);
+      const wakeRoot = resolve(
+        readFlagBeforeCommandTerminator('--wake-root', commandArgs) ?? process.cwd(),
+      );
+      const stateStore = createStateStore({ wakeRoot });
+      await stateStore.ensureWakeRoot();
+      const config = await loadWakeConfig({
+        wakeRoot,
+        configFile: stateStore.paths.configFile,
+      });
+      const wakeInvocation =
+        config.dev?.mode === 'source' ? ['node', '/app/dist/src/main.js'] : ['wake'];
+
+      await runSandbox(['exec', '--', ...wakeInvocation, ...rewritten]);
     },
     runDoctor,
   });

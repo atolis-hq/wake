@@ -1,7 +1,26 @@
-const MAIN_JS_PATH = '/app/dist/src/main.js';
-const CONTROL_PLANE_UI_URL_FILE = '/wake/.wake/control-plane-ui-url';
+import { createWakePaths } from '../lib/paths.js';
+
+// The entrypoint always runs against the fixed in-container mount point
+// (/wake), so a literal wakeRoot here is safe.
+const CONTROL_PLANE_UI_URL_FILE = createWakePaths('/wake').controlPlaneUiUrlFile;
 const DEFAULT_UI_PORT = '4317';
 const DEFAULT_START_RESTART_DELAY_SECONDS = 10;
+
+/**
+ * Resolves how to invoke the wake CLI from inside the container.
+ *
+ * Source-mode images (docker/Dockerfile) bake `WAKE_MAIN_JS` at build time,
+ * pointing at the compiled entrypoint under /app. Packaged-mode images
+ * (docker/Dockerfile.packaged) have no /app directory at all — the CLI is
+ * installed globally via npm and exposed as a `wake` binary on PATH, so the
+ * absence of WAKE_MAIN_JS is the signal to invoke it bare.
+ */
+function resolveWakeInvocation(env: NodeJS.ProcessEnv): { command: string; argsPrefix: string[] } {
+  const mainJs = env.WAKE_MAIN_JS;
+  return mainJs !== undefined
+    ? { command: 'node', argsPrefix: [mainJs] }
+    : { command: 'wake', argsPrefix: [] };
+}
 
 export interface SandboxEntrypointDeps {
   env: NodeJS.ProcessEnv;
@@ -41,7 +60,8 @@ async function superviseWakeStart(
 ): Promise<void> {
   for (;;) {
     deps.log('wake start: starting resident loop');
-    const { pid } = deps.spawnDetached('node', [MAIN_JS_PATH, 'start', '--wake-root', '/wake'], {
+    const { command, argsPrefix } = resolveWakeInvocation(deps.env);
+    const { pid } = deps.spawnDetached(command, [...argsPrefix, 'start', '--wake-root', '/wake'], {
       logFile: '/wake/.wake/logs/start.log',
     });
     await deps.writeFile('/wake/.wake/logs/start.pid', String(pid));
@@ -62,8 +82,9 @@ export async function runSandboxEntrypointCommand(deps: SandboxEntrypointDeps): 
     const port = env.WAKE_UI_PORT ?? DEFAULT_UI_PORT;
     deps.log(`wake ui: starting on 0.0.0.0:${port}`);
 
+    const { command, argsPrefix } = resolveWakeInvocation(env);
     const uiArgs = [
-      MAIN_JS_PATH,
+      ...argsPrefix,
       'ui',
       '--wake-root',
       '/wake',
@@ -75,7 +96,7 @@ export async function runSandboxEntrypointCommand(deps: SandboxEntrypointDeps): 
     if (env.WAKE_UI_TOKEN) {
       uiArgs.push('--token', env.WAKE_UI_TOKEN);
     }
-    deps.spawnDetached('node', uiArgs, { logFile: '/wake/.wake/logs/ui.log' });
+    deps.spawnDetached(command, uiArgs, { logFile: '/wake/.wake/logs/ui.log' });
 
     if (env.WAKE_UI_TUNNEL_ENABLED === 'true') {
       if (env.NGROK_AUTHTOKEN) {

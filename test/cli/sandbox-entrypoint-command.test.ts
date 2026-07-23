@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { runSandboxEntrypointCommand } from '../../src/cli/sandbox-entrypoint-command.js';
+import { createWakePaths } from '../../src/lib/paths.js';
+
+const CONTROL_PLANE_UI_URL_FILE = createWakePaths('/wake').controlPlaneUiUrlFile;
 
 function neverExits() {
   return new Promise<number>(() => {});
@@ -10,7 +13,11 @@ describe('runSandboxEntrypointCommand', () => {
     const spawnDetached = vi.fn(() => ({ pid: 123 }));
 
     await runSandboxEntrypointCommand({
-      env: { WAKE_UI_ENABLED: 'true', WAKE_UI_PORT: '4317' },
+      env: {
+        WAKE_UI_ENABLED: 'true',
+        WAKE_UI_PORT: '4317',
+        WAKE_MAIN_JS: '/app/dist/src/main.js',
+      },
       spawnDetached,
       waitForExit: vi.fn(neverExits),
       writeFile: vi.fn(async () => {}),
@@ -69,7 +76,7 @@ describe('runSandboxEntrypointCommand', () => {
     const writeFile = vi.fn(async () => {});
 
     await runSandboxEntrypointCommand({
-      env: { WAKE_START_ENABLED: 'true' },
+      env: { WAKE_START_ENABLED: 'true', WAKE_MAIN_JS: '/app/dist/src/main.js' },
       spawnDetached,
       waitForExit: vi.fn(neverExits),
       writeFile,
@@ -97,7 +104,7 @@ describe('runSandboxEntrypointCommand', () => {
     const spawnDetached = vi.fn(() => ({ pid: 123 }));
 
     await runSandboxEntrypointCommand({
-      env: { WAKE_UI_ENABLED: 'true' },
+      env: { WAKE_UI_ENABLED: 'true', WAKE_MAIN_JS: '/app/dist/src/main.js' },
       spawnDetached,
       waitForExit: vi.fn(neverExits),
       writeFile: vi.fn(async () => {}),
@@ -117,7 +124,11 @@ describe('runSandboxEntrypointCommand', () => {
     const spawnDetached = vi.fn(() => ({ pid: 123 }));
 
     await runSandboxEntrypointCommand({
-      env: { WAKE_UI_ENABLED: 'true', WAKE_UI_TOKEN: 'secret-token' },
+      env: {
+        WAKE_UI_ENABLED: 'true',
+        WAKE_UI_TOKEN: 'secret-token',
+        WAKE_MAIN_JS: '/app/dist/src/main.js',
+      },
       spawnDetached,
       waitForExit: vi.fn(neverExits),
       writeFile: vi.fn(async () => {}),
@@ -139,7 +150,7 @@ describe('runSandboxEntrypointCommand', () => {
     const spawnDetached = vi.fn(() => ({ pid: 123 }));
 
     await runSandboxEntrypointCommand({
-      env: { WAKE_UI_ENABLED: 'true' },
+      env: { WAKE_UI_ENABLED: 'true', WAKE_MAIN_JS: '/app/dist/src/main.js' },
       spawnDetached,
       waitForExit: vi.fn(neverExits),
       writeFile: vi.fn(async () => {}),
@@ -274,9 +285,9 @@ describe('runSandboxEntrypointCommand', () => {
     // discovery runs in the background (fire-and-forget), so flush microtasks.
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(removeFile).toHaveBeenCalledWith('/wake/.wake/control-plane-ui-url');
+    expect(removeFile).toHaveBeenCalledWith(CONTROL_PLANE_UI_URL_FILE);
     expect(writeFile).toHaveBeenCalledWith(
-      '/wake/.wake/control-plane-ui-url',
+      CONTROL_PLANE_UI_URL_FILE,
       expect.stringContaining('https://example.ngrok.io'),
     );
     expect(log).toHaveBeenCalledWith(expect.stringContaining('https://example.ngrok.io'));
@@ -365,5 +376,106 @@ describe('runSandboxEntrypointCommand', () => {
     expect(sleep).toHaveBeenCalledWith(5000);
     expect(spawnDetached).toHaveBeenCalledTimes(2);
     expect(writeFile).toHaveBeenCalledWith('/wake/.wake/logs/start.pid', '789');
+  });
+
+  describe('wake invocation resolution', () => {
+    it('spawns wake start via node + WAKE_MAIN_JS in source mode (WAKE_MAIN_JS set)', async () => {
+      const spawnDetached = vi.fn(() => ({ pid: 456 }));
+
+      await runSandboxEntrypointCommand({
+        env: { WAKE_START_ENABLED: 'true', WAKE_MAIN_JS: '/app/dist/src/main.js' },
+        spawnDetached,
+        waitForExit: vi.fn(neverExits),
+        writeFile: vi.fn(async () => {}),
+        sleep: vi.fn(async () => {}),
+        discoverNgrokUrl: vi.fn(async () => undefined),
+        log: vi.fn(),
+        ensureDir: vi.fn(async () => {}),
+        removeFile: vi.fn(async () => {}),
+      });
+
+      expect(spawnDetached).toHaveBeenCalledWith(
+        'node',
+        ['/app/dist/src/main.js', 'start', '--wake-root', '/wake'],
+        { logFile: '/wake/.wake/logs/start.log' },
+      );
+    });
+
+    it('spawns wake start via the bare wake binary in packaged mode (WAKE_MAIN_JS unset)', async () => {
+      const spawnDetached = vi.fn(() => ({ pid: 456 }));
+
+      await runSandboxEntrypointCommand({
+        env: { WAKE_START_ENABLED: 'true' },
+        spawnDetached,
+        waitForExit: vi.fn(neverExits),
+        writeFile: vi.fn(async () => {}),
+        sleep: vi.fn(async () => {}),
+        discoverNgrokUrl: vi.fn(async () => undefined),
+        log: vi.fn(),
+        ensureDir: vi.fn(async () => {}),
+        removeFile: vi.fn(async () => {}),
+      });
+
+      expect(spawnDetached).toHaveBeenCalledWith('wake', ['start', '--wake-root', '/wake'], {
+        logFile: '/wake/.wake/logs/start.log',
+      });
+    });
+
+    it('spawns the UI via node + WAKE_MAIN_JS in source mode (WAKE_MAIN_JS set)', async () => {
+      const spawnDetached = vi.fn(() => ({ pid: 123 }));
+
+      await runSandboxEntrypointCommand({
+        env: {
+          WAKE_UI_ENABLED: 'true',
+          WAKE_UI_PORT: '4317',
+          WAKE_MAIN_JS: '/app/dist/src/main.js',
+        },
+        spawnDetached,
+        waitForExit: vi.fn(neverExits),
+        writeFile: vi.fn(async () => {}),
+        sleep: vi.fn(async () => {}),
+        discoverNgrokUrl: vi.fn(async () => undefined),
+        log: vi.fn(),
+        ensureDir: vi.fn(async () => {}),
+        removeFile: vi.fn(async () => {}),
+      });
+
+      expect(spawnDetached).toHaveBeenCalledWith(
+        'node',
+        [
+          '/app/dist/src/main.js',
+          'ui',
+          '--wake-root',
+          '/wake',
+          '--host',
+          '0.0.0.0',
+          '--port',
+          '4317',
+        ],
+        { logFile: '/wake/.wake/logs/ui.log' },
+      );
+    });
+
+    it('spawns the UI via the bare wake binary in packaged mode (WAKE_MAIN_JS unset)', async () => {
+      const spawnDetached = vi.fn(() => ({ pid: 123 }));
+
+      await runSandboxEntrypointCommand({
+        env: { WAKE_UI_ENABLED: 'true', WAKE_UI_PORT: '4317' },
+        spawnDetached,
+        waitForExit: vi.fn(neverExits),
+        writeFile: vi.fn(async () => {}),
+        sleep: vi.fn(async () => {}),
+        discoverNgrokUrl: vi.fn(async () => undefined),
+        log: vi.fn(),
+        ensureDir: vi.fn(async () => {}),
+        removeFile: vi.fn(async () => {}),
+      });
+
+      expect(spawnDetached).toHaveBeenCalledWith(
+        'wake',
+        ['ui', '--wake-root', '/wake', '--host', '0.0.0.0', '--port', '4317'],
+        { logFile: '/wake/.wake/logs/ui.log' },
+      );
+    });
   });
 });

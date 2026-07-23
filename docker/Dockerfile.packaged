@@ -45,4 +45,9 @@ WORKDIR /home/wake
 
 EXPOSE 4317
 
-ENTRYPOINT ["node", "/usr/lib/node_modules/@atolis-hq/wake/dist/src/main.js", "sandbox-entrypoint"]
+# No WAKE_MAIN_JS here: there is no /app in a packaged-mode image, and its
+# absence is the signal (see resolveWakeInvocation in
+# sandbox-entrypoint-command.ts) that the CLI should be invoked via the bare
+# `wake` binary that `npm install -g` puts on PATH, rather than a hardcoded
+# npm global lib path that varies by npm/OS setup.
+ENTRYPOINT ["wake", "sandbox-entrypoint"]

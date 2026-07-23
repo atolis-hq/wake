@@ -54,5 +54,6 @@ export function createWakePaths(wakeRoot: string) {
       join(dataRoot, 'transcripts', workId, sanitizePathKey(sessionKey)),
     resourceIndexRoot: join(dataRoot, 'state', 'index'),
     resourceIndexShardFile: (shard: string) => join(dataRoot, 'state', 'index', `${shard}.json`),
+    controlPlaneUiUrlFile: join(dataRoot, 'control-plane-ui-url'),
   };
 }

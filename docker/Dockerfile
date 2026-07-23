@@ -51,4 +51,10 @@ WORKDIR /home/wake
 
 EXPOSE 4317
 
+# Baked at build time so wake sandbox-entrypoint (and anything it spawns) can
+# find the compiled CLI without hardcoding /app in multiple places. Docker's
+# exec-form ENTRYPOINT below does not expand env vars, so it stays literal —
+# that's fine since it's the very first thing that runs.
+ENV WAKE_MAIN_JS=/app/dist/src/main.js
+
 ENTRYPOINT ["node", "/app/dist/src/main.js", "sandbox-entrypoint"]
