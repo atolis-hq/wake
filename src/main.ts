@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawn, type ChildProcess } from 'node:child_process';
-import { closeSync, existsSync, openSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { access, chmod, copyFile, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { createInterface } from 'node:readline/promises';
@@ -41,7 +41,9 @@ import { createControlPlane } from './core/control-plane.js';
 import { createOutboundSinkRouter, createWorkSourceFanIn } from './core/sink-router.js';
 import { createTickRunner } from './core/tick-runner.js';
 import { systemClock } from './lib/clock.js';
+import { createDetachedProcessLogSink } from './lib/detached-process-logging.js';
 import { readJsonFile } from './lib/json-file.js';
+import { resolveLogMaxBytes, resolveLogRotateCheckIntervalMs } from './lib/log-rotation.js';
 import { configuredTicketSource } from './domain/sources.js';
 import { wakeVersion } from './version.js';
 import type { RunRecord, WakeConfig } from './domain/types.js';
@@ -307,17 +309,30 @@ function createSandboxEntrypointDeps(): Parameters<typeof runSandboxEntrypointCo
   return {
     env: process.env,
     spawnDetached: (command, args, options) => {
-      const logFd = options?.logFile !== undefined ? openSync(options.logFile, 'a') : 'ignore';
+      const logSink =
+        options?.logFile !== undefined
+          ? createDetachedProcessLogSink(options.logFile, {
+              maxBytes: resolveLogMaxBytes(process.env),
+              rotateCheckIntervalMs: resolveLogRotateCheckIntervalMs(process.env),
+            })
+          : undefined;
+
       const child = spawn(command, args, {
         cwd: process.cwd(),
         env: process.env,
-        stdio: ['ignore', logFd, logFd],
+        stdio: ['ignore', 'pipe', 'pipe'],
         detached: true,
       });
 
       if (typeof child.pid === 'number') {
         children.set(child.pid, child);
       }
+
+      const forwardOutput = (chunk: Buffer) => {
+        logSink?.write(chunk);
+      };
+      child.stdout?.on('data', forwardOutput);
+      child.stderr?.on('data', forwardOutput);
 
       // Registered here (at spawn time) so it runs before any exit listener
       // waitForExit attaches later — though it wouldn't matter either way:
@@ -330,9 +345,7 @@ function createSandboxEntrypointDeps(): Parameters<typeof runSandboxEntrypointCo
         if (typeof child.pid === 'number') {
           children.delete(child.pid);
         }
-        if (logFd !== 'ignore') {
-          closeSync(logFd);
-        }
+        logSink?.close().catch(() => {});
       });
 
       return { pid: child.pid ?? -1 };

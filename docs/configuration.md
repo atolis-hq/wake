@@ -588,7 +588,7 @@ Wake does not write resolved configuration back to disk. What's on disk is
 exactly what you put there (plus schema defaults applied in memory) — there
 is no tick-time normalization step to work around when hand-splitting files.
 
-For sandbox debugging, `wake sandbox logs` tails Docker container logs for the durable sandbox. Wake keeps structured run/event records durably, but raw sandbox stdout/stderr is treated as container log output rather than a Wake-managed on-disk archive.
+For sandbox debugging, `wake sandbox logs` tails Docker container logs for the durable sandbox. The sandbox entrypoint tees `wake start`, `wake ui`, and ngrok output to both `<wakeRoot>/.wake/logs/*.log` and container stdout so `docker logs` shows live tick diagnostics. File logs rotate at 20MB (keeping one `.1` backup); override with `WAKE_LOG_MAX_BYTES` and `WAKE_LOG_ROTATE_CHECK_INTERVAL_MS` (default five minutes) inside the container. `wake sandbox up`/`update` also pass Docker `json-file` log-driver limits (`max-size=10m`, `max-file=3`) as a second line of defense. Wake keeps structured run/event records durably, but raw sandbox stdout/stderr is treated as container log output rather than a Wake-managed on-disk archive.
 
 For day-to-day local upgrades, use `wake sandbox build` followed by
 `wake sandbox update`. That rebuilds the image and replaces the container while

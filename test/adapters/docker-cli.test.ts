@@ -107,6 +107,10 @@ describe('docker cli adapter', () => {
       [
         'run',
         '-d',
+        '--log-opt',
+        'max-size=10m',
+        '--log-opt',
+        'max-file=3',
         '--name',
         'wake-sandbox',
         '-v',
@@ -208,6 +212,10 @@ describe('docker cli adapter', () => {
       [
         'run',
         '-d',
+        '--log-opt',
+        'max-size=10m',
+        '--log-opt',
+        'max-file=3',
         '--name',
         'wake-sandbox',
         '-v',
@@ -242,6 +250,10 @@ describe('docker cli adapter', () => {
       [
         'run',
         '-d',
+        '--log-opt',
+        'max-size=10m',
+        '--log-opt',
+        'max-file=3',
         '--name',
         'wake-sandbox',
         '-v',
@@ -283,6 +295,10 @@ describe('docker cli adapter', () => {
       [
         'run',
         '-d',
+        '--log-opt',
+        'max-size=10m',
+        '--log-opt',
+        'max-file=3',
         '--name',
         'wake-sandbox',
         '-v',
@@ -320,6 +336,10 @@ describe('docker cli adapter', () => {
       [
         'run',
         '-d',
+        '--log-opt',
+        'max-size=10m',
+        '--log-opt',
+        'max-file=3',
         '--name',
         'wake-sandbox',
         '-v',
@@ -420,6 +440,10 @@ describe('docker cli adapter', () => {
       [
         'run',
         '-d',
+        '--log-opt',
+        'max-size=10m',
+        '--log-opt',
+        'max-file=3',
         '--name',
         'wake-sandbox',
         '-v',
@@ -455,6 +479,10 @@ describe('docker cli adapter', () => {
       [
         'run',
         '-d',
+        '--log-opt',
+        'max-size=10m',
+        '--log-opt',
+        'max-file=3',
         '--name',
         'wake-sandbox',
         '-v',
@@ -524,6 +552,10 @@ describe('docker cli adapter', () => {
       [
         'run',
         '-d',
+        '--log-opt',
+        'max-size=10m',
+        '--log-opt',
+        'max-file=3',
         '--name',
         'wake-sandbox',
         '-v',
@@ -655,6 +687,30 @@ describe('docker cli adapter', () => {
     await expect(
       docker.execCaptured('wake-sandbox', ['pwd'], { onStdout: () => {}, onStderr: () => {} }),
     ).rejects.toThrow('spawnExec');
+  });
+
+  it('configures docker json-file rotation when creating a container', async () => {
+    const calls: string[][] = [];
+    const docker = createDockerCli({
+      inspectContainer: async () => null,
+      inspectImage: async () => true,
+      run: async (args) => {
+        calls.push(args);
+      },
+    });
+
+    await docker.up({
+      image: 'wake-sandbox',
+      containerName: 'wake-sandbox',
+      wakeRoot: '/host/wake-home',
+      containerHomeRoot: '/host/wake-home/container-home',
+      containerMountPath: '/wake',
+      containerHomeMountPath: '/home/wake',
+    });
+
+    expect(calls[0]).toEqual(
+      expect.arrayContaining(['--log-opt', 'max-size=10m', '--log-opt', 'max-file=3']),
+    );
   });
 
   it('tails docker container logs with a bounded line count', async () => {
