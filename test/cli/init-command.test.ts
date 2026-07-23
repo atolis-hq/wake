@@ -54,6 +54,10 @@ describe('init command', () => {
       'stage: refine',
     );
 
+    const setupGuide = await readFile(join(result.wakeRoot, 'SETUP.md'), 'utf8');
+    expect(setupGuide).toContain('sources:');
+    expect(setupGuide).toContain('extraMounts');
+
     for (const runtimeDirectory of dataRootRuntimeDirectories) {
       expect((await stat(join(result.wakeRoot, '.wake', runtimeDirectory))).isDirectory()).toBe(
         true,

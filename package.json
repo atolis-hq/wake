@@ -17,6 +17,7 @@
     "dist/src",
     "docker",
     "prompts",
+    "templates",
     "README.md",
     "LICENSE"
   ],

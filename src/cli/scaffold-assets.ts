@@ -118,6 +118,7 @@ export async function scaffoldWakeHome(input: {
 
   await Promise.all([
     copyAssets(repoRoot, 'prompts', join(wakeRoot, 'prompts'), promptFileNames),
+    copyFile(join(repoRoot, 'templates', 'SETUP.md'), join(wakeRoot, 'SETUP.md')),
     writeYamlFile(join(wakeRoot, 'config.yaml'), infra),
     writeYamlFile(join(wakeRoot, 'config.workflows.yaml'), workflow),
   ]);
