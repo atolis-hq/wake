@@ -76,6 +76,10 @@ export const indexHtml = `<!DOCTYPE html>
   .ok { color: #7fe3a3; }
   input[type=text] { background: #1a1d23; border: 1px solid #2c313a; color: #e8e8e8; padding: 0.3rem 0.5rem; border-radius: 6px; margin-bottom: 0.6rem; width: 260px; transition: border-color 0.12s ease, box-shadow 0.12s ease; }
   input[type=text]:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(45, 212, 191, 0.15); }
+  a { color: var(--accent-light); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .resource-list { list-style: none; padding: 0; margin: 0 0 1rem; }
+  .resource-list li { display: flex; align-items: baseline; gap: 0.4rem; margin-bottom: 0.35rem; font-size: 0.8rem; }
 </style>
 </head>
 <body>
@@ -198,6 +202,21 @@ async function renderBoard() {
   main.appendChild(columns);
 }
 
+function resourceUriToUrl(resourceUri) {
+  const parts = resourceUri.split(':');
+  if (parts.length < 3) return null;
+  const provider = parts[0];
+  const type = parts[1];
+  const locator = parts.slice(2).join(':');
+  const m = locator.match(/^(.+)#([0-9]+)$/);
+  if (!m) return null;
+  if (provider === 'github') {
+    if (type === 'issue') return 'https://github.com/' + m[1] + '/issues/' + m[2];
+    if (type === 'pr') return 'https://github.com/' + m[1] + '/pull/' + m[2];
+  }
+  return null;
+}
+
 async function openItem(repo, number) {
   const drawer = document.getElementById('drawer');
   const body = document.getElementById('drawer-body');
@@ -206,11 +225,26 @@ async function openItem(repo, number) {
   const detail = await getJson('/items/' + encodeURIComponent(repo) + '/' + number);
   if (!detail) { body.textContent = 'Not found'; return; }
   body.innerHTML = '';
-  body.appendChild(el('h2', { text: repo + '#' + number }));
+  const headLink = el('a', { href: detail.item.issue.url, target: '_blank', rel: 'noopener noreferrer', text: repo + '#' + number });
+  body.appendChild(el('h2', {}, [headLink]));
   body.appendChild(el('p', { text: detail.item.issue.title }));
   body.appendChild(el('p', { class: 'meta', text: 'stage: ' + detail.item.wake.stage + (detail.item.wake.sessionId ? ' · session: ' + detail.item.wake.sessionId : '') }));
   if (detail.item.wake.workspacePath) {
     body.appendChild(el('p', { class: 'meta', text: 'workspace: ' + detail.item.wake.workspacePath }));
+  }
+  const resources = detail.item.correlatedResources || [];
+  if (resources.length > 0) {
+    body.appendChild(el('h3', { text: 'Resources' }));
+    const resourceList = el('ul', { class: 'resource-list' });
+    for (const res of resources) {
+      const resUrl = resourceUriToUrl(res.resourceUri);
+      const badge = el('span', { class: 'chip', text: res.role });
+      const linkOrText = resUrl
+        ? el('a', { href: resUrl, target: '_blank', rel: 'noopener noreferrer', text: res.resourceUri })
+        : el('span', { class: 'meta', text: res.resourceUri });
+      resourceList.appendChild(el('li', {}, [badge, linkOrText]));
+    }
+    body.appendChild(resourceList);
   }
   body.appendChild(el('h3', { text: 'Runs' }));
   const runsTable = el('table', {}, [
