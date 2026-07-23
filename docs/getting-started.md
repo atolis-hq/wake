@@ -41,14 +41,18 @@ From a Wake source checkout:
 
 ```sh
 npm install
-npm link
+cd bin && npm link && cd ..
 ```
 
-`npm link` registers a `wake-dev` command on your `PATH` that runs
-`src/main.ts` live via this checkout's own `tsx` — no build step, and every
-invocation picks up your latest source changes immediately. It works from
-any directory (e.g. after you `cd` into a wake-home), the same as the
-packaged `wake` binary.
+`npm link` (run from `bin/`, which is its own tiny local package) registers
+a `wake-dev` command on your `PATH` that runs `src/main.ts` live via this
+checkout's own `tsx` — no build step, and every invocation picks up your
+latest source changes immediately. It works from any directory (e.g. after
+you `cd` into a wake-home), the same as the packaged `wake` binary. Linking
+from `bin/` rather than the repo root keeps this independent of a real
+`wake` install — running `npm link` from the repo root would overwrite the
+global `wake` symlink with this checkout too, which isn't what you want if
+you also use the published package.
 
 ```sh
 wake-dev init ./wake-home

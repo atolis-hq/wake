@@ -458,6 +458,16 @@ describe('help and unknown-command handling', () => {
 
     write.mockRestore();
   });
+
+  it('treats bare "version" as an unknown command — only --version/-v are recognized', async () => {
+    const write = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+    await expect(dispatchMainCommand({ args: ['version'], ...noopHandlers() })).rejects.toThrow(
+      CliUsageError,
+    );
+
+    write.mockRestore();
+  });
 });
 
 describe('sandbox auto-delegation', () => {

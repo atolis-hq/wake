@@ -1,0 +1,10 @@
+{
+  "name": "wake-dev-cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Local-only bin registration for wake-dev, kept separate from the @atolis-hq/wake package so `npm link` here never touches a real `wake` install.",
+  "bin": {
+    "wake-dev": "./wake-dev.js"
+  }
+}

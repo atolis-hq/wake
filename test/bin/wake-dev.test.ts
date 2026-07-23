@@ -9,7 +9,7 @@ const binPath = resolve(process.cwd(), 'bin', 'wake-dev.js');
 
 describe('bin/wake-dev.js', () => {
   it('runs src/main.ts live and forwards the exit code', () => {
-    const result = spawnSync(process.execPath, [binPath, 'version'], {
+    const result = spawnSync(process.execPath, [binPath, '--version'], {
       encoding: 'utf8',
     });
 
@@ -37,7 +37,7 @@ describe('bin/wake-dev.js', () => {
 
       const result = spawnSync(
         process.execPath,
-        [join(tempDir, 'bin', 'wake-dev.mjs'), 'version'],
+        [join(tempDir, 'bin', 'wake-dev.mjs'), '--version'],
         {
           encoding: 'utf8',
         },

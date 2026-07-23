@@ -67,9 +67,10 @@ differences, see [docs/runner-comparison.md](runner-comparison.md).
 ## Sandbox
 
 See [docs/getting-started.md](getting-started.md) for scaffolding a Wake home
-and running `sandbox build`/`up`/`setup`. From a source checkout, run `npm
-link` once to get a `wake-dev` command on `PATH` (runs `src/main.ts` live via
-this checkout's own `tsx`, no build step) and use it in place of `wake`.
+and running `sandbox build`/`up`/`setup`. From a source checkout, run `cd
+bin && npm link` once to get a `wake-dev` command on `PATH` (runs
+`src/main.ts` live via this checkout's own `tsx`, no build step) and use it
+in place of `wake`.
 
 ### Self-update
 

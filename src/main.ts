@@ -460,7 +460,7 @@ function createHostDockerCli(): DockerCli {
 }
 
 /**
- * Runs `wake version` inside the sandbox container via `docker exec` and
+ * Runs `wake --version` inside the sandbox container via `docker exec` and
  * returns the trimmed stdout, so `wake doctor` can compare it against the
  * installed host CLI version. Stderr is discarded (surfaced only as an
  * empty/mismatched version, which the caller already treats as a notice).
@@ -472,7 +472,7 @@ async function execVersionInContainer(
 ): Promise<string> {
   let stdout = '';
   const command =
-    devMode === 'source' ? ['node', '/app/dist/src/main.js', 'version'] : ['wake', 'version'];
+    devMode === 'source' ? ['node', '/app/dist/src/main.js', '--version'] : ['wake', '--version'];
   await docker.execCaptured(containerName, command, {
     onStdout: (line) => {
       stdout += line;
@@ -887,7 +887,7 @@ export function printUsage(stream: NodeJS.WritableStream): void {
       '  wake ui                    Run the control-plane UI server',
       '  wake correlate             Manually correlate a resource to a work item',
       '  wake doctor                Diagnose config/GitHub/Docker/sandbox setup problems',
-      '  wake version               Print the installed Wake version',
+      '  wake --version             Print the installed Wake version',
       '  wake --help                Show this message',
       '',
       'Getting started:',
@@ -920,7 +920,7 @@ export async function dispatchMainCommand(input: {
   runDoctor: (args: string[]) => Promise<unknown>;
 }) {
   const command = input.args[0] ?? 'help';
-  if (command === '--version' || command === '-v' || command === 'version') {
+  if (command === '--version' || command === '-v') {
     console.log(wakeVersion);
     return;
   }
