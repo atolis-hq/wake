@@ -63,7 +63,6 @@ conversation forward wherever the work is already happening.
 - [Where the Work Happens](#where-the-work-happens)
 - [Supported Agent CLIs](#supported-agent-clis)
 - [Getting Started](#getting-started)
-- [Development](#development)
 - [Documentation](#documentation)
 - [Issues & Feature Requests](#issues--feature-requests)
 - [License](#license)
@@ -164,105 +163,31 @@ for capability differences between runners.
 
 ## Getting Started
 
-Wake is distributed as the `@atolis-hq/wake` npm package. You can run the CLI
-with `npx` or install it globally:
-
-```sh
-npx @atolis-hq/wake init ./wake-home
-```
-
 ```sh
 npm install -g @atolis-hq/wake
 wake init ./wake-home
-```
-
-`wake init` creates a Wake home directory with `config.json`, prompt templates,
-Docker sandbox assets, runtime directories, and shell launchers:
-
-- `wake.sh` for bash, Git Bash, WSL, and similar shells.
-- `wake.ps1` for PowerShell.
-
-Use the generated launcher from the Wake home for day-to-day operation. It's a
-one-line convenience that delegates to the global `wake` binary with
-`--wake-root` set to the Wake home directory, so you don't need to type
-`--wake-root` yourself.
-
-The bare `wake` binary does the same auto-delegation itself: once
-`docker/Dockerfile` exists under `--wake-root` (i.e. after `wake sandbox
-build` has run), runtime commands (`tick`/`start`/`ui`/`smoke`/`correlate`)
-automatically exec into `wake sandbox exec` instead of running on the host.
-Pass `--host` to force a runtime command to run directly on the host even
-when a sandbox is available.
-
-Run `wake --help` at any time for the full command list.
-
-Run `wake doctor` after `wake init` and `wake sandbox build` to check your
-setup: prompt/runner config, GitHub token resolvability, and Docker/sandbox
-reachability. It also reports (without failing) sandbox-vs-CLI version
-drift and any prompt/Dockerfile customizations that have drifted from the
-shipped defaults.
-
-`wake init` auto-detects whether it's running from a source checkout or a
-packaged `npm install -g` install and records this as `dev.mode` in
-`config.json`, so `wake sandbox build` works out of the box either way —
-no separate setup needed for a plain global install. Override the detected
-mode with `wake init --dev` (force source mode) or `wake init --packaged`
-(force packaged mode) if auto-detection doesn't match your intent.
-
-```sh
 cd ./wake-home
 ./wake.sh sandbox build
 ./wake.sh sandbox up
 ./wake.sh sandbox setup
-./wake.sh tick
 ./wake.sh start
 ```
 
-The default sandbox image includes Node, Git, GitHub CLI, Claude Code, Codex,
-Cursor, and the Wake runtime. Treat the generated `docker/Dockerfile` as a
-starting point for your own environment: add the tools your repositories need,
-then rebuild with `./wake.sh sandbox build`. Wake writes the package location to
-`config.json` as `dev.repoRoot` so sandbox rebuilds use the same bundled assets;
-editing your generated Dockerfile or prompts is expected and future package
-upgrades should not overwrite that Wake home.
-
-Common commands:
-
-```sh
-./wake.sh ui
-./wake.sh tick
-./wake.sh start
-./wake.sh stop
-./wake.sh sandbox resume <session-id> --cwd "/wake/workspaces/<workId>"
-```
-
-For a source checkout development workflow, use:
-
-- [docs/development.md](docs/development.md)
-
-Recommended local practices:
-
-- Use a separate git identity for Wake-managed agent work so automated commits
-  and human commits are easy to distinguish.
-- Prefer the prebuilt sandbox flow when running real agent work locally.
-- Treat the default Dockerfile as a starting point. It includes common tooling
-  such as Node, but it is expected to be edited for the repositories and agents
-  you want Wake to operate on.
-
-## Development
-
-Local setup, commands, sandbox operation, auth setup, UI notes, and GitHub
-polling details are documented in [docs/development.md](docs/development.md).
+Full setup instructions — including the source-checkout dev-mode path,
+directory layout, `wake doctor`, and updating — are in
+[docs/getting-started.md](docs/getting-started.md). Run `wake --help` at
+any time for the full command list.
 
 ## Documentation
 
+- [docs/getting-started.md](docs/getting-started.md) — full setup for both packaged and source-checkout dev mode.
 - [docs/vision.md](docs/vision.md) — the rationale and long-term direction for Wake.
 - [docs/architecture.md](docs/architecture.md) — module boundaries and the event-sourced core.
 - [docs/implementation.md](docs/implementation.md) — the accepted implementation plan.
 - [docs/workflows.md](docs/workflows.md) — how stages, prompts, and runner routes are configured.
 - [docs/prompts.md](docs/prompts.md) — how prompt templates map to workflow stages.
 - [docs/configuration.md](docs/configuration.md) — `config.json` options and the operator correlation escape hatch.
-- [docs/development.md](docs/development.md) — local setup and sandbox development workflow.
+- [docs/development.md](docs/development.md) — npm scripts, formatting, self-update, GitHub polling.
 - [docs/runner-comparison.md](docs/runner-comparison.md) — capability differences between supported runners.
 
 ## Issues & Feature Requests
