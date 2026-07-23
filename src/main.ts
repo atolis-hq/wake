@@ -896,8 +896,8 @@ export function printUsage(stream: NodeJS.WritableStream): void {
       '',
       'Runtime commands (tick/start/ui/smoke/correlate) auto-delegate into the sandbox',
       'when docker/Dockerfile exists at --wake-root (i.e. after `wake sandbox build`),',
-      'defaulting --wake-root to the current directory. Pass --host to run directly',
-      'on the host instead.',
+      'defaulting --wake-root to the current directory. Pass --no-sandbox to run',
+      'directly on the host instead.',
       '',
     ].join('\n'),
   );
@@ -968,14 +968,14 @@ export async function dispatchMainCommand(input: {
     const wakeRoot = resolve(
       readFlagBeforeCommandTerminator('--wake-root', commandArgs) ?? process.cwd(),
     );
-    const host = commandArgs.includes('--host');
+    const host = commandArgs.includes('--no-sandbox');
 
     if (!host && (await hasDockerfile(wakeRoot))) {
       await input.execIntoSandbox(input.args);
       return;
     }
 
-    const hostArgs = commandArgs.filter((arg) => arg !== '--host');
+    const hostArgs = commandArgs.filter((arg) => arg !== '--no-sandbox');
     if (command === 'tick') {
       await input.runTick(hostArgs);
     } else if (command === 'start') {
@@ -1117,12 +1117,12 @@ async function main() {
     runUi,
     runCorrelate,
     execIntoSandbox: async (commandArgs) => {
-      const withoutHostFlag = commandArgs.filter((arg) => arg !== '--host');
-      const wakeRootIndex = withoutHostFlag.indexOf('--wake-root');
+      const withoutBypassFlag = commandArgs.filter((arg) => arg !== '--no-sandbox');
+      const wakeRootIndex = withoutBypassFlag.indexOf('--wake-root');
       const rewritten =
         wakeRootIndex === -1
-          ? [...withoutHostFlag, '--wake-root', '/wake']
-          : withoutHostFlag.map((arg, index) => (index === wakeRootIndex + 1 ? '/wake' : arg));
+          ? [...withoutBypassFlag, '--wake-root', '/wake']
+          : withoutBypassFlag.map((arg, index) => (index === wakeRootIndex + 1 ? '/wake' : arg));
 
       const wakeRoot = resolve(
         readFlagBeforeCommandTerminator('--wake-root', commandArgs) ?? process.cwd(),

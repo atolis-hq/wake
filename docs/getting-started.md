@@ -95,8 +95,9 @@ wake stop     # graceful stop, waits for any active run to finish
 
 Once `docker/Dockerfile` exists (i.e. after `sandbox build`), these commands
 automatically exec into `wake sandbox exec` instead of running on the host —
-no separate launcher needed. Pass `--host` to force host execution even when
-a sandbox is available. See `wake --help` for the full command list.
+no separate launcher needed. Pass `--no-sandbox` to force host execution
+even when a sandbox is available. See `wake --help` for the full command
+list.
 
 ## Check your setup
 

@@ -509,13 +509,13 @@ describe('sandbox auto-delegation', () => {
     expect(execIntoSandbox).not.toHaveBeenCalled();
   });
 
-  it('--host bypasses auto-delegation even when docker/Dockerfile exists', async () => {
+  it('--no-sandbox bypasses auto-delegation even when docker/Dockerfile exists', async () => {
     const wakeRoot = await makeTempWakeRootWithDockerfile();
     const execIntoSandbox = vi.fn(async () => {});
     const runTick = vi.fn(async () => {});
 
     await dispatchMainCommand({
-      args: ['tick', '--wake-root', wakeRoot, '--host'],
+      args: ['tick', '--wake-root', wakeRoot, '--no-sandbox'],
       runInit: async () => {},
       runSandbox: async () => {},
       runSandboxSetup: async () => {},
@@ -530,6 +530,7 @@ describe('sandbox auto-delegation', () => {
     });
 
     expect(runTick).toHaveBeenCalled();
+    expect(runTick).toHaveBeenCalledWith(['--wake-root', wakeRoot]);
     expect(execIntoSandbox).not.toHaveBeenCalled();
   });
 

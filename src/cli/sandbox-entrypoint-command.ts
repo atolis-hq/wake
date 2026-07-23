@@ -61,9 +61,15 @@ async function superviseWakeStart(
   for (;;) {
     deps.log('wake start: starting resident loop');
     const { command, argsPrefix } = resolveWakeInvocation(deps.env);
-    const { pid } = deps.spawnDetached(command, [...argsPrefix, 'start', '--wake-root', '/wake'], {
-      logFile: '/wake/.wake/logs/start.log',
-    });
+    // --no-sandbox: this already IS the sandbox — docker/Dockerfile is
+    // bind-mounted at /wake, so without this the process's own
+    // dispatchMainCommand would see it and try to auto-delegate into
+    // `docker exec`, which doesn't exist inside the container itself.
+    const { pid } = deps.spawnDetached(
+      command,
+      [...argsPrefix, 'start', '--wake-root', '/wake', '--no-sandbox'],
+      { logFile: '/wake/.wake/logs/start.log' },
+    );
     await deps.writeFile('/wake/.wake/logs/start.pid', String(pid));
     const exitCode = await deps.waitForExit(pid);
     deps.log(
@@ -83,6 +89,9 @@ export async function runSandboxEntrypointCommand(deps: SandboxEntrypointDeps): 
     deps.log(`wake ui: starting on 0.0.0.0:${port}`);
 
     const { command, argsPrefix } = resolveWakeInvocation(env);
+    // --no-sandbox: same reason as the `wake start` spawn below — without
+    // it, this process would try to `docker exec` itself from inside the
+    // container it's already running in.
     const uiArgs = [
       ...argsPrefix,
       'ui',
@@ -92,6 +101,7 @@ export async function runSandboxEntrypointCommand(deps: SandboxEntrypointDeps): 
       '0.0.0.0',
       '--port',
       port,
+      '--no-sandbox',
     ];
     if (env.WAKE_UI_TOKEN) {
       uiArgs.push('--token', env.WAKE_UI_TOKEN);

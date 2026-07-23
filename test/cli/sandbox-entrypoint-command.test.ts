@@ -30,7 +30,16 @@ describe('runSandboxEntrypointCommand', () => {
 
     expect(spawnDetached).toHaveBeenCalledWith(
       'node',
-      expect.arrayContaining(['ui', '--wake-root', '/wake', '--host', '0.0.0.0', '--port', '4317']),
+      expect.arrayContaining([
+        'ui',
+        '--wake-root',
+        '/wake',
+        '--host',
+        '0.0.0.0',
+        '--port',
+        '4317',
+        '--no-sandbox',
+      ]),
       { logFile: '/wake/.wake/logs/ui.log' },
     );
   });
@@ -396,7 +405,7 @@ describe('runSandboxEntrypointCommand', () => {
 
       expect(spawnDetached).toHaveBeenCalledWith(
         'node',
-        ['/app/dist/src/main.js', 'start', '--wake-root', '/wake'],
+        ['/app/dist/src/main.js', 'start', '--wake-root', '/wake', '--no-sandbox'],
         { logFile: '/wake/.wake/logs/start.log' },
       );
     });
@@ -416,9 +425,11 @@ describe('runSandboxEntrypointCommand', () => {
         removeFile: vi.fn(async () => {}),
       });
 
-      expect(spawnDetached).toHaveBeenCalledWith('wake', ['start', '--wake-root', '/wake'], {
-        logFile: '/wake/.wake/logs/start.log',
-      });
+      expect(spawnDetached).toHaveBeenCalledWith(
+        'wake',
+        ['start', '--wake-root', '/wake', '--no-sandbox'],
+        { logFile: '/wake/.wake/logs/start.log' },
+      );
     });
 
     it('spawns the UI via node + WAKE_MAIN_JS in source mode (WAKE_MAIN_JS set)', async () => {
@@ -451,6 +462,7 @@ describe('runSandboxEntrypointCommand', () => {
           '0.0.0.0',
           '--port',
           '4317',
+          '--no-sandbox',
         ],
         { logFile: '/wake/.wake/logs/ui.log' },
       );
@@ -473,7 +485,7 @@ describe('runSandboxEntrypointCommand', () => {
 
       expect(spawnDetached).toHaveBeenCalledWith(
         'wake',
-        ['ui', '--wake-root', '/wake', '--host', '0.0.0.0', '--port', '4317'],
+        ['ui', '--wake-root', '/wake', '--host', '0.0.0.0', '--port', '4317', '--no-sandbox'],
         { logFile: '/wake/.wake/logs/ui.log' },
       );
     });
