@@ -67,7 +67,7 @@ describe('tick runner', () => {
         expect(result.nextStage).toBeNull();
       }
 
-      const events = await readFile(join(root, 'events', '2026-07-05.jsonl'), 'utf8');
+      const events = await readFile(store.paths.eventFile('2026-07-05'), 'utf8');
       expect(events).toContain('"sentinel":"AWAITING_APPROVAL"');
       expect(events).toContain('"rawSentinel":"DONE"');
     });

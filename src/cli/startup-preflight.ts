@@ -95,10 +95,10 @@ async function assertPromptsRootAccessible(promptsRoot: string | undefined): Pro
   await access(promptsRoot);
 }
 
-export async function runStartupPreflight(
+export async function collectStartupPreflightFailures(
   config: WakeConfig,
   deps: StartupPreflightDeps = {},
-): Promise<void> {
+): Promise<string[]> {
   const failures: string[] = [];
   const loadPrompt = deps.loadPrompt ?? defaultLoadPrompt;
   const checkRunnerCommand = deps.checkRunnerCommand ?? defaultCheckRunnerCommand;
@@ -169,6 +169,14 @@ export async function runStartupPreflight(
     }
   }
 
+  return failures;
+}
+
+export async function runStartupPreflight(
+  config: WakeConfig,
+  deps: StartupPreflightDeps = {},
+): Promise<void> {
+  const failures = await collectStartupPreflightFailures(config, deps);
   if (failures.length > 0) {
     throw formatPreflightFailures(failures);
   }

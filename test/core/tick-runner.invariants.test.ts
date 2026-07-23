@@ -81,7 +81,7 @@ describe('tick runner', () => {
       );
 
       // state/ (projection AND index) is a rebuildable cache over events/.
-      await rm(join(root, 'state'), { recursive: true, force: true });
+      await rm(join(store.paths.dataRoot, 'state'), { recursive: true, force: true });
       await createProjectionUpdater({ stateStore: store, resourceIndex }).rebuildFromEvents(
         await store.listEventEnvelopes(),
       );
@@ -166,7 +166,7 @@ describe('tick runner', () => {
       );
 
       // state/ is a rebuildable cache over events/ — nothing more.
-      await rm(join(root, 'state'), { recursive: true, force: true });
+      await rm(join(store.paths.dataRoot, 'state'), { recursive: true, force: true });
       await createProjectionUpdater({ stateStore: store, resourceIndex }).rebuildFromEvents(
         await store.listEventEnvelopes(),
       );
@@ -532,7 +532,7 @@ describe('tick runner', () => {
       ).length;
       expect(conflictEventCountBefore).toBe(2);
 
-      const indexDir = join(root, 'state', 'index');
+      const indexDir = store.paths.resourceIndexRoot;
       const shardFilesBefore = (await readdir(indexDir)).sort();
       expect(shardFilesBefore.length).toBeGreaterThanOrEqual(1);
       const shardSnapshots = new Map<string, string>();
@@ -542,7 +542,7 @@ describe('tick runner', () => {
 
       // Delete state/ entirely — the projection AND the index are both
       // rebuildable projections over events/, never source of truth.
-      await rm(join(root, 'state'), { recursive: true, force: true });
+      await rm(join(store.paths.dataRoot, 'state'), { recursive: true, force: true });
 
       const allEvents = await store.listEventEnvelopes();
       await projectionUpdater.rebuildFromEvents(allEvents);

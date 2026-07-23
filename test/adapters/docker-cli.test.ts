@@ -1,6 +1,35 @@
+import { EventEmitter } from 'node:events';
+import { PassThrough } from 'node:stream';
+
 import { describe, expect, it } from 'vitest';
 
-import { createDockerCli } from '../../src/adapters/docker/docker-cli.js';
+import { createDockerCli, type DockerExecProcess } from '../../src/adapters/docker/docker-cli.js';
+
+function createFakeExecProcess(): {
+  process: DockerExecProcess;
+  stdout: PassThrough;
+  stderr: PassThrough;
+  emitClose: (exitCode: number | null) => void;
+  emitError: (error: Error) => void;
+} {
+  const stdout = new PassThrough();
+  const stderr = new PassThrough();
+  const emitter = new EventEmitter();
+
+  return {
+    process: {
+      stdout,
+      stderr,
+      on: (event, listener) => {
+        emitter.on(event, listener);
+      },
+    } as DockerExecProcess,
+    stdout,
+    stderr,
+    emitClose: (exitCode) => emitter.emit('close', exitCode),
+    emitError: (error) => emitter.emit('error', error),
+  };
+}
 
 describe('docker cli adapter', () => {
   it('builds docker images with the expected arguments', async () => {
@@ -21,6 +50,37 @@ describe('docker cli adapter', () => {
 
     expect(calls).toEqual([
       ['build', '-t', 'wake-sandbox', '-f', 'docker/Dockerfile', '/repo/wake'],
+    ]);
+  });
+
+  it('passes build args as --build-arg flags before the context dir', async () => {
+    const calls: string[][] = [];
+    const docker = createDockerCli({
+      inspectContainer: async () => null,
+      inspectImage: async () => false,
+      run: async (args) => {
+        calls.push(args);
+      },
+    });
+
+    await docker.build({
+      image: 'wake-sandbox',
+      dockerfile: 'docker/Dockerfile',
+      contextDir: '/repo/wake',
+      buildArgs: { WAKE_VERSION: '1.2.3' },
+    });
+
+    expect(calls).toEqual([
+      [
+        'build',
+        '-t',
+        'wake-sandbox',
+        '-f',
+        'docker/Dockerfile',
+        '--build-arg',
+        'WAKE_VERSION=1.2.3',
+        '/repo/wake',
+      ],
     ]);
   });
 
@@ -518,6 +578,83 @@ describe('docker cli adapter', () => {
     await docker.exec('wake-sandbox', ['pwd']);
 
     expect(calls).toEqual([['exec', '-i', 'wake-sandbox', 'pwd']]);
+  });
+
+  it('spawns docker exec -i with piped stdio and forwards scrubbed stdout/stderr lines', async () => {
+    const spawnCalls: string[][] = [];
+    const fake = createFakeExecProcess();
+    const docker = createDockerCli({
+      inspectContainer: async () => null,
+      inspectImage: async () => false,
+      run: async () => {
+        throw new Error('should not use run for execCaptured');
+      },
+      spawnExec: (args) => {
+        spawnCalls.push(args);
+        return fake.process;
+      },
+    });
+
+    const stdoutLines: string[] = [];
+    const stderrLines: string[] = [];
+
+    const execPromise = docker.execCaptured('wake-sandbox', ['env'], {
+      onStdout: (line) => stdoutLines.push(line),
+      onStderr: (line) => stderrLines.push(line),
+    });
+
+    fake.stdout.write('GITHUB_TOKEN=abc123\n');
+    fake.stdout.write('hello world\n');
+    fake.stdout.end();
+    fake.stderr.write('using token ghp_abcdefghijklmnop\n');
+    fake.stderr.end();
+
+    // Let the readline 'line' events for the writes above flush before close.
+    await new Promise((r) => setImmediate(r));
+    fake.emitClose(0);
+
+    await execPromise;
+
+    expect(spawnCalls).toEqual([['exec', '-i', 'wake-sandbox', 'env']]);
+    expect(stdoutLines).toEqual(['GITHUB_TOKEN=[REDACTED]', 'hello world']);
+    expect(stderrLines).toEqual(['using token [REDACTED]']);
+  });
+
+  it('rejects execCaptured when the process exits non-zero', async () => {
+    const fake = createFakeExecProcess();
+    const docker = createDockerCli({
+      inspectContainer: async () => null,
+      inspectImage: async () => false,
+      run: async () => {
+        throw new Error('should not use run for execCaptured');
+      },
+      spawnExec: () => fake.process,
+    });
+
+    const execPromise = docker.execCaptured('wake-sandbox', ['false'], {
+      onStdout: () => {},
+      onStderr: () => {},
+    });
+
+    fake.stdout.end();
+    fake.stderr.end();
+    fake.emitClose(1);
+
+    await expect(execPromise).rejects.toThrow('failed with exit code 1');
+  });
+
+  it('rejects execCaptured when spawnExec was not configured', async () => {
+    const docker = createDockerCli({
+      inspectContainer: async () => null,
+      inspectImage: async () => false,
+      run: async () => {
+        throw new Error('should not use run for execCaptured');
+      },
+    });
+
+    await expect(
+      docker.execCaptured('wake-sandbox', ['pwd'], { onStdout: () => {}, onStderr: () => {} }),
+    ).rejects.toThrow('spawnExec');
   });
 
   it('tails docker container logs with a bounded line count', async () => {

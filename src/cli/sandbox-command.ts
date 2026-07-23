@@ -1,4 +1,4 @@
-import { mkdir } from 'node:fs/promises';
+import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { posix, resolve } from 'node:path';
 
 import type { DockerCli } from '../adapters/docker/docker-cli.js';
@@ -8,8 +8,33 @@ import type { RunnerEntry, RunRecord } from '../domain/types.js';
 import { runSandboxResumeCommand } from './sandbox-resume.js';
 import { runSelfUpdateCommand, runSelfUpdateLoop } from './self-update-command.js';
 import { runStopCommand } from './stop-command.js';
-import { buildSandboxLoggedCommand } from './sandbox-logging.js';
 import type { WakeConfig } from '../domain/types.js';
+import { wakeVersion } from '../version.js';
+
+async function ensureDockerfile(input: {
+  wakeRoot: string;
+  devMode: 'source' | 'packaged' | undefined;
+  packagedTemplatesRoot: string;
+}): Promise<void> {
+  const targetPath = resolve(input.wakeRoot, 'docker', 'Dockerfile');
+
+  try {
+    await access(targetPath);
+    return; // already present — user-owned, never overwritten
+  } catch {
+    // fall through to write it
+  }
+
+  const mode = input.devMode ?? 'packaged';
+  const templatePath = resolve(
+    input.packagedTemplatesRoot,
+    mode === 'source' ? 'Dockerfile' : 'Dockerfile.packaged',
+  );
+  const content = await readFile(templatePath, 'utf8');
+
+  await mkdir(resolve(input.wakeRoot, 'docker'), { recursive: true });
+  await writeFile(targetPath, content, 'utf8');
+}
 
 async function ensureContainerHomeMountParents(input: {
   containerHomeRoot: string;
@@ -64,6 +89,7 @@ export async function runSandboxCommand(input: {
   wakeRoot: string;
   containerHomeRoot: string;
   docker: DockerCli;
+  packagedTemplatesRoot: string;
   stateStore: { listRunRecords: () => Promise<RunRecord[]> };
   sleep: (ms: number) => Promise<void>;
   logger: { info: (message: string) => void; error?: (message: string) => void };
@@ -92,10 +118,19 @@ export async function runSandboxCommand(input: {
       throw new Error('Sandbox build requires config.dev.repoRoot');
     }
 
+    const effectiveDevMode = input.config.dev?.mode ?? 'packaged';
+
+    await ensureDockerfile({
+      wakeRoot: input.wakeRoot,
+      devMode: effectiveDevMode,
+      packagedTemplatesRoot: input.packagedTemplatesRoot,
+    });
+
     await input.docker.build({
       image: input.config.sandbox.image,
       dockerfile: resolve(input.wakeRoot, 'docker', 'Dockerfile'),
       contextDir: repoRoot,
+      ...(effectiveDevMode === 'packaged' ? { buildArgs: { WAKE_VERSION: wakeVersion } } : {}),
     });
     return;
   }
@@ -163,7 +198,10 @@ export async function runSandboxCommand(input: {
       throw new Error('Sandbox self-update requires config.dev.repoRoot');
     }
     if (input.selfUpdate === undefined) {
-      throw new Error('Sandbox self-update requires git/issueReporter/ledger dependencies');
+      throw new Error(
+        'Sandbox self-update requires dev.mode: "source". For a packaged install, update instead with:\n' +
+          '  npm install -g @atolis-hq/wake@latest && wake sandbox build && wake sandbox update',
+      );
     }
 
     const selfUpdateArgs = input.args.slice(1);
@@ -199,7 +237,11 @@ export async function runSandboxCommand(input: {
   }
 
   if (subcommand === 'setup') {
-    await input.docker.exec(input.config.sandbox.containerName, ['bash', '/wake/docker/setup.sh'], {
+    const setupCommand =
+      input.config.dev?.mode === 'source'
+        ? ['node', '/app/dist/src/main.js', 'sandbox-setup']
+        : ['wake', 'sandbox-setup'];
+    await input.docker.exec(input.config.sandbox.containerName, setupCommand, {
       interactive: true,
     });
     return;
@@ -208,18 +250,20 @@ export async function runSandboxCommand(input: {
   if (subcommand === 'exec') {
     const commandArgs = input.args.slice(1);
     const wrappedCommand = commandArgs[0] === '--' ? commandArgs.slice(1) : commandArgs;
-    await input.docker.exec(
-      input.config.sandbox.containerName,
-      wrappedCommand.length === 0
-        ? []
-        : buildSandboxLoggedCommand({
-            label: 'sandbox.exec',
-            config: input.config,
-            wakeRoot: input.wakeRoot,
-            containerHomeRoot: input.containerHomeRoot,
-            command: wrappedCommand,
-          }),
-    );
+
+    if (wrappedCommand.length === 0) {
+      // No command given: drop into an interactive shell with a real TTY,
+      // same as `docker exec -it ... bash`. That's a genuine interactive
+      // use case, so it stays on the inherited-stdio path rather than the
+      // piped/scrubbed one below (which would break TTY behavior).
+      await input.docker.exec(input.config.sandbox.containerName, []);
+      return;
+    }
+
+    await input.docker.execCaptured(input.config.sandbox.containerName, wrappedCommand, {
+      onStdout: (line) => input.logger.info(line),
+      onStderr: (line) => (input.logger.error ?? input.logger.info)(line),
+    });
     return;
   }
 
@@ -253,6 +297,7 @@ export async function runSandboxCommand(input: {
       wakeRoot: input.wakeRoot,
       containerHomeRoot: input.containerHomeRoot,
       buildResumeCommand: runnerAdapter.buildResumeCommand,
+      logger: input.logger,
     });
     return;
   }

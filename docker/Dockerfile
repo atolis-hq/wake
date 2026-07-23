@@ -44,11 +44,17 @@ RUN --mount=type=cache,target=/root/.npm \
 
 COPY . .
 ARG WAKE_BUILD_TAG
-RUN WAKE_BUILD_TAG="$WAKE_BUILD_TAG" npm run build && chmod +x docker/entrypoint.sh
+RUN WAKE_BUILD_TAG="$WAKE_BUILD_TAG" npm run build
 
 USER wake
 WORKDIR /home/wake
 
 EXPOSE 4317
 
-ENTRYPOINT ["/app/docker/entrypoint.sh"]
+# Baked at build time so wake sandbox-entrypoint (and anything it spawns) can
+# find the compiled CLI without hardcoding /app in multiple places. Docker's
+# exec-form ENTRYPOINT below does not expand env vars, so it stays literal —
+# that's fine since it's the very first thing that runs.
+ENV WAKE_MAIN_JS=/app/dist/src/main.js
+
+ENTRYPOINT ["node", "/app/dist/src/main.js", "sandbox-entrypoint"]

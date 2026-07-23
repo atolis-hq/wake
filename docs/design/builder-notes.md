@@ -1,6 +1,6 @@
 # Builder Notes — non-obvious details for the implementing model
 
-Read [`vision.md`](vision.md) and [`implementation.md`](implementation.md) first;
+Read [`vision.md`](../vision.md) and [`implementation.md`](implementation.md) first;
 they are authoritative. This file is only the traps and nuances that are easy to
 miss and expensive to discover. Do not re-litigate decisions recorded there.
 

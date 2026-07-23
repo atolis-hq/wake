@@ -69,7 +69,7 @@ describe('tick runner', () => {
         reason: 'stage queue tier light selected runner fake-light',
       });
 
-      const events = await readFile(join(root, 'events', '2026-07-05.jsonl'), 'utf8');
+      const events = await readFile(store.paths.eventFile('2026-07-05'), 'utf8');
       expect(events).toContain(
         '"routing":{"runnerName":"fake-light","runnerKind":"fake","tier":"light"',
       );

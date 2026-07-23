@@ -1,6 +1,9 @@
 # Configuration
 
-Wake's behavior is configured through a `config.json` file located at `.wake/config.json`. This document describes the configuration structure, properties, and defaults.
+Wake's behavior is configured through a `config.json` file at the root of a
+Wake home directory (see [docs/getting-started.md](getting-started.md)).
+This document describes the configuration structure, properties, and
+defaults.
 
 ## Overview
 
@@ -21,13 +24,13 @@ All configuration uses `schemaVersion: 1`.
 {
   "schemaVersion": 1,
   "paths": {
-    "wakeRoot": ".wake",
-    "promptsRoot": ".wake/prompts"
+    "wakeRoot": "/path/to/wake-home",
+    "promptsRoot": "/path/to/wake-home/prompts"
   },
   "sandbox": {
     "image": "wake-sandbox",
     "imageRepository": "wake-sandbox",
-    "containerName": "wake-sandbox",
+    "containerName": "wake-sandbox-my-project",
     "containerMountPath": "/wake",
     "containerHomeMountPath": "/home/wake",
     "start": { "enabled": true },
@@ -129,10 +132,15 @@ All configuration uses `schemaVersion: 1`.
 
 Runtime and storage directories.
 
-| Property      | Type              | Description                                                           | Default              |
-| ------------- | ----------------- | --------------------------------------------------------------------- | -------------------- |
-| `wakeRoot`    | string            | Root directory where Wake stores state, fixtures, and persistent data | `.wake`              |
-| `promptsRoot` | string (optional) | Explicit prompt-template root; defaults to `<wakeRoot>/prompts`       | `<wakeRoot>/prompts` |
+| Property      | Type              | Description                                                                                                    | Default              |
+| ------------- | ----------------- | ---------------------------------------------------------------------------------------------------------------- | -------------------- |
+| `wakeRoot`    | string            | The Wake home directory itself. Always resolved fresh from `--wake-root`/the current directory — not user-set. | current directory    |
+| `promptsRoot` | string (optional) | Explicit prompt-template root; defaults to `<wakeRoot>/prompts`                                                 | `<wakeRoot>/prompts` |
+
+Internal/durable data (`events/`, `state/`, `runs/`, `sources/`, `repos/`,
+`locks/`, `logs/`, `container-home/`, `ledger.json`) lives under a hidden
+`<wakeRoot>/.wake/` — see [docs/getting-started.md](getting-started.md) for
+the full directory layout.
 
 Prompt templates are Handlebars markdown files named `prompts/<action>.md`, for
 example `prompts/refine.md`. Wake passes `mode`, `isStart`, and `isResume` into
@@ -187,7 +195,7 @@ Docker sandbox settings for the durable Wake container.
 | ------------------------ | ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
 | `image`                  | string                                                     | Docker image (including tag) Wake uses for the sandbox                                                                                                                                                     | `"wake-sandbox"` |
 | `imageRepository`        | string                                                     | Base image name (no tag) that `wake sandbox self-update` appends a release tag to, e.g. `wake-sandbox:v0.0.80`; old tags are kept so a failed update can roll back to the previous image without a rebuild | `"wake-sandbox"` |
-| `containerName`          | string                                                     | Container name Wake starts and reuses                                                                                                                                                                      | `"wake-sandbox"` |
+| `containerName`          | string                                                     | Container name Wake starts and reuses; derived from the wake-root directory name at `init` time (e.g., `wake-sandbox-<dirname>`) rather than a fixed literal | `wake-sandbox-<dirname>` |
 | `containerMountPath`     | string                                                     | Container path where the Wake home is bind-mounted                                                                                                                                                         | `"/wake"`        |
 | `containerHomeMountPath` | string                                                     | Container path where the sandbox home directory is bind-mounted                                                                                                                                            | `"/home/wake"`   |
 | `start.enabled`          | boolean                                                    | Whether the sandbox entrypoint starts the resident `wake start` loop automatically                                                                                                                         | `true`           |
@@ -321,9 +329,9 @@ Re-authenticate inside the sandbox when the session expires by running
 Raw runner prompt and response capture for debugging.
 
 When enabled, Wake writes text files under
-`<wakeRoot>/transcripts/<workId>/<session-or-run>/`, where `<workId>` is the
-work item's minted `work-<ulid>` identity (the same key used by
-`state/<workId>.json`). Each runner run
+`<wakeRoot>/.wake/transcripts/<workId>/<session-or-run>/`, where `<workId>` is
+the work item's minted `work-<ulid>` identity (the same key used by
+`.wake/state/<workId>.json`). Each runner run
 writes a separate `*.prompt.txt` file with the exact prompt text passed to the
 CLI prompt argument and a matching `*.response.txt` file with raw stdout from
 the CLI. Initial runs are grouped by Wake `runId`; resumed runs are grouped by
@@ -415,8 +423,8 @@ server:
 - `enabled` — when `true`, `wake sandbox up`/`wake sandbox update` publish
   `ui.port` from the container to `127.0.0.1:<ui.port>` on the host and pass
   `WAKE_UI_ENABLED`/`WAKE_UI_PORT`/`WAKE_UI_TOKEN` into the container; the
-  container's `docker/entrypoint.sh` then starts `wake ui --host 0.0.0.0`
-  automatically alongside the resident loop. `false` (the default) leaves the
+  container's `wake sandbox-entrypoint` process then starts `wake ui --host
+  0.0.0.0` automatically alongside the resident loop. `false` (the default) leaves the
   container exactly as before — no published port, no auto-started process.
 - `port` — port `wake ui` binds (`--port` overrides this), and the port
   published from the container when `enabled` is true. Default `4317`.
@@ -425,7 +433,7 @@ server:
   `Authorization: Bearer <token>` or a `wake_ui_token` cookie.
 - `tunnel.enabled` — when `true` and `ui.enabled` is also true, the sandbox
   entrypoint starts `ngrok http 127.0.0.1:<ui.port>` inside the container and
-  writes the discovered public URL to `<wakeRoot>/control-plane-ui-url`. GitHub
+  writes the discovered public URL to `<wakeRoot>/.wake/control-plane-ui-url`. GitHub
   status comments then link the `Wake` header to that URL. Default `false`.
 - `tunnel.authToken` — optional ngrok authtoken passed to the container as
   `NGROK_AUTHTOKEN`. To avoid storing the token in `config.json`, leave this

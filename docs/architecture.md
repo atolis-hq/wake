@@ -22,20 +22,23 @@
 
 ## Durable State
 
-Wake owns a central `.wake/` home. The canonical durable record is an append-only
-event stream; projections and summaries are derived from it:
+Wake owns a Wake home directory (`config.json`, `prompts/`, `workspaces/` at
+the visible top level, everything else under a hidden `.wake/` — see
+[docs/getting-started.md](getting-started.md)). The canonical durable record
+is an append-only event stream; projections and summaries are derived from
+it:
 
 - `config.json` for versioned config
-- `ledger.json` for pause windows and future budget state
-- `events/<date>.jsonl` for immutable imported and internal event envelopes
-- `state/<workId>.json` for a derived projection of the current work item
-- `state/index/<xx>.json` for the reverse index that resolves a resource to its work item
-- `runs/<run-id>.json` for per-invocation records
+- `.wake/ledger.json` for pause windows and future budget state
+- `.wake/events/<date>.jsonl` for immutable imported and internal event envelopes
+- `.wake/state/<workId>.json` for a derived projection of the current work item
+- `.wake/state/index/<xx>.json` for the reverse index that resolves a resource to its work item
+- `.wake/runs/<run-id>.json` for per-invocation records
 - optional future prompt/context artifacts derived from events plus projections
 
 The projection file is no longer the source of truth. It is a materialized view
 used for fast deterministic routing. If projection logic changes, Wake should be
-able to rebuild `state/` from the canonical event stream.
+able to rebuild `.wake/state/` from the canonical event stream.
 
 A work item's identity is a minted `work-<ulid>`, not the ticket that started it.
 Sources do not assign it: they stamp `sourceRefs.resourceUri` (a

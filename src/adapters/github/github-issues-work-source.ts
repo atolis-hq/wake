@@ -1,5 +1,4 @@
 import { readFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
 
 import type { ResourceIndex, UnkeyedEventEnvelope } from '../../core/contracts.js';
 import { defaultAgentIdentity } from '../../domain/schema.js';
@@ -8,6 +7,7 @@ import { wakeStageLabelPrefix } from '../../domain/stages.js';
 import { wakeWorkflowLabelPrefix } from '../../domain/workflows.js';
 import type { EventEnvelope, IssueStateRecord, WakeConfig } from '../../domain/types.js';
 import { createEventEnvelope, createUnkeyedEventEnvelope } from '../../lib/event-log.js';
+import { createWakePaths } from '../../lib/paths.js';
 import { wakeVersion } from '../../version.js';
 import { buildResumeCommandForCli } from '../runner/runner-cli-adapter.js';
 
@@ -232,7 +232,7 @@ function formatControlPlaneLink(url: string): string | null {
 
 export async function readControlPlaneUiUrl(wakeRoot: string): Promise<string | undefined> {
   try {
-    const raw = await readFile(resolve(wakeRoot, 'control-plane-ui-url'), 'utf8');
+    const raw = await readFile(createWakePaths(wakeRoot).controlPlaneUiUrlFile, 'utf8');
     return formatControlPlaneLink(raw.trim()) ?? undefined;
   } catch {
     return undefined;

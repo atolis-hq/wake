@@ -22,14 +22,14 @@ describe('tick runner', () => {
       const store = createStateStore({ wakeRoot: root });
       const workspacePath = join(root, 'workspaces', workId(200));
       const transcriptPath = join(
-        root,
-        'transcripts',
-        workId(200),
+        store.paths.transcriptWorkDir(workId(200)),
         'run-200-1',
         'run-200-1.codex.implement.prompt.txt',
       );
       await mkdir(workspacePath, { recursive: true });
-      await mkdir(join(root, 'transcripts', workId(200), 'run-200-1'), { recursive: true });
+      await mkdir(join(store.paths.transcriptWorkDir(workId(200)), 'run-200-1'), {
+        recursive: true,
+      });
       await writeFile(transcriptPath, 'raw prompt', 'utf8');
 
       const nowIso = '2026-07-05T12:00:00.000Z';
@@ -96,14 +96,14 @@ describe('tick runner', () => {
       const store = createStateStore({ wakeRoot: root });
       const workspacePath = join(root, 'workspaces', workId(204));
       const transcriptPath = join(
-        root,
-        'transcripts',
-        workId(204),
+        store.paths.transcriptWorkDir(workId(204)),
         'run-204-1',
         'run-204-1.codex.implement.prompt.txt',
       );
       await mkdir(workspacePath, { recursive: true });
-      await mkdir(join(root, 'transcripts', workId(204), 'run-204-1'), { recursive: true });
+      await mkdir(join(store.paths.transcriptWorkDir(workId(204)), 'run-204-1'), {
+        recursive: true,
+      });
       await writeFile(transcriptPath, 'raw prompt', 'utf8');
 
       const nowIso = '2026-07-05T12:00:00.000Z';
@@ -164,7 +164,7 @@ describe('tick runner', () => {
 
     it('does not delete the canonical clone when a closed issue has a read-only workspace path', async () => {
       const store = createStateStore({ wakeRoot: root });
-      const canonicalClonePath = join(root, 'repos', 'atolis-hq__wake');
+      const canonicalClonePath = store.paths.repoRoot('atolis-hq/wake');
       await mkdir(canonicalClonePath, { recursive: true });
 
       const nowIso = '2026-07-05T12:00:00.000Z';

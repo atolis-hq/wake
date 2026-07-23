@@ -1,9 +1,12 @@
 # Development
 
-This guide covers local Wake development from a source checkout. It includes
-the command shortcuts, sandbox setup, auth flow, UI startup, and GitHub polling
-notes that are useful while the published-package getting-started path is still
-being built.
+This guide covers local Wake development from a source checkout: dev-mode
+setup, npm scripts, formatting, and the source-checkout-specific parts of
+the sandbox workflow (self-update, GitHub polling). For the packaged-install
+path (`npm install -g @atolis-hq/wake`), see
+[docs/getting-started.md](getting-started.md) — the sandbox `build`/`up`/
+`setup` walkthrough there applies to a source checkout too, once `wake-dev`
+is set up below.
 
 ## Local Commands
 
@@ -54,242 +57,60 @@ full check.
 
 ## Configuration
 
-Wake's behavior can be customized through its JSON config file. In the default
-repo-local flow, Wake loads config from `.wake/config.json`. In the scaffolded
-sandbox flow below, `wake init` creates `wake-home/config.json` and the
-wrappers run Wake against that mounted home directory.
+Wake's behavior can be customized through its JSON config file, at the root
+of whichever Wake home `--wake-root` (or the current directory, by default)
+resolves to. `wake init`/`wake-dev init` creates `wake-home/config.json`.
 
 See [docs/configuration.md](configuration.md) for the full config structure and
 available options. For current Claude, Codex, and Cursor runner capability
 differences, see [docs/runner-comparison.md](runner-comparison.md).
 
-## Sandbox Setup
-
-The sandbox flow on this branch has three parts:
-
-1. Scaffold a clean Wake home directory.
-2. Build and start the persistent Docker sandbox from this repo checkout.
-3. Run the first-time auth setup inside the container.
-
-Today, the top-level `wake init` and `wake sandbox ...` CLI routing is not wired
-through [`src/main.ts`](../src/main.ts). The only local-development detail that
-still points back at the repo checkout is `dev.repoRoot`, which `wake init`
-stores in `wake-home/config.json` so `wake sandbox build` can build the Docker
-image from source.
-
-## 1. Scaffold A Clean Wake Home
-
-Pick a directory that is not this repo checkout and does not already contain
-files. Wake treats that directory itself as its home root.
-
-Run the scaffold command from the Wake repo root.
-
-Example:
+## Dev Mode Setup
 
 ```bash
-export WAKE_REPO="/path/to/wake"
-cd "$WAKE_REPO"
-export WAKE_HOME="$HOME/wake-home"
-npx tsx src/main.ts init "$WAKE_HOME"
+npm install
+cd bin && npm link && cd ..
 ```
 
-That creates a self-contained home with:
-
-- `config.json`
-- `prompts/` with one Handlebars template per action, such as `refine.md`
-  and `implement.md`
-- `docker/Dockerfile`
-- `docker/setup.sh`
-- `events/`, `state/`, `runs/`, `workspaces/`, `repos/`, `sources/`, `locks/`
-
-Use an absolute path in `WAKE_HOME`.
-
-## 2. Build The Sandbox Image
-
-After scaffolding, switch to the Wake home directory. `wake init` drops two
-local-development launchers there:
-
-- `wake.sh` for bash, Git Bash, WSL, and similar shells.
-- `wake.ps1` for PowerShell.
-
-Both wrappers call back into the repo checkout recorded at scaffold time, so
-you can operate from `wake-home` instead of repeating the full `npx tsx
-.../src/main.ts` path.
-
-`init` and explicit `sandbox ...` commands run on the host. Other runtime
-commands such as `start`, `tick`, and `smoke` are automatically forwarded into
-the running container via `sandbox exec`. The wrappers default the in-container
-Wake home to `/wake`, so you do not need to pass `--wake-root` for normal
-scaffolded usage.
-
-The build command reads `config.json`, uses `dev.repoRoot` for the Docker build
-context, and keeps the operator flow rooted in `wake-home`.
+`npm link` (run from `bin/`, which is its own tiny local package) registers
+a `wake-dev` command on your `PATH` that runs `src/main.ts` live via this
+checkout's own `tsx` — no build step, and every invocation picks up your
+latest source changes immediately. It works from any directory (e.g. after
+you `cd` into a wake-home), the same as the packaged `wake` binary. Linking
+from `bin/` rather than the repo root keeps this independent of a real
+`wake` install — running `npm link` from the repo root would overwrite the
+global `wake` symlink with this checkout too, which isn't what you want if
+you also use the published package.
 
 ```bash
-cd "$WAKE_HOME"
-./wake.sh sandbox build
+wake-dev init ./wake-home
+cd ./wake-home
 ```
 
-PowerShell equivalent:
+`wake-dev init --dev` / `wake-dev init --packaged` force a specific
+`dev.mode` if auto-detection ever picks the wrong one (e.g. testing a local
+`npm pack` install from inside a source checkout).
 
-```powershell
-Set-Location $env:WAKE_HOME
-.\wake.ps1 sandbox build
-```
+From here, follow [docs/getting-started.md](getting-started.md)'s "Build and
+start the sandbox" / "Run it" / "Check your setup" sections, using `wake-dev`
+in place of `wake`.
 
-## 3. Start Or Update The Persistent Container
+## Self-update
 
-Start the persistent container from inside `wake-home`:
+Only available when `config.dev.mode` is `"source"` — a packaged install
+(`dev.mode: "packaged"`, or unset on an older wake-home) gets a clear error
+pointing at the packaged-mode update path instead: `npm install -g
+@atolis-hq/wake@latest && wake sandbox build && wake sandbox update`.
 
-```bash
-./wake.sh sandbox up
-```
-
-If the container already exists and is stopped:
-
-```bash
-./wake.sh sandbox up
-```
-
-When you change Wake source or the Dockerfile and want the sandbox to pick up
-the new version without losing mounted state, rebuild the image and replace the
-container in place:
-
-```bash
-./wake.sh sandbox build
-./wake.sh sandbox update
-```
-
-`wake sandbox update` is the normal upgrade path. It preserves the existing
-`wake-home` mount, including `/home/wake` auth state such as GitHub, Claude, and
-SSH credentials.
-
-### Auto-Starting The Resident Loop
-
-By default, `sandbox.start.enabled: true` makes the container entrypoint start
-`wake start --wake-root /wake` whenever `sandbox up`, `sandbox update`, or
-`sandbox self-update` creates the container. Output is written to
-`<wake-root>/logs/start.log`, and the entrypoint records the process id in
-`<wake-root>/logs/start.pid` so self-update can verify the loop survived a
-container replacement. If the resident loop exits unexpectedly, the entrypoint
-restarts it after a short delay and refreshes `start.pid` with the new process
-id.
-
-### Auto-Starting The Control-Plane UI
-
-Set `ui.enabled: true` and a `ui.token` in `wake-home/config.json`, or export
-`WAKE_UI_TOKEN` before `sandbox up` or `sandbox update`, before bringing the
-container up. The container's entrypoint starts `wake ui` automatically, bound
-to `0.0.0.0` inside the container.
-
-`sandbox up` and `sandbox update` publish that port to the host as
-`127.0.0.1:<ui.port>`, defaulting to `4317`, so the UI is reachable at
-`http://127.0.0.1:4317` once the container is running. Requests must include
-`Authorization: Bearer <token>` or a `wake_ui_token` cookie.
-
-To expose the same in-container UI through a public ngrok URL, set
-`ui.tunnel.enabled: true` and either provide `ui.tunnel.authToken` or export
-`NGROK_AUTHTOKEN` before `./wake.sh sandbox up` or `./wake.sh sandbox update`.
-The entrypoint starts the ngrok CLI and writes the generated URL to
-`<wake-root>/control-plane-ui-url`; GitHub comments link their `Wake` header to
-that URL while the file exists.
-
-See [docs/configuration.md#ui](configuration.md#ui) for the full config shape.
-
-## 4. Run First-Time Auth Setup Inside The Container
-
-```bash
-./wake.sh sandbox setup
-```
-
-When configuring GitHub auth, consider using a dedicated GitHub identity for
-Wake-managed agent work instead of your main personal account. This keeps
-automated issue comments, PRs, and commits easy to distinguish from human
-activity and lets you grant only the repository access Wake needs. It is an
-optional best practice, not a hard requirement.
-
-That script runs:
-
-- `gh auth login`
-- `gh auth setup-git`
-- `ssh-keygen` for `/home/wake/.ssh/id_ed25519` if missing
-- `claude auth login --claudeai`
-- `codex login`
-
-Because `/home/wake` is volume-mounted, the sandbox's `gh`, SSH, Claude, and
-Codex auth state survives container restart and recreation.
-
-## 5. Inspect Or Use The Running Sandbox
-
-Open a shell:
-
-```bash
-./wake.sh sandbox exec
-```
-
-Run the resident loop in the foreground for local development or debugging.
-The wrapper forwards this into the container. In normal sandbox operation, the
-entrypoint already starts the resident loop automatically:
-
-```bash
-./wake.sh start
-```
-
-Run one tick manually. The wrapper forwards this into the container:
-
-```bash
-./wake.sh tick
-```
-
-Resume a recorded runner session inside the container workspace:
-
-```bash
-./wake.sh sandbox resume <session-id> --cwd "/wake/workspaces/<workId>"
-```
-
-`<workId>` is the work item's minted `work-<ulid>` identity — the same key used by
-`state/<workId>.json`. Find it in the control-plane UI, or by grepping `state/`
-for the issue number (the projection retains an `issue` snapshot for exactly this
-kind of human lookup).
-
-Tick locks include owner metadata and are self-healing. If a process dies while
-holding the tick lock, the next tick reclaims the lock when the owner PID is no
-longer alive or the lock is older than the configured runner timeout. Stale
-`running` run records are also marked `FAILED` during the next tick so local
-history and labels converge without manual cleanup.
-
-## 6. Stop The Sandbox
-
-```bash
-./wake.sh sandbox down
-```
-
-`sandbox down` stops the container immediately. If an agent run may be in
-progress, use the safe stop instead — it waits for any active run to finish
-before stopping, so an in-flight `implement`/`refine` session isn't killed
-mid-way:
-
-```bash
-./wake.sh stop
-```
-
-(equivalent to `./wake.sh sandbox stop`). It polls `.wake/runs/*.json` for any
-`status: "running"` record and blocks until none remain, then stops the
-container with a 60s grace period. Flags: `--timeout-ms` (give up waiting
-after this long instead of blocking forever) and `--poll-interval-ms`.
-
-### Self-update
-
-Run from inside your **wake-home** directory (the one scaffolded by `wake
-init`, containing `wake.sh`/`wake.ps1`/`config.json`) — like every other
+Run with `--wake-root` pointing at your **wake-home** directory (the one
+scaffolded by `wake init`, containing `config.json`) — like every other
 sandbox lifecycle command (`build`/`up`/`down`), `self-update` is not an npm
-script. Running it from the dev repo checkout instead (`npm run ...`) fails
+script. Running it from the dev repo checkout without `--wake-root` fails
 with "Sandbox self-update requires config.dev.repoRoot", because that's the
 one field that only exists in your scaffolded `config.json`, not in the repo:
 
 ```bash
-cd /path/to/your/wake-home
-./wake.sh sandbox self-update
+wake-dev sandbox self-update --wake-root /path/to/your/wake-home
 ```
 
 `self-update` checks for a newer version tag on `origin`, and if found: waits
@@ -322,16 +143,14 @@ authenticated with permission to create issues on the repo.
 sandbox container.** It has to be able to stop and replace the very container
 it might be updating, and the host `docker`/`git` CLIs aren't reachable from
 inside the container. `wake stop`/`sandbox` are already routed to the host by
-the generated launchers (`wake.sh`/`wake.ps1`), so this falls out of the
-existing routing — you just need something on the host keeping the process
-alive.
+`dispatchMainCommand` itself, so this falls out of the existing routing — you
+just need something on the host keeping the process alive.
 
 To run it continuously with no external scheduler, start the loop as a
-long-lived host process from your wake-home directory:
+long-lived host process:
 
 ```bash
-cd /path/to/your/wake-home
-./wake.sh sandbox self-update --loop
+wake-dev sandbox self-update --wake-root /path/to/your/wake-home --loop
 ```
 
 Leave it running in a background terminal, a `tmux`/`screen` session, or a
@@ -339,9 +158,9 @@ dedicated terminal tab. It polls indefinitely until the process is stopped
 (Ctrl+C, or killed) — there's no separate scheduler or cron job to configure.
 If you want it to survive terminal closes or host reboots, wrap it with
 whatever process supervisor you'd use for any other long-running host script
-(e.g. `pm2 start ./wake.sh -- sandbox self-update --loop`, an `nssm`/Windows
-service, or a systemd unit) — that's optional and outside Wake's own scope,
-since Wake only owns what happens inside the loop, not how the host keeps a
+(e.g. `pm2 start wake-dev -- sandbox self-update --wake-root /path/to/your/wake-home --loop`,
+an `nssm`/Windows service, or a systemd unit) — that's optional and outside
+Wake's own scope, since Wake only owns what happens inside the loop, not how the host keeps a
 process alive.
 
 ## GitHub Issues Polling

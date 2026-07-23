@@ -106,6 +106,8 @@ jobs:
           node-version: '24'
       - run: npm ci
       - run: npm run build
+        env:
+          WAKE_BUILD_TAG: ${{ needs.tag.outputs.version }}
       - name: Set version from tag
         run: npm version ${{ needs.tag.outputs.version }} --no-git-tag-version
       - run: npm publish --access public --provenance

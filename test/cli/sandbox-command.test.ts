@@ -1,5 +1,5 @@
 ﻿import { resolve } from 'node:path';
-import { mkdtemp, stat } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 
 import { describe, expect, it, vi } from 'vitest';
@@ -11,6 +11,11 @@ describe('sandbox command', () => {
   const repoRoot = '/repo/wake';
   const wakeRoot = '/host/wake-home';
   const containerHomeRoot = '/host/wake-home/container-home';
+  const packagedTemplatesRoot = resolve(process.cwd(), 'docker');
+
+  async function makeTempWakeRoot(): Promise<string> {
+    return mkdtemp(resolve(tmpdir(), 'wake-sandbox-command-dockerfile-'));
+  }
 
   function createDockerMock() {
     return {
@@ -19,25 +24,37 @@ describe('sandbox command', () => {
       update: vi.fn(async () => {}),
       down: vi.fn(async () => {}),
       exec: vi.fn(async () => {}),
+      execCaptured: vi.fn(
+        async (
+          _containerName: string,
+          _command: string[],
+          _handlers: { onStdout: (line: string) => void; onStderr: (line: string) => void },
+        ) => {},
+      ),
       logs: vi.fn(async () => {}),
     };
   }
 
   it('dispatches build with the generated Dockerfile and repo-root context', async () => {
     const docker = createDockerMock();
+    const tempWakeRoot = await makeTempWakeRoot();
+    await mkdir(resolve(tempWakeRoot, 'docker'), { recursive: true });
+    await writeFile(resolve(tempWakeRoot, 'docker', 'Dockerfile'), 'EXISTING', 'utf8');
     const config = {
-      ...createDefaultWakeConfig(wakeRoot),
+      ...createDefaultWakeConfig(tempWakeRoot),
       dev: {
         repoRoot,
+        mode: 'source' as const,
       },
     };
 
     await runSandboxCommand({
       args: ['build'],
       config,
-      wakeRoot,
+      wakeRoot: tempWakeRoot,
       containerHomeRoot,
       docker,
+      packagedTemplatesRoot,
       stateStore: { listRunRecords: async () => [] },
       sleep: async () => {},
       logger: { info: () => {} },
@@ -45,9 +62,38 @@ describe('sandbox command', () => {
 
     expect(docker.build).toHaveBeenCalledWith({
       image: 'wake-sandbox',
-      dockerfile: resolve(wakeRoot, 'docker', 'Dockerfile'),
+      dockerfile: resolve(tempWakeRoot, 'docker', 'Dockerfile'),
       contextDir: '/repo/wake',
     });
+  });
+
+  it('defaults to packaged mode (Dockerfile.packaged template, WAKE_VERSION build arg) when dev.mode is unset', async () => {
+    const tempWakeRoot = await makeTempWakeRoot();
+    const docker = createDockerMock();
+    const config = {
+      ...createDefaultWakeConfig(tempWakeRoot),
+      dev: { repoRoot },
+    };
+
+    await runSandboxCommand({
+      args: ['build'],
+      config,
+      wakeRoot: tempWakeRoot,
+      containerHomeRoot,
+      docker,
+      packagedTemplatesRoot,
+      stateStore: { listRunRecords: async () => [] },
+      sleep: async () => {},
+      logger: { info: () => {} },
+    });
+
+    const written = await readFile(resolve(tempWakeRoot, 'docker', 'Dockerfile'), 'utf8');
+    expect(written).toContain('"@atolis-hq/wake@');
+    expect(docker.build).toHaveBeenCalledWith(
+      expect.objectContaining({
+        buildArgs: { WAKE_VERSION: expect.any(String) },
+      }),
+    );
   });
 
   it('rejects build when local-development repo root is missing', async () => {
@@ -60,11 +106,93 @@ describe('sandbox command', () => {
         wakeRoot,
         containerHomeRoot,
         docker,
+        packagedTemplatesRoot,
         stateStore: { listRunRecords: async () => [] },
         sleep: async () => {},
         logger: { info: () => {} },
       }),
     ).rejects.toThrow('Sandbox build requires config.dev.repoRoot');
+  });
+
+  it('writes docker/Dockerfile from the source template when missing and dev.mode is "source"', async () => {
+    const tempWakeRoot = await makeTempWakeRoot();
+    const dockerBuild = vi.fn(async () => {});
+    const docker = { ...createDockerMock(), build: dockerBuild };
+    const config = {
+      ...createDefaultWakeConfig(tempWakeRoot),
+      dev: { repoRoot, mode: 'source' as const },
+    };
+
+    await runSandboxCommand({
+      args: ['build'],
+      config,
+      wakeRoot: tempWakeRoot,
+      containerHomeRoot,
+      docker,
+      packagedTemplatesRoot,
+      stateStore: { listRunRecords: async () => [] },
+      sleep: async () => {},
+      logger: { info: () => {} },
+    });
+
+    const written = await readFile(resolve(tempWakeRoot, 'docker', 'Dockerfile'), 'utf8');
+    expect(written).toContain('npm run build');
+    expect(dockerBuild).toHaveBeenCalled();
+  });
+
+  it('writes docker/Dockerfile from the packaged template when missing and dev.mode is "packaged"', async () => {
+    const tempWakeRoot = await makeTempWakeRoot();
+    const docker = createDockerMock();
+    const config = {
+      ...createDefaultWakeConfig(tempWakeRoot),
+      dev: { repoRoot, mode: 'packaged' as const },
+    };
+
+    await runSandboxCommand({
+      args: ['build'],
+      config,
+      wakeRoot: tempWakeRoot,
+      containerHomeRoot,
+      docker,
+      packagedTemplatesRoot,
+      stateStore: { listRunRecords: async () => [] },
+      sleep: async () => {},
+      logger: { info: () => {} },
+    });
+
+    const written = await readFile(resolve(tempWakeRoot, 'docker', 'Dockerfile'), 'utf8');
+    expect(written).toContain('"@atolis-hq/wake@');
+    expect(docker.build).toHaveBeenCalledWith(
+      expect.objectContaining({
+        buildArgs: { WAKE_VERSION: expect.any(String) },
+      }),
+    );
+  });
+
+  it('leaves an existing docker/Dockerfile untouched on a second build', async () => {
+    const tempWakeRoot = await makeTempWakeRoot();
+    const docker = createDockerMock();
+    await mkdir(resolve(tempWakeRoot, 'docker'), { recursive: true });
+    await writeFile(resolve(tempWakeRoot, 'docker', 'Dockerfile'), 'CUSTOM CONTENT', 'utf8');
+    const config = {
+      ...createDefaultWakeConfig(tempWakeRoot),
+      dev: { repoRoot, mode: 'packaged' as const },
+    };
+
+    await runSandboxCommand({
+      args: ['build'],
+      config,
+      wakeRoot: tempWakeRoot,
+      containerHomeRoot,
+      docker,
+      packagedTemplatesRoot,
+      stateStore: { listRunRecords: async () => [] },
+      sleep: async () => {},
+      logger: { info: () => {} },
+    });
+
+    const written = await readFile(resolve(tempWakeRoot, 'docker', 'Dockerfile'), 'utf8');
+    expect(written).toBe('CUSTOM CONTENT');
   });
 
   it('dispatches up with config-derived container settings', async () => {
@@ -76,6 +204,7 @@ describe('sandbox command', () => {
       wakeRoot,
       containerHomeRoot,
       docker,
+      packagedTemplatesRoot,
       stateStore: { listRunRecords: async () => [] },
       sleep: async () => {},
       logger: { info: () => {} },
@@ -111,6 +240,7 @@ describe('sandbox command', () => {
       wakeRoot,
       containerHomeRoot,
       docker,
+      packagedTemplatesRoot,
       stateStore: { listRunRecords: async () => [] },
       sleep: async () => {},
       logger: { info: () => {} },
@@ -152,6 +282,7 @@ describe('sandbox command', () => {
       wakeRoot,
       containerHomeRoot: tempContainerHomeRoot,
       docker,
+      packagedTemplatesRoot,
       stateStore: { listRunRecords: async () => [] },
       sleep: async () => {},
       logger: { info: () => {} },
@@ -174,6 +305,7 @@ describe('sandbox command', () => {
       wakeRoot,
       containerHomeRoot,
       docker,
+      packagedTemplatesRoot,
       stateStore: { listRunRecords: async () => [] },
       sleep: async () => {},
       logger: { info: () => {} },
@@ -196,6 +328,7 @@ describe('sandbox command', () => {
       wakeRoot,
       containerHomeRoot,
       docker,
+      packagedTemplatesRoot,
       stateStore: { listRunRecords } as never,
       sleep: vi.fn(async () => {}),
       logger: { info: () => {} },
@@ -214,6 +347,7 @@ describe('sandbox command', () => {
       wakeRoot,
       containerHomeRoot,
       docker,
+      packagedTemplatesRoot,
       stateStore: { listRunRecords: async () => [] },
       sleep: async () => {},
       logger: { info: () => {} },
@@ -255,6 +389,7 @@ describe('sandbox command', () => {
       wakeRoot,
       containerHomeRoot,
       docker,
+      packagedTemplatesRoot,
       stateStore: { listRunRecords: async () => [] } as never,
       sleep: vi.fn(async () => {}),
       logger: { info: () => {} },
@@ -313,6 +448,7 @@ describe('sandbox command', () => {
         wakeRoot,
         containerHomeRoot,
         docker,
+        packagedTemplatesRoot,
         stateStore: { listRunRecords: async () => [] } as never,
         sleep,
         logger: { info: () => {}, error: () => {} },
@@ -339,7 +475,7 @@ describe('sandbox command', () => {
     expect(sleep).toHaveBeenCalledWith(50);
   });
 
-  it('dispatches setup to the configured container name', async () => {
+  it('dispatches setup via the bare wake binary when dev.mode is packaged or unset', async () => {
     const docker = createDockerMock();
 
     await runSandboxCommand({
@@ -348,17 +484,40 @@ describe('sandbox command', () => {
       wakeRoot,
       containerHomeRoot,
       docker,
+      packagedTemplatesRoot,
       stateStore: { listRunRecords: async () => [] },
       sleep: async () => {},
       logger: { info: () => {} },
     });
 
-    expect(docker.exec).toHaveBeenCalledWith('wake-sandbox', ['bash', '/wake/docker/setup.sh'], {
+    expect(docker.exec).toHaveBeenCalledWith('wake-sandbox', ['wake', 'sandbox-setup'], {
       interactive: true,
     });
   });
 
-  it('dispatches exec with the remaining command arguments', async () => {
+  it('dispatches setup via node /app/dist/src/main.js when dev.mode is source', async () => {
+    const docker = createDockerMock();
+
+    await runSandboxCommand({
+      args: ['setup'],
+      config: { ...createDefaultWakeConfig(wakeRoot), dev: { mode: 'source' } },
+      wakeRoot,
+      containerHomeRoot,
+      docker,
+      packagedTemplatesRoot,
+      stateStore: { listRunRecords: async () => [] },
+      sleep: async () => {},
+      logger: { info: () => {} },
+    });
+
+    expect(docker.exec).toHaveBeenCalledWith(
+      'wake-sandbox',
+      ['node', '/app/dist/src/main.js', 'sandbox-setup'],
+      { interactive: true },
+    );
+  });
+
+  it('dispatches exec with the remaining command arguments through execCaptured', async () => {
     const docker = createDockerMock();
 
     await runSandboxCommand({
@@ -367,24 +526,21 @@ describe('sandbox command', () => {
       wakeRoot,
       containerHomeRoot,
       docker,
+      packagedTemplatesRoot,
       stateStore: { listRunRecords: async () => [] },
       sleep: async () => {},
       logger: { info: () => {} },
     });
 
-    expect(docker.exec).toHaveBeenCalledWith(
+    expect(docker.execCaptured).toHaveBeenCalledWith(
       'wake-sandbox',
-      expect.arrayContaining([
-        'env',
-        'WAKE_SANDBOX_LABEL=sandbox.exec',
-        '/wake/docker/log-command.sh',
-        '--',
-        'pwd',
-      ]),
+      ['pwd'],
+      expect.objectContaining({ onStdout: expect.any(Function), onStderr: expect.any(Function) }),
     );
+    expect(docker.exec).not.toHaveBeenCalled();
   });
 
-  it('strips the command terminator before dispatching exec payload', async () => {
+  it('strips the command terminator before dispatching the exec payload', async () => {
     const docker = createDockerMock();
 
     await runSandboxCommand({
@@ -393,23 +549,61 @@ describe('sandbox command', () => {
       wakeRoot,
       containerHomeRoot,
       docker,
+      packagedTemplatesRoot,
       stateStore: { listRunRecords: async () => [] },
       sleep: async () => {},
       logger: { info: () => {} },
     });
 
-    expect(docker.exec).toHaveBeenCalledWith(
+    expect(docker.execCaptured).toHaveBeenCalledWith(
       'wake-sandbox',
-      expect.arrayContaining([
-        '/wake/docker/log-command.sh',
-        '--',
-        'node',
-        '/app/dist/src/main.js',
-        'tick',
-        '--wake-root',
-        '/wake',
-      ]),
+      ['node', '/app/dist/src/main.js', 'tick', '--wake-root', '/wake'],
+      expect.objectContaining({ onStdout: expect.any(Function), onStderr: expect.any(Function) }),
     );
+  });
+
+  it('falls back to an interactive shell via docker.exec when no exec command is given', async () => {
+    const docker = createDockerMock();
+
+    await runSandboxCommand({
+      args: ['exec'],
+      config: createDefaultWakeConfig(wakeRoot),
+      wakeRoot,
+      containerHomeRoot,
+      docker,
+      packagedTemplatesRoot,
+      stateStore: { listRunRecords: async () => [] },
+      sleep: async () => {},
+      logger: { info: () => {} },
+    });
+
+    expect(docker.exec).toHaveBeenCalledWith('wake-sandbox', []);
+    expect(docker.execCaptured).not.toHaveBeenCalled();
+  });
+
+  it('forwards execCaptured stdout/stderr lines to the logger in real time', async () => {
+    const docker = createDockerMock();
+    docker.execCaptured.mockImplementation(async (_containerName, _command, handlers) => {
+      handlers.onStdout('build ok');
+      handlers.onStderr('warning: something');
+    });
+    const info = vi.fn();
+    const error = vi.fn();
+
+    await runSandboxCommand({
+      args: ['exec', 'pwd'],
+      config: createDefaultWakeConfig(wakeRoot),
+      wakeRoot,
+      containerHomeRoot,
+      docker,
+      packagedTemplatesRoot,
+      stateStore: { listRunRecords: async () => [] },
+      sleep: async () => {},
+      logger: { info, error },
+    });
+
+    expect(info).toHaveBeenCalledWith('build ok');
+    expect(error).toHaveBeenCalledWith('warning: something');
   });
 
   it('dispatches resume through the sandbox resume command flow', async () => {
@@ -434,23 +628,16 @@ describe('sandbox command', () => {
       wakeRoot,
       containerHomeRoot,
       docker,
+      packagedTemplatesRoot,
       stateStore: { listRunRecords: async () => [] },
       sleep: async () => {},
       logger: { info: () => {} },
     });
 
-    expect(docker.exec).toHaveBeenCalledWith(
+    expect(docker.execCaptured).toHaveBeenCalledWith(
       'wake-sandbox',
-      expect.arrayContaining([
-        'env',
-        'WAKE_SANDBOX_LABEL=sandbox.resume',
-        'WAKE_SANDBOX_CWD=/wake/workspaces/atolis-hq__wake/12',
-        '/wake/docker/log-command.sh',
-        '--',
-        'claude',
-        '--resume',
-        'session-123',
-      ]),
+      ['sh', '-c', "cd '/wake/workspaces/atolis-hq__wake/12' && 'claude' '--resume' 'session-123'"],
+      expect.objectContaining({ onStdout: expect.any(Function), onStderr: expect.any(Function) }),
     );
   });
 
@@ -463,12 +650,36 @@ describe('sandbox command', () => {
       wakeRoot,
       containerHomeRoot,
       docker,
+      packagedTemplatesRoot,
       stateStore: { listRunRecords: async () => [] },
       sleep: async () => {},
       logger: { info: () => {} },
     });
 
     expect(docker.logs).toHaveBeenCalledWith('wake-sandbox', 200);
+  });
+
+  it('throws a dev.mode-specific error for self-update when selfUpdate deps are undefined', async () => {
+    const docker = createDockerMock();
+    const config = {
+      ...createDefaultWakeConfig(wakeRoot),
+      dev: { repoRoot: '/repo', mode: 'packaged' as const },
+    };
+
+    await expect(
+      runSandboxCommand({
+        args: ['self-update'],
+        config,
+        wakeRoot,
+        containerHomeRoot,
+        docker,
+        packagedTemplatesRoot,
+        stateStore: { listRunRecords: async () => [] },
+        sleep: async () => {},
+        logger: { info: () => {} },
+        selfUpdate: undefined,
+      }),
+    ).rejects.toThrow(/dev\.mode: "source"/);
   });
 
   it('rejects unknown sandbox subcommands', async () => {
@@ -481,6 +692,7 @@ describe('sandbox command', () => {
         wakeRoot,
         containerHomeRoot,
         docker,
+        packagedTemplatesRoot,
         stateStore: { listRunRecords: async () => [] },
         sleep: async () => {},
         logger: { info: () => {} },

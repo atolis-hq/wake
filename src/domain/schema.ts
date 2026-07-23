@@ -495,6 +495,7 @@ export const wakeConfigSchema = z
     dev: z
       .object({
         repoRoot: z.string().optional(),
+        mode: z.enum(['source', 'packaged']).optional(),
       })
       .default({}),
     scheduler: z

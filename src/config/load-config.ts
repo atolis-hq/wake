@@ -23,12 +23,16 @@ export async function loadWakeConfig(options?: {
     }
   }
 
+  // wakeRoot is always the live invocation's --wake-root/cwd, never a value
+  // to accept from a (possibly stale, possibly container-context) config
+  // file — spread rawPaths first so wakeRoot always wins. promptsRoot and
+  // any other paths key stay file-overridable.
   const rawPaths = (raw.paths as Record<string, unknown> | undefined) ?? {};
   return parseWakeConfig({
     ...raw,
     paths: {
-      wakeRoot,
       ...rawPaths,
+      wakeRoot,
     },
   });
 }

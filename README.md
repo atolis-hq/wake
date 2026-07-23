@@ -63,7 +63,6 @@ conversation forward wherever the work is already happening.
 - [Where the Work Happens](#where-the-work-happens)
 - [Supported Agent CLIs](#supported-agent-clis)
 - [Getting Started](#getting-started)
-- [Development](#development)
 - [Documentation](#documentation)
 - [Issues & Feature Requests](#issues--feature-requests)
 - [License](#license)
@@ -115,8 +114,10 @@ For more detail, see [docs/vision.md](docs/vision.md) and
 - **Event-sourced and restart-safe.** The durable record is an append-only event
   log; projections can be rebuilt, and the loop can crash and resume without
   losing its place.
-- **Local and inspectable.** Config, events, state, runs, workspaces, and prompts
-  live in a plain-file Wake home directory.
+- **Local and inspectable.** Everything lives in a plain-file Wake home
+  directory: `config.json`, `prompts/`, and `workspaces/` at the top level for
+  what you edit or browse day-to-day, with durable/internal state (events,
+  projections, runs, logs, sandbox auth) nested under a hidden `.wake/`.
 - **Sandbox-oriented execution.** Wake can run from a persistent Docker sandbox
   with durable auth state and mounted Wake home data.
 - **Runner agnostic.** Claude Code, Codex, Cursor, and fake runners sit behind
@@ -162,82 +163,30 @@ for capability differences between runners.
 
 ## Getting Started
 
-Wake is distributed as the `@atolis-hq/wake` npm package. You can run the CLI
-with `npx` or install it globally:
-
-```sh
-npx @atolis-hq/wake init ./wake-home
-```
-
 ```sh
 npm install -g @atolis-hq/wake
+cd ~/
 wake init ./wake-home
-```
-
-`wake init` creates a Wake home directory with `config.json`, prompt templates,
-Docker sandbox assets, runtime directories, and shell launchers:
-
-- `wake.sh` for bash, Git Bash, WSL, and similar shells.
-- `wake.ps1` for PowerShell.
-
-Use the generated launcher from the Wake home for day-to-day operation. The
-launcher runs host setup commands locally and forwards runtime commands into the
-sandbox with the correct Wake home mounted at `/wake`.
-
-```sh
 cd ./wake-home
-./wake.sh sandbox build
-./wake.sh sandbox up
-./wake.sh sandbox setup
-./wake.sh tick
-./wake.sh start
+wake sandbox build
+wake sandbox up
+wake sandbox setup
+wake start
 ```
 
-The default sandbox image includes Node, Git, GitHub CLI, Claude Code, Codex,
-Cursor, and the Wake runtime. Treat the generated `docker/Dockerfile` as a
-starting point for your own environment: add the tools your repositories need,
-then rebuild with `./wake.sh sandbox build`. Wake writes the package location to
-`config.json` as `dev.repoRoot` so sandbox rebuilds use the same bundled assets;
-editing your generated Dockerfile or prompts is expected and future package
-upgrades should not overwrite that Wake home.
-
-Common commands:
-
-```sh
-./wake.sh ui
-./wake.sh tick
-./wake.sh start
-./wake.sh stop
-./wake.sh sandbox resume <session-id> --cwd "/wake/workspaces/<workId>"
-```
-
-For a source checkout development workflow, use:
-
-- [docs/development.md](docs/development.md)
-
-Recommended local practices:
-
-- Use a separate git identity for Wake-managed agent work so automated commits
-  and human commits are easy to distinguish.
-- Prefer the prebuilt sandbox flow when running real agent work locally.
-- Treat the default Dockerfile as a starting point. It includes common tooling
-  such as Node, but it is expected to be edited for the repositories and agents
-  you want Wake to operate on.
-
-## Development
-
-Local setup, commands, sandbox operation, auth setup, UI notes, and GitHub
-polling details are documented in [docs/development.md](docs/development.md).
+Full setup instructions are in
+[docs/getting-started.md](docs/getting-started.md). Run `wake --help` at
+any time for the full command list.
 
 ## Documentation
 
+- [docs/getting-started.md](docs/getting-started.md) — packaged-install setup, sandbox lifecycle, `wake doctor`.
 - [docs/vision.md](docs/vision.md) — the rationale and long-term direction for Wake.
 - [docs/architecture.md](docs/architecture.md) — module boundaries and the event-sourced core.
-- [docs/implementation.md](docs/implementation.md) — the accepted implementation plan.
 - [docs/workflows.md](docs/workflows.md) — how stages, prompts, and runner routes are configured.
 - [docs/prompts.md](docs/prompts.md) — how prompt templates map to workflow stages.
 - [docs/configuration.md](docs/configuration.md) — `config.json` options and the operator correlation escape hatch.
-- [docs/development.md](docs/development.md) — local setup and sandbox development workflow.
+- [docs/development.md](docs/development.md) — source-checkout dev setup (`wake-dev`), npm scripts, formatting, self-update, GitHub polling.
 - [docs/runner-comparison.md](docs/runner-comparison.md) — capability differences between supported runners.
 
 ## Issues & Feature Requests
