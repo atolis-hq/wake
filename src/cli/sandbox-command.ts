@@ -297,6 +297,7 @@ export async function runSandboxCommand(input: {
       wakeRoot: input.wakeRoot,
       containerHomeRoot: input.containerHomeRoot,
       buildResumeCommand: runnerAdapter.buildResumeCommand,
+      logger: input.logger,
     });
     return;
   }

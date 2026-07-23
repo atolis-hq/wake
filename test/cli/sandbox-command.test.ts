@@ -634,18 +634,10 @@ describe('sandbox command', () => {
       logger: { info: () => {} },
     });
 
-    expect(docker.exec).toHaveBeenCalledWith(
+    expect(docker.execCaptured).toHaveBeenCalledWith(
       'wake-sandbox',
-      expect.arrayContaining([
-        'env',
-        'WAKE_SANDBOX_LABEL=sandbox.resume',
-        'WAKE_SANDBOX_CWD=/wake/workspaces/atolis-hq__wake/12',
-        '/wake/docker/log-command.sh',
-        '--',
-        'claude',
-        '--resume',
-        'session-123',
-      ]),
+      ['sh', '-c', "cd '/wake/workspaces/atolis-hq__wake/12' && 'claude' '--resume' 'session-123'"],
+      expect.objectContaining({ onStdout: expect.any(Function), onStderr: expect.any(Function) }),
     );
   });
 

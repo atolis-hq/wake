@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createStateStore } from '../../src/adapters/fs/state-store.js';
 import { runSandboxResumeCommand, chooseResumeTarget } from '../../src/cli/sandbox-resume.js';
@@ -10,10 +10,10 @@ import { createDefaultWakeConfig } from '../../src/config/defaults.js';
 
 describe('sandbox resume command', () => {
   it('executes claude resume in the requested workspace for explicit inputs', async () => {
-    const calls: string[][] = [];
+    const calls: unknown[][] = [];
     const docker = {
-      exec: async (containerName: string, args: string[]) => {
-        calls.push(['exec', '-it', containerName, ...args]);
+      execCaptured: async (containerName: string, command: string[], handlers: unknown) => {
+        calls.push([containerName, command, handlers]);
       },
     };
 
@@ -24,37 +24,24 @@ describe('sandbox resume command', () => {
       wakeRoot: '/wake-home',
       containerHomeRoot: '/wake-home/container-home',
       buildResumeCommand: ({ sessionId }) => ['claude', '--resume', sessionId],
+      logger: { info: () => {} },
     });
 
-    expect(calls).toEqual([
-      [
-        'exec',
-        '-it',
-        'wake-sandbox',
-        'env',
-        'WAKE_SANDBOX_LABEL=sandbox.resume',
-        'WAKE_SANDBOX_CONTAINER_WAKE_ROOT=/wake',
-        'WAKE_SANDBOX_PROMPTS_ROOT=/wake/prompts',
-        'WAKE_SANDBOX_CONTAINER_HOME=/home/wake',
-        'WAKE_SANDBOX_HOST_WAKE_ROOT=/wake-home',
-        'WAKE_SANDBOX_HOST_CONTAINER_HOME=/wake-home/container-home',
-        'WAKE_SANDBOX_CONTAINER_MOUNT=/wake',
-        'WAKE_SANDBOX_CONTAINER_NAME=wake-sandbox',
-        'WAKE_SANDBOX_CWD=/wake/workspaces/atolis-hq__wake/12',
-        '/wake/docker/log-command.sh',
-        '--',
-        'claude',
-        '--resume',
-        'session-123',
-      ],
+    expect(calls).toHaveLength(1);
+    const [containerName, command] = calls[0] as [string, string[], unknown];
+    expect(containerName).toBe('wake-sandbox');
+    expect(command).toEqual([
+      'sh',
+      '-c',
+      "cd '/wake/workspaces/atolis-hq__wake/12' && 'claude' '--resume' 'session-123'",
     ]);
   });
 
   it('executes codex resume in the requested workspace when the runner adapter provides it', async () => {
-    const calls: string[][] = [];
+    const calls: unknown[][] = [];
     const docker = {
-      exec: async (containerName: string, args: string[]) => {
-        calls.push(['exec', '-it', containerName, ...args]);
+      execCaptured: async (containerName: string, command: string[], handlers: unknown) => {
+        calls.push([containerName, command, handlers]);
       },
     };
 
@@ -67,35 +54,50 @@ describe('sandbox resume command', () => {
       wakeRoot: '/wake-home',
       containerHomeRoot: '/wake-home/container-home',
       buildResumeCommand: ({ sessionId }) => ['codex', 'resume', sessionId],
+      logger: { info: () => {} },
     });
 
-    expect(calls).toEqual([
-      [
-        'exec',
-        '-it',
-        'wake-sandbox',
-        'env',
-        'WAKE_SANDBOX_LABEL=sandbox.resume',
-        'WAKE_SANDBOX_CONTAINER_WAKE_ROOT=/wake',
-        'WAKE_SANDBOX_PROMPTS_ROOT=/wake/prompts',
-        'WAKE_SANDBOX_CONTAINER_HOME=/home/wake',
-        'WAKE_SANDBOX_HOST_WAKE_ROOT=/wake-home',
-        'WAKE_SANDBOX_HOST_CONTAINER_HOME=/wake-home/container-home',
-        'WAKE_SANDBOX_CONTAINER_MOUNT=/wake',
-        'WAKE_SANDBOX_CONTAINER_NAME=wake-sandbox',
-        'WAKE_SANDBOX_CWD=/wake/workspaces/atolis-hq__wake/34',
-        '/wake/docker/log-command.sh',
-        '--',
-        'codex',
-        'resume',
-        'session-456',
-      ],
+    expect(calls).toHaveLength(1);
+    const [containerName, command] = calls[0] as [string, string[], unknown];
+    expect(containerName).toBe('wake-sandbox');
+    expect(command).toEqual([
+      'sh',
+      '-c',
+      "cd '/wake/workspaces/atolis-hq__wake/34' && 'codex' 'resume' 'session-456'",
     ]);
+  });
+
+  it('forwards execCaptured stdout/stderr lines to the logger in real time', async () => {
+    const docker = {
+      execCaptured: async (
+        _containerName: string,
+        _command: string[],
+        handlers: { onStdout: (line: string) => void; onStderr: (line: string) => void },
+      ) => {
+        handlers.onStdout('resumed session output');
+        handlers.onStderr('warning: something');
+      },
+    };
+    const info = vi.fn();
+    const error = vi.fn();
+
+    await runSandboxResumeCommand({
+      args: ['session-123', '--cwd', '/wake/workspaces/atolis-hq__wake/12'],
+      config: createDefaultWakeConfig('/wake-home'),
+      docker,
+      wakeRoot: '/wake-home',
+      containerHomeRoot: '/wake-home/container-home',
+      buildResumeCommand: ({ sessionId }) => ['claude', '--resume', sessionId],
+      logger: { info, error },
+    });
+
+    expect(info).toHaveBeenCalledWith('resumed session output');
+    expect(error).toHaveBeenCalledWith('warning: something');
   });
 
   it('throws if the caller does not provide runner-specific resume wiring', async () => {
     const docker = {
-      exec: async () => {
+      execCaptured: async () => {
         throw new Error('should not execute');
       },
     };
@@ -109,6 +111,7 @@ describe('sandbox resume command', () => {
         containerHomeRoot: '/wake-home/container-home',
         // @ts-expect-error intentional runtime coverage for missing adapter wiring
         buildResumeCommand: undefined,
+        logger: { info: () => {} },
       }),
     ).rejects.toThrow();
   });

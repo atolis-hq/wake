@@ -5,7 +5,15 @@ import { join } from 'node:path';
 import type { DockerCli } from '../adapters/docker/docker-cli.js';
 import { listRunRecords } from '../adapters/fs/state-store.js';
 import type { RunRecord, WakeConfig } from '../domain/types.js';
-import { buildSandboxLoggedCommand } from './sandbox-logging.js';
+
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", `'\\''`)}'`;
+}
+
+function buildCwdWrappedShellCommand(cwd: string, command: string[]): string[] {
+  const shellCommand = `cd ${shellQuote(cwd)} && ${command.map(shellQuote).join(' ')}`;
+  return ['sh', '-c', shellCommand];
+}
 
 type ResumeTarget = {
   sessionId: string;
@@ -87,11 +95,12 @@ export async function chooseResumeTarget(input: {
 export async function runSandboxResumeCommand(input: {
   args: string[];
   config: WakeConfig;
-  docker: Pick<DockerCli, 'exec'>;
+  docker: Pick<DockerCli, 'execCaptured'>;
   wakeRoot: string;
   containerHomeRoot: string;
   select?: ResumeSelector;
   buildResumeCommand: (input: { sessionId: string }) => string[];
+  logger: { info: (message: string) => void; error?: (message: string) => void };
 }): Promise<void> {
   const sessionId = input.args[0];
   const explicitCwd = readFlag('--cwd', input.args);
@@ -114,15 +123,15 @@ export async function runSandboxResumeCommand(input: {
     throw new Error('No resumable sandbox session selected.');
   }
 
-  await input.docker.exec(
+  await input.docker.execCaptured(
     input.config.sandbox.containerName,
-    buildSandboxLoggedCommand({
-      label: 'sandbox.resume',
-      config: input.config,
-      wakeRoot: input.wakeRoot,
-      containerHomeRoot: input.containerHomeRoot,
-      cwd: target.workspacePath,
-      command: input.buildResumeCommand({ sessionId: target.sessionId }),
-    }),
+    buildCwdWrappedShellCommand(
+      target.workspacePath,
+      input.buildResumeCommand({ sessionId: target.sessionId }),
+    ),
+    {
+      onStdout: (line) => input.logger.info(line),
+      onStderr: (line) => (input.logger.error ?? input.logger.info)(line),
+    },
   );
 }
