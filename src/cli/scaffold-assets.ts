@@ -6,7 +6,10 @@ import { splitWakeConfig } from '../config/split-config.js';
 import { writeYamlFile } from '../lib/yaml-file.js';
 import { createWakePaths } from '../lib/paths.js';
 
-const promptFileNames = ['refine.md', 'implement.md'] as const;
+async function listPromptFileNames(repoRoot: string): Promise<string[]> {
+  const entries = await readdir(join(repoRoot, 'prompts'));
+  return entries.filter((name) => name.endsWith('.md')).sort();
+}
 
 function sanitizeContainerName(name: string): string {
   const sanitized = name
@@ -111,6 +114,7 @@ export async function scaffoldWakeHome(input: {
   );
 
   const { infra, workflow } = splitWakeConfig(config);
+  const promptFileNames = await listPromptFileNames(repoRoot);
 
   await Promise.all([
     copyAssets(repoRoot, 'prompts', join(wakeRoot, 'prompts'), promptFileNames),

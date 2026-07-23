@@ -33,7 +33,6 @@ Any field left unset in every file falls back to a built-in default.
 schemaVersion: 1
 paths:
   wakeRoot: /path/to/wake-home
-  promptsRoot: /path/to/wake-home/prompts
 sandbox:
   image: wake-sandbox
   imageRepository: wake-sandbox

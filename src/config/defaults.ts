@@ -9,7 +9,6 @@ export function createDefaultWakeConfig(wakeRoot = resolve(process.cwd(), '.wake
   return parseWakeConfig({
     paths: {
       wakeRoot,
-      promptsRoot: resolve(wakeRoot, 'prompts'),
     },
   });
 }

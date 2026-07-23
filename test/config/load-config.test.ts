@@ -1,4 +1,4 @@
-import { mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 
@@ -22,6 +22,20 @@ describe('loadWakeConfig', () => {
     const config = await loadWakeConfig({ wakeRoot: dir });
 
     expect(config.paths.wakeRoot).toBe(dir);
+  });
+
+  it('re-derives promptsRoot from the live wakeRoot when the file is silent on it, even if a stale absolute value from a different host/mount is present elsewhere in the same paths block', async () => {
+    const dir = await mkdtemp(resolve(tmpdir(), 'wake-load-config-'));
+    await mkdir(join(dir, 'prompts'), { recursive: true });
+    await writeFile(join(dir, 'prompts', 'refine.md'), 'refine prompt', 'utf8');
+    // config.yaml omits promptsRoot (as a freshly scaffolded home does) but
+    // still carries a stale wakeRoot from a prior container-context read —
+    // promptsRoot must not be derived from that stale wakeRoot.
+    await writeFile(join(dir, 'config.yaml'), 'paths:\n  wakeRoot: /wake\n', 'utf8');
+
+    const config = await loadWakeConfig({ wakeRoot: dir });
+
+    expect(config.paths.promptsRoot).toBe(join(dir, 'prompts'));
   });
 
   it('still honors an explicit promptsRoot override from config.yaml', async () => {
