@@ -119,11 +119,11 @@ defaults (notices).
 
 ```
 wake-home/
-  config.json              # edit this
-  prompts/                 # edit these
-  docker/Dockerfile         # edit this (written by first `sandbox build`)
-  workspaces/                # real per-work-item git checkouts — browsable
-  .wake/                     # hidden: durable internal state
+  config.json         # edit this
+  prompts/            # edit these
+  docker/Dockerfile   # edit this (written by first `sandbox build`)
+  workspaces/         # real per-work-item git checkouts — browsable
+  .wake/              # hidden: durable internal state
     events/, state/, runs/, sources/, repos/, locks/, logs/, container-home/
 ```
 

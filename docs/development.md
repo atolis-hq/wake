@@ -55,10 +55,9 @@ full check.
 
 ## Configuration
 
-Wake's behavior can be customized through its JSON config file. In the default
-repo-local flow, Wake loads config from `.wake/config.json`. In the scaffolded
-sandbox flow, `wake init` creates `wake-home/config.json` and the launchers
-run Wake against that mounted home directory.
+Wake's behavior can be customized through its JSON config file, at the root
+of whichever Wake home `--wake-root` (or the current directory, by default)
+resolves to. `wake init`/`wake-dev init` creates `wake-home/config.json`.
 
 See [docs/configuration.md](configuration.md) for the full config structure and
 available options. For current Claude, Codex, and Cursor runner capability

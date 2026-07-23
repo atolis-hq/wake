@@ -7,10 +7,9 @@ executes the selected action and reports a result.
 
 ## Where workflows live
 
-Workflows are configured in the `workflows` section of Wake config. In the
-default repo-local development flow this is `.wake/config.json`; in a scaffolded
-Wake home it is `config.json` in that Wake home. All config uses
-`schemaVersion: 1`.
+Workflows are configured in the `workflows` section of Wake config —
+`config.json` at the root of the Wake home `--wake-root` (or the current
+directory, by default) resolves to. All config uses `schemaVersion: 1`.
 
 If no workflow is configured, Wake uses this built-in default:
 

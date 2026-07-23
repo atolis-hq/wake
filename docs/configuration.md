@@ -1,6 +1,9 @@
 # Configuration
 
-Wake's behavior is configured through a `config.json` file located at `.wake/config.json`. This document describes the configuration structure, properties, and defaults.
+Wake's behavior is configured through a `config.json` file at the root of a
+Wake home directory (see [docs/getting-started.md](getting-started.md)).
+This document describes the configuration structure, properties, and
+defaults.
 
 ## Overview
 
@@ -21,8 +24,8 @@ All configuration uses `schemaVersion: 1`.
 {
   "schemaVersion": 1,
   "paths": {
-    "wakeRoot": ".wake",
-    "promptsRoot": ".wake/prompts"
+    "wakeRoot": "/path/to/wake-home",
+    "promptsRoot": "/path/to/wake-home/prompts"
   },
   "sandbox": {
     "image": "wake-sandbox",
@@ -129,10 +132,15 @@ All configuration uses `schemaVersion: 1`.
 
 Runtime and storage directories.
 
-| Property      | Type              | Description                                                           | Default              |
-| ------------- | ----------------- | --------------------------------------------------------------------- | -------------------- |
-| `wakeRoot`    | string            | Root directory where Wake stores state, fixtures, and persistent data | `.wake`              |
-| `promptsRoot` | string (optional) | Explicit prompt-template root; defaults to `<wakeRoot>/prompts`       | `<wakeRoot>/prompts` |
+| Property      | Type              | Description                                                                                                    | Default              |
+| ------------- | ----------------- | ---------------------------------------------------------------------------------------------------------------- | -------------------- |
+| `wakeRoot`    | string            | The Wake home directory itself. Always resolved fresh from `--wake-root`/the current directory — not user-set. | current directory    |
+| `promptsRoot` | string (optional) | Explicit prompt-template root; defaults to `<wakeRoot>/prompts`                                                 | `<wakeRoot>/prompts` |
+
+Internal/durable data (`events/`, `state/`, `runs/`, `sources/`, `repos/`,
+`locks/`, `logs/`, `container-home/`, `ledger.json`) lives under a hidden
+`<wakeRoot>/.wake/` — see [docs/getting-started.md](getting-started.md) for
+the full directory layout.
 
 Prompt templates are Handlebars markdown files named `prompts/<action>.md`, for
 example `prompts/refine.md`. Wake passes `mode`, `isStart`, and `isResume` into
@@ -321,9 +329,9 @@ Re-authenticate inside the sandbox when the session expires by running
 Raw runner prompt and response capture for debugging.
 
 When enabled, Wake writes text files under
-`<wakeRoot>/transcripts/<workId>/<session-or-run>/`, where `<workId>` is the
-work item's minted `work-<ulid>` identity (the same key used by
-`state/<workId>.json`). Each runner run
+`<wakeRoot>/.wake/transcripts/<workId>/<session-or-run>/`, where `<workId>` is
+the work item's minted `work-<ulid>` identity (the same key used by
+`.wake/state/<workId>.json`). Each runner run
 writes a separate `*.prompt.txt` file with the exact prompt text passed to the
 CLI prompt argument and a matching `*.response.txt` file with raw stdout from
 the CLI. Initial runs are grouped by Wake `runId`; resumed runs are grouped by
