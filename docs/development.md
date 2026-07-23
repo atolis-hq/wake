@@ -67,10 +67,9 @@ differences, see [docs/runner-comparison.md](runner-comparison.md).
 ## Sandbox
 
 See [docs/getting-started.md](getting-started.md) for scaffolding a Wake home
-and running `sandbox build`/`up`/`setup`. From a source checkout, use
-`npx tsx src/main.ts init <path>` in place of `wake init` (this repo isn't
-installed globally, so there's no `wake` binary on `PATH` unless you've also
-done a global install separately).
+and running `sandbox build`/`up`/`setup`. From a source checkout, run `npm
+link` once to get a `wake-dev` command on `PATH` (runs `src/main.ts` live via
+this checkout's own `tsx`, no build step) and use it in place of `wake`.
 
 ### Self-update
 
@@ -87,7 +86,7 @@ with "Sandbox self-update requires config.dev.repoRoot", because that's the
 one field that only exists in your scaffolded `config.json`, not in the repo:
 
 ```bash
-npx tsx src/main.ts sandbox self-update --wake-root /path/to/your/wake-home
+wake-dev sandbox self-update --wake-root /path/to/your/wake-home
 ```
 
 `self-update` checks for a newer version tag on `origin`, and if found: waits
@@ -127,7 +126,7 @@ To run it continuously with no external scheduler, start the loop as a
 long-lived host process:
 
 ```bash
-npx tsx src/main.ts sandbox self-update --wake-root /path/to/your/wake-home --loop
+wake-dev sandbox self-update --wake-root /path/to/your/wake-home --loop
 ```
 
 Leave it running in a background terminal, a `tmux`/`screen` session, or a
@@ -135,7 +134,7 @@ dedicated terminal tab. It polls indefinitely until the process is stopped
 (Ctrl+C, or killed) — there's no separate scheduler or cron job to configure.
 If you want it to survive terminal closes or host reboots, wrap it with
 whatever process supervisor you'd use for any other long-running host script
-(e.g. `pm2 start npx -- tsx src/main.ts sandbox self-update --wake-root /path/to/your/wake-home --loop`,
+(e.g. `pm2 start wake-dev -- sandbox self-update --wake-root /path/to/your/wake-home --loop`,
 an `nssm`/Windows service, or a systemd unit) — that's optional and outside
 Wake's own scope, since Wake only owns what happens inside the loop, not how the host keeps a
 process alive.

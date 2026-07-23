@@ -20,6 +20,7 @@ run `wake <command>` directly — no wrapper scripts, no need to pass
 
 ```sh
 npm install -g @atolis-hq/wake
+cd ~/
 wake init ./wake-home
 cd ./wake-home
 ```
@@ -40,28 +41,28 @@ From a Wake source checkout:
 
 ```sh
 npm install
-npx tsx src/main.ts init ./wake-home
+npm link
 ```
 
-There's no `wake` binary on `PATH` from a source checkout unless you've also
-installed the package globally, so every command runs via `npx tsx
-src/main.ts <command> --wake-root <path-to-wake-home>` from the repo root —
-or `cd` into `wake-home` and point back at the checkout, whichever you find
-more convenient:
+`npm link` registers a `wake-dev` command on your `PATH` that runs
+`src/main.ts` live via this checkout's own `tsx` — no build step, and every
+invocation picks up your latest source changes immediately. It works from
+any directory (e.g. after you `cd` into a wake-home), the same as the
+packaged `wake` binary.
 
 ```sh
+wake-dev init ./wake-home
 cd ./wake-home
-npx tsx /path/to/wake/src/main.ts sandbox build
 ```
 
-`wake init --dev` / `wake init --packaged` force a specific `dev.mode` if
-auto-detection ever picks the wrong one (e.g. testing a local `npm pack`
-install from inside a source checkout).
+`wake-dev init --dev` / `wake-dev init --packaged` force a specific
+`dev.mode` if auto-detection ever picks the wrong one (e.g. testing a local
+`npm pack` install from inside a source checkout).
 
 ## Build and start the sandbox
 
-From inside the Wake home (packaged mode shown; dev mode is the same
-commands via `npx tsx .../src/main.ts` as above):
+From inside the Wake home — `wake` for a packaged install, `wake-dev` from a
+source checkout:
 
 ```sh
 wake sandbox build
@@ -89,6 +90,8 @@ wake start    # resident loop
 wake ui       # control-plane UI (127.0.0.1:4317 by default)
 wake stop     # graceful stop, waits for any active run to finish
 ```
+
+(`wake-dev` in place of `wake` from a source checkout, same as above.)
 
 Once `docker/Dockerfile` exists (i.e. after `sandbox build`), these commands
 automatically exec into `wake sandbox exec` instead of running on the host —

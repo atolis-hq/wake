@@ -9,12 +9,14 @@
   },
   "type": "module",
   "bin": {
-    "wake": "dist/src/main.js"
+    "wake": "dist/src/main.js",
+    "wake-dev": "bin/wake-dev.js"
   },
   "main": "./dist/src/main.js",
   "exports": "./dist/src/main.js",
   "files": [
     "dist/src",
+    "bin",
     "docker",
     "prompts",
     "README.md",

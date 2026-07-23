@@ -165,6 +165,7 @@ for capability differences between runners.
 
 ```sh
 npm install -g @atolis-hq/wake
+cd ~/
 wake init ./wake-home
 cd ./wake-home
 wake sandbox build
@@ -173,8 +174,7 @@ wake sandbox setup
 wake start
 ```
 
-Full setup instructions — including the source-checkout dev-mode path,
-directory layout, `wake doctor`, and updating — are in
+Full setup instructions are in
 [docs/getting-started.md](docs/getting-started.md). Run `wake --help` at
 any time for the full command list.
 
