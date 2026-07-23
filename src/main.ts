@@ -821,8 +821,11 @@ async function runDoctor(args: string[]) {
   const containerName = config.sandbox.containerName;
   const image = config.sandbox.image;
 
+  const workspaceManager = createGitWorkspaceManager({ wakeRoot });
+
   const deps: DoctorDeps = {
-    collectPreflightFailures: (doctorConfig) => collectStartupPreflightFailures(doctorConfig),
+    collectPreflightFailures: (doctorConfig) =>
+      collectStartupPreflightFailures(doctorConfig, { workspaceManager }),
     resolveGitHubToken,
     hasDockerfile,
     dockerReachable: dockerDaemonReachable,
