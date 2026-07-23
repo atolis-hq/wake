@@ -314,7 +314,8 @@ durably. The files on disk **are** the audit trail. Two principles govern this:
 
 ```text
 ~/.wake/                # central control-plane home — owns ALL state, permanent
-  config.json           # timing, quiet hours, models, repo allowlist, caps
+  config.yaml           # timing, sandbox, repo allowlist, caps
+  config.workflows.yaml # models, runners, tiers, stage routing
   ledger.json           # per-run cost/duration, pause state
   events/<date>.jsonl   # canonical imported + internal event envelopes
   state/<workId>.json   # derived projection: stage, attempts, session refs, history

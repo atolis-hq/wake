@@ -22,13 +22,13 @@
 
 ## Durable State
 
-Wake owns a Wake home directory (`config.json`, `prompts/`, `workspaces/` at
+Wake owns a Wake home directory (`config.yaml`, `config.workflows.yaml`, `prompts/`, `workspaces/` at
 the visible top level, everything else under a hidden `.wake/` — see
 [docs/getting-started.md](getting-started.md)). The canonical durable record
 is an append-only event stream; projections and summaries are derived from
 it:
 
-- `config.json` for versioned config
+- `config.yaml`/`config.workflows.yaml` for versioned config
 - `.wake/ledger.json` for pause windows and future budget state
 - `.wake/events/<date>.jsonl` for immutable imported and internal event envelopes
 - `.wake/state/<workId>.json` for a derived projection of the current work item

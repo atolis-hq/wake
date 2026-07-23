@@ -96,7 +96,7 @@ on every container rebuild):
 | Codex       | `~/.codex`           | `/home/wake/.codex`  | Add to `sandbox.extraMounts` with `readOnly: false` |
 | Cursor      | `~/.cursor`          | `/home/wake/.cursor` | Add to `sandbox.extraMounts` with `readOnly: false` |
 
-Example `config.json` extraMounts for all three:
+Example `config.yaml` extraMounts for all three:
 
 ```json
 "extraMounts": [
