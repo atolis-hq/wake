@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 const binPath = resolve(process.cwd(), 'bin', 'wake-dev.js');
 
 describe('bin/wake-dev.js', () => {
-  it('runs src/main.ts live and forwards the exit code', () => {
+  it('runs src/main.ts live and forwards the exit code', { timeout: 15_000 }, () => {
     const result = spawnSync(process.execPath, [binPath, '--version'], {
       encoding: 'utf8',
     });

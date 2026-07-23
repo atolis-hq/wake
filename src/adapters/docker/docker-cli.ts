@@ -66,10 +66,17 @@ function buildStopArgs(containerName: string, timeoutSeconds?: number): string[]
   ];
 }
 
+const DOCKER_LOG_MAX_SIZE = '10m';
+const DOCKER_LOG_MAX_FILE = '3';
+
 function buildRunArgs(input: DockerUpInput): string[] {
   return [
     'run',
     '-d',
+    '--log-opt',
+    `max-size=${DOCKER_LOG_MAX_SIZE}`,
+    '--log-opt',
+    `max-file=${DOCKER_LOG_MAX_FILE}`,
     '--name',
     input.containerName,
     '-v',
@@ -80,7 +87,7 @@ function buildRunArgs(input: DockerUpInput): string[] {
       '-v',
       `${mount.source}:${mount.target}${mount.readOnly === true ? ':ro' : ''}`,
     ]),
-    // Auto-started by docker/entrypoint.sh; the UI binds 0.0.0.0 inside the
+    // Auto-started by wake sandbox-entrypoint; the UI binds 0.0.0.0 inside the
     // container so this published port can reach it (127.0.0.1 inside the
     // container would not be reachable via docker's port-forwarding NAT).
     ...(input.ui?.enabled === true
