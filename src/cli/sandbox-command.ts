@@ -237,11 +237,13 @@ export async function runSandboxCommand(input: {
   }
 
   if (subcommand === 'setup') {
-    await input.docker.exec(
-      input.config.sandbox.containerName,
-      ['node', '/app/dist/src/main.js', 'sandbox-setup'],
-      { interactive: true },
-    );
+    const setupCommand =
+      input.config.dev?.mode === 'source'
+        ? ['node', '/app/dist/src/main.js', 'sandbox-setup']
+        : ['wake', 'sandbox-setup'];
+    await input.docker.exec(input.config.sandbox.containerName, setupCommand, {
+      interactive: true,
+    });
     return;
   }
 

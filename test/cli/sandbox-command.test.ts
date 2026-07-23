@@ -475,12 +475,32 @@ describe('sandbox command', () => {
     expect(sleep).toHaveBeenCalledWith(50);
   });
 
-  it('dispatches setup to the configured container name', async () => {
+  it('dispatches setup via the bare wake binary when dev.mode is packaged or unset', async () => {
     const docker = createDockerMock();
 
     await runSandboxCommand({
       args: ['setup'],
       config: createDefaultWakeConfig(wakeRoot),
+      wakeRoot,
+      containerHomeRoot,
+      docker,
+      packagedTemplatesRoot,
+      stateStore: { listRunRecords: async () => [] },
+      sleep: async () => {},
+      logger: { info: () => {} },
+    });
+
+    expect(docker.exec).toHaveBeenCalledWith('wake-sandbox', ['wake', 'sandbox-setup'], {
+      interactive: true,
+    });
+  });
+
+  it('dispatches setup via node /app/dist/src/main.js when dev.mode is source', async () => {
+    const docker = createDockerMock();
+
+    await runSandboxCommand({
+      args: ['setup'],
+      config: { ...createDefaultWakeConfig(wakeRoot), dev: { mode: 'source' } },
       wakeRoot,
       containerHomeRoot,
       docker,
