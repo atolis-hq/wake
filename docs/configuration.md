@@ -1,134 +1,155 @@
 # Configuration
 
-Wake's behavior is configured through a `config.json` file at the root of a
-Wake home directory (see [docs/getting-started.md](getting-started.md)).
-This document describes the configuration structure, properties, and
-defaults.
+Wake's behavior is configured through YAML files at the root of a Wake home
+directory (see [docs/getting-started.md](getting-started.md)). Wake reads
+**every file matching `config.yaml` or `config.<label>.yaml`** in that
+directory and deep-merges them together — nested objects merge key by key,
+arrays and scalars are replaced wholesale by whichever file sets them last.
+Files are merged in alphabetical order by filename, so a later-sorting file
+wins on any key both files set. There's no required layout: split
+configuration into as many or as few files as you want.
 
-## Overview
+`wake init` scaffolds a default two-file split:
 
-The configuration file defines:
+- **`config.yaml`** — infra/operational settings: storage paths, Docker
+  sandbox mounting, scheduler timing, transcripts, the control-plane UI, and
+  which external sources (like GitHub) to monitor.
+- **`config.workflows.yaml`** — behavior/policy settings: the runner
+  registry, capability tiers, workflow and stage definitions, custom
+  commands, and per-stage routing. These are kept together by default
+  because they reference each other by name — a stage route names a `tier`,
+  a tier names `runners`, a workflow selector names a `workflow` — but
+  nothing stops you from splitting further, e.g. a standalone
+  `config.sources.yaml` for GitHub polling settings.
 
-- Where Wake stores runtime data and state
-- How the Docker sandbox is mounted and debugged
-- How frequently the control plane checks for new work
-- Which execution mode and CLI settings to use
-- Which external sources (like GitHub) to monitor for work
-- Policies for filtering and publishing work
-
-All configuration uses `schemaVersion: 1`.
+Any field left unset in every file falls back to a built-in default.
+`config.yaml` carries `schemaVersion: 1`.
 
 ## Full Sample Configuration
 
-```json
-{
-  "schemaVersion": 1,
-  "paths": {
-    "wakeRoot": "/path/to/wake-home",
-    "promptsRoot": "/path/to/wake-home/prompts"
-  },
-  "sandbox": {
-    "image": "wake-sandbox",
-    "imageRepository": "wake-sandbox",
-    "containerName": "wake-sandbox-my-project",
-    "containerMountPath": "/wake",
-    "containerHomeMountPath": "/home/wake",
-    "start": { "enabled": true },
-    "extraMounts": []
-  },
-  "scheduler": {
-    "intervalMs": 60000,
-    "maxIntervalMs": 300000
-  },
-  "transcripts": {
-    "enabled": false,
-    "retainAfterWorkspaceCleanup": false
-  },
-  "runners": {
-    "fake": { "kind": "fake" },
-    "claude-haiku": {
-      "kind": "claude",
-      "command": "claude",
-      "model": "claude-haiku-4-5",
-      "timeoutMs": 600000
-    },
-    "claude-opus": {
-      "kind": "claude",
-      "command": "claude",
-      "model": "claude-opus-4-8",
-      "timeoutMs": 1800000
-    },
-    "codex-standard": {
-      "kind": "codex",
-      "command": "codex",
-      "model": "gpt-5.4",
-      "timeoutMs": 1200000,
-      "reasoningEffort": "medium"
-    },
-    "codex-flagship": {
-      "kind": "codex",
-      "command": "codex",
-      "model": "gpt-5.5",
-      "timeoutMs": 1800000,
-      "reasoningEffort": "high"
-    },
-    "cursor-composer": {
-      "kind": "cursor",
-      "command": "cursor",
-      "model": "composer-2.5",
-      "timeoutMs": 1800000
-    }
-  },
-  "tiers": {
-    "light": ["claude-haiku"],
-    "standard": ["codex-standard", "claude-haiku"],
-    "deep": ["claude-opus", "codex-flagship"]
-  },
-  "defaultTier": "standard",
-  "stages": {
-    "queue": { "action": "refine", "tier": "light" },
-    "implement": { "action": "implement", "tier": "standard" }
-  },
-  "ui": {
-    "enabled": false,
-    "port": 4317,
-    "tunnel": {
-      "enabled": false
-    }
-  },
-  "sources": {
-    "github": {
-      "enabled": false,
-      "repos": [],
-      "polling": {
-        "maxIssuesPerRepo": 25,
-        "commentPageSize": 25,
-        "lookbackMs": 60000
-      },
-      "policy": {
-        "requiredLabels": [],
-        "ignoredLabels": [],
-        "requiredAssignees": []
-      },
-      "publication": {
-        "postStatusComments": true
-      },
-      "pullRequests": {
-        "enabled": false,
-        "maxPullRequestsPerRepo": 25,
-        "commentPageSize": 25,
-        "policy": {
-          "requiredAuthors": []
-        }
-      }
-    }
-  }
-}
+`config.yaml`:
+
+```yaml
+schemaVersion: 1
+paths:
+  wakeRoot: /path/to/wake-home
+  promptsRoot: /path/to/wake-home/prompts
+sandbox:
+  image: wake-sandbox
+  imageRepository: wake-sandbox
+  containerName: wake-sandbox-my-project
+  containerMountPath: /wake
+  containerHomeMountPath: /home/wake
+  start:
+    enabled: true
+  extraMounts: []
+scheduler:
+  intervalMs: 60000
+  maxIntervalMs: 300000
+transcripts:
+  enabled: false
+  retainAfterWorkspaceCleanup: false
+ui:
+  enabled: false
+  port: 4317
+  tunnel:
+    enabled: false
+sources:
+  github:
+    enabled: false
+    repos: []
+    polling:
+      maxIssuesPerRepo: 25
+      commentPageSize: 25
+      lookbackMs: 60000
+    policy:
+      requiredLabels: []
+      ignoredLabels: []
+      requiredAssignees: []
+    publication:
+      postStatusComments: true
+    pullRequests:
+      enabled: false
+      maxPullRequestsPerRepo: 25
+      commentPageSize: 25
+      policy:
+        requiredAuthors: []
 ```
+
+`config.workflows.yaml`:
+
+```yaml
+runners:
+  fake:
+    kind: fake
+  claude-haiku:
+    kind: claude
+    command: claude
+    model: claude-haiku-4-5
+    timeoutMs: 600000
+  claude-opus:
+    kind: claude
+    command: claude
+    model: claude-opus-4-8
+    timeoutMs: 1800000
+  codex-standard:
+    kind: codex
+    command: codex
+    model: gpt-5.4
+    timeoutMs: 1200000
+    reasoningEffort: medium
+  codex-flagship:
+    kind: codex
+    command: codex
+    model: gpt-5.5
+    timeoutMs: 1800000
+    reasoningEffort: high
+  cursor-composer:
+    kind: cursor
+    command: cursor
+    model: composer-2.5
+    timeoutMs: 1800000
+tiers:
+  light: [claude-haiku]
+  standard: [codex-standard, claude-haiku]
+  deep: [claude-opus, codex-flagship]
+defaultTier: standard
+stages:
+  queue:
+    action: refine
+    tier: light
+  implement:
+    action: implement
+    tier: standard
+```
+
+### Splitting further
+
+Any file named `config.yaml` or `config.<label>.yaml` in the Wake home root
+is read and merged. For example, to keep GitHub polling settings separate
+from the rest of `config.yaml`:
+
+`config.sources.yaml`:
+
+```yaml
+sources:
+  github:
+    enabled: true
+    repos: [owner/repo]
+```
+
+Wake merges this with whatever `config.yaml` also sets under `sources` —
+merging is recursive, not a whole-file override, so `config.yaml` can leave
+`sources` out entirely and this file is the only place it's set, or both
+files can set different sub-fields of `sources.github` and both take
+effect. Wake never rewrites these files — whatever split you create is the
+split that persists.
 
 ## Configuration Sections
 
 ### paths
+
+_Lives in `config.yaml`._
 
 Runtime and storage directories.
 
@@ -154,24 +175,23 @@ transitions work, see [docs/workflows.md](workflows.md).
 
 ### commands
 
+_Lives in `config.workflows.yaml`._
+
 Custom slash commands map issue or correlated-PR comments to runner actions.
 The object key is the command name without the leading slash. Wake matches a
 configured command only when it appears as a token at the start of a trimmed
 comment line, so inline mentions like `please run /codereview` are ignored.
 
-```json
-"commands": {
-  "ask": {
-    "action": "ask",
-    "workspace": "read-only",
-    "tier": "light"
-  },
-  "codereview": {
-    "action": "codereview",
-    "workspace": "read-only",
-    "tier": "standard"
-  }
-}
+```yaml
+commands:
+  ask:
+    action: ask
+    workspace: read-only
+    tier: light
+  codereview:
+    action: codereview
+    workspace: read-only
+    tier: standard
 ```
 
 | Property    | Type                                    | Description                                                                           | Default       |
@@ -189,6 +209,8 @@ lifecycle state in place.
 
 ### sandbox
 
+_Lives in `config.yaml`._
+
 Docker sandbox settings for the durable Wake container.
 
 | Property                 | Type                                                       | Description                                                                                                                                                                                                | Default          |
@@ -204,24 +226,16 @@ Docker sandbox settings for the durable Wake container.
 To expose host Claude auth inside the sandbox, mount individual files rather
 than the whole `~/.claude` directory:
 
-```json
-{
-  "schemaVersion": 1,
-  "sandbox": {
-    "extraMounts": [
-      {
-        "source": "C:/Users/alice/.claude/.credentials.json",
-        "target": "/home/wake/.claude/.credentials.json",
-        "readOnly": true
-      },
-      {
-        "source": "C:/Users/alice/.claude/settings.json",
-        "target": "/home/wake/.claude/settings.json",
-        "readOnly": true
-      }
-    ]
-  }
-}
+```yaml
+schemaVersion: 1
+sandbox:
+  extraMounts:
+    - source: C:/Users/alice/.claude/.credentials.json
+      target: /home/wake/.claude/.credentials.json
+      readOnly: true
+    - source: C:/Users/alice/.claude/settings.json
+      target: /home/wake/.claude/settings.json
+      readOnly: true
 ```
 
 `.credentials.json` carries login tokens and `settings.json` carries plugin
@@ -276,23 +290,15 @@ credentials from the host to come along with it.
 For Codex, the narrow equivalent is to mount only the user config and auth
 files rather than the whole `~/.codex` tree:
 
-```json
-{
-  "schemaVersion": 1,
-  "sandbox": {
-    "extraMounts": [
-      {
-        "source": "C:/Users/alice/.codex/config.toml",
-        "target": "/home/wake/.codex/config.toml"
-      },
-      {
-        "source": "C:/Users/alice/.codex/auth.json",
-        "target": "/home/wake/.codex/auth.json",
-        "readOnly": true
-      }
-    ]
-  }
-}
+```yaml
+schemaVersion: 1
+sandbox:
+  extraMounts:
+    - source: C:/Users/alice/.codex/config.toml
+      target: /home/wake/.codex/config.toml
+    - source: C:/Users/alice/.codex/auth.json
+      target: /home/wake/.codex/auth.json
+      readOnly: true
 ```
 
 `config.toml` is the user-level Codex configuration file and `auth.json`
@@ -303,19 +309,13 @@ boundaries.
 
 For Cursor, mount the auth file that `agent login` writes:
 
-```json
-{
-  "schemaVersion": 1,
-  "sandbox": {
-    "extraMounts": [
-      {
-        "source": "C:/Users/alice/.config/cursor/auth.json",
-        "target": "/home/wake/.config/cursor/auth.json",
-        "readOnly": true
-      }
-    ]
-  }
-}
+```yaml
+schemaVersion: 1
+sandbox:
+  extraMounts:
+    - source: C:/Users/alice/.config/cursor/auth.json
+      target: /home/wake/.config/cursor/auth.json
+      readOnly: true
 ```
 
 `~/.config/cursor/auth.json` is the file written by `agent login` and is the
@@ -325,6 +325,8 @@ Re-authenticate inside the sandbox when the session expires by running
 `agent login` via `wake sandbox exec`.
 
 ### transcripts
+
+_Lives in `config.yaml`._
 
 Raw runner prompt and response capture for debugging.
 
@@ -344,6 +346,8 @@ the previously recorded agent session ID when Wake has one.
 
 ### scheduler
 
+_Lives in `config.yaml`._
+
 Control plane tick frequency and timing.
 
 | Property        | Type   | Description                                                                                                                                                                               | Default              |
@@ -352,6 +356,8 @@ Control plane tick frequency and timing.
 | `maxIntervalMs` | number | Ceiling for the idle-cadence backoff: each consecutive idle tick doubles the sleep (starting from `intervalMs`) up to this value, and any `processed` tick resets it back to `intervalMs` | `300000` (5 minutes) |
 
 ### runners
+
+_Lives in `config.workflows.yaml`._
 
 Named runner registry. The object key is the routing target; `kind` selects the
 adapter implementation. Multiple entries can share the same `kind` with
@@ -374,6 +380,8 @@ implement-stage runs pass `--force` (auto-approve writes). Session resume uses
 
 ### tiers
 
+_Lives in `config.workflows.yaml`._
+
 Capability tiers map a closed category name to an ordered list of named runner
 candidates. Wake normally uses the first configured candidate in the tier, but
 falls sideways to the next candidate whenever a higher-priority one is
@@ -395,29 +403,33 @@ other quota failure.
 
 ### defaultTier
 
+_Lives in `config.workflows.yaml`._
+
 Fallback tier used when a stage does not set `tier` or `runner`.
 
 ### stages
+
+_Lives in `config.workflows.yaml`._
 
 Per-stage routing. A stage normally routes to a `tier`; `runner` pins a concrete
 named runner and takes precedence over `tier`.
 
 ### ui
 
+_Lives in `config.yaml`._
+
 Optional settings for the read-only control-plane UI (`wake ui` / `npm run
 ui`). All fields are optional and default to a loopback-only, tokenless
 server:
 
-```json
-"ui": {
-  "enabled": false,
-  "port": 4317,
-  "token": null,
-  "tunnel": {
-    "enabled": false,
-    "authToken": null
-  }
-}
+```yaml
+ui:
+  enabled: false
+  port: 4317
+  token: null
+  tunnel:
+    enabled: false
+    authToken: null
 ```
 
 - `enabled` — when `true`, `wake sandbox up`/`wake sandbox update` publish
@@ -436,7 +448,7 @@ server:
   writes the discovered public URL to `<wakeRoot>/.wake/control-plane-ui-url`. GitHub
   status comments then link the `Wake` header to that URL. Default `false`.
 - `tunnel.authToken` — optional ngrok authtoken passed to the container as
-  `NGROK_AUTHTOKEN`. To avoid storing the token in `config.json`, leave this
+  `NGROK_AUTHTOKEN`. To avoid storing the token in `config.yaml`, leave this
   unset and export `NGROK_AUTHTOKEN` before `wake sandbox up` or
   `wake sandbox update`; the Docker run command passes it through when the
   tunnel is enabled. Ngrok provides free HTTPS tunnels, but it generally
@@ -477,6 +489,8 @@ resource index or a work item's projection directly, so `rm -rf state/` plus
 replay still reproduces the same result.
 
 ### sources.github
+
+_Lives in `config.yaml`._
 
 GitHub Issues integration and polling configuration.
 
@@ -560,7 +574,20 @@ explicit `/approved` command (on the issue or the PR) advances it to
 
 ## Loading and Merging
 
-Wake loads configuration from `.wake/config.json` relative to the current working directory. If the file does not exist, Wake uses built-in defaults. Configuration is merged with defaults, so you only need to specify the properties you want to override.
+Wake loads every `config.yaml`/`config.<label>.yaml` file from the Wake
+home root (not `.wake/` — that hidden directory is durable runtime state,
+not configuration) and deep-merges them in alphabetical filename order.
+Missing fields fall back to built-in defaults.
+
+Wake homes created before this file-splitting existed still have a single
+combined `config.json`. Wake reads it directly whenever no `config*.yaml`
+file is present — no migration step, and Wake never rewrites or renames it.
+Once you add a `config.yaml` (by running `wake init` fresh, or by hand),
+`config.json` is ignored.
+
+Wake does not write resolved configuration back to disk. What's on disk is
+exactly what you put there (plus schema defaults applied in memory) — there
+is no tick-time normalization step to work around when hand-splitting files.
 
 For sandbox debugging, `wake sandbox logs` tails Docker container logs for the durable sandbox. Wake keeps structured run/event records durably, but raw sandbox stdout/stderr is treated as container log output rather than a Wake-managed on-disk archive.
 
@@ -570,14 +597,10 @@ preserving the mounted Wake home and sandbox home directories.
 
 For example, to enable GitHub polling while keeping all other defaults:
 
-```json
-{
-  "schemaVersion": 1,
-  "sources": {
-    "github": {
-      "enabled": true,
-      "repos": ["owner/repo"]
-    }
-  }
-}
+```yaml
+schemaVersion: 1
+sources:
+  github:
+    enabled: true
+    repos: [owner/repo]
 ```
