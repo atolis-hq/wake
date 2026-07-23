@@ -551,7 +551,6 @@ export async function buildRuntime(args: string[]) {
   const config = await loadWakeConfig({
     wakeRoot,
   });
-  await stateStore.writeConfig(config);
 
   const resourceIndex = createResourceIndex({ paths: stateStore.paths });
 
