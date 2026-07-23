@@ -54,6 +54,32 @@ async function ensureContainerHomeMountParents(input: {
   }
 }
 
+const sandboxSubcommands = [
+  ['build', 'Generate docker/Dockerfile (if missing) and build the sandbox image'],
+  ['up', 'Start the sandbox container'],
+  ['update', 'Recreate the sandbox container from the current image'],
+  ['down', 'Stop and remove the sandbox container'],
+  ['stop', 'Stop the resident loop gracefully, then the container'],
+  ['self-update', 'Pull the latest tag and rebuild (source dev.mode only)'],
+  ['setup', 'Run interactive first-time setup inside the container'],
+  ['exec', 'Run a command inside the sandbox container'],
+  ['logs', 'Print sandbox container logs'],
+  ['resume', 'Resume a previous agent session inside the sandbox'],
+] as const;
+
+export function printSandboxUsage(stream: NodeJS.WritableStream): void {
+  const width = Math.max(...sandboxSubcommands.map(([name]) => name.length));
+  stream.write(
+    [
+      'Usage: wake sandbox <subcommand>',
+      '',
+      'Subcommands:',
+      ...sandboxSubcommands.map(([name, description]) => `  ${name.padEnd(width)}  ${description}`),
+      '',
+    ].join('\n'),
+  );
+}
+
 function readFlag(name: string, args: string[]): string | undefined {
   const index = args.indexOf(name);
   if (index === -1) {
@@ -108,8 +134,14 @@ export async function runSandboxCommand(input: {
 }): Promise<void> {
   const subcommand = input.args[0];
 
-  if (subcommand === undefined) {
-    throw new Error('Unknown sandbox command:');
+  if (
+    subcommand === undefined ||
+    subcommand === '--help' ||
+    subcommand === '-h' ||
+    subcommand === 'help'
+  ) {
+    printSandboxUsage(process.stdout);
+    return;
   }
 
   if (subcommand === 'build') {
