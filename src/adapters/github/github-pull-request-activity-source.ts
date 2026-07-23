@@ -2,7 +2,11 @@ import type { ResourceIndex, UnkeyedEventEnvelope } from '../../core/contracts.j
 import type { EventEnvelope, WakeConfig } from '../../domain/types.js';
 import { buildResourceUri } from '../../domain/resource-uri.js';
 import { createUnkeyedEventEnvelope, createEventEnvelope } from '../../lib/event-log.js';
-import { formatWakeComment, readControlPlaneUiUrl } from './github-issues-work-source.js';
+import {
+  formatGitHubError,
+  formatWakeComment,
+  readControlPlaneUiUrl,
+} from './github-issues-work-source.js';
 
 const githubPrSource = 'github-pr';
 const wakeCommentMarker = '<!-- wake:agent -->';
@@ -276,9 +280,9 @@ export function createGitHubPullRequestActivitySource(deps: {
         }
       } catch (error) {
         console.error(
-          `[github-pr-activity-source] discovery failed for ${repoRef}, skipping this tick: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
+          `[github-pr-activity-source] discovery failed for ${repoRef}, skipping this tick: ${formatGitHubError(
+            error,
+          )}`,
         );
       }
     }
@@ -425,9 +429,9 @@ export function createGitHubPullRequestActivitySource(deps: {
       }
     } catch (error) {
       console.error(
-        `[github-pr-activity-source] activity poll failed for ${resourceUri}, skipping this tick: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        `[github-pr-activity-source] activity poll failed for ${resourceUri}, skipping this tick: ${formatGitHubError(
+          error,
+        )}`,
       );
     }
 
@@ -612,9 +616,9 @@ export function createGitHubPullRequestActivitySource(deps: {
             );
           } catch (error) {
             console.error(
-              `[github-pr-activity-source] check poll failed for ${watchRef.resourceUri}, skipping this tick: ${
-                error instanceof Error ? error.message : String(error)
-              }`,
+              `[github-pr-activity-source] check poll failed for ${watchRef.resourceUri}, skipping this tick: ${formatGitHubError(
+                error,
+              )}`,
             );
             return [];
           }
