@@ -31,7 +31,7 @@ Principles, in priority order:
 
 | Source            | Path                                                 | Feeds                                      |
 | ----------------- | ---------------------------------------------------- | ------------------------------------------ |
-| Config            | `config.json`                                        | Config view, routing table, policy display |
+| Config            | `config.yaml` / `config.workflows.yaml`              | Config view, routing table, policy display |
 | Pause file        | `PAUSE`                                              | Status bar, pause control                  |
 | Ledger            | `ledger.json` (`pausedUntil`)                        | Status bar, pause control                  |
 | Tick lock         | `locks/tick.lock`                                    | Lock status, stale-lock action             |
@@ -115,7 +115,7 @@ A reverse-chronological tail of the event log (last N days, default 2):
 
 - The effective config (post-zod-defaults, i.e. what `loadWakeConfig` returns), pretty-printed, read-only.
 - A rendered **routing table**: stage → pinned runner or tier → resolved runner entry → model per action → timeout / maxTurns source. This answers "which model will implement use?" without mentally executing `resolveRunnerRouting`.
-- Redaction: no secrets currently live in `config.json` (tokens come from env), but the renderer must still mask any key matching `token|secret|key|password` defensively.
+- Redaction: no secrets currently live in `config.yaml`/`config.workflows.yaml` (tokens come from env), but the renderer must still mask any key matching `token|secret|key|password` defensively.
 - Unknown/dead keys: flag config keys the loaded schema doesn't recognize. (Known-dead keys like `lookbackMs` / `postStatusComments` are a code problem, not a UI problem, but flagging unknowns catches operator typos.)
 
 ### 4.7 Health view
@@ -185,7 +185,7 @@ Ordered by value. Everything else stays read-only in v1.
 
 5. **Workspace cleanup** — for items that are `done`/`failed`/closed with a per-issue workspace still on disk: triggers the existing `cleanupWorkspace` path and appends the existing `wake.workspace.cleaned` event so the projection updates. Server-side guard: refuse any path outside `workspaces/` (same rule as `isPerIssueWorkspacePath`). Value: the leak mitigation until report E1 makes automatic cleanup reachable.
 
-Explicit **non-mutations** (rejected for v1): approving work (`/approved` must stay a ticket-channel act so the audit trail lives with the work item — the UI links to the ticket instead), editing config (operators edit `config.json`; the UI only displays), retrying a specific run with different parameters (that's routing policy, owned by config), and anything that posts to the external tracker.
+Explicit **non-mutations** (rejected for v1): approving work (`/approved` must stay a ticket-channel act so the audit trail lives with the work item — the UI links to the ticket instead), editing config (operators edit `config.yaml`/`config.workflows.yaml` (or any `config.*.yaml` split they've made); the UI only displays), retrying a specific run with different parameters (that's routing policy, owned by config), and anything that posts to the external tracker.
 
 ## 7. Non-goals
 

@@ -37,10 +37,10 @@ describe('init command', () => {
 
     expect(result.wakeRoot).toBe(join(targetRoot, homeDir));
 
-    const config = await readFile(join(result.wakeRoot, 'config.json'), 'utf8');
+    const config = await readFile(join(result.wakeRoot, 'config.yaml'), 'utf8');
 
-    expect(config).toContain('"sandbox"');
-    expect(config).toContain(`"repoRoot": "${repoRoot.replaceAll('\\', '\\\\')}"`);
+    expect(config).toContain('sandbox:');
+    expect(config).toContain(`repoRoot: ${repoRoot}`);
     await expect(stat(join(result.wakeRoot, 'docker'))).rejects.toThrow();
     await expect(stat(join(result.wakeRoot, 'wake.sh'))).rejects.toThrow();
     await expect(stat(join(result.wakeRoot, 'wake.ps1'))).rejects.toThrow();

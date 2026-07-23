@@ -97,7 +97,7 @@ For more detail, see [docs/vision.md](docs/vision.md) and
   log; projections can be rebuilt, and the loop can crash and resume without
   losing its place.
 - **Local and inspectable.** Everything lives in a plain-file Wake home
-  directory: `config.json`, `prompts/`, and `workspaces/` at the top level for
+  directory: `config.yaml`, `config.workflows.yaml`, `prompts/`, and `workspaces/` at the top level for
   what you edit or browse day-to-day, with durable/internal state (events,
   projections, runs, logs, sandbox auth) nested under a hidden `.wake/`.
 - **Sandbox-oriented execution.** Wake can run from a persistent Docker sandbox
@@ -169,7 +169,7 @@ any time for the full command list, or see
 - [docs/architecture.md](docs/architecture.md) — module boundaries and the event-sourced core.
 - [docs/workflows.md](docs/workflows.md) — how stages, prompts, and runner routes are configured.
 - [docs/prompts.md](docs/prompts.md) — how prompt templates map to workflow stages.
-- [docs/configuration.md](docs/configuration.md) — `config.json` options and the operator correlation escape hatch.
+- [docs/configuration.md](docs/configuration.md) — `config.yaml`/`config.workflows.yaml` options and the operator correlation escape hatch.
 - [docs/development.md](docs/development.md) — source-checkout dev setup (`wake-dev`), npm scripts, formatting, self-update, GitHub polling.
 - [docs/runner-comparison.md](docs/runner-comparison.md) — capability differences between supported runners.
 

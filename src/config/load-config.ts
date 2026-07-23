@@ -1,26 +1,49 @@
-import { resolve } from 'node:path';
+import { resolve, join } from 'node:path';
 import { access } from 'node:fs/promises';
 
 import { readJsonFile } from '../lib/json-file.js';
+import { readYamlFile } from '../lib/yaml-file.js';
+import { deepMergeRaw } from '../lib/deep-merge.js';
 import { parseWakeConfig } from '../domain/schema.js';
 import type { WakeConfig } from '../domain/types.js';
+import { discoverConfigFiles } from './discover-config-files.js';
 
-export async function loadWakeConfig(options?: {
-  wakeRoot?: string;
-  configFile?: string;
-}): Promise<WakeConfig> {
+async function readLegacyConfigIfPresent(wakeRoot: string): Promise<Record<string, unknown>> {
+  const legacyConfigFile = join(wakeRoot, 'config.json');
+  try {
+    await access(legacyConfigFile);
+  } catch {
+    return {};
+  }
+  return readJsonFile<Record<string, unknown>>(legacyConfigFile);
+}
+
+export async function loadWakeConfig(options?: { wakeRoot?: string }): Promise<WakeConfig> {
   const wakeRoot = options?.wakeRoot ?? resolve(process.cwd(), '.wake');
-  const configFile = options?.configFile;
 
-  let raw: Record<string, unknown> = {};
+  const configFiles = await discoverConfigFiles(wakeRoot);
 
-  if (configFile !== undefined) {
-    try {
-      await access(configFile);
-      raw = await readJsonFile<Record<string, unknown>>(configFile);
-    } catch {
-      // no config file — schema defaults apply
+  let raw: Record<string, unknown>;
+  if (configFiles.length > 0) {
+    raw = {};
+    for (const configFile of configFiles) {
+      let parsed: Record<string, unknown>;
+      try {
+        // yaml.parse returns null for empty/comment-only files rather than
+        // {}, so coalesce before merging.
+        parsed = (await readYamlFile<Record<string, unknown>>(configFile)) ?? {};
+      } catch (error) {
+        throw new Error(`Failed to parse ${configFile}: ${(error as Error).message}`, {
+          cause: error,
+        });
+      }
+      raw = deepMergeRaw(raw, parsed);
     }
+  } else {
+    // Pre-split Wake homes only have a single config.json — Wake reads it
+    // directly rather than requiring a migration step. It stays untouched
+    // on disk; nothing here writes it back out (see docs/configuration.md).
+    raw = await readLegacyConfigIfPresent(wakeRoot);
   }
 
   // wakeRoot is always the live invocation's --wake-root/cwd, never a value

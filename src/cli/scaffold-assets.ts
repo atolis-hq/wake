@@ -2,7 +2,8 @@ import { access, chmod, copyFile, mkdir, readFile, readdir, writeFile } from 'no
 import { basename, dirname, join, resolve } from 'node:path';
 
 import { createDefaultWakeConfig } from '../config/defaults.js';
-import { writeJsonFile } from '../lib/json-file.js';
+import { splitWakeConfig } from '../config/split-config.js';
+import { writeYamlFile } from '../lib/yaml-file.js';
 import { createWakePaths } from '../lib/paths.js';
 
 const promptFileNames = ['refine.md', 'implement.md'] as const;
@@ -109,8 +110,11 @@ export async function scaffoldWakeHome(input: {
     runtimeDirectories.map((directoryPath) => mkdir(directoryPath, { recursive: true })),
   );
 
+  const { infra, workflow } = splitWakeConfig(config);
+
   await Promise.all([
     copyAssets(repoRoot, 'prompts', join(wakeRoot, 'prompts'), promptFileNames),
-    writeJsonFile(join(wakeRoot, 'config.json'), config),
+    writeYamlFile(join(wakeRoot, 'config.yaml'), infra),
+    writeYamlFile(join(wakeRoot, 'config.workflows.yaml'), workflow),
   ]);
 }

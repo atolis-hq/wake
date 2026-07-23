@@ -87,7 +87,7 @@ prepare_codex_home
 mirror_stdout "[${label}] begin ts=$(date -u +%FT%TZ) cwd=$(pwd) command=$*"
 mirror_stdout "[${label}] paths hostWakeRoot=${host_wake_root} containerWakeRoot=${container_wake_root} promptsRoot=${prompts_root} containerHome=${container_home} hostContainerHome=${host_container_home} containerMount=${container_mount} containerName=${container_name}"
 
-emit_check "wake-config" test -f "${container_mount}/config.json"
+emit_check "wake-config" test -f "${container_mount}/config.yaml" -o -f "${container_mount}/config.json"
 emit_check "prompts-root" test -d "${prompts_root}"
 emit_check "workspaces-root" test -d "${container_mount}/workspaces"
 emit_check "repos-root" test -d "${container_mount}/repos"

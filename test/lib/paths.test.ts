@@ -7,7 +7,8 @@ describe('createWakePaths', () => {
   const paths = createWakePaths(wakeRoot);
 
   it('keeps user-facing paths at the visible wakeRoot', () => {
-    expect(paths.configFile).toBe(join(wakeRoot, 'config.json'));
+    expect(paths.configFile).toBe(join(wakeRoot, 'config.yaml'));
+    expect(paths.workflowsConfigFile).toBe(join(wakeRoot, 'config.workflows.yaml'));
     expect(paths.workspaceRoot).toBe(join(wakeRoot, 'workspaces'));
     expect(paths.workspaceDir('work-1')).toBe(join(wakeRoot, 'workspaces', 'work-1'));
   });

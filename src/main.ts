@@ -550,9 +550,7 @@ export async function buildRuntime(args: string[]) {
 
   const config = await loadWakeConfig({
     wakeRoot,
-    configFile: stateStore.paths.configFile,
   });
-  await stateStore.writeConfig(config);
 
   const resourceIndex = createResourceIndex({ paths: stateStore.paths });
 
@@ -752,7 +750,6 @@ async function runUi(args: string[]) {
   await stateStore.ensureWakeRoot();
   const config = await loadWakeConfig({
     wakeRoot,
-    configFile: stateStore.paths.configFile,
   });
 
   const server = await runUiCommand({
@@ -813,7 +810,6 @@ async function runDoctor(args: string[]) {
   await stateStore.ensureWakeRoot();
   const config = await loadWakeConfig({
     wakeRoot,
-    configFile: stateStore.paths.configFile,
   });
 
   const docker = createHostDockerCli();
@@ -1005,7 +1001,6 @@ async function main() {
     await stateStore.ensureWakeRoot();
     const config = await loadWakeConfig({
       wakeRoot,
-      configFile: stateStore.paths.configFile,
     });
     const docker = createHostDockerCli();
 
@@ -1131,7 +1126,6 @@ async function main() {
       await stateStore.ensureWakeRoot();
       const config = await loadWakeConfig({
         wakeRoot,
-        configFile: stateStore.paths.configFile,
       });
       const wakeInvocation =
         config.dev?.mode === 'source' ? ['node', '/app/dist/src/main.js'] : ['wake'];

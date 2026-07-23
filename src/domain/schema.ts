@@ -451,251 +451,234 @@ export const ledgerSchema = z.object({
   runners: z.record(z.string(), runnerHealthEntrySchema).default({}),
 });
 
-export const wakeConfigSchema = z
-  .object({
-    schemaVersion: z.literal(1).default(1),
-    paths: z.object({
-      wakeRoot: z.string(),
-      promptsRoot: z.string().optional(),
+const wakeConfigBaseSchema = z.object({
+  schemaVersion: z.literal(1).default(1),
+  paths: z.object({
+    wakeRoot: z.string(),
+    promptsRoot: z.string().optional(),
+  }),
+  sandbox: z
+    .object({
+      image: z.string().min(1).default('wake-sandbox'),
+      // Base image name (no tag) that `wake sandbox self-update` appends a
+      // release tag to, e.g. "wake-sandbox:v0.0.80". `image` above stays the
+      // resolved ref that `build`/`up`/`update` actually run.
+      imageRepository: z.string().min(1).default('wake-sandbox'),
+      containerName: z.string().min(1).default('wake-sandbox'),
+      containerMountPath: z.string().min(1).default('/wake'),
+      containerHomeMountPath: z.string().min(1).default('/home/wake'),
+      start: z
+        .object({
+          enabled: z.boolean().default(true),
+        })
+        .default({ enabled: true }),
+      extraMounts: z
+        .array(
+          z.object({
+            source: z.string().min(1),
+            target: z.string().min(1),
+            readOnly: z.boolean().optional(),
+          }),
+        )
+        .default([]),
+    })
+    .default({
+      image: 'wake-sandbox',
+      imageRepository: 'wake-sandbox',
+      containerName: 'wake-sandbox',
+      containerMountPath: '/wake',
+      containerHomeMountPath: '/home/wake',
+      start: { enabled: true },
+      extraMounts: [],
     }),
-    sandbox: z
-      .object({
-        image: z.string().min(1).default('wake-sandbox'),
-        // Base image name (no tag) that `wake sandbox self-update` appends a
-        // release tag to, e.g. "wake-sandbox:v0.0.80". `image` above stays the
-        // resolved ref that `build`/`up`/`update` actually run.
-        imageRepository: z.string().min(1).default('wake-sandbox'),
-        containerName: z.string().min(1).default('wake-sandbox'),
-        containerMountPath: z.string().min(1).default('/wake'),
-        containerHomeMountPath: z.string().min(1).default('/home/wake'),
-        start: z
-          .object({
-            enabled: z.boolean().default(true),
-          })
-          .default({ enabled: true }),
-        extraMounts: z
-          .array(
-            z.object({
-              source: z.string().min(1),
-              target: z.string().min(1),
-              readOnly: z.boolean().optional(),
-            }),
-          )
-          .default([]),
-      })
-      .default({
-        image: 'wake-sandbox',
-        imageRepository: 'wake-sandbox',
-        containerName: 'wake-sandbox',
-        containerMountPath: '/wake',
-        containerHomeMountPath: '/home/wake',
-        start: { enabled: true },
-        extraMounts: [],
-      }),
-    dev: z
-      .object({
-        repoRoot: z.string().optional(),
-        mode: z.enum(['source', 'packaged']).optional(),
-      })
-      .default({}),
-    scheduler: z
-      .object({
-        intervalMs: z
-          .number()
-          .int()
-          .positive()
-          .default(60 * 1000),
-        // Cap for the idle-cadence backoff (#81): consecutive idle ticks double the
-        // sleep, up to this ceiling, so a quiet repo doesn't poll every intervalMs.
-        maxIntervalMs: z
-          .number()
-          .int()
-          .positive()
-          .default(5 * 60 * 1000),
-      })
-      .default({ intervalMs: 60 * 1000, maxIntervalMs: 5 * 60 * 1000 }),
-    transcripts: z
-      .object({
-        enabled: z.boolean().default(false),
-        retainAfterWorkspaceCleanup: z.boolean().default(false),
-      })
-      .default({ enabled: false, retainAfterWorkspaceCleanup: false }),
-    runners: z.record(z.string(), runnerEntrySchema).default({
-      fake: { kind: 'fake', cli: 'Fake' },
-      'claude-haiku': {
-        kind: 'claude',
-        command: 'claude',
-        model: 'haiku',
-        smokeModel: 'haiku',
-        sessionName: defaultAgentIdentity,
-        remoteControlName: defaultAgentIdentity,
-        smokePrompt: defaultSmokePrompt,
-        timeoutMs: 30 * 60 * 1000,
-        remoteControl: { enabled: false },
-        models: { default: 'haiku' },
-      },
-      'claude-opus': {
-        kind: 'claude',
-        command: 'claude',
-        model: 'claude-opus-4-8',
-        smokeModel: 'haiku',
-        sessionName: defaultAgentIdentity,
-        remoteControlName: defaultAgentIdentity,
-        smokePrompt: defaultSmokePrompt,
-        timeoutMs: 30 * 60 * 1000,
-        remoteControl: { enabled: false },
-        models: { default: 'claude-opus-4-8' },
-      },
-      'codex-mini': {
-        kind: 'codex',
-        command: 'codex',
-        model: 'gpt-5.4-mini',
-        smokeModel: 'gpt-5.4-mini',
-        smokePrompt: defaultSmokePrompt,
-        timeoutMs: 30 * 60 * 1000,
-        models: { default: 'gpt-5.4-mini', implement: 'gpt-5.4-mini' },
-      },
-      'codex-flagship': {
-        kind: 'codex',
-        command: 'codex',
-        model: 'gpt-5.5',
-        smokeModel: 'gpt-5.4-mini',
-        smokePrompt: defaultSmokePrompt,
-        timeoutMs: 30 * 60 * 1000,
-        models: { default: 'gpt-5.5', implement: 'gpt-5.5' },
-      },
-      'cursor-composer': {
-        kind: 'cursor',
-        command: 'cursor',
-        model: 'composer-2.5',
-        smokeModel: 'auto',
-        smokePrompt: defaultSmokePrompt,
-        timeoutMs: 30 * 60 * 1000,
-        models: { default: 'composer-2.5', implement: 'composer-2.5' },
-      },
-    }),
-    tiers: z.record(z.string(), z.array(z.string().min(1)).min(1)).default({
-      light: ['fake'],
-      standard: ['fake'],
-      deep: ['fake'],
-    }),
-    defaultTier: z.string().default('standard'),
-    workflows: z.record(identifierSchema, workflowDefinitionSchema).default({
-      default: {
-        stages: {
-          refine: {
-            action: 'refine',
-            workspace: 'read-only',
-            tier: 'light',
-            onDone: 'implement',
-          },
-          implement: {
-            action: 'implement',
-            workspace: 'branch',
-            tier: 'standard',
-            onDone: 'done',
-          },
+  dev: z
+    .object({
+      repoRoot: z.string().optional(),
+      mode: z.enum(['source', 'packaged']).optional(),
+    })
+    .default({}),
+  scheduler: z
+    .object({
+      intervalMs: z
+        .number()
+        .int()
+        .positive()
+        .default(60 * 1000),
+      // Cap for the idle-cadence backoff (#81): consecutive idle ticks double the
+      // sleep, up to this ceiling, so a quiet repo doesn't poll every intervalMs.
+      maxIntervalMs: z
+        .number()
+        .int()
+        .positive()
+        .default(5 * 60 * 1000),
+    })
+    .default({ intervalMs: 60 * 1000, maxIntervalMs: 5 * 60 * 1000 }),
+  transcripts: z
+    .object({
+      enabled: z.boolean().default(false),
+      retainAfterWorkspaceCleanup: z.boolean().default(false),
+    })
+    .default({ enabled: false, retainAfterWorkspaceCleanup: false }),
+  runners: z.record(z.string(), runnerEntrySchema).default({
+    fake: { kind: 'fake', cli: 'Fake' },
+    'claude-haiku': {
+      kind: 'claude',
+      command: 'claude',
+      model: 'haiku',
+      smokeModel: 'haiku',
+      sessionName: defaultAgentIdentity,
+      remoteControlName: defaultAgentIdentity,
+      smokePrompt: defaultSmokePrompt,
+      timeoutMs: 30 * 60 * 1000,
+      remoteControl: { enabled: false },
+      models: { default: 'haiku' },
+    },
+    'claude-opus': {
+      kind: 'claude',
+      command: 'claude',
+      model: 'claude-opus-4-8',
+      smokeModel: 'haiku',
+      sessionName: defaultAgentIdentity,
+      remoteControlName: defaultAgentIdentity,
+      smokePrompt: defaultSmokePrompt,
+      timeoutMs: 30 * 60 * 1000,
+      remoteControl: { enabled: false },
+      models: { default: 'claude-opus-4-8' },
+    },
+    'codex-mini': {
+      kind: 'codex',
+      command: 'codex',
+      model: 'gpt-5.4-mini',
+      smokeModel: 'gpt-5.4-mini',
+      smokePrompt: defaultSmokePrompt,
+      timeoutMs: 30 * 60 * 1000,
+      models: { default: 'gpt-5.4-mini', implement: 'gpt-5.4-mini' },
+    },
+    'codex-flagship': {
+      kind: 'codex',
+      command: 'codex',
+      model: 'gpt-5.5',
+      smokeModel: 'gpt-5.4-mini',
+      smokePrompt: defaultSmokePrompt,
+      timeoutMs: 30 * 60 * 1000,
+      models: { default: 'gpt-5.5', implement: 'gpt-5.5' },
+    },
+    'cursor-composer': {
+      kind: 'cursor',
+      command: 'cursor',
+      model: 'composer-2.5',
+      smokeModel: 'auto',
+      smokePrompt: defaultSmokePrompt,
+      timeoutMs: 30 * 60 * 1000,
+      models: { default: 'composer-2.5', implement: 'composer-2.5' },
+    },
+  }),
+  tiers: z.record(z.string(), z.array(z.string().min(1)).min(1)).default({
+    light: ['fake'],
+    standard: ['fake'],
+    deep: ['fake'],
+  }),
+  defaultTier: z.string().default('standard'),
+  workflows: z.record(identifierSchema, workflowDefinitionSchema).default({
+    default: {
+      stages: {
+        refine: {
+          action: 'refine',
+          workspace: 'read-only',
+          tier: 'light',
+          onDone: 'implement',
+        },
+        implement: {
+          action: 'implement',
+          workspace: 'branch',
+          tier: 'standard',
+          onDone: 'done',
         },
       },
-    }),
-    workflowSelectors: z.array(workflowSelectorSchema).default([]),
-    commands: z.record(identifierSchema, customCommandSchema).default({
-      ask: {
-        action: 'ask',
-        workspace: 'read-only',
-        tier: 'light',
-      },
-      codereview: {
-        action: 'codereview',
-        workspace: 'read-only',
-        tier: 'standard',
-      },
-    }),
-    stages: z.record(z.string(), stageRouteSchema).default({
-      queue: { action: 'refine', tier: 'light' },
-      implement: { action: 'implement', tier: 'standard' },
-    }),
-    ui: z
-      .object({
-        enabled: z.boolean().default(false),
-        port: z.number().int().positive().default(4317),
-        token: z.string().optional(),
-        tunnel: z
-          .object({
-            enabled: z.boolean().default(false),
-            authToken: z.string().optional(),
-          })
-          .default({ enabled: false }),
-        archiveFreshnessDays: z.number().int().nonnegative().default(5),
-      })
-      .default({ enabled: false, port: 4317, tunnel: { enabled: false }, archiveFreshnessDays: 5 }),
-    sources: z
-      .object({
-        github: z
-          .object({
-            enabled: z.boolean().default(false),
-            repos: z.array(z.string().min(1)).default([]),
-            polling: z
-              .object({
-                maxIssuesPerRepo: z.number().int().positive().default(25),
-                commentPageSize: z.number().int().positive().default(25),
-                lookbackMs: z.number().int().nonnegative().default(60_000),
-              })
-              .default({ maxIssuesPerRepo: 25, commentPageSize: 25, lookbackMs: 60_000 }),
-            policy: z
-              .object({
-                requiredLabels: z.array(z.string()).default([]),
-                ignoredLabels: z.array(z.string()).default([]),
-                requiredAssignees: z.array(z.string()).default([]),
-              })
-              .default({ requiredLabels: [], ignoredLabels: [], requiredAssignees: [] }),
-            publication: z
-              .object({
-                postStatusComments: z.boolean().default(true),
-                activeLabel: z.string().optional(),
-              })
-              .default({ postStatusComments: true }),
-            pullRequests: z
-              .object({
-                enabled: z.boolean().default(false),
-                maxPullRequestsPerRepo: z.number().int().positive().default(25),
-                commentPageSize: z.number().int().positive().default(25),
-                checks: z
-                  .object({
-                    enabled: z.boolean().default(true),
-                  })
-                  .default({ enabled: true }),
-                policy: z
-                  .object({
-                    requiredAuthors: z.array(z.string()).default([]),
-                  })
-                  .default({ requiredAuthors: [] }),
-              })
-              .default({
-                enabled: false,
-                maxPullRequestsPerRepo: 25,
-                commentPageSize: 25,
-                checks: { enabled: true },
-                policy: { requiredAuthors: [] },
-              }),
-          })
-          .default({
-            enabled: false,
-            repos: [],
-            polling: { maxIssuesPerRepo: 25, commentPageSize: 25, lookbackMs: 60_000 },
-            policy: { requiredLabels: [], ignoredLabels: [], requiredAssignees: [] },
-            publication: { postStatusComments: true },
-            pullRequests: {
+    },
+  }),
+  workflowSelectors: z.array(workflowSelectorSchema).default([]),
+  commands: z.record(identifierSchema, customCommandSchema).default({
+    ask: {
+      action: 'ask',
+      workspace: 'read-only',
+      tier: 'light',
+    },
+    codereview: {
+      action: 'codereview',
+      workspace: 'read-only',
+      tier: 'standard',
+    },
+  }),
+  stages: z.record(z.string(), stageRouteSchema).default({
+    queue: { action: 'refine', tier: 'light' },
+    implement: { action: 'implement', tier: 'standard' },
+  }),
+  ui: z
+    .object({
+      enabled: z.boolean().default(false),
+      port: z.number().int().positive().default(4317),
+      token: z.string().optional(),
+      tunnel: z
+        .object({
+          enabled: z.boolean().default(false),
+          authToken: z.string().optional(),
+        })
+        .default({ enabled: false }),
+      archiveFreshnessDays: z.number().int().nonnegative().default(5),
+    })
+    .default({ enabled: false, port: 4317, tunnel: { enabled: false }, archiveFreshnessDays: 5 }),
+  sources: z
+    .object({
+      github: z
+        .object({
+          enabled: z.boolean().default(false),
+          repos: z.array(z.string().min(1)).default([]),
+          polling: z
+            .object({
+              maxIssuesPerRepo: z.number().int().positive().default(25),
+              commentPageSize: z.number().int().positive().default(25),
+              lookbackMs: z.number().int().nonnegative().default(60_000),
+            })
+            .default({ maxIssuesPerRepo: 25, commentPageSize: 25, lookbackMs: 60_000 }),
+          policy: z
+            .object({
+              requiredLabels: z.array(z.string()).default([]),
+              ignoredLabels: z.array(z.string()).default([]),
+              requiredAssignees: z.array(z.string()).default([]),
+            })
+            .default({ requiredLabels: [], ignoredLabels: [], requiredAssignees: [] }),
+          publication: z
+            .object({
+              postStatusComments: z.boolean().default(true),
+              activeLabel: z.string().optional(),
+            })
+            .default({ postStatusComments: true }),
+          pullRequests: z
+            .object({
+              enabled: z.boolean().default(false),
+              maxPullRequestsPerRepo: z.number().int().positive().default(25),
+              commentPageSize: z.number().int().positive().default(25),
+              checks: z
+                .object({
+                  enabled: z.boolean().default(true),
+                })
+                .default({ enabled: true }),
+              policy: z
+                .object({
+                  requiredAuthors: z.array(z.string()).default([]),
+                })
+                .default({ requiredAuthors: [] }),
+            })
+            .default({
               enabled: false,
               maxPullRequestsPerRepo: 25,
               commentPageSize: 25,
               checks: { enabled: true },
               policy: { requiredAuthors: [] },
-            },
-          }),
-      })
-      .default({
-        github: {
+            }),
+        })
+        .default({
           enabled: false,
           repos: [],
           polling: { maxIssuesPerRepo: 25, commentPageSize: 25, lookbackMs: 60_000 },
@@ -708,126 +691,165 @@ export const wakeConfigSchema = z
             checks: { enabled: true },
             policy: { requiredAuthors: [] },
           },
+        }),
+    })
+    .default({
+      github: {
+        enabled: false,
+        repos: [],
+        polling: { maxIssuesPerRepo: 25, commentPageSize: 25, lookbackMs: 60_000 },
+        policy: { requiredLabels: [], ignoredLabels: [], requiredAssignees: [] },
+        publication: { postStatusComments: true },
+        pullRequests: {
+          enabled: false,
+          maxPullRequestsPerRepo: 25,
+          commentPageSize: 25,
+          checks: { enabled: true },
+          policy: { requiredAuthors: [] },
         },
-      }),
-    sinks: z.record(z.string(), sinkEntrySchema).default({}),
-  })
-  .superRefine((config, ctx) => {
-    const promptsRoot = config.paths.promptsRoot ?? defaultPromptsRoot();
-    const workflowEntries = Object.entries(config.workflows);
-    const commandEntries = Object.entries(config.commands);
-    if (workflowEntries.length === 0) {
+      },
+    }),
+  sinks: z.record(z.string(), sinkEntrySchema).default({}),
+});
+
+export const wakeInfraConfigSchema = wakeConfigBaseSchema.pick({
+  schemaVersion: true,
+  paths: true,
+  sandbox: true,
+  dev: true,
+  scheduler: true,
+  transcripts: true,
+  ui: true,
+  sources: true,
+  sinks: true,
+});
+
+export const wakeWorkflowConfigSchema = wakeConfigBaseSchema.pick({
+  runners: true,
+  tiers: true,
+  defaultTier: true,
+  workflows: true,
+  workflowSelectors: true,
+  commands: true,
+  stages: true,
+});
+
+export const wakeConfigSchema = wakeConfigBaseSchema.superRefine((config, ctx) => {
+  const promptsRoot = config.paths.promptsRoot ?? defaultPromptsRoot();
+  const workflowEntries = Object.entries(config.workflows);
+  const commandEntries = Object.entries(config.commands);
+  if (workflowEntries.length === 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['workflows'],
+      message: 'At least one workflow must be configured.',
+    });
+  }
+
+  for (const [workflowName, workflow] of workflowEntries) {
+    const stageNames = Object.keys(workflow.stages);
+    const stageSet = new Set(stageNames);
+
+    if (stageNames.length === 0) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ['workflows'],
-        message: 'At least one workflow must be configured.',
+        path: ['workflows', workflowName, 'stages'],
+        message: 'Workflow must define at least one runnable stage.',
+      });
+      continue;
+    }
+
+    for (const reserved of ['queue', 'done']) {
+      if (stageSet.has(reserved)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['workflows', workflowName, 'stages', reserved],
+          message: `Workflow must not define implicit ${reserved} stage.`,
+        });
+      }
+    }
+
+    const actualEntryStage = workflow.entryStage ?? stageNames[0];
+    if (workflow.entryStage === 'queue') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['workflows', workflowName, 'entryStage'],
+        message: 'Workflow entryStage must not be queue.',
+      });
+    }
+    if (actualEntryStage !== undefined && !stageSet.has(actualEntryStage)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['workflows', workflowName, 'entryStage'],
+        message: `Workflow entryStage "${actualEntryStage}" is not a configured stage.`,
       });
     }
 
-    for (const [workflowName, workflow] of workflowEntries) {
-      const stageNames = Object.keys(workflow.stages);
-      const stageSet = new Set(stageNames);
-
-      if (stageNames.length === 0) {
+    for (const [stageName, stage] of Object.entries(workflow.stages)) {
+      if (stage.onDone === 'queue') {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          path: ['workflows', workflowName, 'stages'],
-          message: 'Workflow must define at least one runnable stage.',
-        });
-        continue;
-      }
-
-      for (const reserved of ['queue', 'done']) {
-        if (stageSet.has(reserved)) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: ['workflows', workflowName, 'stages', reserved],
-            message: `Workflow must not define implicit ${reserved} stage.`,
-          });
-        }
-      }
-
-      const actualEntryStage = workflow.entryStage ?? stageNames[0];
-      if (workflow.entryStage === 'queue') {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['workflows', workflowName, 'entryStage'],
-          message: 'Workflow entryStage must not be queue.',
+          path: ['workflows', workflowName, 'stages', stageName, 'onDone'],
+          message: 'Workflow transitions must not target queue.',
         });
       }
-      if (actualEntryStage !== undefined && !stageSet.has(actualEntryStage)) {
+      if (stage.onDone !== 'done' && !stageSet.has(stage.onDone)) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          path: ['workflows', workflowName, 'entryStage'],
-          message: `Workflow entryStage "${actualEntryStage}" is not a configured stage.`,
+          path: ['workflows', workflowName, 'stages', stageName, 'onDone'],
+          message: `Workflow transition targets unknown stage "${stage.onDone}".`,
         });
       }
-
-      for (const [stageName, stage] of Object.entries(workflow.stages)) {
-        if (stage.onDone === 'queue') {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: ['workflows', workflowName, 'stages', stageName, 'onDone'],
-            message: 'Workflow transitions must not target queue.',
-          });
-        }
-        if (stage.onDone !== 'done' && !stageSet.has(stage.onDone)) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: ['workflows', workflowName, 'stages', stageName, 'onDone'],
-            message: `Workflow transition targets unknown stage "${stage.onDone}".`,
-          });
-        }
-        if (stage.action === undefined && !promptExists(promptsRoot, stageName)) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: ['workflows', workflowName, 'stages', stageName, 'action'],
-            message: `Workflow stage "${stageName}" omits action but no prompts/${stageName}.md template exists.`,
-          });
-        }
-      }
-
-      if (
-        actualEntryStage !== undefined &&
-        stageSet.has(actualEntryStage) &&
-        !canReachDone(actualEntryStage, workflow.stages)
-      ) {
+      if (stage.action === undefined && !promptExists(promptsRoot, stageName)) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          path: ['workflows', workflowName],
-          message: 'Workflow cannot reach done from its entry stage.',
+          path: ['workflows', workflowName, 'stages', stageName, 'action'],
+          message: `Workflow stage "${stageName}" omits action but no prompts/${stageName}.md template exists.`,
         });
       }
     }
 
-    for (const [index, selector] of config.workflowSelectors.entries()) {
-      if (config.workflows[selector.workflow] === undefined) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['workflowSelectors', index, 'workflow'],
-          message: `Workflow selector targets unknown workflow "${selector.workflow}".`,
-        });
-      }
+    if (
+      actualEntryStage !== undefined &&
+      stageSet.has(actualEntryStage) &&
+      !canReachDone(actualEntryStage, workflow.stages)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['workflows', workflowName],
+        message: 'Workflow cannot reach done from its entry stage.',
+      });
+    }
+  }
+
+  for (const [index, selector] of config.workflowSelectors.entries()) {
+    if (config.workflows[selector.workflow] === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['workflowSelectors', index, 'workflow'],
+        message: `Workflow selector targets unknown workflow "${selector.workflow}".`,
+      });
+    }
+  }
+
+  for (const [commandName, command] of commandEntries) {
+    if (reservedCommandNames.includes(commandName.toLowerCase())) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['commands', commandName],
+        message: `Command "/${commandName}" is reserved for Wake approval control.`,
+      });
     }
 
-    for (const [commandName, command] of commandEntries) {
-      if (reservedCommandNames.includes(commandName.toLowerCase())) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['commands', commandName],
-          message: `Command "/${commandName}" is reserved for Wake approval control.`,
-        });
-      }
-
-      if (command.action === undefined && !promptExists(promptsRoot, commandName)) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['commands', commandName, 'action'],
-          message: `Command "/${commandName}" omits action but no prompts/${commandName}.md template exists.`,
-        });
-      }
+    if (command.action === undefined && !promptExists(promptsRoot, commandName)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['commands', commandName, 'action'],
+        message: `Command "/${commandName}" omits action but no prompts/${commandName}.md template exists.`,
+      });
     }
-  });
+  }
+});
 
 export const claudePrintResultSchema = z
   .object({

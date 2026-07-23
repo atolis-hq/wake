@@ -1,7 +1,7 @@
 # Getting Started
 
 Wake runs from a **Wake home** directory: a plain-file directory holding
-`config.json`, `prompts/`, `workspaces/`, and a hidden `.wake/` for durable
+`config.yaml`, `config.workflows.yaml`, `prompts/`, `workspaces/`, and a hidden `.wake/` for durable
 internal state. `--wake-root` defaults to the current directory for every
 command, so the usual pattern is: `cd` into your Wake home, then run
 `wake <command>` directly — no wrapper scripts, no need to pass
@@ -25,7 +25,7 @@ Or run it once without installing globally:
 npx @atolis-hq/wake init ./wake-home
 ```
 
-`wake init` scaffolds `config.json`, `prompts/`, and `workspaces/`. It does
+`wake init` scaffolds `config.yaml`, `config.workflows.yaml`, `prompts/`, and `workspaces/`. It does
 not create `docker/` — that's written lazily by `wake sandbox build` (see
 below).
 
@@ -80,11 +80,12 @@ defaults (notices).
 
 ```
 wake-home/
-  config.json         # edit this
-  prompts/            # edit these
-  docker/Dockerfile   # edit this (written by first `sandbox build`)
-  workspaces/         # real per-work-item git checkouts — browsable
-  .wake/              # hidden: durable internal state
+  config.yaml           # infra/sandbox/sources — edit this
+  config.workflows.yaml # runners/tiers/workflows — edit this
+  prompts/              # edit these
+  docker/Dockerfile     # edit this (written by first `sandbox build`)
+  workspaces/           # real per-work-item git checkouts — browsable
+  .wake/                # hidden: durable internal state
     events/, state/, runs/, sources/, repos/, locks/, logs/, container-home/
 ```
 

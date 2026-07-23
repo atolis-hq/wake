@@ -57,9 +57,10 @@ full check.
 
 ## Configuration
 
-Wake's behavior can be customized through its JSON config file, at the root
+Wake's behavior can be customized through its YAML config files, at the root
 of whichever Wake home `--wake-root` (or the current directory, by default)
-resolves to. `wake init`/`wake-dev init` creates `wake-home/config.json`.
+resolves to. `wake init`/`wake-dev init` creates `wake-home/config.yaml` and
+`wake-home/config.workflows.yaml`.
 
 See [docs/configuration.md](configuration.md) for the full config structure and
 available options. For current Claude, Codex, and Cursor runner capability
@@ -103,11 +104,11 @@ pointing at the packaged-mode update path instead: `npm install -g
 @atolis-hq/wake@latest && wake sandbox build && wake sandbox update`.
 
 Run with `--wake-root` pointing at your **wake-home** directory (the one
-scaffolded by `wake init`, containing `config.json`) — like every other
+scaffolded by `wake init`, containing `config.yaml`) — like every other
 sandbox lifecycle command (`build`/`up`/`down`), `self-update` is not an npm
 script. Running it from the dev repo checkout without `--wake-root` fails
 with "Sandbox self-update requires config.dev.repoRoot", because that's the
-one field that only exists in your scaffolded `config.json`, not in the repo:
+one field that only exists in your scaffolded `config.yaml`, not in the repo:
 
 ```bash
 wake-dev sandbox self-update --wake-root /path/to/your/wake-home
