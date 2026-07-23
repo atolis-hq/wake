@@ -699,4 +699,30 @@ describe('sandbox command', () => {
       }),
     ).rejects.toThrow('Unknown sandbox command: bogus');
   });
+
+  it.each([[[]], [['--help']], [['-h']], [['help']]])(
+    'prints sandbox usage instead of throwing for args %j',
+    async (args) => {
+      const docker = createDockerMock();
+      const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+      await runSandboxCommand({
+        args,
+        config: createDefaultWakeConfig(wakeRoot),
+        wakeRoot,
+        containerHomeRoot,
+        docker,
+        packagedTemplatesRoot,
+        stateStore: { listRunRecords: async () => [] },
+        sleep: async () => {},
+        logger: { info: () => {} },
+      });
+
+      const written = writeSpy.mock.calls.map((call) => call[0]).join('');
+      writeSpy.mockRestore();
+      expect(written).toContain('wake sandbox <subcommand>');
+      expect(written).toContain('build');
+      expect(docker.build).not.toHaveBeenCalled();
+    },
+  );
 });

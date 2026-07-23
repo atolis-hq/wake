@@ -11,33 +11,15 @@
   
 <!-- Badges -->
 <p>
-  <a href="https://github.com/atolis-hq/wake/commits/main">
-    <img src="https://img.shields.io/github/last-commit/atolis-hq/wake" alt="last update" />
-  </a>
-  <a href="https://github.com/atolis-hq/wake/actions/workflows/ci-cd.yml">
-    <img src="https://github.com/atolis-hq/wake/actions/workflows/ci-cd.yml/badge.svg" alt="CI/CD status" />
-  </a>
-  <!-- <a href="https://github.com/atolis-hq/wake/network/members">
-    <img src="https://img.shields.io/github/forks/atolis-hq/wake" alt="forks" />
-  </a>
-  <a href="https://github.com/atolis-hq/wake/stargazers">
-    <img src="https://img.shields.io/github/stars/atolis-hq/wake" alt="stars" />
-  </a> -->
-  <a href="https://github.com/atolis-hq/wake/issues/">
-    <img src="https://img.shields.io/github/issues/atolis-hq/wake" alt="open issues" />
-  </a>
-  <a href="https://github.com/atolis-hq/wake/blob/main/LICENSE">
-    <img src="https://img.shields.io/github/license/atolis-hq/wake.svg" alt="license" />
-  </a>
-  <a href="https://github.com/atolis-hq/wake/tags">
-    <img src="https://img.shields.io/github/v/tag/atolis-hq/wake" alt="latest tag" />
-  </a>
-  <a href="https://www.npmjs.com/package/@atolis-hq/wake">
-    <img src="https://img.shields.io/npm/v/%40atolis-hq%2Fwake" alt="npm version" />
-  </a>
-  <a href="docker/Dockerfile">
-    <img src="https://img.shields.io/badge/sandbox-docker-2496ED?logo=docker&logoColor=white" alt="runs in docker" />
-  </a>
+<a href="https://github.com/atolis-hq/wake/commits/main"><img src="https://img.shields.io/github/last-commit/atolis-hq/wake" alt="last update" /></a>
+<a href="https://github.com/atolis-hq/wake/actions/workflows/ci-cd.yml"><img src="https://github.com/atolis-hq/wake/actions/workflows/ci-cd.yml/badge.svg" alt="CI/CD status" /></a>
+<!-- <a href="https://github.com/atolis-hq/wake/network/members"><img src="https://img.shields.io/github/forks/atolis-hq/wake" alt="forks" /></a>
+<a href="https://github.com/atolis-hq/wake/stargazers"><img src="https://img.shields.io/github/stars/atolis-hq/wake" alt="stars" /></a> -->
+<a href="https://github.com/atolis-hq/wake/issues/"><img src="https://img.shields.io/github/issues/atolis-hq/wake" alt="open issues" /></a>
+<a href="https://github.com/atolis-hq/wake/blob/main/LICENSE"><img src="https://img.shields.io/github/license/atolis-hq/wake.svg" alt="license" /></a>
+<a href="https://github.com/atolis-hq/wake/tags"><img src="https://img.shields.io/github/v/tag/atolis-hq/wake" alt="latest tag" /></a>
+<a href="https://www.npmjs.com/package/@atolis-hq/wake"><img src="https://img.shields.io/npm/v/%40atolis-hq%2Fwake" alt="npm version" /></a>
+<a href="docker/Dockerfile"><img src="https://img.shields.io/badge/sandbox-docker-2496ED?logo=docker&logoColor=white" alt="runs in docker" /></a>
 </p>
 </div>
 
@@ -176,11 +158,13 @@ wake start
 
 Full setup instructions are in
 [docs/getting-started.md](docs/getting-started.md). Run `wake --help` at
-any time for the full command list.
+any time for the full command list, or see
+[docs/cli.md](docs/cli.md) for the full command reference.
 
 ## Documentation
 
 - [docs/getting-started.md](docs/getting-started.md) — packaged-install setup, sandbox lifecycle, `wake doctor`.
+- [docs/cli.md](docs/cli.md) — full CLI command reference.
 - [docs/vision.md](docs/vision.md) — the rationale and long-term direction for Wake.
 - [docs/architecture.md](docs/architecture.md) — module boundaries and the event-sourced core.
 - [docs/workflows.md](docs/workflows.md) — how stages, prompts, and runner routes are configured.
