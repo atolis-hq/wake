@@ -65,8 +65,27 @@ export function readFlagBeforeCommandTerminator(name: string, args: string[]): s
   return scopedArgs[index + 1];
 }
 
+// Walks up from this file's own directory until it finds a package.json,
+// rather than assuming a fixed number of directory levels — the file
+// running is `dist/src/main.js` for a built/packaged install (two levels
+// below the package root) but `src/main.ts` for a `tsx` dev invocation
+// (only one level below), so a fixed `resolve(..., '..', '..')` overshoots
+// the root by one directory in the latter case.
 function resolvePackageRoot(): string {
-  return resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+  let dir = dirname(fileURLToPath(import.meta.url));
+
+  for (;;) {
+    if (existsSync(join(dir, 'package.json'))) {
+      return dir;
+    }
+
+    const parent = dirname(dir);
+    if (parent === dir) {
+      throw new Error(`Could not locate package root (no package.json found above ${dir})`);
+    }
+
+    dir = parent;
+  }
 }
 
 export async function hasDockerfile(wakeRoot: string): Promise<boolean> {
