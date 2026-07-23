@@ -1,7 +1,7 @@
 # Wake Implementation Guide
 
-Status: **accepted direction.** This guide, together with [`vision.md`](vision.md),
-is the authoritative plan. The documents under [`vision-inputs/`](vision-inputs/)
+Status: **accepted direction.** This guide, together with [`vision.md`](../vision.md),
+is the authoritative plan. The documents under [`vision-inputs/`](../vision-inputs/)
 are early-thinking inputs only — useful for mechanism and provenance, but not
 binding. Where they disagree with this guide or the vision, this guide wins.
 

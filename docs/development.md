@@ -1,10 +1,12 @@
 # Development
 
-This guide covers local Wake development from a source checkout: npm
-scripts, formatting, and the source-checkout-specific parts of the sandbox
-workflow (self-update, GitHub polling). For scaffolding a Wake home and
-running the sandbox — both dev mode and packaged installs — see
-[docs/getting-started.md](getting-started.md).
+This guide covers local Wake development from a source checkout: dev-mode
+setup, npm scripts, formatting, and the source-checkout-specific parts of
+the sandbox workflow (self-update, GitHub polling). For the packaged-install
+path (`npm install -g @atolis-hq/wake`), see
+[docs/getting-started.md](getting-started.md) — the sandbox `build`/`up`/
+`setup` walkthrough there applies to a source checkout too, once `wake-dev`
+is set up below.
 
 ## Local Commands
 
@@ -63,15 +65,37 @@ See [docs/configuration.md](configuration.md) for the full config structure and
 available options. For current Claude, Codex, and Cursor runner capability
 differences, see [docs/runner-comparison.md](runner-comparison.md).
 
-## Sandbox
+## Dev Mode Setup
 
-See [docs/getting-started.md](getting-started.md) for scaffolding a Wake home
-and running `sandbox build`/`up`/`setup`. From a source checkout, run `cd
-bin && npm link` once to get a `wake-dev` command on `PATH` (runs
-`src/main.ts` live via this checkout's own `tsx`, no build step) and use it
+```bash
+npm install
+cd bin && npm link && cd ..
+```
+
+`npm link` (run from `bin/`, which is its own tiny local package) registers
+a `wake-dev` command on your `PATH` that runs `src/main.ts` live via this
+checkout's own `tsx` — no build step, and every invocation picks up your
+latest source changes immediately. It works from any directory (e.g. after
+you `cd` into a wake-home), the same as the packaged `wake` binary. Linking
+from `bin/` rather than the repo root keeps this independent of a real
+`wake` install — running `npm link` from the repo root would overwrite the
+global `wake` symlink with this checkout too, which isn't what you want if
+you also use the published package.
+
+```bash
+wake-dev init ./wake-home
+cd ./wake-home
+```
+
+`wake-dev init --dev` / `wake-dev init --packaged` force a specific
+`dev.mode` if auto-detection ever picks the wrong one (e.g. testing a local
+`npm pack` install from inside a source checkout).
+
+From here, follow [docs/getting-started.md](getting-started.md)'s "Build and
+start the sandbox" / "Run it" / "Check your setup" sections, using `wake-dev`
 in place of `wake`.
 
-### Self-update
+## Self-update
 
 Only available when `config.dev.mode` is `"source"` — a packaged install
 (`dev.mode: "packaged"`, or unset on an older wake-home) gets a clear error

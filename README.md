@@ -180,14 +180,13 @@ any time for the full command list.
 
 ## Documentation
 
-- [docs/getting-started.md](docs/getting-started.md) — full setup for both packaged and source-checkout dev mode.
+- [docs/getting-started.md](docs/getting-started.md) — packaged-install setup, sandbox lifecycle, `wake doctor`.
 - [docs/vision.md](docs/vision.md) — the rationale and long-term direction for Wake.
 - [docs/architecture.md](docs/architecture.md) — module boundaries and the event-sourced core.
-- [docs/implementation.md](docs/implementation.md) — the accepted implementation plan.
 - [docs/workflows.md](docs/workflows.md) — how stages, prompts, and runner routes are configured.
 - [docs/prompts.md](docs/prompts.md) — how prompt templates map to workflow stages.
 - [docs/configuration.md](docs/configuration.md) — `config.json` options and the operator correlation escape hatch.
-- [docs/development.md](docs/development.md) — npm scripts, formatting, self-update, GitHub polling.
+- [docs/development.md](docs/development.md) — source-checkout dev setup (`wake-dev`), npm scripts, formatting, self-update, GitHub polling.
 - [docs/runner-comparison.md](docs/runner-comparison.md) — capability differences between supported runners.
 
 ## Issues & Feature Requests
