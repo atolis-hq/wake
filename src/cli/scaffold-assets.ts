@@ -68,23 +68,6 @@ async function copyAssets(
   );
 }
 
-async function writeLaunchers(wakeRoot: string): Promise<void> {
-  const shellLauncher = [
-    '#!/usr/bin/env bash',
-    'exec wake "$@" --wake-root "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"',
-    '',
-  ].join('\n');
-  const powerShellLauncher = [
-    '& wake @args --wake-root $PSScriptRoot',
-    'exit $LASTEXITCODE',
-    '',
-  ].join('\n');
-
-  await writeFile(join(wakeRoot, 'wake.sh'), shellLauncher, 'utf8');
-  await writeFile(join(wakeRoot, 'wake.ps1'), powerShellLauncher, 'utf8');
-  await chmod(join(wakeRoot, 'wake.sh'), 0o755);
-}
-
 export async function scaffoldWakeHome(input: {
   wakeRoot: string;
   repoRoot: string;
@@ -129,6 +112,5 @@ export async function scaffoldWakeHome(input: {
   await Promise.all([
     copyAssets(repoRoot, 'prompts', join(wakeRoot, 'prompts'), promptFileNames),
     writeJsonFile(join(wakeRoot, 'config.json'), config),
-    writeLaunchers(wakeRoot),
   ]);
 }

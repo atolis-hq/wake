@@ -11,8 +11,10 @@ installed Wake:
   this if you're developing Wake itself.
 
 `wake init` detects which one applies automatically and records it as
-`dev.mode` in `config.json`; nothing else about the workflow below differs
-between the two except how you invoke `wake` itself.
+`dev.mode` in `config.json`. `--wake-root` defaults to the current directory
+for every command, so the usual pattern is: `cd` into your Wake home, then
+run `wake <command>` directly — no wrapper scripts, no need to pass
+`--wake-root` yourself.
 
 ## Packaged: install and initialize
 
@@ -28,9 +30,9 @@ Or run it once without installing globally:
 npx @atolis-hq/wake init ./wake-home
 ```
 
-`wake init` scaffolds `config.json`, `prompts/`, `workspaces/`, and the
-`wake.sh`/`wake.ps1` launchers. It does not create `docker/` — that's written
-lazily by `wake sandbox build` (see below).
+`wake init` scaffolds `config.json`, `prompts/`, and `workspaces/`. It does
+not create `docker/` — that's written lazily by `wake sandbox build` (see
+below).
 
 ## Source (dev mode): install and initialize
 
@@ -39,7 +41,17 @@ From a Wake source checkout:
 ```sh
 npm install
 npx tsx src/main.ts init ./wake-home
+```
+
+There's no `wake` binary on `PATH` from a source checkout unless you've also
+installed the package globally, so every command runs via `npx tsx
+src/main.ts <command> --wake-root <path-to-wake-home>` from the repo root —
+or `cd` into `wake-home` and point back at the checkout, whichever you find
+more convenient:
+
+```sh
 cd ./wake-home
+npx tsx /path/to/wake/src/main.ts sandbox build
 ```
 
 `wake init --dev` / `wake init --packaged` force a specific `dev.mode` if
@@ -48,12 +60,13 @@ install from inside a source checkout).
 
 ## Build and start the sandbox
 
-From inside the Wake home, either mode:
+From inside the Wake home (packaged mode shown; dev mode is the same
+commands via `npx tsx .../src/main.ts` as above):
 
 ```sh
-./wake.sh sandbox build
-./wake.sh sandbox up
-./wake.sh sandbox setup
+wake sandbox build
+wake sandbox up
+wake sandbox setup
 ```
 
 - `sandbox build` writes `docker/Dockerfile` from the template matching your
@@ -68,24 +81,19 @@ From inside the Wake home, either mode:
   keygen, Claude, Codex. Optional best practice: use a dedicated GitHub
   identity for Wake-managed work rather than your main account.
 
-PowerShell uses `.\wake.ps1` in place of `./wake.sh`.
-
 ## Run it
 
 ```sh
-./wake.sh tick     # one control-plane tick
-./wake.sh start    # resident loop
-./wake.sh ui       # control-plane UI (127.0.0.1:4317 by default)
-./wake.sh stop     # graceful stop, waits for any active run to finish
+wake tick     # one control-plane tick
+wake start    # resident loop
+wake ui       # control-plane UI (127.0.0.1:4317 by default)
+wake stop     # graceful stop, waits for any active run to finish
 ```
 
-The bare `wake` binary does the same routing itself: once `docker/Dockerfile`
-exists at `--wake-root`, runtime commands (`tick`/`start`/`ui`/`smoke`/
-`correlate`) automatically exec into `wake sandbox exec` instead of running
-on the host. Pass `--host` to force host execution even when a sandbox is
-available. `wake.sh`/`wake.ps1` are a one-line convenience that sets
-`--wake-root` to their own directory, nothing more — see `wake --help` for
-the full command list.
+Once `docker/Dockerfile` exists (i.e. after `sandbox build`), these commands
+automatically exec into `wake sandbox exec` instead of running on the host —
+no separate launcher needed. Pass `--host` to force host execution even when
+a sandbox is available. See `wake --help` for the full command list.
 
 ## Check your setup
 
@@ -106,7 +114,6 @@ wake-home/
   config.json              # edit this
   prompts/                 # edit these
   docker/Dockerfile         # edit this (written by first `sandbox build`)
-  wake.sh / wake.ps1        # entry points
   workspaces/                # real per-work-item git checkouts — browsable
   .wake/                     # hidden: durable internal state
     events/, state/, runs/, sources/, repos/, locks/, logs/, container-home/

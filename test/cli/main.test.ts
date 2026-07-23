@@ -376,7 +376,7 @@ describe('main command routing', () => {
 });
 
 describe('printUsage', () => {
-  it('writes a usage summary mentioning every command and both entry points', () => {
+  it('writes a usage summary mentioning every command and the entry point', () => {
     const chunks: string[] = [];
     const stream = {
       write: (chunk: string) => {
@@ -389,7 +389,7 @@ describe('printUsage', () => {
 
     const output = chunks.join('');
     expect(output).toContain('wake init');
-    expect(output).toContain('wake.sh');
+    expect(output).toContain('wake start');
     expect(output).toContain('tick');
     expect(output).toContain('start');
     expect(output).toContain('sandbox');

@@ -167,10 +167,10 @@ for capability differences between runners.
 npm install -g @atolis-hq/wake
 wake init ./wake-home
 cd ./wake-home
-./wake.sh sandbox build
-./wake.sh sandbox up
-./wake.sh sandbox setup
-./wake.sh start
+wake sandbox build
+wake sandbox up
+wake sandbox setup
+wake start
 ```
 
 Full setup instructions — including the source-checkout dev-mode path,

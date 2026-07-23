@@ -40,34 +40,14 @@ async function makeTempWakeRoot(): Promise<string> {
 }
 
 describe('scaffoldWakeHome launchers', () => {
-  it('generates a one-line delegation to the global wake binary in wake.sh', async () => {
+  it('does not scaffold wake.sh or wake.ps1 — wake defaults --wake-root to cwd instead', async () => {
     const wakeRoot = await mkdtemp(resolve(tmpdir(), 'wake-scaffold-'));
     const repoRoot = process.cwd();
 
     await scaffoldWakeHome({ wakeRoot, repoRoot });
 
-    const shellLauncher = await readFile(resolve(wakeRoot, 'wake.sh'), 'utf8');
-
-    expect(shellLauncher).toBe(
-      [
-        '#!/usr/bin/env bash',
-        'exec wake "$@" --wake-root "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"',
-        '',
-      ].join('\n'),
-    );
-  });
-
-  it('generates a one-line delegation to the global wake binary in wake.ps1', async () => {
-    const wakeRoot = await mkdtemp(resolve(tmpdir(), 'wake-scaffold-'));
-    const repoRoot = process.cwd();
-
-    await scaffoldWakeHome({ wakeRoot, repoRoot });
-
-    const powerShellLauncher = await readFile(resolve(wakeRoot, 'wake.ps1'), 'utf8');
-
-    expect(powerShellLauncher).toBe(
-      ['& wake @args --wake-root $PSScriptRoot', 'exit $LASTEXITCODE', ''].join('\n'),
-    );
+    await expect(access(resolve(wakeRoot, 'wake.sh'))).rejects.toThrow();
+    await expect(access(resolve(wakeRoot, 'wake.ps1'))).rejects.toThrow();
   });
 });
 

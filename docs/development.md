@@ -79,16 +79,15 @@ Only available when `config.dev.mode` is `"source"` — a packaged install
 pointing at the packaged-mode update path instead: `npm install -g
 @atolis-hq/wake@latest && wake sandbox build && wake sandbox update`.
 
-Run from inside your **wake-home** directory (the one scaffolded by `wake
-init`, containing `wake.sh`/`wake.ps1`/`config.json`) — like every other
+Run with `--wake-root` pointing at your **wake-home** directory (the one
+scaffolded by `wake init`, containing `config.json`) — like every other
 sandbox lifecycle command (`build`/`up`/`down`), `self-update` is not an npm
-script. Running it from the dev repo checkout instead (`npm run ...`) fails
+script. Running it from the dev repo checkout without `--wake-root` fails
 with "Sandbox self-update requires config.dev.repoRoot", because that's the
 one field that only exists in your scaffolded `config.json`, not in the repo:
 
 ```bash
-cd /path/to/your/wake-home
-./wake.sh sandbox self-update
+npx tsx src/main.ts sandbox self-update --wake-root /path/to/your/wake-home
 ```
 
 `self-update` checks for a newer version tag on `origin`, and if found: waits
@@ -125,11 +124,10 @@ inside the container. `wake stop`/`sandbox` are already routed to the host by
 just need something on the host keeping the process alive.
 
 To run it continuously with no external scheduler, start the loop as a
-long-lived host process from your wake-home directory:
+long-lived host process:
 
 ```bash
-cd /path/to/your/wake-home
-./wake.sh sandbox self-update --loop
+npx tsx src/main.ts sandbox self-update --wake-root /path/to/your/wake-home --loop
 ```
 
 Leave it running in a background terminal, a `tmux`/`screen` session, or a
@@ -137,9 +135,9 @@ dedicated terminal tab. It polls indefinitely until the process is stopped
 (Ctrl+C, or killed) — there's no separate scheduler or cron job to configure.
 If you want it to survive terminal closes or host reboots, wrap it with
 whatever process supervisor you'd use for any other long-running host script
-(e.g. `pm2 start ./wake.sh -- sandbox self-update --loop`, an `nssm`/Windows
-service, or a systemd unit) — that's optional and outside Wake's own scope,
-since Wake only owns what happens inside the loop, not how the host keeps a
+(e.g. `pm2 start npx -- tsx src/main.ts sandbox self-update --wake-root /path/to/your/wake-home --loop`,
+an `nssm`/Windows service, or a systemd unit) — that's optional and outside
+Wake's own scope, since Wake only owns what happens inside the loop, not how the host keeps a
 process alive.
 
 ## GitHub Issues Polling
