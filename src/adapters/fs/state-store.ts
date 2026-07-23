@@ -7,7 +7,6 @@ import {
   parseLedger,
   parseRunRecord,
   parseSourceStateRecord,
-  parseWakeConfig,
 } from '../../domain/schema.js';
 import { isTerminalStage } from '../../domain/stages.js';
 import type {
@@ -15,7 +14,6 @@ import type {
   IssueStateRecord,
   RunRecord,
   SourceStateRecord,
-  WakeConfig,
   WakeLedger,
 } from '../../domain/types.js';
 import { appendJsonLine, readJsonFile, writeJsonFile } from '../../lib/json-file.js';
@@ -204,11 +202,6 @@ export function createStateStore({ wakeRoot }: { wakeRoot: string }) {
     paths,
     async ensureWakeRoot(): Promise<void> {
       await mkdir(wakeRoot, { recursive: true });
-    },
-    async writeConfig(record: WakeConfig): Promise<WakeConfig> {
-      const parsed = parseWakeConfig(record);
-      await writeJsonFile(paths.configFile, parsed);
-      return parsed;
     },
     async writeLedger(record: WakeLedger): Promise<WakeLedger> {
       const parsed = parseLedger(record);
