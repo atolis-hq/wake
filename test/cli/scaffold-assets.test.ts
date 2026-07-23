@@ -1,4 +1,4 @@
-import { access, copyFile, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { access, copyFile, mkdir, mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -39,6 +39,25 @@ async function makeScaffoldableRepoRoot(hasSrcCheckout: boolean): Promise<string
 async function makeTempWakeRoot(): Promise<string> {
   return mkdtemp(resolve(tmpdir(), 'wake-scaffold-home-'));
 }
+
+describe('scaffoldWakeHome prompts', () => {
+  it('copies every bundled prompt file, not a hardcoded subset', async () => {
+    const wakeRoot = await makeTempWakeRoot();
+    const repoRoot = process.cwd();
+
+    await scaffoldWakeHome({ wakeRoot, repoRoot });
+
+    const bundledPromptFiles = (await readdir(join(repoRoot, 'prompts'))).filter((name) =>
+      name.endsWith('.md'),
+    );
+    const scaffoldedPromptFiles = await readdir(join(wakeRoot, 'prompts'));
+
+    expect(scaffoldedPromptFiles.sort()).toEqual(bundledPromptFiles.sort());
+    expect(scaffoldedPromptFiles).toEqual(
+      expect.arrayContaining(['ask.md', 'codereview.md', 'implement.md', 'refine.md', 'revise.md']),
+    );
+  });
+});
 
 describe('scaffoldWakeHome launchers', () => {
   it('does not scaffold wake.sh or wake.ps1 — wake defaults --wake-root to cwd instead', async () => {
@@ -89,6 +108,17 @@ describe('scaffoldWakeHome config.yaml', () => {
     const config = parse(await readFile(join(wakeRoot, 'config.yaml'), 'utf8'));
 
     expect(config.sandbox.containerName).toBe('wake-sandbox-my_project');
+  });
+
+  it('does not bake an absolute promptsRoot into config.yaml', async () => {
+    const wakeRoot = await makeTempWakeRoot();
+    const repoRoot = process.cwd();
+
+    await scaffoldWakeHome({ wakeRoot, repoRoot });
+
+    const config = parse(await readFile(join(wakeRoot, 'config.yaml'), 'utf8'));
+
+    expect(config.paths.promptsRoot).toBeUndefined();
   });
 });
 
