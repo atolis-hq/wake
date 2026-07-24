@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -12,8 +12,10 @@ import {
   buildConfigView,
   buildEventsFeed,
   buildItemDetail,
+  buildItemTranscripts,
   buildStatus,
 } from '../../src/adapters/http/ui-data.js';
+import { createWakePaths } from '../../src/lib/paths.js';
 import type { IssueStateRecord, RunRecord } from '../../src/domain/types.js';
 
 /** A stable, ULID-shaped work id per issue number; real ids come from createWorkId(). */
@@ -342,5 +344,110 @@ describe('ui-data', () => {
       { runnerName: 'fake-primary', paused: true, pausedUntil: '2026-07-08T01:00:00.000Z' },
       { runnerName: 'fake-secondary', paused: false, pausedUntil: undefined },
     ]);
+  });
+
+  it('groups item transcripts by session and orders entries by run start with prompts first', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const config = createDefaultWakeConfig(root);
+    config.transcripts.enabled = true;
+    const paths = createWakePaths(root);
+
+    await store.writeIssueState(issueState({ number: 320, stage: 'implement' }));
+    await store.writeRunRecord(
+      runRecord({
+        runId: 'run-later',
+        issueNumber: 320,
+        status: 'completed',
+        startedAt: '2026-07-05T12:10:00.000Z',
+      }),
+    );
+    await store.writeRunRecord(
+      runRecord({
+        runId: 'run-earlier',
+        issueNumber: 320,
+        status: 'completed',
+        startedAt: '2026-07-05T12:00:00.000Z',
+      }),
+    );
+    await store.writeRunRecord(
+      runRecord({
+        runId: 'run-next-session',
+        issueNumber: 320,
+        status: 'completed',
+        startedAt: '2026-07-05T13:00:00.000Z',
+      }),
+    );
+
+    const firstSession = paths.transcriptSessionDir(workId(320), 'session-one');
+    const secondSession = paths.transcriptSessionDir(workId(320), 'session-two');
+    await mkdir(firstSession, { recursive: true });
+    await mkdir(secondSession, { recursive: true });
+    await writeFile(join(firstSession, 'run-later.codex.implement.response.txt'), 'later response');
+    await writeFile(
+      join(firstSession, 'run-earlier.codex.implement.response.txt'),
+      'early response',
+    );
+    await writeFile(join(firstSession, 'run-earlier.codex.implement.prompt.txt'), 'early prompt');
+    await writeFile(
+      join(secondSession, 'run-next-session.cursor.review.prompt.txt'),
+      'next prompt',
+    );
+
+    const transcripts = await buildItemTranscripts({
+      stateStore: store,
+      config,
+      workItemKey: workId(320),
+    });
+
+    expect(transcripts.enabled).toBe(true);
+    expect(transcripts.sessions.map((session) => session.sessionKey)).toEqual([
+      'session-one',
+      'session-two',
+    ]);
+    expect(transcripts.sessions[0]?.entries.map((entry) => [entry.runId, entry.role])).toEqual([
+      ['run-earlier', 'user'],
+      ['run-earlier', 'agent'],
+      ['run-later', 'agent'],
+    ]);
+    expect(transcripts.sessions[0]?.entries[0]).toMatchObject({
+      action: 'implement',
+      cli: 'codex',
+      startedAt: '2026-07-05T12:00:00.000Z',
+      text: 'early prompt',
+    });
+  });
+
+  it('returns disabled transcript payload without reading transcript files', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const config = createDefaultWakeConfig(root);
+
+    await store.writeIssueState(issueState({ number: 321, stage: 'implement' }));
+    await mkdir(createWakePaths(root).transcriptSessionDir(workId(321), 'session'), {
+      recursive: true,
+    });
+
+    const transcripts = await buildItemTranscripts({
+      stateStore: store,
+      config,
+      workItemKey: workId(321),
+    });
+
+    expect(transcripts).toEqual({ enabled: false, sessions: [] });
+  });
+
+  it('returns an enabled empty transcript payload when no transcript files exist', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const config = createDefaultWakeConfig(root);
+    config.transcripts.enabled = true;
+
+    await store.writeIssueState(issueState({ number: 322, stage: 'implement' }));
+
+    const transcripts = await buildItemTranscripts({
+      stateStore: store,
+      config,
+      workItemKey: workId(322),
+    });
+
+    expect(transcripts).toEqual({ enabled: true, sessions: [] });
   });
 });

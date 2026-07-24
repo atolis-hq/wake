@@ -15,6 +15,7 @@ import {
   buildEventsFeed,
   buildHealth,
   buildItemDetail,
+  buildItemTranscripts,
   buildRuns,
   buildStatus,
   buildWorkspaces,
@@ -183,6 +184,24 @@ async function handleRequest(
     await writeJsonFile(stateStore.paths.tickRequestFile, tickRequest);
 
     sendJson(res, 202, { workItemKey, retryEventId: retryId });
+    return;
+  }
+
+  if (
+    req.method === 'GET' &&
+    resource === 'work-items' &&
+    segments.length === 3 &&
+    segments[2] === 'transcripts'
+  ) {
+    sendJson(
+      res,
+      200,
+      await buildItemTranscripts({
+        stateStore,
+        config,
+        workItemKey: segments[1] ?? '',
+      }),
+    );
     return;
   }
 
