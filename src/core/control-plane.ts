@@ -137,6 +137,12 @@ export function createControlPlane(deps: {
       const status = (result as { status?: string } | null)?.status;
       if (status === 'processed') {
         input.setIdleTicks(0);
+        if (input.label === 'intake') {
+          await sleepUntilNextTick(deps.intervalMs, {
+            getLastRequest: input.getLastRequest,
+            setLastRequest: input.setLastRequest,
+          });
+        }
       } else {
         const wait = await sleepUntilNextTick(nextSleepMs(input.getIdleTicks()), {
           getLastRequest: input.getLastRequest,

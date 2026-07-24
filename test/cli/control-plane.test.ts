@@ -75,7 +75,7 @@ describe('control plane', () => {
     expect(logged).toEqual(['[wake] status=idle', '[wake] status=processed', '[wake] status=idle']);
   });
 
-  it('does not sleep after a processed tick', async () => {
+  it('does not sleep after a processed tick in the legacy single-loop path', async () => {
     let calls = 0;
     const tickRunner = {
       runTick: vi.fn().mockImplementation(() => {
@@ -161,7 +161,7 @@ describe('control plane', () => {
     expect(sleepCalls).toEqual([1000, 2000, 4000, 5000, 5000]);
   });
 
-  it('resets the idle backoff to intervalMs after a processed tick', async () => {
+  it('resets the idle backoff after a processed tick in the legacy single-loop path', async () => {
     const statuses = ['idle', 'idle', 'processed', 'idle', 'idle'];
     let call = 0;
     const tickRunner = {
@@ -189,6 +189,92 @@ describe('control plane', () => {
 
     // idle, idle (backed off) -> processed (no sleep, resets) -> idle back at base interval
     expect(sleepCalls).toEqual([1000, 2000, 1000]);
+  });
+
+  it('rate-limits processed intake ticks in split-loop mode', async () => {
+    let intakeCalls = 0;
+    let resolveRunner: ((value: { status: string }) => void) | undefined;
+    const tickRunner = {
+      runTick: vi.fn(),
+      runIntakeTick: vi.fn().mockImplementation(() => {
+        intakeCalls++;
+        if (intakeCalls === 1) return Promise.resolve({ status: 'processed' });
+        controlPlane.stop();
+        resolveRunner?.({ status: 'idle' });
+        return Promise.resolve({ status: 'idle' });
+      }),
+      runRunnerTick: vi.fn().mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveRunner = resolve;
+          }),
+      ),
+    };
+    const sleepCalls: number[] = [];
+
+    const controlPlane = createControlPlane({
+      tickRunner,
+      intervalMs: 30000,
+      isPaused: () => false,
+      logger: { info() {}, error() {} },
+      sleep: async (ms) => {
+        sleepCalls.push(ms);
+      },
+    });
+
+    await controlPlane.start();
+
+    expect(tickRunner.runIntakeTick).toHaveBeenCalledTimes(2);
+    expect(sleepCalls).toEqual([30000]);
+  });
+
+  it('fast-forwards a processed intake wait when a tick request appears', async () => {
+    const now = vi.spyOn(Date, 'now');
+    let nowMs = 0;
+    now.mockImplementation(() => nowMs);
+
+    let intakeCalls = 0;
+    let requestId: string | null = null;
+    let resolveRunner: ((value: { status: string }) => void) | undefined;
+    const tickRunner = {
+      runTick: vi.fn(),
+      runIntakeTick: vi.fn().mockImplementation(() => {
+        intakeCalls++;
+        if (intakeCalls === 1) return Promise.resolve({ status: 'processed' });
+        controlPlane.stop();
+        resolveRunner?.({ status: 'idle' });
+        return Promise.resolve({ status: 'idle' });
+      }),
+      runRunnerTick: vi.fn().mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveRunner = resolve;
+          }),
+      ),
+    };
+    const sleepDurations: number[] = [];
+
+    const controlPlane = createControlPlane({
+      tickRunner,
+      intervalMs: 30000,
+      isPaused: () => false,
+      logger: { info() {}, error() {} },
+      sleep: async (ms) => {
+        sleepDurations.push(ms);
+        nowMs += ms;
+        requestId = 'request-1';
+      },
+      readTickRequest: async () => requestId,
+    });
+
+    try {
+      await controlPlane.start();
+    } finally {
+      now.mockRestore();
+    }
+
+    expect(tickRunner.runIntakeTick).toHaveBeenCalledTimes(2);
+    expect(sleepDurations).toEqual([250]);
   });
 
   it('fast-forwards the next scheduled tick when a tick request appears during sleep', async () => {
