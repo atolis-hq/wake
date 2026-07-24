@@ -32,6 +32,34 @@ function createFakeExecProcess(): {
 }
 
 describe('docker cli adapter', () => {
+  it('returns null for the current container image when inspection is unavailable', async () => {
+    const docker = createDockerCli({
+      inspectContainer: async () => null,
+      inspectImage: async () => false,
+      run: async () => {
+        throw new Error('should not run');
+      },
+    });
+
+    await expect(docker.inspectContainerImage('wake-sandbox')).resolves.toBeNull();
+  });
+
+  it('returns the current container image from the configured inspector', async () => {
+    const docker = createDockerCli({
+      inspectContainer: async () => null,
+      inspectImage: async () => false,
+      inspectContainerImage: async (containerName) =>
+        containerName === 'wake-sandbox' ? 'wake-sandbox:v0.2.11' : null,
+      run: async () => {
+        throw new Error('should not run');
+      },
+    });
+
+    await expect(docker.inspectContainerImage('wake-sandbox')).resolves.toBe(
+      'wake-sandbox:v0.2.11',
+    );
+  });
+
   it('builds docker images with the expected arguments', async () => {
     const calls: string[][] = [];
     const docker = createDockerCli({

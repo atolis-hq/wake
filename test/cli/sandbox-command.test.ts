@@ -31,6 +31,7 @@ describe('sandbox command', () => {
           _handlers: { onStdout: (line: string) => void; onStderr: (line: string) => void },
         ) => {},
       ),
+      inspectContainerImage: vi.fn(async () => null),
       logs: vi.fn(async () => {}),
     };
   }

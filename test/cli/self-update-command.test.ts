@@ -190,6 +190,46 @@ describe('runSelfUpdateCommand', () => {
     );
   });
 
+  it('rolls back to the pre-update container image when the ledger is stale', async () => {
+    const staleLedger: SelfUpdateLedger = {
+      lastAppliedTag: 'v0.0.97',
+      lastKnownGoodTag: 'v0.0.97',
+      badTags: [],
+    };
+    const deps = baseDeps({
+      readLedger: vi.fn(async () => staleLedger),
+      docker: {
+        build: vi.fn(async () => {}),
+        update: vi.fn(async () => {}),
+        inspectContainerImage: vi.fn(async () => 'wake-sandbox:v0.2.11'),
+        exec: vi.fn(async (_containerName: string, command: string[]) => {
+          if (command[0] === 'node') {
+            throw new Error('tick exited 1');
+          }
+        }),
+      },
+    });
+
+    await runSelfUpdateCommand(deps as never);
+
+    const git = deps.git as { checkoutTag: ReturnType<typeof vi.fn> };
+    const docker = deps.docker as { update: ReturnType<typeof vi.fn> };
+    const writeLedger = deps.writeLedger as ReturnType<typeof vi.fn>;
+
+    expect(docker.update).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ image: 'wake-sandbox:v0.2.11' }),
+    );
+    expect(git.checkoutTag).toHaveBeenCalledWith('v0.2.11');
+    expect(writeLedger).toHaveBeenCalledWith(
+      expect.objectContaining({
+        lastAppliedTag: 'v0.2.11',
+        lastKnownGoodTag: 'v0.2.11',
+        badTags: [expect.objectContaining({ tag: 'v0.0.80' })],
+      }),
+    );
+  });
+
   it('rolls back when the resident start process cannot be verified after rollout', async () => {
     const deps = baseDeps({
       docker: {
