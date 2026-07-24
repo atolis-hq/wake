@@ -86,6 +86,7 @@ wake-home/
   config.yaml           # infra/sandbox/sources — edit this
   config.workflows.yaml # runners/tiers/workflows — edit this
   prompts/              # edit these
+  SETUP.md              # agent-directed config guide
   docker/Dockerfile     # edit this (written by first `sandbox build`)
   workspaces/           # real per-work-item git checkouts — browsable
   .wake/                # hidden: durable internal state

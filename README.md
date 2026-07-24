@@ -97,7 +97,8 @@ For more detail, see [docs/vision.md](docs/vision.md) and
   log; projections can be rebuilt, and the loop can crash and resume without
   losing its place.
 - **Local and inspectable.** Everything lives in a plain-file Wake home
-  directory: `config.yaml`, `config.workflows.yaml`, `prompts/`, and `workspaces/` at the top level for
+  directory: `config.yaml`, `config.workflows.yaml`, `prompts/`, `SETUP.md`, and
+  `workspaces/` at the top level for
   what you edit or browse day-to-day, with durable/internal state (events,
   projections, runs, logs, sandbox auth) nested under a hidden `.wake/`.
 - **Sandbox-oriented execution.** Wake can run from a persistent Docker sandbox

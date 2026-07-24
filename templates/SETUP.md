@@ -42,16 +42,19 @@ https://github.com/atolis-hq/wake/blob/main/docs/configuration.md#sourcesgithub
 Ask the user which agent CLI(s) they have authenticated on this host:
 Claude, Codex, and/or Cursor.
 
-`config.workflows.yaml` already has working `runners` entries for
+`config.workflows.yaml` already has example `runners` entries for
 `claude-haiku`, `claude-opus`, `codex-mini`, `codex-flagship`, and
-`cursor-composer`, grouped into `tiers` (`light`/`standard`/`deep`) with
-`defaultTier: standard`. Don't rewrite this from scratch — pick which
-runner(s) the user actually has access to, and either:
+`cursor-composer`, but every tier (`light`/`standard`/`deep`, with
+`defaultTier: standard`) still points at the placeholder `fake` runner — none
+of them route to a real runner yet. Don't rewrite this from scratch — pick
+which runner(s) the user actually has access to, and either:
 
-- adjust `tiers` so each tier only lists runners the user can actually use, or
+- repoint `tiers` so each tier lists the real named runner(s) the user can
+  actually use instead of `fake`, or
 - if the user has a runner not already listed (a different model, a
   different CLI), add a new named entry under `runners` following the
   existing pattern, then reference it from `tiers`.
+- remove entries which are not needed.
 
 Full reference:
 https://github.com/atolis-hq/wake/blob/main/docs/configuration.md#runners
