@@ -183,6 +183,7 @@ export function classifyCursorCliFailure(input: {
   const text = `${input.stderr}\n${input.stdout}`.toLowerCase();
   if (
     text.includes('rate limit') ||
+    text.includes('usage limit') ||
     text.includes('quota') ||
     text.includes('billing') ||
     text.includes('unauthorized') ||
