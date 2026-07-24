@@ -418,7 +418,6 @@ export async function buildItemTranscripts(input: {
     const files = (await readdir(sessionDir, { withFileTypes: true }).catch(() => []))
       .filter((entry) => entry.isFile())
       .map((entry) => entry.name);
-    const entries: ItemTranscriptEntry[] = [];
 
     for (const file of files) {
       const parsed = parseTranscriptFileName(file);
