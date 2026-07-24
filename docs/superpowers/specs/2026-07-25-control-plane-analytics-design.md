@@ -46,11 +46,17 @@ The UI should use simple HTML tables and lightweight CSS bars, not introduce a c
 
 Display rules:
 
-- `Runs over time` uses one stacked bar per day with segments for completed, blocked, awaiting approval, failed, and other runs.
+- `Runs over time` uses one stacked bar per time bucket with segments for completed, blocked, awaiting approval, failed, and other runs.
 - `Run breakdown` uses sortable-looking tables with a proportional horizontal bar in the count column for each grouping.
-- `Tokens` uses one stacked bar per day for input, output, cache creation, and cache read tokens, plus grouped token tables with proportional bars.
+- `Tokens` uses one stacked bar per time bucket for input, output, cache creation, and cache read tokens, plus grouped token tables with proportional bars.
 - `Duration` uses grouped tables with median duration as the primary bar value and average duration as a secondary number.
-- `Work items` uses one bar per day for completed item count and a table of queue-to-done/closed durations.
+- `Work items` uses one bar per time bucket for completed item count and a table of queue-to-done/closed durations.
+
+Time-series granularity:
+
+- `1d` uses hourly buckets for the current day so the chart shows intra-day activity instead of a single bar.
+- `3d`, `5d`, and `7d` use daily buckets. `7d` shows seven bars, one per calendar day.
+- Empty buckets are included with zero values so the selected window keeps a stable shape even when there was no activity.
 
 ## API Design
 
@@ -80,21 +86,21 @@ Response shape:
     completedWorkItems: number;
     medianWorkItemDurationMs?: number;
   };
-  runsByDay: Array<{ day: string; total: number; completed: number; blocked: number; awaitingApproval: number; failed: number }>;
+  runsOverTime: Array<{ bucket: string; label: string; total: number; completed: number; blocked: number; awaitingApproval: number; failed: number; other: number }>;
   runsByStatus: Array<{ key: string; count: number }>;
   runsByAction: Array<{ key: string; count: number }>;
   runsByRepo: Array<{ key: string; count: number }>;
   runsByRunner: Array<{ key: string; count: number }>;
   runsByModel: Array<{ key: string; count: number }>;
   runsByTier: Array<{ key: string; count: number }>;
-  tokensByDay: Array<{ day: string; tokens: number; inputTokens: number; outputTokens: number; cacheCreationInputTokens: number; cacheReadInputTokens: number; costUsd: number }>;
+  tokensOverTime: Array<{ bucket: string; label: string; tokens: number; inputTokens: number; outputTokens: number; cacheCreationInputTokens: number; cacheReadInputTokens: number; costUsd: number }>;
   tokensByAction: Array<{ key: string; tokens: number; costUsd: number }>;
   tokensByRepo: Array<{ key: string; tokens: number; costUsd: number }>;
   tokensByRunner: Array<{ key: string; tokens: number; costUsd: number }>;
   tokensByModel: Array<{ key: string; tokens: number; costUsd: number }>;
   durationByAction: Array<{ key: string; count: number; averageMs: number; medianMs: number }>;
-  durationByDay: Array<{ day: string; count: number; averageMs: number; medianMs: number }>;
-  workItemsByDay: Array<{ day: string; completed: number }>;
+  durationOverTime: Array<{ bucket: string; label: string; count: number; averageMs: number; medianMs: number }>;
+  workItemsOverTime: Array<{ bucket: string; label: string; completed: number }>;
   workItemDurations: Array<{ key: string; repo: string; issueNumber: number; durationMs: number; completedAt: string }>;
 }
 ```
@@ -112,7 +118,8 @@ Window filtering:
 
 - Runs are included when `startedAt` is inside the selected window.
 - Work items are included when their completion timestamp is inside the selected window.
-- The window is inclusive of the current day. For example, `3d` includes today and the previous two calendar days.
+- Daily windows are inclusive of the current day. For example, `3d` includes today and the previous two calendar days.
+- `1d` includes the current local day split into hourly buckets from `00:00` through `23:00`.
 
 Run duration:
 
