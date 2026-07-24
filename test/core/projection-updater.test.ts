@@ -1990,4 +1990,67 @@ describe('projection updater', () => {
       expect(projection?.correlatedResources).toEqual([]);
     });
   });
+
+  describe('wake.retry.requested', () => {
+    it('clears lastRunSentinel, lastFailureClass, and blockedFromStage from context', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const updater = createProjectionUpdater({
+        stateStore: store,
+        resourceIndex: createFakeResourceIndex(),
+      });
+
+      await updater.rebuildFromEvents([
+        issueUpsert({ eventId: 'issue-42', issueNumber: 42, labels: ['wake:implement'] }),
+        createEventEnvelope({
+          eventId: 'run-42-completed',
+          workItemKey: workId(42),
+          streamScope: 'work-item',
+          direction: 'internal',
+          sourceSystem: 'wake',
+          sourceEventType: 'wake.run.completed',
+          sourceRefs: { repo: 'atolis-hq/wake', issueNumber: 42, runId: 'run-42' },
+          occurredAt: '2026-07-05T12:01:00.000Z',
+          ingestedAt: '2026-07-05T12:01:00.000Z',
+          trigger: 'immediate',
+          payload: {
+            action: 'implement',
+            sentinel: 'FAILED',
+            runId: 'run-42',
+            failureClass: 'task',
+            reason: 'runner:failed',
+            body: 'something went wrong',
+          },
+        }),
+      ]);
+
+      const before = await store.readIssueState(workId(42));
+      expect((before?.context as Record<string, unknown>).lastRunSentinel).toBe('FAILED');
+      expect((before?.context as Record<string, unknown>).lastFailureClass).toBe('task');
+      expect((before?.context as Record<string, unknown>).blockedFromStage).toBe('queue');
+
+      await updater.rebuildFromEvents([
+        createEventEnvelope({
+          eventId: 'retry-42',
+          workItemKey: workId(42),
+          streamScope: 'work-item',
+          direction: 'internal',
+          sourceSystem: 'wake',
+          sourceEventType: 'wake.retry.requested',
+          sourceRefs: { repo: 'atolis-hq/wake', issueNumber: 42 },
+          occurredAt: '2026-07-05T12:02:00.000Z',
+          ingestedAt: '2026-07-05T12:02:00.000Z',
+          trigger: 'immediate',
+          payload: { requestedBy: 'ui' },
+        }),
+      ]);
+
+      const after = await store.readIssueState(workId(42));
+      const ctx = after?.context as Record<string, unknown>;
+      expect(ctx.lastRunSentinel).toBeUndefined();
+      expect(ctx.lastFailureClass).toBeUndefined();
+      expect(ctx.blockedFromStage).toBeUndefined();
+      expect(after?.wake.stage).toBe('queue');
+      expect(after?.wake.recentEventIds).toContain('retry-42');
+    });
+  });
 });

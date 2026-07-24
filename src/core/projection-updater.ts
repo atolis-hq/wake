@@ -384,6 +384,23 @@ async function applyEvent(
     });
   }
 
+  if (event.sourceEventType === 'wake.retry.requested') {
+    const nextContext: Record<string, unknown> = { ...current.context };
+    delete nextContext.lastRunSentinel;
+    delete nextContext.lastFailureClass;
+    delete nextContext.blockedFromStage;
+
+    return parseIssueStateRecord({
+      ...current,
+      context: nextContext,
+      wake: {
+        ...current.wake,
+        syncedAt: event.ingestedAt,
+        recentEventIds: [...current.wake.recentEventIds, event.eventId].slice(-10),
+      },
+    });
+  }
+
   if (event.sourceEventType === 'wake.workspace.cleaned') {
     return parseIssueStateRecord({
       ...current,
