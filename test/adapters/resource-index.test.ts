@@ -111,14 +111,14 @@ describe('ResourceIndex', () => {
   });
 
   it('survives many registrations across shards', async () => {
-    // 300 sequential lock-guarded read-modify-writes hitting real disk I/O;
-    // fine in isolation but can exceed vitest's 5s default under a fully
-    // parallel full-suite run, so this test gets a longer budget.
+    // Enough sequential lock-guarded real disk writes to exercise shard
+    // distribution without making the full parallel suite depend on tmpdir
+    // I/O latency.
     const index = createResourceIndex({ paths: freshPaths() });
-    for (let n = 0; n < 300; n += 1) {
+    for (let n = 0; n < 100; n += 1) {
       await index.register(`github:issue:atolis-hq/wake#${n}`, `work-${n}`);
     }
-    expect(await index.resolve('github:issue:atolis-hq/wake#150')).toBe('work-150');
-    expect(await index.resolve('github:issue:atolis-hq/wake#299')).toBe('work-299');
+    expect(await index.resolve('github:issue:atolis-hq/wake#50')).toBe('work-50');
+    expect(await index.resolve('github:issue:atolis-hq/wake#99')).toBe('work-99');
   }, 20_000);
 });

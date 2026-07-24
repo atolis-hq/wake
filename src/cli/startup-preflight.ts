@@ -67,12 +67,16 @@ async function defaultLoadPrompt(
   });
 }
 
+export function buildRunnerCommandProbeArgs(kind: RealRunnerEntry['kind']): string[] {
+  return kind === 'cursor' ? ['agent', '--version'] : ['--version'];
+}
+
 async function defaultCheckRunnerCommand(
   runnerName: string,
   entry: RealRunnerEntry,
 ): Promise<void> {
   try {
-    await execFile(entry.command, ['--version'], {
+    await execFile(entry.command, buildRunnerCommandProbeArgs(entry.kind), {
       env: process.env,
       timeout: runnerVersionProbeTimeoutMs,
       windowsHide: true,
