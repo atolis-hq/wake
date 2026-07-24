@@ -18,27 +18,42 @@ export function createStaleRunReconciler(deps: {
   stateStore: StateStore;
   projectionUpdater: ProjectionUpdater;
   runnerTimeoutMs: () => number;
+  isRunningRecordActive?: (record: RunRecord) => Promise<boolean>;
   deliverOutboundEvent: (event: EventEnvelope) => Promise<void>;
 }) {
-  function isStaleRunningRecord(record: RunRecord, now: Date): boolean {
+  async function staleReason(
+    record: RunRecord,
+    now: Date,
+  ): Promise<'timeout' | 'runner-lock-not-active' | null> {
     if (record.status !== 'running') {
-      return false;
+      return null;
+    }
+
+    if (deps.isRunningRecordActive !== undefined && !(await deps.isRunningRecordActive(record))) {
+      return 'runner-lock-not-active';
     }
 
     const startedAtMs = Date.parse(record.startedAt);
     if (!Number.isFinite(startedAtMs)) {
-      return true;
+      return 'timeout';
     }
 
-    return now.getTime() - startedAtMs >= deps.runnerTimeoutMs();
+    return now.getTime() - startedAtMs >= deps.runnerTimeoutMs() ? 'timeout' : null;
   }
 
   async function reconcileStaleRunningRecords(now: Date): Promise<void> {
     const finishedAt = now.toISOString();
     const runRecords = await deps.stateStore.listRunRecords();
-    const staleRecords = runRecords.filter((record) => isStaleRunningRecord(record, now));
+    const staleRecords: Array<{ record: RunRecord; reason: 'timeout' | 'runner-lock-not-active' }> =
+      [];
+    for (const record of runRecords) {
+      const reason = await staleReason(record, now);
+      if (reason !== null) {
+        staleRecords.push({ record, reason });
+      }
+    }
 
-    for (const record of staleRecords) {
+    for (const { record, reason } of staleRecords) {
       // Run records carry the work item they belong to, so this is a direct
       // O(1) read — no scan, no index, no source ambiguity. The record's
       // repo/issueNumber are representation content and take no part in it.
@@ -77,6 +92,7 @@ export function createStaleRunReconciler(deps: {
         metadata: {
           ...record.metadata,
           reconciledBy: 'stale-running-record',
+          staleReason: reason,
           timeoutMs: deps.runnerTimeoutMs(),
         },
       });
@@ -100,7 +116,7 @@ export function createStaleRunReconciler(deps: {
           action: record.action,
           sentinel: 'FAILED',
           runId: record.runId,
-          reason: 'runner:stale-timeout',
+          reason: reason === 'timeout' ? 'runner:stale-timeout' : 'runner:orphaned-process',
           ...(record.routing === undefined ? {} : { routing: record.routing }),
         },
       });

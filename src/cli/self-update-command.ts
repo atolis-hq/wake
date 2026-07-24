@@ -81,6 +81,7 @@ export async function runSelfUpdateCommand(input: {
   imageRepository: string;
   containerName: string;
   stateStore: { listRunRecords: () => Promise<RunRecord[]> };
+  recoverActiveRuns?: () => Promise<void>;
   docker: {
     build: (options: { image: string; dockerfile: string; contextDir: string }) => Promise<void>;
     update: (options: {
@@ -140,6 +141,9 @@ export async function runSelfUpdateCommand(input: {
 
   await waitForActiveRuns({
     listRunRecords: input.stateStore.listRunRecords,
+    ...(input.recoverActiveRuns === undefined
+      ? {}
+      : { recoverActiveRuns: input.recoverActiveRuns }),
     sleep: input.sleep,
     logger: input.logger,
   });

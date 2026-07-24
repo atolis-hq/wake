@@ -117,6 +117,7 @@ export async function runSandboxCommand(input: {
   docker: DockerCli;
   packagedTemplatesRoot: string;
   stateStore: { listRunRecords: () => Promise<RunRecord[]> };
+  recoverActiveRuns?: () => Promise<void>;
   sleep: (ms: number) => Promise<void>;
   logger: { info: (message: string) => void; error?: (message: string) => void };
   selfUpdate?:
@@ -216,6 +217,9 @@ export async function runSandboxCommand(input: {
     await runStopCommand({
       args: input.args.slice(1),
       stateStore: input.stateStore,
+      ...(input.recoverActiveRuns === undefined
+        ? {}
+        : { recoverActiveRuns: input.recoverActiveRuns }),
       docker: input.docker,
       containerName: input.config.sandbox.containerName,
       sleep: input.sleep,
@@ -247,6 +251,9 @@ export async function runSandboxCommand(input: {
       imageRepository: input.config.sandbox.imageRepository,
       containerName: input.config.sandbox.containerName,
       stateStore: input.stateStore,
+      ...(input.recoverActiveRuns === undefined
+        ? {}
+        : { recoverActiveRuns: input.recoverActiveRuns }),
       docker: input.docker,
       git: input.selfUpdate.git,
       issueReporter: input.selfUpdate.issueReporter,

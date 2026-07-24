@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { link, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -6,6 +7,24 @@ export interface FileLockMetadata {
   pid: number;
   acquiredAt: string;
   lockId?: string;
+  commandLine?: string;
+}
+
+export type FileLockStaleReason =
+  'missing' | 'invalid-metadata' | 'expired' | 'pid-not-alive' | 'pid-command-mismatch';
+
+export interface ProcessInspector {
+  isPidAlive: (pid: number) => boolean;
+  readCommandLine: (pid: number) => string | undefined;
+}
+
+export interface FileLockStatus {
+  present: boolean;
+  active: boolean;
+  metadata?: FileLockMetadata;
+  ageMs?: number;
+  commandLine?: string;
+  staleReason?: FileLockStaleReason;
 }
 
 function parseLockMetadata(raw: string): FileLockMetadata | null {
@@ -33,6 +52,7 @@ function parseLockMetadata(raw: string): FileLockMetadata | null {
       pid: record.pid,
       acquiredAt: record.acquiredAt,
       ...(typeof record.lockId === 'string' ? { lockId: record.lockId } : {}),
+      ...(typeof record.commandLine === 'string' ? { commandLine: record.commandLine } : {}),
     };
   } catch {
     return null;
@@ -56,6 +76,31 @@ function isPidAlive(pid: number): boolean {
   }
 }
 
+function readProcessCommandLine(pid: number): string | undefined {
+  if (pid === process.pid) {
+    return process.argv.join(' ');
+  }
+
+  try {
+    return readFileSyncProcessCommandLine(pid);
+  } catch {
+    return undefined;
+  }
+}
+
+function readFileSyncProcessCommandLine(pid: number): string | undefined {
+  const raw = readFileSync(`/proc/${pid}/cmdline`, 'utf8');
+  const commandLine = raw.replace(/\0/g, ' ').trim();
+  return commandLine.length === 0 ? undefined : commandLine;
+}
+
+function defaultProcessInspector(): ProcessInspector {
+  return {
+    isPidAlive,
+    readCommandLine: readProcessCommandLine,
+  };
+}
+
 async function readLockMetadata(path: string): Promise<FileLockMetadata | null> {
   try {
     return parseLockMetadata(await readFile(path, 'utf8'));
@@ -64,14 +109,61 @@ async function readLockMetadata(path: string): Promise<FileLockMetadata | null> 
   }
 }
 
-async function lockIsStale(path: string, staleAfterMs: number, now: Date): Promise<boolean> {
+export async function readFileLockStatus(
+  path: string,
+  options?: {
+    staleAfterMs?: number;
+    now?: Date;
+    processInspector?: ProcessInspector;
+    expectedCommandIncludes?: string[];
+  },
+): Promise<FileLockStatus> {
   const metadata = await readLockMetadata(path);
   if (metadata === null) {
-    return true;
+    try {
+      await readFile(path, 'utf8');
+      return { present: true, active: false, staleReason: 'invalid-metadata' };
+    } catch {
+      return { present: false, active: false, staleReason: 'missing' };
+    }
   }
 
+  const now = options?.now ?? new Date();
   const ageMs = now.getTime() - Date.parse(metadata.acquiredAt);
-  return ageMs >= staleAfterMs || !isPidAlive(metadata.pid);
+  if (options?.staleAfterMs !== undefined && ageMs >= options.staleAfterMs) {
+    return { present: true, active: false, metadata, ageMs, staleReason: 'expired' };
+  }
+
+  const inspector = options?.processInspector ?? defaultProcessInspector();
+  if (!inspector.isPidAlive(metadata.pid)) {
+    return { present: true, active: false, metadata, ageMs, staleReason: 'pid-not-alive' };
+  }
+
+  const commandLine = inspector.readCommandLine(metadata.pid);
+  if (
+    commandLine !== undefined &&
+    ((metadata.commandLine !== undefined && commandLine !== metadata.commandLine) ||
+      (metadata.commandLine === undefined &&
+        options?.expectedCommandIncludes !== undefined &&
+        !options.expectedCommandIncludes.every((fragment) => commandLine.includes(fragment))))
+  ) {
+    return {
+      present: true,
+      active: false,
+      metadata,
+      ageMs,
+      commandLine,
+      staleReason: 'pid-command-mismatch',
+    };
+  }
+
+  return {
+    present: true,
+    active: true,
+    metadata,
+    ageMs,
+    ...(commandLine === undefined ? {} : { commandLine }),
+  };
 }
 
 export async function acquireFileLock(
@@ -91,6 +183,7 @@ export async function acquireFileLock(
     pid: process.pid,
     acquiredAt: (options?.now ?? new Date()).toISOString(),
     lockId: randomUUID(),
+    commandLine: process.argv.join(' '),
   };
 
   async function tryAcquire(): Promise<{
@@ -132,7 +225,12 @@ export async function acquireFileLock(
     if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
       if (
         options?.staleAfterMs !== undefined &&
-        (await lockIsStale(path, options.staleAfterMs, options.now ?? new Date()))
+        !(
+          await readFileLockStatus(path, {
+            staleAfterMs: options.staleAfterMs,
+            now: options.now ?? new Date(),
+          })
+        ).active
       ) {
         await rm(path, { force: true });
         try {

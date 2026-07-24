@@ -49,6 +49,22 @@ describe('waitForActiveRuns', () => {
     expect(sleep).toHaveBeenCalledWith(10);
   });
 
+  it('runs active-run recovery before each poll', async () => {
+    const sleep = vi.fn(async () => {});
+    const recoverActiveRuns = vi.fn(async () => {});
+    const listRunRecords = vi.fn(async () => [makeRunRecord('completed')]);
+
+    await waitForActiveRuns({
+      listRunRecords,
+      recoverActiveRuns,
+      sleep,
+      logger: { info: () => {} },
+    });
+
+    expect(recoverActiveRuns).toHaveBeenCalledBefore(listRunRecords);
+    expect(sleep).not.toHaveBeenCalled();
+  });
+
   it('throws if the timeout elapses while a run is still active', async () => {
     const sleep = vi.fn(async () => {});
     const listRunRecords = vi.fn(async () => [makeRunRecord('running')]);
@@ -77,6 +93,7 @@ describe('runStopCommand', () => {
     await runStopCommand({
       args: [],
       stateStore: { listRunRecords },
+      recoverActiveRuns: async () => {},
       docker: { down },
       containerName: 'wake-sandbox',
       sleep: vi.fn(async () => {}),
