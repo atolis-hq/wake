@@ -90,6 +90,8 @@ function buildNeedsWakeActionIssue(overrides: {
   latestCommentId?: string;
   lastHandledCommentId?: string;
   lastRunSentinel?: string;
+  lastFailureClass?: string;
+  failureCount?: number;
   lastCompletedAction?: string;
 }) {
   return parseIssueStateRecord({
@@ -143,6 +145,10 @@ function buildNeedsWakeActionIssue(overrides: {
       ...(overrides.lastRunSentinel === undefined
         ? {}
         : { lastRunSentinel: overrides.lastRunSentinel }),
+      ...(overrides.lastFailureClass === undefined
+        ? {}
+        : { lastFailureClass: overrides.lastFailureClass }),
+      ...(overrides.failureCount === undefined ? {} : { failureCount: overrides.failureCount }),
       ...(overrides.lastCompletedAction === undefined
         ? {}
         : { lastCompletedAction: overrides.lastCompletedAction }),
@@ -708,6 +714,32 @@ describe('policy engine: needsWakeAction', () => {
 
     expect(policy.needsWakeAction(issue)).toBe(false);
   });
+
+  it('retries quota failures below the configured failure retry limit', () => {
+    const policy = createPolicyEngine();
+    const config = createDefaultWakeConfig('/tmp/wake-root');
+    config.retry.maxFailureRetries = 3;
+    const issue = buildNeedsWakeActionIssue({
+      lastRunSentinel: 'FAILED',
+      lastFailureClass: 'quota',
+      failureCount: 2,
+    });
+
+    expect(policy.needsWakeAction(issue, undefined, config)).toBe(true);
+  });
+
+  it('stops retrying quota failures at the configured failure retry limit', () => {
+    const policy = createPolicyEngine();
+    const config = createDefaultWakeConfig('/tmp/wake-root');
+    config.retry.maxFailureRetries = 3;
+    const issue = buildNeedsWakeActionIssue({
+      lastRunSentinel: 'FAILED',
+      lastFailureClass: 'quota',
+      failureCount: 3,
+    });
+
+    expect(policy.needsWakeAction(issue, undefined, config)).toBe(false);
+  });
 });
 
 describe('policy engine: resolveCustomCommandRequest', () => {
@@ -802,6 +834,7 @@ describe('policy engine: chooseRetryActionAfterHumanReply', () => {
 
   it('retries a quota-failed action after the control-plane pause expires without a human reply', () => {
     const policy = createPolicyEngine();
+    const config = createDefaultWakeConfig('/tmp/wake-root');
     const issue = buildBlockedOrFailedIssue({
       stage: 'refine',
       lastRunAction: 'refine',
@@ -809,7 +842,7 @@ describe('policy engine: chooseRetryActionAfterHumanReply', () => {
     issue.context.lastRunSentinel = 'FAILED';
     issue.context.lastFailureClass = 'quota';
 
-    expect(policy.needsWakeAction(issue)).toBe(true);
+    expect(policy.needsWakeAction(issue, undefined, config)).toBe(true);
     expect(policy.chooseRetryActionAfterHumanReply(issue)).toBe('refine');
   });
 

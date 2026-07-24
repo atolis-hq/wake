@@ -1649,6 +1649,66 @@ describe('projection updater', () => {
     expect(comment?.reviewThread).toEqual({ path: 'src/foo.ts', line: 42 });
   });
 
+  it('increments failureCount for every failed run and resets it on successful completion', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const updater = createProjectionUpdater({
+      stateStore: store,
+      resourceIndex: createFakeResourceIndex(),
+    });
+
+    const failure = (eventId: string, failureClass: string, occurredAt: string) =>
+      createEventEnvelope({
+        eventId,
+        workItemKey: workId(151),
+        streamScope: 'work-item',
+        direction: 'internal',
+        sourceSystem: 'wake',
+        sourceEventType: 'wake.run.completed',
+        sourceRefs: { repo: 'atolis-hq/wake', issueNumber: 151, runId: eventId },
+        occurredAt,
+        ingestedAt: occurredAt,
+        trigger: 'immediate',
+        payload: {
+          action: 'implement',
+          sentinel: 'FAILED',
+          runId: eventId,
+          failureClass,
+        },
+      });
+
+    await updater.rebuildFromEvents([
+      issueUpsert({ eventId: 'evt-failure-count-issue', issueNumber: 151, labels: ['wake'] }),
+      failure('run-151-fail-1', 'quota', '2026-07-05T12:01:00.000Z'),
+      failure('run-151-fail-2', 'infra', '2026-07-05T12:02:00.000Z'),
+    ]);
+
+    let projection = await store.readIssueState(workId(151));
+    expect(projection?.context.failureCount).toBe(2);
+
+    await updater.rebuildFromEvents([
+      createEventEnvelope({
+        eventId: 'run-151-done',
+        workItemKey: workId(151),
+        streamScope: 'work-item',
+        direction: 'internal',
+        sourceSystem: 'wake',
+        sourceEventType: 'wake.run.completed',
+        sourceRefs: { repo: 'atolis-hq/wake', issueNumber: 151, runId: 'run-151-done' },
+        occurredAt: '2026-07-05T12:03:00.000Z',
+        ingestedAt: '2026-07-05T12:03:00.000Z',
+        trigger: 'immediate',
+        payload: {
+          action: 'implement',
+          sentinel: 'DONE',
+          runId: 'run-151-done',
+        },
+      }),
+    ]);
+
+    projection = await store.readIssueState(workId(151));
+    expect(projection?.context.failureCount).toBe(0);
+  });
+
   describe('correlation fold (ADR 0001 §5-6)', () => {
     it('rule 1: wake.correlation.registered appends to correlatedResources[] and registers in the index', async () => {
       const store = createStateStore({ wakeRoot: root });

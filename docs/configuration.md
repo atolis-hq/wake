@@ -48,6 +48,8 @@ scheduler:
 transcripts:
   enabled: false
   retainAfterWorkspaceCleanup: false
+retry:
+  maxFailureRetries: 5
 ui:
   enabled: false
   port: 4317
@@ -342,6 +344,16 @@ the previously recorded agent session ID when Wake has one.
 | ----------------------------- | ------- | ------------------------------------------------------------------------------------ | ------- |
 | `enabled`                     | boolean | Write raw runner prompt and response text files                                      | `false` |
 | `retainAfterWorkspaceCleanup` | boolean | Keep transcript directories when Wake cleans up a closed issue's per-issue workspace | `false` |
+
+### retry
+
+_Lives in `config.yaml`._
+
+Retry limits for failed runner attempts.
+
+| Property            | Type   | Description                                                                 | Default |
+| ------------------- | ------ | --------------------------------------------------------------------------- | ------- |
+| `maxFailureRetries` | number | Maximum consecutive failed runner attempts before automatic retries go idle | `5`     |
 
 ### scheduler
 

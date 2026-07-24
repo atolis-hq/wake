@@ -678,6 +678,27 @@ describe('run and event schemas', () => {
     });
   });
 
+  it('accepts retry configuration with a default maximum failure retry count', () => {
+    const defaulted = parseWakeConfig({
+      schemaVersion: 1,
+      paths: {
+        wakeRoot: '/tmp/wake',
+      },
+    });
+    expect(defaulted.retry.maxFailureRetries).toBe(5);
+
+    const configured = parseWakeConfig({
+      schemaVersion: 1,
+      paths: {
+        wakeRoot: '/tmp/wake',
+      },
+      retry: {
+        maxFailureRetries: 2,
+      },
+    });
+    expect(configured.retry.maxFailureRetries).toBe(2);
+  });
+
   it('accepts codex runner configuration via registry', () => {
     const config = parseWakeConfig({
       schemaVersion: 1,
