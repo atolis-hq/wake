@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
 import {
+  buildRunnerCommandProbeArgs,
   collectStartupPreflightFailures,
   runStartupPreflight,
 } from '../../src/cli/startup-preflight.js';
@@ -32,6 +33,15 @@ async function writePromptSet(root: string): Promise<void> {
 }
 
 describe('startup preflight', () => {
+  it('uses Cursor agent version probing because the Docker cursor shim requires the agent subcommand', () => {
+    expect(buildRunnerCommandProbeArgs('cursor')).toEqual(['agent', '--version']);
+  });
+
+  it('uses generic version probing for Claude and Codex runners', () => {
+    expect(buildRunnerCommandProbeArgs('claude')).toEqual(['--version']);
+    expect(buildRunnerCommandProbeArgs('codex')).toEqual(['--version']);
+  });
+
   it('validates all bundled stage prompt templates are readable', async () => {
     await expect(runStartupPreflight(baseConfig())).resolves.toBeUndefined();
   });

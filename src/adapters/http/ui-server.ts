@@ -2,8 +2,10 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { randomUUID } from 'node:crypto';
 
 import type { ResourceIndex } from '../../core/contracts.js';
+import { createProjectionUpdater } from '../../core/projection-updater.js';
 import { configuredTicketSource } from '../../domain/sources.js';
 import type { WakeConfig } from '../../domain/types.js';
+import { createEventEnvelope } from '../../lib/event-log.js';
 import { writeJsonFile } from '../../lib/json-file.js';
 import type { createStateStore } from '../fs/state-store.js';
 import { indexHtml } from './ui-assets.js';
@@ -78,11 +80,18 @@ function parseItemPath(
   };
 }
 
+type ProjectionUpdater = ReturnType<typeof createProjectionUpdater>;
+
 export function createUiServer(options: UiServerOptions) {
   const now = options.now ?? (() => new Date());
+  const projectionUpdater = createProjectionUpdater({
+    stateStore: options.stateStore,
+    resourceIndex: options.resourceIndex,
+    config: options.config,
+  });
 
   return createServer((req, res) => {
-    void handleRequest(req, res, options, now).catch((error: unknown) => {
+    void handleRequest(req, res, options, now, projectionUpdater).catch((error: unknown) => {
       sendJson(res, 500, { error: error instanceof Error ? error.message : String(error) });
     });
   });
@@ -93,6 +102,7 @@ async function handleRequest(
   res: ServerResponse,
   options: UiServerOptions,
   now: () => Date,
+  projectionUpdater: ProjectionUpdater,
 ): Promise<void> {
   const url = new URL(req.url ?? '/', 'http://internal');
 
@@ -127,6 +137,55 @@ async function handleRequest(
     .map((s) => decodeURIComponent(s));
   const resource = segments[0];
 
+  if (
+    req.method === 'POST' &&
+    resource === 'work-items' &&
+    segments.length === 3 &&
+    segments[2] === 'retry'
+  ) {
+    const workItemKey = segments[1] ?? '';
+    const item = await stateStore.readIssueState(workItemKey);
+    if (item === null) {
+      sendJson(res, 404, { error: 'work item not found' });
+      return;
+    }
+
+    const context = item.context as Record<string, unknown>;
+    if (context.lastRunSentinel !== 'FAILED') {
+      sendJson(res, 409, { error: 'work item last run is not failed' });
+      return;
+    }
+
+    const occurredAt = now().toISOString();
+    const retryId = `retry-${workItemKey}-${now().getTime()}`;
+    const retryEvent = createEventEnvelope({
+      eventId: retryId,
+      workItemKey,
+      streamScope: 'work-item',
+      direction: 'internal',
+      sourceSystem: 'wake',
+      sourceEventType: 'wake.retry.requested',
+      sourceRefs: { repo: item.issue.repo, issueNumber: item.issue.number },
+      occurredAt,
+      ingestedAt: occurredAt,
+      trigger: 'immediate',
+      payload: { requestedBy: 'ui' },
+    });
+
+    const appended = await stateStore.appendEventEnvelope(retryEvent);
+    await projectionUpdater.rebuildFromEvents([appended]);
+
+    const tickRequest = {
+      requestId: randomUUID(),
+      requestedAt: now().toISOString(),
+      requestedBy: 'ui:retry',
+    };
+    await writeJsonFile(stateStore.paths.tickRequestFile, tickRequest);
+
+    sendJson(res, 202, { workItemKey, retryEventId: retryId });
+    return;
+  }
+
   if (req.method === 'POST' && resource === 'tick' && segments.length === 1) {
     const request = {
       requestId: randomUUID(),
@@ -135,6 +194,25 @@ async function handleRequest(
     };
     await writeJsonFile(stateStore.paths.tickRequestFile, request);
     sendJson(res, 202, request);
+    return;
+  }
+
+  if (
+    req.method === 'POST' &&
+    resource === 'runners' &&
+    segments.length === 3 &&
+    segments[2] === 'unpause'
+  ) {
+    const runnerName = segments[1] as string;
+    const ledger = await stateStore.readLedger();
+    const existingRunners = ledger?.runners ?? {};
+    if (existingRunners[runnerName] !== undefined) {
+      await stateStore.writeLedger({
+        schemaVersion: 1,
+        runners: { ...existingRunners, [runnerName]: { failureCount: 0 } },
+      });
+    }
+    sendJson(res, 200, { runnerName, unpaused: true });
     return;
   }
 

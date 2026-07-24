@@ -11,7 +11,7 @@ import type {
   WorkspaceManager,
 } from './contracts.js';
 import type { Clock } from '../lib/clock.js';
-import { acquireFileLock } from '../lib/lock.js';
+import { acquireFileLock, readFileLockStatus } from '../lib/lock.js';
 import {
   CORRELATION_REGISTERED_EVENT,
   parseRunnerArtifacts,
@@ -19,7 +19,13 @@ import {
 } from '../domain/schema.js';
 import { maxConfiguredRunnerTimeoutMs, resolveRunnerRouting } from '../domain/runner-routing.js';
 import { awaitingApprovalRunnerSentinel, stageLabelForStage } from '../domain/stages.js';
-import type { AgentAction, IssueStateRecord, Stage, WakeConfig } from '../domain/types.js';
+import type {
+  AgentAction,
+  IssueStateRecord,
+  RunnerFailureClass,
+  Stage,
+  WakeConfig,
+} from '../domain/types.js';
 import {
   chooseAction as chooseWorkflowAction,
   isKnownWorkflowStage,
@@ -54,6 +60,21 @@ function latestHumanCommentId(candidate: IssueStateRecord): string | undefined {
 
 function isLateralReadOnlyAction(action: AgentAction, config: WakeConfig): boolean {
   return isCustomCommandAction(action, config);
+}
+
+function shouldPublishRunResult(input: {
+  failureClass: RunnerFailureClass | undefined;
+  previousFailureClass?: unknown;
+}): boolean {
+  if (input.failureClass === 'quota') {
+    return false;
+  }
+
+  if (input.failureClass === undefined || input.failureClass === 'task') {
+    return true;
+  }
+
+  return input.failureClass !== input.previousFailureClass;
 }
 
 export function createTickRunner(deps: {
@@ -101,6 +122,7 @@ export function createTickRunner(deps: {
     stateStore: deps.stateStore,
     projectionUpdater,
     runnerTimeoutMs,
+    isRunningRecordActive,
     deliverOutboundEvent,
   });
   const { cleanupClosedIssueWorkspaces } = createWorkspaceCleanup({
@@ -276,6 +298,17 @@ export function createTickRunner(deps: {
 
   function runnerTimeoutMs(): number {
     return maxConfiguredRunnerTimeoutMs(deps.config);
+  }
+
+  async function isRunningRecordActive(record: { startedAt: string }): Promise<boolean> {
+    const lock = await readFileLockStatus(deps.stateStore.paths.runnerLockFile, {
+      expectedCommandIncludes: process.argv[1] === undefined ? [] : [process.argv[1]],
+    });
+    if (!lock.active || lock.metadata === undefined) {
+      return false;
+    }
+
+    return Date.parse(lock.metadata.acquiredAt) <= Date.parse(record.startedAt);
   }
 
   async function parkConfigDriftedProjections(projections: IssueStateRecord[]): Promise<boolean> {
@@ -766,7 +799,12 @@ export function createTickRunner(deps: {
           }),
         );
 
-        if (runnerResult.failureClass !== 'quota') {
+        if (
+          shouldPublishRunResult({
+            failureClass: runnerResult.failureClass,
+            previousFailureClass: candidate.context.lastFailureClass,
+          })
+        ) {
           const publishIntent = createPublishIntentEvent({
             projection: candidate,
             runId,
@@ -861,7 +899,14 @@ export function createTickRunner(deps: {
           occurredAt: finishedAt,
           startedAt: nowIso,
         });
-        await deliverOutboundEvent(failurePublishIntent);
+        if (
+          shouldPublishRunResult({
+            failureClass: 'infra',
+            previousFailureClass: candidate.context.lastFailureClass,
+          })
+        ) {
+          await deliverOutboundEvent(failurePublishIntent);
+        }
 
         return {
           status: 'processed' as const,

@@ -37,6 +37,7 @@ import { runSandboxSetupCommand } from './cli/sandbox-setup-command.js';
 import { collectStartupPreflightFailures, runStartupPreflight } from './cli/startup-preflight.js';
 import { runUiCommand } from './cli/ui-command.js';
 import { loadWakeConfig } from './config/load-config.js';
+import { createActiveRunRecovery } from './core/active-run-recovery.js';
 import { createControlPlane } from './core/control-plane.js';
 import { createOutboundSinkRouter, createWorkSourceFanIn } from './core/sink-router.js';
 import { createTickRunner } from './core/tick-runner.js';
@@ -432,6 +433,36 @@ async function inspectDockerContainer(
   });
 }
 
+async function inspectDockerContainerImage(containerName: string): Promise<string | null> {
+  return await new Promise<string | null>((resolveInspect, reject) => {
+    const child = spawn(
+      'docker',
+      ['container', 'inspect', '-f', '{{.Config.Image}}', containerName],
+      {
+        cwd: process.cwd(),
+        env: process.env,
+        stdio: ['ignore', 'pipe', 'ignore'],
+      },
+    );
+
+    let stdout = '';
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk.toString();
+    });
+
+    child.on('error', reject);
+    child.on('close', (exitCode) => {
+      if (exitCode !== 0) {
+        resolveInspect(null);
+        return;
+      }
+
+      const image = stdout.trim();
+      resolveInspect(image.length > 0 ? image : null);
+    });
+  });
+}
+
 async function dockerDaemonReachable(): Promise<boolean> {
   return await new Promise<boolean>((resolveReachable) => {
     const child = spawn('docker', ['info'], {
@@ -458,6 +489,7 @@ function createHostDockerCli(): DockerCli {
     run: (dockerArgs) => runCommand('docker', dockerArgs, { ...process.env, DOCKER_BUILDKIT: '1' }),
     inspectImage: inspectDockerImage,
     inspectContainer: inspectDockerContainer,
+    inspectContainerImage: inspectDockerContainerImage,
     spawnExec: (dockerArgs) => {
       const child = spawn('docker', dockerArgs, {
         cwd: process.cwd(),
@@ -1016,6 +1048,12 @@ async function main() {
       wakeRoot,
     });
     const docker = createHostDockerCli();
+    const recoverActiveRuns = createActiveRunRecovery({
+      clock: systemClock,
+      config,
+      stateStore,
+      resourceIndex: createResourceIndex({ paths: stateStore.paths }),
+    }).recoverActiveRuns;
 
     const repoRoot = config.dev?.repoRoot;
     const selfUpdate =
@@ -1090,6 +1128,7 @@ async function main() {
       docker,
       packagedTemplatesRoot: resolve(resolvePackageRoot(), 'docker'),
       stateStore,
+      recoverActiveRuns,
       sleep: (ms) => new Promise((resolveSleep) => setTimeout(resolveSleep, ms)),
       logger: {
         info(message) {

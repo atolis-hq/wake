@@ -1477,6 +1477,68 @@ describe('projection updater', () => {
     expect(projection?.wake.sessionCli).toBeUndefined();
   });
 
+  it('clears lastFailureClass when a run advances to a new action stage', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const updater = createProjectionUpdater({
+      stateStore: store,
+      resourceIndex: createFakeResourceIndex(),
+    });
+
+    await updater.rebuildFromEvents([
+      issueUpsert({
+        eventId: 'evt-failure-class-clear-init',
+        issueNumber: 53,
+        labels: ['wake:stage.refine'],
+      }),
+    ]);
+
+    await updater.rebuildFromEvents([
+      createEventEnvelope({
+        eventId: 'evt-failure-class-clear-fail',
+        workItemKey: workId(53),
+        streamScope: 'work-item',
+        direction: 'internal',
+        sourceSystem: 'wake',
+        sourceEventType: 'wake.run.completed',
+        sourceRefs: { repo: 'atolis-hq/wake', issueNumber: 53, runId: 'run-53-1' },
+        occurredAt: '2026-07-05T12:01:00.000Z',
+        ingestedAt: '2026-07-05T12:01:00.000Z',
+        trigger: 'immediate',
+        payload: {
+          action: 'refine',
+          sentinel: 'FAILED',
+          runId: 'run-53-1',
+          failureClass: 'infra',
+        },
+      }),
+    ]);
+
+    await updater.rebuildFromEvents([
+      createEventEnvelope({
+        eventId: 'evt-failure-class-clear-advance',
+        workItemKey: workId(53),
+        streamScope: 'work-item',
+        direction: 'internal',
+        sourceSystem: 'wake',
+        sourceEventType: 'wake.run.completed',
+        sourceRefs: { repo: 'atolis-hq/wake', issueNumber: 53, runId: 'run-53-2' },
+        occurredAt: '2026-07-05T12:05:00.000Z',
+        ingestedAt: '2026-07-05T12:05:00.000Z',
+        trigger: 'immediate',
+        payload: {
+          action: 'refine',
+          sentinel: 'DONE',
+          nextStage: 'implement',
+          runId: 'run-53-2',
+        },
+      }),
+    ]);
+
+    const projection = await store.readIssueState(workId(53));
+    expect(projection?.wake.stage).toBe('implement');
+    expect(projection?.context.lastFailureClass).toBeUndefined();
+  });
+
   it('clears sessionId and sessionCli when a run fails', async () => {
     const store = createStateStore({ wakeRoot: root });
     const updater = createProjectionUpdater({
@@ -1926,6 +1988,69 @@ describe('projection updater', () => {
       expect(await resourceIndex.resolve('slack:thread:C901')).toBeUndefined();
       const projection = await store.readIssueState(workId(301));
       expect(projection?.correlatedResources).toEqual([]);
+    });
+  });
+
+  describe('wake.retry.requested', () => {
+    it('clears lastRunSentinel, lastFailureClass, and blockedFromStage from context', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const updater = createProjectionUpdater({
+        stateStore: store,
+        resourceIndex: createFakeResourceIndex(),
+      });
+
+      await updater.rebuildFromEvents([
+        issueUpsert({ eventId: 'issue-42', issueNumber: 42, labels: ['wake:implement'] }),
+        createEventEnvelope({
+          eventId: 'run-42-completed',
+          workItemKey: workId(42),
+          streamScope: 'work-item',
+          direction: 'internal',
+          sourceSystem: 'wake',
+          sourceEventType: 'wake.run.completed',
+          sourceRefs: { repo: 'atolis-hq/wake', issueNumber: 42, runId: 'run-42' },
+          occurredAt: '2026-07-05T12:01:00.000Z',
+          ingestedAt: '2026-07-05T12:01:00.000Z',
+          trigger: 'immediate',
+          payload: {
+            action: 'implement',
+            sentinel: 'FAILED',
+            runId: 'run-42',
+            failureClass: 'task',
+            reason: 'runner:failed',
+            body: 'something went wrong',
+          },
+        }),
+      ]);
+
+      const before = await store.readIssueState(workId(42));
+      expect((before?.context as Record<string, unknown>).lastRunSentinel).toBe('FAILED');
+      expect((before?.context as Record<string, unknown>).lastFailureClass).toBe('task');
+      expect((before?.context as Record<string, unknown>).blockedFromStage).toBe('queue');
+
+      await updater.rebuildFromEvents([
+        createEventEnvelope({
+          eventId: 'retry-42',
+          workItemKey: workId(42),
+          streamScope: 'work-item',
+          direction: 'internal',
+          sourceSystem: 'wake',
+          sourceEventType: 'wake.retry.requested',
+          sourceRefs: { repo: 'atolis-hq/wake', issueNumber: 42 },
+          occurredAt: '2026-07-05T12:02:00.000Z',
+          ingestedAt: '2026-07-05T12:02:00.000Z',
+          trigger: 'immediate',
+          payload: { requestedBy: 'ui' },
+        }),
+      ]);
+
+      const after = await store.readIssueState(workId(42));
+      const ctx = after?.context as Record<string, unknown>;
+      expect(ctx.lastRunSentinel).toBeUndefined();
+      expect(ctx.lastFailureClass).toBeUndefined();
+      expect(ctx.blockedFromStage).toBeUndefined();
+      expect(after?.wake.stage).toBe('queue');
+      expect(after?.wake.recentEventIds).toContain('retry-42');
     });
   });
 });

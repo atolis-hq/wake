@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { acquireFileLock } from '../../src/lib/lock.js';
+import { acquireFileLock, readFileLockStatus } from '../../src/lib/lock.js';
 
 describe('file lock', () => {
   it('writes owner PID and timestamp metadata', async () => {
@@ -97,5 +97,31 @@ describe('file lock', () => {
     expect(reclaimed.acquired).toBe(true);
 
     await reclaimed.release();
+  });
+
+  it('reports a lock as stale when the PID was reused by an unexpected command', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wake-lock-'));
+    const lockPath = join(root, 'runner.lock');
+    await writeFile(
+      lockPath,
+      `${JSON.stringify({
+        pid: 24,
+        acquiredAt: '2026-07-05T12:00:00.000Z',
+        commandLine: 'node /app/dist/src/main.js start --wake-root /wake',
+      })}\n`,
+      'utf8',
+    );
+
+    const status = await readFileLockStatus(lockPath, {
+      now: new Date('2026-07-05T12:00:01.000Z'),
+      processInspector: {
+        isPidAlive: () => true,
+        readCommandLine: () => 'ngrok http 127.0.0.1:4317 --log=stdout',
+      },
+    });
+
+    expect(status.present).toBe(true);
+    expect(status.active).toBe(false);
+    expect(status.staleReason).toBe('pid-command-mismatch');
   });
 });

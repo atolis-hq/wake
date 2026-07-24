@@ -198,6 +198,15 @@ describe('scaffoldWakeHome SETUP.md', () => {
   });
 });
 
+describe('docker diagnostics assets', () => {
+  it('uses the Cursor agent subcommand for auth-status diagnostics', async () => {
+    const script = await readFile(join(process.cwd(), 'docker', 'log-command.sh'), 'utf8');
+
+    expect(script).toContain('emit_check "cursor-auth-status" cursor agent status');
+    expect(script).not.toContain('emit_check "cursor-auth-status" cursor status');
+  });
+});
+
 describe('detectDevMode', () => {
   it('returns "source" when repoRoot has src/main.ts and tsconfig.json', async () => {
     const repoRoot = await makeSourceRepoRoot();

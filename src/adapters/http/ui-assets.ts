@@ -80,6 +80,9 @@ export const indexHtml = `<!DOCTYPE html>
   a:hover { text-decoration: underline; }
   .resource-list { list-style: none; padding: 0; margin: 0 0 1rem; }
   .resource-list li { display: flex; align-items: baseline; gap: 0.4rem; margin-bottom: 0.35rem; font-size: 0.8rem; }
+  .btn { background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.18); color: #fff; border-radius: 6px; padding: 0.22rem 0.55rem; cursor: pointer; font-size: 0.78rem; margin-top: 0.4rem; }
+  .btn:hover:not(:disabled) { border-color: var(--accent-light); background: rgba(45, 212, 191, 0.16); }
+  .btn:disabled { cursor: default; opacity: 0.62; }
 </style>
 </head>
 <body>
@@ -232,6 +235,23 @@ async function openItem(repo, number) {
   if (detail.item.wake.workspacePath) {
     body.appendChild(el('p', { class: 'meta', text: 'workspace: ' + detail.item.wake.workspacePath }));
   }
+  const lastRun = detail.runs.at(-1);
+  if (lastRun && lastRun.sentinel === 'FAILED') {
+    const retryBtn = el('button', { type: 'button', class: 'btn', text: 'Retry' });
+    retryBtn.addEventListener('click', async () => {
+      retryBtn.disabled = true;
+      retryBtn.textContent = 'Queuing retry…';
+      try {
+        await postJson('/work-items/' + encodeURIComponent(detail.item.workItemKey) + '/retry');
+        retryBtn.textContent = 'Retry queued';
+      } catch (err) {
+        retryBtn.disabled = false;
+        retryBtn.textContent = 'Retry';
+        document.getElementById('status-summary').textContent = 'retry failed: ' + err.message;
+      }
+    });
+    body.appendChild(retryBtn);
+  }
   const resources = detail.item.correlatedResources || [];
   if (resources.length > 0) {
     body.appendChild(el('h3', { text: 'Resources' }));
@@ -314,10 +334,26 @@ async function renderConfig() {
     ...data.routingTable.map((r) => el('tr', {}, [
       el('td', { text: r.stage }), el('td', { text: r.action || '' }), el('td', { text: r.tier || '' }),
       el('td', { text: r.runnerName || '' }), el('td', { text: r.model || '' }),
-      el('td', {}, (r.candidates || []).map((c) => el('span', {
-        class: 'chip' + (c.paused ? ' amber' : ''),
-        text: c.runnerName + (c.paused ? ' (paused)' : ''),
-      }))),
+      el('td', {}, (r.candidates || []).map((c) => {
+        if (!c.paused) return el('span', { class: 'chip', text: c.runnerName });
+        const btn = el('button', { type: 'button', class: 'btn', text: 'Unpause', style: 'margin-top:0;font-size:0.7rem;padding:0.1rem 0.4rem;' });
+        btn.addEventListener('click', async () => {
+          btn.disabled = true;
+          btn.textContent = 'Unpausing…';
+          try {
+            await postJson('/runners/' + encodeURIComponent(c.runnerName) + '/unpause');
+            await renderConfig();
+          } catch (err) {
+            btn.disabled = false;
+            btn.textContent = 'Unpause';
+            document.getElementById('status-summary').textContent = 'unpause failed: ' + err.message;
+          }
+        });
+        return el('span', { style: 'display:inline-flex;align-items:center;gap:0.25rem;margin-right:0.25rem;' }, [
+          el('span', { class: 'chip amber', text: c.runnerName + ' (paused)' }),
+          btn,
+        ]);
+      })),
     ])),
   ]));
   main.appendChild(el('h3', { text: 'Effective config (redacted)' }));

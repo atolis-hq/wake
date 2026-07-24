@@ -9,7 +9,7 @@ import { runSandboxResumeCommand } from './sandbox-resume.js';
 import { runSelfUpdateCommand, runSelfUpdateLoop } from './self-update-command.js';
 import { runStopCommand } from './stop-command.js';
 import type { WakeConfig } from '../domain/types.js';
-import { wakeVersion } from '../version.js';
+import { resolveWakeVersion, wakeVersion } from '../version.js';
 
 async function ensureDockerfile(input: {
   wakeRoot: string;
@@ -117,6 +117,7 @@ export async function runSandboxCommand(input: {
   docker: DockerCli;
   packagedTemplatesRoot: string;
   stateStore: { listRunRecords: () => Promise<RunRecord[]> };
+  recoverActiveRuns?: () => Promise<void>;
   sleep: (ms: number) => Promise<void>;
   logger: { info: (message: string) => void; error?: (message: string) => void };
   selfUpdate?:
@@ -151,6 +152,8 @@ export async function runSandboxCommand(input: {
     }
 
     const effectiveDevMode = input.config.dev?.mode ?? 'packaged';
+    const buildVersion =
+      effectiveDevMode === 'source' ? resolveWakeVersion({ repoRoot }) : wakeVersion;
 
     await ensureDockerfile({
       wakeRoot: input.wakeRoot,
@@ -162,7 +165,10 @@ export async function runSandboxCommand(input: {
       image: input.config.sandbox.image,
       dockerfile: resolve(input.wakeRoot, 'docker', 'Dockerfile'),
       contextDir: repoRoot,
-      ...(effectiveDevMode === 'packaged' ? { buildArgs: { WAKE_VERSION: wakeVersion } } : {}),
+      buildArgs:
+        effectiveDevMode === 'packaged'
+          ? { WAKE_VERSION: buildVersion }
+          : { WAKE_BUILD_TAG: buildVersion },
     });
     return;
   }
@@ -216,6 +222,9 @@ export async function runSandboxCommand(input: {
     await runStopCommand({
       args: input.args.slice(1),
       stateStore: input.stateStore,
+      ...(input.recoverActiveRuns === undefined
+        ? {}
+        : { recoverActiveRuns: input.recoverActiveRuns }),
       docker: input.docker,
       containerName: input.config.sandbox.containerName,
       sleep: input.sleep,
@@ -247,6 +256,9 @@ export async function runSandboxCommand(input: {
       imageRepository: input.config.sandbox.imageRepository,
       containerName: input.config.sandbox.containerName,
       stateStore: input.stateStore,
+      ...(input.recoverActiveRuns === undefined
+        ? {}
+        : { recoverActiveRuns: input.recoverActiveRuns }),
       docker: input.docker,
       git: input.selfUpdate.git,
       issueReporter: input.selfUpdate.issueReporter,
