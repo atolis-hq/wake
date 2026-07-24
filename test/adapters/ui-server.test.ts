@@ -10,6 +10,12 @@ import { createDefaultWakeConfig } from '../../src/config/defaults.js';
 import { createUiServer } from '../../src/adapters/http/ui-server.js';
 import { readJsonFile } from '../../src/lib/json-file.js';
 import { wakeVersion } from '../../src/version.js';
+import { createEventEnvelope } from '../../src/lib/event-log.js';
+import { createProjectionUpdater } from '../../src/core/projection-updater.js';
+
+function workId(issueNumber: number): string {
+  return `work-01JZ${String(issueNumber).padStart(22, '0')}`;
+}
 
 type StateStore = ReturnType<typeof createStateStore>;
 
@@ -79,6 +85,195 @@ describe('ui-server', () => {
     await expect(readJsonFile(store.paths.tickRequestFile)).resolves.toMatchObject({
       requestId: body.requestId,
       requestedBy: 'ui',
+    });
+  });
+
+  it('clears a runner quota-pause via POST /runners/:name/unpause', async () => {
+    await store.writeLedger({
+      schemaVersion: 1,
+      runners: {
+        'fake-primary': {
+          pausedUntil: '2099-01-01T00:00:00.000Z',
+          pausedUntilSource: 'reported',
+          failureCount: 3,
+          lastFailureAt: '2026-07-24T10:00:00.000Z',
+        },
+      },
+    });
+
+    const res = await fetch(`${baseUrl}/api/v1/runners/fake-primary/unpause`, {
+      method: 'POST',
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { runnerName: string; unpaused: boolean };
+    expect(body).toMatchObject({ runnerName: 'fake-primary', unpaused: true });
+
+    const ledger = await store.readLedger();
+    expect(ledger?.runners['fake-primary']).toMatchObject({ failureCount: 0 });
+    expect(ledger?.runners['fake-primary']?.pausedUntil).toBeUndefined();
+  });
+
+  it('returns 200 for unpause of a runner not in the ledger (idempotent)', async () => {
+    const res = await fetch(`${baseUrl}/api/v1/runners/nonexistent/unpause`, {
+      method: 'POST',
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { runnerName: string; unpaused: boolean };
+    expect(body).toMatchObject({ runnerName: 'nonexistent', unpaused: true });
+  });
+});
+
+describe('ui-server retry endpoint', () => {
+  let root: string;
+  let store: StateStore;
+  let server: ReturnType<typeof createUiServer>;
+  let baseUrl: string;
+  let resourceIndex: ReturnType<typeof createFakeResourceIndex>;
+
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), 'wake-ui-retry-'));
+    store = createStateStore({ wakeRoot: root });
+    await store.ensureWakeRoot();
+    const config = createDefaultWakeConfig(root);
+    resourceIndex = createFakeResourceIndex();
+
+    server = createUiServer({ stateStore: store, resourceIndex, config });
+    await new Promise<void>((resolveListen) => {
+      server.listen(0, '127.0.0.1', () => resolveListen());
+    });
+    const address = server.address() as AddressInfo;
+    baseUrl = `http://127.0.0.1:${address.port}`;
+  });
+
+  afterEach(async () => {
+    await new Promise<void>((resolveClose) => server.close(() => resolveClose()));
+  });
+
+  async function seedFailedItem(issueNumber: number): Promise<string> {
+    const key = workId(issueNumber);
+    const updater = createProjectionUpdater({ stateStore: store, resourceIndex });
+    await updater.rebuildFromEvents([
+      createEventEnvelope({
+        eventId: `issue-${issueNumber}`,
+        workItemKey: key,
+        streamScope: 'global-intake',
+        direction: 'inbound',
+        sourceSystem: 'github',
+        sourceEventType: 'ticket.upsert',
+        sourceRefs: {
+          repo: 'atolis-hq/wake',
+          issueNumber,
+          sourceUrl: `https://example.test/issues/${issueNumber}`,
+        },
+        occurredAt: '2026-07-05T12:00:00.000Z',
+        ingestedAt: '2026-07-05T12:00:00.000Z',
+        trigger: 'immediate',
+        payload: {
+          ticket: {
+            repo: 'atolis-hq/wake',
+            number: issueNumber,
+            title: 'Test',
+            body: 'body',
+            labels: ['wake:implement'],
+            assignees: [],
+            isPullRequest: false,
+            state: 'open',
+            url: `https://example.test/issues/${issueNumber}`,
+            createdAt: '2026-07-05T12:00:00.000Z',
+            updatedAt: '2026-07-05T12:00:00.000Z',
+          },
+        },
+      }),
+      createEventEnvelope({
+        eventId: `run-${issueNumber}-completed`,
+        workItemKey: key,
+        streamScope: 'work-item',
+        direction: 'internal',
+        sourceSystem: 'wake',
+        sourceEventType: 'wake.run.completed',
+        sourceRefs: { repo: 'atolis-hq/wake', issueNumber, runId: `run-${issueNumber}` },
+        occurredAt: '2026-07-05T12:01:00.000Z',
+        ingestedAt: '2026-07-05T12:01:00.000Z',
+        trigger: 'immediate',
+        payload: {
+          action: 'implement',
+          sentinel: 'FAILED',
+          runId: `run-${issueNumber}`,
+          failureClass: 'task',
+          reason: 'runner:failed',
+          body: 'something went wrong',
+        },
+      }),
+    ]);
+    return key;
+  }
+
+  it('returns 404 for an unknown work item key', async () => {
+    const res = await fetch(`${baseUrl}/api/v1/work-items/work-UNKNOWNKEY/retry`, {
+      method: 'POST',
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 409 when last run is not failed', async () => {
+    const key = workId(55);
+    const updater = createProjectionUpdater({ stateStore: store, resourceIndex });
+    await updater.rebuildFromEvents([
+      createEventEnvelope({
+        eventId: 'issue-55',
+        workItemKey: key,
+        streamScope: 'global-intake',
+        direction: 'inbound',
+        sourceSystem: 'github',
+        sourceEventType: 'ticket.upsert',
+        sourceRefs: {
+          repo: 'atolis-hq/wake',
+          issueNumber: 55,
+          sourceUrl: 'https://example.test/issues/55',
+        },
+        occurredAt: '2026-07-05T12:00:00.000Z',
+        ingestedAt: '2026-07-05T12:00:00.000Z',
+        trigger: 'immediate',
+        payload: {
+          ticket: {
+            repo: 'atolis-hq/wake',
+            number: 55,
+            title: 'Test',
+            body: 'body',
+            labels: ['wake:implement'],
+            assignees: [],
+            isPullRequest: false,
+            state: 'open',
+            url: 'https://example.test/issues/55',
+            createdAt: '2026-07-05T12:00:00.000Z',
+            updatedAt: '2026-07-05T12:00:00.000Z',
+          },
+        },
+      }),
+    ]);
+    const res = await fetch(`${baseUrl}/api/v1/work-items/${key}/retry`, { method: 'POST' });
+    expect(res.status).toBe(409);
+  });
+
+  it('clears failed state and writes a tick request on success', async () => {
+    const key = await seedFailedItem(77);
+    const itemBefore = await store.readIssueState(key);
+    expect((itemBefore?.context as Record<string, unknown>).lastRunSentinel).toBe('FAILED');
+
+    const res = await fetch(`${baseUrl}/api/v1/work-items/${key}/retry`, { method: 'POST' });
+    expect(res.status).toBe(202);
+    const body = (await res.json()) as { workItemKey: string; retryEventId: string };
+    expect(body.workItemKey).toBe(key);
+    expect(body.retryEventId).toMatch(/^retry-/);
+
+    const itemAfter = await store.readIssueState(key);
+    const ctx = itemAfter?.context as Record<string, unknown>;
+    expect(ctx.lastRunSentinel).toBeUndefined();
+    expect(ctx.lastFailureClass).toBeUndefined();
+    expect(ctx.blockedFromStage).toBeUndefined();
+
+    await expect(readJsonFile(store.paths.tickRequestFile)).resolves.toMatchObject({
+      requestedBy: 'ui:retry',
     });
   });
 });
