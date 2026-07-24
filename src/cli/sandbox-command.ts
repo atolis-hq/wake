@@ -9,7 +9,7 @@ import { runSandboxResumeCommand } from './sandbox-resume.js';
 import { runSelfUpdateCommand, runSelfUpdateLoop } from './self-update-command.js';
 import { runStopCommand } from './stop-command.js';
 import type { WakeConfig } from '../domain/types.js';
-import { wakeVersion } from '../version.js';
+import { resolveWakeVersion, wakeVersion } from '../version.js';
 
 async function ensureDockerfile(input: {
   wakeRoot: string;
@@ -152,6 +152,8 @@ export async function runSandboxCommand(input: {
     }
 
     const effectiveDevMode = input.config.dev?.mode ?? 'packaged';
+    const buildVersion =
+      effectiveDevMode === 'source' ? resolveWakeVersion({ repoRoot }) : wakeVersion;
 
     await ensureDockerfile({
       wakeRoot: input.wakeRoot,
@@ -163,7 +165,10 @@ export async function runSandboxCommand(input: {
       image: input.config.sandbox.image,
       dockerfile: resolve(input.wakeRoot, 'docker', 'Dockerfile'),
       contextDir: repoRoot,
-      ...(effectiveDevMode === 'packaged' ? { buildArgs: { WAKE_VERSION: wakeVersion } } : {}),
+      buildArgs:
+        effectiveDevMode === 'packaged'
+          ? { WAKE_VERSION: buildVersion }
+          : { WAKE_BUILD_TAG: buildVersion },
     });
     return;
   }

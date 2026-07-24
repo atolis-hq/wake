@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { createDefaultWakeConfig } from '../../src/config/defaults.js';
 import { runSandboxCommand } from '../../src/cli/sandbox-command.js';
+import { wakeVersion } from '../../src/version.js';
 
 describe('sandbox command', () => {
   const repoRoot = '/repo/wake';
@@ -15,6 +16,15 @@ describe('sandbox command', () => {
 
   async function makeTempWakeRoot(): Promise<string> {
     return mkdtemp(resolve(tmpdir(), 'wake-sandbox-command-dockerfile-'));
+  }
+
+  async function makeTaggedRepoRoot(tag: string): Promise<string> {
+    const tempRepoRoot = await mkdtemp(resolve(tmpdir(), 'wake-sandbox-command-repo-'));
+    const headHash = 'abc1234567890';
+    await mkdir(resolve(tempRepoRoot, '.git', 'refs', 'tags'), { recursive: true });
+    await writeFile(resolve(tempRepoRoot, '.git', 'HEAD'), `${headHash}\n`, 'utf8');
+    await writeFile(resolve(tempRepoRoot, '.git', 'refs', 'tags', tag), `${headHash}\n`, 'utf8');
+    return tempRepoRoot;
   }
 
   function createDockerMock() {
@@ -39,12 +49,13 @@ describe('sandbox command', () => {
   it('dispatches build with the generated Dockerfile and repo-root context', async () => {
     const docker = createDockerMock();
     const tempWakeRoot = await makeTempWakeRoot();
+    const tempRepoRoot = await makeTaggedRepoRoot('v9.8.7');
     await mkdir(resolve(tempWakeRoot, 'docker'), { recursive: true });
     await writeFile(resolve(tempWakeRoot, 'docker', 'Dockerfile'), 'EXISTING', 'utf8');
     const config = {
       ...createDefaultWakeConfig(tempWakeRoot),
       dev: {
-        repoRoot,
+        repoRoot: tempRepoRoot,
         mode: 'source' as const,
       },
     };
@@ -64,7 +75,8 @@ describe('sandbox command', () => {
     expect(docker.build).toHaveBeenCalledWith({
       image: 'wake-sandbox',
       dockerfile: resolve(tempWakeRoot, 'docker', 'Dockerfile'),
-      contextDir: '/repo/wake',
+      contextDir: tempRepoRoot,
+      buildArgs: { WAKE_BUILD_TAG: 'v9.8.7' },
     });
   });
 
@@ -117,11 +129,12 @@ describe('sandbox command', () => {
 
   it('writes docker/Dockerfile from the source template when missing and dev.mode is "source"', async () => {
     const tempWakeRoot = await makeTempWakeRoot();
+    const tempRepoRoot = await makeTaggedRepoRoot('v9.8.7');
     const dockerBuild = vi.fn(async () => {});
     const docker = { ...createDockerMock(), build: dockerBuild };
     const config = {
       ...createDefaultWakeConfig(tempWakeRoot),
-      dev: { repoRoot, mode: 'source' as const },
+      dev: { repoRoot: tempRepoRoot, mode: 'source' as const },
     };
 
     await runSandboxCommand({
@@ -138,7 +151,12 @@ describe('sandbox command', () => {
 
     const written = await readFile(resolve(tempWakeRoot, 'docker', 'Dockerfile'), 'utf8');
     expect(written).toContain('npm run build');
-    expect(dockerBuild).toHaveBeenCalled();
+    expect(dockerBuild).toHaveBeenCalledWith(
+      expect.objectContaining({
+        contextDir: tempRepoRoot,
+        buildArgs: { WAKE_BUILD_TAG: 'v9.8.7' },
+      }),
+    );
   });
 
   it('writes docker/Dockerfile from the packaged template when missing and dev.mode is "packaged"', async () => {

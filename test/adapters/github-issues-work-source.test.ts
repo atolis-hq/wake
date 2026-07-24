@@ -12,6 +12,7 @@ import {
 import { createDefaultWakeConfig } from '../../src/config/defaults.js';
 import { createEventEnvelope } from '../../src/lib/event-log.js';
 import { createWakePaths } from '../../src/lib/paths.js';
+import { wakeVersion } from '../../src/version.js';
 
 /**
  * A stable, ULID-shaped work id per issue number. The source never mints or
@@ -917,7 +918,7 @@ describe('github issues work source', () => {
 
     const [, , , postedBody] = createComment.mock.calls[0] as [string, string, number, string];
     expect(postedBody).toContain('**Wake**');
-    expect(postedBody).toContain('Wake 0.1.0-dev');
+    expect(postedBody).toContain(`Wake ${wakeVersion}`);
     expect(postedBody).toContain('stage `implement`');
     expect(postedBody).toContain('cli Claude');
     expect(postedBody).toContain('model `haiku`');

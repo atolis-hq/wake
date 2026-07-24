@@ -11,6 +11,7 @@ import {
   printUsage,
   readFlagBeforeCommandTerminator,
 } from '../../src/main.js';
+import { wakeVersion } from '../../src/version.js';
 
 async function makeTempWakeRootWithDockerfile(): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'wake-main-test-'));
@@ -42,7 +43,7 @@ describe('main command routing', () => {
       runDoctor: async () => {},
     });
 
-    expect(log).toHaveBeenCalledWith('0.1.0-dev');
+    expect(log).toHaveBeenCalledWith(wakeVersion);
     log.mockRestore();
   });
 
