@@ -120,9 +120,14 @@ export function createDockerCli(deps: {
   run(args: string[]): Promise<void>;
   inspectImage(image: string): Promise<boolean>;
   inspectContainer(containerName: string): Promise<DockerContainerState>;
+  inspectContainerImage?(containerName: string): Promise<string | null>;
   spawnExec?(args: string[]): DockerExecProcess;
 }) {
   return {
+    async inspectContainerImage(containerName: string): Promise<string | null> {
+      return (await deps.inspectContainerImage?.(containerName)) ?? null;
+    },
+
     async build(input: DockerBuildInput): Promise<void> {
       const buildArgFlags = Object.entries(input.buildArgs ?? {}).flatMap(([key, value]) => [
         '--build-arg',

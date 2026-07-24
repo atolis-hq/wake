@@ -16,6 +16,15 @@ const START_PROCESS_CHECK = [
   ].join(' && '),
 ];
 
+function tagFromImage(imageRepository: string, image: string | null): string | null {
+  if (image === null) {
+    return null;
+  }
+
+  const prefix = `${imageRepository}:`;
+  return image.startsWith(prefix) ? image.slice(prefix.length) : null;
+}
+
 function readFlag(name: string, args: string[]): string | undefined {
   const index = args.indexOf(name);
   return index === -1 ? undefined : args[index + 1];
@@ -85,6 +94,7 @@ export async function runSelfUpdateCommand(input: {
       start?: { enabled: boolean } | undefined;
     }) => Promise<void>;
     exec: (containerName: string, command: string[]) => Promise<void>;
+    inspectContainerImage?: (containerName: string) => Promise<string | null>;
   };
   git: {
     latestTag: () => Promise<string>;
@@ -135,6 +145,14 @@ export async function runSelfUpdateCommand(input: {
   });
 
   const newImage = `${input.imageRepository}:${tag}`;
+  const previousImage = (await input.docker.inspectContainerImage?.(input.containerName)) ?? null;
+  const previousImageTag = tagFromImage(input.imageRepository, previousImage);
+  const rollbackImage =
+    previousImage ??
+    (ledger.lastKnownGoodTag !== null
+      ? `${input.imageRepository}:${ledger.lastKnownGoodTag}`
+      : null);
+  const rollbackTag = previousImageTag ?? ledger.lastKnownGoodTag;
   const updateInput = {
     containerName: input.containerName,
     wakeRoot: input.wakeRoot,
@@ -173,9 +191,10 @@ export async function runSelfUpdateCommand(input: {
     const reason = error instanceof Error ? error.message : String(error);
     input.logger.error(`[self-update] rollout of ${tag} failed: ${reason}`);
 
-    if (ledger.lastKnownGoodTag !== null) {
-      const rollbackImage = `${input.imageRepository}:${ledger.lastKnownGoodTag}`;
-      await input.git.checkoutTag(ledger.lastKnownGoodTag);
+    if (rollbackImage !== null) {
+      if (rollbackTag !== null) {
+        await input.git.checkoutTag(rollbackTag);
+      }
       await input.docker.update({ ...updateInput, image: rollbackImage });
       input.logger.info(
         '[self-update] recreated rollback container; entrypoint will keep wake start running',
@@ -188,14 +207,14 @@ export async function runSelfUpdateCommand(input: {
         sleep: input.sleep,
         context: 'rollback',
       });
-      input.logger.info(`[self-update] rolled back to ${ledger.lastKnownGoodTag}`);
+      input.logger.info(`[self-update] rolled back to ${rollbackTag ?? rollbackImage}`);
     } else {
       input.logger.error('[self-update] no previous known-good tag to roll back to');
     }
 
     await input.writeLedger({
-      lastAppliedTag: ledger.lastKnownGoodTag,
-      lastKnownGoodTag: ledger.lastKnownGoodTag,
+      lastAppliedTag: rollbackTag,
+      lastKnownGoodTag: rollbackTag,
       badTags: [...ledger.badTags, { tag, reason, recordedAt: new Date().toISOString() }],
     });
 
@@ -203,7 +222,7 @@ export async function runSelfUpdateCommand(input: {
       await input.issueReporter.createIssue({
         title: `Self-update to ${tag} failed and was rolled back`,
         body: [
-          `Automated update to \`${tag}\` failed during rollout and was rolled back to \`${ledger.lastKnownGoodTag ?? 'unknown'}\`.`,
+          `Automated update to \`${tag}\` failed during rollout and was rolled back to \`${rollbackTag ?? rollbackImage ?? 'unknown'}\`.`,
           '',
           '```',
           reason,
