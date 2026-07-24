@@ -6,7 +6,6 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { createDefaultWakeConfig } from '../../src/config/defaults.js';
 import { runSandboxCommand } from '../../src/cli/sandbox-command.js';
-import { wakeVersion } from '../../src/version.js';
 
 describe('sandbox command', () => {
   const repoRoot = '/repo/wake';
