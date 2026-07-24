@@ -3,6 +3,8 @@ import type { SelfUpdateLedger } from '../adapters/fs/self-update-ledger.js';
 import type { RunRecord } from '../domain/types.js';
 
 const HEALTHCHECK_WAKE_ROOT = '/tmp/wake-self-update-healthcheck';
+const START_PROCESS_CHECK_ATTEMPTS = 15;
+const START_PROCESS_CHECK_INTERVAL_MS = 1000;
 const START_PROCESS_CHECK = [
   'sh',
   '-lc',
@@ -36,6 +38,7 @@ async function verifyResidentStart(input: {
   containerName: string;
   start?: { enabled: boolean } | undefined;
   logger: { info: (message: string) => void; error: (message: string) => void };
+  sleep: (ms: number) => Promise<void>;
   context: string;
 }): Promise<void> {
   if (input.start?.enabled !== true) {
@@ -45,8 +48,22 @@ async function verifyResidentStart(input: {
     return;
   }
 
-  await input.docker.exec(input.containerName, START_PROCESS_CHECK);
-  input.logger.info(`[self-update] verified wake start is running after ${input.context}`);
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= START_PROCESS_CHECK_ATTEMPTS; attempt += 1) {
+    try {
+      await input.docker.exec(input.containerName, START_PROCESS_CHECK);
+      input.logger.info(`[self-update] verified wake start is running after ${input.context}`);
+      return;
+    } catch (error) {
+      lastError = error;
+      if (attempt === START_PROCESS_CHECK_ATTEMPTS) {
+        break;
+      }
+      await input.sleep(START_PROCESS_CHECK_INTERVAL_MS);
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
 }
 
 export async function runSelfUpdateCommand(input: {
@@ -142,6 +159,7 @@ export async function runSelfUpdateCommand(input: {
       containerName: input.containerName,
       start: input.start,
       logger: input.logger,
+      sleep: input.sleep,
       context: 'rollout',
     });
     await input.docker.exec(input.containerName, [
@@ -167,6 +185,7 @@ export async function runSelfUpdateCommand(input: {
         containerName: input.containerName,
         start: input.start,
         logger: input.logger,
+        sleep: input.sleep,
         context: 'rollback',
       });
       input.logger.info(`[self-update] rolled back to ${ledger.lastKnownGoodTag}`);
