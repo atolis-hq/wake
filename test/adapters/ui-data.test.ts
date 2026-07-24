@@ -69,6 +69,7 @@ function runRecord(input: {
   sentinel?: RunRecord['sentinel'];
   startedAt?: string;
   costUsd?: number;
+  sessionId?: string;
 }): RunRecord {
   return {
     schemaVersion: 1,
@@ -83,6 +84,7 @@ function runRecord(input: {
       input.costUsd === undefined
         ? undefined
         : { inputTokens: 1, outputTokens: 1, costUsd: input.costUsd },
+    ...(input.sessionId === undefined ? {} : { sessionId: input.sessionId }),
     ...(input.sentinel === undefined
       ? {}
       : { sentinel: input.sentinel, finishedAt: '2026-07-05T12:05:00.000Z' }),
@@ -415,6 +417,56 @@ describe('ui-data', () => {
       startedAt: '2026-07-05T12:00:00.000Z',
       text: 'early prompt',
     });
+  });
+
+  it('groups transcript directories by the actual CLI session id when run records have one', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const config = createDefaultWakeConfig(root);
+    config.transcripts.enabled = true;
+    const paths = createWakePaths(root);
+
+    await store.writeIssueState(issueState({ number: 323, stage: 'implement' }));
+    await store.writeRunRecord(
+      runRecord({
+        runId: 'run-initial',
+        issueNumber: 323,
+        status: 'blocked',
+        startedAt: '2026-07-05T12:00:00.000Z',
+        sessionId: 'cli-session-323',
+      }),
+    );
+    await store.writeRunRecord(
+      runRecord({
+        runId: 'run-resume',
+        issueNumber: 323,
+        status: 'completed',
+        startedAt: '2026-07-05T12:30:00.000Z',
+        sessionId: 'cli-session-323',
+      }),
+    );
+
+    const initialRunDir = paths.transcriptSessionDir(workId(323), 'run-initial');
+    const resumedSessionDir = paths.transcriptSessionDir(workId(323), 'cli-session-323');
+    await mkdir(initialRunDir, { recursive: true });
+    await mkdir(resumedSessionDir, { recursive: true });
+    await writeFile(join(initialRunDir, 'run-initial.codex.implement.response.txt'), 'blocked');
+    await writeFile(join(resumedSessionDir, 'run-resume.codex.implement.prompt.txt'), 'resume');
+
+    const transcripts = await buildItemTranscripts({
+      stateStore: store,
+      config,
+      workItemKey: workId(323),
+    });
+
+    expect(transcripts.sessions).toHaveLength(1);
+    expect(transcripts.sessions[0]).toMatchObject({
+      sessionKey: 'cli-session-323',
+      sessionId: 'cli-session-323',
+    });
+    expect(transcripts.sessions[0]?.entries.map((entry) => entry.runId)).toEqual([
+      'run-initial',
+      'run-resume',
+    ]);
   });
 
   it('returns disabled transcript payload without reading transcript files', async () => {

@@ -353,7 +353,7 @@ export type ItemTranscriptEntry = {
 
 export type ItemTranscripts = {
   enabled: boolean;
-  sessions: Array<{ sessionKey: string; entries: ItemTranscriptEntry[] }>;
+  sessions: Array<{ sessionKey: string; sessionId?: string; entries: ItemTranscriptEntry[] }>;
 };
 
 function parseTranscriptFileName(file: string): {
@@ -409,7 +409,10 @@ export async function buildItemTranscripts(input: {
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name);
 
-  const sessions: Array<{ sessionKey: string; entries: ItemTranscriptEntry[] }> = [];
+  const sessionsByKey = new Map<
+    string,
+    { sessionKey: string; sessionId?: string; entries: ItemTranscriptEntry[] }
+  >();
   for (const sessionKey of sessionDirs) {
     const sessionDir = join(workDir, sessionKey);
     const files = (await readdir(sessionDir, { withFileTypes: true }).catch(() => []))
@@ -426,21 +429,31 @@ export async function buildItemTranscripts(input: {
       if (run === undefined) {
         continue;
       }
-      entries.push({
+      const transcriptEntry = {
         runId: parsed.runId,
         action: parsed.action,
         cli: parsed.cli,
         role: parsed.role,
         startedAt: run.startedAt,
         text: await readFile(join(sessionDir, file), 'utf8'),
-      });
+      };
+      const canonicalSessionKey = run.sessionId ?? sessionKey;
+      const existing = sessionsByKey.get(canonicalSessionKey);
+      if (existing === undefined) {
+        sessionsByKey.set(canonicalSessionKey, {
+          sessionKey: canonicalSessionKey,
+          ...(run.sessionId === undefined ? {} : { sessionId: run.sessionId }),
+          entries: [transcriptEntry],
+        });
+      } else {
+        existing.entries.push(transcriptEntry);
+      }
     }
+  }
 
-    if (entries.length === 0) {
-      continue;
-    }
-
-    entries.sort((left, right) => {
+  const sessions = [...sessionsByKey.values()];
+  for (const session of sessions) {
+    session.entries.sort((left, right) => {
       const timeOrder = left.startedAt.localeCompare(right.startedAt);
       if (timeOrder !== 0) {
         return timeOrder;
@@ -451,7 +464,6 @@ export async function buildItemTranscripts(input: {
       const roleRank = { user: 0, agent: 1 };
       return roleRank[left.role] - roleRank[right.role];
     });
-    sessions.push({ sessionKey, entries });
   }
 
   sessions.sort((left, right) => {

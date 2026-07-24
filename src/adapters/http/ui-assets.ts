@@ -369,7 +369,18 @@ function renderTranscripts(transcripts) {
   const root = el('div');
   for (const session of transcripts.sessions) {
     const firstStartedAt = session.entries[0] ? session.entries[0].startedAt : '';
-    root.appendChild(el('div', { class: 'transcript-session', text: '\\u2014 new session \\u00b7 ' + firstStartedAt + ' \\u2014' }));
+    const sessionLabel = session.sessionId || session.sessionKey;
+    root.appendChild(
+      el('div', {
+        class: 'transcript-session',
+        text:
+          '\\u2014 new session \\u00b7 ' +
+          sessionLabel +
+          ' \\u00b7 ' +
+          firstStartedAt +
+          ' \\u2014',
+      }),
+    );
     for (const entry of session.entries) {
       root.appendChild(el('article', { class: 'transcript-entry' }, [
         el('div', { class: 'transcript-head', text: entry.role + ' \\u00b7 ' + entry.action + ' \\u00b7 ' + entry.cli + ' \\u00b7 ' + entry.startedAt }),
