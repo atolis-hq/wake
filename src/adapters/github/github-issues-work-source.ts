@@ -301,6 +301,12 @@ export function formatWakeComment(
     );
   }
 
+  if (kind === 'question') {
+    sections.push(
+      '_Reply on this thread to continue — any reply will resume Wake with your response. To request changes to the overall approach instead, reply with `/changes` followed by your feedback._',
+    );
+  }
+
   if (sessionId !== undefined) {
     const resumeCommandArgs =
       cli === undefined
