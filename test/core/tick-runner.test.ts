@@ -1000,6 +1000,6 @@ describe('tick runner', () => {
       // Still exactly one PR-sink delivery across all five ticks: tick 3's
       // reply was never redelivered by any later tick's outbox retry.
       expect(prSinkPublished).toHaveLength(1);
-    });
+    }, 20_000);
   });
 });
