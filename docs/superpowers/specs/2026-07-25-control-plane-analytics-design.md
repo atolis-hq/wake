@@ -22,15 +22,25 @@ The Analytics tab shows a compact summary row at the top, then a single selected
 Controls:
 
 - Window selector: `1d`, `3d`, `5d`, `7d`.
-- Detail view selector: one active analytics view at a time.
+- Metric selector: one active chart/table at a time. The selector contains specific metric dimensions, not broad sections that expand into many tables.
 
-Initial detail views:
+Initial metric options:
 
 - `Runs over time`: time-bucketed run counts and status split.
-- `Run breakdown`: runs grouped by status, action/stage, repo, runner, model, and tier.
-- `Tokens`: token totals grouped by action/stage, runner/model, repo, and day.
-- `Duration`: median and average run duration grouped by action/stage and day.
-- `Work items`: completed work count and queue-to-done/closed duration where projection timestamps allow it.
+- `Runs by status`
+- `Runs by action/stage`
+- `Runs by repo`
+- `Runs by runner`
+- `Runs by model`
+- `Runs by tier`
+- `Tokens over time`
+- `Tokens by action/stage`
+- `Tokens by runner`
+- `Tokens by model`
+- `Duration by action/stage`
+- `Duration over time`
+- `Work items completed over time`
+- `Work item e2e duration`
 
 The summary row remains visible for every selected detail view and includes:
 
@@ -47,10 +57,12 @@ The UI should use simple HTML tables and lightweight CSS bars, not introduce a c
 Display rules:
 
 - `Runs over time` uses one stacked bar per time bucket with segments for completed, blocked, awaiting approval, failed, and other runs.
-- `Run breakdown` uses sortable-looking tables with a proportional horizontal bar in the count column for each grouping.
-- `Tokens` uses one stacked bar per time bucket for input, output, cache creation, and cache read tokens, plus grouped token tables with proportional bars.
-- `Duration` uses grouped tables with median duration as the primary bar value and average duration as a secondary number.
-- `Work items` uses one bar per time bucket for completed item count and a table of queue-to-done/closed durations.
+- Each `Runs by ...` metric uses one grouped table with a proportional horizontal bar in the count column.
+- `Tokens over time` uses one stacked bar per time bucket for input, output, cache creation, and cache read tokens.
+- Each `Tokens by ...` metric uses one grouped table with a proportional horizontal bar in the token column.
+- `Duration by action/stage` uses one grouped table with median duration as the primary bar value and average duration as a secondary number.
+- `Work items completed over time` uses one bar per time bucket for completed item count.
+- `Work item e2e duration` uses one table of queue-to-done/closed durations.
 
 Time-series granularity:
 
