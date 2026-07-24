@@ -295,7 +295,7 @@ export function formatWakeComment(
   const header = `**${name}** _(Wake ${wakeVersion}${details.length > 0 ? ` · ${details.join(' · ')}` : ''})_`;
   const sections = [wakeCommentMarker, header, body];
 
-  if (kind === 'approval-request') {
+  if (kind === 'approval-request' || kind === 'question') {
     sections.push(
       '_To approve this work, reply with `/approved`. To request changes, reply with `/changes` followed by your feedback. To ask a question without requesting changes, reply with `/ask` followed by your question._',
     );
