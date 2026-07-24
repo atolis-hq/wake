@@ -26,7 +26,7 @@ Controls:
 
 Initial detail views:
 
-- `Runs over time`: daily run counts and status split.
+- `Runs over time`: time-bucketed run counts and status split.
 - `Run breakdown`: runs grouped by status, action/stage, repo, runner, model, and tier.
 - `Tokens`: token totals grouped by action/stage, runner/model, repo, and day.
 - `Duration`: median and average run duration grouped by action/stage and day.
@@ -55,7 +55,8 @@ Display rules:
 Time-series granularity:
 
 - `1d` uses hourly buckets for the current day so the chart shows intra-day activity instead of a single bar.
-- `3d`, `5d`, and `7d` use daily buckets. `7d` shows seven bars, one per calendar day.
+- `3d` uses 6-hour buckets so it shows twelve bars across the three-day window.
+- `5d` and `7d` use daily buckets. `7d` shows seven bars, one per calendar day.
 - Empty buckets are included with zero values so the selected window keeps a stable shape even when there was no activity.
 
 ## API Design
@@ -118,8 +119,9 @@ Window filtering:
 
 - Runs are included when `startedAt` is inside the selected window.
 - Work items are included when their completion timestamp is inside the selected window.
-- Daily windows are inclusive of the current day. For example, `3d` includes today and the previous two calendar days.
+- Multi-day windows are inclusive of the current day. For example, `3d` includes today and the previous two calendar days.
 - `1d` includes the current local day split into hourly buckets from `00:00` through `23:00`.
+- `3d` includes three local calendar days split into 6-hour buckets: `00:00`, `06:00`, `12:00`, and `18:00` for each day.
 
 Run duration:
 
@@ -151,7 +153,7 @@ Add tests before implementation:
 - `buildMetrics` computes completed work-item count and median e2e duration from projections.
 - `/api/v1/metrics?window=7d` returns the metrics payload.
 - Unknown/omitted window defaults to `7d`.
-- The static UI includes the Analytics tab, a window selector with `1d`, `3d`, `5d`, `7d`, and code paths for stacked daily bars.
+- The static UI includes the Analytics tab, a window selector with `1d`, `3d`, `5d`, `7d`, and code paths for stacked time-bucket bars.
 
 UI rendering remains dependency-free. The server/index test should assert that the static page includes the Analytics tab and calls `/metrics`.
 
