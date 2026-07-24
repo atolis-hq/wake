@@ -334,10 +334,26 @@ async function renderConfig() {
     ...data.routingTable.map((r) => el('tr', {}, [
       el('td', { text: r.stage }), el('td', { text: r.action || '' }), el('td', { text: r.tier || '' }),
       el('td', { text: r.runnerName || '' }), el('td', { text: r.model || '' }),
-      el('td', {}, (r.candidates || []).map((c) => el('span', {
-        class: 'chip' + (c.paused ? ' amber' : ''),
-        text: c.runnerName + (c.paused ? ' (paused)' : ''),
-      }))),
+      el('td', {}, (r.candidates || []).map((c) => {
+        if (!c.paused) return el('span', { class: 'chip', text: c.runnerName });
+        const btn = el('button', { type: 'button', class: 'btn', text: 'Unpause', style: 'margin-top:0;font-size:0.7rem;padding:0.1rem 0.4rem;' });
+        btn.addEventListener('click', async () => {
+          btn.disabled = true;
+          btn.textContent = 'Unpausing…';
+          try {
+            await postJson('/runners/' + encodeURIComponent(c.runnerName) + '/unpause');
+            await renderConfig();
+          } catch (err) {
+            btn.disabled = false;
+            btn.textContent = 'Unpause';
+            document.getElementById('status-summary').textContent = 'unpause failed: ' + err.message;
+          }
+        });
+        return el('span', { style: 'display:inline-flex;align-items:center;gap:0.25rem;margin-right:0.25rem;' }, [
+          el('span', { class: 'chip amber', text: c.runnerName + ' (paused)' }),
+          btn,
+        ]);
+      })),
     ])),
   ]));
   main.appendChild(el('h3', { text: 'Effective config (redacted)' }));
