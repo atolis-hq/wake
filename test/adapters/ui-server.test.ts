@@ -9,6 +9,7 @@ import { createStateStore } from '../../src/adapters/fs/state-store.js';
 import { createDefaultWakeConfig } from '../../src/config/defaults.js';
 import { createUiServer } from '../../src/adapters/http/ui-server.js';
 import { readJsonFile } from '../../src/lib/json-file.js';
+import { wakeVersion } from '../../src/version.js';
 import { createEventEnvelope } from '../../src/lib/event-log.js';
 import { createProjectionUpdater } from '../../src/core/projection-updater.js';
 
@@ -51,7 +52,7 @@ describe('ui-server', () => {
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).toContain('Wake control plane');
-    expect(html).toContain('0.1.0-dev');
+    expect(html).toContain(wakeVersion);
   });
 
   it('serves status and board JSON under /api/v1', async () => {

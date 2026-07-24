@@ -14,7 +14,7 @@ describe('bin/wake-dev.js', () => {
     });
 
     expect(result.status).toBe(0);
-    expect(result.stdout.trim()).toMatch(/^\d+\.\d+\.\d+/);
+    expect(result.stdout.trim()).toMatch(/^(?:v?\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?|g[0-9a-f]+)$/);
   });
 
   describe('when there is no sibling src/main.ts (packaged install)', () => {
