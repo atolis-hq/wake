@@ -25,9 +25,12 @@ Or run it once without installing globally:
 npx @atolis-hq/wake init ./wake-home
 ```
 
-`wake init` scaffolds `config.yaml`, `config.workflows.yaml`, `prompts/`, and `workspaces/`. It does
-not create `docker/` — that's written lazily by `wake sandbox build` (see
-below).
+`wake init` scaffolds `config.yaml`, `config.workflows.yaml`, `prompts/`, `workspaces/`, and a
+`SETUP.md` guide written for an assisting agent to read and use to finish
+configuring the GitHub source, runner/tier, and credential mounts — point
+your agent CLI at it (e.g. "read SETUP.md and help me configure this") once
+`wake init` finishes. `wake init` does not create `docker/` — that's written
+lazily by `wake sandbox build` (see below).
 
 ## Build and start the sandbox
 
@@ -83,6 +86,7 @@ wake-home/
   config.yaml           # infra/sandbox/sources — edit this
   config.workflows.yaml # runners/tiers/workflows — edit this
   prompts/              # edit these
+  SETUP.md              # agent-directed config guide
   docker/Dockerfile     # edit this (written by first `sandbox build`)
   workspaces/           # real per-work-item git checkouts — browsable
   .wake/                # hidden: durable internal state

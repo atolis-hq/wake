@@ -33,6 +33,9 @@ async function makeScaffoldableRepoRoot(hasSrcCheckout: boolean): Promise<string
     await copyFile(join(cwd, 'docker', dockerAsset), join(repoRoot, 'docker', dockerAsset));
   }
 
+  await mkdir(join(repoRoot, 'templates'), { recursive: true });
+  await copyFile(join(cwd, 'templates', 'SETUP.md'), join(repoRoot, 'templates', 'SETUP.md'));
+
   return repoRoot;
 }
 
@@ -146,6 +149,52 @@ describe('scaffoldWakeHome runtime directories', () => {
     await scaffoldWakeHome({ wakeRoot, repoRoot });
 
     await expect(access(join(wakeRoot, 'docker'))).rejects.toThrow();
+  });
+});
+
+describe('scaffoldWakeHome SETUP.md', () => {
+  it('copies templates/SETUP.md from repoRoot verbatim into the wake home root', async () => {
+    const wakeRoot = await makeTempWakeRoot();
+    const repoRoot = process.cwd();
+
+    await scaffoldWakeHome({ wakeRoot, repoRoot });
+
+    const scaffolded = await readFile(join(wakeRoot, 'SETUP.md'), 'utf8');
+    const source = await readFile(join(repoRoot, 'templates', 'SETUP.md'), 'utf8');
+
+    expect(scaffolded).toBe(source);
+  });
+
+  it('covers the GitHub source, runner/tier, and credential-mount sections', async () => {
+    const wakeRoot = await makeTempWakeRoot();
+    const repoRoot = process.cwd();
+
+    await scaffoldWakeHome({ wakeRoot, repoRoot });
+
+    const scaffolded = await readFile(join(wakeRoot, 'SETUP.md'), 'utf8');
+
+    expect(scaffolded).toContain('sources:');
+    expect(scaffolded).toContain('github:');
+    expect(scaffolded).toContain('extraMounts');
+    expect(scaffolded).toContain('.credentials.json');
+    expect(scaffolded).toContain('defaultTier');
+    expect(scaffolded).toContain(
+      'https://github.com/atolis-hq/wake/blob/main/docs/configuration.md',
+    );
+    expect(scaffolded).toContain(
+      'https://github.com/atolis-hq/wake/blob/main/docs/getting-started.md',
+    );
+  });
+
+  it('contains no template placeholders — content is static, not interpolated', async () => {
+    const wakeRoot = await makeTempWakeRoot();
+    const repoRoot = process.cwd();
+
+    await scaffoldWakeHome({ wakeRoot, repoRoot });
+
+    const scaffolded = await readFile(join(wakeRoot, 'SETUP.md'), 'utf8');
+
+    expect(scaffolded).not.toMatch(/\{\{.*\}\}/);
   });
 });
 
