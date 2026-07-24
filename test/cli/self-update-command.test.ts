@@ -217,6 +217,50 @@ describe('runSelfUpdateCommand', () => {
     );
   });
 
+  it('waits through a stale resident start pid while the entrypoint supervisor restarts it', async () => {
+    const exec = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('sh: 1: kill: No such process'))
+      .mockResolvedValue(undefined);
+    const sleep = vi.fn(async () => {});
+    const deps = baseDeps({
+      docker: {
+        build: vi.fn(async () => {}),
+        update: vi.fn(async () => {}),
+        exec,
+      },
+      sleep,
+    });
+
+    await runSelfUpdateCommand(deps as never);
+
+    const docker = deps.docker as { update: ReturnType<typeof vi.fn> };
+    const writeLedger = deps.writeLedger as ReturnType<typeof vi.fn>;
+
+    expect(exec).toHaveBeenNthCalledWith(1, 'wake-sandbox', [
+      'sh',
+      '-lc',
+      expect.stringContaining('/wake/.wake/logs/start.pid'),
+    ]);
+    expect(exec).toHaveBeenNthCalledWith(2, 'wake-sandbox', [
+      'sh',
+      '-lc',
+      expect.stringContaining('/wake/.wake/logs/start.pid'),
+    ]);
+    expect(exec).toHaveBeenNthCalledWith(3, 'wake-sandbox', [
+      'node',
+      '/app/dist/src/main.js',
+      'tick',
+      '--wake-root',
+      '/tmp/wake-self-update-healthcheck',
+    ]);
+    expect(sleep).toHaveBeenCalledWith(1000);
+    expect(docker.update).toHaveBeenCalledTimes(1);
+    expect(writeLedger).toHaveBeenCalledWith(
+      expect.objectContaining({ lastAppliedTag: 'v0.0.80', lastKnownGoodTag: 'v0.0.80' }),
+    );
+  });
+
   it('refuses to proceed when the working tree is dirty', async () => {
     const deps = baseDeps({
       git: {
