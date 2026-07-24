@@ -21,7 +21,7 @@ The Analytics tab shows a compact summary row at the top, then a single selected
 
 Controls:
 
-- Window selector: `1d`, `7d`, `30d`, `all`.
+- Window selector: `1d`, `3d`, `5d`, `7d`.
 - Detail view selector: one active analytics view at a time.
 
 Initial detail views:
@@ -42,14 +42,22 @@ The summary row remains visible for every selected detail view and includes:
 - completed work items
 - median work-item e2e duration
 
-The UI should use simple HTML tables and lightweight CSS bars, not introduce a charting dependency. Bars are proportional within the currently selected table and render as stable-width inline elements so the layout remains readable.
+The UI should use simple HTML tables and lightweight CSS bars, not introduce a charting dependency. Time-series detail views use stacked horizontal bars where each day's bar is split by outcome or usage category. Grouped breakdown views use one horizontal proportional bar per row. Bars are proportional within the currently selected view and render as stable-width inline elements so the layout remains readable.
+
+Display rules:
+
+- `Runs over time` uses one stacked bar per day with segments for completed, blocked, awaiting approval, failed, and other runs.
+- `Run breakdown` uses sortable-looking tables with a proportional horizontal bar in the count column for each grouping.
+- `Tokens` uses one stacked bar per day for input, output, cache creation, and cache read tokens, plus grouped token tables with proportional bars.
+- `Duration` uses grouped tables with median duration as the primary bar value and average duration as a secondary number.
+- `Work items` uses one bar per day for completed item count and a table of queue-to-done/closed durations.
 
 ## API Design
 
 Add:
 
 ```text
-GET /api/v1/metrics?window=1d|7d|30d|all
+GET /api/v1/metrics?window=1d|3d|5d|7d
 ```
 
 The endpoint returns one object containing all aggregate data needed by the Analytics tab for the selected window. This keeps the frontend simple and avoids multiple full run scans per render.
@@ -58,7 +66,7 @@ Response shape:
 
 ```ts
 {
-  window: '1d' | '7d' | '30d' | 'all';
+  window: '1d' | '3d' | '5d' | '7d';
   generatedAt: string;
   summary: {
     totalRuns: number;
@@ -79,7 +87,7 @@ Response shape:
   runsByRunner: Array<{ key: string; count: number }>;
   runsByModel: Array<{ key: string; count: number }>;
   runsByTier: Array<{ key: string; count: number }>;
-  tokensByDay: Array<{ day: string; tokens: number; costUsd: number }>;
+  tokensByDay: Array<{ day: string; tokens: number; inputTokens: number; outputTokens: number; cacheCreationInputTokens: number; cacheReadInputTokens: number; costUsd: number }>;
   tokensByAction: Array<{ key: string; tokens: number; costUsd: number }>;
   tokensByRepo: Array<{ key: string; tokens: number; costUsd: number }>;
   tokensByRunner: Array<{ key: string; tokens: number; costUsd: number }>;
@@ -104,7 +112,7 @@ Window filtering:
 
 - Runs are included when `startedAt` is inside the selected window.
 - Work items are included when their completion timestamp is inside the selected window.
-- `all` includes all available records.
+- The window is inclusive of the current day. For example, `3d` includes today and the previous two calendar days.
 
 Run duration:
 
@@ -136,6 +144,7 @@ Add tests before implementation:
 - `buildMetrics` computes completed work-item count and median e2e duration from projections.
 - `/api/v1/metrics?window=7d` returns the metrics payload.
 - Unknown/omitted window defaults to `7d`.
+- The static UI includes the Analytics tab, a window selector with `1d`, `3d`, `5d`, `7d`, and code paths for stacked daily bars.
 
 UI rendering remains dependency-free. The server/index test should assert that the static page includes the Analytics tab and calls `/metrics`.
 
