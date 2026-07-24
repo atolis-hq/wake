@@ -80,6 +80,9 @@ export const indexHtml = `<!DOCTYPE html>
   a:hover { text-decoration: underline; }
   .resource-list { list-style: none; padding: 0; margin: 0 0 1rem; }
   .resource-list li { display: flex; align-items: baseline; gap: 0.4rem; margin-bottom: 0.35rem; font-size: 0.8rem; }
+  .btn { background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.18); color: #fff; border-radius: 6px; padding: 0.22rem 0.55rem; cursor: pointer; font-size: 0.78rem; margin-top: 0.4rem; }
+  .btn:hover:not(:disabled) { border-color: var(--accent-light); background: rgba(45, 212, 191, 0.16); }
+  .btn:disabled { cursor: default; opacity: 0.62; }
 </style>
 </head>
 <body>
@@ -231,6 +234,23 @@ async function openItem(repo, number) {
   body.appendChild(el('p', { class: 'meta', text: 'stage: ' + detail.item.wake.stage + (detail.item.wake.sessionId ? ' · session: ' + detail.item.wake.sessionId : '') }));
   if (detail.item.wake.workspacePath) {
     body.appendChild(el('p', { class: 'meta', text: 'workspace: ' + detail.item.wake.workspacePath }));
+  }
+  const lastRun = detail.runs.at(-1);
+  if (lastRun && lastRun.sentinel === 'FAILED') {
+    const retryBtn = el('button', { type: 'button', class: 'btn', text: 'Retry' });
+    retryBtn.addEventListener('click', async () => {
+      retryBtn.disabled = true;
+      retryBtn.textContent = 'Queuing retry…';
+      try {
+        await postJson('/work-items/' + encodeURIComponent(detail.item.workItemKey) + '/retry');
+        retryBtn.textContent = 'Retry queued';
+      } catch (err) {
+        retryBtn.disabled = false;
+        retryBtn.textContent = 'Retry';
+        document.getElementById('status-summary').textContent = 'retry failed: ' + err.message;
+      }
+    });
+    body.appendChild(retryBtn);
   }
   const resources = detail.item.correlatedResources || [];
   if (resources.length > 0) {
