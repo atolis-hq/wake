@@ -39,12 +39,13 @@ describe('wakeConfigSchema split', () => {
     );
   });
 
-  it('keeps paths/sandbox/sources/ui together in the infra schema', () => {
+  it('keeps paths/sandbox/retry/sources/ui together in the infra schema', () => {
     const infraKeys = Object.keys(wakeInfraConfigSchema.shape).sort();
     expect(infraKeys).toEqual(
       [
         'dev',
         'paths',
+        'retry',
         'sandbox',
         'schemaVersion',
         'scheduler',

@@ -519,6 +519,11 @@ const wakeConfigBaseSchema = z.object({
       retainAfterWorkspaceCleanup: z.boolean().default(false),
     })
     .default({ enabled: false, retainAfterWorkspaceCleanup: false }),
+  retry: z
+    .object({
+      maxFailureRetries: z.number().int().positive().default(5),
+    })
+    .default({ maxFailureRetries: 5 }),
   runners: z.record(z.string(), runnerEntrySchema).default({
     fake: { kind: 'fake', cli: 'Fake' },
     'claude-haiku': {
@@ -719,6 +724,7 @@ export const wakeInfraConfigSchema = wakeConfigBaseSchema.pick({
   dev: true,
   scheduler: true,
   transcripts: true,
+  retry: true,
   ui: true,
   sources: true,
   sinks: true,

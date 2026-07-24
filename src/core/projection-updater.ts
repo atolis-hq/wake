@@ -298,9 +298,20 @@ async function applyEvent(
       config !== undefined &&
       isCustomCommandAction(payload.action, config);
     const shouldClearSession = isForwardProgression || isFailed;
+    const currentFailureCount =
+      typeof current.context.failureCount === 'number' &&
+      Number.isInteger(current.context.failureCount)
+        ? current.context.failureCount
+        : 0;
     const nextContext: Record<string, unknown> = {
       ...current.context,
       lastFailureClass: payload.failureClass,
+      failureCount:
+        payload.failureClass !== undefined
+          ? currentFailureCount + 1
+          : payload.sentinel === doneRunnerSentinel || payload.sentinel === 'AWAITING_APPROVAL'
+            ? 0
+            : currentFailureCount,
       ...(payload.handledCommentId === undefined
         ? {}
         : { lastHandledCommentId: payload.handledCommentId }),

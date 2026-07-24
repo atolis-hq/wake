@@ -26,6 +26,19 @@ function isAwaitingApproval(issue: IssueStateRecord): boolean {
   return context.lastRunSentinel === awaitingApprovalRunnerSentinel;
 }
 
+function belowFailureRetryLimit(issue: IssueStateRecord, config?: WakeConfig): boolean {
+  if (config === undefined) {
+    return true;
+  }
+
+  const context = issue.context as Record<string, unknown>;
+  const failureCount =
+    typeof context.failureCount === 'number' && Number.isInteger(context.failureCount)
+      ? context.failureCount
+      : 0;
+  return failureCount < config.retry.maxFailureRetries;
+}
+
 // Commands are matched as a token at the start of a (trimmed) line, not as a
 // substring anywhere in the body — so "I have *not* /approved this yet" or a
 // quoted reply containing /approved does not approve the gate.
@@ -129,6 +142,7 @@ export function createPolicyEngine() {
     needsWakeAction(
       issue: IssueStateRecord,
       workflow: WorkflowDefinition = builtInDefaultWorkflowDefinition,
+      config?: WakeConfig,
     ): boolean {
       const context = issue.context as Record<string, unknown>;
       const handledCommentId =
@@ -165,7 +179,7 @@ export function createPolicyEngine() {
       }
 
       if (lastFailureClass === 'quota') {
-        return true;
+        return belowFailureRetryLimit(issue, config);
       }
 
       const workflowAction = chooseWorkflowAction(issue, workflow);
@@ -318,7 +332,7 @@ export function createPolicyEngine() {
         resolveCustomCommand(issue, config)?.action ??
         this.chooseAction(issue, workflow) ??
         this.chooseRetryActionAfterHumanReply(issue, workflow);
-      if (nextAction === null || !this.needsWakeAction(issue, workflow)) {
+      if (nextAction === null || !this.needsWakeAction(issue, workflow, config)) {
         return null;
       }
 
