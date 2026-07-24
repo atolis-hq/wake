@@ -151,6 +151,8 @@ npm install -g @atolis-hq/wake
 cd ~/
 wake init ./wake-home
 cd ./wake-home
+# point your agent CLI at the scaffolded SETUP.md to finish configuring
+# (e.g. "read SETUP.md and help me configure this")
 wake sandbox build
 wake sandbox up
 wake sandbox setup
