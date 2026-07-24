@@ -11,7 +11,7 @@ import type {
   WorkspaceManager,
 } from './contracts.js';
 import type { Clock } from '../lib/clock.js';
-import { acquireFileLock } from '../lib/lock.js';
+import { acquireFileLock, readFileLockStatus } from '../lib/lock.js';
 import {
   CORRELATION_REGISTERED_EVENT,
   parseRunnerArtifacts,
@@ -122,6 +122,7 @@ export function createTickRunner(deps: {
     stateStore: deps.stateStore,
     projectionUpdater,
     runnerTimeoutMs,
+    isRunningRecordActive,
     deliverOutboundEvent,
   });
   const { cleanupClosedIssueWorkspaces } = createWorkspaceCleanup({
@@ -297,6 +298,17 @@ export function createTickRunner(deps: {
 
   function runnerTimeoutMs(): number {
     return maxConfiguredRunnerTimeoutMs(deps.config);
+  }
+
+  async function isRunningRecordActive(record: { startedAt: string }): Promise<boolean> {
+    const lock = await readFileLockStatus(deps.stateStore.paths.runnerLockFile, {
+      expectedCommandIncludes: process.argv[1] === undefined ? [] : [process.argv[1]],
+    });
+    if (!lock.active || lock.metadata === undefined) {
+      return false;
+    }
+
+    return Date.parse(lock.metadata.acquiredAt) <= Date.parse(record.startedAt);
   }
 
   async function parkConfigDriftedProjections(projections: IssueStateRecord[]): Promise<boolean> {

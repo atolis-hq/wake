@@ -5,6 +5,7 @@ const STOP_GRACE_PERIOD_SECONDS = 60;
 
 export async function waitForActiveRuns(input: {
   listRunRecords: () => Promise<RunRecord[]>;
+  recoverActiveRuns?: () => Promise<void>;
   sleep: (ms: number) => Promise<void>;
   pollIntervalMs?: number | undefined;
   timeoutMs?: number | undefined;
@@ -14,6 +15,7 @@ export async function waitForActiveRuns(input: {
   const startedAt = Date.now();
 
   for (;;) {
+    await input.recoverActiveRuns?.();
     const records = await input.listRunRecords();
     const activeRuns = records.filter((record) => record.status === 'running');
 
@@ -52,6 +54,7 @@ function readNumberFlag(name: string, args: string[]): number | undefined {
 export async function runStopCommand(input: {
   args: string[];
   stateStore: { listRunRecords: () => Promise<RunRecord[]> };
+  recoverActiveRuns?: () => Promise<void>;
   docker: { down: (containerName: string, options?: { timeoutSeconds?: number }) => Promise<void> };
   containerName: string;
   sleep: (ms: number) => Promise<void>;
@@ -59,6 +62,9 @@ export async function runStopCommand(input: {
 }): Promise<void> {
   await waitForActiveRuns({
     listRunRecords: input.stateStore.listRunRecords,
+    ...(input.recoverActiveRuns === undefined
+      ? {}
+      : { recoverActiveRuns: input.recoverActiveRuns }),
     sleep: input.sleep,
     pollIntervalMs: readNumberFlag('--poll-interval-ms', input.args),
     timeoutMs: readNumberFlag('--timeout-ms', input.args),

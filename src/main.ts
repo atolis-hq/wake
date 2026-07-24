@@ -37,6 +37,7 @@ import { runSandboxSetupCommand } from './cli/sandbox-setup-command.js';
 import { collectStartupPreflightFailures, runStartupPreflight } from './cli/startup-preflight.js';
 import { runUiCommand } from './cli/ui-command.js';
 import { loadWakeConfig } from './config/load-config.js';
+import { createActiveRunRecovery } from './core/active-run-recovery.js';
 import { createControlPlane } from './core/control-plane.js';
 import { createOutboundSinkRouter, createWorkSourceFanIn } from './core/sink-router.js';
 import { createTickRunner } from './core/tick-runner.js';
@@ -1047,6 +1048,12 @@ async function main() {
       wakeRoot,
     });
     const docker = createHostDockerCli();
+    const recoverActiveRuns = createActiveRunRecovery({
+      clock: systemClock,
+      config,
+      stateStore,
+      resourceIndex: createResourceIndex({ paths: stateStore.paths }),
+    }).recoverActiveRuns;
 
     const repoRoot = config.dev?.repoRoot;
     const selfUpdate =
@@ -1121,6 +1128,7 @@ async function main() {
       docker,
       packagedTemplatesRoot: resolve(resolvePackageRoot(), 'docker'),
       stateStore,
+      recoverActiveRuns,
       sleep: (ms) => new Promise((resolveSleep) => setTimeout(resolveSleep, ms)),
       logger: {
         info(message) {
