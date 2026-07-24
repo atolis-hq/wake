@@ -1458,7 +1458,57 @@ describe('github issues work source', () => {
     expect(postedBody).toContain('Work is ready for review.');
   });
 
-  it('does not append approval instructions for non-approval-request comments', async () => {
+  it('appends approval instructions for question comments (blocked runs)', async () => {
+    const createComment = vi.fn();
+    const store = createStateStore({ wakeRoot: root });
+    const config = createDefaultWakeConfig(root);
+    config.sources.github.enabled = true;
+    config.sources.github.repos = ['atolis-hq/wake'];
+
+    const workSource = createGitHubIssuesWorkSource({
+      client: {
+        listIssues: async () => [],
+        listComments: async () => [],
+        createComment,
+        setLabels: vi.fn(),
+      },
+      stateStore: store,
+      config,
+      resourceIndex: createFakeResourceIndex(),
+      now: () => new Date('2026-07-05T12:10:00.000Z'),
+    });
+
+    await workSource.deliverIntent({
+      event: createEventEnvelope({
+        eventId: 'intent-question-1',
+        workItemKey: workId(17),
+        streamScope: 'work-item',
+        direction: 'outbound',
+        sourceSystem: 'wake',
+        sourceEventType: 'wake.publish.intent.requested',
+        sourceRefs: { repo: 'atolis-hq/wake', issueNumber: 17 },
+        occurredAt: '2026-07-05T12:00:00.000Z',
+        ingestedAt: '2026-07-05T12:00:00.000Z',
+        trigger: 'context-only',
+        payload: {
+          kind: 'question',
+          body: 'What should I do next?',
+          action: 'implement',
+          runId: 'run-17-1',
+          model: 'haiku',
+          cli: 'Claude',
+        },
+      }),
+    });
+
+    const [, , , postedBody] = createComment.mock.calls[0] as [string, string, number, string];
+    expect(postedBody).toContain('/approved');
+    expect(postedBody).toContain('/changes');
+    expect(postedBody).toContain('/ask');
+    expect(postedBody).toContain('What should I do next?');
+  });
+
+  it('does not append approval instructions for status-update comments', async () => {
     const createComment = vi.fn();
     const store = createStateStore({ wakeRoot: root });
     const config = createDefaultWakeConfig(root);
