@@ -342,6 +342,139 @@ export async function buildItemDetail(input: {
   return { item, runs, events };
 }
 
+export type ItemTranscriptEntry = {
+  runId: string;
+  action: string;
+  cli: string;
+  role: 'user' | 'agent';
+  startedAt: string;
+  text: string;
+};
+
+export type ItemTranscripts = {
+  enabled: boolean;
+  sessions: Array<{ sessionKey: string; sessionId?: string; entries: ItemTranscriptEntry[] }>;
+};
+
+function parseTranscriptFileName(file: string): {
+  runId: string;
+  cli: string;
+  action: string;
+  kind: 'prompt' | 'response';
+  role: 'user' | 'agent';
+} | null {
+  if (!file.endsWith('.txt')) {
+    return null;
+  }
+  const parts = file.slice(0, -'.txt'.length).split('.');
+  if (parts.length < 4) {
+    return null;
+  }
+
+  const kind = parts.at(-1);
+  if (kind !== 'prompt' && kind !== 'response') {
+    return null;
+  }
+  const action = parts.at(-2);
+  const cli = parts.at(-3);
+  const runId = parts.slice(0, -3).join('.');
+  if (action === undefined || cli === undefined || runId.length === 0) {
+    return null;
+  }
+
+  return {
+    runId,
+    cli,
+    action,
+    kind,
+    role: kind === 'prompt' ? 'user' : 'agent',
+  };
+}
+
+export async function buildItemTranscripts(input: {
+  stateStore: StateStore;
+  config: WakeConfig;
+  workItemKey: string;
+}): Promise<ItemTranscripts> {
+  if (!input.config.transcripts.enabled) {
+    return { enabled: false, sessions: [] };
+  }
+
+  const runs = (await input.stateStore.listRunRecords()).filter(
+    (run) => run.workItemKey === input.workItemKey,
+  );
+  const runsById = new Map(runs.map((run) => [run.runId, run]));
+  const workDir = input.stateStore.paths.transcriptWorkDir(input.workItemKey);
+  const sessionDirs = (await readdir(workDir, { withFileTypes: true }).catch(() => []))
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name);
+
+  const sessionsByKey = new Map<
+    string,
+    { sessionKey: string; sessionId?: string; entries: ItemTranscriptEntry[] }
+  >();
+  for (const sessionKey of sessionDirs) {
+    const sessionDir = join(workDir, sessionKey);
+    const files = (await readdir(sessionDir, { withFileTypes: true }).catch(() => []))
+      .filter((entry) => entry.isFile())
+      .map((entry) => entry.name);
+
+    for (const file of files) {
+      const parsed = parseTranscriptFileName(file);
+      if (parsed === null) {
+        continue;
+      }
+      const run = runsById.get(parsed.runId);
+      if (run === undefined) {
+        continue;
+      }
+      const transcriptEntry = {
+        runId: parsed.runId,
+        action: parsed.action,
+        cli: parsed.cli,
+        role: parsed.role,
+        startedAt: run.startedAt,
+        text: await readFile(join(sessionDir, file), 'utf8'),
+      };
+      const canonicalSessionKey = run.sessionId ?? sessionKey;
+      const existing = sessionsByKey.get(canonicalSessionKey);
+      if (existing === undefined) {
+        sessionsByKey.set(canonicalSessionKey, {
+          sessionKey: canonicalSessionKey,
+          ...(run.sessionId === undefined ? {} : { sessionId: run.sessionId }),
+          entries: [transcriptEntry],
+        });
+      } else {
+        existing.entries.push(transcriptEntry);
+      }
+    }
+  }
+
+  const sessions = [...sessionsByKey.values()];
+  for (const session of sessions) {
+    session.entries.sort((left, right) => {
+      const timeOrder = left.startedAt.localeCompare(right.startedAt);
+      if (timeOrder !== 0) {
+        return timeOrder;
+      }
+      if (left.runId !== right.runId) {
+        return left.runId.localeCompare(right.runId);
+      }
+      const roleRank = { user: 0, agent: 1 };
+      return roleRank[left.role] - roleRank[right.role];
+    });
+  }
+
+  sessions.sort((left, right) => {
+    const leftStartedAt = left.entries[0]?.startedAt ?? '';
+    const rightStartedAt = right.entries[0]?.startedAt ?? '';
+    const timeOrder = leftStartedAt.localeCompare(rightStartedAt);
+    return timeOrder === 0 ? left.sessionKey.localeCompare(right.sessionKey) : timeOrder;
+  });
+
+  return { enabled: true, sessions };
+}
+
 export async function buildEventsFeed(input: {
   stateStore: StateStore;
   limit?: number | undefined;

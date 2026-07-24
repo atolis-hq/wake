@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
@@ -12,6 +12,7 @@ import { readJsonFile } from '../../src/lib/json-file.js';
 import { wakeVersion } from '../../src/version.js';
 import { createEventEnvelope } from '../../src/lib/event-log.js';
 import { createProjectionUpdater } from '../../src/core/projection-updater.js';
+import { createWakePaths } from '../../src/lib/paths.js';
 
 function workId(issueNumber: number): string {
   return `work-01JZ${String(issueNumber).padStart(22, '0')}`;
@@ -120,6 +121,51 @@ describe('ui-server', () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { runnerName: string; unpaused: boolean };
     expect(body).toMatchObject({ runnerName: 'nonexistent', unpaused: true });
+  });
+
+  it('serves transcripts by work item key', async () => {
+    const config = createDefaultWakeConfig(root);
+    config.transcripts.enabled = true;
+    await new Promise<void>((resolveClose) => server.close(() => resolveClose()));
+    server = createUiServer({
+      stateStore: store,
+      resourceIndex: createFakeResourceIndex(),
+      config,
+    });
+    await new Promise<void>((resolveListen) => {
+      server.listen(0, '127.0.0.1', () => resolveListen());
+    });
+    const address = server.address() as AddressInfo;
+    baseUrl = `http://127.0.0.1:${address.port}`;
+
+    const key = workId(42);
+    await store.writeRunRecord({
+      schemaVersion: 1,
+      runId: 'run-42',
+      workItemKey: key,
+      repo: 'atolis-hq/wake',
+      issueNumber: 42,
+      action: 'implement',
+      status: 'completed',
+      startedAt: '2026-07-05T12:00:00.000Z',
+    });
+    const sessionDir = createWakePaths(root).transcriptSessionDir(key, 'run-42');
+    await mkdir(sessionDir, { recursive: true });
+    await writeFile(join(sessionDir, 'run-42.codex.implement.prompt.txt'), 'prompt text');
+
+    const res = await fetch(`${baseUrl}/api/v1/work-items/${key}/transcripts`);
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      enabled: boolean;
+      sessions: Array<{ entries: Array<{ runId: string; role: string; text: string }> }>;
+    };
+    expect(body.enabled).toBe(true);
+    expect(body.sessions[0]?.entries[0]).toMatchObject({
+      runId: 'run-42',
+      role: 'user',
+      text: 'prompt text',
+    });
   });
 });
 

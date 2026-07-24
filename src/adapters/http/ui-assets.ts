@@ -63,10 +63,27 @@ export const indexHtml = `<!DOCTYPE html>
   th, td { text-align: left; padding: 0.35rem 0.5rem; border-bottom: 1px solid #2c313a; }
   th { color: #9aa2ad; font-weight: 600; }
   pre { background: #1a1d23; padding: 0.75rem; border-radius: 6px; overflow: auto; font-size: 0.75rem; }
-  .drawer { position: fixed; top: 0; right: 0; width: min(560px, 100%); height: 100%; background: #191c22; border-left: 1px solid #2c313a; overflow-y: auto; padding: 1rem; transform: translateX(100%); transition: transform 0.15s ease; }
-  .drawer.open { transform: translateX(0); }
-  .drawer .close { float: right; cursor: pointer; color: #9aa2ad; }
-  .drawer .close:hover { color: var(--accent-light); }
+  .modal-overlay { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.58); padding: 1.25rem; z-index: 10; }
+  .modal-overlay.open { display: flex; }
+  .modal { width: calc(100vw - 3rem); height: calc(100vh - 3rem); background: #191c22; border: 1px solid #2c313a; border-radius: 8px; display: flex; flex-direction: column; box-shadow: 0 18px 60px rgba(0, 0, 0, 0.38); }
+  .modal-header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.85rem 1rem 0.55rem; border-bottom: 1px solid #2c313a; }
+  .modal-header h2 { margin: 0; font-size: 1rem; }
+  .modal .close { cursor: pointer; color: #9aa2ad; background: none; border: 0; font-size: 0.9rem; padding: 0.2rem 0; }
+  .modal .close:hover { color: var(--accent-light); }
+  .modal-tabs { display: flex; gap: 0.25rem; padding: 0 1rem; border-bottom: 1px solid #2c313a; }
+  .modal-tabs .nav-button { background: none; border: none; border-bottom: 2px solid transparent; color: rgba(255, 255, 255, 0.65); padding: 0.45rem 0.7rem 0.5rem; margin-bottom: -1px; cursor: pointer; font-size: 0.85rem; }
+  .modal-tabs .nav-button:hover { color: #fff; }
+  .modal-tabs .nav-button.active { color: var(--accent-light); border-bottom-color: var(--accent); }
+  .modal-body { flex: 1; min-height: 0; overflow-y: auto; padding: 1rem; }
+  .modal-body h3:first-child { margin-top: 0; }
+  .transcript-session { margin: 0.75rem 0; color: #9aa2ad; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 0.75rem; text-align: center; }
+  .transcript-entry { background: #101216; border: 1px solid #2c313a; border-radius: 6px; margin-bottom: 0.75rem; overflow: hidden; }
+  .transcript-head { color: #9aa2ad; background: #171a20; border-bottom: 1px solid #2c313a; padding: 0.45rem 0.6rem; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 0.72rem; }
+  .transcript-text { white-space: pre-wrap; margin: 0; background: transparent; border-radius: 0; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 0.76rem; }
+  @media (max-width: 767px) {
+    .modal-overlay { padding: 0; }
+    .modal { width: 100%; height: 100%; max-height: none; border-radius: 0; border-left: 0; border-right: 0; }
+  }
   .tiles { display: flex; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 1rem; }
   .tile { background: #1a1d23; border-radius: 10px; padding: 0.6rem 0.9rem; min-width: 120px; }
   .tile .n { font-size: 1.3rem; font-weight: 700; }
@@ -104,7 +121,16 @@ export const indexHtml = `<!DOCTYPE html>
   <button data-view="health">Health</button>
 </nav>
 <main id="main"></main>
-<div id="drawer" class="drawer"><span class="close" id="drawer-close">close ✕</span><div id="drawer-body"></div></div>
+<div id="modal-overlay" class="modal-overlay">
+  <section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <div class="modal-header">
+      <h2 id="modal-title"></h2>
+      <button type="button" class="close" id="modal-close">close &#x2715;</button>
+    </div>
+    <div id="modal-tabs" class="modal-tabs"></div>
+    <div id="modal-body" class="modal-body"></div>
+  </section>
+</div>
 <script>
 const API = '/api/v1';
 const CONDITIONS = ['needs-human', 'active', 'ready', 'waiting', 'stalled', 'finished'];
@@ -188,7 +214,7 @@ async function renderBoard() {
     const items = board.filter((c) => c.condition === cond);
     const cards = items.map((item) => el('div', {
       class: 'card',
-      onclick: () => openItem(item.repo, item.number),
+      onclick: () => openItemModal(item.repo, item.number),
     }, [
       el('div', { class: 'title', text: item.repo + '#' + item.number + ' ' + item.title }),
       el('div', { class: 'meta' }, [
@@ -220,18 +246,72 @@ function resourceUriToUrl(resourceUri) {
   return null;
 }
 
-async function openItem(repo, number) {
-  const drawer = document.getElementById('drawer');
-  const body = document.getElementById('drawer-body');
-  body.innerHTML = 'Loading…';
-  drawer.classList.add('open');
-  const detail = await getJson('/items/' + encodeURIComponent(repo) + '/' + number);
-  if (!detail) { body.textContent = 'Not found'; return; }
-  body.innerHTML = '';
+async function openItemModal(repo, number) {
+  const overlay = document.getElementById('modal-overlay');
+  const title = document.getElementById('modal-title');
+  const tabs = document.getElementById('modal-tabs');
+  const body = document.getElementById('modal-body');
+  const loaded = new Map();
+  body.textContent = 'Loading...';
+  tabs.innerHTML = '';
+  title.textContent = repo + '#' + number;
+  overlay.classList.add('open');
+
+  for (const tab of ['details', 'events', 'transcripts']) {
+    tabs.appendChild(el('button', {
+      type: 'button',
+      class: 'nav-button',
+      text: tab[0].toUpperCase() + tab.slice(1),
+      onclick: () => switchItemTab(tab),
+    }));
+  }
+
+  async function ensureDetail() {
+    if (!loaded.has('detail')) {
+      loaded.set('detail', await getJson('/items/' + encodeURIComponent(repo) + '/' + number));
+    }
+    return loaded.get('detail');
+  }
+
+  async function switchItemTab(tab) {
+    for (const button of tabs.querySelectorAll('button')) {
+      button.classList.toggle('active', button.textContent.toLowerCase() === tab);
+    }
+    body.scrollTop = 0;
+    if (!loaded.has(tab)) {
+      body.textContent = 'Loading...';
+      loaded.set(tab, await renderItemTab(tab));
+    }
+    body.replaceChildren(loaded.get(tab));
+    if (tab === 'transcripts') {
+      body.scrollTop = body.scrollHeight;
+    }
+  }
+
+  async function renderItemTab(tab) {
+    const detail = await ensureDetail();
+    if (!detail) return el('p', { text: 'Not found' });
+    if (tab === 'events') {
+      return el('div', {}, [el('pre', { text: JSON.stringify(detail.events, null, 2) })]);
+    }
+    if (tab === 'transcripts') {
+      const transcripts = await getJson('/work-items/' + encodeURIComponent(detail.item.workItemKey) + '/transcripts');
+      return renderTranscripts(transcripts);
+    }
+    return renderItemDetails(detail);
+  }
+
+  await switchItemTab('details');
+}
+
+function renderItemDetails(detail) {
+  const body = el('div');
+  const repo = detail.item.issue.repo;
+  const number = detail.item.issue.number;
   const headLink = el('a', { href: detail.item.issue.url, target: '_blank', rel: 'noopener noreferrer', text: repo + '#' + number });
-  body.appendChild(el('h2', {}, [headLink]));
+  body.appendChild(el('h3', {}, [headLink]));
   body.appendChild(el('p', { text: detail.item.issue.title }));
-  body.appendChild(el('p', { class: 'meta', text: 'stage: ' + detail.item.wake.stage + (detail.item.wake.sessionId ? ' · session: ' + detail.item.wake.sessionId : '') }));
+  body.appendChild(el('p', { class: 'meta', text: 'stage: ' + detail.item.wake.stage + (detail.item.wake.sessionId ? ' | session: ' + detail.item.wake.sessionId : '') }));
   if (detail.item.wake.workspacePath) {
     body.appendChild(el('p', { class: 'meta', text: 'workspace: ' + detail.item.wake.workspacePath }));
   }
@@ -240,7 +320,7 @@ async function openItem(repo, number) {
     const retryBtn = el('button', { type: 'button', class: 'btn', text: 'Retry' });
     retryBtn.addEventListener('click', async () => {
       retryBtn.disabled = true;
-      retryBtn.textContent = 'Queuing retry…';
+      retryBtn.textContent = 'Queuing retry...';
       try {
         await postJson('/work-items/' + encodeURIComponent(detail.item.workItemKey) + '/retry');
         retryBtn.textContent = 'Retry queued';
@@ -267,18 +347,48 @@ async function openItem(repo, number) {
     body.appendChild(resourceList);
   }
   body.appendChild(el('h3', { text: 'Runs' }));
-  const runsTable = el('table', {}, [
+  body.appendChild(el('table', {}, [
     el('tr', {}, ['action', 'status', 'sentinel', 'started', 'runId'].map((h) => el('th', { text: h }))),
     ...detail.runs.map((r) => el('tr', {}, [
       el('td', { text: r.action }), el('td', { text: r.status }), el('td', { text: r.sentinel || '' }),
       el('td', { text: r.startedAt }), el('td', { text: r.runId }),
     ])),
-  ]);
-  body.appendChild(runsTable);
+  ]));
   body.appendChild(el('h3', { text: 'Context' }));
   body.appendChild(el('pre', { text: JSON.stringify(detail.item.context, null, 2) }));
-  body.appendChild(el('h3', { text: 'Recent events' }));
-  body.appendChild(el('pre', { text: JSON.stringify(detail.events, null, 2) }));
+  return body;
+}
+
+function renderTranscripts(transcripts) {
+  if (!transcripts.enabled) {
+    return el('p', { class: 'meta', text: 'Transcripts are not enabled \\u2014 set transcripts.enabled: true in config to turn them on.' });
+  }
+  if (!transcripts.sessions || transcripts.sessions.length === 0) {
+    return el('p', { class: 'meta', text: 'No transcripts available for this item.' });
+  }
+  const root = el('div');
+  for (const session of transcripts.sessions) {
+    const firstStartedAt = session.entries[0] ? session.entries[0].startedAt : '';
+    const sessionLabel = session.sessionId || session.sessionKey;
+    root.appendChild(
+      el('div', {
+        class: 'transcript-session',
+        text:
+          '\\u2014 new session \\u00b7 ' +
+          sessionLabel +
+          ' \\u00b7 ' +
+          firstStartedAt +
+          ' \\u2014',
+      }),
+    );
+    for (const entry of session.entries) {
+      root.appendChild(el('article', { class: 'transcript-entry' }, [
+        el('div', { class: 'transcript-head', text: entry.role + ' \\u00b7 ' + entry.action + ' \\u00b7 ' + entry.cli + ' \\u00b7 ' + entry.startedAt }),
+        el('pre', { class: 'transcript-text', text: entry.text }),
+      ]));
+    }
+  }
+  return root;
 }
 
 async function renderActivity() {
@@ -418,8 +528,13 @@ function switchView(view) {
 for (const btn of document.querySelectorAll('nav button')) {
   btn.addEventListener('click', () => switchView(btn.dataset.view));
 }
-document.getElementById('drawer-close').addEventListener('click', () => {
-  document.getElementById('drawer').classList.remove('open');
+document.getElementById('modal-close').addEventListener('click', () => {
+  document.getElementById('modal-overlay').classList.remove('open');
+});
+document.getElementById('modal-overlay').addEventListener('click', (event) => {
+  if (event.target.id === 'modal-overlay') {
+    event.currentTarget.classList.remove('open');
+  }
 });
 document.getElementById('force-tick').addEventListener('click', forceTickNow);
 
