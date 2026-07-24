@@ -80,6 +80,40 @@ describe('ui-server', () => {
       requestedBy: 'ui',
     });
   });
+
+  it('clears a runner quota-pause via POST /runners/:name/unpause', async () => {
+    await store.writeLedger({
+      schemaVersion: 1,
+      runners: {
+        'fake-primary': {
+          pausedUntil: '2099-01-01T00:00:00.000Z',
+          pausedUntilSource: 'reported',
+          failureCount: 3,
+          lastFailureAt: '2026-07-24T10:00:00.000Z',
+        },
+      },
+    });
+
+    const res = await fetch(`${baseUrl}/api/v1/runners/fake-primary/unpause`, {
+      method: 'POST',
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { runnerName: string; unpaused: boolean };
+    expect(body).toMatchObject({ runnerName: 'fake-primary', unpaused: true });
+
+    const ledger = await store.readLedger();
+    expect(ledger?.runners['fake-primary']).toMatchObject({ failureCount: 0 });
+    expect(ledger?.runners['fake-primary']?.pausedUntil).toBeUndefined();
+  });
+
+  it('returns 200 for unpause of a runner not in the ledger (idempotent)', async () => {
+    const res = await fetch(`${baseUrl}/api/v1/runners/nonexistent/unpause`, {
+      method: 'POST',
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { runnerName: string; unpaused: boolean };
+    expect(body).toMatchObject({ runnerName: 'nonexistent', unpaused: true });
+  });
 });
 
 describe('ui-server token gating', () => {

@@ -138,6 +138,25 @@ async function handleRequest(
     return;
   }
 
+  if (
+    req.method === 'POST' &&
+    resource === 'runners' &&
+    segments.length === 3 &&
+    segments[2] === 'unpause'
+  ) {
+    const runnerName = segments[1] as string;
+    const ledger = await stateStore.readLedger();
+    const existingRunners = ledger?.runners ?? {};
+    if (existingRunners[runnerName] !== undefined) {
+      await stateStore.writeLedger({
+        schemaVersion: 1,
+        runners: { ...existingRunners, [runnerName]: { failureCount: 0 } },
+      });
+    }
+    sendJson(res, 200, { runnerName, unpaused: true });
+    return;
+  }
+
   if (req.method !== 'GET') {
     sendJson(res, 405, { error: `method not allowed for ${url.pathname}` });
     return;
