@@ -1459,7 +1459,7 @@ describe('github issues work source', () => {
     expect(postedBody).toContain('Work is ready for review.');
   });
 
-  it('appends approval instructions for question comments (blocked runs)', async () => {
+  it('appends reply-to-continue instructions (not approval) for question comments (blocked runs)', async () => {
     const createComment = vi.fn();
     const store = createStateStore({ wakeRoot: root });
     const config = createDefaultWakeConfig(root);
@@ -1503,9 +1503,10 @@ describe('github issues work source', () => {
     });
 
     const [, , , postedBody] = createComment.mock.calls[0] as [string, string, number, string];
-    expect(postedBody).toContain('/approved');
+    expect(postedBody).not.toContain('/approved');
+    expect(postedBody).not.toContain('/ask');
     expect(postedBody).toContain('/changes');
-    expect(postedBody).toContain('/ask');
+    expect(postedBody).toContain('any reply will resume Wake');
     expect(postedBody).toContain('What should I do next?');
   });
 
