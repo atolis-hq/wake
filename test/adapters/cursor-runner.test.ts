@@ -201,6 +201,16 @@ describe('cursor failure classification', () => {
     expect(cls).toBe('quota');
   });
 
+  it('classifies Cursor usage-limit errors as quota failures', () => {
+    const cls = classifyCursorCliFailure({
+      stderr:
+        "ActionRequiredError: You've hit your usage limit Get Cursor Pro for more Agent usage, unlimited Tab, and more.",
+      stdout: '',
+      timedOut: false,
+    });
+    expect(cls).toBe('quota');
+  });
+
   it('classifies authentication errors as quota failures', () => {
     const cls = classifyCursorCliFailure({
       stderr: 'Unauthorized: invalid api key',
