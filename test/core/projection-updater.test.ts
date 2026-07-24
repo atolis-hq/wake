@@ -1477,6 +1477,68 @@ describe('projection updater', () => {
     expect(projection?.wake.sessionCli).toBeUndefined();
   });
 
+  it('clears lastFailureClass when a run advances to a new action stage', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const updater = createProjectionUpdater({
+      stateStore: store,
+      resourceIndex: createFakeResourceIndex(),
+    });
+
+    await updater.rebuildFromEvents([
+      issueUpsert({
+        eventId: 'evt-failure-class-clear-init',
+        issueNumber: 53,
+        labels: ['wake:stage.refine'],
+      }),
+    ]);
+
+    await updater.rebuildFromEvents([
+      createEventEnvelope({
+        eventId: 'evt-failure-class-clear-fail',
+        workItemKey: workId(53),
+        streamScope: 'work-item',
+        direction: 'internal',
+        sourceSystem: 'wake',
+        sourceEventType: 'wake.run.completed',
+        sourceRefs: { repo: 'atolis-hq/wake', issueNumber: 53, runId: 'run-53-1' },
+        occurredAt: '2026-07-05T12:01:00.000Z',
+        ingestedAt: '2026-07-05T12:01:00.000Z',
+        trigger: 'immediate',
+        payload: {
+          action: 'refine',
+          sentinel: 'FAILED',
+          runId: 'run-53-1',
+          failureClass: 'infra',
+        },
+      }),
+    ]);
+
+    await updater.rebuildFromEvents([
+      createEventEnvelope({
+        eventId: 'evt-failure-class-clear-advance',
+        workItemKey: workId(53),
+        streamScope: 'work-item',
+        direction: 'internal',
+        sourceSystem: 'wake',
+        sourceEventType: 'wake.run.completed',
+        sourceRefs: { repo: 'atolis-hq/wake', issueNumber: 53, runId: 'run-53-2' },
+        occurredAt: '2026-07-05T12:05:00.000Z',
+        ingestedAt: '2026-07-05T12:05:00.000Z',
+        trigger: 'immediate',
+        payload: {
+          action: 'refine',
+          sentinel: 'DONE',
+          nextStage: 'implement',
+          runId: 'run-53-2',
+        },
+      }),
+    ]);
+
+    const projection = await store.readIssueState(workId(53));
+    expect(projection?.wake.stage).toBe('implement');
+    expect(projection?.context.lastFailureClass).toBeUndefined();
+  });
+
   it('clears sessionId and sessionCli when a run fails', async () => {
     const store = createStateStore({ wakeRoot: root });
     const updater = createProjectionUpdater({

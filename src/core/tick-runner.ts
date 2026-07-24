@@ -19,7 +19,13 @@ import {
 } from '../domain/schema.js';
 import { maxConfiguredRunnerTimeoutMs, resolveRunnerRouting } from '../domain/runner-routing.js';
 import { awaitingApprovalRunnerSentinel, stageLabelForStage } from '../domain/stages.js';
-import type { AgentAction, IssueStateRecord, Stage, WakeConfig } from '../domain/types.js';
+import type {
+  AgentAction,
+  IssueStateRecord,
+  RunnerFailureClass,
+  Stage,
+  WakeConfig,
+} from '../domain/types.js';
 import {
   chooseAction as chooseWorkflowAction,
   isKnownWorkflowStage,
@@ -54,6 +60,21 @@ function latestHumanCommentId(candidate: IssueStateRecord): string | undefined {
 
 function isLateralReadOnlyAction(action: AgentAction, config: WakeConfig): boolean {
   return isCustomCommandAction(action, config);
+}
+
+function shouldPublishRunResult(input: {
+  failureClass: RunnerFailureClass | undefined;
+  previousFailureClass?: unknown;
+}): boolean {
+  if (input.failureClass === 'quota') {
+    return false;
+  }
+
+  if (input.failureClass === undefined || input.failureClass === 'task') {
+    return true;
+  }
+
+  return input.failureClass !== input.previousFailureClass;
 }
 
 export function createTickRunner(deps: {
@@ -766,7 +787,12 @@ export function createTickRunner(deps: {
           }),
         );
 
-        if (runnerResult.failureClass !== 'quota') {
+        if (
+          shouldPublishRunResult({
+            failureClass: runnerResult.failureClass,
+            previousFailureClass: candidate.context.lastFailureClass,
+          })
+        ) {
           const publishIntent = createPublishIntentEvent({
             projection: candidate,
             runId,
@@ -861,7 +887,14 @@ export function createTickRunner(deps: {
           occurredAt: finishedAt,
           startedAt: nowIso,
         });
-        await deliverOutboundEvent(failurePublishIntent);
+        if (
+          shouldPublishRunResult({
+            failureClass: 'infra',
+            previousFailureClass: candidate.context.lastFailureClass,
+          })
+        ) {
+          await deliverOutboundEvent(failurePublishIntent);
+        }
 
         return {
           status: 'processed' as const,
