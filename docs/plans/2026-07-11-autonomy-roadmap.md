@@ -1,8 +1,10 @@
 # Wake Autonomy Roadmap
 
-**Date:** 2026-07-11
+**Date:** 2026-07-11 (Phases 0-3). **Updated:** 2026-07-25 (Phases 4-7 added).
 **Author:** Wake (Claude), with decision authority delegated by the operator.
 **Purpose:** the ordered path from "human upgrades Wake" to "Wake upgrades Wake, human approves PRs". This document is the working plan; the operator's brief and constraints are recorded in §1 so they survive context loss.
+
+**2026-07-25 addendum to §1's constraint 2** ("every change must be approved by a human, at minimum at the pull request"): the operator has relaxed this for policy-eligible, low-risk work once Phase 5 lands — an independent review agent plus a deterministic merge gate may merge without a human touching that specific PR, gated by explicit opt-in configuration (`autonomy.merge.mode`, default `recommend-only`). The original constraint as stated in §1 is left unedited below as the historical record; this addendum is the current, superseding state. See #349-#354 and #361.
 
 ## 1. Operating brief and constraints (as given by the operator, 2026-07-11)
 
@@ -73,9 +75,63 @@ Every item here is production-observed or a confirmed trapdoor. All are S or S�
 
 ### Explicitly deferred
 
-- **[#176](https://github.com/atolis-hq/wake/issues/176) yolo mode** (end-to-end without approval) — conflicts with the human-approval constraint; revisit only when the operator relaxes it.
-- **[#63](https://github.com/atolis-hq/wake/issues/63) prompt-injection hardening** — important before pointing Wake at repos with untrusted input; Wake's own repo is trusted, so it sequences after Phase 2.
+- ~~**[#176](https://github.com/atolis-hq/wake/issues/176) yolo mode** (end-to-end without approval) — conflicts with the human-approval constraint; revisit only when the operator relaxes it.~~ **Superseded 2026-07-25**: the operator has relaxed this constraint for policy-eligible work. #176 is being delivered through Phase 5 (#349-#354: config-driven review, deterministic merge gate, policy-driven approval resolution) rather than as a separate all-or-nothing mode.
+- **[#63](https://github.com/atolis-hq/wake/issues/63) prompt-injection hardening** — important before pointing Wake at repos with untrusted input; Wake's own repo is trusted, so it sequences after Phase 2. More detail added 2026-07-25 (see issue comments) as a prerequisite pattern for Phase 5's review-stage tool allow-listing and for Phase 7's real identity segregation.
 - Large refactors (R1/R2/R3) before Phase 3 — too much review load per PR while human bandwidth is the bottleneck.
+
+## 3a. Phases 4-7 (added 2026-07-25)
+
+On 2026-07-25 the operator supplied two analysis reports (execution-reliability and orchestration-recommendations) and asked for them to be turned into a prioritized plan toward a "dark factory": autonomous triage → assignment → implement → independent review → merge, with human hand-holding minimized and guardrails configurable rather than hardcoded. 19 new issues (#342-#360) were filed from the reports plus a 20th (#361) capturing the deliberate near-term trust trade-off described in Phase 5 below; detail comments were added to 5 overlapping existing issues (#126, #122, #148, #72, #63) rather than duplicating them.
+
+**Sequencing principle**: only true prerequisites (schema-breaking changes, or fixes for failure modes that become actively dangerous once nobody is watching every run) gate Phase 5. Everything else that the reports recommend is valuable but deferred to Phase 6, so the autonomy work — the operator's stated priority — isn't blocked behind a full reliability rewrite.
+
+### Phase 4 — Execution reliability kernel (breaking prerequisites)
+
+Schema-breaking or autonomy-critical fixes. Must land before Phase 5 so it isn't rebuilt against a shifting run-record shape.
+
+| Order | Status | Item | Why | Issue |
+| ----- | ------ | ---- | --- | ----- |
+| 4.1 | Not started | Split workflow outcome from execution outcome on the run record | Breaking schema/sentinel-contract change; every later phase reads run outcomes | [#342](https://github.com/atolis-hq/wake/issues/342) |
+| 4.2 | Not started | Explicit claim/execution-attempt lifecycle with per-state recovery | Breaking run-record shape; land with 4.1 | [#343](https://github.com/atolis-hq/wake/issues/343) |
+| 4.3 | Not started | Per-run process identity + renewable lease, replacing global-lock recovery | Foundational liveness correctness, needed before autonomous scheduling | [#344](https://github.com/atolis-hq/wake/issues/344) |
+| 4.4 | Not started | Idempotent outbox for status publication and finalisation | Unattended merge/comment loop must not double-act; absorbs #319 | [#345](https://github.com/atolis-hq/wake/issues/345) |
+| 4.5 | Not started | Revalidate source eligibility + capacity immediately before claim | Autonomous assigner must not claim stale/raced work | [#346](https://github.com/atolis-hq/wake/issues/346) |
+| 4.6 | Not started | Fail-closed corruption detection vs empty state | Unattended Wake must not act on silently corrupted state | [#347](https://github.com/atolis-hq/wake/issues/347) |
+| 4.7 | Not started | Document + test explicit scheduler/execution invariants | Cheap; verifies 4.1-4.6 | [#348](https://github.com/atolis-hq/wake/issues/348) |
+
+### Phase 5 — Autonomous lifecycle ("dark factory")
+
+Goal: remove the remaining hand-holding loop (human triages → assigns → reviews PR → merges) while keeping human approval a configurable, opt-in gate rather than a hardcoded one. Built on Phase 4.
+
+| Order | Status | Item | Why | Issue |
+| ----- | ------ | ---- | --- | ----- |
+| 5.1 | Not started | Operator autonomy-policy configuration surface (risk tiers, merge authority, escalation) | Backbone every later item in this phase reads from | [#349](https://github.com/atolis-hq/wake/issues/349) |
+| 5.2 | Not started | Autonomous triage, prioritization, WIP-bounded assignment scheduler | Removes the "operator assigns one issue at a time" bottleneck; stays serial, does not depend on #122 concurrency | [#350](https://github.com/atolis-hq/wake/issues/350) |
+| 5.3 | Not started | Independent PR review agent (separate session, config-driven, no merge capability) | Reviews without "grading its own homework"; opt-in per repo | [#351](https://github.com/atolis-hq/wake/issues/351) |
+| 5.4 | Not started | Deterministic autonomous merge gate | Only code path allowed to call the merge API; uses Wake's single existing identity, granted merge rights by the operator directly — a deliberate, temporary trust posture (see Phase 7) | [#352](https://github.com/atolis-hq/wake/issues/352) |
+| 5.5 | Not started | Policy-driven autonomous resolution of BLOCKED/approval gates | Reduces mid-implementation hand-holding; off by default | [#353](https://github.com/atolis-hq/wake/issues/353) |
+| 5.6 | Not started | Durable audit trail for autonomous decisions | Ships alongside 5.3-5.5, not after; the trust mechanism that lets `auto` mode expand | [#354](https://github.com/atolis-hq/wake/issues/354) |
+
+### Phase 6 — Execution kernel hardening (deferred)
+
+Valuable but not blocking Phase 5; Wake can pick these up on itself once the dark factory is running. Distinct from #122/#148/#120, which stay tracked under Phase 3 above.
+
+| Order | Status | Item | Why | Issue |
+| ----- | ------ | ---- | --- | ----- |
+| 6.1 | Not started | Canonical provider-neutral runtime event contract | Needed for 6.2 and 6.6 to be meaningful across runner adapters | [#355](https://github.com/atolis-hq/wake/issues/355) |
+| 6.2 | Not started | Live execution handle: cancellation + concurrent reconciliation | Depends on 6.1 | [#356](https://github.com/atolis-hq/wake/issues/356) |
+| 6.3 | Not started | Failure-phase/retry-safety classification before retrying | Avoids duplicate side effects on ambiguous failures | [#357](https://github.com/atolis-hq/wake/issues/357) |
+| 6.4 | Not started | Workspace lifecycle hooks + validation gates | Catches wrong-branch/corrupted-workspace starts early | [#358](https://github.com/atolis-hq/wake/issues/358) |
+| 6.5 | Not started | Immutable per-run input snapshot + mid-run event policy | Reproducibility; feeds the audit trail (5.6) | [#359](https://github.com/atolis-hq/wake/issues/359) |
+| 6.6 | Not started | Distinct stall/startup/absolute-timeout/cancellation tiers | Depends on 6.1; matters more once nothing is watching a stalled run | [#360](https://github.com/atolis-hq/wake/issues/360) |
+
+### Phase 7 — Real trust-boundary segregation
+
+Replaces Phase 5's temporary shared-identity merge posture with genuine credential segregation once the dark factory is proven.
+
+| Order | Status | Item | Why | Issue |
+| ----- | ------ | ---- | --- | ----- |
+| 7.1 | Not started | Second Wake instance with its own GitHub identity, PR-native intake, review-only workflow, real GitHub review approval + branch protection | Removes the single-identity trust gap accepted in 5.4; revokes merge rights from the implement identity once live. Depends on #76, #82, #72 | [#361](https://github.com/atolis-hq/wake/issues/361) |
 
 ## 4. Execution model
 
