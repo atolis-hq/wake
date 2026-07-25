@@ -11,7 +11,7 @@ import type {
   WorkspaceManager,
 } from './contracts.js';
 import type { Clock } from '../lib/clock.js';
-import { acquireFileLock, readFileLockStatus } from '../lib/lock.js';
+import { acquireFileLock } from '../lib/lock.js';
 import {
   CORRELATION_REGISTERED_EVENT,
   parseRunnerArtifacts,
@@ -25,6 +25,7 @@ import type {
   ExecutionOutcome,
   IssueStateRecord,
   RunnerFailureClass,
+  RunRecord,
   Stage,
   WakeConfig,
   WorkflowOutcome,
@@ -46,6 +47,13 @@ import { createOutbox } from './outbox.js';
 import { createEventResolver } from './event-resolver.js';
 import { createStaleRunReconciler } from './stale-run-reconciler.js';
 import { createWorkspaceCleanup } from './workspace-cleanup.js';
+import {
+  createRunLease,
+  isRunLeaseExpired,
+  renewRunLease,
+  runLeaseRenewalIntervalMs,
+} from './run-lease.js';
+import { currentProcessIdentity, processIdentityMatches } from '../lib/process-identity.js';
 
 type TickOutcome =
   | { status: 'locked' | 'idle' }
@@ -135,6 +143,7 @@ export function createTickRunner(deps: {
     workspaceManager: deps.workspaceManager,
     projectionUpdater,
   });
+  const ownerInstanceId = `instance-${process.pid}-${Date.now()}`;
 
   function isAwaitingApproval(projection: IssueStateRecord): boolean {
     return projection.context.lastRunSentinel === awaitingApprovalRunnerSentinel;
@@ -303,15 +312,21 @@ export function createTickRunner(deps: {
     return maxConfiguredRunnerTimeoutMs(deps.config);
   }
 
-  async function isRunningRecordActive(record: { startedAt: string }): Promise<boolean> {
-    const lock = await readFileLockStatus(deps.stateStore.paths.runnerLockFile, {
-      expectedCommandIncludes: process.argv[1] === undefined ? [] : [process.argv[1]],
-    });
-    if (!lock.active || lock.metadata === undefined) {
-      return false;
+  async function isRunningRecordActive(record: RunRecord, now: Date): Promise<boolean> {
+    if (record.lease !== undefined && !isRunLeaseExpired(record, now)) {
+      return true;
     }
 
-    return Date.parse(lock.metadata.acquiredAt) <= Date.parse(record.startedAt);
+    return (
+      processIdentityMatches({
+        pid: record.agentPid,
+        processStartedAt: record.agentProcessStartedAt,
+      }) ||
+      processIdentityMatches({
+        pid: record.workerPid,
+        processStartedAt: record.workerProcessStartedAt,
+      })
+    );
   }
 
   async function parkConfigDriftedProjections(projections: IssueStateRecord[]): Promise<boolean> {
@@ -404,9 +419,7 @@ export function createTickRunner(deps: {
   }
 
   async function runRunnerTick(): Promise<TickOutcome> {
-    const lock = await acquireFileLock(deps.stateStore.paths.runnerLockFile, {
-      staleAfterMs: runnerTimeoutMs(),
-    });
+    const lock = await acquireFileLock(deps.stateStore.paths.runnerLockFile);
     if (!lock.acquired) {
       return { status: 'locked' as const };
     }
@@ -573,6 +586,8 @@ export function createTickRunner(deps: {
       }
 
       const runId = `run-${candidate.issue.number}-${deps.clock.now().getTime()}`;
+      const lease = createRunLease({ clock: deps.clock, ownerInstanceId });
+      const workerIdentity = currentProcessIdentity();
       const runningRecord = {
         schemaVersion: 1 as const,
         runId,
@@ -584,6 +599,9 @@ export function createTickRunner(deps: {
         status: 'running' as const,
         startedAt: nowIso,
         routing,
+        lease,
+        workerPid: workerIdentity.pid,
+        workerProcessStartedAt: workerIdentity.processStartedAt,
       };
 
       await deps.stateStore.writeRunRecord(runningRecord);
@@ -631,6 +649,19 @@ export function createTickRunner(deps: {
         }),
       );
 
+      let leaseRenewalTimer: NodeJS.Timeout | undefined;
+      function startLeaseRenewal() {
+        leaseRenewalTimer = setInterval(() => {
+          void renewRunLease({
+            stateStore: deps.stateStore,
+            runId,
+            leaseId: lease.leaseId,
+            ownerInstanceId,
+            clock: deps.clock,
+          });
+        }, runLeaseRenewalIntervalMs);
+      }
+
       try {
         await transitionRunLifecycle('PREPARING');
         const prepareResult: {
@@ -674,6 +705,7 @@ export function createTickRunner(deps: {
           6,
         );
         await transitionRunLifecycle('RUNNING');
+        startLeaseRenewal();
         const runnerResult = await deps.runner.run({
           action,
           projection: candidate,
@@ -685,7 +717,22 @@ export function createTickRunner(deps: {
           ...(workspacePath === undefined ? {} : { workspacePath }),
           ...(mergeConflictDetected ? { mergeConflictDetected: true } : {}),
           ...(upstreamChanges === undefined ? {} : { upstreamChanges }),
+          onProcessStart: async (identity) => {
+            await deps.stateStore.updateRunRecordIf(runId, {
+              expect: (record) =>
+                record.status === 'running' &&
+                record.lease?.leaseId === lease.leaseId &&
+                record.lease.ownerInstanceId === ownerInstanceId,
+              update: (record) => ({
+                ...record,
+                agentPid: identity.pid,
+                agentProcessStartedAt: identity.processStartedAt,
+              }),
+            });
+          },
         });
+        clearInterval(leaseRenewalTimer);
+        leaseRenewalTimer = undefined;
         const parsedRunnerResult = parseRunnerResult(runnerResult.result);
         const rawSentinel = parsedRunnerResult.status;
         // Coerce DONE → AWAITING_APPROVAL when the stage requires human sign-off.
@@ -878,6 +925,7 @@ export function createTickRunner(deps: {
           nextStage,
         };
       } catch (err) {
+        clearInterval(leaseRenewalTimer);
         const finishedAt = deps.clock.now().toISOString();
         const sentinel = 'FAILED' as const;
 

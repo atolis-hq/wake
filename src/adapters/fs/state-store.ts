@@ -233,6 +233,20 @@ export function createStateStore({ wakeRoot }: { wakeRoot: string }) {
       await writeJsonFile(paths.runDateFile(parsed.startedAt.slice(0, 10), parsed.runId), parsed);
       return parsed;
     },
+    async updateRunRecordIf(
+      runId: string,
+      input: {
+        expect: (record: RunRecord) => boolean;
+        update: (record: RunRecord) => RunRecordInput;
+      },
+    ): Promise<RunRecord | null> {
+      const current = await this.readRunRecord(runId);
+      if (current === null || !input.expect(current)) {
+        return null;
+      }
+
+      return this.writeRunRecord(input.update(current));
+    },
     async writeSourceState(record: SourceStateRecord): Promise<SourceStateRecord> {
       const parsed = parseSourceStateRecord(record);
       await writeJsonFile(paths.sourceStateFile(parsed.source, parsed.key), parsed);

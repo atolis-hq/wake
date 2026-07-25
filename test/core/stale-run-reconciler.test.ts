@@ -8,7 +8,9 @@ import { createStateStore } from '../../src/adapters/fs/state-store.js';
 import { createDefaultWakeConfig } from '../../src/config/defaults.js';
 import { createProjectionUpdater } from '../../src/core/projection-updater.js';
 import { createStaleRunReconciler } from '../../src/core/stale-run-reconciler.js';
+import { isRunLeaseExpired } from '../../src/core/run-lease.js';
 import type { EventEnvelope, ExecutionAttemptLifecycle } from '../../src/domain/types.js';
+import { processIdentityMatches } from '../../src/lib/process-identity.js';
 
 const workId = 'work-01JZ0000000000000000000123';
 const RUNNER_TIMEOUT_MS = 60_000;
@@ -98,6 +100,39 @@ describe('stale run reconciler', () => {
     });
   }
 
+  function reconcilerWithLeaseAndProcessIdentity() {
+    const projectionUpdater = createProjectionUpdater({
+      stateStore: store,
+      resourceIndex: createFakeResourceIndex(),
+      config: createDefaultWakeConfig(root),
+    });
+    return createStaleRunReconciler({
+      config: createDefaultWakeConfig(root),
+      stateStore: store,
+      projectionUpdater,
+      runnerTimeoutMs: () => RUNNER_TIMEOUT_MS,
+      isRunningRecordActive: async (record, now) => {
+        if (record.lease !== undefined && !isRunLeaseExpired(record, now)) {
+          return true;
+        }
+
+        return (
+          processIdentityMatches({
+            pid: record.agentPid,
+            processStartedAt: record.agentProcessStartedAt,
+          }) ||
+          processIdentityMatches({
+            pid: record.workerPid,
+            processStartedAt: record.workerProcessStartedAt,
+          })
+        );
+      },
+      deliverOutboundEvent: async (event) => {
+        delivered.push(event);
+      },
+    });
+  }
+
   beforeEach(async () => {
     root = await mkdtemp(join(tmpdir(), 'wake-stale-'));
     store = createStateStore({ wakeRoot: root });
@@ -161,6 +196,30 @@ describe('stale run reconciler', () => {
 
     const completion = (await store.readEventEnvelope('run-123-stale-stale-reconciled'))!;
     expect(completion.payload.reason).toBe('runner:orphaned-process');
+  });
+
+  it('recovers an expired leased run when the PID start identity does not match', async () => {
+    await seedProjection(store, 'run-123-stale');
+    await store.writeRunRecord({
+      ...runningRecord('2026-07-05T12:01:30.000Z', 'RUNNING'),
+      lease: {
+        leaseId: 'lease-stale',
+        ownerInstanceId: 'instance-old',
+        acquiredAt: '2026-07-05T12:00:00.000Z',
+        lastRenewedAt: '2026-07-05T12:00:00.000Z',
+        expiresAt: '2026-07-05T12:01:00.000Z',
+      },
+      agentPid: process.pid,
+      agentProcessStartedAt: 'linux-start-ticks:definitely-not-this-process',
+    });
+
+    await reconcilerWithLeaseAndProcessIdentity().reconcileStaleRunningRecords(
+      new Date('2026-07-05T12:02:00.000Z'),
+    );
+
+    const record = await store.readRunRecord('run-123-stale');
+    expect(record?.status).toBe('failed');
+    expect(record?.metadata?.staleReason).toBe('runner-lock-not-active');
   });
 
   it.each([

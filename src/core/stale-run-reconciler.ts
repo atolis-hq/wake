@@ -25,7 +25,7 @@ export function createStaleRunReconciler(deps: {
   stateStore: StateStore;
   projectionUpdater: ProjectionUpdater;
   runnerTimeoutMs: () => number;
-  isRunningRecordActive?: (record: RunRecord) => Promise<boolean>;
+  isRunningRecordActive?: (record: RunRecord, now: Date) => Promise<boolean>;
   deliverOutboundEvent: (event: EventEnvelope) => Promise<void>;
 }) {
   function isTerminalLifecycle(lifecycle: ExecutionAttemptLifecycle): boolean {
@@ -76,14 +76,9 @@ export function createStaleRunReconciler(deps: {
       return 'startup-recovery';
     }
 
-    const active = await deps.isRunningRecordActive(record);
+    const active = await deps.isRunningRecordActive(record, now);
     if (active) {
-      const startedAtMs = Date.parse(record.startedAt);
-      if (!Number.isFinite(startedAtMs)) {
-        return 'timeout';
-      }
-
-      return now.getTime() - startedAtMs >= deps.runnerTimeoutMs() ? 'timeout' : null;
+      return null;
     }
 
     if (record.lifecycle === 'RUNNING' || record.lifecycle === 'PROCESS_STARTING') {

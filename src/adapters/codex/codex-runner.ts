@@ -309,6 +309,7 @@ export function createCodexRunner(options: {
       workspacePath?: string;
       mergeConflictDetected?: boolean;
       upstreamChanges?: string;
+      onProcessStart?: (identity: { pid: number; processStartedAt: string }) => Promise<void>;
     }): Promise<AgentRunResult> {
       const runMode = 'start';
       const toolCapabilityNote = buildCodexToolCapabilityNote({
@@ -373,6 +374,7 @@ export function createCodexRunner(options: {
         }),
         cwd,
         timeoutMs: options.settings.timeoutMs,
+        ...(input.onProcessStart === undefined ? {} : { onProcessStart: input.onProcessStart }),
       });
       const responseTranscriptPath = await writeRunnerTranscript({
         config: input.config,

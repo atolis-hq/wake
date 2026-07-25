@@ -86,6 +86,7 @@ export interface AgentRunner {
     routing?: RunnerRouting;
     mergeConflictDetected?: boolean;
     upstreamChanges?: string;
+    onProcessStart?: (identity: { pid: number; processStartedAt: string }) => Promise<void>;
   }): Promise<AgentRunResult>;
 }
 
