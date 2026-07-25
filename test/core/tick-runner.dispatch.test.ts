@@ -126,6 +126,275 @@ describe('tick runner', () => {
       expect(callCount).toBe(1);
     });
 
+    it('refreshes source state before claim and skips dispatch when the issue became ineligible', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const config = createDefaultWakeConfig(root);
+      config.sources.github.policy.requiredLabels = ['wake:queue'];
+      let runnerCallCount = 0;
+      let refreshCallCount = 0;
+
+      await store.writeIssueState({
+        schemaVersion: 1,
+        workItemKey: workId(346),
+        issue: {
+          repo: 'atolis-hq/wake',
+          number: 346,
+          title: 'Execute',
+          body: 'Body',
+          labels: ['wake:queue'],
+          assignees: [],
+          isPullRequest: false,
+          state: 'open',
+          url: 'https://example.test/issues/346',
+          createdAt: '2026-07-05T12:00:00.000Z',
+          updatedAt: '2026-07-05T12:00:00.000Z',
+        },
+        comments: [],
+        wake: {
+          stage: 'implement',
+          stageHistory: [],
+          recentEventIds: [],
+          syncedAt: '2026-07-05T12:00:00.000Z',
+          expectedEcho: { commentIds: [], labels: [] },
+        },
+        context: {},
+        correlatedResources: [],
+      });
+
+      const tickRunner = createTickRunner({
+        clock: { now: () => new Date('2026-07-05T12:10:00.000Z') },
+        config,
+        stateStore: store,
+        workSource: {
+          async pollEvents() {
+            return [];
+          },
+          async refreshForDispatch() {
+            refreshCallCount += 1;
+            return {
+              sourceRevision: 'github:issue:atolis-hq/wake#346@2026-07-05T12:09:00.000Z',
+              events: [
+                {
+                  schemaVersion: 1,
+                  eventId: 'evt-issue-346-closed',
+                  streamScope: 'global-intake',
+                  direction: 'inbound',
+                  sourceSystem: 'github',
+                  sourceEventType: 'ticket.upsert',
+                  sourceRefs: {
+                    repo: 'atolis-hq/wake',
+                    issueNumber: 346,
+                    sourceUrl: 'https://example.test/issues/346',
+                    resourceUri: githubIssueUri(346),
+                  },
+                  occurredAt: '2026-07-05T12:09:00.000Z',
+                  ingestedAt: '2026-07-05T12:10:00.000Z',
+                  trigger: 'immediate',
+                  payload: {
+                    ticket: {
+                      repo: 'atolis-hq/wake',
+                      number: 346,
+                      title: 'Execute',
+                      body: 'Body',
+                      labels: [],
+                      assignees: [],
+                      isPullRequest: false,
+                      state: 'closed',
+                      url: 'https://example.test/issues/346',
+                      createdAt: '2026-07-05T12:00:00.000Z',
+                      updatedAt: '2026-07-05T12:09:00.000Z',
+                    },
+                  },
+                },
+              ],
+            };
+          },
+        },
+        runner: {
+          async run() {
+            runnerCallCount += 1;
+            return { result: 'Should not run\nDONE', model: 'test-model', cli: 'test-cli' };
+          },
+        },
+        resourceIndex: await seededResourceIndex([346]),
+        workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+      });
+
+      const result = await tickRunner.runTick();
+      const runRecords = await store.listRunRecords();
+      const events = await store.listEventEnvelopes();
+      const projection = await store.readIssueState(workId(346));
+
+      expect(result.status).toBe('idle');
+      expect(refreshCallCount).toBe(1);
+      expect(runnerCallCount).toBe(0);
+      expect(runRecords).toHaveLength(0);
+      expect(events.some((event) => event.sourceEventType === 'wake.run.claimed')).toBe(false);
+      expect(projection?.issue.state).toBe('closed');
+    });
+
+    it('persists the refreshed source revision on the run record and claim event', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const config = createDefaultWakeConfig(root);
+      config.sources.github.policy.requiredLabels = ['wake:queue'];
+
+      await store.writeIssueState({
+        schemaVersion: 1,
+        workItemKey: workId(347),
+        issue: {
+          repo: 'atolis-hq/wake',
+          number: 347,
+          title: 'Execute',
+          body: 'Body',
+          labels: ['wake:queue'],
+          assignees: [],
+          isPullRequest: false,
+          state: 'open',
+          url: 'https://example.test/issues/347',
+          createdAt: '2026-07-05T12:00:00.000Z',
+          updatedAt: '2026-07-05T12:00:00.000Z',
+        },
+        comments: [],
+        wake: {
+          stage: 'implement',
+          stageHistory: [],
+          recentEventIds: [],
+          syncedAt: '2026-07-05T12:00:00.000Z',
+          expectedEcho: { commentIds: [], labels: [] },
+        },
+        context: {},
+        correlatedResources: [],
+      });
+
+      const tickRunner = createTickRunner({
+        clock: { now: () => new Date('2026-07-05T12:10:00.000Z') },
+        config,
+        stateStore: store,
+        workSource: {
+          async pollEvents() {
+            return [];
+          },
+          async refreshForDispatch() {
+            return {
+              sourceRevision: 'github:issue:atolis-hq/wake#347@2026-07-05T12:00:00.000Z',
+              events: [],
+            };
+          },
+        },
+        runner: {
+          async run() {
+            return { result: 'Implemented\nDONE', model: 'test-model', cli: 'test-cli' };
+          },
+        },
+        resourceIndex: await seededResourceIndex([347]),
+        workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+      });
+
+      const result = await tickRunner.runTick();
+      const [runRecord] = await store.listRunRecords();
+      const claimedEvent = (await store.listEventEnvelopes()).find(
+        (event) => event.sourceEventType === 'wake.run.claimed',
+      );
+
+      expect(result.status).toBe('processed');
+      expect(runRecord?.metadata?.sourceRevision).toBe(
+        'github:issue:atolis-hq/wake#347@2026-07-05T12:00:00.000Z',
+      );
+      expect(claimedEvent?.payload.sourceRevision).toBe(
+        'github:issue:atolis-hq/wake#347@2026-07-05T12:00:00.000Z',
+      );
+    });
+
+    it('rechecks scheduler capacity after refresh and before persisting a claim', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const config = createDefaultWakeConfig(root);
+      config.sources.github.policy.requiredLabels = ['wake:queue'];
+      let runnerCallCount = 0;
+
+      await store.writeIssueState({
+        schemaVersion: 1,
+        workItemKey: workId(348),
+        issue: {
+          repo: 'atolis-hq/wake',
+          number: 348,
+          title: 'Execute',
+          body: 'Body',
+          labels: ['wake:queue'],
+          assignees: [],
+          isPullRequest: false,
+          state: 'open',
+          url: 'https://example.test/issues/348',
+          createdAt: '2026-07-05T12:00:00.000Z',
+          updatedAt: '2026-07-05T12:00:00.000Z',
+        },
+        comments: [],
+        wake: {
+          stage: 'implement',
+          stageHistory: [],
+          recentEventIds: [],
+          syncedAt: '2026-07-05T12:00:00.000Z',
+          expectedEcho: { commentIds: [], labels: [] },
+        },
+        context: {},
+        correlatedResources: [],
+      });
+
+      const tickRunner = createTickRunner({
+        clock: { now: () => new Date('2026-07-05T12:10:00.000Z') },
+        config,
+        stateStore: store,
+        workSource: {
+          async pollEvents() {
+            return [];
+          },
+          async refreshForDispatch() {
+            await store.writeRunRecord({
+              schemaVersion: 1,
+              runId: 'run-existing-active',
+              workItemKey: workId(999),
+              repo: 'atolis-hq/wake',
+              issueNumber: 999,
+              action: 'implement',
+              lifecycle: 'RUNNING',
+              status: 'running',
+              startedAt: '2026-07-05T12:09:59.000Z',
+              lease: {
+                leaseId: 'lease-existing-active',
+                ownerInstanceId: 'other-instance',
+                acquiredAt: '2026-07-05T12:09:59.000Z',
+                lastRenewedAt: '2026-07-05T12:09:59.000Z',
+                expiresAt: '2026-07-05T12:11:00.000Z',
+              },
+            });
+
+            return {
+              sourceRevision: 'github:issue:atolis-hq/wake#348@2026-07-05T12:00:00.000Z',
+              events: [],
+            };
+          },
+        },
+        runner: {
+          async run() {
+            runnerCallCount += 1;
+            return { result: 'Should not run\nDONE', model: 'test-model', cli: 'test-cli' };
+          },
+        },
+        resourceIndex: await seededResourceIndex([348]),
+        workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+      });
+
+      const result = await tickRunner.runTick();
+      const runRecords = await store.listRunRecords();
+      const claimedEvents = (await store.listEventEnvelopes()).filter(
+        (event) => event.sourceEventType === 'wake.run.claimed',
+      );
+
+      expect(result.status).toBe('idle');
+      expect(runnerCallCount).toBe(0);
+      expect(runRecords.map((record) => record.runId)).toEqual(['run-existing-active']);
+      expect(claimedEvents).toHaveLength(0);
+    });
+
     it('retries the blocked-from stage after a FAILED sentinel with a fresh human reply', async () => {
       // Custom workflows make the resume target a stage-level policy decision:
       // when a FAILED/BLOCKED run gets an unhandled human reply, Wake re-runs

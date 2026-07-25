@@ -247,6 +247,10 @@ export async function readControlPlaneUiUrl(wakeRoot: string): Promise<string | 
 
 type OctokitError = Error & { status?: number; response?: { headers?: Record<string, string> } };
 
+function isGitHubNotFound(error: unknown): boolean {
+  return error instanceof Error && (error as OctokitError).status === 404;
+}
+
 export function formatGitHubError(error: unknown): string {
   if (error instanceof Error) {
     const octokit = error as OctokitError;
@@ -397,6 +401,7 @@ export function createGitHubIssuesWorkSource(deps: {
       issueNumber: number,
       perPage: number,
     ) => Promise<GitHubComment[]>;
+    getIssue?: (owner: string, repo: string, issueNumber: number) => Promise<GitHubIssue>;
     createComment: (
       owner: string,
       repo: string,
@@ -439,6 +444,89 @@ export function createGitHubIssuesWorkSource(deps: {
   }
 
   return {
+    async refreshForDispatch(input: { projection: IssueStateRecord }) {
+      const repoRef = input.projection.issue.repo;
+      if (deps.client.getIssue === undefined) {
+        return null;
+      }
+      if (!deps.config.sources.github.repos.includes(repoRef)) {
+        return null;
+      }
+
+      const [owner, repo] = repoRef.split('/');
+      if (owner === undefined || repo === undefined) {
+        return null;
+      }
+
+      const ingestedAt = deps.now().toISOString();
+      let issue: GitHubIssue;
+      try {
+        issue = await deps.client.getIssue(owner, repo, input.projection.issue.number);
+      } catch (error) {
+        if (isGitHubNotFound(error)) {
+          return {
+            events: [],
+            sourceRevision: `github:issue:${repoRef}#${input.projection.issue.number}@missing`,
+            sourceExists: false,
+          };
+        }
+        throw error;
+      }
+      const events: UnkeyedEventEnvelope[] = [];
+
+      if (input.projection.issue.updatedAt !== issue.updated_at) {
+        events.push(
+          normalizeTicketUpsert({
+            repo: repoRef,
+            issue,
+            ingestedAt,
+            expectedEcho: isExpectedLabelEcho(issue, input.projection),
+          }),
+        );
+      }
+
+      const comments = await deps.client.listComments(
+        owner,
+        repo,
+        input.projection.issue.number,
+        deps.config.sources.github.polling.commentPageSize,
+      );
+      let latestCommentRevision = '';
+
+      for (const comment of comments) {
+        if (comment.updated_at > latestCommentRevision) {
+          latestCommentRevision = comment.updated_at;
+        }
+
+        const known = input.projection.comments.find((entry) => entry.id === String(comment.id));
+        if (known?.updatedAt === comment.updated_at) {
+          continue;
+        }
+
+        if (input.projection.wake.expectedEcho.commentIds.includes(String(comment.id))) {
+          continue;
+        }
+
+        events.push(
+          normalizeTicketCommentEvent({
+            repo: repoRef,
+            issueNumber: input.projection.issue.number,
+            comment,
+            ingestedAt,
+            ...(deps.selfLogin === undefined ? {} : { selfLogin: deps.selfLogin }),
+            ...(known?.updatedAt === undefined ? {} : { existingUpdatedAt: known.updatedAt }),
+          }),
+        );
+      }
+
+      return {
+        events,
+        sourceRevision:
+          latestCommentRevision.length > 0
+            ? `github:issue:${repoRef}#${issue.number}@${issue.updated_at};comments@${latestCommentRevision}`
+            : `github:issue:${repoRef}#${issue.number}@${issue.updated_at}`,
+      };
+    },
     async pollEvents(_input?: {
       watch: Array<{ resourceUri: string }>;
     }): Promise<UnkeyedEventEnvelope[]> {

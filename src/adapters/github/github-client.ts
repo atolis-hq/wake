@@ -76,6 +76,14 @@ export function createGitHubClient(token: string) {
           }),
       });
     },
+    async getIssue(owner: string, repo: string, issueNumber: number) {
+      const { data } = await octokit.rest.issues.get({
+        owner,
+        repo,
+        issue_number: issueNumber,
+      });
+      return data;
+    },
     async createComment(owner: string, repo: string, issueNumber: number, body: string) {
       return octokit.rest.issues.createComment({
         owner,
