@@ -25,6 +25,53 @@ describe('prompt templates', () => {
     await expect(loadPromptTemplate('refine', 'resume')).resolves.toBeDefined();
     await expect(loadPromptTemplate('implement', 'start')).resolves.toBeDefined();
     await expect(loadPromptTemplate('implement', 'resume')).resolves.toBeDefined();
+    await expect(loadPromptTemplate('triage-assign', 'start')).resolves.toBeDefined();
+  });
+
+  it('renders triage manual-exclusion labels and capacity from trusted Wake context', async () => {
+    const config = createDefaultWakeConfig(process.cwd());
+    config.sources.github.repos = ['org/repo'];
+    config.sources.github.policy.ignoredLabels = ['do-not-automate'];
+    const result = await buildStagePrompt({
+      action: 'triage-assign',
+      config,
+      contextOverrides: {
+        triageCapacityAvailable: true,
+      },
+      projection: {
+        schemaVersion: 1,
+        workItemKey: 'work-01JQZX9K2N4P6R8T0V2W4Y6A99',
+        issue: {
+          repo: 'wake/internal',
+          number: 1,
+          title: 'Scheduled workflow: triage',
+          body: 'Synthetic schedule trigger',
+          labels: ['wake:scheduled-workflow'],
+          assignees: [],
+          isPullRequest: false,
+          state: 'open',
+          url: 'https://wake.local/schedules/triage/slot',
+          createdAt: '2026-07-25T22:30:00.000Z',
+          updatedAt: '2026-07-25T22:30:00.000Z',
+        },
+        comments: [],
+        wake: {
+          stage: 'queue',
+          stageHistory: [],
+          recentEventIds: [],
+          syncedAt: '2026-07-25T22:34:00.000Z',
+          expectedEcho: { commentIds: [], labels: [] },
+        },
+        context: { workflow: 'triage' },
+        correlatedResources: [],
+      },
+    });
+
+    expect(result.prompt).toContain('Capacity available: true');
+    expect(result.prompt).toContain('"security"');
+    expect(result.prompt).toContain('"wake:manual"');
+    expect(result.prompt).toContain('"do-not-automate"');
+    expect(result.prompt).toContain('["org/repo"]');
   });
 
   it('instructs the agent to embed the wake:work-item marker verbatim in PR bodies it creates', async () => {

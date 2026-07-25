@@ -770,6 +770,15 @@ export function createTickRunner(deps: {
           runId,
           routing,
           workspaceMode,
+          ...(action === 'triage-assign'
+            ? {
+                promptContextOverrides: {
+                  triageCapacityAvailable: true,
+                  triageWipCapDescription:
+                    'Wake has no active running work item at triage start; do not assign more than one issue.',
+                },
+              }
+            : {}),
           ...(workspacePath === undefined ? {} : { workspacePath }),
           ...(mergeConflictDetected ? { mergeConflictDetected: true } : {}),
           ...(upstreamChanges === undefined ? {} : { upstreamChanges }),

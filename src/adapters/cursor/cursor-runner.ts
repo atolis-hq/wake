@@ -265,6 +265,7 @@ export function createCursorRunner(options: {
       runId: string;
       workspaceMode?: 'none' | 'read-only' | 'branch';
       workspacePath?: string;
+      promptContextOverrides?: Record<string, unknown>;
       mergeConflictDetected?: boolean;
       upstreamChanges?: string;
       onProcessStart?: (identity: { pid: number; processStartedAt: string }) => Promise<void>;
@@ -289,7 +290,14 @@ export function createCursorRunner(options: {
         ...(input.workspaceMode === undefined ? {} : { workspaceMode: input.workspaceMode }),
         ...(input.mergeConflictDetected === true ? { mergeConflictDetected: true } : {}),
         ...(input.upstreamChanges === undefined ? {} : { upstreamChanges: input.upstreamChanges }),
-        ...(toolCapabilityNote !== undefined ? { contextOverrides: { toolCapabilityNote } } : {}),
+        ...(toolCapabilityNote !== undefined || input.promptContextOverrides !== undefined
+          ? {
+              contextOverrides: {
+                ...input.promptContextOverrides,
+                ...(toolCapabilityNote === undefined ? {} : { toolCapabilityNote }),
+              },
+            }
+          : {}),
       });
 
       const model = resolveModel({ action: input.action, settings: options.settings });

@@ -21,6 +21,8 @@ export interface ApprovalResolution {
   pendingAction: AgentAction;
 }
 
+export const alwaysManualIgnoredLabels = ['security', 'wake:manual', 'wake:always-manual'];
+
 function isAwaitingApproval(issue: IssueStateRecord): boolean {
   const context = issue.context as Record<string, unknown>;
   return context.lastRunSentinel === awaitingApprovalRunnerSentinel;
@@ -72,7 +74,8 @@ function labelsAndAssigneesQualify(input: {
     return false;
   }
 
-  if (input.ignoredLabels.some((label) => labels.has(label))) {
+  const ignoredLabels = new Set([...input.ignoredLabels, ...alwaysManualIgnoredLabels]);
+  if ([...ignoredLabels].some((label) => labels.has(label))) {
     return false;
   }
 
@@ -114,6 +117,10 @@ export function createPolicyEngine() {
   return {
     isEligible(issue: IssueStateRecord, config: WakeConfig): boolean {
       if (issue.issue.state !== 'open') {
+        return false;
+      }
+
+      if (issue.issue.labels.some((label) => alwaysManualIgnoredLabels.includes(label))) {
         return false;
       }
 
@@ -345,6 +352,11 @@ export function createPolicyEngine() {
       }
 
       const kind = resourceUri.split(':')[1];
+      if (kind === 'schedule') {
+        const workflow = unresolved.payload.workflow;
+        return typeof workflow === 'string' && config.workflows[workflow] !== undefined;
+      }
+
       if (config.workflowSelectors.length > 0) {
         return selectWorkflowForEvent(unresolved, config) !== null;
       }

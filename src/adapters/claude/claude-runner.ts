@@ -250,6 +250,7 @@ export function createClaudeRunner(options: {
       config: WakeConfig;
       runId: string;
       workspacePath?: string;
+      promptContextOverrides?: Record<string, unknown>;
       mergeConflictDetected?: boolean;
       upstreamChanges?: string;
       onProcessStart?: (identity: { pid: number; processStartedAt: string }) => Promise<void>;
@@ -275,6 +276,9 @@ export function createClaudeRunner(options: {
         projection: input.projection,
         mode: isResume ? 'resume' : 'start',
         config: input.config,
+        ...(input.promptContextOverrides === undefined
+          ? {}
+          : { contextOverrides: input.promptContextOverrides }),
         ...(input.mergeConflictDetected === true ? { mergeConflictDetected: true } : {}),
         ...(input.upstreamChanges === undefined ? {} : { upstreamChanges: input.upstreamChanges }),
       });

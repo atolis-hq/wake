@@ -40,6 +40,7 @@ import { loadWakeConfig } from './config/load-config.js';
 import { createActiveRunRecovery } from './core/active-run-recovery.js';
 import { createControlPlane } from './core/control-plane.js';
 import { createOutboundSinkRouter, createWorkSourceFanIn } from './core/sink-router.js';
+import { createScheduledWorkflowSource } from './core/scheduled-workflow-source.js';
 import { createTickRunner } from './core/tick-runner.js';
 import { systemClock } from './lib/clock.js';
 import { createDetachedProcessLogSink } from './lib/detached-process-logging.js';
@@ -653,6 +654,14 @@ export async function buildRuntime(args: string[]) {
       : null;
 
   const workSource = createWorkSourceFanIn([
+    {
+      source: 'wake-schedule',
+      pollEvents: createScheduledWorkflowSource({
+        config,
+        stateStore,
+        now: () => systemClock.now(),
+      }).pollEvents,
+    },
     {
       source: sourceName,
       pollEvents: ticketingSystem.pollEvents,

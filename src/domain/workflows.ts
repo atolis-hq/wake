@@ -184,6 +184,11 @@ export function selectWorkflowForEvent(
   event: WorkflowSelectorEvent,
   config: WakeConfig,
 ): string | null {
+  const hintedWorkflow = event.payload.workflow;
+  if (typeof hintedWorkflow === 'string' && config.workflows[hintedWorkflow] !== undefined) {
+    return hintedWorkflow;
+  }
+
   const input = workflowSelectorInputFromEvent(event);
   const selector = config.workflowSelectors.find((candidate) => selectorMatches(candidate, input));
   return selector?.workflow ?? null;

@@ -91,6 +91,7 @@ export interface AgentRunner {
     runId: string;
     workspaceMode?: 'none' | 'read-only' | 'branch';
     workspacePath?: string;
+    promptContextOverrides?: Record<string, unknown>;
     routing?: RunnerRouting;
     mergeConflictDetected?: boolean;
     upstreamChanges?: string;

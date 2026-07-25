@@ -430,12 +430,21 @@ const workflowStageSchema = stageRouteSchema.extend({
   onDone: identifierSchema,
 });
 
+const workflowTriggerScheduleSchema = z.object({
+  cron: z.string().min(1),
+});
+
+const workflowTriggerSchema = z.object({
+  schedule: workflowTriggerScheduleSchema.optional(),
+});
+
 const customCommandSchema = stageRouteSchema.extend({
   workspace: workflowWorkspaceSchema.default('read-only'),
 });
 
 const workflowDefinitionSchema = z.object({
   entryStage: identifierSchema.optional(),
+  trigger: workflowTriggerSchema.optional(),
   stages: z.record(identifierSchema, workflowStageSchema),
 });
 
@@ -673,6 +682,21 @@ const wakeConfigBaseSchema = z.object({
           action: 'implement',
           workspace: 'branch',
           tier: 'standard',
+          onDone: 'done',
+        },
+      },
+    },
+    triage: {
+      trigger: {
+        schedule: {
+          cron: '*/10 * * * *',
+        },
+      },
+      stages: {
+        assign: {
+          action: 'triage-assign',
+          workspace: 'none',
+          tier: 'light',
           onDone: 'done',
         },
       },
