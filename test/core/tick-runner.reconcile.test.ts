@@ -278,5 +278,70 @@ describe('tick runner', () => {
       expect(projection?.wake.stage).toBe('done');
       expect(await store.readEventEnvelope('run-124-stale-stale-reconciled')).toBeNull();
     });
+
+    it('does not launch when a projection claim points at a missing run record', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const config = createDefaultWakeConfig(root);
+      config.sources.github.policy.requiredLabels = ['wake'];
+      let runnerCallCount = 0;
+
+      await store.writeIssueState({
+        schemaVersion: 1,
+        workItemKey: workId(125),
+        issue: {
+          repo: 'atolis-hq/wake',
+          number: 125,
+          title: 'Missing run record',
+          body: 'Body',
+          labels: ['wake'],
+          assignees: [],
+          isPullRequest: false,
+          state: 'open',
+          url: 'https://example.test/issues/125',
+          createdAt: '2026-07-05T12:00:00.000Z',
+          updatedAt: '2026-07-05T12:00:00.000Z',
+        },
+        comments: [],
+        wake: {
+          stage: 'implement',
+          lastRunId: 'run-125-missing',
+          syncedAt: '2026-07-05T12:00:00.000Z',
+          stageHistory: [],
+          recentEventIds: [],
+          expectedEcho: { commentIds: [], labels: [] },
+        },
+        context: {},
+        correlatedResources: [],
+      });
+
+      const tickRunner = createTickRunner({
+        clock: { now: () => new Date('2026-07-05T12:02:00.000Z') },
+        config,
+        stateStore: store,
+        workSource: {
+          async pollEvents() {
+            return [];
+          },
+        },
+        runner: {
+          async run() {
+            runnerCallCount += 1;
+            return { result: 'Should not run\nDONE', model: 'test-model', cli: 'test-cli' };
+          },
+        },
+        resourceIndex: createFakeResourceIndex(),
+        workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+      });
+
+      const result = await tickRunner.runTick();
+      const projection = await findByIssueRef(store, { repo: 'atolis-hq/wake', issueNumber: 125 });
+
+      expect(result.status).toBe('idle');
+      expect(runnerCallCount).toBe(0);
+      expect(projection?.context.lastRunSentinel).toBe('FAILED');
+      expect(
+        await store.readEventEnvelope('run-125-missing-missing-run-record-recovered'),
+      ).not.toBeNull();
+    });
   });
 });

@@ -46,8 +46,19 @@ export const workflowOutcomeValues = [
   'CHANGES_REQUESTED',
 ] as const;
 
+export const executionAttemptLifecycleValues = [
+  'CREATED',
+  'CLAIMED',
+  'PREPARING',
+  'PROCESS_STARTING',
+  'RUNNING',
+  'FINALISING',
+  'TERMINAL',
+] as const;
+
 export const executionOutcomeSchema = z.enum(executionOutcomeValues);
 export const workflowOutcomeSchema = z.enum(workflowOutcomeValues);
+export const executionAttemptLifecycleSchema = z.enum(executionAttemptLifecycleValues);
 
 export const defaultAgentIdentity = 'Wake';
 export const defaultSmokePrompt = `This is ${defaultAgentIdentity}, reply with "hi ${defaultAgentIdentity} only"`;
@@ -335,33 +346,59 @@ const runTokenUsageSchema = z.object({
   turns: z.number().nonnegative().optional(),
 });
 
-export const runRecordSchema = z.object({
-  schemaVersion: z.literal(1),
-  runId: z.string(),
-  // The work item this run belongs to. Required: run records are Wake-owned
-  // state that Wake itself writes, so the work id is always in hand at the
-  // write site, and an optional key would lie about runtime while re-admitting
-  // the ticket-shaped ambiguity minted identity exists to remove.
-  workItemKey: z.string(),
-  // Human-readable representation content only — the ticket this run was
-  // launched against (same reasoning as the projection's retained `issue`
-  // snapshot, spec §9). Never used to find the work item: a transferred issue
-  // gets a new repo/number while the work item and its runs persist (spec D3).
-  repo: z.string(),
-  issueNumber: z.number().int().positive(),
-  action: identifierSchema,
-  status: z.enum(['running', 'completed', 'awaiting-approval', 'blocked', 'failed', 'superseded']),
-  startedAt: isoTimestampSchema,
-  finishedAt: isoTimestampSchema.optional(),
-  sessionId: z.string().optional(),
-  sentinel: runnerSentinelSchema.optional(),
-  executionOutcome: executionOutcomeSchema.optional(),
-  workflowOutcome: workflowOutcomeSchema.optional(),
-  summary: z.string().optional(),
-  routing: runnerRoutingSchema.optional(),
-  tokenUsage: runTokenUsageSchema.optional(),
-  metadata: z.record(z.string(), z.unknown()).optional(),
-});
+function legacyRunLifecycle(input: Record<string, unknown>) {
+  if (input.lifecycle !== undefined) {
+    return input;
+  }
+
+  return {
+    ...input,
+    lifecycle: input.status === 'running' ? 'RUNNING' : 'TERMINAL',
+  };
+}
+
+export const runRecordSchema = z.preprocess(
+  (input) => {
+    return input !== null && typeof input === 'object'
+      ? legacyRunLifecycle(input as Record<string, unknown>)
+      : input;
+  },
+  z.object({
+    schemaVersion: z.literal(1),
+    runId: z.string(),
+    // The work item this run belongs to. Required: run records are Wake-owned
+    // state that Wake itself writes, so the work id is always in hand at the
+    // write site, and an optional key would lie about runtime while re-admitting
+    // the ticket-shaped ambiguity minted identity exists to remove.
+    workItemKey: z.string(),
+    // Human-readable representation content only — the ticket this run was
+    // launched against (same reasoning as the projection's retained `issue`
+    // snapshot, spec §9). Never used to find the work item: a transferred issue
+    // gets a new repo/number while the work item and its runs persist (spec D3).
+    repo: z.string(),
+    issueNumber: z.number().int().positive(),
+    action: identifierSchema,
+    lifecycle: executionAttemptLifecycleSchema,
+    status: z.enum([
+      'running',
+      'completed',
+      'awaiting-approval',
+      'blocked',
+      'failed',
+      'superseded',
+    ]),
+    startedAt: isoTimestampSchema,
+    finishedAt: isoTimestampSchema.optional(),
+    sessionId: z.string().optional(),
+    sentinel: runnerSentinelSchema.optional(),
+    executionOutcome: executionOutcomeSchema.optional(),
+    workflowOutcome: workflowOutcomeSchema.optional(),
+    summary: z.string().optional(),
+    routing: runnerRoutingSchema.optional(),
+    tokenUsage: runTokenUsageSchema.optional(),
+    metadata: z.record(z.string(), z.unknown()).optional(),
+  }),
+);
 
 const runnerHealthEntrySchema = z.object({
   pausedUntil: isoTimestampSchema.optional(),

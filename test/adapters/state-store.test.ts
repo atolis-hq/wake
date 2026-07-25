@@ -68,6 +68,7 @@ function runRecord(input: {
     repo: 'atolis-hq/wake',
     issueNumber: input.issueNumber ?? 7,
     action: 'implement',
+    lifecycle: input.status === 'running' ? 'RUNNING' : 'TERMINAL',
     status: input.status ?? 'completed',
     startedAt: input.startedAt,
   };
