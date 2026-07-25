@@ -296,6 +296,52 @@ describe('main command routing', () => {
     expect(runDoctor).toHaveBeenCalledWith(['--wake-root', '/tmp/wake-home']);
   });
 
+  it('routes validate-state through the runtime command path', async () => {
+    const wakeRoot = await makeTempWakeRootWithoutDockerfile();
+    const runValidateState = vi.fn(async () => {});
+
+    await dispatchMainCommand({
+      args: ['validate-state', '--wake-root', wakeRoot],
+      runInit: async () => {},
+      runSandbox: async () => {},
+      runSandboxSetup: async () => {},
+      runSandboxEntrypoint: async () => {},
+      runTick: async () => {},
+      runStart: async () => {},
+      runSmoke: async () => {},
+      runUi: async () => {},
+      runCorrelate: async () => {},
+      runValidateState,
+      execIntoSandbox: async () => {},
+      runDoctor: async () => {},
+    });
+
+    expect(runValidateState).toHaveBeenCalledWith(['--wake-root', wakeRoot]);
+  });
+
+  it('delegates validate-state into the sandbox when the wake home has a Dockerfile', async () => {
+    const wakeRoot = await makeTempWakeRootWithDockerfile();
+    const execIntoSandbox = vi.fn(async () => {});
+
+    await dispatchMainCommand({
+      args: ['validate-state', '--wake-root', wakeRoot],
+      runInit: async () => {},
+      runSandbox: async () => {},
+      runSandboxSetup: async () => {},
+      runSandboxEntrypoint: async () => {},
+      runTick: async () => {},
+      runStart: async () => {},
+      runSmoke: async () => {},
+      runUi: async () => {},
+      runCorrelate: async () => {},
+      runValidateState: async () => {},
+      execIntoSandbox,
+      runDoctor: async () => {},
+    });
+
+    expect(execIntoSandbox).toHaveBeenCalledWith(['validate-state', '--wake-root', wakeRoot]);
+  });
+
   it('ignores inner exec payload flags after command terminator', () => {
     expect(
       readFlagBeforeCommandTerminator('--wake-root', [

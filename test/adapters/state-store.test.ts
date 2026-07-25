@@ -5,6 +5,7 @@ import { join } from 'node:path';
 
 import { createStateStore } from '../../src/adapters/fs/state-store.js';
 import { createWakePaths } from '../../src/lib/paths.js';
+import { StateHealthError } from '../../src/lib/state-health.js';
 import type { EventEnvelope, IssueStateRecord, RunRecord } from '../../src/domain/types.js';
 
 /**
@@ -238,7 +239,14 @@ describe('state store', () => {
     await expect(store.isPaused(new Date('2026-07-08T01:09:59.000Z'))).resolves.toBe(false);
   });
 
-  it('skips invalid issue-state files instead of returning an empty list', async () => {
+  it('returns null for a missing issue-state file on first run', async () => {
+    const store = createStateStore({ wakeRoot: root });
+
+    await expect(store.readIssueState(workId(404))).resolves.toBeNull();
+    await expect(store.listIssueStates()).resolves.toEqual([]);
+  });
+
+  it('flags invalid issue-state files instead of treating them as absent', async () => {
     const store = createStateStore({ wakeRoot: root });
     const paths = createWakePaths(root);
 
@@ -256,10 +264,37 @@ describe('state store', () => {
       'utf8',
     );
 
-    const states = await store.listIssueStates();
+    await expect(store.listIssueStates()).rejects.toBeInstanceOf(StateHealthError);
 
-    expect(states).toHaveLength(1);
-    expect(states[0]?.issue.number).toBe(7);
+    const report = await store.validateStateHealth();
+    expect(report.healthy).toBe(false);
+    expect(report.issues).toContainEqual(
+      expect.objectContaining({
+        surface: 'state',
+        kind: 'corrupted',
+        path: paths.workItemStateFile(workId(8)),
+      }),
+    );
+  });
+
+  it('flags malformed event JSONL instead of returning an empty event list', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const paths = createWakePaths(root);
+
+    await mkdir(join(paths.dataRoot, 'events'), { recursive: true });
+    await writeFile(paths.eventFile('2026-07-05'), '{"eventId": "truncated"\n', 'utf8');
+
+    await expect(store.listEventEnvelopes()).rejects.toBeInstanceOf(StateHealthError);
+
+    const report = await store.validateStateHealth();
+    expect(report.healthy).toBe(false);
+    expect(report.issues).toContainEqual(
+      expect.objectContaining({
+        surface: 'events',
+        kind: 'corrupted',
+        path: `${paths.eventFile('2026-07-05')}:1`,
+      }),
+    );
   });
 
   it('archives old terminal issue states out of the default scan but keeps direct reads working', async () => {

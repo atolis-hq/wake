@@ -1,6 +1,7 @@
 import { access, appendFile, mkdir, readFile, readdir, rename } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
+import { validateResourceIndex } from './resource-index.js';
 import {
   parseEventEnvelope,
   parseIssueStateRecord,
@@ -19,6 +20,14 @@ import type {
 } from '../../domain/types.js';
 import { appendJsonLine, readJsonFile, writeJsonFile } from '../../lib/json-file.js';
 import { createWakePaths } from '../../lib/paths.js';
+import {
+  isMissingPathError,
+  stateHealthIssue,
+  StateHealthError,
+  throwIfUnhealthy,
+  type StateHealthIssue,
+  type StateHealthReport,
+} from '../../lib/state-health.js';
 
 type ListIssueStatesOptions = {
   includeArchived?: boolean;
@@ -36,8 +45,18 @@ type EventFeedFilter = {
 async function readIssueStateFile(file: string): Promise<IssueStateRecord | null> {
   try {
     return parseIssueStateRecord(await readJsonFile(file));
-  } catch {
-    return null;
+  } catch (error) {
+    if (isMissingPathError(error)) {
+      return null;
+    }
+    throw new StateHealthError([
+      stateHealthIssue({
+        surface: 'state',
+        kind: 'corrupted',
+        path: file,
+        message: error instanceof Error ? error.message : String(error),
+      }),
+    ]);
   }
 }
 
@@ -53,26 +72,144 @@ async function readEventFile(file: string): Promise<EventEnvelope[]> {
   try {
     const raw = await readFile(file, 'utf8');
     const envelopes: EventEnvelope[] = [];
+    let lineNumber = 0;
     for (const line of raw.split('\n')) {
+      lineNumber += 1;
       const trimmed = line.trim();
       if (trimmed.length === 0) {
         continue;
       }
 
-      const parsed = JSON.parse(trimmed) as unknown;
-      if (
-        parsed !== null &&
-        typeof parsed === 'object' &&
-        'eventId' in parsed &&
-        'sourceEventType' in parsed
-      ) {
+      try {
+        const parsed = JSON.parse(trimmed) as unknown;
         envelopes.push(parseEventEnvelope(parsed));
+      } catch (error) {
+        throw new StateHealthError([
+          stateHealthIssue({
+            surface: 'events',
+            kind: 'corrupted',
+            path: `${file}:${lineNumber}`,
+            message: error instanceof Error ? error.message : String(error),
+          }),
+        ]);
       }
     }
     return envelopes;
-  } catch {
-    return [];
+  } catch (error) {
+    if (isMissingPathError(error)) {
+      return [];
+    }
+    if (error instanceof StateHealthError) {
+      throw error;
+    }
+    throw new StateHealthError([
+      stateHealthIssue({
+        surface: 'events',
+        kind: 'corrupted',
+        path: file,
+        message: error instanceof Error ? error.message : String(error),
+      }),
+    ]);
   }
+}
+
+async function collectIssueStateIssues(
+  paths: ReturnType<typeof createWakePaths>,
+): Promise<StateHealthIssue[]> {
+  const issues: StateHealthIssue[] = [];
+  const visit = async (dir: string): Promise<void> => {
+    const entries = await readdir(dir, { withFileTypes: true }).catch((error) => {
+      if (isMissingPathError(error)) {
+        return [];
+      }
+      throw error;
+    });
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        if (entry.name === 'index') {
+          continue;
+        }
+        await visit(join(dir, entry.name));
+        continue;
+      }
+      if (!entry.isFile() || !entry.name.endsWith('.json')) {
+        continue;
+      }
+      const file = join(dir, entry.name);
+      try {
+        parseIssueStateRecord(await readJsonFile(file));
+      } catch (error) {
+        issues.push(
+          stateHealthIssue({
+            surface: 'state',
+            kind: 'corrupted',
+            path: file,
+            message: error instanceof Error ? error.message : String(error),
+          }),
+        );
+      }
+    }
+  };
+
+  await visit(join(paths.dataRoot, 'state'));
+  return issues;
+}
+
+async function collectEventIssues(
+  paths: ReturnType<typeof createWakePaths>,
+): Promise<StateHealthIssue[]> {
+  const issues: StateHealthIssue[] = [];
+  const eventLogFiles = await readdir(join(paths.dataRoot, 'events'), {
+    withFileTypes: true,
+  }).catch((error) => {
+    if (isMissingPathError(error)) {
+      return [];
+    }
+    throw error;
+  });
+  for (const entry of eventLogFiles) {
+    if (!entry.isFile() || !entry.name.endsWith('.jsonl')) {
+      continue;
+    }
+    try {
+      await readEventFile(join(paths.dataRoot, 'events', entry.name));
+    } catch (error) {
+      if (error instanceof StateHealthError) {
+        issues.push(...error.issues);
+      } else {
+        throw error;
+      }
+    }
+  }
+
+  const eventEnvelopeFiles = await readdir(join(paths.dataRoot, 'events-by-id'), {
+    withFileTypes: true,
+  }).catch((error) => {
+    if (isMissingPathError(error)) {
+      return [];
+    }
+    throw error;
+  });
+  for (const entry of eventEnvelopeFiles) {
+    if (!entry.isFile() || !entry.name.endsWith('.json')) {
+      continue;
+    }
+    const file = join(paths.dataRoot, 'events-by-id', entry.name);
+    try {
+      parseEventEnvelope(await readJsonFile(file));
+    } catch (error) {
+      issues.push(
+        stateHealthIssue({
+          surface: 'events',
+          kind: 'corrupted',
+          path: file,
+          message: error instanceof Error ? error.message : String(error),
+        }),
+      );
+    }
+  }
+
+  return issues;
 }
 
 function issueArchiveAgeDate(item: IssueStateRecord): string {
@@ -212,8 +349,11 @@ export function createStateStore({ wakeRoot }: { wakeRoot: string }) {
     async readLedger(): Promise<WakeLedger | null> {
       try {
         return parseLedger(await readJsonFile(paths.ledgerFile));
-      } catch {
-        return null;
+      } catch (error) {
+        if (isMissingPathError(error)) {
+          return null;
+        }
+        throw error;
       }
     },
     async writeIssueState(record: IssueStateRecord): Promise<IssueStateRecord> {
@@ -272,8 +412,11 @@ export function createStateStore({ wakeRoot }: { wakeRoot: string }) {
     async readSourceState(source: string, key: string): Promise<SourceStateRecord | null> {
       try {
         return parseSourceStateRecord(await readJsonFile(paths.sourceStateFile(source, key)));
-      } catch {
-        return null;
+      } catch (error) {
+        if (isMissingPathError(error)) {
+          return null;
+        }
+        throw error;
       }
     },
     async appendEventEnvelope(record: EventEnvelope): Promise<EventEnvelope> {
@@ -289,78 +432,87 @@ export function createStateStore({ wakeRoot }: { wakeRoot: string }) {
     async readEventEnvelope(eventId: string): Promise<EventEnvelope | null> {
       try {
         return parseEventEnvelope(await readJsonFile(paths.eventEnvelopeFile(eventId)));
-      } catch {
-        return null;
+      } catch (error) {
+        if (isMissingPathError(error)) {
+          return null;
+        }
+        throw new StateHealthError([
+          stateHealthIssue({
+            surface: 'events',
+            kind: 'corrupted',
+            path: paths.eventEnvelopeFile(eventId),
+            message: error instanceof Error ? error.message : String(error),
+          }),
+        ]);
       }
     },
     async listIssueStates(options: ListIssueStatesOptions = {}): Promise<IssueStateRecord[]> {
       const stateRoot = join(paths.dataRoot, 'state');
-      try {
-        const items: IssueStateRecord[] = [];
-        const includeArchived = options.includeArchived ?? false;
-        const archiveOptions =
-          options.archiveFreshnessDays === undefined
-            ? null
-            : {
-                archiveFreshnessDays: options.archiveFreshnessDays,
-                now: options.now ?? new Date(),
-              };
+      const items: IssueStateRecord[] = [];
+      const includeArchived = options.includeArchived ?? false;
+      const archiveOptions =
+        options.archiveFreshnessDays === undefined
+          ? null
+          : {
+              archiveFreshnessDays: options.archiveFreshnessDays,
+              now: options.now ?? new Date(),
+            };
 
-        // state/ is flat: state/<workId>.json, plus state/archive/ and the
-        // reverse index's own state/index/ shards. Only those two subdirectories
-        // exist, and index/ holds `{ resourceUri: workItemKey }` maps that are
-        // not projections at all — skip it rather than parse-and-discard.
-        const visit = async (dir: string, isArchive: boolean): Promise<void> => {
-          const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
-          for (const entry of entries) {
-            if (entry.isDirectory()) {
-              if (entry.name === 'index') {
-                continue;
-              }
-              if (entry.name === 'archive' && includeArchived) {
-                await visit(join(dir, entry.name), true);
-              }
-              continue;
-            }
-
-            if (!entry.isFile() || !entry.name.endsWith('.json')) {
-              continue;
-            }
-
-            const file = join(dir, entry.name);
-            const record = await readIssueStateFile(file);
-            if (record === null) {
-              continue;
-            }
-
-            if (
-              archiveOptions !== null &&
-              !isArchive &&
-              shouldArchiveIssueState(record, archiveOptions)
-            ) {
-              const archivePath = paths.archivedWorkItemStateFile(record.workItemKey);
-              await mkdir(dirname(archivePath), { recursive: true });
-              await rename(file, archivePath).catch(() => undefined);
-              continue;
-            }
-
-            items.push(record);
+      // state/ is flat: state/<workId>.json, plus state/archive/ and the
+      // reverse index's own state/index/ shards. Only those two subdirectories
+      // exist, and index/ holds `{ resourceUri: workItemKey }` maps that are
+      // not projections at all — skip it rather than parse-and-discard.
+      const visit = async (dir: string, isArchive: boolean): Promise<void> => {
+        const entries = await readdir(dir, { withFileTypes: true }).catch((error) => {
+          if (isMissingPathError(error)) {
+            return [];
           }
-        };
+          throw error;
+        });
+        for (const entry of entries) {
+          if (entry.isDirectory()) {
+            if (entry.name === 'index') {
+              continue;
+            }
+            if (entry.name === 'archive' && includeArchived) {
+              await visit(join(dir, entry.name), true);
+            }
+            continue;
+          }
 
-        await visit(stateRoot, false);
+          if (!entry.isFile() || !entry.name.endsWith('.json')) {
+            continue;
+          }
 
-        const byWorkItemKey = new Map<string, IssueStateRecord>();
-        for (const item of items) {
-          byWorkItemKey.set(item.workItemKey, item);
+          const file = join(dir, entry.name);
+          const record = await readIssueStateFile(file);
+          if (record === null) continue;
+
+          if (
+            archiveOptions !== null &&
+            !isArchive &&
+            shouldArchiveIssueState(record, archiveOptions)
+          ) {
+            const archivePath = paths.archivedWorkItemStateFile(record.workItemKey);
+            await mkdir(dirname(archivePath), { recursive: true });
+            await rename(file, archivePath).catch(() => undefined);
+            continue;
+          }
+
+          items.push(record);
         }
+      };
 
-        return [...byWorkItemKey.values()].sort((left, right) =>
-          left.workItemKey.localeCompare(right.workItemKey),
-        );
-      } catch {
-        return [];
+      await visit(stateRoot, false);
+
+      const byWorkItemKey = new Map<string, IssueStateRecord>();
+      for (const item of items) {
+        byWorkItemKey.set(item.workItemKey, item);
       }
+
+      return [...byWorkItemKey.values()].sort((left, right) =>
+        left.workItemKey.localeCompare(right.workItemKey),
+      );
     },
     async listEventEnvelopes(): Promise<EventEnvelope[]> {
       const eventsRoot = join(paths.dataRoot, 'events');
@@ -373,14 +525,24 @@ export function createStateStore({ wakeRoot }: { wakeRoot: string }) {
         }
 
         return envelopes;
-      } catch {
-        return [];
+      } catch (error) {
+        if (isMissingPathError(error)) {
+          return [];
+        }
+        throw error;
       }
     },
     async listRecentEventEnvelopes(filter: EventFeedFilter = {}): Promise<EventEnvelope[]> {
       const limit = filter.limit ?? 200;
       const eventsRoot = join(paths.dataRoot, 'events');
-      const files = (await readdir(eventsRoot).catch(() => []))
+      const files = (
+        await readdir(eventsRoot).catch((error) => {
+          if (isMissingPathError(error)) {
+            return [];
+          }
+          throw error;
+        })
+      )
         .filter((file) => file.endsWith('.jsonl'))
         .sort()
         .reverse();
@@ -440,6 +602,18 @@ export function createStateStore({ wakeRoot }: { wakeRoot: string }) {
     },
     async readEventLog(date: string): Promise<string> {
       return readFile(paths.eventFile(date), 'utf8');
+    },
+    async validateStateHealth(): Promise<StateHealthReport> {
+      const issues = [
+        ...(await collectEventIssues(paths)),
+        ...(await collectIssueStateIssues(paths)),
+        ...(await validateResourceIndex(paths)),
+      ];
+      return { healthy: issues.length === 0, issues };
+    },
+    async assertStateHealthy(): Promise<void> {
+      const report = await this.validateStateHealth();
+      throwIfUnhealthy(report.issues);
     },
   };
 }

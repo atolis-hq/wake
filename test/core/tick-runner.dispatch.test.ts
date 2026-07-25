@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createFakeResourceIndex } from '../../src/adapters/fake/fake-resource-index.js';
@@ -7,6 +7,7 @@ import { createFakeWorkspaceManager } from '../../src/adapters/fake/fake-workspa
 import { createStateStore } from '../../src/adapters/fs/state-store.js';
 import { createDefaultWakeConfig } from '../../src/config/defaults.js';
 import { createTickRunner } from '../../src/core/tick-runner.js';
+import { StateHealthError } from '../../src/lib/state-health.js';
 import {
   findByIssueRef,
   githubIssueUri,
@@ -22,6 +23,39 @@ describe('tick runner', () => {
   });
 
   describe('candidate selection & action dispatch', () => {
+    it('halts dispatch when authoritative projection state is corrupted', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      let runnerCallCount = 0;
+      await mkdir(join(store.paths.dataRoot, 'state'), { recursive: true });
+      await writeFile(store.paths.workItemStateFile(workId(347)), '{"truncated"\n', 'utf8');
+
+      const tickRunner = createTickRunner({
+        clock: { now: () => new Date('2026-07-05T12:00:00.000Z') },
+        config: createDefaultWakeConfig(root),
+        stateStore: store,
+        workSource: {
+          async pollEvents() {
+            return [];
+          },
+        },
+        runner: {
+          async run() {
+            runnerCallCount += 1;
+            return {
+              result: 'Should not run\nDONE',
+              model: 'test-model',
+              cli: 'test-cli',
+            };
+          },
+        },
+        resourceIndex: createFakeResourceIndex(),
+        workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+      });
+
+      await expect(tickRunner.runTick()).rejects.toBeInstanceOf(StateHealthError);
+      expect(runnerCallCount).toBe(0);
+    });
+
     it('runs once when a new human comment arrives on an eligible issue', async () => {
       const store = createStateStore({ wakeRoot: root });
       let callCount = 0;
