@@ -1,8 +1,12 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createFakeTicketingSystem } from '../../src/adapters/fake/fake-ticketing-system.js';
+import { createFakeRunner } from '../../src/adapters/fake/fake-runner.js';
+import {
+  createFakeTicketingSystem,
+  createFileBackedFakeTicketingSystem,
+} from '../../src/adapters/fake/fake-ticketing-system.js';
 import { createFakeWorkspaceManager } from '../../src/adapters/fake/fake-workspace-manager.js';
 import { createResourceIndex } from '../../src/adapters/fs/resource-index.js';
 import { createStateStore } from '../../src/adapters/fs/state-store.js';
@@ -13,7 +17,8 @@ import {
   CORRELATION_PRIMARY_CONFLICT_EVENT,
   CORRELATION_REGISTERED_EVENT,
 } from '../../src/domain/schema.js';
-import { createEventEnvelope } from '../../src/lib/event-log.js';
+import type { IssueStateRecord } from '../../src/domain/types.js';
+import { createEventEnvelope, createUnkeyedEventEnvelope } from '../../src/lib/event-log.js';
 import { isWorkId } from '../../src/lib/work-id.js';
 import { findByIssueRef, workId } from './support/tick-runner-fixtures.js';
 
@@ -23,6 +28,78 @@ describe('tick runner', () => {
   beforeEach(async () => {
     root = await mkdtemp(join(tmpdir(), 'wake-tick-runner-'));
   });
+
+  async function writeEligibleIssueState(input: {
+    store: ReturnType<typeof createStateStore>;
+    issueNumber: number;
+    labels?: string[];
+    stage?: string;
+    lastRunId?: string;
+    context?: Record<string, unknown>;
+  }): Promise<IssueStateRecord> {
+    return input.store.writeIssueState({
+      schemaVersion: 1,
+      workItemKey: workId(input.issueNumber),
+      origin: 'fake-ticketing',
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: input.issueNumber,
+        title: `Issue ${input.issueNumber}`,
+        body: 'Body',
+        labels: input.labels ?? ['wake'],
+        assignees: [],
+        isPullRequest: false,
+        state: 'open',
+        url: `https://example.test/atolis-hq/wake/issues/${input.issueNumber}`,
+        createdAt: '2026-07-05T12:00:00.000Z',
+        updatedAt: '2026-07-05T12:00:00.000Z',
+      },
+      comments: [],
+      wake: {
+        stage: input.stage ?? 'queue',
+        ...(input.lastRunId === undefined ? {} : { lastRunId: input.lastRunId }),
+        syncedAt: '2026-07-05T12:00:00.000Z',
+        stageHistory: [],
+        recentEventIds: [],
+        expectedEcho: { commentIds: [], labels: [] },
+      },
+      context: input.context ?? {},
+      correlatedResources: [
+        {
+          resourceUri: `fake-ticketing:issue:atolis-hq/wake#${input.issueNumber}`,
+          role: 'representation',
+          relation: 'primary',
+          provenance: 'wake-created',
+          registeredAt: '2026-07-05T12:00:00.000Z',
+        },
+      ],
+    });
+  }
+
+  async function writeStaleRunRecord(input: {
+    store: ReturnType<typeof createStateStore>;
+    runId: string;
+    issueNumber: number;
+    lifecycle?: 'CREATED' | 'CLAIMED' | 'PREPARING' | 'PROCESS_STARTING' | 'RUNNING';
+  }) {
+    await input.store.writeRunRecord({
+      schemaVersion: 1,
+      runId: input.runId,
+      workItemKey: workId(input.issueNumber),
+      repo: 'atolis-hq/wake',
+      issueNumber: input.issueNumber,
+      action: 'refine',
+      lifecycle: input.lifecycle ?? 'RUNNING',
+      status: 'running',
+      startedAt: '2026-07-05T12:00:00.000Z',
+      routing: {
+        runnerName: 'claude-haiku',
+        runnerKind: 'claude',
+        tier: 'light',
+        reason: 'test fixture stale run',
+      },
+    });
+  }
 
   describe('replay & durable-state invariants', () => {
     it('round 3: the auto-registration survives rm -rf state/ + replay when the source polls after the tick started (ADR 0001 rebuild guarantee)', async () => {
@@ -596,6 +673,407 @@ describe('tick runner', () => {
         (event) => event.sourceEventType === CORRELATION_PRIMARY_CONFLICT_EVENT,
       ).length;
       expect(conflictEventCountAfter).toBe(conflictEventCountBefore);
+    });
+  });
+
+  describe('explicit scheduler/execution invariants', () => {
+    it('does not dispatch a second active run for the same work item while one runner tick owns the lock', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const resourceIndex = createResourceIndex({ paths: store.paths });
+      const config = createDefaultWakeConfig(root);
+      config.sources.github.policy.requiredLabels = ['wake:queue'];
+      const fixturePath = join(root, 'tickets.json');
+      await writeFile(
+        fixturePath,
+        JSON.stringify([
+          {
+            repo: 'atolis-hq/wake',
+            number: 3481,
+            title: 'One active run',
+            body: 'Body',
+            labels: ['wake:queue'],
+            comments: [],
+          },
+        ]),
+      );
+
+      let releaseRunner!: () => void;
+      const runnerStarted = new Promise<void>((resolve) => {
+        releaseRunner = resolve;
+      });
+      let runnerCallCount = 0;
+      const tickRunner = createTickRunner({
+        clock: { now: () => new Date('2026-07-05T12:00:00.000Z') },
+        config,
+        stateStore: store,
+        resourceIndex,
+        workSource: await createFileBackedFakeTicketingSystem({
+          fixturePath,
+          now: () => new Date('2026-07-05T12:00:00.000Z'),
+        }),
+        runner: {
+          async run() {
+            runnerCallCount += 1;
+            await runnerStarted;
+            return createFakeRunner().run(
+              {} as Parameters<ReturnType<typeof createFakeRunner>['run']>[0],
+            );
+          },
+        },
+        workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+      });
+
+      const firstTick = tickRunner.runTick();
+      while ((await store.listRunRecords()).length === 0) {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+
+      const secondResult = await tickRunner.runRunnerTick();
+      releaseRunner();
+      await firstTick;
+
+      const runRecords = await store.listRunRecords();
+      const claimedEvents = (await store.listEventEnvelopes()).filter(
+        (event) => event.sourceEventType === 'wake.run.claimed',
+      );
+      expect(secondResult.status).toBe('locked');
+      expect(runnerCallCount).toBe(1);
+      expect(runRecords).toHaveLength(1);
+      expect(claimedEvents).toHaveLength(1);
+    });
+
+    it('persists the run claim durably before the runner process is launched', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const resourceIndex = createResourceIndex({ paths: store.paths });
+      const config = createDefaultWakeConfig(root);
+      config.sources.github.policy.requiredLabels = ['wake'];
+      await writeEligibleIssueState({ store, issueNumber: 3482 });
+
+      let claimWasDurableAtLaunch = false;
+      const tickRunner = createTickRunner({
+        clock: { now: () => new Date('2026-07-05T12:00:00.000Z') },
+        config,
+        stateStore: store,
+        resourceIndex,
+        workSource: createFakeTicketingSystem({ tickets: [] }),
+        runner: {
+          async run({ runId }) {
+            const record = await store.readRunRecord(runId);
+            const claimed = await store.readEventEnvelope(`${runId}-claimed`);
+            claimWasDurableAtLaunch =
+              record?.status === 'running' &&
+              record.lifecycle === 'RUNNING' &&
+              claimed?.sourceEventType === 'wake.run.claimed';
+            return createFakeRunner().run(
+              {} as Parameters<ReturnType<typeof createFakeRunner>['run']>[0],
+            );
+          },
+        },
+        workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+      });
+
+      await tickRunner.runRunnerTick();
+
+      expect(claimWasDurableAtLaunch).toBe(true);
+    });
+
+    it('reconciles stale running records before dispatching new eligible work', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const resourceIndex = createResourceIndex({ paths: store.paths });
+      const config = createDefaultWakeConfig(root);
+      config.sources.github.policy.requiredLabels = ['wake'];
+      const runnerEntry = config.runners['claude-haiku'];
+      if (runnerEntry?.kind === 'claude') runnerEntry.timeoutMs = 60_000;
+      config.tiers.light = ['claude-haiku'];
+      config.tiers.standard = ['claude-haiku'];
+
+      await writeEligibleIssueState({
+        store,
+        issueNumber: 3483,
+        stage: 'refine',
+        lastRunId: 'run-3483-stale',
+        context: { lastRunAction: 'refine' },
+      });
+      await writeStaleRunRecord({
+        store,
+        runId: 'run-3483-stale',
+        issueNumber: 3483,
+        lifecycle: 'RUNNING',
+      });
+      await writeEligibleIssueState({ store, issueNumber: 3484 });
+
+      const tickRunner = createTickRunner({
+        clock: { now: () => new Date('2026-07-05T12:02:00.000Z') },
+        config,
+        stateStore: store,
+        resourceIndex,
+        workSource: createFakeTicketingSystem({ tickets: [] }),
+        runner: createFakeRunner(),
+        workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+      });
+
+      await tickRunner.runTick();
+
+      const events = await store.listEventEnvelopes();
+      const staleIndex = events.findIndex(
+        (event) => event.eventId === 'run-3483-stale-stale-reconciled',
+      );
+      const newClaimIndex = events.findIndex(
+        (event) =>
+          event.sourceEventType === 'wake.run.claimed' && event.sourceRefs.issueNumber === 3484,
+      );
+      expect(staleIndex).toBeGreaterThanOrEqual(0);
+      expect(newClaimIndex).toBeGreaterThan(staleIndex);
+    });
+
+    it('skips runner launch when refresh-for-dispatch makes the work item ineligible', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const resourceIndex = createResourceIndex({ paths: store.paths });
+      const config = createDefaultWakeConfig(root);
+      config.sources.github.policy.requiredLabels = ['wake:queue'];
+      let runnerCallCount = 0;
+
+      const initialSource = createFakeTicketingSystem({
+        tickets: [
+          {
+            repo: 'atolis-hq/wake',
+            number: 3485,
+            title: 'Eligibility changes',
+            body: 'Body',
+            labels: ['wake:queue'],
+            comments: [],
+          },
+        ],
+        now: () => new Date('2026-07-05T12:00:00.000Z'),
+      });
+      const tickRunner = createTickRunner({
+        clock: { now: () => new Date('2026-07-05T12:00:02.000Z') },
+        config,
+        stateStore: store,
+        resourceIndex,
+        workSource: {
+          ...initialSource,
+          async refreshForDispatch() {
+            return {
+              sourceExists: true,
+              sourceRevision: 'atolis-hq/wake#3485@2026-07-05T12:00:01.000Z',
+              events: [
+                createUnkeyedEventEnvelope({
+                  eventId: 'fake-issue-atolis-hq-wake-3485-refreshed',
+                  streamScope: 'global-intake',
+                  direction: 'inbound',
+                  sourceSystem: 'fake-ticketing',
+                  sourceEventType: 'fake.issue.upsert',
+                  sourceRefs: {
+                    repo: 'atolis-hq/wake',
+                    issueNumber: 3485,
+                    sourceUrl: 'https://example.test/atolis-hq/wake/issues/3485',
+                    resourceUri: 'fake-ticketing:issue:atolis-hq/wake#3485',
+                  },
+                  occurredAt: '2026-07-05T12:00:01.000Z',
+                  ingestedAt: '2026-07-05T12:00:01.000Z',
+                  trigger: 'immediate',
+                  payload: {
+                    issue: {
+                      repo: 'atolis-hq/wake',
+                      number: 3485,
+                      title: 'Eligibility changes',
+                      body: 'Body',
+                      labels: [],
+                      assignees: [],
+                      state: 'open',
+                      url: 'https://example.test/atolis-hq/wake/issues/3485',
+                      createdAt: '2026-07-05T12:00:00.000Z',
+                      updatedAt: '2026-07-05T12:00:01.000Z',
+                    },
+                  },
+                }),
+              ],
+            };
+          },
+        },
+        runner: {
+          async run() {
+            runnerCallCount += 1;
+            return createFakeRunner().run(
+              {} as Parameters<ReturnType<typeof createFakeRunner>['run']>[0],
+            );
+          },
+        },
+        workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+      });
+
+      const result = await tickRunner.runTick();
+      const projection = await findByIssueRef(store, { repo: 'atolis-hq/wake', issueNumber: 3485 });
+
+      expect(result.status).toBe('idle');
+      expect(runnerCallCount).toBe(0);
+      expect(projection?.issue.labels).toEqual([]);
+      expect(await store.listRunRecords()).toEqual([]);
+    });
+
+    it('records owner, workspace, runner, start time, and cancellation identity for a launched process', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const resourceIndex = createResourceIndex({ paths: store.paths });
+      const config = createDefaultWakeConfig(root);
+      config.sources.github.policy.requiredLabels = ['wake'];
+      await writeEligibleIssueState({ store, issueNumber: 3486, stage: 'implement' });
+
+      const tickRunner = createTickRunner({
+        clock: { now: () => new Date('2026-07-05T12:00:00.000Z') },
+        config,
+        stateStore: store,
+        resourceIndex,
+        workSource: createFakeTicketingSystem({ tickets: [] }),
+        runner: {
+          async run({ onProcessStart }) {
+            await onProcessStart?.({
+              pid: 4242,
+              processStartedAt: '2026-07-05T11:59:59.000Z',
+            });
+            return createFakeRunner().run(
+              {} as Parameters<ReturnType<typeof createFakeRunner>['run']>[0],
+            );
+          },
+        },
+        workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+      });
+
+      const result = await tickRunner.runRunnerTick();
+      expect(result.status).toBe('processed');
+      if (result.status !== 'processed') {
+        throw new Error('expected runner tick to process issue 3486');
+      }
+      const record = (await store.readRunRecord(result.runId!))!;
+
+      expect(record.workerPid).toBeGreaterThan(0);
+      expect(record.workerProcessStartedAt).toBeTypeOf('string');
+      expect(record.agentPid).toBe(4242);
+      expect(record.agentProcessStartedAt).toBe('2026-07-05T11:59:59.000Z');
+      expect(record.startedAt).toBe('2026-07-05T12:00:00.000Z');
+      expect(record.routing?.runnerName).toBeTypeOf('string');
+      expect(record.metadata?.workspacePath).toContain(workId(3486));
+      expect(record.lease?.leaseId).toBeTypeOf('string');
+      expect(record.lease?.ownerInstanceId).toBeTypeOf('string');
+    });
+
+    it('records exactly one terminal run state and one completion event per finished run', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const resourceIndex = createResourceIndex({ paths: store.paths });
+      const config = createDefaultWakeConfig(root);
+      config.sources.github.policy.requiredLabels = ['wake'];
+      await writeEligibleIssueState({ store, issueNumber: 3487, stage: 'implement' });
+
+      const tickRunner = createTickRunner({
+        clock: { now: () => new Date('2026-07-05T12:00:00.000Z') },
+        config,
+        stateStore: store,
+        resourceIndex,
+        workSource: createFakeTicketingSystem({ tickets: [] }),
+        runner: createFakeRunner(),
+        workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+      });
+
+      const result = await tickRunner.runRunnerTick();
+      expect(result.status).toBe('processed');
+      if (result.status !== 'processed') {
+        throw new Error('expected runner tick to process issue 3487');
+      }
+      const record = (await store.readRunRecord(result.runId!))!;
+      const completionEvents = (await store.listEventEnvelopes()).filter(
+        (event) =>
+          event.sourceEventType === 'wake.run.completed' && event.sourceRefs.runId === result.runId,
+      );
+
+      expect(record.lifecycle).toBe('TERMINAL');
+      expect(record.status).toBe('completed');
+      expect(record.sentinel).toBe('DONE');
+      expect(record.executionOutcome).toBe('COMPLETED');
+      expect(record.finishedAt).toBeDefined();
+      expect(completionEvents).toHaveLength(1);
+      expect(completionEvents[0]?.payload.sentinel).toBe('DONE');
+    });
+
+    it('recovers a startup-era claim with no run record before starting new work', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const resourceIndex = createResourceIndex({ paths: store.paths });
+      const config = createDefaultWakeConfig(root);
+      config.sources.github.policy.requiredLabels = ['wake'];
+      await writeEligibleIssueState({
+        store,
+        issueNumber: 3488,
+        stage: 'refine',
+        lastRunId: 'run-3488-claimed-before-crash',
+        context: { lastRunAction: 'refine' },
+      });
+      await writeEligibleIssueState({ store, issueNumber: 3489 });
+
+      const tickRunner = createTickRunner({
+        clock: { now: () => new Date('2026-07-05T12:00:00.000Z') },
+        config,
+        stateStore: store,
+        resourceIndex,
+        workSource: createFakeTicketingSystem({ tickets: [] }),
+        runner: createFakeRunner(),
+        workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+      });
+
+      await tickRunner.runTick();
+
+      const events = await store.listEventEnvelopes();
+      const recoveredIndex = events.findIndex(
+        (event) => event.eventId === 'run-3488-claimed-before-crash-missing-run-record-recovered',
+      );
+      const newClaimIndex = events.findIndex(
+        (event) =>
+          event.sourceEventType === 'wake.run.claimed' && event.sourceRefs.issueNumber === 3489,
+      );
+      expect(recoveredIndex).toBeGreaterThanOrEqual(0);
+      expect(newClaimIndex).toBeGreaterThan(recoveredIndex);
+    });
+
+    it('dispatches eligible work items in deterministic work-item-key order', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const resourceIndex = createResourceIndex({ paths: store.paths });
+      const config = createDefaultWakeConfig(root);
+      config.sources.github.policy.requiredLabels = ['wake'];
+      config.workflows = {
+        default: {
+          stages: {
+            single: {
+              action: 'implement',
+              workspace: 'branch',
+              onDone: 'done',
+              tier: 'standard',
+            },
+          },
+        },
+      };
+      await writeEligibleIssueState({ store, issueNumber: 3491 });
+      await writeEligibleIssueState({ store, issueNumber: 3490 });
+
+      const dispatchedIssueNumbers: number[] = [];
+      const tickRunner = createTickRunner({
+        clock: { now: () => new Date('2026-07-05T12:00:00.000Z') },
+        config,
+        stateStore: store,
+        resourceIndex,
+        workSource: createFakeTicketingSystem({ tickets: [] }),
+        runner: {
+          async run({ projection }) {
+            dispatchedIssueNumbers.push(projection.issue.number);
+            return createFakeRunner().run(
+              {} as Parameters<ReturnType<typeof createFakeRunner>['run']>[0],
+            );
+          },
+        },
+        workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+      });
+
+      await tickRunner.runRunnerTick();
+      await tickRunner.runRunnerTick();
+
+      expect(dispatchedIssueNumbers).toEqual([3490, 3491]);
     });
   });
 });
