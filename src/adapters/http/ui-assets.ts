@@ -88,6 +88,15 @@ export const indexHtml = `<!DOCTYPE html>
   .tile { background: #1a1d23; border-radius: 10px; padding: 0.6rem 0.9rem; min-width: 120px; }
   .tile .n { font-size: 1.3rem; font-weight: 700; }
   .tile .l { color: #9aa2ad; font-size: 0.72rem; text-transform: uppercase; }
+  .toolbar { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 1rem; }
+  .toolbar label { display: inline-flex; align-items: center; gap: 0.35rem; color: #9aa2ad; font-size: 0.8rem; }
+  select { background: #1a1d23; border: 1px solid #2c313a; color: #e8e8e8; padding: 0.3rem 0.5rem; border-radius: 6px; font-size: 0.8rem; }
+  select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(45, 212, 191, 0.15); }
+  .metric-bar { width: 160px; height: 0.5rem; background: #101216; border-radius: 999px; overflow: hidden; }
+  .metric-bar-fill { height: 100%; background: var(--accent); border-radius: 999px; }
+  .stacked-bar { display: flex; width: min(520px, 45vw); min-width: 220px; height: 0.75rem; background: #101216; border-radius: 999px; overflow: hidden; }
+  .stacked-segment { height: 100%; min-width: 1px; }
+  .metric-table-value { display: flex; align-items: center; gap: 0.55rem; }
   .amber { color: #ffcf7f; }
   .red { color: #ff8f7f; }
   .ok { color: #7fe3a3; }
@@ -117,6 +126,7 @@ export const indexHtml = `<!DOCTYPE html>
   <button data-view="board" class="active">Board</button>
   <button data-view="activity">Activity</button>
   <button data-view="runs">Runs</button>
+  <button data-view="analytics">Analytics</button>
   <button data-view="config">Config</button>
   <button data-view="health">Health</button>
 </nav>
@@ -135,9 +145,32 @@ export const indexHtml = `<!DOCTYPE html>
 const API = '/api/v1';
 const CONDITIONS = ['needs-human', 'active', 'ready', 'waiting', 'stalled', 'finished'];
 let currentView = 'board';
+let analyticsWindow = '7d';
+let analyticsMetric = 'runs-over-time';
+let activeViewRequest = null;
+let activeViewRequestId = 0;
 
-async function getJson(path) {
-  const res = await fetch(API + path);
+const METRIC_OPTIONS = [
+  ['runs-over-time', 'Runs over time'],
+  ['runs-by-status-over-time', 'Runs by status over time'],
+  ['runs-by-status', 'Runs by status'],
+  ['runs-by-action', 'Runs by action/stage'],
+  ['runs-by-repo', 'Runs by repo'],
+  ['runs-by-runner', 'Runs by runner'],
+  ['runs-by-model', 'Runs by model'],
+  ['runs-by-tier', 'Runs by tier'],
+  ['tokens-over-time', 'Tokens over time'],
+  ['tokens-by-action', 'Tokens by action/stage'],
+  ['tokens-by-runner', 'Tokens by runner'],
+  ['tokens-by-model', 'Tokens by model'],
+  ['duration-by-action', 'Duration by action/stage'],
+  ['duration-over-time', 'Duration over time'],
+  ['work-items-over-time', 'Work items completed over time'],
+  ['work-item-durations', 'Work item e2e duration'],
+];
+
+async function getJson(path, signal) {
+  const res = await fetch(API + path, signal ? { signal } : undefined);
   if (!res.ok) throw new Error(path + ' -> ' + res.status);
   return res.json();
 }
@@ -168,6 +201,14 @@ function el(tag, attrs, children) {
   }
   for (const child of children || []) node.appendChild(child);
   return node;
+}
+
+function isActiveRequest(requestId) {
+  return activeViewRequest && activeViewRequest.id === requestId;
+}
+
+function loadingNode(label) {
+  return el('p', { class: 'meta', text: 'Loading ' + label + '...' });
 }
 
 async function renderStatusBar() {
@@ -206,8 +247,9 @@ async function forceTickNow() {
   }
 }
 
-async function renderBoard() {
-  const board = await getJson('/board');
+async function renderBoard(context) {
+  const board = await getJson('/board', context.signal);
+  if (!isActiveRequest(context.requestId)) return;
   const main = document.getElementById('main');
   main.innerHTML = '';
   const columns = el('div', { class: 'columns' }, CONDITIONS.map((cond) => {
@@ -391,8 +433,9 @@ function renderTranscripts(transcripts) {
   return root;
 }
 
-async function renderActivity() {
-  const events = await getJson('/events?limit=200');
+async function renderActivity(context) {
+  const events = await getJson('/events?limit=200', context.signal);
+  if (!isActiveRequest(context.requestId)) return;
   const main = document.getElementById('main');
   main.innerHTML = '';
   const table = el('table', {}, [
@@ -418,8 +461,239 @@ function fmtTokens(tokenUsage) {
   return total >= 1000 ? (total / 1000).toFixed(1) + 'k' : String(total);
 }
 
-async function renderRuns() {
-  const runs = await getJson('/runs');
+function fmtNumber(value) {
+  return Number(value || 0).toLocaleString();
+}
+
+function fmtDuration(ms) {
+  return ms === undefined || ms === null ? '' : fmtMs(ms);
+}
+
+function metricBar(value, max) {
+  const pct = max > 0 ? Math.max(2, Math.round((value / max) * 100)) : 0;
+  return el('div', { class: 'metric-bar' }, [
+    el('div', { class: 'metric-bar-fill', style: 'width:' + pct + '%' }),
+  ]);
+}
+
+function stackedBar(segments) {
+  const total = segments.reduce((sum, segment) => sum + segment.value, 0);
+  return el('div', { class: 'stacked-bar' }, segments.filter((segment) => segment.value > 0).map((segment) =>
+    el('div', {
+      class: 'stacked-segment',
+      title: segment.label + ': ' + fmtNumber(segment.value),
+      style: 'width:' + ((segment.value / total) * 100).toFixed(2) + '%;background:' + segment.color,
+    }),
+  ));
+}
+
+function selectBox(value, options, onChange) {
+  return el('select', { onchange: (event) => onChange(event.target.value) }, options.map((option) =>
+    el('option', {
+      value: option[0],
+      text: option[1],
+      ...(option[0] === value ? { selected: 'selected' } : {}),
+    }),
+  ));
+}
+
+function metricValueCell(value, max, format) {
+  return el('td', {}, [
+    el('div', { class: 'metric-table-value' }, [
+      el('span', { text: format(value) }),
+      metricBar(value, max),
+    ]),
+  ]);
+}
+
+function renderCountTable(rows, label) {
+  if (rows.length === 0) return el('p', { class: 'meta', text: 'No data for this window.' });
+  const max = Math.max(...rows.map((row) => row.count));
+  return el('table', {}, [
+    el('tr', {}, [el('th', { text: label }), el('th', { text: 'runs' })]),
+    ...rows.map((row) => el('tr', {}, [
+      el('td', { text: row.key }),
+      metricValueCell(row.count, max, fmtNumber),
+    ])),
+  ]);
+}
+
+function renderTokenTable(rows, label) {
+  if (rows.length === 0) return el('p', { class: 'meta', text: 'No data for this window.' });
+  const max = Math.max(...rows.map((row) => row.tokens));
+  return el('table', {}, [
+    el('tr', {}, [
+      el('th', { text: label }),
+      el('th', { text: 'tokens' }),
+      el('th', { text: 'avg/run' }),
+      el('th', { text: 'cost' }),
+      el('th', { text: 'avg cost/run' }),
+      el('th', { text: 'runs' }),
+    ]),
+    ...rows.map((row) => el('tr', {}, [
+      el('td', { text: row.key }),
+      metricValueCell(row.tokens, max, fmtNumber),
+      el('td', { text: fmtNumber(row.averageTokens || 0) }),
+      el('td', { text: fmtCost(row.costUsd) }),
+      el('td', { text: fmtCost(row.averageCostUsd) }),
+      el('td', { text: fmtNumber(row.count || 0) }),
+    ])),
+  ]);
+}
+
+function renderDurationTable(rows, label) {
+  if (rows.length === 0) return el('p', { class: 'meta', text: 'No data for this window.' });
+  const max = Math.max(...rows.map((row) => row.totalMs || row.medianMs));
+  return el('table', {}, [
+    el('tr', {}, [
+      el('th', { text: label }),
+      el('th', { text: 'total' }),
+      el('th', { text: 'median' }),
+      el('th', { text: 'average' }),
+      el('th', { text: 'runs' }),
+    ]),
+    ...rows.map((row) => el('tr', {}, [
+      el('td', { text: row.key || row.label }),
+      metricValueCell(row.totalMs || 0, max, fmtDuration),
+      el('td', { text: fmtDuration(row.medianMs) }),
+      el('td', { text: fmtDuration(row.averageMs) }),
+      el('td', { text: fmtNumber(row.count) }),
+    ])),
+  ]);
+}
+
+function renderRunsOverTime(rows) {
+  return el('table', {}, [
+    el('tr', {}, [el('th', { text: 'bucket' }), el('th', { text: 'runs' }), el('th', { text: 'status split' })]),
+    ...rows.map((row) => el('tr', {}, [
+      el('td', { text: row.label }),
+      el('td', { text: fmtNumber(row.total) }),
+      el('td', {}, [stackedBar([
+        { label: 'completed', value: row.completed, color: '#7fe3a3' },
+        { label: 'blocked', value: row.blocked, color: '#ffcf7f' },
+        { label: 'awaiting approval', value: row.awaitingApproval, color: '#7fb3ff' },
+        { label: 'failed', value: row.failed, color: '#ff8f7f' },
+        { label: 'other', value: row.other, color: '#9aa2ad' },
+      ])]),
+    ])),
+  ]);
+}
+
+function renderRunsByStatusOverTime(rows) {
+  return el('table', {}, [
+    el('tr', {}, [
+      el('th', { text: 'bucket' }),
+      el('th', { text: 'completed' }),
+      el('th', { text: 'blocked' }),
+      el('th', { text: 'awaiting approval' }),
+      el('th', { text: 'failed' }),
+      el('th', { text: 'other' }),
+      el('th', { text: 'total' }),
+    ]),
+    ...rows.map((row) => el('tr', {}, [
+      el('td', { text: row.label }),
+      el('td', { text: fmtNumber(row.completed) }),
+      el('td', { text: fmtNumber(row.blocked) }),
+      el('td', { text: fmtNumber(row.awaitingApproval) }),
+      el('td', { text: fmtNumber(row.failed) }),
+      el('td', { text: fmtNumber(row.other) }),
+      el('td', { text: fmtNumber(row.total) }),
+    ])),
+  ]);
+}
+
+function renderTokensOverTime(rows) {
+  return el('table', {}, [
+    el('tr', {}, [el('th', { text: 'bucket' }), el('th', { text: 'tokens' }), el('th', { text: 'token split' }), el('th', { text: 'cost' })]),
+    ...rows.map((row) => el('tr', {}, [
+      el('td', { text: row.label }),
+      el('td', { text: fmtNumber(row.tokens) }),
+      el('td', {}, [stackedBar([
+        { label: 'input', value: row.inputTokens, color: '#7fb3ff' },
+        { label: 'output', value: row.outputTokens, color: '#7fe3a3' },
+        { label: 'cache creation', value: row.cacheCreationInputTokens, color: '#c79bff' },
+        { label: 'cache read', value: row.cacheReadInputTokens, color: '#ffcf7f' },
+      ])]),
+      el('td', { text: fmtCost(row.costUsd) }),
+    ])),
+  ]);
+}
+
+function renderWorkItemsOverTime(rows) {
+  const max = Math.max(0, ...rows.map((row) => row.completed));
+  return el('table', {}, [
+    el('tr', {}, [el('th', { text: 'bucket' }), el('th', { text: 'completed' })]),
+    ...rows.map((row) => el('tr', {}, [
+      el('td', { text: row.label }),
+      metricValueCell(row.completed, max, fmtNumber),
+    ])),
+  ]);
+}
+
+function renderWorkItemDurations(rows) {
+  if (rows.length === 0) return el('p', { class: 'meta', text: 'No completed work items for this window.' });
+  const max = Math.max(...rows.map((row) => row.durationMs));
+  return el('table', {}, [
+    el('tr', {}, ['work item', 'duration', 'completed'].map((h) => el('th', { text: h }))),
+    ...rows.map((row) => el('tr', {}, [
+      el('td', { text: row.repo + '#' + row.issueNumber }),
+      metricValueCell(row.durationMs, max, fmtDuration),
+      el('td', { text: row.completedAt }),
+    ])),
+  ]);
+}
+
+function renderMetricDetail(detail) {
+  if (detail.kind === 'runs-over-time') return renderRunsOverTime(detail.rows);
+  if (detail.kind === 'runs-by-status-over-time') return renderRunsByStatusOverTime(detail.rows);
+  if (detail.kind === 'run-counts') return renderCountTable(detail.rows, detail.group);
+  if (detail.kind === 'tokens-over-time') return renderTokensOverTime(detail.rows);
+  if (detail.kind === 'token-counts') return renderTokenTable(detail.rows, detail.group);
+  if (detail.kind === 'durations') return renderDurationTable(detail.rows, detail.group);
+  if (detail.kind === 'duration-over-time') return renderDurationTable(detail.rows, 'bucket');
+  if (detail.kind === 'work-items-over-time') return renderWorkItemsOverTime(detail.rows);
+  if (detail.kind === 'work-item-durations') return renderWorkItemDurations(detail.rows);
+  return el('p', { class: 'meta', text: 'Unsupported metric.' });
+}
+
+async function renderAnalytics(context) {
+  const metrics = await getJson('/metrics?window=' + encodeURIComponent(analyticsWindow) + '&metric=' + encodeURIComponent(analyticsMetric), context.signal);
+  if (!isActiveRequest(context.requestId)) return;
+  const main = document.getElementById('main');
+  main.innerHTML = '';
+  main.appendChild(el('div', { class: 'toolbar' }, [
+    el('label', {}, [
+      document.createTextNode('Window'),
+      selectBox(analyticsWindow, [['1d', '1d'], ['3d', '3d'], ['5d', '5d'], ['7d', '7d']], (value) => {
+        analyticsWindow = value;
+        switchView('analytics');
+      }),
+    ]),
+    el('label', {}, [
+      document.createTextNode('Metric'),
+      selectBox(analyticsMetric, METRIC_OPTIONS, (value) => {
+        analyticsMetric = value;
+        switchView('analytics');
+      }),
+    ]),
+  ]));
+  main.appendChild(el('div', { class: 'tiles' }, [
+    tile('Runs', fmtNumber(metrics.summary.totalRuns)),
+    tile('Completed', fmtNumber(metrics.summary.completedRuns)),
+    tile('Blocked/approval', fmtNumber(metrics.summary.blockedRuns + metrics.summary.awaitingApprovalRuns)),
+    tile('Failed', fmtNumber(metrics.summary.failedRuns)),
+    tile('Tokens', fmtNumber(metrics.summary.totalTokens)),
+    tile('Cost', fmtCost(metrics.summary.totalCostUsd)),
+    tile('Median run', fmtDuration(metrics.summary.medianRunDurationMs) || '—'),
+    tile('Work done', fmtNumber(metrics.summary.completedWorkItems)),
+    tile('Median e2e', fmtDuration(metrics.summary.medianWorkItemDurationMs) || '—'),
+  ]));
+  main.appendChild(renderMetricDetail(metrics.detail));
+}
+
+async function renderRuns(context) {
+  const runs = await getJson('/runs', context.signal);
+  if (!isActiveRequest(context.requestId)) return;
   const main = document.getElementById('main');
   main.innerHTML = '';
   const table = el('table', {}, [
@@ -434,8 +708,9 @@ async function renderRuns() {
   main.appendChild(table);
 }
 
-async function renderConfig() {
-  const data = await getJson('/config');
+async function renderConfig(context) {
+  const data = await getJson('/config', context.signal);
+  if (!isActiveRequest(context.requestId)) return;
   const main = document.getElementById('main');
   main.innerHTML = '';
   main.appendChild(el('h3', { text: 'Routing table' }));
@@ -452,7 +727,7 @@ async function renderConfig() {
           btn.textContent = 'Unpausing…';
           try {
             await postJson('/runners/' + encodeURIComponent(c.runnerName) + '/unpause');
-            await renderConfig();
+            switchView('config');
           } catch (err) {
             btn.disabled = false;
             btn.textContent = 'Unpause';
@@ -470,8 +745,9 @@ async function renderConfig() {
   main.appendChild(el('pre', { text: JSON.stringify(data.config, null, 2) }));
 }
 
-async function renderHealth() {
-  const health = await getJson('/health');
+async function renderHealth(context) {
+  const health = await getJson('/health', context.signal);
+  if (!isActiveRequest(context.requestId)) return;
   const main = document.getElementById('main');
   main.innerHTML = '';
   const runnerNames = Object.keys(health.pause.runnerHealth || {});
@@ -515,14 +791,25 @@ function tile(label, value) {
   return el('div', { class: 'tile' }, [el('div', { class: 'n', text: value }), el('div', { class: 'l', text: label })]);
 }
 
-const renderers = { board: renderBoard, activity: renderActivity, runs: renderRuns, config: renderConfig, health: renderHealth };
+const renderers = { board: renderBoard, activity: renderActivity, runs: renderRuns, analytics: renderAnalytics, config: renderConfig, health: renderHealth };
 
-function switchView(view) {
+function switchView(view, options) {
+  if (activeViewRequest) activeViewRequest.controller.abort();
+  const controller = new AbortController();
+  const requestId = ++activeViewRequestId;
+  activeViewRequest = { id: requestId, controller };
   currentView = view;
   for (const btn of document.querySelectorAll('nav button')) {
     btn.classList.toggle('active', btn.dataset.view === view);
   }
-  renderers[view]();
+  const main = document.getElementById('main');
+  if (!options || options.showLoading !== false) {
+    main.replaceChildren(loadingNode(view));
+  }
+  renderers[view]({ signal: controller.signal, requestId }).catch((err) => {
+    if (err.name === 'AbortError' || !isActiveRequest(requestId)) return;
+    main.replaceChildren(el('p', { class: 'meta red', text: 'Failed to load ' + view + ': ' + err.message }));
+  });
 }
 
 for (const btn of document.querySelectorAll('nav button')) {
@@ -542,7 +829,7 @@ renderStatusBar();
 switchView('board');
 setInterval(() => {
   renderStatusBar();
-  renderers[currentView]();
+  switchView(currentView, { showLoading: false });
 }, 7000);
 </script>
 </body>

@@ -13,6 +13,7 @@ import {
   buildEventsFeed,
   buildItemDetail,
   buildItemTranscripts,
+  buildMetrics,
   buildStatus,
 } from '../../src/adapters/http/ui-data.js';
 import { createWakePaths } from '../../src/lib/paths.js';
@@ -121,12 +122,147 @@ describe('ui-data', () => {
       config,
       now: new Date('2026-07-05T13:00:00.000Z'),
     });
+
     const byNumber = new Map(board.map((card) => [card.number, card]));
 
     expect(byNumber.get(1)?.condition).toBe('active');
     expect(byNumber.get(2)?.condition).toBe('needs-human');
     expect(byNumber.get(3)?.condition).toBe('finished');
     expect(byNumber.get(4)?.condition).toBe('ready');
+  });
+
+  it('includes per-run averages for grouped token metrics', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const config = createDefaultWakeConfig(root);
+    config.runners['codex-main'] = {
+      kind: 'codex',
+      command: 'codex',
+      model: 'gpt-5.5',
+      smokeModel: 'gpt-5.4-mini',
+      smokePrompt: 'hi',
+      timeoutMs: 1000,
+      models: { default: 'gpt-5.5', implement: 'gpt-5.5' },
+    };
+
+    await store.writeRunRecord({
+      ...runRecord({
+        runId: 'run-token-one',
+        issueNumber: 83,
+        status: 'completed',
+        startedAt: '2026-07-25T08:00:00.000Z',
+      }),
+      routing: {
+        runnerName: 'codex-main',
+        runnerKind: 'codex',
+        tier: 'standard',
+        reason: 'test',
+      },
+      tokenUsage: { inputTokens: 100, outputTokens: 50, costUsd: 1.5 },
+    });
+    await store.writeRunRecord({
+      ...runRecord({
+        runId: 'run-token-two',
+        issueNumber: 84,
+        status: 'completed',
+        startedAt: '2026-07-25T09:00:00.000Z',
+      }),
+      routing: {
+        runnerName: 'codex-main',
+        runnerKind: 'codex',
+        tier: 'standard',
+        reason: 'test',
+      },
+      tokenUsage: { inputTokens: 50, outputTokens: 20, costUsd: 0.5 },
+    });
+
+    const metrics = await buildMetrics({
+      stateStore: store,
+      config,
+      now: new Date('2026-07-25T12:00:00.000Z'),
+      window: '1d',
+      metric: 'tokens-by-model',
+    });
+
+    expect(metrics.detail).toEqual({
+      kind: 'token-counts',
+      group: 'model',
+      rows: [
+        {
+          key: 'gpt-5.5',
+          count: 2,
+          tokens: 220,
+          averageTokens: 110,
+          costUsd: 2,
+          averageCostUsd: 1,
+        },
+      ],
+    });
+  });
+
+  it('includes total duration for grouped and over-time duration metrics', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const config = createDefaultWakeConfig(root);
+
+    await store.writeRunRecord({
+      ...runRecord({
+        runId: 'run-duration-one',
+        issueNumber: 85,
+        status: 'completed',
+        startedAt: '2026-07-25T08:00:00.000Z',
+      }),
+      finishedAt: '2026-07-25T08:10:00.000Z',
+      action: 'implement',
+    });
+    await store.writeRunRecord({
+      ...runRecord({
+        runId: 'run-duration-two',
+        issueNumber: 86,
+        status: 'completed',
+        startedAt: '2026-07-25T08:30:00.000Z',
+      }),
+      finishedAt: '2026-07-25T08:50:00.000Z',
+      action: 'implement',
+    });
+
+    const byAction = await buildMetrics({
+      stateStore: store,
+      config,
+      now: new Date('2026-07-25T12:00:00.000Z'),
+      window: '1d',
+      metric: 'duration-by-action',
+    });
+    expect(byAction.detail).toEqual({
+      kind: 'durations',
+      group: 'action',
+      rows: [
+        {
+          key: 'implement',
+          count: 2,
+          totalMs: 1800000,
+          averageMs: 900000,
+          medianMs: 900000,
+        },
+      ],
+    });
+
+    const overTime = await buildMetrics({
+      stateStore: store,
+      config,
+      now: new Date('2026-07-25T12:00:00.000Z'),
+      window: '1d',
+      metric: 'duration-over-time',
+    });
+    expect(overTime.detail.kind).toBe('duration-over-time');
+    if (overTime.detail.kind !== 'duration-over-time') {
+      throw new Error(`unexpected detail kind: ${overTime.detail.kind}`);
+    }
+    expect(overTime.detail.rows.find((row) => row.bucket === '2026-07-25T08')).toMatchObject({
+      label: '08:00',
+      count: 2,
+      totalMs: 1800000,
+      averageMs: 900000,
+      medianMs: 900000,
+    });
   });
 
   // The UI addresses items by the ticket a human recognizes (work ids are
@@ -501,5 +637,318 @@ describe('ui-data', () => {
     });
 
     expect(transcripts).toEqual({ enabled: true, sessions: [] });
+  });
+
+  it('returns a shared summary and only the selected runs-over-time detail', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const config = createDefaultWakeConfig(root);
+
+    await store.writeRunRecord({
+      ...runRecord({
+        runId: 'run-completed',
+        issueNumber: 71,
+        status: 'completed',
+        startedAt: '2026-07-24T10:00:00.000Z',
+      }),
+      finishedAt: '2026-07-24T10:10:00.000Z',
+      tokenUsage: {
+        inputTokens: 100,
+        outputTokens: 25,
+        cacheCreationInputTokens: 10,
+        cacheReadInputTokens: 5,
+        costUsd: 2.5,
+      },
+    });
+    await store.writeRunRecord({
+      ...runRecord({
+        runId: 'run-failed',
+        issueNumber: 72,
+        status: 'failed',
+        startedAt: '2026-07-25T09:00:00.000Z',
+      }),
+      finishedAt: '2026-07-25T09:01:00.000Z',
+      tokenUsage: { inputTokens: 20, outputTokens: 10, costUsd: 0.25 },
+    });
+
+    const metrics = await buildMetrics({
+      stateStore: store,
+      config,
+      now: new Date('2026-07-25T12:00:00.000Z'),
+      window: '7d',
+      metric: 'runs-over-time',
+    });
+
+    expect(metrics.window).toBe('7d');
+    expect(metrics.metric).toBe('runs-over-time');
+    expect(metrics.summary).toMatchObject({
+      totalRuns: 2,
+      completedRuns: 1,
+      failedRuns: 1,
+      totalTokens: 170,
+      totalCostUsd: 2.75,
+      medianRunDurationMs: 330000,
+    });
+    expect(metrics.detail.kind).toBe('runs-over-time');
+    expect(metrics.detail.rows).toHaveLength(7);
+    expect(metrics.detail.rows.at(-2)).toMatchObject({
+      bucket: '2026-07-24',
+      label: 'Jul 24',
+      total: 1,
+      completed: 1,
+    });
+    expect(metrics.detail.rows.at(-1)).toMatchObject({
+      bucket: '2026-07-25',
+      label: 'Jul 25',
+      total: 1,
+      failed: 1,
+    });
+  });
+
+  it('returns runs by status over time as its own selectable metric', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const config = createDefaultWakeConfig(root);
+
+    await store.writeRunRecord(
+      runRecord({
+        runId: 'run-status-completed',
+        issueNumber: 72,
+        status: 'completed',
+        startedAt: '2026-07-25T09:15:00.000Z',
+      }),
+    );
+    await store.writeRunRecord(
+      runRecord({
+        runId: 'run-status-blocked',
+        issueNumber: 73,
+        status: 'blocked',
+        sentinel: 'BLOCKED',
+        startedAt: '2026-07-25T09:45:00.000Z',
+      }),
+    );
+
+    const metrics = await buildMetrics({
+      stateStore: store,
+      config,
+      now: new Date('2026-07-25T12:00:00.000Z'),
+      window: '1d',
+      metric: 'runs-by-status-over-time',
+    });
+
+    expect(metrics.metric).toBe('runs-by-status-over-time');
+    expect(metrics.detail.kind).toBe('runs-by-status-over-time');
+    if (metrics.detail.kind !== 'runs-by-status-over-time') {
+      throw new Error(`unexpected detail kind: ${metrics.detail.kind}`);
+    }
+    expect(metrics.detail.rows.find((row) => row.bucket === '2026-07-25T09')).toMatchObject({
+      label: '09:00',
+      total: 2,
+      completed: 1,
+      blocked: 1,
+      awaitingApproval: 0,
+      failed: 0,
+      other: 0,
+    });
+  });
+
+  it('loads metrics runs from date buckets instead of scanning the full run history', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const config = createDefaultWakeConfig(root);
+    const countingStore = {
+      ...store,
+      async listRunRecords() {
+        throw new Error('full run scan should not be used for metrics');
+      },
+      async listRunRecordsForDate(...args: Parameters<typeof store.listRunRecordsForDate>) {
+        return store.listRunRecordsForDate(...args);
+      },
+    };
+
+    await store.writeRunRecord({
+      ...runRecord({
+        runId: 'run-bucketed',
+        issueNumber: 82,
+        status: 'completed',
+        startedAt: '2026-07-25T10:00:00.000Z',
+      }),
+      finishedAt: '2026-07-25T10:01:00.000Z',
+    });
+
+    const metrics = await buildMetrics({
+      stateStore: countingStore,
+      config,
+      now: new Date('2026-07-25T12:00:00.000Z'),
+      window: '1d',
+      metric: 'runs-by-status',
+    });
+
+    expect(metrics.detail).toEqual({
+      kind: 'run-counts',
+      group: 'status',
+      rows: [{ key: 'completed', count: 1 }],
+    });
+  });
+
+  it('uses hourly buckets for 1d and 6-hour buckets for 3d', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const config = createDefaultWakeConfig(root);
+
+    await store.writeRunRecord({
+      ...runRecord({
+        runId: 'run-hourly',
+        issueNumber: 73,
+        status: 'completed',
+        startedAt: '2026-07-25T09:15:00.000Z',
+      }),
+      finishedAt: '2026-07-25T09:45:00.000Z',
+    });
+
+    const oneDay = await buildMetrics({
+      stateStore: store,
+      config,
+      now: new Date('2026-07-25T12:00:00.000Z'),
+      window: '1d',
+      metric: 'runs-over-time',
+    });
+    expect(oneDay.detail.kind).toBe('runs-over-time');
+    if (oneDay.detail.kind !== 'runs-over-time') {
+      throw new Error(`unexpected detail kind: ${oneDay.detail.kind}`);
+    }
+    expect(oneDay.detail.rows).toHaveLength(24);
+    expect(oneDay.detail.rows.find((row) => row.bucket === '2026-07-25T09')).toMatchObject({
+      label: '09:00',
+      total: 1,
+    });
+
+    const threeDay = await buildMetrics({
+      stateStore: store,
+      config,
+      now: new Date('2026-07-25T12:00:00.000Z'),
+      window: '3d',
+      metric: 'runs-over-time',
+    });
+    expect(threeDay.detail.kind).toBe('runs-over-time');
+    if (threeDay.detail.kind !== 'runs-over-time') {
+      throw new Error(`unexpected detail kind: ${threeDay.detail.kind}`);
+    }
+    expect(threeDay.detail.rows).toHaveLength(12);
+    expect(threeDay.detail.rows.find((row) => row.bucket === '2026-07-25T06')).toMatchObject({
+      label: 'Jul 25 06:00',
+      total: 1,
+    });
+  });
+
+  it('groups only the selected runner metric and resolves models from config when requested', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const config = createDefaultWakeConfig(root);
+    config.runners['codex-main'] = {
+      kind: 'codex',
+      command: 'codex',
+      model: 'gpt-5.5',
+      smokeModel: 'gpt-5.4-mini',
+      smokePrompt: 'hi',
+      timeoutMs: 1000,
+      models: { default: 'gpt-5.5', implement: 'gpt-5.5' },
+    };
+
+    await store.writeRunRecord({
+      ...runRecord({
+        runId: 'run-known',
+        issueNumber: 74,
+        status: 'completed',
+        startedAt: '2026-07-25T08:00:00.000Z',
+      }),
+      routing: {
+        runnerName: 'codex-main',
+        runnerKind: 'codex',
+        tier: 'standard',
+        reason: 'test',
+      },
+    });
+    await store.writeRunRecord(
+      runRecord({
+        runId: 'run-unknown',
+        issueNumber: 75,
+        status: 'completed',
+        startedAt: '2026-07-25T09:00:00.000Z',
+      }),
+    );
+
+    const byRunner = await buildMetrics({
+      stateStore: store,
+      config,
+      now: new Date('2026-07-25T12:00:00.000Z'),
+      window: '1d',
+      metric: 'runs-by-runner',
+    });
+    expect(byRunner.detail).toEqual({
+      kind: 'run-counts',
+      group: 'runner',
+      rows: [
+        { key: 'codex-main', count: 1 },
+        { key: 'unknown', count: 1 },
+      ],
+    });
+
+    const byModel = await buildMetrics({
+      stateStore: store,
+      config,
+      now: new Date('2026-07-25T12:00:00.000Z'),
+      window: '1d',
+      metric: 'runs-by-model',
+    });
+    expect(byModel.detail).toEqual({
+      kind: 'run-counts',
+      group: 'model',
+      rows: [
+        { key: 'gpt-5.5', count: 1 },
+        { key: 'unknown', count: 1 },
+      ],
+    });
+  });
+
+  it('computes completed work-item e2e duration only for selected work-item detail metrics', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const config = createDefaultWakeConfig(root);
+    const base = issueState({ number: 81, stage: 'done' });
+
+    await store.writeIssueState({
+      ...base,
+      issue: {
+        ...base.issue,
+        createdAt: '2026-07-25T09:00:00.000Z',
+        updatedAt: '2026-07-25T11:00:00.000Z',
+      },
+      wake: {
+        ...base.wake,
+        syncedAt: '2026-07-25T11:00:00.000Z',
+        stageHistory: [
+          { stage: 'queue', changedAt: '2026-07-25T09:00:00.000Z', reason: 'test' },
+          { stage: 'done', changedAt: '2026-07-25T11:00:00.000Z', reason: 'test' },
+        ],
+      },
+    });
+
+    const metrics = await buildMetrics({
+      stateStore: store,
+      config,
+      now: new Date('2026-07-25T12:00:00.000Z'),
+      window: '1d',
+      metric: 'work-item-durations',
+    });
+
+    expect(metrics.summary.completedWorkItems).toBe(1);
+    expect(metrics.summary.medianWorkItemDurationMs).toBe(7200000);
+    expect(metrics.detail).toEqual({
+      kind: 'work-item-durations',
+      rows: [
+        {
+          key: workId(81),
+          repo: 'atolis-hq/wake',
+          issueNumber: 81,
+          durationMs: 7200000,
+          completedAt: '2026-07-25T11:00:00.000Z',
+        },
+      ],
+    });
   });
 });

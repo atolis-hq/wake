@@ -505,6 +505,655 @@ export async function buildRuns(input: {
     .sort((left, right) => right.startedAt.localeCompare(left.startedAt));
 }
 
+export type MetricsWindow = '1d' | '3d' | '5d' | '7d';
+export type MetricsMetric =
+  | 'runs-over-time'
+  | 'runs-by-status-over-time'
+  | 'runs-by-status'
+  | 'runs-by-action'
+  | 'runs-by-repo'
+  | 'runs-by-runner'
+  | 'runs-by-model'
+  | 'runs-by-tier'
+  | 'tokens-over-time'
+  | 'tokens-by-action'
+  | 'tokens-by-runner'
+  | 'tokens-by-model'
+  | 'duration-by-action'
+  | 'duration-over-time'
+  | 'work-items-over-time'
+  | 'work-item-durations';
+
+type MetricsSummary = {
+  totalRuns: number;
+  completedRuns: number;
+  blockedRuns: number;
+  awaitingApprovalRuns: number;
+  failedRuns: number;
+  totalTokens: number;
+  totalCostUsd: number;
+  medianRunDurationMs?: number | undefined;
+  completedWorkItems: number;
+  medianWorkItemDurationMs?: number | undefined;
+};
+
+type TimeBucket = { bucket: string; label: string; startMs: number; endMs: number };
+
+const metricsWindows = new Set<MetricsWindow>(['1d', '3d', '5d', '7d']);
+const metricsMetrics = new Set<MetricsMetric>([
+  'runs-over-time',
+  'runs-by-status-over-time',
+  'runs-by-status',
+  'runs-by-action',
+  'runs-by-repo',
+  'runs-by-runner',
+  'runs-by-model',
+  'runs-by-tier',
+  'tokens-over-time',
+  'tokens-by-action',
+  'tokens-by-runner',
+  'tokens-by-model',
+  'duration-by-action',
+  'duration-over-time',
+  'work-items-over-time',
+  'work-item-durations',
+]);
+
+function parseMetricsWindow(value: string | undefined): MetricsWindow {
+  return metricsWindows.has(value as MetricsWindow) ? (value as MetricsWindow) : '7d';
+}
+
+function parseMetricsMetric(value: string | undefined): MetricsMetric {
+  return metricsMetrics.has(value as MetricsMetric) ? (value as MetricsMetric) : 'runs-over-time';
+}
+
+function utcDayStartMs(date: Date): number {
+  return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+}
+
+function monthDayLabel(date: Date): string {
+  const months = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
+  return `${months[date.getUTCMonth()]} ${date.getUTCDate()}`;
+}
+
+function pad2(value: number): string {
+  return String(value).padStart(2, '0');
+}
+
+function createTimeBuckets(window: MetricsWindow, now: Date): TimeBucket[] {
+  const dayMs = 24 * 60 * 60 * 1000;
+  const hourMs = 60 * 60 * 1000;
+  const todayStart = utcDayStartMs(now);
+
+  if (window === '1d') {
+    return Array.from({ length: 24 }, (_, hour) => {
+      const startMs = todayStart + hour * hourMs;
+      const day = new Date(startMs);
+      return {
+        bucket: `${day.toISOString().slice(0, 10)}T${pad2(hour)}`,
+        label: `${pad2(hour)}:00`,
+        startMs,
+        endMs: startMs + hourMs,
+      };
+    });
+  }
+
+  if (window === '3d') {
+    const start = todayStart - 2 * dayMs;
+    return Array.from({ length: 12 }, (_, index) => {
+      const startMs = start + index * 6 * hourMs;
+      const day = new Date(startMs);
+      const hour = day.getUTCHours();
+      return {
+        bucket: `${day.toISOString().slice(0, 10)}T${pad2(hour)}`,
+        label: `${monthDayLabel(day)} ${pad2(hour)}:00`,
+        startMs,
+        endMs: startMs + 6 * hourMs,
+      };
+    });
+  }
+
+  const days = window === '5d' ? 5 : 7;
+  const start = todayStart - (days - 1) * dayMs;
+  return Array.from({ length: days }, (_, index) => {
+    const startMs = start + index * dayMs;
+    const day = new Date(startMs);
+    return {
+      bucket: day.toISOString().slice(0, 10),
+      label: monthDayLabel(day),
+      startMs,
+      endMs: startMs + dayMs,
+    };
+  });
+}
+
+function inMetricsWindow(timestamp: string, buckets: TimeBucket[]): boolean {
+  const at = Date.parse(timestamp);
+  const first = buckets[0];
+  const last = buckets.at(-1);
+  return (
+    Number.isFinite(at) &&
+    first !== undefined &&
+    last !== undefined &&
+    at >= first.startMs &&
+    at < last.endMs
+  );
+}
+
+function findBucket(timestamp: string, buckets: TimeBucket[]): TimeBucket | undefined {
+  const at = Date.parse(timestamp);
+  if (!Number.isFinite(at)) {
+    return undefined;
+  }
+  return buckets.find((bucket) => at >= bucket.startMs && at < bucket.endMs);
+}
+
+async function listRunsForBuckets(
+  stateStore: StateStore,
+  buckets: TimeBucket[],
+): Promise<RunRecord[]> {
+  const dates = [...new Set(buckets.map((bucket) => bucket.bucket.slice(0, 10)))];
+  const runsById = new Map<string, RunRecord>();
+  const recordsByDate = await Promise.all(
+    dates.map((date) => stateStore.listRunRecordsForDate(date)),
+  );
+  for (const records of recordsByDate) {
+    for (const record of records) {
+      runsById.set(record.runId, record);
+    }
+  }
+  return [...runsById.values()].sort((left, right) =>
+    left.startedAt.localeCompare(right.startedAt),
+  );
+}
+
+function runTokenTotal(run: RunRecord): number {
+  const usage = run.tokenUsage;
+  if (usage === undefined) {
+    return 0;
+  }
+  return (
+    usage.inputTokens +
+    usage.outputTokens +
+    (usage.cacheCreationInputTokens ?? 0) +
+    (usage.cacheReadInputTokens ?? 0)
+  );
+}
+
+function median(values: number[]): number | undefined {
+  if (values.length === 0) {
+    return undefined;
+  }
+  const sorted = values.slice().sort((left, right) => left - right);
+  const middle = Math.floor(sorted.length / 2);
+  if (sorted.length % 2 === 1) {
+    return sorted[middle];
+  }
+  return ((sorted[middle - 1] ?? 0) + (sorted[middle] ?? 0)) / 2;
+}
+
+function average(values: number[]): number {
+  return values.length === 0
+    ? 0
+    : values.reduce((total, value) => total + value, 0) / values.length;
+}
+
+function runDurationMs(run: RunRecord): number | undefined {
+  if (run.finishedAt === undefined) {
+    return undefined;
+  }
+  const started = Date.parse(run.startedAt);
+  const finished = Date.parse(run.finishedAt);
+  if (!Number.isFinite(started) || !Number.isFinite(finished) || finished < started) {
+    return undefined;
+  }
+  return finished - started;
+}
+
+function groupCount<T>(
+  entries: T[],
+  keyFor: (entry: T) => string,
+): Array<{ key: string; count: number }> {
+  const counts = new Map<string, number>();
+  for (const entry of entries) {
+    const key = keyFor(entry);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([key, count]) => ({ key, count }))
+    .sort((left, right) => right.count - left.count || left.key.localeCompare(right.key));
+}
+
+function groupTokens(
+  runs: RunRecord[],
+  keyFor: (run: RunRecord) => string,
+): Array<{
+  key: string;
+  count: number;
+  tokens: number;
+  averageTokens: number;
+  costUsd: number;
+  averageCostUsd: number;
+}> {
+  const groups = new Map<string, { count: number; tokens: number; costUsd: number }>();
+  for (const run of runs) {
+    const key = keyFor(run);
+    const existing = groups.get(key) ?? { count: 0, tokens: 0, costUsd: 0 };
+    existing.count += 1;
+    existing.tokens += runTokenTotal(run);
+    existing.costUsd += run.tokenUsage?.costUsd ?? 0;
+    groups.set(key, existing);
+  }
+  return [...groups.entries()]
+    .map(([key, value]) => ({
+      key,
+      ...value,
+      averageTokens: value.count === 0 ? 0 : value.tokens / value.count,
+      averageCostUsd: value.count === 0 ? 0 : value.costUsd / value.count,
+    }))
+    .sort((left, right) => right.tokens - left.tokens || left.key.localeCompare(right.key));
+}
+
+function groupDurations(
+  runs: RunRecord[],
+  keyFor: (run: RunRecord) => string,
+): Array<{ key: string; count: number; totalMs: number; averageMs: number; medianMs: number }> {
+  const groups = new Map<string, number[]>();
+  for (const run of runs) {
+    const duration = runDurationMs(run);
+    if (duration === undefined) {
+      continue;
+    }
+    const key = keyFor(run);
+    groups.set(key, [...(groups.get(key) ?? []), duration]);
+  }
+  return [...groups.entries()]
+    .map(([key, values]) => ({
+      key,
+      count: values.length,
+      totalMs: values.reduce((total, value) => total + value, 0),
+      averageMs: average(values),
+      medianMs: median(values) ?? 0,
+    }))
+    .sort((left, right) => right.medianMs - left.medianMs || left.key.localeCompare(right.key));
+}
+
+function runnerKey(run: RunRecord): string {
+  return run.routing?.runnerName ?? 'unknown';
+}
+
+function tierKey(run: RunRecord): string {
+  return run.routing?.tier ?? 'unknown';
+}
+
+function modelKey(run: RunRecord, config: WakeConfig): string {
+  const runnerName = run.routing?.runnerName;
+  if (runnerName === undefined) {
+    return 'unknown';
+  }
+  const runner = config.runners[runnerName];
+  if (runner === undefined || runner.kind === 'fake') {
+    return 'unknown';
+  }
+  return runner.models[run.action] ?? runner.models.default ?? runner.model;
+}
+
+function completedAtForItem(item: IssueStateRecord): string | undefined {
+  const doneEntry = item.wake.stageHistory.find((entry) => entry.stage === 'done');
+  if (doneEntry !== undefined) {
+    return doneEntry.changedAt;
+  }
+  if (item.issue.state === 'closed') {
+    return item.issue.updatedAt;
+  }
+  if (isTerminalStage(item.wake.stage)) {
+    return item.wake.stageHistory.at(-1)?.changedAt ?? item.issue.updatedAt;
+  }
+  return undefined;
+}
+
+function startedAtForItem(item: IssueStateRecord): string | undefined {
+  return item.issue.createdAt ?? item.wake.stageHistory[0]?.changedAt;
+}
+
+function completedWorkItemDurations(
+  items: IssueStateRecord[],
+  buckets: TimeBucket[],
+): Array<{
+  key: string;
+  repo: string;
+  issueNumber: number;
+  durationMs: number;
+  completedAt: string;
+}> {
+  const rows: Array<{
+    key: string;
+    repo: string;
+    issueNumber: number;
+    durationMs: number;
+    completedAt: string;
+  }> = [];
+  for (const item of items) {
+    const completedAt = completedAtForItem(item);
+    const startedAt = startedAtForItem(item);
+    if (
+      completedAt === undefined ||
+      startedAt === undefined ||
+      !inMetricsWindow(completedAt, buckets)
+    ) {
+      continue;
+    }
+    const completedMs = Date.parse(completedAt);
+    const startedMs = Date.parse(startedAt);
+    if (!Number.isFinite(completedMs) || !Number.isFinite(startedMs) || completedMs < startedMs) {
+      continue;
+    }
+    rows.push({
+      key: item.workItemKey,
+      repo: item.issue.repo,
+      issueNumber: item.issue.number,
+      durationMs: completedMs - startedMs,
+      completedAt,
+    });
+  }
+  return rows.sort((left, right) => right.completedAt.localeCompare(left.completedAt));
+}
+
+function buildMetricsSummary(
+  runs: RunRecord[],
+  workItemDurations: Array<{ durationMs: number }>,
+): MetricsSummary {
+  const runDurations = runs
+    .map((run) => runDurationMs(run))
+    .filter((duration): duration is number => duration !== undefined);
+  return {
+    totalRuns: runs.length,
+    completedRuns: runs.filter((run) => run.status === 'completed').length,
+    blockedRuns: runs.filter((run) => run.status === 'blocked').length,
+    awaitingApprovalRuns: runs.filter((run) => run.status === 'awaiting-approval').length,
+    failedRuns: runs.filter((run) => run.status === 'failed').length,
+    totalTokens: runs.reduce((total, run) => total + runTokenTotal(run), 0),
+    totalCostUsd: runs.reduce((total, run) => total + (run.tokenUsage?.costUsd ?? 0), 0),
+    medianRunDurationMs: median(runDurations),
+    completedWorkItems: workItemDurations.length,
+    medianWorkItemDurationMs: median(workItemDurations.map((row) => row.durationMs)),
+  };
+}
+
+export async function buildMetrics(input: {
+  stateStore: StateStore;
+  config: WakeConfig;
+  now: Date;
+  window?: string | undefined;
+  metric?: string | undefined;
+}) {
+  const window = parseMetricsWindow(input.window);
+  const metric = parseMetricsMetric(input.metric);
+  const buckets = createTimeBuckets(window, input.now);
+  const [allRuns, items] = await Promise.all([
+    listRunsForBuckets(input.stateStore, buckets),
+    input.stateStore.listIssueStates(),
+  ]);
+  const runs = allRuns.filter((run) => inMetricsWindow(run.startedAt, buckets));
+  const workItemDurations = completedWorkItemDurations(items, buckets);
+  const summary = buildMetricsSummary(runs, workItemDurations);
+
+  const runCountsForBucket = (bucket: TimeBucket) => {
+    const bucketRuns = runs.filter(
+      (run) => findBucket(run.startedAt, buckets)?.bucket === bucket.bucket,
+    );
+    return {
+      bucket: bucket.bucket,
+      label: bucket.label,
+      total: bucketRuns.length,
+      completed: bucketRuns.filter((run) => run.status === 'completed').length,
+      blocked: bucketRuns.filter((run) => run.status === 'blocked').length,
+      awaitingApproval: bucketRuns.filter((run) => run.status === 'awaiting-approval').length,
+      failed: bucketRuns.filter((run) => run.status === 'failed').length,
+      other: bucketRuns.filter(
+        (run) => !['completed', 'blocked', 'awaiting-approval', 'failed'].includes(run.status),
+      ).length,
+    };
+  };
+
+  const tokenCountsForBucket = (bucket: TimeBucket) => {
+    const bucketRuns = runs.filter(
+      (run) => findBucket(run.startedAt, buckets)?.bucket === bucket.bucket,
+    );
+    return {
+      bucket: bucket.bucket,
+      label: bucket.label,
+      tokens: bucketRuns.reduce((total, run) => total + runTokenTotal(run), 0),
+      inputTokens: bucketRuns.reduce((total, run) => total + (run.tokenUsage?.inputTokens ?? 0), 0),
+      outputTokens: bucketRuns.reduce(
+        (total, run) => total + (run.tokenUsage?.outputTokens ?? 0),
+        0,
+      ),
+      cacheCreationInputTokens: bucketRuns.reduce(
+        (total, run) => total + (run.tokenUsage?.cacheCreationInputTokens ?? 0),
+        0,
+      ),
+      cacheReadInputTokens: bucketRuns.reduce(
+        (total, run) => total + (run.tokenUsage?.cacheReadInputTokens ?? 0),
+        0,
+      ),
+      costUsd: bucketRuns.reduce((total, run) => total + (run.tokenUsage?.costUsd ?? 0), 0),
+    };
+  };
+
+  switch (metric) {
+    case 'runs-by-status':
+      return {
+        window,
+        metric,
+        generatedAt: input.now.toISOString(),
+        summary,
+        detail: {
+          kind: 'run-counts' as const,
+          group: 'status' as const,
+          rows: groupCount(runs, (run) => run.status),
+        },
+      };
+    case 'runs-by-status-over-time':
+      return {
+        window,
+        metric,
+        generatedAt: input.now.toISOString(),
+        summary,
+        detail: {
+          kind: 'runs-by-status-over-time' as const,
+          rows: buckets.map(runCountsForBucket),
+        },
+      };
+    case 'runs-by-action':
+      return {
+        window,
+        metric,
+        generatedAt: input.now.toISOString(),
+        summary,
+        detail: {
+          kind: 'run-counts' as const,
+          group: 'action' as const,
+          rows: groupCount(runs, (run) => run.action),
+        },
+      };
+    case 'runs-by-repo':
+      return {
+        window,
+        metric,
+        generatedAt: input.now.toISOString(),
+        summary,
+        detail: {
+          kind: 'run-counts' as const,
+          group: 'repo' as const,
+          rows: groupCount(runs, (run) => run.repo),
+        },
+      };
+    case 'runs-by-runner':
+      return {
+        window,
+        metric,
+        generatedAt: input.now.toISOString(),
+        summary,
+        detail: {
+          kind: 'run-counts' as const,
+          group: 'runner' as const,
+          rows: groupCount(runs, runnerKey),
+        },
+      };
+    case 'runs-by-model':
+      return {
+        window,
+        metric,
+        generatedAt: input.now.toISOString(),
+        summary,
+        detail: {
+          kind: 'run-counts' as const,
+          group: 'model' as const,
+          rows: groupCount(runs, (run) => modelKey(run, input.config)),
+        },
+      };
+    case 'runs-by-tier':
+      return {
+        window,
+        metric,
+        generatedAt: input.now.toISOString(),
+        summary,
+        detail: {
+          kind: 'run-counts' as const,
+          group: 'tier' as const,
+          rows: groupCount(runs, tierKey),
+        },
+      };
+    case 'tokens-over-time':
+      return {
+        window,
+        metric,
+        generatedAt: input.now.toISOString(),
+        summary,
+        detail: { kind: 'tokens-over-time' as const, rows: buckets.map(tokenCountsForBucket) },
+      };
+    case 'tokens-by-action':
+      return {
+        window,
+        metric,
+        generatedAt: input.now.toISOString(),
+        summary,
+        detail: {
+          kind: 'token-counts' as const,
+          group: 'action' as const,
+          rows: groupTokens(runs, (run) => run.action),
+        },
+      };
+    case 'tokens-by-runner':
+      return {
+        window,
+        metric,
+        generatedAt: input.now.toISOString(),
+        summary,
+        detail: {
+          kind: 'token-counts' as const,
+          group: 'runner' as const,
+          rows: groupTokens(runs, runnerKey),
+        },
+      };
+    case 'tokens-by-model':
+      return {
+        window,
+        metric,
+        generatedAt: input.now.toISOString(),
+        summary,
+        detail: {
+          kind: 'token-counts' as const,
+          group: 'model' as const,
+          rows: groupTokens(runs, (run) => modelKey(run, input.config)),
+        },
+      };
+    case 'duration-by-action':
+      return {
+        window,
+        metric,
+        generatedAt: input.now.toISOString(),
+        summary,
+        detail: {
+          kind: 'durations' as const,
+          group: 'action' as const,
+          rows: groupDurations(runs, (run) => run.action),
+        },
+      };
+    case 'duration-over-time':
+      return {
+        window,
+        metric,
+        generatedAt: input.now.toISOString(),
+        summary,
+        detail: {
+          kind: 'duration-over-time' as const,
+          rows: buckets.map((bucket) => {
+            const values = runs
+              .filter((run) => findBucket(run.startedAt, buckets)?.bucket === bucket.bucket)
+              .map((run) => runDurationMs(run))
+              .filter((duration): duration is number => duration !== undefined);
+            return {
+              bucket: bucket.bucket,
+              label: bucket.label,
+              count: values.length,
+              totalMs: values.reduce((total, value) => total + value, 0),
+              averageMs: average(values),
+              medianMs: median(values) ?? 0,
+            };
+          }),
+        },
+      };
+    case 'work-items-over-time':
+      return {
+        window,
+        metric,
+        generatedAt: input.now.toISOString(),
+        summary,
+        detail: {
+          kind: 'work-items-over-time' as const,
+          rows: buckets.map((bucket) => ({
+            bucket: bucket.bucket,
+            label: bucket.label,
+            completed: workItemDurations.filter(
+              (row) => findBucket(row.completedAt, buckets)?.bucket === bucket.bucket,
+            ).length,
+          })),
+        },
+      };
+    case 'work-item-durations':
+      return {
+        window,
+        metric,
+        generatedAt: input.now.toISOString(),
+        summary,
+        detail: { kind: 'work-item-durations' as const, rows: workItemDurations },
+      };
+    case 'runs-over-time':
+      return {
+        window,
+        metric,
+        generatedAt: input.now.toISOString(),
+        summary,
+        detail: { kind: 'runs-over-time' as const, rows: buckets.map(runCountsForBucket) },
+      };
+  }
+}
+
 const secretKeyPattern = /token|secret|key|password/i;
 
 function redact(value: unknown, keyHint = ''): unknown {
