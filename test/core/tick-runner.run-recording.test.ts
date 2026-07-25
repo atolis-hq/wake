@@ -358,6 +358,140 @@ describe('tick runner', () => {
       expect(runRecord.status).toBe('failed');
     });
 
+    it('records PROCESS_FAILED executionOutcome and preserves prior workflowOutcome in projection when workspace prep throws', async () => {
+      const store = createStateStore({ wakeRoot: root });
+
+      await store.writeIssueState({
+        schemaVersion: 1,
+        workItemKey: workId(30),
+        issue: {
+          repo: 'atolis-hq/wake',
+          number: 30,
+          title: 'Implement',
+          body: 'Body',
+          labels: ['wake:implement'],
+          assignees: [],
+          isPullRequest: false,
+          state: 'open',
+          url: 'https://example.test/issues/30',
+          createdAt: '2026-07-05T12:00:00.000Z',
+          updatedAt: '2026-07-05T12:00:00.000Z',
+        },
+        comments: [],
+        wake: {
+          stage: 'implement',
+          stageHistory: [],
+          recentEventIds: [],
+          syncedAt: '2026-07-05T12:00:00.000Z',
+          expectedEcho: { commentIds: [], labels: [] },
+        },
+        context: { lastWorkflowOutcome: 'BLOCKED' },
+        correlatedResources: [],
+      });
+
+      const config = createDefaultWakeConfig(root);
+      config.sources.github.policy.requiredLabels = ['wake:implement'];
+
+      const tickRunner = createTickRunner({
+        clock: { now: () => new Date('2026-07-05T12:00:00.000Z') },
+        config,
+        stateStore: store,
+        workSource: {
+          async pollEvents() {
+            return [];
+          },
+        },
+        runner: {
+          async run() {
+            return { result: 'DONE', model: 'test-model', cli: 'test-cli' };
+          },
+        },
+        resourceIndex: createFakeResourceIndex(),
+        workspaceManager: {
+          async prepareWorkspace() {
+            throw new Error('git network failure');
+          },
+          async prepareReadOnlyClone() {
+            throw new Error('git network failure');
+          },
+          async cleanupWorkspace() {},
+        },
+      });
+
+      await tickRunner.runTick();
+
+      const runRecords = await store.listRunRecords();
+      expect(runRecords[0]?.executionOutcome).toBe('PROCESS_FAILED');
+      expect(runRecords[0]?.workflowOutcome).toBeUndefined();
+
+      const projection = await store.readIssueState(workId(30));
+      expect(projection?.context.lastWorkflowOutcome).toBe('BLOCKED');
+    });
+
+    it('records COMPLETED executionOutcome and BLOCKED workflowOutcome when agent returns BLOCKED', async () => {
+      const store = createStateStore({ wakeRoot: root });
+
+      await store.writeIssueState({
+        schemaVersion: 1,
+        workItemKey: workId(31),
+        issue: {
+          repo: 'atolis-hq/wake',
+          number: 31,
+          title: 'Implement',
+          body: 'Body',
+          labels: ['wake:implement'],
+          assignees: [],
+          isPullRequest: false,
+          state: 'open',
+          url: 'https://example.test/issues/31',
+          createdAt: '2026-07-05T12:00:00.000Z',
+          updatedAt: '2026-07-05T12:00:00.000Z',
+        },
+        comments: [],
+        wake: {
+          stage: 'implement',
+          stageHistory: [],
+          recentEventIds: [],
+          syncedAt: '2026-07-05T12:00:00.000Z',
+          expectedEcho: { commentIds: [], labels: [] },
+        },
+        context: {},
+        correlatedResources: [],
+      });
+
+      const config = createDefaultWakeConfig(root);
+      config.sources.github.policy.requiredLabels = ['wake:implement'];
+
+      const tickRunner = createTickRunner({
+        clock: { now: () => new Date('2026-07-05T12:00:00.000Z') },
+        config,
+        stateStore: store,
+        workSource: {
+          async pollEvents() {
+            return [];
+          },
+        },
+        runner: {
+          async run() {
+            return {
+              result: 'Cannot proceed without more information.\nBLOCKED',
+              model: 'test-model',
+              cli: 'test-cli',
+              session_id: 'session-blocked',
+            };
+          },
+        },
+        resourceIndex: createFakeResourceIndex(),
+        workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+      });
+
+      await tickRunner.runTick();
+
+      const runRecords = await store.listRunRecords();
+      expect(runRecords[0]?.executionOutcome).toBe('COMPLETED');
+      expect(runRecords[0]?.workflowOutcome).toBe('BLOCKED');
+    });
+
     it('publishes a failed status label and failure comment when a run ends in FAILED', async () => {
       const store = createStateStore({ wakeRoot: root });
       const deliveredEvents: string[] = [];

@@ -2,7 +2,7 @@ import type { createProjectionUpdater } from './projection-updater.js';
 import { createLabelsEvent } from './event-builders.js';
 import { stageLabelForStage } from '../domain/stages.js';
 import { workflowLabelForWorkflowName, workflowNameForProjection } from '../domain/workflows.js';
-import type { EventEnvelope, RunRecord, WakeConfig } from '../domain/types.js';
+import type { EventEnvelope, ExecutionOutcome, RunRecord, WakeConfig } from '../domain/types.js';
 import { createEventEnvelope } from '../lib/event-log.js';
 
 type StateStore = ReturnType<typeof import('../adapters/fs/state-store.js').createStateStore>;
@@ -73,6 +73,7 @@ export function createStaleRunReconciler(deps: {
           ...record,
           status: 'superseded',
           finishedAt,
+          executionOutcome: 'SUPERSEDED' as const,
           summary: 'Stale running record was superseded by a newer run.',
           metadata: {
             ...record.metadata,
@@ -83,11 +84,15 @@ export function createStaleRunReconciler(deps: {
         continue;
       }
 
+      const staleExecutionOutcome: ExecutionOutcome =
+        reason === 'timeout' ? 'TIMED_OUT' : 'STALLED';
+
       await deps.stateStore.writeRunRecord({
         ...record,
         status: 'failed',
         finishedAt,
         sentinel: 'FAILED',
+        executionOutcome: staleExecutionOutcome,
         summary: `Run exceeded timeout while marked running and was reconciled by a later tick.`,
         metadata: {
           ...record.metadata,
@@ -115,6 +120,7 @@ export function createStaleRunReconciler(deps: {
         payload: {
           action: record.action,
           sentinel: 'FAILED',
+          executionOutcome: staleExecutionOutcome,
           runId: record.runId,
           reason: reason === 'timeout' ? 'runner:stale-timeout' : 'runner:orphaned-process',
           ...(record.routing === undefined ? {} : { routing: record.routing }),

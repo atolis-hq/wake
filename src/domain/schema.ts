@@ -25,6 +25,30 @@ export const wakeArtifactsEnvelopeSchema = z.object({
 });
 export const runnerSentinelSchema = z.enum(runnerSentinelValues);
 
+export const executionOutcomeValues = [
+  'COMPLETED',
+  'STARTUP_FAILED',
+  'PROCESS_FAILED',
+  'TIMED_OUT',
+  'STALLED',
+  'CANCELED_BY_RECONCILIATION',
+  'CANCELED_BY_OPERATOR',
+  'QUOTA_EXHAUSTED',
+  'MALFORMED_OUTPUT',
+  'SUPERSEDED',
+] as const;
+
+export const workflowOutcomeValues = [
+  'DONE',
+  'BLOCKED',
+  'AWAITING_APPROVAL',
+  'AWAITING_INPUT',
+  'CHANGES_REQUESTED',
+] as const;
+
+export const executionOutcomeSchema = z.enum(executionOutcomeValues);
+export const workflowOutcomeSchema = z.enum(workflowOutcomeValues);
+
 export const defaultAgentIdentity = 'Wake';
 export const defaultSmokePrompt = `This is ${defaultAgentIdentity}, reply with "hi ${defaultAgentIdentity} only"`;
 
@@ -331,6 +355,8 @@ export const runRecordSchema = z.object({
   finishedAt: isoTimestampSchema.optional(),
   sessionId: z.string().optional(),
   sentinel: runnerSentinelSchema.optional(),
+  executionOutcome: executionOutcomeSchema.optional(),
+  workflowOutcome: workflowOutcomeSchema.optional(),
   summary: z.string().optional(),
   routing: runnerRoutingSchema.optional(),
   tokenUsage: runTokenUsageSchema.optional(),

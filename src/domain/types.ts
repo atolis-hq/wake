@@ -7,6 +7,7 @@ import {
   correlationRegisteredPayloadSchema,
   correlationRetractedPayloadSchema,
   eventEnvelopeSchema,
+  executionOutcomeSchema,
   issueStateRecordSchema,
   ledgerSchema,
   reportedArtifactSchema,
@@ -14,6 +15,7 @@ import {
   sourceStateRecordSchema,
   wakeConfigSchema,
   wakeResultEnvelopeSchema,
+  workflowOutcomeSchema,
   workItemCreatedPayloadSchema,
 } from './schema.js';
 import { runnerSentinelValues } from './stages.js';
@@ -36,6 +38,8 @@ export type WakeConfig = z.infer<typeof wakeConfigSchema>;
 export type WorkflowDefinition = WakeConfig['workflows'][string];
 export type WorkflowStageDefinition = WorkflowDefinition['stages'][string];
 export type RunnerFailureClass = 'task' | 'quota' | 'infra';
+export type ExecutionOutcome = z.infer<typeof executionOutcomeSchema>;
+export type WorkflowOutcome = z.infer<typeof workflowOutcomeSchema>;
 export type RunnerRouting = NonNullable<RunRecord['routing']>;
 export type RunnerEntry = WakeConfig['runners'][string];
 export type RunnerKind = RunnerEntry['kind'];
