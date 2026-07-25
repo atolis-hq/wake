@@ -10,6 +10,7 @@ import {
 } from '../../src/adapters/runner/prompt-templates.js';
 import { buildStagePrompt } from '../../src/adapters/runner/stage-prompt.js';
 import { createDefaultWakeConfig } from '../../src/config/defaults.js';
+import { parseWakeConfig } from '../../src/domain/schema.js';
 
 describe('prompt templates', () => {
   it('parses frontmatter and body from a stage/mode template file', async () => {
@@ -29,15 +30,21 @@ describe('prompt templates', () => {
   });
 
   it('renders triage manual-exclusion labels and capacity from trusted Wake context', async () => {
-    const config = createDefaultWakeConfig(process.cwd());
-    config.sources.github.repos = ['org/repo'];
-    config.sources.github.policy.ignoredLabels = ['do-not-automate'];
+    const config = parseWakeConfig({
+      paths: { wakeRoot: process.cwd() },
+      sources: {
+        github: {
+          repos: ['org/repo'],
+          policy: {
+            ignoredLabels: ['do-not-automate'],
+          },
+        },
+      },
+    });
     const result = await buildStagePrompt({
       action: 'triage-assign',
       config,
-      contextOverrides: {
-        triageCapacityAvailable: true,
-      },
+      contextOverrides: config.workflows.triage!.stages.assign!.promptContext!,
       projection: {
         schemaVersion: 1,
         workItemKey: 'work-01JQZX9K2N4P6R8T0V2W4Y6A99',

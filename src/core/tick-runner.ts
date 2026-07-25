@@ -752,6 +752,7 @@ export function createTickRunner(deps: {
       let command: string | undefined;
       let claimedStage = candidate.wake.stage;
       let workspaceMode: 'none' | 'read-only' | 'branch' = 'none';
+      let promptContextOverrides: Record<string, unknown> | undefined;
 
       if (watcherDispatch !== null) {
         const targetWorkflow = deps.config.workflows[watcherDispatch.targetWorkflowName];
@@ -766,6 +767,7 @@ export function createTickRunner(deps: {
         action = entryStage.action ?? entryStageName;
         claimedStage = entryStageName;
         workspaceMode = entryStage.workspace;
+        promptContextOverrides = entryStage.promptContext;
         workflowName = watcherDispatch.targetWorkflowName;
         watcherStateKeyForRun = watcherKey({
           workItemKey: watcherDispatch.projection.workItemKey,
@@ -795,6 +797,7 @@ export function createTickRunner(deps: {
             const workflowAction = chooseWorkflowAction(candidate, workflow);
             claimedStage = workflowAction?.stage ?? candidate.wake.stage;
             workspaceMode = workflowAction?.workspace ?? 'none';
+            promptContextOverrides = workflowAction?.promptContext;
           } else if (approvalResolution.approved) {
             const approvalId = `approval-${candidate.issue.number}-${deps.clock.now().getTime()}`;
             const approvedAt = deps.clock.now().toISOString();
@@ -856,6 +859,7 @@ export function createTickRunner(deps: {
             const workflowAction = chooseWorkflowAction(candidate, workflow);
             claimedStage = workflowAction?.stage ?? candidate.wake.stage;
             workspaceMode = workflowAction?.workspace ?? 'none';
+            promptContextOverrides = workflowAction?.promptContext;
           }
         }
       } else {
@@ -883,6 +887,7 @@ export function createTickRunner(deps: {
         claimedStage = workflowAction?.stage ?? candidate.wake.stage;
         workspaceMode =
           customCommandWorkspace(action, deps.config) ?? workflowAction?.workspace ?? 'none';
+        promptContextOverrides = workflowAction?.promptContext;
       }
 
       // Resolve routing (with sideways fallback across quota-paused runners,
@@ -1066,15 +1071,7 @@ export function createTickRunner(deps: {
           runId,
           routing,
           workspaceMode,
-          ...(action === 'triage-assign'
-            ? {
-                promptContextOverrides: {
-                  triageCapacityAvailable: true,
-                  triageWipCapDescription:
-                    'Wake has no active running work item at triage start; do not assign more than one issue.',
-                },
-              }
-            : {}),
+          ...(promptContextOverrides === undefined ? {} : { promptContextOverrides }),
           ...(workspacePath === undefined ? {} : { workspacePath }),
           ...(mergeConflictDetected ? { mergeConflictDetected: true } : {}),
           ...(upstreamChanges === undefined ? {} : { upstreamChanges }),
@@ -1109,7 +1106,7 @@ export function createTickRunner(deps: {
         const finishedAt = deps.clock.now().toISOString();
 
         let prReviewTargetResourceUri: string | null = null;
-        if (watcherRun && action === 'pr-review') {
+        if (watcherRun) {
           prReviewTargetResourceUri = await resolvePrReviewTarget({
             projection: candidate,
             runId,
@@ -1284,7 +1281,7 @@ export function createTickRunner(deps: {
             : {}),
         });
 
-        if (watcherRun && action === 'pr-review') {
+        if (watcherRun) {
           if (
             prReviewTargetResourceUri !== null &&
             (sentinel === 'DONE' || sentinel === 'FAILED')

@@ -41,6 +41,7 @@ export interface WorkflowAction {
     tier?: string;
     runner?: string;
   };
+  promptContext?: Record<string, unknown>;
   stage: string;
 }
 
@@ -243,6 +244,7 @@ export function chooseAction(
       ...(definition.tier === undefined ? {} : { tier: definition.tier }),
       ...(definition.runner === undefined ? {} : { runner: definition.runner }),
     },
+    ...(definition.promptContext === undefined ? {} : { promptContext: definition.promptContext }),
     stage,
   };
 }

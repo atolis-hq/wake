@@ -14,14 +14,13 @@ import type {
   WakeConfig,
   WorkflowDefinition,
 } from '../domain/types.js';
+import { alwaysManualIgnoredLabels } from '../domain/manual-labels.js';
 import type { UnkeyedEventEnvelope } from './contracts.js';
 
 export interface ApprovalResolution {
   approved: boolean;
   pendingAction: AgentAction;
 }
-
-export const alwaysManualIgnoredLabels = ['security', 'wake:manual', 'wake:always-manual'];
 
 function isAwaitingApproval(issue: IssueStateRecord): boolean {
   const context = issue.context as Record<string, unknown>;
