@@ -10,8 +10,7 @@ import type { createStateStore } from '../fs/state-store.js';
 
 type StateStore = ReturnType<typeof createStateStore>;
 
-export type BoardCondition =
-  'needs-human' | 'active' | 'ready' | 'waiting' | 'stalled' | 'finished';
+export type BoardCondition = 'needs-human' | 'active' | 'ready' | 'error' | 'finished';
 
 interface LockMetadata {
   pid: number;
@@ -97,11 +96,11 @@ function deriveCondition(
   const workflow = workflowForProjection(item, config);
   const hasRoute = config.stages[stage] !== undefined || workflow?.stages[stage] !== undefined;
   if (!hasRoute) {
-    return { condition: 'stalled', reason: `no route configured for stage "${stage}"` };
+    return { condition: 'error', reason: `no route configured for stage "${stage}"` };
   }
 
   if (lastRun?.sentinel === 'FAILED') {
-    return { condition: 'waiting', reason: 'last run failed; awaiting operator/retry policy' };
+    return { condition: 'error', reason: 'last run failed; awaiting operator/retry policy' };
   }
 
   return { condition: 'ready', reason: 'has a route and no blocking condition' };
@@ -192,8 +191,7 @@ export async function buildStatus(input: {
     'needs-human': 0,
     active: 0,
     ready: 0,
-    waiting: 0,
-    stalled: 0,
+    error: 0,
     finished: 0,
   };
   for (const card of board) {

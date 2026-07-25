@@ -311,7 +311,7 @@ describe('ui-data', () => {
     expect(listIssueStatesCalls).toBe(0);
   });
 
-  it('flags a stage with no configured route as stalled', async () => {
+  it('flags a stage with no configured route as error', async () => {
     const store = createStateStore({ wakeRoot: root });
     const config = createDefaultWakeConfig(root);
 
@@ -324,14 +324,14 @@ describe('ui-data', () => {
         sentinel: 'AWAITING_APPROVAL',
       }),
     );
-    // Use a stage with no route to hit stalled.
+    // Use a stage with no route to hit error (no configured route).
     await store.writeIssueState(issueState({ number: 10, stage: 'unknown-stage' }));
 
     const board = await buildBoard({ stateStore: store, config, now: new Date() });
     const byNumber = new Map(board.map((card) => [card.number, card]));
 
     expect(byNumber.get(9)?.condition).toBe('needs-human');
-    expect(byNumber.get(10)?.condition).toBe('stalled');
+    expect(byNumber.get(10)?.condition).toBe('error');
   });
 
   it('reports idle loop state when no lock is held and nothing is paused', async () => {
