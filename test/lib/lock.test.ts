@@ -84,6 +84,44 @@ describe('file lock', () => {
     await reclaimed.release();
   });
 
+  it('reclaims a lock owned by a dead PID without requiring age-based staleness', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wake-lock-'));
+    const lockPath = join(root, 'runner.lock');
+    await writeFile(
+      lockPath,
+      `${JSON.stringify({
+        pid: 99_999_999,
+        acquiredAt: '2026-07-05T12:00:00.000Z',
+      })}\n`,
+      'utf8',
+    );
+
+    const reclaimed = await acquireFileLock(lockPath, {
+      now: new Date('2026-07-05T12:00:01.000Z'),
+    });
+
+    expect(reclaimed.acquired).toBe(true);
+
+    await reclaimed.release();
+  });
+
+  it('does not reclaim an old live lock unless age-based staleness is requested', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wake-lock-'));
+    const lockPath = join(root, 'runner.lock');
+    const first = await acquireFileLock(lockPath, {
+      now: new Date('2026-07-05T12:00:00.000Z'),
+    });
+
+    const second = await acquireFileLock(lockPath, {
+      now: new Date('2026-07-05T13:00:00.000Z'),
+    });
+
+    expect(first.acquired).toBe(true);
+    expect(second.acquired).toBe(false);
+
+    await first.release();
+  });
+
   it('reclaims legacy invalid lock files', async () => {
     const root = await mkdtemp(join(tmpdir(), 'wake-lock-'));
     const lockPath = join(root, 'tick.lock');

@@ -1,7 +1,8 @@
 import type { Clock } from '../lib/clock.js';
-import { readFileLockStatus } from '../lib/lock.js';
 import { maxConfiguredRunnerTimeoutMs } from '../domain/runner-routing.js';
-import type { WakeConfig } from '../domain/types.js';
+import type { RunRecord, WakeConfig } from '../domain/types.js';
+import { isRunLeaseExpired } from './run-lease.js';
+import { processIdentityMatches } from '../lib/process-identity.js';
 import type { ResourceIndex } from './contracts.js';
 import { createOutbox } from './outbox.js';
 import { createProjectionUpdater } from './projection-updater.js';
@@ -26,15 +27,21 @@ export function createActiveRunRecovery(deps: {
     projectionUpdater,
   });
 
-  async function isRunningRecordActive(record: { startedAt: string }): Promise<boolean> {
-    const lock = await readFileLockStatus(deps.stateStore.paths.runnerLockFile, {
-      expectedCommandIncludes: process.argv[1] === undefined ? [] : [process.argv[1]],
-    });
-    if (!lock.active || lock.metadata === undefined) {
-      return false;
+  async function isRunningRecordActive(record: RunRecord, now: Date): Promise<boolean> {
+    if (record.lease !== undefined && !isRunLeaseExpired(record, now)) {
+      return true;
     }
 
-    return Date.parse(lock.metadata.acquiredAt) <= Date.parse(record.startedAt);
+    return (
+      processIdentityMatches({
+        pid: record.agentPid,
+        processStartedAt: record.agentProcessStartedAt,
+      }) ||
+      processIdentityMatches({
+        pid: record.workerPid,
+        processStartedAt: record.workerProcessStartedAt,
+      })
+    );
   }
 
   const { reconcileStaleRunningRecords } = createStaleRunReconciler({

@@ -267,6 +267,7 @@ export function createCursorRunner(options: {
       workspacePath?: string;
       mergeConflictDetected?: boolean;
       upstreamChanges?: string;
+      onProcessStart?: (identity: { pid: number; processStartedAt: string }) => Promise<void>;
     }): Promise<AgentRunResult> {
       const priorSessionId = input.projection.wake.sessionId;
       const priorSessionCli = input.projection.wake.sessionCli;
@@ -332,6 +333,7 @@ export function createCursorRunner(options: {
         }),
         cwd,
         timeoutMs: options.settings.timeoutMs,
+        ...(input.onProcessStart === undefined ? {} : { onProcessStart: input.onProcessStart }),
       });
       const responseTranscriptPath = await writeRunnerTranscript({
         config: input.config,

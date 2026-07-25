@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { readProcessIdentity } from '../../lib/process-identity.js';
 
 const TIMEOUT_KILL_GRACE_MS = 5_000;
 
@@ -7,6 +8,7 @@ export function runAgentCliCommand(input: {
   args: string[];
   cwd: string;
   timeoutMs?: number;
+  onProcessStart?: (identity: { pid: number; processStartedAt: string }) => Promise<void>;
 }): Promise<{
   stdout: string;
   stderr: string;
@@ -24,6 +26,17 @@ export function runAgentCliCommand(input: {
     let stderr = '';
     let timedOut = false;
     let killTimer: NodeJS.Timeout | undefined;
+    let startNotification: Promise<void> = Promise.resolve();
+    let startNotificationError: unknown;
+
+    if (input.onProcessStart !== undefined && child.pid !== undefined) {
+      const identity = readProcessIdentity(child.pid);
+      if (identity !== null) {
+        startNotification = input.onProcessStart(identity).catch((error: unknown) => {
+          startNotificationError = error;
+        });
+      }
+    }
 
     const timeoutTimer =
       input.timeoutMs === undefined
@@ -47,9 +60,14 @@ export function runAgentCliCommand(input: {
       clearTimeout(killTimer);
       reject(error);
     });
-    child.on('close', (exitCode) => {
+    child.on('close', async (exitCode) => {
       clearTimeout(timeoutTimer);
       clearTimeout(killTimer);
+      await startNotification;
+      if (startNotificationError !== undefined) {
+        reject(startNotificationError);
+        return;
+      }
       resolve({
         stdout,
         stderr,

@@ -223,15 +223,11 @@ export async function acquireFileLock(
     return await tryAcquire();
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
-      if (
-        options?.staleAfterMs !== undefined &&
-        !(
-          await readFileLockStatus(path, {
-            staleAfterMs: options.staleAfterMs,
-            now: options.now ?? new Date(),
-          })
-        ).active
-      ) {
+      const status = await readFileLockStatus(path, {
+        ...(options?.staleAfterMs === undefined ? {} : { staleAfterMs: options.staleAfterMs }),
+        now: options?.now ?? new Date(),
+      });
+      if (!status.active) {
         await rm(path, { force: true });
         try {
           return await tryAcquire();

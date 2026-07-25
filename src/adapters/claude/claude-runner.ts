@@ -252,6 +252,7 @@ export function createClaudeRunner(options: {
       workspacePath?: string;
       mergeConflictDetected?: boolean;
       upstreamChanges?: string;
+      onProcessStart?: (identity: { pid: number; processStartedAt: string }) => Promise<void>;
     }): Promise<AgentRunResult> {
       const sessionName = buildWakeSessionName({
         sessionName: options.settings.sessionName,
@@ -326,6 +327,7 @@ export function createClaudeRunner(options: {
         args,
         cwd: input.workspacePath ?? options.cwd,
         timeoutMs: options.settings.timeoutMs,
+        ...(input.onProcessStart === undefined ? {} : { onProcessStart: input.onProcessStart }),
       });
       const responseTranscriptPath = await writeRunnerTranscript({
         config: input.config,

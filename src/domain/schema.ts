@@ -346,6 +346,14 @@ const runTokenUsageSchema = z.object({
   turns: z.number().nonnegative().optional(),
 });
 
+const runLeaseSchema = z.object({
+  leaseId: z.string(),
+  ownerInstanceId: z.string(),
+  acquiredAt: isoTimestampSchema,
+  lastRenewedAt: isoTimestampSchema,
+  expiresAt: isoTimestampSchema,
+});
+
 function legacyRunLifecycle(input: Record<string, unknown>) {
   if (input.lifecycle !== undefined) {
     return input;
@@ -395,6 +403,11 @@ export const runRecordSchema = z.preprocess(
     workflowOutcome: workflowOutcomeSchema.optional(),
     summary: z.string().optional(),
     routing: runnerRoutingSchema.optional(),
+    lease: runLeaseSchema.optional(),
+    workerPid: z.number().int().positive().optional(),
+    workerProcessStartedAt: z.string().optional(),
+    agentPid: z.number().int().positive().optional(),
+    agentProcessStartedAt: z.string().optional(),
     tokenUsage: runTokenUsageSchema.optional(),
     metadata: z.record(z.string(), z.unknown()).optional(),
   }),
