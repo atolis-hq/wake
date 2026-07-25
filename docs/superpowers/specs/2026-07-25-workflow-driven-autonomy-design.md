@@ -58,7 +58,6 @@ workflows:
   triage:
     trigger:
       schedule: "*/10 * * * *"
-      condition: "wip < 2"
     stages:
       assign:
         action: triage-assign
@@ -75,10 +74,17 @@ The run completes normally (`onDone: done`) and closes. A workflow that
 short-lived, independently-bounded runs — nothing new to replay, no special
 casing in `core/`.
 
-`condition` is scoped to cheap, deterministic predicates over state Wake's
-tick already has (WIP count, time since last fire) — not arbitrary code.
-The exact predicate vocabulary is an implementation detail for the plan, not
-fixed by this design; `wip < N` is illustrative.
+**`schedule` only, for now.** An earlier draft of this design also allowed a
+`condition` (e.g. `wip < 2`) evaluated inline against tick state, but the
+predicate vocabulary that would need — what state is visible, how it's
+expressed, whether it can reference other workflows' WIP — isn't settled and
+would be guesswork to fix here. Dropped from this design. The natural home
+for condition-based triggers is likely the same deferred "stage executor"
+work in §8 (a script/check Wake runs deterministically) rather than a new
+expression language embedded in workflow config — a future extension, not
+something `trigger` needs today. `triage` ships schedule-only; a threshold
+trigger can be added once that mechanism exists, without changing the
+schedule case.
 
 **Scope note:** this extension is deliberately generic. It is not "the
 triage trigger" — it is the mechanism any future recurring workflow uses.
@@ -99,10 +105,13 @@ resource (`github:pr:...`), linked to a work item only via an explicit
 `wake.correlation.registered` event, and PR activity already surfaces on
 that work item's watchlist independently of its current stage.
 
-**Design:** A stage may declare attached activities that run as a sibling
-concern while that stage holds a given status, dispatched by activity on a
-resource already correlated to the work item — not by that stage's own
-`onDone`:
+**Design:** a stage may declare **watchers** — attached workflows that run
+as a sibling concern while that stage holds a given status, dispatched by
+activity on a resource already correlated to the work item, not by that
+stage's own `onDone`. The mechanism is deliberately generic — not named or
+shaped around review specifically — so the same field can later attach a
+security scan, a notification, or any other reactive workflow to any stage,
+without a new config concept per use case:
 
 ```yaml
 workflows:
@@ -112,23 +121,34 @@ workflows:
         action: implement
         workspace: branch
         onDone: done
-        reviewers:
-          - workflow: pr-review
+        watch:
+          - on: correlated-resource-activity
             while: awaiting-approval
-            triggerOn: correlated-pr-activity
+            workflow: pr-review
 ```
 
-`pr-review` is an ordinary workflow (its own stage, its own prompt, its own
-tool allowlist) dispatched whenever the correlated PR receives new activity
-(opened, `synchronize`) while `implement` is `awaiting-approval`. It is not
-part of the primary stage chain and does not block or get blocked by it.
+Reading the fields: `on` names the class of event that dispatches the
+watcher (`correlated-resource-activity` today — activity on any resource
+already linked to this work item via the correlation registry, e.g. the PR's
+`opened`/`synchronize` events; other event classes can be added later
+without touching existing watcher definitions). `while` scopes it to a
+named stage status — the watcher only dispatches when `implement` is
+currently `awaiting-approval`; outside that status, matching resource
+activity is ignored. `workflow` is the ordinary workflow to run (its own
+stage, prompt, and tool allowlist) each time the watcher fires — here,
+`pr-review` (§5).
+
+So yes: concretely for review, the watcher only fires while the owning
+stage's status is `awaiting-approval`, exactly as the earlier draft
+described — `watch`/`on`/`while` is just the generalized shape that
+describes it, so the same declaration form covers whatever gets attached
+next.
 
 This is the most structurally significant piece of this design — it
 introduces a second concurrently-relevant stage per work item, where today
-there is exactly one. It is scoped narrowly on purpose: `reviewers` triggers
-only on correlated-resource activity while the named status holds, and its
-verdict is delivered through surfaces that already exist (§5) rather than a
-new resumption path.
+there is exactly one. It is scoped narrowly on purpose: a watcher triggers
+only on the event class and status it declares, and its result is delivered
+through surfaces that already exist (§5) rather than a new resumption path.
 
 ## 5. Review workflow
 
@@ -233,13 +253,13 @@ it (see §9).
   assert a trigger fires exactly once per satisfied condition, mints a
   bounded work item, and that item reaches `done` without leaving residue
   that would affect the next firing.
-- Extension B: assert a `reviewers`-attached workflow dispatches only while
-  the named status holds, dispatches again on a second correlated-resource
-  event (re-review), and does not dispatch when the primary stage is in any
-  other status.
+- Extension B: assert a `watch`-attached workflow dispatches only while the
+  named status holds, dispatches again on a second correlated-resource event
+  (re-review), and does not dispatch when the primary stage is in any other
+  status.
 - Review/triage prompts: verify via existing sentinel-parsing tests
   (`domain/schema.ts`) that verdicts map to the intended sentinel, and that
   malformed/unparseable output never defaults to an approving outcome.
 - No new zod schema surface is introduced for `autonomy:` — existing
   `workflowStageSchema`/`workflowDefinitionSchema` tests extend naturally to
-  cover `trigger` and `reviewers` as additional optional fields.
+  cover `trigger` and `watch` as additional optional fields.
