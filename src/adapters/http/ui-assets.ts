@@ -51,7 +51,7 @@ export const indexHtml = `<!DOCTYPE html>
   nav button:hover { color: #fff; }
   nav button.active { color: var(--accent-light); border-bottom-color: var(--accent); }
   main { padding: 1rem; }
-  .columns { display: grid; grid-template-columns: repeat(6, minmax(180px, 1fr)); gap: 0.6rem; overflow-x: auto; }
+  .columns { display: grid; grid-template-columns: repeat(5, minmax(180px, 1fr)); gap: 0.6rem; overflow-x: auto; }
   .col { background: #1a1d23; border-radius: 10px; padding: 0.5rem; min-height: 200px; }
   .col h2 { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; color: #9aa2ad; margin: 0.2rem 0.4rem 0.5rem; }
   .card { background: #22262e; border: 1px solid #2c313a; border-radius: 8px; padding: 0.5rem; margin-bottom: 0.5rem; cursor: pointer; font-size: 0.8rem; transition: border-color 0.12s ease; }
@@ -143,7 +143,7 @@ export const indexHtml = `<!DOCTYPE html>
 </div>
 <script>
 const API = '/api/v1';
-const CONDITIONS = ['needs-human', 'active', 'ready', 'waiting', 'stalled', 'finished'];
+const CONDITIONS = ['ready', 'active', 'needs-human', 'error', 'finished'];
 let currentView = 'board';
 let analyticsWindow = '7d';
 let analyticsMetric = 'runs-over-time';
