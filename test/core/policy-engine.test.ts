@@ -419,6 +419,52 @@ describe('policy engine: resolveApprovalTransition', () => {
     expect(policy.resolveApprovalTransition(issue)).toBeNull();
   });
 
+  it('treats a bot-authored pr-review approval marker on a PR surface as approval', () => {
+    const policy = createPolicyEngine();
+    const issue = parseIssueStateRecord({
+      schemaVersion: 1,
+      workItemKey: workId,
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 50,
+        title: 'Example',
+        body: 'Body',
+        labels: [],
+        assignees: [],
+        isPullRequest: false,
+        state: 'open',
+        url: 'https://example.test/issues/50',
+        createdAt: '2026-07-06T00:00:00.000Z',
+        updatedAt: '2026-07-06T00:00:00.000Z',
+      },
+      comments: [
+        {
+          id: 'pr-900',
+          body: 'Safe to merge.\n\n<!-- wake:pr-review-approved -->',
+          author: { login: 'wake-bot' },
+          createdAt: '2026-07-06T01:00:00.000Z',
+          updatedAt: '2026-07-06T01:00:00.000Z',
+          isBotAuthored: true,
+          resourceUri: 'github:pr:atolis-hq/wake#51',
+        },
+      ],
+      wake: {
+        stage: 'implement',
+        syncedAt: '2026-07-06T00:00:00.000Z',
+        stageHistory: [],
+      },
+      context: {
+        lastRunSentinel: 'AWAITING_APPROVAL',
+        pendingApprovalAction: 'implement',
+      },
+    });
+
+    expect(policy.resolveApprovalTransition(issue)).toEqual({
+      approved: true,
+      pendingAction: 'implement',
+    });
+  });
+
   it('returns null when the latest human comment was already handled', () => {
     const policy = createPolicyEngine();
     const issue = parseIssueStateRecord({
@@ -660,6 +706,48 @@ describe('policy engine: resolvePendingReviewFeedback', () => {
     });
 
     expect(policy.resolvePendingReviewFeedback(issue)).toBeNull();
+  });
+
+  it('routes a bot-authored pr-review changes marker on a PR surface to revise', () => {
+    const policy = createPolicyEngine();
+    const issue = parseIssueStateRecord({
+      schemaVersion: 1,
+      workItemKey: workId,
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 50,
+        title: 'Example',
+        body: 'Body',
+        labels: [],
+        assignees: [],
+        isPullRequest: false,
+        state: 'open',
+        url: 'https://example.test/issues/50',
+        createdAt: '2026-07-06T00:00:00.000Z',
+        updatedAt: '2026-07-06T00:00:00.000Z',
+      },
+      comments: [
+        {
+          id: 'pr-901',
+          body: 'Please fix the failing path.\n\n<!-- wake:pr-review-changes-requested -->',
+          author: { login: 'wake-bot' },
+          createdAt: '2026-07-06T01:00:00.000Z',
+          updatedAt: '2026-07-06T01:00:00.000Z',
+          isBotAuthored: true,
+          resourceUri: 'github:pr:atolis-hq/wake#51',
+        },
+      ],
+      wake: {
+        stage: 'implement',
+        syncedAt: '2026-07-06T00:00:00.000Z',
+        stageHistory: [],
+      },
+      context: {
+        lastRunSentinel: 'AWAITING_APPROVAL',
+      },
+    });
+
+    expect(policy.resolvePendingReviewFeedback(issue)).toBe('revise');
   });
 });
 

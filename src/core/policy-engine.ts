@@ -46,6 +46,8 @@ function belowFailureRetryLimit(issue: IssueStateRecord, config?: WakeConfig): b
 // quoted reply containing /approved does not approve the gate.
 const approvedCommandPattern = /^\/approved\b/i;
 const changesCommandPattern = /^\/changes\b/i;
+const prReviewApprovalMarker = '<!-- wake:pr-review-approved -->';
+const prReviewChangesMarker = '<!-- wake:pr-review-changes-requested -->';
 
 // The action Wake runs when a correlated PR gets new reviewer feedback while
 // the work item is awaiting approval. Not configurable per workflow: it's a
@@ -111,6 +113,20 @@ function latestUnhandledHumanComment(
   }
 
   return latestHumanComment;
+}
+
+function latestUnhandledComment(
+  issue: IssueStateRecord,
+): IssueStateRecord['comments'][number] | undefined {
+  const context = issue.context as Record<string, unknown>;
+  const handledCommentId =
+    typeof context.lastHandledCommentId === 'string' ? context.lastHandledCommentId : undefined;
+  const lastBotIndex = issue.comments.reduce((acc, c, i) => (c.isBotAuthored ? i : acc), -1);
+  const latest = issue.comments.slice(lastBotIndex).at(-1);
+  if (latest === undefined || latest.id === handledCommentId) {
+    return undefined;
+  }
+  return latest;
 }
 
 export function createPolicyEngine() {
@@ -248,11 +264,19 @@ export function createPolicyEngine() {
       // No new human comment since the last handled one; stay idle instead of
       // falling through to the LLM while awaiting explicit approval feedback.
       const latestHumanComment = latestUnhandledHumanComment(issue);
-      if (latestHumanComment === undefined) {
+      const latestComment = latestUnhandledComment(issue);
+      if (pendingAction === undefined) {
         return null;
       }
 
-      if (pendingAction === undefined) {
+      if (
+        latestComment?.isBotAuthored === true &&
+        latestComment.resourceUri !== undefined &&
+        latestComment.body.includes(prReviewApprovalMarker)
+      ) {
+        return { approved: true, pendingAction };
+      }
+      if (latestHumanComment === undefined) {
         return null;
       }
 
@@ -282,6 +306,15 @@ export function createPolicyEngine() {
       }
 
       const latestHumanComment = latestUnhandledHumanComment(issue);
+      const latestComment = latestUnhandledComment(issue);
+
+      if (
+        latestComment?.isBotAuthored === true &&
+        latestComment.resourceUri !== undefined &&
+        latestComment.body.includes(prReviewChangesMarker)
+      ) {
+        return reviewFeedbackAction;
+      }
 
       // resourceUri is set only on comments folded from a correlated PR/review
       // surface (schema.ts's commentSnapshotSchema: "absent = the originating

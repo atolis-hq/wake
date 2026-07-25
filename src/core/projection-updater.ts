@@ -284,7 +284,19 @@ async function applyEvent(
       blockReason?: string;
       executionOutcome?: string;
       workflowOutcome?: string;
+      watcherRun?: boolean;
     };
+
+    if (payload.watcherRun === true) {
+      return parseIssueStateRecord({
+        ...current,
+        wake: {
+          ...current.wake,
+          syncedAt: event.ingestedAt,
+          recentEventIds: [...current.wake.recentEventIds, event.eventId].slice(-10),
+        },
+      });
+    }
 
     // Clear the session when the stage moves forward (new action needed) or the
     // run failed outright. Keep it for BLOCKED so the same action can resume
