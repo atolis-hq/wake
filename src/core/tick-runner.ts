@@ -1100,6 +1100,7 @@ export function createTickRunner(deps: {
     runIntakeTick,
     runRunnerTick,
     async runTick(): Promise<TickOutcome> {
+      await deps.stateStore.assertStateHealthy();
       const intakeResult = await runIntakeTick();
       if (intakeResult.status === 'locked') {
         return intakeResult;

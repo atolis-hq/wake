@@ -45,6 +45,7 @@ import { systemClock } from './lib/clock.js';
 import { createDetachedProcessLogSink } from './lib/detached-process-logging.js';
 import { readJsonFile } from './lib/json-file.js';
 import { resolveLogMaxBytes, resolveLogRotateCheckIntervalMs } from './lib/log-rotation.js';
+import { StateHealthError, type StateHealthReport } from './lib/state-health.js';
 import { configuredTicketSource } from './domain/sources.js';
 import { wakeVersion } from './version.js';
 import type { RunRecord, WakeConfig } from './domain/types.js';
@@ -719,6 +720,7 @@ export async function buildRuntime(args: string[]) {
 
 async function runTick(args: string[]) {
   const runtime = await buildRuntime(args);
+  await runtime.stateStore.assertStateHealthy();
   const outcome = await runtime.tickRunner.runTick();
   console.log(JSON.stringify(outcome, null, 2));
 
@@ -739,6 +741,7 @@ async function runTick(args: string[]) {
 
 async function runStart(args: string[]) {
   const runtime = await buildRuntime(args);
+  await runtime.stateStore.assertStateHealthy();
   const runnerOverride = readFlagBeforeCommandTerminator('--runner', args);
   await runStartupPreflight(runtime.config, {
     ...(runnerOverride === undefined ? {} : { runnerOverride }),
@@ -772,6 +775,29 @@ async function runStart(args: string[]) {
   process.on('SIGTERM', stop);
 
   await controlPlane.start();
+}
+
+function printStateHealthReport(report: StateHealthReport): void {
+  if (report.healthy) {
+    console.log('wake validate-state: control-plane state is healthy');
+    return;
+  }
+
+  console.error('wake validate-state: control-plane state is unhealthy');
+  for (const issue of report.issues) {
+    console.error(`  - ${issue.surface} ${issue.kind}: ${issue.path}: ${issue.message}`);
+  }
+}
+
+async function runValidateState(args: string[]) {
+  const wakeRoot = resolve(readFlagBeforeCommandTerminator('--wake-root', args) ?? process.cwd());
+  const stateStore = createStateStore({ wakeRoot });
+  await stateStore.ensureWakeRoot();
+  const report = await stateStore.validateStateHealth();
+  printStateHealthReport(report);
+  if (!report.healthy) {
+    process.exitCode = 1;
+  }
 }
 
 function resolveSmokEntry(
@@ -923,6 +949,7 @@ export function printUsage(stream: NodeJS.WritableStream): void {
       '  wake sandbox <subcommand>  Build/run/manage the Docker sandbox (build, up, update, down, stop, self-update, setup, exec, logs, resume)',
       '  wake tick                  Run one control-plane tick',
       '  wake start                 Run the resident loop',
+      '  wake validate-state        Validate .wake/ control-plane state health',
       '  wake stop                  Stop the sandbox container gracefully',
       '  wake smoke                 Smoke-test the configured runner',
       '  wake ui                    Run the control-plane UI server',
@@ -935,7 +962,7 @@ export function printUsage(stream: NodeJS.WritableStream): void {
       '  1. wake init ./wake-home',
       '  2. cd wake-home && wake start',
       '',
-      'Runtime commands (tick/start/ui/smoke/correlate) auto-delegate into the sandbox',
+      'Runtime commands (tick/start/ui/smoke/correlate/validate-state) auto-delegate into the sandbox',
       'when docker/Dockerfile exists at --wake-root (i.e. after `wake sandbox build`),',
       'defaulting --wake-root to the current directory. Pass --no-sandbox to run',
       'directly on the host instead.',
@@ -944,7 +971,7 @@ export function printUsage(stream: NodeJS.WritableStream): void {
   );
 }
 
-const runtimeCommands = new Set(['tick', 'start', 'ui', 'smoke', 'correlate']);
+const runtimeCommands = new Set(['tick', 'start', 'ui', 'smoke', 'correlate', 'validate-state']);
 
 export async function dispatchMainCommand(input: {
   args: string[];
@@ -957,6 +984,7 @@ export async function dispatchMainCommand(input: {
   runSmoke: (args: string[]) => Promise<unknown>;
   runUi: (args: string[]) => Promise<unknown>;
   runCorrelate: (args: string[]) => Promise<unknown>;
+  runValidateState?: (args: string[]) => Promise<unknown>;
   execIntoSandbox: (args: string[]) => Promise<unknown>;
   runDoctor: (args: string[]) => Promise<unknown>;
 }) {
@@ -1025,8 +1053,13 @@ export async function dispatchMainCommand(input: {
       await input.runUi(hostArgs);
     } else if (command === 'smoke') {
       await input.runSmoke(hostArgs);
-    } else {
+    } else if (command === 'correlate') {
       await input.runCorrelate(hostArgs);
+    } else {
+      if (input.runValidateState === undefined) {
+        throw new CliUsageError('validate-state command is not available in this runtime');
+      }
+      await input.runValidateState(hostArgs);
     }
     return;
   }
@@ -1163,6 +1196,7 @@ async function main() {
     runSmoke,
     runUi,
     runCorrelate,
+    runValidateState,
     execIntoSandbox: async (commandArgs) => {
       const withoutBypassFlag = commandArgs.filter((arg) => arg !== '--no-sandbox');
       const wakeRootIndex = withoutBypassFlag.indexOf('--wake-root');
@@ -1191,6 +1225,12 @@ async function main() {
 main().catch((error) => {
   if (error instanceof CliUsageError) {
     console.error(error.message);
+  } else if (error instanceof StateHealthError) {
+    console.error(error.message);
+    for (const issue of error.issues) {
+      console.error(`  - ${issue.surface} ${issue.kind}: ${issue.path}: ${issue.message}`);
+    }
+    process.exitCode = 1;
   } else {
     console.error(error);
   }

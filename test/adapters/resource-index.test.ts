@@ -1,10 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { mkdtempSync } from 'node:fs';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { createResourceIndex, shardFor } from '../../src/adapters/fs/resource-index.js';
+import {
+  createResourceIndex,
+  shardFor,
+  validateResourceIndex,
+} from '../../src/adapters/fs/resource-index.js';
 import { createWakePaths, type WakePaths } from '../../src/lib/paths.js';
+import { StateHealthError } from '../../src/lib/state-health.js';
 
 function freshPaths(): WakePaths {
   const root = mkdtempSync(join(tmpdir(), 'wake-resource-index-'));
@@ -59,6 +65,25 @@ describe('ResourceIndex', () => {
     // and never a throw.
     const index = createResourceIndex({ paths: freshPaths() });
     expect(await index.resolve('github:pr:atolis-hq/wake#91')).toBeUndefined();
+  });
+
+  it('flags a malformed shard instead of treating registered state as absent', async () => {
+    const paths = freshPaths();
+    const index = createResourceIndex({ paths });
+    const uri = 'github:pr:atolis-hq/wake#91';
+    await mkdir(paths.resourceIndexRoot, { recursive: true });
+    await writeFile(paths.resourceIndexShardFile(shardFor(uri)), '{"truncated"\n', 'utf8');
+
+    await expect(index.resolve(uri)).rejects.toBeInstanceOf(StateHealthError);
+
+    const issues = await validateResourceIndex(paths);
+    expect(issues).toContainEqual(
+      expect.objectContaining({
+        surface: 'reverse-index',
+        kind: 'corrupted',
+        path: paths.resourceIndexShardFile(shardFor(uri)),
+      }),
+    );
   });
 
   it('resolves a registered uri to its work item', async () => {

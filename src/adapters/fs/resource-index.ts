@@ -1,11 +1,22 @@
 import { createHash } from 'node:crypto';
+import { readdir } from 'node:fs/promises';
+import { join } from 'node:path';
+import { z } from 'zod';
 
 import { acquireFileLock } from '../../lib/lock.js';
 import { readJsonFile, writeJsonFile } from '../../lib/json-file.js';
 import type { WakePaths } from '../../lib/paths.js';
 import type { ResourceIndex } from '../../core/contracts.js';
+import {
+  isMissingPathError,
+  stateHealthIssue,
+  StateHealthError,
+  type StateHealthIssue,
+} from '../../lib/state-health.js';
 
 type ShardContents = Record<string, string>;
+
+const shardContentsSchema = z.record(z.string(), z.string());
 
 /**
  * Addresses a resource uri to one of 256 shards.
@@ -22,10 +33,51 @@ export function shardFor(resourceUri: string): string {
 
 async function readShard(file: string): Promise<ShardContents> {
   try {
-    return await readJsonFile<ShardContents>(file);
-  } catch {
-    return {};
+    return shardContentsSchema.parse(await readJsonFile<ShardContents>(file));
+  } catch (error) {
+    if (isMissingPathError(error)) {
+      return {};
+    }
+    throw new StateHealthError([
+      stateHealthIssue({
+        surface: 'reverse-index',
+        kind: 'corrupted',
+        path: file,
+        message: error instanceof Error ? error.message : String(error),
+      }),
+    ]);
   }
+}
+
+export async function validateResourceIndex(paths: WakePaths): Promise<StateHealthIssue[]> {
+  const issues: StateHealthIssue[] = [];
+  const entries = await readdir(paths.resourceIndexRoot, { withFileTypes: true }).catch((error) => {
+    if (isMissingPathError(error)) {
+      return [];
+    }
+    throw error;
+  });
+
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith('.json')) {
+      continue;
+    }
+    const file = join(paths.resourceIndexRoot, entry.name);
+    try {
+      shardContentsSchema.parse(await readJsonFile(file));
+    } catch (error) {
+      issues.push(
+        stateHealthIssue({
+          surface: 'reverse-index',
+          kind: 'corrupted',
+          path: file,
+          message: error instanceof Error ? error.message : String(error),
+        }),
+      );
+    }
+  }
+
+  return issues;
 }
 
 // acquireFileLock is a non-blocking try-lock: when contended it returns
