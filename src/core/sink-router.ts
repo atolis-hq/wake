@@ -57,6 +57,45 @@ function withSinkRef(event: EventEnvelope, sink: string): EventEnvelope {
   };
 }
 
+function targetSinksForEvent(input: {
+  event: EventEnvelope;
+  sinksByName: Map<string, NamedOutboundSink>;
+  config: WakeConfig;
+}): Set<string> {
+  const targetSinks = new Set<string>();
+  const origin =
+    typeof input.event.payload.origin === 'string' ? input.event.payload.origin : undefined;
+  const sourceOrigin = input.event.sourceRefs.sink ?? origin;
+
+  if (input.event.sourceEventType === 'wake.labels.requested') {
+    const projectionOrigin =
+      typeof input.event.payload.origin === 'string' ? input.event.payload.origin : undefined;
+    if (projectionOrigin !== undefined) {
+      targetSinks.add(projectionOrigin);
+    }
+  }
+
+  const resourceUri = input.event.sourceRefs.resourceUri;
+  if (
+    input.event.sourceEventType === 'wake.publish.intent.requested' &&
+    sourceOrigin !== undefined
+  ) {
+    const resourceSink =
+      resourceUri === undefined ? sourceOrigin : sinkNameForResourceUri(resourceUri, sourceOrigin);
+    targetSinks.add(input.sinksByName.has(resourceSink) ? resourceSink : sourceOrigin);
+  }
+
+  for (const [sinkName, sinkConfig] of Object.entries(input.config.sinks ?? {})) {
+    if (
+      sinkConfig.subscribe.some((subscription) => subscriptionMatches(input.event, subscription))
+    ) {
+      targetSinks.add(sinkName);
+    }
+  }
+
+  return targetSinks;
+}
+
 export function createOutboundSinkRouter(input: {
   sinks: NamedOutboundSink[];
   config: WakeConfig;
@@ -65,37 +104,7 @@ export function createOutboundSinkRouter(input: {
 
   return {
     async deliverIntent({ event }: { event: EventEnvelope }): Promise<EventEnvelope[]> {
-      const targetSinks = new Set<string>();
-      const origin = typeof event.payload.origin === 'string' ? event.payload.origin : undefined;
-      const sourceOrigin = event.sourceRefs.sink ?? origin;
-
-      if (event.sourceEventType === 'wake.labels.requested') {
-        const projectionOrigin =
-          typeof event.payload.origin === 'string' ? event.payload.origin : undefined;
-        if (projectionOrigin !== undefined) {
-          targetSinks.add(projectionOrigin);
-        }
-      }
-
-      const resourceUri = event.sourceRefs.resourceUri;
-      if (event.sourceEventType === 'wake.publish.intent.requested' && sourceOrigin !== undefined) {
-        const resourceSink =
-          resourceUri === undefined
-            ? sourceOrigin
-            : sinkNameForResourceUri(resourceUri, sourceOrigin);
-        // A resource-derived sink name (e.g. a PR surface) may not be
-        // registered — the source that owns it can be disabled independently
-        // of the origin sink. Falling back to sourceOrigin here, rather than
-        // silently skipping an unregistered sink below, is what keeps a reply
-        // from being dropped-but-marked-delivered when that happens.
-        targetSinks.add(sinksByName.has(resourceSink) ? resourceSink : sourceOrigin);
-      }
-
-      for (const [sinkName, sinkConfig] of Object.entries(input.config.sinks ?? {})) {
-        if (sinkConfig.subscribe.some((subscription) => subscriptionMatches(event, subscription))) {
-          targetSinks.add(sinkName);
-        }
-      }
+      const targetSinks = targetSinksForEvent({ event, sinksByName, config: input.config });
 
       const deliveryEvents: EventEnvelope[] = [];
       for (const sinkName of targetSinks) {
@@ -110,6 +119,21 @@ export function createOutboundSinkRouter(input: {
         );
       }
 
+      return deliveryEvents;
+    },
+    async reconcileIntent({ event }: { event: EventEnvelope }): Promise<EventEnvelope[]> {
+      const targetSinks = targetSinksForEvent({ event, sinksByName, config: input.config });
+      const deliveryEvents: EventEnvelope[] = [];
+      for (const sinkName of targetSinks) {
+        const sink = sinksByName.get(sinkName);
+        if (sink?.reconcileIntent === undefined) {
+          continue;
+        }
+        const sinkDeliveryEvents = await sink.reconcileIntent({ event });
+        deliveryEvents.push(
+          ...sinkDeliveryEvents.map((deliveryEvent) => withSinkRef(deliveryEvent, sinkName)),
+        );
+      }
       return deliveryEvents;
     },
   };

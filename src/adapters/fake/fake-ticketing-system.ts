@@ -165,6 +165,8 @@ export function createFakeTicketingSystem(options: {
             trigger: 'context-only',
             payload: {
               intentEventId: input.event.eventId,
+              idempotencyKey: input.event.payload.idempotencyKey,
+              deliveryState: 'CONFIRMED',
               labels,
             },
           }),
@@ -191,6 +193,9 @@ export function createFakeTicketingSystem(options: {
           trigger: 'context-only',
           payload: {
             intentEventId: input.event.eventId,
+            idempotencyKey: input.event.payload.idempotencyKey,
+            deliveryState: 'CONFIRMED',
+            providerId: commentId,
             kind: input.event.payload.kind,
             body: input.event.payload.body,
           },

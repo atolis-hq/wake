@@ -75,6 +75,25 @@ describe('createPublishIntentEvent', () => {
     expect(event.payload.duration).toBe('1m0s');
     expect(event.payload.tokens).toBe('8k');
     expect(event.payload.cost).toBe('$0.5000');
+    expect(event.payload.idempotencyKey).toBe('run-7-1:result-comment');
+    expect(event.payload.deliveryState).toBe('PENDING');
+  });
+
+  it('records repeated failure metadata on publish intents', () => {
+    const event = createPublishIntentEvent({
+      projection: projection({}),
+      runId: 'run-7-1',
+      action: 'implement',
+      runnerResult: { ...runnerResult, failureClass: 'infra' },
+      parsedRunnerResult: parseRunnerResult(runnerResult.result),
+      sentinel: 'FAILED',
+      occurredAt: '2026-07-05T12:01:00.000Z',
+      startedAt: '2026-07-05T12:00:00.000Z',
+      previousFailureClass: 'infra',
+    });
+
+    expect(event.payload.failureRepeated).toBe(true);
+    expect(event.payload.previousFailureClass).toBe('infra');
   });
 
   it('threads a fresh human comment surface as the reply resourceUri', () => {
@@ -140,6 +159,8 @@ describe('createLabelsEvent', () => {
       stageLabel: 'wake:stage.implement',
       workflowLabel: 'wake:workflow.default',
       origin: 'github',
+      idempotencyKey: 'run-7-1:completion-label',
+      deliveryState: 'PENDING',
     });
     expect(event.eventId.startsWith('run-7-1-labels-')).toBe(true);
   });

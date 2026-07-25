@@ -114,7 +114,7 @@ export function createTickRunner(deps: {
     resourceIndex: deps.resourceIndex,
     config: deps.config,
   });
-  const { deliverOutboundEvent, retryUnconfirmedDeliveries } = createOutbox({
+  const { deliverOutboundEvent, retryUnconfirmedDeliveries, suppressOutboundEvent } = createOutbox({
     clock: deps.clock,
     stateStore: deps.stateStore,
     projectionUpdater,
@@ -227,6 +227,7 @@ export function createTickRunner(deps: {
           relation: 'primary',
           provenance: 'agent-reported',
           registeredBy: input.runId,
+          idempotencyKey: `${input.runId}:artifact-registration:${verified.resourceUri}`,
         },
       });
       const appended = await deps.stateStore.appendEventEnvelope(event);
@@ -897,25 +898,33 @@ export function createTickRunner(deps: {
           }),
         );
 
+        const publishIntent = createPublishIntentEvent({
+          projection: candidate,
+          runId,
+          action,
+          runnerResult,
+          parsedRunnerResult,
+          sentinel,
+          occurredAt: finishedAt,
+          startedAt: nowIso,
+          ...(workspacePath === undefined ? {} : { workspacePath }),
+          ...(typeof candidate.context.lastFailureClass === 'string'
+            ? { previousFailureClass: candidate.context.lastFailureClass }
+            : {}),
+        });
+
         if (
           shouldPublishRunResult({
             failureClass: runnerResult.failureClass,
             previousFailureClass: candidate.context.lastFailureClass,
           })
         ) {
-          const publishIntent = createPublishIntentEvent({
-            projection: candidate,
-            runId,
-            action,
-            runnerResult,
-            parsedRunnerResult,
-            sentinel,
-            occurredAt: finishedAt,
-            startedAt: nowIso,
-            ...(workspacePath === undefined ? {} : { workspacePath }),
-          });
-
           await deliverOutboundEvent(publishIntent);
+        } else {
+          await suppressOutboundEvent(publishIntent, {
+            suppressedPublishReason:
+              runnerResult.failureClass === 'quota' ? 'quota-failure' : 'repeated-infra-failure',
+          });
         }
 
         return {
@@ -990,6 +999,7 @@ export function createTickRunner(deps: {
           result: errorMessage,
           model: 'unknown',
           cli: 'unknown',
+          failureClass: 'infra',
         };
         const parsedInfraFailureResult = parseRunnerResult(infraFailureResult.result);
         const failurePublishIntent = createPublishIntentEvent({
@@ -1001,6 +1011,9 @@ export function createTickRunner(deps: {
           sentinel,
           occurredAt: finishedAt,
           startedAt: nowIso,
+          ...(typeof candidate.context.lastFailureClass === 'string'
+            ? { previousFailureClass: candidate.context.lastFailureClass }
+            : {}),
         });
         if (
           shouldPublishRunResult({
@@ -1009,6 +1022,10 @@ export function createTickRunner(deps: {
           })
         ) {
           await deliverOutboundEvent(failurePublishIntent);
+        } else {
+          await suppressOutboundEvent(failurePublishIntent, {
+            suppressedPublishReason: 'repeated-infra-failure',
+          });
         }
 
         return {

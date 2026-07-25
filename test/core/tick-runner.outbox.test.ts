@@ -22,6 +22,8 @@ describe('tick runner', () => {
       const store = createStateStore({ wakeRoot: root });
       const config = createDefaultWakeConfig(root);
       config.sources.github.policy.requiredLabels = ['wake:queue'];
+      let prepareCallCount = 0;
+      let runnerCallCount = 0;
 
       const tickRunner = createTickRunner({
         clock: { now: () => new Date('2026-07-05T12:00:00.000Z') },
@@ -46,6 +48,7 @@ describe('tick runner', () => {
         },
         runner: {
           async run() {
+            runnerCallCount += 1;
             return {
               result: 'Refined\nDONE',
               model: 'test-model',
@@ -55,13 +58,28 @@ describe('tick runner', () => {
           },
         },
         resourceIndex: createFakeResourceIndex(),
-        workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+        workspaceManager: {
+          async prepareWorkspace() {
+            prepareCallCount += 1;
+            return {
+              workspacePath: join(root, 'workspaces', 'issue-40'),
+              mergeConflictDetected: false,
+            };
+          },
+          async prepareReadOnlyClone() {
+            prepareCallCount += 1;
+            return { workspacePath: join(root, 'workspaces', 'issue-40-readonly') };
+          },
+          async cleanupWorkspace() {},
+        },
       });
 
       const result = await tickRunner.runTick();
 
       expect(result.status).toBe('processed');
       expect((result as { sentinel?: string }).sentinel).toBe('DONE');
+      expect(prepareCallCount).toBe(1);
+      expect(runnerCallCount).toBe(1);
 
       const runRecords = await store.listRunRecords();
       expect(runRecords).toHaveLength(1);
@@ -166,6 +184,109 @@ describe('tick runner', () => {
       const events = await store.listEventEnvelopes();
       const failures = events.filter((e) => e.sourceEventType === 'wake.publish.failed');
       expect(failures).toHaveLength(3);
+    });
+
+    it('records repeated infra-failure suppression as a durable outbox state (#319)', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const config = createDefaultWakeConfig(root);
+      config.sources.github.policy.requiredLabels = ['wake:queue'];
+
+      await store.writeIssueState({
+        schemaVersion: 1,
+        workItemKey: workId(49),
+        issue: {
+          repo: 'atolis-hq/wake',
+          number: 49,
+          title: 'Repeated infra blip',
+          body: '',
+          labels: ['wake:queue'],
+          assignees: [],
+          isPullRequest: false,
+          state: 'open',
+          url: 'https://example.test/issues/49',
+          createdAt: '2026-07-05T12:00:00.000Z',
+          updatedAt: '2026-07-05T12:00:00.000Z',
+        },
+        comments: [
+          {
+            id: 'c-trigger',
+            body: 'Please retry this.',
+            author: { login: 'owner' },
+            createdAt: '2026-07-05T12:00:00.000Z',
+            updatedAt: '2026-07-05T12:00:00.000Z',
+            isBotAuthored: false,
+          },
+        ],
+        latestComment: {
+          id: 'c-trigger',
+          body: 'Please retry this.',
+          author: { login: 'owner' },
+          createdAt: '2026-07-05T12:00:00.000Z',
+          updatedAt: '2026-07-05T12:00:00.000Z',
+          isBotAuthored: false,
+        },
+        wake: {
+          stage: 'queue',
+          stageHistory: [],
+          recentEventIds: [],
+          syncedAt: '2026-07-05T12:00:00.000Z',
+          expectedEcho: { commentIds: [], labels: [] },
+        },
+        context: {
+          lastRunSentinel: 'FAILED',
+          lastFailureClass: 'infra',
+          lastRunAction: 'refine',
+        },
+        correlatedResources: [],
+      });
+
+      const tickRunner = createTickRunner({
+        clock: { now: () => new Date('2026-07-05T12:00:00.000Z') },
+        config,
+        stateStore: store,
+        workSource: {
+          async pollEvents() {
+            return [];
+          },
+        },
+        outboundSink: {
+          async deliverIntent() {
+            return [];
+          },
+        },
+        runner: {
+          async run() {
+            throw new Error('agent process failed again');
+          },
+        },
+        resourceIndex: createFakeResourceIndex(),
+        workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+      });
+
+      const result = await tickRunner.runTick();
+
+      expect(result.status).toBe('processed');
+      expect((result as { sentinel?: string }).sentinel).toBe('FAILED');
+
+      const events = await store.listEventEnvelopes();
+      const publishIntent = events.find(
+        (event) => event.sourceEventType === 'wake.publish.intent.requested',
+      );
+      expect(publishIntent?.payload.failureRepeated).toBe(true);
+      expect(publishIntent?.payload.previousFailureClass).toBe('infra');
+      expect(publishIntent?.payload.suppressedPublishReason).toBe('repeated-infra-failure');
+      expect(publishIntent?.payload.deliveryState).toBe('CONFIRMED');
+      expect(
+        events.some(
+          (event) =>
+            event.sourceEventType === 'wake.publish.confirmed' &&
+            event.payload.intentEventId === publishIntent?.eventId &&
+            event.payload.suppressedPublishReason === 'repeated-infra-failure',
+        ),
+      ).toBe(true);
+      expect(events.some((event) => event.sourceEventType === 'ticket.reply.published')).toBe(
+        false,
+      );
     });
 
     it('does not consume the triggering comment on an infra failure, so the next tick retries it (S9)', async () => {

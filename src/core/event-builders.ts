@@ -53,9 +53,13 @@ export function createPublishIntentEvent(input: {
   occurredAt: string;
   workspacePath?: string;
   startedAt: string;
+  previousFailureClass?: string;
 }): EventEnvelope {
   const tokenCount = extractTokenCount(input.runnerResult.tokenUsage);
   const duration = formatDuration(input.startedAt, input.occurredAt);
+  const failureRepeated =
+    input.runnerResult.failureClass !== undefined &&
+    input.previousFailureClass === input.runnerResult.failureClass;
 
   return createEventEnvelope({
     eventId: `${input.runId}-publish-intent`,
@@ -136,6 +140,12 @@ export function createPublishIntentEvent(input: {
         ? {}
         : { cost: formatCostUsd(input.runnerResult.tokenUsage.costUsd) }),
       ...(input.workspacePath === undefined ? {} : { workspacePath: input.workspacePath }),
+      idempotencyKey: `${input.runId}:result-comment`,
+      deliveryState: 'PENDING',
+      ...(failureRepeated ? { failureRepeated } : {}),
+      ...(input.previousFailureClass === undefined
+        ? {}
+        : { previousFailureClass: input.previousFailureClass }),
     },
     derivedHints: {
       stage: input.sentinel === 'DONE' ? 'done' : input.projection.wake.stage,
@@ -151,6 +161,9 @@ export function createLabelsEvent(input: {
   workflowLabel: string;
   occurredAt: string;
 }): EventEnvelope {
+  const labelKind =
+    input.statusLabel === 'wake:status.working' ? 'working-label' : 'completion-label';
+
   return createEventEnvelope({
     eventId: `${input.runId}-labels-${input.statusLabel.replace(/[^a-z0-9]+/gi, '-')}-${input.stageLabel.replace(/[^a-z0-9]+/gi, '-')}-${input.workflowLabel.replace(/[^a-z0-9]+/gi, '-')}`,
     workItemKey: input.projection.workItemKey,
@@ -171,6 +184,8 @@ export function createLabelsEvent(input: {
       stageLabel: input.stageLabel,
       workflowLabel: input.workflowLabel,
       origin: input.projection.origin ?? 'github',
+      idempotencyKey: `${input.runId}:${labelKind}`,
+      deliveryState: 'PENDING',
     },
   });
 }

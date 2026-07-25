@@ -24,6 +24,12 @@ const pollOverlapMs = 60 * 60 * 1000;
 const wakeCommentMarker = '<!-- wake:agent -->';
 const githubSource = 'github';
 
+export function wakeIdempotencyMarker(idempotencyKey: unknown): string | undefined {
+  return typeof idempotencyKey === 'string'
+    ? `<!-- wake:idempotency ${idempotencyKey} -->`
+    : undefined;
+}
+
 type GitHubIssue = {
   number: number;
   title: string;
@@ -275,6 +281,7 @@ export function formatWakeComment(
   const cost = typeof payload.cost === 'string' ? payload.cost : undefined;
   const workspacePath =
     typeof payload.workspacePath === 'string' ? payload.workspacePath : undefined;
+  const idempotencyMarker = wakeIdempotencyMarker(payload.idempotencyKey);
 
   const details = [
     action === undefined ? undefined : `stage \`${action}\``,
@@ -293,7 +300,9 @@ export function formatWakeComment(
       ? defaultAgentIdentity
       : `[${defaultAgentIdentity}](${controlPlaneUrl})`;
   const header = `**${name}** _(Wake ${wakeVersion}${details.length > 0 ? ` · ${details.join(' · ')}` : ''})_`;
-  const sections = [wakeCommentMarker, header, body];
+  const sections = [wakeCommentMarker, idempotencyMarker, header, body].filter(
+    (section): section is string => section !== undefined,
+  );
 
   if (kind === 'approval-request') {
     sections.push(
@@ -338,6 +347,40 @@ export function formatWakeComment(
   }
 
   return sections.join('\n\n');
+}
+
+function createIssueCommentPublishedEvent(input: {
+  event: EventEnvelope;
+  repo: string;
+  issueNumber: number;
+  publishedAt: string;
+  commentId?: string;
+}): EventEnvelope {
+  return createEventEnvelope({
+    eventId: `${input.event.eventId}-published`,
+    workItemKey: input.event.workItemKey,
+    streamScope: 'work-item',
+    direction: 'outbound',
+    sourceSystem: 'github',
+    sourceEventType: 'ticket.reply.published',
+    sourceRefs: {
+      repo: input.repo,
+      issueNumber: input.issueNumber,
+      ...(input.commentId === undefined ? {} : { commentId: input.commentId }),
+    },
+    occurredAt: input.publishedAt,
+    ingestedAt: input.publishedAt,
+    trigger: 'context-only',
+    payload: {
+      intentEventId: input.event.eventId,
+      idempotencyKey: input.event.payload.idempotencyKey,
+      deliveryState: 'CONFIRMED',
+      kind: input.event.payload.kind,
+      body: input.event.payload.body,
+      providerEventType: 'github.issue.comment.published',
+      ...(input.commentId === undefined ? {} : { providerId: input.commentId }),
+    },
+  });
 }
 
 export function createGitHubIssuesWorkSource(deps: {
@@ -581,6 +624,8 @@ export function createGitHubIssuesWorkSource(deps: {
               trigger: 'context-only',
               payload: {
                 intentEventId: input.event.eventId,
+                idempotencyKey: input.event.payload.idempotencyKey,
+                deliveryState: 'CONFIRMED',
                 ...(nextStatusLabel !== undefined ? { statusLabel: nextStatusLabel } : {}),
                 ...(nextStageLabel !== undefined ? { stageLabel: nextStageLabel } : {}),
                 ...(nextWorkflowLabel !== undefined ? { workflowLabel: nextWorkflowLabel } : {}),
@@ -606,27 +651,81 @@ export function createGitHubIssuesWorkSource(deps: {
       const commentId = extractCreatedCommentId(response);
 
       return [
-        createEventEnvelope({
-          eventId: `${input.event.eventId}-published`,
-          workItemKey: input.event.workItemKey,
-          streamScope: 'work-item',
-          direction: 'outbound',
-          sourceSystem: 'github',
-          sourceEventType: 'ticket.reply.published',
-          sourceRefs: {
-            repo,
-            issueNumber,
-            ...(commentId === undefined ? {} : { commentId }),
-          },
-          occurredAt: publishedAt,
-          ingestedAt: publishedAt,
-          trigger: 'context-only',
-          payload: {
-            intentEventId: input.event.eventId,
-            kind: input.event.payload.kind,
-            body: input.event.payload.body,
-            providerEventType: 'github.issue.comment.published',
-          },
+        createIssueCommentPublishedEvent({
+          event: input.event,
+          repo,
+          issueNumber,
+          publishedAt,
+          ...(commentId === undefined ? {} : { commentId }),
+        }),
+      ];
+    },
+    async reconcileIntent(input: { event: EventEnvelope }): Promise<EventEnvelope[]> {
+      const repo = input.event.sourceRefs.repo;
+      const issueNumber = input.event.sourceRefs.issueNumber;
+      if (repo === undefined || issueNumber === undefined) {
+        return [];
+      }
+      const [owner, repoName] = repo.split('/');
+      if (owner === undefined || repoName === undefined) {
+        return [];
+      }
+      const publishedAt = deps.now().toISOString();
+      if (input.event.sourceEventType === 'wake.labels.requested') {
+        const projection = await deps.stateStore.readIssueState(input.event.workItemKey);
+        const currentLabels = projection?.issue.labels ?? [];
+        const expected = [
+          input.event.payload.statusLabel,
+          input.event.payload.stageLabel,
+          input.event.payload.workflowLabel,
+        ].filter((label): label is string => typeof label === 'string');
+        if (expected.every((label) => currentLabels.includes(label))) {
+          return [
+            createEventEnvelope({
+              eventId: `${input.event.eventId}-labels-updated`,
+              workItemKey: input.event.workItemKey,
+              streamScope: 'work-item',
+              direction: 'outbound',
+              sourceSystem: 'github',
+              sourceEventType: 'ticket.labels.updated',
+              sourceRefs: { repo, issueNumber },
+              occurredAt: publishedAt,
+              ingestedAt: publishedAt,
+              trigger: 'context-only',
+              payload: {
+                intentEventId: input.event.eventId,
+                idempotencyKey: input.event.payload.idempotencyKey,
+                deliveryState: 'CONFIRMED',
+                labels: currentLabels,
+                providerEventType: 'github.issue.labels.updated',
+              },
+            }),
+          ];
+        }
+        return [];
+      }
+
+      const marker = wakeIdempotencyMarker(input.event.payload.idempotencyKey);
+      if (marker === undefined) {
+        return [];
+      }
+      const comments = await deps.client.listComments(
+        owner,
+        repoName,
+        issueNumber,
+        deps.config.sources.github.polling.commentPageSize,
+      );
+      const existing = comments.find((comment) => (comment.body ?? '').includes(marker));
+      if (existing === undefined) {
+        return [];
+      }
+      return [
+        createIssueCommentPublishedEvent({
+          event: input.event,
+          repo,
+          issueNumber,
+          publishedAt,
+          commentId: String(existing.id),
         }),
       ];
     },
