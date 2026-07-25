@@ -167,6 +167,7 @@ const METRIC_OPTIONS = [
   ['duration-over-time', 'Duration over time'],
   ['work-items-over-time', 'Work items completed over time'],
   ['work-item-durations', 'Work item e2e duration'],
+  ['work-item-totals', 'Work item totals'],
 ];
 
 async function getJson(path, signal) {
@@ -643,6 +644,20 @@ function renderWorkItemDurations(rows) {
   ]);
 }
 
+function renderWorkItemTotals(rows) {
+  if (rows.length === 0) return el('p', { class: 'meta', text: 'No runs for this window.' });
+  const maxTokens = Math.max(...rows.map((row) => row.totalTokens));
+  return el('table', {}, [
+    el('tr', {}, ['work item', 'runs', 'total tokens', 'total duration'].map((h) => el('th', { text: h }))),
+    ...rows.map((row) => el('tr', {}, [
+      el('td', { text: row.key }),
+      el('td', { text: String(row.runCount) }),
+      metricValueCell(row.totalTokens, maxTokens, fmtNumber),
+      el('td', { text: fmtMs(row.totalDurationMs) }),
+    ])),
+  ]);
+}
+
 function renderMetricDetail(detail) {
   if (detail.kind === 'runs-over-time') return renderRunsOverTime(detail.rows);
   if (detail.kind === 'runs-by-status-over-time') return renderRunsByStatusOverTime(detail.rows);
@@ -653,6 +668,7 @@ function renderMetricDetail(detail) {
   if (detail.kind === 'duration-over-time') return renderDurationTable(detail.rows, 'bucket');
   if (detail.kind === 'work-items-over-time') return renderWorkItemsOverTime(detail.rows);
   if (detail.kind === 'work-item-durations') return renderWorkItemDurations(detail.rows);
+  if (detail.kind === 'work-item-totals') return renderWorkItemTotals(detail.rows);
   return el('p', { class: 'meta', text: 'Unsupported metric.' });
 }
 

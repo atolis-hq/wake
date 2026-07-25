@@ -102,6 +102,75 @@ describe('ui-server', () => {
     expect(body.detail.kind).toBe('tokens-over-time');
   });
 
+  it('returns work-item-totals keyed by work item id', async () => {
+    const key1 = workId(101);
+    const key2 = workId(102);
+    const today = new Date().toISOString().slice(0, 10);
+    await store.writeRunRecord({
+      schemaVersion: 1,
+      runId: 'run-wi-101-a',
+      workItemKey: key1,
+      repo: 'atolis-hq/wake',
+      issueNumber: 101,
+      action: 'implement',
+      status: 'completed',
+      startedAt: `${today}T08:00:00.000Z`,
+      finishedAt: `${today}T08:02:00.000Z`,
+      tokenUsage: { inputTokens: 100, outputTokens: 50, costUsd: 0.1 },
+    });
+    await store.writeRunRecord({
+      schemaVersion: 1,
+      runId: 'run-wi-101-b',
+      workItemKey: key1,
+      repo: 'atolis-hq/wake',
+      issueNumber: 101,
+      action: 'implement',
+      status: 'failed',
+      startedAt: `${today}T09:00:00.000Z`,
+      finishedAt: `${today}T09:01:00.000Z`,
+      tokenUsage: { inputTokens: 20, outputTokens: 10, costUsd: 0.02 },
+    });
+    await store.writeRunRecord({
+      schemaVersion: 1,
+      runId: 'run-wi-102-a',
+      workItemKey: key2,
+      repo: 'atolis-hq/wake',
+      issueNumber: 102,
+      action: 'refine',
+      status: 'completed',
+      startedAt: `${today}T10:00:00.000Z`,
+      finishedAt: `${today}T10:00:30.000Z`,
+      tokenUsage: { inputTokens: 5, outputTokens: 5, costUsd: 0.01 },
+    });
+
+    const res = await fetch(`${baseUrl}/api/v1/metrics?window=1d&metric=work-item-totals`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      window: string;
+      metric: string;
+      detail: {
+        kind: string;
+        rows: Array<{
+          key: string;
+          runCount: number;
+          totalTokens: number;
+          totalDurationMs: number;
+        }>;
+      };
+    };
+    expect(body.metric).toBe('work-item-totals');
+    expect(body.detail.kind).toBe('work-item-totals');
+
+    const row1 = body.detail.rows.find((r) => r.key === key1);
+    expect(row1).toMatchObject({ runCount: 2, totalTokens: 180, totalDurationMs: 180000 });
+
+    const row2 = body.detail.rows.find((r) => r.key === key2);
+    expect(row2).toMatchObject({ runCount: 1, totalTokens: 10, totalDurationMs: 30000 });
+
+    // sorted by totalTokens descending
+    expect(body.detail.rows[0]?.key).toBe(key1);
+  });
+
   it('404s unknown api routes and rejects non-GET mutation attempts', async () => {
     const unknown = await fetch(`${baseUrl}/api/v1/nope`);
     expect(unknown.status).toBe(404);

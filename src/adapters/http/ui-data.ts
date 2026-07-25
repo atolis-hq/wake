@@ -520,7 +520,8 @@ export type MetricsMetric =
   | 'duration-by-action'
   | 'duration-over-time'
   | 'work-items-over-time'
-  | 'work-item-durations';
+  | 'work-item-durations'
+  | 'work-item-totals';
 
 type MetricsSummary = {
   totalRuns: number;
@@ -555,6 +556,7 @@ const metricsMetrics = new Set<MetricsMetric>([
   'duration-over-time',
   'work-items-over-time',
   'work-item-durations',
+  'work-item-totals',
 ]);
 
 function parseMetricsWindow(value: string | undefined): MetricsWindow {
@@ -1141,6 +1143,33 @@ export async function buildMetrics(input: {
         summary,
         detail: { kind: 'work-item-durations' as const, rows: workItemDurations },
       };
+    case 'work-item-totals': {
+      const groups = new Map<
+        string,
+        { runCount: number; totalTokens: number; totalDurationMs: number }
+      >();
+      for (const run of runs) {
+        const key = run.workItemKey;
+        const existing = groups.get(key) ?? { runCount: 0, totalTokens: 0, totalDurationMs: 0 };
+        existing.runCount += 1;
+        existing.totalTokens += runTokenTotal(run);
+        existing.totalDurationMs += runDurationMs(run) ?? 0;
+        groups.set(key, existing);
+      }
+      const rows = [...groups.entries()]
+        .map(([key, value]) => ({ key, ...value }))
+        .sort(
+          (left, right) =>
+            right.totalTokens - left.totalTokens || left.key.localeCompare(right.key),
+        );
+      return {
+        window,
+        metric,
+        generatedAt: input.now.toISOString(),
+        summary,
+        detail: { kind: 'work-item-totals' as const, rows },
+      };
+    }
     case 'runs-over-time':
       return {
         window,
