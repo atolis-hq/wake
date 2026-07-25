@@ -220,33 +220,88 @@ existing `allowedTools` prompt-frontmatter mechanism — no engine change) and
 asks it to judge the PR against the originating issue's own acceptance
 criteria, mirroring the host-local dark-factory script's `review-prompt.md`
 (evidence of what this judgment call needs to look like operationally — not
-reference architecture). Its verdict maps onto the **existing sentinel
-vocabulary** rather than a new structured field:
+reference architecture).
 
-- Confident, safe to merge → posts `/approved` as the first line of a
-  comment on the **issue** thread. This is the same explicit act a human
-  approval already requires (`resolveApprovalTransition` stays issue-thread
-  only for the actual merge decision — unchanged).
-- Not confident, needs changes → posts a comment on the **PR** thread. The
-  in-flight `revise` action (`docs/superpowers/plans/2026-07-19-pr-review-feedback-action.md`)
-  already resumes `implement` automatically from PR-surface comments while a
-  work item is `awaiting-approval`, with no slash command — this design adds
-  no new resumption mechanism, it just gives an automated reviewer the same
-  channel a human already has.
+**A clarification worth stating explicitly, since it's easy to conflate:**
+`pr-review`'s own `onDone` (§4) only governs *its own* single-stage workflow
+instance — it has no way to reach back into the *parent* work item's own
+projection (the one whose `implement` stage is `awaiting-approval`). Those
+are separate event streams. What actually carries a signal back to the
+parent is the comment mechanism below, processed deterministically by Wake —
+not stage-chaining.
+
+**Identifying and correlating the PR.** `pr-review` looks up the PR itself
+(broad read access, as in §4) and reports which PR it examined using the
+same artifact-report mechanism `implement` already uses to report the PR it
+opened (`registerReportedArtifacts` in `tick-runner.ts` verifies a reported
+artifact against GitHub before treating it as real) — no new response
+schema, the same reporting channel, a different caller. Wake, not the
+agent, then deterministically resolves how that PR relates to this work
+item as part of processing the run result:
+
+- Not yet correlated to any work item → Wake registers the correlation now.
+  This also repairs a real gap noted in §4: if `implement`'s own correlation
+  registration never happened (e.g. `artifactVerifier` wasn't configured at
+  that time), `pr-review` becomes a second chance to link things up
+  correctly, rather than the gap persisting silently.
+- Already correlated to *this* work item → proceed.
+- Already correlated (primary) to a *different* work item → **refuse to act
+  on this run's verdict at all.** Surface it via the correlation registry's
+  existing `wake.correlation.primary-conflict` event and leave it for a
+  human. This isn't new failure-mode design — Wake already has this
+  conflict-detection path for exactly this situation, just not previously
+  wired to a reviewer's own report. A verdict about the wrong PR must never
+  be allowed to approve or merge anything.
+
+**Delivering the verdict**, once the PR is confirmed to belong to this work
+item:
+
+- Confident, safe to merge → posts a comment **on the PR**, using Wake's own
+  comment formatting (the same templates/headers Wake already uses posting
+  on issues), carrying a recognized, bot-authored approval marker. Wake's
+  existing comment-detection (the same machinery that parses `/approved` on
+  issues and detects PR-surface feedback for the `revise` gate below) treats
+  this specific marker, from `pr-review`'s own bot identity, on a correlation-
+  confirmed PR, as an approval signal for the *parent* work item. This does
+  **not** loosen the existing rule that an arbitrary human's plain PR
+  comment never itself constitutes approval — human approval-to-merge stays
+  issue-thread, slash-command-gated, exactly as today. This is a narrow,
+  additional, bot-only trigger on the PR surface, not a general relaxation.
+- Not confident, needs changes → posts an ordinary comment on the PR thread —
+  unchanged from the original draft: the in-flight `revise` action
+  (`docs/superpowers/plans/2026-07-19-pr-review-feedback-action.md`) already
+  resumes `implement` automatically from PR-surface comments while a work
+  item is `awaiting-approval`, no slash command needed.
 - Genuinely uncertain / needs a human's judgment call → leaves the PR alone
   and reports its own run as `AWAITING_APPROVAL`/`BLOCKED` so the item stays
   visibly waiting rather than silently retried.
 
+**Why the PR thread, not the issue thread, for the approval case too:** the
+original draft routed the approval case through `/approved` on the issue
+purely because that path was already hardened — reusing it meant zero new
+code. But routing an automated PR judgment through a different surface than
+the one it's actually judging added indirection without benefit, and the
+PR-thread channel already exists for the request-changes case. One surface,
+one mechanism, no special-casing by verdict.
+
+**Where the merge decision hooks in.** Once a `pr-review` approval comment
+has been processed (correlation guard passed, marker recognized), that's
+the signal the deterministic merge-gate (#352, still blocked on the
+stage-executor design, §8) acts on. GitHub-native auto-merge + branch
+protection remains a valid complementary mechanism to layer on later
+(letting GitHub itself perform the final merge once its own conditions are
+met, rather than Wake polling CI directly) — not required for this design
+to work; Wake's own deterministic gate is sufficient on its own.
+
 No `onBlocked` field, no verdict schema addition to `workflowStageSchema`.
-This is prompt authoring against mechanics that already exist, plus
-Extension B to dispatch it.
+This is prompt authoring plus Wake's existing artifact-report/correlation
+machinery, reused, not new engine surface.
 
 **This crosses the operator's original human-PR-approval constraint, on
-purpose.** An autonomous `pr-review` verdict posting `/approved` is
-indistinguishable from a human approval to `resolveApprovalTransition` — it
-satisfies the hard constraint in the roadmap's §1 ("every change must be
-approved by a human, at minimum at the pull request") with an agent instead
-of a human. That's not an oversight; it's exactly the relaxation the
+purpose.** An autonomous `pr-review` verdict, once correlation-confirmed, is
+what satisfies the hard constraint in the roadmap's §1 ("every change must
+be approved by a human, at minimum at the pull request") with an agent
+instead of a human. That's not an oversight; it's exactly the relaxation the
 operator already recorded in the roadmap's 2026-07-25 addendum for
 policy-eligible work. Stated here so it isn't mistaken for a gap: this
 workflow only runs where the operator has opted a repo/workflow into it —
@@ -309,6 +364,10 @@ with `skipApproval` already living in prompt frontmatter today.
 
 ## 8. Merge execution — decided, but narrowly scoped
 
+**Trigger:** a `pr-review` approval comment that has passed the correlation
+guard (§5) — not `/approved` on the issue thread, which the original draft
+used before the correlation-guard revision.
+
 Two separate questions:
 
 **Who decides/executes:** regardless of identity, the merge call itself must
@@ -345,8 +404,9 @@ second one. It is not dropped by deferring the mechanism, only by deferring
   definitions; no `autonomy:` config surface.
 - **#350** — narrows to Extension A (recurring workflow triggers, engine
   work) plus a `triage` workflow/prompt (§6, config + prompt authoring).
-- **#351** — narrows to Extension B (attached activities, engine work) plus
-  a `pr-review` workflow/prompt (§5); no `autonomy.review` config block.
+- **#351** — narrows to Extension B (watchers, engine work) plus a
+  `pr-review` workflow/prompt with correlation-guarded verdict delivery
+  (§5); no `autonomy.review` config block.
 - **#353** and **#363** — converge into one stage/prompt-frontmatter
   mechanism (§7); #363's open design question 1 is resolved by there being
   only one config surface.
@@ -384,6 +444,13 @@ second one. It is not dropped by deferring the mechanism, only by deferring
 - Review/triage prompts: verify via existing sentinel-parsing tests
   (`domain/schema.ts`) that verdicts map to the intended sentinel, and that
   malformed/unparseable output never defaults to an approving outcome.
+- `pr-review`'s correlation guard: an uncorrelated reported PR gets
+  registered; a PR already correlated to *this* work item proceeds; a PR
+  already primary-correlated to a *different* work item is refused —
+  verdict not acted on, `wake.correlation.primary-conflict` raised, nothing
+  approved or merged. A bot-authored approval marker on the PR thread is
+  recognized as approval for the parent work item; an arbitrary human's
+  plain PR comment is not.
 - No new zod schema surface is introduced for `autonomy:` — existing
   `workflowStageSchema`/`workflowDefinitionSchema` tests extend naturally to
   cover `trigger` and `watch` as additional optional fields.
