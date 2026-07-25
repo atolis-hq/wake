@@ -4,7 +4,9 @@
 **Author:** Wake (Claude), with decision authority delegated by the operator.
 **Purpose:** the ordered path from "human upgrades Wake" to "Wake upgrades Wake, human approves PRs". This document is the working plan; the operator's brief and constraints are recorded in §1 so they survive context loss.
 
-**2026-07-25 addendum to §1's constraint 2** ("every change must be approved by a human, at minimum at the pull request"): the operator has relaxed this for policy-eligible, low-risk work once Phase 5 lands — an independent review agent plus a deterministic merge gate may merge without a human touching that specific PR, gated by explicit opt-in configuration (`autonomy.merge.mode`, default `recommend-only`). The original constraint as stated in §1 is left unedited below as the historical record; this addendum is the current, superseding state. See #349-#354 and #361.
+**2026-07-25 addendum to §1's constraint 2** ("every change must be approved by a human, at minimum at the pull request"): the operator has relaxed this for policy-eligible, low-risk work once Phase 5 lands — an independent review agent plus a deterministic merge gate may merge without a human touching that specific PR, gated by opt-in workflow configuration (see the second 2026-07-25 addendum below). The original constraint as stated in §1 is left unedited below as the historical record; this addendum is the current, superseding state. See #350-#354 and #361.
+
+**Second 2026-07-25 addendum (Phase 5 redesign):** the Phase 5 plan below was originally built around a new global `autonomy:` configuration surface (#349) with `triage`/`review`/`merge`/`approval` sub-blocks. That surface is dropped. Triage, review, and approval auto-resolution are instead built as targeted extensions to Wake's existing `config.workflows.yaml` model — a triggered/recurring workflow mechanism and a resource-correlated "attached activity" mechanism — so autonomy is expressed as ordinary, per-workflow configuration rather than a second, competing policy namespace. Full rationale and design in `docs/superpowers/specs/2026-07-25-workflow-driven-autonomy-design.md`. #349 is dropped; #350-#354/#363 are re-scoped per that design's §9.
 
 ## 1. Operating brief and constraints (as given by the operator, 2026-07-11)
 
@@ -75,7 +77,7 @@ Every item here is production-observed or a confirmed trapdoor. All are S or S�
 
 ### Explicitly deferred
 
-- ~~**[#176](https://github.com/atolis-hq/wake/issues/176) yolo mode** (end-to-end without approval) — conflicts with the human-approval constraint; revisit only when the operator relaxes it.~~ **Superseded 2026-07-25**: the operator has relaxed this constraint for policy-eligible work. #176 is being delivered through Phase 5 (#349-#354: config-driven review, deterministic merge gate, policy-driven approval resolution) rather than as a separate all-or-nothing mode.
+- ~~**[#176](https://github.com/atolis-hq/wake/issues/176) yolo mode** (end-to-end without approval) — conflicts with the human-approval constraint; revisit only when the operator relaxes it.~~ **Superseded 2026-07-25**: the operator has relaxed this constraint for policy-eligible work. #176 is being delivered through Phase 5 (#350-#354/#363: workflow-driven triage/review, deterministic merge gate, stage-scoped approval resolution — see the Phase 5 redesign addendum) rather than as a separate all-or-nothing mode.
 - **[#63](https://github.com/atolis-hq/wake/issues/63) prompt-injection hardening** — important before pointing Wake at repos with untrusted input; Wake's own repo is trusted, so it sequences after Phase 2. More detail added 2026-07-25 (see issue comments) as a prerequisite pattern for Phase 5's review-stage tool allow-listing and for Phase 7's real identity segregation.
 - Large refactors (R1/R2/R3) before Phase 3 — too much review load per PR while human bandwidth is the bottleneck.
 
@@ -101,16 +103,16 @@ Schema-breaking or autonomy-critical fixes. Must land before Phase 5 so it isn't
 
 ### Phase 5 — Autonomous lifecycle ("dark factory")
 
-Goal: remove the remaining hand-holding loop (human triages → assigns → reviews PR → merges) while keeping human approval a configurable, opt-in gate rather than a hardcoded one. Built on Phase 4.
+Goal: remove the remaining hand-holding loop (human triages → assigns → reviews PR → merges) while keeping human approval a configurable, opt-in gate rather than a hardcoded one. Built on Phase 4. Redesigned 2026-07-25 to extend the existing workflow model rather than add a global `autonomy:` config surface — see `docs/superpowers/specs/2026-07-25-workflow-driven-autonomy-design.md`.
 
 | Order | Status | Item | Why | Issue |
 | ----- | ------ | ---- | --- | ----- |
-| 5.1 | Not started | Operator autonomy-policy configuration surface (risk tiers, merge authority, escalation) | Backbone every later item in this phase reads from | [#349](https://github.com/atolis-hq/wake/issues/349) |
-| 5.2 | Not started | Autonomous triage, prioritization, WIP-bounded assignment scheduler | Removes the "operator assigns one issue at a time" bottleneck; stays serial, does not depend on #122 concurrency | [#350](https://github.com/atolis-hq/wake/issues/350) |
-| 5.3 | Not started | Independent PR review agent (separate session, config-driven, no merge capability) | Reviews without "grading its own homework"; opt-in per repo | [#351](https://github.com/atolis-hq/wake/issues/351) |
-| 5.4 | Not started | Deterministic autonomous merge gate | Only code path allowed to call the merge API; uses Wake's single existing identity, granted merge rights by the operator directly — a deliberate, temporary trust posture (see Phase 7) | [#352](https://github.com/atolis-hq/wake/issues/352) |
-| 5.5 | Not started | Policy-driven autonomous resolution of BLOCKED/approval gates | Reduces mid-implementation hand-holding; off by default | [#353](https://github.com/atolis-hq/wake/issues/353) |
-| 5.6 | Not started | Durable audit trail for autonomous decisions | Ships alongside 5.3-5.5, not after; the trust mechanism that lets `auto` mode expand | [#354](https://github.com/atolis-hq/wake/issues/354) |
+| 5.1 | Dropped | ~~Operator autonomy-policy configuration surface~~ — superseded by the schedule-trigger and watcher extensions below | Replaced a global policy namespace with ordinary workflow config | [#349](https://github.com/atolis-hq/wake/issues/349) (closed) |
+| 5.2 | Not started | Schedule-triggered workflows (engine) + a `triage` workflow that assigns work with broad, unfiltered `gh` read access | Removes the "operator assigns one issue at a time" bottleneck; generic mechanism, not special-cased to triage | [#350](https://github.com/atolis-hq/wake/issues/350) |
+| 5.3 | Not started | Per-stage watchers (engine — schedule dispatch scoped by stage status, no correlation-registry dependency) + a `pr-review` workflow that looks up its own PR | Reviews without "grading its own homework"; re-fires on a schedule while `implement` is `awaiting-approval`, which a one-shot chained stage couldn't do | [#351](https://github.com/atolis-hq/wake/issues/351) |
+| 5.4 | Not started | Stage/prompt-scoped autonomous resolution of BLOCKED/approval gates (merges #353 and #363 into one mechanism) | Reduces mid-implementation hand-holding; off by default | [#353](https://github.com/atolis-hq/wake/issues/353) (#363 closed as duplicate) |
+| 5.5 | Not started | Durable audit trail for autonomous decisions | Ships alongside 5.2-5.4, not after; the trust mechanism that lets `auto` mode expand | [#354](https://github.com/atolis-hq/wake/issues/354) |
+| 5.6 | Not started | Deterministic autonomous merge gate | Only code path allowed to call the merge API; uses Wake's single existing identity, granted merge rights by the operator directly — a deliberate, temporary trust posture (see Phase 7). Blocked on a stage-executor design (non-agent/scripted stages, related to #262) before implementation | [#352](https://github.com/atolis-hq/wake/issues/352) |
 
 ### Phase 6 — Execution kernel hardening (deferred)
 
