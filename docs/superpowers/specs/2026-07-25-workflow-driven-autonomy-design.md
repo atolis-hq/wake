@@ -57,13 +57,18 @@ stops.
 workflows:
   triage:
     trigger:
-      schedule: "*/10 * * * *"
+      schedule:
+        cron: "*/10 * * * *"
     stages:
       assign:
         action: triage-assign
         workspace: none
         onDone: done
 ```
+
+`schedule` is an object keyed by format (`cron` today) rather than a bare
+string, so an interval form (`schedule: { interval: "10m" }`) or others can
+be added later without a breaking change to workflows already using `cron`.
 
 Each tick, Wake evaluates configured triggers the same way it polls a
 `WorkSource` today. A firing trigger produces a synthetic intake event that
@@ -107,38 +112,22 @@ mechanism (best-effort cron-on-tick), and if tick cadence ever becomes
 exact/event-driven, trigger evaluation gets more precise for free without
 changing this contract.
 
-## 4. Extension B — Resource-correlated (attached) activities
+## 4. Extension B — Watchers (status-scoped, per-item triggered workflows)
 
 **Gap:** Review can't be modeled as the next stage after `implement`, because
 `implement` doesn't reach `DONE` until the PR is approved and merged — it
 returns `AWAITING_APPROVAL` and stays there through review and merge. A
 review that must be able to re-fire every time new commits land on the PR
 (required for v1 — a one-shot review loses most of its value) also can't be
-a single downstream link in an `onDone` chain; it needs to react to activity
-on a resource correlated to the work item, independent of the work item's
-current primary stage.
+a single downstream link in an `onDone` chain; it needs to re-check
+periodically while the work item sits in that status, independent of the
+work item's current primary stage.
 
-Wake already has the correlation mechanism this needs, end-to-end: a PR is a
-distinct resource (`github:pr:...`), linked to a work item only via an
-explicit `wake.correlation.registered` event (`registerReportedArtifacts` in
-`tick-runner.ts` verifies the agent's reported artifact against the provider
-and appends it), and PR activity already surfaces on that work item's
-watchlist independently of its current stage.
-
-**Dependency to call out explicitly:** registration only happens when
-`artifactVerifier` is configured. Without it, no correlation is ever
-registered and a `watch` entry attached to that stage never fires — silently,
-with no error. `watch` should document this prerequisite rather than assume
-it, and Wake's config validation should warn (not just silently no-op) if a
-workflow declares `watch` entries but `artifactVerifier` isn't configured.
-
-**Design:** a stage may declare **watchers** — attached workflows that run
-as a sibling concern while that stage holds a given status, dispatched by
-activity on a resource already correlated to the work item, not by that
-stage's own `onDone`. The mechanism is deliberately generic — not named or
-shaped around review specifically — so the same field can later attach a
-security scan, a notification, or any other reactive workflow to any stage,
-without a new config concept per use case:
+**Design:** a stage may declare **watchers** — attached workflows dispatched
+on a schedule while that stage holds a given status, not by that stage's own
+`onDone`. This isn't a new engine concept: it reuses Extension A's `schedule`
+trigger exactly as specified, scoped to one work item by an additional
+status guard:
 
 ```yaml
 workflows:
@@ -149,55 +138,56 @@ workflows:
         workspace: branch
         onDone: done
         watch:
-          - on: correlated-resource-activity
-            while: awaiting-approval
+          - while:
+              status: awaiting-approval
+            schedule:
+              cron: "*/10 * * * *"
             workflow: pr-review
 ```
 
-Reading the fields: `on` names the class of event that dispatches the
-watcher (`correlated-resource-activity` today — activity on any resource
-already linked to this work item via the correlation registry, e.g. the PR's
-`opened`/`synchronize` events; other event classes can be added later
-without touching existing watcher definitions). `while` scopes it to a
-named stage status — the watcher only dispatches when `implement` is
-currently `awaiting-approval`; outside that status, matching resource
-activity is ignored. `workflow` is the ordinary workflow to run (its own
-stage, prompt, and tool allowlist) each time the watcher fires — here,
-`pr-review` (§5).
+`while.status` scopes the watcher to this stage's current status —
+dispatched only when `implement` is `awaiting-approval`, never dispatched
+(and nothing to cancel) once it isn't. `schedule` throttles it to at most
+once per elapsed slot, per §3's durability contract (durable last-fired
+record, idempotency key), so it doesn't re-run every tick against an
+unchanged PR. `workflow` is the ordinary workflow to run — here, `pr-review`
+(§5), with its own stage, prompt, and tool allowlist. No `tier`/`runner`
+field on a `watch` entry: that's intrinsic to `pr-review`'s own stage
+definition, not to this attachment.
 
-So yes: concretely for review, the watcher only fires while the owning
-stage's status is `awaiting-approval`, exactly as the earlier draft
-described — `watch`/`on`/`while` is just the generalized shape that
-describes it, so the same declaration form covers whatever gets attached
-next.
+**No correlation-registry dependency, on purpose.** An earlier draft of this
+extension dispatched watchers on new *correlated-resource* activity (a PR's
+`opened`/`synchronize` events), reusing Wake's `wake.correlation.registered`
+mechanism. Dropped: that mechanism is contingent on `artifactVerifier` being
+configured, and a work item can legitimately reach `awaiting-approval` with
+no correlation ever registered — the watcher would then silently never
+fire, for a reason invisible from the workflow config. Rather than depend on
+Wake's internal correlation state at all, `pr-review`'s own prompt looks up
+the PR itself (broad `gh` read access, same pattern as triage's own backlog
+lookup and the dark-factory script's `gh pr list --search "{{ISSUE_NUMBER}}
+in:body"`), so the watcher's trigger condition is just `while`+`schedule` —
+nothing Wake-internal to depend on.
 
-No `tier`/`runner` field on a `watch` entry — the referenced `workflow`
-already carries its own stage-level `tier`/`runner`, exactly like any other
-workflow. Routing only needs to be declared once, on the workflow that's
-actually dispatched, not duplicated at the attachment point.
+Avoiding redundant work (not re-judging an unchanged PR every 10 minutes) is
+`pr-review`'s own responsibility, not the engine's: it tracks what it already
+reviewed (e.g. by PR head SHA) and no-ops cheaply otherwise, mirroring the
+dark-factory script's `reviewed-shas.json`. `watch` only guarantees *an
+opportunity* to re-check on schedule; whether that check does real work is
+up to the attached workflow.
 
-`correlated-resource-activity` is currently the only `on:` class, and it's
-shaped by what review needs (PR `opened`/`synchronize`). The claim that this
-mechanism generalizes rests on future `on:` classes that aren't designed
-yet — worth treating as a direction, not a proven property, until a second
-concrete use (e.g. a label-added trigger, or a check-run-completed trigger)
-is actually built against it.
+**Where this is still narrower than "fully generic":** the only thing a
+watcher can currently vary is which status it watches and how often it
+checks. Attaching on anything other than a status/schedule combination (a
+label added, a check run completing) isn't designed here — a plausible
+future direction, not a proven property of this shape yet.
 
 This is the most structurally significant piece of this design — it
 introduces a second concurrently-relevant stage per work item, where today
-there is exactly one. It is scoped narrowly on purpose: a watcher triggers
-only on the event class and status it declares, and its result is delivered
-through surfaces that already exist (§5) rather than a new resumption path.
-
-**Concurrency guard.** Without one, this can loop or race: a `pr-review`
-verdict triggers `revise`, which pushes a new commit, which fires a new
-`synchronize` event, which dispatches `pr-review` again — and two
-`synchronize` events close together could dispatch two concurrent
-`pr-review` runs, or a `pr-review` run overlapping a `revise` run against the
-same branch. A watcher must not dispatch while any run (the primary stage's
-or a prior watcher's) for that work item is already in flight, and must
-dedupe on the triggering resource-activity event id so a re-observed event
-never double-dispatches.
+there is exactly one. **Concurrency guard:** a watcher must not dispatch a
+new `pr-review` run while a previous one for the same work item (or the
+primary stage's own run) is still in flight — otherwise a verdict that
+triggers `revise`, pushes a commit, and gets checked again on the next slot
+could overlap two runs against the same branch.
 
 ## 5. Review workflow
 
@@ -344,11 +334,11 @@ second one. It is not dropped by deferring the mechanism, only by deferring
   it without double-firing, mints a bounded work item, and that item reaches
   `done` without leaving residue that would affect the next firing.
 - Extension B: assert a `watch`-attached workflow dispatches only while the
-  named status holds, dispatches again on a second correlated-resource event
+  named status holds, dispatches again on the next elapsed schedule slot
   (re-review), does not dispatch when the primary stage is in any other
   status, does not dispatch a second time while a prior dispatch for that
-  work item is still in flight, and never double-dispatches on a re-observed
-  duplicate of the same resource-activity event.
+  work item is still in flight, and stops being dispatched (with nothing to
+  cancel) the moment the status changes away from the watched value.
 - Review/triage prompts: verify via existing sentinel-parsing tests
   (`domain/schema.ts`) that verdicts map to the intended sentinel, and that
   malformed/unparseable output never defaults to an approving outcome.
