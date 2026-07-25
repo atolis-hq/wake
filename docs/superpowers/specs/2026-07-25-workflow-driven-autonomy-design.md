@@ -286,12 +286,26 @@ even shown — not left to the agent to honor voluntarily.
 
 ## 7. Approval auto-resolution (#353/#363)
 
-Both issues converge into stage/prompt-level configuration — an
-`allowAutoApproval`-style frontmatter flag on the relevant prompt, plus a
-label/comment trigger (`wake:auto`, `/yolo`) — with no `autonomy.approval`
-global block. This resolves #363's own open question: there is only one
-configuration surface for this concern, scoped to the stage it applies to,
-consistent with `skipApproval` already living in prompt frontmatter today.
+Two related, differently-shaped mechanisms, not one:
+
+**BLOCKED-question auto-resolution is just another `watch` entry**, not a
+separate mechanism — it wasn't recognized as such in the first draft of
+this design, but it's structurally identical to `pr-review` in §4/§5: a
+fresh, independent session dispatched while a stage holds a given status
+(`blocked` instead of `awaiting-approval`), judging whether to answer on the
+human's behalf. It depends on Extension B (§4) the same way `pr-review`
+does — it is **not** independent engine work, contrary to an earlier draft
+of this document.
+
+**AWAITING_APPROVAL auto-approval is genuinely separate**, and this is
+where #363's mechanism converges in: an `allowAutoApproval`-style
+frontmatter flag on the relevant prompt, plus a label/comment trigger
+(`wake:auto`, `/yolo`), with no `autonomy.approval` global block. Unlike a
+watcher, no agent session runs at all — the Wake orchestrator performs the
+approval directly, deterministically, once the flag and label both hold.
+This resolves #363's own open question: there is only one configuration
+surface for this concern, scoped to the stage it applies to, consistent
+with `skipApproval` already living in prompt frontmatter today.
 
 ## 8. Merge execution — decided, but narrowly scoped
 
