@@ -76,16 +76,37 @@ Time-series granularity:
 Add:
 
 ```text
-GET /api/v1/metrics?window=1d|3d|5d|7d
+GET /api/v1/metrics?window=1d|3d|5d|7d&metric=<metric-id>
 ```
 
-The endpoint returns one object containing all aggregate data needed by the Analytics tab for the selected window. This keeps the frontend simple and avoids multiple full run scans per render.
+The endpoint returns the summary row plus only the selected metric's detail payload. The frontend requests a new metric when the operator changes the metric selector. This avoids sending every possible grouping on each render and keeps each response aligned to the selected chart or table.
+
+Supported `metric` values:
+
+- `runs-over-time`
+- `runs-by-status`
+- `runs-by-action`
+- `runs-by-repo`
+- `runs-by-runner`
+- `runs-by-model`
+- `runs-by-tier`
+- `tokens-over-time`
+- `tokens-by-action`
+- `tokens-by-runner`
+- `tokens-by-model`
+- `duration-by-action`
+- `duration-over-time`
+- `work-items-over-time`
+- `work-item-durations`
+
+Unknown or omitted `metric` defaults to `runs-over-time`.
 
 Response shape:
 
 ```ts
 {
   window: '1d' | '3d' | '5d' | '7d';
+  metric: string;
   generatedAt: string;
   summary: {
     totalRuns: number;
@@ -99,22 +120,15 @@ Response shape:
     completedWorkItems: number;
     medianWorkItemDurationMs?: number;
   };
-  runsOverTime: Array<{ bucket: string; label: string; total: number; completed: number; blocked: number; awaitingApproval: number; failed: number; other: number }>;
-  runsByStatus: Array<{ key: string; count: number }>;
-  runsByAction: Array<{ key: string; count: number }>;
-  runsByRepo: Array<{ key: string; count: number }>;
-  runsByRunner: Array<{ key: string; count: number }>;
-  runsByModel: Array<{ key: string; count: number }>;
-  runsByTier: Array<{ key: string; count: number }>;
-  tokensOverTime: Array<{ bucket: string; label: string; tokens: number; inputTokens: number; outputTokens: number; cacheCreationInputTokens: number; cacheReadInputTokens: number; costUsd: number }>;
-  tokensByAction: Array<{ key: string; tokens: number; costUsd: number }>;
-  tokensByRepo: Array<{ key: string; tokens: number; costUsd: number }>;
-  tokensByRunner: Array<{ key: string; tokens: number; costUsd: number }>;
-  tokensByModel: Array<{ key: string; tokens: number; costUsd: number }>;
-  durationByAction: Array<{ key: string; count: number; averageMs: number; medianMs: number }>;
-  durationOverTime: Array<{ bucket: string; label: string; count: number; averageMs: number; medianMs: number }>;
-  workItemsOverTime: Array<{ bucket: string; label: string; completed: number }>;
-  workItemDurations: Array<{ key: string; repo: string; issueNumber: number; durationMs: number; completedAt: string }>;
+  detail:
+    | { kind: 'runs-over-time'; rows: Array<{ bucket: string; label: string; total: number; completed: number; blocked: number; awaitingApproval: number; failed: number; other: number }> }
+    | { kind: 'run-counts'; group: 'status' | 'action' | 'repo' | 'runner' | 'model' | 'tier'; rows: Array<{ key: string; count: number }> }
+    | { kind: 'tokens-over-time'; rows: Array<{ bucket: string; label: string; tokens: number; inputTokens: number; outputTokens: number; cacheCreationInputTokens: number; cacheReadInputTokens: number; costUsd: number }> }
+    | { kind: 'token-counts'; group: 'action' | 'runner' | 'model'; rows: Array<{ key: string; tokens: number; costUsd: number }> }
+    | { kind: 'durations'; group: 'action'; rows: Array<{ key: string; count: number; averageMs: number; medianMs: number }> }
+    | { kind: 'duration-over-time'; rows: Array<{ bucket: string; label: string; count: number; averageMs: number; medianMs: number }> }
+    | { kind: 'work-items-over-time'; rows: Array<{ bucket: string; label: string; completed: number }> }
+    | { kind: 'work-item-durations'; rows: Array<{ key: string; repo: string; issueNumber: number; durationMs: number; completedAt: string }> };
 }
 ```
 
@@ -161,10 +175,12 @@ The frontend renders empty states for each selected detail view when the selecte
 Add tests before implementation:
 
 - `buildMetrics` aggregates run counts, token totals, cost, and durations for a fixed 7-day window.
-- `buildMetrics` groups runner/model/tier metadata from `run.routing` and uses `unknown` for missing values.
-- `buildMetrics` computes completed work-item count and median e2e duration from projections.
-- `/api/v1/metrics?window=7d` returns the metrics payload.
+- `buildMetrics` returns only the selected detail metric and keeps the summary present for every metric.
+- `buildMetrics` groups runner/model/tier metadata from `run.routing` and uses `unknown` for missing values when the selected metric needs those fields.
+- `buildMetrics` computes completed work-item count and median e2e duration from projections when the selected metric needs work-item data.
+- `/api/v1/metrics?window=7d&metric=runs-over-time` returns the metrics payload.
 - Unknown/omitted window defaults to `7d`.
+- Unknown/omitted metric defaults to `runs-over-time`.
 - The static UI includes the Analytics tab, a window selector with `1d`, `3d`, `5d`, `7d`, and code paths for stacked time-bucket bars.
 
 UI rendering remains dependency-free. The server/index test should assert that the static page includes the Analytics tab and calls `/metrics`.
