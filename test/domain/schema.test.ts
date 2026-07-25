@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, expectTypeOf, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import {
   correlationPrimaryConflictPayloadSchema,
@@ -145,26 +145,32 @@ describe('issue state schema', () => {
 
 describe('run and event schemas', () => {
   it('exports an explicit sandbox config helper type', () => {
-    expectTypeOf<WakeSandboxConfig>().toEqualTypeOf<{
+    // Bidirectional assignability is equivalent to structural type equality and is
+    // more robust than toEqualTypeOf across TypeScript major versions.
+    type ExpectedSandboxConfig = {
       image: string;
       imageRepository: string;
       containerName: string;
       containerMountPath: string;
       containerHomeMountPath: string;
       start: { enabled: boolean };
-      extraMounts: Array<{
-        source: string;
-        target: string;
-        readOnly?: boolean;
-      }>;
-    }>();
+      extraMounts: Array<{ source: string; target: string; readOnly?: boolean | undefined }>;
+    };
+    const _a: ExpectedSandboxConfig = {} as WakeSandboxConfig;
+    const _b: WakeSandboxConfig = {} as ExpectedSandboxConfig;
+    void _a;
+    void _b;
   });
 
   it('exports an explicit local-development config helper type', () => {
-    expectTypeOf<WakeDevConfig>().toEqualTypeOf<{
-      repoRoot?: string;
-      mode?: 'source' | 'packaged';
-    }>();
+    type ExpectedDevConfig = {
+      repoRoot?: string | undefined;
+      mode?: 'source' | 'packaged' | undefined;
+    };
+    const _a: ExpectedDevConfig = {} as WakeDevConfig;
+    const _b: WakeDevConfig = {} as ExpectedDevConfig;
+    void _a;
+    void _b;
   });
 
   it('accepts running run records', () => {

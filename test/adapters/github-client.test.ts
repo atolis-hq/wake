@@ -25,34 +25,36 @@ function pagesOf(...pages: Array<{ data: unknown[]; headers?: Record<string, unk
 }
 
 vi.mock('@octokit/rest', () => ({
-  Octokit: vi.fn().mockImplementation(() => ({
-    paginate,
-    rest: {
-      issues: {
-        listForRepo: vi.fn(),
-        listComments: vi.fn(),
-        createComment: vi.fn(),
-        setLabels,
+  Octokit: vi.fn().mockImplementation(function () {
+    return {
+      paginate,
+      rest: {
+        issues: {
+          listForRepo: vi.fn(),
+          listComments: vi.fn(),
+          createComment: vi.fn(),
+          setLabels,
+        },
+        pulls: {
+          get: getPull,
+          list: listPulls,
+          listReviews,
+          listReviewComments,
+          createReplyForReviewComment,
+        },
+        repos: {
+          getBranch,
+          getCombinedStatusForRef,
+        },
+        checks: {
+          listForRef: listCheckRunsForRef,
+        },
+        users: {
+          getAuthenticated,
+        },
       },
-      pulls: {
-        get: getPull,
-        list: listPulls,
-        listReviews,
-        listReviewComments,
-        createReplyForReviewComment,
-      },
-      repos: {
-        getBranch,
-        getCombinedStatusForRef,
-      },
-      checks: {
-        listForRef: listCheckRunsForRef,
-      },
-      users: {
-        getAuthenticated,
-      },
-    },
-  })),
+    };
+  }),
 }));
 
 describe('github client', () => {
