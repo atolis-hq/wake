@@ -69,6 +69,17 @@ function latestHumanCommentId(candidate: IssueStateRecord): string | undefined {
   return human.at(-1)?.id;
 }
 
+function projectedSourceRevision(projection: IssueStateRecord): string {
+  const latestCommentUpdatedAt = projection.comments
+    .map((comment) => comment.updatedAt)
+    .sort()
+    .at(-1);
+
+  return latestCommentUpdatedAt === undefined
+    ? `${projection.issue.repo}#${projection.issue.number}@${projection.issue.updatedAt}`
+    : `${projection.issue.repo}#${projection.issue.number}@${projection.issue.updatedAt};comments@${latestCommentUpdatedAt}`;
+}
+
 function isLateralReadOnlyAction(action: AgentAction, config: WakeConfig): boolean {
   return isCustomCommandAction(action, config);
 }
@@ -330,6 +341,20 @@ export function createTickRunner(deps: {
     );
   }
 
+  async function hasSchedulerCapacity(now: Date): Promise<boolean> {
+    const runRecords = await deps.stateStore.listRunRecords();
+    for (const record of runRecords) {
+      if (record.status !== 'running') {
+        continue;
+      }
+      if (await isRunningRecordActive(record, now)) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
   async function parkConfigDriftedProjections(projections: IssueStateRecord[]): Promise<boolean> {
     let parked = false;
 
@@ -440,11 +465,33 @@ export function createTickRunner(deps: {
         return { status: 'processed' as const };
       }
 
-      const candidate = projections.find(
+      let candidate = projections.find(
         (issue) => policy.resolveNextEligibleAction(issue, deps.config) !== null,
       );
 
       if (candidate === undefined) {
+        return { status: 'idle' as const };
+      }
+
+      let sourceRevision = projectedSourceRevision(candidate);
+      let refresh: Awaited<ReturnType<NonNullable<WorkSource['refreshForDispatch']>>> | undefined;
+      try {
+        refresh = await deps.workSource.refreshForDispatch?.({ projection: candidate });
+      } catch {
+        return { status: 'idle' as const };
+      }
+      if (refresh !== undefined && refresh !== null) {
+        if (refresh.sourceExists === false) {
+          return { status: 'idle' as const };
+        }
+        sourceRevision = refresh.sourceRevision;
+        if (refresh.events.length > 0) {
+          await ingestInboundEvents(refresh.events);
+          candidate = (await deps.stateStore.readIssueState(candidate.workItemKey)) ?? candidate;
+        }
+      }
+
+      if (policy.resolveNextEligibleAction(candidate, deps.config) === null) {
         return { status: 'idle' as const };
       }
 
@@ -586,6 +633,10 @@ export function createTickRunner(deps: {
         return { status: 'idle' as const };
       }
 
+      if (!(await hasSchedulerCapacity(deps.clock.now()))) {
+        return { status: 'idle' as const };
+      }
+
       const runId = `run-${candidate.issue.number}-${deps.clock.now().getTime()}`;
       const lease = createRunLease({ clock: deps.clock, ownerInstanceId });
       const workerIdentity = currentProcessIdentity();
@@ -603,6 +654,9 @@ export function createTickRunner(deps: {
         lease,
         workerPid: workerIdentity.pid,
         workerProcessStartedAt: workerIdentity.processStartedAt,
+        metadata: {
+          sourceRevision,
+        },
       };
 
       await deps.stateStore.writeRunRecord(runningRecord);
@@ -633,6 +687,7 @@ export function createTickRunner(deps: {
           action,
           priorStage: candidate.wake.stage,
           claimedStage,
+          sourceRevision,
         },
       });
       await deps.stateStore.appendEventEnvelope(claimedEvent);
@@ -948,6 +1003,7 @@ export function createTickRunner(deps: {
           executionOutcome: 'PROCESS_FAILED' as const,
           summary: err instanceof Error ? err.message : String(err),
           metadata: {
+            ...failedRecord.metadata,
             failureClass: 'infra',
           },
         });

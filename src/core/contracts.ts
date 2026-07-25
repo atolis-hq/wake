@@ -42,8 +42,15 @@ export interface ResourceRef {
   resourceUri: string;
 }
 
+export interface SourceRefreshResult {
+  events: UnkeyedEventEnvelope[];
+  sourceRevision: string;
+  sourceExists?: boolean;
+}
+
 export interface WorkSource {
   pollEvents(input?: { watch: ResourceRef[] }): Promise<UnkeyedEventEnvelope[]>;
+  refreshForDispatch?(input: { projection: IssueStateRecord }): Promise<SourceRefreshResult | null>;
 }
 
 export interface OutboundSink {

@@ -1,5 +1,10 @@
 import type { EventEnvelope, WakeConfig } from '../domain/types.js';
-import type { OutboundSink, UnkeyedEventEnvelope, WorkSource } from './contracts.js';
+import type {
+  OutboundSink,
+  SourceRefreshResult,
+  UnkeyedEventEnvelope,
+  WorkSource,
+} from './contracts.js';
 
 export interface NamedWorkSource extends WorkSource {
   source: string;
@@ -14,6 +19,18 @@ export function createWorkSourceFanIn(sources: NamedWorkSource[]): WorkSource {
     async pollEvents(input): Promise<UnkeyedEventEnvelope[]> {
       const batches = await Promise.all(sources.map((source) => source.pollEvents(input)));
       return batches.flat();
+    },
+    async refreshForDispatch(input): Promise<SourceRefreshResult | null> {
+      for (const source of sources) {
+        if (source.refreshForDispatch === undefined) {
+          continue;
+        }
+        const result = await source.refreshForDispatch(input);
+        if (result !== null) {
+          return result;
+        }
+      }
+      return null;
     },
   };
 }
