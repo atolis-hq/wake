@@ -53,6 +53,45 @@ describe('qualifiesForMint', () => {
     expect(policy.qualifiesForMint(event, baseConfig())).toBe(false);
   });
 
+  it('does not qualify always-manual github issues even when source labels otherwise match', () => {
+    const event = createUnkeyedEventEnvelope({
+      eventId: 'e-manual',
+      streamScope: 'global-intake',
+      direction: 'inbound',
+      sourceSystem: 'github',
+      sourceEventType: 'ticket.upsert',
+      sourceRefs: { resourceUri: 'github:issue:org/repo#99' },
+      occurredAt: '2026-07-18T00:00:00Z',
+      ingestedAt: '2026-07-18T00:00:00Z',
+      trigger: 'immediate',
+      payload: { ticket: { labels: ['wake:assign', 'security'], assignees: [] } },
+    });
+    expect(policy.qualifiesForMint(event, baseConfig())).toBe(false);
+  });
+
+  it('qualifies wake schedule events by named workflow without GitHub intake labels', () => {
+    const event = createUnkeyedEventEnvelope({
+      eventId: 'e-schedule',
+      streamScope: 'global-intake',
+      direction: 'inbound',
+      sourceSystem: 'wake',
+      sourceEventType: 'ticket.upsert',
+      sourceRefs: { resourceUri: 'wake:schedule:triage@2026-07-25T22:30:00.000Z' },
+      occurredAt: '2026-07-25T22:30:00.000Z',
+      ingestedAt: '2026-07-25T22:34:00.000Z',
+      trigger: 'immediate',
+      payload: { workflow: 'triage', ticket: { labels: [], assignees: [] } },
+    });
+    const config = baseConfig();
+    config.workflows.triage = {
+      stages: {
+        assign: { action: 'triage-assign', workspace: 'none', onDone: 'done' },
+      },
+    };
+
+    expect(policy.qualifiesForMint(event, config)).toBe(true);
+  });
+
   it('qualifies a github:pr event authored by a required author', () => {
     const event = createUnkeyedEventEnvelope({
       eventId: 'e3',
