@@ -83,6 +83,10 @@ export const indexHtml = `<!DOCTYPE html>
   @media (max-width: 767px) {
     .modal-overlay { padding: 0; }
     .modal { width: 100%; height: 100%; max-height: none; border-radius: 0; border-left: 0; border-right: 0; }
+    .columns { display: flex; flex-direction: column; overflow-x: unset; }
+    .col { min-height: unset; }
+    .col-empty { padding: 0.25rem 0.5rem; }
+    .col-empty h2 { margin: 0.1rem 0.4rem; }
   }
   .tiles { display: flex; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 1rem; }
   .tile { background: #1a1d23; border-radius: 10px; padding: 0.6rem 0.9rem; min-width: 120px; }
@@ -252,7 +256,6 @@ async function renderBoard(context) {
   const board = await getJson('/board', context.signal);
   if (!isActiveRequest(context.requestId)) return;
   const main = document.getElementById('main');
-  main.innerHTML = '';
   const columns = el('div', { class: 'columns' }, CONDITIONS.map((cond) => {
     const items = board.filter((c) => c.condition === cond);
     const cards = items.map((item) => el('div', {
@@ -266,12 +269,12 @@ async function renderBoard(context) {
       ]),
       el('div', { class: 'meta', text: item.lastRunSentinel ? 'last: ' + item.lastRunAction + ' → ' + item.lastRunSentinel : item.conditionReason }),
     ]));
-    return el('div', { class: 'col' }, [
+    return el('div', { class: 'col' + (items.length === 0 ? ' col-empty' : '') }, [
       el('h2', { text: cond + ' (' + items.length + ')' }),
       ...cards,
     ]);
   }));
-  main.appendChild(columns);
+  main.replaceChildren(columns);
 }
 
 function resourceUriToUrl(resourceUri) {
@@ -438,15 +441,13 @@ async function renderActivity(context) {
   const events = await getJson('/events?limit=200', context.signal);
   if (!isActiveRequest(context.requestId)) return;
   const main = document.getElementById('main');
-  main.innerHTML = '';
-  const table = el('table', {}, [
+  main.replaceChildren(el('table', {}, [
     el('tr', {}, ['time', 'direction', 'type', 'work item'].map((h) => el('th', { text: h }))),
     ...events.map((ev) => el('tr', {}, [
       el('td', { text: ev.ingestedAt }), el('td', { text: ev.direction }),
       el('td', { text: ev.sourceEventType }), el('td', { text: ev.workItemKey }),
     ])),
-  ]);
-  main.appendChild(table);
+  ]));
 }
 
 function fmtCost(usd) {
@@ -676,43 +677,43 @@ async function renderAnalytics(context) {
   const metrics = await getJson('/metrics?window=' + encodeURIComponent(analyticsWindow) + '&metric=' + encodeURIComponent(analyticsMetric), context.signal);
   if (!isActiveRequest(context.requestId)) return;
   const main = document.getElementById('main');
-  main.innerHTML = '';
-  main.appendChild(el('div', { class: 'toolbar' }, [
-    el('label', {}, [
-      document.createTextNode('Window'),
-      selectBox(analyticsWindow, [['1d', '1d'], ['3d', '3d'], ['5d', '5d'], ['7d', '7d']], (value) => {
-        analyticsWindow = value;
-        switchView('analytics');
-      }),
+  main.replaceChildren(
+    el('div', { class: 'toolbar' }, [
+      el('label', {}, [
+        document.createTextNode('Window'),
+        selectBox(analyticsWindow, [['1d', '1d'], ['3d', '3d'], ['5d', '5d'], ['7d', '7d']], (value) => {
+          analyticsWindow = value;
+          switchView('analytics');
+        }),
+      ]),
+      el('label', {}, [
+        document.createTextNode('Metric'),
+        selectBox(analyticsMetric, METRIC_OPTIONS, (value) => {
+          analyticsMetric = value;
+          switchView('analytics');
+        }),
+      ]),
     ]),
-    el('label', {}, [
-      document.createTextNode('Metric'),
-      selectBox(analyticsMetric, METRIC_OPTIONS, (value) => {
-        analyticsMetric = value;
-        switchView('analytics');
-      }),
+    el('div', { class: 'tiles' }, [
+      tile('Runs', fmtNumber(metrics.summary.totalRuns)),
+      tile('Completed', fmtNumber(metrics.summary.completedRuns)),
+      tile('Blocked/approval', fmtNumber(metrics.summary.blockedRuns + metrics.summary.awaitingApprovalRuns)),
+      tile('Failed', fmtNumber(metrics.summary.failedRuns)),
+      tile('Tokens', fmtNumber(metrics.summary.totalTokens)),
+      tile('Cost', fmtCost(metrics.summary.totalCostUsd)),
+      tile('Median run', fmtDuration(metrics.summary.medianRunDurationMs) || '—'),
+      tile('Work done', fmtNumber(metrics.summary.completedWorkItems)),
+      tile('Median e2e', fmtDuration(metrics.summary.medianWorkItemDurationMs) || '—'),
     ]),
-  ]));
-  main.appendChild(el('div', { class: 'tiles' }, [
-    tile('Runs', fmtNumber(metrics.summary.totalRuns)),
-    tile('Completed', fmtNumber(metrics.summary.completedRuns)),
-    tile('Blocked/approval', fmtNumber(metrics.summary.blockedRuns + metrics.summary.awaitingApprovalRuns)),
-    tile('Failed', fmtNumber(metrics.summary.failedRuns)),
-    tile('Tokens', fmtNumber(metrics.summary.totalTokens)),
-    tile('Cost', fmtCost(metrics.summary.totalCostUsd)),
-    tile('Median run', fmtDuration(metrics.summary.medianRunDurationMs) || '—'),
-    tile('Work done', fmtNumber(metrics.summary.completedWorkItems)),
-    tile('Median e2e', fmtDuration(metrics.summary.medianWorkItemDurationMs) || '—'),
-  ]));
-  main.appendChild(renderMetricDetail(metrics.detail));
+    renderMetricDetail(metrics.detail),
+  );
 }
 
 async function renderRuns(context) {
   const runs = await getJson('/runs', context.signal);
   if (!isActiveRequest(context.requestId)) return;
   const main = document.getElementById('main');
-  main.innerHTML = '';
-  const table = el('table', {}, [
+  main.replaceChildren(el('table', {}, [
     el('tr', {}, ['repo#issue', 'action', 'status', 'sentinel', 'runner', 'tokens', 'cost', 'started', 'finished'].map((h) => el('th', { text: h }))),
     ...runs.map((r) => el('tr', {}, [
       el('td', { text: r.repo + '#' + r.issueNumber }), el('td', { text: r.action }), el('td', { text: r.status }),
@@ -720,87 +721,87 @@ async function renderRuns(context) {
       el('td', { text: fmtTokens(r.tokenUsage) }), el('td', { text: fmtCost(r.tokenUsage && r.tokenUsage.costUsd) }),
       el('td', { text: r.startedAt }), el('td', { text: r.finishedAt || '' }),
     ])),
-  ]);
-  main.appendChild(table);
+  ]));
 }
 
 async function renderConfig(context) {
   const data = await getJson('/config', context.signal);
   if (!isActiveRequest(context.requestId)) return;
   const main = document.getElementById('main');
-  main.innerHTML = '';
-  main.appendChild(el('h3', { text: 'Routing table' }));
-  main.appendChild(el('table', {}, [
-    el('tr', {}, ['stage', 'action', 'tier', 'runner', 'model', 'fallback order'].map((h) => el('th', { text: h }))),
-    ...data.routingTable.map((r) => el('tr', {}, [
-      el('td', { text: r.stage }), el('td', { text: r.action || '' }), el('td', { text: r.tier || '' }),
-      el('td', { text: r.runnerName || '' }), el('td', { text: r.model || '' }),
-      el('td', {}, (r.candidates || []).map((c) => {
-        if (!c.paused) return el('span', { class: 'chip', text: c.runnerName });
-        const btn = el('button', { type: 'button', class: 'btn', text: 'Unpause', style: 'margin-top:0;font-size:0.7rem;padding:0.1rem 0.4rem;' });
-        btn.addEventListener('click', async () => {
-          btn.disabled = true;
-          btn.textContent = 'Unpausing…';
-          try {
-            await postJson('/runners/' + encodeURIComponent(c.runnerName) + '/unpause');
-            switchView('config');
-          } catch (err) {
-            btn.disabled = false;
-            btn.textContent = 'Unpause';
-            document.getElementById('status-summary').textContent = 'unpause failed: ' + err.message;
-          }
-        });
-        return el('span', { style: 'display:inline-flex;align-items:center;gap:0.25rem;margin-right:0.25rem;' }, [
-          el('span', { class: 'chip amber', text: c.runnerName + ' (paused)' }),
-          btn,
-        ]);
-      })),
-    ])),
-  ]));
-  main.appendChild(el('h3', { text: 'Effective config (redacted)' }));
-  main.appendChild(el('pre', { text: JSON.stringify(data.config, null, 2) }));
+  main.replaceChildren(
+    el('h3', { text: 'Routing table' }),
+    el('table', {}, [
+      el('tr', {}, ['stage', 'action', 'tier', 'runner', 'model', 'fallback order'].map((h) => el('th', { text: h }))),
+      ...data.routingTable.map((r) => el('tr', {}, [
+        el('td', { text: r.stage }), el('td', { text: r.action || '' }), el('td', { text: r.tier || '' }),
+        el('td', { text: r.runnerName || '' }), el('td', { text: r.model || '' }),
+        el('td', {}, (r.candidates || []).map((c) => {
+          if (!c.paused) return el('span', { class: 'chip', text: c.runnerName });
+          const btn = el('button', { type: 'button', class: 'btn', text: 'Unpause', style: 'margin-top:0;font-size:0.7rem;padding:0.1rem 0.4rem;' });
+          btn.addEventListener('click', async () => {
+            btn.disabled = true;
+            btn.textContent = 'Unpausing…';
+            try {
+              await postJson('/runners/' + encodeURIComponent(c.runnerName) + '/unpause');
+              switchView('config');
+            } catch (err) {
+              btn.disabled = false;
+              btn.textContent = 'Unpause';
+              document.getElementById('status-summary').textContent = 'unpause failed: ' + err.message;
+            }
+          });
+          return el('span', { style: 'display:inline-flex;align-items:center;gap:0.25rem;margin-right:0.25rem;' }, [
+            el('span', { class: 'chip amber', text: c.runnerName + ' (paused)' }),
+            btn,
+          ]);
+        })),
+      ])),
+    ]),
+    el('h3', { text: 'Effective config (redacted)' }),
+    el('pre', { text: JSON.stringify(data.config, null, 2) }),
+  );
 }
 
 async function renderHealth(context) {
   const health = await getJson('/health', context.signal);
   if (!isActiveRequest(context.requestId)) return;
   const main = document.getElementById('main');
-  main.innerHTML = '';
   const runnerNames = Object.keys(health.pause.runnerHealth || {});
-  main.appendChild(el('div', { class: 'tiles' }, [
-    tile('Tick lock', health.lock.present ? (health.lock.stale ? 'stale' : 'held') : 'free'),
-    tile('Paused', String(health.pause.paused)),
-    tile('Runners paused now', String(runnerNames.filter((name) => {
-      const until = health.pause.runnerHealth[name].pausedUntil;
-      return until && Date.parse(until) > Date.now();
-    }).length)),
-    tile('Integrity issues', String(health.integrityIssues.length)),
-  ]));
-  main.appendChild(el('h3', { text: 'Runner health (quota fallback, #67)' }));
-  if (runnerNames.length === 0) {
-    main.appendChild(el('p', { class: 'meta', text: 'No quota failures recorded.' }));
-  } else {
-    main.appendChild(el('table', {}, [
-      el('tr', {}, ['runner', 'status', 'paused until', 'failure count', 'last failure'].map((h) => el('th', { text: h }))),
-      ...runnerNames.map((name) => {
-        const entry = health.pause.runnerHealth[name];
-        const paused = entry.pausedUntil && Date.parse(entry.pausedUntil) > Date.now();
-        return el('tr', {}, [
-          el('td', { text: name }),
-          el('td', {}, [el('span', { class: 'chip' + (paused ? ' amber' : ' ok') , text: paused ? 'paused' : 'available' })]),
-          el('td', { text: entry.pausedUntil || '' }),
-          el('td', { text: String(entry.failureCount || 0) }),
-          el('td', { text: entry.lastFailureAt || '' }),
-        ]);
-      }),
-    ]));
-  }
-  main.appendChild(el('h3', { text: 'Storage' }));
-  main.appendChild(el('pre', { text: JSON.stringify(health.storage, null, 2) }));
-  main.appendChild(el('h3', { text: 'Source polling' }));
-  main.appendChild(el('pre', { text: JSON.stringify(health.sources, null, 2) }));
-  main.appendChild(el('h3', { text: 'Integrity issues' }));
-  main.appendChild(el('pre', { text: JSON.stringify(health.integrityIssues, null, 2) }));
+  const runnerSection = runnerNames.length === 0
+    ? el('p', { class: 'meta', text: 'No quota failures recorded.' })
+    : el('table', {}, [
+        el('tr', {}, ['runner', 'status', 'paused until', 'failure count', 'last failure'].map((h) => el('th', { text: h }))),
+        ...runnerNames.map((name) => {
+          const entry = health.pause.runnerHealth[name];
+          const paused = entry.pausedUntil && Date.parse(entry.pausedUntil) > Date.now();
+          return el('tr', {}, [
+            el('td', { text: name }),
+            el('td', {}, [el('span', { class: 'chip' + (paused ? ' amber' : ' ok') , text: paused ? 'paused' : 'available' })]),
+            el('td', { text: entry.pausedUntil || '' }),
+            el('td', { text: String(entry.failureCount || 0) }),
+            el('td', { text: entry.lastFailureAt || '' }),
+          ]);
+        }),
+      ]);
+  main.replaceChildren(
+    el('div', { class: 'tiles' }, [
+      tile('Tick lock', health.lock.present ? (health.lock.stale ? 'stale' : 'held') : 'free'),
+      tile('Paused', String(health.pause.paused)),
+      tile('Runners paused now', String(runnerNames.filter((name) => {
+        const until = health.pause.runnerHealth[name].pausedUntil;
+        return until && Date.parse(until) > Date.now();
+      }).length)),
+      tile('Integrity issues', String(health.integrityIssues.length)),
+    ]),
+    el('h3', { text: 'Runner health (quota fallback, #67)' }),
+    runnerSection,
+    el('h3', { text: 'Storage' }),
+    el('pre', { text: JSON.stringify(health.storage, null, 2) }),
+    el('h3', { text: 'Source polling' }),
+    el('pre', { text: JSON.stringify(health.sources, null, 2) }),
+    el('h3', { text: 'Integrity issues' }),
+    el('pre', { text: JSON.stringify(health.integrityIssues, null, 2) }),
+  );
 }
 
 function tile(label, value) {
