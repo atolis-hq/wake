@@ -21,10 +21,12 @@ import { maxConfiguredRunnerTimeoutMs, resolveRunnerRouting } from '../domain/ru
 import { awaitingApprovalRunnerSentinel, stageLabelForStage } from '../domain/stages.js';
 import type {
   AgentAction,
+  ExecutionOutcome,
   IssueStateRecord,
   RunnerFailureClass,
   Stage,
   WakeConfig,
+  WorkflowOutcome,
 } from '../domain/types.js';
 import {
   chooseAction as chooseWorkflowAction,
@@ -723,6 +725,21 @@ export function createTickRunner(deps: {
           ...(runnerResult.routing === undefined ? {} : { routing: runnerResult.routing }),
         };
 
+        const executionOutcome: ExecutionOutcome =
+          runnerResult.failureClass === 'quota'
+            ? 'QUOTA_EXHAUSTED'
+            : runnerResult.failureClass === 'infra'
+              ? 'PROCESS_FAILED'
+              : 'COMPLETED';
+        const workflowOutcome: WorkflowOutcome | undefined =
+          sentinel === 'DONE'
+            ? 'DONE'
+            : sentinel === 'BLOCKED'
+              ? 'BLOCKED'
+              : sentinel === 'AWAITING_APPROVAL'
+                ? 'AWAITING_APPROVAL'
+                : undefined;
+
         await deps.stateStore.writeRunRecord({
           ...runningRecord,
           status:
@@ -736,6 +753,8 @@ export function createTickRunner(deps: {
           finishedAt,
           sessionId: runnerResult.session_id,
           sentinel,
+          executionOutcome,
+          ...(workflowOutcome !== undefined ? { workflowOutcome } : {}),
           summary: parsedRunnerResult.body,
           ...(runnerResult.routing === undefined ? {} : { routing: runnerResult.routing }),
           ...(runnerResult.tokenUsage === undefined ? {} : { tokenUsage: runnerResult.tokenUsage }),
@@ -780,6 +799,8 @@ export function createTickRunner(deps: {
               : { handledCommentId: latestHumanCommentId(candidate) }),
             body: parsedRunnerResult.body,
             envelope: parsedRunnerResult.envelope,
+            executionOutcome,
+            ...(workflowOutcome !== undefined ? { workflowOutcome } : {}),
           },
         });
         await deps.stateStore.appendEventEnvelope(runCompletedEvent);
@@ -835,6 +856,7 @@ export function createTickRunner(deps: {
           status: 'failed',
           finishedAt,
           sentinel,
+          executionOutcome: 'PROCESS_FAILED' as const,
           summary: err instanceof Error ? err.message : String(err),
           metadata: {
             failureClass: 'infra',
@@ -862,6 +884,7 @@ export function createTickRunner(deps: {
             runId,
             reason: 'runner:infrastructure-error',
             failureClass: 'infra',
+            executionOutcome: 'PROCESS_FAILED',
             // Deliberately omit handledCommentId: an infra blip (CLI crash, timeout,
             // network error) never reached the agent, so it isn't an answer to the
             // triggering comment. Leaving it unset lets the next tick retry the same

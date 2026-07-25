@@ -282,6 +282,8 @@ async function applyEvent(
       handledCommentId?: string;
       failureClass?: string;
       blockReason?: string;
+      executionOutcome?: string;
+      workflowOutcome?: string;
     };
 
     // Clear the session when the stage moves forward (new action needed) or the
@@ -330,6 +332,12 @@ async function applyEvent(
       // skip when a human posts /approved.
       ...(payload.sentinel === 'AWAITING_APPROVAL' && payload.action !== undefined
         ? { pendingApprovalAction: payload.action }
+        : {}),
+      ...(payload.executionOutcome !== undefined
+        ? { lastExecutionOutcome: payload.executionOutcome }
+        : {}),
+      ...(payload.workflowOutcome !== undefined
+        ? { lastWorkflowOutcome: payload.workflowOutcome }
         : {}),
     };
 
