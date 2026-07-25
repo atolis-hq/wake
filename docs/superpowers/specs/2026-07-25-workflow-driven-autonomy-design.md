@@ -89,6 +89,24 @@ schedule case.
 **Scope note:** this extension is deliberately generic. It is not "the
 triage trigger" — it is the mechanism any future recurring workflow uses.
 
+**Firing is durable and best-effort on timing, not exact.** Per CLAUDE.md
+("the tick is a pure function of durable state… never cache 'what happened
+last tick' in process memory"), trigger evaluation must read/write a durable
+last-fired record (e.g. `state/triggers/<workflow>.json` or an event), not
+in-process state — a crash between deciding to fire and recording it must not
+double-fire on restart. The synthetic intake event should carry the same
+kind of idempotency key `tick-runner.ts` already uses for outbound
+publication, keyed on the workflow name and the fired slot.
+
+Ticks are not periodic (`scheduler.maxIntervalMs` backs off idle polling),
+so a `schedule` is evaluated whenever a tick happens to run, not to the
+second — "fire if the schedule's next slot has elapsed since the durable
+last-fired time" rather than firing once per exact slot. That inexactness is
+an accepted trade-off for this design, not a gap: it's a recognized
+mechanism (best-effort cron-on-tick), and if tick cadence ever becomes
+exact/event-driven, trigger evaluation gets more precise for free without
+changing this contract.
+
 ## 4. Extension B — Resource-correlated (attached) activities
 
 **Gap:** Review can't be modeled as the next stage after `implement`, because
@@ -100,10 +118,19 @@ a single downstream link in an `onDone` chain; it needs to react to activity
 on a resource correlated to the work item, independent of the work item's
 current primary stage.
 
-Wake already has the correlation mechanism this needs: a PR is a distinct
-resource (`github:pr:...`), linked to a work item only via an explicit
-`wake.correlation.registered` event, and PR activity already surfaces on
-that work item's watchlist independently of its current stage.
+Wake already has the correlation mechanism this needs, end-to-end: a PR is a
+distinct resource (`github:pr:...`), linked to a work item only via an
+explicit `wake.correlation.registered` event (`registerReportedArtifacts` in
+`tick-runner.ts` verifies the agent's reported artifact against the provider
+and appends it), and PR activity already surfaces on that work item's
+watchlist independently of its current stage.
+
+**Dependency to call out explicitly:** registration only happens when
+`artifactVerifier` is configured. Without it, no correlation is ever
+registered and a `watch` entry attached to that stage never fires — silently,
+with no error. `watch` should document this prerequisite rather than assume
+it, and Wake's config validation should warn (not just silently no-op) if a
+workflow declares `watch` entries but `artifactVerifier` isn't configured.
 
 **Design:** a stage may declare **watchers** — attached workflows that run
 as a sibling concern while that stage holds a given status, dispatched by
@@ -144,11 +171,33 @@ described — `watch`/`on`/`while` is just the generalized shape that
 describes it, so the same declaration form covers whatever gets attached
 next.
 
+No `tier`/`runner` field on a `watch` entry — the referenced `workflow`
+already carries its own stage-level `tier`/`runner`, exactly like any other
+workflow. Routing only needs to be declared once, on the workflow that's
+actually dispatched, not duplicated at the attachment point.
+
+`correlated-resource-activity` is currently the only `on:` class, and it's
+shaped by what review needs (PR `opened`/`synchronize`). The claim that this
+mechanism generalizes rests on future `on:` classes that aren't designed
+yet — worth treating as a direction, not a proven property, until a second
+concrete use (e.g. a label-added trigger, or a check-run-completed trigger)
+is actually built against it.
+
 This is the most structurally significant piece of this design — it
 introduces a second concurrently-relevant stage per work item, where today
 there is exactly one. It is scoped narrowly on purpose: a watcher triggers
 only on the event class and status it declares, and its result is delivered
 through surfaces that already exist (§5) rather than a new resumption path.
+
+**Concurrency guard.** Without one, this can loop or race: a `pr-review`
+verdict triggers `revise`, which pushes a new commit, which fires a new
+`synchronize` event, which dispatches `pr-review` again — and two
+`synchronize` events close together could dispatch two concurrent
+`pr-review` runs, or a `pr-review` run overlapping a `revise` run against the
+same branch. A watcher must not dispatch while any run (the primary stage's
+or a prior watcher's) for that work item is already in flight, and must
+dedupe on the triggering resource-activity event id so a re-observed event
+never double-dispatches.
 
 ## 5. Review workflow
 
@@ -178,10 +227,22 @@ No `onBlocked` field, no verdict schema addition to `workflowStageSchema`.
 This is prompt authoring against mechanics that already exist, plus
 Extension B to dispatch it.
 
+**This crosses the operator's original human-PR-approval constraint, on
+purpose.** An autonomous `pr-review` verdict posting `/approved` is
+indistinguishable from a human approval to `resolveApprovalTransition` — it
+satisfies the hard constraint in the roadmap's §1 ("every change must be
+approved by a human, at minimum at the pull request") with an agent instead
+of a human. That's not an oversight; it's exactly the relaxation the
+operator already recorded in the roadmap's 2026-07-25 addendum for
+policy-eligible work. Stated here so it isn't mistaken for a gap: this
+workflow only runs where the operator has opted a repo/workflow into it —
+it's off unless configured, not a default.
+
 ## 6. Triage workflow
 
-Per Extension A, `triage` is a workflow triggered on a schedule and/or a WIP
-threshold, not a per-ticket workflow. Its single stage's prompt is granted
+Per Extension A, `triage` is a workflow triggered on a schedule, not a
+per-ticket workflow (a WIP-threshold trigger is deferred per §3's note on
+`condition`). Its single stage's prompt is granted
 broad `gh` read access — deliberately **not** filtered through Wake's normal
 intake selectors, since its purpose is to see what Wake's regular intake
 wouldn't (unassigned issues, issues outside the usual attribute filters,
@@ -193,6 +254,21 @@ WIP cap deterministically before that assignment lands.
 This needs no intake changes: assigning an issue is what causes *that* issue
 to separately enter Wake's normal pipeline as its own distinct work item,
 fully decoupled from triage's own (short-lived, per-firing) work item.
+
+**Named tension with "Wake decides, the agent runs."** #350's original
+acceptance criteria wanted deterministic priority ordering (same backlog
+state → same selection across ticks), a conflict heuristic, and
+always-manual exclusions — i.e. Wake, not the agent, decides what gets
+assigned. This design puts that judgment inside the triage agent's own
+lookup instead, with Wake only enforcing the WIP cap. That is a real,
+intentional narrowing of "Wake decides" for this one decision (what enters
+the WIP slot), accepted because triage's whole value is seeing backlog state
+Wake's own intake filters don't — a deterministic scorer over that same
+broader view would just re-implement judgment as a rule set. Always-manual
+exclusions (security-labelled, explicitly excluded work) should still be
+enforced by Wake deterministically before triage ever sees a candidate — as
+a `requiredLabels`/`ignoredLabels`-style filter on what the triage prompt is
+even shown — not left to the agent to honor voluntarily.
 
 ## 7. Approval auto-resolution (#353/#363)
 
@@ -228,6 +304,13 @@ runner invocations"). Building a bespoke merge-gate mechanism now risks a
 second, competing shape once that design lands. #352 is resequenced behind
 it (see §9).
 
+#352's idempotency requirement — a retried/duplicate gate evaluation must not
+re-merge or double-comment — carries forward as a hard constraint on
+whatever that stage-executor design produces, reusing the existing
+idempotent-outbox key pattern (`tick-runner.ts`) rather than inventing a
+second one. It is not dropped by deferring the mechanism, only by deferring
+*which* mechanism implements it.
+
 ## 9. Effect on existing issues
 
 - **#349** — dropped. Replaced by Extension A plus ordinary workflow
@@ -241,22 +324,31 @@ it (see §9).
   only one config surface.
 - **#352** — re-scoped and resequenced behind a new "stage executors"
   design (§8); not attempted until that design exists.
-- **#354** (audit trail) — unaffected. Every trigger firing and stage
-  dispatch is already an ordinary event; if anything, simpler than the
-  original design since there's no separate `autonomy:` decision log to
-  reconcile against the event stream.
+- **#354** (audit trail) — partially, not fully, satisfied by this design as
+  written. Every trigger firing and stage dispatch is already an ordinary,
+  replayable event, which covers #354's durability requirement without a
+  separate `autonomy:` decision log to reconcile against. Still open, and
+  not addressed here: #354's `wake audit <workItemId>`-style CLI/read-model
+  and per-decision policy-revision stamping. Since there's no more global
+  `autonomy:` policy to stamp a revision hash of, that requirement narrows
+  to "which workflow/prompt version was in effect," which fits naturally
+  once the stage-executor design (§8) exists — sequenced with it, not
+  independently.
 
 ## 10. Testing approach
 
 - Extension A: exercise through the existing fakes (`createFakeRunner`,
   `createFileBackedFakeTicketingSystem`) with a fake clock/tick count —
-  assert a trigger fires exactly once per satisfied condition, mints a
-  bounded work item, and that item reaches `done` without leaving residue
-  that would affect the next firing.
+  assert a trigger fires exactly once per elapsed schedule slot (not once
+  per tick), survives a simulated crash between firing and durably recording
+  it without double-firing, mints a bounded work item, and that item reaches
+  `done` without leaving residue that would affect the next firing.
 - Extension B: assert a `watch`-attached workflow dispatches only while the
   named status holds, dispatches again on a second correlated-resource event
-  (re-review), and does not dispatch when the primary stage is in any other
-  status.
+  (re-review), does not dispatch when the primary stage is in any other
+  status, does not dispatch a second time while a prior dispatch for that
+  work item is still in flight, and never double-dispatches on a re-observed
+  duplicate of the same resource-activity event.
 - Review/triage prompts: verify via existing sentinel-parsing tests
   (`domain/schema.ts`) that verdicts map to the intended sentinel, and that
   malformed/unparseable output never defaults to an approving outcome.
