@@ -6,6 +6,7 @@ import {
   formatGitHubError,
   formatWakeComment,
   readControlPlaneUiUrl,
+  wakeIdempotencyMarker,
 } from './github-issues-work-source.js';
 
 const githubPrSource = 'github-pr';
@@ -206,6 +207,32 @@ export function createGitHubPullRequestActivitySource(deps: {
       return null;
     }
     return { owner, repo, repoRef: `${owner}/${repo}`, number: Number(numberStr) };
+  }
+
+  function reviewThreadRefFromUri(
+    resourceUri: string,
+  ): { owner: string; repo: string; repoRef: string; number: number; rootId: number } | null {
+    const locator = resourceUri.split(':').slice(2).join(':');
+    const match = /^([^/]+)\/([^#]+)#(\d+)\/rt_(\d+)$/.exec(locator);
+    if (match === null) {
+      return null;
+    }
+    const [, owner, repo, numberStr, rootIdStr] = match;
+    if (
+      owner === undefined ||
+      repo === undefined ||
+      numberStr === undefined ||
+      rootIdStr === undefined
+    ) {
+      return null;
+    }
+    return {
+      owner,
+      repo,
+      repoRef: `${owner}/${repo}`,
+      number: Number(numberStr),
+      rootId: Number(rootIdStr),
+    };
   }
 
   async function discoverPullRequests(ingestedAt: string): Promise<{
@@ -638,30 +665,18 @@ export function createGitHubPullRequestActivitySource(deps: {
       const publishedAt = deps.now().toISOString();
 
       if (resourceUri.startsWith('github:pr-review-thread:')) {
-        const locator = resourceUri.split(':').slice(2).join(':');
-        const match = /^([^/]+)\/([^#]+)#(\d+)\/rt_(\d+)$/.exec(locator);
-        if (match === null) {
-          throw new Error(
-            `cannot deliver intent ${input.event.eventId}: malformed review-thread uri ${resourceUri}`,
-          );
-        }
-        const [, owner, repo, numberStr, rootIdStr] = match;
-        if (
-          owner === undefined ||
-          repo === undefined ||
-          numberStr === undefined ||
-          rootIdStr === undefined
-        ) {
+        const ref = reviewThreadRefFromUri(resourceUri);
+        if (ref === null) {
           throw new Error(
             `cannot deliver intent ${input.event.eventId}: malformed review-thread uri ${resourceUri}`,
           );
         }
 
         const response = await deps.client.replyToReviewComment(
-          owner,
-          repo,
-          Number(numberStr),
-          Number(rootIdStr),
+          ref.owner,
+          ref.repo,
+          ref.number,
+          ref.rootId,
           formatWakeComment(
             input.event.payload,
             await readControlPlaneUiUrl(deps.config.paths.wakeRoot),
@@ -685,8 +700,11 @@ export function createGitHubPullRequestActivitySource(deps: {
             trigger: 'context-only',
             payload: {
               intentEventId: input.event.eventId,
+              idempotencyKey: input.event.payload.idempotencyKey,
+              deliveryState: 'CONFIRMED',
               kind: input.event.payload.kind,
               body: input.event.payload.body,
+              providerId: (response as { id?: number } | undefined)?.id,
             },
           }),
         ];
@@ -699,7 +717,7 @@ export function createGitHubPullRequestActivitySource(deps: {
         );
       }
 
-      await deps.client.createComment(
+      const response = await deps.client.createComment(
         ref.owner,
         ref.repo,
         ref.number,
@@ -722,8 +740,96 @@ export function createGitHubPullRequestActivitySource(deps: {
           trigger: 'context-only',
           payload: {
             intentEventId: input.event.eventId,
+            idempotencyKey: input.event.payload.idempotencyKey,
+            deliveryState: 'CONFIRMED',
             kind: input.event.payload.kind,
             body: input.event.payload.body,
+            providerId: (response as { data?: { id?: number } } | undefined)?.data?.id,
+          },
+        }),
+      ];
+    },
+    async reconcileIntent(input: { event: EventEnvelope }): Promise<EventEnvelope[]> {
+      const resourceUri = input.event.sourceRefs.resourceUri;
+      const marker = wakeIdempotencyMarker(input.event.payload.idempotencyKey);
+      if (resourceUri === undefined || marker === undefined) {
+        return [];
+      }
+
+      const publishedAt = deps.now().toISOString();
+
+      if (resourceUri.startsWith('github:pr-review-thread:')) {
+        const ref = reviewThreadRefFromUri(resourceUri);
+        if (ref === null) {
+          return [];
+        }
+        const comments = await deps.client.listReviewComments(
+          ref.owner,
+          ref.repo,
+          ref.number,
+          deps.config.sources.github.pullRequests.commentPageSize,
+        );
+        const existing = comments.find((comment) => (comment.body ?? '').includes(marker));
+        if (existing === undefined) {
+          return [];
+        }
+        return [
+          createEventEnvelope({
+            eventId: `${input.event.eventId}-published`,
+            workItemKey: input.event.workItemKey,
+            streamScope: 'work-item',
+            direction: 'outbound',
+            sourceSystem: githubPrSource,
+            sourceEventType: 'pr.review-comment.reply.published',
+            sourceRefs: { resourceUri, sourceUrl: existing.html_url },
+            occurredAt: publishedAt,
+            ingestedAt: publishedAt,
+            trigger: 'context-only',
+            payload: {
+              intentEventId: input.event.eventId,
+              idempotencyKey: input.event.payload.idempotencyKey,
+              deliveryState: 'CONFIRMED',
+              kind: input.event.payload.kind,
+              body: input.event.payload.body,
+              providerId: existing.id,
+            },
+          }),
+        ];
+      }
+
+      const ref = repoAndNumberFromPrUri(resourceUri);
+      if (ref === null) {
+        return [];
+      }
+      const comments = await deps.client.listComments(
+        ref.owner,
+        ref.repo,
+        ref.number,
+        deps.config.sources.github.pullRequests.commentPageSize,
+      );
+      const existing = comments.find((comment) => (comment.body ?? '').includes(marker));
+      if (existing === undefined) {
+        return [];
+      }
+      return [
+        createEventEnvelope({
+          eventId: `${input.event.eventId}-published`,
+          workItemKey: input.event.workItemKey,
+          streamScope: 'work-item',
+          direction: 'outbound',
+          sourceSystem: githubPrSource,
+          sourceEventType: 'pr.comment.reply.published',
+          sourceRefs: { repo: ref.repoRef, resourceUri },
+          occurredAt: publishedAt,
+          ingestedAt: publishedAt,
+          trigger: 'context-only',
+          payload: {
+            intentEventId: input.event.eventId,
+            idempotencyKey: input.event.payload.idempotencyKey,
+            deliveryState: 'CONFIRMED',
+            kind: input.event.payload.kind,
+            body: input.event.payload.body,
+            providerId: existing.id,
           },
         }),
       ];

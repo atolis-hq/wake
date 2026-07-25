@@ -23,6 +23,13 @@ const outboundConfirmationEventTypes = new Set([
   'pr.review-comment.reply.published',
 ]);
 
+type DeliveryState = 'PENDING' | 'SENT_UNCONFIRMED' | 'CONFIRMED';
+
+function intentId(event: EventEnvelope): string | undefined {
+  const intentEventId = event.payload.intentEventId;
+  return typeof intentEventId === 'string' ? intentEventId : undefined;
+}
+
 // The outbox: outbound delivery (comments, labels) attempted independently of
 // run-outcome recording, with a durable, bounded retry trace. Extracted from
 // tick-runner.ts so it can be exercised in isolation; it has the cleanest
@@ -49,11 +56,64 @@ export function createOutbox(deps: {
       payload: {
         intentEventId: intentEvent.eventId,
         intentEventType: intentEvent.sourceEventType,
+        idempotencyKey: intentEvent.payload.idempotencyKey,
+        deliveryState: 'PENDING' satisfies DeliveryState,
         error: err instanceof Error ? err.message : String(err),
       },
     });
     await deps.stateStore.appendEventEnvelope(failureEvent);
     await deps.projectionUpdater.rebuildFromEvents([failureEvent]);
+  }
+
+  async function recordSentUnconfirmed(intentEvent: EventEnvelope): Promise<void> {
+    const occurredAt = deps.clock.now().toISOString();
+    const sentEvent = createEventEnvelope({
+      eventId: `${intentEvent.eventId}-sent-unconfirmed-${randomUUID()}`,
+      workItemKey: intentEvent.workItemKey,
+      streamScope: 'work-item',
+      direction: 'internal',
+      sourceSystem: 'wake',
+      sourceEventType: 'wake.publish.sent-unconfirmed',
+      sourceRefs: intentEvent.sourceRefs,
+      occurredAt,
+      ingestedAt: occurredAt,
+      trigger: 'context-only',
+      payload: {
+        intentEventId: intentEvent.eventId,
+        intentEventType: intentEvent.sourceEventType,
+        idempotencyKey: intentEvent.payload.idempotencyKey,
+        deliveryState: 'SENT_UNCONFIRMED' satisfies DeliveryState,
+      },
+    });
+    await deps.stateStore.appendEventEnvelope(sentEvent);
+    await deps.projectionUpdater.rebuildFromEvents([sentEvent]);
+  }
+
+  async function recordConfirmed(
+    intentEvent: EventEnvelope,
+    payload: Record<string, unknown> = {},
+  ) {
+    const confirmedAt = deps.clock.now().toISOString();
+    const confirmedEvent = createEventEnvelope({
+      eventId: `${intentEvent.eventId}-confirmed`,
+      workItemKey: intentEvent.workItemKey,
+      streamScope: 'work-item',
+      direction: 'internal',
+      sourceSystem: 'wake',
+      sourceEventType: 'wake.publish.confirmed',
+      sourceRefs: intentEvent.sourceRefs,
+      occurredAt: confirmedAt,
+      ingestedAt: confirmedAt,
+      trigger: 'context-only',
+      payload: {
+        intentEventId: intentEvent.eventId,
+        idempotencyKey: intentEvent.payload.idempotencyKey,
+        deliveryState: 'CONFIRMED' satisfies DeliveryState,
+        ...payload,
+      },
+    });
+    const appended = await deps.stateStore.appendEventEnvelope(confirmedEvent);
+    await deps.projectionUpdater.rebuildFromEvents([appended]);
   }
 
   // Outbound delivery (comments, labels) is attempted independently of run-outcome
@@ -66,6 +126,7 @@ export function createOutbox(deps: {
     }
 
     try {
+      await recordSentUnconfirmed(event);
       const deliveryEvents = await deps.outboundSink.deliverIntent({ event });
       for (const deliveryEvent of deliveryEvents) {
         await deps.stateStore.appendEventEnvelope(deliveryEvent);
@@ -76,21 +137,7 @@ export function createOutbox(deps: {
         // No confirmation event was produced (e.g. a no-op label update) but the
         // sink did not throw. Record that delivery was attempted successfully so
         // the outbox scan below does not retry it indefinitely.
-        const confirmedAt = deps.clock.now().toISOString();
-        const confirmedEvent = createEventEnvelope({
-          eventId: `${event.eventId}-confirmed`,
-          workItemKey: event.workItemKey,
-          streamScope: 'work-item',
-          direction: 'internal',
-          sourceSystem: 'wake',
-          sourceEventType: 'wake.publish.confirmed',
-          sourceRefs: event.sourceRefs,
-          occurredAt: confirmedAt,
-          ingestedAt: confirmedAt,
-          trigger: 'context-only',
-          payload: { intentEventId: event.eventId },
-        });
-        await deps.stateStore.appendEventEnvelope(confirmedEvent);
+        await recordConfirmed(event);
       }
     } catch (err) {
       await recordDeliveryFailure(event, err);
@@ -101,6 +148,22 @@ export function createOutbox(deps: {
     await deps.stateStore.appendEventEnvelope(event);
     await deps.projectionUpdater.rebuildFromEvents([event]);
     await attemptDelivery(event);
+  }
+
+  async function suppressOutboundEvent(
+    event: EventEnvelope,
+    input: { suppressedPublishReason: string },
+  ): Promise<void> {
+    const suppressedEvent = await deps.stateStore.appendEventEnvelope({
+      ...event,
+      payload: {
+        ...event.payload,
+        deliveryState: 'CONFIRMED' satisfies DeliveryState,
+        suppressedPublishReason: input.suppressedPublishReason,
+      },
+    });
+    await deps.projectionUpdater.rebuildFromEvents([suppressedEvent]);
+    await recordConfirmed(event, { suppressedPublishReason: input.suppressedPublishReason });
   }
 
   // Adopts the outbox pattern: an intent is only considered delivered once a
@@ -115,10 +178,11 @@ export function createOutbox(deps: {
     const events = await deps.stateStore.listEventEnvelopes();
     const confirmedIntentIds = new Set<string>();
     const failureAttempts = new Map<string, number>();
+    const uncertainIntentIds = new Set<string>();
 
     for (const event of events) {
-      const intentEventId = event.payload.intentEventId;
-      if (typeof intentEventId !== 'string') {
+      const intentEventId = intentId(event);
+      if (intentEventId === undefined) {
         continue;
       }
       if (outboundConfirmationEventTypes.has(event.sourceEventType)) {
@@ -126,6 +190,9 @@ export function createOutbox(deps: {
       }
       if (event.sourceEventType === 'wake.publish.failed') {
         failureAttempts.set(intentEventId, (failureAttempts.get(intentEventId) ?? 0) + 1);
+      }
+      if (event.sourceEventType === 'wake.publish.sent-unconfirmed') {
+        uncertainIntentIds.add(intentEventId);
       }
     }
 
@@ -139,9 +206,32 @@ export function createOutbox(deps: {
       if ((failureAttempts.get(intent.eventId) ?? 0) >= outboxMaxAttempts) {
         continue;
       }
+      if (
+        uncertainIntentIds.has(intent.eventId) &&
+        deps.outboundSink.reconcileIntent !== undefined
+      ) {
+        try {
+          const reconciledEvents = await deps.outboundSink.reconcileIntent({ event: intent });
+          for (const reconciledEvent of reconciledEvents) {
+            await deps.stateStore.appendEventEnvelope(reconciledEvent);
+          }
+          await deps.projectionUpdater.rebuildFromEvents(reconciledEvents);
+          if (reconciledEvents.length > 0) {
+            continue;
+          }
+        } catch (err) {
+          await recordDeliveryFailure(intent, err);
+          continue;
+        }
+      }
       await attemptDelivery(intent);
     }
   }
 
-  return { attemptDelivery, deliverOutboundEvent, retryUnconfirmedDeliveries };
+  return {
+    attemptDelivery,
+    deliverOutboundEvent,
+    retryUnconfirmedDeliveries,
+    suppressOutboundEvent,
+  };
 }

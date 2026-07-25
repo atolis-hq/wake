@@ -129,6 +129,55 @@ describe('outbox', () => {
     expect(events.some((e) => e.sourceEventType === 'ticket.labels.updated')).toBe(true);
   });
 
+  it('reconciles a sent-unconfirmed intent before retrying delivery', async () => {
+    const intent = labelsIntent();
+    const attempts: string[] = [];
+    const reconciliations: string[] = [];
+    const sink: OutboundSink = {
+      deliverIntent: async ({ event }) => {
+        attempts.push(event.eventId);
+        throw new Error('must reconcile before retry');
+      },
+      reconcileIntent: async ({ event }) => {
+        reconciliations.push(event.eventId);
+        return [confirmationFor(event)];
+      },
+    };
+    const outbox = createOutbox({
+      clock,
+      stateStore: store,
+      outboundSink: sink,
+      projectionUpdater,
+    });
+
+    await store.appendEventEnvelope(intent);
+    await store.appendEventEnvelope(
+      createEventEnvelope({
+        eventId: `${intent.eventId}-sent-unconfirmed`,
+        workItemKey: intent.workItemKey,
+        streamScope: 'work-item',
+        direction: 'internal',
+        sourceSystem: 'wake',
+        sourceEventType: 'wake.publish.sent-unconfirmed',
+        sourceRefs: intent.sourceRefs,
+        occurredAt: clock.now().toISOString(),
+        ingestedAt: clock.now().toISOString(),
+        trigger: 'context-only',
+        payload: {
+          intentEventId: intent.eventId,
+          deliveryState: 'SENT_UNCONFIRMED',
+        },
+      }),
+    );
+
+    await outbox.retryUnconfirmedDeliveries();
+
+    expect(reconciliations).toEqual([intent.eventId]);
+    expect(attempts).toEqual([]);
+    const events = await store.listEventEnvelopes();
+    expect(events.some((e) => e.sourceEventType === 'ticket.labels.updated')).toBe(true);
+  });
+
   it('does not retry an intent that already has a confirmation', async () => {
     const attempts: string[] = [];
     const sink: OutboundSink = {

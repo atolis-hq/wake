@@ -48,6 +48,7 @@ export interface WorkSource {
 
 export interface OutboundSink {
   deliverIntent(input: { event: EventEnvelope }): Promise<EventEnvelope[]>;
+  reconcileIntent?(input: { event: EventEnvelope }): Promise<EventEnvelope[]>;
 }
 
 export interface AgentRunTokenUsage {
