@@ -21,6 +21,7 @@ import { maxConfiguredRunnerTimeoutMs, resolveRunnerRouting } from '../domain/ru
 import { awaitingApprovalRunnerSentinel, stageLabelForStage } from '../domain/stages.js';
 import type {
   AgentAction,
+  ExecutionAttemptLifecycle,
   ExecutionOutcome,
   IssueStateRecord,
   RunnerFailureClass,
@@ -579,11 +580,20 @@ export function createTickRunner(deps: {
         repo: candidate.issue.repo,
         issueNumber: candidate.issue.number,
         action,
+        lifecycle: 'CREATED' as const,
         status: 'running' as const,
         startedAt: nowIso,
+        routing,
       };
 
       await deps.stateStore.writeRunRecord(runningRecord);
+      async function transitionRunLifecycle(lifecycle: ExecutionAttemptLifecycle): Promise<void> {
+        await deps.stateStore.writeRunRecord({
+          ...(await deps.stateStore.readRunRecord(runId))!,
+          lifecycle,
+        });
+      }
+
       const claimedAt = eventStampNow();
       const claimedEvent = createEventEnvelope({
         eventId: `${runId}-claimed`,
@@ -607,6 +617,7 @@ export function createTickRunner(deps: {
         },
       });
       await deps.stateStore.appendEventEnvelope(claimedEvent);
+      await transitionRunLifecycle('CLAIMED');
       await projectionUpdater.rebuildFromEvents([claimedEvent]);
 
       await deliverOutboundEvent(
@@ -621,6 +632,7 @@ export function createTickRunner(deps: {
       );
 
       try {
+        await transitionRunLifecycle('PREPARING');
         const prepareResult: {
           workspacePath?: string;
           mergeConflictDetected?: boolean;
@@ -646,10 +658,22 @@ export function createTickRunner(deps: {
             ? prepareResult.upstreamChanges
             : undefined;
 
+        const preparedRecord = (await deps.stateStore.readRunRecord(runId))!;
+        await deps.stateStore.writeRunRecord({
+          ...preparedRecord,
+          lifecycle: 'PROCESS_STARTING',
+          metadata: {
+            ...preparedRecord.metadata,
+            ...(workspacePath === undefined ? {} : { workspacePath }),
+            workspaceMode,
+          },
+        });
+
         const recentEvents = await deps.stateStore.listEventEnvelopesForWorkItem(
           candidate.workItemKey,
           6,
         );
+        await transitionRunLifecycle('RUNNING');
         const runnerResult = await deps.runner.run({
           action,
           projection: candidate,
@@ -740,8 +764,11 @@ export function createTickRunner(deps: {
                 ? 'AWAITING_APPROVAL'
                 : undefined;
 
+        await transitionRunLifecycle('FINALISING');
+        const finalisingRecord = (await deps.stateStore.readRunRecord(runId))!;
         await deps.stateStore.writeRunRecord({
-          ...runningRecord,
+          ...finalisingRecord,
+          lifecycle: 'TERMINAL',
           status:
             sentinel === 'DONE'
               ? 'completed'
@@ -758,7 +785,10 @@ export function createTickRunner(deps: {
           summary: parsedRunnerResult.body,
           ...(runnerResult.routing === undefined ? {} : { routing: runnerResult.routing }),
           ...(runnerResult.tokenUsage === undefined ? {} : { tokenUsage: runnerResult.tokenUsage }),
-          metadata: resultMetadata,
+          metadata: {
+            ...finalisingRecord.metadata,
+            ...resultMetadata,
+          },
         });
 
         const runCompletedEvent = createEventEnvelope({
@@ -851,8 +881,10 @@ export function createTickRunner(deps: {
         const finishedAt = deps.clock.now().toISOString();
         const sentinel = 'FAILED' as const;
 
+        const failedRecord = (await deps.stateStore.readRunRecord(runId)) ?? runningRecord;
         await deps.stateStore.writeRunRecord({
-          ...runningRecord,
+          ...failedRecord,
+          lifecycle: 'TERMINAL',
           status: 'failed',
           finishedAt,
           sentinel,

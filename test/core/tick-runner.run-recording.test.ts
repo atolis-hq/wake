@@ -62,7 +62,96 @@ describe('tick runner', () => {
 
       await tickRunner.runTick();
 
-      expect(runFileSnapshot).toContain('"status": "running"');
+      const snapshot = JSON.parse(runFileSnapshot);
+      expect(snapshot.status).toBe('running');
+      expect(snapshot.lifecycle).toBe('RUNNING');
+    });
+
+    it('persists lifecycle transitions before workspace prep, runner launch, and terminal finalisation', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const observedLifecycles: string[] = [];
+
+      async function observeLifecycle() {
+        const [record] = await store.listRunRecords();
+        observedLifecycles.push(record?.lifecycle ?? 'missing');
+      }
+
+      const config = createDefaultWakeConfig(root);
+      config.sources.github.policy.requiredLabels = ['wake:implement'];
+
+      await store.writeIssueState({
+        schemaVersion: 1,
+        workItemKey: workId(12),
+        issue: {
+          repo: 'atolis-hq/wake',
+          number: 12,
+          title: 'Implement',
+          body: 'Body',
+          labels: ['wake:implement'],
+          assignees: [],
+          isPullRequest: false,
+          state: 'open',
+          url: 'https://example.test/issues/12',
+          createdAt: '2026-07-05T12:00:00.000Z',
+          updatedAt: '2026-07-05T12:00:00.000Z',
+        },
+        comments: [],
+        wake: {
+          stage: 'implement',
+          stageHistory: [],
+          recentEventIds: [],
+          syncedAt: '2026-07-05T12:00:00.000Z',
+          expectedEcho: { commentIds: [], labels: [] },
+        },
+        context: {},
+        correlatedResources: [],
+      });
+
+      const tickRunner = createTickRunner({
+        clock: { now: () => new Date('2026-07-05T12:00:00.000Z') },
+        config,
+        stateStore: store,
+        workSource: {
+          async pollEvents() {
+            return [];
+          },
+        },
+        runner: {
+          async run() {
+            await observeLifecycle();
+            return {
+              result: 'Done\nDONE',
+              model: 'test-model',
+              cli: 'test-cli',
+              session_id: 'session-lifecycle',
+            };
+          },
+        },
+        resourceIndex: createFakeResourceIndex(),
+        workspaceManager: {
+          async prepareWorkspace() {
+            await observeLifecycle();
+            return {
+              workspacePath: join(root, 'workspaces', workId(12)),
+              mergeConflictDetected: false,
+            };
+          },
+          async prepareReadOnlyClone() {
+            throw new Error('not used');
+          },
+          async cleanupWorkspace() {},
+        },
+      });
+
+      await tickRunner.runTick();
+
+      const [record] = await store.listRunRecords();
+      expect(observedLifecycles).toEqual(['PREPARING', 'RUNNING']);
+      expect(record?.lifecycle).toBe('TERMINAL');
+      expect(record?.metadata).toMatchObject({
+        workspaceMode: 'branch',
+        workspacePath: join(root, 'workspaces', workId(12)),
+      });
     });
 
     it('creates event audit records for sync and completion', async () => {

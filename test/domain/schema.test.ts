@@ -186,7 +186,24 @@ describe('run and event schemas', () => {
     });
 
     expect(run.status).toBe('running');
+    expect(run.lifecycle).toBe('RUNNING');
     expect(run.workItemKey).toBe('work-01JZ0000000000000000000012');
+  });
+
+  it('accepts explicit execution attempt lifecycle states', () => {
+    const run = parseRunRecord({
+      schemaVersion: 1,
+      runId: 'run-2',
+      workItemKey: 'work-01JZ0000000000000000000012',
+      repo: 'atolis-hq/wake',
+      issueNumber: 12,
+      action: 'refine',
+      lifecycle: 'CLAIMED',
+      status: 'running',
+      startedAt: '2026-07-05T12:00:00.000Z',
+    });
+
+    expect(run.lifecycle).toBe('CLAIMED');
   });
 
   // Run records are Wake-owned state that Wake itself writes, so the work id is

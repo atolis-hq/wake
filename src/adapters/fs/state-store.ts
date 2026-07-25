@@ -13,6 +13,7 @@ import type {
   EventEnvelope,
   IssueStateRecord,
   RunRecord,
+  RunRecordInput,
   SourceStateRecord,
   WakeLedger,
 } from '../../domain/types.js';
@@ -226,7 +227,7 @@ export function createStateStore({ wakeRoot }: { wakeRoot: string }) {
         (await readIssueStateFile(paths.archivedWorkItemStateFile(workId)))
       );
     },
-    async writeRunRecord(record: RunRecord): Promise<RunRecord> {
+    async writeRunRecord(record: RunRecordInput): Promise<RunRecord> {
       const parsed = parseRunRecord(record);
       await writeJsonFile(paths.runFile(parsed.runId), parsed);
       await writeJsonFile(paths.runDateFile(parsed.startedAt.slice(0, 10), parsed.runId), parsed);

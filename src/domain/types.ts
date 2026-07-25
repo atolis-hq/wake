@@ -6,6 +6,7 @@ import {
   correlationPrimaryConflictPayloadSchema,
   correlationRegisteredPayloadSchema,
   correlationRetractedPayloadSchema,
+  executionAttemptLifecycleSchema,
   eventEnvelopeSchema,
   executionOutcomeSchema,
   issueStateRecordSchema,
@@ -32,12 +33,14 @@ export type AgentAction = string;
 // (test fixtures) simply include `correlatedResources: []` explicitly.
 export type IssueStateRecord = z.infer<typeof issueStateRecordSchema>;
 export type RunRecord = z.infer<typeof runRecordSchema>;
+export type RunRecordInput = z.input<typeof runRecordSchema>;
 export type EventEnvelope = z.infer<typeof eventEnvelopeSchema>;
 export type WakeLedger = z.infer<typeof ledgerSchema>;
 export type WakeConfig = z.infer<typeof wakeConfigSchema>;
 export type WorkflowDefinition = WakeConfig['workflows'][string];
 export type WorkflowStageDefinition = WorkflowDefinition['stages'][string];
 export type RunnerFailureClass = 'task' | 'quota' | 'infra';
+export type ExecutionAttemptLifecycle = z.infer<typeof executionAttemptLifecycleSchema>;
 export type ExecutionOutcome = z.infer<typeof executionOutcomeSchema>;
 export type WorkflowOutcome = z.infer<typeof workflowOutcomeSchema>;
 export type RunnerRouting = NonNullable<RunRecord['routing']>;

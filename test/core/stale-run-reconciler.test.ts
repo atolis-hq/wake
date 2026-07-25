@@ -8,7 +8,7 @@ import { createStateStore } from '../../src/adapters/fs/state-store.js';
 import { createDefaultWakeConfig } from '../../src/config/defaults.js';
 import { createProjectionUpdater } from '../../src/core/projection-updater.js';
 import { createStaleRunReconciler } from '../../src/core/stale-run-reconciler.js';
-import type { EventEnvelope } from '../../src/domain/types.js';
+import type { EventEnvelope, ExecutionAttemptLifecycle } from '../../src/domain/types.js';
 
 const workId = 'work-01JZ0000000000000000000123';
 const RUNNER_TIMEOUT_MS = 60_000;
@@ -44,7 +44,7 @@ function seedProjection(store: ReturnType<typeof createStateStore>, lastRunId: s
   } as never);
 }
 
-function runningRecord(startedAt: string) {
+function runningRecord(startedAt: string, lifecycle?: ExecutionAttemptLifecycle) {
   return {
     schemaVersion: 1 as const,
     runId: 'run-123-stale',
@@ -52,6 +52,7 @@ function runningRecord(startedAt: string) {
     repo: 'atolis-hq/wake',
     issueNumber: 123,
     action: 'implement' as const,
+    ...(lifecycle === undefined ? {} : { lifecycle }),
     status: 'running' as const,
     startedAt,
   };
@@ -160,5 +161,51 @@ describe('stale run reconciler', () => {
 
     const completion = (await store.readEventEnvelope('run-123-stale-stale-reconciled'))!;
     expect(completion.payload.reason).toBe('runner:orphaned-process');
+  });
+
+  it.each([
+    ['CREATED', 'CANCELED_BY_RECONCILIATION', 'runner:recover-created'],
+    ['CLAIMED', 'CANCELED_BY_RECONCILIATION', 'runner:recover-claimed'],
+    ['PREPARING', 'CANCELED_BY_RECONCILIATION', 'runner:recover-preparing'],
+    ['PROCESS_STARTING', 'STALLED', 'runner:orphaned-process'],
+    ['RUNNING', 'STALLED', 'runner:orphaned-process'],
+    ['FINALISING', 'STALLED', 'runner:recover-finalising'],
+  ] satisfies Array<[ExecutionAttemptLifecycle, string, string]>)(
+    'recovers a %s execution attempt without launching a duplicate process',
+    async (lifecycle, executionOutcome, reason) => {
+      await seedProjection(store, 'run-123-stale');
+      await store.writeRunRecord(runningRecord('2026-07-05T12:01:30.000Z', lifecycle));
+
+      await reconcilerWithInactiveRuns().reconcileStaleRunningRecords(
+        new Date('2026-07-05T12:02:00.000Z'),
+      );
+
+      const record = await store.readRunRecord('run-123-stale');
+      expect(record?.status).toBe('failed');
+      expect(record?.lifecycle).toBe('TERMINAL');
+      expect(record?.executionOutcome).toBe(executionOutcome);
+      expect(record?.metadata?.recoveryLifecycle).toBe(lifecycle);
+
+      const completion = (await store.readEventEnvelope('run-123-stale-stale-reconciled'))!;
+      expect(completion.payload.reason).toBe(reason);
+      expect(completion.payload.executionOutcome).toBe(executionOutcome);
+    },
+  );
+
+  it('recovers a claim projection whose run record is missing', async () => {
+    await seedProjection(store, 'run-123-missing');
+
+    await reconcilerWithInactiveRuns().reconcileStaleRunningRecords(
+      new Date('2026-07-05T12:02:00.000Z'),
+    );
+
+    const completion = (await store.readEventEnvelope(
+      'run-123-missing-missing-run-record-recovered',
+    ))!;
+    expect(completion.payload.reason).toBe('runner:missing-run-record');
+    expect(completion.payload.executionOutcome).toBe('CANCELED_BY_RECONCILIATION');
+
+    const projection = await store.readIssueState(workId);
+    expect(projection?.context.lastRunSentinel).toBe('FAILED');
   });
 });

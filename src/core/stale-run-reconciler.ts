@@ -2,7 +2,14 @@ import type { createProjectionUpdater } from './projection-updater.js';
 import { createLabelsEvent } from './event-builders.js';
 import { stageLabelForStage } from '../domain/stages.js';
 import { workflowLabelForWorkflowName, workflowNameForProjection } from '../domain/workflows.js';
-import type { EventEnvelope, ExecutionOutcome, RunRecord, WakeConfig } from '../domain/types.js';
+import type {
+  EventEnvelope,
+  ExecutionAttemptLifecycle,
+  ExecutionOutcome,
+  IssueStateRecord,
+  RunRecord,
+  WakeConfig,
+} from '../domain/types.js';
 import { createEventEnvelope } from '../lib/event-log.js';
 
 type StateStore = ReturnType<typeof import('../adapters/fs/state-store.js').createStateStore>;
@@ -21,31 +28,148 @@ export function createStaleRunReconciler(deps: {
   isRunningRecordActive?: (record: RunRecord) => Promise<boolean>;
   deliverOutboundEvent: (event: EventEnvelope) => Promise<void>;
 }) {
+  function isTerminalLifecycle(lifecycle: ExecutionAttemptLifecycle): boolean {
+    return lifecycle === 'TERMINAL';
+  }
+
+  function recoveryOutcomeForLifecycle(lifecycle: ExecutionAttemptLifecycle): ExecutionOutcome {
+    switch (lifecycle) {
+      case 'CREATED':
+      case 'CLAIMED':
+      case 'PREPARING':
+        return 'CANCELED_BY_RECONCILIATION';
+      case 'PROCESS_STARTING':
+      case 'RUNNING':
+      case 'FINALISING':
+        return 'STALLED';
+      case 'TERMINAL':
+        return 'SUPERSEDED';
+    }
+  }
+
   async function staleReason(
     record: RunRecord,
     now: Date,
-  ): Promise<'timeout' | 'runner-lock-not-active' | null> {
+  ): Promise<'timeout' | 'runner-lock-not-active' | 'startup-recovery' | null> {
     if (record.status !== 'running') {
       return null;
     }
 
-    if (deps.isRunningRecordActive !== undefined && !(await deps.isRunningRecordActive(record))) {
+    if (isTerminalLifecycle(record.lifecycle)) {
+      return null;
+    }
+
+    if (deps.isRunningRecordActive === undefined) {
+      if (
+        record.lifecycle !== 'CREATED' &&
+        record.lifecycle !== 'CLAIMED' &&
+        record.lifecycle !== 'PREPARING'
+      ) {
+        const startedAtMs = Date.parse(record.startedAt);
+        if (!Number.isFinite(startedAtMs)) {
+          return 'timeout';
+        }
+
+        return now.getTime() - startedAtMs >= deps.runnerTimeoutMs() ? 'timeout' : null;
+      }
+
+      return 'startup-recovery';
+    }
+
+    const active = await deps.isRunningRecordActive(record);
+    if (active) {
+      const startedAtMs = Date.parse(record.startedAt);
+      if (!Number.isFinite(startedAtMs)) {
+        return 'timeout';
+      }
+
+      return now.getTime() - startedAtMs >= deps.runnerTimeoutMs() ? 'timeout' : null;
+    }
+
+    if (record.lifecycle === 'RUNNING' || record.lifecycle === 'PROCESS_STARTING') {
       return 'runner-lock-not-active';
     }
 
-    const startedAtMs = Date.parse(record.startedAt);
-    if (!Number.isFinite(startedAtMs)) {
-      return 'timeout';
-    }
+    return 'startup-recovery';
+  }
 
-    return now.getTime() - startedAtMs >= deps.runnerTimeoutMs() ? 'timeout' : null;
+  async function deliverRecoveredLabels(
+    projection: IssueStateRecord,
+    runId: string,
+    finishedAt: string,
+  ): Promise<void> {
+    await deps.deliverOutboundEvent(
+      createLabelsEvent({
+        projection,
+        runId,
+        statusLabel: 'wake:status.failed',
+        stageLabel: stageLabelForStage(projection.wake.stage),
+        workflowLabel: workflowLabelForWorkflowName(
+          workflowNameForProjection(projection, deps.config),
+        ),
+        occurredAt: finishedAt,
+      }),
+    );
+  }
+
+  async function recoverMissingRunRecordClaims(
+    runRecords: RunRecord[],
+    finishedAt: string,
+  ): Promise<void> {
+    const knownRunIds = new Set(runRecords.map((record) => record.runId));
+    const projections = await deps.stateStore.listIssueStates();
+    for (const projection of projections) {
+      const runId = projection.wake.lastRunId;
+      if (
+        runId === undefined ||
+        knownRunIds.has(runId) ||
+        runRecords.some((record) => record.workItemKey === projection.workItemKey) ||
+        projection.context.lastRunSentinel !== undefined
+      ) {
+        continue;
+      }
+
+      const event = createEventEnvelope({
+        eventId: `${runId}-missing-run-record-recovered`,
+        workItemKey: projection.workItemKey,
+        streamScope: 'work-item',
+        direction: 'internal',
+        sourceSystem: 'wake',
+        sourceEventType: 'wake.run.completed',
+        sourceRefs: {
+          repo: projection.issue.repo,
+          issueNumber: projection.issue.number,
+          runId,
+        },
+        occurredAt: finishedAt,
+        ingestedAt: finishedAt,
+        trigger: 'immediate',
+        payload: {
+          action: projection.context.lastRunAction,
+          sentinel: 'FAILED',
+          executionOutcome: 'CANCELED_BY_RECONCILIATION',
+          runId,
+          reason: 'runner:missing-run-record',
+        },
+      });
+      await deps.stateStore.appendEventEnvelope(event);
+      await deps.projectionUpdater.rebuildFromEvents([event]);
+
+      const updatedProjection = await deps.stateStore.readIssueState(projection.workItemKey);
+      if (updatedProjection !== null) {
+        await deliverRecoveredLabels(updatedProjection, runId, finishedAt);
+      }
+    }
   }
 
   async function reconcileStaleRunningRecords(now: Date): Promise<void> {
     const finishedAt = now.toISOString();
     const runRecords = await deps.stateStore.listRunRecords();
-    const staleRecords: Array<{ record: RunRecord; reason: 'timeout' | 'runner-lock-not-active' }> =
-      [];
+    await recoverMissingRunRecordClaims(runRecords, finishedAt);
+    const staleRecords: Array<{
+      record: RunRecord;
+      reason: 'timeout' | 'runner-lock-not-active' | 'startup-recovery';
+    }> = [];
     for (const record of runRecords) {
       const reason = await staleReason(record, now);
       if (reason !== null) {
@@ -71,6 +195,7 @@ export function createStaleRunReconciler(deps: {
       if (projection === null || projection.wake.lastRunId !== record.runId || newerCompletedRun) {
         await deps.stateStore.writeRunRecord({
           ...record,
+          lifecycle: 'TERMINAL',
           status: 'superseded',
           finishedAt,
           executionOutcome: 'SUPERSEDED' as const,
@@ -85,10 +210,11 @@ export function createStaleRunReconciler(deps: {
       }
 
       const staleExecutionOutcome: ExecutionOutcome =
-        reason === 'timeout' ? 'TIMED_OUT' : 'STALLED';
+        reason === 'timeout' ? 'TIMED_OUT' : recoveryOutcomeForLifecycle(record.lifecycle);
 
       await deps.stateStore.writeRunRecord({
         ...record,
+        lifecycle: 'TERMINAL',
         status: 'failed',
         finishedAt,
         sentinel: 'FAILED',
@@ -97,6 +223,7 @@ export function createStaleRunReconciler(deps: {
         metadata: {
           ...record.metadata,
           reconciledBy: 'stale-running-record',
+          recoveryLifecycle: record.lifecycle,
           staleReason: reason,
           timeoutMs: deps.runnerTimeoutMs(),
         },
@@ -122,7 +249,12 @@ export function createStaleRunReconciler(deps: {
           sentinel: 'FAILED',
           executionOutcome: staleExecutionOutcome,
           runId: record.runId,
-          reason: reason === 'timeout' ? 'runner:stale-timeout' : 'runner:orphaned-process',
+          reason:
+            reason === 'timeout'
+              ? 'runner:stale-timeout'
+              : reason === 'startup-recovery'
+                ? `runner:recover-${record.lifecycle.toLowerCase()}`
+                : 'runner:orphaned-process',
           ...(record.routing === undefined ? {} : { routing: record.routing }),
         },
       });
@@ -131,18 +263,7 @@ export function createStaleRunReconciler(deps: {
 
       const updatedProjection = await deps.stateStore.readIssueState(projection.workItemKey);
       if (updatedProjection !== null) {
-        await deps.deliverOutboundEvent(
-          createLabelsEvent({
-            projection: updatedProjection,
-            runId: record.runId,
-            statusLabel: 'wake:status.failed',
-            stageLabel: stageLabelForStage(updatedProjection.wake.stage),
-            workflowLabel: workflowLabelForWorkflowName(
-              workflowNameForProjection(updatedProjection, deps.config),
-            ),
-            occurredAt: finishedAt,
-          }),
-        );
+        await deliverRecoveredLabels(updatedProjection, record.runId, finishedAt);
       }
     }
   }
