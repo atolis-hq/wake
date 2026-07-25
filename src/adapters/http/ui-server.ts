@@ -16,6 +16,7 @@ import {
   buildHealth,
   buildItemDetail,
   buildItemTranscripts,
+  buildMetrics,
   buildRuns,
   buildStatus,
   buildWorkspaces,
@@ -289,6 +290,21 @@ async function handleRequest(
         status: url.searchParams.get('status') ?? undefined,
         action: url.searchParams.get('action') ?? undefined,
         repo: url.searchParams.get('repo') ?? undefined,
+      }),
+    );
+    return;
+  }
+
+  if (resource === 'metrics' && segments.length === 1) {
+    sendJson(
+      res,
+      200,
+      await buildMetrics({
+        stateStore,
+        config,
+        now: now(),
+        window: url.searchParams.get('window') ?? undefined,
+        metric: url.searchParams.get('metric') ?? undefined,
       }),
     );
     return;

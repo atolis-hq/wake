@@ -54,6 +54,11 @@ describe('ui-server', () => {
     const html = await res.text();
     expect(html).toContain('Wake control plane');
     expect(html).toContain(wakeVersion);
+    expect(html).toContain('data-view="analytics"');
+    expect(html).toContain('/metrics?window=');
+    expect(html).toContain('&metric=');
+    expect(html).toContain('AbortController');
+    expect(html).toContain('Loading...');
   });
 
   it('serves status and board JSON under /api/v1', async () => {
@@ -65,6 +70,36 @@ describe('ui-server', () => {
     const board = await fetch(`${baseUrl}/api/v1/board`);
     expect(board.status).toBe(200);
     expect(await board.json()).toEqual([]);
+  });
+
+  it('serves selected analytics metrics under /api/v1/metrics', async () => {
+    await store.writeRunRecord({
+      schemaVersion: 1,
+      runId: 'run-metrics',
+      workItemKey: workId(91),
+      repo: 'atolis-hq/wake',
+      issueNumber: 91,
+      action: 'implement',
+      status: 'completed',
+      startedAt: '2026-07-25T10:00:00.000Z',
+      finishedAt: '2026-07-25T10:01:00.000Z',
+      tokenUsage: { inputTokens: 10, outputTokens: 5, costUsd: 0.1 },
+    });
+
+    const res = await fetch(`${baseUrl}/api/v1/metrics?window=1d&metric=tokens-over-time`);
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      window: string;
+      metric: string;
+      summary: { totalRuns: number; totalTokens: number };
+      detail: { kind: string; rows: Array<{ tokens: number }> };
+    };
+    expect(body.window).toBe('1d');
+    expect(body.metric).toBe('tokens-over-time');
+    expect(body.summary.totalRuns).toBe(1);
+    expect(body.summary.totalTokens).toBe(15);
+    expect(body.detail.kind).toBe('tokens-over-time');
   });
 
   it('404s unknown api routes and rejects non-GET mutation attempts', async () => {
