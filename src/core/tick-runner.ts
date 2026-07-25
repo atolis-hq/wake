@@ -1,3 +1,5 @@
+import { join } from 'node:path';
+
 import { createLifecycleService } from './lifecycle-service.js';
 import { createPolicyEngine } from './policy-engine.js';
 import { createProjectionUpdater } from './projection-updater.js';
@@ -14,6 +16,7 @@ import type { Clock } from '../lib/clock.js';
 import { acquireFileLock } from '../lib/lock.js';
 import {
   CORRELATION_REGISTERED_EVENT,
+  CORRELATION_PRIMARY_CONFLICT_EVENT,
   parseRunnerArtifacts,
   parseRunnerResult,
 } from '../domain/schema.js';
@@ -32,6 +35,7 @@ import type {
 } from '../domain/types.js';
 import {
   chooseAction as chooseWorkflowAction,
+  entryStage as workflowEntryStage,
   isKnownWorkflowStage,
   workflowChangedBlockReason,
   workflowForProjection,
@@ -43,6 +47,7 @@ import { branchNameForIssue } from '../domain/branch-naming.js';
 import { customCommandWorkspace, isCustomCommandAction } from '../domain/custom-commands.js';
 import { resolveQuotaPauseUntil } from './quota-backoff.js';
 import { createLabelsEvent, createPublishIntentEvent } from './event-builders.js';
+import { previousMatchingSlot } from './scheduled-workflow-source.js';
 import { createOutbox } from './outbox.js';
 import { createEventResolver } from './event-resolver.js';
 import { createStaleRunReconciler } from './stale-run-reconciler.js';
@@ -54,6 +59,8 @@ import {
   runLeaseRenewalIntervalMs,
 } from './run-lease.js';
 import { currentProcessIdentity, processIdentityMatches } from '../lib/process-identity.js';
+import { readJsonFile, writeJsonFile } from '../lib/json-file.js';
+import { isMissingPathError } from '../lib/state-health.js';
 
 type TickOutcome =
   | { status: 'locked' | 'idle' }
@@ -63,6 +70,25 @@ type TickOutcome =
       sentinel?: 'DONE' | 'BLOCKED' | 'FAILED' | 'AWAITING_APPROVAL';
       nextStage?: Stage | null;
     };
+
+type WatcherState = {
+  schemaVersion: 1;
+  key: string;
+  lastDispatchedEventId?: string;
+  lastDispatchedSlot?: string;
+  updatedAt: string;
+};
+
+type WatcherDispatch = {
+  projection: IssueStateRecord;
+  parentWorkflowName: string;
+  parentStage: string;
+  watcherIndex: number;
+  targetWorkflowName: string;
+  trigger: { kind: 'event'; eventId: string } | { kind: 'schedule'; slot: string };
+};
+
+const prReviewApprovalMarker = '<!-- wake:pr-review-approved -->';
 
 function latestHumanCommentId(candidate: IssueStateRecord): string | undefined {
   const human = candidate.comments.filter((c) => !c.isBotAuthored);
@@ -444,6 +470,222 @@ export function createTickRunner(deps: {
     }
   }
 
+  function watcherStatus(projection: IssueStateRecord): string {
+    const sentinel = projection.context.lastRunSentinel;
+    if (sentinel === 'AWAITING_APPROVAL') return 'awaiting-approval';
+    if (sentinel === 'BLOCKED') return 'blocked';
+    if (sentinel === 'FAILED') return 'failed';
+    if (sentinel === 'DONE') return 'done';
+    return 'pending';
+  }
+
+  function watcherKey(input: {
+    workItemKey: string;
+    parentWorkflowName: string;
+    parentStage: string;
+    watcherIndex: number;
+  }): string {
+    return [
+      input.workItemKey,
+      input.parentWorkflowName,
+      input.parentStage,
+      String(input.watcherIndex),
+    ]
+      .join('__')
+      .replace(/[^A-Za-z0-9._-]/g, '_');
+  }
+
+  function watcherStateFile(key: string): string {
+    return join(deps.stateStore.paths.dataRoot, 'watchers', `${key}.json`);
+  }
+
+  async function readWatcherState(key: string): Promise<WatcherState | null> {
+    try {
+      const raw = await readJsonFile<unknown>(watcherStateFile(key));
+      if (raw === null || typeof raw !== 'object') return null;
+      const record = raw as Partial<WatcherState>;
+      return record.schemaVersion === 1 &&
+        record.key === key &&
+        typeof record.updatedAt === 'string'
+        ? {
+            schemaVersion: 1,
+            key,
+            ...(typeof record.lastDispatchedEventId === 'string'
+              ? { lastDispatchedEventId: record.lastDispatchedEventId }
+              : {}),
+            ...(typeof record.lastDispatchedSlot === 'string'
+              ? { lastDispatchedSlot: record.lastDispatchedSlot }
+              : {}),
+            updatedAt: record.updatedAt,
+          }
+        : null;
+    } catch (error) {
+      if (isMissingPathError(error)) return null;
+      throw error;
+    }
+  }
+
+  async function writeWatcherState(key: string, patch: Partial<WatcherState>): Promise<void> {
+    const current = await readWatcherState(key);
+    await writeJsonFile(watcherStateFile(key), {
+      schemaVersion: 1,
+      key,
+      ...(current?.lastDispatchedEventId === undefined
+        ? {}
+        : { lastDispatchedEventId: current.lastDispatchedEventId }),
+      ...(current?.lastDispatchedSlot === undefined
+        ? {}
+        : { lastDispatchedSlot: current.lastDispatchedSlot }),
+      ...patch,
+      updatedAt: deps.clock.now().toISOString(),
+    } satisfies WatcherState);
+  }
+
+  async function nextWatcherDispatch(
+    projections: IssueStateRecord[],
+    now: Date,
+  ): Promise<WatcherDispatch | null> {
+    for (const projection of projections) {
+      const parentWorkflow = workflowForProjection(projection, deps.config);
+      if (parentWorkflow === null) continue;
+      const parentWorkflowName = workflowNameForProjection(projection, deps.config);
+      const stage = parentWorkflow.stages[projection.wake.stage];
+      if (stage === undefined) continue;
+
+      for (const [watcherIndex, watcher] of (stage.watch ?? []).entries()) {
+        if (!watcher.while.status.includes(watcherStatus(projection))) continue;
+
+        const key = watcherKey({
+          workItemKey: projection.workItemKey,
+          parentWorkflowName,
+          parentStage: projection.wake.stage,
+          watcherIndex,
+        });
+        const state = await readWatcherState(key);
+
+        if (watcher.on !== undefined) {
+          const events = await deps.stateStore.listRecentEventEnvelopes({
+            workItemKey: projection.workItemKey,
+            direction: 'internal',
+            limit: 200,
+          });
+          const matchingEvents = events
+            .filter((event) => watcher.on!.event.includes(event.sourceEventType))
+            .sort((left, right) => left.ingestedAt.localeCompare(right.ingestedAt));
+          const cursorIndex =
+            state?.lastDispatchedEventId === undefined
+              ? -1
+              : matchingEvents.findIndex((event) => event.eventId === state.lastDispatchedEventId);
+          const newest = matchingEvents.slice(cursorIndex + 1).at(-1);
+          if (newest !== undefined) {
+            return {
+              projection,
+              parentWorkflowName,
+              parentStage: projection.wake.stage,
+              watcherIndex,
+              targetWorkflowName: watcher.workflow,
+              trigger: { kind: 'event', eventId: newest.eventId },
+            };
+          }
+        }
+
+        if (watcher.schedule !== undefined) {
+          const slot = previousMatchingSlot({
+            cron: watcher.schedule.cron,
+            now,
+            ...(state?.lastDispatchedSlot === undefined ? {} : { after: state.lastDispatchedSlot }),
+          });
+          if (slot !== null) {
+            return {
+              projection,
+              parentWorkflowName,
+              parentStage: projection.wake.stage,
+              watcherIndex,
+              targetWorkflowName: watcher.workflow,
+              trigger: { kind: 'schedule', slot },
+            };
+          }
+        }
+      }
+    }
+
+    return null;
+  }
+
+  async function resolvePrReviewTarget(input: {
+    projection: IssueStateRecord;
+    runId: string;
+    runnerResult: AgentRunResult;
+    occurredAt: string;
+  }): Promise<string | null> {
+    if (deps.artifactVerifier === undefined) {
+      return null;
+    }
+
+    const { artifacts } = parseRunnerArtifacts(input.runnerResult.result);
+    for (const artifact of artifacts) {
+      const verified = await deps.artifactVerifier.verify(artifact, {
+        branch: branchNameForIssue(input.projection.issue.number),
+        repo: input.projection.issue.repo,
+      });
+      if (verified === null) {
+        continue;
+      }
+
+      const incumbent = await deps.resourceIndex.resolve(verified.resourceUri);
+      if (incumbent !== undefined && incumbent !== input.projection.workItemKey) {
+        const conflict = createEventEnvelope({
+          eventId: `${input.runId}-pr-review-primary-conflict`,
+          workItemKey: input.projection.workItemKey,
+          streamScope: 'work-item',
+          direction: 'internal',
+          sourceSystem: 'wake',
+          sourceEventType: CORRELATION_PRIMARY_CONFLICT_EVENT,
+          sourceRefs: { runId: input.runId },
+          occurredAt: input.occurredAt,
+          ingestedAt: input.occurredAt,
+          trigger: 'context-only',
+          payload: {
+            resourceUri: verified.resourceUri,
+            incumbentWorkItemKey: incumbent,
+          },
+        });
+        const appended = await deps.stateStore.appendEventEnvelope(conflict);
+        await projectionUpdater.rebuildFromEvents([appended]);
+        return null;
+      }
+
+      if (incumbent === undefined) {
+        const event = createEventEnvelope({
+          eventId: `${input.runId}-pr-review-artifact-${verified.resourceUri.replace(/[^a-z0-9]+/gi, '-')}`,
+          workItemKey: input.projection.workItemKey,
+          streamScope: 'work-item',
+          direction: 'internal',
+          sourceSystem: 'wake',
+          sourceEventType: CORRELATION_REGISTERED_EVENT,
+          sourceRefs: { runId: input.runId },
+          occurredAt: input.occurredAt,
+          ingestedAt: input.occurredAt,
+          trigger: 'context-only',
+          payload: {
+            resourceUri: verified.resourceUri,
+            role: 'implementation',
+            relation: 'primary',
+            provenance: 'agent-reported',
+            registeredBy: input.runId,
+            idempotencyKey: `${input.runId}:pr-review-artifact-registration:${verified.resourceUri}`,
+          },
+        });
+        const appended = await deps.stateStore.appendEventEnvelope(event);
+        await projectionUpdater.rebuildFromEvents([appended]);
+      }
+
+      return verified.resourceUri;
+    }
+
+    return null;
+  }
+
   async function runRunnerTick(): Promise<TickOutcome> {
     const lock = await acquireFileLock(deps.stateStore.paths.runnerLockFile);
     if (!lock.acquired) {
@@ -465,7 +707,13 @@ export function createTickRunner(deps: {
         return { status: 'processed' as const };
       }
 
-      let candidate = projections.find(
+      const watcherDispatch = await nextWatcherDispatch(projections, tickStartedAt);
+      let candidate = watcherDispatch?.projection;
+      let watcherStateKeyForRun: string | undefined;
+      let watcherTriggerForRun: WatcherDispatch['trigger'] | undefined;
+      const watcherRun = watcherDispatch !== null;
+
+      candidate ??= projections.find(
         (issue) => policy.resolveNextEligibleAction(issue, deps.config) !== null,
       );
 
@@ -491,7 +739,7 @@ export function createTickRunner(deps: {
         }
       }
 
-      if (policy.resolveNextEligibleAction(candidate, deps.config) === null) {
+      if (!watcherRun && policy.resolveNextEligibleAction(candidate, deps.config) === null) {
         return { status: 'idle' as const };
       }
 
@@ -499,13 +747,34 @@ export function createTickRunner(deps: {
       if (workflow === null) {
         return { status: 'idle' as const };
       }
-      const workflowName = workflowNameForProjection(candidate, deps.config);
+      let workflowName = workflowNameForProjection(candidate, deps.config);
       let action: AgentAction;
       let command: string | undefined;
       let claimedStage = candidate.wake.stage;
       let workspaceMode: 'none' | 'read-only' | 'branch' = 'none';
 
-      if (isAwaitingApproval(candidate)) {
+      if (watcherDispatch !== null) {
+        const targetWorkflow = deps.config.workflows[watcherDispatch.targetWorkflowName];
+        if (targetWorkflow === undefined) {
+          return { status: 'idle' as const };
+        }
+        const entryStageName = workflowEntryStage(targetWorkflow);
+        const entryStage = targetWorkflow.stages[entryStageName];
+        if (entryStage === undefined) {
+          return { status: 'idle' as const };
+        }
+        action = entryStage.action ?? entryStageName;
+        claimedStage = entryStageName;
+        workspaceMode = entryStage.workspace;
+        workflowName = watcherDispatch.targetWorkflowName;
+        watcherStateKeyForRun = watcherKey({
+          workItemKey: watcherDispatch.projection.workItemKey,
+          parentWorkflowName: watcherDispatch.parentWorkflowName,
+          parentStage: watcherDispatch.parentStage,
+          watcherIndex: watcherDispatch.watcherIndex,
+        });
+        watcherTriggerForRun = watcherDispatch.trigger;
+      } else if (isAwaitingApproval(candidate)) {
         const customCommandRequest = policy.resolveCustomCommandRequest(candidate, deps.config);
 
         if (customCommandRequest !== null) {
@@ -656,6 +925,13 @@ export function createTickRunner(deps: {
         workerProcessStartedAt: workerIdentity.processStartedAt,
         metadata: {
           sourceRevision,
+          ...(watcherRun
+            ? {
+                watcher: true,
+                watcherWorkflow: workflowName,
+                watcherTrigger: watcherTriggerForRun,
+              }
+            : {}),
         },
       };
 
@@ -686,13 +962,23 @@ export function createTickRunner(deps: {
         payload: {
           action,
           priorStage: candidate.wake.stage,
-          claimedStage,
+          ...(watcherRun ? {} : { claimedStage }),
           sourceRevision,
+          ...(watcherRun ? { watcherRun: true, watcherTrigger: watcherTriggerForRun } : {}),
         },
       });
       await deps.stateStore.appendEventEnvelope(claimedEvent);
       await transitionRunLifecycle('CLAIMED');
       await projectionUpdater.rebuildFromEvents([claimedEvent]);
+
+      if (watcherStateKeyForRun !== undefined && watcherTriggerForRun !== undefined) {
+        await writeWatcherState(
+          watcherStateKeyForRun,
+          watcherTriggerForRun.kind === 'event'
+            ? { lastDispatchedEventId: watcherTriggerForRun.eventId }
+            : { lastDispatchedSlot: watcherTriggerForRun.slot },
+        );
+      }
 
       await deliverOutboundEvent(
         createLabelsEvent({
@@ -762,9 +1048,19 @@ export function createTickRunner(deps: {
         );
         await transitionRunLifecycle('RUNNING');
         startLeaseRenewal();
+        const runnerProjection = watcherRun
+          ? {
+              ...candidate,
+              wake: {
+                ...candidate.wake,
+                sessionId: undefined,
+                sessionCli: undefined,
+              },
+            }
+          : candidate;
         const runnerResult = await deps.runner.run({
           action,
-          projection: candidate,
+          projection: runnerProjection,
           recentEvents,
           config: deps.config,
           runId,
@@ -812,7 +1108,15 @@ export function createTickRunner(deps: {
             : lifecycle.nextStageFromSentinel(claimedStage, sentinel, workflow);
         const finishedAt = deps.clock.now().toISOString();
 
-        if (workspaceMode === 'branch') {
+        let prReviewTargetResourceUri: string | null = null;
+        if (watcherRun && action === 'pr-review') {
+          prReviewTargetResourceUri = await resolvePrReviewTarget({
+            projection: candidate,
+            runId,
+            runnerResult,
+            occurredAt: finishedAt,
+          });
+        } else if (workspaceMode === 'branch') {
           await registerReportedArtifacts({
             projection: candidate,
             runId,
@@ -943,24 +1247,27 @@ export function createTickRunner(deps: {
             envelope: parsedRunnerResult.envelope,
             executionOutcome,
             ...(workflowOutcome !== undefined ? { workflowOutcome } : {}),
+            ...(watcherRun ? { watcherRun: true, watcherTrigger: watcherTriggerForRun } : {}),
           },
         });
         await deps.stateStore.appendEventEnvelope(runCompletedEvent);
         await projectionUpdater.rebuildFromEvents([runCompletedEvent]);
 
-        await deliverOutboundEvent(
-          createLabelsEvent({
-            projection: candidate,
-            runId,
-            statusLabel: statusLabelForOutcome({
-              sentinel,
-              stage: nextStage ?? claimedStage,
+        if (!watcherRun) {
+          await deliverOutboundEvent(
+            createLabelsEvent({
+              projection: candidate,
+              runId,
+              statusLabel: statusLabelForOutcome({
+                sentinel,
+                stage: nextStage ?? claimedStage,
+              }),
+              stageLabel: stageLabelForStage(nextStage ?? claimedStage),
+              workflowLabel: workflowLabelForWorkflowName(workflowName),
+              occurredAt: finishedAt,
             }),
-            stageLabel: stageLabelForStage(nextStage ?? claimedStage),
-            workflowLabel: workflowLabelForWorkflowName(workflowName),
-            occurredAt: finishedAt,
-          }),
-        );
+          );
+        }
 
         const publishIntent = createPublishIntentEvent({
           projection: candidate,
@@ -977,7 +1284,33 @@ export function createTickRunner(deps: {
             : {}),
         });
 
-        if (
+        if (watcherRun && action === 'pr-review') {
+          if (
+            prReviewTargetResourceUri !== null &&
+            (sentinel === 'DONE' || sentinel === 'FAILED')
+          ) {
+            await deliverOutboundEvent({
+              ...publishIntent,
+              sourceRefs: {
+                ...publishIntent.sourceRefs,
+                resourceUri: prReviewTargetResourceUri,
+              },
+              payload: {
+                ...publishIntent.payload,
+                kind: sentinel === 'DONE' ? 'approval-request' : 'status-update',
+                body:
+                  sentinel === 'DONE'
+                    ? `${parsedRunnerResult.body}\n\n${prReviewApprovalMarker}`
+                    : `${parsedRunnerResult.body}\n\n<!-- wake:pr-review-changes-requested -->`,
+                idempotencyKey: `${runId}:pr-review-verdict-comment`,
+              },
+            });
+          } else {
+            await suppressOutboundEvent(publishIntent, {
+              suppressedPublishReason: 'pr-review-no-actionable-verdict',
+            });
+          }
+        } else if (
           shouldPublishRunResult({
             failureClass: runnerResult.failureClass,
             previousFailureClass: candidate.context.lastFailureClass,

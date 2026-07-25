@@ -93,7 +93,11 @@ function floorToMinute(date: Date): Date {
   return copy;
 }
 
-function previousMatchingSlot(input: { cron: string; now: Date; after?: string }): string | null {
+export function previousMatchingSlot(input: {
+  cron: string;
+  now: Date;
+  after?: string;
+}): string | null {
   const parsed = parseCron(input.cron);
   const slot = floorToMinute(input.now);
   const afterMs = input.after === undefined ? undefined : Date.parse(input.after);

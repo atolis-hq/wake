@@ -425,13 +425,29 @@ const runnerHealthEntrySchema = z.object({
 
 const workflowWorkspaceSchema = z.enum(['none', 'read-only', 'branch']);
 
+const workflowTriggerScheduleSchema = z.object({
+  cron: z.string().min(1),
+});
+
 const workflowStageSchema = stageRouteSchema.extend({
   workspace: workflowWorkspaceSchema,
   onDone: identifierSchema,
-});
-
-const workflowTriggerScheduleSchema = z.object({
-  cron: z.string().min(1),
+  watch: z
+    .array(
+      z.object({
+        while: z.object({
+          status: z.array(z.string().min(1)).min(1),
+        }),
+        on: z
+          .object({
+            event: z.array(z.string().min(1)).min(1),
+          })
+          .optional(),
+        schedule: workflowTriggerScheduleSchema.optional(),
+        workflow: identifierSchema,
+      }),
+    )
+    .optional(),
 });
 
 const workflowTriggerSchema = z.object({
@@ -912,6 +928,23 @@ export const wakeConfigSchema = wakeConfigBaseSchema.superRefine((config, ctx) =
           path: ['workflows', workflowName, 'stages', stageName, 'action'],
           message: `Workflow stage "${stageName}" omits action but no prompts/${stageName}.md template exists.`,
         });
+      }
+
+      for (const [index, watcher] of (stage.watch ?? []).entries()) {
+        if (watcher.on === undefined && watcher.schedule === undefined) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['workflows', workflowName, 'stages', stageName, 'watch', index],
+            message: 'Watcher must declare at least one of on or schedule.',
+          });
+        }
+        if (config.workflows[watcher.workflow] === undefined) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['workflows', workflowName, 'stages', stageName, 'watch', index, 'workflow'],
+            message: `Watcher targets unknown workflow "${watcher.workflow}".`,
+          });
+        }
       }
     }
 

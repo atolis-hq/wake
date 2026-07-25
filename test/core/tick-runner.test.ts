@@ -12,10 +12,11 @@ import { createDefaultWakeConfig } from '../../src/config/defaults.js';
 import { createOutboundSinkRouter, createWorkSourceFanIn } from '../../src/core/sink-router.js';
 import { createTickRunner } from '../../src/core/tick-runner.js';
 import type { EventEnvelope, IssueStateRecord } from '../../src/domain/types.js';
-import { createUnkeyedEventEnvelope } from '../../src/lib/event-log.js';
+import { createEventEnvelope, createUnkeyedEventEnvelope } from '../../src/lib/event-log.js';
 import {
   findByIssueRef,
   githubIssueUri,
+  seededResourceIndex,
   ticketUpsertWorkSource,
   workId,
 } from './support/tick-runner-fixtures.js';
@@ -25,6 +26,275 @@ describe('tick runner', () => {
 
   beforeEach(async () => {
     root = await mkdtemp(join(tmpdir(), 'wake-tick-runner-'));
+  });
+
+  describe('stage watchers', () => {
+    it('dispatches pr-review from a matching event while awaiting approval without reusing the implement session', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const resourceIndex = await seededResourceIndex([351]);
+      const now = '2026-07-25T12:00:00.000Z';
+      const projection: IssueStateRecord = {
+        schemaVersion: 1 as const,
+        workItemKey: workId(351),
+        issue: {
+          repo: 'atolis-hq/wake',
+          number: 351,
+          title: 'Implement',
+          body: 'Body',
+          labels: ['wake:implement'],
+          assignees: [],
+          isPullRequest: false,
+          state: 'open',
+          url: 'https://example.test/issues/351',
+          createdAt: now,
+          updatedAt: now,
+        },
+        comments: [],
+        wake: {
+          stage: 'implement',
+          lastRunId: 'run-351-previous',
+          sessionId: 'implement-session',
+          sessionCli: 'Claude',
+          stageHistory: [],
+          recentEventIds: ['run-351-previous-completed'],
+          syncedAt: now,
+          expectedEcho: { commentIds: [], labels: [] },
+        },
+        context: {
+          workflow: 'default',
+          lastRunSentinel: 'AWAITING_APPROVAL',
+          pendingApprovalAction: 'implement',
+        },
+        correlatedResources: [],
+      };
+      await store.writeIssueState(projection);
+      await store.appendEventEnvelope(
+        createEventEnvelope({
+          eventId: 'run-351-previous-completed',
+          workItemKey: workId(351),
+          streamScope: 'work-item',
+          direction: 'internal',
+          sourceSystem: 'wake',
+          sourceEventType: 'wake.run.completed',
+          sourceRefs: { repo: 'atolis-hq/wake', issueNumber: 351, runId: 'run-351-previous' },
+          occurredAt: now,
+          ingestedAt: now,
+          trigger: 'immediate',
+          payload: { action: 'implement', sentinel: 'AWAITING_APPROVAL' },
+        }),
+      );
+
+      const config = createDefaultWakeConfig(root);
+      config.sources.github.policy.requiredLabels = ['wake:implement'];
+      config.workflows.default!.stages.implement!.watch = [
+        {
+          while: { status: ['awaiting-approval'] },
+          on: { event: ['wake.run.completed'] },
+          workflow: 'pr-review',
+        },
+      ];
+      config.workflows['pr-review'] = {
+        stages: {
+          review: {
+            action: 'pr-review',
+            workspace: 'read-only',
+            tier: 'light',
+            onDone: 'done',
+          },
+        },
+      };
+
+      const seen: Array<{ action: string; sessionId?: string; sessionCli?: string }> = [];
+      const tickRunner = createTickRunner({
+        clock: { now: () => new Date(now) },
+        config,
+        stateStore: store,
+        workSource: {
+          async pollEvents() {
+            return [];
+          },
+        },
+        runner: {
+          async run(input) {
+            seen.push({
+              action: input.action,
+              ...(input.projection.wake.sessionId === undefined
+                ? {}
+                : { sessionId: input.projection.wake.sessionId }),
+              ...(input.projection.wake.sessionCli === undefined
+                ? {}
+                : { sessionCli: input.projection.wake.sessionCli }),
+            });
+            return {
+              result: [
+                'Review inconclusive.',
+                '',
+                '```wake-result',
+                '{ "status": "BLOCKED" }',
+                '```',
+                'BLOCKED',
+              ].join('\n'),
+              model: 'fake',
+              cli: 'Fake',
+              session_id: 'review-session',
+            };
+          },
+        },
+        resourceIndex,
+        workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+      });
+
+      await tickRunner.runTick();
+      await tickRunner.runTick();
+
+      expect(seen).toEqual([{ action: 'pr-review', sessionId: undefined, sessionCli: undefined }]);
+      const updated = await store.readIssueState(workId(351));
+      expect(updated?.wake.stage).toBe('implement');
+      expect(updated?.wake.sessionId).toBe('implement-session');
+      expect(updated?.context.lastRunSentinel).toBe('AWAITING_APPROVAL');
+    });
+
+    it('publishes a pr-review approval marker only after the reported PR verifies and belongs to the work item', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const resourceIndex = await seededResourceIndex([352]);
+      const now = '2026-07-25T12:00:00.000Z';
+      await resourceIndex.register('github:pr:atolis-hq/wake#99', workId(352));
+      await store.writeIssueState({
+        schemaVersion: 1,
+        workItemKey: workId(352),
+        issue: {
+          repo: 'atolis-hq/wake',
+          number: 352,
+          title: 'Implement',
+          body: 'Body',
+          labels: ['wake:implement'],
+          assignees: [],
+          isPullRequest: false,
+          state: 'open',
+          url: 'https://example.test/issues/352',
+          createdAt: now,
+          updatedAt: now,
+        },
+        comments: [],
+        wake: {
+          stage: 'implement',
+          lastRunId: 'run-352-previous',
+          stageHistory: [],
+          recentEventIds: ['run-352-previous-completed'],
+          syncedAt: now,
+          expectedEcho: { commentIds: [], labels: [] },
+        },
+        context: {
+          workflow: 'default',
+          lastRunSentinel: 'AWAITING_APPROVAL',
+          pendingApprovalAction: 'implement',
+        },
+        correlatedResources: [
+          {
+            resourceUri: 'github:pr:atolis-hq/wake#99',
+            role: 'implementation',
+            relation: 'primary',
+            provenance: 'agent-reported',
+            registeredAt: now,
+          },
+        ],
+      });
+      await store.appendEventEnvelope(
+        createEventEnvelope({
+          eventId: 'run-352-previous-completed',
+          workItemKey: workId(352),
+          streamScope: 'work-item',
+          direction: 'internal',
+          sourceSystem: 'wake',
+          sourceEventType: 'wake.run.completed',
+          sourceRefs: { repo: 'atolis-hq/wake', issueNumber: 352, runId: 'run-352-previous' },
+          occurredAt: now,
+          ingestedAt: now,
+          trigger: 'immediate',
+          payload: { action: 'implement', sentinel: 'AWAITING_APPROVAL' },
+        }),
+      );
+
+      const config = createDefaultWakeConfig(root);
+      config.sources.github.policy.requiredLabels = ['wake:implement'];
+      config.workflows.default!.stages.implement!.watch = [
+        {
+          while: { status: ['awaiting-approval'] },
+          on: { event: ['wake.run.completed'] },
+          workflow: 'pr-review',
+        },
+      ];
+      config.workflows['pr-review'] = {
+        stages: {
+          review: {
+            action: 'pr-review',
+            workspace: 'read-only',
+            tier: 'light',
+            onDone: 'done',
+          },
+        },
+      };
+
+      const delivered: EventEnvelope[] = [];
+      const tickRunner = createTickRunner({
+        clock: { now: () => new Date(now) },
+        config,
+        stateStore: store,
+        workSource: {
+          async pollEvents() {
+            return [];
+          },
+        },
+        runner: {
+          async run() {
+            return {
+              result: [
+                'Safe to merge.',
+                '',
+                '```wake-artifacts',
+                '{ "artifacts": [{ "kind": "pr", "url": "https://example.test/atolis-hq/wake/pull/99" }] }',
+                '```',
+                '',
+                '```wake-result',
+                '{ "status": "DONE" }',
+                '```',
+                'DONE',
+              ].join('\n'),
+              model: 'fake',
+              cli: 'Fake',
+              session_id: 'review-session',
+            };
+          },
+        },
+        outboundSink: {
+          async deliverIntent(input) {
+            delivered.push(input.event);
+            return [];
+          },
+        },
+        resourceIndex,
+        workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+        artifactVerifier: createFakeArtifactVerifier({
+          verifies: [
+            {
+              url: 'https://example.test/atolis-hq/wake/pull/99',
+              resourceUri: 'github:pr:atolis-hq/wake#99',
+            },
+          ],
+        }),
+      });
+
+      await tickRunner.runTick();
+
+      const verdict = delivered.find(
+        (event) =>
+          event.sourceRefs.resourceUri === 'github:pr:atolis-hq/wake#99' &&
+          typeof event.payload.body === 'string' &&
+          event.payload.body.includes('<!-- wake:pr-review-approved -->'),
+      );
+      expect(verdict?.sourceRefs.resourceUri).toBe('github:pr:atolis-hq/wake#99');
+      expect(verdict?.payload.body).toContain('<!-- wake:pr-review-approved -->');
+    });
   });
 
   describe('artifact reporting', () => {
