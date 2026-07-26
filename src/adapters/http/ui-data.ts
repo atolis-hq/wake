@@ -116,16 +116,18 @@ export async function buildBoard(input: { stateStore: StateStore; config: WakeCo
     archiveFreshnessDays: input.config.ui.archiveFreshnessDays,
     now: input.now,
   });
-  const lastRuns = await Promise.all(
-    items.map((item) =>
-      item.wake.lastRunId === undefined
-        ? Promise.resolve(null)
-        : input.stateStore.readRunRecord(item.wake.lastRunId),
-    ),
+  // One bulk summarized scan shared by every item, instead of readRunRecord()
+  // per item - deriveCondition only reads status/sentinel, so this doesn't
+  // need full records, and doing a separate lookup (with its own fallback
+  // scan when a flat run file is missing) per item made board loads scale
+  // with items x run-history size instead of just run-history size.
+  const runsById = new Map(
+    (await input.stateStore.listRunRecordSummaries()).map((run) => [run.runId, run]),
   );
 
-  return items.map((item, index) => {
-    const lastRun = lastRuns[index] ?? null;
+  return items.map((item) => {
+    const lastRun =
+      item.wake.lastRunId === undefined ? null : (runsById.get(item.wake.lastRunId) ?? null);
     const { condition, reason } = deriveCondition(item, lastRun, input.config);
 
     return {
