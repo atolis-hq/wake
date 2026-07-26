@@ -5,7 +5,9 @@ describe('runSandboxSetupCommand', () => {
   it('prepares the codex home and ssh key unconditionally, then prompts for each CLI auth', async () => {
     const log = vi.fn();
     const runInteractive = vi.fn(async () => {});
-    const prompt = vi.fn(async (message: string) => message.includes('GitHub'));
+    const prompt = vi.fn(
+      async (message: string) => message.includes('GitHub') || message.includes('Codex'),
+    );
     const ensureSshKey = vi.fn(async () => {});
     const prepareCodexHome = vi.fn(async () => {});
 
@@ -16,6 +18,7 @@ describe('runSandboxSetupCommand', () => {
     expect(prompt).toHaveBeenCalledTimes(4); // GitHub, Claude, Codex, Cursor
     expect(runInteractive).toHaveBeenCalledWith('gh', ['auth', 'login']);
     expect(runInteractive).toHaveBeenCalledWith('gh', ['auth', 'setup-git']);
+    expect(runInteractive).toHaveBeenCalledWith('codex', ['login', '--device-auth']);
     expect(runInteractive).not.toHaveBeenCalledWith('claude', expect.anything());
   });
 

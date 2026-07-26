@@ -27,7 +27,7 @@ export async function runSandboxSetupCommand(deps: {
   }
 
   if (await deps.prompt('Configure Codex auth? [y/N]')) {
-    await deps.runInteractive('codex', ['login']);
+    await deps.runInteractive('codex', ['login', '--device-auth']);
   } else {
     deps.log('Skipping Codex auth setup.');
   }
