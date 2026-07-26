@@ -132,6 +132,50 @@ describe('ui-data', () => {
     expect(byNumber.get(4)?.condition).toBe('ready');
   });
 
+  it('moves an item with an active watcher run to the active board column', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const config = createDefaultWakeConfig(root);
+
+    await store.writeIssueState(
+      issueState({ number: 5, stage: 'implement', lastRunId: 'run-5-implement' }),
+    );
+    await store.writeRunRecord(
+      runRecord({
+        runId: 'run-5-implement',
+        issueNumber: 5,
+        status: 'awaiting-approval',
+        sentinel: 'AWAITING_APPROVAL',
+      }),
+    );
+    await store.writeRunRecord({
+      ...runRecord({ runId: 'run-5-review', issueNumber: 5, status: 'running' }),
+      action: 'pr-review',
+      metadata: {
+        watcher: true,
+        watcherWorkflow: 'pr-review',
+        watcherTrigger: { kind: 'event', eventId: 'run-5-implement-completed' },
+      },
+    });
+
+    const board = await buildBoard({
+      stateStore: store,
+      config,
+      now: new Date('2026-07-05T13:00:00.000Z'),
+    });
+
+    expect(board).toContainEqual(
+      expect.objectContaining({
+        number: 5,
+        condition: 'active',
+        activeRunKind: 'watcher',
+        activeRunId: 'run-5-review',
+        activeRunAction: 'pr-review',
+        activeWatcherWorkflow: 'pr-review',
+        activeWatcherTrigger: { kind: 'event', eventId: 'run-5-implement-completed' },
+      }),
+    );
+  });
+
   it('includes per-run averages for grouped token metrics', async () => {
     const store = createStateStore({ wakeRoot: root });
     const config = createDefaultWakeConfig(root);

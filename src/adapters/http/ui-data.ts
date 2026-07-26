@@ -111,11 +111,43 @@ function timeInStageMs(item: IssueStateRecord, now: Date): number {
   return now.getTime() - Date.parse(lastChange);
 }
 
+function watcherMetadata(run: RunRecord | null): {
+  activeRunKind?: 'watcher' | undefined;
+  activeRunId?: string | undefined;
+  activeRunAction?: string | undefined;
+  activeWatcherWorkflow?: string | undefined;
+  activeWatcherTrigger?: unknown;
+} {
+  if (run?.status !== 'running' || run.metadata?.watcher !== true) {
+    return {};
+  }
+
+  const workflow =
+    typeof run.metadata.watcherWorkflow === 'string' ? run.metadata.watcherWorkflow : undefined;
+  return {
+    activeRunKind: 'watcher',
+    activeRunId: run.runId,
+    activeRunAction: run.action,
+    ...(workflow === undefined ? {} : { activeWatcherWorkflow: workflow }),
+    ...(run.metadata.watcherTrigger === undefined
+      ? {}
+      : { activeWatcherTrigger: run.metadata.watcherTrigger }),
+  };
+}
+
 export async function buildBoard(input: { stateStore: StateStore; config: WakeConfig; now: Date }) {
   const items = await input.stateStore.listIssueStates({
     archiveFreshnessDays: input.config.ui.archiveFreshnessDays,
     now: input.now,
   });
+  const activeRunsByWorkItem = new Map<string, RunRecord>();
+  for (const run of (await input.stateStore.listRunRecords())
+    .filter((record) => record.status === 'running')
+    .sort((left, right) => right.startedAt.localeCompare(left.startedAt))) {
+    if (!activeRunsByWorkItem.has(run.workItemKey)) {
+      activeRunsByWorkItem.set(run.workItemKey, run);
+    }
+  }
   const lastRuns = await Promise.all(
     items.map((item) =>
       item.wake.lastRunId === undefined
@@ -126,7 +158,8 @@ export async function buildBoard(input: { stateStore: StateStore; config: WakeCo
 
   return items.map((item, index) => {
     const lastRun = lastRuns[index] ?? null;
-    const { condition, reason } = deriveCondition(item, lastRun, input.config);
+    const activeRun = activeRunsByWorkItem.get(item.workItemKey) ?? null;
+    const { condition, reason } = deriveCondition(item, activeRun ?? lastRun, input.config);
 
     return {
       repo: item.issue.repo,
@@ -141,6 +174,9 @@ export async function buildBoard(input: { stateStore: StateStore; config: WakeCo
       lastRunAction: lastRun?.action,
       lastRunSentinel: lastRun?.sentinel,
       lastRunStatus: lastRun?.status,
+      activeRunId: activeRun?.runId,
+      activeRunAction: activeRun?.action,
+      ...watcherMetadata(activeRun),
       sessionId: item.wake.sessionId,
       workspacePath: item.wake.workspacePath,
     };

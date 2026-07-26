@@ -228,6 +228,19 @@ function loadingNode(label) {
   return el('p', { class: 'meta', text: 'Loading ' + label + '...' });
 }
 
+function boardWatcherText(item) {
+  if (item.activeRunKind !== 'watcher') return null;
+  const workflow = item.activeWatcherWorkflow || item.activeRunAction || 'watcher';
+  const trigger = item.activeWatcherTrigger;
+  if (trigger && trigger.kind === 'event' && trigger.eventId) {
+    return 'watcher: ' + workflow + ' · event ' + trigger.eventId;
+  }
+  if (trigger && trigger.kind === 'schedule' && trigger.slot) {
+    return 'watcher: ' + workflow + ' · schedule ' + trigger.slot;
+  }
+  return 'watcher: ' + workflow;
+}
+
 async function renderStatusBar() {
   try {
     const status = await getJson('/status');
@@ -303,6 +316,9 @@ async function renderBoard(context) {
       ...(item.labels && item.labels.length > 0
         ? [el('div', { class: 'meta' }, item.labels.map((label) => el('span', { class: 'chip chip-label', text: label })))]
         : []),
+      ...(boardWatcherText(item) === null
+        ? []
+        : [el('div', { class: 'meta amber', text: boardWatcherText(item) })]),
       el('div', { class: 'meta', text: item.lastRunSentinel ? 'last: ' + item.lastRunAction + ' → ' + item.lastRunSentinel : item.conditionReason }),
     ]));
     return el('div', { class: 'col' + (items.length === 0 ? ' col-empty' : '') }, [
