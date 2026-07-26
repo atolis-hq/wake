@@ -1757,6 +1757,7 @@ describe('tick runner', () => {
           ...(preTick4Projection as IssueStateRecord).context,
           lastRunSentinel: 'FAILED',
           lastFailureClass: 'quota',
+          lastRetrySafety: 'SAFE_TO_RETRY',
           lastRunAction: 'implement',
         },
       });

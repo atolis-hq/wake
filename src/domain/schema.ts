@@ -379,6 +379,25 @@ const runLeaseSchema = z.object({
   expiresAt: isoTimestampSchema,
 });
 
+export const failurePhaseSchema = z.enum([
+  'workspace-prep',
+  'process-starting',
+  'running',
+  'result-parsing',
+  'publishing',
+  'unknown',
+]);
+
+export const externalSideEffectsSchema = z.enum(['none', 'confirmed', 'unknown']);
+
+export const retrySafetySchema = z.enum([
+  'SAFE_TO_RETRY',
+  'SAFE_TO_RESUME',
+  'REQUIRES_RECONCILIATION',
+  'MANUAL_REVIEW_REQUIRED',
+  'NOT_RETRYABLE',
+]);
+
 function legacyRunLifecycle(input: Record<string, unknown>) {
   if (input.lifecycle !== undefined) {
     return input;
@@ -426,6 +445,11 @@ export const runRecordSchema = z.preprocess(
     sentinel: runnerSentinelSchema.optional(),
     executionOutcome: executionOutcomeSchema.optional(),
     workflowOutcome: workflowOutcomeSchema.optional(),
+    failurePhase: failurePhaseSchema.optional(),
+    processStarted: z.boolean().optional(),
+    workspaceChanged: z.boolean().optional(),
+    externalSideEffects: externalSideEffectsSchema.optional(),
+    retrySafety: retrySafetySchema.optional(),
     summary: z.string().optional(),
     routing: runnerRoutingSchema.optional(),
     lease: runLeaseSchema.optional(),

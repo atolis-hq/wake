@@ -33,7 +33,10 @@ import type {
   AgentAction,
   ExecutionAttemptLifecycle,
   ExecutionOutcome,
+  ExternalSideEffects,
+  FailurePhase,
   IssueStateRecord,
+  RetrySafety,
   RunnerFailureClass,
   RunRecord,
   Stage,
@@ -139,6 +142,77 @@ function shouldPublishRunResult(input: {
   }
 
   return input.failureClass !== input.previousFailureClass;
+}
+
+function hasConfirmedExternalSideEffect(projection: IssueStateRecord): boolean {
+  return projection.correlatedResources.some((resource) =>
+    /^[a-z0-9-]+:pr:/.test(resource.resourceUri),
+  );
+}
+
+function failurePhaseForRecord(record: RunRecord): FailurePhase {
+  if (record.agentPid !== undefined || record.agentProcessStartedAt !== undefined) {
+    return 'running';
+  }
+
+  if (record.lifecycle === 'PROCESS_STARTING' || record.lifecycle === 'RUNNING') {
+    return 'process-starting';
+  }
+
+  if (record.lifecycle === 'PREPARING') {
+    return 'workspace-prep';
+  }
+
+  return 'unknown';
+}
+
+function classifyFailedRun(input: {
+  projection: IssueStateRecord;
+  record: RunRecord;
+  failureClass?: RunnerFailureClass;
+  failurePhase?: FailurePhase;
+  workspacePath?: string;
+  envelope?: 'structured' | 'degraded';
+  sentinel?: string;
+}): {
+  failurePhase: FailurePhase;
+  processStarted: boolean;
+  workspaceChanged: boolean;
+  externalSideEffects: ExternalSideEffects;
+  retrySafety: RetrySafety;
+} {
+  const processStarted =
+    input.record.agentPid !== undefined || input.record.agentProcessStartedAt !== undefined;
+  const workspaceChanged = input.workspacePath !== undefined;
+  const externalSideEffects = hasConfirmedExternalSideEffect(input.projection)
+    ? 'confirmed'
+    : processStarted
+      ? 'unknown'
+      : 'none';
+  const failurePhase =
+    input.failurePhase ??
+    (input.envelope === 'degraded' && input.sentinel === 'FAILED'
+      ? 'result-parsing'
+      : failurePhaseForRecord(input.record));
+
+  let retrySafety: RetrySafety;
+  if (input.failureClass === 'task') {
+    retrySafety = 'NOT_RETRYABLE';
+  } else if (externalSideEffects === 'confirmed' || workspaceChanged) {
+    retrySafety = 'REQUIRES_RECONCILIATION';
+  } else if (processStarted) {
+    retrySafety = 'SAFE_TO_RESUME';
+  } else {
+    retrySafety = 'SAFE_TO_RETRY';
+  }
+
+  return {
+    failurePhase,
+    processStarted,
+    workspaceChanged,
+    externalSideEffects,
+    retrySafety,
+  };
 }
 
 export function createTickRunner(deps: {
@@ -1794,6 +1868,17 @@ export function createTickRunner(deps: {
 
         await transitionRunLifecycle('FINALISING');
         const finalisingRecord = (await deps.stateStore.readRunRecord(runId))!;
+        const failureContext =
+          sentinel === 'FAILED'
+            ? classifyFailedRun({
+                projection: candidate,
+                record: finalisingRecord,
+                failureClass: runnerResult.failureClass ?? 'task',
+                ...(workspacePath === undefined ? {} : { workspacePath }),
+                envelope: parsedRunnerResult.envelope,
+                sentinel,
+              })
+            : undefined;
         await deps.stateStore.writeRunRecord({
           ...finalisingRecord,
           lifecycle: 'TERMINAL',
@@ -1810,6 +1895,7 @@ export function createTickRunner(deps: {
           sentinel,
           executionOutcome,
           ...(workflowOutcome !== undefined ? { workflowOutcome } : {}),
+          ...(failureContext === undefined ? {} : failureContext),
           summary: parsedRunnerResult.body,
           ...(runnerResult.routing === undefined ? {} : { routing: runnerResult.routing }),
           ...(runnerResult.tokenUsage === undefined ? {} : { tokenUsage: runnerResult.tokenUsage }),
@@ -1852,6 +1938,7 @@ export function createTickRunner(deps: {
             ...(runnerResult.failureClass === undefined
               ? {}
               : { failureClass: runnerResult.failureClass }),
+            ...(failureContext === undefined ? {} : failureContext),
             // Only mark the triggering comment handled when the run reached the
             // agent and produced a real outcome. Quota/infra failures are transient
             // blips, not an answer to the human's comment — leaving handledCommentId
@@ -1954,6 +2041,19 @@ export function createTickRunner(deps: {
         const sentinel = 'FAILED' as const;
 
         const failedRecord = (await deps.stateStore.readRunRecord(runId)) ?? runningRecord;
+        const failedRecordMetadata = failedRecord.metadata as Record<string, unknown> | undefined;
+        const failedRecordWorkspacePath =
+          typeof failedRecordMetadata?.workspacePath === 'string'
+            ? failedRecordMetadata.workspacePath
+            : undefined;
+        const failureContext = classifyFailedRun({
+          projection: candidate,
+          record: failedRecord,
+          failureClass: 'infra',
+          ...(failedRecordWorkspacePath === undefined
+            ? {}
+            : { workspacePath: failedRecordWorkspacePath }),
+        });
         await deps.stateStore.writeRunRecord({
           ...failedRecord,
           lifecycle: 'TERMINAL',
@@ -1961,10 +2061,12 @@ export function createTickRunner(deps: {
           finishedAt,
           sentinel,
           executionOutcome: 'PROCESS_FAILED' as const,
+          ...failureContext,
           summary: err instanceof Error ? err.message : String(err),
           metadata: {
             ...failedRecord.metadata,
             failureClass: 'infra',
+            ...failureContext,
           },
         });
 
@@ -1989,6 +2091,7 @@ export function createTickRunner(deps: {
             runId,
             reason: 'runner:infrastructure-error',
             failureClass: 'infra',
+            ...failureContext,
             executionOutcome: 'PROCESS_FAILED',
             // Deliberately omit handledCommentId: an infra blip (CLI crash, timeout,
             // network error) never reached the agent, so it isn't an answer to the

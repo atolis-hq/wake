@@ -179,8 +179,8 @@ export function createPolicyEngine() {
         typeof context.lastCompletedAction === 'string' ? context.lastCompletedAction : undefined;
       const lastRunSentinel =
         typeof context.lastRunSentinel === 'string' ? context.lastRunSentinel : undefined;
-      const lastFailureClass =
-        typeof context.lastFailureClass === 'string' ? context.lastFailureClass : undefined;
+      const lastRetrySafety =
+        typeof context.lastRetrySafety === 'string' ? context.lastRetrySafety : undefined;
 
       if (issue.wake.lastRunId === undefined) {
         return true;
@@ -198,16 +198,15 @@ export function createPolicyEngine() {
         return false;
       }
 
-      if (lastRunSentinel === failedRunnerSentinel && lastFailureClass !== 'quota') {
+      if (lastRunSentinel === failedRunnerSentinel) {
+        if (lastRetrySafety === 'SAFE_TO_RETRY' || lastRetrySafety === 'SAFE_TO_RESUME') {
+          return belowFailureRetryLimit(issue, config);
+        }
         return false;
       }
 
       if (lastRunSentinel === 'BLOCKED') {
         return false;
-      }
-
-      if (lastFailureClass === 'quota') {
-        return belowFailureRetryLimit(issue, config);
       }
 
       const workflowAction = chooseWorkflowAction(issue, workflow);

@@ -7,7 +7,10 @@ import type {
   EventEnvelope,
   ExecutionAttemptLifecycle,
   ExecutionOutcome,
+  ExternalSideEffects,
+  FailurePhase,
   IssueStateRecord,
+  RetrySafety,
   RunRecord,
   WakeConfig,
 } from '../domain/types.js';
@@ -46,6 +49,48 @@ export function createStaleRunReconciler(deps: {
       case 'TERMINAL':
         return 'SUPERSEDED';
     }
+  }
+
+  function failurePhaseForLifecycle(lifecycle: ExecutionAttemptLifecycle): FailurePhase {
+    switch (lifecycle) {
+      case 'CREATED':
+      case 'CLAIMED':
+      case 'PREPARING':
+        return 'workspace-prep';
+      case 'PROCESS_STARTING':
+        return 'process-starting';
+      case 'RUNNING':
+      case 'FINALISING':
+        return 'running';
+      case 'TERMINAL':
+        return 'unknown';
+    }
+  }
+
+  function classifyReconciledFailure(record: RunRecord): {
+    failurePhase: FailurePhase;
+    processStarted: boolean;
+    workspaceChanged: boolean;
+    externalSideEffects: ExternalSideEffects;
+    retrySafety: RetrySafety;
+  } {
+    const processStarted =
+      record.agentPid !== undefined ||
+      record.agentProcessStartedAt !== undefined ||
+      record.lifecycle === 'RUNNING' ||
+      record.lifecycle === 'FINALISING';
+    const metadata = record.metadata as Record<string, unknown> | undefined;
+    const workspaceChanged = typeof metadata?.workspacePath === 'string';
+    const retrySafety: RetrySafety =
+      processStarted || workspaceChanged ? 'REQUIRES_RECONCILIATION' : 'SAFE_TO_RETRY';
+
+    return {
+      failurePhase: failurePhaseForLifecycle(record.lifecycle),
+      processStarted,
+      workspaceChanged,
+      externalSideEffects: processStarted ? 'unknown' : 'none',
+      retrySafety,
+    };
   }
 
   async function staleReason(
@@ -144,6 +189,11 @@ export function createStaleRunReconciler(deps: {
           action: projection.context.lastRunAction,
           sentinel: 'FAILED',
           executionOutcome: 'CANCELED_BY_RECONCILIATION',
+          failurePhase: 'unknown',
+          processStarted: false,
+          workspaceChanged: false,
+          externalSideEffects: 'unknown',
+          retrySafety: 'MANUAL_REVIEW_REQUIRED',
           runId,
           reason: 'runner:missing-run-record',
         },
@@ -207,6 +257,7 @@ export function createStaleRunReconciler(deps: {
 
       const staleExecutionOutcome: ExecutionOutcome =
         reason === 'timeout' ? 'TIMED_OUT' : recoveryOutcomeForLifecycle(record.lifecycle);
+      const failureContext = classifyReconciledFailure(record);
 
       await deps.stateStore.writeRunRecord({
         ...record,
@@ -215,6 +266,7 @@ export function createStaleRunReconciler(deps: {
         finishedAt,
         sentinel: 'FAILED',
         executionOutcome: staleExecutionOutcome,
+        ...failureContext,
         summary: `Run exceeded timeout while marked running and was reconciled by a later tick.`,
         metadata: {
           ...record.metadata,
@@ -222,6 +274,7 @@ export function createStaleRunReconciler(deps: {
           recoveryLifecycle: record.lifecycle,
           staleReason: reason,
           timeoutMs: deps.runnerTimeoutMs(),
+          ...failureContext,
         },
       });
 
@@ -244,6 +297,7 @@ export function createStaleRunReconciler(deps: {
           action: record.action,
           sentinel: 'FAILED',
           executionOutcome: staleExecutionOutcome,
+          ...failureContext,
           runId: record.runId,
           reason:
             reason === 'timeout'
