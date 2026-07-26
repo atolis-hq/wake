@@ -115,6 +115,7 @@ export interface StagePromptResult {
   extraArgs: string[];
   maxTurns: number;
   skipApproval: boolean;
+  allowAutoApproval: boolean;
 }
 
 function sentinelListForApproval(skipApproval: boolean): string {
@@ -287,6 +288,7 @@ export async function buildStagePrompt(input: {
   }
 
   const skipApproval = template.frontmatter.skipApproval === 'true';
+  const allowAutoApproval = !skipApproval && template.frontmatter.allowAutoApproval === 'true';
   const permissionMode = template.frontmatter.permissionMode;
   const commentsToAddress = newCommentsSinceLastRun(input.projection);
   const priorComments = previousCommentsThroughLastRun(input.projection);
@@ -346,6 +348,7 @@ export async function buildStagePrompt(input: {
       value: template.frontmatter.maxTurns,
     }),
     skipApproval,
+    allowAutoApproval,
     ...(permissionMode === undefined ? {} : { permissionMode }),
   };
 }

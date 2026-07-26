@@ -550,6 +550,18 @@ Wake also owns one derived status label while it works a ticket:
 
 Wake replaces only the `wake:status.*` label family and preserves unrelated issue labels.
 
+`wake:auto` is an operator opt-in label for deterministic approval of eligible
+`AWAITING_APPROVAL` gates. It has no effect unless the pending action's prompt
+declared `allowAutoApproval: true`; with built-in prompts that means refine can
+advance to implement automatically, while implement still waits for human or PR
+review approval. Commenting `/yolo` or `/autoapprove` on the issue is a
+Wake-recognized built-in shortcut that only adds `wake:auto`. It does not invoke
+an agent and does not directly resolve a pending gate; removing the label turns
+auto-approval back off. When auto-approval fires, Wake appends the same
+`wake.run.completed` transition it would append for a human `/approved`, follows
+the workflow stage's normal `onDone`, and records the decision as
+`auto:approved`.
+
 #### pullRequests
 
 GitHub Pull Requests activity monitoring and correlation.
@@ -582,6 +594,14 @@ justification or an alternative. The work item stays `awaiting-approval`
 afterward; only an
 explicit `/approved` command (on the issue or the PR) advances it to
 `done`.
+
+BLOCKED-question auto-resolution is configured with an ordinary stage watcher,
+not a global approval setting. A watcher intended to answer blocked questions
+should use `while.status: [blocked]` and `on.event: [wake.run.completed]` so it
+fires after a run has entered `BLOCKED`; the watcher workflow can then decide
+whether the configured question class is safe to answer, and any answer must be
+delivered through the same reply/comment path as a human response. With no such
+watcher configured, blocked items continue to wait for a human.
 
 ## Loading and Merging
 

@@ -305,6 +305,235 @@ describe('tick runner', () => {
       expect(deliveredEvents).toContain('wake:stage.done');
     });
 
+    it('auto-approves an awaiting approval action only when prompt metadata and wake:auto are present', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const deliveredEvents: string[] = [];
+      let runnerCallCount = 0;
+
+      await store.writeIssueState({
+        schemaVersion: 1,
+        workItemKey: workId(34),
+        issue: {
+          repo: 'atolis-hq/wake',
+          number: 34,
+          title: 'Auto Approval Test',
+          body: 'Body',
+          labels: ['wake:queue', 'wake:auto'],
+          assignees: [],
+          isPullRequest: false,
+          state: 'open',
+          url: 'https://example.test/issues/34',
+          createdAt: '2026-07-05T12:00:00.000Z',
+          updatedAt: '2026-07-05T12:05:00.000Z',
+        },
+        comments: [],
+        wake: {
+          stage: 'refine',
+          stageHistory: [],
+          recentEventIds: [],
+          syncedAt: '2026-07-05T12:00:00.000Z',
+          expectedEcho: { commentIds: [], labels: [] },
+        },
+        context: {
+          lastRunSentinel: 'AWAITING_APPROVAL',
+          pendingApprovalAction: 'refine',
+          pendingApprovalAllowAutoApproval: true,
+        },
+        correlatedResources: [],
+      });
+
+      const config = createDefaultWakeConfig(root);
+      config.sources.github.policy.requiredLabels = ['wake:queue'];
+
+      const tickRunner = createTickRunner({
+        clock: { now: () => new Date('2026-07-05T12:10:00.000Z') },
+        config,
+        stateStore: store,
+        workSource: {
+          async pollEvents() {
+            return [];
+          },
+        },
+        outboundSink: {
+          async deliverIntent(input) {
+            if (input.event.sourceEventType === 'wake.labels.requested') {
+              deliveredEvents.push(String(input.event.payload.statusLabel));
+              deliveredEvents.push(String(input.event.payload.stageLabel));
+            }
+            return [];
+          },
+        },
+        runner: {
+          async run() {
+            runnerCallCount += 1;
+            return { result: 'DONE', model: 'test-model', cli: 'test-cli' };
+          },
+        },
+        resourceIndex: createFakeResourceIndex(),
+        workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+      });
+
+      const result = await tickRunner.runTick();
+      const projection = await store.readIssueState(workId(34));
+      const events = await readFile(store.paths.eventFile('2026-07-05'), 'utf8');
+
+      expect(result.status).toBe('processed');
+      expect((result as { runId?: string }).runId).toMatch(/^approval-34-/);
+      expect((result as { nextStage?: string }).nextStage).toBe('implement');
+      expect(runnerCallCount).toBe(0);
+      expect(projection?.wake.stage).toBe('implement');
+      expect(projection?.context.pendingApprovalAction).toBeUndefined();
+      expect(projection?.context.pendingApprovalAllowAutoApproval).toBeUndefined();
+      expect(deliveredEvents).toContain('wake:stage.implement');
+      expect(events).toContain('"reason":"auto:approved"');
+      expect(events).toContain('"classification":"auto-approval"');
+    });
+
+    it('does not auto-approve without the wake:auto label', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      let runnerCallCount = 0;
+
+      await store.writeIssueState({
+        schemaVersion: 1,
+        workItemKey: workId(35),
+        issue: {
+          repo: 'atolis-hq/wake',
+          number: 35,
+          title: 'Auto Approval Disabled Test',
+          body: 'Body',
+          labels: ['wake:queue'],
+          assignees: [],
+          isPullRequest: false,
+          state: 'open',
+          url: 'https://example.test/issues/35',
+          createdAt: '2026-07-05T12:00:00.000Z',
+          updatedAt: '2026-07-05T12:05:00.000Z',
+        },
+        comments: [],
+        wake: {
+          stage: 'refine',
+          stageHistory: [],
+          recentEventIds: [],
+          syncedAt: '2026-07-05T12:00:00.000Z',
+          expectedEcho: { commentIds: [], labels: [] },
+        },
+        context: {
+          lastRunSentinel: 'AWAITING_APPROVAL',
+          pendingApprovalAction: 'refine',
+          pendingApprovalAllowAutoApproval: true,
+        },
+        correlatedResources: [],
+      });
+
+      const config = createDefaultWakeConfig(root);
+      config.sources.github.policy.requiredLabels = ['wake:queue'];
+
+      const tickRunner = createTickRunner({
+        clock: { now: () => new Date('2026-07-05T12:10:00.000Z') },
+        config,
+        stateStore: store,
+        workSource: {
+          async pollEvents() {
+            return [];
+          },
+        },
+        runner: {
+          async run() {
+            runnerCallCount += 1;
+            return { result: 'DONE', model: 'test-model', cli: 'test-cli' };
+          },
+        },
+        resourceIndex: createFakeResourceIndex(),
+        workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+      });
+
+      const result = await tickRunner.runTick();
+
+      expect(result.status).toBe('idle');
+      expect(runnerCallCount).toBe(0);
+    });
+
+    it('does not treat auto-approval as a PR merge action', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const outboundEventTypes: string[] = [];
+
+      await store.writeIssueState({
+        schemaVersion: 1,
+        workItemKey: workId(36),
+        issue: {
+          repo: 'atolis-hq/wake',
+          number: 36,
+          title: 'No Merge Test',
+          body: 'Body',
+          labels: ['wake:queue', 'wake:auto'],
+          assignees: [],
+          isPullRequest: false,
+          state: 'open',
+          url: 'https://example.test/issues/36',
+          createdAt: '2026-07-05T12:00:00.000Z',
+          updatedAt: '2026-07-05T12:05:00.000Z',
+        },
+        comments: [],
+        wake: {
+          stage: 'implement',
+          stageHistory: [],
+          recentEventIds: [],
+          syncedAt: '2026-07-05T12:00:00.000Z',
+          expectedEcho: { commentIds: [], labels: [] },
+        },
+        context: {
+          lastRunSentinel: 'AWAITING_APPROVAL',
+          pendingApprovalAction: 'implement',
+          pendingApprovalAllowAutoApproval: true,
+        },
+        correlatedResources: [
+          {
+            resourceUri: 'github:pr:atolis-hq/wake#99',
+            role: 'implementation',
+            relation: 'primary',
+            provenance: 'agent-reported',
+            registeredAt: '2026-07-05T12:00:00.000Z',
+          },
+        ],
+      });
+
+      const config = createDefaultWakeConfig(root);
+      config.sources.github.policy.requiredLabels = ['wake:queue'];
+      config.sources.github.pullRequests.enabled = true;
+
+      const tickRunner = createTickRunner({
+        clock: { now: () => new Date('2026-07-05T12:10:00.000Z') },
+        config,
+        stateStore: store,
+        workSource: {
+          async pollEvents() {
+            return [];
+          },
+        },
+        outboundSink: {
+          async deliverIntent(input) {
+            outboundEventTypes.push(input.event.sourceEventType);
+            return [];
+          },
+        },
+        runner: {
+          async run() {
+            throw new Error('auto-approval must not invoke an agent');
+          },
+        },
+        resourceIndex: createFakeResourceIndex(),
+        workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+      });
+
+      const result = await tickRunner.runTick();
+      const events = await readFile(store.paths.eventFile('2026-07-05'), 'utf8');
+
+      expect(result.status).toBe('processed');
+      expect((result as { nextStage?: string }).nextStage).toBe('done');
+      expect(outboundEventTypes).toEqual(['wake.labels.requested']);
+      expect(events.toLowerCase()).not.toContain('merge');
+    });
+
     it('stays idle when awaiting approval and issue.updatedAt changed but no new human comment (Wake activity false-positive)', async () => {
       // Regression test: when Wake posts its approval-request comment, GitHub bumps
       // issue.updatedAt, causing needsWakeAction() to return true even though no

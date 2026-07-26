@@ -96,6 +96,148 @@ describe('github issues work source', () => {
     });
   });
 
+  it('treats /yolo as a label-only shortcut for wake:auto', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const config = createDefaultWakeConfig(root);
+    config.sources.github.enabled = true;
+    config.sources.github.repos = ['atolis-hq/wake'];
+    const setLabels = vi.fn();
+
+    const workSource = createGitHubIssuesWorkSource({
+      client: {
+        listIssues: async () => [
+          {
+            number: 14,
+            title: 'Example',
+            body: 'Body',
+            state: 'open',
+            html_url: 'https://github.com/atolis-hq/wake/issues/14',
+            created_at: '2026-07-05T12:00:00.000Z',
+            updated_at: '2026-07-05T12:00:00.000Z',
+            labels: [{ name: 'wake:queue' }],
+            assignees: [],
+          },
+        ],
+        listComments: async () => [
+          {
+            id: 102,
+            body: '/yolo',
+            user: { login: 'alice', type: 'User' },
+            created_at: '2026-07-05T12:05:00.000Z',
+            updated_at: '2026-07-05T12:05:00.000Z',
+            html_url: 'https://github.com/atolis-hq/wake/issues/14#issuecomment-102',
+          },
+        ],
+        createComment: vi.fn(),
+        setLabels,
+      },
+      stateStore: store,
+      config,
+      resourceIndex: createFakeResourceIndex(),
+      now: () => new Date('2026-07-05T12:10:00.000Z'),
+    });
+
+    const events = await workSource.pollEvents();
+    const labelUpsert = events.find(
+      (event) =>
+        event.sourceEventType === 'ticket.upsert' &&
+        Array.isArray((event.payload.ticket as { labels?: unknown }).labels) &&
+        ((event.payload.ticket as { labels: string[] }).labels ?? []).includes('wake:auto'),
+    );
+
+    expect(setLabels).toHaveBeenCalledWith('atolis-hq', 'wake', 14, ['wake:queue', 'wake:auto']);
+    expect(events.map((event) => event.sourceEventType)).toEqual([
+      'ticket.upsert',
+      'ticket.comment.created',
+      'ticket.upsert',
+    ]);
+    expect(labelUpsert).toBeDefined();
+  });
+
+  it('does not re-add wake:auto from an already ingested /yolo comment after label removal', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const config = createDefaultWakeConfig(root);
+    config.sources.github.enabled = true;
+    config.sources.github.repos = ['atolis-hq/wake'];
+    const setLabels = vi.fn();
+
+    await store.writeIssueState({
+      schemaVersion: 1,
+      workItemKey: workId(15),
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 15,
+        title: 'Example',
+        body: 'Body',
+        labels: ['wake:queue'],
+        assignees: [],
+        isPullRequest: false,
+        state: 'open',
+        url: 'https://github.com/atolis-hq/wake/issues/15',
+        createdAt: '2026-07-05T12:00:00.000Z',
+        updatedAt: '2026-07-05T12:00:00.000Z',
+      },
+      comments: [
+        {
+          id: '103',
+          body: '/yolo',
+          author: { login: 'alice' },
+          createdAt: '2026-07-05T12:05:00.000Z',
+          updatedAt: '2026-07-05T12:05:00.000Z',
+          isBotAuthored: false,
+        },
+      ],
+      wake: {
+        stage: 'refine',
+        stageHistory: [],
+        recentEventIds: [],
+        syncedAt: '2026-07-05T12:10:00.000Z',
+        expectedEcho: { commentIds: [], labels: [] },
+      },
+      context: {},
+      correlatedResources: [],
+    });
+
+    const workSource = createGitHubIssuesWorkSource({
+      client: {
+        listIssues: async () => [
+          {
+            number: 15,
+            title: 'Example',
+            body: 'Body',
+            state: 'open',
+            html_url: 'https://github.com/atolis-hq/wake/issues/15',
+            created_at: '2026-07-05T12:00:00.000Z',
+            updated_at: '2026-07-05T12:00:00.000Z',
+            labels: [{ name: 'wake:queue' }],
+            assignees: [],
+          },
+        ],
+        listComments: async () => [
+          {
+            id: 103,
+            body: '/yolo',
+            user: { login: 'alice', type: 'User' },
+            created_at: '2026-07-05T12:05:00.000Z',
+            updated_at: '2026-07-05T12:05:00.000Z',
+            html_url: 'https://github.com/atolis-hq/wake/issues/15#issuecomment-103',
+          },
+        ],
+        createComment: vi.fn(),
+        setLabels,
+      },
+      stateStore: store,
+      config,
+      resourceIndex: await seededResourceIndex([15]),
+      now: () => new Date('2026-07-05T12:15:00.000Z'),
+    });
+
+    const events = await workSource.pollEvents();
+
+    expect(setLabels).not.toHaveBeenCalled();
+    expect(events).toEqual([]);
+  });
+
   it('polls unkeyed events carrying github:issue:<repo>#<number> and never a workItemKey (spec D1)', async () => {
     const store = createStateStore({ wakeRoot: root });
     const config = createDefaultWakeConfig(root);

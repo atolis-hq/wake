@@ -285,6 +285,7 @@ async function applyEvent(
       executionOutcome?: string;
       workflowOutcome?: string;
       watcherRun?: boolean;
+      allowAutoApproval?: boolean;
     };
 
     if (payload.watcherRun === true) {
@@ -345,6 +346,9 @@ async function applyEvent(
       ...(payload.sentinel === 'AWAITING_APPROVAL' && payload.action !== undefined
         ? { pendingApprovalAction: payload.action }
         : {}),
+      ...(payload.sentinel === 'AWAITING_APPROVAL'
+        ? { pendingApprovalAllowAutoApproval: payload.allowAutoApproval === true }
+        : {}),
       ...(payload.executionOutcome !== undefined
         ? { lastExecutionOutcome: payload.executionOutcome }
         : {}),
@@ -357,6 +361,10 @@ async function applyEvent(
       nextContext.blockedFromStage = current.wake.stage;
     } else if (payload.sentinel !== undefined) {
       delete nextContext.blockedFromStage;
+    }
+    if (payload.sentinel !== 'AWAITING_APPROVAL' && !isCompletedCustomCommand) {
+      delete nextContext.pendingApprovalAction;
+      delete nextContext.pendingApprovalAllowAutoApproval;
     }
 
     return parseIssueStateRecord({

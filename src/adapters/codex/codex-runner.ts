@@ -480,6 +480,7 @@ export function createCodexRunner(options: {
             .filter((line) => line.trim().length > 0)
             .map((line) => JSON.parse(line) as Record<string, unknown>),
           skipApproval: stagePrompt.skipApproval,
+          allowAutoApproval: stagePrompt.allowAutoApproval,
           ...(promptTranscriptPath === undefined ? {} : { promptTranscriptPath }),
           ...(responseTranscriptPath === undefined ? {} : { responseTranscriptPath }),
           ...(sandboxLog?.metadata ?? {}),

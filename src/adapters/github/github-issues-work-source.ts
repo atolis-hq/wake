@@ -23,6 +23,8 @@ const pollOverlapMs = 60 * 60 * 1000;
 // expectedEcho bookkeeping surviving a crash (#145).
 const wakeCommentMarker = '<!-- wake:agent -->';
 const githubSource = 'github';
+const autoApprovalLabel = 'wake:auto';
+const autoApprovalCommands = new Set(['yolo', 'autoapprove']);
 
 export function wakeIdempotencyMarker(idempotencyKey: unknown): string | undefined {
   return typeof idempotencyKey === 'string'
@@ -186,6 +188,47 @@ function issueAssignees(issue: GitHubIssue): string[] {
   return (issue.assignees ?? [])
     .map((assignee) => assignee.login)
     .filter((login): login is string => typeof login === 'string');
+}
+
+function autoApprovalCommandName(body: string | undefined): string | null {
+  for (const line of (body ?? '').split(/\r?\n/)) {
+    const match = /^\/([A-Za-z0-9_.-]+)\b/.exec(line.trim());
+    if (match?.[1] !== undefined && autoApprovalCommands.has(match[1].toLowerCase())) {
+      return match[1].toLowerCase();
+    }
+  }
+
+  return null;
+}
+
+function issueWithAutoApprovalLabel(issue: GitHubIssue): GitHubIssue {
+  return {
+    ...issue,
+    labels: [...issueLabels(issue), autoApprovalLabel],
+  };
+}
+
+async function ensureAutoApprovalLabel(input: {
+  owner: string;
+  repoName: string;
+  issueNumber: number;
+  issue: GitHubIssue;
+  setLabels: (
+    owner: string,
+    repo: string,
+    issueNumber: number,
+    labels: string[],
+  ) => Promise<unknown>;
+}): Promise<boolean> {
+  if (issueLabels(input.issue).includes(autoApprovalLabel)) {
+    return false;
+  }
+
+  await input.setLabels(input.owner, input.repoName, input.issueNumber, [
+    ...issueLabels(input.issue),
+    autoApprovalLabel,
+  ]);
+  return true;
 }
 
 function isExpectedLabelEcho(issue: GitHubIssue, local: IssueStateRecord | null): boolean {
@@ -492,6 +535,7 @@ export function createGitHubIssuesWorkSource(deps: {
         deps.config.sources.github.polling.commentPageSize,
       );
       let latestCommentRevision = '';
+      let autoApprovalLabelAdded = false;
 
       for (const comment of comments) {
         if (comment.updated_at > latestCommentRevision) {
@@ -507,6 +551,22 @@ export function createGitHubIssuesWorkSource(deps: {
           continue;
         }
 
+        if (
+          !autoApprovalLabelAdded &&
+          autoApprovalCommandName(comment.body) !== null &&
+          comment.user?.type !== 'Bot' &&
+          !(comment.body ?? '').includes(wakeCommentMarker) &&
+          (deps.selfLogin === undefined || comment.user?.login !== deps.selfLogin)
+        ) {
+          autoApprovalLabelAdded = await ensureAutoApprovalLabel({
+            owner,
+            repoName: repo,
+            issueNumber: input.projection.issue.number,
+            issue,
+            setLabels: deps.client.setLabels,
+          });
+        }
+
         events.push(
           normalizeTicketCommentEvent({
             repo: repoRef,
@@ -515,6 +575,16 @@ export function createGitHubIssuesWorkSource(deps: {
             ingestedAt,
             ...(deps.selfLogin === undefined ? {} : { selfLogin: deps.selfLogin }),
             ...(known?.updatedAt === undefined ? {} : { existingUpdatedAt: known.updatedAt }),
+          }),
+        );
+      }
+
+      if (autoApprovalLabelAdded) {
+        events.push(
+          normalizeTicketUpsert({
+            repo: repoRef,
+            issue: issueWithAutoApprovalLabel(issue),
+            ingestedAt,
           }),
         );
       }
@@ -594,6 +664,7 @@ export function createGitHubIssuesWorkSource(deps: {
               issue.number,
               deps.config.sources.github.polling.commentPageSize,
             );
+            let autoApprovalLabelAdded = false;
 
             for (const comment of comments) {
               const known = local?.comments.find((entry) => entry.id === String(comment.id));
@@ -606,6 +677,22 @@ export function createGitHubIssuesWorkSource(deps: {
                 continue;
               }
 
+              if (
+                !autoApprovalLabelAdded &&
+                autoApprovalCommandName(comment.body) !== null &&
+                comment.user?.type !== 'Bot' &&
+                !(comment.body ?? '').includes(wakeCommentMarker) &&
+                (deps.selfLogin === undefined || comment.user?.login !== deps.selfLogin)
+              ) {
+                autoApprovalLabelAdded = await ensureAutoApprovalLabel({
+                  owner,
+                  repoName: repo,
+                  issueNumber: issue.number,
+                  issue,
+                  setLabels: deps.client.setLabels,
+                });
+              }
+
               events.push(
                 normalizeTicketCommentEvent({
                   repo: repoRef,
@@ -614,6 +701,16 @@ export function createGitHubIssuesWorkSource(deps: {
                   ingestedAt,
                   ...(deps.selfLogin === undefined ? {} : { selfLogin: deps.selfLogin }),
                   ...(known?.updatedAt === undefined ? {} : { existingUpdatedAt: known.updatedAt }),
+                }),
+              );
+            }
+
+            if (autoApprovalLabelAdded) {
+              events.push(
+                normalizeTicketUpsert({
+                  repo: repoRef,
+                  issue: issueWithAutoApprovalLabel(issue),
+                  ingestedAt,
                 }),
               );
             }

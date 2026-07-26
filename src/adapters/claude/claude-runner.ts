@@ -436,6 +436,7 @@ export function createClaudeRunner(options: {
           stderr: result.stderr,
           raw: parsed,
           skipApproval: stagePrompt.skipApproval,
+          allowAutoApproval: stagePrompt.allowAutoApproval,
           ...(promptTranscriptPath === undefined ? {} : { promptTranscriptPath }),
           ...(responseTranscriptPath === undefined ? {} : { responseTranscriptPath }),
           ...(sandboxLog?.metadata ?? {}),

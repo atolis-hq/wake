@@ -5,6 +5,7 @@ allowedTools: Read, Glob, Grep, Bash(git fetch), Bash(git status), Bash(git diff
 extraArgs:
 maxTurns: 40
 skipApproval: false
+allowAutoApproval: true
 ---
 
 {{#if isStart}}
