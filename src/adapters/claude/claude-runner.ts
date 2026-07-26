@@ -6,12 +6,15 @@ import type {
   EventEnvelope,
   IssueStateRecord,
   RunnerEntry,
+  RunnerRouting,
+  RuntimeEventDraft,
   WakeConfig,
 } from '../../domain/types.js';
 
 type ClaudeRunnerSettings = Omit<Extract<RunnerEntry, { kind: 'claude' }>, 'kind'>;
 import { runAgentCliCommand } from '../runner/cli-command.js';
 import { buildStagePrompt } from '../runner/stage-prompt.js';
+import { emitRuntimeEvent, runnerRuntimeEvent } from '../runner/runtime-events.js';
 import { writeRunnerTranscript } from '../runner/transcripts.js';
 
 export { buildStagePrompt } from '../runner/stage-prompt.js';
@@ -138,6 +141,7 @@ export function runClaudeCommand(input: {
   args: string[];
   cwd: string;
   timeoutMs?: number;
+  onProcessStart?: (identity: { pid: number; processStartedAt: string }) => Promise<void>;
 }): Promise<{
   stdout: string;
   stderr: string;
@@ -254,6 +258,8 @@ export function createClaudeRunner(options: {
       mergeConflictDetected?: boolean;
       upstreamChanges?: string;
       onProcessStart?: (identity: { pid: number; processStartedAt: string }) => Promise<void>;
+      onRuntimeEvent?: (event: RuntimeEventDraft) => Promise<void>;
+      routing?: RunnerRouting;
     }): Promise<AgentRunResult> {
       const sessionName = buildWakeSessionName({
         sessionName: options.settings.sessionName,
@@ -331,7 +337,21 @@ export function createClaudeRunner(options: {
         args,
         cwd: input.workspacePath ?? options.cwd,
         timeoutMs: options.settings.timeoutMs,
-        ...(input.onProcessStart === undefined ? {} : { onProcessStart: input.onProcessStart }),
+        onProcessStart: async (identity) => {
+          await input.onProcessStart?.(identity);
+          await emitRuntimeEvent(
+            input.onRuntimeEvent,
+            runnerRuntimeEvent({
+              type: 'agent.process.started',
+              runId: input.runId,
+              projection: input.projection,
+              routing: input.routing,
+              cli: CLAUDE_CLI_NAME,
+              model,
+              payload: { pid: identity.pid, processStartedAt: identity.processStartedAt },
+            }),
+          );
+        },
       });
       const responseTranscriptPath = await writeRunnerTranscript({
         config: input.config,
@@ -361,6 +381,18 @@ export function createClaudeRunner(options: {
             model,
             ...(input.workspacePath === undefined ? {} : { workspacePath: input.workspacePath }),
             exitCode: result.exitCode,
+          }),
+        );
+        await emitRuntimeEvent(
+          input.onRuntimeEvent,
+          runnerRuntimeEvent({
+            type: 'agent.process.exited',
+            runId: input.runId,
+            projection: input.projection,
+            routing: input.routing,
+            cli: CLAUDE_CLI_NAME,
+            model,
+            payload: { exitCode: result.exitCode, timedOut: result.timedOut },
           }),
         );
         let parsedReason: string | undefined;
@@ -408,6 +440,19 @@ export function createClaudeRunner(options: {
 
       const parsed = parseClaudePrintOutput(result.stdout);
       const sandboxLog = readSandboxLogBreadcrumb();
+      await emitRuntimeEvent(
+        input.onRuntimeEvent,
+        runnerRuntimeEvent({
+          type: 'agent.progress',
+          runId: input.runId,
+          projection: input.projection,
+          routing: input.routing,
+          cli: CLAUDE_CLI_NAME,
+          model,
+          ...(parsed.session_id === undefined ? {} : { sessionId: parsed.session_id }),
+          payload: { message: 'Claude print result received', raw: parsed },
+        }),
+      );
       console.log(
         formatClaudeRunLogLine({
           phase: 'success',
@@ -422,6 +467,34 @@ export function createClaudeRunner(options: {
         }),
       );
       const tokenUsage = extractTokenUsage(parsed);
+      if (tokenUsage !== undefined) {
+        await emitRuntimeEvent(
+          input.onRuntimeEvent,
+          runnerRuntimeEvent({
+            type: 'agent.usage.updated',
+            runId: input.runId,
+            projection: input.projection,
+            routing: input.routing,
+            cli: CLAUDE_CLI_NAME,
+            model,
+            ...(parsed.session_id === undefined ? {} : { sessionId: parsed.session_id }),
+            payload: { tokenUsage },
+          }),
+        );
+      }
+      await emitRuntimeEvent(
+        input.onRuntimeEvent,
+        runnerRuntimeEvent({
+          type: 'agent.process.exited',
+          runId: input.runId,
+          projection: input.projection,
+          routing: input.routing,
+          cli: CLAUDE_CLI_NAME,
+          model,
+          ...(parsed.session_id === undefined ? {} : { sessionId: parsed.session_id }),
+          payload: { exitCode: result.exitCode, timedOut: result.timedOut },
+        }),
+      );
       return {
         result: parsed.result,
         model,

@@ -23,12 +23,15 @@ import type {
   EventEnvelope,
   IssueStateRecord,
   RunnerEntry,
+  RunnerRouting,
+  RuntimeEventDraft,
   WakeConfig,
 } from '../../domain/types.js';
 
 type CodexRunnerSettings = Omit<Extract<RunnerEntry, { kind: 'codex' }>, 'kind'>;
 import { buildStagePrompt } from '../runner/stage-prompt.js';
 import { runAgentCliCommand } from '../runner/cli-command.js';
+import { emitRuntimeEvent, runnerRuntimeEvent } from '../runner/runtime-events.js';
 import { writeRunnerTranscript } from '../runner/transcripts.js';
 import { parseRunnerResult } from '../../domain/schema.js';
 
@@ -311,6 +314,8 @@ export function createCodexRunner(options: {
       mergeConflictDetected?: boolean;
       upstreamChanges?: string;
       onProcessStart?: (identity: { pid: number; processStartedAt: string }) => Promise<void>;
+      onRuntimeEvent?: (event: RuntimeEventDraft) => Promise<void>;
+      routing?: RunnerRouting;
     }): Promise<AgentRunResult> {
       const runMode = 'start';
       const toolCapabilityNote = buildCodexToolCapabilityNote({
@@ -382,7 +387,21 @@ export function createCodexRunner(options: {
         }),
         cwd,
         timeoutMs: options.settings.timeoutMs,
-        ...(input.onProcessStart === undefined ? {} : { onProcessStart: input.onProcessStart }),
+        onProcessStart: async (identity) => {
+          await input.onProcessStart?.(identity);
+          await emitRuntimeEvent(
+            input.onRuntimeEvent,
+            runnerRuntimeEvent({
+              type: 'agent.process.started',
+              runId: input.runId,
+              projection: input.projection,
+              routing: input.routing,
+              cli: CODEX_CLI_NAME,
+              model,
+              payload: { pid: identity.pid, processStartedAt: identity.processStartedAt },
+            }),
+          );
+        },
       });
       const responseTranscriptPath = await writeRunnerTranscript({
         config: input.config,
@@ -417,6 +436,18 @@ export function createCodexRunner(options: {
             exitCode: result.exitCode,
           }),
         );
+        await emitRuntimeEvent(
+          input.onRuntimeEvent,
+          runnerRuntimeEvent({
+            type: 'agent.process.exited',
+            runId: input.runId,
+            projection: input.projection,
+            routing: input.routing,
+            cli: CODEX_CLI_NAME,
+            model,
+            payload: { exitCode: result.exitCode, timedOut: result.timedOut },
+          }),
+        );
         return {
           result: [
             result.timedOut
@@ -449,6 +480,70 @@ export function createCodexRunner(options: {
 
       const parsed = extractCodexExecResult(result.stdout);
       const sandboxLog = readSandboxLogBreadcrumb();
+      const rawEvents = result.stdout
+        .split(/\r?\n/)
+        .filter((line) => line.trim().length > 0)
+        .map((line) => JSON.parse(line) as Record<string, unknown>);
+      for (const raw of rawEvents) {
+        if (raw.type === 'thread.started' && typeof raw.thread_id === 'string') {
+          await emitRuntimeEvent(
+            input.onRuntimeEvent,
+            runnerRuntimeEvent({
+              type: 'agent.session.started',
+              runId: input.runId,
+              projection: input.projection,
+              routing: input.routing,
+              cli: CODEX_CLI_NAME,
+              model,
+              sessionId: raw.thread_id,
+              payload: { raw },
+            }),
+          );
+        } else if (raw.type === 'turn.completed') {
+          await emitRuntimeEvent(
+            input.onRuntimeEvent,
+            runnerRuntimeEvent({
+              type: 'agent.turn.completed',
+              runId: input.runId,
+              projection: input.projection,
+              routing: input.routing,
+              cli: CODEX_CLI_NAME,
+              model,
+              ...(parsed.sessionId === undefined ? {} : { sessionId: parsed.sessionId }),
+              payload: { raw },
+            }),
+          );
+        } else if (raw.type === 'item.completed') {
+          await emitRuntimeEvent(
+            input.onRuntimeEvent,
+            runnerRuntimeEvent({
+              type: 'agent.progress',
+              runId: input.runId,
+              projection: input.projection,
+              routing: input.routing,
+              cli: CODEX_CLI_NAME,
+              model,
+              ...(parsed.sessionId === undefined ? {} : { sessionId: parsed.sessionId }),
+              payload: { raw },
+            }),
+          );
+        }
+      }
+      if (parsed.tokenUsage !== undefined) {
+        await emitRuntimeEvent(
+          input.onRuntimeEvent,
+          runnerRuntimeEvent({
+            type: 'agent.usage.updated',
+            runId: input.runId,
+            projection: input.projection,
+            routing: input.routing,
+            cli: CODEX_CLI_NAME,
+            model,
+            ...(parsed.sessionId === undefined ? {} : { sessionId: parsed.sessionId }),
+            payload: { tokenUsage: parsed.tokenUsage },
+          }),
+        );
+      }
       console.log(
         formatCodexRunLogLine({
           phase: 'success',
@@ -460,6 +555,19 @@ export function createCodexRunner(options: {
           model,
           ...(input.workspacePath === undefined ? {} : { workspacePath: input.workspacePath }),
           ...(parsed.sessionId === undefined ? {} : { sessionId: parsed.sessionId }),
+        }),
+      );
+      await emitRuntimeEvent(
+        input.onRuntimeEvent,
+        runnerRuntimeEvent({
+          type: 'agent.process.exited',
+          runId: input.runId,
+          projection: input.projection,
+          routing: input.routing,
+          cli: CODEX_CLI_NAME,
+          model,
+          ...(parsed.sessionId === undefined ? {} : { sessionId: parsed.sessionId }),
+          payload: { exitCode: result.exitCode, timedOut: result.timedOut },
         }),
       );
 
@@ -475,10 +583,7 @@ export function createCodexRunner(options: {
         metadata: {
           stdout: result.stdout,
           stderr: result.stderr,
-          raw: result.stdout
-            .split(/\r?\n/)
-            .filter((line) => line.trim().length > 0)
-            .map((line) => JSON.parse(line) as Record<string, unknown>),
+          raw: rawEvents,
           skipApproval: stagePrompt.skipApproval,
           allowAutoApproval: stagePrompt.allowAutoApproval,
           ...(promptTranscriptPath === undefined ? {} : { promptTranscriptPath }),

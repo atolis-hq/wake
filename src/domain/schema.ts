@@ -11,6 +11,7 @@ import {
   correlationRoleSchema,
   resourceUriSchema,
 } from './resource-uri.js';
+import { runtimeEventTypeValues } from './runtime-events.js';
 import { alwaysManualIgnoredLabels } from './manual-labels.js';
 
 const isoTimestampSchema = z.string().datetime({ offset: true });
@@ -60,6 +61,22 @@ export const executionAttemptLifecycleValues = [
 export const executionOutcomeSchema = z.enum(executionOutcomeValues);
 export const workflowOutcomeSchema = z.enum(workflowOutcomeValues);
 export const executionAttemptLifecycleSchema = z.enum(executionAttemptLifecycleValues);
+
+export const runtimeEventSchema = z.object({
+  type: z.enum(runtimeEventTypeValues),
+  runId: z.string(),
+  workItemId: z.string(),
+  runner: z.object({
+    name: z.string(),
+    kind: z.enum(['fake', 'claude', 'codex', 'cursor']),
+    cli: z.string(),
+    model: z.string().optional(),
+  }),
+  sessionId: z.string().optional(),
+  timestamp: isoTimestampSchema,
+  sequence: z.number().int().nonnegative(),
+  payload: z.record(z.string(), z.unknown()).default({}),
+});
 
 export const defaultAgentIdentity = 'Wake';
 export const defaultSmokePrompt = `This is ${defaultAgentIdentity}, reply with "hi ${defaultAgentIdentity} only"`;
@@ -411,6 +428,8 @@ export const runRecordSchema = z.preprocess(
     workerProcessStartedAt: z.string().optional(),
     agentPid: z.number().int().positive().optional(),
     agentProcessStartedAt: z.string().optional(),
+    lastMeaningfulActivityAt: isoTimestampSchema.optional(),
+    runtimeEvents: z.array(runtimeEventSchema).optional(),
     tokenUsage: runTokenUsageSchema.optional(),
     metadata: z.record(z.string(), z.unknown()).optional(),
   }),

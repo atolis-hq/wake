@@ -25,11 +25,14 @@ import type {
   EventEnvelope,
   IssueStateRecord,
   RunnerEntry,
+  RunnerRouting,
+  RuntimeEventDraft,
   WakeConfig,
 } from '../../domain/types.js';
 import { parseRunnerResult } from '../../domain/schema.js';
 import { buildStagePrompt } from '../runner/stage-prompt.js';
 import { runAgentCliCommand } from '../runner/cli-command.js';
+import { emitRuntimeEvent, runnerRuntimeEvent } from '../runner/runtime-events.js';
 import { writeRunnerTranscript } from '../runner/transcripts.js';
 
 type CursorRunnerSettings = Omit<Extract<RunnerEntry, { kind: 'cursor' }>, 'kind'>;
@@ -269,6 +272,8 @@ export function createCursorRunner(options: {
       mergeConflictDetected?: boolean;
       upstreamChanges?: string;
       onProcessStart?: (identity: { pid: number; processStartedAt: string }) => Promise<void>;
+      onRuntimeEvent?: (event: RuntimeEventDraft) => Promise<void>;
+      routing?: RunnerRouting;
     }): Promise<AgentRunResult> {
       const priorSessionId = input.projection.wake.sessionId;
       const priorSessionCli = input.projection.wake.sessionCli;
@@ -341,7 +346,21 @@ export function createCursorRunner(options: {
         }),
         cwd,
         timeoutMs: options.settings.timeoutMs,
-        ...(input.onProcessStart === undefined ? {} : { onProcessStart: input.onProcessStart }),
+        onProcessStart: async (identity) => {
+          await input.onProcessStart?.(identity);
+          await emitRuntimeEvent(
+            input.onRuntimeEvent,
+            runnerRuntimeEvent({
+              type: 'agent.process.started',
+              runId: input.runId,
+              projection: input.projection,
+              routing: input.routing,
+              cli: CURSOR_CLI_NAME,
+              model,
+              payload: { pid: identity.pid, processStartedAt: identity.processStartedAt },
+            }),
+          );
+        },
       });
       const responseTranscriptPath = await writeRunnerTranscript({
         config: input.config,
@@ -371,6 +390,18 @@ export function createCursorRunner(options: {
             model,
             ...(input.workspacePath === undefined ? {} : { workspacePath: input.workspacePath }),
             exitCode: result.exitCode,
+          }),
+        );
+        await emitRuntimeEvent(
+          input.onRuntimeEvent,
+          runnerRuntimeEvent({
+            type: 'agent.process.exited',
+            runId: input.runId,
+            projection: input.projection,
+            routing: input.routing,
+            cli: CURSOR_CLI_NAME,
+            model,
+            payload: { exitCode: result.exitCode, timedOut: result.timedOut },
           }),
         );
         return {
@@ -425,6 +456,34 @@ export function createCursorRunner(options: {
       }
 
       const sandboxLog = readSandboxLogBreadcrumb();
+      await emitRuntimeEvent(
+        input.onRuntimeEvent,
+        runnerRuntimeEvent({
+          type: 'agent.progress',
+          runId: input.runId,
+          projection: input.projection,
+          routing: input.routing,
+          cli: CURSOR_CLI_NAME,
+          model,
+          ...(parsed.sessionId === undefined ? {} : { sessionId: parsed.sessionId }),
+          payload: { message: 'Cursor agent result received', raw: parsed },
+        }),
+      );
+      if (parsed.tokenUsage !== undefined) {
+        await emitRuntimeEvent(
+          input.onRuntimeEvent,
+          runnerRuntimeEvent({
+            type: 'agent.usage.updated',
+            runId: input.runId,
+            projection: input.projection,
+            routing: input.routing,
+            cli: CURSOR_CLI_NAME,
+            model,
+            ...(parsed.sessionId === undefined ? {} : { sessionId: parsed.sessionId }),
+            payload: { tokenUsage: parsed.tokenUsage },
+          }),
+        );
+      }
       console.log(
         formatCursorRunLogLine({
           phase: 'success',
@@ -436,6 +495,19 @@ export function createCursorRunner(options: {
           model,
           ...(input.workspacePath === undefined ? {} : { workspacePath: input.workspacePath }),
           ...(parsed.sessionId === undefined ? {} : { sessionId: parsed.sessionId }),
+        }),
+      );
+      await emitRuntimeEvent(
+        input.onRuntimeEvent,
+        runnerRuntimeEvent({
+          type: 'agent.process.exited',
+          runId: input.runId,
+          projection: input.projection,
+          routing: input.routing,
+          cli: CURSOR_CLI_NAME,
+          model,
+          ...(parsed.sessionId === undefined ? {} : { sessionId: parsed.sessionId }),
+          payload: { exitCode: result.exitCode, timedOut: result.timedOut },
         }),
       );
 

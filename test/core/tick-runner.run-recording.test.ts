@@ -158,6 +158,76 @@ describe('tick runner', () => {
       });
     });
 
+    it('derives last meaningful activity from normalized runtime events', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const config = createDefaultWakeConfig(root);
+      config.sources.github.policy.requiredLabels = ['wake:queue'];
+
+      const tickRunner = createTickRunner({
+        clock: { now: () => new Date('2026-07-05T12:00:00.000Z') },
+        config,
+        stateStore: store,
+        workSource: createFakeTicketingSystem({
+          tickets: [
+            {
+              repo: 'atolis-hq/wake',
+              number: 13,
+              title: 'Implement',
+              body: 'Body',
+              labels: ['wake:queue'],
+              comments: [],
+            },
+          ],
+        }),
+        runner: {
+          async run(input) {
+            await input.onRuntimeEvent?.({
+              type: 'agent.process.started',
+              runId: input.runId,
+              workItemId: input.projection.workItemKey,
+              runner: { name: 'test', kind: 'fake', cli: 'Test', model: 'test-model' },
+              timestamp: '2026-07-05T12:01:00.000Z',
+              payload: { pid: 123 },
+            });
+            await input.onRuntimeEvent?.({
+              type: 'agent.progress',
+              runId: input.runId,
+              workItemId: input.projection.workItemKey,
+              runner: { name: 'test', kind: 'fake', cli: 'Test', model: 'test-model' },
+              timestamp: '2026-07-05T12:02:00.000Z',
+              payload: { message: 'meaningful provider progress' },
+            });
+            await input.onRuntimeEvent?.({
+              type: 'agent.process.exited',
+              runId: input.runId,
+              workItemId: input.projection.workItemKey,
+              runner: { name: 'test', kind: 'fake', cli: 'Test', model: 'test-model' },
+              timestamp: '2026-07-05T12:03:00.000Z',
+              payload: { exitCode: 0 },
+            });
+            return {
+              result: 'Done\nDONE',
+              model: 'test-model',
+              cli: 'test-cli',
+              session_id: 'session-runtime-events',
+            };
+          },
+        },
+        resourceIndex: createFakeResourceIndex(),
+        workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+      });
+
+      await tickRunner.runTick();
+
+      const [record] = await store.listRunRecords();
+      expect(record?.runtimeEvents?.map((event) => [event.sequence, event.type])).toEqual([
+        [0, 'agent.process.started'],
+        [1, 'agent.progress'],
+        [2, 'agent.process.exited'],
+      ]);
+      expect(record?.lastMeaningfulActivityAt).toBe('2026-07-05T12:02:00.000Z');
+    });
+
     it('creates event audit records for sync and completion', async () => {
       const store = createStateStore({ wakeRoot: root });
       const config = createDefaultWakeConfig(root);
