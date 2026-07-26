@@ -8,6 +8,7 @@ import { createFakeWorkspaceManager } from '../../src/adapters/fake/fake-workspa
 import { createStateStore } from '../../src/adapters/fs/state-store.js';
 import { createDefaultWakeConfig } from '../../src/config/defaults.js';
 import { createTickRunner } from '../../src/core/tick-runner.js';
+import { AUTONOMOUS_DECISION_AUDIT_EVENT } from '../../src/domain/schema.js';
 import type { EventEnvelope } from '../../src/domain/types.js';
 import {
   findByIssueRef,
@@ -387,6 +388,9 @@ describe('tick runner', () => {
       expect(deliveredEvents).toContain('wake:stage.implement');
       expect(events).toContain('"reason":"auto:approved"');
       expect(events).toContain('"classification":"auto-approval"');
+      expect(events).toContain(`"sourceEventType":"${AUTONOMOUS_DECISION_AUDIT_EVENT}"`);
+      expect(events).toContain('"decisionType":"approval.auto-resolved"');
+      expect(events).toContain('"workflowRevision":"sha256:');
     });
 
     it('does not auto-approve without the wake:auto label', async () => {

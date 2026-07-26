@@ -13,6 +13,7 @@ import { createPolicyEngine } from '../../src/core/policy-engine.js';
 import { createProjectionUpdater } from '../../src/core/projection-updater.js';
 import { createScheduledWorkflowSource } from '../../src/core/scheduled-workflow-source.js';
 import { createTickRunner } from '../../src/core/tick-runner.js';
+import { AUTONOMOUS_DECISION_AUDIT_EVENT } from '../../src/domain/schema.js';
 import { chooseAction } from '../../src/domain/workflows.js';
 import type { IssueStateRecord } from '../../src/domain/types.js';
 
@@ -150,6 +151,15 @@ describe('scheduled workflow source', () => {
 
     expect(runnerCalls).toBe(0);
     expect(await store.listIssueStates()).toHaveLength(1);
+    const auditEvent = (await store.listEventEnvelopes()).find(
+      (event) => event.sourceEventType === AUTONOMOUS_DECISION_AUDIT_EVENT,
+    );
+    expect(auditEvent?.payload).toMatchObject({
+      decisionType: 'trigger.fired',
+      workItemId: auditEvent?.workItemKey,
+      workflowRevision: expect.stringMatching(/^sha256:/),
+      outcome: expect.objectContaining({ fired: true }),
+    });
   });
 
   it('keeps scheduled workflow stage prompt context on the selected action', () => {
