@@ -151,6 +151,10 @@ function hasConfirmedExternalSideEffect(projection: IssueStateRecord): boolean {
 }
 
 function failurePhaseForRecord(record: RunRecord): FailurePhase {
+  if (record.metadata?.failureSource === 'wake-workspace-validation') {
+    return 'workspace-validation';
+  }
+
   if (record.agentPid !== undefined || record.agentProcessStartedAt !== undefined) {
     return 'running';
   }
@@ -164,6 +168,15 @@ function failurePhaseForRecord(record: RunRecord): FailurePhase {
   }
 
   return 'unknown';
+}
+
+function isWorkspaceValidationFailure(error: unknown): boolean {
+  return (
+    error !== null &&
+    typeof error === 'object' &&
+    'failureSource' in error &&
+    (error as { failureSource?: unknown }).failureSource === 'wake-workspace-validation'
+  );
 }
 
 function classifyFailedRun(input: {
@@ -1569,6 +1582,7 @@ export function createTickRunner(deps: {
           workspacePath?: string;
           mergeConflictDetected?: boolean;
           upstreamChanges?: string;
+          validation?: unknown;
         } =
           workspaceMode === 'branch'
             ? await deps.workspaceManager.prepareWorkspace({
@@ -1598,6 +1612,9 @@ export function createTickRunner(deps: {
             ...preparedRecord.metadata,
             ...(workspacePath === undefined ? {} : { workspacePath }),
             workspaceMode,
+            ...(prepareResult.validation === undefined
+              ? {}
+              : { workspaceValidation: prepareResult.validation }),
           },
         });
 
@@ -1749,6 +1766,21 @@ export function createTickRunner(deps: {
             ? null
             : lifecycle.nextStageFromSentinel(claimedStage, sentinel, workflow);
         const finishedAt = deps.clock.now().toISOString();
+        let workspaceBookkeeping: unknown;
+        if (workspacePath !== undefined) {
+          try {
+            workspaceBookkeeping = {
+              status: 'recorded',
+              result: await deps.workspaceManager.recordWorkspaceBookkeeping({ workspacePath }),
+            };
+          } catch (error) {
+            workspaceBookkeeping = {
+              status: 'failed',
+              failureSource: 'wake-workspace-bookkeeping',
+              error: error instanceof Error ? error.message : String(error),
+            };
+          }
+        }
 
         let prReviewTargetResourceUri: string | null = null;
         if (watcherRun) {
@@ -1901,6 +1933,7 @@ export function createTickRunner(deps: {
           ...(runnerResult.tokenUsage === undefined ? {} : { tokenUsage: runnerResult.tokenUsage }),
           metadata: {
             ...finalisingRecord.metadata,
+            ...(workspaceBookkeeping === undefined ? {} : { workspaceBookkeeping }),
             ...resultMetadata,
           },
         });
@@ -2050,6 +2083,9 @@ export function createTickRunner(deps: {
           projection: candidate,
           record: failedRecord,
           failureClass: 'infra',
+          ...(isWorkspaceValidationFailure(err)
+            ? { failurePhase: 'workspace-validation' as const }
+            : {}),
           ...(failedRecordWorkspacePath === undefined
             ? {}
             : { workspacePath: failedRecordWorkspacePath }),
@@ -2066,6 +2102,9 @@ export function createTickRunner(deps: {
           metadata: {
             ...failedRecord.metadata,
             failureClass: 'infra',
+            ...(isWorkspaceValidationFailure(err)
+              ? { failureSource: 'wake-workspace-validation' }
+              : {}),
             ...failureContext,
           },
         });

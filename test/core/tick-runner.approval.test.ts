@@ -1045,6 +1045,15 @@ describe('tick runner', () => {
             readOnlyWorkspaceCalls += 1;
             return { workspacePath: join(root, 'readonly') };
           },
+          async recordWorkspaceBookkeeping() {
+            return {
+              branch: 'wake/issue-70',
+              headRevision: 'fake-head',
+              diffSummary: '',
+              untrackedFiles: [],
+              unpushedCommits: { hasUpstream: false, count: 0, commits: [] },
+            };
+          },
           async cleanupWorkspace() {},
         },
       });

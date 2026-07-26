@@ -187,7 +187,7 @@ describe('git workspace manager', () => {
     expect(stdout.trim()).toBe('main');
   }, 20_000);
 
-  it('reuses an existing per-issue workspace and recreates it only when missing', async () => {
+  it('reuses clean per-issue workspaces and recreates them only when missing', async () => {
     const wakeRoot = join(root, '.wake');
     const manager = createGitWorkspaceManager({
       wakeRoot,
@@ -202,17 +202,18 @@ describe('git workspace manager', () => {
 
     await writeFile(join(first.workspacePath, 'local-only.txt'), 'keep me\n', 'utf8');
 
-    const second = await manager.prepareWorkspace({
-      workId: workId(42),
-      repo: 'acme/example',
-      issueNumber: 42,
-    });
+    await expect(
+      manager.prepareWorkspace({
+        workId: workId(42),
+        repo: 'acme/example',
+        issueNumber: 42,
+      }),
+    ).rejects.toThrow(/working tree has uncommitted or untracked changes/);
 
-    expect(second.workspacePath).toBe(first.workspacePath);
-    await expect(access(join(second.workspacePath, 'local-only.txt'))).resolves.toBeUndefined();
+    await expect(access(join(first.workspacePath, 'local-only.txt'))).resolves.toBeUndefined();
 
-    await manager.cleanupWorkspace({ workspacePath: second.workspacePath });
-    await expect(access(second.workspacePath)).rejects.toThrow();
+    await manager.cleanupWorkspace({ workspacePath: first.workspacePath });
+    await expect(access(first.workspacePath)).rejects.toThrow();
 
     const third = await manager.prepareWorkspace({
       workId: workId(42),
@@ -306,7 +307,7 @@ describe('git workspace manager', () => {
     expect(newFile.replace(/\r\n/g, '\n')).toBe('new content\n');
   }, 20_000);
 
-  it('skips merge update when workspace has pending changes', async () => {
+  it('blocks an existing workspace with pending changes before a run starts', async () => {
     const wakeRoot = join(root, '.wake');
     const manager = createGitWorkspaceManager({
       wakeRoot,
@@ -329,17 +330,46 @@ describe('git workspace manager', () => {
     // Introduce a pending (untracked) change in the workspace
     await writeFile(join(workspacePath, 'pending.txt'), 'local work\n', 'utf8');
 
-    const { mergeConflictDetected } = await manager.prepareWorkspace({
+    await expect(
+      manager.prepareWorkspace({
+        workId: workId(42),
+        repo: 'acme/example',
+        issueNumber: 42,
+      }),
+    ).rejects.toThrow(
+      /Workspace validation failed: working tree has uncommitted or untracked changes/,
+    );
+
+    // Pending file is preserved for inspection.
+    await expect(access(join(workspacePath, 'pending.txt'))).resolves.toBeUndefined();
+    // Upstream file was NOT merged because the workspace was dirty.
+    await expect(access(join(workspacePath, 'newfile.txt'))).rejects.toThrow();
+  }, 20_000);
+
+  it('records post-run workspace bookkeeping', async () => {
+    const wakeRoot = join(root, '.wake');
+    const manager = createGitWorkspaceManager({
+      wakeRoot,
+      remoteUrlForRepo: () => remotePath,
+    });
+
+    const { workspacePath } = await manager.prepareWorkspace({
       workId: workId(42),
       repo: 'acme/example',
       issueNumber: 42,
     });
 
-    expect(mergeConflictDetected).toBe(false);
-    // Pending file is preserved (merge was skipped)
-    await expect(access(join(workspacePath, 'pending.txt'))).resolves.toBeUndefined();
-    // Upstream file was NOT merged (merge was skipped)
-    await expect(access(join(workspacePath, 'newfile.txt'))).rejects.toThrow();
+    await writeFile(join(workspacePath, 'README.md'), '# workspace version\n', 'utf8');
+    await writeFile(join(workspacePath, 'local.txt'), 'local\n', 'utf8');
+
+    const bookkeeping = await manager.recordWorkspaceBookkeeping({ workspacePath });
+
+    expect(bookkeeping.branch).toBe(branchNameForIssue(42));
+    expect(bookkeeping.headRevision).toMatch(/^[0-9a-f]{40}$/);
+    expect(bookkeeping.diffSummary).toContain('README.md');
+    expect(bookkeeping.untrackedFiles).toEqual(['local.txt']);
+    expect(bookkeeping.unpushedCommits.hasUpstream).toBe(false);
+    expect(bookkeeping.unpushedCommits.count).toBeGreaterThan(0);
   }, 20_000);
 
   it('detects merge conflict and leaves workspace in a clean state', async () => {

@@ -21,6 +21,15 @@ function recordingWorkspaceManager(options: { throwOnCleanup?: boolean } = {}) {
     async prepareReadOnlyClone() {
       return { workspacePath: '' };
     },
+    async recordWorkspaceBookkeeping() {
+      return {
+        branch: 'wake/issue-test',
+        headRevision: 'fake-head',
+        diffSummary: '',
+        untrackedFiles: [],
+        unpushedCommits: { hasUpstream: false, count: 0, commits: [] },
+      };
+    },
     async cleanupWorkspace({ workspacePath }) {
       cleaned.push(workspacePath);
       if (options.throwOnCleanup) {

@@ -70,6 +70,15 @@ describe('tick runner', () => {
             prepareCallCount += 1;
             return { workspacePath: join(root, 'workspaces', 'issue-40-readonly') };
           },
+          async recordWorkspaceBookkeeping() {
+            return {
+              branch: 'wake/issue-40',
+              headRevision: 'fake-head',
+              diffSummary: '',
+              untrackedFiles: [],
+              unpushedCommits: { hasUpstream: false, count: 0, commits: [] },
+            };
+          },
           async cleanupWorkspace() {},
         },
       });
@@ -367,6 +376,15 @@ describe('tick runner', () => {
               throw new Error('git network failure');
             }
             return { workspacePath: 'unused' };
+          },
+          async recordWorkspaceBookkeeping() {
+            return {
+              branch: 'wake/issue-50',
+              headRevision: 'fake-head',
+              diffSummary: '',
+              untrackedFiles: [],
+              unpushedCommits: { hasUpstream: false, count: 0, commits: [] },
+            };
           },
           async cleanupWorkspace() {},
         },

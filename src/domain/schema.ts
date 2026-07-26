@@ -380,6 +380,7 @@ const runLeaseSchema = z.object({
 });
 
 export const failurePhaseSchema = z.enum([
+  'workspace-validation',
   'workspace-prep',
   'process-starting',
   'running',
