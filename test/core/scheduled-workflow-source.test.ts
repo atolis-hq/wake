@@ -13,6 +13,8 @@ import { createPolicyEngine } from '../../src/core/policy-engine.js';
 import { createProjectionUpdater } from '../../src/core/projection-updater.js';
 import { createScheduledWorkflowSource } from '../../src/core/scheduled-workflow-source.js';
 import { createTickRunner } from '../../src/core/tick-runner.js';
+import { chooseAction } from '../../src/domain/workflows.js';
+import type { IssueStateRecord } from '../../src/domain/types.js';
 
 describe('scheduled workflow source', () => {
   let root: string;
@@ -148,5 +150,57 @@ describe('scheduled workflow source', () => {
 
     expect(runnerCalls).toBe(0);
     expect(await store.listIssueStates()).toHaveLength(1);
+  });
+
+  it('keeps scheduled workflow stage prompt context on the selected action', () => {
+    const config = createDefaultWakeConfig(root);
+    config.workflows = {
+      triage: {
+        trigger: { schedule: { cron: '*/10 * * * *' } },
+        stages: {
+          assign: {
+            action: 'triage-assign',
+            workspace: 'none',
+            onDone: 'done',
+            promptContext: {
+              triageCapacityAvailable: true,
+              triageReposJson: '["org/repo"]',
+            },
+          },
+        },
+      },
+    };
+    const projection: IssueStateRecord = {
+      schemaVersion: 1,
+      workItemKey: 'work-01JQZX9K2N4P6R8T0V2W4Y6A99',
+      issue: {
+        repo: 'wake/internal',
+        number: 1,
+        title: 'Scheduled workflow: triage',
+        body: 'Synthetic schedule trigger',
+        labels: ['wake:scheduled-workflow'],
+        assignees: [],
+        isPullRequest: false,
+        state: 'open',
+        url: 'https://wake.local/schedules/triage/slot',
+        createdAt: '2026-07-25T22:30:00.000Z',
+        updatedAt: '2026-07-25T22:30:00.000Z',
+      },
+      comments: [],
+      wake: {
+        stage: 'queue',
+        stageHistory: [],
+        recentEventIds: [],
+        syncedAt: '2026-07-25T22:34:00.000Z',
+        expectedEcho: { commentIds: [], labels: [] },
+      },
+      context: { workflow: 'triage' },
+      correlatedResources: [],
+    };
+
+    expect(chooseAction(projection, config.workflows.triage!)?.promptContext).toMatchObject({
+      triageCapacityAvailable: true,
+      triageReposJson: '["org/repo"]',
+    });
   });
 });

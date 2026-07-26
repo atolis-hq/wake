@@ -1,7 +1,6 @@
 import { defaultAgentIdentity } from '../../domain/schema.js';
 import type { WakeConfig } from '../../domain/types.js';
 import type { AgentAction, IssueStateRecord } from '../../domain/types.js';
-import { alwaysManualIgnoredLabels } from '../../core/policy-engine.js';
 import { chooseAction, workflowForProjection } from '../../domain/workflows.js';
 import { branchNameForIssue } from '../git/git-workspace-manager.js';
 import { loadPromptTemplate, renderPromptTemplate } from './prompt-templates.js';
@@ -266,18 +265,6 @@ export async function buildStagePrompt(input: {
     isStart: mode === 'start',
     isResume: mode === 'resume',
   };
-
-  if (input.action === 'triage-assign' && input.config !== undefined) {
-    const ignoredLabels = [
-      ...new Set([
-        ...alwaysManualIgnoredLabels,
-        ...input.config.sources.github.policy.ignoredLabels,
-      ]),
-    ];
-    context.triageIgnoredLabels = ignoredLabels;
-    context.triageIgnoredLabelsJson = JSON.stringify(ignoredLabels);
-    context.triageReposJson = JSON.stringify(input.config.sources.github.repos);
-  }
 
   if (resolvedWorkspaceMode === 'branch') {
     context.branch = branchNameForIssue(input.projection.issue.number);

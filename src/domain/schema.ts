@@ -11,6 +11,7 @@ import {
   correlationRoleSchema,
   resourceUriSchema,
 } from './resource-uri.js';
+import { alwaysManualIgnoredLabels } from './manual-labels.js';
 
 const isoTimestampSchema = z.string().datetime({ offset: true });
 const identifierSchema = z.string().min(1);
@@ -151,6 +152,7 @@ const stageRouteSchema = z.object({
   action: identifierSchema.optional(),
   tier: z.string().optional(),
   runner: z.string().optional(),
+  promptContext: z.record(z.string(), z.unknown()).optional(),
 });
 
 const runnerRoutingSchema = z.object({
@@ -714,6 +716,11 @@ const wakeConfigBaseSchema = z.object({
           workspace: 'none',
           tier: 'light',
           onDone: 'done',
+          promptContext: {
+            triageCapacityAvailable: true,
+            triageWipCapDescription:
+              'Wake has no active running work item at triage start; do not assign more than one issue.',
+          },
         },
       },
     },
@@ -1018,8 +1025,31 @@ export function parseLedger(input: unknown) {
   return ledgerSchema.parse(input);
 }
 
+function githubTriagePromptContext(config: z.infer<typeof wakeConfigSchema>) {
+  const triageIgnoredLabels = [
+    ...new Set([...alwaysManualIgnoredLabels, ...config.sources.github.policy.ignoredLabels]),
+  ];
+
+  return {
+    triageIgnoredLabels,
+    triageIgnoredLabelsJson: JSON.stringify(triageIgnoredLabels),
+    triageReposJson: JSON.stringify(config.sources.github.repos),
+  };
+}
+
+function attachDerivedPromptContext(config: z.infer<typeof wakeConfigSchema>) {
+  const triageAssignStage = config.workflows.triage?.stages.assign;
+  if (triageAssignStage?.promptContext !== undefined) {
+    triageAssignStage.promptContext = {
+      ...triageAssignStage.promptContext,
+      ...githubTriagePromptContext(config),
+    };
+  }
+  return config;
+}
+
 export function parseWakeConfig(input: unknown) {
-  return structuredClone(wakeConfigSchema.parse(input));
+  return structuredClone(attachDerivedPromptContext(wakeConfigSchema.parse(input)));
 }
 
 export function parseSourceStateRecord(input: unknown) {
