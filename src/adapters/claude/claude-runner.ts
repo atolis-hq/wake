@@ -1,21 +1,13 @@
-import type { AgentRunResult, AgentRunTokenUsage } from '../../core/contracts.js';
+import type { AgentRunInput, AgentRunResult, AgentRunTokenUsage } from '../../core/contracts.js';
 import { parseClaudePrintResult, parseRunnerResult } from '../../domain/schema.js';
-import type {
-  AgentAction,
-  ClaudePrintResult,
-  EventEnvelope,
-  IssueStateRecord,
-  RunnerEntry,
-  RunnerRouting,
-  RuntimeEventDraft,
-  WakeConfig,
-} from '../../domain/types.js';
+import type { AgentAction, ClaudePrintResult, RunnerEntry } from '../../domain/types.js';
 
 type ClaudeRunnerSettings = Omit<Extract<RunnerEntry, { kind: 'claude' }>, 'kind'>;
 import { runAgentCliCommand } from '../runner/cli-command.js';
 import { buildStagePrompt } from '../runner/stage-prompt.js';
 import { emitRuntimeEvent, runnerRuntimeEvent } from '../runner/runtime-events.js';
 import { writeRunnerTranscript } from '../runner/transcripts.js';
+import { createAgentExecution } from '../../core/live-execution.js';
 
 export { buildStagePrompt } from '../runner/stage-prompt.js';
 
@@ -141,6 +133,7 @@ export function runClaudeCommand(input: {
   args: string[];
   cwd: string;
   timeoutMs?: number;
+  cancellationSignal?: AbortSignal;
   onProcessStart?: (identity: { pid: number; processStartedAt: string }) => Promise<void>;
 }): Promise<{
   stdout: string;
@@ -246,216 +239,122 @@ export function createClaudeRunner(options: {
   cwd: string;
   settings: ClaudeRunnerSettings;
 }) {
-  return {
-    async run(input: {
-      action: AgentAction;
-      projection: IssueStateRecord;
-      recentEvents: EventEnvelope[];
-      config: WakeConfig;
-      runId: string;
-      workspacePath?: string;
-      promptContextOverrides?: Record<string, unknown>;
-      mergeConflictDetected?: boolean;
-      upstreamChanges?: string;
-      onProcessStart?: (identity: { pid: number; processStartedAt: string }) => Promise<void>;
-      onRuntimeEvent?: (event: RuntimeEventDraft) => Promise<void>;
-      routing?: RunnerRouting;
-    }): Promise<AgentRunResult> {
-      const sessionName = buildWakeSessionName({
-        sessionName: options.settings.sessionName,
+  async function executeRun(input: AgentRunInput): Promise<AgentRunResult> {
+    const sessionName = buildWakeSessionName({
+      sessionName: options.settings.sessionName,
+      issueNumber: input.projection.issue.number,
+      title: input.projection.issue.title,
+      runId: input.runId,
+    });
+
+    // Resume an in-progress session when the projection carries a session ID
+    // that was created by this same CLI. This happens when the previous run
+    // ended with BLOCKED and the same action is being retried after a human
+    // reply. Any forward-stage transition or FAILED run clears the stored
+    // session ID so that the next action always starts fresh.
+    const priorSessionId = input.projection.wake.sessionId;
+    const priorSessionCli = input.projection.wake.sessionCli;
+    const isResume = priorSessionId !== undefined && priorSessionCli === CLAUDE_CLI_NAME;
+
+    const stagePrompt = await buildStagePrompt({
+      action: input.action,
+      projection: input.projection,
+      mode: isResume ? 'resume' : 'start',
+      config: input.config,
+      ...(input.promptContextOverrides === undefined
+        ? {}
+        : { contextOverrides: input.promptContextOverrides }),
+      ...(input.mergeConflictDetected === true ? { mergeConflictDetected: true } : {}),
+      ...(input.upstreamChanges === undefined ? {} : { upstreamChanges: input.upstreamChanges }),
+    });
+
+    const model = resolveModel({
+      action: input.action,
+      settings: options.settings,
+    });
+
+    const args = buildClaudePrintArgs({
+      model,
+      prompt: stagePrompt.prompt,
+      systemPrompt: stagePrompt.harnessPrompt,
+      sessionName,
+      allowedTools: stagePrompt.allowedTools,
+      extraArgs: stagePrompt.extraArgs,
+      maxTurns: stagePrompt.maxTurns,
+      ...(stagePrompt.permissionMode === undefined
+        ? {}
+        : { permissionMode: stagePrompt.permissionMode }),
+      ...(options.settings.remoteControl.enabled ? { remoteControlName: sessionName } : {}),
+      ...(options.settings.effort === undefined ? {} : { effort: options.settings.effort }),
+      ...(isResume ? { resumeSessionId: priorSessionId } : {}),
+    });
+    const promptTranscriptPath = await writeRunnerTranscript({
+      config: input.config,
+      projection: input.projection,
+      runId: input.runId,
+      action: input.action,
+      cli: CLAUDE_CLI_NAME,
+      kind: 'prompt',
+      text: stagePrompt.prompt,
+    });
+
+    console.log(
+      formatClaudeRunLogLine({
+        phase: 'start',
+        runId: input.runId,
+        action: input.action,
         issueNumber: input.projection.issue.number,
-        title: input.projection.issue.title,
-        runId: input.runId,
-      });
-
-      // Resume an in-progress session when the projection carries a session ID
-      // that was created by this same CLI. This happens when the previous run
-      // ended with BLOCKED and the same action is being retried after a human
-      // reply. Any forward-stage transition or FAILED run clears the stored
-      // session ID so that the next action always starts fresh.
-      const priorSessionId = input.projection.wake.sessionId;
-      const priorSessionCli = input.projection.wake.sessionCli;
-      const isResume = priorSessionId !== undefined && priorSessionCli === CLAUDE_CLI_NAME;
-
-      const stagePrompt = await buildStagePrompt({
-        action: input.action,
-        projection: input.projection,
-        mode: isResume ? 'resume' : 'start',
-        config: input.config,
-        ...(input.promptContextOverrides === undefined
-          ? {}
-          : { contextOverrides: input.promptContextOverrides }),
-        ...(input.mergeConflictDetected === true ? { mergeConflictDetected: true } : {}),
-        ...(input.upstreamChanges === undefined ? {} : { upstreamChanges: input.upstreamChanges }),
-      });
-
-      const model = resolveModel({
-        action: input.action,
-        settings: options.settings,
-      });
-
-      const args = buildClaudePrintArgs({
+        repo: input.projection.issue.repo,
+        recentEventIds: input.recentEvents.map((event) => event.eventId),
         model,
-        prompt: stagePrompt.prompt,
-        systemPrompt: stagePrompt.harnessPrompt,
-        sessionName,
-        allowedTools: stagePrompt.allowedTools,
-        extraArgs: stagePrompt.extraArgs,
-        maxTurns: stagePrompt.maxTurns,
-        ...(stagePrompt.permissionMode === undefined
-          ? {}
-          : { permissionMode: stagePrompt.permissionMode }),
-        ...(options.settings.remoteControl.enabled ? { remoteControlName: sessionName } : {}),
-        ...(options.settings.effort === undefined ? {} : { effort: options.settings.effort }),
-        ...(isResume ? { resumeSessionId: priorSessionId } : {}),
-      });
-      const promptTranscriptPath = await writeRunnerTranscript({
-        config: input.config,
-        projection: input.projection,
-        runId: input.runId,
-        action: input.action,
-        cli: CLAUDE_CLI_NAME,
-        kind: 'prompt',
-        text: stagePrompt.prompt,
-      });
+        ...(input.workspacePath === undefined ? {} : { workspacePath: input.workspacePath }),
+      }),
+    );
 
-      console.log(
-        formatClaudeRunLogLine({
-          phase: 'start',
-          runId: input.runId,
-          action: input.action,
-          issueNumber: input.projection.issue.number,
-          repo: input.projection.issue.repo,
-          recentEventIds: input.recentEvents.map((event) => event.eventId),
-          model,
-          ...(input.workspacePath === undefined ? {} : { workspacePath: input.workspacePath }),
-        }),
-      );
-
-      const result = await runClaudeCommand({
-        command: options.command,
-        args,
-        cwd: input.workspacePath ?? options.cwd,
-        timeoutMs: options.settings.timeoutMs,
-        onProcessStart: async (identity) => {
-          await input.onProcessStart?.(identity);
-          await emitRuntimeEvent(
-            input.onRuntimeEvent,
-            runnerRuntimeEvent({
-              type: 'agent.process.started',
-              runId: input.runId,
-              projection: input.projection,
-              routing: input.routing,
-              cli: CLAUDE_CLI_NAME,
-              model,
-              payload: { pid: identity.pid, processStartedAt: identity.processStartedAt },
-            }),
-          );
-        },
-      });
-      const responseTranscriptPath = await writeRunnerTranscript({
-        config: input.config,
-        projection: input.projection,
-        runId: input.runId,
-        action: input.action,
-        cli: CLAUDE_CLI_NAME,
-        kind: 'response',
-        text: result.stdout,
-      });
-
-      if (result.exitCode !== 0 || result.timedOut || result.stdout.trim().length === 0) {
-        const sandboxLog = readSandboxLogBreadcrumb();
-        const failureClass = classifyClaudeCliFailure({
-          stdout: result.stdout,
-          stderr: result.stderr,
-          timedOut: result.timedOut,
-        });
-        console.error(
-          formatClaudeRunLogLine({
-            phase: 'failure',
-            runId: input.runId,
-            action: input.action,
-            issueNumber: input.projection.issue.number,
-            repo: input.projection.issue.repo,
-            recentEventIds: input.recentEvents.map((event) => event.eventId),
-            model,
-            ...(input.workspacePath === undefined ? {} : { workspacePath: input.workspacePath }),
-            exitCode: result.exitCode,
-          }),
-        );
+    const result = await runClaudeCommand({
+      command: options.command,
+      args,
+      cwd: input.workspacePath ?? options.cwd,
+      timeoutMs: options.settings.timeoutMs,
+      ...(input.cancellationSignal === undefined
+        ? {}
+        : { cancellationSignal: input.cancellationSignal }),
+      onProcessStart: async (identity) => {
+        await input.onProcessStart?.(identity);
         await emitRuntimeEvent(
           input.onRuntimeEvent,
           runnerRuntimeEvent({
-            type: 'agent.process.exited',
+            type: 'agent.process.started',
             runId: input.runId,
             projection: input.projection,
             routing: input.routing,
             cli: CLAUDE_CLI_NAME,
             model,
-            payload: { exitCode: result.exitCode, timedOut: result.timedOut },
+            payload: { pid: identity.pid, processStartedAt: identity.processStartedAt },
           }),
         );
-        let parsedReason: string | undefined;
-        let stdoutFailureDetail: string | undefined;
-        const trimmedStdout = result.stdout.trim();
-        try {
-          if (trimmedStdout.length > 0) {
-            parsedReason = parseClaudePrintOutput(result.stdout).result;
-          }
-        } catch {
-          // stdout wasn't valid JSON, so it is likely a CLI-level error
-          // message rather than a Claude print result.
-          stdoutFailureDetail = trimmedStdout;
-        }
-        return {
-          result: [
-            result.timedOut
-              ? `Claude runner timed out after ${options.settings.timeoutMs}ms and was killed`
-              : trimmedStdout.length === 0
-                ? 'Claude runner produced no output'
-                : parsedReason !== undefined
-                  ? `Claude runner failed: ${parsedReason}`
-                  : 'Claude runner failed',
-            result.stderr,
-            stdoutFailureDetail,
-            sandboxLog?.text,
-            'FAILED',
-          ]
-            .filter((part) => part !== undefined && part.length > 0)
-            .join('\n'),
-          model,
-          cli: CLAUDE_CLI_NAME,
-          failureClass,
-          metadata: {
-            stdout: result.stdout,
-            stderr: result.stderr,
-            exitCode: result.exitCode,
-            failureClass,
-            ...(promptTranscriptPath === undefined ? {} : { promptTranscriptPath }),
-            ...(responseTranscriptPath === undefined ? {} : { responseTranscriptPath }),
-            ...(sandboxLog?.metadata ?? {}),
-          },
-        };
-      }
+      },
+    });
+    const responseTranscriptPath = await writeRunnerTranscript({
+      config: input.config,
+      projection: input.projection,
+      runId: input.runId,
+      action: input.action,
+      cli: CLAUDE_CLI_NAME,
+      kind: 'response',
+      text: result.stdout,
+    });
 
-      const parsed = parseClaudePrintOutput(result.stdout);
+    if (result.exitCode !== 0 || result.timedOut || result.stdout.trim().length === 0) {
       const sandboxLog = readSandboxLogBreadcrumb();
-      await emitRuntimeEvent(
-        input.onRuntimeEvent,
-        runnerRuntimeEvent({
-          type: 'agent.progress',
-          runId: input.runId,
-          projection: input.projection,
-          routing: input.routing,
-          cli: CLAUDE_CLI_NAME,
-          model,
-          ...(parsed.session_id === undefined ? {} : { sessionId: parsed.session_id }),
-          payload: { message: 'Claude print result received', raw: parsed },
-        }),
-      );
-      console.log(
+      const failureClass = classifyClaudeCliFailure({
+        stdout: result.stdout,
+        stderr: result.stderr,
+        timedOut: result.timedOut,
+      });
+      console.error(
         formatClaudeRunLogLine({
-          phase: 'success',
+          phase: 'failure',
           runId: input.runId,
           action: input.action,
           issueNumber: input.projection.issue.number,
@@ -463,25 +362,9 @@ export function createClaudeRunner(options: {
           recentEventIds: input.recentEvents.map((event) => event.eventId),
           model,
           ...(input.workspacePath === undefined ? {} : { workspacePath: input.workspacePath }),
-          ...(parsed.session_id === undefined ? {} : { sessionId: parsed.session_id }),
+          exitCode: result.exitCode,
         }),
       );
-      const tokenUsage = extractTokenUsage(parsed);
-      if (tokenUsage !== undefined) {
-        await emitRuntimeEvent(
-          input.onRuntimeEvent,
-          runnerRuntimeEvent({
-            type: 'agent.usage.updated',
-            runId: input.runId,
-            projection: input.projection,
-            routing: input.routing,
-            cli: CLAUDE_CLI_NAME,
-            model,
-            ...(parsed.session_id === undefined ? {} : { sessionId: parsed.session_id }),
-            payload: { tokenUsage },
-          }),
-        );
-      }
       await emitRuntimeEvent(
         input.onRuntimeEvent,
         runnerRuntimeEvent({
@@ -491,30 +374,137 @@ export function createClaudeRunner(options: {
           routing: input.routing,
           cli: CLAUDE_CLI_NAME,
           model,
-          ...(parsed.session_id === undefined ? {} : { sessionId: parsed.session_id }),
           payload: { exitCode: result.exitCode, timedOut: result.timedOut },
         }),
       );
+      let parsedReason: string | undefined;
+      let stdoutFailureDetail: string | undefined;
+      const trimmedStdout = result.stdout.trim();
+      try {
+        if (trimmedStdout.length > 0) {
+          parsedReason = parseClaudePrintOutput(result.stdout).result;
+        }
+      } catch {
+        // stdout wasn't valid JSON, so it is likely a CLI-level error
+        // message rather than a Claude print result.
+        stdoutFailureDetail = trimmedStdout;
+      }
       return {
-        result: parsed.result,
+        result: [
+          result.timedOut
+            ? `Claude runner timed out after ${options.settings.timeoutMs}ms and was killed`
+            : trimmedStdout.length === 0
+              ? 'Claude runner produced no output'
+              : parsedReason !== undefined
+                ? `Claude runner failed: ${parsedReason}`
+                : 'Claude runner failed',
+          result.stderr,
+          stdoutFailureDetail,
+          sandboxLog?.text,
+          'FAILED',
+        ]
+          .filter((part) => part !== undefined && part.length > 0)
+          .join('\n'),
         model,
         cli: CLAUDE_CLI_NAME,
-        ...(parseRunnerResult(parsed.result).status === 'FAILED'
-          ? { failureClass: 'task' as const }
-          : {}),
-        ...(parsed.session_id === undefined ? {} : { session_id: parsed.session_id }),
-        ...(tokenUsage === undefined ? {} : { tokenUsage }),
+        failureClass,
         metadata: {
           stdout: result.stdout,
           stderr: result.stderr,
-          raw: parsed,
-          skipApproval: stagePrompt.skipApproval,
-          allowAutoApproval: stagePrompt.allowAutoApproval,
+          exitCode: result.exitCode,
+          failureClass,
           ...(promptTranscriptPath === undefined ? {} : { promptTranscriptPath }),
           ...(responseTranscriptPath === undefined ? {} : { responseTranscriptPath }),
           ...(sandboxLog?.metadata ?? {}),
         },
       };
+    }
+
+    const parsed = parseClaudePrintOutput(result.stdout);
+    const sandboxLog = readSandboxLogBreadcrumb();
+    await emitRuntimeEvent(
+      input.onRuntimeEvent,
+      runnerRuntimeEvent({
+        type: 'agent.progress',
+        runId: input.runId,
+        projection: input.projection,
+        routing: input.routing,
+        cli: CLAUDE_CLI_NAME,
+        model,
+        ...(parsed.session_id === undefined ? {} : { sessionId: parsed.session_id }),
+        payload: { message: 'Claude print result received', raw: parsed },
+      }),
+    );
+    console.log(
+      formatClaudeRunLogLine({
+        phase: 'success',
+        runId: input.runId,
+        action: input.action,
+        issueNumber: input.projection.issue.number,
+        repo: input.projection.issue.repo,
+        recentEventIds: input.recentEvents.map((event) => event.eventId),
+        model,
+        ...(input.workspacePath === undefined ? {} : { workspacePath: input.workspacePath }),
+        ...(parsed.session_id === undefined ? {} : { sessionId: parsed.session_id }),
+      }),
+    );
+    const tokenUsage = extractTokenUsage(parsed);
+    if (tokenUsage !== undefined) {
+      await emitRuntimeEvent(
+        input.onRuntimeEvent,
+        runnerRuntimeEvent({
+          type: 'agent.usage.updated',
+          runId: input.runId,
+          projection: input.projection,
+          routing: input.routing,
+          cli: CLAUDE_CLI_NAME,
+          model,
+          ...(parsed.session_id === undefined ? {} : { sessionId: parsed.session_id }),
+          payload: { tokenUsage },
+        }),
+      );
+    }
+    await emitRuntimeEvent(
+      input.onRuntimeEvent,
+      runnerRuntimeEvent({
+        type: 'agent.process.exited',
+        runId: input.runId,
+        projection: input.projection,
+        routing: input.routing,
+        cli: CLAUDE_CLI_NAME,
+        model,
+        ...(parsed.session_id === undefined ? {} : { sessionId: parsed.session_id }),
+        payload: { exitCode: result.exitCode, timedOut: result.timedOut },
+      }),
+    );
+    return {
+      result: parsed.result,
+      model,
+      cli: CLAUDE_CLI_NAME,
+      ...(parseRunnerResult(parsed.result).status === 'FAILED'
+        ? { failureClass: 'task' as const }
+        : {}),
+      ...(parsed.session_id === undefined ? {} : { session_id: parsed.session_id }),
+      ...(tokenUsage === undefined ? {} : { tokenUsage }),
+      metadata: {
+        stdout: result.stdout,
+        stderr: result.stderr,
+        raw: parsed,
+        skipApproval: stagePrompt.skipApproval,
+        allowAutoApproval: stagePrompt.allowAutoApproval,
+        ...(promptTranscriptPath === undefined ? {} : { promptTranscriptPath }),
+        ...(responseTranscriptPath === undefined ? {} : { responseTranscriptPath }),
+        ...(sandboxLog?.metadata ?? {}),
+      },
+    };
+  }
+
+  return {
+    async start(input: AgentRunInput) {
+      return createAgentExecution(input, executeRun);
+    },
+    async run(input: AgentRunInput): Promise<AgentRunResult> {
+      return (await this.start(input)).result;
     },
     async smoke(): Promise<{
       text: string;

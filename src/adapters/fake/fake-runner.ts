@@ -1,28 +1,24 @@
-import type { AgentRunResult } from '../../core/contracts.js';
-import type {
-  AgentAction,
-  EventEnvelope,
-  IssueStateRecord,
-  RunnerRouting,
-  RuntimeEventDraft,
-  WakeConfig,
-} from '../../domain/types.js';
+import type { AgentRunInput, AgentRunResult } from '../../core/contracts.js';
 import { emitRuntimeEvent, runnerRuntimeEvent } from '../runner/runtime-events.js';
+import { createAgentExecution } from '../../core/live-execution.js';
 
 export function createFakeRunner(result?: AgentRunResult, options?: { cli?: string }) {
-  return {
-    async run(_: {
-      action: AgentAction;
-      projection: IssueStateRecord;
-      recentEvents: EventEnvelope[];
-      config: WakeConfig;
-      runId: string;
-      workspacePath?: string;
-      mergeConflictDetected?: boolean;
-      onRuntimeEvent?: (event: RuntimeEventDraft) => Promise<void>;
-      routing?: RunnerRouting;
-    }): Promise<AgentRunResult> {
+  const runner = {
+    async start(input: AgentRunInput) {
+      return createAgentExecution(input, (liveInput) => runner.run(liveInput));
+    },
+    async run(_: AgentRunInput): Promise<AgentRunResult> {
       const cli = options?.cli ?? 'Fake';
+      const isCanceled = () => _.cancellationSignal?.aborted === true;
+      if (isCanceled()) {
+        return {
+          result: 'Fake runner canceled\nFAILED',
+          model: 'fake',
+          cli,
+          failureClass: 'infra',
+          metadata: { source: 'fake-runner', canceled: true },
+        };
+      }
       await emitRuntimeEvent(
         _.onRuntimeEvent,
         runnerRuntimeEvent({
@@ -61,6 +57,15 @@ export function createFakeRunner(result?: AgentRunResult, options?: { cli?: stri
           payload: { exitCode: 0, synthetic: true },
         }),
       );
+      if (isCanceled()) {
+        return {
+          result: 'Fake runner canceled\nFAILED',
+          model: 'fake',
+          cli,
+          failureClass: 'infra',
+          metadata: { source: 'fake-runner', canceled: true },
+        };
+      }
       return (
         result ?? {
           result: [
@@ -81,4 +86,5 @@ export function createFakeRunner(result?: AgentRunResult, options?: { cli?: stri
       );
     },
   };
+  return runner;
 }
