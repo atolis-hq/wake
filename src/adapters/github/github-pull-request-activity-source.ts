@@ -235,6 +235,67 @@ export function createGitHubPullRequestActivitySource(deps: {
     };
   }
 
+  function prCommentPublishedEvent(input: {
+    intent: EventEnvelope;
+    resourceUri: string;
+    repoRef: string;
+    publishedAt: string;
+    providerId: number | undefined;
+  }): EventEnvelope {
+    return createEventEnvelope({
+      eventId: `${input.intent.eventId}-published`,
+      workItemKey: input.intent.workItemKey,
+      streamScope: 'work-item',
+      direction: 'outbound',
+      sourceSystem: githubPrSource,
+      sourceEventType: 'pr.comment.reply.published',
+      sourceRefs: { repo: input.repoRef, resourceUri: input.resourceUri },
+      occurredAt: input.publishedAt,
+      ingestedAt: input.publishedAt,
+      trigger: 'context-only',
+      payload: {
+        intentEventId: input.intent.eventId,
+        idempotencyKey: input.intent.payload.idempotencyKey,
+        deliveryState: 'CONFIRMED',
+        kind: input.intent.payload.kind,
+        body: input.intent.payload.body,
+        providerId: input.providerId,
+      },
+    });
+  }
+
+  function reviewCommentPublishedEvent(input: {
+    intent: EventEnvelope;
+    resourceUri: string;
+    sourceUrl: string | undefined;
+    publishedAt: string;
+    providerId: number | undefined;
+  }): EventEnvelope {
+    return createEventEnvelope({
+      eventId: `${input.intent.eventId}-published`,
+      workItemKey: input.intent.workItemKey,
+      streamScope: 'work-item',
+      direction: 'outbound',
+      sourceSystem: githubPrSource,
+      sourceEventType: 'pr.review-comment.reply.published',
+      sourceRefs: {
+        resourceUri: input.resourceUri,
+        sourceUrl: input.sourceUrl,
+      },
+      occurredAt: input.publishedAt,
+      ingestedAt: input.publishedAt,
+      trigger: 'context-only',
+      payload: {
+        intentEventId: input.intent.eventId,
+        idempotencyKey: input.intent.payload.idempotencyKey,
+        deliveryState: 'CONFIRMED',
+        kind: input.intent.payload.kind,
+        body: input.intent.payload.body,
+        providerId: input.providerId,
+      },
+    });
+  }
+
   async function discoverPullRequests(ingestedAt: string): Promise<{
     events: UnkeyedEventEnvelope[];
     seenPrData: Map<string, PrSnapshot>;
@@ -671,6 +732,27 @@ export function createGitHubPullRequestActivitySource(deps: {
             `cannot deliver intent ${input.event.eventId}: malformed review-thread uri ${resourceUri}`,
           );
         }
+        const marker = wakeIdempotencyMarker(input.event.payload.idempotencyKey);
+        if (marker !== undefined) {
+          const comments = await deps.client.listReviewComments(
+            ref.owner,
+            ref.repo,
+            ref.number,
+            deps.config.sources.github.pullRequests.commentPageSize,
+          );
+          const existing = comments.find((comment) => (comment.body ?? '').includes(marker));
+          if (existing !== undefined) {
+            return [
+              reviewCommentPublishedEvent({
+                intent: input.event,
+                resourceUri,
+                sourceUrl: existing.html_url,
+                publishedAt,
+                providerId: existing.id,
+              }),
+            ];
+          }
+        }
 
         const response = await deps.client.replyToReviewComment(
           ref.owner,
@@ -684,28 +766,12 @@ export function createGitHubPullRequestActivitySource(deps: {
         );
 
         return [
-          createEventEnvelope({
-            eventId: `${input.event.eventId}-published`,
-            workItemKey: input.event.workItemKey,
-            streamScope: 'work-item',
-            direction: 'outbound',
-            sourceSystem: githubPrSource,
-            sourceEventType: 'pr.review-comment.reply.published',
-            sourceRefs: {
-              resourceUri,
-              sourceUrl: (response as { html_url?: string } | undefined)?.html_url,
-            },
-            occurredAt: publishedAt,
-            ingestedAt: publishedAt,
-            trigger: 'context-only',
-            payload: {
-              intentEventId: input.event.eventId,
-              idempotencyKey: input.event.payload.idempotencyKey,
-              deliveryState: 'CONFIRMED',
-              kind: input.event.payload.kind,
-              body: input.event.payload.body,
-              providerId: (response as { id?: number } | undefined)?.id,
-            },
+          reviewCommentPublishedEvent({
+            intent: input.event,
+            resourceUri,
+            sourceUrl: (response as { html_url?: string } | undefined)?.html_url,
+            publishedAt,
+            providerId: (response as { id?: number } | undefined)?.id,
           }),
         ];
       }
@@ -715,6 +781,27 @@ export function createGitHubPullRequestActivitySource(deps: {
         throw new Error(
           `cannot deliver intent ${input.event.eventId}: malformed pr uri ${resourceUri}`,
         );
+      }
+      const marker = wakeIdempotencyMarker(input.event.payload.idempotencyKey);
+      if (marker !== undefined) {
+        const comments = await deps.client.listComments(
+          ref.owner,
+          ref.repo,
+          ref.number,
+          deps.config.sources.github.pullRequests.commentPageSize,
+        );
+        const existing = comments.find((comment) => (comment.body ?? '').includes(marker));
+        if (existing !== undefined) {
+          return [
+            prCommentPublishedEvent({
+              intent: input.event,
+              resourceUri,
+              repoRef: ref.repoRef,
+              publishedAt,
+              providerId: existing.id,
+            }),
+          ];
+        }
       }
 
       const response = await deps.client.createComment(
@@ -727,25 +814,12 @@ export function createGitHubPullRequestActivitySource(deps: {
         ),
       );
       return [
-        createEventEnvelope({
-          eventId: `${input.event.eventId}-published`,
-          workItemKey: input.event.workItemKey,
-          streamScope: 'work-item',
-          direction: 'outbound',
-          sourceSystem: githubPrSource,
-          sourceEventType: 'pr.comment.reply.published',
-          sourceRefs: { repo: ref.repoRef, resourceUri },
-          occurredAt: publishedAt,
-          ingestedAt: publishedAt,
-          trigger: 'context-only',
-          payload: {
-            intentEventId: input.event.eventId,
-            idempotencyKey: input.event.payload.idempotencyKey,
-            deliveryState: 'CONFIRMED',
-            kind: input.event.payload.kind,
-            body: input.event.payload.body,
-            providerId: (response as { data?: { id?: number } } | undefined)?.data?.id,
-          },
+        prCommentPublishedEvent({
+          intent: input.event,
+          resourceUri,
+          repoRef: ref.repoRef,
+          publishedAt,
+          providerId: (response as { data?: { id?: number } } | undefined)?.data?.id,
         }),
       ];
     },
@@ -774,25 +848,12 @@ export function createGitHubPullRequestActivitySource(deps: {
           return [];
         }
         return [
-          createEventEnvelope({
-            eventId: `${input.event.eventId}-published`,
-            workItemKey: input.event.workItemKey,
-            streamScope: 'work-item',
-            direction: 'outbound',
-            sourceSystem: githubPrSource,
-            sourceEventType: 'pr.review-comment.reply.published',
-            sourceRefs: { resourceUri, sourceUrl: existing.html_url },
-            occurredAt: publishedAt,
-            ingestedAt: publishedAt,
-            trigger: 'context-only',
-            payload: {
-              intentEventId: input.event.eventId,
-              idempotencyKey: input.event.payload.idempotencyKey,
-              deliveryState: 'CONFIRMED',
-              kind: input.event.payload.kind,
-              body: input.event.payload.body,
-              providerId: existing.id,
-            },
+          reviewCommentPublishedEvent({
+            intent: input.event,
+            resourceUri,
+            sourceUrl: existing.html_url,
+            publishedAt,
+            providerId: existing.id,
           }),
         ];
       }
@@ -812,25 +873,12 @@ export function createGitHubPullRequestActivitySource(deps: {
         return [];
       }
       return [
-        createEventEnvelope({
-          eventId: `${input.event.eventId}-published`,
-          workItemKey: input.event.workItemKey,
-          streamScope: 'work-item',
-          direction: 'outbound',
-          sourceSystem: githubPrSource,
-          sourceEventType: 'pr.comment.reply.published',
-          sourceRefs: { repo: ref.repoRef, resourceUri },
-          occurredAt: publishedAt,
-          ingestedAt: publishedAt,
-          trigger: 'context-only',
-          payload: {
-            intentEventId: input.event.eventId,
-            idempotencyKey: input.event.payload.idempotencyKey,
-            deliveryState: 'CONFIRMED',
-            kind: input.event.payload.kind,
-            body: input.event.payload.body,
-            providerId: existing.id,
-          },
+        prCommentPublishedEvent({
+          intent: input.event,
+          resourceUri,
+          repoRef: ref.repoRef,
+          publishedAt,
+          providerId: existing.id,
         }),
       ];
     },

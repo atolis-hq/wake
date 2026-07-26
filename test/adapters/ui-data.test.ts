@@ -67,10 +67,12 @@ function runRecord(input: {
   runId: string;
   issueNumber: number;
   status: RunRecord['status'];
+  action?: string;
   sentinel?: RunRecord['sentinel'];
   startedAt?: string;
   costUsd?: number;
   sessionId?: string;
+  routing?: RunRecord['routing'];
 }): RunRecord {
   return {
     schemaVersion: 1,
@@ -78,7 +80,7 @@ function runRecord(input: {
     workItemKey: workId(input.issueNumber),
     repo: 'atolis-hq/wake',
     issueNumber: input.issueNumber,
-    action: 'implement',
+    action: input.action ?? 'implement',
     lifecycle: input.status === 'running' ? 'RUNNING' : 'TERMINAL',
     status: input.status,
     startedAt: input.startedAt ?? '2026-07-05T12:00:00.000Z',
@@ -87,6 +89,7 @@ function runRecord(input: {
         ? undefined
         : { inputTokens: 1, outputTokens: 1, costUsd: input.costUsd },
     ...(input.sessionId === undefined ? {} : { sessionId: input.sessionId }),
+    ...(input.routing === undefined ? {} : { routing: input.routing }),
     ...(input.sentinel === undefined
       ? {}
       : { sentinel: input.sentinel, finishedAt: '2026-07-05T12:05:00.000Z' }),
@@ -130,6 +133,64 @@ describe('ui-data', () => {
     expect(byNumber.get(2)?.condition).toBe('needs-human');
     expect(byNumber.get(3)?.condition).toBe('finished');
     expect(byNumber.get(4)?.condition).toBe('ready');
+  });
+
+  it('surfaces running watcher runs as child rows without replacing the projection last run', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const config = createDefaultWakeConfig(root);
+
+    await store.writeIssueState(
+      issueState({ number: 5, stage: 'implement', lastRunId: 'run-5-implement' }),
+    );
+    await store.writeRunRecord(
+      runRecord({
+        runId: 'run-5-implement',
+        issueNumber: 5,
+        status: 'awaiting-approval',
+        sentinel: 'AWAITING_APPROVAL',
+        startedAt: '2026-07-05T12:00:00.000Z',
+      }),
+    );
+    await store.writeRunRecord(
+      runRecord({
+        runId: 'run-5-review',
+        issueNumber: 5,
+        action: 'pr-review',
+        status: 'running',
+        startedAt: '2026-07-05T12:10:00.000Z',
+        routing: {
+          runnerName: 'codex-standard',
+          runnerKind: 'codex',
+          tier: 'light',
+          reason: 'test',
+        },
+      }),
+    );
+
+    const board = await buildBoard({
+      stateStore: store,
+      config,
+      now: new Date('2026-07-05T13:00:00.000Z'),
+    });
+
+    const card = board.find((item) => item.number === 5);
+    expect(card).toMatchObject({
+      condition: 'needs-human',
+      lastRunAction: 'implement',
+      lastRunSentinel: 'AWAITING_APPROVAL',
+      activeChildRuns: [
+        {
+          runId: 'run-5-review',
+          action: 'pr-review',
+          status: 'running',
+          runnerName: 'codex-standard',
+          runnerKind: 'codex',
+          tier: 'light',
+          startedAt: '2026-07-05T12:10:00.000Z',
+          ageMs: 3_000_000,
+        },
+      ],
+    });
   });
 
   it('includes per-run averages for grouped token metrics', async () => {

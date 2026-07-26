@@ -41,6 +41,8 @@ export function createWakePaths(wakeRoot: string) {
     runFile: (runId: string) => join(dataRoot, 'runs', `${runId}.json`),
     runDateFile: (date: string, runId: string) =>
       join(dataRoot, 'runs', 'by-date', date, `${runId}.json`),
+    runDateIndexFile: (date: string) => join(dataRoot, 'runs', 'by-date', date, 'index.json'),
+    runDateIndexLockFile: (date: string) => join(dataRoot, 'locks', `run-index-${date}.lock`),
     eventFile: (date: string) => join(dataRoot, 'events', `${date}.jsonl`),
     eventEnvelopeFile: (eventId: string) =>
       join(dataRoot, 'events-by-id', `${sanitizePathKey(eventId)}.json`),

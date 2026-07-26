@@ -908,10 +908,189 @@ describe('tick runner', () => {
       expect(events.some((event) => event.sourceEventType === 'wake.run.claimed')).toBe(false);
     });
 
-    it('does not dispatch a watcher for a closed issue even while its stale local status still matches', async () => {
+    it('does not dispatch a watcher from a watcher run completion event', async () => {
       const store = createStateStore({ wakeRoot: root });
       const resourceIndex = await seededResourceIndex([359]);
-      await seedAwaitingApprovalIssue({ store, issueNumber: 359, issueState: 'closed' });
+      await seedAwaitingApprovalIssue({ store, issueNumber: 359 });
+      await store.appendEventEnvelope(
+        createEventEnvelope({
+          eventId: 'run-359-review-completed',
+          workItemKey: workId(359),
+          streamScope: 'work-item',
+          direction: 'internal',
+          sourceSystem: 'wake',
+          sourceEventType: 'wake.run.completed',
+          sourceRefs: { repo: 'atolis-hq/wake', issueNumber: 359, runId: 'run-359-review' },
+          occurredAt: '2026-07-25T12:10:00.000Z',
+          ingestedAt: '2026-07-25T12:10:00.000Z',
+          trigger: 'immediate',
+          payload: {
+            action: 'pr-review',
+            sentinel: 'BLOCKED',
+            watcherRun: true,
+            watcherTrigger: { kind: 'event', eventId: 'run-359-previous-completed' },
+          },
+        }),
+      );
+
+      const config = configurePrReviewWatcher(root);
+      config.workflows.default!.stages.implement!.watch![0]!.schedule = undefined;
+      let runnerCalls = 0;
+      const tickRunner = createTickRunner({
+        clock: { now: () => new Date('2026-07-25T12:11:00.000Z') },
+        config,
+        stateStore: store,
+        workSource: {
+          async pollEvents() {
+            return [];
+          },
+        },
+        runner: {
+          async run() {
+            runnerCalls += 1;
+            return { result: 'should not run\nDONE', model: 'fake', cli: 'Fake' };
+          },
+        },
+        resourceIndex,
+        workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+      });
+
+      const result = await tickRunner.runTick();
+
+      expect(result.status).toBe('idle');
+      expect(runnerCalls).toBe(0);
+      expect(await store.listRunRecords()).toHaveLength(0);
+    });
+
+    it('runs revise instead of re-running pr-review after a changes-requested marker', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const resourceIndex = await seededResourceIndex([360]);
+      await store.writeIssueState({
+        schemaVersion: 1,
+        workItemKey: workId(360),
+        issue: {
+          repo: 'atolis-hq/wake',
+          number: 360,
+          title: 'Implement',
+          body: 'Body',
+          labels: ['wake:implement'],
+          assignees: [],
+          isPullRequest: false,
+          state: 'open',
+          url: 'https://example.test/issues/360',
+          createdAt: watcherNow,
+          updatedAt: watcherNow,
+        },
+        comments: [
+          {
+            id: 'pr-5084905755',
+            body: 'Please revise this PR.\n\n<!-- wake:pr-review-changes-requested -->',
+            author: { login: 'atolis-hq-agent' },
+            createdAt: '2026-07-25T12:10:00.000Z',
+            updatedAt: '2026-07-25T12:10:00.000Z',
+            isBotAuthored: true,
+            resourceUri: 'github:pr:atolis-hq/wake#410',
+          },
+          {
+            id: 'pr-5084954595',
+            body: 'address the comments\nand fix the failing tests',
+            author: { login: 'jmenziessmith' },
+            createdAt: '2026-07-25T12:11:00.000Z',
+            updatedAt: '2026-07-25T12:11:00.000Z',
+            isBotAuthored: false,
+            resourceUri: 'github:pr:atolis-hq/wake#410',
+          },
+        ],
+        wake: {
+          stage: 'implement',
+          lastRunId: 'run-360-previous',
+          stageHistory: [],
+          recentEventIds: ['run-360-review-completed'],
+          syncedAt: watcherNow,
+          expectedEcho: { commentIds: [], labels: [] },
+        },
+        context: {
+          workflow: 'default',
+          lastRunSentinel: 'AWAITING_APPROVAL',
+          pendingApprovalAction: 'implement',
+        },
+        correlatedResources: [
+          {
+            resourceUri: 'github:pr:atolis-hq/wake#410',
+            role: 'implementation',
+            relation: 'primary',
+            provenance: 'agent-reported',
+            registeredAt: watcherNow,
+          },
+        ],
+      });
+      await store.appendEventEnvelope(
+        createEventEnvelope({
+          eventId: 'run-360-review-completed',
+          workItemKey: workId(360),
+          streamScope: 'work-item',
+          direction: 'internal',
+          sourceSystem: 'wake',
+          sourceEventType: 'wake.run.completed',
+          sourceRefs: { repo: 'atolis-hq/wake', issueNumber: 360, runId: 'run-360-review' },
+          occurredAt: '2026-07-25T12:10:00.000Z',
+          ingestedAt: '2026-07-25T12:10:00.000Z',
+          trigger: 'immediate',
+          payload: {
+            action: 'pr-review',
+            sentinel: 'FAILED',
+            watcherRun: true,
+            watcherTrigger: { kind: 'event', eventId: 'run-360-previous-completed' },
+          },
+        }),
+      );
+
+      const config = configurePrReviewWatcher(root);
+      config.workflows.default!.stages.implement!.watch![0]!.schedule = undefined;
+      const seen: string[] = [];
+      const tickRunner = createTickRunner({
+        clock: { now: () => new Date('2026-07-25T12:11:00.000Z') },
+        config,
+        stateStore: store,
+        workSource: {
+          async pollEvents() {
+            return [];
+          },
+        },
+        runner: {
+          async run(input) {
+            seen.push(input.action);
+            return {
+              result: [
+                'Revised and awaiting approval.',
+                '',
+                '```wake-result',
+                '{ "status": "AWAITING_APPROVAL" }',
+                '```',
+                'AWAITING_APPROVAL',
+              ].join('\n'),
+              model: 'fake',
+              cli: 'Fake',
+            };
+          },
+        },
+        resourceIndex,
+        workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+      });
+
+      const result = await tickRunner.runTick();
+      const revised = await store.readIssueState(workId(360));
+      await tickRunner.runTick();
+
+      expect(result.status).toBe('processed');
+      expect(revised?.context.lastHandledCommentId).toBe('pr-5084954595');
+      expect(seen.filter((action) => action === 'revise')).toEqual(['revise']);
+    });
+
+    it('does not dispatch a watcher for a closed issue even while its stale local status still matches', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const resourceIndex = await seededResourceIndex([361]);
+      await seedAwaitingApprovalIssue({ store, issueNumber: 361, issueState: 'closed' });
 
       let runnerCalls = 0;
       const tickRunner = createTickRunner({
@@ -955,6 +1134,12 @@ describe('tick runner', () => {
         lifecycle: 'TERMINAL',
         status: 'completed',
         startedAt: '2026-07-25T12:00:00.000Z',
+        // Rate-limit counting reads run records via the summarized listing
+        // (state-store.ts stripHeavyRunRecordFields) so the resident loop
+        // doesn't hold every run's captured stdout/raw in memory each tick -
+        // a large metadata payload here proves that stripping doesn't affect
+        // whether this record still counts toward the window.
+        metadata: { stdout: 'x'.repeat(10_000) },
       });
 
       const config = configurePrReviewWatcher(root);

@@ -1751,6 +1751,29 @@ describe('tick runner', () => {
       expect(calls).toEqual(['files', 'approve:Safe to merge.', 'autoMerge']);
     });
 
+    it('processes a pr-review approval marker before dispatching eligible watchers', async () => {
+      const config = createDefaultWakeConfig(root);
+      configurePrReviewMerge(config, {
+        approve: true,
+        autoMerge: true,
+        maxFilesChanged: 2,
+        blockedPaths: ['src/core/contracts.ts'],
+        blockedLabels: [],
+      });
+      config.workflows.default!.stages.implement!.watch![0]!.schedule = {
+        cron: '*/10 * * * *',
+      };
+
+      const { result, calls } = await prReviewMergeTick({
+        config,
+        files: ['src/core/tick-runner.ts'],
+      });
+
+      expect(result.status).toBe('processed');
+      expect((result as { sentinel?: string }).sentinel).toBe('DONE');
+      expect(calls).toEqual(['files', 'approve:Safe to merge.', 'autoMerge']);
+    });
+
     it('blocks without approving when the PR changes too many files', async () => {
       const config = createDefaultWakeConfig(root);
       configurePrReviewMerge(config, {
