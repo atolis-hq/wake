@@ -1,5 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { randomUUID } from 'node:crypto';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { dirname } from 'node:path';
 
 import type { ResourceIndex } from '../../core/contracts.js';
 import { createProjectionUpdater } from '../../core/projection-updater.js';
@@ -214,6 +216,19 @@ async function handleRequest(
     };
     await writeJsonFile(stateStore.paths.tickRequestFile, request);
     sendJson(res, 202, request);
+    return;
+  }
+
+  if (req.method === 'POST' && resource === 'pause' && segments.length === 1) {
+    await mkdir(dirname(stateStore.paths.pauseFile), { recursive: true });
+    await writeFile(stateStore.paths.pauseFile, `${now().toISOString()}\n`, 'utf8');
+    sendJson(res, 200, { paused: true });
+    return;
+  }
+
+  if (req.method === 'DELETE' && resource === 'pause' && segments.length === 1) {
+    await rm(stateStore.paths.pauseFile, { force: true });
+    sendJson(res, 200, { paused: false });
     return;
   }
 
