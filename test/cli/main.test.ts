@@ -6,11 +6,14 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   CliUsageError,
+  createResidentControlPlane,
   dispatchMainCommand,
   formatTickFailureDetails,
   printUsage,
   readFlagBeforeCommandTerminator,
 } from '../../src/main.js';
+import { createStateStore } from '../../src/adapters/fs/state-store.js';
+import { createDefaultWakeConfig } from '../../src/config/defaults.js';
 import { wakeVersion } from '../../src/version.js';
 
 async function makeTempWakeRootWithDockerfile(): Promise<string> {
@@ -455,6 +458,29 @@ describe('CliUsageError', () => {
     const error = new CliUsageError('Unknown command: bogus');
     expect(error).toBeInstanceOf(Error);
     expect(error.message).toBe('Unknown command: bogus');
+  });
+});
+
+describe('resident control plane wiring', () => {
+  it('uses the file-backed pause state to gate tick execution', async () => {
+    const wakeRoot = await makeTempWakeRootWithoutDockerfile();
+    const stateStore = createStateStore({ wakeRoot });
+    const config = createDefaultWakeConfig(wakeRoot);
+    const runTick = vi.fn(async () => ({ status: 'processed' }));
+
+    await mkdir(join(wakeRoot, '.wake'), { recursive: true });
+    await writeFile(stateStore.paths.pauseFile, '2026-07-26T11:56:48.000Z\n', 'utf8');
+
+    const controlPlane = createResidentControlPlane({
+      config,
+      stateStore,
+      tickRunner: { runTick },
+    });
+
+    const result = await controlPlane.runOnce();
+
+    expect(result).toEqual({ status: 'paused' });
+    expect(runTick).not.toHaveBeenCalled();
   });
 });
 

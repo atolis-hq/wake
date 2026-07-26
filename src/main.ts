@@ -755,15 +755,17 @@ async function runTick(args: string[]) {
   }
 }
 
-async function runStart(args: string[]) {
-  const runtime = await buildRuntime(args);
-  await runtime.stateStore.assertStateHealthy();
-  const runnerOverride = readFlagBeforeCommandTerminator('--runner', args);
-  await runStartupPreflight(runtime.config, {
-    ...(runnerOverride === undefined ? {} : { runnerOverride }),
-    workspaceManager: runtime.workspaceManager,
-  });
-  const controlPlane = createControlPlane({
+type ResidentControlPlaneRuntime = {
+  config: { scheduler: Pick<WakeConfig['scheduler'], 'intervalMs' | 'maxIntervalMs'> };
+  stateStore: {
+    isPaused: () => Promise<boolean> | boolean;
+    paths: { tickRequestFile: string };
+  };
+  tickRunner: Parameters<typeof createControlPlane>[0]['tickRunner'];
+};
+
+export function createResidentControlPlane(runtime: ResidentControlPlaneRuntime) {
+  return createControlPlane({
     tickRunner: runtime.tickRunner,
     intervalMs: runtime.config.scheduler.intervalMs,
     maxIntervalMs: runtime.config.scheduler.maxIntervalMs,
@@ -785,6 +787,17 @@ async function runStart(args: string[]) {
       return readTickRequestId(runtime.stateStore.paths.tickRequestFile);
     },
   });
+}
+
+async function runStart(args: string[]) {
+  const runtime = await buildRuntime(args);
+  await runtime.stateStore.assertStateHealthy();
+  const runnerOverride = readFlagBeforeCommandTerminator('--runner', args);
+  await runStartupPreflight(runtime.config, {
+    ...(runnerOverride === undefined ? {} : { runnerOverride }),
+    workspaceManager: runtime.workspaceManager,
+  });
+  const controlPlane = createResidentControlPlane(runtime);
 
   const stop = () => controlPlane.stop();
   process.on('SIGINT', stop);
