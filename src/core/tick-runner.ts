@@ -1107,6 +1107,8 @@ export function createTickRunner(deps: {
 
         let prReviewTargetResourceUri: string | null = null;
         if (watcherRun) {
+          // Artifact correlation is intentionally scoped to any watcher-dispatched
+          // run, not to an action literally named "pr-review".
           prReviewTargetResourceUri = await resolvePrReviewTarget({
             projection: candidate,
             runId,
@@ -1282,6 +1284,8 @@ export function createTickRunner(deps: {
         });
 
         if (watcherRun) {
+          // Watcher-dispatched runs own PR verdict delivery and correlation
+          // registration regardless of the target workflow/action name.
           if (
             prReviewTargetResourceUri !== null &&
             (sentinel === 'DONE' || sentinel === 'FAILED')
