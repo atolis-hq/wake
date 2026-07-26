@@ -18,7 +18,9 @@ import {
   wakeResultEnvelopeSchema,
   workflowOutcomeSchema,
   workItemCreatedPayloadSchema,
+  runtimeEventSchema,
 } from './schema.js';
+import type { RuntimeEvent, RuntimeEventDraft } from './runtime-events.js';
 import { runnerSentinelValues } from './stages.js';
 
 export type Stage = string;
@@ -60,3 +62,5 @@ export type CorrelationPrimaryConflictPayload = z.infer<
 >;
 export type CorrelatedResource = z.infer<typeof correlatedResourceSchema>;
 export type ReportedArtifact = z.infer<typeof reportedArtifactSchema>;
+export type PersistedRuntimeEvent = z.infer<typeof runtimeEventSchema>;
+export type { RuntimeEvent, RuntimeEventDraft };

@@ -4,6 +4,7 @@ import type {
   IssueStateRecord,
   RunnerFailureClass,
   RunnerRouting,
+  RuntimeEventDraft,
   WakeConfig,
 } from '../domain/types.js';
 
@@ -96,6 +97,7 @@ export interface AgentRunner {
     mergeConflictDetected?: boolean;
     upstreamChanges?: string;
     onProcessStart?: (identity: { pid: number; processStartedAt: string }) => Promise<void>;
+    onRuntimeEvent?: (event: RuntimeEventDraft) => Promise<void>;
   }): Promise<AgentRunResult>;
 }
 

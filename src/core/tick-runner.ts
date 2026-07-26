@@ -34,7 +34,9 @@ import type {
   WakeConfig,
   WorkflowStageDefinition,
   WorkflowOutcome,
+  RuntimeEventDraft,
 } from '../domain/types.js';
+import { isMeaningfulRuntimeEvent } from '../domain/runtime-events.js';
 import {
   chooseAction as chooseWorkflowAction,
   entryStage as workflowEntryStage,
@@ -1318,6 +1320,32 @@ export function createTickRunner(deps: {
         });
       }
 
+      async function appendRuntimeEvent(event: RuntimeEventDraft): Promise<void> {
+        const timestamp = event.timestamp ?? deps.clock.now().toISOString();
+        await deps.stateStore.updateRunRecordIf(runId, {
+          expect: (record) =>
+            record.status === 'running' &&
+            record.lease?.leaseId === lease.leaseId &&
+            record.lease.ownerInstanceId === ownerInstanceId,
+          update: (record) => {
+            const runtimeEvents = record.runtimeEvents ?? [];
+            const sequence = event.sequence ?? runtimeEvents.length;
+            const normalizedEvent = {
+              ...event,
+              timestamp,
+              sequence,
+            };
+            return {
+              ...record,
+              runtimeEvents: [...runtimeEvents, normalizedEvent],
+              ...(isMeaningfulRuntimeEvent(normalizedEvent)
+                ? { lastMeaningfulActivityAt: normalizedEvent.timestamp }
+                : {}),
+            };
+          },
+        });
+      }
+
       const claimedAt = eventStampNow();
       const claimedEvent = createEventEnvelope({
         eventId: `${runId}-claimed`,
@@ -1490,6 +1518,7 @@ export function createTickRunner(deps: {
               }),
             });
           },
+          onRuntimeEvent: appendRuntimeEvent,
         });
         clearInterval(leaseRenewalTimer);
         leaseRenewalTimer = undefined;
