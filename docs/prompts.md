@@ -47,8 +47,16 @@ Wake passes common context values such as:
 Every prompt template must include a positive integer `maxTurns` frontmatter
 value so Wake can cap runner execution.
 
-Other frontmatter such as `allowedTools`, `permissionMode`, `extraArgs`, and
-`skipApproval` is consumed by runner adapters and the Wake harness.
+Other frontmatter such as `allowedTools`, `permissionMode`, `extraArgs`,
+`skipApproval`, and `allowAutoApproval` is consumed by runner adapters and the
+Wake harness.
+
+`skipApproval: true` means the prompt may complete with `DONE` and move to its
+configured `onDone` stage immediately. `allowAutoApproval: true` applies only
+to prompts that still require an approval gate (`skipApproval: false`): when a
+run for that prompt returns `AWAITING_APPROVAL`, Wake records the pending action
+as eligible for deterministic auto-approval. The built-in `refine` prompt sets
+`allowAutoApproval: true`; `implement` does not.
 
 Example:
 

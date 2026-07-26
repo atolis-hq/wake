@@ -20,6 +20,8 @@ import type { UnkeyedEventEnvelope } from './contracts.js';
 export interface ApprovalResolution {
   approved: boolean;
   pendingAction: AgentAction;
+  automatic?: boolean;
+  reason?: string;
 }
 
 function isAwaitingApproval(issue: IssueStateRecord): boolean {
@@ -47,6 +49,7 @@ const approvedCommandPattern = /^\/approved\b/i;
 const changesCommandPattern = /^\/changes\b/i;
 const prReviewApprovalMarker = '<!-- wake:pr-review-approved -->';
 const prReviewChangesMarker = '<!-- wake:pr-review-changes-requested -->';
+const autoApprovalLabel = 'wake:auto';
 
 // The action Wake runs when a correlated PR gets new reviewer feedback while
 // the work item is awaiting approval. Not configurable per workflow: it's a
@@ -266,6 +269,19 @@ export function createPolicyEngine() {
       const latestComment = latestUnhandledComment(issue);
       if (pendingAction === undefined) {
         return null;
+      }
+
+      if (
+        context.pendingApprovalAllowAutoApproval === true &&
+        issue.issue.labels.includes(autoApprovalLabel)
+      ) {
+        return {
+          approved: true,
+          pendingAction,
+          automatic: true,
+          reason:
+            'Issue has wake:auto and the pending action prompt declared allowAutoApproval: true.',
+        };
       }
 
       if (

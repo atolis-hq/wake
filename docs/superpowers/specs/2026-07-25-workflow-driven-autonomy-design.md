@@ -362,6 +362,20 @@ This resolves #363's own open question: there is only one configuration
 surface for this concern, scoped to the stage it applies to, consistent
 with `skipApproval` already living in prompt frontmatter today.
 
+Implementation semantics resolved for #353/#363:
+
+- `allowAutoApproval` only applies when `skipApproval` is false; if both are
+  present, `skipApproval` wins because there is no approval gate to resolve.
+- `/yolo` and `/autoapprove` are Wake-recognized built-ins with a label-only
+  effect: add `wake:auto`. They do not invoke an agent and do not directly act
+  as `/approved` on the same comment.
+- Auto-approval appends a deterministic `wake.run.completed` event with
+  `sentinel: DONE`, follows the stage's normal `onDone`, and records
+  `auto:approved` plus the classification/reasoning in the event payload.
+- BLOCKED-question auto-resolution uses a watcher with
+  `while.status: [blocked]` and `on.event: [wake.run.completed]`; the resolver
+  workflow either responds through the normal reply path or declines.
+
 ## 8. Merge execution — decided, but narrowly scoped
 
 **Trigger:** a `pr-review` approval comment that has passed the correlation

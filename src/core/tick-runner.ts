@@ -801,6 +801,7 @@ export function createTickRunner(deps: {
           } else if (approvalResolution.approved) {
             const approvalId = `approval-${candidate.issue.number}-${deps.clock.now().getTime()}`;
             const approvedAt = deps.clock.now().toISOString();
+            const automaticApproval = approvalResolution.automatic === true;
             const nextStage = lifecycle.nextStageFromSentinel(
               candidate.wake.stage,
               'DONE',
@@ -830,8 +831,17 @@ export function createTickRunner(deps: {
                 sentinel: 'DONE',
                 nextStage,
                 runId: approvalId,
-                reason: 'human:approved',
-                handledCommentId: latestHumanCommentId(candidate),
+                reason: automaticApproval ? 'auto:approved' : 'human:approved',
+                ...(automaticApproval ? {} : { handledCommentId: latestHumanCommentId(candidate) }),
+                ...(automaticApproval
+                  ? {
+                      autoResolution: {
+                        kind: 'awaiting-approval',
+                        classification: 'auto-approval',
+                        reasoning: approvalResolution.reason,
+                      },
+                    }
+                  : {}),
               },
             });
             await deps.stateStore.appendEventEnvelope(approvalCompletedEvent);
@@ -1224,6 +1234,7 @@ export function createTickRunner(deps: {
           payload: {
             action,
             sentinel,
+            allowAutoApproval: runnerResult.metadata?.allowAutoApproval === true,
             ...(rawSentinel !== sentinel ? { rawSentinel } : {}),
             ...(nextStage !== null ? { nextStage } : {}),
             runId,
