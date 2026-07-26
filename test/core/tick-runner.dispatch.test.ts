@@ -463,6 +463,127 @@ describe('tick runner', () => {
       expect(projection?.issue.state).toBe('closed');
     });
 
+    it('cancels an active run when a new human comment supersedes its input snapshot', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const config = createDefaultWakeConfig(root);
+      config.sources.github.policy.requiredLabels = ['wake:queue'];
+      let refreshCallCount = 0;
+
+      await store.writeIssueState({
+        schemaVersion: 1,
+        workItemKey: workId(350),
+        issue: {
+          repo: 'atolis-hq/wake',
+          number: 350,
+          title: 'Execute',
+          body: 'Body',
+          labels: ['wake:queue'],
+          assignees: [],
+          isPullRequest: false,
+          state: 'open',
+          url: 'https://example.test/issues/350',
+          createdAt: '2026-07-05T12:00:00.000Z',
+          updatedAt: '2026-07-05T12:00:00.000Z',
+        },
+        comments: [],
+        wake: {
+          stage: 'implement',
+          stageHistory: [],
+          recentEventIds: [],
+          syncedAt: '2026-07-05T12:00:00.000Z',
+          expectedEcho: { commentIds: [], labels: [] },
+        },
+        context: {},
+        correlatedResources: [],
+      });
+
+      const tickRunner = createTickRunner({
+        clock: { now: () => new Date('2026-07-05T12:10:00.000Z') },
+        config,
+        stateStore: store,
+        workSource: {
+          async pollEvents() {
+            return [];
+          },
+          async refreshForDispatch() {
+            refreshCallCount += 1;
+            if (refreshCallCount === 1) {
+              return {
+                sourceRevision: 'github:issue:atolis-hq/wake#350@2026-07-05T12:00:00.000Z',
+                events: [],
+              };
+            }
+            return {
+              sourceRevision: 'github:issue:atolis-hq/wake#350@2026-07-05T12:09:00.000Z',
+              events: [
+                createUnkeyedEventEnvelope({
+                  eventId: 'evt-comment-350-new',
+                  streamScope: 'global-intake',
+                  direction: 'inbound',
+                  sourceSystem: 'github',
+                  sourceEventType: 'ticket.comment.created',
+                  sourceRefs: {
+                    repo: 'atolis-hq/wake',
+                    issueNumber: 350,
+                    commentId: 'c-new',
+                    sourceUrl: 'https://example.test/issues/350#issuecomment-c-new',
+                    resourceUri: githubIssueUri(350),
+                  },
+                  occurredAt: '2026-07-05T12:09:00.000Z',
+                  ingestedAt: '2026-07-05T12:10:00.000Z',
+                  trigger: 'immediate',
+                  payload: {
+                    comment: {
+                      id: 'c-new',
+                      body: 'Please change direction.',
+                      author: { login: 'owner' },
+                      createdAt: '2026-07-05T12:09:00.000Z',
+                      updatedAt: '2026-07-05T12:09:00.000Z',
+                    },
+                  },
+                }),
+              ],
+            };
+          },
+        },
+        runner: {
+          async run(input) {
+            return new Promise((resolve) => {
+              input.cancellationSignal?.addEventListener(
+                'abort',
+                () =>
+                  resolve({
+                    result: 'Canceled after newer input arrived\nDONE',
+                    model: 'test-model',
+                    cli: 'test-cli',
+                  }),
+                { once: true },
+              );
+            });
+          },
+        },
+        resourceIndex: await seededResourceIndex([350]),
+        workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+      });
+
+      const result = await tickRunner.runTick();
+      const runRecord = (await store.listRunRecords())[0];
+      const projection = await store.readIssueState(workId(350));
+      const completionEvent = (await store.listEventEnvelopes()).find(
+        (event) => event.sourceEventType === 'wake.run.completed',
+      );
+
+      expect(result.status).toBe('processed');
+      expect(runRecord?.executionOutcome).toBe('CANCELED_BY_SUPERSEDING_EVENT');
+      expect(runRecord?.metadata?.cancellation).toMatchObject({
+        reason: 'CANCELED_BY_SUPERSEDING_EVENT',
+        source: 'active-source-reconciliation',
+      });
+      expect(projection?.latestComment?.id).toBe('c-new');
+      expect(projection?.context.lastHandledCommentId).toBeUndefined();
+      expect(completionEvent?.payload.handledCommentId).toBeUndefined();
+    });
+
     it('rechecks scheduler capacity after refresh and before persisting a claim', async () => {
       const store = createStateStore({ wakeRoot: root });
       const config = createDefaultWakeConfig(root);

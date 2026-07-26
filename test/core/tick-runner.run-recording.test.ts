@@ -65,10 +65,22 @@ describe('tick runner', () => {
       const snapshot = JSON.parse(runFileSnapshot);
       expect(snapshot.status).toBe('running');
       expect(snapshot.lifecycle).toBe('RUNNING');
+      expect(snapshot.inputSnapshotId).toMatch(/^run-9-\d+-input$/);
       expect(snapshot.lease.leaseId).toMatch(/^lease-/);
       expect(snapshot.lease.ownerInstanceId).toMatch(/^instance-/);
       expect(snapshot.workerPid).toBe(process.pid);
       expect(typeof snapshot.workerProcessStartedAt).toBe('string');
+
+      const inputSnapshot = await store.readRunInputSnapshot(snapshot.inputSnapshotId);
+      expect(inputSnapshot?.runId).toBe(snapshot.runId);
+      expect(inputSnapshot?.projection.workItemKey).toBe(snapshot.workItemKey);
+      expect(inputSnapshot?.projection.issue.title).toBe('Implement');
+      expect(inputSnapshot?.handledThroughEventId).toBe(
+        inputSnapshot?.recentEvents.at(-1)?.eventId,
+      );
+      expect(inputSnapshot?.recentEvents.map((event) => event.eventId)).toContain(
+        `${snapshot.runId}-claimed`,
+      );
     });
 
     it('persists lifecycle transitions before workspace prep, runner launch, and terminal finalisation', async () => {

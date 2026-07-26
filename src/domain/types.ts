@@ -16,6 +16,7 @@ import {
   reportedArtifactSchema,
   retrySafetySchema,
   runRecordSchema,
+  runInputSnapshotSchema,
   sourceStateRecordSchema,
   wakeConfigSchema,
   wakeResultEnvelopeSchema,
@@ -39,6 +40,7 @@ export type AgentAction = string;
 export type IssueStateRecord = z.infer<typeof issueStateRecordSchema>;
 export type RunRecord = z.infer<typeof runRecordSchema>;
 export type RunRecordInput = z.input<typeof runRecordSchema>;
+export type RunInputSnapshot = z.infer<typeof runInputSnapshotSchema>;
 export type EventEnvelope = z.infer<typeof eventEnvelopeSchema>;
 export type WakeLedger = z.infer<typeof ledgerSchema>;
 export type WakeConfig = z.infer<typeof wakeConfigSchema>;
