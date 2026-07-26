@@ -31,7 +31,12 @@ describe('tick runner', () => {
   describe('stage watchers', () => {
     const watcherNow = '2026-07-25T12:00:00.000Z';
 
-    function configurePrReviewWatcher(rootPath: string) {
+    function configurePrReviewWatcher(
+      rootPath: string,
+      options: { workflowName?: string; action?: string } = {},
+    ) {
+      const workflowName = options.workflowName ?? 'pr-review';
+      const action = options.action ?? 'pr-review';
       const config = createDefaultWakeConfig(rootPath);
       config.sources.github.policy.requiredLabels = ['wake:implement'];
       config.workflows.default!.stages.implement!.watch = [
@@ -39,13 +44,13 @@ describe('tick runner', () => {
           while: { status: ['awaiting-approval'] },
           on: { event: ['wake.run.completed'] },
           schedule: { cron: '*/10 * * * *' },
-          workflow: 'pr-review',
+          workflow: workflowName,
         },
       ];
-      config.workflows['pr-review'] = {
+      config.workflows[workflowName] = {
         stages: {
           review: {
-            action: 'pr-review',
+            action,
             workspace: 'read-only',
             tier: 'light',
             onDone: 'done',
@@ -620,6 +625,81 @@ describe('tick runner', () => {
         delivered.some(
           (event) =>
             event.sourceRefs.resourceUri === 'github:pr:atolis-hq/wake#355' &&
+            typeof event.payload.body === 'string' &&
+            event.payload.body.includes('<!-- wake:pr-review-approved -->'),
+        ),
+      ).toBe(true);
+    });
+
+    it('registers an uncorrelated verified PR from a watcher action not named pr-review', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const resourceIndex = await seededResourceIndex([359]);
+      await seedAwaitingApprovalIssue({ store, issueNumber: 359 });
+      await appendPreviousCompletedEvent({ store, issueNumber: 359 });
+
+      const delivered: EventEnvelope[] = [];
+      const seenActions: string[] = [];
+      const tickRunner = createTickRunner({
+        clock: { now: () => new Date(watcherNow) },
+        config: configurePrReviewWatcher(root, {
+          workflowName: 'merge-advice',
+          action: 'merge-advice',
+        }),
+        stateStore: store,
+        workSource: {
+          async pollEvents() {
+            return [];
+          },
+        },
+        outboundSink: {
+          async deliverIntent(input) {
+            delivered.push(input.event);
+            return [];
+          },
+        },
+        runner: {
+          async run(input) {
+            seenActions.push(input.action);
+            return {
+              result: prReviewResult({
+                status: 'DONE',
+                body: 'Safe to merge.',
+                prUrl: 'https://example.test/atolis-hq/wake/pull/359',
+              }),
+              model: 'fake',
+              cli: 'Fake',
+              session_id: 'review-session',
+            };
+          },
+        },
+        resourceIndex,
+        workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+        artifactVerifier: createFakeArtifactVerifier({
+          verifies: [
+            {
+              url: 'https://example.test/atolis-hq/wake/pull/359',
+              resourceUri: 'github:pr:atolis-hq/wake#359',
+            },
+          ],
+        }),
+      });
+
+      await tickRunner.runTick();
+
+      const projection = await store.readIssueState(workId(359));
+      expect(seenActions).toEqual(['merge-advice']);
+      expect(await resourceIndex.resolve('github:pr:atolis-hq/wake#359')).toBe(workId(359));
+      expect(projection?.correlatedResources).toContainEqual(
+        expect.objectContaining({
+          resourceUri: 'github:pr:atolis-hq/wake#359',
+          role: 'implementation',
+          relation: 'primary',
+        }),
+      );
+      expect(
+        delivered.some(
+          (event) =>
+            event.sourceRefs.resourceUri === 'github:pr:atolis-hq/wake#359' &&
             typeof event.payload.body === 'string' &&
             event.payload.body.includes('<!-- wake:pr-review-approved -->'),
         ),
