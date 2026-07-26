@@ -346,6 +346,19 @@ describe('ui-data', () => {
     expect(status.counters.finished).toBe(0);
   });
 
+  it('reports paused loop state when the manual pause file is present', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const config = createDefaultWakeConfig(root);
+
+    await mkdir(join(root, '.wake'), { recursive: true });
+    await writeFile(store.paths.pauseFile, '2026-07-26T11:42:30.000Z\n', 'utf8');
+
+    const status = await buildStatus({ stateStore: store, config, now: new Date() });
+
+    expect(status.loopState).toBe('paused');
+    expect(status.paused).toBe(true);
+  });
+
   it('reports polling loop state while only the intake tick lock is held', async () => {
     const store = createStateStore({ wakeRoot: root });
     const config = createDefaultWakeConfig(root);
