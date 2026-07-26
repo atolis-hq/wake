@@ -7,9 +7,11 @@ import type {
   AgentRunner,
   AgentRunResult,
   ArtifactVerifier,
+  CancellationReason,
   OutboundSink,
   PullRequestMergeActor,
   ResourceIndex,
+  SourceRefreshResult,
   WorkSource,
   WorkspaceManager,
 } from './contracts.js';
@@ -56,6 +58,7 @@ import { createOutbox } from './outbox.js';
 import { createEventResolver } from './event-resolver.js';
 import { createStaleRunReconciler } from './stale-run-reconciler.js';
 import { createWorkspaceCleanup } from './workspace-cleanup.js';
+import { createAgentExecution } from './live-execution.js';
 import {
   createAutonomousDecisionAuditEvent,
   workflowRevision as computeWorkflowRevision,
@@ -97,6 +100,7 @@ type WatcherDispatch = {
 };
 
 const prReviewApprovalMarker = '<!-- wake:pr-review-approved -->';
+const activeRunSourceRefreshIntervalMs = 1_000;
 
 function latestHumanCommentId(candidate: IssueStateRecord): string | undefined {
   const human = candidate.comments.filter((c) => !c.isBotAuthored);
@@ -631,6 +635,29 @@ export function createTickRunner(deps: {
 
   function runnerTimeoutMs(): number {
     return maxConfiguredRunnerTimeoutMs(deps.config);
+  }
+
+  function cancellationReasonForIneligibleProjection(
+    projection: IssueStateRecord | null,
+  ): CancellationReason {
+    if (projection === null || projection.issue.state !== 'open') {
+      return 'CANCELED_BY_SOURCE_CLOSED';
+    }
+
+    const requiredAssignees = deps.config.sources.github.policy.requiredAssignees;
+    if (
+      requiredAssignees.length > 0 &&
+      !requiredAssignees.some((login) => projection.issue.assignees.includes(login))
+    ) {
+      return 'CANCELED_BY_UNASSIGNMENT';
+    }
+
+    const workflow = workflowForProjection(projection, deps.config);
+    if (workflow === null || !isKnownWorkflowStage(projection.wake.stage, workflow)) {
+      return 'CANCELED_BY_WORKFLOW_CHANGE';
+    }
+
+    return 'CANCELED_BY_SUPERSEDING_EVENT';
   }
 
   async function isRunningRecordActive(record: RunRecord, now: Date): Promise<boolean> {
@@ -1451,6 +1478,13 @@ export function createTickRunner(deps: {
         }, runLeaseRenewalIntervalMs);
       }
 
+      function delayActiveRunRefresh(): Promise<void> {
+        return new Promise((resolve) => {
+          const timer = setTimeout(resolve, activeRunSourceRefreshIntervalMs);
+          timer.unref?.();
+        });
+      }
+
       try {
         await transitionRunLifecycle('PREPARING');
         const prepareResult: {
@@ -1495,17 +1529,21 @@ export function createTickRunner(deps: {
         );
         await transitionRunLifecycle('RUNNING');
         startLeaseRenewal();
+        const activeCandidate = candidate;
         const runnerProjection = watcherRun
           ? {
-              ...candidate,
+              ...activeCandidate,
               wake: {
-                ...candidate.wake,
+                ...activeCandidate.wake,
                 sessionId: undefined,
                 sessionCli: undefined,
               },
             }
-          : candidate;
-        const runnerResult = await deps.runner.run({
+          : activeCandidate;
+
+        let executionFinished = false;
+        let cancellationReason: CancellationReason | null = null;
+        const runnerInput = {
           action,
           projection: runnerProjection,
           recentEvents,
@@ -1517,7 +1555,7 @@ export function createTickRunner(deps: {
           ...(workspacePath === undefined ? {} : { workspacePath }),
           ...(mergeConflictDetected ? { mergeConflictDetected: true } : {}),
           ...(upstreamChanges === undefined ? {} : { upstreamChanges }),
-          onProcessStart: async (identity) => {
+          onProcessStart: async (identity: { pid: number; processStartedAt: string }) => {
             await deps.stateStore.updateRunRecordIf(runId, {
               expect: (record) =>
                 record.status === 'running' &&
@@ -1531,7 +1569,93 @@ export function createTickRunner(deps: {
             });
           },
           onRuntimeEvent: appendRuntimeEvent,
-        });
+        };
+        const execution =
+          deps.runner.start === undefined
+            ? createAgentExecution(runnerInput, (liveInput) => deps.runner.run(liveInput))
+            : await deps.runner.start(runnerInput);
+
+        async function persistCancellationRequest(reason: CancellationReason): Promise<void> {
+          const requestedAt = deps.clock.now().toISOString();
+          await deps.stateStore.updateRunRecordIf(runId, {
+            expect: (record) =>
+              record.status === 'running' &&
+              record.lease?.leaseId === lease.leaseId &&
+              record.lease.ownerInstanceId === ownerInstanceId,
+            update: (record) => ({
+              ...record,
+              metadata: {
+                ...record.metadata,
+                cancellation: {
+                  reason,
+                  requestedAt,
+                  source: 'active-source-reconciliation',
+                },
+              },
+            }),
+          });
+        }
+
+        async function superviseActiveSource(): Promise<CancellationReason | null> {
+          if (deps.workSource.refreshForDispatch === undefined) {
+            return null;
+          }
+
+          while (!executionFinished) {
+            await delayActiveRunRefresh();
+            if (executionFinished) {
+              return null;
+            }
+
+            let activeRefresh: SourceRefreshResult | null;
+            try {
+              activeRefresh = await deps.workSource.refreshForDispatch({
+                projection: activeCandidate,
+              });
+            } catch {
+              continue;
+            }
+            if (activeRefresh === null) {
+              continue;
+            }
+
+            if (activeRefresh.events.length > 0) {
+              await ingestInboundEvents(activeRefresh.events);
+            }
+
+            const refreshedProjection =
+              (await deps.stateStore.readIssueState(activeCandidate.workItemKey)) ??
+              activeCandidate;
+            const ineligible =
+              activeRefresh.sourceExists === false ||
+              !policy.isEligible(refreshedProjection, deps.config);
+            if (!ineligible) {
+              continue;
+            }
+
+            const reason = cancellationReasonForIneligibleProjection(
+              activeRefresh.sourceExists === false ? null : refreshedProjection,
+            );
+            cancellationReason = reason;
+            await persistCancellationRequest(reason);
+            await execution.cancel(reason);
+            return reason;
+          }
+
+          return null;
+        }
+
+        const runnerResult = await Promise.race([
+          execution.result.finally(() => {
+            executionFinished = true;
+          }),
+          superviseActiveSource().then(async (reason) => {
+            if (reason === null) {
+              return execution.result;
+            }
+            return execution.result;
+          }),
+        ]);
         clearInterval(leaseRenewalTimer);
         leaseRenewalTimer = undefined;
         const parsedRunnerResult = parseRunnerResult(runnerResult.result);
@@ -1640,6 +1764,7 @@ export function createTickRunner(deps: {
         const resultMetadata = {
           ...runnerResult.metadata,
           envelope: parsedRunnerResult.envelope,
+          ...(cancellationReason === null ? {} : { cancellationReason }),
           ...(runnerResult.failureClass === undefined
             ? {}
             : { failureClass: runnerResult.failureClass }),
@@ -1647,11 +1772,13 @@ export function createTickRunner(deps: {
         };
 
         const executionOutcome: ExecutionOutcome =
-          runnerResult.failureClass === 'quota'
-            ? 'QUOTA_EXHAUSTED'
-            : runnerResult.failureClass === 'infra'
-              ? 'PROCESS_FAILED'
-              : 'COMPLETED';
+          cancellationReason !== null
+            ? cancellationReason
+            : runnerResult.failureClass === 'quota'
+              ? 'QUOTA_EXHAUSTED'
+              : runnerResult.failureClass === 'infra'
+                ? 'PROCESS_FAILED'
+                : 'COMPLETED';
         const workflowOutcome: WorkflowOutcome | undefined =
           sentinel === 'DONE'
             ? 'DONE'
@@ -1713,7 +1840,10 @@ export function createTickRunner(deps: {
             sessionId: runnerResult.session_id,
             sessionCli: runnerResult.cli,
             workspacePath,
-            reason: `runner:${sentinel.toLowerCase()}`,
+            reason:
+              cancellationReason === null
+                ? `runner:${sentinel.toLowerCase()}`
+                : `runner:${String(cancellationReason).toLowerCase()}`,
             ...(runnerResult.routing === undefined ? {} : { routing: runnerResult.routing }),
             ...(runnerResult.failureClass === undefined
               ? {}

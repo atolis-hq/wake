@@ -17,22 +17,15 @@
  * Keep this comment aligned with docs/runner-comparison.md when the adapter or
  * public CLI surface changes.
  */
-import type { AgentRunResult, AgentRunTokenUsage } from '../../core/contracts.js';
-import type {
-  AgentAction,
-  EventEnvelope,
-  IssueStateRecord,
-  RunnerEntry,
-  RunnerRouting,
-  RuntimeEventDraft,
-  WakeConfig,
-} from '../../domain/types.js';
+import type { AgentRunInput, AgentRunResult, AgentRunTokenUsage } from '../../core/contracts.js';
+import type { AgentAction, RunnerEntry } from '../../domain/types.js';
 
 type CodexRunnerSettings = Omit<Extract<RunnerEntry, { kind: 'codex' }>, 'kind'>;
 import { buildStagePrompt } from '../runner/stage-prompt.js';
 import { runAgentCliCommand } from '../runner/cli-command.js';
 import { emitRuntimeEvent, runnerRuntimeEvent } from '../runner/runtime-events.js';
 import { writeRunnerTranscript } from '../runner/transcripts.js';
+import { createAgentExecution } from '../../core/live-execution.js';
 import { parseRunnerResult } from '../../domain/schema.js';
 
 const CODEX_CLI_NAME = 'Codex';
@@ -301,22 +294,11 @@ export function createCodexRunner(options: {
   cwd: string;
   settings: CodexRunnerSettings;
 }) {
-  return {
-    async run(input: {
-      action: AgentAction;
-      projection: IssueStateRecord;
-      recentEvents: EventEnvelope[];
-      config: WakeConfig;
-      runId: string;
-      workspaceMode?: 'none' | 'read-only' | 'branch';
-      workspacePath?: string;
-      promptContextOverrides?: Record<string, unknown>;
-      mergeConflictDetected?: boolean;
-      upstreamChanges?: string;
-      onProcessStart?: (identity: { pid: number; processStartedAt: string }) => Promise<void>;
-      onRuntimeEvent?: (event: RuntimeEventDraft) => Promise<void>;
-      routing?: RunnerRouting;
-    }): Promise<AgentRunResult> {
+  const runner = {
+    async start(input: AgentRunInput) {
+      return createAgentExecution(input, (liveInput) => runner.run(liveInput));
+    },
+    async run(input: AgentRunInput): Promise<AgentRunResult> {
       const runMode = 'start';
       const toolCapabilityNote = buildCodexToolCapabilityNote({
         ...(input.workspaceMode === undefined ? {} : { workspaceMode: input.workspaceMode }),
@@ -387,6 +369,9 @@ export function createCodexRunner(options: {
         }),
         cwd,
         timeoutMs: options.settings.timeoutMs,
+        ...(input.cancellationSignal === undefined
+          ? {}
+          : { cancellationSignal: input.cancellationSignal }),
         onProcessStart: async (identity) => {
           await input.onProcessStart?.(identity);
           await emitRuntimeEvent(
@@ -627,4 +612,5 @@ export function createCodexRunner(options: {
       };
     },
   };
+  return runner;
 }

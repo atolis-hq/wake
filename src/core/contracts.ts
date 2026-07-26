@@ -7,6 +7,7 @@ import type {
   RuntimeEventDraft,
   WakeConfig,
 } from '../domain/types.js';
+import type { ProcessIdentity } from '../lib/process-identity.js';
 
 // Declared here (not in the concrete fs adapter) so the seam direction
 // matches every other adapter contract in this file: core/ declares the
@@ -83,22 +84,41 @@ export interface AgentRunResult {
   metadata?: Record<string, unknown>;
 }
 
+export type CancellationReason =
+  | 'CANCELED_BY_SOURCE_CLOSED'
+  | 'CANCELED_BY_UNASSIGNMENT'
+  | 'CANCELED_BY_SUPERSEDING_EVENT'
+  | 'CANCELED_BY_WORKFLOW_CHANGE'
+  | 'CANCELED_BY_OPERATOR';
+
+export interface AgentRunInput {
+  action: AgentAction;
+  projection: IssueStateRecord;
+  recentEvents: EventEnvelope[];
+  config: WakeConfig;
+  runId: string;
+  workspaceMode?: 'none' | 'read-only' | 'branch';
+  workspacePath?: string;
+  promptContextOverrides?: Record<string, unknown>;
+  routing?: RunnerRouting;
+  mergeConflictDetected?: boolean;
+  upstreamChanges?: string;
+  cancellationSignal?: AbortSignal;
+  onProcessStart?: (identity: { pid: number; processStartedAt: string }) => Promise<void>;
+  onRuntimeEvent?: (event: RuntimeEventDraft) => Promise<void>;
+}
+
+export interface AgentExecution {
+  runId: string;
+  processIdentity: ProcessIdentity;
+  events: AsyncIterable<RuntimeEventDraft>;
+  cancel(reason: CancellationReason): Promise<void>;
+  result: Promise<AgentRunResult>;
+}
+
 export interface AgentRunner {
-  run(input: {
-    action: AgentAction;
-    projection: IssueStateRecord;
-    recentEvents: EventEnvelope[];
-    config: WakeConfig;
-    runId: string;
-    workspaceMode?: 'none' | 'read-only' | 'branch';
-    workspacePath?: string;
-    promptContextOverrides?: Record<string, unknown>;
-    routing?: RunnerRouting;
-    mergeConflictDetected?: boolean;
-    upstreamChanges?: string;
-    onProcessStart?: (identity: { pid: number; processStartedAt: string }) => Promise<void>;
-    onRuntimeEvent?: (event: RuntimeEventDraft) => Promise<void>;
-  }): Promise<AgentRunResult>;
+  start?(input: AgentRunInput): Promise<AgentExecution>;
+  run(input: AgentRunInput): Promise<AgentRunResult>;
 }
 
 export interface WorkspaceManager {

@@ -7,6 +7,7 @@ import { createFakeWorkspaceManager } from '../../src/adapters/fake/fake-workspa
 import { createStateStore } from '../../src/adapters/fs/state-store.js';
 import { createDefaultWakeConfig } from '../../src/config/defaults.js';
 import { createTickRunner } from '../../src/core/tick-runner.js';
+import { createUnkeyedEventEnvelope } from '../../src/lib/event-log.js';
 import { StateHealthError } from '../../src/lib/state-health.js';
 import {
   findByIssueRef,
@@ -337,6 +338,129 @@ describe('tick runner', () => {
       expect(claimedEvent?.payload.sourceRevision).toBe(
         'github:issue:atolis-hq/wake#347@2026-07-05T12:00:00.000Z',
       );
+    });
+
+    it('cancels an active run when source refresh closes the work item', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const config = createDefaultWakeConfig(root);
+      config.sources.github.policy.requiredLabels = ['wake:queue'];
+      let refreshCallCount = 0;
+
+      await store.writeIssueState({
+        schemaVersion: 1,
+        workItemKey: workId(349),
+        issue: {
+          repo: 'atolis-hq/wake',
+          number: 349,
+          title: 'Execute',
+          body: 'Body',
+          labels: ['wake:queue'],
+          assignees: [],
+          isPullRequest: false,
+          state: 'open',
+          url: 'https://example.test/issues/349',
+          createdAt: '2026-07-05T12:00:00.000Z',
+          updatedAt: '2026-07-05T12:00:00.000Z',
+        },
+        comments: [],
+        wake: {
+          stage: 'implement',
+          stageHistory: [],
+          recentEventIds: [],
+          syncedAt: '2026-07-05T12:00:00.000Z',
+          expectedEcho: { commentIds: [], labels: [] },
+        },
+        context: {},
+        correlatedResources: [],
+      });
+
+      const tickRunner = createTickRunner({
+        clock: { now: () => new Date('2026-07-05T12:10:00.000Z') },
+        config,
+        stateStore: store,
+        workSource: {
+          async pollEvents() {
+            return [];
+          },
+          async refreshForDispatch() {
+            refreshCallCount += 1;
+            if (refreshCallCount === 1) {
+              return {
+                sourceRevision: 'github:issue:atolis-hq/wake#349@2026-07-05T12:00:00.000Z',
+                events: [],
+              };
+            }
+            return {
+              sourceRevision: 'github:issue:atolis-hq/wake#349@2026-07-05T12:09:00.000Z',
+              events: [
+                createUnkeyedEventEnvelope({
+                  eventId: 'evt-issue-349-closed',
+                  streamScope: 'global-intake',
+                  direction: 'inbound',
+                  sourceSystem: 'github',
+                  sourceEventType: 'ticket.upsert',
+                  sourceRefs: {
+                    repo: 'atolis-hq/wake',
+                    issueNumber: 349,
+                    sourceUrl: 'https://example.test/issues/349',
+                    resourceUri: githubIssueUri(349),
+                  },
+                  occurredAt: '2026-07-05T12:09:00.000Z',
+                  ingestedAt: '2026-07-05T12:10:00.000Z',
+                  trigger: 'immediate',
+                  payload: {
+                    ticket: {
+                      repo: 'atolis-hq/wake',
+                      number: 349,
+                      title: 'Execute',
+                      body: 'Body',
+                      labels: ['wake:queue'],
+                      assignees: [],
+                      isPullRequest: false,
+                      state: 'closed',
+                      url: 'https://example.test/issues/349',
+                      createdAt: '2026-07-05T12:00:00.000Z',
+                      updatedAt: '2026-07-05T12:09:00.000Z',
+                    },
+                  },
+                }),
+              ],
+            };
+          },
+        },
+        runner: {
+          async run(input) {
+            return new Promise((resolve) => {
+              input.cancellationSignal?.addEventListener(
+                'abort',
+                () =>
+                  resolve({
+                    result: 'Source changed while running\nFAILED',
+                    model: 'test-model',
+                    cli: 'test-cli',
+                    failureClass: 'infra' as const,
+                  }),
+                { once: true },
+              );
+            });
+          },
+        },
+        resourceIndex: await seededResourceIndex([349]),
+        workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+      });
+
+      const result = await tickRunner.runTick();
+      const runRecord = (await store.listRunRecords())[0];
+      const projection = await store.readIssueState(workId(349));
+
+      expect(result.status).toBe('processed');
+      expect(runRecord?.status).toBe('failed');
+      expect(runRecord?.executionOutcome).toBe('CANCELED_BY_SOURCE_CLOSED');
+      expect(runRecord?.metadata?.cancellation).toMatchObject({
+        reason: 'CANCELED_BY_SOURCE_CLOSED',
+        source: 'active-source-reconciliation',
+      });
+      expect(projection?.issue.state).toBe('closed');
     });
 
     it('rechecks scheduler capacity after refresh and before persisting a claim', async () => {
