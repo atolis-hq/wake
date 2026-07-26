@@ -83,7 +83,12 @@ export async function runSelfUpdateCommand(input: {
   stateStore: { listRunRecords: () => Promise<RunRecord[]> };
   recoverActiveRuns?: () => Promise<void>;
   docker: {
-    build: (options: { image: string; dockerfile: string; contextDir: string }) => Promise<void>;
+    build: (options: {
+      image: string;
+      dockerfile: string;
+      contextDir: string;
+      buildArgs?: Record<string, string>;
+    }) => Promise<void>;
     update: (options: {
       image: string;
       containerName: string;
@@ -169,10 +174,19 @@ export async function runSelfUpdateCommand(input: {
 
   try {
     await input.git.checkoutTag(tag);
+    // `wake sandbox build`'s source-mode branch (sandbox-command.ts) passes
+    // WAKE_BUILD_TAG resolved from repoRoot's checked-out HEAD; self-update
+    // never passed it at all, so every rollout built with it unset and the
+    // binary silently reported the '0.1.0-dev' fallback regardless of which
+    // tag was actually deployed. `tag` is exactly what HEAD now points to
+    // (checkoutTag above), so it's the same value that resolution would
+    // produce - used directly here to keep this path testable through the
+    // existing `git` fake instead of shelling out again.
     await input.docker.build({
       image: newImage,
       dockerfile: input.dockerfilePath,
       contextDir: input.repoRoot,
+      buildArgs: { WAKE_BUILD_TAG: tag },
     });
     await input.docker.update({ ...updateInput, image: newImage });
     input.logger.info('[self-update] recreated container; entrypoint will keep wake start running');
