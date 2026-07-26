@@ -2,7 +2,7 @@
 
 
   <img src="https://raw.githubusercontent.com/atolis-hq/wake/refs/heads/main/assets/wake-logo.svg" alt="logo" width="200" height="auto" />
-  <h1>Wake</h1>
+  <h1>WAKE</h1>
   
   <p>
     Autonomous software engineering control plane
