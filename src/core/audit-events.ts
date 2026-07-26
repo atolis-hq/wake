@@ -11,6 +11,7 @@ type AuditDecisionType =
   | 'watcher.dispatched'
   | 'review.verdict'
   | 'approval.auto-resolved'
+  | 'approval.watcher-resolved'
   | 'dispatch.rate-limited';
 
 function stableJson(value: unknown): string {

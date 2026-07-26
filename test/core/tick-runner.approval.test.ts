@@ -32,7 +32,7 @@ describe('tick runner', () => {
         NonNullable<
           NonNullable<
             WakeConfig['workflows']['default']['stages']['implement']['watch']
-          >[number]['onApproved']
+          >[number]['onSuccess']
         >['merge']
       >,
     ) {
@@ -43,7 +43,7 @@ describe('tick runner', () => {
           while: { status: ['awaiting-approval'] },
           on: { event: ['wake.run.completed'] },
           workflow: 'pr-review',
-          onApproved: { merge },
+          onSuccess: { approve: false, merge },
         },
       ];
       config.workflows['pr-review'] = {

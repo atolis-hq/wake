@@ -440,13 +440,24 @@ _Lives in `config.workflows.yaml`._
 Per-stage routing. A stage normally routes to a `tier`; `runner` pins a concrete
 named runner and takes precedence over `tier`.
 
-Workflow stages may also define `watch` entries. `watch[].onApproved.merge` is
-an opt-in deterministic action for PR-review approvals:
+Workflow stages may also define `watch` entries. `watch[].onSuccess` declares
+what Wake does when the watched child workflow run completes `DONE` — the
+child's sentinel is its verdict:
 
 ```yaml
 workflows:
   default:
     stages:
+      refine:
+        action: refine
+        workspace: read-only
+        onDone: implement
+        watch:
+          - while: { status: [awaiting-approval] }
+            on: { event: [wake.run.completed] }
+            workflow: plan-review
+            onSuccess:
+              approve: true
       implement:
         action: implement
         workspace: branch
@@ -456,7 +467,7 @@ workflows:
             on: { event: [wake.run.completed] }
             schedule: { cron: "*/10 * * * *" }
             workflow: pr-review
-            onApproved:
+            onSuccess:
               merge:
                 approve: true
                 autoMerge: true
@@ -468,6 +479,16 @@ workflows:
                   - security
 ```
 
+`onSuccess.approve` resolves the watched stage's pending approval through
+Wake's own approval transition — the same one a human `/approved` comment
+takes — when the child run completes `DONE` and no correlated PR carries the
+verdict. The approval is idempotent, recorded as a run-completed event with
+reason `watcher:approved`, and audited as an `approval.watcher-resolved`
+decision. A child `FAILED` or `BLOCKED` verdict posts the review body without
+approving.
+
+`onSuccess.merge` is an opt-in deterministic action for PR-review approvals:
+
 | Property          | Type     | Description                                                       | Default |
 | ----------------- | -------- | ----------------------------------------------------------------- | ------- |
 | `approve`         | boolean  | Submit a GitHub PR review with `APPROVE`                          | `false` |
@@ -476,10 +497,10 @@ workflows:
 | `blockedPaths`    | string[] | Glob-style changed-path patterns that always block (`*` wildcard) | `[]`    |
 | `blockedLabels`   | string[] | Issue labels that always block this deterministic merge action    | `[]`    |
 
-This action only runs for Wake's bot-authored PR-review approval marker on a
-correlated PR. It does not run for human `/approved` comments on the issue
-thread. If a policy rule fails, Wake posts the reviewer message plus the policy
-exception on the PR and moves the work item to `blocked`.
+The merge action only runs for Wake's bot-authored PR-review approval marker
+on a correlated PR. It does not run for human `/approved` comments on the
+issue thread. If a policy rule fails, Wake posts the reviewer message plus the
+policy exception on the PR and moves the work item to `blocked`.
 
 When `autoMerge` is enabled, configure GitHub branch protection with required
 status checks. Wake delegates the final green-CI gate to GitHub native

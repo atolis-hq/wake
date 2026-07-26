@@ -182,7 +182,7 @@ workflows:
             on: { event: [wake.run.completed] }
             schedule: { cron: "*/10 * * * *" }
             workflow: pr-review
-            onApproved:
+            onSuccess:
               merge:
                 approve: true
                 autoMerge: true
@@ -194,7 +194,21 @@ workflows:
                   - security
 ```
 
-`onApproved.merge` runs only when Wake has already recognized a bot-authored
+A watcher's `onSuccess` block declares what Wake does when the child workflow
+run completes `DONE` — the sentinel is the child's verdict, so a `BLOCKED` or
+`FAILED` child never triggers it.
+
+`onSuccess.approve: true` lets the child workflow approve the watched parent
+stage directly. When the child completes `DONE` and no correlated PR carries
+the verdict (for example a `plan-review` workflow reviewing a refine plan on
+the issue thread), Wake resolves the parent's pending approval through the
+same transition a human `/approved` comment takes: the child's review body is
+posted to the issue, an approval run-completed event with reason
+`watcher:approved` is appended, an `approval.watcher-resolved` decision is
+audited, and the parent stage advances. A child `FAILED` or `BLOCKED` verdict
+posts the review body as feedback without approving.
+
+`onSuccess.merge` runs only when Wake has already recognized a bot-authored
 PR review approval marker on a correlated PR. It does not fire for a human
 `/approved` command on the issue thread. The deterministic gate can submit a
 GitHub approval review and enable GitHub native auto-merge after the local risk

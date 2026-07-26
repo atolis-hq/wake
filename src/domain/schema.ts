@@ -496,6 +496,13 @@ const approvedMergePolicySchema = z
     blockedLabels: [],
   });
 
+const watchSuccessPolicySchema = z.object({
+  // Resolve the watched parent stage's pending approval gate when the child
+  // workflow run completes DONE — the child's sentinel is its verdict.
+  approve: z.boolean().default(false),
+  merge: approvedMergePolicySchema.optional(),
+});
+
 const workflowStageSchema = stageRouteSchema.extend({
   workspace: workflowWorkspaceSchema,
   onDone: identifierSchema,
@@ -512,11 +519,7 @@ const workflowStageSchema = stageRouteSchema.extend({
           .optional(),
         schedule: workflowTriggerScheduleSchema.optional(),
         workflow: identifierSchema,
-        onApproved: z
-          .object({
-            merge: approvedMergePolicySchema.optional(),
-          })
-          .optional(),
+        onSuccess: watchSuccessPolicySchema.optional(),
       }),
     )
     .optional(),
