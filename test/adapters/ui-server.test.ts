@@ -73,6 +73,7 @@ describe('ui-server', () => {
   });
 
   it('serves selected analytics metrics under /api/v1/metrics', async () => {
+    const today = new Date().toISOString().slice(0, 10);
     await store.writeRunRecord({
       schemaVersion: 1,
       runId: 'run-metrics',
@@ -81,8 +82,8 @@ describe('ui-server', () => {
       issueNumber: 91,
       action: 'implement',
       status: 'completed',
-      startedAt: '2026-07-25T10:00:00.000Z',
-      finishedAt: '2026-07-25T10:01:00.000Z',
+      startedAt: `${today}T10:00:00.000Z`,
+      finishedAt: `${today}T10:01:00.000Z`,
       tokenUsage: { inputTokens: 10, outputTokens: 5, costUsd: 0.1 },
     });
 
