@@ -496,7 +496,7 @@ export async function buildRuns(input: {
   action?: string | undefined;
   repo?: string | undefined;
 }) {
-  const runs = await input.stateStore.listRunRecords();
+  const runs = await input.stateStore.listRunRecordSummaries();
   return runs
     .filter((run) => input.status === undefined || run.status === input.status)
     .filter((run) => input.action === undefined || run.action === input.action)
@@ -669,7 +669,7 @@ async function listRunsForBuckets(
   const dates = [...new Set(buckets.map((bucket) => bucket.bucket.slice(0, 10)))];
   const runsById = new Map<string, RunRecord>();
   const recordsByDate = await Promise.all(
-    dates.map((date) => stateStore.listRunRecordsForDate(date)),
+    dates.map((date) => stateStore.listRunRecordSummariesForDate(date)),
   );
   for (const records of recordsByDate) {
     for (const record of records) {

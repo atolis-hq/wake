@@ -60,9 +60,32 @@ async function readIssueStateFile(file: string): Promise<IssueStateRecord | null
   }
 }
 
-async function readRunRecordFile(file: string): Promise<RunRecord | null> {
+// The board/runs/metrics UI list many run records at once purely for their
+// small fields (status, timing, routing) - metadata.stdout/stderr/raw and
+// runtimeEvents are captured agent output that can run into single-digit MB
+// per run, and holding all of them in memory for a full-history listing is
+// what took the UI process OOM. Stripped only for bulk-list reads; single-run
+// reads (readRunRecord) keep the full record since reconciliation code
+// spreads a record's metadata back into a rewrite (see stale-run-reconciler).
+function stripHeavyRunRecordFields(record: RunRecord): RunRecord {
+  if (record.metadata === undefined && record.runtimeEvents === undefined) {
+    return record;
+  }
+  const { runtimeEvents: _runtimeEvents, metadata, ...rest } = record;
+  if (metadata === undefined) {
+    return rest;
+  }
+  const { stdout: _stdout, stderr: _stderr, raw: _raw, ...restMetadata } = metadata;
+  return { ...rest, metadata: restMetadata };
+}
+
+async function readRunRecordFile(
+  file: string,
+  options?: { summarize?: boolean },
+): Promise<RunRecord | null> {
   try {
-    return parseRunRecord(await readJsonFile(file));
+    const record = parseRunRecord(await readJsonFile(file));
+    return options?.summarize === true ? stripHeavyRunRecordFields(record) : record;
   } catch {
     return null;
   }
@@ -234,7 +257,10 @@ function shouldArchiveIssueState(
   return Number.isFinite(ageMs) && ageMs > options.archiveFreshnessDays * 24 * 60 * 60 * 1000;
 }
 
-export async function listRunRecords(wakeRoot: string): Promise<RunRecord[]> {
+async function listRunRecordsImpl(
+  wakeRoot: string,
+  options?: { summarize?: boolean },
+): Promise<RunRecord[]> {
   const runsRoot = join(createWakePaths(wakeRoot).dataRoot, 'runs');
   const recordsById = new Map<string, RunRecord>();
 
@@ -242,7 +268,7 @@ export async function listRunRecords(wakeRoot: string): Promise<RunRecord[]> {
     const files = (await readdir(runsRoot)).filter((file) => file.endsWith('.json')).sort();
 
     for (const file of files) {
-      const record = await readRunRecordFile(join(runsRoot, file));
+      const record = await readRunRecordFile(join(runsRoot, file), options);
       if (record !== null) {
         recordsById.set(record.runId, record);
       }
@@ -259,7 +285,7 @@ export async function listRunRecords(wakeRoot: string): Promise<RunRecord[]> {
         .filter((file) => file.endsWith('.json'))
         .sort();
       for (const file of files) {
-        const record = await readRunRecordFile(join(byDateRoot, dateDir, file));
+        const record = await readRunRecordFile(join(byDateRoot, dateDir, file), options);
         if (record !== null) {
           recordsById.set(record.runId, record);
         }
@@ -274,7 +300,24 @@ export async function listRunRecords(wakeRoot: string): Promise<RunRecord[]> {
   );
 }
 
-async function listRunRecordsForDate(wakeRoot: string, date: string): Promise<RunRecord[]> {
+export async function listRunRecords(wakeRoot: string): Promise<RunRecord[]> {
+  return listRunRecordsImpl(wakeRoot);
+}
+
+// Same records as listRunRecords, but with metadata.stdout/stderr/raw and
+// runtimeEvents stripped per-file as they're read - for callers (board/runs/
+// metrics UI) that list every run and only need the small fields. See
+// stripHeavyRunRecordFields for why this can't just be a post-hoc .map() over
+// listRunRecords: that would still hold every full record in memory at once.
+export async function listRunRecordSummaries(wakeRoot: string): Promise<RunRecord[]> {
+  return listRunRecordsImpl(wakeRoot, { summarize: true });
+}
+
+async function listRunRecordsForDateImpl(
+  wakeRoot: string,
+  date: string,
+  options?: { summarize?: boolean },
+): Promise<RunRecord[]> {
   const runsRoot = join(createWakePaths(wakeRoot).dataRoot, 'runs');
   const recordsById = new Map<string, RunRecord>();
 
@@ -282,7 +325,7 @@ async function listRunRecordsForDate(wakeRoot: string, date: string): Promise<Ru
     .filter((file) => file.endsWith('.json'))
     .sort();
   for (const file of bucketFiles) {
-    const record = await readRunRecordFile(join(runsRoot, 'by-date', date, file));
+    const record = await readRunRecordFile(join(runsRoot, 'by-date', date, file), options);
     if (record !== null) {
       recordsById.set(record.runId, record);
     }
@@ -293,7 +336,7 @@ async function listRunRecordsForDate(wakeRoot: string, date: string): Promise<Ru
       .filter((file) => file.endsWith('.json'))
       .sort();
     for (const file of legacyFiles) {
-      const record = await readRunRecordFile(join(runsRoot, file));
+      const record = await readRunRecordFile(join(runsRoot, file), options);
       if (record?.startedAt.slice(0, 10) === date) {
         recordsById.set(record.runId, record);
       }
@@ -303,6 +346,14 @@ async function listRunRecordsForDate(wakeRoot: string, date: string): Promise<Ru
   return [...recordsById.values()].sort((left, right) =>
     left.startedAt.localeCompare(right.startedAt),
   );
+}
+
+async function listRunRecordsForDate(wakeRoot: string, date: string): Promise<RunRecord[]> {
+  return listRunRecordsForDateImpl(wakeRoot, date);
+}
+
+async function listRunRecordSummariesForDate(wakeRoot: string, date: string): Promise<RunRecord[]> {
+  return listRunRecordsForDateImpl(wakeRoot, date, { summarize: true });
 }
 
 async function listRecentRunRecords(wakeRoot: string, limit: number): Promise<RunRecord[]> {
@@ -403,8 +454,14 @@ export function createStateStore({ wakeRoot }: { wakeRoot: string }) {
     async listRunRecords(): Promise<RunRecord[]> {
       return listRunRecords(wakeRoot);
     },
+    async listRunRecordSummaries(): Promise<RunRecord[]> {
+      return listRunRecordSummaries(wakeRoot);
+    },
     async listRunRecordsForDate(date: string): Promise<RunRecord[]> {
       return listRunRecordsForDate(wakeRoot, date);
+    },
+    async listRunRecordSummariesForDate(date: string): Promise<RunRecord[]> {
+      return listRunRecordSummariesForDate(wakeRoot, date);
     },
     async listRecentRunRecords(limit = 10): Promise<RunRecord[]> {
       return listRecentRunRecords(wakeRoot, limit);

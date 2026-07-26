@@ -61,6 +61,8 @@ function runRecord(input: {
   issueNumber?: number;
   startedAt: string;
   status?: RunRecord['status'];
+  metadata?: Record<string, unknown>;
+  runtimeEvents?: RunRecord['runtimeEvents'];
 }): RunRecord {
   return {
     schemaVersion: 1,
@@ -72,6 +74,8 @@ function runRecord(input: {
     lifecycle: input.status === 'running' ? 'RUNNING' : 'TERMINAL',
     status: input.status ?? 'completed',
     startedAt: input.startedAt,
+    ...(input.metadata === undefined ? {} : { metadata: input.metadata }),
+    ...(input.runtimeEvents === undefined ? {} : { runtimeEvents: input.runtimeEvents }),
   };
 }
 
@@ -183,6 +187,63 @@ describe('state store', () => {
     await expect(store.readRunRecord('run-today')).resolves.toMatchObject({ status: 'failed' });
     await expect(store.listRunRecordsForDate('2026-07-05')).resolves.toHaveLength(1);
     await expect(store.listRunRecords()).resolves.toHaveLength(2);
+  });
+
+  it('strips captured stdout/stderr/raw and runtimeEvents from bulk run-record summaries only', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const heavyRunId = 'run-heavy';
+
+    await store.writeRunRecord(
+      runRecord({
+        runId: heavyRunId,
+        startedAt: '2026-07-05T12:00:00.000Z',
+        metadata: {
+          workspacePath: '/wake/.wake/repos/atolis-hq__wake',
+          stdout: 'x'.repeat(1000),
+          stderr: 'y'.repeat(1000),
+          raw: { events: ['z'.repeat(1000)] },
+        },
+        runtimeEvents: [
+          {
+            type: 'agent.process.started',
+            runId: heavyRunId,
+            workItemId: workId(7),
+            runner: { name: 'codex-standard', kind: 'codex', cli: 'Codex' },
+            timestamp: '2026-07-05T12:00:00.000Z',
+            sequence: 0,
+            payload: {},
+          },
+        ],
+      }),
+    );
+
+    // Full reads (single-run and unsummarized listings) keep everything -
+    // reconciliation code spreads a listed record's metadata back into a
+    // rewrite, so stripping here would silently drop captured output on disk.
+    await expect(store.readRunRecord(heavyRunId)).resolves.toMatchObject({
+      metadata: { stdout: 'x'.repeat(1000), stderr: 'y'.repeat(1000) },
+      runtimeEvents: [expect.objectContaining({ type: 'agent.process.started' })],
+    });
+    const fullListed = await store.listRunRecords();
+    expect(fullListed).toHaveLength(1);
+    expect(fullListed[0]?.metadata?.stdout).toBe('x'.repeat(1000));
+    expect(fullListed[0]?.runtimeEvents).toHaveLength(1);
+
+    // Bulk summaries (board/runs/metrics UI) keep small metadata but drop the
+    // captured-output fields and runtimeEvents.
+    const summaryListed = await store.listRunRecordSummaries();
+    expect(summaryListed).toHaveLength(1);
+    expect(summaryListed[0]?.metadata).toEqual({
+      workspacePath: '/wake/.wake/repos/atolis-hq__wake',
+    });
+    expect(summaryListed[0]?.runtimeEvents).toBeUndefined();
+
+    const summaryForDate = await store.listRunRecordSummariesForDate('2026-07-05');
+    expect(summaryForDate).toHaveLength(1);
+    expect(summaryForDate[0]?.metadata).toEqual({
+      workspacePath: '/wake/.wake/repos/atolis-hq__wake',
+    });
+    expect(summaryForDate[0]?.runtimeEvents).toBeUndefined();
   });
 
   it('lists recent work-item events from projection ids without scanning event history', async () => {
