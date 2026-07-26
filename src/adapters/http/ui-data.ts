@@ -134,6 +134,7 @@ export async function buildBoard(input: { stateStore: StateStore; config: WakeCo
       title: item.issue.title,
       url: item.issue.url,
       stage: item.wake.stage,
+      labels: item.issue.labels,
       condition,
       conditionReason: reason,
       timeInStageMs: timeInStageMs(item, input.now),
