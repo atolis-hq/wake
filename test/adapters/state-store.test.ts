@@ -246,6 +246,32 @@ describe('state store', () => {
     expect(summaryForDate[0]?.runtimeEvents).toBeUndefined();
   });
 
+  it('recovers a full record via the date bucket when the flat run file is missing, without a full unstripped scan', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const paths = createWakePaths(root);
+
+    // Simulate a flat-file-missing record (e.g. cleaned up separately) that
+    // still has its date-bucket copy - readRunRecord's fallback used to be
+    // listRecentRunRecords(500) (full, unstripped scan of up to 500 records),
+    // which buildBoard calls once per work item. Write directly to the
+    // by-date path only, bypassing writeRunRecord's dual-write, so the flat
+    // read fails and the fallback path is actually exercised.
+    const record = runRecord({
+      runId: 'run-bucket-only',
+      startedAt: '2026-07-05T12:00:00.000Z',
+      metadata: { stdout: 'x'.repeat(1000) },
+    });
+    await mkdir(join(root, '.wake', 'runs', 'by-date', '2026-07-05'), { recursive: true });
+    await writeFile(
+      paths.runDateFile('2026-07-05', 'run-bucket-only'),
+      JSON.stringify(record),
+      'utf8',
+    );
+
+    const found = await store.readRunRecord('run-bucket-only');
+    expect(found?.metadata?.stdout).toBe('x'.repeat(1000));
+  });
+
   it('lists recent work-item events from projection ids without scanning event history', async () => {
     const store = createStateStore({ wakeRoot: root });
     const paths = createWakePaths(root);

@@ -447,8 +447,25 @@ export function createStateStore({ wakeRoot }: { wakeRoot: string }) {
       try {
         return parseRunRecord(await readJsonFile(paths.runFile(runId)));
       } catch {
-        const recent = await listRecentRunRecords(wakeRoot, 500);
-        return recent.find((record) => record.runId === runId) ?? null;
+        // buildBoard calls this once per work item (readRunRecord per
+        // lastRunId), so a missing flat file used to mean a full,
+        // unstripped listRecentRunRecords(500) scan - every heavy
+        // stdout/raw payload in the 500 most recent runs, parsed again for
+        // every item on the board. Scan summaries to locate the record's
+        // date bucket instead, then do one targeted full read of just that
+        // file so the caller still gets full fidelity.
+        const summaries = await listRunRecordSummaries(wakeRoot);
+        const match = summaries.find((record) => record.runId === runId);
+        if (match === undefined) {
+          return null;
+        }
+        try {
+          return parseRunRecord(
+            await readJsonFile(paths.runDateFile(match.startedAt.slice(0, 10), runId)),
+          );
+        } catch {
+          return match;
+        }
       }
     },
     async listRunRecords(): Promise<RunRecord[]> {

@@ -157,7 +157,7 @@ export async function buildStatus(input: {
     input.stateStore.readLedger(),
     input.stateStore.isPaused(),
     input.stateStore.listRecentEventEnvelopes({ limit: 1 }),
-    input.stateStore.listRunRecordsForDate(today),
+    input.stateStore.listRunRecordSummariesForDate(today),
     input.stateStore.listRecentRunRecords(1),
     buildBoard(input),
   ]);
