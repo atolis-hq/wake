@@ -26,13 +26,17 @@ The identity design states "a miss means mint; there is no other trigger." That 
 
 For the PR activity source specifically, qualification is **author-based**, not label-based: a PR is workable as its own item only if opened by a configured author (e.g. a human on an allowlist), because PRs don't carry Wake's issue-label workflow and a PR's own labels are typically GitHub's review-status labels, not intent signals. Config shape:
 
-```yaml
-sources:
-  github:
-    pullRequests:
-      enabled: false
-      policy:
-        requiredAuthors: [] # empty = accept none (safe default); PRs only ever resume via existing correlation until configured
+```jsonc
+"sources": {
+  "github": {
+    "pullRequests": {
+      "enabled": false,
+      "policy": {
+        "requiredAuthors": []   // empty = accept none (safe default); PRs only ever resume via existing correlation until configured
+      }
+    }
+  }
+}
 ```
 
 An unresolved PR event that fails qualification is **not dropped**: it is appended under `streamScope: global-intake` (ADR 0001 §5), recoverable later via `wake correlate`.
