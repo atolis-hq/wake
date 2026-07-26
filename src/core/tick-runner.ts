@@ -1035,6 +1035,7 @@ export function createTickRunner(deps: {
           });
           const matchingEvents = events
             .filter((event) => watcher.on!.event.includes(event.sourceEventType))
+            .filter((event) => event.payload.watcherRun !== true)
             .sort((left, right) => left.ingestedAt.localeCompare(right.ingestedAt));
           const cursorIndex =
             state?.lastDispatchedEventId === undefined
@@ -2101,6 +2102,8 @@ export function createTickRunner(deps: {
                 idempotencyKey: `${runId}:pr-review-verdict-comment`,
               },
             });
+          } else if (sentinel === 'BLOCKED') {
+            await deliverOutboundEvent(publishIntent);
           } else {
             await suppressOutboundEvent(publishIntent, {
               suppressedPublishReason: 'pr-review-no-actionable-verdict',

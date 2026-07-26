@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { mkdtemp, readFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -589,6 +589,138 @@ describe('tick runner', () => {
           payload: expect.objectContaining({
             deliveryState: 'CONFIRMED',
             suppressedPublishReason: 'pr-review-no-actionable-verdict',
+          }),
+        }),
+      );
+    });
+
+    it('does not redispatch a watcher from its own blocked completion event', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const resourceIndex = await seededResourceIndex([360]);
+      await seedAwaitingApprovalIssue({
+        store,
+        issueNumber: 360,
+        lastRunId: 'run-360-review-blocked',
+      });
+      await appendPreviousCompletedEvent({
+        store,
+        issueNumber: 360,
+        runId: 'run-360-implement',
+        occurredAt: '2026-07-25T11:58:00.000Z',
+      });
+      await store.appendEventEnvelope(
+        createEventEnvelope({
+          eventId: 'run-360-review-blocked-completed',
+          workItemKey: workId(360),
+          streamScope: 'work-item',
+          direction: 'internal',
+          sourceSystem: 'wake',
+          sourceEventType: 'wake.run.completed',
+          sourceRefs: { repo: 'atolis-hq/wake', issueNumber: 360, runId: 'run-360-review-blocked' },
+          occurredAt: '2026-07-25T11:59:00.000Z',
+          ingestedAt: '2026-07-25T11:59:00.000Z',
+          trigger: 'immediate',
+          payload: {
+            action: 'pr-review',
+            sentinel: 'BLOCKED',
+            watcherRun: true,
+            watcherTrigger: { kind: 'event', eventId: 'run-360-implement-completed' },
+          },
+        }),
+      );
+      await mkdir(join(store.paths.dataRoot, 'watchers'), { recursive: true });
+      await writeFile(
+        join(
+          store.paths.dataRoot,
+          'watchers',
+          `${workId(360)}__default__implement__0.json`,
+        ),
+        JSON.stringify({
+          schemaVersion: 1,
+          key: `${workId(360)}__default__implement__0`,
+          lastDispatchedEventId: 'run-360-implement-completed',
+          updatedAt: '2026-07-25T11:58:30.000Z',
+        }),
+        'utf8',
+      );
+
+      let runnerCalls = 0;
+      const config = configurePrReviewWatcher(root);
+      delete config.workflows.default!.stages.implement!.watch![0]!.schedule;
+      const tickRunner = createTickRunner({
+        clock: { now: () => new Date(watcherNow) },
+        config,
+        stateStore: store,
+        workSource: {
+          async pollEvents() {
+            return [];
+          },
+        },
+        runner: {
+          async run() {
+            runnerCalls += 1;
+            return { result: 'should not run\nDONE', model: 'fake', cli: 'Fake' };
+          },
+        },
+        resourceIndex,
+        workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+      });
+
+      await tickRunner.runTick();
+
+      expect(runnerCalls).toBe(0);
+    });
+
+    it('publishes blocked watcher output to the issue when there is no actionable PR verdict', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const resourceIndex = await seededResourceIndex([361]);
+      await seedAwaitingApprovalIssue({ store, issueNumber: 361 });
+      await appendPreviousCompletedEvent({ store, issueNumber: 361 });
+
+      const delivered: EventEnvelope[] = [];
+      const tickRunner = createTickRunner({
+        clock: { now: () => new Date(watcherNow) },
+        config: configurePrReviewWatcher(root),
+        stateStore: store,
+        workSource: {
+          async pollEvents() {
+            return [];
+          },
+        },
+        outboundSink: {
+          async deliverIntent(input) {
+            delivered.push(input.event);
+            return [];
+          },
+        },
+        runner: {
+          async run() {
+            return {
+              result: prReviewResult({
+                status: 'BLOCKED',
+                body: 'Could not inspect the PR because GitHub is unavailable.',
+              }),
+              model: 'fake',
+              cli: 'Fake',
+              session_id: 'review-session',
+            };
+          },
+        },
+        resourceIndex,
+        workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+      });
+
+      await tickRunner.runTick();
+
+      expect(delivered).toContainEqual(
+        expect.objectContaining({
+          sourceRefs: expect.objectContaining({
+            repo: 'atolis-hq/wake',
+            issueNumber: 361,
+          }),
+          payload: expect.objectContaining({
+            kind: 'question',
+            body: expect.stringContaining('GitHub is unavailable'),
           }),
         }),
       );
