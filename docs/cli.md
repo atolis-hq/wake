@@ -13,6 +13,7 @@ wake start                 Run the resident loop
 wake stop                  Stop the sandbox container gracefully
 wake smoke                 Smoke-test the configured runner
 wake ui                    Run the control-plane UI server
+wake audit                 Show autonomous decision audit history
 wake correlate             Manually correlate a resource to a work item
 wake doctor                Diagnose config/GitHub/Docker/sandbox setup problems
 wake --version              Print the installed Wake version
@@ -84,6 +85,13 @@ first real (non-fake) entry in `config.runners` is used.
 
 Starts the control-plane UI server (default `127.0.0.1:4317`, configurable
 via `config.ui`).
+
+## `wake audit <workItemKey>`
+
+Prints the append-only autonomous decision history for a work item, including
+trigger firings, watcher dispatches, review verdicts, and auto-resolutions.
+The command reads `.wake/events/*.jsonl` directly rather than projection state,
+so the history remains available after `.wake/state/` is deleted and rebuilt.
 
 ## `wake correlate <workItemKey> <resourceUri> [--role <role>]`
 

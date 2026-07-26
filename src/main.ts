@@ -28,6 +28,7 @@ import { createGitHubArtifactVerifier } from './adapters/github/github-artifact-
 import { createGitHubClient } from './adapters/github/github-client.js';
 import { createGitHubIssuesWorkSource } from './adapters/github/github-issues-work-source.js';
 import { createGitHubPullRequestActivitySource } from './adapters/github/github-pull-request-activity-source.js';
+import { runAuditCommand } from './cli/audit-command.js';
 import { runCorrelateCommand } from './cli/correlate-command.js';
 import { runDoctorCommand, type DoctorDeps } from './cli/doctor-command.js';
 import { runInitCommand } from './cli/init-command.js';
@@ -863,6 +864,17 @@ async function runCorrelate(args: string[]) {
   });
 }
 
+async function runAudit(args: string[]) {
+  const wakeRoot = resolve(readFlagBeforeCommandTerminator('--wake-root', args) ?? process.cwd());
+  const stateStore = createStateStore({ wakeRoot });
+  await stateStore.ensureWakeRoot();
+
+  await runAuditCommand({
+    args,
+    stateStore,
+  });
+}
+
 async function runSmoke(args: string[]) {
   const runtime = await buildRuntime(args);
   const explicitKind =
@@ -962,6 +974,7 @@ export function printUsage(stream: NodeJS.WritableStream): void {
       '  wake stop                  Stop the sandbox container gracefully',
       '  wake smoke                 Smoke-test the configured runner',
       '  wake ui                    Run the control-plane UI server',
+      '  wake audit                 Show autonomous decision audit history',
       '  wake correlate             Manually correlate a resource to a work item',
       '  wake doctor                Diagnose config/GitHub/Docker/sandbox setup problems',
       '  wake --version             Print the installed Wake version',
@@ -971,7 +984,7 @@ export function printUsage(stream: NodeJS.WritableStream): void {
       '  1. wake init ./wake-home',
       '  2. cd wake-home && wake start',
       '',
-      'Runtime commands (tick/start/ui/smoke/correlate/validate-state) auto-delegate into the sandbox',
+      'Runtime commands (tick/start/ui/smoke/audit/correlate/validate-state) auto-delegate into the sandbox',
       'when docker/Dockerfile exists at --wake-root (i.e. after `wake sandbox build`),',
       'defaulting --wake-root to the current directory. Pass --no-sandbox to run',
       'directly on the host instead.',
@@ -980,7 +993,15 @@ export function printUsage(stream: NodeJS.WritableStream): void {
   );
 }
 
-const runtimeCommands = new Set(['tick', 'start', 'ui', 'smoke', 'correlate', 'validate-state']);
+const runtimeCommands = new Set([
+  'tick',
+  'start',
+  'ui',
+  'smoke',
+  'audit',
+  'correlate',
+  'validate-state',
+]);
 
 export async function dispatchMainCommand(input: {
   args: string[];
@@ -992,6 +1013,7 @@ export async function dispatchMainCommand(input: {
   runStart: (args: string[]) => Promise<unknown>;
   runSmoke: (args: string[]) => Promise<unknown>;
   runUi: (args: string[]) => Promise<unknown>;
+  runAudit?: (args: string[]) => Promise<unknown>;
   runCorrelate: (args: string[]) => Promise<unknown>;
   runValidateState?: (args: string[]) => Promise<unknown>;
   execIntoSandbox: (args: string[]) => Promise<unknown>;
@@ -1060,6 +1082,11 @@ export async function dispatchMainCommand(input: {
       await input.runStart(hostArgs);
     } else if (command === 'ui') {
       await input.runUi(hostArgs);
+    } else if (command === 'audit') {
+      if (input.runAudit === undefined) {
+        throw new CliUsageError('audit command is not available in this runtime');
+      }
+      await input.runAudit(hostArgs);
     } else if (command === 'smoke') {
       await input.runSmoke(hostArgs);
     } else if (command === 'correlate') {
@@ -1204,6 +1231,7 @@ async function main() {
     runStart,
     runSmoke,
     runUi,
+    runAudit,
     runCorrelate,
     runValidateState,
     execIntoSandbox: async (commandArgs) => {

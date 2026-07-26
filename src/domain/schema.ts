@@ -245,6 +245,7 @@ export const WORK_ITEM_CREATED_EVENT = 'wake.workitem.created';
 export const CORRELATION_REGISTERED_EVENT = 'wake.correlation.registered';
 export const CORRELATION_RETRACTED_EVENT = 'wake.correlation.retracted';
 export const CORRELATION_PRIMARY_CONFLICT_EVENT = 'wake.correlation.primary-conflict';
+export const AUTONOMOUS_DECISION_AUDIT_EVENT = 'wake.audit.autonomous-decision';
 
 /**
  * Shared key for events whose resource failed mint qualification (spec D1').

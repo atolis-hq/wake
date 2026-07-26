@@ -11,6 +11,7 @@ import { createStateStore } from '../../src/adapters/fs/state-store.js';
 import { createDefaultWakeConfig } from '../../src/config/defaults.js';
 import { createOutboundSinkRouter, createWorkSourceFanIn } from '../../src/core/sink-router.js';
 import { createTickRunner } from '../../src/core/tick-runner.js';
+import { AUTONOMOUS_DECISION_AUDIT_EVENT } from '../../src/domain/schema.js';
 import type { EventEnvelope, IssueStateRecord } from '../../src/domain/types.js';
 import { createEventEnvelope, createUnkeyedEventEnvelope } from '../../src/lib/event-log.js';
 import {
@@ -277,6 +278,25 @@ describe('tick runner', () => {
       expect(updated?.wake.stage).toBe('implement');
       expect(updated?.wake.sessionId).toBe('implement-session');
       expect(updated?.context.lastRunSentinel).toBe('AWAITING_APPROVAL');
+      const auditEvents = (await store.listEventEnvelopes()).filter(
+        (event) => event.sourceEventType === AUTONOMOUS_DECISION_AUDIT_EVENT,
+      );
+      expect(auditEvents).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            payload: expect.objectContaining({
+              decisionType: 'watcher.dispatched',
+              workflowRevision: expect.stringMatching(/^sha256:/),
+            }),
+          }),
+          expect.objectContaining({
+            payload: expect.objectContaining({
+              decisionType: 'review.verdict',
+              outcome: expect.objectContaining({ verdict: 'uncertain' }),
+            }),
+          }),
+        ]),
+      );
     });
 
     it('publishes a pr-review approval marker only after the reported PR verifies and belongs to the work item', async () => {
@@ -419,6 +439,17 @@ describe('tick runner', () => {
       );
       expect(verdict?.sourceRefs.resourceUri).toBe('github:pr:atolis-hq/wake#99');
       expect(verdict?.payload.body).toContain('<!-- wake:pr-review-approved -->');
+      const auditVerdict = (await store.listEventEnvelopes()).find(
+        (event) =>
+          event.sourceEventType === AUTONOMOUS_DECISION_AUDIT_EVENT &&
+          event.payload.decisionType === 'review.verdict',
+      );
+      expect(auditVerdict?.payload.outcome).toMatchObject({
+        verdict: 'approved',
+      });
+      expect(
+        String((auditVerdict?.payload.outcome as { reasoning?: unknown })?.reasoning),
+      ).toContain('Safe to merge.');
     });
 
     it('publishes a pr-review changes-requested marker for a FAILED verdict on a confirmed PR', async () => {

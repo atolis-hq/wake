@@ -53,6 +53,10 @@ import { createEventResolver } from './event-resolver.js';
 import { createStaleRunReconciler } from './stale-run-reconciler.js';
 import { createWorkspaceCleanup } from './workspace-cleanup.js';
 import {
+  createAutonomousDecisionAuditEvent,
+  workflowRevision as computeWorkflowRevision,
+} from './audit-events.js';
+import {
   createRunLease,
   isRunLeaseExpired,
   renewRunLease,
@@ -287,6 +291,12 @@ export function createTickRunner(deps: {
     return deps.clock.now().toISOString();
   }
 
+  async function appendAuditEvent(
+    input: Parameters<typeof createAutonomousDecisionAuditEvent>[0],
+  ): Promise<void> {
+    await deps.stateStore.appendEventEnvelope(createAutonomousDecisionAuditEvent(input));
+  }
+
   // The watchlist is every resource currently correlated to an open work
   // item, deduplicated by exact resourceUri. It is derived once per tick from
   // the pre-poll projection snapshot (see runTick's ordering note) and handed
@@ -455,6 +465,40 @@ export function createTickRunner(deps: {
       const inboundEvents = await ingestInboundEvents(
         await deps.workSource.pollEvents({ watch: deriveWatchlist(watchlistProjections) }),
       );
+      for (const event of inboundEvents) {
+        const trigger = event.payload.trigger as Record<string, unknown> | undefined;
+        const workflowName =
+          typeof event.payload.workflow === 'string' ? event.payload.workflow : undefined;
+        const workflow =
+          workflowName === undefined ? undefined : deps.config.workflows[workflowName];
+        if (trigger?.kind !== 'schedule' || workflowName === undefined || workflow === undefined) {
+          continue;
+        }
+        const timestamp = eventStampNow();
+        await appendAuditEvent({
+          eventId: `${event.eventId}-audit-trigger-fired`,
+          decisionType: 'trigger.fired',
+          workItemKey: event.workItemKey,
+          runId: event.eventId,
+          workflowRevision: await computeWorkflowRevision({
+            config: deps.config,
+            workflowName,
+            workflow,
+          }),
+          inputsConsidered: {
+            workflow: workflowName,
+            schedule: workflow.trigger?.schedule,
+            trigger,
+            sourceEventId: event.eventId,
+          },
+          outcome: {
+            fired: true,
+            sourceEventType: event.sourceEventType,
+          },
+          timestamp,
+          sourceRefs: event.sourceRefs,
+        });
+      }
 
       const projections = await deps.stateStore.listIssueStates();
       await cleanupClosedIssueWorkspaces(projections);
@@ -845,6 +889,36 @@ export function createTickRunner(deps: {
               },
             });
             await deps.stateStore.appendEventEnvelope(approvalCompletedEvent);
+            if (automaticApproval) {
+              await appendAuditEvent({
+                eventId: `${approvalId}-audit-auto-resolution`,
+                decisionType: 'approval.auto-resolved',
+                workItemKey: candidate.workItemKey,
+                runId: approvalId,
+                workflowRevision: await computeWorkflowRevision({
+                  config: deps.config,
+                  workflowName,
+                  workflow,
+                  action: approvalResolution.pendingAction,
+                }),
+                inputsConsidered: {
+                  labels: candidate.issue.labels,
+                  pendingAction: approvalResolution.pendingAction,
+                  pendingApprovalAllowAutoApproval:
+                    candidate.context.pendingApprovalAllowAutoApproval === true,
+                },
+                outcome: {
+                  approved: true,
+                  nextStage,
+                  reason: approvalResolution.reason,
+                },
+                timestamp: approvedAt,
+                sourceRefs: {
+                  repo: candidate.issue.repo,
+                  issueNumber: candidate.issue.number,
+                },
+              });
+            }
             await projectionUpdater.rebuildFromEvents([approvalCompletedEvent]);
 
             await deliverOutboundEvent(
@@ -983,6 +1057,38 @@ export function createTickRunner(deps: {
         },
       });
       await deps.stateStore.appendEventEnvelope(claimedEvent);
+      if (watcherRun && watcherDispatch !== null && watcherTriggerForRun !== undefined) {
+        await appendAuditEvent({
+          eventId: `${runId}-audit-watcher-dispatched`,
+          decisionType: 'watcher.dispatched',
+          workItemKey: candidate.workItemKey,
+          runId,
+          workflowRevision: await computeWorkflowRevision({
+            config: deps.config,
+            workflowName,
+            workflow: deps.config.workflows[workflowName] ?? workflow,
+            action,
+          }),
+          inputsConsidered: {
+            parentWorkflowName: watcherDispatch.parentWorkflowName,
+            parentStage: watcherDispatch.parentStage,
+            watcherIndex: watcherDispatch.watcherIndex,
+            watcherStatus: watcherStatus(candidate),
+            trigger: watcherTriggerForRun,
+          },
+          outcome: {
+            dispatched: true,
+            targetWorkflowName: workflowName,
+            action,
+            claimedStage,
+          },
+          timestamp: claimedAt,
+          sourceRefs: {
+            repo: candidate.issue.repo,
+            issueNumber: candidate.issue.number,
+          },
+        });
+      }
       await transitionRunLifecycle('CLAIMED');
       await projectionUpdater.rebuildFromEvents([claimedEvent]);
 
@@ -1124,6 +1230,45 @@ export function createTickRunner(deps: {
             runId,
             runnerResult,
             occurredAt: finishedAt,
+          });
+          await appendAuditEvent({
+            eventId: `${runId}-audit-review-verdict`,
+            decisionType: 'review.verdict',
+            workItemKey: candidate.workItemKey,
+            runId,
+            workflowRevision: await computeWorkflowRevision({
+              config: deps.config,
+              workflowName,
+              workflow: deps.config.workflows[workflowName] ?? workflow,
+              action,
+            }),
+            inputsConsidered: {
+              sourceRevision,
+              watcherTrigger: watcherTriggerForRun,
+              verifiedTargetResourceUri: prReviewTargetResourceUri,
+              rawSentinel,
+            },
+            outcome: {
+              sentinel,
+              verdict:
+                prReviewTargetResourceUri === null
+                  ? 'uncertain'
+                  : sentinel === 'DONE'
+                    ? 'approved'
+                    : sentinel === 'FAILED'
+                      ? 'changes-requested'
+                      : 'uncertain',
+              reasoning: parsedRunnerResult.body,
+              runner: {
+                model: runnerResult.model,
+                cli: runnerResult.cli,
+              },
+            },
+            timestamp: finishedAt,
+            sourceRefs: {
+              repo: candidate.issue.repo,
+              issueNumber: candidate.issue.number,
+            },
           });
         } else if (workspaceMode === 'branch') {
           await registerReportedArtifacts({
