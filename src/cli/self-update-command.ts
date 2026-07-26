@@ -174,14 +174,7 @@ export async function runSelfUpdateCommand(input: {
 
   try {
     await input.git.checkoutTag(tag);
-    // `wake sandbox build`'s source-mode branch (sandbox-command.ts) passes
-    // WAKE_BUILD_TAG resolved from repoRoot's checked-out HEAD; self-update
-    // never passed it at all, so every rollout built with it unset and the
-    // binary silently reported the '0.1.0-dev' fallback regardless of which
-    // tag was actually deployed. `tag` is exactly what HEAD now points to
-    // (checkoutTag above), so it's the same value that resolution would
-    // produce - used directly here to keep this path testable through the
-    // existing `git` fake instead of shelling out again.
+    // Matches wake sandbox build's WAKE_BUILD_TAG handling (sandbox-command.ts).
     await input.docker.build({
       image: newImage,
       dockerfile: input.dockerfilePath,
