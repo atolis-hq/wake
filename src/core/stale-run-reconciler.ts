@@ -210,7 +210,14 @@ export function createStaleRunReconciler(deps: {
 
   async function reconcileStaleRunningRecords(now: Date): Promise<void> {
     const finishedAt = now.toISOString();
-    const runRecords = await deps.stateStore.listRunRecords();
+    // Summarized: the scan below (staleReason/classifyReconciledFailure/the
+    // newerCompletedRun comparison) only reads status/lifecycle/timestamps/pids
+    // and metadata.workspacePath, none of which are stripped - this runs every
+    // tick, so loading every run's captured stdout/raw here just to check
+    // staleness on all of them was a real OOM risk. The stale ones actually
+    // rewritten below re-fetch the full record first so captured output isn't
+    // dropped on write.
+    const runRecords = await deps.stateStore.listRunRecordSummaries();
     await recoverMissingRunRecordClaims(runRecords, finishedAt);
     const staleRecords: Array<{
       record: RunRecord;
@@ -239,15 +246,16 @@ export function createStaleRunReconciler(deps: {
       // spelled out so the non-null projection is available below for its
       // workItemKey.
       if (projection === null || projection.wake.lastRunId !== record.runId || newerCompletedRun) {
+        const fullRecord = (await deps.stateStore.readRunRecord(record.runId)) ?? record;
         await deps.stateStore.writeRunRecord({
-          ...record,
+          ...fullRecord,
           lifecycle: 'TERMINAL',
           status: 'superseded',
           finishedAt,
           executionOutcome: 'SUPERSEDED' as const,
           summary: 'Stale running record was superseded by a newer run.',
           metadata: {
-            ...record.metadata,
+            ...fullRecord.metadata,
             reconciledBy: 'stale-running-record',
             supersededBy: projection?.wake.lastRunId,
           },
@@ -258,9 +266,10 @@ export function createStaleRunReconciler(deps: {
       const staleExecutionOutcome: ExecutionOutcome =
         reason === 'timeout' ? 'TIMED_OUT' : recoveryOutcomeForLifecycle(record.lifecycle);
       const failureContext = classifyReconciledFailure(record);
+      const fullRecord = (await deps.stateStore.readRunRecord(record.runId)) ?? record;
 
       await deps.stateStore.writeRunRecord({
-        ...record,
+        ...fullRecord,
         lifecycle: 'TERMINAL',
         status: 'failed',
         finishedAt,
@@ -269,7 +278,7 @@ export function createStaleRunReconciler(deps: {
         ...failureContext,
         summary: `Run exceeded timeout while marked running and was reconciled by a later tick.`,
         metadata: {
-          ...record.metadata,
+          ...fullRecord.metadata,
           reconciledBy: 'stale-running-record',
           recoveryLifecycle: record.lifecycle,
           staleReason: reason,
