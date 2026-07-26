@@ -21,6 +21,33 @@ describe('control plane', () => {
     expect(tickRunner.runTick).not.toHaveBeenCalled();
   });
 
+  it('skips split-loop execution when the pause gate is active', async () => {
+    let sleepCalls = 0;
+    const tickRunner = {
+      runTick: vi.fn(),
+      runIntakeTick: vi.fn(),
+      runRunnerTick: vi.fn(),
+    };
+
+    const controlPlane = createControlPlane({
+      tickRunner,
+      intervalMs: 10,
+      isPaused: () => true,
+      logger: { info() {}, error() {} },
+      sleep: async () => {
+        sleepCalls++;
+        if (sleepCalls >= 2) {
+          controlPlane.stop();
+        }
+      },
+    });
+
+    await controlPlane.start();
+
+    expect(tickRunner.runIntakeTick).not.toHaveBeenCalled();
+    expect(tickRunner.runRunnerTick).not.toHaveBeenCalled();
+  });
+
   it('logs status on change but suppresses repeated identical statuses', async () => {
     const tickRunner = {
       runTick: vi.fn().mockResolvedValue({ status: 'idle' }),
