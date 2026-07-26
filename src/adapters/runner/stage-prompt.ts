@@ -271,6 +271,11 @@ export async function buildStagePrompt(input: {
     context.branch = branchNameForIssue(input.projection.issue.number);
   }
 
+  // Opaque to this file (resourceUri locator grammar is provider-specific,
+  // ADR 0001 §1) — passed through as-is so a provider-aware prompt template
+  // can interpret it without stage-prompt.ts knowing any adapter's format.
+  context.correlatedResources = input.projection.correlatedResources;
+
   const allowedTools = parseFrontmatterList(template.frontmatter.allowedTools);
   const allowedToolsListStr = allowedTools.length > 0 ? allowedTools.join(', ') : '(none)';
   context.allowedToolsList = allowedToolsListStr;
