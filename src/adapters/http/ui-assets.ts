@@ -41,6 +41,10 @@ export const indexHtml = `<!DOCTYPE html>
   .statusbar button { background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.18); color: #fff; border-radius: 6px; padding: 0.22rem 0.55rem; cursor: pointer; font-size: 0.78rem; }
   .statusbar button:hover:not(:disabled) { border-color: var(--accent-light); background: rgba(45, 212, 191, 0.16); }
   .statusbar button:disabled { cursor: wait; opacity: 0.62; }
+  .statusbar .pause-control { background: #5c1f1a; border-color: #ff8f7f; font-weight: 700; }
+  .statusbar .pause-control:hover:not(:disabled) { background: #733027; border-color: #ffd0c8; }
+  .statusbar .pause-control.is-paused { background: #1f4b34; border-color: #7fe3a3; }
+  .statusbar .pause-control.is-paused:hover:not(:disabled) { background: #276340; border-color: #c3f3d2; }
   .pill { padding: 0.15rem 0.5rem; border-radius: 999px; font-size: 0.75rem; font-weight: 600; }
   .pill-idle { background: #1f3d2c; color: #7fe3a3; }
   .pill-polling { background: #1f3350; color: #7fb3ff; }
@@ -124,6 +128,7 @@ export const indexHtml = `<!DOCTYPE html>
 </header>
 <div class="statusbar">
   <span id="loop-pill" class="pill">…</span>
+  <button id="pause-toggle" type="button" class="pause-control">Pause</button>
   <button id="force-tick" type="button">Tick now</button>
   <span id="status-summary" class="meta"></span>
 </div>
@@ -187,6 +192,12 @@ async function postJson(path) {
   return res.json();
 }
 
+async function deleteJson(path) {
+  const res = await fetch(API + path, { method: 'DELETE' });
+  if (!res.ok) throw new Error(path + ' -> ' + res.status);
+  return res.json();
+}
+
 function fmtMs(ms) {
   if (ms === undefined || ms === null) return '—';
   const s = Math.floor(ms / 1000);
@@ -223,6 +234,10 @@ async function renderStatusBar() {
     const pill = document.getElementById('loop-pill');
     pill.textContent = status.loopState;
     pill.className = 'pill pill-' + status.loopState;
+    const pauseButton = document.getElementById('pause-toggle');
+    pauseButton.dataset.paused = String(status.paused);
+    pauseButton.textContent = status.paused ? 'Resume' : 'Pause';
+    pauseButton.classList.toggle('is-paused', status.paused);
     const freshness = status.sourceFreshness.level;
     const summary = document.getElementById('status-summary');
     summary.textContent =
@@ -232,6 +247,23 @@ async function renderStatusBar() {
       (status.lastRun ? ' · last run: ' + status.lastRun.repo + '#' + status.lastRun.issueNumber + ' ' + status.lastRun.action + ' → ' + (status.lastRun.sentinel ?? status.lastRun.status) : '');
   } catch (err) {
     document.getElementById('status-summary').textContent = 'status unavailable: ' + err.message;
+  }
+}
+
+async function togglePause() {
+  const button = document.getElementById('pause-toggle');
+  const paused = button.dataset.paused === 'true';
+  button.disabled = true;
+  button.textContent = paused ? 'Resuming...' : 'Pausing...';
+  try {
+    if (paused) await deleteJson('/pause');
+    else await postJson('/pause');
+    await renderStatusBar();
+    switchView(currentView, { showLoading: false });
+  } catch (err) {
+    document.getElementById('status-summary').textContent = 'pause toggle failed: ' + err.message;
+  } finally {
+    button.disabled = false;
   }
 }
 
@@ -845,6 +877,7 @@ document.getElementById('modal-overlay').addEventListener('click', (event) => {
   }
 });
 document.getElementById('force-tick').addEventListener('click', forceTickNow);
+document.getElementById('pause-toggle').addEventListener('click', togglePause);
 
 renderStatusBar();
 switchView('board');

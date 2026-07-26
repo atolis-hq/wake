@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
@@ -59,6 +59,7 @@ describe('ui-server', () => {
     expect(html).toContain('&metric=');
     expect(html).toContain('AbortController');
     expect(html).toContain('Loading...');
+    expect(html).toContain('id="pause-toggle"');
   });
 
   it('serves status and board JSON under /api/v1', async () => {
@@ -172,12 +173,26 @@ describe('ui-server', () => {
     expect(body.detail.rows[0]?.key).toBe(key1);
   });
 
-  it('404s unknown api routes and rejects non-GET mutation attempts', async () => {
+  it('404s unknown api routes', async () => {
     const unknown = await fetch(`${baseUrl}/api/v1/nope`);
     expect(unknown.status).toBe(404);
+  });
 
-    const post = await fetch(`${baseUrl}/api/v1/pause`, { method: 'POST' });
-    expect(post.status).toBe(405);
+  it('toggles the manual pause file through the mutation endpoint', async () => {
+    const pause = await fetch(`${baseUrl}/api/v1/pause`, { method: 'POST' });
+    expect(pause.status).toBe(200);
+    await expect(pause.json()).resolves.toEqual({ paused: true });
+    await expect(store.isPaused()).resolves.toBe(true);
+    await expect(access(store.paths.pauseFile)).resolves.toBeUndefined();
+
+    const status = await fetch(`${baseUrl}/api/v1/status`);
+    expect(status.status).toBe(200);
+    await expect(status.json()).resolves.toMatchObject({ loopState: 'paused', paused: true });
+
+    const resume = await fetch(`${baseUrl}/api/v1/pause`, { method: 'DELETE' });
+    expect(resume.status).toBe(200);
+    await expect(resume.json()).resolves.toEqual({ paused: false });
+    await expect(store.isPaused()).resolves.toBe(false);
   });
 
   it('records a force-tick request through the mutation endpoint', async () => {
