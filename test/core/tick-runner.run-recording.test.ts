@@ -514,11 +514,23 @@ describe('tick runner', () => {
         );
       expect(completedEvent).toBeDefined();
       expect(completedEvent.payload.sentinel).toBe('FAILED');
+      expect(completedEvent.payload).toMatchObject({
+        failurePhase: 'workspace-prep',
+        processStarted: false,
+        workspaceChanged: false,
+        retrySafety: 'SAFE_TO_RETRY',
+      });
 
       const runsRoot = join(store.paths.dataRoot, 'runs');
       const runFiles = (await readdir(runsRoot)).filter((file) => file.endsWith('.json'));
       const runRecord = JSON.parse(await readFile(join(runsRoot, runFiles[0]!), 'utf8'));
       expect(runRecord.status).toBe('failed');
+      expect(runRecord).toMatchObject({
+        failurePhase: 'workspace-prep',
+        processStarted: false,
+        workspaceChanged: false,
+        retrySafety: 'SAFE_TO_RETRY',
+      });
     });
 
     it('records PROCESS_FAILED executionOutcome and preserves prior workflowOutcome in projection when workspace prep throws', async () => {

@@ -91,8 +91,17 @@ function buildNeedsWakeActionIssue(overrides: {
   lastHandledCommentId?: string;
   lastRunSentinel?: string;
   lastFailureClass?: string;
+  lastRetrySafety?: string;
   failureCount?: number;
   lastCompletedAction?: string;
+  correlatedResources?: Array<{
+    resourceUri: string;
+    role:
+      'representation' | 'implementation' | 'discussion' | 'review' | 'documentation' | 'decision';
+    relation: 'primary' | 'secondary';
+    provenance: 'wake-created' | 'agent-reported' | 'detected' | 'operator-declared';
+    registeredAt: string;
+  }>;
 }) {
   return parseIssueStateRecord({
     schemaVersion: 1,
@@ -148,11 +157,15 @@ function buildNeedsWakeActionIssue(overrides: {
       ...(overrides.lastFailureClass === undefined
         ? {}
         : { lastFailureClass: overrides.lastFailureClass }),
+      ...(overrides.lastRetrySafety === undefined
+        ? {}
+        : { lastRetrySafety: overrides.lastRetrySafety }),
       ...(overrides.failureCount === undefined ? {} : { failureCount: overrides.failureCount }),
       ...(overrides.lastCompletedAction === undefined
         ? {}
         : { lastCompletedAction: overrides.lastCompletedAction }),
     },
+    correlatedResources: overrides.correlatedResources ?? [],
   });
 }
 
@@ -813,6 +826,7 @@ describe('policy engine: needsWakeAction', () => {
     const issue = buildNeedsWakeActionIssue({
       lastRunSentinel: 'FAILED',
       lastFailureClass: 'quota',
+      lastRetrySafety: 'SAFE_TO_RETRY',
       failureCount: 2,
     });
 
@@ -826,7 +840,45 @@ describe('policy engine: needsWakeAction', () => {
     const issue = buildNeedsWakeActionIssue({
       lastRunSentinel: 'FAILED',
       lastFailureClass: 'quota',
+      lastRetrySafety: 'SAFE_TO_RETRY',
       failureCount: 3,
+    });
+
+    expect(policy.needsWakeAction(issue, undefined, config)).toBe(false);
+  });
+
+  it('retries a failed run only when retry safety says pre-side-effect retry is safe', () => {
+    const policy = createPolicyEngine();
+    const config = createDefaultWakeConfig('/tmp/wake-root');
+    config.retry.maxFailureRetries = 3;
+    const issue = buildNeedsWakeActionIssue({
+      lastRunSentinel: 'FAILED',
+      lastFailureClass: 'infra',
+      lastRetrySafety: 'SAFE_TO_RETRY',
+      failureCount: 1,
+    });
+
+    expect(policy.needsWakeAction(issue, undefined, config)).toBe(true);
+  });
+
+  it('does not blindly retry a failed run after a PR side effect requires reconciliation', () => {
+    const policy = createPolicyEngine();
+    const config = createDefaultWakeConfig('/tmp/wake-root');
+    config.retry.maxFailureRetries = 3;
+    const issue = buildNeedsWakeActionIssue({
+      lastRunSentinel: 'FAILED',
+      lastFailureClass: 'infra',
+      lastRetrySafety: 'REQUIRES_RECONCILIATION',
+      failureCount: 1,
+      correlatedResources: [
+        {
+          resourceUri: 'github:pr:atolis-hq/wake#357',
+          role: 'implementation',
+          relation: 'primary',
+          provenance: 'agent-reported',
+          registeredAt: '2026-07-06T01:00:00.000Z',
+        },
+      ],
     });
 
     expect(policy.needsWakeAction(issue, undefined, config)).toBe(false);
@@ -932,6 +984,7 @@ describe('policy engine: chooseRetryActionAfterHumanReply', () => {
     });
     issue.context.lastRunSentinel = 'FAILED';
     issue.context.lastFailureClass = 'quota';
+    issue.context.lastRetrySafety = 'SAFE_TO_RETRY';
 
     expect(policy.needsWakeAction(issue, undefined, config)).toBe(true);
     expect(policy.chooseRetryActionAfterHumanReply(issue)).toBe('refine');

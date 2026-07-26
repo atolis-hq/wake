@@ -283,6 +283,11 @@ async function applyEvent(
       reason?: string;
       handledCommentId?: string;
       failureClass?: string;
+      failurePhase?: string;
+      processStarted?: boolean;
+      workspaceChanged?: boolean;
+      externalSideEffects?: string;
+      retrySafety?: string;
       blockReason?: string;
       executionOutcome?: string;
       workflowOutcome?: string;
@@ -357,6 +362,17 @@ async function applyEvent(
       ...(payload.workflowOutcome !== undefined
         ? { lastWorkflowOutcome: payload.workflowOutcome }
         : {}),
+      ...(payload.failurePhase !== undefined ? { lastFailurePhase: payload.failurePhase } : {}),
+      ...(payload.processStarted !== undefined
+        ? { lastProcessStarted: payload.processStarted }
+        : {}),
+      ...(payload.workspaceChanged !== undefined
+        ? { lastWorkspaceChanged: payload.workspaceChanged }
+        : {}),
+      ...(payload.externalSideEffects !== undefined
+        ? { lastExternalSideEffects: payload.externalSideEffects }
+        : {}),
+      ...(payload.retrySafety !== undefined ? { lastRetrySafety: payload.retrySafety } : {}),
     };
 
     if (payload.sentinel === 'BLOCKED' || payload.sentinel === 'FAILED') {

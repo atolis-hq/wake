@@ -9,9 +9,12 @@ import {
   executionAttemptLifecycleSchema,
   eventEnvelopeSchema,
   executionOutcomeSchema,
+  externalSideEffectsSchema,
+  failurePhaseSchema,
   issueStateRecordSchema,
   ledgerSchema,
   reportedArtifactSchema,
+  retrySafetySchema,
   runRecordSchema,
   sourceStateRecordSchema,
   wakeConfigSchema,
@@ -42,6 +45,9 @@ export type WakeConfig = z.infer<typeof wakeConfigSchema>;
 export type WorkflowDefinition = WakeConfig['workflows'][string];
 export type WorkflowStageDefinition = WorkflowDefinition['stages'][string];
 export type RunnerFailureClass = 'task' | 'quota' | 'infra';
+export type FailurePhase = z.infer<typeof failurePhaseSchema>;
+export type ExternalSideEffects = z.infer<typeof externalSideEffectsSchema>;
+export type RetrySafety = z.infer<typeof retrySafetySchema>;
 export type ExecutionAttemptLifecycle = z.infer<typeof executionAttemptLifecycleSchema>;
 export type ExecutionOutcome = z.infer<typeof executionOutcomeSchema>;
 export type WorkflowOutcome = z.infer<typeof workflowOutcomeSchema>;
