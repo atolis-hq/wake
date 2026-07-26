@@ -331,7 +331,7 @@ export async function buildItemDetail(input: {
     return null;
   }
 
-  const allRuns = await input.stateStore.listRunRecords();
+  const allRuns = await input.stateStore.listRunRecordSummaries();
   const runs = allRuns
     .filter((run) => run.workItemKey === item.workItemKey)
     .sort((left, right) => left.startedAt.localeCompare(right.startedAt));
@@ -399,7 +399,7 @@ export async function buildItemTranscripts(input: {
     return { enabled: false, sessions: [] };
   }
 
-  const runs = (await input.stateStore.listRunRecords()).filter(
+  const runs = (await input.stateStore.listRunRecordSummaries()).filter(
     (run) => run.workItemKey === input.workItemKey,
   );
   const runsById = new Map(runs.map((run) => [run.runId, run]));
