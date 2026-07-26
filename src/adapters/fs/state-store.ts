@@ -1,3 +1,4 @@
+import { setTimeout as delay } from 'node:timers/promises';
 import { access, appendFile, mkdir, readFile, readdir, rename } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
@@ -19,6 +20,7 @@ import type {
   WakeLedger,
 } from '../../domain/types.js';
 import { appendJsonLine, readJsonFile, writeJsonFile } from '../../lib/json-file.js';
+import { acquireFileLock } from '../../lib/lock.js';
 import { createWakePaths } from '../../lib/paths.js';
 import {
   isMissingPathError,
@@ -41,6 +43,15 @@ type EventFeedFilter = {
   direction?: EventEnvelope['direction'];
   type?: string;
 };
+
+type RunRecordSummaryIndex = {
+  schemaVersion: 1;
+  date: string;
+  entries: RunRecord[];
+};
+
+const runSummaryIndexLockTimeoutMs = 5_000;
+const runSummaryIndexLockPollMs = 10;
 
 async function readIssueStateFile(file: string): Promise<IssueStateRecord | null> {
   try {
@@ -77,6 +88,132 @@ function stripHeavyRunRecordFields(record: RunRecord): RunRecord {
   }
   const { stdout: _stdout, stderr: _stderr, raw: _raw, ...restMetadata } = metadata;
   return { ...rest, metadata: restMetadata };
+}
+
+function parseRunRecordSummaryIndex(input: unknown, date: string): RunRecordSummaryIndex {
+  if (input === null || typeof input !== 'object') {
+    throw new Error('Run summary index must be an object');
+  }
+
+  const record = input as Record<string, unknown>;
+  if (record.schemaVersion !== 1) {
+    throw new Error('Run summary index schemaVersion must be 1');
+  }
+  if (record.date !== date) {
+    throw new Error(`Run summary index date must be ${date}`);
+  }
+  if (!Array.isArray(record.entries)) {
+    throw new Error('Run summary index entries must be an array');
+  }
+
+  return {
+    schemaVersion: 1,
+    date,
+    entries: record.entries.map((entry) => parseRunRecord(entry)),
+  };
+}
+
+async function withRunSummaryIndexLock<T>(
+  paths: ReturnType<typeof createWakePaths>,
+  date: string,
+  operation: () => Promise<T>,
+): Promise<T> {
+  const deadline = Date.now() + runSummaryIndexLockTimeoutMs;
+
+  while (true) {
+    const lock = await acquireFileLock(paths.runDateIndexLockFile(date), {
+      staleAfterMs: runSummaryIndexLockTimeoutMs,
+    });
+    if (lock.acquired) {
+      try {
+        return await operation();
+      } finally {
+        await lock.release();
+      }
+    }
+
+    if (Date.now() >= deadline) {
+      throw new Error(`Timed out acquiring run summary index lock for ${date}`);
+    }
+    await delay(runSummaryIndexLockPollMs);
+  }
+}
+
+async function readRunSummaryIndex(
+  paths: ReturnType<typeof createWakePaths>,
+  date: string,
+): Promise<RunRecordSummaryIndex> {
+  return parseRunRecordSummaryIndex(await readJsonFile(paths.runDateIndexFile(date)), date);
+}
+
+async function writeRunSummaryIndex(
+  paths: ReturnType<typeof createWakePaths>,
+  date: string,
+  entries: RunRecord[],
+): Promise<void> {
+  await writeJsonFile(paths.runDateIndexFile(date), {
+    schemaVersion: 1,
+    date,
+    entries: entries.sort((left, right) => left.startedAt.localeCompare(right.startedAt)),
+  });
+}
+
+async function countRunDateBucketFiles(
+  paths: ReturnType<typeof createWakePaths>,
+  date: string,
+): Promise<number> {
+  return (
+    await readdir(join(paths.dataRoot, 'runs', 'by-date', date), { withFileTypes: true }).catch(
+      (error) => {
+        if (isMissingPathError(error)) {
+          return [];
+        }
+        throw error;
+      },
+    )
+  ).filter((file) => file.isFile() && file.name.endsWith('.json') && file.name !== 'index.json')
+    .length;
+}
+
+async function rebuildRunSummaryIndexForDate(
+  paths: ReturnType<typeof createWakePaths>,
+  date: string,
+): Promise<RunRecord[]> {
+  const recordsById = new Map<string, RunRecord>();
+  const bucketFiles = (await readdir(join(paths.dataRoot, 'runs', 'by-date', date)).catch(() => []))
+    .filter((file) => file.endsWith('.json') && file !== 'index.json')
+    .sort();
+
+  for (const file of bucketFiles) {
+    const record = await readRunRecordFile(join(paths.dataRoot, 'runs', 'by-date', date, file), {
+      summarize: true,
+    });
+    if (record !== null) {
+      recordsById.set(record.runId, record);
+    }
+  }
+
+  const entries = [...recordsById.values()].sort((left, right) =>
+    left.startedAt.localeCompare(right.startedAt),
+  );
+  await writeRunSummaryIndex(paths, date, entries);
+  return entries;
+}
+
+async function upsertRunSummaryIndexEntry(
+  paths: ReturnType<typeof createWakePaths>,
+  record: RunRecord,
+): Promise<void> {
+  const date = record.startedAt.slice(0, 10);
+  const summary = stripHeavyRunRecordFields(record);
+  await withRunSummaryIndexLock(paths, date, async () => {
+    const entries = await readRunSummaryIndex(paths, date)
+      .then((index) => index.entries)
+      .catch(() => []);
+    const nextById = new Map(entries.map((entry) => [entry.runId, entry]));
+    nextById.set(summary.runId, summary);
+    await writeRunSummaryIndex(paths, date, [...nextById.values()]);
+  });
 }
 
 async function readRunRecordFile(
@@ -235,6 +372,53 @@ async function collectEventIssues(
   return issues;
 }
 
+async function collectRunSummaryIndexIssues(
+  paths: ReturnType<typeof createWakePaths>,
+): Promise<StateHealthIssue[]> {
+  const issues: StateHealthIssue[] = [];
+  const byDateRoot = join(paths.dataRoot, 'runs', 'by-date');
+  const dateDirs = await readdir(byDateRoot, { withFileTypes: true }).catch((error) => {
+    if (isMissingPathError(error)) {
+      return [];
+    }
+    throw error;
+  });
+
+  for (const entry of dateDirs) {
+    if (!entry.isDirectory()) {
+      continue;
+    }
+
+    const date = entry.name;
+    const runFileCount = await countRunDateBucketFiles(paths, date);
+    const indexFile = paths.runDateIndexFile(date);
+    try {
+      const index = await readRunSummaryIndex(paths, date);
+      if (index.entries.length !== runFileCount) {
+        issues.push(
+          stateHealthIssue({
+            surface: 'runs',
+            kind: 'incomplete',
+            path: indexFile,
+            message: `Run summary index has ${index.entries.length} entries but ${runFileCount} run files exist for ${date}`,
+          }),
+        );
+      }
+    } catch (error) {
+      issues.push(
+        stateHealthIssue({
+          surface: 'runs',
+          kind: isMissingPathError(error) ? 'incomplete' : 'corrupted',
+          path: indexFile,
+          message: error instanceof Error ? error.message : String(error),
+        }),
+      );
+    }
+  }
+
+  return issues;
+}
+
 function issueArchiveAgeDate(item: IssueStateRecord): string {
   const stageChangedAt = item.wake.stageHistory.at(-1)?.changedAt;
   return (
@@ -310,7 +494,24 @@ export async function listRunRecords(wakeRoot: string): Promise<RunRecord[]> {
 // stripHeavyRunRecordFields for why this can't just be a post-hoc .map() over
 // listRunRecords: that would still hold every full record in memory at once.
 export async function listRunRecordSummaries(wakeRoot: string): Promise<RunRecord[]> {
-  return listRunRecordsImpl(wakeRoot, { summarize: true });
+  const paths = createWakePaths(wakeRoot);
+  const byDateRoot = join(paths.dataRoot, 'runs', 'by-date');
+  const dateDirs = (await readdir(byDateRoot).catch(() => [])).sort();
+  if (dateDirs.length === 0) {
+    return listRunRecordsImpl(wakeRoot, { summarize: true });
+  }
+
+  const recordsById = new Map<string, RunRecord>();
+  for (const dateDir of dateDirs) {
+    const records = await listRunRecordSummariesForDate(wakeRoot, dateDir);
+    for (const record of records) {
+      recordsById.set(record.runId, record);
+    }
+  }
+
+  return [...recordsById.values()].sort((left, right) =>
+    left.startedAt.localeCompare(right.startedAt),
+  );
 }
 
 async function listRunRecordsForDateImpl(
@@ -353,6 +554,39 @@ async function listRunRecordsForDate(wakeRoot: string, date: string): Promise<Ru
 }
 
 async function listRunRecordSummariesForDate(wakeRoot: string, date: string): Promise<RunRecord[]> {
+  const paths = createWakePaths(wakeRoot);
+  try {
+    const index = await readRunSummaryIndex(paths, date);
+    const runFileCount = await countRunDateBucketFiles(paths, date);
+    if (index.entries.length === runFileCount && (index.entries.length > 0 || runFileCount > 0)) {
+      return index.entries;
+    }
+  } catch {
+    // Rebuild below under the per-date lock.
+  }
+
+  const rebuilt = await withRunSummaryIndexLock(paths, date, async () => {
+    const runFileCount = await countRunDateBucketFiles(paths, date);
+    if (runFileCount === 0) {
+      return null;
+    }
+
+    try {
+      const index = await readRunSummaryIndex(paths, date);
+      if (index.entries.length === runFileCount) {
+        return index.entries;
+      }
+    } catch {
+      // Rebuild below.
+    }
+
+    return rebuildRunSummaryIndexForDate(paths, date);
+  });
+
+  if (rebuilt !== null) {
+    return rebuilt;
+  }
+
   return listRunRecordsForDateImpl(wakeRoot, date, { summarize: true });
 }
 
@@ -422,6 +656,7 @@ export function createStateStore({ wakeRoot }: { wakeRoot: string }) {
       const parsed = parseRunRecord(record);
       await writeJsonFile(paths.runFile(parsed.runId), parsed);
       await writeJsonFile(paths.runDateFile(parsed.startedAt.slice(0, 10), parsed.runId), parsed);
+      await upsertRunSummaryIndexEntry(paths, parsed);
       return parsed;
     },
     async updateRunRecordIf(
@@ -681,6 +916,7 @@ export function createStateStore({ wakeRoot }: { wakeRoot: string }) {
       const issues = [
         ...(await collectEventIssues(paths)),
         ...(await collectIssueStateIssues(paths)),
+        ...(await collectRunSummaryIndexIssues(paths)),
         ...(await validateResourceIndex(paths)),
       ];
       return { healthy: issues.length === 0, issues };

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -111,6 +111,10 @@ function eventEnvelope(input: {
       },
     },
   };
+}
+
+function runSummaryIndexFile(root: string, date: string): string {
+  return join(root, '.wake', 'runs', 'by-date', date, 'index.json');
 }
 
 describe('state store', () => {
@@ -244,6 +248,169 @@ describe('state store', () => {
       workspacePath: '/wake/.wake/repos/atolis-hq__wake',
     });
     expect(summaryForDate[0]?.runtimeEvents).toBeUndefined();
+  });
+
+  it('writes a summarized run-record index entry for the run date', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const indexFile = runSummaryIndexFile(root, '2026-07-05');
+
+    await store.writeRunRecord(
+      runRecord({
+        runId: 'run-indexed',
+        startedAt: '2026-07-05T12:00:00.000Z',
+        metadata: {
+          workspacePath: '/wake/.wake/repos/atolis-hq__wake',
+          stdout: 'captured stdout',
+          stderr: 'captured stderr',
+          raw: { transcript: 'raw transcript' },
+        },
+        runtimeEvents: [
+          {
+            type: 'agent.process.started',
+            runId: 'run-indexed',
+            workItemId: workId(7),
+            runner: { name: 'codex-standard', kind: 'codex', cli: 'Codex' },
+            timestamp: '2026-07-05T12:00:00.000Z',
+            sequence: 0,
+            payload: {},
+          },
+        ],
+      }),
+    );
+
+    const index = JSON.parse(await readFile(indexFile, 'utf8')) as {
+      schemaVersion: number;
+      date: string;
+      entries: RunRecord[];
+    };
+    expect(index.schemaVersion).toBe(1);
+    expect(index.date).toBe('2026-07-05');
+    expect(index.entries.map((entry) => entry.runId)).toEqual(['run-indexed']);
+    expect(index.entries[0]?.metadata).toEqual({
+      workspacePath: '/wake/.wake/repos/atolis-hq__wake',
+    });
+    expect(index.entries[0]?.runtimeEvents).toBeUndefined();
+  });
+
+  it('rebuilds a missing run-record summary index from date-bucket files', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const indexFile = runSummaryIndexFile(root, '2026-07-05');
+
+    await store.writeRunRecord(
+      runRecord({
+        runId: 'run-rebuild',
+        startedAt: '2026-07-05T12:00:00.000Z',
+        metadata: { stdout: 'captured stdout' },
+      }),
+    );
+    await rm(indexFile);
+
+    const summaries = await store.listRunRecordSummariesForDate('2026-07-05');
+
+    expect(summaries.map((record) => record.runId)).toEqual(['run-rebuild']);
+    expect(summaries[0]?.metadata?.stdout).toBeUndefined();
+    await expect(readFile(indexFile, 'utf8')).resolves.toContain('run-rebuild');
+  });
+
+  it('rebuilds a corrupt run-record summary index from date-bucket files', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const indexFile = runSummaryIndexFile(root, '2026-07-05');
+
+    await store.writeRunRecord(
+      runRecord({
+        runId: 'run-corrupt-index',
+        startedAt: '2026-07-05T12:00:00.000Z',
+      }),
+    );
+    await writeFile(indexFile, '{not json\n', 'utf8');
+
+    const summaries = await store.listRunRecordSummariesForDate('2026-07-05');
+
+    expect(summaries.map((record) => record.runId)).toEqual(['run-corrupt-index']);
+    await expect(readFile(indexFile, 'utf8')).resolves.toContain('run-corrupt-index');
+  });
+
+  it('rebuilds a stale run-record summary index whose entry count differs from date-bucket files', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const indexFile = runSummaryIndexFile(root, '2026-07-05');
+
+    await store.writeRunRecord(
+      runRecord({
+        runId: 'run-stale-a',
+        startedAt: '2026-07-05T12:00:00.000Z',
+      }),
+    );
+    await store.writeRunRecord(
+      runRecord({
+        runId: 'run-stale-b',
+        startedAt: '2026-07-05T12:01:00.000Z',
+      }),
+    );
+    await writeFile(
+      indexFile,
+      JSON.stringify({
+        schemaVersion: 1,
+        date: '2026-07-05',
+        entries: [
+          runRecord({
+            runId: 'run-stale-a',
+            startedAt: '2026-07-05T12:00:00.000Z',
+          }),
+        ],
+      }),
+      'utf8',
+    );
+
+    const summaries = await store.listRunRecordSummariesForDate('2026-07-05');
+    const rebuilt = JSON.parse(await readFile(indexFile, 'utf8')) as { entries: RunRecord[] };
+
+    expect(summaries.map((record) => record.runId)).toEqual(['run-stale-a', 'run-stale-b']);
+    expect(rebuilt.entries.map((record) => record.runId)).toEqual(['run-stale-a', 'run-stale-b']);
+  });
+
+  it('keeps legacy flat-only run-record date summaries working across repeated reads', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const paths = createWakePaths(root);
+    const record = runRecord({
+      runId: 'run-legacy-flat-only',
+      startedAt: '2026-07-05T12:00:00.000Z',
+      metadata: { stdout: 'captured stdout' },
+    });
+    await mkdir(join(paths.dataRoot, 'runs'), { recursive: true });
+    await writeFile(paths.runFile(record.runId), JSON.stringify(record), 'utf8');
+
+    const firstRead = await store.listRunRecordSummariesForDate('2026-07-05');
+    const secondRead = await store.listRunRecordSummariesForDate('2026-07-05');
+
+    expect(firstRead.map((entry) => entry.runId)).toEqual(['run-legacy-flat-only']);
+    expect(secondRead.map((entry) => entry.runId)).toEqual(['run-legacy-flat-only']);
+    expect(secondRead[0]?.metadata?.stdout).toBeUndefined();
+  });
+
+  it('preserves same-date run-record summary index entries across concurrent writes', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const indexFile = runSummaryIndexFile(root, '2026-07-05');
+
+    await Promise.all([
+      store.writeRunRecord(
+        runRecord({
+          runId: 'run-concurrent-a',
+          startedAt: '2026-07-05T12:00:00.000Z',
+        }),
+      ),
+      store.writeRunRecord(
+        runRecord({
+          runId: 'run-concurrent-b',
+          startedAt: '2026-07-05T12:01:00.000Z',
+        }),
+      ),
+    ]);
+
+    const index = JSON.parse(await readFile(indexFile, 'utf8')) as { entries: RunRecord[] };
+    expect(index.entries.map((entry) => entry.runId).sort()).toEqual([
+      'run-concurrent-a',
+      'run-concurrent-b',
+    ]);
   });
 
   it('recovers a full record via the date bucket when the flat run file is missing, without a full unstripped scan', async () => {
@@ -380,6 +547,34 @@ describe('state store', () => {
         surface: 'events',
         kind: 'corrupted',
         path: `${paths.eventFile('2026-07-05')}:1`,
+      }),
+    );
+  });
+
+  it('flags a run-record summary index whose entry count differs from date-bucket run files', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const indexFile = runSummaryIndexFile(root, '2026-07-05');
+
+    await store.writeRunRecord(
+      runRecord({
+        runId: 'run-present',
+        startedAt: '2026-07-05T12:00:00.000Z',
+      }),
+    );
+    await writeFile(
+      indexFile,
+      JSON.stringify({ schemaVersion: 1, date: '2026-07-05', entries: [] }),
+      'utf8',
+    );
+
+    const report = await store.validateStateHealth();
+
+    expect(report.healthy).toBe(false);
+    expect(report.issues).toContainEqual(
+      expect.objectContaining({
+        surface: 'runs',
+        kind: 'incomplete',
+        path: indexFile,
       }),
     );
   });
