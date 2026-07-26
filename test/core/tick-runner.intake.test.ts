@@ -17,6 +17,7 @@ import {
   findByIssueRef,
   githubIssueUri,
   seededResourceIndex,
+  ticketUpsertWorkSource,
   workId,
 } from './support/tick-runner-fixtures.js';
 
@@ -808,6 +809,109 @@ describe('tick runner', () => {
         true,
       );
       expect(pendingRunIds.every((id) => !/^pending-4[12]-/.test(id))).toBe(true);
+    });
+
+    it('does not mark an actionable working item pending while its run lease is active', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const pendingLabelRequests: string[] = [];
+
+      await store.writeIssueState({
+        schemaVersion: 1,
+        workItemKey: workId(393),
+        issue: {
+          repo: 'atolis-hq/wake',
+          number: 393,
+          title: 'Implement',
+          body: 'Body',
+          labels: [
+            'wake:queue',
+            'wake:status.pending',
+            'wake:stage.implement',
+            'wake:workflow.default',
+          ],
+          assignees: [],
+          isPullRequest: false,
+          state: 'open',
+          url: 'https://example.test/issues/393',
+          createdAt: '2026-07-26T10:13:24.000Z',
+          updatedAt: '2026-07-26T10:13:24.000Z',
+        },
+        comments: [],
+        wake: {
+          stage: 'implement',
+          stageHistory: [],
+          recentEventIds: [],
+          syncedAt: '2026-07-26T10:13:24.000Z',
+          expectedEcho: { commentIds: [], labels: [] },
+        },
+        context: {},
+        correlatedResources: [],
+      });
+      await store.writeRunRecord({
+        schemaVersion: 1,
+        runId: 'run-393-active',
+        workItemKey: workId(393),
+        repo: 'atolis-hq/wake',
+        issueNumber: 393,
+        action: 'implement',
+        lifecycle: 'RUNNING',
+        status: 'running',
+        startedAt: '2026-07-26T10:13:33.000Z',
+        lease: {
+          leaseId: 'lease-393-active',
+          ownerInstanceId: 'other-instance',
+          acquiredAt: '2026-07-26T10:13:33.000Z',
+          lastRenewedAt: '2026-07-26T10:13:34.000Z',
+          expiresAt: '2026-07-26T10:14:34.000Z',
+        },
+      });
+
+      const config = createDefaultWakeConfig(root);
+      config.sources.github.policy.requiredLabels = ['wake:queue'];
+
+      const tickRunner = createTickRunner({
+        clock: { now: () => new Date('2026-07-26T10:13:35.000Z') },
+        config,
+        stateStore: store,
+        workSource: ticketUpsertWorkSource({
+          repo: 'atolis-hq/wake',
+          issueNumber: 393,
+          labels: [
+            'wake:queue',
+            'wake:status.working',
+            'wake:stage.implement',
+            'wake:workflow.default',
+          ],
+          now: new Date('2026-07-26T10:13:34.000Z'),
+        }),
+        outboundSink: {
+          async deliverIntent(input) {
+            if (
+              input.event.sourceEventType === 'wake.labels.requested' &&
+              input.event.payload.statusLabel === 'wake:status.pending'
+            ) {
+              pendingLabelRequests.push(String(input.event.sourceRefs.runId));
+            }
+            return [];
+          },
+        },
+        runner: {
+          async run() {
+            throw new Error('should not run during intake');
+          },
+        },
+        resourceIndex: await seededResourceIndex([393]),
+        workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+      });
+
+      await tickRunner.runIntakeTick();
+
+      const projection = await findByIssueRef(store, {
+        repo: 'atolis-hq/wake',
+        issueNumber: 393,
+      });
+      expect(projection?.issue.labels).toContain('wake:status.working');
+      expect(pendingLabelRequests).toEqual([]);
     });
 
     it('fails loudly rather than minting when a polled event carries no sourceRefs.resourceUri', async () => {
