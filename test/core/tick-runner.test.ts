@@ -69,6 +69,7 @@ describe('tick runner', () => {
       correlatedResources?: IssueStateRecord['correlatedResources'];
       sessionId?: string;
       sessionCli?: string;
+      issueState?: 'open' | 'closed';
     }) {
       const lastRunId = input.lastRunId ?? `run-${input.issueNumber}-previous`;
       await input.store.writeIssueState({
@@ -82,7 +83,7 @@ describe('tick runner', () => {
           labels: ['wake:implement'],
           assignees: [],
           isPullRequest: false,
-          state: 'open',
+          state: input.issueState ?? 'open',
           url: `https://example.test/issues/${input.issueNumber}`,
           createdAt: watcherNow,
           updatedAt: watcherNow,
@@ -905,6 +906,93 @@ describe('tick runner', () => {
       expect(runnerCalls).toBe(0);
       expect(runRecords).toHaveLength(1);
       expect(events.some((event) => event.sourceEventType === 'wake.run.claimed')).toBe(false);
+    });
+
+    it('does not dispatch a watcher for a closed issue even while its stale local status still matches', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const resourceIndex = await seededResourceIndex([359]);
+      await seedAwaitingApprovalIssue({ store, issueNumber: 359, issueState: 'closed' });
+
+      let runnerCalls = 0;
+      const tickRunner = createTickRunner({
+        clock: { now: () => new Date('2026-07-25T12:34:30.000Z') },
+        config: configurePrReviewWatcher(root),
+        stateStore: store,
+        workSource: {
+          async pollEvents() {
+            return [];
+          },
+        },
+        runner: {
+          async run() {
+            runnerCalls += 1;
+            return { result: 'should not run\nDONE', model: 'fake', cli: 'Fake' };
+          },
+        },
+        resourceIndex,
+        workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+      });
+
+      const result = await tickRunner.runTick();
+
+      expect(result.status).toBe('idle');
+      expect(runnerCalls).toBe(0);
+      expect(await store.listRunRecords()).toHaveLength(0);
+    });
+
+    it('blocks dispatch once the trailing-window run-record count reaches the configured ceiling', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const resourceIndex = await seededResourceIndex([360]);
+      await seedAwaitingApprovalIssue({ store, issueNumber: 360 });
+      await appendPreviousCompletedEvent({ store, issueNumber: 360 });
+      await store.writeRunRecord({
+        schemaVersion: 1,
+        runId: 'run-360-earlier-this-hour',
+        workItemKey: workId(360),
+        repo: 'atolis-hq/wake',
+        issueNumber: 360,
+        action: 'pr-review',
+        lifecycle: 'TERMINAL',
+        status: 'completed',
+        startedAt: '2026-07-25T12:00:00.000Z',
+      });
+
+      const config = configurePrReviewWatcher(root);
+      config.scheduler.dispatchRateLimit = { windowMs: 60 * 60 * 1000, maxDispatches: 1 };
+
+      let runnerCalls = 0;
+      const tickRunner = createTickRunner({
+        clock: { now: () => new Date('2026-07-25T12:34:30.000Z') },
+        config,
+        stateStore: store,
+        workSource: {
+          async pollEvents() {
+            return [];
+          },
+        },
+        runner: {
+          async run() {
+            runnerCalls += 1;
+            return { result: 'should not run\nDONE', model: 'fake', cli: 'Fake' };
+          },
+        },
+        resourceIndex,
+        workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+      });
+
+      const result = await tickRunner.runTick();
+      const events = await store.listEventEnvelopes();
+
+      expect(result.status).toBe('idle');
+      expect(runnerCalls).toBe(0);
+      expect(await store.listRunRecords()).toHaveLength(1);
+      expect(
+        events.some(
+          (event) =>
+            event.sourceEventType === AUTONOMOUS_DECISION_AUDIT_EVENT &&
+            (event.payload as { decisionType?: string }).decisionType === 'dispatch.rate-limited',
+        ),
+      ).toBe(true);
     });
   });
 

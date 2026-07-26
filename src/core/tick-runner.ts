@@ -728,6 +728,26 @@ export function createTickRunner(deps: {
     return maxConfiguredRunnerTimeoutMs(deps.config);
   }
 
+  // Counted from durable run records (never an in-memory counter, per the
+  // "tick is a pure function of durable state" invariant), so this holds
+  // across process restarts and is a backstop independent of any specific
+  // dispatch-eligibility bug (stuck watcher, misconfigured cron, a dedupe gap
+  // not yet caught) - it caps total damage rather than preventing a cause.
+  async function exceedsDispatchRateLimit(now: Date): Promise<boolean> {
+    const { windowMs, maxDispatches } = deps.config.scheduler.dispatchRateLimit;
+    const windowStartMs = now.getTime() - windowMs;
+    const runRecords = await deps.stateStore.listRunRecords();
+    const recentCount = runRecords.reduce((count, record) => {
+      const startedAtMs = Date.parse(record.startedAt);
+      return Number.isFinite(startedAtMs) &&
+        startedAtMs >= windowStartMs &&
+        startedAtMs <= now.getTime()
+        ? count + 1
+        : count;
+    }, 0);
+    return recentCount >= maxDispatches;
+  }
+
   function cancellationReasonForIneligibleProjection(
     projection: IssueStateRecord | null,
   ): CancellationReason {
@@ -981,6 +1001,15 @@ export function createTickRunner(deps: {
     now: Date,
   ): Promise<WatcherDispatch | null> {
     for (const projection of projections) {
+      // A closed issue can still carry a stale status label (e.g. squash-merged
+      // outside Wake's own merge gate, before label reconciliation caught up),
+      // so this must be checked explicitly - unlike deriveWatchlist and
+      // cancellationReasonForIneligibleProjection, watcher dispatch has no
+      // other path that excludes closed issues. Without this, a closed issue
+      // whose last-seen local status matches `watcher.while.status` (e.g.
+      // awaiting-approval) re-fires its watcher workflow every tick forever.
+      if (projection.issue.state !== 'open') continue;
+
       const parentWorkflow = workflowForProjection(projection, deps.config);
       if (parentWorkflow === null) continue;
       const parentWorkflowName = workflowNameForProjection(projection, deps.config);
@@ -1153,6 +1182,35 @@ export function createTickRunner(deps: {
       );
 
       if (candidate === undefined) {
+        return { status: 'idle' as const };
+      }
+
+      if (await exceedsDispatchRateLimit(tickStartedAt)) {
+        const rateLimitedWorkflowName = workflowNameForProjection(candidate, deps.config);
+        const rateLimitedWorkflow = workflowForProjection(candidate, deps.config);
+        const blockedAt = eventStampNow();
+        await appendAuditEvent({
+          eventId: `dispatch-rate-limited-${candidate.workItemKey}-${tickStartedAt.getTime()}`,
+          decisionType: 'dispatch.rate-limited',
+          workItemKey: candidate.workItemKey,
+          runId: `dispatch-rate-limited-${candidate.workItemKey}-${tickStartedAt.getTime()}`,
+          workflowRevision:
+            rateLimitedWorkflow === null
+              ? 'sha256:unavailable'
+              : await computeWorkflowRevision({
+                  config: deps.config,
+                  workflowName: rateLimitedWorkflowName,
+                  workflow: rateLimitedWorkflow,
+                }),
+          inputsConsidered: {
+            windowMs: deps.config.scheduler.dispatchRateLimit.windowMs,
+            maxDispatches: deps.config.scheduler.dispatchRateLimit.maxDispatches,
+            watcherRun,
+          },
+          outcome: { dispatched: false, reason: 'dispatch-rate-limit-exceeded' },
+          timestamp: blockedAt,
+          sourceRefs: { repo: candidate.issue.repo, issueNumber: candidate.issue.number },
+        });
         return { status: 'idle' as const };
       }
 

@@ -684,8 +684,27 @@ const wakeConfigBaseSchema = z.object({
         .int()
         .positive()
         .default(5 * 60 * 1000),
+      // Deterministic circuit breaker independent of any specific dispatch-eligibility
+      // bug: caps total runner invocations (main path + watchers) in a trailing
+      // window, counted from durable run records, not in-memory state. A storm
+      // (stuck watcher, misconfigured cron, dedupe bug) hits this ceiling and idles
+      // instead of compounding cost indefinitely.
+      dispatchRateLimit: z
+        .object({
+          windowMs: z
+            .number()
+            .int()
+            .positive()
+            .default(60 * 60 * 1000),
+          maxDispatches: z.number().int().positive().default(20),
+        })
+        .default({ windowMs: 60 * 60 * 1000, maxDispatches: 20 }),
     })
-    .default({ intervalMs: 60 * 1000, maxIntervalMs: 5 * 60 * 1000 }),
+    .default({
+      intervalMs: 60 * 1000,
+      maxIntervalMs: 5 * 60 * 1000,
+      dispatchRateLimit: { windowMs: 60 * 60 * 1000, maxDispatches: 20 },
+    }),
   transcripts: z
     .object({
       enabled: z.boolean().default(false),
