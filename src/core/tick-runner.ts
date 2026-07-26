@@ -588,7 +588,19 @@ export function createTickRunner(deps: {
   }
 
   async function markPendingActionableIssues(projections: IssueStateRecord[]): Promise<void> {
+    const activeRunWorkItemKeys = new Set<string>();
+    const now = deps.clock.now();
+    for (const record of await deps.stateStore.listRunRecords()) {
+      if (record.status === 'running' && (await isRunningRecordActive(record, now))) {
+        activeRunWorkItemKeys.add(record.workItemKey);
+      }
+    }
+
     for (const projection of projections) {
+      if (activeRunWorkItemKeys.has(projection.workItemKey)) {
+        continue;
+      }
+
       const statusLabel = statusLabelForStage(projection.wake.stage);
       const stageLabel = stageLabelForStage(projection.wake.stage);
       const workflowLabel = workflowLabelForWorkflowName(
