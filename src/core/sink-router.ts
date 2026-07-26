@@ -1,4 +1,5 @@
 import type { EventEnvelope, WakeConfig } from '../domain/types.js';
+import { LABELS_REQUESTED_EVENT, PUBLISH_INTENT_REQUESTED_EVENT } from '../domain/event-types.js';
 import type {
   OutboundSink,
   SourceRefreshResult,
@@ -36,7 +37,7 @@ export function createWorkSourceFanIn(sources: NamedWorkSource[]): WorkSource {
 }
 
 function intentKind(event: EventEnvelope): string | null {
-  if (event.sourceEventType !== 'wake.publish.intent.requested') {
+  if (event.sourceEventType !== PUBLISH_INTENT_REQUESTED_EVENT) {
     return null;
   }
 
@@ -84,7 +85,7 @@ function targetSinksForEvent(input: {
     typeof input.event.payload.origin === 'string' ? input.event.payload.origin : undefined;
   const sourceOrigin = input.event.sourceRefs.sink ?? origin;
 
-  if (input.event.sourceEventType === 'wake.labels.requested') {
+  if (input.event.sourceEventType === LABELS_REQUESTED_EVENT) {
     const projectionOrigin =
       typeof input.event.payload.origin === 'string' ? input.event.payload.origin : undefined;
     if (projectionOrigin !== undefined) {
@@ -94,7 +95,7 @@ function targetSinksForEvent(input: {
 
   const resourceUri = input.event.sourceRefs.resourceUri;
   if (
-    input.event.sourceEventType === 'wake.publish.intent.requested' &&
+    input.event.sourceEventType === PUBLISH_INTENT_REQUESTED_EVENT &&
     sourceOrigin !== undefined
   ) {
     const resourceSink =

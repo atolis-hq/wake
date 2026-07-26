@@ -20,9 +20,13 @@ import { acquireFileLock } from '../lib/lock.js';
 import {
   CORRELATION_REGISTERED_EVENT,
   CORRELATION_PRIMARY_CONFLICT_EVENT,
-  parseRunnerArtifacts,
-  parseRunnerResult,
-} from '../domain/schema.js';
+  PR_AUTO_MERGE_ENABLED_EVENT,
+  PR_REVIEW_APPROVED_EVENT,
+  PUBLISH_INTENT_REQUESTED_EVENT,
+  RUN_CLAIMED_EVENT,
+  RUN_COMPLETED_EVENT,
+} from '../domain/event-types.js';
+import { parseRunnerArtifacts, parseRunnerResult } from '../domain/schema.js';
 import { maxConfiguredRunnerTimeoutMs, resolveRunnerRouting } from '../domain/runner-routing.js';
 import { awaitingApprovalRunnerSentinel, stageLabelForStage } from '../domain/stages.js';
 import type {
@@ -330,7 +334,7 @@ export function createTickRunner(deps: {
       streamScope: 'work-item',
       direction: 'internal',
       sourceSystem: 'wake',
-      sourceEventType: 'wake.run.completed',
+      sourceEventType: RUN_COMPLETED_EVENT,
       sourceRefs: {
         repo: input.projection.issue.repo,
         issueNumber: input.projection.issue.number,
@@ -364,7 +368,7 @@ export function createTickRunner(deps: {
         streamScope: 'work-item',
         direction: 'outbound',
         sourceSystem: 'wake',
-        sourceEventType: 'wake.publish.intent.requested',
+        sourceEventType: PUBLISH_INTENT_REQUESTED_EVENT,
         sourceRefs: {
           repo: input.projection.issue.repo,
           issueNumber: input.projection.issue.number,
@@ -438,7 +442,7 @@ export function createTickRunner(deps: {
           streamScope: 'work-item',
           direction: 'internal',
           sourceSystem: 'wake',
-          sourceEventType: 'wake.pr-review.approved',
+          sourceEventType: PR_REVIEW_APPROVED_EVENT,
           sourceRefs: {
             resourceUri: targetResourceUri,
             commentId: input.approvalResolution.triggeringCommentId,
@@ -467,7 +471,7 @@ export function createTickRunner(deps: {
           streamScope: 'work-item',
           direction: 'internal',
           sourceSystem: 'wake',
-          sourceEventType: 'wake.pr-auto-merge.enabled',
+          sourceEventType: PR_AUTO_MERGE_ENABLED_EVENT,
           sourceRefs: {
             resourceUri: targetResourceUri,
             commentId: input.approvalResolution.triggeringCommentId,
@@ -712,7 +716,7 @@ export function createTickRunner(deps: {
         streamScope: 'work-item',
         direction: 'internal',
         sourceSystem: 'wake',
-        sourceEventType: 'wake.run.completed',
+        sourceEventType: RUN_COMPLETED_EVENT,
         sourceRefs: {
           repo: projection.issue.repo,
           issueNumber: projection.issue.number,
@@ -1183,7 +1187,7 @@ export function createTickRunner(deps: {
               streamScope: 'work-item',
               direction: 'internal',
               sourceSystem: 'wake',
-              sourceEventType: 'wake.run.completed',
+              sourceEventType: RUN_COMPLETED_EVENT,
               sourceRefs: {
                 repo: candidate.issue.repo,
                 issueNumber: candidate.issue.number,
@@ -1392,7 +1396,7 @@ export function createTickRunner(deps: {
         streamScope: 'work-item',
         direction: 'internal',
         sourceSystem: 'wake',
-        sourceEventType: 'wake.run.claimed',
+        sourceEventType: RUN_CLAIMED_EVENT,
         sourceRefs: {
           repo: candidate.issue.repo,
           issueNumber: candidate.issue.number,
@@ -1821,7 +1825,7 @@ export function createTickRunner(deps: {
           streamScope: 'work-item',
           direction: 'internal',
           sourceSystem: 'wake',
-          sourceEventType: 'wake.run.completed',
+          sourceEventType: RUN_COMPLETED_EVENT,
           sourceRefs: {
             repo: candidate.issue.repo,
             issueNumber: candidate.issue.number,
@@ -1970,7 +1974,7 @@ export function createTickRunner(deps: {
           streamScope: 'work-item',
           direction: 'internal',
           sourceSystem: 'wake',
-          sourceEventType: 'wake.run.completed',
+          sourceEventType: RUN_COMPLETED_EVENT,
           sourceRefs: {
             repo: candidate.issue.repo,
             issueNumber: candidate.issue.number,

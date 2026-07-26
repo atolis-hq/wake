@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 
 import { autoApprovalLabel, resolveAutoApprovalIntent } from '../../core/approval-intents.js';
 import type { ResourceIndex, UnkeyedEventEnvelope } from '../../core/contracts.js';
+import { LABELS_REQUESTED_EVENT } from '../../domain/event-types.js';
 import { defaultAgentIdentity } from '../../domain/schema.js';
 import { buildResourceUri } from '../../domain/resource-uri.js';
 import { wakeStageLabelPrefix } from '../../domain/stages.js';
@@ -737,7 +738,7 @@ export function createGitHubIssuesWorkSource(deps: {
       }
 
       const publishedAt = deps.now().toISOString();
-      if (input.event.sourceEventType === 'wake.labels.requested') {
+      if (input.event.sourceEventType === LABELS_REQUESTED_EVENT) {
         // Outbound intents are keyed envelopes Wake itself minted, so the work
         // item is already named on the event — a direct read, not a lookup.
         const projection = await deps.stateStore.readIssueState(input.event.workItemKey);
@@ -844,7 +845,7 @@ export function createGitHubIssuesWorkSource(deps: {
         return [];
       }
       const publishedAt = deps.now().toISOString();
-      if (input.event.sourceEventType === 'wake.labels.requested') {
+      if (input.event.sourceEventType === LABELS_REQUESTED_EVENT) {
         const projection = await deps.stateStore.readIssueState(input.event.workItemKey);
         const currentLabels = projection?.issue.labels ?? [];
         const expected = [

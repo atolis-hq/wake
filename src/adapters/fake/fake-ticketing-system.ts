@@ -1,6 +1,7 @@
 import { access } from 'node:fs/promises';
 
 import type { UnkeyedEventEnvelope } from '../../core/contracts.js';
+import { LABELS_REQUESTED_EVENT } from '../../domain/event-types.js';
 import type { EventEnvelope } from '../../domain/types.js';
 import { buildResourceUri } from '../../domain/resource-uri.js';
 import { createEventEnvelope, createUnkeyedEventEnvelope } from '../../lib/event-log.js';
@@ -111,7 +112,7 @@ export function createFakeTicketingSystem(options: {
     async deliverIntent(input: { event: EventEnvelope }): Promise<EventEnvelope[]> {
       const publishedAt = (options.now ?? (() => new Date()))().toISOString();
 
-      if (input.event.sourceEventType === 'wake.labels.requested') {
+      if (input.event.sourceEventType === LABELS_REQUESTED_EVENT) {
         const ticket = options.tickets.find(
           (issue) =>
             issue.repo === input.event.sourceRefs.repo &&

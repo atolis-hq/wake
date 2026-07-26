@@ -4,6 +4,7 @@ import { isAbsolute, join, relative } from 'node:path';
 import type { WorkspaceManager } from './contracts.js';
 import type { createProjectionUpdater } from './projection-updater.js';
 import type { Clock } from '../lib/clock.js';
+import { WORKSPACE_CLEANED_EVENT, WORKSPACE_CLEANUP_FAILED_EVENT } from '../domain/event-types.js';
 import type { IssueStateRecord, WakeConfig } from '../domain/types.js';
 import { createEventEnvelope } from '../lib/event-log.js';
 
@@ -55,7 +56,7 @@ export function createWorkspaceCleanup(deps: {
               streamScope: 'work-item',
               direction: 'internal',
               sourceSystem: 'wake',
-              sourceEventType: 'wake.workspace.cleanup-failed',
+              sourceEventType: WORKSPACE_CLEANUP_FAILED_EVENT,
               sourceRefs: {
                 repo: projection.issue.repo,
                 issueNumber: projection.issue.number,
@@ -78,7 +79,7 @@ export function createWorkspaceCleanup(deps: {
           streamScope: 'work-item',
           direction: 'internal',
           sourceSystem: 'wake',
-          sourceEventType: 'wake.workspace.cleaned',
+          sourceEventType: WORKSPACE_CLEANED_EVENT,
           sourceRefs: {
             repo: projection.issue.repo,
             issueNumber: projection.issue.number,
