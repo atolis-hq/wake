@@ -2,9 +2,13 @@ import {
   CORRELATION_PRIMARY_CONFLICT_EVENT,
   CORRELATION_REGISTERED_EVENT,
   CORRELATION_RETRACTED_EVENT,
-  UNRESOLVED_WORK_ITEM_KEY,
-  parseIssueStateRecord,
-} from '../domain/schema.js';
+  RETRY_REQUESTED_EVENT,
+  RUN_CLAIMED_EVENT,
+  RUN_COMPLETED_EVENT,
+  WORKFLOW_SELECTED_EVENT,
+  WORKSPACE_CLEANED_EVENT,
+} from '../domain/event-types.js';
+import { UNRESOLVED_WORK_ITEM_KEY, parseIssueStateRecord } from '../domain/schema.js';
 import { doneRunnerSentinel, stageFromLabels } from '../domain/stages.js';
 import {
   builtInDefaultWorkflowDefinition,
@@ -28,8 +32,6 @@ type ApplyEventCtx = {
   resourceIndex: ResourceIndex;
   appendEvent: (event: EventEnvelope) => Promise<EventEnvelope>;
 };
-
-const WORKFLOW_SELECTED_EVENT = 'wake.workflow.selected';
 
 function stringArrayFromPayload(value: unknown): string[] {
   return Array.isArray(value)
@@ -232,7 +234,7 @@ async function applyEvent(
     });
   }
 
-  if (event.sourceEventType === 'wake.run.claimed') {
+  if (event.sourceEventType === RUN_CLAIMED_EVENT) {
     const payload = event.payload as {
       action?: string;
       claimedStage?: IssueStateRecord['wake']['stage'];
@@ -269,7 +271,7 @@ async function applyEvent(
     });
   }
 
-  if (event.sourceEventType === 'wake.run.completed') {
+  if (event.sourceEventType === RUN_COMPLETED_EVENT) {
     const payload = event.payload as {
       action?: string;
       sentinel?: string;
@@ -423,7 +425,7 @@ async function applyEvent(
     });
   }
 
-  if (event.sourceEventType === 'wake.retry.requested') {
+  if (event.sourceEventType === RETRY_REQUESTED_EVENT) {
     const nextContext: Record<string, unknown> = { ...current.context };
     delete nextContext.lastRunSentinel;
     delete nextContext.lastFailureClass;
@@ -440,7 +442,7 @@ async function applyEvent(
     });
   }
 
-  if (event.sourceEventType === 'wake.workspace.cleaned') {
+  if (event.sourceEventType === WORKSPACE_CLEANED_EVENT) {
     return parseIssueStateRecord({
       ...current,
       wake: {

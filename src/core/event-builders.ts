@@ -1,4 +1,5 @@
 import type { AgentRunResult } from './contracts.js';
+import { LABELS_REQUESTED_EVENT, PUBLISH_INTENT_REQUESTED_EVENT } from '../domain/event-types.js';
 import { parseRunnerResult } from '../domain/schema.js';
 import type { AgentAction, EventEnvelope, IssueStateRecord } from '../domain/types.js';
 import { createEventEnvelope } from '../lib/event-log.js';
@@ -67,7 +68,7 @@ export function createPublishIntentEvent(input: {
     streamScope: 'work-item',
     direction: 'outbound',
     sourceSystem: 'wake',
-    sourceEventType: 'wake.publish.intent.requested',
+    sourceEventType: PUBLISH_INTENT_REQUESTED_EVENT,
     sourceRefs: {
       repo: input.projection.issue.repo,
       issueNumber: input.projection.issue.number,
@@ -170,7 +171,7 @@ export function createLabelsEvent(input: {
     streamScope: 'work-item',
     direction: 'outbound',
     sourceSystem: 'wake',
-    sourceEventType: 'wake.labels.requested',
+    sourceEventType: LABELS_REQUESTED_EVENT,
     sourceRefs: {
       repo: input.projection.issue.repo,
       issueNumber: input.projection.issue.number,

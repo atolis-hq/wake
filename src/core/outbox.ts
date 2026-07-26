@@ -4,6 +4,13 @@ import type { OutboundSink } from './contracts.js';
 import type { createProjectionUpdater } from './projection-updater.js';
 import type { Clock } from '../lib/clock.js';
 import type { EventEnvelope } from '../domain/types.js';
+import {
+  LABELS_REQUESTED_EVENT,
+  PUBLISH_CONFIRMED_EVENT,
+  PUBLISH_FAILED_EVENT,
+  PUBLISH_INTENT_REQUESTED_EVENT,
+  PUBLISH_SENT_UNCONFIRMED_EVENT,
+} from '../domain/event-types.js';
 import { createEventEnvelope } from '../lib/event-log.js';
 
 type StateStore = ReturnType<typeof import('../adapters/fs/state-store.js').createStateStore>;
@@ -11,14 +18,11 @@ type ProjectionUpdater = ReturnType<typeof createProjectionUpdater>;
 
 const outboxMaxAttempts = 3;
 
-const outboundIntentEventTypes = new Set([
-  'wake.publish.intent.requested',
-  'wake.labels.requested',
-]);
+const outboundIntentEventTypes = new Set([PUBLISH_INTENT_REQUESTED_EVENT, LABELS_REQUESTED_EVENT]);
 const outboundConfirmationEventTypes = new Set([
   'ticket.reply.published',
   'ticket.labels.updated',
-  'wake.publish.confirmed',
+  PUBLISH_CONFIRMED_EVENT,
   'pr.comment.reply.published',
   'pr.review-comment.reply.published',
 ]);
@@ -48,7 +52,7 @@ export function createOutbox(deps: {
       streamScope: 'work-item',
       direction: 'internal',
       sourceSystem: 'wake',
-      sourceEventType: 'wake.publish.failed',
+      sourceEventType: PUBLISH_FAILED_EVENT,
       sourceRefs: intentEvent.sourceRefs,
       occurredAt,
       ingestedAt: occurredAt,
@@ -73,7 +77,7 @@ export function createOutbox(deps: {
       streamScope: 'work-item',
       direction: 'internal',
       sourceSystem: 'wake',
-      sourceEventType: 'wake.publish.sent-unconfirmed',
+      sourceEventType: PUBLISH_SENT_UNCONFIRMED_EVENT,
       sourceRefs: intentEvent.sourceRefs,
       occurredAt,
       ingestedAt: occurredAt,
@@ -100,7 +104,7 @@ export function createOutbox(deps: {
       streamScope: 'work-item',
       direction: 'internal',
       sourceSystem: 'wake',
-      sourceEventType: 'wake.publish.confirmed',
+      sourceEventType: PUBLISH_CONFIRMED_EVENT,
       sourceRefs: intentEvent.sourceRefs,
       occurredAt: confirmedAt,
       ingestedAt: confirmedAt,
@@ -188,10 +192,10 @@ export function createOutbox(deps: {
       if (outboundConfirmationEventTypes.has(event.sourceEventType)) {
         confirmedIntentIds.add(intentEventId);
       }
-      if (event.sourceEventType === 'wake.publish.failed') {
+      if (event.sourceEventType === PUBLISH_FAILED_EVENT) {
         failureAttempts.set(intentEventId, (failureAttempts.get(intentEventId) ?? 0) + 1);
       }
-      if (event.sourceEventType === 'wake.publish.sent-unconfirmed') {
+      if (event.sourceEventType === PUBLISH_SENT_UNCONFIRMED_EVENT) {
         uncertainIntentIds.add(intentEventId);
       }
     }

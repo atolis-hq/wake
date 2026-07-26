@@ -14,6 +14,14 @@ import {
 import { runtimeEventTypeValues } from './runtime-events.js';
 import { alwaysManualIgnoredLabels } from './manual-labels.js';
 
+export {
+  AUTONOMOUS_DECISION_AUDIT_EVENT,
+  CORRELATION_PRIMARY_CONFLICT_EVENT,
+  CORRELATION_REGISTERED_EVENT,
+  CORRELATION_RETRACTED_EVENT,
+  WORK_ITEM_CREATED_EVENT,
+} from './event-types.js';
+
 const isoTimestampSchema = z.string().datetime({ offset: true });
 const identifierSchema = z.string().min(1);
 
@@ -260,13 +268,6 @@ export const eventEnvelopeSourceRefsSchema = z.object({
   // own locator grammar; this keeps that knowledge out of core/.
   parentResourceUri: resourceUriSchema.optional(),
 });
-
-/** Event type constants for the correlation registry (ADR 0001 §5). */
-export const WORK_ITEM_CREATED_EVENT = 'wake.workitem.created';
-export const CORRELATION_REGISTERED_EVENT = 'wake.correlation.registered';
-export const CORRELATION_RETRACTED_EVENT = 'wake.correlation.retracted';
-export const CORRELATION_PRIMARY_CONFLICT_EVENT = 'wake.correlation.primary-conflict';
-export const AUTONOMOUS_DECISION_AUDIT_EVENT = 'wake.audit.autonomous-decision';
 
 /**
  * Shared key for events whose resource failed mint qualification (spec D1').

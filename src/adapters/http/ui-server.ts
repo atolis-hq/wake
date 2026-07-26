@@ -5,6 +5,7 @@ import { dirname } from 'node:path';
 
 import type { ResourceIndex } from '../../core/contracts.js';
 import { createProjectionUpdater } from '../../core/projection-updater.js';
+import { RETRY_REQUESTED_EVENT } from '../../domain/event-types.js';
 import { configuredTicketSource } from '../../domain/sources.js';
 import type { WakeConfig } from '../../domain/types.js';
 import { createEventEnvelope } from '../../lib/event-log.js';
@@ -168,7 +169,7 @@ async function handleRequest(
       streamScope: 'work-item',
       direction: 'internal',
       sourceSystem: 'wake',
-      sourceEventType: 'wake.retry.requested',
+      sourceEventType: RETRY_REQUESTED_EVENT,
       sourceRefs: { repo: item.issue.repo, issueNumber: item.issue.number },
       occurredAt,
       ingestedAt: occurredAt,

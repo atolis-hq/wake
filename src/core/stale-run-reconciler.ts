@@ -1,5 +1,6 @@
 import type { createProjectionUpdater } from './projection-updater.js';
 import { createLabelsEvent } from './event-builders.js';
+import { RUN_COMPLETED_EVENT } from '../domain/event-types.js';
 import { stageLabelForStage } from '../domain/stages.js';
 import { workflowLabelForWorkflowName, workflowNameForProjection } from '../domain/workflows.js';
 import type {
@@ -130,7 +131,7 @@ export function createStaleRunReconciler(deps: {
         streamScope: 'work-item',
         direction: 'internal',
         sourceSystem: 'wake',
-        sourceEventType: 'wake.run.completed',
+        sourceEventType: RUN_COMPLETED_EVENT,
         sourceRefs: {
           repo: projection.issue.repo,
           issueNumber: projection.issue.number,
@@ -230,7 +231,7 @@ export function createStaleRunReconciler(deps: {
         streamScope: 'work-item',
         direction: 'internal',
         sourceSystem: 'wake',
-        sourceEventType: 'wake.run.completed',
+        sourceEventType: RUN_COMPLETED_EVENT,
         sourceRefs: {
           repo: record.repo,
           issueNumber: record.issueNumber,
