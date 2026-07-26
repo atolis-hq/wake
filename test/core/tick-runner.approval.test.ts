@@ -9,7 +9,8 @@ import { createStateStore } from '../../src/adapters/fs/state-store.js';
 import { createDefaultWakeConfig } from '../../src/config/defaults.js';
 import { createTickRunner } from '../../src/core/tick-runner.js';
 import { AUTONOMOUS_DECISION_AUDIT_EVENT } from '../../src/domain/schema.js';
-import type { EventEnvelope } from '../../src/domain/types.js';
+import type { EventEnvelope, IssueStateRecord, WakeConfig } from '../../src/domain/types.js';
+import { createEventEnvelope } from '../../src/lib/event-log.js';
 import {
   findByIssueRef,
   githubIssueUri,
@@ -25,6 +26,189 @@ describe('tick runner', () => {
   });
 
   describe('approval & custom commands', () => {
+    function configurePrReviewMerge(
+      config: WakeConfig,
+      merge: NonNullable<
+        NonNullable<
+          NonNullable<
+            WakeConfig['workflows']['default']['stages']['implement']['watch']
+          >[number]['onApproved']
+        >['merge']
+      >,
+    ) {
+      config.sources.github.policy.requiredLabels = ['wake:queue'];
+      config.sources.github.pullRequests.enabled = true;
+      config.workflows.default!.stages.implement!.watch = [
+        {
+          while: { status: ['awaiting-approval'] },
+          on: { event: ['wake.run.completed'] },
+          workflow: 'pr-review',
+          onApproved: { merge },
+        },
+      ];
+      config.workflows['pr-review'] = {
+        stages: {
+          review: {
+            action: 'pr-review',
+            workspace: 'read-only',
+            onDone: 'done',
+          },
+        },
+      };
+    }
+
+    function awaitingPrReviewApprovalProjection(
+      input: {
+        labels?: string[];
+        body?: string;
+      } = {},
+    ): IssueStateRecord {
+      const body = input.body ?? 'Safe to merge.\n\n<!-- wake:pr-review-approved -->';
+      return {
+        schemaVersion: 1,
+        workItemKey: workId(352),
+        issue: {
+          repo: 'atolis-hq/wake',
+          number: 352,
+          title: 'Merge gate',
+          body: 'Body',
+          labels: input.labels ?? ['wake:queue'],
+          assignees: [],
+          isPullRequest: false,
+          state: 'open',
+          url: 'https://example.test/issues/352',
+          createdAt: '2026-07-05T12:00:00.000Z',
+          updatedAt: '2026-07-05T12:00:00.000Z',
+        },
+        comments: [
+          {
+            id: 'pr-900',
+            body,
+            author: { login: 'wake-bot' },
+            createdAt: '2026-07-05T12:01:00.000Z',
+            updatedAt: '2026-07-05T12:01:00.000Z',
+            isBotAuthored: true,
+            resourceUri: 'github:pr:atolis-hq/wake#91',
+          },
+        ],
+        latestComment: {
+          id: 'pr-900',
+          body,
+          author: { login: 'wake-bot' },
+          createdAt: '2026-07-05T12:01:00.000Z',
+          updatedAt: '2026-07-05T12:01:00.000Z',
+          isBotAuthored: true,
+          resourceUri: 'github:pr:atolis-hq/wake#91',
+        },
+        wake: {
+          stage: 'implement',
+          stageHistory: [],
+          recentEventIds: [],
+          syncedAt: '2026-07-05T12:00:00.000Z',
+          expectedEcho: { commentIds: [], labels: [] },
+        },
+        context: {
+          lastRunSentinel: 'AWAITING_APPROVAL',
+          pendingApprovalAction: 'implement',
+        },
+        correlatedResources: [
+          {
+            resourceUri: 'github:pr:atolis-hq/wake#91',
+            role: 'implementation',
+            relation: 'primary',
+            provenance: 'agent-reported',
+            registeredAt: '2026-07-05T12:00:00.000Z',
+          },
+        ],
+      };
+    }
+
+    async function prReviewMergeTick(input: {
+      config: WakeConfig;
+      files: string[];
+      projection?: IssueStateRecord;
+      outboundBodies?: string[];
+      preseedActionEvents?: boolean;
+      prIncumbentWorkItemKey?: string;
+    }) {
+      const store = createStateStore({ wakeRoot: root });
+      const projection = input.projection ?? awaitingPrReviewApprovalProjection();
+      await store.writeIssueState(projection);
+      const resourceIndex = createFakeResourceIndex();
+      await resourceIndex.register(githubIssueUri(projection.issue.number), projection.workItemKey);
+      await resourceIndex.register(
+        'github:pr:atolis-hq/wake#91',
+        input.prIncumbentWorkItemKey ?? projection.workItemKey,
+      );
+
+      if (input.preseedActionEvents === true) {
+        for (const eventId of ['pr-merge-approved-pr-900', 'pr-auto-merge-enabled-pr-900']) {
+          await store.appendEventEnvelope(
+            createEventEnvelope({
+              eventId,
+              workItemKey: projection.workItemKey,
+              streamScope: 'work-item',
+              direction: 'internal',
+              sourceSystem: 'wake',
+              sourceEventType:
+                eventId === 'pr-merge-approved-pr-900'
+                  ? 'wake.pr-review.approved'
+                  : 'wake.pr-auto-merge.enabled',
+              sourceRefs: {
+                resourceUri: 'github:pr:atolis-hq/wake#91',
+                commentId: 'pr-900',
+              },
+              occurredAt: '2026-07-05T12:01:30.000Z',
+              ingestedAt: '2026-07-05T12:01:30.000Z',
+              trigger: 'context-only',
+              payload: { idempotencyKey: eventId },
+            }),
+          );
+        }
+      }
+
+      const calls: string[] = [];
+      const tickRunner = createTickRunner({
+        clock: { now: () => new Date('2026-07-05T12:10:00.000Z') },
+        config: input.config,
+        stateStore: store,
+        workSource: {
+          async pollEvents() {
+            return [];
+          },
+        },
+        outboundSink: {
+          async deliverIntent(delivery) {
+            if (delivery.event.sourceEventType === 'wake.publish.intent.requested') {
+              input.outboundBodies?.push(String(delivery.event.payload.body));
+            }
+            return [];
+          },
+        },
+        runner: {
+          async run() {
+            throw new Error('runner should not be called for deterministic PR merge approval');
+          },
+        },
+        resourceIndex,
+        workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+        prMergeActor: {
+          async listChangedFiles() {
+            calls.push('files');
+            return input.files;
+          },
+          async approve(_resourceUri, body) {
+            calls.push(`approve:${body}`);
+          },
+          async enableAutoMerge() {
+            calls.push('autoMerge');
+          },
+        },
+      });
+
+      return { result: await tickRunner.runTick(), calls, store };
+    }
+
     it('coerces DONE to AWAITING_APPROVAL when runner metadata signals skipApproval=false', async () => {
       const store = createStateStore({ wakeRoot: root });
       const config = createDefaultWakeConfig(root);
@@ -1536,6 +1720,135 @@ describe('tick runner', () => {
 
       expect(result.status).toBe('idle');
       expect(runnerCallCount).toBe(0);
+    });
+
+    it('approves and enables auto-merge when pr-review approval passes merge risk policy', async () => {
+      const config = createDefaultWakeConfig(root);
+      configurePrReviewMerge(config, {
+        approve: true,
+        autoMerge: true,
+        maxFilesChanged: 2,
+        blockedPaths: ['src/core/contracts.ts'],
+        blockedLabels: ['security'],
+      });
+
+      const { result, calls } = await prReviewMergeTick({
+        config,
+        files: ['src/core/tick-runner.ts'],
+      });
+
+      expect(result.status).toBe('processed');
+      expect((result as { sentinel?: string }).sentinel).toBe('DONE');
+      expect(calls).toEqual(['files', 'approve:Safe to merge.', 'autoMerge']);
+    });
+
+    it('blocks without approving when the PR changes too many files', async () => {
+      const config = createDefaultWakeConfig(root);
+      configurePrReviewMerge(config, {
+        approve: true,
+        autoMerge: true,
+        maxFilesChanged: 1,
+        blockedPaths: [],
+        blockedLabels: [],
+      });
+      const outboundBodies: string[] = [];
+
+      const { result, calls } = await prReviewMergeTick({
+        config,
+        files: ['src/a.ts', 'src/b.ts'],
+        outboundBodies,
+      });
+
+      expect(result.status).toBe('processed');
+      expect((result as { sentinel?: string }).sentinel).toBe('BLOCKED');
+      expect(calls).toEqual(['files']);
+      expect(outboundBodies[0]).toContain('Safe to merge.');
+      expect(outboundBodies[0]).toContain('exceeding maxFilesChanged 1');
+    });
+
+    it('blocks without approving when a changed file matches blockedPaths', async () => {
+      const config = createDefaultWakeConfig(root);
+      configurePrReviewMerge(config, {
+        approve: true,
+        autoMerge: true,
+        maxFilesChanged: 10,
+        blockedPaths: ['docker/*'],
+        blockedLabels: [],
+      });
+
+      const { result, calls } = await prReviewMergeTick({
+        config,
+        files: ['docker/Dockerfile'],
+      });
+
+      expect(result.status).toBe('processed');
+      expect((result as { sentinel?: string }).sentinel).toBe('BLOCKED');
+      expect(calls).toEqual(['files']);
+    });
+
+    it('blocks before reading the diff when the work item has a blocked label', async () => {
+      const config = createDefaultWakeConfig(root);
+      configurePrReviewMerge(config, {
+        approve: true,
+        autoMerge: true,
+        maxFilesChanged: 10,
+        blockedPaths: [],
+        blockedLabels: ['requires-human'],
+      });
+
+      const { result, calls } = await prReviewMergeTick({
+        config,
+        files: ['src/core/tick-runner.ts'],
+        projection: awaitingPrReviewApprovalProjection({
+          labels: ['wake:queue', 'requires-human'],
+        }),
+      });
+
+      expect(result.status).toBe('processed');
+      expect((result as { sentinel?: string }).sentinel).toBe('BLOCKED');
+      expect(calls).toEqual([]);
+    });
+
+    it('blocks before reading the diff when the PR is primary-correlated to another work item', async () => {
+      const config = createDefaultWakeConfig(root);
+      configurePrReviewMerge(config, {
+        approve: true,
+        autoMerge: true,
+        maxFilesChanged: 10,
+        blockedPaths: [],
+        blockedLabels: [],
+      });
+
+      const { result, calls } = await prReviewMergeTick({
+        config,
+        files: ['src/core/tick-runner.ts'],
+        prIncumbentWorkItemKey: 'work-01JZ9999999999999999999999',
+      });
+
+      expect(result.status).toBe('processed');
+      expect((result as { sentinel?: string }).sentinel).toBe('BLOCKED');
+      expect(calls).toEqual([]);
+    });
+
+    it('does not repeat approve or auto-merge when action events already exist for the marker comment', async () => {
+      const config = createDefaultWakeConfig(root);
+      configurePrReviewMerge(config, {
+        approve: true,
+        autoMerge: true,
+        maxFilesChanged: 2,
+        blockedPaths: [],
+        blockedLabels: [],
+      });
+
+      const { result, calls } = await prReviewMergeTick({
+        config,
+        files: ['src/core/tick-runner.ts'],
+        preseedActionEvents: true,
+      });
+
+      expect(result.status).toBe('processed');
+      expect((result as { sentinel?: string }).sentinel).toBe('DONE');
+      expect(calls).toEqual(['files']);
     });
   });
 });

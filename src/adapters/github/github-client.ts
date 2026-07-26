@@ -207,6 +207,41 @@ export function createGitHubClient(token: string) {
           }),
       });
     },
+    async listPullRequestFiles(owner: string, repo: string, pullNumber: number) {
+      return fetchPaginatedWithEtag({
+        cache: etagCache,
+        cacheKey: `pr-files:${owner}/${repo}#${pullNumber}`,
+        pages: (headers) =>
+          octokit.paginate.iterator(octokit.rest.pulls.listFiles, {
+            owner,
+            repo,
+            pull_number: pullNumber,
+            per_page: 100,
+            ...(headers === undefined ? {} : { headers }),
+          }),
+      });
+    },
+    async createPullRequestApproval(owner: string, repo: string, pullNumber: number, body: string) {
+      await octokit.rest.pulls.createReview({
+        owner,
+        repo,
+        pull_number: pullNumber,
+        event: 'APPROVE',
+        body,
+      });
+    },
+    async enablePullRequestAutoMerge(pullRequestNodeId: string) {
+      await octokit.graphql(
+        `mutation EnableWakeAutoMerge($pullRequestId: ID!) {
+          enablePullRequestAutoMerge(input: { pullRequestId: $pullRequestId }) {
+            pullRequest {
+              id
+            }
+          }
+        }`,
+        { pullRequestId: pullRequestNodeId },
+      );
+    },
     async replyToReviewComment(
       owner: string,
       repo: string,

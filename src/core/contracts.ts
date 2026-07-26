@@ -122,3 +122,9 @@ export interface ArtifactVerifier {
     context: { branch: string; repo: string },
   ): Promise<{ resourceUri: string } | null>;
 }
+
+export interface PullRequestMergeActor {
+  listChangedFiles(resourceUri: string): Promise<string[]>;
+  approve(resourceUri: string, body: string): Promise<void>;
+  enableAutoMerge(resourceUri: string): Promise<void>;
+}

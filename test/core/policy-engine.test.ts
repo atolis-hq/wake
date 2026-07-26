@@ -462,6 +462,9 @@ describe('policy engine: resolveApprovalTransition', () => {
     expect(policy.resolveApprovalTransition(issue)).toEqual({
       approved: true,
       pendingAction: 'implement',
+      targetResourceUri: 'github:pr:atolis-hq/wake#51',
+      triggeringCommentId: 'pr-900',
+      triggeringCommentBody: 'Safe to merge.\n\n<!-- wake:pr-review-approved -->',
     });
   });
 

@@ -23,6 +23,9 @@ export interface ApprovalResolution {
   pendingAction: AgentAction;
   automatic?: boolean;
   reason?: string;
+  targetResourceUri?: string;
+  triggeringCommentId?: string;
+  triggeringCommentBody?: string;
 }
 
 function isAwaitingApproval(issue: IssueStateRecord): boolean {
@@ -289,7 +292,13 @@ export function createPolicyEngine() {
         latestComment.resourceUri !== undefined &&
         latestComment.body.includes(prReviewApprovalMarker)
       ) {
-        return { approved: true, pendingAction };
+        return {
+          approved: true,
+          pendingAction,
+          targetResourceUri: latestComment.resourceUri,
+          triggeringCommentId: latestComment.id,
+          triggeringCommentBody: latestComment.body,
+        };
       }
       if (latestHumanComment === undefined) {
         return null;
