@@ -955,6 +955,12 @@ describe('tick runner', () => {
         lifecycle: 'TERMINAL',
         status: 'completed',
         startedAt: '2026-07-25T12:00:00.000Z',
+        // Rate-limit counting reads run records via the summarized listing
+        // (state-store.ts stripHeavyRunRecordFields) so the resident loop
+        // doesn't hold every run's captured stdout/raw in memory each tick -
+        // a large metadata payload here proves that stripping doesn't affect
+        // whether this record still counts toward the window.
+        metadata: { stdout: 'x'.repeat(10_000) },
       });
 
       const config = configurePrReviewWatcher(root);

@@ -685,7 +685,7 @@ export function createTickRunner(deps: {
   async function markPendingActionableIssues(projections: IssueStateRecord[]): Promise<void> {
     const activeRunWorkItemKeys = new Set<string>();
     const now = deps.clock.now();
-    for (const record of await deps.stateStore.listRunRecords()) {
+    for (const record of await deps.stateStore.listRunRecordSummaries()) {
       if (record.status === 'running' && (await isRunningRecordActive(record, now))) {
         activeRunWorkItemKeys.add(record.workItemKey);
       }
@@ -736,7 +736,7 @@ export function createTickRunner(deps: {
   async function exceedsDispatchRateLimit(now: Date): Promise<boolean> {
     const { windowMs, maxDispatches } = deps.config.scheduler.dispatchRateLimit;
     const windowStartMs = now.getTime() - windowMs;
-    const runRecords = await deps.stateStore.listRunRecords();
+    const runRecords = await deps.stateStore.listRunRecordSummaries();
     const recentCount = runRecords.reduce((count, record) => {
       const startedAtMs = Date.parse(record.startedAt);
       return Number.isFinite(startedAtMs) &&
@@ -789,7 +789,7 @@ export function createTickRunner(deps: {
   }
 
   async function hasSchedulerCapacity(now: Date): Promise<boolean> {
-    const runRecords = await deps.stateStore.listRunRecords();
+    const runRecords = await deps.stateStore.listRunRecordSummaries();
     for (const record of runRecords) {
       if (record.status !== 'running') {
         continue;
