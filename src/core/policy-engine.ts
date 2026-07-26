@@ -15,6 +15,7 @@ import type {
   WorkflowDefinition,
 } from '../domain/types.js';
 import { alwaysManualIgnoredLabels } from '../domain/manual-labels.js';
+import { autoApprovalLabel } from './approval-intents.js';
 import type { UnkeyedEventEnvelope } from './contracts.js';
 
 export interface ApprovalResolution {
@@ -49,7 +50,6 @@ const approvedCommandPattern = /^\/approved\b/i;
 const changesCommandPattern = /^\/changes\b/i;
 const prReviewApprovalMarker = '<!-- wake:pr-review-approved -->';
 const prReviewChangesMarker = '<!-- wake:pr-review-changes-requested -->';
-const autoApprovalLabel = 'wake:auto';
 
 // The action Wake runs when a correlated PR gets new reviewer feedback while
 // the work item is awaiting approval. Not configurable per workflow: it's a

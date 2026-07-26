@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 
+import { autoApprovalLabel, resolveAutoApprovalIntent } from '../../core/approval-intents.js';
 import type { ResourceIndex, UnkeyedEventEnvelope } from '../../core/contracts.js';
 import { defaultAgentIdentity } from '../../domain/schema.js';
 import { buildResourceUri } from '../../domain/resource-uri.js';
@@ -23,8 +24,6 @@ const pollOverlapMs = 60 * 60 * 1000;
 // expectedEcho bookkeeping surviving a crash (#145).
 const wakeCommentMarker = '<!-- wake:agent -->';
 const githubSource = 'github';
-const autoApprovalLabel = 'wake:auto';
-const autoApprovalCommands = new Set(['yolo', 'autoapprove']);
 
 export function wakeIdempotencyMarker(idempotencyKey: unknown): string | undefined {
   return typeof idempotencyKey === 'string'
@@ -188,17 +187,6 @@ function issueAssignees(issue: GitHubIssue): string[] {
   return (issue.assignees ?? [])
     .map((assignee) => assignee.login)
     .filter((login): login is string => typeof login === 'string');
-}
-
-function autoApprovalCommandName(body: string | undefined): string | null {
-  for (const line of (body ?? '').split(/\r?\n/)) {
-    const match = /^\/([A-Za-z0-9_.-]+)\b/.exec(line.trim());
-    if (match?.[1] !== undefined && autoApprovalCommands.has(match[1].toLowerCase())) {
-      return match[1].toLowerCase();
-    }
-  }
-
-  return null;
 }
 
 function issueWithAutoApprovalLabel(issue: GitHubIssue): GitHubIssue {
@@ -553,7 +541,7 @@ export function createGitHubIssuesWorkSource(deps: {
 
         if (
           !autoApprovalLabelAdded &&
-          autoApprovalCommandName(comment.body) !== null &&
+          resolveAutoApprovalIntent(comment.body) !== null &&
           comment.user?.type !== 'Bot' &&
           !(comment.body ?? '').includes(wakeCommentMarker) &&
           (deps.selfLogin === undefined || comment.user?.login !== deps.selfLogin)
@@ -679,7 +667,7 @@ export function createGitHubIssuesWorkSource(deps: {
 
               if (
                 !autoApprovalLabelAdded &&
-                autoApprovalCommandName(comment.body) !== null &&
+                resolveAutoApprovalIntent(comment.body) !== null &&
                 comment.user?.type !== 'Bot' &&
                 !(comment.body ?? '').includes(wakeCommentMarker) &&
                 (deps.selfLogin === undefined || comment.user?.login !== deps.selfLogin)
