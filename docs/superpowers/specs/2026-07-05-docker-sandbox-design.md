@@ -25,7 +25,7 @@ sandbox home directory layout.
 - A first-run interactive setup path for `gh auth login`, SSH key
   generation, and Claude Code auth, since these require a human at a
   terminal and can't be baked into the image.
-- Config (`config.json`) and prompt templates (`prompts/*.md`) that live in
+- Config (`config.yaml` / `config.workflows.yaml`) and prompt templates (`prompts/*.md`) that live in
   the host home directory, are bind-mounted into the container, and are
   editable without rebuilding the image.
 - A way to jump into the running container and resume a specific Claude
@@ -55,7 +55,7 @@ to `cwd`; an optional `dir` argument overrides the target). It scaffolds:
 
 ```
 wake-home/
-  config.json          # copied from defaults, includes a new `sandbox` section
+  config.yaml          # copied from defaults, includes a new `sandbox` section
   prompts/              # copied from repo's prompts/*.md — editable, no rebuild needed
   docker/
     Dockerfile           # copied from the repo's docker/Dockerfile
@@ -83,7 +83,7 @@ the existing `src/main.ts` tick/start/smoke commands):
   Claude session inside the container (see section D)
 
 Single sandbox per host for now: image/container names default to fixed
-values (e.g. `wake-sandbox`), overridable via `config.json`'s `sandbox`
+values (e.g. `wake-sandbox`), overridable via `config.yaml`'s `sandbox`
 section. The design doesn't preclude a future named-sandbox extension, but
 no selector UX is built now.
 
@@ -130,18 +130,17 @@ writable layer.
 **Config.** Add a `sandbox` section to `WakeConfig` / the zod schema in
 `src/domain/schema.ts`:
 
-```json
-"sandbox": {
-  "image": "wake-sandbox",
-  "containerName": "wake-sandbox",
-  "containerMountPath": "/wake",
-  "containerHomeMountPath": "/home/wake"
-}
+```yaml
+sandbox:
+  image: wake-sandbox
+  containerName: wake-sandbox
+  containerMountPath: /wake
+  containerHomeMountPath: /home/wake
 ```
 
 `runner.claude.model` already exists and continues to govern model
 selection — no new field needed there; editing the scaffolded
-`config.json` is the supported way to change it, same as today.
+`config.workflows.yaml` is the supported way to change it, same as today.
 
 **Prompts.** `promptsRoot()` in `src/adapters/claude/prompt-templates.ts`
 currently always walks up from the module's own location to find

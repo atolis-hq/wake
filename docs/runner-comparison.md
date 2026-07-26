@@ -98,12 +98,15 @@ on every container rebuild):
 
 Example `config.yaml` extraMounts for all three:
 
-```json
-"extraMounts": [
-  { "source": "~/.claude", "target": "/home/wake/.claude" },
-  { "source": "~/.codex",  "target": "/home/wake/.codex"  },
-  { "source": "~/.cursor", "target": "/home/wake/.cursor"  }
-]
+```yaml
+sandbox:
+  extraMounts:
+    - source: ~/.claude
+      target: /home/wake/.claude
+    - source: ~/.codex
+      target: /home/wake/.codex
+    - source: ~/.cursor
+      target: /home/wake/.cursor
 ```
 
 ## Sources
