@@ -24,9 +24,9 @@ Run `wake --help` at any time for this list with one-line descriptions.
 
 ## `wake init <path>`
 
-Scaffolds a new Wake home at `<path>`: `config.json`, `prompts/`, and
-`workspaces/`. Does not create `docker/` — that's written lazily by
-`wake sandbox build`.
+Scaffolds a new Wake home at `<path>`: `config.yaml`,
+`config.workflows.yaml`, `prompts/`, and `workspaces/`. Does not create
+`docker/` — that's written lazily by `wake sandbox build`.
 
 - `--dev` — force `dev.mode: "source"` (build the sandbox from a local
   checkout rather than installing the published npm package).

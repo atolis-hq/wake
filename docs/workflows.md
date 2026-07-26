@@ -13,27 +13,20 @@ current directory, by default) resolves to. All config uses `schemaVersion: 1`.
 
 If no workflow is configured, Wake uses this built-in default:
 
-```json
-{
-  "workflows": {
-    "default": {
-      "stages": {
-        "refine": {
-          "action": "refine",
-          "workspace": "read-only",
-          "tier": "light",
-          "onDone": "implement"
-        },
-        "implement": {
-          "action": "implement",
-          "workspace": "branch",
-          "tier": "standard",
-          "onDone": "done"
-        }
-      }
-    }
-  }
-}
+```yaml
+workflows:
+  default:
+    stages:
+      refine:
+        action: refine
+        workspace: read-only
+        tier: light
+        onDone: implement
+      implement:
+        action: implement
+        workspace: branch
+        tier: standard
+        onDone: done
 ```
 
 That means queued work first runs the `refine` action with a read-only
@@ -45,34 +38,26 @@ workspace. When the agent reports `DONE`, Wake moves the work item to
 
 A workflow has an optional `entryStage` and a required `stages` object:
 
-```json
-{
-  "workflows": {
-    "bugfix": {
-      "entryStage": "triage",
-      "stages": {
-        "triage": {
-          "action": "refine",
-          "workspace": "read-only",
-          "tier": "light",
-          "onDone": "patch"
-        },
-        "patch": {
-          "action": "implement",
-          "workspace": "branch",
-          "tier": "standard",
-          "onDone": "verify"
-        },
-        "verify": {
-          "action": "verify",
-          "workspace": "branch",
-          "runner": "codex-flagship",
-          "onDone": "done"
-        }
-      }
-    }
-  }
-}
+```yaml
+workflows:
+  bugfix:
+    entryStage: triage
+    stages:
+      triage:
+        action: refine
+        workspace: read-only
+        tier: light
+        onDone: patch
+      patch:
+        action: implement
+        workspace: branch
+        tier: standard
+        onDone: verify
+      verify:
+        action: verify
+        workspace: branch
+        runner: codex-flagship
+        onDone: done
 ```
 
 `entryStage` is the first configured stage to run after the universal `queue`
@@ -106,16 +91,12 @@ Handlebars context details.
 
 For example:
 
-```json
-{
-  "stages": {
-    "verify": {
-      "action": "verify",
-      "workspace": "branch",
-      "onDone": "done"
-    }
-  }
-}
+```yaml
+stages:
+  verify:
+    action: verify
+    workspace: branch
+    onDone: done
 ```
 
 requires a `verify` prompt template under `paths.promptsRoot`, normally
@@ -139,27 +120,18 @@ determined from that projection:
 Selectors match source-level facts, so the same config can classify issues, PRs,
 or future event sources:
 
-```json
-{
-  "workflowSelectors": [
-    {
-      "workflow": "bug",
-      "match": {
-        "kind": "issue",
-        "repo": "atolis-hq/wake",
-        "requiredLabels": ["bug"],
-        "ignoredLabels": ["wontfix"]
-      }
-    },
-    {
-      "workflow": "pr-review",
-      "match": {
-        "kind": "pr",
-        "requiredAuthors": ["trusted-human"]
-      }
-    }
-  ]
-}
+```yaml
+workflowSelectors:
+  - workflow: bug
+    match:
+      kind: issue
+      repo: atolis-hq/wake
+      requiredLabels: [bug]
+      ignoredLabels: [wontfix]
+  - workflow: pr-review
+    match:
+      kind: pr
+      requiredAuthors: [trusted-human]
 ```
 
 Wake then looks up that workflow in config. If the named workflow no longer

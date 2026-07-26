@@ -25,35 +25,30 @@ This is not a plugin system. Do not build hooks, middleware, or a scripting laye
 
 A workflow is a set of named stages; each stage either dispatches an agent action or is terminal. Sketch (zod-validated, lives in config):
 
-```jsonc
-{
-  "workflows": {
-    "default": {
-      "entryStage": "queue",
-      "stages": {
-        "queue": { "action": "refine", "workspace": "read-only", "onDone": "implement" },
-        "implement": { "action": "implement", "workspace": "branch", "onDone": "done" },
-        "done": { "terminal": true },
-        "failed": { "terminal": true },
-      },
-    },
-    "bug": {
-      "entryStage": "queue",
-      "stages": {
-        "queue": { "action": "reproduce", "workspace": "branch", "onDone": "confirmed" },
-        "confirmed": { "action": "implement", "workspace": "branch", "onDone": "verify" },
-        "verify": { "action": "verify", "workspace": "branch", "onDone": "done" },
-        "done": { "terminal": true },
-        "failed": { "terminal": true },
-      },
-    },
-  },
-  "workflowSelectors": [
-    { "match": { "labels": ["bug"] }, "workflow": "bug" },
-    { "match": { "labels": ["wake:workflow.bug"] }, "workflow": "bug" },
-    { "match": {}, "workflow": "default" },
-  ],
-}
+```yaml
+workflows:
+  default:
+    entryStage: queue
+    stages:
+      queue: { action: refine, workspace: read-only, onDone: implement }
+      implement: { action: implement, workspace: branch, onDone: done }
+      done: { terminal: true }
+      failed: { terminal: true }
+  bug:
+    entryStage: queue
+    stages:
+      queue: { action: reproduce, workspace: branch, onDone: confirmed }
+      confirmed: { action: implement, workspace: branch, onDone: verify }
+      verify: { action: verify, workspace: branch, onDone: done }
+      done: { terminal: true }
+      failed: { terminal: true }
+workflowSelectors:
+  - match: { labels: [bug] }
+    workflow: bug
+  - match: { labels: [wake:workflow.bug] }
+    workflow: bug
+  - match: {}
+    workflow: default
 ```
 
 Key vocabulary decisions:
@@ -99,8 +94,10 @@ Also validate the graph at load: every `onDone` target exists, every non-termina
 
 Ship config-first. The escape hatch for "policies as code" should be the smallest possible surface: config may point at a module —
 
-```jsonc
-"workflows": { "release": { "module": "./wake-workflows/release.mjs" } }
+```yaml
+workflows:
+  release:
+    module: ./wake-workflows/release.mjs
 ```
 
 — whose default export is _the same workflow object_ the JSON form would contain (validated through the same zod schema), optionally with `match`/`chooseAction` as functions for genuinely dynamic cases. Code produces the data structure; the interpreter never changes. Resist exposing tick-runner internals, the state store, or event emission to user modules — the moment user code can emit events or mutate projections, the "tick is a pure function of durable state" invariant is gone and crash-safety with it.
@@ -113,31 +110,34 @@ Ship config-first. The escape hatch for "policies as code" should be the smalles
 
 `buildRuntime` currently picks one runner. Replace with a named registry plus a **tier layer** between stages and runners:
 
-```jsonc
-"runners": {
-  "claude-opus":  { "kind": "claude", "command": "claude", "model": "claude-opus-4-8",  "timeoutMs": 1800000 },
-  "claude-haiku": { "kind": "claude", "command": "claude", "model": "claude-haiku-4-5", "timeoutMs": 600000 },
-  "codex":        { "kind": "codex",  "command": "codex",  "model": "gpt-...",          "timeoutMs": 1800000 },
-  "cursor":       { "kind": "cursor", "command": "cursor-agent", "model": "...",        "timeoutMs": 1800000 },
-  "fake":         { "kind": "fake" }
-},
-"tiers": {
-  "light":    ["claude-haiku"],
-  "standard": ["codex", "cursor"],          // ordered candidates; selection rules in §2.5
-  "deep":     ["claude-opus", "codex"]
-}
+```yaml
+runners:
+  claude-opus: { kind: claude, command: claude, model: claude-opus-4-8, timeoutMs: 1800000 }
+  claude-haiku: { kind: claude, command: claude, model: claude-haiku-4-5, timeoutMs: 600000 }
+  codex: { kind: codex, command: codex, model: gpt-placeholder, timeoutMs: 1800000 }
+  cursor: { kind: cursor, command: cursor-agent, model: cursor-placeholder, timeoutMs: 1800000 }
+  fake: { kind: fake }
+tiers:
+  light: [claude-haiku]
+  standard: [codex, cursor] # ordered candidates; selection rules in §2.5
+  deep: [claude-opus, codex]
 ```
 
 Note the split: **`kind` selects the adapter, the entry name is a routing target, and tiers are ordered candidate lists.** Two entries can share `kind: claude` with different models. `--runner fake` keeps working as a global override.
 
 Stages route to a _tier_ by default (a concrete runner name remains legal for pinning):
 
-```jsonc
-"stages": {
-  "queue":   { "action": "refine",    "tier": "light", ... },
-  "implement": { "action": "implement", "tier": "standard", ... }
-},
-"defaultTier": "standard"
+```yaml
+stages:
+  queue:
+    action: refine
+    tier: light
+    # other stage fields omitted
+  implement:
+    action: implement
+    tier: standard
+    # other stage fields omitted
+defaultTier: standard
 ```
 
 **Why tiers (categories) and not a complexity-score matrix:** LLM-emitted numeric scores are uncalibrated — a "7/10 complexity" means different things to different models, drifts across model versions, and forces you to maintain threshold tables nobody can justify (`>= 6.5 → opus`?). A small closed enum is legible in config, testable in the interpreter, stable across CLIs, and each value has an obvious operational meaning. If one axis proves insufficient, add a second _enum_ axis (e.g. `taskKind: code|research|writing`) before ever reaching for numbers. Scores are false precision; tiers are decisions.
@@ -229,10 +229,12 @@ The prompt templates change in one place (the "last line must be DONE/BLOCKED/FA
   1. **Replies go to the origin.** Record the originating source on the projection at intake (`origin: "github"`); `question`/`status-update` intents route there. This falls out naturally since intents already carry `sourceRefs`.
   2. **Subscriptions are additive**: config maps intent kinds to extra sinks — e.g. Slack gets `question` and terminal-stage notifications for everything, regardless of origin.
 
-```jsonc
-"sinks": {
-  "slack": { "kind": "slack", "channel": "#eng-wake", "subscribe": ["question", "stage.terminal"] }
-}
+```yaml
+sinks:
+  slack:
+    kind: slack
+    channel: "#eng-wake"
+    subscribe: [question, stage.terminal]
 ```
 
 The intent events are already channel-agnostic (`kind`, `body`, metadata) with formatting owned by the sink — that design decision is correct and carries over unchanged; a Slack sink is `formatWakeComment`'s sibling with Block Kit instead of markdown.
@@ -321,16 +323,16 @@ So: keep the architecture — it is the defensible bet. But respect what the com
 
 ## Configuration shape (unified)
 
-```jsonc
-{
-  "runners":   { /* §2.1 — named runner registry */ },
-  "tiers":     { /* §2.1 — capability tier → ordered runner candidates + strategy */ },
-  "workflows": { /* §1.1 — stages, actions, transitions, per-stage tier/runner/workspace, acceptAdvice */ },
-  "workflowSelectors": [ /* §1.3 — ticket type → workflow */ ],
-  "sources":   { "github": { ... }, "slack": { ... } },
-  "sinks":     { /* §3.1 — subscriptions beyond origin-reply */ },
-  "defaultTier": "standard"
-}
+```yaml
+runners:   # §2.1 — named runner registry
+tiers:     # §2.1 — capability tier → ordered runner candidates + strategy
+workflows: # §1.1 — stages, actions, transitions, per-stage tier/runner/workspace, acceptAdvice
+workflowSelectors: # §1.3 — ticket type → workflow
+sources:
+  github: {} # source config omitted
+  slack: {} # source config omitted
+sinks:     # §3.1 — subscriptions beyond origin-reply
+defaultTier: standard
 ```
 
 Land the review's zod-defaults refactor (deleting `mergeWakeConfig`) **before** adding these sections — the hand-written deep merge already silently drops forgotten branches at 3 levels of nesting; workflows and runner registries would take it to 5.
