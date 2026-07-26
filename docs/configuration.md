@@ -366,6 +366,21 @@ Control plane tick frequency and timing.
 | `intervalMs`    | number | Milliseconds between control-plane ticks (minimum 1)                                                                                                                                      | `60000` (60 seconds) |
 | `maxIntervalMs` | number | Ceiling for the idle-cadence backoff: each consecutive idle tick doubles the sleep (starting from `intervalMs`) up to this value, and any `processed` tick resets it back to `intervalMs` | `300000` (5 minutes) |
 
+#### dispatchRateLimit
+
+A deterministic circuit breaker on total runner invocations (both the main
+dispatch path and stage watchers), independent of any specific
+dispatch-eligibility bug. Counted from durable run records in a trailing
+window, not an in-memory counter, so it holds across process restarts. Once
+the window's run count reaches `maxDispatches`, the tick idles instead of
+dispatching, and Wake records a `dispatch.rate-limited` autonomous-decision
+audit event (see `wake audit`) explaining why.
+
+| Property        | Type   | Description                                     | Default                |
+| --------------- | ------ | ------------------------------------------------ | ----------------------- |
+| `windowMs`      | number | Trailing window, in milliseconds, to count runs over | `3600000` (1 hour) |
+| `maxDispatches` | number | Maximum runner invocations allowed within the window | `20`                |
+
 ### runners
 
 _Lives in `config.workflows.yaml`._

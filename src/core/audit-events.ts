@@ -7,7 +7,11 @@ import type { EventEnvelope, WakeConfig, WorkflowDefinition } from '../domain/ty
 import { createEventEnvelope } from '../lib/event-log.js';
 
 type AuditDecisionType =
-  'trigger.fired' | 'watcher.dispatched' | 'review.verdict' | 'approval.auto-resolved';
+  | 'trigger.fired'
+  | 'watcher.dispatched'
+  | 'review.verdict'
+  | 'approval.auto-resolved'
+  | 'dispatch.rate-limited';
 
 function stableJson(value: unknown): string {
   if (value === null || typeof value !== 'object') {
