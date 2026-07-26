@@ -60,7 +60,7 @@ else
 fi
 
 if prompt_yes_no "Configure Codex auth?"; then
-  codex login
+  codex login --device-auth
 else
   echo "Skipping Codex auth setup."
 fi
