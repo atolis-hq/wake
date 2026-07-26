@@ -28,6 +28,7 @@ import { createGitHubArtifactVerifier } from './adapters/github/github-artifact-
 import { createGitHubClient } from './adapters/github/github-client.js';
 import { createGitHubIssuesWorkSource } from './adapters/github/github-issues-work-source.js';
 import { createGitHubPullRequestActivitySource } from './adapters/github/github-pull-request-activity-source.js';
+import { createGitHubPullRequestMergeActor } from './adapters/github/github-pull-request-merge-actor.js';
 import { runAuditCommand } from './cli/audit-command.js';
 import { runCorrelateCommand } from './cli/correlate-command.js';
 import { runDoctorCommand, type DoctorDeps } from './cli/doctor-command.js';
@@ -624,6 +625,10 @@ export async function buildRuntime(args: string[]) {
     prTrackingEnabled && githubClient !== undefined
       ? createGitHubArtifactVerifier({ client: githubClient })
       : undefined;
+  const prMergeActor =
+    prTrackingEnabled && githubClient !== undefined
+      ? createGitHubPullRequestMergeActor({ client: githubClient })
+      : undefined;
 
   const ticketingSystem =
     githubClient !== undefined
@@ -716,6 +721,7 @@ export async function buildRuntime(args: string[]) {
     workspaceManager,
     resourceIndex,
     ...(artifactVerifier === undefined ? {} : { artifactVerifier }),
+    ...(prMergeActor === undefined ? {} : { prMergeActor }),
   });
 
   return {

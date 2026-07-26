@@ -432,6 +432,21 @@ const workflowTriggerScheduleSchema = z.object({
   cron: z.string().min(1),
 });
 
+const approvedMergePolicySchema = z
+  .object({
+    approve: z.boolean().default(false),
+    autoMerge: z.boolean().default(false),
+    maxFilesChanged: z.number().int().positive().optional(),
+    blockedPaths: z.array(z.string().min(1)).default([]),
+    blockedLabels: z.array(z.string().min(1)).default([]),
+  })
+  .default({
+    approve: false,
+    autoMerge: false,
+    blockedPaths: [],
+    blockedLabels: [],
+  });
+
 const workflowStageSchema = stageRouteSchema.extend({
   workspace: workflowWorkspaceSchema,
   onDone: identifierSchema,
@@ -448,6 +463,11 @@ const workflowStageSchema = stageRouteSchema.extend({
           .optional(),
         schedule: workflowTriggerScheduleSchema.optional(),
         workflow: identifierSchema,
+        onApproved: z
+          .object({
+            merge: approvedMergePolicySchema.optional(),
+          })
+          .optional(),
       }),
     )
     .optional(),

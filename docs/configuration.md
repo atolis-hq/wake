@@ -425,6 +425,51 @@ _Lives in `config.workflows.yaml`._
 Per-stage routing. A stage normally routes to a `tier`; `runner` pins a concrete
 named runner and takes precedence over `tier`.
 
+Workflow stages may also define `watch` entries. `watch[].onApproved.merge` is
+an opt-in deterministic action for PR-review approvals:
+
+```yaml
+workflows:
+  default:
+    stages:
+      implement:
+        action: implement
+        workspace: branch
+        onDone: done
+        watch:
+          - while: { status: [awaiting-approval] }
+            on: { event: [wake.run.completed] }
+            schedule: { cron: "*/10 * * * *" }
+            workflow: pr-review
+            onApproved:
+              merge:
+                approve: true
+                autoMerge: true
+                maxFilesChanged: 10
+                blockedPaths:
+                  - src/core/contracts.ts
+                  - docker/*
+                blockedLabels:
+                  - security
+```
+
+| Property          | Type     | Description                                                       | Default |
+| ----------------- | -------- | ----------------------------------------------------------------- | ------- |
+| `approve`         | boolean  | Submit a GitHub PR review with `APPROVE`                          | `false` |
+| `autoMerge`       | boolean  | Enable GitHub native auto-merge on the PR after policy passes     | `false` |
+| `maxFilesChanged` | number   | Block when the PR changes more files than this limit              | unset   |
+| `blockedPaths`    | string[] | Glob-style changed-path patterns that always block (`*` wildcard) | `[]`    |
+| `blockedLabels`   | string[] | Issue labels that always block this deterministic merge action    | `[]`    |
+
+This action only runs for Wake's bot-authored PR-review approval marker on a
+correlated PR. It does not run for human `/approved` comments on the issue
+thread. If a policy rule fails, Wake posts the reviewer message plus the policy
+exception on the PR and moves the work item to `blocked`.
+
+When `autoMerge` is enabled, configure GitHub branch protection with required
+status checks. Wake delegates the final green-CI gate to GitHub native
+auto-merge rather than polling CI in this merge action.
+
 ### ui
 
 _Lives in `config.yaml`._

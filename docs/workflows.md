@@ -191,6 +191,49 @@ When a runner reports `DONE`, Wake follows the stage's `onDone` transition. If
 the runner reports `BLOCKED`, `FAILED`, or `AWAITING_APPROVAL`, Wake does not
 take the `onDone` transition automatically.
 
+## Stage watchers
+
+A stage can attach watcher workflows that run while the parent work item is in a
+specific status. For example, an implementation stage can dispatch an
+independent `pr-review` workflow while it is `awaiting-approval`:
+
+```yaml
+workflows:
+  default:
+    stages:
+      implement:
+        action: implement
+        workspace: branch
+        onDone: done
+        watch:
+          - while: { status: [awaiting-approval] }
+            on: { event: [wake.run.completed] }
+            schedule: { cron: "*/10 * * * *" }
+            workflow: pr-review
+            onApproved:
+              merge:
+                approve: true
+                autoMerge: true
+                maxFilesChanged: 10
+                blockedPaths:
+                  - src/core/contracts.ts
+                  - docker/*
+                blockedLabels:
+                  - security
+```
+
+`onApproved.merge` runs only when Wake has already recognized a bot-authored
+PR review approval marker on a correlated PR. It does not fire for a human
+`/approved` command on the issue thread. The deterministic gate can submit a
+GitHub approval review and enable GitHub native auto-merge after the local risk
+policy passes. If `autoMerge` is enabled, configure branch protection with
+required status checks so GitHub holds the final merge until CI is green.
+
+The merge risk policy checks the correlated PR ownership, `maxFilesChanged`,
+`blockedPaths`, and `blockedLabels`. If any rule fails, Wake posts the review
+message plus the policy exception on the PR and blocks the work item for a
+human.
+
 ## Labels
 
 Wake's stage labels use the workflow vocabulary:

@@ -8,6 +8,7 @@ import type {
   AgentRunResult,
   ArtifactVerifier,
   OutboundSink,
+  PullRequestMergeActor,
   ResourceIndex,
   WorkSource,
   WorkspaceManager,
@@ -31,6 +32,7 @@ import type {
   RunRecord,
   Stage,
   WakeConfig,
+  WorkflowStageDefinition,
   WorkflowOutcome,
 } from '../domain/types.js';
 import {
@@ -147,6 +149,7 @@ export function createTickRunner(deps: {
   // registerReportedArtifacts becomes a no-op rather than registering
   // unverified free text.
   artifactVerifier?: ArtifactVerifier;
+  prMergeActor?: PullRequestMergeActor;
 }) {
   const policy = createPolicyEngine();
   const lifecycle = createLifecycleService();
@@ -216,6 +219,262 @@ export function createTickRunner(deps: {
 
   function hasLabel(projection: IssueStateRecord, label: string): boolean {
     return projection.issue.labels.includes(label);
+  }
+
+  type ApprovedMergePolicy = NonNullable<
+    NonNullable<NonNullable<WorkflowStageDefinition['watch']>[number]['onApproved']>['merge']
+  >;
+
+  function approvedMergePolicyForStage(
+    stage: WorkflowStageDefinition | undefined,
+  ): ApprovedMergePolicy | null {
+    return (
+      stage?.watch?.find((watch) => watch.onApproved?.merge !== undefined)?.onApproved?.merge ??
+      null
+    );
+  }
+
+  function escapeRegex(input: string): string {
+    return input.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  function globPatternMatches(pattern: string, path: string): boolean {
+    const regex = new RegExp(`^${pattern.split('*').map(escapeRegex).join('.*')}$`);
+    return regex.test(path);
+  }
+
+  function reviewerMessageFromApprovalComment(body: string): string {
+    return body
+      .replaceAll(prReviewApprovalMarker, '')
+      .replaceAll('<!-- wake:pr-review-changes-requested -->', '')
+      .trim();
+  }
+
+  async function evaluatePrMergeRisk(input: {
+    projection: IssueStateRecord;
+    targetResourceUri: string;
+    policy: ApprovedMergePolicy;
+  }): Promise<{ passed: true; filesChanged: string[] } | { passed: false; reason: string }> {
+    const incumbent = await deps.resourceIndex.resolve(input.targetResourceUri);
+    if (incumbent !== undefined && incumbent !== input.projection.workItemKey) {
+      return {
+        passed: false,
+        reason: `Merge policy blocked this PR because ${input.targetResourceUri} is primary-correlated to ${incumbent}, not ${input.projection.workItemKey}.`,
+      };
+    }
+
+    const blockedLabel = input.policy.blockedLabels.find((label) =>
+      input.projection.issue.labels.includes(label),
+    );
+    if (blockedLabel !== undefined) {
+      return {
+        passed: false,
+        reason: `Merge policy blocked this PR because the work item has blocked label "${blockedLabel}".`,
+      };
+    }
+
+    if (deps.prMergeActor === undefined) {
+      return {
+        passed: false,
+        reason: 'Merge policy blocked this PR because no pull request merge actor is configured.',
+      };
+    }
+
+    const filesChanged = await deps.prMergeActor.listChangedFiles(input.targetResourceUri);
+    if (
+      input.policy.maxFilesChanged !== undefined &&
+      filesChanged.length > input.policy.maxFilesChanged
+    ) {
+      return {
+        passed: false,
+        reason: `Merge policy blocked this PR because it changes ${filesChanged.length} files, exceeding maxFilesChanged ${input.policy.maxFilesChanged}.`,
+      };
+    }
+
+    for (const pattern of input.policy.blockedPaths) {
+      const blockedPath = filesChanged.find((path) => globPatternMatches(pattern, path));
+      if (blockedPath !== undefined) {
+        return {
+          passed: false,
+          reason: `Merge policy blocked this PR because changed path "${blockedPath}" matches blockedPaths pattern "${pattern}".`,
+        };
+      }
+    }
+
+    return { passed: true, filesChanged };
+  }
+
+  async function publishPrMergePolicyBlock(input: {
+    projection: IssueStateRecord;
+    approvalResolution: NonNullable<ReturnType<typeof policy.resolveApprovalTransition>>;
+    reason: string;
+    workflowName: string;
+  }): Promise<TickOutcome> {
+    const commentId = input.approvalResolution.triggeringCommentId;
+    const targetResourceUri = input.approvalResolution.targetResourceUri;
+    if (commentId === undefined || targetResourceUri === undefined) {
+      return { status: 'idle' };
+    }
+
+    const runId = `merge-gate-blocked-${commentId.replace(/[^a-z0-9]+/gi, '-')}`;
+    const occurredAt = eventStampNow();
+    const blockedEvent = createEventEnvelope({
+      eventId: `${runId}-completed`,
+      workItemKey: input.projection.workItemKey,
+      streamScope: 'work-item',
+      direction: 'internal',
+      sourceSystem: 'wake',
+      sourceEventType: 'wake.run.completed',
+      sourceRefs: {
+        repo: input.projection.issue.repo,
+        issueNumber: input.projection.issue.number,
+        runId,
+        resourceUri: targetResourceUri,
+      },
+      occurredAt,
+      ingestedAt: occurredAt,
+      trigger: 'immediate',
+      payload: {
+        action: input.approvalResolution.pendingAction,
+        sentinel: 'BLOCKED',
+        runId,
+        reason: 'pr-review-merge-policy-blocked',
+        blockReason: 'pr-review-merge-policy-blocked',
+        handledCommentId: commentId,
+        body: input.reason,
+      },
+    });
+    const appended = await deps.stateStore.appendEventEnvelope(blockedEvent);
+    await projectionUpdater.rebuildFromEvents([appended]);
+
+    const reviewerMessage = reviewerMessageFromApprovalComment(
+      input.approvalResolution.triggeringCommentBody ?? '',
+    );
+    const body = [reviewerMessage, input.reason].filter((part) => part.length > 0).join('\n\n');
+    await deliverOutboundEvent(
+      createEventEnvelope({
+        eventId: `${runId}-publish-intent`,
+        workItemKey: input.projection.workItemKey,
+        streamScope: 'work-item',
+        direction: 'outbound',
+        sourceSystem: 'wake',
+        sourceEventType: 'wake.publish.intent.requested',
+        sourceRefs: {
+          repo: input.projection.issue.repo,
+          issueNumber: input.projection.issue.number,
+          runId,
+          resourceUri: targetResourceUri,
+        },
+        occurredAt,
+        ingestedAt: occurredAt,
+        trigger: 'context-only',
+        payload: {
+          kind: 'question',
+          origin: input.projection.origin ?? 'github',
+          body,
+          action: input.approvalResolution.pendingAction,
+          sentinel: 'BLOCKED',
+          runId,
+          idempotencyKey: `${commentId}:pr-review-merge-policy-blocked`,
+          deliveryState: 'PENDING',
+        },
+        derivedHints: { stage: input.projection.wake.stage },
+      }),
+    );
+    await deliverOutboundEvent(
+      createLabelsEvent({
+        projection: input.projection,
+        runId,
+        statusLabel: 'wake:status.blocked',
+        stageLabel: stageLabelForStage(input.projection.wake.stage),
+        workflowLabel: workflowLabelForWorkflowName(input.workflowName),
+        occurredAt,
+      }),
+    );
+
+    return {
+      status: 'processed',
+      runId,
+      sentinel: 'BLOCKED',
+      nextStage: null,
+    };
+  }
+
+  async function performApprovedPrMergeActions(input: {
+    projection: IssueStateRecord;
+    approvalResolution: NonNullable<ReturnType<typeof policy.resolveApprovalTransition>>;
+    mergePolicy: ApprovedMergePolicy;
+  }): Promise<void> {
+    if (
+      deps.prMergeActor === undefined ||
+      input.approvalResolution.targetResourceUri === undefined ||
+      input.approvalResolution.triggeringCommentId === undefined
+    ) {
+      return;
+    }
+
+    const targetResourceUri = input.approvalResolution.targetResourceUri;
+    const commentId = input.approvalResolution.triggeringCommentId.replace(/[^a-z0-9]+/gi, '-');
+    const reviewBody = reviewerMessageFromApprovalComment(
+      input.approvalResolution.triggeringCommentBody ?? '',
+    );
+    const approvedEventId = `pr-merge-approved-${commentId}`;
+    if (
+      input.mergePolicy.approve &&
+      (await deps.stateStore.readEventEnvelope(approvedEventId)) === null
+    ) {
+      await deps.prMergeActor.approve(targetResourceUri, reviewBody);
+      const occurredAt = eventStampNow();
+      await deps.stateStore.appendEventEnvelope(
+        createEventEnvelope({
+          eventId: approvedEventId,
+          workItemKey: input.projection.workItemKey,
+          streamScope: 'work-item',
+          direction: 'internal',
+          sourceSystem: 'wake',
+          sourceEventType: 'wake.pr-review.approved',
+          sourceRefs: {
+            resourceUri: targetResourceUri,
+            commentId: input.approvalResolution.triggeringCommentId,
+          },
+          occurredAt,
+          ingestedAt: occurredAt,
+          trigger: 'context-only',
+          payload: {
+            idempotencyKey: `${input.approvalResolution.triggeringCommentId}:pr-review-approval`,
+          },
+        }),
+      );
+    }
+
+    const autoMergeEventId = `pr-auto-merge-enabled-${commentId}`;
+    if (
+      input.mergePolicy.autoMerge &&
+      (await deps.stateStore.readEventEnvelope(autoMergeEventId)) === null
+    ) {
+      await deps.prMergeActor.enableAutoMerge(targetResourceUri);
+      const occurredAt = eventStampNow();
+      await deps.stateStore.appendEventEnvelope(
+        createEventEnvelope({
+          eventId: autoMergeEventId,
+          workItemKey: input.projection.workItemKey,
+          streamScope: 'work-item',
+          direction: 'internal',
+          sourceSystem: 'wake',
+          sourceEventType: 'wake.pr-auto-merge.enabled',
+          sourceRefs: {
+            resourceUri: targetResourceUri,
+            commentId: input.approvalResolution.triggeringCommentId,
+          },
+          occurredAt,
+          ingestedAt: occurredAt,
+          trigger: 'context-only',
+          payload: {
+            idempotencyKey: `${input.approvalResolution.triggeringCommentId}:pr-auto-merge`,
+          },
+        }),
+      );
+    }
   }
 
   // Closes the loop on #82's review feedback: rather than scrape a PR link
@@ -843,6 +1102,28 @@ export function createTickRunner(deps: {
             workspaceMode = workflowAction?.workspace ?? 'none';
             promptContextOverrides = workflowAction?.promptContext;
           } else if (approvalResolution.approved) {
+            const mergePolicy = approvedMergePolicyForStage(workflow.stages[candidate.wake.stage]);
+            if (approvalResolution.targetResourceUri !== undefined && mergePolicy !== null) {
+              const risk = await evaluatePrMergeRisk({
+                projection: candidate,
+                targetResourceUri: approvalResolution.targetResourceUri,
+                policy: mergePolicy,
+              });
+              if (!risk.passed) {
+                return await publishPrMergePolicyBlock({
+                  projection: candidate,
+                  approvalResolution,
+                  reason: risk.reason,
+                  workflowName,
+                });
+              }
+              await performApprovedPrMergeActions({
+                projection: candidate,
+                approvalResolution,
+                mergePolicy,
+              });
+            }
+
             const approvalId = `approval-${candidate.issue.number}-${deps.clock.now().getTime()}`;
             const approvedAt = deps.clock.now().toISOString();
             const automaticApproval = approvalResolution.automatic === true;
@@ -876,7 +1157,12 @@ export function createTickRunner(deps: {
                 nextStage,
                 runId: approvalId,
                 reason: automaticApproval ? 'auto:approved' : 'human:approved',
-                ...(automaticApproval ? {} : { handledCommentId: latestHumanCommentId(candidate) }),
+                ...(automaticApproval
+                  ? {}
+                  : {
+                      handledCommentId:
+                        approvalResolution.triggeringCommentId ?? latestHumanCommentId(candidate),
+                    }),
                 ...(automaticApproval
                   ? {
                       autoResolution: {
