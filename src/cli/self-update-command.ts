@@ -83,7 +83,12 @@ export async function runSelfUpdateCommand(input: {
   stateStore: { listRunRecords: () => Promise<RunRecord[]> };
   recoverActiveRuns?: () => Promise<void>;
   docker: {
-    build: (options: { image: string; dockerfile: string; contextDir: string }) => Promise<void>;
+    build: (options: {
+      image: string;
+      dockerfile: string;
+      contextDir: string;
+      buildArgs?: Record<string, string>;
+    }) => Promise<void>;
     update: (options: {
       image: string;
       containerName: string;
@@ -169,10 +174,12 @@ export async function runSelfUpdateCommand(input: {
 
   try {
     await input.git.checkoutTag(tag);
+    // Matches wake sandbox build's WAKE_BUILD_TAG handling (sandbox-command.ts).
     await input.docker.build({
       image: newImage,
       dockerfile: input.dockerfilePath,
       contextDir: input.repoRoot,
+      buildArgs: { WAKE_BUILD_TAG: tag },
     });
     await input.docker.update({ ...updateInput, image: newImage });
     input.logger.info('[self-update] recreated container; entrypoint will keep wake start running');

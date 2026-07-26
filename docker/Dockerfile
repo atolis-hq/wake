@@ -31,7 +31,10 @@ RUN useradd --create-home --shell /bin/bash wake \
 ENV CODEX_HOME=/home/wake/.codex-runtime
 ENV PATH=/home/wake/.local/bin:$PATH
 
-RUN curl https://cursor.com/install -fsS | HOME=/home/wake bash \
+# Bump this date to force a fresh cursor.com/install instead of an indefinitely cached one.
+ARG CURSOR_CACHE_BUST=2026-07-26
+RUN echo "cursor cache bust: ${CURSOR_CACHE_BUST}" \
+  && curl https://cursor.com/install -fsS | HOME=/home/wake bash \
   && printf '#!/bin/bash\n[ "$1" = "agent" ] && shift\nexec ~/.local/bin/agent "$@"\n' \
      > /home/wake/.local/bin/cursor \
   && chmod +x /home/wake/.local/bin/cursor \

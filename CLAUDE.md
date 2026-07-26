@@ -90,6 +90,10 @@ Wake's core selling point is being model/CLI/workflow-agnostic. This only holds 
 - **The tick is a pure function of durable state.** Never cache "what happened last tick" in process memory — if a decision needs it, persist it under `.wake/` first. This is what makes the resident loop crash/restart safe; don't add logic that only works if the process stays alive between ticks.
 - **GitHub is half the state.** Labels can be edited by a human at any time. Reconcile labels → local projection at the start of every tick; GitHub wins for _stage_, local files win for _history/attempts_.
 
+## Code comments
+
+Keep comments short — one line stating a non-obvious rationale, not a multi-sentence narrative of what the code does or why a change was made. If removing a comment wouldn't confuse a future reader, don't add it.
+
 ## Testing conventions specific to this repo
 
 - Prefer exercising `core/` logic through the fake adapters (`createFakeRunner`, `createFileBackedFakeTicketingSystem`, `createFakeWorkspaceManager`) rather than mocking `core/contracts.ts` interfaces ad hoc — the fakes already model the real contract and are maintained for exactly this purpose.
