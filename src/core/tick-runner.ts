@@ -32,6 +32,7 @@ import { awaitingApprovalRunnerSentinel, stageLabelForStage } from '../domain/st
 import type {
   AgentAction,
   ExecutionAttemptLifecycle,
+  EventEnvelope,
   ExecutionOutcome,
   ExternalSideEffects,
   FailurePhase,
@@ -107,11 +108,34 @@ type WatcherDispatch = {
 };
 
 const prReviewApprovalMarker = '<!-- wake:pr-review-approved -->';
+const prReviewChangesMarker = '<!-- wake:pr-review-changes-requested -->';
 const activeRunSourceRefreshIntervalMs = 1_000;
 
 function latestHumanCommentId(candidate: IssueStateRecord): string | undefined {
   const human = candidate.comments.filter((c) => !c.isBotAuthored);
   return human.at(-1)?.id;
+}
+
+function latestActionableCommentId(candidate: IssueStateRecord): string | undefined {
+  const handledCommentId =
+    typeof candidate.context.lastHandledCommentId === 'string'
+      ? candidate.context.lastHandledCommentId
+      : undefined;
+  const lastBotIndex = candidate.comments.reduce((acc, comment, index) => {
+    return comment.isBotAuthored ? index : acc;
+  }, -1);
+  const latestComment = candidate.comments.slice(lastBotIndex).at(-1);
+
+  if (
+    latestComment?.id !== handledCommentId &&
+    latestComment?.isBotAuthored === true &&
+    latestComment.resourceUri !== undefined &&
+    latestComment.body.includes(prReviewChangesMarker)
+  ) {
+    return latestComment.id;
+  }
+
+  return latestHumanCommentId(candidate);
 }
 
 function projectedSourceRevision(projection: IssueStateRecord): string {
@@ -127,6 +151,15 @@ function projectedSourceRevision(projection: IssueStateRecord): string {
 
 function isLateralReadOnlyAction(action: AgentAction, config: WakeConfig): boolean {
   return isCustomCommandAction(action, config);
+}
+
+function isEventFromWatcherRun(event: EventEnvelope): boolean {
+  return (
+    typeof event.payload === 'object' &&
+    event.payload !== null &&
+    'watcherRun' in event.payload &&
+    event.payload.watcherRun === true
+  );
 }
 
 function shouldPublishRunResult(input: {
@@ -1035,6 +1068,7 @@ export function createTickRunner(deps: {
           });
           const matchingEvents = events
             .filter((event) => watcher.on!.event.includes(event.sourceEventType))
+            .filter((event) => !isEventFromWatcherRun(event))
             .sort((left, right) => left.ingestedAt.localeCompare(right.ingestedAt));
           const cursorIndex =
             state?.lastDispatchedEventId === undefined
@@ -1171,15 +1205,15 @@ export function createTickRunner(deps: {
         return { status: 'processed' as const };
       }
 
-      const watcherDispatch = await nextWatcherDispatch(projections, tickStartedAt);
-      let candidate = watcherDispatch?.projection;
+      let candidate = projections.find(
+        (issue) => policy.resolveNextEligibleAction(issue, deps.config) !== null,
+      );
+      const watcherDispatch =
+        candidate === undefined ? await nextWatcherDispatch(projections, tickStartedAt) : null;
+      candidate ??= watcherDispatch?.projection;
       let watcherStateKeyForRun: string | undefined;
       let watcherTriggerForRun: WatcherDispatch['trigger'] | undefined;
       const watcherRun = watcherDispatch !== null;
-
-      candidate ??= projections.find(
-        (issue) => policy.resolveNextEligibleAction(issue, deps.config) !== null,
-      );
 
       if (candidate === undefined) {
         return { status: 'idle' as const };
@@ -2036,7 +2070,7 @@ export function createTickRunner(deps: {
             // unset lets the next tick retry instead of silently eating the request (S9).
             ...(runnerResult.failureClass === 'quota' || runnerResult.failureClass === 'infra'
               ? {}
-              : { handledCommentId: latestHumanCommentId(candidate) }),
+              : { handledCommentId: latestActionableCommentId(candidate) }),
             body: parsedRunnerResult.body,
             envelope: parsedRunnerResult.envelope,
             executionOutcome,

@@ -111,6 +111,40 @@ function timeInStageMs(item: IssueStateRecord, now: Date): number {
   return now.getTime() - Date.parse(lastChange);
 }
 
+function activeChildRunsForItem(
+  item: IssueStateRecord,
+  runs: RunRecord[],
+  now: Date,
+): Array<{
+  runId: string;
+  action: string;
+  status: RunRecord['status'];
+  startedAt: string;
+  ageMs: number;
+  runnerName?: string;
+  runnerKind?: string;
+  tier?: string;
+}> {
+  return runs
+    .filter(
+      (run) =>
+        run.workItemKey === item.workItemKey &&
+        run.status === 'running' &&
+        run.runId !== item.wake.lastRunId,
+    )
+    .sort((left, right) => left.startedAt.localeCompare(right.startedAt))
+    .map((run) => ({
+      runId: run.runId,
+      action: run.action,
+      status: run.status,
+      startedAt: run.startedAt,
+      ageMs: now.getTime() - Date.parse(run.startedAt),
+      ...(run.routing?.runnerName === undefined ? {} : { runnerName: run.routing.runnerName }),
+      ...(run.routing?.runnerKind === undefined ? {} : { runnerKind: run.routing.runnerKind }),
+      ...(run.routing?.tier === undefined ? {} : { tier: run.routing.tier }),
+    }));
+}
+
 export async function buildBoard(input: { stateStore: StateStore; config: WakeConfig; now: Date }) {
   const items = await input.stateStore.listIssueStates({
     archiveFreshnessDays: input.config.ui.archiveFreshnessDays,
@@ -121,14 +155,14 @@ export async function buildBoard(input: { stateStore: StateStore; config: WakeCo
   // need full records, and doing a separate lookup (with its own fallback
   // scan when a flat run file is missing) per item made board loads scale
   // with items x run-history size instead of just run-history size.
-  const runsById = new Map(
-    (await input.stateStore.listRunRecordSummaries()).map((run) => [run.runId, run]),
-  );
+  const runs = await input.stateStore.listRunRecordSummaries();
+  const runsById = new Map(runs.map((run) => [run.runId, run]));
 
   return items.map((item) => {
     const lastRun =
       item.wake.lastRunId === undefined ? null : (runsById.get(item.wake.lastRunId) ?? null);
     const { condition, reason } = deriveCondition(item, lastRun, input.config);
+    const activeChildRuns = activeChildRunsForItem(item, runs, input.now);
 
     return {
       repo: item.issue.repo,
@@ -143,6 +177,7 @@ export async function buildBoard(input: { stateStore: StateStore; config: WakeCo
       lastRunAction: lastRun?.action,
       lastRunSentinel: lastRun?.sentinel,
       lastRunStatus: lastRun?.status,
+      ...(activeChildRuns.length === 0 ? {} : { activeChildRuns }),
       sessionId: item.wake.sessionId,
       workspacePath: item.wake.workspacePath,
     };
