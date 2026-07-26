@@ -31,15 +31,7 @@ RUN useradd --create-home --shell /bin/bash wake \
 ENV CODEX_HOME=/home/wake/.codex-runtime
 ENV PATH=/home/wake/.local/bin:$PATH
 
-# CURSOR_CACHE_BUST forces this layer to re-run instead of reusing a cached
-# result indefinitely. Nothing else in this instruction's inputs ever changes
-# between builds (unlike the source COPY steps below), so without this,
-# Docker's layer cache silently preserves whatever cursor.com/install
-# produced on the build that first created it - including a broken install -
-# through every later rebuild, since self-update rebuilds this same image
-# repeatedly without ever forcing a clean cursor reinstall. Bump the date
-# whenever cursor.com/install needs to be re-run (e.g. after a Cursor CLI
-# incompatibility is found).
+# Bump this date to force a fresh cursor.com/install instead of an indefinitely cached one.
 ARG CURSOR_CACHE_BUST=2026-07-26
 RUN echo "cursor cache bust: ${CURSOR_CACHE_BUST}" \
   && curl https://cursor.com/install -fsS | HOME=/home/wake bash \
