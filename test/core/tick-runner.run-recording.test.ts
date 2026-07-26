@@ -143,6 +143,15 @@ describe('tick runner', () => {
           async prepareReadOnlyClone() {
             throw new Error('not used');
           },
+          async recordWorkspaceBookkeeping() {
+            return {
+              branch: 'wake/issue-12',
+              headRevision: 'fake-head',
+              diffSummary: '',
+              untrackedFiles: [],
+              unpushedCommits: { hasUpstream: false, count: 0, commits: [] },
+            };
+          },
           async cleanupWorkspace() {},
         },
       });
@@ -484,6 +493,9 @@ describe('tick runner', () => {
           async prepareReadOnlyClone() {
             throw new Error('git network failure');
           },
+          async recordWorkspaceBookkeeping() {
+            throw new Error('not used');
+          },
           async cleanupWorkspace() {},
         },
       });
@@ -530,6 +542,128 @@ describe('tick runner', () => {
         processStarted: false,
         workspaceChanged: false,
         retrySafety: 'SAFE_TO_RETRY',
+      });
+    });
+
+    it('blocks the run before agent launch when built-in workspace validation fails', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      let runnerCalls = 0;
+
+      await store.writeIssueState({
+        schemaVersion: 1,
+        workItemKey: workId(21),
+        issue: {
+          repo: 'atolis-hq/wake',
+          number: 21,
+          title: 'Implement',
+          body: 'Body',
+          labels: ['wake:implement'],
+          assignees: [],
+          isPullRequest: false,
+          state: 'open',
+          url: 'https://example.test/issues/21',
+          createdAt: '2026-07-05T12:00:00.000Z',
+          updatedAt: '2026-07-05T12:00:00.000Z',
+        },
+        comments: [],
+        wake: {
+          stage: 'implement',
+          stageHistory: [],
+          recentEventIds: [],
+          syncedAt: '2026-07-05T12:00:00.000Z',
+          expectedEcho: { commentIds: [], labels: [] },
+        },
+        context: {},
+        correlatedResources: [],
+      });
+
+      const config = createDefaultWakeConfig(root);
+      config.sources.github.policy.requiredLabels = ['wake:implement'];
+
+      const tickRunner = createTickRunner({
+        clock: { now: () => new Date('2026-07-05T12:00:00.000Z') },
+        config,
+        stateStore: store,
+        workSource: {
+          async pollEvents() {
+            return [];
+          },
+        },
+        runner: {
+          async run() {
+            runnerCalls += 1;
+            return { result: 'DONE', model: 'test-model', cli: 'test-cli' };
+          },
+        },
+        resourceIndex: createFakeResourceIndex(),
+        workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces'), {
+          failValidation: true,
+        }),
+      });
+
+      const result = await tickRunner.runTick();
+      const [record] = await store.listRunRecords();
+
+      expect(result.status).toBe('processed');
+      expect((result as { sentinel?: string }).sentinel).toBe('FAILED');
+      expect(runnerCalls).toBe(0);
+      expect(record).toMatchObject({
+        status: 'failed',
+        failurePhase: 'workspace-validation',
+        processStarted: false,
+        workspaceChanged: false,
+        retrySafety: 'SAFE_TO_RETRY',
+      });
+      expect(record?.metadata).toMatchObject({
+        failureSource: 'wake-workspace-validation',
+      });
+    });
+
+    it('records post-run bookkeeping failures without changing the agent outcome', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const config = createDefaultWakeConfig(root);
+      config.sources.github.policy.requiredLabels = ['wake:queue'];
+
+      const tickRunner = createTickRunner({
+        clock: { now: () => new Date('2026-07-05T12:00:00.000Z') },
+        config,
+        stateStore: store,
+        workSource: createFakeTicketingSystem({
+          tickets: [
+            {
+              repo: 'atolis-hq/wake',
+              number: 22,
+              title: 'Refine',
+              body: 'Body',
+              labels: ['wake:queue'],
+              comments: [],
+            },
+          ],
+        }),
+        runner: {
+          async run() {
+            return {
+              result: 'Refined\nDONE',
+              model: 'test-model',
+              cli: 'test-cli',
+              session_id: 'session-bookkeeping',
+            };
+          },
+        },
+        resourceIndex: createFakeResourceIndex(),
+        workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces'), {
+          failBookkeeping: true,
+        }),
+      });
+
+      await tickRunner.runTick();
+      const [record] = await store.listRunRecords();
+
+      expect(record?.status).toBe('completed');
+      expect(record?.metadata?.workspaceBookkeeping).toMatchObject({
+        status: 'failed',
+        failureSource: 'wake-workspace-bookkeeping',
+        error: 'fake workspace bookkeeping failed',
       });
     });
 
@@ -588,6 +722,9 @@ describe('tick runner', () => {
           },
           async prepareReadOnlyClone() {
             throw new Error('git network failure');
+          },
+          async recordWorkspaceBookkeeping() {
+            throw new Error('not used');
           },
           async cleanupWorkspace() {},
         },

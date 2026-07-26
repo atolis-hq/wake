@@ -129,9 +129,41 @@ export interface WorkspaceManager {
     repo: string;
     /** Still needed for the human-readable branch name (spec D2). */
     issueNumber: number;
-  }): Promise<{ workspacePath: string; mergeConflictDetected: boolean; upstreamChanges?: string }>;
-  prepareReadOnlyClone(input: { repo: string }): Promise<{ workspacePath: string }>;
+  }): Promise<{
+    workspacePath: string;
+    mergeConflictDetected: boolean;
+    upstreamChanges?: string;
+    validation?: WorkspaceValidationResult;
+  }>;
+  prepareReadOnlyClone(input: {
+    repo: string;
+  }): Promise<{ workspacePath: string; validation?: WorkspaceValidationResult }>;
+  recordWorkspaceBookkeeping(input: { workspacePath: string }): Promise<WorkspaceBookkeepingResult>;
   cleanupWorkspace(input: { workspacePath: string }): Promise<void>;
+}
+
+export interface WorkspaceValidationResult {
+  repo: string;
+  expectedBranch: string;
+  actualBranch: string;
+  expectedRemoteUrl: string;
+  actualRemoteUrl: string;
+  baseRevision: string;
+  headRevision: string;
+  clean: boolean;
+  remoteAvailable: boolean;
+}
+
+export interface WorkspaceBookkeepingResult {
+  branch: string;
+  headRevision: string;
+  diffSummary: string;
+  untrackedFiles: string[];
+  unpushedCommits: {
+    hasUpstream: boolean;
+    count: number;
+    commits: string[];
+  };
 }
 
 // Verification needs a provider-specific client, but core/ never imports a

@@ -5,6 +5,10 @@ import { promisify } from 'node:util';
 
 import { createWakePaths } from '../../lib/paths.js';
 import { branchNameForIssue } from '../../domain/branch-naming.js';
+import type {
+  WorkspaceBookkeepingResult,
+  WorkspaceValidationResult,
+} from '../../core/contracts.js';
 
 const execFile = promisify(nodeExecFile);
 
@@ -23,6 +27,30 @@ async function git(args: string[], cwd: string): Promise<{ stdout: string; stder
   });
 
   return { stdout: result.stdout.trim(), stderr: result.stderr.trim() };
+}
+
+async function gitExitCode(args: string[], cwd: string): Promise<number> {
+  try {
+    await execFile('git', args, {
+      cwd,
+      env: process.env,
+      encoding: 'utf8',
+      maxBuffer: 1024 * 1024 * 16,
+    });
+    return 0;
+  } catch (error) {
+    const maybeExit = error as { code?: unknown };
+    return typeof maybeExit.code === 'number' ? maybeExit.code : 1;
+  }
+}
+
+export class WorkspaceValidationError extends Error {
+  readonly failureSource = 'wake-workspace-validation';
+
+  constructor(message: string) {
+    super(message);
+    this.name = 'WorkspaceValidationError';
+  }
 }
 
 async function detectDefaultBranch(repoPath: string): Promise<string> {
@@ -127,6 +155,115 @@ async function tryUpdateFromDefaultBranch(workspacePath: string): Promise<{
   }
 }
 
+async function validateWorkspace(input: {
+  workspacePath: string;
+  repo: string;
+  expectedBranch: string;
+  expectedRemoteUrl: string;
+  expectedBaseRef: string;
+}): Promise<WorkspaceValidationResult> {
+  await git(['fetch', 'origin'], input.workspacePath);
+  const { stdout: actualRemoteUrl } = await git(
+    ['remote', 'get-url', 'origin'],
+    input.workspacePath,
+  );
+  const { stdout: actualBranch } = await git(
+    ['rev-parse', '--abbrev-ref', 'HEAD'],
+    input.workspacePath,
+  );
+  const { stdout: baseRevision } = await git(
+    ['merge-base', 'HEAD', input.expectedBaseRef],
+    input.workspacePath,
+  );
+  const { stdout: headRevision } = await git(['rev-parse', 'HEAD'], input.workspacePath);
+  const { stdout: status } = await git(['status', '--porcelain'], input.workspacePath);
+  const remoteExit = await gitExitCode(
+    ['ls-remote', '--exit-code', 'origin', 'HEAD'],
+    input.workspacePath,
+  );
+
+  const validation = {
+    repo: input.repo,
+    expectedBranch: input.expectedBranch,
+    actualBranch,
+    expectedRemoteUrl: input.expectedRemoteUrl,
+    actualRemoteUrl,
+    baseRevision,
+    headRevision,
+    clean: status.length === 0,
+    remoteAvailable: remoteExit === 0,
+  } satisfies WorkspaceValidationResult;
+
+  const failures: string[] = [];
+  if (actualRemoteUrl !== input.expectedRemoteUrl) {
+    failures.push(`expected origin ${input.expectedRemoteUrl}, found ${actualRemoteUrl}`);
+  }
+  if (actualBranch !== input.expectedBranch) {
+    failures.push(`expected branch ${input.expectedBranch}, found ${actualBranch}`);
+  }
+  if (!validation.clean) {
+    failures.push('working tree has uncommitted or untracked changes');
+  }
+  if (!validation.remoteAvailable) {
+    failures.push('origin remote is not available');
+  }
+
+  if (failures.length > 0) {
+    throw new WorkspaceValidationError(`Workspace validation failed: ${failures.join('; ')}`);
+  }
+
+  return validation;
+}
+
+async function recordWorkspaceBookkeeping(
+  workspacePath: string,
+): Promise<WorkspaceBookkeepingResult> {
+  const { stdout: branch } = await git(['rev-parse', '--abbrev-ref', 'HEAD'], workspacePath);
+  const { stdout: headRevision } = await git(['rev-parse', 'HEAD'], workspacePath);
+  const { stdout: diffSummary } = await git(['diff', '--stat', 'HEAD'], workspacePath);
+  const { stdout: untracked } = await git(
+    ['ls-files', '--others', '--exclude-standard'],
+    workspacePath,
+  );
+
+  let hasUpstream = true;
+  let count: number;
+  let commits: string[];
+  try {
+    const { stdout: upstream } = await git(
+      ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'],
+      workspacePath,
+    );
+    const { stdout: ahead } = await git(
+      ['rev-list', '--count', `${upstream}..HEAD`],
+      workspacePath,
+    );
+    count = parseInt(ahead, 10);
+    const { stdout: commitLog } = await git(
+      ['log', '--pretty=format:%h %s', `${upstream}..HEAD`],
+      workspacePath,
+    );
+    commits = commitLog.length === 0 ? [] : commitLog.split('\n');
+  } catch {
+    hasUpstream = false;
+    const { stdout: commitLog } = await git(['log', '--pretty=format:%h %s'], workspacePath);
+    commits = commitLog.length === 0 ? [] : commitLog.split('\n');
+    count = commits.length;
+  }
+
+  return {
+    branch,
+    headRevision,
+    diffSummary,
+    untrackedFiles: untracked.length === 0 ? [] : untracked.split('\n'),
+    unpushedCommits: {
+      hasUpstream,
+      count,
+      commits,
+    },
+  };
+}
+
 export function createGitWorkspaceManager(options: {
   wakeRoot: string;
   remoteUrlForRepo?: (repo: string) => string;
@@ -175,6 +312,7 @@ export function createGitWorkspaceManager(options: {
       workspacePath: string;
       mergeConflictDetected: boolean;
       upstreamChanges?: string;
+      validation?: WorkspaceValidationResult;
     }> {
       // The workspace is keyed by work item; `repo` still drives the clone and
       // `issueNumber` still names the branch, which stays human-readable and
@@ -182,7 +320,15 @@ export function createGitWorkspaceManager(options: {
       const workspacePath = paths.workspaceDir(workId);
       if (await pathExists(workspacePath)) {
         const updateResult = await tryUpdateFromDefaultBranch(workspacePath);
-        return { workspacePath, ...updateResult };
+        const defaultBranch = await detectDefaultBranch(workspacePath);
+        const validation = await validateWorkspace({
+          workspacePath,
+          repo,
+          expectedBranch: branchNameForIssue(issueNumber),
+          expectedRemoteUrl: remoteUrlForRepo(repo),
+          expectedBaseRef: `origin/${defaultBranch}`,
+        });
+        return { workspacePath, ...updateResult, validation };
       }
 
       const { repoPath, defaultBranch } = await ensureCanonicalClone(repo);
@@ -202,14 +348,41 @@ export function createGitWorkspaceManager(options: {
       await git(['remote', 'set-url', 'origin', remoteUrl], workspacePath);
       await git(['checkout', '-B', branch], workspacePath);
 
-      return { workspacePath, mergeConflictDetected: false };
+      const validation = await validateWorkspace({
+        workspacePath,
+        repo,
+        expectedBranch: branch,
+        expectedRemoteUrl: remoteUrl,
+        expectedBaseRef: `origin/${defaultBranch}`,
+      });
+
+      return { workspacePath, mergeConflictDetected: false, validation };
     },
-    async prepareReadOnlyClone({ repo }: { repo: string }): Promise<{ workspacePath: string }> {
+    async prepareReadOnlyClone({
+      repo,
+    }: {
+      repo: string;
+    }): Promise<{ workspacePath: string; validation?: WorkspaceValidationResult }> {
       // Refine only reads the issue and, at most, the canonical clone -
       // it never gets a per-issue branch/workspace of its own (only
       // 'implement' pays that cost).
       const { repoPath } = await ensureCanonicalClone(repo);
-      return { workspacePath: repoPath };
+      const defaultBranch = await detectDefaultBranch(repoPath);
+      const validation = await validateWorkspace({
+        workspacePath: repoPath,
+        repo,
+        expectedBranch: defaultBranch,
+        expectedRemoteUrl: remoteUrlForRepo(repo),
+        expectedBaseRef: `origin/${defaultBranch}`,
+      });
+      return { workspacePath: repoPath, validation };
+    },
+    async recordWorkspaceBookkeeping({
+      workspacePath,
+    }: {
+      workspacePath: string;
+    }): Promise<WorkspaceBookkeepingResult> {
+      return recordWorkspaceBookkeeping(workspacePath);
     },
     async cleanupWorkspace({ workspacePath }: { workspacePath: string }): Promise<void> {
       // On Windows, a just-exited git subprocess (or AV/indexer) can hold a brief
