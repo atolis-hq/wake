@@ -505,6 +505,12 @@ merging"). GitHub's auto-merge API defaults to `MERGE` when unspecified, which
 fails outright on a squash-only or rebase-only repository — set this
 explicitly to match your repo's settings rather than relying on the default.
 
+`autoMerge` queues a merge that completes once required checks pass; GitHub
+rejects that queue request when the PR has nothing left to wait for (checks
+already green or skipped) — the common case for a small, fast-reviewed PR.
+Wake detects that specific rejection and merges directly instead, using the
+same `mergeMethod`, rather than treating it as a policy block.
+
 The merge action only runs for Wake's bot-authored PR-review approval marker
 on a correlated PR. It does not run for human `/approved` comments on the
 issue thread. If a policy rule fails, Wake posts the reviewer message plus the

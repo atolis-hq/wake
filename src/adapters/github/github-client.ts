@@ -230,6 +230,22 @@ export function createGitHubClient(token: string) {
         body,
       });
     },
+    // GitHub's REST merge method takes a lowercase merge_method value,
+    // distinct from the GraphQL PullRequestMergeMethod enum used by
+    // enablePullRequestAutoMerge below.
+    async mergePullRequest(
+      owner: string,
+      repo: string,
+      pullNumber: number,
+      mergeMethod: 'MERGE' | 'SQUASH' | 'REBASE',
+    ) {
+      await octokit.rest.pulls.merge({
+        owner,
+        repo,
+        pull_number: pullNumber,
+        merge_method: mergeMethod.toLowerCase() as 'merge' | 'squash' | 'rebase',
+      });
+    },
     async enablePullRequestAutoMerge(
       pullRequestNodeId: string,
       mergeMethod: 'MERGE' | 'SQUASH' | 'REBASE',
