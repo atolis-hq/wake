@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { createLifecycleService } from './lifecycle-service.js';
@@ -31,8 +33,8 @@ import { maxConfiguredRunnerTimeoutMs, resolveRunnerRouting } from '../domain/ru
 import { awaitingApprovalRunnerSentinel, stageLabelForStage } from '../domain/stages.js';
 import type {
   AgentAction,
-  ExecutionAttemptLifecycle,
   EventEnvelope,
+  ExecutionAttemptLifecycle,
   ExecutionOutcome,
   ExternalSideEffects,
   FailurePhase,
@@ -40,6 +42,7 @@ import type {
   RetrySafety,
   RunnerFailureClass,
   RunRecord,
+  RunInputSnapshot,
   Stage,
   WakeConfig,
   WorkflowDefinition,
@@ -117,6 +120,29 @@ function latestHumanCommentId(candidate: IssueStateRecord): string | undefined {
   return human.at(-1)?.id;
 }
 
+// Matched as a token at the start of a (trimmed) line, mirroring the
+// /approved and /changes commands in policy-engine.ts.
+const interruptCommandPattern = /^\/interrupt\b/i;
+
+// Plain comments during a run are additional context for the next turn, not
+// a signal to abandon the current attempt - only an explicit /interrupt
+// should cancel an in-flight run, per the PR #411 follow-up discussion.
+function newHumanCommentsSince(
+  snapshot: IssueStateRecord,
+  refreshed: IssueStateRecord,
+): IssueStateRecord['comments'] {
+  const knownIds = new Set(snapshot.comments.map((comment) => comment.id));
+  return refreshed.comments.filter(
+    (comment) => !comment.isBotAuthored && !knownIds.has(comment.id),
+  );
+}
+
+function requestsInterrupt(comments: IssueStateRecord['comments']): boolean {
+  return comments.some((comment) =>
+    comment.body.split(/\r?\n/).some((line) => interruptCommandPattern.test(line.trim())),
+  );
+}
+
 function latestActionableCommentId(candidate: IssueStateRecord): string | undefined {
   const handledCommentId =
     typeof candidate.context.lastHandledCommentId === 'string'
@@ -148,6 +174,26 @@ function projectedSourceRevision(projection: IssueStateRecord): string {
   return latestCommentUpdatedAt === undefined
     ? `${projection.issue.repo}#${projection.issue.number}@${projection.issue.updatedAt}`
     : `${projection.issue.repo}#${projection.issue.number}@${projection.issue.updatedAt};comments@${latestCommentUpdatedAt}`;
+}
+
+function stableJson(value: unknown): string {
+  if (value === null || typeof value !== 'object') {
+    return JSON.stringify(value);
+  }
+
+  if (Array.isArray(value)) {
+    return `[${value.map((entry) => stableJson(entry)).join(',')}]`;
+  }
+
+  const record = value as Record<string, unknown>;
+  return `{${Object.keys(record)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${stableJson(record[key])}`)
+    .join(',')}}`;
+}
+
+function sha256(value: unknown): string {
+  return `sha256:${createHash('sha256').update(stableJson(value)).digest('hex')}`;
 }
 
 function isLateralReadOnlyAction(action: AgentAction, config: WakeConfig): boolean {
@@ -854,6 +900,99 @@ export function createTickRunner(deps: {
 
   function runnerTimeoutMs(): number {
     return maxConfiguredRunnerTimeoutMs(deps.config);
+  }
+
+  async function promptHashForAction(action: AgentAction): Promise<string> {
+    const promptsRoot = deps.config.paths.promptsRoot;
+    if (promptsRoot === undefined) {
+      return sha256({ action, status: 'not-configured' });
+    }
+
+    for (const suffix of ['.md', '.start.md', '.resume.md']) {
+      const path = join(promptsRoot, `${action}${suffix}`);
+      try {
+        return `sha256:${createHash('sha256')
+          .update(await readFile(path, 'utf8'))
+          .digest('hex')}`;
+      } catch {
+        // Try the next supported prompt template name.
+      }
+    }
+
+    return sha256({ action, status: 'missing' });
+  }
+
+  function triggerEventIdForRun(input: {
+    watcherTrigger?: WatcherDispatch['trigger'];
+    recentEvents: EventEnvelope[];
+  }): string | undefined {
+    if (input.watcherTrigger?.kind === 'event') {
+      return input.watcherTrigger.eventId;
+    }
+
+    return input.recentEvents.at(-1)?.eventId;
+  }
+
+  async function createRunInputSnapshot(input: {
+    runId: string;
+    createdAt: string;
+    action: AgentAction;
+    workflowName: string;
+    workflow: NonNullable<ReturnType<typeof workflowForProjection>>;
+    claimedStage: string;
+    projection: IssueStateRecord;
+    recentEvents: EventEnvelope[];
+    sourceRevision: string;
+    routing: NonNullable<RunRecord['routing']>;
+    watcherTrigger?: WatcherDispatch['trigger'];
+    workspaceValidation?: unknown;
+  }): Promise<RunInputSnapshot> {
+    const validation =
+      input.workspaceValidation !== null &&
+      typeof input.workspaceValidation === 'object' &&
+      !Array.isArray(input.workspaceValidation)
+        ? (input.workspaceValidation as Record<string, unknown>)
+        : undefined;
+    const repositoryHead =
+      typeof validation?.baseRevision === 'string' ? validation.baseRevision : undefined;
+    const workspaceHead =
+      typeof validation?.headRevision === 'string' ? validation.headRevision : undefined;
+    const triggerEventId = triggerEventIdForRun({
+      ...(input.watcherTrigger === undefined ? {} : { watcherTrigger: input.watcherTrigger }),
+      recentEvents: input.recentEvents,
+    });
+
+    return deps.stateStore.writeRunInputSnapshot({
+      schemaVersion: 1,
+      snapshotId: `${input.runId}-input`,
+      runId: input.runId,
+      createdAt: input.createdAt,
+      action: input.action,
+      workflowName: input.workflowName,
+      claimedStage: input.claimedStage,
+      projectionVersion: input.projection.wake.syncedAt,
+      sourceUpdatedAt: input.projection.issue.updatedAt,
+      sourceRevision: input.sourceRevision,
+      ...(triggerEventId === undefined ? {} : { triggerEventId }),
+      ...(input.recentEvents.at(-1)?.eventId === undefined
+        ? {}
+        : { handledThroughEventId: input.recentEvents.at(-1)!.eventId }),
+      workflowHash: await computeWorkflowRevision({
+        config: deps.config,
+        workflowName: input.workflowName,
+        workflow: input.workflow,
+        action: input.action,
+      }),
+      promptHash: await promptHashForAction(input.action),
+      ...(repositoryHead === undefined ? {} : { repositoryHead }),
+      ...(workspaceHead === undefined ? {} : { workspaceHead }),
+      runnerConfigurationHash: sha256({
+        routing: input.routing,
+        runner: deps.config.runners[input.routing.runnerName],
+      }),
+      projection: input.projection,
+      recentEvents: input.recentEvents,
+    });
   }
 
   // Counted from durable run records (never an in-memory counter, per the
@@ -1749,6 +1888,39 @@ export function createTickRunner(deps: {
         });
       }
 
+      const recentEvents = await deps.stateStore.listEventEnvelopesForWorkItem(
+        candidate.workItemKey,
+        6,
+      );
+      const activeCandidate = candidate;
+      const runnerProjection = watcherRun
+        ? {
+            ...activeCandidate,
+            wake: {
+              ...activeCandidate.wake,
+              sessionId: undefined,
+              sessionCli: undefined,
+            },
+          }
+        : activeCandidate;
+      const inputSnapshot = await createRunInputSnapshot({
+        runId,
+        createdAt: deps.clock.now().toISOString(),
+        action,
+        workflowName,
+        workflow: deps.config.workflows[workflowName] ?? workflow,
+        claimedStage,
+        projection: runnerProjection,
+        recentEvents,
+        sourceRevision,
+        routing,
+        ...(watcherTriggerForRun === undefined ? {} : { watcherTrigger: watcherTriggerForRun }),
+      });
+      await deps.stateStore.writeRunRecord({
+        ...(await deps.stateStore.readRunRecord(runId))!,
+        inputSnapshotId: inputSnapshot.snapshotId,
+      });
+
       try {
         await transitionRunLifecycle('PREPARING');
         const prepareResult: {
@@ -1785,29 +1957,15 @@ export function createTickRunner(deps: {
             ...preparedRecord.metadata,
             ...(workspacePath === undefined ? {} : { workspacePath }),
             workspaceMode,
+            inputSnapshotId: inputSnapshot.snapshotId,
             ...(prepareResult.validation === undefined
               ? {}
               : { workspaceValidation: prepareResult.validation }),
           },
         });
 
-        const recentEvents = await deps.stateStore.listEventEnvelopesForWorkItem(
-          candidate.workItemKey,
-          6,
-        );
         await transitionRunLifecycle('RUNNING');
         startLeaseRenewal();
-        const activeCandidate = candidate;
-        const runnerProjection = watcherRun
-          ? {
-              ...activeCandidate,
-              wake: {
-                ...activeCandidate.wake,
-                sessionId: undefined,
-                sessionCli: undefined,
-              },
-            }
-          : activeCandidate;
 
         let executionFinished = false;
         let cancellationReason: CancellationReason | null = null;
@@ -1894,6 +2052,18 @@ export function createTickRunner(deps: {
             const refreshedProjection =
               (await deps.stateStore.readIssueState(activeCandidate.workItemKey)) ??
               activeCandidate;
+            const newHumanComments = newHumanCommentsSince(
+              inputSnapshot.projection,
+              refreshedProjection,
+            );
+            if (requestsInterrupt(newHumanComments)) {
+              const reason = 'CANCELED_BY_SUPERSEDING_EVENT' as const;
+              cancellationReason = reason;
+              await persistCancellationRequest(reason);
+              await execution.cancel(reason);
+              return reason;
+            }
+
             const ineligible =
               activeRefresh.sourceExists === false ||
               !policy.isEligible(refreshedProjection, deps.config);
@@ -1934,10 +2104,14 @@ export function createTickRunner(deps: {
         const skipApproval = runnerResult.metadata?.skipApproval;
         const sentinel =
           rawSentinel === 'DONE' && skipApproval === false ? 'AWAITING_APPROVAL' : rawSentinel;
+        // A canceled run must not advance the stage regardless of what the
+        // runner echoed back — the snapshot it acted on was superseded.
         const nextStage =
-          isLateralReadOnlyAction(action, deps.config) && sentinel === 'DONE'
+          cancellationReason !== null
             ? null
-            : lifecycle.nextStageFromSentinel(claimedStage, sentinel, workflow);
+            : isLateralReadOnlyAction(action, deps.config) && sentinel === 'DONE'
+              ? null
+              : lifecycle.nextStageFromSentinel(claimedStage, sentinel, workflow);
         const finishedAt = deps.clock.now().toISOString();
         let workspaceBookkeeping: unknown;
         if (workspacePath !== undefined) {
@@ -2062,14 +2236,18 @@ export function createTickRunner(deps: {
               : runnerResult.failureClass === 'infra'
                 ? 'PROCESS_FAILED'
                 : 'COMPLETED';
+        // Canceled runs don't produce a meaningful workflow outcome; the input
+        // they acted on was superseded so the sentinel is not authoritative.
         const workflowOutcome: WorkflowOutcome | undefined =
-          sentinel === 'DONE'
-            ? 'DONE'
-            : sentinel === 'BLOCKED'
-              ? 'BLOCKED'
-              : sentinel === 'AWAITING_APPROVAL'
-                ? 'AWAITING_APPROVAL'
-                : undefined;
+          cancellationReason !== null
+            ? undefined
+            : sentinel === 'DONE'
+              ? 'DONE'
+              : sentinel === 'BLOCKED'
+                ? 'BLOCKED'
+                : sentinel === 'AWAITING_APPROVAL'
+                  ? 'AWAITING_APPROVAL'
+                  : undefined;
 
         await transitionRunLifecycle('FINALISING');
         const finalisingRecord = (await deps.stateStore.readRunRecord(runId))!;
@@ -2147,11 +2325,13 @@ export function createTickRunner(deps: {
             ...(failureContext === undefined ? {} : failureContext),
             // Only mark the triggering comment handled when the run reached the
             // agent and produced a real outcome. Quota/infra failures are transient
-            // blips, not an answer to the human's comment — leaving handledCommentId
-            // unset lets the next tick retry instead of silently eating the request (S9).
-            ...(runnerResult.failureClass === 'quota' || runnerResult.failureClass === 'infra'
+            // blips; canceled runs acted on a superseded snapshot — in both cases
+            // leave handledCommentId unset so the next tick can retry (S9).
+            ...(runnerResult.failureClass === 'quota' ||
+            runnerResult.failureClass === 'infra' ||
+            cancellationReason !== null
               ? {}
-              : { handledCommentId: latestActionableCommentId(candidate) }),
+              : { handledCommentId: latestActionableCommentId(inputSnapshot.projection) }),
             body: parsedRunnerResult.body,
             envelope: parsedRunnerResult.envelope,
             executionOutcome,

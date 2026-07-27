@@ -362,6 +362,28 @@ export const issueStateRecordSchema = z.object({
   correlatedResources: z.array(correlatedResourceSchema).default([]),
 });
 
+export const runInputSnapshotSchema = z.object({
+  schemaVersion: z.literal(1),
+  snapshotId: z.string(),
+  runId: z.string(),
+  createdAt: isoTimestampSchema,
+  action: identifierSchema,
+  workflowName: identifierSchema,
+  claimedStage: identifierSchema,
+  projectionVersion: z.string(),
+  sourceUpdatedAt: isoTimestampSchema,
+  sourceRevision: z.string(),
+  triggerEventId: z.string().optional(),
+  handledThroughEventId: z.string().optional(),
+  workflowHash: z.string(),
+  promptHash: z.string(),
+  repositoryHead: z.string().optional(),
+  workspaceHead: z.string().optional(),
+  runnerConfigurationHash: z.string(),
+  projection: issueStateRecordSchema,
+  recentEvents: z.array(eventEnvelopeSchema),
+});
+
 const runTokenUsageSchema = z.object({
   inputTokens: z.number().nonnegative(),
   outputTokens: z.number().nonnegative(),
@@ -452,6 +474,7 @@ export const runRecordSchema = z.preprocess(
     externalSideEffects: externalSideEffectsSchema.optional(),
     retrySafety: retrySafetySchema.optional(),
     summary: z.string().optional(),
+    inputSnapshotId: z.string().optional(),
     routing: runnerRoutingSchema.optional(),
     lease: runLeaseSchema.optional(),
     workerPid: z.number().int().positive().optional(),
@@ -1083,7 +1106,7 @@ export const wakeConfigSchema = wakeConfigBaseSchema.superRefine((config, ctx) =
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['commands', commandName],
-        message: `Command "/${commandName}" is reserved for Wake approval control.`,
+        message: `Command "/${commandName}" is reserved for Wake's own control flow.`,
       });
     }
 
@@ -1115,6 +1138,10 @@ export function parseIssueStateRecord(input: unknown) {
 
 export function parseRunRecord(input: unknown) {
   return runRecordSchema.parse(input);
+}
+
+export function parseRunInputSnapshot(input: unknown) {
+  return runInputSnapshotSchema.parse(input);
 }
 
 export function parseEventEnvelope(input: unknown) {

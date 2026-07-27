@@ -463,6 +463,239 @@ describe('tick runner', () => {
       expect(projection?.issue.state).toBe('closed');
     });
 
+    it('cancels an active run when a new /interrupt comment supersedes its input snapshot', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const config = createDefaultWakeConfig(root);
+      config.sources.github.policy.requiredLabels = ['wake:queue'];
+      let refreshCallCount = 0;
+
+      await store.writeIssueState({
+        schemaVersion: 1,
+        workItemKey: workId(350),
+        issue: {
+          repo: 'atolis-hq/wake',
+          number: 350,
+          title: 'Execute',
+          body: 'Body',
+          labels: ['wake:queue'],
+          assignees: [],
+          isPullRequest: false,
+          state: 'open',
+          url: 'https://example.test/issues/350',
+          createdAt: '2026-07-05T12:00:00.000Z',
+          updatedAt: '2026-07-05T12:00:00.000Z',
+        },
+        comments: [],
+        wake: {
+          stage: 'implement',
+          stageHistory: [],
+          recentEventIds: [],
+          syncedAt: '2026-07-05T12:00:00.000Z',
+          expectedEcho: { commentIds: [], labels: [] },
+        },
+        context: {},
+        correlatedResources: [],
+      });
+
+      const tickRunner = createTickRunner({
+        clock: { now: () => new Date('2026-07-05T12:10:00.000Z') },
+        config,
+        stateStore: store,
+        workSource: {
+          async pollEvents() {
+            return [];
+          },
+          async refreshForDispatch() {
+            refreshCallCount += 1;
+            if (refreshCallCount === 1) {
+              return {
+                sourceRevision: 'github:issue:atolis-hq/wake#350@2026-07-05T12:00:00.000Z',
+                events: [],
+              };
+            }
+            return {
+              sourceRevision: 'github:issue:atolis-hq/wake#350@2026-07-05T12:09:00.000Z',
+              events: [
+                createUnkeyedEventEnvelope({
+                  eventId: 'evt-comment-350-new',
+                  streamScope: 'global-intake',
+                  direction: 'inbound',
+                  sourceSystem: 'github',
+                  sourceEventType: 'ticket.comment.created',
+                  sourceRefs: {
+                    repo: 'atolis-hq/wake',
+                    issueNumber: 350,
+                    commentId: 'c-new',
+                    sourceUrl: 'https://example.test/issues/350#issuecomment-c-new',
+                    resourceUri: githubIssueUri(350),
+                  },
+                  occurredAt: '2026-07-05T12:09:00.000Z',
+                  ingestedAt: '2026-07-05T12:10:00.000Z',
+                  trigger: 'immediate',
+                  payload: {
+                    comment: {
+                      id: 'c-new',
+                      body: '/interrupt Please change direction.',
+                      author: { login: 'owner' },
+                      createdAt: '2026-07-05T12:09:00.000Z',
+                      updatedAt: '2026-07-05T12:09:00.000Z',
+                    },
+                  },
+                }),
+              ],
+            };
+          },
+        },
+        runner: {
+          async run(input) {
+            return new Promise((resolve) => {
+              input.cancellationSignal?.addEventListener(
+                'abort',
+                () =>
+                  resolve({
+                    result: 'Canceled after newer input arrived\nDONE',
+                    model: 'test-model',
+                    cli: 'test-cli',
+                  }),
+                { once: true },
+              );
+            });
+          },
+        },
+        resourceIndex: await seededResourceIndex([350]),
+        workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+      });
+
+      const result = await tickRunner.runTick();
+      const runRecord = (await store.listRunRecords())[0];
+      const projection = await store.readIssueState(workId(350));
+      const completionEvent = (await store.listEventEnvelopes()).find(
+        (event) => event.sourceEventType === 'wake.run.completed',
+      );
+
+      expect(result.status).toBe('processed');
+      expect(runRecord?.executionOutcome).toBe('CANCELED_BY_SUPERSEDING_EVENT');
+      expect(runRecord?.metadata?.cancellation).toMatchObject({
+        reason: 'CANCELED_BY_SUPERSEDING_EVENT',
+        source: 'active-source-reconciliation',
+      });
+      expect(projection?.latestComment?.id).toBe('c-new');
+      expect(projection?.context.lastHandledCommentId).toBeUndefined();
+      expect(completionEvent?.payload.handledCommentId).toBeUndefined();
+      // A canceled run must not advance stage or record a workflow outcome even
+      // if the runner echoed DONE — the snapshot it acted on was superseded.
+      expect(completionEvent?.payload.nextStage).toBeUndefined();
+      expect(completionEvent?.payload.workflowOutcome).toBeUndefined();
+      expect(projection?.wake.stage).toBe('implement');
+    });
+
+    it('does not cancel an active run for a plain comment without /interrupt', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const config = createDefaultWakeConfig(root);
+      config.sources.github.policy.requiredLabels = ['wake:queue'];
+      let refreshCallCount = 0;
+
+      await store.writeIssueState({
+        schemaVersion: 1,
+        workItemKey: workId(351),
+        issue: {
+          repo: 'atolis-hq/wake',
+          number: 351,
+          title: 'Execute',
+          body: 'Body',
+          labels: ['wake:queue'],
+          assignees: [],
+          isPullRequest: false,
+          state: 'open',
+          url: 'https://example.test/issues/351',
+          createdAt: '2026-07-05T12:00:00.000Z',
+          updatedAt: '2026-07-05T12:00:00.000Z',
+        },
+        comments: [],
+        wake: {
+          stage: 'implement',
+          stageHistory: [],
+          recentEventIds: [],
+          syncedAt: '2026-07-05T12:00:00.000Z',
+          expectedEcho: { commentIds: [], labels: [] },
+        },
+        context: {},
+        correlatedResources: [],
+      });
+
+      const tickRunner = createTickRunner({
+        clock: { now: () => new Date('2026-07-05T12:10:00.000Z') },
+        config,
+        stateStore: store,
+        workSource: {
+          async pollEvents() {
+            return [];
+          },
+          async refreshForDispatch() {
+            refreshCallCount += 1;
+            if (refreshCallCount === 1) {
+              return {
+                sourceRevision: 'github:issue:atolis-hq/wake#351@2026-07-05T12:00:00.000Z',
+                events: [],
+              };
+            }
+            return {
+              sourceRevision: 'github:issue:atolis-hq/wake#351@2026-07-05T12:09:00.000Z',
+              events: [
+                createUnkeyedEventEnvelope({
+                  eventId: 'evt-comment-351-new',
+                  streamScope: 'global-intake',
+                  direction: 'inbound',
+                  sourceSystem: 'github',
+                  sourceEventType: 'ticket.comment.created',
+                  sourceRefs: {
+                    repo: 'atolis-hq/wake',
+                    issueNumber: 351,
+                    commentId: 'c-plain',
+                    sourceUrl: 'https://example.test/issues/351#issuecomment-c-plain',
+                    resourceUri: githubIssueUri(351),
+                  },
+                  occurredAt: '2026-07-05T12:09:00.000Z',
+                  ingestedAt: '2026-07-05T12:10:00.000Z',
+                  trigger: 'immediate',
+                  payload: {
+                    comment: {
+                      id: 'c-plain',
+                      body: 'Also please update the README once this lands.',
+                      author: { login: 'owner' },
+                      createdAt: '2026-07-05T12:09:00.000Z',
+                      updatedAt: '2026-07-05T12:09:00.000Z',
+                    },
+                  },
+                }),
+              ],
+            };
+          },
+        },
+        runner: {
+          async run() {
+            // Resolves well after the first supervise-loop refresh
+            // (activeRunSourceRefreshIntervalMs) so the plain comment is
+            // seen mid-run and confirmed not to trigger cancellation.
+            await new Promise((resolve) => setTimeout(resolve, 1500));
+            return { result: 'DONE', model: 'test-model', cli: 'test-cli' };
+          },
+        },
+        resourceIndex: await seededResourceIndex([351]),
+        workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+      });
+
+      const result = await tickRunner.runTick();
+      const runRecord = (await store.listRunRecords())[0];
+      const projection = await store.readIssueState(workId(351));
+
+      expect(result.status).toBe('processed');
+      expect(refreshCallCount).toBeGreaterThan(1);
+      expect(runRecord?.executionOutcome).not.toBe('CANCELED_BY_SUPERSEDING_EVENT');
+      expect(runRecord?.metadata?.cancellation).toBeUndefined();
+      expect(projection?.latestComment?.id).toBe('c-plain');
+    }, 10_000);
+
     it('rechecks scheduler capacity after refresh and before persisting a claim', async () => {
       const store = createStateStore({ wakeRoot: root });
       const config = createDefaultWakeConfig(root);

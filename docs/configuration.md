@@ -202,11 +202,17 @@ commands:
 | `tier`      | string (optional)                       | Runner tier for this command; falls back to `defaultTier` when omitted                | unset         |
 | `runner`    | string (optional)                       | Concrete runner to use for this command; takes precedence over `tier`                 | unset         |
 
-`/ask` and `/codereview` are built-in custom commands. `/approved` and
-`/changes` are reserved for Wake's approval control flow and cannot be
+`/ask` and `/codereview` are built-in custom commands. `/approved`, `/changes`,
+and `/interrupt` are reserved for Wake's own control flow and cannot be
 redefined as custom commands. Completed custom commands do not advance the work
 item's workflow stage; they handle the command comment and leave the current
 lifecycle state in place.
+
+A plain comment posted while a run is active is treated as additional context
+for the next turn — it does not interrupt the in-progress run. Posting
+`/interrupt` on the issue or PR thread cancels the active run immediately so
+the next tick can pick up the new direction, instead of letting the run finish
+against a now-superseded snapshot.
 
 ### sandbox
 

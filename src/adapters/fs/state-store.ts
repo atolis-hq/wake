@@ -7,6 +7,7 @@ import {
   parseEventEnvelope,
   parseIssueStateRecord,
   parseLedger,
+  parseRunInputSnapshot,
   parseRunRecord,
   parseSourceStateRecord,
 } from '../../domain/schema.js';
@@ -14,6 +15,7 @@ import { isTerminalStage } from '../../domain/stages.js';
 import type {
   EventEnvelope,
   IssueStateRecord,
+  RunInputSnapshot,
   RunRecord,
   RunRecordInput,
   SourceStateRecord,
@@ -658,6 +660,21 @@ export function createStateStore({ wakeRoot }: { wakeRoot: string }) {
       await writeJsonFile(paths.runDateFile(parsed.startedAt.slice(0, 10), parsed.runId), parsed);
       await upsertRunSummaryIndexEntry(paths, parsed);
       return parsed;
+    },
+    async writeRunInputSnapshot(record: RunInputSnapshot): Promise<RunInputSnapshot> {
+      const parsed = parseRunInputSnapshot(record);
+      await writeJsonFile(paths.runInputSnapshotFile(parsed.snapshotId), parsed);
+      return parsed;
+    },
+    async readRunInputSnapshot(snapshotId: string): Promise<RunInputSnapshot | null> {
+      try {
+        return parseRunInputSnapshot(await readJsonFile(paths.runInputSnapshotFile(snapshotId)));
+      } catch (error) {
+        if (isMissingPathError(error)) {
+          return null;
+        }
+        throw error;
+      }
     },
     async updateRunRecordIf(
       runId: string,
