@@ -155,13 +155,15 @@ export function createPolicyEngine() {
       }
 
       // Source policy is always checked first — workflow selectors are optional secondary filter.
-      if (!labelsAndAssigneesQualify({
-        labels: issue.issue.labels,
-        assignees: issue.issue.assignees,
-        requiredLabels: config.sources.github.policy.requiredLabels,
-        ignoredLabels: config.sources.github.policy.ignoredLabels,
-        requiredAssignees: config.sources.github.policy.requiredAssignees,
-      })) {
+      if (
+        !labelsAndAssigneesQualify({
+          labels: issue.issue.labels,
+          assignees: issue.issue.assignees,
+          requiredLabels: config.sources.github.policy.requiredLabels,
+          ignoredLabels: config.sources.github.policy.ignoredLabels,
+          requiredAssignees: config.sources.github.policy.requiredAssignees,
+        })
+      ) {
         return false;
       }
 
@@ -434,13 +436,15 @@ export function createPolicyEngine() {
         if (ticket === undefined) {
           return false;
         }
-        if (!labelsAndAssigneesQualify({
-          labels: Array.isArray(ticket.labels) ? ticket.labels : [],
-          assignees: Array.isArray(ticket.assignees) ? ticket.assignees : [],
-          requiredLabels: config.sources.github.policy.requiredLabels,
-          ignoredLabels: config.sources.github.policy.ignoredLabels,
-          requiredAssignees: config.sources.github.policy.requiredAssignees,
-        })) {
+        if (
+          !labelsAndAssigneesQualify({
+            labels: Array.isArray(ticket.labels) ? ticket.labels : [],
+            assignees: Array.isArray(ticket.assignees) ? ticket.assignees : [],
+            requiredLabels: config.sources.github.policy.requiredLabels,
+            ignoredLabels: config.sources.github.policy.ignoredLabels,
+            requiredAssignees: config.sources.github.policy.requiredAssignees,
+          })
+        ) {
           return false;
         }
         // Issue passed source policy; if workflow selectors are configured, also check routing.
