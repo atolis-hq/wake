@@ -184,3 +184,5 @@ bug reports and feature requests are both welcome.
 ## License
 
 Wake is licensed under the [Apache License 2.0](LICENSE).
+
+Wake is built by Wake.
