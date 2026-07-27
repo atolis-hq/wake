@@ -120,6 +120,29 @@ function latestHumanCommentId(candidate: IssueStateRecord): string | undefined {
   return human.at(-1)?.id;
 }
 
+// Matched as a token at the start of a (trimmed) line, mirroring the
+// /approved and /changes commands in policy-engine.ts.
+const interruptCommandPattern = /^\/interrupt\b/i;
+
+// Plain comments during a run are additional context for the next turn, not
+// a signal to abandon the current attempt - only an explicit /interrupt
+// should cancel an in-flight run, per the PR #411 follow-up discussion.
+function newHumanCommentsSince(
+  snapshot: IssueStateRecord,
+  refreshed: IssueStateRecord,
+): IssueStateRecord['comments'] {
+  const knownIds = new Set(snapshot.comments.map((comment) => comment.id));
+  return refreshed.comments.filter(
+    (comment) => !comment.isBotAuthored && !knownIds.has(comment.id),
+  );
+}
+
+function requestsInterrupt(comments: IssueStateRecord['comments']): boolean {
+  return comments.some((comment) =>
+    comment.body.split(/\r?\n/).some((line) => interruptCommandPattern.test(line.trim())),
+  );
+}
+
 function latestActionableCommentId(candidate: IssueStateRecord): string | undefined {
   const handledCommentId =
     typeof candidate.context.lastHandledCommentId === 'string'
@@ -2029,12 +2052,11 @@ export function createTickRunner(deps: {
             const refreshedProjection =
               (await deps.stateStore.readIssueState(activeCandidate.workItemKey)) ??
               activeCandidate;
-            const snapshotHumanCommentId = latestHumanCommentId(inputSnapshot.projection);
-            const refreshedHumanCommentId = latestHumanCommentId(refreshedProjection);
-            if (
-              refreshedHumanCommentId !== undefined &&
-              refreshedHumanCommentId !== snapshotHumanCommentId
-            ) {
+            const newHumanComments = newHumanCommentsSince(
+              inputSnapshot.projection,
+              refreshedProjection,
+            );
+            if (requestsInterrupt(newHumanComments)) {
               const reason = 'CANCELED_BY_SUPERSEDING_EVENT' as const;
               cancellationReason = reason;
               await persistCancellationRequest(reason);

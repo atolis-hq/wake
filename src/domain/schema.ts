@@ -1106,7 +1106,7 @@ export const wakeConfigSchema = wakeConfigBaseSchema.superRefine((config, ctx) =
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['commands', commandName],
-        message: `Command "/${commandName}" is reserved for Wake approval control.`,
+        message: `Command "/${commandName}" is reserved for Wake's own control flow.`,
       });
     }
 
