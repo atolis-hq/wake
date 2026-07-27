@@ -219,7 +219,7 @@ function classifyFailedRun(input: {
   failureClass?: RunnerFailureClass;
   failurePhase?: FailurePhase;
   workspacePath?: string;
-  envelope?: 'structured' | 'degraded';
+  envelope?: 'structured' | 'degraded' | 'missing';
   sentinel?: string;
 }): {
   failurePhase: FailurePhase;
@@ -238,7 +238,7 @@ function classifyFailedRun(input: {
       : 'none';
   const failurePhase =
     input.failurePhase ??
-    (input.envelope === 'degraded' && input.sentinel === 'FAILED'
+    ((input.envelope === 'degraded' || input.envelope === 'missing') && input.sentinel === 'FAILED'
       ? 'result-parsing'
       : failurePhaseForRecord(input.record));
 

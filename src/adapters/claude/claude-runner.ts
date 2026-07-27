@@ -4,7 +4,7 @@ import type { AgentAction, ClaudePrintResult, RunnerEntry } from '../../domain/t
 
 type ClaudeRunnerSettings = Omit<Extract<RunnerEntry, { kind: 'claude' }>, 'kind'>;
 import { runAgentCliCommand } from '../runner/cli-command.js';
-import { buildStagePrompt } from '../runner/stage-prompt.js';
+import { buildStagePrompt, sentinelListForApproval } from '../runner/stage-prompt.js';
 import { emitRuntimeEvent, runnerRuntimeEvent } from '../runner/runtime-events.js';
 import { writeRunnerTranscript } from '../runner/transcripts.js';
 import { createAgentExecution } from '../../core/live-execution.js';
@@ -187,6 +187,99 @@ function extractTokenUsage(parsed: ClaudePrintResult): AgentRunTokenUsage | unde
 }
 
 const CLAUDE_CLI_NAME = 'Claude';
+
+// Bounded — this is a single "just tell me the status" follow-up, not a
+// second attempt at the task, so it never needs more than one turn.
+const ENVELOPE_REPAIR_MAX_TURNS = 1;
+const ENVELOPE_REPAIR_TIMEOUT_MS = 60_000;
+
+function buildEnvelopeRepairPrompt(skipApproval: boolean): string {
+  return [
+    'Your previous reply did not end with the required `wake-result` envelope, so it could not be parsed.',
+    'Reply with ONLY a fenced `wake-result` JSON block containing a `status` field, then repeat that status word on its own line after the closing fence.',
+    `The status must be exactly one of: ${sentinelListForApproval(skipApproval)}, reflecting the outcome of your previous turn.`,
+    'Do not repeat, summarize, or redo any of your previous work — this reply is parsed automatically and anything besides the envelope is discarded.',
+  ].join('\n');
+}
+
+function mergeTokenUsage(
+  base: AgentRunTokenUsage | undefined,
+  extra: AgentRunTokenUsage | undefined,
+): AgentRunTokenUsage | undefined {
+  if (extra === undefined) {
+    return base;
+  }
+  if (base === undefined) {
+    return extra;
+  }
+  return {
+    inputTokens: base.inputTokens + extra.inputTokens,
+    outputTokens: base.outputTokens + extra.outputTokens,
+    ...(base.cacheCreationInputTokens === undefined && extra.cacheCreationInputTokens === undefined
+      ? {}
+      : {
+          cacheCreationInputTokens:
+            (base.cacheCreationInputTokens ?? 0) + (extra.cacheCreationInputTokens ?? 0),
+        }),
+    ...(base.cacheReadInputTokens === undefined && extra.cacheReadInputTokens === undefined
+      ? {}
+      : {
+          cacheReadInputTokens:
+            (base.cacheReadInputTokens ?? 0) + (extra.cacheReadInputTokens ?? 0),
+        }),
+    ...(base.costUsd === undefined && extra.costUsd === undefined
+      ? {}
+      : { costUsd: (base.costUsd ?? 0) + (extra.costUsd ?? 0) }),
+    ...(base.turns === undefined && extra.turns === undefined
+      ? {}
+      : { turns: (base.turns ?? 0) + (extra.turns ?? 0) }),
+  };
+}
+
+// Asks the same (still-live) session to restate just its result envelope,
+// for the case where a run otherwise completed but the model forgot the
+// mandatory trailer — cheaper and more honest than defaulting the whole run
+// to BLOCKED because of a formatting slip. Returns undefined on any failure
+// so the caller falls back to the original (unparseable) result untouched.
+async function attemptEnvelopeRepair(input: {
+  command: string;
+  cwd: string;
+  model: string;
+  sessionName: string;
+  sessionId: string;
+  skipApproval: boolean;
+  timeoutMs: number;
+}): Promise<{ text: string; tokenUsage?: AgentRunTokenUsage } | undefined> {
+  const args = buildClaudePrintArgs({
+    model: input.model,
+    prompt: buildEnvelopeRepairPrompt(input.skipApproval),
+    sessionName: input.sessionName,
+    resumeSessionId: input.sessionId,
+    maxTurns: ENVELOPE_REPAIR_MAX_TURNS,
+  });
+
+  const result = await runClaudeCommand({
+    command: input.command,
+    args,
+    cwd: input.cwd,
+    timeoutMs: input.timeoutMs,
+  });
+
+  if (result.exitCode !== 0 || result.timedOut || result.stdout.trim().length === 0) {
+    return undefined;
+  }
+
+  try {
+    const parsed = parseClaudePrintOutput(result.stdout);
+    const repairTokenUsage = extractTokenUsage(parsed);
+    return {
+      text: parsed.result,
+      ...(repairTokenUsage === undefined ? {} : { tokenUsage: repairTokenUsage }),
+    };
+  } catch {
+    return undefined;
+  }
+}
 
 export function classifyClaudeCliFailure(input: {
   stderr: string;
@@ -449,6 +542,37 @@ export function createClaudeRunner(options: {
       }),
     );
     const tokenUsage = extractTokenUsage(parsed);
+
+    let effectiveResultText = parsed.result;
+    let effectiveTokenUsage = tokenUsage;
+    let envelopeRepaired = false;
+    if (
+      parseRunnerResult(effectiveResultText).envelope === 'missing' &&
+      parsed.session_id !== undefined
+    ) {
+      const repair = await attemptEnvelopeRepair({
+        command: options.command,
+        cwd: input.workspacePath ?? options.cwd,
+        model,
+        sessionName,
+        sessionId: parsed.session_id,
+        skipApproval: stagePrompt.skipApproval,
+        timeoutMs: Math.min(options.settings.timeoutMs, ENVELOPE_REPAIR_TIMEOUT_MS),
+      });
+      if (repair !== undefined && parseRunnerResult(repair.text).envelope !== 'missing') {
+        effectiveResultText = `${effectiveResultText.trimEnd()}\n\n${repair.text.trim()}`;
+        effectiveTokenUsage = mergeTokenUsage(effectiveTokenUsage, repair.tokenUsage);
+        envelopeRepaired = true;
+        console.log(
+          `[claude-run] envelope repair succeeded runId=${input.runId} sessionId=${parsed.session_id}`,
+        );
+      } else {
+        console.error(
+          `[claude-run] envelope repair failed runId=${input.runId} sessionId=${parsed.session_id}`,
+        );
+      }
+    }
+
     if (tokenUsage !== undefined) {
       await emitRuntimeEvent(
         input.onRuntimeEvent,
@@ -478,20 +602,21 @@ export function createClaudeRunner(options: {
       }),
     );
     return {
-      result: parsed.result,
+      result: effectiveResultText,
       model,
       cli: CLAUDE_CLI_NAME,
-      ...(parseRunnerResult(parsed.result).status === 'FAILED'
+      ...(parseRunnerResult(effectiveResultText).status === 'FAILED'
         ? { failureClass: 'task' as const }
         : {}),
       ...(parsed.session_id === undefined ? {} : { session_id: parsed.session_id }),
-      ...(tokenUsage === undefined ? {} : { tokenUsage }),
+      ...(effectiveTokenUsage === undefined ? {} : { tokenUsage: effectiveTokenUsage }),
       metadata: {
         stdout: result.stdout,
         stderr: result.stderr,
         raw: parsed,
         skipApproval: stagePrompt.skipApproval,
         allowAutoApproval: stagePrompt.allowAutoApproval,
+        ...(envelopeRepaired ? { envelopeRepaired: true } : {}),
         ...(promptTranscriptPath === undefined ? {} : { promptTranscriptPath }),
         ...(responseTranscriptPath === undefined ? {} : { responseTranscriptPath }),
         ...(sandboxLog?.metadata ?? {}),

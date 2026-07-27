@@ -1173,7 +1173,7 @@ function synthesizeBodyFromEnvelope(envelope: z.infer<typeof wakeResultEnvelopeS
 export function parseRunnerResult(result: string): {
   status: 'DONE' | 'BLOCKED' | 'FAILED' | 'AWAITING_APPROVAL';
   body: string;
-  envelope: 'structured' | 'degraded';
+  envelope: 'structured' | 'degraded' | 'missing';
   result?: z.infer<typeof wakeResultEnvelopeSchema>;
 } {
   const wakeResultFencePattern =
@@ -1246,7 +1246,11 @@ export function parseRunnerResult(result: string): {
     return {
       status: body.length === 0 ? 'FAILED' : 'BLOCKED',
       body,
-      envelope: 'degraded',
+      // No structured envelope AND no recognizable bare sentinel at all —
+      // distinct from 'degraded' (a deliberate bare-sentinel reply) so
+      // callers can retry a runner that simply forgot the trailer instead
+      // of trusting a fabricated BLOCKED/FAILED default.
+      envelope: 'missing',
     };
   }
 
