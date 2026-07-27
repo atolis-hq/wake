@@ -126,7 +126,7 @@ export interface StagePromptResult {
   allowAutoApproval: boolean;
 }
 
-function sentinelListForApproval(skipApproval: boolean): string {
+export function sentinelListForApproval(skipApproval: boolean): string {
   return skipApproval ? 'DONE, BLOCKED, FAILED' : 'AWAITING_APPROVAL, BLOCKED, FAILED';
 }
 
@@ -192,6 +192,7 @@ function buildHarnessPrompt(input: {
     `The JSON \`status\` and final line must be exactly one of: ${sentinelListForApproval(input.skipApproval)}.`,
     sentinelInstructionsForApproval(input.skipApproval),
     'The JSON object must contain only the `status` field. Do not add other fields.',
+    'This envelope is mandatory, not optional formatting: an automated parser reads only your final lines, and a reply that omits it is discarded and treated as BLOCKED regardless of the work you actually completed.',
   );
 
   if (input.prTrackingEnabled) {
@@ -344,8 +345,11 @@ export async function buildStagePrompt(input: {
     includeRepoDetails: resolvedWorkspaceMode === 'read-only',
   });
 
+  const envelopeReminder =
+    'Before you finish: end this reply with the `wake-result` envelope exactly as your instructions describe, or this run is discarded and marked BLOCKED.';
+
   return {
-    prompt: `${renderedTemplate}\n\n${untrustedDataBlock}`,
+    prompt: `${renderedTemplate}\n\n${untrustedDataBlock}\n\n${envelopeReminder}`,
     harnessPrompt: buildHarnessPrompt({
       skipApproval,
       prTrackingEnabled:

@@ -567,11 +567,11 @@ describe('run and event schemas', () => {
     expect(parsed.envelope).toBe('structured');
   });
 
-  it('treats substantive degraded output without a sentinel as blocked', () => {
+  it('treats substantive output without any sentinel as blocked, flagged as a missing envelope', () => {
     const parsed = parseRunnerResult('Should I create a migration or preserve the legacy format?');
 
     expect(parsed.status).toBe('BLOCKED');
-    expect(parsed.envelope).toBe('degraded');
+    expect(parsed.envelope).toBe('missing');
   });
 
   it('does not match a sentinel word embedded in prose on the last line', () => {

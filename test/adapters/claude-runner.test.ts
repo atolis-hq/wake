@@ -971,6 +971,67 @@ describe('claude runner command building', () => {
     },
   );
 
+  it.skipIf(platform === 'win32')(
+    'repairs a missing result envelope by resuming the same session, without losing the original body',
+    async () => {
+      const commandDir = await mkdtemp(join(tmpdir(), 'wake-claude-cli-'));
+      const command = join(commandDir, 'claude-missing-envelope');
+      const primaryJson = JSON.stringify({
+        type: 'result',
+        subtype: 'success',
+        result: 'Here is my completed plan without a sentinel.',
+        session_id: 'session-abc',
+      });
+      const repairJson = JSON.stringify({
+        type: 'result',
+        subtype: 'success',
+        result: '```wake-result\n{"status":"AWAITING_APPROVAL"}\n```\nAWAITING_APPROVAL',
+        session_id: 'session-abc',
+      });
+      await writeFile(
+        command,
+        [
+          '#!/usr/bin/env bash',
+          'if [[ "$*" == *"--resume"* ]]; then',
+          `  printf '%s' '${repairJson}'`,
+          'else',
+          `  printf '%s' '${primaryJson}'`,
+          'fi',
+        ].join('\n'),
+        'utf8',
+      );
+      await chmod(command, 0o755);
+
+      const runner = createClaudeRunner({
+        command,
+        cwd: process.cwd(),
+        settings: {
+          command,
+          model: 'haiku',
+          models: { default: 'haiku' },
+          smokeModel: 'haiku',
+          sessionName: 'Wake',
+          remoteControlName: 'Wake',
+          smokePrompt: defaultSmokePrompt,
+          timeoutMs: 10_000,
+          remoteControl: { enabled: false },
+        },
+      });
+
+      const result = await runner.run({
+        action: 'refine',
+        projection: baseProjection,
+        recentEvents: [],
+        config: createDefaultWakeConfig(process.cwd()),
+        runId: 'run-12-envelope-repair',
+      });
+
+      expect(result.result).toContain('Here is my completed plan without a sentinel.');
+      expect(result.result.trim().endsWith('AWAITING_APPROVAL')).toBe(true);
+      expect(result.metadata?.envelopeRepaired).toBe(true);
+    },
+  );
+
   it('classifies Claude CLI quota failures separately from infra failures', () => {
     expect(
       classifyClaudeCliFailure({
