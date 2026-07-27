@@ -532,17 +532,8 @@ export function createTickRunner(deps: {
     };
   }
 
-  // GitHub rejects a review that would approve the PR's own author (422 "Can
-  // not approve your own pull request") — the default single-identity setup
-  // where implement and pr-review share one bot account. Permanent, not
-  // transient: never worth retrying, so it's treated as a policy block
-  // rather than left to propagate as an uncaught tick failure.
-  function isSelfApprovalError(error: unknown): boolean {
-    return (
-      error instanceof Error &&
-      (error as Error & { status?: number }).status === 422 &&
-      error.message.toLowerCase().includes('approve your own pull request')
-    );
+  function describeMergeActorError(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
   }
 
   async function performApprovedPrMergeActions(input: {
@@ -563,24 +554,21 @@ export function createTickRunner(deps: {
     const reviewBody = reviewerMessageFromApprovalComment(
       input.approvalResolution.triggeringCommentBody ?? '',
     );
-    let blockedReason: string | null = null;
+    // Never enumerate specific rejection reasons (self-approval, merge-method
+    // restrictions, branch protection, ...) by string-matching the merge
+    // actor's error — there are too many, and Wake shouldn't need to know
+    // its provider's vocabulary. Any failure here is permanent enough not to
+    // retry blindly forever, so it becomes a policy block with the actor's
+    // own message attached. approve and autoMerge are independent: one
+    // failing doesn't stop the other from being attempted.
+    const blockedReasons: string[] = [];
     const approvedEventId = `pr-merge-approved-${commentId}`;
     if (
       input.mergePolicy.approve &&
       (await deps.stateStore.readEventEnvelope(approvedEventId)) === null
     ) {
-      let approved = true;
       try {
         await deps.prMergeActor.approve(targetResourceUri, reviewBody);
-      } catch (error) {
-        if (!isSelfApprovalError(error)) {
-          throw error;
-        }
-        approved = false;
-        blockedReason =
-          'Merge policy blocked the approval step because GitHub refuses a review that approves its own author (implement and pr-review run as the same bot identity). Either disable merge.approve and rely on merge.autoMerge alone, or configure a second reviewer identity.';
-      }
-      if (approved) {
         const occurredAt = eventStampNow();
         await deps.stateStore.appendEventEnvelope(
           createEventEnvelope({
@@ -602,6 +590,10 @@ export function createTickRunner(deps: {
             },
           }),
         );
+      } catch (error) {
+        blockedReasons.push(
+          `Merge policy blocked the approval step: ${describeMergeActorError(error)}`,
+        );
       }
     }
 
@@ -610,32 +602,38 @@ export function createTickRunner(deps: {
       input.mergePolicy.autoMerge &&
       (await deps.stateStore.readEventEnvelope(autoMergeEventId)) === null
     ) {
-      await deps.prMergeActor.enableAutoMerge(targetResourceUri);
-      const occurredAt = eventStampNow();
-      await deps.stateStore.appendEventEnvelope(
-        createEventEnvelope({
-          eventId: autoMergeEventId,
-          workItemKey: input.projection.workItemKey,
-          streamScope: 'work-item',
-          direction: 'internal',
-          sourceSystem: 'wake',
-          sourceEventType: PR_AUTO_MERGE_ENABLED_EVENT,
-          sourceRefs: {
-            resourceUri: targetResourceUri,
-            commentId: input.approvalResolution.triggeringCommentId,
-          },
-          occurredAt,
-          ingestedAt: occurredAt,
-          trigger: 'context-only',
-          payload: {
-            idempotencyKey: `${input.approvalResolution.triggeringCommentId}:pr-auto-merge`,
-          },
-        }),
-      );
+      try {
+        await deps.prMergeActor.enableAutoMerge(targetResourceUri, input.mergePolicy.mergeMethod);
+        const occurredAt = eventStampNow();
+        await deps.stateStore.appendEventEnvelope(
+          createEventEnvelope({
+            eventId: autoMergeEventId,
+            workItemKey: input.projection.workItemKey,
+            streamScope: 'work-item',
+            direction: 'internal',
+            sourceSystem: 'wake',
+            sourceEventType: PR_AUTO_MERGE_ENABLED_EVENT,
+            sourceRefs: {
+              resourceUri: targetResourceUri,
+              commentId: input.approvalResolution.triggeringCommentId,
+            },
+            occurredAt,
+            ingestedAt: occurredAt,
+            trigger: 'context-only',
+            payload: {
+              idempotencyKey: `${input.approvalResolution.triggeringCommentId}:pr-auto-merge`,
+            },
+          }),
+        );
+      } catch (error) {
+        blockedReasons.push(
+          `Merge policy blocked the auto-merge step: ${describeMergeActorError(error)}`,
+        );
+      }
     }
 
-    if (blockedReason !== null) {
-      return { blocked: true, reason: blockedReason };
+    if (blockedReasons.length > 0) {
+      return { blocked: true, reason: blockedReasons.join(' ') };
     }
 
     return { blocked: false };

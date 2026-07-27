@@ -471,6 +471,7 @@ workflows:
               merge:
                 approve: true
                 autoMerge: true
+                mergeMethod: SQUASH
                 maxFilesChanged: 10
                 blockedPaths:
                   - src/core/contracts.ts
@@ -491,11 +492,24 @@ approving.
 
 | Property          | Type     | Description                                                       | Default |
 | ----------------- | -------- | ----------------------------------------------------------------- | ------- |
-| `approve`         | boolean  | Submit a GitHub PR review with `APPROVE`                          | `false` |
-| `autoMerge`       | boolean  | Enable GitHub native auto-merge on the PR after policy passes     | `false` |
-| `maxFilesChanged` | number   | Block when the PR changes more files than this limit              | unset   |
-| `blockedPaths`    | string[] | Glob-style changed-path patterns that always block (`*` wildcard) | `[]`    |
-| `blockedLabels`   | string[] | Issue labels that always block this deterministic merge action    | `[]`    |
+| `approve`         | boolean                       | Submit a GitHub PR review with `APPROVE`                           | `false` |
+| `autoMerge`       | boolean                       | Enable GitHub native auto-merge on the PR after policy passes      | `false` |
+| `mergeMethod`     | `MERGE` \| `SQUASH` \| `REBASE` | Merge method requested when enabling `autoMerge`                 | `MERGE` |
+| `maxFilesChanged` | number                        | Block when the PR changes more files than this limit               | unset   |
+| `blockedPaths`    | string[]                      | Glob-style changed-path patterns that always block (`*` wildcard)  | `[]`    |
+| `blockedLabels`   | string[]                      | Issue labels that always block this deterministic merge action     | `[]`    |
+
+`mergeMethod` must match a method the repository actually allows (GitHub
+repo settings: "Allow merge commits" / "Allow squash merging" / "Allow rebase
+merging"). GitHub's auto-merge API defaults to `MERGE` when unspecified, which
+fails outright on a squash-only or rebase-only repository — set this
+explicitly to match your repo's settings rather than relying on the default.
+
+`autoMerge` queues a merge that completes once required checks pass; GitHub
+rejects that queue request when the PR has nothing left to wait for (checks
+already green or skipped) — the common case for a small, fast-reviewed PR.
+Wake detects that specific rejection and merges directly instead, using the
+same `mergeMethod`, rather than treating it as a policy block.
 
 The merge action only runs for Wake's bot-authored PR-review approval marker
 on a correlated PR. It does not run for human `/approved` comments on the
@@ -506,14 +520,18 @@ When `autoMerge` is enabled, configure GitHub branch protection with required
 status checks. Wake delegates the final green-CI gate to GitHub native
 auto-merge rather than polling CI in this merge action.
 
-`approve` requires a reviewer identity distinct from the PR's author. If
-`implement` and `pr-review` run as the same bot account (the default
-single-runner-identity setup), GitHub rejects the approval review with a 422
-("Can not approve your own pull request"). Wake treats this as a policy block
-rather than an error — it posts the reason and moves the work item to
-`blocked`, and still attempts `autoMerge` independently, since that step has
-no such restriction. To get a real approving review, either disable `approve`
-and rely on `autoMerge` alone, or configure a second reviewer identity.
+If `approve` or `autoMerge` fails against the provider (for example: GitHub
+rejects a review approving the PR's own author with a 422 "Can not approve
+your own pull request" when `implement` and `pr-review` share one bot
+identity; or a repository's allowed merge methods reject the auto-merge
+request), Wake treats that failure as a policy block rather than an
+uncaught error — it posts the provider's own rejection message and moves the
+work item to `blocked`, without retrying the identical doomed call forever.
+`approve` and `autoMerge` are attempted independently: one failing doesn't
+prevent the other from running or from an already-succeeded step being
+recorded. If `approve` consistently fails because your implement and
+pr-review workflows share one bot identity, either disable `approve` and rely
+on `autoMerge` alone, or configure a second reviewer identity.
 
 ### ui
 

@@ -160,6 +160,68 @@ describe('prompt templates', () => {
     expect(rendered).toContain('"id": "evt-1"');
   });
 
+  it('includes a bot-authored PR-surface review comment as addressable, not filtered out like a status post', async () => {
+    const projection = {
+      schemaVersion: 1 as const,
+      workItemKey: 'work-01JQZX9K2N4P6R8T0V2W4Y6A9E',
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 435,
+        title: 'Example issue',
+        body: 'Body',
+        labels: ['wake:implement'],
+        assignees: [],
+        isPullRequest: false,
+        state: 'open' as const,
+        url: 'https://example.test/issues/435',
+        createdAt: '2026-07-05T12:00:00.000Z',
+        updatedAt: '2026-07-05T12:00:00.000Z',
+      },
+      comments: [
+        {
+          id: 'pr-status-post',
+          body: 'Working on it...',
+          author: { login: 'atolis-hq-agent' },
+          createdAt: '2026-07-05T11:55:00.000Z',
+          updatedAt: '2026-07-05T11:55:00.000Z',
+          isBotAuthored: true,
+        },
+        {
+          id: 'pr-review-feedback',
+          body: 'This violates the docs style guide.\n\n<!-- wake:pr-review-changes-requested -->',
+          author: { login: 'atolis-hq-agent' },
+          createdAt: '2026-07-05T12:00:00.000Z',
+          updatedAt: '2026-07-05T12:00:00.000Z',
+          isBotAuthored: true,
+          resourceUri: 'github:pr:atolis-hq/wake#436',
+        },
+      ],
+      wake: {
+        stage: 'implement' as const,
+        stageHistory: [],
+        recentEventIds: [],
+        syncedAt: '2026-07-05T12:00:00.000Z',
+        expectedEcho: { commentIds: [], labels: [] },
+      },
+      context: {},
+      correlatedResources: [],
+    };
+
+    const config = createDefaultWakeConfig(process.cwd());
+
+    const result = await buildStagePrompt({
+      action: 'revise',
+      projection,
+      config,
+      mode: 'resume',
+    });
+
+    expect(result.prompt).toContain('This violates the docs style guide.');
+    // The bot's own prior status post is still excluded — it's not the
+    // deliberate act a PR-surface comment (resourceUri set) is.
+    expect(result.prompt).not.toContain('Working on it...');
+  });
+
   it('threads correlated resources into the pr-review prompt so the agent never has to guess the PR number', async () => {
     const projection = {
       schemaVersion: 1 as const,
