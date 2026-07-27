@@ -131,6 +131,7 @@ describe('tick runner', () => {
       preseedActionEvents?: boolean;
       prIncumbentWorkItemKey?: string;
       approveError?: Error;
+      autoMergeError?: Error;
     }) {
       const store = createStateStore({ wakeRoot: root });
       const projection = input.projection ?? awaitingPrReviewApprovalProjection();
@@ -206,6 +207,9 @@ describe('tick runner', () => {
           },
           async enableAutoMerge() {
             calls.push('autoMerge');
+            if (input.autoMergeError !== undefined) {
+              throw input.autoMergeError;
+            }
           },
         },
       });
@@ -1778,7 +1782,7 @@ describe('tick runner', () => {
       expect(calls).toEqual(['files', 'approve:Safe to merge.', 'autoMerge']);
     });
 
-    it('blocks the work item without crashing when GitHub refuses a self-approval, and still enables auto-merge', async () => {
+    it('blocks the work item without crashing when the merge actor rejects approval (e.g. GitHub self-approval), and still attempts auto-merge', async () => {
       const config = createDefaultWakeConfig(root);
       configurePrReviewMerge(config, {
         approve: true,
@@ -1803,10 +1807,11 @@ describe('tick runner', () => {
       expect(result.status).toBe('processed');
       expect((result as { sentinel?: string }).sentinel).toBe('BLOCKED');
       expect(calls).toEqual(['files', 'approve:Safe to merge.', 'autoMerge']);
-      expect(outboundBodies[0]).toContain('refuses a review that approves its own author');
+      expect(outboundBodies[0]).toContain('Merge policy blocked the approval step');
+      expect(outboundBodies[0]).toContain('Can not approve your own pull request');
     });
 
-    it('rethrows a non-self-approval error from the merge actor instead of misclassifying it as a policy block', async () => {
+    it('blocks without crashing on a merge-actor rejection unrelated to self-approval (e.g. a merge-method restriction)', async () => {
       const config = createDefaultWakeConfig(root);
       configurePrReviewMerge(config, {
         approve: true,
@@ -1815,15 +1820,54 @@ describe('tick runner', () => {
         blockedPaths: [],
         blockedLabels: [],
       });
-      const transientError = Object.assign(new Error('Server error'), { status: 500 });
+      const mergeMethodError = Object.assign(
+        new Error(
+          'Merge method merge commits are not allowed on this repository and Pull request Pull request is in clean status',
+        ),
+        { status: 422 },
+      );
+      const outboundBodies: string[] = [];
 
-      await expect(
-        prReviewMergeTick({
-          config,
-          files: ['src/core/tick-runner.ts'],
-          approveError: transientError,
-        }),
-      ).rejects.toThrow('Server error');
+      const { result, calls } = await prReviewMergeTick({
+        config,
+        files: ['src/core/tick-runner.ts'],
+        approveError: mergeMethodError,
+        outboundBodies,
+      });
+
+      expect(result.status).toBe('processed');
+      expect((result as { sentinel?: string }).sentinel).toBe('BLOCKED');
+      expect(calls).toEqual(['files', 'approve:Safe to merge.', 'autoMerge']);
+      expect(outboundBodies[0]).toContain('Merge policy blocked the approval step');
+      expect(outboundBodies[0]).toContain('Merge method merge commits are not allowed');
+    });
+
+    it('blocks on an auto-merge failure independently of approval succeeding, without repeating the already-recorded approval', async () => {
+      const config = createDefaultWakeConfig(root);
+      configurePrReviewMerge(config, {
+        approve: true,
+        autoMerge: true,
+        maxFilesChanged: 2,
+        blockedPaths: [],
+        blockedLabels: [],
+      });
+      const autoMergeError = new Error('Auto-merge is not enabled for this repository');
+      const outboundBodies: string[] = [];
+
+      const { result, calls, store } = await prReviewMergeTick({
+        config,
+        files: ['src/core/tick-runner.ts'],
+        autoMergeError,
+        outboundBodies,
+      });
+
+      expect(result.status).toBe('processed');
+      expect((result as { sentinel?: string }).sentinel).toBe('BLOCKED');
+      expect(calls).toEqual(['files', 'approve:Safe to merge.', 'autoMerge']);
+      expect(outboundBodies[0]).toContain('Merge policy blocked the auto-merge step');
+      expect(outboundBodies[0]).toContain('Auto-merge is not enabled');
+      expect(await store.readEventEnvelope('pr-merge-approved-pr-900')).not.toBeNull();
+      expect(await store.readEventEnvelope('pr-auto-merge-enabled-pr-900')).toBeNull();
     });
 
     it('blocks without approving when the PR changes too many files', async () => {
