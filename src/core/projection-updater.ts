@@ -3,6 +3,7 @@ import {
   CORRELATION_REGISTERED_EVENT,
   CORRELATION_RETRACTED_EVENT,
   RETRY_REQUESTED_EVENT,
+  RUN_REQUESTED_EVENT,
   RUN_CLAIMED_EVENT,
   RUN_COMPLETED_EVENT,
   WORKFLOW_SELECTED_EVENT,
@@ -450,6 +451,17 @@ async function applyEvent(
     return parseIssueStateRecord({
       ...current,
       context: nextContext,
+      wake: {
+        ...current.wake,
+        syncedAt: event.ingestedAt,
+        recentEventIds: [...current.wake.recentEventIds, event.eventId].slice(-10),
+      },
+    });
+  }
+
+  if (event.sourceEventType === RUN_REQUESTED_EVENT) {
+    return parseIssueStateRecord({
+      ...current,
       wake: {
         ...current.wake,
         syncedAt: event.ingestedAt,

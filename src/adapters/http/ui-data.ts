@@ -10,7 +10,8 @@ import type { createStateStore } from '../fs/state-store.js';
 
 type StateStore = ReturnType<typeof createStateStore>;
 
-export type BoardCondition = 'needs-human' | 'active' | 'ready' | 'error' | 'finished';
+export type BoardCondition =
+  'needs-human' | 'active' | 'scheduled' | 'ready' | 'error' | 'finished';
 
 interface LockMetadata {
   pid: number;
@@ -101,6 +102,10 @@ function deriveCondition(
 
   if (lastRun?.sentinel === 'FAILED') {
     return { condition: 'error', reason: 'last run failed; awaiting operator/retry policy' };
+  }
+
+  if (item.issue.labels.includes('wake:scheduled-workflow')) {
+    return { condition: 'scheduled', reason: 'scheduled workflow awaiting next run' };
   }
 
   return { condition: 'ready', reason: 'has a route and no blocking condition' };
@@ -242,6 +247,7 @@ export async function buildStatus(input: {
   const counters: Record<BoardCondition, number> = {
     'needs-human': 0,
     active: 0,
+    scheduled: 0,
     ready: 0,
     error: 0,
     finished: 0,

@@ -5,7 +5,7 @@ import { dirname } from 'node:path';
 
 import type { ResourceIndex } from '../../core/contracts.js';
 import { createProjectionUpdater } from '../../core/projection-updater.js';
-import { RETRY_REQUESTED_EVENT } from '../../domain/event-types.js';
+import { RETRY_REQUESTED_EVENT, RUN_REQUESTED_EVENT } from '../../domain/event-types.js';
 import { configuredTicketSource } from '../../domain/sources.js';
 import type { WakeConfig } from '../../domain/types.js';
 import { createEventEnvelope } from '../../lib/event-log.js';
@@ -188,6 +188,54 @@ async function handleRequest(
     await writeJsonFile(stateStore.paths.tickRequestFile, tickRequest);
 
     sendJson(res, 202, { workItemKey, retryEventId: retryId });
+    return;
+  }
+
+  if (
+    req.method === 'POST' &&
+    resource === 'work-items' &&
+    segments.length === 3 &&
+    segments[2] === 'run'
+  ) {
+    const workItemKey = segments[1] ?? '';
+    const item = await stateStore.readIssueState(workItemKey);
+    if (item === null) {
+      sendJson(res, 404, { error: 'work item not found' });
+      return;
+    }
+
+    if (!item.issue.labels.includes('wake:scheduled-workflow')) {
+      sendJson(res, 409, { error: 'work item is not a scheduled workflow' });
+      return;
+    }
+
+    const occurredAt = now().toISOString();
+    const runRequestId = `run-${workItemKey}-${now().getTime()}`;
+    const runRequestEvent = createEventEnvelope({
+      eventId: runRequestId,
+      workItemKey,
+      streamScope: 'work-item',
+      direction: 'internal',
+      sourceSystem: 'wake',
+      sourceEventType: RUN_REQUESTED_EVENT,
+      sourceRefs: { repo: item.issue.repo, issueNumber: item.issue.number },
+      occurredAt,
+      ingestedAt: occurredAt,
+      trigger: 'immediate',
+      payload: { requestedBy: 'ui' },
+    });
+
+    const appended = await stateStore.appendEventEnvelope(runRequestEvent);
+    await projectionUpdater.rebuildFromEvents([appended]);
+
+    const tickRequest = {
+      requestId: randomUUID(),
+      requestedAt: now().toISOString(),
+      requestedBy: 'ui:run',
+    };
+    await writeJsonFile(stateStore.paths.tickRequestFile, tickRequest);
+
+    sendJson(res, 202, { workItemKey, runEventId: runRequestId });
     return;
   }
 
