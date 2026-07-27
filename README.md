@@ -122,11 +122,11 @@ Wake has no chat UI you need to check for status. Your ticketing system is the
 interface: Wake posts progress updates, asks clarifying questions, and reports
 results as comments on the ticket, and reflects stage and status as labels on
 it. When it's ready, it opens a pull request against your repo the normal way.
-Reviewing, approving, and merging happen exactly where they already do today —
+Reviewing, approving, and merging happen exactly where they already do today -
 nothing new to learn, no separate dashboard to babysit.
 
 A local control-plane UI exists for operators who want to watch runs, inspect
-events, or resume a session directly, but it's a window into the same state —
+events, or resume a session directly, but it's a window into the same state -
 not a required part of the workflow.
 
 ## Supported Agent CLIs
@@ -166,19 +166,19 @@ any time for the full command list, or see
 
 ## Documentation
 
-- [docs/getting-started.md](docs/getting-started.md) — packaged-install setup, sandbox lifecycle, `wake doctor`.
-- [docs/cli.md](docs/cli.md) — full CLI command reference.
-- [docs/vision.md](docs/vision.md) — the rationale and long-term direction for Wake.
-- [docs/architecture.md](docs/architecture.md) — module boundaries and the event-sourced core.
-- [docs/workflows.md](docs/workflows.md) — how stages, prompts, and runner routes are configured.
-- [docs/prompts.md](docs/prompts.md) — how prompt templates map to workflow stages.
-- [docs/configuration.md](docs/configuration.md) — `config.yaml`/`config.workflows.yaml` options and the operator correlation escape hatch.
-- [docs/development.md](docs/development.md) — source-checkout dev setup (`wake-dev`), npm scripts, formatting, self-update, GitHub polling.
-- [docs/runner-comparison.md](docs/runner-comparison.md) — capability differences between supported runners.
+- [docs/getting-started.md](docs/getting-started.md) - packaged-install setup, sandbox lifecycle, `wake doctor`.
+- [docs/cli.md](docs/cli.md) - full CLI command reference.
+- [docs/vision.md](docs/vision.md) - the rationale and long-term direction for Wake.
+- [docs/architecture.md](docs/architecture.md) - module boundaries and the event-sourced core.
+- [docs/workflows.md](docs/workflows.md) - how stages, prompts, and runner routes are configured.
+- [docs/prompts.md](docs/prompts.md) - how prompt templates map to workflow stages.
+- [docs/configuration.md](docs/configuration.md) - `config.yaml`/`config.workflows.yaml` options and the operator correlation escape hatch.
+- [docs/development.md](docs/development.md) - source-checkout dev setup (`wake-dev`), npm scripts, formatting, self-update, GitHub polling.
+- [docs/runner-comparison.md](docs/runner-comparison.md) - capability differences between supported runners.
 
 ## Issues & Feature Requests
 
-Found a bug or have an idea for Wake? [Open an issue](https://github.com/atolis-hq/wake/issues/new) —
+Found a bug or have an idea for Wake? [Open an issue](https://github.com/atolis-hq/wake/issues/new) -
 bug reports and feature requests are both welcome.
 
 ## License
