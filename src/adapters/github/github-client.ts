@@ -230,16 +230,19 @@ export function createGitHubClient(token: string) {
         body,
       });
     },
-    async enablePullRequestAutoMerge(pullRequestNodeId: string) {
+    async enablePullRequestAutoMerge(
+      pullRequestNodeId: string,
+      mergeMethod: 'MERGE' | 'SQUASH' | 'REBASE',
+    ) {
       await octokit.graphql(
-        `mutation EnableWakeAutoMerge($pullRequestId: ID!) {
-          enablePullRequestAutoMerge(input: { pullRequestId: $pullRequestId }) {
+        `mutation EnableWakeAutoMerge($pullRequestId: ID!, $mergeMethod: PullRequestMergeMethod!) {
+          enablePullRequestAutoMerge(input: { pullRequestId: $pullRequestId, mergeMethod: $mergeMethod }) {
             pullRequest {
               id
             }
           }
         }`,
-        { pullRequestId: pullRequestNodeId },
+        { pullRequestId: pullRequestNodeId, mergeMethod },
       );
     },
     async replyToReviewComment(

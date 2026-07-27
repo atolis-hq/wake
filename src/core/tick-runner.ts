@@ -603,7 +603,7 @@ export function createTickRunner(deps: {
       (await deps.stateStore.readEventEnvelope(autoMergeEventId)) === null
     ) {
       try {
-        await deps.prMergeActor.enableAutoMerge(targetResourceUri);
+        await deps.prMergeActor.enableAutoMerge(targetResourceUri, input.mergePolicy.mergeMethod);
         const occurredAt = eventStampNow();
         await deps.stateStore.appendEventEnvelope(
           createEventEnvelope({

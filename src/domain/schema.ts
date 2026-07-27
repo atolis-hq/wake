@@ -481,10 +481,17 @@ const workflowTriggerScheduleSchema = z.object({
   cron: z.string().min(1),
 });
 
+// Matches GitHub's PullRequestMergeMethod GraphQL enum. GitHub's
+// enablePullRequestAutoMerge mutation defaults to MERGE when unspecified,
+// which fails outright on a repo that only allows squash/rebase merges — so
+// this must be explicit rather than inferred.
+export const mergeMethodSchema = z.enum(['MERGE', 'SQUASH', 'REBASE']);
+
 const approvedMergePolicySchema = z
   .object({
     approve: z.boolean().default(false),
     autoMerge: z.boolean().default(false),
+    mergeMethod: mergeMethodSchema.default('MERGE'),
     maxFilesChanged: z.number().int().positive().optional(),
     blockedPaths: z.array(z.string().min(1)).default([]),
     blockedLabels: z.array(z.string().min(1)).default([]),
@@ -492,6 +499,7 @@ const approvedMergePolicySchema = z
   .default({
     approve: false,
     autoMerge: false,
+    mergeMethod: 'MERGE',
     blockedPaths: [],
     blockedLabels: [],
   });

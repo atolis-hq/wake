@@ -2,6 +2,7 @@ import type {
   AgentAction,
   EventEnvelope,
   IssueStateRecord,
+  MergeMethod,
   RunnerFailureClass,
   RunnerRouting,
   RuntimeEventDraft,
@@ -180,5 +181,5 @@ export interface ArtifactVerifier {
 export interface PullRequestMergeActor {
   listChangedFiles(resourceUri: string): Promise<string[]>;
   approve(resourceUri: string, body: string): Promise<void>;
-  enableAutoMerge(resourceUri: string): Promise<void>;
+  enableAutoMerge(resourceUri: string, mergeMethod: MergeMethod): Promise<void>;
 }

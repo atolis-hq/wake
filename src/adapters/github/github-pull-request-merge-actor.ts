@@ -1,4 +1,5 @@
 import type { PullRequestMergeActor } from '../../core/contracts.js';
+import type { MergeMethod } from '../../domain/types.js';
 import type { createGitHubClient } from './github-client.js';
 
 type GitHubClient = ReturnType<typeof createGitHubClient>;
@@ -33,10 +34,10 @@ export function createGitHubPullRequestMergeActor(input: {
       const ref = parseGithubPullRequestResourceUri(resourceUri);
       await input.client.createPullRequestApproval(ref.owner, ref.repo, ref.pullNumber, body);
     },
-    async enableAutoMerge(resourceUri: string): Promise<void> {
+    async enableAutoMerge(resourceUri: string, mergeMethod: MergeMethod): Promise<void> {
       const ref = parseGithubPullRequestResourceUri(resourceUri);
       const pr = await input.client.getPullRequest(ref.owner, ref.repo, ref.pullNumber);
-      await input.client.enablePullRequestAutoMerge(pr.node_id);
+      await input.client.enablePullRequestAutoMerge(pr.node_id, mergeMethod);
     },
   };
 }

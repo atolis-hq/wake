@@ -471,6 +471,7 @@ workflows:
               merge:
                 approve: true
                 autoMerge: true
+                mergeMethod: SQUASH
                 maxFilesChanged: 10
                 blockedPaths:
                   - src/core/contracts.ts
@@ -491,11 +492,18 @@ approving.
 
 | Property          | Type     | Description                                                       | Default |
 | ----------------- | -------- | ----------------------------------------------------------------- | ------- |
-| `approve`         | boolean  | Submit a GitHub PR review with `APPROVE`                          | `false` |
-| `autoMerge`       | boolean  | Enable GitHub native auto-merge on the PR after policy passes     | `false` |
-| `maxFilesChanged` | number   | Block when the PR changes more files than this limit              | unset   |
-| `blockedPaths`    | string[] | Glob-style changed-path patterns that always block (`*` wildcard) | `[]`    |
-| `blockedLabels`   | string[] | Issue labels that always block this deterministic merge action    | `[]`    |
+| `approve`         | boolean                       | Submit a GitHub PR review with `APPROVE`                           | `false` |
+| `autoMerge`       | boolean                       | Enable GitHub native auto-merge on the PR after policy passes      | `false` |
+| `mergeMethod`     | `MERGE` \| `SQUASH` \| `REBASE` | Merge method requested when enabling `autoMerge`                 | `MERGE` |
+| `maxFilesChanged` | number                        | Block when the PR changes more files than this limit               | unset   |
+| `blockedPaths`    | string[]                      | Glob-style changed-path patterns that always block (`*` wildcard)  | `[]`    |
+| `blockedLabels`   | string[]                      | Issue labels that always block this deterministic merge action     | `[]`    |
+
+`mergeMethod` must match a method the repository actually allows (GitHub
+repo settings: "Allow merge commits" / "Allow squash merging" / "Allow rebase
+merging"). GitHub's auto-merge API defaults to `MERGE` when unspecified, which
+fails outright on a squash-only or rebase-only repository — set this
+explicitly to match your repo's settings rather than relying on the default.
 
 The merge action only runs for Wake's bot-authored PR-review approval marker
 on a correlated PR. It does not run for human `/approved` comments on the
