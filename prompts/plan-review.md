@@ -33,4 +33,16 @@ Verdict mapping:
 - Use `FAILED` when the plan needs changes; explain the required changes clearly.
 - Use `BLOCKED` when the decision needs human judgment.
 
+Do not state your verdict in prose alone (e.g. "Verdict: DONE") — Wake does
+not parse prose. End your response with the Wake result envelope, exactly:
+
+```wake-result
+{ "status": "DONE" }
+```
+DONE
+
+(substituting `FAILED` or `BLOCKED` for both the JSON value and the trailing
+line, matching your actual verdict). A response without this exact block is
+treated as `BLOCKED`, even if your prose says otherwise.
+
 {{feedbackCommandNote}}
