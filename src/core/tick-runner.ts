@@ -532,17 +532,30 @@ export function createTickRunner(deps: {
     };
   }
 
+  // GitHub rejects a review that would approve the PR's own author (422 "Can
+  // not approve your own pull request") — the default single-identity setup
+  // where implement and pr-review share one bot account. Permanent, not
+  // transient: never worth retrying, so it's treated as a policy block
+  // rather than left to propagate as an uncaught tick failure.
+  function isSelfApprovalError(error: unknown): boolean {
+    return (
+      error instanceof Error &&
+      (error as Error & { status?: number }).status === 422 &&
+      error.message.toLowerCase().includes('approve your own pull request')
+    );
+  }
+
   async function performApprovedPrMergeActions(input: {
     projection: IssueStateRecord;
     approvalResolution: NonNullable<ReturnType<typeof policy.resolveApprovalTransition>>;
     mergePolicy: ApprovedMergePolicy;
-  }): Promise<void> {
+  }): Promise<{ blocked: false } | { blocked: true; reason: string }> {
     if (
       deps.prMergeActor === undefined ||
       input.approvalResolution.targetResourceUri === undefined ||
       input.approvalResolution.triggeringCommentId === undefined
     ) {
-      return;
+      return { blocked: false };
     }
 
     const targetResourceUri = input.approvalResolution.targetResourceUri;
@@ -550,33 +563,46 @@ export function createTickRunner(deps: {
     const reviewBody = reviewerMessageFromApprovalComment(
       input.approvalResolution.triggeringCommentBody ?? '',
     );
+    let blockedReason: string | null = null;
     const approvedEventId = `pr-merge-approved-${commentId}`;
     if (
       input.mergePolicy.approve &&
       (await deps.stateStore.readEventEnvelope(approvedEventId)) === null
     ) {
-      await deps.prMergeActor.approve(targetResourceUri, reviewBody);
-      const occurredAt = eventStampNow();
-      await deps.stateStore.appendEventEnvelope(
-        createEventEnvelope({
-          eventId: approvedEventId,
-          workItemKey: input.projection.workItemKey,
-          streamScope: 'work-item',
-          direction: 'internal',
-          sourceSystem: 'wake',
-          sourceEventType: PR_REVIEW_APPROVED_EVENT,
-          sourceRefs: {
-            resourceUri: targetResourceUri,
-            commentId: input.approvalResolution.triggeringCommentId,
-          },
-          occurredAt,
-          ingestedAt: occurredAt,
-          trigger: 'context-only',
-          payload: {
-            idempotencyKey: `${input.approvalResolution.triggeringCommentId}:pr-review-approval`,
-          },
-        }),
-      );
+      let approved = true;
+      try {
+        await deps.prMergeActor.approve(targetResourceUri, reviewBody);
+      } catch (error) {
+        if (!isSelfApprovalError(error)) {
+          throw error;
+        }
+        approved = false;
+        blockedReason =
+          'Merge policy blocked the approval step because GitHub refuses a review that approves its own author (implement and pr-review run as the same bot identity). Either disable merge.approve and rely on merge.autoMerge alone, or configure a second reviewer identity.';
+      }
+      if (approved) {
+        const occurredAt = eventStampNow();
+        await deps.stateStore.appendEventEnvelope(
+          createEventEnvelope({
+            eventId: approvedEventId,
+            workItemKey: input.projection.workItemKey,
+            streamScope: 'work-item',
+            direction: 'internal',
+            sourceSystem: 'wake',
+            sourceEventType: PR_REVIEW_APPROVED_EVENT,
+            sourceRefs: {
+              resourceUri: targetResourceUri,
+              commentId: input.approvalResolution.triggeringCommentId,
+            },
+            occurredAt,
+            ingestedAt: occurredAt,
+            trigger: 'context-only',
+            payload: {
+              idempotencyKey: `${input.approvalResolution.triggeringCommentId}:pr-review-approval`,
+            },
+          }),
+        );
+      }
     }
 
     const autoMergeEventId = `pr-auto-merge-enabled-${commentId}`;
@@ -607,6 +633,12 @@ export function createTickRunner(deps: {
         }),
       );
     }
+
+    if (blockedReason !== null) {
+      return { blocked: true, reason: blockedReason };
+    }
+
+    return { blocked: false };
   }
 
   // The one deterministic approval transition: /approved, wake:auto, and a
@@ -1359,7 +1391,21 @@ export function createTickRunner(deps: {
         action = entryStage.action ?? entryStageName;
         claimedStage = entryStageName;
         workspaceMode = entryStage.workspace;
-        promptContextOverrides = entryStage.promptContext;
+        // The triggering event's own body (e.g. a refine plan comment) is
+        // durable and already local the moment this fires — projection.comments
+        // only gets it once a later GitHub poll echoes it back, which a watcher
+        // dispatched off the same-tick completion event can easily outrace.
+        const triggeringEvent =
+          watcherDispatch.trigger.kind === 'event'
+            ? await deps.stateStore.readEventEnvelope(watcherDispatch.trigger.eventId)
+            : null;
+        const triggeringBody = triggeringEvent?.payload.body;
+        promptContextOverrides = {
+          ...entryStage.promptContext,
+          ...(typeof triggeringBody === 'string'
+            ? { parentPendingReviewBody: triggeringBody }
+            : {}),
+        };
         workflowName = watcherDispatch.targetWorkflowName;
         watcherStateKeyForRun = watcherKey({
           workItemKey: watcherDispatch.projection.workItemKey,
@@ -1406,11 +1452,19 @@ export function createTickRunner(deps: {
                   workflowName,
                 });
               }
-              await performApprovedPrMergeActions({
+              const mergeActionsResult = await performApprovedPrMergeActions({
                 projection: candidate,
                 approvalResolution,
                 mergePolicy,
               });
+              if (mergeActionsResult.blocked) {
+                return await publishPrMergePolicyBlock({
+                  projection: candidate,
+                  approvalResolution,
+                  reason: mergeActionsResult.reason,
+                  workflowName,
+                });
+              }
             }
 
             const approvalId = `approval-${candidate.issue.number}-${deps.clock.now().getTime()}`;
