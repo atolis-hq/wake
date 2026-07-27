@@ -111,22 +111,58 @@ function timeInStageMs(item: IssueStateRecord, now: Date): number {
   return now.getTime() - Date.parse(lastChange);
 }
 
+function activeChildRunsForItem(
+  item: IssueStateRecord,
+  runs: RunRecord[],
+  now: Date,
+): Array<{
+  runId: string;
+  action: string;
+  status: RunRecord['status'];
+  startedAt: string;
+  ageMs: number;
+  runnerName?: string;
+  runnerKind?: string;
+  tier?: string;
+}> {
+  return runs
+    .filter(
+      (run) =>
+        run.workItemKey === item.workItemKey &&
+        run.status === 'running' &&
+        run.runId !== item.wake.lastRunId,
+    )
+    .sort((left, right) => left.startedAt.localeCompare(right.startedAt))
+    .map((run) => ({
+      runId: run.runId,
+      action: run.action,
+      status: run.status,
+      startedAt: run.startedAt,
+      ageMs: now.getTime() - Date.parse(run.startedAt),
+      ...(run.routing?.runnerName === undefined ? {} : { runnerName: run.routing.runnerName }),
+      ...(run.routing?.runnerKind === undefined ? {} : { runnerKind: run.routing.runnerKind }),
+      ...(run.routing?.tier === undefined ? {} : { tier: run.routing.tier }),
+    }));
+}
+
 export async function buildBoard(input: { stateStore: StateStore; config: WakeConfig; now: Date }) {
   const items = await input.stateStore.listIssueStates({
     archiveFreshnessDays: input.config.ui.archiveFreshnessDays,
     now: input.now,
   });
-  const lastRuns = await Promise.all(
-    items.map((item) =>
-      item.wake.lastRunId === undefined
-        ? Promise.resolve(null)
-        : input.stateStore.readRunRecord(item.wake.lastRunId),
-    ),
-  );
+  // One bulk summarized scan shared by every item, instead of readRunRecord()
+  // per item - deriveCondition only reads status/sentinel, so this doesn't
+  // need full records, and doing a separate lookup (with its own fallback
+  // scan when a flat run file is missing) per item made board loads scale
+  // with items x run-history size instead of just run-history size.
+  const runs = await input.stateStore.listRunRecordSummaries();
+  const runsById = new Map(runs.map((run) => [run.runId, run]));
 
-  return items.map((item, index) => {
-    const lastRun = lastRuns[index] ?? null;
+  return items.map((item) => {
+    const lastRun =
+      item.wake.lastRunId === undefined ? null : (runsById.get(item.wake.lastRunId) ?? null);
     const { condition, reason } = deriveCondition(item, lastRun, input.config);
+    const activeChildRuns = activeChildRunsForItem(item, runs, input.now);
 
     return {
       repo: item.issue.repo,
@@ -141,6 +177,7 @@ export async function buildBoard(input: { stateStore: StateStore; config: WakeCo
       lastRunAction: lastRun?.action,
       lastRunSentinel: lastRun?.sentinel,
       lastRunStatus: lastRun?.status,
+      ...(activeChildRuns.length === 0 ? {} : { activeChildRuns }),
       sessionId: item.wake.sessionId,
       workspacePath: item.wake.workspacePath,
     };
@@ -157,7 +194,7 @@ export async function buildStatus(input: {
     input.stateStore.readLedger(),
     input.stateStore.isPaused(),
     input.stateStore.listRecentEventEnvelopes({ limit: 1 }),
-    input.stateStore.listRunRecordsForDate(today),
+    input.stateStore.listRunRecordSummariesForDate(today),
     input.stateStore.listRecentRunRecords(1),
     buildBoard(input),
   ]);
@@ -331,7 +368,7 @@ export async function buildItemDetail(input: {
     return null;
   }
 
-  const allRuns = await input.stateStore.listRunRecords();
+  const allRuns = await input.stateStore.listRunRecordSummaries();
   const runs = allRuns
     .filter((run) => run.workItemKey === item.workItemKey)
     .sort((left, right) => left.startedAt.localeCompare(right.startedAt));
@@ -399,7 +436,7 @@ export async function buildItemTranscripts(input: {
     return { enabled: false, sessions: [] };
   }
 
-  const runs = (await input.stateStore.listRunRecords()).filter(
+  const runs = (await input.stateStore.listRunRecordSummaries()).filter(
     (run) => run.workItemKey === input.workItemKey,
   );
   const runsById = new Map(runs.map((run) => [run.runId, run]));
@@ -496,7 +533,7 @@ export async function buildRuns(input: {
   action?: string | undefined;
   repo?: string | undefined;
 }) {
-  const runs = await input.stateStore.listRunRecords();
+  const runs = await input.stateStore.listRunRecordSummaries();
   return runs
     .filter((run) => input.status === undefined || run.status === input.status)
     .filter((run) => input.action === undefined || run.action === input.action)
@@ -669,7 +706,7 @@ async function listRunsForBuckets(
   const dates = [...new Set(buckets.map((bucket) => bucket.bucket.slice(0, 10)))];
   const runsById = new Map<string, RunRecord>();
   const recordsByDate = await Promise.all(
-    dates.map((date) => stateStore.listRunRecordsForDate(date)),
+    dates.map((date) => stateStore.listRunRecordSummariesForDate(date)),
   );
   for (const records of recordsByDate) {
     for (const record of records) {

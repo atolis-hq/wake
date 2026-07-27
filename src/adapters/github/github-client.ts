@@ -230,16 +230,35 @@ export function createGitHubClient(token: string) {
         body,
       });
     },
-    async enablePullRequestAutoMerge(pullRequestNodeId: string) {
+    // GitHub's REST merge method takes a lowercase merge_method value,
+    // distinct from the GraphQL PullRequestMergeMethod enum used by
+    // enablePullRequestAutoMerge below.
+    async mergePullRequest(
+      owner: string,
+      repo: string,
+      pullNumber: number,
+      mergeMethod: 'MERGE' | 'SQUASH' | 'REBASE',
+    ) {
+      await octokit.rest.pulls.merge({
+        owner,
+        repo,
+        pull_number: pullNumber,
+        merge_method: mergeMethod.toLowerCase() as 'merge' | 'squash' | 'rebase',
+      });
+    },
+    async enablePullRequestAutoMerge(
+      pullRequestNodeId: string,
+      mergeMethod: 'MERGE' | 'SQUASH' | 'REBASE',
+    ) {
       await octokit.graphql(
-        `mutation EnableWakeAutoMerge($pullRequestId: ID!) {
-          enablePullRequestAutoMerge(input: { pullRequestId: $pullRequestId }) {
+        `mutation EnableWakeAutoMerge($pullRequestId: ID!, $mergeMethod: PullRequestMergeMethod!) {
+          enablePullRequestAutoMerge(input: { pullRequestId: $pullRequestId, mergeMethod: $mergeMethod }) {
             pullRequest {
               id
             }
           }
         }`,
-        { pullRequestId: pullRequestNodeId },
+        { pullRequestId: pullRequestNodeId, mergeMethod },
       );
     },
     async replyToReviewComment(

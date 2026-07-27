@@ -2,7 +2,7 @@ export type StateHealthIssueKind = 'corrupted' | 'incomplete' | 'unreadable';
 
 export type StateHealthIssue = {
   path: string;
-  surface: 'events' | 'state' | 'reverse-index';
+  surface: 'events' | 'state' | 'reverse-index' | 'runs';
   kind: StateHealthIssueKind;
   message: string;
 };

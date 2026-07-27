@@ -609,6 +609,69 @@ describe('createGitHubPullRequestActivitySource', () => {
     );
   });
 
+  it('does not create a duplicate PR comment when the idempotency marker already exists', async () => {
+    const client = {
+      listPullRequests: vi.fn(),
+      getPullRequest: vi.fn(),
+      listComments: vi.fn().mockResolvedValue([
+        {
+          id: 5084999590,
+          body: '<!-- wake:agent -->\n\n<!-- wake:idempotency run-405:pr-review-verdict-comment -->\n\nNo findings.',
+          html_url: 'https://github.com/org/repo/pull/91#issuecomment-5084999590',
+          user: { login: 'atolis-hq-agent' },
+          created_at: '2026-07-18T00:00:00Z',
+          updated_at: '2026-07-18T00:00:00Z',
+        },
+      ]),
+      listReviews: vi.fn(),
+      listReviewComments: vi.fn(),
+      replyToReviewComment: vi.fn(),
+      createComment: vi.fn(),
+    };
+    const source = createGitHubPullRequestActivitySource({
+      client,
+      stateStore: createStateStore({ wakeRoot: root }),
+      config: buildConfig(),
+      resourceIndex: createFakeResourceIndex(),
+      now: () => new Date('2026-07-18T00:00:00Z'),
+    });
+
+    const events = await source.deliverIntent({
+      event: {
+        schemaVersion: 1,
+        eventId: 'intent-1',
+        workItemKey: 'work-01JZ0000000000000000000000',
+        streamScope: 'work-item',
+        direction: 'outbound',
+        sourceSystem: 'wake',
+        sourceEventType: 'wake.publish.intent.requested',
+        sourceRefs: { resourceUri: 'github:pr:org/repo#91' },
+        occurredAt: '2026-07-18T00:00:00Z',
+        ingestedAt: '2026-07-18T00:00:00Z',
+        trigger: 'context-only',
+        payload: {
+          kind: 'approval-request',
+          body: 'No findings.',
+          idempotencyKey: 'run-405:pr-review-verdict-comment',
+        },
+      },
+    });
+
+    expect(client.createComment).not.toHaveBeenCalled();
+    expect(events).toEqual([
+      expect.objectContaining({
+        eventId: 'intent-1-published',
+        sourceEventType: 'pr.comment.reply.published',
+        payload: expect.objectContaining({
+          intentEventId: 'intent-1',
+          idempotencyKey: 'run-405:pr-review-verdict-comment',
+          deliveryState: 'CONFIRMED',
+          providerId: 5084999590,
+        }),
+      }),
+    ]);
+  });
+
   it('derives a stable review-thread resourceUri from review comment thread roots', async () => {
     const client = {
       listPullRequests: vi.fn().mockResolvedValue([openPr91()]),

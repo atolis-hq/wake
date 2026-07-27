@@ -440,13 +440,24 @@ _Lives in `config.workflows.yaml`._
 Per-stage routing. A stage normally routes to a `tier`; `runner` pins a concrete
 named runner and takes precedence over `tier`.
 
-Workflow stages may also define `watch` entries. `watch[].onApproved.merge` is
-an opt-in deterministic action for PR-review approvals:
+Workflow stages may also define `watch` entries. `watch[].onSuccess` declares
+what Wake does when the watched child workflow run completes `DONE` — the
+child's sentinel is its verdict:
 
 ```yaml
 workflows:
   default:
     stages:
+      refine:
+        action: refine
+        workspace: read-only
+        onDone: implement
+        watch:
+          - while: { status: [awaiting-approval] }
+            on: { event: [wake.run.completed] }
+            workflow: plan-review
+            onSuccess:
+              approve: true
       implement:
         action: implement
         workspace: branch
@@ -456,10 +467,11 @@ workflows:
             on: { event: [wake.run.completed] }
             schedule: { cron: "*/10 * * * *" }
             workflow: pr-review
-            onApproved:
+            onSuccess:
               merge:
                 approve: true
                 autoMerge: true
+                mergeMethod: SQUASH
                 maxFilesChanged: 10
                 blockedPaths:
                   - src/core/contracts.ts
@@ -468,22 +480,58 @@ workflows:
                   - security
 ```
 
+`onSuccess.approve` resolves the watched stage's pending approval through
+Wake's own approval transition — the same one a human `/approved` comment
+takes — when the child run completes `DONE` and no correlated PR carries the
+verdict. The approval is idempotent, recorded as a run-completed event with
+reason `watcher:approved`, and audited as an `approval.watcher-resolved`
+decision. A child `FAILED` or `BLOCKED` verdict posts the review body without
+approving.
+
+`onSuccess.merge` is an opt-in deterministic action for PR-review approvals:
+
 | Property          | Type     | Description                                                       | Default |
 | ----------------- | -------- | ----------------------------------------------------------------- | ------- |
-| `approve`         | boolean  | Submit a GitHub PR review with `APPROVE`                          | `false` |
-| `autoMerge`       | boolean  | Enable GitHub native auto-merge on the PR after policy passes     | `false` |
-| `maxFilesChanged` | number   | Block when the PR changes more files than this limit              | unset   |
-| `blockedPaths`    | string[] | Glob-style changed-path patterns that always block (`*` wildcard) | `[]`    |
-| `blockedLabels`   | string[] | Issue labels that always block this deterministic merge action    | `[]`    |
+| `approve`         | boolean                       | Submit a GitHub PR review with `APPROVE`                           | `false` |
+| `autoMerge`       | boolean                       | Enable GitHub native auto-merge on the PR after policy passes      | `false` |
+| `mergeMethod`     | `MERGE` \| `SQUASH` \| `REBASE` | Merge method requested when enabling `autoMerge`                 | `MERGE` |
+| `maxFilesChanged` | number                        | Block when the PR changes more files than this limit               | unset   |
+| `blockedPaths`    | string[]                      | Glob-style changed-path patterns that always block (`*` wildcard)  | `[]`    |
+| `blockedLabels`   | string[]                      | Issue labels that always block this deterministic merge action     | `[]`    |
 
-This action only runs for Wake's bot-authored PR-review approval marker on a
-correlated PR. It does not run for human `/approved` comments on the issue
-thread. If a policy rule fails, Wake posts the reviewer message plus the policy
-exception on the PR and moves the work item to `blocked`.
+`mergeMethod` must match a method the repository actually allows (GitHub
+repo settings: "Allow merge commits" / "Allow squash merging" / "Allow rebase
+merging"). GitHub's auto-merge API defaults to `MERGE` when unspecified, which
+fails outright on a squash-only or rebase-only repository — set this
+explicitly to match your repo's settings rather than relying on the default.
+
+`autoMerge` queues a merge that completes once required checks pass; GitHub
+rejects that queue request when the PR has nothing left to wait for (checks
+already green or skipped) — the common case for a small, fast-reviewed PR.
+Wake detects that specific rejection and merges directly instead, using the
+same `mergeMethod`, rather than treating it as a policy block.
+
+The merge action only runs for Wake's bot-authored PR-review approval marker
+on a correlated PR. It does not run for human `/approved` comments on the
+issue thread. If a policy rule fails, Wake posts the reviewer message plus the
+policy exception on the PR and moves the work item to `blocked`.
 
 When `autoMerge` is enabled, configure GitHub branch protection with required
 status checks. Wake delegates the final green-CI gate to GitHub native
 auto-merge rather than polling CI in this merge action.
+
+If `approve` or `autoMerge` fails against the provider (for example: GitHub
+rejects a review approving the PR's own author with a 422 "Can not approve
+your own pull request" when `implement` and `pr-review` share one bot
+identity; or a repository's allowed merge methods reject the auto-merge
+request), Wake treats that failure as a policy block rather than an
+uncaught error — it posts the provider's own rejection message and moves the
+work item to `blocked`, without retrying the identical doomed call forever.
+`approve` and `autoMerge` are attempted independently: one failing doesn't
+prevent the other from running or from an already-succeeded step being
+recorded. If `approve` consistently fails because your implement and
+pr-review workflows share one bot identity, either disable `approve` and rely
+on `autoMerge` alone, or configure a second reviewer identity.
 
 ### ui
 

@@ -13,6 +13,7 @@ import {
   failurePhaseSchema,
   issueStateRecordSchema,
   ledgerSchema,
+  mergeMethodSchema,
   reportedArtifactSchema,
   retrySafetySchema,
   runRecordSchema,
@@ -37,6 +38,7 @@ export type AgentAction = string;
 // pointless `?? []` guards onto every consumer. Call sites that build a raw
 // IssueStateRecord literal without going through parseIssueStateRecord
 // (test fixtures) simply include `correlatedResources: []` explicitly.
+export type MergeMethod = z.infer<typeof mergeMethodSchema>;
 export type IssueStateRecord = z.infer<typeof issueStateRecordSchema>;
 export type RunRecord = z.infer<typeof runRecordSchema>;
 export type RunRecordInput = z.input<typeof runRecordSchema>;

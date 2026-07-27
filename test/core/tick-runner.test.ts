@@ -114,6 +114,7 @@ describe('tick runner', () => {
       issueNumber: number;
       runId?: string;
       occurredAt?: string;
+      body?: string;
     }) {
       const runId = input.runId ?? `run-${input.issueNumber}-previous`;
       await input.store.appendEventEnvelope(
@@ -128,7 +129,11 @@ describe('tick runner', () => {
           occurredAt: input.occurredAt ?? watcherNow,
           ingestedAt: input.occurredAt ?? watcherNow,
           trigger: 'immediate',
-          payload: { action: 'implement', sentinel: 'AWAITING_APPROVAL' },
+          payload: {
+            action: 'implement',
+            sentinel: 'AWAITING_APPROVAL',
+            ...(input.body === undefined ? {} : { body: input.body }),
+          },
         }),
       );
     }
@@ -298,6 +303,290 @@ describe('tick runner', () => {
           }),
         ]),
       );
+    });
+
+    it('resolves the parent approval gate when an onSuccess.approve watcher child completes DONE without a PR target', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const resourceIndex = await seededResourceIndex([420]);
+      const config = configurePrReviewWatcher(root, {
+        workflowName: 'plan-review',
+        action: 'plan-review',
+      });
+      config.workflows.default!.stages.implement!.watch![0]!.onSuccess = { approve: true };
+
+      await seedAwaitingApprovalIssue({ store, issueNumber: 420 });
+      await appendPreviousCompletedEvent({ store, issueNumber: 420 });
+
+      const publishedBodies: string[] = [];
+      let runnerCallCount = 0;
+      const tickRunner = createTickRunner({
+        clock: { now: () => new Date(watcherNow) },
+        config,
+        stateStore: store,
+        workSource: {
+          async pollEvents() {
+            return [];
+          },
+        },
+        outboundSink: {
+          async deliverIntent(input) {
+            if (input.event.sourceEventType === 'wake.publish.intent.requested') {
+              publishedBodies.push(String(input.event.payload.body));
+            }
+            return [];
+          },
+        },
+        runner: {
+          async run() {
+            runnerCallCount += 1;
+            return {
+              result: prReviewResult({ status: 'DONE', body: 'Plan looks solid.' }),
+              model: 'fake',
+              cli: 'Fake',
+            };
+          },
+        },
+        resourceIndex,
+        workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+      });
+
+      await tickRunner.runTick();
+      await tickRunner.runTick();
+
+      expect(runnerCallCount).toBe(1);
+      const updated = await store.readIssueState(workId(420));
+      expect(updated?.wake.stage).toBe('done');
+      expect(updated?.context.pendingApprovalAction).toBeUndefined();
+      expect(publishedBodies).toContain('Plan looks solid.');
+      const events = await store.listEventEnvelopes();
+      const approvalEvent = events.find((event) =>
+        event.eventId.endsWith('-parent-approval-completed'),
+      );
+      expect(approvalEvent?.payload.reason).toBe('watcher:approved');
+      expect(approvalEvent?.payload.action).toBe('implement');
+      const auditEvents = events.filter(
+        (event) => event.sourceEventType === AUTONOMOUS_DECISION_AUDIT_EVENT,
+      );
+      expect(auditEvents).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            payload: expect.objectContaining({
+              decisionType: 'approval.watcher-resolved',
+              workflowRevision: expect.stringMatching(/^sha256:/),
+            }),
+          }),
+        ]),
+      );
+    });
+
+    it('threads the triggering completion event body into the watcher child prompt context, not just projection.comments', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const resourceIndex = await seededResourceIndex([424]);
+      const config = configurePrReviewWatcher(root, {
+        workflowName: 'plan-review',
+        action: 'plan-review',
+      });
+      // Event-only trigger: a schedule fallback would also fire on the second
+      // tick with no triggering event of its own, overwriting the assertion
+      // below with an empty override — not what this test is checking.
+      delete config.workflows.default!.stages.implement!.watch![0]!.schedule;
+
+      await seedAwaitingApprovalIssue({ store, issueNumber: 424 });
+      await appendPreviousCompletedEvent({
+        store,
+        issueNumber: 424,
+        body: 'Proposed plan: rename foo to bar.',
+      });
+
+      let seenContextOverrides: Record<string, unknown> | undefined;
+      const tickRunner = createTickRunner({
+        clock: { now: () => new Date(watcherNow) },
+        config,
+        stateStore: store,
+        workSource: {
+          async pollEvents() {
+            return [];
+          },
+        },
+        runner: {
+          async run(input) {
+            seenContextOverrides = input.promptContextOverrides;
+            return {
+              result: prReviewResult({ status: 'BLOCKED', body: 'Needs a human look.' }),
+              model: 'fake',
+              cli: 'Fake',
+            };
+          },
+        },
+        resourceIndex,
+        workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+      });
+
+      await tickRunner.runTick();
+
+      expect(seenContextOverrides?.parentPendingReviewBody).toBe(
+        'Proposed plan: rename foo to bar.',
+      );
+    });
+
+    it('does not resolve the parent gate when the watcher lacks onSuccess.approve', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const resourceIndex = await seededResourceIndex([421]);
+      const config = configurePrReviewWatcher(root, {
+        workflowName: 'plan-review',
+        action: 'plan-review',
+      });
+
+      await seedAwaitingApprovalIssue({ store, issueNumber: 421 });
+      await appendPreviousCompletedEvent({ store, issueNumber: 421 });
+
+      const tickRunner = createTickRunner({
+        clock: { now: () => new Date(watcherNow) },
+        config,
+        stateStore: store,
+        workSource: {
+          async pollEvents() {
+            return [];
+          },
+        },
+        runner: {
+          async run() {
+            return {
+              result: prReviewResult({ status: 'DONE', body: 'Plan looks solid.' }),
+              model: 'fake',
+              cli: 'Fake',
+            };
+          },
+        },
+        resourceIndex,
+        workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+      });
+
+      await tickRunner.runTick();
+      await tickRunner.runTick();
+
+      const updated = await store.readIssueState(workId(421));
+      expect(updated?.wake.stage).toBe('implement');
+      expect(updated?.context.pendingApprovalAction).toBe('implement');
+      const events = await store.listEventEnvelopes();
+      expect(
+        events.find((event) => event.eventId.endsWith('-parent-approval-completed')),
+      ).toBeUndefined();
+    });
+
+    it('publishes a FAILED child verdict without approving the parent gate', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const resourceIndex = await seededResourceIndex([422]);
+      const config = configurePrReviewWatcher(root, {
+        workflowName: 'plan-review',
+        action: 'plan-review',
+      });
+      config.workflows.default!.stages.implement!.watch![0]!.onSuccess = { approve: true };
+
+      await seedAwaitingApprovalIssue({ store, issueNumber: 422 });
+      await appendPreviousCompletedEvent({ store, issueNumber: 422 });
+
+      const publishedBodies: string[] = [];
+      const tickRunner = createTickRunner({
+        clock: { now: () => new Date(watcherNow) },
+        config,
+        stateStore: store,
+        workSource: {
+          async pollEvents() {
+            return [];
+          },
+        },
+        outboundSink: {
+          async deliverIntent(input) {
+            if (input.event.sourceEventType === 'wake.publish.intent.requested') {
+              publishedBodies.push(String(input.event.payload.body));
+            }
+            return [];
+          },
+        },
+        runner: {
+          async run() {
+            return {
+              result: prReviewResult({ status: 'FAILED', body: 'Plan misses the rollback path.' }),
+              model: 'fake',
+              cli: 'Fake',
+            };
+          },
+        },
+        resourceIndex,
+        workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+      });
+
+      await tickRunner.runTick();
+      await tickRunner.runTick();
+
+      const updated = await store.readIssueState(workId(422));
+      expect(updated?.wake.stage).toBe('implement');
+      expect(updated?.context.pendingApprovalAction).toBe('implement');
+      expect(publishedBodies).toContain('Plan misses the rollback path.');
+      const events = await store.listEventEnvelopes();
+      expect(
+        events.find((event) => event.eventId.endsWith('-parent-approval-completed')),
+      ).toBeUndefined();
+    });
+
+    it('publishes a BLOCKED child verdict without approving the parent gate', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const resourceIndex = await seededResourceIndex([423]);
+      const config = configurePrReviewWatcher(root, {
+        workflowName: 'plan-review',
+        action: 'plan-review',
+      });
+      config.workflows.default!.stages.implement!.watch![0]!.onSuccess = { approve: true };
+
+      await seedAwaitingApprovalIssue({ store, issueNumber: 423 });
+      await appendPreviousCompletedEvent({ store, issueNumber: 423 });
+
+      const publishedBodies: string[] = [];
+      const tickRunner = createTickRunner({
+        clock: { now: () => new Date(watcherNow) },
+        config,
+        stateStore: store,
+        workSource: {
+          async pollEvents() {
+            return [];
+          },
+        },
+        outboundSink: {
+          async deliverIntent(input) {
+            if (input.event.sourceEventType === 'wake.publish.intent.requested') {
+              publishedBodies.push(String(input.event.payload.body));
+            }
+            return [];
+          },
+        },
+        runner: {
+          async run() {
+            return {
+              result: prReviewResult({
+                status: 'BLOCKED',
+                body: 'This needs operator judgment on the schema migration.',
+              }),
+              model: 'fake',
+              cli: 'Fake',
+            };
+          },
+        },
+        resourceIndex,
+        workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+      });
+
+      await tickRunner.runTick();
+      await tickRunner.runTick();
+
+      const updated = await store.readIssueState(workId(423));
+      expect(updated?.wake.stage).toBe('implement');
+      expect(updated?.context.pendingApprovalAction).toBe('implement');
+      expect(publishedBodies).toContain('This needs operator judgment on the schema migration.');
+      const events = await store.listEventEnvelopes();
+      expect(
+        events.find((event) => event.eventId.endsWith('-parent-approval-completed')),
+      ).toBeUndefined();
     });
 
     it('publishes a pr-review approval marker only after the reported PR verifies and belongs to the work item', async () => {
@@ -908,10 +1197,189 @@ describe('tick runner', () => {
       expect(events.some((event) => event.sourceEventType === 'wake.run.claimed')).toBe(false);
     });
 
-    it('does not dispatch a watcher for a closed issue even while its stale local status still matches', async () => {
+    it('does not dispatch a watcher from a watcher run completion event', async () => {
       const store = createStateStore({ wakeRoot: root });
       const resourceIndex = await seededResourceIndex([359]);
-      await seedAwaitingApprovalIssue({ store, issueNumber: 359, issueState: 'closed' });
+      await seedAwaitingApprovalIssue({ store, issueNumber: 359 });
+      await store.appendEventEnvelope(
+        createEventEnvelope({
+          eventId: 'run-359-review-completed',
+          workItemKey: workId(359),
+          streamScope: 'work-item',
+          direction: 'internal',
+          sourceSystem: 'wake',
+          sourceEventType: 'wake.run.completed',
+          sourceRefs: { repo: 'atolis-hq/wake', issueNumber: 359, runId: 'run-359-review' },
+          occurredAt: '2026-07-25T12:10:00.000Z',
+          ingestedAt: '2026-07-25T12:10:00.000Z',
+          trigger: 'immediate',
+          payload: {
+            action: 'pr-review',
+            sentinel: 'BLOCKED',
+            watcherRun: true,
+            watcherTrigger: { kind: 'event', eventId: 'run-359-previous-completed' },
+          },
+        }),
+      );
+
+      const config = configurePrReviewWatcher(root);
+      config.workflows.default!.stages.implement!.watch![0]!.schedule = undefined;
+      let runnerCalls = 0;
+      const tickRunner = createTickRunner({
+        clock: { now: () => new Date('2026-07-25T12:11:00.000Z') },
+        config,
+        stateStore: store,
+        workSource: {
+          async pollEvents() {
+            return [];
+          },
+        },
+        runner: {
+          async run() {
+            runnerCalls += 1;
+            return { result: 'should not run\nDONE', model: 'fake', cli: 'Fake' };
+          },
+        },
+        resourceIndex,
+        workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+      });
+
+      const result = await tickRunner.runTick();
+
+      expect(result.status).toBe('idle');
+      expect(runnerCalls).toBe(0);
+      expect(await store.listRunRecords()).toHaveLength(0);
+    });
+
+    it('runs revise instead of re-running pr-review after a changes-requested marker', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const resourceIndex = await seededResourceIndex([360]);
+      await store.writeIssueState({
+        schemaVersion: 1,
+        workItemKey: workId(360),
+        issue: {
+          repo: 'atolis-hq/wake',
+          number: 360,
+          title: 'Implement',
+          body: 'Body',
+          labels: ['wake:implement'],
+          assignees: [],
+          isPullRequest: false,
+          state: 'open',
+          url: 'https://example.test/issues/360',
+          createdAt: watcherNow,
+          updatedAt: watcherNow,
+        },
+        comments: [
+          {
+            id: 'pr-5084905755',
+            body: 'Please revise this PR.\n\n<!-- wake:pr-review-changes-requested -->',
+            author: { login: 'atolis-hq-agent' },
+            createdAt: '2026-07-25T12:10:00.000Z',
+            updatedAt: '2026-07-25T12:10:00.000Z',
+            isBotAuthored: true,
+            resourceUri: 'github:pr:atolis-hq/wake#410',
+          },
+          {
+            id: 'pr-5084954595',
+            body: 'address the comments\nand fix the failing tests',
+            author: { login: 'jmenziessmith' },
+            createdAt: '2026-07-25T12:11:00.000Z',
+            updatedAt: '2026-07-25T12:11:00.000Z',
+            isBotAuthored: false,
+            resourceUri: 'github:pr:atolis-hq/wake#410',
+          },
+        ],
+        wake: {
+          stage: 'implement',
+          lastRunId: 'run-360-previous',
+          stageHistory: [],
+          recentEventIds: ['run-360-review-completed'],
+          syncedAt: watcherNow,
+          expectedEcho: { commentIds: [], labels: [] },
+        },
+        context: {
+          workflow: 'default',
+          lastRunSentinel: 'AWAITING_APPROVAL',
+          pendingApprovalAction: 'implement',
+        },
+        correlatedResources: [
+          {
+            resourceUri: 'github:pr:atolis-hq/wake#410',
+            role: 'implementation',
+            relation: 'primary',
+            provenance: 'agent-reported',
+            registeredAt: watcherNow,
+          },
+        ],
+      });
+      await store.appendEventEnvelope(
+        createEventEnvelope({
+          eventId: 'run-360-review-completed',
+          workItemKey: workId(360),
+          streamScope: 'work-item',
+          direction: 'internal',
+          sourceSystem: 'wake',
+          sourceEventType: 'wake.run.completed',
+          sourceRefs: { repo: 'atolis-hq/wake', issueNumber: 360, runId: 'run-360-review' },
+          occurredAt: '2026-07-25T12:10:00.000Z',
+          ingestedAt: '2026-07-25T12:10:00.000Z',
+          trigger: 'immediate',
+          payload: {
+            action: 'pr-review',
+            sentinel: 'FAILED',
+            watcherRun: true,
+            watcherTrigger: { kind: 'event', eventId: 'run-360-previous-completed' },
+          },
+        }),
+      );
+
+      const config = configurePrReviewWatcher(root);
+      config.workflows.default!.stages.implement!.watch![0]!.schedule = undefined;
+      const seen: string[] = [];
+      const tickRunner = createTickRunner({
+        clock: { now: () => new Date('2026-07-25T12:11:00.000Z') },
+        config,
+        stateStore: store,
+        workSource: {
+          async pollEvents() {
+            return [];
+          },
+        },
+        runner: {
+          async run(input) {
+            seen.push(input.action);
+            return {
+              result: [
+                'Revised and awaiting approval.',
+                '',
+                '```wake-result',
+                '{ "status": "AWAITING_APPROVAL" }',
+                '```',
+                'AWAITING_APPROVAL',
+              ].join('\n'),
+              model: 'fake',
+              cli: 'Fake',
+            };
+          },
+        },
+        resourceIndex,
+        workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+      });
+
+      const result = await tickRunner.runTick();
+      const revised = await store.readIssueState(workId(360));
+      await tickRunner.runTick();
+
+      expect(result.status).toBe('processed');
+      expect(revised?.context.lastHandledCommentId).toBe('pr-5084954595');
+      expect(seen.filter((action) => action === 'revise')).toEqual(['revise']);
+    });
+
+    it('does not dispatch a watcher for a closed issue even while its stale local status still matches', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const resourceIndex = await seededResourceIndex([361]);
+      await seedAwaitingApprovalIssue({ store, issueNumber: 361, issueState: 'closed' });
 
       let runnerCalls = 0;
       const tickRunner = createTickRunner({
@@ -955,6 +1423,12 @@ describe('tick runner', () => {
         lifecycle: 'TERMINAL',
         status: 'completed',
         startedAt: '2026-07-25T12:00:00.000Z',
+        // Rate-limit counting reads run records via the summarized listing
+        // (state-store.ts stripHeavyRunRecordFields) so the resident loop
+        // doesn't hold every run's captured stdout/raw in memory each tick -
+        // a large metadata payload here proves that stripping doesn't affect
+        // whether this record still counts toward the window.
+        metadata: { stdout: 'x'.repeat(10_000) },
       });
 
       const config = configurePrReviewWatcher(root);

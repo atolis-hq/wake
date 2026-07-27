@@ -158,6 +158,22 @@ describe('stale run reconciler', () => {
     expect(delivered.map((e) => e.payload.statusLabel)).toContain('wake:status.failed');
   });
 
+  it('preserves captured metadata on a reconciled record even though the staleness scan reads summaries', async () => {
+    await seedProjection(store, 'run-123-stale');
+    await store.writeRunRecord({
+      ...runningRecord('2026-07-05T12:00:00.000Z'),
+      metadata: { workspacePath: '/wake/.wake/repos/atolis-hq__wake', stdout: 'x'.repeat(5000) },
+    });
+
+    await reconciler().reconcileStaleRunningRecords(new Date('2026-07-05T12:02:00.000Z'));
+
+    const record = await store.readRunRecord('run-123-stale');
+    expect(record?.status).toBe('failed');
+    expect(record?.metadata?.stdout).toBe('x'.repeat(5000));
+    expect(record?.metadata?.workspacePath).toBe('/wake/.wake/repos/atolis-hq__wake');
+    expect(record?.metadata?.reconciledBy).toBe('stale-running-record');
+  });
+
   it('supersedes a stale record when a newer run has taken over', async () => {
     await seedProjection(store, 'run-123-newer');
     await store.writeRunRecord(runningRecord('2026-07-05T12:00:00.000Z'));

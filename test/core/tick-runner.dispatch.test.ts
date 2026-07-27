@@ -582,6 +582,11 @@ describe('tick runner', () => {
       expect(projection?.latestComment?.id).toBe('c-new');
       expect(projection?.context.lastHandledCommentId).toBeUndefined();
       expect(completionEvent?.payload.handledCommentId).toBeUndefined();
+      // A canceled run must not advance stage or record a workflow outcome even
+      // if the runner echoed DONE — the snapshot it acted on was superseded.
+      expect(completionEvent?.payload.nextStage).toBeUndefined();
+      expect(completionEvent?.payload.workflowOutcome).toBeUndefined();
+      expect(projection?.wake.stage).toBe('implement');
     });
 
     it('rechecks scheduler capacity after refresh and before persisting a claim', async () => {

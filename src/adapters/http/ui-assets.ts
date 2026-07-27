@@ -62,6 +62,10 @@ export const indexHtml = `<!DOCTYPE html>
   .card:hover { border-color: var(--accent); }
   .card .title { font-weight: 600; margin-bottom: 0.25rem; }
   .card .meta { color: #9aa2ad; font-size: 0.72rem; }
+  .child-run { display: grid; grid-template-columns: auto 1fr; gap: 0.25rem 0.45rem; align-items: center; margin-top: 0.45rem; padding: 0.4rem; border-radius: 6px; background: #181c22; border: 1px solid #334155; color: #cbd5e1; font-size: 0.72rem; }
+  .child-run .dot { width: 0.48rem; height: 0.48rem; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px rgba(45, 212, 191, 0.14); }
+  .child-run .run-title { font-weight: 650; color: #e5e7eb; }
+  .child-run .run-meta { grid-column: 2; color: #94a3b8; }
   .chip { display: inline-block; background: #2c313a; border-radius: 4px; padding: 0.05rem 0.35rem; font-size: 0.68rem; margin-right: 0.2rem; }
   .chip-label { background: transparent; border: 1px solid #3a4150; color: #9aa2ad; margin-bottom: 0.2rem; }
   table { border-collapse: collapse; width: 100%; font-size: 0.8rem; }
@@ -289,6 +293,14 @@ async function renderBoard(context) {
   const board = await getJson('/board', context.signal);
   if (!isActiveRequest(context.requestId)) return;
   const main = document.getElementById('main');
+  const renderChildRun = (run) => el('div', { class: 'child-run' }, [
+    el('span', { class: 'dot' }),
+    el('div', { class: 'run-title', text: run.action + ' running' }),
+    el('div', {
+      class: 'run-meta',
+      text: [run.runnerName, run.tier, fmtMs(run.ageMs)].filter(Boolean).join(' · '),
+    }),
+  ]);
   const columns = el('div', { class: 'columns' }, CONDITIONS.map((cond) => {
     const items = board.filter((c) => c.condition === cond);
     const cards = items.map((item) => el('div', {
@@ -304,6 +316,7 @@ async function renderBoard(context) {
         ? [el('div', { class: 'meta' }, item.labels.map((label) => el('span', { class: 'chip chip-label', text: label })))]
         : []),
       el('div', { class: 'meta', text: item.lastRunSentinel ? 'last: ' + item.lastRunAction + ' → ' + item.lastRunSentinel : item.conditionReason }),
+      ...((item.activeChildRuns || []).map(renderChildRun)),
     ]));
     return el('div', { class: 'col' + (items.length === 0 ? ' col-empty' : '') }, [
       el('h2', { text: cond + ' (' + items.length + ')' }),

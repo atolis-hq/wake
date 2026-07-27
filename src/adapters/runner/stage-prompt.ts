@@ -54,7 +54,15 @@ function newCommentsSinceLastRun(projection: IssueStateRecord): CommentSnapshot[
   const candidates =
     cursorIndex === -1 ? projection.comments : projection.comments.slice(cursorIndex + 1);
 
-  return candidates.filter((comment) => !comment.isBotAuthored);
+  // Bot-authored comments are normally excluded so an agent never reacts to
+  // its own prior status posts as new instructions. A bot-authored comment
+  // on a correlated PR/review surface (resourceUri set) is the one
+  // exception — resolvePendingReviewFeedback (policy-engine.ts) already
+  // treats that surface as the deliberate act that triggers `revise`, so
+  // its prompt must actually carry the comment that dispatched it.
+  return candidates.filter(
+    (comment) => !comment.isBotAuthored || comment.resourceUri !== undefined,
+  );
 }
 
 function previousCommentsThroughLastRun(projection: IssueStateRecord): CommentSnapshot[] {
@@ -270,6 +278,11 @@ export async function buildStagePrompt(input: {
   if (resolvedWorkspaceMode === 'branch') {
     context.branch = branchNameForIssue(input.projection.issue.number);
   }
+
+  // Opaque to this file (resourceUri locator grammar is provider-specific,
+  // ADR 0001 §1) — passed through as-is so a provider-aware prompt template
+  // can interpret it without stage-prompt.ts knowing any adapter's format.
+  context.correlatedResources = input.projection.correlatedResources;
 
   const allowedTools = parseFrontmatterList(template.frontmatter.allowedTools);
   const allowedToolsListStr = allowedTools.length > 0 ? allowedTools.join(', ') : '(none)';

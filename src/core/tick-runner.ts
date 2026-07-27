@@ -45,6 +45,7 @@ import type {
   RunInputSnapshot,
   Stage,
   WakeConfig,
+  WorkflowDefinition,
   WorkflowStageDefinition,
   WorkflowOutcome,
   RuntimeEventDraft,
@@ -111,11 +112,34 @@ type WatcherDispatch = {
 };
 
 const prReviewApprovalMarker = '<!-- wake:pr-review-approved -->';
+const prReviewChangesMarker = '<!-- wake:pr-review-changes-requested -->';
 const activeRunSourceRefreshIntervalMs = 1_000;
 
 function latestHumanCommentId(candidate: IssueStateRecord): string | undefined {
   const human = candidate.comments.filter((c) => !c.isBotAuthored);
   return human.at(-1)?.id;
+}
+
+function latestActionableCommentId(candidate: IssueStateRecord): string | undefined {
+  const handledCommentId =
+    typeof candidate.context.lastHandledCommentId === 'string'
+      ? candidate.context.lastHandledCommentId
+      : undefined;
+  const lastBotIndex = candidate.comments.reduce((acc, comment, index) => {
+    return comment.isBotAuthored ? index : acc;
+  }, -1);
+  const latestComment = candidate.comments.slice(lastBotIndex).at(-1);
+
+  if (
+    latestComment?.id !== handledCommentId &&
+    latestComment?.isBotAuthored === true &&
+    latestComment.resourceUri !== undefined &&
+    latestComment.body.includes(prReviewChangesMarker)
+  ) {
+    return latestComment.id;
+  }
+
+  return latestHumanCommentId(candidate);
 }
 
 function projectedSourceRevision(projection: IssueStateRecord): string {
@@ -151,6 +175,15 @@ function sha256(value: unknown): string {
 
 function isLateralReadOnlyAction(action: AgentAction, config: WakeConfig): boolean {
   return isCustomCommandAction(action, config);
+}
+
+function isEventFromWatcherRun(event: EventEnvelope): boolean {
+  return (
+    typeof event.payload === 'object' &&
+    event.payload !== null &&
+    'watcherRun' in event.payload &&
+    event.payload.watcherRun === true
+  );
 }
 
 function shouldPublishRunResult(input: {
@@ -343,16 +376,17 @@ export function createTickRunner(deps: {
   }
 
   type ApprovedMergePolicy = NonNullable<
-    NonNullable<NonNullable<WorkflowStageDefinition['watch']>[number]['onApproved']>['merge']
+    NonNullable<NonNullable<WorkflowStageDefinition['watch']>[number]['onSuccess']>['merge']
   >;
 
   function approvedMergePolicyForStage(
     stage: WorkflowStageDefinition | undefined,
   ): ApprovedMergePolicy | null {
-    return (
-      stage?.watch?.find((watch) => watch.onApproved?.merge !== undefined)?.onApproved?.merge ??
-      null
-    );
+    // Schema defaults materialize a disabled merge block whenever onSuccess is
+    // set (e.g. approve-only watchers); treat it as no merge policy at all.
+    const merge =
+      stage?.watch?.find((watch) => watch.onSuccess?.merge !== undefined)?.onSuccess?.merge ?? null;
+    return merge !== null && (merge.approve || merge.autoMerge) ? merge : null;
   }
 
   function escapeRegex(input: string): string {
@@ -521,17 +555,21 @@ export function createTickRunner(deps: {
     };
   }
 
+  function describeMergeActorError(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
+  }
+
   async function performApprovedPrMergeActions(input: {
     projection: IssueStateRecord;
     approvalResolution: NonNullable<ReturnType<typeof policy.resolveApprovalTransition>>;
     mergePolicy: ApprovedMergePolicy;
-  }): Promise<void> {
+  }): Promise<{ blocked: false } | { blocked: true; reason: string }> {
     if (
       deps.prMergeActor === undefined ||
       input.approvalResolution.targetResourceUri === undefined ||
       input.approvalResolution.triggeringCommentId === undefined
     ) {
-      return;
+      return { blocked: false };
     }
 
     const targetResourceUri = input.approvalResolution.targetResourceUri;
@@ -539,33 +577,47 @@ export function createTickRunner(deps: {
     const reviewBody = reviewerMessageFromApprovalComment(
       input.approvalResolution.triggeringCommentBody ?? '',
     );
+    // Never enumerate specific rejection reasons (self-approval, merge-method
+    // restrictions, branch protection, ...) by string-matching the merge
+    // actor's error — there are too many, and Wake shouldn't need to know
+    // its provider's vocabulary. Any failure here is permanent enough not to
+    // retry blindly forever, so it becomes a policy block with the actor's
+    // own message attached. approve and autoMerge are independent: one
+    // failing doesn't stop the other from being attempted.
+    const blockedReasons: string[] = [];
     const approvedEventId = `pr-merge-approved-${commentId}`;
     if (
       input.mergePolicy.approve &&
       (await deps.stateStore.readEventEnvelope(approvedEventId)) === null
     ) {
-      await deps.prMergeActor.approve(targetResourceUri, reviewBody);
-      const occurredAt = eventStampNow();
-      await deps.stateStore.appendEventEnvelope(
-        createEventEnvelope({
-          eventId: approvedEventId,
-          workItemKey: input.projection.workItemKey,
-          streamScope: 'work-item',
-          direction: 'internal',
-          sourceSystem: 'wake',
-          sourceEventType: PR_REVIEW_APPROVED_EVENT,
-          sourceRefs: {
-            resourceUri: targetResourceUri,
-            commentId: input.approvalResolution.triggeringCommentId,
-          },
-          occurredAt,
-          ingestedAt: occurredAt,
-          trigger: 'context-only',
-          payload: {
-            idempotencyKey: `${input.approvalResolution.triggeringCommentId}:pr-review-approval`,
-          },
-        }),
-      );
+      try {
+        await deps.prMergeActor.approve(targetResourceUri, reviewBody);
+        const occurredAt = eventStampNow();
+        await deps.stateStore.appendEventEnvelope(
+          createEventEnvelope({
+            eventId: approvedEventId,
+            workItemKey: input.projection.workItemKey,
+            streamScope: 'work-item',
+            direction: 'internal',
+            sourceSystem: 'wake',
+            sourceEventType: PR_REVIEW_APPROVED_EVENT,
+            sourceRefs: {
+              resourceUri: targetResourceUri,
+              commentId: input.approvalResolution.triggeringCommentId,
+            },
+            occurredAt,
+            ingestedAt: occurredAt,
+            trigger: 'context-only',
+            payload: {
+              idempotencyKey: `${input.approvalResolution.triggeringCommentId}:pr-review-approval`,
+            },
+          }),
+        );
+      } catch (error) {
+        blockedReasons.push(
+          `Merge policy blocked the approval step: ${describeMergeActorError(error)}`,
+        );
+      }
     }
 
     const autoMergeEventId = `pr-auto-merge-enabled-${commentId}`;
@@ -573,29 +625,104 @@ export function createTickRunner(deps: {
       input.mergePolicy.autoMerge &&
       (await deps.stateStore.readEventEnvelope(autoMergeEventId)) === null
     ) {
-      await deps.prMergeActor.enableAutoMerge(targetResourceUri);
-      const occurredAt = eventStampNow();
-      await deps.stateStore.appendEventEnvelope(
-        createEventEnvelope({
-          eventId: autoMergeEventId,
-          workItemKey: input.projection.workItemKey,
-          streamScope: 'work-item',
-          direction: 'internal',
-          sourceSystem: 'wake',
-          sourceEventType: PR_AUTO_MERGE_ENABLED_EVENT,
-          sourceRefs: {
-            resourceUri: targetResourceUri,
-            commentId: input.approvalResolution.triggeringCommentId,
-          },
-          occurredAt,
-          ingestedAt: occurredAt,
-          trigger: 'context-only',
-          payload: {
-            idempotencyKey: `${input.approvalResolution.triggeringCommentId}:pr-auto-merge`,
-          },
-        }),
-      );
+      try {
+        await deps.prMergeActor.enableAutoMerge(targetResourceUri, input.mergePolicy.mergeMethod);
+        const occurredAt = eventStampNow();
+        await deps.stateStore.appendEventEnvelope(
+          createEventEnvelope({
+            eventId: autoMergeEventId,
+            workItemKey: input.projection.workItemKey,
+            streamScope: 'work-item',
+            direction: 'internal',
+            sourceSystem: 'wake',
+            sourceEventType: PR_AUTO_MERGE_ENABLED_EVENT,
+            sourceRefs: {
+              resourceUri: targetResourceUri,
+              commentId: input.approvalResolution.triggeringCommentId,
+            },
+            occurredAt,
+            ingestedAt: occurredAt,
+            trigger: 'context-only',
+            payload: {
+              idempotencyKey: `${input.approvalResolution.triggeringCommentId}:pr-auto-merge`,
+            },
+          }),
+        );
+      } catch (error) {
+        blockedReasons.push(
+          `Merge policy blocked the auto-merge step: ${describeMergeActorError(error)}`,
+        );
+      }
     }
+
+    if (blockedReasons.length > 0) {
+      return { blocked: true, reason: blockedReasons.join(' ') };
+    }
+
+    return { blocked: false };
+  }
+
+  // The one deterministic approval transition: /approved, wake:auto, and a
+  // watcher child's onSuccess.approve all resolve a pending approval through
+  // this same event shape, so replay folds them identically.
+  async function applyApprovalTransition(input: {
+    projection: IssueStateRecord;
+    pendingAction: AgentAction;
+    approvalId: string;
+    approvedAt: string;
+    reason: string;
+    workflow: WorkflowDefinition;
+    workflowName: string;
+    payloadExtras?: Record<string, unknown>;
+  }): Promise<{ nextStage: Stage } | null> {
+    const nextStage = lifecycle.nextStageFromSentinel(
+      input.projection.wake.stage,
+      'DONE',
+      input.workflow,
+    );
+    if (nextStage === null) {
+      return null;
+    }
+
+    const approvalCompletedEvent = createEventEnvelope({
+      eventId: `${input.approvalId}-completed`,
+      workItemKey: input.projection.workItemKey,
+      streamScope: 'work-item',
+      direction: 'internal',
+      sourceSystem: 'wake',
+      sourceEventType: RUN_COMPLETED_EVENT,
+      sourceRefs: {
+        repo: input.projection.issue.repo,
+        issueNumber: input.projection.issue.number,
+        runId: input.approvalId,
+      },
+      occurredAt: input.approvedAt,
+      ingestedAt: input.approvedAt,
+      trigger: 'immediate',
+      payload: {
+        action: input.pendingAction,
+        sentinel: 'DONE',
+        nextStage,
+        runId: input.approvalId,
+        reason: input.reason,
+        ...input.payloadExtras,
+      },
+    });
+    await deps.stateStore.appendEventEnvelope(approvalCompletedEvent);
+    await projectionUpdater.rebuildFromEvents([approvalCompletedEvent]);
+
+    await deliverOutboundEvent(
+      createLabelsEvent({
+        projection: input.projection,
+        runId: input.approvalId,
+        statusLabel: statusLabelForStage(nextStage),
+        stageLabel: stageLabelForStage(nextStage),
+        workflowLabel: workflowLabelForWorkflowName(input.workflowName),
+        occurredAt: input.approvedAt,
+      }),
+    );
+
+    return { nextStage };
   }
 
   // Closes the loop on #82's review feedback: rather than scrape a PR link
@@ -709,7 +836,7 @@ export function createTickRunner(deps: {
   async function markPendingActionableIssues(projections: IssueStateRecord[]): Promise<void> {
     const activeRunWorkItemKeys = new Set<string>();
     const now = deps.clock.now();
-    for (const record of await deps.stateStore.listRunRecords()) {
+    for (const record of await deps.stateStore.listRunRecordSummaries()) {
       if (record.status === 'running' && (await isRunningRecordActive(record, now))) {
         activeRunWorkItemKeys.add(record.workItemKey);
       }
@@ -853,7 +980,7 @@ export function createTickRunner(deps: {
   async function exceedsDispatchRateLimit(now: Date): Promise<boolean> {
     const { windowMs, maxDispatches } = deps.config.scheduler.dispatchRateLimit;
     const windowStartMs = now.getTime() - windowMs;
-    const runRecords = await deps.stateStore.listRunRecords();
+    const runRecords = await deps.stateStore.listRunRecordSummaries();
     const recentCount = runRecords.reduce((count, record) => {
       const startedAtMs = Date.parse(record.startedAt);
       return Number.isFinite(startedAtMs) &&
@@ -906,7 +1033,7 @@ export function createTickRunner(deps: {
   }
 
   async function hasSchedulerCapacity(now: Date): Promise<boolean> {
-    const runRecords = await deps.stateStore.listRunRecords();
+    const runRecords = await deps.stateStore.listRunRecordSummaries();
     for (const record of runRecords) {
       if (record.status !== 'running') {
         continue;
@@ -1152,6 +1279,7 @@ export function createTickRunner(deps: {
           });
           const matchingEvents = events
             .filter((event) => watcher.on!.event.includes(event.sourceEventType))
+            .filter((event) => !isEventFromWatcherRun(event))
             .sort((left, right) => left.ingestedAt.localeCompare(right.ingestedAt));
           const cursorIndex =
             state?.lastDispatchedEventId === undefined
@@ -1288,15 +1416,15 @@ export function createTickRunner(deps: {
         return { status: 'processed' as const };
       }
 
-      const watcherDispatch = await nextWatcherDispatch(projections, tickStartedAt);
-      let candidate = watcherDispatch?.projection;
+      let candidate = projections.find(
+        (issue) => policy.resolveNextEligibleAction(issue, deps.config) !== null,
+      );
+      const watcherDispatch =
+        candidate === undefined ? await nextWatcherDispatch(projections, tickStartedAt) : null;
+      candidate ??= watcherDispatch?.projection;
       let watcherStateKeyForRun: string | undefined;
       let watcherTriggerForRun: WatcherDispatch['trigger'] | undefined;
       const watcherRun = watcherDispatch !== null;
-
-      candidate ??= projections.find(
-        (issue) => policy.resolveNextEligibleAction(issue, deps.config) !== null,
-      );
 
       if (candidate === undefined) {
         return { status: 'idle' as const };
@@ -1377,7 +1505,21 @@ export function createTickRunner(deps: {
         action = entryStage.action ?? entryStageName;
         claimedStage = entryStageName;
         workspaceMode = entryStage.workspace;
-        promptContextOverrides = entryStage.promptContext;
+        // The triggering event's own body (e.g. a refine plan comment) is
+        // durable and already local the moment this fires — projection.comments
+        // only gets it once a later GitHub poll echoes it back, which a watcher
+        // dispatched off the same-tick completion event can easily outrace.
+        const triggeringEvent =
+          watcherDispatch.trigger.kind === 'event'
+            ? await deps.stateStore.readEventEnvelope(watcherDispatch.trigger.eventId)
+            : null;
+        const triggeringBody = triggeringEvent?.payload.body;
+        promptContextOverrides = {
+          ...entryStage.promptContext,
+          ...(typeof triggeringBody === 'string'
+            ? { parentPendingReviewBody: triggeringBody }
+            : {}),
+        };
         workflowName = watcherDispatch.targetWorkflowName;
         watcherStateKeyForRun = watcherKey({
           workItemKey: watcherDispatch.projection.workItemKey,
@@ -1424,64 +1566,48 @@ export function createTickRunner(deps: {
                   workflowName,
                 });
               }
-              await performApprovedPrMergeActions({
+              const mergeActionsResult = await performApprovedPrMergeActions({
                 projection: candidate,
                 approvalResolution,
                 mergePolicy,
               });
+              if (mergeActionsResult.blocked) {
+                return await publishPrMergePolicyBlock({
+                  projection: candidate,
+                  approvalResolution,
+                  reason: mergeActionsResult.reason,
+                  workflowName,
+                });
+              }
             }
 
             const approvalId = `approval-${candidate.issue.number}-${deps.clock.now().getTime()}`;
             const approvedAt = deps.clock.now().toISOString();
             const automaticApproval = approvalResolution.automatic === true;
-            const nextStage = lifecycle.nextStageFromSentinel(
-              candidate.wake.stage,
-              'DONE',
+            const applied = await applyApprovalTransition({
+              projection: candidate,
+              pendingAction: approvalResolution.pendingAction,
+              approvalId,
+              approvedAt,
+              reason: automaticApproval ? 'auto:approved' : 'human:approved',
               workflow,
-            );
-            if (nextStage === null) {
+              workflowName,
+              payloadExtras: automaticApproval
+                ? {
+                    autoResolution: {
+                      kind: 'awaiting-approval',
+                      classification: 'auto-approval',
+                      reasoning: approvalResolution.reason,
+                    },
+                  }
+                : {
+                    handledCommentId:
+                      approvalResolution.triggeringCommentId ?? latestHumanCommentId(candidate),
+                  },
+            });
+            if (applied === null) {
               return { status: 'idle' as const };
             }
-
-            const approvalCompletedEvent = createEventEnvelope({
-              eventId: `${approvalId}-completed`,
-              workItemKey: candidate.workItemKey,
-              streamScope: 'work-item',
-              direction: 'internal',
-              sourceSystem: 'wake',
-              sourceEventType: RUN_COMPLETED_EVENT,
-              sourceRefs: {
-                repo: candidate.issue.repo,
-                issueNumber: candidate.issue.number,
-                runId: approvalId,
-              },
-              occurredAt: approvedAt,
-              ingestedAt: approvedAt,
-              trigger: 'immediate',
-              payload: {
-                action: approvalResolution.pendingAction,
-                sentinel: 'DONE',
-                nextStage,
-                runId: approvalId,
-                reason: automaticApproval ? 'auto:approved' : 'human:approved',
-                ...(automaticApproval
-                  ? {}
-                  : {
-                      handledCommentId:
-                        approvalResolution.triggeringCommentId ?? latestHumanCommentId(candidate),
-                    }),
-                ...(automaticApproval
-                  ? {
-                      autoResolution: {
-                        kind: 'awaiting-approval',
-                        classification: 'auto-approval',
-                        reasoning: approvalResolution.reason,
-                      },
-                    }
-                  : {}),
-              },
-            });
-            await deps.stateStore.appendEventEnvelope(approvalCompletedEvent);
             if (automaticApproval) {
               await appendAuditEvent({
                 eventId: `${approvalId}-audit-auto-resolution`,
@@ -1502,7 +1628,7 @@ export function createTickRunner(deps: {
                 },
                 outcome: {
                   approved: true,
-                  nextStage,
+                  nextStage: applied.nextStage,
                   reason: approvalResolution.reason,
                 },
                 timestamp: approvedAt,
@@ -1512,24 +1638,12 @@ export function createTickRunner(deps: {
                 },
               });
             }
-            await projectionUpdater.rebuildFromEvents([approvalCompletedEvent]);
-
-            await deliverOutboundEvent(
-              createLabelsEvent({
-                projection: candidate,
-                runId: approvalId,
-                statusLabel: statusLabelForStage(nextStage),
-                stageLabel: stageLabelForStage(nextStage),
-                workflowLabel: workflowLabelForWorkflowName(workflowName),
-                occurredAt: approvedAt,
-              }),
-            );
 
             return {
               status: 'processed' as const,
               runId: approvalId,
               sentinel: 'DONE' as const,
-              nextStage,
+              nextStage: applied.nextStage,
             };
           } else {
             action = approvalResolution.pendingAction;
@@ -1968,10 +2082,14 @@ export function createTickRunner(deps: {
         const skipApproval = runnerResult.metadata?.skipApproval;
         const sentinel =
           rawSentinel === 'DONE' && skipApproval === false ? 'AWAITING_APPROVAL' : rawSentinel;
+        // A canceled run must not advance the stage regardless of what the
+        // runner echoed back — the snapshot it acted on was superseded.
         const nextStage =
-          isLateralReadOnlyAction(action, deps.config) && sentinel === 'DONE'
+          cancellationReason !== null
             ? null
-            : lifecycle.nextStageFromSentinel(claimedStage, sentinel, workflow);
+            : isLateralReadOnlyAction(action, deps.config) && sentinel === 'DONE'
+              ? null
+              : lifecycle.nextStageFromSentinel(claimedStage, sentinel, workflow);
         const finishedAt = deps.clock.now().toISOString();
         let workspaceBookkeeping: unknown;
         if (workspacePath !== undefined) {
@@ -2096,14 +2214,18 @@ export function createTickRunner(deps: {
               : runnerResult.failureClass === 'infra'
                 ? 'PROCESS_FAILED'
                 : 'COMPLETED';
+        // Canceled runs don't produce a meaningful workflow outcome; the input
+        // they acted on was superseded so the sentinel is not authoritative.
         const workflowOutcome: WorkflowOutcome | undefined =
-          sentinel === 'DONE'
-            ? 'DONE'
-            : sentinel === 'BLOCKED'
-              ? 'BLOCKED'
-              : sentinel === 'AWAITING_APPROVAL'
-                ? 'AWAITING_APPROVAL'
-                : undefined;
+          cancellationReason !== null
+            ? undefined
+            : sentinel === 'DONE'
+              ? 'DONE'
+              : sentinel === 'BLOCKED'
+                ? 'BLOCKED'
+                : sentinel === 'AWAITING_APPROVAL'
+                  ? 'AWAITING_APPROVAL'
+                  : undefined;
 
         await transitionRunLifecycle('FINALISING');
         const finalisingRecord = (await deps.stateStore.readRunRecord(runId))!;
@@ -2181,11 +2303,13 @@ export function createTickRunner(deps: {
             ...(failureContext === undefined ? {} : failureContext),
             // Only mark the triggering comment handled when the run reached the
             // agent and produced a real outcome. Quota/infra failures are transient
-            // blips, not an answer to the human's comment — leaving handledCommentId
-            // unset lets the next tick retry instead of silently eating the request (S9).
-            ...(runnerResult.failureClass === 'quota' || runnerResult.failureClass === 'infra'
+            // blips; canceled runs acted on a superseded snapshot — in both cases
+            // leave handledCommentId unset so the next tick can retry (S9).
+            ...(runnerResult.failureClass === 'quota' ||
+            runnerResult.failureClass === 'infra' ||
+            cancellationReason !== null
               ? {}
-              : { handledCommentId: latestHumanCommentId(inputSnapshot.projection) }),
+              : { handledCommentId: latestActionableCommentId(inputSnapshot.projection) }),
             body: parsedRunnerResult.body,
             envelope: parsedRunnerResult.envelope,
             executionOutcome,
@@ -2230,6 +2354,13 @@ export function createTickRunner(deps: {
         if (watcherRun) {
           // Watcher-dispatched runs own PR verdict delivery and correlation
           // registration regardless of the target workflow/action name.
+          const pendingApprovalAction = candidate.context.pendingApprovalAction;
+          const watcherSuccessPolicy =
+            watcherDispatch === null
+              ? undefined
+              : deps.config.workflows[watcherDispatch.parentWorkflowName]?.stages[
+                  watcherDispatch.parentStage
+                ]?.watch?.[watcherDispatch.watcherIndex]?.onSuccess;
           if (
             prReviewTargetResourceUri !== null &&
             (sentinel === 'DONE' || sentinel === 'FAILED')
@@ -2250,6 +2381,61 @@ export function createTickRunner(deps: {
                 idempotencyKey: `${runId}:pr-review-verdict-comment`,
               },
             });
+          } else if (
+            watcherDispatch !== null &&
+            watcherSuccessPolicy?.approve === true &&
+            (sentinel === 'DONE' || sentinel === 'FAILED' || sentinel === 'BLOCKED')
+          ) {
+            // No PR surface to carry the verdict comment: the child's sentinel
+            // is its verdict. Publish the review body for every verdict so the
+            // human sees why; only DONE resolves the parent's pending gate.
+            await deliverOutboundEvent(publishIntent);
+            const approvalId = `${runId}-parent-approval`;
+            const parentWorkflow = deps.config.workflows[watcherDispatch.parentWorkflowName];
+            if (
+              sentinel === 'DONE' &&
+              isAwaitingApproval(candidate) &&
+              typeof pendingApprovalAction === 'string' &&
+              parentWorkflow !== undefined &&
+              (await deps.stateStore.readEventEnvelope(`${approvalId}-completed`)) === null
+            ) {
+              const approvedAt = eventStampNow();
+              const applied = await applyApprovalTransition({
+                projection: candidate,
+                pendingAction: pendingApprovalAction,
+                approvalId,
+                approvedAt,
+                reason: 'watcher:approved',
+                workflow: parentWorkflow,
+                workflowName: watcherDispatch.parentWorkflowName,
+              });
+              if (applied !== null) {
+                await appendAuditEvent({
+                  eventId: `${approvalId}-audit-watcher-approval`,
+                  decisionType: 'approval.watcher-resolved',
+                  workItemKey: candidate.workItemKey,
+                  runId,
+                  workflowRevision: await computeWorkflowRevision({
+                    config: deps.config,
+                    workflowName: watcherDispatch.parentWorkflowName,
+                    workflow: parentWorkflow,
+                    action: pendingApprovalAction,
+                  }),
+                  inputsConsidered: {
+                    watcherWorkflow: watcherDispatch.targetWorkflowName,
+                    pendingAction: pendingApprovalAction,
+                    childRunId: runId,
+                    childSentinel: sentinel,
+                  },
+                  outcome: { approved: true, nextStage: applied.nextStage },
+                  timestamp: approvedAt,
+                  sourceRefs: {
+                    repo: candidate.issue.repo,
+                    issueNumber: candidate.issue.number,
+                  },
+                });
+              }
+            }
           } else {
             await suppressOutboundEvent(publishIntent, {
               suppressedPublishReason: 'pr-review-no-actionable-verdict',
