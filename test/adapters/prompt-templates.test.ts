@@ -160,6 +160,55 @@ describe('prompt templates', () => {
     expect(rendered).toContain('"id": "evt-1"');
   });
 
+  it('threads correlated resources into the pr-review prompt so the agent never has to guess the PR number', async () => {
+    const projection = {
+      schemaVersion: 1 as const,
+      workItemKey: 'work-01JQZX9K2N4P6R8T0V2W4Y6A8D',
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 419,
+        title: 'Example issue',
+        body: 'Body',
+        labels: ['wake:implement'],
+        assignees: [],
+        isPullRequest: false,
+        state: 'open' as const,
+        url: 'https://example.test/issues/419',
+        createdAt: '2026-07-05T12:00:00.000Z',
+        updatedAt: '2026-07-05T12:00:00.000Z',
+      },
+      comments: [],
+      wake: {
+        stage: 'review' as const,
+        stageHistory: [],
+        recentEventIds: [],
+        syncedAt: '2026-07-05T12:00:00.000Z',
+        expectedEcho: { commentIds: [], labels: [] },
+      },
+      context: {},
+      correlatedResources: [
+        {
+          resourceUri: 'github:pr:atolis-hq/wake#421',
+          role: 'implementation' as const,
+          relation: 'primary' as const,
+          provenance: 'agent-reported' as const,
+          registeredAt: '2026-07-05T12:00:00.000Z',
+        },
+      ],
+    };
+
+    const config = createDefaultWakeConfig(process.cwd());
+
+    const result = await buildStagePrompt({
+      action: 'pr-review',
+      projection,
+      config,
+    });
+
+    expect(result.prompt).toContain('github:pr:atolis-hq/wake#421');
+    expect(result.prompt).toContain('"role": "implementation"');
+  });
+
   it('instructs the agent to report PR artifacts when PR tracking is enabled', async () => {
     const projection = {
       schemaVersion: 1 as const,
