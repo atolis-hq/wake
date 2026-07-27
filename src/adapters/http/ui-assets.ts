@@ -315,7 +315,10 @@ async function renderBoard(context) {
       ...(item.labels && item.labels.length > 0
         ? [el('div', { class: 'meta' }, item.labels.map((label) => el('span', { class: 'chip chip-label', text: label })))]
         : []),
-      el('div', { class: 'meta', text: item.lastRunSentinel ? 'last: ' + item.lastRunAction + ' → ' + item.lastRunSentinel : item.conditionReason }),
+      ...(item.activeMainRun
+        ? []
+        : [el('div', { class: 'meta', text: item.lastRunSentinel ? 'last: ' + item.lastRunAction + ' → ' + item.lastRunSentinel : item.conditionReason })]),
+      ...(item.activeMainRun ? [renderChildRun(item.activeMainRun)] : []),
       ...((item.activeChildRuns || []).map(renderChildRun)),
     ]));
     return el('div', { class: 'col' + (items.length === 0 ? ' col-empty' : '') }, [

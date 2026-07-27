@@ -163,6 +163,19 @@ export async function buildBoard(input: { stateStore: StateStore; config: WakeCo
       item.wake.lastRunId === undefined ? null : (runsById.get(item.wake.lastRunId) ?? null);
     const { condition, reason } = deriveCondition(item, lastRun, input.config);
     const activeChildRuns = activeChildRunsForItem(item, runs, input.now);
+    const activeMainRun =
+      lastRun?.status === 'running'
+        ? {
+            runId: lastRun.runId,
+            action: lastRun.action,
+            startedAt: lastRun.startedAt,
+            ageMs: input.now.getTime() - Date.parse(lastRun.startedAt),
+            ...(lastRun.routing?.runnerName === undefined
+              ? {}
+              : { runnerName: lastRun.routing.runnerName }),
+            ...(lastRun.routing?.tier === undefined ? {} : { tier: lastRun.routing.tier }),
+          }
+        : undefined;
 
     return {
       repo: item.issue.repo,
@@ -177,6 +190,7 @@ export async function buildBoard(input: { stateStore: StateStore; config: WakeCo
       lastRunAction: lastRun?.action,
       lastRunSentinel: lastRun?.sentinel,
       lastRunStatus: lastRun?.status,
+      ...(activeMainRun === undefined ? {} : { activeMainRun }),
       ...(activeChildRuns.length === 0 ? {} : { activeChildRuns }),
       sessionId: item.wake.sessionId,
       workspacePath: item.wake.workspacePath,
