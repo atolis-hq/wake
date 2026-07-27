@@ -303,6 +303,7 @@ async function renderBoard(context) {
   ]);
   const columns = el('div', { class: 'columns' }, CONDITIONS.map((cond) => {
     const items = board.filter((c) => c.condition === cond);
+    if (cond === 'finished') items.sort((a, b) => a.timeInStageMs - b.timeInStageMs);
     const cards = items.map((item) => el('div', {
       class: 'card',
       onclick: () => openItemModal(item.repo, item.number),
@@ -310,7 +311,7 @@ async function renderBoard(context) {
       el('div', { class: 'title', text: item.repo + '#' + item.number + ' ' + item.title }),
       el('div', { class: 'meta' }, [
         el('span', { class: 'chip', text: item.stage }),
-        document.createTextNode(fmtMs(item.timeInStageMs) + ' in stage'),
+        ...(cond !== 'finished' ? [document.createTextNode(fmtMs(item.timeInStageMs) + ' in stage')] : []),
       ]),
       ...(item.labels && item.labels.length > 0
         ? [el('div', { class: 'meta' }, item.labels.map((label) => el('span', { class: 'chip chip-label', text: label })))]
