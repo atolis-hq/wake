@@ -618,7 +618,7 @@ const metricsMetrics = new Set<MetricsMetric>([
 ]);
 
 function parseMetricsWindow(value: string | undefined): MetricsWindow {
-  return metricsWindows.has(value as MetricsWindow) ? (value as MetricsWindow) : '7d';
+  return metricsWindows.has(value as MetricsWindow) ? (value as MetricsWindow) : '1d';
 }
 
 function parseMetricsMetric(value: string | undefined): MetricsMetric {
