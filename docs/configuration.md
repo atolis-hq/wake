@@ -506,6 +506,15 @@ When `autoMerge` is enabled, configure GitHub branch protection with required
 status checks. Wake delegates the final green-CI gate to GitHub native
 auto-merge rather than polling CI in this merge action.
 
+`approve` requires a reviewer identity distinct from the PR's author. If
+`implement` and `pr-review` run as the same bot account (the default
+single-runner-identity setup), GitHub rejects the approval review with a 422
+("Can not approve your own pull request"). Wake treats this as a policy block
+rather than an error — it posts the reason and moves the work item to
+`blocked`, and still attempts `autoMerge` independently, since that step has
+no such restriction. To get a real approving review, either disable `approve`
+and rely on `autoMerge` alone, or configure a second reviewer identity.
+
 ### ui
 
 _Lives in `config.yaml`._

@@ -130,6 +130,7 @@ describe('tick runner', () => {
       outboundBodies?: string[];
       preseedActionEvents?: boolean;
       prIncumbentWorkItemKey?: string;
+      approveError?: Error;
     }) {
       const store = createStateStore({ wakeRoot: root });
       const projection = input.projection ?? awaitingPrReviewApprovalProjection();
@@ -199,6 +200,9 @@ describe('tick runner', () => {
           },
           async approve(_resourceUri, body) {
             calls.push(`approve:${body}`);
+            if (input.approveError !== undefined) {
+              throw input.approveError;
+            }
           },
           async enableAutoMerge() {
             calls.push('autoMerge');
@@ -1772,6 +1776,54 @@ describe('tick runner', () => {
       expect(result.status).toBe('processed');
       expect((result as { sentinel?: string }).sentinel).toBe('DONE');
       expect(calls).toEqual(['files', 'approve:Safe to merge.', 'autoMerge']);
+    });
+
+    it('blocks the work item without crashing when GitHub refuses a self-approval, and still enables auto-merge', async () => {
+      const config = createDefaultWakeConfig(root);
+      configurePrReviewMerge(config, {
+        approve: true,
+        autoMerge: true,
+        maxFilesChanged: 2,
+        blockedPaths: [],
+        blockedLabels: [],
+      });
+      const selfApprovalError = Object.assign(
+        new Error('Unprocessable Entity: "Review Can not approve your own pull request"'),
+        { status: 422 },
+      );
+      const outboundBodies: string[] = [];
+
+      const { result, calls } = await prReviewMergeTick({
+        config,
+        files: ['src/core/tick-runner.ts'],
+        approveError: selfApprovalError,
+        outboundBodies,
+      });
+
+      expect(result.status).toBe('processed');
+      expect((result as { sentinel?: string }).sentinel).toBe('BLOCKED');
+      expect(calls).toEqual(['files', 'approve:Safe to merge.', 'autoMerge']);
+      expect(outboundBodies[0]).toContain('refuses a review that approves its own author');
+    });
+
+    it('rethrows a non-self-approval error from the merge actor instead of misclassifying it as a policy block', async () => {
+      const config = createDefaultWakeConfig(root);
+      configurePrReviewMerge(config, {
+        approve: true,
+        autoMerge: true,
+        maxFilesChanged: 2,
+        blockedPaths: [],
+        blockedLabels: [],
+      });
+      const transientError = Object.assign(new Error('Server error'), { status: 500 });
+
+      await expect(
+        prReviewMergeTick({
+          config,
+          files: ['src/core/tick-runner.ts'],
+          approveError: transientError,
+        }),
+      ).rejects.toThrow('Server error');
     });
 
     it('blocks without approving when the PR changes too many files', async () => {

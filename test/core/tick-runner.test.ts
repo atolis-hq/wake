@@ -114,6 +114,7 @@ describe('tick runner', () => {
       issueNumber: number;
       runId?: string;
       occurredAt?: string;
+      body?: string;
     }) {
       const runId = input.runId ?? `run-${input.issueNumber}-previous`;
       await input.store.appendEventEnvelope(
@@ -128,7 +129,11 @@ describe('tick runner', () => {
           occurredAt: input.occurredAt ?? watcherNow,
           ingestedAt: input.occurredAt ?? watcherNow,
           trigger: 'immediate',
-          payload: { action: 'implement', sentinel: 'AWAITING_APPROVAL' },
+          payload: {
+            action: 'implement',
+            sentinel: 'AWAITING_APPROVAL',
+            ...(input.body === undefined ? {} : { body: input.body }),
+          },
         }),
       );
     }
@@ -371,6 +376,56 @@ describe('tick runner', () => {
             }),
           }),
         ]),
+      );
+    });
+
+    it('threads the triggering completion event body into the watcher child prompt context, not just projection.comments', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const resourceIndex = await seededResourceIndex([424]);
+      const config = configurePrReviewWatcher(root, {
+        workflowName: 'plan-review',
+        action: 'plan-review',
+      });
+      // Event-only trigger: a schedule fallback would also fire on the second
+      // tick with no triggering event of its own, overwriting the assertion
+      // below with an empty override — not what this test is checking.
+      delete config.workflows.default!.stages.implement!.watch![0]!.schedule;
+
+      await seedAwaitingApprovalIssue({ store, issueNumber: 424 });
+      await appendPreviousCompletedEvent({
+        store,
+        issueNumber: 424,
+        body: 'Proposed plan: rename foo to bar.',
+      });
+
+      let seenContextOverrides: Record<string, unknown> | undefined;
+      const tickRunner = createTickRunner({
+        clock: { now: () => new Date(watcherNow) },
+        config,
+        stateStore: store,
+        workSource: {
+          async pollEvents() {
+            return [];
+          },
+        },
+        runner: {
+          async run(input) {
+            seenContextOverrides = input.promptContextOverrides;
+            return {
+              result: prReviewResult({ status: 'BLOCKED', body: 'Needs a human look.' }),
+              model: 'fake',
+              cli: 'Fake',
+            };
+          },
+        },
+        resourceIndex,
+        workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+      });
+
+      await tickRunner.runTick();
+
+      expect(seenContextOverrides?.parentPendingReviewBody).toBe(
+        'Proposed plan: rename foo to bar.',
       );
     });
 
