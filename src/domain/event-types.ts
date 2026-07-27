@@ -10,6 +10,7 @@ export const PUBLISH_FAILED_EVENT = 'wake.publish.failed';
 export const PUBLISH_INTENT_REQUESTED_EVENT = 'wake.publish.intent.requested';
 export const PUBLISH_SENT_UNCONFIRMED_EVENT = 'wake.publish.sent-unconfirmed';
 export const RETRY_REQUESTED_EVENT = 'wake.retry.requested';
+export const RUN_REQUESTED_EVENT = 'wake.run.requested';
 export const RUN_CLAIMED_EVENT = 'wake.run.claimed';
 export const RUN_COMPLETED_EVENT = 'wake.run.completed';
 export const WORKFLOW_SELECTED_EVENT = 'wake.workflow.selected';
@@ -30,6 +31,7 @@ export const wakeEventTypeValues = [
   PUBLISH_INTENT_REQUESTED_EVENT,
   PUBLISH_SENT_UNCONFIRMED_EVENT,
   RETRY_REQUESTED_EVENT,
+  RUN_REQUESTED_EVENT,
   RUN_CLAIMED_EVENT,
   RUN_COMPLETED_EVENT,
   WORKFLOW_SELECTED_EVENT,
@@ -112,6 +114,11 @@ export const wakeEventTypeDefinitions = [
   {
     type: RETRY_REQUESTED_EVENT,
     description: 'Requests that a failed work item be retried.',
+    payloadShape: '{ requestedBy }',
+  },
+  {
+    type: RUN_REQUESTED_EVENT,
+    description: 'Requests that a scheduled work item be run immediately.',
     payloadShape: '{ requestedBy }',
   },
   {

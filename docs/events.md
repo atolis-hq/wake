@@ -20,6 +20,7 @@ External adapters also emit provider event types such as `ticket.*`, `pr.*`, and
 | `wake.retry.requested` | Requests that a failed work item be retried. | `{ requestedBy }` |
 | `wake.run.claimed` | Records that Wake claimed a work item for an agent run. | `{ action, priorStage, claimedStage?, sourceRevision, watcherRun?, watcherTrigger? }` |
 | `wake.run.completed` | Records the terminal result of an agent run or internal lifecycle transition. | `{ action?, sentinel, nextStage?, runId, sessionId?, sessionCli?, workspacePath?, reason?, handledCommentId?, failureClass?, blockReason?, executionOutcome?, workflowOutcome?, watcherRun?, allowAutoApproval?, body? }` |
+| `wake.run.requested` | Requests that a scheduled work item be run immediately. | `{ requestedBy }` |
 | `wake.workflow.selected` | Pins the workflow selected for a newly minted work item. | `{ workflow, selectedFromEventId }` |
 | `wake.workitem.created` | Mints a Wake work item identity before resource correlation is registered. | `{}` |
 | `wake.workspace.cleaned` | Records successful cleanup of a closed issue workspace. | `{ workspacePath }` |
