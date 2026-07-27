@@ -145,11 +145,6 @@ export function createPolicyEngine() {
         return false;
       }
 
-      const context = issue.context as Record<string, unknown>;
-      if (config.workflowSelectors.length > 0) {
-        return typeof context.workflow === 'string';
-      }
-
       // Defense-in-depth: the issues source filters PR-shaped items at poll
       // time, so no NEW projection can ever have isPullRequest: true. But a
       // pre-existing state/<workId>.json written by a pre-this-branch
@@ -159,13 +154,25 @@ export function createPolicyEngine() {
         return false;
       }
 
-      return labelsAndAssigneesQualify({
+      // Source policy is always checked first — workflow selectors are optional secondary filter.
+      if (!labelsAndAssigneesQualify({
         labels: issue.issue.labels,
         assignees: issue.issue.assignees,
         requiredLabels: config.sources.github.policy.requiredLabels,
         ignoredLabels: config.sources.github.policy.ignoredLabels,
         requiredAssignees: config.sources.github.policy.requiredAssignees,
-      });
+      })) {
+        return false;
+      }
+
+      // If workflow selectors are configured as the routing mechanism, the issue must have
+      // a workflow assigned (set by a matching selector when the issue was first minted).
+      if (config.workflowSelectors.length > 0) {
+        const context = issue.context as Record<string, unknown>;
+        return typeof context.workflow === 'string';
+      }
+
+      return true;
     },
     needsWakeAction(
       issue: IssueStateRecord,
@@ -413,10 +420,7 @@ export function createPolicyEngine() {
         return typeof workflow === 'string' && config.workflows[workflow] !== undefined;
       }
 
-      if (config.workflowSelectors.length > 0) {
-        return selectWorkflowForEvent(unresolved, config) !== null;
-      }
-
+      // Source policy enforcement is always checked first — workflow selectors are optional secondary routing.
       if (kind === 'issue') {
         // Real github source stamps payload.ticket (sourceEventType
         // 'ticket.upsert'); the fake ticketing harness stamps payload.issue
@@ -430,13 +434,20 @@ export function createPolicyEngine() {
         if (ticket === undefined) {
           return false;
         }
-        return labelsAndAssigneesQualify({
+        if (!labelsAndAssigneesQualify({
           labels: Array.isArray(ticket.labels) ? ticket.labels : [],
           assignees: Array.isArray(ticket.assignees) ? ticket.assignees : [],
           requiredLabels: config.sources.github.policy.requiredLabels,
           ignoredLabels: config.sources.github.policy.ignoredLabels,
           requiredAssignees: config.sources.github.policy.requiredAssignees,
-        });
+        })) {
+          return false;
+        }
+        // Issue passed source policy; if workflow selectors are configured, also check routing.
+        if (config.workflowSelectors.length > 0) {
+          return selectWorkflowForEvent(unresolved, config) !== null;
+        }
+        return true;
       }
 
       if (kind === 'pr') {
@@ -445,10 +456,17 @@ export function createPolicyEngine() {
         }
         const pr = unresolved.payload.pr as { author?: unknown } | undefined;
         const requiredAuthors = config.sources.github.pullRequests.policy.requiredAuthors;
-        if (requiredAuthors.length === 0 || typeof pr?.author !== 'string') {
-          return false;
+        // If requiredAuthors is empty, source policy allows any author.
+        if (requiredAuthors.length > 0) {
+          if (typeof pr?.author !== 'string' || !requiredAuthors.includes(pr.author)) {
+            return false;
+          }
         }
-        return requiredAuthors.includes(pr.author);
+        // PR passed source policy; if workflow selectors are configured, also check routing.
+        if (config.workflowSelectors.length > 0) {
+          return selectWorkflowForEvent(unresolved, config) !== null;
+        }
+        return true;
       }
 
       return false;

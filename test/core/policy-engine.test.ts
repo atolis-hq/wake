@@ -326,7 +326,7 @@ describe('policy engine: requiredAssignees', () => {
     expect(policy.isEligible(matchesBoth, config)).toBe(true);
   });
 
-  it('uses a pinned workflow as the eligibility fact when workflowSelectors are configured', () => {
+  it('requires source policy compliance even when workflowSelectors are configured', () => {
     const policy = createPolicyEngine();
     const config = createDefaultWakeConfig('/tmp/wake-root');
     config.sources.github.policy.requiredLabels = ['legacy-label'];
@@ -342,11 +342,16 @@ describe('policy engine: requiredAssignees', () => {
         },
       },
     ];
-    const issue = buildIssue({ labels: ['bug'] });
+    const issueFailingSourcePolicy = buildIssue({ labels: ['bug'] });
 
-    expect(policy.isEligible(issue, config)).toBe(false);
-    issue.context.workflow = 'default';
-    expect(policy.isEligible(issue, config)).toBe(true);
+    expect(policy.isEligible(issueFailingSourcePolicy, config)).toBe(false);
+    issueFailingSourcePolicy.context.workflow = 'default';
+    expect(policy.isEligible(issueFailingSourcePolicy, config)).toBe(false);
+
+    const issuePassingSourcePolicy = buildIssue({ labels: ['legacy-label', 'bug'] });
+    expect(policy.isEligible(issuePassingSourcePolicy, config)).toBe(false);
+    issuePassingSourcePolicy.context.workflow = 'default';
+    expect(policy.isEligible(issuePassingSourcePolicy, config)).toBe(true);
   });
 });
 

@@ -159,7 +159,7 @@ describe('qualifiesForMint', () => {
     expect(policy.qualifiesForMint(event, baseConfig())).toBe(false);
   });
 
-  it('qualifies matching events through workflowSelectors when configured', () => {
+  it('does not qualify events failing source policy even when matching a workflowSelector', () => {
     const event = createUnkeyedEventEnvelope({
       eventId: 'e6',
       streamScope: 'global-intake',
@@ -171,6 +171,38 @@ describe('qualifiesForMint', () => {
       ingestedAt: '2026-07-18T00:00:00Z',
       trigger: 'immediate',
       payload: { ticket: { repo: 'org/repo', labels: ['bug'], assignees: [] } },
+    });
+    const config = baseConfig({
+      policy: { requiredLabels: ['wake:assign'], requiredAssignees: [] },
+    });
+    config.workflowSelectors = [
+      {
+        workflow: 'default',
+        match: {
+          kind: 'issue',
+          requiredLabels: ['bug'],
+          ignoredLabels: [],
+          requiredAssignees: [],
+          requiredAuthors: [],
+        },
+      },
+    ];
+
+    expect(policy.qualifiesForMint(event, config)).toBe(false);
+  });
+
+  it('qualifies events passing source policy and matching a workflowSelector', () => {
+    const event = createUnkeyedEventEnvelope({
+      eventId: 'e6b',
+      streamScope: 'global-intake',
+      direction: 'inbound',
+      sourceSystem: 'github',
+      sourceEventType: 'ticket.upsert',
+      sourceRefs: { resourceUri: 'github:issue:org/repo#6b' },
+      occurredAt: '2026-07-18T00:00:00Z',
+      ingestedAt: '2026-07-18T00:00:00Z',
+      trigger: 'immediate',
+      payload: { ticket: { repo: 'org/repo', labels: ['wake:assign', 'bug'], assignees: [] } },
     });
     const config = baseConfig({
       policy: { requiredLabels: ['wake:assign'], requiredAssignees: [] },
