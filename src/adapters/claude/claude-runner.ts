@@ -348,6 +348,9 @@ export function createClaudeRunner(options: {
         : { contextOverrides: input.promptContextOverrides }),
       ...(input.mergeConflictDetected === true ? { mergeConflictDetected: true } : {}),
       ...(input.upstreamChanges === undefined ? {} : { upstreamChanges: input.upstreamChanges }),
+      ...(input.preExistingUncommittedChanges === true
+        ? { preExistingUncommittedChanges: true }
+        : {}),
     });
 
     const model = resolveModel({

@@ -1930,6 +1930,7 @@ export function createTickRunner(deps: {
           workspacePath?: string;
           mergeConflictDetected?: boolean;
           upstreamChanges?: string;
+          preExistingUncommittedChanges?: boolean;
           validation?: unknown;
         } =
           workspaceMode === 'branch'
@@ -1951,6 +1952,10 @@ export function createTickRunner(deps: {
           'upstreamChanges' in prepareResult && typeof prepareResult.upstreamChanges === 'string'
             ? prepareResult.upstreamChanges
             : undefined;
+        const preExistingUncommittedChanges =
+          'preExistingUncommittedChanges' in prepareResult
+            ? prepareResult.preExistingUncommittedChanges
+            : false;
 
         const preparedRecord = (await deps.stateStore.readRunRecord(runId))!;
         await deps.stateStore.writeRunRecord({
@@ -1984,6 +1989,7 @@ export function createTickRunner(deps: {
           ...(workspacePath === undefined ? {} : { workspacePath }),
           ...(mergeConflictDetected ? { mergeConflictDetected: true } : {}),
           ...(upstreamChanges === undefined ? {} : { upstreamChanges }),
+          ...(preExistingUncommittedChanges ? { preExistingUncommittedChanges: true } : {}),
           onProcessStart: async (identity: { pid: number; processStartedAt: string }) => {
             await deps.stateStore.updateRunRecordIf(runId, {
               expect: (record) =>

@@ -438,6 +438,22 @@ describe('claude runner command building', () => {
     expect(result.prompt).not.toContain('Upstream update notice:');
   });
 
+  it('adds pre-existing uncommitted changes guidance to the trusted harness prompt', async () => {
+    const result = await buildStagePrompt({
+      action: 'implement',
+      mode: 'resume',
+      projection: baseProjection,
+      preExistingUncommittedChanges: true,
+    });
+
+    expect(result.harnessPrompt).toContain('Pre-existing uncommitted changes notice:');
+    expect(result.harnessPrompt).toContain(
+      'left over from a previous interrupted attempt at this same issue',
+    );
+    expect(result.harnessPrompt).toContain('review them with `git status`/`git diff`');
+    expect(result.prompt).not.toContain('Pre-existing uncommitted changes notice:');
+  });
+
   it('start prompts make new comments prominent while preserving prior comment context', async () => {
     const result = await buildStagePrompt({
       action: 'implement',
