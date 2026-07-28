@@ -31,6 +31,7 @@ import {
 import { parseRunnerArtifacts, parseRunnerResult } from '../domain/schema.js';
 import { maxConfiguredRunnerTimeoutMs, resolveRunnerRouting } from '../domain/runner-routing.js';
 import { awaitingApprovalRunnerSentinel, stageLabelForStage } from '../domain/stages.js';
+import { isWorkItemDeleted, isWorkItemRunnable } from '../domain/work-item-lifecycle.js';
 import type {
   AgentAction,
   EventEnvelope,
@@ -841,7 +842,7 @@ export function createTickRunner(deps: {
     const watch: { resourceUri: string }[] = [];
 
     for (const projection of projections) {
-      if (projection.issue.state !== 'open') {
+      if (projection.issue.state !== 'open' || isWorkItemDeleted(projection)) {
         continue;
       }
       for (const resource of projection.correlatedResources) {
@@ -866,7 +867,7 @@ export function createTickRunner(deps: {
     }
 
     for (const projection of projections) {
-      if (activeRunWorkItemKeys.has(projection.workItemKey)) {
+      if (!isWorkItemRunnable(projection) || activeRunWorkItemKeys.has(projection.workItemKey)) {
         continue;
       }
 
@@ -1275,7 +1276,7 @@ export function createTickRunner(deps: {
       // other path that excludes closed issues. Without this, a closed issue
       // whose last-seen local status matches `watcher.while.status` (e.g.
       // awaiting-approval) re-fires its watcher workflow every tick forever.
-      if (projection.issue.state !== 'open') continue;
+      if (projection.issue.state !== 'open' || !isWorkItemRunnable(projection)) continue;
 
       const parentWorkflow = workflowForProjection(projection, deps.config);
       if (parentWorkflow === null) continue;
@@ -1440,7 +1441,9 @@ export function createTickRunner(deps: {
       }
 
       let candidate = projections.find(
-        (issue) => policy.resolveNextEligibleAction(issue, deps.config) !== null,
+        (issue) =>
+          isWorkItemRunnable(issue) &&
+          policy.resolveNextEligibleAction(issue, deps.config) !== null,
       );
       const watcherDispatch =
         candidate === undefined ? await nextWatcherDispatch(projections, tickStartedAt) : null;

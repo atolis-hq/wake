@@ -340,6 +340,68 @@ describe('tick runner', () => {
       );
     });
 
+    it('does not dispatch a frozen work item', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const config = createDefaultWakeConfig(root);
+      config.sources.github.policy.requiredLabels = ['wake:queue'];
+      let runnerCallCount = 0;
+
+      await store.writeIssueState({
+        schemaVersion: 1,
+        workItemKey: workId(352),
+        issue: {
+          repo: 'atolis-hq/wake',
+          number: 352,
+          title: 'Frozen',
+          body: 'Body',
+          labels: ['wake:queue', 'wake:frozen'],
+          assignees: [],
+          isPullRequest: false,
+          state: 'open',
+          url: 'https://example.test/issues/352',
+          createdAt: '2026-07-05T12:00:00.000Z',
+          updatedAt: '2026-07-05T12:00:00.000Z',
+        },
+        comments: [],
+        wake: {
+          stage: 'implement',
+          stageHistory: [],
+          recentEventIds: [],
+          syncedAt: '2026-07-05T12:00:00.000Z',
+          expectedEcho: { commentIds: [], labels: [] },
+        },
+        context: {
+          frozenAt: '2026-07-05T12:00:00.000Z',
+          frozenBy: 'ui',
+        },
+        correlatedResources: [],
+      });
+
+      const tickRunner = createTickRunner({
+        clock: { now: () => new Date('2026-07-05T12:10:00.000Z') },
+        config,
+        stateStore: store,
+        workSource: {
+          async pollEvents() {
+            return [];
+          },
+        },
+        runner: {
+          async run() {
+            runnerCallCount += 1;
+            return { result: 'Should not run\nDONE', model: 'test-model', cli: 'test-cli' };
+          },
+        },
+        resourceIndex: await seededResourceIndex([352]),
+        workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+      });
+
+      const result = await tickRunner.runRunnerTick();
+      expect(result.status).toBe('idle');
+      expect(runnerCallCount).toBe(0);
+      expect(await store.listRunRecords()).toEqual([]);
+    });
+
     it('cancels an active run when source refresh closes the work item', async () => {
       const store = createStateStore({ wakeRoot: root });
       const config = createDefaultWakeConfig(root);

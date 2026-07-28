@@ -7,10 +7,14 @@ import {
   RUN_CLAIMED_EVENT,
   RUN_COMPLETED_EVENT,
   WORKFLOW_SELECTED_EVENT,
+  WORK_ITEM_DELETED_EVENT,
+  WORK_ITEM_FROZEN_EVENT,
+  WORK_ITEM_UNFROZEN_EVENT,
   WORKSPACE_CLEANED_EVENT,
 } from '../domain/event-types.js';
 import { UNRESOLVED_WORK_ITEM_KEY, parseIssueStateRecord } from '../domain/schema.js';
 import { doneRunnerSentinel, stageFromLabels } from '../domain/stages.js';
+import { FROZEN_WORK_ITEM_LABEL } from '../domain/work-item-lifecycle.js';
 import {
   builtInDefaultWorkflowDefinition,
   defaultWorkflowName,
@@ -462,6 +466,66 @@ async function applyEvent(
   if (event.sourceEventType === RUN_REQUESTED_EVENT) {
     return parseIssueStateRecord({
       ...current,
+      wake: {
+        ...current.wake,
+        syncedAt: event.ingestedAt,
+        recentEventIds: [...current.wake.recentEventIds, event.eventId].slice(-10),
+      },
+    });
+  }
+
+  if (event.sourceEventType === WORK_ITEM_DELETED_EVENT) {
+    return parseIssueStateRecord({
+      ...current,
+      context: {
+        ...current.context,
+        deletedAt: event.occurredAt,
+        deletedBy:
+          typeof event.payload.requestedBy === 'string' ? event.payload.requestedBy : 'unknown',
+      },
+      wake: {
+        ...current.wake,
+        sessionId: undefined,
+        sessionCli: undefined,
+        syncedAt: event.ingestedAt,
+        recentEventIds: [...current.wake.recentEventIds, event.eventId].slice(-10),
+      },
+    });
+  }
+
+  if (event.sourceEventType === WORK_ITEM_FROZEN_EVENT) {
+    return parseIssueStateRecord({
+      ...current,
+      issue: {
+        ...current.issue,
+        labels: Array.from(new Set([...current.issue.labels, FROZEN_WORK_ITEM_LABEL])),
+      },
+      context: {
+        ...current.context,
+        frozenAt: event.occurredAt,
+        frozenBy:
+          typeof event.payload.requestedBy === 'string' ? event.payload.requestedBy : 'unknown',
+      },
+      wake: {
+        ...current.wake,
+        syncedAt: event.ingestedAt,
+        recentEventIds: [...current.wake.recentEventIds, event.eventId].slice(-10),
+      },
+    });
+  }
+
+  if (event.sourceEventType === WORK_ITEM_UNFROZEN_EVENT) {
+    const nextContext: Record<string, unknown> = { ...current.context };
+    delete nextContext.frozenAt;
+    delete nextContext.frozenBy;
+
+    return parseIssueStateRecord({
+      ...current,
+      issue: {
+        ...current.issue,
+        labels: current.issue.labels.filter((label) => label !== FROZEN_WORK_ITEM_LABEL),
+      },
+      context: nextContext,
       wake: {
         ...current.wake,
         syncedAt: event.ingestedAt,
