@@ -224,14 +224,11 @@ describe('runner registry routing', () => {
     });
   });
 
-  it('uses workflow stage routing instead of legacy stage-name overrides', () => {
+  it('uses workflow stage routing for stage runner selection', () => {
     const config = createDefaultWakeConfig('/tmp/wake');
     config.runners['fake-workflow'] = { kind: 'fake', cli: 'Fake Workflow' };
-    config.runners['fake-legacy'] = { kind: 'fake', cli: 'Fake Legacy' };
     config.tiers.standard = ['fake-workflow'];
-    config.tiers.deep = ['fake-legacy'];
     config.workflows.default!.stages.implement!.tier = 'standard';
-    config.stages.implement = { action: 'implement', tier: 'deep' };
 
     expect(
       resolveRunnerRouting({

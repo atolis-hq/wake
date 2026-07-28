@@ -747,7 +747,7 @@ describe('run and event schemas', () => {
     expect(entry.smokeModel).toBe('gpt-5.4-mini');
   });
 
-  it('accepts named runners and tier routing', () => {
+  it('accepts named runners and workflow tier routing', () => {
     const config = parseWakeConfig({
       schemaVersion: 1,
       paths: {
@@ -776,15 +776,29 @@ describe('run and event schemas', () => {
         deep: ['claude-opus', 'claude-haiku'],
       },
       defaultTier: 'standard',
-      stages: {
-        queue: { action: 'refine', tier: 'light' },
-        refined: { action: 'implement', runner: 'claude-opus' },
+      workflows: {
+        default: {
+          stages: {
+            refine: {
+              action: 'refine',
+              workspace: 'read-only',
+              tier: 'light',
+              onDone: 'refined',
+            },
+            refined: {
+              action: 'implement',
+              workspace: 'branch',
+              runner: 'claude-opus',
+              onDone: 'done',
+            },
+          },
+        },
       },
     });
 
     expect(config.runners['claude-haiku']?.kind).toBe('claude');
     expect(config.tiers.deep).toEqual(['claude-opus', 'claude-haiku']);
-    expect(config.stages.refined?.runner).toBe('claude-opus');
+    expect(config.workflows.default?.stages.refined?.runner).toBe('claude-opus');
   });
 
   it('accepts optional local-development repo root configuration', () => {

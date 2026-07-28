@@ -118,7 +118,6 @@ describe('startup preflight', () => {
       },
       tiers: { standard: ['codex'] },
       defaultTier: 'standard',
-      stages: { implement: { action: 'implement', tier: 'standard' } },
     };
 
     await runStartupPreflight(config, { runnerOverride: 'fake', checkRunnerCommand });
@@ -142,7 +141,6 @@ describe('startup preflight', () => {
       },
       tiers: { standard: ['cursor'] },
       defaultTier: 'standard',
-      stages: { implement: { action: 'implement', tier: 'standard' } },
     };
 
     await expect(
@@ -176,7 +174,6 @@ describe('startup preflight', () => {
       },
       tiers: { standard: ['codex'] },
       defaultTier: 'standard',
-      stages: { implement: { action: 'implement', tier: 'standard' } },
       sources: {
         github: {
           enabled: true,

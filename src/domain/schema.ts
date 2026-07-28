@@ -861,10 +861,6 @@ const wakeConfigBaseSchema = z.object({
       tier: 'standard',
     },
   }),
-  stages: z.record(z.string(), stageRouteSchema).default({
-    queue: { action: 'refine', tier: 'light' },
-    implement: { action: 'implement', tier: 'standard' },
-  }),
   ui: z
     .object({
       enabled: z.boolean().default(false),
@@ -983,7 +979,6 @@ export const wakeWorkflowConfigSchema = wakeConfigBaseSchema.pick({
   workflows: true,
   workflowSelectors: true,
   commands: true,
-  stages: true,
 });
 
 export const wakeConfigSchema = wakeConfigBaseSchema.superRefine((config, ctx) => {

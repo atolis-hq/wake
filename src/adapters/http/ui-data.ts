@@ -4,7 +4,11 @@ import { join } from 'node:path';
 import type { ResourceIndex } from '../../core/contracts.js';
 import { buildResourceUri } from '../../domain/resource-uri.js';
 import { isTerminalStage } from '../../domain/stages.js';
-import { workflowForProjection, workflowNameForProjection } from '../../domain/workflows.js';
+import {
+  universalQueueStage,
+  workflowForProjection,
+  workflowNameForProjection,
+} from '../../domain/workflows.js';
 import type { EventEnvelope, IssueStateRecord, RunRecord, WakeConfig } from '../../domain/types.js';
 import type { createStateStore } from '../fs/state-store.js';
 
@@ -95,7 +99,8 @@ function deriveCondition(
   }
 
   const workflow = workflowForProjection(item, config);
-  const hasRoute = config.stages[stage] !== undefined || workflow?.stages[stage] !== undefined;
+  const hasRoute =
+    stage === universalQueueStage ? workflow !== null : workflow?.stages[stage] !== undefined;
   if (!hasRoute) {
     return { condition: 'error', reason: `no route configured for stage "${stage}"` };
   }
@@ -1301,30 +1306,33 @@ export async function buildConfigView(input: {
   const ledger = await input.stateStore.readLedger();
   const runnerHealth = ledger?.runners ?? {};
 
-  const routingTable = Object.entries(input.config.stages).map(([stage, route]) => {
-    const tier = route.tier ?? input.config.defaultTier;
-    const candidates = input.config.tiers[tier] ?? [];
-    const runnerName = route.runner ?? candidates[0];
-    const runner = runnerName !== undefined ? input.config.runners[runnerName] : undefined;
-    // Full fallback order for the tier (#67), each candidate's current pause
-    // state so the UI can show not just who's active but who Wake would fall
-    // sideways to next, and rotate back to once a pause expires.
-    const candidateHealth = candidates.map((name) => {
-      const health = runnerHealth[name];
-      const pausedUntil = health?.pausedUntil;
-      const paused = pausedUntil !== undefined && Date.parse(pausedUntil) > input.now.getTime();
-      return { runnerName: name, paused, pausedUntil };
+  const routingTable = Object.entries(input.config.workflows).flatMap(([workflow, definition]) => {
+    return Object.entries(definition.stages).map(([stage, route]) => {
+      const tier = route.tier ?? input.config.defaultTier;
+      const candidates = input.config.tiers[tier] ?? [];
+      const runnerName = route.runner ?? candidates[0];
+      const runner = runnerName !== undefined ? input.config.runners[runnerName] : undefined;
+      // Full fallback order for the tier (#67), each candidate's current pause
+      // state so the UI can show not just who's active but who Wake would fall
+      // sideways to next, and rotate back to once a pause expires.
+      const candidateHealth = candidates.map((name) => {
+        const health = runnerHealth[name];
+        const pausedUntil = health?.pausedUntil;
+        const paused = pausedUntil !== undefined && Date.parse(pausedUntil) > input.now.getTime();
+        return { runnerName: name, paused, pausedUntil };
+      });
+      return {
+        workflow,
+        stage,
+        action: route.action,
+        tier,
+        runnerName,
+        runnerKind: runner?.kind,
+        model: runner !== undefined && runner.kind !== 'fake' ? runner.model : undefined,
+        timeoutMs: runner !== undefined && runner.kind !== 'fake' ? runner.timeoutMs : undefined,
+        candidates: candidateHealth,
+      };
     });
-    return {
-      stage,
-      action: route.action,
-      tier,
-      runnerName,
-      runnerKind: runner?.kind,
-      model: runner !== undefined && runner.kind !== 'fake' ? runner.model : undefined,
-      timeoutMs: runner !== undefined && runner.kind !== 'fake' ? runner.timeoutMs : undefined,
-      candidates: candidateHealth,
-    };
   });
 
   return { config: redact(input.config), routingTable };

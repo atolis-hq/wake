@@ -537,7 +537,7 @@ describe('ui-data', () => {
     config.runners['fake-primary'] = { kind: 'fake', cli: 'Fake Primary' };
     config.runners['fake-secondary'] = { kind: 'fake', cli: 'Fake Secondary' };
     config.tiers.standard = ['fake-primary', 'fake-secondary'];
-    config.stages.implement = { action: 'implement', tier: 'standard' };
+    config.workflows.default!.stages.implement!.tier = 'standard';
 
     await store.writeLedger({
       schemaVersion: 1,
@@ -553,6 +553,7 @@ describe('ui-data', () => {
     });
     const implementRoute = view.routingTable.find((r) => r.stage === 'implement');
 
+    expect(implementRoute?.workflow).toBe('default');
     expect(implementRoute?.candidates).toEqual([
       { runnerName: 'fake-primary', paused: true, pausedUntil: '2026-07-08T01:00:00.000Z' },
       { runnerName: 'fake-secondary', paused: false, pausedUntil: undefined },
