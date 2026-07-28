@@ -3,11 +3,11 @@ import type { IssueStateRecord } from './types.js';
 export const FROZEN_WORK_ITEM_LABEL = 'wake:frozen';
 
 export function isWorkItemDeleted(item: IssueStateRecord): boolean {
-  return typeof item.context.deletedAt === 'string';
+  return item.context.deleted !== undefined;
 }
 
 export function isWorkItemFrozen(item: IssueStateRecord): boolean {
-  return typeof item.context.frozenAt === 'string';
+  return item.context.frozen !== undefined;
 }
 
 export function isWorkItemRunnable(item: IssueStateRecord): boolean {

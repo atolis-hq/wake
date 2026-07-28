@@ -350,7 +350,17 @@ describe('tick runner', () => {
           number: 14,
           title: 'Implement',
           body: 'Body',
-          labels: ['wake:implement'],
+          // Already synced with labelsForWorkItem's output for this
+          // context/stage, so the tick-time reconciliation pass (which runs
+          // every tick now, not only when there's a fresh inbound event)
+          // finds no drift and doesn't add its own label delivery before the
+          // claim-time "working" label this test actually asserts on.
+          labels: [
+            'wake:implement',
+            'wake:status.pending',
+            'wake:stage.implement',
+            'wake:workflow.default',
+          ],
           assignees: [],
           isPullRequest: false,
           state: 'open',
@@ -445,7 +455,14 @@ describe('tick runner', () => {
           number: 20,
           title: 'Implement',
           body: 'Body',
-          labels: ['wake:implement'],
+          // Pre-synced so the every-tick reconciliation pass finds no drift
+          // ahead of the claim/failure labels this test asserts on.
+          labels: [
+            'wake:implement',
+            'wake:status.pending',
+            'wake:stage.implement',
+            'wake:workflow.default',
+          ],
           assignees: [],
           isPullRequest: false,
           state: 'open',
@@ -829,7 +846,14 @@ describe('tick runner', () => {
           number: 15,
           title: 'Refine',
           body: 'Body',
-          labels: ['wake:queue'],
+          // Pre-synced so the every-tick reconciliation pass finds no drift
+          // ahead of the claim/failure labels this test asserts on.
+          labels: [
+            'wake:queue',
+            'wake:status.pending',
+            'wake:stage.queue',
+            'wake:workflow.default',
+          ],
           assignees: [],
           isPullRequest: false,
           state: 'open',

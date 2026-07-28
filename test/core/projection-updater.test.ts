@@ -1709,6 +1709,124 @@ describe('projection updater', () => {
     expect(projection?.context.failureCount).toBe(0);
   });
 
+  it('folds context.status = "working" on RUN_CLAIMED, for the parent\'s own claimed action only', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const updater = createProjectionUpdater({
+      stateStore: store,
+      resourceIndex: createFakeResourceIndex(),
+    });
+
+    await updater.rebuildFromEvents([
+      issueUpsert({ eventId: 'issue-160', issueNumber: 160, labels: ['wake:queue'] }),
+      createEventEnvelope({
+        eventId: 'run-160-claimed',
+        workItemKey: workId(160),
+        streamScope: 'work-item',
+        direction: 'internal',
+        sourceSystem: 'wake',
+        sourceEventType: 'wake.run.claimed',
+        sourceRefs: { repo: 'atolis-hq/wake', issueNumber: 160, runId: 'run-160' },
+        occurredAt: '2026-07-05T12:01:00.000Z',
+        ingestedAt: '2026-07-05T12:01:00.000Z',
+        trigger: 'immediate',
+        payload: { action: 'implement', priorStage: 'queue', claimedStage: 'implement' },
+      }),
+    ]);
+
+    const projection = await store.readIssueState(workId(160));
+    expect(projection?.context.status).toBe('working');
+  });
+
+  it('does not fold context.status on a watcher-dispatched RUN_CLAIMED (no claimedStage in payload)', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const updater = createProjectionUpdater({
+      stateStore: store,
+      resourceIndex: createFakeResourceIndex(),
+    });
+
+    await updater.rebuildFromEvents([
+      issueUpsert({ eventId: 'issue-161', issueNumber: 161, labels: ['wake:queue'] }),
+      createEventEnvelope({
+        eventId: 'run-161-claimed',
+        workItemKey: workId(161),
+        streamScope: 'work-item',
+        direction: 'internal',
+        sourceSystem: 'wake',
+        sourceEventType: 'wake.run.claimed',
+        sourceRefs: { repo: 'atolis-hq/wake', issueNumber: 161, runId: 'run-161' },
+        occurredAt: '2026-07-05T12:01:00.000Z',
+        ingestedAt: '2026-07-05T12:01:00.000Z',
+        trigger: 'immediate',
+        payload: { action: 'plan-review', priorStage: 'queue', watcherRun: true },
+      }),
+    ]);
+
+    const projection = await store.readIssueState(workId(161));
+    expect(projection?.context.status).toBeUndefined();
+  });
+
+  it('folds context.scheduled = true when minting a work item from the scheduled-workflow synthetic ticket', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const updater = createProjectionUpdater({
+      stateStore: store,
+      resourceIndex: createFakeResourceIndex(),
+    });
+
+    await updater.rebuildFromEvents([
+      createEventEnvelope({
+        eventId: 'scheduled-workflow-nightly-report@2026-07-05T00-00',
+        workItemKey: workId(162),
+        streamScope: 'global-intake',
+        direction: 'inbound',
+        sourceSystem: 'wake',
+        sourceEventType: 'ticket.upsert',
+        sourceRefs: {
+          repo: 'wake/internal',
+          issueNumber: 1,
+          sourceUrl: 'https://wake.local/schedules/nightly-report/2026-07-05T00%3A00',
+          resourceUri: 'wake:schedule:nightly-report@2026-07-05T00:00',
+        },
+        occurredAt: '2026-07-05T00:00:00.000Z',
+        ingestedAt: '2026-07-05T00:00:01.000Z',
+        trigger: 'immediate',
+        payload: {
+          ticket: {
+            repo: 'wake/internal',
+            number: 1,
+            title: 'Scheduled workflow: nightly-report',
+            body: 'Wake fired scheduled workflow "nightly-report".',
+            labels: ['wake:scheduled-workflow', 'wake:workflow.nightly-report'],
+            assignees: [],
+            isPullRequest: false,
+            state: 'open',
+            url: 'https://wake.local/schedules/nightly-report/2026-07-05T00%3A00',
+            createdAt: '2026-07-05T00:00:00.000Z',
+            updatedAt: '2026-07-05T00:00:00.000Z',
+          },
+          workflow: 'nightly-report',
+        },
+      }),
+    ]);
+
+    const projection = await store.readIssueState(workId(162));
+    expect(projection?.context.scheduled).toBe(true);
+  });
+
+  it('does not set context.scheduled for a normal (non-schedule) mint', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const updater = createProjectionUpdater({
+      stateStore: store,
+      resourceIndex: createFakeResourceIndex(),
+    });
+
+    await updater.rebuildFromEvents([
+      issueUpsert({ eventId: 'issue-163', issueNumber: 163, labels: ['wake:queue'] }),
+    ]);
+
+    const projection = await store.readIssueState(workId(163));
+    expect(projection?.context.scheduled).toBeUndefined();
+  });
+
   describe('correlation fold (ADR 0001 §5-6)', () => {
     it('rule 1: wake.correlation.registered appends to correlatedResources[] and registers in the index', async () => {
       const store = createStateStore({ wakeRoot: root });

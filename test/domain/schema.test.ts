@@ -26,7 +26,7 @@ import {
 import type { WakeDevConfig, WakeSandboxConfig } from '../../src/domain/types.js';
 
 describe('issue state schema', () => {
-  it('accepts canonical issue and comment fields plus extensible context', () => {
+  it('accepts canonical issue and comment fields plus known typed context fields', () => {
     const record = parseIssueStateRecord({
       schemaVersion: 1,
       workItemKey: 'work-01JZ0000000000000000000012',
@@ -59,15 +59,48 @@ describe('issue state schema', () => {
         syncedAt: '2026-07-05T12:00:00.000Z',
       },
       context: {
-        agentBrief: 'Extra information for future prompts',
+        status: 'awaiting-approval',
       },
     });
 
-    expect(record.context.agentBrief).toBe('Extra information for future prompts');
+    expect(record.context.status).toBe('awaiting-approval');
     expect(record.wake.expectedEcho).toEqual({ commentIds: [], labels: [] });
     expect(record.issue.isPullRequest).toBe(false);
     // The key is taken verbatim: nothing derives, namespaces, or rewrites it.
     expect(record.workItemKey).toBe('work-01JZ0000000000000000000012');
+  });
+
+  it('silently strips an unknown context key instead of erroring (the typed schema catches typos on read, not by throwing on write)', () => {
+    const record = parseIssueStateRecord({
+      schemaVersion: 1,
+      workItemKey: 'work-01JZ0000000000000000000013',
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 13,
+        title: 'Example',
+        body: 'Body',
+        labels: ['wake:queue'],
+        assignees: [],
+        isPullRequest: false,
+        state: 'open',
+        url: 'https://example.test/issues/13',
+        createdAt: '2026-07-05T12:00:00.000Z',
+        updatedAt: '2026-07-05T12:00:00.000Z',
+      },
+      comments: [],
+      wake: {
+        stage: 'queue',
+        stageHistory: [],
+        syncedAt: '2026-07-05T12:00:00.000Z',
+      },
+      context: {
+        status: 'queued',
+        agentBrief: 'a typo or a field nobody wired into the schema yet',
+      },
+    });
+
+    expect(record.context.status).toBe('queued');
+    expect((record.context as Record<string, unknown>).agentBrief).toBeUndefined();
   });
 
   it('requires an explicit workItemKey rather than deriving one from the issue', () => {

@@ -118,7 +118,12 @@ describe('tick runner', () => {
           number: 41,
           title: 'Outbox retry',
           body: '',
-          labels: [],
+          // Already synced with what labelsForWorkItem would compute for this
+          // context/stage, so the tick-time reconciliation pass (which now
+          // runs every tick, not only when there's a fresh inbound event)
+          // finds no drift here and doesn't add its own outbound attempts on
+          // top of the orphaned intent this test is actually exercising.
+          labels: ['wake:status.pending', 'wake:stage.implement', 'wake:workflow.default'],
           assignees: [],
           isPullRequest: false,
           state: 'open',

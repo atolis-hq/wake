@@ -478,7 +478,7 @@ function renderItemDetails(detail, boardItem) {
       el('dd', { text: value }),
     ])));
   }
-  const isFrozen = typeof detail.item.context.frozenAt === 'string';
+  const isFrozen = detail.item.context.frozen !== undefined && detail.item.context.frozen !== null;
   const actionBar = el('div', { class: 'action-bar' });
   const lastRun = detail.runs.at(-1);
   if (lastRun && lastRun.sentinel === 'FAILED') {

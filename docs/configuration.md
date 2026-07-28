@@ -50,6 +50,7 @@ transcripts:
   retainAfterWorkspaceCleanup: false
 retry:
   maxFailureRetries: 5
+  maxChangesRequestedRetries: 5
 ui:
   enabled: false
   port: 4317
@@ -355,11 +356,12 @@ the previously recorded agent session ID when Wake has one.
 
 _Lives in `config.yaml`._
 
-Retry limits for failed runner attempts.
+Retry limits for failed runner attempts and auto-revise loops.
 
-| Property            | Type   | Description                                                                 | Default |
-| ------------------- | ------ | --------------------------------------------------------------------------- | ------- |
-| `maxFailureRetries` | number | Maximum consecutive failed runner attempts before automatic retries go idle | `5`     |
+| Property                     | Type   | Description                                                                                                     | Default |
+| ---------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------- | ------- |
+| `maxFailureRetries`          | number | Maximum consecutive failed runner attempts before automatic retries go idle                                       | `5`     |
+| `maxChangesRequestedRetries` | number | Maximum consecutive `changes-requested` auto-revise cycles (a rejecting `plan-review`/`pr-review` watcher, or a human `/changes` reply) before Wake escalates to `blocked` instead of re-running automatically | `5`     |
 
 ### scheduler
 
@@ -659,10 +661,16 @@ Wake also owns one derived status label while it works a ticket:
 
 - `wake:status.pending`
 - `wake:status.working`
+- `wake:status.awaiting-approval`
+- `wake:status.changes-requested`
+- `wake:status.blocked`
 - `wake:status.failed`
 - `wake:status.completed`
 
-Wake replaces only the `wake:status.*` label family and preserves unrelated issue labels.
+Wake replaces only the `wake:status.*` label family and preserves unrelated issue labels. A
+tick-time reconciliation pass keeps this label (plus `wake:stage.*`, `wake:workflow.*`,
+`wake:frozen`, and `wake:scheduled-workflow`) converged on the work item's actual state every
+tick, even if a delivery is lost or a human hand-edits a label.
 
 `wake:auto` is an operator opt-in label for deterministic approval of eligible
 `AWAITING_APPROVAL` gates. It has no effect unless the pending action's prompt

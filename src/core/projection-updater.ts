@@ -15,6 +15,7 @@ import {
 import { UNRESOLVED_WORK_ITEM_KEY, parseIssueStateRecord } from '../domain/schema.js';
 import { doneRunnerSentinel, stageFromLabels } from '../domain/stages.js';
 import { FROZEN_WORK_ITEM_LABEL } from '../domain/work-item-lifecycle.js';
+import { workItemStatusForRunOutcome } from '../domain/work-item-status.js';
 import {
   builtInDefaultWorkflowDefinition,
   defaultWorkflowName,
@@ -68,6 +69,11 @@ function createProjectionFromIssueEvent(
     ? (issue as { labels: string[] }).labels
     : [];
 
+  // Only the scheduled-workflow-source's synthetic ticket carries a
+  // wake:schedule resourceUri; no other mint path sets this, so `scheduled`
+  // has a real backing context field instead of only ever living in a label.
+  const scheduled = event.sourceRefs.resourceUri?.split(':')[1] === 'schedule';
+
   return parseIssueStateRecord({
     schemaVersion: 1,
     workItemKey: event.workItemKey,
@@ -79,7 +85,7 @@ function createProjectionFromIssueEvent(
       recentEventIds: [event.eventId],
       syncedAt: event.ingestedAt,
     },
-    context: {},
+    context: scheduled ? { scheduled: true } : {},
   });
 }
 
@@ -258,6 +264,10 @@ async function applyEvent(
 
     return parseIssueStateRecord({
       ...current,
+      context: {
+        ...current.context,
+        status: 'working',
+      },
       wake: {
         ...current.wake,
         stage: payload.claimedStage,
@@ -298,7 +308,48 @@ async function applyEvent(
       workflowOutcome?: string;
       watcherRun?: boolean;
       allowAutoApproval?: boolean;
+      changesRequested?: boolean;
+      reviewFeedbackBody?: string;
     };
+
+    // A rejecting plan-review/pr-review watcher sub-run (§5, trigger 1) or a
+    // human /changes reply (§5, trigger 2) folds onto the parent's context
+    // without touching wake.stage/lastRunId/session — same isolation
+    // guarantee PR #479 established for watcher runs generally. Checked
+    // before the watcherRun early-return below so a rejecting watcher run
+    // (which also carries watcherRun: true) still updates status/feedback,
+    // while every other watcher-run completion (e.g. an approving DONE
+    // verdict) still hits that early-return untouched.
+    if (payload.changesRequested === true) {
+      const currentChangesRequestedCount =
+        typeof current.context.changesRequestedCount === 'number' &&
+        Number.isInteger(current.context.changesRequestedCount)
+          ? current.context.changesRequestedCount
+          : 0;
+      const nextChangesRequestedCount = currentChangesRequestedCount + 1;
+      const maxRetries = config?.retry.maxChangesRequestedRetries ?? Infinity;
+      const escalate = nextChangesRequestedCount > maxRetries;
+
+      return parseIssueStateRecord({
+        ...current,
+        context: {
+          ...current.context,
+          status: escalate ? 'blocked' : 'changes-requested',
+          changesRequestedCount: nextChangesRequestedCount,
+          ...(payload.reviewFeedbackBody === undefined
+            ? {}
+            : { changesRequestedFeedback: payload.reviewFeedbackBody }),
+          ...(payload.handledCommentId === undefined
+            ? {}
+            : { lastHandledCommentId: payload.handledCommentId }),
+        },
+        wake: {
+          ...current.wake,
+          syncedAt: event.ingestedAt,
+          recentEventIds: [...current.wake.recentEventIds, event.eventId].slice(-10),
+        },
+      });
+    }
 
     if (payload.watcherRun === true) {
       return parseIssueStateRecord({
@@ -378,6 +429,19 @@ async function applyEvent(
         ? { lastExternalSideEffects: payload.externalSideEffects }
         : {}),
       ...(payload.retrySafety !== undefined ? { lastRetrySafety: payload.retrySafety } : {}),
+      ...(payload.sentinel === undefined || isCompletedCustomCommand
+        ? {}
+        : {
+            status: workItemStatusForRunOutcome({
+              sentinel: payload.sentinel as 'DONE' | 'BLOCKED' | 'FAILED' | 'AWAITING_APPROVAL',
+              stage: payload.nextStage ?? current.wake.stage,
+            }),
+          }),
+      // A fresh DONE/AWAITING_APPROVAL cycle resolves whatever changes were
+      // previously requested — reset the loop counter and stored feedback.
+      ...(payload.sentinel === doneRunnerSentinel || payload.sentinel === 'AWAITING_APPROVAL'
+        ? { changesRequestedCount: 0, changesRequestedFeedback: undefined }
+        : {}),
     };
 
     if (payload.sentinel === 'BLOCKED' || payload.sentinel === 'FAILED') {
@@ -479,9 +543,10 @@ async function applyEvent(
       ...current,
       context: {
         ...current.context,
-        deletedAt: event.occurredAt,
-        deletedBy:
-          typeof event.payload.requestedBy === 'string' ? event.payload.requestedBy : 'unknown',
+        deleted: {
+          at: event.occurredAt,
+          by: typeof event.payload.requestedBy === 'string' ? event.payload.requestedBy : 'unknown',
+        },
       },
       wake: {
         ...current.wake,
@@ -502,9 +567,10 @@ async function applyEvent(
       },
       context: {
         ...current.context,
-        frozenAt: event.occurredAt,
-        frozenBy:
-          typeof event.payload.requestedBy === 'string' ? event.payload.requestedBy : 'unknown',
+        frozen: {
+          at: event.occurredAt,
+          by: typeof event.payload.requestedBy === 'string' ? event.payload.requestedBy : 'unknown',
+        },
       },
       wake: {
         ...current.wake,
@@ -516,8 +582,7 @@ async function applyEvent(
 
   if (event.sourceEventType === WORK_ITEM_UNFROZEN_EVENT) {
     const nextContext: Record<string, unknown> = { ...current.context };
-    delete nextContext.frozenAt;
-    delete nextContext.frozenBy;
+    delete nextContext.frozen;
 
     return parseIssueStateRecord({
       ...current,

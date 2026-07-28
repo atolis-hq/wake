@@ -342,7 +342,6 @@ describe('tick runner', () => {
         comments: [retryComment],
         latestComment: retryComment,
         context: {
-          lastRunId: 'run-304-1',
           lastRunSentinel: 'FAILED',
           lastFailureClass: 'task',
           lastRunAction: 'implement',

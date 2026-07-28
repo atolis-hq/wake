@@ -26,6 +26,10 @@ export interface ApprovalResolution {
   targetResourceUri?: string;
   triggeringCommentId?: string;
   triggeringCommentBody?: string;
+  // Set when `approved: false` came from an explicit /changes command, so
+  // callers can distinguish "human asked for changes" from any other
+  // non-approval outcome and thread the feedback / fold context.status.
+  changesRequested?: boolean;
 }
 
 function isAwaitingApproval(issue: IssueStateRecord): boolean {
@@ -327,7 +331,17 @@ export function createPolicyEngine() {
         return null;
       }
 
-      return { approved, pendingAction };
+      return {
+        approved,
+        pendingAction,
+        ...(changesRequested
+          ? {
+              changesRequested: true,
+              triggeringCommentId: latestHumanComment.id,
+              triggeringCommentBody: latestHumanComment.body,
+            }
+          : {}),
+      };
     },
     // Callers must try resolveApprovalTransition first and only fall back to
     // this when it returns null. resolveApprovalTransition doesn't check
@@ -362,6 +376,20 @@ export function createPolicyEngine() {
 
       return reviewFeedbackAction;
     },
+    // A rejecting review watcher (or an already-folded /changes reply) sets
+    // context.status = 'changes-requested' with no fresh comment required —
+    // this is the gap #472 described: nothing distinguished a plan-review
+    // rejection from "never reviewed yet." Bounding (escalating to 'blocked'
+    // once config.retry.maxChangesRequestedRetries is exceeded) already
+    // happened at fold time, so this only has to check the current status.
+    resolveChangesRequestedAction(issue: IssueStateRecord): AgentAction | null {
+      if (!isAwaitingApproval(issue) || issue.context.status !== 'changes-requested') {
+        return null;
+      }
+      return typeof issue.context.pendingApprovalAction === 'string'
+        ? issue.context.pendingApprovalAction
+        : null;
+    },
     resolveCustomCommandRequest(
       issue: IssueStateRecord,
       config: WakeConfig,
@@ -395,6 +423,10 @@ export function createPolicyEngine() {
         const approval = this.resolveApprovalTransition(issue);
         if (approval !== null) {
           return { action: approval.pendingAction, workflow };
+        }
+        const changesRequestedAction = this.resolveChangesRequestedAction(issue);
+        if (changesRequestedAction !== null) {
+          return { action: changesRequestedAction, workflow };
         }
         const reviewAction = this.resolvePendingReviewFeedback(issue);
         if (reviewAction !== null) {

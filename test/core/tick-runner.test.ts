@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { createFakeArtifactVerifier } from '../../src/adapters/fake/fake-artifact-verifier.js';
+import { labelsForWorkItem } from '../../src/adapters/github/status-labels.js';
 import { createFakeGitHubPullRequestActivitySource } from '../../src/adapters/fake/fake-github-pull-request-activity-source.js';
 import { createFakeResourceIndex } from '../../src/adapters/fake/fake-resource-index.js';
 import { createFakeWorkspaceManager } from '../../src/adapters/fake/fake-workspace-manager.js';
@@ -59,6 +60,43 @@ describe('tick runner', () => {
         },
       };
       return config;
+    }
+
+    // Several fixtures below assert an exact (often empty) set of label
+    // events for a narrow scenario (e.g. watcher isolation) that has nothing
+    // to do with label reconciliation. Since the reconciliation pass now
+    // runs every tick against every item (not only when there's a fresh
+    // inbound event), a fixture whose seeded issue.labels don't already match
+    // labelsForWorkItem's output would otherwise pick up its own unrelated
+    // correction. This re-syncs the seeded labels so only the scenario under
+    // test produces label events.
+    async function syncLabelsToProjection(
+      store: ReturnType<typeof createStateStore>,
+      workItemKey: string,
+    ) {
+      const projection = await store.readIssueState(workItemKey);
+      if (projection === null) {
+        return;
+      }
+      const config = createDefaultWakeConfig(root);
+      const labels = labelsForWorkItem(projection, config);
+      await store.writeIssueState({
+        ...projection,
+        issue: {
+          ...projection.issue,
+          labels: [
+            ...projection.issue.labels.filter(
+              (label) =>
+                !label.startsWith('wake:status.') &&
+                !label.startsWith('wake:stage.') &&
+                !label.startsWith('wake:workflow.'),
+            ),
+            labels.statusLabel,
+            labels.stageLabel,
+            labels.workflowLabel,
+          ],
+        },
+      });
     }
 
     async function seedAwaitingApprovalIssue(input: {
@@ -389,6 +427,10 @@ describe('tick runner', () => {
 
       await seedAwaitingApprovalIssue({ store, issueNumber: 425 });
       await appendPreviousCompletedEvent({ store, issueNumber: 425 });
+      // Pre-sync the parent's actual labels with labelsForWorkItem's output so
+      // the every-tick reconciliation pass (unrelated to this test's watcher
+      // isolation assertion) finds no drift of its own to correct.
+      await syncLabelsToProjection(store, workId(425));
 
       const tickRunner = createTickRunner({
         clock: { now: () => new Date(watcherNow) },
@@ -440,6 +482,7 @@ describe('tick runner', () => {
 
       await seedAwaitingApprovalIssue({ store, issueNumber: 426 });
       await appendPreviousCompletedEvent({ store, issueNumber: 426 });
+      await syncLabelsToProjection(store, workId(426));
 
       const tickRunner = createTickRunner({
         clock: { now: () => new Date(watcherNow) },
@@ -625,12 +668,19 @@ describe('tick runner', () => {
         workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
       });
 
-      await tickRunner.runTick();
+      // A single tick only dispatches and completes the watcher run itself —
+      // the auto-revise re-dispatch of the parent's pending action happens on
+      // a *later* tick (see 'auto-revises the original pending action after
+      // a changes-requested watcher rejection' below), so this only asserts
+      // the watcher-run completion's own effect on the parent.
       await tickRunner.runTick();
 
       const updated = await store.readIssueState(workId(422));
       expect(updated?.wake.stage).toBe('implement');
       expect(updated?.context.pendingApprovalAction).toBe('implement');
+      expect(updated?.context.status).toBe('changes-requested');
+      expect(updated?.context.changesRequestedCount).toBe(1);
+      expect(updated?.context.changesRequestedFeedback).toBe('Plan misses the rollback path.');
       expect(publishedBodies).toContain('Plan misses the rollback path.');
       const events = await store.listEventEnvelopes();
       expect(
@@ -685,16 +735,102 @@ describe('tick runner', () => {
       });
 
       await tickRunner.runTick();
-      await tickRunner.runTick();
 
       const updated = await store.readIssueState(workId(423));
       expect(updated?.wake.stage).toBe('implement');
       expect(updated?.context.pendingApprovalAction).toBe('implement');
+      expect(updated?.context.status).toBe('changes-requested');
+      expect(updated?.context.changesRequestedCount).toBe(1);
       expect(publishedBodies).toContain('This needs operator judgment on the schema migration.');
       const events = await store.listEventEnvelopes();
       expect(
         events.find((event) => event.eventId.endsWith('-parent-approval-completed')),
       ).toBeUndefined();
+    });
+
+    it('auto-revises the original pending action after a changes-requested watcher rejection, then resolves the gate once plan-review approves', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const resourceIndex = await seededResourceIndex([424]);
+      const config = configurePrReviewWatcher(root, {
+        workflowName: 'plan-review',
+        action: 'plan-review',
+      });
+      config.workflows.default!.stages.implement!.watch![0]!.onSuccess = { approve: true };
+
+      await seedAwaitingApprovalIssue({ store, issueNumber: 424 });
+      await appendPreviousCompletedEvent({ store, issueNumber: 424 });
+
+      const labelEvents: Array<{ statusLabel: string }> = [];
+      let planReviewCalls = 0;
+      let implementCalls = 0;
+      const tickRunner = createTickRunner({
+        clock: { now: () => new Date(watcherNow) },
+        config,
+        stateStore: store,
+        workSource: {
+          async pollEvents() {
+            return [];
+          },
+        },
+        outboundSink: {
+          async deliverIntent(input) {
+            if (input.event.sourceEventType === 'wake.labels.requested') {
+              labelEvents.push({ statusLabel: String(input.event.payload.statusLabel) });
+            }
+            return [];
+          },
+        },
+        runner: {
+          async run(input) {
+            if (input.action === 'plan-review') {
+              planReviewCalls += 1;
+              return planReviewCalls === 1
+                ? {
+                    result: prReviewResult({ status: 'FAILED', body: 'Please add tests.' }),
+                    model: 'fake',
+                    cli: 'Fake',
+                  }
+                : {
+                    result: prReviewResult({ status: 'DONE', body: 'Looks good now.' }),
+                    model: 'fake',
+                    cli: 'Fake',
+                  };
+            }
+            implementCalls += 1;
+            expect(input.promptContextOverrides?.parentPendingReviewBody).toBe('Please add tests.');
+            return { result: 'Added tests.\nAWAITING_APPROVAL', model: 'fake', cli: 'Fake' };
+          },
+        },
+        resourceIndex,
+        workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+      });
+
+      // Tick 1: plan-review watcher rejects the plan.
+      await tickRunner.runTick();
+      let updated = await store.readIssueState(workId(424));
+      expect(updated?.wake.stage).toBe('implement');
+      expect(updated?.context.status).toBe('changes-requested');
+      expect(updated?.context.changesRequestedCount).toBe(1);
+
+      // Tick 2: no eligible watcher event yet, so the parent's own
+      // changes-requested status is now actionable — auto re-dispatches the
+      // original pending action ('implement') with the feedback threaded.
+      await tickRunner.runTick();
+      updated = await store.readIssueState(workId(424));
+      expect(implementCalls).toBe(1);
+      expect(updated?.context.status).toBe('awaiting-approval');
+      expect(updated?.context.changesRequestedCount).toBe(0);
+
+      // Tick 3: the revise run's own completion re-triggers the plan-review
+      // watcher, which now approves, resolving the parent's gate to 'done'.
+      await tickRunner.runTick();
+      updated = await store.readIssueState(workId(424));
+      expect(planReviewCalls).toBe(2);
+      expect(updated?.wake.stage).toBe('done');
+
+      expect(labelEvents.map((event) => event.statusLabel)).toContain(
+        'wake:status.changes-requested',
+      );
     });
 
     it('publishes a pr-review approval marker only after the reported PR verifies and belongs to the work item', async () => {

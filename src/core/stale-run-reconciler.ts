@@ -1,8 +1,7 @@
 import type { createProjectionUpdater } from './projection-updater.js';
 import { createLabelsEvent } from './event-builders.js';
 import { RUN_COMPLETED_EVENT } from '../domain/event-types.js';
-import { stageLabelForStage } from '../domain/stages.js';
-import { workflowLabelForWorkflowName, workflowNameForProjection } from '../domain/workflows.js';
+import { labelsForWorkItem } from '../adapters/github/status-labels.js';
 import type {
   EventEnvelope,
   ExecutionAttemptLifecycle,
@@ -143,11 +142,7 @@ export function createStaleRunReconciler(deps: {
       createLabelsEvent({
         projection,
         runId,
-        statusLabel: 'wake:status.failed',
-        stageLabel: stageLabelForStage(projection.wake.stage),
-        workflowLabel: workflowLabelForWorkflowName(
-          workflowNameForProjection(projection, deps.config),
-        ),
+        ...labelsForWorkItem(projection, deps.config),
         occurredAt: finishedAt,
       }),
     );

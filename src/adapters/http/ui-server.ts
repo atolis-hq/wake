@@ -15,13 +15,12 @@ import {
   WORK_ITEM_UNFROZEN_EVENT,
 } from '../../domain/event-types.js';
 import { configuredTicketSource } from '../../domain/sources.js';
-import { stageLabelForStage } from '../../domain/stages.js';
 import type { EventEnvelope, IssueStateRecord, WakeConfig } from '../../domain/types.js';
 import { isWorkItemDeleted, isWorkItemFrozen } from '../../domain/work-item-lifecycle.js';
-import { workflowLabelForWorkflowName, workflowNameForProjection } from '../../domain/workflows.js';
 import { createEventEnvelope } from '../../lib/event-log.js';
 import { writeJsonFile } from '../../lib/json-file.js';
 import type { createStateStore } from '../fs/state-store.js';
+import { labelsForWorkItem } from '../github/status-labels.js';
 import { indexHtml } from './ui-assets.js';
 import {
   buildBoard,
@@ -140,13 +139,10 @@ async function appendLabelSyncEvent(input: {
   action: 'freeze' | 'unfreeze';
 }): Promise<string> {
   const occurredAt = input.now().toISOString();
-  const workflowName = workflowNameForProjection(input.item, input.config);
   const labelEvent = createLabelsEvent({
     projection: input.item,
     runId: `${input.action}-${input.item.workItemKey}-${input.now().getTime()}`,
-    statusLabel: 'wake:status.pending',
-    stageLabel: stageLabelForStage(input.item.wake.stage),
-    workflowLabel: workflowLabelForWorkflowName(workflowName),
+    ...labelsForWorkItem(input.item, input.config),
     occurredAt,
   });
   const appended = await input.stateStore.appendEventEnvelope(labelEvent);
