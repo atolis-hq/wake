@@ -379,6 +379,114 @@ describe('tick runner', () => {
       );
     });
 
+    it('never stamps the child workflow onto the parent issue labels, whether the watcher run succeeds or is rejected', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const resourceIndex = await seededResourceIndex([425]);
+      const config = configurePrReviewWatcher(root, {
+        workflowName: 'plan-review',
+        action: 'plan-review',
+      });
+
+      await seedAwaitingApprovalIssue({ store, issueNumber: 425 });
+      await appendPreviousCompletedEvent({ store, issueNumber: 425 });
+
+      const tickRunner = createTickRunner({
+        clock: { now: () => new Date(watcherNow) },
+        config,
+        stateStore: store,
+        workSource: {
+          async pollEvents() {
+            return [];
+          },
+        },
+        runner: {
+          async run() {
+            return {
+              result: prReviewResult({ status: 'BLOCKED', body: 'Not approved as-is.' }),
+              model: 'fake',
+              cli: 'Fake',
+            };
+          },
+        },
+        resourceIndex,
+        workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+      });
+
+      await tickRunner.runTick();
+      await tickRunner.runTick();
+
+      const events = await store.listEventEnvelopes();
+      const labelEvents = events.filter(
+        (event) => event.sourceEventType === 'wake.labels.requested',
+      );
+      // The watcher (plan-review) run claims and completes against the same
+      // parent projection, but must never write labels of its own - only the
+      // parent's own action (implement, here) is allowed to touch the parent
+      // issue's labels.
+      expect(labelEvents).toEqual([]);
+
+      const updated = await store.readIssueState(workId(425));
+      expect(updated?.wake.stage).toBe('implement');
+      expect(updated?.context.lastRunSentinel).toBe('AWAITING_APPROVAL');
+    });
+
+    it('does not fold a watcher run infra failure into the parent projection context or labels', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const resourceIndex = await seededResourceIndex([426]);
+      const config = configurePrReviewWatcher(root, {
+        workflowName: 'plan-review',
+        action: 'plan-review',
+      });
+
+      await seedAwaitingApprovalIssue({ store, issueNumber: 426 });
+      await appendPreviousCompletedEvent({ store, issueNumber: 426 });
+
+      const tickRunner = createTickRunner({
+        clock: { now: () => new Date(watcherNow) },
+        config,
+        stateStore: store,
+        workSource: {
+          async pollEvents() {
+            return [];
+          },
+        },
+        runner: {
+          async run() {
+            throw new Error('should not run: workspace prep fails first');
+          },
+        },
+        resourceIndex,
+        workspaceManager: {
+          async prepareWorkspace() {
+            throw new Error('not used');
+          },
+          async prepareReadOnlyClone() {
+            throw new Error('git network failure');
+          },
+          async recordWorkspaceBookkeeping() {
+            throw new Error('not used');
+          },
+          async cleanupWorkspace() {},
+        },
+      });
+
+      await tickRunner.runTick();
+
+      const events = await store.listEventEnvelopes();
+      const labelEvents = events.filter(
+        (event) => event.sourceEventType === 'wake.labels.requested',
+      );
+      expect(labelEvents).toEqual([]);
+
+      const updated = await store.readIssueState(workId(426));
+      // The watcher's own infra failure must not overwrite the parent's real
+      // status - it's still sitting on the original implement approval gate,
+      // untouched by the child review workflow dying before it could run.
+      expect(updated?.wake.stage).toBe('implement');
+      expect(updated?.context.lastRunSentinel).toBe('AWAITING_APPROVAL');
+      expect(updated?.context.pendingApprovalAction).toBe('implement');
+    });
+
     it('threads the triggering completion event body into the watcher child prompt context, not just projection.comments', async () => {
       const store = createStateStore({ wakeRoot: root });
       const resourceIndex = await seededResourceIndex([424]);
