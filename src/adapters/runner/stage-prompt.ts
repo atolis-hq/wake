@@ -150,6 +150,7 @@ function buildHarnessPrompt(input: {
   skipApproval: boolean;
   mergeConflictDetected?: boolean;
   upstreamChanges?: string;
+  preExistingUncommittedChanges?: boolean;
   prTrackingEnabled: boolean;
 }): string {
   const lines = [
@@ -182,6 +183,14 @@ function buildHarnessPrompt(input: {
       'Upstream update notice:',
       'Before resuming this session, Wake pulled the latest default-branch changes into your workspace. New commits included:',
       input.upstreamChanges.trimEnd(),
+    );
+  }
+
+  if (input.preExistingUncommittedChanges) {
+    lines.push(
+      '',
+      'Pre-existing uncommitted changes notice:',
+      'This workspace already has uncommitted changes, left over from a previous interrupted attempt at this same issue (e.g. a crash or usage-limit cutoff). They are your own prior partial work, not an unknown or unsafe state - review them with `git status`/`git diff` and continue, amend, or discard as appropriate, then commit when ready.',
     );
   }
 
@@ -253,6 +262,7 @@ export async function buildStagePrompt(input: {
   contextOverrides?: Record<string, unknown>;
   mergeConflictDetected?: boolean;
   upstreamChanges?: string;
+  preExistingUncommittedChanges?: boolean;
 }): Promise<StagePromptResult> {
   const mode = input.mode ?? 'start';
   const workflow =
@@ -357,6 +367,9 @@ export async function buildStagePrompt(input: {
         input.config?.sources.github.pullRequests.enabled === true,
       ...(input.mergeConflictDetected === true ? { mergeConflictDetected: true } : {}),
       ...(input.upstreamChanges === undefined ? {} : { upstreamChanges: input.upstreamChanges }),
+      ...(input.preExistingUncommittedChanges === true
+        ? { preExistingUncommittedChanges: true }
+        : {}),
     }),
     allowedTools,
     extraArgs: parseFrontmatterArgs(template.frontmatter.extraArgs),

@@ -97,11 +97,12 @@ export function buildWorkspaceCloneArgs(input: {
 async function tryUpdateFromDefaultBranch(workspacePath: string): Promise<{
   mergeConflictDetected: boolean;
   upstreamChanges?: string;
+  preExistingUncommittedChanges?: boolean;
 }> {
   try {
     const { stdout: status } = await git(['status', '--porcelain'], workspacePath);
     if (status.length > 0) {
-      return { mergeConflictDetected: false };
+      return { mergeConflictDetected: false, preExistingUncommittedChanges: true };
     }
 
     await git(['fetch', 'origin'], workspacePath);
@@ -161,6 +162,7 @@ async function validateWorkspace(input: {
   expectedBranch: string;
   expectedRemoteUrl: string;
   expectedBaseRef: string;
+  allowUncommittedChanges?: boolean;
 }): Promise<WorkspaceValidationResult> {
   await git(['fetch', 'origin'], input.workspacePath);
   const { stdout: actualRemoteUrl } = await git(
@@ -201,7 +203,7 @@ async function validateWorkspace(input: {
   if (actualBranch !== input.expectedBranch) {
     failures.push(`expected branch ${input.expectedBranch}, found ${actualBranch}`);
   }
-  if (!validation.clean) {
+  if (!validation.clean && input.allowUncommittedChanges !== true) {
     failures.push('working tree has uncommitted or untracked changes');
   }
   if (!validation.remoteAvailable) {
@@ -312,6 +314,7 @@ export function createGitWorkspaceManager(options: {
       workspacePath: string;
       mergeConflictDetected: boolean;
       upstreamChanges?: string;
+      preExistingUncommittedChanges?: boolean;
       validation?: WorkspaceValidationResult;
     }> {
       // The workspace is keyed by work item; `repo` still drives the clone and
@@ -327,6 +330,9 @@ export function createGitWorkspaceManager(options: {
           expectedBranch: branchNameForIssue(issueNumber),
           expectedRemoteUrl: remoteUrlForRepo(repo),
           expectedBaseRef: `origin/${defaultBranch}`,
+          ...(updateResult.preExistingUncommittedChanges === true
+            ? { allowUncommittedChanges: true }
+            : {}),
         });
         return { workspacePath, ...updateResult, validation };
       }

@@ -301,6 +301,9 @@ export function createCodexRunner(options: {
         ...(input.workspaceMode === undefined ? {} : { workspaceMode: input.workspaceMode }),
         ...(input.mergeConflictDetected === true ? { mergeConflictDetected: true } : {}),
         ...(input.upstreamChanges === undefined ? {} : { upstreamChanges: input.upstreamChanges }),
+        ...(input.preExistingUncommittedChanges === true
+          ? { preExistingUncommittedChanges: true }
+          : {}),
         ...(toolCapabilityNote !== undefined || input.promptContextOverrides !== undefined
           ? {
               contextOverrides: {
