@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import type { ResourceIndex } from '../../core/contracts.js';
 import { buildResourceUri } from '../../domain/resource-uri.js';
 import { isTerminalStage } from '../../domain/stages.js';
+import { isWorkItemDeleted, isWorkItemFrozen } from '../../domain/work-item-lifecycle.js';
 import { workflowForProjection, workflowNameForProjection } from '../../domain/workflows.js';
 import type { EventEnvelope, IssueStateRecord, RunRecord, WakeConfig } from '../../domain/types.js';
 import type { createStateStore } from '../fs/state-store.js';
@@ -75,6 +76,10 @@ function deriveCondition(
   lastRun: RunRecord | null,
   config: WakeConfig,
 ): { condition: BoardCondition; reason: string } {
+  if (isWorkItemFrozen(item)) {
+    return { condition: 'needs-human', reason: 'work item frozen' };
+  }
+
   const stage = item.wake.stage;
 
   if (isTerminalStage(stage) || item.issue.state === 'closed') {
@@ -188,54 +193,56 @@ export async function buildBoard(input: { stateStore: StateStore; config: WakeCo
     runTotalsByItem.set(run.workItemKey, existing);
   }
 
-  return items.map((item) => {
-    const lastRun =
-      item.wake.lastRunId === undefined ? null : (runsById.get(item.wake.lastRunId) ?? null);
-    const { condition, reason } = deriveCondition(item, lastRun, input.config);
-    const activeChildRuns = activeChildRunsForItem(item, runs, input.now);
-    const activeMainRun =
-      lastRun?.status === 'running'
-        ? {
-            runId: lastRun.runId,
-            action: lastRun.action,
-            startedAt: lastRun.startedAt,
-            ageMs: input.now.getTime() - Date.parse(lastRun.startedAt),
-            ...(lastRun.routing?.runnerName === undefined
-              ? {}
-              : { runnerName: lastRun.routing.runnerName }),
-            ...(lastRun.routing?.tier === undefined ? {} : { tier: lastRun.routing.tier }),
-          }
-        : undefined;
+  return items
+    .filter((item) => !isWorkItemDeleted(item))
+    .map((item) => {
+      const lastRun =
+        item.wake.lastRunId === undefined ? null : (runsById.get(item.wake.lastRunId) ?? null);
+      const { condition, reason } = deriveCondition(item, lastRun, input.config);
+      const activeChildRuns = activeChildRunsForItem(item, runs, input.now);
+      const activeMainRun =
+        lastRun?.status === 'running'
+          ? {
+              runId: lastRun.runId,
+              action: lastRun.action,
+              startedAt: lastRun.startedAt,
+              ageMs: input.now.getTime() - Date.parse(lastRun.startedAt),
+              ...(lastRun.routing?.runnerName === undefined
+                ? {}
+                : { runnerName: lastRun.routing.runnerName }),
+              ...(lastRun.routing?.tier === undefined ? {} : { tier: lastRun.routing.tier }),
+            }
+          : undefined;
 
-    const runTotals = runTotalsByItem.get(item.workItemKey) ?? {
-      totalRuns: 0,
-      totalTokens: 0,
-      totalCostUsd: 0,
-    };
+      const runTotals = runTotalsByItem.get(item.workItemKey) ?? {
+        totalRuns: 0,
+        totalTokens: 0,
+        totalCostUsd: 0,
+      };
 
-    return {
-      repo: item.issue.repo,
-      number: item.issue.number,
-      title: item.issue.title,
-      url: item.issue.url,
-      stage: item.wake.stage,
-      workflow: workflowNameForProjection(item, input.config),
-      labels: item.issue.labels,
-      condition,
-      conditionReason: reason,
-      timeInStageMs: timeInStageMs(item, input.now),
-      totalRuns: runTotals.totalRuns,
-      totalTokens: runTotals.totalTokens,
-      totalCostUsd: runTotals.totalCostUsd,
-      lastRunAction: lastRun?.action,
-      lastRunSentinel: lastRun?.sentinel,
-      lastRunStatus: lastRun?.status,
-      ...(activeMainRun === undefined ? {} : { activeMainRun }),
-      ...(activeChildRuns.length === 0 ? {} : { activeChildRuns }),
-      sessionId: item.wake.sessionId,
-      workspacePath: item.wake.workspacePath,
-    };
-  });
+      return {
+        repo: item.issue.repo,
+        number: item.issue.number,
+        title: item.issue.title,
+        url: item.issue.url,
+        stage: item.wake.stage,
+        workflow: workflowNameForProjection(item, input.config),
+        labels: item.issue.labels,
+        condition,
+        conditionReason: reason,
+        timeInStageMs: timeInStageMs(item, input.now),
+        totalRuns: runTotals.totalRuns,
+        totalTokens: runTotals.totalTokens,
+        totalCostUsd: runTotals.totalCostUsd,
+        lastRunAction: lastRun?.action,
+        lastRunSentinel: lastRun?.sentinel,
+        lastRunStatus: lastRun?.status,
+        ...(activeMainRun === undefined ? {} : { activeMainRun }),
+        ...(activeChildRuns.length === 0 ? {} : { activeChildRuns }),
+        sessionId: item.wake.sessionId,
+        workspacePath: item.wake.workspacePath,
+      };
+    });
 }
 
 export async function buildStatus(input: {

@@ -132,8 +132,11 @@ export const indexHtml = `<!DOCTYPE html>
   a:hover { text-decoration: underline; }
   .resource-list { list-style: none; padding: 0; margin: 0 0 1rem; }
   .resource-list li { display: flex; align-items: baseline; gap: 0.4rem; margin-bottom: 0.35rem; font-size: 0.8rem; }
-  .btn { background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.18); color: #fff; border-radius: 6px; padding: 0.22rem 0.55rem; cursor: pointer; font-size: 0.78rem; margin-top: 0.4rem; }
+  .action-bar { display: flex; align-items: center; gap: 0.45rem; flex-wrap: wrap; margin: 0.6rem 0 0.2rem; }
+  .btn { background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.18); color: #fff; border-radius: 6px; padding: 0.22rem 0.55rem; cursor: pointer; font-size: 0.78rem; }
   .btn:hover:not(:disabled) { border-color: var(--accent-light); background: rgba(45, 212, 191, 0.16); }
+  .btn.danger { background: #5c1f1a; border-color: #ff8f7f; }
+  .btn.danger:hover:not(:disabled) { background: #733027; border-color: #ffd0c8; }
   .btn:disabled { cursor: default; opacity: 0.62; }
 </style>
 </head>
@@ -447,6 +450,8 @@ function renderItemDetails(detail) {
   if (detail.item.wake.workspacePath) {
     body.appendChild(el('p', { class: 'meta', text: 'workspace: ' + detail.item.wake.workspacePath }));
   }
+  const isFrozen = typeof detail.item.context.frozenAt === 'string';
+  const actionBar = el('div', { class: 'action-bar' });
   const lastRun = detail.runs.at(-1);
   if (lastRun && lastRun.sentinel === 'FAILED') {
     const retryBtn = el('button', { type: 'button', class: 'btn', text: 'Retry' });
@@ -462,7 +467,7 @@ function renderItemDetails(detail) {
         document.getElementById('status-summary').textContent = 'retry failed: ' + err.message;
       }
     });
-    body.appendChild(retryBtn);
+    actionBar.appendChild(retryBtn);
   }
   if (detail.item.issue.labels.includes('wake:scheduled-workflow')) {
     const runNowBtn = el('button', { type: 'button', class: 'btn', text: 'Run now' });
@@ -478,7 +483,44 @@ function renderItemDetails(detail) {
         document.getElementById('status-summary').textContent = 'run request failed: ' + err.message;
       }
     });
-    body.appendChild(runNowBtn);
+    actionBar.appendChild(runNowBtn);
+  }
+  const freezeBtn = el('button', { type: 'button', class: 'btn', text: isFrozen ? 'Unfreeze' : 'Freeze' });
+  freezeBtn.addEventListener('click', async () => {
+    const action = isFrozen ? 'unfreeze' : 'freeze';
+    freezeBtn.disabled = true;
+    freezeBtn.textContent = isFrozen ? 'Unfreezing...' : 'Freezing...';
+    try {
+      await postJson('/work-items/' + encodeURIComponent(detail.item.workItemKey) + '/' + action);
+      freezeBtn.textContent = isFrozen ? 'Unfrozen' : 'Frozen';
+      document.getElementById('status-summary').textContent = isFrozen ? 'work item unfrozen' : 'work item frozen';
+    } catch (err) {
+      freezeBtn.disabled = false;
+      freezeBtn.textContent = isFrozen ? 'Unfreeze' : 'Freeze';
+      document.getElementById('status-summary').textContent = action + ' failed: ' + err.message;
+    }
+  });
+  actionBar.appendChild(freezeBtn);
+
+  const deleteBtn = el('button', { type: 'button', class: 'btn danger', text: 'Delete' });
+  deleteBtn.addEventListener('click', async () => {
+    if (!confirm('Delete this work item from the board and remove its resource correlations?')) return;
+    deleteBtn.disabled = true;
+    deleteBtn.textContent = 'Deleting...';
+    try {
+      await postJson('/work-items/' + encodeURIComponent(detail.item.workItemKey) + '/delete');
+      deleteBtn.textContent = 'Deleted';
+      document.getElementById('status-summary').textContent = 'work item deleted';
+      switchView(currentView, { showLoading: false });
+    } catch (err) {
+      deleteBtn.disabled = false;
+      deleteBtn.textContent = 'Delete';
+      document.getElementById('status-summary').textContent = 'delete failed: ' + err.message;
+    }
+  });
+  actionBar.appendChild(deleteBtn);
+  if (actionBar.childNodes.length > 0) {
+    body.appendChild(actionBar);
   }
   const resources = detail.item.correlatedResources || [];
   if (resources.length > 0) {

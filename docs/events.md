@@ -23,5 +23,8 @@ External adapters also emit provider event types such as `ticket.*`, `pr.*`, and
 | `wake.run.requested` | Requests that a scheduled work item be run immediately. | `{ requestedBy }` |
 | `wake.workflow.selected` | Pins the workflow selected for a newly minted work item. | `{ workflow, selectedFromEventId }` |
 | `wake.workitem.created` | Mints a Wake work item identity before resource correlation is registered. | `{}` |
+| `wake.workitem.deleted` | Soft-deletes a work item and excludes it from board display and execution. | `{ requestedBy }` |
+| `wake.workitem.frozen` | Marks a work item as frozen so runner ticks will not execute it. | `{ requestedBy }` |
+| `wake.workitem.unfrozen` | Clears a work item freeze so runner ticks may execute it again. | `{ requestedBy }` |
 | `wake.workspace.cleaned` | Records successful cleanup of a closed issue workspace. | `{ workspacePath }` |
 | `wake.workspace.cleanup-failed` | Records a workspace cleanup failure without aborting the cleanup sweep. | `{ workspacePath, error }` |
