@@ -67,6 +67,8 @@ describe('ui-server', () => {
     expect(html).toContain('AbortController');
     expect(html).toContain('Loading...');
     expect(html).toContain('id="pause-toggle"');
+    expect(html).toContain('pill-frozen');
+    expect(html).toContain('Frozen');
   });
 
   it('serves status and board JSON under /api/v1', async () => {

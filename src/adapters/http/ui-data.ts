@@ -173,6 +173,7 @@ export async function buildBoard(input: { stateStore: StateStore; config: WakeCo
       const lastRun =
         item.wake.lastRunId === undefined ? null : (runsById.get(item.wake.lastRunId) ?? null);
       const { condition, reason } = deriveCondition(item, lastRun, input.config);
+      const isFrozen = isWorkItemFrozen(item);
       const activeChildRuns = activeChildRunsForItem(item, runs, input.now);
       const activeMainRun =
         lastRun?.status === 'running'
@@ -202,6 +203,7 @@ export async function buildBoard(input: { stateStore: StateStore; config: WakeCo
         stage: item.wake.stage,
         workflow: workflowNameForProjection(item, input.config),
         labels: item.issue.labels,
+        isFrozen,
         condition,
         conditionReason: reason,
         timeInStageMs: timeInStageMs(item, input.now),

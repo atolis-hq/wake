@@ -30,6 +30,7 @@ function issueState(input: {
   sessionId?: string;
   lastRunId?: string;
   syncedAt?: string;
+  frozenAt?: string;
 }): IssueStateRecord {
   const syncedAt = input.syncedAt ?? '2026-07-05T12:00:00.000Z';
   return {
@@ -58,7 +59,9 @@ function issueState(input: {
       ...(input.sessionId === undefined ? {} : { sessionId: input.sessionId }),
       ...(input.lastRunId === undefined ? {} : { lastRunId: input.lastRunId }),
     },
-    context: {},
+    context: {
+      ...(input.frozenAt === undefined ? {} : { frozenAt: input.frozenAt, frozenBy: 'test' }),
+    },
     correlatedResources: [],
   };
 }
@@ -133,6 +136,31 @@ describe('ui-data', () => {
     expect(byNumber.get(2)?.condition).toBe('needs-human');
     expect(byNumber.get(3)?.condition).toBe('finished');
     expect(byNumber.get(4)?.condition).toBe('ready');
+  });
+
+  it('marks frozen board cards explicitly', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const config = createDefaultWakeConfig(root);
+
+    await store.writeIssueState(
+      issueState({
+        number: 6,
+        stage: 'implement',
+        frozenAt: '2026-07-05T12:30:00.000Z',
+      }),
+    );
+
+    const board = await buildBoard({
+      stateStore: store,
+      config,
+      now: new Date('2026-07-05T13:00:00.000Z'),
+    });
+
+    expect(board.find((item) => item.number === 6)).toMatchObject({
+      condition: 'needs-human',
+      conditionReason: 'work item frozen',
+      isFrozen: true,
+    });
   });
 
   it('surfaces running watcher runs as child rows without replacing the projection last run', async () => {
