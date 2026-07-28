@@ -203,7 +203,6 @@ describe('ui-data', () => {
       smokeModel: 'gpt-5.4-mini',
       smokePrompt: 'hi',
       timeoutMs: 1000,
-      models: { default: 'gpt-5.5', implement: 'gpt-5.5' },
     };
 
     await store.writeRunRecord({
@@ -922,7 +921,6 @@ describe('ui-data', () => {
       smokeModel: 'gpt-5.4-mini',
       smokePrompt: 'hi',
       timeoutMs: 1000,
-      models: { default: 'gpt-5.5', implement: 'gpt-5.5' },
     };
 
     await store.writeRunRecord({

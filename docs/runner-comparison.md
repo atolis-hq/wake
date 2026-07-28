@@ -14,7 +14,7 @@ Wake normalizes all real runners behind `AgentRunner`, `smoke`, and
 | `runner.mode` support                    | Yes                    | Yes                 | Yes                          | All three are first-class runtime modes.                                          |
 | Normalized `AgentRunResult` into `core/` | Yes                    | Yes                 | Yes                          | All return `result`, `model`, `cli`, optional `session_id`, and failure metadata. |
 | Stage prompt templates                   | Yes                    | Yes                 | Yes                          | All use the shared Wake prompt templates.                                         |
-| Action-specific model overrides          | Yes                    | Yes                 | Yes                          | `runner.<cli>.models.<action>` works for all.                                     |
+| Runner-level model selection             | Yes                    | Yes                 | Yes                          | Each named runner has one `model`; stage routing chooses among runners via tiers. |
 | Wall-clock timeout                       | Yes                    | Yes                 | Yes                          | All runners kill hung CLI processes and return `FAILED`.                          |
 | `wake smoke` support                     | Yes                    | Yes                 | Yes                          | All support the generic smoke surface.                                            |
 | Explicit smoke command                   | `smoke claude`         | `smoke codex`       | `smoke cursor`               | All supported.                                                                    |

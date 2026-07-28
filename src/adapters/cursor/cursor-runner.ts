@@ -216,18 +216,7 @@ function resolveCursorMode(input: {
 }
 
 function resolveModel(input: { action: AgentAction; settings: CursorRunnerSettings }): string {
-  const { models, model } = input.settings;
-
-  const actionSpecificModel = models[input.action];
-  if (actionSpecificModel !== undefined) {
-    return actionSpecificModel;
-  }
-
-  if (models.default !== undefined) {
-    return models.default;
-  }
-
-  return model;
+  return input.settings.model;
 }
 
 function readSandboxLogBreadcrumb(): {
