@@ -96,7 +96,23 @@ function timeInStageMs(item: IssueStateRecord, now: Date): number {
 }
 
 function displayStatusForCard(item: IssueStateRecord, lastRun: RunRecord | null): string {
-  return lastRun?.status ?? item.wake.stage;
+  if (lastRun?.status === 'running') {
+    return 'running';
+  }
+
+  if (lastRun?.status === 'awaiting-approval' || lastRun?.sentinel === 'AWAITING_APPROVAL') {
+    return 'awaiting-approval';
+  }
+
+  if (lastRun?.status === 'blocked' || lastRun?.sentinel === 'BLOCKED') {
+    return 'blocked';
+  }
+
+  if (lastRun?.status === 'failed' || lastRun?.sentinel === 'FAILED') {
+    return 'failed';
+  }
+
+  return item.wake.stage === 'done' ? 'completed' : 'pending';
 }
 
 function activeChildRunsForItem(

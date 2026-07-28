@@ -114,6 +114,7 @@ describe('ui-data', () => {
     await store.writeIssueState(issueState({ number: 2, stage: 'implement', lastRunId: 'run-2' }));
     await store.writeIssueState(issueState({ number: 3, stage: 'done' }));
     await store.writeIssueState(issueState({ number: 4, stage: 'queue' }));
+    await store.writeIssueState(issueState({ number: 5, stage: 'implement', lastRunId: 'run-5' }));
     await store.writeRunRecord(runRecord({ runId: 'run-1', issueNumber: 1, status: 'running' }));
     await store.writeRunRecord(
       runRecord({
@@ -121,6 +122,14 @@ describe('ui-data', () => {
         issueNumber: 2,
         status: 'blocked',
         sentinel: 'BLOCKED',
+      }),
+    );
+    await store.writeRunRecord(
+      runRecord({
+        runId: 'run-5',
+        issueNumber: 5,
+        status: 'completed',
+        sentinel: 'DONE',
       }),
     );
 
@@ -137,9 +146,11 @@ describe('ui-data', () => {
     expect(byNumber.get(2)?.condition).toBe('needs-human');
     expect(byNumber.get(2)?.displayStatus).toBe('blocked');
     expect(byNumber.get(3)?.condition).toBe('finished');
-    expect(byNumber.get(3)?.displayStatus).toBe('done');
+    expect(byNumber.get(3)?.displayStatus).toBe('completed');
     expect(byNumber.get(4)?.condition).toBe('ready');
-    expect(byNumber.get(4)?.displayStatus).toBe('queue');
+    expect(byNumber.get(4)?.displayStatus).toBe('pending');
+    expect(byNumber.get(5)?.condition).toBe('ready');
+    expect(byNumber.get(5)?.displayStatus).toBe('pending');
   });
 
   it('marks frozen board cards explicitly', async () => {
