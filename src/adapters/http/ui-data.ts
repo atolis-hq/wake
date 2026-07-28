@@ -8,63 +8,37 @@ import { isWorkItemDeleted, isWorkItemFrozen } from '../../domain/work-item-life
 import { workflowForProjection, workflowNameForProjection } from '../../domain/workflows.js';
 import type { EventEnvelope, IssueStateRecord, RunRecord, WakeConfig } from '../../domain/types.js';
 import type { createStateStore } from '../fs/state-store.js';
+import { readFileLockStatus, type ProcessInspector } from '../../lib/lock.js';
 
 type StateStore = ReturnType<typeof createStateStore>;
 
 export type BoardCondition =
   'needs-human' | 'active' | 'scheduled' | 'ready' | 'error' | 'finished';
 
-interface LockMetadata {
-  pid: number;
-  acquiredAt: string;
-}
-
-function parseLockMetadata(raw: string): LockMetadata | null {
-  try {
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
-    if (typeof parsed.pid !== 'number' || typeof parsed.acquiredAt !== 'string') {
-      return null;
-    }
-    return { pid: parsed.pid, acquiredAt: parsed.acquiredAt };
-  } catch {
-    return null;
-  }
-}
-
-function isPidAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code !== 'ESRCH';
-  }
-}
-
 async function readLockInfo(
   lockFile: string,
   now: Date,
+  processInspector?: ProcessInspector,
 ): Promise<{
   present: boolean;
   pid?: number;
   acquiredAt?: string;
   ageMs?: number;
   pidAlive?: boolean;
+  staleReason?: string;
 }> {
-  try {
-    const metadata = parseLockMetadata(await readFile(lockFile, 'utf8'));
-    if (metadata === null) {
-      return { present: true };
-    }
-    return {
-      present: true,
-      pid: metadata.pid,
-      acquiredAt: metadata.acquiredAt,
-      ageMs: now.getTime() - Date.parse(metadata.acquiredAt),
-      pidAlive: isPidAlive(metadata.pid),
-    };
-  } catch {
-    return { present: false };
-  }
+  const status = await readFileLockStatus(lockFile, {
+    now,
+    ...(processInspector === undefined ? {} : { processInspector }),
+  });
+  return {
+    present: status.present,
+    ...(status.metadata === undefined ? {} : { pid: status.metadata.pid }),
+    ...(status.metadata === undefined ? {} : { acquiredAt: status.metadata.acquiredAt }),
+    ...(status.ageMs === undefined ? {} : { ageMs: status.ageMs }),
+    pidAlive: status.active,
+    ...(status.staleReason === undefined ? {} : { staleReason: status.staleReason }),
+  };
 }
 
 /**
@@ -249,6 +223,7 @@ export async function buildStatus(input: {
   stateStore: StateStore;
   config: WakeConfig;
   now: Date;
+  processInspector?: ProcessInspector;
 }) {
   const today = input.now.toISOString().slice(0, 10);
   const [ledger, paused, recentEvents, todaysRuns, recentRuns, board] = await Promise.all([
@@ -261,8 +236,8 @@ export async function buildStatus(input: {
   ]);
 
   const [tickLock, runnerLock] = await Promise.all([
-    readLockInfo(input.stateStore.paths.tickLockFile, input.now),
-    readLockInfo(input.stateStore.paths.runnerLockFile, input.now),
+    readLockInfo(input.stateStore.paths.tickLockFile, input.now, input.processInspector),
+    readLockInfo(input.stateStore.paths.runnerLockFile, input.now, input.processInspector),
   ]);
   const tickLockLive = tickLock.present && tickLock.pidAlive === true;
   const runnerLockLive = runnerLock.present && runnerLock.pidAlive === true;

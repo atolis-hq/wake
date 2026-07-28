@@ -441,6 +441,37 @@ describe('ui-data', () => {
     expect(status.loopState).toBe('working');
   });
 
+  it('does not report working when a stale runner lock PID was reused by another command', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const config = createDefaultWakeConfig(root);
+
+    await mkdir(join(root, '.wake', 'locks'), { recursive: true });
+    await writeFile(
+      store.paths.runnerLockFile,
+      `${JSON.stringify({
+        pid: 24,
+        acquiredAt: '2026-07-05T12:00:00.000Z',
+        lockId: 'stale-runner-lock',
+        commandLine: 'node /app/dist/src/main.js start --wake-root /wake',
+      })}\n`,
+      'utf8',
+    );
+
+    const status = await buildStatus({
+      stateStore: store,
+      config,
+      now: new Date('2026-07-05T12:00:01.000Z'),
+      processInspector: {
+        isPidAlive: () => true,
+        readCommandLine: () => 'ngrok http 127.0.0.1:4317 --log=stdout',
+      },
+    });
+
+    expect(status.loopState).toBe('idle');
+    expect(status.runnerLock.pidAlive).toBe(false);
+    expect(status.runnerLock.staleReason).toBe('pid-command-mismatch');
+  });
+
   it('builds status from recent events and today run buckets without a full history run scan', async () => {
     const store = createStateStore({ wakeRoot: root });
     const config = createDefaultWakeConfig(root);
