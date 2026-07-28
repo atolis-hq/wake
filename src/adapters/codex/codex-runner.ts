@@ -220,6 +220,16 @@ export function classifyCodexCliFailure(input: {
   const structuredMessage = extractCodexErrorMessage(input.stdout);
   const text = (structuredMessage ?? `${input.stderr}\n${input.stdout}`).toLowerCase();
   if (
+    text.includes('missing bearer or basic authentication') ||
+    text.includes('missing bearer') ||
+    text.includes('missing authentication') ||
+    text.includes('not logged in') ||
+    text.includes('login required')
+  ) {
+    return 'infra';
+  }
+
+  if (
     text.includes('usage limit') ||
     text.includes('rate limit') ||
     text.includes('quota') ||

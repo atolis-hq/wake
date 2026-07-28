@@ -176,6 +176,19 @@ describe('codex runner failure classification', () => {
     );
   });
 
+  it('classifies missing Codex authentication as infra instead of quota', () => {
+    const authStdout = [
+      '{"type":"thread.started","thread_id":"019f96c3-922a-77b3-90eb-82665a0eeff4"}',
+      '{"type":"turn.started"}',
+      '{"type":"error","message":"Reconnecting... 1/5 (unexpected status 401 Unauthorized: Missing bearer or basic authentication in header, url: https://api.openai.com/v1/responses, request id: 493d40f4-90bd-43c6-a52c-b08df77799d1)"}',
+      '{"type":"turn.failed","error":{"message":"unexpected status 401 Unauthorized: Missing bearer or basic authentication in header, url: https://api.openai.com/v1/responses, request id: 4cf4afde-e359-48db-8403-8e8e4308a8b8"}}',
+    ].join('\n');
+
+    expect(classifyCodexCliFailure({ stdout: authStdout, stderr: '', timedOut: false })).toBe(
+      'infra',
+    );
+  });
+
   it('classifies an unrecognized failure as infra', () => {
     expect(
       classifyCodexCliFailure({
