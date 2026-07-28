@@ -50,6 +50,12 @@ export const indexHtml = `<!DOCTYPE html>
   .pill-polling { background: #1f3350; color: #7fb3ff; }
   .pill-working { background: #2d1f50; color: #c79bff; }
   .pill-paused { background: #4a3510; color: #ffcf7f; }
+  .pill-ready { background: #1f3d2c; color: #7fe3a3; }
+  .pill-active { background: #2d1f50; color: #c79bff; }
+  .pill-scheduled { background: #1f3350; color: #7fb3ff; }
+  .pill-needs-human { background: #4a3510; color: #ffcf7f; }
+  .pill-error { background: #3d1f1f; color: #ff8f7f; }
+  .pill-finished { background: #252830; color: #9aa2ad; }
   nav { display: flex; gap: 0.25rem; padding: 0.4rem 1rem 0 0.3rem; background: var(--brand-darker); border-bottom: 1px solid #2c313a; }
   nav button { background: none; border: none; border-bottom: 2px solid transparent; color: rgba(255, 255, 255, 0.65); padding: 0.4rem 0.7rem 0.45rem; margin-bottom: -1px; cursor: pointer; font-size: 0.85rem; transition: color 0.12s ease; }
   nav button:hover { color: #fff; }
@@ -64,8 +70,10 @@ export const indexHtml = `<!DOCTYPE html>
   .card .meta { color: #9aa2ad; font-size: 0.72rem; }
   .child-run { display: grid; grid-template-columns: auto 1fr; gap: 0.25rem 0.45rem; align-items: center; margin-top: 0.45rem; padding: 0.4rem; border-radius: 6px; background: #181c22; border: 1px solid #334155; color: #cbd5e1; font-size: 0.72rem; }
   .child-run .dot { width: 0.48rem; height: 0.48rem; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px rgba(45, 212, 191, 0.14); }
+  .child-run .dot-watch { background: #ffcf7f; box-shadow: 0 0 0 3px rgba(255, 207, 127, 0.14); }
   .child-run .run-title { font-weight: 650; color: #e5e7eb; }
   .child-run .run-meta { grid-column: 2; color: #94a3b8; }
+  .card-stats { color: #6b7280; font-size: 0.7rem; margin-top: 0.25rem; }
   .chip { display: inline-block; background: #2c313a; border-radius: 4px; padding: 0.05rem 0.35rem; font-size: 0.68rem; margin-right: 0.2rem; }
   .chip-label { background: transparent; border: 1px solid #3a4150; color: #9aa2ad; margin-bottom: 0.2rem; }
   table { border-collapse: collapse; width: 100%; font-size: 0.8rem; }
@@ -293,9 +301,17 @@ async function renderBoard(context) {
   const board = await getJson('/board', context.signal);
   if (!isActiveRequest(context.requestId)) return;
   const main = document.getElementById('main');
+  const COND_PILL = {
+    ready: 'pill-ready',
+    active: 'pill-active',
+    scheduled: 'pill-scheduled',
+    'needs-human': 'pill-needs-human',
+    error: 'pill-error',
+    finished: 'pill-finished',
+  };
   const renderChildRun = (run) => el('div', { class: 'child-run' }, [
-    el('span', { class: 'dot' }),
-    el('div', { class: 'run-title', text: run.action + ' running' }),
+    el('span', { class: 'dot' + (run.isWatcher ? ' dot-watch' : '') }),
+    el('div', { class: 'run-title', text: (run.isWatcher ? '⟳ ' : '') + run.action + ' running' }),
     el('div', {
       class: 'run-meta',
       text: [run.runnerName, run.tier, fmtMs(run.ageMs)].filter(Boolean).join(' · '),
@@ -304,24 +320,27 @@ async function renderBoard(context) {
   const columns = el('div', { class: 'columns' }, CONDITIONS.map((cond) => {
     const items = board.filter((c) => c.condition === cond);
     if (cond === 'finished') items.sort((a, b) => a.timeInStageMs - b.timeInStageMs);
-    const cards = items.map((item) => el('div', {
-      class: 'card',
-      onclick: () => openItemModal(item.repo, item.number),
-    }, [
-      el('div', { class: 'title', text: item.repo + '#' + item.number + ' ' + item.title }),
-      el('div', { class: 'meta' }, [
-        el('span', { class: 'chip', text: item.stage }),
-        ...(cond !== 'finished' ? [document.createTextNode(fmtMs(item.timeInStageMs) + ' in stage')] : []),
-      ]),
-      ...(item.labels && item.labels.length > 0
-        ? [el('div', { class: 'meta' }, item.labels.map((label) => el('span', { class: 'chip chip-label', text: label })))]
-        : []),
-      ...(item.activeMainRun
-        ? []
-        : [el('div', { class: 'meta', text: item.lastRunSentinel ? 'last: ' + item.lastRunAction + ' → ' + item.lastRunSentinel : item.conditionReason })]),
-      ...(item.activeMainRun ? [renderChildRun(item.activeMainRun)] : []),
-      ...((item.activeChildRuns || []).map(renderChildRun)),
-    ]));
+    const cards = items.map((item) => {
+      const nonWakeLabels = (item.labels || []).filter((l) => !l.startsWith('wake:'));
+      const pillClass = 'pill ' + (COND_PILL[item.condition] || 'pill-finished');
+      const statsText = item.totalRuns + ' runs | ' + fmtCost(item.totalCostUsd) + ' | ' + fmtNumber(item.totalTokens) + ' tokens';
+      return el('div', {
+        class: 'card',
+        onclick: () => openItemModal(item.repo, item.number),
+      }, [
+        el('div', { class: 'title', text: item.repo + '#' + item.number + ' ' + item.title }),
+        el('div', { class: 'meta', style: 'display:flex;align-items:center;gap:0.3rem;flex-wrap:wrap;margin-top:0.2rem;' }, [
+          el('span', { class: pillClass, text: item.condition }),
+          document.createTextNode('| ' + item.workflow + ' | ' + item.stage + ' | ' + fmtMs(item.timeInStageMs) + ' in stage'),
+        ]),
+        el('div', { class: 'card-stats', text: statsText }),
+        ...(nonWakeLabels.length > 0
+          ? [el('div', { class: 'meta', style: 'margin-top:0.2rem;' }, nonWakeLabels.map((label) => el('span', { class: 'chip chip-label', text: label })))]
+          : []),
+        ...(item.activeMainRun ? [renderChildRun(item.activeMainRun)] : []),
+        ...((item.activeChildRuns || []).map(renderChildRun)),
+      ]);
+    });
     return el('div', { class: 'col' + (items.length === 0 ? ' col-empty' : '') }, [
       el('h2', { text: cond + ' (' + items.length + ')' }),
       ...cards,

@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import type { ResourceIndex } from '../../core/contracts.js';
 import { buildResourceUri } from '../../domain/resource-uri.js';
 import { isTerminalStage } from '../../domain/stages.js';
-import { workflowForProjection } from '../../domain/workflows.js';
+import { workflowForProjection, workflowNameForProjection } from '../../domain/workflows.js';
 import type { EventEnvelope, IssueStateRecord, RunRecord, WakeConfig } from '../../domain/types.js';
 import type { createStateStore } from '../fs/state-store.js';
 
@@ -126,6 +126,7 @@ function activeChildRunsForItem(
   status: RunRecord['status'];
   startedAt: string;
   ageMs: number;
+  isWatcher: boolean;
   runnerName?: string;
   runnerKind?: string;
   tier?: string;
@@ -144,6 +145,7 @@ function activeChildRunsForItem(
       status: run.status,
       startedAt: run.startedAt,
       ageMs: now.getTime() - Date.parse(run.startedAt),
+      isWatcher: run.metadata?.watcher === true,
       ...(run.routing?.runnerName === undefined ? {} : { runnerName: run.routing.runnerName }),
       ...(run.routing?.runnerKind === undefined ? {} : { runnerKind: run.routing.runnerKind }),
       ...(run.routing?.tier === undefined ? {} : { tier: run.routing.tier }),
@@ -162,6 +164,29 @@ export async function buildBoard(input: { stateStore: StateStore; config: WakeCo
   // with items x run-history size instead of just run-history size.
   const runs = await input.stateStore.listRunRecordSummaries();
   const runsById = new Map(runs.map((run) => [run.runId, run]));
+
+  const runTotalsByItem = new Map<
+    string,
+    { totalRuns: number; totalTokens: number; totalCostUsd: number }
+  >();
+  for (const run of runs) {
+    const existing = runTotalsByItem.get(run.workItemKey) ?? {
+      totalRuns: 0,
+      totalTokens: 0,
+      totalCostUsd: 0,
+    };
+    existing.totalRuns += 1;
+    const usage = run.tokenUsage;
+    if (usage !== undefined) {
+      existing.totalTokens +=
+        (usage.inputTokens ?? 0) +
+        (usage.outputTokens ?? 0) +
+        (usage.cacheCreationInputTokens ?? 0) +
+        (usage.cacheReadInputTokens ?? 0);
+      existing.totalCostUsd += usage.costUsd ?? 0;
+    }
+    runTotalsByItem.set(run.workItemKey, existing);
+  }
 
   return items.map((item) => {
     const lastRun =
@@ -182,16 +207,26 @@ export async function buildBoard(input: { stateStore: StateStore; config: WakeCo
           }
         : undefined;
 
+    const runTotals = runTotalsByItem.get(item.workItemKey) ?? {
+      totalRuns: 0,
+      totalTokens: 0,
+      totalCostUsd: 0,
+    };
+
     return {
       repo: item.issue.repo,
       number: item.issue.number,
       title: item.issue.title,
       url: item.issue.url,
       stage: item.wake.stage,
+      workflow: workflowNameForProjection(item, input.config),
       labels: item.issue.labels,
       condition,
       conditionReason: reason,
       timeInStageMs: timeInStageMs(item, input.now),
+      totalRuns: runTotals.totalRuns,
+      totalTokens: runTotals.totalTokens,
+      totalCostUsd: runTotals.totalCostUsd,
       lastRunAction: lastRun?.action,
       lastRunSentinel: lastRun?.sentinel,
       lastRunStatus: lastRun?.status,
