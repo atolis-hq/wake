@@ -942,7 +942,6 @@ describe('claude runner command building', () => {
         settings: {
           command,
           model: 'haiku',
-          models: { default: 'haiku' },
           smokeModel: 'haiku',
           sessionName: 'Wake',
           remoteControlName: 'Wake',
@@ -1008,7 +1007,6 @@ describe('claude runner command building', () => {
         settings: {
           command,
           model: 'haiku',
-          models: { default: 'haiku' },
           smokeModel: 'haiku',
           sessionName: 'Wake',
           remoteControlName: 'Wake',
@@ -1085,7 +1083,6 @@ describe('claude runner command building', () => {
         settings: {
           command,
           model: 'haiku',
-          models: { default: 'haiku' },
           smokeModel: 'haiku',
           sessionName: 'Wake',
           remoteControlName: 'Wake',
@@ -1114,54 +1111,19 @@ describe('claude runner command building', () => {
 describe('model resolution', () => {
   type ClaudeSettings = {
     model: string;
-    models?: { default?: string; refine?: string; implement?: string };
   };
 
-  function resolveTestModel(settings: ClaudeSettings, action: 'implement' | 'refine'): string {
-    const models = settings.models ?? {};
-    return models[action] ?? models.default ?? settings.model;
+  function resolveTestModel(settings: ClaudeSettings): string {
+    return settings.model;
   }
 
-  it('uses action-specific model when configured', () => {
-    const settings: ClaudeSettings = { model: 'haiku', models: { implement: 'sonnet-4.6' } };
+  it('uses the runner model field', () => {
+    const settings: ClaudeSettings = { model: 'haiku' };
     const args = buildClaudePrintArgs({
-      model: resolveTestModel(settings, 'implement'),
+      model: resolveTestModel(settings),
       prompt: 'test',
       sessionName: 'Wake',
     });
-    expect(args).toContain('sonnet-4.6');
-  });
-
-  it('falls back to default model when action-specific model is not set', () => {
-    const settings: ClaudeSettings = {
-      model: 'haiku',
-      models: { default: 'opus', implement: 'sonnet-4.6' },
-    };
-    const args = buildClaudePrintArgs({
-      model: resolveTestModel(settings, 'refine'),
-      prompt: 'test',
-      sessionName: 'Wake',
-    });
-    expect(args).toContain('opus');
-  });
-
-  it('falls back to model field when no models overrides set', () => {
-    const settings: ClaudeSettings = { model: 'legacy-haiku' };
-    const args = buildClaudePrintArgs({
-      model: resolveTestModel(settings, 'implement'),
-      prompt: 'test',
-      sessionName: 'Wake',
-    });
-    expect(args).toContain('legacy-haiku');
-  });
-
-  it('prioritizes models.default over model field', () => {
-    const settings: ClaudeSettings = { model: 'legacy-haiku', models: { default: 'new-haiku' } };
-    const args = buildClaudePrintArgs({
-      model: resolveTestModel(settings, 'implement'),
-      prompt: 'test',
-      sessionName: 'Wake',
-    });
-    expect(args).toContain('new-haiku');
+    expect(args).toContain('haiku');
   });
 });

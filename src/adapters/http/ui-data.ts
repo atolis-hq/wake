@@ -908,7 +908,7 @@ function modelKey(run: RunRecord, config: WakeConfig): string {
   if (runner === undefined || runner.kind === 'fake') {
     return 'unknown';
   }
-  return runner.models[run.action] ?? runner.models.default ?? runner.model;
+  return runner.model;
 }
 
 function completedAtForItem(item: IssueStateRecord): string | undefined {

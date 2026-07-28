@@ -93,13 +93,6 @@ export const runtimeEventSchema = z.object({
 export const defaultAgentIdentity = 'Wake';
 export const defaultSmokePrompt = `This is ${defaultAgentIdentity}, reply with "hi ${defaultAgentIdentity} only"`;
 
-const modelOverridesSchema = z
-  .object({
-    default: z.string().optional(),
-  })
-  .catchall(z.string())
-  .default({});
-
 const claudeEffortSchema = z.enum(['low', 'medium', 'high', 'xhigh', 'max']);
 const codexReasoningEffortSchema = z.enum(['low', 'medium', 'high']);
 const cursorModeSchema = z.enum(['ask', 'agent']);
@@ -121,7 +114,6 @@ const claudeRunnerSettingsSchema = z.object({
       enabled: z.boolean().default(false),
     })
     .default({ enabled: false }),
-  models: modelOverridesSchema.default({ default: 'haiku', implement: 'claude-sonnet-4-6' }),
   effort: claudeEffortSchema.optional(),
 });
 
@@ -135,7 +127,6 @@ const codexRunnerSettingsSchema = z.object({
     .int()
     .positive()
     .default(30 * 60 * 1000),
-  models: modelOverridesSchema.default({ default: 'gpt-5.5', implement: 'gpt-5.5' }),
   reasoningEffort: codexReasoningEffortSchema.optional(),
 });
 
@@ -162,7 +153,6 @@ const cursorRunnerSettingsSchema = z.object({
     .int()
     .positive()
     .default(30 * 60 * 1000),
-  models: modelOverridesSchema.default({ default: 'composer-2.5', implement: 'composer-2.5' }),
   defaultMode: cursorModeSchema.optional(),
 });
 
@@ -762,7 +752,6 @@ const wakeConfigBaseSchema = z.object({
       smokePrompt: defaultSmokePrompt,
       timeoutMs: 30 * 60 * 1000,
       remoteControl: { enabled: false },
-      models: { default: 'haiku' },
     },
     'claude-opus': {
       kind: 'claude',
@@ -774,7 +763,6 @@ const wakeConfigBaseSchema = z.object({
       smokePrompt: defaultSmokePrompt,
       timeoutMs: 30 * 60 * 1000,
       remoteControl: { enabled: false },
-      models: { default: 'claude-opus-4-8' },
     },
     'codex-mini': {
       kind: 'codex',
@@ -783,7 +771,6 @@ const wakeConfigBaseSchema = z.object({
       smokeModel: 'gpt-5.4-mini',
       smokePrompt: defaultSmokePrompt,
       timeoutMs: 30 * 60 * 1000,
-      models: { default: 'gpt-5.4-mini', implement: 'gpt-5.4-mini' },
     },
     'codex-flagship': {
       kind: 'codex',
@@ -792,7 +779,6 @@ const wakeConfigBaseSchema = z.object({
       smokeModel: 'gpt-5.4-mini',
       smokePrompt: defaultSmokePrompt,
       timeoutMs: 30 * 60 * 1000,
-      models: { default: 'gpt-5.5', implement: 'gpt-5.5' },
     },
     'cursor-composer': {
       kind: 'cursor',
@@ -801,7 +787,6 @@ const wakeConfigBaseSchema = z.object({
       smokeModel: 'auto',
       smokePrompt: defaultSmokePrompt,
       timeoutMs: 30 * 60 * 1000,
-      models: { default: 'composer-2.5', implement: 'composer-2.5' },
     },
   }),
   tiers: z.record(z.string(), z.array(z.string().min(1)).min(1)).default({

@@ -145,18 +145,7 @@ export function runClaudeCommand(input: {
 }
 
 function resolveModel(options: { action: AgentAction; settings: ClaudeRunnerSettings }): string {
-  const { models, model } = options.settings;
-
-  const actionSpecificModel = models[options.action];
-  if (actionSpecificModel !== undefined) {
-    return actionSpecificModel;
-  }
-
-  if (models.default !== undefined) {
-    return models.default;
-  }
-
-  return model;
+  return options.settings.model;
 }
 
 function parseClaudePrintOutput(stdout: string): ClaudePrintResult {
