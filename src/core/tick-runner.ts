@@ -68,7 +68,7 @@ import {
   labelsForWorkItem,
   SCHEDULED_WORKFLOW_LABEL,
   type WorkItemLabels,
-} from '../adapters/github/status-labels.js';
+} from '../domain/work-item-labels.js';
 import { createEventEnvelope } from '../lib/event-log.js';
 import { branchNameForIssue } from '../domain/branch-naming.js';
 import { customCommandWorkspace, isCustomCommandAction } from '../domain/custom-commands.js';

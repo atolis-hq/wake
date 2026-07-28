@@ -20,7 +20,7 @@ import { isWorkItemDeleted, isWorkItemFrozen } from '../../domain/work-item-life
 import { createEventEnvelope } from '../../lib/event-log.js';
 import { writeJsonFile } from '../../lib/json-file.js';
 import type { createStateStore } from '../fs/state-store.js';
-import { labelsForWorkItem } from '../github/status-labels.js';
+import { labelsForWorkItem } from '../../domain/work-item-labels.js';
 import { indexHtml } from './ui-assets.js';
 import {
   buildBoard,

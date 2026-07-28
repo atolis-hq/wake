@@ -1,7 +1,7 @@
 import type { createProjectionUpdater } from './projection-updater.js';
 import { createLabelsEvent } from './event-builders.js';
 import { RUN_COMPLETED_EVENT } from '../domain/event-types.js';
-import { labelsForWorkItem } from '../adapters/github/status-labels.js';
+import { labelsForWorkItem } from '../domain/work-item-labels.js';
 import type {
   EventEnvelope,
   ExecutionAttemptLifecycle,

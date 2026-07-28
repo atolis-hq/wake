@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { labelsForWorkItem } from '../../src/adapters/github/status-labels.js';
+import { labelsForWorkItem } from '../../src/domain/work-item-labels.js';
 import { createDefaultWakeConfig } from '../../src/config/defaults.js';
 import { parseIssueStateRecord } from '../../src/domain/schema.js';
 import type { WorkItemStatus } from '../../src/domain/work-item-status.js';

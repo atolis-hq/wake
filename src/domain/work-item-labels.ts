@@ -1,13 +1,15 @@
-import { stageLabelForStage } from '../../domain/stages.js';
-import type { IssueStateRecord, WakeConfig } from '../../domain/types.js';
-import { FROZEN_WORK_ITEM_LABEL } from '../../domain/work-item-lifecycle.js';
-import type { WorkItemStatus } from '../../domain/work-item-status.js';
-import { workflowLabelForWorkflowName, workflowNameForProjection } from '../../domain/workflows.js';
+import { stageLabelForStage } from './stages.js';
+import type { IssueStateRecord, WakeConfig } from './types.js';
+import { FROZEN_WORK_ITEM_LABEL } from './work-item-lifecycle.js';
+import type { WorkItemStatus } from './work-item-status.js';
+import { workflowLabelForWorkflowName, workflowNameForProjection } from './workflows.js';
 
-// Only Wake's GitHub adapter knows the wake:* label string convention — this
-// is the single place that translates the canonical, typed context fields
-// (status/frozen/deleted/scheduled) into label strings. core/ never computes
-// labels itself; it just reads the current projection and calls this.
+// The single place that translates the canonical, typed context fields
+// (status/frozen/deleted/scheduled) into wake:* label strings. Lives in
+// domain/ (not adapters/github/) so core/ can call it directly without
+// importing a concrete adapter — the wake: naming convention is Wake's own,
+// not GitHub-specific, matching stageLabelForStage/workflowLabelForWorkflowName
+// which already live here for the same reason.
 export const SCHEDULED_WORKFLOW_LABEL = 'wake:scheduled-workflow';
 
 const statusLabelByStatus: Record<WorkItemStatus, string> = {

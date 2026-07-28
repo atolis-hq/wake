@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { createFakeArtifactVerifier } from '../../src/adapters/fake/fake-artifact-verifier.js';
-import { labelsForWorkItem } from '../../src/adapters/github/status-labels.js';
+import { labelsForWorkItem } from '../../src/domain/work-item-labels.js';
 import { createFakeGitHubPullRequestActivitySource } from '../../src/adapters/fake/fake-github-pull-request-activity-source.js';
 import { createFakeResourceIndex } from '../../src/adapters/fake/fake-resource-index.js';
 import { createFakeWorkspaceManager } from '../../src/adapters/fake/fake-workspace-manager.js';

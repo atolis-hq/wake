@@ -13,7 +13,7 @@ import { createEventEnvelope, createUnkeyedEventEnvelope } from '../../lib/event
 import { createWakePaths } from '../../lib/paths.js';
 import { wakeVersion } from '../../version.js';
 import { buildResumeCommandForCli } from '../runner/runner-cli-adapter.js';
-import { SCHEDULED_WORKFLOW_LABEL } from './status-labels.js';
+import { SCHEDULED_WORKFLOW_LABEL } from '../../domain/work-item-labels.js';
 
 const wakeStatusLabelPrefix = 'wake:status.';
 const pollOverlapMs = 60 * 60 * 1000;
