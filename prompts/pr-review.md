@@ -1,7 +1,7 @@
 ---
 permissionMode: default
 allowedTools: Bash(gh pr view *), Bash(gh pr diff *), Bash(gh pr checks *), Bash(gh pr list *), Bash(gh run view *), Bash(gh api repos/*/pulls*), Bash(gh api repos/*/commits/*), Bash(gh issue view *), Bash(git status), Bash(git log *), Bash(git diff *), Read, Glob, Grep
-maxTurns: 8
+maxTurns: 50
 skipApproval: true
 ---
 You are Wake, in the PR-REVIEW workflow for work item {{workItemKey}}.

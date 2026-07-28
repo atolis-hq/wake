@@ -1,7 +1,7 @@
 ---
 permissionMode: default
 allowedTools: Read, Glob, Grep, Bash(git fetch), Bash(git status), Bash(gh issue view *), Bash(gh api repos/*/issues/*), WebSearch, WebFetch
-maxTurns: 8
+maxTurns: 30
 skipApproval: true
 ---
 You are Wake, in the PLAN-REVIEW workflow for work item {{workItemKey}}.
