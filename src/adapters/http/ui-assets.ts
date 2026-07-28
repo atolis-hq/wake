@@ -68,6 +68,13 @@ export const indexHtml = `<!DOCTYPE html>
   .card:hover { border-color: var(--accent); }
   .card .title { font-weight: 600; margin-bottom: 0.25rem; }
   .card .meta { color: #9aa2ad; font-size: 0.72rem; }
+  .item-summary { margin: 0.45rem 0 0.75rem; }
+  .item-summary .meta { color: #9aa2ad; font-size: 0.78rem; }
+  .item-summary .card-stats { font-size: 0.76rem; }
+  .item-summary .child-run { max-width: 560px; }
+  .detail-kv { display: grid; grid-template-columns: max-content 1fr; gap: 0.35rem 0.7rem; align-items: baseline; margin: 0.75rem 0 1rem; font-size: 0.8rem; }
+  .detail-kv dt { margin: 0; color: #9aa2ad; }
+  .detail-kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
   .child-run { display: grid; grid-template-columns: auto 1fr; gap: 0.25rem 0.45rem; align-items: center; margin-top: 0.45rem; padding: 0.4rem; border-radius: 6px; background: #181c22; border: 1px solid #334155; color: #cbd5e1; font-size: 0.72rem; }
   .child-run .dot { width: 0.48rem; height: 0.48rem; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px rgba(45, 212, 191, 0.14); }
   .child-run .dot-watch { background: #ffcf7f; box-shadow: 0 0 0 3px rgba(255, 207, 127, 0.14); }
@@ -174,6 +181,21 @@ export const indexHtml = `<!DOCTYPE html>
 <script>
 const API = '/api/v1';
 const CONDITIONS = ['ready', 'scheduled', 'active', 'needs-human', 'error', 'finished'];
+const COND_PILL = {
+  ready: 'pill-ready',
+  active: 'pill-active',
+  scheduled: 'pill-scheduled',
+  'needs-human': 'pill-needs-human',
+  error: 'pill-error',
+  finished: 'pill-finished',
+};
+const COND_CARD = {
+  ready: 'card-ready',
+  active: 'card-active',
+  scheduled: 'card-scheduled',
+  'needs-human': 'card-needs-human',
+  error: 'card-error',
+};
 let currentView = 'board';
 let analyticsWindow = '1d';
 let analyticsMetric = 'runs-over-time';
@@ -309,53 +331,17 @@ async function renderBoard(context) {
   const board = await getJson('/board', context.signal);
   if (!isActiveRequest(context.requestId)) return;
   const main = document.getElementById('main');
-  const COND_PILL = {
-    ready: 'pill-ready',
-    active: 'pill-active',
-    scheduled: 'pill-scheduled',
-    'needs-human': 'pill-needs-human',
-    error: 'pill-error',
-    finished: 'pill-finished',
-  };
-  const COND_CARD = {
-    ready: 'card-ready',
-    active: 'card-active',
-    scheduled: 'card-scheduled',
-    'needs-human': 'card-needs-human',
-    error: 'card-error',
-  };
-  const renderChildRun = (run) => el('div', { class: 'child-run' }, [
-    el('span', { class: 'dot' + (run.isWatcher ? ' dot-watch' : '') }),
-    el('div', { class: 'run-title', text: (run.isWatcher ? '⟳ ' : '') + run.action + ' running' }),
-    el('div', {
-      class: 'run-meta',
-      text: [run.runnerName, run.tier, fmtMs(run.ageMs)].filter(Boolean).join(' · '),
-    }),
-  ]);
   const columns = el('div', { class: 'columns' }, CONDITIONS.map((cond) => {
     const items = board.filter((c) => c.condition === cond);
     if (cond === 'finished') items.sort((a, b) => a.timeInStageMs - b.timeInStageMs);
     const cards = items.map((item) => {
-      const nonWakeLabels = (item.labels || []).filter((l) => !l.startsWith('wake:'));
-      const pillClass = 'pill ' + (COND_PILL[item.condition] || 'pill-finished');
       const cardCondClass = COND_CARD[item.condition] ?? '';
-      const statsText = item.totalRuns + ' runs | ' + fmtCost(item.totalCostUsd) + ' | ' + fmtCompact(item.totalTokens) + ' tokens';
-      const isFinished = item.condition === 'finished';
       return el('div', {
         class: 'card' + (cardCondClass ? ' ' + cardCondClass : ''),
-        onclick: () => openItemModal(item.repo, item.number),
+        onclick: () => openItemModal(item.repo, item.number, item),
       }, [
         el('div', { class: 'title', text: item.repo + '#' + item.number + ' ' + item.title }),
-        el('div', { class: 'meta', style: 'display:flex;align-items:center;gap:0.3rem;flex-wrap:wrap;margin-top:0.2rem;' }, [
-          el('span', { class: pillClass, text: item.condition }),
-          document.createTextNode('| ' + item.workflow + ' | ' + item.stage + (isFinished ? '' : ' | ' + fmtMs(item.timeInStageMs) + ' in stage')),
-        ]),
-        el('div', { class: 'card-stats', text: statsText }),
-        ...(nonWakeLabels.length > 0
-          ? [el('div', { class: 'meta', style: 'margin-top:0.2rem;' }, nonWakeLabels.map((label) => el('span', { class: 'chip chip-label', text: label })))]
-          : []),
-        ...(item.activeMainRun ? [renderChildRun(item.activeMainRun)] : []),
-        ...((item.activeChildRuns || []).map(renderChildRun)),
+        ...renderCardSummaryNodes(item),
       ]);
     });
     return el('div', { class: 'col' + (items.length === 0 ? ' col-empty' : '') }, [
@@ -364,6 +350,36 @@ async function renderBoard(context) {
     ]);
   }));
   main.replaceChildren(columns);
+}
+
+function renderChildRun(run) {
+  return el('div', { class: 'child-run' }, [
+    el('span', { class: 'dot' + (run.isWatcher ? ' dot-watch' : '') }),
+    el('div', { class: 'run-title', text: (run.isWatcher ? 'watcher ' : '') + run.action + ' running' }),
+    el('div', {
+      class: 'run-meta',
+      text: [run.runnerName, run.tier, fmtMs(run.ageMs)].filter(Boolean).join(' | '),
+    }),
+  ]);
+}
+
+function renderCardSummaryNodes(item) {
+  const nonWakeLabels = (item.labels || []).filter((l) => !l.startsWith('wake:'));
+  const pillClass = 'pill ' + (COND_PILL[item.condition] || 'pill-finished');
+  const statsText = item.totalRuns + ' runs | ' + fmtCost(item.totalCostUsd) + ' | ' + fmtCompact(item.totalTokens) + ' tokens';
+  const isFinished = item.condition === 'finished';
+  return [
+    el('div', { class: 'meta', style: 'display:flex;align-items:center;gap:0.3rem;flex-wrap:wrap;margin-top:0.2rem;' }, [
+      el('span', { class: pillClass, text: item.condition }),
+      document.createTextNode('| ' + item.workflow + ' | ' + item.stage + (isFinished ? '' : ' | ' + fmtMs(item.timeInStageMs) + ' in stage')),
+    ]),
+    el('div', { class: 'card-stats', text: statsText }),
+    ...(nonWakeLabels.length > 0
+      ? [el('div', { class: 'meta', style: 'margin-top:0.2rem;' }, nonWakeLabels.map((label) => el('span', { class: 'chip chip-label', text: label })))]
+      : []),
+    ...(item.activeMainRun ? [renderChildRun(item.activeMainRun)] : []),
+    ...((item.activeChildRuns || []).map(renderChildRun)),
+  ];
 }
 
 function resourceUriToUrl(resourceUri) {
@@ -381,7 +397,7 @@ function resourceUriToUrl(resourceUri) {
   return null;
 }
 
-async function openItemModal(repo, number) {
+async function openItemModal(repo, number, boardItem) {
   const overlay = document.getElementById('modal-overlay');
   const title = document.getElementById('modal-title');
   const tabs = document.getElementById('modal-tabs');
@@ -433,22 +449,34 @@ async function openItemModal(repo, number) {
       const transcripts = await getJson('/work-items/' + encodeURIComponent(detail.item.workItemKey) + '/transcripts');
       return renderTranscripts(transcripts);
     }
-    return renderItemDetails(detail);
+    return renderItemDetails(detail, boardItem);
   }
 
   await switchItemTab('details');
 }
 
-function renderItemDetails(detail) {
+function renderItemDetails(detail, boardItem) {
   const body = el('div');
   const repo = detail.item.issue.repo;
   const number = detail.item.issue.number;
   const headLink = el('a', { href: detail.item.issue.url, target: '_blank', rel: 'noopener noreferrer', text: repo + '#' + number });
   body.appendChild(el('h3', {}, [headLink]));
   body.appendChild(el('p', { text: detail.item.issue.title }));
-  body.appendChild(el('p', { class: 'meta', text: 'stage: ' + detail.item.wake.stage + (detail.item.wake.sessionId ? ' | session: ' + detail.item.wake.sessionId : '') }));
+  if (boardItem) {
+    body.appendChild(el('div', { class: 'item-summary' }, renderCardSummaryNodes(boardItem)));
+  }
+  const details = [];
+  if (detail.item.wake.sessionId) {
+    details.push(['Session', detail.item.wake.sessionId]);
+  }
   if (detail.item.wake.workspacePath) {
-    body.appendChild(el('p', { class: 'meta', text: 'workspace: ' + detail.item.wake.workspacePath }));
+    details.push(['Workspace', detail.item.wake.workspacePath]);
+  }
+  if (details.length > 0) {
+    body.appendChild(el('dl', { class: 'detail-kv' }, details.flatMap(([label, value]) => [
+      el('dt', { text: label }),
+      el('dd', { text: value }),
+    ])));
   }
   const isFrozen = typeof detail.item.context.frozenAt === 'string';
   const actionBar = el('div', { class: 'action-bar' });
