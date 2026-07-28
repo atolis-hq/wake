@@ -133,9 +133,13 @@ describe('ui-data', () => {
     const byNumber = new Map(board.map((card) => [card.number, card]));
 
     expect(byNumber.get(1)?.condition).toBe('active');
+    expect(byNumber.get(1)?.displayStatus).toBe('running');
     expect(byNumber.get(2)?.condition).toBe('needs-human');
+    expect(byNumber.get(2)?.displayStatus).toBe('blocked');
     expect(byNumber.get(3)?.condition).toBe('finished');
+    expect(byNumber.get(3)?.displayStatus).toBe('done');
     expect(byNumber.get(4)?.condition).toBe('ready');
+    expect(byNumber.get(4)?.displayStatus).toBe('queue');
   });
 
   it('marks frozen board cards explicitly', async () => {

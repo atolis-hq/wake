@@ -95,6 +95,10 @@ function timeInStageMs(item: IssueStateRecord, now: Date): number {
   return now.getTime() - Date.parse(lastChange);
 }
 
+function displayStatusForCard(item: IssueStateRecord, lastRun: RunRecord | null): string {
+  return lastRun?.status ?? item.wake.stage;
+}
+
 function activeChildRunsForItem(
   item: IssueStateRecord,
   runs: RunRecord[],
@@ -210,6 +214,7 @@ export async function buildBoard(input: { stateStore: StateStore; config: WakeCo
         totalRuns: runTotals.totalRuns,
         totalTokens: runTotals.totalTokens,
         totalCostUsd: runTotals.totalCostUsd,
+        displayStatus: displayStatusForCard(item, lastRun),
         lastRunAction: lastRun?.action,
         lastRunSentinel: lastRun?.sentinel,
         lastRunStatus: lastRun?.status,

@@ -92,6 +92,7 @@ export const indexHtml = `<!DOCTYPE html>
   .card-error { border-left: 3px solid #ff8f7f; }
   .chip { display: inline-block; background: #2c313a; border-radius: 4px; padding: 0.05rem 0.35rem; font-size: 0.68rem; margin-right: 0.2rem; }
   .chip-label { background: transparent; border: 1px solid #3a4150; color: #9aa2ad; margin-bottom: 0.2rem; }
+  .chip-meta { border: 1px solid #3a4150; color: #cbd5e1; margin-bottom: 0.2rem; }
   table { border-collapse: collapse; width: 100%; font-size: 0.8rem; }
   th, td { text-align: left; padding: 0.35rem 0.5rem; border-bottom: 1px solid #2c313a; }
   th { color: #9aa2ad; font-weight: 600; }
@@ -438,12 +439,18 @@ function renderCardSummaryNodes(item) {
   const pillClass = 'pill ' + (COND_PILL[item.condition] || 'pill-finished');
   const statsText = item.totalRuns + ' runs | ' + fmtCost(item.totalCostUsd) + ' | ' + fmtCompact(item.totalTokens) + ' tokens';
   const isFinished = item.condition === 'finished';
+  const displayStatus = item.displayStatus || item.lastRunStatus || item.stage;
+  const metaPills = [
+    el('span', { class: pillClass, text: displayStatus.replace(/-/g, ' ') }),
+    ...(item.isFrozen ? [el('span', { class: 'pill pill-frozen', text: 'Frozen' })] : []),
+    el('span', { class: 'chip chip-meta', text: item.workflow }),
+    el('span', { class: 'chip chip-meta', text: item.stage }),
+  ];
+  if (!isFinished) {
+    metaPills.push(el('span', { class: 'chip chip-meta', text: fmtMs(item.timeInStageMs) + ' in stage' }));
+  }
   return [
-    el('div', { class: 'meta', style: 'display:flex;align-items:center;gap:0.3rem;flex-wrap:wrap;margin-top:0.2rem;' }, [
-      el('span', { class: pillClass, text: item.condition }),
-      ...(item.isFrozen ? [el('span', { class: 'pill pill-frozen', text: 'Frozen' })] : []),
-      document.createTextNode('| ' + item.workflow + ' | ' + item.stage + (isFinished ? '' : ' | ' + fmtMs(item.timeInStageMs) + ' in stage')),
-    ]),
+    el('div', { class: 'meta', style: 'display:flex;align-items:center;gap:0.3rem;flex-wrap:wrap;margin-top:0.2rem;' }, metaPills),
     el('div', { class: 'card-stats', text: statsText }),
     ...(nonWakeLabels.length > 0
       ? [el('div', { class: 'meta', style: 'margin-top:0.2rem;' }, nonWakeLabels.map((label) => el('span', { class: 'chip chip-label', text: label })))]
