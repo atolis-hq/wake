@@ -200,6 +200,9 @@ export function createPolicyEngine() {
         !issue.latestComment.isBotAuthored &&
         issue.latestComment.id !== handledCommentId
       ) {
+        if (lastRunSentinel === failedRunnerSentinel) {
+          return belowFailureRetryLimit(issue, config);
+        }
         return true;
       }
 
