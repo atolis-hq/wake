@@ -73,7 +73,12 @@ export const indexHtml = `<!DOCTYPE html>
   .child-run .dot-watch { background: #ffcf7f; box-shadow: 0 0 0 3px rgba(255, 207, 127, 0.14); }
   .child-run .run-title { font-weight: 650; color: #e5e7eb; }
   .child-run .run-meta { grid-column: 2; color: #94a3b8; }
-  .card-stats { color: #6b7280; font-size: 0.7rem; margin-top: 0.25rem; }
+  .card-stats { color: #8892a0; font-size: 0.7rem; margin-top: 0.3rem; }
+  .card-ready { border-left: 3px solid #7fe3a3; }
+  .card-active { border-left: 3px solid #c79bff; }
+  .card-scheduled { border-left: 3px solid #7fb3ff; }
+  .card-needs-human { border-left: 3px solid #ffcf7f; }
+  .card-error { border-left: 3px solid #ff8f7f; }
   .chip { display: inline-block; background: #2c313a; border-radius: 4px; padding: 0.05rem 0.35rem; font-size: 0.68rem; margin-right: 0.2rem; }
   .chip-label { background: transparent; border: 1px solid #3a4150; color: #9aa2ad; margin-bottom: 0.2rem; }
   table { border-collapse: collapse; width: 100%; font-size: 0.8rem; }
@@ -309,6 +314,13 @@ async function renderBoard(context) {
     error: 'pill-error',
     finished: 'pill-finished',
   };
+  const COND_CARD = {
+    ready: 'card-ready',
+    active: 'card-active',
+    scheduled: 'card-scheduled',
+    'needs-human': 'card-needs-human',
+    error: 'card-error',
+  };
   const renderChildRun = (run) => el('div', { class: 'child-run' }, [
     el('span', { class: 'dot' + (run.isWatcher ? ' dot-watch' : '') }),
     el('div', { class: 'run-title', text: (run.isWatcher ? '⟳ ' : '') + run.action + ' running' }),
@@ -323,15 +335,17 @@ async function renderBoard(context) {
     const cards = items.map((item) => {
       const nonWakeLabels = (item.labels || []).filter((l) => !l.startsWith('wake:'));
       const pillClass = 'pill ' + (COND_PILL[item.condition] || 'pill-finished');
-      const statsText = item.totalRuns + ' runs | ' + fmtCost(item.totalCostUsd) + ' | ' + fmtNumber(item.totalTokens) + ' tokens';
+      const cardCondClass = COND_CARD[item.condition] ?? '';
+      const statsText = item.totalRuns + ' runs | ' + fmtCost(item.totalCostUsd) + ' | ' + fmtCompact(item.totalTokens) + ' tokens';
+      const isFinished = item.condition === 'finished';
       return el('div', {
-        class: 'card',
+        class: 'card' + (cardCondClass ? ' ' + cardCondClass : ''),
         onclick: () => openItemModal(item.repo, item.number),
       }, [
         el('div', { class: 'title', text: item.repo + '#' + item.number + ' ' + item.title }),
         el('div', { class: 'meta', style: 'display:flex;align-items:center;gap:0.3rem;flex-wrap:wrap;margin-top:0.2rem;' }, [
           el('span', { class: pillClass, text: item.condition }),
-          document.createTextNode('| ' + item.workflow + ' | ' + item.stage + ' | ' + fmtMs(item.timeInStageMs) + ' in stage'),
+          document.createTextNode('| ' + item.workflow + ' | ' + item.stage + (isFinished ? '' : ' | ' + fmtMs(item.timeInStageMs) + ' in stage')),
         ]),
         el('div', { class: 'card-stats', text: statsText }),
         ...(nonWakeLabels.length > 0
@@ -549,6 +563,13 @@ function fmtTokens(tokenUsage) {
     (tokenUsage.inputTokens || 0) + (tokenUsage.outputTokens || 0) +
     (tokenUsage.cacheCreationInputTokens || 0) + (tokenUsage.cacheReadInputTokens || 0);
   return total >= 1000 ? (total / 1000).toFixed(1) + 'k' : String(total);
+}
+
+function fmtCompact(value) {
+  const n = Number(value || 0);
+  if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+  if (n >= 1000) return (n / 1000).toFixed(1) + 'k';
+  return String(n);
 }
 
 function fmtNumber(value) {
