@@ -1860,16 +1860,24 @@ export function createTickRunner(deps: {
         );
       }
 
-      await deliverOutboundEvent(
-        createLabelsEvent({
-          projection: candidate,
-          runId,
-          statusLabel: 'wake:status.working',
-          stageLabel: stageLabelForStage(claimedStage),
-          workflowLabel: workflowLabelForWorkflowName(workflowName),
-          occurredAt: eventStampNow(),
-        }),
-      );
+      // Watcher runs execute a *different* workflow's stage (e.g. plan-review)
+      // against the same parent projection, not a stage transition of the
+      // parent's own workflow — writing labels here would stamp the child
+      // workflow's stage/workflow onto the parent's GitHub issue. The parent's
+      // labels must only ever reflect the parent's own action (see the mirrored
+      // guard on the completion path below).
+      if (!watcherRun) {
+        await deliverOutboundEvent(
+          createLabelsEvent({
+            projection: candidate,
+            runId,
+            statusLabel: 'wake:status.working',
+            stageLabel: stageLabelForStage(claimedStage),
+            workflowLabel: workflowLabelForWorkflowName(workflowName),
+            occurredAt: eventStampNow(),
+          }),
+        );
+      }
 
       let leaseRenewalTimer: NodeJS.Timeout | undefined;
       function startLeaseRenewal() {
@@ -2560,21 +2568,31 @@ export function createTickRunner(deps: {
             // network error) never reached the agent, so it isn't an answer to the
             // triggering comment. Leaving it unset lets the next tick retry the same
             // request instead of silently eating it (S9).
+            // Mirrors the happy-path completion payload below: without this flag,
+            // projection-updater.ts folds sentinel/workflowOutcome onto the
+            // *parent's* context, even though this failure belongs to a watcher's
+            // own child-workflow run, not the parent's own action.
+            ...(watcherRun ? { watcherRun: true, watcherTrigger: watcherTriggerForRun } : {}),
           },
         });
         await deps.stateStore.appendEventEnvelope(runCompletedEvent);
         await projectionUpdater.rebuildFromEvents([runCompletedEvent]);
 
-        await deliverOutboundEvent(
-          createLabelsEvent({
-            projection: candidate,
-            runId,
-            statusLabel: 'wake:status.failed',
-            stageLabel: stageLabelForStage(claimedStage),
-            workflowLabel: workflowLabelForWorkflowName(workflowName),
-            occurredAt: finishedAt,
-          }),
-        );
+        // See the matching guard on the claim path above: a watcher run's
+        // failure is not the parent's own action failing, so it must not
+        // stamp the child workflow's stage/workflow onto the parent's labels.
+        if (!watcherRun) {
+          await deliverOutboundEvent(
+            createLabelsEvent({
+              projection: candidate,
+              runId,
+              statusLabel: 'wake:status.failed',
+              stageLabel: stageLabelForStage(claimedStage),
+              workflowLabel: workflowLabelForWorkflowName(workflowName),
+              occurredAt: finishedAt,
+            }),
+          );
+        }
 
         const errorMessage = err instanceof Error ? err.message : String(err);
         const infraFailureResult: import('./contracts.js').AgentRunResult = {
