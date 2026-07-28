@@ -795,6 +795,21 @@ describe('policy engine: needsWakeAction', () => {
     expect(policy.needsWakeAction(issue)).toBe(true);
   });
 
+  it('does not let an unhandled human comment bypass the configured failure retry limit', () => {
+    const policy = createPolicyEngine();
+    const config = createDefaultWakeConfig('/tmp/wake-root');
+    config.retry.maxFailureRetries = 3;
+    const issue = buildNeedsWakeActionIssue({
+      updatedAt: '2026-07-07T00:05:00.000Z',
+      latestCommentId: 'c-2',
+      lastHandledCommentId: 'c-1',
+      lastRunSentinel: 'FAILED',
+      failureCount: 3,
+    });
+
+    expect(policy.needsWakeAction(issue, undefined, config)).toBe(false);
+  });
+
   it('continues to implement after refine completed without relying on updatedAt churn', () => {
     const policy = createPolicyEngine();
     const issue = buildNeedsWakeActionIssue({

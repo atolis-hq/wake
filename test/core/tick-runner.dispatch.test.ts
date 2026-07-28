@@ -161,6 +161,115 @@ describe('tick runner', () => {
       expect(callCount).toBe(1);
     });
 
+    it('skips a retry-capped failed item with an unhandled comment and dispatches the next eligible item', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const config = createDefaultWakeConfig(root);
+      config.sources.github.policy.requiredLabels = ['wake:queue'];
+      config.retry.maxFailureRetries = 3;
+      const staleComment = {
+        id: 'c-stale-retry',
+        body: 'Please retry.',
+        author: { login: 'owner' },
+        createdAt: '2026-07-05T12:05:00.000Z',
+        updatedAt: '2026-07-05T12:05:00.000Z',
+        isBotAuthored: false,
+      };
+      const dispatchedIssueNumbers: number[] = [];
+
+      await store.writeIssueState({
+        schemaVersion: 1,
+        workItemKey: workId(4661),
+        issue: {
+          repo: 'atolis-hq/wake',
+          number: 4661,
+          title: 'Stuck validation failure',
+          body: 'Body',
+          labels: ['wake:queue'],
+          assignees: [],
+          isPullRequest: false,
+          state: 'open',
+          url: 'https://example.test/issues/4661',
+          createdAt: '2026-07-05T12:00:00.000Z',
+          updatedAt: '2026-07-05T12:05:00.000Z',
+        },
+        comments: [staleComment],
+        latestComment: staleComment,
+        wake: {
+          stage: 'implement',
+          lastRunId: 'run-4661-previous',
+          stageHistory: [],
+          recentEventIds: [],
+          syncedAt: '2026-07-05T12:05:00.000Z',
+          expectedEcho: { commentIds: [], labels: [] },
+        },
+        context: {
+          lastRunSentinel: 'FAILED',
+          lastFailureClass: 'infra',
+          lastRetrySafety: 'SAFE_TO_RETRY',
+          lastFailurePhase: 'workspace-validation',
+          failureCount: 3,
+          lastHandledCommentId: 'c-before-stale-retry',
+        },
+        correlatedResources: [],
+      });
+
+      await store.writeIssueState({
+        schemaVersion: 1,
+        workItemKey: workId(4662),
+        issue: {
+          repo: 'atolis-hq/wake',
+          number: 4662,
+          title: 'Fresh eligible work',
+          body: 'Body',
+          labels: ['wake:queue'],
+          assignees: [],
+          isPullRequest: false,
+          state: 'open',
+          url: 'https://example.test/issues/4662',
+          createdAt: '2026-07-05T12:01:00.000Z',
+          updatedAt: '2026-07-05T12:01:00.000Z',
+        },
+        comments: [],
+        wake: {
+          stage: 'implement',
+          stageHistory: [],
+          recentEventIds: [],
+          syncedAt: '2026-07-05T12:01:00.000Z',
+          expectedEcho: { commentIds: [], labels: [] },
+        },
+        context: {},
+        correlatedResources: [],
+      });
+
+      const tickRunner = createTickRunner({
+        clock: { now: () => new Date('2026-07-05T12:10:00.000Z') },
+        config,
+        stateStore: store,
+        workSource: {
+          async pollEvents() {
+            return [];
+          },
+        },
+        runner: {
+          async run(input) {
+            dispatchedIssueNumbers.push(input.projection.issue.number);
+            return { result: 'Completed next item\nDONE', model: 'test-model', cli: 'test-cli' };
+          },
+        },
+        resourceIndex: await seededResourceIndex([4661, 4662]),
+        workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+      });
+
+      const result = await tickRunner.runRunnerTick();
+
+      expect(result.status).toBe('processed');
+      expect(dispatchedIssueNumbers).toEqual([4662]);
+      expect((await store.readIssueState(workId(4661)))?.context.lastHandledCommentId).toBe(
+        'c-before-stale-retry',
+      );
+      expect((await store.readIssueState(workId(4662)))?.context.lastRunSentinel).toBe('DONE');
+    });
+
     it('refreshes source state before claim and skips dispatch when the issue became ineligible', async () => {
       const store = createStateStore({ wakeRoot: root });
       const config = createDefaultWakeConfig(root);
