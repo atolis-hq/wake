@@ -18,6 +18,7 @@ function workId(issueNumber: number): string {
 
 function issueState(input?: {
   recentEventIds?: string[];
+  workItemKey?: string;
   number?: number;
   stage?: IssueStateRecord['wake']['stage'];
   issueState?: IssueStateRecord['issue']['state'];
@@ -28,7 +29,7 @@ function issueState(input?: {
 
   return {
     schemaVersion: 1,
-    workItemKey: workId(number),
+    workItemKey: input?.workItemKey ?? workId(number),
     origin: 'github',
     issue: {
       repo: 'atolis-hq/wake',
@@ -627,6 +628,21 @@ describe('state store', () => {
     const states = await store.listIssueStates();
 
     expect(states.map((state) => state.workItemKey)).toEqual([workId(7)]);
+  });
+
+  it('lists issue states by chronological work item key order', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const newestKey = 'work-01JZ0000000000000000000009';
+    const oldestKey = 'work-01JZ0000000000000000000007';
+    const middleKey = 'work-01JZ0000000000000000000008';
+
+    await store.writeIssueState(issueState({ number: 9, workItemKey: newestKey }));
+    await store.writeIssueState(issueState({ number: 7, workItemKey: oldestKey }));
+    await store.writeIssueState(issueState({ number: 8, workItemKey: middleKey }));
+
+    const states = await store.listIssueStates();
+
+    expect(states.map((state) => state.workItemKey)).toEqual([oldestKey, middleKey, newestKey]);
   });
 
   it('lists recent events by walking day files backward until the limit is satisfied', async () => {
