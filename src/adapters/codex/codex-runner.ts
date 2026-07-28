@@ -219,13 +219,7 @@ export function classifyCodexCliFailure(input: {
 
   const structuredMessage = extractCodexErrorMessage(input.stdout);
   const text = (structuredMessage ?? `${input.stderr}\n${input.stdout}`).toLowerCase();
-  if (
-    text.includes('missing bearer or basic authentication') ||
-    text.includes('missing bearer') ||
-    text.includes('missing authentication') ||
-    text.includes('not logged in') ||
-    text.includes('login required')
-  ) {
+  if (text.includes('missing bearer or basic authentication')) {
     return 'infra';
   }
 
@@ -237,7 +231,9 @@ export function classifyCodexCliFailure(input: {
     text.includes('credit') ||
     text.includes('too many requests') ||
     text.includes('unauthorized') ||
-    text.includes('authentication')
+    text.includes('authentication') ||
+    text.includes('not logged in') ||
+    text.includes('login required')
   ) {
     return 'quota';
   }

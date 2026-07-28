@@ -189,6 +189,22 @@ describe('codex runner failure classification', () => {
     );
   });
 
+  it.each(['missing authentication', 'not logged in', 'login required'])(
+    'preserves auth exhaustion as quota for "%s"',
+    (message) => {
+      const authStdout = [
+        '{"type":"thread.started","thread_id":"thread-auth-expired"}',
+        '{"type":"turn.started"}',
+        JSON.stringify({ type: 'error', message }),
+        JSON.stringify({ type: 'turn.failed', error: { message } }),
+      ].join('\n');
+
+      expect(classifyCodexCliFailure({ stdout: authStdout, stderr: '', timedOut: false })).toBe(
+        'quota',
+      );
+    },
+  );
+
   it('classifies an unrecognized failure as infra', () => {
     expect(
       classifyCodexCliFailure({
