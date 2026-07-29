@@ -26,6 +26,7 @@ function baseDeps(overrides: Record<string, unknown> = {}) {
       isWorkingTreeClean: vi.fn(async () => true),
       checkoutTag: vi.fn(async () => {}),
     },
+    resolveBuildVersion: vi.fn(() => 'v0.0.80'),
     issueReporter: { createIssue: vi.fn(async () => {}) },
     readLedger: vi.fn(async () => ledger),
     writeLedger: vi.fn(async () => {}),
@@ -86,7 +87,10 @@ describe('runSelfUpdateCommand', () => {
 
     expect(git.checkoutTag).toHaveBeenCalledWith('v0.0.80');
     expect(docker.build).toHaveBeenCalledWith(
-      expect.objectContaining({ image: 'wake-sandbox:v0.0.80' }),
+      expect.objectContaining({
+        image: 'wake-sandbox:v0.0.80',
+        buildArgs: { WAKE_BUILD_TAG: 'v0.0.80' },
+      }),
     );
     expect(docker.update).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -319,6 +323,7 @@ describe('runSelfUpdateCommand', () => {
   it('supports --tag to target an explicit tag regardless of git state', async () => {
     const deps = baseDeps({
       args: ['--tag', 'v0.0.81', '--force'],
+      resolveBuildVersion: vi.fn(() => 'v0.0.81'),
       git: {
         latestTag: vi.fn(async () => 'v0.0.79'),
         isWorkingTreeClean: vi.fn(async () => true),
@@ -333,7 +338,36 @@ describe('runSelfUpdateCommand', () => {
 
     expect(git.checkoutTag).toHaveBeenCalledWith('v0.0.81');
     expect(docker.build).toHaveBeenCalledWith(
-      expect.objectContaining({ image: 'wake-sandbox:v0.0.81' }),
+      expect.objectContaining({
+        image: 'wake-sandbox:v0.0.81',
+        buildArgs: { WAKE_BUILD_TAG: 'v0.0.81' },
+      }),
+    );
+  });
+
+  it('resolves the build tag from the checked-out repo before building', async () => {
+    const resolveBuildVersion = vi.fn(() => 'v0.0.81+gabc1234');
+    const deps = baseDeps({
+      resolveBuildVersion,
+      git: {
+        latestTag: vi.fn(async () => 'v0.0.81'),
+        isWorkingTreeClean: vi.fn(async () => true),
+        checkoutTag: vi.fn(async () => {}),
+      },
+    });
+
+    await runSelfUpdateCommand(deps as never);
+
+    const git = deps.git as { checkoutTag: ReturnType<typeof vi.fn> };
+    const docker = deps.docker as { build: ReturnType<typeof vi.fn> };
+
+    expect(git.checkoutTag).toHaveBeenCalledWith('v0.0.81');
+    expect(resolveBuildVersion).toHaveBeenCalledWith('/repo/wake');
+    expect(docker.build).toHaveBeenCalledWith(
+      expect.objectContaining({
+        image: 'wake-sandbox:v0.0.81',
+        buildArgs: { WAKE_BUILD_TAG: 'v0.0.81+gabc1234' },
+      }),
     );
   });
 });
