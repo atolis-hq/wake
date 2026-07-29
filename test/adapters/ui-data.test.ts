@@ -60,7 +60,7 @@ function issueState(input: {
       ...(input.lastRunId === undefined ? {} : { lastRunId: input.lastRunId }),
     },
     context: {
-      ...(input.frozenAt === undefined ? {} : { frozenAt: input.frozenAt, frozenBy: 'test' }),
+      ...(input.frozenAt === undefined ? {} : { frozen: { at: input.frozenAt, by: 'test' } }),
     },
     correlatedResources: [],
   };
