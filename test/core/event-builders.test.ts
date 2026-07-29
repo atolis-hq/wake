@@ -42,7 +42,8 @@ const runnerResult: AgentRunResult = {
 };
 
 function publishIntent(overrides: {
-  sentinel: 'DONE' | 'BLOCKED' | 'FAILED' | 'AWAITING_APPROVAL';
+  sentinel: 'DONE' | 'REJECTED' | 'BLOCKED' | 'FAILED';
+  approvalGated?: boolean;
   proj?: IssueStateRecord;
 }) {
   return createPublishIntentEvent({
@@ -52,6 +53,7 @@ function publishIntent(overrides: {
     runnerResult,
     parsedRunnerResult: parseRunnerResult(runnerResult.result),
     sentinel: overrides.sentinel,
+    ...(overrides.approvalGated === undefined ? {} : { approvalGated: overrides.approvalGated }),
     occurredAt: '2026-07-05T12:01:00.000Z',
     startedAt: '2026-07-05T12:00:00.000Z',
   });
@@ -60,8 +62,11 @@ function publishIntent(overrides: {
 describe('createPublishIntentEvent', () => {
   it('maps each sentinel to its card kind', () => {
     expect(publishIntent({ sentinel: 'DONE' }).payload.kind).toBe('status-update');
+    expect(publishIntent({ sentinel: 'REJECTED' }).payload.kind).toBe('status-update');
     expect(publishIntent({ sentinel: 'BLOCKED' }).payload.kind).toBe('question');
-    expect(publishIntent({ sentinel: 'AWAITING_APPROVAL' }).payload.kind).toBe('approval-request');
+    expect(publishIntent({ sentinel: 'DONE', approvalGated: true }).payload.kind).toBe(
+      'approval-request',
+    );
     expect(publishIntent({ sentinel: 'FAILED' }).payload.kind).toBe('failure');
   });
 

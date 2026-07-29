@@ -50,7 +50,8 @@ export function createPublishIntentEvent(input: {
   action: AgentAction;
   runnerResult: AgentRunResult;
   parsedRunnerResult: ParsedRunnerResult;
-  sentinel: 'DONE' | 'BLOCKED' | 'FAILED' | 'AWAITING_APPROVAL';
+  sentinel: 'DONE' | 'REJECTED' | 'BLOCKED' | 'FAILED';
+  approvalGated?: boolean;
   occurredAt: string;
   workspacePath?: string;
   startedAt: string;
@@ -110,10 +111,10 @@ export function createPublishIntentEvent(input: {
     trigger: 'context-only',
     payload: {
       kind:
-        input.sentinel === 'BLOCKED'
-          ? 'question'
-          : input.sentinel === 'AWAITING_APPROVAL'
-            ? 'approval-request'
+        input.sentinel === 'DONE' && input.approvalGated === true
+          ? 'approval-request'
+          : input.sentinel === 'BLOCKED'
+            ? 'question'
             : input.sentinel === 'FAILED'
               ? 'failure'
               : 'status-update',
