@@ -438,6 +438,48 @@ describe('ui-server work item action endpoints', () => {
     expect(res.status).toBe(404);
   });
 
+  it('serves item detail and events by work item key', async () => {
+    const key = await seedItem({ issueNumber: 54, resourceUri: 'wake:schedule:triage@daily' });
+    await store.appendEventEnvelope(
+      createEventEnvelope({
+        eventId: 'detail-event-54',
+        workItemKey: key,
+        streamScope: 'work-item',
+        direction: 'internal',
+        sourceSystem: 'wake',
+        sourceEventType: 'wake.detail.test',
+        sourceRefs: { repo: 'atolis-hq/wake', issueNumber: 54 },
+        occurredAt: '2026-07-05T12:02:00.000Z',
+        ingestedAt: '2026-07-05T12:02:00.000Z',
+        trigger: 'context-only',
+        payload: {},
+      }),
+    );
+    const seeded = await store.readIssueState(key);
+    expect(seeded).not.toBeNull();
+    await store.writeIssueState({
+      ...seeded!,
+      wake: {
+        ...seeded!.wake,
+        recentEventIds: [...seeded!.wake.recentEventIds, 'detail-event-54'],
+      },
+    });
+
+    const detail = await fetch(`${baseUrl}/api/v1/items/${key}`);
+    expect(detail.status).toBe(200);
+    const detailBody = (await detail.json()) as {
+      item: { workItemKey: string };
+      events: Array<{ sourceEventType: string }>;
+    };
+    expect(detailBody.item.workItemKey).toBe(key);
+    expect(detailBody.events.map((event) => event.sourceEventType)).toContain('wake.detail.test');
+
+    const events = await fetch(`${baseUrl}/api/v1/items/${key}/events`);
+    expect(events.status).toBe(200);
+    const eventsBody = (await events.json()) as Array<{ sourceEventType: string }>;
+    expect(eventsBody.map((event) => event.sourceEventType)).toContain('wake.detail.test');
+  });
+
   it('returns 409 when last run is not failed', async () => {
     const key = workId(55);
     const updater = createProjectionUpdater({ stateStore: store, resourceIndex });

@@ -205,6 +205,7 @@ export async function buildBoard(input: { stateStore: StateStore; config: WakeCo
       };
 
       return {
+        workItemKey: item.workItemKey,
         repo: item.issue.repo,
         number: item.issue.number,
         title: item.issue.title,
@@ -396,22 +397,24 @@ async function listSourceStates(sourceStateRoot: string) {
 
 export async function buildItemDetail(input: {
   stateStore: StateStore;
-  resourceIndex: ResourceIndex;
-  /** The active ticket source's registered name — the uri's provider segment. */
-  provider: string;
-  repo: string;
-  issueNumber: number;
+  resourceIndex?: ResourceIndex;
+  /** The active ticket source's registered name - the uri's provider segment. */
+  provider?: string;
+  repo?: string;
+  issueNumber?: number;
+  workItemKey?: string;
 }) {
-  // The UI addresses items by the ticket a human recognizes them by; work ids
-  // are opaque (spec D3). The ticket's uri is *constructed* here (never parsed)
-  // and resolved through the reverse index in one shard read (spec D2), then
-  // everything downstream keys off the record's own workItemKey.
-  const uri = buildResourceUri(input.provider, 'issue', `${input.repo}#${input.issueNumber}`);
-  const workItemKey = await input.resourceIndex.resolve(uri);
-  if (workItemKey === undefined) {
-    return null;
-  }
-
+  const workItemKey =
+    input.workItemKey ??
+    (input.resourceIndex === undefined ||
+    input.provider === undefined ||
+    input.repo === undefined ||
+    input.issueNumber === undefined
+      ? undefined
+      : await input.resourceIndex.resolve(
+          buildResourceUri(input.provider, 'issue', `${input.repo}#${input.issueNumber}`),
+        ));
+  if (workItemKey === undefined) return null;
   const item = await input.stateStore.readIssueState(workItemKey);
   if (item === null) {
     return null;
