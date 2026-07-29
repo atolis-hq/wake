@@ -387,6 +387,12 @@ async function applyEvent(
       config !== undefined &&
       isCustomCommandAction(payload.action, config);
     const shouldClearSession = isForwardProgression || isFailed;
+    const hasPendingChangesRequested =
+      (typeof current.context.changesRequestedCount === 'number' &&
+        current.context.changesRequestedCount > 0) ||
+      current.context.changesRequestedFeedback !== undefined;
+    const resolvesChangesRequested =
+      sentinel === doneRunnerSentinel && (!hasPendingChangesRequested || !approvalGated);
     const currentFailureCount =
       typeof current.context.failureCount === 'number' &&
       Number.isInteger(current.context.failureCount)
@@ -448,9 +454,11 @@ async function applyEvent(
               approvalGated,
             }),
           }),
-      // A fresh DONE cycle (gated or not) resolves whatever changes were
-      // previously requested — reset the loop counter and stored feedback.
-      ...(sentinel === doneRunnerSentinel
+      // An approval-gated DONE after changes-requested only resubmits work for
+      // review; the next reviewer verdict decides whether the request was
+      // actually resolved. Keep the retry counter through that gate so
+      // repeated rejections can hit the configured escalation cap.
+      ...(resolvesChangesRequested
         ? { changesRequestedCount: 0, changesRequestedFeedback: undefined }
         : {}),
     };

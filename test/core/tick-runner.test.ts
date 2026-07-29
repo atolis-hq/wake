@@ -832,7 +832,7 @@ describe('tick runner', () => {
       updated = await store.readIssueState(workId(424));
       expect(implementCalls).toBe(1);
       expect(updated?.context.status).toBe('awaiting-approval');
-      expect(updated?.context.changesRequestedCount).toBe(0);
+      expect(updated?.context.changesRequestedCount).toBe(1);
 
       // Tick 3: the revise run's own completion re-triggers the plan-review
       // watcher, which now approves, resolving the parent's gate to 'done'.
