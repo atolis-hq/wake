@@ -2070,7 +2070,9 @@ describe('tick runner', () => {
       expect(result.status).toBe('processed');
       expect((result as { sentinel?: string }).sentinel).toBe('DONE');
       expect(calls).toEqual(['files', 'approve:Safe to merge.', 'autoMerge:MERGE']);
-      expect(outboundBodies).toEqual([]);
+      expect(outboundBodies).toHaveLength(1);
+      expect(outboundBodies[0]).toContain('Approval step did not block the merge');
+      expect(outboundBodies[0]).toContain('Can not approve your own pull request');
     });
 
     it('does not block on an approval failure after auto-merge succeeds', async () => {
@@ -2100,7 +2102,9 @@ describe('tick runner', () => {
       expect(result.status).toBe('processed');
       expect((result as { sentinel?: string }).sentinel).toBe('DONE');
       expect(calls).toEqual(['files', 'approve:Safe to merge.', 'autoMerge:MERGE']);
-      expect(outboundBodies).toEqual([]);
+      expect(outboundBodies).toHaveLength(1);
+      expect(outboundBodies[0]).toContain('Approval step did not block the merge');
+      expect(outboundBodies[0]).toContain('Merge method merge commits are not allowed');
     });
 
     it('blocks on an auto-merge failure independently of approval succeeding, without repeating the already-recorded approval', async () => {

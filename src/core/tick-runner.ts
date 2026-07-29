@@ -692,6 +692,40 @@ export function createTickRunner(deps: {
       return { blocked: true, reason: blockedReasons.join(' ') };
     }
 
+    // Approval failed but auto-merge covered it (e.g. GitHub rejecting
+    // self-approval on the bot's own PR) - not a policy block, but the
+    // failure should still leave a visible trail instead of vanishing
+    // silently, since it may also be a real permissions/config problem.
+    if (approvalBlockedReasons.length > 0) {
+      const occurredAt = eventStampNow();
+      await deliverOutboundEvent(
+        createEventEnvelope({
+          eventId: `pr-merge-approval-note-${commentId}`,
+          workItemKey: input.projection.workItemKey,
+          streamScope: 'work-item',
+          direction: 'outbound',
+          sourceSystem: 'wake',
+          sourceEventType: PUBLISH_INTENT_REQUESTED_EVENT,
+          sourceRefs: {
+            repo: input.projection.issue.repo,
+            issueNumber: input.projection.issue.number,
+            resourceUri: targetResourceUri,
+          },
+          occurredAt,
+          ingestedAt: occurredAt,
+          trigger: 'context-only',
+          payload: {
+            kind: 'status-update',
+            origin: input.projection.origin ?? 'github',
+            body: `Approval step did not block the merge, but did not succeed on its own: ${approvalBlockedReasons.join(' ')}`,
+            idempotencyKey: `${commentId}:pr-merge-approval-note`,
+            deliveryState: 'PENDING',
+          },
+          derivedHints: { stage: input.projection.wake.stage },
+        }),
+      );
+    }
+
     return { blocked: false };
   }
 
