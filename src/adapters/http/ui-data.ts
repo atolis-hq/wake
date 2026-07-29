@@ -69,6 +69,10 @@ function deriveCondition(
     lastRun?.status === 'blocked' ||
     lastRun?.status === 'awaiting-approval' ||
     lastRun?.sentinel === 'BLOCKED' ||
+    // A run record can never be written with this sentinel value again
+    // (ADR 0002), but a pre-existing run record on disk still can be —
+    // legacyTolerantRunnerSentinelSchema keeps it readable, so this branch
+    // stays to classify it correctly rather than falling through to 'ready'.
     lastRun?.sentinel === 'AWAITING_APPROVAL'
   ) {
     return { condition: 'needs-human', reason: `sentinel ${lastRun?.sentinel ?? stage}` };
