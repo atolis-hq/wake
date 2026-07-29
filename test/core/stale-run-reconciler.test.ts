@@ -242,6 +242,31 @@ describe('stale run reconciler', () => {
     expect(watcherState.lastDispatchedEventId).toBe('run-123-parent-completed');
   });
 
+  it('records the original schedule slot for a retry-safe stale watcher run', async () => {
+    await seedProjection(store, 'run-123-parent');
+    await store.writeRunRecord({
+      ...runningRecord('2026-07-05T12:01:30.000Z', 'CLAIMED'),
+      action: 'pr-review',
+      metadata: {
+        watcher: true,
+        watcherStateKey: `${workId}__default__implement__0`,
+        watcherTrigger: { kind: 'schedule', slot: '2026-07-05T12:00:00.000Z' },
+      },
+    });
+
+    await reconcilerWithInactiveRuns().reconcileStaleRunningRecords(
+      new Date('2026-07-05T12:02:00.000Z'),
+    );
+
+    const watcherState = JSON.parse(await readFile(watcherStatePath(), 'utf8')) as Record<
+      string,
+      unknown
+    >;
+    expect(watcherState.failureCount).toBe(1);
+    expect(watcherState.retrySlot).toBe('2026-07-05T12:00:00.000Z');
+    expect(watcherState.lastDispatchedSlot).toBeUndefined();
+  });
+
   it('supersedes a stale record when a newer run has taken over', async () => {
     await seedProjection(store, 'run-123-newer');
     await store.writeRunRecord(runningRecord('2026-07-05T12:00:00.000Z'));

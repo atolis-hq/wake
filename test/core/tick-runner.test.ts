@@ -1529,6 +1529,58 @@ describe('tick runner', () => {
       expect(seenTriggers).toEqual([{ kind: 'schedule', slot: '2026-07-25T12:30:00.000Z' }]);
     });
 
+    it('re-dispatches the original watcher schedule slot after retry-safe FAILED completions', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const resourceIndex = await seededResourceIndex([367]);
+      await seedAwaitingApprovalIssue({ store, issueNumber: 367 });
+
+      const config = configurePrReviewWatcher(root);
+      config.workflows.default!.stages.implement!.watch![0]!.on = undefined;
+
+      let now = new Date('2026-07-25T12:34:30.000Z');
+      let prepareCalls = 0;
+      const tickRunner = createTickRunner({
+        clock: { now: () => now },
+        config,
+        stateStore: store,
+        workSource: {
+          async pollEvents() {
+            return [];
+          },
+        },
+        runner: {
+          async run() {
+            throw new Error('should not run: workspace prep fails first');
+          },
+        },
+        resourceIndex,
+        workspaceManager: createFailingReadOnlyWorkspaceManager(() => {
+          prepareCalls += 1;
+        }),
+      });
+
+      await tickRunner.runTick();
+      now = new Date('2026-07-25T12:44:30.000Z');
+      await tickRunner.runTick();
+
+      expect(prepareCalls).toBe(2);
+      const claimedTriggers = (await store.listEventEnvelopes())
+        .filter((event) => event.sourceEventType === 'wake.run.claimed')
+        .map((event) => event.payload.watcherTrigger);
+      expect(claimedTriggers).toEqual([
+        { kind: 'schedule', slot: '2026-07-25T12:30:00.000Z' },
+        { kind: 'schedule', slot: '2026-07-25T12:30:00.000Z' },
+      ]);
+
+      const watcherState = JSON.parse(await readFile(watcherStatePath(367), 'utf8')) as Record<
+        string,
+        unknown
+      >;
+      expect(watcherState.failureCount).toBe(2);
+      expect(watcherState.retrySlot).toBe('2026-07-25T12:30:00.000Z');
+      expect(watcherState.lastDispatchedSlot).toBeUndefined();
+    });
+
     it('does not dispatch a watcher while another run is still in flight', async () => {
       const store = createStateStore({ wakeRoot: root });
       const resourceIndex = await seededResourceIndex([358]);

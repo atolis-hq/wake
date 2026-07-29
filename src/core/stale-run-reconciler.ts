@@ -26,8 +26,14 @@ type WatcherState = {
   key: string;
   lastDispatchedEventId?: string;
   lastDispatchedSlot?: string;
+  retryEventId?: string;
+  retrySlot?: string;
   failureCount?: number;
   updatedAt: string;
+};
+type WatcherStatePatch = Partial<Omit<WatcherState, 'retryEventId' | 'retrySlot'>> & {
+  retryEventId?: string | undefined;
+  retrySlot?: string | undefined;
 };
 
 // Reconciles run records still marked `running` past the runner timeout: a
@@ -145,6 +151,10 @@ export function createStaleRunReconciler(deps: {
             ...(typeof record.lastDispatchedSlot === 'string'
               ? { lastDispatchedSlot: record.lastDispatchedSlot }
               : {}),
+            ...(typeof record.retryEventId === 'string'
+              ? { retryEventId: record.retryEventId }
+              : {}),
+            ...(typeof record.retrySlot === 'string' ? { retrySlot: record.retrySlot } : {}),
             ...(typeof record.failureCount === 'number' &&
             Number.isInteger(record.failureCount) &&
             record.failureCount >= 0
@@ -161,31 +171,75 @@ export function createStaleRunReconciler(deps: {
 
   async function writeWatcherState(
     key: string,
-    patch: Partial<WatcherState>,
+    patch: WatcherStatePatch,
     updatedAt: string,
   ): Promise<void> {
     const current = await readWatcherState(key);
-    await writeJsonFile(watcherStateFile(key), {
+    const hasPatch = (field: keyof WatcherStatePatch) =>
+      Object.prototype.hasOwnProperty.call(patch, field);
+    const next: WatcherState = {
       schemaVersion: 1,
       key,
-      ...(current?.lastDispatchedEventId === undefined
-        ? {}
-        : { lastDispatchedEventId: current.lastDispatchedEventId }),
-      ...(current?.lastDispatchedSlot === undefined
-        ? {}
-        : { lastDispatchedSlot: current.lastDispatchedSlot }),
-      ...(current?.failureCount === undefined ? {} : { failureCount: current.failureCount }),
-      ...patch,
       updatedAt,
-    } satisfies WatcherState);
+    };
+    if (current?.lastDispatchedEventId !== undefined) {
+      next.lastDispatchedEventId = current.lastDispatchedEventId;
+    }
+    if (current?.lastDispatchedSlot !== undefined) {
+      next.lastDispatchedSlot = current.lastDispatchedSlot;
+    }
+    if (current?.retryEventId !== undefined) {
+      next.retryEventId = current.retryEventId;
+    }
+    if (current?.retrySlot !== undefined) {
+      next.retrySlot = current.retrySlot;
+    }
+    if (current?.failureCount !== undefined) {
+      next.failureCount = current.failureCount;
+    }
+    if (patch.lastDispatchedEventId !== undefined) {
+      next.lastDispatchedEventId = patch.lastDispatchedEventId;
+    }
+    if (patch.lastDispatchedSlot !== undefined) {
+      next.lastDispatchedSlot = patch.lastDispatchedSlot;
+    }
+    if (hasPatch('retryEventId')) {
+      if (patch.retryEventId === undefined) {
+        delete next.retryEventId;
+      } else {
+        next.retryEventId = patch.retryEventId;
+      }
+    }
+    if (hasPatch('retrySlot')) {
+      if (patch.retrySlot === undefined) {
+        delete next.retrySlot;
+      } else {
+        next.retrySlot = patch.retrySlot;
+      }
+    }
+    if (patch.failureCount !== undefined) {
+      next.failureCount = patch.failureCount;
+    }
+    await writeJsonFile(watcherStateFile(key), next);
   }
 
-  function watcherCursorPatch(trigger: WatcherTrigger): Partial<WatcherState> {
+  function watcherCursorPatch(trigger: WatcherTrigger): WatcherStatePatch {
     return {
       ...(trigger.kind === 'event'
         ? { lastDispatchedEventId: trigger.eventId }
         : { lastDispatchedSlot: trigger.slot }),
+      retryEventId: undefined,
+      retrySlot: undefined,
       failureCount: 0,
+    };
+  }
+
+  function watcherRetryPatch(trigger: WatcherTrigger, failureCount: number): WatcherStatePatch {
+    return {
+      ...(trigger.kind === 'event'
+        ? { retryEventId: trigger.eventId, retrySlot: undefined }
+        : { retryEventId: undefined, retrySlot: trigger.slot }),
+      failureCount,
     };
   }
 
@@ -201,7 +255,11 @@ export function createStaleRunReconciler(deps: {
       const current = await readWatcherState(input.stateKey);
       const failureCount = (current?.failureCount ?? 0) + 1;
       if (failureCount < deps.config.retry.maxFailureRetries) {
-        await writeWatcherState(input.stateKey, { failureCount }, input.updatedAt);
+        await writeWatcherState(
+          input.stateKey,
+          watcherRetryPatch(input.trigger, failureCount),
+          input.updatedAt,
+        );
         return;
       }
     }

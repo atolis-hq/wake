@@ -107,8 +107,14 @@ type WatcherState = {
   key: string;
   lastDispatchedEventId?: string;
   lastDispatchedSlot?: string;
+  retryEventId?: string;
+  retrySlot?: string;
   failureCount?: number;
   updatedAt: string;
+};
+type WatcherStatePatch = Partial<Omit<WatcherState, 'retryEventId' | 'retrySlot'>> & {
+  retryEventId?: string | undefined;
+  retrySlot?: string | undefined;
 };
 
 type WatcherDispatch = {
@@ -1342,6 +1348,10 @@ export function createTickRunner(deps: {
             ...(typeof record.lastDispatchedSlot === 'string'
               ? { lastDispatchedSlot: record.lastDispatchedSlot }
               : {}),
+            ...(typeof record.retryEventId === 'string'
+              ? { retryEventId: record.retryEventId }
+              : {}),
+            ...(typeof record.retrySlot === 'string' ? { retrySlot: record.retrySlot } : {}),
             ...(typeof record.failureCount === 'number' &&
             Number.isInteger(record.failureCount) &&
             record.failureCount >= 0
@@ -1356,29 +1366,76 @@ export function createTickRunner(deps: {
     }
   }
 
-  async function writeWatcherState(key: string, patch: Partial<WatcherState>): Promise<void> {
+  async function writeWatcherState(key: string, patch: WatcherStatePatch): Promise<void> {
     const current = await readWatcherState(key);
-    await writeJsonFile(watcherStateFile(key), {
+    const hasPatch = (field: keyof WatcherStatePatch) =>
+      Object.prototype.hasOwnProperty.call(patch, field);
+    const next: WatcherState = {
       schemaVersion: 1,
       key,
-      ...(current?.lastDispatchedEventId === undefined
-        ? {}
-        : { lastDispatchedEventId: current.lastDispatchedEventId }),
-      ...(current?.lastDispatchedSlot === undefined
-        ? {}
-        : { lastDispatchedSlot: current.lastDispatchedSlot }),
-      ...(current?.failureCount === undefined ? {} : { failureCount: current.failureCount }),
-      ...patch,
       updatedAt: deps.clock.now().toISOString(),
-    } satisfies WatcherState);
+    };
+    if (current?.lastDispatchedEventId !== undefined) {
+      next.lastDispatchedEventId = current.lastDispatchedEventId;
+    }
+    if (current?.lastDispatchedSlot !== undefined) {
+      next.lastDispatchedSlot = current.lastDispatchedSlot;
+    }
+    if (current?.retryEventId !== undefined) {
+      next.retryEventId = current.retryEventId;
+    }
+    if (current?.retrySlot !== undefined) {
+      next.retrySlot = current.retrySlot;
+    }
+    if (current?.failureCount !== undefined) {
+      next.failureCount = current.failureCount;
+    }
+    if (patch.lastDispatchedEventId !== undefined) {
+      next.lastDispatchedEventId = patch.lastDispatchedEventId;
+    }
+    if (patch.lastDispatchedSlot !== undefined) {
+      next.lastDispatchedSlot = patch.lastDispatchedSlot;
+    }
+    if (hasPatch('retryEventId')) {
+      if (patch.retryEventId === undefined) {
+        delete next.retryEventId;
+      } else {
+        next.retryEventId = patch.retryEventId;
+      }
+    }
+    if (hasPatch('retrySlot')) {
+      if (patch.retrySlot === undefined) {
+        delete next.retrySlot;
+      } else {
+        next.retrySlot = patch.retrySlot;
+      }
+    }
+    if (patch.failureCount !== undefined) {
+      next.failureCount = patch.failureCount;
+    }
+    await writeJsonFile(watcherStateFile(key), next);
   }
 
-  function watcherCursorPatch(trigger: WatcherDispatch['trigger']): Partial<WatcherState> {
+  function watcherCursorPatch(trigger: WatcherDispatch['trigger']): WatcherStatePatch {
     return {
       ...(trigger.kind === 'event'
         ? { lastDispatchedEventId: trigger.eventId }
         : { lastDispatchedSlot: trigger.slot }),
+      retryEventId: undefined,
+      retrySlot: undefined,
       failureCount: 0,
+    };
+  }
+
+  function watcherRetryPatch(
+    trigger: WatcherDispatch['trigger'],
+    failureCount: number,
+  ): WatcherStatePatch {
+    return {
+      ...(trigger.kind === 'event'
+        ? { retryEventId: trigger.eventId, retrySlot: undefined }
+        : { retryEventId: undefined, retrySlot: trigger.slot }),
+      failureCount,
     };
   }
 
@@ -1404,7 +1461,7 @@ export function createTickRunner(deps: {
       const current = await readWatcherState(input.key);
       const failureCount = (current?.failureCount ?? 0) + 1;
       if (failureCount < deps.config.retry.maxFailureRetries) {
-        await writeWatcherState(input.key, { failureCount });
+        await writeWatcherState(input.key, watcherRetryPatch(input.trigger, failureCount));
         return;
       }
     }
@@ -1458,7 +1515,13 @@ export function createTickRunner(deps: {
               ? -1
               : matchingEvents.findIndex((event) => event.eventId === state.lastDispatchedEventId);
           const undispatched = matchingEvents.slice(cursorIndex + 1);
-          const next = (state?.failureCount ?? 0) > 0 ? undispatched.at(0) : undispatched.at(-1);
+          const retryEvent =
+            (state?.failureCount ?? 0) > 0 && state?.retryEventId !== undefined
+              ? undispatched.find((event) => event.eventId === state.retryEventId)
+              : undefined;
+          const next =
+            retryEvent ??
+            ((state?.failureCount ?? 0) > 0 ? undispatched.at(0) : undispatched.at(-1));
           if (next !== undefined) {
             return {
               projection,
@@ -1472,6 +1535,16 @@ export function createTickRunner(deps: {
         }
 
         if (watcher.schedule !== undefined) {
+          if ((state?.failureCount ?? 0) > 0 && state?.retrySlot !== undefined) {
+            return {
+              projection,
+              parentWorkflowName,
+              parentStage: projection.wake.stage,
+              watcherIndex,
+              targetWorkflowName: watcher.workflow,
+              trigger: { kind: 'schedule', slot: state.retrySlot },
+            };
+          }
           const slot = previousMatchingSlot({
             cron: watcher.schedule.cron,
             now,
