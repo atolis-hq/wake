@@ -18,7 +18,7 @@ Wake normalizes all real runners behind `AgentRunner`, `smoke`, and
 | Wall-clock timeout                       | Yes                    | Yes                 | Yes                          | All runners kill hung CLI processes and return `FAILED`.                          |
 | `wake smoke` support                     | Yes                    | Yes                 | Yes                          | All support the generic smoke surface.                                            |
 | Explicit smoke command                   | `smoke claude`         | `smoke codex`       | `smoke cursor`               | All supported.                                                                    |
-| Session resume command generation        | `claude --resume <id>` | `codex resume <id>` | `cursor agent --resume=<id>` | All supported in `wake sandbox resume` and GitHub comments.                       |
+| Session resume command generation        | `claude --resume <id>` | `codex exec resume <id>` | `cursor agent --resume=<id>` | All supported in `wake sandbox resume` and GitHub comments.                       |
 | Stage-specific access control            | Per-tool allowlist     | Sandbox mode        | `--mode ask` / default       | Mechanisms differ; all separate refine from implement.                            |
 | Parsed raw CLI output in metadata        | Yes                    | Yes                 | Yes                          | Claude: parsed JSON; Codex: parsed JSONL; Cursor: parsed JSON.                    |
 | Run correlation logging                  | Yes                    | Yes                 | Yes                          | All emit start/success/failure log lines.                                         |
