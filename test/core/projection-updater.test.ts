@@ -1709,6 +1709,108 @@ describe('projection updater', () => {
     expect(projection?.context.failureCount).toBe(0);
   });
 
+  it('keeps changes-requested retries across approval-gated resubmissions until the request is resolved', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const config = parseWakeConfig({
+      paths: { wakeRoot: root },
+      retry: { maxChangesRequestedRetries: 3 },
+    });
+    const updater = createProjectionUpdater({
+      stateStore: store,
+      resourceIndex: createFakeResourceIndex(),
+      config,
+    });
+
+    const changesRequested = (eventId: string, occurredAt: string, feedback: string) =>
+      createEventEnvelope({
+        eventId,
+        workItemKey: workId(152),
+        streamScope: 'work-item',
+        direction: 'internal',
+        sourceSystem: 'wake',
+        sourceEventType: 'wake.run.completed',
+        sourceRefs: { repo: 'atolis-hq/wake', issueNumber: 152, runId: eventId },
+        occurredAt,
+        ingestedAt: occurredAt,
+        trigger: 'immediate',
+        payload: {
+          changesRequested: true,
+          runId: eventId,
+          reviewFeedbackBody: feedback,
+        },
+      });
+    const gatedResubmission = (eventId: string, occurredAt: string) =>
+      createEventEnvelope({
+        eventId,
+        workItemKey: workId(152),
+        streamScope: 'work-item',
+        direction: 'internal',
+        sourceSystem: 'wake',
+        sourceEventType: 'wake.run.completed',
+        sourceRefs: { repo: 'atolis-hq/wake', issueNumber: 152, runId: eventId },
+        occurredAt,
+        ingestedAt: occurredAt,
+        trigger: 'immediate',
+        payload: {
+          action: 'refine',
+          sentinel: 'DONE',
+          approvalGated: true,
+          runId: eventId,
+        },
+      });
+
+    await updater.rebuildFromEvents([
+      issueUpsert({
+        eventId: 'evt-changes-count-issue',
+        issueNumber: 152,
+        labels: ['wake:stage.refine'],
+      }),
+      changesRequested('run-152-review-1', '2026-07-05T12:01:00.000Z', 'Add the retry path.'),
+      gatedResubmission('run-152-refine-1', '2026-07-05T12:02:00.000Z'),
+      changesRequested('run-152-review-2', '2026-07-05T12:03:00.000Z', 'Still missing.'),
+      gatedResubmission('run-152-refine-2', '2026-07-05T12:04:00.000Z'),
+      changesRequested('run-152-review-3', '2026-07-05T12:05:00.000Z', 'Still missing.'),
+    ]);
+
+    let projection = await store.readIssueState(workId(152));
+    expect(projection?.context.status).toBe('changes-requested');
+    expect(projection?.context.changesRequestedCount).toBe(3);
+    expect(projection?.context.changesRequestedFeedback).toBe('Still missing.');
+
+    await updater.rebuildFromEvents([
+      changesRequested('run-152-review-4', '2026-07-05T12:06:00.000Z', 'No progress.'),
+    ]);
+
+    projection = await store.readIssueState(workId(152));
+    expect(projection?.context.status).toBe('blocked');
+    expect(projection?.context.changesRequestedCount).toBe(4);
+
+    await updater.rebuildFromEvents([
+      createEventEnvelope({
+        eventId: 'run-152-approved',
+        workItemKey: workId(152),
+        streamScope: 'work-item',
+        direction: 'internal',
+        sourceSystem: 'wake',
+        sourceEventType: 'wake.run.completed',
+        sourceRefs: { repo: 'atolis-hq/wake', issueNumber: 152, runId: 'run-152-approved' },
+        occurredAt: '2026-07-05T12:07:00.000Z',
+        ingestedAt: '2026-07-05T12:07:00.000Z',
+        trigger: 'immediate',
+        payload: {
+          action: 'refine',
+          sentinel: 'DONE',
+          nextStage: 'implement',
+          runId: 'run-152-approved',
+        },
+      }),
+    ]);
+
+    projection = await store.readIssueState(workId(152));
+    expect(projection?.context.changesRequestedCount).toBe(0);
+    expect(projection?.context.changesRequestedFeedback).toBeUndefined();
+  });
+
   it('folds context.status = "working" on RUN_CLAIMED, for the parent\'s own claimed action only', async () => {
     const store = createStateStore({ wakeRoot: root });
     const updater = createProjectionUpdater({

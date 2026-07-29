@@ -792,9 +792,9 @@ const wakeConfigBaseSchema = z.object({
   retry: z
     .object({
       maxFailureRetries: z.number().int().positive().default(5),
-      maxChangesRequestedRetries: z.number().int().positive().default(5),
+      maxChangesRequestedRetries: z.number().int().positive().default(3),
     })
-    .default({ maxFailureRetries: 5, maxChangesRequestedRetries: 5 }),
+    .default({ maxFailureRetries: 5, maxChangesRequestedRetries: 3 }),
   runners: z.record(z.string(), runnerEntrySchema).default({
     fake: { kind: 'fake', cli: 'Fake' },
     'claude-haiku': {

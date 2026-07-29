@@ -50,7 +50,7 @@ transcripts:
   retentionMs: 259200000
 retry:
   maxFailureRetries: 5
-  maxChangesRequestedRetries: 5
+  maxChangesRequestedRetries: 3
 ui:
   enabled: false
   port: 4317
@@ -371,7 +371,7 @@ Retry limits for failed runner attempts and auto-revise loops.
 | Property                     | Type   | Description                                                                                                     | Default |
 | ---------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------- | ------- |
 | `maxFailureRetries`          | number | Maximum consecutive failed runner attempts before automatic retries go idle                                       | `5`     |
-| `maxChangesRequestedRetries` | number | Maximum consecutive `changes-requested` auto-revise cycles (a rejecting `plan-review`/`pr-review` watcher, or a human `/changes` reply) before Wake escalates to `blocked` instead of re-running automatically | `5`     |
+| `maxChangesRequestedRetries` | number | Maximum consecutive `changes-requested` auto-revise cycles (a rejecting `plan-review`/`pr-review` watcher, or a human `/changes` reply) before Wake escalates to `blocked` instead of re-running automatically | `3`     |
 
 ### scheduler
 
