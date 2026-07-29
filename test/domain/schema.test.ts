@@ -493,14 +493,21 @@ describe('run and event schemas', () => {
     });
   });
 
-  it('synthesizes a generic status body for AWAITING_APPROVAL when structured envelope has no prose', () => {
+  it('synthesizes a generic status body for REJECTED when structured envelope has no prose', () => {
     const parsed = parseRunnerResult(
-      ['```wake-result', '{"status":"AWAITING_APPROVAL"}', '```', 'AWAITING_APPROVAL'].join('\n'),
+      ['```wake-result', '{"status":"REJECTED"}', '```', 'REJECTED'].join('\n'),
     );
 
-    expect(parsed.status).toBe('AWAITING_APPROVAL');
+    expect(parsed.status).toBe('REJECTED');
     expect(parsed.envelope).toBe('structured');
     expect(parsed.body).toBeTruthy();
+  });
+
+  it('no longer recognizes AWAITING_APPROVAL as a bare sentinel', () => {
+    const parsed = parseRunnerResult('Done with the work.\nAWAITING_APPROVAL');
+
+    expect(parsed.envelope).toBe('missing');
+    expect(parsed.status).toBe('BLOCKED');
   });
 
   it('synthesizes a generic status sentence when structured envelope has no prose', () => {
@@ -519,9 +526,9 @@ describe('run and event schemas', () => {
         'Here is my plan.',
         '',
         '```wake-result',
-        '{"status":"AWAITING_APPROVAL"}',
+        '{"status":"REJECTED"}',
         '```',
-        'AWAITING_APPROVAL',
+        'REJECTED',
       ].join('\n'),
     );
 
@@ -546,13 +553,13 @@ describe('run and event schemas', () => {
         'PR opened and ready for review.',
         '',
         '```wake-result',
-        '{"status": "AWAITING_APPROVAL"}',
-        'AWAITING_APPROVAL',
+        '{"status": "REJECTED"}',
+        'REJECTED',
         '```',
       ].join('\n'),
     );
 
-    expect(parsed.status).toBe('AWAITING_APPROVAL');
+    expect(parsed.status).toBe('REJECTED');
     expect(parsed.envelope).toBe('structured');
     expect(parsed.body).toBe('PR opened and ready for review.');
   });
@@ -617,9 +624,9 @@ describe('run and event schemas', () => {
     ).toBe('BLOCKED');
   });
 
-  it('parses AWAITING_APPROVAL sentinel from last line', () => {
-    expect(parseRunnerResultSentinel('Work complete, awaiting sign-off\nAWAITING_APPROVAL')).toBe(
-      'AWAITING_APPROVAL',
+  it('parses REJECTED sentinel from last line', () => {
+    expect(parseRunnerResultSentinel('Reviewed the diff, needs changes.\nREJECTED')).toBe(
+      'REJECTED',
     );
   });
 
@@ -1184,9 +1191,9 @@ describe('parseRunnerArtifacts', () => {
       '```',
       '',
       '```wake-result',
-      '{ "status": "AWAITING_APPROVAL" }',
+      '{ "status": "DONE" }',
       '```',
-      'AWAITING_APPROVAL',
+      'DONE',
     ].join('\n');
 
     expect(parseRunnerArtifacts(result)).toEqual({

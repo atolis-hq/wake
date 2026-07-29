@@ -36,6 +36,15 @@ export const wakeArtifactsEnvelopeSchema = z.object({
 });
 export const runnerSentinelSchema = z.enum(runnerSentinelValues);
 
+// A projection persisted before ADR 0002 can still have context.lastRunSentinel
+// = "AWAITING_APPROVAL" on disk. That field is read (not just replayed) on
+// every ordinary parseIssueStateRecord call, not only during an explicit
+// event-log rebuild, so the strict current-vocabulary schema above would
+// reject an untouched legacy projection outright. This schema stays
+// permissive to that one retired value so existing on-disk state keeps
+// loading until it's naturally refreshed by a new run.
+const legacyTolerantRunnerSentinelSchema = z.enum([...runnerSentinelValues, 'AWAITING_APPROVAL']);
+
 export const executionOutcomeValues = [
   'COMPLETED',
   'STARTUP_FAILED',
@@ -363,9 +372,9 @@ export const issueContextSchema = z.object({
   blockedFromStage: z.string().optional(),
   lastFailureClass: z.enum(['task', 'quota', 'infra']).optional(),
   lastHandledCommentId: z.string().optional(),
-  lastRunSentinel: runnerSentinelSchema.optional(),
-  // Set while AWAITING_APPROVAL so the approval path knows which action to
-  // resume (or skip) once a human responds.
+  lastRunSentinel: legacyTolerantRunnerSentinelSchema.optional(),
+  // Set while approval-gated (context.status === 'awaiting-approval') so the
+  // approval path knows which action to resume (or skip) once a human responds.
   pendingApprovalAction: z.string().optional(),
   pendingApprovalAllowAutoApproval: z.boolean().optional(),
   // Workflow pinned at mint time (WORKFLOW_SELECTED_EVENT); re-read at every
@@ -488,6 +497,7 @@ export const runRecordSchema = z.preprocess(
       'running',
       'completed',
       'awaiting-approval',
+      'rejected',
       'blocked',
       'failed',
       'superseded',
@@ -495,7 +505,7 @@ export const runRecordSchema = z.preprocess(
     startedAt: isoTimestampSchema,
     finishedAt: isoTimestampSchema.optional(),
     sessionId: z.string().optional(),
-    sentinel: runnerSentinelSchema.optional(),
+    sentinel: legacyTolerantRunnerSentinelSchema.optional(),
     executionOutcome: executionOutcomeSchema.optional(),
     workflowOutcome: workflowOutcomeSchema.optional(),
     failurePhase: failurePhaseSchema.optional(),
@@ -1216,15 +1226,15 @@ export function parseClaudePrintResult(input: unknown) {
 function synthesizeBodyFromEnvelope(envelope: z.infer<typeof wakeResultEnvelopeSchema>): string {
   const labels: Record<string, string> = {
     DONE: 'Run completed.',
+    REJECTED: 'Run rejected — needs changes.',
     BLOCKED: 'Run blocked — needs input.',
-    AWAITING_APPROVAL: 'Ready for approval.',
     FAILED: 'Run failed.',
   };
   return labels[envelope.status] ?? 'Run finished.';
 }
 
 export function parseRunnerResult(result: string): {
-  status: 'DONE' | 'BLOCKED' | 'FAILED' | 'AWAITING_APPROVAL';
+  status: 'DONE' | 'REJECTED' | 'BLOCKED' | 'FAILED';
   body: string;
   envelope: 'structured' | 'degraded' | 'missing';
   result?: z.infer<typeof wakeResultEnvelopeSchema>;
@@ -1245,8 +1255,7 @@ export function parseRunnerResult(result: string): {
       // the closing fence. Strip a trailing sentinel line so JSON.parse sees only the JSON.
       // The capture group includes the newline before the closing fence, so allow \n? after.
       const jsonContent =
-        rawContent.replace(/\n(?:DONE|BLOCKED|FAILED|AWAITING_APPROVAL)[ \t]*\n?$/, '') ||
-        rawContent;
+        rawContent.replace(/\n(?:DONE|REJECTED|BLOCKED|FAILED)[ \t]*\n?$/, '') || rawContent;
       const parsed = wakeResultEnvelopeSchema.safeParse(JSON.parse(jsonContent));
       if (parsed.success) {
         const proseBody = result.slice(0, lastMatch.index).trim();
@@ -1352,6 +1361,6 @@ export function parseRunnerArtifacts(result: string): z.infer<typeof wakeArtifac
 
 export function parseRunnerResultSentinel(
   result: string,
-): 'DONE' | 'BLOCKED' | 'FAILED' | 'AWAITING_APPROVAL' {
+): 'DONE' | 'REJECTED' | 'BLOCKED' | 'FAILED' {
   return parseRunnerResult(result).status;
 }
