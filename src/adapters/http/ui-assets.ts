@@ -497,7 +497,11 @@ async function openItemModal(repo, number, boardItem) {
 
   async function ensureDetail() {
     if (!loaded.has('detail')) {
-      loaded.set('detail', await getJson('/items/' + encodeURIComponent(repo) + '/' + number));
+      const itemPath =
+        boardItem && boardItem.workItemKey
+          ? '/items/' + encodeURIComponent(boardItem.workItemKey)
+          : '/items/' + encodeURIComponent(repo) + '/' + number;
+      loaded.set('detail', await getJson(itemPath));
     }
     return loaded.get('detail');
   }

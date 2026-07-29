@@ -151,6 +151,7 @@ describe('ui-data', () => {
     const byNumber = new Map(board.map((card) => [card.number, card]));
 
     expect(byNumber.get(1)?.condition).toBe('active');
+    expect(byNumber.get(1)?.workItemKey).toBe(workId(1));
     expect(byNumber.get(1)?.displayStatus).toBe('working');
     expect(byNumber.get(2)?.condition).toBe('needs-human');
     expect(byNumber.get(2)?.displayStatus).toBe('blocked');
@@ -422,6 +423,27 @@ describe('ui-data', () => {
     });
     expect(missing).toBeNull();
     expect(listIssueStatesCalls).toBe(0);
+  });
+
+  it('resolves an item detail directly by work item key', async () => {
+    const store = createStateStore({ wakeRoot: root });
+
+    await store.writeIssueState(issueState({ number: 9, stage: 'implement', lastRunId: 'run-9' }));
+    await store.writeRunRecord(runRecord({ runId: 'run-9', issueNumber: 9, status: 'running' }));
+
+    const detail = await buildItemDetail({
+      stateStore: store,
+      workItemKey: workId(9),
+    });
+
+    expect(detail?.item.workItemKey).toBe(workId(9));
+    expect(detail?.runs.map((run) => run.runId)).toEqual(['run-9']);
+
+    const missing = await buildItemDetail({
+      stateStore: store,
+      workItemKey: workId(404),
+    });
+    expect(missing).toBeNull();
   });
 
   it('flags a stage with no configured route as error', async () => {

@@ -73,13 +73,27 @@ function extractBearerToken(req: IncomingMessage): string | undefined {
 }
 
 /**
- * Parses `/items/<repo-with-slashes>/<issueNumber>[/events]` where repo itself
+ * Parses `/items/<workItemKey>[/events]` and the legacy
+ * `/items/<repo-with-slashes>/<issueNumber>[/events]` form where repo itself
  * may contain a `/` (e.g. `owner/name`), so the split can't assume a fixed arity.
  */
 function parseItemPath(
   segments: string[],
-): { repo: string; issueNumber: number; suffix?: string } | null {
+):
+  | { workItemKey: string; suffix?: string }
+  | { repo: string; issueNumber: number; suffix?: string }
+  | null {
   const trailingIsEvents = segments.at(-1) === 'events';
+  const itemSegments = trailingIsEvents ? segments.slice(0, -1) : segments;
+  if (itemSegments.length === 1) {
+    const workItemKey = itemSegments[0];
+    if (workItemKey === undefined || workItemKey.length === 0) return null;
+    return {
+      workItemKey,
+      ...(trailingIsEvents ? { suffix: 'events' } : {}),
+    };
+  }
+
   const numberIndex = trailingIsEvents ? segments.length - 2 : segments.length - 1;
   const issueNumberRaw = segments[numberIndex];
   const issueNumber = issueNumberRaw === undefined ? Number.NaN : Number(issueNumberRaw);
@@ -490,20 +504,23 @@ async function handleRequest(
     return;
   }
 
-  if (resource === 'items' && segments.length >= 3) {
+  if (resource === 'items' && segments.length >= 2) {
     const parsed = parseItemPath(segments.slice(1));
     if (parsed === null) {
-      sendJson(res, 400, { error: 'expected /items/<repo>/<issueNumber>' });
+      sendJson(res, 400, { error: 'expected /items/<workItemKey> or /items/<repo>/<issueNumber>' });
       return;
     }
 
-    const itemDetailInput = {
-      stateStore,
-      resourceIndex,
-      provider: configuredTicketSource(config),
-      repo: parsed.repo,
-      issueNumber: parsed.issueNumber,
-    };
+    const itemDetailInput =
+      'workItemKey' in parsed
+        ? { stateStore, workItemKey: parsed.workItemKey }
+        : {
+            stateStore,
+            resourceIndex,
+            provider: configuredTicketSource(config),
+            repo: parsed.repo,
+            issueNumber: parsed.issueNumber,
+          };
 
     if (parsed.suffix === 'events') {
       const detail = await buildItemDetail(itemDetailInput);
