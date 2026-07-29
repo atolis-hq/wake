@@ -37,7 +37,7 @@ describe('sandbox resume command', () => {
     ]);
   });
 
-  it('executes codex resume in the requested workspace when the runner adapter provides it', async () => {
+  it('executes codex exec resume in the requested workspace when the runner adapter provides it', async () => {
     const calls: unknown[][] = [];
     const docker = {
       execCaptured: async (containerName: string, command: string[], handlers: unknown) => {
@@ -53,7 +53,7 @@ describe('sandbox resume command', () => {
       docker,
       wakeRoot: '/wake-home',
       containerHomeRoot: '/wake-home/container-home',
-      buildResumeCommand: ({ sessionId }) => ['codex', 'resume', sessionId],
+      buildResumeCommand: ({ sessionId }) => ['codex', 'exec', 'resume', sessionId],
       logger: { info: () => {} },
     });
 
@@ -63,7 +63,7 @@ describe('sandbox resume command', () => {
     expect(command).toEqual([
       'sh',
       '-c',
-      "cd '/wake/workspaces/atolis-hq__wake/34' && 'codex' 'resume' 'session-456'",
+      "cd '/wake/workspaces/atolis-hq__wake/34' && 'codex' 'exec' 'resume' 'session-456'",
     ]);
   });
 

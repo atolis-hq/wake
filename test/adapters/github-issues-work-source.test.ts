@@ -1162,7 +1162,7 @@ describe('github issues work source', () => {
 
     const [, , , postedBody] = createComment.mock.calls[0] as [string, string, number, string];
     expect(postedBody).toContain('cli Codex');
-    expect(postedBody).toContain('codex resume session-codex');
+    expect(postedBody).toContain('codex exec resume session-codex');
     expect(postedBody).not.toContain('claude --resume session-codex');
   });
 

@@ -30,16 +30,18 @@ import { parseRunnerResult } from '../../domain/schema.js';
 
 const CODEX_CLI_NAME = 'Codex';
 
-export function buildCodexExecArgs(input: {
+type CodexExecInvocationInput = {
   model: string;
   prompt: string;
   harnessPrompt?: string;
   cwd: string;
   sandboxMode: 'workspace-write' | 'danger-full-access';
   reasoningEffort?: string;
-}): string[] {
-  const prompt = buildCodexPromptText(input);
+};
 
+function buildCodexExecPrefixArgs(
+  input: Omit<CodexExecInvocationInput, 'prompt' | 'harnessPrompt'>,
+) {
   return [
     '--ask-for-approval',
     'never',
@@ -55,8 +57,13 @@ export function buildCodexExecArgs(input: {
     input.cwd,
     '--model',
     input.model,
-    prompt,
   ];
+}
+
+export function buildCodexExecArgs(input: CodexExecInvocationInput): string[] {
+  const prompt = buildCodexPromptText(input);
+
+  return [...buildCodexExecPrefixArgs(input), prompt];
 }
 
 export function buildCodexPromptText(input: { prompt: string; harnessPrompt?: string }): string {
@@ -65,8 +72,12 @@ export function buildCodexPromptText(input: { prompt: string; harnessPrompt?: st
     : `${input.harnessPrompt}\n\n${input.prompt}`;
 }
 
-export function buildCodexResumeArgs(input: { sessionId: string }): string[] {
-  return ['resume', input.sessionId];
+export function buildCodexResumeArgs(
+  input: CodexExecInvocationInput & { sessionId: string },
+): string[] {
+  const prompt = buildCodexPromptText(input);
+
+  return [...buildCodexExecPrefixArgs(input), 'resume', input.sessionId, prompt];
 }
 
 function compactLogValue(value: string): string {
@@ -294,7 +305,10 @@ export function createCodexRunner(options: {
       return createAgentExecution(input, (liveInput) => runner.run(liveInput));
     },
     async run(input: AgentRunInput): Promise<AgentRunResult> {
-      const runMode = 'start';
+      const priorSessionId = input.projection.wake.sessionId;
+      const priorSessionCli = input.projection.wake.sessionCli;
+      const isResume = priorSessionId !== undefined && priorSessionCli === CODEX_CLI_NAME;
+      const runMode = isResume ? 'resume' : 'start';
       const toolCapabilityNote = buildCodexToolCapabilityNote({
         ...(input.workspaceMode === undefined ? {} : { workspaceMode: input.workspaceMode }),
         mode: runMode,
@@ -352,19 +366,31 @@ export function createCodexRunner(options: {
           recentEventIds: input.recentEvents.map((event) => event.eventId),
           model,
           ...(input.workspacePath === undefined ? {} : { workspacePath: input.workspacePath }),
+          ...(isResume ? { sessionId: priorSessionId } : {}),
         }),
       );
       const result = await runAgentCliCommand({
         command: options.command,
-        args: buildCodexExecArgs({
-          model,
-          prompt: promptText,
-          cwd,
-          sandboxMode,
-          ...(options.settings.reasoningEffort === undefined
-            ? {}
-            : { reasoningEffort: options.settings.reasoningEffort }),
-        }),
+        args: isResume
+          ? buildCodexResumeArgs({
+              model,
+              prompt: promptText,
+              cwd,
+              sandboxMode,
+              sessionId: priorSessionId,
+              ...(options.settings.reasoningEffort === undefined
+                ? {}
+                : { reasoningEffort: options.settings.reasoningEffort }),
+            })
+          : buildCodexExecArgs({
+              model,
+              prompt: promptText,
+              cwd,
+              sandboxMode,
+              ...(options.settings.reasoningEffort === undefined
+                ? {}
+                : { reasoningEffort: options.settings.reasoningEffort }),
+            }),
         cwd,
         timeoutMs: options.settings.timeoutMs,
         ...(input.cancellationSignal === undefined
