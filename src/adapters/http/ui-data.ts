@@ -5,6 +5,7 @@ import type { ResourceIndex } from '../../core/contracts.js';
 import { buildResourceUri } from '../../domain/resource-uri.js';
 import { isTerminalStage } from '../../domain/stages.js';
 import { isWorkItemDeleted, isWorkItemFrozen } from '../../domain/work-item-lifecycle.js';
+import type { WorkItemStatus } from '../../domain/work-item-status.js';
 import { workflowForProjection, workflowNameForProjection } from '../../domain/workflows.js';
 import type { EventEnvelope, IssueStateRecord, RunRecord, WakeConfig } from '../../domain/types.js';
 import type { createStateStore } from '../fs/state-store.js';
@@ -95,24 +96,22 @@ function timeInStageMs(item: IssueStateRecord, now: Date): number {
   return now.getTime() - Date.parse(lastChange);
 }
 
-function displayStatusForCard(item: IssueStateRecord, lastRun: RunRecord | null): string {
-  if (lastRun?.status === 'running') {
-    return 'running';
-  }
+// Translates the canonical `context.status` (folded once in
+// projection-updater.ts) to the card's display text — never recomputed from
+// lastRun, per the same "one status, many translations" rule labelsForWorkItem
+// follows for GitHub labels.
+const DISPLAY_STATUS_BY_WORK_ITEM_STATUS: Record<WorkItemStatus, string> = {
+  queued: 'pending',
+  working: 'running',
+  'awaiting-approval': 'awaiting-approval',
+  'changes-requested': 'changes-requested',
+  blocked: 'blocked',
+  done: 'completed',
+  failed: 'failed',
+};
 
-  if (lastRun?.status === 'awaiting-approval' || lastRun?.sentinel === 'AWAITING_APPROVAL') {
-    return 'awaiting-approval';
-  }
-
-  if (lastRun?.status === 'blocked' || lastRun?.sentinel === 'BLOCKED') {
-    return 'blocked';
-  }
-
-  if (lastRun?.status === 'failed' || lastRun?.sentinel === 'FAILED') {
-    return 'failed';
-  }
-
-  return item.wake.stage === 'done' ? 'completed' : 'pending';
+function displayStatusForCard(item: IssueStateRecord): string {
+  return DISPLAY_STATUS_BY_WORK_ITEM_STATUS[item.context.status ?? 'queued'];
 }
 
 function activeChildRunsForItem(
@@ -230,7 +229,7 @@ export async function buildBoard(input: { stateStore: StateStore; config: WakeCo
         totalRuns: runTotals.totalRuns,
         totalTokens: runTotals.totalTokens,
         totalCostUsd: runTotals.totalCostUsd,
-        displayStatus: displayStatusForCard(item, lastRun),
+        displayStatus: displayStatusForCard(item),
         lastRunAction: lastRun?.action,
         lastRunSentinel: lastRun?.sentinel,
         lastRunStatus: lastRun?.status,

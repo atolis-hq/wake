@@ -18,6 +18,7 @@ import {
 } from '../../src/adapters/http/ui-data.js';
 import { createWakePaths } from '../../src/lib/paths.js';
 import type { IssueStateRecord, RunRecord } from '../../src/domain/types.js';
+import type { WorkItemStatus } from '../../src/domain/work-item-status.js';
 
 /** A stable, ULID-shaped work id per issue number; real ids come from createWorkId(). */
 function workId(issueNumber: number): string {
@@ -31,6 +32,7 @@ function issueState(input: {
   lastRunId?: string;
   syncedAt?: string;
   frozenAt?: string;
+  status?: WorkItemStatus;
 }): IssueStateRecord {
   const syncedAt = input.syncedAt ?? '2026-07-05T12:00:00.000Z';
   return {
@@ -61,6 +63,7 @@ function issueState(input: {
     },
     context: {
       ...(input.frozenAt === undefined ? {} : { frozen: { at: input.frozenAt, by: 'test' } }),
+      ...(input.status === undefined ? {} : { status: input.status }),
     },
     correlatedResources: [],
   };
@@ -110,11 +113,17 @@ describe('ui-data', () => {
     const store = createStateStore({ wakeRoot: root });
     const config = createDefaultWakeConfig(root);
 
-    await store.writeIssueState(issueState({ number: 1, stage: 'implement', lastRunId: 'run-1' }));
-    await store.writeIssueState(issueState({ number: 2, stage: 'implement', lastRunId: 'run-2' }));
-    await store.writeIssueState(issueState({ number: 3, stage: 'done' }));
+    await store.writeIssueState(
+      issueState({ number: 1, stage: 'implement', lastRunId: 'run-1', status: 'working' }),
+    );
+    await store.writeIssueState(
+      issueState({ number: 2, stage: 'implement', lastRunId: 'run-2', status: 'blocked' }),
+    );
+    await store.writeIssueState(issueState({ number: 3, stage: 'done', status: 'done' }));
     await store.writeIssueState(issueState({ number: 4, stage: 'queue' }));
-    await store.writeIssueState(issueState({ number: 5, stage: 'implement', lastRunId: 'run-5' }));
+    await store.writeIssueState(
+      issueState({ number: 5, stage: 'implement', lastRunId: 'run-5', status: 'queued' }),
+    );
     await store.writeRunRecord(runRecord({ runId: 'run-1', issueNumber: 1, status: 'running' }));
     await store.writeRunRecord(
       runRecord({
