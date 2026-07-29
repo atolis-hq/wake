@@ -736,6 +736,23 @@ describe('run and event schemas', () => {
     });
   });
 
+  it('rejects the legacy transcript retention boolean', () => {
+    expect(() =>
+      parseWakeConfig({
+        schemaVersion: 1,
+        paths: {
+          wakeRoot: '/tmp/wake',
+        },
+        transcripts: {
+          enabled: true,
+          retainAfterWorkspaceCleanup: false,
+        },
+      }),
+    ).toThrow(
+      'transcripts.retainAfterWorkspaceCleanup is no longer supported; use transcripts.retentionMs instead.',
+    );
+  });
+
   it('accepts retry configuration with a default maximum failure retry count', () => {
     const defaulted = parseWakeConfig({
       schemaVersion: 1,

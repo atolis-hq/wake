@@ -210,6 +210,66 @@ describe('tick runner', () => {
       ).rejects.toThrow();
     });
 
+    it('does not create a transcript directory marker when no transcripts exist', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const workspacePath = join(root, 'workspaces', workId(207));
+      await mkdir(workspacePath, { recursive: true });
+
+      const nowIso = '2026-07-05T12:00:00.000Z';
+      await store.writeIssueState({
+        schemaVersion: 1,
+        workItemKey: workId(207),
+        issue: {
+          repo: 'atolis-hq/wake',
+          number: 207,
+          title: 'Closed issue without transcripts',
+          body: 'Body',
+          labels: [],
+          assignees: [],
+          isPullRequest: false,
+          state: 'closed',
+          url: 'https://example.test/atolis-hq/wake/issues/207',
+          createdAt: nowIso,
+          updatedAt: nowIso,
+        },
+        comments: [],
+        wake: {
+          stage: 'done',
+          workspacePath,
+          syncedAt: nowIso,
+          stageHistory: [{ stage: 'done', changedAt: nowIso, reason: 'test' }],
+          recentEventIds: [],
+          expectedEcho: { commentIds: [], labels: [] },
+        },
+        context: {},
+        correlatedResources: [],
+      });
+
+      const config = createDefaultWakeConfig(root);
+      const tickRunner = createTickRunner({
+        clock: { now: () => new Date(nowIso) },
+        config,
+        stateStore: store,
+        workSource: {
+          async pollEvents() {
+            return [];
+          },
+        },
+        runner: {
+          async run() {
+            return { result: 'DONE', model: 'test', cli: 'test' };
+          },
+        },
+        resourceIndex: createFakeResourceIndex(),
+        workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+      });
+
+      await tickRunner.runTick();
+
+      await expect(access(workspacePath)).rejects.toThrow();
+      await expect(access(store.paths.transcriptWorkDir(workId(207)))).rejects.toThrow();
+    });
+
     it('leaves marker-less retained transcript directories untouched during expiry sweep', async () => {
       const store = createStateStore({ wakeRoot: root });
       const transcriptPath = join(

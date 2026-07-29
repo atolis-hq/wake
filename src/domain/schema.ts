@@ -1211,7 +1211,21 @@ function attachDerivedPromptContext(config: z.infer<typeof wakeConfigSchema>) {
 }
 
 export function parseWakeConfig(input: unknown) {
+  if (
+    isRecord(input) &&
+    isRecord(input.transcripts) &&
+    'retainAfterWorkspaceCleanup' in input.transcripts
+  ) {
+    throw new Error(
+      'transcripts.retainAfterWorkspaceCleanup is no longer supported; use transcripts.retentionMs instead. Set transcripts.retentionMs to 0 to delete transcripts immediately on workspace cleanup.',
+    );
+  }
+
   return structuredClone(attachDerivedPromptContext(wakeConfigSchema.parse(input)));
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 export function parseSourceStateRecord(input: unknown) {

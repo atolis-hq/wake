@@ -358,6 +358,10 @@ the previously recorded agent session ID when Wake has one.
 | `enabled`     | boolean | Write raw runner prompt and response text files                                                              | `false`     |
 | `retentionMs` | integer | Milliseconds to retain transcripts after workspace cleanup. Set `0` to delete immediately during cleanup.    | `259200000` |
 
+The legacy `retainAfterWorkspaceCleanup` boolean is no longer supported. Wake
+fails config parsing if that key is present so existing retention settings do
+not silently change behavior on upgrade.
+
 ### retry
 
 _Lives in `config.yaml`._

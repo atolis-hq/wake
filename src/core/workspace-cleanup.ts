@@ -1,4 +1,4 @@
-import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { isAbsolute, join, relative } from 'node:path';
 
 import type { WorkspaceManager } from './contracts.js';
@@ -38,7 +38,11 @@ export function createWorkspaceCleanup(deps: {
     cleanedAt: string,
   ): Promise<void> {
     const transcriptDir = deps.stateStore.paths.transcriptWorkDir(workItemKey);
-    await mkdir(transcriptDir, { recursive: true });
+    const transcriptDirStat = await stat(transcriptDir).catch(() => undefined);
+    if (transcriptDirStat === undefined || !transcriptDirStat.isDirectory()) {
+      return;
+    }
+
     await writeFile(join(transcriptDir, TRANSCRIPT_CLEANED_AT_MARKER), `${cleanedAt}\n`, 'utf8');
   }
 
