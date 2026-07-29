@@ -320,6 +320,7 @@ export function formatWakeComment(
   const workspacePath =
     typeof payload.workspacePath === 'string' ? payload.workspacePath : undefined;
   const idempotencyMarker = wakeIdempotencyMarker(payload.idempotencyKey);
+  const outcomeLine = formatOutcomeLine(payload);
 
   const details = [
     action === undefined ? undefined : `stage \`${action}\``,
@@ -338,7 +339,7 @@ export function formatWakeComment(
       ? defaultAgentIdentity
       : `[${defaultAgentIdentity}](${controlPlaneUrl})`;
   const header = `**${name}** _(Wake ${wakeVersion}${details.length > 0 ? ` · ${details.join(' · ')}` : ''})_`;
-  const sections = [wakeCommentMarker, idempotencyMarker, header, body].filter(
+  const sections = [wakeCommentMarker, idempotencyMarker, header, outcomeLine, body].filter(
     (section): section is string => section !== undefined,
   );
 
@@ -385,6 +386,29 @@ export function formatWakeComment(
   }
 
   return sections.join('\n\n');
+}
+
+function formatOutcomeLine(payload: Record<string, unknown>): string | undefined {
+  const sentinel = typeof payload.sentinel === 'string' ? payload.sentinel : undefined;
+  const kind = typeof payload.kind === 'string' ? payload.kind : undefined;
+
+  if (kind === 'approval-request') {
+    return '**Outcome:** 🟡 Awaiting Approval';
+  }
+  if (sentinel === 'DONE') {
+    return '**Outcome:** ✅ Done';
+  }
+  if (sentinel === 'REJECTED') {
+    return '**Outcome:** 🔴 Changes Requested';
+  }
+  if (sentinel === 'BLOCKED' || kind === 'question') {
+    return '**Outcome:** 🟠 Blocked';
+  }
+  if (sentinel === 'FAILED' || kind === 'failure') {
+    return '**Outcome:** ❌ Failed';
+  }
+
+  return undefined;
 }
 
 function createIssueCommentPublishedEvent(input: {

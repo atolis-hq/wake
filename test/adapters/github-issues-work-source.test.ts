@@ -7,6 +7,7 @@ import { createFakeResourceIndex } from '../../src/adapters/fake/fake-resource-i
 import { createStateStore } from '../../src/adapters/fs/state-store.js';
 import {
   createGitHubIssuesWorkSource,
+  formatWakeComment,
   readControlPlaneUiUrl,
 } from '../../src/adapters/github/github-issues-work-source.js';
 import { createDefaultWakeConfig } from '../../src/config/defaults.js';
@@ -956,7 +957,7 @@ describe('github issues work source', () => {
         occurredAt: '2026-07-05T12:00:00.000Z',
         ingestedAt: '2026-07-05T12:00:00.000Z',
         trigger: 'context-only',
-        payload: { kind: 'status-update', body: 'Handled' },
+        payload: { kind: 'status-update', body: 'Handled', sentinel: 'DONE' },
       }),
     });
 
@@ -971,6 +972,7 @@ describe('github issues work source', () => {
       string,
     ];
     expect(postedBody).toContain('<!-- wake:agent -->');
+    expect(postedBody).toContain('**Outcome:** ✅ Done');
   });
 
   it('rejects delivery instead of silently dropping an intent with missing sourceRefs (E5)', async () => {
@@ -1586,6 +1588,7 @@ describe('github issues work source', () => {
           kind: 'approval-request',
           body: 'Work is ready for review.',
           action: 'implement',
+          sentinel: 'DONE',
           runId: 'run-15-1',
           model: 'haiku',
           cli: 'Claude',
@@ -1598,6 +1601,7 @@ describe('github issues work source', () => {
     expect(postedBody.split('/approved')).toHaveLength(2);
     expect(postedBody).toContain('/changes');
     expect(postedBody).toContain('/ask');
+    expect(postedBody).toContain('**Outcome:** 🟡 Awaiting Approval');
     expect(postedBody).toContain('Work is ready for review.');
   });
 
@@ -1637,6 +1641,7 @@ describe('github issues work source', () => {
           kind: 'question',
           body: 'What should I do next?',
           action: 'implement',
+          sentinel: 'BLOCKED',
           runId: 'run-17-1',
           model: 'haiku',
           cli: 'Claude',
@@ -1648,6 +1653,7 @@ describe('github issues work source', () => {
     expect(postedBody).not.toContain('/approved');
     expect(postedBody).not.toContain('/ask');
     expect(postedBody).toContain('/changes');
+    expect(postedBody).toContain('**Outcome:** 🟠 Blocked');
     expect(postedBody).toContain('any reply will resume Wake');
     expect(postedBody).toContain('What should I do next?');
   });
@@ -1693,6 +1699,27 @@ describe('github issues work source', () => {
 
     const [, , , postedBody] = createComment.mock.calls[0] as [string, string, number, string];
     expect(postedBody).not.toContain('/approved');
+  });
+});
+
+describe('formatWakeComment', () => {
+  it.each([
+    [{ kind: 'status-update', sentinel: 'DONE' }, '**Outcome:** ✅ Done'],
+    [{ kind: 'approval-request', sentinel: 'DONE' }, '**Outcome:** 🟡 Awaiting Approval'],
+    [{ kind: 'status-update', sentinel: 'REJECTED' }, '**Outcome:** 🔴 Changes Requested'],
+    [{ kind: 'question', sentinel: 'BLOCKED' }, '**Outcome:** 🟠 Blocked'],
+    [{ kind: 'failure', sentinel: 'FAILED' }, '**Outcome:** ❌ Failed'],
+  ])('inserts a deterministic outcome line for %o', (payload, outcomeLine) => {
+    const comment = formatWakeComment({ ...payload, body: 'Agent response.' });
+
+    expect(comment).toContain(outcomeLine);
+    expect(comment.indexOf(outcomeLine)).toBeLessThan(comment.indexOf('Agent response.'));
+  });
+
+  it('omits the outcome line when the payload has no known outcome fields', () => {
+    expect(formatWakeComment({ kind: 'status-update', body: 'Still working.' })).not.toContain(
+      '**Outcome:**',
+    );
   });
 });
 
