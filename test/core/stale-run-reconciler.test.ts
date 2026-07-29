@@ -18,6 +18,11 @@ import { processIdentityMatches } from '../../src/lib/process-identity.js';
 
 const workId = 'work-01JZ0000000000000000000123';
 const RUNNER_TIMEOUT_MS = 60_000;
+const RUN_TIMEOUTS = {
+  startupTimeoutMs: RUNNER_TIMEOUT_MS,
+  stallTimeoutMs: RUNNER_TIMEOUT_MS,
+  absoluteTimeoutMs: RUNNER_TIMEOUT_MS,
+};
 
 function seedProjection(store: ReturnType<typeof createStateStore>, lastRunId: string) {
   return store.writeIssueState({
@@ -79,7 +84,7 @@ describe('stale run reconciler', () => {
       config,
       stateStore: store,
       projectionUpdater,
-      runnerTimeoutMs: () => RUNNER_TIMEOUT_MS,
+      runTimeouts: () => RUN_TIMEOUTS,
       deliverOutboundEvent: async (event) => {
         delivered.push(event);
       },
@@ -100,7 +105,7 @@ describe('stale run reconciler', () => {
       config: createDefaultWakeConfig(root),
       stateStore: store,
       projectionUpdater,
-      runnerTimeoutMs: () => RUNNER_TIMEOUT_MS,
+      runTimeouts: () => RUN_TIMEOUTS,
       isRunningRecordActive: async () => false,
       deliverOutboundEvent: async (event) => {
         delivered.push(event);
@@ -118,7 +123,7 @@ describe('stale run reconciler', () => {
       config: createDefaultWakeConfig(root),
       stateStore: store,
       projectionUpdater,
-      runnerTimeoutMs: () => RUNNER_TIMEOUT_MS,
+      runTimeouts: () => RUN_TIMEOUTS,
       isRunningRecordActive: async (record, now) => {
         if (record.lease !== undefined && !isRunLeaseExpired(record, now)) {
           return true;
@@ -334,6 +339,70 @@ describe('stale run reconciler', () => {
       expect(completion.payload.executionOutcome).toBe(executionOutcome);
     },
   );
+
+  it('uses startup timeout for process-starting records before meaningful runtime activity', async () => {
+    const config = createDefaultWakeConfig(root);
+    await seedProjection(store, 'run-123-stale');
+    await store.writeRunRecord(runningRecord('2026-07-05T12:00:00.000Z', 'PROCESS_STARTING'));
+
+    const projectionUpdater = createProjectionUpdater({
+      stateStore: store,
+      resourceIndex: createFakeResourceIndex(),
+      config,
+    });
+    await createStaleRunReconciler({
+      config,
+      stateStore: store,
+      projectionUpdater,
+      runTimeouts: () => ({
+        startupTimeoutMs: 30_000,
+        stallTimeoutMs: 60_000,
+        absoluteTimeoutMs: 10 * 60_000,
+      }),
+      deliverOutboundEvent: async (event) => {
+        delivered.push(event);
+      },
+    }).reconcileStaleRunningRecords(new Date('2026-07-05T12:00:31.000Z'));
+
+    const record = await store.readRunRecord('run-123-stale');
+    expect(record?.executionOutcome).toBe('STARTUP_FAILED');
+  });
+
+  it('uses last meaningful activity for running stall timeout before absolute timeout', async () => {
+    const config = createDefaultWakeConfig(root);
+    await seedProjection(store, 'run-123-stale');
+    await store.writeRunRecord({
+      ...runningRecord('2026-07-05T12:00:00.000Z', 'RUNNING'),
+      lastMeaningfulActivityAt: '2026-07-05T12:05:00.000Z',
+    });
+
+    const projectionUpdater = createProjectionUpdater({
+      stateStore: store,
+      resourceIndex: createFakeResourceIndex(),
+      config,
+    });
+    const runReconciler = createStaleRunReconciler({
+      config,
+      stateStore: store,
+      projectionUpdater,
+      runTimeouts: () => ({
+        startupTimeoutMs: 30_000,
+        stallTimeoutMs: 60_000,
+        absoluteTimeoutMs: 10 * 60_000,
+      }),
+      deliverOutboundEvent: async (event) => {
+        delivered.push(event);
+      },
+    });
+
+    await runReconciler.reconcileStaleRunningRecords(new Date('2026-07-05T12:05:30.000Z'));
+    expect((await store.readRunRecord('run-123-stale'))?.status).toBe('running');
+
+    await runReconciler.reconcileStaleRunningRecords(new Date('2026-07-05T12:06:01.000Z'));
+    const record = await store.readRunRecord('run-123-stale');
+    expect(record?.executionOutcome).toBe('STALLED');
+    expect(record?.retrySafety).toBe('SAFE_TO_RESUME');
+  });
 
   it('recovers a claim projection whose run record is missing', async () => {
     await seedProjection(store, 'run-123-missing');

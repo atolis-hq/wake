@@ -154,6 +154,7 @@ describe('codex runner session resume', () => {
           smokeModel: 'gpt-5.5-mini',
           smokePrompt: defaultSmokePrompt,
           timeoutMs: 10_000,
+          gracefulCancellationTimeoutMs: 5_000,
         },
       });
 

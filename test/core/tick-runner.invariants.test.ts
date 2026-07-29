@@ -847,7 +847,7 @@ describe('tick runner', () => {
       );
       const newClaimIndex = events.findIndex(
         (event) =>
-          event.sourceEventType === 'wake.run.claimed' && event.sourceRefs.issueNumber === 3484,
+          event.sourceEventType === 'wake.run.claimed' && event.sourceRefs.issueNumber === 3483,
       );
       expect(staleIndex).toBeGreaterThanOrEqual(0);
       expect(newClaimIndex).toBeGreaterThan(staleIndex);

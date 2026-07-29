@@ -204,6 +204,8 @@ export function createPolicyEngine() {
         typeof context.lastRunSentinel === 'string' ? context.lastRunSentinel : undefined;
       const lastRetrySafety =
         typeof context.lastRetrySafety === 'string' ? context.lastRetrySafety : undefined;
+      const lastExecutionOutcome =
+        typeof context.lastExecutionOutcome === 'string' ? context.lastExecutionOutcome : undefined;
 
       if (issue.wake.lastRunId === undefined) {
         return true;
@@ -225,6 +227,13 @@ export function createPolicyEngine() {
       }
 
       if (lastRunSentinel === failedRunnerSentinel) {
+        if (lastExecutionOutcome === 'MALFORMED_OUTPUT') {
+          const failureCount =
+            typeof context.failureCount === 'number' && Number.isInteger(context.failureCount)
+              ? context.failureCount
+              : 0;
+          return failureCount < 2;
+        }
         if (lastRetrySafety === 'SAFE_TO_RETRY' || lastRetrySafety === 'SAFE_TO_RESUME') {
           return belowFailureRetryLimit(issue, config);
         }

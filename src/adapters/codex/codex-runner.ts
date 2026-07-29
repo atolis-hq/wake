@@ -20,7 +20,10 @@
 import type { AgentRunInput, AgentRunResult, AgentRunTokenUsage } from '../../core/contracts.js';
 import type { AgentAction, RunnerEntry } from '../../domain/types.js';
 
-type CodexRunnerSettings = Omit<Extract<RunnerEntry, { kind: 'codex' }>, 'kind'>;
+type CodexRunnerSettings = Omit<Extract<RunnerEntry, { kind: 'codex' }>, 'kind'> & {
+  timeoutMs: number;
+  gracefulCancellationTimeoutMs: number;
+};
 import { buildStagePrompt } from '../runner/stage-prompt.js';
 import { runAgentCliCommand } from '../runner/cli-command.js';
 import { emitRuntimeEvent, runnerRuntimeEvent } from '../runner/runtime-events.js';
@@ -393,6 +396,7 @@ export function createCodexRunner(options: {
             }),
         cwd,
         timeoutMs: options.settings.timeoutMs,
+        gracefulCancellationTimeoutMs: options.settings.gracefulCancellationTimeoutMs,
         ...(input.cancellationSignal === undefined
           ? {}
           : { cancellationSignal: input.cancellationSignal }),
@@ -422,7 +426,12 @@ export function createCodexRunner(options: {
         text: result.stdout,
       });
 
-      if (result.exitCode !== 0 || result.timedOut || result.stdout.trim().length === 0) {
+      if (
+        result.exitCode !== 0 ||
+        result.timedOut ||
+        result.canceled ||
+        result.stdout.trim().length === 0
+      ) {
         const sandboxLog = readSandboxLogBreadcrumb();
         const failureClass = classifyCodexCliFailure({
           stdout: result.stdout,
@@ -454,18 +463,24 @@ export function createCodexRunner(options: {
             routing: input.routing,
             cli: CODEX_CLI_NAME,
             model,
-            payload: { exitCode: result.exitCode, timedOut: result.timedOut },
+            payload: {
+              exitCode: result.exitCode,
+              timedOut: result.timedOut,
+              canceled: result.canceled,
+            },
           }),
         );
         return {
           result: [
             result.timedOut
               ? `Codex runner timed out after ${options.settings.timeoutMs}ms and was killed`
-              : structuredMessage !== undefined
-                ? `Codex runner failed: ${structuredMessage}`
-                : result.stdout.trim().length === 0
-                  ? 'Codex runner produced no output'
-                  : 'Codex runner failed',
+              : result.canceled
+                ? 'Codex runner was canceled'
+                : structuredMessage !== undefined
+                  ? `Codex runner failed: ${structuredMessage}`
+                  : result.stdout.trim().length === 0
+                    ? 'Codex runner produced no output'
+                    : 'Codex runner failed',
             result.stderr,
             sandboxLog?.text,
             'FAILED',
@@ -479,6 +494,8 @@ export function createCodexRunner(options: {
             stdout: result.stdout,
             stderr: result.stderr,
             exitCode: result.exitCode,
+            timedOut: result.timedOut,
+            canceled: result.canceled,
             failureClass,
             ...(promptTranscriptPath === undefined ? {} : { promptTranscriptPath }),
             ...(responseTranscriptPath === undefined ? {} : { responseTranscriptPath }),
@@ -576,7 +593,11 @@ export function createCodexRunner(options: {
           cli: CODEX_CLI_NAME,
           model,
           ...(parsed.sessionId === undefined ? {} : { sessionId: parsed.sessionId }),
-          payload: { exitCode: result.exitCode, timedOut: result.timedOut },
+          payload: {
+            exitCode: result.exitCode,
+            timedOut: result.timedOut,
+            canceled: result.canceled,
+          },
         }),
       );
 

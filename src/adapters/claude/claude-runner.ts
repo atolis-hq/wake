@@ -2,7 +2,10 @@ import type { AgentRunInput, AgentRunResult, AgentRunTokenUsage } from '../../co
 import { parseClaudePrintResult, parseRunnerResult } from '../../domain/schema.js';
 import type { AgentAction, ClaudePrintResult, RunnerEntry } from '../../domain/types.js';
 
-type ClaudeRunnerSettings = Omit<Extract<RunnerEntry, { kind: 'claude' }>, 'kind'>;
+type ClaudeRunnerSettings = Omit<Extract<RunnerEntry, { kind: 'claude' }>, 'kind'> & {
+  timeoutMs: number;
+  gracefulCancellationTimeoutMs: number;
+};
 import { runAgentCliCommand } from '../runner/cli-command.js';
 import { buildStagePrompt, sentinelListForApproval } from '../runner/stage-prompt.js';
 import { emitRuntimeEvent, runnerRuntimeEvent } from '../runner/runtime-events.js';
@@ -133,6 +136,7 @@ export function runClaudeCommand(input: {
   args: string[];
   cwd: string;
   timeoutMs?: number;
+  gracefulCancellationTimeoutMs?: number;
   cancellationSignal?: AbortSignal;
   onProcessStart?: (identity: { pid: number; processStartedAt: string }) => Promise<void>;
 }): Promise<{
@@ -140,6 +144,7 @@ export function runClaudeCommand(input: {
   stderr: string;
   exitCode: number;
   timedOut: boolean;
+  canceled: boolean;
 }> {
   return runAgentCliCommand(input);
 }
@@ -238,6 +243,7 @@ async function attemptEnvelopeRepair(input: {
   sessionId: string;
   reviewShaped: boolean;
   timeoutMs: number;
+  gracefulCancellationTimeoutMs?: number;
 }): Promise<{ text: string; tokenUsage?: AgentRunTokenUsage } | undefined> {
   const args = buildClaudePrintArgs({
     model: input.model,
@@ -252,9 +258,17 @@ async function attemptEnvelopeRepair(input: {
     args,
     cwd: input.cwd,
     timeoutMs: input.timeoutMs,
+    ...(input.gracefulCancellationTimeoutMs === undefined
+      ? {}
+      : { gracefulCancellationTimeoutMs: input.gracefulCancellationTimeoutMs }),
   });
 
-  if (result.exitCode !== 0 || result.timedOut || result.stdout.trim().length === 0) {
+  if (
+    result.exitCode !== 0 ||
+    result.timedOut ||
+    result.canceled ||
+    result.stdout.trim().length === 0
+  ) {
     return undefined;
   }
 
@@ -401,6 +415,7 @@ export function createClaudeRunner(options: {
       args,
       cwd: input.workspacePath ?? options.cwd,
       timeoutMs: options.settings.timeoutMs,
+      gracefulCancellationTimeoutMs: options.settings.gracefulCancellationTimeoutMs,
       ...(input.cancellationSignal === undefined
         ? {}
         : { cancellationSignal: input.cancellationSignal }),
@@ -430,7 +445,12 @@ export function createClaudeRunner(options: {
       text: result.stdout,
     });
 
-    if (result.exitCode !== 0 || result.timedOut || result.stdout.trim().length === 0) {
+    if (
+      result.exitCode !== 0 ||
+      result.timedOut ||
+      result.canceled ||
+      result.stdout.trim().length === 0
+    ) {
       const sandboxLog = readSandboxLogBreadcrumb();
       const failureClass = classifyClaudeCliFailure({
         stdout: result.stdout,
@@ -459,7 +479,11 @@ export function createClaudeRunner(options: {
           routing: input.routing,
           cli: CLAUDE_CLI_NAME,
           model,
-          payload: { exitCode: result.exitCode, timedOut: result.timedOut },
+          payload: {
+            exitCode: result.exitCode,
+            timedOut: result.timedOut,
+            canceled: result.canceled,
+          },
         }),
       );
       let parsedReason: string | undefined;
@@ -478,11 +502,13 @@ export function createClaudeRunner(options: {
         result: [
           result.timedOut
             ? `Claude runner timed out after ${options.settings.timeoutMs}ms and was killed`
-            : trimmedStdout.length === 0
-              ? 'Claude runner produced no output'
-              : parsedReason !== undefined
-                ? `Claude runner failed: ${parsedReason}`
-                : 'Claude runner failed',
+            : result.canceled
+              ? 'Claude runner was canceled'
+              : trimmedStdout.length === 0
+                ? 'Claude runner produced no output'
+                : parsedReason !== undefined
+                  ? `Claude runner failed: ${parsedReason}`
+                  : 'Claude runner failed',
           result.stderr,
           stdoutFailureDetail,
           sandboxLog?.text,
@@ -497,6 +523,8 @@ export function createClaudeRunner(options: {
           stdout: result.stdout,
           stderr: result.stderr,
           exitCode: result.exitCode,
+          timedOut: result.timedOut,
+          canceled: result.canceled,
           failureClass,
           ...(promptTranscriptPath === undefined ? {} : { promptTranscriptPath }),
           ...(responseTranscriptPath === undefined ? {} : { responseTranscriptPath }),
@@ -550,6 +578,7 @@ export function createClaudeRunner(options: {
         sessionId: parsed.session_id,
         reviewShaped: stagePrompt.reviewShaped,
         timeoutMs: Math.min(options.settings.timeoutMs, ENVELOPE_REPAIR_TIMEOUT_MS),
+        gracefulCancellationTimeoutMs: options.settings.gracefulCancellationTimeoutMs,
       });
       if (repair !== undefined && parseRunnerResult(repair.text).envelope !== 'missing') {
         effectiveResultText = `${effectiveResultText.trimEnd()}\n\n${repair.text.trim()}`;
@@ -590,7 +619,11 @@ export function createClaudeRunner(options: {
         cli: CLAUDE_CLI_NAME,
         model,
         ...(parsed.session_id === undefined ? {} : { sessionId: parsed.session_id }),
-        payload: { exitCode: result.exitCode, timedOut: result.timedOut },
+        payload: {
+          exitCode: result.exitCode,
+          timedOut: result.timedOut,
+          canceled: result.canceled,
+        },
       }),
     );
     return {

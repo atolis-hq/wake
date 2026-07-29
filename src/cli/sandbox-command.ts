@@ -321,8 +321,9 @@ export async function runSandboxCommand(input: {
   }
 
   if (subcommand === 'resume') {
-    const realEntry = Object.values(input.config.runners).find(
-      (e): e is Exclude<RunnerEntry, { kind: 'fake' }> => e.kind !== 'fake',
+    const realEntry = Object.entries(input.config.runners).find(
+      (entry): entry is [string, Exclude<RunnerEntry, { kind: 'fake' }>] =>
+        entry[1].kind !== 'fake',
     );
     if (realEntry === undefined) {
       throw new Error(
@@ -331,7 +332,9 @@ export async function runSandboxCommand(input: {
     }
 
     const runnerAdapter = createRunnerCliAdapter({
-      entry: realEntry,
+      name: realEntry[0],
+      entry: realEntry[1],
+      config: input.config,
       cwd: process.cwd(),
     });
     await runSandboxResumeCommand({
