@@ -503,7 +503,7 @@ describe('ui-server work item action endpoints', () => {
     const freeze = await fetch(`${baseUrl}/api/v1/work-items/${key}/freeze`, { method: 'POST' });
     expect(freeze.status).toBe(202);
     const frozen = await store.readIssueState(key);
-    expect(frozen?.context.frozenAt).toBe('2026-07-05T12:00:00.000Z');
+    expect(frozen?.context.frozen?.at).toBe('2026-07-05T12:00:00.000Z');
     expect(frozen?.issue.labels).toContain(FROZEN_WORK_ITEM_LABEL);
 
     const freezeAgain = await fetch(`${baseUrl}/api/v1/work-items/${key}/freeze`, {
@@ -517,7 +517,7 @@ describe('ui-server work item action endpoints', () => {
     });
     expect(unfreeze.status).toBe(202);
     const unfrozen = await store.readIssueState(key);
-    expect(unfrozen?.context.frozenAt).toBeUndefined();
+    expect(unfrozen?.context.frozen).toBeUndefined();
     expect(unfrozen?.issue.labels).not.toContain(FROZEN_WORK_ITEM_LABEL);
 
     const eventTypes = (await store.listRecentEventEnvelopes({ workItemKey: key, limit: 20 })).map(
@@ -545,7 +545,7 @@ describe('ui-server work item action endpoints', () => {
     });
 
     const item = await store.readIssueState(key);
-    expect(item?.context.deletedAt).toBe('2026-07-05T12:00:00.000Z');
+    expect(item?.context.deleted?.at).toBe('2026-07-05T12:00:00.000Z');
     expect(item?.correlatedResources).toEqual([]);
     await expect(resourceIndex.resolve(resourceUri)).resolves.toBeUndefined();
 

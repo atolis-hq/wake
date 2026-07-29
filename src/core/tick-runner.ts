@@ -30,8 +30,12 @@ import {
 } from '../domain/event-types.js';
 import { parseRunnerArtifacts, parseRunnerResult } from '../domain/schema.js';
 import { maxConfiguredRunnerTimeoutMs, resolveRunnerRouting } from '../domain/runner-routing.js';
-import { awaitingApprovalRunnerSentinel, stageLabelForStage } from '../domain/stages.js';
-import { isWorkItemDeleted, isWorkItemRunnable } from '../domain/work-item-lifecycle.js';
+import { awaitingApprovalRunnerSentinel } from '../domain/stages.js';
+import {
+  FROZEN_WORK_ITEM_LABEL,
+  isWorkItemDeleted,
+  isWorkItemRunnable,
+} from '../domain/work-item-lifecycle.js';
 import type {
   AgentAction,
   EventEnvelope,
@@ -58,9 +62,13 @@ import {
   isKnownWorkflowStage,
   workflowChangedBlockReason,
   workflowForProjection,
-  workflowLabelForWorkflowName,
   workflowNameForProjection,
 } from '../domain/workflows.js';
+import {
+  labelsForWorkItem,
+  SCHEDULED_WORKFLOW_LABEL,
+  type WorkItemLabels,
+} from '../domain/work-item-labels.js';
 import { createEventEnvelope } from '../lib/event-log.js';
 import { branchNameForIssue } from '../domain/branch-naming.js';
 import { customCommandWorkspace, isCustomCommandAction } from '../domain/custom-commands.js';
@@ -371,28 +379,16 @@ export function createTickRunner(deps: {
     return projection.context.lastRunSentinel === awaitingApprovalRunnerSentinel;
   }
 
-  function statusLabelForStage(stage: import('../domain/types.js').Stage): string {
-    if (stage === 'done') {
-      return 'wake:status.completed';
-    }
-
-    return 'wake:status.pending';
-  }
-
-  function statusLabelForOutcome(input: {
-    sentinel: 'DONE' | 'BLOCKED' | 'FAILED' | 'AWAITING_APPROVAL';
-    stage: import('../domain/types.js').Stage;
-  }): string {
-    if (input.sentinel === 'AWAITING_APPROVAL') {
-      return 'wake:status.awaiting-approval';
-    }
-    if (input.sentinel === 'BLOCKED') {
-      return 'wake:status.blocked';
-    }
-    if (input.sentinel === 'FAILED') {
-      return 'wake:status.failed';
-    }
-    return statusLabelForStage(input.stage);
+  // Always reads the current projection at write time (never a threaded
+  // local like a stale `workflowName`/`claimedStage`), so a mid-run
+  // WORKFLOW_SELECTED_EVENT or freeze/schedule change can never be
+  // stamped with a label reflecting a snapshot from before it took effect.
+  async function currentLabelsForWorkItem(
+    workItemKey: string,
+    fallback: IssueStateRecord,
+  ): Promise<WorkItemLabels> {
+    const projection = (await deps.stateStore.readIssueState(workItemKey)) ?? fallback;
+    return labelsForWorkItem(projection, deps.config);
   }
 
   function hasLabel(projection: IssueStateRecord, label: string): boolean {
@@ -564,9 +560,7 @@ export function createTickRunner(deps: {
       createLabelsEvent({
         projection: input.projection,
         runId,
-        statusLabel: 'wake:status.blocked',
-        stageLabel: stageLabelForStage(input.projection.wake.stage),
-        workflowLabel: workflowLabelForWorkflowName(input.workflowName),
+        ...(await currentLabelsForWorkItem(input.projection.workItemKey, input.projection)),
         occurredAt,
       }),
     );
@@ -739,14 +733,67 @@ export function createTickRunner(deps: {
       createLabelsEvent({
         projection: input.projection,
         runId: input.approvalId,
-        statusLabel: statusLabelForStage(nextStage),
-        stageLabel: stageLabelForStage(nextStage),
-        workflowLabel: workflowLabelForWorkflowName(input.workflowName),
+        ...(await currentLabelsForWorkItem(input.projection.workItemKey, input.projection)),
         occurredAt: input.approvedAt,
       }),
     );
 
     return { nextStage };
+  }
+
+  // Folds a human /changes reply onto the parent's context via the same
+  // `changesRequested` RUN_COMPLETED payload shape a rejecting review watcher
+  // uses (projection-updater.ts) — same fold, same bounding against
+  // config.retry.maxChangesRequestedRetries, so a human bouncing /changes
+  // repeatedly escalates to 'blocked' exactly like an auto-revise loop would.
+  async function applyChangesRequestedTransition(input: {
+    projection: IssueStateRecord;
+    requestId: string;
+    requestedAt: string;
+    feedbackBody?: string;
+    // Marked handled regardless of escalation — once Wake has acted on this
+    // /changes reply (dispatched a revise, or escalated to blocked because
+    // the retry cap was hit), it must not keep re-triggering every tick off
+    // the same unhandled comment (that would re-increment the counter
+    // forever instead of converging on 'blocked' once).
+    triggeringCommentId?: string;
+  }): Promise<{ escalated: boolean }> {
+    const currentCount =
+      typeof input.projection.context.changesRequestedCount === 'number' &&
+      Number.isInteger(input.projection.context.changesRequestedCount)
+        ? input.projection.context.changesRequestedCount
+        : 0;
+    const escalated = currentCount + 1 > deps.config.retry.maxChangesRequestedRetries;
+
+    const event = createEventEnvelope({
+      eventId: `${input.requestId}-changes-requested`,
+      workItemKey: input.projection.workItemKey,
+      streamScope: 'work-item',
+      direction: 'internal',
+      sourceSystem: 'wake',
+      sourceEventType: RUN_COMPLETED_EVENT,
+      sourceRefs: {
+        repo: input.projection.issue.repo,
+        issueNumber: input.projection.issue.number,
+        runId: input.requestId,
+      },
+      occurredAt: input.requestedAt,
+      ingestedAt: input.requestedAt,
+      trigger: 'immediate',
+      payload: {
+        changesRequested: true,
+        runId: input.requestId,
+        reason: 'human:changes-requested',
+        ...(input.feedbackBody === undefined ? {} : { reviewFeedbackBody: input.feedbackBody }),
+        ...(input.triggeringCommentId === undefined
+          ? {}
+          : { handledCommentId: input.triggeringCommentId }),
+      },
+    });
+    await deps.stateStore.appendEventEnvelope(event);
+    await projectionUpdater.rebuildFromEvents([event]);
+
+    return { escalated };
   }
 
   // Closes the loop on #82's review feedback: rather than scrape a PR link
@@ -857,6 +904,11 @@ export function createTickRunner(deps: {
     return watch;
   }
 
+  // Runs against every open, non-deleted item every tick (not just ones with
+  // an eligible next action) so a stale label self-heals even on a parked
+  // item nothing else would otherwise re-check — this is also where
+  // wake:frozen/wake:scheduled-workflow get their only reconciliation
+  // coverage, since freeze/unfreeze no longer writes labels inline (§6).
   async function markPendingActionableIssues(projections: IssueStateRecord[]): Promise<void> {
     const activeRunWorkItemKeys = new Set<string>();
     const now = deps.clock.now();
@@ -867,22 +919,26 @@ export function createTickRunner(deps: {
     }
 
     for (const projection of projections) {
-      if (!isWorkItemRunnable(projection) || activeRunWorkItemKeys.has(projection.workItemKey)) {
+      if (isWorkItemDeleted(projection) || activeRunWorkItemKeys.has(projection.workItemKey)) {
         continue;
       }
 
-      const statusLabel = statusLabelForStage(projection.wake.stage);
-      const stageLabel = stageLabelForStage(projection.wake.stage);
-      const workflowLabel = workflowLabelForWorkflowName(
-        workflowNameForProjection(projection, deps.config),
-      );
+      const labels = labelsForWorkItem(projection, deps.config);
+      const matchesDesired =
+        hasLabel(projection, labels.statusLabel) &&
+        hasLabel(projection, labels.stageLabel) &&
+        hasLabel(projection, labels.workflowLabel) &&
+        (labels.frozenLabel === undefined || hasLabel(projection, labels.frozenLabel)) &&
+        (labels.scheduledLabel === undefined || hasLabel(projection, labels.scheduledLabel));
+      // A toggle label (frozen/scheduled) whose desired state is "absent"
+      // still needs to be checked for stray presence — the family-prefix
+      // labels above don't need this since removing them is folded into
+      // "does the current one match" by construction.
+      const hasStrayToggleLabel =
+        (labels.frozenLabel === undefined && hasLabel(projection, FROZEN_WORK_ITEM_LABEL)) ||
+        (labels.scheduledLabel === undefined && hasLabel(projection, SCHEDULED_WORKFLOW_LABEL));
 
-      if (
-        policy.resolveNextEligibleAction(projection, deps.config) === null ||
-        (hasLabel(projection, statusLabel) &&
-          hasLabel(projection, stageLabel) &&
-          hasLabel(projection, workflowLabel))
-      ) {
+      if (matchesDesired && !hasStrayToggleLabel) {
         continue;
       }
 
@@ -890,9 +946,7 @@ export function createTickRunner(deps: {
         createLabelsEvent({
           projection,
           runId: `pending-${projection.workItemKey}-${deps.clock.now().getTime()}`,
-          statusLabel,
-          stageLabel,
-          workflowLabel,
+          ...labels,
           occurredAt: eventStampNow(),
         }),
       );
@@ -1114,11 +1168,7 @@ export function createTickRunner(deps: {
         createLabelsEvent({
           projection,
           runId: eventId,
-          statusLabel: 'wake:status.blocked',
-          stageLabel: stageLabelForStage(projection.wake.stage),
-          workflowLabel: workflowLabelForWorkflowName(
-            workflowNameForProjection(projection, deps.config),
-          ),
+          ...(await currentLabelsForWorkItem(projection.workItemKey, projection)),
           occurredAt,
         }),
       );
@@ -1181,9 +1231,10 @@ export function createTickRunner(deps: {
 
       const projections = await deps.stateStore.listIssueStates();
       await cleanupClosedIssueWorkspaces(projections);
-      if (inboundEvents.length > 0) {
-        await markPendingActionableIssues(projections);
-      }
+      // Runs every tick, not only when this tick happened to poll a fresh
+      // inbound event — a stale label on a parked item (nothing else ever
+      // re-checks it once there's no next action) otherwise never self-heals.
+      await markPendingActionableIssues(projections);
 
       return {
         status: inboundEvents.length > 0 ? ('processed' as const) : ('idle' as const),
@@ -1566,16 +1617,30 @@ export function createTickRunner(deps: {
           const approvalResolution = policy.resolveApprovalTransition(candidate);
 
           if (approvalResolution === null) {
-            const reviewAction = policy.resolvePendingReviewFeedback(candidate);
-            if (reviewAction === null) {
-              return { status: 'idle' as const };
-            }
+            const changesRequestedAction = policy.resolveChangesRequestedAction(candidate);
+            if (changesRequestedAction !== null) {
+              action = changesRequestedAction;
+              const workflowAction = chooseWorkflowAction(candidate, workflow);
+              claimedStage = workflowAction?.stage ?? candidate.wake.stage;
+              workspaceMode = workflowAction?.workspace ?? 'none';
+              promptContextOverrides = {
+                ...workflowAction?.promptContext,
+                ...(typeof candidate.context.changesRequestedFeedback === 'string'
+                  ? { parentPendingReviewBody: candidate.context.changesRequestedFeedback }
+                  : {}),
+              };
+            } else {
+              const reviewAction = policy.resolvePendingReviewFeedback(candidate);
+              if (reviewAction === null) {
+                return { status: 'idle' as const };
+              }
 
-            action = reviewAction;
-            const workflowAction = chooseWorkflowAction(candidate, workflow);
-            claimedStage = workflowAction?.stage ?? candidate.wake.stage;
-            workspaceMode = workflowAction?.workspace ?? 'none';
-            promptContextOverrides = workflowAction?.promptContext;
+              action = reviewAction;
+              const workflowAction = chooseWorkflowAction(candidate, workflow);
+              claimedStage = workflowAction?.stage ?? candidate.wake.stage;
+              workspaceMode = workflowAction?.workspace ?? 'none';
+              promptContextOverrides = workflowAction?.promptContext;
+            }
           } else if (approvalResolution.approved) {
             const mergePolicy = approvedMergePolicyForStage(workflow.stages[candidate.wake.stage]);
             if (approvalResolution.targetResourceUri !== undefined && mergePolicy !== null) {
@@ -1672,11 +1737,36 @@ export function createTickRunner(deps: {
               nextStage: applied.nextStage,
             };
           } else {
+            const changesRequestId = `changes-requested-${candidate.issue.number}-${deps.clock.now().getTime()}`;
+            const requestedAt = deps.clock.now().toISOString();
+            const changesRequestedTriggeringCommentId =
+              approvalResolution.triggeringCommentId ?? latestHumanCommentId(candidate);
+            const { escalated } = await applyChangesRequestedTransition({
+              projection: candidate,
+              requestId: changesRequestId,
+              requestedAt,
+              ...(approvalResolution.triggeringCommentBody === undefined
+                ? {}
+                : { feedbackBody: approvalResolution.triggeringCommentBody }),
+              ...(changesRequestedTriggeringCommentId === undefined
+                ? {}
+                : { triggeringCommentId: changesRequestedTriggeringCommentId }),
+            });
+            if (escalated) {
+              return { status: 'idle' as const };
+            }
+
             action = approvalResolution.pendingAction;
             const workflowAction = chooseWorkflowAction(candidate, workflow);
             claimedStage = workflowAction?.stage ?? candidate.wake.stage;
             workspaceMode = workflowAction?.workspace ?? 'none';
-            promptContextOverrides = workflowAction?.promptContext;
+            promptContextOverrides = {
+              ...workflowAction?.promptContext,
+              ...(approvalResolution.changesRequested === true &&
+              approvalResolution.triggeringCommentBody !== undefined
+                ? { parentPendingReviewBody: approvalResolution.triggeringCommentBody }
+                : {}),
+            };
           }
         }
       } else {
@@ -1871,9 +1961,7 @@ export function createTickRunner(deps: {
           createLabelsEvent({
             projection: candidate,
             runId,
-            statusLabel: 'wake:status.working',
-            stageLabel: stageLabelForStage(claimedStage),
-            workflowLabel: workflowLabelForWorkflowName(workflowName),
+            ...(await currentLabelsForWorkItem(candidate.workItemKey, candidate)),
             occurredAt: eventStampNow(),
           }),
         );
@@ -2306,6 +2394,22 @@ export function createTickRunner(deps: {
           },
         });
 
+        // Computed before the payload so a rejecting review verdict (either
+        // the PR-artifact-verified path or a plain onSuccess.approve watcher
+        // with no PR) can fold context.status = 'changes-requested' on the
+        // parent via the same RUN_COMPLETED event, instead of requiring a
+        // separate marker comment round-trip (§5).
+        const watcherSuccessPolicy =
+          watcherRun && watcherDispatch !== null
+            ? deps.config.workflows[watcherDispatch.parentWorkflowName]?.stages[
+                watcherDispatch.parentStage
+              ]?.watch?.[watcherDispatch.watcherIndex]?.onSuccess
+            : undefined;
+        const isReviewRejection =
+          watcherRun &&
+          (sentinel === 'FAILED' || sentinel === 'BLOCKED') &&
+          (prReviewTargetResourceUri !== null || watcherSuccessPolicy?.approve === true);
+
         const runCompletedEvent = createEventEnvelope({
           eventId: `${runId}-completed`,
           workItemKey: candidate.workItemKey,
@@ -2354,6 +2458,9 @@ export function createTickRunner(deps: {
             executionOutcome,
             ...(workflowOutcome !== undefined ? { workflowOutcome } : {}),
             ...(watcherRun ? { watcherRun: true, watcherTrigger: watcherTriggerForRun } : {}),
+            ...(isReviewRejection
+              ? { changesRequested: true, reviewFeedbackBody: parsedRunnerResult.body }
+              : {}),
           },
         });
         await deps.stateStore.appendEventEnvelope(runCompletedEvent);
@@ -2364,12 +2471,7 @@ export function createTickRunner(deps: {
             createLabelsEvent({
               projection: candidate,
               runId,
-              statusLabel: statusLabelForOutcome({
-                sentinel,
-                stage: nextStage ?? claimedStage,
-              }),
-              stageLabel: stageLabelForStage(nextStage ?? claimedStage),
-              workflowLabel: workflowLabelForWorkflowName(workflowName),
+              ...(await currentLabelsForWorkItem(candidate.workItemKey, candidate)),
               occurredAt: finishedAt,
             }),
           );
@@ -2394,12 +2496,6 @@ export function createTickRunner(deps: {
           // Watcher-dispatched runs own PR verdict delivery and correlation
           // registration regardless of the target workflow/action name.
           const pendingApprovalAction = candidate.context.pendingApprovalAction;
-          const watcherSuccessPolicy =
-            watcherDispatch === null
-              ? undefined
-              : deps.config.workflows[watcherDispatch.parentWorkflowName]?.stages[
-                  watcherDispatch.parentStage
-                ]?.watch?.[watcherDispatch.watcherIndex]?.onSuccess;
           if (
             prReviewTargetResourceUri !== null &&
             (sentinel === 'DONE' || sentinel === 'FAILED')
@@ -2586,9 +2682,7 @@ export function createTickRunner(deps: {
             createLabelsEvent({
               projection: candidate,
               runId,
-              statusLabel: 'wake:status.failed',
-              stageLabel: stageLabelForStage(claimedStage),
-              workflowLabel: workflowLabelForWorkflowName(workflowName),
+              ...(await currentLabelsForWorkItem(candidate.workItemKey, candidate)),
               occurredAt: finishedAt,
             }),
           );

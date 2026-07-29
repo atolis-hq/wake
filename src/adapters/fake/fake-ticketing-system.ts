@@ -131,12 +131,22 @@ export function createFakeTicketingSystem(options: {
           typeof input.event.payload.workflowLabel === 'string'
             ? input.event.payload.workflowLabel
             : undefined;
+        const frozenLabel =
+          typeof input.event.payload.frozenLabel === 'string'
+            ? input.event.payload.frozenLabel
+            : undefined;
+        const scheduledLabel =
+          typeof input.event.payload.scheduledLabel === 'string'
+            ? input.event.payload.scheduledLabel
+            : undefined;
         const labels = [
           ...currentLabels.filter(
             (label) =>
               !label.startsWith('wake:status.') &&
               !label.startsWith('wake:stage.') &&
-              !label.startsWith('wake:workflow.'),
+              !label.startsWith('wake:workflow.') &&
+              label !== 'wake:frozen' &&
+              label !== 'wake:scheduled-workflow',
           ),
           ...(statusLabel === undefined
             ? currentLabels.filter((label) => label.startsWith('wake:status.'))
@@ -147,6 +157,8 @@ export function createFakeTicketingSystem(options: {
           ...(workflowLabel === undefined
             ? currentLabels.filter((label) => label.startsWith('wake:workflow.'))
             : [workflowLabel]),
+          ...(frozenLabel === undefined ? [] : [frozenLabel]),
+          ...(scheduledLabel === undefined ? [] : [scheduledLabel]),
         ];
 
         return [

@@ -160,6 +160,8 @@ export function createLabelsEvent(input: {
   statusLabel: string;
   stageLabel: string;
   workflowLabel: string;
+  frozenLabel?: string;
+  scheduledLabel?: string;
   occurredAt: string;
 }): EventEnvelope {
   const labelKind =
@@ -184,6 +186,8 @@ export function createLabelsEvent(input: {
       statusLabel: input.statusLabel,
       stageLabel: input.stageLabel,
       workflowLabel: input.workflowLabel,
+      ...(input.frozenLabel === undefined ? {} : { frozenLabel: input.frozenLabel }),
+      ...(input.scheduledLabel === undefined ? {} : { scheduledLabel: input.scheduledLabel }),
       origin: input.projection.origin ?? 'github',
       idempotencyKey: `${input.runId}:${labelKind}`,
       deliveryState: 'PENDING',

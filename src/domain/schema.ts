@@ -13,6 +13,7 @@ import {
 } from './resource-uri.js';
 import { runtimeEventTypeValues } from './runtime-events.js';
 import { alwaysManualIgnoredLabels } from './manual-labels.js';
+import { workItemStatusSchema } from './work-item-status.js';
 
 export {
   AUTONOMOUS_DECISION_AUDIT_EVENT,
@@ -324,6 +325,65 @@ export const eventEnvelopeSchema = z.object({
   derivedHints: z.record(z.string(), z.unknown()).optional(),
 });
 
+export const failurePhaseSchema = z.enum([
+  'workspace-validation',
+  'workspace-prep',
+  'process-starting',
+  'running',
+  'result-parsing',
+  'publishing',
+  'unknown',
+]);
+
+export const externalSideEffectsSchema = z.enum(['none', 'confirmed', 'unknown']);
+
+export const retrySafetySchema = z.enum([
+  'SAFE_TO_RETRY',
+  'SAFE_TO_RESUME',
+  'REQUIRES_RECONCILIATION',
+  'MANUAL_REVIEW_REQUIRED',
+  'NOT_RETRYABLE',
+]);
+
+// Typed `context` — every field is optional so an on-disk projection missing
+// some/all of them (pre-dating this schema, or simply untouched since) still
+// parses. See docs/superpowers/specs/2026-07-28-canonical-work-item-status-design.md §4/§8.
+export const issueContextSchema = z.object({
+  // Retry/failure bookkeeping, folded from RUN_COMPLETED (projection-updater.ts).
+  failureCount: z.number().int().nonnegative().optional(),
+  lastRunAction: z.string().optional(),
+  lastCompletedAction: z.string().optional(),
+  lastExecutionOutcome: executionOutcomeSchema.optional(),
+  lastWorkflowOutcome: workflowOutcomeSchema.optional(),
+  lastFailurePhase: failurePhaseSchema.optional(),
+  lastProcessStarted: z.boolean().optional(),
+  lastWorkspaceChanged: z.boolean().optional(),
+  lastExternalSideEffects: externalSideEffectsSchema.optional(),
+  lastRetrySafety: retrySafetySchema.optional(),
+  blockedFromStage: z.string().optional(),
+  lastFailureClass: z.enum(['task', 'quota', 'infra']).optional(),
+  lastHandledCommentId: z.string().optional(),
+  lastRunSentinel: runnerSentinelSchema.optional(),
+  // Set while AWAITING_APPROVAL so the approval path knows which action to
+  // resume (or skip) once a human responds.
+  pendingApprovalAction: z.string().optional(),
+  pendingApprovalAllowAutoApproval: z.boolean().optional(),
+  // Workflow pinned at mint time (WORKFLOW_SELECTED_EVENT); re-read at every
+  // label write instead of trusting a threaded local (workflow-name-drift, §6).
+  workflow: z.string().optional(),
+  // Canonical status — see work-item-status.ts. Additive alongside
+  // lastRunSentinel, not a replacement for it (§3).
+  status: workItemStatusSchema.optional(),
+  changesRequestedCount: z.number().int().nonnegative().optional(),
+  // Feedback body threaded into the next auto-revise prompt as
+  // promptContextOverrides.parentPendingReviewBody (§5).
+  changesRequestedFeedback: z.string().optional(),
+  // Orthogonal facts — not folded into `status` (§2).
+  frozen: z.object({ at: isoTimestampSchema, by: z.string() }).optional(),
+  deleted: z.object({ at: isoTimestampSchema, by: z.string() }).optional(),
+  scheduled: z.boolean().optional(),
+});
+
 export const issueStateRecordSchema = z.object({
   schemaVersion: z.literal(1),
   workItemKey: z.string(),
@@ -348,7 +408,7 @@ export const issueStateRecordSchema = z.object({
       })
       .default({ commentIds: [], labels: [] }),
   }),
-  context: z.record(z.string(), z.unknown()).default({}),
+  context: issueContextSchema.default({}),
   correlatedResources: z.array(correlatedResourceSchema).default([]),
 });
 
@@ -390,26 +450,6 @@ const runLeaseSchema = z.object({
   lastRenewedAt: isoTimestampSchema,
   expiresAt: isoTimestampSchema,
 });
-
-export const failurePhaseSchema = z.enum([
-  'workspace-validation',
-  'workspace-prep',
-  'process-starting',
-  'running',
-  'result-parsing',
-  'publishing',
-  'unknown',
-]);
-
-export const externalSideEffectsSchema = z.enum(['none', 'confirmed', 'unknown']);
-
-export const retrySafetySchema = z.enum([
-  'SAFE_TO_RETRY',
-  'SAFE_TO_RESUME',
-  'REQUIRES_RECONCILIATION',
-  'MANUAL_REVIEW_REQUIRED',
-  'NOT_RETRYABLE',
-]);
 
 function legacyRunLifecycle(input: Record<string, unknown>) {
   if (input.lifecycle !== undefined) {
@@ -738,8 +778,9 @@ const wakeConfigBaseSchema = z.object({
   retry: z
     .object({
       maxFailureRetries: z.number().int().positive().default(5),
+      maxChangesRequestedRetries: z.number().int().positive().default(5),
     })
-    .default({ maxFailureRetries: 5 }),
+    .default({ maxFailureRetries: 5, maxChangesRequestedRetries: 5 }),
   runners: z.record(z.string(), runnerEntrySchema).default({
     fake: { kind: 'fake', cli: 'Fake' },
     'claude-haiku': {
