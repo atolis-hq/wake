@@ -64,7 +64,10 @@ export const indexHtml = `<!DOCTYPE html>
   main { padding: 1rem; }
   .columns { display: grid; grid-template-columns: repeat(6, minmax(180px, 1fr)); gap: 0.6rem; overflow-x: auto; }
   .col { background: #1a1d23; border-radius: 10px; padding: 0.5rem; min-height: 200px; }
-  .col h2 { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; color: #9aa2ad; margin: 0.2rem 0.4rem 0.5rem; }
+  .col-header { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin: 0.2rem 0.4rem 0.5rem; }
+  .col h2 { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; color: #9aa2ad; margin: 0; }
+  .col-toggle { display: none; width: 1.65rem; height: 1.65rem; flex: 0 0 auto; align-items: center; justify-content: center; background: transparent; border: 1px solid #3a4150; border-radius: 6px; color: #cbd5e1; cursor: pointer; font-size: 1rem; line-height: 1; }
+  .col-toggle:hover { border-color: var(--accent); color: var(--accent-light); }
   .card { background: #22262e; border: 1px solid #2c313a; border-radius: 8px; padding: 0.5rem; margin-bottom: 0.5rem; cursor: pointer; font-size: 0.8rem; transition: border-color 0.12s ease; }
   .card:hover { border-color: var(--accent); }
   .card .title { font-weight: 600; margin-bottom: 0.25rem; }
@@ -129,8 +132,10 @@ export const indexHtml = `<!DOCTYPE html>
     .modal { width: 100%; height: 100%; max-height: none; border-radius: 0; border-left: 0; border-right: 0; }
     .columns { display: flex; flex-direction: column; overflow-x: unset; }
     .col { min-height: unset; }
+    .col-toggle { display: inline-flex; }
+    .col.is-collapsed .col-cards { display: none; }
     .col-empty { padding: 0.25rem 0.5rem; }
-    .col-empty h2 { margin: 0.1rem 0.4rem; }
+    .col-empty .col-header { margin: 0.1rem 0.4rem; }
     .event-summary { grid-template-columns: minmax(8.5rem, 10rem) minmax(8rem, 1fr) 2.2rem; gap: 0.5rem; }
     .event-id { display: none; }
   }
@@ -213,6 +218,7 @@ const COND_CARD = {
   'needs-human': 'card-needs-human',
   error: 'card-error',
 };
+const BOARD_COLLAPSE_STORAGE_KEY = 'wake:board:collapsed-columns';
 let currentView = 'board';
 let analyticsWindow = '1d';
 let analyticsMetric = 'runs-over-time';
@@ -283,6 +289,35 @@ function isActiveRequest(requestId) {
   return activeViewRequest && activeViewRequest.id === requestId;
 }
 
+function readCollapsedColumns() {
+  try {
+    const raw = window.localStorage.getItem(BOARD_COLLAPSE_STORAGE_KEY);
+    if (!raw) return new Set();
+    const values = JSON.parse(raw);
+    if (!Array.isArray(values)) return new Set();
+    return new Set(values.filter((value) => CONDITIONS.includes(value)));
+  } catch {
+    return new Set();
+  }
+}
+
+function writeCollapsedColumns(collapsed) {
+  try {
+    window.localStorage.setItem(BOARD_COLLAPSE_STORAGE_KEY, JSON.stringify([...collapsed]));
+  } catch {
+    // Ignore storage failures; the toggle should still work for this render.
+  }
+}
+
+function setColumnCollapsed(column, button, collapsed) {
+  const label = collapsed ? 'Expand column' : 'Collapse column';
+  column.classList.toggle('is-collapsed', collapsed);
+  button.textContent = collapsed ? '+' : '-';
+  button.setAttribute('aria-label', label);
+  button.setAttribute('aria-expanded', String(!collapsed));
+  button.setAttribute('title', label);
+}
+
 function loadingNode(label) {
   return el('p', { class: 'meta', text: 'Loading ' + label + '...' });
 }
@@ -348,6 +383,7 @@ async function renderBoard(context) {
   const board = await getJson('/board', context.signal);
   if (!isActiveRequest(context.requestId)) return;
   const main = document.getElementById('main');
+  const collapsedColumns = readCollapsedColumns();
   const columns = el('div', { class: 'columns' }, CONDITIONS.map((cond) => {
     const items = board.filter((c) => c.condition === cond);
     if (cond === 'finished') items.sort((a, b) => a.timeInStageMs - b.timeInStageMs);
@@ -361,10 +397,27 @@ async function renderBoard(context) {
         ...renderCardSummaryNodes(item),
       ]);
     });
-    return el('div', { class: 'col' + (items.length === 0 ? ' col-empty' : '') }, [
-      el('h2', { text: cond + ' (' + items.length + ')' }),
-      ...cards,
+    const isCollapsed = collapsedColumns.has(cond);
+    const toggle = el('button', {
+      class: 'col-toggle',
+      type: 'button',
+      onclick: () => {
+        const nextCollapsed = !collapsedColumns.has(cond);
+        if (nextCollapsed) collapsedColumns.add(cond);
+        else collapsedColumns.delete(cond);
+        writeCollapsedColumns(collapsedColumns);
+        setColumnCollapsed(column, toggle, nextCollapsed);
+      },
+    });
+    const column = el('div', { class: 'col' + (items.length === 0 ? ' col-empty' : '') }, [
+      el('div', { class: 'col-header' }, [
+        el('h2', { text: cond + ' (' + items.length + ')' }),
+        toggle,
+      ]),
+      el('div', { class: 'col-cards' }, cards),
     ]);
+    setColumnCollapsed(column, toggle, isCollapsed);
+    return column;
   }));
   main.replaceChildren(columns);
 }
