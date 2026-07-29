@@ -451,10 +451,10 @@ function renderCardSummaryNodes(item) {
   }
   return [
     el('div', { class: 'meta', style: 'display:flex;align-items:center;gap:0.3rem;flex-wrap:wrap;margin-top:0.2rem;' }, metaPills),
-    el('div', { class: 'card-stats', text: statsText }),
     ...(nonWakeLabels.length > 0
       ? [el('div', { class: 'meta', style: 'margin-top:0.2rem;' }, nonWakeLabels.map((label) => el('span', { class: 'chip chip-label', text: label })))]
       : []),
+    el('div', { class: 'card-stats', text: statsText }),
     ...(item.activeMainRun ? [renderChildRun(item.activeMainRun)] : []),
     ...((item.activeChildRuns || []).map(renderChildRun)),
   ];
