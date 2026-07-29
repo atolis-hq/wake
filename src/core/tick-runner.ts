@@ -30,7 +30,6 @@ import {
 } from '../domain/event-types.js';
 import { parseRunnerArtifacts, parseRunnerResult } from '../domain/schema.js';
 import { maxConfiguredRunnerTimeoutMs, resolveRunnerRouting } from '../domain/runner-routing.js';
-import { awaitingApprovalRunnerSentinel } from '../domain/stages.js';
 import {
   FROZEN_WORK_ITEM_LABEL,
   isWorkItemDeleted,
@@ -99,7 +98,7 @@ type TickOutcome =
   | {
       status: 'processed';
       runId?: string;
-      sentinel?: 'DONE' | 'BLOCKED' | 'FAILED' | 'AWAITING_APPROVAL';
+      sentinel?: 'DONE' | 'REJECTED' | 'BLOCKED' | 'FAILED';
       nextStage?: Stage | null;
     };
 
@@ -376,7 +375,17 @@ export function createTickRunner(deps: {
   const ownerInstanceId = `instance-${process.pid}-${Date.now()}`;
 
   function isAwaitingApproval(projection: IssueStateRecord): boolean {
-    return projection.context.lastRunSentinel === awaitingApprovalRunnerSentinel;
+    // pendingApprovalAction persists through a changes-requested review round
+    // within the same gated cycle (that fold path never touches it), so it's
+    // the faithful "is this item currently gated on human sign-off" signal —
+    // context.status alone flips between 'awaiting-approval' and
+    // 'changes-requested' within the same gated cycle and can't be used here.
+    // The lastRunSentinel fallback tolerates a projection folded before
+    // pendingApprovalAction was reliably set on every gated DONE.
+    return (
+      typeof projection.context.pendingApprovalAction === 'string' ||
+      projection.context.lastRunSentinel === 'AWAITING_APPROVAL'
+    );
   }
 
   // Always reads the current projection at write time (never a threaded
@@ -1246,7 +1255,8 @@ export function createTickRunner(deps: {
 
   function watcherStatus(projection: IssueStateRecord): string {
     const sentinel = projection.context.lastRunSentinel;
-    if (sentinel === 'AWAITING_APPROVAL') return 'awaiting-approval';
+    if (isAwaitingApproval(projection)) return 'awaiting-approval';
+    if (sentinel === 'REJECTED') return 'rejected';
     if (sentinel === 'BLOCKED') return 'blocked';
     if (sentinel === 'FAILED') return 'failed';
     if (sentinel === 'DONE') return 'done';
@@ -2204,21 +2214,22 @@ export function createTickRunner(deps: {
         clearInterval(leaseRenewalTimer);
         leaseRenewalTimer = undefined;
         const parsedRunnerResult = parseRunnerResult(runnerResult.result);
-        const rawSentinel = parsedRunnerResult.status;
-        // Coerce DONE → AWAITING_APPROVAL when the stage requires human sign-off.
-        // An agent that writes DONE but was told not to skip approval has violated
-        // the protocol; treat it as AWAITING_APPROVAL so the gate is enforced.
+        const sentinel = parsedRunnerResult.status;
+        // The approval gate is pure policy, never the agent's word choice —
+        // a DONE on a stage configured with skipApproval: false is gated
+        // regardless of what the agent wrote (ADR 0002).
         const skipApproval = runnerResult.metadata?.skipApproval;
-        const sentinel =
-          rawSentinel === 'DONE' && skipApproval === false ? 'AWAITING_APPROVAL' : rawSentinel;
+        const approvalGated = sentinel === 'DONE' && skipApproval === false;
         // A canceled run must not advance the stage regardless of what the
         // runner echoed back — the snapshot it acted on was superseded.
         const nextStage =
           cancellationReason !== null
             ? null
-            : isLateralReadOnlyAction(action, deps.config) && sentinel === 'DONE'
+            : approvalGated
               ? null
-              : lifecycle.nextStageFromSentinel(claimedStage, sentinel, workflow);
+              : isLateralReadOnlyAction(action, deps.config) && sentinel === 'DONE'
+                ? null
+                : lifecycle.nextStageFromSentinel(claimedStage, sentinel, workflow);
         const finishedAt = deps.clock.now().toISOString();
         let workspaceBookkeeping: unknown;
         if (workspacePath !== undefined) {
@@ -2261,7 +2272,6 @@ export function createTickRunner(deps: {
               sourceRevision,
               watcherTrigger: watcherTriggerForRun,
               verifiedTargetResourceUri: prReviewTargetResourceUri,
-              rawSentinel,
             },
             outcome: {
               sentinel,
@@ -2270,7 +2280,7 @@ export function createTickRunner(deps: {
                   ? 'uncertain'
                   : sentinel === 'DONE'
                     ? 'approved'
-                    : sentinel === 'FAILED'
+                    : sentinel === 'REJECTED'
                       ? 'changes-requested'
                       : 'uncertain',
               reasoning: parsedRunnerResult.body,
@@ -2349,11 +2359,13 @@ export function createTickRunner(deps: {
           cancellationReason !== null
             ? undefined
             : sentinel === 'DONE'
-              ? 'DONE'
-              : sentinel === 'BLOCKED'
-                ? 'BLOCKED'
-                : sentinel === 'AWAITING_APPROVAL'
-                  ? 'AWAITING_APPROVAL'
+              ? approvalGated
+                ? 'AWAITING_APPROVAL'
+                : 'DONE'
+              : sentinel === 'REJECTED'
+                ? 'CHANGES_REQUESTED'
+                : sentinel === 'BLOCKED'
+                  ? 'BLOCKED'
                   : undefined;
 
         await transitionRunLifecycle('FINALISING');
@@ -2374,11 +2386,13 @@ export function createTickRunner(deps: {
           lifecycle: 'TERMINAL',
           status:
             sentinel === 'DONE'
-              ? 'completed'
-              : sentinel === 'BLOCKED'
-                ? 'blocked'
-                : sentinel === 'AWAITING_APPROVAL'
-                  ? 'awaiting-approval'
+              ? approvalGated
+                ? 'awaiting-approval'
+                : 'completed'
+              : sentinel === 'REJECTED'
+                ? 'rejected'
+                : sentinel === 'BLOCKED'
+                  ? 'blocked'
                   : 'failed',
           finishedAt,
           sessionId: runnerResult.session_id,
@@ -2409,7 +2423,7 @@ export function createTickRunner(deps: {
             : undefined;
         const isReviewRejection =
           watcherRun &&
-          (sentinel === 'FAILED' || sentinel === 'BLOCKED') &&
+          sentinel === 'REJECTED' &&
           (prReviewTargetResourceUri !== null || watcherSuccessPolicy?.approve === true);
 
         const runCompletedEvent = createEventEnvelope({
@@ -2430,8 +2444,8 @@ export function createTickRunner(deps: {
           payload: {
             action,
             sentinel,
+            approvalGated,
             allowAutoApproval: runnerResult.metadata?.allowAutoApproval === true,
-            ...(rawSentinel !== sentinel ? { rawSentinel } : {}),
             ...(nextStage !== null ? { nextStage } : {}),
             runId,
             sessionId: runnerResult.session_id,
@@ -2486,6 +2500,7 @@ export function createTickRunner(deps: {
           runnerResult,
           parsedRunnerResult,
           sentinel,
+          approvalGated,
           occurredAt: finishedAt,
           startedAt: nowIso,
           ...(workspacePath === undefined ? {} : { workspacePath }),
@@ -2500,7 +2515,7 @@ export function createTickRunner(deps: {
           const pendingApprovalAction = candidate.context.pendingApprovalAction;
           if (
             prReviewTargetResourceUri !== null &&
-            (sentinel === 'DONE' || sentinel === 'FAILED')
+            (sentinel === 'DONE' || sentinel === 'REJECTED')
           ) {
             await deliverOutboundEvent({
               ...publishIntent,
@@ -2521,11 +2536,15 @@ export function createTickRunner(deps: {
           } else if (
             watcherDispatch !== null &&
             watcherSuccessPolicy?.approve === true &&
-            (sentinel === 'DONE' || sentinel === 'FAILED' || sentinel === 'BLOCKED')
+            (sentinel === 'DONE' ||
+              sentinel === 'REJECTED' ||
+              sentinel === 'FAILED' ||
+              sentinel === 'BLOCKED')
           ) {
             // No PR surface to carry the verdict comment: the child's sentinel
             // is its verdict. Publish the review body for every verdict so the
-            // human sees why; only DONE resolves the parent's pending gate.
+            // human sees why; only an ungated DONE resolves the parent's
+            // pending gate (checked below via isAwaitingApproval).
             await deliverOutboundEvent(publishIntent);
             const approvalId = `${runId}-parent-approval`;
             const parentWorkflow = deps.config.workflows[watcherDispatch.parentWorkflowName];
