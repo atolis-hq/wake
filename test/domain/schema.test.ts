@@ -23,6 +23,7 @@ import {
   CORRELATION_RETRACTED_EVENT,
   WORK_ITEM_CREATED_EVENT,
 } from '../../src/domain/schema.js';
+import { maxConfiguredRunnerTimeoutMs } from '../../src/domain/runner-routing.js';
 import type { WakeDevConfig, WakeSandboxConfig } from '../../src/domain/types.js';
 
 describe('issue state schema', () => {
@@ -772,6 +773,52 @@ describe('run and event schemas', () => {
       },
     });
     expect(configured.retry.maxFailureRetries).toBe(2);
+  });
+
+  it('accepts global run timeout configuration and optional legacy runner timeout overrides', () => {
+    const config = parseWakeConfig({
+      schemaVersion: 1,
+      paths: {
+        wakeRoot: '/tmp/wake',
+      },
+      runs: {
+        startupTimeoutMs: 120_000,
+        stallTimeoutMs: 900_000,
+        absoluteTimeoutMs: 5_400_000,
+        gracefulCancellationTimeoutMs: 20_000,
+      },
+      runners: {
+        'claude-haiku': {
+          kind: 'claude',
+          command: 'claude',
+          model: 'claude-haiku-4-5',
+        },
+        'codex-standard': {
+          kind: 'codex',
+          command: 'codex',
+          model: 'gpt-5.4',
+          timeoutMs: 1_200_000,
+        },
+      },
+      tiers: {
+        standard: ['claude-haiku', 'codex-standard'],
+      },
+      defaultTier: 'standard',
+    });
+
+    expect(config.runs).toEqual({
+      startupTimeoutMs: 120_000,
+      stallTimeoutMs: 900_000,
+      absoluteTimeoutMs: 5_400_000,
+      gracefulCancellationTimeoutMs: 20_000,
+    });
+    expect(config.runners['claude-haiku']?.kind).toBe('claude');
+    expect(
+      config.runners['claude-haiku']?.kind === 'claude'
+        ? config.runners['claude-haiku'].timeoutMs
+        : undefined,
+    ).toBeUndefined();
+    expect(maxConfiguredRunnerTimeoutMs(config)).toBe(5_400_000);
   });
 
   it('accepts codex runner configuration via registry', () => {

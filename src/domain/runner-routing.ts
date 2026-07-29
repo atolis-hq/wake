@@ -20,10 +20,23 @@ export function maxConfiguredRunnerTimeoutMs(config: WakeConfig): number {
 
   const registryTimeouts = [...activeRunnerNames]
     .map((name) => config.runners[name])
-    .map((entry) => (entry === undefined || entry.kind === 'fake' ? undefined : entry.timeoutMs))
+    .map((entry) =>
+      entry === undefined || entry.kind === 'fake'
+        ? undefined
+        : (entry.timeoutMs ?? config.runs.absoluteTimeoutMs),
+    )
     .filter((timeout): timeout is number => timeout !== undefined);
 
-  return registryTimeouts.length > 0 ? Math.max(...registryTimeouts) : Infinity;
+  return registryTimeouts.length > 0
+    ? Math.max(...registryTimeouts)
+    : config.runs.absoluteTimeoutMs;
+}
+
+export function runnerAbsoluteTimeoutMs(config: WakeConfig, runnerName: string): number {
+  const entry = config.runners[runnerName];
+  return entry === undefined || entry.kind === 'fake'
+    ? config.runs.absoluteTimeoutMs
+    : (entry.timeoutMs ?? config.runs.absoluteTimeoutMs);
 }
 
 // How often an 'estimated' pause (exponential-backoff guess, not a reset time

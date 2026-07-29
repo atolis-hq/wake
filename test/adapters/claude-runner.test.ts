@@ -964,6 +964,7 @@ describe('claude runner command building', () => {
           remoteControlName: 'Wake',
           smokePrompt: defaultSmokePrompt,
           timeoutMs: 10_000,
+          gracefulCancellationTimeoutMs: 5_000,
           remoteControl: { enabled: false },
         },
       });
@@ -1029,6 +1030,7 @@ describe('claude runner command building', () => {
           remoteControlName: 'Wake',
           smokePrompt: defaultSmokePrompt,
           timeoutMs: 10_000,
+          gracefulCancellationTimeoutMs: 5_000,
           remoteControl: { enabled: false },
         },
       });
@@ -1105,6 +1107,7 @@ describe('claude runner command building', () => {
           remoteControlName: 'Wake',
           smokePrompt: defaultSmokePrompt,
           timeoutMs: 10_000,
+          gracefulCancellationTimeoutMs: 5_000,
           remoteControl: { enabled: false },
         },
       });

@@ -90,6 +90,7 @@ function buildNeedsWakeActionIssue(overrides: {
   latestCommentId?: string;
   lastHandledCommentId?: string;
   lastRunSentinel?: string;
+  lastExecutionOutcome?: string;
   lastFailureClass?: string;
   lastRetrySafety?: string;
   failureCount?: number;
@@ -157,6 +158,9 @@ function buildNeedsWakeActionIssue(overrides: {
       ...(overrides.lastFailureClass === undefined
         ? {}
         : { lastFailureClass: overrides.lastFailureClass }),
+      ...(overrides.lastExecutionOutcome === undefined
+        ? {}
+        : { lastExecutionOutcome: overrides.lastExecutionOutcome }),
       ...(overrides.lastRetrySafety === undefined
         ? {}
         : { lastRetrySafety: overrides.lastRetrySafety }),
@@ -983,6 +987,54 @@ describe('policy engine: needsWakeAction', () => {
     });
 
     expect(policy.needsWakeAction(issue, undefined, config)).toBe(true);
+  });
+
+  it('retries stalled runs when reconciliation says the run is safe to resume', () => {
+    const policy = createPolicyEngine();
+    const config = createDefaultWakeConfig('/tmp/wake-root');
+    config.retry.maxFailureRetries = 3;
+    const issue = buildNeedsWakeActionIssue({
+      lastRunSentinel: 'FAILED',
+      lastExecutionOutcome: 'STALLED',
+      lastRetrySafety: 'SAFE_TO_RESUME',
+      failureCount: 1,
+    });
+
+    expect(policy.needsWakeAction(issue, undefined, config)).toBe(true);
+  });
+
+  it('never retries runs canceled by the operator', () => {
+    const policy = createPolicyEngine();
+    const config = createDefaultWakeConfig('/tmp/wake-root');
+    config.retry.maxFailureRetries = 3;
+    const issue = buildNeedsWakeActionIssue({
+      lastRunSentinel: 'FAILED',
+      lastExecutionOutcome: 'CANCELED_BY_OPERATOR',
+      lastRetrySafety: 'NOT_RETRYABLE',
+      failureCount: 1,
+    });
+
+    expect(policy.needsWakeAction(issue, undefined, config)).toBe(false);
+  });
+
+  it('retries malformed output once and then stops', () => {
+    const policy = createPolicyEngine();
+    const config = createDefaultWakeConfig('/tmp/wake-root');
+    const firstMalformed = buildNeedsWakeActionIssue({
+      lastRunSentinel: 'FAILED',
+      lastExecutionOutcome: 'MALFORMED_OUTPUT',
+      lastRetrySafety: 'SAFE_TO_RETRY',
+      failureCount: 1,
+    });
+    const secondMalformed = buildNeedsWakeActionIssue({
+      lastRunSentinel: 'FAILED',
+      lastExecutionOutcome: 'MALFORMED_OUTPUT',
+      lastRetrySafety: 'MANUAL_REVIEW_REQUIRED',
+      failureCount: 2,
+    });
+
+    expect(policy.needsWakeAction(firstMalformed, undefined, config)).toBe(true);
+    expect(policy.needsWakeAction(secondMalformed, undefined, config)).toBe(false);
   });
 
   it('does not blindly retry a failed run after a PR side effect requires reconciliation', () => {

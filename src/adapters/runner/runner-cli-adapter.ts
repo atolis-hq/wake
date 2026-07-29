@@ -2,7 +2,8 @@ import { createClaudeRunner } from '../claude/claude-runner.js';
 import { createCodexRunner } from '../codex/codex-runner.js';
 import { createCursorRunner } from '../cursor/cursor-runner.js';
 import type { AgentRunner } from '../../core/contracts.js';
-import type { RunnerEntry, RunnerKind } from '../../domain/types.js';
+import { runnerAbsoluteTimeoutMs } from '../../domain/runner-routing.js';
+import type { RunnerEntry, RunnerKind, WakeConfig } from '../../domain/types.js';
 
 export type SupportedRunnerMode = Exclude<RunnerKind, 'fake'>;
 
@@ -11,6 +12,18 @@ type RealRunnerEntry = Exclude<RunnerEntry, { kind: 'fake' }>;
 function withoutKind<T extends RealRunnerEntry>(entry: T): Omit<T, 'kind'> {
   const { kind: _kind, ...settings } = entry;
   return settings as Omit<T, 'kind'>;
+}
+
+function resolvedRunnerSettings<T extends RealRunnerEntry>(input: {
+  name: string;
+  entry: T;
+  config: WakeConfig;
+}): Omit<T, 'kind'> & { timeoutMs: number; gracefulCancellationTimeoutMs: number } {
+  return {
+    ...withoutKind(input.entry),
+    timeoutMs: runnerAbsoluteTimeoutMs(input.config, input.name),
+    gracefulCancellationTimeoutMs: input.config.runs.gracefulCancellationTimeoutMs,
+  };
 }
 
 export interface RunnerCliAdapter {
@@ -22,11 +35,17 @@ export interface RunnerCliAdapter {
 }
 
 export function createRunnerCliAdapter(input: {
+  name: string;
   entry: RealRunnerEntry;
+  config: WakeConfig;
   cwd: string;
 }): RunnerCliAdapter {
   if (input.entry.kind === 'claude') {
-    const settings = withoutKind(input.entry);
+    const settings = resolvedRunnerSettings({
+      name: input.name,
+      entry: input.entry,
+      config: input.config,
+    });
     const runner = createClaudeRunner({
       command: settings.command,
       cwd: input.cwd,
@@ -67,7 +86,11 @@ export function createRunnerCliAdapter(input: {
   }
 
   if (input.entry.kind === 'cursor') {
-    const settings = withoutKind(input.entry);
+    const settings = resolvedRunnerSettings({
+      name: input.name,
+      entry: input.entry,
+      config: input.config,
+    });
     const runner = createCursorRunner({
       command: settings.command,
       cwd: input.cwd,
@@ -95,7 +118,11 @@ export function createRunnerCliAdapter(input: {
     };
   }
 
-  const settings = withoutKind(input.entry);
+  const settings = resolvedRunnerSettings({
+    name: input.name,
+    entry: input.entry,
+    config: input.config,
+  });
   const runner = createCodexRunner({
     command: settings.command,
     cwd: input.cwd,

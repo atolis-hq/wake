@@ -1,13 +1,14 @@
 import { spawn } from 'node:child_process';
 import { readProcessIdentity } from '../../lib/process-identity.js';
 
-const TIMEOUT_KILL_GRACE_MS = 5_000;
+const DEFAULT_GRACEFUL_CANCELLATION_TIMEOUT_MS = 5_000;
 
 export function runAgentCliCommand(input: {
   command: string;
   args: string[];
   cwd: string;
   timeoutMs?: number;
+  gracefulCancellationTimeoutMs?: number;
   cancellationSignal?: AbortSignal;
   onProcessStart?: (identity: { pid: number; processStartedAt: string }) => Promise<void>;
 }): Promise<{
@@ -15,6 +16,7 @@ export function runAgentCliCommand(input: {
   stderr: string;
   exitCode: number;
   timedOut: boolean;
+  canceled: boolean;
 }> {
   return new Promise((resolve, reject) => {
     const child = spawn(input.command, input.args, {
@@ -42,7 +44,10 @@ export function runAgentCliCommand(input: {
 
     const terminate = () => {
       child.kill('SIGTERM');
-      killTimer = setTimeout(() => child.kill('SIGKILL'), TIMEOUT_KILL_GRACE_MS);
+      killTimer = setTimeout(
+        () => child.kill('SIGKILL'),
+        input.gracefulCancellationTimeoutMs ?? DEFAULT_GRACEFUL_CANCELLATION_TIMEOUT_MS,
+      );
     };
 
     const timeoutTimer =
@@ -89,7 +94,8 @@ export function runAgentCliCommand(input: {
         stdout,
         stderr,
         exitCode: exitCode ?? 1,
-        timedOut: timedOut || canceled,
+        timedOut,
+        canceled,
       });
     });
   });

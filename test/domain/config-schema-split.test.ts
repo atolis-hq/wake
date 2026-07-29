@@ -27,7 +27,15 @@ describe('wakeConfigSchema split', () => {
   it('keeps runners/tiers/workflows/commands together in the workflow schema', () => {
     const workflowKeys = Object.keys(wakeWorkflowConfigSchema.shape).sort();
     expect(workflowKeys).toEqual(
-      ['commands', 'defaultTier', 'runners', 'tiers', 'workflowSelectors', 'workflows'].sort(),
+      [
+        'commands',
+        'defaultTier',
+        'runners',
+        'runs',
+        'tiers',
+        'workflowSelectors',
+        'workflows',
+      ].sort(),
     );
   });
 

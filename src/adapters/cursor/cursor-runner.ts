@@ -28,7 +28,10 @@ import { emitRuntimeEvent, runnerRuntimeEvent } from '../runner/runtime-events.j
 import { writeRunnerTranscript } from '../runner/transcripts.js';
 import { createAgentExecution } from '../../core/live-execution.js';
 
-type CursorRunnerSettings = Omit<Extract<RunnerEntry, { kind: 'cursor' }>, 'kind'>;
+type CursorRunnerSettings = Omit<Extract<RunnerEntry, { kind: 'cursor' }>, 'kind'> & {
+  timeoutMs: number;
+  gracefulCancellationTimeoutMs: number;
+};
 
 const CURSOR_CLI_NAME = 'Cursor';
 
@@ -320,6 +323,7 @@ export function createCursorRunner(options: {
         }),
         cwd,
         timeoutMs: options.settings.timeoutMs,
+        gracefulCancellationTimeoutMs: options.settings.gracefulCancellationTimeoutMs,
         ...(input.cancellationSignal === undefined
           ? {}
           : { cancellationSignal: input.cancellationSignal }),
@@ -349,7 +353,12 @@ export function createCursorRunner(options: {
         text: result.stdout,
       });
 
-      if (result.exitCode !== 0 || result.timedOut || result.stdout.trim().length === 0) {
+      if (
+        result.exitCode !== 0 ||
+        result.timedOut ||
+        result.canceled ||
+        result.stdout.trim().length === 0
+      ) {
         const sandboxLog = readSandboxLogBreadcrumb();
         const failureClass = classifyCursorCliFailure({
           stdout: result.stdout,
@@ -378,16 +387,22 @@ export function createCursorRunner(options: {
             routing: input.routing,
             cli: CURSOR_CLI_NAME,
             model,
-            payload: { exitCode: result.exitCode, timedOut: result.timedOut },
+            payload: {
+              exitCode: result.exitCode,
+              timedOut: result.timedOut,
+              canceled: result.canceled,
+            },
           }),
         );
         return {
           result: [
             result.timedOut
               ? `Cursor runner timed out after ${options.settings.timeoutMs}ms and was killed`
-              : result.stdout.trim().length === 0
-                ? 'Cursor runner produced no output'
-                : 'Cursor runner failed',
+              : result.canceled
+                ? 'Cursor runner was canceled'
+                : result.stdout.trim().length === 0
+                  ? 'Cursor runner produced no output'
+                  : 'Cursor runner failed',
             result.stderr,
             sandboxLog?.text,
             'FAILED',
@@ -401,6 +416,8 @@ export function createCursorRunner(options: {
             stdout: result.stdout,
             stderr: result.stderr,
             exitCode: result.exitCode,
+            timedOut: result.timedOut,
+            canceled: result.canceled,
             failureClass,
             ...(promptTranscriptPath === undefined ? {} : { promptTranscriptPath }),
             ...(responseTranscriptPath === undefined ? {} : { responseTranscriptPath }),
@@ -484,7 +501,11 @@ export function createCursorRunner(options: {
           cli: CURSOR_CLI_NAME,
           model,
           ...(parsed.sessionId === undefined ? {} : { sessionId: parsed.sessionId }),
-          payload: { exitCode: result.exitCode, timedOut: result.timedOut },
+          payload: {
+            exitCode: result.exitCode,
+            timedOut: result.timedOut,
+            canceled: result.canceled,
+          },
         }),
       );
 

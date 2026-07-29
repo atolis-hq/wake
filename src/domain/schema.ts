@@ -106,6 +106,36 @@ export const defaultSmokePrompt = `This is ${defaultAgentIdentity}, reply with "
 const claudeEffortSchema = z.enum(['low', 'medium', 'high', 'xhigh', 'max']);
 const codexReasoningEffortSchema = z.enum(['low', 'medium', 'high']);
 const cursorModeSchema = z.enum(['ask', 'agent']);
+const runnerTimeoutOverrideMsSchema = z.number().int().positive();
+const runTimeoutsSchema = z
+  .object({
+    startupTimeoutMs: z
+      .number()
+      .int()
+      .positive()
+      .default(2 * 60 * 1000),
+    stallTimeoutMs: z
+      .number()
+      .int()
+      .positive()
+      .default(15 * 60 * 1000),
+    absoluteTimeoutMs: z
+      .number()
+      .int()
+      .positive()
+      .default(90 * 60 * 1000),
+    gracefulCancellationTimeoutMs: z
+      .number()
+      .int()
+      .positive()
+      .default(20 * 1000),
+  })
+  .default({
+    startupTimeoutMs: 2 * 60 * 1000,
+    stallTimeoutMs: 15 * 60 * 1000,
+    absoluteTimeoutMs: 90 * 60 * 1000,
+    gracefulCancellationTimeoutMs: 20 * 1000,
+  });
 
 const claudeRunnerSettingsSchema = z.object({
   command: z.string().default('claude'),
@@ -114,11 +144,7 @@ const claudeRunnerSettingsSchema = z.object({
   sessionName: z.string().default(defaultAgentIdentity),
   remoteControlName: z.string().default(defaultAgentIdentity),
   smokePrompt: z.string().default(defaultSmokePrompt),
-  timeoutMs: z
-    .number()
-    .int()
-    .positive()
-    .default(30 * 60 * 1000),
+  timeoutMs: runnerTimeoutOverrideMsSchema.optional(),
   remoteControl: z
     .object({
       enabled: z.boolean().default(false),
@@ -132,11 +158,7 @@ const codexRunnerSettingsSchema = z.object({
   model: z.string().default('gpt-5.5'),
   smokeModel: z.string().default('gpt-5.4-mini'),
   smokePrompt: z.string().default(defaultSmokePrompt),
-  timeoutMs: z
-    .number()
-    .int()
-    .positive()
-    .default(30 * 60 * 1000),
+  timeoutMs: runnerTimeoutOverrideMsSchema.optional(),
   reasoningEffort: codexReasoningEffortSchema.optional(),
 });
 
@@ -158,11 +180,7 @@ const cursorRunnerSettingsSchema = z.object({
   model: z.string().default('composer-2.5'),
   smokeModel: z.string().default('auto'),
   smokePrompt: z.string().default(defaultSmokePrompt),
-  timeoutMs: z
-    .number()
-    .int()
-    .positive()
-    .default(30 * 60 * 1000),
+  timeoutMs: runnerTimeoutOverrideMsSchema.optional(),
   defaultMode: cursorModeSchema.optional(),
 });
 
@@ -795,6 +813,7 @@ const wakeConfigBaseSchema = z.object({
       maxChangesRequestedRetries: z.number().int().positive().default(3),
     })
     .default({ maxFailureRetries: 5, maxChangesRequestedRetries: 3 }),
+  runs: runTimeoutsSchema,
   runners: z.record(z.string(), runnerEntrySchema).default({
     fake: { kind: 'fake', cli: 'Fake' },
     'claude-haiku': {
@@ -805,7 +824,6 @@ const wakeConfigBaseSchema = z.object({
       sessionName: defaultAgentIdentity,
       remoteControlName: defaultAgentIdentity,
       smokePrompt: defaultSmokePrompt,
-      timeoutMs: 30 * 60 * 1000,
       remoteControl: { enabled: false },
     },
     'claude-opus': {
@@ -816,7 +834,6 @@ const wakeConfigBaseSchema = z.object({
       sessionName: defaultAgentIdentity,
       remoteControlName: defaultAgentIdentity,
       smokePrompt: defaultSmokePrompt,
-      timeoutMs: 30 * 60 * 1000,
       remoteControl: { enabled: false },
     },
     'codex-mini': {
@@ -825,7 +842,6 @@ const wakeConfigBaseSchema = z.object({
       model: 'gpt-5.4-mini',
       smokeModel: 'gpt-5.4-mini',
       smokePrompt: defaultSmokePrompt,
-      timeoutMs: 30 * 60 * 1000,
     },
     'codex-flagship': {
       kind: 'codex',
@@ -833,7 +849,6 @@ const wakeConfigBaseSchema = z.object({
       model: 'gpt-5.5',
       smokeModel: 'gpt-5.4-mini',
       smokePrompt: defaultSmokePrompt,
-      timeoutMs: 30 * 60 * 1000,
     },
     'cursor-composer': {
       kind: 'cursor',
@@ -841,7 +856,6 @@ const wakeConfigBaseSchema = z.object({
       model: 'composer-2.5',
       smokeModel: 'auto',
       smokePrompt: defaultSmokePrompt,
-      timeoutMs: 30 * 60 * 1000,
     },
   }),
   tiers: z.record(z.string(), z.array(z.string().min(1)).min(1)).default({
@@ -1013,6 +1027,7 @@ export const wakeInfraConfigSchema = wakeConfigBaseSchema.pick({
 });
 
 export const wakeWorkflowConfigSchema = wakeConfigBaseSchema.pick({
+  runs: true,
   runners: true,
   tiers: true,
   defaultTier: true,

@@ -317,6 +317,30 @@ function classifyFailedRun(input: {
   };
 }
 
+function retrySafetyForExecutionOutcome(input: {
+  executionOutcome: ExecutionOutcome;
+  retrySafety: RetrySafety;
+  failureCount: number;
+}): RetrySafety {
+  switch (input.executionOutcome) {
+    case 'STALLED':
+    case 'STARTUP_FAILED':
+      return input.retrySafety === 'REQUIRES_RECONCILIATION' ? 'SAFE_TO_RESUME' : input.retrySafety;
+    case 'MALFORMED_OUTPUT':
+      return input.failureCount < 1 ? 'SAFE_TO_RETRY' : 'MANUAL_REVIEW_REQUIRED';
+    case 'TIMED_OUT':
+      return 'MANUAL_REVIEW_REQUIRED';
+    case 'CANCELED_BY_SOURCE_CLOSED':
+    case 'CANCELED_BY_UNASSIGNMENT':
+    case 'CANCELED_BY_SUPERSEDING_EVENT':
+    case 'CANCELED_BY_WORKFLOW_CHANGE':
+    case 'CANCELED_BY_OPERATOR':
+      return 'NOT_RETRYABLE';
+    default:
+      return input.retrySafety;
+  }
+}
+
 export function createTickRunner(deps: {
   clock: Clock;
   config: WakeConfig;
@@ -362,7 +386,7 @@ export function createTickRunner(deps: {
     config: deps.config,
     stateStore: deps.stateStore,
     projectionUpdater,
-    runnerTimeoutMs,
+    runTimeouts,
     isRunningRecordActive,
     deliverOutboundEvent,
   });
@@ -1005,6 +1029,14 @@ export function createTickRunner(deps: {
 
   function runnerTimeoutMs(): number {
     return maxConfiguredRunnerTimeoutMs(deps.config);
+  }
+
+  function runTimeouts(): {
+    startupTimeoutMs: number;
+    stallTimeoutMs: number;
+    absoluteTimeoutMs: number;
+  } {
+    return deps.config.runs;
   }
 
   async function promptHashForAction(action: AgentAction): Promise<string> {
@@ -2294,10 +2326,32 @@ export function createTickRunner(deps: {
         clearInterval(leaseRenewalTimer);
         leaseRenewalTimer = undefined;
         const parsedRunnerResult = parseRunnerResult(runnerResult.result);
-        const sentinel = parsedRunnerResult.status;
         // The approval gate is pure policy, never the agent's word choice —
         // a DONE on a stage configured with skipApproval: false is gated
         // regardless of what the agent wrote (ADR 0002).
+        const timedOut = runnerResult.metadata?.timedOut === true;
+        const malformedOutput =
+          runnerResult.failureClass === undefined &&
+          parsedRunnerResult.envelope === 'missing' &&
+          parsedRunnerResult.status === 'FAILED';
+        const executionOutcome: ExecutionOutcome =
+          cancellationReason !== null
+            ? cancellationReason
+            : runnerResult.failureClass === 'quota'
+              ? 'QUOTA_EXHAUSTED'
+              : timedOut
+                ? 'TIMED_OUT'
+                : malformedOutput
+                  ? 'MALFORMED_OUTPUT'
+                  : runnerResult.failureClass === 'infra'
+                    ? 'PROCESS_FAILED'
+                    : 'COMPLETED';
+        const sentinel =
+          executionOutcome === 'TIMED_OUT'
+            ? ('BLOCKED' as const)
+            : executionOutcome === 'MALFORMED_OUTPUT'
+              ? ('FAILED' as const)
+              : parsedRunnerResult.status;
         const skipApproval = runnerResult.metadata?.skipApproval;
         const approvalGated = sentinel === 'DONE' && skipApproval === false;
         // A canceled run must not advance the stage regardless of what the
@@ -2425,14 +2479,6 @@ export function createTickRunner(deps: {
           ...(runnerResult.routing === undefined ? {} : { routing: runnerResult.routing }),
         };
 
-        const executionOutcome: ExecutionOutcome =
-          cancellationReason !== null
-            ? cancellationReason
-            : runnerResult.failureClass === 'quota'
-              ? 'QUOTA_EXHAUSTED'
-              : runnerResult.failureClass === 'infra'
-                ? 'PROCESS_FAILED'
-                : 'COMPLETED';
         // Canceled runs don't produce a meaningful workflow outcome; the input
         // they acted on was superseded so the sentinel is not authoritative.
         const workflowOutcome: WorkflowOutcome | undefined =
@@ -2451,15 +2497,28 @@ export function createTickRunner(deps: {
         await transitionRunLifecycle('FINALISING');
         const finalisingRecord = (await deps.stateStore.readRunRecord(runId))!;
         const failureContext =
-          sentinel === 'FAILED'
-            ? classifyFailedRun({
-                projection: candidate,
-                record: finalisingRecord,
-                failureClass: runnerResult.failureClass ?? 'task',
-                ...(workspacePath === undefined ? {} : { workspacePath }),
-                envelope: parsedRunnerResult.envelope,
-                sentinel,
-              })
+          sentinel === 'FAILED' || executionOutcome === 'TIMED_OUT' || cancellationReason !== null
+            ? (() => {
+                const classified = classifyFailedRun({
+                  projection: candidate,
+                  record: finalisingRecord,
+                  failureClass:
+                    executionOutcome === 'MALFORMED_OUTPUT'
+                      ? 'infra'
+                      : (runnerResult.failureClass ?? 'task'),
+                  ...(workspacePath === undefined ? {} : { workspacePath }),
+                  envelope: parsedRunnerResult.envelope,
+                  sentinel,
+                });
+                return {
+                  ...classified,
+                  retrySafety: retrySafetyForExecutionOutcome({
+                    executionOutcome,
+                    retrySafety: classified.retrySafety,
+                    failureCount: candidate.context.failureCount ?? 0,
+                  }),
+                };
+              })()
             : undefined;
         await deps.stateStore.writeRunRecord({
           ...finalisingRecord,

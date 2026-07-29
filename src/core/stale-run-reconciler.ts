@@ -39,7 +39,11 @@ export function createStaleRunReconciler(deps: {
   config: WakeConfig;
   stateStore: StateStore;
   projectionUpdater: ProjectionUpdater;
-  runnerTimeoutMs: () => number;
+  runTimeouts: () => {
+    startupTimeoutMs: number;
+    stallTimeoutMs: number;
+    absoluteTimeoutMs: number;
+  };
   isRunningRecordActive?: (record: RunRecord, now: Date) => Promise<boolean>;
   deliverOutboundEvent: (event: EventEnvelope) => Promise<void>;
 }) {
@@ -47,7 +51,13 @@ export function createStaleRunReconciler(deps: {
     return lifecycle === 'TERMINAL';
   }
 
-  function recoveryOutcomeForLifecycle(lifecycle: ExecutionAttemptLifecycle): ExecutionOutcome {
+  function recoveryOutcomeForLifecycle(
+    lifecycle: ExecutionAttemptLifecycle,
+    reason: 'timeout' | 'runner-lock-not-active' | 'startup-recovery',
+  ): ExecutionOutcome {
+    if (lifecycle === 'PROCESS_STARTING' && reason === 'timeout') {
+      return 'STARTUP_FAILED';
+    }
     switch (lifecycle) {
       case 'CREATED':
       case 'CLAIMED':
@@ -93,7 +103,11 @@ export function createStaleRunReconciler(deps: {
     const metadata = record.metadata as Record<string, unknown> | undefined;
     const workspaceChanged = typeof metadata?.workspacePath === 'string';
     const retrySafety: RetrySafety =
-      processStarted || workspaceChanged ? 'REQUIRES_RECONCILIATION' : 'SAFE_TO_RETRY';
+      record.lifecycle === 'RUNNING' || record.lifecycle === 'FINALISING'
+        ? 'SAFE_TO_RESUME'
+        : processStarted || workspaceChanged
+          ? 'REQUIRES_RECONCILIATION'
+          : 'SAFE_TO_RETRY';
 
     return {
       failurePhase: failurePhaseForLifecycle(record.lifecycle),
@@ -227,12 +241,12 @@ export function createStaleRunReconciler(deps: {
         record.lifecycle !== 'CLAIMED' &&
         record.lifecycle !== 'PREPARING'
       ) {
-        const startedAtMs = Date.parse(record.startedAt);
-        if (!Number.isFinite(startedAtMs)) {
+        const deadline = deadlineMsForRecord(record);
+        if (deadline === null) {
           return 'timeout';
         }
 
-        return now.getTime() - startedAtMs >= deps.runnerTimeoutMs() ? 'timeout' : null;
+        return now.getTime() >= deadline ? 'timeout' : null;
       }
 
       return 'startup-recovery';
@@ -248,6 +262,26 @@ export function createStaleRunReconciler(deps: {
     }
 
     return 'startup-recovery';
+  }
+
+  function deadlineMsForRecord(record: RunRecord): number | null {
+    const startedAtMs = Date.parse(record.startedAt);
+    if (!Number.isFinite(startedAtMs)) return null;
+
+    const timeouts = deps.runTimeouts();
+    const absoluteDeadlineMs = startedAtMs + timeouts.absoluteTimeoutMs;
+    if (record.lifecycle === 'PROCESS_STARTING') {
+      return Math.min(absoluteDeadlineMs, startedAtMs + timeouts.startupTimeoutMs);
+    }
+    if (record.lifecycle === 'RUNNING' || record.lifecycle === 'FINALISING') {
+      const activityAt =
+        record.lastMeaningfulActivityAt === undefined
+          ? startedAtMs
+          : Date.parse(record.lastMeaningfulActivityAt);
+      const stallBaseMs = Number.isFinite(activityAt) ? activityAt : startedAtMs;
+      return Math.min(absoluteDeadlineMs, stallBaseMs + timeouts.stallTimeoutMs);
+    }
+    return absoluteDeadlineMs;
   }
 
   async function deliverRecoveredLabels(
@@ -382,7 +416,9 @@ export function createStaleRunReconciler(deps: {
       }
 
       const staleExecutionOutcome: ExecutionOutcome =
-        reason === 'timeout' ? 'TIMED_OUT' : recoveryOutcomeForLifecycle(record.lifecycle);
+        reason === 'timeout'
+          ? recoveryOutcomeForLifecycle(record.lifecycle, reason)
+          : recoveryOutcomeForLifecycle(record.lifecycle, reason);
       const failureContext = classifyReconciledFailure(record);
 
       await deps.stateStore.writeRunRecord({
@@ -393,13 +429,13 @@ export function createStaleRunReconciler(deps: {
         sentinel: 'FAILED',
         executionOutcome: staleExecutionOutcome,
         ...failureContext,
-        summary: `Run exceeded timeout while marked running and was reconciled by a later tick.`,
+        summary: `Run exceeded a run timeout while marked running and was reconciled by a later tick.`,
         metadata: {
           ...fullRecord.metadata,
           reconciledBy: 'stale-running-record',
           recoveryLifecycle: record.lifecycle,
           staleReason: reason,
-          timeoutMs: deps.runnerTimeoutMs(),
+          timeouts: deps.runTimeouts(),
           ...failureContext,
         },
       });

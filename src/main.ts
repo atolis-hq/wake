@@ -832,13 +832,13 @@ async function runValidateState(args: string[]) {
 function resolveSmokEntry(
   config: WakeConfig,
   kind?: 'claude' | 'codex' | 'cursor',
-): Exclude<WakeConfig['runners'][string], { kind: 'fake' }> | null {
-  for (const entry of Object.values(config.runners)) {
+): { name: string; entry: Exclude<WakeConfig['runners'][string], { kind: 'fake' }> } | null {
+  for (const [name, entry] of Object.entries(config.runners)) {
     if (entry.kind === 'fake') {
       continue;
     }
     if (kind === undefined || entry.kind === kind) {
-      return entry;
+      return { name, entry };
     }
   }
   return null;
@@ -900,15 +900,17 @@ async function runSmoke(args: string[]) {
     args[0] === 'claude' || args[0] === 'codex' || args[0] === 'cursor' ? args[0] : undefined;
   const smokeArgs = explicitKind === undefined ? args : args.slice(1);
 
-  const entry = resolveSmokEntry(runtime.config, explicitKind);
-  if (entry === null) {
+  const resolvedEntry = resolveSmokEntry(runtime.config, explicitKind);
+  if (resolvedEntry === null) {
     throw new Error(
       'Smoke tests require a real runner entry (`claude`, `codex`, or `cursor`) in config.runners.',
     );
   }
 
   const runnerAdapter = createRunnerCliAdapter({
-    entry,
+    name: resolvedEntry.name,
+    entry: resolvedEntry.entry,
+    config: runtime.config,
     cwd: process.cwd(),
   });
   const result = await runnerAdapter.smoke(smokeArgs);

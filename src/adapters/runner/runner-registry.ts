@@ -3,7 +3,7 @@ import { createCodexRunner } from '../codex/codex-runner.js';
 import { createCursorRunner } from '../cursor/cursor-runner.js';
 import { createFakeRunner } from '../fake/fake-runner.js';
 import type { AgentRunner } from '../../core/contracts.js';
-import { resolveRunnerRouting } from '../../domain/runner-routing.js';
+import { resolveRunnerRouting, runnerAbsoluteTimeoutMs } from '../../domain/runner-routing.js';
 import {
   chooseAction,
   workflowForProjection,
@@ -23,6 +23,18 @@ function withoutKind<T extends RunnerEntry>(entry: T): Omit<T, 'kind'> {
   return settings;
 }
 
+function resolvedRunnerSettings<T extends Exclude<RunnerEntry, { kind: 'fake' }>>(input: {
+  name: string;
+  entry: T;
+  config: WakeConfig;
+}): Omit<T, 'kind'> & { timeoutMs: number; gracefulCancellationTimeoutMs: number } {
+  return {
+    ...withoutKind(input.entry),
+    timeoutMs: runnerAbsoluteTimeoutMs(input.config, input.name),
+    gracefulCancellationTimeoutMs: input.config.runs.gracefulCancellationTimeoutMs,
+  };
+}
+
 function createRunnerForEntry(input: {
   name: string;
   entry: RunnerEntry;
@@ -34,7 +46,11 @@ function createRunnerForEntry(input: {
   }
 
   if (input.entry.kind === 'claude') {
-    const settings = withoutKind(input.entry);
+    const settings = resolvedRunnerSettings({
+      name: input.name,
+      entry: input.entry,
+      config: input.config,
+    });
     return createClaudeRunner({
       command: settings.command,
       cwd: input.cwd,
@@ -43,7 +59,11 @@ function createRunnerForEntry(input: {
   }
 
   if (input.entry.kind === 'cursor') {
-    const settings = withoutKind(input.entry);
+    const settings = resolvedRunnerSettings({
+      name: input.name,
+      entry: input.entry,
+      config: input.config,
+    });
     return createCursorRunner({
       command: settings.command,
       cwd: input.cwd,
@@ -51,7 +71,11 @@ function createRunnerForEntry(input: {
     });
   }
 
-  const settings = withoutKind(input.entry);
+  const settings = resolvedRunnerSettings({
+    name: input.name,
+    entry: input.entry,
+    config: input.config,
+  });
   return createCodexRunner({
     command: settings.command,
     cwd: input.cwd,

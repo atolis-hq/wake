@@ -1,5 +1,4 @@
 import type { Clock } from '../lib/clock.js';
-import { maxConfiguredRunnerTimeoutMs } from '../domain/runner-routing.js';
 import type { RunRecord, WakeConfig } from '../domain/types.js';
 import { isRunLeaseExpired } from './run-lease.js';
 import { processIdentityMatches } from '../lib/process-identity.js';
@@ -48,7 +47,7 @@ export function createActiveRunRecovery(deps: {
     config: deps.config,
     stateStore: deps.stateStore,
     projectionUpdater,
-    runnerTimeoutMs: () => maxConfiguredRunnerTimeoutMs(deps.config),
+    runTimeouts: () => deps.config.runs,
     isRunningRecordActive,
     deliverOutboundEvent,
   });

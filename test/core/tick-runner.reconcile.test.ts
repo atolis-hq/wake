@@ -80,7 +80,11 @@ describe('tick runner', () => {
         runner: {
           async run() {
             runnerCallCount += 1;
-            return { result: 'Should not run\nDONE', model: 'test-model', cli: 'test-cli' };
+            return {
+              result: 'Retried after reconciliation\nDONE',
+              model: 'test-model',
+              cli: 'test-cli',
+            };
           },
         },
         resourceIndex: createFakeResourceIndex(),
@@ -92,12 +96,17 @@ describe('tick runner', () => {
       const projection = await findByIssueRef(store, { repo: 'atolis-hq/wake', issueNumber: 123 });
       const events = await readFile(store.paths.eventFile('2026-07-05'), 'utf8');
 
-      expect(result.status).toBe('idle');
-      expect(runnerCallCount).toBe(0);
+      expect(result.status).toBe('processed');
+      expect(runnerCallCount).toBe(1);
       expect(runRecord?.status).toBe('failed');
       expect(runRecord?.sentinel).toBe('FAILED');
-      expect(projection?.wake.stage).toBe('implement');
+      expect(runRecord?.executionOutcome).toBe('STALLED');
+      expect(runRecord?.retrySafety).toBe('SAFE_TO_RESUME');
+      expect(projection?.wake.stage).toBe('done');
       expect(events).toContain('"eventId":"run-123-stale-stale-reconciled"');
+      expect(events.indexOf('"eventId":"run-123-stale-stale-reconciled"')).toBeLessThan(
+        events.lastIndexOf('"sourceEventType":"wake.run.claimed"'),
+      );
       expect(events).toContain('"sourceEventType":"wake.labels.requested"');
       expect(events).toContain('"stageLabel":"wake:stage.implement"');
     });
