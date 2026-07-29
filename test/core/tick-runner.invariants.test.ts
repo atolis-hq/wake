@@ -19,6 +19,7 @@ import {
 } from '../../src/domain/schema.js';
 import type { IssueStateRecord } from '../../src/domain/types.js';
 import { createEventEnvelope, createUnkeyedEventEnvelope } from '../../src/lib/event-log.js';
+import { acquireFileLock } from '../../src/lib/lock.js';
 import { isWorkId } from '../../src/lib/work-id.js';
 import { findByIssueRef, workId } from './support/tick-runner-fixtures.js';
 
@@ -740,6 +741,32 @@ describe('tick runner', () => {
       expect(runnerCallCount).toBe(1);
       expect(runRecords).toHaveLength(1);
       expect(claimedEvents).toHaveLength(1);
+    });
+
+    it('reclaims a stale runner lock owned by the current process before dispatching', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const resourceIndex = createResourceIndex({ paths: store.paths });
+      const config = createDefaultWakeConfig(root);
+      config.sources.github.policy.requiredLabels = ['wake'];
+      await writeEligibleIssueState({ store, issueNumber: 34811 });
+      await acquireFileLock(store.paths.runnerLockFile, {
+        now: new Date('2026-07-05T12:00:00.000Z'),
+      });
+
+      const tickRunner = createTickRunner({
+        clock: { now: () => new Date('2026-07-05T12:10:00.000Z') },
+        config,
+        stateStore: store,
+        resourceIndex,
+        workSource: createFakeTicketingSystem({ tickets: [] }),
+        runner: createFakeRunner(),
+        workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+      });
+
+      const result = await tickRunner.runRunnerTick();
+
+      expect(result.status).toBe('processed');
+      expect(await store.listRunRecords()).toHaveLength(1);
     });
 
     it('persists the run claim durably before the runner process is launched', async () => {

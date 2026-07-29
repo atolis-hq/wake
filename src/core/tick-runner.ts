@@ -1471,7 +1471,9 @@ export function createTickRunner(deps: {
   }
 
   async function runRunnerTick(): Promise<TickOutcome> {
-    const lock = await acquireFileLock(deps.stateStore.paths.runnerLockFile);
+    const lock = await acquireFileLock(deps.stateStore.paths.runnerLockFile, {
+      staleAfterMs: Math.min(runnerTimeoutMs(), 5 * 60 * 1000),
+    });
     if (!lock.acquired) {
       return { status: 'locked' as const };
     }
