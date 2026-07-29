@@ -5,6 +5,7 @@ import type { ResourceIndex } from '../../core/contracts.js';
 import { buildResourceUri } from '../../domain/resource-uri.js';
 import { isTerminalStage } from '../../domain/stages.js';
 import { isWorkItemDeleted, isWorkItemFrozen } from '../../domain/work-item-lifecycle.js';
+import type { WorkItemStatus } from '../../domain/work-item-status.js';
 import { workflowForProjection, workflowNameForProjection } from '../../domain/workflows.js';
 import type { EventEnvelope, IssueStateRecord, RunRecord, WakeConfig } from '../../domain/types.js';
 import type { createStateStore } from '../fs/state-store.js';
@@ -93,6 +94,10 @@ function deriveCondition(
 function timeInStageMs(item: IssueStateRecord, now: Date): number {
   const lastChange = item.wake.stageHistory.at(-1)?.changedAt ?? item.wake.syncedAt;
   return now.getTime() - Date.parse(lastChange);
+}
+
+function displayStatusForCard(item: IssueStateRecord): WorkItemStatus {
+  return item.context.status ?? 'queued';
 }
 
 function activeChildRunsForItem(
@@ -210,6 +215,7 @@ export async function buildBoard(input: { stateStore: StateStore; config: WakeCo
         totalRuns: runTotals.totalRuns,
         totalTokens: runTotals.totalTokens,
         totalCostUsd: runTotals.totalCostUsd,
+        displayStatus: displayStatusForCard(item),
         lastRunAction: lastRun?.action,
         lastRunSentinel: lastRun?.sentinel,
         lastRunStatus: lastRun?.status,
