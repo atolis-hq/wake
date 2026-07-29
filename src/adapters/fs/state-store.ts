@@ -92,6 +92,10 @@ function stripHeavyRunRecordFields(record: RunRecord): RunRecord {
   return { ...rest, metadata: restMetadata };
 }
 
+function compareIssueStatesForListing(left: IssueStateRecord, right: IssueStateRecord): number {
+  return left.workItemKey.localeCompare(right.workItemKey);
+}
+
 function parseRunRecordSummaryIndex(input: unknown, date: string): RunRecordSummaryIndex {
   if (input === null || typeof input !== 'object') {
     throw new Error('Run summary index must be an object');
@@ -836,9 +840,7 @@ export function createStateStore({ wakeRoot }: { wakeRoot: string }) {
         byWorkItemKey.set(item.workItemKey, item);
       }
 
-      return [...byWorkItemKey.values()].sort((left, right) =>
-        left.workItemKey.localeCompare(right.workItemKey),
-      );
+      return [...byWorkItemKey.values()].sort(compareIssueStatesForListing);
     },
     async listEventEnvelopes(): Promise<EventEnvelope[]> {
       const eventsRoot = join(paths.dataRoot, 'events');
