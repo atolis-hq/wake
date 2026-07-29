@@ -107,6 +107,7 @@ type WatcherState = {
   key: string;
   lastDispatchedEventId?: string;
   lastDispatchedSlot?: string;
+  failureCount?: number;
   updatedAt: string;
 };
 
@@ -1341,6 +1342,11 @@ export function createTickRunner(deps: {
             ...(typeof record.lastDispatchedSlot === 'string'
               ? { lastDispatchedSlot: record.lastDispatchedSlot }
               : {}),
+            ...(typeof record.failureCount === 'number' &&
+            Number.isInteger(record.failureCount) &&
+            record.failureCount >= 0
+              ? { failureCount: record.failureCount }
+              : {}),
             updatedAt: record.updatedAt,
           }
         : null;
@@ -1361,9 +1367,49 @@ export function createTickRunner(deps: {
       ...(current?.lastDispatchedSlot === undefined
         ? {}
         : { lastDispatchedSlot: current.lastDispatchedSlot }),
+      ...(current?.failureCount === undefined ? {} : { failureCount: current.failureCount }),
       ...patch,
       updatedAt: deps.clock.now().toISOString(),
     } satisfies WatcherState);
+  }
+
+  function watcherCursorPatch(trigger: WatcherDispatch['trigger']): Partial<WatcherState> {
+    return {
+      ...(trigger.kind === 'event'
+        ? { lastDispatchedEventId: trigger.eventId }
+        : { lastDispatchedSlot: trigger.slot }),
+      failureCount: 0,
+    };
+  }
+
+  function isRetryEligibleWatcherFailure(input: {
+    sentinel: 'DONE' | 'REJECTED' | 'BLOCKED' | 'FAILED';
+    retrySafety: RetrySafety | undefined;
+  }): boolean {
+    return (
+      input.sentinel === 'FAILED' &&
+      (input.retrySafety === 'SAFE_TO_RETRY' || input.retrySafety === 'SAFE_TO_RESUME')
+    );
+  }
+
+  async function updateWatcherStateAfterCompletion(input: {
+    key: string | undefined;
+    trigger: WatcherDispatch['trigger'] | undefined;
+    sentinel: 'DONE' | 'REJECTED' | 'BLOCKED' | 'FAILED';
+    retrySafety: RetrySafety | undefined;
+  }): Promise<void> {
+    if (input.key === undefined || input.trigger === undefined) return;
+
+    if (isRetryEligibleWatcherFailure(input)) {
+      const current = await readWatcherState(input.key);
+      const failureCount = (current?.failureCount ?? 0) + 1;
+      if (failureCount < deps.config.retry.maxFailureRetries) {
+        await writeWatcherState(input.key, { failureCount });
+        return;
+      }
+    }
+
+    await writeWatcherState(input.key, watcherCursorPatch(input.trigger));
   }
 
   async function nextWatcherDispatch(
@@ -1411,15 +1457,16 @@ export function createTickRunner(deps: {
             state?.lastDispatchedEventId === undefined
               ? -1
               : matchingEvents.findIndex((event) => event.eventId === state.lastDispatchedEventId);
-          const newest = matchingEvents.slice(cursorIndex + 1).at(-1);
-          if (newest !== undefined) {
+          const undispatched = matchingEvents.slice(cursorIndex + 1);
+          const next = (state?.failureCount ?? 0) > 0 ? undispatched.at(0) : undispatched.at(-1);
+          if (next !== undefined) {
             return {
               projection,
               parentWorkflowName,
               parentStage: projection.wake.stage,
               watcherIndex,
               targetWorkflowName: watcher.workflow,
-              trigger: { kind: 'event', eventId: newest.eventId },
+              trigger: { kind: 'event', eventId: next.eventId },
             };
           }
         }
@@ -1894,6 +1941,7 @@ export function createTickRunner(deps: {
             ? {
                 watcher: true,
                 watcherWorkflow: workflowName,
+                watcherStateKey: watcherStateKeyForRun,
                 watcherTrigger: watcherTriggerForRun,
               }
             : {}),
@@ -1993,15 +2041,6 @@ export function createTickRunner(deps: {
       }
       await transitionRunLifecycle('CLAIMED');
       await projectionUpdater.rebuildFromEvents([claimedEvent]);
-
-      if (watcherStateKeyForRun !== undefined && watcherTriggerForRun !== undefined) {
-        await writeWatcherState(
-          watcherStateKeyForRun,
-          watcherTriggerForRun.kind === 'event'
-            ? { lastDispatchedEventId: watcherTriggerForRun.eventId }
-            : { lastDispatchedSlot: watcherTriggerForRun.slot },
-        );
-      }
 
       // Watcher runs execute a *different* workflow's stage (e.g. plan-review)
       // against the same parent projection, not a stage transition of the
@@ -2522,6 +2561,12 @@ export function createTickRunner(deps: {
         });
         await deps.stateStore.appendEventEnvelope(runCompletedEvent);
         await projectionUpdater.rebuildFromEvents([runCompletedEvent]);
+        await updateWatcherStateAfterCompletion({
+          key: watcherStateKeyForRun,
+          trigger: watcherTriggerForRun,
+          sentinel,
+          retrySafety: failureContext?.retrySafety,
+        });
 
         if (!watcherRun) {
           await deliverOutboundEvent(
@@ -2735,6 +2780,12 @@ export function createTickRunner(deps: {
         });
         await deps.stateStore.appendEventEnvelope(runCompletedEvent);
         await projectionUpdater.rebuildFromEvents([runCompletedEvent]);
+        await updateWatcherStateAfterCompletion({
+          key: watcherStateKeyForRun,
+          trigger: watcherTriggerForRun,
+          sentinel,
+          retrySafety: failureContext.retrySafety,
+        });
 
         // See the matching guard on the claim path above: a watcher run's
         // failure is not the parent's own action failing, so it must not

@@ -199,6 +199,26 @@ describe('tick runner', () => {
       ].join('\n');
     }
 
+    function watcherStatePath(issueNumber: number): string {
+      return join(root, '.wake', 'watchers', `${workId(issueNumber)}__default__implement__0.json`);
+    }
+
+    function createFailingReadOnlyWorkspaceManager(onPrepareReadOnly?: () => void) {
+      return {
+        async prepareWorkspace() {
+          throw new Error('not used');
+        },
+        async prepareReadOnlyClone() {
+          onPrepareReadOnly?.();
+          throw new Error('git network failure');
+        },
+        async recordWorkspaceBookkeeping() {
+          throw new Error('not used');
+        },
+        async cleanupWorkspace() {},
+      };
+    }
+
     it('dispatches pr-review from a matching event while awaiting approval without reusing the implement session', async () => {
       const store = createStateStore({ wakeRoot: root });
       const resourceIndex = await seededResourceIndex([351]);
@@ -528,6 +548,114 @@ describe('tick runner', () => {
       expect(updated?.wake.stage).toBe('implement');
       expect(updated?.context.lastRunSentinel).toBe('AWAITING_APPROVAL');
       expect(updated?.context.pendingApprovalAction).toBe('implement');
+    });
+
+    it('re-dispatches the original watcher event after retry-safe FAILED completions', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const resourceIndex = await seededResourceIndex([427]);
+      const config = configurePrReviewWatcher(root);
+      config.workflows.default!.stages.implement!.watch![0]!.schedule = undefined;
+
+      await seedAwaitingApprovalIssue({ store, issueNumber: 427 });
+      await appendPreviousCompletedEvent({ store, issueNumber: 427 });
+
+      let prepareCalls = 0;
+      let now = new Date(watcherNow);
+      const tickRunner = createTickRunner({
+        clock: { now: () => now },
+        config,
+        stateStore: store,
+        workSource: {
+          async pollEvents() {
+            return [];
+          },
+        },
+        runner: {
+          async run() {
+            throw new Error('should not run: workspace prep fails first');
+          },
+        },
+        resourceIndex,
+        workspaceManager: createFailingReadOnlyWorkspaceManager(() => {
+          prepareCalls += 1;
+        }),
+      });
+
+      await tickRunner.runTick();
+      const retryState = JSON.parse(await readFile(watcherStatePath(427), 'utf8')) as Record<
+        string,
+        unknown
+      >;
+      expect(retryState.failureCount).toBe(1);
+      expect(retryState.lastDispatchedEventId).toBeUndefined();
+
+      await appendPreviousCompletedEvent({
+        store,
+        issueNumber: 427,
+        runId: 'run-427-newer',
+        occurredAt: '2026-07-25T12:01:00.000Z',
+      });
+      now = new Date('2026-07-25T12:02:00.000Z');
+      await tickRunner.runTick();
+      expect(prepareCalls).toBe(2);
+
+      const claimedTriggers = (await store.listEventEnvelopes())
+        .filter((event) => event.sourceEventType === 'wake.run.claimed')
+        .map((event) => event.payload.watcherTrigger);
+      expect(claimedTriggers).toEqual([
+        { kind: 'event', eventId: 'run-427-previous-completed' },
+        { kind: 'event', eventId: 'run-427-previous-completed' },
+      ]);
+
+      const retryStateAfterNewerEvent = JSON.parse(
+        await readFile(watcherStatePath(427), 'utf8'),
+      ) as Record<string, unknown>;
+      expect(retryStateAfterNewerEvent.failureCount).toBe(2);
+      expect(retryStateAfterNewerEvent.lastDispatchedEventId).toBeUndefined();
+    });
+
+    it('advances the watcher event cursor once retry-safe failures reach the configured cap', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const resourceIndex = await seededResourceIndex([428]);
+      const config = configurePrReviewWatcher(root);
+      config.retry.maxFailureRetries = 2;
+      config.workflows.default!.stages.implement!.watch![0]!.schedule = undefined;
+
+      await seedAwaitingApprovalIssue({ store, issueNumber: 428 });
+      await appendPreviousCompletedEvent({ store, issueNumber: 428 });
+
+      let prepareCalls = 0;
+      const tickRunner = createTickRunner({
+        clock: { now: () => new Date(watcherNow) },
+        config,
+        stateStore: store,
+        workSource: {
+          async pollEvents() {
+            return [];
+          },
+        },
+        runner: {
+          async run() {
+            throw new Error('should not run: workspace prep fails first');
+          },
+        },
+        resourceIndex,
+        workspaceManager: createFailingReadOnlyWorkspaceManager(() => {
+          prepareCalls += 1;
+        }),
+      });
+
+      await tickRunner.runTick();
+      await tickRunner.runTick();
+      await tickRunner.runTick();
+
+      expect(prepareCalls).toBe(2);
+      const state = JSON.parse(await readFile(watcherStatePath(428), 'utf8')) as Record<
+        string,
+        unknown
+      >;
+      expect(state.failureCount).toBe(0);
+      expect(state.lastDispatchedEventId).toBe('run-428-previous-completed');
     });
 
     it('threads the triggering completion event body into the watcher child prompt context, not just projection.comments', async () => {
