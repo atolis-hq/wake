@@ -18,7 +18,7 @@ describe('tick runner', () => {
   });
 
   describe('workspace cleanup', () => {
-    it('deletes the per-issue workspace and clears workspacePath when an issue is closed', async () => {
+    it('cleans the workspace and marks transcripts retained until expiry when an issue is closed', async () => {
       const store = createStateStore({ wakeRoot: root });
       const workspacePath = join(root, 'workspaces', workId(200));
       const transcriptPath = join(
@@ -84,7 +84,10 @@ describe('tick runner', () => {
       await tickRunner.runTick();
 
       await expect(access(workspacePath)).rejects.toThrow();
-      await expect(access(transcriptPath)).rejects.toThrow();
+      await expect(readFile(transcriptPath, 'utf8')).resolves.toBe('raw prompt');
+      await expect(
+        readFile(join(store.paths.transcriptWorkDir(workId(200)), '.cleaned-at'), 'utf8'),
+      ).resolves.toBe(`${nowIso}\n`);
       const updatedProjection = await findByIssueRef(store, {
         repo: 'atolis-hq/wake',
         issueNumber: 200,
@@ -92,16 +95,58 @@ describe('tick runner', () => {
       expect(updatedProjection?.wake.workspacePath).toBeUndefined();
     });
 
-    it('retains transcripts for closed workspace cleanup when configured', async () => {
+    it('deletes retained transcripts on a later tick after retention expires', async () => {
       const store = createStateStore({ wakeRoot: root });
-      const workspacePath = join(root, 'workspaces', workId(204));
       const transcriptPath = join(
         store.paths.transcriptWorkDir(workId(204)),
         'run-204-1',
         'run-204-1.codex.implement.prompt.txt',
       );
-      await mkdir(workspacePath, { recursive: true });
       await mkdir(join(store.paths.transcriptWorkDir(workId(204)), 'run-204-1'), {
+        recursive: true,
+      });
+      await writeFile(transcriptPath, 'raw prompt', 'utf8');
+      await writeFile(
+        join(store.paths.transcriptWorkDir(workId(204)), '.cleaned-at'),
+        '2026-07-05T12:00:00.000Z\n',
+        'utf8',
+      );
+
+      const config = createDefaultWakeConfig(root);
+      config.transcripts.retentionMs = 60 * 1000;
+      const tickRunner = createTickRunner({
+        clock: { now: () => new Date('2026-07-05T12:01:00.000Z') },
+        config,
+        stateStore: store,
+        workSource: {
+          async pollEvents() {
+            return [];
+          },
+        },
+        runner: {
+          async run() {
+            return { result: 'DONE', model: 'test', cli: 'test' };
+          },
+        },
+        resourceIndex: createFakeResourceIndex(),
+        workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+      });
+
+      await tickRunner.runTick();
+
+      await expect(access(store.paths.transcriptWorkDir(workId(204)))).rejects.toThrow();
+    });
+
+    it('deletes transcripts immediately on workspace cleanup when retention is zero', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const workspacePath = join(root, 'workspaces', workId(205));
+      const transcriptPath = join(
+        store.paths.transcriptWorkDir(workId(205)),
+        'run-205-1',
+        'run-205-1.codex.implement.prompt.txt',
+      );
+      await mkdir(workspacePath, { recursive: true });
+      await mkdir(join(store.paths.transcriptWorkDir(workId(205)), 'run-205-1'), {
         recursive: true,
       });
       await writeFile(transcriptPath, 'raw prompt', 'utf8');
@@ -109,17 +154,17 @@ describe('tick runner', () => {
       const nowIso = '2026-07-05T12:00:00.000Z';
       await store.writeIssueState({
         schemaVersion: 1,
-        workItemKey: workId(204),
+        workItemKey: workId(205),
         issue: {
           repo: 'atolis-hq/wake',
-          number: 204,
-          title: 'Closed issue with retained transcripts',
+          number: 205,
+          title: 'Closed issue with immediate transcript deletion',
           body: 'Body',
           labels: [],
           assignees: [],
           isPullRequest: false,
           state: 'closed',
-          url: 'https://example.test/atolis-hq/wake/issues/204',
+          url: 'https://example.test/atolis-hq/wake/issues/205',
           createdAt: nowIso,
           updatedAt: nowIso,
         },
@@ -137,7 +182,7 @@ describe('tick runner', () => {
       });
 
       const config = createDefaultWakeConfig(root);
-      config.transcripts.retainAfterWorkspaceCleanup = true;
+      config.transcripts.retentionMs = 0;
       const tickRunner = createTickRunner({
         clock: { now: () => new Date(nowIso) },
         config,
@@ -159,6 +204,106 @@ describe('tick runner', () => {
       await tickRunner.runTick();
 
       await expect(access(workspacePath)).rejects.toThrow();
+      await expect(access(store.paths.transcriptWorkDir(workId(205)))).rejects.toThrow();
+      await expect(
+        access(join(store.paths.transcriptWorkDir(workId(205)), '.cleaned-at')),
+      ).rejects.toThrow();
+    });
+
+    it('does not create a transcript directory marker when no transcripts exist', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const workspacePath = join(root, 'workspaces', workId(207));
+      await mkdir(workspacePath, { recursive: true });
+
+      const nowIso = '2026-07-05T12:00:00.000Z';
+      await store.writeIssueState({
+        schemaVersion: 1,
+        workItemKey: workId(207),
+        issue: {
+          repo: 'atolis-hq/wake',
+          number: 207,
+          title: 'Closed issue without transcripts',
+          body: 'Body',
+          labels: [],
+          assignees: [],
+          isPullRequest: false,
+          state: 'closed',
+          url: 'https://example.test/atolis-hq/wake/issues/207',
+          createdAt: nowIso,
+          updatedAt: nowIso,
+        },
+        comments: [],
+        wake: {
+          stage: 'done',
+          workspacePath,
+          syncedAt: nowIso,
+          stageHistory: [{ stage: 'done', changedAt: nowIso, reason: 'test' }],
+          recentEventIds: [],
+          expectedEcho: { commentIds: [], labels: [] },
+        },
+        context: {},
+        correlatedResources: [],
+      });
+
+      const config = createDefaultWakeConfig(root);
+      const tickRunner = createTickRunner({
+        clock: { now: () => new Date(nowIso) },
+        config,
+        stateStore: store,
+        workSource: {
+          async pollEvents() {
+            return [];
+          },
+        },
+        runner: {
+          async run() {
+            return { result: 'DONE', model: 'test', cli: 'test' };
+          },
+        },
+        resourceIndex: createFakeResourceIndex(),
+        workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+      });
+
+      await tickRunner.runTick();
+
+      await expect(access(workspacePath)).rejects.toThrow();
+      await expect(access(store.paths.transcriptWorkDir(workId(207)))).rejects.toThrow();
+    });
+
+    it('leaves marker-less retained transcript directories untouched during expiry sweep', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const transcriptPath = join(
+        store.paths.transcriptWorkDir(workId(206)),
+        'run-206-1',
+        'run-206-1.codex.implement.prompt.txt',
+      );
+      await mkdir(join(store.paths.transcriptWorkDir(workId(206)), 'run-206-1'), {
+        recursive: true,
+      });
+      await writeFile(transcriptPath, 'raw prompt', 'utf8');
+
+      const config = createDefaultWakeConfig(root);
+      config.transcripts.retentionMs = 1;
+      const tickRunner = createTickRunner({
+        clock: { now: () => new Date('2026-07-05T12:00:00.000Z') },
+        config,
+        stateStore: store,
+        workSource: {
+          async pollEvents() {
+            return [];
+          },
+        },
+        runner: {
+          async run() {
+            return { result: 'DONE', model: 'test', cli: 'test' };
+          },
+        },
+        resourceIndex: createFakeResourceIndex(),
+        workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+      });
+
+      await tickRunner.runTick();
+
       await expect(readFile(transcriptPath, 'utf8')).resolves.toBe('raw prompt');
     });
 

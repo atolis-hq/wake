@@ -1,4 +1,4 @@
-import { rm } from 'node:fs/promises';
+import { readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { isAbsolute, join, relative } from 'node:path';
 
 import type { WorkspaceManager } from './contracts.js';
@@ -11,7 +11,9 @@ import { createEventEnvelope } from '../lib/event-log.js';
 type StateStore = ReturnType<typeof import('../adapters/fs/state-store.js').createStateStore>;
 type ProjectionUpdater = ReturnType<typeof createProjectionUpdater>;
 
-// Cleans up per-issue workspaces (and, unless retained, transcripts) once the
+const TRANSCRIPT_CLEANED_AT_MARKER = '.cleaned-at';
+
+// Cleans up per-issue workspaces and applies transcript retention once the
 // originating issue is closed. A cleanup failure is recorded as an event and
 // skipped rather than aborting the sweep.
 export function createWorkspaceCleanup(deps: {
@@ -31,6 +33,64 @@ export function createWorkspaceCleanup(deps: {
     return !rel.startsWith('..') && !isAbsolute(rel) && rel.length > 0;
   }
 
+  async function markTranscriptDirectoryCleaned(
+    workItemKey: string,
+    cleanedAt: string,
+  ): Promise<void> {
+    const transcriptDir = deps.stateStore.paths.transcriptWorkDir(workItemKey);
+    const transcriptDirStat = await stat(transcriptDir).catch(() => undefined);
+    if (transcriptDirStat === undefined || !transcriptDirStat.isDirectory()) {
+      return;
+    }
+
+    await writeFile(join(transcriptDir, TRANSCRIPT_CLEANED_AT_MARKER), `${cleanedAt}\n`, 'utf8');
+  }
+
+  async function applyTranscriptCleanupRetention(
+    workItemKey: string,
+    cleanedAt: string,
+  ): Promise<void> {
+    if (deps.config.transcripts.retentionMs === 0) {
+      await rm(deps.stateStore.paths.transcriptWorkDir(workItemKey), {
+        recursive: true,
+        force: true,
+      });
+      return;
+    }
+
+    await markTranscriptDirectoryCleaned(workItemKey, cleanedAt);
+  }
+
+  async function sweepExpiredTranscriptDirs(): Promise<void> {
+    const retentionMs = deps.config.transcripts.retentionMs;
+    const transcriptDirs = await readdir(deps.stateStore.paths.transcriptsRoot, {
+      withFileTypes: true,
+    }).catch(() => []);
+    const nowMs = deps.clock.now().getTime();
+
+    for (const entry of transcriptDirs) {
+      if (!entry.isDirectory()) {
+        continue;
+      }
+
+      const transcriptDir = join(deps.stateStore.paths.transcriptsRoot, entry.name);
+      const markerPath = join(transcriptDir, TRANSCRIPT_CLEANED_AT_MARKER);
+      const marker = await readFile(markerPath, 'utf8').catch(() => undefined);
+      if (marker === undefined) {
+        continue;
+      }
+
+      const cleanedAtMs = Date.parse(marker.trim());
+      if (!Number.isFinite(cleanedAtMs)) {
+        continue;
+      }
+
+      if (nowMs - cleanedAtMs >= retentionMs) {
+        await rm(transcriptDir, { recursive: true, force: true });
+      }
+    }
+  }
+
   async function cleanupClosedIssueWorkspaces(projections: IssueStateRecord[]): Promise<void> {
     for (const projection of projections) {
       const { workspacePath } = projection.wake;
@@ -41,12 +101,7 @@ export function createWorkspaceCleanup(deps: {
       ) {
         try {
           await deps.workspaceManager.cleanupWorkspace({ workspacePath });
-          if (!deps.config.transcripts.retainAfterWorkspaceCleanup) {
-            await rm(deps.stateStore.paths.transcriptWorkDir(projection.workItemKey), {
-              recursive: true,
-              force: true,
-            });
-          }
+          await applyTranscriptCleanupRetention(projection.workItemKey, eventStampNow());
         } catch (error) {
           const failedAt = eventStampNow();
           await deps.stateStore.appendEventEnvelope(
@@ -95,5 +150,5 @@ export function createWorkspaceCleanup(deps: {
     }
   }
 
-  return { cleanupClosedIssueWorkspaces };
+  return { cleanupClosedIssueWorkspaces, sweepExpiredTranscriptDirs };
 }

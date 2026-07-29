@@ -365,7 +365,7 @@ export function createTickRunner(deps: {
     isRunningRecordActive,
     deliverOutboundEvent,
   });
-  const { cleanupClosedIssueWorkspaces } = createWorkspaceCleanup({
+  const { cleanupClosedIssueWorkspaces, sweepExpiredTranscriptDirs } = createWorkspaceCleanup({
     clock: deps.clock,
     config: deps.config,
     stateStore: deps.stateStore,
@@ -1280,6 +1280,7 @@ export function createTickRunner(deps: {
 
       const projections = await deps.stateStore.listIssueStates();
       await cleanupClosedIssueWorkspaces(projections);
+      await sweepExpiredTranscriptDirs();
       // Runs every tick, not only when this tick happened to poll a fresh
       // inbound event — a stale label on a parked item (nothing else ever
       // re-checks it once there's no next action) otherwise never self-heals.

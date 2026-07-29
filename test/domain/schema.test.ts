@@ -706,7 +706,7 @@ describe('run and event schemas', () => {
     expect(config.paths.promptsRoot).toBe('/tmp/wake/prompts');
     expect(config.sandbox.containerName).toBe('wake-sandbox-1');
     expect(config.sandbox.start).toEqual({ enabled: true });
-    expect(config.transcripts).toEqual({ enabled: false, retainAfterWorkspaceCleanup: false });
+    expect(config.transcripts).toEqual({ enabled: false, retentionMs: 259200000 });
     expect(config.ui.archiveFreshnessDays).toBe(5);
     expect(config.ui.tunnel).toEqual({ enabled: false });
     expect(config.sandbox.extraMounts).toEqual([
@@ -726,14 +726,31 @@ describe('run and event schemas', () => {
       },
       transcripts: {
         enabled: true,
-        retainAfterWorkspaceCleanup: true,
+        retentionMs: 60000,
       },
     });
 
     expect(config.transcripts).toEqual({
       enabled: true,
-      retainAfterWorkspaceCleanup: true,
+      retentionMs: 60000,
     });
+  });
+
+  it('rejects the legacy transcript retention boolean', () => {
+    expect(() =>
+      parseWakeConfig({
+        schemaVersion: 1,
+        paths: {
+          wakeRoot: '/tmp/wake',
+        },
+        transcripts: {
+          enabled: true,
+          retainAfterWorkspaceCleanup: false,
+        },
+      }),
+    ).toThrow(
+      'transcripts.retainAfterWorkspaceCleanup is no longer supported; use transcripts.retentionMs instead.',
+    );
   });
 
   it('accepts retry configuration with a default maximum failure retry count', () => {
