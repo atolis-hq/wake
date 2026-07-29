@@ -985,6 +985,7 @@ describe('tick runner', () => {
           event.payload.body.includes('<!-- wake:pr-review-approved -->'),
       );
       expect(verdict?.sourceRefs.resourceUri).toBe('github:pr:atolis-hq/wake#99');
+      expect(verdict?.payload.kind).toBe('status-update');
       expect(verdict?.payload.body).toContain('<!-- wake:pr-review-approved -->');
       const auditVerdict = (await store.listEventEnvelopes()).find(
         (event) =>

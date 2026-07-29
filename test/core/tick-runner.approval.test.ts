@@ -2045,7 +2045,7 @@ describe('tick runner', () => {
       expect(calls).toEqual(['files', 'approve:Safe to merge.', 'autoMerge:MERGE']);
     });
 
-    it('blocks the work item without crashing when the merge actor rejects approval (e.g. GitHub self-approval), and still attempts auto-merge', async () => {
+    it('does not block when approval fails but auto-merge succeeds (e.g. GitHub self-approval)', async () => {
       const config = createDefaultWakeConfig(root);
       configurePrReviewMerge(config, {
         approve: true,
@@ -2068,13 +2068,12 @@ describe('tick runner', () => {
       });
 
       expect(result.status).toBe('processed');
-      expect((result as { sentinel?: string }).sentinel).toBe('BLOCKED');
+      expect((result as { sentinel?: string }).sentinel).toBe('DONE');
       expect(calls).toEqual(['files', 'approve:Safe to merge.', 'autoMerge:MERGE']);
-      expect(outboundBodies[0]).toContain('Merge policy blocked the approval step');
-      expect(outboundBodies[0]).toContain('Can not approve your own pull request');
+      expect(outboundBodies).toEqual([]);
     });
 
-    it('blocks without crashing on a merge-actor rejection unrelated to self-approval (e.g. a merge-method restriction)', async () => {
+    it('does not block on an approval failure after auto-merge succeeds', async () => {
       const config = createDefaultWakeConfig(root);
       configurePrReviewMerge(config, {
         approve: true,
@@ -2099,10 +2098,9 @@ describe('tick runner', () => {
       });
 
       expect(result.status).toBe('processed');
-      expect((result as { sentinel?: string }).sentinel).toBe('BLOCKED');
+      expect((result as { sentinel?: string }).sentinel).toBe('DONE');
       expect(calls).toEqual(['files', 'approve:Safe to merge.', 'autoMerge:MERGE']);
-      expect(outboundBodies[0]).toContain('Merge policy blocked the approval step');
-      expect(outboundBodies[0]).toContain('Merge method merge commits are not allowed');
+      expect(outboundBodies).toEqual([]);
     });
 
     it('blocks on an auto-merge failure independently of approval succeeding, without repeating the already-recorded approval', async () => {
