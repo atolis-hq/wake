@@ -254,7 +254,7 @@ export function nextStage(
   sentinel: RunnerSentinel,
   workflow: WorkflowDefinition,
 ): Stage | null {
-  if (sentinel === 'BLOCKED' || sentinel === 'FAILED' || sentinel === 'AWAITING_APPROVAL') {
+  if (sentinel === 'BLOCKED' || sentinel === 'FAILED' || sentinel === 'REJECTED') {
     return null;
   }
 

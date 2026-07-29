@@ -104,6 +104,7 @@ export interface AgentRunInput {
   routing?: RunnerRouting;
   mergeConflictDetected?: boolean;
   upstreamChanges?: string;
+  preExistingUncommittedChanges?: boolean;
   cancellationSignal?: AbortSignal;
   onProcessStart?: (identity: { pid: number; processStartedAt: string }) => Promise<void>;
   onRuntimeEvent?: (event: RuntimeEventDraft) => Promise<void>;
@@ -134,6 +135,7 @@ export interface WorkspaceManager {
     workspacePath: string;
     mergeConflictDetected: boolean;
     upstreamChanges?: string;
+    preExistingUncommittedChanges?: boolean;
     validation?: WorkspaceValidationResult;
   }>;
   prepareReadOnlyClone(input: {

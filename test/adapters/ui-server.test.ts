@@ -13,6 +13,13 @@ import { wakeVersion } from '../../src/version.js';
 import { createEventEnvelope } from '../../src/lib/event-log.js';
 import { createProjectionUpdater } from '../../src/core/projection-updater.js';
 import { createWakePaths } from '../../src/lib/paths.js';
+import {
+  CORRELATION_REGISTERED_EVENT,
+  WORK_ITEM_DELETED_EVENT,
+  WORK_ITEM_FROZEN_EVENT,
+  WORK_ITEM_UNFROZEN_EVENT,
+} from '../../src/domain/event-types.js';
+import { FROZEN_WORK_ITEM_LABEL } from '../../src/domain/work-item-lifecycle.js';
 
 function workId(issueNumber: number): string {
   return `work-01JZ${String(issueNumber).padStart(22, '0')}`;
@@ -60,6 +67,11 @@ describe('ui-server', () => {
     expect(html).toContain('AbortController');
     expect(html).toContain('Loading...');
     expect(html).toContain('id="pause-toggle"');
+    expect(html).toContain('pill-frozen');
+    expect(html).toContain(
+      '.pill-frozen { background: #102a43; color: #9bd8ff; border: 1px solid #38bdf8; }',
+    );
+    expect(html).toContain('Frozen');
   });
 
   it('serves status and board JSON under /api/v1', async () => {
@@ -289,7 +301,7 @@ describe('ui-server', () => {
   });
 });
 
-describe('ui-server retry endpoint', () => {
+describe('ui-server work item action endpoints', () => {
   let root: string;
   let store: StateStore;
   let server: ReturnType<typeof createUiServer>;
@@ -303,7 +315,12 @@ describe('ui-server retry endpoint', () => {
     const config = createDefaultWakeConfig(root);
     resourceIndex = createFakeResourceIndex();
 
-    server = createUiServer({ stateStore: store, resourceIndex, config });
+    server = createUiServer({
+      stateStore: store,
+      resourceIndex,
+      config,
+      now: () => new Date('2026-07-05T12:00:00.000Z'),
+    });
     await new Promise<void>((resolveListen) => {
       server.listen(0, '127.0.0.1', () => resolveListen());
     });
@@ -316,9 +333,18 @@ describe('ui-server retry endpoint', () => {
   });
 
   async function seedFailedItem(issueNumber: number): Promise<string> {
+    return seedItem({ issueNumber, failed: true });
+  }
+
+  async function seedItem(input: {
+    issueNumber: number;
+    failed?: boolean;
+    resourceUri?: string;
+  }): Promise<string> {
+    const issueNumber = input.issueNumber;
     const key = workId(issueNumber);
     const updater = createProjectionUpdater({ stateStore: store, resourceIndex });
-    await updater.rebuildFromEvents([
+    const events = [
       createEventEnvelope({
         eventId: `issue-${issueNumber}`,
         workItemKey: key,
@@ -350,27 +376,58 @@ describe('ui-server retry endpoint', () => {
           },
         },
       }),
-      createEventEnvelope({
-        eventId: `run-${issueNumber}-completed`,
-        workItemKey: key,
-        streamScope: 'work-item',
-        direction: 'internal',
-        sourceSystem: 'wake',
-        sourceEventType: 'wake.run.completed',
-        sourceRefs: { repo: 'atolis-hq/wake', issueNumber, runId: `run-${issueNumber}` },
-        occurredAt: '2026-07-05T12:01:00.000Z',
-        ingestedAt: '2026-07-05T12:01:00.000Z',
-        trigger: 'immediate',
-        payload: {
-          action: 'implement',
-          sentinel: 'FAILED',
-          runId: `run-${issueNumber}`,
-          failureClass: 'task',
-          reason: 'runner:failed',
-          body: 'something went wrong',
-        },
-      }),
-    ]);
+    ];
+    if (input.resourceUri !== undefined) {
+      events.push(
+        createEventEnvelope({
+          eventId: `correlation-${issueNumber}`,
+          workItemKey: key,
+          streamScope: 'work-item',
+          direction: 'internal',
+          sourceSystem: 'wake',
+          sourceEventType: CORRELATION_REGISTERED_EVENT,
+          sourceRefs: {
+            repo: 'atolis-hq/wake',
+            issueNumber,
+            resourceUri: input.resourceUri,
+          },
+          occurredAt: '2026-07-05T12:00:30.000Z',
+          ingestedAt: '2026-07-05T12:00:30.000Z',
+          trigger: 'context-only',
+          payload: {
+            resourceUri: input.resourceUri,
+            role: 'representation',
+            relation: 'primary',
+            provenance: 'wake-created',
+          },
+        }),
+      );
+    }
+    if (input.failed === true) {
+      events.push(
+        createEventEnvelope({
+          eventId: `run-${issueNumber}-completed`,
+          workItemKey: key,
+          streamScope: 'work-item',
+          direction: 'internal',
+          sourceSystem: 'wake',
+          sourceEventType: 'wake.run.completed',
+          sourceRefs: { repo: 'atolis-hq/wake', issueNumber, runId: `run-${issueNumber}` },
+          occurredAt: '2026-07-05T12:01:00.000Z',
+          ingestedAt: '2026-07-05T12:01:00.000Z',
+          trigger: 'immediate',
+          payload: {
+            action: 'implement',
+            sentinel: 'FAILED',
+            runId: `run-${issueNumber}`,
+            failureClass: 'task',
+            reason: 'runner:failed',
+            body: 'something went wrong',
+          },
+        }),
+      );
+    }
+    await updater.rebuildFromEvents(events);
     return key;
   }
 
@@ -379,6 +436,48 @@ describe('ui-server retry endpoint', () => {
       method: 'POST',
     });
     expect(res.status).toBe(404);
+  });
+
+  it('serves item detail and events by work item key', async () => {
+    const key = await seedItem({ issueNumber: 54, resourceUri: 'wake:schedule:triage@daily' });
+    await store.appendEventEnvelope(
+      createEventEnvelope({
+        eventId: 'detail-event-54',
+        workItemKey: key,
+        streamScope: 'work-item',
+        direction: 'internal',
+        sourceSystem: 'wake',
+        sourceEventType: 'wake.detail.test',
+        sourceRefs: { repo: 'atolis-hq/wake', issueNumber: 54 },
+        occurredAt: '2026-07-05T12:02:00.000Z',
+        ingestedAt: '2026-07-05T12:02:00.000Z',
+        trigger: 'context-only',
+        payload: {},
+      }),
+    );
+    const seeded = await store.readIssueState(key);
+    expect(seeded).not.toBeNull();
+    await store.writeIssueState({
+      ...seeded!,
+      wake: {
+        ...seeded!.wake,
+        recentEventIds: [...seeded!.wake.recentEventIds, 'detail-event-54'],
+      },
+    });
+
+    const detail = await fetch(`${baseUrl}/api/v1/items/${key}`);
+    expect(detail.status).toBe(200);
+    const detailBody = (await detail.json()) as {
+      item: { workItemKey: string };
+      events: Array<{ sourceEventType: string }>;
+    };
+    expect(detailBody.item.workItemKey).toBe(key);
+    expect(detailBody.events.map((event) => event.sourceEventType)).toContain('wake.detail.test');
+
+    const events = await fetch(`${baseUrl}/api/v1/items/${key}/events`);
+    expect(events.status).toBe(200);
+    const eventsBody = (await events.json()) as Array<{ sourceEventType: string }>;
+    expect(eventsBody.map((event) => event.sourceEventType)).toContain('wake.detail.test');
   });
 
   it('returns 409 when last run is not failed', async () => {
@@ -440,6 +539,72 @@ describe('ui-server retry endpoint', () => {
 
     await expect(readJsonFile(store.paths.tickRequestFile)).resolves.toMatchObject({
       requestedBy: 'ui:retry',
+    });
+  });
+
+  it('freezes and unfreezes a work item through projection state and label requests', async () => {
+    const key = await seedItem({ issueNumber: 78 });
+
+    const freeze = await fetch(`${baseUrl}/api/v1/work-items/${key}/freeze`, { method: 'POST' });
+    expect(freeze.status).toBe(202);
+    const frozen = await store.readIssueState(key);
+    expect(frozen?.context.frozen?.at).toBe('2026-07-05T12:00:00.000Z');
+    expect(frozen?.issue.labels).toContain(FROZEN_WORK_ITEM_LABEL);
+
+    const freezeAgain = await fetch(`${baseUrl}/api/v1/work-items/${key}/freeze`, {
+      method: 'POST',
+    });
+    expect(freezeAgain.status).toBe(202);
+    await expect(freezeAgain.json()).resolves.toMatchObject({ changed: false });
+
+    const unfreeze = await fetch(`${baseUrl}/api/v1/work-items/${key}/unfreeze`, {
+      method: 'POST',
+    });
+    expect(unfreeze.status).toBe(202);
+    const unfrozen = await store.readIssueState(key);
+    expect(unfrozen?.context.frozen).toBeUndefined();
+    expect(unfrozen?.issue.labels).not.toContain(FROZEN_WORK_ITEM_LABEL);
+
+    const eventTypes = (await store.listRecentEventEnvelopes({ workItemKey: key, limit: 20 })).map(
+      (event) => event.sourceEventType,
+    );
+    expect(eventTypes).toContain(WORK_ITEM_FROZEN_EVENT);
+    expect(eventTypes).toContain(WORK_ITEM_UNFROZEN_EVENT);
+    expect(eventTypes.filter((type) => type === 'wake.labels.requested')).toHaveLength(2);
+    await expect(readJsonFile(store.paths.tickRequestFile)).resolves.toMatchObject({
+      requestedBy: 'ui:unfreeze',
+    });
+  });
+
+  it('soft-deletes a work item, retracts correlations, and hides it from the board', async () => {
+    const resourceUri = 'github:issue:atolis-hq/wake#79';
+    const key = await seedItem({ issueNumber: 79, resourceUri });
+    await expect(resourceIndex.resolve(resourceUri)).resolves.toBe(key);
+
+    const res = await fetch(`${baseUrl}/api/v1/work-items/${key}/delete`, { method: 'POST' });
+    expect(res.status).toBe(202);
+    await expect(res.json()).resolves.toMatchObject({
+      workItemKey: key,
+      changed: true,
+      retractedResources: [resourceUri],
+    });
+
+    const item = await store.readIssueState(key);
+    expect(item?.context.deleted?.at).toBe('2026-07-05T12:00:00.000Z');
+    expect(item?.correlatedResources).toEqual([]);
+    await expect(resourceIndex.resolve(resourceUri)).resolves.toBeUndefined();
+
+    const board = await fetch(`${baseUrl}/api/v1/board`);
+    expect(board.status).toBe(200);
+    expect(await board.json()).toEqual([]);
+
+    const eventTypes = (await store.listRecentEventEnvelopes({ workItemKey: key, limit: 20 })).map(
+      (event) => event.sourceEventType,
+    );
+    expect(eventTypes).toContain(WORK_ITEM_DELETED_EVENT);
+    expect(eventTypes).toContain('wake.correlation.retracted');
+    await expect(readJsonFile(store.paths.tickRequestFile)).resolves.toMatchObject({
+      requestedBy: 'ui:delete',
     });
   });
 });

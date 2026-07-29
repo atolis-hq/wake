@@ -4,13 +4,23 @@ import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 
 import type { ResourceIndex } from '../../core/contracts.js';
+import { createLabelsEvent } from '../../core/event-builders.js';
 import { createProjectionUpdater } from '../../core/projection-updater.js';
-import { RETRY_REQUESTED_EVENT, RUN_REQUESTED_EVENT } from '../../domain/event-types.js';
+import {
+  CORRELATION_RETRACTED_EVENT,
+  RETRY_REQUESTED_EVENT,
+  RUN_REQUESTED_EVENT,
+  WORK_ITEM_DELETED_EVENT,
+  WORK_ITEM_FROZEN_EVENT,
+  WORK_ITEM_UNFROZEN_EVENT,
+} from '../../domain/event-types.js';
 import { configuredTicketSource } from '../../domain/sources.js';
-import type { WakeConfig } from '../../domain/types.js';
+import type { EventEnvelope, IssueStateRecord, WakeConfig } from '../../domain/types.js';
+import { isWorkItemDeleted, isWorkItemFrozen } from '../../domain/work-item-lifecycle.js';
 import { createEventEnvelope } from '../../lib/event-log.js';
 import { writeJsonFile } from '../../lib/json-file.js';
 import type { createStateStore } from '../fs/state-store.js';
+import { labelsForWorkItem } from '../../domain/work-item-labels.js';
 import { indexHtml } from './ui-assets.js';
 import {
   buildBoard,
@@ -63,13 +73,27 @@ function extractBearerToken(req: IncomingMessage): string | undefined {
 }
 
 /**
- * Parses `/items/<repo-with-slashes>/<issueNumber>[/events]` where repo itself
+ * Parses `/items/<workItemKey>[/events]` and the legacy
+ * `/items/<repo-with-slashes>/<issueNumber>[/events]` form where repo itself
  * may contain a `/` (e.g. `owner/name`), so the split can't assume a fixed arity.
  */
 function parseItemPath(
   segments: string[],
-): { repo: string; issueNumber: number; suffix?: string } | null {
+):
+  | { workItemKey: string; suffix?: string }
+  | { repo: string; issueNumber: number; suffix?: string }
+  | null {
   const trailingIsEvents = segments.at(-1) === 'events';
+  const itemSegments = trailingIsEvents ? segments.slice(0, -1) : segments;
+  if (itemSegments.length === 1) {
+    const workItemKey = itemSegments[0];
+    if (workItemKey === undefined || workItemKey.length === 0) return null;
+    return {
+      workItemKey,
+      ...(trailingIsEvents ? { suffix: 'events' } : {}),
+    };
+  }
+
   const numberIndex = trailingIsEvents ? segments.length - 2 : segments.length - 1;
   const issueNumberRaw = segments[numberIndex];
   const issueNumber = issueNumberRaw === undefined ? Number.NaN : Number(issueNumberRaw);
@@ -86,6 +110,59 @@ function parseItemPath(
 }
 
 type ProjectionUpdater = ReturnType<typeof createProjectionUpdater>;
+
+async function writeTickRequest(
+  stateStore: StateStore,
+  now: () => Date,
+  requestedBy: string,
+): Promise<void> {
+  await writeJsonFile(stateStore.paths.tickRequestFile, {
+    requestId: randomUUID(),
+    requestedAt: now().toISOString(),
+    requestedBy,
+  });
+}
+
+function buildUiWorkItemEvent(input: {
+  item: IssueStateRecord;
+  eventId: string;
+  sourceEventType: string;
+  occurredAt: string;
+}): EventEnvelope {
+  return createEventEnvelope({
+    eventId: input.eventId,
+    workItemKey: input.item.workItemKey,
+    streamScope: 'work-item',
+    direction: 'internal',
+    sourceSystem: 'wake',
+    sourceEventType: input.sourceEventType,
+    sourceRefs: { repo: input.item.issue.repo, issueNumber: input.item.issue.number },
+    occurredAt: input.occurredAt,
+    ingestedAt: input.occurredAt,
+    trigger: 'immediate',
+    payload: { requestedBy: 'ui' },
+  });
+}
+
+async function appendLabelSyncEvent(input: {
+  item: IssueStateRecord;
+  stateStore: StateStore;
+  projectionUpdater: ProjectionUpdater;
+  config: WakeConfig;
+  now: () => Date;
+  action: 'freeze' | 'unfreeze';
+}): Promise<string> {
+  const occurredAt = input.now().toISOString();
+  const labelEvent = createLabelsEvent({
+    projection: input.item,
+    runId: `${input.action}-${input.item.workItemKey}-${input.now().getTime()}`,
+    ...labelsForWorkItem(input.item, input.config),
+    occurredAt,
+  });
+  const appended = await input.stateStore.appendEventEnvelope(labelEvent);
+  await input.projectionUpdater.rebuildFromEvents([appended]);
+  return labelEvent.eventId;
+}
 
 export function createUiServer(options: UiServerOptions) {
   const now = options.now ?? (() => new Date());
@@ -141,6 +218,118 @@ async function handleRequest(
     .filter((part) => part.length > 0)
     .map((s) => decodeURIComponent(s));
   const resource = segments[0];
+
+  if (
+    req.method === 'POST' &&
+    resource === 'work-items' &&
+    segments.length === 3 &&
+    (segments[2] === 'freeze' || segments[2] === 'unfreeze')
+  ) {
+    const workItemKey = segments[1] ?? '';
+    const item = await stateStore.readIssueState(workItemKey);
+    if (item === null) {
+      sendJson(res, 404, { error: 'work item not found' });
+      return;
+    }
+    if (isWorkItemDeleted(item)) {
+      sendJson(res, 409, { error: 'work item is deleted' });
+      return;
+    }
+
+    const action = segments[2];
+    const alreadyInDesiredState =
+      action === 'freeze' ? isWorkItemFrozen(item) : !isWorkItemFrozen(item);
+    if (alreadyInDesiredState) {
+      sendJson(res, 202, { workItemKey, changed: false });
+      return;
+    }
+
+    const occurredAt = now().toISOString();
+    const eventId = `${action}-${workItemKey}-${now().getTime()}`;
+    const event = buildUiWorkItemEvent({
+      item,
+      eventId,
+      sourceEventType: action === 'freeze' ? WORK_ITEM_FROZEN_EVENT : WORK_ITEM_UNFROZEN_EVENT,
+      occurredAt,
+    });
+    const appended = await stateStore.appendEventEnvelope(event);
+    await projectionUpdater.rebuildFromEvents([appended]);
+    const updated = (await stateStore.readIssueState(workItemKey)) ?? item;
+    const labelEventId = await appendLabelSyncEvent({
+      item: updated,
+      stateStore,
+      projectionUpdater,
+      config,
+      now,
+      action,
+    });
+    await writeTickRequest(stateStore, now, `ui:${action}`);
+
+    sendJson(res, 202, { workItemKey, eventId, labelEventId, changed: true });
+    return;
+  }
+
+  if (
+    req.method === 'POST' &&
+    resource === 'work-items' &&
+    segments.length === 3 &&
+    segments[2] === 'delete'
+  ) {
+    const workItemKey = segments[1] ?? '';
+    const item = await stateStore.readIssueState(workItemKey);
+    if (item === null) {
+      sendJson(res, 404, { error: 'work item not found' });
+      return;
+    }
+    if (isWorkItemDeleted(item)) {
+      sendJson(res, 202, { workItemKey, changed: false });
+      return;
+    }
+
+    const occurredAt = now().toISOString();
+    const deleteEventId = `delete-${workItemKey}-${now().getTime()}`;
+    const events = [
+      buildUiWorkItemEvent({
+        item,
+        eventId: deleteEventId,
+        sourceEventType: WORK_ITEM_DELETED_EVENT,
+        occurredAt,
+      }),
+      ...item.correlatedResources.map((resourceRef) =>
+        createEventEnvelope({
+          eventId: `${deleteEventId}-retract-${resourceRef.resourceUri.replace(/[^a-z0-9]+/gi, '-')}`,
+          workItemKey,
+          streamScope: 'work-item',
+          direction: 'internal',
+          sourceSystem: 'wake',
+          sourceEventType: CORRELATION_RETRACTED_EVENT,
+          sourceRefs: {
+            repo: item.issue.repo,
+            issueNumber: item.issue.number,
+            resourceUri: resourceRef.resourceUri,
+          },
+          occurredAt,
+          ingestedAt: occurredAt,
+          trigger: 'context-only',
+          payload: { resourceUri: resourceRef.resourceUri, requestedBy: 'ui' },
+        }),
+      ),
+    ];
+    const appended = [];
+    for (const event of events) {
+      appended.push(await stateStore.appendEventEnvelope(event));
+    }
+    await projectionUpdater.rebuildFromEvents(appended);
+    await writeTickRequest(stateStore, now, 'ui:delete');
+
+    sendJson(res, 202, {
+      workItemKey,
+      deleteEventId,
+      retractedResources: item.correlatedResources.map((resourceRef) => resourceRef.resourceUri),
+      changed: true,
+    });
+    return;
+  }
 
   if (
     req.method === 'POST' &&
@@ -315,20 +504,23 @@ async function handleRequest(
     return;
   }
 
-  if (resource === 'items' && segments.length >= 3) {
+  if (resource === 'items' && segments.length >= 2) {
     const parsed = parseItemPath(segments.slice(1));
     if (parsed === null) {
-      sendJson(res, 400, { error: 'expected /items/<repo>/<issueNumber>' });
+      sendJson(res, 400, { error: 'expected /items/<workItemKey> or /items/<repo>/<issueNumber>' });
       return;
     }
 
-    const itemDetailInput = {
-      stateStore,
-      resourceIndex,
-      provider: configuredTicketSource(config),
-      repo: parsed.repo,
-      issueNumber: parsed.issueNumber,
-    };
+    const itemDetailInput =
+      'workItemKey' in parsed
+        ? { stateStore, workItemKey: parsed.workItemKey }
+        : {
+            stateStore,
+            resourceIndex,
+            provider: configuredTicketSource(config),
+            repo: parsed.repo,
+            issueNumber: parsed.issueNumber,
+          };
 
     if (parsed.suffix === 'events') {
       const detail = await buildItemDetail(itemDetailInput);

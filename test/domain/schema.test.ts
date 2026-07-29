@@ -26,7 +26,7 @@ import {
 import type { WakeDevConfig, WakeSandboxConfig } from '../../src/domain/types.js';
 
 describe('issue state schema', () => {
-  it('accepts canonical issue and comment fields plus extensible context', () => {
+  it('accepts canonical issue and comment fields plus known typed context fields', () => {
     const record = parseIssueStateRecord({
       schemaVersion: 1,
       workItemKey: 'work-01JZ0000000000000000000012',
@@ -59,15 +59,48 @@ describe('issue state schema', () => {
         syncedAt: '2026-07-05T12:00:00.000Z',
       },
       context: {
-        agentBrief: 'Extra information for future prompts',
+        status: 'awaiting-approval',
       },
     });
 
-    expect(record.context.agentBrief).toBe('Extra information for future prompts');
+    expect(record.context.status).toBe('awaiting-approval');
     expect(record.wake.expectedEcho).toEqual({ commentIds: [], labels: [] });
     expect(record.issue.isPullRequest).toBe(false);
     // The key is taken verbatim: nothing derives, namespaces, or rewrites it.
     expect(record.workItemKey).toBe('work-01JZ0000000000000000000012');
+  });
+
+  it('silently strips an unknown context key instead of erroring (the typed schema catches typos on read, not by throwing on write)', () => {
+    const record = parseIssueStateRecord({
+      schemaVersion: 1,
+      workItemKey: 'work-01JZ0000000000000000000013',
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 13,
+        title: 'Example',
+        body: 'Body',
+        labels: ['wake:queue'],
+        assignees: [],
+        isPullRequest: false,
+        state: 'open',
+        url: 'https://example.test/issues/13',
+        createdAt: '2026-07-05T12:00:00.000Z',
+        updatedAt: '2026-07-05T12:00:00.000Z',
+      },
+      comments: [],
+      wake: {
+        stage: 'queue',
+        stageHistory: [],
+        syncedAt: '2026-07-05T12:00:00.000Z',
+      },
+      context: {
+        status: 'queued',
+        agentBrief: 'a typo or a field nobody wired into the schema yet',
+      },
+    });
+
+    expect(record.context.status).toBe('queued');
+    expect((record.context as Record<string, unknown>).agentBrief).toBeUndefined();
   });
 
   it('requires an explicit workItemKey rather than deriving one from the issue', () => {
@@ -460,14 +493,21 @@ describe('run and event schemas', () => {
     });
   });
 
-  it('synthesizes a generic status body for AWAITING_APPROVAL when structured envelope has no prose', () => {
+  it('synthesizes a generic status body for REJECTED when structured envelope has no prose', () => {
     const parsed = parseRunnerResult(
-      ['```wake-result', '{"status":"AWAITING_APPROVAL"}', '```', 'AWAITING_APPROVAL'].join('\n'),
+      ['```wake-result', '{"status":"REJECTED"}', '```', 'REJECTED'].join('\n'),
     );
 
-    expect(parsed.status).toBe('AWAITING_APPROVAL');
+    expect(parsed.status).toBe('REJECTED');
     expect(parsed.envelope).toBe('structured');
     expect(parsed.body).toBeTruthy();
+  });
+
+  it('no longer recognizes AWAITING_APPROVAL as a bare sentinel', () => {
+    const parsed = parseRunnerResult('Done with the work.\nAWAITING_APPROVAL');
+
+    expect(parsed.envelope).toBe('missing');
+    expect(parsed.status).toBe('BLOCKED');
   });
 
   it('synthesizes a generic status sentence when structured envelope has no prose', () => {
@@ -482,14 +522,9 @@ describe('run and event schemas', () => {
 
   it('does not synthesize body when prose already precedes the structured envelope', () => {
     const parsed = parseRunnerResult(
-      [
-        'Here is my plan.',
-        '',
-        '```wake-result',
-        '{"status":"AWAITING_APPROVAL"}',
-        '```',
-        'AWAITING_APPROVAL',
-      ].join('\n'),
+      ['Here is my plan.', '', '```wake-result', '{"status":"REJECTED"}', '```', 'REJECTED'].join(
+        '\n',
+      ),
     );
 
     expect(parsed.body).toBe('Here is my plan.');
@@ -513,13 +548,13 @@ describe('run and event schemas', () => {
         'PR opened and ready for review.',
         '',
         '```wake-result',
-        '{"status": "AWAITING_APPROVAL"}',
-        'AWAITING_APPROVAL',
+        '{"status": "REJECTED"}',
+        'REJECTED',
         '```',
       ].join('\n'),
     );
 
-    expect(parsed.status).toBe('AWAITING_APPROVAL');
+    expect(parsed.status).toBe('REJECTED');
     expect(parsed.envelope).toBe('structured');
     expect(parsed.body).toBe('PR opened and ready for review.');
   });
@@ -584,9 +619,9 @@ describe('run and event schemas', () => {
     ).toBe('BLOCKED');
   });
 
-  it('parses AWAITING_APPROVAL sentinel from last line', () => {
-    expect(parseRunnerResultSentinel('Work complete, awaiting sign-off\nAWAITING_APPROVAL')).toBe(
-      'AWAITING_APPROVAL',
+  it('parses REJECTED sentinel from last line', () => {
+    expect(parseRunnerResultSentinel('Reviewed the diff, needs changes.\nREJECTED')).toBe(
+      'REJECTED',
     );
   });
 
@@ -1165,9 +1200,9 @@ describe('parseRunnerArtifacts', () => {
       '```',
       '',
       '```wake-result',
-      '{ "status": "AWAITING_APPROVAL" }',
+      '{ "status": "DONE" }',
       '```',
-      'AWAITING_APPROVAL',
+      'DONE',
     ].join('\n');
 
     expect(parseRunnerArtifacts(result)).toEqual({

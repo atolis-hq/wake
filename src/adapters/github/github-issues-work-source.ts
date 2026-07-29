@@ -8,10 +8,12 @@ import { buildResourceUri } from '../../domain/resource-uri.js';
 import { wakeStageLabelPrefix } from '../../domain/stages.js';
 import { wakeWorkflowLabelPrefix } from '../../domain/workflows.js';
 import type { EventEnvelope, IssueStateRecord, WakeConfig } from '../../domain/types.js';
+import { FROZEN_WORK_ITEM_LABEL } from '../../domain/work-item-lifecycle.js';
 import { createEventEnvelope, createUnkeyedEventEnvelope } from '../../lib/event-log.js';
 import { createWakePaths } from '../../lib/paths.js';
 import { wakeVersion } from '../../version.js';
 import { buildResumeCommandForCli } from '../runner/runner-cli-adapter.js';
+import { SCHEDULED_WORKFLOW_LABEL } from '../../domain/work-item-labels.js';
 
 const wakeStatusLabelPrefix = 'wake:status.';
 const pollOverlapMs = 60 * 60 * 1000;
@@ -318,6 +320,7 @@ export function formatWakeComment(
   const workspacePath =
     typeof payload.workspacePath === 'string' ? payload.workspacePath : undefined;
   const idempotencyMarker = wakeIdempotencyMarker(payload.idempotencyKey);
+  const outcomeLine = formatOutcomeLine(payload);
 
   const details = [
     action === undefined ? undefined : `stage \`${action}\``,
@@ -336,7 +339,7 @@ export function formatWakeComment(
       ? defaultAgentIdentity
       : `[${defaultAgentIdentity}](${controlPlaneUrl})`;
   const header = `**${name}** _(Wake ${wakeVersion}${details.length > 0 ? ` · ${details.join(' · ')}` : ''})_`;
-  const sections = [wakeCommentMarker, idempotencyMarker, header, body].filter(
+  const sections = [wakeCommentMarker, idempotencyMarker, header, outcomeLine, body].filter(
     (section): section is string => section !== undefined,
   );
 
@@ -383,6 +386,29 @@ export function formatWakeComment(
   }
 
   return sections.join('\n\n');
+}
+
+function formatOutcomeLine(payload: Record<string, unknown>): string | undefined {
+  const sentinel = typeof payload.sentinel === 'string' ? payload.sentinel : undefined;
+  const kind = typeof payload.kind === 'string' ? payload.kind : undefined;
+
+  if (kind === 'approval-request') {
+    return '**Outcome:** 🟡 Awaiting Approval';
+  }
+  if (sentinel === 'DONE') {
+    return '**Outcome:** ✅ Done';
+  }
+  if (sentinel === 'REJECTED') {
+    return '**Outcome:** 🔴 Changes Requested';
+  }
+  if (sentinel === 'BLOCKED' || kind === 'question') {
+    return '**Outcome:** 🟠 Blocked';
+  }
+  if (sentinel === 'FAILED' || kind === 'failure') {
+    return '**Outcome:** ❌ Failed';
+  }
+
+  return undefined;
 }
 
 function createIssueCommentPublishedEvent(input: {
@@ -755,13 +781,27 @@ export function createGitHubIssuesWorkSource(deps: {
           typeof input.event.payload.workflowLabel === 'string'
             ? input.event.payload.workflowLabel
             : undefined;
+        // Unlike the three label families above, frozen/scheduled are single
+        // toggle labels: every call site now computes the full authoritative
+        // desired state via labelsForWorkItem, so their absence here means
+        // "should not be present" (not "leave unspecified as before").
+        const nextFrozenLabel =
+          typeof input.event.payload.frozenLabel === 'string'
+            ? input.event.payload.frozenLabel
+            : undefined;
+        const nextScheduledLabel =
+          typeof input.event.payload.scheduledLabel === 'string'
+            ? input.event.payload.scheduledLabel
+            : undefined;
 
         const nextLabels = [
           ...currentLabels.filter(
             (label) =>
               !label.startsWith(wakeStatusLabelPrefix) &&
               !label.startsWith(wakeStageLabelPrefix) &&
-              !label.startsWith(wakeWorkflowLabelPrefix),
+              !label.startsWith(wakeWorkflowLabelPrefix) &&
+              label !== FROZEN_WORK_ITEM_LABEL &&
+              label !== SCHEDULED_WORKFLOW_LABEL,
           ),
           ...(nextStatusLabel !== undefined
             ? [nextStatusLabel]
@@ -772,6 +812,8 @@ export function createGitHubIssuesWorkSource(deps: {
           ...(nextWorkflowLabel !== undefined
             ? [nextWorkflowLabel]
             : currentLabels.filter((label) => label.startsWith(wakeWorkflowLabelPrefix))),
+          ...(nextFrozenLabel !== undefined ? [nextFrozenLabel] : []),
+          ...(nextScheduledLabel !== undefined ? [nextScheduledLabel] : []),
         ];
 
         const labelsChanged =
@@ -803,6 +845,8 @@ export function createGitHubIssuesWorkSource(deps: {
                 ...(nextStatusLabel !== undefined ? { statusLabel: nextStatusLabel } : {}),
                 ...(nextStageLabel !== undefined ? { stageLabel: nextStageLabel } : {}),
                 ...(nextWorkflowLabel !== undefined ? { workflowLabel: nextWorkflowLabel } : {}),
+                ...(nextFrozenLabel !== undefined ? { frozenLabel: nextFrozenLabel } : {}),
+                ...(nextScheduledLabel !== undefined ? { scheduledLabel: nextScheduledLabel } : {}),
                 labels: nextLabels,
                 providerEventType: 'github.issue.labels.updated',
               },
@@ -852,6 +896,8 @@ export function createGitHubIssuesWorkSource(deps: {
           input.event.payload.statusLabel,
           input.event.payload.stageLabel,
           input.event.payload.workflowLabel,
+          input.event.payload.frozenLabel,
+          input.event.payload.scheduledLabel,
         ].filter((label): label is string => typeof label === 'string');
         if (expected.every((label) => currentLabels.includes(label))) {
           return [

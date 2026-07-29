@@ -304,6 +304,41 @@ describe('control plane', () => {
     expect(sleepDurations).toEqual([250]);
   });
 
+  it('keeps runner idle checks on the base interval in split-loop mode', async () => {
+    let resolveIntake: ((value: { status: string }) => void) | undefined;
+    const tickRunner = {
+      runTick: vi.fn(),
+      runIntakeTick: vi.fn().mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveIntake = resolve;
+          }),
+      ),
+      runRunnerTick: vi.fn().mockResolvedValue({ status: 'idle' }),
+    };
+    const sleepCalls: number[] = [];
+
+    const controlPlane = createControlPlane({
+      tickRunner,
+      intervalMs: 1000,
+      maxIntervalMs: 10000,
+      isPaused: () => false,
+      logger: { info() {}, error() {} },
+      sleep: async (ms) => {
+        sleepCalls.push(ms);
+        if (sleepCalls.length >= 4) {
+          controlPlane.stop();
+          resolveIntake?.({ status: 'idle' });
+        }
+      },
+    });
+
+    await controlPlane.start();
+
+    expect(tickRunner.runRunnerTick).toHaveBeenCalledTimes(4);
+    expect(sleepCalls).toEqual([1000, 1000, 1000, 1000]);
+  });
+
   it('fast-forwards the next scheduled tick when a tick request appears during sleep', async () => {
     const now = vi.spyOn(Date, 'now');
     let nowMs = 0;

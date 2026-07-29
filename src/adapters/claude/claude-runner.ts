@@ -145,18 +145,7 @@ export function runClaudeCommand(input: {
 }
 
 function resolveModel(options: { action: AgentAction; settings: ClaudeRunnerSettings }): string {
-  const { models, model } = options.settings;
-
-  const actionSpecificModel = models[options.action];
-  if (actionSpecificModel !== undefined) {
-    return actionSpecificModel;
-  }
-
-  if (models.default !== undefined) {
-    return models.default;
-  }
-
-  return model;
+  return options.settings.model;
 }
 
 function parseClaudePrintOutput(stdout: string): ClaudePrintResult {
@@ -193,11 +182,11 @@ const CLAUDE_CLI_NAME = 'Claude';
 const ENVELOPE_REPAIR_MAX_TURNS = 1;
 const ENVELOPE_REPAIR_TIMEOUT_MS = 60_000;
 
-function buildEnvelopeRepairPrompt(skipApproval: boolean): string {
+function buildEnvelopeRepairPrompt(reviewShaped: boolean): string {
   return [
     'Your previous reply did not end with the required `wake-result` envelope, so it could not be parsed.',
     'Reply with ONLY a fenced `wake-result` JSON block containing a `status` field, then repeat that status word on its own line after the closing fence.',
-    `The status must be exactly one of: ${sentinelListForApproval(skipApproval)}, reflecting the outcome of your previous turn.`,
+    `The status must be exactly one of: ${sentinelListForApproval(reviewShaped)}, reflecting the outcome of your previous turn.`,
     'Do not repeat, summarize, or redo any of your previous work — this reply is parsed automatically and anything besides the envelope is discarded.',
   ].join('\n');
 }
@@ -247,12 +236,12 @@ async function attemptEnvelopeRepair(input: {
   model: string;
   sessionName: string;
   sessionId: string;
-  skipApproval: boolean;
+  reviewShaped: boolean;
   timeoutMs: number;
 }): Promise<{ text: string; tokenUsage?: AgentRunTokenUsage } | undefined> {
   const args = buildClaudePrintArgs({
     model: input.model,
-    prompt: buildEnvelopeRepairPrompt(input.skipApproval),
+    prompt: buildEnvelopeRepairPrompt(input.reviewShaped),
     sessionName: input.sessionName,
     resumeSessionId: input.sessionId,
     maxTurns: ENVELOPE_REPAIR_MAX_TURNS,
@@ -359,6 +348,9 @@ export function createClaudeRunner(options: {
         : { contextOverrides: input.promptContextOverrides }),
       ...(input.mergeConflictDetected === true ? { mergeConflictDetected: true } : {}),
       ...(input.upstreamChanges === undefined ? {} : { upstreamChanges: input.upstreamChanges }),
+      ...(input.preExistingUncommittedChanges === true
+        ? { preExistingUncommittedChanges: true }
+        : {}),
     });
 
     const model = resolveModel({
@@ -556,7 +548,7 @@ export function createClaudeRunner(options: {
         model,
         sessionName,
         sessionId: parsed.session_id,
-        skipApproval: stagePrompt.skipApproval,
+        reviewShaped: stagePrompt.reviewShaped,
         timeoutMs: Math.min(options.settings.timeoutMs, ENVELOPE_REPAIR_TIMEOUT_MS),
       });
       if (repair !== undefined && parseRunnerResult(repair.text).envelope !== 'missing') {

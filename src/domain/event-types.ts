@@ -15,6 +15,9 @@ export const RUN_CLAIMED_EVENT = 'wake.run.claimed';
 export const RUN_COMPLETED_EVENT = 'wake.run.completed';
 export const WORKFLOW_SELECTED_EVENT = 'wake.workflow.selected';
 export const WORK_ITEM_CREATED_EVENT = 'wake.workitem.created';
+export const WORK_ITEM_DELETED_EVENT = 'wake.workitem.deleted';
+export const WORK_ITEM_FROZEN_EVENT = 'wake.workitem.frozen';
+export const WORK_ITEM_UNFROZEN_EVENT = 'wake.workitem.unfrozen';
 export const WORKSPACE_CLEANED_EVENT = 'wake.workspace.cleaned';
 export const WORKSPACE_CLEANUP_FAILED_EVENT = 'wake.workspace.cleanup-failed';
 
@@ -36,6 +39,9 @@ export const wakeEventTypeValues = [
   RUN_COMPLETED_EVENT,
   WORKFLOW_SELECTED_EVENT,
   WORK_ITEM_CREATED_EVENT,
+  WORK_ITEM_DELETED_EVENT,
+  WORK_ITEM_FROZEN_EVENT,
+  WORK_ITEM_UNFROZEN_EVENT,
   WORKSPACE_CLEANED_EVENT,
   WORKSPACE_CLEANUP_FAILED_EVENT,
 ] as const;
@@ -142,6 +148,21 @@ export const wakeEventTypeDefinitions = [
     type: WORK_ITEM_CREATED_EVENT,
     description: 'Mints a Wake work item identity before resource correlation is registered.',
     payloadShape: '{}',
+  },
+  {
+    type: WORK_ITEM_DELETED_EVENT,
+    description: 'Soft-deletes a work item and excludes it from board display and execution.',
+    payloadShape: '{ requestedBy }',
+  },
+  {
+    type: WORK_ITEM_FROZEN_EVENT,
+    description: 'Marks a work item as frozen so runner ticks will not execute it.',
+    payloadShape: '{ requestedBy }',
+  },
+  {
+    type: WORK_ITEM_UNFROZEN_EVENT,
+    description: 'Clears a work item freeze so runner ticks may execute it again.',
+    payloadShape: '{ requestedBy }',
   },
   {
     type: WORKSPACE_CLEANED_EVENT,

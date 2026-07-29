@@ -50,6 +50,7 @@ transcripts:
   retainAfterWorkspaceCleanup: false
 retry:
   maxFailureRetries: 5
+  maxChangesRequestedRetries: 5
 ui:
   enabled: false
   port: 4317
@@ -361,11 +362,12 @@ the previously recorded agent session ID when Wake has one.
 
 _Lives in `config.yaml`._
 
-Retry limits for failed runner attempts.
+Retry limits for failed runner attempts and auto-revise loops.
 
-| Property            | Type   | Description                                                                 | Default |
-| ------------------- | ------ | --------------------------------------------------------------------------- | ------- |
-| `maxFailureRetries` | number | Maximum consecutive failed runner attempts before automatic retries go idle | `5`     |
+| Property                     | Type   | Description                                                                                                     | Default |
+| ---------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------- | ------- |
+| `maxFailureRetries`          | number | Maximum consecutive failed runner attempts before automatic retries go idle                                       | `5`     |
+| `maxChangesRequestedRetries` | number | Maximum consecutive `changes-requested` auto-revise cycles (a rejecting `plan-review`/`pr-review` watcher, or a human `/changes` reply) before Wake escalates to `blocked` instead of re-running automatically | `5`     |
 
 ### scheduler
 
@@ -454,8 +456,8 @@ stage normally routes to a `tier`; `runner` pins a concrete named runner and
 takes precedence over `tier`.
 
 Workflow stages may also define `watch` entries. `watch[].onSuccess` declares
-what Wake does when the watched child workflow run completes `DONE` — the
-child's sentinel is its verdict:
+what Wake does when the watched child workflow run completes `DONE` or
+`REJECTED` — the child's sentinel is its verdict:
 
 ```yaml
 workflows:
@@ -498,8 +500,10 @@ Wake's own approval transition — the same one a human `/approved` comment
 takes — when the child run completes `DONE` and no correlated PR carries the
 verdict. The approval is idempotent, recorded as a run-completed event with
 reason `watcher:approved`, and audited as an `approval.watcher-resolved`
-decision. A child `FAILED` or `BLOCKED` verdict posts the review body without
-approving.
+decision. A child `REJECTED` verdict posts the review body as feedback and
+moves the parent to `changes-requested` instead of approving; a `BLOCKED` or
+`FAILED` child (no verdict could be rendered at all) leaves the parent's
+pending approval untouched.
 
 `onSuccess.merge` is an opt-in deterministic action for PR-review approvals:
 
@@ -666,13 +670,20 @@ Wake also owns one derived status label while it works a ticket:
 
 - `wake:status.pending`
 - `wake:status.working`
+- `wake:status.awaiting-approval`
+- `wake:status.changes-requested`
+- `wake:status.blocked`
 - `wake:status.failed`
 - `wake:status.completed`
 
-Wake replaces only the `wake:status.*` label family and preserves unrelated issue labels.
+Wake replaces only the `wake:status.*` label family and preserves unrelated issue labels. A
+tick-time reconciliation pass keeps this label (plus `wake:stage.*`, `wake:workflow.*`,
+`wake:frozen`, and `wake:scheduled-workflow`) converged on the work item's actual state every
+tick, even if a delivery is lost or a human hand-edits a label.
 
 `wake:auto` is an operator opt-in label for deterministic approval of eligible
-`AWAITING_APPROVAL` gates. It has no effect unless the pending action's prompt
+approval-gated stages (a `DONE` run on a stage configured with
+`skipApproval: false`). It has no effect unless the pending action's prompt
 declared `allowAutoApproval: true`; with built-in prompts that means refine can
 advance to implement automatically, while implement still waits for human or PR
 review approval. Commenting `/yolo` or `/autoapprove` on the issue is a

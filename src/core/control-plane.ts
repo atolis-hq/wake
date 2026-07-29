@@ -121,6 +121,7 @@ export function createControlPlane(deps: {
     setIdleTicks: (value: number) => void;
     getLastRequest: () => string | undefined;
     setLastRequest: (value: string) => void;
+    idleBackoff: boolean;
   }): Promise<void> {
     while (running) {
       let result: unknown;
@@ -144,11 +145,12 @@ export function createControlPlane(deps: {
           });
         }
       } else {
-        const wait = await sleepUntilNextTick(nextSleepMs(input.getIdleTicks()), {
+        const waitMs = input.idleBackoff ? nextSleepMs(input.getIdleTicks()) : deps.intervalMs;
+        const wait = await sleepUntilNextTick(waitMs, {
           getLastRequest: input.getLastRequest,
           setLastRequest: input.setLastRequest,
         });
-        if (!wait.forced) {
+        if (!wait.forced && input.idleBackoff) {
           input.setIdleTicks(input.getIdleTicks() + 1);
         }
       }
@@ -193,6 +195,7 @@ export function createControlPlane(deps: {
             setLastRequest: (value) => {
               lastIntakeTickRequest = value;
             },
+            idleBackoff: true,
           }),
           startLoop({
             run: deps.tickRunner.runRunnerTick,
@@ -205,6 +208,7 @@ export function createControlPlane(deps: {
             setLastRequest: (value) => {
               lastRunnerTickRequest = value;
             },
+            idleBackoff: false,
           }),
         ]);
         return;

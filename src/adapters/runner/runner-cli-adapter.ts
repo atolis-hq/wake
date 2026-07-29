@@ -118,7 +118,7 @@ export function createRunnerCliAdapter(input: {
       };
     },
     buildResumeCommand({ sessionId }) {
-      return ['codex', 'resume', sessionId];
+      return ['codex', 'exec', 'resume', sessionId];
     },
   };
 }
@@ -130,7 +130,7 @@ export function buildResumeCommandForCli(input: {
   const normalizedCli = input.cli.trim().toLowerCase();
 
   if (normalizedCli === 'codex') {
-    return ['codex', 'resume', input.sessionId];
+    return ['codex', 'exec', 'resume', input.sessionId];
   }
 
   if (normalizedCli === 'claude') {

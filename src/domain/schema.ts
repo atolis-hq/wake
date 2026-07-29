@@ -13,6 +13,7 @@ import {
 } from './resource-uri.js';
 import { runtimeEventTypeValues } from './runtime-events.js';
 import { alwaysManualIgnoredLabels } from './manual-labels.js';
+import { workItemStatusSchema } from './work-item-status.js';
 
 export {
   AUTONOMOUS_DECISION_AUDIT_EVENT,
@@ -34,6 +35,15 @@ export const wakeArtifactsEnvelopeSchema = z.object({
   artifacts: z.array(reportedArtifactSchema).default([]),
 });
 export const runnerSentinelSchema = z.enum(runnerSentinelValues);
+
+// A projection persisted before ADR 0002 can still have context.lastRunSentinel
+// = "AWAITING_APPROVAL" on disk. That field is read (not just replayed) on
+// every ordinary parseIssueStateRecord call, not only during an explicit
+// event-log rebuild, so the strict current-vocabulary schema above would
+// reject an untouched legacy projection outright. This schema stays
+// permissive to that one retired value so existing on-disk state keeps
+// loading until it's naturally refreshed by a new run.
+const legacyTolerantRunnerSentinelSchema = z.enum([...runnerSentinelValues, 'AWAITING_APPROVAL']);
 
 export const executionOutcomeValues = [
   'COMPLETED',
@@ -93,13 +103,6 @@ export const runtimeEventSchema = z.object({
 export const defaultAgentIdentity = 'Wake';
 export const defaultSmokePrompt = `This is ${defaultAgentIdentity}, reply with "hi ${defaultAgentIdentity} only"`;
 
-const modelOverridesSchema = z
-  .object({
-    default: z.string().optional(),
-  })
-  .catchall(z.string())
-  .default({});
-
 const claudeEffortSchema = z.enum(['low', 'medium', 'high', 'xhigh', 'max']);
 const codexReasoningEffortSchema = z.enum(['low', 'medium', 'high']);
 const cursorModeSchema = z.enum(['ask', 'agent']);
@@ -121,7 +124,6 @@ const claudeRunnerSettingsSchema = z.object({
       enabled: z.boolean().default(false),
     })
     .default({ enabled: false }),
-  models: modelOverridesSchema.default({ default: 'haiku', implement: 'claude-sonnet-4-6' }),
   effort: claudeEffortSchema.optional(),
 });
 
@@ -135,7 +137,6 @@ const codexRunnerSettingsSchema = z.object({
     .int()
     .positive()
     .default(30 * 60 * 1000),
-  models: modelOverridesSchema.default({ default: 'gpt-5.5', implement: 'gpt-5.5' }),
   reasoningEffort: codexReasoningEffortSchema.optional(),
 });
 
@@ -162,7 +163,6 @@ const cursorRunnerSettingsSchema = z.object({
     .int()
     .positive()
     .default(30 * 60 * 1000),
-  models: modelOverridesSchema.default({ default: 'composer-2.5', implement: 'composer-2.5' }),
   defaultMode: cursorModeSchema.optional(),
 });
 
@@ -334,6 +334,65 @@ export const eventEnvelopeSchema = z.object({
   derivedHints: z.record(z.string(), z.unknown()).optional(),
 });
 
+export const failurePhaseSchema = z.enum([
+  'workspace-validation',
+  'workspace-prep',
+  'process-starting',
+  'running',
+  'result-parsing',
+  'publishing',
+  'unknown',
+]);
+
+export const externalSideEffectsSchema = z.enum(['none', 'confirmed', 'unknown']);
+
+export const retrySafetySchema = z.enum([
+  'SAFE_TO_RETRY',
+  'SAFE_TO_RESUME',
+  'REQUIRES_RECONCILIATION',
+  'MANUAL_REVIEW_REQUIRED',
+  'NOT_RETRYABLE',
+]);
+
+// Typed `context` — every field is optional so an on-disk projection missing
+// some/all of them (pre-dating this schema, or simply untouched since) still
+// parses. See docs/superpowers/specs/2026-07-28-canonical-work-item-status-design.md §4/§8.
+export const issueContextSchema = z.object({
+  // Retry/failure bookkeeping, folded from RUN_COMPLETED (projection-updater.ts).
+  failureCount: z.number().int().nonnegative().optional(),
+  lastRunAction: z.string().optional(),
+  lastCompletedAction: z.string().optional(),
+  lastExecutionOutcome: executionOutcomeSchema.optional(),
+  lastWorkflowOutcome: workflowOutcomeSchema.optional(),
+  lastFailurePhase: failurePhaseSchema.optional(),
+  lastProcessStarted: z.boolean().optional(),
+  lastWorkspaceChanged: z.boolean().optional(),
+  lastExternalSideEffects: externalSideEffectsSchema.optional(),
+  lastRetrySafety: retrySafetySchema.optional(),
+  blockedFromStage: z.string().optional(),
+  lastFailureClass: z.enum(['task', 'quota', 'infra']).optional(),
+  lastHandledCommentId: z.string().optional(),
+  lastRunSentinel: legacyTolerantRunnerSentinelSchema.optional(),
+  // Set while approval-gated (context.status === 'awaiting-approval') so the
+  // approval path knows which action to resume (or skip) once a human responds.
+  pendingApprovalAction: z.string().optional(),
+  pendingApprovalAllowAutoApproval: z.boolean().optional(),
+  // Workflow pinned at mint time (WORKFLOW_SELECTED_EVENT); re-read at every
+  // label write instead of trusting a threaded local (workflow-name-drift, §6).
+  workflow: z.string().optional(),
+  // Canonical status — see work-item-status.ts. Additive alongside
+  // lastRunSentinel, not a replacement for it (§3).
+  status: workItemStatusSchema.optional(),
+  changesRequestedCount: z.number().int().nonnegative().optional(),
+  // Feedback body threaded into the next auto-revise prompt as
+  // promptContextOverrides.parentPendingReviewBody (§5).
+  changesRequestedFeedback: z.string().optional(),
+  // Orthogonal facts — not folded into `status` (§2).
+  frozen: z.object({ at: isoTimestampSchema, by: z.string() }).optional(),
+  deleted: z.object({ at: isoTimestampSchema, by: z.string() }).optional(),
+  scheduled: z.boolean().optional(),
+});
+
 export const issueStateRecordSchema = z.object({
   schemaVersion: z.literal(1),
   workItemKey: z.string(),
@@ -358,7 +417,7 @@ export const issueStateRecordSchema = z.object({
       })
       .default({ commentIds: [], labels: [] }),
   }),
-  context: z.record(z.string(), z.unknown()).default({}),
+  context: issueContextSchema.default({}),
   correlatedResources: z.array(correlatedResourceSchema).default([]),
 });
 
@@ -401,26 +460,6 @@ const runLeaseSchema = z.object({
   expiresAt: isoTimestampSchema,
 });
 
-export const failurePhaseSchema = z.enum([
-  'workspace-validation',
-  'workspace-prep',
-  'process-starting',
-  'running',
-  'result-parsing',
-  'publishing',
-  'unknown',
-]);
-
-export const externalSideEffectsSchema = z.enum(['none', 'confirmed', 'unknown']);
-
-export const retrySafetySchema = z.enum([
-  'SAFE_TO_RETRY',
-  'SAFE_TO_RESUME',
-  'REQUIRES_RECONCILIATION',
-  'MANUAL_REVIEW_REQUIRED',
-  'NOT_RETRYABLE',
-]);
-
 function legacyRunLifecycle(input: Record<string, unknown>) {
   if (input.lifecycle !== undefined) {
     return input;
@@ -458,6 +497,7 @@ export const runRecordSchema = z.preprocess(
       'running',
       'completed',
       'awaiting-approval',
+      'rejected',
       'blocked',
       'failed',
       'superseded',
@@ -465,7 +505,7 @@ export const runRecordSchema = z.preprocess(
     startedAt: isoTimestampSchema,
     finishedAt: isoTimestampSchema.optional(),
     sessionId: z.string().optional(),
-    sentinel: runnerSentinelSchema.optional(),
+    sentinel: legacyTolerantRunnerSentinelSchema.optional(),
     executionOutcome: executionOutcomeSchema.optional(),
     workflowOutcome: workflowOutcomeSchema.optional(),
     failurePhase: failurePhaseSchema.optional(),
@@ -748,8 +788,9 @@ const wakeConfigBaseSchema = z.object({
   retry: z
     .object({
       maxFailureRetries: z.number().int().positive().default(5),
+      maxChangesRequestedRetries: z.number().int().positive().default(5),
     })
-    .default({ maxFailureRetries: 5 }),
+    .default({ maxFailureRetries: 5, maxChangesRequestedRetries: 5 }),
   runners: z.record(z.string(), runnerEntrySchema).default({
     fake: { kind: 'fake', cli: 'Fake' },
     'claude-haiku': {
@@ -762,7 +803,6 @@ const wakeConfigBaseSchema = z.object({
       smokePrompt: defaultSmokePrompt,
       timeoutMs: 30 * 60 * 1000,
       remoteControl: { enabled: false },
-      models: { default: 'haiku' },
     },
     'claude-opus': {
       kind: 'claude',
@@ -774,7 +814,6 @@ const wakeConfigBaseSchema = z.object({
       smokePrompt: defaultSmokePrompt,
       timeoutMs: 30 * 60 * 1000,
       remoteControl: { enabled: false },
-      models: { default: 'claude-opus-4-8' },
     },
     'codex-mini': {
       kind: 'codex',
@@ -783,7 +822,6 @@ const wakeConfigBaseSchema = z.object({
       smokeModel: 'gpt-5.4-mini',
       smokePrompt: defaultSmokePrompt,
       timeoutMs: 30 * 60 * 1000,
-      models: { default: 'gpt-5.4-mini', implement: 'gpt-5.4-mini' },
     },
     'codex-flagship': {
       kind: 'codex',
@@ -792,7 +830,6 @@ const wakeConfigBaseSchema = z.object({
       smokeModel: 'gpt-5.4-mini',
       smokePrompt: defaultSmokePrompt,
       timeoutMs: 30 * 60 * 1000,
-      models: { default: 'gpt-5.5', implement: 'gpt-5.5' },
     },
     'cursor-composer': {
       kind: 'cursor',
@@ -801,7 +838,6 @@ const wakeConfigBaseSchema = z.object({
       smokeModel: 'auto',
       smokePrompt: defaultSmokePrompt,
       timeoutMs: 30 * 60 * 1000,
-      models: { default: 'composer-2.5', implement: 'composer-2.5' },
     },
   }),
   tiers: z.record(z.string(), z.array(z.string().min(1)).min(1)).default({
@@ -1185,15 +1221,15 @@ export function parseClaudePrintResult(input: unknown) {
 function synthesizeBodyFromEnvelope(envelope: z.infer<typeof wakeResultEnvelopeSchema>): string {
   const labels: Record<string, string> = {
     DONE: 'Run completed.',
+    REJECTED: 'Run rejected — needs changes.',
     BLOCKED: 'Run blocked — needs input.',
-    AWAITING_APPROVAL: 'Ready for approval.',
     FAILED: 'Run failed.',
   };
   return labels[envelope.status] ?? 'Run finished.';
 }
 
 export function parseRunnerResult(result: string): {
-  status: 'DONE' | 'BLOCKED' | 'FAILED' | 'AWAITING_APPROVAL';
+  status: 'DONE' | 'REJECTED' | 'BLOCKED' | 'FAILED';
   body: string;
   envelope: 'structured' | 'degraded' | 'missing';
   result?: z.infer<typeof wakeResultEnvelopeSchema>;
@@ -1214,8 +1250,7 @@ export function parseRunnerResult(result: string): {
       // the closing fence. Strip a trailing sentinel line so JSON.parse sees only the JSON.
       // The capture group includes the newline before the closing fence, so allow \n? after.
       const jsonContent =
-        rawContent.replace(/\n(?:DONE|BLOCKED|FAILED|AWAITING_APPROVAL)[ \t]*\n?$/, '') ||
-        rawContent;
+        rawContent.replace(/\n(?:DONE|REJECTED|BLOCKED|FAILED)[ \t]*\n?$/, '') || rawContent;
       const parsed = wakeResultEnvelopeSchema.safeParse(JSON.parse(jsonContent));
       if (parsed.success) {
         const proseBody = result.slice(0, lastMatch.index).trim();
@@ -1321,6 +1356,6 @@ export function parseRunnerArtifacts(result: string): z.infer<typeof wakeArtifac
 
 export function parseRunnerResultSentinel(
   result: string,
-): 'DONE' | 'BLOCKED' | 'FAILED' | 'AWAITING_APPROVAL' {
+): 'DONE' | 'REJECTED' | 'BLOCKED' | 'FAILED' {
   return parseRunnerResult(result).status;
 }

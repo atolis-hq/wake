@@ -56,6 +56,7 @@ export const indexHtml = `<!DOCTYPE html>
   .pill-needs-human { background: #4a3510; color: #ffcf7f; }
   .pill-error { background: #3d1f1f; color: #ff8f7f; }
   .pill-finished { background: #252830; color: #9aa2ad; }
+  .pill-frozen { background: #102a43; color: #9bd8ff; border: 1px solid #38bdf8; }
   nav { display: flex; gap: 0.25rem; padding: 0.4rem 1rem 0 0.3rem; background: var(--brand-darker); border-bottom: 1px solid #2c313a; }
   nav button { background: none; border: none; border-bottom: 2px solid transparent; color: rgba(255, 255, 255, 0.65); padding: 0.4rem 0.7rem 0.45rem; margin-bottom: -1px; cursor: pointer; font-size: 0.85rem; transition: color 0.12s ease; }
   nav button:hover { color: #fff; }
@@ -63,11 +64,21 @@ export const indexHtml = `<!DOCTYPE html>
   main { padding: 1rem; }
   .columns { display: grid; grid-template-columns: repeat(6, minmax(180px, 1fr)); gap: 0.6rem; overflow-x: auto; }
   .col { background: #1a1d23; border-radius: 10px; padding: 0.5rem; min-height: 200px; }
-  .col h2 { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; color: #9aa2ad; margin: 0.2rem 0.4rem 0.5rem; }
+  .col-header { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin: 0.2rem 0.4rem 0.5rem; }
+  .col h2 { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; color: #9aa2ad; margin: 0; }
+  .col-toggle { display: none; width: 1.65rem; height: 1.65rem; flex: 0 0 auto; align-items: center; justify-content: center; background: transparent; border: 1px solid #3a4150; border-radius: 6px; color: #cbd5e1; cursor: pointer; font-size: 1rem; line-height: 1; }
+  .col-toggle:hover { border-color: var(--accent); color: var(--accent-light); }
   .card { background: #22262e; border: 1px solid #2c313a; border-radius: 8px; padding: 0.5rem; margin-bottom: 0.5rem; cursor: pointer; font-size: 0.8rem; transition: border-color 0.12s ease; }
   .card:hover { border-color: var(--accent); }
   .card .title { font-weight: 600; margin-bottom: 0.25rem; }
   .card .meta { color: #9aa2ad; font-size: 0.72rem; }
+  .item-summary { margin: 0.45rem 0 0.75rem; }
+  .item-summary .meta { color: #9aa2ad; font-size: 0.78rem; }
+  .item-summary .card-stats { font-size: 0.76rem; }
+  .item-summary .child-run { max-width: 560px; }
+  .detail-kv { display: grid; grid-template-columns: max-content 1fr; gap: 0.35rem 0.7rem; align-items: baseline; margin: 0.75rem 0 1rem; font-size: 0.8rem; }
+  .detail-kv dt { margin: 0; color: #9aa2ad; }
+  .detail-kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
   .child-run { display: grid; grid-template-columns: auto 1fr; gap: 0.25rem 0.45rem; align-items: center; margin-top: 0.45rem; padding: 0.4rem; border-radius: 6px; background: #181c22; border: 1px solid #334155; color: #cbd5e1; font-size: 0.72rem; }
   .child-run .dot { width: 0.48rem; height: 0.48rem; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px rgba(45, 212, 191, 0.14); }
   .child-run .dot-watch { background: #ffcf7f; box-shadow: 0 0 0 3px rgba(255, 207, 127, 0.14); }
@@ -81,6 +92,7 @@ export const indexHtml = `<!DOCTYPE html>
   .card-error { border-left: 3px solid #ff8f7f; }
   .chip { display: inline-block; background: #2c313a; border-radius: 4px; padding: 0.05rem 0.35rem; font-size: 0.68rem; margin-right: 0.2rem; }
   .chip-label { background: transparent; border: 1px solid #3a4150; color: #9aa2ad; margin-bottom: 0.2rem; }
+  .chip-meta { border: 1px solid #3a4150; color: #cbd5e1; margin-bottom: 0.2rem; }
   table { border-collapse: collapse; width: 100%; font-size: 0.8rem; }
   th, td { text-align: left; padding: 0.35rem 0.5rem; border-bottom: 1px solid #2c313a; }
   th { color: #9aa2ad; font-weight: 600; }
@@ -98,6 +110,20 @@ export const indexHtml = `<!DOCTYPE html>
   .modal-tabs .nav-button.active { color: var(--accent-light); border-bottom-color: var(--accent); }
   .modal-body { flex: 1; min-height: 0; overflow-y: auto; padding: 1rem; }
   .modal-body h3:first-child { margin-top: 0; }
+  .event-list { display: flex; flex-direction: column; gap: 0.45rem; }
+  .event-card { background: #20242c; border: 1px solid #2c313a; border-radius: 6px; overflow: hidden; }
+  .event-card:hover { border-color: #3a4150; }
+  .event-summary { display: grid; grid-template-columns: minmax(11rem, 14rem) minmax(10rem, 1fr) minmax(8rem, 18rem) 2.4rem; gap: 0.65rem; align-items: center; width: 100%; min-height: 2.25rem; background: transparent; border: 0; color: inherit; padding: 0.45rem 0.65rem; text-align: left; cursor: pointer; font: inherit; }
+  .event-summary:hover { background: rgba(255, 255, 255, 0.03); }
+  .event-time, .event-type, .event-id, .event-direction { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .event-time, .event-id { color: #9aa2ad; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 0.72rem; }
+  .event-type { font-weight: 650; font-size: 0.8rem; }
+  .event-direction { justify-self: end; width: 1.7rem; height: 1.7rem; display: inline-flex; align-items: center; justify-content: center; border-radius: 999px; background: #151922; border: 1px solid #334155; color: var(--accent-light); font-size: 0.9rem; }
+  .event-json { display: none; position: relative; border-top: 1px solid #2c313a; background: #14171d; }
+  .event-card.expanded .event-json { display: block; }
+  .event-copy { position: absolute; top: 0.55rem; right: 0.55rem; z-index: 1; background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.18); color: #fff; border-radius: 6px; padding: 0.16rem 0.48rem; cursor: pointer; font-size: 0.72rem; }
+  .event-copy:hover { border-color: var(--accent-light); background: rgba(45, 212, 191, 0.16); }
+  .event-json pre { margin: 0; padding-top: 2.35rem; border-radius: 0; background: transparent; }
   .transcript-session { margin: 0.75rem 0; color: #9aa2ad; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 0.75rem; text-align: center; }
   .transcript-entry { background: #101216; border: 1px solid #2c313a; border-radius: 6px; margin-bottom: 0.75rem; overflow: hidden; }
   .transcript-head { color: #9aa2ad; background: #171a20; border-bottom: 1px solid #2c313a; padding: 0.45rem 0.6rem; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 0.72rem; }
@@ -107,8 +133,12 @@ export const indexHtml = `<!DOCTYPE html>
     .modal { width: 100%; height: 100%; max-height: none; border-radius: 0; border-left: 0; border-right: 0; }
     .columns { display: flex; flex-direction: column; overflow-x: unset; }
     .col { min-height: unset; }
+    .col-toggle { display: inline-flex; }
+    .col.is-collapsed .col-cards { display: none; }
     .col-empty { padding: 0.25rem 0.5rem; }
-    .col-empty h2 { margin: 0.1rem 0.4rem; }
+    .col-empty .col-header { margin: 0.1rem 0.4rem; }
+    .event-summary { grid-template-columns: minmax(8.5rem, 10rem) minmax(8rem, 1fr) 2.2rem; gap: 0.5rem; }
+    .event-id { display: none; }
   }
   .tiles { display: flex; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 1rem; }
   .tile { background: #1a1d23; border-radius: 10px; padding: 0.6rem 0.9rem; min-width: 120px; }
@@ -132,8 +162,11 @@ export const indexHtml = `<!DOCTYPE html>
   a:hover { text-decoration: underline; }
   .resource-list { list-style: none; padding: 0; margin: 0 0 1rem; }
   .resource-list li { display: flex; align-items: baseline; gap: 0.4rem; margin-bottom: 0.35rem; font-size: 0.8rem; }
-  .btn { background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.18); color: #fff; border-radius: 6px; padding: 0.22rem 0.55rem; cursor: pointer; font-size: 0.78rem; margin-top: 0.4rem; }
+  .action-bar { display: flex; align-items: center; gap: 0.45rem; flex-wrap: wrap; margin: 0.6rem 0 0.2rem; }
+  .btn { background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.18); color: #fff; border-radius: 6px; padding: 0.22rem 0.55rem; cursor: pointer; font-size: 0.78rem; }
   .btn:hover:not(:disabled) { border-color: var(--accent-light); background: rgba(45, 212, 191, 0.16); }
+  .btn.danger { background: #5c1f1a; border-color: #ff8f7f; }
+  .btn.danger:hover:not(:disabled) { background: #733027; border-color: #ffd0c8; }
   .btn:disabled { cursor: default; opacity: 0.62; }
 </style>
 </head>
@@ -171,6 +204,22 @@ export const indexHtml = `<!DOCTYPE html>
 <script>
 const API = '/api/v1';
 const CONDITIONS = ['ready', 'scheduled', 'active', 'needs-human', 'error', 'finished'];
+const COND_PILL = {
+  ready: 'pill-ready',
+  active: 'pill-active',
+  scheduled: 'pill-scheduled',
+  'needs-human': 'pill-needs-human',
+  error: 'pill-error',
+  finished: 'pill-finished',
+};
+const COND_CARD = {
+  ready: 'card-ready',
+  active: 'card-active',
+  scheduled: 'card-scheduled',
+  'needs-human': 'card-needs-human',
+  error: 'card-error',
+};
+const BOARD_COLLAPSE_STORAGE_KEY = 'wake:board:collapsed-columns';
 let currentView = 'board';
 let analyticsWindow = '1d';
 let analyticsMetric = 'runs-over-time';
@@ -241,6 +290,35 @@ function isActiveRequest(requestId) {
   return activeViewRequest && activeViewRequest.id === requestId;
 }
 
+function readCollapsedColumns() {
+  try {
+    const raw = window.localStorage.getItem(BOARD_COLLAPSE_STORAGE_KEY);
+    if (!raw) return new Set();
+    const values = JSON.parse(raw);
+    if (!Array.isArray(values)) return new Set();
+    return new Set(values.filter((value) => CONDITIONS.includes(value)));
+  } catch {
+    return new Set();
+  }
+}
+
+function writeCollapsedColumns(collapsed) {
+  try {
+    window.localStorage.setItem(BOARD_COLLAPSE_STORAGE_KEY, JSON.stringify([...collapsed]));
+  } catch {
+    // Ignore storage failures; the toggle should still work for this render.
+  }
+}
+
+function setColumnCollapsed(column, button, collapsed) {
+  const label = collapsed ? 'Expand column' : 'Collapse column';
+  column.classList.toggle('is-collapsed', collapsed);
+  button.textContent = collapsed ? '+' : '-';
+  button.setAttribute('aria-label', label);
+  button.setAttribute('aria-expanded', String(!collapsed));
+  button.setAttribute('title', label);
+}
+
 function loadingNode(label) {
   return el('p', { class: 'meta', text: 'Loading ' + label + '...' });
 }
@@ -306,61 +384,80 @@ async function renderBoard(context) {
   const board = await getJson('/board', context.signal);
   if (!isActiveRequest(context.requestId)) return;
   const main = document.getElementById('main');
-  const COND_PILL = {
-    ready: 'pill-ready',
-    active: 'pill-active',
-    scheduled: 'pill-scheduled',
-    'needs-human': 'pill-needs-human',
-    error: 'pill-error',
-    finished: 'pill-finished',
-  };
-  const COND_CARD = {
-    ready: 'card-ready',
-    active: 'card-active',
-    scheduled: 'card-scheduled',
-    'needs-human': 'card-needs-human',
-    error: 'card-error',
-  };
-  const renderChildRun = (run) => el('div', { class: 'child-run' }, [
-    el('span', { class: 'dot' + (run.isWatcher ? ' dot-watch' : '') }),
-    el('div', { class: 'run-title', text: (run.isWatcher ? '⟳ ' : '') + run.action + ' running' }),
-    el('div', {
-      class: 'run-meta',
-      text: [run.runnerName, run.tier, fmtMs(run.ageMs)].filter(Boolean).join(' · '),
-    }),
-  ]);
+  const collapsedColumns = readCollapsedColumns();
   const columns = el('div', { class: 'columns' }, CONDITIONS.map((cond) => {
     const items = board.filter((c) => c.condition === cond);
     if (cond === 'finished') items.sort((a, b) => a.timeInStageMs - b.timeInStageMs);
     const cards = items.map((item) => {
-      const nonWakeLabels = (item.labels || []).filter((l) => !l.startsWith('wake:'));
-      const pillClass = 'pill ' + (COND_PILL[item.condition] || 'pill-finished');
       const cardCondClass = COND_CARD[item.condition] ?? '';
-      const statsText = item.totalRuns + ' runs | ' + fmtCost(item.totalCostUsd) + ' | ' + fmtCompact(item.totalTokens) + ' tokens';
-      const isFinished = item.condition === 'finished';
       return el('div', {
         class: 'card' + (cardCondClass ? ' ' + cardCondClass : ''),
-        onclick: () => openItemModal(item.repo, item.number),
+        onclick: () => openItemModal(item.repo, item.number, item),
       }, [
         el('div', { class: 'title', text: item.repo + '#' + item.number + ' ' + item.title }),
-        el('div', { class: 'meta', style: 'display:flex;align-items:center;gap:0.3rem;flex-wrap:wrap;margin-top:0.2rem;' }, [
-          el('span', { class: pillClass, text: item.condition }),
-          document.createTextNode('| ' + item.workflow + ' | ' + item.stage + (isFinished ? '' : ' | ' + fmtMs(item.timeInStageMs) + ' in stage')),
-        ]),
-        el('div', { class: 'card-stats', text: statsText }),
-        ...(nonWakeLabels.length > 0
-          ? [el('div', { class: 'meta', style: 'margin-top:0.2rem;' }, nonWakeLabels.map((label) => el('span', { class: 'chip chip-label', text: label })))]
-          : []),
-        ...(item.activeMainRun ? [renderChildRun(item.activeMainRun)] : []),
-        ...((item.activeChildRuns || []).map(renderChildRun)),
+        ...renderCardSummaryNodes(item),
       ]);
     });
-    return el('div', { class: 'col' + (items.length === 0 ? ' col-empty' : '') }, [
-      el('h2', { text: cond + ' (' + items.length + ')' }),
-      ...cards,
+    const isCollapsed = collapsedColumns.has(cond);
+    const toggle = el('button', {
+      class: 'col-toggle',
+      type: 'button',
+      onclick: () => {
+        const nextCollapsed = !collapsedColumns.has(cond);
+        if (nextCollapsed) collapsedColumns.add(cond);
+        else collapsedColumns.delete(cond);
+        writeCollapsedColumns(collapsedColumns);
+        setColumnCollapsed(column, toggle, nextCollapsed);
+      },
+    });
+    const column = el('div', { class: 'col' + (items.length === 0 ? ' col-empty' : '') }, [
+      el('div', { class: 'col-header' }, [
+        el('h2', { text: cond + ' (' + items.length + ')' }),
+        toggle,
+      ]),
+      el('div', { class: 'col-cards' }, cards),
     ]);
+    setColumnCollapsed(column, toggle, isCollapsed);
+    return column;
   }));
   main.replaceChildren(columns);
+}
+
+function renderChildRun(run) {
+  return el('div', { class: 'child-run' }, [
+    el('span', { class: 'dot' + (run.isWatcher ? ' dot-watch' : '') }),
+    el('div', { class: 'run-title', text: (run.isWatcher ? 'watcher ' : '') + run.action + ' running' }),
+    el('div', {
+      class: 'run-meta',
+      text: [run.runnerName, run.tier, fmtMs(run.ageMs)].filter(Boolean).join(' | '),
+    }),
+  ]);
+}
+
+function renderCardSummaryNodes(item) {
+  const nonWakeLabels = (item.labels || []).filter((l) => !l.startsWith('wake:'));
+  const pillClass = 'pill ' + (COND_PILL[item.condition] || 'pill-finished');
+  const statsText = item.totalRuns + ' runs | ' + fmtCost(item.totalCostUsd) + ' | ' + fmtCompact(item.totalTokens) + ' tokens';
+  const isFinished = item.condition === 'finished';
+  const displayStatus = item.displayStatus || item.lastRunStatus || item.stage;
+  const metaPills = [
+    el('span', { class: pillClass, text: displayStatus.replace(/-/g, ' ') }),
+    ...(item.isFrozen ? [el('span', { class: 'pill pill-frozen', text: 'Frozen' })] : []),
+    el('span', { class: 'chip chip-meta', text: item.workflow }),
+    el('span', { class: 'chip chip-meta', text: item.stage }),
+  ];
+  if (!isFinished) {
+    metaPills.push(el('span', { class: 'chip chip-meta', text: fmtMs(item.timeInStageMs) + ' in stage' }));
+  }
+  return [
+    el('div', { class: 'meta', style: 'display:flex;align-items:center;gap:0.3rem;flex-wrap:wrap;margin-top:0.2rem;' }, metaPills),
+    ...(nonWakeLabels.length > 0
+      ? [el('div', { class: 'meta', style: 'margin-top:0.2rem;' }, nonWakeLabels.map((label) => el('span', { class: 'chip chip-label', text: label })))]
+      : []),
+    el('div', { class: 'card-stats', text: statsText }),
+    ...(item.activeMainRun ? [renderChildRun(item.activeMainRun)] : []),
+    ...((item.activeChildRuns || []).map(renderChildRun)),
+  ];
 }
 
 function resourceUriToUrl(resourceUri) {
@@ -378,7 +475,7 @@ function resourceUriToUrl(resourceUri) {
   return null;
 }
 
-async function openItemModal(repo, number) {
+async function openItemModal(repo, number, boardItem) {
   const overlay = document.getElementById('modal-overlay');
   const title = document.getElementById('modal-title');
   const tabs = document.getElementById('modal-tabs');
@@ -400,7 +497,11 @@ async function openItemModal(repo, number) {
 
   async function ensureDetail() {
     if (!loaded.has('detail')) {
-      loaded.set('detail', await getJson('/items/' + encodeURIComponent(repo) + '/' + number));
+      const itemPath =
+        boardItem && boardItem.workItemKey
+          ? '/items/' + encodeURIComponent(boardItem.workItemKey)
+          : '/items/' + encodeURIComponent(repo) + '/' + number;
+      loaded.set('detail', await getJson(itemPath));
     }
     return loaded.get('detail');
   }
@@ -424,29 +525,118 @@ async function openItemModal(repo, number) {
     const detail = await ensureDetail();
     if (!detail) return el('p', { text: 'Not found' });
     if (tab === 'events') {
-      return el('div', {}, [el('pre', { text: JSON.stringify(detail.events, null, 2) })]);
+      return renderItemEvents(detail.events || []);
     }
     if (tab === 'transcripts') {
       const transcripts = await getJson('/work-items/' + encodeURIComponent(detail.item.workItemKey) + '/transcripts');
       return renderTranscripts(transcripts);
     }
-    return renderItemDetails(detail);
+    return renderItemDetails(detail, boardItem);
   }
 
   await switchItemTab('details');
 }
 
-function renderItemDetails(detail) {
+function eventTimestamp(event) {
+  return event.ingestedAt || event.occurredAt || '';
+}
+
+function eventDirectionSymbol(direction) {
+  if (direction === 'inbound') return '\\u2193';
+  if (direction === 'outbound') return '\\u2191';
+  return '\\u2194';
+}
+
+function sortedEventsNewestFirst(events) {
+  return [...events].sort((left, right) => eventTimestamp(right).localeCompare(eventTimestamp(left)));
+}
+
+async function copyText(text, button) {
+  const original = button.textContent;
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      const input = document.createElement('textarea');
+      input.value = text;
+      input.setAttribute('readonly', 'readonly');
+      input.style.position = 'fixed';
+      input.style.top = '-1000px';
+      document.body.appendChild(input);
+      input.select();
+      document.execCommand('copy');
+      input.remove();
+    }
+    button.textContent = 'Copied';
+  } catch (err) {
+    button.textContent = 'Copy failed';
+  } finally {
+    setTimeout(() => {
+      button.textContent = original;
+    }, 1100);
+  }
+}
+
+function renderItemEvents(events) {
+  if (events.length === 0) {
+    return el('p', { class: 'meta', text: 'No events available for this item.' });
+  }
+
+  const root = el('div', { class: 'event-list' });
+  for (const event of sortedEventsNewestFirst(events)) {
+    const json = JSON.stringify(event, null, 2);
+    const card = el('article', { class: 'event-card' });
+    const summary = el('button', { type: 'button', class: 'event-summary' }, [
+      el('span', { class: 'event-time', text: eventTimestamp(event) }),
+      el('span', { class: 'event-type', text: event.sourceEventType || 'unknown event' }),
+      el('span', { class: 'event-id', text: event.eventId || '' }),
+      el('span', { class: 'event-direction', title: event.direction || 'unknown', text: eventDirectionSymbol(event.direction) }),
+    ]);
+    summary.addEventListener('click', () => {
+      card.classList.toggle('expanded');
+      summary.setAttribute('aria-expanded', String(card.classList.contains('expanded')));
+    });
+    const copyButton = el('button', { type: 'button', class: 'event-copy', text: 'Copy' });
+    copyButton.addEventListener('click', (clickEvent) => {
+      clickEvent.stopPropagation();
+      copyText(json, copyButton);
+    });
+    const jsonArea = el('div', { class: 'event-json' }, [
+      copyButton,
+      el('pre', { text: json }),
+    ]);
+    card.appendChild(summary);
+    card.appendChild(jsonArea);
+    root.appendChild(card);
+  }
+  return root;
+}
+
+function renderItemDetails(detail, boardItem) {
   const body = el('div');
   const repo = detail.item.issue.repo;
   const number = detail.item.issue.number;
   const headLink = el('a', { href: detail.item.issue.url, target: '_blank', rel: 'noopener noreferrer', text: repo + '#' + number });
   body.appendChild(el('h3', {}, [headLink]));
   body.appendChild(el('p', { text: detail.item.issue.title }));
-  body.appendChild(el('p', { class: 'meta', text: 'stage: ' + detail.item.wake.stage + (detail.item.wake.sessionId ? ' | session: ' + detail.item.wake.sessionId : '') }));
-  if (detail.item.wake.workspacePath) {
-    body.appendChild(el('p', { class: 'meta', text: 'workspace: ' + detail.item.wake.workspacePath }));
+  if (boardItem) {
+    body.appendChild(el('div', { class: 'item-summary' }, renderCardSummaryNodes(boardItem)));
   }
+  const details = [];
+  if (detail.item.wake.sessionId) {
+    details.push(['Session', detail.item.wake.sessionId]);
+  }
+  if (detail.item.wake.workspacePath) {
+    details.push(['Workspace', detail.item.wake.workspacePath]);
+  }
+  if (details.length > 0) {
+    body.appendChild(el('dl', { class: 'detail-kv' }, details.flatMap(([label, value]) => [
+      el('dt', { text: label }),
+      el('dd', { text: value }),
+    ])));
+  }
+  const isFrozen = detail.item.context.frozen !== undefined && detail.item.context.frozen !== null;
+  const actionBar = el('div', { class: 'action-bar' });
   const lastRun = detail.runs.at(-1);
   if (lastRun && lastRun.sentinel === 'FAILED') {
     const retryBtn = el('button', { type: 'button', class: 'btn', text: 'Retry' });
@@ -462,7 +652,7 @@ function renderItemDetails(detail) {
         document.getElementById('status-summary').textContent = 'retry failed: ' + err.message;
       }
     });
-    body.appendChild(retryBtn);
+    actionBar.appendChild(retryBtn);
   }
   if (detail.item.issue.labels.includes('wake:scheduled-workflow')) {
     const runNowBtn = el('button', { type: 'button', class: 'btn', text: 'Run now' });
@@ -478,7 +668,44 @@ function renderItemDetails(detail) {
         document.getElementById('status-summary').textContent = 'run request failed: ' + err.message;
       }
     });
-    body.appendChild(runNowBtn);
+    actionBar.appendChild(runNowBtn);
+  }
+  const freezeBtn = el('button', { type: 'button', class: 'btn', text: isFrozen ? 'Unfreeze' : 'Freeze' });
+  freezeBtn.addEventListener('click', async () => {
+    const action = isFrozen ? 'unfreeze' : 'freeze';
+    freezeBtn.disabled = true;
+    freezeBtn.textContent = isFrozen ? 'Unfreezing...' : 'Freezing...';
+    try {
+      await postJson('/work-items/' + encodeURIComponent(detail.item.workItemKey) + '/' + action);
+      freezeBtn.textContent = isFrozen ? 'Unfrozen' : 'Frozen';
+      document.getElementById('status-summary').textContent = isFrozen ? 'work item unfrozen' : 'work item frozen';
+    } catch (err) {
+      freezeBtn.disabled = false;
+      freezeBtn.textContent = isFrozen ? 'Unfreeze' : 'Freeze';
+      document.getElementById('status-summary').textContent = action + ' failed: ' + err.message;
+    }
+  });
+  actionBar.appendChild(freezeBtn);
+
+  const deleteBtn = el('button', { type: 'button', class: 'btn danger', text: 'Delete' });
+  deleteBtn.addEventListener('click', async () => {
+    if (!confirm('Delete this work item from the board and remove its resource correlations?')) return;
+    deleteBtn.disabled = true;
+    deleteBtn.textContent = 'Deleting...';
+    try {
+      await postJson('/work-items/' + encodeURIComponent(detail.item.workItemKey) + '/delete');
+      deleteBtn.textContent = 'Deleted';
+      document.getElementById('status-summary').textContent = 'work item deleted';
+      switchView(currentView, { showLoading: false });
+    } catch (err) {
+      deleteBtn.disabled = false;
+      deleteBtn.textContent = 'Delete';
+      document.getElementById('status-summary').textContent = 'delete failed: ' + err.message;
+    }
+  });
+  actionBar.appendChild(deleteBtn);
+  if (actionBar.childNodes.length > 0) {
+    body.appendChild(actionBar);
   }
   const resources = detail.item.correlatedResources || [];
   if (resources.length > 0) {

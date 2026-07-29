@@ -61,6 +61,7 @@ describe('workflow interpreter', () => {
     expect(nextStage('triage', 'DONE', workflow)).toBe('build');
     expect(nextStage('build', 'DONE', workflow)).toBe('done');
     expect(nextStage('build', 'BLOCKED', workflow)).toBeNull();
+    expect(nextStage('build', 'REJECTED', workflow)).toBeNull();
     expect(stageLabelsForWorkflow(workflow)).toEqual([
       'wake:stage.queue',
       'wake:stage.triage',

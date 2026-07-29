@@ -637,7 +637,6 @@ describe('sandbox command', () => {
       smokePrompt: 'hi',
       timeoutMs: 600_000,
       remoteControl: { enabled: false },
-      models: {},
     };
 
     await runSandboxCommand({

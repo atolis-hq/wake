@@ -18,6 +18,7 @@ import {
 } from '../../src/adapters/http/ui-data.js';
 import { createWakePaths } from '../../src/lib/paths.js';
 import type { IssueStateRecord, RunRecord } from '../../src/domain/types.js';
+import type { WorkItemStatus } from '../../src/domain/work-item-status.js';
 
 /** A stable, ULID-shaped work id per issue number; real ids come from createWorkId(). */
 function workId(issueNumber: number): string {
@@ -30,6 +31,8 @@ function issueState(input: {
   sessionId?: string;
   lastRunId?: string;
   syncedAt?: string;
+  frozenAt?: string;
+  status?: WorkItemStatus;
 }): IssueStateRecord {
   const syncedAt = input.syncedAt ?? '2026-07-05T12:00:00.000Z';
   return {
@@ -58,7 +61,10 @@ function issueState(input: {
       ...(input.sessionId === undefined ? {} : { sessionId: input.sessionId }),
       ...(input.lastRunId === undefined ? {} : { lastRunId: input.lastRunId }),
     },
-    context: {},
+    context: {
+      ...(input.frozenAt === undefined ? {} : { frozen: { at: input.frozenAt, by: 'test' } }),
+      ...(input.status === undefined ? {} : { status: input.status }),
+    },
     correlatedResources: [],
   };
 }
@@ -107,10 +113,17 @@ describe('ui-data', () => {
     const store = createStateStore({ wakeRoot: root });
     const config = createDefaultWakeConfig(root);
 
-    await store.writeIssueState(issueState({ number: 1, stage: 'implement', lastRunId: 'run-1' }));
-    await store.writeIssueState(issueState({ number: 2, stage: 'implement', lastRunId: 'run-2' }));
-    await store.writeIssueState(issueState({ number: 3, stage: 'done' }));
+    await store.writeIssueState(
+      issueState({ number: 1, stage: 'implement', lastRunId: 'run-1', status: 'working' }),
+    );
+    await store.writeIssueState(
+      issueState({ number: 2, stage: 'implement', lastRunId: 'run-2', status: 'blocked' }),
+    );
+    await store.writeIssueState(issueState({ number: 3, stage: 'done', status: 'done' }));
     await store.writeIssueState(issueState({ number: 4, stage: 'queue' }));
+    await store.writeIssueState(
+      issueState({ number: 5, stage: 'implement', lastRunId: 'run-5', status: 'queued' }),
+    );
     await store.writeRunRecord(runRecord({ runId: 'run-1', issueNumber: 1, status: 'running' }));
     await store.writeRunRecord(
       runRecord({
@@ -118,6 +131,14 @@ describe('ui-data', () => {
         issueNumber: 2,
         status: 'blocked',
         sentinel: 'BLOCKED',
+      }),
+    );
+    await store.writeRunRecord(
+      runRecord({
+        runId: 'run-5',
+        issueNumber: 5,
+        status: 'completed',
+        sentinel: 'DONE',
       }),
     );
 
@@ -130,9 +151,41 @@ describe('ui-data', () => {
     const byNumber = new Map(board.map((card) => [card.number, card]));
 
     expect(byNumber.get(1)?.condition).toBe('active');
+    expect(byNumber.get(1)?.workItemKey).toBe(workId(1));
+    expect(byNumber.get(1)?.displayStatus).toBe('working');
     expect(byNumber.get(2)?.condition).toBe('needs-human');
+    expect(byNumber.get(2)?.displayStatus).toBe('blocked');
     expect(byNumber.get(3)?.condition).toBe('finished');
+    expect(byNumber.get(3)?.displayStatus).toBe('done');
     expect(byNumber.get(4)?.condition).toBe('ready');
+    expect(byNumber.get(4)?.displayStatus).toBe('queued');
+    expect(byNumber.get(5)?.condition).toBe('ready');
+    expect(byNumber.get(5)?.displayStatus).toBe('queued');
+  });
+
+  it('marks frozen board cards explicitly', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const config = createDefaultWakeConfig(root);
+
+    await store.writeIssueState(
+      issueState({
+        number: 6,
+        stage: 'implement',
+        frozenAt: '2026-07-05T12:30:00.000Z',
+      }),
+    );
+
+    const board = await buildBoard({
+      stateStore: store,
+      config,
+      now: new Date('2026-07-05T13:00:00.000Z'),
+    });
+
+    expect(board.find((item) => item.number === 6)).toMatchObject({
+      condition: 'needs-human',
+      conditionReason: 'work item frozen',
+      isFrozen: true,
+    });
   });
 
   it('surfaces running watcher runs as child rows without replacing the projection last run', async () => {
@@ -203,7 +256,6 @@ describe('ui-data', () => {
       smokeModel: 'gpt-5.4-mini',
       smokePrompt: 'hi',
       timeoutMs: 1000,
-      models: { default: 'gpt-5.5', implement: 'gpt-5.5' },
     };
 
     await store.writeRunRecord({
@@ -373,6 +425,27 @@ describe('ui-data', () => {
     expect(listIssueStatesCalls).toBe(0);
   });
 
+  it('resolves an item detail directly by work item key', async () => {
+    const store = createStateStore({ wakeRoot: root });
+
+    await store.writeIssueState(issueState({ number: 9, stage: 'implement', lastRunId: 'run-9' }));
+    await store.writeRunRecord(runRecord({ runId: 'run-9', issueNumber: 9, status: 'running' }));
+
+    const detail = await buildItemDetail({
+      stateStore: store,
+      workItemKey: workId(9),
+    });
+
+    expect(detail?.item.workItemKey).toBe(workId(9));
+    expect(detail?.runs.map((run) => run.runId)).toEqual(['run-9']);
+
+    const missing = await buildItemDetail({
+      stateStore: store,
+      workItemKey: workId(404),
+    });
+    expect(missing).toBeNull();
+  });
+
   it('flags a stage with no configured route as error', async () => {
     const store = createStateStore({ wakeRoot: root });
     const config = createDefaultWakeConfig(root);
@@ -440,6 +513,37 @@ describe('ui-data', () => {
     await lock.release();
 
     expect(status.loopState).toBe('working');
+  });
+
+  it('does not report working when a stale runner lock PID was reused by another command', async () => {
+    const store = createStateStore({ wakeRoot: root });
+    const config = createDefaultWakeConfig(root);
+
+    await mkdir(join(root, '.wake', 'locks'), { recursive: true });
+    await writeFile(
+      store.paths.runnerLockFile,
+      `${JSON.stringify({
+        pid: 24,
+        acquiredAt: '2026-07-05T12:00:00.000Z',
+        lockId: 'stale-runner-lock',
+        commandLine: 'node /app/dist/src/main.js start --wake-root /wake',
+      })}\n`,
+      'utf8',
+    );
+
+    const status = await buildStatus({
+      stateStore: store,
+      config,
+      now: new Date('2026-07-05T12:00:01.000Z'),
+      processInspector: {
+        isPidAlive: () => true,
+        readCommandLine: () => 'ngrok http 127.0.0.1:4317 --log=stdout',
+      },
+    });
+
+    expect(status.loopState).toBe('idle');
+    expect(status.runnerLock.pidAlive).toBe(false);
+    expect(status.runnerLock.staleReason).toBe('pid-command-mismatch');
   });
 
   it('builds status from recent events and today run buckets without a full history run scan', async () => {
@@ -923,7 +1027,6 @@ describe('ui-data', () => {
       smokeModel: 'gpt-5.4-mini',
       smokePrompt: 'hi',
       timeoutMs: 1000,
-      models: { default: 'gpt-5.5', implement: 'gpt-5.5' },
     };
 
     await store.writeRunRecord({

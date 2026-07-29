@@ -230,11 +230,15 @@ describe('claude runner command building', () => {
     expect(result.prompt).toContain('propose an alternative');
     expect(result.prompt).toContain('/replies');
     expect(result.prompt).toContain('Rename "item" to "work item"');
-    expect(result.harnessPrompt).toContain('AWAITING_APPROVAL, BLOCKED, FAILED');
+    expect(result.harnessPrompt).toContain('DONE, BLOCKED, FAILED');
     expect(result.maxTurns).toBeGreaterThan(0);
   });
 
-  it('requires AWAITING_APPROVAL, not DONE, for successful built-in prompts when approval is required', async () => {
+  it('always requires DONE (never AWAITING_APPROVAL) for built-in prompts, regardless of whether approval is required', async () => {
+    // The approval gate is pure policy (ADR 0002) — the agent always reports
+    // DONE, and Wake decides whether that advances immediately or waits for
+    // a human based on the stage's skipApproval config, without the agent
+    // ever needing to know which applies.
     for (const action of ['refine', 'implement'] as const) {
       for (const mode of ['start', 'resume'] as const) {
         const result = await buildStagePrompt({
@@ -244,19 +248,16 @@ describe('claude runner command building', () => {
         });
 
         expect(result.harnessPrompt).toContain('must be exactly one of:');
-        expect(result.harnessPrompt).toContain('AWAITING_APPROVAL, BLOCKED, FAILED');
-        expect(result.harnessPrompt).not.toContain('DONE, BLOCKED, FAILED');
-        expect(result.harnessPrompt).toContain(
-          '- AWAITING_APPROVAL: the stage objective is complete',
-        );
-        expect(result.harnessPrompt).not.toContain('- DONE:');
+        expect(result.harnessPrompt).toContain('DONE, BLOCKED, FAILED');
+        expect(result.harnessPrompt).not.toContain('AWAITING_APPROVAL');
+        expect(result.harnessPrompt).toContain('- DONE: the stage objective is complete.');
         expect(result.prompt).not.toContain('must be exactly one of:');
-        expect(result.prompt).not.toContain('AWAITING_APPROVAL, BLOCKED, FAILED');
+        expect(result.prompt).not.toContain('DONE, BLOCKED, FAILED');
       }
     }
   });
 
-  it('allows DONE as the success sentinel only when a template opts out of approval', async () => {
+  it('requires DONE as the success sentinel for a skipApproval: true template', async () => {
     const promptsDir = await mkdtemp(join(tmpdir(), 'wake-prompts-'));
     await writeFile(
       join(promptsDir, 'refine.start.md'),
@@ -436,6 +437,22 @@ describe('claude runner command building', () => {
     expect(result.harnessPrompt).toContain('abc1234 2026-07-18 Wake Test <wake@example.test>');
     expect(result.harnessPrompt).toContain('Add latest feature');
     expect(result.prompt).not.toContain('Upstream update notice:');
+  });
+
+  it('adds pre-existing uncommitted changes guidance to the trusted harness prompt', async () => {
+    const result = await buildStagePrompt({
+      action: 'implement',
+      mode: 'resume',
+      projection: baseProjection,
+      preExistingUncommittedChanges: true,
+    });
+
+    expect(result.harnessPrompt).toContain('Pre-existing uncommitted changes notice:');
+    expect(result.harnessPrompt).toContain(
+      'left over from a previous interrupted attempt at this same issue',
+    );
+    expect(result.harnessPrompt).toContain('review them with `git status`/`git diff`');
+    expect(result.prompt).not.toContain('Pre-existing uncommitted changes notice:');
   });
 
   it('start prompts make new comments prominent while preserving prior comment context', async () => {
@@ -942,7 +959,6 @@ describe('claude runner command building', () => {
         settings: {
           command,
           model: 'haiku',
-          models: { default: 'haiku' },
           smokeModel: 'haiku',
           sessionName: 'Wake',
           remoteControlName: 'Wake',
@@ -985,7 +1001,7 @@ describe('claude runner command building', () => {
       const repairJson = JSON.stringify({
         type: 'result',
         subtype: 'success',
-        result: '```wake-result\n{"status":"AWAITING_APPROVAL"}\n```\nAWAITING_APPROVAL',
+        result: '```wake-result\n{"status":"DONE"}\n```\nDONE',
         session_id: 'session-abc',
       });
       await writeFile(
@@ -1008,7 +1024,6 @@ describe('claude runner command building', () => {
         settings: {
           command,
           model: 'haiku',
-          models: { default: 'haiku' },
           smokeModel: 'haiku',
           sessionName: 'Wake',
           remoteControlName: 'Wake',
@@ -1027,7 +1042,7 @@ describe('claude runner command building', () => {
       });
 
       expect(result.result).toContain('Here is my completed plan without a sentinel.');
-      expect(result.result.trim().endsWith('AWAITING_APPROVAL')).toBe(true);
+      expect(result.result.trim().endsWith('DONE')).toBe(true);
       expect(result.metadata?.envelopeRepaired).toBe(true);
     },
   );
@@ -1085,7 +1100,6 @@ describe('claude runner command building', () => {
         settings: {
           command,
           model: 'haiku',
-          models: { default: 'haiku' },
           smokeModel: 'haiku',
           sessionName: 'Wake',
           remoteControlName: 'Wake',
@@ -1114,54 +1128,19 @@ describe('claude runner command building', () => {
 describe('model resolution', () => {
   type ClaudeSettings = {
     model: string;
-    models?: { default?: string; refine?: string; implement?: string };
   };
 
-  function resolveTestModel(settings: ClaudeSettings, action: 'implement' | 'refine'): string {
-    const models = settings.models ?? {};
-    return models[action] ?? models.default ?? settings.model;
+  function resolveTestModel(settings: ClaudeSettings): string {
+    return settings.model;
   }
 
-  it('uses action-specific model when configured', () => {
-    const settings: ClaudeSettings = { model: 'haiku', models: { implement: 'sonnet-4.6' } };
+  it('uses the runner model field', () => {
+    const settings: ClaudeSettings = { model: 'haiku' };
     const args = buildClaudePrintArgs({
-      model: resolveTestModel(settings, 'implement'),
+      model: resolveTestModel(settings),
       prompt: 'test',
       sessionName: 'Wake',
     });
-    expect(args).toContain('sonnet-4.6');
-  });
-
-  it('falls back to default model when action-specific model is not set', () => {
-    const settings: ClaudeSettings = {
-      model: 'haiku',
-      models: { default: 'opus', implement: 'sonnet-4.6' },
-    };
-    const args = buildClaudePrintArgs({
-      model: resolveTestModel(settings, 'refine'),
-      prompt: 'test',
-      sessionName: 'Wake',
-    });
-    expect(args).toContain('opus');
-  });
-
-  it('falls back to model field when no models overrides set', () => {
-    const settings: ClaudeSettings = { model: 'legacy-haiku' };
-    const args = buildClaudePrintArgs({
-      model: resolveTestModel(settings, 'implement'),
-      prompt: 'test',
-      sessionName: 'Wake',
-    });
-    expect(args).toContain('legacy-haiku');
-  });
-
-  it('prioritizes models.default over model field', () => {
-    const settings: ClaudeSettings = { model: 'legacy-haiku', models: { default: 'new-haiku' } };
-    const args = buildClaudePrintArgs({
-      model: resolveTestModel(settings, 'implement'),
-      prompt: 'test',
-      sessionName: 'Wake',
-    });
-    expect(args).toContain('new-haiku');
+    expect(args).toContain('haiku');
   });
 });

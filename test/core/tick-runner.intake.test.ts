@@ -780,9 +780,14 @@ describe('tick runner', () => {
         },
         outboundSink: {
           async deliverIntent(input) {
+            // The reconciliation pass's own synthetic runId (`pending-<key>-…`)
+            // is what this test is really about — not the specific status
+            // label value, which now reflects the seeded AWAITING_APPROVAL
+            // sentinel via labelsForWorkItem's legacy fallback rather than a
+            // blanket "pending".
             if (
               input.event.sourceEventType === 'wake.labels.requested' &&
-              input.event.payload.statusLabel === 'wake:status.pending'
+              String(input.event.sourceRefs.runId).startsWith('pending-')
             ) {
               pendingRunIds.push(String(input.event.sourceRefs.runId));
             }

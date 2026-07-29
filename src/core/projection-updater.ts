@@ -7,10 +7,15 @@ import {
   RUN_CLAIMED_EVENT,
   RUN_COMPLETED_EVENT,
   WORKFLOW_SELECTED_EVENT,
+  WORK_ITEM_DELETED_EVENT,
+  WORK_ITEM_FROZEN_EVENT,
+  WORK_ITEM_UNFROZEN_EVENT,
   WORKSPACE_CLEANED_EVENT,
 } from '../domain/event-types.js';
 import { UNRESOLVED_WORK_ITEM_KEY, parseIssueStateRecord } from '../domain/schema.js';
-import { doneRunnerSentinel, stageFromLabels } from '../domain/stages.js';
+import { doneRunnerSentinel, rejectedRunnerSentinel, stageFromLabels } from '../domain/stages.js';
+import { FROZEN_WORK_ITEM_LABEL } from '../domain/work-item-lifecycle.js';
+import { workItemStatusForRunOutcome } from '../domain/work-item-status.js';
 import {
   builtInDefaultWorkflowDefinition,
   defaultWorkflowName,
@@ -64,6 +69,11 @@ function createProjectionFromIssueEvent(
     ? (issue as { labels: string[] }).labels
     : [];
 
+  // Only the scheduled-workflow-source's synthetic ticket carries a
+  // wake:schedule resourceUri; no other mint path sets this, so `scheduled`
+  // has a real backing context field instead of only ever living in a label.
+  const scheduled = event.sourceRefs.resourceUri?.split(':')[1] === 'schedule';
+
   return parseIssueStateRecord({
     schemaVersion: 1,
     workItemKey: event.workItemKey,
@@ -75,7 +85,7 @@ function createProjectionFromIssueEvent(
       recentEventIds: [event.eventId],
       syncedAt: event.ingestedAt,
     },
-    context: {},
+    context: scheduled ? { scheduled: true } : {},
   });
 }
 
@@ -254,6 +264,10 @@ async function applyEvent(
 
     return parseIssueStateRecord({
       ...current,
+      context: {
+        ...current.context,
+        status: 'working',
+      },
       wake: {
         ...current.wake,
         stage: payload.claimedStage,
@@ -276,6 +290,7 @@ async function applyEvent(
     const payload = event.payload as {
       action?: string;
       sentinel?: string;
+      approvalGated?: boolean;
       nextStage?: IssueStateRecord['wake']['stage'];
       runId?: string;
       sessionId?: string;
@@ -294,7 +309,58 @@ async function applyEvent(
       workflowOutcome?: string;
       watcherRun?: boolean;
       allowAutoApproval?: boolean;
+      changesRequested?: boolean;
+      reviewFeedbackBody?: string;
     };
+
+    // A historical event stream may still carry the retired AWAITING_APPROVAL
+    // sentinel (pre-ADR-0002). Normalize it here, once, so every branch below
+    // and the strict runnerSentinelSchema validation on new writes to
+    // context.lastRunSentinel only ever see the current four-value
+    // vocabulary — replaying an old event stream must still land on the same
+    // practical state (approval-gated) as it did before this change.
+    const isLegacyAwaitingApproval = payload.sentinel === 'AWAITING_APPROVAL';
+    const sentinel = isLegacyAwaitingApproval ? doneRunnerSentinel : payload.sentinel;
+    const approvalGated = payload.approvalGated === true || isLegacyAwaitingApproval;
+
+    // A rejecting plan-review/pr-review watcher sub-run (§5, trigger 1) or a
+    // human /changes reply (§5, trigger 2) folds onto the parent's context
+    // without touching wake.stage/lastRunId/session — same isolation
+    // guarantee PR #479 established for watcher runs generally. Checked
+    // before the watcherRun early-return below so a rejecting watcher run
+    // (which also carries watcherRun: true) still updates status/feedback,
+    // while every other watcher-run completion (e.g. an approving DONE
+    // verdict) still hits that early-return untouched.
+    if (payload.changesRequested === true) {
+      const currentChangesRequestedCount =
+        typeof current.context.changesRequestedCount === 'number' &&
+        Number.isInteger(current.context.changesRequestedCount)
+          ? current.context.changesRequestedCount
+          : 0;
+      const nextChangesRequestedCount = currentChangesRequestedCount + 1;
+      const maxRetries = config?.retry.maxChangesRequestedRetries ?? Infinity;
+      const escalate = nextChangesRequestedCount > maxRetries;
+
+      return parseIssueStateRecord({
+        ...current,
+        context: {
+          ...current.context,
+          status: escalate ? 'blocked' : 'changes-requested',
+          changesRequestedCount: nextChangesRequestedCount,
+          ...(payload.reviewFeedbackBody === undefined
+            ? {}
+            : { changesRequestedFeedback: payload.reviewFeedbackBody }),
+          ...(payload.handledCommentId === undefined
+            ? {}
+            : { lastHandledCommentId: payload.handledCommentId }),
+        },
+        wake: {
+          ...current.wake,
+          syncedAt: event.ingestedAt,
+          recentEventIds: [...current.wake.recentEventIds, event.eventId].slice(-10),
+        },
+      });
+    }
 
     if (payload.watcherRun === true) {
       return parseIssueStateRecord({
@@ -314,10 +380,10 @@ async function applyEvent(
       payload.nextStage !== undefined && payload.nextStage !== current.wake.stage;
     const stageChanged =
       payload.nextStage !== undefined && payload.nextStage !== current.wake.stage;
-    const isFailed = payload.sentinel === 'FAILED';
+    const isFailed = sentinel === 'FAILED';
     const isCompletedCustomCommand =
       payload.action !== undefined &&
-      payload.sentinel === doneRunnerSentinel &&
+      sentinel === doneRunnerSentinel &&
       config !== undefined &&
       isCustomCommandAction(payload.action, config);
     const shouldClearSession = isForwardProgression || isFailed;
@@ -332,29 +398,28 @@ async function applyEvent(
       failureCount:
         payload.failureClass !== undefined
           ? currentFailureCount + 1
-          : payload.sentinel === doneRunnerSentinel || payload.sentinel === 'AWAITING_APPROVAL'
+          : sentinel === doneRunnerSentinel || sentinel === rejectedRunnerSentinel
             ? 0
             : currentFailureCount,
       ...(payload.handledCommentId === undefined
         ? {}
         : { lastHandledCommentId: payload.handledCommentId }),
-      ...(payload.sentinel === undefined || isCompletedCustomCommand
-        ? {}
-        : { lastRunSentinel: payload.sentinel }),
+      ...(sentinel === undefined || isCompletedCustomCommand ? {} : { lastRunSentinel: sentinel }),
       ...(payload.action === undefined || isCompletedCustomCommand
         ? {}
         : { lastRunAction: payload.action }),
-      ...(payload.sentinel === doneRunnerSentinel &&
+      ...(sentinel === doneRunnerSentinel &&
       payload.action !== undefined &&
       !isCompletedCustomCommand
         ? { lastCompletedAction: payload.action }
         : {}),
       // Remembered so the approval path knows which action to resume or
-      // skip when a human posts /approved.
-      ...(payload.sentinel === 'AWAITING_APPROVAL' && payload.action !== undefined
+      // skip when a human posts /approved. Set only for an approval-gated
+      // DONE — REJECTED/BLOCKED/FAILED never gate on human sign-off this way.
+      ...(sentinel === doneRunnerSentinel && approvalGated && payload.action !== undefined
         ? { pendingApprovalAction: payload.action }
         : {}),
-      ...(payload.sentinel === 'AWAITING_APPROVAL'
+      ...(sentinel === doneRunnerSentinel && approvalGated
         ? { pendingApprovalAllowAutoApproval: payload.allowAutoApproval === true }
         : {}),
       ...(payload.executionOutcome !== undefined
@@ -374,14 +439,28 @@ async function applyEvent(
         ? { lastExternalSideEffects: payload.externalSideEffects }
         : {}),
       ...(payload.retrySafety !== undefined ? { lastRetrySafety: payload.retrySafety } : {}),
+      ...(sentinel === undefined || isCompletedCustomCommand
+        ? {}
+        : {
+            status: workItemStatusForRunOutcome({
+              sentinel: sentinel as 'DONE' | 'REJECTED' | 'BLOCKED' | 'FAILED',
+              stage: payload.nextStage ?? current.wake.stage,
+              approvalGated,
+            }),
+          }),
+      // A fresh DONE cycle (gated or not) resolves whatever changes were
+      // previously requested — reset the loop counter and stored feedback.
+      ...(sentinel === doneRunnerSentinel
+        ? { changesRequestedCount: 0, changesRequestedFeedback: undefined }
+        : {}),
     };
 
-    if (payload.sentinel === 'BLOCKED' || payload.sentinel === 'FAILED') {
+    if (sentinel === 'BLOCKED' || sentinel === 'FAILED') {
       nextContext.blockedFromStage = current.wake.stage;
-    } else if (payload.sentinel !== undefined) {
+    } else if (sentinel !== undefined) {
       delete nextContext.blockedFromStage;
     }
-    if (payload.sentinel !== 'AWAITING_APPROVAL' && !isCompletedCustomCommand) {
+    if (!(sentinel === doneRunnerSentinel && approvalGated) && !isCompletedCustomCommand) {
       delete nextContext.pendingApprovalAction;
       delete nextContext.pendingApprovalAllowAutoApproval;
     }
@@ -462,6 +541,67 @@ async function applyEvent(
   if (event.sourceEventType === RUN_REQUESTED_EVENT) {
     return parseIssueStateRecord({
       ...current,
+      wake: {
+        ...current.wake,
+        syncedAt: event.ingestedAt,
+        recentEventIds: [...current.wake.recentEventIds, event.eventId].slice(-10),
+      },
+    });
+  }
+
+  if (event.sourceEventType === WORK_ITEM_DELETED_EVENT) {
+    return parseIssueStateRecord({
+      ...current,
+      context: {
+        ...current.context,
+        deleted: {
+          at: event.occurredAt,
+          by: typeof event.payload.requestedBy === 'string' ? event.payload.requestedBy : 'unknown',
+        },
+      },
+      wake: {
+        ...current.wake,
+        sessionId: undefined,
+        sessionCli: undefined,
+        syncedAt: event.ingestedAt,
+        recentEventIds: [...current.wake.recentEventIds, event.eventId].slice(-10),
+      },
+    });
+  }
+
+  if (event.sourceEventType === WORK_ITEM_FROZEN_EVENT) {
+    return parseIssueStateRecord({
+      ...current,
+      issue: {
+        ...current.issue,
+        labels: Array.from(new Set([...current.issue.labels, FROZEN_WORK_ITEM_LABEL])),
+      },
+      context: {
+        ...current.context,
+        frozen: {
+          at: event.occurredAt,
+          by: typeof event.payload.requestedBy === 'string' ? event.payload.requestedBy : 'unknown',
+        },
+      },
+      wake: {
+        ...current.wake,
+        syncedAt: event.ingestedAt,
+        recentEventIds: [...current.wake.recentEventIds, event.eventId].slice(-10),
+      },
+    });
+  }
+
+  if (event.sourceEventType === WORK_ITEM_UNFROZEN_EVENT) {
+    const nextContext: Record<string, unknown> = { ...current.context };
+    delete nextContext.frozen;
+
+    return parseIssueStateRecord({
+      ...current,
+      issue: {
+        ...current.issue,
+        labels: current.issue.labels.filter((label) => label !== FROZEN_WORK_ITEM_LABEL),
+      },
+      context: nextContext,
       wake: {
         ...current.wake,
         syncedAt: event.ingestedAt,

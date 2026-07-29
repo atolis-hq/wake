@@ -123,33 +123,39 @@ export interface StagePromptResult {
   extraArgs: string[];
   maxTurns: number;
   skipApproval: boolean;
+  reviewShaped: boolean;
   allowAutoApproval: boolean;
 }
 
-export function sentinelListForApproval(skipApproval: boolean): string {
-  return skipApproval ? 'DONE, BLOCKED, FAILED' : 'AWAITING_APPROVAL, BLOCKED, FAILED';
+// The agent never chooses whether its stage is approval-gated — that's pure
+// policy (ADR 0002), derived from skipApproval and applied by Wake to a
+// DONE reply regardless of what the agent writes. `reviewShaped` is the only
+// axis that changes the agent-facing vocabulary: stages whose role is to
+// render a verdict on some target artifact (pr-review, plan-review) also
+// need REJECTED to report "evaluated, verdict is negative, known corrective
+// next step" — distinct from BLOCKED ("I can't decide at all").
+export function sentinelListForApproval(reviewShaped: boolean): string {
+  return reviewShaped ? 'DONE, REJECTED, BLOCKED, FAILED' : 'DONE, BLOCKED, FAILED';
 }
 
-function sentinelInstructionsForApproval(skipApproval: boolean): string {
-  if (skipApproval) {
-    return [
-      '- DONE: the stage objective is complete.',
-      '- BLOCKED: you need clarification from a human or cannot proceed safely.',
-      '- FAILED: something prevented you from completing this stage at all.',
-    ].join('\n');
-  }
-
+function sentinelInstructionsForApproval(reviewShaped: boolean): string {
   return [
-    '- AWAITING_APPROVAL: the stage objective is complete but requires human sign-off before Wake proceeds. Wake will notify the human automatically — do not post a GitHub comment yourself.',
+    '- DONE: the stage objective is complete.',
+    ...(reviewShaped
+      ? [
+          '- REJECTED: you evaluated the target and it does not meet the bar — explain what needs to change. Wake routes this back to a corrective stage automatically; you do not need to ask a human what to do next.',
+        ]
+      : []),
     '- BLOCKED: you need clarification from a human or cannot proceed safely.',
     '- FAILED: something prevented you from completing this stage at all.',
   ].join('\n');
 }
 
 function buildHarnessPrompt(input: {
-  skipApproval: boolean;
+  reviewShaped: boolean;
   mergeConflictDetected?: boolean;
   upstreamChanges?: string;
+  preExistingUncommittedChanges?: boolean;
   prTrackingEnabled: boolean;
 }): string {
   const lines = [
@@ -185,12 +191,20 @@ function buildHarnessPrompt(input: {
     );
   }
 
+  if (input.preExistingUncommittedChanges) {
+    lines.push(
+      '',
+      'Pre-existing uncommitted changes notice:',
+      'This workspace already has uncommitted changes, left over from a previous interrupted attempt at this same issue (e.g. a crash or usage-limit cutoff). They are your own prior partial work, not an unknown or unsafe state - review them with `git status`/`git diff` and continue, amend, or discard as appropriate, then commit when ready.',
+    );
+  }
+
   lines.push(
     '',
     'Result envelope ABI:',
     'Respond concisely. End your response with a fenced `wake-result` JSON block, then on its own line after the closing fence repeat the status word for degraded-mode fallback.',
-    `The JSON \`status\` and final line must be exactly one of: ${sentinelListForApproval(input.skipApproval)}.`,
-    sentinelInstructionsForApproval(input.skipApproval),
+    `The JSON \`status\` and final line must be exactly one of: ${sentinelListForApproval(input.reviewShaped)}.`,
+    sentinelInstructionsForApproval(input.reviewShaped),
     'The JSON object must contain only the `status` field. Do not add other fields.',
     'This envelope is mandatory, not optional formatting: an automated parser reads only your final lines, and a reply that omits it is discarded and treated as BLOCKED regardless of the work you actually completed.',
   );
@@ -253,6 +267,7 @@ export async function buildStagePrompt(input: {
   contextOverrides?: Record<string, unknown>;
   mergeConflictDetected?: boolean;
   upstreamChanges?: string;
+  preExistingUncommittedChanges?: boolean;
 }): Promise<StagePromptResult> {
   const mode = input.mode ?? 'start';
   const workflow =
@@ -302,6 +317,7 @@ export async function buildStagePrompt(input: {
   }
 
   const skipApproval = template.frontmatter.skipApproval === 'true';
+  const reviewShaped = template.frontmatter.sentinelVocabulary === 'review';
   const allowAutoApproval = !skipApproval && template.frontmatter.allowAutoApproval === 'true';
   const permissionMode = template.frontmatter.permissionMode;
   const commentsToAddress = newCommentsSinceLastRun(input.projection);
@@ -351,12 +367,15 @@ export async function buildStagePrompt(input: {
   return {
     prompt: `${renderedTemplate}\n\n${untrustedDataBlock}\n\n${envelopeReminder}`,
     harnessPrompt: buildHarnessPrompt({
-      skipApproval,
+      reviewShaped,
       prTrackingEnabled:
         input.config?.sources.github.enabled === true &&
         input.config?.sources.github.pullRequests.enabled === true,
       ...(input.mergeConflictDetected === true ? { mergeConflictDetected: true } : {}),
       ...(input.upstreamChanges === undefined ? {} : { upstreamChanges: input.upstreamChanges }),
+      ...(input.preExistingUncommittedChanges === true
+        ? { preExistingUncommittedChanges: true }
+        : {}),
     }),
     allowedTools,
     extraArgs: parseFrontmatterArgs(template.frontmatter.extraArgs),
@@ -365,6 +384,7 @@ export async function buildStagePrompt(input: {
       value: template.frontmatter.maxTurns,
     }),
     skipApproval,
+    reviewShaped,
     allowAutoApproval,
     ...(permissionMode === undefined ? {} : { permissionMode }),
   };

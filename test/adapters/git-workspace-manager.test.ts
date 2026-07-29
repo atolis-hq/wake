@@ -202,14 +202,15 @@ describe('git workspace manager', () => {
 
     await writeFile(join(first.workspacePath, 'local-only.txt'), 'keep me\n', 'utf8');
 
-    await expect(
-      manager.prepareWorkspace({
-        workId: workId(42),
-        repo: 'acme/example',
-        issueNumber: 42,
-      }),
-    ).rejects.toThrow(/working tree has uncommitted or untracked changes/);
+    const second = await manager.prepareWorkspace({
+      workId: workId(42),
+      repo: 'acme/example',
+      issueNumber: 42,
+    });
 
+    expect(second.workspacePath).toBe(first.workspacePath);
+    expect(second.preExistingUncommittedChanges).toBe(true);
+    expect(second.validation?.clean).toBe(false);
     await expect(access(join(first.workspacePath, 'local-only.txt'))).resolves.toBeUndefined();
 
     await manager.cleanupWorkspace({ workspacePath: first.workspacePath });
@@ -307,7 +308,7 @@ describe('git workspace manager', () => {
     expect(newFile.replace(/\r\n/g, '\n')).toBe('new content\n');
   }, 20_000);
 
-  it('blocks an existing workspace with pending changes before a run starts', async () => {
+  it('reports pre-existing pending changes in an existing workspace without updating it', async () => {
     const wakeRoot = join(root, '.wake');
     const manager = createGitWorkspaceManager({
       wakeRoot,
@@ -330,15 +331,16 @@ describe('git workspace manager', () => {
     // Introduce a pending (untracked) change in the workspace
     await writeFile(join(workspacePath, 'pending.txt'), 'local work\n', 'utf8');
 
-    await expect(
-      manager.prepareWorkspace({
+    const { mergeConflictDetected, preExistingUncommittedChanges, validation } =
+      await manager.prepareWorkspace({
         workId: workId(42),
         repo: 'acme/example',
         issueNumber: 42,
-      }),
-    ).rejects.toThrow(
-      /Workspace validation failed: working tree has uncommitted or untracked changes/,
-    );
+      });
+
+    expect(mergeConflictDetected).toBe(false);
+    expect(preExistingUncommittedChanges).toBe(true);
+    expect(validation?.clean).toBe(false);
 
     // Pending file is preserved for inspection.
     await expect(access(join(workspacePath, 'pending.txt'))).resolves.toBeUndefined();

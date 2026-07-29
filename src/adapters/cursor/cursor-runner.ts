@@ -216,18 +216,7 @@ function resolveCursorMode(input: {
 }
 
 function resolveModel(input: { action: AgentAction; settings: CursorRunnerSettings }): string {
-  const { models, model } = input.settings;
-
-  const actionSpecificModel = models[input.action];
-  if (actionSpecificModel !== undefined) {
-    return actionSpecificModel;
-  }
-
-  if (models.default !== undefined) {
-    return models.default;
-  }
-
-  return model;
+  return input.settings.model;
 }
 
 function readSandboxLogBreadcrumb(): {
@@ -277,6 +266,9 @@ export function createCursorRunner(options: {
         ...(input.workspaceMode === undefined ? {} : { workspaceMode: input.workspaceMode }),
         ...(input.mergeConflictDetected === true ? { mergeConflictDetected: true } : {}),
         ...(input.upstreamChanges === undefined ? {} : { upstreamChanges: input.upstreamChanges }),
+        ...(input.preExistingUncommittedChanges === true
+          ? { preExistingUncommittedChanges: true }
+          : {}),
         ...(toolCapabilityNote !== undefined || input.promptContextOverrides !== undefined
           ? {
               contextOverrides: {

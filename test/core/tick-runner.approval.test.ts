@@ -111,7 +111,8 @@ describe('tick runner', () => {
           expectedEcho: { commentIds: [], labels: [] },
         },
         context: {
-          lastRunSentinel: 'AWAITING_APPROVAL',
+          lastRunSentinel: 'DONE',
+          status: 'awaiting-approval',
           pendingApprovalAction: 'implement',
         },
         correlatedResources: [
@@ -220,7 +221,7 @@ describe('tick runner', () => {
       return { result: await tickRunner.runTick(), calls, store };
     }
 
-    it('coerces DONE to AWAITING_APPROVAL when runner metadata signals skipApproval=false', async () => {
+    it('marks a gated DONE approvalGated without changing the sentinel', async () => {
       const store = createStateStore({ wakeRoot: root });
       const config = createDefaultWakeConfig(root);
       config.sources.github.policy.requiredLabels = ['wake:queue'];
@@ -259,13 +260,13 @@ describe('tick runner', () => {
 
       expect(result.status).toBe('processed');
       if (result.status === 'processed') {
-        expect(result.sentinel).toBe('AWAITING_APPROVAL');
+        expect(result.sentinel).toBe('DONE');
         expect(result.nextStage).toBeNull();
       }
 
       const events = await readFile(store.paths.eventFile('2026-07-05'), 'utf8');
-      expect(events).toContain('"sentinel":"AWAITING_APPROVAL"');
-      expect(events).toContain('"rawSentinel":"DONE"');
+      expect(events).toContain('"sentinel":"DONE"');
+      expect(events).toContain('"approvalGated":true');
     });
 
     it('does not coerce DONE when runner metadata signals skipApproval=true', async () => {
@@ -324,7 +325,14 @@ describe('tick runner', () => {
           number: 33,
           title: 'Approval Required Test',
           body: 'Body',
-          labels: ['wake:queue'],
+          // Pre-synced so the every-tick reconciliation pass finds no drift
+          // ahead of the claim/approval labels this test asserts on.
+          labels: [
+            'wake:queue',
+            'wake:status.pending',
+            'wake:stage.queue',
+            'wake:workflow.default',
+          ],
           assignees: [],
           isPullRequest: false,
           state: 'open',
@@ -374,11 +382,11 @@ describe('tick runner', () => {
         runner: {
           async run() {
             return {
-              result:
-                'Issue is well-specified. Please reply with /approved to proceed.\nAWAITING_APPROVAL',
+              result: 'Issue is well-specified. Please reply with /approved to proceed.\nDONE',
               model: 'test-model',
               cli: 'test-cli',
               session_id: 'session-33',
+              metadata: { skipApproval: false },
             };
           },
         },
@@ -390,11 +398,12 @@ describe('tick runner', () => {
       const projection = await findByIssueRef(store, { repo: 'atolis-hq/wake', issueNumber: 33 });
 
       expect(result.status).toBe('processed');
-      expect((result as { sentinel?: string }).sentinel).toBe('AWAITING_APPROVAL');
+      expect((result as { sentinel?: string }).sentinel).toBe('DONE');
       expect((result as { nextStage?: string | null }).nextStage).toBeNull();
       expect(projection?.wake.stage).toBe('refine');
       expect(projection?.context.pendingApprovalAction).toBe('refine');
-      expect(projection?.context.lastRunSentinel).toBe('AWAITING_APPROVAL');
+      expect(projection?.context.status).toBe('awaiting-approval');
+      expect(projection?.context.lastRunSentinel).toBe('DONE');
       expect(deliveredEvents).toEqual([
         'wake:status.working',
         'wake:stage.refine',
@@ -456,7 +465,8 @@ describe('tick runner', () => {
           expectedEcho: { commentIds: [], labels: [] },
         },
         context: {
-          lastRunSentinel: 'AWAITING_APPROVAL',
+          lastRunSentinel: 'DONE',
+          status: 'awaiting-approval',
           pendingApprovalAction: 'implement',
         },
         correlatedResources: [],
@@ -531,7 +541,8 @@ describe('tick runner', () => {
           expectedEcho: { commentIds: [], labels: [] },
         },
         context: {
-          lastRunSentinel: 'AWAITING_APPROVAL',
+          lastRunSentinel: 'DONE',
+          status: 'awaiting-approval',
           pendingApprovalAction: 'refine',
           pendingApprovalAllowAutoApproval: true,
         },
@@ -617,7 +628,8 @@ describe('tick runner', () => {
           expectedEcho: { commentIds: [], labels: [] },
         },
         context: {
-          lastRunSentinel: 'AWAITING_APPROVAL',
+          lastRunSentinel: 'DONE',
+          status: 'awaiting-approval',
           pendingApprovalAction: 'refine',
           pendingApprovalAllowAutoApproval: true,
         },
@@ -664,7 +676,16 @@ describe('tick runner', () => {
           number: 36,
           title: 'No Merge Test',
           body: 'Body',
-          labels: ['wake:queue', 'wake:auto'],
+          // Pre-synced (including the awaiting-approval-derived status label)
+          // so the every-tick reconciliation pass finds no drift alongside
+          // the single approval-driven label write this test asserts on.
+          labels: [
+            'wake:queue',
+            'wake:auto',
+            'wake:status.awaiting-approval',
+            'wake:stage.implement',
+            'wake:workflow.default',
+          ],
           assignees: [],
           isPullRequest: false,
           state: 'open',
@@ -681,7 +702,8 @@ describe('tick runner', () => {
           expectedEcho: { commentIds: [], labels: [] },
         },
         context: {
-          lastRunSentinel: 'AWAITING_APPROVAL',
+          lastRunSentinel: 'DONE',
+          status: 'awaiting-approval',
           pendingApprovalAction: 'implement',
           pendingApprovalAllowAutoApproval: true,
         },
@@ -765,7 +787,8 @@ describe('tick runner', () => {
           expectedEcho: { commentIds: [], labels: [] },
         },
         context: {
-          lastRunSentinel: 'AWAITING_APPROVAL',
+          lastRunSentinel: 'DONE',
+          status: 'awaiting-approval',
           pendingApprovalAction: 'implement',
         },
         correlatedResources: [],
@@ -802,6 +825,7 @@ describe('tick runner', () => {
     it('invokes the agent when awaiting approval and comment is an explicit /changes command (S2)', async () => {
       const store = createStateStore({ wakeRoot: root });
       let runnerCallCount = 0;
+      let capturedPromptContextOverrides: Record<string, unknown> | undefined;
 
       await store.writeIssueState({
         schemaVersion: 1,
@@ -845,7 +869,8 @@ describe('tick runner', () => {
           expectedEcho: { commentIds: [], labels: [] },
         },
         context: {
-          lastRunSentinel: 'AWAITING_APPROVAL',
+          lastRunSentinel: 'DONE',
+          status: 'awaiting-approval',
           pendingApprovalAction: 'refine',
         },
         correlatedResources: [],
@@ -853,6 +878,108 @@ describe('tick runner', () => {
 
       const config = createDefaultWakeConfig(root);
       config.sources.github.policy.requiredLabels = ['wake:queue'];
+
+      const tickRunner = createTickRunner({
+        clock: { now: () => new Date('2026-07-05T12:10:00.000Z') },
+        config,
+        stateStore: store,
+        workSource: {
+          async pollEvents() {
+            return [];
+          },
+        },
+        runner: {
+          async run(input) {
+            runnerCallCount += 1;
+            capturedPromptContextOverrides = input.promptContextOverrides;
+            return { result: 'Revised plan.\nDONE', model: 'test-model', cli: 'test-cli' };
+          },
+        },
+        resourceIndex: createFakeResourceIndex(),
+        workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+      });
+
+      const result = await tickRunner.runTick();
+
+      expect(result.status).toBe('processed');
+      expect(runnerCallCount).toBe(1);
+      // The /changes fold (§5, trigger 2) threads the human's own feedback
+      // into the same promptContextOverrides.parentPendingReviewBody
+      // mechanism the BLOCKED-retry path already uses.
+      expect(capturedPromptContextOverrides?.parentPendingReviewBody).toBe(
+        '/changes Please revise section 3.',
+      );
+
+      const events = await store.listEventEnvelopes();
+      const changesRequestedEvent = events.find((event) =>
+        event.eventId.endsWith('-changes-requested'),
+      );
+      expect(changesRequestedEvent).toBeDefined();
+      expect(changesRequestedEvent?.payload.changesRequested).toBe(true);
+      // Folding /changes must not touch stage/lastRunId itself (only the
+      // subsequent revise run, once it completes, may move the stage) — same
+      // watcher-isolation guarantee PR #479 established for other triggers.
+      expect(changesRequestedEvent?.payload.nextStage).toBeUndefined();
+      expect(changesRequestedEvent?.payload.claimedStage).toBeUndefined();
+    });
+
+    it('escalates to blocked instead of auto-revising once changesRequestedCount exceeds the configured cap', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      let runnerCallCount = 0;
+
+      await store.writeIssueState({
+        schemaVersion: 1,
+        workItemKey: workId(32),
+        issue: {
+          repo: 'atolis-hq/wake',
+          number: 32,
+          title: 'Approval Feedback Cap Test',
+          body: 'Body',
+          labels: ['wake:queue'],
+          assignees: [],
+          isPullRequest: false,
+          state: 'open',
+          url: 'https://example.test/issues/32',
+          createdAt: '2026-07-05T12:00:00.000Z',
+          updatedAt: '2026-07-05T12:05:00.000Z',
+        },
+        comments: [
+          {
+            id: 'c-feedback-cap',
+            body: '/changes One more round, please.',
+            author: { login: 'owner' },
+            createdAt: '2026-07-05T12:05:00.000Z',
+            updatedAt: '2026-07-05T12:05:00.000Z',
+            isBotAuthored: false,
+          },
+        ],
+        latestComment: {
+          id: 'c-feedback-cap',
+          body: '/changes One more round, please.',
+          author: { login: 'owner' },
+          createdAt: '2026-07-05T12:05:00.000Z',
+          updatedAt: '2026-07-05T12:05:00.000Z',
+          isBotAuthored: false,
+        },
+        wake: {
+          stage: 'refine',
+          stageHistory: [],
+          recentEventIds: [],
+          syncedAt: '2026-07-05T12:00:00.000Z',
+          expectedEcho: { commentIds: [], labels: [] },
+        },
+        context: {
+          lastRunSentinel: 'DONE',
+          pendingApprovalAction: 'refine',
+          status: 'changes-requested',
+          changesRequestedCount: 1,
+        },
+        correlatedResources: [],
+      });
+
+      const config = createDefaultWakeConfig(root);
+      config.sources.github.policy.requiredLabels = ['wake:queue'];
+      config.retry.maxChangesRequestedRetries = 1;
 
       const tickRunner = createTickRunner({
         clock: { now: () => new Date('2026-07-05T12:10:00.000Z') },
@@ -875,8 +1002,13 @@ describe('tick runner', () => {
 
       const result = await tickRunner.runTick();
 
-      expect(result.status).toBe('processed');
-      expect(runnerCallCount).toBe(1);
+      expect(result.status).toBe('idle');
+      expect(runnerCallCount).toBe(0);
+
+      const updated = await store.readIssueState(workId(32));
+      expect(updated?.context.status).toBe('blocked');
+      expect(updated?.context.changesRequestedCount).toBe(2);
+      expect(updated?.wake.stage).toBe('refine');
     });
 
     it('invokes the ask custom command when awaiting approval and comment is /ask', async () => {
@@ -926,7 +1058,8 @@ describe('tick runner', () => {
           expectedEcho: { commentIds: [], labels: [] },
         },
         context: {
-          lastRunSentinel: 'AWAITING_APPROVAL',
+          lastRunSentinel: 'DONE',
+          status: 'awaiting-approval',
           pendingApprovalAction: 'refine',
         },
         correlatedResources: [],
@@ -1016,7 +1149,8 @@ describe('tick runner', () => {
           expectedEcho: { commentIds: [], labels: [] },
         },
         context: {
-          lastRunSentinel: 'AWAITING_APPROVAL',
+          lastRunSentinel: 'DONE',
+          status: 'awaiting-approval',
           pendingApprovalAction: 'implement',
         },
         correlatedResources: [],
@@ -1082,7 +1216,7 @@ describe('tick runner', () => {
 
       const projection = await findByIssueRef(store, { repo: 'atolis-hq/wake', issueNumber: 35 });
       expect(projection?.wake.stage).toBe('implement');
-      expect(projection?.context.lastRunSentinel).toBe('AWAITING_APPROVAL');
+      expect(projection?.context.lastRunSentinel).toBe('DONE');
       expect(projection?.context.pendingApprovalAction).toBe('implement');
       expect(projection?.context.lastHandledCommentId).toBe('c-codereview');
     });
@@ -1133,7 +1267,8 @@ describe('tick runner', () => {
           expectedEcho: { commentIds: [], labels: [] },
         },
         context: {
-          lastRunSentinel: 'AWAITING_APPROVAL',
+          lastRunSentinel: 'DONE',
+          status: 'awaiting-approval',
           pendingApprovalAction: 'refine',
         },
         correlatedResources: [],
@@ -1218,7 +1353,8 @@ describe('tick runner', () => {
           expectedEcho: { commentIds: [], labels: [] },
         },
         context: {
-          lastRunSentinel: 'AWAITING_APPROVAL',
+          lastRunSentinel: 'DONE',
+          status: 'awaiting-approval',
           pendingApprovalAction: 'implement',
         },
         correlatedResources: [],
@@ -1241,9 +1377,10 @@ describe('tick runner', () => {
             runnerCallCount += 1;
             capturedAction = input.action;
             return {
-              result: 'Renamed it and pushed.\nAWAITING_APPROVAL',
+              result: 'Renamed it and pushed.\nDONE',
               model: 'test-model',
               cli: 'test-cli',
+              metadata: { skipApproval: false },
             };
           },
         },
@@ -1259,7 +1396,8 @@ describe('tick runner', () => {
 
       const projection = await findByIssueRef(store, { repo: 'atolis-hq/wake', issueNumber: 99 });
       expect(projection?.wake.stage).toBe('implement');
-      expect(projection?.context.lastRunSentinel).toBe('AWAITING_APPROVAL');
+      expect(projection?.context.lastRunSentinel).toBe('DONE');
+      expect(projection?.context.status).toBe('awaiting-approval');
     });
 
     it("does not route the revise run's status card to the triggering review thread (agent replies to threads itself)", async () => {
@@ -1312,7 +1450,8 @@ describe('tick runner', () => {
           expectedEcho: { commentIds: [], labels: [] },
         },
         context: {
-          lastRunSentinel: 'AWAITING_APPROVAL',
+          lastRunSentinel: 'DONE',
+          status: 'awaiting-approval',
           pendingApprovalAction: 'implement',
         },
         correlatedResources: [],
@@ -1341,9 +1480,10 @@ describe('tick runner', () => {
         runner: {
           async run() {
             return {
-              result: 'Renamed it and pushed.\nAWAITING_APPROVAL',
+              result: 'Renamed it and pushed.\nDONE',
               model: 'test-model',
               cli: 'test-cli',
+              metadata: { skipApproval: false },
             };
           },
         },
@@ -1406,7 +1546,8 @@ describe('tick runner', () => {
           expectedEcho: { commentIds: [], labels: [] },
         },
         context: {
-          lastRunSentinel: 'AWAITING_APPROVAL',
+          lastRunSentinel: 'DONE',
+          status: 'awaiting-approval',
           pendingApprovalAction: 'implement',
           lastHandledCommentId: 'pr-review-comment-402',
         },
@@ -1476,7 +1617,8 @@ describe('tick runner', () => {
             expectedEcho: { commentIds: [], labels: [] },
           },
           context: {
-            lastRunSentinel: 'AWAITING_APPROVAL',
+            lastRunSentinel: 'DONE',
+            status: 'awaiting-approval',
             pendingApprovalAction: 'implement',
           },
           correlatedResources: [],
@@ -1547,14 +1689,19 @@ describe('tick runner', () => {
 
       await tickRunner.runTick();
 
+      // Both items are missing their wake:workflow.* label (the fixture never
+      // set one), so the broadened reconciliation corrects it — using the
+      // *actual* awaiting-approval status now that labelsForWorkItem reads
+      // context.lastRunSentinel as a legacy fallback, not the old blanket
+      // "pending" a stage-only mapping produced for any non-done stage.
       expect(deliveredEvents).toContainEqual({
         issueNumber: 41,
-        statusLabel: 'wake:status.pending',
+        statusLabel: 'wake:status.awaiting-approval',
         stageLabel: 'wake:stage.implement',
       });
       expect(deliveredEvents).toContainEqual({
         issueNumber: 42,
-        statusLabel: 'wake:status.pending',
+        statusLabel: 'wake:status.awaiting-approval',
         stageLabel: 'wake:stage.implement',
       });
       expect(deliveredEvents).toContainEqual({
@@ -1577,7 +1724,12 @@ describe('tick runner', () => {
           number: 43,
           title: 'Approval Conversation Sync',
           body: 'Body',
-          labels: ['wake:queue', 'wake:status.awaiting-approval', 'wake:stage.implement'],
+          labels: [
+            'wake:queue',
+            'wake:status.awaiting-approval',
+            'wake:stage.implement',
+            'wake:workflow.default',
+          ],
           assignees: [],
           isPullRequest: false,
           state: 'open',
@@ -1594,7 +1746,8 @@ describe('tick runner', () => {
           expectedEcho: { commentIds: [], labels: [] },
         },
         context: {
-          lastRunSentinel: 'AWAITING_APPROVAL',
+          lastRunSentinel: 'DONE',
+          status: 'awaiting-approval',
           pendingApprovalAction: 'implement',
         },
         correlatedResources: [],
@@ -1662,6 +1815,91 @@ describe('tick runner', () => {
       expect(deliveredEvents).toEqual([]);
     });
 
+    it('corrects a stale status label on the next tick even with no fresh inbound event or eligible next action (§6 reconciliation)', async () => {
+      const store = createStateStore({ wakeRoot: root });
+      const deliveredEvents: Array<{ statusLabel: string; stageLabel: string }> = [];
+
+      await store.writeIssueState({
+        schemaVersion: 1,
+        workItemKey: workId(44),
+        issue: {
+          repo: 'atolis-hq/wake',
+          number: 44,
+          title: 'Stale Label Reconciliation',
+          body: 'Body',
+          // Actual GitHub labels are stuck on a stale "pending" status even
+          // though context already reflects a finished, approved item — no
+          // eligible next action exists (isAwaitingApproval is false, stage
+          // is 'done'), so nothing except the broadened reconciliation pass
+          // would ever notice or correct this.
+          labels: ['wake:status.pending', 'wake:stage.implement', 'wake:workflow.default'],
+          assignees: [],
+          isPullRequest: false,
+          state: 'open',
+          url: 'https://example.test/issues/44',
+          createdAt: '2026-07-05T12:00:00.000Z',
+          updatedAt: '2026-07-05T12:00:00.000Z',
+        },
+        comments: [],
+        wake: {
+          stage: 'done',
+          stageHistory: [],
+          recentEventIds: [],
+          syncedAt: '2026-07-05T12:00:00.000Z',
+          expectedEcho: { commentIds: [], labels: [] },
+        },
+        context: {
+          status: 'done',
+        },
+        correlatedResources: [],
+      });
+
+      const config = createDefaultWakeConfig(root);
+      config.sources.github.policy.requiredLabels = ['wake:queue'];
+
+      const tickRunner = createTickRunner({
+        clock: { now: () => new Date('2026-07-05T12:10:00.000Z') },
+        config,
+        stateStore: store,
+        workSource: {
+          async pollEvents() {
+            return [];
+          },
+        },
+        outboundSink: {
+          async deliverIntent(input) {
+            if (input.event.sourceEventType === 'wake.labels.requested') {
+              deliveredEvents.push({
+                statusLabel: String(input.event.payload.statusLabel),
+                stageLabel: String(input.event.payload.stageLabel),
+              });
+            }
+            return [];
+          },
+        },
+        runner: {
+          async run() {
+            throw new Error('should not run');
+          },
+        },
+        resourceIndex: await seededResourceIndex([44]),
+        workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+      });
+
+      await tickRunner.runTick();
+
+      // Confirms the reconciliation pass diffed labelsForWorkItem's output
+      // (derived from context.status='done' + stage='done') against the
+      // stale actual labels and requested the correction — the fake sink
+      // here only records the request; the real github adapter's own
+      // deliverIntent/reconcileIntent (github-issues-work-source.ts) is what
+      // applies it back to issue.labels, covered separately.
+      expect(deliveredEvents).toContainEqual({
+        statusLabel: 'wake:status.completed',
+        stageLabel: 'wake:stage.done',
+      });
+    });
+
     it('does not approve on a comment that merely mentions /approved as a substring (S2)', async () => {
       const store = createStateStore({ wakeRoot: root });
       let runnerCallCount = 0;
@@ -1708,7 +1946,8 @@ describe('tick runner', () => {
           expectedEcho: { commentIds: [], labels: [] },
         },
         context: {
-          lastRunSentinel: 'AWAITING_APPROVAL',
+          lastRunSentinel: 'DONE',
+          status: 'awaiting-approval',
           pendingApprovalAction: 'implement',
         },
         correlatedResources: [],

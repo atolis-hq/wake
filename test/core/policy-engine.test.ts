@@ -404,6 +404,28 @@ describe('policy engine: resolveApprovalTransition', () => {
     expect(resolution?.pendingAction).toBe('implement');
   });
 
+  it('flags changesRequested and threads the triggering comment for an explicit /changes command', () => {
+    const policy = createPolicyEngine();
+    const issue = buildAwaitingApprovalIssue({
+      latestCommentBody: '/changes Can you change the approach?',
+      pendingApprovalAction: 'implement',
+    });
+    const resolution = policy.resolveApprovalTransition(issue);
+    expect(resolution?.changesRequested).toBe(true);
+    expect(resolution?.triggeringCommentId).toBe('c-1');
+    expect(resolution?.triggeringCommentBody).toBe('/changes Can you change the approach?');
+  });
+
+  it('does not set changesRequested on an /approved resolution', () => {
+    const policy = createPolicyEngine();
+    const issue = buildAwaitingApprovalIssue({
+      latestCommentBody: '/approved',
+      pendingApprovalAction: 'implement',
+    });
+    const resolution = policy.resolveApprovalTransition(issue);
+    expect(resolution?.changesRequested).toBeUndefined();
+  });
+
   it('does not treat a legacy question command as an approval-control command', () => {
     const policy = createPolicyEngine();
     const issue = buildAwaitingApprovalIssue({
@@ -627,6 +649,88 @@ describe('policy engine: resolveApprovalTransition', () => {
   });
 });
 
+describe('policy engine: resolveChangesRequestedAction', () => {
+  it('returns null when issue is not awaiting approval', () => {
+    const policy = createPolicyEngine();
+    const issue = buildIssue({ labels: ['wake'] });
+    expect(policy.resolveChangesRequestedAction(issue)).toBeNull();
+  });
+
+  it('returns null when status is not changes-requested', () => {
+    const policy = createPolicyEngine();
+    const issue = buildAwaitingApprovalIssue({ pendingApprovalAction: 'implement' });
+    expect(policy.resolveChangesRequestedAction(issue)).toBeNull();
+  });
+
+  it('returns the stored pendingApprovalAction with no fresh comment required, once status is changes-requested', () => {
+    const policy = createPolicyEngine();
+    const issue = parseIssueStateRecord({
+      schemaVersion: 1,
+      workItemKey: workId,
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 50,
+        title: 'Example',
+        body: 'Body',
+        labels: [],
+        assignees: [],
+        isPullRequest: false,
+        state: 'open',
+        url: 'https://example.test/issues/50',
+        createdAt: '2026-07-06T00:00:00.000Z',
+        updatedAt: '2026-07-06T00:00:00.000Z',
+      },
+      comments: [],
+      wake: {
+        stage: 'refine',
+        syncedAt: '2026-07-06T00:00:00.000Z',
+        stageHistory: [],
+      },
+      context: {
+        lastRunSentinel: 'AWAITING_APPROVAL',
+        pendingApprovalAction: 'refine',
+        status: 'changes-requested',
+        changesRequestedCount: 1,
+      },
+    });
+    expect(policy.resolveChangesRequestedAction(issue)).toBe('refine');
+  });
+
+  it('returns null once escalated to blocked (bounding already applied at fold time)', () => {
+    const policy = createPolicyEngine();
+    const issue = parseIssueStateRecord({
+      schemaVersion: 1,
+      workItemKey: workId,
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 50,
+        title: 'Example',
+        body: 'Body',
+        labels: [],
+        assignees: [],
+        isPullRequest: false,
+        state: 'open',
+        url: 'https://example.test/issues/50',
+        createdAt: '2026-07-06T00:00:00.000Z',
+        updatedAt: '2026-07-06T00:00:00.000Z',
+      },
+      comments: [],
+      wake: {
+        stage: 'refine',
+        syncedAt: '2026-07-06T00:00:00.000Z',
+        stageHistory: [],
+      },
+      context: {
+        lastRunSentinel: 'AWAITING_APPROVAL',
+        pendingApprovalAction: 'refine',
+        status: 'blocked',
+        changesRequestedCount: 6,
+      },
+    });
+    expect(policy.resolveChangesRequestedAction(issue)).toBeNull();
+  });
+});
+
 describe('policy engine: resolvePendingReviewFeedback', () => {
   it('returns null when issue is not awaiting approval', () => {
     const policy = createPolicyEngine();
@@ -793,6 +897,21 @@ describe('policy engine: needsWakeAction', () => {
     });
 
     expect(policy.needsWakeAction(issue)).toBe(true);
+  });
+
+  it('does not let an unhandled human comment bypass the configured failure retry limit', () => {
+    const policy = createPolicyEngine();
+    const config = createDefaultWakeConfig('/tmp/wake-root');
+    config.retry.maxFailureRetries = 3;
+    const issue = buildNeedsWakeActionIssue({
+      updatedAt: '2026-07-07T00:05:00.000Z',
+      latestCommentId: 'c-2',
+      lastHandledCommentId: 'c-1',
+      lastRunSentinel: 'FAILED',
+      failureCount: 3,
+    });
+
+    expect(policy.needsWakeAction(issue, undefined, config)).toBe(false);
   });
 
   it('continues to implement after refine completed without relying on updatedAt churn', () => {

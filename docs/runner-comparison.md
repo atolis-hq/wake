@@ -14,11 +14,11 @@ Wake normalizes all real runners behind `AgentRunner`, `smoke`, and
 | `runner.mode` support                    | Yes                    | Yes                 | Yes                          | All three are first-class runtime modes.                                          |
 | Normalized `AgentRunResult` into `core/` | Yes                    | Yes                 | Yes                          | All return `result`, `model`, `cli`, optional `session_id`, and failure metadata. |
 | Stage prompt templates                   | Yes                    | Yes                 | Yes                          | All use the shared Wake prompt templates.                                         |
-| Action-specific model overrides          | Yes                    | Yes                 | Yes                          | `runner.<cli>.models.<action>` works for all.                                     |
+| Runner-level model selection             | Yes                    | Yes                 | Yes                          | Each named runner has one `model`; stage routing chooses among runners via tiers. |
 | Wall-clock timeout                       | Yes                    | Yes                 | Yes                          | All runners kill hung CLI processes and return `FAILED`.                          |
 | `wake smoke` support                     | Yes                    | Yes                 | Yes                          | All support the generic smoke surface.                                            |
 | Explicit smoke command                   | `smoke claude`         | `smoke codex`       | `smoke cursor`               | All supported.                                                                    |
-| Session resume command generation        | `claude --resume <id>` | `codex resume <id>` | `cursor agent --resume=<id>` | All supported in `wake sandbox resume` and GitHub comments.                       |
+| Session resume command generation        | `claude --resume <id>` | `codex exec resume <id>` | `cursor agent --resume=<id>` | All supported in `wake sandbox resume` and GitHub comments.                       |
 | Stage-specific access control            | Per-tool allowlist     | Sandbox mode        | `--mode ask` / default       | Mechanisms differ; all separate refine from implement.                            |
 | Parsed raw CLI output in metadata        | Yes                    | Yes                 | Yes                          | Claude: parsed JSON; Codex: parsed JSONL; Cursor: parsed JSON.                    |
 | Run correlation logging                  | Yes                    | Yes                 | Yes                          | All emit start/success/failure log lines.                                         |

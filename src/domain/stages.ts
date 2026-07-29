@@ -1,15 +1,15 @@
 export const stageValues = ['queue', 'done'] as const;
 
 export const doneRunnerSentinel = 'DONE';
+export const rejectedRunnerSentinel = 'REJECTED';
 export const blockedRunnerSentinel = 'BLOCKED';
 export const failedRunnerSentinel = 'FAILED';
-export const awaitingApprovalRunnerSentinel = 'AWAITING_APPROVAL';
 
 export const runnerSentinelValues = [
   doneRunnerSentinel,
+  rejectedRunnerSentinel,
   blockedRunnerSentinel,
   failedRunnerSentinel,
-  awaitingApprovalRunnerSentinel,
 ] as const;
 
 export const terminalStageValues = ['done'] as const;

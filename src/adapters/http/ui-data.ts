@@ -4,6 +4,8 @@ import { join } from 'node:path';
 import type { ResourceIndex } from '../../core/contracts.js';
 import { buildResourceUri } from '../../domain/resource-uri.js';
 import { isTerminalStage } from '../../domain/stages.js';
+import { isWorkItemDeleted, isWorkItemFrozen } from '../../domain/work-item-lifecycle.js';
+import type { WorkItemStatus } from '../../domain/work-item-status.js';
 import {
   universalQueueStage,
   workflowForProjection,
@@ -11,63 +13,37 @@ import {
 } from '../../domain/workflows.js';
 import type { EventEnvelope, IssueStateRecord, RunRecord, WakeConfig } from '../../domain/types.js';
 import type { createStateStore } from '../fs/state-store.js';
+import { readFileLockStatus, type ProcessInspector } from '../../lib/lock.js';
 
 type StateStore = ReturnType<typeof createStateStore>;
 
 export type BoardCondition =
   'needs-human' | 'active' | 'scheduled' | 'ready' | 'error' | 'finished';
 
-interface LockMetadata {
-  pid: number;
-  acquiredAt: string;
-}
-
-function parseLockMetadata(raw: string): LockMetadata | null {
-  try {
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
-    if (typeof parsed.pid !== 'number' || typeof parsed.acquiredAt !== 'string') {
-      return null;
-    }
-    return { pid: parsed.pid, acquiredAt: parsed.acquiredAt };
-  } catch {
-    return null;
-  }
-}
-
-function isPidAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code !== 'ESRCH';
-  }
-}
-
 async function readLockInfo(
   lockFile: string,
   now: Date,
+  processInspector?: ProcessInspector,
 ): Promise<{
   present: boolean;
   pid?: number;
   acquiredAt?: string;
   ageMs?: number;
   pidAlive?: boolean;
+  staleReason?: string;
 }> {
-  try {
-    const metadata = parseLockMetadata(await readFile(lockFile, 'utf8'));
-    if (metadata === null) {
-      return { present: true };
-    }
-    return {
-      present: true,
-      pid: metadata.pid,
-      acquiredAt: metadata.acquiredAt,
-      ageMs: now.getTime() - Date.parse(metadata.acquiredAt),
-      pidAlive: isPidAlive(metadata.pid),
-    };
-  } catch {
-    return { present: false };
-  }
+  const status = await readFileLockStatus(lockFile, {
+    now,
+    ...(processInspector === undefined ? {} : { processInspector }),
+  });
+  return {
+    present: status.present,
+    ...(status.metadata === undefined ? {} : { pid: status.metadata.pid }),
+    ...(status.metadata === undefined ? {} : { acquiredAt: status.metadata.acquiredAt }),
+    ...(status.ageMs === undefined ? {} : { ageMs: status.ageMs }),
+    pidAlive: status.active,
+    ...(status.staleReason === undefined ? {} : { staleReason: status.staleReason }),
+  };
 }
 
 /**
@@ -79,6 +55,10 @@ function deriveCondition(
   lastRun: RunRecord | null,
   config: WakeConfig,
 ): { condition: BoardCondition; reason: string } {
+  if (isWorkItemFrozen(item)) {
+    return { condition: 'needs-human', reason: 'work item frozen' };
+  }
+
   const stage = item.wake.stage;
 
   if (isTerminalStage(stage) || item.issue.state === 'closed') {
@@ -93,6 +73,10 @@ function deriveCondition(
     lastRun?.status === 'blocked' ||
     lastRun?.status === 'awaiting-approval' ||
     lastRun?.sentinel === 'BLOCKED' ||
+    // A run record can never be written with this sentinel value again
+    // (ADR 0002), but a pre-existing run record on disk still can be —
+    // legacyTolerantRunnerSentinelSchema keeps it readable, so this branch
+    // stays to classify it correctly rather than falling through to 'ready'.
     lastRun?.sentinel === 'AWAITING_APPROVAL'
   ) {
     return { condition: 'needs-human', reason: `sentinel ${lastRun?.sentinel ?? stage}` };
@@ -119,6 +103,10 @@ function deriveCondition(
 function timeInStageMs(item: IssueStateRecord, now: Date): number {
   const lastChange = item.wake.stageHistory.at(-1)?.changedAt ?? item.wake.syncedAt;
   return now.getTime() - Date.parse(lastChange);
+}
+
+function displayStatusForCard(item: IssueStateRecord): WorkItemStatus {
+  return item.context.status ?? 'queued';
 }
 
 function activeChildRunsForItem(
@@ -193,60 +181,67 @@ export async function buildBoard(input: { stateStore: StateStore; config: WakeCo
     runTotalsByItem.set(run.workItemKey, existing);
   }
 
-  return items.map((item) => {
-    const lastRun =
-      item.wake.lastRunId === undefined ? null : (runsById.get(item.wake.lastRunId) ?? null);
-    const { condition, reason } = deriveCondition(item, lastRun, input.config);
-    const activeChildRuns = activeChildRunsForItem(item, runs, input.now);
-    const activeMainRun =
-      lastRun?.status === 'running'
-        ? {
-            runId: lastRun.runId,
-            action: lastRun.action,
-            startedAt: lastRun.startedAt,
-            ageMs: input.now.getTime() - Date.parse(lastRun.startedAt),
-            ...(lastRun.routing?.runnerName === undefined
-              ? {}
-              : { runnerName: lastRun.routing.runnerName }),
-            ...(lastRun.routing?.tier === undefined ? {} : { tier: lastRun.routing.tier }),
-          }
-        : undefined;
+  return items
+    .filter((item) => !isWorkItemDeleted(item))
+    .map((item) => {
+      const lastRun =
+        item.wake.lastRunId === undefined ? null : (runsById.get(item.wake.lastRunId) ?? null);
+      const { condition, reason } = deriveCondition(item, lastRun, input.config);
+      const isFrozen = isWorkItemFrozen(item);
+      const activeChildRuns = activeChildRunsForItem(item, runs, input.now);
+      const activeMainRun =
+        lastRun?.status === 'running'
+          ? {
+              runId: lastRun.runId,
+              action: lastRun.action,
+              startedAt: lastRun.startedAt,
+              ageMs: input.now.getTime() - Date.parse(lastRun.startedAt),
+              ...(lastRun.routing?.runnerName === undefined
+                ? {}
+                : { runnerName: lastRun.routing.runnerName }),
+              ...(lastRun.routing?.tier === undefined ? {} : { tier: lastRun.routing.tier }),
+            }
+          : undefined;
 
-    const runTotals = runTotalsByItem.get(item.workItemKey) ?? {
-      totalRuns: 0,
-      totalTokens: 0,
-      totalCostUsd: 0,
-    };
+      const runTotals = runTotalsByItem.get(item.workItemKey) ?? {
+        totalRuns: 0,
+        totalTokens: 0,
+        totalCostUsd: 0,
+      };
 
-    return {
-      repo: item.issue.repo,
-      number: item.issue.number,
-      title: item.issue.title,
-      url: item.issue.url,
-      stage: item.wake.stage,
-      workflow: workflowNameForProjection(item, input.config),
-      labels: item.issue.labels,
-      condition,
-      conditionReason: reason,
-      timeInStageMs: timeInStageMs(item, input.now),
-      totalRuns: runTotals.totalRuns,
-      totalTokens: runTotals.totalTokens,
-      totalCostUsd: runTotals.totalCostUsd,
-      lastRunAction: lastRun?.action,
-      lastRunSentinel: lastRun?.sentinel,
-      lastRunStatus: lastRun?.status,
-      ...(activeMainRun === undefined ? {} : { activeMainRun }),
-      ...(activeChildRuns.length === 0 ? {} : { activeChildRuns }),
-      sessionId: item.wake.sessionId,
-      workspacePath: item.wake.workspacePath,
-    };
-  });
+      return {
+        workItemKey: item.workItemKey,
+        repo: item.issue.repo,
+        number: item.issue.number,
+        title: item.issue.title,
+        url: item.issue.url,
+        stage: item.wake.stage,
+        workflow: workflowNameForProjection(item, input.config),
+        labels: item.issue.labels,
+        isFrozen,
+        condition,
+        conditionReason: reason,
+        timeInStageMs: timeInStageMs(item, input.now),
+        totalRuns: runTotals.totalRuns,
+        totalTokens: runTotals.totalTokens,
+        totalCostUsd: runTotals.totalCostUsd,
+        displayStatus: displayStatusForCard(item),
+        lastRunAction: lastRun?.action,
+        lastRunSentinel: lastRun?.sentinel,
+        lastRunStatus: lastRun?.status,
+        ...(activeMainRun === undefined ? {} : { activeMainRun }),
+        ...(activeChildRuns.length === 0 ? {} : { activeChildRuns }),
+        sessionId: item.wake.sessionId,
+        workspacePath: item.wake.workspacePath,
+      };
+    });
 }
 
 export async function buildStatus(input: {
   stateStore: StateStore;
   config: WakeConfig;
   now: Date;
+  processInspector?: ProcessInspector;
 }) {
   const today = input.now.toISOString().slice(0, 10);
   const [ledger, paused, recentEvents, todaysRuns, recentRuns, board] = await Promise.all([
@@ -259,8 +254,8 @@ export async function buildStatus(input: {
   ]);
 
   const [tickLock, runnerLock] = await Promise.all([
-    readLockInfo(input.stateStore.paths.tickLockFile, input.now),
-    readLockInfo(input.stateStore.paths.runnerLockFile, input.now),
+    readLockInfo(input.stateStore.paths.tickLockFile, input.now, input.processInspector),
+    readLockInfo(input.stateStore.paths.runnerLockFile, input.now, input.processInspector),
   ]);
   const tickLockLive = tickLock.present && tickLock.pidAlive === true;
   const runnerLockLive = runnerLock.present && runnerLock.pidAlive === true;
@@ -407,22 +402,24 @@ async function listSourceStates(sourceStateRoot: string) {
 
 export async function buildItemDetail(input: {
   stateStore: StateStore;
-  resourceIndex: ResourceIndex;
-  /** The active ticket source's registered name — the uri's provider segment. */
-  provider: string;
-  repo: string;
-  issueNumber: number;
+  resourceIndex?: ResourceIndex;
+  /** The active ticket source's registered name - the uri's provider segment. */
+  provider?: string;
+  repo?: string;
+  issueNumber?: number;
+  workItemKey?: string;
 }) {
-  // The UI addresses items by the ticket a human recognizes them by; work ids
-  // are opaque (spec D3). The ticket's uri is *constructed* here (never parsed)
-  // and resolved through the reverse index in one shard read (spec D2), then
-  // everything downstream keys off the record's own workItemKey.
-  const uri = buildResourceUri(input.provider, 'issue', `${input.repo}#${input.issueNumber}`);
-  const workItemKey = await input.resourceIndex.resolve(uri);
-  if (workItemKey === undefined) {
-    return null;
-  }
-
+  const workItemKey =
+    input.workItemKey ??
+    (input.resourceIndex === undefined ||
+    input.provider === undefined ||
+    input.repo === undefined ||
+    input.issueNumber === undefined
+      ? undefined
+      : await input.resourceIndex.resolve(
+          buildResourceUri(input.provider, 'issue', `${input.repo}#${input.issueNumber}`),
+        ));
+  if (workItemKey === undefined) return null;
   const item = await input.stateStore.readIssueState(workItemKey);
   if (item === null) {
     return null;
@@ -906,7 +903,7 @@ function modelKey(run: RunRecord, config: WakeConfig): string {
   if (runner === undefined || runner.kind === 'fake') {
     return 'unknown';
   }
-  return runner.models[run.action] ?? runner.models.default ?? runner.model;
+  return runner.model;
 }
 
 function completedAtForItem(item: IssueStateRecord): string | undefined {
