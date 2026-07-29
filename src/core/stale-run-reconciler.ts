@@ -2,6 +2,8 @@ import type { createProjectionUpdater } from './projection-updater.js';
 import { createLabelsEvent } from './event-builders.js';
 import { RUN_COMPLETED_EVENT } from '../domain/event-types.js';
 import { labelsForWorkItem } from '../domain/work-item-labels.js';
+import { readJsonFile, writeJsonFile } from '../lib/json-file.js';
+import { isMissingPathError } from '../lib/state-health.js';
 import type {
   EventEnvelope,
   ExecutionAttemptLifecycle,
@@ -14,9 +16,19 @@ import type {
   WakeConfig,
 } from '../domain/types.js';
 import { createEventEnvelope } from '../lib/event-log.js';
+import { join } from 'node:path';
 
 type StateStore = ReturnType<typeof import('../adapters/fs/state-store.js').createStateStore>;
 type ProjectionUpdater = ReturnType<typeof createProjectionUpdater>;
+type WatcherTrigger = { kind: 'event'; eventId: string } | { kind: 'schedule'; slot: string };
+type WatcherState = {
+  schemaVersion: 1;
+  key: string;
+  lastDispatchedEventId?: string;
+  lastDispatchedSlot?: string;
+  failureCount?: number;
+  updatedAt: string;
+};
 
 // Reconciles run records still marked `running` past the runner timeout: a
 // record whose work item has already moved on is superseded, otherwise it is
@@ -90,6 +102,111 @@ export function createStaleRunReconciler(deps: {
       externalSideEffects: processStarted ? 'unknown' : 'none',
       retrySafety,
     };
+  }
+
+  function watcherStateFile(key: string): string {
+    return join(deps.stateStore.paths.dataRoot, 'watchers', `${key}.json`);
+  }
+
+  function isWatcherTrigger(value: unknown): value is WatcherTrigger {
+    if (value === null || typeof value !== 'object') return false;
+    const record = value as Record<string, unknown>;
+    return (
+      (record.kind === 'event' && typeof record.eventId === 'string') ||
+      (record.kind === 'schedule' && typeof record.slot === 'string')
+    );
+  }
+
+  function watcherMetadata(record: RunRecord): { stateKey?: string; trigger?: WatcherTrigger } {
+    const metadata = record.metadata as Record<string, unknown> | undefined;
+    if (metadata?.watcher !== true) return {};
+    return {
+      ...(typeof metadata.watcherStateKey === 'string'
+        ? { stateKey: metadata.watcherStateKey }
+        : {}),
+      ...(isWatcherTrigger(metadata.watcherTrigger) ? { trigger: metadata.watcherTrigger } : {}),
+    };
+  }
+
+  async function readWatcherState(key: string): Promise<WatcherState | null> {
+    try {
+      const raw = await readJsonFile<unknown>(watcherStateFile(key));
+      if (raw === null || typeof raw !== 'object') return null;
+      const record = raw as Partial<WatcherState>;
+      return record.schemaVersion === 1 &&
+        record.key === key &&
+        typeof record.updatedAt === 'string'
+        ? {
+            schemaVersion: 1,
+            key,
+            ...(typeof record.lastDispatchedEventId === 'string'
+              ? { lastDispatchedEventId: record.lastDispatchedEventId }
+              : {}),
+            ...(typeof record.lastDispatchedSlot === 'string'
+              ? { lastDispatchedSlot: record.lastDispatchedSlot }
+              : {}),
+            ...(typeof record.failureCount === 'number' &&
+            Number.isInteger(record.failureCount) &&
+            record.failureCount >= 0
+              ? { failureCount: record.failureCount }
+              : {}),
+            updatedAt: record.updatedAt,
+          }
+        : null;
+    } catch (error) {
+      if (isMissingPathError(error)) return null;
+      throw error;
+    }
+  }
+
+  async function writeWatcherState(
+    key: string,
+    patch: Partial<WatcherState>,
+    updatedAt: string,
+  ): Promise<void> {
+    const current = await readWatcherState(key);
+    await writeJsonFile(watcherStateFile(key), {
+      schemaVersion: 1,
+      key,
+      ...(current?.lastDispatchedEventId === undefined
+        ? {}
+        : { lastDispatchedEventId: current.lastDispatchedEventId }),
+      ...(current?.lastDispatchedSlot === undefined
+        ? {}
+        : { lastDispatchedSlot: current.lastDispatchedSlot }),
+      ...(current?.failureCount === undefined ? {} : { failureCount: current.failureCount }),
+      ...patch,
+      updatedAt,
+    } satisfies WatcherState);
+  }
+
+  function watcherCursorPatch(trigger: WatcherTrigger): Partial<WatcherState> {
+    return {
+      ...(trigger.kind === 'event'
+        ? { lastDispatchedEventId: trigger.eventId }
+        : { lastDispatchedSlot: trigger.slot }),
+      failureCount: 0,
+    };
+  }
+
+  async function updateWatcherStateAfterCompletion(input: {
+    stateKey: string | undefined;
+    trigger: WatcherTrigger | undefined;
+    retrySafety: RetrySafety;
+    updatedAt: string;
+  }): Promise<void> {
+    if (input.stateKey === undefined || input.trigger === undefined) return;
+
+    if (input.retrySafety === 'SAFE_TO_RETRY' || input.retrySafety === 'SAFE_TO_RESUME') {
+      const current = await readWatcherState(input.stateKey);
+      const failureCount = (current?.failureCount ?? 0) + 1;
+      if (failureCount < deps.config.retry.maxFailureRetries) {
+        await writeWatcherState(input.stateKey, { failureCount }, input.updatedAt);
+        return;
+      }
+    }
+
+    await writeWatcherState(input.stateKey, watcherCursorPatch(input.trigger), input.updatedAt);
   }
 
   async function staleReason(
@@ -237,11 +354,17 @@ export function createStaleRunReconciler(deps: {
           candidate.status !== 'running' &&
           Date.parse(candidate.startedAt) > Date.parse(record.startedAt),
       );
-      // Equivalent to the previous `projection?.wake.lastRunId !== record.runId`,
-      // spelled out so the non-null projection is available below for its
-      // workItemKey.
-      if (projection === null || projection.wake.lastRunId !== record.runId || newerCompletedRun) {
-        const fullRecord = (await deps.stateStore.readRunRecord(record.runId)) ?? record;
+      const fullRecord = (await deps.stateStore.readRunRecord(record.runId)) ?? record;
+      const watcher = watcherMetadata(fullRecord);
+      const watcherRun = watcher.trigger !== undefined;
+      // Parent-stage runs must still be the projection's latest run. Watcher
+      // runs are isolated child runs, so their claim events intentionally do
+      // not replace the parent's wake.lastRunId.
+      if (
+        projection === null ||
+        (!watcherRun && projection.wake.lastRunId !== record.runId) ||
+        newerCompletedRun
+      ) {
         await deps.stateStore.writeRunRecord({
           ...fullRecord,
           lifecycle: 'TERMINAL',
@@ -261,7 +384,6 @@ export function createStaleRunReconciler(deps: {
       const staleExecutionOutcome: ExecutionOutcome =
         reason === 'timeout' ? 'TIMED_OUT' : recoveryOutcomeForLifecycle(record.lifecycle);
       const failureContext = classifyReconciledFailure(record);
-      const fullRecord = (await deps.stateStore.readRunRecord(record.runId)) ?? record;
 
       await deps.stateStore.writeRunRecord({
         ...fullRecord,
@@ -310,13 +432,20 @@ export function createStaleRunReconciler(deps: {
                 ? `runner:recover-${record.lifecycle.toLowerCase()}`
                 : 'runner:orphaned-process',
           ...(record.routing === undefined ? {} : { routing: record.routing }),
+          ...(watcherRun ? { watcherRun: true, watcherTrigger: watcher.trigger } : {}),
         },
       });
       await deps.stateStore.appendEventEnvelope(runCompletedEvent);
       await deps.projectionUpdater.rebuildFromEvents([runCompletedEvent]);
+      await updateWatcherStateAfterCompletion({
+        stateKey: watcher.stateKey,
+        trigger: watcher.trigger,
+        retrySafety: failureContext.retrySafety,
+        updatedAt: finishedAt,
+      });
 
       const updatedProjection = await deps.stateStore.readIssueState(projection.workItemKey);
-      if (updatedProjection !== null) {
+      if (!watcherRun && updatedProjection !== null) {
         await deliverRecoveredLabels(updatedProjection, record.runId, finishedAt);
       }
     }

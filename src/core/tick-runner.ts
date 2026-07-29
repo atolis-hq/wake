@@ -1941,6 +1941,7 @@ export function createTickRunner(deps: {
             ? {
                 watcher: true,
                 watcherWorkflow: workflowName,
+                watcherStateKey: watcherStateKeyForRun,
                 watcherTrigger: watcherTriggerForRun,
               }
             : {}),

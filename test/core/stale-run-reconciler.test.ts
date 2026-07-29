@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -9,7 +9,11 @@ import { createDefaultWakeConfig } from '../../src/config/defaults.js';
 import { createProjectionUpdater } from '../../src/core/projection-updater.js';
 import { createStaleRunReconciler } from '../../src/core/stale-run-reconciler.js';
 import { isRunLeaseExpired } from '../../src/core/run-lease.js';
-import type { EventEnvelope, ExecutionAttemptLifecycle } from '../../src/domain/types.js';
+import type {
+  EventEnvelope,
+  ExecutionAttemptLifecycle,
+  WakeConfig,
+} from '../../src/domain/types.js';
 import { processIdentityMatches } from '../../src/lib/process-identity.js';
 
 const workId = 'work-01JZ0000000000000000000123';
@@ -65,14 +69,14 @@ describe('stale run reconciler', () => {
   let store: ReturnType<typeof createStateStore>;
   let delivered: EventEnvelope[];
 
-  function reconciler() {
+  function reconciler(config: WakeConfig = createDefaultWakeConfig(root)) {
     const projectionUpdater = createProjectionUpdater({
       stateStore: store,
       resourceIndex: createFakeResourceIndex(),
-      config: createDefaultWakeConfig(root),
+      config,
     });
     return createStaleRunReconciler({
-      config: createDefaultWakeConfig(root),
+      config,
       stateStore: store,
       projectionUpdater,
       runnerTimeoutMs: () => RUNNER_TIMEOUT_MS,
@@ -80,6 +84,10 @@ describe('stale run reconciler', () => {
         delivered.push(event);
       },
     });
+  }
+
+  function watcherStatePath(): string {
+    return join(root, '.wake', 'watchers', `${workId}__default__implement__0.json`);
   }
 
   function reconcilerWithInactiveRuns() {
@@ -172,6 +180,66 @@ describe('stale run reconciler', () => {
     expect(record?.metadata?.stdout).toBe('x'.repeat(5000));
     expect(record?.metadata?.workspacePath).toBe('/wake/.wake/repos/atolis-hq__wake');
     expect(record?.metadata?.reconciledBy).toBe('stale-running-record');
+  });
+
+  it('reconciles a stale watcher run without folding failure onto the parent projection', async () => {
+    await seedProjection(store, 'run-123-parent');
+    await store.writeRunRecord({
+      ...runningRecord('2026-07-05T12:01:30.000Z', 'CLAIMED'),
+      action: 'pr-review',
+      metadata: {
+        watcher: true,
+        watcherStateKey: `${workId}__default__implement__0`,
+        watcherTrigger: { kind: 'event', eventId: 'run-123-parent-completed' },
+      },
+    });
+
+    await reconcilerWithInactiveRuns().reconcileStaleRunningRecords(
+      new Date('2026-07-05T12:02:00.000Z'),
+    );
+
+    const completion = (await store.readEventEnvelope('run-123-stale-stale-reconciled'))!;
+    expect(completion.payload.watcherRun).toBe(true);
+    expect(completion.payload.watcherTrigger).toEqual({
+      kind: 'event',
+      eventId: 'run-123-parent-completed',
+    });
+
+    const projection = await store.readIssueState(workId);
+    expect(projection?.wake.lastRunId).toBe('run-123-parent');
+    expect(projection?.context.lastRunSentinel).toBeUndefined();
+    expect(delivered).toEqual([]);
+
+    const watcherState = JSON.parse(await readFile(watcherStatePath(), 'utf8')) as Record<
+      string,
+      unknown
+    >;
+    expect(watcherState.failureCount).toBe(1);
+    expect(watcherState.lastDispatchedEventId).toBeUndefined();
+  });
+
+  it('advances a stale watcher run cursor once retry-safe failures reach the cap', async () => {
+    const config = createDefaultWakeConfig(root);
+    config.retry.maxFailureRetries = 1;
+    await seedProjection(store, 'run-123-parent');
+    await store.writeRunRecord({
+      ...runningRecord('2026-07-05T12:01:30.000Z', 'CLAIMED'),
+      action: 'pr-review',
+      metadata: {
+        watcher: true,
+        watcherStateKey: `${workId}__default__implement__0`,
+        watcherTrigger: { kind: 'event', eventId: 'run-123-parent-completed' },
+      },
+    });
+
+    await reconciler(config).reconcileStaleRunningRecords(new Date('2026-07-05T12:02:00.000Z'));
+
+    const watcherState = JSON.parse(await readFile(watcherStatePath(), 'utf8')) as Record<
+      string,
+      unknown
+    >;
+    expect(watcherState.failureCount).toBe(0);
+    expect(watcherState.lastDispatchedEventId).toBe('run-123-parent-completed');
   });
 
   it('supersedes a stale record when a newer run has taken over', async () => {
