@@ -522,14 +522,9 @@ describe('run and event schemas', () => {
 
   it('does not synthesize body when prose already precedes the structured envelope', () => {
     const parsed = parseRunnerResult(
-      [
-        'Here is my plan.',
-        '',
-        '```wake-result',
-        '{"status":"REJECTED"}',
-        '```',
-        'REJECTED',
-      ].join('\n'),
+      ['Here is my plan.', '', '```wake-result', '{"status":"REJECTED"}', '```', 'REJECTED'].join(
+        '\n',
+      ),
     );
 
     expect(parsed.body).toBe('Here is my plan.');

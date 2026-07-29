@@ -408,7 +408,9 @@ async function applyEvent(
       ...(payload.action === undefined || isCompletedCustomCommand
         ? {}
         : { lastRunAction: payload.action }),
-      ...(sentinel === doneRunnerSentinel && payload.action !== undefined && !isCompletedCustomCommand
+      ...(sentinel === doneRunnerSentinel &&
+      payload.action !== undefined &&
+      !isCompletedCustomCommand
         ? { lastCompletedAction: payload.action }
         : {}),
       // Remembered so the approval path knows which action to resume or
