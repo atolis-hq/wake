@@ -151,15 +151,15 @@ describe('ui-data', () => {
     const byNumber = new Map(board.map((card) => [card.number, card]));
 
     expect(byNumber.get(1)?.condition).toBe('active');
-    expect(byNumber.get(1)?.displayStatus).toBe('running');
+    expect(byNumber.get(1)?.displayStatus).toBe('working');
     expect(byNumber.get(2)?.condition).toBe('needs-human');
     expect(byNumber.get(2)?.displayStatus).toBe('blocked');
     expect(byNumber.get(3)?.condition).toBe('finished');
-    expect(byNumber.get(3)?.displayStatus).toBe('completed');
+    expect(byNumber.get(3)?.displayStatus).toBe('done');
     expect(byNumber.get(4)?.condition).toBe('ready');
-    expect(byNumber.get(4)?.displayStatus).toBe('pending');
+    expect(byNumber.get(4)?.displayStatus).toBe('queued');
     expect(byNumber.get(5)?.condition).toBe('ready');
-    expect(byNumber.get(5)?.displayStatus).toBe('pending');
+    expect(byNumber.get(5)?.displayStatus).toBe('queued');
   });
 
   it('marks frozen board cards explicitly', async () => {

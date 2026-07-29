@@ -96,22 +96,8 @@ function timeInStageMs(item: IssueStateRecord, now: Date): number {
   return now.getTime() - Date.parse(lastChange);
 }
 
-// Translates the canonical `context.status` (folded once in
-// projection-updater.ts) to the card's display text — never recomputed from
-// lastRun, per the same "one status, many translations" rule labelsForWorkItem
-// follows for GitHub labels.
-const DISPLAY_STATUS_BY_WORK_ITEM_STATUS: Record<WorkItemStatus, string> = {
-  queued: 'pending',
-  working: 'running',
-  'awaiting-approval': 'awaiting-approval',
-  'changes-requested': 'changes-requested',
-  blocked: 'blocked',
-  done: 'completed',
-  failed: 'failed',
-};
-
-function displayStatusForCard(item: IssueStateRecord): string {
-  return DISPLAY_STATUS_BY_WORK_ITEM_STATUS[item.context.status ?? 'queued'];
+function displayStatusForCard(item: IssueStateRecord): WorkItemStatus {
+  return item.context.status ?? 'queued';
 }
 
 function activeChildRunsForItem(
