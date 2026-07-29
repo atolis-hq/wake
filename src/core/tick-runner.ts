@@ -1457,15 +1457,16 @@ export function createTickRunner(deps: {
             state?.lastDispatchedEventId === undefined
               ? -1
               : matchingEvents.findIndex((event) => event.eventId === state.lastDispatchedEventId);
-          const newest = matchingEvents.slice(cursorIndex + 1).at(-1);
-          if (newest !== undefined) {
+          const undispatched = matchingEvents.slice(cursorIndex + 1);
+          const next = (state?.failureCount ?? 0) > 0 ? undispatched.at(0) : undispatched.at(-1);
+          if (next !== undefined) {
             return {
               projection,
               parentWorkflowName,
               parentStage: projection.wake.stage,
               watcherIndex,
               targetWorkflowName: watcher.workflow,
-              trigger: { kind: 'event', eventId: newest.eventId },
+              trigger: { kind: 'event', eventId: next.eventId },
             };
           }
         }

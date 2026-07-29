@@ -550,7 +550,7 @@ describe('tick runner', () => {
       expect(updated?.context.pendingApprovalAction).toBe('implement');
     });
 
-    it('re-dispatches a watcher after retry-safe FAILED completions without advancing the event cursor', async () => {
+    it('re-dispatches the original watcher event after retry-safe FAILED completions', async () => {
       const store = createStateStore({ wakeRoot: root });
       const resourceIndex = await seededResourceIndex([427]);
       const config = configurePrReviewWatcher(root);
@@ -560,8 +560,9 @@ describe('tick runner', () => {
       await appendPreviousCompletedEvent({ store, issueNumber: 427 });
 
       let prepareCalls = 0;
+      let now = new Date(watcherNow);
       const tickRunner = createTickRunner({
-        clock: { now: () => new Date(watcherNow) },
+        clock: { now: () => now },
         config,
         stateStore: store,
         workSource: {
@@ -588,15 +589,29 @@ describe('tick runner', () => {
       expect(retryState.failureCount).toBe(1);
       expect(retryState.lastDispatchedEventId).toBeUndefined();
 
+      await appendPreviousCompletedEvent({
+        store,
+        issueNumber: 427,
+        runId: 'run-427-newer',
+        occurredAt: '2026-07-25T12:01:00.000Z',
+      });
+      now = new Date('2026-07-25T12:02:00.000Z');
       await tickRunner.runTick();
       expect(prepareCalls).toBe(2);
 
-      const advancedState = JSON.parse(await readFile(watcherStatePath(427), 'utf8')) as Record<
-        string,
-        unknown
-      >;
-      expect(advancedState.failureCount).toBe(2);
-      expect(advancedState.lastDispatchedEventId).toBeUndefined();
+      const claimedTriggers = (await store.listEventEnvelopes())
+        .filter((event) => event.sourceEventType === 'wake.run.claimed')
+        .map((event) => event.payload.watcherTrigger);
+      expect(claimedTriggers).toEqual([
+        { kind: 'event', eventId: 'run-427-previous-completed' },
+        { kind: 'event', eventId: 'run-427-previous-completed' },
+      ]);
+
+      const retryStateAfterNewerEvent = JSON.parse(
+        await readFile(watcherStatePath(427), 'utf8'),
+      ) as Record<string, unknown>;
+      expect(retryStateAfterNewerEvent.failureCount).toBe(2);
+      expect(retryStateAfterNewerEvent.lastDispatchedEventId).toBeUndefined();
     });
 
     it('advances the watcher event cursor once retry-safe failures reach the configured cap', async () => {
