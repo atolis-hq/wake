@@ -604,14 +604,12 @@ export function createTickRunner(deps: {
     const reviewBody = reviewerMessageFromApprovalComment(
       input.approvalResolution.triggeringCommentBody ?? '',
     );
-    // Never enumerate specific rejection reasons (self-approval, merge-method
-    // restrictions, branch protection, ...) by string-matching the merge
-    // actor's error — there are too many, and Wake shouldn't need to know
-    // its provider's vocabulary. Any failure here is permanent enough not to
-    // retry blindly forever, so it becomes a policy block with the actor's
-    // own message attached. approve and autoMerge are independent: one
-    // failing doesn't stop the other from being attempted.
-    const blockedReasons: string[] = [];
+    // approve and autoMerge are independent: one failing doesn't stop the
+    // other from being attempted. If autoMerge succeeds, a failed approval is
+    // not a policy block on its own; GitHub can reject self-approval while
+    // still accepting auto-merge for repos that do not require review.
+    const approvalBlockedReasons: string[] = [];
+    const autoMergeBlockedReasons: string[] = [];
     const approvedEventId = `pr-merge-approved-${commentId}`;
     if (
       input.mergePolicy.approve &&
@@ -641,13 +639,14 @@ export function createTickRunner(deps: {
           }),
         );
       } catch (error) {
-        blockedReasons.push(
+        approvalBlockedReasons.push(
           `Merge policy blocked the approval step: ${describeMergeActorError(error)}`,
         );
       }
     }
 
     const autoMergeEventId = `pr-auto-merge-enabled-${commentId}`;
+    let autoMergeSucceeded = false;
     if (
       input.mergePolicy.autoMerge &&
       (await deps.stateStore.readEventEnvelope(autoMergeEventId)) === null
@@ -675,15 +674,56 @@ export function createTickRunner(deps: {
             },
           }),
         );
+        autoMergeSucceeded = true;
       } catch (error) {
-        blockedReasons.push(
+        autoMergeBlockedReasons.push(
           `Merge policy blocked the auto-merge step: ${describeMergeActorError(error)}`,
         );
       }
+    } else if (input.mergePolicy.autoMerge) {
+      autoMergeSucceeded = true;
     }
 
+    const blockedReasons =
+      autoMergeSucceeded && input.mergePolicy.autoMerge
+        ? autoMergeBlockedReasons
+        : [...approvalBlockedReasons, ...autoMergeBlockedReasons];
     if (blockedReasons.length > 0) {
       return { blocked: true, reason: blockedReasons.join(' ') };
+    }
+
+    // Approval failed but auto-merge covered it (e.g. GitHub rejecting
+    // self-approval on the bot's own PR) - not a policy block, but the
+    // failure should still leave a visible trail instead of vanishing
+    // silently, since it may also be a real permissions/config problem.
+    if (approvalBlockedReasons.length > 0) {
+      const occurredAt = eventStampNow();
+      await deliverOutboundEvent(
+        createEventEnvelope({
+          eventId: `pr-merge-approval-note-${commentId}`,
+          workItemKey: input.projection.workItemKey,
+          streamScope: 'work-item',
+          direction: 'outbound',
+          sourceSystem: 'wake',
+          sourceEventType: PUBLISH_INTENT_REQUESTED_EVENT,
+          sourceRefs: {
+            repo: input.projection.issue.repo,
+            issueNumber: input.projection.issue.number,
+            resourceUri: targetResourceUri,
+          },
+          occurredAt,
+          ingestedAt: occurredAt,
+          trigger: 'context-only',
+          payload: {
+            kind: 'status-update',
+            origin: input.projection.origin ?? 'github',
+            body: `Approval step did not block the merge, but did not succeed on its own: ${approvalBlockedReasons.join(' ')}`,
+            idempotencyKey: `${commentId}:pr-merge-approval-note`,
+            deliveryState: 'PENDING',
+          },
+          derivedHints: { stage: input.projection.wake.stage },
+        }),
+      );
     }
 
     return { blocked: false };
@@ -2525,7 +2565,7 @@ export function createTickRunner(deps: {
               },
               payload: {
                 ...publishIntent.payload,
-                kind: sentinel === 'DONE' ? 'approval-request' : 'status-update',
+                kind: 'status-update',
                 body:
                   sentinel === 'DONE'
                     ? `${parsedRunnerResult.body}\n\n${prReviewApprovalMarker}`
