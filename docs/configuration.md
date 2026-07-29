@@ -116,13 +116,19 @@ tiers:
   standard: [codex-standard, claude-haiku]
   deep: [claude-opus, codex-flagship]
 defaultTier: standard
-stages:
-  queue:
-    action: refine
-    tier: light
-  implement:
-    action: implement
-    tier: standard
+workflows:
+  default:
+    stages:
+      refine:
+        action: refine
+        workspace: read-only
+        tier: light
+        onDone: implement
+      implement:
+        action: implement
+        workspace: branch
+        tier: standard
+        onDone: done
 ```
 
 ### Splitting further
@@ -441,12 +447,13 @@ _Lives in `config.workflows.yaml`._
 
 Fallback tier used when a stage does not set `tier` or `runner`.
 
-### stages
+### workflows
 
 _Lives in `config.workflows.yaml`._
 
-Per-stage routing. A stage normally routes to a `tier`; `runner` pins a concrete
-named runner and takes precedence over `tier`.
+Workflow definitions contain the runnable stages and their actions. A workflow
+stage normally routes to a `tier`; `runner` pins a concrete named runner and
+takes precedence over `tier`.
 
 Workflow stages may also define `watch` entries. `watch[].onSuccess` declares
 what Wake does when the watched child workflow run completes `DONE` or

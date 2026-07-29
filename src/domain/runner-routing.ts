@@ -12,11 +12,6 @@ export function maxConfiguredRunnerTimeoutMs(config: WakeConfig): number {
       }
     }
   }
-  for (const stageRoute of Object.values(config.stages)) {
-    if (stageRoute.runner !== undefined) {
-      activeRunnerNames.add(stageRoute.runner);
-    }
-  }
   for (const commandRoute of Object.values(config.commands)) {
     if (commandRoute.runner !== undefined) {
       activeRunnerNames.add(commandRoute.runner);
