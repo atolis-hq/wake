@@ -24,11 +24,15 @@ export const workItemStatusSchema = z.enum(workItemStatusValues);
 // tick-runner.ts's statusLabelForOutcome/statusLabelForStage. Folded onto
 // context.status alongside (not replacing) context.lastRunSentinel.
 export function workItemStatusForRunOutcome(input: {
-  sentinel: 'DONE' | 'BLOCKED' | 'FAILED' | 'AWAITING_APPROVAL';
+  sentinel: 'DONE' | 'REJECTED' | 'BLOCKED' | 'FAILED';
   stage: Stage;
+  approvalGated?: boolean;
 }): WorkItemStatus {
-  if (input.sentinel === 'AWAITING_APPROVAL') {
+  if (input.sentinel === 'DONE' && input.approvalGated === true) {
     return 'awaiting-approval';
+  }
+  if (input.sentinel === 'REJECTED') {
+    return 'changes-requested';
   }
   if (input.sentinel === 'BLOCKED') {
     return 'blocked';

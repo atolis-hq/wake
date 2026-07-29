@@ -159,9 +159,11 @@ stage, Wake reads that stage definition and dispatches:
 - the requested workspace mode,
 - the stage's runner routing hints.
 
-When a runner reports `DONE`, Wake follows the stage's `onDone` transition. If
-the runner reports `BLOCKED`, `FAILED`, or `AWAITING_APPROVAL`, Wake does not
-take the `onDone` transition automatically.
+When a runner reports `DONE`, Wake follows the stage's `onDone` transition —
+unless the stage is configured with `skipApproval: false`, in which case Wake
+holds the transition for human approval instead of advancing immediately. If
+the runner reports `BLOCKED`, `FAILED`, or `REJECTED`, Wake does not take the
+`onDone` transition automatically.
 
 ## Stage watchers
 
@@ -195,8 +197,9 @@ workflows:
 ```
 
 A watcher's `onSuccess` block declares what Wake does when the child workflow
-run completes `DONE` — the sentinel is the child's verdict, so a `BLOCKED` or
-`FAILED` child never triggers it.
+run completes `DONE` or `REJECTED` — the sentinel is the child's verdict, so a
+`BLOCKED` or `FAILED` child (the reviewer couldn't render a verdict at all)
+never triggers it.
 
 `onSuccess.approve: true` lets the child workflow approve the watched parent
 stage directly. When the child completes `DONE` and no correlated PR carries
@@ -205,8 +208,10 @@ the issue thread), Wake resolves the parent's pending approval through the
 same transition a human `/approved` comment takes: the child's review body is
 posted to the issue, an approval run-completed event with reason
 `watcher:approved` is appended, an `approval.watcher-resolved` decision is
-audited, and the parent stage advances. A child `FAILED` or `BLOCKED` verdict
-posts the review body as feedback without approving.
+audited, and the parent stage advances. A child `REJECTED` verdict posts the
+review body as feedback and moves the parent to `changes-requested` instead of
+approving; a `BLOCKED` or `FAILED` child leaves the parent's pending approval
+untouched.
 
 `onSuccess.merge` runs only when Wake has already recognized a bot-authored
 PR review approval marker on a correlated PR. It does not fire for a human

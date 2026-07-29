@@ -22,11 +22,11 @@ describe('lifecycle service', () => {
   );
 
   it.each(['refine', 'implement'] as const)(
-    'keeps the current stage when a %s action awaits approval',
+    'keeps the current stage when a %s action is rejected',
     (action) => {
       const lifecycle = createLifecycleService();
 
-      expect(lifecycle.nextStageFromSentinel(action, 'AWAITING_APPROVAL')).toBeNull();
+      expect(lifecycle.nextStageFromSentinel(action, 'REJECTED')).toBeNull();
     },
   );
 });

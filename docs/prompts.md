@@ -48,15 +48,27 @@ Every prompt template must include a positive integer `maxTurns` frontmatter
 value so Wake can cap runner execution.
 
 Other frontmatter such as `allowedTools`, `permissionMode`, `extraArgs`,
-`skipApproval`, and `allowAutoApproval` is consumed by runner adapters and the
-Wake harness.
+`skipApproval`, `allowAutoApproval`, and `sentinelVocabulary` is consumed by
+runner adapters and the Wake harness.
 
-`skipApproval: true` means the prompt may complete with `DONE` and move to its
-configured `onDone` stage immediately. `allowAutoApproval: true` applies only
-to prompts that still require an approval gate (`skipApproval: false`): when a
-run for that prompt returns `AWAITING_APPROVAL`, Wake records the pending action
-as eligible for deterministic auto-approval. The built-in `refine` prompt sets
-`allowAutoApproval: true`; `implement` does not.
+The agent always reports `DONE` on success; whether that requires human
+sign-off before Wake advances is pure policy, not something the agent decides
+or is even told. `skipApproval: true` means a `DONE` run moves to its
+configured `onDone` stage immediately. `skipApproval: false` means Wake holds
+that `DONE` for approval instead of advancing it. `allowAutoApproval: true`
+applies only to prompts that still require an approval gate
+(`skipApproval: false`): when such a prompt completes `DONE`, Wake records the
+pending action as eligible for deterministic auto-approval. The built-in
+`refine` prompt sets `allowAutoApproval: true`; `implement` does not.
+
+`sentinelVocabulary: review` adds `REJECTED` to the sentinel vocabulary a
+prompt is instructed to use. It's for stages whose role is to render a verdict
+on some other target artifact (a PR, a plan): `REJECTED` means the agent
+completed its evaluation and the verdict is negative, with a known corrective
+next step Wake can route to automatically — distinct from `BLOCKED` ("I can't
+decide at all") and `FAILED` ("I couldn't complete the review itself"). The
+built-in `pr-review` and `plan-review` prompts set this; omit it (the default)
+for every other stage.
 
 Example:
 

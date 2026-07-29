@@ -1,4 +1,4 @@
-import { awaitingApprovalRunnerSentinel, failedRunnerSentinel } from '../domain/stages.js';
+import { failedRunnerSentinel } from '../domain/stages.js';
 import { resolveCustomCommand } from '../domain/custom-commands.js';
 import type { CustomCommandResolution } from '../domain/custom-commands.js';
 import {
@@ -34,7 +34,17 @@ export interface ApprovalResolution {
 
 function isAwaitingApproval(issue: IssueStateRecord): boolean {
   const context = issue.context as Record<string, unknown>;
-  return context.lastRunSentinel === awaitingApprovalRunnerSentinel;
+  // pendingApprovalAction persists through a changes-requested review round
+  // within the same gated cycle (that fold path never touches it), so it's
+  // the faithful "is this item currently gated on human sign-off" signal —
+  // context.status alone flips between 'awaiting-approval' and
+  // 'changes-requested' within the same gated cycle and can't be used here.
+  // The lastRunSentinel fallback tolerates a projection folded before
+  // pendingApprovalAction was reliably set on every gated DONE.
+  return (
+    typeof context.pendingApprovalAction === 'string' ||
+    context.lastRunSentinel === 'AWAITING_APPROVAL'
+  );
 }
 
 function belowFailureRetryLimit(issue: IssueStateRecord, config?: WakeConfig): boolean {
@@ -218,6 +228,10 @@ export function createPolicyEngine() {
         if (lastRetrySafety === 'SAFE_TO_RETRY' || lastRetrySafety === 'SAFE_TO_RESUME') {
           return belowFailureRetryLimit(issue, config);
         }
+        return false;
+      }
+
+      if (lastRunSentinel === 'REJECTED') {
         return false;
       }
 

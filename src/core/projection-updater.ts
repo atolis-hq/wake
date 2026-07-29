@@ -13,7 +13,7 @@ import {
   WORKSPACE_CLEANED_EVENT,
 } from '../domain/event-types.js';
 import { UNRESOLVED_WORK_ITEM_KEY, parseIssueStateRecord } from '../domain/schema.js';
-import { doneRunnerSentinel, stageFromLabels } from '../domain/stages.js';
+import { doneRunnerSentinel, rejectedRunnerSentinel, stageFromLabels } from '../domain/stages.js';
 import { FROZEN_WORK_ITEM_LABEL } from '../domain/work-item-lifecycle.js';
 import { workItemStatusForRunOutcome } from '../domain/work-item-status.js';
 import {
@@ -290,6 +290,7 @@ async function applyEvent(
     const payload = event.payload as {
       action?: string;
       sentinel?: string;
+      approvalGated?: boolean;
       nextStage?: IssueStateRecord['wake']['stage'];
       runId?: string;
       sessionId?: string;
@@ -311,6 +312,16 @@ async function applyEvent(
       changesRequested?: boolean;
       reviewFeedbackBody?: string;
     };
+
+    // A historical event stream may still carry the retired AWAITING_APPROVAL
+    // sentinel (pre-ADR-0002). Normalize it here, once, so every branch below
+    // and the strict runnerSentinelSchema validation on new writes to
+    // context.lastRunSentinel only ever see the current four-value
+    // vocabulary — replaying an old event stream must still land on the same
+    // practical state (approval-gated) as it did before this change.
+    const isLegacyAwaitingApproval = payload.sentinel === 'AWAITING_APPROVAL';
+    const sentinel = isLegacyAwaitingApproval ? doneRunnerSentinel : payload.sentinel;
+    const approvalGated = payload.approvalGated === true || isLegacyAwaitingApproval;
 
     // A rejecting plan-review/pr-review watcher sub-run (§5, trigger 1) or a
     // human /changes reply (§5, trigger 2) folds onto the parent's context
@@ -369,10 +380,10 @@ async function applyEvent(
       payload.nextStage !== undefined && payload.nextStage !== current.wake.stage;
     const stageChanged =
       payload.nextStage !== undefined && payload.nextStage !== current.wake.stage;
-    const isFailed = payload.sentinel === 'FAILED';
+    const isFailed = sentinel === 'FAILED';
     const isCompletedCustomCommand =
       payload.action !== undefined &&
-      payload.sentinel === doneRunnerSentinel &&
+      sentinel === doneRunnerSentinel &&
       config !== undefined &&
       isCustomCommandAction(payload.action, config);
     const shouldClearSession = isForwardProgression || isFailed;
@@ -387,29 +398,28 @@ async function applyEvent(
       failureCount:
         payload.failureClass !== undefined
           ? currentFailureCount + 1
-          : payload.sentinel === doneRunnerSentinel || payload.sentinel === 'AWAITING_APPROVAL'
+          : sentinel === doneRunnerSentinel || sentinel === rejectedRunnerSentinel
             ? 0
             : currentFailureCount,
       ...(payload.handledCommentId === undefined
         ? {}
         : { lastHandledCommentId: payload.handledCommentId }),
-      ...(payload.sentinel === undefined || isCompletedCustomCommand
-        ? {}
-        : { lastRunSentinel: payload.sentinel }),
+      ...(sentinel === undefined || isCompletedCustomCommand ? {} : { lastRunSentinel: sentinel }),
       ...(payload.action === undefined || isCompletedCustomCommand
         ? {}
         : { lastRunAction: payload.action }),
-      ...(payload.sentinel === doneRunnerSentinel &&
+      ...(sentinel === doneRunnerSentinel &&
       payload.action !== undefined &&
       !isCompletedCustomCommand
         ? { lastCompletedAction: payload.action }
         : {}),
       // Remembered so the approval path knows which action to resume or
-      // skip when a human posts /approved.
-      ...(payload.sentinel === 'AWAITING_APPROVAL' && payload.action !== undefined
+      // skip when a human posts /approved. Set only for an approval-gated
+      // DONE — REJECTED/BLOCKED/FAILED never gate on human sign-off this way.
+      ...(sentinel === doneRunnerSentinel && approvalGated && payload.action !== undefined
         ? { pendingApprovalAction: payload.action }
         : {}),
-      ...(payload.sentinel === 'AWAITING_APPROVAL'
+      ...(sentinel === doneRunnerSentinel && approvalGated
         ? { pendingApprovalAllowAutoApproval: payload.allowAutoApproval === true }
         : {}),
       ...(payload.executionOutcome !== undefined
@@ -429,27 +439,28 @@ async function applyEvent(
         ? { lastExternalSideEffects: payload.externalSideEffects }
         : {}),
       ...(payload.retrySafety !== undefined ? { lastRetrySafety: payload.retrySafety } : {}),
-      ...(payload.sentinel === undefined || isCompletedCustomCommand
+      ...(sentinel === undefined || isCompletedCustomCommand
         ? {}
         : {
             status: workItemStatusForRunOutcome({
-              sentinel: payload.sentinel as 'DONE' | 'BLOCKED' | 'FAILED' | 'AWAITING_APPROVAL',
+              sentinel: sentinel as 'DONE' | 'REJECTED' | 'BLOCKED' | 'FAILED',
               stage: payload.nextStage ?? current.wake.stage,
+              approvalGated,
             }),
           }),
-      // A fresh DONE/AWAITING_APPROVAL cycle resolves whatever changes were
+      // A fresh DONE cycle (gated or not) resolves whatever changes were
       // previously requested — reset the loop counter and stored feedback.
-      ...(payload.sentinel === doneRunnerSentinel || payload.sentinel === 'AWAITING_APPROVAL'
+      ...(sentinel === doneRunnerSentinel
         ? { changesRequestedCount: 0, changesRequestedFeedback: undefined }
         : {}),
     };
 
-    if (payload.sentinel === 'BLOCKED' || payload.sentinel === 'FAILED') {
+    if (sentinel === 'BLOCKED' || sentinel === 'FAILED') {
       nextContext.blockedFromStage = current.wake.stage;
-    } else if (payload.sentinel !== undefined) {
+    } else if (sentinel !== undefined) {
       delete nextContext.blockedFromStage;
     }
-    if (payload.sentinel !== 'AWAITING_APPROVAL' && !isCompletedCustomCommand) {
+    if (!(sentinel === doneRunnerSentinel && approvalGated) && !isCompletedCustomCommand) {
       delete nextContext.pendingApprovalAction;
       delete nextContext.pendingApprovalAllowAutoApproval;
     }

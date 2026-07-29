@@ -177,7 +177,7 @@ describe('tick runner', () => {
     }
 
     function prReviewResult(input: {
-      status: 'DONE' | 'FAILED' | 'AWAITING_APPROVAL' | 'BLOCKED';
+      status: 'DONE' | 'REJECTED' | 'FAILED' | 'BLOCKED';
       body: string;
       prUrl?: string;
     }) {
@@ -625,7 +625,7 @@ describe('tick runner', () => {
       ).toBeUndefined();
     });
 
-    it('publishes a FAILED child verdict without approving the parent gate', async () => {
+    it('publishes a REJECTED child verdict without approving the parent gate', async () => {
       const store = createStateStore({ wakeRoot: root });
       const resourceIndex = await seededResourceIndex([422]);
       const config = configurePrReviewWatcher(root, {
@@ -658,7 +658,10 @@ describe('tick runner', () => {
         runner: {
           async run() {
             return {
-              result: prReviewResult({ status: 'FAILED', body: 'Plan misses the rollback path.' }),
+              result: prReviewResult({
+                status: 'REJECTED',
+                body: 'Plan misses the rollback path.',
+              }),
               model: 'fake',
               cli: 'Fake',
             };
@@ -688,7 +691,7 @@ describe('tick runner', () => {
       ).toBeUndefined();
     });
 
-    it('publishes a BLOCKED child verdict without approving the parent gate', async () => {
+    it('does not fold a BLOCKED or FAILED child verdict into changes-requested (only REJECTED is a review rejection)', async () => {
       const store = createStateStore({ wakeRoot: root });
       const resourceIndex = await seededResourceIndex([423]);
       const config = configurePrReviewWatcher(root, {
@@ -739,8 +742,13 @@ describe('tick runner', () => {
       const updated = await store.readIssueState(workId(423));
       expect(updated?.wake.stage).toBe('implement');
       expect(updated?.context.pendingApprovalAction).toBe('implement');
-      expect(updated?.context.status).toBe('changes-requested');
-      expect(updated?.context.changesRequestedCount).toBe(1);
+      // BLOCKED means the reviewer couldn't render a verdict at all — it must
+      // not be treated as "reviewed and rejected." A non-rejecting watcher
+      // run leaves the parent's context untouched (same as seedAwaitingApprovalIssue
+      // left it — it never sets context.status), so no changes-requested loop
+      // is started.
+      expect(updated?.context.status).toBeUndefined();
+      expect(updated?.context.changesRequestedCount ?? 0).toBe(0);
       expect(publishedBodies).toContain('This needs operator judgment on the schema migration.');
       const events = await store.listEventEnvelopes();
       expect(
@@ -786,7 +794,7 @@ describe('tick runner', () => {
               planReviewCalls += 1;
               return planReviewCalls === 1
                 ? {
-                    result: prReviewResult({ status: 'FAILED', body: 'Please add tests.' }),
+                    result: prReviewResult({ status: 'REJECTED', body: 'Please add tests.' }),
                     model: 'fake',
                     cli: 'Fake',
                   }
@@ -798,7 +806,12 @@ describe('tick runner', () => {
             }
             implementCalls += 1;
             expect(input.promptContextOverrides?.parentPendingReviewBody).toBe('Please add tests.');
-            return { result: 'Added tests.\nAWAITING_APPROVAL', model: 'fake', cli: 'Fake' };
+            return {
+              result: 'Added tests.\nDONE',
+              model: 'fake',
+              cli: 'Fake',
+              metadata: { skipApproval: false },
+            };
           },
         },
         resourceIndex,
@@ -986,7 +999,7 @@ describe('tick runner', () => {
       ).toContain('Safe to merge.');
     });
 
-    it('publishes a pr-review changes-requested marker for a FAILED verdict on a confirmed PR', async () => {
+    it('publishes a pr-review changes-requested marker for a REJECTED verdict on a confirmed PR', async () => {
       const store = createStateStore({ wakeRoot: root });
       const resourceIndex = await seededResourceIndex([353]);
       await resourceIndex.register('github:pr:atolis-hq/wake#353', workId(353));
@@ -1025,7 +1038,7 @@ describe('tick runner', () => {
           async run() {
             return {
               result: prReviewResult({
-                status: 'FAILED',
+                status: 'REJECTED',
                 body: 'Tests are missing the negative path.',
                 prUrl: 'https://example.test/atolis-hq/wake/pull/353',
               }),
@@ -1050,7 +1063,7 @@ describe('tick runner', () => {
       const result = await tickRunner.runTick();
 
       expect(result.status).toBe('processed');
-      expect((result as { sentinel?: string }).sentinel).toBe('FAILED');
+      expect((result as { sentinel?: string }).sentinel).toBe('REJECTED');
       const verdict = delivered.find(
         (event) => event.sourceRefs.resourceUri === 'github:pr:atolis-hq/wake#353',
       );
@@ -1086,7 +1099,7 @@ describe('tick runner', () => {
           async run() {
             return {
               result: prReviewResult({
-                status: 'AWAITING_APPROVAL',
+                status: 'BLOCKED',
                 body: 'The diff is too ambiguous to approve or request changes.',
                 prUrl: 'https://example.test/atolis-hq/wake/pull/354',
               }),
@@ -1112,7 +1125,7 @@ describe('tick runner', () => {
       const events = await store.listEventEnvelopes();
 
       expect(result.status).toBe('processed');
-      expect((result as { sentinel?: string }).sentinel).toBe('AWAITING_APPROVAL');
+      expect((result as { sentinel?: string }).sentinel).toBe('BLOCKED');
       expect(
         delivered.some((event) => event.sourceRefs.resourceUri === 'github:pr:atolis-hq/wake#354'),
       ).toBe(false);

@@ -449,8 +449,8 @@ Per-stage routing. A stage normally routes to a `tier`; `runner` pins a concrete
 named runner and takes precedence over `tier`.
 
 Workflow stages may also define `watch` entries. `watch[].onSuccess` declares
-what Wake does when the watched child workflow run completes `DONE` — the
-child's sentinel is its verdict:
+what Wake does when the watched child workflow run completes `DONE` or
+`REJECTED` — the child's sentinel is its verdict:
 
 ```yaml
 workflows:
@@ -493,8 +493,10 @@ Wake's own approval transition — the same one a human `/approved` comment
 takes — when the child run completes `DONE` and no correlated PR carries the
 verdict. The approval is idempotent, recorded as a run-completed event with
 reason `watcher:approved`, and audited as an `approval.watcher-resolved`
-decision. A child `FAILED` or `BLOCKED` verdict posts the review body without
-approving.
+decision. A child `REJECTED` verdict posts the review body as feedback and
+moves the parent to `changes-requested` instead of approving; a `BLOCKED` or
+`FAILED` child (no verdict could be rendered at all) leaves the parent's
+pending approval untouched.
 
 `onSuccess.merge` is an opt-in deterministic action for PR-review approvals:
 
@@ -673,7 +675,8 @@ tick-time reconciliation pass keeps this label (plus `wake:stage.*`, `wake:workf
 tick, even if a delivery is lost or a human hand-edits a label.
 
 `wake:auto` is an operator opt-in label for deterministic approval of eligible
-`AWAITING_APPROVAL` gates. It has no effect unless the pending action's prompt
+approval-gated stages (a `DONE` run on a stage configured with
+`skipApproval: false`). It has no effect unless the pending action's prompt
 declared `allowAutoApproval: true`; with built-in prompts that means refine can
 advance to implement automatically, while implement still waits for human or PR
 review approval. Commenting `/yolo` or `/autoapprove` on the issue is a
