@@ -56,7 +56,7 @@ export const indexHtml = `<!DOCTYPE html>
   .pill-needs-human { background: #4a3510; color: #ffcf7f; }
   .pill-error { background: #3d1f1f; color: #ff8f7f; }
   .pill-finished { background: #252830; color: #9aa2ad; }
-  .pill-frozen { background: #5c2a11; color: #ffd7a3; border: 1px solid #ff9f43; }
+  .pill-frozen { background: #102a43; color: #9bd8ff; border: 1px solid #38bdf8; }
   nav { display: flex; gap: 0.25rem; padding: 0.4rem 1rem 0 0.3rem; background: var(--brand-darker); border-bottom: 1px solid #2c313a; }
   nav button { background: none; border: none; border-bottom: 2px solid transparent; color: rgba(255, 255, 255, 0.65); padding: 0.4rem 0.7rem 0.45rem; margin-bottom: -1px; cursor: pointer; font-size: 0.85rem; transition: color 0.12s ease; }
   nav button:hover { color: #fff; }

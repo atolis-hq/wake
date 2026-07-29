@@ -68,6 +68,9 @@ describe('ui-server', () => {
     expect(html).toContain('Loading...');
     expect(html).toContain('id="pause-toggle"');
     expect(html).toContain('pill-frozen');
+    expect(html).toContain(
+      '.pill-frozen { background: #102a43; color: #9bd8ff; border: 1px solid #38bdf8; }',
+    );
     expect(html).toContain('Frozen');
   });
 
