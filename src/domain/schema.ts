@@ -782,9 +782,13 @@ const wakeConfigBaseSchema = z.object({
   transcripts: z
     .object({
       enabled: z.boolean().default(false),
-      retainAfterWorkspaceCleanup: z.boolean().default(false),
+      retentionMs: z
+        .number()
+        .int()
+        .nonnegative()
+        .default(3 * 24 * 60 * 60 * 1000),
     })
-    .default({ enabled: false, retainAfterWorkspaceCleanup: false }),
+    .default({ enabled: false, retentionMs: 3 * 24 * 60 * 60 * 1000 }),
   retry: z
     .object({
       maxFailureRetries: z.number().int().positive().default(5),

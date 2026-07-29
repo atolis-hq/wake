@@ -47,7 +47,7 @@ scheduler:
   maxIntervalMs: 300000
 transcripts:
   enabled: false
-  retainAfterWorkspaceCleanup: false
+  retentionMs: 259200000
 retry:
   maxFailureRetries: 5
   maxChangesRequestedRetries: 5
@@ -353,10 +353,10 @@ CLI prompt argument and a matching `*.response.txt` file with raw stdout from
 the CLI. Initial runs are grouped by Wake `runId`; resumed runs are grouped by
 the previously recorded agent session ID when Wake has one.
 
-| Property                      | Type    | Description                                                                          | Default |
-| ----------------------------- | ------- | ------------------------------------------------------------------------------------ | ------- |
-| `enabled`                     | boolean | Write raw runner prompt and response text files                                      | `false` |
-| `retainAfterWorkspaceCleanup` | boolean | Keep transcript directories when Wake cleans up a closed issue's per-issue workspace | `false` |
+| Property      | Type    | Description                                                                                                  | Default     |
+| ------------- | ------- | ------------------------------------------------------------------------------------------------------------ | ----------- |
+| `enabled`     | boolean | Write raw runner prompt and response text files                                                              | `false`     |
+| `retentionMs` | integer | Milliseconds to retain transcripts after workspace cleanup. Set `0` to delete immediately during cleanup.    | `259200000` |
 
 ### retry
 
