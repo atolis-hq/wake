@@ -1042,6 +1042,17 @@ describe('tick runner', () => {
           while: { status: ['awaiting-approval'] },
           on: { event: ['wake.run.completed'] },
           workflow: 'pr-review',
+          onSuccess: {
+            approve: false,
+            merge: {
+              approve: true,
+              autoMerge: true,
+              mergeMethod: 'SQUASH',
+              maxFilesChanged: 5,
+              blockedPaths: [],
+              blockedLabels: [],
+            },
+          },
         },
       ];
       config.workflows['pr-review'] = {
@@ -1056,6 +1067,7 @@ describe('tick runner', () => {
       };
 
       const delivered: EventEnvelope[] = [];
+      const mergeCalls: string[] = [];
       const tickRunner = createTickRunner({
         clock: { now: () => new Date(now) },
         config,
@@ -1094,6 +1106,18 @@ describe('tick runner', () => {
         },
         resourceIndex,
         workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+        prMergeActor: {
+          async listChangedFiles() {
+            mergeCalls.push('files');
+            return ['src/core/tick-runner.ts'];
+          },
+          async approve(_resourceUri, body) {
+            mergeCalls.push(`approve:${body}`);
+          },
+          async enableAutoMerge(_resourceUri, method) {
+            mergeCalls.push(`autoMerge:${method}`);
+          },
+        },
         artifactVerifier: createFakeArtifactVerifier({
           verifies: [
             {
@@ -1126,6 +1150,26 @@ describe('tick runner', () => {
       expect(
         String((auditVerdict?.payload.outcome as { reasoning?: unknown })?.reasoning),
       ).toContain('Safe to merge.');
+      const updated = await store.readIssueState(workId(352));
+      expect(updated?.wake.stage).toBe('done');
+      expect(updated?.context.pendingApprovalAction).toBeUndefined();
+      const approvalEvent = (await store.listEventEnvelopes()).find((event) =>
+        event.eventId.endsWith('-parent-approval-completed'),
+      );
+      expect(approvalEvent?.payload).toMatchObject({
+        action: 'implement',
+        reason: 'watcher:approved',
+        sentinel: 'DONE',
+      });
+      const approvalAudit = (await store.listEventEnvelopes()).find(
+        (event) =>
+          event.sourceEventType === AUTONOMOUS_DECISION_AUDIT_EVENT &&
+          event.payload.decisionType === 'approval.watcher-resolved',
+      );
+      expect(approvalAudit?.sourceRefs.resourceUri).toBe('github:pr:atolis-hq/wake#99');
+      expect(mergeCalls[0]).toBe('files');
+      expect(mergeCalls[1]).toContain('approve:Safe to merge.');
+      expect(mergeCalls[2]).toBe('autoMerge:SQUASH');
     });
 
     it('publishes a pr-review changes-requested marker for a REJECTED verdict on a confirmed PR', async () => {

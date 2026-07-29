@@ -4,6 +4,7 @@ import { join } from 'node:path';
 
 import { createLifecycleService } from './lifecycle-service.js';
 import { createPolicyEngine } from './policy-engine.js';
+import type { ApprovalResolution } from './policy-engine.js';
 import { createProjectionUpdater } from './projection-updater.js';
 import type {
   AgentRunner,
@@ -589,7 +590,7 @@ export function createTickRunner(deps: {
 
   async function performApprovedPrMergeActions(input: {
     projection: IssueStateRecord;
-    approvalResolution: NonNullable<ReturnType<typeof policy.resolveApprovalTransition>>;
+    approvalResolution: ApprovalResolution;
     mergePolicy: ApprovedMergePolicy;
   }): Promise<{ blocked: false } | { blocked: true; reason: string }> {
     if (
@@ -728,6 +729,46 @@ export function createTickRunner(deps: {
     }
 
     return { blocked: false };
+  }
+
+  async function applyApprovedPrMergePolicy(input: {
+    projection: IssueStateRecord;
+    approvalResolution: ApprovalResolution;
+    workflowName: string;
+    mergePolicy: ApprovedMergePolicy | null;
+  }): Promise<TickOutcome | null> {
+    if (input.approvalResolution.targetResourceUri === undefined || input.mergePolicy === null) {
+      return null;
+    }
+
+    const risk = await evaluatePrMergeRisk({
+      projection: input.projection,
+      targetResourceUri: input.approvalResolution.targetResourceUri,
+      policy: input.mergePolicy,
+    });
+    if (!risk.passed) {
+      return await publishPrMergePolicyBlock({
+        projection: input.projection,
+        approvalResolution: input.approvalResolution,
+        reason: risk.reason,
+        workflowName: input.workflowName,
+      });
+    }
+    const mergeActionsResult = await performApprovedPrMergeActions({
+      projection: input.projection,
+      approvalResolution: input.approvalResolution,
+      mergePolicy: input.mergePolicy,
+    });
+    if (mergeActionsResult.blocked) {
+      return await publishPrMergePolicyBlock({
+        projection: input.projection,
+        approvalResolution: input.approvalResolution,
+        reason: mergeActionsResult.reason,
+        workflowName: input.workflowName,
+      });
+    }
+
+    return null;
   }
 
   // The one deterministic approval transition: /approved, wake:auto, and a
@@ -1742,34 +1783,14 @@ export function createTickRunner(deps: {
               promptContextOverrides = workflowAction?.promptContext;
             }
           } else if (approvalResolution.approved) {
-            const mergePolicy = approvedMergePolicyForStage(workflow.stages[candidate.wake.stage]);
-            if (approvalResolution.targetResourceUri !== undefined && mergePolicy !== null) {
-              const risk = await evaluatePrMergeRisk({
-                projection: candidate,
-                targetResourceUri: approvalResolution.targetResourceUri,
-                policy: mergePolicy,
-              });
-              if (!risk.passed) {
-                return await publishPrMergePolicyBlock({
-                  projection: candidate,
-                  approvalResolution,
-                  reason: risk.reason,
-                  workflowName,
-                });
-              }
-              const mergeActionsResult = await performApprovedPrMergeActions({
-                projection: candidate,
-                approvalResolution,
-                mergePolicy,
-              });
-              if (mergeActionsResult.blocked) {
-                return await publishPrMergePolicyBlock({
-                  projection: candidate,
-                  approvalResolution,
-                  reason: mergeActionsResult.reason,
-                  workflowName,
-                });
-              }
+            const mergePolicyBlock = await applyApprovedPrMergePolicy({
+              projection: candidate,
+              approvalResolution,
+              workflowName,
+              mergePolicy: approvedMergePolicyForStage(workflow.stages[candidate.wake.stage]),
+            });
+            if (mergePolicyBlock !== null) {
+              return mergePolicyBlock;
             }
 
             const approvalId = `approval-${candidate.issue.number}-${deps.clock.now().getTime()}`;
@@ -2619,6 +2640,77 @@ export function createTickRunner(deps: {
                 idempotencyKey: `${runId}:pr-review-verdict-comment`,
               },
             });
+            const approvalId = `${runId}-parent-approval`;
+            const parentWorkflow =
+              watcherDispatch === null
+                ? undefined
+                : deps.config.workflows[watcherDispatch.parentWorkflowName];
+            if (
+              sentinel === 'DONE' &&
+              watcherDispatch !== null &&
+              isAwaitingApproval(candidate) &&
+              typeof pendingApprovalAction === 'string' &&
+              parentWorkflow !== undefined &&
+              (await deps.stateStore.readEventEnvelope(`${approvalId}-completed`)) === null
+            ) {
+              const approvedAt = eventStampNow();
+              const approvalResolution: ApprovalResolution = {
+                approved: true,
+                pendingAction: pendingApprovalAction,
+                targetResourceUri: prReviewTargetResourceUri,
+                triggeringCommentId: approvalId,
+                triggeringCommentBody: parsedRunnerResult.body,
+              };
+              const mergePolicyBlock = await applyApprovedPrMergePolicy({
+                projection: candidate,
+                approvalResolution,
+                workflowName: watcherDispatch.parentWorkflowName,
+                mergePolicy: approvedMergePolicyForStage(
+                  parentWorkflow.stages[watcherDispatch.parentStage],
+                ),
+              });
+              if (mergePolicyBlock !== null) {
+                return mergePolicyBlock;
+              }
+
+              const applied = await applyApprovalTransition({
+                projection: candidate,
+                pendingAction: pendingApprovalAction,
+                approvalId,
+                approvedAt,
+                reason: 'watcher:approved',
+                workflow: parentWorkflow,
+                workflowName: watcherDispatch.parentWorkflowName,
+              });
+              if (applied !== null) {
+                await appendAuditEvent({
+                  eventId: `${approvalId}-audit-watcher-approval`,
+                  decisionType: 'approval.watcher-resolved',
+                  workItemKey: candidate.workItemKey,
+                  runId,
+                  workflowRevision: await computeWorkflowRevision({
+                    config: deps.config,
+                    workflowName: watcherDispatch.parentWorkflowName,
+                    workflow: parentWorkflow,
+                    action: pendingApprovalAction,
+                  }),
+                  inputsConsidered: {
+                    watcherWorkflow: watcherDispatch.targetWorkflowName,
+                    pendingAction: pendingApprovalAction,
+                    childRunId: runId,
+                    childSentinel: sentinel,
+                    verifiedTargetResourceUri: prReviewTargetResourceUri,
+                  },
+                  outcome: { approved: true, nextStage: applied.nextStage },
+                  timestamp: approvedAt,
+                  sourceRefs: {
+                    repo: candidate.issue.repo,
+                    issueNumber: candidate.issue.number,
+                    resourceUri: prReviewTargetResourceUri,
+                  },
+                });
+              }
+            }
           } else if (
             watcherDispatch !== null &&
             watcherSuccessPolicy?.approve === true &&
