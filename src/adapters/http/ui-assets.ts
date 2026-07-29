@@ -106,6 +106,20 @@ export const indexHtml = `<!DOCTYPE html>
   .modal-tabs .nav-button.active { color: var(--accent-light); border-bottom-color: var(--accent); }
   .modal-body { flex: 1; min-height: 0; overflow-y: auto; padding: 1rem; }
   .modal-body h3:first-child { margin-top: 0; }
+  .event-list { display: flex; flex-direction: column; gap: 0.45rem; }
+  .event-card { background: #20242c; border: 1px solid #2c313a; border-radius: 6px; overflow: hidden; }
+  .event-card:hover { border-color: #3a4150; }
+  .event-summary { display: grid; grid-template-columns: minmax(11rem, 14rem) minmax(10rem, 1fr) minmax(8rem, 18rem) 2.4rem; gap: 0.65rem; align-items: center; width: 100%; min-height: 2.25rem; background: transparent; border: 0; color: inherit; padding: 0.45rem 0.65rem; text-align: left; cursor: pointer; font: inherit; }
+  .event-summary:hover { background: rgba(255, 255, 255, 0.03); }
+  .event-time, .event-type, .event-id, .event-direction { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .event-time, .event-id { color: #9aa2ad; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 0.72rem; }
+  .event-type { font-weight: 650; font-size: 0.8rem; }
+  .event-direction { justify-self: end; width: 1.7rem; height: 1.7rem; display: inline-flex; align-items: center; justify-content: center; border-radius: 999px; background: #151922; border: 1px solid #334155; color: var(--accent-light); font-size: 0.9rem; }
+  .event-json { display: none; position: relative; border-top: 1px solid #2c313a; background: #14171d; }
+  .event-card.expanded .event-json { display: block; }
+  .event-copy { position: absolute; top: 0.55rem; right: 0.55rem; z-index: 1; background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.18); color: #fff; border-radius: 6px; padding: 0.16rem 0.48rem; cursor: pointer; font-size: 0.72rem; }
+  .event-copy:hover { border-color: var(--accent-light); background: rgba(45, 212, 191, 0.16); }
+  .event-json pre { margin: 0; padding-top: 2.35rem; border-radius: 0; background: transparent; }
   .transcript-session { margin: 0.75rem 0; color: #9aa2ad; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 0.75rem; text-align: center; }
   .transcript-entry { background: #101216; border: 1px solid #2c313a; border-radius: 6px; margin-bottom: 0.75rem; overflow: hidden; }
   .transcript-head { color: #9aa2ad; background: #171a20; border-bottom: 1px solid #2c313a; padding: 0.45rem 0.6rem; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 0.72rem; }
@@ -117,6 +131,8 @@ export const indexHtml = `<!DOCTYPE html>
     .col { min-height: unset; }
     .col-empty { padding: 0.25rem 0.5rem; }
     .col-empty h2 { margin: 0.1rem 0.4rem; }
+    .event-summary { grid-template-columns: minmax(8.5rem, 10rem) minmax(8rem, 1fr) 2.2rem; gap: 0.5rem; }
+    .event-id { display: none; }
   }
   .tiles { display: flex; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 1rem; }
   .tile { background: #1a1d23; border-radius: 10px; padding: 0.6rem 0.9rem; min-width: 120px; }
@@ -445,7 +461,7 @@ async function openItemModal(repo, number, boardItem) {
     const detail = await ensureDetail();
     if (!detail) return el('p', { text: 'Not found' });
     if (tab === 'events') {
-      return el('div', {}, [el('pre', { text: JSON.stringify(detail.events, null, 2) })]);
+      return renderItemEvents(detail.events || []);
     }
     if (tab === 'transcripts') {
       const transcripts = await getJson('/work-items/' + encodeURIComponent(detail.item.workItemKey) + '/transcripts');
@@ -455,6 +471,81 @@ async function openItemModal(repo, number, boardItem) {
   }
 
   await switchItemTab('details');
+}
+
+function eventTimestamp(event) {
+  return event.ingestedAt || event.occurredAt || '';
+}
+
+function eventDirectionSymbol(direction) {
+  if (direction === 'inbound') return '\\u2193';
+  if (direction === 'outbound') return '\\u2191';
+  return '\\u2194';
+}
+
+function sortedEventsNewestFirst(events) {
+  return [...events].sort((left, right) => eventTimestamp(right).localeCompare(eventTimestamp(left)));
+}
+
+async function copyText(text, button) {
+  const original = button.textContent;
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      const input = document.createElement('textarea');
+      input.value = text;
+      input.setAttribute('readonly', 'readonly');
+      input.style.position = 'fixed';
+      input.style.top = '-1000px';
+      document.body.appendChild(input);
+      input.select();
+      document.execCommand('copy');
+      input.remove();
+    }
+    button.textContent = 'Copied';
+  } catch (err) {
+    button.textContent = 'Copy failed';
+  } finally {
+    setTimeout(() => {
+      button.textContent = original;
+    }, 1100);
+  }
+}
+
+function renderItemEvents(events) {
+  if (events.length === 0) {
+    return el('p', { class: 'meta', text: 'No events available for this item.' });
+  }
+
+  const root = el('div', { class: 'event-list' });
+  for (const event of sortedEventsNewestFirst(events)) {
+    const json = JSON.stringify(event, null, 2);
+    const card = el('article', { class: 'event-card' });
+    const summary = el('button', { type: 'button', class: 'event-summary' }, [
+      el('span', { class: 'event-time', text: eventTimestamp(event) }),
+      el('span', { class: 'event-type', text: event.sourceEventType || 'unknown event' }),
+      el('span', { class: 'event-id', text: event.eventId || '' }),
+      el('span', { class: 'event-direction', title: event.direction || 'unknown', text: eventDirectionSymbol(event.direction) }),
+    ]);
+    summary.addEventListener('click', () => {
+      card.classList.toggle('expanded');
+      summary.setAttribute('aria-expanded', String(card.classList.contains('expanded')));
+    });
+    const copyButton = el('button', { type: 'button', class: 'event-copy', text: 'Copy' });
+    copyButton.addEventListener('click', (clickEvent) => {
+      clickEvent.stopPropagation();
+      copyText(json, copyButton);
+    });
+    const jsonArea = el('div', { class: 'event-json' }, [
+      copyButton,
+      el('pre', { text: json }),
+    ]);
+    card.appendChild(summary);
+    card.appendChild(jsonArea);
+    root.appendChild(card);
+  }
+  return root;
 }
 
 function renderItemDetails(detail, boardItem) {
