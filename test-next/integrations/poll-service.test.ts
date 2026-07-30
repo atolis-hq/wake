@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import {
   PollService,
+  createEventDraft,
   type ExternalEventSource,
-  type EventJournal,
   entityRef,
 } from '../../src-next/integrations/index.js';
 import { InMemoryEventJournal } from '../../src-next/persistence/index.js';
@@ -15,10 +15,9 @@ describe('PollService', () => {
     const source: ExternalEventSource = {
       async poll() {
         return [
-          {
+          createEventDraft({
             eventId: 'github:delivery-1',
             eventType: 'integration.github.work-observed',
-            schemaVersion: 1,
             occurredAt: '2026-07-30T12:00:00.000Z',
             correlationId: 'github:delivery-1',
             causationId: 'github:delivery-1',
@@ -26,7 +25,7 @@ describe('PollService', () => {
             source: { kind: 'adapter', id: 'github' },
             stream: entityRef('integration', 'github'),
             payload: { externalKey: 'owner/repo#7' },
-          },
+          }),
         ];
       },
     };
