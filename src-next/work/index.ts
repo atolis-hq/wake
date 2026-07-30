@@ -1,4 +1,5 @@
 export * from './application/work-repository.js';
+export * from './application/work-projection.js';
 export * from './application/work-service.js';
 export * from './contracts/commands.js';
 export * from './contracts/events.js';

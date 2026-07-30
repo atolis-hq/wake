@@ -1,0 +1,14 @@
+import type { ActivityOutcome } from '../../activities/index.js';
+export type RunTransportStatus = 'started' | 'succeeded' | 'failed' | 'cancelled' | 'ambiguous';
+export interface RunView {
+  readonly runId: string;
+  readonly activationId: string;
+  readonly activity: string;
+  readonly attempt: number;
+  readonly status: RunTransportStatus;
+  readonly startedAt: string;
+  readonly finishedAt?: string;
+  readonly outcome?: ActivityOutcome;
+  readonly failure?: { readonly kind: string; readonly message: string };
+  readonly workspace?: { readonly mode: 'read-only' | 'branch'; readonly path: string };
+}

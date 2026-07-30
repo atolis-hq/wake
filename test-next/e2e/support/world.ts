@@ -1,11 +1,24 @@
 import {
   createEventDraft,
+  correlationId,
   entityRef,
   type Clock,
   type EventEnvelope,
   type IdGenerator,
 } from '../../../src-next/kernel/index.js';
 import { InMemoryEventJournal } from '../../../src-next/persistence/index.js';
+import { ActivityRegistry, type ActivityDefinition } from '../../../src-next/activities/index.js';
+import { createWorkService, workItemId, type WorkItemId } from '../../../src-next/work/index.js';
+import { createResourceService, type ResourceView } from '../../../src-next/resources/index.js';
+import {
+  compileWorkflow,
+  createOrchestrationService,
+  type CompiledWorkflow,
+  type WorkflowDefinitionConfig,
+  type WorkflowInstanceView,
+} from '../../../src-next/orchestration/index.js';
+import { createExecutionService, type RunView } from '../../../src-next/execution/index.js';
+import { createAdvanceOnce, type AdvanceResult } from '../../../src-next/control-plane/index.js';
 import { FaultInjector } from './faults.js';
 import { formatTrace } from './trace.js';
 
@@ -34,6 +47,28 @@ export class TestWorld {
   readonly ids = new SequentialIds();
   readonly faults = new FaultInjector();
   readonly journal = new InMemoryEventJournal(this.clock);
+  readonly activities = new ActivityRegistry();
+  private readonly definitions: Record<string, CompiledWorkflow> = {};
+  private readonly work = createWorkService(this.journal);
+  private readonly resources = createResourceService(this.journal);
+  private readonly orchestration = createOrchestrationService(
+    this.journal,
+    this.work,
+    this.definitions,
+  );
+  private readonly execution = createExecutionService(
+    this.journal,
+    this.activities,
+    { tiers: { standard: ['fake'] }, defaultTier: 'standard' },
+    { clock: this.clock, ids: this.ids },
+  );
+  private readonly advanceOnce = createAdvanceOnce(
+    this.orchestration,
+    this.execution,
+    this.resources,
+    this.clock,
+    this.ids,
+  );
   private readonly stream = entityRef('test', 'scenario');
 
   async appendFact<Type extends string, Payload>(
@@ -61,5 +96,68 @@ export class TestWorld {
 
   async trace(): Promise<string> {
     return formatTrace(await this.journal.readAll(0));
+  }
+
+  registerActivity(definition: ActivityDefinition): void {
+    this.activities.register(definition);
+  }
+  configureWorkflow(name: string, config: WorkflowDefinitionConfig): CompiledWorkflow {
+    const compiled = compileWorkflow(name, config, this.activities);
+    this.definitions[name] = compiled;
+    return compiled;
+  }
+  async createWork(input: { objective: string; workItemId?: WorkItemId }) {
+    const id = input.workItemId ?? workItemId(this.ids.next('work'));
+    return this.work.create({ workItemId: id, objective: input.objective }, this.command());
+  }
+  async discoverResource(
+    input: Parameters<typeof this.resources.discover>[0],
+  ): Promise<ResourceView> {
+    return this.resources.discover(input, this.command());
+  }
+  async startWorkflow(input: {
+    workItemId: WorkItemId;
+    workflowName: string;
+    workflowInstanceId?: string;
+    orchestrationGroupId?: string;
+  }): Promise<WorkflowInstanceView> {
+    const id = input.workflowInstanceId ?? this.ids.next('workflow');
+    return this.orchestration.start(
+      {
+        workflowInstanceId: id,
+        workItemId: input.workItemId,
+        workflowName: input.workflowName,
+        orchestrationGroupId: input.orchestrationGroupId ?? id,
+      },
+      this.command(),
+    );
+  }
+  advance(workItemId?: WorkItemId): Promise<AdvanceResult> {
+    return this.advanceOnce({
+      ...(workItemId === undefined ? {} : { workItemId }),
+      maxProgress: 1,
+    });
+  }
+  async events(type?: string): Promise<readonly EventEnvelope[]> {
+    const events = await this.journal.readAll(0);
+    return type === undefined ? events : events.filter((event) => event.eventType === type);
+  }
+  viewWork(id: WorkItemId) {
+    return this.work.get(id);
+  }
+  viewWorkflow(id: string) {
+    return this.orchestration.get(id);
+  }
+  viewRuns(activationId?: string): Promise<readonly RunView[]> {
+    return this.execution.list(activationId);
+  }
+  private command() {
+    const commandId = this.ids.next('command');
+    return {
+      commandId,
+      correlationId: correlationId('scenario-1'),
+      occurredAt: this.clock.now().toISOString(),
+      actor: { kind: 'system' as const, id: 'test-world' },
+    };
   }
 }

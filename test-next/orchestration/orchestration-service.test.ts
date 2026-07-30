@@ -1,0 +1,74 @@
+import { z } from 'zod';
+import { expect, it } from 'vitest';
+import { ActivityRegistry } from '../../src-next/activities/index.js';
+import { InMemoryEventJournal } from '../../src-next/persistence/index.js';
+import { correlationId } from '../../src-next/kernel/index.js';
+import { createWorkService, workItemId } from '../../src-next/work/index.js';
+import { compileWorkflow, createOrchestrationService } from '../../src-next/orchestration/index.js';
+import { FakeClock } from '../e2e/support/world.js';
+
+it('persists instances and accepts outcomes idempotently', async () => {
+  const journal = new InMemoryEventJournal(new FakeClock());
+  const context = {
+    commandId: 'cmd-1',
+    correlationId: correlationId('corr-1'),
+    occurredAt: '2026-07-30T12:00:00Z',
+    actor: { kind: 'operator' as const, id: 'test' },
+  };
+  await createWorkService(journal).create(
+    { workItemId: workItemId('work-1'), objective: 'ship' },
+    context,
+  );
+  const registry = new ActivityRegistry();
+  registry.register({
+    name: 'implement',
+    inputSchema: z.object({}).strict(),
+    outcomeSchema: z.object({ kind: z.literal('done') }).strict(),
+    resources: [],
+    executionKind: 'deterministic',
+    handler: {
+      async execute() {
+        return { kind: 'done' };
+      },
+    },
+  });
+  const definition = compileWorkflow(
+    'default',
+    {
+      stages: {
+        implement: { activity: 'implement', with: {}, on: { done: { then: 'done' } } },
+      },
+    },
+    registry,
+  );
+  const service = createOrchestrationService(journal, createWorkService(journal), {
+    default: definition,
+  });
+  const instance = await service.start(
+    {
+      workflowInstanceId: 'workflow-1',
+      workItemId: workItemId('work-1'),
+      workflowName: 'default',
+      orchestrationGroupId: 'group-1',
+    },
+    context,
+  );
+  expect((await service.listPendingActivations()).length).toBe(1);
+  await service.acceptOutcome(
+    {
+      workflowInstanceId: instance.workflowInstanceId,
+      activationId: instance.pendingActivation!.activationId,
+      outcome: { kind: 'done' },
+    },
+    { ...context, commandId: 'run-1' },
+  );
+  await service.acceptOutcome(
+    {
+      workflowInstanceId: instance.workflowInstanceId,
+      activationId: instance.pendingActivation!.activationId,
+      outcome: { kind: 'done' },
+    },
+    { ...context, commandId: 'run-1' },
+  );
+  expect((await service.get(instance.workflowInstanceId))?.status).toBe('completed');
+});
