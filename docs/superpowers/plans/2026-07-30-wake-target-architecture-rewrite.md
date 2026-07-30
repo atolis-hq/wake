@@ -165,7 +165,9 @@ src-next/
     cli/{main,usage}.ts
     cli/commands/
     api/{contracts,http-server}.ts
-    ui/{assets,data}.ts
+    ui/data.ts
+    # Web application source, build, and packaging paths are added by the
+    # mandatory Task 25 web-architecture amendment.
   bootstrap/
     MODULE.md
     module.json
@@ -3862,15 +3864,53 @@ git commit -m "feat: compose target runtime from domain config"
 
 ## Task 25: Rebuild CLI, API, and UI over public application views
 
+> **Mandatory web-architecture decision gate:** Do not begin Task 25
+> implementation from this plan unchanged. After Task 24 passes, pause and
+> agree the target web architecture with the operator. Record the decision in
+> a dated design/ADR and amend this task with exact web application paths,
+> dependencies, build commands, tests, and packaging steps before continuing.
+> No framework, build tool, routing library, state library, or reusable
+> component strategy is selected by this plan.
+
+The decision must compare realistic options and explicitly settle:
+
+- the web framework and build tool;
+- whether the web application is a workspace/package or another isolated
+  source boundary;
+- feature/domain component organisation and the typed API-client boundary;
+- routing, client state, error handling, accessibility, and browser testing;
+- how compiled assets are packaged and served by Wake;
+- whether separately embeddable components have a demonstrated second
+  consumer.
+
+Whichever option is approved must preserve these constraints:
+
+- browser code consumes only the public, domain-shaped API;
+- web dependencies and presentation models do not leak into Wake's domains;
+- useful user-facing behaviour may be preserved, but the legacy monolithic
+  embedded HTML/CSS/JavaScript generation is not copied as an interim UI;
+- the web application is independently buildable and testable;
+- Wake hosts compiled assets through a replaceable Surface adapter.
+
 **Files:**
 
 - Create: `src-next/surfaces/cli/{main,usage}.ts`
 - Create: `src-next/surfaces/cli/commands/{audit,correlate,start,stop,tick,ui,validate-state}.ts`
 - Create: `src-next/surfaces/api/{contracts,http-server}.ts`
-- Create: `src-next/surfaces/ui/{assets,data}.ts`
+- Create: `src-next/surfaces/ui/data.ts`
+- Create after the mandatory decision gate: the exact web application source,
+  build, test, and asset-host files named by the approved Task 25 amendment
 - Modify: `src-next/surfaces/index.ts`
 - Create: `test-next/surfaces/{api,cli-main,cli-runtime-commands,ui-data,ui-server}.test.ts`
 - Create: `test-next/e2e/scenarios/api-domain-shape.test.ts`
+
+- [ ] **Step 0: Approve and incorporate the web-architecture amendment**
+
+Do not write Task 25 production code before the decision gate above is
+complete. The amendment must replace the deferred web file entry and extend
+Steps 1, 2, 5, and 7 with complete framework-specific tests, commands, and
+expected results. Review the amended task for placeholders and obtain operator
+approval before resuming execution.
 
 - [ ] **Step 1: Write surface-boundary tests**
 
@@ -3881,8 +3921,9 @@ it('routes CLI commands without importing a store or provider client');
 it('audit reads canonical events and causal links');
 it('validate-state reports journal, projection, and checkpoint health');
 it('API composition nests work, resources, orchestration, execution, and activities');
-it('UI data is assembled only from public views');
+it('UI data and the typed web API client use only public views');
 it('surface actions call application commands rather than writing state');
+it('the web build is isolated from domain and adapter implementation imports');
 ```
 
 - [ ] **Step 2: Run and confirm surfaces are absent**
@@ -3937,19 +3978,20 @@ calls an injected `ProjectionMaintenance` surface port after explicit operator
 selection. Bootstrap implements that port with ProjectionRunner; Surfaces do
 not import Persistence.
 
-- [ ] **Step 5: Port HTTP mechanics and static assets**
+- [ ] **Step 5: Port HTTP mechanics and implement the approved web application**
 
-Port accepted server token-gating, routing, static-asset, and error-mapping
-tests from:
+Port accepted server token-gating, routing, compiled-asset serving, and
+error-mapping tests from:
 
 ```text
 test/adapters/ui-server.test.ts
 test/adapters/ui-data.test.ts
 ```
 
-Copy static HTML/CSS/JS generation only after the server contract passes. Write
-new `ui/data.ts` against `WorkDetailResponse` and public list views; do not copy
-the legacy `ui-data.ts` projection coupling.
+Implement the exact component, API-client, browser-test, build, and packaging
+steps specified by the approved Task 25 amendment. Write new `ui/data.ts`
+against `WorkDetailResponse` and public list views. Do not copy the legacy
+static-string asset generation or `ui-data.ts` projection coupling.
 
 - [ ] **Step 6: Add `E2E-SURFACE-001`**
 
@@ -3968,8 +4010,13 @@ npm test -- test/cli/main.test.ts test/cli/audit-command.test.ts test/adapters/u
 
 Expected: target surfaces and selected legacy surface evidence PASS.
 
+Also run every web build, component, and browser verification command added by
+the approved Task 25 amendment. The Packet E gate cannot pass using a temporary
+embedded UI or with any amendment verification omitted.
+
 ```powershell
 git add src-next/surfaces test-next/surfaces test-next/e2e docs/architecture/functional-decision-catalogue.md
+# Add the exact web application paths recorded by the approved Task 25 amendment.
 git commit -m "feat: expose target domain surfaces"
 ```
 
