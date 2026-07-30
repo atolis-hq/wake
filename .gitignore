@@ -12,6 +12,7 @@ Thumbs.db
 # Common package and build outputs
 node_modules/
 dist/
+dist-next/
 build/
 coverage/
 .next/
