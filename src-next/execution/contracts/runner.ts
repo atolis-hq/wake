@@ -1,0 +1,38 @@
+export interface RunnerRequest {
+  readonly runId: string;
+  readonly prompt: string;
+  readonly model?: string;
+  readonly workspacePath?: string;
+  readonly allowedTools: readonly string[];
+  readonly resumeSessionId?: string;
+}
+
+export interface RunnerResult {
+  readonly transport: 'succeeded' | 'failed' | 'cancelled' | 'ambiguous';
+  readonly output: string;
+  readonly runner: string;
+  readonly model?: string;
+  readonly sessionId?: string;
+  readonly tokenUsage?: {
+    readonly input: number;
+    readonly output: number;
+    readonly cacheRead?: number;
+    readonly cacheWrite?: number;
+    readonly costUsd?: number;
+  };
+  readonly failure?: { readonly kind: string; readonly message: string };
+}
+
+export interface RunnerExecution {
+  readonly identity?: {
+    readonly kind: 'process' | 'remote-session';
+    readonly id: string;
+    readonly startedAt: string;
+  };
+  readonly result: Promise<RunnerResult>;
+  cancel(reason: string): Promise<void>;
+}
+
+export interface Runner {
+  start(request: RunnerRequest, signal: AbortSignal): Promise<RunnerExecution>;
+}
