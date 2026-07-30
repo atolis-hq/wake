@@ -1,20 +1,21 @@
 # Wake Target Architecture and Rewrite Design
 
 **Date:** 2026-07-30  
-**Status:** Draft for written review; the decisions were approved in discussion  
+**Status:** Approved
 **Scope:** Long-term architecture, deterministic guardrails, and the method for
 replacing the current implementation
 
 ## 1. Executive decision
 
-Wake will be a local-first, event-driven SDLC orchestration engine that can
-coordinate work beyond software changes, including conversations, documents,
-reviews, and other ticketed or unticketed work.
+Wake will be a local-first, event-driven SDLC orchestration engine. Its
+long-term model can coordinate work beyond software changes, but the initial
+rewrite remains focused on Wake's current SDLC capabilities.
 
 The replacement will be a domain-modular monolith with explicit bounded
 contexts:
 
 - `kernel`
+- `persistence`
 - `work`
 - `resources`
 - `orchestration`
@@ -23,6 +24,7 @@ contexts:
 - `control-plane`
 - `integrations`
 - `surfaces`
+- `bootstrap`
 
 Wake will own a deliberately small workflow interpreter. It will be a pure,
 deterministic state machine over configured workflow definitions and durable
@@ -63,6 +65,11 @@ Most work is expected to be made visible as a ticket or comparable work item.
 Some work will originate from conversations, documents, schedules, signals, or
 operator actions. Wake must be able to coordinate all of these without
 weakening its specialist understanding of software delivery.
+
+This is long-term product direction, not initial Activity scope. The rewrite
+does not implement specialist communication/conversation or document
+Activities. Existing provider messages used for status, questions, reviews,
+approvals, and effect confirmation remain Integration responsibilities.
 
 Wake should ultimately behave like another colleague:
 
@@ -109,7 +116,9 @@ The rewrite will not initially implement:
 - transferring an active work item between workflows;
 - free-form agent-authored workflow graphs;
 - a universal plugin or capability platform;
+- specialist communication/conversation or document Activities;
 - exact legacy output or internal-event parity.
+- a database-backed persistence adapter.
 
 These are deliberate exclusions, not unresolved architecture decisions. The
 target model must leave credible seams for them, but no speculative machinery
@@ -227,7 +236,7 @@ generic graph database in which every fact is an arbitrary node.
 | Concept | Meaning | Owning module |
 | --- | --- | --- |
 | `WorkItem` | Durable identity and description of an objective Wake is coordinating | `work` |
-| `Resource` | An external or internal thing relevant to work, such as a ticket, pull request, document, conversation, repository, or workspace artifact | `resources` |
+| `Resource` | An external or internal thing relevant to work, such as a ticket, pull request, repository, URL, or workspace artifact | `resources` |
 | `Relation` | A typed, provenance-bearing link between entity references | `kernel` primitives; relation semantics owned by a domain |
 | `WorkflowDefinition` | Validated configured description of stages, activities, outcomes, and transitions | `orchestration` |
 | `WorkflowInstance` | Durable enactment of a workflow for a WorkItem, including current position, waits, outcomes, and next requested activity | `orchestration` |
@@ -260,8 +269,11 @@ progressing the work and may be replaced or supplemented in the future.
 ### 5.2 WorkflowInstance
 
 A WorkflowInstance is attached to exactly one WorkItem. Initially, a WorkItem
-has at most one active WorkflowInstance and an instance has one primary current
-stage.
+has at most one **primary** active WorkflowInstance and each instance has one
+primary current stage. A primary instance may have subordinate child instances
+in the same orchestration group; those children do not become the WorkItem's
+active-workflow reference and cannot create another independent primary
+position.
 
 The model must not make the current stage a field on WorkItem. That separation
 allows a future workflow change to:
@@ -312,7 +324,7 @@ Examples include:
 - Run attempts an ActivityActivation;
 - Resource represents or supports WorkItem;
 - pull request implements WorkItem;
-- document records an outcome of WorkItem.
+- workspace artifact records an outcome of WorkItem.
 
 Domain entities remain authoritative. The graph is an index of explicit typed
 relationships, not the domain model itself.
@@ -328,6 +340,7 @@ src/                         # legacy implementation, unchanged except essential
 test/                        # legacy tests
 src-next/
   kernel/
+  persistence/
   work/
   resources/
   orchestration/
@@ -375,11 +388,27 @@ Owns the minimal shared language:
 - event envelope metadata;
 - universal identifiers and entity references;
 - typed relation primitives;
+- storage ports for the event journal, derived projections, and consumer
+  checkpoints;
 - clock and identifier ports where universally required;
 - small result/value types with no domain policy.
 
 It imports no domain module and contains no workflow, execution, provider, or
-SDLC policy.
+SDLC policy. It contains no filesystem implementation.
+
+#### `persistence`
+
+Owns replaceable implementations of the Kernel storage ports. The initial and
+only rewrite implementation is the local filesystem adapter:
+
+- append-only JSONL event journal;
+- atomic derived-projection files;
+- atomic projector/reactor/outbox checkpoint files;
+- filesystem locks and corruption diagnostics.
+
+It depends only on `kernel`, contains no domain projectors or business policy,
+and is selected by `bootstrap`. Domain modules depend on Kernel ports and never
+import `persistence` or filesystem paths.
 
 #### `work`
 
@@ -422,14 +451,11 @@ activities/
     approve/
     merge/
   review/
-  document/
-  conversation/
 ```
 
 An Activity is named for a concrete subject and intent, such as `pr.merge`,
-`pr.approve`, `review.request`, `document.generate`, or
-`conversation.summarize`. Unqualified names such as `implement` represent a
-configured agent-prompt Activity.
+`pr.approve`, or `review.request`. Unqualified names such as `implement`
+represent a configured agent-prompt Activity.
 
 This module is not a dumping ground for workflow callbacks. An Activity must
 have a typed input, declared resource requirements, typed outcomes, and a clear
@@ -515,6 +541,7 @@ application graph.
 The following are architectural invariants:
 
 - `kernel` imports nothing from another Wake module.
+- `persistence` imports only `kernel`.
 - A module may import another module only through its public `index.ts` and
   declared contracts.
 - Domain and application code never import `integrations` or `surfaces`.
@@ -524,6 +551,8 @@ The following are architectural invariants:
 - Projectors do not import command handlers, journals, adapters, or clocks.
 - No target module imports legacy `src/core`, `src/domain`, or `src/config`.
 - Concrete adapters are referenced only from `bootstrap` and their own tests.
+- Filesystem paths outside `persistence`, workspace/transcript implementations,
+  and bootstrap path resolution are prohibited.
 - Cycles between top-level modules are prohibited.
 
 Cross-module communication uses a public command/application contract, a
@@ -735,8 +764,8 @@ The flow is:
 5. Orchestration consumes the typed signal if the WorkflowInstance is waiting
    for it.
 
-Other providers may use buttons, review states, messages, documents, or
-entirely different mechanics without changing the canonical decision.
+Other providers may use buttons, review states, messages, or entirely
+different mechanics without changing the canonical decision.
 
 ## 9. Execution
 
@@ -822,7 +851,51 @@ workspaces, and delivery state.
 No snapshots are implemented initially. They may be added behind repositories
 only if replay performance is measured to be a problem.
 
-### 10.3 Projectors and reactors
+### 10.3 Filesystem persistence contract
+
+The configured Wake root keeps human-authored configuration and assets at its
+visible top level. The filesystem adapter stores target runtime state beneath
+the existing hidden `.wake` directory:
+
+```text
+<wakeRoot>/
+  workspaces/                   # execution-owned scratch, visible as today
+  .wake/
+    events/                     # append-only canonical JSONL journal
+      YYYY-MM-DD.jsonl
+    projections/                # disposable materialized domain views
+      work/
+      resources/
+      orchestration/
+      execution/
+      delivery/
+    checkpoints/                # mutable consumer global positions
+    locks/                      # filesystem adapter coordination
+    transcripts/                # execution-owned operational artifacts
+```
+
+The exact projection filenames are adapter concerns, but projection namespace
+and key are supplied by the owning domain. Projection files contain the last
+applied global event position with the derived view so replaying an event after
+a crash is idempotent.
+
+Persistence order is:
+
+1. append the accepted domain event to the journal;
+2. a projector/reactor reads from its last durable global-position checkpoint;
+3. a pure domain projector computes a new view;
+4. the filesystem projection adapter atomically replaces the derived file;
+5. the filesystem checkpoint adapter advances the consumer position.
+
+A crash after step 1 leaves the event available for replay. A crash after step
+4 but before step 5 replays the event; the projection's recorded global
+position prevents double application. Events are never reconstructed from
+projection files.
+
+The filesystem adapter is the default and required implementation for the
+rewrite. Replacing it later changes `bootstrap` wiring, not domain modules.
+
+### 10.4 Projectors and reactors
 
 A projector is pure:
 
@@ -846,7 +919,7 @@ Mutable projection and reactor checkpoints are operational accelerators. They
 are rebuildable from the journal and never become the source of business
 truth.
 
-### 10.4 Durable outbound delivery
+### 10.5 Durable outbound delivery
 
 Reliable external delivery is a shared opt-in application capability used by
 integrations that need it. It is not a second authoritative queue.
@@ -980,6 +1053,7 @@ CI rejects:
 - undeclared top-level module dependencies;
 - cycles between top-level modules;
 - `kernel` importing a domain;
+- domain code importing `persistence` or filesystem APIs;
 - core domains importing provider integrations;
 - projectors importing effectful services;
 - passing or importing global `WakeConfig` outside bootstrap;
@@ -1004,6 +1078,8 @@ In addition to import checks, small executable architecture tests assert:
 - module manifests match public entry points;
 - projectors are deterministic for the same input sequence;
 - bootstrap is the only composition root.
+- all configured projection consumers can delete and rebuild their filesystem
+  views from the event journal.
 
 ## 15. Testing strategy
 
@@ -1149,6 +1225,7 @@ not by completing every technical layer before exercising the system.
 
 - Create module `MODULE.md` files and manifests.
 - Install dependency and architecture checks.
+- Implement Kernel storage ports and the filesystem persistence adapter.
 - Implement minimal journal, WorkItem, Resource link, WorkflowInstance,
   ActivityActivation, Run, control-plane `advanceOnce`, and fake executor.
 - Prove one event-model scenario from work creation to workflow completion.
@@ -1192,8 +1269,8 @@ before any module becomes elaborate.
 #### Slice 7: remaining activities, integrations, and surfaces
 
 - Work through remaining catalogue clusters by value and risk.
-- Add document, conversation, and other specialist Activities only where
-  current capabilities or agreed requirements demand them.
+- Keep Activity implementations limited to the agent, review, approval, and
+  pull-request capabilities explicitly covered by the catalogue.
 - Build CLI, API, and UI over public domain views.
 
 #### Slice 8: audit and switch
@@ -1287,6 +1364,8 @@ The rewrite is successful when:
 - Execution can be replaced or extended without changing workflow policy;
 - a provider integration can be replaced without changing core domain types;
 - journal replay rebuilds domain views and delivery indexes;
+- all target events, projections, and consumer checkpoints are stored beneath
+  `<wakeRoot>/.wake` by the filesystem adapter;
 - destructive actions are tied to trusted, current evidence;
 - tick, resident, and schedule hosts exhibit the same workflow semantics;
 - architecture violations fail deterministically in local verification and CI;
