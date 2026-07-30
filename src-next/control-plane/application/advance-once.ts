@@ -10,6 +10,7 @@ import type { RunView } from '../../execution/index.js';
 import type { AdvanceOptions, AdvanceResult } from '../contracts/views.js';
 
 interface OrchestrationPort {
+  reconcileChildCompletions(context: CommandContext): Promise<void>;
   listPendingActivations(workItemId?: string): Promise<
     readonly {
       workflow: WorkflowInstanceView;
@@ -58,6 +59,7 @@ export function createAdvanceOnce(
   });
   return async (options: AdvanceOptions): Promise<AdvanceResult> => {
     if (options.maxProgress < 1) return { kind: 'exhausted', progressCount: 0 };
+    await orchestration.reconcileChildCompletions(context('child-completion-reconciliation'));
     const pending = await orchestration.listPendingActivations(options.workItemId);
     const recovery = await findUnacceptedCompleted(pending, execution);
     if (recovery !== undefined) {

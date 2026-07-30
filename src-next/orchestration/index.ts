@@ -6,6 +6,8 @@ export * from './contracts/views.js';
 export * from './application/orchestration-repository.js';
 export * from './application/orchestration-projection.js';
 export * from './application/orchestration-service.js';
+export * from './application/signal-reactor.js';
+export * from './application/watch-reactor.js';
 export * from './domain/compiler.js';
 export * from './domain/interpreter.js';
 export * from './domain/workflow-instance.js';

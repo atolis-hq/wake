@@ -4,7 +4,8 @@ import type { ExternalEventSource } from '../github/application/poll-service.js'
 export class FakeExternalEventSource implements ExternalEventSource {
   constructor(private readonly events: readonly EventDraft[]) {}
 
-  async poll(_signal: AbortSignal): Promise<readonly EventDraft[]> {
+  async poll(signal: AbortSignal): Promise<readonly EventDraft[]> {
+    void signal;
     return this.events;
   }
 }

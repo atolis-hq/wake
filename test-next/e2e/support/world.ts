@@ -6,13 +6,17 @@ import {
   type EventEnvelope,
   type IdGenerator,
 } from '../../../src-next/kernel/index.js';
-import { InMemoryEventJournal } from '../../../src-next/persistence/index.js';
+import {
+  InMemoryCheckpointStore,
+  InMemoryEventJournal,
+} from '../../../src-next/persistence/index.js';
 import { ActivityRegistry, type ActivityDefinition } from '../../../src-next/activities/index.js';
 import { createWorkService, workItemId, type WorkItemId } from '../../../src-next/work/index.js';
 import { createResourceService, type ResourceView } from '../../../src-next/resources/index.js';
 import {
   compileWorkflow,
   createOrchestrationService,
+  createWatchReactor,
   type CompiledWorkflow,
   type WorkflowDefinitionConfig,
   type WorkflowInstanceView,
@@ -47,6 +51,7 @@ export class TestWorld {
   readonly ids = new SequentialIds();
   readonly faults = new FaultInjector();
   readonly journal = new InMemoryEventJournal(this.clock);
+  readonly checkpoints = new InMemoryCheckpointStore();
   readonly activities = new ActivityRegistry();
   private readonly definitions: Record<string, CompiledWorkflow> = {};
   private readonly work = createWorkService(this.journal);
@@ -68,6 +73,11 @@ export class TestWorld {
     this.resources,
     this.clock,
     this.ids,
+  );
+  private readonly watchReactor = createWatchReactor(
+    this.orchestration,
+    this.journal,
+    this.checkpoints,
   );
   private readonly stream = entityRef('test', 'scenario');
 
@@ -102,7 +112,10 @@ export class TestWorld {
     this.activities.register(definition);
   }
   configureWorkflow(name: string, config: WorkflowDefinitionConfig): CompiledWorkflow {
-    const compiled = compileWorkflow(name, config, this.activities);
+    const compiled = compileWorkflow(name, config, this.activities, [
+      ...Object.keys(this.definitions),
+      name,
+    ]);
     this.definitions[name] = compiled;
     return compiled;
   }
@@ -132,11 +145,61 @@ export class TestWorld {
       this.command(),
     );
   }
-  advance(workItemId?: WorkItemId): Promise<AdvanceResult> {
-    return this.advanceOnce({
+  waitForSignal(
+    workflowInstanceId: string,
+    expectation: Parameters<typeof this.orchestration.waitForSignal>[1],
+  ) {
+    return this.orchestration.waitForSignal(
+      workflowInstanceId,
+      expectation,
+      this.command({ kind: 'operator', id: 'owner' }),
+    );
+  }
+  acceptSignal(
+    workflowInstanceId: string,
+    signal: Parameters<typeof this.orchestration.acceptSignal>[1],
+  ) {
+    return this.orchestration.acceptSignal(
+      workflowInstanceId,
+      signal,
+      this.command({ kind: 'operator', id: 'owner' }),
+    );
+  }
+  requestSupplementalActivity(
+    workflowInstanceId: string,
+    request: Parameters<typeof this.orchestration.requestSupplementalActivity>[1],
+  ) {
+    return this.orchestration.requestSupplementalActivity(
+      workflowInstanceId,
+      request,
+      this.command({ kind: 'operator', id: 'owner' }),
+    );
+  }
+  async advance(workItemId?: WorkItemId): Promise<AdvanceResult> {
+    const result = await this.advanceOnce({
       ...(workItemId === undefined ? {} : { workItemId }),
       maxProgress: 1,
     });
+    await this.watchReactor.runOnce();
+    return result;
+  }
+  async triggerWatch(eventType: string, eventId: string): Promise<void> {
+    const events = await this.journal.readStream(this.stream);
+    const [event] = await this.journal.append(this.stream, events.length, [
+      createEventDraft({
+        eventId,
+        eventType,
+        occurredAt: this.clock.now().toISOString(),
+        correlationId: 'scenario-1',
+        causationId: eventId,
+        actor: { kind: 'integration', id: 'test' },
+        source: { kind: 'internal', id: 'test' },
+        stream: this.stream,
+        payload: {},
+      }),
+    ]);
+    if (event === undefined) throw new Error('Watch trigger was not appended');
+    await this.watchReactor.runOnce();
   }
   async events(type?: string): Promise<readonly EventEnvelope[]> {
     const events = await this.journal.readAll(0);
@@ -151,13 +214,18 @@ export class TestWorld {
   viewRuns(activationId?: string): Promise<readonly RunView[]> {
     return this.execution.list(activationId);
   }
-  private command() {
+  private command(
+    actor: { kind: 'system' | 'operator' | 'agent' | 'integration'; id: string } = {
+      kind: 'system',
+      id: 'test-world',
+    },
+  ) {
     const commandId = this.ids.next('command');
     return {
       commandId,
       correlationId: correlationId('scenario-1'),
       occurredAt: this.clock.now().toISOString(),
-      actor: { kind: 'system' as const, id: 'test-world' },
+      actor,
     };
   }
 }

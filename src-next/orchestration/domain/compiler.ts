@@ -3,7 +3,9 @@ import {
   workflowDefinitionConfigSchema,
   type CompiledOutcomeRoute,
   type CompiledStage,
+  type CompiledSupplementalCommand,
   type CompiledWorkflow,
+  type StageConfig,
   type WorkflowDefinitionConfig,
 } from '../contracts/config.js';
 
@@ -11,41 +13,114 @@ export function compileWorkflow(
   name: string,
   input: unknown,
   activities: ActivityRegistry,
+  knownWorkflowNames: readonly string[] = [name],
 ): CompiledWorkflow {
   if (name.trim().length === 0) throw new Error('Workflow name must not be empty');
   const config = workflowDefinitionConfigSchema.parse(input) as WorkflowDefinitionConfig;
   const stageNames = Object.keys(config.stages);
   const entry = config.entry ?? stageNames[0]!;
   if (!(entry in config.stages)) throw new Error(`Unknown workflow entry stage: ${entry}`);
+  const stages = compileStages(name, config.stages, activities);
+  const commands = compileCommands(config, activities);
+  const watches = compileWatches(config, stageNames, knownWorkflowNames);
+  assertReachable(entry, stages);
+  assertCyclesBounded(stages);
+  return Object.freeze({
+    name,
+    entry,
+    commands: Object.freeze(commands),
+    watches: Object.freeze(watches),
+    stages: Object.freeze(stages),
+  });
+}
 
-  const stages: Record<string, CompiledStage> = {};
-  for (const [stageName, stage] of Object.entries(config.stages)) {
-    activities.validateInput(stage.activity, stage.with);
-    const on: Record<string, CompiledOutcomeRoute> = {};
-    for (const [outcomeKind, route] of Object.entries(stage.on)) {
-      if (!isTerminal(route.then) && !(route.then in config.stages))
+function compileWatches(
+  config: WorkflowDefinitionConfig,
+  stageNames: readonly string[],
+  knownWorkflowNames: readonly string[],
+) {
+  const ids = new Set<string>();
+  return (config.watches ?? []).map((watch) => {
+    if (ids.has(watch.id)) throw new Error(`Duplicate watch id: ${watch.id}`);
+    ids.add(watch.id);
+    const unknownStages = watch.while.stages.filter((stage) => !stageNames.includes(stage));
+    if (unknownStages.length > 0)
+      throw new Error(`Unknown watch stage: ${unknownStages.join(', ')}`);
+    if (!knownWorkflowNames.includes(watch.workflow))
+      throw new Error(`Unknown watch workflow: ${watch.workflow}`);
+    return Object.freeze({
+      ...watch,
+      while: Object.freeze({
+        stages: Object.freeze([...watch.while.stages]),
+        statuses: Object.freeze([...watch.while.statuses]),
+      }),
+      ...(watch.on === undefined
+        ? {}
+        : { on: Object.freeze({ events: Object.freeze([...watch.on.events]) }) }),
+      ...(watch.schedule === undefined ? {} : { schedule: Object.freeze({ ...watch.schedule }) }),
+    });
+  });
+}
+
+function compileStages(
+  workflowName: string,
+  configured: WorkflowDefinitionConfig['stages'],
+  activities: ActivityRegistry,
+): Record<string, CompiledStage> {
+  return Object.fromEntries(
+    Object.entries(configured).map(([stageName, stage]) => [
+      stageName,
+      compileStage(workflowName, stageName, stage, configured, activities),
+    ]),
+  );
+}
+
+function compileStage(
+  workflowName: string,
+  stageName: string,
+  stage: StageConfig,
+  allStages: WorkflowDefinitionConfig['stages'],
+  activities: ActivityRegistry,
+): CompiledStage {
+  const on = Object.fromEntries(
+    Object.entries(stage.on).map(([outcomeKind, route]) => {
+      if (!isTerminal(route.then) && !(route.then in allStages))
         throw new Error(`Unknown transition target: ${route.then}`);
       const followOns = route.activities?.map((activity) => ({
         ...activity,
         with: activities.validateInput(activity.use, activity.with),
       }));
-      on[outcomeKind] = Object.freeze({
+      const compiled: CompiledOutcomeRoute = Object.freeze({
         then: route.then,
         ...(route.repeat === undefined ? {} : { repeat: route.repeat }),
         ...(route.retry === undefined ? {} : { retry: route.retry }),
         ...(followOns === undefined ? {} : { activities: Object.freeze(followOns) }),
-        id: `${name}:${stageName}:${outcomeKind}`,
+        id: `${workflowName}:${stageName}:${outcomeKind}`,
       });
-    }
-    stages[stageName] = Object.freeze({
-      ...stage,
-      with: activities.validateInput(stage.activity, stage.with),
-      on: Object.freeze(on),
-    });
-  }
-  assertReachable(entry, stages);
-  assertCyclesBounded(stages);
-  return Object.freeze({ name, entry, stages: Object.freeze(stages) });
+      return [outcomeKind, compiled];
+    }),
+  );
+  return Object.freeze({
+    ...stage,
+    with: activities.validateInput(stage.activity, stage.with),
+    on: Object.freeze(on),
+  });
+}
+
+function compileCommands(
+  config: WorkflowDefinitionConfig,
+  activities: ActivityRegistry,
+): Record<string, CompiledSupplementalCommand> {
+  return Object.fromEntries(
+    Object.entries(config.commands ?? {}).map(([command, configured]) => [
+      command,
+      Object.freeze({
+        activity: configured.activity,
+        with: activities.validateInput(configured.activity, configured.with),
+        allowedActors: Object.freeze([...configured.allowedActors]),
+      }),
+    ]),
+  );
 }
 
 const isTerminal = (target: string): boolean => target === 'done' || target === 'await-human';

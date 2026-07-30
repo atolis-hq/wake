@@ -40,6 +40,7 @@ it('E2E-GOLDEN-001 completes work through orchestration and an explicit Run', as
   });
   expect((await world.events()).map((event) => event.eventType)).toEqual([
     'work.item-created',
+    'orchestration.primary-claimed',
     'orchestration.instance-started',
     'orchestration.stage-entered',
     'orchestration.activity-requested',

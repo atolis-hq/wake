@@ -6,6 +6,7 @@ import {
   compileWorkflow,
   foldWorkflowInstance,
   startInstance,
+  type StartInstanceInput,
 } from '../../src-next/orchestration/index.js';
 import { workItemId } from '../../src-next/work/index.js';
 
@@ -48,6 +49,9 @@ const start = {
   correlationId: 'correlation-1',
   causationId: 'command-1',
 };
+// @ts-expect-error A child start requires its complete durable provenance.
+const malformedChildStart: StartInstanceInput = { ...start, parentWorkflowInstanceId: 'parent-1' };
+void malformedChildStart;
 
 describe('workflow interpreter', () => {
   it('starts at entry and requests one stable activation', () => {
