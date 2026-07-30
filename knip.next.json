@@ -1,0 +1,5 @@
+{
+  "entry": ["src-next/main.ts", "test-next/**/*.test.ts"],
+  "project": ["src-next/**/*.ts", "test-next/**/*.ts"],
+  "ignore": ["src-next/surfaces/ui/assets.ts"]
+}

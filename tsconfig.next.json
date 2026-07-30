@@ -5,10 +5,6 @@
     "rootDir": ".",
     "types": ["node", "vitest/globals"]
   },
-  "include": [
-    "src-next/**/*.ts",
-    "test-next/**/*.ts",
-    "vitest.next.config.ts"
-  ],
+  "include": ["src-next/**/*.ts", "test-next/**/*.ts", "vitest.next.config.ts"],
   "exclude": ["src/**", "test/**", "dist/**", "dist-next/**"]
 }

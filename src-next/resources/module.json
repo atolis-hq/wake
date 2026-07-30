@@ -1,0 +1,7 @@
+{
+  "name": "resources",
+  "kind": "domain",
+  "dependencies": ["kernel", "work"],
+  "publicEntry": "./index.ts",
+  "namespaces": { "events": ["resources."], "config": ["resources"], "relations": ["resource."] }
+}

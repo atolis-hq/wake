@@ -1,0 +1,7 @@
+{
+  "name": "kernel",
+  "kind": "foundation",
+  "dependencies": [],
+  "publicEntry": "./index.ts",
+  "namespaces": { "events": [], "config": [], "relations": [] }
+}

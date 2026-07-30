@@ -1,0 +1,16 @@
+{
+  "name": "surfaces",
+  "kind": "surface",
+  "dependencies": [
+    "kernel",
+    "work",
+    "resources",
+    "activities",
+    "orchestration",
+    "execution",
+    "control-plane",
+    "integrations"
+  ],
+  "publicEntry": "./index.ts",
+  "namespaces": { "events": [], "config": ["surfaces"], "relations": [] }
+}
