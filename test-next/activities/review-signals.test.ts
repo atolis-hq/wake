@@ -10,16 +10,25 @@ describe('proposeReviewSignal', () => {
         resourceId: 'resource-github-owner-repo-1' as never,
         revision: 'a',
         actorId: 'human',
+        actorKind: 'human',
+        resourceAuthorId: 'author',
+        authorization: { source: 'configured-reviewer', reviewerId: 'human' },
         providerEventId: 'event-1',
         body: 'Please review\n /accepted \nthanks',
       }),
-    ).toMatchObject({ kind: 'accepted' });
+    ).toMatchObject({
+      kind: 'accepted',
+      authorization: { source: 'configured-reviewer' },
+    });
     expect(
       proposeReviewSignal({
         provider: 'github',
         resourceId: 'resource-github-owner-repo-1' as never,
         revision: 'a',
         actorId: 'human',
+        actorKind: 'human',
+        resourceAuthorId: 'author',
+        authorization: { source: 'none' },
         providerEventId: 'event-2',
         body: 'I think this is /accepted',
       }),

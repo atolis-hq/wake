@@ -11,6 +11,9 @@ export function proposeReviewSignal(input: ReviewSignalInput): ProposedReviewSig
     resourceId: input.resourceId,
     revision: input.revision,
     actorId: input.actorId,
+    actorKind: input.actorKind,
+    resourceAuthorId: input.resourceAuthorId,
+    authorization: input.authorization,
     providerEventId: input.providerEventId,
     kind: command === '/accepted' ? 'accepted' : 'changes-requested',
   };

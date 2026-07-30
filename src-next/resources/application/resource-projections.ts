@@ -22,6 +22,20 @@ export const resourceProjection: ProjectionDefinition<ResourceView | null> = {
       typeof payload.revision === 'string'
     )
       return { ...previous, revision: payload.revision };
+    if (
+      previous !== null &&
+      event.eventType === 'resources.work-correlation-conflicted' &&
+      typeof payload.workItemId === 'string' &&
+      typeof payload.existingWorkItemId === 'string'
+    )
+      return {
+        ...previous,
+        primaryCorrelationConflict: {
+          attemptedWorkItemId: workItemId(payload.workItemId),
+          existingWorkItemId: workItemId(payload.existingWorkItemId),
+          eventId: event.eventId,
+        },
+      };
     return previous;
   },
 };

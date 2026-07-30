@@ -22,6 +22,7 @@ export interface ActivityOutcome<Kind extends string = string, Data = unknown> {
 }
 export interface ActivityExecutionContext {
   readonly signal: AbortSignal;
+  readonly occurredAt: string;
   reportExternalExecution(reference: {
     readonly kind: 'process' | 'remote-session';
     readonly id: string;

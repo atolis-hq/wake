@@ -1,0 +1,102 @@
+import { describe, expect, it } from 'vitest';
+
+import {
+  activityProjectionDefinitions,
+  pullRequestProjection,
+} from '../../src-next/activities/index.js';
+import { createEventDraft, entityRef, type EventEnvelope } from '../../src-next/kernel/index.js';
+import {
+  InMemoryCheckpointStore,
+  InMemoryEventJournal,
+  InMemoryProjectionStore,
+  ProjectionRunner,
+} from '../../src-next/persistence/index.js';
+import { FakeClock } from '../e2e/support/world.js';
+
+function event(type: string, payload: Record<string, unknown>): EventEnvelope {
+  return {
+    ...createEventDraft({
+      eventId: `event-${type}`,
+      eventType: type,
+      occurredAt: '2026-07-30T12:00:00.000Z',
+      correlationId: 'correlation-1',
+      causationId: 'command-1',
+      actor: { kind: 'integration', id: 'github' },
+      source: { kind: 'adapter', id: 'github' },
+      stream: entityRef('resource', 'resource-1'),
+      payload,
+    }),
+    globalPosition: 1,
+    recordedAt: '2026-07-30T12:00:00.000Z',
+    sequence: 1,
+  };
+}
+
+describe('pullRequestProjection', () => {
+  it('projects an accepted review only at its observed revision and clears it when head changes', () => {
+    const discovered = pullRequestProjection.project(
+      pullRequestProjection.initial('resource-1'),
+      event('pr.discovered', {
+        workItemId: 'work-1',
+        state: 'open',
+        headRevision: 'head-a',
+        baseRevision: 'base-a',
+        checks: 'pending',
+      }),
+    );
+    const accepted = pullRequestProjection.project(
+      discovered,
+      event('pr.review-accepted', { revision: 'head-a', actorId: 'reviewer' }),
+    );
+    expect(accepted?.acceptedReview).toMatchObject({ revision: 'head-a', actorId: 'reviewer' });
+    const revised = pullRequestProjection.project(
+      accepted,
+      event('pr.revision-changed', { headRevision: 'head-b', baseRevision: 'base-a' }),
+    );
+    expect(revised).toMatchObject({ headRevision: 'head-b' });
+    expect(revised).not.toHaveProperty('acceptedReview');
+  });
+
+  it('preserves all distinct check states', () => {
+    const discovered = pullRequestProjection.project(
+      pullRequestProjection.initial('resource-1'),
+      event('pr.discovered', {
+        workItemId: 'work-1',
+        state: 'open',
+        headRevision: 'head-a',
+        baseRevision: 'base-a',
+        checks: 'unknown',
+      }),
+    );
+    expect(
+      pullRequestProjection.project(discovered, event('pr.checks-changed', { checks: 'failing' })),
+    ).toMatchObject({ checks: 'failing' });
+  });
+
+  it('registers activities-pr for named runtime replay', async () => {
+    const journal = new InMemoryEventJournal(new FakeClock());
+    const draft = event('pr.discovered', {
+      workItemId: 'work-1',
+      state: 'open',
+      headRevision: 'head-a',
+      baseRevision: 'base-a',
+      checks: 'passing',
+    });
+    await journal.append(draft.stream, 0, [draft]);
+    const store = new InMemoryProjectionStore();
+    const runner = new ProjectionRunner(
+      journal,
+      store,
+      new InMemoryCheckpointStore(),
+      activityProjectionDefinitions,
+    );
+
+    expect(activityProjectionDefinitions.map((definition) => definition.name)).toContain(
+      'activities-pr',
+    );
+    await runner.runRegisteredOnce();
+    expect(await store.read('activities-pr', 'resource-1')).toMatchObject({
+      value: { headRevision: 'head-a' },
+    });
+  });
+});

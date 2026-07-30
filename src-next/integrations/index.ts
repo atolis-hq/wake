@@ -11,3 +11,4 @@ export * from './github/infrastructure/client.js';
 export * from './github/infrastructure/etag-cache.js';
 export * from './github/infrastructure/issue-source.js';
 export * from './github/infrastructure/pr-source.js';
+export * from './github/infrastructure/review-source.js';

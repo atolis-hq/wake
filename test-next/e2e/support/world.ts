@@ -10,7 +10,11 @@ import {
   InMemoryCheckpointStore,
   InMemoryEventJournal,
 } from '../../../src-next/persistence/index.js';
-import { ActivityRegistry, type ActivityDefinition } from '../../../src-next/activities/index.js';
+import {
+  ActivityRegistry,
+  createPullRequestService,
+  type ActivityDefinition,
+} from '../../../src-next/activities/index.js';
 import { createWorkService, workItemId, type WorkItemId } from '../../../src-next/work/index.js';
 import { createResourceService, type ResourceView } from '../../../src-next/resources/index.js';
 import {
@@ -54,8 +58,9 @@ export class TestWorld {
   readonly checkpoints = new InMemoryCheckpointStore();
   readonly activities = new ActivityRegistry();
   private readonly definitions: Record<string, CompiledWorkflow> = {};
-  private readonly work = createWorkService(this.journal);
-  private readonly resources = createResourceService(this.journal);
+  readonly work = createWorkService(this.journal);
+  readonly resources = createResourceService(this.journal);
+  readonly pullRequests = createPullRequestService(this.journal, this.work, this.resources);
   private readonly orchestration = createOrchestrationService(
     this.journal,
     this.work,

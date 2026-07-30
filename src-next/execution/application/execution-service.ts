@@ -83,7 +83,7 @@ export function createExecutionService(
         ]);
         const outcome = activities.validateOutcome(
           activation.activity,
-          await executeActivity(definition, activation, context, input),
+          await executeActivity(definition, activation, context, input, startedAt),
         );
         const finishedAt = dependencies.clock.now().toISOString();
         await repository.append(runId, 1, [
@@ -126,9 +126,11 @@ async function executeActivity(
   activation: Activation,
   context: AttemptContext,
   input: unknown,
+  occurredAt: string,
 ) {
   const executionContext: ActivityExecutionContext = {
     signal: new AbortController().signal,
+    occurredAt,
     async reportExternalExecution() {},
   };
   return definition.handler.execute(

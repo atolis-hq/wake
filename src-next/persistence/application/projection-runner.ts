@@ -9,7 +9,14 @@ export class ProjectionRunner {
     private readonly journal: EventJournal,
     private readonly projections: ProjectionStore,
     private readonly checkpoints: CheckpointStore,
+    private readonly registered: readonly ProjectionDefinition[] = [],
   ) {}
+  async runRegisteredOnce(limit = 100): Promise<number> {
+    const counts = await Promise.all(
+      this.registered.map((definition) => this.runOnce(definition, limit)),
+    );
+    return counts.reduce((total, count) => total + count, 0);
+  }
   async runOnce<Value>(definition: ProjectionDefinition<Value>, limit = 100): Promise<number> {
     const consumer = `projection:${definition.name}`;
     const events = await this.journal.readAll(await this.checkpoints.load(consumer), limit);

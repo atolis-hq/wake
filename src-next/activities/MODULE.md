@@ -19,4 +19,4 @@ Results are validated and idempotently accepted.
 ## Extension rules
 Add named concrete Activities; no callback dumping ground.
 ## Scenarios
-E2E-ACTIVITY-001, E2E-PR-001, E2E-PR-APPROVE-001.
+E2E-ACTIVITY-001, E2E-PR-001, E2E-PR-002, E2E-PR-APPROVE-001.

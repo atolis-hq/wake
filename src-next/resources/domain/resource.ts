@@ -52,6 +52,8 @@ function applyResourceEvent(
   }
   if (event.eventType === 'resources.work-correlation-established')
     establish(active, resource.resourceId, event);
+  if (event.eventType === 'resources.work-correlation-conflicted')
+    recordPrimaryConflict(resource, event);
   if (
     event.eventType === 'resources.work-correlation-retracted' &&
     isRecord(event.payload) &&
@@ -59,6 +61,22 @@ function applyResourceEvent(
   ) {
     active.delete(workItemId(event.payload.workItemId));
   }
+}
+
+function recordPrimaryConflict(resource: ResourceView, event: EventEnvelope): void {
+  if (
+    !isRecord(event.payload) ||
+    typeof event.payload.workItemId !== 'string' ||
+    typeof event.payload.existingWorkItemId !== 'string'
+  )
+    return;
+  Object.assign(resource, {
+    primaryCorrelationConflict: {
+      attemptedWorkItemId: workItemId(event.payload.workItemId),
+      existingWorkItemId: workItemId(event.payload.existingWorkItemId),
+      eventId: event.eventId,
+    },
+  });
 }
 
 function establish(

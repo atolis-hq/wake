@@ -5,8 +5,11 @@ export interface ExternalWorkObservedPayload {
   readonly kind: 'issue' | 'pull-request';
   readonly title: string;
   readonly body: string;
-  readonly state: 'open' | 'closed';
+  readonly state: 'open' | 'closed' | 'merged';
   readonly revision: string;
+  readonly headRevision?: string;
+  readonly baseRevision?: string;
+  readonly checks?: 'unknown' | 'pending' | 'passing' | 'failing';
   readonly actor: { readonly id: string; readonly kind: 'human' | 'bot' };
   readonly raw: Readonly<Record<string, unknown>>;
 }
@@ -16,6 +19,14 @@ export interface GitHubCommentObservedPayload {
   readonly body: string;
   readonly revision: string;
   readonly actor: { readonly id: string; readonly kind: 'human' | 'bot' };
+  readonly resourceAuthorId?: string;
+  readonly authorization?:
+    | { readonly source: 'configured-reviewer'; readonly reviewerId: string }
+    | {
+        readonly source: 'provider-permission';
+        readonly permission: 'none' | 'read' | 'triage' | 'write' | 'maintain' | 'admin';
+      }
+    | { readonly source: 'none' };
   readonly raw: Readonly<Record<string, unknown>>;
 }
 
