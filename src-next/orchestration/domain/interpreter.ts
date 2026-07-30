@@ -12,6 +12,7 @@ import type { WorkflowInstanceView } from '../contracts/views.js';
 import { activation, nextOrdinal, startDraft, stateDraft } from './decision-events.js';
 import { childStartDrafts } from './coordination-events.js';
 import { finishRoute } from './transition.js';
+import { acceptWaitingOutcome } from './waiting-outcome.js';
 
 export type OrchestrationDecision =
   | { readonly kind: 'append'; readonly events: readonly EventDraft[] }
@@ -129,6 +130,7 @@ export function acceptActivityOutcome(
   if (!isPendingOutcome(state, input)) {
     return { kind: 'ignored', reason: 'outcome is not for the pending activation' };
   }
+  if (input.outcome.kind === 'waiting') return acceptWaitingOutcome(state, input);
   const pending = state.pendingActivation!;
 
   const events: EventDraft[] = [

@@ -20,6 +20,12 @@ export interface ActivityOutcome<Kind extends string = string, Data = unknown> {
   readonly kind: Kind;
   readonly data?: Data;
 }
+export interface WaitingActivityOutcome extends ActivityOutcome<
+  'waiting',
+  { readonly intentEventId: string; readonly signalKind: string }
+> {
+  readonly data: { readonly intentEventId: string; readonly signalKind: string };
+}
 export interface ActivityExecutionContext {
   readonly signal: AbortSignal;
   readonly occurredAt: string;

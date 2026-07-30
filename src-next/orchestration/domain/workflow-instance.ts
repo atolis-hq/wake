@@ -90,6 +90,7 @@ function apply(state: Mutable, event: Fact): void {
 function applyActivity(state: Mutable, eventType: string, payload: Record<string, unknown>): void {
   if (eventType === 'orchestration.activity-requested') {
     state.status = 'active';
+    delete state.waitingFor;
     state.pendingActivation = {
       activationId: String(payload.activationId),
       ordinal: Number(payload.ordinal),
@@ -118,6 +119,21 @@ function applyActivity(state: Mutable, eventType: string, payload: Record<string
       state.pendingActivation = { ...pending, status: 'completed' };
     }
   }
+  applyActivityWaiting(state, eventType, payload);
+}
+function applyActivityWaiting(
+  state: Mutable,
+  eventType: string,
+  payload: Record<string, unknown>,
+): void {
+  if (
+    eventType === 'orchestration.activity-waiting' &&
+    state.pendingActivation?.activationId === payload.activationId
+  ) {
+    const pending = state.pendingActivation as ActivityActivationView;
+    state.pendingActivation = { ...pending, status: 'waiting' };
+    state.lastOutcome = payload.outcome as WorkflowInstanceView['lastOutcome'];
+  }
 }
 function applyStatus(state: Mutable, eventType: string, payload: Record<string, unknown>): void {
   applySignalStatus(state, eventType, payload);
@@ -137,6 +153,13 @@ function applySignalStatus(
       signalKind: String(payload.signalKind),
       ...(typeof payload.resourceId === 'string' ? { resourceId: payload.resourceId } : {}),
       ...(typeof payload.revision === 'string' ? { revision: payload.revision } : {}),
+    };
+  }
+  if (eventType === 'orchestration.activity-waiting') {
+    state.status = 'waiting';
+    state.waitingFor = {
+      signalKind: String(payload.signalKind),
+      intentEventId: String(payload.intentEventId),
     };
   }
   if (eventType === 'orchestration.signal-accepted') {

@@ -8,12 +8,13 @@ export interface ActivityActivationView {
   readonly activity: string;
   readonly input: unknown;
   readonly execution: StageConfig['execution'];
-  readonly status: 'pending' | 'running' | 'completed';
+  readonly status: 'pending' | 'running' | 'waiting' | 'completed';
   readonly followOnIndex?: number;
   readonly supplemental?: boolean;
 }
 export interface SignalExpectationView {
   readonly signalKind: string;
+  readonly intentEventId?: string;
   readonly resourceId?: string;
   readonly revision?: string;
 }

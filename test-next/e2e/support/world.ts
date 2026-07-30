@@ -170,6 +170,16 @@ export class TestWorld {
       this.command({ kind: 'operator', id: 'owner' }),
     );
   }
+  acceptOutcome(
+    workflowInstanceId: string,
+    activationId: string,
+    outcome: Parameters<typeof this.orchestration.acceptOutcome>[0]['outcome'],
+  ) {
+    return this.orchestration.acceptOutcome(
+      { workflowInstanceId, activationId, outcome },
+      this.command({ kind: 'integration', id: 'synthetic-delivery' }),
+    );
+  }
   requestSupplementalActivity(
     workflowInstanceId: string,
     request: Parameters<typeof this.orchestration.requestSupplementalActivity>[1],

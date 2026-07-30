@@ -53,6 +53,32 @@ export interface PullRequestResourceView {
   readonly correlations: readonly ResourceCorrelationView[];
 }
 
+export type PullRequestTarget = 'primary' | { readonly resourceId: ResourceId };
+export interface PullRequestTargetInput {
+  readonly target: PullRequestTarget;
+}
+export interface PullRequestApproveInput extends PullRequestTargetInput {
+  readonly body?: string;
+}
+export interface PullRequestMergeInput extends PullRequestTargetInput {
+  readonly method: 'merge' | 'squash' | 'rebase';
+  readonly requireChecks: boolean;
+}
+export type PullRequestActivityOutcome =
+  | {
+      readonly kind: 'waiting';
+      readonly data: { readonly intentEventId: string; readonly signalKind: 'delivery-result' };
+    }
+  | { readonly kind: 'done'; readonly data: { readonly deliveryEventId: string } }
+  | { readonly kind: 'blocked'; readonly data: { readonly reason: string } }
+  | { readonly kind: 'failed'; readonly data: { readonly reason: string } };
+
+export interface PullRequestAuthorityOptions {
+  readonly target: PullRequestTarget;
+  readonly requireAcceptedReview: boolean;
+  readonly requireChecks: boolean;
+}
+
 export interface AcceptedReviewSignalView {
   readonly resourceId: ResourceId;
   readonly revision: string;

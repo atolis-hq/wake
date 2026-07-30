@@ -1,0 +1,182 @@
+import { expect, it } from 'vitest';
+
+import { createPullRequestMergeActivity } from '../../src-next/activities/index.js';
+import { appendIntentOnce } from '../../src-next/activities/pr/intent.js';
+import {
+  createEventDraft,
+  entityRef,
+  WrongExpectedSequenceError,
+  type EventJournal,
+} from '../../src-next/kernel/index.js';
+import { resourceId } from '../../src-next/resources/index.js';
+import { workItemId } from '../../src-next/work/index.js';
+import { TestWorld } from '../e2e/support/world.js';
+
+it('returns failed when the append boundary reports a definite failure', async () => {
+  const world = new TestWorld();
+  const work = await world.createWork({ objective: 'merge', workItemId: workItemId('work-1') });
+  await setupApprovedPullRequest(world, work.workItemId);
+  const activity = createPullRequestMergeActivity(world.journal, world.pullRequests, {
+    async append() {
+      return 'failed';
+    },
+  });
+
+  await expect(activity.handler.execute(invocation(work.workItemId), context())).resolves.toEqual({
+    kind: 'failed',
+    data: { reason: 'intent-write-failed' },
+  });
+  expect(await world.events('pr.merge-requested')).toHaveLength(0);
+});
+
+it('fails rather than waiting when an ambiguous denial append cannot be found', async () => {
+  const world = new TestWorld();
+  const work = await world.createWork({ objective: 'merge', workItemId: workItemId('work-1') });
+  const activity = createPullRequestMergeActivity(world.journal, world.pullRequests, {
+    async append() {
+      return 'ambiguous';
+    },
+  });
+
+  await expect(
+    activity.handler.execute({ ...invocation(work.workItemId), resources: [] }, context()),
+  ).resolves.toEqual({
+    kind: 'failed',
+    data: { reason: 'intent-write-failed' },
+  });
+  expect(await world.events('pr.merge-denied')).toHaveLength(0);
+});
+
+it('queries by event id before trusting a genuinely uncertain requested append', async () => {
+  const world = new TestWorld();
+  const work = await world.createWork({ objective: 'merge', workItemId: workItemId('work-1') });
+  await setupApprovedPullRequest(world, work.workItemId);
+  let reconciliationReads = 0;
+  const queryingJournal: EventJournal = {
+    append: (stream, sequence, events) => world.journal.append(stream, sequence, events),
+    readAll: (position, limit) => world.journal.readAll(position, limit),
+    readStream(stream) {
+      reconciliationReads += 1;
+      return world.journal.readStream(stream);
+    },
+  };
+  const activity = createPullRequestMergeActivity(queryingJournal, world.pullRequests, {
+    async append(stream, intent) {
+      const events = await world.journal.readStream(stream);
+      await world.journal.append(stream, events.length, [intent]);
+      return 'ambiguous';
+    },
+  });
+
+  await expect(activity.handler.execute(invocation(work.workItemId), context())).resolves.toEqual({
+    kind: 'waiting',
+    data: { intentEventId: 'activation-1:pr.merge-requested', signalKind: 'delivery-result' },
+  });
+  expect(reconciliationReads).toBeGreaterThan(0);
+  expect(await world.events('pr.merge-requested')).toHaveLength(1);
+});
+
+it('treats exhausted sequence conflicts without the event as a failed append', async () => {
+  const stream = entityRef('work', 'work-1');
+  let attempts = 0;
+  const journal: EventJournal = {
+    async append() {
+      attempts += 1;
+      throw new WrongExpectedSequenceError('conflict');
+    },
+    async readStream() {
+      return [];
+    },
+    async readAll() {
+      return [];
+    },
+  };
+  const intent = createEventDraft({
+    eventId: 'activation-1:pr.merge-denied',
+    eventType: 'pr.merge-denied',
+    occurredAt: '2026-07-30T12:00:00.000Z',
+    correlationId: 'scenario-1',
+    causationId: 'activation-1',
+    actor: { kind: 'system', id: 'test' },
+    source: { kind: 'internal', id: 'test' },
+    stream,
+    payload: {},
+  });
+
+  await expect(appendIntentOnce(journal, stream, intent)).resolves.toBe('failed');
+  expect(attempts).toBe(3);
+});
+
+async function setupApprovedPullRequest(
+  world: TestWorld,
+  work: ReturnType<typeof workItemId>,
+): Promise<void> {
+  const resource = resourceId('resource-1');
+  await world.discoverResource({
+    resourceId: resource,
+    kind: 'pull-request',
+    externalKey: { adapter: 'neutral-test', key: 'pr-1' },
+    capabilities: ['reviewable', 'mergeable', 'revisioned'],
+  });
+  await world.resources.correlate(resource, work, 'primary', command(world, 'correlate'));
+  await world.pullRequests.observe(
+    {
+      resourceId: resource,
+      workItemId: work,
+      state: 'open',
+      headRevision: 'head-a',
+      baseRevision: 'base-a',
+      checks: 'passing',
+    },
+    command(world, 'observe'),
+  );
+  await world.pullRequests.acceptReviewSignal(
+    {
+      resourceId: resource,
+      revision: 'head-a',
+      actorId: 'reviewer',
+      actorKind: 'human',
+      acceptedEventId: 'review-1',
+      resourceAuthorId: 'author',
+      authorization: { source: 'configured-reviewer', reviewerId: 'reviewer' },
+    },
+    command(world, 'approve'),
+  );
+}
+
+function invocation(work: ReturnType<typeof workItemId>) {
+  return {
+    activationId: 'activation-1',
+    activity: 'pr.merge',
+    workItemId: work,
+    workflowInstanceId: 'workflow-1',
+    orchestrationGroupId: 'group-1',
+    causationId: 'activation-1',
+    input: { target: 'primary' as const, method: 'merge' as const, requireChecks: true },
+    resources: [
+      {
+        resourceId: resourceId('resource-1'),
+        kind: 'pull-request',
+        externalKey: { adapter: 'neutral-test', key: 'pr-1' },
+        capabilities: ['mergeable', 'revisioned'] as const,
+      },
+    ],
+  };
+}
+
+function context() {
+  return {
+    occurredAt: '2026-07-30T12:10:00.000Z',
+    signal: new AbortController().signal,
+    async reportExternalExecution() {},
+  };
+}
+
+function command(world: TestWorld, commandId: string) {
+  return {
+    commandId,
+    correlationId: 'scenario-1' as never,
+    occurredAt: world.clock.now().toISOString(),
+    actor: { kind: 'system' as const, id: 'test' },
+  };
+}

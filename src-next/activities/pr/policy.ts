@@ -2,22 +2,34 @@ import type {
   AcceptedReviewSignalView,
   PullRequestAuthorityDecision,
   PullRequestAuthorityInput,
+  PullRequestAuthorityOptions,
   PullRequestResourceView,
+  PullRequestTarget,
   PullRequestView,
 } from './contracts.js';
 
 export function decidePullRequestAuthority(
   input: PullRequestAuthorityInput,
+  options: PullRequestAuthorityOptions = {
+    target: 'primary',
+    requireAcceptedReview: true,
+    requireChecks: true,
+  },
 ): PullRequestAuthorityDecision {
   if (input.work === null) return denied('missing-resource');
-  const resource = selectResource(input, input.work.workItemId);
+  const resource = selectResource(input, input.work.workItemId, options.target);
   if (isDenial(resource)) return resource;
   const pullRequest = selectPullRequest(input, resource, input.work.workItemId);
   if (isDenial(pullRequest)) return pullRequest;
-  const review = reviewAuthority(pullRequest, input.acceptedSignals);
-  if (review !== null) return review;
-  const checks = checkAuthority(pullRequest);
-  if (checks !== null) return checks;
+  if (pullRequest.state !== 'open') return denied('closed');
+  if (options.requireAcceptedReview) {
+    const review = reviewAuthority(pullRequest, input.acceptedSignals);
+    if (review !== null) return review;
+  }
+  if (options.requireChecks) {
+    const checks = checkAuthority(pullRequest);
+    if (checks !== null) return checks;
+  }
   return { allowed: true, resourceId: pullRequest.resourceId, revision: pullRequest.headRevision };
 }
 
@@ -43,8 +55,13 @@ function hasPrimaryCorrelationConflict(
 function selectResource(
   input: PullRequestAuthorityInput,
   workItemId: string,
+  target: PullRequestTarget,
 ): PullRequestResourceView | Denial {
-  const resources = input.resources.filter((entry) => isPrimaryPullRequest(entry, workItemId));
+  const resources = input.resources.filter(
+    (entry) =>
+      isPrimaryPullRequest(entry, workItemId) &&
+      (target === 'primary' || entry.resource.resourceId === target.resourceId),
+  );
   if (resources.length === 0) return denied('missing-resource');
   if (resources.length !== 1) return denied('ambiguous-resource');
   const resource = resources[0]!;
@@ -76,7 +93,6 @@ function reviewAuthority(
   pullRequest: PullRequestView,
   signals: readonly AcceptedReviewSignalView[],
 ): Denial | null {
-  if (pullRequest.state !== 'open') return denied('closed');
   const accepted = pullRequest.acceptedReview;
   if (accepted === undefined || accepted.revision !== pullRequest.headRevision) {
     if (hasCurrentUntrustedSignal(pullRequest, signals)) return denied('untrusted-actor');

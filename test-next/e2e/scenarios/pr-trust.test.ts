@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 
-import { createPullRequestMergeAuthorityActivity } from '../../../src-next/activities/index.js';
+import { createPullRequestMergeAuthorityGate } from '../../../src-next/activities/index.js';
 import {
   InboundTranslator,
   createEventDraft,
@@ -8,6 +8,7 @@ import {
   githubReviewObservation,
 } from '../../../src-next/integrations/index.js';
 import { workItemId } from '../../../src-next/work/index.js';
+import { mergeAuthorityTestActivity } from '../support/merge-authority-activity.js';
 import { TestWorld } from '../support/world.js';
 
 it('allows current-revision human acceptance through real merge authority', async () => {
@@ -34,11 +35,13 @@ it.each([
     await appendObservation(world);
     await appendAcceptance(world, actor, allowed);
     await translator.runOnce();
-    world.registerActivity(createPullRequestMergeAuthorityActivity(world.pullRequests));
+    world.registerActivity(
+      mergeAuthorityTestActivity(createPullRequestMergeAuthorityGate(world.pullRequests)),
+    );
     world.configureWorkflow('merge', {
       stages: {
         merge: {
-          activity: 'pr.merge',
+          activity: 'test.pr.merge-authority',
           with: {},
           on: { 'merge-denied': { then: 'merge', repeat: { max: 1 } } },
         },
@@ -57,7 +60,11 @@ it.each([
       expect.objectContaining({ payload: { reason: 'untrusted-actor' } }),
     ]);
     expect(await world.events('pr.merge-denied')).toEqual(
-      expect.arrayContaining([expect.objectContaining({ payload: { reason: 'untrusted-actor' } })]),
+      expect.arrayContaining([
+        expect.objectContaining({
+          payload: expect.objectContaining({ reason: 'untrusted-actor' }),
+        }),
+      ]),
     );
     expect(await world.events('pr.merge-requested')).toHaveLength(0);
   },

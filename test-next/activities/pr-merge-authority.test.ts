@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { createPullRequestMergeAuthorityActivity } from '../../src-next/activities/index.js';
+import { createPullRequestMergeAuthorityGate } from '../../src-next/activities/index.js';
 import { entityRef } from '../../src-next/kernel/index.js';
 import { resourceId } from '../../src-next/resources/index.js';
 import { workItemId } from '../../src-next/work/index.js';
@@ -69,25 +69,20 @@ describe('PullRequestService merge authority audit', () => {
       },
       command(world, 'accept'),
     );
-    const activity = createPullRequestMergeAuthorityActivity(world.pullRequests);
-    const invocation = {
+    const gate = createPullRequestMergeAuthorityGate(world.pullRequests);
+    const input = {
       activationId: 'activation-1',
-      activity: 'pr.merge',
       workItemId: work.workItemId,
-      workflowInstanceId: 'workflow-1',
       orchestrationGroupId: 'group-1',
-      causationId: 'activation-1',
-      input: {},
-      resources: [],
     };
 
-    expect(
-      await activity.handler.execute(invocation, executionContext('2026-07-30T12:10:00Z')),
-    ).toEqual({ kind: 'merge-denied' });
+    expect(await gate.evaluate(input, '2026-07-30T12:10:00Z')).toEqual({
+      kind: 'merge-denied',
+    });
     await observe(world, resource, 'failing', 'observe-failing');
-    expect(
-      await activity.handler.execute(invocation, executionContext('2026-07-30T12:20:00Z')),
-    ).toEqual({ kind: 'merge-denied' });
+    expect(await gate.evaluate(input, '2026-07-30T12:20:00Z')).toEqual({
+      kind: 'merge-denied',
+    });
 
     const denials = await world.events('pr.merge-denied');
     expect(denials).toHaveLength(1);
@@ -122,25 +117,20 @@ it('reuses a durable authorization after mutable authority becomes failing', asy
     },
     command(world, 'accept'),
   );
-  const activity = createPullRequestMergeAuthorityActivity(world.pullRequests);
-  const invocation = {
+  const gate = createPullRequestMergeAuthorityGate(world.pullRequests);
+  const input = {
     activationId: 'activation-authorized',
-    activity: 'pr.merge',
     workItemId: work.workItemId,
-    workflowInstanceId: 'workflow-1',
     orchestrationGroupId: 'group-1',
-    causationId: 'activation-authorized',
-    input: {},
-    resources: [],
   };
 
-  expect(
-    await activity.handler.execute(invocation, executionContext('2026-07-30T12:10:00Z')),
-  ).toEqual({ kind: 'merge-authorized' });
+  expect(await gate.evaluate(input, '2026-07-30T12:10:00Z')).toEqual({
+    kind: 'merge-authorized',
+  });
   await observe(world, resource, 'failing', 'observe-failing');
-  expect(
-    await activity.handler.execute(invocation, executionContext('2026-07-30T12:20:00Z')),
-  ).toEqual({ kind: 'merge-authorized' });
+  expect(await gate.evaluate(input, '2026-07-30T12:20:00Z')).toEqual({
+    kind: 'merge-authorized',
+  });
 
   expect(await world.events('pr.merge-authorized')).toEqual([
     expect.objectContaining({
@@ -176,13 +166,5 @@ function command(world: TestWorld, commandId: string) {
     correlationId: 'correlation-1' as never,
     occurredAt: world.clock.now().toISOString(),
     actor: { kind: 'system' as const, id: 'test' },
-  };
-}
-
-function executionContext(occurredAt: string) {
-  return {
-    occurredAt,
-    signal: new AbortController().signal,
-    async reportExternalExecution() {},
   };
 }

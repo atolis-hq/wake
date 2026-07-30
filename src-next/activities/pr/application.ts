@@ -12,6 +12,7 @@ import type {
   AcceptReviewSignal,
   ObservePullRequest,
   PullRequestAuthorityInput,
+  PullRequestAuthorityOptions,
   PullRequestResourceView,
   PullRequestView,
   RequestChangesSignal,
@@ -39,6 +40,11 @@ export interface PullRequestService {
     workItemId: ObservePullRequest['workItemId'],
     context: CommandContext,
   ): Promise<boolean>;
+  decideAuthority(
+    workItemId: ObservePullRequest['workItemId'],
+    options: PullRequestAuthorityOptions,
+  ): Promise<ReturnType<typeof decidePullRequestAuthority>>;
+  authorityInput(workItemId: ObservePullRequest['workItemId']): Promise<PullRequestAuthorityInput>;
   get(resourceId: ObservePullRequest['resourceId']): Promise<PullRequestView | null>;
 }
 
@@ -126,6 +132,13 @@ class JournalPullRequestService implements PullRequestService {
     return false;
   }
 
+  async decideAuthority(
+    workItemId: ObservePullRequest['workItemId'],
+    options: PullRequestAuthorityOptions,
+  ): Promise<ReturnType<typeof decidePullRequestAuthority>> {
+    return decidePullRequestAuthority(await this.authorityInput(workItemId), options);
+  }
+
   private async appendObservationChanges(
     current: PullRequestView,
     command: ObservePullRequest,
@@ -189,7 +202,7 @@ class JournalPullRequestService implements PullRequestService {
     return view.headRevision === revision ? null : 'stale-approval';
   }
 
-  private async authorityInput(
+  async authorityInput(
     workItemId: ObservePullRequest['workItemId'],
   ): Promise<PullRequestAuthorityInput> {
     const correlations = await this.resources.correlationsForWork(workItemId);

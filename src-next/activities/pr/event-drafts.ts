@@ -69,6 +69,7 @@ export const mergeDenied = (
   stream: EntityRef,
   reason: string,
   context: CommandContext,
+  audit: Record<string, unknown> = {},
 ): EventDraft =>
   createEventDraft({
     eventId: `${context.commandId}:pr.merge-denied`,
@@ -79,7 +80,35 @@ export const mergeDenied = (
     actor: context.actor,
     source: { kind: 'internal', id: 'activities-pr' },
     stream,
-    payload: { reason },
+    payload: {
+      activationId: context.commandId,
+      idempotencyKey: `${context.commandId}:pr.merge-denied`,
+      reason,
+      ...audit,
+    },
+  });
+
+export const approveDenied = (
+  stream: EntityRef,
+  reason: string,
+  context: CommandContext,
+  audit: Record<string, unknown> = {},
+): EventDraft =>
+  createEventDraft({
+    eventId: `${context.commandId}:pr.approve-denied`,
+    eventType: 'pr.approve-denied',
+    occurredAt: context.occurredAt,
+    correlationId: context.correlationId,
+    causationId: context.commandId,
+    actor: context.actor,
+    source: { kind: 'internal', id: 'activities-pr' },
+    stream,
+    payload: {
+      activationId: context.commandId,
+      idempotencyKey: `${context.commandId}:pr.approve-denied`,
+      reason,
+      ...audit,
+    },
   });
 
 export const mergeAuthorized = (
@@ -97,6 +126,24 @@ export const mergeAuthorized = (
     source: { kind: 'internal', id: 'activities-pr' },
     stream,
     payload: { revision },
+  });
+
+export const deliveryIntentRequested = (
+  resourceId: ObservePullRequest['resourceId'],
+  type: 'pr.approve-requested' | 'pr.merge-requested',
+  payload: Record<string, unknown>,
+  context: CommandContext,
+): EventDraft =>
+  createEventDraft({
+    eventId: `${context.commandId}:${type}`,
+    eventType: type,
+    occurredAt: context.occurredAt,
+    correlationId: context.correlationId,
+    causationId: context.commandId,
+    actor: context.actor,
+    source: { kind: 'internal', id: 'activities-pr' },
+    stream: entityRef('resource', resourceId),
+    payload: { idempotencyKey: `${context.commandId}:${type}`, ...payload },
   });
 
 function fact<Type extends string, Payload>(

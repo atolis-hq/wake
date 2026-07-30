@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 
 import {
-  createPullRequestMergeAuthorityActivity,
+  createPullRequestMergeAuthorityGate,
   pullRequestProjection,
   decidePullRequestAuthority,
   type PullRequestAuthorityInput,
@@ -9,6 +9,7 @@ import {
 import { createEventDraft, entityRef } from '../../../src-next/kernel/index.js';
 import { resourceId } from '../../../src-next/resources/index.js';
 import { workItemId } from '../../../src-next/work/index.js';
+import { mergeAuthorityTestActivity } from '../support/merge-authority-activity.js';
 import { TestWorld } from '../support/world.js';
 
 it('E2E-PR-002 denies a merge after an accepted review becomes stale', async () => {
@@ -89,11 +90,13 @@ it('E2E-PR-002 denies a merge after an accepted review becomes stale', async () 
     },
     { ...context, commandId: 'observe-b' },
   );
-  world.registerActivity(createPullRequestMergeAuthorityActivity(world.pullRequests));
+  world.registerActivity(
+    mergeAuthorityTestActivity(createPullRequestMergeAuthorityGate(world.pullRequests)),
+  );
   world.configureWorkflow('merge', {
     stages: {
       merge: {
-        activity: 'pr.merge',
+        activity: 'test.pr.merge-authority',
         with: {},
         on: { 'merge-denied': { then: 'merge', repeat: { max: 1 } } },
       },
