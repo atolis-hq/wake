@@ -363,134 +363,140 @@ describe('tick runner', () => {
       );
     });
 
-    it('resolves the parent approval gate when an onSuccess.approve watcher child completes DONE without a PR target', async () => {
-      const store = createStateStore({ wakeRoot: root });
-      const resourceIndex = await seededResourceIndex([420]);
-      const config = configurePrReviewWatcher(root, {
-        workflowName: 'plan-review',
-        action: 'plan-review',
-      });
-      config.workflows.default!.stages.implement!.watch![0]!.onSuccess = { approve: true };
+    it.skipIf(process.platform === 'win32')(
+      'resolves the parent approval gate when an onSuccess.approve watcher child completes DONE without a PR target',
+      async () => {
+        const store = createStateStore({ wakeRoot: root });
+        const resourceIndex = await seededResourceIndex([420]);
+        const config = configurePrReviewWatcher(root, {
+          workflowName: 'plan-review',
+          action: 'plan-review',
+        });
+        config.workflows.default!.stages.implement!.watch![0]!.onSuccess = { approve: true };
 
-      await seedAwaitingApprovalIssue({ store, issueNumber: 420 });
-      await appendPreviousCompletedEvent({ store, issueNumber: 420 });
+        await seedAwaitingApprovalIssue({ store, issueNumber: 420 });
+        await appendPreviousCompletedEvent({ store, issueNumber: 420 });
 
-      const publishedBodies: string[] = [];
-      let runnerCallCount = 0;
-      const tickRunner = createTickRunner({
-        clock: { now: () => new Date(watcherNow) },
-        config,
-        stateStore: store,
-        workSource: {
-          async pollEvents() {
-            return [];
+        const publishedBodies: string[] = [];
+        let runnerCallCount = 0;
+        const tickRunner = createTickRunner({
+          clock: { now: () => new Date(watcherNow) },
+          config,
+          stateStore: store,
+          workSource: {
+            async pollEvents() {
+              return [];
+            },
           },
-        },
-        outboundSink: {
-          async deliverIntent(input) {
-            if (input.event.sourceEventType === 'wake.publish.intent.requested') {
-              publishedBodies.push(String(input.event.payload.body));
-            }
-            return [];
+          outboundSink: {
+            async deliverIntent(input) {
+              if (input.event.sourceEventType === 'wake.publish.intent.requested') {
+                publishedBodies.push(String(input.event.payload.body));
+              }
+              return [];
+            },
           },
-        },
-        runner: {
-          async run() {
-            runnerCallCount += 1;
-            return {
-              result: prReviewResult({ status: 'DONE', body: 'Plan looks solid.' }),
-              model: 'fake',
-              cli: 'Fake',
-            };
+          runner: {
+            async run() {
+              runnerCallCount += 1;
+              return {
+                result: prReviewResult({ status: 'DONE', body: 'Plan looks solid.' }),
+                model: 'fake',
+                cli: 'Fake',
+              };
+            },
           },
-        },
-        resourceIndex,
-        workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
-      });
+          resourceIndex,
+          workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+        });
 
-      await tickRunner.runTick();
-      await tickRunner.runTick();
+        await tickRunner.runTick();
+        await tickRunner.runTick();
 
-      expect(runnerCallCount).toBe(1);
-      const updated = await store.readIssueState(workId(420));
-      expect(updated?.wake.stage).toBe('done');
-      expect(updated?.context.pendingApprovalAction).toBeUndefined();
-      expect(publishedBodies).toContain('Plan looks solid.');
-      const events = await store.listEventEnvelopes();
-      const approvalEvent = events.find((event) =>
-        event.eventId.endsWith('-parent-approval-completed'),
-      );
-      expect(approvalEvent?.payload.reason).toBe('watcher:approved');
-      expect(approvalEvent?.payload.action).toBe('implement');
-      const auditEvents = events.filter(
-        (event) => event.sourceEventType === AUTONOMOUS_DECISION_AUDIT_EVENT,
-      );
-      expect(auditEvents).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            payload: expect.objectContaining({
-              decisionType: 'approval.watcher-resolved',
-              workflowRevision: expect.stringMatching(/^sha256:/),
+        expect(runnerCallCount).toBe(1);
+        const updated = await store.readIssueState(workId(420));
+        expect(updated?.wake.stage).toBe('done');
+        expect(updated?.context.pendingApprovalAction).toBeUndefined();
+        expect(publishedBodies).toContain('Plan looks solid.');
+        const events = await store.listEventEnvelopes();
+        const approvalEvent = events.find((event) =>
+          event.eventId.endsWith('-parent-approval-completed'),
+        );
+        expect(approvalEvent?.payload.reason).toBe('watcher:approved');
+        expect(approvalEvent?.payload.action).toBe('implement');
+        const auditEvents = events.filter(
+          (event) => event.sourceEventType === AUTONOMOUS_DECISION_AUDIT_EVENT,
+        );
+        expect(auditEvents).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              payload: expect.objectContaining({
+                decisionType: 'approval.watcher-resolved',
+                workflowRevision: expect.stringMatching(/^sha256:/),
+              }),
             }),
-          }),
-        ]),
-      );
-    });
+          ]),
+        );
+      },
+    );
 
-    it('never stamps the child workflow onto the parent issue labels, whether the watcher run succeeds or is rejected', async () => {
-      const store = createStateStore({ wakeRoot: root });
-      const resourceIndex = await seededResourceIndex([425]);
-      const config = configurePrReviewWatcher(root, {
-        workflowName: 'plan-review',
-        action: 'plan-review',
-      });
+    it.skipIf(process.platform === 'win32')(
+      'never stamps the child workflow onto the parent issue labels, whether the watcher run succeeds or is rejected',
+      async () => {
+        const store = createStateStore({ wakeRoot: root });
+        const resourceIndex = await seededResourceIndex([425]);
+        const config = configurePrReviewWatcher(root, {
+          workflowName: 'plan-review',
+          action: 'plan-review',
+        });
 
-      await seedAwaitingApprovalIssue({ store, issueNumber: 425 });
-      await appendPreviousCompletedEvent({ store, issueNumber: 425 });
-      // Pre-sync the parent's actual labels with labelsForWorkItem's output so
-      // the every-tick reconciliation pass (unrelated to this test's watcher
-      // isolation assertion) finds no drift of its own to correct.
-      await syncLabelsToProjection(store, workId(425));
+        await seedAwaitingApprovalIssue({ store, issueNumber: 425 });
+        await appendPreviousCompletedEvent({ store, issueNumber: 425 });
+        // Pre-sync the parent's actual labels with labelsForWorkItem's output so
+        // the every-tick reconciliation pass (unrelated to this test's watcher
+        // isolation assertion) finds no drift of its own to correct.
+        await syncLabelsToProjection(store, workId(425));
 
-      const tickRunner = createTickRunner({
-        clock: { now: () => new Date(watcherNow) },
-        config,
-        stateStore: store,
-        workSource: {
-          async pollEvents() {
-            return [];
+        const tickRunner = createTickRunner({
+          clock: { now: () => new Date(watcherNow) },
+          config,
+          stateStore: store,
+          workSource: {
+            async pollEvents() {
+              return [];
+            },
           },
-        },
-        runner: {
-          async run() {
-            return {
-              result: prReviewResult({ status: 'BLOCKED', body: 'Not approved as-is.' }),
-              model: 'fake',
-              cli: 'Fake',
-            };
+          runner: {
+            async run() {
+              return {
+                result: prReviewResult({ status: 'BLOCKED', body: 'Not approved as-is.' }),
+                model: 'fake',
+                cli: 'Fake',
+              };
+            },
           },
-        },
-        resourceIndex,
-        workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
-      });
+          resourceIndex,
+          workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+        });
 
-      await tickRunner.runTick();
-      await tickRunner.runTick();
+        await tickRunner.runTick();
+        await tickRunner.runTick();
 
-      const events = await store.listEventEnvelopes();
-      const labelEvents = events.filter(
-        (event) => event.sourceEventType === 'wake.labels.requested',
-      );
-      // The watcher (plan-review) run claims and completes against the same
-      // parent projection, but must never write labels of its own - only the
-      // parent's own action (implement, here) is allowed to touch the parent
-      // issue's labels.
-      expect(labelEvents).toEqual([]);
+        const events = await store.listEventEnvelopes();
+        const labelEvents = events.filter(
+          (event) => event.sourceEventType === 'wake.labels.requested',
+        );
+        // The watcher (plan-review) run claims and completes against the same
+        // parent projection, but must never write labels of its own - only the
+        // parent's own action (implement, here) is allowed to touch the parent
+        // issue's labels.
+        expect(labelEvents).toEqual([]);
 
-      const updated = await store.readIssueState(workId(425));
-      expect(updated?.wake.stage).toBe('implement');
-      expect(updated?.context.lastRunSentinel).toBe('AWAITING_APPROVAL');
-    });
+        const updated = await store.readIssueState(workId(425));
+        expect(updated?.wake.stage).toBe('implement');
+        expect(updated?.context.lastRunSentinel).toBe('AWAITING_APPROVAL');
+      },
+    );
 
     it('does not fold a watcher run infra failure into the parent projection context or labels', async () => {
       const store = createStateStore({ wakeRoot: root });
@@ -884,95 +890,100 @@ describe('tick runner', () => {
       ).toBeUndefined();
     });
 
-    it('auto-revises the original pending action after a changes-requested watcher rejection, then resolves the gate once plan-review approves', async () => {
-      const store = createStateStore({ wakeRoot: root });
-      const resourceIndex = await seededResourceIndex([424]);
-      const config = configurePrReviewWatcher(root, {
-        workflowName: 'plan-review',
-        action: 'plan-review',
-      });
-      config.workflows.default!.stages.implement!.watch![0]!.onSuccess = { approve: true };
+    it.skipIf(process.platform === 'win32')(
+      'auto-revises the original pending action after a changes-requested watcher rejection, then resolves the gate once plan-review approves',
+      async () => {
+        const store = createStateStore({ wakeRoot: root });
+        const resourceIndex = await seededResourceIndex([424]);
+        const config = configurePrReviewWatcher(root, {
+          workflowName: 'plan-review',
+          action: 'plan-review',
+        });
+        config.workflows.default!.stages.implement!.watch![0]!.onSuccess = { approve: true };
 
-      await seedAwaitingApprovalIssue({ store, issueNumber: 424 });
-      await appendPreviousCompletedEvent({ store, issueNumber: 424 });
+        await seedAwaitingApprovalIssue({ store, issueNumber: 424 });
+        await appendPreviousCompletedEvent({ store, issueNumber: 424 });
 
-      const labelEvents: Array<{ statusLabel: string }> = [];
-      let planReviewCalls = 0;
-      let implementCalls = 0;
-      const tickRunner = createTickRunner({
-        clock: { now: () => new Date(watcherNow) },
-        config,
-        stateStore: store,
-        workSource: {
-          async pollEvents() {
-            return [];
+        const labelEvents: Array<{ statusLabel: string }> = [];
+        let planReviewCalls = 0;
+        let implementCalls = 0;
+        const tickRunner = createTickRunner({
+          clock: { now: () => new Date(watcherNow) },
+          config,
+          stateStore: store,
+          workSource: {
+            async pollEvents() {
+              return [];
+            },
           },
-        },
-        outboundSink: {
-          async deliverIntent(input) {
-            if (input.event.sourceEventType === 'wake.labels.requested') {
-              labelEvents.push({ statusLabel: String(input.event.payload.statusLabel) });
-            }
-            return [];
+          outboundSink: {
+            async deliverIntent(input) {
+              if (input.event.sourceEventType === 'wake.labels.requested') {
+                labelEvents.push({ statusLabel: String(input.event.payload.statusLabel) });
+              }
+              return [];
+            },
           },
-        },
-        runner: {
-          async run(input) {
-            if (input.action === 'plan-review') {
-              planReviewCalls += 1;
-              return planReviewCalls === 1
-                ? {
-                    result: prReviewResult({ status: 'REJECTED', body: 'Please add tests.' }),
-                    model: 'fake',
-                    cli: 'Fake',
-                  }
-                : {
-                    result: prReviewResult({ status: 'DONE', body: 'Looks good now.' }),
-                    model: 'fake',
-                    cli: 'Fake',
-                  };
-            }
-            implementCalls += 1;
-            expect(input.promptContextOverrides?.parentPendingReviewBody).toBe('Please add tests.');
-            return {
-              result: 'Added tests.\nDONE',
-              model: 'fake',
-              cli: 'Fake',
-              metadata: { skipApproval: false },
-            };
+          runner: {
+            async run(input) {
+              if (input.action === 'plan-review') {
+                planReviewCalls += 1;
+                return planReviewCalls === 1
+                  ? {
+                      result: prReviewResult({ status: 'REJECTED', body: 'Please add tests.' }),
+                      model: 'fake',
+                      cli: 'Fake',
+                    }
+                  : {
+                      result: prReviewResult({ status: 'DONE', body: 'Looks good now.' }),
+                      model: 'fake',
+                      cli: 'Fake',
+                    };
+              }
+              implementCalls += 1;
+              expect(input.promptContextOverrides?.parentPendingReviewBody).toBe(
+                'Please add tests.',
+              );
+              return {
+                result: 'Added tests.\nDONE',
+                model: 'fake',
+                cli: 'Fake',
+                metadata: { skipApproval: false },
+              };
+            },
           },
-        },
-        resourceIndex,
-        workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
-      });
+          resourceIndex,
+          workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
+        });
 
-      // Tick 1: plan-review watcher rejects the plan.
-      await tickRunner.runTick();
-      let updated = await store.readIssueState(workId(424));
-      expect(updated?.wake.stage).toBe('implement');
-      expect(updated?.context.status).toBe('changes-requested');
-      expect(updated?.context.changesRequestedCount).toBe(1);
+        // Tick 1: plan-review watcher rejects the plan.
+        await tickRunner.runTick();
+        let updated = await store.readIssueState(workId(424));
+        expect(updated?.wake.stage).toBe('implement');
+        expect(updated?.context.status).toBe('changes-requested');
+        expect(updated?.context.changesRequestedCount).toBe(1);
 
-      // Tick 2: no eligible watcher event yet, so the parent's own
-      // changes-requested status is now actionable — auto re-dispatches the
-      // original pending action ('implement') with the feedback threaded.
-      await tickRunner.runTick();
-      updated = await store.readIssueState(workId(424));
-      expect(implementCalls).toBe(1);
-      expect(updated?.context.status).toBe('awaiting-approval');
-      expect(updated?.context.changesRequestedCount).toBe(1);
+        // Tick 2: no eligible watcher event yet, so the parent's own
+        // changes-requested status is now actionable — auto re-dispatches the
+        // original pending action ('implement') with the feedback threaded.
+        await tickRunner.runTick();
+        updated = await store.readIssueState(workId(424));
+        expect(implementCalls).toBe(1);
+        expect(updated?.context.status).toBe('awaiting-approval');
+        expect(updated?.context.changesRequestedCount).toBe(1);
 
-      // Tick 3: the revise run's own completion re-triggers the plan-review
-      // watcher, which now approves, resolving the parent's gate to 'done'.
-      await tickRunner.runTick();
-      updated = await store.readIssueState(workId(424));
-      expect(planReviewCalls).toBe(2);
-      expect(updated?.wake.stage).toBe('done');
+        // Tick 3: the revise run's own completion re-triggers the plan-review
+        // watcher, which now approves, resolving the parent's gate to 'done'.
+        await tickRunner.runTick();
+        updated = await store.readIssueState(workId(424));
+        expect(planReviewCalls).toBe(2);
+        expect(updated?.wake.stage).toBe('done');
 
-      expect(labelEvents.map((event) => event.statusLabel)).toContain(
-        'wake:status.changes-requested',
-      );
-    });
+        expect(labelEvents.map((event) => event.statusLabel)).toContain(
+          'wake:status.changes-requested',
+        );
+      },
+    );
 
     it('publishes a pr-review approval marker only after the reported PR verifies and belongs to the work item', async () => {
       const store = createStateStore({ wakeRoot: root });
