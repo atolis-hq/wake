@@ -8,6 +8,7 @@ import {
 import { ExecutionCancellationReason, type ActiveRunCancellation } from '../../execution/index.js';
 import type { WorkItemId, WorkItemView } from '../../work/index.js';
 import type { WorkflowInstanceView } from '../../orchestration/index.js';
+import { ControlStreamKind } from '../contracts/streams.js';
 
 interface WorkPort {
   cancel(workItemId: WorkItemId, reason: string, context: CommandContext): Promise<WorkItemView>;
@@ -56,6 +57,6 @@ function commandContext(clock: Clock, ids: IdGenerator, cause: string): CommandC
     commandId: ids.next('command'),
     correlationId: correlationId(cause),
     occurredAt: clock.now().toISOString(),
-    actor: { kind: EventActorKind.System, id: 'control-plane' },
+    actor: { kind: EventActorKind.System, id: ControlStreamKind.Global },
   };
 }

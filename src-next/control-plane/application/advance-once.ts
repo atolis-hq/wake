@@ -11,6 +11,7 @@ import type { ActivityActivationView, WorkflowInstanceView } from '../../orchest
 import type { ResourceService } from '../../resources/index.js';
 import type { RunView } from '../../execution/index.js';
 import type { AdvanceOptions, AdvanceResult } from '../contracts/views.js';
+import { ControlStreamKind } from '../contracts/streams.js';
 
 interface OrchestrationPort {
   reconcileChildCompletions(context: CommandContext): Promise<void>;
@@ -59,11 +60,11 @@ export function createAdvanceOnce(
     commandId: ids.next('command'),
     correlationId: correlationId(cause),
     occurredAt: clock.now().toISOString(),
-    actor: { kind: EventActorKind.System, id: 'control-plane' },
+    actor: { kind: EventActorKind.System, id: ControlStreamKind.Global },
   });
   return async (options: AdvanceOptions): Promise<AdvanceResult> => {
     if (options.maxProgress < 1) return { kind: 'exhausted', progressCount: 0 };
-    await execution.recoverActive?.('control-plane');
+    await execution.recoverActive?.(ControlStreamKind.Global);
     await orchestration.reconcileChildCompletions(context('child-completion-reconciliation'));
     const pending = await orchestration.listPendingActivations(options.workItemId);
     const recovery = await findUnacceptedCompleted(pending, execution);

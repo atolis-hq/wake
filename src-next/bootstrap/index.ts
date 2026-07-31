@@ -13,6 +13,8 @@ import type { CheckpointStore, EventJournal, ProjectionStore } from '../kernel/i
 import { ProjectionRunner } from '../persistence/index.js';
 import { resourceCorrelationProjection, resourceProjection } from '../resources/index.js';
 import { workProjection } from '../work/index.js';
+import { controlPlaneProjectionDefinitions } from '../control-plane/index.js';
+import { ResidentHost, TickHost, type AdvanceOnce } from '../control-plane/index.js';
 
 export const runtimeProjectionDefinitions = [
   workProjection,
@@ -20,6 +22,7 @@ export const runtimeProjectionDefinitions = [
   resourceCorrelationProjection,
   ...activityProjectionDefinitions,
   ...deliveryProjectionDefinitions,
+  ...controlPlaneProjectionDefinitions,
 ];
 
 export function composeDeliveryService(dependencies: DeliveryServiceDependencies): DeliveryService {
@@ -84,4 +87,12 @@ export function createRuntimeProjectionRunner(
   checkpoints: CheckpointStore,
 ): ProjectionRunner {
   return new ProjectionRunner(journal, projections, checkpoints, runtimeProjectionDefinitions);
+}
+
+export function composeControlPlaneHosts(
+  advanceOnce: AdvanceOnce,
+  sleep?: (signal: AbortSignal) => Promise<void>,
+) {
+  const tick = new TickHost(advanceOnce);
+  return { tick, resident: new ResidentHost(tick, sleep) };
 }

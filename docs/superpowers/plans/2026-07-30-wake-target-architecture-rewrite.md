@@ -4338,7 +4338,7 @@ required gates:
 - Create: `test-next/control-plane/{dispatch-policy,resident-host,schedule-service,tick-host}.test.ts`
 - Create: `test-next/e2e/scenarios/{fairness,quota-pause,schedule-restart,tick-resident-equivalence}.test.ts`
 
-- [ ] **Step 1: Write host-independent policy tests**
+- [x] **Step 1: Write host-independent policy tests**
 
 Cover:
 
@@ -4352,7 +4352,7 @@ it('does not fire a schedule slot twice after restart');
 it('does not create issue-shaped synthetic work');
 ```
 
-- [ ] **Step 2: Run and confirm host policies are absent**
+- [x] **Step 2: Run and confirm host policies are absent**
 
 Run:
 
@@ -4362,7 +4362,7 @@ npx vitest run --config vitest.next.config.ts test-next/control-plane/schedule-s
 
 Expected: FAIL resolving schedule/host services.
 
-- [ ] **Step 3: Define bounded host results**
+- [x] **Step 3: Define bounded host results**
 
 ```ts
 export interface HostBudget {
@@ -4388,7 +4388,7 @@ export interface HostResult {
 repeats the same control-plane operation with fakeable backoff and never keeps
 business state only in memory.
 
-- [ ] **Step 4: Implement durable scheduling**
+- [x] **Step 4: Implement durable scheduling**
 
 Configuration:
 
@@ -4411,7 +4411,7 @@ For each latest elapsed slot since durable checkpoint:
 
 Schedule WorkItems contain no fake repository or issue number.
 
-- [ ] **Step 5: Implement fairness and quota facts**
+- [x] **Step 5: Implement fairness and quota facts**
 
 DispatchPolicy orders pending activations by requested-event global position,
 then activation ID. It excludes WorkItems with active Runs, cancelled Work, or
@@ -4429,7 +4429,7 @@ The pause deadline is an event-derived view persisted under
 `ProjectionDefinition` when adding these events. No process-local timer is
 authoritative.
 
-- [ ] **Step 6: Add E2E scenarios**
+- [x] **Step 6: Add E2E scenarios**
 
 `E2E-SCHEDULE-001`: restart across an elapsed slot produces one WorkItem and
 one workflow start.
@@ -4443,7 +4443,7 @@ domain events under repeated TickHost calls and one ResidentHost cycle.
 `E2E-CONTROL-003`: quota pause survives restart and does not consume Run retry
 budget.
 
-- [ ] **Step 7: Verify and commit**
+- [x] **Step 7: Verify and commit**
 
 Run:
 

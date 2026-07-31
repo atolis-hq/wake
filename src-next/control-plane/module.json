@@ -4,9 +4,9 @@
   "dependencies": ["kernel", "work", "resources", "orchestration", "execution"],
   "publicEntry": "./index.ts",
   "namespaces": {
-    "events": ["control."],
+    "events": ["control-plane.dispatch-paused", "control-plane.dispatch-resumed"],
     "config": ["controlPlane"],
     "relations": [],
-    "streams": []
+    "streams": ["control-plane"]
   }
 }
