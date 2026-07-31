@@ -119,11 +119,45 @@ non-GitHub fake-provider contract test whose interaction model has no labels
 or slash commands, proving that the shared seam does not rely on GitHub
 semantics. It does not deliver a real Jira, Linear, Notion, or GitLab adapter.
 
+### 3.4 GitHub locality rule
+
+GitHub is not a built-in domain concept. In production code, a case-insensitive
+`github` identifier, string literal, import path, type, configuration property,
+event name, adapter ID, or test fixture is permitted only under
+`src-next/integrations/github/**` or `test-next/integrations/github/**`.
+Documentation and the GitHub provider's own package metadata are not subject to
+that source-code rule.
+
+All shared Integration contracts use provider-neutral names and values. They
+must not expose `GitHubAdapterId`, `BuiltInAdapterId.GitHub`, a top-level
+`integrations.github` field, `integration.github.*` event names, or a
+GitHub-specific export from a general Integration barrel. Provider discovery
+and registration must use a generic provider-plugin contract so Bootstrap and
+the shared Integration layer do not name a concrete provider.
+
+Tests outside the GitHub namespace must use provider-neutral fake identities.
+The default names are `fakeTicketing` for external-work interactions and
+`fakeSourceControl` or `fakePr` for pull-request/source-control interactions.
+They must not use GitHub-shaped keys, labels, comments, commands, or event
+names merely because GitHub is the first real adapter.
+
+This rule is deliberate testable architecture, not a naming preference. The
+corrective packet adds a static boundary check that fails on a GitHub reference
+outside the permitted paths. It also renames existing generic fixtures and
+test data before using them as provider-neutral evidence.
+
 ## 4. Evidence-led review
 
 The correction begins with a full, traceable review of the legacy live runtime.
 The review must analyse source, tests, configuration schema/defaults, current
 operator documentation, and controlled execution where useful.
+
+The initial target audit has already found GitHub leakage outside the GitHub
+namespace: built-in integration identifiers/configuration, general integration
+exports, a fake external source, and generic architecture, activity, resource,
+bootstrap, surface, and E2E fixtures/tests. The corrective inventory records
+each occurrence, its target-neutral replacement, and the boundary test that
+proves its removal.
 
 The inventory must cover at least:
 
