@@ -59,6 +59,12 @@ const mandatedIds = new Set([
   'OPS-SANDBOX',
   'OPS-SELF-UPDATE',
   'OPS-TRANSCRIPT',
+  'WORK-IDENTITY-MINTED',
+  'ORCH-SELECTOR',
+  'ORCH-APPROVAL-AUTHORITY',
+  'ORCH-CONFIG-DISCOVERY',
+  'ACT-AGENT-PROMPT',
+  'FUTURE-STATE-SYNC-EXTRACTION',
 ]);
 const scenarioListPattern = /^E2E-[A-Z0-9]+(?:-[A-Z0-9]+)*(?:,\s*E2E-[A-Z0-9]+(?:-[A-Z0-9]+)*)*$/;
 const failures = [];

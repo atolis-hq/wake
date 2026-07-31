@@ -47,23 +47,14 @@ The correction does not import legacy `src/**` implementations into
 persistence directly.
 
 The functional-decision catalogue remains the ledger for legacy capability
-decisions. Every reviewed item must have exactly one disposition:
-
-- **replicate now**: preserve the observable capability using target-native
-  contracts;
-- **adjust**: preserve the operator outcome while deliberately changing policy,
-  configuration, or presentation;
-- **defer**: omit it from this correction with a reason, owner, and future
-  trigger;
-- **ignore**: remove it because it is obsolete, unsafe, or contradicted by the
-  approved target design.
-
-No implicit omission, undocumented configuration loss, or "covered by a
-module" assertion is acceptable.
+decisions. Every reviewed item carries exactly one catalogue disposition:
+`preserve`, `correct`, `consolidate`, `remove`, or `defer`. The existing
+`check:catalogue` gate remains authoritative and no new disposition vocabulary
+is introduced.
 
 ### 3.2 Architecture may be amended when evidence demands it
 
-For each legacy capability selected for replication or adjustment, review its
+For each legacy capability marked `preserve`, `correct`, or `consolidate`, review its
 target design fit against these invariants:
 
 - domain modules own policy and canonical facts;
@@ -208,7 +199,7 @@ legacy setting to one of:
 
 - a target module-owned configuration field;
 - a target-native replacement with documented behavioral change;
-- an explicit defer/ignore decision.
+- an explicit `defer` or `remove` decision.
 
 Bootstrap may aggregate validated module subtrees in
 `ResolvedWakeModulesConfig`, but no domain or adapter constructor may accept
@@ -279,7 +270,7 @@ repeatable script. Credentials must come from the approved local configuration
 or environment mechanism and must never be committed or printed.
 
 The script will cover the final agreed capability set. At minimum, if those
-capabilities are classified `replicate now`, it proves issue intake and update,
+capabilities are classified `preserve` or `correct`, it proves issue intake and update,
 workflow selection and GitHub-label synchronization, one agent workflow, a
 GitHub human review/comment decision, and one intended GitHub effect.
 Each observation is recorded with command, configuration fixture shape,
@@ -303,9 +294,9 @@ capability** immediately after Task 25. Task 26 and all later tasks are blocked
 until Task 25A records:
 
 - approved dispositions for every reviewed legacy capability;
-- target-design alignment or an approved amendment for every adjustment;
+- target-design alignment or an approved amendment for every `correct` disposition;
 - passing automated composition and process-level fake E2E evidence;
-- completed manual acceptance evidence for every `replicate now` real-provider
+- completed manual acceptance evidence for every `preserve` or `correct` real-provider
   capability;
 - accurate target configuration and operator documentation.
 
@@ -320,5 +311,5 @@ an accidental consequence of incomplete wiring.
 GitHub is the only real provider delivered by this correction. The review must
 identify the extension requirements for Jira, Linear, Notion, GitLab, and other
 providers, but must not imply that an arbitrary real provider adapter is
-`replicate now`. The fake non-GitHub contract provider is required proof of the
+`preserve` or `correct`. The fake non-GitHub contract provider is required proof of the
 seam, not a production integration.

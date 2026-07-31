@@ -68,7 +68,7 @@ Hard rules:
 | B. Minimal domain spine | 4-12 | One WorkItem reaches workflow completion through real target modules and fake boundaries |
 | C. Durable operation | 13-18 | Filesystem replay, persisted projections, waits, retries, child workflows, and external-input scenarios pass |
 | D. Specialist SDLC safety | 19-21 | Revision-bound approval/merge and ambiguous external-effect scenarios pass |
-| E. Hosts and product surfaces | 22-26 | Cancellation/recovery, tick, resident, schedule, config, CLI, API, UI, and operational command decisions pass |
+| E. Hosts and product surfaces | 22-26 | Cancellation/recovery, tick, resident, schedule, config, CLI, API, UI, and operational command decisions pass, plus the Task 25A packet gate |
 | F. Audit and cutover | 27-29 | Catalogue is complete, full verification passes, legacy is removed |
 
 The plan deliberately builds only enough of each module to complete the first
@@ -4934,6 +4934,16 @@ git add src-next/surfaces src-next/bootstrap docker test-next/surfaces test-next
 git add docs/architecture/functional-decision-catalogue.md
 git commit -m "feat: expose target domain surfaces"
 ```
+
+## Task 25A: Restore and prove live runtime capability
+
+Do not begin Task 26 until Task 25A passes its packet gate. The failing-test-first
+plan is
+[`2026-08-01-wake-task-25a-live-runtime-parity.md`](2026-08-01-wake-task-25a-live-runtime-parity.md);
+its authority is
+[`2026-07-31-wake-live-runtime-parity-packet-design.md`](../specs/2026-07-31-wake-live-runtime-parity-packet-design.md).
+Task 25B (provider and runner fidelity, plus manual real-GitHub acceptance) is
+gated behind 25A and is planned separately. Task 26 blocks on both.
 
 ## Task 26: Port operational commands without leaking them into the domain
 

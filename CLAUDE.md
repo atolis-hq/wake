@@ -136,7 +136,7 @@ Keep comments short — one line stating a non-obvious rationale, not a multi-se
 ## Testing conventions specific to this repo
 
 - Prefer exercising `core/` logic through the fake adapters (`createFakeRunner`, `createFileBackedFakeTicketingSystem`, `createFakeWorkspaceManager`) rather than mocking `core/contracts.ts` interfaces ad hoc — the fakes already model the real contract and are maintained for exactly this purpose.
-- Any new runner invocation must set `--max-turns` and a wall-clock timeout — these are the only runaway-cost protections and must not be optional.
+- Any new runner invocation must enforce a wall-clock timeout — it is the mandatory runaway-cost protection, and it is a runner/execution config setting with an operator-adjustable default. `maxTurns` is operator policy, not a Wake default: it is passed to the runner verbatim when a prompt declares it and the flag is omitted entirely when it does not. Wake never injects a default and never clamps the value.
 - Don't add retry-with-bigger-model logic on a failed run; a failed attempt should surface as `BLOCKED` (bad spec), not trigger silent model escalation.
 
 # Documentation requirements
