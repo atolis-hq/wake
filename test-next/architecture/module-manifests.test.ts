@@ -102,6 +102,50 @@ describe('module manifests', () => {
       'work/application/stream-values.ts:1:14 [stream-literals] WorkStreamKind must be declared in contracts/streams.ts',
     );
   });
+
+  it('rejects a nested contracts/streams.ts as a module stream catalogue', async () => {
+    const root = await manifestFixture({
+      work: {
+        streams: ['work-item'],
+        sourcePath: 'application/contracts/streams.ts',
+        source: "export const WorkStreamKind = { WorkItem: 'work-item' } as const;",
+      },
+    });
+
+    await expect(checker.checkModuleManifests(root)).resolves.toContain(
+      'work/application/contracts/streams.ts:1:14 [stream-literals] WorkStreamKind must be declared in contracts/streams.ts',
+    );
+  });
+
+  it('rejects multiple StreamKind catalogues in the canonical file', async () => {
+    const root = await manifestFixture({
+      work: {
+        streams: ['work-item', 'legacy'],
+        source: [
+          "export const WorkStreamKind = { WorkItem: 'work-item' } as const;",
+          "export const LegacyStreamKind = { Legacy: 'legacy' } as const;",
+        ].join('\n'),
+      },
+    });
+
+    await expect(checker.checkModuleManifests(root)).resolves.toContain(
+      'work/contracts/streams.ts:2:14 [stream-literals] LegacyStreamKind duplicates WorkStreamKind; contracts/streams.ts must declare exactly one StreamKind catalogue',
+    );
+  });
+
+  it('rejects duplicate stream registrations from one catalogue owner', async () => {
+    const root = await manifestFixture({
+      work: {
+        streams: ['work-item'],
+        source:
+          "export const WorkStreamKind = { WorkItem: 'work-item', Alias: 'work-item' } as const;",
+      },
+    });
+
+    await expect(checker.checkModuleManifests(root)).resolves.toContain(
+      'stream kind work-item has duplicate catalogue owners: work, work',
+    );
+  });
 });
 
 async function manifestFixture(

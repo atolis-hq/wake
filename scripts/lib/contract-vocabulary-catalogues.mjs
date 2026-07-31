@@ -20,13 +20,14 @@ export function discoverCatalogues(sourceDetails, rules) {
       );
     }
     if (rules.has('stream-literals')) {
-      if (isContractPath(detail.path, 'streams.ts')) {
+      if (isCanonicalModuleContractPath(detail.path, 'streams.ts')) {
         discoverNamedCatalogues(
           detail,
           'StreamKind',
           'stream-literals',
           catalogues.streamValues,
           diagnostics,
+          true,
         );
       } else {
         rejectOffPathCatalogues(detail, 'StreamKind', 'stream-literals', diagnostics);
@@ -91,8 +92,16 @@ function rejectOffPathCatalogues(detail, suffix, rule, diagnostics) {
   }
 }
 
-function discoverNamedCatalogues(detail, suffix, rule, registrations, diagnostics) {
+function discoverNamedCatalogues(
+  detail,
+  suffix,
+  rule,
+  registrations,
+  diagnostics,
+  requireSingle = false,
+) {
   const localNames = new Set();
+  const declarations = [];
 
   for (const statement of detail.source.statements) {
     if (!ts.isVariableStatement(statement)) continue;
@@ -101,7 +110,23 @@ function discoverNamedCatalogues(detail, suffix, rule, registrations, diagnostic
         continue;
       }
       localNames.add(declaration.name.text);
+      declarations.push(declaration);
       discoverNamedCatalogue(detail, statement, declaration, rule, registrations, diagnostics);
+    }
+  }
+
+  if (requireSingle && declarations.length > 1) {
+    const canonicalOwner = declarations[0].name.text;
+    for (const declaration of declarations.slice(1)) {
+      const owner = declaration.name.text;
+      rejectShape(
+        diagnostics,
+        detail,
+        declaration.name,
+        rule,
+        owner,
+        `${owner} duplicates ${canonicalOwner}; contracts/streams.ts must declare exactly one ${suffix} catalogue`,
+      );
     }
   }
 
@@ -481,6 +506,12 @@ function isExportedConst(statement) {
 function isContractPath(path, fileName) {
   const parts = path.toLowerCase().split('/');
   return parts.at(-2) === 'contracts' && parts.at(-1) === fileName;
+}
+
+function isCanonicalModuleContractPath(path, fileName) {
+  const parts = path.toLowerCase().split('/');
+  const modulePath = parts[0] === 'src-next' ? parts.slice(1) : parts;
+  return modulePath.length === 3 && modulePath[1] === 'contracts' && modulePath[2] === fileName;
 }
 
 function visit(node, visitor) {

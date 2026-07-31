@@ -21,6 +21,7 @@ import {
   IntegrationStreamKind,
   type AdapterId,
 } from '../../src-next/integrations/index.js';
+import * as kernel from '../../src-next/kernel/index.js';
 import type { EntityRef } from '../../src-next/kernel/index.js';
 import {
   childOrchestrationGroupStream,
@@ -125,5 +126,11 @@ describe('domain-owned logical streams', () => {
     const right = activityDecisionStream(activationId('a'), 'merge:pr.approve' as PrAction);
 
     expect(left.id).not.toBe(right.id);
+  });
+});
+
+describe('kernel stream primitive exports', () => {
+  it('does not expose the removed generic entityRef factory', () => {
+    expect(kernel).not.toHaveProperty('entityRef');
   });
 });

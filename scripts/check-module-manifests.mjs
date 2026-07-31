@@ -82,15 +82,13 @@ export async function checkModuleManifests(root = 'src-next') {
   const discovery = discoverCatalogues(sourceDetails, new Set(['stream-literals']));
   failures.push(...discovery.diagnostics.map(({ message }) => message));
   for (const [stream, registrations] of discovery.catalogues.streamValues) {
-    const catalogueOwners = [
-      ...new Set(registrations.map(({ path }) => path.split('/')[0])),
-    ].sort();
+    const catalogueOwners = registrations.map(({ path }) => path.split('/')[0]).sort();
     if (catalogueOwners.length > 1) {
       failures.push(
         `stream kind ${stream} has duplicate catalogue owners: ${catalogueOwners.join(', ')}`,
       );
     }
-    for (const owner of catalogueOwners) {
+    for (const owner of new Set(catalogueOwners)) {
       if (!(manifests.get(owner)?.namespaces?.streams ?? []).includes(stream)) {
         failures.push(`${owner}: stream catalogue value ${stream} is not declared in its manifest`);
       }
