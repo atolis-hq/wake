@@ -3300,6 +3300,7 @@ git commit -m "feat: add safe target PR Activities"
 **Files:**
 
 - Modify: `src-next/kernel/contracts/{events,identifiers}.ts`
+- Modify: `src-next/kernel/domain/event-envelope.ts`
 - Create: `src-next/kernel/contracts/vocabulary.ts`
 - Modify: `src-next/kernel/index.ts`
 - Create: `scripts/lib/contract-vocabulary.mjs`
@@ -3310,13 +3311,15 @@ git commit -m "feat: add safe target PR Activities"
 - [ ] **Step 1: Write failing kernel and checker tests**
 
 Add kernel assertions proving a stream ID retains its brand and an event union
-retains its exact event/payload/stream relationship. Add checker fixture tests:
+retains its exact event/payload/stream relationship through
+`createEventDraft()`. Use an `interface` payload map, not only a type alias.
+Add checker fixture tests:
 
 ```ts
 it('rejects a registered event literal outside its owning events contract');
 it('rejects a registered stream literal outside its owning streams contract');
-it('rejects direct entityRef calls outside stream contracts');
-it('rejects erased domain events and persisted-payload coercion');
+it('rejects a repeated defineClosedVocabulary value');
+it('rejects unsupported indirect, shorthand, spread, and computed catalogue declarations');
 it('permits provider decoding, persistence keys, free text, and corrupt-input fixtures');
 ```
 
@@ -3391,14 +3394,14 @@ export interface EventEnvelope<
 }
 
 export type EventUnion<
-  Payloads extends Readonly<Record<string, unknown>>,
+  Payloads extends object,
   Stream extends EntityRef,
 > = {
   [Type in keyof Payloads & string]: EventEnvelope<Type, Payloads[Type], Stream>;
 }[keyof Payloads & string];
 
 export type EventDraftUnion<
-  Payloads extends Readonly<Record<string, unknown>>,
+  Payloads extends object,
   Stream extends EntityRef,
 > = {
   [Type in keyof Payloads & string]: EventDraft<Type, Payloads[Type], Stream>;
@@ -3408,33 +3411,59 @@ export type EventDraftUnion<
 Existing kernel and persistence defaults remain generic. Do not add a domain
 registry to `kernel`.
 
-- [ ] **Step 4: Implement the AST checker as a tested library**
+- [ ] **Step 4: Preserve exact streams through the public draft factory**
 
-Use the installed `typescript` compiler API, not regular expressions. The
-checker must:
+Thread `Stream extends EntityRef` through `EventDraftInput` and
+`createEventDraft()` in `kernel/domain/event-envelope.ts`:
 
-1. recursively parse `src-next/**/*.ts`;
-2. collect exact string values declared in exported objects whose names end in
-   `EventType` under `contracts/events.ts` and `StreamKind` under
-   `contracts/streams.ts`;
-3. collect all values passed to `defineClosedVocabulary()` and reject an exact
-   registered value literal outside its catalogue declaration;
-4. reject an exact registered event/stream value outside its declaration file;
-5. reject calls to `entityRef()` outside
-   `kernel/contracts/identifiers.ts` and `contracts/streams.ts`;
-6. in `work|resources|activities|orchestration|execution` domain/application
-   paths, reject erased `EventDraft`/`EventEnvelope` type references and
-   `String(payload.*)`/`Number(payload.*)` coercion;
-7. accept explicit fixture paths ending `.corrupt-fixture.ts`;
-8. accept an optional CLI `--rules` comma-separated subset for staged
-   migration while retaining all rules as the default;
-9. sort diagnostics by path and position.
+```ts
+export interface EventDraftInput<
+  Type extends string,
+  Payload,
+  Stream extends EntityRef,
+> extends Omit<EventDraft<Type, Payload, Stream>, 'schemaVersion'> {}
+
+export function createEventDraft<
+  Type extends string,
+  Payload,
+  Stream extends EntityRef,
+>(input: EventDraftInput<Type, Payload, Stream>): EventDraft<Type, Payload, Stream>;
+```
+
+The compile-only test must fail if the returned stream loses its exact kind or
+branded ID.
+
+- [ ] **Step 5: Implement the deliberately small AST vocabulary checker**
+
+Use the TypeScript parser for syntax traversal, not regular expressions and
+not a TypeScript `Program`/`TypeChecker`. The checker must:
+
+1. recursively parse the supplied `src-next/**/*.ts` tree;
+2. recognize only directly exported, inline event/stream catalogue objects and
+   `defineClosedVocabulary({ ... } as const)` closed catalogues;
+3. require ordinary property assignments with string-literal values;
+4. reject indirect exports, identifier/spread arguments, computed properties,
+   shorthand properties, and other unsupported shapes rather than ignoring
+   them;
+5. reject an exact registered value outside its declaration initializer;
+6. permit registered values only in exact integration
+   `*-decoder.ts|*-translator.ts|*-translation.ts` paths, persistence paths,
+   and `*.corrupt-fixture.ts`;
+7. support optional rules
+   `closed-vocabulary,event-literals,stream-literals`;
+8. reject empty/unknown rule selections with concise usage output;
+9. sort with a locale-independent code-unit comparator.
+
+Do not implement symbol resolution, event-type inference, payload provenance,
+function-name permissions, source-level `entityRef` detection, or generic
+event analysis. TypeScript, public exports, dependency rules, and ESLint own
+those concerns.
 
 `scripts/check-contract-vocabulary.mjs` calls the library for `src-next` and
 exits non-zero on diagnostics. Do not add a baseline, suppression file, or list
 of current violations.
 
-- [ ] **Step 5: Keep the checker executable but defer the root gate**
+- [ ] **Step 6: Keep the checker executable but defer the root gate**
 
 Add:
 
@@ -3445,7 +3474,7 @@ Add:
 Do not add it to `lint:architecture` until Task 20E because Tasks 20B-20D remove
 the violations it is designed to expose.
 
-- [ ] **Step 6: Verify and commit**
+- [ ] **Step 7: Verify and commit**
 
 Run:
 
@@ -3520,7 +3549,7 @@ export type WorkItemStreamRef = EntityRef<
 >;
 
 export const workItemStream = (id: WorkItemId): WorkItemStreamRef =>
-  entityRef(WorkStreamKind.WorkItem, id);
+  ({ kind: WorkStreamKind.WorkItem, id });
 
 export const isWorkItemStream = (stream: EntityRef): stream is WorkItemStreamRef =>
   stream.kind === WorkStreamKind.WorkItem;
@@ -3541,6 +3570,10 @@ The exact owned kinds are:
 Add missing ID brands before using them. Built-in GitHub code uses a public
 branded `GitHubAdapterId` constant through `integrationStream`.
 
+After migration, remove `entityRef` from `kernel/index.ts`. It may remain an
+internal kernel implementation/test helper, but no domain module can import it
+through the public boundary.
+
 - [ ] **Step 4: Declare and verify stream ownership**
 
 Add an exact `streams` array beside `events`, `config`, and `relations` in
@@ -3555,8 +3588,7 @@ factories, projectors, policies, and integration pollers use their owning
 constructors/predicates. Remove `workStream()` from
 `activities/pr/activity-support.ts`; PR denial uses `workItemStream()`.
 
-After migration this command must print only the two allowed low-level
-locations:
+After migration this command must print only the internal kernel definition:
 
 ```powershell
 rg -n "entityRef\(" src-next
@@ -3566,7 +3598,6 @@ Expected locations:
 
 ```text
 src-next/kernel/contracts/identifiers.ts
-src-next/*/contracts/streams.ts
 ```
 
 - [ ] **Step 6: Verify and commit**
@@ -3575,12 +3606,13 @@ Run:
 
 ```powershell
 npx vitest run --config vitest.next.config.ts test-next/architecture test-next/work test-next/resources test-next/activities test-next/orchestration test-next/execution test-next/integrations
-npm run lint:contracts -- --rules stream-literals,entity-ref
+npm run lint:contracts -- --rules stream-literals
 npm run verify:next
 ```
 
-The scoped checker must report no stream-construction or stream-literal
-violation. Do not run it with a baseline for the remaining event work.
+The scoped checker must report no stream-literal violation. Public-export and
+dependency tests prove low-level stream construction is unavailable. Do not
+run it with a baseline for the remaining event work.
 
 ```powershell
 git add src-next test-next/architecture test-next/work test-next/resources test-next/activities test-next/orchestration test-next/execution test-next/integrations scripts/check-module-manifests.mjs
@@ -3935,15 +3967,30 @@ depth at 4 unless the existing limit is already stricter.
 
 - [ ] **Step 4: Enable deterministic contract enforcement**
 
+Add an ESLint override for
+`src-next/{work,resources,activities,orchestration,execution}/{domain,application}/**/*.ts`
+that:
+
+- uses `no-restricted-imports` to prohibit the named kernel imports
+  `EventDraft`, `EventEnvelope`, and `entityRef`; domain/application files use
+  owned event unions and stream constructors instead;
+- uses `no-restricted-syntax` to prohibit call expressions whose identifier
+  callee is `String` or `Number`.
+
+The restriction intentionally also rejects local functions shadowing
+`String`/`Number`; those names are misleading in domain code. Add focused
+architecture fixtures proving aliased restricted imports fail and contract,
+integration-boundary, persistence, and test files remain permitted.
+
 Change:
 
 ```json
 "lint:architecture": "node scripts/check-module-manifests.mjs && node scripts/check-contract-vocabulary.mjs && depcruise --config dependency-cruiser.config.mjs src-next"
 ```
 
-Run the checker with no baseline, ignored current violation, or broad path
-suppression. Provider/persistence/config exceptions must be structural rules
-already covered by checker tests.
+Run the checker and ESLint with no baseline, ignored current violation, or
+broad path suppression. Provider/persistence/config exceptions must be exact
+structural rules already covered by checker tests.
 
 - [ ] **Step 5: Update module policy**
 

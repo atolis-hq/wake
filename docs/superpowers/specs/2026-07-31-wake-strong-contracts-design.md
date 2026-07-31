@@ -77,6 +77,11 @@ export const runStatusSchema = z.enum([
 ]);
 ```
 
+Catalogue declarations deliberately use this one directly exported, inline
+shape. Indirect exports, identifier/spread arguments, computed properties, and
+shorthand properties are rejected by the architecture check rather than
+requiring Wake to implement TypeScript constant evaluation.
+
 Consumers compare against `RunStatus.Succeeded`, not `'succeeded'`. A
 discriminated union may use the catalogue values directly.
 
@@ -148,7 +153,7 @@ export type WorkItemStreamRef = EntityRef<
 >;
 
 export function workItemStream(id: WorkItemId): WorkItemStreamRef {
-  return entityRef(WorkStreamKind.WorkItem, id);
+  return { kind: WorkStreamKind.WorkItem, id };
 }
 
 export function isWorkItemStream(ref: EntityRef): ref is WorkItemStreamRef {
@@ -158,8 +163,9 @@ export function isWorkItemStream(ref: EntityRef): ref is WorkItemStreamRef {
 
 Application and domain code use `workItemStream(id)`, `resourceStream(id)`,
 `runStream(id)`, `workflowInstanceStream(id)`, and named coordination-stream
-constructors. Only `kernel/contracts/identifiers.ts` and domain-owned
-`contracts/streams.ts` files may call the low-level `entityRef()` constructor.
+constructors. The low-level `entityRef()` constructor is not exported through
+the kernel public entry point after stream migration. Domain stream contracts
+construct the structural reference from already validated branded IDs.
 
 Composite stream IDs are also hidden behind named constructors. Code does not
 repeat fragments such as ``primary:${workItemId}``.
@@ -201,7 +207,7 @@ export interface EventEnvelope<
 }
 
 export type EventUnion<
-  Payloads extends Readonly<Record<string, unknown>>,
+  Payloads extends object,
   Stream extends EntityRef,
 > = {
   [Type in keyof Payloads & string]: EventEnvelope<Type, Payloads[Type], Stream>;
@@ -368,21 +374,29 @@ flow into core state.
 
 ## 10. Deterministic enforcement
 
-`npm run lint:architecture` also runs a TypeScript-AST contract-vocabulary
-check. The check:
+Deterministic enforcement composes existing tools rather than implementing a
+second TypeScript semantic analyser:
 
-1. discovers values passed to `defineClosedVocabulary()` plus event and stream
-   catalogue values from `src-next/**/contracts/{events,streams}.ts`;
-2. rejects those raw literals elsewhere in `src-next`;
-3. rejects direct `entityRef()` calls outside kernel identity and owned stream
-   contract files;
-4. rejects erased `EventDraft`/`EventEnvelope` use in domain/application code;
-5. rejects payload coercion in domain folds/projectors;
-6. verifies manifest event namespaces and exact stream kinds have one owner.
+1. TypeScript types and compile-only contract tests enforce exact event
+   type/payload/stream relationships and preserve branded stream IDs through
+   event factories.
+2. ESLint `no-restricted-imports` prevents domain/application code importing
+   generic `EventDraft`, `EventEnvelope`, or the low-level stream constructor.
+3. ESLint `no-restricted-syntax` prohibits `String()` and `Number()` coercion
+   in domain/application code. A local function shadowing either built-in is
+   also prohibited; those names are misleading in a domain.
+4. A small TypeScript-AST vocabulary checker recognizes only directly
+   exported, inline catalogues, rejects unsupported catalogue shapes, and
+   rejects registered event, stream, and closed-vocabulary literals outside
+   their exact declaration initializer.
+5. Module-manifest tests verify event namespace and exact stream-kind
+   ownership.
 
-The checker reports file, line, offending value, and the contract symbol that
-must replace it. Tests prove each prohibited case fails and each permitted
-boundary case passes.
+The vocabulary checker does not resolve TypeScript symbols, infer event
+provenance, or reproduce ESLint scope analysis. It reports file, line,
+offending value, and the contract symbol that must replace it. Tests prove each
+supported declaration, prohibited duplication, invalid declaration shape, and
+permitted boundary case.
 
 Static enforcement complements type design; it does not attempt to ban every
 string literal. It deliberately permits:
@@ -393,8 +407,11 @@ string literal. It deliberately permits:
 - serialized corrupt-input fixtures;
 - validated configuration at the parsing boundary.
 
-All permitted exceptions are path- and context-specific. There is no general
-allowlist of current violations.
+All permitted exceptions are exact file-pattern boundaries. Provider raw
+values are allowed only in integration files explicitly named `*-decoder.ts`,
+`*-translator.ts`, or `*-translation.ts`; persistence keys only inside
+`persistence`; corrupt fixtures only in `*.corrupt-fixture.ts`. There is no
+function-name heuristic, general allowlist, or baseline of current violations.
 
 ## 11. Refactor boundaries
 
