@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM node:20-bookworm-slim
+FROM node:24-bookworm-slim
 
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
@@ -47,7 +47,7 @@ RUN --mount=type=cache,target=/root/.npm \
 
 COPY . .
 ARG WAKE_BUILD_TAG
-RUN WAKE_BUILD_TAG="$WAKE_BUILD_TAG" npm run build
+RUN WAKE_BUILD_TAG="$WAKE_BUILD_TAG" npm run build && npm run build:web
 
 USER wake
 WORKDIR /home/wake

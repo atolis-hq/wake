@@ -80,3 +80,4 @@ export * from './config/root-schema.js';
 export * from './paths.js';
 export * from './composition-root.js';
 export * from './projection-runtime.js';
+export * from './surface-applications.js';

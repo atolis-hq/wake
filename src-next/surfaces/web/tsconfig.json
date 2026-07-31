@@ -1,0 +1,10 @@
+{
+  "extends": "../../../tsconfig.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "noEmit": true,
+    "lib": ["ES2022", "DOM"],
+    "types": ["node", "vitest/globals", "react", "react-dom", "vite/client"]
+  },
+  "include": ["src", "test", "vite.config.ts", "vitest.config.ts", "playwright.config.ts"]
+}

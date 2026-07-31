@@ -1,0 +1,18 @@
+:root {
+  --ink: #152235;
+  --muted: #526074;
+  --surface: #f4f7fa;
+  --surface-subtle: #eaf0f5;
+  --border: #ccd6e0;
+  --accent: #0b5cad;
+  --good: #087a4b;
+  --warning: #9a5b00;
+  --bad: #b42318;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --radius: 0.65rem;
+  --shadow: 0 1px 3px rgb(18 34 52 / 0.12);
+}

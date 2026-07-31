@@ -76,9 +76,21 @@ export default {
       name: 'filesystem-io-stays-in-adapters',
       severity: 'error',
       from: {
-        path: '^src-next/(?!persistence/|execution/infrastructure/(?:workspace/|transcripts\\.ts$)|bootstrap/)',
+        path: '^src-next/(?!persistence/|execution/infrastructure/(?:workspace/|transcripts\\.ts$)|bootstrap/|surfaces/web-host/)',
       },
       to: { path: '^node:fs' },
+    },
+    {
+      name: 'browser-imports-only-surface-transport-contracts',
+      severity: 'error',
+      from: { path: '^src-next/surfaces/web/src/' },
+      to: { path: '^src-next/(?!surfaces/(?:web/src/|api/contracts/))' },
+    },
+    {
+      name: 'browser-has-no-node-runtime-dependencies',
+      severity: 'error',
+      from: { path: '^src-next/surfaces/web/src/' },
+      to: { path: '^node:' },
     },
     ...internalBoundaryRules,
     ...undeclaredDependencyRules,
