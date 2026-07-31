@@ -9,7 +9,8 @@ import type {
   ChildCoordinationMetadata,
   GroupBudgetExhaustedPayload,
 } from '../contracts/events.js';
-import { OrchestrationEventType, selectOrchestrationEvent } from '../contracts/events.js';
+import { OrchestrationEventType } from '../contracts/events.js';
+import { selectOrchestrationEvent } from '../contracts/event-decoder.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
 import { coordinationDraft } from '../domain/coordination-events.js';
 

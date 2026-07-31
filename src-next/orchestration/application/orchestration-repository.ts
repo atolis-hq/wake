@@ -1,10 +1,12 @@
 import type { EventJournal } from '../../kernel/index.js';
+import type {
+  WorkflowOrchestrationEvent,
+  WorkflowOrchestrationEventDraft,
+} from '../contracts/events.js';
 import {
   decodeOrchestrationEvent,
   selectWorkflowOrchestrationEvent,
-  type WorkflowOrchestrationEvent,
-  type WorkflowOrchestrationEventDraft,
-} from '../contracts/events.js';
+} from '../contracts/event-decoder.js';
 import { workflowInstanceId } from '../contracts/identifiers.js';
 import { isWorkflowInstanceStream, workflowInstanceStream } from '../contracts/streams.js';
 import { foldWorkflowInstance } from '../domain/workflow-instance.js';
@@ -19,6 +21,11 @@ export class OrchestrationRepository {
           event !== null && isWorkflowInstanceStream(event.stream),
       );
     return { sequence: events.length, view: foldWorkflowInstance(owned) };
+  }
+  async loadRequired(id: string) {
+    const loaded = await this.load(id);
+    if (loaded.view === null) throw new Error('WorkflowInstance does not exist');
+    return { sequence: loaded.sequence, view: loaded.view };
   }
   async append(
     id: string,

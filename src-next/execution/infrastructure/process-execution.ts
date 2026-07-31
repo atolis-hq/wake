@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 
-export interface ProcessExecutionResult {
+interface ProcessExecutionResult {
   readonly stdout: string;
   readonly stderr: string;
   readonly exitCode: number | null;

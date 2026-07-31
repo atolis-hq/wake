@@ -30,9 +30,13 @@ function sourceFailure(error: unknown): {
     const details = Reflect.get(error, 'details');
     return {
       kind: typeof kind === 'string' && kind.length > 0 ? kind : 'non-error-object',
-      message: typeof message === 'string' ? message : String(error),
+      message: typeof message === 'string' ? message : failureValue(error),
       ...(details === undefined ? {} : { details }),
     };
   }
-  return { kind: typeof error, message: String(error) };
+  return { kind: typeof error, message: failureValue(error) };
+}
+
+function failureValue(error: unknown): string {
+  return typeof error === 'symbol' ? error.toString() : `${error}`;
 }

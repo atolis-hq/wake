@@ -17,7 +17,7 @@ import type { PullRequestActivityOutcome } from './contracts.js';
 import type { IntentAppender } from './intent.js';
 import { appendResolved } from './activity-support.js';
 
-export type PullRequestDecisionKind = 'requested' | 'denied';
+type PullRequestDecisionKind = 'requested' | 'denied';
 export type PullRequestAction = PullRequestDecisionAction;
 
 type DecisionClaimPayload<Action extends PullRequestAction> = Action extends 'approve'
@@ -98,6 +98,17 @@ export async function completeDecisionClaim(
   return result === IntentAppendStatus.Failed
     ? { kind: ActivityOutcomeKind.Failed, data: { reason: ActivityFailureCode.IntentWriteFailed } }
     : decision.outcome;
+}
+
+export async function claimAndCompleteDecision<Action extends PullRequestAction>(
+  journal: EventJournal,
+  appender: IntentAppender,
+  activationId: ActivationId,
+  action: Action,
+  proposal: PullRequestDecision<NoInfer<Action>>,
+): Promise<PullRequestActivityOutcome> {
+  const claimed = await claimDecision(journal, activationId, action, proposal);
+  return completeDecisionClaim(journal, appender, claimed);
 }
 
 function decisionClaimId(activationId: ActivationId, action: PullRequestAction): string {

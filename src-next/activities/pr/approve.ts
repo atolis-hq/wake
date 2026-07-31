@@ -1,7 +1,11 @@
 import { ActivityOutcomeKind } from '../contracts/vocabulary.js';
 import { z } from 'zod';
 
-import type { ActivityDefinition } from '../contracts/activity.js';
+import type {
+  ActivityDefinition,
+  ActivityExecutionContext,
+  ActivityInvocation,
+} from '../contracts/activity.js';
 import { ActivityExecutionKind, BuiltInActivityName } from '../contracts/vocabulary.js';
 import { ActivityEventType } from '../contracts/events.js';
 import type { EventJournal } from '../../kernel/index.js';
@@ -23,10 +27,9 @@ import {
   selectionDenialAudit,
 } from './activity-support.js';
 import {
-  claimDecision,
+  claimAndCompleteDecision,
   completeDecisionClaim,
   readDecisionClaim,
-  type PullRequestDecision,
 } from './decision-claim.js';
 import { decidePullRequestAuthority } from './policy.js';
 
@@ -61,81 +64,78 @@ export function createPullRequestApproveActivity(
     resources: [],
     executionKind: ActivityExecutionKind.Deterministic,
     handler: {
-      async execute(invocation, context) {
-        const command = activityCommandContext(
-          invocation.activationId,
-          invocation.orchestrationGroupId,
-          context.occurredAt,
-        );
-        const prior = await readDecisionClaim(journal, invocation.activationId, 'approve');
-        if (prior !== null) return completeDecisionClaim(journal, appender, prior);
-        const authority = await pullRequests.authorityInput(invocation.workItemId);
-        const resource = resolvePrimaryCapability(
-          invocation.resources,
-          authority,
-          invocation.workItemId,
-          invocation.input.target,
-          BuiltInResourceCapability.Approvable,
-        );
-        if (!resource.allowed) {
-          const stream = workItemStream(invocation.workItemId);
-          const denial = approveDenied(stream, resource.reason, command, {
-            ...selectionDenialAudit(invocation.input.target, resource.candidates),
-            body: invocation.input.body ?? null,
-          });
-          return decide({
-            decisionKind: 'denied',
-            outcome: { kind: ActivityOutcomeKind.Blocked, data: { reason: resource.reason } },
-            fact: denial,
-          });
-        }
-        const decision = decidePullRequestAuthority(authority, {
-          target: { resourceId: resource.resourceId },
-          requireAcceptedReview: false,
-          requireChecks: false,
-        });
-        if (!decision.allowed) {
-          const stream = resourceStream(resource.resourceId);
-          const denial = approveDenied(stream, decision.reason, command, {
-            ...selectedDenialAudit(authority, resource.resourceId),
-            body: invocation.input.body ?? null,
-          });
-          return decide({
-            decisionKind: 'denied',
-            outcome: { kind: ActivityOutcomeKind.Blocked, data: { reason: decision.reason } },
-            fact: denial,
-          });
-        }
-        const intent = deliveryIntentRequested(
-          decision.resourceId,
-          ActivityEventType.PrApproveRequested,
-          {
-            activationId: invocation.activationId,
-            resourceId: decision.resourceId,
-            revision: decision.revision,
-            body: invocation.input.body ?? null,
-          },
-          command,
-        );
-        return decide({
-          decisionKind: 'requested',
-          outcome: {
-            kind: ActivityOutcomeKind.Waiting,
-            data: { intentEventId: intent.eventId, signalKind: 'delivery-result' },
-          },
-          fact: intent,
-        });
-
-        async function decide(proposal: PullRequestDecision<'approve'>) {
-          const claimed = await claimDecision(
-            journal,
-            invocation.activationId,
-            'approve',
-            proposal,
-          );
-          return completeDecisionClaim(journal, appender, claimed);
-        }
-      },
+      execute: (invocation, context) =>
+        executeApproval(journal, pullRequests, appender, invocation, context),
     },
   };
+}
+
+async function executeApproval(
+  journal: EventJournal,
+  pullRequests: PullRequestService,
+  appender: IntentAppender,
+  invocation: ActivityInvocation<PullRequestApproveInput>,
+  context: ActivityExecutionContext,
+): Promise<PullRequestActivityOutcome> {
+  const command = activityCommandContext(
+    invocation.activationId,
+    invocation.orchestrationGroupId,
+    context.occurredAt,
+  );
+  const prior = await readDecisionClaim(journal, invocation.activationId, 'approve');
+  if (prior !== null) return completeDecisionClaim(journal, appender, prior);
+  const authority = await pullRequests.authorityInput(invocation.workItemId);
+  const resource = resolvePrimaryCapability(
+    invocation.resources,
+    authority,
+    invocation.workItemId,
+    invocation.input.target,
+    BuiltInResourceCapability.Approvable,
+  );
+  if (!resource.allowed) {
+    const denial = approveDenied(workItemStream(invocation.workItemId), resource.reason, command, {
+      ...selectionDenialAudit(invocation.input.target, resource.candidates),
+      body: invocation.input.body ?? null,
+    });
+    return claimAndCompleteDecision(journal, appender, invocation.activationId, 'approve', {
+      decisionKind: 'denied',
+      outcome: { kind: ActivityOutcomeKind.Blocked, data: { reason: resource.reason } },
+      fact: denial,
+    });
+  }
+  const decision = decidePullRequestAuthority(authority, {
+    target: { resourceId: resource.resourceId },
+    requireAcceptedReview: false,
+    requireChecks: false,
+  });
+  if (!decision.allowed) {
+    const denial = approveDenied(resourceStream(resource.resourceId), decision.reason, command, {
+      ...selectedDenialAudit(authority, resource.resourceId),
+      body: invocation.input.body ?? null,
+    });
+    return claimAndCompleteDecision(journal, appender, invocation.activationId, 'approve', {
+      decisionKind: 'denied',
+      outcome: { kind: ActivityOutcomeKind.Blocked, data: { reason: decision.reason } },
+      fact: denial,
+    });
+  }
+  const intent = deliveryIntentRequested(
+    decision.resourceId,
+    ActivityEventType.PrApproveRequested,
+    {
+      activationId: invocation.activationId,
+      resourceId: decision.resourceId,
+      revision: decision.revision,
+      body: invocation.input.body ?? null,
+    },
+    command,
+  );
+  return claimAndCompleteDecision(journal, appender, invocation.activationId, 'approve', {
+    decisionKind: 'requested',
+    outcome: {
+      kind: ActivityOutcomeKind.Waiting,
+      data: { intentEventId: intent.eventId, signalKind: 'delivery-result' },
+    },
+    fact: intent,
+  });
 }

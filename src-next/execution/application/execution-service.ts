@@ -23,96 +23,131 @@ import type { WorkspaceLease, WorkspaceProvider } from '../contracts/workspace.j
 import { failureFrom } from '../domain/run-result.js';
 import { RunRepository } from './run-repository.js';
 
+interface ExecutionDependencies {
+  readonly clock: Clock;
+  readonly ids: IdGenerator;
+  readonly workspaces?: WorkspaceProvider;
+}
+
+interface ExecutionRuntime {
+  readonly activities: ActivityRegistry;
+  readonly config: ExecutionConfig;
+  readonly dependencies: ExecutionDependencies;
+  readonly repository: RunRepository;
+}
+
 export function createExecutionService(
   journal: EventJournal,
   activities: ActivityRegistry,
   config: ExecutionConfig,
-  dependencies: {
-    readonly clock: Clock;
-    readonly ids: IdGenerator;
-    readonly workspaces?: WorkspaceProvider;
-  },
+  dependencies: ExecutionDependencies,
 ) {
   const repository = new RunRepository(journal);
   return {
-    async attempt(activation: ExecutionActivation, context: ExecutionAttemptContext) {
-      const definition = activities.describe(activation.activity);
-      activities.validateInput(activation.activity, activation.input);
-      validateResources(definition.resources, context.resources);
-      const tier = activation.execution?.tier ?? config.defaultTier;
-      if (config.tiers[tier] === undefined) throw new Error(`Unknown execution tier: ${tier}`);
-      const prior = await repository.list(activation.activationId);
-      const completed = prior.find((run) => run.status === RunStatus.Succeeded);
-      if (completed !== undefined) return completed;
-      const currentRunId = runId(dependencies.ids.next(ExecutionStreamKind.Run));
-      const startedAt = dependencies.clock.now().toISOString();
-      let lease: WorkspaceLease | undefined;
-      try {
-        lease = await acquireWorkspace(
-          activation.execution?.workspace ?? WorkspaceMode.None,
-          context.workItemId,
-          context.resources,
-          dependencies.workspaces,
-        );
-        await repository.append(currentRunId, 0, [
-          event({
-            runId: currentRunId,
-            eventId: `${currentRunId}:started`,
-            eventType: ExecutionEventType.RunStarted,
-            occurredAt: startedAt,
-            correlationId: context.orchestrationGroupId,
-            causationId: activation.activationId,
-            payload: {
-              activationId: activation.activationId,
-              activity: activation.activity,
-              workflowInstanceId: context.workflowInstanceId,
-              orchestrationGroupId: context.orchestrationGroupId,
-              attempt: prior.length + 1,
-              startedAt,
-              ...(lease === undefined ? {} : { workspace: { mode: lease.mode, path: lease.path } }),
-            },
-          }),
-        ]);
-        const outcome = await executeActivity(activities, {
-          activation,
-          context,
-          occurredAt: startedAt,
-        });
-        const finishedAt = dependencies.clock.now().toISOString();
-        await repository.append(currentRunId, 1, [
-          event({
-            runId: currentRunId,
-            eventId: `${currentRunId}:succeeded`,
-            eventType: ExecutionEventType.RunSucceeded,
-            occurredAt: finishedAt,
-            correlationId: context.orchestrationGroupId,
-            causationId: activation.activationId,
-            payload: { outcome, finishedAt },
-          }),
-        ]);
-      } catch (error) {
-        const loaded = await repository.load(currentRunId);
-        if (loaded.sequence > 0) {
-          const finishedAt = dependencies.clock.now().toISOString();
-          await repository.append(currentRunId, loaded.sequence, [
-            event({
-              runId: currentRunId,
-              eventId: `${currentRunId}:failed`,
-              eventType: ExecutionEventType.RunFailed,
-              occurredAt: finishedAt,
-              correlationId: context.orchestrationGroupId,
-              causationId: activation.activationId,
-              payload: { failure: failureFrom(error), finishedAt },
-            }),
-          ]);
-        } else throw error;
-      } finally {
-        await lease?.release();
-      }
-      return (await repository.load(currentRunId)).view!;
-    },
+    attempt: (activation: ExecutionActivation, context: ExecutionAttemptContext) =>
+      attemptExecution({ activities, config, dependencies, repository }, activation, context),
     list: (activationId?: ExecutionActivation['activationId']) => repository.list(activationId),
   };
+}
+
+async function attemptExecution(
+  runtime: ExecutionRuntime,
+  activation: ExecutionActivation,
+  context: ExecutionAttemptContext,
+) {
+  const definition = runtime.activities.describe(activation.activity);
+  runtime.activities.validateInput(activation.activity, activation.input);
+  validateResources(definition.resources, context.resources);
+  const tier = activation.execution?.tier ?? runtime.config.defaultTier;
+  if (runtime.config.tiers[tier] === undefined) throw new Error(`Unknown execution tier: ${tier}`);
+  const prior = await runtime.repository.list(activation.activationId);
+  const completed = prior.find((run) => run.status === RunStatus.Succeeded);
+  if (completed !== undefined) return completed;
+  const currentRunId = runId(runtime.dependencies.ids.next(ExecutionStreamKind.Run));
+  const startedAt = runtime.dependencies.clock.now().toISOString();
+  let lease: WorkspaceLease | undefined;
+  try {
+    lease = await acquireWorkspace(
+      activation.execution?.workspace ?? WorkspaceMode.None,
+      context.workItemId,
+      context.resources,
+      runtime.dependencies.workspaces,
+    );
+    await runtime.repository.append(currentRunId, 0, [
+      event({
+        runId: currentRunId,
+        eventId: `${currentRunId}:started`,
+        eventType: ExecutionEventType.RunStarted,
+        occurredAt: startedAt,
+        correlationId: context.orchestrationGroupId,
+        causationId: activation.activationId,
+        payload: {
+          activationId: activation.activationId,
+          activity: activation.activity,
+          workflowInstanceId: context.workflowInstanceId,
+          orchestrationGroupId: context.orchestrationGroupId,
+          attempt: prior.length + 1,
+          startedAt,
+          ...(lease === undefined ? {} : { workspace: { mode: lease.mode, path: lease.path } }),
+        },
+      }),
+    ]);
+    const outcome = await executeActivity(runtime.activities, {
+      activation,
+      context,
+      occurredAt: startedAt,
+    });
+    await recordSuccess(runtime, currentRunId, activation, context, outcome);
+  } catch (error) {
+    await recordFailure(runtime, currentRunId, activation, context, error);
+  } finally {
+    await lease?.release();
+  }
+  return (await runtime.repository.load(currentRunId)).view!;
+}
+
+async function recordSuccess(
+  runtime: ExecutionRuntime,
+  currentRunId: ReturnType<typeof runId>,
+  activation: ExecutionActivation,
+  context: ExecutionAttemptContext,
+  outcome: Awaited<ReturnType<typeof executeActivity>>,
+): Promise<void> {
+  const finishedAt = runtime.dependencies.clock.now().toISOString();
+  await runtime.repository.append(currentRunId, 1, [
+    event({
+      runId: currentRunId,
+      eventId: `${currentRunId}:succeeded`,
+      eventType: ExecutionEventType.RunSucceeded,
+      occurredAt: finishedAt,
+      correlationId: context.orchestrationGroupId,
+      causationId: activation.activationId,
+      payload: { outcome, finishedAt },
+    }),
+  ]);
+}
+
+async function recordFailure(
+  runtime: ExecutionRuntime,
+  currentRunId: ReturnType<typeof runId>,
+  activation: ExecutionActivation,
+  context: ExecutionAttemptContext,
+  error: unknown,
+): Promise<void> {
+  const loaded = await runtime.repository.load(currentRunId);
+  if (loaded.sequence === 0) throw error;
+  const finishedAt = runtime.dependencies.clock.now().toISOString();
+  await runtime.repository.append(currentRunId, loaded.sequence, [
+    event({
+      runId: currentRunId,
+      eventId: `${currentRunId}:failed`,
+      eventType: ExecutionEventType.RunFailed,
+      occurredAt: finishedAt,
+      correlationId: context.orchestrationGroupId,
+      causationId: activation.activationId,
+      payload: { failure: failureFrom(error), finishedAt },
+    }),
+  ]);
 }
 async function executeActivity(
   activities: ActivityRegistry,

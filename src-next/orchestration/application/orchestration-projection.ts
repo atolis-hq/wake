@@ -1,8 +1,6 @@
 import type { ProjectionDefinition } from '../../kernel/index.js';
-import {
-  selectWorkflowOrchestrationEvent,
-  type WorkflowOrchestrationEvent,
-} from '../contracts/events.js';
+import { selectWorkflowOrchestrationEvent } from '../contracts/event-decoder.js';
+import { type WorkflowOrchestrationEvent } from '../contracts/events.js';
 import { isWorkflowInstanceStream } from '../contracts/streams.js';
 import { foldWorkflowInstance } from '../domain/workflow-instance.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';

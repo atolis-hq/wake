@@ -3,14 +3,10 @@ import {
   correlationId,
   type CheckpointStore,
   type CommandContext,
-  type EventEnvelope,
   type EventJournal,
 } from '../../kernel/index.js';
-import {
-  selectOrchestrationEvent,
-  type ChildWorkflowRequest,
-  type OrchestrationEvent,
-} from '../contracts/events.js';
+import { type ChildWorkflowRequest, type OrchestrationEvent } from '../contracts/events.js';
+import { selectOrchestrationEvent } from '../contracts/event-decoder.js';
 import {
   workflowInstanceId,
   workflowName,
@@ -43,6 +39,7 @@ interface WatchOrchestrationPort {
 }
 
 const checkpoint = 'reactor:orchestration.watch';
+type PersistedEvent = Parameters<typeof selectOrchestrationEvent>[0];
 
 export function createWatchReactor(
   orchestration: WatchOrchestrationPort,
@@ -50,7 +47,7 @@ export function createWatchReactor(
   checkpoints?: CheckpointStore,
 ) {
   return {
-    async react(event: EventEnvelope, context: CommandContext): Promise<void> {
+    async react(event: PersistedEvent, context: CommandContext): Promise<void> {
       const causalCycle = orchestrationCausalCycleId(selectOrchestrationEvent(event));
       for (const match of await orchestration.listWatchMatches(event.eventType)) {
         const requestId = workflowInstanceId(
@@ -98,7 +95,7 @@ export function createWatchReactor(
   };
 }
 
-function commandContext(event: EventEnvelope): CommandContext {
+function commandContext(event: PersistedEvent): CommandContext {
   return {
     commandId: `${event.eventId}:watch`,
     correlationId: correlationId(event.correlationId),
@@ -113,6 +110,6 @@ function orchestrationCausalCycleId(event: OrchestrationEvent | null): string | 
     : undefined;
 }
 
-function watchCommandId(context: CommandContext, match: WatchMatch, event: EventEnvelope): string {
+function watchCommandId(context: CommandContext, match: WatchMatch, event: PersistedEvent): string {
   return `${context.commandId}:parent:${match.parent.workflowInstanceId}:watch:${match.watch.id}:trigger:${event.eventId}`;
 }

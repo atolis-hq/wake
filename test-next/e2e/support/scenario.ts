@@ -1,6 +1,6 @@
 import { it } from 'vitest';
 
-export interface ScenarioDescription {
+interface ScenarioDescription {
   readonly id: `E2E-${string}`;
   readonly title: string;
   readonly given: readonly string[];

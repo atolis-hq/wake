@@ -2,7 +2,34 @@ import { WorkflowInstanceKind } from '../contracts/vocabulary.js';
 import type { StartWorkflowInstance } from '../contracts/commands.js';
 import type { ChildCoordinationMetadata, ChildWorkflowRequest } from '../contracts/events.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
-import { workflowInstanceId, type WorkflowInstanceId } from '../contracts/identifiers.js';
+import {
+  workflowInstanceId,
+  type OrchestrationGroupId,
+  type WorkflowInstanceId,
+} from '../contracts/identifiers.js';
+
+interface ChildStartInput {
+  readonly workflowInstanceId: WorkflowInstanceId;
+  readonly orchestrationGroupId: OrchestrationGroupId;
+  readonly parentWorkflowInstanceId?: WorkflowInstanceId;
+  readonly watchId?: string;
+  readonly triggerId?: string;
+  readonly causalCycleId?: string;
+  readonly requestId?: string;
+}
+
+export function childStartMetadata(input: ChildStartInput): ChildCoordinationMetadata | undefined {
+  if (input.parentWorkflowInstanceId === undefined) return undefined;
+  return {
+    parentWorkflowInstanceId: input.parentWorkflowInstanceId,
+    watchId: input.watchId!,
+    triggerId: input.triggerId!,
+    orchestrationGroupId: input.orchestrationGroupId,
+    causalCycleId: input.causalCycleId!,
+    requestId: input.requestId!,
+    childWorkflowInstanceId: input.workflowInstanceId,
+  };
+}
 
 export function childMetadata(child: WorkflowInstanceView): ChildCoordinationMetadata {
   if (

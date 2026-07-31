@@ -33,7 +33,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "check:catalogue": "node scripts/check-functional-catalogue.mjs",
-    "lint:architecture": "node scripts/check-module-manifests.mjs && depcruise --config dependency-cruiser.config.mjs src-next",
+    "lint:architecture": "node scripts/check-module-manifests.mjs && node scripts/check-contract-vocabulary.mjs && depcruise --config dependency-cruiser.config.mjs src-next",
     "build:next": "tsc -p tsconfig.next.json",
     "test:next": "vitest run --config vitest.next.config.ts",
     "lint:contracts": "node scripts/check-contract-vocabulary.mjs",

@@ -4,7 +4,7 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: ['coverage/**', 'dist/**', 'node_modules/**', '.wake/**'],
+    ignores: ['coverage/**', 'dist/**', 'dist-next/**', 'node_modules/**', '.wake/**'],
   },
   {
     files: ['**/*.{js,mjs,cjs}'],
@@ -44,9 +44,51 @@ export default tseslint.config(
     rules: {
       complexity: ['error', 12],
       'max-depth': ['error', 4],
+      'max-params': ['error', 5],
+    },
+  },
+  {
+    files: ['src-next/**/*.ts'],
+    rules: {
+      'max-lines': ['error', { max: 300, skipBlankLines: true, skipComments: true }],
+      'max-lines-per-function': ['error', { max: 80, skipBlankLines: true, skipComments: true }],
+    },
+  },
+  {
+    files: ['test-next/**/*.ts'],
+    rules: {
       'max-lines': ['error', { max: 400, skipBlankLines: true, skipComments: true }],
       'max-lines-per-function': ['error', { max: 100, skipBlankLines: true, skipComments: true }],
-      'max-params': ['error', 5],
+    },
+  },
+  {
+    files: [
+      'src-next/{work,resources,activities,orchestration,execution}/{domain,application}/**/*.ts',
+    ],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['**/kernel/index.js', '**/kernel/contracts/*.js'],
+              importNames: ['EventDraft', 'EventEnvelope', 'entityRef'],
+              message: 'Use the owning domain event union and stream constructor.',
+            },
+          ],
+        },
+      ],
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'CallExpression[callee.type="Identifier"][callee.name="String"]',
+          message: 'Decode typed domain values instead of calling String().',
+        },
+        {
+          selector: 'CallExpression[callee.type="Identifier"][callee.name="Number"]',
+          message: 'Decode typed domain values instead of calling Number().',
+        },
+      ],
     },
   },
 );

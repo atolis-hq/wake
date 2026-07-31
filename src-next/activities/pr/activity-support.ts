@@ -85,7 +85,7 @@ interface CandidateAudit {
   readonly revision: string | null;
 }
 
-export type CapabilityResolution =
+type CapabilityResolution =
   | { readonly allowed: true; readonly resourceId: ResourceId }
   | {
       readonly allowed: false;

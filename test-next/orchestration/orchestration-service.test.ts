@@ -17,7 +17,7 @@ import { FakeClock } from '../e2e/support/world.js';
 
 it('uses the Work status vocabulary when checking whether work is open', async () => {
   const source = await readFile(
-    new URL('../../src-next/orchestration/application/orchestration-service.ts', import.meta.url),
+    new URL('../../src-next/orchestration/application/start-workflow.ts', import.meta.url),
     'utf8',
   );
   expect(source).toContain('item.state !== WorkStatus.Open');
