@@ -10,10 +10,7 @@ type RuleName =
   | 'entity-ref'
   | 'erased-events'
   | 'payload-coercion';
-
-interface ContractDiagnostic {
-  readonly message: string;
-}
+type ContractDiagnostic = { readonly message: string };
 
 type CheckContractVocabulary = (
   root: string,
@@ -26,6 +23,8 @@ const { checkContractVocabulary } = (await import(checkerModulePath)) as {
 };
 
 const fixtureRoots: string[] = [];
+const unrelatedPayloadSource =
+  'export function render(settings: { payload: { count: unknown } }) { const { payload } = settings; return Number(settings.payload.count) + String(payload.count); } export function destructured({ payload }: { payload: { count: unknown } }) { return Number(payload.count); }';
 
 afterEach(async () => {
   await Promise.all(
@@ -56,6 +55,10 @@ function expectMessagesContain(
 ): void {
   const output = messages(diagnostics);
   for (const value of expected) expect(output).toContain(value);
+}
+
+function providerEventFunction(name: string): string {
+  return `export function ${name}() { return 'work.item-created'; }`;
 }
 
 function registeredCatalogues(): Readonly<Record<string, string>> {
@@ -226,29 +229,33 @@ describe('domain contract structure', () => {
   it('tracks payload coercion only from imported event contracts', async () => {
     const root = await fixture({
       'src-next/work/domain/work-item.ts': [
-        "import type { EntityRef, EventEnvelope as Event } from '../../kernel/index.js';",
+        "import type { EntityRef, EventDraftUnion, EventEnvelope, EventUnion } from '../../kernel/index.js';",
         'type Payload = { readonly objective: string; readonly count: unknown };',
+        "type Payloads = { readonly 'work.item-created': Payload };",
         'type WorkItemId = string & { readonly __brand: "WorkItemId" };',
         "type Stream = EntityRef<'work-item', WorkItemId>;",
-        "type WorkEvent = Event<'work.item-created', Payload, Stream>;",
+        'type WorkEvent = EventUnion<Payloads, Stream>;',
+        'type WorkDraft = EventDraftUnion<Payloads, Stream>;',
         'export function fold(event: WorkEvent) {',
         '  const payload = event.payload as Record<string, unknown>;',
         '  const { payload: destructured } = event;',
         '  const fact = event;',
         '  return (',
         '    String(event.payload.objective) +',
+        '    Number(event.payload.count) +',
         '    Number(payload.count) +',
         '    String(destructured.objective) +',
         '    String(fact.payload.objective)',
         '  );',
         '}',
-      ].join('\n'),
-      'src-next/work/domain/settings.ts': [
-        'export function render(settings: { payload: { count: unknown } }) {',
-        '  const { payload } = settings;',
-        '  return Number(settings.payload.count) + String(payload.count);',
+        'export function foldDraft(event: WorkDraft) {',
+        '  return Number(event.payload.count);',
+        '}',
+        "export function foldDestructured({ payload }: EventEnvelope<'work.item-created', Payload, Stream>) {",
+        '  return Number(payload.count);',
         '}',
       ].join('\n'),
+      'src-next/work/domain/settings.ts': unrelatedPayloadSource,
       'src-next/work/domain/shadowed-coercion.ts': [
         "import type { EntityRef, EventEnvelope } from '../../kernel/index.js';",
         'type Id = string & { readonly __brand: "Id" };',
@@ -266,14 +273,17 @@ describe('domain contract structure', () => {
     const diagnostics = await checkContractVocabulary(root, { rules: ['payload-coercion'] });
 
     expectMessagesContain(diagnostics, [
-      'src-next/work/domain/work-item.ts:11:5 [payload-coercion] "String(payload.*)"',
-      'src-next/work/domain/work-item.ts:12:5 [payload-coercion] "Number(payload.*)"',
       'src-next/work/domain/work-item.ts:13:5 [payload-coercion] "String(payload.*)"',
-      'src-next/work/domain/work-item.ts:14:5 [payload-coercion] "String(payload.*)"',
+      'src-next/work/domain/work-item.ts:14:5 [payload-coercion] "Number(payload.*)"',
+      'src-next/work/domain/work-item.ts:15:5 [payload-coercion] "Number(payload.*)"',
+      'src-next/work/domain/work-item.ts:16:5 [payload-coercion] "String(payload.*)"',
+      'src-next/work/domain/work-item.ts:17:5 [payload-coercion] "String(payload.*)"',
+      'src-next/work/domain/work-item.ts:21:10 [payload-coercion] "Number(payload.*)"',
+      'src-next/work/domain/work-item.ts:24:10 [payload-coercion] "Number(payload.*)"',
     ]);
     expect(messages(diagnostics)).not.toContain('settings.ts');
     expect(messages(diagnostics)).not.toContain('shadowed-coercion.ts');
-    expect(diagnostics).toHaveLength(4);
+    expect(diagnostics).toHaveLength(7);
   });
 });
 
@@ -318,27 +328,16 @@ describe('contract vocabulary permissions', () => {
   it('permits provider values in explicit decoder files and functions', async () => {
     const root = await fixture({
       ...registeredCatalogues(),
-      'src-next/integrations/github/infrastructure/payload-decoder.ts': [
-        "export const providerEvent = 'work.item-created';",
-        "export const providerDecision = 'review.approved';",
-      ].join('\n'),
-      'src-next/integrations/github/application/provider-boundary.ts': [
-        'export function decodeProviderReviewCommand(raw: string) {',
-        "  return raw === 'review.approved';",
-        '}',
-        'export function translateProviderStream(raw: string) {',
-        "  return raw === 'work-item';",
-        '}',
-        'export function parseProviderEvent(raw: string) {',
-        "  return raw === 'work.item-created';",
-        '}',
-      ].join('\n'),
+      'src-next/integrations/github/infrastructure/payload-decoder.ts':
+        "export const providerEvent = 'work.item-created'; export const providerDecision = 'review.approved';",
+      'src-next/integrations/github/application/provider-boundary.ts':
+        "export function decodeProviderReviewCommand(raw: string) { return raw === 'review.approved'; }",
+      'src-next/integrations/github/application/review-command.ts':
+        "export function decodeReviewCommand(raw: string) { return raw === 'work.item-created'; }",
       'src-next/integrations/github/application/review-command-translator.ts':
         "export const providerStream = 'work-item';",
-      'src-next/test-support/provider.decoder-fixture.ts': [
-        "export const providerEvent = 'work.item-created';",
-        "export const providerDecision = 'review.approved';",
-      ].join('\n'),
+      'src-next/test-support/provider.decoder-fixture.ts':
+        "export const providerEvent = 'work.item-created'; export const providerDecision = 'review.approved';",
     });
 
     await expect(checkContractVocabulary(root)).resolves.toEqual([]);
@@ -399,39 +398,34 @@ describe('provider boundary enforcement', () => {
         "export const providerEvent = 'work.item-created';",
       'src-next/integrations/github/infrastructure/cache.ts':
         "export const providerEvent = 'work.item-created';",
-      'src-next/integrations/github/infrastructure/helper.ts': [
-        'export function notDecoder() {',
-        "  return 'work.item-created';",
-        '}',
-      ].join('\n'),
-      'src-next/integrations/github/infrastructure/parse-cache.ts': [
-        'export function parseCacheKey() {',
-        "  return 'work.item-created';",
-        '}',
-      ].join('\n'),
-      'src-next/integrations/github/infrastructure/review-command.ts': [
-        'export function decodeReviewCommand() {',
-        "  return 'work.item-created';",
-        '}',
-      ].join('\n'),
-      'src-next/integrations/github/infrastructure/translate-cache.ts': [
-        'export function translateCacheKey() {',
-        "  return 'work.item-created';",
-        '}',
-      ].join('\n'),
+      'src-next/integrations/github/infrastructure/helper.ts': providerEventFunction('notDecoder'),
+      'src-next/integrations/github/infrastructure/parse-cache.ts':
+        providerEventFunction('parseCacheKey'),
+      'src-next/integrations/github/infrastructure/review-command.ts':
+        providerEventFunction('decodeReviewCommand'),
+      'src-next/integrations/github/contracts/review.ts':
+        providerEventFunction('decodeReviewCommand'),
+      'src-next/integrations/github/infrastructure/parse-provider.ts':
+        providerEventFunction('parseProviderEvent'),
+      'src-next/integrations/github/infrastructure/translate-cache.ts':
+        providerEventFunction('translateCacheKey'),
+      'src-next/integrations/github/infrastructure/translate-provider.ts':
+        providerEventFunction('translateProviderStream'),
     });
 
     const diagnostics = await checkContractVocabulary(root, { rules: ['event-literals'] });
 
     expect(diagnostics.map(({ message }) => message.split(':', 1)[0])).toEqual([
+      'src-next/integrations/github/contracts/review.ts',
       'src-next/integrations/github/infrastructure/cache.ts',
       'src-next/integrations/github/infrastructure/client.ts',
       'src-next/integrations/github/infrastructure/decoders/client.ts',
       'src-next/integrations/github/infrastructure/helper.ts',
       'src-next/integrations/github/infrastructure/parse-cache.ts',
-      'src-next/integrations/github/infrastructure/review-command.ts',
+      'src-next/integrations/github/infrastructure/parse-provider.ts',
       'src-next/integrations/github/infrastructure/source.ts',
       'src-next/integrations/github/infrastructure/translate-cache.ts',
+      'src-next/integrations/github/infrastructure/translate-provider.ts',
     ]);
     expect(messages(diagnostics)).toContain('"work.item-created"');
     expect(messages(diagnostics)).toContain('WorkEventType');

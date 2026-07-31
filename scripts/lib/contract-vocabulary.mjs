@@ -343,7 +343,8 @@ function allowsProviderValue(path, literal) {
   const parts = path.toLowerCase().split('/');
   if (parts.some(isDecoderFixturePart)) return true;
   if (!parts.includes('integrations')) return false;
-  return parts.some(isDecoderPathPart) || hasDecoderFunctionAncestor(literal);
+  const isCodeBoundary = parts.includes('application') || parts.includes('infrastructure');
+  return parts.some(isDecoderPathPart) || (isCodeBoundary && hasDecoderFunctionAncestor(literal));
 }
 
 function isDecoderFixturePart(part) {
@@ -382,11 +383,11 @@ function hasDecoderFunctionAncestor(node) {
 
 function isDecoderName(name) {
   if (!ts.isIdentifier(name)) return false;
-  const normalized = name.text.toLowerCase();
+  if (!name.text.startsWith('decode') || name.text.length === 'decode'.length) return false;
+  const firstDomainCharacter = name.text.at('decode'.length);
   return (
-    normalized.startsWith('decodeprovider') ||
-    normalized.startsWith('translateprovider') ||
-    normalized.startsWith('parseprovider')
+    firstDomainCharacter === firstDomainCharacter.toUpperCase() &&
+    firstDomainCharacter !== firstDomainCharacter.toLowerCase()
   );
 }
 
@@ -558,12 +559,12 @@ function collectEventProvenance(source, checker) {
   visit(source, (node) => {
     if (ts.isParameter(node) || ts.isVariableDeclaration(node)) {
       declarations.push(node);
-      if (
-        ts.isIdentifier(node.name) &&
-        node.type !== undefined &&
-        isEventTypeNode(node.type, checker, new Set())
-      ) {
-        addNodeSymbol(eventSymbols, checker, node.name);
+      if (node.type !== undefined && isEventTypeNode(node.type, checker, new Set())) {
+        if (ts.isIdentifier(node.name)) {
+          addNodeSymbol(eventSymbols, checker, node.name);
+        } else if (ts.isObjectBindingPattern(node.name)) {
+          addPayloadBindingSymbols(node.name, payloadSymbols, checker);
+        }
       }
     }
   });
@@ -598,13 +599,8 @@ function collectEventProvenance(source, checker) {
         ts.isObjectBindingPattern(declaration.name) &&
         isProvenEventExpression(initializer, checker, eventSymbols)
       ) {
-        for (const element of declaration.name.elements) {
-          const sourceName = element.propertyName ?? element.name;
-          if (bindingNameText(sourceName) !== 'payload') continue;
-          for (const identifier of bindingIdentifiers(element.name)) {
-            changed = addNodeSymbol(payloadSymbols, checker, identifier) || changed;
-          }
-        }
+        changed =
+          addPayloadBindingSymbols(declaration.name, payloadSymbols, checker) || changed;
       }
     }
   }
@@ -617,16 +613,27 @@ function isEventTypeNode(node, checker, visited) {
     return node.types.some((part) => isEventTypeNode(part, checker, new Set(visited)));
   }
   if (!ts.isTypeReferenceNode(node)) return false;
-  if (
-    isImportedKernelReference(checker, node.typeName, 'EventDraft') ||
-    isImportedKernelReference(checker, node.typeName, 'EventEnvelope')
-  ) {
+  if (['EventDraft', 'EventEnvelope', 'EventUnion', 'EventDraftUnion'].some((name) =>
+    isImportedKernelReference(checker, node.typeName, name),
+  )) {
     return true;
   }
   const alias = resolvedTypeAlias(checker, node.typeName);
   if (alias === undefined || visited.has(alias.symbol)) return false;
   visited.add(alias.symbol);
   return isEventTypeNode(alias.declaration.type, checker, visited);
+}
+
+function addPayloadBindingSymbols(pattern, payloadSymbols, checker) {
+  let changed = false;
+  for (const element of pattern.elements) {
+    const sourceName = element.propertyName ?? element.name;
+    if (bindingNameText(sourceName) !== 'payload') continue;
+    for (const identifier of bindingIdentifiers(element.name)) {
+      changed = addNodeSymbol(payloadSymbols, checker, identifier) || changed;
+    }
+  }
+  return changed;
 }
 
 function isProvenEventExpression(expression, checker, eventSymbols) {
