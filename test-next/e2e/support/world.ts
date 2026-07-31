@@ -75,11 +75,7 @@ export class TestWorld {
   readonly work = createWorkService(this.journal);
   readonly resources = createResourceService(this.journal);
   readonly pullRequests = createPullRequestService(this.journal, this.work, this.resources);
-  private readonly orchestration = createOrchestrationService(
-    this.journal,
-    this.work,
-    this.definitions,
-  );
+  readonly orchestration = createOrchestrationService(this.journal, this.work, this.definitions);
   private execution = createExecutionService(
     this.journal,
     this.activities,

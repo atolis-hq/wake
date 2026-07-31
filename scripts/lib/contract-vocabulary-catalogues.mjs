@@ -316,9 +316,13 @@ function registerObject(detail, object, initializer, rule, owner, registrations,
     return;
   }
   for (const literal of entries) {
+    const start = literal.getStart(detail.source);
+    const { line, character } = detail.source.getLineAndCharacterOfPosition(start);
     register(registrations, literal.text, {
       owner,
       path: detail.path,
+      line: line + 1,
+      column: character + 1,
       initializerStart: initializer.getStart(detail.source),
       initializerEnd: initializer.getEnd(),
     });

@@ -73,6 +73,7 @@ export interface PullRequestDenialPayload {
 export interface PullRequestApproveRequestedPayload {
   readonly idempotencyKey: string;
   readonly activationId: ActivationId;
+  readonly workflowInstanceId: string;
   readonly resourceId: ResourceId;
   readonly revision: string;
   readonly body: string | null;
@@ -81,6 +82,7 @@ export interface PullRequestApproveRequestedPayload {
 export interface PullRequestMergeRequestedPayload {
   readonly idempotencyKey: string;
   readonly activationId: ActivationId;
+  readonly workflowInstanceId: string;
   readonly resourceId: ResourceId;
   readonly revision: string;
   readonly method: typeof MergeMethod.Merge | typeof MergeMethod.Squash | typeof MergeMethod.Rebase;

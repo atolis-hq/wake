@@ -124,6 +124,7 @@ async function executeMerge(
     ActivityEventType.PrMergeRequested,
     {
       activationId: invocation.activationId,
+      workflowInstanceId: invocation.workflowInstanceId,
       resourceId: decision.resourceId,
       revision: decision.revision,
       method: invocation.input.method,

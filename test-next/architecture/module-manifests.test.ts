@@ -116,7 +116,9 @@ describe('module manifests', () => {
       'work/application/contracts/streams.ts:1:14 [stream-literals] WorkStreamKind must be declared in contracts/streams.ts',
     );
   });
+});
 
+describe('module manifest catalogue integrity', () => {
   it('rejects multiple StreamKind catalogues in the canonical file', async () => {
     const root = await manifestFixture({
       work: {
@@ -146,6 +148,27 @@ describe('module manifests', () => {
       'stream kind work-item has duplicate catalogue owners: work, work',
     );
   });
+
+  it('rejects nested delivery events outside the manifest event namespace', async () => {
+    const root = await manifestFixture({
+      integrations: {
+        streams: ['delivery'],
+        events: ['integration.'],
+        source: "export const IntegrationStreamKind = { Delivery: 'delivery' } as const;",
+        eventSourcePath: 'delivery/contracts/events.ts',
+        eventSource:
+          "export const DeliveryEventType = { Confirmed: 'delivery.confirmed' } as const;",
+      },
+    });
+
+    await expect(checker.checkModuleManifests(root)).resolves.toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(
+          /^integrations\/delivery\/contracts\/events\.ts:\d+:\d+ \[event-literals\] delivery\.confirmed is not declared in integrations module manifest events$/,
+        ),
+      ]),
+    );
+  });
 });
 
 async function manifestFixture(
@@ -154,8 +177,11 @@ async function manifestFixture(
       string,
       {
         readonly streams: readonly string[];
+        readonly events?: readonly string[];
         readonly source: string;
         readonly sourcePath?: string;
+        readonly eventSource?: string;
+        readonly eventSourcePath?: string;
       }
     >
   >,
@@ -171,12 +197,26 @@ async function manifestFixture(
         kind: 'domain',
         dependencies: [],
         publicEntry: './index.ts',
-        namespaces: { events: [], config: [], relations: [], streams: fixture.streams },
+        namespaces: {
+          events: fixture.events ?? [],
+          config: [],
+          relations: [],
+          streams: fixture.streams,
+        },
       };
-      return [
+      const files = [
         writeFixture(manifestPath, `${JSON.stringify(manifest)}\n`),
         writeFixture(streamsPath, fixture.source),
       ];
+      if (fixture.eventSource !== undefined) {
+        files.push(
+          writeFixture(
+            join(root, name, fixture.eventSourcePath ?? 'contracts/events.ts'),
+            fixture.eventSource,
+          ),
+        );
+      }
+      return files;
     }),
   );
   return root;

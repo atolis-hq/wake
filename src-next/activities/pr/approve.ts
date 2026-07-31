@@ -124,6 +124,7 @@ async function executeApproval(
     ActivityEventType.PrApproveRequested,
     {
       activationId: invocation.activationId,
+      workflowInstanceId: invocation.workflowInstanceId,
       resourceId: decision.resourceId,
       revision: decision.revision,
       body: invocation.input.body ?? null,

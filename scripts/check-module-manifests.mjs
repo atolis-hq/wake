@@ -94,6 +94,17 @@ export async function checkModuleManifests(root = 'src-next') {
       }
     }
   }
+  for (const [eventType, registrations] of discovery.catalogues.eventValues) {
+    for (const { path, line, column } of registrations) {
+      const owner = path.split('/')[0];
+      const declared = manifests.get(owner)?.namespaces?.events ?? [];
+      if (!declared.some((namespace) => eventType.startsWith(namespace))) {
+        failures.push(
+          `${path}:${line}:${column} [event-literals] ${eventType} is not declared in ${owner} module manifest events`,
+        );
+      }
+    }
+  }
   for (const [name, manifest] of manifests) {
     for (const stream of manifest.namespaces?.streams ?? []) {
       const registrations = discovery.catalogues.streamValues.get(stream) ?? [];

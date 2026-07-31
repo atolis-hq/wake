@@ -10,7 +10,7 @@ import {
 import { resourceId, resourceStream } from '../../src-next/resources/index.js';
 import { FakeClock } from '../e2e/support/world.js';
 
-it('constructs runtime replay with the activities-pr projection registered', async () => {
+it('constructs runtime replay with the activities-pr and delivery projections registered', async () => {
   const journal = new InMemoryEventJournal(new FakeClock());
   const projections = new InMemoryProjectionStore();
   const stream = resourceStream(resourceId('resource-1'));
@@ -40,4 +40,5 @@ it('constructs runtime replay with the activities-pr projection registered', asy
   expect(await projections.read('activities-pr', 'resource-1')).toMatchObject({
     value: { headRevision: 'head-a' },
   });
+  expect(await projections.list('delivery')).toEqual([]);
 });

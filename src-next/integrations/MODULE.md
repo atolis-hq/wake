@@ -13,7 +13,7 @@ Inbound evidence becomes commands; outbound facts use durable delivery.
 ## Configuration
 Owns `integrations`.
 ## Relations and events
-Owns `integration.` evidence and relation namespaces.
+Owns `integration.` evidence, provider-neutral `status.` and `reply.` intents, and `delivery.` durable delivery facts, including the `integration` and `delivery` streams.
 ## Failure and recovery
 Delivery outcomes explicitly include confirmed, failed, and ambiguous.
 ## Extension rules

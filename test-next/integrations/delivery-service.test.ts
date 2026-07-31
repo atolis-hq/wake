@@ -1,36 +1,64 @@
 import { describe, expect, it } from 'vitest';
 
 import { DeliveryService } from '../../src-next/integrations/delivery/application/delivery-service.js';
+import {
+  decodeDeliveryEvent,
+  DeliveryEventType,
+  DeliveryIntentKind,
+  DeliveryResultKind,
+  DeliveryState,
+} from '../../src-next/integrations/index.js';
+import { MergeMethod } from '../../src-next/activities/index.js';
 import { resourceId } from '../../src-next/resources/index.js';
+import { InMemoryEventJournal } from '../../src-next/persistence/index.js';
+import { FakeClock } from '../e2e/support/world.js';
 
 describe('DeliveryService', () => {
   it('uses the canonical intent event id as the provider idempotency key', async () => {
     const calls: string[] = [];
+    const journal = new InMemoryEventJournal(new FakeClock());
     const service = new DeliveryService({
+      journal,
       intents: async () => [
         {
           intentEventId: 'intent-1',
           globalPosition: 1,
-          kind: 'pr.merge',
+          workflowInstanceId: 'workflow-1',
+          activationId: 'activation-1',
+          kind: DeliveryIntentKind.PrMerge,
           resourceId: resourceId('resource-1'),
-          payload: { kind: 'pr.merge', revision: 'abc', method: 'merge' },
-          state: 'pending',
+          payload: {
+            kind: DeliveryIntentKind.PrMerge,
+            revision: 'abc',
+            method: MergeMethod.Merge,
+          },
+          state: DeliveryState.Pending,
           attempts: 0,
+          occurrenceOrdinal: 0,
         },
       ],
       resource: async () => ({ resourceId: 'resource-1', adapter: 'github' }),
       adapter: () => ({
         deliver: async (intent: { readonly intentEventId: string }) => {
           calls.push(intent.intentEventId);
-          return { kind: 'confirmed' as const, externalId: '42' };
+          return { kind: DeliveryResultKind.Confirmed, externalId: '42' };
         },
-        reconcile: async () => ({ kind: 'not-found' as const }),
+        reconcile: async () => ({ kind: DeliveryResultKind.NotFound }),
       }),
-      append: async () => undefined,
+      now: () => '2026-07-31T12:00:00.000Z',
     });
 
     await service.deliverNext(new AbortController().signal);
 
     expect(calls).toEqual(['intent-1']);
+    const events = await journal.readAll(0);
+    expect(decodeDeliveryEvent(events[1]!).eventType).toBe(DeliveryEventType.Confirmed);
+    expect(decodeDeliveryEvent(events[1]!).payload).toMatchObject({
+      intentEventId: 'intent-1',
+      intentGlobalPosition: 1,
+      workflowInstanceId: 'workflow-1',
+      activationId: 'activation-1',
+      occurrenceOrdinal: 1,
+    });
   });
 });

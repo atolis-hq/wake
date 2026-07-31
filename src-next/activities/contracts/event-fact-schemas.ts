@@ -107,6 +107,7 @@ const approveRequestedSchema = z
   .object({
     idempotencyKey: z.string(),
     activationId: brandedStringSchema(activationId),
+    workflowInstanceId: z.string().min(1),
     resourceId: resourceIdSchema,
     revision: z.string(),
     body: z.string().nullable(),
@@ -116,6 +117,7 @@ const mergeRequestedSchema = z
   .object({
     idempotencyKey: z.string(),
     activationId: brandedStringSchema(activationId),
+    workflowInstanceId: z.string().min(1),
     resourceId: resourceIdSchema,
     revision: z.string(),
     method: z.enum([MergeMethod.Merge, MergeMethod.Squash, MergeMethod.Rebase]),

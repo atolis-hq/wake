@@ -1,37 +1,35 @@
 import { describe, expect, it } from 'vitest';
-import { DeliveryService } from '../../../src-next/integrations/delivery/application/delivery-service.js';
-import { resourceId } from '../../../src-next/resources/index.js';
+import { composeDeliveryRuntime } from '../../../src-next/bootstrap/index.js';
+import {
+  DeliveryEventType,
+  DurableFakeDeliveryProvider,
+} from '../../../src-next/integrations/index.js';
+import { InMemoryProjectionStore } from '../../../src-next/persistence/index.js';
+import { executeMerge, setupMergeScenario } from './pr-activity-fixtures.js';
+import { TestWorld } from '../support/world.js';
 
 describe('E2E-PR-MERGE-003', () => {
-  it('delivers an allowed merge once and records its canonical confirmation', async () => {
-    const events: string[] = [];
-    let calls = 0;
-    const service = new DeliveryService({
-      intents: async () => [
-        {
-          intentEventId: 'intent-merge',
-          globalPosition: 1,
-          kind: 'pr.merge' as const,
-          resourceId: resourceId('resource-1'),
-          payload: { kind: 'pr.merge' as const, revision: 'a', method: 'merge' as const },
-          state: 'pending' as const,
-          attempts: 0,
-        },
-      ],
-      resource: async () => ({ resourceId: 'resource-1', adapter: 'fake' }),
-      adapter: () => ({
-        deliver: async () => {
-          calls += 1;
-          return { kind: 'confirmed' as const, externalId: '42' };
-        },
-        reconcile: async () => ({ kind: 'not-found' as const }),
-      }),
-      append: async (event) => {
-        events.push(event.type);
-      },
+  it('delivers through projections and advances the waiting workflow only after confirmation', async () => {
+    const world = new TestWorld();
+    const setup = await setupMergeScenario(world, 'safe');
+    const workflowId = await executeMerge(world, setup.workItemId);
+    const provider = new DurableFakeDeliveryProvider();
+    const runtime = composeDeliveryRuntime({
+      journal: world.journal,
+      projections: new InMemoryProjectionStore(),
+      checkpoints: world.checkpoints,
+      resource: async (id) => ({ resourceId: id, adapter: 'fake' }),
+      adapter: () => provider,
+      now: () => world.clock.now().toISOString(),
+      orchestration: world.orchestration,
     });
-    await service.deliverNext(new AbortController().signal);
-    expect(calls).toBe(1);
-    expect(events).toEqual(['delivery.attempt-started', 'delivery.confirmed']);
+
+    await runtime.runOnce(new AbortController().signal);
+
+    expect(provider.effects).toHaveLength(1);
+    expect((await world.viewWorkflow(workflowId))?.status).toBe('completed');
+    expect((await world.events()).map((event) => event.eventType)).toContain(
+      DeliveryEventType.Confirmed,
+    );
   });
 });

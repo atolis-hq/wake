@@ -1,4 +1,5 @@
 import { defineClosedVocabulary, type ValueOf } from '../../../kernel/index.js';
+import { BuiltInActivityName } from '../../../activities/index.js';
 
 export const DeliveryState = defineClosedVocabulary({
   Pending: 'pending',
@@ -16,3 +17,11 @@ export const DeliveryResultKind = defineClosedVocabulary({
   Unknown: 'unknown',
 } as const);
 export type DeliveryResultKind = ValueOf<typeof DeliveryResultKind>;
+
+export const DeliveryIntentKind = {
+  PrApprove: BuiltInActivityName.PullRequestApprove,
+  PrMerge: BuiltInActivityName.PullRequestMerge,
+  StatusPublish: 'status.publish',
+  ReplyPublish: 'reply.publish',
+} as const;
+export type DeliveryIntentKind = ValueOf<typeof DeliveryIntentKind>;

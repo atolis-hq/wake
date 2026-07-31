@@ -40,6 +40,7 @@ const approveIntent = createEventDraft({
   payload: {
     idempotencyKey: 'approve-intent',
     activationId: activation,
+    workflowInstanceId: 'workflow-1',
     resourceId: resourceId('resource-1'),
     revision: 'abc',
     body: null,
@@ -52,6 +53,7 @@ const mergeIntent = createEventDraft({
   payload: {
     idempotencyKey: 'merge-intent',
     activationId: activation,
+    workflowInstanceId: 'workflow-1',
     resourceId: resourceId('resource-1'),
     revision: 'abc',
     method: 'squash',
