@@ -12,6 +12,7 @@ import {
 } from '../../../src-next/persistence/index.js';
 import {
   ActivityRegistry,
+  activationId as parseActivationId,
   createPullRequestService,
   type ActivityDefinition,
 } from '../../../src-next/activities/index.js';
@@ -21,6 +22,9 @@ import {
   compileWorkflow,
   createOrchestrationService,
   createWatchReactor,
+  orchestrationGroupId,
+  workflowInstanceId as parseWorkflowInstanceId,
+  workflowName,
   type CompiledWorkflow,
   type WorkflowDefinitionConfig,
   type WorkflowInstanceView,
@@ -145,10 +149,10 @@ export class TestWorld {
     const id = input.workflowInstanceId ?? this.ids.next('workflow');
     return this.orchestration.start(
       {
-        workflowInstanceId: id,
+        workflowInstanceId: parseWorkflowInstanceId(id),
         workItemId: input.workItemId,
-        workflowName: input.workflowName,
-        orchestrationGroupId: input.orchestrationGroupId ?? id,
+        workflowName: workflowName(input.workflowName),
+        orchestrationGroupId: orchestrationGroupId(input.orchestrationGroupId ?? id),
       },
       this.command(),
     );
@@ -158,7 +162,7 @@ export class TestWorld {
     expectation: Parameters<typeof this.orchestration.waitForSignal>[1],
   ) {
     return this.orchestration.waitForSignal(
-      workflowInstanceId,
+      parseWorkflowInstanceId(workflowInstanceId),
       expectation,
       this.command({ kind: 'operator', id: 'owner' }),
     );
@@ -168,7 +172,7 @@ export class TestWorld {
     signal: Parameters<typeof this.orchestration.acceptSignal>[1],
   ) {
     return this.orchestration.acceptSignal(
-      workflowInstanceId,
+      parseWorkflowInstanceId(workflowInstanceId),
       signal,
       this.command({ kind: 'operator', id: 'owner' }),
     );
@@ -179,7 +183,11 @@ export class TestWorld {
     outcome: Parameters<typeof this.orchestration.acceptOutcome>[0]['outcome'],
   ) {
     return this.orchestration.acceptOutcome(
-      { workflowInstanceId, activationId, outcome },
+      {
+        workflowInstanceId: parseWorkflowInstanceId(workflowInstanceId),
+        activationId: parseActivationId(activationId),
+        outcome,
+      },
       this.command({ kind: 'integration', id: 'synthetic-delivery' }),
     );
   }
@@ -188,7 +196,7 @@ export class TestWorld {
     request: Parameters<typeof this.orchestration.requestSupplementalActivity>[1],
   ) {
     return this.orchestration.requestSupplementalActivity(
-      workflowInstanceId,
+      parseWorkflowInstanceId(workflowInstanceId),
       request,
       this.command({ kind: 'operator', id: 'owner' }),
     );
@@ -232,7 +240,7 @@ export class TestWorld {
     return this.work.get(id);
   }
   viewWorkflow(id: string) {
-    return this.orchestration.get(id);
+    return this.orchestration.get(parseWorkflowInstanceId(id));
   }
   viewRuns(activationId?: string): Promise<readonly RunView[]> {
     return this.execution.list(activationId);

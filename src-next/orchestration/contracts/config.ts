@@ -1,6 +1,19 @@
+import { WorkflowStatus } from './vocabulary.js';
 import { z } from 'zod';
 
 import { EventActorKind } from '../../kernel/index.js';
+import {
+  WorkspaceMode,
+  type ActivityName,
+  type WorkspaceMode as WorkspaceModeType,
+} from '../../activities/index.js';
+import type { CommandName, StageName, WorkflowName } from './identifiers.js';
+import { TransitionTargetKind } from './vocabulary.js';
+
+export interface ActivityExecutionConfig {
+  readonly workspace?: WorkspaceModeType | undefined;
+  readonly tier?: string | undefined;
+}
 
 const identifier = z.string().trim().min(1);
 const bound = z.object({ max: z.number().int().positive() }).strict();
@@ -12,7 +25,7 @@ const actorKind = z.enum([
 ]);
 const commandName = z.string().regex(/^\/[a-z][a-z0-9-]*$/);
 const canonicalEventName = z.string().regex(/^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)+$/);
-const watchStatus = z.enum(['active', 'waiting', 'blocked']);
+const watchStatus = z.enum([WorkflowStatus.Active, WorkflowStatus.Waiting, WorkflowStatus.Blocked]);
 export const watchConfigSchema = z
   .object({
     id: identifier,
@@ -54,7 +67,9 @@ export const stageConfigSchema = z
     with: z.unknown().optional(),
     execution: z
       .object({
-        workspace: z.enum(['none', 'read-only', 'branch']).optional(),
+        workspace: z
+          .enum([WorkspaceMode.None, WorkspaceMode.ReadOnly, WorkspaceMode.Branch])
+          .optional(),
         tier: identifier.optional(),
       })
       .strict()
@@ -89,20 +104,39 @@ export type SupplementalCommandConfig = z.infer<typeof supplementalCommandConfig
 export type WatchConfig = z.infer<typeof watchConfigSchema>;
 export type WorkflowDefinitionConfig = z.infer<typeof workflowDefinitionConfigSchema>;
 
-export interface CompiledOutcomeRoute extends OutcomeRouteConfig {
-  readonly id: string;
-  readonly activities?: readonly Readonly<FollowOnActivityConfig>[];
+export type TransitionTarget =
+  | { readonly kind: typeof TransitionTargetKind.Stage; readonly stage: StageName }
+  | { readonly kind: typeof TransitionTargetKind.Complete }
+  | { readonly kind: typeof TransitionTargetKind.AwaitSignal };
+
+export interface CompiledFollowOnActivity {
+  readonly use: ActivityName;
+  readonly with: unknown;
 }
-export interface CompiledStage extends Omit<StageConfig, 'on'> {
+export interface CompiledOutcomeRoute extends Omit<OutcomeRouteConfig, 'activities' | 'then'> {
+  readonly id: string;
+  readonly target: TransitionTarget;
+  readonly activities?: readonly CompiledFollowOnActivity[];
+}
+export interface CompiledStage extends Omit<StageConfig, 'activity' | 'execution' | 'on'> {
+  readonly activity: ActivityName;
+  readonly execution?: ActivityExecutionConfig;
   readonly on: Readonly<Record<string, CompiledOutcomeRoute>>;
 }
-export interface CompiledSupplementalCommand extends SupplementalCommandConfig {
+export interface CompiledSupplementalCommand extends Omit<SupplementalCommandConfig, 'activity'> {
+  readonly activity: ActivityName;
   readonly allowedActors: SupplementalCommandConfig['allowedActors'];
 }
+export interface CompiledWatch extends Omit<WatchConfig, 'workflow' | 'while'> {
+  readonly workflow: WorkflowName;
+  readonly while: Omit<WatchConfig['while'], 'stages'> & {
+    readonly stages: readonly StageName[];
+  };
+}
 export interface CompiledWorkflow {
-  readonly name: string;
-  readonly entry: string;
-  readonly commands: Readonly<Record<string, CompiledSupplementalCommand>>;
-  readonly watches: readonly Readonly<WatchConfig>[];
-  readonly stages: Readonly<Record<string, CompiledStage>>;
+  readonly name: WorkflowName;
+  readonly entry: StageName;
+  readonly commands: Readonly<Record<CommandName, CompiledSupplementalCommand>>;
+  readonly watches: readonly Readonly<CompiledWatch>[];
+  readonly stages: Readonly<Record<StageName, CompiledStage>>;
 }

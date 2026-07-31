@@ -1,3 +1,4 @@
+import { EventActorKind } from '../../kernel/index.js';
 import type { WorkItemId } from '../../work/index.js';
 import type { PullRequestService } from './application.js';
 
@@ -23,7 +24,7 @@ export function createPullRequestMergeAuthorityGate(
         commandId: `${input.activationId}:pr.merge`,
         correlationId: input.orchestrationGroupId as never,
         occurredAt,
-        actor: { kind: 'system', id: 'activities-pr' },
+        actor: { kind: EventActorKind.System, id: 'activities-pr' },
       });
       return { kind: allowed ? 'merge-authorized' : 'merge-denied' };
     },

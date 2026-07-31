@@ -1,3 +1,6 @@
+import { EventActorKind } from '../../kernel/index.js';
+import { WorkflowStatus } from '../../orchestration/index.js';
+import { RunStatus } from '../../execution/index.js';
 import {
   correlationId,
   type Clock,
@@ -55,7 +58,7 @@ export function createAdvanceOnce(
     commandId: ids.next('command'),
     correlationId: correlationId(cause),
     occurredAt: clock.now().toISOString(),
-    actor: { kind: 'system' as const, id: 'control-plane' },
+    actor: { kind: EventActorKind.System, id: 'control-plane' },
   });
   return async (options: AdvanceOptions): Promise<AdvanceResult> => {
     if (options.maxProgress < 1) return { kind: 'exhausted', progressCount: 0 };
@@ -82,7 +85,7 @@ export function createAdvanceOnce(
       const waiting = (await orchestration.listWaiting()).find((view) => view !== null);
       return waiting === undefined
         ? { kind: 'no-work' }
-        : { kind: 'waiting', workflowInstanceId: waiting.workflowInstanceId };
+        : { kind: WorkflowStatus.Waiting, workflowInstanceId: waiting.workflowInstanceId };
     }
     await orchestration.markActivationStarted(
       selected.workflow.workflowInstanceId,
@@ -99,7 +102,7 @@ export function createAdvanceOnce(
       orchestrationGroupId: selected.workflow.orchestrationGroupId,
       resources: resourceViews,
     });
-    if (run.status === 'succeeded' && run.outcome !== undefined) {
+    if (run.status === RunStatus.Succeeded && run.outcome !== undefined) {
       await orchestration.acceptOutcome(
         {
           workflowInstanceId: selected.workflow.workflowInstanceId,
@@ -109,10 +112,10 @@ export function createAdvanceOnce(
         context(run.runId),
       );
     }
-    return run.status === 'succeeded'
+    return run.status === RunStatus.Succeeded
       ? { kind: 'progressed', activationId: selected.activation.activationId, runId: run.runId }
       : {
-          kind: 'blocked',
+          kind: WorkflowStatus.Blocked,
           workflowInstanceId: selected.workflow.workflowInstanceId,
           reason: run.failure?.message ?? 'execution failed',
         };
@@ -124,7 +127,7 @@ async function findUnacceptedCompleted(
 ): Promise<{ item: (typeof pending)[number]; run: RunView } | undefined> {
   for (const item of pending) {
     const run = (await execution.list(item.activation.activationId)).find(
-      (candidate) => candidate.status === 'succeeded' && candidate.outcome !== undefined,
+      (candidate) => candidate.status === RunStatus.Succeeded && candidate.outcome !== undefined,
     );
     if (run !== undefined && !item.workflow.acceptedOutcomes.includes(item.activation.activationId))
       return { item, run };

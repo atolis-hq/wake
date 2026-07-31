@@ -1,3 +1,10 @@
+import {
+  orchestrationGroupId,
+  signalName,
+  workflowName,
+} from '../../src-next/orchestration/contracts/identifiers.js';
+import { activationId } from '../../src-next/activities/contracts/identifiers.js';
+import { activityName } from '../../src-next/activities/index.js';
 import { describe, expect, it } from 'vitest';
 import {
   childOrchestrationGroupStream,
@@ -15,23 +22,23 @@ const workflow = workflowInstanceStream(workflowInstanceId('workflow-1'));
 const primaryGroup = primaryOrchestrationGroupStream(workItemId('work-1'));
 const childGroup = childOrchestrationGroupStream('group-1', 'watch-1');
 const metadata = {
-  parentWorkflowInstanceId: 'workflow-parent',
+  parentWorkflowInstanceId: workflowInstanceId('workflow-parent'),
   watchId: 'watch-1',
   triggerId: 'trigger-1',
-  orchestrationGroupId: 'group-1',
+  orchestrationGroupId: orchestrationGroupId('group-1'),
   causalCycleId: 'cycle-1',
   requestId: 'request-1',
-  childWorkflowInstanceId: 'workflow-1',
+  childWorkflowInstanceId: workflowInstanceId('workflow-1'),
 } as const;
 const activation = {
-  activationId: 'workflow-1:activity:1',
+  activationId: activationId('workflow-1:activity:1'),
   ordinal: 1,
-  activity: 'implement',
+  activity: activityName('implement'),
   input: { prompt: 'ship' },
   execution: { workspace: 'branch', tier: 'standard' },
 } as const;
 const signal = {
-  kind: 'review-accepted',
+  kind: signalName('review-accepted'),
   resourceId: 'resource-1',
   revision: 'abc',
   actorId: 'reviewer',
@@ -44,8 +51,8 @@ const samples = [
     OrchestrationEventType.InstanceStarted,
     {
       workItemId: workItemId('work-1'),
-      workflowName: 'default',
-      orchestrationGroupId: 'group-1',
+      workflowName: workflowName('default'),
+      orchestrationGroupId: orchestrationGroupId('group-1'),
       entry: 'implement',
     },
     workflow,
@@ -67,17 +74,17 @@ const samples = [
     {
       activationId: activation.activationId,
       intentEventId: 'intent-1',
-      signalKind: 'delivery-result',
+      signalKind: signalName('delivery-result'),
       outcome: {
         kind: 'waiting',
-        data: { intentEventId: 'intent-1', signalKind: 'delivery-result' },
+        data: { intentEventId: 'intent-1', signalKind: signalName('delivery-result') },
       },
     },
     workflow,
   ),
   eventEnvelope(
     OrchestrationEventType.SignalWaitStarted,
-    { signalKind: 'review-accepted', resourceId: 'resource-1', revision: 'abc' },
+    { signalKind: signalName('review-accepted'), resourceId: 'resource-1', revision: 'abc' },
     workflow,
   ),
   eventEnvelope(OrchestrationEventType.SignalAccepted, signal, workflow),
@@ -102,7 +109,7 @@ const samples = [
   eventEnvelope(OrchestrationEventType.InstanceSuperseded, {}, workflow),
   eventEnvelope(
     OrchestrationEventType.ChildRequested,
-    { ...metadata, workflowName: 'child' },
+    { ...metadata, workflowName: workflowName('child') },
     workflow,
   ),
   eventEnvelope(OrchestrationEventType.ChildStarted, metadata, workflow),
@@ -116,7 +123,7 @@ const samples = [
   ),
   eventEnvelope(
     OrchestrationEventType.PrimaryClaimed,
-    { workItemId: workItemId('work-1'), workflowInstanceId: 'workflow-1' },
+    { workItemId: workItemId('work-1'), workflowInstanceId: workflowInstanceId('workflow-1') },
     primaryGroup,
   ),
   eventEnvelope(

@@ -1,9 +1,12 @@
+import { MergeMethod } from './vocabulary.js';
+import { ActivityOutcomeKind } from '../contracts/vocabulary.js';
 import { z } from 'zod';
 
 import type { ActivityDefinition } from '../contracts/activity.js';
+import { ActivityExecutionKind, BuiltInActivityName } from '../contracts/vocabulary.js';
 import { ActivityEventType } from '../contracts/events.js';
 import type { EventJournal } from '../../kernel/index.js';
-import { resourceStream } from '../../resources/index.js';
+import { BuiltInResourceCapability, resourceStream } from '../../resources/index.js';
 import { workItemStream } from '../../work/index.js';
 import { deliveryIntentRequested, mergeDenied } from './event-drafts.js';
 import {
@@ -12,7 +15,7 @@ import {
   type IntentAppender,
 } from './intent.js';
 import type { PullRequestService } from './application.js';
-import type { PullRequestMergeInput } from './contracts.js';
+import type { PullRequestActivityOutcome, PullRequestMergeInput } from './contracts.js';
 import {
   pullRequestOutcomeSchema,
   pullRequestTargetSchema,
@@ -31,7 +34,7 @@ import { decidePullRequestAuthority } from './policy.js';
 const inputSchema: z.ZodType<PullRequestMergeInput> = z
   .object({
     target: pullRequestTargetSchema,
-    method: z.enum(['merge', 'squash', 'rebase']),
+    method: z.enum([MergeMethod.Merge, MergeMethod.Squash, MergeMethod.Rebase]),
     requireChecks: z.boolean(),
   })
   .strict();
@@ -40,13 +43,23 @@ export function createPullRequestMergeActivity(
   journal: EventJournal,
   pullRequests: PullRequestService,
   appender: IntentAppender = createJournalIntentAppender(journal),
-): ActivityDefinition<PullRequestMergeInput> {
+): ActivityDefinition<
+  typeof BuiltInActivityName.PullRequestMerge,
+  PullRequestMergeInput,
+  PullRequestActivityOutcome
+> {
   return {
-    name: 'pr.merge',
+    name: BuiltInActivityName.PullRequestMerge,
     inputSchema,
     outcomeSchema: pullRequestOutcomeSchema,
+    outcomeKinds: [
+      ActivityOutcomeKind.Waiting,
+      ActivityOutcomeKind.Done,
+      ActivityOutcomeKind.Blocked,
+      ActivityOutcomeKind.Failed,
+    ],
     resources: [],
-    executionKind: 'deterministic',
+    executionKind: ActivityExecutionKind.Deterministic,
     handler: {
       async execute(invocation, context) {
         const command = activityCommandContext(
@@ -54,7 +67,7 @@ export function createPullRequestMergeActivity(
           invocation.orchestrationGroupId,
           context.occurredAt,
         );
-        const prior = await readDecisionClaim(journal, invocation.activationId, 'merge');
+        const prior = await readDecisionClaim(journal, invocation.activationId, MergeMethod.Merge);
         if (prior !== null) return completeDecisionClaim(journal, appender, prior);
         const authority = await pullRequests.authorityInput(invocation.workItemId);
         const resource = resolvePrimaryCapability(
@@ -62,7 +75,7 @@ export function createPullRequestMergeActivity(
           authority,
           invocation.workItemId,
           invocation.input.target,
-          'mergeable',
+          BuiltInResourceCapability.Mergeable,
         );
         if (!resource.allowed) {
           const stream = workItemStream(invocation.workItemId);
@@ -72,7 +85,7 @@ export function createPullRequestMergeActivity(
           });
           return decide({
             decisionKind: 'denied',
-            outcome: { kind: 'blocked', data: { reason: resource.reason } },
+            outcome: { kind: ActivityOutcomeKind.Blocked, data: { reason: resource.reason } },
             fact: denial,
           });
         }
@@ -89,7 +102,7 @@ export function createPullRequestMergeActivity(
           });
           return decide({
             decisionKind: 'denied',
-            outcome: { kind: 'blocked', data: { reason: decision.reason } },
+            outcome: { kind: ActivityOutcomeKind.Blocked, data: { reason: decision.reason } },
             fact: denial,
           });
         }
@@ -108,14 +121,19 @@ export function createPullRequestMergeActivity(
         return decide({
           decisionKind: 'requested',
           outcome: {
-            kind: 'waiting',
+            kind: ActivityOutcomeKind.Waiting,
             data: { intentEventId: intent.eventId, signalKind: 'delivery-result' },
           },
           fact: intent,
         });
 
-        async function decide(proposal: PullRequestDecision<'merge'>) {
-          const claimed = await claimDecision(journal, invocation.activationId, 'merge', proposal);
+        async function decide(proposal: PullRequestDecision<typeof MergeMethod.Merge>) {
+          const claimed = await claimDecision(
+            journal,
+            invocation.activationId,
+            MergeMethod.Merge,
+            proposal,
+          );
           return completeDecisionClaim(journal, appender, claimed);
         }
       },

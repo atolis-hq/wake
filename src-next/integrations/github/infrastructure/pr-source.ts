@@ -1,3 +1,10 @@
+import {
+  PullRequestCheckState,
+  PullRequestState,
+  ReviewActorKind,
+  type PullRequestCheckState as PullRequestCheckStateValue,
+} from '../../../activities/index.js';
+import { EventSourceKind } from '../../../kernel/index.js';
 import { createHash } from 'node:crypto';
 import { createEventDraft, EventActorKind } from '../../../kernel/index.js';
 import { BuiltInAdapterId } from '../../contracts/identifiers.js';
@@ -9,8 +16,11 @@ import type {
   GitHubPullRequestPayload,
 } from '../contracts/payloads.js';
 import { GitHubEventType, type GitHubAdapterEventDraft } from '../contracts/events.js';
-
-type PullRequestCheckState = 'unknown' | 'pending' | 'passing' | 'failing';
+import {
+  GitHubCheckRunStatus,
+  UnknownGitHubIdentity,
+  UnknownGitHubRevision,
+} from '../contracts/vocabulary.js';
 
 interface CheckEvidence {
   readonly available: boolean;
@@ -67,7 +77,7 @@ export function pullRequestObservation(input: {
   const revision = fallback(pullRequest.head?.sha, pullRequest.updated_at);
   const checks = input.evidence.available
     ? normalizeCheckEvidence(input.evidence.checkRuns, input.evidence.statuses)
-    : 'unknown';
+    : PullRequestCheckState.Unknown;
   const payload = {
     externalKey: key,
     kind: 'pull-request' as const,
@@ -76,10 +86,10 @@ export function pullRequestObservation(input: {
     state: pullRequestState(pullRequest),
     revision,
     headRevision: revision,
-    baseRevision: fallback(pullRequest.base?.sha, 'unknown'),
+    baseRevision: fallback(pullRequest.base?.sha, UnknownGitHubRevision),
     checks,
     actor: {
-      id: fallback(pullRequest.user?.login, 'unknown'),
+      id: fallback(pullRequest.user?.login, UnknownGitHubIdentity),
       kind: actorKind(pullRequest.user?.type),
     },
     raw: { number: pullRequest.number },
@@ -92,7 +102,7 @@ export function pullRequestObservation(input: {
     correlationId: `github:${key}`,
     causationId: `github:${key}:${fingerprint}`,
     actor: { kind: EventActorKind.Integration, id: 'github' },
-    source: { kind: 'adapter', id: 'github' },
+    source: { kind: EventSourceKind.Adapter, id: 'github' },
     stream: integrationStream(BuiltInAdapterId.GitHub),
     payload,
   });
@@ -101,15 +111,15 @@ export function pullRequestObservation(input: {
 export function normalizeCheckEvidence(
   checkRuns: readonly GitHubCheckRunPayload[],
   statuses: readonly GitHubCommitStatusPayload[],
-): PullRequestCheckState {
+): PullRequestCheckStateValue {
   const states = [
     ...checkRuns.map(checkRunState),
     ...statuses.map((status) => commitStatusState(status.state)),
   ];
-  if (states.includes('failing')) return 'failing';
-  if (states.includes('pending')) return 'pending';
-  if (states.includes('passing')) return 'passing';
-  return 'unknown';
+  if (states.includes(PullRequestCheckState.Failing)) return PullRequestCheckState.Failing;
+  if (states.includes(PullRequestCheckState.Pending)) return PullRequestCheckState.Pending;
+  if (states.includes(PullRequestCheckState.Passing)) return PullRequestCheckState.Passing;
+  return PullRequestCheckState.Unknown;
 }
 
 async function readCheckEvidence(
@@ -182,20 +192,29 @@ function compareJson(left: object, right: object): number {
   return JSON.stringify(left).localeCompare(JSON.stringify(right));
 }
 
-function checkRunState(checkRun: GitHubCheckRunPayload): PullRequestCheckState {
-  if (checkRun.status !== 'completed') return 'pending';
-  if (checkRun.conclusion === null || checkRun.conclusion === undefined) return 'pending';
-  return passingConclusions.has(checkRun.conclusion) ? 'passing' : 'failing';
+function checkRunState(checkRun: GitHubCheckRunPayload): PullRequestCheckStateValue {
+  if (checkRun.status !== GitHubCheckRunStatus.Completed) return PullRequestCheckState.Pending;
+  if (checkRun.conclusion === null || checkRun.conclusion === undefined)
+    return PullRequestCheckState.Pending;
+  return passingConclusions.has(checkRun.conclusion)
+    ? PullRequestCheckState.Passing
+    : PullRequestCheckState.Failing;
 }
 
-function commitStatusState(state: string | undefined): PullRequestCheckState {
-  if (state === 'failure' || state === 'error') return 'failing';
-  if (state === 'pending') return 'pending';
-  return state === 'success' ? 'passing' : 'unknown';
+function commitStatusState(state: string | undefined): PullRequestCheckStateValue {
+  if (state === GitHubCommitStatusState.Failure || state === GitHubCommitStatusState.Error)
+    return PullRequestCheckState.Failing;
+  if (state === GitHubCommitStatusState.Pending) return PullRequestCheckState.Pending;
+  return state === GitHubCommitStatusState.Success
+    ? PullRequestCheckState.Passing
+    : PullRequestCheckState.Unknown;
 }
 
-function pullRequestState(pullRequest: GitHubPullRequestPayload): 'open' | 'closed' | 'merged' {
-  if (pullRequest.merged_at !== null && pullRequest.merged_at !== undefined) return 'merged';
+function pullRequestState(
+  pullRequest: GitHubPullRequestPayload,
+): typeof PullRequestState.Open | typeof PullRequestState.Closed | typeof PullRequestState.Merged {
+  if (pullRequest.merged_at !== null && pullRequest.merged_at !== undefined)
+    return PullRequestState.Merged;
   return pullRequest.state;
 }
 
@@ -210,8 +229,16 @@ function fallback<Value>(value: Value | null | undefined, defaultValue: Value): 
   return value === null || value === undefined ? defaultValue : value;
 }
 
-function actorKind(type: string | undefined): 'bot' | 'human' {
-  return type === 'Bot' ? 'bot' : 'human';
+function actorKind(
+  type: string | undefined,
+): typeof ReviewActorKind.Bot | typeof ReviewActorKind.Human {
+  return type === 'Bot' ? ReviewActorKind.Bot : ReviewActorKind.Human;
 }
 
 const passingConclusions = new Set(['success', 'neutral', 'skipped']);
+const GitHubCommitStatusState = {
+  Error: 'error',
+  Failure: 'failure',
+  Pending: PullRequestCheckState.Pending,
+  Success: 'success',
+} as const;

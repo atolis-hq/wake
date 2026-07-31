@@ -1,3 +1,4 @@
+import { signalName } from '../../src-next/orchestration/contracts/identifiers.js';
 import { describe, expect, it } from 'vitest';
 import {
   activityDecisionStream,
@@ -134,7 +135,7 @@ const samples = [
       decisionKind: 'requested',
       outcome: {
         kind: 'waiting',
-        data: { intentEventId: approveIntent.eventId, signalKind: 'delivery-result' },
+        data: { intentEventId: approveIntent.eventId, signalKind: signalName('delivery-result') },
       },
       fact: approveIntent,
     },
@@ -148,7 +149,7 @@ const samples = [
       decisionKind: 'requested',
       outcome: {
         kind: 'waiting',
-        data: { intentEventId: mergeIntent.eventId, signalKind: 'delivery-result' },
+        data: { intentEventId: mergeIntent.eventId, signalKind: signalName('delivery-result') },
       },
       fact: mergeIntent,
     },
@@ -286,7 +287,7 @@ describe('Activity decision claim integrity', () => {
         ...samples[13].payload,
         outcome: {
           kind: 'waiting',
-          data: { intentEventId: 'other-intent', signalKind: 'delivery-result' },
+          data: { intentEventId: 'other-intent', signalKind: signalName('delivery-result') },
         },
       },
     },
@@ -297,7 +298,7 @@ describe('Activity decision claim integrity', () => {
         decisionKind: 'denied',
         outcome: {
           kind: 'waiting',
-          data: { intentEventId: approveDenial.eventId, signalKind: 'delivery-result' },
+          data: { intentEventId: approveDenial.eventId, signalKind: signalName('delivery-result') },
         },
         fact: approveDenial,
       },

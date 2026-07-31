@@ -1,33 +1,53 @@
 import type { ResourceId } from '../../resources/index.js';
+import { defineClosedVocabulary, type ValueOf } from '../../kernel/index.js';
+
+export const ReviewerAuthorizationSource = defineClosedVocabulary({
+  ConfiguredReviewer: 'configured-reviewer',
+  ProviderPermission: 'provider-permission',
+  None: 'none',
+} as const);
+export type ReviewerAuthorizationSource = ValueOf<typeof ReviewerAuthorizationSource>;
+
+export const ProviderPermission = defineClosedVocabulary({
+  None: 'none',
+  Read: 'read',
+  Triage: 'triage',
+  Write: 'write',
+  Maintain: 'maintain',
+  Admin: 'admin',
+} as const);
+export type ProviderPermission = ValueOf<typeof ProviderPermission>;
+
+export const ReviewActorKind = defineClosedVocabulary({
+  Human: 'human',
+  Bot: 'bot',
+} as const);
+export type ReviewActorKind = ValueOf<typeof ReviewActorKind>;
+
+export const ReviewDecisionKind = defineClosedVocabulary({
+  Accepted: 'accepted',
+  ChangesRequested: 'changes-requested',
+} as const);
+export type ReviewDecisionKind = ValueOf<typeof ReviewDecisionKind>;
 
 export type ReviewerAuthorizationEvidence =
-  | { readonly source: 'configured-reviewer'; readonly reviewerId: string }
   | {
-      readonly source: 'provider-permission';
-      readonly permission: 'none' | 'read' | 'triage' | 'write' | 'maintain' | 'admin';
+      readonly source: typeof ReviewerAuthorizationSource.ConfiguredReviewer;
+      readonly reviewerId: string;
     }
-  | { readonly source: 'none' };
+  | {
+      readonly source: typeof ReviewerAuthorizationSource.ProviderPermission;
+      readonly permission: ProviderPermission;
+    }
+  | { readonly source: typeof ReviewerAuthorizationSource.None };
 
 export interface ProposedReviewSignal {
-  readonly provider: 'github';
   readonly resourceId: ResourceId;
   readonly revision: string;
   readonly actorId: string;
-  readonly actorKind: 'human' | 'bot';
+  readonly actorKind: ReviewActorKind;
   readonly resourceAuthorId: string;
   readonly authorization: ReviewerAuthorizationEvidence;
   readonly providerEventId: string;
-  readonly kind: 'accepted' | 'changes-requested';
-}
-
-export interface ReviewSignalInput {
-  readonly provider: 'github';
-  readonly resourceId: ResourceId;
-  readonly revision: string;
-  readonly actorId: string;
-  readonly actorKind: 'human' | 'bot';
-  readonly resourceAuthorId: string;
-  readonly authorization: ReviewerAuthorizationEvidence;
-  readonly providerEventId: string;
-  readonly body: string;
+  readonly kind: ReviewDecisionKind;
 }

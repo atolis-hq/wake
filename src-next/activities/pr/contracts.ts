@@ -1,3 +1,11 @@
+import {
+  MergeMethod,
+  PullRequestCheckState,
+  PullRequestDenialCode,
+  PullRequestState,
+} from './vocabulary.js';
+import { ReviewActorKind } from '../review/contracts.js';
+import { ActivityOutcomeKind, ActivityResourceRole } from '../contracts/vocabulary.js';
 import type { ResourceCorrelationView, ResourceView } from '../../resources/index.js';
 import type { WorkItemId, WorkItemView } from '../../work/index.js';
 import type { ResourceId } from '../../resources/index.js';
@@ -6,10 +14,10 @@ import type { ReviewerAuthorizationEvidence } from '../review/contracts.js';
 export interface PullRequestView {
   readonly resourceId: ResourceId;
   readonly workItemId: WorkItemId;
-  readonly state: 'open' | 'closed' | 'merged';
+  readonly state: PullRequestState;
   readonly headRevision: string;
   readonly baseRevision: string;
-  readonly checks: 'unknown' | 'pending' | 'passing' | 'failing';
+  readonly checks: PullRequestCheckState;
   readonly acceptedReview?: {
     readonly revision: string;
     readonly actorId: string;
@@ -30,7 +38,7 @@ export interface AcceptReviewSignal {
   readonly resourceId: ResourceId;
   readonly revision: string;
   readonly actorId: string;
-  readonly actorKind: 'human' | 'bot';
+  readonly actorKind: ReviewActorKind;
   readonly acceptedEventId: string;
   readonly resourceAuthorId: string;
   readonly authorization: ReviewerAuthorizationEvidence;
@@ -53,7 +61,8 @@ export interface PullRequestResourceView {
   readonly correlations: readonly ResourceCorrelationView[];
 }
 
-export type PullRequestTarget = 'primary' | { readonly resourceId: ResourceId };
+export type PullRequestTarget =
+  typeof ActivityResourceRole.Primary | { readonly resourceId: ResourceId };
 export interface PullRequestTargetInput {
   readonly target: PullRequestTarget;
 }
@@ -61,17 +70,26 @@ export interface PullRequestApproveInput extends PullRequestTargetInput {
   readonly body?: string;
 }
 export interface PullRequestMergeInput extends PullRequestTargetInput {
-  readonly method: 'merge' | 'squash' | 'rebase';
+  readonly method: MergeMethod;
   readonly requireChecks: boolean;
 }
 export type PullRequestActivityOutcome =
   | {
-      readonly kind: 'waiting';
+      readonly kind: typeof ActivityOutcomeKind.Waiting;
       readonly data: { readonly intentEventId: string; readonly signalKind: 'delivery-result' };
     }
-  | { readonly kind: 'done'; readonly data: { readonly deliveryEventId: string } }
-  | { readonly kind: 'blocked'; readonly data: { readonly reason: string } }
-  | { readonly kind: 'failed'; readonly data: { readonly reason: string } };
+  | {
+      readonly kind: typeof ActivityOutcomeKind.Done;
+      readonly data: { readonly deliveryEventId: string };
+    }
+  | {
+      readonly kind: typeof ActivityOutcomeKind.Blocked;
+      readonly data: { readonly reason: string };
+    }
+  | {
+      readonly kind: typeof ActivityOutcomeKind.Failed;
+      readonly data: { readonly reason: string };
+    };
 
 export interface PullRequestAuthorityOptions {
   readonly target: PullRequestTarget;
@@ -83,7 +101,7 @@ export interface AcceptedReviewSignalView {
   readonly resourceId: ResourceId;
   readonly revision: string;
   readonly actorId: string;
-  readonly actorKind: 'human' | 'bot';
+  readonly actorKind: ReviewActorKind;
   readonly acceptedEventId: string;
   readonly trusted: boolean;
 }
@@ -99,13 +117,5 @@ export type PullRequestAuthorityDecision =
   | { readonly allowed: true; readonly resourceId: ResourceId; readonly revision: string }
   | {
       readonly allowed: false;
-      readonly reason:
-        | 'missing-resource'
-        | 'ambiguous-resource'
-        | 'correlation-conflict'
-        | 'closed'
-        | 'stale-approval'
-        | 'checks-pending'
-        | 'checks-failing'
-        | 'untrusted-actor';
+      readonly reason: PullRequestDenialCode;
     };

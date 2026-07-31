@@ -1,3 +1,5 @@
+import { PullRequestDenialCode } from './vocabulary.js';
+import { ActivityResourceRole } from '../contracts/vocabulary.js';
 import { type CommandContext, type EventJournal } from '../../kernel/index.js';
 import {
   resourceStream,
@@ -96,7 +98,7 @@ class JournalPullRequestService implements PullRequestService {
     const signal = reviewAcceptanceSignalRecorded(command, context);
     const outcome = isReviewAuthorized(command)
       ? reviewAccepted(command, context)
-      : reviewRejected(command.resourceId, 'untrusted-actor', context);
+      : reviewRejected(command.resourceId, PullRequestDenialCode.UntrustedActor, context);
     await this.append(command.resourceId, [signal, outcome]);
   }
 
@@ -190,7 +192,7 @@ class JournalPullRequestService implements PullRequestService {
     if (resource?.kind !== 'pull-request' || resource.primaryCorrelationConflict !== undefined)
       return false;
     const correlations = await this.resources.correlations(command.resourceId);
-    const primary = correlations.filter((value) => value.role === 'primary');
+    const primary = correlations.filter((value) => value.role === ActivityResourceRole.Primary);
     return primary.length === 1 && primary[0]?.workItemId === command.workItemId;
   }
 
@@ -200,14 +202,15 @@ class JournalPullRequestService implements PullRequestService {
   ): Promise<string | null> {
     const resource = await this.resources.get(resourceId);
     const view = await this.get(resourceId);
-    if (resource?.kind !== 'pull-request' || view === null) return 'missing-resource';
+    if (resource?.kind !== 'pull-request' || view === null)
+      return PullRequestDenialCode.MissingResource;
     const correlations = await this.resources.correlations(resourceId);
     if (
       resource.primaryCorrelationConflict !== undefined ||
-      correlations.filter((value) => value.role === 'primary').length !== 1
+      correlations.filter((value) => value.role === ActivityResourceRole.Primary).length !== 1
     )
-      return 'correlation-conflict';
-    return view.headRevision === revision ? null : 'stale-approval';
+      return PullRequestDenialCode.CorrelationConflict;
+    return view.headRevision === revision ? null : PullRequestDenialCode.StaleApproval;
   }
 
   async authorityInput(

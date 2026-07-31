@@ -1,3 +1,4 @@
+import { EventActorKind } from '../../kernel/index.js';
 import {
   correlationId,
   type CheckpointStore,
@@ -10,12 +11,18 @@ import {
   type ChildWorkflowRequest,
   type OrchestrationEvent,
 } from '../contracts/events.js';
+import {
+  workflowInstanceId,
+  workflowName,
+  type WorkflowInstanceId,
+  type WorkflowName,
+} from '../contracts/identifiers.js';
 
 interface WatchMatch {
-  readonly parent: { readonly workflowInstanceId: string };
+  readonly parent: { readonly workflowInstanceId: WorkflowInstanceId };
   readonly watch: {
     readonly id: string;
-    readonly workflow: string;
+    readonly workflow: WorkflowName;
     readonly maxPerGroup: number;
   };
 }
@@ -46,12 +53,14 @@ export function createWatchReactor(
     async react(event: EventEnvelope, context: CommandContext): Promise<void> {
       const causalCycle = orchestrationCausalCycleId(selectOrchestrationEvent(event));
       for (const match of await orchestration.listWatchMatches(event.eventType)) {
-        const requestId = `${match.parent.workflowInstanceId}:watch:${match.watch.id}:trigger:${event.eventId}`;
+        const requestId = workflowInstanceId(
+          `${match.parent.workflowInstanceId}:watch:${match.watch.id}:trigger:${event.eventId}`,
+        );
         const request = {
           parentWorkflowInstanceId: match.parent.workflowInstanceId,
           watchId: match.watch.id,
           triggerId: event.eventId,
-          workflowName: match.watch.workflow,
+          workflowName: workflowName(match.watch.workflow),
           causalCycleId: causalCycle ?? requestId,
           requestId,
           maxPerGroup: match.watch.maxPerGroup,
@@ -94,7 +103,7 @@ function commandContext(event: EventEnvelope): CommandContext {
     commandId: `${event.eventId}:watch`,
     correlationId: correlationId(event.correlationId),
     occurredAt: event.occurredAt,
-    actor: { kind: 'system', id: 'watch-reactor' },
+    actor: { kind: EventActorKind.System, id: 'watch-reactor' },
   };
 }
 

@@ -1,5 +1,10 @@
+import {
+  commandName,
+  workflowName,
+} from '../../../src-next/orchestration/contracts/identifiers.js';
 import { z } from 'zod';
 import { expect } from 'vitest';
+import { activityName } from '../../../src-next/activities/index.js';
 import { defineScenario } from '../support/scenario.js';
 import { TestWorld } from '../support/world.js';
 
@@ -15,9 +20,10 @@ defineScenario(
     const world = new TestWorld();
     for (const name of ['implement', 'review']) {
       world.registerActivity({
-        name,
+        name: activityName(name),
         inputSchema: z.object({ prompt: z.string() }).strict(),
         outcomeSchema: z.object({ kind: z.literal('done') }).strict(),
+        outcomeKinds: ['done'],
         resources: [],
         executionKind: 'deterministic',
         handler: {
@@ -46,10 +52,10 @@ defineScenario(
     const work = await world.createWork({ objective: 'review without transition' });
     const workflow = await world.startWorkflow({
       workItemId: work.workItemId,
-      workflowName: 'default',
+      workflowName: workflowName('default'),
     });
     await world.requestSupplementalActivity(workflow.workflowInstanceId, {
-      command: '/codereview',
+      command: commandName('/codereview'),
     });
     await world.advance(work.workItemId);
     await world.advance(work.workItemId);

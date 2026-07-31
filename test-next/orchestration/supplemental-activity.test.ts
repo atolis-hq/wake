@@ -1,6 +1,12 @@
+import {
+  commandName,
+  orchestrationGroupId,
+  workflowInstanceId,
+  workflowName,
+} from '../../src-next/orchestration/contracts/identifiers.js';
 import { z } from 'zod';
 import { describe, expect, it } from 'vitest';
-import { ActivityRegistry } from '../../src-next/activities/index.js';
+import { ActivityRegistry, activityName } from '../../src-next/activities/index.js';
 import { correlationId } from '../../src-next/kernel/index.js';
 import { compileWorkflow, createOrchestrationService } from '../../src-next/orchestration/index.js';
 import { InMemoryEventJournal } from '../../src-next/persistence/index.js';
@@ -22,9 +28,10 @@ async function fixture(actor: 'operator' | 'agent' = 'operator') {
   const activities = new ActivityRegistry();
   for (const name of ['implement', 'review']) {
     activities.register({
-      name,
+      name: activityName(name),
       inputSchema: z.object({ prompt: z.string() }).strict(),
       outcomeSchema: z.object({ kind: z.enum(['done', 'blocked']) }).strict(),
+      outcomeKinds: ['done', 'blocked'],
       resources: [],
       executionKind: 'deterministic',
       handler: {
@@ -60,10 +67,10 @@ async function fixture(actor: 'operator' | 'agent' = 'operator') {
   const service = createOrchestrationService(journal, work, { default: definition });
   const instance = await service.start(
     {
-      workflowInstanceId: 'workflow-1',
+      workflowInstanceId: workflowInstanceId('workflow-1'),
       workItemId: workItemId('work-1'),
-      workflowName: 'default',
-      orchestrationGroupId: 'group-1',
+      workflowName: workflowName('default'),
+      orchestrationGroupId: orchestrationGroupId('group-1'),
     },
     { ...context, commandId: 'start', actor: { kind: 'operator', id: 'owner' } },
   );
@@ -80,7 +87,7 @@ describe('supplemental Activity commands', () => {
     );
     const queued = await service.requestSupplementalActivity(
       instance.workflowInstanceId,
-      { command: '/codereview' },
+      { command: commandName('/codereview') },
       { ...context, commandId: 'command-1' },
     );
     expect(queued.pendingActivation).toMatchObject({
@@ -100,7 +107,7 @@ describe('supplemental Activity commands', () => {
     const { service, instance, context } = await fixture();
     await service.requestSupplementalActivity(
       instance.workflowInstanceId,
-      { command: '/codereview' },
+      { command: commandName('/codereview') },
       { ...context, commandId: 'command-1' },
     );
     const reviewing = await service.acceptOutcome(
@@ -136,7 +143,7 @@ describe('supplemental Activity commands', () => {
     await expect(
       authorized.service.requestSupplementalActivity(
         authorized.instance.workflowInstanceId,
-        { command: '/unknown' },
+        { command: commandName('/unknown') },
         { ...authorized.context, commandId: 'unknown' },
       ),
     ).rejects.toThrow(/Unknown supplemental command/);
@@ -145,7 +152,7 @@ describe('supplemental Activity commands', () => {
     await expect(
       unauthorized.service.requestSupplementalActivity(
         unauthorized.instance.workflowInstanceId,
-        { command: '/codereview' },
+        { command: commandName('/codereview') },
         { ...unauthorized.context, commandId: 'unauthorized' },
       ),
     ).rejects.toThrow(/not authorised/);
@@ -164,7 +171,7 @@ describe('supplemental Activity commands', () => {
     await expect(
       service.requestSupplementalActivity(
         instance.workflowInstanceId,
-        { command: '/codereview' },
+        { command: commandName('/codereview') },
         { ...context, commandId: 'bypass' },
       ),
     ).rejects.toThrow(/active WorkflowInstance/);

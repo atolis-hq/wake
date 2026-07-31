@@ -1,3 +1,4 @@
+import { WorkStatus } from '../contracts/vocabulary.js';
 import { WorkEventType, type WorkEvent } from '../contracts/events.js';
 import type { WorkItemView, WorkState } from '../contracts/views.js';
 
@@ -10,7 +11,7 @@ export function foldWorkItem(events: readonly WorkEvent[]): WorkItemView | null 
   const id = events[0].stream.id;
   const state = {
     objective: events[0].payload.objective,
-    lifecycle: 'open' as WorkState,
+    lifecycle: WorkStatus.Open as WorkState,
     links: [] as WorkItemView['relatedWorkItems'][number][],
     linkKeys: new Set<string>(),
   };
@@ -46,10 +47,10 @@ function applyEvent(
       state.objective = event.payload.objective;
       break;
     case WorkEventType.ItemClosed:
-      state.lifecycle = 'closed';
+      state.lifecycle = WorkStatus.Closed;
       break;
     case WorkEventType.ItemCancelled:
-      state.lifecycle = 'cancelled';
+      state.lifecycle = WorkStatus.Cancelled;
       break;
     case WorkEventType.ItemLinked:
       addLink(state, { workItemId: event.payload.to, relation: event.payload.relation });

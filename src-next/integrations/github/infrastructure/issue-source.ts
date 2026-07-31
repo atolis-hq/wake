@@ -1,8 +1,11 @@
+import { EventSourceKind } from '../../../kernel/index.js';
+import { ReviewActorKind } from '../../../activities/index.js';
 import { createEventDraft, EventActorKind } from '../../../kernel/index.js';
 import { BuiltInAdapterId } from '../../contracts/identifiers.js';
 import { integrationStream } from '../../contracts/streams.js';
 import type { GitHubIssuePayload } from '../contracts/payloads.js';
 import { GitHubEventType, type GitHubAdapterEventDraft } from '../contracts/events.js';
+import { UnknownGitHubIdentity } from '../contracts/vocabulary.js';
 
 export function issueObservation(input: {
   readonly repository: string;
@@ -16,7 +19,7 @@ export function issueObservation(input: {
     correlationId: `github:${key}`,
     causationId: `github:${key}:${input.issue.updated_at}`,
     actor: { kind: EventActorKind.Integration, id: 'github' },
-    source: { kind: 'adapter', id: 'github' },
+    source: { kind: EventSourceKind.Adapter, id: 'github' },
     stream: integrationStream(BuiltInAdapterId.GitHub),
     payload: {
       externalKey: key,
@@ -26,8 +29,8 @@ export function issueObservation(input: {
       state: input.issue.state,
       revision: input.issue.updated_at,
       actor: {
-        id: input.issue.user?.login ?? 'unknown',
-        kind: input.issue.user?.type === 'Bot' ? 'bot' : 'human',
+        id: input.issue.user?.login ?? UnknownGitHubIdentity,
+        kind: input.issue.user?.type === 'Bot' ? ReviewActorKind.Bot : ReviewActorKind.Human,
       },
       raw: { number: input.issue.number },
     },

@@ -1,3 +1,10 @@
+import {
+  orchestrationGroupId,
+  signalName,
+  workflowInstanceId,
+} from '../../src-next/orchestration/contracts/identifiers.js';
+import { activityName } from '../../src-next/activities/index.js';
+import { resourceKind, resourceCapability } from '../../src-next/resources/index.js';
 import { expect, it } from 'vitest';
 
 import { activationId, createPullRequestMergeActivity } from '../../src-next/activities/index.js';
@@ -32,7 +39,10 @@ it('keeps an activation requested when authority becomes denied before retry', a
     activity.handler.execute(invocation(work.workItemId, [resource]), executionContext()),
   ).resolves.toEqual({
     kind: 'waiting',
-    data: { intentEventId: 'activation-1:pr.merge-requested', signalKind: 'delivery-result' },
+    data: {
+      intentEventId: 'activation-1:pr.merge-requested',
+      signalKind: signalName('delivery-result'),
+    },
   });
   await world.pullRequests.observe(
     {
@@ -50,7 +60,10 @@ it('keeps an activation requested when authority becomes denied before retry', a
     activity.handler.execute(invocation(work.workItemId, [resource]), executionContext()),
   ).resolves.toEqual({
     kind: 'waiting',
-    data: { intentEventId: 'activation-1:pr.merge-requested', signalKind: 'delivery-result' },
+    data: {
+      intentEventId: 'activation-1:pr.merge-requested',
+      signalKind: signalName('delivery-result'),
+    },
   });
   expect(await world.events('pr.merge-requested')).toHaveLength(1);
   expect(await world.events('pr.merge-denied')).toHaveLength(0);
@@ -62,9 +75,13 @@ async function setupApprovedPullRequest(
 ): Promise<ResourceView> {
   const resource = await world.discoverResource({
     resourceId: resourceId('resource-1'),
-    kind: 'pull-request',
+    kind: resourceKind('pull-request'),
     externalKey: { adapter: 'neutral-test', key: 'pr-1' },
-    capabilities: ['reviewable', 'mergeable', 'revisioned'],
+    capabilities: [
+      resourceCapability('reviewable'),
+      resourceCapability('mergeable'),
+      resourceCapability('revisioned'),
+    ],
   });
   await world.resources.correlate(
     resource.resourceId,
@@ -101,10 +118,10 @@ async function setupApprovedPullRequest(
 function invocation(work: ReturnType<typeof workItemId>, resources: readonly ResourceView[]) {
   return {
     activationId: activationId('activation-1'),
-    activity: 'pr.merge',
+    activity: activityName('pr.merge'),
     workItemId: work,
-    workflowInstanceId: 'workflow-1',
-    orchestrationGroupId: 'group-1',
+    workflowInstanceId: workflowInstanceId('workflow-1'),
+    orchestrationGroupId: orchestrationGroupId('group-1'),
     causationId: 'activation-1',
     input: { target: 'primary' as const, method: 'merge' as const, requireChecks: true },
     resources,

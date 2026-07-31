@@ -1,3 +1,4 @@
+import { PullRequestState } from '../../../activities/index.js';
 import { Octokit } from '@octokit/rest';
 import { createEtagCache, fetchWithEtag } from './etag-cache.js';
 
@@ -88,6 +89,14 @@ export function createGitHubClient(token: string) {
 
 function normalizePullRequestState<Value extends { readonly state: string }>(
   pullRequest: Value,
-): Omit<Value, 'state'> & { readonly state: 'open' | 'closed' } {
-  return { ...pullRequest, state: pullRequest.state === 'closed' ? 'closed' : 'open' };
+): Omit<Value, 'state'> & {
+  readonly state: typeof PullRequestState.Open | typeof PullRequestState.Closed;
+} {
+  return {
+    ...pullRequest,
+    state:
+      pullRequest.state === PullRequestState.Closed
+        ? PullRequestState.Closed
+        : PullRequestState.Open,
+  };
 }

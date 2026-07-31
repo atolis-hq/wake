@@ -1,6 +1,8 @@
+import { WorkflowInstanceKind } from '../contracts/vocabulary.js';
 import type { StartWorkflowInstance } from '../contracts/commands.js';
 import type { ChildCoordinationMetadata, ChildWorkflowRequest } from '../contracts/events.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
+import { workflowInstanceId, type WorkflowInstanceId } from '../contracts/identifiers.js';
 
 export function childMetadata(child: WorkflowInstanceView): ChildCoordinationMetadata {
   if (
@@ -22,7 +24,9 @@ export function childMetadata(child: WorkflowInstanceView): ChildCoordinationMet
   };
 }
 
-export function validateChildProvenance(command: StartWorkflowInstance): 'primary' | 'child' {
+export function validateChildProvenance(
+  command: StartWorkflowInstance,
+): typeof WorkflowInstanceKind.Primary | typeof WorkflowInstanceKind.Child {
   const values = [
     command.parentWorkflowInstanceId,
     command.watchId,
@@ -31,15 +35,17 @@ export function validateChildProvenance(command: StartWorkflowInstance): 'primar
     command.requestId,
   ];
   const provided = values.filter((value) => value !== undefined).length;
-  if (provided === 0) return 'primary';
+  if (provided === 0) return WorkflowInstanceKind.Primary;
   if (provided !== values.length) throw new Error('Complete child provenance must be provided');
   if (command.requestId !== command.workflowInstanceId)
     throw new Error('Child request id must equal its WorkflowInstance id');
-  return 'child';
+  return WorkflowInstanceKind.Child;
 }
 
-export function childRequestId(request: ChildWorkflowRequest): string {
-  return `${request.parentWorkflowInstanceId}:watch:${request.watchId}:trigger:${request.triggerId}`;
+export function childRequestId(request: ChildWorkflowRequest): WorkflowInstanceId {
+  return workflowInstanceId(
+    `${request.parentWorkflowInstanceId}:watch:${request.watchId}:trigger:${request.triggerId}`,
+  );
 }
 
 export function coordinationMetadata(

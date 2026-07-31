@@ -1,3 +1,10 @@
+import {
+  orchestrationGroupId,
+  signalName,
+  workflowInstanceId,
+} from '../../src-next/orchestration/contracts/identifiers.js';
+import { activityName } from '../../src-next/activities/index.js';
+import { resourceKind, resourceCapability } from '../../src-next/resources/index.js';
 import { describe, expect, expectTypeOf, it } from 'vitest';
 
 import {
@@ -16,9 +23,9 @@ it('creates one provider-neutral approval intent for the current primary PR revi
   const resource = resourceId('resource-1');
   await world.discoverResource({
     resourceId: resource,
-    kind: 'pull-request',
+    kind: resourceKind('pull-request'),
     externalKey: { adapter: 'github', key: 'owner/repo#1' },
-    capabilities: ['reviewable', 'revisioned'],
+    capabilities: [resourceCapability('reviewable'), resourceCapability('revisioned')],
   });
   await world.resources.correlate(
     resource,
@@ -43,18 +50,18 @@ it('creates one provider-neutral approval intent for the current primary PR revi
     activity.handler.execute(
       {
         activationId: activationId('activation-1'),
-        activity: 'pr.approve',
+        activity: activityName('pr.approve'),
         workItemId: work.workItemId,
-        workflowInstanceId: 'workflow-1',
-        orchestrationGroupId: 'group-1',
+        workflowInstanceId: workflowInstanceId('workflow-1'),
+        orchestrationGroupId: orchestrationGroupId('group-1'),
         causationId: 'activation-1',
         input: { target: 'primary', body: 'Reviewed' },
         resources: [
           {
             resourceId: resource,
-            kind: 'pull-request',
+            kind: resourceKind('pull-request'),
             externalKey: { adapter: 'github', key: 'owner/repo#1' },
-            capabilities: ['approvable', 'revisioned'],
+            capabilities: [resourceCapability('approvable'), resourceCapability('revisioned')],
           },
         ],
       },
@@ -62,7 +69,10 @@ it('creates one provider-neutral approval intent for the current primary PR revi
     ),
   ).resolves.toEqual({
     kind: 'waiting',
-    data: { intentEventId: 'activation-1:pr.approve-requested', signalKind: 'delivery-result' },
+    data: {
+      intentEventId: 'activation-1:pr.approve-requested',
+      signalKind: signalName('delivery-result'),
+    },
   });
   expect(await world.events('pr.approve-requested')).toEqual([
     expect.objectContaining({
@@ -140,9 +150,13 @@ async function setupApprovablePullRequest(world: TestWorld, work: ReturnType<typ
   const resource = resourceId('resource-1');
   await world.discoverResource({
     resourceId: resource,
-    kind: 'pull-request',
+    kind: resourceKind('pull-request'),
     externalKey: { adapter: 'neutral-test', key: 'pr-1' },
-    capabilities: ['reviewable', 'approvable', 'revisioned'],
+    capabilities: [
+      resourceCapability('reviewable'),
+      resourceCapability('approvable'),
+      resourceCapability('revisioned'),
+    ],
   });
   await world.resources.correlate(resource, work, 'primary', command(world, 'correlate'));
   await world.pullRequests.observe(
@@ -161,18 +175,18 @@ async function setupApprovablePullRequest(world: TestWorld, work: ReturnType<typ
 function invocation(work: ReturnType<typeof workItemId>) {
   return {
     activationId: activationId('activation-1'),
-    activity: 'pr.approve',
+    activity: activityName('pr.approve'),
     workItemId: work,
-    workflowInstanceId: 'workflow-1',
-    orchestrationGroupId: 'group-1',
+    workflowInstanceId: workflowInstanceId('workflow-1'),
+    orchestrationGroupId: orchestrationGroupId('group-1'),
     causationId: 'activation-1',
     input: { target: 'primary' as const, body: 'Reviewed' },
     resources: [
       {
         resourceId: resourceId('resource-1'),
-        kind: 'pull-request',
+        kind: resourceKind('pull-request'),
         externalKey: { adapter: 'neutral-test', key: 'pr-1' },
-        capabilities: ['approvable', 'revisioned'] as const,
+        capabilities: [resourceCapability('approvable'), resourceCapability('revisioned')] as const,
       },
     ],
   };

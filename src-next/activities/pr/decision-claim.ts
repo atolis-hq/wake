@@ -1,3 +1,9 @@
+import { EventSourceKind } from '../../kernel/index.js';
+import {
+  ActivityFailureCode,
+  ActivityOutcomeKind,
+  IntentAppendStatus,
+} from '../contracts/vocabulary.js';
 import { createEventDraft, type EventEnvelope, type EventJournal } from '../../kernel/index.js';
 import {
   ActivityEventType,
@@ -61,7 +67,7 @@ export async function claimDecision<Action extends PullRequestAction>(
     correlationId: proposal.fact.correlationId,
     causationId: proposal.fact.causationId,
     actor: proposal.fact.actor,
-    source: { kind: 'internal', id: 'activities-pr' },
+    source: { kind: EventSourceKind.Internal, id: 'activities-pr' },
     stream,
     payload: {
       action,
@@ -89,8 +95,8 @@ export async function completeDecisionClaim(
   decision: PullRequestDecision,
 ): Promise<PullRequestActivityOutcome> {
   const result = await appendResolved(journal, appender, decision.fact.stream, decision.fact);
-  return result === 'failed'
-    ? { kind: 'failed', data: { reason: 'intent-write-failed' } }
+  return result === IntentAppendStatus.Failed
+    ? { kind: ActivityOutcomeKind.Failed, data: { reason: ActivityFailureCode.IntentWriteFailed } }
     : decision.outcome;
 }
 

@@ -1,3 +1,4 @@
+import { resourceKind, resourceCapability } from '../../src-next/resources/index.js';
 import { describe, expect, it } from 'vitest';
 import {
   createResourceService,
@@ -22,9 +23,13 @@ describe('Resource correlations', () => {
     await service.discover(
       {
         resourceId: resourceId('resource-1'),
-        kind: 'pull-request',
+        kind: resourceKind('pull-request'),
         externalKey: { adapter: 'fake', key: 'repo/pulls/7' },
-        capabilities: ['reviewable', 'mergeable', 'revisioned'],
+        capabilities: [
+          resourceCapability('reviewable'),
+          resourceCapability('mergeable'),
+          resourceCapability('revisioned'),
+        ],
         revision: 'sha-a',
       },
       context('command-1'),
@@ -34,9 +39,13 @@ describe('Resource correlations', () => {
       service.findByExternalKey({ adapter: 'fake', key: 'repo/pulls/7' }),
     ).resolves.toEqual({
       resourceId: 'resource-1',
-      kind: 'pull-request',
+      kind: resourceKind('pull-request'),
       externalKey: { adapter: 'fake', key: 'repo/pulls/7' },
-      capabilities: ['reviewable', 'mergeable', 'revisioned'],
+      capabilities: [
+        resourceCapability('reviewable'),
+        resourceCapability('mergeable'),
+        resourceCapability('revisioned'),
+      ],
       revision: 'sha-a',
     });
   });
@@ -115,9 +124,13 @@ describe('Resource correlations', () => {
 function discovery(resource: ReturnType<typeof resourceId>) {
   return {
     resourceId: resource,
-    kind: 'pull-request',
+    kind: resourceKind('pull-request'),
     externalKey: { adapter: 'fake', key: 'repo/pulls/7' },
-    capabilities: ['reviewable', 'mergeable', 'revisioned'] as const,
+    capabilities: [
+      resourceCapability('reviewable'),
+      resourceCapability('mergeable'),
+      resourceCapability('revisioned'),
+    ] as const,
     revision: 'sha-a',
   };
 }

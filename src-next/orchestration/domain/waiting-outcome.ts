@@ -1,11 +1,18 @@
-import type { ActivityOutcome, WaitingActivityOutcome } from '../../activities/index.js';
+import {
+  ActivityOutcomeKind,
+  type ActivityOutcome,
+  type ActivationId,
+  type WaitingActivityOutcome,
+} from '../../activities/index.js';
+import { ActivityActivationStatus } from '../contracts/vocabulary.js';
 import type { WorkflowOrchestrationEventDraft } from '../contracts/events.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
 import { OrchestrationEventType } from '../contracts/events.js';
 import { stateDraft } from './decision-events.js';
+import { signalName, type SignalName } from '../contracts/identifiers.js';
 
 interface WaitingInput {
-  readonly activationId: string;
+  readonly activationId: ActivationId;
   readonly outcome: ActivityOutcome;
   readonly occurredAt: string;
   readonly causationId: string;
@@ -20,7 +27,7 @@ export function acceptWaitingOutcome(
   const waiting = waitingOutcome(input.outcome);
   if (waiting === null) return { kind: 'ignored', reason: 'waiting outcome lacks expectation' };
   if (
-    state.pendingActivation?.status === 'waiting' &&
+    state.pendingActivation?.status === ActivityActivationStatus.Waiting &&
     state.waitingFor?.intentEventId === waiting.data.intentEventId &&
     state.waitingFor.signalKind === waiting.data.signalKind
   )
@@ -39,8 +46,16 @@ export function acceptWaitingOutcome(
   };
 }
 
-function waitingOutcome(outcome: ActivityOutcome): WaitingActivityOutcome | null {
-  if (outcome.kind !== 'waiting' || typeof outcome.data !== 'object' || outcome.data === null)
+type CompiledWaitingOutcome = WaitingActivityOutcome & {
+  readonly data: WaitingActivityOutcome['data'] & { readonly signalKind: SignalName };
+};
+
+function waitingOutcome(outcome: ActivityOutcome): CompiledWaitingOutcome | null {
+  if (
+    outcome.kind !== ActivityOutcomeKind.Waiting ||
+    typeof outcome.data !== 'object' ||
+    outcome.data === null
+  )
     return null;
   const data = outcome.data;
   if (
@@ -52,8 +67,12 @@ function waitingOutcome(outcome: ActivityOutcome): WaitingActivityOutcome | null
     data.signalKind.length === 0
   )
     return null;
-  return {
-    kind: 'waiting',
-    data: { intentEventId: data.intentEventId, signalKind: data.signalKind },
-  };
+  try {
+    return {
+      kind: ActivityOutcomeKind.Waiting,
+      data: { intentEventId: data.intentEventId, signalKind: signalName(data.signalKind) },
+    };
+  } catch {
+    return null;
+  }
 }

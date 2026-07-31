@@ -1,3 +1,4 @@
+import { EventSourceKind } from '../../../kernel/index.js';
 import type { EventJournal } from '../../../kernel/index.js';
 import { GitHubEventType, type GitHubAdapterEventDraft } from '../contracts/events.js';
 import { BuiltInAdapterId } from '../../contracts/identifiers.js';
@@ -18,7 +19,7 @@ export class PollService {
   async pollOnce(signal: AbortSignal): Promise<void> {
     const drafts = await this.source.poll(signal);
     for (const draft of drafts) {
-      if (draft.source.kind !== 'adapter' || draft.source.id !== 'github') {
+      if (draft.source.kind !== EventSourceKind.Adapter || draft.source.id !== 'github') {
         throw new Error('PollService accepts GitHub adapter evidence only');
       }
       if (!gitHubEventTypes.has(draft.eventType)) {

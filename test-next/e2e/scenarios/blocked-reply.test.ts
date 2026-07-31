@@ -1,3 +1,5 @@
+import { signalName, workflowName } from '../../../src-next/orchestration/contracts/identifiers.js';
+import { activityName } from '../../../src-next/activities/index.js';
 import { z } from 'zod';
 import { expect } from 'vitest';
 import { resourceId } from '../../../src-next/resources/index.js';
@@ -16,9 +18,10 @@ defineScenario(
     const world = new TestWorld();
     let attempts = 0;
     world.registerActivity({
-      name: 'implement',
+      name: activityName('implement'),
       inputSchema: z.object({}).strict(),
       outcomeSchema: z.object({ kind: z.enum(['failed', 'blocked']) }).strict(),
+      outcomeKinds: ['failed', 'blocked'],
       resources: [],
       executionKind: 'deterministic',
       handler: {
@@ -43,17 +46,17 @@ defineScenario(
     const work = await world.createWork({ objective: 'wait for a decision' });
     const workflow = await world.startWorkflow({
       workItemId: work.workItemId,
-      workflowName: 'default',
+      workflowName: workflowName('default'),
     });
     await world.advance(work.workItemId);
     await world.advance(work.workItemId);
     await world.waitForSignal(workflow.workflowInstanceId, {
-      signalKind: 'accepted',
+      signalKind: signalName('accepted'),
       resourceId: resourceId('resource-pr-1'),
       revision: 'abc123',
     });
     const signal = {
-      kind: 'accepted',
+      kind: signalName('accepted'),
       resourceId: resourceId('resource-pr-1'),
       revision: 'abc123',
       actorId: 'owner',

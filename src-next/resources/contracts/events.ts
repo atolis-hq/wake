@@ -7,9 +7,16 @@ import {
   type EventUnion,
 } from '../../kernel/index.js';
 import { workItemId, type WorkItemId } from '../../work/index.js';
-import { resourceId, type ResourceId } from './identifiers.js';
+import {
+  resourceCapability,
+  resourceId,
+  resourceKind,
+  type ResourceId,
+  type ResourceKind,
+} from './identifiers.js';
 import { ResourceStreamKind, type ResourceStreamRef } from './streams.js';
 import type { ExternalResourceKey, ResourceCapability } from './views.js';
+import { ResourceCorrelationRole, type ResourceCorrelationRole as Role } from './vocabulary.js';
 
 export const ResourceEventType = {
   ResourceDiscovered: 'resources.resource-discovered',
@@ -20,7 +27,7 @@ export const ResourceEventType = {
 } as const;
 
 export interface ResourceDiscoveredPayload {
-  readonly kind: string;
+  readonly kind: ResourceKind;
   readonly externalKey: ExternalResourceKey;
   readonly capabilities: readonly ResourceCapability[];
   readonly revision?: string | undefined;
@@ -31,7 +38,7 @@ export interface ResourceEventPayloads {
   readonly [ResourceEventType.ResourceRevisionObserved]: { readonly revision: string };
   readonly [ResourceEventType.WorkCorrelationEstablished]: {
     readonly workItemId: WorkItemId;
-    readonly role: 'primary' | 'secondary';
+    readonly role: Role;
   };
   readonly [ResourceEventType.WorkCorrelationRetracted]: { readonly workItemId: WorkItemId };
   readonly [ResourceEventType.WorkCorrelationConflicted]: {
@@ -62,18 +69,9 @@ const eventSchema = z.discriminatedUnion('eventType', [
     stream: streamSchema,
     payload: z
       .object({
-        kind: z.string(),
+        kind: brandedStringSchema(resourceKind),
         externalKey: z.object({ adapter: z.string(), key: z.string() }).strict(),
-        capabilities: z.array(
-          z.enum([
-            'commentable',
-            'reviewable',
-            'approvable',
-            'mergeable',
-            'revisioned',
-            'editable',
-          ]),
-        ),
+        capabilities: z.array(brandedStringSchema(resourceCapability)),
         revision: z.string().optional(),
       })
       .strict(),
@@ -87,7 +85,10 @@ const eventSchema = z.discriminatedUnion('eventType', [
     eventType: z.literal(ResourceEventType.WorkCorrelationEstablished),
     stream: streamSchema,
     payload: z
-      .object({ workItemId: workItemIdSchema, role: z.enum(['primary', 'secondary']) })
+      .object({
+        workItemId: workItemIdSchema,
+        role: z.enum([ResourceCorrelationRole.Primary, ResourceCorrelationRole.Secondary]),
+      })
       .strict(),
   }),
   eventEnvelopeSchema.extend({

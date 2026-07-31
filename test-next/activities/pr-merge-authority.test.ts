@@ -1,3 +1,6 @@
+import { orchestrationGroupId } from '../../src-next/orchestration/contracts/identifiers.js';
+import { activationId } from '../../src-next/activities/contracts/identifiers.js';
+import { resourceKind, resourceCapability } from '../../src-next/resources/index.js';
 import { describe, expect, it } from 'vitest';
 
 import { createPullRequestMergeAuthorityGate } from '../../src-next/activities/index.js';
@@ -11,9 +14,9 @@ describe('PullRequestService merge authority audit', () => {
     const work = await world.createWork({ objective: 'merge' });
     const resource = await world.discoverResource({
       resourceId: resourceId('resource-1'),
-      kind: 'pull-request',
+      kind: resourceKind('pull-request'),
       externalKey: { adapter: 'github', key: 'owner/repo#1' },
-      capabilities: ['reviewable', 'revisioned'],
+      capabilities: [resourceCapability('reviewable'), resourceCapability('revisioned')],
     });
     await world.resources.correlate(
       resource.resourceId,
@@ -50,9 +53,9 @@ describe('PullRequestService merge authority audit', () => {
     const resource = resourceId('resource-1');
     await world.discoverResource({
       resourceId: resource,
-      kind: 'pull-request',
+      kind: resourceKind('pull-request'),
       externalKey: { adapter: 'github', key: 'owner/repo#1' },
-      capabilities: ['reviewable', 'revisioned'],
+      capabilities: [resourceCapability('reviewable'), resourceCapability('revisioned')],
     });
     await world.resources.correlate(resource, work.workItemId, 'primary', command(world, 'link'));
     await observe(world, resource, 'pending', 'observe-pending');
@@ -70,9 +73,9 @@ describe('PullRequestService merge authority audit', () => {
     );
     const gate = createPullRequestMergeAuthorityGate(world.pullRequests);
     const input = {
-      activationId: 'activation-1',
+      activationId: activationId('activation-1'),
       workItemId: work.workItemId,
-      orchestrationGroupId: 'group-1',
+      orchestrationGroupId: orchestrationGroupId('group-1'),
     };
 
     expect(await gate.evaluate(input, '2026-07-30T12:10:00Z')).toEqual({
@@ -98,9 +101,9 @@ it('reuses a durable authorization after mutable authority becomes failing', asy
   const resource = resourceId('resource-1');
   await world.discoverResource({
     resourceId: resource,
-    kind: 'pull-request',
+    kind: resourceKind('pull-request'),
     externalKey: { adapter: 'github', key: 'owner/repo#1' },
-    capabilities: ['reviewable', 'revisioned'],
+    capabilities: [resourceCapability('reviewable'), resourceCapability('revisioned')],
   });
   await world.resources.correlate(resource, work.workItemId, 'primary', command(world, 'link'));
   await observe(world, resource, 'passing', 'observe-passing');
@@ -118,9 +121,9 @@ it('reuses a durable authorization after mutable authority becomes failing', asy
   );
   const gate = createPullRequestMergeAuthorityGate(world.pullRequests);
   const input = {
-    activationId: 'activation-authorized',
+    activationId: activationId('activation-authorized'),
     workItemId: work.workItemId,
-    orchestrationGroupId: 'group-1',
+    orchestrationGroupId: orchestrationGroupId('group-1'),
   };
 
   expect(await gate.evaluate(input, '2026-07-30T12:10:00Z')).toEqual({

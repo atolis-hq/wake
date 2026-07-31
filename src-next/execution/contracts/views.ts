@@ -1,6 +1,8 @@
+import type { RunStatus } from './vocabulary.js';
+import { WorkspaceMode } from '../../activities/index.js';
 import type { ActivityOutcome } from '../../activities/index.js';
 import type { RunId } from './identifiers.js';
-export type RunTransportStatus = 'started' | 'succeeded' | 'failed' | 'cancelled' | 'ambiguous';
+export type RunTransportStatus = RunStatus;
 export interface RunView {
   readonly runId: RunId;
   readonly activationId: string;
@@ -11,5 +13,8 @@ export interface RunView {
   readonly finishedAt?: string;
   readonly outcome?: ActivityOutcome;
   readonly failure?: { readonly kind: string; readonly message: string };
-  readonly workspace?: { readonly mode: 'read-only' | 'branch'; readonly path: string };
+  readonly workspace?: {
+    readonly mode: typeof WorkspaceMode.ReadOnly | typeof WorkspaceMode.Branch;
+    readonly path: string;
+  };
 }

@@ -1,3 +1,4 @@
+import { RunStatus } from '../contracts/vocabulary.js';
 import { ExecutionEventType, type ExecutionEvent } from '../contracts/events.js';
 import type { RunView } from '../contracts/views.js';
 export function foldRun(events: readonly ExecutionEvent[]): RunView | null {
@@ -8,7 +9,7 @@ export function foldRun(events: readonly ExecutionEvent[]): RunView | null {
     activationId: started.payload.activationId,
     activity: started.payload.activity,
     attempt: started.payload.attempt,
-    status: 'started',
+    status: RunStatus.Started,
     startedAt: started.payload.startedAt,
     ...(started.payload.workspace === undefined ? {} : { workspace: started.payload.workspace }),
   };
@@ -18,14 +19,14 @@ export function foldRun(events: readonly ExecutionEvent[]): RunView | null {
         break;
       case ExecutionEventType.RunSucceeded:
         Object.assign(state, {
-          status: 'succeeded',
+          status: RunStatus.Succeeded,
           finishedAt: event.payload.finishedAt,
           outcome: event.payload.outcome,
         });
         break;
       case ExecutionEventType.RunFailed:
         Object.assign(state, {
-          status: 'failed',
+          status: RunStatus.Failed,
           finishedAt: event.payload.finishedAt,
           failure: event.payload.failure,
         });

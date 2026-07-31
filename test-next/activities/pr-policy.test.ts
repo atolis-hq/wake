@@ -1,3 +1,4 @@
+import { resourceKind, resourceCapability } from '../../src-next/resources/index.js';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -19,9 +20,9 @@ function authorityInput(
       {
         resource: {
           resourceId: resource,
-          kind: 'pull-request',
+          kind: resourceKind('pull-request'),
           externalKey: { adapter: 'github', key: 'owner/repo#1' },
-          capabilities: ['reviewable', 'revisioned'],
+          capabilities: [resourceCapability('reviewable'), resourceCapability('revisioned')],
           revision: 'head-a',
         },
         correlations: [

@@ -1,14 +1,16 @@
+import { resourceCapability } from '../../src-next/resources/index.js';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { ActivityRegistry } from '../../src-next/activities/index.js';
+import { ActivityRegistry, activityName } from '../../src-next/activities/index.js';
 
 const definition = (name = 'implement') => ({
-  name,
+  name: activityName(name),
   inputSchema: z.object({ prompt: z.string().min(1) }),
   outcomeSchema: z.object({ kind: z.enum(['done', 'failed']) }),
+  outcomeKinds: ['done', 'failed'],
   resources: [
     {
-      capability: 'revisioned' as const,
+      capability: resourceCapability('revisioned'),
       cardinality: 'exactly-one' as const,
       role: 'primary' as const,
     },
@@ -40,7 +42,7 @@ describe('ActivityRegistry', () => {
     const registry = new ActivityRegistry();
     registry.register(definition());
     expect(registry.get('implement').resources).toEqual([
-      { capability: 'revisioned', cardinality: 'exactly-one', role: 'primary' },
+      { capability: resourceCapability('revisioned'), cardinality: 'exactly-one', role: 'primary' },
     ]);
   });
 });

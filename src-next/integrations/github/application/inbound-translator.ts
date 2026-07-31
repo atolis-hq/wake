@@ -7,17 +7,24 @@ import {
 } from '../../../kernel/index.js';
 import {
   createPullRequestService,
-  proposeReviewSignal,
+  ReviewDecisionKind,
   type ObservePullRequest,
   type PullRequestService,
 } from '../../../activities/index.js';
 import type { ResourceService } from '../../../resources/index.js';
-import { resourceId, type ResourceId } from '../../../resources/index.js';
+import {
+  BuiltInResourceCapability,
+  BuiltInResourceKind,
+  resourceId,
+  type ResourceId,
+} from '../../../resources/index.js';
 import type { WorkService } from '../../../work/index.js';
 import { workItemId, type WorkItemId } from '../../../work/index.js';
 import type { ExternalWorkObservedPayload, GitHubAdapterEvent } from '../contracts/events.js';
 import { GitHubEventType, selectGitHubAdapterEvent } from '../contracts/events.js';
+import { UnknownGitHubIdentity } from '../contracts/vocabulary.js';
 import { observePullRequest } from './pull-request-translation.js';
+import { translateGitHubReviewCommand } from './review-command-translator.js';
 
 export type InboundCommandCandidate =
   | {
@@ -127,12 +134,19 @@ export class InboundTranslator {
     await this.resources.discover(
       {
         resourceId: resourceIdValue,
-        kind: payload.kind,
+        kind:
+          payload.kind === 'pull-request'
+            ? BuiltInResourceKind.PullRequest
+            : BuiltInResourceKind.Issue,
         externalKey: { adapter: 'github', key: payload.externalKey },
         capabilities:
           payload.kind === 'pull-request'
-            ? ['commentable', 'reviewable', 'revisioned']
-            : ['commentable'],
+            ? [
+                BuiltInResourceCapability.Commentable,
+                BuiltInResourceCapability.Reviewable,
+                BuiltInResourceCapability.Revisioned,
+              ]
+            : [BuiltInResourceCapability.Commentable],
         revision: payload.revision,
       },
       context,
@@ -153,13 +167,12 @@ export class InboundTranslator {
       return;
     const payload = event.payload;
     const resourceIdValue = externalResourceId(payload.externalKey);
-    const proposed = proposeReviewSignal({
-      provider: 'github',
+    const proposed = translateGitHubReviewCommand({
       resourceId: resourceIdValue,
       revision: payload.revision,
       actorId: payload.actor.id,
       actorKind: payload.actor.kind,
-      resourceAuthorId: payload.resourceAuthorId ?? 'unknown',
+      resourceAuthorId: payload.resourceAuthorId ?? UnknownGitHubIdentity,
       authorization: payload.authorization ?? { source: 'none' },
       providerEventId: event.eventId,
       body: payload.body,
@@ -168,7 +181,7 @@ export class InboundTranslator {
     const context = commandContext(event);
     const pullRequests =
       this.pullRequests ?? createPullRequestService(this.journal, this.work, this.resources);
-    if (proposed.kind === 'accepted')
+    if (proposed.kind === ReviewDecisionKind.Accepted)
       await pullRequests.acceptReviewSignal(
         { ...proposed, acceptedEventId: proposed.providerEventId },
         context,

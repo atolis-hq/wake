@@ -1,7 +1,8 @@
+import { WorkspaceMode } from '../../activities/index.js';
 import type { ResourceView } from '../../resources/index.js';
 import type { WorkItemId } from '../../work/index.js';
 export interface WorkspaceRequest {
-  readonly mode: 'read-only' | 'branch';
+  readonly mode: typeof WorkspaceMode.ReadOnly | typeof WorkspaceMode.Branch;
   readonly workItemId: WorkItemId;
   readonly repositoryResource: ResourceView;
 }

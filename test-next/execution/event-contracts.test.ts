@@ -1,3 +1,5 @@
+import { activationId } from '../../src-next/activities/contracts/identifiers.js';
+import { activityName } from '../../src-next/activities/index.js';
 import { describe, expect, it } from 'vitest';
 import {
   decodeExecutionEvent,
@@ -13,8 +15,8 @@ const samples = [
   [
     ExecutionEventType.RunStarted,
     {
-      activationId: 'activation-1',
-      activity: 'implement',
+      activationId: activationId('activation-1'),
+      activity: activityName('implement'),
       attempt: 1,
       startedAt: '2026-07-31T12:00:00.000Z',
       workspace: { mode: 'branch', path: 'C:\\repo' },
@@ -47,7 +49,7 @@ describe('Execution event contract', () => {
     expect(() => decodeExecutionEvent(eventEnvelope('execution.unknown', {}, stream))).toThrow();
     expect(() =>
       decodeExecutionEvent(
-        eventEnvelope(ExecutionEventType.RunStarted, { activationId: 'x' }, stream),
+        eventEnvelope(ExecutionEventType.RunStarted, { activationId: activationId('x') }, stream),
       ),
     ).toThrow();
     expect(() =>

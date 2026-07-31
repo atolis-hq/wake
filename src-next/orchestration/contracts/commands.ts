@@ -1,10 +1,11 @@
-import type { ActivityOutcome } from '../../activities/index.js';
+import type { ActivationId, ActivityOutcome } from '../../activities/index.js';
 import type { WorkItemId } from '../../work/index.js';
+import type { OrchestrationGroupId, WorkflowInstanceId, WorkflowName } from './identifiers.js';
 interface StartWorkflowBase {
-  readonly workflowInstanceId: string;
+  readonly workflowInstanceId: WorkflowInstanceId;
   readonly workItemId: WorkItemId;
-  readonly workflowName: string;
-  readonly orchestrationGroupId: string;
+  readonly workflowName: WorkflowName;
+  readonly orchestrationGroupId: OrchestrationGroupId;
 }
 type PrimaryWorkflowStart = {
   readonly parentWorkflowInstanceId?: never;
@@ -14,7 +15,7 @@ type PrimaryWorkflowStart = {
   readonly requestId?: never;
 };
 type ChildWorkflowStart = {
-  readonly parentWorkflowInstanceId: string;
+  readonly parentWorkflowInstanceId: WorkflowInstanceId;
   readonly watchId: string;
   readonly triggerId: string;
   readonly causalCycleId: string;
@@ -22,7 +23,7 @@ type ChildWorkflowStart = {
 };
 export type StartWorkflowInstance = StartWorkflowBase & (PrimaryWorkflowStart | ChildWorkflowStart);
 export interface AcceptActivityOutcomeCommand {
-  readonly workflowInstanceId: string;
-  readonly activationId: string;
+  readonly workflowInstanceId: WorkflowInstanceId;
+  readonly activationId: ActivationId;
   readonly outcome: ActivityOutcome;
 }

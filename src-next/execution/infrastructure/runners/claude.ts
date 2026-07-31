@@ -1,3 +1,5 @@
+import { ExternalExecutionKind } from '../../../activities/index.js';
+import { RunStatus } from '../../contracts/vocabulary.js';
 import type {
   Runner,
   RunnerExecution,
@@ -23,17 +25,21 @@ export function cliRunner(
     async start(request, signal): Promise<RunnerExecution> {
       const process = runProcess(command, args(request), request.workspacePath, signal);
       return {
-        identity: { kind: 'process', id: request.runId, startedAt: new Date().toISOString() },
+        identity: {
+          kind: ExternalExecutionKind.Process,
+          id: request.runId,
+          startedAt: new Date().toISOString(),
+        },
         result: process.result.then((value): RunnerResult =>
           value.exitCode === 0
             ? {
-                transport: 'succeeded',
+                transport: RunStatus.Succeeded,
                 output: value.stdout,
                 runner: name,
                 ...(request.model === undefined ? {} : { model: request.model }),
               }
             : {
-                transport: 'failed',
+                transport: RunStatus.Failed,
                 output: value.stdout,
                 runner: name,
                 failure: {

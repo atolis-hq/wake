@@ -3,10 +3,9 @@ import { describe, expect, it } from 'vitest';
 import { proposeReviewSignal } from '../../src-next/activities/index.js';
 
 describe('proposeReviewSignal', () => {
-  it('recognises an accepted command only when it occupies its own trimmed line', () => {
+  it('retains a provider-neutral canonical review decision', () => {
     expect(
       proposeReviewSignal({
-        provider: 'github',
         resourceId: 'resource-github-owner-repo-1' as never,
         revision: 'a',
         actorId: 'human',
@@ -14,24 +13,17 @@ describe('proposeReviewSignal', () => {
         resourceAuthorId: 'author',
         authorization: { source: 'configured-reviewer', reviewerId: 'human' },
         providerEventId: 'event-1',
-        body: 'Please review\n /accepted \nthanks',
+        kind: 'accepted',
       }),
-    ).toMatchObject({
+    ).toEqual({
+      resourceId: 'resource-github-owner-repo-1',
+      revision: 'a',
+      actorId: 'human',
+      actorKind: 'human',
+      resourceAuthorId: 'author',
       kind: 'accepted',
-      authorization: { source: 'configured-reviewer' },
+      authorization: { source: 'configured-reviewer', reviewerId: 'human' },
+      providerEventId: 'event-1',
     });
-    expect(
-      proposeReviewSignal({
-        provider: 'github',
-        resourceId: 'resource-github-owner-repo-1' as never,
-        revision: 'a',
-        actorId: 'human',
-        actorKind: 'human',
-        resourceAuthorId: 'author',
-        authorization: { source: 'none' },
-        providerEventId: 'event-2',
-        body: 'I think this is /accepted',
-      }),
-    ).toBeNull();
   });
 });

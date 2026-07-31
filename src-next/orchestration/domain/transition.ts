@@ -3,6 +3,8 @@ import type { CompiledOutcomeRoute, CompiledWorkflow } from '../contracts/config
 import type { WorkflowOrchestrationEventDraft } from '../contracts/events.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
 import { OrchestrationEventType } from '../contracts/events.js';
+import { TransitionTargetKind } from '../contracts/vocabulary.js';
+import { signalName } from '../contracts/identifiers.js';
 import { activation, nextOrdinal, stateDraft } from './decision-events.js';
 
 interface TransitionInput {
@@ -18,19 +20,19 @@ export function finishRoute(
   input: TransitionInput,
   route: CompiledOutcomeRoute,
 ): void {
-  if (route.then === 'done') {
+  if (route.target.kind === TransitionTargetKind.Complete) {
     events.push(
       stateDraft(state, input, OrchestrationEventType.InstanceCompleted, {}, events.length + 1),
     );
     return;
   }
-  if (route.then === 'await-human') {
+  if (route.target.kind === TransitionTargetKind.AwaitSignal) {
     events.push(
       stateDraft(
         state,
         input,
         OrchestrationEventType.SignalWaitStarted,
-        { signalKind: input.outcome.kind },
+        { signalKind: signalName(input.outcome.kind) },
         events.length + 1,
       ),
     );
@@ -60,13 +62,13 @@ export function finishRoute(
       ),
     );
   }
-  const stage = definition.stages[route.then]!;
+  const stage = definition.stages[route.target.stage]!;
   events.push(
     stateDraft(
       state,
       input,
       OrchestrationEventType.StageEntered,
-      { stage: route.then },
+      { stage: route.target.stage },
       events.length + 1,
     ),
     stateDraft(

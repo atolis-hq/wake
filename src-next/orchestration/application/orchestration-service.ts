@@ -1,4 +1,7 @@
-import type { ActivityOutcome } from '../../activities/index.js';
+import { PullRequestState } from '../../activities/index.js';
+import { WorkflowInstanceKind, WorkflowStatus } from '../contracts/vocabulary.js';
+import { EventSourceKind } from '../../kernel/index.js';
+import type { ActivationId, ActivityOutcome } from '../../activities/index.js';
 import { createEventDraft, type CommandContext, type EventJournal } from '../../kernel/index.js';
 import type { WorkItemId, WorkService } from '../../work/index.js';
 import type { CompiledWorkflow } from '../contracts/config.js';
@@ -28,7 +31,14 @@ import {
   validateChildProvenance,
 } from '../domain/child-coordination.js';
 import { coordinationDraft } from '../domain/coordination-events.js';
-import { workflowInstanceId as parseWorkflowInstanceId } from '../contracts/identifiers.js';
+import {
+  commandName,
+  signalName,
+  workflowInstanceId as parseWorkflowInstanceId,
+  type SignalName,
+  type WorkflowInstanceId,
+  type WorkflowName,
+} from '../contracts/identifiers.js';
 import { childOrchestrationGroupStream, workflowInstanceStream } from '../contracts/streams.js';
 import { CoordinationClaims } from './coordination-claims.js';
 import { GroupBudgetRecorder } from './group-budget-recorder.js';
@@ -51,12 +61,13 @@ export class OrchestrationService {
 
   async start(command: StartWorkflowInstance, context: CommandContext) {
     const item = await this.work.get(command.workItemId);
-    if (item === null || item.state !== 'open') throw new Error('WorkItem must exist and be open');
+    if (item === null || item.state !== PullRequestState.Open)
+      throw new Error('WorkItem must exist and be open');
     const definition = this.definition(command.workflowName);
     const existing = await this.repository.load(command.workflowInstanceId);
     if (existing.view !== null) return existing.view;
     const startKind = validateChildProvenance(command);
-    if (startKind === 'primary') {
+    if (startKind === WorkflowInstanceKind.Primary) {
       await this.claims.claimPrimary(command.workItemId, command.workflowInstanceId, context);
     } else {
       const parent = await this.loadRequired(command.parentWorkflowInstanceId!);
@@ -141,8 +152,8 @@ export class OrchestrationService {
 
   async acceptOutcome(
     command: {
-      workflowInstanceId: string;
-      activationId: string;
+      workflowInstanceId: WorkflowInstanceId;
+      activationId: ActivationId;
       outcome: ActivityOutcome;
     },
     context: CommandContext,
@@ -159,7 +170,7 @@ export class OrchestrationService {
   }
 
   async waitForSignal(
-    workflowInstanceId: string,
+    workflowInstanceId: WorkflowInstanceId,
     expectation: SignalExpectation,
     context: CommandContext,
   ) {
@@ -174,7 +185,7 @@ export class OrchestrationService {
   }
 
   async acceptSignal(
-    workflowInstanceId: string,
+    workflowInstanceId: WorkflowInstanceId,
     signal: OrchestrationSignal,
     context: CommandContext,
   ) {
@@ -189,12 +200,14 @@ export class OrchestrationService {
   }
 
   async requestSupplementalActivity(
-    workflowInstanceId: string,
+    workflowInstanceId: WorkflowInstanceId,
     request: SupplementalActivityRequest,
     context: CommandContext,
   ) {
     const loaded = await this.loadRequired(workflowInstanceId);
-    const configured = this.definition(loaded.view.workflowName).commands[request.command];
+    const configured = this.definition(loaded.view.workflowName).commands[
+      commandName(request.command)
+    ];
     if (configured === undefined)
       throw new Error(`Unknown supplemental command: ${request.command}`);
     if (!configured.allowedActors.includes(context.actor.kind))
@@ -214,8 +227,8 @@ export class OrchestrationService {
   }
 
   async markActivationStarted(
-    workflowInstanceId: string,
-    activationId: string,
+    workflowInstanceId: WorkflowInstanceId,
+    activationId: ActivationId,
     context: CommandContext,
   ) {
     const loaded = await this.repository.load(workflowInstanceId);
@@ -227,7 +240,7 @@ export class OrchestrationService {
       correlationId: context.correlationId,
       causationId: context.commandId,
       actor: context.actor,
-      source: { kind: 'internal' as const, id: 'orchestration-service' },
+      source: { kind: EventSourceKind.Internal, id: 'orchestration-service' },
       stream: workflowInstanceStream(parseWorkflowInstanceId(workflowInstanceId)),
       payload: { activationId },
     });
@@ -235,7 +248,7 @@ export class OrchestrationService {
     return (await this.repository.load(workflowInstanceId)).view;
   }
 
-  async get(id: string) {
+  async get(id: WorkflowInstanceId) {
     return (await this.repository.load(id)).view;
   }
 
@@ -248,17 +261,17 @@ export class OrchestrationService {
       .filter(
         (view) =>
           view !== null &&
-          view.status === 'active' &&
+          view.status === WorkflowStatus.Active &&
           view.pendingActivation !== undefined &&
           (workItemId === undefined || view.workItemId === workItemId),
       )
       .map((view) => ({ workflow: view!, activation: view!.pendingActivation! }));
   }
 
-  async listWaiting(signalKind?: string) {
+  async listWaiting(signalKind?: SignalName) {
     return (await this.repository.list()).filter(
       (view) =>
-        view?.status === 'waiting' &&
+        view?.status === WorkflowStatus.Waiting &&
         (signalKind === undefined || view.waitingFor?.signalKind === signalKind),
     );
   }
@@ -269,7 +282,7 @@ export class OrchestrationService {
 
   async reconcileChildCompletions(context: CommandContext): Promise<void> {
     for (const child of await this.listAll()) {
-      if (child.parentWorkflowInstanceId !== undefined && child.status === 'completed')
+      if (child.parentWorkflowInstanceId !== undefined && child.status === WorkflowStatus.Completed)
         await this.completeChild(child, {
           ...context,
           commandId: `${context.commandId}:child:${child.workflowInstanceId}`,
@@ -278,7 +291,7 @@ export class OrchestrationService {
   }
 
   async isCausalRepeat(
-    workflowInstanceId: string,
+    workflowInstanceId: WorkflowInstanceId,
     triggerId: string,
     causalCycleId: string | undefined,
     requestId?: string,
@@ -308,20 +321,20 @@ export class OrchestrationService {
     });
   }
 
-  private definition(name: string): CompiledWorkflow {
+  private definition(name: WorkflowName): CompiledWorkflow {
     const definition = this.definitions[name];
     if (definition === undefined) throw new Error(`Unknown workflow: ${name}`);
     return definition;
   }
 
-  private async loadRequired(id: string) {
+  private async loadRequired(id: WorkflowInstanceId) {
     const loaded = await this.repository.load(id);
     if (loaded.view === null) throw new Error('WorkflowInstance does not exist');
     return { sequence: loaded.sequence, view: loaded.view };
   }
 
   private async appendDecision(
-    id: string,
+    id: WorkflowInstanceId,
     sequence: number,
     decision: ReturnType<typeof acceptActivityOutcome>,
   ): Promise<void> {
@@ -338,7 +351,7 @@ export class OrchestrationService {
     const parent = await this.loadRequired(metadata.parentWorkflowInstanceId);
     if (parent.view.acceptedChildCompletionIds.includes(child.workflowInstanceId)) return;
     const signal: ChildCompletionSignal = {
-      kind: OrchestrationEventType.ChildCompleted,
+      kind: signalName(OrchestrationEventType.ChildCompleted),
       actorId: 'orchestration',
       actorDecision: { authorized: true, evidenceId: child.workflowInstanceId },
       providerEventId: child.workflowInstanceId,

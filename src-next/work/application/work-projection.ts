@@ -1,3 +1,4 @@
+import { WorkStatus } from '../contracts/vocabulary.js';
 import type { ProjectionDefinition } from '../../kernel/index.js';
 import { selectWorkEvent, WorkEventType } from '../contracts/events.js';
 import type { WorkItemView } from '../contracts/views.js';
@@ -16,15 +17,15 @@ export const workProjection: ProjectionDefinition<WorkItemView | null> = {
         return {
           workItemId: owned.stream.id,
           objective: owned.payload.objective,
-          state: 'open',
+          state: WorkStatus.Open,
           relatedWorkItems: [],
         };
       case WorkEventType.ObjectiveRevised:
         return previous === null ? previous : { ...previous, objective: owned.payload.objective };
       case WorkEventType.ItemClosed:
-        return previous === null ? previous : { ...previous, state: 'closed' };
+        return previous === null ? previous : { ...previous, state: WorkStatus.Closed };
       case WorkEventType.ItemCancelled:
-        return previous === null ? previous : { ...previous, state: 'cancelled' };
+        return previous === null ? previous : { ...previous, state: WorkStatus.Cancelled };
       case WorkEventType.ItemLinked: {
         if (previous === null) return previous;
         const link = {

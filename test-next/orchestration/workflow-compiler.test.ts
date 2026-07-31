@@ -1,15 +1,16 @@
 import { z } from 'zod';
 import { describe, expect, it } from 'vitest';
-import { ActivityRegistry } from '../../src-next/activities/index.js';
-import { compileWorkflow } from '../../src-next/orchestration/index.js';
+import { ActivityRegistry, activityName } from '../../src-next/activities/index.js';
+import { compileWorkflow, stageName } from '../../src-next/orchestration/index.js';
 
 function registry(): ActivityRegistry {
   const result = new ActivityRegistry();
   for (const name of ['implement', 'review']) {
     result.register({
-      name,
+      name: activityName(name),
       inputSchema: z.object({ prompt: z.string() }).strict(),
       outcomeSchema: z.object({ kind: z.string() }).strict(),
+      outcomeKinds: ['done'],
       resources: [],
       executionKind: 'deterministic',
       handler: {
@@ -41,8 +42,8 @@ describe('compileWorkflow', () => {
       registry(),
     );
     expect(compiled.entry).toBe('implement');
-    expect(compiled.stages.implement?.on.done?.id).toBe('default:implement:done');
-    expect(compiled.stages.implement?.with).toEqual({ prompt: 'go' });
+    expect(compiled.stages[stageName('implement')]?.on.done?.id).toBe('default:implement:done');
+    expect(compiled.stages[stageName('implement')]?.with).toEqual({ prompt: 'go' });
   });
 
   it.each([

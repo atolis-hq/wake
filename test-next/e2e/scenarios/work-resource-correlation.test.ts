@@ -1,3 +1,4 @@
+import { resourceKind } from '../../../src-next/resources/index.js';
 import { expect } from 'vitest';
 import { correlationId } from '../../../src-next/kernel/index.js';
 import { InMemoryEventJournal } from '../../../src-next/persistence/index.js';
@@ -36,7 +37,7 @@ defineScenario(
     await resources.discover(
       {
         resourceId: resource,
-        kind: 'issue',
+        kind: resourceKind('issue'),
         externalKey: { adapter: 'fake', key: 'repo/issues/7' },
         capabilities: [],
       },

@@ -1,17 +1,25 @@
 import type { StageConfig } from './config.js';
+import type { ActivationId, ActivityName } from '../../activities/index.js';
+import type {
+  CommandName,
+  OrchestrationGroupId,
+  SignalName,
+  WorkflowInstanceId,
+  WorkflowName,
+} from './identifiers.js';
 
 export interface ChildCoordinationMetadata {
-  readonly parentWorkflowInstanceId: string;
+  readonly parentWorkflowInstanceId: WorkflowInstanceId;
   readonly watchId: string;
   readonly triggerId: string;
-  readonly orchestrationGroupId: string;
+  readonly orchestrationGroupId: OrchestrationGroupId;
   readonly causalCycleId: string;
   readonly requestId: string;
-  readonly childWorkflowInstanceId: string;
+  readonly childWorkflowInstanceId: WorkflowInstanceId;
 }
 
 export interface ChildRequestedPayload extends ChildCoordinationMetadata {
-  readonly workflowName: string;
+  readonly workflowName: WorkflowName;
 }
 
 export type ChildStartedPayload = ChildCoordinationMetadata;
@@ -24,9 +32,9 @@ export interface GroupBudgetExhaustedPayload extends ChildCoordinationMetadata {
 }
 
 export interface ActivityRequestedPayload {
-  readonly activationId: string;
+  readonly activationId: ActivationId;
   readonly ordinal: number;
-  readonly activity: string;
+  readonly activity: ActivityName;
   readonly input: unknown;
   readonly execution?: StageConfig['execution'] | undefined;
   readonly followOnIndex?: number | undefined;
@@ -34,13 +42,13 @@ export interface ActivityRequestedPayload {
 }
 
 export interface SignalExpectation {
-  readonly signalKind: string;
+  readonly signalKind: SignalName;
   readonly resourceId?: string | undefined;
   readonly revision?: string | undefined;
 }
 
 export interface OrchestrationSignal {
-  readonly kind: string;
+  readonly kind: SignalName;
   readonly resourceId?: string | undefined;
   readonly revision?: string | undefined;
   readonly actorId: string;
@@ -52,14 +60,14 @@ export interface OrchestrationSignal {
 }
 
 export interface SupplementalActivityRequest {
-  readonly command: string;
+  readonly command: CommandName;
 }
 
 export interface ChildWorkflowRequest {
-  readonly parentWorkflowInstanceId: string;
+  readonly parentWorkflowInstanceId: WorkflowInstanceId;
   readonly watchId: string;
   readonly triggerId: string;
-  readonly workflowName: string;
+  readonly workflowName: WorkflowName;
   readonly causalCycleId: string;
-  readonly requestId: string;
+  readonly requestId: WorkflowInstanceId;
 }

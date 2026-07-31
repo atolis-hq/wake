@@ -8,13 +8,18 @@ export const EventActorKind = defineClosedVocabulary({
   Integration: 'integration',
 } as const);
 
+export const EventSourceKind = defineClosedVocabulary({
+  Internal: 'internal',
+  Adapter: 'adapter',
+} as const);
+
 export interface EventActor {
   readonly kind: ValueOf<typeof EventActorKind>;
   readonly id: string;
 }
 
 export interface EventSource {
-  readonly kind: 'internal' | 'adapter';
+  readonly kind: ValueOf<typeof EventSourceKind>;
   readonly id: string;
 }
 

@@ -1,3 +1,4 @@
+import { EventSourceKind } from '../../kernel/index.js';
 import { createEventDraft, type CommandContext } from '../../kernel/index.js';
 import { resourceStream, type ResourceStreamRef } from '../../resources/index.js';
 import type { WorkItemStreamRef } from '../../work/index.js';
@@ -179,6 +180,6 @@ function metadata<Type extends ActivityEventDraft['eventType']>(
     correlationId: context.correlationId,
     causationId: context.commandId,
     actor: context.actor,
-    source: { kind: 'internal' as const, id: 'activities-pr' },
+    source: { kind: EventSourceKind.Internal, id: 'activities-pr' },
   };
 }

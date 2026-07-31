@@ -1,5 +1,10 @@
+import { EventActorKind, EventSourceKind } from '../../kernel/index.js';
 import { createEventDraft } from '../../kernel/index.js';
-import { workflowInstanceId } from '../contracts/identifiers.js';
+import {
+  workflowInstanceId,
+  type WorkflowInstanceId,
+  type WorkflowName,
+} from '../contracts/identifiers.js';
 import { workflowInstanceStream } from '../contracts/streams.js';
 import type {
   ChildCoordinationEventPayloads,
@@ -8,15 +13,15 @@ import type {
 import { OrchestrationEventType } from '../contracts/events.js';
 
 interface CoordinationDraftContext {
-  readonly workflowInstanceId: string;
+  readonly workflowInstanceId: WorkflowInstanceId;
   readonly eventIdPrefix: string;
   readonly occurredAt: string;
   readonly correlationId: string;
   readonly causationId: string;
 }
 
-const actor = { kind: 'system' as const, id: 'orchestration' };
-const source = { kind: 'internal' as const, id: 'orchestration' };
+const actor = { kind: EventActorKind.System, id: 'orchestration' };
+const source = { kind: EventSourceKind.Internal, id: 'orchestration' };
 
 export function coordinationDraft<Type extends keyof ChildCoordinationEventPayloads>(
   context: CoordinationDraftContext,
@@ -40,7 +45,7 @@ export function coordinationDraft<Type extends keyof ChildCoordinationEventPaylo
 export function childStartDrafts(
   context: CoordinationDraftContext,
   metadata: ChildCoordinationMetadata,
-  workflowName: string,
+  workflowName: WorkflowName,
 ) {
   return [
     coordinationDraft(

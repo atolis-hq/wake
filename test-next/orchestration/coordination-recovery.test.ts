@@ -1,3 +1,10 @@
+import {
+  orchestrationGroupId,
+  signalName,
+  workflowInstanceId,
+  workflowName,
+} from '../../src-next/orchestration/contracts/identifiers.js';
+import { activityName } from '../../src-next/activities/index.js';
 import { z } from 'zod';
 import { expect, it } from 'vitest';
 import { ActivityRegistry } from '../../src-next/activities/index.js';
@@ -48,9 +55,10 @@ async function fixture() {
     );
   const activities = new ActivityRegistry();
   activities.register({
-    name: 'parent-work',
+    name: activityName('parent-work'),
     inputSchema: z.object({}).strict(),
     outcomeSchema: z.object({ kind: z.literal('blocked') }).strict(),
+    outcomeKinds: ['blocked'],
     resources: [],
     executionKind: 'deterministic',
     handler: {
@@ -60,9 +68,10 @@ async function fixture() {
     },
   });
   activities.register({
-    name: 'child-work',
+    name: activityName('child-work'),
     inputSchema: z.object({}).strict(),
     outcomeSchema: z.object({ kind: z.literal('done') }).strict(),
+    outcomeKinds: ['done'],
     resources: [],
     executionKind: 'deterministic',
     handler: {
@@ -112,17 +121,17 @@ async function fixture() {
 
 function startPrimary(
   service: OrchestrationService,
-  workflowInstanceId: string,
+  id: string,
   workItem: WorkItemId = workItemId('work-1'),
 ) {
   return service.start(
     {
-      workflowInstanceId,
+      workflowInstanceId: workflowInstanceId(id),
       workItemId: workItem,
-      workflowName: 'parent',
-      orchestrationGroupId: workflowInstanceId,
+      workflowName: workflowName('parent'),
+      orchestrationGroupId: orchestrationGroupId(id),
     },
-    command(`start-${workflowInstanceId}`),
+    command(`start-${id}`),
   );
 }
 
@@ -139,7 +148,7 @@ it('binds durable primary ownership to the first exact WorkflowInstance across a
   await expect(startPrimary(restarted, 'primary-b')).rejects.toThrow(/owned by primary-a/);
   expect(await restarted.getPrimaryWorkflowInstanceId(workItemId('work-1'))).toBe('primary-a');
   await expect(startPrimary(restarted, 'primary-a')).resolves.toMatchObject({
-    workflowInstanceId: 'primary-a',
+    workflowInstanceId: workflowInstanceId('primary-a'),
   });
   const roots = (await journal.readAll(0)).filter(
     (event) =>
@@ -147,7 +156,7 @@ it('binds durable primary ownership to the first exact WorkflowInstance across a
       !(event.payload as Record<string, unknown>).parentWorkflowInstanceId,
   );
   expect(roots.map((event) => event.stream.id)).toEqual(['primary-a']);
-  expect(await service.get('primary-b')).toBeNull();
+  expect(await service.get(workflowInstanceId('primary-b'))).toBeNull();
 });
 
 it('retries the same durable child claim after a crash before checkpointing the trigger', async () => {
@@ -181,7 +190,7 @@ it('retries the same durable child claim after a crash before checkpointing the 
   const first = createWatchReactor(crashingService, journal, checkpoints);
   await expect(first.runOnce()).rejects.toThrow('injected start crash');
   expect(await checkpoints.load('reactor:orchestration.watch')).toBe(before);
-  expect(await service.get(childId)).toBeNull();
+  expect(await service.get(workflowInstanceId(childId))).toBeNull();
 
   const restartedService = createOrchestrationService(journal, work, definitions);
   const restarted = createWatchReactor(restartedService, journal, checkpoints);
@@ -189,7 +198,7 @@ it('retries the same durable child claim after a crash before checkpointing the 
   expect(await checkpoints.load('reactor:orchestration.watch')).toBeGreaterThanOrEqual(
     trigger!.globalPosition,
   );
-  expect((await service.get(childId))?.workflowInstanceId).toBe(childId);
+  expect((await service.get(workflowInstanceId(childId)))?.workflowInstanceId).toBe(childId);
   expect(
     (await journal.readAll(0)).filter(
       (event) => event.eventType === 'orchestration.child-requested',
@@ -201,9 +210,11 @@ it('retries the same durable child claim after a crash before checkpointing the 
         parentWorkflowInstanceId: parent.workflowInstanceId,
         watchId: 'review',
         triggerId: 'distinct-trigger',
-        workflowName: 'child',
+        workflowName: workflowName('child'),
         causalCycleId: 'distinct-cycle',
-        requestId: `${parent.workflowInstanceId}:watch:review:trigger:distinct-trigger`,
+        requestId: workflowInstanceId(
+          `${parent.workflowInstanceId}:watch:review:trigger:distinct-trigger`,
+        ),
         maxPerGroup: 1,
       },
       command('distinct-request'),
@@ -261,7 +272,7 @@ it('reconciles an unconsumed child completion during ordinary restarted advancem
     );
     await service.waitForSignal(
       waiting.workflowInstanceId,
-      { signalKind: 'orchestration.child-completed' },
+      { signalKind: signalName('orchestration.child-completed') },
       command(`wait-child-${index}`),
     );
   }
@@ -272,9 +283,11 @@ it('reconciles an unconsumed child completion during ordinary restarted advancem
         parentWorkflowInstanceId: parent.workflowInstanceId,
         watchId: 'review',
         triggerId: `trigger-${index}`,
-        workflowName: 'child',
+        workflowName: workflowName('child'),
         causalCycleId: `cycle-${index}`,
-        requestId: `${parent.workflowInstanceId}:watch:review:trigger:trigger-${index}`,
+        requestId: workflowInstanceId(
+          `${parent.workflowInstanceId}:watch:review:trigger:trigger-${index}`,
+        ),
         maxPerGroup: 1,
       },
       command(`request-child-${index}`),

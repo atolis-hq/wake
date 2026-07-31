@@ -1,9 +1,11 @@
+import { ActivityOutcomeKind } from '../contracts/vocabulary.js';
 import { z } from 'zod';
 
 import type { ActivityDefinition } from '../contracts/activity.js';
+import { ActivityExecutionKind, BuiltInActivityName } from '../contracts/vocabulary.js';
 import { ActivityEventType } from '../contracts/events.js';
 import type { EventJournal } from '../../kernel/index.js';
-import { resourceStream } from '../../resources/index.js';
+import { BuiltInResourceCapability, resourceStream } from '../../resources/index.js';
 import { workItemStream } from '../../work/index.js';
 import { approveDenied, deliveryIntentRequested } from './event-drafts.js';
 import {
@@ -12,7 +14,7 @@ import {
   type IntentAppender,
 } from './intent.js';
 import type { PullRequestService } from './application.js';
-import type { PullRequestApproveInput } from './contracts.js';
+import type { PullRequestActivityOutcome, PullRequestApproveInput } from './contracts.js';
 import {
   pullRequestOutcomeSchema,
   pullRequestTargetSchema,
@@ -41,13 +43,23 @@ export function createPullRequestApproveActivity(
   journal: EventJournal,
   pullRequests: PullRequestService,
   appender: IntentAppender = createJournalIntentAppender(journal),
-): ActivityDefinition<PullRequestApproveInput> {
+): ActivityDefinition<
+  typeof BuiltInActivityName.PullRequestApprove,
+  PullRequestApproveInput,
+  PullRequestActivityOutcome
+> {
   return {
-    name: 'pr.approve',
+    name: BuiltInActivityName.PullRequestApprove,
     inputSchema,
     outcomeSchema: pullRequestOutcomeSchema,
+    outcomeKinds: [
+      ActivityOutcomeKind.Waiting,
+      ActivityOutcomeKind.Done,
+      ActivityOutcomeKind.Blocked,
+      ActivityOutcomeKind.Failed,
+    ],
     resources: [],
-    executionKind: 'deterministic',
+    executionKind: ActivityExecutionKind.Deterministic,
     handler: {
       async execute(invocation, context) {
         const command = activityCommandContext(
@@ -63,7 +75,7 @@ export function createPullRequestApproveActivity(
           authority,
           invocation.workItemId,
           invocation.input.target,
-          'approvable',
+          BuiltInResourceCapability.Approvable,
         );
         if (!resource.allowed) {
           const stream = workItemStream(invocation.workItemId);
@@ -73,7 +85,7 @@ export function createPullRequestApproveActivity(
           });
           return decide({
             decisionKind: 'denied',
-            outcome: { kind: 'blocked', data: { reason: resource.reason } },
+            outcome: { kind: ActivityOutcomeKind.Blocked, data: { reason: resource.reason } },
             fact: denial,
           });
         }
@@ -90,7 +102,7 @@ export function createPullRequestApproveActivity(
           });
           return decide({
             decisionKind: 'denied',
-            outcome: { kind: 'blocked', data: { reason: decision.reason } },
+            outcome: { kind: ActivityOutcomeKind.Blocked, data: { reason: decision.reason } },
             fact: denial,
           });
         }
@@ -108,7 +120,7 @@ export function createPullRequestApproveActivity(
         return decide({
           decisionKind: 'requested',
           outcome: {
-            kind: 'waiting',
+            kind: ActivityOutcomeKind.Waiting,
             data: { intentEventId: intent.eventId, signalKind: 'delivery-result' },
           },
           fact: intent,

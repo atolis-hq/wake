@@ -1,3 +1,5 @@
+import { workflowName } from '../../../src-next/orchestration/contracts/identifiers.js';
+import { resourceCapability, resourceKind } from '../../../src-next/resources/index.js';
 import {
   createPullRequestApproveActivity,
   createPullRequestMergeActivity,
@@ -38,8 +40,12 @@ export async function setupApprovalScenario(
   if (scenario === 'missing') return { workItemId: work.workItemId };
   const primaryCapabilities: readonly ResourceCapability[] =
     scenario === 'capability-missing'
-      ? ['reviewable', 'revisioned']
-      : ['reviewable', 'approvable', 'revisioned'];
+      ? [resourceCapability('reviewable'), resourceCapability('revisioned')]
+      : [
+          resourceCapability('reviewable'),
+          resourceCapability('approvable'),
+          resourceCapability('revisioned'),
+        ];
   const primary = await addObservedPullRequest(world, {
     work: work.workItemId,
     suffix: 'primary',
@@ -47,16 +53,20 @@ export async function setupApprovalScenario(
   });
   if (scenario === 'capability-missing' || scenario === 'safe') {
     await addResource(world, work.workItemId, 'secondary', 'secondary', [
-      'reviewable',
-      'approvable',
-      'revisioned',
+      resourceCapability('reviewable'),
+      resourceCapability('approvable'),
+      resourceCapability('revisioned'),
     ]);
   }
   if (scenario === 'ambiguous') {
     await addObservedPullRequest(world, {
       work: work.workItemId,
       suffix: 'other-primary',
-      capabilities: ['reviewable', 'approvable', 'revisioned'],
+      capabilities: [
+        resourceCapability('reviewable'),
+        resourceCapability('approvable'),
+        resourceCapability('revisioned'),
+      ],
     });
   }
   if (scenario === 'conflict') await recordCorrelationConflict(world, primary);
@@ -74,8 +84,12 @@ export async function setupMergeScenario(
   if (scenario === 'missing') return { workItemId: work.workItemId };
   const primaryCapabilities: readonly ResourceCapability[] =
     scenario === 'capability-missing'
-      ? ['reviewable', 'revisioned']
-      : ['reviewable', 'mergeable', 'revisioned'];
+      ? [resourceCapability('reviewable'), resourceCapability('revisioned')]
+      : [
+          resourceCapability('reviewable'),
+          resourceCapability('mergeable'),
+          resourceCapability('revisioned'),
+        ];
   const primary = await addObservedPullRequest(world, {
     work: work.workItemId,
     suffix: 'primary',
@@ -85,16 +99,20 @@ export async function setupMergeScenario(
   });
   if (scenario === 'capability-missing' || scenario === 'safe') {
     await addResource(world, work.workItemId, 'secondary', 'secondary', [
-      'reviewable',
-      'mergeable',
-      'revisioned',
+      resourceCapability('reviewable'),
+      resourceCapability('mergeable'),
+      resourceCapability('revisioned'),
     ]);
   }
   if (scenario === 'ambiguous') {
     const other = await addObservedPullRequest(world, {
       work: work.workItemId,
       suffix: 'other-primary',
-      capabilities: ['reviewable', 'mergeable', 'revisioned'],
+      capabilities: [
+        resourceCapability('reviewable'),
+        resourceCapability('mergeable'),
+        resourceCapability('revisioned'),
+      ],
     });
     await acceptReview(world, other, 'reviewer-2', true);
   }
@@ -131,7 +149,10 @@ export async function executeApproval(world: TestWorld, work: WorkItemId) {
       },
     },
   });
-  const workflow = await world.startWorkflow({ workItemId: work, workflowName: 'approve' });
+  const workflow = await world.startWorkflow({
+    workItemId: work,
+    workflowName: workflowName('approve'),
+  });
   await world.advance(work);
   return workflow.workflowInstanceId;
 }
@@ -155,7 +176,10 @@ export async function executeMerge(
       },
     },
   });
-  const workflow = await world.startWorkflow({ workItemId: work, workflowName: 'merge' });
+  const workflow = await world.startWorkflow({
+    workItemId: work,
+    workflowName: workflowName('merge'),
+  });
   await world.advance(work);
   return workflow.workflowInstanceId;
 }
@@ -201,7 +225,7 @@ async function addResource(
   const resource = resourceId(`resource-${suffix}`);
   await world.discoverResource({
     resourceId: resource,
-    kind: 'pull-request',
+    kind: resourceKind('pull-request'),
     externalKey: { adapter: 'neutral-test', key: `pr-${suffix}` },
     capabilities,
   });

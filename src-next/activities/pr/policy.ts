@@ -1,3 +1,5 @@
+import { ActivityResourceRole } from '../contracts/vocabulary.js';
+import { PullRequestCheckState, PullRequestDenialCode, PullRequestState } from './vocabulary.js';
 import type {
   AcceptedReviewSignalView,
   PullRequestAuthorityDecision,
@@ -12,17 +14,17 @@ import { ActivityEventType } from '../contracts/events.js';
 export function decidePullRequestAuthority(
   input: PullRequestAuthorityInput,
   options: PullRequestAuthorityOptions = {
-    target: 'primary',
+    target: ActivityResourceRole.Primary,
     requireAcceptedReview: true,
     requireChecks: true,
   },
 ): PullRequestAuthorityDecision {
-  if (input.work === null) return denied('missing-resource');
+  if (input.work === null) return denied(PullRequestDenialCode.MissingResource);
   const resource = selectResource(input, input.work.workItemId, options.target);
   if (isDenial(resource)) return resource;
   const pullRequest = selectPullRequest(input, resource, input.work.workItemId);
   if (isDenial(pullRequest)) return pullRequest;
-  if (pullRequest.state !== 'open') return denied('closed');
+  if (pullRequest.state !== PullRequestState.Open) return denied(PullRequestState.Closed);
   if (options.requireAcceptedReview) {
     const review = reviewAuthority(pullRequest, input.acceptedSignals);
     if (review !== null) return review;
@@ -49,7 +51,9 @@ function hasPrimaryCorrelationConflict(
   resource: PullRequestResourceView,
   workItemId: string,
 ): boolean {
-  const primary = resource.correlations.filter((correlation) => correlation.role === 'primary');
+  const primary = resource.correlations.filter(
+    (correlation) => correlation.role === ActivityResourceRole.Primary,
+  );
   return (
     resource.resource.primaryCorrelationConflict !== undefined ||
     primary.length !== 1 ||
@@ -65,20 +69,21 @@ function selectResource(
   const resources = input.resources.filter(
     (entry) =>
       isPrimaryPullRequest(entry, workItemId) &&
-      (target === 'primary' || entry.resource.resourceId === target.resourceId),
+      (target === ActivityResourceRole.Primary || entry.resource.resourceId === target.resourceId),
   );
-  if (resources.length === 0) return denied('missing-resource');
-  if (resources.length !== 1) return denied('ambiguous-resource');
+  if (resources.length === 0) return denied(PullRequestDenialCode.MissingResource);
+  if (resources.length !== 1) return denied(PullRequestDenialCode.AmbiguousResource);
   const resource = resources[0]!;
   return hasPrimaryCorrelationConflict(resource, workItemId)
-    ? denied('correlation-conflict')
+    ? denied(PullRequestDenialCode.CorrelationConflict)
     : resource;
 }
 
 function isPrimaryPullRequest(resource: PullRequestResourceView, workItemId: string): boolean {
   if (resource.resource.kind !== 'pull-request') return false;
   return resource.correlations.some(
-    (correlation) => correlation.role === 'primary' && correlation.workItemId === workItemId,
+    (correlation) =>
+      correlation.role === ActivityResourceRole.Primary && correlation.workItemId === workItemId,
   );
 }
 
@@ -90,8 +95,10 @@ function selectPullRequest(
   const pullRequests = input.pullRequests.filter(
     (view) => view.resourceId === resource.resource.resourceId && view.workItemId === workItemId,
   );
-  if (pullRequests.length === 0) return denied('missing-resource');
-  return pullRequests.length === 1 ? pullRequests[0]! : denied('ambiguous-resource');
+  if (pullRequests.length === 0) return denied(PullRequestDenialCode.MissingResource);
+  return pullRequests.length === 1
+    ? pullRequests[0]!
+    : denied(PullRequestDenialCode.AmbiguousResource);
 }
 
 function reviewAuthority(
@@ -100,11 +107,12 @@ function reviewAuthority(
 ): Denial | null {
   const accepted = pullRequest.acceptedReview;
   if (accepted === undefined || accepted.revision !== pullRequest.headRevision) {
-    if (hasCurrentUntrustedSignal(pullRequest, signals)) return denied('untrusted-actor');
-    return denied('stale-approval');
+    if (hasCurrentUntrustedSignal(pullRequest, signals))
+      return denied(PullRequestDenialCode.UntrustedActor);
+    return denied(PullRequestDenialCode.StaleApproval);
   }
   const signal = signals.find((candidate) => matchesAcceptedReview(candidate, pullRequest));
-  return signal?.trusted === true ? null : denied('untrusted-actor');
+  return signal?.trusted === true ? null : denied(PullRequestDenialCode.UntrustedActor);
 }
 
 function hasCurrentUntrustedSignal(
@@ -134,9 +142,14 @@ function matchesAcceptedReview(
 }
 
 function checkAuthority(pullRequest: PullRequestView): Denial | null {
-  if (pullRequest.checks === 'unknown' || pullRequest.checks === 'pending')
-    return denied('checks-pending');
-  return pullRequest.checks === 'failing' ? denied('checks-failing') : null;
+  if (
+    pullRequest.checks === PullRequestCheckState.Unknown ||
+    pullRequest.checks === PullRequestCheckState.Pending
+  )
+    return denied(PullRequestDenialCode.ChecksPending);
+  return pullRequest.checks === PullRequestCheckState.Failing
+    ? denied(PullRequestDenialCode.ChecksFailing)
+    : null;
 }
 
 type Denial = Extract<PullRequestAuthorityDecision, { readonly allowed: false }>;

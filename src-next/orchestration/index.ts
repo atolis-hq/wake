@@ -4,6 +4,7 @@ export * from './contracts/events.js';
 export * from './contracts/identifiers.js';
 export * from './contracts/streams.js';
 export * from './contracts/views.js';
+export * from './contracts/vocabulary.js';
 export * from './application/orchestration-repository.js';
 export * from './application/orchestration-projection.js';
 export * from './application/orchestration-service.js';

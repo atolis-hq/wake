@@ -1,3 +1,5 @@
+import { workflowName } from '../../../src-next/orchestration/contracts/identifiers.js';
+import { resourceKind, resourceCapability } from '../../../src-next/resources/index.js';
 import { expect, it } from 'vitest';
 
 import {
@@ -46,9 +48,9 @@ it('E2E-PR-002 denies a merge after an accepted review becomes stale', async () 
   await world.resources.discover(
     {
       resourceId: resource,
-      kind: 'pull-request',
+      kind: resourceKind('pull-request'),
       externalKey: { adapter: 'github', key: 'owner/repo#1' },
-      capabilities: ['reviewable', 'revisioned'],
+      capabilities: [resourceCapability('reviewable'), resourceCapability('revisioned')],
     },
     { ...context, commandId: 'resource' },
   );
@@ -102,7 +104,7 @@ it('E2E-PR-002 denies a merge after an accepted review becomes stale', async () 
       },
     },
   });
-  await world.startWorkflow({ workItemId: work.workItemId, workflowName: 'merge' });
+  await world.startWorkflow({ workItemId: work.workItemId, workflowName: workflowName('merge') });
   await world.advance(work.workItemId);
   await world.advance(work.workItemId);
 
@@ -129,7 +131,7 @@ function authorityInput(
       {
         resource: {
           resourceId: pullRequest.resourceId,
-          kind: 'pull-request',
+          kind: resourceKind('pull-request'),
           externalKey: { adapter: 'github', key: 'owner/repo#1' },
           capabilities: [],
         },

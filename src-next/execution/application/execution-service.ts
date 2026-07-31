@@ -1,7 +1,14 @@
+import { ActivityResourceCardinality, WorkspaceMode } from '../../activities/index.js';
+import { RunStatus } from '../contracts/vocabulary.js';
+import { EventActorKind, EventSourceKind } from '../../kernel/index.js';
 import {
-  activationId,
+  activityName,
+  activityOrchestrationGroupId,
+  activityWorkflowInstanceId,
   type ActivityRegistry,
   type ActivityExecutionContext,
+  type ActivationId,
+  type ActivityName,
 } from '../../activities/index.js';
 import {
   createEventDraft,
@@ -9,7 +16,7 @@ import {
   type EventJournal,
   type IdGenerator,
 } from '../../kernel/index.js';
-import type { ResourceView } from '../../resources/index.js';
+import { BuiltInResourceKind, type ResourceView } from '../../resources/index.js';
 import type { WorkItemId } from '../../work/index.js';
 import type { ExecutionConfig } from '../contracts/config.js';
 import { ExecutionEventType, type ExecutionEventPayloads } from '../contracts/events.js';
@@ -20,17 +27,20 @@ import { failureFrom } from '../domain/run-result.js';
 import { RunRepository } from './run-repository.js';
 
 interface Activation {
-  readonly activationId: string;
+  readonly activationId: ActivationId;
   readonly ordinal: number;
-  readonly activity: string;
+  readonly activity: ActivityName;
   readonly input: unknown;
   readonly execution:
     | {
-        readonly workspace?: 'none' | 'read-only' | 'branch' | undefined;
+        readonly workspace?:
+          | typeof WorkspaceMode.None
+          | typeof WorkspaceMode.ReadOnly
+          | typeof WorkspaceMode.Branch
+          | undefined;
         readonly tier?: string | undefined;
       }
     | undefined;
-  readonly status: 'pending' | 'running' | 'completed';
 }
 interface AttemptContext {
   readonly workItemId: WorkItemId;
@@ -52,20 +62,20 @@ export function createExecutionService(
   const repository = new RunRepository(journal);
   return {
     async attempt(activation: Activation, context: AttemptContext) {
-      const definition = activities.get(activation.activity);
+      const definition = activities.get(activityName(activation.activity));
       const input = activities.validateInput(activation.activity, activation.input);
       validateResources(definition.resources, context.resources);
       const tier = activation.execution?.tier ?? config.defaultTier;
       if (config.tiers[tier] === undefined) throw new Error(`Unknown execution tier: ${tier}`);
       const prior = await repository.list(activation.activationId);
-      const completed = prior.find((run) => run.status === 'succeeded');
+      const completed = prior.find((run) => run.status === RunStatus.Succeeded);
       if (completed !== undefined) return completed;
       const currentRunId = runId(dependencies.ids.next(ExecutionStreamKind.Run));
       const startedAt = dependencies.clock.now().toISOString();
       let lease: WorkspaceLease | undefined;
       try {
         lease = await acquireWorkspace(
-          activation.execution?.workspace ?? 'none',
+          activation.execution?.workspace ?? WorkspaceMode.None,
           context.workItemId,
           context.resources,
           dependencies.workspaces,
@@ -87,10 +97,12 @@ export function createExecutionService(
             },
           }),
         ]);
-        const outcome = activities.validateOutcome(
-          activation.activity,
-          await executeActivity(definition, activation, context, input, startedAt),
-        );
+        const outcome = await executeActivity(activities, definition, {
+          activation,
+          context,
+          input,
+          occurredAt: startedAt,
+        });
         const finishedAt = dependencies.clock.now().toISOString();
         await repository.append(currentRunId, 1, [
           event({
@@ -128,24 +140,29 @@ export function createExecutionService(
   };
 }
 async function executeActivity(
+  activities: ActivityRegistry,
   definition: ReturnType<ActivityRegistry['get']>,
-  activation: Activation,
-  context: AttemptContext,
-  input: unknown,
-  occurredAt: string,
+  request: {
+    readonly activation: Activation;
+    readonly context: AttemptContext;
+    readonly input: unknown;
+    readonly occurredAt: string;
+  },
 ) {
+  const { activation, context, input, occurredAt } = request;
   const executionContext: ActivityExecutionContext = {
     signal: new AbortController().signal,
     occurredAt,
     async reportExternalExecution() {},
   };
-  return definition.handler.execute(
+  return activities.execute(
+    definition,
     {
-      activationId: activationId(activation.activationId),
+      activationId: activation.activationId,
       activity: activation.activity,
       workItemId: context.workItemId,
-      workflowInstanceId: context.workflowInstanceId,
-      orchestrationGroupId: context.orchestrationGroupId,
+      workflowInstanceId: activityWorkflowInstanceId(context.workflowInstanceId),
+      orchestrationGroupId: activityOrchestrationGroupId(context.orchestrationGroupId),
       causationId: activation.activationId,
       input,
       resources: context.resources,
@@ -154,14 +171,16 @@ async function executeActivity(
   );
 }
 async function acquireWorkspace(
-  mode: 'none' | 'read-only' | 'branch',
+  mode: typeof WorkspaceMode.None | typeof WorkspaceMode.ReadOnly | typeof WorkspaceMode.Branch,
   workItemId: WorkItemId,
   resources: readonly ResourceView[],
   provider?: WorkspaceProvider,
 ): Promise<WorkspaceLease | undefined> {
-  if (mode === 'none') return undefined;
+  if (mode === WorkspaceMode.None) return undefined;
   if (provider === undefined) throw new Error('Workspace provider is required');
-  const repositoryResource = resources.find((resource) => resource.kind === 'repository');
+  const repositoryResource = resources.find(
+    (resource) => resource.kind === BuiltInResourceKind.Repository,
+  );
   if (repositoryResource === undefined) throw new Error('Repository Resource is required');
   return provider.acquire({ mode, workItemId, repositoryResource });
 }
@@ -180,8 +199,8 @@ function event<Type extends keyof ExecutionEventPayloads>(input: {
     occurredAt: input.occurredAt,
     correlationId: input.correlationId,
     causationId: input.causationId,
-    actor: { kind: 'system', id: 'execution' },
-    source: { kind: 'internal', id: 'execution' },
+    actor: { kind: EventActorKind.System, id: 'execution' },
+    source: { kind: EventSourceKind.Internal, id: 'execution' },
     stream: runStream(input.runId),
     payload: input.payload,
   });
@@ -194,11 +213,11 @@ function validateResources(
     const count = resources.filter((resource) =>
       resource.capabilities.includes(requirement.capability as never),
     ).length;
-    if (requirement.cardinality === 'exactly-one' && count !== 1)
+    if (requirement.cardinality === ActivityResourceCardinality.ExactlyOne && count !== 1)
       throw new Error(`Activity requires exactly one ${requirement.capability} Resource`);
-    if (requirement.cardinality === 'one-or-more' && count < 1)
+    if (requirement.cardinality === ActivityResourceCardinality.OneOrMore && count < 1)
       throw new Error(`Activity requires ${requirement.capability} Resources`);
-    if (requirement.cardinality === 'zero-or-one' && count > 1)
+    if (requirement.cardinality === ActivityResourceCardinality.ZeroOrOne && count > 1)
       throw new Error(`Activity allows at most one ${requirement.capability} Resource`);
   }
 }

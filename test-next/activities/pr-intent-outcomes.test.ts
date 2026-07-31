@@ -1,3 +1,10 @@
+import {
+  orchestrationGroupId,
+  signalName,
+  workflowInstanceId,
+} from '../../src-next/orchestration/contracts/identifiers.js';
+import { activityName } from '../../src-next/activities/index.js';
+import { resourceKind, resourceCapability } from '../../src-next/resources/index.js';
 import { expect, it } from 'vitest';
 
 import { activationId, createPullRequestMergeActivity } from '../../src-next/activities/index.js';
@@ -70,7 +77,10 @@ it('queries by event id before trusting a genuinely uncertain requested append',
 
   await expect(activity.handler.execute(invocation(work.workItemId), context())).resolves.toEqual({
     kind: 'waiting',
-    data: { intentEventId: 'activation-1:pr.merge-requested', signalKind: 'delivery-result' },
+    data: {
+      intentEventId: 'activation-1:pr.merge-requested',
+      signalKind: signalName('delivery-result'),
+    },
   });
   expect(reconciliationReads).toBeGreaterThan(0);
   expect(await world.events('pr.merge-requested')).toHaveLength(1);
@@ -109,9 +119,13 @@ async function setupApprovedPullRequest(
   const resource = resourceId('resource-1');
   await world.discoverResource({
     resourceId: resource,
-    kind: 'pull-request',
+    kind: resourceKind('pull-request'),
     externalKey: { adapter: 'neutral-test', key: 'pr-1' },
-    capabilities: ['reviewable', 'mergeable', 'revisioned'],
+    capabilities: [
+      resourceCapability('reviewable'),
+      resourceCapability('mergeable'),
+      resourceCapability('revisioned'),
+    ],
   });
   await world.resources.correlate(resource, work, 'primary', command(world, 'correlate'));
   await world.pullRequests.observe(
@@ -142,18 +156,18 @@ async function setupApprovedPullRequest(
 function invocation(work: ReturnType<typeof workItemId>) {
   return {
     activationId: activationId('activation-1'),
-    activity: 'pr.merge',
+    activity: activityName('pr.merge'),
     workItemId: work,
-    workflowInstanceId: 'workflow-1',
-    orchestrationGroupId: 'group-1',
+    workflowInstanceId: workflowInstanceId('workflow-1'),
+    orchestrationGroupId: orchestrationGroupId('group-1'),
     causationId: 'activation-1',
     input: { target: 'primary' as const, method: 'merge' as const, requireChecks: true },
     resources: [
       {
         resourceId: resourceId('resource-1'),
-        kind: 'pull-request',
+        kind: resourceKind('pull-request'),
         externalKey: { adapter: 'neutral-test', key: 'pr-1' },
-        capabilities: ['mergeable', 'revisioned'] as const,
+        capabilities: [resourceCapability('mergeable'), resourceCapability('revisioned')] as const,
       },
     ],
   };

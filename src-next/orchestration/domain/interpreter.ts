@@ -1,4 +1,6 @@
-import type { ActivityOutcome } from '../../activities/index.js';
+import { WorkflowStatus } from '../contracts/vocabulary.js';
+import { ActivityOutcomeKind, RetrySafety } from '../../activities/index.js';
+import type { ActivationId, ActivityName, ActivityOutcome } from '../../activities/index.js';
 import type { WorkItemId } from '../../work/index.js';
 import type { CompiledOutcomeRoute, CompiledWorkflow } from '../contracts/config.js';
 import type {
@@ -14,15 +16,20 @@ import { activation, nextOrdinal, startDraft, stateDraft } from './decision-even
 import { childStartDrafts } from './coordination-events.js';
 import { finishRoute } from './transition.js';
 import { acceptWaitingOutcome } from './waiting-outcome.js';
+import {
+  stageName,
+  type OrchestrationGroupId,
+  type WorkflowInstanceId,
+} from '../contracts/identifiers.js';
 
 export type OrchestrationDecision =
   | { readonly kind: 'append'; readonly events: readonly WorkflowOrchestrationEventDraft[] }
   | { readonly kind: 'ignored'; readonly reason: string };
 
 interface StartInstanceBase {
-  readonly workflowInstanceId: string;
+  readonly workflowInstanceId: WorkflowInstanceId;
   readonly workItemId: WorkItemId;
-  readonly orchestrationGroupId: string;
+  readonly orchestrationGroupId: OrchestrationGroupId;
   readonly definition: CompiledWorkflow;
   readonly occurredAt: string;
   readonly correlationId: string;
@@ -36,7 +43,7 @@ type PrimaryInstanceStart = {
   readonly requestId?: never;
 };
 type ChildInstanceStart = {
-  readonly parentWorkflowInstanceId: string;
+  readonly parentWorkflowInstanceId: WorkflowInstanceId;
   readonly watchId: string;
   readonly triggerId: string;
   readonly causalCycleId: string;
@@ -50,7 +57,7 @@ export interface DecisionContext {
 }
 
 export interface AcceptActivityOutcome extends DecisionContext {
-  readonly activationId: string;
+  readonly activationId: ActivationId;
   readonly outcome: ActivityOutcome;
 }
 
@@ -59,7 +66,7 @@ export interface AcceptSignal extends DecisionContext {
 }
 
 export interface QueueSupplementalActivity extends DecisionContext {
-  readonly activity: string;
+  readonly activity: ActivityName;
   readonly input: unknown;
   readonly requestedBy: string;
 }
@@ -136,7 +143,7 @@ export function acceptActivityOutcome(
   if (!isPendingOutcome(state, input)) {
     return { kind: 'ignored', reason: 'outcome is not for the pending activation' };
   }
-  if (input.outcome.kind === 'waiting') return acceptWaitingOutcome(state, input);
+  if (input.outcome.kind === ActivityOutcomeKind.Waiting) return acceptWaitingOutcome(state, input);
   const pending = state.pendingActivation!;
 
   const events: WorkflowOrchestrationEventDraft[] = [
@@ -154,11 +161,11 @@ export function acceptActivityOutcome(
     return { kind: 'append', events };
   }
 
-  const route = definition.stages[state.currentStage]?.on[input.outcome.kind];
+  const route = definition.stages[stageName(state.currentStage)]?.on[input.outcome.kind];
   if (route === undefined)
     return { kind: 'ignored', reason: `unconfigured outcome ${input.outcome.kind}` };
 
-  if (input.outcome.kind !== 'done') {
+  if (input.outcome.kind !== ActivityOutcomeKind.Done) {
     if (mayRetry(route, state, input.outcome)) {
       requestRetry(events, definition, state, input);
     } else {
@@ -208,7 +215,7 @@ export function waitForSignal(
   expectation: SignalExpectation,
   input: DecisionContext,
 ): OrchestrationDecision {
-  if (state.status !== 'waiting' && state.status !== 'blocked')
+  if (state.status !== WorkflowStatus.Waiting && state.status !== WorkflowStatus.Blocked)
     return { kind: 'ignored', reason: 'WorkflowInstance is not waiting or blocked' };
   if (expectation.signalKind.trim().length === 0)
     return { kind: 'ignored', reason: 'signal kind must not be empty' };
@@ -227,7 +234,7 @@ export function acceptSignal(
   if (state.acceptedSignalIds.includes(signal.providerEventId))
     return { kind: 'ignored', reason: 'provider signal was already accepted' };
   const expected = state.waitingFor;
-  if (state.status !== 'waiting' || expected === undefined)
+  if (state.status !== WorkflowStatus.Waiting || expected === undefined)
     return { kind: 'ignored', reason: 'WorkflowInstance is not waiting for a signal' };
   if (
     signal.kind !== expected.signalKind ||
@@ -246,7 +253,7 @@ export function acceptSignal(
   if (signal.providerEventId.trim().length === 0)
     return { kind: 'ignored', reason: 'signal lacks provider event identity' };
 
-  const stage = definition.stages[state.currentStage]!;
+  const stage = definition.stages[stageName(state.currentStage)]!;
   return {
     kind: 'append',
     events: [
@@ -269,7 +276,7 @@ export function requestSupplementalActivity(
   request: Omit<QueueSupplementalActivity, keyof DecisionContext>,
   input: DecisionContext,
 ): OrchestrationDecision {
-  if (state.status !== 'active' || state.pendingActivation === undefined)
+  if (state.status !== WorkflowStatus.Active || state.pendingActivation === undefined)
     return { kind: 'ignored', reason: 'supplemental commands require an active WorkflowInstance' };
   return {
     kind: 'append',
@@ -303,7 +310,7 @@ function requiresReconciliation(outcome: ActivityOutcome): boolean {
   if (typeof outcome.data !== 'object' || outcome.data === null) return false;
   if (!('retrySafety' in outcome.data)) return false;
   const retrySafety = outcome.data.retrySafety;
-  return retrySafety === 'requires-reconciliation' || retrySafety === 'REQUIRES_RECONCILIATION';
+  return retrySafety === RetrySafety.RequiresReconciliation;
 }
 
 function requestRetry(
@@ -314,7 +321,7 @@ function requestRetry(
 ): void {
   const retryKey = `${state.currentStage}:${input.outcome.kind}`;
   const count = (state.retryCounts[retryKey] ?? 0) + 1;
-  const stage = definition.stages[state.currentStage]!;
+  const stage = definition.stages[stageName(state.currentStage)]!;
   events.push(
     stateDraft(
       state,
@@ -341,7 +348,7 @@ function finishSupplemental(
   state: WorkflowInstanceView,
   input: AcceptActivityOutcome,
 ): void {
-  if (input.outcome.kind !== 'done') {
+  if (input.outcome.kind !== ActivityOutcomeKind.Done) {
     events.push(
       stateDraft(
         state,
@@ -357,7 +364,7 @@ function finishSupplemental(
     requestNextSupplemental(events, state, input);
     return;
   }
-  const stage = definition.stages[state.currentStage]!;
+  const stage = definition.stages[stageName(state.currentStage)]!;
   events.push(
     stateDraft(
       state,

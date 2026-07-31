@@ -1,3 +1,5 @@
+import { WorkStatus } from '../contracts/vocabulary.js';
+import { EventSourceKind } from '../../kernel/index.js';
 import { createEventDraft, type CommandContext, type EventJournal } from '../../kernel/index.js';
 import type { CreateWorkItem, LinkWorkItems, ReviseWorkObjective } from '../contracts/commands.js';
 import { WorkEventType, type WorkEventDraft, type WorkEventPayloads } from '../contracts/events.js';
@@ -27,7 +29,7 @@ export function createWorkService(journal: EventJournal): WorkService {
     const loaded = await repository.load(workItemId);
     if (!allowMissing && loaded.view === null)
       throw new Error(`WorkItem ${workItemId} does not exist`);
-    if (loaded.view !== null && loaded.view.state !== 'open') {
+    if (loaded.view !== null && loaded.view.state !== WorkStatus.Open) {
       throw new Error(`WorkItem ${workItemId} is ${loaded.view.state}`);
     }
     await repository.append(workItemId, loaded.sequence, [draft]);
@@ -97,7 +99,7 @@ function workDraft<Type extends keyof WorkEventPayloads>(
     correlationId: context.correlationId,
     causationId: context.commandId,
     actor: context.actor,
-    source: { kind: 'internal', id: 'work-service' },
+    source: { kind: EventSourceKind.Internal, id: 'work-service' },
     stream: workItemStream(workItemId),
     payload,
   });

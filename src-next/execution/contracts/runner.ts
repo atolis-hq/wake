@@ -1,3 +1,5 @@
+import type { FinishedRunStatus } from './vocabulary.js';
+import type { ExternalExecutionKind } from '../../activities/index.js';
 export interface RunnerRequest {
   readonly runId: string;
   readonly prompt: string;
@@ -8,7 +10,7 @@ export interface RunnerRequest {
 }
 
 export interface RunnerResult {
-  readonly transport: 'succeeded' | 'failed' | 'cancelled' | 'ambiguous';
+  readonly transport: FinishedRunStatus;
   readonly output: string;
   readonly runner: string;
   readonly model?: string;
@@ -25,7 +27,7 @@ export interface RunnerResult {
 
 export interface RunnerExecution {
   readonly identity?: {
-    readonly kind: 'process' | 'remote-session';
+    readonly kind: ExternalExecutionKind;
     readonly id: string;
     readonly startedAt: string;
   };

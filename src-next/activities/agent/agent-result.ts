@@ -1,3 +1,4 @@
+import { ActivityFailureCode, ActivityOutcomeKind } from '../contracts/vocabulary.js';
 import type { ActivityOutcome } from '../contracts/activity.js';
 export function translateAgentResult(value: unknown): ActivityOutcome {
   if (
@@ -6,14 +7,19 @@ export function translateAgentResult(value: unknown): ActivityOutcome {
     !('status' in value) ||
     typeof value.status !== 'string'
   )
-    return { kind: 'failed', data: { reason: 'invalid-agent-result' } };
+    return {
+      kind: ActivityOutcomeKind.Failed,
+      data: { reason: ActivityFailureCode.InvalidAgentResult },
+    };
   const kind = (
-    { DONE: 'done', REJECTED: 'rejected', BLOCKED: 'blocked', FAILED: 'failed' } as Record<
-      string,
-      string
-    >
+    {
+      DONE: ActivityOutcomeKind.Done,
+      REJECTED: ActivityOutcomeKind.Rejected,
+      BLOCKED: ActivityOutcomeKind.Blocked,
+      FAILED: ActivityOutcomeKind.Failed,
+    } as Record<string, string>
   )[value.status];
   return kind === undefined
-    ? { kind: 'failed', data: { reason: 'invalid-agent-result' } }
+    ? { kind: ActivityOutcomeKind.Failed, data: { reason: ActivityFailureCode.InvalidAgentResult } }
     : { kind, data: value };
 }

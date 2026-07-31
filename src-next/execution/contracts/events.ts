@@ -1,3 +1,4 @@
+import { WorkspaceMode } from '../../activities/index.js';
 import { z } from 'zod';
 import type { ActivityOutcome } from '../../activities/index.js';
 import {
@@ -22,7 +23,12 @@ export interface RunStartedPayload {
   readonly activity: string;
   readonly attempt: number;
   readonly startedAt: string;
-  readonly workspace?: { readonly mode: 'read-only' | 'branch'; readonly path: string } | undefined;
+  readonly workspace?:
+    | {
+        readonly mode: typeof WorkspaceMode.ReadOnly | typeof WorkspaceMode.Branch;
+        readonly path: string;
+      }
+    | undefined;
 }
 
 export interface ExecutionEventPayloads {
@@ -57,7 +63,10 @@ const eventSchema = z.discriminatedUnion('eventType', [
         attempt: z.number().int().positive(),
         startedAt: offsetIsoTimestampSchema,
         workspace: z
-          .object({ mode: z.enum(['read-only', 'branch']), path: z.string().min(1) })
+          .object({
+            mode: z.enum([WorkspaceMode.ReadOnly, WorkspaceMode.Branch]),
+            path: z.string().min(1),
+          })
           .strict()
           .optional(),
       })

@@ -1,3 +1,10 @@
+import {
+  ProviderPermission,
+  PullRequestCheckState,
+  PullRequestState,
+  ReviewActorKind,
+  ReviewerAuthorizationSource,
+} from '../../../activities/index.js';
 import { z } from 'zod';
 import {
   eventEnvelopeSchema,
@@ -19,12 +26,21 @@ export interface ExternalWorkObservedPayload {
   readonly kind: 'issue' | 'pull-request';
   readonly title: string;
   readonly body: string;
-  readonly state: 'open' | 'closed' | 'merged';
+  readonly state:
+    typeof PullRequestState.Open | typeof PullRequestState.Closed | typeof PullRequestState.Merged;
   readonly revision: string;
   readonly headRevision?: string | undefined;
   readonly baseRevision?: string | undefined;
-  readonly checks?: 'unknown' | 'pending' | 'passing' | 'failing' | undefined;
-  readonly actor: { readonly id: string; readonly kind: 'human' | 'bot' };
+  readonly checks?:
+    | typeof PullRequestCheckState.Unknown
+    | typeof PullRequestCheckState.Pending
+    | typeof PullRequestCheckState.Passing
+    | typeof PullRequestCheckState.Failing
+    | undefined;
+  readonly actor: {
+    readonly id: string;
+    readonly kind: typeof ReviewActorKind.Human | typeof ReviewActorKind.Bot;
+  };
   readonly raw: Readonly<Record<string, unknown>>;
 }
 
@@ -32,15 +48,27 @@ export interface GitHubCommentObservedPayload {
   readonly externalKey: string;
   readonly body: string;
   readonly revision: string;
-  readonly actor: { readonly id: string; readonly kind: 'human' | 'bot' };
+  readonly actor: {
+    readonly id: string;
+    readonly kind: typeof ReviewActorKind.Human | typeof ReviewActorKind.Bot;
+  };
   readonly resourceAuthorId?: string | undefined;
   readonly authorization?:
-    | { readonly source: 'configured-reviewer'; readonly reviewerId: string }
     | {
-        readonly source: 'provider-permission';
-        readonly permission: 'none' | 'read' | 'triage' | 'write' | 'maintain' | 'admin';
+        readonly source: typeof ReviewerAuthorizationSource.ConfiguredReviewer;
+        readonly reviewerId: string;
       }
-    | { readonly source: 'none' }
+    | {
+        readonly source: typeof ReviewerAuthorizationSource.ProviderPermission;
+        readonly permission:
+          | typeof ProviderPermission.None
+          | typeof ProviderPermission.Read
+          | typeof ProviderPermission.Triage
+          | typeof ProviderPermission.Write
+          | typeof ProviderPermission.Maintain
+          | typeof ProviderPermission.Admin;
+      }
+    | { readonly source: typeof ReviewerAuthorizationSource.None }
     | undefined;
   readonly raw: Readonly<Record<string, unknown>>;
 }
@@ -66,16 +94,30 @@ const streamSchema = z
   })
   .strict();
 const rawSchema = z.record(z.string(), z.unknown());
-const actorSchema = z.object({ id: z.string(), kind: z.enum(['human', 'bot']) }).strict();
+const actorSchema = z
+  .object({ id: z.string(), kind: z.enum([ReviewActorKind.Human, ReviewActorKind.Bot]) })
+  .strict();
 const authorizationSchema = z.discriminatedUnion('source', [
-  z.object({ source: z.literal('configured-reviewer'), reviewerId: z.string() }).strict(),
   z
     .object({
-      source: z.literal('provider-permission'),
-      permission: z.enum(['none', 'read', 'triage', 'write', 'maintain', 'admin']),
+      source: z.literal(ReviewerAuthorizationSource.ConfiguredReviewer),
+      reviewerId: z.string(),
     })
     .strict(),
-  z.object({ source: z.literal('none') }).strict(),
+  z
+    .object({
+      source: z.literal(ReviewerAuthorizationSource.ProviderPermission),
+      permission: z.enum([
+        ProviderPermission.None,
+        ProviderPermission.Read,
+        ProviderPermission.Triage,
+        ProviderPermission.Write,
+        ProviderPermission.Maintain,
+        ProviderPermission.Admin,
+      ]),
+    })
+    .strict(),
+  z.object({ source: z.literal(ReviewerAuthorizationSource.None) }).strict(),
 ]);
 const eventSchema = z.discriminatedUnion('eventType', [
   eventEnvelopeSchema.extend({
@@ -87,11 +129,18 @@ const eventSchema = z.discriminatedUnion('eventType', [
         kind: z.enum(['issue', 'pull-request']),
         title: z.string(),
         body: z.string(),
-        state: z.enum(['open', 'closed', 'merged']),
+        state: z.enum([PullRequestState.Open, PullRequestState.Closed, PullRequestState.Merged]),
         revision: z.string(),
         headRevision: z.string().optional(),
         baseRevision: z.string().optional(),
-        checks: z.enum(['unknown', 'pending', 'passing', 'failing']).optional(),
+        checks: z
+          .enum([
+            PullRequestCheckState.Unknown,
+            PullRequestCheckState.Pending,
+            PullRequestCheckState.Passing,
+            PullRequestCheckState.Failing,
+          ])
+          .optional(),
         actor: actorSchema,
         raw: rawSchema,
       })

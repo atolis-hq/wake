@@ -1,3 +1,4 @@
+import { signalName } from '../../../src-next/orchestration/contracts/identifiers.js';
 import { expect, it } from 'vitest';
 
 import { resourceStream } from '../../../src-next/resources/index.js';
@@ -39,7 +40,7 @@ it('accepts one synthetic final delivery outcome for the same waiting activation
     status: 'waiting',
     pendingActivation: { activationId, status: 'waiting' },
     waitingFor: {
-      signalKind: 'delivery-result',
+      signalKind: signalName('delivery-result'),
       intentEventId: expect.any(String),
     },
     acceptedOutcomes: [],
@@ -79,7 +80,7 @@ it('accepts one synthetic final delivery failure for the same waiting activation
 
   expect(await world.viewWorkflow(workflowId)).toMatchObject({
     status: 'waiting',
-    waitingFor: { signalKind: 'failed' },
+    waitingFor: { signalKind: signalName('failed') },
     acceptedOutcomes: [activationId],
   });
   expect(await world.events('orchestration.activity-outcome-accepted')).toHaveLength(1);

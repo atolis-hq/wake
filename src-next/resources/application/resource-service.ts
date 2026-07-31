@@ -1,3 +1,5 @@
+import { ResourceCorrelationRole } from '../contracts/vocabulary.js';
+import { EventSourceKind } from '../../kernel/index.js';
 import { createEventDraft, type CommandContext, type EventJournal } from '../../kernel/index.js';
 import type { WorkItemId } from '../../work/index.js';
 import type { DiscoverResource } from '../contracts/commands.js';
@@ -24,7 +26,7 @@ export interface ResourceService {
   correlate(
     resourceId: ResourceId,
     workItemId: WorkItemId,
-    role: 'primary' | 'secondary',
+    role: typeof ResourceCorrelationRole.Primary | typeof ResourceCorrelationRole.Secondary,
     context: CommandContext,
   ): Promise<ResourceCorrelationView>;
   retract(resourceId: ResourceId, workItemId: WorkItemId, context: CommandContext): Promise<void>;
@@ -83,9 +85,13 @@ export function createResourceService(journal: EventJournal): ResourceService {
       const loaded = await repository.load(resourceId);
       if (loaded.resource === null) throw new Error(`Resource ${resourceId} does not exist`);
       const primary = loaded.resource.correlations.find(
-        (correlation) => correlation.role === 'primary',
+        (correlation) => correlation.role === ResourceCorrelationRole.Primary,
       );
-      if (role === 'primary' && primary !== undefined && primary.workItemId !== workItemId) {
+      if (
+        role === ResourceCorrelationRole.Primary &&
+        primary !== undefined &&
+        primary.workItemId !== workItemId
+      ) {
         await append(
           resourceId,
           context,
@@ -135,7 +141,7 @@ function resourceDraft<Type extends keyof ResourceEventPayloads>(
     correlationId: context.correlationId,
     causationId: context.commandId,
     actor: context.actor,
-    source: { kind: 'internal', id: 'resource-service' },
+    source: { kind: EventSourceKind.Internal, id: 'resource-service' },
     stream: resourceStream(resourceId),
     payload,
   });

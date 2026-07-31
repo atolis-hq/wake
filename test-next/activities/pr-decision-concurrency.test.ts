@@ -1,3 +1,10 @@
+import {
+  orchestrationGroupId,
+  signalName,
+  workflowInstanceId,
+} from '../../src-next/orchestration/contracts/identifiers.js';
+import { activityName } from '../../src-next/activities/index.js';
+import { resourceKind, resourceCapability } from '../../src-next/resources/index.js';
 import { expect, it } from 'vitest';
 
 import {
@@ -28,11 +35,17 @@ it('atomically keeps one activation decision across interleaved authority evalua
   expect(outcomes).toEqual([
     {
       kind: 'waiting',
-      data: { intentEventId: 'activation-1:pr.merge-requested', signalKind: 'delivery-result' },
+      data: {
+        intentEventId: 'activation-1:pr.merge-requested',
+        signalKind: signalName('delivery-result'),
+      },
     },
     {
       kind: 'waiting',
-      data: { intentEventId: 'activation-1:pr.merge-requested', signalKind: 'delivery-result' },
+      data: {
+        intentEventId: 'activation-1:pr.merge-requested',
+        signalKind: signalName('delivery-result'),
+      },
     },
   ]);
   expect(await world.events('pr.merge-decision-claimed')).toEqual([
@@ -69,7 +82,10 @@ it('resumes the claimed canonical fact after a crash without reevaluating author
 
   await expect(activity.handler.execute(invocation(), executionContext())).resolves.toEqual({
     kind: 'waiting',
-    data: { intentEventId: 'activation-1:pr.merge-requested', signalKind: 'delivery-result' },
+    data: {
+      intentEventId: 'activation-1:pr.merge-requested',
+      signalKind: signalName('delivery-result'),
+    },
   });
   expect(authorityCalls).toBe(1);
   expect(await world.events('pr.merge-requested')).toHaveLength(1);
@@ -165,10 +181,10 @@ function authorityService(load: () => Promise<PullRequestAuthorityInput>): PullR
 function invocation() {
   return {
     activationId: activationId('activation-1'),
-    activity: 'pr.merge',
+    activity: activityName('pr.merge'),
     workItemId: workItemId('work-1'),
-    workflowInstanceId: 'workflow-1',
-    orchestrationGroupId: 'group-1',
+    workflowInstanceId: workflowInstanceId('workflow-1'),
+    orchestrationGroupId: orchestrationGroupId('group-1'),
     causationId: 'activation-1',
     input: { target: 'primary' as const, method: 'merge' as const, requireChecks: true },
     resources: [invocationResource()],
@@ -178,9 +194,13 @@ function invocation() {
 function invocationResource(): ResourceView {
   return {
     resourceId: resourceId('resource-1'),
-    kind: 'pull-request',
+    kind: resourceKind('pull-request'),
     externalKey: { adapter: 'neutral-test', key: 'pr-1' },
-    capabilities: ['reviewable', 'mergeable', 'revisioned'],
+    capabilities: [
+      resourceCapability('reviewable'),
+      resourceCapability('mergeable'),
+      resourceCapability('revisioned'),
+    ],
   };
 }
 

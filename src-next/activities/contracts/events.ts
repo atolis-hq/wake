@@ -1,3 +1,6 @@
+import { MergeMethod, PullRequestCheckState, PullRequestState } from '../pr/vocabulary.js';
+import { ActivityOutcomeKind } from './vocabulary.js';
+import { ReviewActorKind } from '../review/contracts.js';
 import { z } from 'zod';
 import {
   type EventDraft,
@@ -33,10 +36,15 @@ export type ActivityEventTypes = typeof ActivityEventType;
 
 export interface PullRequestDiscoveredPayload {
   readonly workItemId: WorkItemId;
-  readonly state: 'open' | 'closed' | 'merged';
+  readonly state:
+    typeof PullRequestState.Open | typeof PullRequestState.Closed | typeof PullRequestState.Merged;
   readonly headRevision: string;
   readonly baseRevision: string;
-  readonly checks: 'unknown' | 'pending' | 'passing' | 'failing';
+  readonly checks:
+    | typeof PullRequestCheckState.Unknown
+    | typeof PullRequestCheckState.Pending
+    | typeof PullRequestCheckState.Passing
+    | typeof PullRequestCheckState.Failing;
 }
 
 export interface PullRequestDenialPayload {
@@ -52,7 +60,8 @@ export interface PullRequestDenialPayload {
     | undefined;
   readonly resourceId?: ResourceId | null | undefined;
   readonly revision?: string | null | undefined;
-  readonly method?: 'merge' | 'squash' | 'rebase' | undefined;
+  readonly method?:
+    typeof MergeMethod.Merge | typeof MergeMethod.Squash | typeof MergeMethod.Rebase | undefined;
   readonly body?: string | null | undefined;
 }
 
@@ -69,12 +78,18 @@ export interface PullRequestMergeRequestedPayload {
   readonly activationId: ActivationId;
   readonly resourceId: ResourceId;
   readonly revision: string;
-  readonly method: 'merge' | 'squash' | 'rebase';
+  readonly method: typeof MergeMethod.Merge | typeof MergeMethod.Squash | typeof MergeMethod.Rebase;
   readonly requireChecks: boolean;
 }
 
-type RequestedOutcome = Extract<PullRequestActivityOutcome, { readonly kind: 'waiting' }>;
-type DeniedOutcome = Extract<PullRequestActivityOutcome, { readonly kind: 'blocked' }>;
+type RequestedOutcome = Extract<
+  PullRequestActivityOutcome,
+  { readonly kind: typeof ActivityOutcomeKind.Waiting }
+>;
+type DeniedOutcome = Extract<
+  PullRequestActivityOutcome,
+  { readonly kind: typeof ActivityOutcomeKind.Blocked }
+>;
 type RequestedFact<Action extends PullRequestDecisionAction> = Action extends 'approve'
   ? EventDraft<
       typeof ActivityEventType.PrApproveRequested,
@@ -128,7 +143,7 @@ export interface ActivityEventPayloads {
   readonly [ActivityEventType.ReviewAcceptanceSignalRecorded]: {
     readonly revision: string;
     readonly actorId: string;
-    readonly actorKind: 'human' | 'bot';
+    readonly actorKind: typeof ReviewActorKind.Human | typeof ReviewActorKind.Bot;
     readonly acceptedEventId: string;
     readonly providerEventId: string;
     readonly trusted: boolean;
@@ -144,7 +159,9 @@ export interface ActivityEventPayloads {
   readonly [ActivityEventType.PrApproveRequested]: PullRequestApproveRequestedPayload;
   readonly [ActivityEventType.PrMergeRequested]: PullRequestMergeRequestedPayload;
   readonly [ActivityEventType.PrApproveDecisionClaimed]: PullRequestDecisionClaimPayload<'approve'>;
-  readonly [ActivityEventType.PrMergeDecisionClaimed]: PullRequestDecisionClaimPayload<'merge'>;
+  readonly [ActivityEventType.PrMergeDecisionClaimed]: PullRequestDecisionClaimPayload<
+    typeof MergeMethod.Merge
+  >;
 }
 
 type ResourceFactType =
@@ -181,11 +198,11 @@ export type ActivityFactDraft =
 export type ActivityEvent =
   | ActivityFact
   | EventUnion<ApproveDecisionPayloads, ActivityDecisionStreamRef<'approve'>>
-  | EventUnion<MergeDecisionPayloads, ActivityDecisionStreamRef<'merge'>>;
+  | EventUnion<MergeDecisionPayloads, ActivityDecisionStreamRef<typeof MergeMethod.Merge>>;
 export type ActivityEventDraft =
   | ActivityFactDraft
   | EventDraftUnion<ApproveDecisionPayloads, ActivityDecisionStreamRef<'approve'>>
-  | EventDraftUnion<MergeDecisionPayloads, ActivityDecisionStreamRef<'merge'>>;
+  | EventDraftUnion<MergeDecisionPayloads, ActivityDecisionStreamRef<typeof MergeMethod.Merge>>;
 
 const { draftSchema, eventSchema } = createActivityEventSchemas(ActivityEventType);
 

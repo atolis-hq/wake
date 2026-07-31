@@ -1,3 +1,5 @@
+import { workflowName } from '../../../src-next/orchestration/contracts/identifiers.js';
+import { activityName } from '../../../src-next/activities/index.js';
 import { z } from 'zod';
 import { expect, it } from 'vitest';
 import { TestWorld } from '../support/world.js';
@@ -5,9 +7,10 @@ import { TestWorld } from '../support/world.js';
 it('E2E-GOLDEN-001 completes work through orchestration and an explicit Run', async () => {
   const world = new TestWorld();
   world.registerActivity({
-    name: 'implement',
+    name: activityName('implement'),
     inputSchema: z.object({}).strict(),
     outcomeSchema: z.object({ kind: z.literal('done') }).strict(),
+    outcomeKinds: ['done'],
     resources: [],
     executionKind: 'deterministic',
     handler: {
@@ -29,7 +32,7 @@ it('E2E-GOLDEN-001 completes work through orchestration and an explicit Run', as
   const work = await world.createWork({ objective: 'ship target architecture' });
   const workflow = await world.startWorkflow({
     workItemId: work.workItemId,
-    workflowName: 'default',
+    workflowName: workflowName('default'),
   });
   const result = await world.advance(work.workItemId);
   expect(result.kind).toBe('progressed');

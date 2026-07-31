@@ -6,5 +6,6 @@ export * from './contracts/events.js';
 export * from './contracts/identifiers.js';
 export * from './contracts/streams.js';
 export * from './contracts/views.js';
+export * from './contracts/vocabulary.js';
 export * from './domain/correlation.js';
 export * from './domain/resource.js';

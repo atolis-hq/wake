@@ -1,3 +1,9 @@
+import {
+  orchestrationGroupId,
+  workflowInstanceId,
+  workflowName,
+} from '../../src-next/orchestration/contracts/identifiers.js';
+import { activityName } from '../../src-next/activities/index.js';
 import { z } from 'zod';
 import { expect, it } from 'vitest';
 import { ActivityRegistry } from '../../src-next/activities/index.js';
@@ -21,9 +27,10 @@ it('persists instances and accepts outcomes idempotently', async () => {
   );
   const registry = new ActivityRegistry();
   registry.register({
-    name: 'implement',
+    name: activityName('implement'),
     inputSchema: z.object({}).strict(),
     outcomeSchema: z.object({ kind: z.literal('done') }).strict(),
+    outcomeKinds: ['done'],
     resources: [],
     executionKind: 'deterministic',
     handler: {
@@ -46,10 +53,10 @@ it('persists instances and accepts outcomes idempotently', async () => {
   });
   const instance = await service.start(
     {
-      workflowInstanceId: 'workflow-1',
+      workflowInstanceId: workflowInstanceId('workflow-1'),
       workItemId: workItemId('work-1'),
-      workflowName: 'default',
-      orchestrationGroupId: 'group-1',
+      workflowName: workflowName('default'),
+      orchestrationGroupId: orchestrationGroupId('group-1'),
     },
     context,
   );

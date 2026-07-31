@@ -1,3 +1,6 @@
+import { MergeMethod, PullRequestCheckState, PullRequestState } from '../pr/vocabulary.js';
+import { ActivityOutcomeKind, ActivityResourceRole } from './vocabulary.js';
+import { ReviewActorKind } from '../review/contracts.js';
 import { z } from 'zod';
 import { brandedStringSchema, eventDraftSchema, eventEnvelopeSchema } from '../../kernel/index.js';
 import { ResourceStreamKind, resourceId } from '../../resources/index.js';
@@ -38,7 +41,9 @@ const workStreamSchema = z
     id: brandedStringSchema(workItemId),
   })
   .strict();
-const decisionStreamSchema = <Action extends 'approve' | 'merge'>(action: Action) =>
+const decisionStreamSchema = <Action extends 'approve' | typeof MergeMethod.Merge>(
+  action: Action,
+) =>
   z
     .object({
       kind: z.literal(ActivityStreamKind.Decision),
@@ -46,12 +51,21 @@ const decisionStreamSchema = <Action extends 'approve' | 'merge'>(action: Action
     })
     .strict();
 const approveDecisionStreamSchema = decisionStreamSchema('approve');
-const mergeDecisionStreamSchema = decisionStreamSchema('merge');
+const mergeDecisionStreamSchema = decisionStreamSchema(MergeMethod.Merge);
 const denialStreamSchema = z.union([resourceStreamSchema, workStreamSchema]);
 const workItemIdSchema = brandedStringSchema(workItemId);
 const resourceIdSchema = brandedStringSchema(resourceId);
-const stateSchema = z.enum(['open', 'closed', 'merged']);
-const checksSchema = z.enum(['unknown', 'pending', 'passing', 'failing']);
+const stateSchema = z.enum([
+  PullRequestState.Open,
+  PullRequestState.Closed,
+  PullRequestState.Merged,
+]);
+const checksSchema = z.enum([
+  PullRequestCheckState.Unknown,
+  PullRequestCheckState.Pending,
+  PullRequestCheckState.Passing,
+  PullRequestCheckState.Failing,
+]);
 const reviewSchema = z.object({ revision: z.string(), actorId: z.string() }).strict();
 const denialSchema = z
   .object({
@@ -59,14 +73,17 @@ const denialSchema = z
     idempotencyKey: z.string(),
     reason: z.string(),
     target: z
-      .union([z.literal('primary'), z.object({ resourceId: resourceIdSchema }).strict()])
+      .union([
+        z.literal(ActivityResourceRole.Primary),
+        z.object({ resourceId: resourceIdSchema }).strict(),
+      ])
       .optional(),
     candidates: z
       .array(z.object({ resourceId: resourceIdSchema, revision: z.string().nullable() }).strict())
       .optional(),
     resourceId: resourceIdSchema.nullable().optional(),
     revision: z.string().nullable().optional(),
-    method: z.enum(['merge', 'squash', 'rebase']).optional(),
+    method: z.enum([MergeMethod.Merge, MergeMethod.Squash, MergeMethod.Rebase]).optional(),
     body: z.string().nullable().optional(),
   })
   .strict();
@@ -85,13 +102,13 @@ const mergeRequestedSchema = z
     activationId: brandedStringSchema(activationId),
     resourceId: resourceIdSchema,
     revision: z.string(),
-    method: z.enum(['merge', 'squash', 'rebase']),
+    method: z.enum([MergeMethod.Merge, MergeMethod.Squash, MergeMethod.Rebase]),
     requireChecks: z.boolean(),
   })
   .strict();
 const requestedOutcomeSchema = z
   .object({
-    kind: z.literal('waiting'),
+    kind: z.literal(ActivityOutcomeKind.Waiting),
     data: z
       .object({
         intentEventId: z.string(),
@@ -102,7 +119,7 @@ const requestedOutcomeSchema = z
   .strict();
 const deniedOutcomeSchema = z
   .object({
-    kind: z.literal('blocked'),
+    kind: z.literal(ActivityOutcomeKind.Blocked),
     data: z.object({ reason: z.string() }).strict(),
   })
   .strict();
@@ -133,7 +150,7 @@ export function createActivityEventSchemas(eventTypes: ActivityEventTypes) {
   const mergeClaimPayloadSchema = z.discriminatedUnion('decisionKind', [
     z
       .object({
-        action: z.literal('merge'),
+        action: z.literal(MergeMethod.Merge),
         activationId: brandedStringSchema(activationId),
         decisionKind: z.literal('requested'),
         outcome: requestedOutcomeSchema,
@@ -142,7 +159,7 @@ export function createActivityEventSchemas(eventTypes: ActivityEventTypes) {
       .strict(),
     z
       .object({
-        action: z.literal('merge'),
+        action: z.literal(MergeMethod.Merge),
         activationId: brandedStringSchema(activationId),
         decisionKind: z.literal('denied'),
         outcome: deniedOutcomeSchema,
@@ -218,7 +235,7 @@ function createResourceFactDraftSchemas(eventTypes: ActivityEventTypes) {
         .object({
           revision: z.string(),
           actorId: z.string(),
-          actorKind: z.enum(['human', 'bot']),
+          actorKind: z.enum([ReviewActorKind.Human, ReviewActorKind.Bot]),
           acceptedEventId: z.string(),
           providerEventId: z.string(),
           trusted: z.boolean(),
@@ -297,11 +314,11 @@ function decisionClaimIdentity(
     readonly stream: { readonly id: string };
     readonly payload:
       | {
-          readonly action: 'approve' | 'merge';
+          readonly action: 'approve' | typeof MergeMethod.Merge;
           readonly activationId: string;
           readonly decisionKind: 'requested';
           readonly outcome: {
-            readonly kind: 'waiting';
+            readonly kind: typeof ActivityOutcomeKind.Waiting;
             readonly data: { readonly intentEventId: string };
           };
           readonly fact: {
@@ -310,11 +327,11 @@ function decisionClaimIdentity(
           };
         }
       | {
-          readonly action: 'approve' | 'merge';
+          readonly action: 'approve' | typeof MergeMethod.Merge;
           readonly activationId: string;
           readonly decisionKind: 'denied';
           readonly outcome: {
-            readonly kind: 'blocked';
+            readonly kind: typeof ActivityOutcomeKind.Blocked;
             readonly data: { readonly reason: string };
           };
           readonly fact: {

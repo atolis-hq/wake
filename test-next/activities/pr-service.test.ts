@@ -1,3 +1,4 @@
+import { resourceKind, resourceCapability } from '../../src-next/resources/index.js';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -26,9 +27,9 @@ describe('PullRequestService', () => {
     await resources.discover(
       {
         resourceId: resource,
-        kind: 'pull-request',
+        kind: resourceKind('pull-request'),
         externalKey: { adapter: 'github', key: 'o/r#1' },
-        capabilities: ['reviewable', 'revisioned'],
+        capabilities: [resourceCapability('reviewable'), resourceCapability('revisioned')],
       },
       context('resource'),
     );
@@ -79,9 +80,9 @@ describe('PullRequestService review evidence', () => {
     await resources.discover(
       {
         resourceId: resource,
-        kind: 'pull-request',
+        kind: resourceKind('pull-request'),
         externalKey: { adapter: 'github', key: 'o/r#1' },
-        capabilities: ['reviewable', 'revisioned'],
+        capabilities: [resourceCapability('reviewable'), resourceCapability('revisioned')],
       },
       context('resource'),
     );

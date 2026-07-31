@@ -1,6 +1,11 @@
+import {
+  orchestrationGroupId,
+  workflowInstanceId,
+} from '../../src-next/orchestration/contracts/identifiers.js';
+import { activationId } from '../../src-next/activities/contracts/identifiers.js';
 import { z } from 'zod';
 import { describe, expect, it } from 'vitest';
-import { ActivityRegistry } from '../../src-next/activities/index.js';
+import { ActivityRegistry, activityName } from '../../src-next/activities/index.js';
 import {
   acceptActivityOutcome,
   compileWorkflow,
@@ -13,9 +18,10 @@ import { workItemId } from '../../src-next/work/index.js';
 const activities = new ActivityRegistry();
 for (const name of ['implement', 'review'])
   activities.register({
-    name,
+    name: activityName(name),
     inputSchema: z.object({}).strict(),
     outcomeSchema: z.object({ kind: z.enum(['done', 'blocked', 'failed']) }).strict(),
+    outcomeKinds: ['done', 'blocked', 'failed'],
     resources: [],
     executionKind: 'deterministic',
     handler: {
@@ -41,16 +47,19 @@ const definition = compileWorkflow(
   activities,
 );
 const start = {
-  workflowInstanceId: 'workflow-1',
+  workflowInstanceId: workflowInstanceId('workflow-1'),
   workItemId: workItemId('work-1'),
-  orchestrationGroupId: 'group-1',
+  orchestrationGroupId: orchestrationGroupId('group-1'),
   definition,
   occurredAt: '2026-07-30T12:00:00.000Z',
   correlationId: 'correlation-1',
   causationId: 'command-1',
 };
 // @ts-expect-error A child start requires its complete durable provenance.
-const malformedChildStart: StartInstanceInput = { ...start, parentWorkflowInstanceId: 'parent-1' };
+const malformedChildStart: StartInstanceInput = {
+  ...start,
+  parentWorkflowInstanceId: workflowInstanceId('parent-1'),
+};
 void malformedChildStart;
 
 describe('workflow interpreter', () => {
@@ -146,7 +155,7 @@ describe('workflow outcome acceptance', () => {
     const state = foldWorkflowInstance(started.events)!;
     expect(
       acceptActivityOutcome(definition, state, {
-        activationId: 'other',
+        activationId: activationId('other'),
         outcome: { kind: 'done' },
         occurredAt: start.occurredAt,
         causationId: 'x',

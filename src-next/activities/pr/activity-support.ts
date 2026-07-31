@@ -1,7 +1,15 @@
+import {
+  ActivityOutcomeKind,
+  ActivityResourceRole,
+  IntentAppendStatus,
+} from '../contracts/vocabulary.js';
+import { PullRequestDenialCode } from './vocabulary.js';
 import { z } from 'zod';
 
 import { type EventJournal } from '../../kernel/index.js';
 import {
+  BuiltInResourceKind,
+  ResourceCorrelationRole,
   resourceId,
   type ResourceCapability,
   type ResourceId,
@@ -20,27 +28,38 @@ import type { ActivityFactDraft } from '../contracts/events.js';
 
 export const pullRequestTargetSchema = z
   .union([
-    z.literal('primary'),
+    z.literal(ActivityResourceRole.Primary),
     z.object({ resourceId: z.string().min(1).transform(resourceId) }).strict(),
   ])
-  .default('primary');
+  .default(ActivityResourceRole.Primary);
 
 export const pullRequestOutcomeSchema: z.ZodType<PullRequestActivityOutcome> = z.union([
   z
     .object({
-      kind: z.literal('waiting'),
+      kind: z.literal(ActivityOutcomeKind.Waiting),
       data: z
         .object({ intentEventId: z.string(), signalKind: z.literal('delivery-result') })
         .strict(),
     })
     .strict(),
   z
-    .object({ kind: z.literal('done'), data: z.object({ deliveryEventId: z.string() }).strict() })
+    .object({
+      kind: z.literal(ActivityOutcomeKind.Done),
+      data: z.object({ deliveryEventId: z.string() }).strict(),
+    })
     .strict(),
   z
-    .object({ kind: z.literal('blocked'), data: z.object({ reason: z.string() }).strict() })
+    .object({
+      kind: z.literal(ActivityOutcomeKind.Blocked),
+      data: z.object({ reason: z.string() }).strict(),
+    })
     .strict(),
-  z.object({ kind: z.literal('failed'), data: z.object({ reason: z.string() }).strict() }).strict(),
+  z
+    .object({
+      kind: z.literal(ActivityOutcomeKind.Failed),
+      data: z.object({ reason: z.string() }).strict(),
+    })
+    .strict(),
 ]);
 
 interface CandidateAudit {
@@ -52,7 +71,9 @@ export type CapabilityResolution =
   | { readonly allowed: true; readonly resourceId: ResourceId }
   | {
       readonly allowed: false;
-      readonly reason: 'missing-resource' | 'ambiguous-resource';
+      readonly reason:
+        | typeof PullRequestDenialCode.MissingResource
+        | typeof PullRequestDenialCode.AmbiguousResource;
       readonly candidates: readonly CandidateAudit[];
     };
 
@@ -65,19 +86,23 @@ export function resolvePrimaryCapability(
 ): CapabilityResolution {
   const primaryCandidates = authority.resources.filter(
     (entry) =>
-      entry.resource.kind === 'pull-request' &&
+      entry.resource.kind === BuiltInResourceKind.PullRequest &&
       entry.correlations.some(
-        (correlation) => correlation.role === 'primary' && correlation.workItemId === workItemId,
+        (correlation) =>
+          correlation.role === ResourceCorrelationRole.Primary &&
+          correlation.workItemId === workItemId,
       ),
   );
   const targetedCandidates = primaryCandidates.filter(
-    (entry) => target === 'primary' || entry.resource.resourceId === target.resourceId,
+    (entry) =>
+      target === ActivityResourceRole.Primary || entry.resource.resourceId === target.resourceId,
   );
   const capableIds = new Set(
     invocationResources
       .filter(
         (resource) =>
-          resource.kind === 'pull-request' && resource.capabilities.includes(capability),
+          resource.kind === BuiltInResourceKind.PullRequest &&
+          resource.capabilities.includes(capability),
       )
       .map((resource) => resource.resourceId),
   );
@@ -85,7 +110,10 @@ export function resolvePrimaryCapability(
   if (matches.length === 1) return { allowed: true, resourceId: matches[0]!.resource.resourceId };
   return {
     allowed: false,
-    reason: matches.length === 0 ? 'missing-resource' : 'ambiguous-resource',
+    reason:
+      matches.length === 0
+        ? PullRequestDenialCode.MissingResource
+        : PullRequestDenialCode.AmbiguousResource,
     candidates: candidateAudit(
       authority,
       primaryCandidates.map((entry) => entry.resource.resourceId),
@@ -118,11 +146,13 @@ export async function appendResolved(
   appender: IntentAppender,
   stream: ResourceStreamRef | WorkItemStreamRef,
   event: ActivityFactDraft,
-): Promise<Exclude<IntentAppendResult, 'ambiguous'>> {
+): Promise<Exclude<IntentAppendResult, typeof IntentAppendStatus.Ambiguous>> {
   const result = await appender.append(stream, event);
-  if (result !== 'ambiguous') return result;
+  if (result !== IntentAppendStatus.Ambiguous) return result;
   const events = await journal.readStream(stream);
-  return events.some((candidate) => candidate.eventId === event.eventId) ? 'known' : 'failed';
+  return events.some((candidate) => candidate.eventId === event.eventId)
+    ? IntentAppendStatus.Known
+    : IntentAppendStatus.Failed;
 }
 
 function candidateAudit(

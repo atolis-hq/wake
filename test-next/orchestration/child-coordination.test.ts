@@ -1,3 +1,10 @@
+import {
+  orchestrationGroupId,
+  signalName,
+  workflowInstanceId,
+  workflowName,
+} from '../../src-next/orchestration/contracts/identifiers.js';
+import { activityName } from '../../src-next/activities/index.js';
 import { z } from 'zod';
 import { expect, it } from 'vitest';
 import { ActivityRegistry } from '../../src-next/activities/index.js';
@@ -37,9 +44,10 @@ async function fixture() {
   );
   const activities = new ActivityRegistry();
   activities.register({
-    name: 'parent-work',
+    name: activityName('parent-work'),
     inputSchema: z.object({}).strict(),
     outcomeSchema: z.object({ kind: z.literal('blocked') }).strict(),
+    outcomeKinds: ['blocked'],
     resources: [],
     executionKind: 'deterministic',
     handler: {
@@ -49,9 +57,10 @@ async function fixture() {
     },
   });
   activities.register({
-    name: 'child-work',
+    name: activityName('child-work'),
     inputSchema: z.object({}).strict(),
     outcomeSchema: z.object({ kind: z.literal('done') }).strict(),
+    outcomeKinds: ['done'],
     resources: [],
     executionKind: 'deterministic',
     handler: {
@@ -96,10 +105,10 @@ async function startParent(
 ) {
   return service.start(
     {
-      workflowInstanceId: id,
+      workflowInstanceId: workflowInstanceId(id),
       workItemId: workItemId('work-1'),
-      workflowName: 'parent',
-      orchestrationGroupId: 'group-1',
+      workflowName: workflowName('parent'),
+      orchestrationGroupId: orchestrationGroupId('group-1'),
     },
     context(`start-${id}`),
   );
@@ -109,12 +118,12 @@ const childRequest = (
   triggerId: string,
   parentWorkflowInstanceId = 'parent-1',
 ): ChildWorkflowRequest & { readonly maxPerGroup: number } => ({
-  parentWorkflowInstanceId,
+  parentWorkflowInstanceId: workflowInstanceId(parentWorkflowInstanceId),
   watchId: 'review',
   triggerId,
-  workflowName: 'child',
+  workflowName: workflowName('child'),
   causalCycleId: `${parentWorkflowInstanceId}:cycle:${triggerId}`,
-  requestId: `${parentWorkflowInstanceId}:watch:review:trigger:${triggerId}`,
+  requestId: workflowInstanceId(`${parentWorkflowInstanceId}:watch:review:trigger:${triggerId}`),
   maxPerGroup: 1,
 });
 
@@ -166,10 +175,10 @@ it('rejects incomplete, fake, and mismatched child provenance before starting', 
   await expect(
     incomplete.service.start(
       {
-        workflowInstanceId: 'incomplete-child',
+        workflowInstanceId: workflowInstanceId('incomplete-child'),
         workItemId: workItemId('work-1'),
-        workflowName: 'child',
-        orchestrationGroupId: 'group-1',
+        workflowName: workflowName('child'),
+        orchestrationGroupId: orchestrationGroupId('group-1'),
         watchId: 'review',
       } as never,
       context('incomplete'),
@@ -179,7 +188,7 @@ it('rejects incomplete, fake, and mismatched child provenance before starting', 
   const { journal, service } = await fixture();
   await startParent(service);
   const base = (workflowInstanceId: string) => ({
-    workflowName: 'child',
+    workflowName: workflowName('child'),
     watchId: 'review',
     triggerId: 'trigger-1',
     causalCycleId: 'cycle-1',
@@ -189,10 +198,10 @@ it('rejects incomplete, fake, and mismatched child provenance before starting', 
     service.start(
       {
         ...base('fake-parent-child'),
-        workflowInstanceId: 'fake-parent-child',
+        workflowInstanceId: workflowInstanceId('fake-parent-child'),
         workItemId: workItemId('work-1'),
-        orchestrationGroupId: 'group-1',
-        parentWorkflowInstanceId: 'missing-parent',
+        orchestrationGroupId: orchestrationGroupId('group-1'),
+        parentWorkflowInstanceId: workflowInstanceId('missing-parent'),
       },
       context('fake-parent'),
     ),
@@ -201,10 +210,10 @@ it('rejects incomplete, fake, and mismatched child provenance before starting', 
     service.start(
       {
         ...base('wrong-work-child'),
-        workflowInstanceId: 'wrong-work-child',
+        workflowInstanceId: workflowInstanceId('wrong-work-child'),
         workItemId: workItemId('work-2'),
-        orchestrationGroupId: 'group-1',
-        parentWorkflowInstanceId: 'parent-1',
+        orchestrationGroupId: orchestrationGroupId('group-1'),
+        parentWorkflowInstanceId: workflowInstanceId('parent-1'),
       },
       context('wrong-work'),
     ),
@@ -213,10 +222,10 @@ it('rejects incomplete, fake, and mismatched child provenance before starting', 
     service.start(
       {
         ...base('wrong-group-child'),
-        workflowInstanceId: 'wrong-group-child',
+        workflowInstanceId: workflowInstanceId('wrong-group-child'),
         workItemId: workItemId('work-1'),
-        orchestrationGroupId: 'other-group',
-        parentWorkflowInstanceId: 'parent-1',
+        orchestrationGroupId: orchestrationGroupId('other-group'),
+        parentWorkflowInstanceId: workflowInstanceId('parent-1'),
       },
       context('wrong-group'),
     ),
@@ -245,7 +254,7 @@ it('does not consume a completion rejected by the parent signal expectation', as
   );
   await service.waitForSignal(
     waiting.workflowInstanceId,
-    { signalKind: 'some-other-signal' },
+    { signalKind: signalName('some-other-signal') },
     context('wait-for-other'),
   );
   const child = requireStarted(
@@ -288,10 +297,18 @@ it('uses durable group provenance to distinguish repeated and unrelated causal c
   await service.requestChild(request, context('request-child'));
   const restarted = createOrchestrationService(journal, work, definitions);
   await expect(
-    restarted.isCausalRepeat('parent-1', 'unrelated-trigger', 'unrelated-cycle'),
+    restarted.isCausalRepeat(
+      workflowInstanceId('parent-1'),
+      'unrelated-trigger',
+      'unrelated-cycle',
+    ),
   ).resolves.toBe(false);
   await expect(
-    restarted.isCausalRepeat('parent-1', 'completion-event', request.causalCycleId),
+    restarted.isCausalRepeat(
+      workflowInstanceId('parent-1'),
+      'completion-event',
+      request.causalCycleId,
+    ),
   ).resolves.toBe(true);
 });
 
@@ -308,7 +325,7 @@ it('records typed metadata for every child coordination outcome', async () => {
   );
   await service.waitForSignal(
     waiting.workflowInstanceId,
-    { signalKind: 'orchestration.child-completed' },
+    { signalKind: signalName('orchestration.child-completed') },
     context('wait-child'),
   );
   const child = requireStarted(
@@ -351,9 +368,9 @@ async function expectCoordinationMetadata(journal: EventJournal, childId: string
     const [event] = await eventsOf(journal, eventType);
     expect(event?.payload, eventType).toEqual(
       expect.objectContaining({
-        parentWorkflowInstanceId: 'parent-1',
+        parentWorkflowInstanceId: workflowInstanceId('parent-1'),
         watchId: 'review',
-        orchestrationGroupId: 'group-1',
+        orchestrationGroupId: orchestrationGroupId('group-1'),
         causalCycleId: expect.any(String),
         requestId: expect.any(String),
         childWorkflowInstanceId: expect.any(String),

@@ -1,3 +1,4 @@
+import { EventSourceKind } from './events.js';
 import { z } from 'zod';
 import { EventActorKind, type EventEnvelope } from './events.js';
 import { causationId, correlationId, eventId } from './identifiers.js';
@@ -20,7 +21,7 @@ export const eventActorSchema = z
 
 export const eventSourceSchema = z
   .object({
-    kind: z.enum(['internal', 'adapter']),
+    kind: z.enum([EventSourceKind.Internal, EventSourceKind.Adapter]),
     id: nonEmptyString,
   })
   .strict();

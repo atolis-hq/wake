@@ -1,3 +1,4 @@
+import { activityName } from '../../src-next/activities/index.js';
 import { z } from 'zod';
 import { expect, it } from 'vitest';
 import { ActivityRegistry } from '../../src-next/activities/index.js';
@@ -6,9 +7,10 @@ import { compileWorkflow } from '../../src-next/orchestration/index.js';
 function registry() {
   const activities = new ActivityRegistry();
   activities.register({
-    name: 'implement',
+    name: activityName('implement'),
     inputSchema: z.object({}).strict(),
     outcomeSchema: z.object({ kind: z.literal('done') }).strict(),
+    outcomeKinds: ['done'],
     resources: [],
     executionKind: 'deterministic',
     handler: {

@@ -1,3 +1,4 @@
+import { activityName } from '../../../src-next/activities/index.js';
 import { z } from 'zod';
 
 import type {
@@ -9,9 +10,10 @@ export function mergeAuthorityTestActivity(
   gate: PullRequestMergeAuthorityGate,
 ): ActivityDefinition {
   return {
-    name: 'test.pr.merge-authority',
+    name: activityName('test.pr.merge-authority'),
     inputSchema: z.object({}).strict(),
     outcomeSchema: z.object({ kind: z.enum(['merge-denied', 'merge-authorized']) }).strict(),
+    outcomeKinds: ['merge-denied', 'merge-authorized'],
     resources: [],
     executionKind: 'deterministic',
     handler: {

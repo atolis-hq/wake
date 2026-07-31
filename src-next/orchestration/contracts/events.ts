@@ -1,13 +1,30 @@
 import { z } from 'zod';
-import type { ActivityOutcome, WaitingActivityOutcome } from '../../activities/index.js';
 import {
-  eventEnvelopeSchema,
+  activationId,
+  activityName,
+  type ActivationId,
+  type ActivityName,
+  type ActivityOutcome,
+  type WaitingActivityOutcome,
+} from '../../activities/index.js';
+import {
   brandedStringSchema,
   type EventDraftUnion,
   type EventEnvelope,
   type EventUnion,
 } from '../../kernel/index.js';
 import { workItemId, type WorkItemId } from '../../work/index.js';
+import {
+  orchestrationGroupId,
+  signalName,
+  stageName,
+  workflowName,
+  type OrchestrationGroupId,
+  type SignalName,
+  type StageName,
+  type WorkflowInstanceId,
+  type WorkflowName,
+} from './identifiers.js';
 import {
   type ChildOrchestrationGroupStreamId,
   type ChildOrchestrationGroupStreamRef,
@@ -17,18 +34,20 @@ import {
 import {
   activityRequestedSchema,
   childGroupIdSchema,
-  childGroupStreamSchema,
   childMetadataSchema,
   childMetadataShape,
   emptySchema,
   expectationSchema,
   outcomeSchema,
-  primaryGroupStreamSchema,
   signalSchema,
   waitingOutcomeSchema,
   workflowInstanceIdSchema,
-  workflowStreamSchema,
 } from './event-payload-schema.js';
+import {
+  childGroupEnvelope,
+  primaryGroupEnvelope,
+  workflowEnvelope,
+} from './event-envelope-schema.js';
 import type {
   ActivityRequestedPayload,
   CausalActivationRejectedPayload,
@@ -86,38 +105,38 @@ export interface OrchestrationEventPayloads {
   readonly [OrchestrationEventType.InstanceStarted]:
     | {
         readonly workItemId: WorkItemId;
-        readonly workflowName: string;
-        readonly orchestrationGroupId: string;
-        readonly entry: string;
+        readonly workflowName: WorkflowName;
+        readonly orchestrationGroupId: OrchestrationGroupId;
+        readonly entry: StageName;
       }
     | ({
         readonly workItemId: WorkItemId;
-        readonly workflowName: string;
-        readonly orchestrationGroupId: string;
-        readonly entry: string;
+        readonly workflowName: WorkflowName;
+        readonly orchestrationGroupId: OrchestrationGroupId;
+        readonly entry: StageName;
       } & ChildCoordinationMetadata);
-  readonly [OrchestrationEventType.StageEntered]: { readonly stage: string };
+  readonly [OrchestrationEventType.StageEntered]: { readonly stage: StageName };
   readonly [OrchestrationEventType.ActivityRequested]: ActivityRequestedPayload;
-  readonly [OrchestrationEventType.ActivityStarted]: { readonly activationId: string };
+  readonly [OrchestrationEventType.ActivityStarted]: { readonly activationId: ActivationId };
   readonly [OrchestrationEventType.ActivityOutcomeAccepted]: {
-    readonly activationId: string;
+    readonly activationId: ActivationId;
     readonly outcome: ActivityOutcome;
   };
   readonly [OrchestrationEventType.ActivityWaiting]: {
-    readonly activationId: string;
+    readonly activationId: ActivationId;
     readonly intentEventId: string;
-    readonly signalKind: string;
+    readonly signalKind: SignalName;
     readonly outcome: WaitingActivityOutcome;
   };
   readonly [OrchestrationEventType.SignalWaitStarted]: SignalExpectation;
   readonly [OrchestrationEventType.SignalAccepted]: OrchestrationSignal;
   readonly [OrchestrationEventType.SupplementalActivityQueued]: {
-    readonly activity: string;
+    readonly activity: ActivityName;
     readonly input: unknown;
     readonly requestedBy: string;
   };
   readonly [OrchestrationEventType.SupplementalActivityDequeued]: {
-    readonly activity: string;
+    readonly activity: ActivityName;
     readonly requestedBy: string;
   };
   readonly [OrchestrationEventType.RepeatCounted]: {
@@ -139,7 +158,7 @@ export interface OrchestrationEventPayloads {
   readonly [OrchestrationEventType.GroupBudgetExhausted]: GroupBudgetExhaustedPayload;
   readonly [OrchestrationEventType.PrimaryClaimed]: {
     readonly workItemId: WorkItemId;
-    readonly workflowInstanceId: string;
+    readonly workflowInstanceId: WorkflowInstanceId;
   };
   readonly [OrchestrationEventType.GroupClaimed]: {
     readonly key: ChildOrchestrationGroupStreamId;
@@ -209,38 +228,10 @@ export type ChildCoordinationEventPayloads = Pick<
   ChildCoordinationEventDraft['eventType']
 >;
 export interface ChildCompletionSignal extends OrchestrationSignal {
-  readonly kind: typeof OrchestrationEventType.ChildCompleted;
-  readonly childWorkflowInstanceId: string;
+  readonly childWorkflowInstanceId: WorkflowInstanceId;
   readonly requestId: string;
 }
 
-const workflowEnvelope = <Type extends string, Payload extends z.ZodType>(
-  eventType: Type,
-  payload: Payload,
-) =>
-  eventEnvelopeSchema.extend({
-    eventType: z.literal(eventType),
-    stream: workflowStreamSchema,
-    payload,
-  });
-const primaryGroupEnvelope = <Type extends string, Payload extends z.ZodType>(
-  eventType: Type,
-  payload: Payload,
-) =>
-  eventEnvelopeSchema.extend({
-    eventType: z.literal(eventType),
-    stream: primaryGroupStreamSchema,
-    payload,
-  });
-const childGroupEnvelope = <Type extends string, Payload extends z.ZodType>(
-  eventType: Type,
-  payload: Payload,
-) =>
-  eventEnvelopeSchema.extend({
-    eventType: z.literal(eventType),
-    stream: childGroupStreamSchema,
-    payload,
-  });
 const primaryClaimedEnvelope = primaryGroupEnvelope(
   OrchestrationEventType.PrimaryClaimed,
   z
@@ -275,16 +266,16 @@ const eventSchema = z.discriminatedUnion('eventType', [
       z
         .object({
           workItemId: brandedStringSchema(workItemId),
-          workflowName: z.string().min(1),
-          orchestrationGroupId: z.string().min(1),
-          entry: z.string().min(1),
+          workflowName: brandedStringSchema(workflowName),
+          orchestrationGroupId: brandedStringSchema(orchestrationGroupId),
+          entry: brandedStringSchema(stageName),
         })
         .strict(),
       z
         .object({
           workItemId: brandedStringSchema(workItemId),
-          workflowName: z.string().min(1),
-          entry: z.string().min(1),
+          workflowName: brandedStringSchema(workflowName),
+          entry: brandedStringSchema(stageName),
           ...childMetadataShape,
         })
         .strict(),
@@ -292,18 +283,18 @@ const eventSchema = z.discriminatedUnion('eventType', [
   ),
   workflowEnvelope(
     OrchestrationEventType.StageEntered,
-    z.object({ stage: z.string().min(1) }).strict(),
+    z.object({ stage: brandedStringSchema(stageName) }).strict(),
   ),
   workflowEnvelope(OrchestrationEventType.ActivityRequested, activityRequestedSchema),
   workflowEnvelope(
     OrchestrationEventType.ActivityStarted,
-    z.object({ activationId: z.string().min(1) }).strict(),
+    z.object({ activationId: brandedStringSchema(activationId) }).strict(),
   ),
   workflowEnvelope(
     OrchestrationEventType.ActivityOutcomeAccepted,
     z
       .object({
-        activationId: z.string().min(1),
+        activationId: brandedStringSchema(activationId),
         outcome: outcomeSchema,
       })
       .strict(),
@@ -312,9 +303,9 @@ const eventSchema = z.discriminatedUnion('eventType', [
     OrchestrationEventType.ActivityWaiting,
     z
       .object({
-        activationId: z.string().min(1),
+        activationId: brandedStringSchema(activationId),
         intentEventId: z.string().min(1),
-        signalKind: z.string().min(1),
+        signalKind: brandedStringSchema(signalName),
         outcome: waitingOutcomeSchema,
       })
       .strict(),
@@ -325,7 +316,7 @@ const eventSchema = z.discriminatedUnion('eventType', [
     OrchestrationEventType.SupplementalActivityQueued,
     z
       .object({
-        activity: z.string().min(1),
+        activity: brandedStringSchema(activityName),
         input: z.unknown(),
         requestedBy: z.string().min(1),
       })
@@ -335,7 +326,7 @@ const eventSchema = z.discriminatedUnion('eventType', [
     OrchestrationEventType.SupplementalActivityDequeued,
     z
       .object({
-        activity: z.string().min(1),
+        activity: brandedStringSchema(activityName),
         requestedBy: z.string().min(1),
       })
       .strict(),
@@ -356,7 +347,7 @@ const eventSchema = z.discriminatedUnion('eventType', [
   workflowEnvelope(OrchestrationEventType.InstanceSuperseded, emptySchema),
   workflowEnvelope(
     OrchestrationEventType.ChildRequested,
-    z.object({ ...childMetadataShape, workflowName: z.string().min(1) }).strict(),
+    z.object({ ...childMetadataShape, workflowName: brandedStringSchema(workflowName) }).strict(),
   ),
   workflowEnvelope(OrchestrationEventType.ChildStarted, childMetadataSchema),
   workflowEnvelope(OrchestrationEventType.ChildCompleted, childMetadataSchema),

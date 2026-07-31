@@ -1,3 +1,4 @@
+import { workflowName } from '../../../src-next/orchestration/contracts/identifiers.js';
 import { expect, it } from 'vitest';
 
 import { createPullRequestMergeAuthorityGate } from '../../../src-next/activities/index.js';
@@ -51,7 +52,7 @@ it.each([
 
     await world.startWorkflow({
       workItemId: workItemId('work-github-owner-repo-7'),
-      workflowName: 'merge',
+      workflowName: workflowName('merge'),
     });
     await world.advance(workItemId('work-github-owner-repo-7'));
     await world.advance(workItemId('work-github-owner-repo-7'));

@@ -1,8 +1,7 @@
 import type { WorkItemId } from '../../work/index.js';
-import type { ResourceId } from './identifiers.js';
-
-export type ResourceCapability =
-  'commentable' | 'reviewable' | 'approvable' | 'mergeable' | 'revisioned' | 'editable';
+import type { ResourceCapability, ResourceId, ResourceKind } from './identifiers.js';
+import type { ResourceCorrelationRole } from './vocabulary.js';
+export type { ResourceCapability, ResourceKind } from './identifiers.js';
 
 export interface ExternalResourceKey {
   readonly adapter: string;
@@ -11,7 +10,7 @@ export interface ExternalResourceKey {
 
 export interface ResourceView {
   readonly resourceId: ResourceId;
-  readonly kind: string;
+  readonly kind: ResourceKind;
   readonly externalKey: ExternalResourceKey;
   readonly capabilities: readonly ResourceCapability[];
   readonly revision?: string;
@@ -25,6 +24,6 @@ export interface ResourceView {
 export interface ResourceCorrelationView {
   readonly resourceId: ResourceId;
   readonly workItemId: WorkItemId;
-  readonly role: 'primary' | 'secondary';
+  readonly role: ResourceCorrelationRole;
   readonly establishedByEventId: string;
 }

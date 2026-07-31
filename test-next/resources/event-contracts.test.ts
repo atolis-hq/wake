@@ -1,3 +1,4 @@
+import { resourceCapability } from '../../src-next/resources/index.js';
 import { describe, expect, it } from 'vitest';
 import {
   decodeResourceEvent,
@@ -16,7 +17,7 @@ const samples = [
     {
       kind: 'pull-request',
       externalKey: { adapter: 'github', key: 'wake#1' },
-      capabilities: ['commentable', 'reviewable'],
+      capabilities: [resourceCapability('commentable'), resourceCapability('reviewable')],
       revision: 'abc',
     },
   ],

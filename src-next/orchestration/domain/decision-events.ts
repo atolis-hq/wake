@@ -1,10 +1,12 @@
+import { EventActorKind, EventSourceKind } from '../../kernel/index.js';
 import { createEventDraft } from '../../kernel/index.js';
+import { activationId, type ActivityName } from '../../activities/index.js';
 import {
   type ActivityRequestedPayload,
   type OrchestrationEventPayloads,
   type WorkflowOrchestrationEventName,
 } from '../contracts/events.js';
-import { workflowInstanceId } from '../contracts/identifiers.js';
+import { workflowInstanceId, type WorkflowInstanceId } from '../contracts/identifiers.js';
 import { workflowInstanceStream } from '../contracts/streams.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
 
@@ -14,21 +16,21 @@ interface DecisionContext {
 }
 
 interface StartDraftContext extends DecisionContext {
-  readonly workflowInstanceId: string;
+  readonly workflowInstanceId: WorkflowInstanceId;
   readonly correlationId: string;
 }
 
-const actor = { kind: 'system' as const, id: 'orchestration' };
-const source = { kind: 'internal' as const, id: 'orchestration' };
+const actor = { kind: EventActorKind.System, id: 'orchestration' };
+const source = { kind: EventSourceKind.Internal, id: 'orchestration' };
 
 export function nextOrdinal(state: WorkflowInstanceView): number {
   return (state.pendingActivation?.ordinal ?? 0) + 1;
 }
 
 export function activation(
-  id: string,
+  id: WorkflowInstanceId,
   ordinal: number,
-  activity: string,
+  activity: ActivityName,
   input: unknown,
   options: {
     readonly execution: ActivityRequestedPayload['execution'];
@@ -37,7 +39,7 @@ export function activation(
   },
 ): ActivityRequestedPayload {
   return {
-    activationId: `${id}:activity:${ordinal}`,
+    activationId: activationId(`${id}:activity:${ordinal}`),
     ordinal,
     activity,
     input,

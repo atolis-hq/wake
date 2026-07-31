@@ -1,3 +1,5 @@
+import { IntentAppendStatus } from '../contracts/vocabulary.js';
+import { EventActorKind } from '../../kernel/index.js';
 import {
   type CommandContext,
   type EventJournal,
@@ -7,7 +9,11 @@ import type { ResourceStreamRef } from '../../resources/index.js';
 import type { WorkItemStreamRef } from '../../work/index.js';
 import type { ActivityFactDraft } from '../contracts/events.js';
 
-export type IntentAppendResult = 'appended' | 'known' | 'ambiguous' | 'failed';
+export type IntentAppendResult =
+  | typeof IntentAppendStatus.Appended
+  | typeof IntentAppendStatus.Known
+  | typeof IntentAppendStatus.Ambiguous
+  | typeof IntentAppendStatus.Failed;
 
 export interface IntentAppender {
   append(
@@ -29,18 +35,21 @@ export async function appendIntentOnce(
 ): Promise<IntentAppendResult> {
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const events = await journal.readStream(stream);
-    if (events.some((event) => event.eventId === intent.eventId)) return 'known';
+    if (events.some((event) => event.eventId === intent.eventId)) return IntentAppendStatus.Known;
     try {
       await journal.append(stream, events.length, [intent]);
-      return 'appended';
+      return IntentAppendStatus.Appended;
     } catch (error) {
       const observed = await journal.readStream(stream);
-      if (observed.some((event) => event.eventId === intent.eventId)) return 'known';
-      if (!(error instanceof WrongExpectedSequenceError)) return 'failed';
+      if (observed.some((event) => event.eventId === intent.eventId))
+        return IntentAppendStatus.Known;
+      if (!(error instanceof WrongExpectedSequenceError)) return IntentAppendStatus.Failed;
     }
   }
   const reconciled = await journal.readStream(stream);
-  return reconciled.some((event) => event.eventId === intent.eventId) ? 'known' : 'failed';
+  return reconciled.some((event) => event.eventId === intent.eventId)
+    ? IntentAppendStatus.Known
+    : IntentAppendStatus.Failed;
 }
 
 export function activityCommandContext(
@@ -52,6 +61,6 @@ export function activityCommandContext(
     commandId: activationId,
     correlationId: orchestrationGroupId as CommandContext['correlationId'],
     occurredAt,
-    actor: { kind: 'system', id: 'activities-pr' },
+    actor: { kind: EventActorKind.System, id: 'activities-pr' },
   };
 }

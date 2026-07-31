@@ -1,3 +1,5 @@
+import { workflowName } from '../../../src-next/orchestration/contracts/identifiers.js';
+import { activityName } from '../../../src-next/activities/index.js';
 import { z } from 'zod';
 import { expect } from 'vitest';
 import { defineScenario } from '../support/scenario.js';
@@ -15,7 +17,7 @@ defineScenario(
     const world = new TestWorld();
     let attempts = 0;
     world.registerActivity({
-      name: 'implement',
+      name: activityName('implement'),
       inputSchema: z.object({}).strict(),
       outcomeSchema: z
         .object({
@@ -23,6 +25,7 @@ defineScenario(
           data: z.object({ retrySafety: z.literal('safe-to-retry') }).optional(),
         })
         .strict(),
+      outcomeKinds: ['done', 'failed'],
       resources: [],
       executionKind: 'deterministic',
       handler: {
@@ -49,7 +52,7 @@ defineScenario(
     const work = await world.createWork({ objective: 'retry safely' });
     const workflow = await world.startWorkflow({
       workItemId: work.workItemId,
-      workflowName: 'default',
+      workflowName: workflowName('default'),
     });
     await world.advance(work.workItemId);
     await world.advance(work.workItemId);

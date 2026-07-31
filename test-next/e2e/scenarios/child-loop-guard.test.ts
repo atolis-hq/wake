@@ -1,3 +1,5 @@
+import { signalName, workflowName } from '../../../src-next/orchestration/contracts/identifiers.js';
+import { activityName } from '../../../src-next/activities/index.js';
 import { z } from 'zod';
 import { expect } from 'vitest';
 import {
@@ -18,9 +20,10 @@ defineScenario(
   async () => {
     const world = new TestWorld();
     world.registerActivity({
-      name: 'implement',
+      name: activityName('implement'),
       inputSchema: z.object({}).strict(),
       outcomeSchema: z.object({ kind: z.literal('blocked') }).strict(),
+      outcomeKinds: ['blocked'],
       resources: [],
       executionKind: 'deterministic',
       handler: {
@@ -30,9 +33,10 @@ defineScenario(
       },
     });
     world.registerActivity({
-      name: 'pr-review',
+      name: activityName('pr-review'),
       inputSchema: z.object({}).strict(),
       outcomeSchema: z.object({ kind: z.literal('done') }).strict(),
+      outcomeKinds: ['done'],
       resources: [],
       executionKind: 'deterministic',
       handler: {
@@ -61,11 +65,11 @@ defineScenario(
     const work = await world.createWork({ objective: 'implement with a review' });
     const parent = await world.startWorkflow({
       workItemId: work.workItemId,
-      workflowName: 'parent',
+      workflowName: workflowName('parent'),
     });
     await world.advance(work.workItemId);
     await world.waitForSignal(parent.workflowInstanceId, {
-      signalKind: 'orchestration.child-completed',
+      signalKind: signalName('orchestration.child-completed'),
     });
 
     await world.triggerWatch('review.requested', 'review-1');

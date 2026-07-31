@@ -1,3 +1,4 @@
+import { signalName } from '../../src-next/orchestration/contracts/identifiers.js';
 import { expect, expectTypeOf, it } from 'vitest';
 import {
   activityDecisionStream,
@@ -126,7 +127,7 @@ it('rejects an inexact decision claim before calling the journal append boundary
     decisionKind: 'requested',
     outcome: {
       kind: 'waiting',
-      data: { intentEventId: mergeRequest.eventId, signalKind: 'delivery-result' },
+      data: { intentEventId: mergeRequest.eventId, signalKind: signalName('delivery-result') },
     },
     fact: mergeRequest,
   } as unknown as PullRequestDecision<'approve'>;

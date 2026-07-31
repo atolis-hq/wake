@@ -1,3 +1,7 @@
+import {
+  orchestrationGroupId,
+  workflowName,
+} from '../../src-next/orchestration/contracts/identifiers.js';
 import { expect, it } from 'vitest';
 import { createEventDraft, eventId, type EntityRef } from '../../src-next/kernel/index.js';
 import {
@@ -62,8 +66,8 @@ it('does not inspect an unrelated domain payload for causal metadata', async () 
     async listWatchMatches() {
       return [
         {
-          parent: { workflowInstanceId: 'parent-1' },
-          watch: { id: 'review', workflow: 'review', maxPerGroup: 1 },
+          parent: { workflowInstanceId: workflowInstanceId('parent-1') },
+          watch: { id: 'review', workflow: workflowName('review'), maxPerGroup: 1 },
         },
       ];
     },
@@ -95,8 +99,8 @@ it('rejects a causal event instead of dispatching another child', async () => {
     async listWatchMatches() {
       return [
         {
-          parent: { workflowInstanceId: 'parent-1' },
-          watch: { id: 'review', workflow: 'review', maxPerGroup: 1 },
+          parent: { workflowInstanceId: workflowInstanceId('parent-1') },
+          watch: { id: 'review', workflow: workflowName('review'), maxPerGroup: 1 },
         },
       ];
     },
@@ -116,13 +120,13 @@ it('rejects a causal event instead of dispatching another child', async () => {
       OrchestrationEventType.ChildCompleted,
       'child-1',
       {
-        parentWorkflowInstanceId: 'parent-1',
+        parentWorkflowInstanceId: workflowInstanceId('parent-1'),
         watchId: 'review',
         triggerId: 'trigger-1',
-        orchestrationGroupId: 'group-1',
+        orchestrationGroupId: orchestrationGroupId('group-1'),
         causalCycleId: 'cycle-1',
         requestId: 'request-1',
-        childWorkflowInstanceId: 'workflow-child',
+        childWorkflowInstanceId: workflowInstanceId('workflow-child'),
       },
       workflowInstanceStream(workflowInstanceId('workflow-child')),
     ),
@@ -142,8 +146,8 @@ it('does not reject an unrelated causal event', async () => {
     async listWatchMatches() {
       return [
         {
-          parent: { workflowInstanceId: 'parent-1' },
-          watch: { id: 'review', workflow: 'review', maxPerGroup: 1 },
+          parent: { workflowInstanceId: workflowInstanceId('parent-1') },
+          watch: { id: 'review', workflow: workflowName('review'), maxPerGroup: 1 },
         },
       ];
     },
@@ -198,8 +202,8 @@ it('keeps its checkpoint unchanged until every watch request succeeds', async ()
     {
       async listWatchMatches() {
         return ['first', 'second'].map((id) => ({
-          parent: { workflowInstanceId: 'parent-1' },
-          watch: { id, workflow: 'review', maxPerGroup: 2 },
+          parent: { workflowInstanceId: workflowInstanceId('parent-1') },
+          watch: { id, workflow: workflowName('review'), maxPerGroup: 2 },
         }));
       },
       async requestChild(request, context) {
@@ -232,9 +236,9 @@ it('keeps its checkpoint unchanged until every watch request succeeds', async ()
 it('scopes dispatch and rejection command identities to the parent and watch', async () => {
   const dispatched: string[] = [];
   const rejected: string[] = [];
-  const matches = ['parent-a', 'parent-b'].map((workflowInstanceId) => ({
-    parent: { workflowInstanceId },
-    watch: { id: 'review', workflow: 'review', maxPerGroup: 1 },
+  const matches = ['parent-a', 'parent-b'].map((id) => ({
+    parent: { workflowInstanceId: workflowInstanceId(id) },
+    watch: { id: 'review', workflow: workflowName('review'), maxPerGroup: 1 },
   }));
   const event = canonicalEvent('review.requested', 'event-1', {});
   const context = {
@@ -317,8 +321,8 @@ it('replays the identical child request after checkpoint persistence fails', asy
       async listWatchMatches() {
         return [
           {
-            parent: { workflowInstanceId: 'parent-1' },
-            watch: { id: 'review', workflow: 'review', maxPerGroup: 1 },
+            parent: { workflowInstanceId: workflowInstanceId('parent-1') },
+            watch: { id: 'review', workflow: workflowName('review'), maxPerGroup: 1 },
           },
         ];
       },

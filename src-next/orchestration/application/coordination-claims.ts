@@ -1,3 +1,4 @@
+import { EventSourceKind } from '../../kernel/index.js';
 import {
   createEventDraft,
   type CommandContext,
@@ -43,7 +44,7 @@ export class CoordinationClaims {
             correlationId: context.correlationId,
             causationId: context.commandId,
             actor: context.actor,
-            source: { kind: 'internal', id: 'orchestration-service' },
+            source: { kind: EventSourceKind.Internal, id: 'orchestration-service' },
             stream,
             payload: { workItemId, workflowInstanceId },
           }),
@@ -79,7 +80,7 @@ export class CoordinationClaims {
             correlationId: context.correlationId,
             causationId: context.commandId,
             actor: context.actor,
-            source: { kind: 'internal', id: 'orchestration-service' },
+            source: { kind: EventSourceKind.Internal, id: 'orchestration-service' },
             stream,
             payload: { key: stream.id, requestId: request.requestId },
           }),

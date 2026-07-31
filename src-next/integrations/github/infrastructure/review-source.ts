@@ -1,8 +1,11 @@
+import { ReviewActorKind, ReviewerAuthorizationSource } from '../../../activities/index.js';
+import { EventSourceKind } from '../../../kernel/index.js';
 import { createEventDraft, EventActorKind } from '../../../kernel/index.js';
 import { BuiltInAdapterId } from '../../contracts/identifiers.js';
 import { integrationStream } from '../../contracts/streams.js';
 import type { GitHubPullRequestPayload, GitHubReviewPayload } from '../contracts/payloads.js';
 import { GitHubEventType, type GitHubAdapterEventDraft } from '../contracts/events.js';
+import { GitHubReviewState, UnknownGitHubIdentity } from '../contracts/vocabulary.js';
 
 export function githubReviewObservation(input: {
   readonly repository: string;
@@ -12,7 +15,7 @@ export function githubReviewObservation(input: {
 }): Extract<GitHubAdapterEventDraft, { eventType: typeof GitHubEventType.CommentObserved }> | null {
   const command = reviewCommand(input.review.state);
   if (command === null) return null;
-  const actorId = input.review.user?.login ?? 'unknown';
+  const actorId = input.review.user?.login ?? UnknownGitHubIdentity;
   const key = `${input.repository}#${input.pullRequest.number}`;
   return createEventDraft({
     eventId: `github:review:${key}:${input.review.id}:${input.review.state}:${input.review.commit_id}`,
@@ -21,7 +24,7 @@ export function githubReviewObservation(input: {
     correlationId: `github:${key}`,
     causationId: `github:review:${input.review.id}`,
     actor: { kind: EventActorKind.Integration, id: 'github' },
-    source: { kind: 'adapter', id: 'github' },
+    source: { kind: EventSourceKind.Adapter, id: 'github' },
     stream: integrationStream(BuiltInAdapterId.GitHub),
     payload: {
       externalKey: key,
@@ -29,9 +32,9 @@ export function githubReviewObservation(input: {
       revision: input.review.commit_id,
       actor: {
         id: actorId,
-        kind: input.review.user?.type === 'Bot' ? 'bot' : 'human',
+        kind: input.review.user?.type === 'Bot' ? ReviewActorKind.Bot : ReviewActorKind.Human,
       },
-      resourceAuthorId: input.pullRequest.user?.login ?? 'unknown',
+      resourceAuthorId: input.pullRequest.user?.login ?? UnknownGitHubIdentity,
       authorization: configuredAuthorization(actorId, input.authorizedReviewers),
       raw: { reviewId: input.review.id, state: input.review.state },
     },
@@ -41,13 +44,13 @@ export function githubReviewObservation(input: {
 function configuredAuthorization(actorId: string, reviewers: readonly string[]) {
   const reviewerId = reviewers.find((reviewer) => sameIdentity(reviewer, actorId));
   return reviewerId === undefined
-    ? ({ source: 'none' } as const)
-    : ({ source: 'configured-reviewer', reviewerId } as const);
+    ? ({ source: ReviewerAuthorizationSource.None } as const)
+    : ({ source: ReviewerAuthorizationSource.ConfiguredReviewer, reviewerId } as const);
 }
 
 function reviewCommand(state: string): '/accepted' | '/changes' | null {
-  if (state === 'APPROVED') return '/accepted';
-  return state === 'CHANGES_REQUESTED' ? '/changes' : null;
+  if (state === GitHubReviewState.Approved) return '/accepted';
+  return state === GitHubReviewState.ChangesRequested ? '/changes' : null;
 }
 
 function sameIdentity(left: string, right: string): boolean {

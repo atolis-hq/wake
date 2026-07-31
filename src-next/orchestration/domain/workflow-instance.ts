@@ -1,9 +1,11 @@
+import { ActivityActivationStatus, WorkflowStatus } from '../contracts/vocabulary.js';
 import {
   OrchestrationEventType,
   type WorkflowOrchestrationEvent,
   type WorkflowOrchestrationEventDraft,
 } from '../contracts/events.js';
 import type { ActivityActivationView, WorkflowInstanceView } from '../contracts/views.js';
+import type { ActivationId } from '../../activities/index.js';
 
 type WorkflowFact = WorkflowOrchestrationEvent | WorkflowOrchestrationEventDraft;
 
@@ -16,7 +18,7 @@ export function foldWorkflowInstance(events: readonly WorkflowFact[]): WorkflowI
     workflowName: first.payload.workflowName,
     orchestrationGroupId: first.payload.orchestrationGroupId,
     ...optionalChildFields(first.payload),
-    status: 'active',
+    status: WorkflowStatus.Active,
     currentStage: first.payload.entry,
     repeatCounts: {},
     retryCounts: {},
@@ -32,29 +34,25 @@ export function foldWorkflowInstance(events: readonly WorkflowFact[]): WorkflowI
 }
 
 type Mutable = {
-  workflowInstanceId: string;
+  workflowInstanceId: WorkflowInstanceView['workflowInstanceId'];
   workItemId: WorkflowInstanceView['workItemId'];
-  workflowName: string;
-  orchestrationGroupId: string;
-  parentWorkflowInstanceId?: string;
+  workflowName: WorkflowInstanceView['workflowName'];
+  orchestrationGroupId: WorkflowInstanceView['orchestrationGroupId'];
+  parentWorkflowInstanceId?: WorkflowInstanceView['parentWorkflowInstanceId'];
   watchId?: string;
   triggerId?: string;
   causalCycleId?: string;
   requestId?: string;
   status: WorkflowInstanceView['status'];
-  currentStage: string;
+  currentStage: WorkflowInstanceView['currentStage'];
   pendingActivation?: ActivityActivationView;
   repeatCounts: Record<string, number>;
   retryCounts: Record<string, number>;
   waitingFor?: WorkflowInstanceView['waitingFor'];
-  supplementalQueue: {
-    activity: string;
-    input: unknown;
-    requestedBy: string;
-  }[];
+  supplementalQueue: Array<WorkflowInstanceView['supplementalQueue'][number]>;
   acceptedSignalIds: string[];
-  acceptedOutcomes: string[];
-  acceptedChildCompletionIds: string[];
+  acceptedOutcomes: ActivationId[];
+  acceptedChildCompletionIds: WorkflowInstanceView['workflowInstanceId'][];
   causalRejectionIds: string[];
   childCompletionRecorded: boolean;
   lastOutcome?: WorkflowInstanceView['lastOutcome'];
@@ -124,12 +122,12 @@ function applyActivityFact(state: Mutable, event: ActivityFact): void {
       applyActivityRequested(state, event.payload);
       return;
     case OrchestrationEventType.ActivityStarted:
-      updateActivationStatus(state, event.payload.activationId, 'running');
+      updateActivationStatus(state, event.payload.activationId, ActivityActivationStatus.Running);
       return;
     case OrchestrationEventType.ActivityOutcomeAccepted:
       state.acceptedOutcomes.push(event.payload.activationId);
       state.lastOutcome = event.payload.outcome;
-      updateActivationStatus(state, event.payload.activationId, 'completed');
+      updateActivationStatus(state, event.payload.activationId, ActivityActivationStatus.Completed);
       return;
     case OrchestrationEventType.ActivityWaiting:
       applyActivityWaiting(state, event);
@@ -157,7 +155,7 @@ function applyInteractionFact(state: Mutable, event: InteractionFact): void {
       applySignalWaitStarted(state, event);
       return;
     case OrchestrationEventType.SignalAccepted:
-      state.status = 'active';
+      state.status = WorkflowStatus.Active;
       state.acceptedSignalIds.push(event.payload.providerEventId);
       delete state.waitingFor;
       return;
@@ -194,15 +192,15 @@ function applyLifecycleFact(state: Mutable, event: LifecycleFact): void {
       state.retryCounts[event.payload.retryKey] = event.payload.count;
       return;
     case OrchestrationEventType.InstanceCompleted:
-      state.status = 'completed';
+      state.status = WorkflowStatus.Completed;
       delete state.pendingActivation;
       delete state.waitingFor;
       return;
     case OrchestrationEventType.InstanceBlocked:
-      state.status = 'blocked';
+      state.status = WorkflowStatus.Blocked;
       return;
     case OrchestrationEventType.InstanceSuperseded:
-      state.status = 'superseded';
+      state.status = WorkflowStatus.Superseded;
       return;
     default:
       assertNever(event);
@@ -234,20 +232,20 @@ function applyActivityWaiting(
   state: Mutable,
   event: FactsOf<typeof OrchestrationEventType.ActivityWaiting>,
 ): void {
-  state.status = 'waiting';
+  state.status = WorkflowStatus.Waiting;
   state.waitingFor = {
     signalKind: event.payload.signalKind,
     intentEventId: event.payload.intentEventId,
   };
   state.lastOutcome = event.payload.outcome;
-  updateActivationStatus(state, event.payload.activationId, 'waiting');
+  updateActivationStatus(state, event.payload.activationId, ActivityActivationStatus.Waiting);
 }
 
 function applySignalWaitStarted(
   state: Mutable,
   event: FactsOf<typeof OrchestrationEventType.SignalWaitStarted>,
 ): void {
-  state.status = 'waiting';
+  state.status = WorkflowStatus.Waiting;
   state.waitingFor = {
     signalKind: event.payload.signalKind,
     ...(event.payload.resourceId === undefined ? {} : { resourceId: event.payload.resourceId }),
@@ -257,7 +255,7 @@ function applySignalWaitStarted(
 
 function updateActivationStatus(
   state: Mutable,
-  activationId: string,
+  activationId: ActivationId,
   status: ActivityActivationView['status'],
 ): void {
   if (state.pendingActivation?.activationId === activationId) {
@@ -272,7 +270,7 @@ function applyActivityRequested(
     { eventType: typeof OrchestrationEventType.ActivityRequested }
   >['payload'],
 ): void {
-  state.status = 'active';
+  state.status = WorkflowStatus.Active;
   delete state.waitingFor;
   state.pendingActivation = {
     activationId: payload.activationId,
@@ -280,7 +278,7 @@ function applyActivityRequested(
     activity: payload.activity,
     input: payload.input,
     execution: payload.execution,
-    status: 'pending',
+    status: ActivityActivationStatus.Pending,
     ...(payload.followOnIndex === undefined ? {} : { followOnIndex: payload.followOnIndex }),
     ...(payload.supplemental === true ? { supplemental: true } : {}),
   };

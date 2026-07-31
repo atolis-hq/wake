@@ -1,3 +1,9 @@
+import {
+  orchestrationGroupId,
+  workflowInstanceId,
+} from '../../src-next/orchestration/contracts/identifiers.js';
+import { activationId } from '../../src-next/activities/contracts/identifiers.js';
+import { activityName } from '../../src-next/activities/index.js';
 import { z } from 'zod';
 import { describe, expect, it } from 'vitest';
 import { ActivityRegistry } from '../../src-next/activities/index.js';
@@ -12,7 +18,7 @@ import { workItemId } from '../../src-next/work/index.js';
 function retryFixture() {
   const activities = new ActivityRegistry();
   activities.register({
-    name: 'implement',
+    name: activityName('implement'),
     inputSchema: z.object({}).strict(),
     outcomeSchema: z
       .object({
@@ -22,6 +28,7 @@ function retryFixture() {
           .optional(),
       })
       .strict(),
+    outcomeKinds: ['done', 'failed'],
     resources: [],
     executionKind: 'deterministic',
     handler: {
@@ -47,9 +54,9 @@ function retryFixture() {
     activities,
   );
   const started = startInstance({
-    workflowInstanceId: 'workflow-1',
+    workflowInstanceId: workflowInstanceId('workflow-1'),
     workItemId: workItemId('work-1'),
-    orchestrationGroupId: 'group-1',
+    orchestrationGroupId: orchestrationGroupId('group-1'),
     definition,
     occurredAt: '2026-07-30T12:00:00.000Z',
     correlationId: 'correlation-1',
@@ -82,9 +89,9 @@ describe('workflow retry policy', () => {
     if (decision.kind !== 'append') return;
     const retried = foldWorkflowInstance([...fixture.events, ...decision.events])!;
     expect(retried.pendingActivation).toMatchObject({
-      activationId: 'workflow-1:activity:2',
+      activationId: activationId('workflow-1:activity:2'),
       ordinal: 2,
-      activity: 'implement',
+      activity: activityName('implement'),
     });
     expect(retried.retryCounts).toEqual({ 'implement:failed': 1 });
   });

@@ -7,6 +7,7 @@ export * from './contracts/identifiers.js';
 export * from './contracts/runner.js';
 export * from './contracts/streams.js';
 export * from './contracts/views.js';
+export * from './contracts/vocabulary.js';
 export * from './contracts/workspace.js';
 export * from './domain/run.js';
 export * from './domain/run-result.js';
