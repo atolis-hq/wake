@@ -10,35 +10,39 @@ export function discoverCatalogues(sourceDetails, rules) {
   const diagnostics = [];
 
   for (const detail of sourceDetails) {
-    if (rules.has('event-literals') && isContractPath(detail.path, 'events.ts')) {
+    if (isContractPath(detail.path, 'events.ts')) {
       discoverNamedCatalogues(
         detail,
         'EventType',
         'event-literals',
         catalogues.eventValues,
-        diagnostics,
+        diagnosticsFor(rules, diagnostics, 'event-literals'),
       );
     }
-    if (rules.has('stream-literals')) {
-      if (isCanonicalModuleContractPath(detail.path, 'streams.ts')) {
-        discoverNamedCatalogues(
-          detail,
-          'StreamKind',
-          'stream-literals',
-          catalogues.streamValues,
-          diagnostics,
-          true,
-        );
-      } else {
-        rejectOffPathCatalogues(detail, 'StreamKind', 'stream-literals', diagnostics);
-      }
+    if (isCanonicalModuleContractPath(detail.path, 'streams.ts')) {
+      discoverNamedCatalogues(
+        detail,
+        'StreamKind',
+        'stream-literals',
+        catalogues.streamValues,
+        diagnosticsFor(rules, diagnostics, 'stream-literals'),
+        true,
+      );
+    } else if (rules.has('stream-literals')) {
+      rejectOffPathCatalogues(detail, 'StreamKind', 'stream-literals', diagnostics);
     }
-    if (rules.has('closed-vocabulary')) {
-      discoverClosedCatalogues(detail, catalogues.closedValues, diagnostics);
-    }
+    discoverClosedCatalogues(
+      detail,
+      catalogues.closedValues,
+      diagnosticsFor(rules, diagnostics, 'closed-vocabulary'),
+    );
   }
 
   return { catalogues, diagnostics };
+}
+
+function diagnosticsFor(rules, diagnostics, rule) {
+  return rules.has(rule) ? diagnostics : [];
 }
 
 function rejectOffPathCatalogues(detail, suffix, rule, diagnostics) {

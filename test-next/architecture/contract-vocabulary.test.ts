@@ -188,6 +188,46 @@ describe('contract vocabulary catalogue boundaries', () => {
   });
 });
 
+describe('validated catalogue literal exemptions', () => {
+  it.each([
+    {
+      name: 'misleading exported catalogue name',
+      path: 'src-next/work/domain/pseudo-catalogue.ts',
+      source: "export const NotReallyAnEventType = () => 'work-item';",
+    },
+    {
+      name: 'malformed event catalogue',
+      path: 'src-next/activities/contracts/events.ts',
+      source: "export const ActivityEventType = { Fake: 'work-item' };",
+    },
+    {
+      name: 'malformed stream catalogue',
+      path: 'src-next/activities/contracts/streams.ts',
+      source: "export const ActivityStreamKind = { Fake: 'work-item' };",
+    },
+    {
+      name: 'malformed closed catalogue',
+      path: 'src-next/activities/contracts/review.ts',
+      source: [
+        "import { defineClosedVocabulary } from '../../kernel/index.js';",
+        "export const ReviewDecision = defineClosedVocabulary({ Fake: 'work-item' });",
+      ].join('\n'),
+    },
+  ])('does not exempt a $name', async ({ path, source }) => {
+    const root = await fixture({
+      'src-next/work/contracts/streams.ts': streamCatalogue,
+      [path]: source,
+    });
+
+    const diagnostics = await checkContractVocabulary(root, { rules: ['stream-literals'] });
+
+    expect(messages(diagnostics)).toContain(
+      `[stream-literals] "work-item" must be replaced by WorkStreamKind`,
+    );
+    expect(diagnostics.some(({ message }) => message.startsWith(path))).toBe(true);
+  });
+});
+
 describe('event and stream catalogue shapes', () => {
   it.each([
     {
