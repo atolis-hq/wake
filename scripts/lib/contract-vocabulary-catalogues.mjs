@@ -321,10 +321,10 @@ function isConstAssertion(expression) {
 }
 
 function isDefineClosedVocabularyCall(node) {
+  if (!ts.isCallExpression(node)) return false;
+  const callee = unwrapParentheses(node.expression);
   return (
-    ts.isCallExpression(node) &&
-    ts.isIdentifier(node.expression) &&
-    node.expression.text === 'defineClosedVocabulary'
+    callee !== undefined && ts.isIdentifier(callee) && callee.text === 'defineClosedVocabulary'
   );
 }
 
@@ -354,21 +354,28 @@ function closedVocabularyImports(source) {
 
 function isUnsupportedClosedVocabularyCall(node, imports) {
   if (!ts.isCallExpression(node)) return false;
-  const callee = node.expression;
+  const callee = unwrapParentheses(node.expression);
+  if (callee === undefined) return false;
   if (ts.isIdentifier(callee)) return imports.aliases.has(callee.text);
   if (
     ts.isPropertyAccessExpression(callee) &&
-    ts.isIdentifier(callee.expression) &&
-    imports.namespaces.has(callee.expression.text)
+    isImportedNamespaceReceiver(callee.expression, imports)
   ) {
     return callee.name.text === 'defineClosedVocabulary';
   }
   return (
     ts.isElementAccessExpression(callee) &&
-    ts.isIdentifier(callee.expression) &&
-    imports.namespaces.has(callee.expression.text) &&
-    ts.isStringLiteral(callee.argumentExpression) &&
+    isImportedNamespaceReceiver(callee.expression, imports) &&
+    (ts.isStringLiteral(callee.argumentExpression) ||
+      ts.isNoSubstitutionTemplateLiteral(callee.argumentExpression)) &&
     callee.argumentExpression.text === 'defineClosedVocabulary'
+  );
+}
+
+function isImportedNamespaceReceiver(expression, imports) {
+  const receiver = unwrapParentheses(expression);
+  return (
+    receiver !== undefined && ts.isIdentifier(receiver) && imports.namespaces.has(receiver.text)
   );
 }
 

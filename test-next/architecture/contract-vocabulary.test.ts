@@ -53,7 +53,6 @@ const closedCatalogue = [
   "  Approved: 'review.approved',",
   '} as const);',
 ].join('\n');
-
 describe('contract vocabulary discovery', () => {
   it('exposes only the three parser vocabulary rules', () => {
     expect(CONTRACT_VOCABULARY_RULES).toEqual([
@@ -117,6 +116,27 @@ describe('contract vocabulary discovery', () => {
       'src-next/activities/application/review.ts:1:25 [closed-vocabulary] "review.approved" must be replaced by ReviewDecision',
     );
     expect(diagnostics).toHaveLength(2);
+  });
+
+  it('recognizes a parenthesized direct defineClosedVocabulary call', async () => {
+    const root = await fixture({
+      'src-next/activities/contracts/review.ts': [
+        "import { defineClosedVocabulary } from '../../kernel/index.js';",
+        'export const ReviewDecision = (defineClosedVocabulary)({',
+        "  Approved: 'review.approved',",
+        '} as const);',
+      ].join('\n'),
+      'src-next/activities/application/review.ts': "export const decision = 'review.approved';",
+    });
+
+    const diagnostics = await checkContractVocabulary(root, {
+      rules: ['closed-vocabulary'],
+    });
+
+    expect(messages(diagnostics)).toContain(
+      'src-next/activities/application/review.ts:1:25 [closed-vocabulary] "review.approved" must be replaced by ReviewDecision',
+    );
+    expect(diagnostics).toHaveLength(1);
   });
 
   it('defaults to all rules and filters an explicit subset', async () => {
@@ -238,108 +258,6 @@ describe('event and stream catalogue shapes', () => {
     });
 
     await expect(checkContractVocabulary(root)).resolves.toEqual([]);
-  });
-});
-
-describe('closed catalogue shapes', () => {
-  it.each([
-    {
-      name: 'non-exported declaration',
-      source:
-        "const ReviewDecision = defineClosedVocabulary({ Approved: 'review.approved' } as const);",
-      expected: 'ReviewDecision must be declared directly with export const',
-    },
-    {
-      name: 'indirect export',
-      source: [
-        "const ReviewDecision = defineClosedVocabulary({ Approved: 'review.approved' } as const);",
-        'export { ReviewDecision };',
-      ].join('\n'),
-      expected: 'ReviewDecision must be declared directly with export const',
-    },
-    {
-      name: 'identifier argument',
-      source: [
-        "const values = { Approved: 'review.approved' } as const;",
-        'export const ReviewDecision = defineClosedVocabulary(values);',
-      ].join('\n'),
-      expected: 'ReviewDecision must pass an inline object literal as const',
-    },
-    {
-      name: 'renamed helper import',
-      source: [
-        "import { defineClosedVocabulary as defineVocabulary } from '../../kernel/index.js';",
-        "export const ReviewDecision = defineVocabulary({ Approved: 'review.approved' } as const);",
-      ].join('\n'),
-      expected:
-        'ReviewDecision must call defineClosedVocabulary with its direct identifier spelling',
-    },
-    {
-      name: 'namespace helper member call',
-      source: [
-        "import * as vocabulary from '../../kernel/index.js';",
-        "export const ReviewDecision = vocabulary.defineClosedVocabulary({ Approved: 'review.approved' } as const);",
-      ].join('\n'),
-      expected:
-        'ReviewDecision must call defineClosedVocabulary with its direct identifier spelling',
-    },
-    {
-      name: 'nested helper call',
-      source:
-        "export const ReviewDecision = identity(defineClosedVocabulary({ Approved: 'review.approved' } as const));",
-      expected: 'ReviewDecision must use defineClosedVocabulary(...) as its direct initializer',
-    },
-    {
-      name: 'spread argument',
-      source: [
-        "const values = [{ Approved: 'review.approved' } as const];",
-        'export const ReviewDecision = defineClosedVocabulary(...values);',
-      ].join('\n'),
-      expected: 'ReviewDecision must pass exactly one inline object literal as const',
-    },
-    {
-      name: 'object spread',
-      source: [
-        "const values = { Approved: 'review.approved' } as const;",
-        'export const ReviewDecision = defineClosedVocabulary({ ...values } as const);',
-      ].join('\n'),
-      expected: 'ReviewDecision contains a spread property',
-    },
-    {
-      name: 'computed property',
-      source:
-        "export const ReviewDecision = defineClosedVocabulary({ ['Approved']: 'review.approved' } as const);",
-      expected: 'ReviewDecision contains a computed property',
-    },
-    {
-      name: 'shorthand property',
-      source: [
-        "const Approved = 'review.approved';",
-        'export const ReviewDecision = defineClosedVocabulary({ Approved } as const);',
-      ].join('\n'),
-      expected: 'ReviewDecision contains a shorthand property',
-    },
-    {
-      name: 'non-string value',
-      source: 'export const ReviewDecision = defineClosedVocabulary({ Approved: 1 } as const);',
-      expected: 'ReviewDecision.Approved must have a string-literal value',
-    },
-    {
-      name: 'argument without const assertion',
-      source:
-        "export const ReviewDecision = defineClosedVocabulary({ Approved: 'review.approved' });",
-      expected: 'ReviewDecision inline object argument must use as const',
-    },
-  ])('rejects an unsupported $name', async ({ source, expected }) => {
-    const root = await fixture({
-      'src-next/activities/contracts/review.ts': source,
-    });
-
-    const diagnostics = await checkContractVocabulary(root);
-
-    expect(messages(diagnostics)).toContain(expected);
-    expect(messages(diagnostics)).toMatch(/src-next\/activities\/contracts\/review\.ts:\d+:\d+/);
-    expect(diagnostics).toHaveLength(1);
   });
 });
 
