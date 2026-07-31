@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises';
+
 import {
   orchestrationGroupId,
   workflowInstanceId,
@@ -12,6 +14,15 @@ import { correlationId } from '../../src-next/kernel/index.js';
 import { createWorkService, workItemId } from '../../src-next/work/index.js';
 import { compileWorkflow, createOrchestrationService } from '../../src-next/orchestration/index.js';
 import { FakeClock } from '../e2e/support/world.js';
+
+it('uses the Work status vocabulary when checking whether work is open', async () => {
+  const source = await readFile(
+    new URL('../../src-next/orchestration/application/orchestration-service.ts', import.meta.url),
+    'utf8',
+  );
+  expect(source).toContain('item.state !== WorkStatus.Open');
+  expect(source).not.toContain('item.state !== PullRequestState.Open');
+});
 
 it('persists instances and accepts outcomes idempotently', async () => {
   const journal = new InMemoryEventJournal(new FakeClock());

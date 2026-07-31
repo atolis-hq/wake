@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises';
+
 import { resourceKind, resourceCapability } from '../../src-next/resources/index.js';
 import { describe, expect, it } from 'vitest';
 
@@ -61,6 +63,15 @@ function authorityInput(
 }
 
 describe('decidePullRequestAuthority', () => {
+  it('uses the Pull Request denial vocabulary for closed authority', async () => {
+    const source = await readFile(
+      new URL('../../src-next/activities/pr/policy.ts', import.meta.url),
+      'utf8',
+    );
+    expect(source).toContain('return denied(PullRequestDenialCode.Closed)');
+    expect(source).not.toContain('return denied(PullRequestState.Closed)');
+  });
+
   it.each([
     ['missing-resource', { resources: [] }],
     [

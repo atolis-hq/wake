@@ -91,7 +91,7 @@ export const reviewChangesRequested = (
 
 export const reviewRejected = (
   resourceId: ObservePullRequest['resourceId'],
-  reason: string,
+  reason: ActivityEventPayloads[typeof ActivityEventType.PrReviewRejected]['reason'],
   context: CommandContext,
 ): ActivityDraft<typeof ActivityEventType.PrReviewRejected> =>
   fact(resourceId, ActivityEventType.PrReviewRejected, { reason }, context);

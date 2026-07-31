@@ -199,7 +199,7 @@ class JournalPullRequestService implements PullRequestService {
   private async reviewRejection(
     resourceId: ObservePullRequest['resourceId'],
     revision: string,
-  ): Promise<string | null> {
+  ): Promise<PullRequestDenialCode | null> {
     const resource = await this.resources.get(resourceId);
     const view = await this.get(resourceId);
     if (resource?.kind !== 'pull-request' || view === null)

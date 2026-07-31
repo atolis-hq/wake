@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 
 import { z } from 'zod';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
 
 import {
   ActivityExecutionKind,
@@ -11,6 +11,7 @@ import {
   activityName,
   activationId,
   type ActivityDefinition,
+  type ActivityExecutionContext,
   type ActivityInvocation,
 } from '../../src-next/activities/index.js';
 import { workItemId } from '../../src-next/work/index.js';
@@ -58,11 +59,13 @@ describe('Activity outcome contracts', () => {
       resources: [],
     };
 
-    const outcome = await registry.execute(scoredActivity.name, invocation, {
+    const executionContext = {
       signal: new AbortController().signal,
       occurredAt: '2026-07-31T00:00:00.000Z',
       async reportExternalExecution(_reference) {},
-    });
+    } satisfies ActivityExecutionContext;
+    expectTypeOf(registry.execute).parameter(0).toEqualTypeOf<ActivityInvocation<unknown>>();
+    const outcome = await registry.execute(invocation, executionContext);
 
     expect(outcome).toEqual({ kind: 'scored', data: { score: 7 } });
     expect('get' in registry).toBe(false);

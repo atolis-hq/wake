@@ -1,9 +1,8 @@
-import { PullRequestState } from '../../activities/index.js';
 import { WorkflowInstanceKind, WorkflowStatus } from '../contracts/vocabulary.js';
 import { EventSourceKind } from '../../kernel/index.js';
 import type { ActivationId, ActivityOutcome } from '../../activities/index.js';
 import { createEventDraft, type CommandContext, type EventJournal } from '../../kernel/index.js';
-import type { WorkItemId, WorkService } from '../../work/index.js';
+import { WorkStatus, type WorkItemId, type WorkService } from '../../work/index.js';
 import type { CompiledWorkflow } from '../contracts/config.js';
 import type { GroupBudgetExhaustedView, WorkflowInstanceView } from '../contracts/views.js';
 import type { StartWorkflowInstance } from '../contracts/commands.js';
@@ -62,7 +61,7 @@ export class OrchestrationService {
 
   async start(command: StartWorkflowInstance, context: CommandContext) {
     const item = await this.work.get(command.workItemId);
-    if (item === null || item.state !== PullRequestState.Open)
+    if (item === null || item.state !== WorkStatus.Open)
       throw new Error('WorkItem must exist and be open');
     const definition = this.definition(command.workflowName);
     const existing = await this.repository.load(command.workflowInstanceId);

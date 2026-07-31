@@ -9,6 +9,7 @@ import { describe, expect, expectTypeOf, it } from 'vitest';
 import {
   childOrchestrationGroupStream,
   decodeOrchestrationEvent,
+  foldWorkflowInstance,
   OrchestrationEventType,
   primaryOrchestrationGroupStream,
   selectOrchestrationEvent,
@@ -76,8 +77,6 @@ const samples = [
     OrchestrationEventType.ActivityWaiting,
     {
       activationId: activation.activationId,
-      intentEventId: 'intent-1',
-      signalKind: signalName('delivery-result'),
       outcome: {
         kind: 'waiting',
         data: { intentEventId: 'intent-1', signalKind: signalName('delivery-result') },
@@ -151,14 +150,24 @@ it('types decoded and draft ActivityWaiting outcomes with the Orchestration bran
   expectTypeOf<
     WaitingDraft['payload']['outcome']
   >().toEqualTypeOf<OrchestrationWaitingActivityOutcome>();
+  expectTypeOf<WaitingDraft['payload']>().toEqualTypeOf<{
+    readonly activationId: ReturnType<typeof activationId>;
+    readonly outcome: OrchestrationWaitingActivityOutcome;
+  }>();
+
+  const canonicalPayload: WaitingDraft['payload'] = {
+    activationId: activation.activationId,
+    outcome: {
+      kind: 'waiting',
+      data: { intentEventId: 'intent-1', signalKind: signalName('delivery-result') },
+    } as OrchestrationWaitingActivityOutcome,
+  };
 
   const decoded = decodeOrchestrationEvent(
     eventEnvelope(
       OrchestrationEventType.ActivityWaiting,
       {
         activationId: activation.activationId,
-        intentEventId: 'intent-1',
-        signalKind: 'delivery-result',
         outcome: {
           kind: 'waiting',
           data: { intentEventId: 'intent-1', signalKind: 'delivery-result' },
@@ -170,6 +179,26 @@ it('types decoded and draft ActivityWaiting outcomes with the Orchestration bran
   if (decoded.eventType !== OrchestrationEventType.ActivityWaiting)
     throw new Error('expected ActivityWaiting');
   expect(decoded.payload.outcome.data.signalKind).toBe(signalName('delivery-result'));
+  const started = decodeOrchestrationEvent(samples[0]);
+  if (started.eventType !== OrchestrationEventType.InstanceStarted)
+    throw new Error('expected InstanceStarted');
+  expect(foldWorkflowInstance([started, decoded])?.waitingFor).toEqual({
+    intentEventId: 'intent-1',
+    signalKind: signalName('delivery-result'),
+  });
+  expect(() =>
+    decodeOrchestrationEvent(
+      eventEnvelope(
+        OrchestrationEventType.ActivityWaiting,
+        {
+          ...canonicalPayload,
+          intentEventId: 'intent-2',
+          signalKind: signalName('different-signal'),
+        },
+        workflow,
+      ),
+    ),
+  ).toThrow();
 });
 
 describe('Orchestration event contract', () => {

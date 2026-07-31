@@ -157,7 +157,9 @@ export interface ActivityEventPayloads {
     readonly revision: string;
     readonly actorId: string;
   };
-  readonly [ActivityEventType.PrReviewRejected]: { readonly reason: string };
+  readonly [ActivityEventType.PrReviewRejected]: {
+    readonly reason: PullRequestDenialCode;
+  };
   readonly [ActivityEventType.PrMergeDenied]: PullRequestDenialPayload;
   readonly [ActivityEventType.PrApproveDenied]: PullRequestDenialPayload;
   readonly [ActivityEventType.PrMergeAuthorized]: { readonly revision: string };
@@ -244,9 +246,4 @@ function invalidActivityEvent(event: EventEnvelope, cause: z.ZodError): Error {
     `Invalid Activity event ${event.eventId} at global position ${event.globalPosition} (${event.eventType}): ${cause.message}`,
     { cause },
   );
-}
-
-export interface ActivityActivated {
-  readonly activationId: ActivationId;
-  readonly activity: string;
 }

@@ -16,11 +16,9 @@ import { workItemId, type WorkItemId } from '../../work/index.js';
 import { type OrchestrationWaitingActivityOutcome } from './activity-outcome.js';
 import {
   orchestrationGroupId,
-  signalName,
   stageName,
   workflowName,
   type OrchestrationGroupId,
-  type SignalName,
   type StageName,
   type WorkflowInstanceId,
   type WorkflowName,
@@ -124,8 +122,6 @@ export interface OrchestrationEventPayloads {
   };
   readonly [OrchestrationEventType.ActivityWaiting]: {
     readonly activationId: ActivationId;
-    readonly intentEventId: string;
-    readonly signalKind: SignalName;
     readonly outcome: OrchestrationWaitingActivityOutcome;
   };
   readonly [OrchestrationEventType.SignalWaitStarted]: SignalExpectation;
@@ -304,8 +300,6 @@ const eventSchema = z.discriminatedUnion('eventType', [
     z
       .object({
         activationId: brandedStringSchema(activationId),
-        intentEventId: z.string().min(1),
-        signalKind: brandedStringSchema(signalName),
         outcome: waitingOutcomeSchema,
       })
       .strict(),

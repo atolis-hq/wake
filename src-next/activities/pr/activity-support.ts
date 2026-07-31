@@ -73,12 +73,7 @@ export const pullRequestOutcomeSchema: z.ZodType<PullRequestActivityOutcome> = z
       kind: z.literal(ActivityOutcomeKind.Failed),
       data: z
         .object({
-          reason: z.enum([
-            ActivityFailureCode.IntentWriteFailed,
-            ActivityFailureCode.InvalidAgentResult,
-            ActivityFailureCode.AmbiguousRunnerResult,
-            ActivityFailureCode.RunnerFailed,
-          ]),
+          reason: z.literal(ActivityFailureCode.IntentWriteFailed),
         })
         .strict(),
     })

@@ -5,6 +5,7 @@ import {
   ActivityOutcomeKind,
   PullRequestDenialCode,
   createPullRequestMergeActivity,
+  type PullRequestActivityOutcome,
   type PullRequestMergeInput,
 } from '../../src-next/activities/index.js';
 import { resourceId } from '../../src-next/resources/index.js';
@@ -36,6 +37,14 @@ it('exports the exact shared parsed merge input contract', () => {
 });
 
 it('closes blocked and failed Pull Request outcome reasons to their owning vocabularies', () => {
+  type FailedOutcome = Extract<
+    PullRequestActivityOutcome,
+    { readonly kind: typeof ActivityOutcomeKind.Failed }
+  >;
+  expectTypeOf<FailedOutcome['data']['reason']>().toEqualTypeOf<
+    typeof ActivityFailureCode.IntentWriteFailed
+  >();
+
   const world = new TestWorld();
   const schema = createPullRequestMergeActivity(world.journal, world.pullRequests).outcomeSchema;
 
@@ -63,4 +72,15 @@ it('closes blocked and failed Pull Request outcome reasons to their owning vocab
       data: { reason: PullRequestDenialCode.MissingResource },
     }),
   ).toThrow();
+  for (const reason of [
+    ActivityFailureCode.InvalidAgentResult,
+    ActivityFailureCode.AmbiguousRunnerResult,
+    ActivityFailureCode.RunnerFailed,
+  ])
+    expect(() =>
+      schema.parse({
+        kind: ActivityOutcomeKind.Failed,
+        data: { reason },
+      }),
+    ).toThrow();
 });

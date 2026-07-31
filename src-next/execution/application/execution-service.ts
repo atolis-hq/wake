@@ -1,7 +1,11 @@
 import { ActivityResourceCardinality } from '../../activities/index.js';
 import { RunStatus, WorkspaceMode } from '../contracts/vocabulary.js';
 import { EventActorKind, EventSourceKind } from '../../kernel/index.js';
-import { type ActivityRegistry, type ActivityExecutionContext } from '../../activities/index.js';
+import {
+  type ActivityRegistry,
+  type ActivityExecutionContext,
+  type ResourceRequirement,
+} from '../../activities/index.js';
 import {
   createEventDraft,
   type Clock,
@@ -125,7 +129,6 @@ async function executeActivity(
     async reportExternalExecution() {},
   };
   return activities.execute(
-    activation.activity,
     {
       activationId: activation.activationId,
       activity: activation.activity,
@@ -175,12 +178,12 @@ function event<Type extends keyof ExecutionEventPayloads>(input: {
   });
 }
 function validateResources(
-  requirements: readonly { capability: string; cardinality: string }[],
+  requirements: readonly ResourceRequirement[],
   resources: readonly ResourceView[],
 ): void {
   for (const requirement of requirements) {
     const count = resources.filter((resource) =>
-      resource.capabilities.includes(requirement.capability as never),
+      resource.capabilities.includes(requirement.capability),
     ).length;
     if (requirement.cardinality === ActivityResourceCardinality.ExactlyOne && count !== 1)
       throw new Error(`Activity requires exactly one ${requirement.capability} Resource`);

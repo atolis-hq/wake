@@ -37,7 +37,7 @@ export function acceptWaitingOutcome(
         state,
         input,
         OrchestrationEventType.ActivityWaiting,
-        { activationId: input.activationId, ...waiting.data, outcome: waiting },
+        { activationId: input.activationId, outcome: waiting },
         1,
       ),
     ],

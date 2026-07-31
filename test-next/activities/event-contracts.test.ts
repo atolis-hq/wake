@@ -1,10 +1,14 @@
+import { readFile } from 'node:fs/promises';
+
 import { signalName } from '../../src-next/orchestration/contracts/identifiers.js';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
 import {
   activityDecisionStream,
   activationId,
+  type ActivityEvent,
   ActivityEventType,
   decodeActivityEvent,
+  type PullRequestDenialCode,
   selectActivityEvent,
 } from '../../src-next/activities/index.js';
 import { createEventDraft } from '../../src-next/kernel/index.js';
@@ -183,6 +187,31 @@ describe('Activity event contract', () => {
         ),
       ),
     ).toThrow();
+  });
+
+  it('closes review rejection reasons to Pull Request denial codes', () => {
+    type ReviewRejected = Extract<
+      ActivityEvent,
+      { readonly eventType: typeof ActivityEventType.PrReviewRejected }
+    >;
+    expectTypeOf<ReviewRejected['payload']['reason']>().toEqualTypeOf<PullRequestDenialCode>();
+    expect(() =>
+      decodeActivityEvent(
+        eventEnvelope(
+          ActivityEventType.PrReviewRejected,
+          { reason: 'unknown-rejection' },
+          resource,
+        ),
+      ),
+    ).toThrow();
+  });
+
+  it('does not publish the unused ActivityActivated contract', async () => {
+    const source = await readFile(
+      new URL('../../src-next/activities/contracts/events.ts', import.meta.url),
+      'utf8',
+    );
+    expect(source).not.toMatch(/export interface ActivityActivated/);
   });
 
   it('rejects event-specific wrong stream kinds', () => {

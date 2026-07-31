@@ -258,7 +258,7 @@ function createResourceFactDraftSchemas(eventTypes: ActivityEventTypes) {
         .strict(),
     ),
     resourceFactDraft(eventTypes.PrReviewChangesRequested, reviewSchema),
-    resourceFactDraft(eventTypes.PrReviewRejected, z.object({ reason: z.string() }).strict()),
+    resourceFactDraft(eventTypes.PrReviewRejected, z.object({ reason: denialCodeSchema }).strict()),
     resourceFactDraft(eventTypes.PrMergeAuthorized, z.object({ revision: z.string() }).strict()),
     resourceFactDraft(eventTypes.PrApproveRequested, approveRequestedSchema),
     resourceFactDraft(eventTypes.PrMergeRequested, mergeRequestedSchema),

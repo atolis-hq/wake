@@ -22,4 +22,14 @@ describe('Execution vocabulary ownership', () => {
     expect(activityVocabulary).toMatch(/Agent:\s*activityName\('agent\.run'\)/);
     expect(BuiltInActivityName.Agent).toBe('agent.run');
   });
+
+  it('preserves the ResourceCapability contract while validating requirements', async () => {
+    const executionService = await readFile(
+      new URL('../../src-next/execution/application/execution-service.ts', import.meta.url),
+      'utf8',
+    );
+
+    expect(executionService).toMatch(/requirements: readonly ResourceRequirement\[\]/);
+    expect(executionService).not.toMatch(/requirement\.capability as never/);
+  });
 });

@@ -24,7 +24,7 @@ export function decidePullRequestAuthority(
   if (isDenial(resource)) return resource;
   const pullRequest = selectPullRequest(input, resource, input.work.workItemId);
   if (isDenial(pullRequest)) return pullRequest;
-  if (pullRequest.state !== PullRequestState.Open) return denied(PullRequestState.Closed);
+  if (pullRequest.state !== PullRequestState.Open) return denied(PullRequestDenialCode.Closed);
   if (options.requireAcceptedReview) {
     const review = reviewAuthority(pullRequest, input.acceptedSignals);
     if (review !== null) return review;

@@ -84,11 +84,10 @@ export class ActivityRegistry {
   }
 
   execute(
-    name: ActivityName | string,
     invocation: ActivityInvocation<unknown>,
     context: ActivityExecutionContext,
   ): Promise<ActivityOutcome> {
-    return this.entry(name).execute(invocation, context);
+    return this.entry(invocation.activity).execute(invocation, context);
   }
 
   list(): readonly ActivityDescriptor[] {

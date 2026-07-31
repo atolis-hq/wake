@@ -6,9 +6,9 @@ import {
 } from './vocabulary.js';
 import { ReviewActorKind } from '../review/contracts.js';
 import {
+  ActivityFailureCode,
   ActivityOutcomeKind,
   ActivityResourceRole,
-  type ActivityFailureCode,
 } from '../contracts/vocabulary.js';
 import type { ResourceCorrelationView, ResourceView } from '../../resources/index.js';
 import type { WorkItemId, WorkItemView } from '../../work/index.js';
@@ -92,7 +92,7 @@ export type PullRequestActivityOutcome =
     }
   | {
       readonly kind: typeof ActivityOutcomeKind.Failed;
-      readonly data: { readonly reason: ActivityFailureCode };
+      readonly data: { readonly reason: typeof ActivityFailureCode.IntentWriteFailed };
     };
 
 export interface PullRequestAuthorityOptions {

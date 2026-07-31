@@ -234,8 +234,8 @@ function applyActivityWaiting(
 ): void {
   state.status = WorkflowStatus.Waiting;
   state.waitingFor = {
-    signalKind: event.payload.signalKind,
-    intentEventId: event.payload.intentEventId,
+    signalKind: event.payload.outcome.data.signalKind,
+    intentEventId: event.payload.outcome.data.intentEventId,
   };
   state.lastOutcome = event.payload.outcome;
   updateActivationStatus(state, event.payload.activationId, ActivityActivationStatus.Waiting);
