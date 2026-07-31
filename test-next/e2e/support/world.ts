@@ -29,8 +29,18 @@ import {
   type WorkflowDefinitionConfig,
   type WorkflowInstanceView,
 } from '../../../src-next/orchestration/index.js';
-import { createExecutionService, type RunView } from '../../../src-next/execution/index.js';
-import { createAdvanceOnce, type AdvanceResult } from '../../../src-next/control-plane/index.js';
+import {
+  createExecutionService,
+  createRecoveryCoordinator,
+  RecoveryService,
+  type ExternalExecutionInspector,
+  type RunView,
+} from '../../../src-next/execution/index.js';
+import {
+  createAdvanceOnce,
+  createWorkCancellationPolicy,
+  type AdvanceResult,
+} from '../../../src-next/control-plane/index.js';
 import { FaultInjector } from './faults.js';
 import { formatTrace } from './trace.js';
 
@@ -70,13 +80,20 @@ export class TestWorld {
     this.work,
     this.definitions,
   );
-  private readonly execution = createExecutionService(
+  private execution = createExecutionService(
     this.journal,
     this.activities,
     { tiers: { standard: ['fake'] }, defaultTier: 'standard' },
     { clock: this.clock, ids: this.ids },
   );
-  private readonly advanceOnce = createAdvanceOnce(
+  private cancellation = createWorkCancellationPolicy(
+    this.work,
+    this.orchestration,
+    this.execution,
+    this.clock,
+    this.ids,
+  );
+  private advanceOnce = createAdvanceOnce(
     this.orchestration,
     this.execution,
     this.resources,
@@ -134,6 +151,54 @@ export class TestWorld {
   async createWork(input: { objective: string; workItemId?: WorkItemId }) {
     const id = input.workItemId ?? workItemId(this.ids.next('work'));
     return this.work.create({ workItemId: id, objective: input.objective }, this.command());
+  }
+  async cancelWork(workItemId: WorkItemId, reason = 'operator cancellation') {
+    return this.cancellation.cancelWork(workItemId, reason);
+  }
+  requestRunCancellation(runId: string, reason: NonNullable<RunView['cancellation']>['reason']) {
+    return this.execution.requestCancellation(runId, reason);
+  }
+  confirmRunCancellation(runId: string) {
+    return this.execution.confirmCancellation(runId);
+  }
+  restartExecution(inspector?: ExternalExecutionInspector): void {
+    this.execution = createExecutionService(
+      this.journal,
+      this.activities,
+      { tiers: { standard: ['fake'] }, defaultTier: 'standard' },
+      { clock: this.clock, ids: this.ids },
+    );
+    this.cancellation = createWorkCancellationPolicy(
+      this.work,
+      this.orchestration,
+      this.execution,
+      this.clock,
+      this.ids,
+    );
+    const recovery =
+      inspector === undefined
+        ? undefined
+        : createRecoveryCoordinator(
+            new RecoveryService(this.journal, this.clock, inspector, this.activities, {
+              leaseDurationMs: 60_000,
+              leaseRenewalIntervalMs: 30_000,
+            }),
+          );
+    const dispatchExecution =
+      recovery === undefined
+        ? this.execution
+        : { ...this.execution, recoverActive: recovery.recoverActive };
+    this.advanceOnce = createAdvanceOnce(
+      this.orchestration,
+      dispatchExecution,
+      this.resources,
+      this.clock,
+      this.ids,
+    );
+  }
+  async restartAndRecover(inspector: ExternalExecutionInspector): Promise<void> {
+    this.restartExecution(inspector);
+    await this.advance();
   }
   async discoverResource(
     input: Parameters<typeof this.resources.discover>[0],

@@ -108,6 +108,10 @@ export class OrchestrationService {
     return this.advanceWorkflow.markActivationStarted(workflowInstanceId, activationId, context);
   }
 
+  block(workflowInstanceId: WorkflowInstanceId, reason: string, context: CommandContext) {
+    return this.advanceWorkflow.block(workflowInstanceId, reason, context);
+  }
+
   get(id: WorkflowInstanceId) {
     return this.advanceWorkflow.get(id);
   }

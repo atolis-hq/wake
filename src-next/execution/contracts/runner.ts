@@ -13,16 +13,18 @@ export interface RunnerResult {
   readonly transport: FinishedRunStatus;
   readonly output: string;
   readonly runner: string;
-  readonly model?: string;
-  readonly sessionId?: string;
-  readonly tokenUsage?: {
-    readonly input: number;
-    readonly output: number;
-    readonly cacheRead?: number;
-    readonly cacheWrite?: number;
-    readonly costUsd?: number;
-  };
-  readonly failure?: { readonly kind: string; readonly message: string };
+  readonly model?: string | undefined;
+  readonly sessionId?: string | undefined;
+  readonly tokenUsage?:
+    | {
+        readonly input: number;
+        readonly output: number;
+        readonly cacheRead?: number | undefined;
+        readonly cacheWrite?: number | undefined;
+        readonly costUsd?: number | undefined;
+      }
+    | undefined;
+  readonly failure?: { readonly kind: string; readonly message: string } | undefined;
 }
 
 export interface RunnerExecution {

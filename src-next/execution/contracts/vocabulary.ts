@@ -15,6 +15,23 @@ export const ExecutionFailureCode = defineClosedVocabulary({
 } as const);
 export type ExecutionFailureCode = ValueOf<typeof ExecutionFailureCode>;
 
+export const ExecutionCancellationReason = defineClosedVocabulary({
+  Operator: 'operator',
+  WorkCancelled: 'work-cancelled',
+  WorkflowSuperseded: 'workflow-superseded',
+  Timeout: 'timeout',
+  Shutdown: 'shutdown',
+} as const);
+export type ExecutionCancellationReason = ValueOf<typeof ExecutionCancellationReason>;
+
+export const ExternalExecutionState = defineClosedVocabulary({
+  Running: 'running',
+  Completed: 'completed',
+  Absent: 'absent',
+  Unknown: 'unknown',
+} as const);
+export type ExternalExecutionState = ValueOf<typeof ExternalExecutionState>;
+
 export const WorkspaceMode = defineClosedVocabulary({
   None: 'none',
   ReadOnly: 'read-only',

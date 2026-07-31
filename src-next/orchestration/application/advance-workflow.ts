@@ -69,6 +69,24 @@ export class AdvanceWorkflow {
     return (await this.repository.load(id)).view;
   }
 
+  async block(id: WorkflowInstanceId, reason: string, context: CommandContext) {
+    const loaded = await this.repository.load(id);
+    if (loaded.view === null || loaded.view.status === WorkflowStatus.Blocked) return loaded.view;
+    const event = createEventDraft({
+      eventId: `${context.commandId}:${OrchestrationEventType.InstanceBlocked}`,
+      eventType: OrchestrationEventType.InstanceBlocked,
+      occurredAt: context.occurredAt,
+      correlationId: context.correlationId,
+      causationId: context.commandId,
+      actor: context.actor,
+      source: { kind: EventSourceKind.Internal, id: 'orchestration-service' },
+      stream: workflowInstanceStream(id),
+      payload: { reason },
+    });
+    await this.repository.append(id, loaded.sequence, [event]);
+    return (await this.repository.load(id)).view;
+  }
+
   async get(id: WorkflowInstanceId) {
     return (await this.repository.load(id)).view;
   }

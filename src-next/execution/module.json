@@ -7,6 +7,6 @@
     "events": ["execution."],
     "config": ["execution"],
     "relations": ["run."],
-    "streams": ["run"]
+    "streams": ["run", "execution-activation"]
   }
 }

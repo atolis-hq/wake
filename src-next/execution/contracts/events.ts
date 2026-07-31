@@ -20,13 +20,33 @@ import {
 } from '../../kernel/index.js';
 import { runId } from './identifiers.js';
 import { ExecutionStreamKind, type RunStreamRef } from './streams.js';
-import { ExecutionFailureCode, WorkspaceMode } from './vocabulary.js';
+import {
+  ExecutionCancellationReason,
+  ExecutionFailureCode,
+  RunStatus,
+  WorkspaceMode,
+} from './vocabulary.js';
+import { ExternalExecutionKind } from '../../activities/index.js';
 import type { ExecutionFailure } from './views.js';
+import type {
+  Cancellation,
+  ExternalExecutionReference,
+  Lease,
+  RecoveredRunResult,
+} from './liveness.js';
 
 export const ExecutionEventType = {
   RunStarted: 'execution.run-started',
   RunSucceeded: 'execution.run-succeeded',
   RunFailed: 'execution.run-failed',
+  RunLeaseClaimed: 'execution.run-lease-claimed',
+  RunLeaseRenewed: 'execution.run-lease-renewed',
+  RunExternalExecutionReported: 'execution.run-external-execution-reported',
+  RunCancellationRequested: 'execution.run-cancellation-requested',
+  RunCancellationConfirmed: 'execution.run-cancellation-confirmed',
+  RunCancelled: 'execution.run-cancelled',
+  RunRecovered: 'execution.run-recovered',
+  RunAmbiguous: 'execution.run-ambiguous',
 } as const;
 
 export interface RunStartedPayload {
@@ -54,18 +74,31 @@ export interface ExecutionEventPayloads {
     readonly failure: ExecutionFailure;
     readonly finishedAt: string;
   };
+  readonly [ExecutionEventType.RunLeaseClaimed]: Lease;
+  readonly [ExecutionEventType.RunLeaseRenewed]: Lease;
+  readonly [ExecutionEventType.RunExternalExecutionReported]: ExternalExecutionReference;
+  readonly [ExecutionEventType.RunCancellationRequested]: {
+    readonly requestedAt: string;
+    readonly reason: Cancellation['reason'];
+  };
+  readonly [ExecutionEventType.RunCancellationConfirmed]: { readonly confirmedAt: string };
+  readonly [ExecutionEventType.RunCancelled]: { readonly finishedAt: string };
+  readonly [ExecutionEventType.RunRecovered]: RecoveredRunResult;
+  readonly [ExecutionEventType.RunAmbiguous]: {
+    readonly reason: string;
+    readonly finishedAt: string;
+  };
 }
 
 export type ExecutionEvent = EventUnion<ExecutionEventPayloads, RunStreamRef>;
 export type ExecutionEventDraft = EventDraftUnion<ExecutionEventPayloads, RunStreamRef>;
-
 const streamSchema = z
   .object({
     kind: z.literal(ExecutionStreamKind.Run),
     id: brandedStringSchema(runId),
   })
   .strict();
-const eventSchema = z.discriminatedUnion('eventType', [
+const eventSchema: z.ZodType<ExecutionEvent> = z.discriminatedUnion('eventType', [
   eventEnvelopeSchema.extend({
     eventType: z.literal(ExecutionEventType.RunStarted),
     stream: streamSchema,
@@ -86,6 +119,11 @@ const eventSchema = z.discriminatedUnion('eventType', [
           .optional(),
       })
       .strict(),
+  }),
+  eventEnvelopeSchema.extend({
+    eventType: z.literal(ExecutionEventType.RunCancelled),
+    stream: streamSchema,
+    payload: z.object({ finishedAt: offsetIsoTimestampSchema }).strict(),
   }),
   eventEnvelopeSchema.extend({
     eventType: z.literal(ExecutionEventType.RunSucceeded),
@@ -119,7 +157,105 @@ const eventSchema = z.discriminatedUnion('eventType', [
       })
       .strict(),
   }),
+  eventEnvelopeSchema.extend({
+    eventType: z.literal(ExecutionEventType.RunLeaseClaimed),
+    stream: streamSchema,
+    payload: leaseSchema(),
+  }),
+  eventEnvelopeSchema.extend({
+    eventType: z.literal(ExecutionEventType.RunLeaseRenewed),
+    stream: streamSchema,
+    payload: leaseSchema(),
+  }),
+  eventEnvelopeSchema.extend({
+    eventType: z.literal(ExecutionEventType.RunExternalExecutionReported),
+    stream: streamSchema,
+    payload: z
+      .object({
+        kind: z.enum([ExternalExecutionKind.Process, ExternalExecutionKind.RemoteSession]),
+        id: z.string().min(1),
+        startedAt: offsetIsoTimestampSchema,
+      })
+      .strict(),
+  }),
+  eventEnvelopeSchema.extend({
+    eventType: z.literal(ExecutionEventType.RunCancellationRequested),
+    stream: streamSchema,
+    payload: z
+      .object({
+        requestedAt: offsetIsoTimestampSchema,
+        reason: z.enum(
+          Object.values(ExecutionCancellationReason) as [
+            ExecutionCancellationReason,
+            ...ExecutionCancellationReason[],
+          ],
+        ),
+      })
+      .strict(),
+  }),
+  eventEnvelopeSchema.extend({
+    eventType: z.literal(ExecutionEventType.RunCancellationConfirmed),
+    stream: streamSchema,
+    payload: z.object({ confirmedAt: offsetIsoTimestampSchema }).strict(),
+  }),
+  eventEnvelopeSchema.extend({
+    eventType: z.literal(ExecutionEventType.RunRecovered),
+    stream: streamSchema,
+    payload: z
+      .object({
+        result: runnerResultSchema(),
+        outcome: z.object({ kind: z.string().min(1), data: z.unknown().optional() }).strict(),
+        finishedAt: offsetIsoTimestampSchema,
+      })
+      .strict(),
+  }),
+  eventEnvelopeSchema.extend({
+    eventType: z.literal(ExecutionEventType.RunAmbiguous),
+    stream: streamSchema,
+    payload: z.object({ reason: z.string().min(1), finishedAt: offsetIsoTimestampSchema }).strict(),
+  }),
 ]);
+
+function leaseSchema() {
+  return z
+    .object({
+      owner: z.string().min(1),
+      acquiredAt: offsetIsoTimestampSchema,
+      expiresAt: offsetIsoTimestampSchema,
+    })
+    .strict();
+}
+
+function runnerResultSchema() {
+  return z
+    .object({
+      transport: z.enum([
+        RunStatus.Succeeded,
+        RunStatus.Failed,
+        RunStatus.Cancelled,
+        RunStatus.Ambiguous,
+      ]),
+      output: z.string(),
+      runner: z.string().min(1),
+      model: z.string().optional(),
+      sessionId: z.string().optional(),
+      tokenUsage: z
+        .object({
+          input: z.number(),
+          output: z.number(),
+          cacheRead: z.number().optional(),
+          cacheWrite: z.number().optional(),
+          costUsd: z.number().optional(),
+        })
+        .strict()
+        .optional(),
+      failure: z
+        .object({ kind: z.string().min(1), message: z.string() })
+        .strict()
+        .optional(),
+    })
+    .strict();
+}
 
 export function decodeExecutionEvent(event: EventEnvelope): ExecutionEvent {
   const result = eventSchema.safeParse(event);

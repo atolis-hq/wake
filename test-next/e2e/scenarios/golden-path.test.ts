@@ -48,8 +48,11 @@ it('E2E-GOLDEN-001 completes work through orchestration and an explicit Run', as
     'orchestration.stage-entered',
     'orchestration.activity-requested',
     'orchestration.activity-started',
+    'execution.activation-claimed',
     'execution.run-started',
+    'execution.run-lease-claimed',
     'execution.run-succeeded',
+    'execution.activation-released',
     'orchestration.activity-outcome-accepted',
     'orchestration.instance-completed',
   ]);

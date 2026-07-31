@@ -26,4 +26,5 @@ export interface ExecutionAttemptContext {
   readonly workflowInstanceId: ActivityWorkflowInstanceId;
   readonly orchestrationGroupId: ActivityOrchestrationGroupId;
   readonly resources: readonly ResourceView[];
+  readonly owner?: string;
 }

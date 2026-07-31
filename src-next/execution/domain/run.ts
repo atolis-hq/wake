@@ -1,4 +1,4 @@
-import { RunStatus } from '../contracts/vocabulary.js';
+import { ExecutionFailureCode, RunStatus } from '../contracts/vocabulary.js';
 import { ExecutionEventType, type ExecutionEvent } from '../contracts/events.js';
 import type { RunView } from '../contracts/views.js';
 export function foldRun(events: readonly ExecutionEvent[]): RunView | null {
@@ -15,29 +15,135 @@ export function foldRun(events: readonly ExecutionEvent[]): RunView | null {
     startedAt: started.payload.startedAt,
     ...(started.payload.workspace === undefined ? {} : { workspace: started.payload.workspace }),
   };
-  for (const event of events) {
-    switch (event.eventType) {
-      case ExecutionEventType.RunStarted:
-        break;
-      case ExecutionEventType.RunSucceeded:
-        Object.assign(state, {
-          status: RunStatus.Succeeded,
-          finishedAt: event.payload.finishedAt,
-          outcome: event.payload.outcome,
-        });
-        break;
-      case ExecutionEventType.RunFailed:
-        Object.assign(state, {
-          status: RunStatus.Failed,
-          finishedAt: event.payload.finishedAt,
-          failure: event.payload.failure,
-        });
-        break;
-      default:
-        assertNever(event);
-    }
-  }
+  for (const event of events) applyRunEvent(state, event);
   return state;
+}
+
+function applyRunEvent(state: RunView, event: ExecutionEvent): void {
+  if (state.status !== RunStatus.Started) return;
+  switch (event.eventType) {
+    case ExecutionEventType.RunStarted:
+      return;
+    case ExecutionEventType.RunSucceeded:
+    case ExecutionEventType.RunFailed:
+    case ExecutionEventType.RunCancelled:
+      return applyTerminalEvent(state, event);
+    default:
+      return applyLivenessEvent(state, event);
+  }
+}
+
+function applyTerminalEvent(
+  state: RunView,
+  event: Extract<
+    ExecutionEvent,
+    {
+      eventType:
+        | typeof ExecutionEventType.RunSucceeded
+        | typeof ExecutionEventType.RunFailed
+        | typeof ExecutionEventType.RunCancelled;
+    }
+  >,
+): void {
+  if (event.eventType === ExecutionEventType.RunSucceeded) {
+    Object.assign(state, {
+      status: RunStatus.Succeeded,
+      finishedAt: event.payload.finishedAt,
+      outcome: event.payload.outcome,
+    });
+    return;
+  }
+  if (event.eventType === ExecutionEventType.RunCancelled) {
+    Object.assign(state, { status: RunStatus.Cancelled, finishedAt: event.payload.finishedAt });
+    return;
+  }
+  Object.assign(state, {
+    status: RunStatus.Failed,
+    finishedAt: event.payload.finishedAt,
+    failure: event.payload.failure,
+  });
+}
+
+function applyLivenessEvent(
+  state: RunView,
+  event: Exclude<
+    ExecutionEvent,
+    {
+      eventType:
+        | typeof ExecutionEventType.RunStarted
+        | typeof ExecutionEventType.RunSucceeded
+        | typeof ExecutionEventType.RunFailed
+        | typeof ExecutionEventType.RunCancelled;
+    }
+  >,
+): void {
+  switch (event.eventType) {
+    case ExecutionEventType.RunLeaseClaimed:
+    case ExecutionEventType.RunLeaseRenewed:
+      Object.assign(state, { lease: event.payload });
+      return;
+    case ExecutionEventType.RunExternalExecutionReported:
+      Object.assign(state, { externalExecution: event.payload });
+      return;
+    case ExecutionEventType.RunCancellationRequested:
+      Object.assign(state, { cancellation: event.payload });
+      return;
+    case ExecutionEventType.RunCancellationConfirmed:
+      if (state.cancellation !== undefined)
+        Object.assign(state, {
+          cancellation: { ...state.cancellation, confirmedAt: event.payload.confirmedAt },
+        });
+      return;
+    case ExecutionEventType.RunRecovered:
+      Object.assign(
+        state,
+        recoveredState(event.payload.result, event.payload.finishedAt, event.payload.outcome),
+      );
+      return;
+    case ExecutionEventType.RunAmbiguous:
+      Object.assign(state, {
+        status: RunStatus.Ambiguous,
+        finishedAt: event.payload.finishedAt,
+        failure: { kind: ExecutionFailureCode.Unexpected, message: event.payload.reason },
+      });
+      return;
+    default:
+      assertNever(event);
+  }
+}
+
+function recoveredState(
+  result: {
+    readonly transport: string;
+    readonly failure?: { readonly message: string } | undefined;
+  },
+  finishedAt: string,
+  outcome?: RunView['outcome'],
+) {
+  if (result.transport === RunStatus.Succeeded)
+    return {
+      status: RunStatus.Succeeded,
+      finishedAt,
+      ...(outcome === undefined ? {} : { outcome }),
+    };
+  if (result.transport === RunStatus.Cancelled) return { status: RunStatus.Cancelled, finishedAt };
+  if (result.transport === RunStatus.Ambiguous)
+    return {
+      status: RunStatus.Ambiguous,
+      finishedAt,
+      failure: {
+        kind: ExecutionFailureCode.Unexpected,
+        message: result.failure?.message ?? 'Recovered execution is ambiguous',
+      },
+    };
+  return {
+    status: RunStatus.Failed,
+    finishedAt,
+    failure: {
+      kind: ExecutionFailureCode.Unexpected,
+      message: result.failure?.message ?? 'Recovered execution failed',
+    },
+  };
 }
 
 function assertNever(value: never): never {

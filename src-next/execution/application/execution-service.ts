@@ -1,9 +1,8 @@
-import { ActivityResourceCardinality } from '../../activities/index.js';
 import { RunStatus, WorkspaceMode } from '../contracts/vocabulary.js';
 import { EventActorKind, EventSourceKind } from '../../kernel/index.js';
 import {
-  type ActivityRegistry,
   type ActivityExecutionContext,
+  type ActivityRegistry,
   type ResourceRequirement,
 } from '../../activities/index.js';
 import {
@@ -12,8 +11,7 @@ import {
   type EventJournal,
   type IdGenerator,
 } from '../../kernel/index.js';
-import { BuiltInResourceKind, type ResourceView } from '../../resources/index.js';
-import type { WorkItemId } from '../../work/index.js';
+import type { ResourceView } from '../../resources/index.js';
 import type { ExecutionConfig } from '../contracts/config.js';
 import type { ExecutionActivation, ExecutionAttemptContext } from '../contracts/commands.js';
 import { ExecutionEventType, type ExecutionEventPayloads } from '../contracts/events.js';
@@ -22,6 +20,15 @@ import { ExecutionStreamKind, runStream } from '../contracts/streams.js';
 import type { WorkspaceLease, WorkspaceProvider } from '../contracts/workspace.js';
 import { failureFrom } from '../domain/run-result.js';
 import { RunRepository } from './run-repository.js';
+import { acquireWorkspace, validateResourceRequirements } from './execution-validation.js';
+import {
+  claimRun,
+  confirmCancellation,
+  renewLease,
+  requestCancellation,
+} from './run-liveness-service.js';
+import { claimActivation, releaseActivation } from './activation-claim.js';
+import { cancelActiveRuns } from './active-run-cancellation.js';
 
 interface ExecutionDependencies {
   readonly clock: Clock;
@@ -34,6 +41,8 @@ interface ExecutionRuntime {
   readonly config: ExecutionConfig;
   readonly dependencies: ExecutionDependencies;
   readonly repository: RunRepository;
+  readonly active: Map<string, AbortController>;
+  readonly journal: EventJournal;
 }
 
 export function createExecutionService(
@@ -43,10 +52,29 @@ export function createExecutionService(
   dependencies: ExecutionDependencies,
 ) {
   const repository = new RunRepository(journal);
+  const active = new Map<string, AbortController>();
   return {
     attempt: (activation: ExecutionActivation, context: ExecutionAttemptContext) =>
-      attemptExecution({ activities, config, dependencies, repository }, activation, context),
+      attemptExecution(
+        { activities, config, dependencies, repository, active, journal },
+        activation,
+        context,
+      ),
     list: (activationId?: ExecutionActivation['activationId']) => repository.list(activationId),
+    claim: (id: string, owner: string) =>
+      claimRun(repository, dependencies.clock, config, runId(id), owner),
+    renewLease: (id: string, owner: string) =>
+      renewLease(repository, dependencies.clock, config, runId(id), owner),
+    requestCancellation: (
+      id: string,
+      reason: NonNullable<import('../contracts/views.js').RunView['cancellation']>['reason'],
+    ) => requestCancellation(repository, dependencies.clock, runId(id), reason, active),
+    confirmCancellation: (id: string) =>
+      confirmCancellation(repository, dependencies.clock, runId(id)),
+    cancelActive: (
+      workflowInstanceIds: readonly string[],
+      reason: NonNullable<import('../contracts/views.js').RunView['cancellation']>['reason'],
+    ) => cancelActiveRuns(repository, dependencies.clock, workflowInstanceIds, reason, active),
   };
 }
 
@@ -60,11 +88,21 @@ async function attemptExecution(
   validateResources(definition.resources, context.resources);
   const tier = activation.execution?.tier ?? runtime.config.defaultTier;
   if (runtime.config.tiers[tier] === undefined) throw new Error(`Unknown execution tier: ${tier}`);
+  const owner = context.owner ?? 'execution';
   const prior = await runtime.repository.list(activation.activationId);
-  const completed = prior.find((run) => run.status === RunStatus.Succeeded);
-  if (completed !== undefined) return completed;
+  const existing = existingRun(prior, runtime.dependencies.clock, owner);
+  if (existing !== undefined) return existing;
   const currentRunId = runId(runtime.dependencies.ids.next(ExecutionStreamKind.Run));
   const startedAt = runtime.dependencies.clock.now().toISOString();
+  await claimActivation({
+    journal: runtime.journal,
+    clock: runtime.dependencies.clock,
+    config: runtime.config,
+    activationId: activation.activationId,
+    runId: currentRunId,
+    owner,
+    occurredAt: startedAt,
+  });
   let lease: WorkspaceLease | undefined;
   try {
     lease = await acquireWorkspace(
@@ -92,7 +130,14 @@ async function attemptExecution(
         },
       }),
     ]);
-    const outcome = await executeActivity(runtime.activities, {
+    await claimRun(
+      runtime.repository,
+      runtime.dependencies.clock,
+      runtime.config,
+      currentRunId,
+      owner,
+    );
+    const outcome = await executeActivity(runtime, currentRunId, {
       activation,
       context,
       occurredAt: startedAt,
@@ -101,9 +146,36 @@ async function attemptExecution(
   } catch (error) {
     await recordFailure(runtime, currentRunId, activation, context, error);
   } finally {
+    await releaseActivation({
+      journal: runtime.journal,
+      clock: runtime.dependencies.clock,
+      activationId: activation.activationId,
+      runId: currentRunId,
+    });
+    runtime.active.delete(currentRunId);
     await lease?.release();
   }
   return (await runtime.repository.load(currentRunId)).view!;
+}
+
+function existingRun(
+  runs: readonly import('../contracts/views.js').RunView[],
+  clock: Clock,
+  owner: string,
+) {
+  const completed = runs.find((run) => run.status === RunStatus.Succeeded);
+  if (completed !== undefined) return completed;
+  const ambiguous = runs.find((run) => run.status === RunStatus.Ambiguous);
+  if (ambiguous !== undefined) return ambiguous;
+  const active = runs.find((run) => run.status === RunStatus.Started);
+  if (active === undefined) return undefined;
+  if (
+    active.lease !== undefined &&
+    new Date(active.lease.expiresAt) > clock.now() &&
+    active.lease.owner !== owner
+  )
+    throw new Error(`Run ${active.runId} has an unexpired lease`);
+  return active;
 }
 
 async function recordSuccess(
@@ -114,7 +186,9 @@ async function recordSuccess(
   outcome: Awaited<ReturnType<typeof executeActivity>>,
 ): Promise<void> {
   const finishedAt = runtime.dependencies.clock.now().toISOString();
-  await runtime.repository.append(currentRunId, 1, [
+  const loaded = await runtime.repository.load(currentRunId);
+  if (loaded.view?.status !== RunStatus.Started) return;
+  await runtime.repository.append(currentRunId, loaded.sequence, [
     event({
       runId: currentRunId,
       eventId: `${currentRunId}:succeeded`,
@@ -136,6 +210,7 @@ async function recordFailure(
 ): Promise<void> {
   const loaded = await runtime.repository.load(currentRunId);
   if (loaded.sequence === 0) throw error;
+  if (loaded.view?.status !== RunStatus.Started) return;
   const finishedAt = runtime.dependencies.clock.now().toISOString();
   await runtime.repository.append(currentRunId, loaded.sequence, [
     event({
@@ -150,7 +225,8 @@ async function recordFailure(
   ]);
 }
 async function executeActivity(
-  activities: ActivityRegistry,
+  runtime: ExecutionRuntime,
+  currentRunId: ReturnType<typeof runId>,
   request: {
     readonly activation: ExecutionActivation;
     readonly context: ExecutionAttemptContext;
@@ -158,12 +234,27 @@ async function executeActivity(
   },
 ) {
   const { activation, context, occurredAt } = request;
+  const controller = new AbortController();
+  runtime.active.set(currentRunId, controller);
   const executionContext: ActivityExecutionContext = {
-    signal: new AbortController().signal,
+    signal: controller.signal,
     occurredAt,
-    async reportExternalExecution() {},
+    reportExternalExecution: async (reference) => {
+      const loaded = await runtime.repository.load(currentRunId);
+      await runtime.repository.append(currentRunId, loaded.sequence, [
+        event({
+          runId: currentRunId,
+          eventId: `${currentRunId}:external:${reference.id}`,
+          eventType: ExecutionEventType.RunExternalExecutionReported,
+          occurredAt: runtime.dependencies.clock.now().toISOString(),
+          correlationId: context.orchestrationGroupId,
+          causationId: activation.activationId,
+          payload: reference,
+        }),
+      ]);
+    },
   };
-  return activities.execute(
+  return runtime.activities.execute(
     {
       activationId: activation.activationId,
       activity: activation.activity,
@@ -176,20 +267,6 @@ async function executeActivity(
     },
     executionContext,
   );
-}
-async function acquireWorkspace(
-  mode: typeof WorkspaceMode.None | typeof WorkspaceMode.ReadOnly | typeof WorkspaceMode.Branch,
-  workItemId: WorkItemId,
-  resources: readonly ResourceView[],
-  provider?: WorkspaceProvider,
-): Promise<WorkspaceLease | undefined> {
-  if (mode === WorkspaceMode.None) return undefined;
-  if (provider === undefined) throw new Error('Workspace provider is required');
-  const repositoryResource = resources.find(
-    (resource) => resource.kind === BuiltInResourceKind.Repository,
-  );
-  if (repositoryResource === undefined) throw new Error('Repository Resource is required');
-  return provider.acquire({ mode, workItemId, repositoryResource });
 }
 function event<Type extends keyof ExecutionEventPayloads>(input: {
   runId: ReturnType<typeof runId>;
@@ -212,19 +289,10 @@ function event<Type extends keyof ExecutionEventPayloads>(input: {
     payload: input.payload,
   });
 }
+
 function validateResources(
   requirements: readonly ResourceRequirement[],
   resources: readonly ResourceView[],
 ): void {
-  for (const requirement of requirements) {
-    const count = resources.filter((resource) =>
-      resource.capabilities.includes(requirement.capability),
-    ).length;
-    if (requirement.cardinality === ActivityResourceCardinality.ExactlyOne && count !== 1)
-      throw new Error(`Activity requires exactly one ${requirement.capability} Resource`);
-    if (requirement.cardinality === ActivityResourceCardinality.OneOrMore && count < 1)
-      throw new Error(`Activity requires ${requirement.capability} Resources`);
-    if (requirement.cardinality === ActivityResourceCardinality.ZeroOrOne && count > 1)
-      throw new Error(`Activity allows at most one ${requirement.capability} Resource`);
-  }
+  validateResourceRequirements(requirements, resources);
 }

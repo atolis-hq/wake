@@ -44,6 +44,44 @@ const samples = [
       finishedAt: '2026-07-31T12:01:00.000Z',
     },
   ],
+  [
+    ExecutionEventType.RunLeaseClaimed,
+    {
+      owner: 'resident-a',
+      acquiredAt: '2026-07-31T12:00:00.000Z',
+      expiresAt: '2026-07-31T12:01:00.000Z',
+    },
+  ],
+  [
+    ExecutionEventType.RunLeaseRenewed,
+    {
+      owner: 'resident-a',
+      acquiredAt: '2026-07-31T12:00:00.000Z',
+      expiresAt: '2026-07-31T12:02:00.000Z',
+    },
+  ],
+  [
+    ExecutionEventType.RunExternalExecutionReported,
+    { kind: 'process', id: 'process-1', startedAt: '2026-07-31T12:00:00.000Z' },
+  ],
+  [
+    ExecutionEventType.RunCancellationRequested,
+    { requestedAt: '2026-07-31T12:00:00.000Z', reason: 'timeout' },
+  ],
+  [ExecutionEventType.RunCancellationConfirmed, { confirmedAt: '2026-07-31T12:01:00.000Z' }],
+  [ExecutionEventType.RunCancelled, { finishedAt: '2026-07-31T12:01:00.000Z' }],
+  [
+    ExecutionEventType.RunRecovered,
+    {
+      result: { transport: 'succeeded', output: 'DONE', runner: 'fake' },
+      outcome: { kind: 'done' },
+      finishedAt: '2026-07-31T12:01:00.000Z',
+    },
+  ],
+  [
+    ExecutionEventType.RunAmbiguous,
+    { reason: 'runner unavailable', finishedAt: '2026-07-31T12:01:00.000Z' },
+  ],
 ] as const;
 
 describe('Execution event contract', () => {

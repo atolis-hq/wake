@@ -6,6 +6,7 @@ import type {
   ActivityOutcome,
   ActivityWorkflowInstanceId,
 } from '../../activities/index.js';
+import type { Cancellation, ExternalExecutionReference, Lease } from './liveness.js';
 import type { RunId } from './identifiers.js';
 export type RunTransportStatus = RunStatus;
 
@@ -36,4 +37,7 @@ export interface RunView {
     readonly mode: typeof WorkspaceMode.ReadOnly | typeof WorkspaceMode.Branch;
     readonly path: string;
   };
+  readonly lease?: Lease;
+  readonly externalExecution?: ExternalExecutionReference;
+  readonly cancellation?: Cancellation;
 }

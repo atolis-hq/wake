@@ -36,6 +36,7 @@ interface OrchestrationPort {
   ): Promise<WorkflowInstanceView | null>;
 }
 interface ExecutionPort {
+  recoverActive?(owner: string): Promise<readonly RunView[]>;
   attempt(
     activation: ActivityActivationView,
     context: {
@@ -62,6 +63,7 @@ export function createAdvanceOnce(
   });
   return async (options: AdvanceOptions): Promise<AdvanceResult> => {
     if (options.maxProgress < 1) return { kind: 'exhausted', progressCount: 0 };
+    await execution.recoverActive?.('control-plane');
     await orchestration.reconcileChildCompletions(context('child-completion-reconciliation'));
     const pending = await orchestration.listPendingActivations(options.workItemId);
     const recovery = await findUnacceptedCompleted(pending, execution);
