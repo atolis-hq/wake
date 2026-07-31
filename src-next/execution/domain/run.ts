@@ -8,6 +8,8 @@ export function foldRun(events: readonly ExecutionEvent[]): RunView | null {
     runId: started.stream.id,
     activationId: started.payload.activationId,
     activity: started.payload.activity,
+    workflowInstanceId: started.payload.workflowInstanceId,
+    orchestrationGroupId: started.payload.orchestrationGroupId,
     attempt: started.payload.attempt,
     status: RunStatus.Started,
     startedAt: started.payload.startedAt,

@@ -1,19 +1,17 @@
-import {
-  ActivityOutcomeKind,
-  type ActivityOutcome,
-  type ActivationId,
-  type WaitingActivityOutcome,
-} from '../../activities/index.js';
+import { ActivityOutcomeKind, type ActivationId } from '../../activities/index.js';
 import { ActivityActivationStatus } from '../contracts/vocabulary.js';
 import type { WorkflowOrchestrationEventDraft } from '../contracts/events.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
 import { OrchestrationEventType } from '../contracts/events.js';
 import { stateDraft } from './decision-events.js';
-import { signalName, type SignalName } from '../contracts/identifiers.js';
+import type {
+  OrchestrationActivityOutcome,
+  OrchestrationWaitingActivityOutcome,
+} from '../contracts/activity-outcome.js';
 
 interface WaitingInput {
   readonly activationId: ActivationId;
-  readonly outcome: ActivityOutcome;
+  readonly outcome: OrchestrationActivityOutcome;
   readonly occurredAt: string;
   readonly causationId: string;
 }
@@ -46,33 +44,10 @@ export function acceptWaitingOutcome(
   };
 }
 
-type CompiledWaitingOutcome = WaitingActivityOutcome & {
-  readonly data: WaitingActivityOutcome['data'] & { readonly signalKind: SignalName };
-};
-
-function waitingOutcome(outcome: ActivityOutcome): CompiledWaitingOutcome | null {
-  if (
-    outcome.kind !== ActivityOutcomeKind.Waiting ||
-    typeof outcome.data !== 'object' ||
-    outcome.data === null
-  )
-    return null;
-  const data = outcome.data;
-  if (
-    !('intentEventId' in data) ||
-    typeof data.intentEventId !== 'string' ||
-    data.intentEventId.length === 0 ||
-    !('signalKind' in data) ||
-    typeof data.signalKind !== 'string' ||
-    data.signalKind.length === 0
-  )
-    return null;
-  try {
-    return {
-      kind: ActivityOutcomeKind.Waiting,
-      data: { intentEventId: data.intentEventId, signalKind: signalName(data.signalKind) },
-    };
-  } catch {
-    return null;
-  }
+function waitingOutcome(
+  outcome: OrchestrationActivityOutcome,
+): OrchestrationWaitingActivityOutcome | null {
+  return outcome.kind === ActivityOutcomeKind.Waiting
+    ? (outcome as OrchestrationWaitingActivityOutcome)
+    : null;
 }

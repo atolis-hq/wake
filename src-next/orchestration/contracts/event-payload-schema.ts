@@ -1,9 +1,5 @@
-import {
-  activationId,
-  activityName,
-  ActivityOutcomeKind,
-  WorkspaceMode,
-} from '../../activities/index.js';
+import { activationId, activityName, ActivityOutcomeKind } from '../../activities/index.js';
+import { WorkspaceMode } from '../../execution/index.js';
 import { z } from 'zod';
 import { brandedStringSchema } from '../../kernel/index.js';
 import { orchestrationGroupId, signalName, workflowInstanceId } from './identifiers.js';

@@ -33,13 +33,6 @@ export const RetrySafety = defineClosedVocabulary({
 } as const);
 export type RetrySafety = ValueOf<typeof RetrySafety>;
 
-export const WorkspaceMode = defineClosedVocabulary({
-  None: 'none',
-  ReadOnly: 'read-only',
-  Branch: 'branch',
-} as const);
-export type WorkspaceMode = ValueOf<typeof WorkspaceMode>;
-
 export const ActivityFailureCode = defineClosedVocabulary({
   IntentWriteFailed: 'intent-write-failed',
   InvalidAgentResult: 'invalid-agent-result',
@@ -74,7 +67,7 @@ export const IntentAppendStatus = defineClosedVocabulary({
 export type IntentAppendStatus = ValueOf<typeof IntentAppendStatus>;
 
 export const BuiltInActivityName = {
-  Agent: activityName(ActivityExecutionKind.Agent),
+  Agent: activityName('agent'),
   PullRequestApprove: activityName('pr.approve'),
   PullRequestMerge: activityName('pr.merge'),
 } as const;

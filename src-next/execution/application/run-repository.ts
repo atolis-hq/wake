@@ -1,4 +1,5 @@
 import type { EventJournal } from '../../kernel/index.js';
+import type { ActivationId } from '../../activities/index.js';
 import {
   decodeExecutionEvent,
   type ExecutionEvent,
@@ -21,7 +22,7 @@ export class RunRepository {
     const events = await this.journal.append(runStream(runId), sequence, drafts);
     return events.map(decodeExecutionEvent);
   }
-  async list(activationId?: string) {
+  async list(activationId?: ActivationId) {
     const ids = new Set(
       (await this.journal.readAll(0))
         .filter((event) => isRunStream(event.stream))

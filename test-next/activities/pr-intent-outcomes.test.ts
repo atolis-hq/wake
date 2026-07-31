@@ -3,7 +3,7 @@ import {
   signalName,
   workflowInstanceId,
 } from '../../src-next/orchestration/contracts/identifiers.js';
-import { activityName } from '../../src-next/activities/index.js';
+import { activityName, PullRequestDenialCode } from '../../src-next/activities/index.js';
 import { resourceKind, resourceCapability } from '../../src-next/resources/index.js';
 import { expect, it } from 'vitest';
 
@@ -101,7 +101,7 @@ it('treats exhausted sequence conflicts without the event as a failed append', a
       return [];
     },
   };
-  const intent = mergeDenied(stream, 'test-denial', {
+  const intent = mergeDenied(stream, PullRequestDenialCode.MissingResource, {
     commandId: 'activation-1',
     occurredAt: '2026-07-30T12:00:00.000Z',
     correlationId: correlationId('scenario-1'),

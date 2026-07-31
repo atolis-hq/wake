@@ -61,6 +61,19 @@ it('persists instances and accepts outcomes idempotently', async () => {
     context,
   );
   expect((await service.listPendingActivations()).length).toBe(1);
+  await expect(
+    service.acceptOutcome(
+      {
+        workflowInstanceId: instance.workflowInstanceId,
+        activationId: instance.pendingActivation!.activationId,
+        outcome: {
+          kind: 'waiting',
+          data: { intentEventId: 'intent-1', signalKind: 'needs_input' },
+        },
+      },
+      { ...context, commandId: 'invalid-waiting' },
+    ),
+  ).rejects.toThrow(/invalid signal name.*needs_input/i);
   await service.acceptOutcome(
     {
       workflowInstanceId: instance.workflowInstanceId,

@@ -40,12 +40,12 @@ interface ExecutionPort {
     activation: ActivityActivationView,
     context: {
       workItemId: WorkflowInstanceView['workItemId'];
-      workflowInstanceId: string;
-      orchestrationGroupId: string;
+      workflowInstanceId: WorkflowInstanceView['workflowInstanceId'];
+      orchestrationGroupId: WorkflowInstanceView['orchestrationGroupId'];
       resources: readonly NonNullable<Awaited<ReturnType<ResourceService['get']>>>[];
     },
   ): Promise<RunView>;
-  list(activationId?: string): Promise<readonly RunView[]>;
+  list(activationId?: ActivityActivationView['activationId']): Promise<readonly RunView[]>;
 }
 export function createAdvanceOnce(
   orchestration: OrchestrationPort,

@@ -5,9 +5,21 @@ import {
 import { activationId } from '../../src-next/activities/contracts/identifiers.js';
 import { activityName } from '../../src-next/activities/index.js';
 import { z } from 'zod';
-import { describe, expect, it } from 'vitest';
-import { ActivityRegistry } from '../../src-next/activities/index.js';
-import { createExecutionService } from '../../src-next/execution/index.js';
+import { describe, expect, expectTypeOf, it } from 'vitest';
+import {
+  ActivityExecutionKind,
+  ActivityRegistry,
+  type ActivationId,
+  type ActivityName,
+  type ActivityOrchestrationGroupId,
+  type ActivityWorkflowInstanceId,
+} from '../../src-next/activities/index.js';
+import {
+  createExecutionService,
+  ExecutionFailureCode,
+  type ExecutionActivation,
+  type ExecutionAttemptContext,
+} from '../../src-next/execution/index.js';
 import { InMemoryEventJournal } from '../../src-next/persistence/index.js';
 import { workItemId } from '../../src-next/work/index.js';
 import { FakeClock, SequentialIds } from '../e2e/support/world.js';
@@ -58,6 +70,9 @@ describe('ExecutionService', () => {
     const run = await setup().attempt(activation, context);
     expect(run).toMatchObject({
       activationId: activation.activationId,
+      activity: activation.activity,
+      workflowInstanceId: context.workflowInstanceId,
+      orchestrationGroupId: context.orchestrationGroupId,
       attempt: 1,
       status: 'succeeded',
       outcome: { kind: 'done' },
@@ -82,5 +97,69 @@ describe('ExecutionService', () => {
     await expect(
       setup().attempt({ ...activation, execution: { tier: 'premium' } }, context),
     ).rejects.toThrow(/tier/);
+  });
+
+  it('preserves valid owner-specific output and rejects invalid owner output end to end', async () => {
+    const registry = new ActivityRegistry();
+    registry.register({
+      name: activityName('score'),
+      inputSchema: z.object({ value: z.number() }).strict(),
+      outcomeSchema: z
+        .object({
+          kind: z.literal('scored'),
+          data: z.object({ score: z.number() }).strict(),
+        })
+        .strict(),
+      outcomeKinds: ['scored'],
+      resources: [],
+      executionKind: ActivityExecutionKind.Deterministic,
+      handler: {
+        async execute(invocation) {
+          return {
+            kind: 'scored',
+            data: { score: invocation.input.value === 7 ? 7 : ('invalid' as never) },
+          };
+        },
+      },
+    });
+    const service = createExecutionService(
+      new InMemoryEventJournal(new FakeClock()),
+      registry,
+      { tiers: { standard: ['fake'] }, defaultTier: 'standard' },
+      { clock: new FakeClock(), ids: new SequentialIds() },
+    );
+    const scoreActivation = {
+      ...activation,
+      activity: activityName('score'),
+      input: { value: 7 },
+    };
+
+    await expect(service.attempt(scoreActivation, context)).resolves.toMatchObject({
+      status: 'succeeded',
+      outcome: { kind: 'scored', data: { score: 7 } },
+    });
+    await expect(
+      service.attempt(
+        { ...scoreActivation, activationId: activationId('score-invalid'), input: { value: 0 } },
+        context,
+      ),
+    ).resolves.toMatchObject({
+      status: 'failed',
+      failure: {
+        kind: ExecutionFailureCode.Unexpected,
+        details: { sourceKind: 'Error' },
+      },
+    });
+  });
+
+  it('publishes branded execution commands end to end', () => {
+    expectTypeOf<ExecutionActivation['activationId']>().toEqualTypeOf<ActivationId>();
+    expectTypeOf<ExecutionActivation['activity']>().toEqualTypeOf<ActivityName>();
+    expectTypeOf<
+      ExecutionAttemptContext['workflowInstanceId']
+    >().toEqualTypeOf<ActivityWorkflowInstanceId>();
+    expectTypeOf<
+      ExecutionAttemptContext['orchestrationGroupId']
+    >().toEqualTypeOf<ActivityOrchestrationGroupId>();
   });
 });

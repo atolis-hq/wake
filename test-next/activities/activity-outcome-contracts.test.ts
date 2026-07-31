@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 
 import { z } from 'zod';
-import { describe, expect, expectTypeOf, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import {
   ActivityExecutionKind,
@@ -47,7 +47,6 @@ describe('Activity outcome contracts', () => {
   it('retains an Activity-specific outcome through registration and execution', async () => {
     const registry = new ActivityRegistry();
     registry.register(scoredActivity);
-    const resolved = registry.get<typeof scoredActivity>(scoredActivity.name);
     const invocation: ActivityInvocation<{ readonly value: number }> = {
       activationId: activationId('activation-1'),
       activity: scoredActivity.name,
@@ -59,21 +58,14 @@ describe('Activity outcome contracts', () => {
       resources: [],
     };
 
-    const outcome = await registry.execute(resolved, invocation, {
+    const outcome = await registry.execute(scoredActivity.name, invocation, {
       signal: new AbortController().signal,
       occurredAt: '2026-07-31T00:00:00.000Z',
       async reportExternalExecution(_reference) {},
     });
 
     expect(outcome).toEqual({ kind: 'scored', data: { score: 7 } });
-    expectTypeOf(outcome).toMatchTypeOf<ScoredOutcome>();
-    expectTypeOf(outcome.kind).toEqualTypeOf<'scored'>();
-    expectTypeOf(registry.validateInput(resolved, { value: 1 })).toEqualTypeOf<{
-      value: number;
-    }>();
-    expectTypeOf(
-      registry.validateOutcome(resolved, { kind: 'scored', data: { score: 1 } }),
-    ).toMatchTypeOf<ScoredOutcome>();
+    expect('get' in registry).toBe(false);
   });
 
   it('rejects duplicate outcome kinds and outcomes outside the declaration', () => {

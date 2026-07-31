@@ -5,7 +5,11 @@ import {
   PullRequestState,
 } from './vocabulary.js';
 import { ReviewActorKind } from '../review/contracts.js';
-import { ActivityOutcomeKind, ActivityResourceRole } from '../contracts/vocabulary.js';
+import {
+  ActivityOutcomeKind,
+  ActivityResourceRole,
+  type ActivityFailureCode,
+} from '../contracts/vocabulary.js';
 import type { ResourceCorrelationView, ResourceView } from '../../resources/index.js';
 import type { WorkItemId, WorkItemView } from '../../work/index.js';
 import type { ResourceId } from '../../resources/index.js';
@@ -84,11 +88,11 @@ export type PullRequestActivityOutcome =
     }
   | {
       readonly kind: typeof ActivityOutcomeKind.Blocked;
-      readonly data: { readonly reason: string };
+      readonly data: { readonly reason: PullRequestDenialCode };
     }
   | {
       readonly kind: typeof ActivityOutcomeKind.Failed;
-      readonly data: { readonly reason: string };
+      readonly data: { readonly reason: ActivityFailureCode };
     };
 
 export interface PullRequestAuthorityOptions {

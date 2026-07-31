@@ -98,6 +98,28 @@ describe('contract vocabulary discovery', () => {
 });
 
 describe('contract vocabulary catalogue boundaries', () => {
+  it('permits a closed-vocabulary collision owned by a branded name constructor', async () => {
+    const root = await fixture({
+      'src-next/kernel/contracts/vocabulary.ts': [
+        "import { defineClosedVocabulary } from '../index.js';",
+        'export const EventActorKind = defineClosedVocabulary({',
+        "  Agent: 'agent',",
+        '} as const);',
+      ].join('\n'),
+      'src-next/activities/contracts/vocabulary.ts': [
+        "import { activityName } from './identifiers.js';",
+        "export const BuiltInActivityName = { Agent: activityName('agent') } as const;",
+      ].join('\n'),
+      'src-next/activities/domain/raw.ts': "export const raw = 'agent';",
+    });
+
+    const diagnostics = await checkContractVocabulary(root, { rules: ['closed-vocabulary'] });
+
+    expect(messages(diagnostics)).toBe(
+      'src-next/activities/domain/raw.ts:1:20 [closed-vocabulary] "agent" must be replaced by EventActorKind',
+    );
+  });
+
   it('permits a colliding literal inside another explicit catalogue only', async () => {
     const root = await fixture({
       'src-next/integrations/contracts/streams.ts':

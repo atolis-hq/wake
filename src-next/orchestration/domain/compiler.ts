@@ -9,7 +9,13 @@ import {
   type StageConfig,
   type WorkflowDefinitionConfig,
 } from '../contracts/config.js';
-import { commandName, stageName, workflowName, type StageName } from '../contracts/identifiers.js';
+import {
+  commandName,
+  signalName,
+  stageName,
+  workflowName,
+  type StageName,
+} from '../contracts/identifiers.js';
 import { TransitionTargetKind } from '../contracts/vocabulary.js';
 
 export function compileWorkflow(
@@ -91,7 +97,7 @@ function compileStage(
   allStages: WorkflowDefinitionConfig['stages'],
   activities: ActivityRegistry,
 ): CompiledStage {
-  const definition = activities.get(activityName(stage.activity));
+  const definition = activities.describe(activityName(stage.activity));
   const on = Object.fromEntries(
     Object.entries(stage.on).map(([outcomeKind, route]) => {
       if (!definition.outcomeKinds.includes(outcomeKind))
@@ -105,7 +111,7 @@ function compileStage(
         with: activities.validateInput(activityName(activity.use), activity.with),
       }));
       const compiled: CompiledOutcomeRoute = Object.freeze({
-        target: compileTarget(route.then),
+        target: compileTarget(route.then, outcomeKind),
         ...(route.repeat === undefined ? {} : { repeat: route.repeat }),
         ...(route.retry === undefined ? {} : { retry: route.retry }),
         ...(followOns === undefined ? {} : { activities: Object.freeze(followOns) }),
@@ -141,9 +147,10 @@ function compileCommands(
 const isReservedTerminal = (target: string): boolean =>
   target === ActivityOutcomeKind.Done || target === 'await-human';
 
-function compileTarget(target: string): CompiledOutcomeRoute['target'] {
+function compileTarget(target: string, outcomeKind: string): CompiledOutcomeRoute['target'] {
   if (target === ActivityOutcomeKind.Done) return { kind: TransitionTargetKind.Complete };
-  if (target === 'await-human') return { kind: TransitionTargetKind.AwaitSignal };
+  if (target === 'await-human')
+    return { kind: TransitionTargetKind.AwaitSignal, signal: signalName(outcomeKind) };
   return { kind: TransitionTargetKind.Stage, stage: stageName(target) };
 }
 

@@ -4,7 +4,6 @@ import type { WorkflowOrchestrationEventDraft } from '../contracts/events.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
 import { OrchestrationEventType } from '../contracts/events.js';
 import { TransitionTargetKind } from '../contracts/vocabulary.js';
-import { signalName } from '../contracts/identifiers.js';
 import { activation, nextOrdinal, stateDraft } from './decision-events.js';
 
 interface TransitionInput {
@@ -32,7 +31,7 @@ export function finishRoute(
         state,
         input,
         OrchestrationEventType.SignalWaitStarted,
-        { signalKind: signalName(input.outcome.kind) },
+        { signalKind: route.target.signal },
         events.length + 1,
       ),
     );

@@ -3,12 +3,12 @@ import {
   ActivityOutcomeKind,
   ActivityRunnerTransportStatus,
 } from '../contracts/vocabulary.js';
-import type { ActivityHandler, ActivityOutcome } from '../contracts/activity.js';
+import type { ActivityHandler } from '../contracts/activity.js';
 import type {
   ActivityRunnerTransportStatus as ActivityRunnerTransportStatusValue,
   ExternalExecutionKind as ExternalExecutionKindValue,
 } from '../contracts/vocabulary.js';
-import { translateAgentResult } from './agent-result.js';
+import { translateAgentResult, type AgentActivityOutcome } from './agent-result.js';
 
 interface AgentRunner {
   start(
@@ -37,10 +37,10 @@ export function createAgentActivity(
   runner: AgentRunner,
 ): ActivityHandler<
   { prompt: string; model?: string; allowedTools?: readonly string[] },
-  ActivityOutcome
+  AgentActivityOutcome
 > {
   return {
-    async execute(invocation, context): Promise<ActivityOutcome> {
+    async execute(invocation, context): Promise<AgentActivityOutcome> {
       const input = invocation.input;
       const execution = await runner.start(
         {
@@ -62,7 +62,10 @@ export function createAgentActivity(
       if (result.transport !== ActivityRunnerTransportStatus.Succeeded)
         return {
           kind: ActivityOutcomeKind.Failed,
-          data: result.failure ?? { reason: ActivityFailureCode.RunnerFailed },
+          data: {
+            reason: ActivityFailureCode.RunnerFailed,
+            ...(result.failure === undefined ? {} : { message: result.failure.message }),
+          },
         };
       return translateAgentResult(parseOutput(result.output));
     },

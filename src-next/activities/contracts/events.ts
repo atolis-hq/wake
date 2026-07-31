@@ -1,4 +1,9 @@
-import { MergeMethod, PullRequestCheckState, PullRequestState } from '../pr/vocabulary.js';
+import {
+  MergeMethod,
+  PullRequestCheckState,
+  PullRequestDenialCode,
+  PullRequestState,
+} from '../pr/vocabulary.js';
 import { ActivityOutcomeKind } from './vocabulary.js';
 import { ReviewActorKind } from '../review/contracts.js';
 import { z } from 'zod';
@@ -50,7 +55,7 @@ export interface PullRequestDiscoveredPayload {
 export interface PullRequestDenialPayload {
   readonly activationId: ActivationId;
   readonly idempotencyKey: string;
-  readonly reason: string;
+  readonly reason: PullRequestDenialCode;
   readonly target?: PullRequestTarget | undefined;
   readonly candidates?:
     | readonly {

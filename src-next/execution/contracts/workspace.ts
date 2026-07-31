@@ -1,4 +1,4 @@
-import { WorkspaceMode } from '../../activities/index.js';
+import { WorkspaceMode } from './vocabulary.js';
 import type { ResourceView } from '../../resources/index.js';
 import type { WorkItemId } from '../../work/index.js';
 export interface WorkspaceRequest {

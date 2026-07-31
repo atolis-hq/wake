@@ -1,4 +1,5 @@
 export * from './contracts/config.js';
+export * from './contracts/activity-outcome.js';
 export * from './contracts/commands.js';
 export * from './contracts/events.js';
 export * from './contracts/identifiers.js';

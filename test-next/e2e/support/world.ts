@@ -243,7 +243,9 @@ export class TestWorld {
     return this.orchestration.get(parseWorkflowInstanceId(id));
   }
   viewRuns(activationId?: string): Promise<readonly RunView[]> {
-    return this.execution.list(activationId);
+    return this.execution.list(
+      activationId === undefined ? undefined : parseActivationId(activationId),
+    );
   }
   private command(
     actor: { kind: 'system' | 'operator' | 'agent' | 'integration'; id: string } = {

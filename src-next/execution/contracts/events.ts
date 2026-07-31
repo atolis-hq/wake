@@ -1,6 +1,15 @@
-import { WorkspaceMode } from '../../activities/index.js';
 import { z } from 'zod';
-import type { ActivityOutcome } from '../../activities/index.js';
+import {
+  activationId,
+  activityName,
+  activityOrchestrationGroupId,
+  activityWorkflowInstanceId,
+  type ActivationId,
+  type ActivityName,
+  type ActivityOrchestrationGroupId,
+  type ActivityOutcome,
+  type ActivityWorkflowInstanceId,
+} from '../../activities/index.js';
 import {
   eventEnvelopeSchema,
   brandedStringSchema,
@@ -11,6 +20,8 @@ import {
 } from '../../kernel/index.js';
 import { runId } from './identifiers.js';
 import { ExecutionStreamKind, type RunStreamRef } from './streams.js';
+import { ExecutionFailureCode, WorkspaceMode } from './vocabulary.js';
+import type { ExecutionFailure } from './views.js';
 
 export const ExecutionEventType = {
   RunStarted: 'execution.run-started',
@@ -19,8 +30,10 @@ export const ExecutionEventType = {
 } as const;
 
 export interface RunStartedPayload {
-  readonly activationId: string;
-  readonly activity: string;
+  readonly activationId: ActivationId;
+  readonly activity: ActivityName;
+  readonly workflowInstanceId: ActivityWorkflowInstanceId;
+  readonly orchestrationGroupId: ActivityOrchestrationGroupId;
   readonly attempt: number;
   readonly startedAt: string;
   readonly workspace?:
@@ -38,7 +51,7 @@ export interface ExecutionEventPayloads {
     readonly finishedAt: string;
   };
   readonly [ExecutionEventType.RunFailed]: {
-    readonly failure: { readonly kind: string; readonly message: string };
+    readonly failure: ExecutionFailure;
     readonly finishedAt: string;
   };
 }
@@ -58,8 +71,10 @@ const eventSchema = z.discriminatedUnion('eventType', [
     stream: streamSchema,
     payload: z
       .object({
-        activationId: z.string().min(1),
-        activity: z.string().min(1),
+        activationId: brandedStringSchema(activationId),
+        activity: brandedStringSchema(activityName),
+        workflowInstanceId: brandedStringSchema(activityWorkflowInstanceId),
+        orchestrationGroupId: brandedStringSchema(activityOrchestrationGroupId),
         attempt: z.number().int().positive(),
         startedAt: offsetIsoTimestampSchema,
         workspace: z
@@ -87,7 +102,19 @@ const eventSchema = z.discriminatedUnion('eventType', [
     stream: streamSchema,
     payload: z
       .object({
-        failure: z.object({ kind: z.string(), message: z.string() }).strict(),
+        failure: z
+          .object({
+            kind: z.enum([ExecutionFailureCode.Unexpected]),
+            message: z.string(),
+            details: z
+              .object({
+                sourceKind: z.string().min(1),
+                sourceDetails: z.unknown().optional(),
+              })
+              .strict()
+              .optional(),
+          })
+          .strict(),
         finishedAt: offsetIsoTimestampSchema,
       })
       .strict(),

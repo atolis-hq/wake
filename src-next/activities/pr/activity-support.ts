@@ -1,4 +1,5 @@
 import {
+  ActivityFailureCode,
   ActivityOutcomeKind,
   ActivityResourceRole,
   IntentAppendStatus,
@@ -51,13 +52,35 @@ export const pullRequestOutcomeSchema: z.ZodType<PullRequestActivityOutcome> = z
   z
     .object({
       kind: z.literal(ActivityOutcomeKind.Blocked),
-      data: z.object({ reason: z.string() }).strict(),
+      data: z
+        .object({
+          reason: z.enum([
+            PullRequestDenialCode.MissingResource,
+            PullRequestDenialCode.AmbiguousResource,
+            PullRequestDenialCode.CorrelationConflict,
+            PullRequestDenialCode.Closed,
+            PullRequestDenialCode.StaleApproval,
+            PullRequestDenialCode.ChecksPending,
+            PullRequestDenialCode.ChecksFailing,
+            PullRequestDenialCode.UntrustedActor,
+          ]),
+        })
+        .strict(),
     })
     .strict(),
   z
     .object({
       kind: z.literal(ActivityOutcomeKind.Failed),
-      data: z.object({ reason: z.string() }).strict(),
+      data: z
+        .object({
+          reason: z.enum([
+            ActivityFailureCode.IntentWriteFailed,
+            ActivityFailureCode.InvalidAgentResult,
+            ActivityFailureCode.AmbiguousRunnerResult,
+            ActivityFailureCode.RunnerFailed,
+          ]),
+        })
+        .strict(),
     })
     .strict(),
 ]);

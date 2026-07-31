@@ -16,6 +16,7 @@ import { activation, nextOrdinal, startDraft, stateDraft } from './decision-even
 import { childStartDrafts } from './coordination-events.js';
 import { finishRoute } from './transition.js';
 import { acceptWaitingOutcome } from './waiting-outcome.js';
+import type { OrchestrationActivityOutcome } from '../contracts/activity-outcome.js';
 import {
   stageName,
   type OrchestrationGroupId,
@@ -58,7 +59,7 @@ export interface DecisionContext {
 
 export interface AcceptActivityOutcome extends DecisionContext {
   readonly activationId: ActivationId;
-  readonly outcome: ActivityOutcome;
+  readonly outcome: OrchestrationActivityOutcome;
 }
 
 export interface AcceptSignal extends DecisionContext {

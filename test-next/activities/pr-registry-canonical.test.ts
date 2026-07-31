@@ -15,7 +15,12 @@ it('only the canonical merge factory owns the pr.merge Activity registration', (
 
   registry.register(canonical);
 
-  expect(registry.get('pr.merge')).toBe(canonical);
+  expect(registry.describe('pr.merge')).toMatchObject({
+    name: canonical.name,
+    outcomeKinds: canonical.outcomeKinds,
+    resources: canonical.resources,
+    executionKind: canonical.executionKind,
+  });
   expect(authority).not.toHaveProperty('name');
   expect(authority).not.toHaveProperty('handler');
 });

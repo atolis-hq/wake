@@ -2,12 +2,9 @@ import { WorkflowStatus } from './vocabulary.js';
 import { z } from 'zod';
 
 import { EventActorKind } from '../../kernel/index.js';
-import {
-  WorkspaceMode,
-  type ActivityName,
-  type WorkspaceMode as WorkspaceModeType,
-} from '../../activities/index.js';
-import type { CommandName, StageName, WorkflowName } from './identifiers.js';
+import { type ActivityName } from '../../activities/index.js';
+import { WorkspaceMode, type WorkspaceMode as WorkspaceModeType } from '../../execution/index.js';
+import type { CommandName, SignalName, StageName, WorkflowName } from './identifiers.js';
 import { TransitionTargetKind } from './vocabulary.js';
 
 export interface ActivityExecutionConfig {
@@ -107,7 +104,7 @@ export type WorkflowDefinitionConfig = z.infer<typeof workflowDefinitionConfigSc
 export type TransitionTarget =
   | { readonly kind: typeof TransitionTargetKind.Stage; readonly stage: StageName }
   | { readonly kind: typeof TransitionTargetKind.Complete }
-  | { readonly kind: typeof TransitionTargetKind.AwaitSignal };
+  | { readonly kind: typeof TransitionTargetKind.AwaitSignal; readonly signal: SignalName };
 
 export interface CompiledFollowOnActivity {
   readonly use: ActivityName;

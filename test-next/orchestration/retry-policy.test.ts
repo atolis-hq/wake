@@ -11,6 +11,7 @@ import {
   acceptActivityOutcome,
   compileWorkflow,
   foldWorkflowInstance,
+  orchestrationActivityOutcome,
   startInstance,
 } from '../../src-next/orchestration/index.js';
 import { workItemId } from '../../src-next/work/index.js';
@@ -75,7 +76,7 @@ function fail(
   const state = foldWorkflowInstance(events)!;
   return acceptActivityOutcome(fixture.definition, state, {
     activationId: state.pendingActivation!.activationId,
-    outcome: { kind: 'failed', data: { retrySafety } },
+    outcome: orchestrationActivityOutcome({ kind: 'failed', data: { retrySafety } }),
     occurredAt: '2026-07-30T12:01:00.000Z',
     causationId,
   });

@@ -1,4 +1,9 @@
-import { MergeMethod, PullRequestCheckState, PullRequestState } from '../pr/vocabulary.js';
+import {
+  MergeMethod,
+  PullRequestCheckState,
+  PullRequestDenialCode,
+  PullRequestState,
+} from '../pr/vocabulary.js';
 import { ActivityOutcomeKind, ActivityResourceRole } from './vocabulary.js';
 import { ReviewActorKind } from '../review/contracts.js';
 import { z } from 'zod';
@@ -67,11 +72,21 @@ const checksSchema = z.enum([
   PullRequestCheckState.Failing,
 ]);
 const reviewSchema = z.object({ revision: z.string(), actorId: z.string() }).strict();
+const denialCodeSchema = z.enum([
+  PullRequestDenialCode.MissingResource,
+  PullRequestDenialCode.AmbiguousResource,
+  PullRequestDenialCode.CorrelationConflict,
+  PullRequestDenialCode.Closed,
+  PullRequestDenialCode.StaleApproval,
+  PullRequestDenialCode.ChecksPending,
+  PullRequestDenialCode.ChecksFailing,
+  PullRequestDenialCode.UntrustedActor,
+]);
 const denialSchema = z
   .object({
     activationId: brandedStringSchema(activationId),
     idempotencyKey: z.string(),
-    reason: z.string(),
+    reason: denialCodeSchema,
     target: z
       .union([
         z.literal(ActivityResourceRole.Primary),
@@ -120,7 +135,7 @@ const requestedOutcomeSchema = z
 const deniedOutcomeSchema = z
   .object({
     kind: z.literal(ActivityOutcomeKind.Blocked),
-    data: z.object({ reason: z.string() }).strict(),
+    data: z.object({ reason: denialCodeSchema }).strict(),
   })
   .strict();
 

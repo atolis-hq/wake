@@ -10,6 +10,7 @@ import {
   acceptActivityOutcome,
   compileWorkflow,
   foldWorkflowInstance,
+  orchestrationActivityOutcome,
   startInstance,
   type StartInstanceInput,
 } from '../../src-next/orchestration/index.js';
@@ -78,7 +79,7 @@ describe('workflow interpreter', () => {
     const state = foldWorkflowInstance(started.events)!;
     const first = acceptActivityOutcome(definition, state, {
       activationId: state.pendingActivation!.activationId,
-      outcome: { kind: 'done' },
+      outcome: orchestrationActivityOutcome({ kind: 'done' }),
       occurredAt: start.occurredAt,
       causationId: 'run-1',
     });
@@ -87,7 +88,7 @@ describe('workflow interpreter', () => {
     expect(reviewing.pendingActivation?.activity).toBe('review');
     const second = acceptActivityOutcome(definition, reviewing, {
       activationId: reviewing.pendingActivation!.activationId,
-      outcome: { kind: 'done' },
+      outcome: orchestrationActivityOutcome({ kind: 'done' }),
       occurredAt: start.occurredAt,
       causationId: 'run-2',
     });
@@ -128,7 +129,7 @@ describe('workflow follow-ons', () => {
       const state = foldWorkflowInstance(events)!;
       const decision = acceptActivityOutcome(multiple, state, {
         activationId: state.pendingActivation!.activationId,
-        outcome: { kind: 'done' },
+        outcome: orchestrationActivityOutcome({ kind: 'done' }),
         occurredAt: start.occurredAt,
         causationId: `run-${state.pendingActivation!.ordinal}`,
       });
@@ -139,7 +140,7 @@ describe('workflow follow-ons', () => {
     const state = foldWorkflowInstance(events)!;
     const terminal = acceptActivityOutcome(multiple, state, {
       activationId: state.pendingActivation!.activationId,
-      outcome: { kind: 'done' },
+      outcome: orchestrationActivityOutcome({ kind: 'done' }),
       occurredAt: start.occurredAt,
       causationId: 'run-terminal',
     });
@@ -156,14 +157,14 @@ describe('workflow outcome acceptance', () => {
     expect(
       acceptActivityOutcome(definition, state, {
         activationId: activationId('other'),
-        outcome: { kind: 'done' },
+        outcome: orchestrationActivityOutcome({ kind: 'done' }),
         occurredAt: start.occurredAt,
         causationId: 'x',
       }).kind,
     ).toBe('ignored');
     const waiting = acceptActivityOutcome(definition, state, {
       activationId: state.pendingActivation!.activationId,
-      outcome: { kind: 'blocked' },
+      outcome: orchestrationActivityOutcome({ kind: 'blocked' }),
       occurredAt: start.occurredAt,
       causationId: 'run-1',
     });

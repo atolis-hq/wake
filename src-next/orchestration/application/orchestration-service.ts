@@ -16,6 +16,7 @@ import type {
   SupplementalActivityRequest,
 } from '../contracts/events.js';
 import { OrchestrationEventType } from '../contracts/events.js';
+import { orchestrationActivityOutcome } from '../contracts/activity-outcome.js';
 import {
   acceptActivityOutcome,
   acceptSignal,
@@ -161,6 +162,7 @@ export class OrchestrationService {
     const loaded = await this.loadRequired(command.workflowInstanceId);
     const decision = acceptActivityOutcome(this.definition(loaded.view.workflowName), loaded.view, {
       ...command,
+      outcome: orchestrationActivityOutcome(command.outcome),
       occurredAt: context.occurredAt,
       causationId: context.commandId,
     });

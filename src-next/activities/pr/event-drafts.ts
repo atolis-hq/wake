@@ -98,7 +98,7 @@ export const reviewRejected = (
 
 export const mergeDenied = (
   stream: ResourceStreamRef | WorkItemStreamRef,
-  reason: string,
+  reason: PullRequestDenialPayload['reason'],
   context: CommandContext,
   audit: DenialAudit = {},
 ): ActivityDraft<typeof ActivityEventType.PrMergeDenied> =>
@@ -106,7 +106,7 @@ export const mergeDenied = (
 
 export const approveDenied = (
   stream: ResourceStreamRef | WorkItemStreamRef,
-  reason: string,
+  reason: PullRequestDenialPayload['reason'],
   context: CommandContext,
   audit: DenialAudit = {},
 ): ActivityDraft<typeof ActivityEventType.PrApproveDenied> =>
@@ -153,7 +153,7 @@ function denialDraft<
 >(
   eventType: Type,
   stream: ResourceStreamRef | WorkItemStreamRef,
-  reason: string,
+  reason: PullRequestDenialPayload['reason'],
   context: CommandContext,
   audit: DenialAudit,
 ) {

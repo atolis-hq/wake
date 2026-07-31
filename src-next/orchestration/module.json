@@ -1,7 +1,7 @@
 {
   "name": "orchestration",
   "kind": "domain",
-  "dependencies": ["kernel", "work", "activities"],
+  "dependencies": ["kernel", "work", "activities", "execution"],
   "publicEntry": "./index.ts",
   "namespaces": {
     "events": ["orchestration."],

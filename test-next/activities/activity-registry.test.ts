@@ -41,7 +41,7 @@ describe('ActivityRegistry', () => {
   it('declares resource capability and cardinality requirements', () => {
     const registry = new ActivityRegistry();
     registry.register(definition());
-    expect(registry.get('implement').resources).toEqual([
+    expect(registry.describe('implement').resources).toEqual([
       { capability: resourceCapability('revisioned'), cardinality: 'exactly-one', role: 'primary' },
     ]);
   });

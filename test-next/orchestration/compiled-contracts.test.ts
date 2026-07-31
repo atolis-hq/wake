@@ -10,6 +10,7 @@ import {
   TransitionTargetKind,
   commandName,
   compileWorkflow,
+  signalName,
   stageName,
   workflowName,
 } from '../../src-next/orchestration/index.js';
@@ -96,8 +97,46 @@ describe('compiled workflow contracts', () => {
 
     const routes = compiled.stages[stageName('implement')]!.on;
     expect(routes.done?.target).toEqual({ kind: TransitionTargetKind.Complete });
-    expect(routes.blocked?.target).toEqual({ kind: TransitionTargetKind.AwaitSignal });
+    expect(routes.blocked?.target).toEqual({
+      kind: TransitionTargetKind.AwaitSignal,
+      signal: signalName('blocked'),
+    });
     expect(routes.done).not.toHaveProperty('then');
+  });
+});
+
+describe('compiled workflow signal contracts', () => {
+  it('rejects an await-human route whose outcome kind is not a SignalName', () => {
+    const activities = registry();
+    activities.register({
+      name: activityName('request-input'),
+      inputSchema: z.object({}).strict(),
+      outcomeSchema: z.object({ kind: z.literal('needs_input') }).strict(),
+      outcomeKinds: ['needs_input'],
+      resources: [],
+      executionKind: ActivityExecutionKind.Deterministic,
+      handler: {
+        async execute() {
+          return { kind: 'needs_input' };
+        },
+      },
+    });
+
+    expect(() =>
+      compileWorkflow(
+        'default',
+        {
+          stages: {
+            request: {
+              activity: 'request-input',
+              with: {},
+              on: { needs_input: { then: 'await-human' } },
+            },
+          },
+        },
+        activities,
+      ),
+    ).toThrow(/invalid signal name.*needs_input/i);
   });
 
   it.each(['done', 'await-human'])('rejects the reserved stage name %s', (reserved) => {

@@ -1,15 +1,7 @@
-import { ActivityResourceCardinality, WorkspaceMode } from '../../activities/index.js';
-import { RunStatus } from '../contracts/vocabulary.js';
+import { ActivityResourceCardinality } from '../../activities/index.js';
+import { RunStatus, WorkspaceMode } from '../contracts/vocabulary.js';
 import { EventActorKind, EventSourceKind } from '../../kernel/index.js';
-import {
-  activityName,
-  activityOrchestrationGroupId,
-  activityWorkflowInstanceId,
-  type ActivityRegistry,
-  type ActivityExecutionContext,
-  type ActivationId,
-  type ActivityName,
-} from '../../activities/index.js';
+import { type ActivityRegistry, type ActivityExecutionContext } from '../../activities/index.js';
 import {
   createEventDraft,
   type Clock,
@@ -19,35 +11,13 @@ import {
 import { BuiltInResourceKind, type ResourceView } from '../../resources/index.js';
 import type { WorkItemId } from '../../work/index.js';
 import type { ExecutionConfig } from '../contracts/config.js';
+import type { ExecutionActivation, ExecutionAttemptContext } from '../contracts/commands.js';
 import { ExecutionEventType, type ExecutionEventPayloads } from '../contracts/events.js';
 import { runId } from '../contracts/identifiers.js';
 import { ExecutionStreamKind, runStream } from '../contracts/streams.js';
 import type { WorkspaceLease, WorkspaceProvider } from '../contracts/workspace.js';
 import { failureFrom } from '../domain/run-result.js';
 import { RunRepository } from './run-repository.js';
-
-interface Activation {
-  readonly activationId: ActivationId;
-  readonly ordinal: number;
-  readonly activity: ActivityName;
-  readonly input: unknown;
-  readonly execution:
-    | {
-        readonly workspace?:
-          | typeof WorkspaceMode.None
-          | typeof WorkspaceMode.ReadOnly
-          | typeof WorkspaceMode.Branch
-          | undefined;
-        readonly tier?: string | undefined;
-      }
-    | undefined;
-}
-interface AttemptContext {
-  readonly workItemId: WorkItemId;
-  readonly workflowInstanceId: string;
-  readonly orchestrationGroupId: string;
-  readonly resources: readonly ResourceView[];
-}
 
 export function createExecutionService(
   journal: EventJournal,
@@ -61,9 +31,9 @@ export function createExecutionService(
 ) {
   const repository = new RunRepository(journal);
   return {
-    async attempt(activation: Activation, context: AttemptContext) {
-      const definition = activities.get(activityName(activation.activity));
-      const input = activities.validateInput(activation.activity, activation.input);
+    async attempt(activation: ExecutionActivation, context: ExecutionAttemptContext) {
+      const definition = activities.describe(activation.activity);
+      activities.validateInput(activation.activity, activation.input);
       validateResources(definition.resources, context.resources);
       const tier = activation.execution?.tier ?? config.defaultTier;
       if (config.tiers[tier] === undefined) throw new Error(`Unknown execution tier: ${tier}`);
@@ -91,16 +61,17 @@ export function createExecutionService(
             payload: {
               activationId: activation.activationId,
               activity: activation.activity,
+              workflowInstanceId: context.workflowInstanceId,
+              orchestrationGroupId: context.orchestrationGroupId,
               attempt: prior.length + 1,
               startedAt,
               ...(lease === undefined ? {} : { workspace: { mode: lease.mode, path: lease.path } }),
             },
           }),
         ]);
-        const outcome = await executeActivity(activities, definition, {
+        const outcome = await executeActivity(activities, {
           activation,
           context,
-          input,
           occurredAt: startedAt,
         });
         const finishedAt = dependencies.clock.now().toISOString();
@@ -136,35 +107,33 @@ export function createExecutionService(
       }
       return (await repository.load(currentRunId)).view!;
     },
-    list: (activationId?: string) => repository.list(activationId),
+    list: (activationId?: ExecutionActivation['activationId']) => repository.list(activationId),
   };
 }
 async function executeActivity(
   activities: ActivityRegistry,
-  definition: ReturnType<ActivityRegistry['get']>,
   request: {
-    readonly activation: Activation;
-    readonly context: AttemptContext;
-    readonly input: unknown;
+    readonly activation: ExecutionActivation;
+    readonly context: ExecutionAttemptContext;
     readonly occurredAt: string;
   },
 ) {
-  const { activation, context, input, occurredAt } = request;
+  const { activation, context, occurredAt } = request;
   const executionContext: ActivityExecutionContext = {
     signal: new AbortController().signal,
     occurredAt,
     async reportExternalExecution() {},
   };
   return activities.execute(
-    definition,
+    activation.activity,
     {
       activationId: activation.activationId,
       activity: activation.activity,
       workItemId: context.workItemId,
-      workflowInstanceId: activityWorkflowInstanceId(context.workflowInstanceId),
-      orchestrationGroupId: activityOrchestrationGroupId(context.orchestrationGroupId),
+      workflowInstanceId: context.workflowInstanceId,
+      orchestrationGroupId: context.orchestrationGroupId,
       causationId: activation.activationId,
-      input,
+      input: activation.input,
       resources: context.resources,
     },
     executionContext,

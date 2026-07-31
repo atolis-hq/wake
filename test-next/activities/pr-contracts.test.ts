@@ -1,6 +1,9 @@
 import { expect, expectTypeOf, it } from 'vitest';
 
 import {
+  ActivityFailureCode,
+  ActivityOutcomeKind,
+  PullRequestDenialCode,
   createPullRequestMergeActivity,
   type PullRequestMergeInput,
 } from '../../src-next/activities/index.js';
@@ -30,4 +33,34 @@ it('exports the exact shared parsed merge input contract', () => {
     readonly method: 'merge' | 'squash' | 'rebase';
     readonly requireChecks: boolean;
   }>();
+});
+
+it('closes blocked and failed Pull Request outcome reasons to their owning vocabularies', () => {
+  const world = new TestWorld();
+  const schema = createPullRequestMergeActivity(world.journal, world.pullRequests).outcomeSchema;
+
+  expect(
+    schema.parse({
+      kind: ActivityOutcomeKind.Blocked,
+      data: { reason: PullRequestDenialCode.MissingResource },
+    }),
+  ).toBeDefined();
+  expect(() =>
+    schema.parse({
+      kind: ActivityOutcomeKind.Blocked,
+      data: { reason: ActivityFailureCode.IntentWriteFailed },
+    }),
+  ).toThrow();
+  expect(
+    schema.parse({
+      kind: ActivityOutcomeKind.Failed,
+      data: { reason: ActivityFailureCode.IntentWriteFailed },
+    }),
+  ).toBeDefined();
+  expect(() =>
+    schema.parse({
+      kind: ActivityOutcomeKind.Failed,
+      data: { reason: PullRequestDenialCode.MissingResource },
+    }),
+  ).toThrow();
 });

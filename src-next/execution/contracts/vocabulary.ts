@@ -9,3 +9,15 @@ export const RunStatus = defineClosedVocabulary({
 } as const);
 export type RunStatus = ValueOf<typeof RunStatus>;
 export type FinishedRunStatus = Exclude<RunStatus, typeof RunStatus.Started>;
+
+export const ExecutionFailureCode = defineClosedVocabulary({
+  Unexpected: 'unexpected-execution-failure',
+} as const);
+export type ExecutionFailureCode = ValueOf<typeof ExecutionFailureCode>;
+
+export const WorkspaceMode = defineClosedVocabulary({
+  None: 'none',
+  ReadOnly: 'read-only',
+  Branch: 'branch',
+} as const);
+export type WorkspaceMode = ValueOf<typeof WorkspaceMode>;

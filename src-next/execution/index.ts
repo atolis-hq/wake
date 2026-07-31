@@ -2,6 +2,7 @@ export * from './application/execution-service.js';
 export * from './application/execution-projection.js';
 export * from './application/run-repository.js';
 export * from './contracts/config.js';
+export * from './contracts/commands.js';
 export * from './contracts/events.js';
 export * from './contracts/identifiers.js';
 export * from './contracts/runner.js';

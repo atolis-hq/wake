@@ -3,11 +3,13 @@ import { activityName } from '../../src-next/activities/index.js';
 import { describe, expect, it } from 'vitest';
 import {
   decodeExecutionEvent,
+  ExecutionFailureCode,
   ExecutionEventType,
   runId,
   runStream,
   selectExecutionEvent,
 } from '../../src-next/execution/index.js';
+import { orchestrationGroupId, workflowInstanceId } from '../../src-next/orchestration/index.js';
 import { eventEnvelope } from '../support/event-envelope.js';
 
 const stream = runStream(runId('run-1'));
@@ -17,6 +19,8 @@ const samples = [
     {
       activationId: activationId('activation-1'),
       activity: activityName('implement'),
+      workflowInstanceId: workflowInstanceId('workflow-1'),
+      orchestrationGroupId: orchestrationGroupId('group-1'),
       attempt: 1,
       startedAt: '2026-07-31T12:00:00.000Z',
       workspace: { mode: 'branch', path: 'C:\\repo' },
@@ -32,7 +36,11 @@ const samples = [
   [
     ExecutionEventType.RunFailed,
     {
-      failure: { kind: 'Error', message: 'failed' },
+      failure: {
+        kind: ExecutionFailureCode.Unexpected,
+        message: 'failed',
+        details: { sourceKind: 'TypeError' },
+      },
       finishedAt: '2026-07-31T12:01:00.000Z',
     },
   ],
@@ -79,5 +87,20 @@ describe('Execution event contract', () => {
     expect(() => selectExecutionEvent(eventEnvelope('execution.unknown', {}, stream))).toThrow(
       /event-7.*position 7.*execution\.unknown/i,
     );
+  });
+
+  it('rejects provider or Error names as machine failure kinds', () => {
+    expect(() =>
+      decodeExecutionEvent(
+        eventEnvelope(
+          ExecutionEventType.RunFailed,
+          {
+            failure: { kind: 'TypeError', message: 'failed' },
+            finishedAt: '2026-07-31T12:01:00.000Z',
+          },
+          stream,
+        ),
+      ),
+    ).toThrow();
   });
 });
