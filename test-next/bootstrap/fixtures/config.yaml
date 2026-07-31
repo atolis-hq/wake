@@ -1,0 +1,12 @@
+schemaVersion: 1
+work: {}
+resources: {}
+execution:
+  runners:
+    fake: { kind: fake }
+  tiers:
+    standard: [fake]
+  defaultTier: standard
+controlPlane: {}
+integrations: {}
+surfaces: {}

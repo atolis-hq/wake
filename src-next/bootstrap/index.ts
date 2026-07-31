@@ -1,29 +1,15 @@
-import { activityProjectionDefinitions } from '../activities/index.js';
 import {
   DeliveryOutcomeReactor,
   DeliveryService,
-  deliveryProjectionDefinitions,
   type ExternalDeliveryAdapter,
-  type DeliveryIntentView,
   type DeliveryResourceLookup,
   type DeliveryServiceDependencies,
 } from '../integrations/index.js';
+import { deliveryProjectionDefinitions } from '../integrations/index.js';
 import type { OrchestrationService } from '../orchestration/index.js';
-import type { CheckpointStore, EventJournal, ProjectionStore } from '../kernel/index.js';
-import { ProjectionRunner } from '../persistence/index.js';
-import { resourceCorrelationProjection, resourceProjection } from '../resources/index.js';
-import { workProjection } from '../work/index.js';
-import { controlPlaneProjectionDefinitions } from '../control-plane/index.js';
 import { ResidentHost, TickHost, type AdvanceOnce } from '../control-plane/index.js';
-
-export const runtimeProjectionDefinitions = [
-  workProjection,
-  resourceProjection,
-  resourceCorrelationProjection,
-  ...activityProjectionDefinitions,
-  ...deliveryProjectionDefinitions,
-  ...controlPlaneProjectionDefinitions,
-];
+import type { CheckpointStore, EventJournal, ProjectionStore } from '../kernel/index.js';
+import { createRuntimeProjectionRunner } from './projection-runtime.js';
 
 export function composeDeliveryService(dependencies: DeliveryServiceDependencies): DeliveryService {
   return new DeliveryService(dependencies);
@@ -57,7 +43,7 @@ export function composeDeliveryRuntime(dependencies: DeliveryRuntimeDependencies
     journal: dependencies.journal,
     intents: async () =>
       (
-        await dependencies.projections.list<DeliveryIntentView>(
+        await dependencies.projections.list<import('../integrations/index.js').DeliveryIntentView>(
           deliveryProjectionDefinitions[0]!.name,
         )
       ).map(({ value }) => value),
@@ -81,14 +67,6 @@ export function composeDeliveryRuntime(dependencies: DeliveryRuntimeDependencies
   };
 }
 
-export function createRuntimeProjectionRunner(
-  journal: EventJournal,
-  projections: ProjectionStore,
-  checkpoints: CheckpointStore,
-): ProjectionRunner {
-  return new ProjectionRunner(journal, projections, checkpoints, runtimeProjectionDefinitions);
-}
-
 export function composeControlPlaneHosts(
   advanceOnce: AdvanceOnce,
   sleep?: (signal: AbortSignal) => Promise<void>,
@@ -96,3 +74,9 @@ export function composeControlPlaneHosts(
   const tick = new TickHost(advanceOnce);
   return { tick, resident: new ResidentHost(tick, sleep) };
 }
+
+export * from './config/load-config.js';
+export * from './config/root-schema.js';
+export * from './paths.js';
+export * from './composition-root.js';
+export * from './projection-runtime.js';

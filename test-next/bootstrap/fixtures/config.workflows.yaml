@@ -1,0 +1,13 @@
+workflows:
+  default:
+    stages:
+      implement:
+        activity: implement
+        with:
+          prompt: implement
+        execution:
+          workspace: none
+          tier: standard
+        on:
+          done:
+            then: done

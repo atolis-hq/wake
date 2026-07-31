@@ -1,5 +1,5 @@
 {
-  "entry": ["src-next/*/index.ts", "test-next/**/*.test.ts"],
+  "entry": ["src-next/main.ts", "src-next/*/index.ts", "test-next/**/*.test.ts"],
   "project": ["src-next/**/*.ts", "test-next/**/*.ts"],
   "ignoreDependencies": ["handlebars"]
 }

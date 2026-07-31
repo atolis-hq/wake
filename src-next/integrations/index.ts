@@ -4,6 +4,7 @@ export * from './delivery/contracts/intents.js';
 export * from './delivery/contracts/event-factory.js';
 export * from './delivery/contracts/commands.js';
 export * from './delivery/contracts/config.js';
+export * from './contracts/config.js';
 export * from './delivery/contracts/views.js';
 export * from './delivery/contracts/vocabulary.js';
 export * from './contracts/identifiers.js';

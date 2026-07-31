@@ -2,6 +2,7 @@ export * from './application/resource-repository.js';
 export * from './application/resource-projections.js';
 export * from './application/resource-service.js';
 export * from './contracts/commands.js';
+export * from './contracts/config.js';
 export * from './contracts/events.js';
 export * from './contracts/identifiers.js';
 export * from './contracts/streams.js';
