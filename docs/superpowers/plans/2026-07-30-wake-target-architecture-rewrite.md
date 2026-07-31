@@ -164,10 +164,20 @@ src-next/
     index.ts
     cli/{main,usage}.ts
     cli/commands/
-    api/{contracts,http-server}.ts
-    ui/data.ts
-    # Web application source, build, and packaging paths are added by the
-    # mandatory Task 25 web-architecture amendment.
+    api/
+      contracts/
+      presenters/
+      routes/
+      {http-server,problem-details,router}.ts
+    web-host/{asset-source,packaged-assets}.ts
+    web/
+      package.json
+      tsconfig.json
+      {vite.config,vitest.config,playwright.config}.ts
+      index.html
+      src/
+      test/
+      e2e/
   bootstrap/
     MODULE.md
     module.json
@@ -3864,53 +3874,66 @@ git commit -m "feat: compose target runtime from domain config"
 
 ## Task 25: Rebuild CLI, API, and UI over public application views
 
-> **Mandatory web-architecture decision gate:** Do not begin Task 25
-> implementation from this plan unchanged. After Task 24 passes, pause and
-> agree the target web architecture with the operator. Record the decision in
-> a dated design/ADR and amend this task with exact web application paths,
-> dependencies, build commands, tests, and packaging steps before continuing.
-> No framework, build tool, routing library, state library, or reusable
-> component strategy is selected by this plan.
+> **Approved web architecture:** Implement
+> [`2026-07-30-wake-web-surface-architecture-design.md`](../specs/2026-07-30-wake-web-surface-architecture-design.md).
+> The operator approved that companion design on 2026-07-30. Task 24 remains a
+> prerequisite because Task 25 consumes its public applications,
+> configuration, and bootstrap composition; do not start Task 25 production
+> code before the Task 24 gate passes.
 
-The decision must compare realistic options and explicitly settle:
+The approved decision is:
 
-- the web framework and build tool;
-- whether the web application is a workspace/package or another isolated
-  source boundary;
-- feature/domain component organisation and the typed API-client boundary;
-- routing, client state, error handling, accessibility, and browser testing;
-- how compiled assets are packaged and served by Wake;
-- whether separately embeddable components have a demonstrated second
-  consumer.
-
-Whichever option is approved must preserve these constraints:
-
-- browser code consumes only the public, domain-shaped API;
-- web dependencies and presentation models do not leak into Wake's domains;
-- useful user-facing behaviour may be preserved, but the legacy monolithic
-  embedded HTML/CSS/JavaScript generation is not copied as an interim UI;
-- the web application is independently buildable and testable;
-- Wake hosts compiled assets through a replaceable Surface adapter.
+- a private React and TypeScript npm workspace built by Vite;
+- React Router browser-history routes and TanStack Query server state;
+- no component, table, CSS, graph, icon, general state, or HTTP server
+  framework initially;
+- API source and clients grouped by Wake domain/capability, while browser code
+  is grouped by operator feature;
+- clean shareable paths, never hash routing;
+- one UI-agnostic `/api/v1`, using WorkItem keys, success envelopes, cursor
+  pagination, UTC timestamps, and RFC 9457 Problem Details;
+- no authentication in v1; the HTTP surface remains locally scoped;
+- independently refreshing JSON-bound components, with polling and immediate
+  mutation reconciliation rather than full-document replacement;
+- compiled assets served through a replaceable Surface adapter and shipped
+  inside Wake; `wake init` writes no UI artifacts;
+- Chromium Playwright coverage at desktop and mobile viewports;
+- no separately embeddable component package until a second consumer exists.
 
 **Files:**
 
 - Create: `src-next/surfaces/cli/{main,usage}.ts`
-- Create: `src-next/surfaces/cli/commands/{audit,correlate,start,stop,tick,ui,validate-state}.ts`
-- Create: `src-next/surfaces/api/{contracts,http-server}.ts`
-- Create: `src-next/surfaces/ui/data.ts`
-- Create after the mandatory decision gate: the exact web application source,
-  build, test, and asset-host files named by the approved Task 25 amendment
+- Create: `src-next/surfaces/cli/commands/{api,audit,correlate,start,stop,tick,ui,validate-state}.ts`
+- Create: `src-next/surfaces/api/contracts/{common,control-plane,work,resources,orchestration,execution,activities,events,observability,system,index}.ts`
+- Create: `src-next/surfaces/api/presenters/{control-plane,work,resources,orchestration,execution,activities,events,observability,system}.ts`
+- Create: `src-next/surfaces/api/routes/{control-plane,work,resources,orchestration,execution,activities,events,observability,system}.ts`
+- Create: `src-next/surfaces/api/{http-server,problem-details,router}.ts`
+- Create: `src-next/surfaces/web-host/{asset-source,packaged-assets}.ts`
+- Create: `src-next/surfaces/web/package.json`
+- Create: `src-next/surfaces/web/tsconfig.json`
+- Create: `src-next/surfaces/web/{vite.config,vitest.config,playwright.config}.ts`
+- Create: `src-next/surfaces/web/index.html`
+- Create: `src-next/surfaces/web/src/{main.tsx,app/**,api/**,components/**,features/**,styles/**}`
+- Create: `src-next/surfaces/web/{test,e2e}/**`
 - Modify: `src-next/surfaces/index.ts`
-- Create: `test-next/surfaces/{api,cli-main,cli-runtime-commands,ui-data,ui-server}.test.ts`
+- Modify: `src-next/surfaces/contracts/config.ts`
+- Modify: `src-next/bootstrap/composition-root.ts`
+- Modify: `package.json`
+- Modify: `package-lock.json`
+- Modify: `tsconfig.next.json`
+- Modify: `vitest.next.config.ts`
+- Modify: `dependency-cruiser.config.mjs`
+- Modify: `knip.next.json`
+- Modify: `docker/Dockerfile`
+- Modify: `docker/Dockerfile.packaged`
+- Create: `test-next/surfaces/{api,cli-main,cli-runtime-commands,web-assets,web-server}.test.ts`
 - Create: `test-next/e2e/scenarios/api-domain-shape.test.ts`
 
-- [ ] **Step 0: Approve and incorporate the web-architecture amendment**
+- [x] **Step 0: Approve and incorporate the web-architecture amendment**
 
-Do not write Task 25 production code before the decision gate above is
-complete. The amendment must replace the deferred web file entry and extend
-Steps 1, 2, 5, and 7 with complete framework-specific tests, commands, and
-expected results. Review the amended task for placeholders and obtain operator
-approval before resuming execution.
+The companion design and this amended task satisfy the web-architecture
+decision gate. Reconfirm only if implementation discovers a need for a
+dependency or boundary that the companion design explicitly excludes.
 
 - [ ] **Step 1: Write surface-boundary tests**
 
@@ -3921,10 +3944,27 @@ it('routes CLI commands without importing a store or provider client');
 it('audit reads canonical events and causal links');
 it('validate-state reports journal, projection, and checkpoint health');
 it('API composition nests work, resources, orchestration, execution, and activities');
-it('UI data and the typed web API client use only public views');
+it('API routes and the typed web client group operations by domain capability');
+it('the typed web API client uses transport contracts and public views only');
 it('surface actions call application commands rather than writing state');
 it('the web build is isolated from domain and adapter implementation imports');
+it('clean browser-history paths do not intercept API or asset 404s');
+it('packaged assets are served without writing UI artifacts into a Wake home');
+it('WorkItem links use WorkItemKey rather than a resource locator');
+it('API errors use RFC 9457 Problem Details');
+it('API timestamps are UTC and browser timestamps are localized');
 ```
+
+Under `src-next/surfaces/web/test`, add behavior tests for:
+
+- first load, cached refresh, empty, stale, error, reconnecting, and delayed
+  mutation states;
+- board and WorkItem clean-route navigation;
+- desktop route-backed WorkItem detail and mobile full-page detail;
+- independent status, board, WorkItem, Run, event/audit, health, and runner
+  availability updates;
+- events/audit pause, buffered count, and resume without viewport movement;
+- semantic tables, keyboard focus, and accessible status.
 
 - [ ] **Step 2: Run and confirm surfaces are absent**
 
@@ -3932,9 +3972,11 @@ Run:
 
 ```powershell
 npx vitest run --config vitest.next.config.ts test-next/surfaces/cli-main.test.ts
+npm run test:web
 ```
 
-Expected: FAIL resolving target surfaces.
+Expected: FAIL resolving target surfaces and the unimplemented web
+application.
 
 - [ ] **Step 3: Define domain-shaped API contracts**
 
@@ -3954,8 +3996,36 @@ export interface WorkDetailResponse {
 ```
 
 Do not flatten stage, Run, issue, and PR fields into one object. Provider raw
-payload is available only from an explicit Integration diagnostics endpoint
-guarded by the configured Surface API token.
+payload is not exposed by the v1 API.
+
+The API is grouped by domain/capability, not UI feature. Do not add `/board`,
+`/status-bar`, `/drawer`, or other screen-shaped routes. Initial read groups
+cover control-plane status, WorkItems, Resources, WorkflowInstances, Runs,
+transcripts, runners, events, observability metrics, health, and redacted
+configuration.
+
+Use:
+
+```ts
+interface ResourceResponse<T> {
+  readonly data: T;
+  readonly meta: { readonly asOf: string; readonly position?: number };
+}
+
+interface CollectionResponse<T> {
+  readonly items: readonly T[];
+  readonly page: {
+    readonly nextCursor: string | null;
+    readonly hasMore: boolean;
+    readonly total?: number;
+  };
+  readonly meta: { readonly asOf: string; readonly position?: number };
+}
+```
+
+Collection cursors are opaque. API timestamps are UTC RFC 3339 values with a
+`Z` suffix. Errors use `application/problem+json`; stable extensions may
+include `code`, `retryable`, `current`, and `violations`.
 
 - [ ] **Step 4: Rebuild runtime CLI commands**
 
@@ -3965,6 +4035,7 @@ Commands:
 wake tick
 wake start
 wake stop
+wake api
 wake ui
 wake audit <work-item-id>
 wake correlate <resource> <work-item-id>
@@ -3978,31 +4049,128 @@ calls an injected `ProjectionMaintenance` surface port after explicit operator
 selection. Bootstrap implements that port with ProjectionRunner; Surfaces do
 not import Persistence.
 
+`wake api` starts the API alone. `wake ui` starts the API plus packaged web
+assets. `wake start` starts the processor and optionally enabled API/web hosts
+in the same Node.js process from:
+
+```yaml
+surfaces:
+  api:
+    enabled: false
+    host: 127.0.0.1
+    port: 4317
+  web:
+    enabled: false
+```
+
+`web.enabled` requires `api.enabled`. There is no auth configuration in v1.
+Bind loopback by default; Docker may publish an internal bind only to host
+loopback.
+
 - [ ] **Step 5: Port HTTP mechanics and implement the approved web application**
 
-Port accepted server token-gating, routing, compiled-asset serving, and
-error-mapping tests from:
+Port accepted routing, compiled-asset serving, and error-mapping behavior from:
 
 ```text
 test/adapters/ui-server.test.ts
 test/adapters/ui-data.test.ts
 ```
 
-Implement the exact component, API-client, browser-test, build, and packaging
-steps specified by the approved Task 25 amendment. Write new `ui/data.ts`
-against `WorkDetailResponse` and public list views. Do not copy the legacy
-static-string asset generation or `ui-data.ts` projection coupling.
+Do not port legacy token gating: v1 is unauthenticated and locally scoped. Do
+not create `ui/data.ts`. Domain presenters, transport contracts, and the typed
+client replace that legacy-shaped boundary.
+
+Add one private npm workspace at `src-next/surfaces/web` with these runtime
+dependencies:
+
+```text
+react
+react-dom
+react-router
+@tanstack/react-query
+```
+
+Add these development dependencies:
+
+```text
+vite
+@vitejs/plugin-react
+typescript
+vitest
+jsdom
+@testing-library/react
+@testing-library/user-event
+@playwright/test
+@axe-core/playwright
+```
+
+Browser source is organized by operator feature:
+
+```text
+src/
+  app/
+  api/
+  components/
+  features/{board,work,events,runs,observability,health,configuration}/
+  styles/
+```
+
+Use React Router browser-history paths `/board`, `/work`,
+`/work/:workItemKey`, `/events`, `/runs`, `/runs/:runId`,
+`/observability`, `/health`, and `/configuration`. WorkItem detail is a
+route-backed modal from desktop list/board navigation and a full page for
+direct loads and mobile. Never use hash routes.
+
+Use CSS Modules, global design tokens, native semantic elements, and a small
+Wake-owned shared component layer. Do not add a component library, table
+library, CSS framework, icon suite, or general state library. The initial
+JavaScript entry budget is 150 KiB gzip.
+
+Use TanStack Query for JSON binding:
+
+- status polls every 2 seconds;
+- board, open WorkItem, active Runs, and incremental events/audit poll every 3
+  seconds;
+- historical Runs poll every 5 seconds while visible;
+- health and runner availability poll every 5 seconds;
+- observability analytics and configuration refresh only explicitly;
+- background tabs reduce or stop polling and revalidate on focus;
+- confirmed mutations update the narrow cache immediately and invalidate
+  related queries for authoritative reconciliation;
+- `Pause live view` and scrolled-away event feeds buffer records and show a
+  `new events` count without moving the viewport.
+
+React mounts once; no update replaces the whole document. A future SSE
+transport may emit domain/resource invalidation signals only and must reuse
+the same resource queries.
+
+Vite writes target-lane assets to
+`dist-next/src-next/surfaces/web-assets/`. After cutover the equivalent path is
+`dist/src/surfaces/web-assets/`. Serve `index.html` with revalidation and
+content-hashed assets as immutable. SPA fallback applies only to extensionless
+non-API application `GET`/`HEAD` paths. Verify npm and both Docker builds
+contain the assets and `wake init` contains none.
 
 - [ ] **Step 6: Add `E2E-SURFACE-001`**
 
 Create work, resource, workflow, and Run through public commands; query the API
 and assert the nested domain shape and absence of raw GitHub payload.
 
+Run Playwright against the real HTTP Surface with deterministic application
+boundaries. Cover Chromium desktop and mobile journeys for shell/board load,
+clean-route deep links, WorkItem detail presentation, one mutation and
+reconciliation, Problem Details conflict, event pause/buffer/resume, health
+refresh, keyboard navigation, and serious automated accessibility violations.
+Do not create a standalone mock server.
+
 - [ ] **Step 7: Verify and commit**
 
 Run:
 
 ```powershell
+npm run build:web
+npm run test:web
+npm run test:web:e2e
 npx vitest run --config vitest.next.config.ts test-next/surfaces test-next/e2e/scenarios/api-domain-shape.test.ts
 npm run verify:next
 npm test -- test/cli/main.test.ts test/cli/audit-command.test.ts test/adapters/ui-server.test.ts test/adapters/ui-data.test.ts
@@ -4010,13 +4178,13 @@ npm test -- test/cli/main.test.ts test/cli/audit-command.test.ts test/adapters/u
 
 Expected: target surfaces and selected legacy surface evidence PASS.
 
-Also run every web build, component, and browser verification command added by
-the approved Task 25 amendment. The Packet E gate cannot pass using a temporary
-embedded UI or with any amendment verification omitted.
+The Packet E gate cannot pass using a temporary embedded UI, a mock API
+product, hash routing, or with any web verification omitted.
 
 ```powershell
-git add src-next/surfaces test-next/surfaces test-next/e2e docs/architecture/functional-decision-catalogue.md
-# Add the exact web application paths recorded by the approved Task 25 amendment.
+git add package.json package-lock.json tsconfig.next.json vitest.next.config.ts dependency-cruiser.config.mjs knip.next.json
+git add src-next/surfaces src-next/bootstrap docker test-next/surfaces test-next/e2e
+git add docs/architecture/functional-decision-catalogue.md
 git commit -m "feat: expose target domain surfaces"
 ```
 
