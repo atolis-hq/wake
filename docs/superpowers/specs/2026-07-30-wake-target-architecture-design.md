@@ -838,6 +838,19 @@ namespaced payload. Core domains cannot import that payload type.
 `schemaVersion` starts at one. The rewrite avoids incompatible changes while
 the system is pre-release; it does not build an upcaster framework.
 
+Event type, payload, and logical stream are one domain-owned contract. Domain
+code uses exported event catalogues, mapped payload unions, typed stream
+constructors, and strict runtime decoders; it does not reconstruct persisted
+payloads with string/number coercion or repeat event and stream names as
+literals. The generic journal remains intentionally unaware of domains.
+
+Closed Wake-owned vocabularies use `as const` catalogues and derived types.
+Open extension names use branded strings and an owning registry, external
+vocabulary is translated at its adapter boundary, and only human-authored text
+remains an unconstrained domain string. The complete rules and refactor
+boundary are specified in
+[`2026-07-31-wake-strong-contracts-design.md`](./2026-07-31-wake-strong-contracts-design.md).
+
 ### 10.2 Journal and repositories
 
 One physical append-only journal may contain many logical streams. The
@@ -1058,6 +1071,12 @@ CI rejects:
 - projectors importing effectful services;
 - passing or importing global `WakeConfig` outside bootstrap;
 - raw event-type strings outside owning event-contract definitions;
+- raw logical-stream kinds or low-level stream construction outside owning
+  stream-contract definitions;
+- erased generic events and unchecked persisted-payload coercion inside
+  domain/application code;
+- raw closed-vocabulary values where an owning public catalogue exists;
+- provider vocabulary outside its integration decoder;
 - unrestricted graph mutation;
 - concrete adapters outside bootstrap;
 - target imports from legacy core/domain/config;
@@ -1073,7 +1092,10 @@ clear exceptions for generated/static assets.
 In addition to import checks, small executable architecture tests assert:
 
 - all event namespaces have one declared owner;
+- all logical stream kinds have one declared owner;
 - all configured Activities are registered and their `with` input validates;
+- all configured Activity outcome routes name outcomes declared by that
+  Activity;
 - relation types are registered by an owner;
 - module manifests match public entry points;
 - projectors are deterministic for the same input sequence;

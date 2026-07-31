@@ -3287,6 +3287,694 @@ git add src-next/activities test-next/activities test-next/e2e docs/architecture
 git commit -m "feat: add safe target PR Activities"
 ```
 
+## Task 20A: Establish strong-contract primitives and executable rules
+
+> **Corrective gate:** Tasks 20A-20E supersede any earlier plan examples that
+> use raw canonical event names, raw stream kinds, erased event payloads, or
+> unconstrained machine strings. Do not begin Task 21 until all five tasks pass
+> `npm run verify:next`.
+
+**Design authority:**
+[`docs/superpowers/specs/2026-07-31-wake-strong-contracts-design.md`](../specs/2026-07-31-wake-strong-contracts-design.md)
+
+**Files:**
+
+- Modify: `src-next/kernel/contracts/{events,identifiers}.ts`
+- Create: `src-next/kernel/contracts/vocabulary.ts`
+- Modify: `src-next/kernel/index.ts`
+- Create: `scripts/lib/contract-vocabulary.mjs`
+- Create: `scripts/check-contract-vocabulary.mjs`
+- Create: `test-next/architecture/contract-vocabulary.test.ts`
+- Modify: `package.json`
+
+- [ ] **Step 1: Write failing kernel and checker tests**
+
+Add kernel assertions proving a stream ID retains its brand and an event union
+retains its exact event/payload/stream relationship. Add checker fixture tests:
+
+```ts
+it('rejects a registered event literal outside its owning events contract');
+it('rejects a registered stream literal outside its owning streams contract');
+it('rejects direct entityRef calls outside stream contracts');
+it('rejects erased domain events and persisted-payload coercion');
+it('permits provider decoding, persistence keys, free text, and corrupt-input fixtures');
+```
+
+The checker tests create disposable fixture trees beneath `os.tmpdir()` and
+invoke the exported `checkContractVocabulary(root)` function. They assert
+diagnostics containing relative path, line, offending value, and replacement
+catalogue owner.
+
+- [ ] **Step 2: Run tests and confirm the contracts/checker are absent**
+
+Run:
+
+```powershell
+npx vitest run --config vitest.next.config.ts test-next/kernel test-next/architecture/contract-vocabulary.test.ts
+```
+
+Expected: FAIL resolving `EventUnion`, the two-parameter `EntityRef`, or
+`scripts/lib/contract-vocabulary.mjs`.
+
+- [ ] **Step 3: Add generic strong-contract primitives**
+
+Implement:
+
+```ts
+// kernel/contracts/vocabulary.ts
+export type ValueOf<Catalogue extends Readonly<Record<string, unknown>>> =
+  Catalogue[keyof Catalogue];
+
+export const defineClosedVocabulary = <
+  const Catalogue extends Readonly<Record<string, string>>,
+>(
+  catalogue: Catalogue,
+): Catalogue => catalogue;
+
+// kernel/contracts/identifiers.ts
+export interface EntityRef<
+  Kind extends string = string,
+  Id extends string = string,
+> {
+  readonly kind: Kind;
+  readonly id: Id;
+}
+
+export function entityRef<Kind extends string, Id extends string>(
+  kind: Kind,
+  id: Id,
+): EntityRef<Kind, Id> {
+  if (id.trim().length === 0) throw new Error('Entity reference id must not be empty');
+  return { kind, id };
+}
+
+// kernel/contracts/events.ts
+export interface EventDraft<
+  Type extends string = string,
+  Payload = unknown,
+  Stream extends EntityRef = EntityRef,
+> {
+  // retain the existing metadata fields
+  readonly eventType: Type;
+  readonly stream: Stream;
+  readonly payload: Payload;
+}
+
+export interface EventEnvelope<
+  Type extends string = string,
+  Payload = unknown,
+  Stream extends EntityRef = EntityRef,
+> extends EventDraft<Type, Payload, Stream> {
+  readonly recordedAt: string;
+  readonly sequence: number;
+  readonly globalPosition: number;
+}
+
+export type EventUnion<
+  Payloads extends Readonly<Record<string, unknown>>,
+  Stream extends EntityRef,
+> = {
+  [Type in keyof Payloads & string]: EventEnvelope<Type, Payloads[Type], Stream>;
+}[keyof Payloads & string];
+
+export type EventDraftUnion<
+  Payloads extends Readonly<Record<string, unknown>>,
+  Stream extends EntityRef,
+> = {
+  [Type in keyof Payloads & string]: EventDraft<Type, Payloads[Type], Stream>;
+}[keyof Payloads & string];
+```
+
+Existing kernel and persistence defaults remain generic. Do not add a domain
+registry to `kernel`.
+
+- [ ] **Step 4: Implement the AST checker as a tested library**
+
+Use the installed `typescript` compiler API, not regular expressions. The
+checker must:
+
+1. recursively parse `src-next/**/*.ts`;
+2. collect exact string values declared in exported objects whose names end in
+   `EventType` under `contracts/events.ts` and `StreamKind` under
+   `contracts/streams.ts`;
+3. collect all values passed to `defineClosedVocabulary()` and reject an exact
+   registered value literal outside its catalogue declaration;
+4. reject an exact registered event/stream value outside its declaration file;
+5. reject calls to `entityRef()` outside
+   `kernel/contracts/identifiers.ts` and `contracts/streams.ts`;
+6. in `work|resources|activities|orchestration|execution` domain/application
+   paths, reject erased `EventDraft`/`EventEnvelope` type references and
+   `String(payload.*)`/`Number(payload.*)` coercion;
+7. accept explicit fixture paths ending `.corrupt-fixture.ts`;
+8. accept an optional CLI `--rules` comma-separated subset for staged
+   migration while retaining all rules as the default;
+9. sort diagnostics by path and position.
+
+`scripts/check-contract-vocabulary.mjs` calls the library for `src-next` and
+exits non-zero on diagnostics. Do not add a baseline, suppression file, or list
+of current violations.
+
+- [ ] **Step 5: Keep the checker executable but defer the root gate**
+
+Add:
+
+```json
+"lint:contracts": "node scripts/check-contract-vocabulary.mjs"
+```
+
+Do not add it to `lint:architecture` until Task 20E because Tasks 20B-20D remove
+the violations it is designed to expose.
+
+- [ ] **Step 6: Verify and commit**
+
+Run:
+
+```powershell
+npx vitest run --config vitest.next.config.ts test-next/kernel test-next/architecture/contract-vocabulary.test.ts
+npm run build:next
+```
+
+Expected: strong generic contracts and all checker fixture tests PASS.
+
+```powershell
+git add src-next/kernel scripts/check-contract-vocabulary.mjs scripts/lib/contract-vocabulary.mjs test-next/architecture/contract-vocabulary.test.ts package.json
+git commit -m "refactor: establish strong contract primitives"
+```
+
+## Task 20B: Replace raw logical streams with typed domain identities
+
+**Files:**
+
+- Create: `src-next/work/contracts/streams.ts`
+- Create: `src-next/resources/contracts/streams.ts`
+- Create: `src-next/activities/contracts/streams.ts`
+- Create: `src-next/orchestration/contracts/streams.ts`
+- Create: `src-next/execution/contracts/streams.ts`
+- Create: `src-next/integrations/contracts/streams.ts`
+- Modify: `src-next/{work,resources,activities,orchestration,execution,integrations}/index.ts`
+- Modify: `src-next/{work,resources,activities,orchestration,execution,integrations}/module.json`
+- Modify: every `src-next` caller of `entityRef()` or raw `stream.kind`
+- Modify: `scripts/check-module-manifests.mjs`
+- Modify: `test-next/architecture/module-manifests.test.ts`
+- Create: `test-next/architecture/stream-contracts.test.ts`
+- Modify: affected Work, Resource, PR, Orchestration, Execution, and integration tests
+
+- [ ] **Step 1: Write failing stream ownership and regression tests**
+
+Assert:
+
+```ts
+it('gives every logical stream kind exactly one manifest owner');
+it('constructs WorkItem streams only from WorkItemId');
+it('constructs Resource, Run, WorkflowInstance, integration, coordination, and Activity-decision streams through their owners');
+it('hides composite coordination and Activity-decision keys behind named constructors');
+it('records a PR denial on the canonical work-item stream rather than a new work stream');
+```
+
+The final regression must expose the current accidental difference between
+`'work'` and `'work-item'`.
+
+- [ ] **Step 2: Run and confirm stream contracts are absent**
+
+Run:
+
+```powershell
+npx vitest run --config vitest.next.config.ts test-next/architecture/stream-contracts.test.ts test-next/activities/pr-approve.test.ts test-next/activities/pr-merge.test.ts
+```
+
+Expected: FAIL resolving the owned stream constructors or observing the
+non-canonical denial stream.
+
+- [ ] **Step 3: Define domain-owned stream catalogues and constructors**
+
+Use this pattern in each `contracts/streams.ts`:
+
+```ts
+export const WorkStreamKind = {
+  WorkItem: 'work-item',
+} as const;
+
+export type WorkItemStreamRef = EntityRef<
+  typeof WorkStreamKind.WorkItem,
+  WorkItemId
+>;
+
+export const workItemStream = (id: WorkItemId): WorkItemStreamRef =>
+  entityRef(WorkStreamKind.WorkItem, id);
+
+export const isWorkItemStream = (stream: EntityRef): stream is WorkItemStreamRef =>
+  stream.kind === WorkStreamKind.WorkItem;
+```
+
+The exact owned kinds are:
+
+| Owner | Kind | Constructor |
+| --- | --- | --- |
+| `work` | `work-item` | `workItemStream(WorkItemId)` |
+| `resources` | `resource` | `resourceStream(ResourceId)` |
+| `activities` | `activity-decision` | `activityDecisionStream(ActivationId, PrAction)` |
+| `orchestration` | `workflow-instance` | `workflowInstanceStream(WorkflowInstanceId)` |
+| `orchestration` | `orchestration-group` | `primaryOrchestrationGroupStream(WorkItemId)` and an internal validated group-key constructor |
+| `execution` | `run` | `runStream(RunId)` |
+| `integrations` | `integration` | `integrationStream(AdapterId)` |
+
+Add missing ID brands before using them. Built-in GitHub code uses a public
+branded `GitHubAdapterId` constant through `integrationStream`.
+
+- [ ] **Step 4: Declare and verify stream ownership**
+
+Add an exact `streams` array beside `events`, `config`, and `relations` in
+every module manifest, including an empty array where the module owns none.
+Update both manifest checks to require arrays, reject duplicate owners, and
+ensure every exported `*StreamKind` value is declared by the same module.
+
+- [ ] **Step 5: Migrate all production stream construction and matching**
+
+Replace every direct call and comparison in `src-next`. Repositories, event
+factories, projectors, policies, and integration pollers use their owning
+constructors/predicates. Remove `workStream()` from
+`activities/pr/activity-support.ts`; PR denial uses `workItemStream()`.
+
+After migration this command must print only the two allowed low-level
+locations:
+
+```powershell
+rg -n "entityRef\(" src-next
+```
+
+Expected locations:
+
+```text
+src-next/kernel/contracts/identifiers.ts
+src-next/*/contracts/streams.ts
+```
+
+- [ ] **Step 6: Verify and commit**
+
+Run:
+
+```powershell
+npx vitest run --config vitest.next.config.ts test-next/architecture test-next/work test-next/resources test-next/activities test-next/orchestration test-next/execution test-next/integrations
+npm run lint:contracts -- --rules stream-literals,entity-ref
+npm run verify:next
+```
+
+The scoped checker must report no stream-construction or stream-literal
+violation. Do not run it with a baseline for the remaining event work.
+
+```powershell
+git add src-next test-next/architecture test-next/work test-next/resources test-next/activities test-next/orchestration test-next/execution test-next/integrations scripts/check-module-manifests.mjs
+git commit -m "refactor: type logical stream identities"
+```
+
+## Task 20C: Type canonical events and decode persisted payloads
+
+**Files:**
+
+- Create: `src-next/kernel/contracts/event-schema.ts`
+- Modify: `src-next/kernel/{index.ts,domain/event-envelope.ts}`
+- Modify: `src-next/persistence/filesystem/file-event-journal.ts`
+- Modify: every `src-next/**/contracts/events.ts`
+- Modify: event factories under `src-next/{work,resources,activities,orchestration,execution,integrations}`
+- Modify: folds, repositories, projectors, and reactors that consume events
+- Create: `test-next/kernel/event-decoding.test.ts`
+- Modify: `test-next/persistence/file-event-journal.test.ts`
+- Create: `test-next/{work,resources,activities,orchestration,execution,integrations}/event-contracts.test.ts`
+- Modify: affected E2E scenario tests
+
+- [ ] **Step 1: Write failing decoding and exhaustiveness tests**
+
+For each owner assert:
+
+```ts
+it('decodes every declared event with its exact payload and stream');
+it('rejects an owned event with an unknown type');
+it('rejects an owned event with a malformed payload');
+it('rejects an owned event on the wrong stream kind');
+it('ignores an unrelated namespace in a projector selector');
+```
+
+Also assert that the filesystem journal rejects malformed JSON and malformed
+common envelopes with file/line context rather than returning a cast value.
+
+- [ ] **Step 2: Run and confirm persisted payloads are still erased**
+
+Run:
+
+```powershell
+npx vitest run --config vitest.next.config.ts test-next/kernel/event-decoding.test.ts test-next/persistence/file-event-journal.test.ts test-next/work/event-contracts.test.ts
+```
+
+Expected: FAIL because common/domain decoders are absent and folds still accept
+generic payloads.
+
+- [ ] **Step 3: Add strict common-envelope decoding**
+
+`kernel/contracts/event-schema.ts` owns strict Zod schemas for actor, source,
+stream, draft metadata, and recorded envelope metadata. Export:
+
+```ts
+export function decodeEventEnvelope(input: unknown): EventEnvelope;
+```
+
+Validate non-empty IDs/types, `schemaVersion: 1`, ISO timestamp strings,
+positive sequence/global position, and unknown payload. The filesystem journal
+calls this function after `JSON.parse`; remove
+`JSON.parse(line) as EventEnvelope`.
+
+- [ ] **Step 4: Give every domain a catalogue, payload map, union, and decoder**
+
+Use the Work pattern from the strong-contract design:
+
+```ts
+export const WorkEventType = {
+  ItemCreated: 'work.item-created',
+  ObjectiveRevised: 'work.objective-revised',
+  ItemLinked: 'work.item-linked',
+  ItemClosed: 'work.item-closed',
+  ItemCancelled: 'work.item-cancelled',
+} as const;
+
+export interface WorkEventPayloads {
+  readonly [WorkEventType.ItemCreated]: { readonly objective: string };
+  readonly [WorkEventType.ObjectiveRevised]: { readonly objective: string };
+  readonly [WorkEventType.ItemLinked]: WorkItemLinkedPayload;
+  readonly [WorkEventType.ItemClosed]: WorkItemClosedPayload;
+  readonly [WorkEventType.ItemCancelled]: WorkItemCancelledPayload;
+}
+
+export type WorkEvent = EventUnion<WorkEventPayloads, WorkItemStreamRef>;
+export type WorkEventDraft = EventDraftUnion<WorkEventPayloads, WorkItemStreamRef>;
+
+export function decodeWorkEvent(event: EventEnvelope): WorkEvent;
+export function selectWorkEvent(event: EventEnvelope): WorkEvent | null;
+```
+
+Repeat with owner-specific names for Resources, Activities including PR/review,
+Orchestration including child/group facts, Execution, and GitHub adapter
+evidence. Zod schemas are strict and transform identifier strings through
+their branded constructors.
+
+`select*Event` returns `null` only outside the owner's declared namespace. It
+throws for an unknown/malformed event inside that namespace.
+
+- [ ] **Step 5: Migrate factories, folds, projectors, and reactors**
+
+Event factories return exact draft union members. Domain folds accept exact
+owned unions. Generic projection selectors decode before calling a fold.
+Switches use catalogue values and an `assertNever()` exhaustiveness helper.
+
+Remove:
+
+- `EventDraft<string, unknown>` and `EventEnvelope<string, unknown>` from
+  domain/application code;
+- default generic `EventDraft[]`/`EventEnvelope[]` in domain repositories;
+- `String(payload.*)`, `Number(payload.*)`, and payload assertions;
+- raw canonical event names in production comparisons and construction.
+
+The journal, audit query, projection runner, and adapter intake boundary remain
+generic by design.
+
+- [ ] **Step 6: Verify event architecture and behavior**
+
+Run:
+
+```powershell
+npx vitest run --config vitest.next.config.ts test-next/kernel test-next/persistence test-next/work test-next/resources test-next/activities test-next/orchestration test-next/execution test-next/integrations test-next/e2e
+npm run lint:contracts
+npm run verify:next
+```
+
+Expected: all domain event decoding and E2E tests PASS. Any remaining
+`lint:contracts` diagnostics must be closed/open vocabulary work explicitly
+assigned to Task 20D, not event or stream names.
+
+- [ ] **Step 7: Commit**
+
+```powershell
+git add src-next test-next
+git commit -m "refactor: enforce typed event contracts"
+```
+
+## Task 20D: Type Activities, compiled workflows, Resources, and provider signals
+
+**Files:**
+
+- Modify: `src-next/activities/contracts/{activity,registry}.ts`
+- Create: `src-next/activities/contracts/{identifiers,vocabulary}.ts`
+- Modify: every Activity definition and invocation
+- Modify: `src-next/orchestration/contracts/{config,identifiers,views,events}.ts`
+- Modify: `src-next/orchestration/domain/{compiler,interpreter,workflow-instance,transition}.ts`
+- Modify: `src-next/execution/contracts/{config,runner,views,workspace}.ts`
+- Modify: `src-next/resources/contracts/{identifiers,views}.ts`
+- Create: `src-next/resources/contracts/vocabulary.ts`
+- Modify: `src-next/activities/review/{contracts,signals}.ts`
+- Create: `src-next/integrations/github/application/review-command-translator.ts`
+- Modify: `src-next/integrations/github/application/inbound-translator.ts`
+- Create: `test-next/activities/activity-outcome-contracts.test.ts`
+- Create: `test-next/orchestration/compiled-contracts.test.ts`
+- Create: `test-next/resources/resource-vocabulary.test.ts`
+- Create: `test-next/integrations/review-command-translator.test.ts`
+- Modify: affected unit and E2E tests
+
+- [ ] **Step 1: Write failing closed/open vocabulary tests**
+
+Add:
+
+```ts
+it('retains an Activity-specific outcome through registration and execution');
+it('rejects a workflow outcome route not declared by its Activity');
+it('compiles stage, Activity, workflow, signal, and command names to branded identifiers');
+it('compiles done and await-human to structural targets rather than stage strings');
+it('rejects stages named with reserved terminal words');
+it('uses one canonical retry-safety spelling');
+it('registers extensible Resource kinds and capabilities while exposing constants for built-ins');
+it('translates exact GitHub slash commands to canonical review decisions at the integration boundary');
+it('does not let activities/review parse GitHub comment syntax');
+```
+
+- [ ] **Step 2: Run and confirm the contracts are currently open strings**
+
+Run:
+
+```powershell
+npx vitest run --config vitest.next.config.ts test-next/activities/activity-outcome-contracts.test.ts test-next/orchestration/compiled-contracts.test.ts test-next/resources/resource-vocabulary.test.ts test-next/integrations/review-command-translator.test.ts
+```
+
+Expected: FAIL on missing branded names, structural targets, registries, or
+boundary translator.
+
+- [ ] **Step 3: Make Activity input and outcome generic end-to-end**
+
+Implement:
+
+```ts
+export interface ActivityDefinition<
+  Name extends ActivityName,
+  Input,
+  Outcome extends ActivityOutcome,
+> {
+  readonly name: Name;
+  readonly inputSchema: z.ZodType<Input>;
+  readonly outcomeSchema: z.ZodType<Outcome>;
+  readonly outcomeKinds: readonly Outcome['kind'][];
+  readonly resources: readonly ResourceRequirement[];
+  readonly executionKind: ActivityExecutionKind;
+  readonly handler: ActivityHandler<Input, Outcome>;
+}
+
+export interface ActivityHandler<Input, Outcome extends ActivityOutcome> {
+  execute(
+    invocation: ActivityInvocation<Input>,
+    context: ActivityExecutionContext,
+  ): Promise<Outcome>;
+}
+```
+
+Use `ActivityName`, built-in Activity constants, and a registry-owned erased
+internal entry only where heterogeneous storage requires it. Public validation
+of a resolved definition preserves that definition's input/outcome type.
+Registration verifies unique `outcomeKinds` and that sample/returned outcomes
+are accepted by the schema.
+
+- [ ] **Step 4: Compile open names and structural transition targets**
+
+Add brands and validators for workflow, stage, signal, command, activation,
+workflow-instance, and orchestration-group identities. Keep raw strings only
+in strict configuration schemas.
+
+Compile route targets to:
+
+```ts
+export const TransitionTargetKind = {
+  Stage: 'stage',
+  Complete: 'complete',
+  AwaitSignal: 'await-signal',
+} as const;
+
+export type TransitionTarget =
+  | { readonly kind: typeof TransitionTargetKind.Stage; readonly stage: StageName }
+  | { readonly kind: typeof TransitionTargetKind.Complete }
+  | { readonly kind: typeof TransitionTargetKind.AwaitSignal };
+```
+
+The compiler resolves every Activity, validates route keys against
+`outcomeKinds`, rejects reserved stage names, and returns only compiled
+contracts. Interpreter code never compares a target with `'done'` or
+`'await-human'`.
+
+- [ ] **Step 5: Catalogue closed machine vocabularies**
+
+Create domain-owned `defineClosedVocabulary({ ... } as const)` catalogues and
+derived types for current closed values including Activity execution
+kind/cardinality/role, workflow/Run status, retry safety, workspace mode,
+PR/check/review/delivery state, merge method, actor/source kind, and machine
+denial/failure codes.
+
+Do not force open Activity, Resource, adapter, workflow, stage, command, or
+signal names into closed global unions. Give those brands, validators,
+registries, and built-in constants.
+
+- [ ] **Step 6: Move GitHub comment conventions to the integration**
+
+`review-command-translator.ts` recognizes only normalized, exact GitHub
+commands such as `/accepted` and `/changes` according to current approved
+behavior and returns canonical typed review-decision candidates.
+`activities/review` retains authorization and decision contracts but removes
+comment text parsing. Other integrations can translate different conventions
+to the same canonical decision without importing GitHub.
+
+- [ ] **Step 7: Verify and commit**
+
+Run:
+
+```powershell
+npx vitest run --config vitest.next.config.ts test-next/activities test-next/orchestration test-next/resources test-next/execution test-next/integrations test-next/e2e
+npm run lint:contracts
+npm run verify:next
+```
+
+Expected: typed Activity/workflow/resource/integration contracts and all
+existing behavior PASS.
+
+```powershell
+git add src-next test-next
+git commit -m "refactor: type domain vocabularies and workflow contracts"
+```
+
+## Task 20E: Decompose orchestration seams and enable the contract gate
+
+**Files:**
+
+- Split: `src-next/orchestration/application/orchestration-service.ts`
+- Split: `src-next/orchestration/domain/interpreter.ts`
+- Split: `src-next/orchestration/domain/workflow-instance.ts`
+- Modify: `src-next/orchestration/index.ts`
+- Modify: `src-next/orchestration/MODULE.md`
+- Modify: `eslint.config.js`
+- Modify: `package.json`
+- Modify: orchestration unit and E2E tests only where imports move
+- Modify: `test-next/architecture/contract-vocabulary.test.ts`
+
+- [ ] **Step 1: Add characterization tests for public orchestration seams**
+
+Using only public Orchestration contracts/services, retain tests for:
+
+```ts
+it('starts one primary WorkflowInstance');
+it('requests and accepts one typed Activity outcome');
+it('waits for and accepts a typed signal');
+it('retries without resetting the group budget');
+it('coordinates a child without a parent-child success loop');
+it('replays the same event sequence to the same public view');
+```
+
+Run them before moving code and confirm they PASS.
+
+- [ ] **Step 2: Split by decision and use case without changing public behavior**
+
+Application files become focused use cases:
+
+```text
+orchestration/application/
+  start-workflow.ts
+  advance-workflow.ts
+  accept-activity-outcome.ts
+  accept-signal.ts
+  request-child.ts
+  coordination-claims.ts
+  group-budget-recorder.ts
+  orchestration-repository.ts
+  orchestration-service.ts       # thin compatibility facade/public composition
+```
+
+Domain files become pure decisions:
+
+```text
+orchestration/domain/
+  workflow-instance.ts           # state and top-level exhaustive fold only
+  workflow-instance-events.ts    # typed event application
+  activation-policy.ts
+  retry-policy.ts
+  signal-policy.ts
+  supplemental-policy.ts
+  child-policy.ts
+  transition.ts
+  interpreter.ts                 # small dispatcher over the policies
+```
+
+No extracted file imports journal, clock, adapter, or execution
+infrastructure. Do not introduce a generic process manager or service locator.
+
+- [ ] **Step 3: Ratchet comprehensibility limits**
+
+Reduce the `src-next` `max-lines` limit from 400 to 300 and
+`max-lines-per-function` from 100 to 80. If a non-generated file fails, split
+it by responsibility; do not add path exceptions. Keep complexity at 12 and
+depth at 4 unless the existing limit is already stricter.
+
+- [ ] **Step 4: Enable deterministic contract enforcement**
+
+Change:
+
+```json
+"lint:architecture": "node scripts/check-module-manifests.mjs && node scripts/check-contract-vocabulary.mjs && depcruise --config dependency-cruiser.config.mjs src-next"
+```
+
+Run the checker with no baseline, ignored current violation, or broad path
+suppression. Provider/persistence/config exceptions must be structural rules
+already covered by checker tests.
+
+- [ ] **Step 5: Update module policy**
+
+Update `orchestration/MODULE.md` with:
+
+- compiled strings stop at the compiler;
+- decisions consume typed state/input and return typed event drafts;
+- use cases own I/O sequencing;
+- the service facade delegates and contains no policy;
+- child/group, retry, signal, and supplemental policies remain independent;
+- persisted events are decoded before folding.
+
+- [ ] **Step 6: Verify the corrective gate and commit**
+
+Run:
+
+```powershell
+npm run lint:contracts
+npm run lint:architecture
+npm run knip:next
+npm run verify:next
+```
+
+Expected: no vocabulary, dependency, size, unused-export, build, or test
+failure.
+
+```powershell
+git add src-next/orchestration test-next/orchestration test-next/e2e test-next/architecture scripts eslint.config.js package.json
+git commit -m "refactor: enforce typed orchestration seams"
+```
+
 ## Task 21: Deliver external effects from the journal
 
 **Files:**
