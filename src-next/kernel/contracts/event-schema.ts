@@ -1,0 +1,61 @@
+import { z } from 'zod';
+import { EventActorKind, type EventEnvelope } from './events.js';
+import { causationId, correlationId, eventId } from './identifiers.js';
+
+const nonEmptyString = z.string().refine((value) => value.trim().length > 0, {
+  message: 'must not be empty',
+});
+const isoTimestamp = z.iso.datetime({ offset: true });
+
+export const eventActorSchema = z
+  .object({
+    kind: z.enum([
+      EventActorKind.System,
+      EventActorKind.Operator,
+      EventActorKind.Agent,
+      EventActorKind.Integration,
+    ]),
+    id: nonEmptyString,
+  })
+  .strict();
+
+export const eventSourceSchema = z
+  .object({
+    kind: z.enum(['internal', 'adapter']),
+    id: nonEmptyString,
+  })
+  .strict();
+
+export const entityRefSchema = z
+  .object({
+    kind: nonEmptyString,
+    id: nonEmptyString,
+  })
+  .strict();
+
+export const eventDraftSchema = z
+  .object({
+    eventId: nonEmptyString.transform(eventId),
+    eventType: nonEmptyString,
+    schemaVersion: z.literal(1),
+    occurredAt: isoTimestamp,
+    correlationId: nonEmptyString.transform(correlationId),
+    causationId: nonEmptyString.transform(causationId),
+    actor: eventActorSchema,
+    source: eventSourceSchema,
+    stream: entityRefSchema,
+    payload: z.unknown(),
+  })
+  .strict();
+
+export const eventEnvelopeSchema = eventDraftSchema
+  .extend({
+    recordedAt: isoTimestamp,
+    sequence: z.number().int().positive(),
+    globalPosition: z.number().int().positive(),
+  })
+  .strict();
+
+export function decodeEventEnvelope(input: unknown): EventEnvelope {
+  return eventEnvelopeSchema.parse(input);
+}

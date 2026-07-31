@@ -8,7 +8,7 @@ import type {
   EventEnvelope,
   EventJournal,
 } from '../../kernel/index.js';
-import { WrongExpectedSequenceError } from '../../kernel/index.js';
+import { decodeEventEnvelope, WrongExpectedSequenceError } from '../../kernel/index.js';
 import { withFileLock } from './file-lock.js';
 export class FileEventJournal implements EventJournal {
   constructor(
@@ -33,7 +33,7 @@ export class FileEventJournal implements EventJournal {
       for (const [index, event] of existing.entries())
         if (event !== undefined && !sameDraft(event, drafts[index]!))
           throw new Error(`Event id ${event.eventId} has already been used with different content`);
-      if (drafts.length > 0 && existing.every(Boolean)) return existing as EventEnvelope[];
+      if (drafts.length > 0 && existing.every(isDefined)) return existing.filter(isDefined);
       const streamEvents = current.filter((event) => key(event.stream) === key(stream));
       if (streamEvents.length !== expectedSequence)
         throw new WrongExpectedSequenceError(
@@ -91,14 +91,18 @@ export class FileEventJournal implements EventJournal {
       if (raw.length > 0 && !raw.endsWith('\n'))
         throw new Error(`Incomplete trailing line in ${file}`);
       for (const [index, line] of raw.split('\n').slice(0, -1).entries()) {
+        let input: unknown;
         try {
-          const event = JSON.parse(line) as EventEnvelope;
+          input = JSON.parse(line);
+          const event = decodeEventEnvelope(input);
           validateEnvelope(event, events.length + 1);
           events.push(event);
         } catch (error) {
-          throw new Error(`Corrupt event at ${file}:${index + 1}: ${(error as Error).message}`, {
-            cause: error,
-          });
+          const context = eventContext(input);
+          throw new Error(
+            `Corrupt event at ${file}:${index + 1}${context}: ${(error as Error).message}`,
+            { cause: error },
+          );
         }
       }
     }
@@ -123,12 +127,15 @@ const sameDraft = (event: EventEnvelope, draft: EventDraft) =>
     draft,
   );
 function validateEnvelope(event: EventEnvelope, expectedPosition: number): void {
-  if (
-    event.globalPosition !== expectedPosition ||
-    !Number.isSafeInteger(event.sequence) ||
-    event.sequence < 1 ||
-    typeof event.eventId !== 'string' ||
-    typeof event.eventType !== 'string'
-  )
-    throw new Error('Invalid event envelope');
+  if (event.globalPosition !== expectedPosition) throw new Error('Invalid event envelope position');
+}
+
+function eventContext(input: unknown): string {
+  if (typeof input !== 'object' || input === null || !('eventId' in input)) return '';
+  const eventId = input.eventId;
+  return typeof eventId === 'string' && eventId.length > 0 ? ` event ${eventId}` : '';
+}
+
+function isDefined<Value>(value: Value | undefined): value is Value {
+  return value !== undefined;
 }

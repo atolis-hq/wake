@@ -1,68 +1,82 @@
 import type { ProjectionDefinition } from '../../kernel/index.js';
-import { workItemId } from '../../work/index.js';
-import { resourceId } from '../contracts/identifiers.js';
-import { isResourceStream } from '../contracts/streams.js';
+import { ResourceEventType, selectResourceEvent } from '../contracts/events.js';
 import type { ResourceCorrelationView, ResourceView } from '../contracts/views.js';
 export const resourceProjection: ProjectionDefinition<ResourceView | null> = {
   name: 'resources',
-  select: (event) => (isResourceStream(event.stream) ? { key: event.stream.id } : null),
+  select(event) {
+    const owned = selectResourceEvent(event);
+    return owned === null ? null : { key: owned.stream.id };
+  },
   initial: () => null,
   project(previous, event) {
-    const payload = record(event.payload) ? event.payload : {};
-    if (event.eventType === 'resources.resource-discovered')
-      return {
-        resourceId: resourceId(event.stream.id),
-        kind: String(payload.kind),
-        externalKey: payload.externalKey as ResourceView['externalKey'],
-        capabilities: payload.capabilities as ResourceView['capabilities'],
-        ...(typeof payload.revision === 'string' ? { revision: payload.revision } : {}),
-      };
-    if (
-      previous !== null &&
-      event.eventType === 'resources.resource-revision-observed' &&
-      typeof payload.revision === 'string'
-    )
-      return { ...previous, revision: payload.revision };
-    if (
-      previous !== null &&
-      event.eventType === 'resources.work-correlation-conflicted' &&
-      typeof payload.workItemId === 'string' &&
-      typeof payload.existingWorkItemId === 'string'
-    )
-      return {
-        ...previous,
-        primaryCorrelationConflict: {
-          attemptedWorkItemId: workItemId(payload.workItemId),
-          existingWorkItemId: workItemId(payload.existingWorkItemId),
-          eventId: event.eventId,
-        },
-      };
-    return previous;
+    const owned = selectResourceEvent(event);
+    if (owned === null) return previous;
+    switch (owned.eventType) {
+      case ResourceEventType.ResourceDiscovered:
+        return {
+          resourceId: owned.stream.id,
+          kind: owned.payload.kind,
+          externalKey: owned.payload.externalKey,
+          capabilities: owned.payload.capabilities,
+          ...(owned.payload.revision === undefined ? {} : { revision: owned.payload.revision }),
+        };
+      case ResourceEventType.ResourceRevisionObserved:
+        return previous === null ? previous : { ...previous, revision: owned.payload.revision };
+      case ResourceEventType.WorkCorrelationConflicted:
+        return previous === null
+          ? previous
+          : {
+              ...previous,
+              primaryCorrelationConflict: {
+                attemptedWorkItemId: owned.payload.workItemId,
+                existingWorkItemId: owned.payload.existingWorkItemId,
+                eventId: owned.eventId,
+              },
+            };
+      case ResourceEventType.WorkCorrelationEstablished:
+      case ResourceEventType.WorkCorrelationRetracted:
+        return previous;
+      default:
+        return assertNever(owned);
+    }
   },
 };
 export const resourceCorrelationProjection: ProjectionDefinition<
   readonly ResourceCorrelationView[]
 > = {
   name: 'resource-correlations',
-  select: (event) => (isResourceStream(event.stream) ? { key: event.stream.id } : null),
+  select(event) {
+    const owned = selectResourceEvent(event);
+    return owned === null ? null : { key: owned.stream.id };
+  },
   initial: () => [],
   project(previous, event) {
-    const payload = record(event.payload) ? event.payload : {};
-    if (event.eventType === 'resources.work-correlation-established') {
-      const correlation: ResourceCorrelationView = {
-        resourceId: resourceId(event.stream.id),
-        workItemId: workItemId(String(payload.workItemId)),
-        role: payload.role as ResourceCorrelationView['role'],
-        establishedByEventId: event.eventId,
-      };
-      return previous.some((value) => value.workItemId === correlation.workItemId)
-        ? previous
-        : [...previous, correlation];
+    const owned = selectResourceEvent(event);
+    if (owned === null) return previous;
+    switch (owned.eventType) {
+      case ResourceEventType.WorkCorrelationEstablished: {
+        const correlation: ResourceCorrelationView = {
+          resourceId: owned.stream.id,
+          workItemId: owned.payload.workItemId,
+          role: owned.payload.role,
+          establishedByEventId: owned.eventId,
+        };
+        return previous.some((value) => value.workItemId === correlation.workItemId)
+          ? previous
+          : [...previous, correlation];
+      }
+      case ResourceEventType.WorkCorrelationRetracted:
+        return previous.filter((value) => value.workItemId !== owned.payload.workItemId);
+      case ResourceEventType.ResourceDiscovered:
+      case ResourceEventType.ResourceRevisionObserved:
+      case ResourceEventType.WorkCorrelationConflicted:
+        return previous;
+      default:
+        return assertNever(owned);
     }
-    if (event.eventType === 'resources.work-correlation-retracted')
-      return previous.filter((value) => value.workItemId !== payload.workItemId);
-    return previous;
   },
 };
-const record = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null;
+
+function assertNever(value: never): never {
+  throw new Error(`Unhandled Resource event: ${JSON.stringify(value)}`);
+}

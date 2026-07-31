@@ -11,12 +11,19 @@ export type ActivityDecisionStreamRef = EntityRef<
   ActivityDecisionId
 >;
 
+export const activityDecisionId = (value: string): ActivityDecisionId => {
+  if (!/^.+:pr\.(?:approve|merge)$/.test(value)) {
+    throw new Error(`Invalid ActivityDecisionId: ${value}`);
+  }
+  return value as ActivityDecisionId;
+};
+
 export const activityDecisionStream = (
   activation: ActivationId,
   action: PullRequestDecisionAction,
 ): ActivityDecisionStreamRef => ({
   kind: ActivityStreamKind.Decision,
-  id: `${segment(activation)}:pr.${segment(action)}` as ActivityDecisionId,
+  id: activityDecisionId(`${segment(activation)}:pr.${segment(action)}`),
 });
 
 export const isActivityDecisionStream = (stream: EntityRef): stream is ActivityDecisionStreamRef =>

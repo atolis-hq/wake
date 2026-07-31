@@ -1,15 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { createEventDraft, type EventEnvelope } from '../../src-next/kernel/index.js';
-import { foldWorkItem, workItemId, workItemStream } from '../../src-next/work/index.js';
+import { createEventDraft } from '../../src-next/kernel/index.js';
+import {
+  decodeWorkEvent,
+  foldWorkItem,
+  type WorkEvent,
+  workItemId,
+  workItemStream,
+} from '../../src-next/work/index.js';
 
 const stream = workItemStream(workItemId('work-1'));
 
-function event<Type extends string, Payload>(
-  eventType: Type,
-  payload: Payload,
-  sequence: number,
-): EventEnvelope<Type, Payload> {
-  return {
+function event(eventType: string, payload: unknown, sequence: number): WorkEvent {
+  return decodeWorkEvent({
     ...createEventDraft({
       eventId: `event-${sequence}`,
       eventType,
@@ -24,7 +26,7 @@ function event<Type extends string, Payload>(
     recordedAt: '2026-07-30T12:00:00.000Z',
     sequence,
     globalPosition: sequence,
-  };
+  });
 }
 
 describe('WorkItem', () => {
@@ -40,9 +42,7 @@ describe('WorkItem', () => {
   });
 
   it('rejects an empty objective', () => {
-    expect(() => foldWorkItem([event('work.item-created', { objective: '   ' }, 1)])).toThrow(
-      'objective must not be empty',
-    );
+    expect(() => foldWorkItem([event('work.item-created', { objective: '   ' }, 1)])).toThrow();
   });
 
   it('replays objective revisions in stream order', () => {

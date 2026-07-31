@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { createEventDraft, EventActorKind, type EventDraft } from '../../../kernel/index.js';
+import { createEventDraft, EventActorKind } from '../../../kernel/index.js';
 import { BuiltInAdapterId } from '../../contracts/identifiers.js';
 import { integrationStream } from '../../contracts/streams.js';
 import type { ExternalEventSource } from '../application/poll-service.js';
@@ -8,6 +8,7 @@ import type {
   GitHubCommitStatusPayload,
   GitHubPullRequestPayload,
 } from '../contracts/payloads.js';
+import { GitHubEventType, type GitHubAdapterEventDraft } from '../contracts/events.js';
 
 type PullRequestCheckState = 'unknown' | 'pending' | 'passing' | 'failing';
 
@@ -60,7 +61,7 @@ export function pullRequestObservation(input: {
   readonly repository: string;
   readonly pullRequest: GitHubPullRequestPayload;
   readonly evidence: CheckEvidence;
-}): EventDraft {
+}): Extract<GitHubAdapterEventDraft, { eventType: typeof GitHubEventType.WorkObserved }> {
   const pullRequest = input.pullRequest;
   const key = `${input.repository}#${pullRequest.number}`;
   const revision = fallback(pullRequest.head?.sha, pullRequest.updated_at);
@@ -86,7 +87,7 @@ export function pullRequestObservation(input: {
   const fingerprint = evidenceFingerprint(payload, input.evidence);
   return createEventDraft({
     eventId: `github:pr:${key}:${fingerprint}`,
-    eventType: 'integration.github.work-observed',
+    eventType: GitHubEventType.WorkObserved,
     occurredAt: pullRequest.updated_at,
     correlationId: `github:${key}`,
     causationId: `github:${key}:${fingerprint}`,

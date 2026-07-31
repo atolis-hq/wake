@@ -1,15 +1,19 @@
 import {
   type CommandContext,
-  type EventDraft,
-  type EntityRef,
   type EventJournal,
   WrongExpectedSequenceError,
 } from '../../kernel/index.js';
+import type { ResourceStreamRef } from '../../resources/index.js';
+import type { WorkItemStreamRef } from '../../work/index.js';
+import type { ActivityFactDraft } from '../contracts/events.js';
 
 export type IntentAppendResult = 'appended' | 'known' | 'ambiguous' | 'failed';
 
 export interface IntentAppender {
-  append(stream: EntityRef, intent: EventDraft): Promise<IntentAppendResult>;
+  append(
+    stream: ResourceStreamRef | WorkItemStreamRef,
+    intent: ActivityFactDraft,
+  ): Promise<IntentAppendResult>;
 }
 
 export function createJournalIntentAppender(journal: EventJournal): IntentAppender {
@@ -20,8 +24,8 @@ export function createJournalIntentAppender(journal: EventJournal): IntentAppend
 
 export async function appendIntentOnce(
   journal: EventJournal,
-  stream: EntityRef,
-  intent: EventDraft,
+  stream: ResourceStreamRef | WorkItemStreamRef,
+  intent: ActivityFactDraft,
 ): Promise<IntentAppendResult> {
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const events = await journal.readStream(stream);

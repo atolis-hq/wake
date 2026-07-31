@@ -12,6 +12,7 @@ import type {
   SignalExpectation,
   SupplementalActivityRequest,
 } from '../contracts/events.js';
+import { OrchestrationEventType } from '../contracts/events.js';
 import {
   acceptActivityOutcome,
   acceptSignal,
@@ -124,14 +125,14 @@ export class OrchestrationService {
       this.coordinationEvent(
         loaded.view,
         context,
-        'orchestration.causal-activation-rejected',
+        OrchestrationEventType.CausalActivationRejected,
         metadata,
         1,
       ),
       stateDraft(
         loaded.view,
         { occurredAt: context.occurredAt, causationId: context.commandId },
-        'instance-blocked',
+        OrchestrationEventType.InstanceBlocked,
         { reason: 'causal activation rejected' },
         2,
       ),
@@ -221,8 +222,8 @@ export class OrchestrationService {
     const loaded = await this.repository.load(workflowInstanceId);
     if (loaded.view?.pendingActivation?.activationId !== activationId) return loaded.view;
     const event = createEventDraft({
-      eventId: `${context.commandId}:orchestration.activity-started`,
-      eventType: 'orchestration.activity-started',
+      eventId: `${context.commandId}:${OrchestrationEventType.ActivityStarted}`,
+      eventType: OrchestrationEventType.ActivityStarted,
       occurredAt: context.occurredAt,
       correlationId: context.correlationId,
       causationId: context.commandId,
@@ -294,14 +295,13 @@ export class OrchestrationService {
     );
   }
 
-  async listWatchMatches(eventType: string, scheduleCron?: string) {
+  async listWatchMatches(eventType: string) {
     return (await this.listAll()).flatMap((parent) => {
       const definition = this.definition(parent.workflowName);
       return definition.watches
         .filter(
           (watch) =>
-            (watch.on?.events.includes(eventType) === true ||
-              (scheduleCron !== undefined && watch.schedule?.cron === scheduleCron)) &&
+            watch.on?.events.includes(eventType) === true &&
             watch.while.stages.includes(parent.currentStage) &&
             watch.while.statuses.some((status) => status === parent.status),
         )
@@ -334,12 +334,12 @@ export class OrchestrationService {
     const childLoaded = await this.loadRequired(child.workflowInstanceId);
     if (!childLoaded.view.childCompletionRecorded)
       await this.repository.append(child.workflowInstanceId, childLoaded.sequence, [
-        this.coordinationEvent(child, context, 'orchestration.child-completed', metadata, 1),
+        this.coordinationEvent(child, context, OrchestrationEventType.ChildCompleted, metadata, 1),
       ]);
     const parent = await this.loadRequired(metadata.parentWorkflowInstanceId);
     if (parent.view.acceptedChildCompletionIds.includes(child.workflowInstanceId)) return;
     const signal: ChildCompletionSignal = {
-      kind: 'orchestration.child-completed',
+      kind: OrchestrationEventType.ChildCompleted,
       actorId: 'orchestration',
       actorDecision: { authorized: true, evidenceId: child.workflowInstanceId },
       providerEventId: child.workflowInstanceId,
@@ -357,7 +357,7 @@ export class OrchestrationService {
       this.coordinationEvent(
         parent.view,
         context,
-        'orchestration.child-completion-consumed',
+        OrchestrationEventType.ChildCompletionConsumed,
         metadata,
         2,
       ),

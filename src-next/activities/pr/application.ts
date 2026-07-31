@@ -1,11 +1,11 @@
+import { type CommandContext, type EventJournal } from '../../kernel/index.js';
 import {
-  type CommandContext,
-  type EntityRef,
-  type EventDraft,
-  type EventJournal,
-} from '../../kernel/index.js';
-import { resourceStream, type ResourceService } from '../../resources/index.js';
-import { workItemStream, type WorkService } from '../../work/index.js';
+  resourceStream,
+  type ResourceService,
+  type ResourceStreamRef,
+} from '../../resources/index.js';
+import { workItemStream, type WorkItemStreamRef, type WorkService } from '../../work/index.js';
+import { ActivityEventType, type ActivityFactDraft } from '../contracts/events.js';
 import { isReviewAuthorized } from '../review/authorization.js';
 import type {
   AcceptReviewSignal,
@@ -156,15 +156,15 @@ class JournalPullRequestService implements PullRequestService {
 
   private async append(
     resourceId: ObservePullRequest['resourceId'],
-    event: EventDraft | readonly EventDraft[],
+    event: ActivityFactDraft | readonly ActivityFactDraft[],
   ): Promise<void> {
     const stream = resourceStream(resourceId);
     await this.appendStream(stream, event);
   }
 
   private async appendStream(
-    stream: EntityRef,
-    event: EventDraft | readonly EventDraft[],
+    stream: ResourceStreamRef | WorkItemStreamRef,
+    event: ActivityFactDraft | readonly ActivityFactDraft[],
   ): Promise<void> {
     const events = Array.isArray(event) ? event : [event];
     await this.journal.append(stream, (await this.journal.readStream(stream)).length, events);
@@ -172,8 +172,17 @@ class JournalPullRequestService implements PullRequestService {
 
   private async priorMergeDecision(commandId: string): Promise<boolean | null> {
     const events = await this.journal.readAll(0);
-    if (events.some((event) => event.eventId === `${commandId}:pr.merge-authorized`)) return true;
-    return events.some((event) => event.eventId === `${commandId}:pr.merge-denied`) ? false : null;
+    if (
+      events.some(
+        (event) => event.eventId === `${commandId}:${ActivityEventType.PrMergeAuthorized}`,
+      )
+    )
+      return true;
+    return events.some(
+      (event) => event.eventId === `${commandId}:${ActivityEventType.PrMergeDenied}`,
+    )
+      ? false
+      : null;
   }
 
   private async hasVerifiedPrimaryCorrelation(command: ObservePullRequest): Promise<boolean> {
@@ -249,7 +258,7 @@ function isPresent<Value>(value: Value | null): value is Value {
 function denialStream(
   input: PullRequestAuthorityInput,
   workItemId: ObservePullRequest['workItemId'],
-): EntityRef {
+): ResourceStreamRef | WorkItemStreamRef {
   const resource = input.resources.find((entry) => entry.resource.kind === 'pull-request');
   return resource === undefined
     ? workItemStream(workItemId)

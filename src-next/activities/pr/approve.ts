@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import type { ActivityDefinition } from '../contracts/activity.js';
+import { ActivityEventType } from '../contracts/events.js';
 import type { EventJournal } from '../../kernel/index.js';
 import { resourceStream } from '../../resources/index.js';
 import { workItemStream } from '../../work/index.js';
@@ -95,7 +96,7 @@ export function createPullRequestApproveActivity(
         }
         const intent = deliveryIntentRequested(
           decision.resourceId,
-          'pr.approve-requested',
+          ActivityEventType.PrApproveRequested,
           {
             activationId: invocation.activationId,
             resourceId: decision.resourceId,

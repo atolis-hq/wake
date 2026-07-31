@@ -1,20 +1,15 @@
-import type { EventEnvelope } from '../../kernel/index.js';
-import { workItemId } from '../contracts/identifiers.js';
-import { isWorkItemStream } from '../contracts/streams.js';
+import { WorkEventType, type WorkEvent } from '../contracts/events.js';
 import type { WorkItemView, WorkState } from '../contracts/views.js';
 
-type WorkItemEvent = EventEnvelope<string, unknown>;
-
-export function foldWorkItem(events: readonly WorkItemEvent[]): WorkItemView | null {
+export function foldWorkItem(events: readonly WorkEvent[]): WorkItemView | null {
   if (events.length === 0) return null;
-  if (events[0]?.eventType !== 'work.item-created') {
-    throw new Error('WorkItem stream must begin with work.item-created');
+  if (events[0]?.eventType !== WorkEventType.ItemCreated) {
+    throw new Error(`WorkItem stream must begin with ${WorkEventType.ItemCreated}`);
   }
 
-  const id = workItemId(events[0].stream.id);
-  const objective = objectiveFrom(events[0].payload);
+  const id = events[0].stream.id;
   const state = {
-    objective,
+    objective: events[0].payload.objective,
     lifecycle: 'open' as WorkState,
     links: [] as WorkItemView['relatedWorkItems'][number][],
     linkKeys: new Set<string>(),
@@ -36,23 +31,31 @@ function applyEvent(
     links: WorkItemView['relatedWorkItems'][number][];
     linkKeys: Set<string>;
   },
-  event: WorkItemEvent,
+  event: WorkEvent,
   index: number,
   id: string,
 ): void {
-  assertWorkStream(event, index, id);
-  if (event.eventType === 'work.objective-revised') state.objective = objectiveFrom(event.payload);
-  if (event.eventType === 'work.item-closed') state.lifecycle = 'closed';
-  if (event.eventType === 'work.item-cancelled') state.lifecycle = 'cancelled';
-  if (event.eventType === 'work.item-linked') addLink(state, linkFrom(event.payload));
-}
-
-function assertWorkStream(event: WorkItemEvent, index: number, id: string): void {
-  if (!isWorkItemStream(event.stream) || event.stream.id !== id) {
+  if (event.stream.id !== id) {
     throw new Error('WorkItem events must belong to the same work-item stream');
   }
-  if (index > 0 && event.eventType === 'work.item-created') {
-    throw new Error('WorkItem stream cannot contain a second creation event');
+  switch (event.eventType) {
+    case WorkEventType.ItemCreated:
+      if (index > 0) throw new Error('WorkItem stream cannot contain a second creation event');
+      break;
+    case WorkEventType.ObjectiveRevised:
+      state.objective = event.payload.objective;
+      break;
+    case WorkEventType.ItemClosed:
+      state.lifecycle = 'closed';
+      break;
+    case WorkEventType.ItemCancelled:
+      state.lifecycle = 'cancelled';
+      break;
+    case WorkEventType.ItemLinked:
+      addLink(state, { workItemId: event.payload.to, relation: event.payload.relation });
+      break;
+    default:
+      assertNever(event);
   }
 }
 
@@ -67,28 +70,6 @@ function addLink(
   }
 }
 
-function objectiveFrom(payload: unknown): string {
-  if (
-    !isRecord(payload) ||
-    typeof payload.objective !== 'string' ||
-    payload.objective.trim().length === 0
-  ) {
-    throw new Error('WorkItem objective must not be empty');
-  }
-  return payload.objective;
-}
-
-function linkFrom(payload: unknown): WorkItemView['relatedWorkItems'][number] {
-  if (!isRecord(payload) || typeof payload.to !== 'string' || !isRelation(payload.relation)) {
-    throw new Error('Invalid WorkItem link event');
-  }
-  return { workItemId: workItemId(payload.to), relation: payload.relation };
-}
-
-function isRelation(value: unknown): value is WorkItemView['relatedWorkItems'][number]['relation'] {
-  return value === 'relates-to' || value === 'parent-of' || value === 'child-of';
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
+function assertNever(value: never): never {
+  throw new Error(`Unhandled Work event: ${JSON.stringify(value)}`);
 }

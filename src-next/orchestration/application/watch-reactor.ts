@@ -17,7 +17,7 @@ interface WatchMatch {
 }
 
 interface WatchOrchestrationPort {
-  listWatchMatches(eventType: string, scheduleCron?: string): Promise<readonly WatchMatch[]>;
+  listWatchMatches(eventType: string): Promise<readonly WatchMatch[]>;
   requestChild(
     request: ChildWorkflowRequest & { readonly maxPerGroup: number },
     context: CommandContext,
@@ -46,10 +46,7 @@ export function createWatchReactor(
 ) {
   return {
     async react(event: CanonicalEvent, context: CommandContext): Promise<void> {
-      for (const match of await orchestration.listWatchMatches(
-        event.eventType,
-        scheduleCron(event),
-      )) {
+      for (const match of await orchestration.listWatchMatches(event.eventType)) {
         const requestId = `${match.parent.workflowInstanceId}:watch:${match.watch.id}:trigger:${event.eventId}`;
         const request = {
           parentWorkflowInstanceId: match.parent.workflowInstanceId,
@@ -102,16 +99,10 @@ function commandContext(event: EventEnvelope): CommandContext {
   };
 }
 
-function scheduleCron(event: CanonicalEvent): string | undefined {
-  if (event.eventType !== 'control.schedule-slot') return undefined;
-  if (typeof event.payload !== 'object' || event.payload === null) return undefined;
-  const cron = (event.payload as Record<string, unknown>).cron;
-  return typeof cron === 'string' ? cron : undefined;
-}
-
 function causalCycleId(payload: unknown): string | undefined {
-  if (typeof payload !== 'object' || payload === null) return undefined;
-  const value = (payload as Record<string, unknown>).causalCycleId;
+  if (typeof payload !== 'object' || payload === null || !('causalCycleId' in payload))
+    return undefined;
+  const value = payload.causalCycleId;
   return typeof value === 'string' ? value : undefined;
 }
 

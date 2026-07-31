@@ -1,12 +1,14 @@
 import { z } from 'zod';
 
-import { type EntityRef, type EventDraft, type EventJournal } from '../../kernel/index.js';
+import { type EventJournal } from '../../kernel/index.js';
 import {
   resourceId,
   type ResourceCapability,
   type ResourceId,
   type ResourceView,
+  type ResourceStreamRef,
 } from '../../resources/index.js';
+import type { WorkItemStreamRef } from '../../work/index.js';
 import type { WorkItemId } from '../../work/index.js';
 import type {
   PullRequestActivityOutcome,
@@ -14,6 +16,7 @@ import type {
   PullRequestTarget,
 } from './contracts.js';
 import type { IntentAppender, IntentAppendResult } from './intent.js';
+import type { ActivityFactDraft } from '../contracts/events.js';
 
 export const pullRequestTargetSchema = z
   .union([
@@ -113,8 +116,8 @@ export function selectedDenialAudit(authority: PullRequestAuthorityInput, select
 export async function appendResolved(
   journal: EventJournal,
   appender: IntentAppender,
-  stream: EntityRef,
-  event: EventDraft,
+  stream: ResourceStreamRef | WorkItemStreamRef,
+  event: ActivityFactDraft,
 ): Promise<Exclude<IntentAppendResult, 'ambiguous'>> {
   const result = await appender.append(stream, event);
   if (result !== 'ambiguous') return result;

@@ -1,17 +1,28 @@
-import type { EventEnvelope, ProjectionDefinition } from '../../kernel/index.js';
+import type { ProjectionDefinition } from '../../kernel/index.js';
+import {
+  selectWorkflowOrchestrationEvent,
+  type WorkflowOrchestrationEvent,
+} from '../contracts/events.js';
 import { isWorkflowInstanceStream } from '../contracts/streams.js';
 import { foldWorkflowInstance } from '../domain/workflow-instance.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
 type ProjectionValue = {
-  readonly events: readonly EventEnvelope[];
+  readonly events: readonly WorkflowOrchestrationEvent[];
   readonly view: WorkflowInstanceView | null;
 };
 export const orchestrationProjection: ProjectionDefinition<ProjectionValue> = {
   name: 'orchestration',
-  select: (event) => (isWorkflowInstanceStream(event.stream) ? { key: event.stream.id } : null),
+  select(event) {
+    const owned = selectWorkflowOrchestrationEvent(event);
+    return owned !== null && isWorkflowInstanceStream(owned.stream)
+      ? { key: owned.stream.id }
+      : null;
+  },
   initial: () => ({ events: [], view: null }),
   project(previous, event) {
-    const events = [...previous.events, event];
+    const owned = selectWorkflowOrchestrationEvent(event);
+    if (owned === null || !isWorkflowInstanceStream(owned.stream)) return previous;
+    const events = [...previous.events, owned];
     return { events, view: foldWorkflowInstance(events) };
   },
 };

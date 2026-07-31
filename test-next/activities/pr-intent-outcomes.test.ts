@@ -2,8 +2,9 @@ import { expect, it } from 'vitest';
 
 import { activationId, createPullRequestMergeActivity } from '../../src-next/activities/index.js';
 import { appendIntentOnce } from '../../src-next/activities/pr/intent.js';
+import { mergeDenied } from '../../src-next/activities/pr/event-drafts.js';
 import {
-  createEventDraft,
+  correlationId,
   WrongExpectedSequenceError,
   type EventJournal,
 } from '../../src-next/kernel/index.js';
@@ -90,16 +91,11 @@ it('treats exhausted sequence conflicts without the event as a failed append', a
       return [];
     },
   };
-  const intent = createEventDraft({
-    eventId: 'activation-1:pr.merge-denied',
-    eventType: 'pr.merge-denied',
+  const intent = mergeDenied(stream, 'test-denial', {
+    commandId: 'activation-1',
     occurredAt: '2026-07-30T12:00:00.000Z',
-    correlationId: 'scenario-1',
-    causationId: 'activation-1',
+    correlationId: correlationId('scenario-1'),
     actor: { kind: 'system', id: 'test' },
-    source: { kind: 'internal', id: 'test' },
-    stream,
-    payload: {},
   });
 
   await expect(appendIntentOnce(journal, stream, intent)).resolves.toBe('failed');

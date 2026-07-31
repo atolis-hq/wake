@@ -1,5 +1,6 @@
 import { createEventDraft, type CommandContext, type EventJournal } from '../../kernel/index.js';
 import type { CreateWorkItem, LinkWorkItems, ReviseWorkObjective } from '../contracts/commands.js';
+import { WorkEventType, type WorkEventDraft, type WorkEventPayloads } from '../contracts/events.js';
 import type { WorkItemId } from '../contracts/identifiers.js';
 import { workItemStream } from '../contracts/streams.js';
 import type { WorkItemView } from '../contracts/views.js';
@@ -20,8 +21,7 @@ export function createWorkService(journal: EventJournal): WorkService {
   async function change(
     workItemId: WorkItemId,
     context: CommandContext,
-    eventType: string,
-    payload: unknown,
+    draft: WorkEventDraft,
     allowMissing = false,
   ): Promise<WorkItemView> {
     const loaded = await repository.load(workItemId);
@@ -30,19 +30,7 @@ export function createWorkService(journal: EventJournal): WorkService {
     if (loaded.view !== null && loaded.view.state !== 'open') {
       throw new Error(`WorkItem ${workItemId} is ${loaded.view.state}`);
     }
-    await repository.append(workItemId, loaded.sequence, [
-      createEventDraft({
-        eventId: `${context.commandId}:${eventType}`,
-        eventType,
-        occurredAt: context.occurredAt,
-        correlationId: context.correlationId,
-        causationId: context.commandId,
-        actor: context.actor,
-        source: { kind: 'internal', id: 'work-service' },
-        stream: workItemStream(workItemId),
-        payload,
-      }),
-    ]);
+    await repository.append(workItemId, loaded.sequence, [draft]);
     const result = await repository.load(workItemId);
     if (result.view === null) throw new Error(`WorkItem ${workItemId} was not created`);
     return result.view;
@@ -51,42 +39,66 @@ export function createWorkService(journal: EventJournal): WorkService {
   return {
     async create(command, context) {
       const loaded = await repository.load(command.workItemId);
-      if (loaded.view !== null) {
-        return change(
-          command.workItemId,
-          context,
-          'work.item-created',
-          { objective: command.objective },
-          true,
-        );
-      }
+      const draft = workDraft(command.workItemId, context, WorkEventType.ItemCreated, {
+        objective: command.objective,
+      });
+      if (loaded.view !== null) return change(command.workItemId, context, draft, true);
+      return change(command.workItemId, context, draft, true);
+    },
+    revise(command, context) {
       return change(
         command.workItemId,
         context,
-        'work.item-created',
-        { objective: command.objective },
-        true,
+        workDraft(command.workItemId, context, WorkEventType.ObjectiveRevised, {
+          objective: command.objective,
+        }),
       );
     },
-    revise(command, context) {
-      return change(command.workItemId, context, 'work.objective-revised', {
-        objective: command.objective,
-      });
-    },
     link(command, context) {
-      return change(command.from, context, 'work.item-linked', {
-        to: command.to,
-        relation: command.relation,
-      });
+      return change(
+        command.from,
+        context,
+        workDraft(command.from, context, WorkEventType.ItemLinked, {
+          to: command.to,
+          relation: command.relation,
+        }),
+      );
     },
     close(workItemId, reason, context) {
-      return change(workItemId, context, 'work.item-closed', { reason });
+      return change(
+        workItemId,
+        context,
+        workDraft(workItemId, context, WorkEventType.ItemClosed, { reason }),
+      );
     },
     cancel(workItemId, reason, context) {
-      return change(workItemId, context, 'work.item-cancelled', { reason });
+      return change(
+        workItemId,
+        context,
+        workDraft(workItemId, context, WorkEventType.ItemCancelled, { reason }),
+      );
     },
     async get(workItemId) {
       return (await repository.load(workItemId)).view;
     },
   };
+}
+
+function workDraft<Type extends keyof WorkEventPayloads>(
+  workItemId: WorkItemId,
+  context: CommandContext,
+  eventType: Type,
+  payload: WorkEventPayloads[Type],
+) {
+  return createEventDraft({
+    eventId: `${context.commandId}:${eventType}`,
+    eventType,
+    occurredAt: context.occurredAt,
+    correlationId: context.correlationId,
+    causationId: context.commandId,
+    actor: context.actor,
+    source: { kind: 'internal', id: 'work-service' },
+    stream: workItemStream(workItemId),
+    payload,
+  });
 }

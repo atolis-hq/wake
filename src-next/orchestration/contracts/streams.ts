@@ -17,6 +17,13 @@ export type OrchestrationGroupStreamRef = EntityRef<
   OrchestrationGroupStreamId
 >;
 
+export const orchestrationGroupStreamId = (value: string): OrchestrationGroupStreamId => {
+  if (!/^(?:primary:work-[a-z0-9-]+|group:[^:]+:watch:[^:]+)$/.test(value)) {
+    throw new Error(`Invalid orchestration group stream key: ${value}`);
+  }
+  return value as OrchestrationGroupStreamId;
+};
+
 export const workflowInstanceStream = (id: WorkflowInstanceId): WorkflowInstanceStreamRef => ({
   kind: OrchestrationStreamKind.WorkflowInstance,
   id,
@@ -40,12 +47,9 @@ export const isOrchestrationGroupStream = (
 ): stream is OrchestrationGroupStreamRef => stream.kind === OrchestrationStreamKind.Group;
 
 function orchestrationGroupStream(key: string): OrchestrationGroupStreamRef {
-  if (!/^(?:primary:work-[a-z0-9-]+|group:[^:]+:watch:[^:]+)$/.test(key)) {
-    throw new Error(`Invalid orchestration group stream key: ${key}`);
-  }
   return {
     kind: OrchestrationStreamKind.Group,
-    id: key as OrchestrationGroupStreamId,
+    id: orchestrationGroupStreamId(key),
   };
 }
 

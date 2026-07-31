@@ -1,21 +1,22 @@
-import { createEventDraft, EventActorKind, type EventDraft } from '../../../kernel/index.js';
+import { createEventDraft, EventActorKind } from '../../../kernel/index.js';
 import { BuiltInAdapterId } from '../../contracts/identifiers.js';
 import { integrationStream } from '../../contracts/streams.js';
 import type { GitHubPullRequestPayload, GitHubReviewPayload } from '../contracts/payloads.js';
+import { GitHubEventType, type GitHubAdapterEventDraft } from '../contracts/events.js';
 
 export function githubReviewObservation(input: {
   readonly repository: string;
   readonly pullRequest: GitHubPullRequestPayload;
   readonly review: GitHubReviewPayload;
   readonly authorizedReviewers: readonly string[];
-}): EventDraft | null {
+}): Extract<GitHubAdapterEventDraft, { eventType: typeof GitHubEventType.CommentObserved }> | null {
   const command = reviewCommand(input.review.state);
   if (command === null) return null;
   const actorId = input.review.user?.login ?? 'unknown';
   const key = `${input.repository}#${input.pullRequest.number}`;
   return createEventDraft({
     eventId: `github:review:${key}:${input.review.id}:${input.review.state}:${input.review.commit_id}`,
-    eventType: 'integration.github.comment-observed',
+    eventType: GitHubEventType.CommentObserved,
     occurredAt: input.review.submitted_at,
     correlationId: `github:${key}`,
     causationId: `github:review:${input.review.id}`,

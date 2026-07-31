@@ -1,9 +1,9 @@
+import { createEventDraft, type EventEnvelope, type EventJournal } from '../../kernel/index.js';
 import {
-  createEventDraft,
-  type EventDraft,
-  type EventEnvelope,
-  type EventJournal,
-} from '../../kernel/index.js';
+  ActivityEventType,
+  decodeActivityEvent,
+  type ActivityFactDraft,
+} from '../contracts/events.js';
 import { activityDecisionStream, type PullRequestDecisionAction } from '../contracts/streams.js';
 import type { ActivationId } from '../contracts/identifiers.js';
 import type { PullRequestActivityOutcome } from './contracts.js';
@@ -16,12 +16,7 @@ export type PullRequestAction = PullRequestDecisionAction;
 export interface PullRequestDecision {
   readonly decisionKind: PullRequestDecisionKind;
   readonly outcome: PullRequestActivityOutcome;
-  readonly fact: EventDraft;
-}
-
-interface DecisionClaimPayload extends PullRequestDecision {
-  readonly action: PullRequestAction;
-  readonly activationId: ActivationId;
+  readonly fact: ActivityFactDraft;
 }
 
 export async function readDecisionClaim(
@@ -48,7 +43,7 @@ export async function claimDecision(
   const stream = activityDecisionStream(activationId, action);
   const claim = createEventDraft({
     eventId: decisionClaimId(activationId, action),
-    eventType: `pr.${action}-decision-claimed`,
+    eventType: decisionEventType(action),
     occurredAt: proposal.fact.occurredAt,
     correlationId: proposal.fact.correlationId,
     causationId: proposal.fact.causationId,
@@ -61,7 +56,7 @@ export async function claimDecision(
       decisionKind: proposal.decisionKind,
       outcome: proposal.outcome,
       fact: proposal.fact,
-    } satisfies DecisionClaimPayload,
+    },
   });
 
   try {
@@ -86,7 +81,7 @@ export async function completeDecisionClaim(
 }
 
 function decisionClaimId(activationId: ActivationId, action: PullRequestAction): string {
-  return `${activationId}:pr.${action}-decision-claimed`;
+  return `${activationId}:${decisionEventType(action)}`;
 }
 
 function parseClaim(
@@ -94,51 +89,28 @@ function parseClaim(
   activationId: ActivationId,
   action: PullRequestAction,
 ): PullRequestDecision {
-  const payload = event.payload;
+  const decoded = decodeActivityEvent(event);
+  const expectedType = decisionEventType(action);
   if (
-    !isRecord(payload) ||
-    payload.activationId !== activationId ||
-    payload.action !== action ||
-    (payload.decisionKind !== 'requested' && payload.decisionKind !== 'denied') ||
-    !isOutcome(payload.outcome) ||
-    !isEventDraft(payload.fact)
+    decoded.eventType !== expectedType ||
+    decoded.payload.activationId !== activationId ||
+    decoded.payload.action !== action
   ) {
     throw new Error(`Invalid pull-request decision claim ${event.eventId}`);
   }
   return {
-    decisionKind: payload.decisionKind,
-    outcome: payload.outcome,
-    fact: payload.fact,
+    decisionKind: decoded.payload.decisionKind,
+    outcome: decoded.payload.outcome,
+    fact: decoded.payload.fact,
   };
 }
 
-function isOutcome(value: unknown): value is PullRequestActivityOutcome {
-  if (!isRecord(value) || typeof value.kind !== 'string' || !isRecord(value.data)) return false;
-  if (value.kind === 'waiting')
-    return (
-      typeof value.data.intentEventId === 'string' && value.data.signalKind === 'delivery-result'
-    );
-  if (value.kind === 'done') return typeof value.data.deliveryEventId === 'string';
-  if (value.kind === 'blocked' || value.kind === 'failed')
-    return typeof value.data.reason === 'string';
-  return false;
-}
-
-function isEventDraft(value: unknown): value is EventDraft {
-  return (
-    isRecord(value) &&
-    typeof value.eventId === 'string' &&
-    typeof value.eventType === 'string' &&
-    value.schemaVersion === 1 &&
-    typeof value.occurredAt === 'string' &&
-    typeof value.correlationId === 'string' &&
-    typeof value.causationId === 'string' &&
-    isRecord(value.actor) &&
-    isRecord(value.source) &&
-    isRecord(value.stream)
-  );
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
+function decisionEventType(
+  action: PullRequestAction,
+):
+  | typeof ActivityEventType.PrApproveDecisionClaimed
+  | typeof ActivityEventType.PrMergeDecisionClaimed {
+  return action === 'approve'
+    ? ActivityEventType.PrApproveDecisionClaimed
+    : ActivityEventType.PrMergeDecisionClaimed;
 }

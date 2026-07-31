@@ -1,6 +1,7 @@
 import type { ActivityOutcome, WaitingActivityOutcome } from '../../activities/index.js';
-import type { EventDraft } from '../../kernel/index.js';
+import type { WorkflowOrchestrationEventDraft } from '../contracts/events.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
+import { OrchestrationEventType } from '../contracts/events.js';
 import { stateDraft } from './decision-events.js';
 
 interface WaitingInput {
@@ -14,7 +15,7 @@ export function acceptWaitingOutcome(
   state: WorkflowInstanceView,
   input: WaitingInput,
 ):
-  | { readonly kind: 'append'; readonly events: readonly EventDraft[] }
+  | { readonly kind: 'append'; readonly events: readonly WorkflowOrchestrationEventDraft[] }
   | { readonly kind: 'ignored'; readonly reason: string } {
   const waiting = waitingOutcome(input.outcome);
   if (waiting === null) return { kind: 'ignored', reason: 'waiting outcome lacks expectation' };
@@ -30,7 +31,7 @@ export function acceptWaitingOutcome(
       stateDraft(
         state,
         input,
-        'activity-waiting',
+        OrchestrationEventType.ActivityWaiting,
         { activationId: input.activationId, ...waiting.data, outcome: waiting },
         1,
       ),
@@ -41,10 +42,12 @@ export function acceptWaitingOutcome(
 function waitingOutcome(outcome: ActivityOutcome): WaitingActivityOutcome | null {
   if (outcome.kind !== 'waiting' || typeof outcome.data !== 'object' || outcome.data === null)
     return null;
-  const data = outcome.data as Record<string, unknown>;
+  const data = outcome.data;
   if (
+    !('intentEventId' in data) ||
     typeof data.intentEventId !== 'string' ||
     data.intentEventId.length === 0 ||
+    !('signalKind' in data) ||
     typeof data.signalKind !== 'string' ||
     data.signalKind.length === 0
   )

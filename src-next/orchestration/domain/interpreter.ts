@@ -1,5 +1,4 @@
 import type { ActivityOutcome } from '../../activities/index.js';
-import type { EventDraft } from '../../kernel/index.js';
 import type { WorkItemId } from '../../work/index.js';
 import type { CompiledOutcomeRoute, CompiledWorkflow } from '../contracts/config.js';
 import type {
@@ -7,7 +6,9 @@ import type {
   OrchestrationSignal,
   SignalExpectation,
   SupplementalActivityRequest,
+  WorkflowOrchestrationEventDraft,
 } from '../contracts/events.js';
+import { OrchestrationEventType } from '../contracts/events.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
 import { activation, nextOrdinal, startDraft, stateDraft } from './decision-events.js';
 import { childStartDrafts } from './coordination-events.js';
@@ -15,7 +16,7 @@ import { finishRoute } from './transition.js';
 import { acceptWaitingOutcome } from './waiting-outcome.js';
 
 export type OrchestrationDecision =
-  | { readonly kind: 'append'; readonly events: readonly EventDraft[] }
+  | { readonly kind: 'append'; readonly events: readonly WorkflowOrchestrationEventDraft[] }
   | { readonly kind: 'ignored'; readonly reason: string };
 
 interface StartInstanceBase {
@@ -86,7 +87,7 @@ export function startInstance(input: StartInstanceInput): OrchestrationDecision 
       ...childEvents,
       startDraft(
         input,
-        'instance-started',
+        OrchestrationEventType.InstanceStarted,
         {
           workItemId: input.workItemId,
           workflowName: input.definition.name,
@@ -96,10 +97,15 @@ export function startInstance(input: StartInstanceInput): OrchestrationDecision 
         },
         childEvents.length + 1,
       ),
-      startDraft(input, 'stage-entered', { stage: input.definition.entry }, childEvents.length + 2),
       startDraft(
         input,
-        'activity-requested',
+        OrchestrationEventType.StageEntered,
+        { stage: input.definition.entry },
+        childEvents.length + 2,
+      ),
+      startDraft(
+        input,
+        OrchestrationEventType.ActivityRequested,
         activation(input.workflowInstanceId, 1, stage.activity, stage.with, {
           execution: stage.execution,
         }),
@@ -133,11 +139,11 @@ export function acceptActivityOutcome(
   if (input.outcome.kind === 'waiting') return acceptWaitingOutcome(state, input);
   const pending = state.pendingActivation!;
 
-  const events: EventDraft[] = [
+  const events: WorkflowOrchestrationEventDraft[] = [
     stateDraft(
       state,
       input,
-      'activity-outcome-accepted',
+      OrchestrationEventType.ActivityOutcomeAccepted,
       { activationId: input.activationId, outcome: input.outcome },
       1,
     ),
@@ -174,7 +180,7 @@ export function acceptActivityOutcome(
       stateDraft(
         state,
         input,
-        'activity-requested',
+        OrchestrationEventType.ActivityRequested,
         activation(state.workflowInstanceId, pending.ordinal + 1, next.use, next.with, {
           execution: undefined,
           followOnIndex: nextFollowOnIndex,
@@ -208,7 +214,7 @@ export function waitForSignal(
     return { kind: 'ignored', reason: 'signal kind must not be empty' };
   return {
     kind: 'append',
-    events: [stateDraft(state, input, 'signal-wait-started', expectation, 1)],
+    events: [stateDraft(state, input, OrchestrationEventType.SignalWaitStarted, expectation, 1)],
   };
 }
 
@@ -244,11 +250,11 @@ export function acceptSignal(
   return {
     kind: 'append',
     events: [
-      stateDraft(state, input, 'signal-accepted', signal, 1),
+      stateDraft(state, input, OrchestrationEventType.SignalAccepted, signal, 1),
       stateDraft(
         state,
         input,
-        'activity-requested',
+        OrchestrationEventType.ActivityRequested,
         activation(state.workflowInstanceId, nextOrdinal(state), stage.activity, stage.with, {
           execution: stage.execution,
         }),
@@ -271,7 +277,7 @@ export function requestSupplementalActivity(
       stateDraft(
         state,
         input,
-        'supplemental-activity-queued',
+        OrchestrationEventType.SupplementalActivityQueued,
         {
           activity: request.activity,
           input: request.input,
@@ -295,12 +301,13 @@ function mayRetry(
 
 function requiresReconciliation(outcome: ActivityOutcome): boolean {
   if (typeof outcome.data !== 'object' || outcome.data === null) return false;
-  const retrySafety = (outcome.data as Record<string, unknown>).retrySafety;
+  if (!('retrySafety' in outcome.data)) return false;
+  const retrySafety = outcome.data.retrySafety;
   return retrySafety === 'requires-reconciliation' || retrySafety === 'REQUIRES_RECONCILIATION';
 }
 
 function requestRetry(
-  events: EventDraft[],
+  events: WorkflowOrchestrationEventDraft[],
   definition: CompiledWorkflow,
   state: WorkflowInstanceView,
   input: AcceptActivityOutcome,
@@ -309,11 +316,17 @@ function requestRetry(
   const count = (state.retryCounts[retryKey] ?? 0) + 1;
   const stage = definition.stages[state.currentStage]!;
   events.push(
-    stateDraft(state, input, 'retry-counted', { retryKey, count }, events.length + 1),
     stateDraft(
       state,
       input,
-      'activity-requested',
+      OrchestrationEventType.RetryCounted,
+      { retryKey, count },
+      events.length + 1,
+    ),
+    stateDraft(
+      state,
+      input,
+      OrchestrationEventType.ActivityRequested,
       activation(state.workflowInstanceId, nextOrdinal(state), stage.activity, stage.with, {
         execution: stage.execution,
       }),
@@ -323,7 +336,7 @@ function requestRetry(
 }
 
 function finishSupplemental(
-  events: EventDraft[],
+  events: WorkflowOrchestrationEventDraft[],
   definition: CompiledWorkflow,
   state: WorkflowInstanceView,
   input: AcceptActivityOutcome,
@@ -333,7 +346,7 @@ function finishSupplemental(
       stateDraft(
         state,
         input,
-        'instance-blocked',
+        OrchestrationEventType.InstanceBlocked,
         { reason: `supplemental activity returned ${input.outcome.kind}` },
         events.length + 1,
       ),
@@ -349,7 +362,7 @@ function finishSupplemental(
     stateDraft(
       state,
       input,
-      'activity-requested',
+      OrchestrationEventType.ActivityRequested,
       activation(state.workflowInstanceId, nextOrdinal(state), stage.activity, stage.with, {
         execution: stage.execution,
       }),
@@ -359,7 +372,7 @@ function finishSupplemental(
 }
 
 function requestNextSupplemental(
-  events: EventDraft[],
+  events: WorkflowOrchestrationEventDraft[],
   state: WorkflowInstanceView,
   input: DecisionContext,
 ): void {
@@ -368,14 +381,14 @@ function requestNextSupplemental(
     stateDraft(
       state,
       input,
-      'supplemental-activity-dequeued',
+      OrchestrationEventType.SupplementalActivityDequeued,
       { activity: next.activity, requestedBy: next.requestedBy },
       events.length + 1,
     ),
     stateDraft(
       state,
       input,
-      'activity-requested',
+      OrchestrationEventType.ActivityRequested,
       activation(state.workflowInstanceId, nextOrdinal(state), next.activity, next.input, {
         execution: undefined,
         supplemental: true,

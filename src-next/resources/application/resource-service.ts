@@ -1,6 +1,11 @@
 import { createEventDraft, type CommandContext, type EventJournal } from '../../kernel/index.js';
 import type { WorkItemId } from '../../work/index.js';
 import type { DiscoverResource } from '../contracts/commands.js';
+import {
+  ResourceEventType,
+  type ResourceEventDraft,
+  type ResourceEventPayloads,
+} from '../contracts/events.js';
 import { resourceId, type ResourceId } from '../contracts/identifiers.js';
 import { isResourceStream, resourceStream } from '../contracts/streams.js';
 import type {
@@ -31,33 +36,24 @@ export function createResourceService(journal: EventJournal): ResourceService {
   async function append(
     resourceId: ResourceId,
     context: CommandContext,
-    eventType: string,
-    payload: unknown,
+    draft: ResourceEventDraft,
   ): Promise<void> {
     const loaded = await repository.load(resourceId);
-    await repository.append(resourceId, loaded.sequence, [
-      createEventDraft({
-        eventId: `${context.commandId}:${eventType}`,
-        eventType,
-        occurredAt: context.occurredAt,
-        correlationId: context.correlationId,
-        causationId: context.commandId,
-        actor: context.actor,
-        source: { kind: 'internal', id: 'resource-service' },
-        stream: resourceStream(resourceId),
-        payload,
-      }),
-    ]);
+    await repository.append(resourceId, loaded.sequence, [draft]);
   }
 
   return {
     async discover(command, context) {
-      await append(command.resourceId, context, 'resources.resource-discovered', {
-        kind: command.kind,
-        externalKey: command.externalKey,
-        capabilities: command.capabilities,
-        ...(command.revision === undefined ? {} : { revision: command.revision }),
-      });
+      await append(
+        command.resourceId,
+        context,
+        resourceDraft(command.resourceId, context, ResourceEventType.ResourceDiscovered, {
+          kind: command.kind,
+          externalKey: command.externalKey,
+          capabilities: command.capabilities,
+          ...(command.revision === undefined ? {} : { revision: command.revision }),
+        }),
+      );
       const resource = (await repository.load(command.resourceId)).resource;
       if (resource === null) throw new Error(`Resource ${command.resourceId} was not discovered`);
       return resource.view;
@@ -90,16 +86,24 @@ export function createResourceService(journal: EventJournal): ResourceService {
         (correlation) => correlation.role === 'primary',
       );
       if (role === 'primary' && primary !== undefined && primary.workItemId !== workItemId) {
-        await append(resourceId, context, 'resources.work-correlation-conflicted', {
-          workItemId,
-          existingWorkItemId: primary.workItemId,
-        });
+        await append(
+          resourceId,
+          context,
+          resourceDraft(resourceId, context, ResourceEventType.WorkCorrelationConflicted, {
+            workItemId,
+            existingWorkItemId: primary.workItemId,
+          }),
+        );
         throw new Error(`Resource ${resourceId} already has a primary WorkItem correlation`);
       }
-      await append(resourceId, context, 'resources.work-correlation-established', {
-        workItemId,
-        role,
-      });
+      await append(
+        resourceId,
+        context,
+        resourceDraft(resourceId, context, ResourceEventType.WorkCorrelationEstablished, {
+          workItemId,
+          role,
+        }),
+      );
       const correlation = (await repository.load(resourceId)).resource?.correlations.find(
         (candidate) => candidate.workItemId === workItemId && candidate.role === role,
       );
@@ -107,7 +111,32 @@ export function createResourceService(journal: EventJournal): ResourceService {
       return correlation;
     },
     async retract(resourceId, workItemId, context) {
-      await append(resourceId, context, 'resources.work-correlation-retracted', { workItemId });
+      await append(
+        resourceId,
+        context,
+        resourceDraft(resourceId, context, ResourceEventType.WorkCorrelationRetracted, {
+          workItemId,
+        }),
+      );
     },
   };
+}
+
+function resourceDraft<Type extends keyof ResourceEventPayloads>(
+  resourceId: ResourceId,
+  context: CommandContext,
+  eventType: Type,
+  payload: ResourceEventPayloads[Type],
+) {
+  return createEventDraft({
+    eventId: `${context.commandId}:${eventType}`,
+    eventType,
+    occurredAt: context.occurredAt,
+    correlationId: context.correlationId,
+    causationId: context.commandId,
+    actor: context.actor,
+    source: { kind: 'internal', id: 'resource-service' },
+    stream: resourceStream(resourceId),
+    payload,
+  });
 }

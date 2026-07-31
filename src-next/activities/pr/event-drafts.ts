@@ -1,47 +1,76 @@
+import { createEventDraft, type CommandContext } from '../../kernel/index.js';
+import { resourceStream, type ResourceStreamRef } from '../../resources/index.js';
+import type { WorkItemStreamRef } from '../../work/index.js';
 import {
-  createEventDraft,
-  type CommandContext,
-  type EntityRef,
-  type EventDraft,
-} from '../../kernel/index.js';
-import { resourceStream } from '../../resources/index.js';
-import type { AcceptReviewSignal, ObservePullRequest, RequestChangesSignal } from './contracts.js';
+  ActivityEventType,
+  type ActivityEventDraft,
+  type ActivityEventPayloads,
+  type PullRequestDenialPayload,
+} from '../contracts/events.js';
+import { activationId } from '../contracts/identifiers.js';
 import { isReviewAuthorized } from '../review/authorization.js';
+import type { AcceptReviewSignal, ObservePullRequest, RequestChangesSignal } from './contracts.js';
+
+type ActivityDraft<Type extends ActivityEventDraft['eventType']> = Extract<
+  ActivityEventDraft,
+  { eventType: Type }
+>;
+type DenialAudit = Omit<PullRequestDenialPayload, 'activationId' | 'idempotencyKey' | 'reason'>;
+type DeliveryIntentType =
+  typeof ActivityEventType.PrApproveRequested | typeof ActivityEventType.PrMergeRequested;
 
 export const discovered = (
   { resourceId, ...command }: ObservePullRequest,
   context: CommandContext,
-): EventDraft => fact(resourceId, 'pr.discovered', command, context);
+): ActivityDraft<typeof ActivityEventType.PrDiscovered> =>
+  fact(resourceId, ActivityEventType.PrDiscovered, command, context);
 
-export const revisionChanged = (command: ObservePullRequest, context: CommandContext): EventDraft =>
+export const revisionChanged = (
+  command: ObservePullRequest,
+  context: CommandContext,
+): ActivityDraft<typeof ActivityEventType.PrRevisionChanged> =>
   fact(
     command.resourceId,
-    'pr.revision-changed',
-    pick(command, ['headRevision', 'baseRevision']),
+    ActivityEventType.PrRevisionChanged,
+    { headRevision: command.headRevision, baseRevision: command.baseRevision },
     context,
   );
 
-export const stateChanged = (command: ObservePullRequest, context: CommandContext): EventDraft =>
-  fact(command.resourceId, 'pr.state-changed', pick(command, ['state']), context);
+export const stateChanged = (
+  command: ObservePullRequest,
+  context: CommandContext,
+): ActivityDraft<typeof ActivityEventType.PrStateChanged> =>
+  fact(command.resourceId, ActivityEventType.PrStateChanged, { state: command.state }, context);
 
-export const checksChanged = (command: ObservePullRequest, context: CommandContext): EventDraft =>
-  fact(command.resourceId, 'pr.checks-changed', pick(command, ['checks']), context);
+export const checksChanged = (
+  command: ObservePullRequest,
+  context: CommandContext,
+): ActivityDraft<typeof ActivityEventType.PrChecksChanged> =>
+  fact(command.resourceId, ActivityEventType.PrChecksChanged, { checks: command.checks }, context);
 
-export const reviewAccepted = (command: AcceptReviewSignal, context: CommandContext): EventDraft =>
-  fact(command.resourceId, 'pr.review-accepted', pick(command, ['revision', 'actorId']), context);
+export const reviewAccepted = (
+  command: AcceptReviewSignal,
+  context: CommandContext,
+): ActivityDraft<typeof ActivityEventType.PrReviewAccepted> =>
+  fact(
+    command.resourceId,
+    ActivityEventType.PrReviewAccepted,
+    { revision: command.revision, actorId: command.actorId },
+    context,
+  );
 
 export const reviewAcceptanceSignalRecorded = (
   command: AcceptReviewSignal,
   context: CommandContext,
-): EventDraft =>
+): ActivityDraft<typeof ActivityEventType.ReviewAcceptanceSignalRecorded> =>
   fact(
     command.resourceId,
-    'review.acceptance-signal-recorded',
+    ActivityEventType.ReviewAcceptanceSignalRecorded,
     {
       revision: command.revision,
       actorId: command.actorId,
       actorKind: command.actorKind,
-      acceptedEventId: `${context.commandId}:pr.review-accepted`,
+      acceptedEventId: `${context.commandId}:${ActivityEventType.PrReviewAccepted}`,
       providerEventId: command.acceptedEventId,
       trusted: isReviewAuthorized(command),
     },
@@ -51,11 +80,11 @@ export const reviewAcceptanceSignalRecorded = (
 export const reviewChangesRequested = (
   command: RequestChangesSignal,
   context: CommandContext,
-): EventDraft =>
+): ActivityDraft<typeof ActivityEventType.PrReviewChangesRequested> =>
   fact(
     command.resourceId,
-    'pr.review-changes-requested',
-    pick(command, ['revision', 'actorId']),
+    ActivityEventType.PrReviewChangesRequested,
+    { revision: command.revision, actorId: command.actorId },
     context,
   );
 
@@ -63,108 +92,93 @@ export const reviewRejected = (
   resourceId: ObservePullRequest['resourceId'],
   reason: string,
   context: CommandContext,
-): EventDraft => fact(resourceId, 'pr.review-rejected', { reason }, context);
+): ActivityDraft<typeof ActivityEventType.PrReviewRejected> =>
+  fact(resourceId, ActivityEventType.PrReviewRejected, { reason }, context);
 
 export const mergeDenied = (
-  stream: EntityRef,
+  stream: ResourceStreamRef | WorkItemStreamRef,
   reason: string,
   context: CommandContext,
-  audit: Record<string, unknown> = {},
-): EventDraft =>
-  createEventDraft({
-    eventId: `${context.commandId}:pr.merge-denied`,
-    eventType: 'pr.merge-denied',
-    occurredAt: context.occurredAt,
-    correlationId: context.correlationId,
-    causationId: context.commandId,
-    actor: context.actor,
-    source: { kind: 'internal', id: 'activities-pr' },
-    stream,
-    payload: {
-      activationId: context.commandId,
-      idempotencyKey: `${context.commandId}:pr.merge-denied`,
-      reason,
-      ...audit,
-    },
-  });
+  audit: DenialAudit = {},
+): ActivityDraft<typeof ActivityEventType.PrMergeDenied> =>
+  denialDraft(ActivityEventType.PrMergeDenied, stream, reason, context, audit);
 
 export const approveDenied = (
-  stream: EntityRef,
+  stream: ResourceStreamRef | WorkItemStreamRef,
   reason: string,
   context: CommandContext,
-  audit: Record<string, unknown> = {},
-): EventDraft =>
-  createEventDraft({
-    eventId: `${context.commandId}:pr.approve-denied`,
-    eventType: 'pr.approve-denied',
-    occurredAt: context.occurredAt,
-    correlationId: context.correlationId,
-    causationId: context.commandId,
-    actor: context.actor,
-    source: { kind: 'internal', id: 'activities-pr' },
-    stream,
-    payload: {
-      activationId: context.commandId,
-      idempotencyKey: `${context.commandId}:pr.approve-denied`,
-      reason,
-      ...audit,
-    },
-  });
+  audit: DenialAudit = {},
+): ActivityDraft<typeof ActivityEventType.PrApproveDenied> =>
+  denialDraft(ActivityEventType.PrApproveDenied, stream, reason, context, audit);
 
 export const mergeAuthorized = (
-  stream: EntityRef,
+  stream: ResourceStreamRef,
   revision: string,
   context: CommandContext,
-): EventDraft =>
+): ActivityDraft<typeof ActivityEventType.PrMergeAuthorized> =>
   createEventDraft({
-    eventId: `${context.commandId}:pr.merge-authorized`,
-    eventType: 'pr.merge-authorized',
-    occurredAt: context.occurredAt,
-    correlationId: context.correlationId,
-    causationId: context.commandId,
-    actor: context.actor,
-    source: { kind: 'internal', id: 'activities-pr' },
+    ...metadata(ActivityEventType.PrMergeAuthorized, context),
     stream,
     payload: { revision },
   });
 
-export const deliveryIntentRequested = (
+export const deliveryIntentRequested = <Type extends DeliveryIntentType>(
   resourceId: ObservePullRequest['resourceId'],
-  type: 'pr.approve-requested' | 'pr.merge-requested',
-  payload: Record<string, unknown>,
+  type: Type,
+  payload: Omit<ActivityEventPayloads[Type], 'idempotencyKey'>,
   context: CommandContext,
-): EventDraft =>
+) =>
   createEventDraft({
-    eventId: `${context.commandId}:${type}`,
-    eventType: type,
-    occurredAt: context.occurredAt,
-    correlationId: context.correlationId,
-    causationId: context.commandId,
-    actor: context.actor,
-    source: { kind: 'internal', id: 'activities-pr' },
+    ...metadata(type, context),
     stream: resourceStream(resourceId),
     payload: { idempotencyKey: `${context.commandId}:${type}`, ...payload },
   });
 
-function fact<Type extends string, Payload>(
+function fact<Type extends ActivityEventDraft['eventType']>(
   resourceId: ObservePullRequest['resourceId'],
   eventType: Type,
-  payload: Payload,
+  payload: ActivityEventPayloads[Type],
   context: CommandContext,
-): EventDraft {
+) {
   return createEventDraft({
+    ...metadata(eventType, context),
+    stream: resourceStream(resourceId),
+    payload,
+  });
+}
+
+function denialDraft<
+  Type extends typeof ActivityEventType.PrMergeDenied | typeof ActivityEventType.PrApproveDenied,
+>(
+  eventType: Type,
+  stream: ResourceStreamRef | WorkItemStreamRef,
+  reason: string,
+  context: CommandContext,
+  audit: DenialAudit,
+) {
+  return createEventDraft({
+    ...metadata(eventType, context),
+    stream,
+    payload: {
+      activationId: activationId(context.commandId),
+      idempotencyKey: `${context.commandId}:${eventType}`,
+      reason,
+      ...audit,
+    },
+  });
+}
+
+function metadata<Type extends ActivityEventDraft['eventType']>(
+  eventType: Type,
+  context: CommandContext,
+) {
+  return {
     eventId: `${context.commandId}:${eventType}`,
     eventType,
     occurredAt: context.occurredAt,
     correlationId: context.correlationId,
     causationId: context.commandId,
     actor: context.actor,
-    source: { kind: 'internal', id: 'activities-pr' },
-    stream: resourceStream(resourceId),
-    payload,
-  });
-}
-
-function pick<T extends object, Key extends keyof T>(value: T, keys: readonly Key[]): Pick<T, Key> {
-  return Object.fromEntries(keys.map((key) => [key, value[key]])) as Pick<T, Key>;
+    source: { kind: 'internal' as const, id: 'activities-pr' },
+  };
 }

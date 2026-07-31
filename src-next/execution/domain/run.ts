@@ -1,40 +1,42 @@
-import type { EventEnvelope } from '../../kernel/index.js';
-import { runId } from '../contracts/identifiers.js';
+import { ExecutionEventType, type ExecutionEvent } from '../contracts/events.js';
 import type { RunView } from '../contracts/views.js';
-export function foldRun(events: readonly EventEnvelope[]): RunView | null {
-  const started = events.find((event) => event.eventType === 'execution.run-started');
-  if (started === undefined || !record(started.payload)) return null;
-  const workspace = record(started.payload.workspace)
-    ? (started.payload.workspace as {
-        readonly mode: 'read-only' | 'branch';
-        readonly path: string;
-      })
-    : undefined;
+export function foldRun(events: readonly ExecutionEvent[]): RunView | null {
+  const started = events.find((event) => event.eventType === ExecutionEventType.RunStarted);
+  if (started === undefined) return null;
   const state: RunView = {
-    runId: runId(started.stream.id),
-    activationId: String(started.payload.activationId),
-    activity: String(started.payload.activity),
-    attempt: Number(started.payload.attempt),
+    runId: started.stream.id,
+    activationId: started.payload.activationId,
+    activity: started.payload.activity,
+    attempt: started.payload.attempt,
     status: 'started',
-    startedAt: String(started.payload.startedAt),
-    ...(workspace === undefined ? {} : { workspace }),
+    startedAt: started.payload.startedAt,
+    ...(started.payload.workspace === undefined ? {} : { workspace: started.payload.workspace }),
   };
   for (const event of events) {
-    if (!record(event.payload)) continue;
-    if (event.eventType === 'execution.run-succeeded')
-      Object.assign(state, {
-        status: 'succeeded',
-        finishedAt: event.payload.finishedAt,
-        outcome: event.payload.outcome,
-      });
-    if (event.eventType === 'execution.run-failed')
-      Object.assign(state, {
-        status: 'failed',
-        finishedAt: event.payload.finishedAt,
-        failure: event.payload.failure,
-      });
+    switch (event.eventType) {
+      case ExecutionEventType.RunStarted:
+        break;
+      case ExecutionEventType.RunSucceeded:
+        Object.assign(state, {
+          status: 'succeeded',
+          finishedAt: event.payload.finishedAt,
+          outcome: event.payload.outcome,
+        });
+        break;
+      case ExecutionEventType.RunFailed:
+        Object.assign(state, {
+          status: 'failed',
+          finishedAt: event.payload.finishedAt,
+          failure: event.payload.failure,
+        });
+        break;
+      default:
+        assertNever(event);
+    }
   }
   return state;
 }
-const record = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null;
+
+function assertNever(value: never): never {
+  throw new Error(`Unhandled Execution event: ${JSON.stringify(value)}`);
+}

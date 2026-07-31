@@ -12,6 +12,7 @@ import {
 import type { ResourceView } from '../../resources/index.js';
 import type { WorkItemId } from '../../work/index.js';
 import type { ExecutionConfig } from '../contracts/config.js';
+import { ExecutionEventType, type ExecutionEventPayloads } from '../contracts/events.js';
 import { runId } from '../contracts/identifiers.js';
 import { ExecutionStreamKind, runStream } from '../contracts/streams.js';
 import type { WorkspaceLease, WorkspaceProvider } from '../contracts/workspace.js';
@@ -73,7 +74,7 @@ export function createExecutionService(
           event({
             runId: currentRunId,
             eventId: `${currentRunId}:started`,
-            eventType: 'execution.run-started',
+            eventType: ExecutionEventType.RunStarted,
             occurredAt: startedAt,
             correlationId: context.orchestrationGroupId,
             causationId: activation.activationId,
@@ -95,7 +96,7 @@ export function createExecutionService(
           event({
             runId: currentRunId,
             eventId: `${currentRunId}:succeeded`,
-            eventType: 'execution.run-succeeded',
+            eventType: ExecutionEventType.RunSucceeded,
             occurredAt: finishedAt,
             correlationId: context.orchestrationGroupId,
             causationId: activation.activationId,
@@ -110,7 +111,7 @@ export function createExecutionService(
             event({
               runId: currentRunId,
               eventId: `${currentRunId}:failed`,
-              eventType: 'execution.run-failed',
+              eventType: ExecutionEventType.RunFailed,
               occurredAt: finishedAt,
               correlationId: context.orchestrationGroupId,
               causationId: activation.activationId,
@@ -164,14 +165,14 @@ async function acquireWorkspace(
   if (repositoryResource === undefined) throw new Error('Repository Resource is required');
   return provider.acquire({ mode, workItemId, repositoryResource });
 }
-function event(input: {
+function event<Type extends keyof ExecutionEventPayloads>(input: {
   runId: ReturnType<typeof runId>;
   eventId: string;
-  eventType: string;
+  eventType: Type;
   occurredAt: string;
   correlationId: string;
   causationId: string;
-  payload: unknown;
+  payload: ExecutionEventPayloads[Type];
 }) {
   return createEventDraft({
     eventId: input.eventId,

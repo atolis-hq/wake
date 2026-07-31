@@ -1,4 +1,4 @@
-import { mkdtemp } from 'node:fs/promises';
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, it } from 'vitest';
@@ -47,4 +47,42 @@ it('returns an existing idempotent event while appending only new events in a mi
   const result = await journal.append(stream, 1, [draft('event-1'), draft('event-2')]);
   expect(result.map((event) => event.globalPosition)).toEqual([1, 2]);
   expect((await journal.readAll(0)).map((event) => event.eventId)).toEqual(['event-1', 'event-2']);
+});
+
+it('rejects malformed JSON with file and 1-based line context', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-journal-corrupt-json-'));
+  await mkdir(join(root, 'events'));
+  await writeFile(join(root, 'events', '2026-07-31.jsonl'), '{"eventId":\n', 'utf8');
+
+  await expect(new FileEventJournal(root, new FakeClock()).readAll(0)).rejects.toThrow(
+    /2026-07-31\.jsonl:1/,
+  );
+});
+
+it('rejects a malformed common envelope with file, line, and event context', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-journal-corrupt-envelope-'));
+  await mkdir(join(root, 'events'));
+  await writeFile(
+    join(root, 'events', '2026-07-31.jsonl'),
+    `${JSON.stringify({
+      eventId: 'event-corrupt',
+      eventType: 'work.item-created',
+      schemaVersion: 1,
+      occurredAt: '2026-07-31T12:00:00.000Z',
+      recordedAt: '2026-07-31T12:00:01.000Z',
+      correlationId: 'correlation-1',
+      causationId: 'causation-1',
+      actor: { kind: 'robot', id: 'test' },
+      source: { kind: 'internal', id: 'test' },
+      stream: { kind: 'work-item', id: 'work-1' },
+      sequence: 1,
+      globalPosition: 1,
+      payload: { objective: 'Ship it' },
+    })}\n`,
+    'utf8',
+  );
+
+  await expect(new FileEventJournal(root, new FakeClock()).readAll(0)).rejects.toThrow(
+    /2026-07-31\.jsonl:1.*event-corrupt/i,
+  );
 });

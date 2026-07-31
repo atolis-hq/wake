@@ -1,4 +1,11 @@
-import type { EventDraft, EventEnvelope, EventJournal } from '../../kernel/index.js';
+import type { EventJournal } from '../../kernel/index.js';
+import {
+  decodeResourceEvent,
+  ResourceEventType,
+  selectResourceEvent,
+  type ResourceEvent,
+  type ResourceEventDraft,
+} from '../contracts/events.js';
 import type { ExternalResourceKey } from '../contracts/views.js';
 import type { ResourceId } from '../contracts/identifiers.js';
 import { resourceStream } from '../contracts/streams.js';
@@ -14,26 +21,30 @@ export class ResourceRepository {
 
   async load(resourceId: ResourceId): Promise<LoadedResource> {
     const events = await this.journal.readStream(resourceStream(resourceId));
-    return { sequence: events.length, resource: foldResource(events) };
+    const owned = events.map(selectResourceEvent).filter((event) => event !== null);
+    return { sequence: events.length, resource: foldResource(owned) };
   }
 
-  append(
+  async append(
     resourceId: ResourceId,
     expectedSequence: number,
-    drafts: readonly EventDraft[],
-  ): Promise<readonly EventEnvelope[]> {
-    return this.journal.append(resourceStream(resourceId), expectedSequence, drafts);
+    drafts: readonly ResourceEventDraft[],
+  ): Promise<readonly ResourceEvent[]> {
+    const events = await this.journal.append(resourceStream(resourceId), expectedSequence, drafts);
+    return events.map(decodeResourceEvent);
   }
 
   async findByExternalKey(externalKey: ExternalResourceKey): Promise<FoldedResource | null> {
-    const events = await this.journal.readAll(0);
+    const events = (await this.journal.readAll(0))
+      .map(selectResourceEvent)
+      .filter((event) => event !== null);
     const ids = new Set(
       events
-        .filter((event) => event.eventType === 'resources.resource-discovered')
+        .filter((event) => event.eventType === ResourceEventType.ResourceDiscovered)
         .map((event) => event.stream.id),
     );
     for (const id of ids) {
-      const resource = await this.load(id as ResourceId);
+      const resource = await this.load(id);
       if (
         resource.resource?.view.externalKey.adapter === externalKey.adapter &&
         resource.resource.view.externalKey.key === externalKey.key

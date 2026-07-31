@@ -42,28 +42,6 @@ it('rejects a causal event instead of dispatching another child', async () => {
   expect(rejected).toEqual(['parent-1']);
 });
 
-it('matches a durable schedule slot by its configured cron identity', async () => {
-  const matches: Array<[string, string | undefined]> = [];
-  const reactor = createWatchReactor({
-    async listWatchMatches(eventType: string, cron?: string) {
-      matches.push([eventType, cron]);
-      return [];
-    },
-    async requestChild() {},
-    async rejectCausalActivation() {},
-  });
-  await reactor.react(
-    { eventType: 'control.schedule-slot', eventId: 'slot-1', payload: { cron: '0 * * * *' } },
-    {
-      commandId: 'react-1',
-      correlationId: 'corr-1' as never,
-      occurredAt: '2026-07-30T12:00:00.000Z',
-      actor: { kind: 'system', id: 'test' },
-    },
-  );
-  expect(matches).toEqual([['control.schedule-slot', '0 * * * *']]);
-});
-
 it('does not reject an unrelated causal event', async () => {
   const requested: string[] = [];
   const reactor = createWatchReactor({

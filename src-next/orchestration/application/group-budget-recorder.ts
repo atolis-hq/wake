@@ -9,6 +9,7 @@ import type {
   ChildCoordinationMetadata,
   GroupBudgetExhaustedPayload,
 } from '../contracts/events.js';
+import { OrchestrationEventType, selectOrchestrationEvent } from '../contracts/events.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
 import { coordinationDraft } from '../domain/coordination-events.js';
 
@@ -26,11 +27,13 @@ export class GroupBudgetRecorder {
     for (;;) {
       const events = await this.journal.readStream(stream);
       if (
-        events.some(
-          (event) =>
-            event.eventType === 'orchestration.group-budget-exhausted' &&
-            isRequest(event.payload, metadata.requestId),
-        )
+        events.some((event) => {
+          const owned = selectOrchestrationEvent(event);
+          return (
+            owned?.eventType === OrchestrationEventType.GroupBudgetExhausted &&
+            owned.payload.requestId === metadata.requestId
+          );
+        })
       )
         return;
       try {
@@ -43,7 +46,7 @@ export class GroupBudgetRecorder {
               correlationId: parent.orchestrationGroupId,
               causationId: context.commandId,
             },
-            'orchestration.group-budget-exhausted',
+            OrchestrationEventType.GroupBudgetExhausted,
             payload,
             1,
           ),
@@ -54,12 +57,4 @@ export class GroupBudgetRecorder {
       }
     }
   }
-}
-
-function isRequest(payload: unknown, requestId: string): boolean {
-  return (
-    typeof payload === 'object' &&
-    payload !== null &&
-    (payload as Record<string, unknown>).requestId === requestId
-  );
 }

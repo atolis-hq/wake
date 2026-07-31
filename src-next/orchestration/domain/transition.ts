@@ -1,7 +1,8 @@
 import type { ActivityOutcome } from '../../activities/index.js';
-import type { EventDraft } from '../../kernel/index.js';
 import type { CompiledOutcomeRoute, CompiledWorkflow } from '../contracts/config.js';
+import type { WorkflowOrchestrationEventDraft } from '../contracts/events.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
+import { OrchestrationEventType } from '../contracts/events.js';
 import { activation, nextOrdinal, stateDraft } from './decision-events.js';
 
 interface TransitionInput {
@@ -11,14 +12,16 @@ interface TransitionInput {
 }
 
 export function finishRoute(
-  events: EventDraft[],
+  events: WorkflowOrchestrationEventDraft[],
   definition: CompiledWorkflow,
   state: WorkflowInstanceView,
   input: TransitionInput,
   route: CompiledOutcomeRoute,
 ): void {
   if (route.then === 'done') {
-    events.push(stateDraft(state, input, 'instance-completed', {}, events.length + 1));
+    events.push(
+      stateDraft(state, input, OrchestrationEventType.InstanceCompleted, {}, events.length + 1),
+    );
     return;
   }
   if (route.then === 'await-human') {
@@ -26,7 +29,7 @@ export function finishRoute(
       stateDraft(
         state,
         input,
-        'signal-wait-started',
+        OrchestrationEventType.SignalWaitStarted,
         { signalKind: input.outcome.kind },
         events.length + 1,
       ),
@@ -40,7 +43,7 @@ export function finishRoute(
         stateDraft(
           state,
           input,
-          'instance-blocked',
+          OrchestrationEventType.InstanceBlocked,
           { reason: `repeat.max exceeded for ${route.id}` },
           events.length + 1,
         ),
@@ -48,16 +51,28 @@ export function finishRoute(
       return;
     }
     events.push(
-      stateDraft(state, input, 'repeat-counted', { routeId: route.id, count }, events.length + 1),
+      stateDraft(
+        state,
+        input,
+        OrchestrationEventType.RepeatCounted,
+        { routeId: route.id, count },
+        events.length + 1,
+      ),
     );
   }
   const stage = definition.stages[route.then]!;
   events.push(
-    stateDraft(state, input, 'stage-entered', { stage: route.then }, events.length + 1),
     stateDraft(
       state,
       input,
-      'activity-requested',
+      OrchestrationEventType.StageEntered,
+      { stage: route.then },
+      events.length + 1,
+    ),
+    stateDraft(
+      state,
+      input,
+      OrchestrationEventType.ActivityRequested,
       activation(state.workflowInstanceId, nextOrdinal(state), stage.activity, stage.with, {
         execution: stage.execution,
       }),

@@ -1,4 +1,9 @@
-import { createEventDraft, type EventDraft } from '../../kernel/index.js';
+import { createEventDraft } from '../../kernel/index.js';
+import {
+  type ActivityRequestedPayload,
+  type OrchestrationEventPayloads,
+  type WorkflowOrchestrationEventName,
+} from '../contracts/events.js';
 import { workflowInstanceId } from '../contracts/identifiers.js';
 import { workflowInstanceStream } from '../contracts/streams.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
@@ -26,11 +31,11 @@ export function activation(
   activity: string,
   input: unknown,
   options: {
-    readonly execution: unknown;
+    readonly execution: ActivityRequestedPayload['execution'];
     readonly followOnIndex?: number;
     readonly supplemental?: boolean;
   },
-) {
+): ActivityRequestedPayload {
   return {
     activationId: `${id}:activity:${ordinal}`,
     ordinal,
@@ -42,15 +47,15 @@ export function activation(
   };
 }
 
-export function startDraft(
+export function startDraft<Type extends WorkflowOrchestrationEventName>(
   input: StartDraftContext,
-  suffix: string,
-  payload: unknown,
+  eventType: Type,
+  payload: OrchestrationEventPayloads[Type],
   ordinal: number,
-): EventDraft {
+) {
   return createEventDraft({
-    eventId: `${input.causationId}:orchestration.${suffix}:${ordinal}`,
-    eventType: `orchestration.${suffix}`,
+    eventId: `${input.causationId}:${eventType}:${ordinal}`,
+    eventType,
     occurredAt: input.occurredAt,
     correlationId: input.correlationId,
     causationId: input.causationId,
@@ -61,16 +66,16 @@ export function startDraft(
   });
 }
 
-export function stateDraft(
+export function stateDraft<Type extends WorkflowOrchestrationEventName>(
   state: WorkflowInstanceView,
   input: DecisionContext,
-  suffix: string,
-  payload: unknown,
+  eventType: Type,
+  payload: OrchestrationEventPayloads[Type],
   ordinal: number,
-): EventDraft {
+) {
   return createEventDraft({
-    eventId: `${input.causationId}:orchestration.${suffix}:${ordinal}`,
-    eventType: `orchestration.${suffix}`,
+    eventId: `${input.causationId}:${eventType}:${ordinal}`,
+    eventType,
     occurredAt: input.occurredAt,
     correlationId: state.orchestrationGroupId,
     causationId: input.causationId,

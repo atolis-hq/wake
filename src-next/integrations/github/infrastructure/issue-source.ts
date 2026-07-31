@@ -1,16 +1,17 @@
-import { createEventDraft, EventActorKind, type EventDraft } from '../../../kernel/index.js';
+import { createEventDraft, EventActorKind } from '../../../kernel/index.js';
 import { BuiltInAdapterId } from '../../contracts/identifiers.js';
 import { integrationStream } from '../../contracts/streams.js';
 import type { GitHubIssuePayload } from '../contracts/payloads.js';
+import { GitHubEventType, type GitHubAdapterEventDraft } from '../contracts/events.js';
 
 export function issueObservation(input: {
   readonly repository: string;
   readonly issue: GitHubIssuePayload;
-}): EventDraft {
+}): Extract<GitHubAdapterEventDraft, { eventType: typeof GitHubEventType.WorkObserved }> {
   const key = `${input.repository}#${input.issue.number}`;
   return createEventDraft({
     eventId: `github:issue:${key}:${input.issue.updated_at}`,
-    eventType: 'integration.github.work-observed',
+    eventType: GitHubEventType.WorkObserved,
     occurredAt: input.issue.updated_at,
     correlationId: `github:${key}`,
     causationId: `github:${key}:${input.issue.updated_at}`,

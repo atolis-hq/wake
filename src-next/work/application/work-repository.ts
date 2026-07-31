@@ -1,4 +1,10 @@
-import type { EventDraft, EventEnvelope, EventJournal } from '../../kernel/index.js';
+import type { EventJournal } from '../../kernel/index.js';
+import {
+  decodeWorkEvent,
+  selectWorkEvent,
+  type WorkEvent,
+  type WorkEventDraft,
+} from '../contracts/events.js';
 import { foldWorkItem } from '../domain/work-item.js';
 import type { WorkItemId } from '../contracts/identifiers.js';
 import { workItemStream } from '../contracts/streams.js';
@@ -14,14 +20,16 @@ export class WorkRepository {
 
   async load(workItemId: WorkItemId): Promise<LoadedWorkItem> {
     const events = await this.journal.readStream(workItemStream(workItemId));
-    return { sequence: events.length, view: foldWorkItem(events) };
+    const owned = events.map(selectWorkEvent).filter((event) => event !== null);
+    return { sequence: events.length, view: foldWorkItem(owned) };
   }
 
-  append(
+  async append(
     workItemId: WorkItemId,
     expectedSequence: number,
-    drafts: readonly EventDraft[],
-  ): Promise<readonly EventEnvelope[]> {
-    return this.journal.append(workItemStream(workItemId), expectedSequence, drafts);
+    drafts: readonly WorkEventDraft[],
+  ): Promise<readonly WorkEvent[]> {
+    const events = await this.journal.append(workItemStream(workItemId), expectedSequence, drafts);
+    return events.map(decodeWorkEvent);
   }
 }

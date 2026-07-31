@@ -1,10 +1,13 @@
-import type { EventDraft, EventJournal } from '../../../kernel/index.js';
+import type { EventJournal } from '../../../kernel/index.js';
+import { GitHubEventType, type GitHubAdapterEventDraft } from '../contracts/events.js';
 import { BuiltInAdapterId } from '../../contracts/identifiers.js';
 import { integrationStream } from '../../contracts/streams.js';
 
 export interface ExternalEventSource {
-  poll(signal: AbortSignal): Promise<readonly EventDraft[]>;
+  poll(signal: AbortSignal): Promise<readonly GitHubAdapterEventDraft[]>;
 }
+
+const gitHubEventTypes = new Set<string>(Object.values(GitHubEventType));
 
 export class PollService {
   constructor(
@@ -18,7 +21,7 @@ export class PollService {
       if (draft.source.kind !== 'adapter' || draft.source.id !== 'github') {
         throw new Error('PollService accepts GitHub adapter evidence only');
       }
-      if (!draft.eventType.startsWith('integration.github.')) {
+      if (!gitHubEventTypes.has(draft.eventType)) {
         throw new Error('PollService cannot append canonical domain events');
       }
       const stream = integrationStream(BuiltInAdapterId.GitHub);

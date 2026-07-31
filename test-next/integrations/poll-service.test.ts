@@ -25,7 +25,16 @@ describe('PollService', () => {
             actor: { kind: 'integration', id: 'github' },
             source: { kind: 'adapter', id: 'github' },
             stream: integrationStream(BuiltInAdapterId.GitHub),
-            payload: { externalKey: 'owner/repo#7' },
+            payload: {
+              externalKey: 'owner/repo#7',
+              kind: 'issue',
+              title: 'Issue 7',
+              body: '',
+              state: 'open',
+              revision: 'revision-1',
+              actor: { id: 'octocat', kind: 'human' },
+              raw: {},
+            },
           }),
         ];
       },

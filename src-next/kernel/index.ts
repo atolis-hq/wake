@@ -2,6 +2,7 @@ export * from './contracts/clock.js';
 export * from './contracts/checkpoint-store.js';
 export * from './contracts/commands.js';
 export * from './contracts/event-journal.js';
+export * from './contracts/event-schema.js';
 export * from './contracts/events.js';
 export * from './contracts/id-generator.js';
 export { causationId, correlationId, eventId } from './contracts/identifiers.js';

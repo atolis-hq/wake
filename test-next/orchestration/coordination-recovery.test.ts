@@ -223,7 +223,7 @@ it('uses unique durable event identities for the same trigger across two parents
   expect(new Set(requested.map((candidate) => candidate.eventId)).size).toBe(2);
 
   await createWatchReactor({
-    listWatchMatches: (eventType, cron) => service.listWatchMatches(eventType, cron),
+    listWatchMatches: (eventType) => service.listWatchMatches(eventType),
     requestChild: (request, context) => service.requestChild(request, context),
     rejectCausalActivation: (request, context) => service.rejectCausalActivation(request, context),
     async isCausalRepeat() {

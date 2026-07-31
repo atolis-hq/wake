@@ -1,12 +1,19 @@
 import {
   createEventDraft,
   type CommandContext,
+  type EventEnvelope,
   type EventJournal,
   WrongExpectedSequenceError,
 } from '../../kernel/index.js';
 import type { WorkItemId } from '../../work/index.js';
 import type { ChildWorkflowRequest } from '../contracts/events.js';
 import {
+  OrchestrationEventType,
+  selectOrchestrationEvent,
+  type OrchestrationGroupEvent,
+} from '../contracts/events.js';
+import {
+  isOrchestrationGroupStream,
   primaryOrchestrationGroupStream,
   type OrchestrationGroupStreamRef,
 } from '../contracts/streams.js';
@@ -22,7 +29,7 @@ export class CoordinationClaims {
     const stream = primaryOrchestrationGroupStream(workItemId);
     for (;;) {
       const events = await this.journal.readStream(stream);
-      const owner = primaryOwner(events);
+      const owner = primaryOwner(groupEvents(events));
       if (owner !== undefined) {
         if (owner === workflowInstanceId) return;
         throw new Error(`WorkItem already has an active primary workflow owned by ${owner}`);
@@ -30,8 +37,8 @@ export class CoordinationClaims {
       try {
         await this.journal.append(stream, events.length, [
           createEventDraft({
-            eventId: `${context.commandId}:orchestration.primary-claimed:${workItemId}`,
-            eventType: 'orchestration.primary-claimed',
+            eventId: `${context.commandId}:${OrchestrationEventType.PrimaryClaimed}:${workItemId}`,
+            eventType: OrchestrationEventType.PrimaryClaimed,
             occurredAt: context.occurredAt,
             correlationId: context.correlationId,
             causationId: context.commandId,
@@ -49,7 +56,9 @@ export class CoordinationClaims {
   }
 
   async primaryWorkflowInstanceId(workItemId: WorkItemId): Promise<string | undefined> {
-    return primaryOwner(await this.journal.readStream(primaryOrchestrationGroupStream(workItemId)));
+    return primaryOwner(
+      groupEvents(await this.journal.readStream(primaryOrchestrationGroupStream(workItemId))),
+    );
   }
 
   async claimWithinBudget(
@@ -59,13 +68,13 @@ export class CoordinationClaims {
   ): Promise<boolean> {
     for (;;) {
       const events = await this.journal.readStream(stream);
-      if (claimedRequestIds(events).has(request.requestId)) return true;
+      if (claimedRequestIds(groupEvents(events)).has(request.requestId)) return true;
       if (events.length >= request.maxPerGroup) return false;
       try {
         await this.journal.append(stream, events.length, [
           createEventDraft({
-            eventId: `${context.commandId}:orchestration.group-claim:${request.requestId}`,
-            eventType: 'orchestration.group-claimed',
+            eventId: `${context.commandId}:${OrchestrationEventType.GroupClaimed}:${request.requestId}`,
+            eventType: OrchestrationEventType.GroupClaimed,
             occurredAt: context.occurredAt,
             correlationId: context.correlationId,
             causationId: context.commandId,
@@ -83,21 +92,44 @@ export class CoordinationClaims {
   }
 }
 
-function primaryOwner(events: readonly { readonly payload: unknown }[]): string | undefined {
+function primaryOwner(events: readonly OrchestrationGroupEvent[]): string | undefined {
   for (const event of events) {
-    if (typeof event.payload !== 'object' || event.payload === null) continue;
-    const owner = (event.payload as Record<string, unknown>).workflowInstanceId;
-    if (typeof owner === 'string') return owner;
+    switch (event.eventType) {
+      case OrchestrationEventType.PrimaryClaimed:
+        return event.payload.workflowInstanceId;
+      case OrchestrationEventType.GroupClaimed:
+        break;
+      default:
+        assertNever(event);
+    }
   }
   return undefined;
 }
 
-function claimedRequestIds(events: readonly { readonly payload: unknown }[]): ReadonlySet<string> {
+function claimedRequestIds(events: readonly OrchestrationGroupEvent[]): ReadonlySet<string> {
   return new Set(
     events.flatMap((event) => {
-      if (typeof event.payload !== 'object' || event.payload === null) return [];
-      const requestId = (event.payload as Record<string, unknown>).requestId;
-      return typeof requestId === 'string' ? [requestId] : [];
+      switch (event.eventType) {
+        case OrchestrationEventType.GroupClaimed:
+          return [event.payload.requestId];
+        case OrchestrationEventType.PrimaryClaimed:
+          return [];
+        default:
+          return assertNever(event);
+      }
     }),
   );
+}
+
+function groupEvents(events: readonly EventEnvelope[]): readonly OrchestrationGroupEvent[] {
+  return events
+    .map(selectOrchestrationEvent)
+    .filter(
+      (event): event is OrchestrationGroupEvent =>
+        event !== null && isOrchestrationGroupStream(event.stream),
+    );
+}
+
+function assertNever(value: never): never {
+  throw new Error(`Unhandled Orchestration group event: ${JSON.stringify(value)}`);
 }

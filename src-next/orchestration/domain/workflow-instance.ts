@@ -1,19 +1,23 @@
-import type { EventDraft, EventEnvelope } from '../../kernel/index.js';
-import { workItemId } from '../../work/index.js';
+import {
+  OrchestrationEventType,
+  type WorkflowOrchestrationEvent,
+  type WorkflowOrchestrationEventDraft,
+} from '../contracts/events.js';
 import type { ActivityActivationView, WorkflowInstanceView } from '../contracts/views.js';
 
-type Fact = EventDraft<string, unknown> | EventEnvelope<string, unknown>;
-export function foldWorkflowInstance(events: readonly Fact[]): WorkflowInstanceView | null {
-  const first = events.find((event) => event.eventType === 'orchestration.instance-started');
-  if (first === undefined || !record(first.payload)) return null;
+type WorkflowFact = WorkflowOrchestrationEvent | WorkflowOrchestrationEventDraft;
+
+export function foldWorkflowInstance(events: readonly WorkflowFact[]): WorkflowInstanceView | null {
+  const first = events.find((event) => event.eventType === OrchestrationEventType.InstanceStarted);
+  if (first === undefined) return null;
   const state: Mutable = {
     workflowInstanceId: first.stream.id,
-    workItemId: workItemId(String(first.payload.workItemId)),
-    workflowName: String(first.payload.workflowName),
-    orchestrationGroupId: String(first.payload.orchestrationGroupId),
+    workItemId: first.payload.workItemId,
+    workflowName: first.payload.workflowName,
+    orchestrationGroupId: first.payload.orchestrationGroupId,
     ...optionalChildFields(first.payload),
     status: 'active',
-    currentStage: String(first.payload.entry),
+    currentStage: first.payload.entry,
     repeatCounts: {},
     retryCounts: {},
     supplementalQueue: [],
@@ -24,6 +28,265 @@ export function foldWorkflowInstance(events: readonly Fact[]): WorkflowInstanceV
     childCompletionRecorded: false,
   };
   for (const event of events) apply(state, event);
+  return immutableView(state);
+}
+
+type Mutable = {
+  workflowInstanceId: string;
+  workItemId: WorkflowInstanceView['workItemId'];
+  workflowName: string;
+  orchestrationGroupId: string;
+  parentWorkflowInstanceId?: string;
+  watchId?: string;
+  triggerId?: string;
+  causalCycleId?: string;
+  requestId?: string;
+  status: WorkflowInstanceView['status'];
+  currentStage: string;
+  pendingActivation?: ActivityActivationView;
+  repeatCounts: Record<string, number>;
+  retryCounts: Record<string, number>;
+  waitingFor?: WorkflowInstanceView['waitingFor'];
+  supplementalQueue: {
+    activity: string;
+    input: unknown;
+    requestedBy: string;
+  }[];
+  acceptedSignalIds: string[];
+  acceptedOutcomes: string[];
+  acceptedChildCompletionIds: string[];
+  causalRejectionIds: string[];
+  childCompletionRecorded: boolean;
+  lastOutcome?: WorkflowInstanceView['lastOutcome'];
+};
+
+function apply(state: Mutable, event: WorkflowFact): void {
+  if (isActivityFact(event)) {
+    applyActivityFact(state, event);
+    return;
+  }
+  if (isInteractionFact(event)) {
+    applyInteractionFact(state, event);
+    return;
+  }
+  if (isLifecycleFact(event)) {
+    applyLifecycleFact(state, event);
+    return;
+  }
+  applyCoordinationFact(state, event);
+}
+
+type FactsOf<Type extends WorkflowFact['eventType']> = Extract<
+  WorkflowFact,
+  { readonly eventType: Type }
+>;
+type ActivityFact = FactsOf<
+  | typeof OrchestrationEventType.StageEntered
+  | typeof OrchestrationEventType.ActivityRequested
+  | typeof OrchestrationEventType.ActivityStarted
+  | typeof OrchestrationEventType.ActivityOutcomeAccepted
+  | typeof OrchestrationEventType.ActivityWaiting
+>;
+type InteractionFact = FactsOf<
+  | typeof OrchestrationEventType.SignalWaitStarted
+  | typeof OrchestrationEventType.SignalAccepted
+  | typeof OrchestrationEventType.SupplementalActivityQueued
+  | typeof OrchestrationEventType.SupplementalActivityDequeued
+>;
+type LifecycleFact = FactsOf<
+  | typeof OrchestrationEventType.RepeatCounted
+  | typeof OrchestrationEventType.RetryCounted
+  | typeof OrchestrationEventType.InstanceCompleted
+  | typeof OrchestrationEventType.InstanceBlocked
+  | typeof OrchestrationEventType.InstanceSuperseded
+>;
+type CoordinationFact = Exclude<WorkflowFact, ActivityFact | InteractionFact | LifecycleFact>;
+
+function isActivityFact(event: WorkflowFact): event is ActivityFact {
+  switch (event.eventType) {
+    case OrchestrationEventType.StageEntered:
+    case OrchestrationEventType.ActivityRequested:
+    case OrchestrationEventType.ActivityStarted:
+    case OrchestrationEventType.ActivityOutcomeAccepted:
+    case OrchestrationEventType.ActivityWaiting:
+      return true;
+    default:
+      return false;
+  }
+}
+
+function applyActivityFact(state: Mutable, event: ActivityFact): void {
+  switch (event.eventType) {
+    case OrchestrationEventType.StageEntered:
+      state.currentStage = event.payload.stage;
+      return;
+    case OrchestrationEventType.ActivityRequested:
+      applyActivityRequested(state, event.payload);
+      return;
+    case OrchestrationEventType.ActivityStarted:
+      updateActivationStatus(state, event.payload.activationId, 'running');
+      return;
+    case OrchestrationEventType.ActivityOutcomeAccepted:
+      state.acceptedOutcomes.push(event.payload.activationId);
+      state.lastOutcome = event.payload.outcome;
+      updateActivationStatus(state, event.payload.activationId, 'completed');
+      return;
+    case OrchestrationEventType.ActivityWaiting:
+      applyActivityWaiting(state, event);
+      return;
+    default:
+      assertNever(event);
+  }
+}
+
+function isInteractionFact(event: WorkflowFact): event is InteractionFact {
+  switch (event.eventType) {
+    case OrchestrationEventType.SignalWaitStarted:
+    case OrchestrationEventType.SignalAccepted:
+    case OrchestrationEventType.SupplementalActivityQueued:
+    case OrchestrationEventType.SupplementalActivityDequeued:
+      return true;
+    default:
+      return false;
+  }
+}
+
+function applyInteractionFact(state: Mutable, event: InteractionFact): void {
+  switch (event.eventType) {
+    case OrchestrationEventType.SignalWaitStarted:
+      applySignalWaitStarted(state, event);
+      return;
+    case OrchestrationEventType.SignalAccepted:
+      state.status = 'active';
+      state.acceptedSignalIds.push(event.payload.providerEventId);
+      delete state.waitingFor;
+      return;
+    case OrchestrationEventType.SupplementalActivityQueued:
+      state.supplementalQueue.push(event.payload);
+      return;
+    case OrchestrationEventType.SupplementalActivityDequeued:
+      state.supplementalQueue.shift();
+      return;
+    default:
+      assertNever(event);
+  }
+}
+
+function isLifecycleFact(event: WorkflowFact): event is LifecycleFact {
+  switch (event.eventType) {
+    case OrchestrationEventType.RepeatCounted:
+    case OrchestrationEventType.RetryCounted:
+    case OrchestrationEventType.InstanceCompleted:
+    case OrchestrationEventType.InstanceBlocked:
+    case OrchestrationEventType.InstanceSuperseded:
+      return true;
+    default:
+      return false;
+  }
+}
+
+function applyLifecycleFact(state: Mutable, event: LifecycleFact): void {
+  switch (event.eventType) {
+    case OrchestrationEventType.RepeatCounted:
+      state.repeatCounts[event.payload.routeId] = event.payload.count;
+      return;
+    case OrchestrationEventType.RetryCounted:
+      state.retryCounts[event.payload.retryKey] = event.payload.count;
+      return;
+    case OrchestrationEventType.InstanceCompleted:
+      state.status = 'completed';
+      delete state.pendingActivation;
+      delete state.waitingFor;
+      return;
+    case OrchestrationEventType.InstanceBlocked:
+      state.status = 'blocked';
+      return;
+    case OrchestrationEventType.InstanceSuperseded:
+      state.status = 'superseded';
+      return;
+    default:
+      assertNever(event);
+  }
+}
+
+function applyCoordinationFact(state: Mutable, event: CoordinationFact): void {
+  switch (event.eventType) {
+    case OrchestrationEventType.InstanceStarted:
+    case OrchestrationEventType.ChildRequested:
+    case OrchestrationEventType.ChildStarted:
+    case OrchestrationEventType.GroupBudgetExhausted:
+      return;
+    case OrchestrationEventType.ChildCompleted:
+      state.childCompletionRecorded = true;
+      return;
+    case OrchestrationEventType.ChildCompletionConsumed:
+      state.acceptedChildCompletionIds.push(event.payload.childWorkflowInstanceId);
+      return;
+    case OrchestrationEventType.CausalActivationRejected:
+      state.causalRejectionIds.push(event.payload.triggerId);
+      return;
+    default:
+      assertNever(event);
+  }
+}
+
+function applyActivityWaiting(
+  state: Mutable,
+  event: FactsOf<typeof OrchestrationEventType.ActivityWaiting>,
+): void {
+  state.status = 'waiting';
+  state.waitingFor = {
+    signalKind: event.payload.signalKind,
+    intentEventId: event.payload.intentEventId,
+  };
+  state.lastOutcome = event.payload.outcome;
+  updateActivationStatus(state, event.payload.activationId, 'waiting');
+}
+
+function applySignalWaitStarted(
+  state: Mutable,
+  event: FactsOf<typeof OrchestrationEventType.SignalWaitStarted>,
+): void {
+  state.status = 'waiting';
+  state.waitingFor = {
+    signalKind: event.payload.signalKind,
+    ...(event.payload.resourceId === undefined ? {} : { resourceId: event.payload.resourceId }),
+    ...(event.payload.revision === undefined ? {} : { revision: event.payload.revision }),
+  };
+}
+
+function updateActivationStatus(
+  state: Mutable,
+  activationId: string,
+  status: ActivityActivationView['status'],
+): void {
+  if (state.pendingActivation?.activationId === activationId) {
+    state.pendingActivation = { ...state.pendingActivation, status };
+  }
+}
+
+function applyActivityRequested(
+  state: Mutable,
+  payload: Extract<
+    WorkflowFact,
+    { eventType: typeof OrchestrationEventType.ActivityRequested }
+  >['payload'],
+): void {
+  state.status = 'active';
+  delete state.waitingFor;
+  state.pendingActivation = {
+    activationId: payload.activationId,
+    ordinal: payload.ordinal,
+    activity: payload.activity,
+    input: payload.input,
+    execution: payload.execution,
+    status: 'pending',
+    ...(payload.followOnIndex === undefined ? {} : { followOnIndex: payload.followOnIndex }),
+    ...(payload.supplemental === true ? { supplemental: true } : {}),
+  };
+}
+
+function immutableView(state: Mutable): WorkflowInstanceView {
   return {
     workflowInstanceId: state.workflowInstanceId,
     workItemId: state.workItemId,
@@ -53,179 +316,27 @@ export function foldWorkflowInstance(events: readonly Fact[]): WorkflowInstanceV
     ...(state.waitingFor === undefined ? {} : { waitingFor: state.waitingFor }),
   };
 }
-type Mutable = {
-  workflowInstanceId: string;
-  workItemId: ReturnType<typeof workItemId>;
-  workflowName: string;
-  orchestrationGroupId: string;
-  parentWorkflowInstanceId?: string;
-  watchId?: string;
-  triggerId?: string;
-  causalCycleId?: string;
-  requestId?: string;
-  status: WorkflowInstanceView['status'];
-  currentStage: string;
-  pendingActivation?: ActivityActivationView;
-  repeatCounts: Record<string, number>;
-  retryCounts: Record<string, number>;
-  waitingFor?: WorkflowInstanceView['waitingFor'];
-  supplementalQueue: {
-    activity: string;
-    input: unknown;
-    requestedBy: string;
-  }[];
-  acceptedSignalIds: string[];
-  acceptedOutcomes: string[];
-  acceptedChildCompletionIds: string[];
-  causalRejectionIds: string[];
-  childCompletionRecorded: boolean;
-  lastOutcome?: WorkflowInstanceView['lastOutcome'];
-};
-function apply(state: Mutable, event: Fact): void {
-  const payload = record(event.payload) ? event.payload : {};
-  if (event.eventType === 'orchestration.stage-entered') state.currentStage = String(payload.stage);
-  applyActivity(state, event.eventType, payload);
-  applyStatus(state, event.eventType, payload);
-}
-function applyActivity(state: Mutable, eventType: string, payload: Record<string, unknown>): void {
-  if (eventType === 'orchestration.activity-requested') {
-    state.status = 'active';
-    delete state.waitingFor;
-    state.pendingActivation = {
-      activationId: String(payload.activationId),
-      ordinal: Number(payload.ordinal),
-      activity: String(payload.activity),
-      input: payload.input,
-      execution: payload.execution as ActivityActivationView['execution'],
-      status: 'pending',
-      ...(typeof payload.followOnIndex === 'number'
-        ? { followOnIndex: payload.followOnIndex }
-        : {}),
-      ...(payload.supplemental === true ? { supplemental: true } : {}),
-    };
-  }
-  if (
-    eventType === 'orchestration.activity-started' &&
-    state.pendingActivation?.activationId === payload.activationId
-  ) {
-    const pending = state.pendingActivation as ActivityActivationView;
-    state.pendingActivation = { ...pending, status: 'running' };
-  }
-  if (eventType === 'orchestration.activity-outcome-accepted') {
-    state.acceptedOutcomes.push(String(payload.activationId));
-    state.lastOutcome = payload.outcome as WorkflowInstanceView['lastOutcome'];
-    if (state.pendingActivation?.activationId === payload.activationId) {
-      const pending = state.pendingActivation as ActivityActivationView;
-      state.pendingActivation = { ...pending, status: 'completed' };
-    }
-  }
-  applyActivityWaiting(state, eventType, payload);
-}
-function applyActivityWaiting(
-  state: Mutable,
-  eventType: string,
-  payload: Record<string, unknown>,
-): void {
-  if (
-    eventType === 'orchestration.activity-waiting' &&
-    state.pendingActivation?.activationId === payload.activationId
-  ) {
-    const pending = state.pendingActivation as ActivityActivationView;
-    state.pendingActivation = { ...pending, status: 'waiting' };
-    state.lastOutcome = payload.outcome as WorkflowInstanceView['lastOutcome'];
-  }
-}
-function applyStatus(state: Mutable, eventType: string, payload: Record<string, unknown>): void {
-  applySignalStatus(state, eventType, payload);
-  applyCoordinationStatus(state, eventType, payload);
-  applyCountersAndQueue(state, eventType, payload);
-  applyLifecycleStatus(state, eventType);
+
+function optionalChildFields(
+  payload: Extract<
+    WorkflowFact,
+    { eventType: typeof OrchestrationEventType.InstanceStarted }
+  >['payload'],
+): Pick<
+  Mutable,
+  'parentWorkflowInstanceId' | 'watchId' | 'triggerId' | 'causalCycleId' | 'requestId'
+> {
+  return 'parentWorkflowInstanceId' in payload
+    ? {
+        parentWorkflowInstanceId: payload.parentWorkflowInstanceId,
+        watchId: payload.watchId,
+        triggerId: payload.triggerId,
+        causalCycleId: payload.causalCycleId,
+        requestId: payload.requestId,
+      }
+    : {};
 }
 
-function applySignalStatus(
-  state: Mutable,
-  eventType: string,
-  payload: Record<string, unknown>,
-): void {
-  if (eventType === 'orchestration.signal-wait-started') {
-    state.status = 'waiting';
-    state.waitingFor = {
-      signalKind: String(payload.signalKind),
-      ...(typeof payload.resourceId === 'string' ? { resourceId: payload.resourceId } : {}),
-      ...(typeof payload.revision === 'string' ? { revision: payload.revision } : {}),
-    };
-  }
-  if (eventType === 'orchestration.activity-waiting') {
-    state.status = 'waiting';
-    state.waitingFor = {
-      signalKind: String(payload.signalKind),
-      intentEventId: String(payload.intentEventId),
-    };
-  }
-  if (eventType === 'orchestration.signal-accepted') {
-    state.status = 'active';
-    state.acceptedSignalIds.push(String(payload.providerEventId));
-    delete state.waitingFor;
-  }
-}
-
-function applyCoordinationStatus(
-  state: Mutable,
-  eventType: string,
-  payload: Record<string, unknown>,
-): void {
-  if (eventType === 'orchestration.child-completion-consumed')
-    state.acceptedChildCompletionIds.push(String(payload.childWorkflowInstanceId));
-  if (eventType === 'orchestration.causal-activation-rejected')
-    state.causalRejectionIds.push(String(payload.triggerId));
-  if (eventType === 'orchestration.child-completed') state.childCompletionRecorded = true;
-}
-
-function applyCountersAndQueue(
-  state: Mutable,
-  eventType: string,
-  payload: Record<string, unknown>,
-): void {
-  if (eventType === 'orchestration.repeat-counted')
-    state.repeatCounts[String(payload.routeId)] = Number(payload.count);
-  if (eventType === 'orchestration.retry-counted')
-    state.retryCounts[String(payload.retryKey)] = Number(payload.count);
-  if (eventType === 'orchestration.supplemental-activity-queued')
-    state.supplementalQueue.push({
-      activity: String(payload.activity),
-      input: payload.input,
-      requestedBy: String(payload.requestedBy),
-    });
-  if (eventType === 'orchestration.supplemental-activity-dequeued') state.supplementalQueue.shift();
-}
-
-function applyLifecycleStatus(state: Mutable, eventType: string): void {
-  if (eventType === 'orchestration.instance-completed') {
-    state.status = 'completed';
-    delete state.pendingActivation;
-    delete state.waitingFor;
-  }
-  if (eventType === 'orchestration.instance-blocked') state.status = 'blocked';
-  if (eventType === 'orchestration.instance-superseded') state.status = 'superseded';
-}
-const record = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null;
-const stringOrUndefined = (value: unknown): string | undefined =>
-  typeof value === 'string' ? value : undefined;
-
-function optionalChildFields(payload: Record<string, unknown>) {
-  const parentWorkflowInstanceId = stringOrUndefined(payload.parentWorkflowInstanceId);
-  const watchId = stringOrUndefined(payload.watchId);
-  const triggerId = stringOrUndefined(payload.triggerId);
-  const causalCycleId = stringOrUndefined(payload.causalCycleId);
-  const requestId = stringOrUndefined(payload.requestId);
-  if (
-    parentWorkflowInstanceId === undefined ||
-    watchId === undefined ||
-    triggerId === undefined ||
-    causalCycleId === undefined ||
-    requestId === undefined
-  )
-    return {};
-  return { parentWorkflowInstanceId, watchId, triggerId, causalCycleId, requestId };
+function assertNever(value: never): never {
+  throw new Error(`Unhandled WorkflowInstance event: ${JSON.stringify(value)}`);
 }

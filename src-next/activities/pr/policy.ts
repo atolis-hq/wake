@@ -7,6 +7,7 @@ import type {
   PullRequestTarget,
   PullRequestView,
 } from './contracts.js';
+import { ActivityEventType } from '../contracts/events.js';
 
 export function decidePullRequestAuthority(
   input: PullRequestAuthorityInput,
@@ -33,11 +34,15 @@ export function decidePullRequestAuthority(
   return { allowed: true, resourceId: pullRequest.resourceId, revision: pullRequest.headRevision };
 }
 
-export function createPullRequestMergeDenial(
-  decision: PullRequestAuthorityDecision,
-): { readonly eventType: 'pr.merge-denied'; readonly payload: { readonly reason: string } } | null {
+export function createPullRequestMergeDenial(decision: PullRequestAuthorityDecision): {
+  readonly eventType: typeof ActivityEventType.PrMergeDenied;
+  readonly payload: { readonly reason: string };
+} | null {
   if (decision.allowed) return null;
-  return { eventType: 'pr.merge-denied', payload: { reason: decision.reason } };
+  return {
+    eventType: ActivityEventType.PrMergeDenied,
+    payload: { reason: decision.reason },
+  };
 }
 
 function hasPrimaryCorrelationConflict(

@@ -3,7 +3,6 @@ import {
   EventActorKind,
   type CheckpointStore,
   type CommandContext,
-  type EventEnvelope,
   type EventJournal,
 } from '../../../kernel/index.js';
 import {
@@ -17,6 +16,7 @@ import { resourceId, type ResourceId } from '../../../resources/index.js';
 import type { WorkService } from '../../../work/index.js';
 import { workItemId, type WorkItemId } from '../../../work/index.js';
 import type { ExternalWorkObservedPayload, GitHubAdapterEvent } from '../contracts/events.js';
+import { GitHubEventType, selectGitHubAdapterEvent } from '../contracts/events.js';
 import { observePullRequest } from './pull-request-translation.js';
 
 export type InboundCommandCandidate =
@@ -83,16 +83,16 @@ export class InboundTranslator {
     const position = await this.checkpoints.load(checkpoint);
     const events = await this.journal.readAll(position, limit);
     for (const event of events) {
-      if (event.eventType === 'integration.github.work-observed')
-        await this.apply(event as GitHubAdapterEvent);
-      if (event.eventType === 'integration.github.comment-observed')
-        await this.applyReviewSignal(event as GitHubAdapterEvent);
+      const owned = selectGitHubAdapterEvent(event);
+      if (owned?.eventType === GitHubEventType.WorkObserved) await this.apply(owned);
+      if (owned?.eventType === GitHubEventType.CommentObserved) await this.applyReviewSignal(owned);
       await this.checkpoints.save(checkpoint, event.globalPosition);
     }
   }
 
-  private async apply(event: GitHubAdapterEvent): Promise<void> {
-    if (event.eventType !== 'integration.github.work-observed') return;
+  private async apply(
+    event: Extract<GitHubAdapterEvent, { eventType: typeof GitHubEventType.WorkObserved }>,
+  ): Promise<void> {
     if (this.work === undefined || this.resources === undefined) return;
     const payload = event.payload;
     const context = commandContext(event);
@@ -146,8 +146,9 @@ export class InboundTranslator {
       );
   }
 
-  private async applyReviewSignal(event: GitHubAdapterEvent): Promise<void> {
-    if (event.eventType !== 'integration.github.comment-observed') return;
+  private async applyReviewSignal(
+    event: Extract<GitHubAdapterEvent, { eventType: typeof GitHubEventType.CommentObserved }>,
+  ): Promise<void> {
     if (this.journal === undefined || this.resources === undefined || this.work === undefined)
       return;
     const payload = event.payload;
@@ -180,7 +181,7 @@ export class InboundTranslator {
   }
 }
 
-function commandContext(event: EventEnvelope): CommandContext {
+function commandContext(event: GitHubAdapterEvent): CommandContext {
   return {
     commandId: `${event.eventId}:inbound`,
     correlationId: correlationId(event.correlationId),
