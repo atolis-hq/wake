@@ -6,6 +6,7 @@ import { createExecutionService } from '../../src-next/execution/index.js';
 import {
   correlationId,
   createEventDraft,
+  eventId,
   type CommandContext,
   type EntityRef,
   type EventJournal,
@@ -21,12 +22,18 @@ import { InMemoryCheckpointStore, InMemoryEventJournal } from '../../src-next/pe
 import { createResourceService } from '../../src-next/resources/index.js';
 import { createWorkService, workItemId, type WorkItemId } from '../../src-next/work/index.js';
 import { FakeClock, SequentialIds } from '../e2e/support/world.js';
+import { eventEnvelope } from '../support/event-envelope.js';
 
 const command = (commandId: string): CommandContext => ({
   commandId,
   correlationId: correlationId('recovery-1'),
   occurredAt: '2026-07-30T12:00:00.000Z',
   actor: { kind: 'system', id: 'test' },
+});
+
+const watchEvent = (id: string) => ({
+  ...eventEnvelope('review.requested', {}, { kind: 'test', id: 'coordination-recovery-watch' }),
+  eventId: eventId(id),
 });
 
 async function fixture() {
@@ -214,7 +221,7 @@ it('uses unique durable event identities for the same trigger across two parents
   const { journal, service } = await fixture();
   await startPrimary(service, 'parent-a', workItemId('work-1'));
   await startPrimary(service, 'parent-b', workItemId('work-2'));
-  const event = { eventType: 'review.requested', eventId: 'shared-trigger', payload: {} };
+  const event = watchEvent('shared-trigger');
   await createWatchReactor(service).react(event, command('shared-trigger:watch'));
   const requested = (await journal.readAll(0)).filter(
     (candidate) => candidate.eventType === 'orchestration.child-requested',
@@ -229,10 +236,7 @@ it('uses unique durable event identities for the same trigger across two parents
     async isCausalRepeat() {
       return true;
     },
-  }).react(
-    { eventType: 'review.requested', eventId: 'shared-causal-trigger', payload: {} },
-    command('shared-causal-trigger:watch'),
-  );
+  }).react(watchEvent('shared-causal-trigger'), command('shared-causal-trigger:watch'));
   const rejected = (await journal.readAll(0)).filter(
     (candidate) => candidate.eventType === 'orchestration.causal-activation-rejected',
   );

@@ -131,13 +131,17 @@ type ResourceFactType =
   | typeof ActivityEventType.PrApproveRequested
   | typeof ActivityEventType.PrMergeRequested;
 type DenialType = typeof ActivityEventType.PrMergeDenied | typeof ActivityEventType.PrApproveDenied;
-type DecisionType =
-  | typeof ActivityEventType.PrApproveDecisionClaimed
-  | typeof ActivityEventType.PrMergeDecisionClaimed;
 
 type ResourceFactPayloads = Pick<ActivityEventPayloads, ResourceFactType>;
 type DenialPayloads = Pick<ActivityEventPayloads, DenialType>;
-type DecisionPayloads = Pick<ActivityEventPayloads, DecisionType>;
+type ApproveDecisionPayloads = Pick<
+  ActivityEventPayloads,
+  typeof ActivityEventType.PrApproveDecisionClaimed
+>;
+type MergeDecisionPayloads = Pick<
+  ActivityEventPayloads,
+  typeof ActivityEventType.PrMergeDecisionClaimed
+>;
 
 export type ActivityFact =
   | EventUnion<ResourceFactPayloads, ResourceStreamRef>
@@ -145,9 +149,14 @@ export type ActivityFact =
 export type ActivityFactDraft =
   | EventDraftUnion<ResourceFactPayloads, ResourceStreamRef>
   | EventDraftUnion<DenialPayloads, ResourceStreamRef | WorkItemStreamRef>;
-export type ActivityEvent = ActivityFact | EventUnion<DecisionPayloads, ActivityDecisionStreamRef>;
+export type ActivityEvent =
+  | ActivityFact
+  | EventUnion<ApproveDecisionPayloads, ActivityDecisionStreamRef<'approve'>>
+  | EventUnion<MergeDecisionPayloads, ActivityDecisionStreamRef<'merge'>>;
 export type ActivityEventDraft =
-  ActivityFactDraft | EventDraftUnion<DecisionPayloads, ActivityDecisionStreamRef>;
+  | ActivityFactDraft
+  | EventDraftUnion<ApproveDecisionPayloads, ActivityDecisionStreamRef<'approve'>>
+  | EventDraftUnion<MergeDecisionPayloads, ActivityDecisionStreamRef<'merge'>>;
 
 const eventSchema = createActivityEventSchema(ActivityEventType);
 

@@ -5,25 +5,31 @@ export const ActivityStreamKind = { Decision: 'activity-decision' } as const;
 
 export type PrAction = 'approve' | 'merge';
 export type PullRequestDecisionAction = PrAction;
-export type ActivityDecisionId = Brand<string, 'ActivityDecisionId'>;
-export type ActivityDecisionStreamRef = EntityRef<
+export type ActivityDecisionId<Action extends PrAction = PrAction> = Brand<
+  string,
+  `ActivityDecisionId:${Action}`
+>;
+export type ActivityDecisionStreamRef<Action extends PrAction = PrAction> = EntityRef<
   typeof ActivityStreamKind.Decision,
-  ActivityDecisionId
+  ActivityDecisionId<Action>
 >;
 
-export const activityDecisionId = (value: string): ActivityDecisionId => {
-  if (!/^.+:pr\.(?:approve|merge)$/.test(value)) {
-    throw new Error(`Invalid ActivityDecisionId: ${value}`);
+export const activityDecisionId = <Action extends PrAction>(
+  value: string,
+  action: Action,
+): ActivityDecisionId<Action> => {
+  if (!value.endsWith(`:pr.${action}`) || value.length === `:pr.${action}`.length) {
+    throw new Error(`Invalid ${action} ActivityDecisionId: ${value}`);
   }
-  return value as ActivityDecisionId;
+  return value as ActivityDecisionId<Action>;
 };
 
-export const activityDecisionStream = (
+export const activityDecisionStream = <Action extends PullRequestDecisionAction>(
   activation: ActivationId,
-  action: PullRequestDecisionAction,
-): ActivityDecisionStreamRef => ({
+  action: Action,
+): ActivityDecisionStreamRef<Action> => ({
   kind: ActivityStreamKind.Decision,
-  id: activityDecisionId(`${segment(activation)}:pr.${segment(action)}`),
+  id: activityDecisionId(`${segment(activation)}:pr.${segment(action)}`, action),
 });
 
 export const isActivityDecisionStream = (stream: EntityRef): stream is ActivityDecisionStreamRef =>

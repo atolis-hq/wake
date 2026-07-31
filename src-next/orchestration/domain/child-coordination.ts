@@ -2,13 +2,6 @@ import type { StartWorkflowInstance } from '../contracts/commands.js';
 import type { ChildCoordinationMetadata, ChildWorkflowRequest } from '../contracts/events.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
 
-export function causalCycleId(payload: unknown): string | undefined {
-  if (typeof payload !== 'object' || payload === null || !('causalCycleId' in payload))
-    return undefined;
-  const cycle = payload.causalCycleId;
-  return typeof cycle === 'string' ? cycle : undefined;
-}
-
 export function childMetadata(child: WorkflowInstanceView): ChildCoordinationMetadata {
   if (
     child.parentWorkflowInstanceId === undefined ||

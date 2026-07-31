@@ -1,33 +1,58 @@
 import { z } from 'zod';
-import { eventEnvelopeSchema, type EventEnvelope } from '../../kernel/index.js';
-import { workItemId } from '../../work/index.js';
-import { workflowInstanceId } from './identifiers.js';
-import { orchestrationGroupStreamId, OrchestrationStreamKind } from './streams.js';
-import type { OrchestrationEvent, WorkflowOrchestrationEvent } from './event-types.js';
+import type { ActivityOutcome, WaitingActivityOutcome } from '../../activities/index.js';
+import {
+  eventEnvelopeSchema,
+  type EventDraftUnion,
+  type EventEnvelope,
+  type EventUnion,
+} from '../../kernel/index.js';
+import { workItemId, type WorkItemId } from '../../work/index.js';
+import {
+  type ChildOrchestrationGroupStreamId,
+  type ChildOrchestrationGroupStreamRef,
+  type PrimaryOrchestrationGroupStreamRef,
+  type WorkflowInstanceStreamRef,
+} from './streams.js';
+import {
+  activityRequestedSchema,
+  childGroupIdSchema,
+  childGroupStreamSchema,
+  childMetadataSchema,
+  childMetadataShape,
+  emptySchema,
+  expectationSchema,
+  outcomeSchema,
+  primaryGroupStreamSchema,
+  signalSchema,
+  waitingOutcomeSchema,
+  workflowInstanceIdSchema,
+  workflowStreamSchema,
+} from './event-payload-schema.js';
+import type {
+  ActivityRequestedPayload,
+  CausalActivationRejectedPayload,
+  ChildCompletedPayload,
+  ChildCompletionConsumedPayload,
+  ChildCoordinationMetadata,
+  ChildRequestedPayload,
+  ChildStartedPayload,
+  GroupBudgetExhaustedPayload,
+  OrchestrationSignal,
+  SignalExpectation,
+} from './event-types.js';
 export type {
   ActivityRequestedPayload,
   CausalActivationRejectedPayload,
   ChildCompletedPayload,
   ChildCompletionConsumedPayload,
-  ChildCompletionSignal,
-  ChildCoordinationEventDraft,
-  ChildCoordinationEventPayloads,
   ChildCoordinationMetadata,
   ChildRequestedPayload,
   ChildStartedPayload,
   ChildWorkflowRequest,
   GroupBudgetExhaustedPayload,
-  OrchestrationEvent,
-  OrchestrationEventDraft,
-  OrchestrationEventPayloads,
-  OrchestrationGroupEvent,
-  OrchestrationGroupEventDraft,
   OrchestrationSignal,
   SignalExpectation,
   SupplementalActivityRequest,
-  WorkflowOrchestrationEvent,
-  WorkflowOrchestrationEventDraft,
-  WorkflowOrchestrationEventName,
 } from './event-types.js';
 
 export const OrchestrationEventType = {
@@ -56,75 +81,138 @@ export const OrchestrationEventType = {
   GroupClaimed: 'orchestration.group-claimed',
 } as const;
 
-const workflowInstanceIdSchema = z.string().min(1).transform(workflowInstanceId);
-const workflowStreamSchema = z
-  .object({
-    kind: z.literal(OrchestrationStreamKind.WorkflowInstance),
-    id: workflowInstanceIdSchema,
-  })
-  .strict();
-const groupIdPattern = /^(?:primary:work-[a-z0-9-]+|group:[^:]+:watch:[^:]+)$/;
-const groupIdSchema = z.string().regex(groupIdPattern).transform(orchestrationGroupStreamId);
-const groupStreamSchema = z
-  .object({
-    kind: z.literal(OrchestrationStreamKind.Group),
-    id: groupIdSchema,
-  })
-  .strict();
-const childMetadataShape = {
-  parentWorkflowInstanceId: workflowInstanceIdSchema,
-  watchId: z.string().min(1),
-  triggerId: z.string().min(1),
-  orchestrationGroupId: z.string().min(1),
-  causalCycleId: z.string().min(1),
-  requestId: z.string().min(1),
-  childWorkflowInstanceId: workflowInstanceIdSchema,
-} as const;
-const childMetadataSchema = z.object(childMetadataShape).strict();
-const outcomeSchema = z.object({ kind: z.string().min(1), data: z.unknown().optional() }).strict();
-const waitingOutcomeSchema = z
-  .object({
-    kind: z.literal('waiting'),
-    data: z.object({ intentEventId: z.string().min(1), signalKind: z.string().min(1) }).strict(),
-  })
-  .strict();
-const executionSchema = z
-  .object({
-    workspace: z.enum(['none', 'read-only', 'branch']).optional(),
-    tier: z.string().min(1).optional(),
-  })
-  .strict();
-const activityRequestedSchema = z
-  .object({
-    activationId: z.string().min(1),
-    ordinal: z.number().int().positive(),
-    activity: z.string().min(1),
-    input: z.unknown(),
-    execution: executionSchema.optional(),
-    followOnIndex: z.number().int().nonnegative().optional(),
-    supplemental: z.literal(true).optional(),
-  })
-  .strict();
-const expectationSchema = z
-  .object({
-    signalKind: z.string().min(1),
-    resourceId: z.string().optional(),
-    revision: z.string().optional(),
-  })
-  .strict();
-const signalSchema = z
-  .object({
-    kind: z.string().min(1),
-    resourceId: z.string().optional(),
-    revision: z.string().optional(),
-    actorId: z.string().min(1),
-    actorDecision: z.object({ authorized: z.boolean(), evidenceId: z.string().min(1) }).strict(),
-    providerEventId: z.string().min(1),
-    childWorkflowInstanceId: workflowInstanceIdSchema.optional(),
-    requestId: z.string().optional(),
-  })
-  .strict();
-const emptySchema = z.object({}).strict();
+export interface OrchestrationEventPayloads {
+  readonly [OrchestrationEventType.InstanceStarted]:
+    | {
+        readonly workItemId: WorkItemId;
+        readonly workflowName: string;
+        readonly orchestrationGroupId: string;
+        readonly entry: string;
+      }
+    | ({
+        readonly workItemId: WorkItemId;
+        readonly workflowName: string;
+        readonly orchestrationGroupId: string;
+        readonly entry: string;
+      } & ChildCoordinationMetadata);
+  readonly [OrchestrationEventType.StageEntered]: { readonly stage: string };
+  readonly [OrchestrationEventType.ActivityRequested]: ActivityRequestedPayload;
+  readonly [OrchestrationEventType.ActivityStarted]: { readonly activationId: string };
+  readonly [OrchestrationEventType.ActivityOutcomeAccepted]: {
+    readonly activationId: string;
+    readonly outcome: ActivityOutcome;
+  };
+  readonly [OrchestrationEventType.ActivityWaiting]: {
+    readonly activationId: string;
+    readonly intentEventId: string;
+    readonly signalKind: string;
+    readonly outcome: WaitingActivityOutcome;
+  };
+  readonly [OrchestrationEventType.SignalWaitStarted]: SignalExpectation;
+  readonly [OrchestrationEventType.SignalAccepted]: OrchestrationSignal;
+  readonly [OrchestrationEventType.SupplementalActivityQueued]: {
+    readonly activity: string;
+    readonly input: unknown;
+    readonly requestedBy: string;
+  };
+  readonly [OrchestrationEventType.SupplementalActivityDequeued]: {
+    readonly activity: string;
+    readonly requestedBy: string;
+  };
+  readonly [OrchestrationEventType.RepeatCounted]: {
+    readonly routeId: string;
+    readonly count: number;
+  };
+  readonly [OrchestrationEventType.RetryCounted]: {
+    readonly retryKey: string;
+    readonly count: number;
+  };
+  readonly [OrchestrationEventType.InstanceCompleted]: Readonly<Record<never, never>>;
+  readonly [OrchestrationEventType.InstanceBlocked]: { readonly reason: string };
+  readonly [OrchestrationEventType.InstanceSuperseded]: Readonly<Record<never, never>>;
+  readonly [OrchestrationEventType.ChildRequested]: ChildRequestedPayload;
+  readonly [OrchestrationEventType.ChildStarted]: ChildStartedPayload;
+  readonly [OrchestrationEventType.ChildCompleted]: ChildCompletedPayload;
+  readonly [OrchestrationEventType.ChildCompletionConsumed]: ChildCompletionConsumedPayload;
+  readonly [OrchestrationEventType.CausalActivationRejected]: CausalActivationRejectedPayload;
+  readonly [OrchestrationEventType.GroupBudgetExhausted]: GroupBudgetExhaustedPayload;
+  readonly [OrchestrationEventType.PrimaryClaimed]: {
+    readonly workItemId: WorkItemId;
+    readonly workflowInstanceId: string;
+  };
+  readonly [OrchestrationEventType.GroupClaimed]: {
+    readonly key: ChildOrchestrationGroupStreamId;
+    readonly requestId: string;
+  };
+}
+
+type WorkflowEventType = Exclude<
+  keyof OrchestrationEventPayloads,
+  typeof OrchestrationEventType.PrimaryClaimed | typeof OrchestrationEventType.GroupClaimed
+>;
+export type WorkflowOrchestrationEventName = WorkflowEventType;
+type WorkflowEventPayloads = Pick<OrchestrationEventPayloads, WorkflowEventType>;
+type PrimaryGroupEventPayloads = Pick<
+  OrchestrationEventPayloads,
+  typeof OrchestrationEventType.PrimaryClaimed
+>;
+type ChildGroupEventPayloads = Pick<
+  OrchestrationEventPayloads,
+  typeof OrchestrationEventType.GroupClaimed
+>;
+
+export type WorkflowOrchestrationEvent = EventUnion<
+  WorkflowEventPayloads,
+  WorkflowInstanceStreamRef
+>;
+type PrimaryOrchestrationGroupEvent = EventUnion<
+  PrimaryGroupEventPayloads,
+  PrimaryOrchestrationGroupStreamRef
+>;
+type ChildOrchestrationGroupEvent = EventUnion<
+  ChildGroupEventPayloads,
+  ChildOrchestrationGroupStreamRef
+>;
+export type OrchestrationGroupEvent = PrimaryOrchestrationGroupEvent | ChildOrchestrationGroupEvent;
+export type WorkflowOrchestrationEventDraft = EventDraftUnion<
+  WorkflowEventPayloads,
+  WorkflowInstanceStreamRef
+>;
+type PrimaryOrchestrationGroupEventDraft = EventDraftUnion<
+  PrimaryGroupEventPayloads,
+  PrimaryOrchestrationGroupStreamRef
+>;
+type ChildOrchestrationGroupEventDraft = EventDraftUnion<
+  ChildGroupEventPayloads,
+  ChildOrchestrationGroupStreamRef
+>;
+export type OrchestrationGroupEventDraft =
+  PrimaryOrchestrationGroupEventDraft | ChildOrchestrationGroupEventDraft;
+export type OrchestrationEvent = WorkflowOrchestrationEvent | OrchestrationGroupEvent;
+export type OrchestrationEventDraft =
+  WorkflowOrchestrationEventDraft | OrchestrationGroupEventDraft;
+export type ChildCoordinationEventDraft = Extract<
+  OrchestrationEventDraft,
+  {
+    readonly eventType:
+      | typeof OrchestrationEventType.ChildRequested
+      | typeof OrchestrationEventType.ChildStarted
+      | typeof OrchestrationEventType.ChildCompleted
+      | typeof OrchestrationEventType.ChildCompletionConsumed
+      | typeof OrchestrationEventType.CausalActivationRejected
+      | typeof OrchestrationEventType.GroupBudgetExhausted;
+  }
+>;
+export type ChildCoordinationEventPayloads = Pick<
+  OrchestrationEventPayloads,
+  ChildCoordinationEventDraft['eventType']
+>;
+export interface ChildCompletionSignal extends OrchestrationSignal {
+  readonly kind: typeof OrchestrationEventType.ChildCompleted;
+  readonly childWorkflowInstanceId: string;
+  readonly requestId: string;
+}
+
 const workflowEnvelope = <Type extends string, Payload extends z.ZodType>(
   eventType: Type,
   payload: Payload,
@@ -134,13 +222,22 @@ const workflowEnvelope = <Type extends string, Payload extends z.ZodType>(
     stream: workflowStreamSchema,
     payload,
   });
-const groupEnvelope = <Type extends string, Payload extends z.ZodType>(
+const primaryGroupEnvelope = <Type extends string, Payload extends z.ZodType>(
   eventType: Type,
   payload: Payload,
 ) =>
   eventEnvelopeSchema.extend({
     eventType: z.literal(eventType),
-    stream: groupStreamSchema,
+    stream: primaryGroupStreamSchema,
+    payload,
+  });
+const childGroupEnvelope = <Type extends string, Payload extends z.ZodType>(
+  eventType: Type,
+  payload: Payload,
+) =>
+  eventEnvelopeSchema.extend({
+    eventType: z.literal(eventType),
+    stream: childGroupStreamSchema,
     payload,
   });
 const eventSchema = z.discriminatedUnion('eventType', [
@@ -241,7 +338,7 @@ const eventSchema = z.discriminatedUnion('eventType', [
     OrchestrationEventType.GroupBudgetExhausted,
     z.object({ ...childMetadataShape, maxPerGroup: z.number().int().positive() }).strict(),
   ),
-  groupEnvelope(
+  primaryGroupEnvelope(
     OrchestrationEventType.PrimaryClaimed,
     z
       .object({
@@ -250,9 +347,9 @@ const eventSchema = z.discriminatedUnion('eventType', [
       })
       .strict(),
   ),
-  groupEnvelope(
+  childGroupEnvelope(
     OrchestrationEventType.GroupClaimed,
-    z.object({ key: groupIdSchema, requestId: z.string().min(1) }).strict(),
+    z.object({ key: childGroupIdSchema, requestId: z.string().min(1) }).strict(),
   ),
 ]);
 

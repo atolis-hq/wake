@@ -11,17 +11,39 @@ export type WorkflowInstanceStreamRef = EntityRef<
   typeof OrchestrationStreamKind.WorkflowInstance,
   WorkflowInstanceId
 >;
-export type OrchestrationGroupStreamId = Brand<string, 'OrchestrationGroupStreamId'>;
-export type OrchestrationGroupStreamRef = EntityRef<
+export type PrimaryOrchestrationGroupStreamId = Brand<string, 'PrimaryOrchestrationGroupStreamId'>;
+export type ChildOrchestrationGroupStreamId = Brand<string, 'ChildOrchestrationGroupStreamId'>;
+export type OrchestrationGroupStreamId =
+  PrimaryOrchestrationGroupStreamId | ChildOrchestrationGroupStreamId;
+export type PrimaryOrchestrationGroupStreamRef = EntityRef<
   typeof OrchestrationStreamKind.Group,
-  OrchestrationGroupStreamId
+  PrimaryOrchestrationGroupStreamId
 >;
+export type ChildOrchestrationGroupStreamRef = EntityRef<
+  typeof OrchestrationStreamKind.Group,
+  ChildOrchestrationGroupStreamId
+>;
+export type OrchestrationGroupStreamRef =
+  PrimaryOrchestrationGroupStreamRef | ChildOrchestrationGroupStreamRef;
 
 export const orchestrationGroupStreamId = (value: string): OrchestrationGroupStreamId => {
-  if (!/^(?:primary:work-[a-z0-9-]+|group:[^:]+:watch:[^:]+)$/.test(value)) {
-    throw new Error(`Invalid orchestration group stream key: ${value}`);
-  }
-  return value as OrchestrationGroupStreamId;
+  return value.startsWith('primary:')
+    ? primaryOrchestrationGroupStreamId(value)
+    : childOrchestrationGroupStreamId(value);
+};
+
+export const primaryOrchestrationGroupStreamId = (
+  value: string,
+): PrimaryOrchestrationGroupStreamId => {
+  if (!/^primary:work-[a-z0-9-]+$/.test(value))
+    throw new Error(`Invalid primary orchestration group stream key: ${value}`);
+  return value as PrimaryOrchestrationGroupStreamId;
+};
+
+export const childOrchestrationGroupStreamId = (value: string): ChildOrchestrationGroupStreamId => {
+  if (!/^group:[^:]+:watch:[^:]+$/.test(value))
+    throw new Error(`Invalid child orchestration group stream key: ${value}`);
+  return value as ChildOrchestrationGroupStreamId;
 };
 
 export const workflowInstanceStream = (id: WorkflowInstanceId): WorkflowInstanceStreamRef => ({
@@ -31,13 +53,20 @@ export const workflowInstanceStream = (id: WorkflowInstanceId): WorkflowInstance
 
 export const primaryOrchestrationGroupStream = (
   workItemId: WorkItemId,
-): OrchestrationGroupStreamRef => orchestrationGroupStream(`primary:${workItemId}`);
+): PrimaryOrchestrationGroupStreamRef => ({
+  kind: OrchestrationStreamKind.Group,
+  id: primaryOrchestrationGroupStreamId(`primary:${workItemId}`),
+});
 
 export const childOrchestrationGroupStream = (
   orchestrationGroupId: string,
   watchId: string,
-): OrchestrationGroupStreamRef =>
-  orchestrationGroupStream(`group:${component(orchestrationGroupId)}:watch:${component(watchId)}`);
+): ChildOrchestrationGroupStreamRef => ({
+  kind: OrchestrationStreamKind.Group,
+  id: childOrchestrationGroupStreamId(
+    `group:${component(orchestrationGroupId)}:watch:${component(watchId)}`,
+  ),
+});
 
 export const isWorkflowInstanceStream = (stream: EntityRef): stream is WorkflowInstanceStreamRef =>
   stream.kind === OrchestrationStreamKind.WorkflowInstance;
@@ -45,13 +74,6 @@ export const isWorkflowInstanceStream = (stream: EntityRef): stream is WorkflowI
 export const isOrchestrationGroupStream = (
   stream: EntityRef,
 ): stream is OrchestrationGroupStreamRef => stream.kind === OrchestrationStreamKind.Group;
-
-function orchestrationGroupStream(key: string): OrchestrationGroupStreamRef {
-  return {
-    kind: OrchestrationStreamKind.Group,
-    id: orchestrationGroupStreamId(key),
-  };
-}
 
 function component(value: string): string {
   if (value.trim().length === 0) throw new Error('Orchestration group key part must not be empty');

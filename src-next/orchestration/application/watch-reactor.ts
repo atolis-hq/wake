@@ -5,7 +5,11 @@ import {
   type EventEnvelope,
   type EventJournal,
 } from '../../kernel/index.js';
-import type { ChildWorkflowRequest } from '../contracts/events.js';
+import {
+  selectOrchestrationEvent,
+  type ChildWorkflowRequest,
+  type OrchestrationEvent,
+} from '../contracts/events.js';
 
 interface WatchMatch {
   readonly parent: { readonly workflowInstanceId: string };
@@ -26,15 +30,9 @@ interface WatchOrchestrationPort {
   isCausalRepeat?(
     workflowInstanceId: string,
     eventId: string,
-    payload: unknown,
+    causalCycleId: string | undefined,
     requestId: string,
   ): Promise<boolean>;
-}
-
-interface CanonicalEvent {
-  readonly eventType: string;
-  readonly eventId: string;
-  readonly payload: unknown;
 }
 
 const checkpoint = 'reactor:orchestration.watch';
@@ -45,7 +43,8 @@ export function createWatchReactor(
   checkpoints?: CheckpointStore,
 ) {
   return {
-    async react(event: CanonicalEvent, context: CommandContext): Promise<void> {
+    async react(event: EventEnvelope, context: CommandContext): Promise<void> {
+      const causalCycle = orchestrationCausalCycleId(selectOrchestrationEvent(event));
       for (const match of await orchestration.listWatchMatches(event.eventType)) {
         const requestId = `${match.parent.workflowInstanceId}:watch:${match.watch.id}:trigger:${event.eventId}`;
         const request = {
@@ -53,7 +52,7 @@ export function createWatchReactor(
           watchId: match.watch.id,
           triggerId: event.eventId,
           workflowName: match.watch.workflow,
-          causalCycleId: causalCycleId(event.payload) ?? requestId,
+          causalCycleId: causalCycle ?? requestId,
           requestId,
           maxPerGroup: match.watch.maxPerGroup,
         };
@@ -65,7 +64,7 @@ export function createWatchReactor(
           (await orchestration.isCausalRepeat?.(
             match.parent.workflowInstanceId,
             event.eventId,
-            event.payload,
+            causalCycle,
             request.requestId,
           )) === true
         ) {
@@ -99,13 +98,12 @@ function commandContext(event: EventEnvelope): CommandContext {
   };
 }
 
-function causalCycleId(payload: unknown): string | undefined {
-  if (typeof payload !== 'object' || payload === null || !('causalCycleId' in payload))
-    return undefined;
-  const value = payload.causalCycleId;
-  return typeof value === 'string' ? value : undefined;
+function orchestrationCausalCycleId(event: OrchestrationEvent | null): string | undefined {
+  return event !== null && 'causalCycleId' in event.payload
+    ? event.payload.causalCycleId
+    : undefined;
 }
 
-function watchCommandId(context: CommandContext, match: WatchMatch, event: CanonicalEvent): string {
+function watchCommandId(context: CommandContext, match: WatchMatch, event: EventEnvelope): string {
   return `${context.commandId}:parent:${match.parent.workflowInstanceId}:watch:${match.watch.id}:trigger:${event.eventId}`;
 }

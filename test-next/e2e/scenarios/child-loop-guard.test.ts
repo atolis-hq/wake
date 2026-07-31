@@ -1,5 +1,9 @@
 import { z } from 'zod';
 import { expect } from 'vitest';
+import {
+  OrchestrationEventType,
+  selectOrchestrationEvent,
+} from '../../../src-next/orchestration/index.js';
 import { defineScenario } from '../support/scenario.js';
 import { TestWorld } from '../support/world.js';
 
@@ -83,7 +87,20 @@ defineScenario(
     await world.advance(work.workItemId);
     expect(await world.events('orchestration.child-requested')).toHaveLength(1);
 
-    await world.triggerWatch('orchestration.child-completed', childId);
+    const [childCompleted] = await world.events('orchestration.child-completed');
+    if (childCompleted === undefined) throw new Error('Child completion was not recorded');
+    const childCompletion = selectOrchestrationEvent(childCompleted);
+    if (childCompletion?.eventType !== OrchestrationEventType.ChildCompleted)
+      throw new Error('Recorded child completion was invalid');
+    await world.triggerWatch(
+      childCompletion.eventType,
+      childId,
+      {
+        ...childCompletion.payload,
+        causalCycleId: `${childCompletion.payload.causalCycleId}:reobserved`,
+      },
+      childCompletion.stream,
+    );
     expect(await world.events('orchestration.child-requested')).toHaveLength(1);
     expect(await world.events('orchestration.causal-activation-rejected')).toHaveLength(1);
     expect(await world.events('orchestration.group-budget-exhausted')).toHaveLength(1);

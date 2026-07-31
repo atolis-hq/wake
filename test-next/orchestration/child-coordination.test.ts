@@ -288,14 +288,10 @@ it('uses durable group provenance to distinguish repeated and unrelated causal c
   await service.requestChild(request, context('request-child'));
   const restarted = createOrchestrationService(journal, work, definitions);
   await expect(
-    restarted.isCausalRepeat('parent-1', 'unrelated-trigger', {
-      causalCycleId: 'unrelated-cycle',
-    }),
+    restarted.isCausalRepeat('parent-1', 'unrelated-trigger', 'unrelated-cycle'),
   ).resolves.toBe(false);
   await expect(
-    restarted.isCausalRepeat('parent-1', 'completion-event', {
-      causalCycleId: request.causalCycleId,
-    }),
+    restarted.isCausalRepeat('parent-1', 'completion-event', request.causalCycleId),
   ).resolves.toBe(true);
 });
 

@@ -44,15 +44,18 @@ const workStreamSchema = z
       .transform(workItemId),
   })
   .strict();
-const decisionStreamSchema = z
-  .object({
-    kind: z.literal(ActivityStreamKind.Decision),
-    id: z
-      .string()
-      .regex(/^.+:pr\.(?:approve|merge)$/)
-      .transform(activityDecisionId),
-  })
-  .strict();
+const decisionStreamSchema = <Action extends 'approve' | 'merge'>(action: Action) =>
+  z
+    .object({
+      kind: z.literal(ActivityStreamKind.Decision),
+      id: z
+        .string()
+        .refine((id) => id.endsWith(`:pr.${action}`) && id.length > `:pr.${action}`.length)
+        .transform((id) => activityDecisionId(id, action)),
+    })
+    .strict();
+const approveDecisionStreamSchema = decisionStreamSchema('approve');
+const mergeDecisionStreamSchema = decisionStreamSchema('merge');
 const denialStreamSchema = z.union([resourceStreamSchema, workStreamSchema]);
 const workItemIdSchema = z.string().transform(workItemId);
 const resourceIdSchema = z.string().transform(resourceId);
@@ -145,7 +148,7 @@ export function createActivityEventSchema(eventTypes: ActivityEventTypes) {
     factEnvelopeSchema,
     eventEnvelopeSchema.extend({
       eventType: z.literal(eventTypes.PrApproveDecisionClaimed),
-      stream: decisionStreamSchema,
+      stream: approveDecisionStreamSchema,
       payload: z
         .object({
           action: z.literal('approve'),
@@ -156,7 +159,7 @@ export function createActivityEventSchema(eventTypes: ActivityEventTypes) {
     }),
     eventEnvelopeSchema.extend({
       eventType: z.literal(eventTypes.PrMergeDecisionClaimed),
-      stream: decisionStreamSchema,
+      stream: mergeDecisionStreamSchema,
       payload: z
         .object({
           action: z.literal('merge'),

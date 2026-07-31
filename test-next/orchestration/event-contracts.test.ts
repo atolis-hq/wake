@@ -161,6 +161,22 @@ describe('Orchestration event contract', () => {
     ).toThrow();
   });
 
+  it('rejects a primary claim on a child/watch group stream', () => {
+    expect(() =>
+      decodeOrchestrationEvent(
+        eventEnvelope(OrchestrationEventType.PrimaryClaimed, samples[21].payload, childGroup),
+      ),
+    ).toThrow();
+  });
+
+  it('rejects a child/watch group claim on a primary group stream', () => {
+    expect(() =>
+      decodeOrchestrationEvent(
+        eventEnvelope(OrchestrationEventType.GroupClaimed, samples[22].payload, primaryGroup),
+      ),
+    ).toThrow();
+  });
+
   it('selects unrelated namespaces as null but throws for invalid owned events', () => {
     expect(selectOrchestrationEvent(eventEnvelope('work.item-created', {}, workflow))).toBeNull();
     expect(() =>

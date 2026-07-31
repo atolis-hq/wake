@@ -22,7 +22,6 @@ import {
 } from '../domain/interpreter.js';
 import { stateDraft } from '../domain/decision-events.js';
 import {
-  causalCycleId,
   childMetadata,
   childRequestId,
   coordinationMetadata,
@@ -281,17 +280,17 @@ export class OrchestrationService {
   async isCausalRepeat(
     workflowInstanceId: string,
     triggerId: string,
-    payload: unknown,
+    causalCycleId: string | undefined,
     requestId?: string,
   ) {
     const parent = await this.loadRequired(workflowInstanceId);
-    const cycle = causalCycleId(payload);
     return (await this.listAll()).some(
       (view) =>
         view.orchestrationGroupId === parent.view.orchestrationGroupId &&
         view.parentWorkflowInstanceId !== undefined &&
         view.requestId !== requestId &&
-        (view.triggerId === triggerId || (cycle !== undefined && view.causalCycleId === cycle)),
+        (view.triggerId === triggerId ||
+          (causalCycleId !== undefined && view.causalCycleId === causalCycleId)),
     );
   }
 

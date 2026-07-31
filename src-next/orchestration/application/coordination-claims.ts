@@ -15,7 +15,7 @@ import {
 import {
   isOrchestrationGroupStream,
   primaryOrchestrationGroupStream,
-  type OrchestrationGroupStreamRef,
+  type ChildOrchestrationGroupStreamRef,
 } from '../contracts/streams.js';
 
 export class CoordinationClaims {
@@ -62,7 +62,7 @@ export class CoordinationClaims {
   }
 
   async claimWithinBudget(
-    stream: OrchestrationGroupStreamRef,
+    stream: ChildOrchestrationGroupStreamRef,
     request: ChildWorkflowRequest & { readonly maxPerGroup: number },
     context: CommandContext,
   ): Promise<boolean> {

@@ -5,8 +5,7 @@ import {
   activityDecisionStream,
   ActivityStreamKind,
   isActivityDecisionStream,
-  type ActivationId,
-  type PrAction,
+  type ActivityDecisionStreamRef,
 } from '../../src-next/activities/index.js';
 import {
   ExecutionStreamKind,
@@ -148,8 +147,10 @@ describe('domain-owned logical streams', () => {
       kind: ActivityStreamKind.Decision,
       id: 'activation-1:pr.merge',
     });
-    expectTypeOf(activityDecisionStream).parameter(0).toEqualTypeOf<ActivationId>();
-    expectTypeOf(activityDecisionStream).parameter(1).toEqualTypeOf<PrAction>();
+    expectTypeOf(stream).toEqualTypeOf<ActivityDecisionStreamRef<'merge'>>();
+    expectTypeOf(activityDecisionStream(activation, 'approve')).toEqualTypeOf<
+      ActivityDecisionStreamRef<'approve'>
+    >();
   });
 
   it('keeps Activity decision ids stable and injective for valid public inputs', () => {

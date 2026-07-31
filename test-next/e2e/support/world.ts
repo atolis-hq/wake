@@ -201,9 +201,14 @@ export class TestWorld {
     await this.watchReactor.runOnce();
     return result;
   }
-  async triggerWatch(eventType: string, eventId: string): Promise<void> {
-    const events = await this.journal.readStream(this.stream);
-    const [event] = await this.journal.append(this.stream, events.length, [
+  async triggerWatch(
+    eventType: string,
+    eventId: string,
+    payload: unknown = {},
+    stream: EntityRef = this.stream,
+  ): Promise<void> {
+    const events = await this.journal.readStream(stream);
+    const [event] = await this.journal.append(stream, events.length, [
       createEventDraft({
         eventId,
         eventType,
@@ -212,8 +217,8 @@ export class TestWorld {
         causationId: eventId,
         actor: { kind: 'integration', id: 'test' },
         source: { kind: 'internal', id: 'test' },
-        stream: this.stream,
-        payload: {},
+        stream,
+        payload,
       }),
     ]);
     if (event === undefined) throw new Error('Watch trigger was not appended');

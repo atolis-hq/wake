@@ -184,6 +184,30 @@ describe('Activity event contract', () => {
     ).toThrow();
   });
 
+  it('rejects an approve decision claim on a merge decision stream', () => {
+    expect(() =>
+      decodeActivityEvent(
+        eventEnvelope(
+          ActivityEventType.PrApproveDecisionClaimed,
+          samples[13].payload,
+          mergeDecision,
+        ),
+      ),
+    ).toThrow();
+  });
+
+  it('rejects a merge decision claim on an approve decision stream', () => {
+    expect(() =>
+      decodeActivityEvent(
+        eventEnvelope(
+          ActivityEventType.PrMergeDecisionClaimed,
+          samples[14].payload,
+          approveDecision,
+        ),
+      ),
+    ).toThrow();
+  });
+
   it('selects unrelated namespaces as null but throws for any invalid owned namespace', () => {
     expect(selectActivityEvent(eventEnvelope('work.item-created', {}, resource))).toBeNull();
     expect(() => selectActivityEvent(eventEnvelope('activities.unknown', {}, resource))).toThrow(
