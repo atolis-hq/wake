@@ -3733,13 +3733,13 @@ Run:
 
 ```powershell
 npx vitest run --config vitest.next.config.ts test-next/kernel test-next/persistence test-next/work test-next/resources test-next/activities test-next/orchestration test-next/execution test-next/integrations test-next/e2e
-npm run lint:contracts
+npm run lint:contracts -- --rules event-literals,stream-literals
 npm run verify:next
 ```
 
-Expected: all domain event decoding and E2E tests PASS. Any remaining
-`lint:contracts` diagnostics must be closed/open vocabulary work explicitly
-assigned to Task 20D, not event or stream names.
+Expected: all domain event decoding and E2E tests PASS, with no event/stream
+literal diagnostic. The unscoped checker may still report closed/open
+vocabulary work explicitly assigned to Task 20D.
 
 - [ ] **Step 7: Commit**
 
