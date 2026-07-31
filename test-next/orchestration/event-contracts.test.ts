@@ -5,7 +5,7 @@ import {
 } from '../../src-next/orchestration/contracts/identifiers.js';
 import { activationId } from '../../src-next/activities/contracts/identifiers.js';
 import { activityName } from '../../src-next/activities/index.js';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
 import {
   childOrchestrationGroupStream,
   decodeOrchestrationEvent,
@@ -14,6 +14,9 @@ import {
   selectOrchestrationEvent,
   workflowInstanceId,
   workflowInstanceStream,
+  type OrchestrationWaitingActivityOutcome,
+  type WorkflowOrchestrationEvent,
+  type WorkflowOrchestrationEventDraft,
 } from '../../src-next/orchestration/index.js';
 import { workItemId } from '../../src-next/work/index.js';
 import { eventEnvelope } from '../support/event-envelope.js';
@@ -132,6 +135,42 @@ const samples = [
     childGroup,
   ),
 ] as const;
+
+it('types decoded and draft ActivityWaiting outcomes with the Orchestration brand', () => {
+  type WaitingEvent = Extract<
+    WorkflowOrchestrationEvent,
+    { readonly eventType: typeof OrchestrationEventType.ActivityWaiting }
+  >;
+  type WaitingDraft = Extract<
+    WorkflowOrchestrationEventDraft,
+    { readonly eventType: typeof OrchestrationEventType.ActivityWaiting }
+  >;
+  expectTypeOf<
+    WaitingEvent['payload']['outcome']
+  >().toEqualTypeOf<OrchestrationWaitingActivityOutcome>();
+  expectTypeOf<
+    WaitingDraft['payload']['outcome']
+  >().toEqualTypeOf<OrchestrationWaitingActivityOutcome>();
+
+  const decoded = decodeOrchestrationEvent(
+    eventEnvelope(
+      OrchestrationEventType.ActivityWaiting,
+      {
+        activationId: activation.activationId,
+        intentEventId: 'intent-1',
+        signalKind: 'delivery-result',
+        outcome: {
+          kind: 'waiting',
+          data: { intentEventId: 'intent-1', signalKind: 'delivery-result' },
+        },
+      },
+      workflow,
+    ),
+  );
+  if (decoded.eventType !== OrchestrationEventType.ActivityWaiting)
+    throw new Error('expected ActivityWaiting');
+  expect(decoded.payload.outcome.data.signalKind).toBe(signalName('delivery-result'));
+});
 
 describe('Orchestration event contract', () => {
   it('decodes every declared event with its exact payload and permitted stream', () => {

@@ -67,7 +67,7 @@ export const IntentAppendStatus = defineClosedVocabulary({
 export type IntentAppendStatus = ValueOf<typeof IntentAppendStatus>;
 
 export const BuiltInActivityName = {
-  Agent: activityName('agent'),
+  Agent: activityName('agent.run'),
   PullRequestApprove: activityName('pr.approve'),
   PullRequestMerge: activityName('pr.merge'),
 } as const;

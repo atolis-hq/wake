@@ -5,7 +5,6 @@ import {
   type ActivationId,
   type ActivityName,
   type ActivityOutcome,
-  type WaitingActivityOutcome,
 } from '../../activities/index.js';
 import {
   brandedStringSchema,
@@ -14,6 +13,7 @@ import {
   type EventUnion,
 } from '../../kernel/index.js';
 import { workItemId, type WorkItemId } from '../../work/index.js';
+import { type OrchestrationWaitingActivityOutcome } from './activity-outcome.js';
 import {
   orchestrationGroupId,
   signalName,
@@ -126,7 +126,7 @@ export interface OrchestrationEventPayloads {
     readonly activationId: ActivationId;
     readonly intentEventId: string;
     readonly signalKind: SignalName;
-    readonly outcome: WaitingActivityOutcome;
+    readonly outcome: OrchestrationWaitingActivityOutcome;
   };
   readonly [OrchestrationEventType.SignalWaitStarted]: SignalExpectation;
   readonly [OrchestrationEventType.SignalAccepted]: OrchestrationSignal;

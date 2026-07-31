@@ -67,7 +67,6 @@ function inspectLiteral(detail, literal, catalogues, rules, diagnostics) {
 
 function inspectRegistrations(detail, literal, value, rule, registrations, rules, diagnostics) {
   if (!rules.has(rule)) return;
-  if (rule === 'closed-vocabulary' && isBrandedNameConstructorLiteral(literal)) return;
   for (const registration of registrations.get(value) ?? []) {
     if (isInsideInitializer(detail, literal, registration)) continue;
     diagnostics.push(
@@ -81,20 +80,6 @@ function inspectRegistrations(detail, literal, value, rule, registrations, rules
       ),
     );
   }
-}
-
-function isBrandedNameConstructorLiteral(literal) {
-  const call = literal.parent;
-  if (!ts.isCallExpression(call) || call.arguments.length !== 1 || call.arguments[0] !== literal)
-    return false;
-  const constructor = unwrapParentheses(call.expression);
-  return ts.isIdentifier(constructor) && /^[a-z][A-Za-z0-9]*Name$/.test(constructor.text);
-}
-
-function unwrapParentheses(expression) {
-  let current = expression;
-  while (ts.isParenthesizedExpression(current)) current = current.expression;
-  return current;
 }
 
 function isRegisteredCatalogueLiteral(detail, literal, catalogues) {

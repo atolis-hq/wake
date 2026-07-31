@@ -17,6 +17,12 @@ export type OrchestrationWaitingActivityOutcome = WaitingActivityOutcome & {
 };
 
 export function orchestrationActivityOutcome(
+  outcome: WaitingActivityOutcome,
+): OrchestrationWaitingActivityOutcome;
+export function orchestrationActivityOutcome(
+  outcome: ActivityOutcome,
+): OrchestrationActivityOutcome;
+export function orchestrationActivityOutcome(
   outcome: ActivityOutcome,
 ): OrchestrationActivityOutcome {
   if (outcome.kind !== ActivityOutcomeKind.Waiting) return outcome as OrchestrationActivityOutcome;

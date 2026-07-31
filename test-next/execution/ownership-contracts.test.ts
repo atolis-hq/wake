@@ -19,7 +19,7 @@ describe('Execution vocabulary ownership', () => {
     expect(WorkspaceMode.None).toBe('none');
     expect(executionVocabulary).toMatch(/export const WorkspaceMode/);
     expect(activityVocabulary).not.toMatch(/export const WorkspaceMode/);
-    expect(activityVocabulary).toMatch(/Agent:\s*activityName\('agent'\)/);
-    expect(BuiltInActivityName.Agent).toBe('agent');
+    expect(activityVocabulary).toMatch(/Agent:\s*activityName\('agent\.run'\)/);
+    expect(BuiltInActivityName.Agent).toBe('agent.run');
   });
 });

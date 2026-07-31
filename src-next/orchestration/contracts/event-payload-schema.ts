@@ -2,6 +2,10 @@ import { activationId, activityName, ActivityOutcomeKind } from '../../activitie
 import { WorkspaceMode } from '../../execution/index.js';
 import { z } from 'zod';
 import { brandedStringSchema } from '../../kernel/index.js';
+import {
+  orchestrationActivityOutcome,
+  type OrchestrationWaitingActivityOutcome,
+} from './activity-outcome.js';
 import { orchestrationGroupId, signalName, workflowInstanceId } from './identifiers.js';
 import {
   childOrchestrationGroupStreamId,
@@ -53,7 +57,10 @@ export const waitingOutcomeSchema = z
       })
       .strict(),
   })
-  .strict();
+  .strict()
+  .transform((outcome): OrchestrationWaitingActivityOutcome =>
+    orchestrationActivityOutcome(outcome),
+  );
 const executionSchema = z
   .object({
     workspace: z

@@ -2,7 +2,7 @@ import { describe, expect, expectTypeOf, it } from 'vitest';
 import {
   ActivityFailureCode,
   ActivityOutcomeKind,
-  activityName,
+  BuiltInActivityName,
   activityOrchestrationGroupId,
   activityWorkflowInstanceId,
   activationId,
@@ -82,7 +82,7 @@ describe('agent results', () => {
       handler.execute(
         {
           activationId: activationId('activation-1'),
-          activity: activityName('agent'),
+          activity: BuiltInActivityName.Agent,
           workItemId: workItemId('work-1'),
           workflowInstanceId: activityWorkflowInstanceId('workflow-1'),
           orchestrationGroupId: activityOrchestrationGroupId('group-1'),
