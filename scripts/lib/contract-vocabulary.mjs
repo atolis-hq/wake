@@ -158,8 +158,8 @@ function collectNamedObject(
       register(registrations, literal.text, {
         owner: declaration.name.text,
         path,
-        declarationStart: declaration.getStart(source),
-        declarationEnd: declaration.getEnd(),
+        declarationStart: object.getStart(source),
+        declarationEnd: object.getEnd(),
       });
     }
   }
@@ -256,6 +256,7 @@ function inspectSource(detail, catalogues, rules, diagnostics) {
     eventDraft: kernelBindings(source, 'EventDraft'),
     eventEnvelope: kernelBindings(source, 'EventEnvelope'),
   };
+  const payloadAliases = collectPayloadAliases(source);
 
   visit(source, (node) => {
     if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
@@ -283,7 +284,7 @@ function inspectSource(detail, catalogues, rules, diagnostics) {
       rules.has('payload-coercion') &&
       isDomainCode(path) &&
       ts.isCallExpression(node) &&
-      isPayloadCoercion(node)
+      isPayloadCoercion(node, source, payloadAliases)
     ) {
       const coercion = callName(node);
       addDiagnostic(
@@ -305,12 +306,7 @@ function inspectLiteral(detail, literal, catalogues, rules, diagnostics) {
 
   if (rules.has('closed-vocabulary')) {
     for (const registration of catalogues.closedValues.get(value) ?? []) {
-      const position = literal.getStart(detail.source);
-      const insideDeclaration =
-        path === registration.path &&
-        position >= registration.declarationStart &&
-        position < registration.declarationEnd;
-      if (!insideDeclaration) {
+      if (!isInsideRegistration(detail, literal, registration)) {
         addDiagnostic(diagnostics, detail, literal, 'closed-vocabulary', value, registration.owner);
       }
     }
@@ -318,7 +314,7 @@ function inspectLiteral(detail, literal, catalogues, rules, diagnostics) {
 
   if (rules.has('event-literals')) {
     for (const registration of catalogues.eventValues.get(value) ?? []) {
-      if (path !== registration.path) {
+      if (!isInsideRegistration(detail, literal, registration)) {
         addDiagnostic(diagnostics, detail, literal, 'event-literals', value, registration.owner);
       }
     }
@@ -326,11 +322,20 @@ function inspectLiteral(detail, literal, catalogues, rules, diagnostics) {
 
   if (rules.has('stream-literals')) {
     for (const registration of catalogues.streamValues.get(value) ?? []) {
-      if (path !== registration.path) {
+      if (!isInsideRegistration(detail, literal, registration)) {
         addDiagnostic(diagnostics, detail, literal, 'stream-literals', value, registration.owner);
       }
     }
   }
+}
+
+function isInsideRegistration(detail, literal, registration) {
+  const position = literal.getStart(detail.source);
+  return (
+    detail.path === registration.path &&
+    position >= registration.declarationStart &&
+    position < registration.declarationEnd
+  );
 }
 
 function allowsProviderValue(path, literal) {
@@ -345,7 +350,18 @@ function isDecoderFixturePart(part) {
 }
 
 function isDecoderPathPart(part) {
-  return part === 'decoders' || part.includes('decoder.');
+  return (
+    part === 'decoders' ||
+    part === 'translators' ||
+    part === 'parsers' ||
+    isNamedBoundaryFile(part, 'decoder') ||
+    isNamedBoundaryFile(part, 'translator') ||
+    isNamedBoundaryFile(part, 'parser')
+  );
+}
+
+function isNamedBoundaryFile(part, boundary) {
+  return part.startsWith(`${boundary}.`) || part.includes(`-${boundary}.`);
 }
 
 function hasDecoderFunctionAncestor(node) {
@@ -366,7 +382,13 @@ function hasDecoderFunctionAncestor(node) {
 }
 
 function isDecoderName(name) {
-  return ts.isIdentifier(name) && name.text.toLowerCase().includes('decode');
+  if (!ts.isIdentifier(name)) return false;
+  const normalized = name.text.toLowerCase();
+  return (
+    normalized.startsWith('decode') ||
+    normalized.startsWith('translate') ||
+    normalized.startsWith('parse')
+  );
 }
 
 function isPrivatePersistenceKey(path, literal) {
@@ -411,9 +433,10 @@ function inspectEventType(detail, node, bindings, diagnostics) {
   if (name === undefined) return;
   const typeArguments = node.typeArguments ?? [];
   if (
-    typeArguments.length >= 2 &&
+    typeArguments.length >= 3 &&
     !isErasedTypeArgument(typeArguments[0], true) &&
-    !isErasedTypeArgument(typeArguments[1], false)
+    !isErasedTypeArgument(typeArguments[1], false) &&
+    !isErasedTypeArgument(typeArguments[2], false)
   ) {
     return;
   }
@@ -441,11 +464,14 @@ function isErasedTypeArgument(node, isEventType) {
   );
 }
 
-function isPayloadCoercion(node) {
+function isPayloadCoercion(node, source, payloadAliases) {
   const name = callName(node);
   const argument = node.arguments[0];
   return (
-    (name === 'String' || name === 'Number') && argument !== undefined && isPayloadAccess(argument)
+    (name === 'String' || name === 'Number') &&
+    argument !== undefined &&
+    !isShadowedBuiltin(node, source) &&
+    isPayloadDerived(argument, source, payloadAliases)
   );
 }
 
@@ -455,12 +481,15 @@ function callName(node) {
   return undefined;
 }
 
-function isPayloadAccess(expression) {
+function isPayloadDerived(expression, source, payloadAliases) {
   const unwrapped = unwrapExpression(expression);
+  if (ts.isIdentifier(unwrapped)) {
+    const declaration = resolveIdentifierDeclaration(unwrapped, source);
+    return declaration !== undefined && payloadAliases.has(declaration);
+  }
   if (ts.isPropertyAccessExpression(unwrapped) || ts.isElementAccessExpression(unwrapped)) {
     if (propertyName(unwrapped) === 'payload') return true;
-    const owner = unwrapExpression(unwrapped.expression);
-    return ts.isIdentifier(owner) ? owner.text === 'payload' : isPayloadAccess(owner);
+    return isPayloadDerived(unwrapped.expression, source, payloadAliases);
   }
   return false;
 }
@@ -471,6 +500,149 @@ function propertyName(expression) {
   return ts.isStringLiteral(argument) || ts.isNoSubstitutionTemplateLiteral(argument)
     ? argument.text
     : undefined;
+}
+
+function collectPayloadAliases(source) {
+  const declarations = [];
+  visit(source, (node) => {
+    if (ts.isVariableDeclaration(node)) declarations.push(node);
+  });
+  const aliases = new Set();
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const declaration of declarations) {
+      const initializer = declaration.initializer;
+      if (initializer === undefined) continue;
+      if (ts.isIdentifier(declaration.name)) {
+        if (!aliases.has(declaration.name) && isPayloadDerived(initializer, source, aliases)) {
+          aliases.add(declaration.name);
+          changed = true;
+        }
+        continue;
+      }
+      if (!ts.isObjectBindingPattern(declaration.name)) continue;
+      for (const element of declaration.name.elements) {
+        const sourceName = element.propertyName ?? element.name;
+        if (bindingNameText(sourceName) !== 'payload') continue;
+        for (const identifier of bindingIdentifiers(element.name)) {
+          if (!aliases.has(identifier)) {
+            aliases.add(identifier);
+            changed = true;
+          }
+        }
+      }
+    }
+  }
+  return aliases;
+}
+
+function isShadowedBuiltin(call, source) {
+  if (!ts.isIdentifier(call.expression)) return true;
+  return resolveIdentifierDeclaration(call.expression, source) !== undefined;
+}
+
+function resolveIdentifierDeclaration(identifier, source) {
+  const name = identifier.text;
+  let current = identifier.parent;
+  while (current !== undefined) {
+    if (ts.isBlock(current) || ts.isSourceFile(current)) {
+      const declaration = statementDeclaration(current.statements, name);
+      if (declaration !== undefined) return declaration;
+    }
+    if (ts.isFunctionLike(current)) {
+      for (const parameter of current.parameters) {
+        const declaration = bindingIdentifier(parameter.name, name);
+        if (declaration !== undefined) return declaration;
+      }
+      if (
+        (ts.isFunctionDeclaration(current) || ts.isFunctionExpression(current)) &&
+        current.name?.text === name
+      ) {
+        return current.name;
+      }
+    }
+    if (ts.isCatchClause(current) && current.variableDeclaration !== undefined) {
+      const declaration = bindingIdentifier(current.variableDeclaration.name, name);
+      if (declaration !== undefined) return declaration;
+    }
+    if (
+      (ts.isForStatement(current) ||
+        ts.isForInStatement(current) ||
+        ts.isForOfStatement(current)) &&
+      current.initializer !== undefined &&
+      ts.isVariableDeclarationList(current.initializer)
+    ) {
+      const declaration = variableDeclaration(current.initializer.declarations, name);
+      if (declaration !== undefined) return declaration;
+    }
+    current = current.parent;
+  }
+  return sourceDeclaration(source, name);
+}
+
+function statementDeclaration(statements, name) {
+  for (const statement of statements) {
+    if (ts.isVariableStatement(statement)) {
+      const declaration = variableDeclaration(statement.declarationList.declarations, name);
+      if (declaration !== undefined) return declaration;
+    }
+    if (
+      (ts.isFunctionDeclaration(statement) || ts.isClassDeclaration(statement)) &&
+      statement.name?.text === name
+    ) {
+      return statement.name;
+    }
+    if (ts.isImportDeclaration(statement)) {
+      const declaration = importDeclaration(statement, name);
+      if (declaration !== undefined) return declaration;
+    }
+  }
+  return undefined;
+}
+
+function sourceDeclaration(source, name) {
+  return statementDeclaration(source.statements, name);
+}
+
+function variableDeclaration(declarations, name) {
+  for (const declaration of declarations) {
+    const identifier = bindingIdentifier(declaration.name, name);
+    if (identifier !== undefined) return identifier;
+  }
+  return undefined;
+}
+
+function importDeclaration(statement, name) {
+  const clause = statement.importClause;
+  if (clause === undefined) return undefined;
+  if (clause.name?.text === name) return clause.name;
+  const bindings = clause.namedBindings;
+  if (bindings === undefined) return undefined;
+  if (ts.isNamespaceImport(bindings))
+    return bindings.name.text === name ? bindings.name : undefined;
+  for (const element of bindings.elements) {
+    if (element.name.text === name) return element.name;
+  }
+  return undefined;
+}
+
+function bindingIdentifier(name, expected) {
+  return bindingIdentifiers(name).find((identifier) => identifier.text === expected);
+}
+
+function bindingIdentifiers(name) {
+  if (ts.isIdentifier(name)) return [name];
+  return name.elements.flatMap((element) =>
+    ts.isOmittedExpression(element) ? [] : bindingIdentifiers(element.name),
+  );
+}
+
+function bindingNameText(name) {
+  if (ts.isIdentifier(name) || ts.isStringLiteral(name) || ts.isNumericLiteral(name)) {
+    return name.text;
+  }
+  return undefined;
 }
 
 function kernelBindings(source, exportedName) {
