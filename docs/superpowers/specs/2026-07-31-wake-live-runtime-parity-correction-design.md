@@ -11,7 +11,9 @@ The immediate trigger is that the target contains independently tested GitHub,
 runner, delivery, configuration, and surface modules, but its production
 composition root does not assemble them into a configured live process. The
 current target can exercise an in-memory deterministic workflow; it cannot yet
-prove the end-to-end operational loop that Wake operators rely on.
+prove the end-to-end operational loop that Wake operators rely on. It also
+must not make GitHub's labels, comments, message format, or command syntax an
+implicit part of Wake's domain model.
 
 The correction is a mandatory work packet between Task 25 and Task 26 of
 `2026-07-30-wake-target-architecture-rewrite.md`. It must pass before any
@@ -22,13 +24,13 @@ cutover or claim of target operational equivalence.
 With an approved target configuration, a target Wake process can:
 
 1. load configuration and durable state from a Wake root;
-2. observe the approved GitHub issue, pull-request, review, and comment
-   evidence;
+2. observe configured external-work evidence through provider-owned adapters;
 3. translate provider evidence into canonical commands and facts;
 4. create and progress eligible WorkItems according to approved policy;
 5. select and invoke configured agent runners in an approved workspace;
 6. persist transcripts, recover active Runs, and obey cancellation/lease rules;
-7. deliver approved external effects through the durable delivery journal;
+7. deliver approved external effects through the durable delivery journal and
+   provider-owned publication behavior;
 8. expose the resulting public views through the target CLI, API, and web UI.
 
 This outcome does not require literal preservation of legacy implementation,
@@ -77,6 +79,46 @@ If the target design cannot support an agreed capability without violating an
 invariant, write and approve a dated design amendment before implementation.
 Do not work around the conflict inside bootstrap or an adapter.
 
+### 3.3 Providers own their interaction semantics
+
+Wake distinguishes external-work providers from source-control/pull-request
+providers. GitHub implements both roles in this correction. Future ticket
+providers may include Jira, Linear, and Notion; future source-control/PR
+providers may include GitLab. Their addition must not require a domain or
+workflow rewrite.
+
+The shared target boundary is intentionally narrow. It carries provider
+identity, canonical external-resource identity, normalized work/revision facts,
+and approved domain publication requests. It does **not** prescribe labels,
+comments, slash commands, markdown headers, review APIs, status fields, or any
+other GitHub-shaped operation.
+
+Each provider implementation owns all of the following:
+
+- configuration schema and validation for that provider;
+- polling/webhook mechanics, pagination, caching, and provider event
+  deduplication;
+- provider-object normalization and correlation evidence;
+- eligibility filtering and provider-native state/status synchronization;
+- recognition of output written by Wake and suppression of provider-specific
+  feedback loops;
+- parsing provider-native human interaction into provider-neutral proposed
+  decisions;
+- formatting and publication of provider-native status, replies, reviews,
+  labels, or other interactions;
+- provider-specific idempotency and reconciliation.
+
+The GitHub provider therefore owns `wake:status.*`, `wake:stage.*`, and
+`wake:workflow.*` labels, GitHub comment headers/body formatting, and GitHub
+slash-command conventions. No domain, orchestration, execution, activity,
+surface, or shared integration component may inspect, generate, or configure
+those details.
+
+Task 25A delivers GitHub as the only real provider. It also delivers a
+non-GitHub fake-provider contract test whose interaction model has no labels
+or slash commands, proving that the shared seam does not rely on GitHub
+semantics. It does not deliver a real Jira, Linear, Notion, or GitLab adapter.
+
 ## 4. Evidence-led review
 
 The correction begins with a full, traceable review of the legacy live runtime.
@@ -89,7 +131,8 @@ The inventory must cover at least:
   operator-supported setting;
 - GitHub authentication, repository discovery, issue/PR/review/comment
   observation, pagination, ETags, polling cadence, eligibility policy, and
-  deduplication;
+  deduplication; the same review identifies the target provider-neutral facts
+  and the GitHub-only behavior that must remain enclosed;
 - work creation/correlation, durable workflow-selection policy, state movement,
   and the reconciliation of provider labels that mirror Wake status, workflow,
   and stage without replacing unrelated user labels;
@@ -126,7 +169,9 @@ legacy setting to one of:
 Bootstrap may aggregate validated module subtrees in
 `ResolvedWakeModulesConfig`, but no domain or adapter constructor may accept
 that aggregate. Runner-specific settings belong to Execution; provider
-credentials, repositories, and observation policy belong to Integrations;
+credentials, repositories, observation policy, message formats, and
+provider-native interaction rules belong to that provider's configuration
+subtree under Integrations;
 workflow policy belongs to Orchestration/Activities; host settings belong to
 Control Plane and Surfaces.
 
@@ -144,12 +189,14 @@ validated configuration it will construct and connect:
 - registered built-in Activities, including agent and PR activities, each with
   its narrow ports;
 - configured runner instances and a tier-aware registry;
-- GitHub client plus issue, pull-request, review, and comment observation
-  sources;
-- polling, inbound translation, domain reactors, and their durable
-  checkpoints;
-- the journal-backed external delivery service, GitHub delivery adapter, and
-  reconciliation;
+- a provider registry composed from configured provider subtrees; in this
+  packet it registers GitHub only;
+- the GitHub client plus GitHub-owned issue, pull-request, review, and comment
+  observation and publication components;
+- provider-neutral polling/discovery dispatch, inbound decision application,
+  domain reactors, and their durable checkpoints;
+- the journal-backed external delivery service and a provider-selected delivery
+  adapter/reconciliation path;
 - cancellation, liveness, recovery, schedule, tick, and resident hosts;
 - CLI/API/web applications over the same public application services.
 
@@ -172,6 +219,10 @@ Automated tests are the primary continuous evidence.
   configuration; it observes fake GitHub evidence, creates/progresses work,
   executes a fake runner, records durable state, and confirms a fake outbound
   effect.
+- A provider-boundary contract test runs the same shared intake and publication
+  path with a fake non-GitHub provider whose state synchronization and human
+  interaction use provider-specific fields rather than labels or slash
+  commands.
 - Restart, duplicate, cancellation, failed delivery, and reconciliation
   scenarios exercise the same composed runtime rather than isolated helper
   objects.
@@ -185,8 +236,8 @@ or environment mechanism and must never be committed or printed.
 
 The script will cover the final agreed capability set. At minimum, if those
 capabilities are classified `replicate now`, it proves issue intake and update,
-workflow selection and provider-label synchronization, one agent workflow, a
-human review/comment decision, and one intended GitHub effect.
+workflow selection and GitHub-label synchronization, one agent workflow, a
+GitHub human review/comment decision, and one intended GitHub effect.
 Each observation is recorded with command, configuration fixture shape,
 expected public view, and result. A failed manual check returns work to the
 owning corrective task; it is not waived by a passing fake.
@@ -222,8 +273,8 @@ syntax, or an external production deployment. Those remain separate decisions.
 It does require that any such omission be explicit in the catalogue rather than
 an accidental consequence of incomplete wiring.
 
-The target design currently names GitHub as its concrete provider. The review
-must identify any legacy provider abstractions that would support another
-ticketing system, but must not imply that arbitrary ticketing-system adapters
-are `replicate now` unless the catalogue and an approved target design
-amendment select them.
+GitHub is the only real provider delivered by this correction. The review must
+identify the extension requirements for Jira, Linear, Notion, GitLab, and other
+providers, but must not imply that an arbitrary real provider adapter is
+`replicate now`. The fake non-GitHub contract provider is required proof of the
+seam, not a production integration.
