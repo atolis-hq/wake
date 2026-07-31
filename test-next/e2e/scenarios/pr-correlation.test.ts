@@ -6,8 +6,9 @@ import {
 } from '../../../src-next/activities/index.js';
 import {
   InboundTranslator,
+  BuiltInAdapterId,
   createEventDraft,
-  entityRef,
+  integrationStream,
   type ExternalWorkObservedPayload,
 } from '../../../src-next/integrations/index.js';
 import {
@@ -37,7 +38,7 @@ it('E2E-PR-001 correlates a verified primary PR and rejects uncorrelated or conf
     causationId: 'github:pr-1',
     actor: { kind: 'integration', id: 'github' },
     source: { kind: 'adapter', id: 'github' },
-    stream: entityRef('integration', 'github'),
+    stream: integrationStream(BuiltInAdapterId.GitHub),
     payload,
   });
   await journal.append(evidence.stream, 0, [evidence]);
@@ -117,7 +118,7 @@ async function appendObservation(
   payload: ExternalWorkObservedPayload,
   eventId: string,
 ) {
-  const stream = entityRef('integration', 'github');
+  const stream = integrationStream(BuiltInAdapterId.GitHub);
   await journal.append(stream, (await journal.readStream(stream)).length, [
     createEventDraft({
       eventId,
@@ -148,7 +149,7 @@ async function appendComment(
     causationId: eventId,
     actor: { kind: 'integration', id: 'github' },
     source: { kind: 'adapter', id: 'github' },
-    stream: entityRef('integration', 'github'),
+    stream: integrationStream(BuiltInAdapterId.GitHub),
     payload: {
       externalKey,
       body: '/accepted',
@@ -157,6 +158,6 @@ async function appendComment(
       raw: {},
     },
   });
-  const stream = entityRef('integration', 'github');
+  const stream = integrationStream(BuiltInAdapterId.GitHub);
   await journal.append(stream, (await journal.readStream(stream)).length, [event]);
 }

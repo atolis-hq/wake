@@ -1,18 +1,19 @@
 import { expect, it } from 'vitest';
 
 import { createRuntimeProjectionRunner } from '../../src-next/bootstrap/index.js';
-import { createEventDraft, entityRef } from '../../src-next/kernel/index.js';
+import { createEventDraft } from '../../src-next/kernel/index.js';
 import {
   InMemoryCheckpointStore,
   InMemoryEventJournal,
   InMemoryProjectionStore,
 } from '../../src-next/persistence/index.js';
+import { resourceId, resourceStream } from '../../src-next/resources/index.js';
 import { FakeClock } from '../e2e/support/world.js';
 
 it('constructs runtime replay with the activities-pr projection registered', async () => {
   const journal = new InMemoryEventJournal(new FakeClock());
   const projections = new InMemoryProjectionStore();
-  const stream = entityRef('resource', 'resource-1');
+  const stream = resourceStream(resourceId('resource-1'));
   await journal.append(stream, 0, [
     createEventDraft({
       eventId: 'pr-discovered',

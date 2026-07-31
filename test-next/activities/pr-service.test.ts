@@ -6,7 +6,11 @@ import {
 } from '../../src-next/activities/index.js';
 import { correlationId } from '../../src-next/kernel/index.js';
 import { InMemoryEventJournal } from '../../src-next/persistence/index.js';
-import { createResourceService, resourceId } from '../../src-next/resources/index.js';
+import {
+  createResourceService,
+  resourceId,
+  resourceStream,
+} from '../../src-next/resources/index.js';
 import { createWorkService, workItemId } from '../../src-next/work/index.js';
 import { FakeClock } from '../e2e/support/world.js';
 
@@ -55,9 +59,7 @@ describe('PullRequestService', () => {
     );
 
     expect(
-      (await journal.readStream({ kind: 'resource', id: resource })).map(
-        (event) => event.eventType,
-      ),
+      (await journal.readStream(resourceStream(resource))).map((event) => event.eventType),
     ).toEqual([
       'resources.resource-discovered',
       'resources.work-correlation-established',
@@ -117,7 +119,7 @@ describe('PullRequestService review evidence', () => {
       context('accept'),
     );
 
-    expect((await journal.readStream({ kind: 'resource', id: resource })).at(-1)?.eventType).toBe(
+    expect((await journal.readStream(resourceStream(resource))).at(-1)?.eventType).toBe(
       'pr.review-rejected',
     );
     expect(

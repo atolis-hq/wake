@@ -66,6 +66,7 @@ function inspectLiteral(detail, literal, catalogues, rules, diagnostics) {
 
 function inspectRegistrations(detail, literal, value, rule, registrations, rules, diagnostics) {
   if (!rules.has(rule)) return;
+  if (isExplicitCatalogueLiteral(literal)) return;
   for (const registration of registrations.get(value) ?? []) {
     if (isInsideInitializer(detail, literal, registration)) continue;
     diagnostics.push(
@@ -79,6 +80,57 @@ function inspectRegistrations(detail, literal, value, rule, registrations, rules
       ),
     );
   }
+}
+
+function isExplicitCatalogueLiteral(literal) {
+  const declaration = ancestor(literal, ts.isVariableDeclaration);
+  if (
+    declaration === undefined ||
+    !ts.isIdentifier(declaration.name) ||
+    declaration.initializer === undefined
+  ) {
+    return false;
+  }
+  const list = declaration.parent;
+  const statement =
+    ts.isVariableDeclarationList(list) && ts.isVariableStatement(list.parent)
+      ? list.parent
+      : undefined;
+  if (
+    statement === undefined ||
+    statement.parent !== literal.getSourceFile() ||
+    (list.flags & ts.NodeFlags.Const) === 0 ||
+    !(
+      statement.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword) ??
+      false
+    )
+  ) {
+    return false;
+  }
+  if (declaration.name.text.endsWith('EventType') || declaration.name.text.endsWith('StreamKind')) {
+    return true;
+  }
+  const initializer = unwrapParentheses(declaration.initializer);
+  return (
+    ts.isCallExpression(initializer) &&
+    ts.isIdentifier(unwrapParentheses(initializer.expression)) &&
+    unwrapParentheses(initializer.expression).text === 'defineClosedVocabulary'
+  );
+}
+
+function ancestor(node, predicate) {
+  let current = node.parent;
+  while (current !== undefined) {
+    if (predicate(current)) return current;
+    current = current.parent;
+  }
+  return undefined;
+}
+
+function unwrapParentheses(expression) {
+  let current = expression;
+  while (ts.isParenthesizedExpression(current)) current = current.expression;
+  return current;
 }
 
 function isInsideInitializer(detail, literal, registration) {

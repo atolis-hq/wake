@@ -3,5 +3,10 @@
   "kind": "domain",
   "dependencies": ["kernel"],
   "publicEntry": "./index.ts",
-  "namespaces": { "events": ["work."], "config": ["work"], "relations": ["work."] }
+  "namespaces": {
+    "events": ["work."],
+    "config": ["work"],
+    "relations": ["work."],
+    "streams": ["work-item"]
+  }
 }

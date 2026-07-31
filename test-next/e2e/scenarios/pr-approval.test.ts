@@ -1,5 +1,7 @@
 import { expect, it } from 'vitest';
 
+import { resourceStream } from '../../../src-next/resources/index.js';
+import { workItemStream } from '../../../src-next/work/index.js';
 import { TestWorld } from '../support/world.js';
 import {
   executeApproval,
@@ -51,9 +53,7 @@ it.each([
     const selectionDenied =
       scenario === 'missing' || scenario === 'capability-missing' || scenario === 'ambiguous';
     expect(denials[0]?.stream).toEqual(
-      selectionDenied
-        ? { kind: 'work', id: setup.workItemId }
-        : { kind: 'resource', id: setup.primaryResourceId },
+      selectionDenied ? workItemStream(setup.workItemId) : resourceStream(setup.primaryResourceId!),
     );
     expect(denials[0]?.payload).toEqual(
       expect.objectContaining(

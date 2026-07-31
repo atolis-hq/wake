@@ -1,7 +1,8 @@
 import type { ActivityOutcome } from '../../activities/index.js';
+import type { RunId } from './identifiers.js';
 export type RunTransportStatus = 'started' | 'succeeded' | 'failed' | 'cancelled' | 'ambiguous';
 export interface RunView {
-  readonly runId: string;
+  readonly runId: RunId;
   readonly activationId: string;
   readonly activity: string;
   readonly attempt: number;

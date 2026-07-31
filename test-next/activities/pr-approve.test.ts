@@ -1,6 +1,7 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 
 import {
+  activationId,
   createPullRequestApproveActivity,
   type PullRequestActivityOutcome,
   type PullRequestApproveInput,
@@ -41,7 +42,7 @@ it('creates one provider-neutral approval intent for the current primary PR revi
   await expect(
     activity.handler.execute(
       {
-        activationId: 'activation-1',
+        activationId: activationId('activation-1'),
         activity: 'pr.approve',
         workItemId: work.workItemId,
         workflowInstanceId: 'workflow-1',
@@ -66,7 +67,7 @@ it('creates one provider-neutral approval intent for the current primary PR revi
   expect(await world.events('pr.approve-requested')).toEqual([
     expect.objectContaining({
       payload: expect.objectContaining({
-        activationId: 'activation-1',
+        activationId: activationId('activation-1'),
         resourceId: resource,
         revision: 'head-a',
         body: 'Reviewed',
@@ -159,7 +160,7 @@ async function setupApprovablePullRequest(world: TestWorld, work: ReturnType<typ
 
 function invocation(work: ReturnType<typeof workItemId>) {
   return {
-    activationId: 'activation-1',
+    activationId: activationId('activation-1'),
     activity: 'pr.approve',
     workItemId: work,
     workflowInstanceId: 'workflow-1',

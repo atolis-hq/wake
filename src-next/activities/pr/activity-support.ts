@@ -1,11 +1,6 @@
 import { z } from 'zod';
 
-import {
-  entityRef,
-  type EntityRef,
-  type EventDraft,
-  type EventJournal,
-} from '../../kernel/index.js';
+import { type EntityRef, type EventDraft, type EventJournal } from '../../kernel/index.js';
 import {
   resourceId,
   type ResourceCapability,
@@ -126,8 +121,6 @@ export async function appendResolved(
   const events = await journal.readStream(stream);
   return events.some((candidate) => candidate.eventId === event.eventId) ? 'known' : 'failed';
 }
-
-export const workStream = (workItemId: WorkItemId): EntityRef => entityRef('work', workItemId);
 
 function candidateAudit(
   authority: PullRequestAuthorityInput,

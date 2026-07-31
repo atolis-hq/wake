@@ -1,10 +1,10 @@
 import {
   createEventDraft,
-  entityRef,
   type CommandContext,
   type EntityRef,
   type EventDraft,
 } from '../../kernel/index.js';
+import { resourceStream } from '../../resources/index.js';
 import type { AcceptReviewSignal, ObservePullRequest, RequestChangesSignal } from './contracts.js';
 import { isReviewAuthorized } from '../review/authorization.js';
 
@@ -142,7 +142,7 @@ export const deliveryIntentRequested = (
     causationId: context.commandId,
     actor: context.actor,
     source: { kind: 'internal', id: 'activities-pr' },
-    stream: entityRef('resource', resourceId),
+    stream: resourceStream(resourceId),
     payload: { idempotencyKey: `${context.commandId}:${type}`, ...payload },
   });
 
@@ -160,7 +160,7 @@ function fact<Type extends string, Payload>(
     causationId: context.commandId,
     actor: context.actor,
     source: { kind: 'internal', id: 'activities-pr' },
-    stream: entityRef('resource', resourceId),
+    stream: resourceStream(resourceId),
     payload,
   });
 }

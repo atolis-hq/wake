@@ -1,7 +1,10 @@
-import type { ActivityRegistry, ActivityExecutionContext } from '../../activities/index.js';
+import {
+  activationId,
+  type ActivityRegistry,
+  type ActivityExecutionContext,
+} from '../../activities/index.js';
 import {
   createEventDraft,
-  entityRef,
   type Clock,
   type EventJournal,
   type IdGenerator,
@@ -9,6 +12,8 @@ import {
 import type { ResourceView } from '../../resources/index.js';
 import type { WorkItemId } from '../../work/index.js';
 import type { ExecutionConfig } from '../contracts/config.js';
+import { runId } from '../contracts/identifiers.js';
+import { ExecutionStreamKind, runStream } from '../contracts/streams.js';
 import type { WorkspaceLease, WorkspaceProvider } from '../contracts/workspace.js';
 import { failureFrom } from '../domain/run-result.js';
 import { RunRepository } from './run-repository.js';
@@ -54,7 +59,7 @@ export function createExecutionService(
       const prior = await repository.list(activation.activationId);
       const completed = prior.find((run) => run.status === 'succeeded');
       if (completed !== undefined) return completed;
-      const runId = dependencies.ids.next('run');
+      const currentRunId = runId(dependencies.ids.next(ExecutionStreamKind.Run));
       const startedAt = dependencies.clock.now().toISOString();
       let lease: WorkspaceLease | undefined;
       try {
@@ -64,10 +69,10 @@ export function createExecutionService(
           context.resources,
           dependencies.workspaces,
         );
-        await repository.append(runId, 0, [
+        await repository.append(currentRunId, 0, [
           event({
-            runId,
-            eventId: `${runId}:started`,
+            runId: currentRunId,
+            eventId: `${currentRunId}:started`,
             eventType: 'execution.run-started',
             occurredAt: startedAt,
             correlationId: context.orchestrationGroupId,
@@ -86,10 +91,10 @@ export function createExecutionService(
           await executeActivity(definition, activation, context, input, startedAt),
         );
         const finishedAt = dependencies.clock.now().toISOString();
-        await repository.append(runId, 1, [
+        await repository.append(currentRunId, 1, [
           event({
-            runId,
-            eventId: `${runId}:succeeded`,
+            runId: currentRunId,
+            eventId: `${currentRunId}:succeeded`,
             eventType: 'execution.run-succeeded',
             occurredAt: finishedAt,
             correlationId: context.orchestrationGroupId,
@@ -98,13 +103,13 @@ export function createExecutionService(
           }),
         ]);
       } catch (error) {
-        const loaded = await repository.load(runId);
+        const loaded = await repository.load(currentRunId);
         if (loaded.sequence > 0) {
           const finishedAt = dependencies.clock.now().toISOString();
-          await repository.append(runId, loaded.sequence, [
+          await repository.append(currentRunId, loaded.sequence, [
             event({
-              runId,
-              eventId: `${runId}:failed`,
+              runId: currentRunId,
+              eventId: `${currentRunId}:failed`,
               eventType: 'execution.run-failed',
               occurredAt: finishedAt,
               correlationId: context.orchestrationGroupId,
@@ -116,7 +121,7 @@ export function createExecutionService(
       } finally {
         await lease?.release();
       }
-      return (await repository.load(runId)).view!;
+      return (await repository.load(currentRunId)).view!;
     },
     list: (activationId?: string) => repository.list(activationId),
   };
@@ -135,7 +140,7 @@ async function executeActivity(
   };
   return definition.handler.execute(
     {
-      activationId: activation.activationId,
+      activationId: activationId(activation.activationId),
       activity: activation.activity,
       workItemId: context.workItemId,
       workflowInstanceId: context.workflowInstanceId,
@@ -160,7 +165,7 @@ async function acquireWorkspace(
   return provider.acquire({ mode, workItemId, repositoryResource });
 }
 function event(input: {
-  runId: string;
+  runId: ReturnType<typeof runId>;
   eventId: string;
   eventType: string;
   occurredAt: string;
@@ -176,7 +181,7 @@ function event(input: {
     causationId: input.causationId,
     actor: { kind: 'system', id: 'execution' },
     source: { kind: 'internal', id: 'execution' },
-    stream: entityRef('run', input.runId),
+    stream: runStream(input.runId),
     payload: input.payload,
   });
 }

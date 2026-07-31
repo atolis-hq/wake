@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { createResourceService, resourceId } from '../../src-next/resources/index.js';
+import {
+  createResourceService,
+  resourceId,
+  resourceStream,
+} from '../../src-next/resources/index.js';
 import { InMemoryEventJournal } from '../../src-next/persistence/index.js';
 import { workItemId } from '../../src-next/work/index.js';
 import { FakeClock } from '../e2e/support/world.js';
@@ -62,7 +66,7 @@ describe('Resource correlations', () => {
     await service.correlate(resource, workItemId('work-1'), 'primary', context('command-2'));
 
     expect(
-      (await journal.readStream({ kind: 'resource', id: 'resource-1' })).filter(
+      (await journal.readStream(resourceStream(resourceId('resource-1')))).filter(
         (event) => event.eventType === 'resources.work-correlation-established',
       ),
     ).toHaveLength(1);
@@ -79,7 +83,7 @@ describe('Resource correlations', () => {
       service.correlate(resource, workItemId('work-2'), 'primary', context('command-3')),
     ).rejects.toThrow('primary');
     expect(
-      (await journal.readStream({ kind: 'resource', id: 'resource-1' })).at(-1)?.eventType,
+      (await journal.readStream(resourceStream(resourceId('resource-1')))).at(-1)?.eventType,
     ).toBe('resources.work-correlation-conflicted');
   });
 

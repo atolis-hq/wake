@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { createEventDraft, entityRef } from '../../src-next/kernel/index.js';
+import { createEventDraft, type EntityRef } from '../../src-next/kernel/index.js';
 import { createWatchReactor } from '../../src-next/orchestration/index.js';
 import { InMemoryCheckpointStore, InMemoryEventJournal } from '../../src-next/persistence/index.js';
 import { FakeClock } from '../e2e/support/world.js';
@@ -105,7 +105,10 @@ it('does not reject an unrelated causal event', async () => {
 it('keeps its checkpoint unchanged until every watch request succeeds', async () => {
   const journal = new InMemoryEventJournal(new FakeClock());
   const checkpoints = new InMemoryCheckpointStore();
-  const stream = entityRef('test', 'watch-reactor');
+  const stream: EntityRef<'test', 'watch-reactor'> = {
+    kind: 'test',
+    id: 'watch-reactor',
+  };
   await journal.append(stream, 0, [
     createEventDraft({
       eventId: 'event-1',
@@ -206,7 +209,10 @@ it('scopes dispatch and rejection command identities to the parent and watch', a
 
 it('replays the identical child request after checkpoint persistence fails', async () => {
   const journal = new InMemoryEventJournal(new FakeClock());
-  const stream = entityRef('test', 'checkpoint-replay');
+  const stream: EntityRef<'test', 'checkpoint-replay'> = {
+    kind: 'test',
+    id: 'checkpoint-replay',
+  };
   await journal.append(stream, 0, [
     createEventDraft({
       eventId: 'event-replay-1',

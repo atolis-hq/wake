@@ -2,12 +2,12 @@ import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, it } from 'vitest';
-import { createEventDraft, entityRef } from '../../src-next/kernel/index.js';
+import { createEventDraft, type EntityRef } from '../../src-next/kernel/index.js';
 import { FileEventJournal } from '../../src-next/persistence/index.js';
 import { FakeClock } from '../e2e/support/world.js';
 it('reopens the journal and continues stream sequence and global position', async () => {
   const root = await mkdtemp(join(tmpdir(), 'wake-journal-'));
-  const stream = entityRef('work-item', 'work-1');
+  const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };
   const draft = (id: string) =>
     createEventDraft({
       eventId: id,
@@ -29,7 +29,7 @@ it('reopens the journal and continues stream sequence and global position', asyn
 
 it('returns an existing idempotent event while appending only new events in a mixed batch', async () => {
   const root = await mkdtemp(join(tmpdir(), 'wake-journal-mixed-'));
-  const stream = entityRef('work-item', 'work-1');
+  const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };
   const draft = (id: string) =>
     createEventDraft({
       eventId: id,

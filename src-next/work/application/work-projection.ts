@@ -1,9 +1,10 @@
 import type { ProjectionDefinition } from '../../kernel/index.js';
 import { workItemId } from '../contracts/identifiers.js';
+import { isWorkItemStream } from '../contracts/streams.js';
 import type { WorkItemView } from '../contracts/views.js';
 export const workProjection: ProjectionDefinition<WorkItemView | null> = {
   name: 'work',
-  select: (event) => (event.stream.kind === 'work-item' ? { key: event.stream.id } : null),
+  select: (event) => (isWorkItemStream(event.stream) ? { key: event.stream.id } : null),
   initial: () => null,
   project(previous, event) {
     const payload = record(event.payload) ? event.payload : {};

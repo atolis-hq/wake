@@ -1,7 +1,15 @@
 import type { CausationId, CorrelationId, EntityRef, EventId } from './identifiers.js';
+import { defineClosedVocabulary, type ValueOf } from './vocabulary.js';
+
+export const EventActorKind = defineClosedVocabulary({
+  System: 'system',
+  Operator: 'operator',
+  Agent: 'agent',
+  Integration: 'integration',
+} as const);
 
 export interface EventActor {
-  readonly kind: 'system' | 'operator' | 'agent' | 'integration';
+  readonly kind: ValueOf<typeof EventActorKind>;
   readonly id: string;
 }
 

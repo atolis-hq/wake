@@ -1,8 +1,8 @@
 import {
   createEventDraft,
   correlationId,
-  entityRef,
   type Clock,
+  type EntityRef,
   type EventEnvelope,
   type IdGenerator,
 } from '../../../src-next/kernel/index.js';
@@ -84,7 +84,10 @@ export class TestWorld {
     this.journal,
     this.checkpoints,
   );
-  private readonly stream = entityRef('test', 'scenario');
+  private readonly stream: EntityRef<'test', 'scenario'> = {
+    kind: 'test',
+    id: 'scenario',
+  };
 
   async appendFact<Type extends string, Payload>(
     eventType: Type,

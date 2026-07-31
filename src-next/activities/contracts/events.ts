@@ -1,4 +1,6 @@
+import type { ActivationId } from './identifiers.js';
+
 export interface ActivityActivated {
-  readonly activationId: string;
+  readonly activationId: ActivationId;
   readonly activity: string;
 }

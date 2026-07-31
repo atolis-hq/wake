@@ -1,10 +1,11 @@
 import type { ProjectionDefinition } from '../../kernel/index.js';
 import { workItemId } from '../../work/index.js';
 import { resourceId } from '../contracts/identifiers.js';
+import { isResourceStream } from '../contracts/streams.js';
 import type { ResourceCorrelationView, ResourceView } from '../contracts/views.js';
 export const resourceProjection: ProjectionDefinition<ResourceView | null> = {
   name: 'resources',
-  select: (event) => (event.stream.kind === 'resource' ? { key: event.stream.id } : null),
+  select: (event) => (isResourceStream(event.stream) ? { key: event.stream.id } : null),
   initial: () => null,
   project(previous, event) {
     const payload = record(event.payload) ? event.payload : {};
@@ -43,7 +44,7 @@ export const resourceCorrelationProjection: ProjectionDefinition<
   readonly ResourceCorrelationView[]
 > = {
   name: 'resource-correlations',
-  select: (event) => (event.stream.kind === 'resource' ? { key: event.stream.id } : null),
+  select: (event) => (isResourceStream(event.stream) ? { key: event.stream.id } : null),
   initial: () => [],
   project(previous, event) {
     const payload = record(event.payload) ? event.payload : {};

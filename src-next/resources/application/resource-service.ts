@@ -1,12 +1,8 @@
-import {
-  createEventDraft,
-  entityRef,
-  type CommandContext,
-  type EventJournal,
-} from '../../kernel/index.js';
+import { createEventDraft, type CommandContext, type EventJournal } from '../../kernel/index.js';
 import type { WorkItemId } from '../../work/index.js';
 import type { DiscoverResource } from '../contracts/commands.js';
 import { resourceId, type ResourceId } from '../contracts/identifiers.js';
+import { isResourceStream, resourceStream } from '../contracts/streams.js';
 import type {
   ExternalResourceKey,
   ResourceCorrelationView,
@@ -48,7 +44,7 @@ export function createResourceService(journal: EventJournal): ResourceService {
         causationId: context.commandId,
         actor: context.actor,
         source: { kind: 'internal', id: 'resource-service' },
-        stream: entityRef('resource', resourceId),
+        stream: resourceStream(resourceId),
         payload,
       }),
     ]);
@@ -79,7 +75,7 @@ export function createResourceService(journal: EventJournal): ResourceService {
       const events = await journal.readAll(0);
       const ids = new Set(
         events
-          .filter((event) => event.stream.kind === 'resource')
+          .filter((event) => isResourceStream(event.stream))
           .map((event) => resourceId(event.stream.id)),
       );
       const correlations = await Promise.all(

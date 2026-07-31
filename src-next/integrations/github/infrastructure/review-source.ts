@@ -1,4 +1,6 @@
-import { createEventDraft, entityRef, type EventDraft } from '../../../kernel/index.js';
+import { createEventDraft, EventActorKind, type EventDraft } from '../../../kernel/index.js';
+import { BuiltInAdapterId } from '../../contracts/identifiers.js';
+import { integrationStream } from '../../contracts/streams.js';
 import type { GitHubPullRequestPayload, GitHubReviewPayload } from '../contracts/payloads.js';
 
 export function githubReviewObservation(input: {
@@ -17,9 +19,9 @@ export function githubReviewObservation(input: {
     occurredAt: input.review.submitted_at,
     correlationId: `github:${key}`,
     causationId: `github:review:${input.review.id}`,
-    actor: { kind: 'integration', id: 'github' },
+    actor: { kind: EventActorKind.Integration, id: 'github' },
     source: { kind: 'adapter', id: 'github' },
-    stream: entityRef('integration', 'github'),
+    stream: integrationStream(BuiltInAdapterId.GitHub),
     payload: {
       externalKey: key,
       body: command,

@@ -3,5 +3,10 @@
   "kind": "application",
   "dependencies": ["kernel", "work", "resources", "orchestration", "execution"],
   "publicEntry": "./index.ts",
-  "namespaces": { "events": ["control."], "config": ["controlPlane"], "relations": [] }
+  "namespaces": {
+    "events": ["control."],
+    "config": ["controlPlane"],
+    "relations": [],
+    "streams": []
+  }
 }

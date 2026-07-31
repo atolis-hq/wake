@@ -1,11 +1,7 @@
-import {
-  entityRef,
-  type EventDraft,
-  type EventEnvelope,
-  type EventJournal,
-} from '../../kernel/index.js';
+import type { EventDraft, EventEnvelope, EventJournal } from '../../kernel/index.js';
 import type { ExternalResourceKey } from '../contracts/views.js';
 import type { ResourceId } from '../contracts/identifiers.js';
+import { resourceStream } from '../contracts/streams.js';
 import { foldResource, type FoldedResource } from '../domain/resource.js';
 
 export interface LoadedResource {
@@ -17,7 +13,7 @@ export class ResourceRepository {
   constructor(private readonly journal: EventJournal) {}
 
   async load(resourceId: ResourceId): Promise<LoadedResource> {
-    const events = await this.journal.readStream(entityRef('resource', resourceId));
+    const events = await this.journal.readStream(resourceStream(resourceId));
     return { sequence: events.length, resource: foldResource(events) };
   }
 
@@ -26,7 +22,7 @@ export class ResourceRepository {
     expectedSequence: number,
     drafts: readonly EventDraft[],
   ): Promise<readonly EventEnvelope[]> {
-    return this.journal.append(entityRef('resource', resourceId), expectedSequence, drafts);
+    return this.journal.append(resourceStream(resourceId), expectedSequence, drafts);
   }
 
   async findByExternalKey(externalKey: ExternalResourceKey): Promise<FoldedResource | null> {

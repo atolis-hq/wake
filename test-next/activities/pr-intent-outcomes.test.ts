@@ -1,15 +1,14 @@
 import { expect, it } from 'vitest';
 
-import { createPullRequestMergeActivity } from '../../src-next/activities/index.js';
+import { activationId, createPullRequestMergeActivity } from '../../src-next/activities/index.js';
 import { appendIntentOnce } from '../../src-next/activities/pr/intent.js';
 import {
   createEventDraft,
-  entityRef,
   WrongExpectedSequenceError,
   type EventJournal,
 } from '../../src-next/kernel/index.js';
 import { resourceId } from '../../src-next/resources/index.js';
-import { workItemId } from '../../src-next/work/index.js';
+import { workItemId, workItemStream } from '../../src-next/work/index.js';
 import { TestWorld } from '../e2e/support/world.js';
 
 it('returns failed when the append boundary reports a definite failure', async () => {
@@ -77,7 +76,7 @@ it('queries by event id before trusting a genuinely uncertain requested append',
 });
 
 it('treats exhausted sequence conflicts without the event as a failed append', async () => {
-  const stream = entityRef('work', 'work-1');
+  const stream = workItemStream(workItemId('work-1'));
   let attempts = 0;
   const journal: EventJournal = {
     async append() {
@@ -146,7 +145,7 @@ async function setupApprovedPullRequest(
 
 function invocation(work: ReturnType<typeof workItemId>) {
   return {
-    activationId: 'activation-1',
+    activationId: activationId('activation-1'),
     activity: 'pr.merge',
     workItemId: work,
     workflowInstanceId: 'workflow-1',

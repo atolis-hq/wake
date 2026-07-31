@@ -1,4 +1,6 @@
-import { createEventDraft, entityRef, type EventDraft } from '../../kernel/index.js';
+import { createEventDraft, type EventDraft } from '../../kernel/index.js';
+import { workflowInstanceId } from '../contracts/identifiers.js';
+import { workflowInstanceStream } from '../contracts/streams.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
 
 interface DecisionContext {
@@ -54,7 +56,7 @@ export function startDraft(
     causationId: input.causationId,
     actor,
     source,
-    stream: entityRef('workflow-instance', input.workflowInstanceId),
+    stream: workflowInstanceStream(workflowInstanceId(input.workflowInstanceId)),
     payload,
   });
 }
@@ -74,7 +76,7 @@ export function stateDraft(
     causationId: input.causationId,
     actor,
     source,
-    stream: entityRef('workflow-instance', state.workflowInstanceId),
+    stream: workflowInstanceStream(workflowInstanceId(state.workflowInstanceId)),
     payload,
   });
 }

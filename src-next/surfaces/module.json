@@ -12,5 +12,5 @@
     "integrations"
   ],
   "publicEntry": "./index.ts",
-  "namespaces": { "events": [], "config": ["surfaces"], "relations": [] }
+  "namespaces": { "events": [], "config": ["surfaces"], "relations": [], "streams": [] }
 }

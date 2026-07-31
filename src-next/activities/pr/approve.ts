@@ -1,7 +1,9 @@
 import { z } from 'zod';
 
 import type { ActivityDefinition } from '../contracts/activity.js';
-import { entityRef, type EventJournal } from '../../kernel/index.js';
+import type { EventJournal } from '../../kernel/index.js';
+import { resourceStream } from '../../resources/index.js';
+import { workItemStream } from '../../work/index.js';
 import { approveDenied, deliveryIntentRequested } from './event-drafts.js';
 import {
   activityCommandContext,
@@ -16,7 +18,6 @@ import {
   resolvePrimaryCapability,
   selectedDenialAudit,
   selectionDenialAudit,
-  workStream,
 } from './activity-support.js';
 import {
   claimDecision,
@@ -64,7 +65,7 @@ export function createPullRequestApproveActivity(
           'approvable',
         );
         if (!resource.allowed) {
-          const stream = workStream(invocation.workItemId);
+          const stream = workItemStream(invocation.workItemId);
           const denial = approveDenied(stream, resource.reason, command, {
             ...selectionDenialAudit(invocation.input.target, resource.candidates),
             body: invocation.input.body ?? null,
@@ -81,7 +82,7 @@ export function createPullRequestApproveActivity(
           requireChecks: false,
         });
         if (!decision.allowed) {
-          const stream = entityRef('resource', resource.resourceId);
+          const stream = resourceStream(resource.resourceId);
           const denial = approveDenied(stream, decision.reason, command, {
             ...selectedDenialAudit(authority, resource.resourceId),
             body: invocation.input.body ?? null,

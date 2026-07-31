@@ -6,6 +6,7 @@
   "namespaces": {
     "events": ["activities.", "pr.", "review."],
     "config": ["activities"],
-    "relations": ["activity."]
+    "relations": ["activity."],
+    "streams": ["activity-decision"]
   }
 }

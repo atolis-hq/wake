@@ -2,8 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import {
   InboundTranslator,
+  BuiltInAdapterId,
   createEventDraft,
-  entityRef,
+  integrationStream,
   type ExternalWorkObservedPayload,
 } from '../../src-next/integrations/index.js';
 import { InMemoryCheckpointStore, InMemoryEventJournal } from '../../src-next/persistence/index.js';
@@ -44,7 +45,7 @@ describe('InboundTranslator', () => {
       causationId: 'github:delivery-7',
       actor: { kind: 'integration', id: 'github' },
       source: { kind: 'adapter', id: 'github' },
-      stream: entityRef('integration', 'github'),
+      stream: integrationStream(BuiltInAdapterId.GitHub),
       payload: observation(),
     });
     await journal.append(event.stream, 0, [event]);

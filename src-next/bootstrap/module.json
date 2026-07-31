@@ -14,5 +14,5 @@
     "surfaces"
   ],
   "publicEntry": "./index.ts",
-  "namespaces": { "events": [], "config": ["bootstrap"], "relations": [] }
+  "namespaces": { "events": [], "config": ["bootstrap"], "relations": [], "streams": [] }
 }

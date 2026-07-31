@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { createEventDraft, entityRef, type EventEnvelope } from '../../src-next/kernel/index.js';
+import { createEventDraft, type EventEnvelope } from '../../src-next/kernel/index.js';
+import { workItemId, workItemStream } from '../../src-next/work/index.js';
 import { FaultInjector, InjectedFaultError } from './support/faults.js';
 import { formatTrace } from './support/trace.js';
 import { FakeClock, SequentialIds } from './support/world.js';
@@ -42,7 +43,7 @@ describe('event-model support', () => {
       causationId: 'cmd-1',
       actor: { kind: 'system', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream: entityRef('work-item', 'work-1'),
+      stream: workItemStream(workItemId('work-1')),
       payload: { objective: 'test' },
     });
     const envelope: EventEnvelope = {

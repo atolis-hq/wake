@@ -1,5 +1,7 @@
 export * from '../kernel/index.js';
 export * from './delivery/contracts/events.js';
+export * from './contracts/identifiers.js';
+export * from './contracts/streams.js';
 export * from './fake/external-sink.js';
 export * from './fake/external-source.js';
 export * from './github/application/inbound-translator.js';

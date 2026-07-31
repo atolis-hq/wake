@@ -2,8 +2,9 @@ import {
   type CommandContext,
   type EventJournal,
   WrongExpectedSequenceError,
-  entityRef,
 } from '../../kernel/index.js';
+import { workflowInstanceId } from '../contracts/identifiers.js';
+import { workflowInstanceStream } from '../contracts/streams.js';
 import type {
   ChildCoordinationMetadata,
   GroupBudgetExhaustedPayload,
@@ -20,7 +21,7 @@ export class GroupBudgetRecorder {
     maxPerGroup: number,
     context: CommandContext,
   ): Promise<void> {
-    const stream = entityRef('workflow-instance', parent.workflowInstanceId);
+    const stream = workflowInstanceStream(workflowInstanceId(parent.workflowInstanceId));
     const payload: GroupBudgetExhaustedPayload = { ...metadata, maxPerGroup };
     for (;;) {
       const events = await this.journal.readStream(stream);

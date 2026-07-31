@@ -1,9 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import { createPullRequestMergeAuthorityGate } from '../../src-next/activities/index.js';
-import { entityRef } from '../../src-next/kernel/index.js';
-import { resourceId } from '../../src-next/resources/index.js';
-import { workItemId } from '../../src-next/work/index.js';
+import { resourceId, resourceStream } from '../../src-next/resources/index.js';
+import { workItemId, workItemStream } from '../../src-next/work/index.js';
 import { TestWorld } from '../e2e/support/world.js';
 
 describe('PullRequestService merge authority audit', () => {
@@ -27,7 +26,7 @@ describe('PullRequestService merge authority audit', () => {
       false,
     );
     expect(
-      (await world.journal.readStream(entityRef('resource', resource.resourceId))).at(-1),
+      (await world.journal.readStream(resourceStream(resource.resourceId))).at(-1),
     ).toMatchObject({ eventType: 'pr.merge-denied', payload: { reason: 'missing-resource' } });
   });
 
@@ -39,7 +38,7 @@ describe('PullRequestService merge authority audit', () => {
       false,
     );
 
-    expect((await world.journal.readStream(entityRef('work', missingWork))).at(-1)).toMatchObject({
+    expect((await world.journal.readStream(workItemStream(missingWork))).at(-1)).toMatchObject({
       eventType: 'pr.merge-denied',
       payload: { reason: 'missing-resource' },
     });

@@ -6,14 +6,15 @@ import { createExecutionService } from '../../src-next/execution/index.js';
 import {
   correlationId,
   createEventDraft,
-  entityRef,
   type CommandContext,
+  type EntityRef,
   type EventJournal,
 } from '../../src-next/kernel/index.js';
 import {
   compileWorkflow,
   createOrchestrationService,
   createWatchReactor,
+  isWorkflowInstanceStream,
   type OrchestrationService,
 } from '../../src-next/orchestration/index.js';
 import { InMemoryCheckpointStore, InMemoryEventJournal } from '../../src-next/persistence/index.js';
@@ -145,7 +146,10 @@ it('binds durable primary ownership to the first exact WorkflowInstance across a
 it('retries the same durable child claim after a crash before checkpointing the trigger', async () => {
   const { definitions, journal, service, work } = await fixture();
   const parent = await startPrimary(service, 'parent-1');
-  const stream = entityRef('test', 'watch-trigger');
+  const stream: EntityRef<'test', 'watch-trigger'> = {
+    kind: 'test',
+    id: 'watch-trigger',
+  };
   const before = (await journal.readAll(0)).length;
   const [trigger] = await journal.append(stream, 0, [
     createEventDraft({
@@ -325,7 +329,7 @@ function failWorkflowStartOnce(journal: EventJournal, id: string): EventJournal 
   return failAppendOnce(
     journal,
     (stream, events) =>
-      stream.kind === 'workflow-instance' &&
+      isWorkflowInstanceStream(stream) &&
       stream.id === id &&
       events.some((event) => event.eventType === 'orchestration.instance-started'),
     'injected start crash',

@@ -6,6 +6,7 @@
   "namespaces": {
     "events": ["integration."],
     "config": ["integrations"],
-    "relations": ["integration."]
+    "relations": ["integration."],
+    "streams": ["integration"]
   }
 }

@@ -1,5 +1,6 @@
 import type { EventEnvelope } from '../../kernel/index.js';
 import { workItemId } from '../contracts/identifiers.js';
+import { isWorkItemStream } from '../contracts/streams.js';
 import type { WorkItemView, WorkState } from '../contracts/views.js';
 
 type WorkItemEvent = EventEnvelope<string, unknown>;
@@ -47,7 +48,7 @@ function applyEvent(
 }
 
 function assertWorkStream(event: WorkItemEvent, index: number, id: string): void {
-  if (event.stream.kind !== 'work-item' || event.stream.id !== id) {
+  if (!isWorkItemStream(event.stream) || event.stream.id !== id) {
     throw new Error('WorkItem events must belong to the same work-item stream');
   }
   if (index > 0 && event.eventType === 'work.item-created') {

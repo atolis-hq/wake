@@ -1,12 +1,11 @@
 import {
-  entityRef,
   type CommandContext,
   type EntityRef,
   type EventDraft,
   type EventJournal,
 } from '../../kernel/index.js';
-import type { ResourceService } from '../../resources/index.js';
-import type { WorkService } from '../../work/index.js';
+import { resourceStream, type ResourceService } from '../../resources/index.js';
+import { workItemStream, type WorkService } from '../../work/index.js';
 import { isReviewAuthorized } from '../review/authorization.js';
 import type {
   AcceptReviewSignal,
@@ -64,7 +63,7 @@ class JournalPullRequestService implements PullRequestService {
   ) {}
 
   async get(resourceId: ObservePullRequest['resourceId']): Promise<PullRequestView | null> {
-    const events = await this.journal.readStream(entityRef('resource', resourceId));
+    const events = await this.journal.readStream(resourceStream(resourceId));
     return events.reduce(
       (view, event) => pullRequestProjection.project(view, event),
       pullRequestProjection.initial(resourceId),
@@ -123,7 +122,7 @@ class JournalPullRequestService implements PullRequestService {
     const input = await this.authorityInput(workItemId);
     const decision = decidePullRequestAuthority(input);
     if (decision.allowed) {
-      const stream = entityRef('resource', decision.resourceId);
+      const stream = resourceStream(decision.resourceId);
       await this.appendStream(stream, mergeAuthorized(stream, decision.revision, context));
       return true;
     }
@@ -159,7 +158,7 @@ class JournalPullRequestService implements PullRequestService {
     resourceId: ObservePullRequest['resourceId'],
     event: EventDraft | readonly EventDraft[],
   ): Promise<void> {
-    const stream = entityRef('resource', resourceId);
+    const stream = resourceStream(resourceId);
     await this.appendStream(stream, event);
   }
 
@@ -227,7 +226,7 @@ class JournalPullRequestService implements PullRequestService {
   private async acceptedSignals(
     resourceId: ObservePullRequest['resourceId'],
   ): Promise<PullRequestAuthorityInput['acceptedSignals']> {
-    const events = await this.journal.readStream(entityRef('resource', resourceId));
+    const events = await this.journal.readStream(resourceStream(resourceId));
     return events.reduce(
       (view, event) => acceptedReviewSignalProjection.project(view, event),
       acceptedReviewSignalProjection.initial(resourceId),
@@ -253,6 +252,6 @@ function denialStream(
 ): EntityRef {
   const resource = input.resources.find((entry) => entry.resource.kind === 'pull-request');
   return resource === undefined
-    ? entityRef('work', workItemId)
-    : entityRef('resource', resource.resource.resourceId);
+    ? workItemStream(workItemId)
+    : resourceStream(resource.resource.resourceId);
 }

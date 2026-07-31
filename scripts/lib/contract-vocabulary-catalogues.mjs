@@ -19,14 +19,18 @@ export function discoverCatalogues(sourceDetails, rules) {
         diagnostics,
       );
     }
-    if (rules.has('stream-literals') && isContractPath(detail.path, 'streams.ts')) {
-      discoverNamedCatalogues(
-        detail,
-        'StreamKind',
-        'stream-literals',
-        catalogues.streamValues,
-        diagnostics,
-      );
+    if (rules.has('stream-literals')) {
+      if (isContractPath(detail.path, 'streams.ts')) {
+        discoverNamedCatalogues(
+          detail,
+          'StreamKind',
+          'stream-literals',
+          catalogues.streamValues,
+          diagnostics,
+        );
+      } else {
+        rejectOffPathCatalogues(detail, 'StreamKind', 'stream-literals', diagnostics);
+      }
     }
     if (rules.has('closed-vocabulary')) {
       discoverClosedCatalogues(detail, catalogues.closedValues, diagnostics);
@@ -34,6 +38,57 @@ export function discoverCatalogues(sourceDetails, rules) {
   }
 
   return { catalogues, diagnostics };
+}
+
+function rejectOffPathCatalogues(detail, suffix, rule, diagnostics) {
+  for (const statement of detail.source.statements) {
+    if (ts.isVariableStatement(statement)) {
+      const exported =
+        statement.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword) ??
+        false;
+      if (!exported) continue;
+      for (const declaration of statement.declarationList.declarations) {
+        if (!ts.isIdentifier(declaration.name) || !declaration.name.text.endsWith(suffix)) continue;
+        rejectShape(
+          diagnostics,
+          detail,
+          declaration.name,
+          rule,
+          declaration.name.text,
+          `${declaration.name.text} must be declared in contracts/streams.ts`,
+        );
+      }
+      continue;
+    }
+    if (!ts.isExportDeclaration(statement) || statement.exportClause === undefined) continue;
+    if (ts.isNamespaceExport(statement.exportClause)) {
+      const owner = statement.exportClause.name.text;
+      if (owner.endsWith(suffix)) {
+        rejectShape(
+          diagnostics,
+          detail,
+          statement.exportClause.name,
+          rule,
+          owner,
+          `${owner} must be declared in contracts/streams.ts`,
+        );
+      }
+      continue;
+    }
+    if (!ts.isNamedExports(statement.exportClause)) continue;
+    for (const specifier of statement.exportClause.elements) {
+      const owner = specifier.name.text;
+      if (!owner.endsWith(suffix)) continue;
+      rejectShape(
+        diagnostics,
+        detail,
+        specifier.name,
+        rule,
+        owner,
+        `${owner} must be declared in contracts/streams.ts`,
+      );
+    }
+  }
 }
 
 function discoverNamedCatalogues(detail, suffix, rule, registrations, diagnostics) {

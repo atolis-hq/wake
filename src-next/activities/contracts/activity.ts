@@ -1,13 +1,14 @@
 import type { z } from 'zod';
 import type { ResourceCapability, ResourceView } from '../../resources/index.js';
 import type { WorkItemId } from '../../work/index.js';
+import type { ActivationId } from './identifiers.js';
 export interface ResourceRequirement {
   readonly capability: ResourceCapability;
   readonly cardinality: 'zero-or-one' | 'exactly-one' | 'one-or-more';
   readonly role?: 'primary' | 'secondary';
 }
 export interface ActivityInvocation<Input = unknown> {
-  readonly activationId: string;
+  readonly activationId: ActivationId;
   readonly activity: string;
   readonly workItemId: WorkItemId;
   readonly workflowInstanceId: string;

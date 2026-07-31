@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 
-import { createPullRequestMergeActivity } from '../../src-next/activities/index.js';
+import { activationId, createPullRequestMergeActivity } from '../../src-next/activities/index.js';
 import { resourceId, type ResourceView } from '../../src-next/resources/index.js';
 import { workItemId } from '../../src-next/work/index.js';
 import { TestWorld } from '../e2e/support/world.js';
@@ -100,7 +100,7 @@ async function setupApprovedPullRequest(
 
 function invocation(work: ReturnType<typeof workItemId>, resources: readonly ResourceView[]) {
   return {
-    activationId: 'activation-1',
+    activationId: activationId('activation-1'),
     activity: 'pr.merge',
     workItemId: work,
     workflowInstanceId: 'workflow-1',

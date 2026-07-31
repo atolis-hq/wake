@@ -1,4 +1,6 @@
-import { createEventDraft, entityRef, type EventDraft } from '../../kernel/index.js';
+import { createEventDraft, type EventDraft } from '../../kernel/index.js';
+import { workflowInstanceId } from '../contracts/identifiers.js';
+import { workflowInstanceStream } from '../contracts/streams.js';
 import type {
   ChildCoordinationEventPayloads,
   ChildCoordinationMetadata,
@@ -29,7 +31,7 @@ export function coordinationDraft<Type extends keyof ChildCoordinationEventPaylo
     causationId: context.causationId,
     actor,
     source,
-    stream: entityRef('workflow-instance', context.workflowInstanceId),
+    stream: workflowInstanceStream(workflowInstanceId(context.workflowInstanceId)),
     payload,
   });
 }

@@ -1,5 +1,7 @@
 import { expect, it } from 'vitest';
 
+import { resourceStream } from '../../../src-next/resources/index.js';
+import { workItemStream } from '../../../src-next/work/index.js';
 import { TestWorld } from '../support/world.js';
 import { executeMerge, setupMergeScenario, type MergeScenario } from './pr-activity-fixtures.js';
 
@@ -89,7 +91,7 @@ it('attributes an invalid explicit target denial to the WorkItem', async () => {
   await executeMerge(world, setup.workItemId, { resourceId: 'resource-not-correlated' });
 
   const [denial] = await world.events('pr.merge-denied');
-  expect(denial?.stream).toEqual({ kind: 'work', id: setup.workItemId });
+  expect(denial?.stream).toEqual(workItemStream(setup.workItemId));
   expect(denial?.payload).toEqual(
     expect.objectContaining({
       reason: 'missing-resource',
@@ -127,9 +129,7 @@ it.each([
     const selectionDenied =
       scenario === 'missing' || scenario === 'capability-missing' || scenario === 'ambiguous';
     expect(denials[0]?.stream).toEqual(
-      selectionDenied
-        ? { kind: 'work', id: setup.workItemId }
-        : { kind: 'resource', id: setup.primaryResourceId },
+      selectionDenied ? workItemStream(setup.workItemId) : resourceStream(setup.primaryResourceId!),
     );
     expect(denials[0]?.payload).toEqual(
       expect.objectContaining(

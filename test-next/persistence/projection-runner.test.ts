@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { createEventDraft, entityRef } from '../../src-next/kernel/index.js';
+import { createEventDraft, type EntityRef } from '../../src-next/kernel/index.js';
 import {
   InMemoryEventJournal,
   InMemoryProjectionStore,
@@ -9,7 +9,7 @@ import {
 import { FakeClock } from '../e2e/support/world.js';
 it('replays a committed event exactly once and rebuilds derived state only', async () => {
   const journal = new InMemoryEventJournal(new FakeClock());
-  const stream = entityRef('counter', 'one');
+  const stream: EntityRef<'counter', 'one'> = { kind: 'counter', id: 'one' };
   await journal.append(stream, 0, [
     createEventDraft({
       eventId: 'event-1',

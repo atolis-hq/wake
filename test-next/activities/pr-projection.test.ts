@@ -4,7 +4,8 @@ import {
   activityProjectionDefinitions,
   pullRequestProjection,
 } from '../../src-next/activities/index.js';
-import { createEventDraft, entityRef, type EventEnvelope } from '../../src-next/kernel/index.js';
+import { createEventDraft, type EventEnvelope } from '../../src-next/kernel/index.js';
+import { resourceId, resourceStream } from '../../src-next/resources/index.js';
 import {
   InMemoryCheckpointStore,
   InMemoryEventJournal,
@@ -23,7 +24,7 @@ function event(type: string, payload: Record<string, unknown>): EventEnvelope {
       causationId: 'command-1',
       actor: { kind: 'integration', id: 'github' },
       source: { kind: 'adapter', id: 'github' },
-      stream: entityRef('resource', 'resource-1'),
+      stream: resourceStream(resourceId('resource-1')),
       payload,
     }),
     globalPosition: 1,

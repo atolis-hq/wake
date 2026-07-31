@@ -1,5 +1,5 @@
 import type { EventEnvelope, ProjectionDefinition } from '../../kernel/index.js';
-import { resourceId } from '../../resources/index.js';
+import { isResourceStream, resourceId } from '../../resources/index.js';
 import type { AcceptedReviewSignalView, PullRequestView } from './contracts.js';
 
 type Projector = (
@@ -18,7 +18,7 @@ const projectors: Readonly<Record<string, Projector>> = {
 
 export const pullRequestProjection: ProjectionDefinition<PullRequestView | null> = {
   name: 'activities-pr',
-  select: (event) => (event.stream.kind === 'resource' ? { key: event.stream.id } : null),
+  select: (event) => (isResourceStream(event.stream) ? { key: event.stream.id } : null),
   initial: () => null,
   project(previous, event) {
     const payload = asRecord(event.payload);
@@ -33,7 +33,7 @@ export const acceptedReviewSignalProjection: ProjectionDefinition<
   readonly AcceptedReviewSignalView[]
 > = {
   name: 'activities-pr-accepted-signals',
-  select: (event) => (event.stream.kind === 'resource' ? { key: event.stream.id } : null),
+  select: (event) => (isResourceStream(event.stream) ? { key: event.stream.id } : null),
   initial: () => [],
   project(previous, event) {
     if (event.eventType !== 'review.acceptance-signal-recorded') return previous;

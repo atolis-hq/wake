@@ -6,6 +6,7 @@
   "namespaces": {
     "events": ["orchestration."],
     "config": ["orchestration"],
-    "relations": ["workflow."]
+    "relations": ["workflow."],
+    "streams": ["workflow-instance", "orchestration-group"]
   }
 }

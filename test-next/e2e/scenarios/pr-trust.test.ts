@@ -3,9 +3,10 @@ import { expect, it } from 'vitest';
 import { createPullRequestMergeAuthorityGate } from '../../../src-next/activities/index.js';
 import {
   InboundTranslator,
+  BuiltInAdapterId,
   createEventDraft,
-  entityRef,
   githubReviewObservation,
+  integrationStream,
 } from '../../../src-next/integrations/index.js';
 import { workItemId } from '../../../src-next/work/index.js';
 import { mergeAuthorityTestActivity } from '../support/merge-authority-activity.js';
@@ -126,7 +127,7 @@ async function appendIntegrationEvent(
   eventType: string,
   payload: Record<string, unknown>,
 ): Promise<void> {
-  const stream = entityRef('integration', 'github');
+  const stream = integrationStream(BuiltInAdapterId.GitHub);
   await world.journal.append(stream, (await world.journal.readStream(stream)).length, [
     createEventDraft({
       eventId,

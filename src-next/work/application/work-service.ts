@@ -1,11 +1,7 @@
-import {
-  createEventDraft,
-  entityRef,
-  type CommandContext,
-  type EventJournal,
-} from '../../kernel/index.js';
+import { createEventDraft, type CommandContext, type EventJournal } from '../../kernel/index.js';
 import type { CreateWorkItem, LinkWorkItems, ReviseWorkObjective } from '../contracts/commands.js';
 import type { WorkItemId } from '../contracts/identifiers.js';
+import { workItemStream } from '../contracts/streams.js';
 import type { WorkItemView } from '../contracts/views.js';
 import { WorkRepository } from './work-repository.js';
 
@@ -43,7 +39,7 @@ export function createWorkService(journal: EventJournal): WorkService {
         causationId: context.commandId,
         actor: context.actor,
         source: { kind: 'internal', id: 'work-service' },
-        stream: entityRef('work-item', workItemId),
+        stream: workItemStream(workItemId),
         payload,
       }),
     ]);

@@ -2,8 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import {
   InboundTranslator,
+  BuiltInAdapterId,
   createEventDraft,
-  entityRef,
+  integrationStream,
   type ExternalWorkObservedPayload,
 } from '../../../src-next/integrations/index.js';
 import {
@@ -39,7 +40,7 @@ describe('E2E-WORK-002 external intake', () => {
       causationId: 'github:delivery-7',
       actor: { kind: 'integration', id: 'github' },
       source: { kind: 'adapter', id: 'github' },
-      stream: entityRef('integration', 'github'),
+      stream: integrationStream(BuiltInAdapterId.GitHub),
       payload,
     });
     await journal.append(evidence.stream, 0, [evidence]);

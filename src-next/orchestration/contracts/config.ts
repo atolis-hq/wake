@@ -1,8 +1,15 @@
 import { z } from 'zod';
 
+import { EventActorKind } from '../../kernel/index.js';
+
 const identifier = z.string().trim().min(1);
 const bound = z.object({ max: z.number().int().positive() }).strict();
-const actorKind = z.enum(['system', 'operator', 'agent', 'integration']);
+const actorKind = z.enum([
+  EventActorKind.System,
+  EventActorKind.Operator,
+  EventActorKind.Agent,
+  EventActorKind.Integration,
+]);
 const commandName = z.string().regex(/^\/[a-z][a-z0-9-]*$/);
 const canonicalEventName = z.string().regex(/^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)+$/);
 const watchStatus = z.enum(['active', 'waiting', 'blocked']);
@@ -90,7 +97,7 @@ export interface CompiledStage extends Omit<StageConfig, 'on'> {
   readonly on: Readonly<Record<string, CompiledOutcomeRoute>>;
 }
 export interface CompiledSupplementalCommand extends SupplementalCommandConfig {
-  readonly allowedActors: readonly ('system' | 'operator' | 'agent' | 'integration')[];
+  readonly allowedActors: SupplementalCommandConfig['allowedActors'];
 }
 export interface CompiledWorkflow {
   readonly name: string;

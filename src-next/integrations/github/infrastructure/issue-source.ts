@@ -1,4 +1,6 @@
-import { createEventDraft, entityRef, type EventDraft } from '../../../kernel/index.js';
+import { createEventDraft, EventActorKind, type EventDraft } from '../../../kernel/index.js';
+import { BuiltInAdapterId } from '../../contracts/identifiers.js';
+import { integrationStream } from '../../contracts/streams.js';
 import type { GitHubIssuePayload } from '../contracts/payloads.js';
 
 export function issueObservation(input: {
@@ -12,9 +14,9 @@ export function issueObservation(input: {
     occurredAt: input.issue.updated_at,
     correlationId: `github:${key}`,
     causationId: `github:${key}:${input.issue.updated_at}`,
-    actor: { kind: 'integration', id: 'github' },
+    actor: { kind: EventActorKind.Integration, id: 'github' },
     source: { kind: 'adapter', id: 'github' },
-    stream: entityRef('integration', 'github'),
+    stream: integrationStream(BuiltInAdapterId.GitHub),
     payload: {
       externalKey: key,
       kind: 'issue',

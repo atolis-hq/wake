@@ -4,7 +4,14 @@ export * from './contracts/commands.js';
 export * from './contracts/event-journal.js';
 export * from './contracts/events.js';
 export * from './contracts/id-generator.js';
-export * from './contracts/identifiers.js';
+export { causationId, correlationId, eventId } from './contracts/identifiers.js';
+export type {
+  Brand,
+  CausationId,
+  CorrelationId,
+  EntityRef,
+  EventId,
+} from './contracts/identifiers.js';
 export * from './contracts/relations.js';
 export * from './contracts/projection-store.js';
 export * from './contracts/vocabulary.js';

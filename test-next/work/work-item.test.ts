@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { createEventDraft, entityRef, type EventEnvelope } from '../../src-next/kernel/index.js';
-import { foldWorkItem, workItemId } from '../../src-next/work/index.js';
+import { createEventDraft, type EventEnvelope } from '../../src-next/kernel/index.js';
+import { foldWorkItem, workItemId, workItemStream } from '../../src-next/work/index.js';
 
-const stream = entityRef('work-item', 'work-1');
+const stream = workItemStream(workItemId('work-1'));
 
 function event<Type extends string, Payload>(
   eventType: Type,

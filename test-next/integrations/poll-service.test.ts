@@ -2,9 +2,10 @@ import { describe, expect, it } from 'vitest';
 
 import {
   PollService,
+  BuiltInAdapterId,
   createEventDraft,
   type ExternalEventSource,
-  entityRef,
+  integrationStream,
 } from '../../src-next/integrations/index.js';
 import { InMemoryEventJournal } from '../../src-next/persistence/index.js';
 import { FakeClock } from '../e2e/support/world.js';
@@ -23,7 +24,7 @@ describe('PollService', () => {
             causationId: 'github:delivery-1',
             actor: { kind: 'integration', id: 'github' },
             source: { kind: 'adapter', id: 'github' },
-            stream: entityRef('integration', 'github'),
+            stream: integrationStream(BuiltInAdapterId.GitHub),
             payload: { externalKey: 'owner/repo#7' },
           }),
         ];

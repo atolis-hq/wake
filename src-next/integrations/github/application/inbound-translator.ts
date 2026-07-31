@@ -1,5 +1,6 @@
 import {
   correlationId,
+  EventActorKind,
   type CheckpointStore,
   type CommandContext,
   type EventEnvelope,
@@ -184,7 +185,7 @@ function commandContext(event: EventEnvelope): CommandContext {
     commandId: `${event.eventId}:inbound`,
     correlationId: correlationId(event.correlationId),
     occurredAt: event.occurredAt,
-    actor: { kind: 'integration', id: 'github' },
+    actor: { kind: EventActorKind.Integration, id: 'github' },
   };
 }
 

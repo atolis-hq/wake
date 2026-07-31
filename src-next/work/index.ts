@@ -4,5 +4,6 @@ export * from './application/work-service.js';
 export * from './contracts/commands.js';
 export * from './contracts/events.js';
 export * from './contracts/identifiers.js';
+export * from './contracts/streams.js';
 export * from './contracts/views.js';
 export * from './domain/work-item.js';

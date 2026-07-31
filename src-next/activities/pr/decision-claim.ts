@@ -1,17 +1,17 @@
 import {
   createEventDraft,
-  entityRef,
-  type EntityRef,
   type EventDraft,
   type EventEnvelope,
   type EventJournal,
 } from '../../kernel/index.js';
+import { activityDecisionStream, type PullRequestDecisionAction } from '../contracts/streams.js';
+import type { ActivationId } from '../contracts/identifiers.js';
 import type { PullRequestActivityOutcome } from './contracts.js';
 import type { IntentAppender } from './intent.js';
 import { appendResolved } from './activity-support.js';
 
 export type PullRequestDecisionKind = 'requested' | 'denied';
-export type PullRequestAction = 'approve' | 'merge';
+export type PullRequestAction = PullRequestDecisionAction;
 
 export interface PullRequestDecision {
   readonly decisionKind: PullRequestDecisionKind;
@@ -21,16 +21,16 @@ export interface PullRequestDecision {
 
 interface DecisionClaimPayload extends PullRequestDecision {
   readonly action: PullRequestAction;
-  readonly activationId: string;
+  readonly activationId: ActivationId;
 }
 
 export async function readDecisionClaim(
   journal: EventJournal,
-  activationId: string,
+  activationId: ActivationId,
   action: PullRequestAction,
 ): Promise<PullRequestDecision | null> {
   const claimId = decisionClaimId(activationId, action);
-  const event = (await journal.readStream(decisionStream(activationId, action))).find(
+  const event = (await journal.readStream(activityDecisionStream(activationId, action))).find(
     (candidate) => candidate.eventId === claimId,
   );
   return event === undefined ? null : parseClaim(event, activationId, action);
@@ -38,14 +38,14 @@ export async function readDecisionClaim(
 
 export async function claimDecision(
   journal: EventJournal,
-  activationId: string,
+  activationId: ActivationId,
   action: PullRequestAction,
   proposal: PullRequestDecision,
 ): Promise<PullRequestDecision> {
   const existing = await readDecisionClaim(journal, activationId, action);
   if (existing !== null) return existing;
 
-  const stream = decisionStream(activationId, action);
+  const stream = activityDecisionStream(activationId, action);
   const claim = createEventDraft({
     eventId: decisionClaimId(activationId, action),
     eventType: `pr.${action}-decision-claimed`,
@@ -85,17 +85,13 @@ export async function completeDecisionClaim(
     : decision.outcome;
 }
 
-function decisionStream(activationId: string, action: PullRequestAction): EntityRef {
-  return entityRef('activity-decision', `${activationId}:pr.${action}`);
-}
-
-function decisionClaimId(activationId: string, action: PullRequestAction): string {
+function decisionClaimId(activationId: ActivationId, action: PullRequestAction): string {
   return `${activationId}:pr.${action}-decision-claimed`;
 }
 
 function parseClaim(
   event: EventEnvelope,
-  activationId: string,
+  activationId: ActivationId,
   action: PullRequestAction,
 ): PullRequestDecision {
   const payload = event.payload;

@@ -1,11 +1,6 @@
 import type { ActivityOutcome } from '../../activities/index.js';
-import {
-  createEventDraft,
-  entityRef,
-  type CommandContext,
-  type EventJournal,
-} from '../../kernel/index.js';
-import type { WorkService } from '../../work/index.js';
+import { createEventDraft, type CommandContext, type EventJournal } from '../../kernel/index.js';
+import type { WorkItemId, WorkService } from '../../work/index.js';
 import type { CompiledWorkflow } from '../contracts/config.js';
 import type { GroupBudgetExhaustedView, WorkflowInstanceView } from '../contracts/views.js';
 import type { StartWorkflowInstance } from '../contracts/commands.js';
@@ -33,6 +28,8 @@ import {
   validateChildProvenance,
 } from '../domain/child-coordination.js';
 import { coordinationDraft } from '../domain/coordination-events.js';
+import { workflowInstanceId as parseWorkflowInstanceId } from '../contracts/identifiers.js';
+import { childOrchestrationGroupStream, workflowInstanceStream } from '../contracts/streams.js';
 import { CoordinationClaims } from './coordination-claims.js';
 import { GroupBudgetRecorder } from './group-budget-recorder.js';
 import { OrchestrationRepository } from './orchestration-repository.js';
@@ -91,9 +88,12 @@ export class OrchestrationService {
       throw new Error('Child request id must be stable for its parent, watch, and trigger');
     const existing = await this.repository.load(workflowInstanceId);
     if (existing.view !== null) return existing.view;
-    const groupKey = `group:${parent.view.orchestrationGroupId}:watch:${request.watchId}`;
+    const groupStream = childOrchestrationGroupStream(
+      parent.view.orchestrationGroupId,
+      request.watchId,
+    );
     const metadata = coordinationMetadata(parent.view, request);
-    if (!(await this.claims.claimWithinBudget(groupKey, request, context))) {
+    if (!(await this.claims.claimWithinBudget(groupStream, request, context))) {
       await this.groupBudgets.record(parent.view, metadata, request.maxPerGroup, context);
       return { kind: 'group-budget-exhausted', requestId: request.requestId };
     }
@@ -228,7 +228,7 @@ export class OrchestrationService {
       causationId: context.commandId,
       actor: context.actor,
       source: { kind: 'internal' as const, id: 'orchestration-service' },
-      stream: entityRef('workflow-instance', workflowInstanceId),
+      stream: workflowInstanceStream(parseWorkflowInstanceId(workflowInstanceId)),
       payload: { activationId },
     });
     await this.repository.append(workflowInstanceId, loaded.sequence, [event]);
@@ -239,7 +239,7 @@ export class OrchestrationService {
     return (await this.repository.load(id)).view;
   }
 
-  async getPrimaryWorkflowInstanceId(workItemId: string) {
+  async getPrimaryWorkflowInstanceId(workItemId: WorkItemId) {
     return this.claims.primaryWorkflowInstanceId(workItemId);
   }
 

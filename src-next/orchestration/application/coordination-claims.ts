@@ -1,21 +1,25 @@
 import {
   createEventDraft,
-  entityRef,
   type CommandContext,
   type EventJournal,
   WrongExpectedSequenceError,
 } from '../../kernel/index.js';
+import type { WorkItemId } from '../../work/index.js';
 import type { ChildWorkflowRequest } from '../contracts/events.js';
+import {
+  primaryOrchestrationGroupStream,
+  type OrchestrationGroupStreamRef,
+} from '../contracts/streams.js';
 
 export class CoordinationClaims {
   constructor(private readonly journal: EventJournal) {}
 
   async claimPrimary(
-    workItemId: string,
+    workItemId: WorkItemId,
     workflowInstanceId: string,
     context: CommandContext,
   ): Promise<void> {
-    const stream = entityRef('orchestration-group', `primary:${workItemId}`);
+    const stream = primaryOrchestrationGroupStream(workItemId);
     for (;;) {
       const events = await this.journal.readStream(stream);
       const owner = primaryOwner(events);
@@ -44,18 +48,15 @@ export class CoordinationClaims {
     }
   }
 
-  async primaryWorkflowInstanceId(workItemId: string): Promise<string | undefined> {
-    return primaryOwner(
-      await this.journal.readStream(entityRef('orchestration-group', `primary:${workItemId}`)),
-    );
+  async primaryWorkflowInstanceId(workItemId: WorkItemId): Promise<string | undefined> {
+    return primaryOwner(await this.journal.readStream(primaryOrchestrationGroupStream(workItemId)));
   }
 
   async claimWithinBudget(
-    key: string,
+    stream: OrchestrationGroupStreamRef,
     request: ChildWorkflowRequest & { readonly maxPerGroup: number },
     context: CommandContext,
   ): Promise<boolean> {
-    const stream = entityRef('orchestration-group', key);
     for (;;) {
       const events = await this.journal.readStream(stream);
       if (claimedRequestIds(events).has(request.requestId)) return true;
@@ -71,7 +72,7 @@ export class CoordinationClaims {
             actor: context.actor,
             source: { kind: 'internal', id: 'orchestration-service' },
             stream,
-            payload: { key, requestId: request.requestId },
+            payload: { key: stream.id, requestId: request.requestId },
           }),
         ]);
         return true;

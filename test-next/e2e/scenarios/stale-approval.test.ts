@@ -6,8 +6,8 @@ import {
   decidePullRequestAuthority,
   type PullRequestAuthorityInput,
 } from '../../../src-next/activities/index.js';
-import { createEventDraft, entityRef } from '../../../src-next/kernel/index.js';
-import { resourceId } from '../../../src-next/resources/index.js';
+import { createEventDraft } from '../../../src-next/kernel/index.js';
+import { resourceId, resourceStream } from '../../../src-next/resources/index.js';
 import { workItemId } from '../../../src-next/work/index.js';
 import { mergeAuthorityTestActivity } from '../support/merge-authority-activity.js';
 import { TestWorld } from '../support/world.js';
@@ -163,7 +163,7 @@ function prEvent(
       causationId: `cause-${position}`,
       actor: { kind: 'integration', id: 'github' },
       source: { kind: 'adapter', id: 'github' },
-      stream: entityRef('resource', resource),
+      stream: resourceStream(resource),
       payload,
     }),
     globalPosition: position,

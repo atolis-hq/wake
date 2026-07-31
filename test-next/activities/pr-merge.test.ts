@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { createPullRequestMergeActivity } from '../../src-next/activities/index.js';
+import { activationId, createPullRequestMergeActivity } from '../../src-next/activities/index.js';
 import { resourceId } from '../../src-next/resources/index.js';
 import { workItemId } from '../../src-next/work/index.js';
 import { TestWorld } from '../e2e/support/world.js';
@@ -25,7 +25,7 @@ describe('pr.merge Activity', () => {
       expect.objectContaining({
         eventId: 'activation-1:pr.merge-requested',
         payload: expect.objectContaining({
-          activationId: 'activation-1',
+          activationId: activationId('activation-1'),
           resourceId: resource,
           revision: 'head-a',
           method: 'squash',
@@ -131,7 +131,7 @@ function invocation(
   input: { target: 'primary'; method: 'merge' | 'squash' | 'rebase'; requireChecks: boolean },
 ) {
   return {
-    activationId: 'activation-1',
+    activationId: activationId('activation-1'),
     activity: 'pr.merge',
     workItemId: work,
     workflowInstanceId: 'workflow-1',

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { correlationId } from '../../src-next/kernel/index.js';
 import { InMemoryEventJournal } from '../../src-next/persistence/index.js';
-import { createWorkService, workItemId } from '../../src-next/work/index.js';
+import { createWorkService, workItemId, workItemStream } from '../../src-next/work/index.js';
 import { FakeClock } from '../e2e/support/world.js';
 
 const context = {
@@ -52,7 +52,7 @@ describe('WorkService', () => {
     await service.create(command, context);
     await service.create(command, context);
 
-    expect(await journal.readStream({ kind: 'work-item', id: 'work-1' })).toHaveLength(1);
+    expect(await journal.readStream(workItemStream(workItemId('work-1')))).toHaveLength(1);
   });
 
   it('rejects lifecycle changes after work is closed', async () => {

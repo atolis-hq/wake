@@ -1,7 +1,9 @@
 import { z } from 'zod';
 
 import type { ActivityDefinition } from '../contracts/activity.js';
-import { entityRef, type EventJournal } from '../../kernel/index.js';
+import type { EventJournal } from '../../kernel/index.js';
+import { resourceStream } from '../../resources/index.js';
+import { workItemStream } from '../../work/index.js';
 import { deliveryIntentRequested, mergeDenied } from './event-drafts.js';
 import {
   activityCommandContext,
@@ -16,7 +18,6 @@ import {
   resolvePrimaryCapability,
   selectedDenialAudit,
   selectionDenialAudit,
-  workStream,
 } from './activity-support.js';
 import {
   claimDecision,
@@ -63,7 +64,7 @@ export function createPullRequestMergeActivity(
           'mergeable',
         );
         if (!resource.allowed) {
-          const stream = workStream(invocation.workItemId);
+          const stream = workItemStream(invocation.workItemId);
           const denial = mergeDenied(stream, resource.reason, command, {
             ...selectionDenialAudit(invocation.input.target, resource.candidates),
             method: invocation.input.method,
@@ -80,7 +81,7 @@ export function createPullRequestMergeActivity(
           requireChecks: invocation.input.requireChecks,
         });
         if (!decision.allowed) {
-          const stream = entityRef('resource', resource.resourceId);
+          const stream = resourceStream(resource.resourceId);
           const denial = mergeDenied(stream, decision.reason, command, {
             ...selectedDenialAudit(authority, resource.resourceId),
             method: invocation.input.method,

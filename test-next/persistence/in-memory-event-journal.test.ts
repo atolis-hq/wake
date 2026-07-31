@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   createEventDraft,
-  entityRef,
   type Clock,
+  type EntityRef,
   type EventDraft,
   WrongExpectedSequenceError,
 } from '../../src-next/kernel/index.js';
@@ -14,7 +14,7 @@ class FixedClock implements Clock {
   }
 }
 
-const stream = entityRef('test', 'journal');
+const stream: EntityRef<'test', 'journal'> = { kind: 'test', id: 'journal' };
 
 function event(
   eventId: string,
@@ -62,7 +62,7 @@ describe('in-memory event journal', () => {
 
   it('reads a logical stream in sequence order', async () => {
     const journal = new InMemoryEventJournal(new FixedClock());
-    const other = entityRef('test', 'other');
+    const other: EntityRef<'test', 'other'> = { kind: 'test', id: 'other' };
     await journal.append(stream, 0, [event('evt-1')]);
     await journal.append(other, 0, [
       createEventDraft({ ...event('evt-2'), stream: other, eventId: 'evt-2' }),
@@ -106,7 +106,7 @@ describe('in-memory event journal', () => {
 
   it('does not partially append a batch when a later event is invalid', async () => {
     const journal = new InMemoryEventJournal(new FixedClock());
-    const other = entityRef('test', 'other');
+    const other: EntityRef<'test', 'other'> = { kind: 'test', id: 'other' };
     const wrongStreamEvent = createEventDraft({
       ...event('evt-2'),
       eventId: 'evt-2',

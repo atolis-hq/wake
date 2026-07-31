@@ -95,6 +95,32 @@ describe('contract vocabulary discovery', () => {
     );
     expect(diagnostics).toHaveLength(1);
   });
+});
+
+describe('contract vocabulary catalogue boundaries', () => {
+  it('permits a colliding literal inside another explicit catalogue only', async () => {
+    const root = await fixture({
+      'src-next/integrations/contracts/streams.ts':
+        "export const IntegrationStreamKind = { Integration: 'integration' } as const;",
+      'src-next/kernel/contracts/events.ts': [
+        "import { defineClosedVocabulary } from './vocabulary.js';",
+        'export const EventActorKind = defineClosedVocabulary({',
+        "  System: 'system',",
+        "  Integration: 'integration',",
+        '} as const);',
+      ].join('\n'),
+      'src-next/integrations/github/infrastructure/source.ts': [
+        'const actor = { kind: EventActorKind.Integration, id: "github" };',
+        "const repeated = 'integration';",
+      ].join('\n'),
+    });
+
+    const diagnostics = await checkContractVocabulary(root, { rules: ['stream-literals'] });
+
+    expect(messages(diagnostics)).toBe(
+      'src-next/integrations/github/infrastructure/source.ts:2:18 [stream-literals] "integration" must be replaced by IntegrationStreamKind',
+    );
+  });
 
   it('rejects a repeated defineClosedVocabulary value', async () => {
     const root = await fixture({

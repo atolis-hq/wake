@@ -3,5 +3,5 @@
   "kind": "foundation",
   "dependencies": [],
   "publicEntry": "./index.ts",
-  "namespaces": { "events": [], "config": [], "relations": [] }
+  "namespaces": { "events": [], "config": [], "relations": [], "streams": [] }
 }

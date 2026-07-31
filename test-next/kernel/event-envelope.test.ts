@@ -2,7 +2,6 @@ import { describe, expect, expectTypeOf, it } from 'vitest';
 import {
   createEventDraft,
   createRelation,
-  entityRef,
   type Brand,
   type EntityRef,
   type EventDraft,
@@ -32,7 +31,10 @@ describe('event envelope', () => {
     type WorkItemId = Brand<string, 'WorkItemId'>;
     const workItemId = 'work-1' as WorkItemId;
 
-    const stream = entityRef('work-item', workItemId);
+    const stream: EntityRef<'work-item', WorkItemId> = {
+      kind: 'work-item',
+      id: workItemId,
+    };
 
     expectTypeOf(stream).toEqualTypeOf<EntityRef<'work-item', WorkItemId>>();
     expect(stream.id).toBe(workItemId);
@@ -66,9 +68,10 @@ describe('event envelope', () => {
 
   it('supports an explicit two-generic draft input and factory call', () => {
     type Payload = { readonly objective: string };
-    const input: EventDraftInput<'work.item-created', Payload> = workDraftInput(
-      entityRef('work-item', 'work-1'),
-    );
+    const input: EventDraftInput<'work.item-created', Payload> = workDraftInput({
+      kind: 'work-item',
+      id: 'work-1',
+    } as const);
 
     const draft = createEventDraft<'work.item-created', Payload>(input);
 
@@ -79,7 +82,7 @@ describe('event envelope', () => {
     type WorkItemId = Brand<string, 'WorkItemId'>;
     const workItemId = 'work-1' as WorkItemId;
 
-    const draft = createEventDraft(workDraftInput(entityRef('work-item', workItemId)));
+    const draft = createEventDraft(workDraftInput({ kind: 'work-item', id: workItemId } as const));
 
     expectTypeOf(draft.stream).toEqualTypeOf<EntityRef<'work-item', WorkItemId>>();
   });
@@ -95,7 +98,7 @@ describe('event draft validation', () => {
       causationId: 'cmd-1',
       actor: { kind: 'system', id: 'wake' },
       source: { kind: 'internal', id: 'wake' },
-      stream: entityRef('work-item', 'work-1'),
+      stream: { kind: 'work-item', id: 'work-1' },
       payload: { objective: 'Ship the change' },
     });
 
@@ -120,15 +123,11 @@ describe('event draft validation', () => {
         causationId: 'cmd-1',
         actor: { kind: 'system', id: 'wake' },
         source: { kind: 'internal', id: 'wake' },
-        stream: entityRef('work-item', 'work-1'),
+        stream: { kind: 'work-item', id: 'work-1' },
         payload: {},
         [field]: value,
       }),
     ).toThrow();
-  });
-
-  it('rejects an empty entity reference id', () => {
-    expect(() => entityRef('work-item', ' ')).toThrow('Entity reference id must not be empty');
   });
 
   it.each(['actor', 'source'] as const)('rejects an empty %s id', (metadata) => {
@@ -141,7 +140,7 @@ describe('event draft validation', () => {
         causationId: 'cmd-1',
         actor: { kind: 'system', id: 'wake' },
         source: { kind: 'internal', id: 'wake' },
-        stream: entityRef('work-item', 'work-1'),
+        stream: { kind: 'work-item', id: 'work-1' },
         payload: {},
         [metadata]: {
           kind: metadata === 'actor' ? 'system' : 'internal',
@@ -164,8 +163,8 @@ describe('entity relations', () => {
     expect(
       createRelation(definition, {
         relationId: 'rel-1',
-        from: entityRef('work-item', 'work-1'),
-        to: entityRef('work-item', 'work-2'),
+        from: { kind: 'work-item', id: 'work-1' },
+        to: { kind: 'work-item', id: 'work-2' },
         establishedByEventId: 'evt-1',
       }),
     ).toEqual({
@@ -181,8 +180,8 @@ describe('entity relations', () => {
     expect(() =>
       createRelation(definition, {
         relationId: 'rel-1',
-        from: entityRef('resource', 'resource-1'),
-        to: entityRef('work-item', 'work-2'),
+        from: { kind: 'resource', id: 'resource-1' },
+        to: { kind: 'work-item', id: 'work-2' },
         establishedByEventId: 'evt-1',
       }),
     ).toThrow('Relation work.related-to requires resource to be work-item');

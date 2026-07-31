@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest';
 
 import {
+  activationId,
   createPullRequestMergeActivity,
   type PullRequestAuthorityInput,
   type PullRequestService,
@@ -163,7 +164,7 @@ function authorityService(load: () => Promise<PullRequestAuthorityInput>): PullR
 
 function invocation() {
   return {
-    activationId: 'activation-1',
+    activationId: activationId('activation-1'),
     activity: 'pr.merge',
     workItemId: workItemId('work-1'),
     workflowInstanceId: 'workflow-1',
