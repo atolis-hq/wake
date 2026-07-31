@@ -54,7 +54,8 @@ export class FileEventJournal implements EventJournal {
           globalPosition: current.length + newCount,
         };
       });
-      const newEnvelopes = envelopes.filter((event) => !byId.has(event.eventId));
+      const finalizedEnvelopes = envelopes.map((event) => decodeEventEnvelope(event));
+      const newEnvelopes = finalizedEnvelopes.filter((event) => !byId.has(event.eventId));
       if (newEnvelopes.length > 0) {
         const directory = join(this.root, 'events');
         await mkdir(directory, { recursive: true });
@@ -65,7 +66,7 @@ export class FileEventJournal implements EventJournal {
           'utf8',
         );
       }
-      return envelopes;
+      return finalizedEnvelopes;
     });
   }
   async readStream(stream: EntityRef) {

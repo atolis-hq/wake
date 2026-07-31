@@ -2,6 +2,7 @@ import { createEventDraft, type EventEnvelope, type EventJournal } from '../../k
 import {
   ActivityEventType,
   decodeActivityEvent,
+  decodeActivityEventDraft,
   type ActivityFactDraft,
 } from '../contracts/events.js';
 import { activityDecisionStream, type PullRequestDecisionAction } from '../contracts/streams.js';
@@ -13,17 +14,35 @@ import { appendResolved } from './activity-support.js';
 export type PullRequestDecisionKind = 'requested' | 'denied';
 export type PullRequestAction = PullRequestDecisionAction;
 
-export interface PullRequestDecision {
-  readonly decisionKind: PullRequestDecisionKind;
-  readonly outcome: PullRequestActivityOutcome;
-  readonly fact: ActivityFactDraft;
-}
+type DecisionFactType<
+  Action extends PullRequestAction,
+  Kind extends PullRequestDecisionKind,
+> = Action extends 'approve'
+  ? Kind extends 'requested'
+    ? typeof ActivityEventType.PrApproveRequested
+    : typeof ActivityEventType.PrApproveDenied
+  : Kind extends 'requested'
+    ? typeof ActivityEventType.PrMergeRequested
+    : typeof ActivityEventType.PrMergeDenied;
 
-export async function readDecisionClaim(
+type DecisionFact<Action extends PullRequestAction, Kind extends PullRequestDecisionKind> = Extract<
+  ActivityFactDraft,
+  { eventType: DecisionFactType<Action, Kind> }
+>;
+
+export type PullRequestDecision<Action extends PullRequestAction = PullRequestAction> = {
+  readonly [Kind in PullRequestDecisionKind]: {
+    readonly decisionKind: Kind;
+    readonly outcome: PullRequestActivityOutcome;
+    readonly fact: DecisionFact<Action, Kind>;
+  };
+}[PullRequestDecisionKind];
+
+export async function readDecisionClaim<Action extends PullRequestAction>(
   journal: EventJournal,
   activationId: ActivationId,
-  action: PullRequestAction,
-): Promise<PullRequestDecision | null> {
+  action: Action,
+): Promise<PullRequestDecision<Action> | null> {
   const claimId = decisionClaimId(activationId, action);
   const event = (await journal.readStream(activityDecisionStream(activationId, action))).find(
     (candidate) => candidate.eventId === claimId,
@@ -31,12 +50,12 @@ export async function readDecisionClaim(
   return event === undefined ? null : parseClaim(event, activationId, action);
 }
 
-export async function claimDecision(
+export async function claimDecision<Action extends PullRequestAction>(
   journal: EventJournal,
   activationId: ActivationId,
-  action: PullRequestAction,
-  proposal: PullRequestDecision,
-): Promise<PullRequestDecision> {
+  action: Action,
+  proposal: PullRequestDecision<Action>,
+): Promise<PullRequestDecision<Action>> {
   const existing = await readDecisionClaim(journal, activationId, action);
   if (existing !== null) return existing;
 
@@ -58,6 +77,7 @@ export async function claimDecision(
       fact: proposal.fact,
     },
   });
+  decodeActivityEventDraft(claim);
 
   try {
     await journal.append(stream, 0, [claim]);
@@ -84,11 +104,11 @@ function decisionClaimId(activationId: ActivationId, action: PullRequestAction):
   return `${activationId}:${decisionEventType(action)}`;
 }
 
-function parseClaim(
+function parseClaim<Action extends PullRequestAction>(
   event: EventEnvelope,
   activationId: ActivationId,
-  action: PullRequestAction,
-): PullRequestDecision {
+  action: Action,
+): PullRequestDecision<Action> {
   const decoded = decodeActivityEvent(event);
   const expectedType = decisionEventType(action);
   if (
@@ -102,7 +122,7 @@ function parseClaim(
     decisionKind: decoded.payload.decisionKind,
     outcome: decoded.payload.outcome,
     fact: decoded.payload.fact,
-  };
+  } as PullRequestDecision<Action>;
 }
 
 function decisionEventType(

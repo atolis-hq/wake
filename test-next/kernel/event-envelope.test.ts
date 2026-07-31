@@ -130,6 +130,18 @@ describe('event draft validation', () => {
     ).toThrow();
   });
 
+  it.each(['2026-07-31', 'July 31, 2026 12:00:00 UTC', '2026-07-31 12:00:00Z'])(
+    'rejects a Date.parse-compatible non-offset-ISO occurredAt before construction: %s',
+    (value) => {
+      expect(() =>
+        createEventDraft({
+          ...workDraftInput({ kind: 'work-item', id: 'work-1' } as const),
+          occurredAt: value,
+        }),
+      ).toThrow(/occurred at.*offset.*iso/i);
+    },
+  );
+
   it.each(['actor', 'source'] as const)('rejects an empty %s id', (metadata) => {
     expect(() =>
       createEventDraft({

@@ -177,6 +177,48 @@ describe('Orchestration event contract', () => {
     ).toThrow();
   });
 
+  it.each([
+    eventEnvelope(
+      OrchestrationEventType.InstanceCompleted,
+      {},
+      { kind: 'workflow-instance', id: ' ' },
+    ),
+    eventEnvelope(
+      OrchestrationEventType.InstanceStarted,
+      { ...samples[0].payload, workItemId: 'invalid-work-id' },
+      workflow,
+    ),
+  ])('reports invalid branded IDs through the Orchestration decoder context', (event) => {
+    expect(() => decodeOrchestrationEvent(event)).toThrow(
+      /Invalid Orchestration event event-7 at global position 7/i,
+    );
+  });
+
+  it('rejects a primary claim whose work item does not identify its stream', () => {
+    expect(() =>
+      decodeOrchestrationEvent(
+        eventEnvelope(
+          OrchestrationEventType.PrimaryClaimed,
+          { ...samples[21].payload, workItemId: workItemId('work-2') },
+          primaryGroup,
+        ),
+      ),
+    ).toThrow();
+  });
+
+  it('rejects a group claim whose key does not identify its stream', () => {
+    const otherChildGroup = childOrchestrationGroupStream('group-2', 'watch-1');
+    expect(() =>
+      decodeOrchestrationEvent(
+        eventEnvelope(
+          OrchestrationEventType.GroupClaimed,
+          { ...samples[22].payload, key: otherChildGroup.id },
+          childGroup,
+        ),
+      ),
+    ).toThrow();
+  });
+
   it('selects unrelated namespaces as null but throws for invalid owned events', () => {
     expect(selectOrchestrationEvent(eventEnvelope('work.item-created', {}, workflow))).toBeNull();
     expect(() =>

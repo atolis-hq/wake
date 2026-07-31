@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { brandedStringSchema } from '../../kernel/index.js';
 import { workflowInstanceId } from './identifiers.js';
 import {
   childOrchestrationGroupStreamId,
@@ -6,21 +7,15 @@ import {
   primaryOrchestrationGroupStreamId,
 } from './streams.js';
 
-export const workflowInstanceIdSchema = z.string().min(1).transform(workflowInstanceId);
+export const workflowInstanceIdSchema = brandedStringSchema(workflowInstanceId);
 export const workflowStreamSchema = z
   .object({
     kind: z.literal(OrchestrationStreamKind.WorkflowInstance),
     id: workflowInstanceIdSchema,
   })
   .strict();
-const primaryGroupIdSchema = z
-  .string()
-  .regex(/^primary:work-[a-z0-9-]+$/)
-  .transform(primaryOrchestrationGroupStreamId);
-export const childGroupIdSchema = z
-  .string()
-  .regex(/^group:[^:]+:watch:[^:]+$/)
-  .transform(childOrchestrationGroupStreamId);
+const primaryGroupIdSchema = brandedStringSchema(primaryOrchestrationGroupStreamId);
+export const childGroupIdSchema = brandedStringSchema(childOrchestrationGroupStreamId);
 export const primaryGroupStreamSchema = z
   .object({
     kind: z.literal(OrchestrationStreamKind.Group),

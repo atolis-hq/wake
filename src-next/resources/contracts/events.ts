@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import {
   eventEnvelopeSchema,
+  brandedStringSchema,
   type EventDraftUnion,
   type EventEnvelope,
   type EventUnion,
@@ -50,11 +51,11 @@ export interface ResourceEventStream {
 const streamSchema = z
   .object({
     kind: z.literal(ResourceStreamKind.Resource),
-    id: z.string().transform(resourceId),
+    id: brandedStringSchema(resourceId),
   })
   .strict();
 const revisionSchema = z.object({ revision: z.string() }).strict();
-const workItemIdSchema = z.string().transform(workItemId);
+const workItemIdSchema = brandedStringSchema(workItemId);
 const eventSchema = z.discriminatedUnion('eventType', [
   eventEnvelopeSchema.extend({
     eventType: z.literal(ResourceEventType.ResourceDiscovered),

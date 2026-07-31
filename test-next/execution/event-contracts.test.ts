@@ -60,6 +60,18 @@ describe('Execution event contract', () => {
     ).toThrow();
   });
 
+  it.each([
+    eventEnvelope(ExecutionEventType.RunSucceeded, samples[1][1], {
+      kind: 'execution-run',
+      id: ' ',
+    }),
+    eventEnvelope(ExecutionEventType.RunStarted, { ...samples[0][1], activationId: '' }, stream),
+  ])('reports invalid IDs through the Execution decoder context', (event) => {
+    expect(() => decodeExecutionEvent(event)).toThrow(
+      /Invalid Execution event event-7 at global position 7/i,
+    );
+  });
+
   it('selects unrelated namespaces as null but throws for invalid owned events', () => {
     expect(selectExecutionEvent(eventEnvelope('work.item-created', {}, stream))).toBeNull();
     expect(() => selectExecutionEvent(eventEnvelope('execution.unknown', {}, stream))).toThrow(

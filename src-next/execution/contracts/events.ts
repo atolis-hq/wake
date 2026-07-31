@@ -2,6 +2,8 @@ import { z } from 'zod';
 import type { ActivityOutcome } from '../../activities/index.js';
 import {
   eventEnvelopeSchema,
+  brandedStringSchema,
+  offsetIsoTimestampSchema,
   type EventDraftUnion,
   type EventEnvelope,
   type EventUnion,
@@ -38,11 +40,10 @@ export interface ExecutionEventPayloads {
 export type ExecutionEvent = EventUnion<ExecutionEventPayloads, RunStreamRef>;
 export type ExecutionEventDraft = EventDraftUnion<ExecutionEventPayloads, RunStreamRef>;
 
-const timestampSchema = z.iso.datetime({ offset: true });
 const streamSchema = z
   .object({
     kind: z.literal(ExecutionStreamKind.Run),
-    id: z.string().transform(runId),
+    id: brandedStringSchema(runId),
   })
   .strict();
 const eventSchema = z.discriminatedUnion('eventType', [
@@ -54,7 +55,7 @@ const eventSchema = z.discriminatedUnion('eventType', [
         activationId: z.string().min(1),
         activity: z.string().min(1),
         attempt: z.number().int().positive(),
-        startedAt: timestampSchema,
+        startedAt: offsetIsoTimestampSchema,
         workspace: z
           .object({ mode: z.enum(['read-only', 'branch']), path: z.string().min(1) })
           .strict()
@@ -68,7 +69,7 @@ const eventSchema = z.discriminatedUnion('eventType', [
     payload: z
       .object({
         outcome: z.object({ kind: z.string().min(1), data: z.unknown().optional() }).strict(),
-        finishedAt: timestampSchema,
+        finishedAt: offsetIsoTimestampSchema,
       })
       .strict(),
   }),
@@ -78,7 +79,7 @@ const eventSchema = z.discriminatedUnion('eventType', [
     payload: z
       .object({
         failure: z.object({ kind: z.string(), message: z.string() }).strict(),
-        finishedAt: timestampSchema,
+        finishedAt: offsetIsoTimestampSchema,
       })
       .strict(),
   }),

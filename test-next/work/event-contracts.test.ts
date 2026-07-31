@@ -53,6 +53,23 @@ describe('Work event contract', () => {
     ).toThrow();
   });
 
+  it.each([
+    eventEnvelope(
+      WorkEventType.ItemCreated,
+      { objective: 'Ship it' },
+      { kind: 'work-item', id: 'invalid-work-id' },
+    ),
+    eventEnvelope(
+      WorkEventType.ItemLinked,
+      { to: 'invalid-work-id', relation: 'parent-of' },
+      stream,
+    ),
+  ])('reports invalid branded IDs through the Work decoder context', (event) => {
+    expect(() => decodeWorkEvent(event)).toThrow(
+      /Invalid Work event event-7 at global position 7/i,
+    );
+  });
+
   it('selects unrelated namespaces as null but throws for invalid owned events', () => {
     expect(selectWorkEvent(eventEnvelope('resources.resource-discovered', {}, stream))).toBeNull();
     expect(() => selectWorkEvent(eventEnvelope('work.unknown', {}, stream))).toThrow();

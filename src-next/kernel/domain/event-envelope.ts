@@ -1,5 +1,6 @@
 import type { EventActor, EventDraft, EventSource } from '../contracts/events.js';
 import { causationId, correlationId, eventId, type EntityRef } from '../contracts/identifiers.js';
+import { offsetIsoTimestampSchema } from '../contracts/schema.js';
 
 export interface EventDraftInput<
   Type extends string,
@@ -23,16 +24,18 @@ export function createEventDraft<
   Stream extends EntityRef = EntityRef,
 >(input: EventDraftInput<Type, Payload, Stream>): EventDraft<Type, Payload, Stream> {
   if (input.eventType.trim().length === 0) throw new Error('event type must not be empty');
-  if (Number.isNaN(Date.parse(input.occurredAt))) {
-    throw new Error('occurred at must be a valid ISO timestamp');
-  }
+  const occurredAt = offsetIsoTimestampSchema.safeParse(input.occurredAt);
+  if (!occurredAt.success)
+    throw new Error('occurred at must be a valid offset ISO timestamp', {
+      cause: occurredAt.error,
+    });
   assertMetadataId(input.actor.id, 'actor');
   assertMetadataId(input.source.id, 'source');
   return {
     eventId: eventId(input.eventId),
     eventType: input.eventType,
     schemaVersion: 1,
-    occurredAt: input.occurredAt,
+    occurredAt: occurredAt.data,
     correlationId: correlationId(input.correlationId),
     causationId: causationId(input.causationId),
     actor: input.actor,

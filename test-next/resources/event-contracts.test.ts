@@ -63,6 +63,23 @@ describe('Resource event contract', () => {
     ).toThrow();
   });
 
+  it.each([
+    eventEnvelope(
+      ResourceEventType.ResourceRevisionObserved,
+      { revision: 'x' },
+      { kind: 'resource', id: 'invalid-resource-id' },
+    ),
+    eventEnvelope(
+      ResourceEventType.WorkCorrelationEstablished,
+      { workItemId: 'invalid-work-id', role: 'primary' },
+      stream,
+    ),
+  ])('reports invalid branded IDs through the Resource decoder context', (event) => {
+    expect(() => decodeResourceEvent(event)).toThrow(
+      /Invalid Resource event event-7 at global position 7/i,
+    );
+  });
+
   it('selects unrelated namespaces as null but throws for invalid owned events', () => {
     expect(selectResourceEvent(eventEnvelope('work.item-created', {}, stream))).toBeNull();
     expect(() => selectResourceEvent(eventEnvelope('resources.unknown', {}, stream))).toThrow(

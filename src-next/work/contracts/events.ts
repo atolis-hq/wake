@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import {
   eventEnvelopeSchema,
+  brandedStringSchema,
   type EventDraftUnion,
   type EventEnvelope,
   type EventUnion,
@@ -36,7 +37,7 @@ export type WorkEventDraft = EventDraftUnion<WorkEventPayloads, WorkItemStreamRe
 const streamSchema = z
   .object({
     kind: z.literal(WorkStreamKind.WorkItem),
-    id: z.string().transform(workItemId),
+    id: brandedStringSchema(workItemId),
   })
   .strict();
 const objectiveSchema = z
@@ -63,7 +64,7 @@ const eventSchema = z.discriminatedUnion('eventType', [
     stream: streamSchema,
     payload: z
       .object({
-        to: z.string().transform(workItemId),
+        to: brandedStringSchema(workItemId),
         relation: z.enum(['relates-to', 'parent-of', 'child-of']),
       })
       .strict(),

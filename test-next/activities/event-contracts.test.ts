@@ -216,3 +216,74 @@ describe('Activity event contract', () => {
     expect(() => selectActivityEvent(eventEnvelope('review.unknown', {}, resource))).toThrow();
   });
 });
+
+describe('Activity event integrity', () => {
+  it.each([
+    eventEnvelope(
+      ActivityEventType.PrDiscovered,
+      { ...context, workItemId: 'invalid-work-id' },
+      resource,
+    ),
+    eventEnvelope(
+      ActivityEventType.PrApproveDecisionClaimed,
+      { ...samples[13].payload, activationId: ' ' },
+      approveDecision,
+    ),
+  ])('reports invalid branded IDs through the Activity decoder context', (event) => {
+    expect(() => decodeActivityEvent(event)).toThrow(
+      /Invalid Activity event event-7 at global position 7/i,
+    );
+  });
+
+  it('rejects an Activity resource payload whose id does not identify its stream', () => {
+    expect(() =>
+      decodeActivityEvent(
+        eventEnvelope(
+          ActivityEventType.PrApproveRequested,
+          { ...approveIntent.payload, resourceId: resourceId('resource-2') },
+          resource,
+        ),
+      ),
+    ).toThrow();
+  });
+
+  it('rejects a decision claim whose activation does not identify its stream', () => {
+    expect(() =>
+      decodeActivityEvent(
+        eventEnvelope(
+          ActivityEventType.PrApproveDecisionClaimed,
+          { ...samples[13].payload, activationId: activationId('activation-2') },
+          approveDecision,
+        ),
+      ),
+    ).toThrow();
+  });
+
+  it.each([
+    { decisionKind: 'denied', fact: approveIntent },
+    {
+      decisionKind: 'requested',
+      fact: createEventDraft({
+        ...approveIntent,
+        eventId: 'approve-denied',
+        eventType: ActivityEventType.PrApproveDenied,
+        payload: {
+          activationId: activation,
+          idempotencyKey: 'approve-denied',
+          reason: 'policy',
+          resourceId: resource.id,
+        },
+      }),
+    },
+  ] as const)('rejects a decision kind paired with the wrong fact family', (mismatch) => {
+    expect(() =>
+      decodeActivityEvent(
+        eventEnvelope(
+          ActivityEventType.PrApproveDecisionClaimed,
+          { ...samples[13].payload, ...mismatch },
+          approveDecision,
+        ),
+      ),
+    ).toThrow();
+  });
+});

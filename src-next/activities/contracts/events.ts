@@ -1,11 +1,16 @@
 import { z } from 'zod';
-import { type EventDraftUnion, type EventEnvelope, type EventUnion } from '../../kernel/index.js';
+import {
+  type EventDraft,
+  type EventDraftUnion,
+  type EventEnvelope,
+  type EventUnion,
+} from '../../kernel/index.js';
 import { type ResourceId, type ResourceStreamRef } from '../../resources/index.js';
 import { type WorkItemId, type WorkItemStreamRef } from '../../work/index.js';
 import { type ActivityDecisionStreamRef, type PullRequestDecisionAction } from './streams.js';
 import type { ActivationId } from './identifiers.js';
 import type { PullRequestActivityOutcome, PullRequestTarget } from '../pr/contracts.js';
-import { createActivityEventSchema } from './event-schema.js';
+import { createActivityEventSchemas } from './event-schema.js';
 
 export const ActivityEventType = {
   PrDiscovered: 'pr.discovered',
@@ -158,7 +163,7 @@ export type ActivityEventDraft =
   | EventDraftUnion<ApproveDecisionPayloads, ActivityDecisionStreamRef<'approve'>>
   | EventDraftUnion<MergeDecisionPayloads, ActivityDecisionStreamRef<'merge'>>;
 
-const eventSchema = createActivityEventSchema(ActivityEventType);
+const { draftSchema, eventSchema } = createActivityEventSchemas(ActivityEventType);
 
 export function decodeActivityEvent(event: EventEnvelope): ActivityEvent {
   const result = eventSchema.safeParse(event);
@@ -168,6 +173,16 @@ export function decodeActivityEvent(event: EventEnvelope): ActivityEvent {
 
 export function selectActivityEvent(event: EventEnvelope): ActivityEvent | null {
   return ownsActivityEventType(event.eventType) ? decodeActivityEvent(event) : null;
+}
+
+export function decodeActivityEventDraft(draft: EventDraft): ActivityEventDraft {
+  const result = draftSchema.safeParse(draft);
+  if (!result.success)
+    throw new Error(
+      `Invalid Activity event draft ${draft.eventId} (${draft.eventType}): ${result.error.message}`,
+      { cause: result.error },
+    );
+  return result.data;
 }
 
 function ownsActivityEventType(eventType: string): boolean {

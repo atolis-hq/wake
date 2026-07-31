@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { ActivityOutcome, WaitingActivityOutcome } from '../../activities/index.js';
 import {
   eventEnvelopeSchema,
+  brandedStringSchema,
   type EventDraftUnion,
   type EventEnvelope,
   type EventUnion,
@@ -240,13 +241,40 @@ const childGroupEnvelope = <Type extends string, Payload extends z.ZodType>(
     stream: childGroupStreamSchema,
     payload,
   });
+const primaryClaimedEnvelope = primaryGroupEnvelope(
+  OrchestrationEventType.PrimaryClaimed,
+  z
+    .object({
+      workItemId: brandedStringSchema(workItemId),
+      workflowInstanceId: workflowInstanceIdSchema,
+    })
+    .strict(),
+).superRefine((event, context) => {
+  if (event.stream.id !== `primary:${event.payload.workItemId}`)
+    context.addIssue({
+      code: 'custom',
+      path: ['payload', 'workItemId'],
+      message: 'Primary claim work item must identify its stream',
+    });
+});
+const groupClaimedEnvelope = childGroupEnvelope(
+  OrchestrationEventType.GroupClaimed,
+  z.object({ key: childGroupIdSchema, requestId: z.string().min(1) }).strict(),
+).superRefine((event, context) => {
+  if (event.payload.key !== event.stream.id)
+    context.addIssue({
+      code: 'custom',
+      path: ['payload', 'key'],
+      message: 'Group claim key must identify its stream',
+    });
+});
 const eventSchema = z.discriminatedUnion('eventType', [
   workflowEnvelope(
     OrchestrationEventType.InstanceStarted,
     z.union([
       z
         .object({
-          workItemId: z.string().transform(workItemId),
+          workItemId: brandedStringSchema(workItemId),
           workflowName: z.string().min(1),
           orchestrationGroupId: z.string().min(1),
           entry: z.string().min(1),
@@ -254,7 +282,7 @@ const eventSchema = z.discriminatedUnion('eventType', [
         .strict(),
       z
         .object({
-          workItemId: z.string().transform(workItemId),
+          workItemId: brandedStringSchema(workItemId),
           workflowName: z.string().min(1),
           entry: z.string().min(1),
           ...childMetadataShape,
@@ -338,19 +366,8 @@ const eventSchema = z.discriminatedUnion('eventType', [
     OrchestrationEventType.GroupBudgetExhausted,
     z.object({ ...childMetadataShape, maxPerGroup: z.number().int().positive() }).strict(),
   ),
-  primaryGroupEnvelope(
-    OrchestrationEventType.PrimaryClaimed,
-    z
-      .object({
-        workItemId: z.string().transform(workItemId),
-        workflowInstanceId: workflowInstanceIdSchema,
-      })
-      .strict(),
-  ),
-  childGroupEnvelope(
-    OrchestrationEventType.GroupClaimed,
-    z.object({ key: childGroupIdSchema, requestId: z.string().min(1) }).strict(),
-  ),
+  primaryClaimedEnvelope,
+  groupClaimedEnvelope,
 ]);
 
 export function decodeOrchestrationEvent(event: EventEnvelope): OrchestrationEvent {

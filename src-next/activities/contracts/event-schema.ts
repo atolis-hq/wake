@@ -1,9 +1,9 @@
 import { z } from 'zod';
-import { eventDraftSchema, eventEnvelopeSchema } from '../../kernel/index.js';
+import { brandedStringSchema, eventDraftSchema, eventEnvelopeSchema } from '../../kernel/index.js';
 import { ResourceStreamKind, resourceId } from '../../resources/index.js';
 import { WorkStreamKind, workItemId } from '../../work/index.js';
 import { activationId } from './identifiers.js';
-import { ActivityStreamKind, activityDecisionId } from './streams.js';
+import { ActivityStreamKind, activityDecisionId, activityDecisionStream } from './streams.js';
 
 type PullRequestEventName<Suffix extends string> = `pr.${Suffix}`;
 type ReviewEventName<Suffix extends string> = `review.${Suffix}`;
@@ -29,42 +29,33 @@ interface ActivityEventTypes {
 const resourceStreamSchema = z
   .object({
     kind: z.literal(ResourceStreamKind.Resource),
-    id: z
-      .string()
-      .regex(/^resource-[a-z0-9-]+$/)
-      .transform(resourceId),
+    id: brandedStringSchema(resourceId),
   })
   .strict();
 const workStreamSchema = z
   .object({
     kind: z.literal(WorkStreamKind.WorkItem),
-    id: z
-      .string()
-      .regex(/^work-[a-z0-9-]+$/)
-      .transform(workItemId),
+    id: brandedStringSchema(workItemId),
   })
   .strict();
 const decisionStreamSchema = <Action extends 'approve' | 'merge'>(action: Action) =>
   z
     .object({
       kind: z.literal(ActivityStreamKind.Decision),
-      id: z
-        .string()
-        .refine((id) => id.endsWith(`:pr.${action}`) && id.length > `:pr.${action}`.length)
-        .transform((id) => activityDecisionId(id, action)),
+      id: brandedStringSchema((id) => activityDecisionId(id, action)),
     })
     .strict();
 const approveDecisionStreamSchema = decisionStreamSchema('approve');
 const mergeDecisionStreamSchema = decisionStreamSchema('merge');
 const denialStreamSchema = z.union([resourceStreamSchema, workStreamSchema]);
-const workItemIdSchema = z.string().transform(workItemId);
-const resourceIdSchema = z.string().transform(resourceId);
+const workItemIdSchema = brandedStringSchema(workItemId);
+const resourceIdSchema = brandedStringSchema(resourceId);
 const stateSchema = z.enum(['open', 'closed', 'merged']);
 const checksSchema = z.enum(['unknown', 'pending', 'passing', 'failing']);
 const reviewSchema = z.object({ revision: z.string(), actorId: z.string() }).strict();
 const denialSchema = z
   .object({
-    activationId: z.string().transform(activationId),
+    activationId: brandedStringSchema(activationId),
     idempotencyKey: z.string(),
     reason: z.string(),
     target: z
@@ -82,7 +73,7 @@ const denialSchema = z
 const approveRequestedSchema = z
   .object({
     idempotencyKey: z.string(),
-    activationId: z.string().transform(activationId),
+    activationId: brandedStringSchema(activationId),
     resourceId: resourceIdSchema,
     revision: z.string(),
     body: z.string().nullable(),
@@ -91,7 +82,7 @@ const approveRequestedSchema = z
 const mergeRequestedSchema = z
   .object({
     idempotencyKey: z.string(),
-    activationId: z.string().transform(activationId),
+    activationId: brandedStringSchema(activationId),
     resourceId: resourceIdSchema,
     revision: z.string(),
     method: z.enum(['merge', 'squash', 'rebase']),
@@ -130,53 +121,98 @@ const outcomeSchema = z.discriminatedUnion('kind', [
     .strict(),
 ]);
 
-export function createActivityEventSchema(eventTypes: ActivityEventTypes) {
+export function createActivityEventSchemas(eventTypes: ActivityEventTypes) {
   const resourceFacts = createResourceFactDraftSchemas(eventTypes);
   const denials = createDenialDraftSchemas(eventTypes);
-  const approveFactSchema = z.discriminatedUnion('eventType', [resourceFacts[9], denials[1]]);
-  const mergeFactSchema = z.discriminatedUnion('eventType', [resourceFacts[10], denials[0]]);
   const claimBase = {
-    activationId: z.string().transform(activationId),
-    decisionKind: z.enum(['requested', 'denied']),
     outcome: outcomeSchema,
   } as const;
+  const approveClaimPayloadSchema = z.discriminatedUnion('decisionKind', [
+    z
+      .object({
+        action: z.literal('approve'),
+        activationId: brandedStringSchema(activationId),
+        decisionKind: z.literal('requested'),
+        ...claimBase,
+        fact: resourceFacts[9],
+      })
+      .strict(),
+    z
+      .object({
+        action: z.literal('approve'),
+        activationId: brandedStringSchema(activationId),
+        decisionKind: z.literal('denied'),
+        ...claimBase,
+        fact: denials[1],
+      })
+      .strict(),
+  ]);
+  const mergeClaimPayloadSchema = z.discriminatedUnion('decisionKind', [
+    z
+      .object({
+        action: z.literal('merge'),
+        activationId: brandedStringSchema(activationId),
+        decisionKind: z.literal('requested'),
+        ...claimBase,
+        fact: resourceFacts[10],
+      })
+      .strict(),
+    z
+      .object({
+        action: z.literal('merge'),
+        activationId: brandedStringSchema(activationId),
+        decisionKind: z.literal('denied'),
+        ...claimBase,
+        fact: denials[0],
+      })
+      .strict(),
+  ]);
+  const approveClaimContract = {
+    eventType: z.literal(eventTypes.PrApproveDecisionClaimed),
+    stream: approveDecisionStreamSchema,
+    payload: approveClaimPayloadSchema,
+  };
+  const mergeClaimContract = {
+    eventType: z.literal(eventTypes.PrMergeDecisionClaimed),
+    stream: mergeDecisionStreamSchema,
+    payload: mergeClaimPayloadSchema,
+  };
+  const approveClaimEnvelopeSchema = eventEnvelopeSchema
+    .extend(approveClaimContract)
+    .superRefine(decisionClaimIdentity);
+  const mergeClaimEnvelopeSchema = eventEnvelopeSchema
+    .extend(mergeClaimContract)
+    .superRefine(decisionClaimIdentity);
+  const approveClaimDraftSchema = eventDraftSchema
+    .extend(approveClaimContract)
+    .superRefine(decisionClaimIdentity);
+  const mergeClaimDraftSchema = eventDraftSchema
+    .extend(mergeClaimContract)
+    .superRefine(decisionClaimIdentity);
   const factEnvelopeSchema = z.intersection(
     eventEnvelopeSchema,
     z.preprocess(withoutEnvelopeMetadata, z.union([...resourceFacts, ...denials])),
   );
-  return z.union([
-    factEnvelopeSchema,
-    eventEnvelopeSchema.extend({
-      eventType: z.literal(eventTypes.PrApproveDecisionClaimed),
-      stream: approveDecisionStreamSchema,
-      payload: z
-        .object({
-          action: z.literal('approve'),
-          ...claimBase,
-          fact: approveFactSchema,
-        })
-        .strict(),
-    }),
-    eventEnvelopeSchema.extend({
-      eventType: z.literal(eventTypes.PrMergeDecisionClaimed),
-      stream: mergeDecisionStreamSchema,
-      payload: z
-        .object({
-          action: z.literal('merge'),
-          ...claimBase,
-          fact: mergeFactSchema,
-        })
-        .strict(),
-    }),
-  ]);
+  return {
+    eventSchema: z.union([
+      factEnvelopeSchema,
+      approveClaimEnvelopeSchema,
+      mergeClaimEnvelopeSchema,
+    ]),
+    draftSchema: z.union([
+      ...resourceFacts,
+      ...denials,
+      approveClaimDraftSchema,
+      mergeClaimDraftSchema,
+    ]),
+  };
 }
 
 function createResourceFactDraftSchemas(eventTypes: ActivityEventTypes) {
   return [
-    eventDraftSchema.extend({
-      eventType: z.literal(eventTypes.PrDiscovered),
-      stream: resourceStreamSchema,
-      payload: z
+    resourceFactDraft(
+      eventTypes.PrDiscovered,
+      z
         .object({
           workItemId: workItemIdSchema,
           state: stateSchema,
@@ -185,31 +221,17 @@ function createResourceFactDraftSchemas(eventTypes: ActivityEventTypes) {
           checks: checksSchema,
         })
         .strict(),
-    }),
-    eventDraftSchema.extend({
-      eventType: z.literal(eventTypes.PrRevisionChanged),
-      stream: resourceStreamSchema,
-      payload: z.object({ headRevision: z.string(), baseRevision: z.string() }).strict(),
-    }),
-    eventDraftSchema.extend({
-      eventType: z.literal(eventTypes.PrStateChanged),
-      stream: resourceStreamSchema,
-      payload: z.object({ state: stateSchema }).strict(),
-    }),
-    eventDraftSchema.extend({
-      eventType: z.literal(eventTypes.PrChecksChanged),
-      stream: resourceStreamSchema,
-      payload: z.object({ checks: checksSchema }).strict(),
-    }),
-    eventDraftSchema.extend({
-      eventType: z.literal(eventTypes.PrReviewAccepted),
-      stream: resourceStreamSchema,
-      payload: reviewSchema,
-    }),
-    eventDraftSchema.extend({
-      eventType: z.literal(eventTypes.ReviewAcceptanceSignalRecorded),
-      stream: resourceStreamSchema,
-      payload: z
+    ),
+    resourceFactDraft(
+      eventTypes.PrRevisionChanged,
+      z.object({ headRevision: z.string(), baseRevision: z.string() }).strict(),
+    ),
+    resourceFactDraft(eventTypes.PrStateChanged, z.object({ state: stateSchema }).strict()),
+    resourceFactDraft(eventTypes.PrChecksChanged, z.object({ checks: checksSchema }).strict()),
+    resourceFactDraft(eventTypes.PrReviewAccepted, reviewSchema),
+    resourceFactDraft(
+      eventTypes.ReviewAcceptanceSignalRecorded,
+      z
         .object({
           revision: z.string(),
           actorId: z.string(),
@@ -219,48 +241,100 @@ function createResourceFactDraftSchemas(eventTypes: ActivityEventTypes) {
           trusted: z.boolean(),
         })
         .strict(),
-    }),
-    eventDraftSchema.extend({
-      eventType: z.literal(eventTypes.PrReviewChangesRequested),
-      stream: resourceStreamSchema,
-      payload: reviewSchema,
-    }),
-    eventDraftSchema.extend({
-      eventType: z.literal(eventTypes.PrReviewRejected),
-      stream: resourceStreamSchema,
-      payload: z.object({ reason: z.string() }).strict(),
-    }),
-    eventDraftSchema.extend({
-      eventType: z.literal(eventTypes.PrMergeAuthorized),
-      stream: resourceStreamSchema,
-      payload: z.object({ revision: z.string() }).strict(),
-    }),
-    eventDraftSchema.extend({
-      eventType: z.literal(eventTypes.PrApproveRequested),
-      stream: resourceStreamSchema,
-      payload: approveRequestedSchema,
-    }),
-    eventDraftSchema.extend({
-      eventType: z.literal(eventTypes.PrMergeRequested),
-      stream: resourceStreamSchema,
-      payload: mergeRequestedSchema,
-    }),
+    ),
+    resourceFactDraft(eventTypes.PrReviewChangesRequested, reviewSchema),
+    resourceFactDraft(eventTypes.PrReviewRejected, z.object({ reason: z.string() }).strict()),
+    resourceFactDraft(eventTypes.PrMergeAuthorized, z.object({ revision: z.string() }).strict()),
+    resourceFactDraft(eventTypes.PrApproveRequested, approveRequestedSchema),
+    resourceFactDraft(eventTypes.PrMergeRequested, mergeRequestedSchema),
   ] as const;
 }
 
 function createDenialDraftSchemas(eventTypes: ActivityEventTypes) {
   return [
-    eventDraftSchema.extend({
-      eventType: z.literal(eventTypes.PrMergeDenied),
-      stream: denialStreamSchema,
-      payload: denialSchema,
-    }),
-    eventDraftSchema.extend({
-      eventType: z.literal(eventTypes.PrApproveDenied),
-      stream: denialStreamSchema,
-      payload: denialSchema,
-    }),
+    denialFactDraft(eventTypes.PrMergeDenied),
+    denialFactDraft(eventTypes.PrApproveDenied),
   ] as const;
+}
+
+function resourceFactDraft<Type extends string, Payload extends z.ZodType>(
+  eventType: Type,
+  payload: Payload,
+) {
+  return eventDraftSchema
+    .extend({
+      eventType: z.literal(eventType),
+      stream: resourceStreamSchema,
+      payload,
+    })
+    .superRefine((event, context) =>
+      resourcePayloadIdentity(
+        event as {
+          readonly stream: { readonly kind: string; readonly id: string };
+          readonly payload: unknown;
+        },
+        context,
+      ),
+    );
+}
+
+function denialFactDraft<Type extends string>(eventType: Type) {
+  return eventDraftSchema
+    .extend({
+      eventType: z.literal(eventType),
+      stream: denialStreamSchema,
+      payload: denialSchema,
+    })
+    .superRefine(resourcePayloadIdentity);
+}
+
+function resourcePayloadIdentity(
+  event: {
+    readonly stream: { readonly kind: string; readonly id: string };
+    readonly payload: unknown;
+  },
+  context: z.RefinementCtx,
+): void {
+  if (
+    event.stream.kind !== ResourceStreamKind.Resource ||
+    !isRecord(event.payload) ||
+    typeof event.payload.resourceId !== 'string'
+  )
+    return;
+  if (event.payload.resourceId !== event.stream.id)
+    context.addIssue({
+      code: 'custom',
+      path: ['payload', 'resourceId'],
+      message: 'Activity resource payload id must identify its stream',
+    });
+}
+
+function decisionClaimIdentity(
+  event: {
+    readonly stream: { readonly id: string };
+    readonly payload: {
+      readonly action: 'approve' | 'merge';
+      readonly activationId: string;
+      readonly fact: { readonly payload: { readonly activationId: string } };
+    };
+  },
+  context: z.RefinementCtx,
+): void {
+  if (
+    event.stream.id !==
+    activityDecisionStream(activationId(event.payload.activationId), event.payload.action).id
+  )
+    context.addIssue({
+      code: 'custom',
+      path: ['payload', 'activationId'],
+      message: 'Activity decision activation and action must identify its stream',
+    });
+  if (event.payload.fact.payload.activationId !== event.payload.activationId)
+    context.addIssue({
+      code: 'custom',
+      path: ['payload', 'fact', 'payload', 'activationId'],
+      message: 'Activity decision fact activation must match its claim',
+    });
 }
 
 function withoutEnvelopeMetadata(input: unknown): unknown {

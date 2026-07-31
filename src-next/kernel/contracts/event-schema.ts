@@ -1,12 +1,11 @@
 import { z } from 'zod';
 import { EventActorKind, type EventEnvelope } from './events.js';
 import { causationId, correlationId, eventId } from './identifiers.js';
+import { brandedStringSchema, offsetIsoTimestampSchema } from './schema.js';
 
 const nonEmptyString = z.string().refine((value) => value.trim().length > 0, {
   message: 'must not be empty',
 });
-const isoTimestamp = z.iso.datetime({ offset: true });
-
 export const eventActorSchema = z
   .object({
     kind: z.enum([
@@ -35,12 +34,12 @@ export const entityRefSchema = z
 
 export const eventDraftSchema = z
   .object({
-    eventId: nonEmptyString.transform(eventId),
+    eventId: nonEmptyString.pipe(brandedStringSchema(eventId)),
     eventType: nonEmptyString,
     schemaVersion: z.literal(1),
-    occurredAt: isoTimestamp,
-    correlationId: nonEmptyString.transform(correlationId),
-    causationId: nonEmptyString.transform(causationId),
+    occurredAt: offsetIsoTimestampSchema,
+    correlationId: nonEmptyString.pipe(brandedStringSchema(correlationId)),
+    causationId: nonEmptyString.pipe(brandedStringSchema(causationId)),
     actor: eventActorSchema,
     source: eventSourceSchema,
     stream: entityRefSchema,
@@ -50,7 +49,7 @@ export const eventDraftSchema = z
 
 export const eventEnvelopeSchema = eventDraftSchema
   .extend({
-    recordedAt: isoTimestamp,
+    recordedAt: offsetIsoTimestampSchema,
     sequence: z.number().int().positive(),
     globalPosition: z.number().int().positive(),
   })
