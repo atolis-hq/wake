@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
-import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 const cliPath = resolve('scripts/check-contract-vocabulary.mjs');
@@ -14,10 +14,17 @@ afterEach(async () => {
   );
 });
 
-async function cliFixture(): Promise<string> {
+async function cliFixture(files: Readonly<Record<string, string>> = {}): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'wake-contract-vocabulary-cli-'));
   fixtureRoots.push(root);
   await mkdir(join(root, 'src-next'));
+  await Promise.all(
+    Object.entries(files).map(async ([path, source]) => {
+      const target = join(root, path);
+      await mkdir(dirname(target), { recursive: true });
+      await writeFile(target, source, 'utf8');
+    }),
+  );
   return root;
 }
 
@@ -57,5 +64,21 @@ describe('contract vocabulary CLI', () => {
     expect(result.status).toBe(1);
     expect(result.stdout).toBe('');
     expect(result.stderr).toBe(`Unknown contract-vocabulary rule: nope\n${usage}`);
+  });
+
+  it('writes vocabulary violations to stderr and exits nonzero', async () => {
+    const root = await cliFixture({
+      'src-next/work/contracts/events.ts':
+        "export const WorkEventType = { Created: 'work.item-created' } as const;",
+      'src-next/work/domain/work-item.ts': "export const eventType = 'work.item-created';",
+    });
+
+    const result = runCli(root, []);
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toBe(
+      'src-next/work/domain/work-item.ts:1:26 [event-literals] "work.item-created" must be replaced by WorkEventType\n',
+    );
   });
 });

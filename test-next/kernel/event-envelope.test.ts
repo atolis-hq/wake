@@ -6,6 +6,7 @@ import {
   type Brand,
   type EntityRef,
   type EventDraft,
+  type EventDraftInput,
   type EventDraftUnion,
   type EventEnvelope,
   type EventUnion,
@@ -63,7 +64,18 @@ describe('event envelope', () => {
     >();
   });
 
-  it('preserves an exact branded stream through the public draft factory', () => {
+  it('supports an explicit two-generic draft input and factory call', () => {
+    type Payload = { readonly objective: string };
+    const input: EventDraftInput<'work.item-created', Payload> = workDraftInput(
+      entityRef('work-item', 'work-1'),
+    );
+
+    const draft = createEventDraft<'work.item-created', Payload>(input);
+
+    expectTypeOf(draft).toEqualTypeOf<EventDraft<'work.item-created', Payload, EntityRef>>();
+  });
+
+  it('retains exact stream inference for an unannotated draft factory call', () => {
     type WorkItemId = Brand<string, 'WorkItemId'>;
     const workItemId = 'work-1' as WorkItemId;
 
@@ -71,7 +83,9 @@ describe('event envelope', () => {
 
     expectTypeOf(draft.stream).toEqualTypeOf<EntityRef<'work-item', WorkItemId>>();
   });
+});
 
+describe('event draft validation', () => {
   it('keeps domain payload separate from universal metadata', () => {
     const draft = createEventDraft({
       eventId: 'evt-1',

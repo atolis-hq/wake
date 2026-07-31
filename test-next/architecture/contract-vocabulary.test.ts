@@ -163,6 +163,18 @@ describe('event and stream catalogue shapes', () => {
       expected: 'WorkEventType must use an inline object initializer',
     },
     {
+      name: 'event catalogue without const assertion',
+      path: 'src-next/work/contracts/events.ts',
+      source: "export const WorkEventType = { Created: 'work.item-created' };",
+      expected: 'WorkEventType inline object initializer must use as const',
+    },
+    {
+      name: 'stream catalogue without const assertion',
+      path: 'src-next/work/contracts/streams.ts',
+      source: "export const WorkStreamKind = { Item: 'work-item' };",
+      expected: 'WorkStreamKind inline object initializer must use as const',
+    },
+    {
       name: 'spread property',
       path: 'src-next/work/contracts/events.ts',
       source: [
@@ -191,6 +203,18 @@ describe('event and stream catalogue shapes', () => {
       path: 'src-next/work/contracts/streams.ts',
       source: 'export const WorkStreamKind = { Item: 1 } as const;',
       expected: 'WorkStreamKind.Item must have a string-literal value',
+    },
+    {
+      name: 'event namespace export',
+      path: 'src-next/work/contracts/events.ts',
+      source: "export * as WorkEventType from './event-values.js';",
+      expected: 'WorkEventType must be declared directly with export const',
+    },
+    {
+      name: 'stream namespace export',
+      path: 'src-next/work/contracts/streams.ts',
+      source: "export * as WorkStreamKind from './stream-values.js';",
+      expected: 'WorkStreamKind must be declared directly with export const',
     },
   ])('rejects an unsupported $name', async ({ path, source, expected }) => {
     const root = await fixture({ [path]: source });
@@ -240,6 +264,24 @@ describe('closed catalogue shapes', () => {
         'export const ReviewDecision = defineClosedVocabulary(values);',
       ].join('\n'),
       expected: 'ReviewDecision must pass an inline object literal as const',
+    },
+    {
+      name: 'renamed helper import',
+      source: [
+        "import { defineClosedVocabulary as defineVocabulary } from '../../kernel/index.js';",
+        "export const ReviewDecision = defineVocabulary({ Approved: 'review.approved' } as const);",
+      ].join('\n'),
+      expected:
+        'ReviewDecision must call defineClosedVocabulary with its direct identifier spelling',
+    },
+    {
+      name: 'namespace helper member call',
+      source: [
+        "import * as vocabulary from '../../kernel/index.js';",
+        "export const ReviewDecision = vocabulary.defineClosedVocabulary({ Approved: 'review.approved' } as const);",
+      ].join('\n'),
+      expected:
+        'ReviewDecision must call defineClosedVocabulary with its direct identifier spelling',
     },
     {
       name: 'nested helper call',

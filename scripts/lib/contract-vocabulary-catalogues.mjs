@@ -78,16 +78,13 @@ function discoverNamedCatalogue(detail, statement, declaration, rule, registrati
     return;
   }
 
-  const object = inlineObject(declaration.initializer);
+  const object = constAssertedObject(declaration.initializer);
   if (object === undefined) {
-    rejectShape(
-      diagnostics,
-      detail,
-      declaration.initializer,
-      rule,
-      owner,
-      `${owner} must use an inline object initializer`,
-    );
+    const unwrapped = unwrapExpression(declaration.initializer);
+    const reason = ts.isObjectLiteralExpression(unwrapped)
+      ? `${owner} inline object initializer must use as const`
+      : `${owner} must use an inline object initializer`;
+    rejectShape(diagnostics, detail, declaration.initializer, rule, owner, reason);
     return;
   }
   registerObject(detail, object, declaration.initializer, rule, owner, registrations, diagnostics);
@@ -105,6 +102,20 @@ function rejectIndirectExports(detail, suffix, rule, localNames, diagnostics) {
         suffix,
         `${suffix} catalogues must not use wildcard exports`,
       );
+      continue;
+    }
+    if (ts.isNamespaceExport(statement.exportClause)) {
+      const owner = statement.exportClause.name.text;
+      if (owner.endsWith(suffix)) {
+        rejectShape(
+          diagnostics,
+          detail,
+          statement.exportClause,
+          rule,
+          owner,
+          `${owner} must be declared directly with export const`,
+        );
+      }
       continue;
     }
     if (!ts.isNamedExports(statement.exportClause)) continue;
@@ -125,9 +136,13 @@ function rejectIndirectExports(detail, suffix, rule, localNames, diagnostics) {
 }
 
 function discoverClosedCatalogues(detail, registrations, diagnostics) {
+  const imports = closedVocabularyImports(detail.source);
   visit(detail.source, (node) => {
-    if (!isDefineClosedVocabularyCall(node)) return;
-    discoverClosedCatalogue(detail, node, registrations, diagnostics);
+    if (isDefineClosedVocabularyCall(node)) {
+      discoverClosedCatalogue(detail, node, registrations, diagnostics);
+    } else if (isUnsupportedClosedVocabularyCall(node, imports)) {
+      rejectClosedVocabularySpelling(detail, node, diagnostics);
+    }
   });
 }
 
@@ -263,6 +278,14 @@ function rejectShape(diagnostics, detail, node, rule, owner, reason) {
   diagnostics.push(createShapeDiagnostic(detail, node, rule, owner, reason));
 }
 
+function constAssertedObject(expression) {
+  let current = expression;
+  while (ts.isParenthesizedExpression(current) || ts.isSatisfiesExpression(current)) {
+    current = current.expression;
+  }
+  return isConstAssertion(current) ? inlineObject(current.expression) : undefined;
+}
+
 function inlineObject(expression) {
   const unwrapped = unwrapExpression(expression);
   return ts.isObjectLiteralExpression(unwrapped) ? unwrapped : undefined;
@@ -302,6 +325,63 @@ function isDefineClosedVocabularyCall(node) {
     ts.isCallExpression(node) &&
     ts.isIdentifier(node.expression) &&
     node.expression.text === 'defineClosedVocabulary'
+  );
+}
+
+function closedVocabularyImports(source) {
+  const aliases = new Set();
+  const namespaces = new Set();
+  for (const statement of source.statements) {
+    if (!ts.isImportDeclaration(statement)) continue;
+    const bindings = statement.importClause?.namedBindings;
+    if (bindings === undefined) continue;
+    if (ts.isNamespaceImport(bindings)) {
+      namespaces.add(bindings.name.text);
+      continue;
+    }
+    for (const specifier of bindings.elements) {
+      const importedName = specifier.propertyName?.text ?? specifier.name.text;
+      if (
+        importedName === 'defineClosedVocabulary' &&
+        specifier.name.text !== 'defineClosedVocabulary'
+      ) {
+        aliases.add(specifier.name.text);
+      }
+    }
+  }
+  return { aliases, namespaces };
+}
+
+function isUnsupportedClosedVocabularyCall(node, imports) {
+  if (!ts.isCallExpression(node)) return false;
+  const callee = node.expression;
+  if (ts.isIdentifier(callee)) return imports.aliases.has(callee.text);
+  if (
+    ts.isPropertyAccessExpression(callee) &&
+    ts.isIdentifier(callee.expression) &&
+    imports.namespaces.has(callee.expression.text)
+  ) {
+    return callee.name.text === 'defineClosedVocabulary';
+  }
+  return (
+    ts.isElementAccessExpression(callee) &&
+    ts.isIdentifier(callee.expression) &&
+    imports.namespaces.has(callee.expression.text) &&
+    ts.isStringLiteral(callee.argumentExpression) &&
+    callee.argumentExpression.text === 'defineClosedVocabulary'
+  );
+}
+
+function rejectClosedVocabularySpelling(detail, call, diagnostics) {
+  const declaration = enclosingVariableDeclaration(call);
+  const owner = variableName(declaration) ?? 'defineClosedVocabulary';
+  rejectShape(
+    diagnostics,
+    detail,
+    call,
+    'closed-vocabulary',
+    owner,
+    `${owner} must call defineClosedVocabulary with its direct identifier spelling`,
   );
 }
 

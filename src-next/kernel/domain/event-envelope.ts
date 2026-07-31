@@ -1,7 +1,11 @@
 import type { EventActor, EventDraft, EventSource } from '../contracts/events.js';
 import { causationId, correlationId, eventId, type EntityRef } from '../contracts/identifiers.js';
 
-export interface EventDraftInput<Type extends string, Payload, Stream extends EntityRef> {
+export interface EventDraftInput<
+  Type extends string,
+  Payload,
+  Stream extends EntityRef = EntityRef,
+> {
   readonly eventId: string;
   readonly eventType: Type;
   readonly occurredAt: string;
@@ -13,9 +17,11 @@ export interface EventDraftInput<Type extends string, Payload, Stream extends En
   readonly payload: Payload;
 }
 
-export function createEventDraft<Type extends string, Payload, Stream extends EntityRef>(
-  input: EventDraftInput<Type, Payload, Stream>,
-): EventDraft<Type, Payload, Stream> {
+export function createEventDraft<
+  Type extends string,
+  Payload,
+  Stream extends EntityRef = EntityRef,
+>(input: EventDraftInput<Type, Payload, Stream>): EventDraft<Type, Payload, Stream> {
   if (input.eventType.trim().length === 0) throw new Error('event type must not be empty');
   if (Number.isNaN(Date.parse(input.occurredAt))) {
     throw new Error('occurred at must be a valid ISO timestamp');
