@@ -90,13 +90,22 @@ The inventory must cover at least:
 - GitHub authentication, repository discovery, issue/PR/review/comment
   observation, pagination, ETags, polling cadence, eligibility policy, and
   deduplication;
-- work creation/correlation, state movement, human command interpretation,
-  identity/permission policy, and bot/self-reply suppression;
+- work creation/correlation, durable workflow-selection policy, state movement,
+  and the reconciliation of provider labels that mirror Wake status, workflow,
+  and stage without replacing unrelated user labels;
+- human command interpretation, identity/permission policy, recognition of
+  Wake-authored comments, and bot/self-reply suppression;
 - Claude, Codex, Cursor, and fake runner selection, commands, models,
-  timeouts, prompts, workspaces, transcripts, retries, cancellation, and
-  recovery;
-- status/reply/approval/merge delivery, idempotency, ambiguity reconciliation,
-  and provider-side error handling;
+  timeouts, new-session/resume semantics, headless structured output, prompt
+  frontmatter, template rendering context, workspaces, transcripts, retries,
+  cancellation, and recovery;
+- sentinel/result-envelope parsing, structured agent-reported decisions and
+  artefacts, outcome policy such as approval gates, and durable Run recording;
+- status/reply/approval/merge delivery, including operator-facing run metadata,
+  agent messages, next-step instructions, idempotency, ambiguity
+  reconciliation, and provider-side error handling;
+- child workflow/watch behavior, review/revision policy, and loop guards;
+- closed-workspace cleanup and transcript retention;
 - tick, resident, schedules, CLI commands, API/UI host lifecycle, sandbox, and
   operational diagnostics.
 
@@ -175,8 +184,9 @@ repeatable script. Credentials must come from the approved local configuration
 or environment mechanism and must never be committed or printed.
 
 The script will cover the final agreed capability set. At minimum, if those
-capabilities are classified `replicate now`, it proves issue intake, one agent
-workflow, a human review/comment decision, and one intended GitHub effect.
+capabilities are classified `replicate now`, it proves issue intake and update,
+workflow selection and provider-label synchronization, one agent workflow, a
+human review/comment decision, and one intended GitHub effect.
 Each observation is recorded with command, configuration fixture shape,
 expected public view, and result. A failed manual check returns work to the
 owning corrective task; it is not waived by a passing fake.
@@ -211,3 +221,9 @@ compatibility for legacy HTTP endpoints, acceptance of legacy configuration
 syntax, or an external production deployment. Those remain separate decisions.
 It does require that any such omission be explicit in the catalogue rather than
 an accidental consequence of incomplete wiring.
+
+The target design currently names GitHub as its concrete provider. The review
+must identify any legacy provider abstractions that would support another
+ticketing system, but must not imply that arbitrary ticketing-system adapters
+are `replicate now` unless the catalogue and an approved target design
+amendment select them.
