@@ -9,9 +9,10 @@ import {
 import { translateGitHubOutbound } from '../../src-next/integrations/github/application/outbound-translator.js';
 import { createGitHubDelivery } from '../../src-next/integrations/github/infrastructure/delivery.js';
 import { BuiltInResourceKind, resourceId } from '../../src-next/resources/index.js';
+import { eventId } from '../../src-next/kernel/index.js';
 
 const mergeIntent = {
-  intentEventId: 'intent',
+  intentEventId: eventId('intent'),
   globalPosition: 1,
   workflowInstanceId: 'workflow-1',
   activationId: 'activation-1',

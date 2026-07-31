@@ -1,8 +1,11 @@
 import { z } from 'zod';
 import {
+  brandedStringSchema,
+  eventId,
   eventEnvelopeSchema,
   type EventDraftUnion,
   type EventEnvelope,
+  type EventId,
   type EventUnion,
 } from '../../../kernel/index.js';
 import { IntegrationStreamKind, type DeliveryStreamRef } from '../../contracts/streams.js';
@@ -18,7 +21,7 @@ export const DeliveryEventType = {
 export const DeliveryEventNamespace = 'delivery.' as const;
 
 export interface DeliveryEventCorrelation {
-  readonly intentEventId: string;
+  readonly intentEventId: EventId;
   readonly intentGlobalPosition: number;
   readonly workflowInstanceId: string;
   readonly activationId: string;
@@ -55,7 +58,7 @@ export type DeliveryEventDraft = EventDraftUnion<DeliveryEventPayloads, Delivery
 
 const correlationSchema = z
   .object({
-    intentEventId: z.string().min(1),
+    intentEventId: brandedStringSchema(eventId),
     intentGlobalPosition: z.number().int().positive(),
     workflowInstanceId: z.string().min(1),
     activationId: z.string().min(1),
@@ -63,7 +66,10 @@ const correlationSchema = z
   })
   .strict();
 const deliveryStreamSchema = z
-  .object({ kind: z.literal(IntegrationStreamKind.Delivery), id: z.string().min(1) })
+  .object({
+    kind: z.literal(IntegrationStreamKind.Delivery),
+    id: brandedStringSchema(eventId),
+  })
   .strict();
 const reconciledPayloadSchema = z.discriminatedUnion('result', [
   correlationSchema.extend({

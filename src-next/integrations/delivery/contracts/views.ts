@@ -1,5 +1,6 @@
 import type { ResourceId } from '../../../resources/index.js';
 import type { MergeMethod } from '../../../activities/index.js';
+import type { EventId } from '../../../kernel/index.js';
 import {
   DeliveryIntentKind,
   type DeliveryIntentKind as DeliveryIntentKindValue,
@@ -7,7 +8,7 @@ import {
 } from './vocabulary.js';
 
 export interface DeliveryIntentView {
-  readonly intentEventId: string;
+  readonly intentEventId: EventId;
   readonly globalPosition: number;
   readonly workflowInstanceId: string;
   readonly activationId: string;

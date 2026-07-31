@@ -1,4 +1,4 @@
-import type { EntityRef } from '../../kernel/index.js';
+import type { EntityRef, EventId } from '../../kernel/index.js';
 import type { AdapterId } from './identifiers.js';
 
 export const IntegrationStreamKind = { Integration: 'integration', Delivery: 'delivery' } as const;
@@ -13,8 +13,8 @@ export const integrationStream = (id: AdapterId): IntegrationStreamRef => ({
 export const isIntegrationStream = (stream: EntityRef): stream is IntegrationStreamRef =>
   stream.kind === IntegrationStreamKind.Integration;
 
-export type DeliveryStreamRef = EntityRef<typeof IntegrationStreamKind.Delivery, string>;
-export const deliveryStream = (intentEventId: string): DeliveryStreamRef => ({
+export type DeliveryStreamRef = EntityRef<typeof IntegrationStreamKind.Delivery, EventId>;
+export const deliveryStream = (intentEventId: EventId): DeliveryStreamRef => ({
   kind: IntegrationStreamKind.Delivery,
   id: intentEventId,
 });

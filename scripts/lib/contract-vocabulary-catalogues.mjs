@@ -10,7 +10,7 @@ export function discoverCatalogues(sourceDetails, rules) {
   const diagnostics = [];
 
   for (const detail of sourceDetails) {
-    if (isContractPath(detail.path, 'events.ts')) {
+    if (isEventContractPath(detail.path)) {
       discoverNamedCatalogues(
         detail,
         'EventType',
@@ -514,6 +514,10 @@ function isExportedConst(statement) {
 function isContractPath(path, fileName) {
   const parts = path.toLowerCase().split('/');
   return parts.at(-2) === 'contracts' && parts.at(-1) === fileName;
+}
+
+function isEventContractPath(path) {
+  return isContractPath(path, 'events.ts') || isContractPath(path, 'intents.ts');
 }
 
 function isCanonicalModuleContractPath(path, fileName) {

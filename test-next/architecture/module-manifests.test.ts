@@ -169,6 +169,34 @@ describe('module manifest catalogue integrity', () => {
       ]),
     );
   });
+
+  it('rejects nested delivery intent events outside the manifest event namespaces', async () => {
+    const root = await manifestFixture({
+      integrations: {
+        streams: ['delivery'],
+        events: ['integration.', 'delivery.'],
+        source: "export const IntegrationStreamKind = { Delivery: 'delivery' } as const;",
+        eventSourcePath: 'delivery/contracts/intents.ts',
+        eventSource: [
+          'export const DeliveryIntentEventType = {',
+          "  StatusPublishRequested: 'status.publish-requested',",
+          "  ReplyPublishRequested: 'reply.publish-requested',",
+          '} as const;',
+        ].join('\n'),
+      },
+    });
+
+    await expect(checker.checkModuleManifests(root)).resolves.toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(
+          /^integrations\/delivery\/contracts\/intents\.ts:\d+:\d+ \[event-literals\] status\.publish-requested is not declared in integrations module manifest events$/,
+        ),
+        expect.stringMatching(
+          /^integrations\/delivery\/contracts\/intents\.ts:\d+:\d+ \[event-literals\] reply\.publish-requested is not declared in integrations module manifest events$/,
+        ),
+      ]),
+    );
+  });
 });
 
 async function manifestFixture(

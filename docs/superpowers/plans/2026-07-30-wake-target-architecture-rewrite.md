@@ -4322,7 +4322,7 @@ required gates:
 
 - [x] **Task 22A:** make activation claim/release events first-class typed
   Execution contracts tied to the activation stream.
-- [ ] **Task 21B:** replace Task 21's generic delivery payload/string handling,
+- [x] **Task 21B:** replace Task 21's generic delivery payload/string handling,
   register delivery in production composition, and prove restart-safe delivery
   through composed E2E scenarios.
 

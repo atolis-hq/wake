@@ -10,7 +10,10 @@ import {
   type ExternalDeliveryAdapter,
   type ReconciliationResult,
 } from '../../../src-next/integrations/index.js';
-import { InMemoryProjectionStore } from '../../../src-next/persistence/index.js';
+import {
+  InMemoryCheckpointStore,
+  InMemoryProjectionStore,
+} from '../../../src-next/persistence/index.js';
 import { OrchestrationEventType } from '../../../src-next/orchestration/index.js';
 import { executeMerge, setupMergeScenario } from './pr-activity-fixtures.js';
 import { TestWorld } from '../support/world.js';
@@ -52,6 +55,11 @@ describe('E2E-DELIVERY-001', () => {
     expect(await world.events(DeliveryEventType.Confirmed)).toHaveLength(0);
     expect(await world.events(OrchestrationEventType.InstanceCompleted)).toHaveLength(1);
   });
+
+  it(
+    'rebuilds unresolved delivery work after projection state and checkpoint loss',
+    rebuildUnresolvedDeliveryWork,
+  );
 
   it('uses a new durable event occurrence when reconciliation retries and remains unknown', async () => {
     // Given an ambiguous provider effect that survives each delivery-runtime restart.
@@ -114,6 +122,43 @@ describe('E2E-DELIVERY-001', () => {
     ]);
   });
 });
+
+async function rebuildUnresolvedDeliveryWork(): Promise<void> {
+  // Given a provider effect accepted before Wake records confirmation.
+  const world = new TestWorld();
+  const setup = await setupMergeScenario(world, 'safe');
+  const workflowId = await executeMerge(world, setup.workItemId);
+  const provider = new DurableFakeDeliveryProvider();
+  provider.crashAfterNextEffect();
+  const dependencies = {
+    journal: world.journal,
+    projections: new InMemoryProjectionStore(),
+    checkpoints: world.checkpoints,
+    resource: async (id: string) => ({ resourceId: id, adapter: 'fake' }),
+    adapter: () => provider,
+    now: () => world.clock.now().toISOString(),
+    orchestration: world.orchestration,
+  };
+
+  await expect(
+    composeDeliveryRuntime(dependencies).runOnce(new AbortController().signal),
+  ).rejects.toThrow('simulated provider crash after accepted effect');
+
+  // When delivery projections and their checkpoints are lost before restart.
+  const restartedDependencies = {
+    ...dependencies,
+    projections: new InMemoryProjectionStore(),
+    checkpoints: new InMemoryCheckpointStore(),
+  };
+  await composeDeliveryRuntime(restartedDependencies).runOnce(new AbortController().signal);
+
+  // Then journal replay reconciles the original effect without delivering again.
+  expect(provider.effects).toHaveLength(1);
+  expect(provider.deliveryCalls).toBe(1);
+  expect((await world.viewWorkflow(workflowId))?.status).toBe('completed');
+  expect(await world.events(DeliveryEventType.Reconciled)).toHaveLength(1);
+  expect(await world.events(OrchestrationEventType.InstanceCompleted)).toHaveLength(1);
+}
 
 class EventuallyConsistentDeliveryProvider implements ExternalDeliveryAdapter {
   readonly effects: string[] = [];

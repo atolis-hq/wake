@@ -11,17 +11,19 @@ import {
 import { MergeMethod } from '../../src-next/activities/index.js';
 import { resourceId } from '../../src-next/resources/index.js';
 import { InMemoryEventJournal } from '../../src-next/persistence/index.js';
+import { eventId } from '../../src-next/kernel/index.js';
 import { FakeClock } from '../e2e/support/world.js';
 
 describe('DeliveryService', () => {
   it('uses the canonical intent event id as the provider idempotency key', async () => {
     const calls: string[] = [];
+    const intentEventId = eventId('intent-1');
     const journal = new InMemoryEventJournal(new FakeClock());
     const service = new DeliveryService({
       journal,
       intents: async () => [
         {
-          intentEventId: 'intent-1',
+          intentEventId,
           globalPosition: 1,
           workflowInstanceId: 'workflow-1',
           activationId: 'activation-1',

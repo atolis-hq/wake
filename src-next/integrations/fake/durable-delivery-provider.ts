@@ -1,11 +1,12 @@
 import type { ExternalDeliveryAdapter } from '../delivery/contracts/config.js';
 import type { DeliveryIntentView } from '../delivery/contracts/views.js';
 import { DeliveryResultKind } from '../delivery/contracts/vocabulary.js';
+import type { EventId } from '../../kernel/index.js';
 
 export class DurableFakeDeliveryProvider implements ExternalDeliveryAdapter {
   readonly effects = new Map<string, string>();
   deliveryCalls = 0;
-  private ambiguous = new Map<string, string>();
+  private ambiguous = new Map<string, EventId>();
   private crashAfterEffect = false;
 
   crashAfterNextEffect(): void {
@@ -25,7 +26,7 @@ export class DurableFakeDeliveryProvider implements ExternalDeliveryAdapter {
     return { kind: DeliveryResultKind.Confirmed, externalId };
   }
 
-  rememberAmbiguous(intentEventId: string, reconciliationKey: string): void {
+  rememberAmbiguous(intentEventId: EventId, reconciliationKey: string): void {
     this.ambiguous.set(reconciliationKey, intentEventId);
   }
 

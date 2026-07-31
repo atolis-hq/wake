@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
 import {
   BuiltInAdapterId,
   createDeliveryEventDraft,
@@ -10,7 +10,9 @@ import {
   integrationStream,
   selectDeliveryEvent,
   selectGitHubAdapterEvent,
+  type DeliveryEventDraftInput,
 } from '../../src-next/integrations/index.js';
+import { eventId, type EventId } from '../../src-next/kernel/index.js';
 import { eventEnvelope } from '../support/event-envelope.js';
 
 const stream = integrationStream(BuiltInAdapterId.GitHub);
@@ -83,10 +85,21 @@ describe('GitHub adapter event contract', () => {
   });
 });
 
+it('preserves the canonical EventId brand through delivery factory inputs', () => {
+  type ConfirmedInput = Extract<
+    DeliveryEventDraftInput,
+    { readonly eventType: typeof DeliveryEventType.Confirmed }
+  >;
+
+  expectTypeOf<ConfirmedInput['stream']['id']>().toEqualTypeOf<EventId>();
+  expectTypeOf<ConfirmedInput['payload']['intentEventId']>().toEqualTypeOf<EventId>();
+});
+
 describe('Delivery event contract', () => {
-  const delivery = deliveryStream('intent-1');
+  const intentEventId = eventId('intent-1');
+  const delivery = deliveryStream(intentEventId);
   const confirmed = {
-    intentEventId: 'intent-1',
+    intentEventId,
     intentGlobalPosition: 4,
     workflowInstanceId: 'workflow-1',
     activationId: 'activation-1',
@@ -142,14 +155,14 @@ describe('Delivery event contract', () => {
   it('rejects a delivery event whose stream identifies a different intent', () => {
     expect(() =>
       decodeDeliveryEvent(
-        eventEnvelope(DeliveryEventType.Confirmed, confirmed, deliveryStream('intent-2')),
+        eventEnvelope(DeliveryEventType.Confirmed, confirmed, deliveryStream(eventId('intent-2'))),
       ),
     ).toThrow(/intent/i);
   });
 
   it('requires an external id only for a confirmed reconciliation', () => {
     const correlation = {
-      intentEventId: 'intent-1',
+      intentEventId,
       intentGlobalPosition: 4,
       workflowInstanceId: 'workflow-1',
       activationId: 'activation-1',
