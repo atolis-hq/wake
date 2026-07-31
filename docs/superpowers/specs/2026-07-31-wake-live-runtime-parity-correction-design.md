@@ -149,8 +149,18 @@ test data before using them as provider-neutral evidence.
 ## 4. Evidence-led review
 
 The correction begins with a full, traceable review of the legacy live runtime.
-The review must analyse source, tests, configuration schema/defaults, current
-operator documentation, and controlled execution where useful.
+The review must analyse both legacy source and legacy tests, configuration
+schema/defaults, current operator documentation, and controlled execution where
+useful. Source and tests are complementary evidence: source exposes the
+implemented control flow and dependencies; tests expose intended observable
+behavior, edge cases, and prior regressions.
+
+Neither is authority to copy. For each capability, the reviewer records what
+the source does, what the tests assert, what the operator documentation claims,
+and any result from controlled observation. A conflict, unexplained behavior,
+or legacy coupling is a decision point, not a reason to reproduce a bug. The
+target disposition must explicitly distinguish intended behavior from a legacy
+defect, accidental dependency, or unsuitable design.
 
 The initial target audit has already found GitHub leakage outside the GitHub
 namespace: built-in integration identifiers/configuration, general integration
