@@ -6,7 +6,7 @@ export function evaluateVocabulary(detail, catalogues, rules) {
   const diagnostics = [];
 
   visit(detail.source, (node) => {
-    if (!ts.isStringLiteral(node)) return;
+    if (!ts.isStringLiteral(node) && !ts.isNoSubstitutionTemplateLiteral(node)) return;
     inspectLiteral(detail, node, catalogues, rules, diagnostics);
   });
 

@@ -302,6 +302,36 @@ describe('closed catalogue shapes', () => {
 });
 
 describe('exact vocabulary permissions', () => {
+  it('checks no-substitution templates while retaining exact path permissions', async () => {
+    const root = await fixture({
+      'src-next/work/contracts/events.ts': eventCatalogue,
+      'src-next/work/contracts/streams.ts': streamCatalogue,
+      'src-next/activities/contracts/review.ts': closedCatalogue,
+      'src-next/work/domain/templates.ts': [
+        'export const eventType = `work.item-created`;',
+        'export const streamKind = `work-item`;',
+        'export const decision = `review.approved`;',
+      ].join('\n'),
+      'src-next/integrations/github/infrastructure/event-decoder.ts':
+        'export const eventType = `work.item-created`;',
+      'src-next/persistence/filesystem/event-record.ts': 'export const streamKind = `work-item`;',
+      'src-next/work/domain/event.corrupt-fixture.ts': 'export const decision = `review.approved`;',
+    });
+
+    const diagnostics = await checkContractVocabulary(root);
+
+    expect(messages(diagnostics)).toContain(
+      'src-next/work/domain/templates.ts:1:26 [event-literals] "work.item-created" must be replaced by WorkEventType',
+    );
+    expect(messages(diagnostics)).toContain(
+      'src-next/work/domain/templates.ts:2:27 [stream-literals] "work-item" must be replaced by WorkStreamKind',
+    );
+    expect(messages(diagnostics)).toContain(
+      'src-next/work/domain/templates.ts:3:25 [closed-vocabulary] "review.approved" must be replaced by ReviewDecision',
+    );
+    expect(diagnostics).toHaveLength(3);
+  });
+
   it('permits exact integration, persistence, corrupt-fixture, and free-text boundaries', async () => {
     const root = await fixture({
       'src-next/work/contracts/events.ts': eventCatalogue,
