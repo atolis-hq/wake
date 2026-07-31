@@ -3,8 +3,11 @@ import { activityName } from '../../src-next/activities/index.js';
 import { describe, expect, it } from 'vitest';
 import {
   decodeExecutionEvent,
+  decodeActivationExecutionEvent,
+  decodeRunExecutionEvent,
   ExecutionFailureCode,
   ExecutionEventType,
+  activationStream,
   runId,
   runStream,
   selectExecutionEvent,
@@ -13,7 +16,7 @@ import { orchestrationGroupId, workflowInstanceId } from '../../src-next/orchest
 import { eventEnvelope } from '../support/event-envelope.js';
 
 const stream = runStream(runId('run-1'));
-const samples = [
+const runSamples = [
   [
     ExecutionEventType.RunStarted,
     {
@@ -84,11 +87,29 @@ const samples = [
   ],
 ] as const;
 
+const activation = activationId('activation-1');
+const activationSamples = [
+  [
+    ExecutionEventType.ActivationClaimed,
+    {
+      runId: runId('run-1'),
+      owner: 'resident-a',
+      expiresAt: '2026-07-31T12:01:00.000Z',
+    },
+  ],
+  [ExecutionEventType.ActivationReleased, { runId: runId('run-1') }],
+] as const;
+
 describe('Execution event contract', () => {
   it('decodes every declared event with its exact payload and stream', () => {
-    expect(
-      samples.map(([type, payload]) => decodeExecutionEvent(eventEnvelope(type, payload, stream))),
-    ).toHaveLength(Object.keys(ExecutionEventType).length);
+    expect([
+      ...runSamples.map(([type, payload]) =>
+        decodeRunExecutionEvent(eventEnvelope(type, payload, stream)),
+      ),
+      ...activationSamples.map(([type, payload]) =>
+        decodeActivationExecutionEvent(eventEnvelope(type, payload, activationStream(activation))),
+      ),
+    ]).toHaveLength(Object.keys(ExecutionEventType).length);
   });
 
   it('rejects unknown, malformed, and wrong-stream owned events', () => {
@@ -100,20 +121,43 @@ describe('Execution event contract', () => {
     ).toThrow();
     expect(() =>
       decodeExecutionEvent(
-        eventEnvelope(ExecutionEventType.RunFailed, samples[2][1], {
+        eventEnvelope(ExecutionEventType.RunFailed, runSamples[2][1], {
           kind: 'resource',
           id: 'resource-1',
         }),
       ),
     ).toThrow();
+    expect(() =>
+      decodeExecutionEvent(
+        eventEnvelope(ExecutionEventType.ActivationClaimed, activationSamples[0][1], stream),
+      ),
+    ).toThrow();
+    expect(() =>
+      decodeExecutionEvent(
+        eventEnvelope(
+          ExecutionEventType.RunStarted,
+          runSamples[0][1],
+          activationStream(activation),
+        ),
+      ),
+    ).toThrow();
+    expect(() =>
+      decodeExecutionEvent(
+        eventEnvelope(
+          ExecutionEventType.ActivationClaimed,
+          { runId: runId('run-1'), owner: 'resident-a' },
+          activationStream(activation),
+        ),
+      ),
+    ).toThrow();
   });
 
   it.each([
-    eventEnvelope(ExecutionEventType.RunSucceeded, samples[1][1], {
+    eventEnvelope(ExecutionEventType.RunSucceeded, runSamples[1][1], {
       kind: 'execution-run',
       id: ' ',
     }),
-    eventEnvelope(ExecutionEventType.RunStarted, { ...samples[0][1], activationId: '' }, stream),
+    eventEnvelope(ExecutionEventType.RunStarted, { ...runSamples[0][1], activationId: '' }, stream),
   ])('reports invalid IDs through the Execution decoder context', (event) => {
     expect(() => decodeExecutionEvent(event)).toThrow(
       /Invalid Execution event event-7 at global position 7/i,
@@ -125,6 +169,18 @@ describe('Execution event contract', () => {
     expect(() => selectExecutionEvent(eventEnvelope('execution.unknown', {}, stream))).toThrow(
       /event-7.*position 7.*execution\.unknown/i,
     );
+  });
+
+  it('selects a valid activation event through the Execution contract', () => {
+    const selected = selectExecutionEvent(
+      eventEnvelope(
+        ExecutionEventType.ActivationClaimed,
+        activationSamples[0][1],
+        activationStream(activation),
+      ),
+    );
+
+    expect(selected?.eventType).toBe(ExecutionEventType.ActivationClaimed);
   });
 
   it('rejects provider or Error names as machine failure kinds', () => {

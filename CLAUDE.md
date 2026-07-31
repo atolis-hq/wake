@@ -11,6 +11,8 @@ Wake is an autonomous agent control plane for software development. It coordinat
 ```bash
 npm install
 npm run build        # tsc -p tsconfig.json
+npm run verify:next  # architecture + contracts + lint + format + build + all src-next tests
+npm run knip:next    # unused files, exports, types, and dependencies in the target rewrite
 npm test             # vitest run
 npm run test:watch   # vitest watch mode
 npm run verify       # lint + format:check + build + test — run this exact command (not a manual build+test) before considering work done. On Windows with core.autocrlf=true, format:check reports false positives on untouched files (CRLF vs the LF committed blobs); ignore those, but confirm any file you touched has no real prettier diff (`npx prettier --check <file>`) and was written with `npx prettier --write --end-of-line lf <file>`. Do not skip the lint step — unused-import/no-unused-vars errors are easy to introduce (e.g. splitting a file and over-copying its import list) and won't show up in `tsc`/`vitest` alone.
@@ -29,6 +31,43 @@ Run tests matching a name: `npx vitest run -t "some test name"`
 CI (`.github/workflows/ci-cd.yml`) runs `npm ci && npm test` on push/PR to `main`, then auto-tags semantic versions on `main` pushes based on `(MAJOR)`/`(MINOR)` markers in commit messages.
 
 ## Architecture
+
+### Target rewrite (`src-next/`)
+
+`src-next/` is the active target architecture. Legacy `src/` is behavioural
+evidence, not an architectural or model template. Before changing a target
+module, read its `MODULE.md`, `module.json`, the active task in
+`docs/superpowers/plans/2026-07-30-wake-target-architecture-rewrite.md`, and any
+linked corrective plan.
+
+Keep domain seams explicit:
+
+- A domain owns its event-type constants, exact payload map, typed event and
+  draft unions, stream refs, strict runtime decoder/selector, and typed draft
+  factory. An event type must be tied to its permitted stream at compile time
+  and runtime.
+- Compare closed concepts through exported constants or closed-vocabulary
+  values. Do not repeat event types, stream kinds, statuses, outcomes, relation
+  kinds, or config keys as magic strings in production code or tests.
+- Decode persisted events before folding them. A selector returns `null` for an
+  unrelated namespace and throws for malformed events owned by its domain.
+- Do not recover domain data with `Record<string, unknown>`, `Reflect.get`,
+  `String(...)`, `Number(...)`, `as never`, or reconstructed synthetic event
+  envelopes. Validate genuinely open provider payloads at the adapter boundary,
+  then translate them to typed internal contracts.
+- The append-only event journal is authoritative. Projections are pure,
+  rebuildable, and registered in production composition; views never define or
+  reconstruct events.
+- Prove reachability through the production composition root. An isolated
+  service test with callback mocks is a unit test, not an E2E test.
+- E2E scenarios use composed production services, the journal,
+  projections/checkpoints, and durable fakes. Describe the business flow in
+  concise Given/When/Then comments or test structure and cover success,
+  failure, crash/restart, and idempotency where relevant.
+
+Before completing any `src-next/` task, run `npm run lint:contracts`,
+`npm run lint:architecture`, `npm run knip:next`, and `npm run verify:next`.
+Until the legacy replacement gate in Task 28, also run `npm run verify`.
 
 ### Module boundaries (`src/`)
 

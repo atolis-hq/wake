@@ -1,5 +1,6 @@
 import { workflowName } from '../../../src-next/orchestration/contracts/identifiers.js';
 import { activityName } from '../../../src-next/activities/index.js';
+import { ExecutionEventType } from '../../../src-next/execution/index.js';
 import { z } from 'zod';
 import { expect, it } from 'vitest';
 import { TestWorld } from '../support/world.js';
@@ -48,11 +49,11 @@ it('E2E-GOLDEN-001 completes work through orchestration and an explicit Run', as
     'orchestration.stage-entered',
     'orchestration.activity-requested',
     'orchestration.activity-started',
-    'execution.activation-claimed',
+    ExecutionEventType.ActivationClaimed,
     'execution.run-started',
     'execution.run-lease-claimed',
     'execution.run-succeeded',
-    'execution.activation-released',
+    ExecutionEventType.ActivationReleased,
     'orchestration.activity-outcome-accepted',
     'orchestration.instance-completed',
   ]);

@@ -1,12 +1,17 @@
 import type { ActivationId } from '../../activities/index.js';
 import {
-  createEventDraft,
   EventActorKind,
   EventSourceKind,
   type Clock,
   type EventJournal,
 } from '../../kernel/index.js';
 import type { ExecutionConfig } from '../contracts/config.js';
+import {
+  decodeActivationExecutionEvent,
+  ExecutionEventType,
+  type ActivationExecutionEvent,
+} from '../contracts/events.js';
+import { createActivationExecutionEventDraft } from '../contracts/event-factory.js';
 import type { RunId } from '../contracts/identifiers.js';
 import { activationStream } from '../contracts/streams.js';
 
@@ -21,14 +26,14 @@ export async function claimActivation(input: {
 }): Promise<void> {
   const { journal, clock, config, activationId, runId, owner, occurredAt } = input;
   const stream = activationStream(activationId);
-  const events = await journal.readStream(stream);
+  const events = (await journal.readStream(stream)).map(decodeActivationExecutionEvent);
   const last = events.at(-1);
-  if (last?.eventType === 'execution.activation-claimed' && unexpired(last.payload, clock))
+  if (last?.eventType === ExecutionEventType.ActivationClaimed && claimIsUnexpired(last, clock))
     throw new Error(`Activation ${activationId} already has an active Run claim`);
   await journal.append(stream, events.length, [
-    createEventDraft({
+    createActivationExecutionEventDraft({
       eventId: `${activationId}:claim:${runId}`,
-      eventType: 'execution.activation-claimed',
+      eventType: ExecutionEventType.ActivationClaimed,
       occurredAt,
       correlationId: activationId,
       causationId: runId,
@@ -54,11 +59,11 @@ export async function releaseActivation(input: {
 }): Promise<void> {
   const { journal, clock, activationId, runId } = input;
   const stream = activationStream(activationId);
-  const events = await journal.readStream(stream);
+  const events = (await journal.readStream(stream)).map(decodeActivationExecutionEvent);
   await journal.append(stream, events.length, [
-    createEventDraft({
+    createActivationExecutionEventDraft({
       eventId: `${activationId}:released:${runId}`,
-      eventType: 'execution.activation-released',
+      eventType: ExecutionEventType.ActivationReleased,
       occurredAt: clock.now().toISOString(),
       correlationId: activationId,
       causationId: runId,
@@ -70,8 +75,12 @@ export async function releaseActivation(input: {
   ]);
 }
 
-function unexpired(payload: unknown, clock: Clock): boolean {
-  if (typeof payload !== 'object' || payload === null) return false;
-  const expiresAt = Reflect.get(payload, 'expiresAt');
-  return typeof expiresAt === 'string' && new Date(expiresAt) > clock.now();
+function claimIsUnexpired(
+  event: Extract<
+    ActivationExecutionEvent,
+    { readonly eventType: typeof ExecutionEventType.ActivationClaimed }
+  >,
+  clock: Clock,
+): boolean {
+  return new Date(event.payload.expiresAt) > clock.now();
 }

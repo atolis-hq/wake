@@ -1,20 +1,36 @@
 import { createEventDraft, type EventDraftInput } from '../../kernel/index.js';
 import {
   ExecutionEventType,
+  type ActivationExecutionEventDraft,
+  type ActivationExecutionEventPayloads,
   type ExecutionEventDraft,
-  type ExecutionEventPayloads,
+  type RunExecutionEventDraft,
+  type RunExecutionEventPayloads,
 } from './events.js';
-import type { RunStreamRef } from './streams.js';
+import type { ActivationStreamRef, RunStreamRef } from './streams.js';
 
-export type ExecutionEventDraftInput = {
-  [Type in keyof ExecutionEventPayloads]: EventDraftInput<
+export type RunExecutionEventDraftInput = {
+  [Type in keyof RunExecutionEventPayloads]: EventDraftInput<
     Type,
-    ExecutionEventPayloads[Type],
+    RunExecutionEventPayloads[Type],
     RunStreamRef
   >;
-}[keyof ExecutionEventPayloads];
+}[keyof RunExecutionEventPayloads];
 
-export function createExecutionEventDraft(input: ExecutionEventDraftInput): ExecutionEventDraft {
+export type ActivationExecutionEventDraftInput = {
+  [Type in keyof ActivationExecutionEventPayloads]: EventDraftInput<
+    Type,
+    ActivationExecutionEventPayloads[Type],
+    ActivationStreamRef
+  >;
+}[keyof ActivationExecutionEventPayloads];
+
+export type ExecutionEventDraftInput =
+  RunExecutionEventDraftInput | ActivationExecutionEventDraftInput;
+
+export function createRunExecutionEventDraft(
+  input: RunExecutionEventDraftInput,
+): RunExecutionEventDraft {
   switch (input.eventType) {
     case ExecutionEventType.RunStarted:
       return createEventDraft(input);
@@ -38,5 +54,32 @@ export function createExecutionEventDraft(input: ExecutionEventDraftInput): Exec
       return createEventDraft(input);
     case ExecutionEventType.RunAmbiguous:
       return createEventDraft(input);
+  }
+}
+
+export function createActivationExecutionEventDraft(
+  input: ActivationExecutionEventDraftInput,
+): ActivationExecutionEventDraft {
+  switch (input.eventType) {
+    case ExecutionEventType.ActivationClaimed:
+      return createEventDraft(input);
+    case ExecutionEventType.ActivationReleased:
+      return createEventDraft(input);
+  }
+}
+
+export function createExecutionEventDraft(
+  input: RunExecutionEventDraftInput,
+): RunExecutionEventDraft;
+export function createExecutionEventDraft(
+  input: ActivationExecutionEventDraftInput,
+): ActivationExecutionEventDraft;
+export function createExecutionEventDraft(input: ExecutionEventDraftInput): ExecutionEventDraft {
+  switch (input.eventType) {
+    case ExecutionEventType.ActivationClaimed:
+    case ExecutionEventType.ActivationReleased:
+      return createActivationExecutionEventDraft(input);
+    default:
+      return createRunExecutionEventDraft(input);
   }
 }

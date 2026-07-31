@@ -1,9 +1,6 @@
 import { z } from 'zod';
 import {
   activationId,
-  activityName,
-  activityOrchestrationGroupId,
-  activityWorkflowInstanceId,
   type ActivationId,
   type ActivityName,
   type ActivityOrchestrationGroupId,
@@ -19,13 +16,8 @@ import {
   type EventUnion,
 } from '../../kernel/index.js';
 import { runId } from './identifiers.js';
-import { ExecutionStreamKind, type RunStreamRef } from './streams.js';
-import {
-  ExecutionCancellationReason,
-  ExecutionFailureCode,
-  RunStatus,
-  WorkspaceMode,
-} from './vocabulary.js';
+import { ExecutionStreamKind, type ActivationStreamRef, type RunStreamRef } from './streams.js';
+import { ExecutionCancellationReason, ExecutionFailureCode, WorkspaceMode } from './vocabulary.js';
 import { ExternalExecutionKind } from '../../activities/index.js';
 import type { ExecutionFailure } from './views.js';
 import type {
@@ -34,6 +26,11 @@ import type {
   Lease,
   RecoveredRunResult,
 } from './liveness.js';
+import {
+  leasePayloadSchema,
+  runnerResultPayloadSchema,
+  runStartedPayloadSchema,
+} from './event-schema-components.js';
 
 export const ExecutionEventType = {
   RunStarted: 'execution.run-started',
@@ -47,7 +44,11 @@ export const ExecutionEventType = {
   RunCancelled: 'execution.run-cancelled',
   RunRecovered: 'execution.run-recovered',
   RunAmbiguous: 'execution.run-ambiguous',
+  ActivationClaimed: 'execution.activation-claimed',
+  ActivationReleased: 'execution.activation-released',
 } as const;
+
+export const ExecutionEventNamespace = 'execution.' as const;
 
 export interface RunStartedPayload {
   readonly activationId: ActivationId;
@@ -64,7 +65,7 @@ export interface RunStartedPayload {
     | undefined;
 }
 
-export interface ExecutionEventPayloads {
+export interface RunExecutionEventPayloads {
   readonly [ExecutionEventType.RunStarted]: RunStartedPayload;
   readonly [ExecutionEventType.RunSucceeded]: {
     readonly outcome: ActivityOutcome;
@@ -90,44 +91,57 @@ export interface ExecutionEventPayloads {
   };
 }
 
-export type ExecutionEvent = EventUnion<ExecutionEventPayloads, RunStreamRef>;
-export type ExecutionEventDraft = EventDraftUnion<ExecutionEventPayloads, RunStreamRef>;
-const streamSchema = z
+export interface ActivationExecutionEventPayloads {
+  readonly [ExecutionEventType.ActivationClaimed]: {
+    readonly runId: ReturnType<typeof runId>;
+    readonly owner: string;
+    readonly expiresAt: string;
+  };
+  readonly [ExecutionEventType.ActivationReleased]: {
+    readonly runId: ReturnType<typeof runId>;
+  };
+}
+
+export type RunExecutionEvent = EventUnion<RunExecutionEventPayloads, RunStreamRef>;
+export type RunExecutionEventDraft = EventDraftUnion<RunExecutionEventPayloads, RunStreamRef>;
+export type ActivationExecutionEvent = EventUnion<
+  ActivationExecutionEventPayloads,
+  ActivationStreamRef
+>;
+export type ActivationExecutionEventDraft = EventDraftUnion<
+  ActivationExecutionEventPayloads,
+  ActivationStreamRef
+>;
+export type ExecutionEvent = RunExecutionEvent | ActivationExecutionEvent;
+export type ExecutionEventDraft = RunExecutionEventDraft | ActivationExecutionEventDraft;
+
+const runStreamSchema = z
   .object({
     kind: z.literal(ExecutionStreamKind.Run),
     id: brandedStringSchema(runId),
   })
   .strict();
-const eventSchema: z.ZodType<ExecutionEvent> = z.discriminatedUnion('eventType', [
+const activationStreamSchema = z
+  .object({
+    kind: z.literal(ExecutionStreamKind.Activation),
+    id: brandedStringSchema(activationId),
+  })
+  .strict();
+
+const runEventSchema: z.ZodType<RunExecutionEvent> = z.discriminatedUnion('eventType', [
   eventEnvelopeSchema.extend({
     eventType: z.literal(ExecutionEventType.RunStarted),
-    stream: streamSchema,
-    payload: z
-      .object({
-        activationId: brandedStringSchema(activationId),
-        activity: brandedStringSchema(activityName),
-        workflowInstanceId: brandedStringSchema(activityWorkflowInstanceId),
-        orchestrationGroupId: brandedStringSchema(activityOrchestrationGroupId),
-        attempt: z.number().int().positive(),
-        startedAt: offsetIsoTimestampSchema,
-        workspace: z
-          .object({
-            mode: z.enum([WorkspaceMode.ReadOnly, WorkspaceMode.Branch]),
-            path: z.string().min(1),
-          })
-          .strict()
-          .optional(),
-      })
-      .strict(),
+    stream: runStreamSchema,
+    payload: runStartedPayloadSchema,
   }),
   eventEnvelopeSchema.extend({
     eventType: z.literal(ExecutionEventType.RunCancelled),
-    stream: streamSchema,
+    stream: runStreamSchema,
     payload: z.object({ finishedAt: offsetIsoTimestampSchema }).strict(),
   }),
   eventEnvelopeSchema.extend({
     eventType: z.literal(ExecutionEventType.RunSucceeded),
-    stream: streamSchema,
+    stream: runStreamSchema,
     payload: z
       .object({
         outcome: z.object({ kind: z.string().min(1), data: z.unknown().optional() }).strict(),
@@ -137,7 +151,7 @@ const eventSchema: z.ZodType<ExecutionEvent> = z.discriminatedUnion('eventType',
   }),
   eventEnvelopeSchema.extend({
     eventType: z.literal(ExecutionEventType.RunFailed),
-    stream: streamSchema,
+    stream: runStreamSchema,
     payload: z
       .object({
         failure: z
@@ -159,17 +173,17 @@ const eventSchema: z.ZodType<ExecutionEvent> = z.discriminatedUnion('eventType',
   }),
   eventEnvelopeSchema.extend({
     eventType: z.literal(ExecutionEventType.RunLeaseClaimed),
-    stream: streamSchema,
-    payload: leaseSchema(),
+    stream: runStreamSchema,
+    payload: leasePayloadSchema,
   }),
   eventEnvelopeSchema.extend({
     eventType: z.literal(ExecutionEventType.RunLeaseRenewed),
-    stream: streamSchema,
-    payload: leaseSchema(),
+    stream: runStreamSchema,
+    payload: leasePayloadSchema,
   }),
   eventEnvelopeSchema.extend({
     eventType: z.literal(ExecutionEventType.RunExternalExecutionReported),
-    stream: streamSchema,
+    stream: runStreamSchema,
     payload: z
       .object({
         kind: z.enum([ExternalExecutionKind.Process, ExternalExecutionKind.RemoteSession]),
@@ -180,7 +194,7 @@ const eventSchema: z.ZodType<ExecutionEvent> = z.discriminatedUnion('eventType',
   }),
   eventEnvelopeSchema.extend({
     eventType: z.literal(ExecutionEventType.RunCancellationRequested),
-    stream: streamSchema,
+    stream: runStreamSchema,
     payload: z
       .object({
         requestedAt: offsetIsoTimestampSchema,
@@ -195,15 +209,15 @@ const eventSchema: z.ZodType<ExecutionEvent> = z.discriminatedUnion('eventType',
   }),
   eventEnvelopeSchema.extend({
     eventType: z.literal(ExecutionEventType.RunCancellationConfirmed),
-    stream: streamSchema,
+    stream: runStreamSchema,
     payload: z.object({ confirmedAt: offsetIsoTimestampSchema }).strict(),
   }),
   eventEnvelopeSchema.extend({
     eventType: z.literal(ExecutionEventType.RunRecovered),
-    stream: streamSchema,
+    stream: runStreamSchema,
     payload: z
       .object({
-        result: runnerResultSchema(),
+        result: runnerResultPayloadSchema,
         outcome: z.object({ kind: z.string().min(1), data: z.unknown().optional() }).strict(),
         finishedAt: offsetIsoTimestampSchema,
       })
@@ -211,51 +225,34 @@ const eventSchema: z.ZodType<ExecutionEvent> = z.discriminatedUnion('eventType',
   }),
   eventEnvelopeSchema.extend({
     eventType: z.literal(ExecutionEventType.RunAmbiguous),
-    stream: streamSchema,
+    stream: runStreamSchema,
     payload: z.object({ reason: z.string().min(1), finishedAt: offsetIsoTimestampSchema }).strict(),
   }),
 ]);
 
-function leaseSchema() {
-  return z
-    .object({
-      owner: z.string().min(1),
-      acquiredAt: offsetIsoTimestampSchema,
-      expiresAt: offsetIsoTimestampSchema,
-    })
-    .strict();
-}
-
-function runnerResultSchema() {
-  return z
-    .object({
-      transport: z.enum([
-        RunStatus.Succeeded,
-        RunStatus.Failed,
-        RunStatus.Cancelled,
-        RunStatus.Ambiguous,
-      ]),
-      output: z.string(),
-      runner: z.string().min(1),
-      model: z.string().optional(),
-      sessionId: z.string().optional(),
-      tokenUsage: z
+const activationEventSchema: z.ZodType<ActivationExecutionEvent> = z.discriminatedUnion(
+  'eventType',
+  [
+    eventEnvelopeSchema.extend({
+      eventType: z.literal(ExecutionEventType.ActivationClaimed),
+      stream: activationStreamSchema,
+      payload: z
         .object({
-          input: z.number(),
-          output: z.number(),
-          cacheRead: z.number().optional(),
-          cacheWrite: z.number().optional(),
-          costUsd: z.number().optional(),
+          runId: brandedStringSchema(runId),
+          owner: z.string().min(1),
+          expiresAt: offsetIsoTimestampSchema,
         })
-        .strict()
-        .optional(),
-      failure: z
-        .object({ kind: z.string().min(1), message: z.string() })
-        .strict()
-        .optional(),
-    })
-    .strict();
-}
+        .strict(),
+    }),
+    eventEnvelopeSchema.extend({
+      eventType: z.literal(ExecutionEventType.ActivationReleased),
+      stream: activationStreamSchema,
+      payload: z.object({ runId: brandedStringSchema(runId) }).strict(),
+    }),
+  ],
+);
+
+const eventSchema: z.ZodType<ExecutionEvent> = z.union([runEventSchema, activationEventSchema]);
 
 export function decodeExecutionEvent(event: EventEnvelope): ExecutionEvent {
   const result = eventSchema.safeParse(event);
@@ -263,8 +260,37 @@ export function decodeExecutionEvent(event: EventEnvelope): ExecutionEvent {
   return result.data;
 }
 
+export function decodeRunExecutionEvent(event: EventEnvelope): RunExecutionEvent {
+  const result = runEventSchema.safeParse(event);
+  if (!result.success) throw invalidExecutionEvent(event, result.error);
+  return result.data;
+}
+
+export function decodeActivationExecutionEvent(event: EventEnvelope): ActivationExecutionEvent {
+  const result = activationEventSchema.safeParse(event);
+  if (!result.success) throw invalidExecutionEvent(event, result.error);
+  return result.data;
+}
+
 export function selectExecutionEvent(event: EventEnvelope): ExecutionEvent | null {
-  return event.eventType.startsWith('execution.') ? decodeExecutionEvent(event) : null;
+  return event.eventType.startsWith(ExecutionEventNamespace) ? decodeExecutionEvent(event) : null;
+}
+
+export function selectRunExecutionEvent(event: EventEnvelope): RunExecutionEvent | null {
+  if (!event.eventType.startsWith(ExecutionEventNamespace)) return null;
+  if (event.stream.kind === ExecutionStreamKind.Run) return decodeRunExecutionEvent(event);
+  decodeExecutionEvent(event);
+  return null;
+}
+
+export function selectActivationExecutionEvent(
+  event: EventEnvelope,
+): ActivationExecutionEvent | null {
+  if (!event.eventType.startsWith(ExecutionEventNamespace)) return null;
+  if (event.stream.kind === ExecutionStreamKind.Activation)
+    return decodeActivationExecutionEvent(event);
+  decodeExecutionEvent(event);
+  return null;
 }
 
 function invalidExecutionEvent(event: EventEnvelope, cause: z.ZodError): Error {

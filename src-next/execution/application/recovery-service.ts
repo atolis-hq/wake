@@ -8,8 +8,8 @@ import {
 } from '../contracts/vocabulary.js';
 import type { RunnerResult } from '../contracts/runner.js';
 import type { RunView } from '../contracts/views.js';
-import { ExecutionEventType, type ExecutionEventDraft } from '../contracts/events.js';
-import { createExecutionEventDraft } from '../contracts/event-factory.js';
+import { ExecutionEventType, type RunExecutionEventDraft } from '../contracts/events.js';
+import { createRunExecutionEventDraft } from '../contracts/event-factory.js';
 import { runId, type RunId } from '../contracts/identifiers.js';
 import { EventActorKind, EventSourceKind } from '../../kernel/index.js';
 import { runStream } from '../contracts/streams.js';
@@ -111,7 +111,7 @@ export class RecoveryService {
     const finishedAt = this.clock.now().toISOString();
     return this.append(id, ambiguousDraft(id, run, { reason, finishedAt }, finishedAt));
   }
-  private async append(id: RunId, draft: ExecutionEventDraft): Promise<RunView> {
+  private async append(id: RunId, draft: RunExecutionEventDraft): Promise<RunView> {
     const loaded = await this.repository.load(id);
     if (loaded.view === null) throw new Error(`Run ${id} does not exist`);
     if (loaded.view.status !== RunStatus.Started) return loaded.view;
@@ -129,8 +129,8 @@ function leaseRenewedDraft(
   run: RunView,
   payload: { readonly owner: string; readonly acquiredAt: string; readonly expiresAt: string },
   occurredAt: string,
-): ExecutionEventDraft {
-  return createExecutionEventDraft({
+): RunExecutionEventDraft {
+  return createRunExecutionEventDraft({
     ...eventMetadata(id, run, occurredAt),
     eventType: ExecutionEventType.RunLeaseRenewed,
     payload,
@@ -145,8 +145,8 @@ function recoveredDraft(
     readonly finishedAt: string;
   },
   occurredAt: string,
-): ExecutionEventDraft {
-  return createExecutionEventDraft({
+): RunExecutionEventDraft {
+  return createRunExecutionEventDraft({
     ...eventMetadata(id, run, occurredAt),
     eventType: ExecutionEventType.RunRecovered,
     payload,
@@ -163,8 +163,8 @@ function failedDraft(
     readonly finishedAt: string;
   },
   occurredAt: string,
-): ExecutionEventDraft {
-  return createExecutionEventDraft({
+): RunExecutionEventDraft {
+  return createRunExecutionEventDraft({
     ...eventMetadata(id, run, occurredAt),
     eventType: ExecutionEventType.RunFailed,
     payload,
@@ -175,8 +175,8 @@ function ambiguousDraft(
   run: RunView,
   payload: { readonly reason: string; readonly finishedAt: string },
   occurredAt: string,
-): ExecutionEventDraft {
-  return createExecutionEventDraft({
+): RunExecutionEventDraft {
+  return createRunExecutionEventDraft({
     ...eventMetadata(id, run, occurredAt),
     eventType: ExecutionEventType.RunAmbiguous,
     payload,

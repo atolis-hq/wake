@@ -1,11 +1,11 @@
 import {
+  createEventDraft,
   EventActorKind,
   EventSourceKind,
-  createEventDraft,
   type Clock,
 } from '../../kernel/index.js';
 import type { ExecutionConfig } from '../contracts/config.js';
-import { ExecutionEventType, type ExecutionEventPayloads } from '../contracts/events.js';
+import { ExecutionEventType, type RunExecutionEventPayloads } from '../contracts/events.js';
 import { runId } from '../contracts/identifiers.js';
 import { runStream } from '../contracts/streams.js';
 import { RunStatus } from '../contracts/vocabulary.js';
@@ -126,7 +126,7 @@ function requireActiveRun(run: RunView | null): RunView {
 
 function livenessEvent<
   Type extends Exclude<
-    keyof ExecutionEventPayloads,
+    keyof RunExecutionEventPayloads,
     | typeof ExecutionEventType.RunStarted
     | typeof ExecutionEventType.RunSucceeded
     | typeof ExecutionEventType.RunFailed
@@ -135,7 +135,7 @@ function livenessEvent<
   currentRunId: ReturnType<typeof runId>,
   run: RunView,
   eventType: Type,
-  payload: ExecutionEventPayloads[Type],
+  payload: RunExecutionEventPayloads[Type],
   occurredAt: string,
 ) {
   return createEventDraft({

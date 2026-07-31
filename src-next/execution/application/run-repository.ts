@@ -1,9 +1,9 @@
 import type { EventJournal } from '../../kernel/index.js';
 import type { ActivationId } from '../../activities/index.js';
 import {
-  decodeExecutionEvent,
-  type ExecutionEvent,
-  type ExecutionEventDraft,
+  decodeRunExecutionEvent,
+  type RunExecutionEvent,
+  type RunExecutionEventDraft,
 } from '../contracts/events.js';
 import { runId, type RunId } from '../contracts/identifiers.js';
 import { isRunStream, runStream } from '../contracts/streams.js';
@@ -12,15 +12,15 @@ export class RunRepository {
   constructor(private readonly journal: EventJournal) {}
   async load(runId: RunId) {
     const events = await this.journal.readStream(runStream(runId));
-    return { sequence: events.length, view: foldRun(events.map(decodeExecutionEvent)) };
+    return { sequence: events.length, view: foldRun(events.map(decodeRunExecutionEvent)) };
   }
   async append(
     runId: RunId,
     sequence: number,
-    drafts: readonly ExecutionEventDraft[],
-  ): Promise<readonly ExecutionEvent[]> {
+    drafts: readonly RunExecutionEventDraft[],
+  ): Promise<readonly RunExecutionEvent[]> {
     const events = await this.journal.append(runStream(runId), sequence, drafts);
-    return events.map(decodeExecutionEvent);
+    return events.map(decodeRunExecutionEvent);
   }
   async list(activationId?: ActivationId) {
     const ids = new Set(

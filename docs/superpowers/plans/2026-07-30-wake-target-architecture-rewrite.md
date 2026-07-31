@@ -4314,6 +4314,18 @@ git add src-next/execution test-next/execution test-next/e2e docs/architecture/f
 git commit -m "feat: recover and cancel target Runs"
 ```
 
+## Corrective gate before Task 23
+
+Do not begin Task 23 until both corrections in
+`docs/superpowers/plans/2026-07-31-wake-event-contract-corrections.md` pass all
+required gates:
+
+- [x] **Task 22A:** make activation claim/release events first-class typed
+  Execution contracts tied to the activation stream.
+- [ ] **Task 21B:** replace Task 21's generic delivery payload/string handling,
+  register delivery in production composition, and prove restart-safe delivery
+  through composed E2E scenarios.
+
 ## Task 23: Compose tick, resident, scheduled, fairness, and quota policies
 
 **Files:**

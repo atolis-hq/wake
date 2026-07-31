@@ -14,7 +14,7 @@ import {
 import type { ResourceView } from '../../resources/index.js';
 import type { ExecutionConfig } from '../contracts/config.js';
 import type { ExecutionActivation, ExecutionAttemptContext } from '../contracts/commands.js';
-import { ExecutionEventType, type ExecutionEventPayloads } from '../contracts/events.js';
+import { ExecutionEventType, type RunExecutionEventPayloads } from '../contracts/events.js';
 import { runId } from '../contracts/identifiers.js';
 import { ExecutionStreamKind, runStream } from '../contracts/streams.js';
 import type { WorkspaceLease, WorkspaceProvider } from '../contracts/workspace.js';
@@ -268,14 +268,14 @@ async function executeActivity(
     executionContext,
   );
 }
-function event<Type extends keyof ExecutionEventPayloads>(input: {
+function event<Type extends keyof RunExecutionEventPayloads>(input: {
   runId: ReturnType<typeof runId>;
   eventId: string;
   eventType: Type;
   occurredAt: string;
   correlationId: string;
   causationId: string;
-  payload: ExecutionEventPayloads[Type];
+  payload: RunExecutionEventPayloads[Type];
 }) {
   return createEventDraft({
     eventId: input.eventId,

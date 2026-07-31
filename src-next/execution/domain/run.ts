@@ -1,7 +1,7 @@
 import { ExecutionFailureCode, RunStatus } from '../contracts/vocabulary.js';
-import { ExecutionEventType, type ExecutionEvent } from '../contracts/events.js';
+import { ExecutionEventType, type RunExecutionEvent } from '../contracts/events.js';
 import type { RunView } from '../contracts/views.js';
-export function foldRun(events: readonly ExecutionEvent[]): RunView | null {
+export function foldRun(events: readonly RunExecutionEvent[]): RunView | null {
   const started = events.find((event) => event.eventType === ExecutionEventType.RunStarted);
   if (started === undefined) return null;
   const state: RunView = {
@@ -19,7 +19,7 @@ export function foldRun(events: readonly ExecutionEvent[]): RunView | null {
   return state;
 }
 
-function applyRunEvent(state: RunView, event: ExecutionEvent): void {
+function applyRunEvent(state: RunView, event: RunExecutionEvent): void {
   if (state.status !== RunStatus.Started) return;
   switch (event.eventType) {
     case ExecutionEventType.RunStarted:
@@ -36,7 +36,7 @@ function applyRunEvent(state: RunView, event: ExecutionEvent): void {
 function applyTerminalEvent(
   state: RunView,
   event: Extract<
-    ExecutionEvent,
+    RunExecutionEvent,
     {
       eventType:
         | typeof ExecutionEventType.RunSucceeded
@@ -67,7 +67,7 @@ function applyTerminalEvent(
 function applyLivenessEvent(
   state: RunView,
   event: Exclude<
-    ExecutionEvent,
+    RunExecutionEvent,
     {
       eventType:
         | typeof ExecutionEventType.RunStarted
