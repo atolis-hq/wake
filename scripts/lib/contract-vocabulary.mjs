@@ -1,4 +1,4 @@
-import { readFile, readdir, stat } from 'node:fs/promises';
+import { readdir, stat } from 'node:fs/promises';
 import { basename, dirname, relative, resolve, sep } from 'node:path';
 import ts from 'typescript';
 
@@ -19,26 +19,26 @@ export async function checkContractVocabulary(root, options = {}) {
   const selectedRules = selectRules(options.rules);
   const { scanRoot, displayRoot } = await roots(root);
   const paths = await typeScriptFiles(scanRoot);
-  const sources = await Promise.all(
-    paths.map(async (path) =>
-      ts.createSourceFile(
-        path,
-        await readFile(path, 'utf8'),
-        ts.ScriptTarget.Latest,
-        true,
-        ts.ScriptKind.TS,
-      ),
-    ),
-  );
+  const program = ts.createProgram(paths, {
+    module: ts.ModuleKind.NodeNext,
+    moduleResolution: ts.ModuleResolutionKind.NodeNext,
+    noEmit: true,
+    skipLibCheck: true,
+    target: ts.ScriptTarget.ES2022,
+  });
+  const checker = program.getTypeChecker();
+  const sources = paths
+    .map((path) => program.getSourceFile(path))
+    .filter((source) => source !== undefined);
   const sourceDetails = sources.map((source) => ({
     source,
     path: normalizePath(relative(displayRoot, source.fileName)),
   }));
-  const catalogues = collectCatalogues(sourceDetails);
+  const catalogues = collectCatalogues(sourceDetails, checker);
   const diagnostics = [];
 
   for (const detail of sourceDetails) {
-    inspectSource(detail, catalogues, selectedRules, diagnostics);
+    inspectSource(detail, catalogues, selectedRules, diagnostics, checker);
   }
 
   return diagnostics.sort(compareDiagnostics);
@@ -90,49 +90,36 @@ function normalizePath(path) {
   return path.split(sep).join('/');
 }
 
-function collectCatalogues(sourceDetails) {
+function collectCatalogues(sourceDetails, checker) {
   const eventValues = new Map();
   const streamValues = new Map();
   const closedValues = new Map();
 
   for (const { source, path } of sourceDetails) {
-    const defineVocabularyBindings = kernelBindings(source, 'defineClosedVocabulary');
     for (const statement of source.statements) {
       if (!ts.isVariableStatement(statement)) continue;
 
       if (hasExportModifier(statement) && isContractPath(path, 'events.ts')) {
-        collectNamedObject(
-          statement,
-          'EventType',
-          source,
-          path,
-          eventValues,
-          defineVocabularyBindings,
-        );
+        collectNamedObject(statement, 'EventType', source, path, eventValues, checker);
       }
       if (hasExportModifier(statement) && isContractPath(path, 'streams.ts')) {
-        collectNamedObject(
-          statement,
-          'StreamKind',
-          source,
-          path,
-          streamValues,
-          defineVocabularyBindings,
-        );
+        collectNamedObject(statement, 'StreamKind', source, path, streamValues, checker);
       }
     }
 
     visit(source, (node) => {
-      if (!isBoundCall(node, defineVocabularyBindings)) return;
+      if (!isImportedKernelCall(checker, node, 'defineClosedVocabulary')) return;
       const argument = node.arguments[0];
       if (argument === undefined) return;
+      const object = resolveObjectExpression(argument, checker, new Set());
+      if (object === undefined) return;
       const owner = enclosingVariableName(node) ?? 'defineClosedVocabulary';
-      for (const literal of valueLiterals(unwrapExpression(argument))) {
+      for (const literal of valueLiterals(object)) {
         register(closedValues, literal.text, {
           owner,
           path,
-          declarationStart: argument.getStart(source),
-          declarationEnd: argument.getEnd(),
+          declarationStart: object.getStart(source),
+          declarationEnd: object.getEnd(),
         });
       }
     });
@@ -141,18 +128,11 @@ function collectCatalogues(sourceDetails) {
   return { eventValues, streamValues, closedValues };
 }
 
-function collectNamedObject(
-  statement,
-  suffix,
-  source,
-  path,
-  registrations,
-  defineVocabularyBindings,
-) {
+function collectNamedObject(statement, suffix, source, path, registrations, checker) {
   for (const declaration of statement.declarationList.declarations) {
     if (!ts.isIdentifier(declaration.name) || !declaration.name.text.endsWith(suffix)) continue;
     if (declaration.initializer === undefined) continue;
-    const object = catalogueObject(declaration.initializer, defineVocabularyBindings);
+    const object = catalogueObject(declaration.initializer, checker);
     if (object === undefined) continue;
     for (const literal of valueLiterals(object)) {
       register(registrations, literal.text, {
@@ -174,17 +154,43 @@ function isContractPath(path, fileName) {
   return parts.at(-2) === 'contracts' && parts.at(-1) === fileName;
 }
 
-function catalogueObject(expression, defineVocabularyBindings) {
+function catalogueObject(expression, checker) {
+  const object = resolveObjectExpression(expression, checker, new Set());
+  if (object !== undefined) return object;
   const unwrapped = unwrapExpression(expression);
-  if (ts.isObjectLiteralExpression(unwrapped)) return unwrapped;
-  if (isBoundCall(unwrapped, defineVocabularyBindings)) {
+  if (isImportedKernelCall(checker, unwrapped, 'defineClosedVocabulary')) {
     const argument = unwrapped.arguments[0];
-    if (argument !== undefined) {
-      const object = unwrapExpression(argument);
-      if (ts.isObjectLiteralExpression(object)) return object;
-    }
+    if (argument !== undefined) return resolveObjectExpression(argument, checker, new Set());
   }
   return undefined;
+}
+
+function resolveObjectExpression(expression, checker, visited) {
+  const unwrapped = unwrapExpression(expression);
+  if (ts.isObjectLiteralExpression(unwrapped)) return unwrapped;
+  if (!ts.isIdentifier(unwrapped)) return undefined;
+  const symbol = checker.getSymbolAtLocation(unwrapped);
+  if (symbol === undefined || visited.has(symbol)) return undefined;
+  visited.add(symbol);
+  for (const declaration of symbol.declarations ?? []) {
+    if (
+      !ts.isVariableDeclaration(declaration) ||
+      declaration.initializer === undefined ||
+      !isConstDeclaration(declaration)
+    ) {
+      continue;
+    }
+    const object = resolveObjectExpression(declaration.initializer, checker, visited);
+    if (object !== undefined) return object;
+  }
+  return undefined;
+}
+
+function isConstDeclaration(declaration) {
+  return (
+    ts.isVariableDeclarationList(declaration.parent) &&
+    (declaration.parent.flags & ts.NodeFlags.Const) !== 0
+  );
 }
 
 function unwrapExpression(expression) {
@@ -248,15 +254,10 @@ function enclosingVariableName(node) {
   return undefined;
 }
 
-function inspectSource(detail, catalogues, rules, diagnostics) {
+function inspectSource(detail, catalogues, rules, diagnostics, checker) {
   const { source, path } = detail;
   if (path.toLowerCase().endsWith('.corrupt-fixture.ts')) return;
-  const bindings = {
-    entityRef: kernelBindings(source, 'entityRef'),
-    eventDraft: kernelBindings(source, 'EventDraft'),
-    eventEnvelope: kernelBindings(source, 'EventEnvelope'),
-  };
-  const payloadAliases = collectPayloadAliases(source);
+  const provenance = collectEventProvenance(source, checker);
 
   visit(source, (node) => {
     if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
@@ -265,7 +266,7 @@ function inspectSource(detail, catalogues, rules, diagnostics) {
     if (
       rules.has('entity-ref') &&
       ts.isCallExpression(node) &&
-      isBoundCall(node, bindings.entityRef) &&
+      isImportedKernelCall(checker, node, 'entityRef') &&
       !allowsEntityRef(path)
     ) {
       addDiagnostic(
@@ -278,13 +279,13 @@ function inspectSource(detail, catalogues, rules, diagnostics) {
       );
     }
     if (rules.has('erased-events') && isDomainCode(path) && ts.isTypeReferenceNode(node)) {
-      inspectEventType(detail, node, bindings, diagnostics);
+      inspectEventType(detail, node, checker, diagnostics);
     }
     if (
       rules.has('payload-coercion') &&
       isDomainCode(path) &&
       ts.isCallExpression(node) &&
-      isPayloadCoercion(node, source, payloadAliases)
+      isPayloadCoercion(node, checker, provenance)
     ) {
       const coercion = callName(node);
       addDiagnostic(
@@ -351,11 +352,9 @@ function isDecoderFixturePart(part) {
 
 function isDecoderPathPart(part) {
   return (
-    part === 'decoders' ||
-    part === 'translators' ||
-    part === 'parsers' ||
     isNamedBoundaryFile(part, 'decoder') ||
     isNamedBoundaryFile(part, 'translator') ||
+    isNamedBoundaryFile(part, 'translation') ||
     isNamedBoundaryFile(part, 'parser')
   );
 }
@@ -385,9 +384,9 @@ function isDecoderName(name) {
   if (!ts.isIdentifier(name)) return false;
   const normalized = name.text.toLowerCase();
   return (
-    normalized.startsWith('decode') ||
-    normalized.startsWith('translate') ||
-    normalized.startsWith('parse')
+    normalized.startsWith('decodeprovider') ||
+    normalized.startsWith('translateprovider') ||
+    normalized.startsWith('parseprovider')
   );
 }
 
@@ -428,15 +427,15 @@ function isDomainCode(path) {
   return domainModules.has(parts[moduleIndex]) && domainLayers.has(parts[moduleIndex + 1]);
 }
 
-function inspectEventType(detail, node, bindings, diagnostics) {
-  const name = boundEventType(node.typeName, bindings);
+function inspectEventType(detail, node, checker, diagnostics) {
+  const name = importedEventContractName(checker, node.typeName);
   if (name === undefined) return;
   const typeArguments = node.typeArguments ?? [];
   if (
     typeArguments.length >= 3 &&
-    !isErasedTypeArgument(typeArguments[0], true) &&
-    !isErasedTypeArgument(typeArguments[1], false) &&
-    !isErasedTypeArgument(typeArguments[2], false)
+    isUsefulContractType(typeArguments[0], checker, new Set()) &&
+    isUsefulContractType(typeArguments[1], checker, new Set()) &&
+    isUsefulStreamType(typeArguments[2], checker, new Set())
   ) {
     return;
   }
@@ -450,28 +449,99 @@ function inspectEventType(detail, node, bindings, diagnostics) {
   );
 }
 
-function boundEventType(typeName, bindings) {
-  if (isBoundReference(typeName, bindings.eventDraft)) return 'EventDraft';
-  if (isBoundReference(typeName, bindings.eventEnvelope)) return 'EventEnvelope';
+function importedEventContractName(checker, node) {
+  if (isImportedKernelReference(checker, node, 'EventDraft')) return 'EventDraft';
+  if (isImportedKernelReference(checker, node, 'EventEnvelope')) return 'EventEnvelope';
   return undefined;
 }
 
-function isErasedTypeArgument(node, isEventType) {
+function isUsefulContractType(node, checker, visited) {
+  if (isErasedKeyword(node)) return false;
+  if (!ts.isTypeReferenceNode(node)) return true;
+  const alias = resolvedTypeAlias(checker, node.typeName);
+  if (alias === undefined || visited.has(alias.symbol)) return true;
+  visited.add(alias.symbol);
+  return isUsefulContractType(alias.declaration.type, checker, visited);
+}
+
+function isUsefulStreamType(node, checker, visited) {
+  if (isErasedKeyword(node) || !ts.isTypeReferenceNode(node)) return false;
+  if (isImportedKernelReference(checker, node.typeName, 'EntityRef')) {
+    const typeArguments = node.typeArguments ?? [];
+    return (
+      typeArguments.length === 2 &&
+      isExactStringLiteralType(typeArguments[0], checker) &&
+      isBrandedStringType(typeArguments[1], checker, new Set())
+    );
+  }
+  const alias = resolvedTypeAlias(checker, node.typeName);
+  if (alias === undefined || visited.has(alias.symbol)) return false;
+  visited.add(alias.symbol);
+  return isUsefulStreamType(alias.declaration.type, checker, visited);
+}
+
+function isExactStringLiteralType(node, checker) {
+  if (ts.isLiteralTypeNode(node) && ts.isStringLiteral(node.literal)) return true;
+  const type = checker.getTypeFromTypeNode(node);
+  return (type.flags & ts.TypeFlags.StringLiteral) !== 0;
+}
+
+function isBrandedStringType(node, checker, visited) {
+  if (isErasedKeyword(node)) return false;
+  if (ts.isIntersectionTypeNode(node)) {
+    const explicitlyBranded =
+      node.types.some((part) => part.kind === ts.SyntaxKind.StringKeyword) &&
+      node.types.some((part) => part.kind !== ts.SyntaxKind.StringKeyword);
+    if (explicitlyBranded) return true;
+  }
+  const type = checker.getTypeFromTypeNode(node);
+  if (
+    (type.flags & ts.TypeFlags.Intersection) !== 0 &&
+    type.types.some((part) => (part.flags & ts.TypeFlags.StringLike) !== 0) &&
+    type.types.some((part) => (part.flags & ts.TypeFlags.Object) !== 0)
+  ) {
+    return true;
+  }
+  if (!ts.isTypeReferenceNode(node)) return false;
+  const alias = resolvedTypeAlias(checker, node.typeName);
+  if (alias !== undefined && !visited.has(alias.symbol)) {
+    visited.add(alias.symbol);
+    return isBrandedStringType(alias.declaration.type, checker, visited);
+  }
+  return false;
+}
+
+function isErasedKeyword(node) {
   return (
-    node?.kind === ts.SyntaxKind.AnyKeyword ||
-    node?.kind === ts.SyntaxKind.UnknownKeyword ||
-    (isEventType && node?.kind === ts.SyntaxKind.StringKeyword)
+    node.kind === ts.SyntaxKind.AnyKeyword ||
+    node.kind === ts.SyntaxKind.UnknownKeyword ||
+    node.kind === ts.SyntaxKind.StringKeyword
   );
 }
 
-function isPayloadCoercion(node, source, payloadAliases) {
+function resolvedTypeAlias(checker, node) {
+  const symbol = resolvedSymbol(checker, checker.getSymbolAtLocation(node));
+  const declaration = symbol?.declarations?.find(ts.isTypeAliasDeclaration);
+  return declaration === undefined ? undefined : { symbol, declaration };
+}
+
+function resolvedSymbol(checker, symbol) {
+  if (symbol === undefined || (symbol.flags & ts.SymbolFlags.Alias) === 0) return symbol;
+  try {
+    return checker.getAliasedSymbol(symbol);
+  } catch {
+    return symbol;
+  }
+}
+
+function isPayloadCoercion(node, checker, provenance) {
   const name = callName(node);
   const argument = node.arguments[0];
   return (
     (name === 'String' || name === 'Number') &&
     argument !== undefined &&
-    !isShadowedBuiltin(node, source) &&
-    isPayloadDerived(argument, source, payloadAliases)
+    isGlobalBuiltinReference(checker, node.expression) &&
+    isProvenPayloadExpression(argument, checker, provenance)
   );
 }
 
@@ -481,15 +551,102 @@ function callName(node) {
   return undefined;
 }
 
-function isPayloadDerived(expression, source, payloadAliases) {
+function collectEventProvenance(source, checker) {
+  const eventSymbols = new Set();
+  const payloadSymbols = new Set();
+  const declarations = [];
+  visit(source, (node) => {
+    if (ts.isParameter(node) || ts.isVariableDeclaration(node)) {
+      declarations.push(node);
+      if (
+        ts.isIdentifier(node.name) &&
+        node.type !== undefined &&
+        isEventTypeNode(node.type, checker, new Set())
+      ) {
+        addNodeSymbol(eventSymbols, checker, node.name);
+      }
+    }
+  });
+
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const declaration of declarations) {
+      const initializer = declaration.initializer;
+      if (initializer === undefined) continue;
+      if (ts.isIdentifier(declaration.name)) {
+        const symbol = checker.getSymbolAtLocation(declaration.name);
+        if (
+          symbol !== undefined &&
+          !eventSymbols.has(symbol) &&
+          isProvenEventExpression(initializer, checker, eventSymbols)
+        ) {
+          eventSymbols.add(symbol);
+          changed = true;
+        }
+        if (
+          symbol !== undefined &&
+          !payloadSymbols.has(symbol) &&
+          isProvenPayloadExpression(initializer, checker, { eventSymbols, payloadSymbols })
+        ) {
+          payloadSymbols.add(symbol);
+          changed = true;
+        }
+        continue;
+      }
+      if (
+        ts.isObjectBindingPattern(declaration.name) &&
+        isProvenEventExpression(initializer, checker, eventSymbols)
+      ) {
+        for (const element of declaration.name.elements) {
+          const sourceName = element.propertyName ?? element.name;
+          if (bindingNameText(sourceName) !== 'payload') continue;
+          for (const identifier of bindingIdentifiers(element.name)) {
+            changed = addNodeSymbol(payloadSymbols, checker, identifier) || changed;
+          }
+        }
+      }
+    }
+  }
+  return { eventSymbols, payloadSymbols };
+}
+
+function isEventTypeNode(node, checker, visited) {
+  if (ts.isParenthesizedTypeNode(node)) return isEventTypeNode(node.type, checker, visited);
+  if (ts.isUnionTypeNode(node)) {
+    return node.types.some((part) => isEventTypeNode(part, checker, new Set(visited)));
+  }
+  if (!ts.isTypeReferenceNode(node)) return false;
+  if (
+    isImportedKernelReference(checker, node.typeName, 'EventDraft') ||
+    isImportedKernelReference(checker, node.typeName, 'EventEnvelope')
+  ) {
+    return true;
+  }
+  const alias = resolvedTypeAlias(checker, node.typeName);
+  if (alias === undefined || visited.has(alias.symbol)) return false;
+  visited.add(alias.symbol);
+  return isEventTypeNode(alias.declaration.type, checker, visited);
+}
+
+function isProvenEventExpression(expression, checker, eventSymbols) {
+  const unwrapped = unwrapExpression(expression);
+  if (!ts.isIdentifier(unwrapped)) return false;
+  const symbol = checker.getSymbolAtLocation(unwrapped);
+  return symbol !== undefined && eventSymbols.has(symbol);
+}
+
+function isProvenPayloadExpression(expression, checker, provenance) {
   const unwrapped = unwrapExpression(expression);
   if (ts.isIdentifier(unwrapped)) {
-    const declaration = resolveIdentifierDeclaration(unwrapped, source);
-    return declaration !== undefined && payloadAliases.has(declaration);
+    const symbol = checker.getSymbolAtLocation(unwrapped);
+    return symbol !== undefined && provenance.payloadSymbols.has(symbol);
   }
   if (ts.isPropertyAccessExpression(unwrapped) || ts.isElementAccessExpression(unwrapped)) {
-    if (propertyName(unwrapped) === 'payload') return true;
-    return isPayloadDerived(unwrapped.expression, source, payloadAliases);
+    if (propertyName(unwrapped) === 'payload') {
+      return isProvenEventExpression(unwrapped.expression, checker, provenance.eventSymbols);
+    }
+    return isProvenPayloadExpression(unwrapped.expression, checker, provenance);
   }
   return false;
 }
@@ -500,135 +657,6 @@ function propertyName(expression) {
   return ts.isStringLiteral(argument) || ts.isNoSubstitutionTemplateLiteral(argument)
     ? argument.text
     : undefined;
-}
-
-function collectPayloadAliases(source) {
-  const declarations = [];
-  visit(source, (node) => {
-    if (ts.isVariableDeclaration(node)) declarations.push(node);
-  });
-  const aliases = new Set();
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (const declaration of declarations) {
-      const initializer = declaration.initializer;
-      if (initializer === undefined) continue;
-      if (ts.isIdentifier(declaration.name)) {
-        if (!aliases.has(declaration.name) && isPayloadDerived(initializer, source, aliases)) {
-          aliases.add(declaration.name);
-          changed = true;
-        }
-        continue;
-      }
-      if (!ts.isObjectBindingPattern(declaration.name)) continue;
-      for (const element of declaration.name.elements) {
-        const sourceName = element.propertyName ?? element.name;
-        if (bindingNameText(sourceName) !== 'payload') continue;
-        for (const identifier of bindingIdentifiers(element.name)) {
-          if (!aliases.has(identifier)) {
-            aliases.add(identifier);
-            changed = true;
-          }
-        }
-      }
-    }
-  }
-  return aliases;
-}
-
-function isShadowedBuiltin(call, source) {
-  if (!ts.isIdentifier(call.expression)) return true;
-  return resolveIdentifierDeclaration(call.expression, source) !== undefined;
-}
-
-function resolveIdentifierDeclaration(identifier, source) {
-  const name = identifier.text;
-  let current = identifier.parent;
-  while (current !== undefined) {
-    if (ts.isBlock(current) || ts.isSourceFile(current)) {
-      const declaration = statementDeclaration(current.statements, name);
-      if (declaration !== undefined) return declaration;
-    }
-    if (ts.isFunctionLike(current)) {
-      for (const parameter of current.parameters) {
-        const declaration = bindingIdentifier(parameter.name, name);
-        if (declaration !== undefined) return declaration;
-      }
-      if (
-        (ts.isFunctionDeclaration(current) || ts.isFunctionExpression(current)) &&
-        current.name?.text === name
-      ) {
-        return current.name;
-      }
-    }
-    if (ts.isCatchClause(current) && current.variableDeclaration !== undefined) {
-      const declaration = bindingIdentifier(current.variableDeclaration.name, name);
-      if (declaration !== undefined) return declaration;
-    }
-    if (
-      (ts.isForStatement(current) ||
-        ts.isForInStatement(current) ||
-        ts.isForOfStatement(current)) &&
-      current.initializer !== undefined &&
-      ts.isVariableDeclarationList(current.initializer)
-    ) {
-      const declaration = variableDeclaration(current.initializer.declarations, name);
-      if (declaration !== undefined) return declaration;
-    }
-    current = current.parent;
-  }
-  return sourceDeclaration(source, name);
-}
-
-function statementDeclaration(statements, name) {
-  for (const statement of statements) {
-    if (ts.isVariableStatement(statement)) {
-      const declaration = variableDeclaration(statement.declarationList.declarations, name);
-      if (declaration !== undefined) return declaration;
-    }
-    if (
-      (ts.isFunctionDeclaration(statement) || ts.isClassDeclaration(statement)) &&
-      statement.name?.text === name
-    ) {
-      return statement.name;
-    }
-    if (ts.isImportDeclaration(statement)) {
-      const declaration = importDeclaration(statement, name);
-      if (declaration !== undefined) return declaration;
-    }
-  }
-  return undefined;
-}
-
-function sourceDeclaration(source, name) {
-  return statementDeclaration(source.statements, name);
-}
-
-function variableDeclaration(declarations, name) {
-  for (const declaration of declarations) {
-    const identifier = bindingIdentifier(declaration.name, name);
-    if (identifier !== undefined) return identifier;
-  }
-  return undefined;
-}
-
-function importDeclaration(statement, name) {
-  const clause = statement.importClause;
-  if (clause === undefined) return undefined;
-  if (clause.name?.text === name) return clause.name;
-  const bindings = clause.namedBindings;
-  if (bindings === undefined) return undefined;
-  if (ts.isNamespaceImport(bindings))
-    return bindings.name.text === name ? bindings.name : undefined;
-  for (const element of bindings.elements) {
-    if (element.name.text === name) return element.name;
-  }
-  return undefined;
-}
-
-function bindingIdentifier(name, expected) {
-  return bindingIdentifiers(name).find((identifier) => identifier.text === expected);
 }
 
 function bindingIdentifiers(name) {
@@ -645,53 +673,86 @@ function bindingNameText(name) {
   return undefined;
 }
 
-function kernelBindings(source, exportedName) {
-  const identifiers = new Set();
-  const namespaces = new Set();
-  for (const statement of source.statements) {
-    if (
-      !ts.isImportDeclaration(statement) ||
-      !ts.isStringLiteral(statement.moduleSpecifier) ||
-      !isKernelModule(statement.moduleSpecifier.text)
-    ) {
-      continue;
-    }
-    const bindings = statement.importClause?.namedBindings;
-    if (bindings === undefined) continue;
-    if (ts.isNamespaceImport(bindings)) {
-      namespaces.add(bindings.name.text);
-      continue;
-    }
-    for (const element of bindings.elements) {
-      const importedName = element.propertyName?.text ?? element.name.text;
-      if (importedName === exportedName) identifiers.add(element.name.text);
-    }
-  }
-  return { exportedName, identifiers, namespaces };
+function addNodeSymbol(symbols, checker, node) {
+  const symbol = checker.getSymbolAtLocation(node);
+  if (symbol === undefined || symbols.has(symbol)) return false;
+  symbols.add(symbol);
+  return true;
 }
 
 function isKernelModule(moduleSpecifier) {
   return moduleSpecifier.replaceAll('\\', '/').split('/').includes('kernel');
 }
 
-function isBoundCall(node, bindings) {
-  if (!ts.isCallExpression(node)) return false;
-  const expression = node.expression;
-  if (ts.isIdentifier(expression)) return bindings.identifiers.has(expression.text);
+function isImportedKernelCall(checker, node, exportedName) {
   return (
-    ts.isPropertyAccessExpression(expression) &&
-    expression.name.text === bindings.exportedName &&
-    ts.isIdentifier(expression.expression) &&
-    bindings.namespaces.has(expression.expression.text)
+    ts.isCallExpression(node) && isImportedKernelReference(checker, node.expression, exportedName)
   );
 }
 
-function isBoundReference(typeName, bindings) {
-  if (ts.isIdentifier(typeName)) return bindings.identifiers.has(typeName.text);
+function isImportedKernelReference(checker, node, exportedName) {
+  if (ts.isIdentifier(node)) {
+    return symbolIsKernelImport(checker.getSymbolAtLocation(node), exportedName);
+  }
+  if (ts.isPropertyAccessExpression(node)) {
+    return (
+      node.name.text === exportedName &&
+      symbolIsKernelNamespace(checker.getSymbolAtLocation(node.expression))
+    );
+  }
+  if (ts.isQualifiedName(node)) {
+    return (
+      node.right.text === exportedName &&
+      symbolIsKernelNamespace(checker.getSymbolAtLocation(node.left))
+    );
+  }
+  return false;
+}
+
+function symbolIsKernelImport(symbol, exportedName) {
+  return (symbol?.declarations ?? []).some((declaration) => {
+    if (!ts.isImportSpecifier(declaration)) return false;
+    const importedName = declaration.propertyName?.text ?? declaration.name.text;
+    const importNode = enclosingImportDeclaration(declaration);
+    return (
+      importedName === exportedName &&
+      importNode !== undefined &&
+      ts.isStringLiteral(importNode.moduleSpecifier) &&
+      isKernelModule(importNode.moduleSpecifier.text)
+    );
+  });
+}
+
+function symbolIsKernelNamespace(symbol) {
+  return (symbol?.declarations ?? []).some((declaration) => {
+    if (!ts.isNamespaceImport(declaration)) return false;
+    const importNode = enclosingImportDeclaration(declaration);
+    return (
+      importNode !== undefined &&
+      ts.isStringLiteral(importNode.moduleSpecifier) &&
+      isKernelModule(importNode.moduleSpecifier.text)
+    );
+  });
+}
+
+function enclosingImportDeclaration(node) {
+  let current = node.parent;
+  while (current !== undefined && !ts.isImportDeclaration(current)) current = current.parent;
+  return current;
+}
+
+function isGlobalBuiltinReference(checker, node) {
+  if (!ts.isIdentifier(node)) return false;
+  const symbol = checker.getSymbolAtLocation(node);
+  if (symbol === undefined) return true;
+  const declarations = symbol.declarations ?? [];
   return (
-    typeName.right.text === bindings.exportedName &&
-    ts.isIdentifier(typeName.left) &&
-    bindings.namespaces.has(typeName.left.text)
+    declarations.length > 0 &&
+    declarations.every((declaration) => {
+      const source = declaration.getSourceFile();
+      const path = normalizePath(source.fileName).toLowerCase();
+      return source.isDeclarationFile && path.includes('/typescript/lib/lib.');
+    })
   );
 }
 
