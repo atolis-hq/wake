@@ -114,7 +114,7 @@ export function createPullRequestApproveActivity(
           fact: intent,
         });
 
-        async function decide(proposal: PullRequestDecision) {
+        async function decide(proposal: PullRequestDecision<'approve'>) {
           const claimed = await claimDecision(
             journal,
             invocation.activationId,

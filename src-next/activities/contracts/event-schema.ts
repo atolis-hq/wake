@@ -89,51 +89,34 @@ const mergeRequestedSchema = z
     requireChecks: z.boolean(),
   })
   .strict();
-const outcomeSchema = z.discriminatedUnion('kind', [
-  z
-    .object({
-      kind: z.literal('waiting'),
-      data: z
-        .object({
-          intentEventId: z.string(),
-          signalKind: z.literal('delivery-result'),
-        })
-        .strict(),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal('done'),
-      data: z.object({ deliveryEventId: z.string() }).strict(),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal('blocked'),
-      data: z.object({ reason: z.string() }).strict(),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal('failed'),
-      data: z.object({ reason: z.string() }).strict(),
-    })
-    .strict(),
-]);
+const requestedOutcomeSchema = z
+  .object({
+    kind: z.literal('waiting'),
+    data: z
+      .object({
+        intentEventId: z.string(),
+        signalKind: z.literal('delivery-result'),
+      })
+      .strict(),
+  })
+  .strict();
+const deniedOutcomeSchema = z
+  .object({
+    kind: z.literal('blocked'),
+    data: z.object({ reason: z.string() }).strict(),
+  })
+  .strict();
 
 export function createActivityEventSchemas(eventTypes: ActivityEventTypes) {
   const resourceFacts = createResourceFactDraftSchemas(eventTypes);
   const denials = createDenialDraftSchemas(eventTypes);
-  const claimBase = {
-    outcome: outcomeSchema,
-  } as const;
   const approveClaimPayloadSchema = z.discriminatedUnion('decisionKind', [
     z
       .object({
         action: z.literal('approve'),
         activationId: brandedStringSchema(activationId),
         decisionKind: z.literal('requested'),
-        ...claimBase,
+        outcome: requestedOutcomeSchema,
         fact: resourceFacts[9],
       })
       .strict(),
@@ -142,7 +125,7 @@ export function createActivityEventSchemas(eventTypes: ActivityEventTypes) {
         action: z.literal('approve'),
         activationId: brandedStringSchema(activationId),
         decisionKind: z.literal('denied'),
-        ...claimBase,
+        outcome: deniedOutcomeSchema,
         fact: denials[1],
       })
       .strict(),
@@ -153,7 +136,7 @@ export function createActivityEventSchemas(eventTypes: ActivityEventTypes) {
         action: z.literal('merge'),
         activationId: brandedStringSchema(activationId),
         decisionKind: z.literal('requested'),
-        ...claimBase,
+        outcome: requestedOutcomeSchema,
         fact: resourceFacts[10],
       })
       .strict(),
@@ -162,7 +145,7 @@ export function createActivityEventSchemas(eventTypes: ActivityEventTypes) {
         action: z.literal('merge'),
         activationId: brandedStringSchema(activationId),
         decisionKind: z.literal('denied'),
-        ...claimBase,
+        outcome: deniedOutcomeSchema,
         fact: denials[0],
       })
       .strict(),
@@ -312,11 +295,33 @@ function resourcePayloadIdentity(
 function decisionClaimIdentity(
   event: {
     readonly stream: { readonly id: string };
-    readonly payload: {
-      readonly action: 'approve' | 'merge';
-      readonly activationId: string;
-      readonly fact: { readonly payload: { readonly activationId: string } };
-    };
+    readonly payload:
+      | {
+          readonly action: 'approve' | 'merge';
+          readonly activationId: string;
+          readonly decisionKind: 'requested';
+          readonly outcome: {
+            readonly kind: 'waiting';
+            readonly data: { readonly intentEventId: string };
+          };
+          readonly fact: {
+            readonly eventId: string;
+            readonly payload: { readonly activationId: string };
+          };
+        }
+      | {
+          readonly action: 'approve' | 'merge';
+          readonly activationId: string;
+          readonly decisionKind: 'denied';
+          readonly outcome: {
+            readonly kind: 'blocked';
+            readonly data: { readonly reason: string };
+          };
+          readonly fact: {
+            readonly eventId: string;
+            readonly payload: { readonly activationId: string; readonly reason: string };
+          };
+        };
   },
   context: z.RefinementCtx,
 ): void {
@@ -334,6 +339,24 @@ function decisionClaimIdentity(
       code: 'custom',
       path: ['payload', 'fact', 'payload', 'activationId'],
       message: 'Activity decision fact activation must match its claim',
+    });
+  if (
+    event.payload.decisionKind === 'requested' &&
+    event.payload.outcome.data.intentEventId !== event.payload.fact.eventId
+  )
+    context.addIssue({
+      code: 'custom',
+      path: ['payload', 'outcome', 'data', 'intentEventId'],
+      message: 'Requested decision intent event id must match its fact',
+    });
+  if (
+    event.payload.decisionKind === 'denied' &&
+    event.payload.outcome.data.reason !== event.payload.fact.payload.reason
+  )
+    context.addIssue({
+      code: 'custom',
+      path: ['payload', 'outcome', 'data', 'reason'],
+      message: 'Denied decision reason must match its fact',
     });
 }
 

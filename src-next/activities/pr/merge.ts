@@ -114,7 +114,7 @@ export function createPullRequestMergeActivity(
           fact: intent,
         });
 
-        async function decide(proposal: PullRequestDecision) {
+        async function decide(proposal: PullRequestDecision<'merge'>) {
           const claimed = await claimDecision(journal, invocation.activationId, 'merge', proposal);
           return completeDecisionClaim(journal, appender, claimed);
         }

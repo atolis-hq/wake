@@ -3,7 +3,7 @@ import {
   ActivityEventType,
   decodeActivityEvent,
   decodeActivityEventDraft,
-  type ActivityFactDraft,
+  type ActivityEventPayloads,
 } from '../contracts/events.js';
 import { activityDecisionStream, type PullRequestDecisionAction } from '../contracts/streams.js';
 import type { ActivationId } from '../contracts/identifiers.js';
@@ -14,29 +14,23 @@ import { appendResolved } from './activity-support.js';
 export type PullRequestDecisionKind = 'requested' | 'denied';
 export type PullRequestAction = PullRequestDecisionAction;
 
-type DecisionFactType<
-  Action extends PullRequestAction,
-  Kind extends PullRequestDecisionKind,
-> = Action extends 'approve'
-  ? Kind extends 'requested'
-    ? typeof ActivityEventType.PrApproveRequested
-    : typeof ActivityEventType.PrApproveDenied
-  : Kind extends 'requested'
-    ? typeof ActivityEventType.PrMergeRequested
-    : typeof ActivityEventType.PrMergeDenied;
+type DecisionClaimPayload<Action extends PullRequestAction> = Action extends 'approve'
+  ? ActivityEventPayloads[typeof ActivityEventType.PrApproveDecisionClaimed]
+  : ActivityEventPayloads[typeof ActivityEventType.PrMergeDecisionClaimed];
+type DecisionFromClaim<Claim> = Claim extends {
+  readonly decisionKind: infer Kind extends PullRequestDecisionKind;
+  readonly outcome: infer Outcome extends PullRequestActivityOutcome;
+  readonly fact: infer Fact;
+}
+  ? {
+      readonly decisionKind: Kind;
+      readonly outcome: Outcome;
+      readonly fact: Fact;
+    }
+  : never;
 
-type DecisionFact<Action extends PullRequestAction, Kind extends PullRequestDecisionKind> = Extract<
-  ActivityFactDraft,
-  { eventType: DecisionFactType<Action, Kind> }
->;
-
-export type PullRequestDecision<Action extends PullRequestAction = PullRequestAction> = {
-  readonly [Kind in PullRequestDecisionKind]: {
-    readonly decisionKind: Kind;
-    readonly outcome: PullRequestActivityOutcome;
-    readonly fact: DecisionFact<Action, Kind>;
-  };
-}[PullRequestDecisionKind];
+export type PullRequestDecision<Action extends PullRequestAction = PullRequestAction> =
+  DecisionFromClaim<DecisionClaimPayload<Action>>;
 
 export async function readDecisionClaim<Action extends PullRequestAction>(
   journal: EventJournal,
@@ -54,7 +48,7 @@ export async function claimDecision<Action extends PullRequestAction>(
   journal: EventJournal,
   activationId: ActivationId,
   action: Action,
-  proposal: PullRequestDecision<Action>,
+  proposal: PullRequestDecision<NoInfer<Action>>,
 ): Promise<PullRequestDecision<Action>> {
   const existing = await readDecisionClaim(journal, activationId, action);
   if (existing !== null) return existing;

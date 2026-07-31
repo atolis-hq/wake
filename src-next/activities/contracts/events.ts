@@ -73,13 +73,41 @@ export interface PullRequestMergeRequestedPayload {
   readonly requireChecks: boolean;
 }
 
-interface PullRequestDecisionClaimPayload {
-  readonly action: PullRequestDecisionAction;
-  readonly activationId: ActivationId;
-  readonly decisionKind: 'requested' | 'denied';
-  readonly outcome: PullRequestActivityOutcome;
-  readonly fact: ActivityFactDraft;
-}
+type RequestedOutcome = Extract<PullRequestActivityOutcome, { readonly kind: 'waiting' }>;
+type DeniedOutcome = Extract<PullRequestActivityOutcome, { readonly kind: 'blocked' }>;
+type RequestedFact<Action extends PullRequestDecisionAction> = Action extends 'approve'
+  ? EventDraft<
+      typeof ActivityEventType.PrApproveRequested,
+      PullRequestApproveRequestedPayload,
+      ResourceStreamRef
+    >
+  : EventDraft<
+      typeof ActivityEventType.PrMergeRequested,
+      PullRequestMergeRequestedPayload,
+      ResourceStreamRef
+    >;
+type DeniedFact<Action extends PullRequestDecisionAction> = EventDraft<
+  Action extends 'approve'
+    ? typeof ActivityEventType.PrApproveDenied
+    : typeof ActivityEventType.PrMergeDenied,
+  PullRequestDenialPayload,
+  ResourceStreamRef | WorkItemStreamRef
+>;
+type PullRequestDecisionClaimPayload<Action extends PullRequestDecisionAction> =
+  | {
+      readonly action: Action;
+      readonly activationId: ActivationId;
+      readonly decisionKind: 'requested';
+      readonly outcome: RequestedOutcome;
+      readonly fact: RequestedFact<Action>;
+    }
+  | {
+      readonly action: Action;
+      readonly activationId: ActivationId;
+      readonly decisionKind: 'denied';
+      readonly outcome: DeniedOutcome;
+      readonly fact: DeniedFact<Action>;
+    };
 
 export interface ActivityEventPayloads {
   readonly [ActivityEventType.PrDiscovered]: PullRequestDiscoveredPayload;
@@ -115,12 +143,8 @@ export interface ActivityEventPayloads {
   readonly [ActivityEventType.PrMergeAuthorized]: { readonly revision: string };
   readonly [ActivityEventType.PrApproveRequested]: PullRequestApproveRequestedPayload;
   readonly [ActivityEventType.PrMergeRequested]: PullRequestMergeRequestedPayload;
-  readonly [ActivityEventType.PrApproveDecisionClaimed]: PullRequestDecisionClaimPayload & {
-    readonly action: 'approve';
-  };
-  readonly [ActivityEventType.PrMergeDecisionClaimed]: PullRequestDecisionClaimPayload & {
-    readonly action: 'merge';
-  };
+  readonly [ActivityEventType.PrApproveDecisionClaimed]: PullRequestDecisionClaimPayload<'approve'>;
+  readonly [ActivityEventType.PrMergeDecisionClaimed]: PullRequestDecisionClaimPayload<'merge'>;
 }
 
 type ResourceFactType =

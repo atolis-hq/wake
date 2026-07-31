@@ -53,6 +53,17 @@ const mergeIntent = createEventDraft({
     requireChecks: true,
   },
 });
+const approveDenial = createEventDraft({
+  ...approveIntent,
+  eventId: 'approve-denied',
+  eventType: ActivityEventType.PrApproveDenied,
+  payload: {
+    activationId: activation,
+    idempotencyKey: 'approve-denied',
+    reason: 'policy',
+    resourceId: resource.id,
+  },
+});
 
 const samples = [
   eventEnvelope(ActivityEventType.PrDiscovered, context, resource),
@@ -258,22 +269,64 @@ describe('Activity event integrity', () => {
       ),
     ).toThrow();
   });
+});
+
+describe('Activity decision claim integrity', () => {
+  it.each([
+    {
+      name: 'requested claim with a blocked outcome',
+      payload: {
+        ...samples[13].payload,
+        outcome: { kind: 'blocked', data: { reason: 'policy' } },
+      },
+    },
+    {
+      name: 'requested claim with a mismatched intent event id',
+      payload: {
+        ...samples[13].payload,
+        outcome: {
+          kind: 'waiting',
+          data: { intentEventId: 'other-intent', signalKind: 'delivery-result' },
+        },
+      },
+    },
+    {
+      name: 'denied claim with a waiting outcome',
+      payload: {
+        ...samples[13].payload,
+        decisionKind: 'denied',
+        outcome: {
+          kind: 'waiting',
+          data: { intentEventId: approveDenial.eventId, signalKind: 'delivery-result' },
+        },
+        fact: approveDenial,
+      },
+    },
+  ])('rejects $name with Activity event context', ({ payload }) => {
+    expect(() =>
+      decodeActivityEvent(
+        eventEnvelope(ActivityEventType.PrApproveDecisionClaimed, payload, approveDecision),
+      ),
+    ).toThrow(/Invalid Activity event event-7 at global position 7/i);
+  });
+
+  it('reports a lone-surrogate activation id through the Activity decoder context', () => {
+    expect(() =>
+      decodeActivityEvent(
+        eventEnvelope(
+          ActivityEventType.PrApproveDecisionClaimed,
+          { ...samples[13].payload, activationId: '\uD800' },
+          approveDecision,
+        ),
+      ),
+    ).toThrow(/Invalid Activity event event-7 at global position 7/i);
+  });
 
   it.each([
     { decisionKind: 'denied', fact: approveIntent },
     {
       decisionKind: 'requested',
-      fact: createEventDraft({
-        ...approveIntent,
-        eventId: 'approve-denied',
-        eventType: ActivityEventType.PrApproveDenied,
-        payload: {
-          activationId: activation,
-          idempotencyKey: 'approve-denied',
-          reason: 'policy',
-          resourceId: resource.id,
-        },
-      }),
+      fact: approveDenial,
     },
   ] as const)('rejects a decision kind paired with the wrong fact family', (mismatch) => {
     expect(() =>
