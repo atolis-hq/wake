@@ -1,12 +1,54 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
 import {
   createEventDraft,
   createRelation,
   entityRef,
+  type Brand,
+  type EntityRef,
+  type EventDraft,
+  type EventDraftUnion,
+  type EventEnvelope,
+  type EventUnion,
   type RelationDefinition,
 } from '../../src-next/kernel/index.js';
 
 describe('event envelope', () => {
+  it('retains a branded stream id', () => {
+    type WorkItemId = Brand<string, 'WorkItemId'>;
+    const workItemId = 'work-1' as WorkItemId;
+
+    const stream = entityRef('work-item', workItemId);
+
+    expectTypeOf(stream).toEqualTypeOf<EntityRef<'work-item', WorkItemId>>();
+    expect(stream.id).toBe(workItemId);
+  });
+
+  it('maps each event type to its exact payload and stream', () => {
+    type WorkItemId = Brand<string, 'WorkItemId'>;
+    type WorkStream = EntityRef<'work-item', WorkItemId>;
+    type WorkPayloads = {
+      readonly 'work.item-created': { readonly objective: string };
+      readonly 'work.item-closed': { readonly reason: string };
+    };
+    type WorkEvent = EventUnion<WorkPayloads, WorkStream>;
+    type WorkEventDraft = EventDraftUnion<WorkPayloads, WorkStream>;
+
+    expectTypeOf<Extract<WorkEvent, { eventType: 'work.item-created' }>>().toEqualTypeOf<
+      EventEnvelope<
+        'work.item-created',
+        { readonly objective: string },
+        EntityRef<'work-item', WorkItemId>
+      >
+    >();
+    expectTypeOf<Extract<WorkEventDraft, { eventType: 'work.item-closed' }>>().toEqualTypeOf<
+      EventDraft<
+        'work.item-closed',
+        { readonly reason: string },
+        EntityRef<'work-item', WorkItemId>
+      >
+    >();
+  });
+
   it('keeps domain payload separate from universal metadata', () => {
     const draft = createEventDraft({
       eventId: 'evt-1',

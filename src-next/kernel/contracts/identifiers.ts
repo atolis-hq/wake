@@ -3,12 +3,15 @@ export type EventId = Brand<string, 'EventId'>;
 export type CorrelationId = Brand<string, 'CorrelationId'>;
 export type CausationId = Brand<string, 'CausationId'>;
 
-export interface EntityRef<Kind extends string = string> {
+export interface EntityRef<Kind extends string = string, Id extends string = string> {
   readonly kind: Kind;
-  readonly id: string;
+  readonly id: Id;
 }
 
-export function entityRef<Kind extends string>(kind: Kind, id: string): EntityRef<Kind> {
+export function entityRef<Kind extends string, Id extends string>(
+  kind: Kind,
+  id: Id,
+): EntityRef<Kind, Id> {
   if (id.trim().length === 0) throw new Error('Entity reference id must not be empty');
   return { kind, id };
 }

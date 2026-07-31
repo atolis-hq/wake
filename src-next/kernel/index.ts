@@ -7,6 +7,7 @@ export * from './contracts/id-generator.js';
 export * from './contracts/identifiers.js';
 export * from './contracts/relations.js';
 export * from './contracts/projection-store.js';
+export * from './contracts/vocabulary.js';
 export * from './domain/event-envelope.js';
 export * from './domain/relation.js';
 export * from './infrastructure/system-clock.js';
