@@ -12,6 +12,20 @@ import {
   type RelationDefinition,
 } from '../../src-next/kernel/index.js';
 
+function workDraftInput<Stream extends EntityRef>(stream: Stream) {
+  return {
+    eventId: 'evt-1',
+    eventType: 'work.item-created',
+    occurredAt: '2026-07-30T12:00:00.000Z',
+    correlationId: 'corr-1',
+    causationId: 'cmd-1',
+    actor: { kind: 'system', id: 'wake' },
+    source: { kind: 'internal', id: 'wake' },
+    stream,
+    payload: { objective: 'Ship the change' },
+  } as const;
+}
+
 describe('event envelope', () => {
   it('retains a branded stream id', () => {
     type WorkItemId = Brand<string, 'WorkItemId'>;
@@ -26,12 +40,12 @@ describe('event envelope', () => {
   it('maps each event type to its exact payload and stream', () => {
     type WorkItemId = Brand<string, 'WorkItemId'>;
     type WorkStream = EntityRef<'work-item', WorkItemId>;
-    type WorkPayloads = {
+    interface WorkEventPayloads {
       readonly 'work.item-created': { readonly objective: string };
       readonly 'work.item-closed': { readonly reason: string };
-    };
-    type WorkEvent = EventUnion<WorkPayloads, WorkStream>;
-    type WorkEventDraft = EventDraftUnion<WorkPayloads, WorkStream>;
+    }
+    type WorkEvent = EventUnion<WorkEventPayloads, WorkStream>;
+    type WorkEventDraft = EventDraftUnion<WorkEventPayloads, WorkStream>;
 
     expectTypeOf<Extract<WorkEvent, { eventType: 'work.item-created' }>>().toEqualTypeOf<
       EventEnvelope<
@@ -47,6 +61,15 @@ describe('event envelope', () => {
         EntityRef<'work-item', WorkItemId>
       >
     >();
+  });
+
+  it('preserves an exact branded stream through the public draft factory', () => {
+    type WorkItemId = Brand<string, 'WorkItemId'>;
+    const workItemId = 'work-1' as WorkItemId;
+
+    const draft = createEventDraft(workDraftInput(entityRef('work-item', workItemId)));
+
+    expectTypeOf(draft.stream).toEqualTypeOf<EntityRef<'work-item', WorkItemId>>();
   });
 
   it('keeps domain payload separate from universal metadata', () => {

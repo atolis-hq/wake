@@ -37,16 +37,10 @@ export interface EventEnvelope<
   readonly globalPosition: number;
 }
 
-export type EventUnion<
-  Payloads extends Readonly<Record<string, unknown>>,
-  Stream extends EntityRef,
-> = {
+export type EventUnion<Payloads extends object, Stream extends EntityRef> = {
   [Type in keyof Payloads & string]: EventEnvelope<Type, Payloads[Type], Stream>;
 }[keyof Payloads & string];
 
-export type EventDraftUnion<
-  Payloads extends Readonly<Record<string, unknown>>,
-  Stream extends EntityRef,
-> = {
+export type EventDraftUnion<Payloads extends object, Stream extends EntityRef> = {
   [Type in keyof Payloads & string]: EventDraft<Type, Payloads[Type], Stream>;
 }[keyof Payloads & string];
