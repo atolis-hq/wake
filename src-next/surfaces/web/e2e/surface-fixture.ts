@@ -66,16 +66,33 @@ const applications: ApiApplications = {
   },
   work: {
     async list() {
-      return { items: [workSummary()], meta: { asOf: instant }, total: 1 };
+      const items = workItems();
+      return { items, meta: { asOf: instant }, total: items.length };
     },
     async detail(key) {
-      if (key !== workItemKey) return undefined;
+      const item = workItems().find((candidate) => candidate.workItemKey === key);
+      if (item === undefined) return undefined;
       return {
         data: {
-          work: workSummary(),
-          resources: [],
+          work: item,
+          resources:
+            item.workItemId === 'work-demo'
+              ? [
+                  {
+                    resourceId: 'resource-1',
+                    kind: 'ticket',
+                    capabilities: ['comment', 'label'],
+                    revision: 'rev-1',
+                  },
+                  {
+                    resourceId: 'resource-2',
+                    kind: 'change-proposal',
+                    capabilities: ['review', 'merge'],
+                  },
+                ]
+              : [],
           orchestration: { primary: null, children: [] },
-          execution: { runs: [] },
+          execution: { runs: item.workItemId === 'work-demo' ? [run()] : [] },
           activities: {},
         },
         meta: { asOf: instant },
@@ -180,6 +197,32 @@ function workSummary(): WorkItemResponse {
     state: state.advanced ? WorkStatus.Closed : WorkStatus.Open,
     relatedWorkItems: [],
   };
+}
+/** Review dataset: enough breadth to expose density, truncation, and empty columns.
+    No objective may contain "Demo Wake" - the journey locates that link by substring. */
+function workItems(): readonly WorkItemResponse[] {
+  const extra: readonly (readonly [string, string, string])[] = [
+    ['work-refine', 'Refine the intake policy for scheduled workflows', WorkStatus.Open],
+    [
+      'work-long',
+      'Distinguish stall, startup, absolute-timeout, and graceful-cancellation semantics so a watcher can tell a wedged run from a slow one',
+      WorkStatus.Open,
+    ],
+    ['work-review', 'Review pull request feedback', WorkStatus.Open],
+    ['work-merged', 'Merge the runner selection change', WorkStatus.Closed],
+    ['work-shipped', 'Ship the projection catch-up fix', WorkStatus.Closed],
+    ['work-dropped', 'Abandon the duplicate correlation spike', WorkStatus.Cancelled],
+  ];
+  return [
+    workSummary(),
+    ...extra.map(([id, objective, itemState]) => ({
+      workItemKey: toWorkItemKey(id),
+      workItemId: id,
+      objective,
+      state: itemState,
+      relatedWorkItems: [],
+    })),
+  ];
 }
 function event(position: number, type: string): AuditEventResponse {
   return { id: `event-${position}`, type, occurredAt: instant, position };
