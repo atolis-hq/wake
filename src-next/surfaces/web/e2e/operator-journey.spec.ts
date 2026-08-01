@@ -48,7 +48,7 @@ test('operates Wake through the real HTTP Surface and packaged application', asy
   if (testInfo.project.name === 'desktop') await expect(thirdEvent).toBeVisible();
   else await expect(thirdEvent).toBeAttached();
 
-  await page.getByRole('link', { name: 'Health' }).click();
+  await page.goto('/health');
   await expect(page.getByRole('table', { name: 'Runner availability' })).toContainText(
     'refreshing',
   );
@@ -74,14 +74,14 @@ test('keeps the restyled board operable and free of serious accessibility faults
   page,
 }) => {
   await page.goto('/board');
-  await expect(page.getByRole('heading', { name: /^Open \(\d+\)$/ })).toBeVisible();
-  await expect(page.getByRole('heading', { name: /^Cancelled \(\d+\)$/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^Ready \(\d+\)$/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^Finished \(\d+\)$/ })).toBeVisible();
 
-  const collapse = page.getByRole('button', { name: 'Collapse Open' });
+  const collapse = page.getByRole('button', { name: 'Collapse Ready' });
   await collapse.click();
-  await expect(page.getByRole('button', { name: 'Expand Open' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Expand Ready' })).toBeVisible();
   await page.reload();
-  await expect(page.getByRole('button', { name: 'Expand Open' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Expand Ready' })).toBeVisible();
 
   const results = await new AxeBuilder({ page })
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])

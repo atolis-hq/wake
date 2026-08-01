@@ -149,7 +149,11 @@ function applications() {
     events: { list: async () => page },
     observability: {
       metrics: async () => ({
-        data: { collectedAt: '2026-07-31T10:00:00.000Z', values: {} },
+        data: {
+          collectedAt: '2026-07-31T10:00:00.000Z',
+          window: { days: 7, from: '2026-07-25', to: '2026-07-31' },
+          values: {},
+        },
         meta,
       }),
     },

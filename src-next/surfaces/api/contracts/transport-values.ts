@@ -11,3 +11,24 @@ export const AcceptedCommandStatusValue = {
 const runResponseShape = { active: true };
 
 export const RunResponseField = { Active: Object.keys(runResponseShape)[0]! } as const;
+
+const boardConditionShape = {
+  ready: true,
+  active: true,
+  'needs-human': true,
+  error: true,
+  finished: true,
+};
+const boardConditions = Object.keys(boardConditionShape);
+
+export const BoardConditionValue = {
+  Ready: boardConditions[0]!,
+  Active: boardConditions[1]!,
+  NeedsHuman: boardConditions[2]!,
+  Error: boardConditions[3]!,
+  Finished: boardConditions[4]!,
+} as const;
+
+const boardCardFieldShape = { stage: true };
+
+export const BoardCardField = { Stage: Object.keys(boardCardFieldShape)[0]! } as const;

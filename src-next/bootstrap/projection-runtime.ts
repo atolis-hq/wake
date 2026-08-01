@@ -12,6 +12,8 @@ import {
   workCorrelationsProjection,
 } from '../resources/index.js';
 import { workProjection } from '../work/index.js';
+import { analyticsProjection } from './analytics-projection.js';
+import { boardProjection } from './board-projection.js';
 
 export const runtimeProjectionDefinitions = [
   workProjection,
@@ -24,6 +26,8 @@ export const runtimeProjectionDefinitions = [
   ...controlPlaneProjectionDefinitions,
   orchestrationProjection,
   executionProjection,
+  boardProjection,
+  analyticsProjection,
 ];
 
 export function createRuntimeProjectionRunner(

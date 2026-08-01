@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router';
-import type { WorkItemResponse } from '../../../../api/contracts/index.js';
+import type { BoardCardResponse } from '../../../../api/contracts/index.js';
 import { Chip } from '../../components/chip.js';
 import styles from '../features.module.css';
 
@@ -7,7 +7,7 @@ export function BoardCard({
   item,
   background,
 }: {
-  readonly item: WorkItemResponse;
+  readonly item: BoardCardResponse;
   readonly background: ReturnType<typeof useLocation>;
 }) {
   return (
@@ -19,12 +19,13 @@ export function BoardCard({
       >
         <span className={styles.cardTitle}>{item.objective}</span>
         <span className={styles.cardMeta}>
-          <Chip variant="outline">{item.state}</Chip>
-          {item.relatedWorkItems.length > 0 && (
-            <Chip variant="outline">{item.relatedWorkItems.length} related</Chip>
-          )}
+          <Chip variant="outline">{item.condition}</Chip>
+          {item.workflowName !== undefined && <Chip variant="outline">{item.workflowName}</Chip>}
+          {item.stage !== undefined && <Chip variant="outline">{item.stage}</Chip>}
         </span>
-        <span className={styles.cardStats}>{item.workItemId}</span>
+        <span
+          className={styles.cardStats}
+        >{`${item.runCount} runs · since ${item.dwellSince}`}</span>
       </Link>
     </li>
   );

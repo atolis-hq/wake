@@ -19,6 +19,7 @@ const collectionRoutes = new Map<string, ReadonlySet<string>>([
   ['/api/v1/runs', new Set(['cursor', 'limit', 'state'])],
   ['/api/v1/runners', new Set(['cursor', 'limit'])],
   ['/api/v1/events', new Set(['cursor', 'limit'])],
+  ['/api/v1/board', new Set(['cursor', 'limit'])],
 ]);
 
 export async function dispatchRead(
@@ -43,7 +44,11 @@ async function readSingleton(
     case '/api/v1/control-plane/status':
       return noQuery(url, async () => ok(await applications.controlPlane.status()));
     case '/api/v1/observability/metrics':
-      return noQuery(url, async () => ok(await applications.observability.metrics()));
+      return readMetrics(applications, url);
+    case '/api/v1/status':
+      return applications.status === undefined
+        ? unavailable('status')
+        : noQuery(url, async () => ok(await applications.status!.get()));
     case '/api/v1/system/health':
       return noQuery(url, async () => ok(await applications.system.health()));
     case '/api/v1/system/configuration':
@@ -51,6 +56,19 @@ async function readSingleton(
     default:
       return undefined;
   }
+}
+
+async function readMetrics(applications: ApiApplications, url: URL): Promise<ApiHttpResponse> {
+  const allowed = new Set(['days']);
+  for (const key of url.searchParams.keys()) {
+    if (!allowed.has(key) || url.searchParams.getAll(key).length !== 1)
+      return invalidQuery(`Unknown or repeated query parameter: ${key}`, key);
+  }
+  const raw = url.searchParams.get('days');
+  const days = raw === null ? 7 : Number(raw);
+  if (!/^[1-9]\d*$/.test(raw ?? '7') || !Number.isSafeInteger(days) || days > 31)
+    return invalidQuery('days must be an integer from 1 to 31', 'days');
+  return ok(await applications.observability.metrics({ days }));
 }
 
 async function readCollection(
@@ -82,6 +100,15 @@ async function collectionResult(
       return applications.execution.runners === undefined
         ? unavailable('runners')
         : collection(await applications.execution.runners(query), query);
+    case '/api/v1/board': {
+      if (applications.board === undefined) return unavailable('board');
+      const board = await applications.board.list(query);
+      const response = collection(board, query);
+      return {
+        ...response,
+        body: { ...(response.body as object), conditionCounts: board.conditionCounts },
+      };
+    }
     default:
       return collection(await applications.events.list(query), query);
   }

@@ -11,31 +11,14 @@ import { WorkList } from '../src/features/work/work.js';
 describe('URL-owned collection navigation', () => {
   afterEach(cleanup);
 
-  it('owns Work search, state, and opaque cursor pagination in the URL', async () => {
-    const user = userEvent.setup();
+  it('uses one board read-model collection for Work instead of joining domain collections', async () => {
     const requests: string[] = [];
-    renderFeature(
-      <WorkList />,
-      '/work?search=demo&state=open&cursor=c_initial',
-      collectionClient(requests, 'work'),
-    );
-
-    expect(await screen.findByDisplayValue('demo')).toBeTruthy();
-    expect(screen.getByDisplayValue('Open')).toBeTruthy();
-    expect((await screen.findByText('open')).className).toContain('chipOutline');
-    await waitFor(() =>
-      expect(requests[0]).toBe('/api/v1/work-items?cursor=c_initial&search=demo&state=open'),
-    );
-    await user.click(screen.getByRole('button', { name: 'Next page' }));
-    await waitFor(() => expect(requests.at(-1)).toContain('cursor=c_next'));
-    await user.clear(screen.getByLabelText('Search'));
-    await user.type(screen.getByLabelText('Search'), 'revised');
-    await waitFor(() => {
-      expect(requests.at(-1)).toContain('search=revised');
-      expect(requests.at(-1)).not.toContain('cursor=');
-    });
+    renderFeature(<WorkList />, '/work', collectionClient(requests, 'work'));
+    expect(await screen.findByRole('table', { name: 'Work items' })).toBeTruthy();
+    expect(requests[0]).toBe('/api/v1/board');
+    expect(requests.some((url) => url.includes('/workflow-instances'))).toBe(false);
+    expect(requests.some((url) => url.includes('/work-items'))).toBe(false);
   });
-
   it('requests Runs by the URL cursor and provides historical page controls', async () => {
     const user = userEvent.setup();
     const requests: string[] = [];
@@ -73,8 +56,9 @@ function collectionClient(requests: string[], kind: 'work' | 'runs') {
               workItemKey: 'wk_demo',
               workItemId: 'work-demo',
               objective: 'Demo Wake',
-              state: 'open',
-              relatedWorkItems: [],
+              condition: 'ready',
+              dwellSince: asOf,
+              runCount: 1,
             },
           ]
         : [
@@ -90,13 +74,18 @@ function collectionClient(requests: string[], kind: 'work' | 'runs') {
               startedAt: asOf,
             },
           ];
-    return new Response(
-      JSON.stringify({
-        items,
-        page: { nextCursor: 'c_next', hasMore: true },
-        meta: { asOf, position: 1 },
-      }),
-      { status: 200, headers: { 'content-type': 'application/json' } },
-    );
+    const body =
+      kind === 'work'
+        ? {
+            items,
+            conditionCounts: { ready: 1 },
+            page: { nextCursor: 'c_next', hasMore: true },
+            meta: { asOf, position: 1 },
+          }
+        : { items, page: { nextCursor: 'c_next', hasMore: true }, meta: { asOf, position: 1 } };
+    return new Response(JSON.stringify(body), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
   });
 }

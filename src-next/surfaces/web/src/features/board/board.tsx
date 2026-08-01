@@ -15,6 +15,7 @@ import styles from '../features.module.css';
 import { BoardCard } from './board-card.js';
 
 const collapseStorageKey = 'wake:board:collapsed-columns';
+const boardColumns = ['ready', 'active', 'needs-human', 'error', 'finished'] as const;
 
 function readCollapsed(): ReadonlySet<string> {
   try {
@@ -28,28 +29,26 @@ function readCollapsed(): ReadonlySet<string> {
     return new Set();
   }
 }
-
 function writeCollapsed(collapsed: ReadonlySet<string>): void {
   try {
     globalThis.localStorage?.setItem(collapseStorageKey, JSON.stringify([...collapsed]));
   } catch {
-    // Storage failures must not break the toggle for this render.
+    /* storage is optional */
   }
 }
-
 export function Board() {
   const client = useApiClient();
   const location = useLocation();
   const query = useQuery({
-    queryKey: queryKeys.work.list(),
-    queryFn: ({ signal }) => client.work.list({}, signal),
+    queryKey: queryKeys.board.list(),
+    queryFn: ({ signal }) => client.board.list(undefined, signal),
     refetchInterval: refreshPolicy.board,
   });
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(readCollapsed);
-  const toggleColumn = (state: string) => {
+  const toggleColumn = (condition: string) => {
     const next = new Set(collapsed);
-    if (next.has(state)) next.delete(state);
-    else next.add(state);
+    if (next.has(condition)) next.delete(condition);
+    else next.add(condition);
     writeCollapsed(next);
     setCollapsed(next);
   };
@@ -78,23 +77,23 @@ export function Board() {
         <EmptyState>No work items</EmptyState>
       ) : (
         <div className={styles.board}>
-          {boardColumns.map((state) => {
-            const columnItems = items.filter((item) => item.state === state);
+          {boardColumns.map((condition) => {
+            const columnItems = items.filter((item) => item.condition === condition);
             return (
-              <section className={styles.column} key={state}>
+              <section className={styles.column} key={condition}>
                 <div className={styles.columnHeader}>
-                  <h2>{`${label(state)} (${columnItems.length})`}</h2>
+                  <h2>{`${label(condition)} (${columnItems.length})`}</h2>
                   <button
                     type="button"
                     className={styles.columnToggle}
-                    aria-expanded={!collapsed.has(state)}
-                    aria-label={`${collapsed.has(state) ? 'Expand' : 'Collapse'} ${label(state)}`}
-                    onClick={() => toggleColumn(state)}
+                    aria-expanded={!collapsed.has(condition)}
+                    aria-label={`${collapsed.has(condition) ? 'Expand' : 'Collapse'} ${label(condition)}`}
+                    onClick={() => toggleColumn(condition)}
                   >
-                    {collapsed.has(state) ? '+' : '−'}
+                    {collapsed.has(condition) ? '+' : 'âˆ’'}
                   </button>
                 </div>
-                {!collapsed.has(state) && (
+                {!collapsed.has(condition) && (
                   <ul className={styles.cards}>
                     {columnItems.map((item) => (
                       <BoardCard key={item.workItemKey} item={item} background={location} />
@@ -109,6 +108,8 @@ export function Board() {
     </>
   );
 }
-
-const boardColumns = ['open', 'closed', 'cancelled'] as const;
-const label = (value: string) => value[0]!.toUpperCase() + value.slice(1);
+const label = (value: string) =>
+  value
+    .split('-')
+    .map((part) => part[0]!.toUpperCase() + part.slice(1))
+    .join(' ');

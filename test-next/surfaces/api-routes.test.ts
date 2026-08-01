@@ -286,7 +286,12 @@ function applications(
     execution: { list: async () => page([]) },
     events: { list: overrides.eventsList ?? (async () => page([])) },
     observability: {
-      metrics: async () => resource({ collectedAt: '2026-07-31T10:00:00.000Z', values: {} }),
+      metrics: async () =>
+        resource({
+          collectedAt: '2026-07-31T10:00:00.000Z',
+          window: { days: 7, from: '2026-07-25', to: '2026-07-31' },
+          values: {},
+        }),
     },
     system: {
       health: async () =>

@@ -1,5 +1,6 @@
 import type {
   AuditEventResponse,
+  BoardCardResponse,
   CollectionResponse,
   ControlPlaneStatusResponse,
   ResourceItemResponse,
@@ -36,6 +37,9 @@ import {
 } from './decoder-primitives.js';
 
 export type { Decoder } from './decoder-primitives.js';
+
+const boardCardFieldShape = { stage: true };
+const boardStageField = Object.keys(boardCardFieldShape)[0]!;
 
 export function resourceDecoder<Value>(decode: Decoder<Value>): Decoder<ResourceResponse<Value>> {
   return (value, path = '') => {
@@ -117,6 +121,20 @@ export const decodeWorkItem: Decoder<WorkItemResponse> = (value, path = '') => {
         };
       },
     ),
+  };
+};
+
+export const decodeBoardCard: Decoder<BoardCardResponse> = (value, path = '') => {
+  const record = object(value, path);
+  return {
+    workItemKey: string(record.workItemKey, child(path, 'workItemKey')),
+    workItemId: string(record.workItemId, child(path, 'workItemId')),
+    objective: string(record.objective, child(path, 'objective')),
+    condition: string(record.condition, child(path, 'condition')) as BoardCardResponse['condition'],
+    ...optionalStringProperty(record, 'workflowName', path),
+    ...optionalStringProperty(record, boardStageField, path),
+    dwellSince: string(record.dwellSince, child(path, 'dwellSince')),
+    runCount: number(record.runCount, child(path, 'runCount')),
   };
 };
 

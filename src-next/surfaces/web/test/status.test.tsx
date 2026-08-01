@@ -52,7 +52,7 @@ describe('control-plane mutation and connection state', () => {
           meta: { asOf: instant },
         });
       }
-      if (url.includes('/work-items')) workReads += 1;
+      if (url.includes('/board')) workReads += 1;
       return fixtureResponse(url, init);
     });
     render(
@@ -119,7 +119,12 @@ function json(body: unknown, status = 200) {
 function fixtureResponse(url: string, _init?: RequestInit) {
   if (url.endsWith('/control-plane/status'))
     return json({ data: { paused: false, updatedAt: instant }, meta: { asOf: instant } });
-  if (url.includes('/work-items'))
-    return json({ items: [], page: { nextCursor: null, hasMore: false }, meta: { asOf: instant } });
+  if (url.includes('/board'))
+    return json({
+      items: [],
+      conditionCounts: {},
+      page: { nextCursor: null, hasMore: false },
+      meta: { asOf: instant },
+    });
   return json({ data: {}, meta: { asOf: instant } });
 }

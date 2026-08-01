@@ -22,6 +22,7 @@ export const decodeMetrics: Decoder<MetricsResponse> = (value, path = '') => {
   const values = object(record.values, child(path, 'values'));
   return {
     collectedAt: string(record.collectedAt, child(path, 'collectedAt')),
+    window: decodeAnalyticsWindow(record.window, child(path, 'window')),
     values: Object.fromEntries(
       Object.entries(values).map(([key, item]) => [
         key,
@@ -30,6 +31,15 @@ export const decodeMetrics: Decoder<MetricsResponse> = (value, path = '') => {
     ),
   };
 };
+
+function decodeAnalyticsWindow(value: unknown, path: string) {
+  const record = object(value, path);
+  return {
+    days: number(record.days, child(path, 'days')),
+    from: string(record.from, child(path, 'from')),
+    to: string(record.to, child(path, 'to')),
+  };
+}
 
 export const decodeHealth: Decoder<HealthResponse> = (value, path = '') => {
   const record = object(value, path);
