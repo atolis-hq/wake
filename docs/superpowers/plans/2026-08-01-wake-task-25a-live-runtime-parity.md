@@ -73,7 +73,7 @@ status for this plan:
 | A2 | Projection catch-up runs once per tick in the host, not inside `advanceOnce` | Accepted. Built in Step 6, with the read-your-writes correction in §Findings F4 |
 | A3 | Config discovery is `remove`; `config.yaml` and `config.workflows.yaml` only | Accepted. Catalogue row added in Step 0; fixture root built in Step 9 |
 | A4 | `maxFilesChanged` and `blockedPaths` require a changed-files capability on the provider | **Confirmed 2026-08-01.** In scope for 25A. Built in Steps 7 and 9 |
-| A5 | Operator pause and quota pause emit the same `ControlEventType.DispatchPaused`, differing only in `reason` | Accepted. `ControlEventPayloads` already carries `reason`. Built in Step 8 |
+| A5 | Operator pause and quota pause emit the same `ControlEventType.DispatchPaused`, differing only in `reason` | **Reversed by operator 2026-08-01.** Global dispatch pauses remain `DispatchPaused`; runner manual and quota pauses use dedicated durable runner pause/resume events. A quota pause has `resumeAt`; a manual resume may clear either pause early. |
 
 ---
 
@@ -198,7 +198,7 @@ legacy 83 files / 950 tests, with `check:catalogue`, `lint:contracts`,
 | 25A.7 approval authority (D16) — Work half | Built: consent events, idempotent commands, projection, view |
 | 25A.7 approval authority (D16) — Orchestration half | Built: `ApprovalAuthorityKind`, the authority union, `WatchId`, `await.from` compiled and watch-resolved, capability-and-consent enforcement, `SignalAccepted.authority` recorded apart from provenance |
 | A4 merge policy (`maxFilesChanged`, `blockedPaths`, changed-files capability) | Built, including explicit `changed-files-unavailable` denial when policy is configured but evidence is missing. PR activities gate on capability rather than resource kind |
-| 25B step 13 alternate runner selection | Seam only. `RunnerRegistry.resolve(tier, ineligible)` walks ordered candidates, but nothing in production populates `ineligibleRunners`; per-runner quota state does not exist |
+| 25B step 13 alternate runner selection | **In progress.** Operator approved durable runner pause/resume state: runner pauses can be manual or quota-driven, quota pauses have an optional expiry, and an explicit resume clears either. The composed runtime must derive `ineligibleRunners` from active runner pauses and pass it to `RunnerRegistry.resolve`. |
 
 **Developer-feedback decision recorded 2026-08-01.**
 `test/adapters/git-workspace-manager.test.ts` is a real-Git adapter integration
@@ -210,11 +210,43 @@ Other fast filesystem and loopback-HTTP adapter tests remain in the default
 suite; touching a local boundary alone is not a reason to remove it from rapid
 feedback.
 
-**One decision remains open.** Connecting quota to runner ineligibility reverses carried
-assumption A5, which recorded that operator pause and quota pause share a single global
-`ControlEventType.DispatchPaused` differing only in `reason`. Per-runner ineligibility
-needs either a new durable event or a runner scope on the existing one. That is an
-operator decision, not a wiring task, and nothing should be built until it is taken.
+**Decision recorded 2026-08-01.** The operator reversed A5. `DispatchPaused` remains
+strictly global. A dedicated durable runner pause/resume event pair owns runner-level
+manual and quota pauses. A runner pause includes the runner name, cause, reason, and
+optional `resumeAt`; an explicit runner resume overrides either a manual or quota pause.
+The control-plane projection derives the active ineligible runner set from that durable
+state and the clock, then passes it into execution for same-tier sideways selection.
+
+### Final remediation: runner-level quota and manual pauses
+
+**Goal:** Make a quota-paused preferred runner durably ineligible so Execution selects
+the next configured candidate in the same tier, while preserving independent global and
+WorkItem pause scopes.
+
+**Files:** `control-plane/contracts/events.ts`, `control-plane/application/control-plane-projection.ts`,
+`control-plane/application/advance-once.ts`, `bootstrap/composition-root.ts`, the matching
+control-plane/bootstrap tests, and the module manifest.
+
+1. Add failing strict-contract and projection tests for `RunnerPaused` and
+   `RunnerResumed`: a manual pause has no `resumeAt`; a quota pause requires an ISO
+   `resumeAt`; resume removes either pause; malformed runner payloads throw.
+2. Add the minimal event union, closed `manual`/`quota` cause vocabulary, and per-runner
+   projection state. The projection exposes a pure `ineligibleRunners(view, now)` selector
+   that includes manual pauses and only quota pauses whose deadline is still future.
+3. Add a failing composed advancement test with tier `[sonnet, codex-mini]` and a durable
+   `RunnerPaused(sonnet, quota)` event. It must record a run using `codex-mini`, survive
+   projection replay, return to `sonnet` at expiry, and return to `sonnet` after an early
+   `RunnerResumed` event.
+4. Wire the control-plane projection read through Bootstrap into `advanceOnce`, passing its
+   active set as `ExecutionAttemptContext.ineligibleRunners`. Do not pass runner state from
+   an in-memory cache.
+5. Add quota detection at the runner-result boundary. A `provider-quota-exceeded` result
+   appends `RunnerPaused` for the selected configured runner. Use the CLI-reported reset
+   time when it is explicit (including explicit UTC conversion); otherwise append a fixed
+   30-minute `resumeAt`. The event always contains the resolved timestamp, never a raw
+   provider message as scheduling state.
+6. Run each new test red before its implementation, then run the focused suite, the required
+   lint/architecture/knip gates, both verification commands, and commit all changes once.
 
 ## Scenario matrix
 

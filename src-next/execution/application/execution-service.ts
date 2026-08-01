@@ -31,6 +31,10 @@ export interface ExecutionDependencies {
   readonly ids: IdGenerator;
   readonly workspaces?: WorkspaceProvider;
   readonly runners?: RunnerRegistry;
+  readonly reportRunnerQuota?: (input: {
+    readonly runnerName: string;
+    readonly message: string;
+  }) => Promise<void>;
 }
 
 interface ExecutionRuntime {
@@ -109,6 +113,7 @@ async function attemptExecution(
       context,
       occurredAt: startedAt,
       runner: runner.runner,
+      ...(runner.name === undefined ? {} : { runnerName: runner.name }),
     });
     await recordRunSuccess({
       dependencies: runLifecycleDependencies(runtime),
@@ -234,6 +239,7 @@ async function executeActivity(
     readonly context: ExecutionAttemptContext;
     readonly occurredAt: string;
     readonly runner: ActivityExecutionContext['runner'];
+    readonly runnerName?: string;
   },
 ) {
   const { activation, context, occurredAt, runner } = request;
@@ -270,6 +276,11 @@ async function executeActivity(
           payload: result,
         }),
       ]);
+      if (result.failure?.kind === 'provider-quota-exceeded' && request.runnerName !== undefined)
+        await runtime.dependencies.reportRunnerQuota?.({
+          runnerName: request.runnerName,
+          message: result.failure.message,
+        });
     },
   };
   return runtime.activities.execute(

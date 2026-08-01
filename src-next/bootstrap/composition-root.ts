@@ -9,6 +9,8 @@ import {
 import {
   createAdvanceOnce,
   createTickPipeline,
+  ControlStreamKind,
+  ineligibleRunners,
   type TickPipeline,
 } from '../control-plane/index.js';
 import {
@@ -60,6 +62,7 @@ import { createRuntimeProjectionRunner } from './projection-runtime.js';
 import { createRunnerRegistry } from './runner-registry.js';
 import { hydrateFakeProviderEvidence } from './fake-provider-files.js';
 import { createStatusPublishActivity } from './status-publish-activity.js';
+import { createRunnerQuotaReporter } from './runner-quota-reporter.js';
 
 export interface CompositionRootOptions {
   readonly config?: ResolvedWakeModulesConfig;
@@ -116,8 +119,20 @@ export async function createCompositionRoot(
     clock,
     ids,
     runners: createRunnerRegistry(config.execution),
+    reportRunnerQuota: createRunnerQuotaReporter(journal, clock, ids),
   });
-  const advanceOnce = createAdvanceOnce(orchestration, execution, resources, clock, ids);
+  const advanceOnce = createAdvanceOnce(orchestration, execution, resources, clock, {
+    ids,
+    runnerIneligibility: async () => {
+      const stored = await projections.read<import('../control-plane/index.js').ControlPlaneView>(
+        ControlStreamKind.Global,
+        'global',
+      );
+      return stored === null
+        ? new Set()
+        : ineligibleRunners(stored.value, clock.now().toISOString());
+    },
+  });
   const runtime = await composeIntegrationRuntime({
     config,
     journal,

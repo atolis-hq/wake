@@ -45,19 +45,25 @@ interface ExecutionPort {
       workflowInstanceId: WorkflowInstanceView['workflowInstanceId'];
       orchestrationGroupId: WorkflowInstanceView['orchestrationGroupId'];
       resources: readonly NonNullable<Awaited<ReturnType<ResourceService['get']>>>[];
+      ineligibleRunners?: ReadonlySet<string>;
     },
   ): Promise<RunView>;
   list(activationId?: ActivityActivationView['activationId']): Promise<readonly RunView[]>;
+}
+interface AdvanceOnceDependencies {
+  readonly ids: IdGenerator;
+  readonly runnerIneligibility?: () => Promise<ReadonlySet<string>>;
 }
 export function createAdvanceOnce(
   orchestration: OrchestrationPort,
   execution: ExecutionPort,
   resources: ResourceService,
   clock: Clock,
-  ids: IdGenerator,
+  dependencies: AdvanceOnceDependencies,
 ) {
+  const runnerIneligibility = dependencies.runnerIneligibility ?? (async () => new Set());
   const context = (cause: string) => ({
-    commandId: ids.next('command'),
+    commandId: dependencies.ids.next('command'),
     correlationId: correlationId(cause),
     occurredAt: clock.now().toISOString(),
     actor: { kind: EventActorKind.System, id: ControlStreamKind.Global },
@@ -99,11 +105,13 @@ export function createAdvanceOnce(
     const resourceViews = (
       await Promise.all(correlated.map((entry) => resources.get(entry.resourceId)))
     ).filter((resource) => resource !== null);
+    const ineligible = await runnerIneligibility();
     const run = await execution.attempt(selected.activation, {
       workItemId: selected.workflow.workItemId,
       workflowInstanceId: selected.workflow.workflowInstanceId,
       orchestrationGroupId: selected.workflow.orchestrationGroupId,
       resources: resourceViews,
+      ...(ineligible.size === 0 ? {} : { ineligibleRunners: ineligible }),
     });
     if (run.status === RunStatus.Succeeded && run.outcome !== undefined) {
       await orchestration.acceptOutcome(

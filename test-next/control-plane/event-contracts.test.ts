@@ -45,6 +45,34 @@ it('decodes and selects strict dispatch pause/resume events', () => {
   ).not.toBeNull();
 });
 
+it('decodes strict runner quota pause and manual resume events', () => {
+  const paused = decodeControlEvent(
+    envelope('control-plane.runner-paused', {
+      runnerName: 'sonnet',
+      cause: 'quota',
+      reason: 'provider quota exceeded',
+      resumeAt: '2026-08-01T12:30:00.000Z',
+    }),
+  );
+  expect(paused.eventType).toBe('control-plane.runner-paused');
+  const resumed = decodeControlEvent(
+    envelope('control-plane.runner-resumed', {
+      runnerName: 'sonnet',
+      resumedAt: '2026-08-01T12:05:00.000Z',
+    }),
+  );
+  expect(resumed.eventType).toBe('control-plane.runner-resumed');
+  expect(() =>
+    decodeControlEvent(
+      envelope('control-plane.runner-paused', {
+        runnerName: 'sonnet',
+        cause: 'quota',
+        reason: 'provider quota exceeded',
+      }),
+    ),
+  ).toThrow();
+});
+
 it('throws for malformed owned events and ignores unrelated namespaces', () => {
   expect(() =>
     decodeControlEvent(

@@ -325,7 +325,7 @@ it('reconciles an unconsumed child completion during ordinary restarted advancem
     ),
     createTestResourceServices(journal).resources,
     clock,
-    ids,
+    { ids },
   );
   await advance({ workItemId: workId('1'), maxProgress: 1 });
   for (const [index, parent] of parents.entries())

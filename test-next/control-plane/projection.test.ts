@@ -28,11 +28,45 @@ it('projects a durable quota pause and clears it only after resume', () => {
       1,
     ),
   );
-  expect(paused).toEqual({ pausedUntil: '2026-07-31T12:05:00.000Z', reason: 'quota' });
+  expect(paused).toEqual({
+    pausedUntil: '2026-07-31T12:05:00.000Z',
+    reason: 'quota',
+    runnerPauses: {},
+  });
   expect(
     controlPlaneProjection.project(
       paused,
       event(ControlEventType.DispatchResumed, { resumedAt: '2026-07-31T12:05:00.000Z' }, 2),
     ),
-  ).toEqual({ pausedUntil: null });
+  ).toEqual({ pausedUntil: null, runnerPauses: {} });
+});
+
+it('keeps manual and unexpired quota runner pauses in the durable projection', () => {
+  const quotaPaused = controlPlaneProjection.project(
+    controlPlaneProjection.initial('global'),
+    event(
+      'control-plane.runner-paused',
+      {
+        runnerName: 'sonnet',
+        cause: 'quota',
+        reason: 'provider quota exceeded',
+        resumeAt: '2026-08-01T12:30:00.000Z',
+      },
+      1,
+    ),
+  );
+  const manuallyPaused = controlPlaneProjection.project(
+    quotaPaused,
+    event(
+      'control-plane.runner-paused',
+      { runnerName: 'codex-mini', cause: 'manual', reason: 'operator maintenance' },
+      2,
+    ),
+  );
+  expect(manuallyPaused).toMatchObject({
+    runnerPauses: {
+      sonnet: { cause: 'quota', resumeAt: '2026-08-01T12:30:00.000Z' },
+      'codex-mini': { cause: 'manual' },
+    },
+  });
 });

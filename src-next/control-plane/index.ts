@@ -10,6 +10,7 @@ export * from './contracts/streams.js';
 export * from './domain/dispatch-policy.js';
 export * from './domain/schedule-policy.js';
 export * from './domain/quota-policy.js';
+export * from './domain/runner-quota.js';
 export * from './application/schedule-service.js';
 export * from './application/control-plane-projection.js';
 export * from './infrastructure/tick-host.js';

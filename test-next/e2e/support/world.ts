@@ -107,7 +107,7 @@ export class TestWorld {
     this.execution,
     this.resources,
     this.clock,
-    this.ids,
+    { ids: this.ids },
   );
   private readonly watchReactor = createWatchReactor(
     this.orchestration,
@@ -202,7 +202,7 @@ export class TestWorld {
       dispatchExecution,
       this.resources,
       this.clock,
-      this.ids,
+      { ids: this.ids },
     );
   }
   async restartAndRecover(inspector: ExternalExecutionInspector): Promise<void> {
