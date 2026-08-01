@@ -69,7 +69,7 @@ Hard rules:
 | C. Durable operation | 13-18 | Filesystem replay, persisted projections, waits, retries, child workflows, and external-input scenarios pass |
 | D. Specialist SDLC safety | 19-21 | Revision-bound approval/merge and ambiguous external-effect scenarios pass |
 | E. Hosts and product surfaces | 22-26, 25A-25D | Cancellation/recovery, tick, resident, schedule, config, CLI, API, UI, operator read models, and operational command decisions pass, plus the Task 25A, 25B, and 25D packet gates |
-| F. Audit and cutover | 27-29 | Catalogue is complete, full verification passes, and legacy is isolated in a delete-ready archive |
+| F. Audit and cutover | 27-29, 27A | Catalogue and behavioural specifications are complete, full verification passes, and legacy is isolated in a delete-ready archive |
 
 The plan deliberately builds only enough of each module to complete the first
 golden path, then expands by capability. Do not finish an entire technical
@@ -5313,6 +5313,166 @@ git add scripts/check-scenario-coverage.mjs docs/architecture package.json test-
 git commit -m "test: prove target rewrite coverage"
 ```
 
+## Task 27A: Write target behavioural specifications
+
+**Goal:** Create concise, source-adjacent specifications that state the target
+behaviour sufficiently for an informed implementation to reproduce it without
+coupling the specification to source-file structure or test evidence.
+
+**Files:**
+
+- Create: `src-next/SPECIFICATION.md`
+- Create: `src-next/work/SPEC.md`
+- Create: `src-next/work/domain/work-item.spec.md`
+- Create: `src-next/<module>/SPEC.md` for every remaining target module
+- Create: `src-next/<module>/**/<behavioural-component>.spec.md` where a
+  component owns aggregate, projection, policy/process, adapter, or public
+  surface-application behaviour
+- Modify: `docs/architecture/rewrite-completion-audit.md`
+
+**Specification rules:**
+
+- Specifications are normative behavioural documents, not evidence records.
+  Do not include test names, scenario IDs, implementation class names, file
+  walkthroughs, or proof links.
+- Use uppercase `MUST`, `MUST NOT`, `SHOULD`, and `MAY` only where the stated
+  requirement level is intentional. Prefer concise conditional rules over
+  narrative process descriptions.
+- A module `SPEC.md` is a high-level map: it summarises the module, links to
+  child specifications, and explains how those children interact. It does not
+  repeat their detailed rules.
+- Keep module specifications below 200 lines and component specifications below
+  120 lines. Split a component specification only when its conceptual behaviour
+  cannot be understood at that length.
+- The exact wire/schema contracts remain the public TypeScript/Zod contracts.
+  A specification's conceptual schema describes meaning, identity,
+  relationships, and lifecycle rather than reproducing field declarations.
+
+- [ ] **Step 1: Establish the source-adjacent specification standard**
+
+Create `src-next/SPECIFICATION.md` with the required ordering for both levels:
+
+```markdown
+# Target Behavioural Specification Standard
+
+## Module specification
+1. Purpose and scope
+2. Responsibilities and boundaries
+3. Ubiquitous language
+4. Core policies, invariants, and behaviours
+5. Event catalogue
+6. Conceptual schema
+7. Child components and interactions
+8. Dependencies and system role
+9. Decisions, exclusions, and deferred capability
+
+## Component specification
+1. Type, purpose, and scope
+2. Ubiquitous language
+3. Responsibilities and boundaries
+4. Core policies, invariants, and behaviours
+5. Event catalogue
+6. Conceptual schema
+7. Dependencies and system role
+8. Decisions, exclusions, and deferred capability
+```
+
+Define the allowed component types as `aggregate`, `projection`,
+`policy/process`, `adapter`, and `surface application`. State that empty
+headings are removed rather than retained as placeholders.
+
+- [ ] **Step 2: Write the two-level Work pilot**
+
+Create `src-next/work/SPEC.md` as the high-level Work module specification.
+It defines Work ownership, WorkItem vocabulary, module-level policies and
+facts, and a child-component table containing at least WorkItem, the Work
+projection, and the public Work application boundary. Each table row links to
+its detailed specification where one exists and states how the child uses or
+produces facts for the others.
+
+Create `src-next/work/domain/work-item.spec.md` as the aggregate specification.
+It defines WorkItem identity, lifecycle meaning, command acceptance/rejection,
+idempotency, durable facts, cancellation/closure behaviour, and the semantic
+meaning of Work events. It does not name TypeScript functions or reproduce Zod
+shapes.
+
+- [ ] **Step 3: Obtain pilot-format approval before scaling**
+
+Present both Work specifications for operator review. Confirm that:
+
+```text
+- the module page remains a navigable summary rather than a duplicate;
+- the component page is sufficient to reproduce intended behaviour;
+- rule wording is normative and implementation-independent;
+- conceptual schema and event descriptions appear after the core behaviour;
+- neither page includes test/proof material.
+```
+
+Do not create the remaining specifications until the pilot format is approved.
+Incorporate the approved changes into `src-next/SPECIFICATION.md`,
+`src-next/work/SPEC.md`, and `src-next/work/domain/work-item.spec.md`.
+
+- [ ] **Step 4: Inventory behavioural owners by module**
+
+For every target module, list the behavioural owners that need a component
+specification. Include only a component that owns a meaningful aggregate,
+projection, policy/process, adapter translation, or public surface application;
+do not create a page for every source file. Add the child names and links to the
+owning module's `SPEC.md` before writing detailed pages.
+
+- [ ] **Step 5: Write the remaining module and component specifications**
+
+Create the remaining `SPEC.md` and component `.spec.md` files from the approved
+standard. A module page describes how its children collaborate and what it
+receives from or makes available to other modules. A component page defines
+only its own behaviour and boundaries. Events list event type, occurrence, and
+business meaning; policies state conditions and required outcomes.
+
+Do not infer semantics from legacy source when the target design, module
+contract, or public contract disagrees. Record deliberate exclusions and
+unimplemented capabilities in the final section rather than silently omitting
+them.
+
+- [ ] **Step 6: Review specification completeness and cutover readiness**
+
+Review every module page and linked component page against this checklist:
+
+```text
+- A reader can identify ownership, language, inputs, observable outcomes, and boundaries.
+- State-changing behaviour has explicit acceptance, rejection, duplicate, and ambiguity semantics where applicable.
+- Event-driven behaviour states the fact's meaning, not its serialization.
+- Projections state their source facts, derived meaning, and rebuild expectation.
+- External adapters state translation, idempotency, and external-effect boundaries.
+- No document is primarily a source-code explanation or a test index.
+```
+
+Update `docs/architecture/rewrite-completion-audit.md` to name the completed
+specification set as a cutover requirement, without adding proof links to the
+specifications themselves.
+
+- [ ] **Step 7: Run the documentation and pre-cutover gate**
+
+Run:
+
+```powershell
+rg --files src-next -g 'SPEC.md' -g '*.spec.md'
+npm run check:catalogue
+npm run check:scenarios
+npm run verify:next
+npm run verify
+```
+
+Expected: every target module has a `SPEC.md`; every linked component
+specification resolves; all verification commands pass. Stop and resolve any
+missing behavioural owner or stale module link before Task 28.
+
+- [ ] **Step 8: Commit the behavioural specifications**
+
+```powershell
+git add src-next docs/architecture/rewrite-completion-audit.md
+git commit -m "docs: specify target module behaviour"
+```
+
 ## Task 28: Cut over atomically and archive the legacy implementation
 
 **Files:**
@@ -5576,6 +5736,7 @@ The rewrite is complete only when all of the following are simultaneously
 true:
 
 - every frozen legacy evidence path has an explicit functional decision;
+- every target module has an approved source-adjacent behavioural specification;
 - every preserved/corrected/consolidated decision names a passing target
   scenario;
 - no target code imports or retains legacy domain/orchestration models;
