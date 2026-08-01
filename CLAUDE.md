@@ -15,7 +15,7 @@ npm run verify:next  # architecture + contracts + lint + format + build + all sr
 npm run knip:next    # unused files, exports, types, and dependencies in the target rewrite
 npm test             # vitest run
 npm run test:watch   # vitest watch mode
-npm run verify       # lint + format:check + build + test — run this exact command (not a manual build+test) before considering work done. On Windows with core.autocrlf=true, format:check reports false positives on untouched files (CRLF vs the LF committed blobs); ignore those, but confirm any file you touched has no real prettier diff (`npx prettier --check <file>`) and was written with `npx prettier --write --end-of-line lf <file>`. Do not skip the lint step — unused-import/no-unused-vars errors are easy to introduce (e.g. splitting a file and over-copying its import list) and won't show up in `tsc`/`vitest` alone.
+npm run verify       # lint + format:check + build + test — run this exact command (not a manual build+test) before considering work done. Do not skip the lint step — unused-import/no-unused-vars errors are easy to introduce (e.g. splitting a file and over-copying its import list) and won't show up in `tsc`/`vitest` alone.
 npm run tick         # run one control-plane tick against .wake/ (fake ticketing data if no GitHub source configured)
 npm run start        # run the resident loop
 npm run smoke        # smoke test the configured real runner
