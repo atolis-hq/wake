@@ -1,0 +1,32 @@
+/* Layer 1: raw values. Only tokens.css may reference these. */
+:root {
+  --wake-ink-950: #14161a;
+  --wake-ink-900: #1a1d23;
+  --wake-ink-850: #22262e;
+  --wake-ink-800: #101216;
+  --wake-ink-700: #2c313a;
+  --wake-ink-600: #3a4150;
+  --wake-grey-300: #cbd5e1;
+  --wake-grey-400: #9aa2ad;
+  --wake-grey-100: #e8e8e8;
+  --wake-white: #ffffff;
+
+  --wake-teal-700: #103a37;
+  --wake-teal-650: #134e4a;
+  --wake-teal-600: #0f766e;
+  --wake-mint-400: #2dd4bf;
+  --wake-mint-300: #5eead4;
+
+  --wake-green-300: #7fe3a3;
+  --wake-green-900: #1f3d2c;
+  --wake-blue-300: #7fb3ff;
+  --wake-blue-900: #1f3350;
+  --wake-purple-300: #c79bff;
+  --wake-purple-900: #2d1f50;
+  --wake-amber-300: #ffcf7f;
+  --wake-amber-900: #4a3510;
+  --wake-red-300: #ff8f7f;
+  --wake-red-900: #3d1f1f;
+  --wake-slate-400: #9aa2ad;
+  --wake-slate-900: #252830;
+}
