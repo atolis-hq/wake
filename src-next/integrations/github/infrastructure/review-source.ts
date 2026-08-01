@@ -3,6 +3,7 @@ import { EventSourceKind } from '../../../kernel/index.js';
 import { createEventDraft, EventActorKind } from '../../../kernel/index.js';
 import { BuiltInAdapterId } from '../../contracts/identifiers.js';
 import { integrationStream } from '../../contracts/streams.js';
+import { formatGitHubResourceKey } from '../contracts/external-key.js';
 import type { GitHubPullRequestPayload, GitHubReviewPayload } from '../contracts/payloads.js';
 import { GitHubEventType, type GitHubAdapterEventDraft } from '../contracts/events.js';
 import { GitHubReviewState, UnknownGitHubIdentity } from '../contracts/vocabulary.js';
@@ -16,7 +17,10 @@ export function githubReviewObservation(input: {
   const command = reviewCommand(input.review.state);
   if (command === null) return null;
   const actorId = input.review.user?.login ?? UnknownGitHubIdentity;
-  const key = `${input.repository}#${input.pullRequest.number}`;
+  const key = formatGitHubResourceKey({
+    ...parseRepository(input.repository),
+    number: input.pullRequest.number,
+  });
   return createEventDraft({
     eventId: `github:review:${key}:${input.review.id}:${input.review.state}:${input.review.commit_id}`,
     eventType: GitHubEventType.CommentObserved,
@@ -39,6 +43,13 @@ export function githubReviewObservation(input: {
       raw: { reviewId: input.review.id, state: input.review.state },
     },
   });
+}
+
+function parseRepository(repository: string): { readonly owner: string; readonly repo: string } {
+  const [owner, repo, ...extra] = repository.split('/');
+  if (owner === undefined || repo === undefined || extra.length > 0)
+    throw new Error(`Invalid GitHub repository: ${repository}`);
+  return { owner, repo };
 }
 
 function configuredAuthorization(actorId: string, reviewers: readonly string[]) {

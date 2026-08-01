@@ -9,6 +9,7 @@ import { createHash } from 'node:crypto';
 import { createEventDraft, EventActorKind } from '../../../kernel/index.js';
 import { BuiltInAdapterId } from '../../contracts/identifiers.js';
 import { integrationStream } from '../../contracts/streams.js';
+import { formatGitHubResourceKey } from '../contracts/external-key.js';
 import type { ExternalEventSource } from '../application/poll-service.js';
 import type {
   GitHubCheckRunPayload,
@@ -73,7 +74,10 @@ export function pullRequestObservation(input: {
   readonly evidence: CheckEvidence;
 }): Extract<GitHubAdapterEventDraft, { eventType: typeof GitHubEventType.WorkObserved }> {
   const pullRequest = input.pullRequest;
-  const key = `${input.repository}#${pullRequest.number}`;
+  const key = formatGitHubResourceKey({
+    ...parseRepository(input.repository),
+    number: pullRequest.number,
+  });
   const revision = fallback(pullRequest.head?.sha, pullRequest.updated_at);
   const checks = input.evidence.available
     ? normalizeCheckEvidence(input.evidence.checkRuns, input.evidence.statuses)

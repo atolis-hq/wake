@@ -3,6 +3,7 @@ import { ReviewActorKind } from '../../../activities/index.js';
 import { createEventDraft, EventActorKind } from '../../../kernel/index.js';
 import { BuiltInAdapterId } from '../../contracts/identifiers.js';
 import { integrationStream } from '../../contracts/streams.js';
+import { formatGitHubResourceKey } from '../contracts/external-key.js';
 import type { GitHubIssuePayload } from '../contracts/payloads.js';
 import { GitHubEventType, type GitHubAdapterEventDraft } from '../contracts/events.js';
 import { UnknownGitHubIdentity } from '../contracts/vocabulary.js';
@@ -11,7 +12,10 @@ export function issueObservation(input: {
   readonly repository: string;
   readonly issue: GitHubIssuePayload;
 }): Extract<GitHubAdapterEventDraft, { eventType: typeof GitHubEventType.WorkObserved }> {
-  const key = `${input.repository}#${input.issue.number}`;
+  const key = formatGitHubResourceKey({
+    ...parseRepository(input.repository),
+    number: input.issue.number,
+  });
   return createEventDraft({
     eventId: `github:issue:${key}:${input.issue.updated_at}`,
     eventType: GitHubEventType.WorkObserved,
@@ -35,4 +39,11 @@ export function issueObservation(input: {
       raw: { number: input.issue.number },
     },
   });
+}
+
+function parseRepository(repository: string): { readonly owner: string; readonly repo: string } {
+  const [owner, repo, ...extra] = repository.split('/');
+  if (owner === undefined || repo === undefined || extra.length > 0)
+    throw new Error(`Invalid GitHub repository: ${repository}`);
+  return { owner, repo };
 }
