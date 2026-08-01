@@ -200,6 +200,16 @@ legacy 83 files / 950 tests, with `check:catalogue`, `lint:contracts`,
 | A4 merge policy (`maxFilesChanged`, `blockedPaths`, changed-files capability) | Built, including explicit `changed-files-unavailable` denial when policy is configured but evidence is missing. PR activities gate on capability rather than resource kind |
 | 25B step 13 alternate runner selection | Seam only. `RunnerRegistry.resolve(tier, ineligible)` walks ordered candidates, but nothing in production populates `ineligibleRunners`; per-runner quota state does not exist |
 
+**Developer-feedback decision recorded 2026-08-01.**
+`test/adapters/git-workspace-manager.test.ts` is a real-Git adapter integration
+suite: each case creates and clones local repositories and Windows cleanup can
+wait for Git/AV file handles. Keep its coverage mandatory in CI through
+`npm run verify:ci`, but exclude it from the default `npm test` and `npm run
+verify` feedback loop. `npm run test:integration` runs this suite explicitly.
+Other fast filesystem and loopback-HTTP adapter tests remain in the default
+suite; touching a local boundary alone is not a reason to remove it from rapid
+feedback.
+
 **One decision remains open.** Connecting quota to runner ineligibility reverses carried
 assumption A5, which recorded that operator pause and quota pause share a single global
 `ControlEventType.DispatchPaused` differing only in `reason`. Per-runner ineligibility
