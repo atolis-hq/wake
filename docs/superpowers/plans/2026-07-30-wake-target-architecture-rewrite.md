@@ -4960,6 +4960,16 @@ linting. Steps 1-6 are auto-fixable and semantically inert; step 7 measures
 `recommendedTypeChecked` before step 8 decides how much of it to adopt. Task 25C
 is independent of 25B and does not gate Task 26.
 
+## Runner-pool terminology
+
+Before Task 26 exposes or documents the target operational surface, apply the
+pre-release breaking rename from `tiers`/`tier`/`defaultTier` to
+`runnerPools`/`runnerPool`/`defaultRunnerPool`. The configuration and routing
+contract is defined in
+[`2026-08-01-runner-pools-design.md`](../specs/2026-08-01-runner-pools-design.md)
+and its execution sequence is in
+[`2026-08-01-runner-pools-rename.md`](2026-08-01-runner-pools-rename.md).
+
 ## Task 26: Port operational commands without leaking them into the domain
 
 **Files:**
