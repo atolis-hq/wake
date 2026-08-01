@@ -62,6 +62,25 @@
   font-size: 0.7rem;
   margin-top: 0.3rem;
 }
+.columnToggle {
+  display: inline-flex;
+  width: 1.65rem;
+  height: 1.65rem;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--ink-muted);
+  cursor: pointer;
+  font-size: var(--text-base);
+  line-height: 1;
+}
+.columnToggle:hover {
+  border-color: var(--accent);
+  color: var(--accent-light);
+}
 .filters {
   display: flex;
   flex-wrap: wrap;
@@ -154,6 +173,7 @@
   }
   .column {
     margin-bottom: 0.75rem;
+    min-height: unset;
   }
   .event {
     grid-template-columns: 1fr;

@@ -1,4 +1,5 @@
 import { cleanup, render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../src/app/app.js';
@@ -81,5 +82,36 @@ describe('board', () => {
     await screen.findByRole('heading', { name: 'Open (2)' });
     expect(seen.filter((url) => url.includes('/workflow-instances'))).toEqual([]);
     expect(seen.filter((url) => url.includes('/resources'))).toEqual([]);
+  });
+
+  it('collapses a column, hides its cards, and persists the choice', async () => {
+    const user = userEvent.setup();
+    window.localStorage.clear();
+    render(
+      <MemoryRouter initialEntries={['/board']}>
+        <App client={boardClient()} />
+      </MemoryRouter>,
+    );
+    const toggle = await screen.findByRole('button', { name: 'Collapse Open' });
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    await user.click(toggle);
+
+    expect(screen.queryByRole('link', { name: 'Alpha' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Expand Open' }).getAttribute('aria-expanded')).toBe(
+      'false',
+    );
+    expect(window.localStorage.getItem('wake:board:collapsed-columns')).toBe('["open"]');
+  });
+
+  it('restores collapsed columns from storage on first render', async () => {
+    window.localStorage.setItem('wake:board:collapsed-columns', '["closed"]');
+    render(
+      <MemoryRouter initialEntries={['/board']}>
+        <App client={boardClient()} />
+      </MemoryRouter>,
+    );
+    expect(await screen.findByRole('button', { name: 'Expand Closed' })).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'Gamma' })).toBeNull();
+    window.localStorage.clear();
   });
 });
