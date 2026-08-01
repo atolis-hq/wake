@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 
 import { parseIssueStateRecord, parseWakeConfig } from '../../src/domain/schema.js';
 import { chooseAction, nextStage, stageLabelsForWorkflow } from '../../src/domain/workflows.js';
@@ -38,13 +38,13 @@ describe('workflow interpreter', () => {
             triage: {
               action: 'refine',
               workspace: 'read-only',
-              tier: 'light',
+              runnerPool: 'light',
               onDone: 'build',
             },
             build: {
               action: 'implement',
               workspace: 'branch',
-              tier: 'standard',
+              runnerPool: 'standard',
               onDone: 'done',
             },
           },

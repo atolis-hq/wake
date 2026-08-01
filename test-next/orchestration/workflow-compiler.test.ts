@@ -32,7 +32,7 @@ describe('compileWorkflow', () => {
           implement: {
             activity: 'implement',
             with: { prompt: 'go' },
-            execution: { workspace: 'branch', tier: 'standard' },
+            execution: { workspace: 'branch', runnerPool: 'standard' },
             on: {
               done: { activities: [{ use: 'review', with: { prompt: 'check' } }], then: 'done' },
             },

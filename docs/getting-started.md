@@ -1,10 +1,10 @@
-# Getting Started
+﻿# Getting Started
 
 Wake runs from a **Wake home** directory: a plain-file directory holding
 `config.yaml`, `config.workflows.yaml`, `prompts/`, `workspaces/`, and a hidden `.wake/` for durable
 internal state. `--wake-root` defaults to the current directory for every
 command, so the usual pattern is: `cd` into your Wake home, then run
-`wake <command>` directly — no wrapper scripts, no need to pass
+`wake <command>` directly â€” no wrapper scripts, no need to pass
 `--wake-root` yourself.
 
 Developing Wake itself, from a source checkout? See
@@ -27,9 +27,9 @@ npx @atolis-hq/wake init ./wake-home
 
 `wake init` scaffolds `config.yaml`, `config.workflows.yaml`, `prompts/`, `workspaces/`, and a
 `SETUP.md` guide written for an assisting agent to read and use to finish
-configuring the GitHub source, runner/tier, and credential mounts — point
+configuring the GitHub source, runner/runnerPool, and credential mounts â€” point
 your agent CLI at it (e.g. "read SETUP.md and help me configure this") once
-`wake init` finishes. `wake init` does not create `docker/` — that's written
+`wake init` finishes. `wake init` does not create `docker/` â€” that's written
 lazily by `wake sandbox build` (see below).
 
 ## Build and start the sandbox
@@ -44,7 +44,7 @@ wake sandbox setup
 
 - `sandbox build` writes `docker/Dockerfile` from the template matching your
   `dev.mode` and builds it. Existing `docker/Dockerfile` is never
-  overwritten — it's yours to edit (add tools your repos need, etc.);
+  overwritten â€” it's yours to edit (add tools your repos need, etc.);
   rebuild with `sandbox build` after editing it.
 - `sandbox up` starts the persistent container, mounting the Wake home at
   `/wake` and a durable `container-home` at `/home/wake` for auth state.
@@ -62,7 +62,7 @@ wake stop     # graceful stop, waits for any active run to finish
 ```
 
 Once `docker/Dockerfile` exists (i.e. after `sandbox build`), these commands
-automatically exec into `wake sandbox exec` instead of running on the host —
+automatically exec into `wake sandbox exec` instead of running on the host â€”
 no separate launcher needed. Pass `--no-sandbox` to force host execution
 even when a sandbox is available. See `wake --help` for the full command
 list.
@@ -83,17 +83,17 @@ defaults (notices).
 
 ```
 wake-home/
-  config.yaml           # infra/sandbox/sources — edit this
-  config.workflows.yaml # runners/tiers/workflows — edit this
+  config.yaml           # infra/sandbox/sources â€” edit this
+  config.workflows.yaml # runners/runnerPools/workflows â€” edit this
   prompts/              # edit these
   SETUP.md              # agent-directed config guide
   docker/Dockerfile     # edit this (written by first `sandbox build`)
-  workspaces/           # real per-work-item git checkouts — browsable
+  workspaces/           # real per-work-item git checkouts â€” browsable
   .wake/                # hidden: durable internal state
     events/, state/, runs/, sources/, repos/, locks/, logs/, container-home/
 ```
 
-Everything under `.wake/` is generated and rebuildable — safe to delete
+Everything under `.wake/` is generated and rebuildable â€” safe to delete
 (except `container-home/`, which holds sandbox auth state) if you want a
 clean slate.
 
@@ -112,5 +112,5 @@ state (GitHub, Claude, SSH credentials).
 
 - Use a separate git identity for Wake-managed agent work so automated
   commits are easy to distinguish from human ones.
-- Treat the generated `docker/Dockerfile` as a starting point — add the
+- Treat the generated `docker/Dockerfile` as a starting point â€” add the
   tools your repositories and agents need, then rebuild.

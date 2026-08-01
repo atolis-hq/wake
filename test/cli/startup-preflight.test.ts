@@ -1,4 +1,4 @@
-import { mkdtemp, writeFile } from 'node:fs/promises';
+﻿import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -115,8 +115,8 @@ describe('startup preflight', () => {
           timeoutMs: 1000,
         },
       },
-      tiers: { standard: ['codex'] },
-      defaultTier: 'standard',
+      runnerPools: { standard: ['codex'] },
+      defaultRunnerPool: 'standard',
     };
 
     await runStartupPreflight(config, { runnerOverride: 'fake', checkRunnerCommand });
@@ -137,8 +137,8 @@ describe('startup preflight', () => {
           timeoutMs: 1000,
         },
       },
-      tiers: { standard: ['cursor'] },
-      defaultTier: 'standard',
+      runnerPools: { standard: ['cursor'] },
+      defaultRunnerPool: 'standard',
     };
 
     await expect(
@@ -169,8 +169,8 @@ describe('startup preflight', () => {
           timeoutMs: 1000,
         },
       },
-      tiers: { standard: ['codex'] },
-      defaultTier: 'standard',
+      runnerPools: { standard: ['codex'] },
+      defaultRunnerPool: 'standard',
       sources: {
         github: {
           enabled: true,

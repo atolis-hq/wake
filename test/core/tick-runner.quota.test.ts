@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+﻿import { beforeEach, describe, expect, it } from 'vitest';
 import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -126,8 +126,8 @@ describe('tick runner', () => {
               routing: {
                 runnerName: 'fake-light',
                 runnerKind: 'fake',
-                tier: 'light',
-                reason: 'stage queue tier light selected runner fake-light',
+                runnerPool: 'light',
+                reason: 'stage queue runnerPool light selected runner fake-light',
               },
             };
           },
@@ -142,13 +142,13 @@ describe('tick runner', () => {
       expect(runRecord?.routing).toEqual({
         runnerName: 'fake-light',
         runnerKind: 'fake',
-        tier: 'light',
-        reason: 'stage queue tier light selected runner fake-light',
+        runnerPool: 'light',
+        reason: 'stage queue runnerPool light selected runner fake-light',
       });
 
       const events = await readFile(store.paths.eventFile('2026-07-05'), 'utf8');
       expect(events).toContain(
-        '"routing":{"runnerName":"fake-light","runnerKind":"fake","tier":"light"',
+        '"routing":{"runnerName":"fake-light","runnerKind":"fake","runnerPool":"light"',
       );
     });
 

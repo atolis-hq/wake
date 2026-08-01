@@ -30,8 +30,10 @@ export const executionConfigSchema = z
           }),
       )
       .default({}),
-    tiers: z.record(z.string().trim().min(1), z.array(z.string().trim().min(1)).min(1)).default({}),
-    defaultTier: z.string().trim().min(1),
+    runnerPools: z
+      .record(z.string().trim().min(1), z.array(z.string().trim().min(1)).min(1))
+      .default({}),
+    defaultRunnerPool: z.string().trim().min(1),
     leaseDurationMs: z.number().int().positive().optional(),
     leaseRenewalIntervalMs: z.number().int().positive().optional(),
   })
@@ -51,8 +53,8 @@ export interface ExecutionConfig {
       }
     >
   >;
-  readonly tiers: Readonly<Record<string, readonly string[]>>;
-  readonly defaultTier: string;
+  readonly runnerPools: Readonly<Record<string, readonly string[]>>;
+  readonly defaultRunnerPool: string;
   readonly leaseDurationMs?: number;
   readonly leaseRenewalIntervalMs?: number;
 }

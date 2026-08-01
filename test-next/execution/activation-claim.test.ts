@@ -14,8 +14,8 @@ import { InMemoryEventJournal } from '../../src-next/persistence/index.js';
 import { FakeClock } from '../e2e/support/world.js';
 
 const config = {
-  tiers: { standard: ['fake'] },
-  defaultTier: 'standard',
+  runnerPools: { standard: ['fake'] },
+  defaultRunnerPool: 'standard',
   leaseDurationMs: 60_000,
 } as const;
 

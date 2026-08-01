@@ -17,7 +17,7 @@ import {} from '../../src-next/work/index.js';
 import { FakeClock, SequentialIds } from '../e2e/support/world.js';
 
 describe('Execution runner selection', () => {
-  it('resolves the runner from the activation tier', async () => {
+  it('resolves the runner from the activation runner pool', async () => {
     const standard = runner('standard');
     const premium = runner('premium');
     const service = fixture(
@@ -30,7 +30,7 @@ describe('Execution runner selection', () => {
     expect(standard.calls).toBe(0);
   });
 
-  it('falls back to the default tier when a stage declares none', async () => {
+  it('falls back to the default runner pool when a stage declares none', async () => {
     const standard = runner('standard');
     const service = fixture(new RunnerRegistry({ standard: ['standard'] }, { standard }));
 
@@ -50,13 +50,13 @@ describe('Execution runner selection', () => {
     });
   });
 
-  it('rejects a tier with no registered runner', async () => {
+  it('rejects a runner pool with no registered runner', async () => {
     const service = fixture(new RunnerRegistry({ standard: ['missing'] }, {}));
 
     await expect(service.attempt(activation(), context())).rejects.toThrow(/not registered/);
   });
 
-  it('falls sideways to the next tier candidate when the preferred runner is quota-ineligible', async () => {
+  it('falls sideways to the next runner-pool candidate when the preferred runner is quota-ineligible', async () => {
     const sonnet = runner('sonnet');
     const codexMini = runner('codex-mini');
     const service = fixture(
@@ -108,8 +108,8 @@ function fixture(runners: RunnerRegistry) {
       agentRunners: {
         standard: { kind: 'fake', model: 'test-model', effort: 'high', timeoutMs: 1_000, args: [] },
       },
-      tiers: { standard: ['standard'], premium: ['premium'] },
-      defaultTier: 'standard',
+      runnerPools: { standard: ['standard'], premium: ['premium'] },
+      defaultRunnerPool: 'standard',
     },
     {
       clock: new FakeClock(),
@@ -119,13 +119,16 @@ function fixture(runners: RunnerRegistry) {
   );
 }
 
-function activation(tier?: string) {
+function activation(runnerPool?: string) {
   return {
-    activationId: activationId(`agent:${tier ?? 'default'}`),
+    activationId: activationId(`agent:${runnerPool ?? 'default'}`),
     ordinal: 1,
     activity: agentActivityDefinition.name,
     input: { prompt: 'ship' },
-    execution: { workspace: 'none' as const, ...(tier === undefined ? {} : { tier }) },
+    execution: {
+      workspace: 'none' as const,
+      ...(runnerPool === undefined ? {} : { runnerPool }),
+    },
     status: 'pending' as const,
   };
 }

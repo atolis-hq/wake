@@ -2,8 +2,8 @@ schemaVersion: 1
 execution:
   agentRunners:
     fake: { kind: fake, timeoutMs: 5000 }
-  tiers: { standard: [fake] }
-  defaultTier: standard
+  runnerPools: { standard: [fake] }
+  defaultRunnerPool: standard
 controlPlane: {}
 integrations:
   primary:

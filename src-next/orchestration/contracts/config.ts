@@ -9,7 +9,7 @@ import { TransitionTargetKind } from './vocabulary.js';
 
 export interface ActivityExecutionConfig {
   readonly workspace?: WorkspaceModeType | undefined;
-  readonly tier?: string | undefined;
+  readonly runnerPool?: string | undefined;
 }
 
 const identifier = z.string().trim().min(1);
@@ -79,7 +79,7 @@ export const stageConfigSchema = z
         workspace: z
           .enum([WorkspaceMode.None, WorkspaceMode.ReadOnly, WorkspaceMode.Branch])
           .optional(),
-        tier: identifier.optional(),
+        runnerPool: identifier.optional(),
       })
       .strict()
       .optional(),

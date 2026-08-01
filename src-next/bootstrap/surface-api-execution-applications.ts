@@ -56,16 +56,17 @@ export function createExecutionApplications(
       );
       const paused =
         stored === null ? new Set<string>() : ineligibleRunners(stored.value, sampledAt);
-      const all = [...new Set(Object.values(root.config.execution.tiers).flat())].map((runnerId) =>
-        paused.has(runnerId)
-          ? {
-              runnerId,
-              status: 'paused',
-              available: false,
-              detail: 'runner is paused',
-              updatedAt: sampledAt,
-            }
-          : { runnerId, status: 'available', available: true, updatedAt: sampledAt },
+      const all = [...new Set(Object.values(root.config.execution.runnerPools).flat())].map(
+        (runnerId) =>
+          paused.has(runnerId)
+            ? {
+                runnerId,
+                status: 'paused',
+                available: false,
+                detail: 'runner is paused',
+                updatedAt: sampledAt,
+              }
+            : { runnerId, status: 'available', available: true, updatedAt: sampledAt },
       );
       const offset = query.cursor?.position ?? 0;
       const items = all.slice(offset, offset + query.limit);

@@ -320,7 +320,7 @@ it('reconciles an unconsumed child completion during ordinary restarted advancem
     createExecutionService(
       journal,
       activities,
-      { tiers: { standard: ['fake'] }, defaultTier: 'standard' },
+      { runnerPools: { standard: ['fake'] }, defaultRunnerPool: 'standard' },
       { clock, ids },
     ),
     createTestResourceServices(journal).resources,

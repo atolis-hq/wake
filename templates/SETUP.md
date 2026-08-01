@@ -1,10 +1,10 @@
-# Wake Setup Guide (for the assisting agent)
+﻿# Wake Setup Guide (for the assisting agent)
 
 You are reading this because a human just ran `wake init` and asked you to
 help finish configuring this Wake home. This file is written as instructions
-to you, the assisting agent — not as prose for a human to read top to bottom.
+to you, the assisting agent â€” not as prose for a human to read top to bottom.
 
-Read `config.yaml` and `config.workflows.yaml` in this directory now — both
+Read `config.yaml` and `config.workflows.yaml` in this directory now â€” both
 already exist with working defaults from `wake init`. Everything below tells
 you which fields in those two files to change. Edit them directly; don't
 create a new `config.<label>.yaml` split unless the user asks for one.
@@ -37,29 +37,29 @@ preserves any other labels already on the issue.
 Full reference:
 https://github.com/atolis-hq/wake/blob/main/docs/configuration.md#sourcesgithub
 
-## 2. Runner and tier
+## 2. Runner and runnerPool
 
 Ask the user which agent CLI(s) they have authenticated on this host:
 Claude, Codex, and/or Cursor.
 
 `config.workflows.yaml` already has example `runners` entries for
 `claude-haiku`, `claude-opus`, `codex-mini`, `codex-flagship`, and
-`cursor-composer`, but every tier (`light`/`standard`/`deep`, with
-`defaultTier: standard`) still points at the placeholder `fake` runner — none
-of them route to a real runner yet. Don't rewrite this from scratch — pick
+`cursor-composer`, but every runnerPool (`light`/`standard`/`deep`, with
+`defaultRunnerPool: standard`) still points at the placeholder `fake` runner â€” none
+of them route to a real runner yet. Don't rewrite this from scratch â€” pick
 which runner(s) the user actually has access to, and either:
 
-- repoint `tiers` so each tier lists the real named runner(s) the user can
+- repoint `runnerPools` so each runnerPool lists the real named runner(s) the user can
   actually use instead of `fake`, or
 - if the user has a runner not already listed (a different model, a
   different CLI), add a new named entry under `runners` following the
-  existing pattern, then reference it from `tiers`.
+  existing pattern, then reference it from `runnerPools`.
 - remove entries which are not needed.
 
 Full reference:
 https://github.com/atolis-hq/wake/blob/main/docs/configuration.md#runners
 and
-https://github.com/atolis-hq/wake/blob/main/docs/configuration.md#tiers
+https://github.com/atolis-hq/wake/blob/main/docs/configuration.md#runnerPools
 
 ## 3. Credential mounts (check before asking)
 
@@ -87,11 +87,11 @@ sandbox:
 
 `.credentials.json`/`auth.json` should be `readOnly: true` unless the user
 wants the sandbox able to refresh tokens on the host's behalf. `settings.json`
-must stay `readOnly: false` — Claude plugin commands write to it. Use the
+must stay `readOnly: false` â€” Claude plugin commands write to it. Use the
 actual host home directory path (resolve `~` yourself; don't write a literal
 tilde into YAML).
 
-Never mount the whole `~/.claude`, `~/.codex`, or `~/.cursor` directory —
+Never mount the whole `~/.claude`, `~/.codex`, or `~/.cursor` directory â€”
 only the specific files listed above. Mounting the whole directory leaks
 OS-specific absolute paths (e.g. Windows plugin cache paths) into the Linux
 sandbox and can cause the sandbox to overwrite the host's plugin bookkeeping.
@@ -104,12 +104,12 @@ https://github.com/atolis-hq/wake/blob/main/docs/configuration.md#sandbox
 
 ## After config looks right
 
-Don't try to explain the sandbox lifecycle yourself — point the user at (or
+Don't try to explain the sandbox lifecycle yourself â€” point the user at (or
 fetch, if you have web access):
 
-- https://github.com/atolis-hq/wake/blob/main/docs/getting-started.md —
+- https://github.com/atolis-hq/wake/blob/main/docs/getting-started.md â€”
   `wake sandbox build` / `up` / `setup` / `exec` / `down`
-- https://github.com/atolis-hq/wake/blob/main/docs/runner-comparison.md —
+- https://github.com/atolis-hq/wake/blob/main/docs/runner-comparison.md â€”
   deeper comparison of runner tradeoffs if the user asks which to pick
-- https://github.com/atolis-hq/wake/blob/main/docs/configuration.md — every
+- https://github.com/atolis-hq/wake/blob/main/docs/configuration.md â€” every
   config field, if something here doesn't cover their situation

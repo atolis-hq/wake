@@ -9,8 +9,8 @@ describe('root configuration', () => {
       resources: {},
       execution: {
         agentRunners: { fake: { kind: 'fake' } },
-        tiers: { standard: ['fake'] },
-        defaultTier: 'standard',
+        runnerPools: { standard: ['fake'] },
+        defaultRunnerPool: 'standard',
       },
       orchestration: {
         workflows: {
@@ -47,8 +47,8 @@ function orchestration(subtree: Record<string, unknown>) {
     resources: {},
     execution: {
       agentRunners: { fake: { kind: 'fake' } },
-      tiers: { standard: ['fake'] },
-      defaultTier: 'standard',
+      runnerPools: { standard: ['fake'] },
+      defaultRunnerPool: 'standard',
     },
     orchestration: {
       workflows: {
@@ -102,8 +102,8 @@ describe('workflow routing configuration', () => {
       resources: {},
       execution: {
         agentRunners: { fake: { kind: 'fake' } },
-        tiers: { standard: ['fake'] },
-        defaultTier: 'standard',
+        runnerPools: { standard: ['fake'] },
+        defaultRunnerPool: 'standard',
       },
       orchestration: { workflows: {} },
       controlPlane: {},

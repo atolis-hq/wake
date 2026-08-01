@@ -16,8 +16,8 @@ describe('target composition root', () => {
       resources: {},
       execution: {
         agentRunners: { fake: { kind: 'fake' } },
-        tiers: { standard: ['fake'] },
-        defaultTier: 'standard',
+        runnerPools: { standard: ['fake'] },
+        defaultRunnerPool: 'standard',
       },
       orchestration: { workflows: {} },
       controlPlane: {},
@@ -33,7 +33,7 @@ describe('target composition root', () => {
       activities: new ActivityRegistry(),
     });
 
-    expect(runtime.config.execution.defaultTier).toBe('standard');
+    expect(runtime.config.execution.defaultRunnerPool).toBe('standard');
     expect(runtime.paths.dataRoot).toContain('.wake');
     expect(runtime.projectionRunner).toBeDefined();
     expect(runtime.work).toBeDefined();

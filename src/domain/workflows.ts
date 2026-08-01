@@ -1,4 +1,4 @@
-import type {
+﻿import type {
   EventEnvelope,
   IssueStateRecord,
   RunnerSentinel,
@@ -18,13 +18,13 @@ export const builtInDefaultWorkflowDefinition: WorkflowDefinition = {
     refine: {
       action: 'refine',
       workspace: 'read-only',
-      tier: 'light',
+      runnerPool: 'light',
       onDone: 'implement',
     },
     implement: {
       action: 'implement',
       workspace: 'branch',
-      tier: 'standard',
+      runnerPool: 'standard',
       onDone: 'done',
     },
   },
@@ -38,7 +38,7 @@ export interface WorkflowAction {
   action: string;
   workspace: 'none' | 'read-only' | 'branch';
   routing: {
-    tier?: string;
+    runnerPool?: string;
     runner?: string;
   };
   promptContext?: Record<string, unknown>;
@@ -241,7 +241,7 @@ export function chooseAction(
     action: definition.action ?? stage,
     workspace: definition.workspace,
     routing: {
-      ...(definition.tier === undefined ? {} : { tier: definition.tier }),
+      ...(definition.runnerPool === undefined ? {} : { runnerPool: definition.runnerPool }),
       ...(definition.runner === undefined ? {} : { runner: definition.runner }),
     },
     ...(definition.promptContext === undefined ? {} : { promptContext: definition.promptContext }),

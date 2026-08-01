@@ -38,7 +38,7 @@ it('renders a Wake-root prompt template through the composed on-disk process', a
     refine:
       activity: agent
       with: { template: refine }
-      execution: { workspace: none, tier: standard }
+      execution: { workspace: none, runnerPool: standard }
       on:
         done: { then: publish }
     publish:
@@ -69,8 +69,8 @@ execution:
       command: ${JSON.stringify(process.execPath)}
       timeoutMs: 5000
       args: ['-e', "process.stdout.write('DONE')"]
-  tiers: { standard: [command] }
-  defaultTier: standard
+  runnerPools: { standard: [command] }
+  defaultRunnerPool: standard
 controlPlane: {}
 integrations:
   fake:

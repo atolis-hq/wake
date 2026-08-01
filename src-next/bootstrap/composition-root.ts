@@ -127,7 +127,7 @@ export async function createCompositionRoot(
     journal,
     clock,
     ids,
-    runners: new Set(Object.values(config.execution.tiers).flat()),
+    runners: new Set(Object.values(config.execution.runnerPools).flat()),
   });
   const advanceOnce = createAdvanceOnce(orchestration, execution, resources, clock, {
     ids,

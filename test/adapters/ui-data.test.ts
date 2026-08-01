@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+﻿import { beforeEach, describe, expect, it } from 'vitest';
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -214,7 +214,7 @@ describe('ui-data', () => {
         routing: {
           runnerName: 'codex-standard',
           runnerKind: 'codex',
-          tier: 'light',
+          runnerPool: 'light',
           reason: 'test',
         },
       }),
@@ -238,7 +238,7 @@ describe('ui-data', () => {
           status: 'running',
           runnerName: 'codex-standard',
           runnerKind: 'codex',
-          tier: 'light',
+          runnerPool: 'light',
           startedAt: '2026-07-05T12:10:00.000Z',
           ageMs: 3_000_000,
         },
@@ -268,7 +268,7 @@ describe('ui-data', () => {
       routing: {
         runnerName: 'codex-main',
         runnerKind: 'codex',
-        tier: 'standard',
+        runnerPool: 'standard',
         reason: 'test',
       },
       tokenUsage: { inputTokens: 100, outputTokens: 50, costUsd: 1.5 },
@@ -283,7 +283,7 @@ describe('ui-data', () => {
       routing: {
         runnerName: 'codex-main',
         runnerKind: 'codex',
-        tier: 'standard',
+        runnerPool: 'standard',
         reason: 'test',
       },
       tokenUsage: { inputTokens: 50, outputTokens: 20, costUsd: 0.5 },
@@ -413,7 +413,7 @@ describe('ui-data', () => {
     expect(detail?.runs.map((run) => run.runId)).toEqual(['run-7']);
     expect(listIssueStatesCalls).toBe(0);
 
-    // A ticket with no index entry is simply not found — never a scan.
+    // A ticket with no index entry is simply not found â€” never a scan.
     const missing = await buildItemDetail({
       stateStore: countingStore,
       resourceIndex,
@@ -635,13 +635,13 @@ describe('ui-data', () => {
     expect(events.map((event) => event.eventId)).toEqual(['evt-two']);
   });
 
-  it('marks a paused tier candidate in the routing table fallback order (#67)', async () => {
+  it('marks a paused runnerPool candidate in the routing table fallback order (#67)', async () => {
     const store = createStateStore({ wakeRoot: root });
     const config = createDefaultWakeConfig(root);
     config.runners['fake-primary'] = { kind: 'fake', cli: 'Fake Primary' };
     config.runners['fake-secondary'] = { kind: 'fake', cli: 'Fake Secondary' };
-    config.tiers.standard = ['fake-primary', 'fake-secondary'];
-    config.workflows.default!.stages.implement!.tier = 'standard';
+    config.runnerPools.standard = ['fake-primary', 'fake-secondary'];
+    config.workflows.default!.stages.implement!.runnerPool = 'standard';
 
     await store.writeLedger({
       schemaVersion: 1,
@@ -1039,7 +1039,7 @@ describe('ui-data', () => {
       routing: {
         runnerName: 'codex-main',
         runnerKind: 'codex',
-        tier: 'standard',
+        runnerPool: 'standard',
         reason: 'test',
       },
     });

@@ -73,7 +73,7 @@ export function readFlagBeforeCommandTerminator(name: string, args: string[]): s
 }
 
 // Walks up from this file's own directory until it finds a package.json,
-// rather than assuming a fixed number of directory levels — the file
+// rather than assuming a fixed number of directory levels â€” the file
 // running is `dist/src/main.js` for a built/packaged install (two levels
 // below the package root) but `src/main.ts` for a `tsx` dev invocation
 // (only one level below), so a fixed `resolve(..., '..', '..')` overshoots
@@ -105,7 +105,7 @@ export async function hasDockerfile(wakeRoot: string): Promise<boolean> {
 }
 
 function routesOnlyToFake(config: WakeConfig): boolean {
-  return Object.values(config.tiers).every((candidates) => {
+  return Object.values(config.runnerPools).every((candidates) => {
     const first = candidates[0];
     return first !== undefined && config.runners[first]?.kind === 'fake';
   });
@@ -340,7 +340,7 @@ function createSandboxEntrypointDeps(): Parameters<typeof runSandboxEntrypointCo
       child.stderr?.on('data', forwardOutput);
 
       // Registered here (at spawn time) so it runs before any exit listener
-      // waitForExit attaches later — though it wouldn't matter either way:
+      // waitForExit attaches later â€” though it wouldn't matter either way:
       // waitForExit captures the ChildProcess reference synchronously from
       // `children` when it's called (before the child can possibly have
       // exited) and attaches its own listener directly to that reference,
@@ -541,7 +541,7 @@ async function readFileIfExists(path: string): Promise<string | null> {
 
 /**
  * Compares the wake-home's `prompts/*.md` and `docker/Dockerfile` (both
- * user-owned files, never auto-overwritten after scaffolding — see
+ * user-owned files, never auto-overwritten after scaffolding â€” see
  * `scaffold-assets.ts`/`sandbox-command.ts`'s `ensureDockerfile`) against the
  * currently-shipped defaults under `resolvePackageRoot()`, byte-for-byte.
  * Only files present in *both* locations are compared: a prompt file the
@@ -608,7 +608,7 @@ export async function buildRuntime(args: string[]) {
 
   // Resolved once and shared: resolveGitHubToken shells out to `gh auth
   // token`, so building a separate client per consumer would triple that
-  // subprocess spawn on every startup for no benefit — all three consumers
+  // subprocess spawn on every startup for no benefit â€” all three consumers
   // talk to the same GitHub account under the same config.
   const githubClient = config.sources.github.enabled
     ? createGitHubClient(await resolveGitHubToken())
@@ -982,7 +982,7 @@ export class CliUsageError extends Error {}
 export function printUsage(stream: NodeJS.WritableStream): void {
   stream.write(
     [
-      'Wake — an autonomous agent control plane for software development.',
+      'Wake â€” an autonomous agent control plane for software development.',
       '',
       'Usage:',
       '  wake init <path>           Scaffold a new Wake home directory',

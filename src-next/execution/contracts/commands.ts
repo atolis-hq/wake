@@ -16,7 +16,7 @@ export interface ExecutionActivation {
   readonly execution:
     | {
         readonly workspace?: WorkspaceMode | undefined;
-        readonly tier?: string | undefined;
+        readonly runnerPool?: string | undefined;
       }
     | undefined;
 }

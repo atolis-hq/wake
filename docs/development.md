@@ -1,10 +1,10 @@
-# Development
+﻿# Development
 
 This guide covers local Wake development from a source checkout: dev-mode
 setup, npm scripts, formatting, and the source-checkout-specific parts of
 the sandbox workflow (self-update, GitHub polling). For the packaged-install
 path (`npm install -g @atolis-hq/wake`), see
-[docs/getting-started.md](getting-started.md) — the sandbox `build`/`up`/
+[docs/getting-started.md](getting-started.md) â€” the sandbox `build`/`up`/
 `setup` walkthrough there applies to a source checkout too, once `wake-dev`
 is set up below.
 
@@ -75,11 +75,11 @@ cd bin && npm link && cd ..
 
 `npm link` (run from `bin/`, which is its own tiny local package) registers
 a `wake-dev` command on your `PATH` that runs `src/main.ts` live via this
-checkout's own `tsx` — no build step, and every invocation picks up your
+checkout's own `tsx` â€” no build step, and every invocation picks up your
 latest source changes immediately. It works from any directory (e.g. after
 you `cd` into a wake-home), the same as the packaged `wake` binary. Linking
 from `bin/` rather than the repo root keeps this independent of a real
-`wake` install — running `npm link` from the repo root would overwrite the
+`wake` install â€” running `npm link` from the repo root would overwrite the
 global `wake` symlink with this checkout too, which isn't what you want if
 you also use the published package.
 
@@ -98,13 +98,13 @@ in place of `wake`.
 
 ## Self-update
 
-Only available when `config.dev.mode` is `"source"` — a packaged install
+Only available when `config.dev.mode` is `"source"` â€” a packaged install
 (`dev.mode: "packaged"`, or unset on an older wake-home) gets a clear error
 pointing at the packaged-mode update path instead: `npm install -g
 @atolis-hq/wake@latest && wake sandbox build && wake sandbox update`.
 
 Run with `--wake-root` pointing at your **wake-home** directory (the one
-scaffolded by `wake init`, containing `config.yaml`) — like every other
+scaffolded by `wake init`, containing `config.yaml`) â€” like every other
 sandbox lifecycle command (`build`/`up`/`down`), `self-update` is not an npm
 script. Running it from the dev repo checkout without `--wake-root` fails
 with "Sandbox self-update requires config.dev.repoRoot", because that's the
@@ -126,15 +126,15 @@ via `gh issue create`.
 
 Flags:
 
-- `--force` — proceed even if the tag matches what's already applied, or is
+- `--force` â€” proceed even if the tag matches what's already applied, or is
   recorded as a known-bad tag.
-- `--tag <tag>` — target an explicit tag instead of discovering the latest
+- `--tag <tag>` â€” target an explicit tag instead of discovering the latest
   one (useful for testing/rehearsal).
-- `--loop` — don't exit after one check; repeat forever, sleeping
+- `--loop` â€” don't exit after one check; repeat forever, sleeping
   `--loop-interval-ms` (default 5 minutes) between checks. Each iteration is
   independent: a failed iteration (a transient git/docker error, for example)
   is logged and the loop continues rather than exiting, and a healthy no-op
-  check (already on the latest tag) is cheap — it's just `git fetch --tags`
+  check (already on the latest tag) is cheap â€” it's just `git fetch --tags`
   plus a tag comparison, no rebuild.
 
 Requires a clean git working tree in `config.dev.repoRoot` and `gh`
@@ -144,7 +144,7 @@ authenticated with permission to create issues on the repo.
 sandbox container.** It has to be able to stop and replace the very container
 it might be updating, and the host `docker`/`git` CLIs aren't reachable from
 inside the container. `wake stop`/`sandbox` are already routed to the host by
-`dispatchMainCommand` itself, so this falls out of the existing routing — you
+`dispatchMainCommand` itself, so this falls out of the existing routing â€” you
 just need something on the host keeping the process alive.
 
 To run it continuously with no external scheduler, start the loop as a
@@ -156,11 +156,11 @@ wake-dev sandbox self-update --wake-root /path/to/your/wake-home --loop
 
 Leave it running in a background terminal, a `tmux`/`screen` session, or a
 dedicated terminal tab. It polls indefinitely until the process is stopped
-(Ctrl+C, or killed) — there's no separate scheduler or cron job to configure.
+(Ctrl+C, or killed) â€” there's no separate scheduler or cron job to configure.
 If you want it to survive terminal closes or host reboots, wrap it with
 whatever process supervisor you'd use for any other long-running host script
 (e.g. `pm2 start wake-dev -- sandbox self-update --wake-root /path/to/your/wake-home --loop`,
-an `nssm`/Windows service, or a systemd unit) — that's optional and outside
+an `nssm`/Windows service, or a systemd unit) â€” that's optional and outside
 Wake's own scope, since Wake only owns what happens inside the loop, not how the host keeps a
 process alive.
 
@@ -169,7 +169,7 @@ process alive.
 Wake can poll configured GitHub repositories when `sources.github.enabled` is
 set to `true`. Authentication is resolved from the current GitHub CLI session
 via `gh auth token`, and Wake routes work through configured named runners and
-capability tiers. `--runner fake` remains available as a global local override.
+capability runnerPools. `--runner fake` remains available as a global local override.
 
 GitHub Issues sync runs inside the normal tick path. Each tick polls GitHub,
 translates provider payloads into canonical ticket events, appends those events,

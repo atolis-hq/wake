@@ -1,4 +1,4 @@
-import { access, copyFile, mkdir, mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises';
+﻿import { access, copyFile, mkdir, mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -63,7 +63,7 @@ describe('scaffoldWakeHome prompts', () => {
 });
 
 describe('scaffoldWakeHome launchers', () => {
-  it('does not scaffold wake.sh or wake.ps1 — wake defaults --wake-root to cwd instead', async () => {
+  it('does not scaffold wake.sh or wake.ps1 â€” wake defaults --wake-root to cwd instead', async () => {
     const wakeRoot = await mkdtemp(resolve(tmpdir(), 'wake-scaffold-'));
     const repoRoot = process.cwd();
 
@@ -165,7 +165,7 @@ describe('scaffoldWakeHome SETUP.md', () => {
     expect(scaffolded).toBe(source);
   });
 
-  it('covers the GitHub source, runner/tier, and credential-mount sections', async () => {
+  it('covers the GitHub source, runner/runnerPool, and credential-mount sections', async () => {
     const wakeRoot = await makeTempWakeRoot();
     const repoRoot = process.cwd();
 
@@ -177,7 +177,7 @@ describe('scaffoldWakeHome SETUP.md', () => {
     expect(scaffolded).toContain('github:');
     expect(scaffolded).toContain('extraMounts');
     expect(scaffolded).toContain('.credentials.json');
-    expect(scaffolded).toContain('defaultTier');
+    expect(scaffolded).toContain('defaultRunnerPool');
     expect(scaffolded).toContain(
       'https://github.com/atolis-hq/wake/blob/main/docs/configuration.md',
     );
@@ -186,7 +186,7 @@ describe('scaffoldWakeHome SETUP.md', () => {
     );
   });
 
-  it('contains no template placeholders — content is static, not interpolated', async () => {
+  it('contains no template placeholders â€” content is static, not interpolated', async () => {
     const wakeRoot = await makeTempWakeRoot();
     const repoRoot = process.cwd();
 

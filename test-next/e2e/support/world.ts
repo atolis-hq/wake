@@ -92,7 +92,7 @@ export class TestWorld {
   private execution = createExecutionService(
     this.journal,
     this.activities,
-    { tiers: { standard: ['fake'] }, defaultTier: 'standard' },
+    { runnerPools: { standard: ['fake'] }, defaultRunnerPool: 'standard' },
     { clock: this.clock, ids: this.ids },
   );
   private cancellation = createWorkCancellationPolicy(
@@ -174,7 +174,7 @@ export class TestWorld {
     this.execution = createExecutionService(
       this.journal,
       this.activities,
-      { tiers: { standard: ['fake'] }, defaultTier: 'standard' },
+      { runnerPools: { standard: ['fake'] }, defaultRunnerPool: 'standard' },
       { clock: this.clock, ids: this.ids },
     );
     this.cancellation = createWorkCancellationPolicy(

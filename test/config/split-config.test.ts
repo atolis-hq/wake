@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 
 import { createDefaultWakeConfig } from '../../src/config/defaults.js';
 import { splitWakeConfig } from '../../src/config/split-config.js';
@@ -17,7 +17,7 @@ describe('splitWakeConfig', () => {
 
     expect(workflow).toHaveProperty('runners');
     expect(workflow).toHaveProperty('workflows');
-    expect(workflow).toHaveProperty('tiers');
+    expect(workflow).toHaveProperty('runnerPools');
     expect(workflow).not.toHaveProperty('sandbox');
     expect(workflow).not.toHaveProperty('paths');
   });
@@ -28,6 +28,6 @@ describe('splitWakeConfig', () => {
     const { infra, workflow } = splitWakeConfig(config);
 
     expect(infra.sandbox).toEqual(config.sandbox);
-    expect(workflow.defaultTier).toBe(config.defaultTier);
+    expect(workflow.defaultRunnerPool).toBe(config.defaultRunnerPool);
   });
 });

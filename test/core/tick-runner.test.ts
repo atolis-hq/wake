@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+﻿import { beforeEach, describe, expect, it } from 'vitest';
 import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -54,7 +54,7 @@ describe('tick runner', () => {
           review: {
             action,
             workspace: 'read-only',
-            tier: 'light',
+            runnerPool: 'light',
             onDone: 'done',
           },
         },
@@ -288,7 +288,7 @@ describe('tick runner', () => {
           review: {
             action: 'pr-review',
             workspace: 'read-only',
-            tier: 'light',
+            runnerPool: 'light',
             onDone: 'done',
           },
         },
@@ -673,7 +673,7 @@ describe('tick runner', () => {
       });
       // Event-only trigger: a schedule fallback would also fire on the second
       // tick with no triggering event of its own, overwriting the assertion
-      // below with an empty override — not what this test is checking.
+      // below with an empty override â€” not what this test is checking.
       delete config.workflows.default!.stages.implement!.watch![0]!.schedule;
 
       await seedAwaitingApprovalIssue({ store, issueNumber: 424 });
@@ -805,7 +805,7 @@ describe('tick runner', () => {
         workspaceManager: createFakeWorkspaceManager(join(root, 'workspaces')),
       });
 
-      // A single tick only dispatches and completes the watcher run itself —
+      // A single tick only dispatches and completes the watcher run itself â€”
       // the auto-revise re-dispatch of the parent's pending action happens on
       // a *later* tick (see 'auto-revises the original pending action after
       // a changes-requested watcher rejection' below), so this only asserts
@@ -876,10 +876,10 @@ describe('tick runner', () => {
       const updated = await store.readIssueState(workId(423));
       expect(updated?.wake.stage).toBe('implement');
       expect(updated?.context.pendingApprovalAction).toBe('implement');
-      // BLOCKED means the reviewer couldn't render a verdict at all — it must
+      // BLOCKED means the reviewer couldn't render a verdict at all â€” it must
       // not be treated as "reviewed and rejected." A non-rejecting watcher
       // run leaves the parent's context untouched (same as seedAwaitingApprovalIssue
-      // left it — it never sets context.status), so no changes-requested loop
+      // left it â€” it never sets context.status), so no changes-requested loop
       // is started.
       expect(updated?.context.status).toBeUndefined();
       expect(updated?.context.changesRequestedCount ?? 0).toBe(0);
@@ -964,7 +964,7 @@ describe('tick runner', () => {
         expect(updated?.context.changesRequestedCount).toBe(1);
 
         // Tick 2: no eligible watcher event yet, so the parent's own
-        // changes-requested status is now actionable — auto re-dispatches the
+        // changes-requested status is now actionable â€” auto re-dispatches the
         // original pending action ('implement') with the feedback threaded.
         await tickRunner.runTick();
         updated = await store.readIssueState(workId(424));
@@ -1071,7 +1071,7 @@ describe('tick runner', () => {
           review: {
             action: 'pr-review',
             workspace: 'read-only',
-            tier: 'light',
+            runnerPool: 'light',
             onDone: 'done',
           },
         },
@@ -2034,7 +2034,7 @@ describe('tick runner', () => {
       const config = createDefaultWakeConfig(root);
       config.sources.github.policy.requiredLabels = ['wake:implement'];
 
-      // verifies: [] — verify() always returns null, exercising the failed-
+      // verifies: [] â€” verify() always returns null, exercising the failed-
       // verification path.
       const artifactVerifier = createFakeArtifactVerifier({ verifies: [] });
 
@@ -2084,7 +2084,7 @@ describe('tick runner', () => {
     it("threads the work item's own repo into the artifact verifier context", async () => {
       // Fix 3 regression: the artifact verifier must be able to confirm a
       // reported PR's repo matches the work item's own repo, not just its
-      // branch — a low-entropy branch name like wake/issue-<n> could
+      // branch â€” a low-entropy branch name like wake/issue-<n> could
       // otherwise match a PR in an unrelated repo. This proves tick-runner
       // actually threads the work item's repo (candidate.issue.repo) through
       // to the verifier's context, using a verifier that records what it was
@@ -2206,7 +2206,7 @@ describe('tick runner', () => {
       expect(projections).toHaveLength(0);
 
       // listEventEnvelopesForWorkItem reads recentEventIds off a projection,
-      // which the 'unresolved' sentinel key never has — read the raw JSONL
+      // which the 'unresolved' sentinel key never has â€” read the raw JSONL
       // event log directly instead, the same pattern used elsewhere in this
       // file (e.g. "creates event audit records for sync and completion").
       const lines = (await readFile(store.paths.eventFile('2026-07-05'), 'utf8'))
@@ -2260,7 +2260,7 @@ describe('tick runner', () => {
 
     it('resolves a first-sighting PR review-thread comment to the owning PR work item via sourceRefs.parentResourceUri, rather than quarantining it as unresolved', async () => {
       // A review-thread comment's resourceUri is unique per thread and is
-      // never registered in the index on its own — only the owning PR's
+      // never registered in the index on its own â€” only the owning PR's
       // resourceUri is. Without the parentResourceUri fallback, resolving
       // straight off the thread's resourceUri always misses the index and
       // (since qualifiesForMint has no 'pr-review-thread' case) permanently
@@ -2383,7 +2383,7 @@ describe('tick runner', () => {
       // and registered (step 3), a human reply resumes the SAME session
       // (steps 1-4), and a later comment on the PR surface resumes that
       // same session again and gets its reply routed to the PR sink instead
-      // of the issue sink (steps 5-7) — extending a review thread instead of
+      // of the issue sink (steps 5-7) â€” extending a review thread instead of
       // the top-level conversation would exercise the same routing code
       // path (sinkNameForResourceUri treats 'pr' and 'pr-review-thread'
       // identically), so nothing about the routing claim is weakened.
@@ -2393,7 +2393,7 @@ describe('tick runner', () => {
       // real approval path shows this can't hold. Approving an
       // implement-stage AWAITING_APPROVAL always resolves via
       // lifecycle-service's `nextStageFromSentinel('implement', 'DONE')`,
-      // which unconditionally returns 'done' — see the existing test
+      // which unconditionally returns 'done' â€” see the existing test
       // "transitions an awaiting-approval status to done when /approved
       // comment is present" above. Moving stage forward always clears
       // `wake.sessionId` (projection-updater.ts's `shouldClearSession`), so
@@ -2401,10 +2401,10 @@ describe('tick runner', () => {
       // This scenario instead uses the BLOCKED / human-reply resume cycle
       // this file already exercises elsewhere (e.g. "runs once when a new
       // human comment arrives on an eligible issue"), which is
-      // session-preserving by design — while still posting a comment
+      // session-preserving by design â€” while still posting a comment
       // literally worded '/approved' so the human step stays recognisable.
       //
-      // PRODUCTION FIX NOTE: writing this scenario surfaced a real gap —
+      // PRODUCTION FIX NOTE: writing this scenario surfaced a real gap â€”
       // src/core/tick-runner.ts's createPublishIntentEvent never carried a
       // `resourceUri` on the outbound wake.publish.intent.requested event,
       // so createOutboundSinkRouter's PR-vs-issue routing (Task 11,
@@ -2433,14 +2433,14 @@ describe('tick runner', () => {
         verifies: [{ url: prUrl, resourceUri: prResourceUri }],
       });
 
-      // One shared issue-thread sink across all three ticks — every tick
+      // One shared issue-thread sink across all three ticks â€” every tick
       // must confirm its own outbound intents (deliverOutboundEvent ->
       // attemptDelivery) as it goes, or a later tick's
       // retryUnconfirmedDeliveries replays them in a batch instead. This
       // mirrors the no-op-reply outboundSink shape used throughout this
       // file (e.g. "publishes working then completed status labels...")
       // rather than createFakeTicketingSystem's full echo, which replaces
-      // issue.labels with exactly `[statusLabel, stageLabel]` on delivery —
+      // issue.labels with exactly `[statusLabel, stageLabel]` on delivery â€”
       // that would wipe this fixture's 'wake:implement' qualifying label,
       // which isn't one of Wake's own status/stage labels.
       const githubIssueSink = {
@@ -2483,7 +2483,7 @@ describe('tick runner', () => {
         correlatedResources: [],
       });
 
-      // Step 2: first tick — the agent opens a PR (reported via the
+      // Step 2: first tick â€” the agent opens a PR (reported via the
       // wake-artifacts fence, Task 4's pattern) but comes back BLOCKED with
       // a clarifying question rather than AWAITING_APPROVAL/DONE, so the
       // session survives to be resumed later (see adaptation 2 above).
@@ -2546,7 +2546,7 @@ describe('tick runner', () => {
 
       // Step 4: a human replies with a plain ticket comment (the same
       // inbound shape the fake ticketing system's comment-seed path
-      // produces) — this resumes the SAME session rather than a fresh one.
+      // produces) â€” this resumes the SAME session rather than a fresh one.
       const tickRunner2 = createTickRunner({
         clock: { now: () => new Date('2026-07-05T12:05:00.000Z') },
         config,
@@ -2590,7 +2590,7 @@ describe('tick runner', () => {
             capturedSessionIds.push(input.projection.wake.sessionId);
             return {
               result: [
-                'Thanks — keeping the retry cap fixed for now. One more thing to confirm before this is fully done.',
+                'Thanks â€” keeping the retry cap fixed for now. One more thing to confirm before this is fully done.',
                 '',
                 '```wake-result',
                 '{ "status": "BLOCKED" }',
@@ -2723,11 +2723,11 @@ describe('tick runner', () => {
       projection = await findByIssueRef(store, { repo, issueNumber });
       expect(projection?.comments.some((c) => c.id === 'prc-1')).toBe(true);
       // The triggering comment is tagged with the PR surface it came from
-      // (ad1cf45's comment fold) — this is exactly the signal the
+      // (ad1cf45's comment fold) â€” this is exactly the signal the
       // production fix above threads onto the reply's publish intent.
       expect(projection?.latestComment?.resourceUri).toBe(prResourceUri);
 
-      // Step 7: the reply was routed to the PR sink, not the issue sink —
+      // Step 7: the reply was routed to the PR sink, not the issue sink â€”
       // the resourceUri on the triggering run's publish intent carries the
       // PR surface, and only the 'github-pr' sink received it.
       expect(
@@ -2744,12 +2744,12 @@ describe('tick runner', () => {
 
       // Step 8 (review fix regression): `latestComment` is a sticky,
       // per-work-item field (projection-updater.ts's comment fold overwrites
-      // it unconditionally and nothing ever resets it) — it still points at
+      // it unconditionally and nothing ever resets it) â€” it still points at
       // prc-1/prResourceUri here even though tick 3 already handled that
       // comment (context.lastHandledCommentId === 'prc-1'). Simulate a run
-      // that completes for a reason OTHER than a fresh comment — an
+      // that completes for a reason OTHER than a fresh comment â€” an
       // automatic quota-failure retry, one of needsWakeAction's non-comment
-      // trigger paths — and confirm the reply does NOT get misrouted to the
+      // trigger paths â€” and confirm the reply does NOT get misrouted to the
       // PR sink just because the projection's stale latestComment still
       // carries a PR resourceUri from a comment that was already replied to.
       const preTick4Projection = await findByIssueRef(store, { repo, issueNumber });
@@ -2815,7 +2815,7 @@ describe('tick runner', () => {
       expect(tick4RunId).toBeDefined();
 
       // The quota-retry run wasn't triggered by a fresh comment, so its own
-      // reply must go to the issue sink, not the PR sink — even though the
+      // reply must go to the issue sink, not the PR sink â€” even though the
       // projection's sticky latestComment.resourceUri still names the PR.
       // (retryUnconfirmedDeliveries may also re-attempt tick 3's still-
       // unconfirmed PR delivery during this tick; identify tick 4's own
@@ -2838,7 +2838,7 @@ describe('tick runner', () => {
       // Fix 1 regression: 'pr.comment.reply.published' (the confirmation
       // event the PR sink's deliverIntent returns on success, asserted at
       // line ~4366) must be recognized by
-      // outboundConfirmationEventTypes — otherwise retryUnconfirmedDeliveries
+      // outboundConfirmationEventTypes â€” otherwise retryUnconfirmedDeliveries
       // never sees tick 3's PR reply as confirmed and re-delivers it on every
       // subsequent tick, forever, reposting the same comment to the real PR
       // thread with no bound. tick 4 above already re-triggered
@@ -2847,7 +2847,7 @@ describe('tick runner', () => {
       expect(prSinkPublished).toHaveLength(1);
 
       // Step 9: one more tick with no new triggering activity at all (no
-      // fresh comment, no failed run to retry) — the strongest form of the
+      // fresh comment, no failed run to retry) â€” the strongest form of the
       // regression check. If the fix is missing, retryUnconfirmedDeliveries
       // finds tick 3's PR reply intent still unconfirmed and redelivers it
       // yet again here.

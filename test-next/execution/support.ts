@@ -44,8 +44,8 @@ export function executionFixture() {
     journal,
     registry,
     {
-      tiers: { standard: ['fake'] },
-      defaultTier: 'standard',
+      runnerPools: { standard: ['fake'] },
+      defaultRunnerPool: 'standard',
       leaseDurationMs: 60_000,
       leaseRenewalIntervalMs: 30_000,
     },

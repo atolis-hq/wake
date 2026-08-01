@@ -73,7 +73,7 @@ const executionSchema = z
     workspace: z
       .enum([WorkspaceMode.None, WorkspaceMode.ReadOnly, WorkspaceMode.Branch])
       .optional(),
-    tier: z.string().min(1).optional(),
+    runnerPool: z.string().min(1).optional(),
   })
   .strict();
 export const activityRequestedSchema = z

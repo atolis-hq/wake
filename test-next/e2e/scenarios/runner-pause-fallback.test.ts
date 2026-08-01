@@ -75,8 +75,8 @@ async function createRoot(
       activities: {},
       execution: {
         agentRunners: { sonnet: { kind: 'fake' }, 'codex-mini': { kind: 'fake' } },
-        tiers: { standard: ['sonnet', 'codex-mini'] },
-        defaultTier: 'standard',
+        runnerPools: { standard: ['sonnet', 'codex-mini'] },
+        defaultRunnerPool: 'standard',
       },
       orchestration: {
         workflows: {

@@ -1,4 +1,4 @@
-import { wakeVersion } from '../../version.js';
+﻿import { wakeVersion } from '../../version.js';
 
 const logoSvg = `<svg viewBox="0 0 110 110" xmlns="http://www.w3.org/2000/svg">
   <g transform="translate(55 55)">
@@ -177,7 +177,7 @@ export const indexHtml = `<!DOCTYPE html>
   <span class="version">${wakeVersion}</span>
 </header>
 <div class="statusbar">
-  <span id="loop-pill" class="pill">…</span>
+  <span id="loop-pill" class="pill">â€¦</span>
   <button id="pause-toggle" type="button" class="pause-control">Pause</button>
   <button id="force-tick" type="button">Tick now</button>
   <span id="status-summary" class="meta"></span>
@@ -234,7 +234,7 @@ const METRIC_OPTIONS = [
   ['runs-by-repo', 'Runs by repo'],
   ['runs-by-runner', 'Runs by runner'],
   ['runs-by-model', 'Runs by model'],
-  ['runs-by-tier', 'Runs by tier'],
+  ['runs-by-runnerPool', 'Runs by runnerPool'],
   ['tokens-over-time', 'Tokens over time'],
   ['tokens-by-action', 'Tokens by action/stage'],
   ['tokens-by-runner', 'Tokens by runner'],
@@ -265,7 +265,7 @@ async function deleteJson(path) {
 }
 
 function fmtMs(ms) {
-  if (ms === undefined || ms === null) return '—';
+  if (ms === undefined || ms === null) return 'â€”';
   const s = Math.floor(ms / 1000);
   if (s < 60) return s + 's';
   const m = Math.floor(s / 60);
@@ -336,10 +336,10 @@ async function renderStatusBar() {
     const freshness = status.sourceFreshness.level;
     const summary = document.getElementById('status-summary');
     summary.textContent =
-      'runs today: ' + status.runsToday + ' · failures today: ' + status.failuresToday +
-      ' · cost today: $' + Number(status.costUsdToday ?? 0).toFixed(2) +
-      ' · source freshness: ' + freshness +
-      (status.lastRun ? ' · last run: ' + status.lastRun.repo + '#' + status.lastRun.issueNumber + ' ' + status.lastRun.action + ' → ' + (status.lastRun.sentinel ?? status.lastRun.status) : '');
+      'runs today: ' + status.runsToday + ' Â· failures today: ' + status.failuresToday +
+      ' Â· cost today: $' + Number(status.costUsdToday ?? 0).toFixed(2) +
+      ' Â· source freshness: ' + freshness +
+      (status.lastRun ? ' Â· last run: ' + status.lastRun.repo + '#' + status.lastRun.issueNumber + ' ' + status.lastRun.action + ' â†’ ' + (status.lastRun.sentinel ?? status.lastRun.status) : '');
   } catch (err) {
     document.getElementById('status-summary').textContent = 'status unavailable: ' + err.message;
   }
@@ -429,7 +429,7 @@ function renderChildRun(run) {
     el('div', { class: 'run-title', text: (run.isWatcher ? 'watcher ' : '') + run.action + ' running' }),
     el('div', {
       class: 'run-meta',
-      text: [run.runnerName, run.tier, fmtMs(run.ageMs)].filter(Boolean).join(' | '),
+      text: [run.runnerName, run.runnerPool, fmtMs(run.ageMs)].filter(Boolean).join(' | '),
     }),
   ]);
 }
@@ -1037,9 +1037,9 @@ async function renderAnalytics(context) {
       tile('Failed', fmtNumber(metrics.summary.failedRuns)),
       tile('Tokens', fmtNumber(metrics.summary.totalTokens)),
       tile('Cost', fmtCost(metrics.summary.totalCostUsd)),
-      tile('Median run', fmtDuration(metrics.summary.medianRunDurationMs) || '—'),
+      tile('Median run', fmtDuration(metrics.summary.medianRunDurationMs) || 'â€”'),
       tile('Work done', fmtNumber(metrics.summary.completedWorkItems)),
-      tile('Median e2e', fmtDuration(metrics.summary.medianWorkItemDurationMs) || '—'),
+      tile('Median e2e', fmtDuration(metrics.summary.medianWorkItemDurationMs) || 'â€”'),
     ]),
     renderMetricDetail(metrics.detail),
   );
@@ -1067,16 +1067,16 @@ async function renderConfig(context) {
   main.replaceChildren(
     el('h3', { text: 'Routing table' }),
     el('table', {}, [
-      el('tr', {}, ['stage', 'action', 'tier', 'runner', 'model', 'fallback order'].map((h) => el('th', { text: h }))),
+      el('tr', {}, ['stage', 'action', 'runnerPool', 'runner', 'model', 'fallback order'].map((h) => el('th', { text: h }))),
       ...data.routingTable.map((r) => el('tr', {}, [
-        el('td', { text: r.stage }), el('td', { text: r.action || '' }), el('td', { text: r.tier || '' }),
+        el('td', { text: r.stage }), el('td', { text: r.action || '' }), el('td', { text: r.runnerPool || '' }),
         el('td', { text: r.runnerName || '' }), el('td', { text: r.model || '' }),
         el('td', {}, (r.candidates || []).map((c) => {
           if (!c.paused) return el('span', { class: 'chip', text: c.runnerName });
           const btn = el('button', { type: 'button', class: 'btn', text: 'Unpause', style: 'margin-top:0;font-size:0.7rem;padding:0.1rem 0.4rem;' });
           btn.addEventListener('click', async () => {
             btn.disabled = true;
-            btn.textContent = 'Unpausing…';
+            btn.textContent = 'Unpausingâ€¦';
             try {
               await postJson('/runners/' + encodeURIComponent(c.runnerName) + '/unpause');
               switchView('config');

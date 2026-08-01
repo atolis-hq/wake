@@ -4,9 +4,9 @@ resources: {}
 execution:
   runners:
     fake: { kind: fake }
-  tiers:
+  runnerPools:
     standard: [fake]
-  defaultTier: standard
+  defaultRunnerPool: standard
 controlPlane: {}
 integrations: {}
 surfaces: {}

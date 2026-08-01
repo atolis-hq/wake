@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { RunnerRegistry, type Runner } from '../../src-next/execution/index.js';
 
 describe('RunnerRegistry', () => {
-  it('resolves the first configured runner in an execution tier', () => {
+  it('resolves the first configured runner in an execution runner pool', () => {
     const runner: Runner = fakeRunner();
     const registry = new RunnerRegistry({ standard: ['fake'] }, { fake: runner });
 
@@ -35,7 +35,7 @@ describe('RunnerRegistry', () => {
     });
   });
 
-  it('throws a distinct error when every candidate in the tier is ineligible', () => {
+  it('throws a distinct error when every candidate in the runner pool is ineligible', () => {
     const sonnet = fakeRunner();
     const codexMini = fakeRunner();
     const registry = new RunnerRegistry(
@@ -48,23 +48,23 @@ describe('RunnerRegistry', () => {
     );
   });
 
-  it('does not fall back to an ineligible runner or a different tier when exhausted', () => {
+  it('does not fall back to an ineligible runner or a different runner pool when exhausted', () => {
     const sonnet = fakeRunner();
     const registry = new RunnerRegistry({ standard: ['sonnet'], fallback: ['sonnet'] }, { sonnet });
 
     expect(() => registry.resolve('standard', new Set(['sonnet']))).toThrow();
   });
 
-  it('throws when a tier names a runner that is not registered', () => {
+  it('throws when a runner pool names a runner that is not registered', () => {
     const registry = new RunnerRegistry({ standard: ['missing'] }, {});
 
     expect(() => registry.resolve('standard')).toThrow(/not registered/i);
   });
 
-  it('throws when the tier itself is unknown', () => {
+  it('throws when the runner pool itself is unknown', () => {
     const registry = new RunnerRegistry({ standard: ['fake'] }, { fake: fakeRunner() });
 
-    expect(() => registry.resolve('unknown-tier')).toThrow(/has no runner/i);
+    expect(() => registry.resolve('unknown-runner-pool')).toThrow(/has no runner/i);
   });
 });
 

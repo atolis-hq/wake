@@ -1,4 +1,4 @@
-# Workflows
+﻿# Workflows
 
 Wake workflows define the stages a work item moves through and which prompt file is
 used to run each stage. They are deterministic control-plane configuration:
@@ -7,7 +7,7 @@ executes the selected action and reports a result.
 
 ## Where workflows live
 
-Workflows are configured in the `workflows` section of Wake config —
+Workflows are configured in the `workflows` section of Wake config â€”
 `config.workflows.yaml` at the root of the Wake home `--wake-root` (or the
 current directory, by default) resolves to. All config uses `schemaVersion: 1`.
 
@@ -20,12 +20,12 @@ workflows:
       refine:
         action: refine
         workspace: read-only
-        tier: light
+        runnerPool: light
         onDone: implement
       implement:
         action: implement
         workspace: branch
-        tier: standard
+        runnerPool: standard
         onDone: done
 ```
 
@@ -46,12 +46,12 @@ workflows:
       triage:
         action: refine
         workspace: read-only
-        tier: light
+        runnerPool: light
         onDone: patch
       patch:
         action: implement
         workspace: branch
-        tier: standard
+        runnerPool: standard
         onDone: verify
       verify:
         action: verify
@@ -72,9 +72,9 @@ Each stage has:
 - `onDone`: the next stage name, or `done`.
 - `action`: optional prompt-template name. If omitted, Wake uses the stage name
   as the action.
-- `tier`: optional runner tier to route this stage through.
+- `runnerPool`: optional runner runnerPool to route this stage through.
 - `runner`: optional concrete runner name. A runner pin takes precedence over a
-  tier.
+  runnerPool.
 
 Wake validates the workflow at config load. It rejects empty workflows,
 `entryStage: "queue"`, unknown `entryStage` values, transitions to unknown
@@ -159,7 +159,7 @@ stage, Wake reads that stage definition and dispatches:
 - the requested workspace mode,
 - the stage's runner routing hints.
 
-When a runner reports `DONE`, Wake follows the stage's `onDone` transition —
+When a runner reports `DONE`, Wake follows the stage's `onDone` transition â€”
 unless the stage is configured with `skipApproval: false`, in which case Wake
 holds the transition for human approval instead of advancing immediately. If
 the runner reports `BLOCKED`, `FAILED`, or `REJECTED`, Wake does not take the
@@ -197,7 +197,7 @@ workflows:
 ```
 
 A watcher's `onSuccess` block declares what Wake does when the child workflow
-run completes `DONE` or `REJECTED` — the sentinel is the child's verdict, so a
+run completes `DONE` or `REJECTED` â€” the sentinel is the child's verdict, so a
 `BLOCKED` or `FAILED` child (the reviewer couldn't render a verdict at all)
 never triggers it.
 
@@ -255,5 +255,5 @@ behavior by themselves; the workflow configuration and prompt files do that.
 3. Add a workflow with runnable stage names under `workflows`.
 4. Set each stage's `workspace` and `onDone`.
 5. Add `action` when the prompt name differs from the stage name.
-6. Add `tier` or `runner` when a stage needs specific routing.
+6. Add `runnerPool` or `runner` when a stage needs specific routing.
 7. Confirm the entry stage can reach `done`.

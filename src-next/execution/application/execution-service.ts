@@ -149,11 +149,12 @@ function resolveRunner(
   activation: ExecutionActivation,
   context: ExecutionAttemptContext,
 ) {
-  const tier = activation.execution?.tier ?? runtime.config.defaultTier;
-  if (runtime.config.tiers[tier] === undefined) throw new Error(`Unknown execution tier: ${tier}`);
+  const runnerPool = activation.execution?.runnerPool ?? runtime.config.defaultRunnerPool;
+  if (runtime.config.runnerPools[runnerPool] === undefined)
+    throw new Error(`Unknown execution runner pool: ${runnerPool}`);
   if (executionKind !== ActivityExecutionKind.Agent) return { runner: undefined };
   const resolved = runtime.dependencies.runners?.resolve(
-    tier,
+    runnerPool,
     context.ineligibleRunners ?? new Set(),
   );
   return describeResolvedRunner(runtime, resolved);

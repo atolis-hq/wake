@@ -22,9 +22,9 @@ describe('deepMergeRaw', () => {
   });
 
   it('lets the source value win on a direct key conflict', () => {
-    const result = deepMergeRaw({ defaultTier: 'standard' }, { defaultTier: 'deep' });
+    const result = deepMergeRaw({ defaultRunnerPool: 'standard' }, { defaultRunnerPool: 'deep' });
 
-    expect(result.defaultTier).toBe('deep');
+    expect(result.defaultRunnerPool).toBe('deep');
   });
 
   it('replaces arrays wholesale rather than concatenating them', () => {

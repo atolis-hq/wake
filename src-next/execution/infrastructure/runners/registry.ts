@@ -2,23 +2,24 @@ import type { Runner } from '../../contracts/runner.js';
 
 export class RunnerRegistry {
   constructor(
-    private readonly tiers: Readonly<Record<string, readonly string[]>>,
+    private readonly runnerPools: Readonly<Record<string, readonly string[]>>,
     private readonly runners: Readonly<Record<string, Runner>>,
   ) {}
 
   resolve(
-    tier: string,
+    runnerPool: string,
     ineligible: ReadonlySet<string> = new Set(),
   ): { readonly name: string; readonly runner: Runner } {
-    const candidates = this.tiers[tier];
-    if (candidates === undefined) throw new Error(`Execution tier ${tier} has no runner`);
-    return selectEligibleCandidate(tier, candidates, this.runners, ineligible);
+    const candidates = this.runnerPools[runnerPool];
+    if (candidates === undefined)
+      throw new Error(`Execution runner pool ${runnerPool} has no runner`);
+    return selectEligibleCandidate(runnerPool, candidates, this.runners, ineligible);
   }
 }
 
-// Falls sideways to the next candidate on quota ineligibility; never a different tier.
+// Falls sideways to the next candidate on quota ineligibility; never a different runner pool.
 function selectEligibleCandidate(
-  tier: string,
+  runnerPool: string,
   candidates: readonly string[],
   runners: Readonly<Record<string, Runner>>,
   ineligible: ReadonlySet<string>,
@@ -29,5 +30,7 @@ function selectEligibleCandidate(
     if (runner === undefined) throw new Error(`Runner ${name} is not registered`);
     return { name, runner };
   }
-  throw new Error(`Execution tier ${tier} has no eligible runner: all candidates are ineligible`);
+  throw new Error(
+    `Execution runner pool ${runnerPool} has no eligible runner: all candidates are ineligible`,
+  );
 }

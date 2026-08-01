@@ -257,8 +257,8 @@ async function createWorld() {
       },
       execution: {
         agentRunners: { fake: { kind: 'fake' } },
-        tiers: { standard: ['fake'] },
-        defaultTier: 'standard',
+        runnerPools: { standard: ['fake'] },
+        defaultRunnerPool: 'standard',
       },
       controlPlane: {},
       integrations: {},
