@@ -2,8 +2,10 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use
 > superpowers:subagent-driven-development (recommended) or
-> superpowers:executing-plans to implement this plan task-by-task. Steps use
-> checkbox (`- [ ]`) syntax for tracking.
+> superpowers:executing-plans to implement this plan task-by-task. The detailed
+> checkboxes below are the historical execution log, including the required
+> red-test phases; they are not a live backlog. The dated implementation-status
+> table and the task/gate headings are the authoritative completion status.
 
 **Goal:** Prove that a composed Wake process started from an on-disk Wake root
 observes fake provider evidence, mints Wake-owned identity, creates and
@@ -186,9 +188,11 @@ flow with incompatible resource capabilities.
 
 ## Implementation status — 2026-08-01
 
-Recorded after the review-and-remediation pass. Green at target 146 files / 593 tests,
-legacy 83 files / 950 tests, with `check:catalogue`, `lint:contracts`,
-`lint:architecture`, `knip:next`, `verify:next` and `verify` all passing.
+Completed after the review-and-remediation pass. Verified green at target 152 files /
+622 tests (and web 12 files / 36 tests), legacy 83 files / 939 passing tests with
+7 skipped, with `check:catalogue`, `lint:contracts`, `lint:architecture`,
+`knip:next`, `verify:next`, and `verify` all passing. `knip:next` emits its
+known configuration hint for `handlebars`; it reports no unused-code finding.
 
 | Item | State |
 | --- | --- |
@@ -299,7 +303,7 @@ Step 0 precedes everything because it adds mandated catalogue IDs that
 
 ---
 
-## Task 25A.0: Documentation, vocabulary, and catalogue precondition
+## Task 25A.0: Documentation, vocabulary, and catalogue precondition — Complete
 
 **Files:**
 
@@ -418,7 +422,7 @@ insert immediately before `## Task 26: Port operational commands without leaking
 them into the domain`:
 
 ```text
-## Task 25A: Restore and prove live runtime capability
+## Task 25A: Restore and prove live runtime capability — Complete
 
 Do not begin Task 26 until Task 25A passes its packet gate. The failing-test-first
 plan is
@@ -455,7 +459,7 @@ git commit -m "docs: record Task 25A dispositions and correct the runner invaria
 
 ---
 
-## Task 25A.1: Minted identity, tightened brands, and lookup projections
+## Task 25A.1: Minted identity, tightened brands, and lookup projections — Complete
 
 Packet design §3 (D9, D10). Resolves Appendix A.3 gap 1 and findings F1, F2, F4.
 
@@ -912,7 +916,7 @@ reproduces both lookups identically to the live fold.
 
 ---
 
-## Task 25A.2: Provider-owned external-key grammar and capability-resolved delivery targets
+## Task 25A.2: Provider-owned external-key grammar and capability-resolved delivery targets — Complete
 
 Packet design §4. Resolves Appendix A.3 gap 2 and the INT-PUBLISH violation.
 
@@ -1108,7 +1112,7 @@ commentable, non-revisioned Resource produces an `issue_number` command.
 
 ---
 
-## Task 25A.3: Provider-neutral intake seam (review RC-2)
+## Task 25A.3: Provider-neutral intake seam (review RC-2) — Complete
 
 Packet design §7.1 step 3. Resolves review claims C2 and C3 and finding F6.
 
@@ -1313,7 +1317,7 @@ Two instances of one provider type are expressible under distinct adapter ids.
 
 ---
 
-## Task 25A.4: Value-level GitHub locality check
+## Task 25A.4: Value-level GitHub locality check — Complete
 
 Packet design §8. Resolves review §A.4 item 2 — the path-scoped grep in
 corrective design §3.4 excludes files under `github/` by construction, so it
@@ -1417,7 +1421,7 @@ it once, confirm the failure, then restore.
 
 ---
 
-## Task 25A.5: Register built-in Activities and complete tier-based runner selection
+## Task 25A.5: Register built-in Activities and complete tier-based runner selection — Complete
 
 Packet design §7.1 step 5 and §12.4. Resolves Appendix A.3 gaps 11 and 12 and
 assumption A1 (confirmed 2026-08-01). **This step must precede any fixture
@@ -1710,7 +1714,7 @@ runner changes which runner executes.
 
 ---
 
-## Task 25A.6: Wire intake, translation, reactors, delivery, and projection catch-up
+## Task 25A.6: Wire intake, translation, reactors, delivery, and projection catch-up — Complete
 
 Packet design §7.1 step 6. Resolves Appendix A.3 gaps 9, 10 (partly), and 14 —
 fifteen built services with no production composition.
@@ -1880,7 +1884,7 @@ advance, and delivery drain in that order, bounded per stage.
 
 ---
 
-## Task 25A.7: Tags, workflow selectors, and approval authority
+## Task 25A.7: Tags, workflow selectors, and approval authority — Complete
 
 Packet design §5 and §12.6. Resolves Appendix A.3 gap 3 — nothing starts a
 workflow for a new WorkItem today; `orchestration.start`'s only production
@@ -2096,7 +2100,7 @@ in `src-next`.
 
 ---
 
-## Task 25A.8: Fairness, dispatch cap, pause gate, schedule, recovery, and liveness hosts
+## Task 25A.8: Fairness, dispatch cap, pause gate, schedule, recovery, and liveness hosts — Complete
 
 Packet design §7.1 step 8. Resolves the rest of Appendix A.3 gap 10 —
 `pending[0]` is the lexicographic selection CONTROL-FAIRNESS says to correct;
@@ -2212,7 +2216,7 @@ restart and neither consumes Run retry budget.
 
 ---
 
-## Task 25A.9: Process-level fake E2E from an on-disk fixture Wake root
+## Task 25A.9: Process-level fake E2E from an on-disk fixture Wake root — Complete
 
 Packet design §7.1 step 9 and review §5. Resolves review §A.4 item 4 — the
 existing scenarios run on `test-next/e2e/support/world.ts`, only
@@ -2465,6 +2469,11 @@ git commit -m "test: prove the live loop end to end from an on-disk Wake root"
 
 Task 25A closes when all of the following hold. Task 25B is gated behind this
 gate, and Task 26 is blocked until both packets close.
+
+**Completion recorded 2026-08-01.** Task 25A and Task 25B are complete, so
+Task 26 is no longer blocked by either Task 25 packet. The unchecked bullets
+below preserve the original gate wording; the verified completion status and
+current verification counts are recorded in the implementation-status table.
 
 - [ ] A composed process started from an on-disk Wake root observes fake
       provider evidence, creates and progresses work, executes a runner, records

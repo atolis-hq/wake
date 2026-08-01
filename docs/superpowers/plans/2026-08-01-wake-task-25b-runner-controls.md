@@ -1,6 +1,6 @@
 # Runner controls implementation plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. The remaining unchecked lines are historical red-test and evidence-capture steps; they are not a live backlog. The completion record below is authoritative.
 
 **Goal:** Close Task 25B step 13 with durable runner pause commands, truthful status, and composed fallback proof.
 
@@ -44,3 +44,14 @@
 - [x] Update Step 13 from In progress to Built with exact evidence and mark the final remediation plan items complete.
 - [x] Run `npm run lint:contracts`, `npm run lint:architecture`, `npm run knip:next`, `npm run verify:next`, and `npm run verify`.
 - [x] Commit all remaining Step 13 work once every gate passes.
+
+## Completion record — 2026-08-01
+
+**Complete.** Verified green at target 152 files / 622 tests (and web 12 files /
+36 tests), legacy 83 files / 939 passing tests with 7 skipped. `check:catalogue`,
+`lint:contracts`, `lint:architecture`, `knip:next`, `verify:next`, and `verify`
+all pass. `knip:next` emits its known `handlebars` configuration hint only.
+
+Evidence includes focused API and runner-control service tests, composed
+`E2E-CONTROL-QUOTA-001` fallback/replay/expiry/early-resume proof, and the
+desktop/mobile browser journey for the Health-page Pause/Unpause control.
