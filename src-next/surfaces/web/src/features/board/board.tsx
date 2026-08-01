@@ -1,9 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
-import { Link, useLocation } from 'react-router';
-import type { WorkItemResponse } from '../../../../api/contracts/index.js';
+import { useLocation } from 'react-router';
 import { useApiClient } from '../../api/context.js';
 import { queryKeys } from '../../api/query-keys.js';
 import { refreshPolicy } from '../../api/refresh-policy.js';
+import { BoardCard } from './board-card.js';
 import {
   EmptyState,
   ErrorState,
@@ -46,40 +46,26 @@ export function Board() {
         <EmptyState>No work items</EmptyState>
       ) : (
         <div className={styles.board}>
-          {(['open', 'closed', 'cancelled'] as const).map((state) => (
-            <section className={styles.column} key={state}>
-              <h2>{label(state)}</h2>
-              <ul className={styles.cards}>
-                {items
-                  .filter((item) => item.state === state)
-                  .map((item) => (
-                    <WorkCard key={item.workItemKey} item={item} background={location} />
+          {boardColumns.map((state) => {
+            const columnItems = items.filter((item) => item.state === state);
+            return (
+              <section className={styles.column} key={state}>
+                <div className={styles.columnHeader}>
+                  <h2>{`${label(state)} (${columnItems.length})`}</h2>
+                </div>
+                <ul className={styles.cards}>
+                  {columnItems.map((item) => (
+                    <BoardCard key={item.workItemKey} item={item} background={location} />
                   ))}
-              </ul>
-            </section>
-          ))}
+                </ul>
+              </section>
+            );
+          })}
         </div>
       )}
     </>
   );
 }
 
-function WorkCard({
-  item,
-  background,
-}: {
-  readonly item: WorkItemResponse;
-  readonly background: ReturnType<typeof useLocation>;
-}) {
-  return (
-    <li className={styles.card}>
-      <Link to={`/work/${encodeURIComponent(item.workItemKey)}`} state={{ background }}>
-        {item.objective}
-      </Link>
-      <div>
-        {item.workItemId} · {item.state}
-      </div>
-    </li>
-  );
-}
+const boardColumns = ['open', 'closed', 'cancelled'] as const;
 const label = (value: string) => value[0]!.toUpperCase() + value.slice(1);
