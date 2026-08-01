@@ -4945,6 +4945,21 @@ its authority is
 Task 25B (provider and runner fidelity, plus manual real-GitHub acceptance) is
 gated behind 25A and is planned separately. Task 26 blocks on both.
 
+## Task 25C: Adopt the community lint and style baseline
+
+Do not begin Task 25C while Task 25A is mid-flight; its steps rewrite import
+blocks and whitespace across most of `src-next/`, which conflicts with every
+open 25A edit. The failing-test-first plan is
+[`2026-08-01-wake-task-25c-lint-and-style-baseline.md`](2026-08-01-wake-task-25c-lint-and-style-baseline.md);
+its authority is
+[`2026-08-01-src-next-structural-review.md`](../../reports/2026-08-01-src-next-structural-review.md).
+The task takes deterministic line endings, import deduplication and ordering,
+blank-line separation, enforced type-only imports, a size budget that
+distinguishes declarative contracts from behavioural code, and type-aware
+linting. Steps 1-6 are auto-fixable and semantically inert; step 7 measures
+`recommendedTypeChecked` before step 8 decides how much of it to adopt. Task 25C
+is independent of 25B and does not gate Task 26.
+
 ## Task 26: Port operational commands without leaking them into the domain
 
 **Files:**
