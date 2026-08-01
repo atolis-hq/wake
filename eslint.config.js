@@ -14,6 +14,7 @@ export default tseslint.config(
       'node_modules/**',
       '.wake/**',
       '.claude/worktrees/**',
+      '.worktrees/**',
     ],
   },
   {
