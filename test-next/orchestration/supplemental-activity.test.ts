@@ -1,4 +1,4 @@
-import {
+﻿import {
   commandName,
   orchestrationGroupId,
   workflowInstanceId,
@@ -6,11 +6,12 @@ import {
 } from '../../src-next/orchestration/contracts/identifiers.js';
 import { z } from 'zod';
 import { describe, expect, it } from 'vitest';
+import { workId } from '../support/identities.js';
 import { ActivityRegistry, activityName } from '../../src-next/activities/index.js';
 import { correlationId } from '../../src-next/kernel/index.js';
 import { compileWorkflow, createOrchestrationService } from '../../src-next/orchestration/index.js';
 import { InMemoryEventJournal } from '../../src-next/persistence/index.js';
-import { createWorkService, workItemId } from '../../src-next/work/index.js';
+import { createWorkService } from '../../src-next/work/index.js';
 import { FakeClock } from '../e2e/support/world.js';
 
 async function fixture(actor: 'operator' | 'agent' = 'operator') {
@@ -22,7 +23,7 @@ async function fixture(actor: 'operator' | 'agent' = 'operator') {
     actor: { kind: actor, id: actor === 'operator' ? 'owner' : 'runner' },
   } as const;
   await work.create(
-    { workItemId: workItemId('work-1'), objective: 'ship' },
+    { workItemId: workId('1'), objective: 'ship' },
     { ...context, commandId: 'create-work', actor: { kind: 'operator', id: 'owner' } },
   );
   const activities = new ActivityRegistry();
@@ -68,7 +69,7 @@ async function fixture(actor: 'operator' | 'agent' = 'operator') {
   const instance = await service.start(
     {
       workflowInstanceId: workflowInstanceId('workflow-1'),
-      workItemId: workItemId('work-1'),
+      workItemId: workId('1'),
       workflowName: workflowName('default'),
       orchestrationGroupId: orchestrationGroupId('group-1'),
     },

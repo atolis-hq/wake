@@ -1,14 +1,14 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
+import { workId } from '../support/identities.js';
 import { createEventDraft } from '../../src-next/kernel/index.js';
 import {
   decodeWorkEvent,
   foldWorkItem,
   type WorkEvent,
-  workItemId,
   workItemStream,
 } from '../../src-next/work/index.js';
 
-const stream = workItemStream(workItemId('work-1'));
+const stream = workItemStream(workId('1'));
 
 function event(eventType: string, payload: unknown, sequence: number): WorkEvent {
   return decodeWorkEvent({
@@ -34,7 +34,7 @@ describe('WorkItem', () => {
     expect(
       foldWorkItem([event('work.item-created', { objective: 'Implement the target spine' }, 1)]),
     ).toEqual({
-      workItemId: 'work-1',
+      workItemId: workId('1'),
       objective: 'Implement the target spine',
       state: 'open',
       relatedWorkItems: [],
@@ -59,10 +59,10 @@ describe('WorkItem', () => {
     expect(
       foldWorkItem([
         event('work.item-created', { objective: 'First objective' }, 1),
-        event('work.item-linked', { to: workItemId('work-2'), relation: 'parent-of' }, 2),
+        event('work.item-linked', { to: workId('2'), relation: 'parent-of' }, 2),
       ]),
     ).toMatchObject({
-      relatedWorkItems: [{ workItemId: 'work-2', relation: 'parent-of' }],
+      relatedWorkItems: [{ workItemId: workId('2'), relation: 'parent-of' }],
     });
   });
 

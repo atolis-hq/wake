@@ -1,9 +1,11 @@
 import {
   correlationId,
   EventActorKind,
+  UlidIdGenerator,
   type CheckpointStore,
   type CommandContext,
   type EventJournal,
+  type IdGenerator,
 } from '../../../kernel/index.js';
 import {
   createPullRequestService,
@@ -11,7 +13,7 @@ import {
   type ObservePullRequest,
   type PullRequestService,
 } from '../../../activities/index.js';
-import type { ResourceService } from '../../../resources/index.js';
+import type { ResourceLookup, ResourceService } from '../../../resources/index.js';
 import {
   BuiltInResourceCapability,
   BuiltInResourceKind,
@@ -26,7 +28,7 @@ import { UnknownGitHubIdentity } from '../contracts/vocabulary.js';
 import { observePullRequest } from './pull-request-translation.js';
 import { translateGitHubReviewCommand } from './review-command-translator.js';
 
-export type InboundCommandCandidate =
+type InboundCommandCandidate =
   | {
       readonly kind: 'discover-resource';
       readonly resourceId: ResourceId;
@@ -47,10 +49,20 @@ export type InboundCommandCandidate =
 
 const checkpoint = 'reactor:integration.github.inbound';
 
+interface InboundTranslatorDependencies {
+  readonly pullRequests?: PullRequestService;
+  readonly ids?: IdGenerator;
+  readonly lookup?: ResourceLookup;
+}
+
 export class InboundTranslator {
+  private readonly minted = new Map<string, { resourceId: ResourceId; workItemId: WorkItemId }>();
+
   translate(payload: ExternalWorkObservedPayload): readonly InboundCommandCandidate[] {
-    const resourceIdValue = externalResourceId(payload.externalKey);
-    const workItemIdValue = externalWorkItemId(payload.externalKey);
+    const { resourceId: resourceIdValue, workItemId: workItemIdValue } = this.newIdentity({
+      adapter: 'github',
+      key: payload.externalKey,
+    });
     const commands: InboundCommandCandidate[] = [
       {
         kind: 'discover-resource',
@@ -75,8 +87,16 @@ export class InboundTranslator {
     private readonly checkpoints?: CheckpointStore,
     private readonly work?: WorkService,
     private readonly resources?: ResourceService,
-    private readonly pullRequests?: PullRequestService,
-  ) {}
+    dependencies: InboundTranslatorDependencies = {},
+  ) {
+    this.pullRequests = dependencies.pullRequests;
+    this.ids = dependencies.ids ?? new UlidIdGenerator();
+    this.lookup = dependencies.lookup;
+  }
+
+  private readonly pullRequests: PullRequestService | undefined;
+  private readonly ids: IdGenerator;
+  private readonly lookup: ResourceLookup | undefined;
 
   async runOnce(limit = 100): Promise<void> {
     if (
@@ -105,11 +125,10 @@ export class InboundTranslator {
     const context = commandContext(event);
     const pullRequests =
       this.pullRequests ?? createPullRequestService(this.journal!, this.work, this.resources);
-    const current = await this.resources.findByExternalKey({
-      adapter: 'github',
-      key: payload.externalKey,
-    });
-    if (current !== null) {
+    const identity = await this.resolveIdentity({ adapter: 'github', key: payload.externalKey });
+    if (!identity.created) {
+      const current = await this.resources.get(identity.resourceId);
+      if (current === null) throw new Error(`Resource ${identity.resourceId} could not be loaded`);
       if (current.revision !== payload.revision) {
         await this.resources.discover(
           {
@@ -124,13 +143,12 @@ export class InboundTranslator {
       }
       if (payload.kind === 'pull-request')
         await pullRequests.observe(
-          observePullRequest(current.resourceId, externalWorkItemId(payload.externalKey), payload),
+          observePullRequest(current.resourceId, identity.workItemId, payload),
           context,
         );
       return;
     }
-    const resourceIdValue = externalResourceId(payload.externalKey);
-    const workItemIdValue = externalWorkItemId(payload.externalKey);
+    const { resourceId: resourceIdValue, workItemId: workItemIdValue } = identity;
     await this.resources.discover(
       {
         resourceId: resourceIdValue,
@@ -166,7 +184,12 @@ export class InboundTranslator {
     if (this.journal === undefined || this.resources === undefined || this.work === undefined)
       return;
     const payload = event.payload;
-    const resourceIdValue = externalResourceId(payload.externalKey);
+    if (this.lookup === undefined) throw new Error('InboundTranslator lookup is required');
+    let resourceIdValue = await this.lookup.resourceIdForExternalKey({
+      adapter: 'github',
+      key: payload.externalKey,
+    });
+    if (resourceIdValue === null) resourceIdValue = resourceId(this.ids.next('resource'));
     const proposed = translateGitHubReviewCommand({
       resourceId: resourceIdValue,
       revision: payload.revision,
@@ -192,6 +215,42 @@ export class InboundTranslator {
         context,
       );
   }
+
+  private mintIdentity(externalKey: { readonly adapter: string; readonly key: string }) {
+    const key = `${externalKey.adapter}:${externalKey.key}`;
+    const existing = this.minted.get(key);
+    if (existing !== undefined) return existing;
+    const identity = this.newIdentity(externalKey);
+    this.minted.set(key, identity);
+    return identity;
+  }
+
+  private newIdentity(_externalKey: { readonly adapter: string; readonly key: string }) {
+    return {
+      resourceId: resourceId(this.ids.next('resource')),
+      workItemId: workItemId(this.ids.next('work')),
+    };
+  }
+
+  private async resolveIdentity(externalKey: { readonly adapter: string; readonly key: string }) {
+    const key = `${externalKey.adapter}:${externalKey.key}`;
+    const inBatch = this.minted.get(key);
+    if (inBatch !== undefined) return { ...inBatch, created: false };
+    if (this.lookup === undefined) throw new Error('InboundTranslator lookup is required');
+    const resourceIdValue = await this.lookup.resourceIdForExternalKey(externalKey);
+    if (resourceIdValue !== null) {
+      if (this.resources === undefined) throw new Error('InboundTranslator resources are required');
+      const correlation = (await this.resources.correlations(resourceIdValue)).find(
+        (value) => value.role === 'primary',
+      );
+      if (correlation === undefined)
+        throw new Error(`Resource ${resourceIdValue} has no primary WorkItem correlation`);
+      const identity = { resourceId: resourceIdValue, workItemId: correlation.workItemId };
+      this.minted.set(key, identity);
+      return { ...identity, created: false };
+    }
+    return { ...this.mintIdentity(externalKey), created: true };
+  }
 }
 
 function commandContext(event: GitHubAdapterEvent): CommandContext {
@@ -201,19 +260,4 @@ function commandContext(event: GitHubAdapterEvent): CommandContext {
     occurredAt: event.occurredAt,
     actor: { kind: EventActorKind.Integration, id: 'github' },
   };
-}
-
-function stableSuffix(externalKey: string): string {
-  return externalKey
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '');
-}
-
-function externalResourceId(externalKey: string): ResourceId {
-  return resourceId(`resource-github-${stableSuffix(externalKey)}`);
-}
-
-function externalWorkItemId(externalKey: string): WorkItemId {
-  return workItemId(`work-github-${stableSuffix(externalKey)}`);
 }

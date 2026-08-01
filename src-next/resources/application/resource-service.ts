@@ -8,14 +8,15 @@ import {
   type ResourceEventDraft,
   type ResourceEventPayloads,
 } from '../contracts/events.js';
-import { resourceId, type ResourceId } from '../contracts/identifiers.js';
-import { isResourceStream, resourceStream } from '../contracts/streams.js';
+import type { ResourceId } from '../contracts/identifiers.js';
+import { resourceStream } from '../contracts/streams.js';
 import type {
   ExternalResourceKey,
   ResourceCorrelationView,
   ResourceView,
 } from '../contracts/views.js';
 import { ResourceRepository } from './resource-repository.js';
+import type { ResourceLookup } from './resource-lookup.js';
 
 export interface ResourceService {
   discover(command: DiscoverResource, context: CommandContext): Promise<ResourceView>;
@@ -32,7 +33,10 @@ export interface ResourceService {
   retract(resourceId: ResourceId, workItemId: WorkItemId, context: CommandContext): Promise<void>;
 }
 
-export function createResourceService(journal: EventJournal): ResourceService {
+export function createResourceService(
+  journal: EventJournal,
+  lookup: ResourceLookup,
+): ResourceService {
   const repository = new ResourceRepository(journal);
   return {
     discover: (command, context) => discoverResource(repository, command, context),
@@ -40,12 +44,13 @@ export function createResourceService(journal: EventJournal): ResourceService {
       return (await repository.load(resourceId)).resource?.view ?? null;
     },
     async findByExternalKey(externalKey) {
-      return (await repository.findByExternalKey(externalKey))?.view ?? null;
+      const id = await lookup.resourceIdForExternalKey(externalKey);
+      return id === null ? null : ((await repository.load(id)).resource?.view ?? null);
     },
     async correlations(resourceId) {
       return (await repository.load(resourceId)).resource?.correlations ?? [];
     },
-    correlationsForWork: (workItemId) => correlationsForWork(journal, repository, workItemId),
+    correlationsForWork: (workItemId) => lookup.correlationsForWork(workItemId),
     correlate: (resourceId, workItemId, role, context) =>
       correlateResource(repository, resourceId, workItemId, role, context),
     async retract(resourceId, workItemId, context) {
@@ -78,22 +83,6 @@ async function discoverResource(
   const resource = (await repository.load(command.resourceId)).resource;
   if (resource === null) throw new Error(`Resource ${command.resourceId} was not discovered`);
   return resource.view;
-}
-
-async function correlationsForWork(
-  journal: EventJournal,
-  repository: ResourceRepository,
-  workItemId: WorkItemId,
-): Promise<readonly ResourceCorrelationView[]> {
-  const ids = new Set(
-    (await journal.readAll(0))
-      .filter((event) => isResourceStream(event.stream))
-      .map((event) => resourceId(event.stream.id)),
-  );
-  const correlations = await Promise.all(
-    [...ids].map(async (id) => (await repository.load(id)).resource?.correlations ?? []),
-  );
-  return correlations.flat().filter((correlation) => correlation.workItemId === workItemId);
 }
 
 async function correlateResource(

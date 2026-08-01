@@ -1,16 +1,15 @@
-import { resourceCapability } from '../../src-next/resources/index.js';
+﻿import { resourceCapability } from '../../src-next/resources/index.js';
 import { describe, expect, it } from 'vitest';
+import { workId, resId } from '../support/identities.js';
 import {
   decodeResourceEvent,
   ResourceEventType,
-  resourceId,
   resourceStream,
   selectResourceEvent,
 } from '../../src-next/resources/index.js';
-import { workItemId } from '../../src-next/work/index.js';
 import { eventEnvelope } from '../support/event-envelope.js';
 
-const stream = resourceStream(resourceId('resource-1'));
+const stream = resourceStream(resId('one'));
 const samples = [
   [
     ResourceEventType.ResourceDiscovered,
@@ -22,16 +21,13 @@ const samples = [
     },
   ],
   [ResourceEventType.ResourceRevisionObserved, { revision: 'def' }],
-  [
-    ResourceEventType.WorkCorrelationEstablished,
-    { workItemId: workItemId('work-1'), role: 'primary' },
-  ],
-  [ResourceEventType.WorkCorrelationRetracted, { workItemId: workItemId('work-1') }],
+  [ResourceEventType.WorkCorrelationEstablished, { workItemId: workId('one'), role: 'primary' }],
+  [ResourceEventType.WorkCorrelationRetracted, { workItemId: workId('one') }],
   [
     ResourceEventType.WorkCorrelationConflicted,
     {
-      workItemId: workItemId('work-2'),
-      existingWorkItemId: workItemId('work-1'),
+      workItemId: workId('two'),
+      existingWorkItemId: workId('one'),
     },
   ],
 ] as const;

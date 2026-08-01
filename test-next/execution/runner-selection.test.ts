@@ -1,9 +1,9 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
+import { workId } from '../support/identities.js';
 
 import {
   ActivityRegistry,
   agentActivityDefinition,
-  activityName,
   activationId,
 } from '../../src-next/activities/index.js';
 import {
@@ -13,7 +13,7 @@ import {
 } from '../../src-next/execution/index.js';
 import { workflowInstanceId, orchestrationGroupId } from '../../src-next/orchestration/index.js';
 import { InMemoryEventJournal } from '../../src-next/persistence/index.js';
-import { workItemId } from '../../src-next/work/index.js';
+import {} from '../../src-next/work/index.js';
 import { FakeClock, SequentialIds } from '../e2e/support/world.js';
 
 describe('Execution runner selection', () => {
@@ -86,7 +86,7 @@ function activation(tier?: string) {
 }
 function context() {
   return {
-    workItemId: workItemId('work-00000000000000000000000002'),
+    workItemId: workId('00000000000000000000000002'),
     workflowInstanceId: workflowInstanceId('workflow-1'),
     orchestrationGroupId: orchestrationGroupId('group-1'),
     resources: [],

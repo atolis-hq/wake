@@ -1,18 +1,18 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
+import { workId } from '../support/identities.js';
 import {
   decodeWorkEvent,
   selectWorkEvent,
   WorkEventType,
-  workItemId,
   workItemStream,
 } from '../../src-next/work/index.js';
 import { eventEnvelope } from '../support/event-envelope.js';
 
-const stream = workItemStream(workItemId('work-1'));
+const stream = workItemStream(workId('1'));
 const samples = [
   [WorkEventType.ItemCreated, { objective: 'Ship it' }],
   [WorkEventType.ObjectiveRevised, { objective: 'Ship it safely' }],
-  [WorkEventType.ItemLinked, { to: workItemId('work-2'), relation: 'parent-of' }],
+  [WorkEventType.ItemLinked, { to: workId('2'), relation: 'parent-of' }],
   [WorkEventType.ItemClosed, { reason: 'done' }],
   [WorkEventType.ItemCancelled, { reason: 'obsolete' }],
 ] as const;

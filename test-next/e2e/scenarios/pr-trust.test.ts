@@ -1,5 +1,6 @@
-import { workflowName } from '../../../src-next/orchestration/contracts/identifiers.js';
+﻿import { workflowName } from '../../../src-next/orchestration/contracts/identifiers.js';
 import { expect, it } from 'vitest';
+import { workId } from '../../support/identities.js';
 
 import { createPullRequestMergeAuthorityGate } from '../../../src-next/activities/index.js';
 import {
@@ -8,8 +9,8 @@ import {
   createEventDraft,
   githubReviewObservation,
   integrationStream,
-} from '../../../src-next/integrations/index.js';
-import { workItemId } from '../../../src-next/work/index.js';
+} from '../../../src-next/integrations/github/index.js';
+import {} from '../../../src-next/work/index.js';
 import { mergeAuthorityTestActivity } from '../support/merge-authority-activity.js';
 import { TestWorld } from '../support/world.js';
 
@@ -20,9 +21,7 @@ it('allows current-revision human acceptance through real merge authority', asyn
   await appendAcceptance(world, 'reviewer', ['reviewer']);
   await translator.runOnce();
 
-  expect(
-    await world.pullRequests.authorizeMerge(workItemId('work-github-owner-repo-7'), context(world)),
-  ).toBe(true);
+  expect(await world.pullRequests.authorizeMerge(workId('2'), context(world))).toBe(true);
   expect(await world.events('pr.review-accepted')).toHaveLength(1);
 });
 
@@ -51,11 +50,11 @@ it.each([
     });
 
     await world.startWorkflow({
-      workItemId: workItemId('work-github-owner-repo-7'),
+      workItemId: workId('2'),
       workflowName: workflowName('merge'),
     });
-    await world.advance(workItemId('work-github-owner-repo-7'));
-    await world.advance(workItemId('work-github-owner-repo-7'));
+    await world.advance(workId('2'));
+    await world.advance(workId('2'));
 
     expect(await world.events('pr.review-accepted')).toHaveLength(0);
     expect(await world.events('pr.review-rejected')).toEqual([
@@ -73,13 +72,11 @@ it.each([
 );
 
 function translatorFor(world: TestWorld): InboundTranslator {
-  return new InboundTranslator(
-    world.journal,
-    world.checkpoints,
-    world.work,
-    world.resources,
-    world.pullRequests,
-  );
+  return new InboundTranslator(world.journal, world.checkpoints, world.work, world.resources, {
+    pullRequests: world.pullRequests,
+    ids: world.ids,
+    lookup: world.resourceLookup,
+  });
 }
 
 async function appendObservation(world: TestWorld): Promise<void> {

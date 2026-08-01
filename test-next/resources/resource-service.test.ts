@@ -1,9 +1,10 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
+import { resId } from '../support/identities.js';
 import { resourceId } from '../../src-next/resources/index.js';
 
 describe('Resource identifiers', () => {
   it('accepts the canonical resource identifier shape', () => {
-    expect(resourceId('resource-1')).toBe('resource-1');
+    expect(resourceId(resId('one'))).toBe(resId('one'));
   });
 
   it('rejects invalid resource identifiers', () => {

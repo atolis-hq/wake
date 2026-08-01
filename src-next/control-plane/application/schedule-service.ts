@@ -1,4 +1,4 @@
-import { correlationId, type CommandContext } from '../../kernel/index.js';
+import { correlationId, type CommandContext, type IdGenerator } from '../../kernel/index.js';
 import type { StartWorkflowInstance } from '../../orchestration/index.js';
 import {
   orchestrationGroupId,
@@ -17,6 +17,7 @@ export interface ScheduleCheckpointStore {
 
 export interface ScheduleServiceDependencies {
   readonly checkpoint: ScheduleCheckpointStore;
+  readonly ids: IdGenerator;
   readonly work: {
     create(command: CreateWorkItem, context: CommandContext): Promise<unknown>;
   };
@@ -39,7 +40,7 @@ export class ScheduleService {
     const slots = this.policy.elapsedSlots(config, this.dependencies.now(), checkpoint);
     const accepted: string[] = [];
     for (const slot of slots) {
-      const item = workItemId(`work-${safe(config.id)}-${safe(slot.at)}`);
+      const item = workItemId(this.dependencies.ids.next('work'));
       const workflow = workflowInstanceId(`workflow-${safe(slot.at)}`);
       const slotContext = slotCommandContext(context, slot.identity);
       const workCommand: CreateWorkItem = { workItemId: item, objective: config.objective };

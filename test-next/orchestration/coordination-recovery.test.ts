@@ -1,4 +1,4 @@
-import {
+﻿import {
   orchestrationGroupId,
   signalName,
   workflowInstanceId,
@@ -7,6 +7,8 @@ import {
 import { activityName } from '../../src-next/activities/index.js';
 import { z } from 'zod';
 import { expect, it } from 'vitest';
+import { workId } from '../support/identities.js';
+import { createTestResourceServices } from '../support/resource-lookup.js';
 import { ActivityRegistry } from '../../src-next/activities/index.js';
 import { createAdvanceOnce } from '../../src-next/control-plane/index.js';
 import { createExecutionService } from '../../src-next/execution/index.js';
@@ -26,8 +28,7 @@ import {
   type OrchestrationService,
 } from '../../src-next/orchestration/index.js';
 import { InMemoryCheckpointStore, InMemoryEventJournal } from '../../src-next/persistence/index.js';
-import { createResourceService } from '../../src-next/resources/index.js';
-import { createWorkService, workItemId, type WorkItemId } from '../../src-next/work/index.js';
+import { createWorkService, type WorkItemId } from '../../src-next/work/index.js';
 import { FakeClock, SequentialIds } from '../e2e/support/world.js';
 import { eventEnvelope } from '../support/event-envelope.js';
 
@@ -48,10 +49,10 @@ async function fixture() {
   const ids = new SequentialIds();
   const journal = new InMemoryEventJournal(clock);
   const work = createWorkService(journal);
-  for (const id of ['work-1', 'work-2'])
+  for (const id of ['1', '2'])
     await work.create(
-      { workItemId: workItemId(id), objective: `coordinate ${id}` },
-      command(`create-${id}`),
+      { workItemId: workId(id), objective: `coordinate ${id}` },
+      command(`create-work-${id}`),
     );
   const activities = new ActivityRegistry();
   activities.register({
@@ -122,7 +123,7 @@ async function fixture() {
 function startPrimary(
   service: OrchestrationService,
   id: string,
-  workItem: WorkItemId = workItemId('work-1'),
+  workItem: WorkItemId = workId('1'),
 ) {
   return service.start(
     {
@@ -146,7 +147,7 @@ it('binds durable primary ownership to the first exact WorkflowInstance across a
 
   const restarted = createOrchestrationService(journal, work, definitions);
   await expect(startPrimary(restarted, 'primary-b')).rejects.toThrow(/owned by primary-a/);
-  expect(await restarted.getPrimaryWorkflowInstanceId(workItemId('work-1'))).toBe('primary-a');
+  expect(await restarted.getPrimaryWorkflowInstanceId(workId('1'))).toBe('primary-a');
   await expect(startPrimary(restarted, 'primary-a')).resolves.toMatchObject({
     workflowInstanceId: workflowInstanceId('primary-a'),
   });
@@ -230,8 +231,8 @@ it('retries the same durable child claim after a crash before checkpointing the 
 
 it('uses unique durable event identities for the same trigger across two parents', async () => {
   const { journal, service } = await fixture();
-  await startPrimary(service, 'parent-a', workItemId('work-1'));
-  await startPrimary(service, 'parent-b', workItemId('work-2'));
+  await startPrimary(service, 'parent-a', workId('1'));
+  await startPrimary(service, 'parent-b', workId('2'));
   const event = watchEvent('shared-trigger');
   await createWatchReactor(service).react(event, command('shared-trigger:watch'));
   const requested = (await journal.readAll(0)).filter(
@@ -258,8 +259,8 @@ it('uses unique durable event identities for the same trigger across two parents
 it('reconciles an unconsumed child completion during ordinary restarted advancement', async () => {
   const { activities, clock, definitions, ids, journal, service, work } = await fixture();
   const parents = await Promise.all([
-    startPrimary(service, 'parent-1', workItemId('work-1')),
-    startPrimary(service, 'parent-2', workItemId('work-2')),
+    startPrimary(service, 'parent-1', workId('1')),
+    startPrimary(service, 'parent-2', workId('2')),
   ]);
   for (const [index, parent] of parents.entries()) {
     const waiting = await service.acceptOutcome(
@@ -322,11 +323,11 @@ it('reconciles an unconsumed child completion during ordinary restarted advancem
       { tiers: { standard: ['fake'] }, defaultTier: 'standard' },
       { clock, ids },
     ),
-    createResourceService(journal),
+    createTestResourceServices(journal).resources,
     clock,
     ids,
   );
-  await advance({ workItemId: workItemId('work-1'), maxProgress: 1 });
+  await advance({ workItemId: workId('1'), maxProgress: 1 });
   for (const [index, parent] of parents.entries())
     expect((await restarted.get(parent.workflowInstanceId))?.acceptedChildCompletionIds).toEqual([
       children[index]!.workflowInstanceId,

@@ -1,10 +1,11 @@
+﻿import { workId } from '../support/identities.js';
 import { z } from 'zod';
 
 import { ActivityRegistry, activityName, activationId } from '../../src-next/activities/index.js';
 import { createExecutionService, type RunView } from '../../src-next/execution/index.js';
 import { InMemoryEventJournal } from '../../src-next/persistence/index.js';
 import { orchestrationGroupId, workflowInstanceId } from '../../src-next/orchestration/index.js';
-import { workItemId } from '../../src-next/work/index.js';
+import {} from '../../src-next/work/index.js';
 import { FakeClock, SequentialIds } from '../e2e/support/world.js';
 
 export function executionFixture() {
@@ -60,7 +61,7 @@ export function executionFixture() {
         execution: { workspace: 'none' },
       },
       {
-        workItemId: workItemId('work-1'),
+        workItemId: workId('1'),
         workflowInstanceId: workflowInstanceId('workflow-1'),
         orchestrationGroupId: orchestrationGroupId('group-1'),
         resources: [],

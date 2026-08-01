@@ -1,4 +1,5 @@
-import { beforeEach, expect, it, vi } from 'vitest';
+﻿import { beforeEach, expect, it, vi } from 'vitest';
+import {} from '../support/identities.js';
 
 import {
   InboundTranslator,
@@ -6,9 +7,13 @@ import {
   createGitHubClient,
   createGitHubPullRequestSource,
   type GitHubPullRequestSourceClient,
-} from '../../src-next/integrations/index.js';
-import { InMemoryCheckpointStore, InMemoryEventJournal } from '../../src-next/persistence/index.js';
-import { createResourceService, resourceId } from '../../src-next/resources/index.js';
+} from '../../src-next/integrations/github/index.js';
+import {
+  InMemoryCheckpointStore,
+  InMemoryEventJournal,
+  InMemoryProjectionStore,
+} from '../../src-next/persistence/index.js';
+import { createResourceLookup, createResourceService } from '../../src-next/resources/index.js';
 import { createWorkService } from '../../src-next/work/index.js';
 import { createPullRequestService } from '../../src-next/activities/index.js';
 import { FakeClock } from '../e2e/support/world.js';
@@ -143,16 +148,19 @@ it('emits changed check evidence when GitHub checks change without PR metadata c
     checkRuns: async () => checkRuns.shift() ?? [],
     statuses: async () => [{ state: 'success' }],
   });
-  const { journal, translator, poll, pullRequests } = sourceRuntime(client);
+  const { journal, lookup, translator, poll, pullRequests } = sourceRuntime(client);
 
   await poll.pollOnce(new AbortController().signal);
   await translator.runOnce();
   await poll.pollOnce(new AbortController().signal);
   await translator.runOnce();
 
-  expect((await pullRequests.get(resourceId('resource-github-owner-repo-7')))?.checks).toBe(
-    'passing',
-  );
+  const resource = await lookup.resourceIdForExternalKey({
+    adapter: 'github',
+    key: 'owner/repo#7',
+  });
+  expect(resource).not.toBeNull();
+  expect((await pullRequests.get(resource!))?.checks).toBe('passing');
   expect((await journal.readAll(0)).map((event) => event.eventType)).toContain('pr.checks-changed');
 });
 
@@ -175,7 +183,7 @@ it('distinguishes pending to passing to a new pending run and deduplicates ident
     checkRuns: async () => checkRuns.shift() ?? [],
     statuses: async () => [{ id: 1, context: 'legacy', state: 'success' }],
   });
-  const { journal, translator, poll, pullRequests } = sourceRuntime(client);
+  const { journal, lookup, translator, poll, pullRequests } = sourceRuntime(client);
 
   for (let index = 0; index < 4; index += 1) {
     await poll.pollOnce(new AbortController().signal);
@@ -187,9 +195,12 @@ it('distinguishes pending to passing to a new pending run and deduplicates ident
       (event) => event.eventType === 'integration.github.work-observed',
     ),
   ).toHaveLength(3);
-  expect((await pullRequests.get(resourceId('resource-github-owner-repo-7')))?.checks).toBe(
-    'pending',
-  );
+  const resource = await lookup.resourceIdForExternalKey({
+    adapter: 'github',
+    key: 'owner/repo#7',
+  });
+  expect(resource).not.toBeNull();
+  expect((await pullRequests.get(resource!))?.checks).toBe('pending');
 });
 
 it('distinguishes a base-only provider evidence change', async () => {
@@ -303,7 +314,8 @@ function sourceRuntime(client: GitHubPullRequestSourceClient) {
   const clock = new FakeClock();
   const journal = new InMemoryEventJournal(clock);
   const checkpoints = new InMemoryCheckpointStore();
-  const resources = createResourceService(journal);
+  const lookup = createResourceLookup({ journal, projections: new InMemoryProjectionStore() });
+  const resources = createResourceService(journal, lookup);
   const work = createWorkService(journal);
   const pullRequests = createPullRequestService(journal, work, resources);
   const poll = new PollService(
@@ -316,9 +328,13 @@ function sourceRuntime(client: GitHubPullRequestSourceClient) {
   );
   return {
     journal,
+    lookup,
     pullRequests,
     poll,
-    translator: new InboundTranslator(journal, checkpoints, work, resources, pullRequests),
+    translator: new InboundTranslator(journal, checkpoints, work, resources, {
+      pullRequests,
+      lookup,
+    }),
   };
 }
 

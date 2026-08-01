@@ -1,4 +1,4 @@
-import {
+﻿import {
   orchestrationGroupId,
   signalName,
   workflowInstanceId,
@@ -7,6 +7,7 @@ import {
 import { activityName } from '../../src-next/activities/index.js';
 import { z } from 'zod';
 import { expect, it } from 'vitest';
+import { workId } from '../support/identities.js';
 import { ActivityRegistry } from '../../src-next/activities/index.js';
 import {
   correlationId,
@@ -21,7 +22,7 @@ import {
   type WorkflowInstanceView,
 } from '../../src-next/orchestration/index.js';
 import { InMemoryEventJournal } from '../../src-next/persistence/index.js';
-import { createWorkService, workItemId } from '../../src-next/work/index.js';
+import { createWorkService } from '../../src-next/work/index.js';
 import { FakeClock } from '../e2e/support/world.js';
 
 const context = (commandId: string): CommandContext => ({
@@ -35,13 +36,10 @@ async function fixture() {
   const journal = new InMemoryEventJournal(new FakeClock());
   const work = createWorkService(journal);
   await work.create(
-    { workItemId: workItemId('work-1'), objective: 'coordinate children' },
+    { workItemId: workId('1'), objective: 'coordinate children' },
     context('create-work-1'),
   );
-  await work.create(
-    { workItemId: workItemId('work-2'), objective: 'other work' },
-    context('create-work-2'),
-  );
+  await work.create({ workItemId: workId('2'), objective: 'other work' }, context('create-work-2'));
   const activities = new ActivityRegistry();
   activities.register({
     name: activityName('parent-work'),
@@ -106,7 +104,7 @@ async function startParent(
   return service.start(
     {
       workflowInstanceId: workflowInstanceId(id),
-      workItemId: workItemId('work-1'),
+      workItemId: workId('1'),
       workflowName: workflowName('parent'),
       orchestrationGroupId: orchestrationGroupId('group-1'),
     },
@@ -176,7 +174,7 @@ it('rejects incomplete, fake, and mismatched child provenance before starting', 
     incomplete.service.start(
       {
         workflowInstanceId: workflowInstanceId('incomplete-child'),
-        workItemId: workItemId('work-1'),
+        workItemId: workId('1'),
         workflowName: workflowName('child'),
         orchestrationGroupId: orchestrationGroupId('group-1'),
         watchId: 'review',
@@ -199,7 +197,7 @@ it('rejects incomplete, fake, and mismatched child provenance before starting', 
       {
         ...base('fake-parent-child'),
         workflowInstanceId: workflowInstanceId('fake-parent-child'),
-        workItemId: workItemId('work-1'),
+        workItemId: workId('1'),
         orchestrationGroupId: orchestrationGroupId('group-1'),
         parentWorkflowInstanceId: workflowInstanceId('missing-parent'),
       },
@@ -211,7 +209,7 @@ it('rejects incomplete, fake, and mismatched child provenance before starting', 
       {
         ...base('wrong-work-child'),
         workflowInstanceId: workflowInstanceId('wrong-work-child'),
-        workItemId: workItemId('work-2'),
+        workItemId: workId('2'),
         orchestrationGroupId: orchestrationGroupId('group-1'),
         parentWorkflowInstanceId: workflowInstanceId('parent-1'),
       },
@@ -223,7 +221,7 @@ it('rejects incomplete, fake, and mismatched child provenance before starting', 
       {
         ...base('wrong-group-child'),
         workflowInstanceId: workflowInstanceId('wrong-group-child'),
-        workItemId: workItemId('work-1'),
+        workItemId: workId('1'),
         orchestrationGroupId: orchestrationGroupId('other-group'),
         parentWorkflowInstanceId: workflowInstanceId('parent-1'),
       },

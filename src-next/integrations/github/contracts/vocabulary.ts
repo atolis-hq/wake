@@ -1,5 +1,9 @@
 import { defineClosedVocabulary, type ValueOf } from '../../../kernel/index.js';
 import { MergeMethod } from '../../../activities/index.js';
+import { adapterId, type AdapterId } from '../../contracts/identifiers.js';
+
+export const GitHubAdapter: AdapterId = adapterId('github');
+export const BuiltInAdapterId = { GitHub: GitHubAdapter } as const;
 
 export const GitHubCheckRunStatus = defineClosedVocabulary({
   Queued: 'queued',

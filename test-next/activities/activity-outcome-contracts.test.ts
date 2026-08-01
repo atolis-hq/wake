@@ -1,7 +1,8 @@
-import { readFile } from 'node:fs/promises';
+﻿import { readFile } from 'node:fs/promises';
 
 import { z } from 'zod';
 import { describe, expect, expectTypeOf, it } from 'vitest';
+import { workId } from '../support/identities.js';
 
 import {
   ActivityExecutionKind,
@@ -14,7 +15,7 @@ import {
   type ActivityExecutionContext,
   type ActivityInvocation,
 } from '../../src-next/activities/index.js';
-import { workItemId } from '../../src-next/work/index.js';
+import {} from '../../src-next/work/index.js';
 
 interface ScoredOutcome {
   readonly kind: 'scored';
@@ -51,7 +52,7 @@ describe('Activity outcome contracts', () => {
     const invocation: ActivityInvocation<{ readonly value: number }> = {
       activationId: activationId('activation-1'),
       activity: scoredActivity.name,
-      workItemId: workItemId('work-1'),
+      workItemId: workId('1'),
       workflowInstanceId: activityWorkflowInstanceId('workflow-1'),
       orchestrationGroupId: activityOrchestrationGroupId('group-1'),
       causationId: 'cause-1',

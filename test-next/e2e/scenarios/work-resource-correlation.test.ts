@@ -1,11 +1,12 @@
-import { resourceKind } from '../../../src-next/resources/index.js';
+﻿import { resourceKind } from '../../../src-next/resources/index.js';
 import { expect } from 'vitest';
+import { workId, resId } from '../../support/identities.js';
 import { correlationId } from '../../../src-next/kernel/index.js';
 import { InMemoryEventJournal } from '../../../src-next/persistence/index.js';
-import { createResourceService, resourceId } from '../../../src-next/resources/index.js';
-import { createWorkService, workItemId } from '../../../src-next/work/index.js';
+import { createWorkService } from '../../../src-next/work/index.js';
 import { defineScenario } from '../support/scenario.js';
 import { FakeClock } from '../support/world.js';
+import { createTestResourceServices } from '../../support/resource-lookup.js';
 
 defineScenario(
   {
@@ -29,11 +30,11 @@ defineScenario(
       occurredAt: '2026-07-30T12:00:00.000Z',
     };
     const work = createWorkService(journal);
-    const resources = createResourceService(journal);
-    const workId = workItemId('work-1');
-    const resource = resourceId('resource-1');
+    const { resources } = createTestResourceServices(journal);
+    const itemId = workId('1');
+    const resource = resId('1');
 
-    await work.create({ workItemId: workId, objective: 'Implement target spine' }, context);
+    await work.create({ workItemId: itemId, objective: 'Implement target spine' }, context);
     await resources.discover(
       {
         resourceId: resource,
@@ -43,13 +44,13 @@ defineScenario(
       },
       { ...context, commandId: 'discovery-1' },
     );
-    await resources.correlate(resource, workId, 'primary', {
+    await resources.correlate(resource, itemId, 'primary', {
       ...context,
       commandId: 'correlation-1',
     });
 
-    expect(await work.get(workId)).toEqual({
-      workItemId: 'work-1',
+    expect(await work.get(itemId)).toEqual({
+      workItemId: itemId,
       objective: 'Implement target spine',
       state: 'open',
       relatedWorkItems: [],

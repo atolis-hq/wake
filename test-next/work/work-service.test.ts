@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
+import { workId } from '../support/identities.js';
 import { correlationId } from '../../src-next/kernel/index.js';
 import { InMemoryEventJournal } from '../../src-next/persistence/index.js';
-import { createWorkService, workItemId, workItemStream } from '../../src-next/work/index.js';
+import { createWorkService, workItemStream } from '../../src-next/work/index.js';
 import { FakeClock } from '../e2e/support/world.js';
 
 const context = {
@@ -14,17 +15,17 @@ const context = {
 describe('WorkService', () => {
   it('creates, revises, links, and reloads Work-owned views', async () => {
     const service = createWorkService(new InMemoryEventJournal(new FakeClock()));
-    const work1 = workItemId('work-1');
+    const work1 = workId('1');
 
     await expect(
       service.create({ workItemId: work1, objective: 'Original objective' }, context),
     ).resolves.toMatchObject({
-      workItemId: 'work-1',
+      workItemId: work1,
       objective: 'Original objective',
       state: 'open',
     });
     await service.create(
-      { workItemId: workItemId('work-2'), objective: 'Related objective' },
+      { workItemId: workId('2'), objective: 'Related objective' },
       { ...context, commandId: 'command-2' },
     );
     await service.revise(
@@ -32,32 +33,32 @@ describe('WorkService', () => {
       { ...context, commandId: 'command-3' },
     );
     await service.link(
-      { from: work1, to: workItemId('work-2'), relation: 'relates-to' },
+      { from: work1, to: workId('2'), relation: 'relates-to' },
       { ...context, commandId: 'command-4' },
     );
 
     await expect(service.get(work1)).resolves.toEqual({
-      workItemId: 'work-1',
+      workItemId: work1,
       objective: 'Revised objective',
       state: 'open',
-      relatedWorkItems: [{ workItemId: 'work-2', relation: 'relates-to' }],
+      relatedWorkItems: [{ workItemId: workId('2'), relation: 'relates-to' }],
     });
   });
 
   it('uses event idempotency when the same command is repeated', async () => {
     const journal = new InMemoryEventJournal(new FakeClock());
     const service = createWorkService(journal);
-    const command = { workItemId: workItemId('work-1'), objective: 'Idempotent objective' };
+    const command = { workItemId: workId('1'), objective: 'Idempotent objective' };
 
     await service.create(command, context);
     await service.create(command, context);
 
-    expect(await journal.readStream(workItemStream(workItemId('work-1')))).toHaveLength(1);
+    expect(await journal.readStream(workItemStream(workId('1')))).toHaveLength(1);
   });
 
   it('rejects lifecycle changes after work is closed', async () => {
     const service = createWorkService(new InMemoryEventJournal(new FakeClock()));
-    const work1 = workItemId('work-1');
+    const work1 = workId('1');
     await service.create({ workItemId: work1, objective: 'Close me' }, context);
     await service.close(work1, 'completed', { ...context, commandId: 'command-2' });
 

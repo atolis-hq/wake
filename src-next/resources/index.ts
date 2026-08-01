@@ -1,5 +1,7 @@
 export * from './application/resource-repository.js';
 export * from './application/resource-projections.js';
+export * from './application/lookup-projections.js';
+export * from './application/resource-lookup.js';
 export * from './application/resource-service.js';
 export * from './contracts/commands.js';
 export * from './contracts/config.js';

@@ -15,7 +15,7 @@ describe('target composition root', () => {
       work: {},
       resources: {},
       execution: {
-        runners: { fake: { kind: 'fake' } },
+        agentRunners: { fake: { kind: 'fake' } },
         tiers: { standard: ['fake'] },
         defaultTier: 'standard',
       },

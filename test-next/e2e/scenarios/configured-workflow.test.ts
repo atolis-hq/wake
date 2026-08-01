@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
+import { workId } from '../../support/identities.js';
 import { z } from 'zod';
 import {
   ActivityExecutionKind,
@@ -19,7 +20,7 @@ import {
   workflowInstanceId,
   workflowName,
 } from '../../../src-next/orchestration/index.js';
-import { workItemId } from '../../../src-next/work/index.js';
+import {} from '../../../src-next/work/index.js';
 
 describe('E2E-CONFIG-001 configured workflow', () => {
   it('composes the module subtrees and completes one fake activity stage', async () => {
@@ -39,7 +40,7 @@ describe('E2E-CONFIG-001 configured workflow', () => {
       work: {},
       resources: {},
       execution: {
-        runners: { fake: { kind: 'fake' } },
+        agentRunners: { fake: { kind: 'fake' } },
         tiers: { standard: ['fake'] },
         defaultTier: 'standard',
       },
@@ -75,7 +76,7 @@ describe('E2E-CONFIG-001 configured workflow', () => {
       actor: { kind: 'system' as const, id: 'test' },
     };
     const item = await runtime.work.create(
-      { workItemId: workItemId('work-config'), objective: 'configured' },
+      { workItemId: workId('config'), objective: 'configured' },
       context,
     );
     const workflow = await runtime.orchestration.start(

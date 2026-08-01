@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
+import { resId } from '../support/identities.js';
 import { ActivityEventType, MergeMethod, activationId } from '../../src-next/activities/index.js';
 import {
   DeliveryEventType,
@@ -8,7 +9,7 @@ import {
   DeliveryState,
   deliveryStream,
 } from '../../src-next/integrations/index.js';
-import { resourceId, resourceStream } from '../../src-next/resources/index.js';
+import { resourceStream } from '../../src-next/resources/index.js';
 import { projectDeliveries } from '../../src-next/integrations/delivery/application/delivery-projector.js';
 import { eventEnvelope } from '../support/event-envelope.js';
 
@@ -21,12 +22,12 @@ describe('delivery projector', () => {
           idempotencyKey: 'merge-intent',
           activationId: activationId('activation-2'),
           workflowInstanceId: 'workflow-2',
-          resourceId: resourceId('resource-1'),
+          resourceId: resId('1'),
           revision: 'b',
           method: MergeMethod.Merge,
           requireChecks: true,
         },
-        resourceStream(resourceId('resource-1')),
+        resourceStream(resId('1')),
         2,
       ),
       eventEnvelope(
@@ -35,11 +36,11 @@ describe('delivery projector', () => {
           idempotencyKey: 'approve-intent',
           activationId: activationId('activation-1'),
           workflowInstanceId: 'workflow-1',
-          resourceId: resourceId('resource-1'),
+          resourceId: resId('1'),
           revision: 'a',
           body: 'ok',
         },
-        resourceStream(resourceId('resource-1')),
+        resourceStream(resId('1')),
         1,
       ),
     ]);
@@ -56,12 +57,12 @@ describe('delivery projector', () => {
         idempotencyKey: 'merge-intent',
         activationId: activationId('activation-1'),
         workflowInstanceId: 'workflow-1',
-        resourceId: resourceId('resource-1'),
+        resourceId: resId('1'),
         revision: 'a',
         method: MergeMethod.Merge,
         requireChecks: true,
       },
-      resourceStream(resourceId('resource-1')),
+      resourceStream(resId('1')),
       1,
     );
     const correlation = {
@@ -93,7 +94,7 @@ describe('delivery integration intents', () => {
     const correlation = {
       activationId: activationId('activation-1'),
       workflowInstanceId: 'workflow-1',
-      resourceId: resourceId('resource-1'),
+      resourceId: resId('1'),
     } as const;
 
     expect(

@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type { MergeMethod } from '../../../activities/index.js';
 import type { DeliveryIntentView } from '../../delivery/contracts/views.js';
 import { DeliveryIntentKind } from '../../delivery/contracts/vocabulary.js';
-import { BuiltInAdapterId } from '../../contracts/identifiers.js';
+import { GitHubAdapter } from '../contracts/vocabulary.js';
 import type { ResourceView } from '../../../resources/index.js';
 import {
   GitHubOutboundAction,
@@ -40,7 +40,7 @@ export function translateGitHubOutbound(
   resource: ResourceView,
   intent: DeliveryIntentView,
 ): GitHubOutboundCommand {
-  if (resource.externalKey.adapter !== BuiltInAdapterId.GitHub)
+  if (resource.externalKey.adapter !== GitHubAdapter)
     throw new Error('Resource is not a GitHub resource');
   const parsed = resourceKeySchema.safeParse(resource.externalKey.key.split('/'));
   if (!parsed.success)

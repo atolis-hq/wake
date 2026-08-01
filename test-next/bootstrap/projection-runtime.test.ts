@@ -1,4 +1,5 @@
-import { expect, it } from 'vitest';
+﻿import { expect, it } from 'vitest';
+import { resId, workId } from '../support/identities.js';
 
 import { createRuntimeProjectionRunner } from '../../src-next/bootstrap/index.js';
 import { createEventDraft } from '../../src-next/kernel/index.js';
@@ -7,13 +8,13 @@ import {
   InMemoryEventJournal,
   InMemoryProjectionStore,
 } from '../../src-next/persistence/index.js';
-import { resourceId, resourceStream } from '../../src-next/resources/index.js';
+import { resourceStream } from '../../src-next/resources/index.js';
 import { FakeClock } from '../e2e/support/world.js';
 
 it('constructs runtime replay with the activities-pr and delivery projections registered', async () => {
   const journal = new InMemoryEventJournal(new FakeClock());
   const projections = new InMemoryProjectionStore();
-  const stream = resourceStream(resourceId('resource-1'));
+  const stream = resourceStream(resId('1'));
   await journal.append(stream, 0, [
     createEventDraft({
       eventId: 'pr-discovered',
@@ -25,7 +26,7 @@ it('constructs runtime replay with the activities-pr and delivery projections re
       source: { kind: 'internal', id: 'activities-pr' },
       stream,
       payload: {
-        workItemId: 'work-1',
+        workItemId: workId('1'),
         state: 'open',
         headRevision: 'head-a',
         baseRevision: 'base-a',
@@ -37,7 +38,7 @@ it('constructs runtime replay with the activities-pr and delivery projections re
 
   await runner.runRegisteredOnce();
 
-  expect(await projections.read('activities-pr', 'resource-1')).toMatchObject({
+  expect(await projections.read('activities-pr', resId('1'))).toMatchObject({
     value: { headRevision: 'head-a' },
   });
   expect(await projections.list('delivery')).toEqual([]);

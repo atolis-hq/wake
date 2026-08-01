@@ -1,5 +1,6 @@
-import { signalName } from '../../src-next/orchestration/contracts/identifiers.js';
+﻿import { signalName } from '../../src-next/orchestration/contracts/identifiers.js';
 import { expect, expectTypeOf, it } from 'vitest';
+import { resId } from '../support/identities.js';
 import {
   activityDecisionStream,
   activationId,
@@ -12,7 +13,7 @@ import {
   type PullRequestDecision,
 } from '../../src-next/activities/pr/decision-claim.js';
 import { createEventDraft, type EventJournal } from '../../src-next/kernel/index.js';
-import { resourceId, resourceStream } from '../../src-next/resources/index.js';
+import { resourceStream } from '../../src-next/resources/index.js';
 import type { PullRequestActivityOutcome } from '../../src-next/activities/pr/contracts.js';
 
 type Fact<Type extends ActivityFactDraft['eventType']> = Extract<
@@ -48,7 +49,7 @@ it('maps action and decision kind to the exact canonical fact type', () => {
 
 it('rejects a malformed outcome/fact pair through the draft decoder context', () => {
   const activation = activationId('activation-1');
-  const stream = resourceStream(resourceId('resource-1'));
+  const stream = resourceStream(resId('1'));
   const approveRequest = createEventDraft({
     eventId: 'approve-request',
     eventType: ActivityEventType.PrApproveRequested,
@@ -104,7 +105,7 @@ it('rejects an inexact decision claim before calling the journal append boundary
     },
   };
   const activation = activationId('activation-1');
-  const stream = resourceStream(resourceId('resource-1'));
+  const stream = resourceStream(resId('1'));
   const mergeRequest = createEventDraft({
     eventId: 'merge-request',
     eventType: ActivityEventType.PrMergeRequested,

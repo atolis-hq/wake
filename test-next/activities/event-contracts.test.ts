@@ -1,7 +1,8 @@
-import { readFile } from 'node:fs/promises';
+﻿import { readFile } from 'node:fs/promises';
 
 import { signalName } from '../../src-next/orchestration/contracts/identifiers.js';
 import { describe, expect, expectTypeOf, it } from 'vitest';
+import { workId, resId } from '../support/identities.js';
 import {
   activityDecisionStream,
   activationId,
@@ -12,17 +13,17 @@ import {
   selectActivityEvent,
 } from '../../src-next/activities/index.js';
 import { createEventDraft } from '../../src-next/kernel/index.js';
-import { resourceId, resourceStream } from '../../src-next/resources/index.js';
-import { workItemId, workItemStream } from '../../src-next/work/index.js';
+import { resourceStream } from '../../src-next/resources/index.js';
+import { workItemStream } from '../../src-next/work/index.js';
 import { eventEnvelope } from '../support/event-envelope.js';
 
-const resource = resourceStream(resourceId('resource-1'));
-const work = workItemStream(workItemId('work-1'));
+const resource = resourceStream(resId('1'));
+const work = workItemStream(workId('1'));
 const activation = activationId('activation-1');
 const approveDecision = activityDecisionStream(activation, 'approve');
 const mergeDecision = activityDecisionStream(activation, 'merge');
 const context = {
-  workItemId: workItemId('work-1'),
+  workItemId: workId('1'),
   state: 'open',
   headRevision: 'abc',
   baseRevision: 'def',
@@ -41,7 +42,7 @@ const approveIntent = createEventDraft({
     idempotencyKey: 'approve-intent',
     activationId: activation,
     workflowInstanceId: 'workflow-1',
-    resourceId: resourceId('resource-1'),
+    resourceId: resId('1'),
     revision: 'abc',
     body: null,
   },
@@ -54,7 +55,7 @@ const mergeIntent = createEventDraft({
     idempotencyKey: 'merge-intent',
     activationId: activation,
     workflowInstanceId: 'workflow-1',
-    resourceId: resourceId('resource-1'),
+    resourceId: resId('1'),
     revision: 'abc',
     method: 'squash',
     requireChecks: true,
@@ -110,7 +111,7 @@ const samples = [
       activationId: activation,
       idempotencyKey: 'merge-denied',
       reason: 'checks-failing',
-      resourceId: resourceId('resource-1'),
+      resourceId: resId('1'),
       revision: 'ghi',
       method: 'squash',
     },
@@ -283,7 +284,7 @@ describe('Activity event integrity', () => {
       decodeActivityEvent(
         eventEnvelope(
           ActivityEventType.PrApproveRequested,
-          { ...approveIntent.payload, resourceId: resourceId('resource-2') },
+          { ...approveIntent.payload, resourceId: resId('2') },
           resource,
         ),
       ),

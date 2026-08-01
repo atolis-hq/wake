@@ -28,6 +28,7 @@ it('creates one normal WorkItem and workflow for each accepted elapsed slot', as
         checkpoint = value;
       },
     },
+    ids: { next: () => 'work-00000000000000000000000001' },
     work: {
       async create(command) {
         created.push(command.workItemId);
@@ -48,5 +49,5 @@ it('creates one normal WorkItem and workflow for each accepted elapsed slot', as
   expect(created).toHaveLength(1);
   expect(started).toHaveLength(1);
   expect(checkpoint).toBe('2026-07-31T12:01:00.000Z');
-  expect(created[0]).toMatch(/^work-hourly-2026-07-31t12-01-00-000z$/);
+  expect(created[0]).toBe('work-00000000000000000000000001');
 });

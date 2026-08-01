@@ -1,4 +1,4 @@
-import {
+﻿import {
   orchestrationGroupId,
   workflowInstanceId,
 } from '../../src-next/orchestration/contracts/identifiers.js';
@@ -6,6 +6,7 @@ import { activationId } from '../../src-next/activities/contracts/identifiers.js
 import { activityName } from '../../src-next/activities/index.js';
 import { z } from 'zod';
 import { describe, expect, it } from 'vitest';
+import { workId } from '../support/identities.js';
 import { ActivityRegistry } from '../../src-next/activities/index.js';
 import {
   acceptActivityOutcome,
@@ -14,7 +15,7 @@ import {
   orchestrationActivityOutcome,
   startInstance,
 } from '../../src-next/orchestration/index.js';
-import { workItemId } from '../../src-next/work/index.js';
+import {} from '../../src-next/work/index.js';
 
 function retryFixture() {
   const activities = new ActivityRegistry();
@@ -56,7 +57,7 @@ function retryFixture() {
   );
   const started = startInstance({
     workflowInstanceId: workflowInstanceId('workflow-1'),
-    workItemId: workItemId('work-1'),
+    workItemId: workId('1'),
     orchestrationGroupId: orchestrationGroupId('group-1'),
     definition,
     occurredAt: '2026-07-30T12:00:00.000Z',

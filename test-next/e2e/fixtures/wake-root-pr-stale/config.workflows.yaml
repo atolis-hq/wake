@@ -1,0 +1,13 @@
+default:
+  stages:
+    approve:
+      activity: pr.approve
+      with: { target: primary }
+      on:
+        done: { then: merge }
+    merge:
+      activity: pr.merge
+      with: { target: primary, method: squash, requireChecks: true }
+      on:
+        done: { then: done }
+        blocked: { then: done }

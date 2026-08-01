@@ -1,5 +1,6 @@
-import { resourceKind, resourceCapability } from '../../src-next/resources/index.js';
+﻿import { resourceKind, resourceCapability } from '../../src-next/resources/index.js';
 import { describe, expect, it } from 'vitest';
+import { workId, resId } from '../support/identities.js';
 
 import {
   createPullRequestService,
@@ -7,21 +8,18 @@ import {
 } from '../../src-next/activities/index.js';
 import { correlationId } from '../../src-next/kernel/index.js';
 import { InMemoryEventJournal } from '../../src-next/persistence/index.js';
-import {
-  createResourceService,
-  resourceId,
-  resourceStream,
-} from '../../src-next/resources/index.js';
-import { createWorkService, workItemId } from '../../src-next/work/index.js';
+import { resourceStream } from '../../src-next/resources/index.js';
+import { createWorkService } from '../../src-next/work/index.js';
 import { FakeClock } from '../e2e/support/world.js';
+import { createTestResourceServices } from '../support/resource-lookup.js';
 
-const resource = resourceId('resource-1');
-const workItem = workItemId('work-1');
+const resource = resId('1');
+const workItem = workId('1');
 
 describe('PullRequestService', () => {
   it('emits typed state changes from a PR observation without an adapter constructing facts', async () => {
     const journal = new InMemoryEventJournal(new FakeClock());
-    const resources = createResourceService(journal);
+    const { resources } = createTestResourceServices(journal);
     const work = createWorkService(journal);
     await work.create({ workItemId: workItem, objective: 'Merge PR' }, context('work'));
     await resources.discover(
@@ -74,7 +72,7 @@ describe('PullRequestService', () => {
 describe('PullRequestService review evidence', () => {
   it('rejects an accepted review when public resource conflict provenance is present', async () => {
     const journal = new InMemoryEventJournal(new FakeClock());
-    const resources = createResourceService(journal);
+    const { resources } = createTestResourceServices(journal);
     const work = createWorkService(journal);
     await work.create({ workItemId: workItem, objective: 'Merge PR' }, context('work'));
     await resources.discover(
@@ -100,11 +98,11 @@ describe('PullRequestService review evidence', () => {
       context('observe'),
     );
     await expect(
-      resources.correlate(resource, workItemId('work-2'), 'primary', context('conflict')),
+      resources.correlate(resource, workId('2'), 'primary', context('conflict')),
     ).rejects.toThrow('primary');
     const publicResource = await resources.get(resource);
     expect(publicResource?.primaryCorrelationConflict).toMatchObject({
-      attemptedWorkItemId: 'work-2',
+      attemptedWorkItemId: workId('2'),
     });
 
     await service.acceptReviewSignal(

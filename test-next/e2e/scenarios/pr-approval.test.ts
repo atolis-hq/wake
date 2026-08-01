@@ -1,4 +1,5 @@
-import { expect, it } from 'vitest';
+﻿import { expect, it } from 'vitest';
+import { resId } from '../../support/identities.js';
 
 import { resourceStream } from '../../../src-next/resources/index.js';
 import { workItemStream } from '../../../src-next/work/index.js';
@@ -84,9 +85,9 @@ it.each([
 function selectionCandidates(scenario: ApprovalScenario) {
   if (scenario === 'missing') return [];
   if (scenario === 'capability-missing')
-    return [{ resourceId: 'resource-primary', revision: 'revision-a' }];
+    return [{ resourceId: resId('primary'), revision: 'revision-a' }];
   return [
-    { resourceId: 'resource-other-primary', revision: 'revision-a' },
-    { resourceId: 'resource-primary', revision: 'revision-a' },
+    { resourceId: resId('primary'), revision: 'revision-a' },
+    { resourceId: resId('other-primary'), revision: 'revision-a' },
   ];
 }

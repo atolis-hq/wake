@@ -1,14 +1,15 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
+import { resId } from '../support/identities.js';
 import { MergeMethod } from '../../src-next/activities/index.js';
 import {
   BuiltInAdapterId,
   DeliveryIntentKind,
   DeliveryResultKind,
   DeliveryState,
-} from '../../src-next/integrations/index.js';
+} from '../../src-next/integrations/github/index.js';
 import { translateGitHubOutbound } from '../../src-next/integrations/github/application/outbound-translator.js';
 import { createGitHubDelivery } from '../../src-next/integrations/github/infrastructure/delivery.js';
-import { BuiltInResourceKind, resourceId } from '../../src-next/resources/index.js';
+import { BuiltInResourceKind } from '../../src-next/resources/index.js';
 import { eventId } from '../../src-next/kernel/index.js';
 
 const mergeIntent = {
@@ -17,7 +18,7 @@ const mergeIntent = {
   workflowInstanceId: 'workflow-1',
   activationId: 'activation-1',
   kind: DeliveryIntentKind.PrMerge,
-  resourceId: resourceId('resource-1'),
+  resourceId: resId('1'),
   payload: {
     kind: DeliveryIntentKind.PrMerge,
     revision: 'abc',
@@ -33,7 +34,7 @@ describe('GitHub outbound delivery', () => {
     expect(
       translateGitHubOutbound(
         {
-          resourceId: resourceId('resource-1'),
+          resourceId: resId('1'),
           kind: BuiltInResourceKind.PullRequest,
           externalKey: { adapter: BuiltInAdapterId.GitHub, key: 'o/r/2' },
           capabilities: [],
@@ -47,7 +48,7 @@ describe('GitHub outbound delivery', () => {
     expect(() =>
       translateGitHubOutbound(
         {
-          resourceId: resourceId('resource-1'),
+          resourceId: resId('1'),
           kind: BuiltInResourceKind.PullRequest,
           externalKey: {
             adapter: BuiltInAdapterId.GitHub,

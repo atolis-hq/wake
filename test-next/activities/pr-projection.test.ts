@@ -1,11 +1,12 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
+import { resId, workId } from '../support/identities.js';
 
 import {
   activityProjectionDefinitions,
   pullRequestProjection,
 } from '../../src-next/activities/index.js';
 import { createEventDraft, type EventEnvelope } from '../../src-next/kernel/index.js';
-import { resourceId, resourceStream } from '../../src-next/resources/index.js';
+import { resourceStream } from '../../src-next/resources/index.js';
 import {
   InMemoryCheckpointStore,
   InMemoryEventJournal,
@@ -24,7 +25,7 @@ function event(type: string, payload: Record<string, unknown>): EventEnvelope {
       causationId: 'command-1',
       actor: { kind: 'integration', id: 'github' },
       source: { kind: 'adapter', id: 'github' },
-      stream: resourceStream(resourceId('resource-1')),
+      stream: resourceStream(resId('1')),
       payload,
     }),
     globalPosition: 1,
@@ -36,9 +37,9 @@ function event(type: string, payload: Record<string, unknown>): EventEnvelope {
 describe('pullRequestProjection', () => {
   it('projects an accepted review only at its observed revision and clears it when head changes', () => {
     const discovered = pullRequestProjection.project(
-      pullRequestProjection.initial('resource-1'),
+      pullRequestProjection.initial(resId('1')),
       event('pr.discovered', {
-        workItemId: 'work-1',
+        workItemId: workId('1'),
         state: 'open',
         headRevision: 'head-a',
         baseRevision: 'base-a',
@@ -60,9 +61,9 @@ describe('pullRequestProjection', () => {
 
   it('preserves all distinct check states', () => {
     const discovered = pullRequestProjection.project(
-      pullRequestProjection.initial('resource-1'),
+      pullRequestProjection.initial(resId('1')),
       event('pr.discovered', {
-        workItemId: 'work-1',
+        workItemId: workId('1'),
         state: 'open',
         headRevision: 'head-a',
         baseRevision: 'base-a',
@@ -77,7 +78,7 @@ describe('pullRequestProjection', () => {
   it('registers activities-pr for named runtime replay', async () => {
     const journal = new InMemoryEventJournal(new FakeClock());
     const draft = event('pr.discovered', {
-      workItemId: 'work-1',
+      workItemId: workId('1'),
       state: 'open',
       headRevision: 'head-a',
       baseRevision: 'base-a',
@@ -96,7 +97,7 @@ describe('pullRequestProjection', () => {
       'activities-pr',
     );
     await runner.runRegisteredOnce();
-    expect(await store.read('activities-pr', 'resource-1')).toMatchObject({
+    expect(await store.read('activities-pr', resId('1'))).toMatchObject({
       value: { headRevision: 'head-a' },
     });
   });

@@ -1,5 +1,6 @@
-import { z } from 'zod';
+﻿import { z } from 'zod';
 import { expect, it } from 'vitest';
+import { workId } from '../support/identities.js';
 
 import { ActivityRegistry, activityName } from '../../src-next/activities/index.js';
 import { correlationId, type CommandContext } from '../../src-next/kernel/index.js';
@@ -17,7 +18,7 @@ import {
   workflowName,
   type OrchestrationService,
 } from '../../src-next/orchestration/index.js';
-import { createWorkService, workItemId } from '../../src-next/work/index.js';
+import { createWorkService } from '../../src-next/work/index.js';
 
 const occurredAt = '2026-07-30T12:00:00.000Z';
 const context = (commandId: string): CommandContext => ({
@@ -77,7 +78,7 @@ async function fixture() {
   const journal = new InMemoryEventJournal(clock);
   const work = createWorkService(journal);
   await work.create(
-    { workItemId: workItemId('work-public'), objective: 'characterize orchestration' },
+    { workItemId: workId('public'), objective: 'characterize orchestration' },
     context('create-work'),
   );
   const registry = activities();
@@ -120,7 +121,7 @@ function startPrimary(service: OrchestrationService) {
   return service.start(
     {
       workflowInstanceId: workflowInstanceId('primary-public'),
-      workItemId: workItemId('work-public'),
+      workItemId: workId('public'),
       workflowName: workflowName('parent'),
       orchestrationGroupId: orchestrationGroupId('group-public'),
     },
@@ -150,14 +151,14 @@ it('starts one primary WorkflowInstance', async () => {
     service.start(
       {
         workflowInstanceId: workflowInstanceId('second-primary'),
-        workItemId: workItemId('work-public'),
+        workItemId: workId('public'),
         workflowName: workflowName('parent'),
         orchestrationGroupId: orchestrationGroupId('second-group'),
       },
       context('start-second-primary'),
     ),
   ).rejects.toThrow(/primary workflow/i);
-  expect(await service.getPrimaryWorkflowInstanceId(workItemId('work-public'))).toBe(
+  expect(await service.getPrimaryWorkflowInstanceId(workId('public'))).toBe(
     workflowInstanceId('primary-public'),
   );
 });

@@ -1,5 +1,6 @@
-import { once } from 'node:events';
+﻿import { once } from 'node:events';
 import { describe, expect, it } from 'vitest';
+import { workId, resId } from '../../support/identities.js';
 import { z } from 'zod';
 import {
   ActivityExecutionKind,
@@ -25,23 +26,22 @@ import {
 } from '../../../src-next/persistence/index.js';
 import {
   resourceCapability,
-  resourceId,
   resourceKind,
   ResourceCorrelationRole,
 } from '../../../src-next/resources/index.js';
 import { createApiDispatcher, createApiHttpServer } from '../../../src-next/surfaces/index.js';
-import { workItemId } from '../../../src-next/work/index.js';
+import {} from '../../../src-next/work/index.js';
 
 describe('E2E-SURFACE-001 API metadata provenance', () => {
   it('attributes a retracted resource correlation to Work detail absence', async () => {
     const { root, context } = await createWorld();
     await root.work.create(
-      { workItemId: workItemId('work-retracted'), objective: 'Track absence provenance' },
+      { workItemId: workId('retracted'), objective: 'Track absence provenance' },
       context,
     );
     const discovered = await root.resources.discover(
       {
-        resourceId: resourceId('resource-retracted'),
+        resourceId: resId('retracted'),
         kind: resourceKind('pull-request'),
         externalKey: { adapter: 'github', key: 'atolis/wake#retracted' },
         capabilities: [resourceCapability('review')],
@@ -51,12 +51,12 @@ describe('E2E-SURFACE-001 API metadata provenance', () => {
     const correlatedAt = '2026-07-31T10:05:00.000Z';
     await root.resources.correlate(
       discovered.resourceId,
-      workItemId('work-retracted'),
+      workId('retracted'),
       ResourceCorrelationRole.Primary,
       { ...context, commandId: 'surface-correlate', occurredAt: correlatedAt },
     );
     const retractedAt = '2026-07-31T10:10:00.000Z';
-    await root.resources.retract(discovered.resourceId, workItemId('work-retracted'), {
+    await root.resources.retract(discovered.resourceId, workId('retracted'), {
       ...context,
       commandId: 'surface-retract',
       occurredAt: retractedAt,
@@ -74,13 +74,10 @@ describe('E2E-SURFACE-001 API metadata provenance', () => {
 
   it('timestamps collection totals and empty filters from the newest contributing fact', async () => {
     const { root, context } = await createWorld();
-    await root.work.create(
-      { workItemId: workItemId('work-earlier'), objective: 'Earlier work' },
-      context,
-    );
+    await root.work.create({ workItemId: workId('earlier'), objective: 'Earlier work' }, context);
     const laterAt = '2026-07-31T10:05:00.000Z';
     await root.work.create(
-      { workItemId: workItemId('work-later'), objective: 'Later work' },
+      { workItemId: workId('later'), objective: 'Later work' },
       { ...context, commandId: 'surface-flow-later', occurredAt: laterAt },
     );
     await root.projectionRunner.runRegisteredOnce();
@@ -104,12 +101,12 @@ describe('E2E-SURFACE-001 API domain shape', () => {
     // Given composed production applications create canonical Work, Resource, workflow, and Run facts.
     const { root, clock, context } = await createWorld();
     const work = await root.work.create(
-      { workItemId: workItemId('work-surface'), objective: 'Expose target surface' },
+      { workItemId: workId('surface'), objective: 'Expose target surface' },
       context,
     );
     const resource = await root.resources.discover(
       {
-        resourceId: resourceId('resource-surface'),
+        resourceId: resId('surface'),
         kind: resourceKind('pull-request'),
         externalKey: { adapter: 'github', key: 'atolis/wake#25' },
         capabilities: [resourceCapability('review')],
@@ -188,7 +185,7 @@ describe('E2E-SURFACE-001 command idempotency', () => {
       },
     });
     const work = await root.work.create(
-      { workItemId: workItemId('work-after-command'), objective: 'Wait for a new command' },
+      { workItemId: workId('after-command'), objective: 'Wait for a new command' },
       context,
     );
     await root.orchestration.start(
@@ -214,7 +211,7 @@ describe('E2E-SURFACE-001 command idempotency', () => {
       correlationId: correlationId('surface-flow-later'),
     };
     const laterWork = await root.work.create(
-      { workItemId: workItemId('work-after-eviction'), objective: 'Bound completed commands' },
+      { workItemId: workId('after-eviction'), objective: 'Bound completed commands' },
       laterContext,
     );
     await root.orchestration.start(
@@ -259,7 +256,7 @@ async function createWorld() {
         },
       },
       execution: {
-        runners: { fake: { kind: 'fake' } },
+        agentRunners: { fake: { kind: 'fake' } },
         tiers: { standard: ['fake'] },
         defaultTier: 'standard',
       },
@@ -268,6 +265,7 @@ async function createWorld() {
       surfaces: {},
     }),
     activities,
+    clock,
     journal: new InMemoryEventJournal(clock),
     projections: new InMemoryProjectionStore(),
     checkpoints: new InMemoryCheckpointStore(),

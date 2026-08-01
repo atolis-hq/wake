@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
+import { resId } from '../support/identities.js';
 
 import { DeliveryService } from '../../src-next/integrations/delivery/application/delivery-service.js';
 import {
@@ -9,7 +10,7 @@ import {
   DeliveryState,
 } from '../../src-next/integrations/index.js';
 import { MergeMethod } from '../../src-next/activities/index.js';
-import { resourceId } from '../../src-next/resources/index.js';
+import {} from '../../src-next/resources/index.js';
 import { InMemoryEventJournal } from '../../src-next/persistence/index.js';
 import { eventId } from '../../src-next/kernel/index.js';
 import { FakeClock } from '../e2e/support/world.js';
@@ -28,7 +29,7 @@ describe('DeliveryService', () => {
           workflowInstanceId: 'workflow-1',
           activationId: 'activation-1',
           kind: DeliveryIntentKind.PrMerge,
-          resourceId: resourceId('resource-1'),
+          resourceId: resId('1'),
           payload: {
             kind: DeliveryIntentKind.PrMerge,
             revision: 'abc',

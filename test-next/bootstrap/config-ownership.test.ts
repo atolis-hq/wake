@@ -14,7 +14,7 @@ describe('target configuration ownership', () => {
         'work: {}',
         'resources: {}',
         'execution:',
-        '  runners:',
+        '  agentRunners:',
         '    fake: { kind: fake }',
         '  tiers:',
         '    standard: [fake]',
@@ -31,7 +31,7 @@ describe('target configuration ownership', () => {
     expect(config.execution.defaultTier).toBe('standard');
     expect(config.controlPlane.maxDispatches).toBe(1);
     expect(config.controlPlane.schedules).toEqual([]);
-    expect(config.integrations.github.enabled).toBe(false);
+    expect(config.integrations).toEqual({});
     expect(config.surfaces.api.enabled).toBe(false);
   });
 

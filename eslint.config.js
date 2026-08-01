@@ -4,7 +4,14 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: ['coverage/**', 'dist/**', 'dist-next/**', 'node_modules/**', '.wake/**'],
+    ignores: [
+      'coverage/**',
+      'dist/**',
+      'dist-next/**',
+      'node_modules/**',
+      '.wake/**',
+      '.claude/worktrees/**',
+    ],
   },
   {
     files: ['**/*.{js,mjs,cjs}'],

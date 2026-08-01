@@ -1,17 +1,18 @@
-import { readFile } from 'node:fs/promises';
+﻿import { readFile } from 'node:fs/promises';
 
 import { resourceKind, resourceCapability } from '../../src-next/resources/index.js';
 import { describe, expect, it } from 'vitest';
+import { workId, resId } from '../support/identities.js';
 
 import {
   decidePullRequestAuthority,
   type PullRequestAuthorityInput,
 } from '../../src-next/activities/index.js';
-import { resourceId } from '../../src-next/resources/index.js';
-import { workItemId } from '../../src-next/work/index.js';
+import {} from '../../src-next/resources/index.js';
+import {} from '../../src-next/work/index.js';
 
-const workItem = workItemId('work-1');
-const resource = resourceId('resource-1');
+const workItem = workId('1');
+const resource = resId('1');
 
 function authorityInput(
   overrides: Partial<PullRequestAuthorityInput> = {},
@@ -82,11 +83,11 @@ describe('decidePullRequestAuthority', () => {
           {
             resource: {
               ...authorityInput().resources[0]!.resource,
-              resourceId: resourceId('resource-2'),
+              resourceId: resId('2'),
             },
             correlations: [
               {
-                resourceId: resourceId('resource-2'),
+                resourceId: resId('2'),
                 workItemId: workItem,
                 role: 'primary' as const,
                 establishedByEventId: 'correlation-2',
@@ -106,7 +107,7 @@ describe('decidePullRequestAuthority', () => {
               ...authorityInput().resources[0]!.correlations,
               {
                 resourceId: resource,
-                workItemId: workItemId('work-2'),
+                workItemId: workId('2'),
                 role: 'primary' as const,
                 establishedByEventId: 'correlation-2',
               },

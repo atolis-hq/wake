@@ -6,11 +6,11 @@ import {
   createEventDraft,
   integrationStream,
   type ExternalWorkObservedPayload,
-} from '../../src-next/integrations/index.js';
+} from '../../src-next/integrations/github/index.js';
 import { InMemoryCheckpointStore, InMemoryEventJournal } from '../../src-next/persistence/index.js';
-import { createResourceService } from '../../src-next/resources/index.js';
 import { createWorkService } from '../../src-next/work/index.js';
 import { FakeClock } from '../e2e/support/world.js';
+import { createTestResourceServices } from '../support/resource-lookup.js';
 
 describe('InboundTranslator', () => {
   it('translates an external work observation into Work and Resource command candidates', () => {
@@ -34,7 +34,7 @@ describe('InboundTranslator', () => {
   it('reprocessing the same adapter event does not mint another WorkItem', async () => {
     const clock = new FakeClock();
     const journal = new InMemoryEventJournal(clock);
-    const resources = createResourceService(journal);
+    const { resources, lookup } = createTestResourceServices(journal);
     const work = createWorkService(journal);
     const checkpoints = new InMemoryCheckpointStore();
     const event = createEventDraft({
@@ -49,21 +49,21 @@ describe('InboundTranslator', () => {
       payload: observation(),
     });
     await journal.append(event.stream, 0, [event]);
-    const translator = new InboundTranslator(journal, checkpoints, work, resources);
+    const translator = new InboundTranslator(journal, checkpoints, work, resources, { lookup });
 
     await translator.runOnce();
     await checkpoints.reset('reactor:integration.github.inbound');
     await translator.runOnce();
 
-    expect(await work.get('work-github-owner-repo-7' as never)).not.toBeNull();
-    expect(
-      await resources.findByExternalKey({ adapter: 'github', key: 'owner/repo#7' }),
-    ).toMatchObject({
-      resourceId: 'resource-github-owner-repo-7',
+    const resource = await lookup.resourceIdForExternalKey({
+      adapter: 'github',
+      key: 'owner/repo#7',
     });
-    expect(await resources.correlationsForWork('work-github-owner-repo-7' as never)).toHaveLength(
-      1,
-    );
+    expect(resource).toMatch(/^resource-[0-9a-hjkmnp-tv-z]{26}$/);
+    expect(resource).not.toMatch(/github/);
+    expect(
+      await resources.correlationsForWork((await resources.correlations(resource!))[0]!.workItemId),
+    ).toHaveLength(1);
   });
 });
 

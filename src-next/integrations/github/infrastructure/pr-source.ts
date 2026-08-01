@@ -7,7 +7,7 @@ import {
 import { EventSourceKind } from '../../../kernel/index.js';
 import { createHash } from 'node:crypto';
 import { createEventDraft, EventActorKind } from '../../../kernel/index.js';
-import { BuiltInAdapterId } from '../../contracts/identifiers.js';
+import { GitHubAdapter } from '../contracts/vocabulary.js';
 import { integrationStream } from '../../contracts/streams.js';
 import { formatGitHubResourceKey } from '../contracts/external-key.js';
 import type { ExternalEventSource } from '../application/poll-service.js';
@@ -68,7 +68,7 @@ export function createGitHubPullRequestSource(input: {
   };
 }
 
-export function pullRequestObservation(input: {
+function pullRequestObservation(input: {
   readonly repository: string;
   readonly pullRequest: GitHubPullRequestPayload;
   readonly evidence: CheckEvidence;
@@ -107,12 +107,12 @@ export function pullRequestObservation(input: {
     causationId: `github:${key}:${fingerprint}`,
     actor: { kind: EventActorKind.Integration, id: 'github' },
     source: { kind: EventSourceKind.Adapter, id: 'github' },
-    stream: integrationStream(BuiltInAdapterId.GitHub),
+    stream: integrationStream(GitHubAdapter),
     payload,
   });
 }
 
-export function normalizeCheckEvidence(
+function normalizeCheckEvidence(
   checkRuns: readonly GitHubCheckRunPayload[],
   statuses: readonly GitHubCommitStatusPayload[],
 ): PullRequestCheckStateValue {

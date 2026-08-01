@@ -5,7 +5,8 @@ export type ResourceKind = Brand<string, 'ResourceKind'>;
 export type ResourceCapability = Brand<string, 'ResourceCapability'>;
 
 export const resourceId = (value: string): ResourceId => {
-  if (!/^resource-[a-z0-9-]+$/.test(value)) throw new Error(`Invalid ResourceId: ${value}`);
+  if (!/^resource-[0-9a-hjkmnp-tv-z]{26}$/.test(value))
+    throw new Error(`Invalid ResourceId: ${value}. Resource identity is minted, never derived.`);
   return value as ResourceId;
 };
 

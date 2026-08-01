@@ -1,0 +1,13 @@
+default:
+  stages:
+    refine:
+      activity: agent
+      with: { prompt: refine the objective }
+      execution: { workspace: none, tier: standard }
+      on:
+        done: { then: publish }
+    publish:
+      activity: status.publish
+      with: { body: Intake completed }
+      on:
+        done: { then: done }

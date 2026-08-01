@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export interface GitHubResourceLocator {
+interface GitHubResourceLocator {
   readonly owner: string;
   readonly repo: string;
   readonly number: number;

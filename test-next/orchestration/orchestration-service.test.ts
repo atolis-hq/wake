@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises';
+﻿import { readFile } from 'node:fs/promises';
 
 import {
   orchestrationGroupId,
@@ -8,10 +8,11 @@ import {
 import { activityName } from '../../src-next/activities/index.js';
 import { z } from 'zod';
 import { expect, it } from 'vitest';
+import { workId } from '../support/identities.js';
 import { ActivityRegistry } from '../../src-next/activities/index.js';
 import { InMemoryEventJournal } from '../../src-next/persistence/index.js';
 import { correlationId } from '../../src-next/kernel/index.js';
-import { createWorkService, workItemId } from '../../src-next/work/index.js';
+import { createWorkService } from '../../src-next/work/index.js';
 import { compileWorkflow, createOrchestrationService } from '../../src-next/orchestration/index.js';
 import { FakeClock } from '../e2e/support/world.js';
 
@@ -32,10 +33,7 @@ it('persists instances and accepts outcomes idempotently', async () => {
     occurredAt: '2026-07-30T12:00:00Z',
     actor: { kind: 'operator' as const, id: 'test' },
   };
-  await createWorkService(journal).create(
-    { workItemId: workItemId('work-1'), objective: 'ship' },
-    context,
-  );
+  await createWorkService(journal).create({ workItemId: workId('1'), objective: 'ship' }, context);
   const registry = new ActivityRegistry();
   registry.register({
     name: activityName('implement'),
@@ -65,7 +63,7 @@ it('persists instances and accepts outcomes idempotently', async () => {
   const instance = await service.start(
     {
       workflowInstanceId: workflowInstanceId('workflow-1'),
-      workItemId: workItemId('work-1'),
+      workItemId: workId('1'),
       workflowName: workflowName('default'),
       orchestrationGroupId: orchestrationGroupId('group-1'),
     },

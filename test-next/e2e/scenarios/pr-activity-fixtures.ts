@@ -1,3 +1,4 @@
+﻿import { workId, resId } from '../../support/identities.js';
 import { workflowName } from '../../../src-next/orchestration/contracts/identifiers.js';
 import { resourceCapability, resourceKind } from '../../../src-next/resources/index.js';
 import {
@@ -6,7 +7,7 @@ import {
 } from '../../../src-next/activities/index.js';
 import type { ResourceCapability } from '../../../src-next/resources/index.js';
 import { resourceId } from '../../../src-next/resources/index.js';
-import { workItemId, type WorkItemId } from '../../../src-next/work/index.js';
+import { type WorkItemId } from '../../../src-next/work/index.js';
 import { TestWorld } from '../support/world.js';
 
 export type ApprovalScenario = 'missing' | 'capability-missing' | 'ambiguous' | 'conflict' | 'safe';
@@ -35,7 +36,7 @@ export async function setupApprovalScenario(
 ): Promise<ScenarioSetup> {
   const work = await world.createWork({
     objective: `approve ${scenario}`,
-    workItemId: workItemId('work-1'),
+    workItemId: workId('one'),
   });
   if (scenario === 'missing') return { workItemId: work.workItemId };
   const primaryCapabilities: readonly ResourceCapability[] =
@@ -79,7 +80,7 @@ export async function setupMergeScenario(
 ): Promise<ScenarioSetup> {
   const work = await world.createWork({
     objective: `merge ${scenario}`,
-    workItemId: workItemId('work-1'),
+    workItemId: workId('one'),
   });
   if (scenario === 'missing') return { workItemId: work.workItemId };
   const primaryCapabilities: readonly ResourceCapability[] =
@@ -222,7 +223,7 @@ async function addResource(
   role: 'primary' | 'secondary',
   capabilities: readonly ResourceCapability[],
 ) {
-  const resource = resourceId(`resource-${suffix}`);
+  const resource = resId(suffix);
   await world.discoverResource({
     resourceId: resource,
     kind: resourceKind('pull-request'),
@@ -263,7 +264,7 @@ async function recordCorrelationConflict(
   await expectRejection(
     world.resources.correlate(
       resource,
-      workItemId('work-conflicting'),
+      workId('conflicting'),
       'primary',
       command(world, 'conflict'),
     ),

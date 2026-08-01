@@ -1,7 +1,7 @@
 import { EventSourceKind } from '../../../kernel/index.js';
 import { ReviewActorKind } from '../../../activities/index.js';
 import { createEventDraft, EventActorKind } from '../../../kernel/index.js';
-import { BuiltInAdapterId } from '../../contracts/identifiers.js';
+import { GitHubAdapter } from '../contracts/vocabulary.js';
 import { integrationStream } from '../../contracts/streams.js';
 import { formatGitHubResourceKey } from '../contracts/external-key.js';
 import type { GitHubIssuePayload } from '../contracts/payloads.js';
@@ -24,7 +24,7 @@ export function issueObservation(input: {
     causationId: `github:${key}:${input.issue.updated_at}`,
     actor: { kind: EventActorKind.Integration, id: 'github' },
     source: { kind: EventSourceKind.Adapter, id: 'github' },
-    stream: integrationStream(BuiltInAdapterId.GitHub),
+    stream: integrationStream(GitHubAdapter),
     payload: {
       externalKey: key,
       kind: 'issue',

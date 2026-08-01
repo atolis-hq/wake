@@ -1,9 +1,10 @@
-import { z } from 'zod';
+﻿import { z } from 'zod';
 import { expect, it } from 'vitest';
+import { resId } from '../../support/identities.js';
 
 import { activityName } from '../../../src-next/activities/index.js';
 import { correlationId } from '../../../src-next/kernel/index.js';
-import { resourceId, resourceKind } from '../../../src-next/resources/index.js';
+import { resourceKind } from '../../../src-next/resources/index.js';
 import { workflowName } from '../../../src-next/orchestration/index.js';
 import { TestWorld } from '../support/world.js';
 
@@ -42,7 +43,7 @@ it('E2E-EXEC-CANCEL-001 cancels Work with a live fake Run across Execution resta
   });
   const work = await world.createWork({ objective: 'cancel an active Run' });
   const resource = await world.discoverResource({
-    resourceId: resourceId('resource-1'),
+    resourceId: resId('1'),
     kind: resourceKind('issue'),
     externalKey: { adapter: 'fake', key: 'issues/1' },
     capabilities: [],

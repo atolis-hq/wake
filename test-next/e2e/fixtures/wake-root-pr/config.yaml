@@ -1,0 +1,16 @@
+schemaVersion: 1
+execution:
+  agentRunners:
+    fake: { kind: fake, timeoutMs: 5000 }
+  tiers: { standard: [fake] }
+  defaultTier: standard
+controlPlane: {}
+integrations:
+  fake:
+    provider: fake
+    enabled: true
+    evidenceFile: provider/evidence.json
+    effectsFile: provider/effects.json
+surfaces:
+  api: { enabled: false }
+  web: { enabled: false }

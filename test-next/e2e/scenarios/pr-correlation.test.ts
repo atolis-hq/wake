@@ -1,4 +1,5 @@
-import { expect, it } from 'vitest';
+﻿import { expect, it } from 'vitest';
+import { workId, resId } from '../../support/identities.js';
 
 import {
   createPullRequestService,
@@ -10,25 +11,27 @@ import {
   createEventDraft,
   integrationStream,
   type ExternalWorkObservedPayload,
-} from '../../../src-next/integrations/index.js';
+} from '../../../src-next/integrations/github/index.js';
 import {
   InMemoryCheckpointStore,
   InMemoryEventJournal,
 } from '../../../src-next/persistence/index.js';
 import { ProjectionRunner } from '../../../src-next/persistence/index.js';
 import { InMemoryProjectionStore } from '../../../src-next/persistence/index.js';
-import { createResourceService, resourceId } from '../../../src-next/resources/index.js';
-import { createWorkService, workItemId } from '../../../src-next/work/index.js';
+import { createResourceLookup, createResourceService } from '../../../src-next/resources/index.js';
+import { createWorkService } from '../../../src-next/work/index.js';
 import { FakeClock } from '../support/world.js';
 
 it('E2E-PR-001 correlates a verified primary PR and rejects uncorrelated or conflicting review evidence', async () => {
   const clock = new FakeClock();
   const journal = new InMemoryEventJournal(clock);
-  const resources = createResourceService(journal);
-  const work = createWorkService(journal);
   const checkpoints = new InMemoryCheckpointStore();
+  const projectionStore = new InMemoryProjectionStore();
+  const lookup = createResourceLookup({ journal, projections: projectionStore });
+  const resources = createResourceService(journal, lookup);
+  const work = createWorkService(journal);
   const pullRequests = createPullRequestService(journal, work, resources);
-  const prResource = resourceId('resource-github-owner-repo-1');
+  const prResource = resId('github-owner-repo-1');
   const payload = observation('head-a');
   const evidence = createEventDraft({
     eventId: 'github:pr-1',
@@ -42,19 +45,26 @@ it('E2E-PR-001 correlates a verified primary PR and rejects uncorrelated or conf
     payload,
   });
   await journal.append(evidence.stream, 0, [evidence]);
-  const translator = new InboundTranslator(journal, checkpoints, work, resources, pullRequests);
+  const translator = new InboundTranslator(journal, checkpoints, work, resources, {
+    pullRequests,
+    lookup,
+  });
 
   expect(translator.translate(payload).map((candidate) => candidate.kind)).toContain('pr.observe');
   await translator.runOnce();
-  const projectionStore = new InMemoryProjectionStore();
   await new ProjectionRunner(journal, projectionStore, checkpoints).runOnce(pullRequestProjection);
+  const resource = await lookup.resourceIdForExternalKey({
+    adapter: 'github',
+    key: payload.externalKey,
+  });
+  expect(resource).not.toBeNull();
+  const [correlation] = await resources.correlations(resource!);
+  expect(correlation).toBeDefined();
 
-  expect(await projectionStore.read('activities-pr', 'resource-github-owner-repo-1')).toMatchObject(
-    {
-      value: { workItemId: 'work-github-owner-repo-1', headRevision: 'head-a' },
-    },
-  );
-  expect(await resources.correlationsForWork('work-github-owner-repo-1' as never)).toMatchObject([
+  expect(await projectionStore.read('activities-pr', resource!)).toMatchObject({
+    value: { workItemId: correlation!.workItemId, headRevision: 'head-a' },
+  });
+  expect(await resources.correlationsForWork(correlation!.workItemId)).toMatchObject([
     { role: 'primary' },
   ]);
   await appendObservation(journal, clock, observation('head-b'), 'github:pr-2');
@@ -72,13 +82,13 @@ it('E2E-PR-001 correlates a verified primary PR and rejects uncorrelated or conf
   expect(
     (await journal.readAll(0)).filter((event) => event.eventType === 'pr.review-rejected'),
   ).toEqual([expect.objectContaining({ payload: { reason: 'missing-resource' } })]);
-  expect(await work.get('work-github-owner-repo-1' as never)).toMatchObject({
+  expect(await work.get(correlation!.workItemId)).toMatchObject({
     objective: payload.title,
   });
   expect(await pullRequests.get(prResource)).toEqual(safePullRequest);
 
   await expect(
-    resources.correlate('resource-github-owner-repo-1' as never, workItemId('work-2'), 'primary', {
+    resources.correlate(resource!, workId('2'), 'primary', {
       commandId: 'conflicting-primary',
       correlationId: 'github:pr-1' as never,
       occurredAt: clock.now().toISOString(),
@@ -93,7 +103,7 @@ it('E2E-PR-001 correlates a verified primary PR and rejects uncorrelated or conf
     expect.objectContaining({ payload: { reason: 'missing-resource' } }),
     expect.objectContaining({ payload: { reason: 'correlation-conflict' } }),
   ]);
-  expect(await work.get('work-github-owner-repo-1' as never)).toMatchObject({
+  expect(await work.get(correlation!.workItemId)).toMatchObject({
     objective: payload.title,
   });
   expect(await pullRequests.get(prResource)).toEqual(safePullRequest);

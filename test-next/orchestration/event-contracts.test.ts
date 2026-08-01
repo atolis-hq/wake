@@ -1,4 +1,4 @@
-import {
+﻿import {
   orchestrationGroupId,
   signalName,
   workflowName,
@@ -6,6 +6,7 @@ import {
 import { activationId } from '../../src-next/activities/contracts/identifiers.js';
 import { activityName } from '../../src-next/activities/index.js';
 import { describe, expect, expectTypeOf, it } from 'vitest';
+import { workId } from '../support/identities.js';
 import {
   childOrchestrationGroupStream,
   decodeOrchestrationEvent,
@@ -19,11 +20,11 @@ import {
   type WorkflowOrchestrationEvent,
   type WorkflowOrchestrationEventDraft,
 } from '../../src-next/orchestration/index.js';
-import { workItemId } from '../../src-next/work/index.js';
+import {} from '../../src-next/work/index.js';
 import { eventEnvelope } from '../support/event-envelope.js';
 
 const workflow = workflowInstanceStream(workflowInstanceId('workflow-1'));
-const primaryGroup = primaryOrchestrationGroupStream(workItemId('work-1'));
+const primaryGroup = primaryOrchestrationGroupStream(workId('1'));
 const childGroup = childOrchestrationGroupStream('group-1', 'watch-1');
 const metadata = {
   parentWorkflowInstanceId: workflowInstanceId('workflow-parent'),
@@ -54,7 +55,7 @@ const samples = [
   eventEnvelope(
     OrchestrationEventType.InstanceStarted,
     {
-      workItemId: workItemId('work-1'),
+      workItemId: workId('1'),
       workflowName: workflowName('default'),
       orchestrationGroupId: orchestrationGroupId('group-1'),
       entry: 'implement',
@@ -125,7 +126,7 @@ const samples = [
   ),
   eventEnvelope(
     OrchestrationEventType.PrimaryClaimed,
-    { workItemId: workItemId('work-1'), workflowInstanceId: workflowInstanceId('workflow-1') },
+    { workItemId: workId('1'), workflowInstanceId: workflowInstanceId('workflow-1') },
     primaryGroup,
   ),
   eventEnvelope(
@@ -274,7 +275,7 @@ describe('Orchestration event contract', () => {
       decodeOrchestrationEvent(
         eventEnvelope(
           OrchestrationEventType.PrimaryClaimed,
-          { ...samples[21].payload, workItemId: workItemId('work-2') },
+          { ...samples[21].payload, workItemId: workId('2') },
           primaryGroup,
         ),
       ),

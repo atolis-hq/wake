@@ -12,7 +12,8 @@ import {
   type EventEnvelope,
   type EventUnion,
 } from '../../../kernel/index.js';
-import { adapterId, BuiltInAdapterId } from '../../contracts/identifiers.js';
+import { adapterId } from '../../contracts/identifiers.js';
+import { GitHubAdapter } from './vocabulary.js';
 import { IntegrationStreamKind, type IntegrationStreamRef } from '../../contracts/streams.js';
 
 export const GitHubEventType = {
@@ -44,7 +45,7 @@ export interface ExternalWorkObservedPayload {
   readonly raw: Readonly<Record<string, unknown>>;
 }
 
-export interface GitHubCommentObservedPayload {
+interface GitHubCommentObservedPayload {
   readonly externalKey: string;
   readonly body: string;
   readonly revision: string;
@@ -73,7 +74,7 @@ export interface GitHubCommentObservedPayload {
   readonly raw: Readonly<Record<string, unknown>>;
 }
 
-export interface GitHubDeliveryObservedPayload {
+interface GitHubDeliveryObservedPayload {
   readonly deliveryId: string;
   readonly raw: Readonly<Record<string, unknown>>;
 }
@@ -90,7 +91,7 @@ export type GitHubAdapterEventDraft = EventDraftUnion<GitHubEventPayloads, Integ
 const streamSchema = z
   .object({
     kind: z.literal(IntegrationStreamKind.Integration),
-    id: z.literal(BuiltInAdapterId.GitHub).transform(adapterId),
+    id: z.literal(GitHubAdapter).transform(adapterId),
   })
   .strict();
 const rawSchema = z.record(z.string(), z.unknown());

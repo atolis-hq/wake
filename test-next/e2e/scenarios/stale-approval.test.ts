@@ -1,6 +1,7 @@
-import { workflowName } from '../../../src-next/orchestration/contracts/identifiers.js';
+﻿import { workflowName } from '../../../src-next/orchestration/contracts/identifiers.js';
 import { resourceKind, resourceCapability } from '../../../src-next/resources/index.js';
 import { expect, it } from 'vitest';
+import { workId, resId } from '../../support/identities.js';
 
 import {
   createPullRequestMergeAuthorityGate,
@@ -10,13 +11,13 @@ import {
 } from '../../../src-next/activities/index.js';
 import { createEventDraft } from '../../../src-next/kernel/index.js';
 import { resourceId, resourceStream } from '../../../src-next/resources/index.js';
-import { workItemId } from '../../../src-next/work/index.js';
+import {} from '../../../src-next/work/index.js';
 import { mergeAuthorityTestActivity } from '../support/merge-authority-activity.js';
 import { TestWorld } from '../support/world.js';
 
 it('E2E-PR-002 denies a merge after an accepted review becomes stale', async () => {
-  const workItem = workItemId('work-1');
-  const resource = resourceId('resource-1');
+  const workItem = workId('1');
+  const resource = resId('1');
   const discovered = pullRequestProjection.project(
     pullRequestProjection.initial('resource-1'),
     prEvent(resource, 1, 'pr.discovered', {

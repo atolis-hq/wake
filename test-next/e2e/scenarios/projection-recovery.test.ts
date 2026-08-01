@@ -1,7 +1,8 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+﻿import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, it } from 'vitest';
+import { workId } from '../../support/identities.js';
 import {
   FileCheckpointStore,
   FileEventJournal,
@@ -9,14 +10,14 @@ import {
   ProjectionRunner,
 } from '../../../src-next/persistence/index.js';
 import { correlationId } from '../../../src-next/kernel/index.js';
-import { createWorkService, workItemId, workProjection } from '../../../src-next/work/index.js';
+import { createWorkService, workProjection } from '../../../src-next/work/index.js';
 import { FakeClock } from '../support/world.js';
 it('E2E-PROJECTION-001 rebuilds projections without changing journal bytes', async () => {
   const root = await mkdtemp(join(tmpdir(), 'wake-projection-recovery-'));
   const clock = new FakeClock();
   const journal = new FileEventJournal(root, clock);
   await createWorkService(journal).create(
-    { workItemId: workItemId('work-1'), objective: 'ship' },
+    { workItemId: workId('1'), objective: 'ship' },
     {
       commandId: 'create',
       correlationId: correlationId('corr'),
@@ -32,7 +33,7 @@ it('E2E-PROJECTION-001 rebuilds projections without changing journal bytes', asy
   const before = await readFile(eventPath, 'utf8');
   await rm(join(root, 'projections'), { recursive: true });
   await runner.rebuild(workProjection);
-  expect((await projections.read('work', 'work-1'))?.value).toMatchObject({ objective: 'ship' });
+  expect((await projections.read('work', workId('1')))?.value).toMatchObject({ objective: 'ship' });
   expect(await readFile(eventPath, 'utf8')).toBe(before);
   expect(await checkpoints.load('projection:work')).toBe(1);
 });

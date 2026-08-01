@@ -1,11 +1,12 @@
-import { orchestrationGroupId } from '../../src-next/orchestration/contracts/identifiers.js';
+﻿import { orchestrationGroupId } from '../../src-next/orchestration/contracts/identifiers.js';
 import { activationId } from '../../src-next/activities/contracts/identifiers.js';
 import { resourceKind, resourceCapability } from '../../src-next/resources/index.js';
 import { describe, expect, it } from 'vitest';
+import { workId, resId } from '../support/identities.js';
 
 import { createPullRequestMergeAuthorityGate } from '../../src-next/activities/index.js';
 import { resourceId, resourceStream } from '../../src-next/resources/index.js';
-import { workItemId, workItemStream } from '../../src-next/work/index.js';
+import { workItemStream } from '../../src-next/work/index.js';
 import { TestWorld } from '../e2e/support/world.js';
 
 describe('PullRequestService merge authority audit', () => {
@@ -13,7 +14,7 @@ describe('PullRequestService merge authority audit', () => {
     const world = new TestWorld();
     const work = await world.createWork({ objective: 'merge' });
     const resource = await world.discoverResource({
-      resourceId: resourceId('resource-1'),
+      resourceId: resId('1'),
       kind: resourceKind('pull-request'),
       externalKey: { adapter: 'github', key: 'owner/repo#1' },
       capabilities: [resourceCapability('reviewable'), resourceCapability('revisioned')],
@@ -35,7 +36,7 @@ describe('PullRequestService merge authority audit', () => {
 
   it('appends a durable denial to the Work audit stream when no Resource exists', async () => {
     const world = new TestWorld();
-    const missingWork = workItemId('work-missing');
+    const missingWork = workId('missing');
 
     expect(await world.pullRequests.authorizeMerge(missingWork, command(world, 'merge'))).toBe(
       false,
@@ -49,8 +50,8 @@ describe('PullRequestService merge authority audit', () => {
 
   it('reuses the first durable activation denial after mutable authority changes', async () => {
     const world = new TestWorld();
-    const work = await world.createWork({ objective: 'merge', workItemId: workItemId('work-1') });
-    const resource = resourceId('resource-1');
+    const work = await world.createWork({ objective: 'merge', workItemId: workId('1') });
+    const resource = resId('1');
     await world.discoverResource({
       resourceId: resource,
       kind: resourceKind('pull-request'),
@@ -97,8 +98,8 @@ describe('PullRequestService merge authority audit', () => {
 
 it('reuses a durable authorization after mutable authority becomes failing', async () => {
   const world = new TestWorld();
-  const work = await world.createWork({ objective: 'merge', workItemId: workItemId('work-1') });
-  const resource = resourceId('resource-1');
+  const work = await world.createWork({ objective: 'merge', workItemId: workId('1') });
+  const resource = resId('1');
   await world.discoverResource({
     resourceId: resource,
     kind: resourceKind('pull-request'),
@@ -152,7 +153,7 @@ async function observe(
   await world.pullRequests.observe(
     {
       resourceId: resource,
-      workItemId: workItemId('work-1'),
+      workItemId: workId('1'),
       state: 'open',
       headRevision: 'head-a',
       baseRevision: 'base-a',

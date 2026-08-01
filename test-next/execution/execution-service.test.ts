@@ -1,4 +1,4 @@
-import {
+﻿import {
   orchestrationGroupId,
   workflowInstanceId,
 } from '../../src-next/orchestration/contracts/identifiers.js';
@@ -6,6 +6,7 @@ import { activationId } from '../../src-next/activities/contracts/identifiers.js
 import { activityName } from '../../src-next/activities/index.js';
 import { z } from 'zod';
 import { describe, expect, expectTypeOf, it } from 'vitest';
+import { workId } from '../support/identities.js';
 import {
   ActivityExecutionKind,
   ActivityRegistry,
@@ -21,7 +22,7 @@ import {
   type ExecutionAttemptContext,
 } from '../../src-next/execution/index.js';
 import { InMemoryEventJournal } from '../../src-next/persistence/index.js';
-import { workItemId } from '../../src-next/work/index.js';
+import {} from '../../src-next/work/index.js';
 import { FakeClock, SequentialIds } from '../e2e/support/world.js';
 
 function setup(workspace?: { acquire: (request: unknown) => Promise<never> }) {
@@ -59,7 +60,7 @@ const activation = {
   status: 'pending' as const,
 };
 const context = {
-  workItemId: workItemId('work-1'),
+  workItemId: workId('1'),
   workflowInstanceId: workflowInstanceId('workflow-1'),
   orchestrationGroupId: orchestrationGroupId('group-1'),
   resources: [],

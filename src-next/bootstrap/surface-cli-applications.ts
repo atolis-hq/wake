@@ -20,7 +20,7 @@ export function createSurfaceCliApplications(
   api: ApiApplications,
   now: () => string,
 ): WakeCliApplications {
-  const tick = new TickHost(root.advanceOnce);
+  const tick = new TickHost((options) => root.pipeline.run(options));
   const resident = new ResidentHost(tick);
   const servers = new Set<Server>();
   const startHttp = createHttpStarter(root, api, servers);

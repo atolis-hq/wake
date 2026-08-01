@@ -1,4 +1,5 @@
-import { describe, expect, expectTypeOf, it } from 'vitest';
+﻿import { describe, expect, expectTypeOf, it } from 'vitest';
+import { workId } from '../support/identities.js';
 import {
   ActivityFailureCode,
   ActivityOutcomeKind,
@@ -12,7 +13,7 @@ import {
   translateAgentResult,
   type AgentActivityOutcome,
 } from '../../src-next/activities/index.js';
-import { workItemId } from '../../src-next/work/index.js';
+import {} from '../../src-next/work/index.js';
 describe('agent results', () => {
   it.each([
     ['DONE', 'done'],
@@ -73,7 +74,7 @@ describe('agent results', () => {
         {
           activationId: activationId('activation-1'),
           activity: BuiltInActivityName.Agent,
-          workItemId: workItemId('work-00000000000000000000000001'),
+          workItemId: workId('00000000000000000000000001'),
           workflowInstanceId: activityWorkflowInstanceId('workflow-1'),
           orchestrationGroupId: activityOrchestrationGroupId('group-1'),
           causationId: 'cause-1',

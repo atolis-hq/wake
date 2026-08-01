@@ -1,4 +1,4 @@
-import {
+﻿import {
   orchestrationGroupId,
   signalName,
   workflowInstanceId,
@@ -7,6 +7,7 @@ import {
 import { activityName } from '../../src-next/activities/index.js';
 import { z } from 'zod';
 import { expect, it } from 'vitest';
+import { workId, resId } from '../support/identities.js';
 import { ActivityRegistry } from '../../src-next/activities/index.js';
 import { correlationId } from '../../src-next/kernel/index.js';
 import {
@@ -15,8 +16,8 @@ import {
   createSignalReactor,
 } from '../../src-next/orchestration/index.js';
 import { InMemoryEventJournal } from '../../src-next/persistence/index.js';
-import { resourceId } from '../../src-next/resources/index.js';
-import { createWorkService, workItemId } from '../../src-next/work/index.js';
+import {} from '../../src-next/resources/index.js';
+import { createWorkService } from '../../src-next/work/index.js';
 import { FakeClock } from '../e2e/support/world.js';
 
 async function waitingService() {
@@ -28,7 +29,7 @@ async function waitingService() {
     actor: { kind: 'operator' as const, id: 'owner' },
   };
   await work.create(
-    { workItemId: workItemId('work-1'), objective: 'ship' },
+    { workItemId: workId('1'), objective: 'ship' },
     { ...baseContext, commandId: 'create-work' },
   );
   const activities = new ActivityRegistry();
@@ -65,7 +66,7 @@ async function waitingService() {
   const started = await service.start(
     {
       workflowInstanceId: workflowInstanceId('workflow-1'),
-      workItemId: workItemId('work-1'),
+      workItemId: workId('1'),
       workflowName: workflowName('default'),
       orchestrationGroupId: orchestrationGroupId('group-1'),
     },
@@ -91,7 +92,7 @@ async function waitingService() {
     waiting.workflowInstanceId,
     {
       signalKind: signalName('accepted'),
-      resourceId: resourceId('resource-pr-1'),
+      resourceId: resId('pr-1'),
       revision: 'abc123',
     },
     { ...baseContext, commandId: 'wait' },
@@ -105,7 +106,7 @@ it('does not let a human reply reset the retry count', async () => {
     workflowInstanceId('workflow-1'),
     {
       kind: signalName('accepted'),
-      resourceId: resourceId('resource-pr-1'),
+      resourceId: resId('pr-1'),
       revision: 'abc123',
       actorId: 'owner',
       actorDecision: { authorized: true, evidenceId: 'review-decision-1' },
@@ -122,7 +123,7 @@ it('accepts one matching signal while waiting and ignores duplicates', async () 
   const reactor = createSignalReactor(service);
   const signal = {
     kind: signalName('accepted'),
-    resourceId: resourceId('resource-pr-1'),
+    resourceId: resId('pr-1'),
     revision: 'abc123',
     actorId: 'owner',
     actorDecision: { authorized: true, evidenceId: 'review-decision-1' },
@@ -146,7 +147,7 @@ it('ignores mismatched or unauthorised signal evidence', async () => {
     workflowInstanceId('workflow-1'),
     {
       kind: signalName('accepted'),
-      resourceId: resourceId('resource-pr-2'),
+      resourceId: resId('pr-2'),
       revision: 'abc123',
       actorId: 'owner',
       actorDecision: { authorized: true, evidenceId: 'review-decision-1' },
@@ -158,7 +159,7 @@ it('ignores mismatched or unauthorised signal evidence', async () => {
     workflowInstanceId('workflow-1'),
     {
       kind: signalName('accepted'),
-      resourceId: resourceId('resource-pr-1'),
+      resourceId: resId('pr-1'),
       revision: 'abc123',
       actorId: 'stranger',
       actorDecision: { authorized: false, evidenceId: 'review-decision-2' },

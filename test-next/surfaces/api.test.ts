@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
+import { workId, resId } from '../support/identities.js';
 import {
   collectionResponse,
   decodeCursor,
@@ -13,10 +14,10 @@ import { presentRun } from '../../src-next/surfaces/api/presenters/execution.js'
 import { presentResource } from '../../src-next/surfaces/api/presenters/resources.js';
 import { redactConfiguration } from '../../src-next/surfaces/api/presenters/system.js';
 import { RunStatus, runId, type RunView } from '../../src-next/execution/index.js';
-import { resourceId, resourceKind, type ResourceView } from '../../src-next/resources/index.js';
+import { resourceKind, type ResourceView } from '../../src-next/resources/index.js';
 import { activationId, activityName } from '../../src-next/activities/index.js';
 import { orchestrationGroupId, workflowInstanceId } from '../../src-next/orchestration/index.js';
-import { workItemId } from '../../src-next/work/index.js';
+import {} from '../../src-next/work/index.js';
 
 describe('surface API contracts', () => {
   it('keeps cross-domain WorkItem results nested and addresses them by WorkItemKey', () => {
@@ -40,10 +41,10 @@ describe('surface API contracts', () => {
   });
 
   it('maps the opaque route key explicitly to Wake-owned WorkItem identity', () => {
-    const key = toWorkItemKey(workItemId('work-demo'));
+    const key = toWorkItemKey(workId('demo'));
 
     expect(key).toMatch(/^wk_/);
-    expect(fromWorkItemKey(key)).toBe('work-demo');
+    expect(fromWorkItemKey(key)).toBe(workId('demo'));
     expect(workItemPath(key)).toBe(`/api/v1/work-items/${encodeURIComponent(key)}`);
     expect(() => fromWorkItemKey('github:issue:42')).toThrow(/WorkItemKey/);
   });
@@ -66,7 +67,7 @@ describe('surface API contracts', () => {
 
   it('removes provider locators and workspace paths from transport DTOs', () => {
     const resource = presentResource({
-      resourceId: resourceId('resource-1'),
+      resourceId: resId('1'),
       kind: resourceKind('pull-request'),
       externalKey: { adapter: 'github', key: 'owner/repo#42' },
       capabilities: [],

@@ -9,6 +9,7 @@ import {
 import {
   InMemoryCheckpointStore,
   InMemoryEventJournal,
+  InMemoryProjectionStore,
 } from '../../../src-next/persistence/index.js';
 import {
   ActivityRegistry,
@@ -17,7 +18,11 @@ import {
   type ActivityDefinition,
 } from '../../../src-next/activities/index.js';
 import { createWorkService, workItemId, type WorkItemId } from '../../../src-next/work/index.js';
-import { createResourceService, type ResourceView } from '../../../src-next/resources/index.js';
+import {
+  createResourceLookup,
+  createResourceService,
+  type ResourceView,
+} from '../../../src-next/resources/index.js';
 import {
   compileWorkflow,
   createOrchestrationService,
@@ -60,7 +65,10 @@ export class SequentialIds implements IdGenerator {
   private nextValue = 1;
 
   next(prefix: string): string {
-    return `${prefix}-${this.nextValue++}`;
+    const value = this.nextValue++;
+    return prefix === 'work' || prefix === 'resource'
+      ? `${prefix}-${String(value).padStart(26, '0')}`
+      : `${prefix}-${value}`;
   }
 }
 
@@ -69,11 +77,16 @@ export class TestWorld {
   readonly ids = new SequentialIds();
   readonly faults = new FaultInjector();
   readonly journal = new InMemoryEventJournal(this.clock);
+  readonly projections = new InMemoryProjectionStore();
   readonly checkpoints = new InMemoryCheckpointStore();
   readonly activities = new ActivityRegistry();
   private readonly definitions: Record<string, CompiledWorkflow> = {};
   readonly work = createWorkService(this.journal);
-  readonly resources = createResourceService(this.journal);
+  readonly resourceLookup = createResourceLookup({
+    journal: this.journal,
+    projections: this.projections,
+  });
+  readonly resources = createResourceService(this.journal, this.resourceLookup);
   readonly pullRequests = createPullRequestService(this.journal, this.work, this.resources);
   readonly orchestration = createOrchestrationService(this.journal, this.work, this.definitions);
   private execution = createExecutionService(

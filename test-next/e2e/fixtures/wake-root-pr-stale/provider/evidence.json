@@ -1,0 +1,20 @@
+[
+  {
+    "key": "pr#stale",
+    "title": "Reject an old approval",
+    "kind": "pull-request",
+    "revision": "head-1",
+    "baseRevision": "base-1",
+    "checks": "passing",
+    "acceptedReview": true
+  },
+  {
+    "key": "pr#stale",
+    "title": "Reject an old approval",
+    "kind": "pull-request",
+    "revision": "head-2",
+    "baseRevision": "base-1",
+    "checks": "passing",
+    "acceptedReview": false
+  }
+]

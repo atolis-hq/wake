@@ -1,0 +1,8 @@
+retry:
+  stages:
+    attempt:
+      activity: agent
+      with: { prompt: '[fake:failed] retry me' }
+      execution: { workspace: none, tier: standard }
+      on:
+        failed: { then: await-human, retry: { max: 2 } }

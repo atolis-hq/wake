@@ -1,4 +1,4 @@
-import {
+﻿import {
   orchestrationGroupId,
   signalName,
   workflowInstanceId,
@@ -6,6 +6,7 @@ import {
 import { activityName, PullRequestDenialCode } from '../../src-next/activities/index.js';
 import { resourceKind, resourceCapability } from '../../src-next/resources/index.js';
 import { expect, it } from 'vitest';
+import { workId, resId } from '../support/identities.js';
 
 import { activationId, createPullRequestMergeActivity } from '../../src-next/activities/index.js';
 import { appendIntentOnce } from '../../src-next/activities/pr/intent.js';
@@ -15,13 +16,13 @@ import {
   WrongExpectedSequenceError,
   type EventJournal,
 } from '../../src-next/kernel/index.js';
-import { resourceId } from '../../src-next/resources/index.js';
+import {} from '../../src-next/resources/index.js';
 import { workItemId, workItemStream } from '../../src-next/work/index.js';
 import { TestWorld } from '../e2e/support/world.js';
 
 it('returns failed when the append boundary reports a definite failure', async () => {
   const world = new TestWorld();
-  const work = await world.createWork({ objective: 'merge', workItemId: workItemId('work-1') });
+  const work = await world.createWork({ objective: 'merge', workItemId: workId('1') });
   await setupApprovedPullRequest(world, work.workItemId);
   const activity = createPullRequestMergeActivity(world.journal, world.pullRequests, {
     async append() {
@@ -38,7 +39,7 @@ it('returns failed when the append boundary reports a definite failure', async (
 
 it('fails rather than waiting when an ambiguous denial append cannot be found', async () => {
   const world = new TestWorld();
-  const work = await world.createWork({ objective: 'merge', workItemId: workItemId('work-1') });
+  const work = await world.createWork({ objective: 'merge', workItemId: workId('1') });
   const activity = createPullRequestMergeActivity(world.journal, world.pullRequests, {
     async append() {
       return 'ambiguous';
@@ -56,7 +57,7 @@ it('fails rather than waiting when an ambiguous denial append cannot be found', 
 
 it('queries by event id before trusting a genuinely uncertain requested append', async () => {
   const world = new TestWorld();
-  const work = await world.createWork({ objective: 'merge', workItemId: workItemId('work-1') });
+  const work = await world.createWork({ objective: 'merge', workItemId: workId('1') });
   await setupApprovedPullRequest(world, work.workItemId);
   let reconciliationReads = 0;
   const queryingJournal: EventJournal = {
@@ -87,7 +88,7 @@ it('queries by event id before trusting a genuinely uncertain requested append',
 });
 
 it('treats exhausted sequence conflicts without the event as a failed append', async () => {
-  const stream = workItemStream(workItemId('work-1'));
+  const stream = workItemStream(workId('1'));
   let attempts = 0;
   const journal: EventJournal = {
     async append() {
@@ -116,7 +117,7 @@ async function setupApprovedPullRequest(
   world: TestWorld,
   work: ReturnType<typeof workItemId>,
 ): Promise<void> {
-  const resource = resourceId('resource-1');
+  const resource = resId('1');
   await world.discoverResource({
     resourceId: resource,
     kind: resourceKind('pull-request'),
@@ -164,7 +165,7 @@ function invocation(work: ReturnType<typeof workItemId>) {
     input: { target: 'primary' as const, method: 'merge' as const, requireChecks: true },
     resources: [
       {
-        resourceId: resourceId('resource-1'),
+        resourceId: resId('1'),
         kind: resourceKind('pull-request'),
         externalKey: { adapter: 'neutral-test', key: 'pr-1' },
         capabilities: [resourceCapability('mergeable'), resourceCapability('revisioned')] as const,

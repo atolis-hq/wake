@@ -11,7 +11,7 @@ import {
   selectDeliveryEvent,
   selectGitHubAdapterEvent,
   type DeliveryEventDraftInput,
-} from '../../src-next/integrations/index.js';
+} from '../../src-next/integrations/github/index.js';
 import { eventId, type EventId } from '../../src-next/kernel/index.js';
 import { eventEnvelope } from '../support/event-envelope.js';
 

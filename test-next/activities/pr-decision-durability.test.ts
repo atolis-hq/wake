@@ -1,4 +1,4 @@
-import {
+﻿import {
   orchestrationGroupId,
   signalName,
   workflowInstanceId,
@@ -6,15 +6,16 @@ import {
 import { activityName } from '../../src-next/activities/index.js';
 import { resourceKind, resourceCapability } from '../../src-next/resources/index.js';
 import { expect, it } from 'vitest';
+import { workId, resId } from '../support/identities.js';
 
 import { activationId, createPullRequestMergeActivity } from '../../src-next/activities/index.js';
-import { resourceId, type ResourceView } from '../../src-next/resources/index.js';
+import { type ResourceView } from '../../src-next/resources/index.js';
 import { workItemId } from '../../src-next/work/index.js';
 import { TestWorld } from '../e2e/support/world.js';
 
 it('keeps an activation denied when authority becomes allowed before retry', async () => {
   const world = new TestWorld();
-  const work = await world.createWork({ objective: 'merge', workItemId: workItemId('work-1') });
+  const work = await world.createWork({ objective: 'merge', workItemId: workId('1') });
   const activity = createPullRequestMergeActivity(world.journal, world.pullRequests);
 
   await expect(
@@ -31,7 +32,7 @@ it('keeps an activation denied when authority becomes allowed before retry', asy
 
 it('keeps an activation requested when authority becomes denied before retry', async () => {
   const world = new TestWorld();
-  const work = await world.createWork({ objective: 'merge', workItemId: workItemId('work-1') });
+  const work = await world.createWork({ objective: 'merge', workItemId: workId('1') });
   const resource = await setupApprovedPullRequest(world, work.workItemId);
   const activity = createPullRequestMergeActivity(world.journal, world.pullRequests);
 
@@ -74,7 +75,7 @@ async function setupApprovedPullRequest(
   work: ReturnType<typeof workItemId>,
 ): Promise<ResourceView> {
   const resource = await world.discoverResource({
-    resourceId: resourceId('resource-1'),
+    resourceId: resId('1'),
     kind: resourceKind('pull-request'),
     externalKey: { adapter: 'neutral-test', key: 'pr-1' },
     capabilities: [

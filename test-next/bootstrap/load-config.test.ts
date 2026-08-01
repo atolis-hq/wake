@@ -8,7 +8,7 @@ describe('root configuration', () => {
       work: {},
       resources: {},
       execution: {
-        runners: { fake: { kind: 'fake' } },
+        agentRunners: { fake: { kind: 'fake' } },
         tiers: { standard: ['fake'] },
         defaultTier: 'standard',
       },

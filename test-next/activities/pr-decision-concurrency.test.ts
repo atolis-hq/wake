@@ -1,4 +1,4 @@
-import {
+﻿import {
   orchestrationGroupId,
   signalName,
   workflowInstanceId,
@@ -6,6 +6,7 @@ import {
 import { activityName } from '../../src-next/activities/index.js';
 import { resourceKind, resourceCapability } from '../../src-next/resources/index.js';
 import { expect, it } from 'vitest';
+import { workId, resId } from '../support/identities.js';
 
 import {
   activationId,
@@ -15,8 +16,8 @@ import {
 } from '../../src-next/activities/index.js';
 import { appendIntentOnce } from '../../src-next/activities/pr/intent.js';
 import type { EventDraft, EventJournal } from '../../src-next/kernel/index.js';
-import { resourceId, type ResourceView } from '../../src-next/resources/index.js';
-import { workItemId } from '../../src-next/work/index.js';
+import { type ResourceView } from '../../src-next/resources/index.js';
+import {} from '../../src-next/work/index.js';
 import { TestWorld } from '../e2e/support/world.js';
 
 it('atomically keeps one activation decision across interleaved authority evaluations', async () => {
@@ -133,8 +134,8 @@ function decisionKind(event: EventDraft | undefined): 'requested' | 'denied' | u
 }
 
 function authority(state: 'open' | 'closed'): PullRequestAuthorityInput {
-  const resource = resourceId('resource-1');
-  const work = workItemId('work-1');
+  const resource = resId('1');
+  const work = workId('1');
   return {
     work: { workItemId: work, objective: 'merge', state: 'open', relatedWorkItems: [] },
     resources: [
@@ -182,7 +183,7 @@ function invocation() {
   return {
     activationId: activationId('activation-1'),
     activity: activityName('pr.merge'),
-    workItemId: workItemId('work-1'),
+    workItemId: workId('1'),
     workflowInstanceId: workflowInstanceId('workflow-1'),
     orchestrationGroupId: orchestrationGroupId('group-1'),
     causationId: 'activation-1',
@@ -193,7 +194,7 @@ function invocation() {
 
 function invocationResource(): ResourceView {
   return {
-    resourceId: resourceId('resource-1'),
+    resourceId: resId('1'),
     kind: resourceKind('pull-request'),
     externalKey: { adapter: 'neutral-test', key: 'pr-1' },
     capabilities: [

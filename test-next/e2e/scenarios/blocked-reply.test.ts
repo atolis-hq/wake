@@ -1,8 +1,9 @@
-import { signalName, workflowName } from '../../../src-next/orchestration/contracts/identifiers.js';
+﻿import { signalName, workflowName } from '../../../src-next/orchestration/contracts/identifiers.js';
 import { activityName } from '../../../src-next/activities/index.js';
 import { z } from 'zod';
 import { expect } from 'vitest';
-import { resourceId } from '../../../src-next/resources/index.js';
+import { resId } from '../../support/identities.js';
+import {} from '../../../src-next/resources/index.js';
 import { defineScenario } from '../support/scenario.js';
 import { TestWorld } from '../support/world.js';
 
@@ -52,12 +53,12 @@ defineScenario(
     await world.advance(work.workItemId);
     await world.waitForSignal(workflow.workflowInstanceId, {
       signalKind: signalName('accepted'),
-      resourceId: resourceId('resource-pr-1'),
+      resourceId: resId('pr-1'),
       revision: 'abc123',
     });
     const signal = {
       kind: signalName('accepted'),
-      resourceId: resourceId('resource-pr-1'),
+      resourceId: resId('pr-1'),
       revision: 'abc123',
       actorId: 'owner',
       actorDecision: { authorized: true, evidenceId: 'review-decision-1' },

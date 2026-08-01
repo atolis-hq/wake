@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
+import { workId } from '../support/identities.js';
 import { createEventDraft, type EventEnvelope } from '../../src-next/kernel/index.js';
-import { workItemId, workItemStream } from '../../src-next/work/index.js';
+import { workItemStream } from '../../src-next/work/index.js';
 import { FaultInjector, InjectedFaultError } from './support/faults.js';
 import { formatTrace } from './support/trace.js';
 import { FakeClock, SequentialIds } from './support/world.js';
@@ -43,7 +44,7 @@ describe('event-model support', () => {
       causationId: 'cmd-1',
       actor: { kind: 'system', id: 'test' },
       source: { kind: 'internal', id: 'test' },
-      stream: workItemStream(workItemId('work-1')),
+      stream: workItemStream(workId('1')),
       payload: { objective: 'test' },
     });
     const envelope: EventEnvelope = {
@@ -54,7 +55,7 @@ describe('event-model support', () => {
     };
 
     expect(formatTrace([envelope])).toBe(
-      '3 work.item-created stream=work-item:work-1 cause=cmd-1 payload={"objective":"test"}',
+      `3 work.item-created stream=work-item:${workId('1')} cause=cmd-1 payload={"objective":"test"}`,
     );
     expect(formatTrace([])).toBe('');
   });

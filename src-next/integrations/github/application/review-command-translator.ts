@@ -6,7 +6,7 @@ import {
 } from '../../../activities/index.js';
 import type { ResourceId } from '../../../resources/index.js';
 
-export interface GitHubReviewCommandInput {
+interface GitHubReviewCommandInput {
   readonly resourceId: ResourceId;
   readonly revision: string;
   readonly actorId: string;

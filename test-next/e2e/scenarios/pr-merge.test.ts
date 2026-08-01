@@ -1,5 +1,6 @@
-import { signalName } from '../../../src-next/orchestration/contracts/identifiers.js';
+﻿import { signalName } from '../../../src-next/orchestration/contracts/identifiers.js';
 import { expect, it } from 'vitest';
+import { resId } from '../../support/identities.js';
 
 import { resourceStream } from '../../../src-next/resources/index.js';
 import { workItemStream } from '../../../src-next/work/index.js';
@@ -89,15 +90,15 @@ it('accepts one synthetic final delivery failure for the same waiting activation
 it('attributes an invalid explicit target denial to the WorkItem', async () => {
   const world = new TestWorld();
   const setup = await setupMergeScenario(world, 'safe');
-  await executeMerge(world, setup.workItemId, { resourceId: 'resource-not-correlated' });
+  await executeMerge(world, setup.workItemId, { resourceId: resId('not-correlated') });
 
   const [denial] = await world.events('pr.merge-denied');
   expect(denial?.stream).toEqual(workItemStream(setup.workItemId));
   expect(denial?.payload).toEqual(
     expect.objectContaining({
       reason: 'missing-resource',
-      target: { resourceId: 'resource-not-correlated' },
-      candidates: [{ resourceId: 'resource-primary', revision: 'revision-a' }],
+      target: { resourceId: resId('not-correlated') },
+      candidates: [{ resourceId: resId('primary'), revision: 'revision-a' }],
       resourceId: null,
       revision: null,
     }),
@@ -161,9 +162,9 @@ it.each([
 function selectionCandidates(scenario: MergeScenario) {
   if (scenario === 'missing') return [];
   if (scenario === 'capability-missing')
-    return [{ resourceId: 'resource-primary', revision: 'revision-a' }];
+    return [{ resourceId: resId('primary'), revision: 'revision-a' }];
   return [
-    { resourceId: 'resource-other-primary', revision: 'revision-a' },
-    { resourceId: 'resource-primary', revision: 'revision-a' },
+    { resourceId: resId('primary'), revision: 'revision-a' },
+    { resourceId: resId('other-primary'), revision: 'revision-a' },
   ];
 }

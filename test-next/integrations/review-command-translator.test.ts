@@ -1,10 +1,11 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
+import { resId } from '../support/identities.js';
 
-import { resourceId } from '../../src-next/resources/index.js';
-import { translateGitHubReviewCommand } from '../../src-next/integrations/index.js';
+import {} from '../../src-next/resources/index.js';
+import { translateGitHubReviewCommand } from '../../src-next/integrations/github/index.js';
 
 const base = {
-  resourceId: resourceId('resource-github-owner-repo-1'),
+  resourceId: resId('github-owner-repo-1'),
   revision: 'abc123',
   actorId: 'reviewer',
   actorKind: 'human' as const,

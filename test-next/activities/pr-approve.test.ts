@@ -1,4 +1,4 @@
-import {
+﻿import {
   orchestrationGroupId,
   signalName,
   workflowInstanceId,
@@ -6,6 +6,7 @@ import {
 import { activityName } from '../../src-next/activities/index.js';
 import { resourceKind, resourceCapability } from '../../src-next/resources/index.js';
 import { describe, expect, expectTypeOf, it } from 'vitest';
+import { workId, resId } from '../support/identities.js';
 
 import {
   activationId,
@@ -19,8 +20,8 @@ import { TestWorld } from '../e2e/support/world.js';
 
 it('creates one provider-neutral approval intent for the current primary PR revision', async () => {
   const world = new TestWorld();
-  const work = await world.createWork({ objective: 'approve', workItemId: workItemId('work-1') });
-  const resource = resourceId('resource-1');
+  const work = await world.createWork({ objective: 'approve', workItemId: workId('1') });
+  const resource = resId('1');
   await world.discoverResource({
     resourceId: resource,
     kind: resourceKind('pull-request'),
@@ -118,7 +119,7 @@ describe('pr.approve public contract', () => {
 
 it('retries the same activation idempotently without duplicating approval intent', async () => {
   const world = new TestWorld();
-  const work = await world.createWork({ objective: 'approve', workItemId: workItemId('work-1') });
+  const work = await world.createWork({ objective: 'approve', workItemId: workId('1') });
   await setupApprovablePullRequest(world, work.workItemId);
   const activity = createPullRequestApproveActivity(world.journal, world.pullRequests);
   const request = invocation(work.workItemId);
@@ -147,7 +148,7 @@ function command(world: TestWorld, commandId: string) {
 }
 
 async function setupApprovablePullRequest(world: TestWorld, work: ReturnType<typeof workItemId>) {
-  const resource = resourceId('resource-1');
+  const resource = resId('1');
   await world.discoverResource({
     resourceId: resource,
     kind: resourceKind('pull-request'),
@@ -183,7 +184,7 @@ function invocation(work: ReturnType<typeof workItemId>) {
     input: { target: 'primary' as const, body: 'Reviewed' },
     resources: [
       {
-        resourceId: resourceId('resource-1'),
+        resourceId: resId('1'),
         kind: resourceKind('pull-request'),
         externalKey: { adapter: 'neutral-test', key: 'pr-1' },
         capabilities: [resourceCapability('approvable'), resourceCapability('revisioned')] as const,

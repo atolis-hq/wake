@@ -1,4 +1,4 @@
-import {
+﻿import {
   orchestrationGroupId,
   signalName,
   workflowInstanceId,
@@ -6,16 +6,17 @@ import {
 import { activityName } from '../../src-next/activities/index.js';
 import { resourceKind, resourceCapability } from '../../src-next/resources/index.js';
 import { describe, expect, it } from 'vitest';
+import { workId, resId } from '../support/identities.js';
 
 import { activationId, createPullRequestMergeActivity } from '../../src-next/activities/index.js';
-import { resourceId } from '../../src-next/resources/index.js';
+import {} from '../../src-next/resources/index.js';
 import { workItemId } from '../../src-next/work/index.js';
 import { TestWorld } from '../e2e/support/world.js';
 
 describe('pr.merge Activity', () => {
   it('requires a method and returns a delivery wait after one verified merge intent', async () => {
     const world = new TestWorld();
-    const work = await world.createWork({ objective: 'merge', workItemId: workItemId('work-1') });
+    const work = await world.createWork({ objective: 'merge', workItemId: workId('1') });
     const resource = await setupApprovedPullRequest(world, work.workItemId);
     const activity = createPullRequestMergeActivity(world.journal, world.pullRequests);
 
@@ -49,7 +50,7 @@ describe('pr.merge Activity', () => {
     'blocks without a merge intent when checks are %s',
     async (checks) => {
       const world = new TestWorld();
-      const work = await world.createWork({ objective: 'merge', workItemId: workItemId('work-1') });
+      const work = await world.createWork({ objective: 'merge', workItemId: workId('1') });
       await setupApprovedPullRequest(world, work.workItemId, checks);
       const activity = createPullRequestMergeActivity(world.journal, world.pullRequests);
 
@@ -66,7 +67,7 @@ describe('pr.merge Activity', () => {
 
   it('blocks a stale approval before it creates a delivery intent', async () => {
     const world = new TestWorld();
-    const work = await world.createWork({ objective: 'merge', workItemId: workItemId('work-1') });
+    const work = await world.createWork({ objective: 'merge', workItemId: workId('1') });
     const resource = await setupApprovedPullRequest(world, work.workItemId);
     await world.pullRequests.observe(
       {
@@ -102,7 +103,7 @@ async function setupApprovedPullRequest(
   work: ReturnType<typeof workItemId>,
   checks: 'pending' | 'passing' | 'failing' = 'passing',
 ) {
-  const resource = resourceId('resource-1');
+  const resource = resId('1');
   await world.discoverResource({
     resourceId: resource,
     kind: resourceKind('pull-request'),
@@ -150,7 +151,7 @@ function invocation(
     input,
     resources: [
       {
-        resourceId: resourceId('resource-1'),
+        resourceId: resId('1'),
         kind: resourceKind('pull-request'),
         externalKey: { adapter: 'github', key: 'owner/repo#1' },
         capabilities: [resourceCapability('mergeable'), resourceCapability('revisioned')] as const,

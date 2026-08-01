@@ -1,13 +1,11 @@
-import { resourceKind, resourceCapability } from '../../src-next/resources/index.js';
+﻿import { resourceKind, resourceCapability } from '../../src-next/resources/index.js';
 import { describe, expect, it } from 'vitest';
-import {
-  createResourceService,
-  resourceId,
-  resourceStream,
-} from '../../src-next/resources/index.js';
+import { workId, resId } from '../support/identities.js';
+import { resourceId, resourceStream } from '../../src-next/resources/index.js';
 import { InMemoryEventJournal } from '../../src-next/persistence/index.js';
-import { workItemId } from '../../src-next/work/index.js';
+import {} from '../../src-next/work/index.js';
 import { FakeClock } from '../e2e/support/world.js';
+import { createTestResourceServices } from '../support/resource-lookup.js';
 
 const context = (commandId: string) => ({
   commandId,
@@ -18,11 +16,11 @@ const context = (commandId: string) => ({
 
 describe('Resource correlations', () => {
   it('discovers any provider resource behind an opaque adapter key', async () => {
-    const service = createResourceService(new InMemoryEventJournal(new FakeClock()));
+    const service = createTestResourceServices(new InMemoryEventJournal(new FakeClock())).resources;
 
     await service.discover(
       {
-        resourceId: resourceId('resource-1'),
+        resourceId: resId('one'),
         kind: resourceKind('pull-request'),
         externalKey: { adapter: 'fake', key: 'repo/pulls/7' },
         capabilities: [
@@ -38,7 +36,7 @@ describe('Resource correlations', () => {
     await expect(
       service.findByExternalKey({ adapter: 'fake', key: 'repo/pulls/7' }),
     ).resolves.toEqual({
-      resourceId: 'resource-1',
+      resourceId: resId('one'),
       kind: resourceKind('pull-request'),
       externalKey: { adapter: 'fake', key: 'repo/pulls/7' },
       capabilities: [
@@ -51,15 +49,15 @@ describe('Resource correlations', () => {
   });
 
   it('correlates a Resource to a WorkItem using a registered relation definition', async () => {
-    const service = createResourceService(new InMemoryEventJournal(new FakeClock()));
-    const resource = resourceId('resource-1');
+    const service = createTestResourceServices(new InMemoryEventJournal(new FakeClock())).resources;
+    const resource = resId('one');
     await service.discover(discovery(resource), context('command-1'));
 
     await expect(
-      service.correlate(resource, workItemId('work-1'), 'primary', context('command-2')),
+      service.correlate(resource, workId('one'), 'primary', context('command-2')),
     ).resolves.toEqual({
-      resourceId: 'resource-1',
-      workItemId: 'work-1',
+      resourceId: resId('one'),
+      workItemId: workId('one'),
       role: 'primary',
       establishedByEventId: 'command-2:resources.work-correlation-established',
     });
@@ -67,15 +65,15 @@ describe('Resource correlations', () => {
 
   it('repeating the same correlation is idempotent', async () => {
     const journal = new InMemoryEventJournal(new FakeClock());
-    const service = createResourceService(journal);
-    const resource = resourceId('resource-1');
+    const service = createTestResourceServices(journal).resources;
+    const resource = resId('one');
     await service.discover(discovery(resource), context('command-1'));
 
-    await service.correlate(resource, workItemId('work-1'), 'primary', context('command-2'));
-    await service.correlate(resource, workItemId('work-1'), 'primary', context('command-2'));
+    await service.correlate(resource, workId('one'), 'primary', context('command-2'));
+    await service.correlate(resource, workId('one'), 'primary', context('command-2'));
 
     expect(
-      (await journal.readStream(resourceStream(resourceId('resource-1')))).filter(
+      (await journal.readStream(resourceStream(resId('one')))).filter(
         (event) => event.eventType === 'resources.work-correlation-established',
       ),
     ).toHaveLength(1);
@@ -83,40 +81,40 @@ describe('Resource correlations', () => {
 
   it('rejects a second primary WorkItem correlation and records conflict evidence', async () => {
     const journal = new InMemoryEventJournal(new FakeClock());
-    const service = createResourceService(journal);
-    const resource = resourceId('resource-1');
+    const service = createTestResourceServices(journal).resources;
+    const resource = resId('one');
     await service.discover(discovery(resource), context('command-1'));
-    await service.correlate(resource, workItemId('work-1'), 'primary', context('command-2'));
+    await service.correlate(resource, workId('one'), 'primary', context('command-2'));
 
     await expect(
-      service.correlate(resource, workItemId('work-2'), 'primary', context('command-3')),
+      service.correlate(resource, workId('two'), 'primary', context('command-3')),
     ).rejects.toThrow('primary');
-    expect(
-      (await journal.readStream(resourceStream(resourceId('resource-1')))).at(-1)?.eventType,
-    ).toBe('resources.work-correlation-conflicted');
+    expect((await journal.readStream(resourceStream(resId('one')))).at(-1)?.eventType).toBe(
+      'resources.work-correlation-conflicted',
+    );
   });
 
   it('permits explicit secondary correlation without changing the primary', async () => {
-    const service = createResourceService(new InMemoryEventJournal(new FakeClock()));
-    const resource = resourceId('resource-1');
+    const service = createTestResourceServices(new InMemoryEventJournal(new FakeClock())).resources;
+    const resource = resId('one');
     await service.discover(discovery(resource), context('command-1'));
-    await service.correlate(resource, workItemId('work-1'), 'primary', context('command-2'));
-    await service.correlate(resource, workItemId('work-2'), 'secondary', context('command-3'));
+    await service.correlate(resource, workId('one'), 'primary', context('command-2'));
+    await service.correlate(resource, workId('two'), 'secondary', context('command-3'));
 
     await expect(service.correlations(resource)).resolves.toEqual([
-      expect.objectContaining({ workItemId: 'work-1', role: 'primary' }),
-      expect.objectContaining({ workItemId: 'work-2', role: 'secondary' }),
+      expect.objectContaining({ workItemId: workId('one'), role: 'primary' }),
+      expect.objectContaining({ workItemId: workId('two'), role: 'secondary' }),
     ]);
   });
 
   it('retracts a correlation without deleting either specialist entity', async () => {
-    const service = createResourceService(new InMemoryEventJournal(new FakeClock()));
-    const resource = resourceId('resource-1');
+    const service = createTestResourceServices(new InMemoryEventJournal(new FakeClock())).resources;
+    const resource = resId('one');
     await service.discover(discovery(resource), context('command-1'));
-    await service.correlate(resource, workItemId('work-1'), 'primary', context('command-2'));
-    await service.retract(resource, workItemId('work-1'), context('command-3'));
+    await service.correlate(resource, workId('one'), 'primary', context('command-2'));
+    await service.retract(resource, workId('one'), context('command-3'));
 
-    await expect(service.get(resource)).resolves.toMatchObject({ resourceId: 'resource-1' });
+    await expect(service.get(resource)).resolves.toMatchObject({ resourceId: resId('one') });
     await expect(service.correlations(resource)).resolves.toEqual([]);
   });
 });

@@ -1,4 +1,5 @@
-import { describe, expect, expectTypeOf, it } from 'vitest';
+﻿import { describe, expect, expectTypeOf, it } from 'vitest';
+import { workId, resId } from '../support/identities.js';
 
 import {
   activationId,
@@ -17,12 +18,11 @@ import {
 import {
   adapterId,
   BuiltInAdapterId,
-  GitHubAdapterId,
   integrationStream,
   IntegrationStreamKind,
   isIntegrationStream,
   type AdapterId,
-} from '../../src-next/integrations/index.js';
+} from '../../src-next/integrations/github/index.js';
 import * as kernel from '../../src-next/kernel/index.js';
 import type { EntityRef } from '../../src-next/kernel/index.js';
 import {
@@ -36,14 +36,12 @@ import {
 } from '../../src-next/orchestration/index.js';
 import {
   isResourceStream,
-  resourceId,
   resourceStream,
   ResourceStreamKind,
   type ResourceId,
 } from '../../src-next/resources/index.js';
 import {
   isWorkItemStream,
-  workItemId,
   workItemStream,
   WorkStreamKind,
   type WorkItemId,
@@ -53,8 +51,8 @@ type StreamPredicate = (stream: EntityRef) => boolean;
 type StreamPredicateCase = readonly [name: string, predicate: StreamPredicate, stream: EntityRef];
 
 const streamPredicateCases: readonly StreamPredicateCase[] = [
-  ['work item', isWorkItemStream, workItemStream(workItemId('work-1'))],
-  ['resource', isResourceStream, resourceStream(resourceId('resource-1'))],
+  ['work item', isWorkItemStream, workItemStream(workId('1'))],
+  ['resource', isResourceStream, resourceStream(resId('1'))],
   [
     'activity decision',
     isActivityDecisionStream,
@@ -76,7 +74,7 @@ const streamPredicateCases: readonly StreamPredicateCase[] = [
 
 describe('domain-owned logical streams', () => {
   it('preserves the WorkItem stream kind and branded id types', () => {
-    const id = workItemId('work-1');
+    const id = workId('1');
     const stream = workItemStream(id);
 
     expect(stream).toEqual({ kind: 'work-item', id });
@@ -86,7 +84,7 @@ describe('domain-owned logical streams', () => {
   });
 
   it('constructs Resource streams through the Resources contract', () => {
-    const id = resourceId('resource-1');
+    const id = resId('1');
     const stream = resourceStream(id);
 
     expect(stream).toEqual({ kind: ResourceStreamKind.Resource, id });
@@ -104,7 +102,7 @@ describe('domain-owned logical streams', () => {
   it('constructs WorkflowInstance and coordination streams through Orchestration', () => {
     const workflowId = workflowInstanceId('workflow-1');
     const workflowStream = workflowInstanceStream(workflowId);
-    const primaryStream = primaryOrchestrationGroupStream(workItemId('work-1'));
+    const primaryStream = primaryOrchestrationGroupStream(workId('1'));
     const childStream = childOrchestrationGroupStream('group-1', 'watch-1');
 
     expect(workflowStream).toEqual({
@@ -113,7 +111,7 @@ describe('domain-owned logical streams', () => {
     });
     expect(primaryStream).toEqual({
       kind: OrchestrationStreamKind.Group,
-      id: 'primary:work-1',
+      id: `primary:${workId('1')}`,
     });
     expect(childStream).toEqual({
       kind: OrchestrationStreamKind.Group,
@@ -133,7 +131,6 @@ describe('domain-owned logical streams', () => {
     const stream = integrationStream(github);
 
     expect(BuiltInAdapterId.GitHub).toBe(github);
-    expect(GitHubAdapterId).toBe(github);
     expect(stream).toEqual({ kind: IntegrationStreamKind.Integration, id: github });
     expectTypeOf(stream.id).toEqualTypeOf<AdapterId>();
     expect(() => adapterId('GitHub')).toThrow('Invalid AdapterId');
