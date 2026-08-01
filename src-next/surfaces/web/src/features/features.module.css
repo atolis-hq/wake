@@ -91,15 +91,25 @@
 .filters label {
   display: grid;
   gap: 0.25rem;
-  font-weight: 700;
+  font-weight: 600;
+  color: var(--ink-muted);
+  font-size: var(--text-sm);
 }
 .filters input,
 .filters select {
   min-height: 2.35rem;
+  background: var(--surface-panel);
   border: 1px solid var(--border);
-  border-radius: 0.4rem;
+  border-radius: var(--radius-sm);
+  color: var(--ink);
   padding-inline: 0.55rem;
   font: inherit;
+}
+.filters input:focus,
+.filters select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgb(45 212 191 / 0.15);
 }
 .detail {
   display: grid;

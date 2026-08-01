@@ -22,6 +22,7 @@ describe('URL-owned collection navigation', () => {
 
     expect(await screen.findByDisplayValue('demo')).toBeTruthy();
     expect(screen.getByDisplayValue('Open')).toBeTruthy();
+    expect((await screen.findByText('open')).className).toContain('chipOutline');
     await waitFor(() =>
       expect(requests[0]).toBe('/api/v1/work-items?cursor=c_initial&search=demo&state=open'),
     );

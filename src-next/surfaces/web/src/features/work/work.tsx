@@ -6,6 +6,7 @@ import { queryKeys } from '../../api/query-keys.js';
 import { refreshPolicy } from '../../api/refresh-policy.js';
 import { DataTable } from '../../components/data-table.js';
 import { CursorPagination, useCursorNavigation } from '../../components/cursor-pagination.js';
+import { Chip } from '../../components/chip.js';
 import {
   EmptyState,
   ErrorState,
@@ -14,7 +15,6 @@ import {
   PageHeader,
   Panel,
   StaleIndicator,
-  StatusBadge,
 } from '../../components/primitives.js';
 import styles from '../features.module.css';
 
@@ -103,9 +103,7 @@ const columns = (location: ReturnType<typeof useLocation>) => [
   { label: 'Identity', render: (item: WorkItemResponse) => item.workItemId },
   {
     label: 'State',
-    render: (item: WorkItemResponse) => (
-      <StatusBadge tone={item.state === 'open' ? 'good' : 'neutral'}>{item.state}</StatusBadge>
-    ),
+    render: (item: WorkItemResponse) => <Chip variant="outline">{item.state}</Chip>,
   },
 ];
 
