@@ -42,7 +42,12 @@
   padding: 0.4rem var(--space-4) 0;
   background: var(--brand-darker);
   overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
   border-bottom: 1px solid var(--border);
+}
+.nav::-webkit-scrollbar {
+  display: none;
 }
 .nav a {
   color: var(--nav-ink-idle);
