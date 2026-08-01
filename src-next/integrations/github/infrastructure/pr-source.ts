@@ -12,10 +12,12 @@ import type { AdapterId } from '../../contracts/identifiers.js';
 import { integrationStream } from '../../contracts/streams.js';
 import { formatGitHubResourceKey } from '../contracts/external-key.js';
 import type { ExternalEventSource } from '../application/poll-service.js';
-import type {
-  GitHubCheckRunPayload,
-  GitHubCommitStatusPayload,
-  GitHubPullRequestPayload,
+import {
+  gitHubAssigneeLogins,
+  gitHubLabelNames,
+  type GitHubCheckRunPayload,
+  type GitHubCommitStatusPayload,
+  type GitHubPullRequestPayload,
 } from '../contracts/payloads.js';
 import { GitHubEventType, type GitHubAdapterEventDraft } from '../contracts/events.js';
 import {
@@ -104,6 +106,8 @@ function pullRequestObservation(input: {
       id: fallback(pullRequest.user?.login, UnknownGitHubIdentity),
       kind: actorKind(pullRequest.user?.type),
     },
+    labels: gitHubLabelNames(pullRequest),
+    assignees: gitHubAssigneeLogins(pullRequest),
     raw: { number: pullRequest.number },
   };
   const fingerprint = evidenceFingerprint(payload, input.evidence);

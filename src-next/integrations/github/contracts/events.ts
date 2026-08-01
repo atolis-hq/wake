@@ -41,6 +41,9 @@ export interface ExternalWorkObservedPayload {
     readonly id: string;
     readonly kind: typeof ReviewActorKind.Human | typeof ReviewActorKind.Bot;
   };
+  // Optional so observations recorded before intake matching still decode.
+  readonly labels?: readonly string[] | undefined;
+  readonly assignees?: readonly string[] | undefined;
   readonly raw: Readonly<Record<string, unknown>>;
 }
 
@@ -142,6 +145,8 @@ const eventSchema = z.discriminatedUnion('eventType', [
           ])
           .optional(),
         actor: actorSchema,
+        labels: z.array(z.string()).readonly().optional(),
+        assignees: z.array(z.string()).readonly().optional(),
         raw: rawSchema,
       })
       .strict(),

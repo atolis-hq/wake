@@ -1,8 +1,18 @@
 import { z } from 'zod';
+import { MatchMode } from '../../../kernel/index.js';
+import { isGitHubWakeMarker } from './vocabulary.js';
 
 const repositorySchema = z
   .object({ owner: z.string().trim().min(1), repo: z.string().trim().min(1) })
   .strict();
+const intakeTag = z
+  .string()
+  .trim()
+  .min(1)
+  .refine((tag) => !isGitHubWakeMarker(tag), {
+    message:
+      'intake tags must not come from a Wake-owned marker family; Wake would observe its own marker and re-route',
+  });
 const intakeRuleSchema = z
   .object({
     where: z
@@ -13,8 +23,8 @@ const intakeRuleSchema = z
         labels: z.array(z.string().trim().min(1)).default([]),
       })
       .strict(),
-    matchMode: z.enum(['any', 'all']).default('any'),
-    tags: z.array(z.string().trim().min(1)).default([]),
+    matchMode: z.enum([MatchMode.Any, MatchMode.All]).default(MatchMode.Any),
+    tags: z.array(intakeTag).default([]),
   })
   .strict();
 
@@ -40,3 +50,4 @@ export const gitHubConfigSchema = z
   .strict();
 
 export type GitHubConfig = z.output<typeof gitHubConfigSchema>;
+export type GitHubIntakeRuleConfig = GitHubConfig['intake'][number];

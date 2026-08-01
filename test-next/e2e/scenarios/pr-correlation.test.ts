@@ -18,7 +18,13 @@ import {
 } from '../../../src-next/persistence/index.js';
 import { ProjectionRunner } from '../../../src-next/persistence/index.js';
 import { InMemoryProjectionStore } from '../../../src-next/persistence/index.js';
-import { createResourceLookup, createResourceService } from '../../../src-next/resources/index.js';
+import {
+  BuiltInResourceCapability,
+  BuiltInResourceKind,
+  ResourceCorrelationRole,
+  createResourceLookup,
+  createResourceService,
+} from '../../../src-next/resources/index.js';
 import { createWorkService } from '../../../src-next/work/index.js';
 import { FakeClock } from '../support/world.js';
 
@@ -49,6 +55,11 @@ it('E2E-PR-001 correlates a verified primary PR and rejects uncorrelated or conf
     pullRequests,
     lookup,
   });
+  // This scenario proves correlation and review-evidence rejection, not admission, so the
+  // WorkItem/Resource/correlation are pre-established: the translator resolves an existing
+  // identity for the first observation and never needs to start a workflow.
+  const workItem = workId('1');
+  await preAdmit({ work, resources, clock, prResource, payload, workItem });
 
   expect(translator.translate(payload).map((candidate) => candidate.kind)).toContain('pr.observe');
   await translator.runOnce();
@@ -108,6 +119,44 @@ it('E2E-PR-001 correlates a verified primary PR and rejects uncorrelated or conf
   });
   expect(await pullRequests.get(prResource)).toEqual(safePullRequest);
 });
+
+async function preAdmit(input: {
+  work: ReturnType<typeof createWorkService>;
+  resources: ReturnType<typeof createResourceService>;
+  clock: FakeClock;
+  prResource: ReturnType<typeof resId>;
+  payload: ExternalWorkObservedPayload;
+  workItem: ReturnType<typeof workId>;
+}): Promise<void> {
+  const { work, resources, clock, prResource, payload, workItem } = input;
+  const admissionContext = {
+    commandId: 'pre-admit',
+    correlationId: 'github:pr-1' as never,
+    occurredAt: clock.now().toISOString(),
+    actor: { kind: 'integration' as const, id: 'github' },
+  };
+  await work.create({ workItemId: workItem, objective: payload.title }, admissionContext);
+  await resources.discover(
+    {
+      resourceId: prResource,
+      kind: BuiltInResourceKind.PullRequest,
+      externalKey: { adapter: 'github', key: payload.externalKey },
+      capabilities: [
+        BuiltInResourceCapability.Commentable,
+        BuiltInResourceCapability.Reviewable,
+        BuiltInResourceCapability.Revisioned,
+      ],
+      revision: payload.revision,
+    },
+    admissionContext,
+  );
+  await resources.correlate(
+    prResource,
+    workItem,
+    ResourceCorrelationRole.Primary,
+    admissionContext,
+  );
+}
 
 function observation(revision: string): ExternalWorkObservedPayload {
   return {

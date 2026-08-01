@@ -126,6 +126,8 @@ function authorityInput(
       workItemId: pullRequest.workItemId,
       objective: 'merge',
       state: 'open',
+      tags: [],
+      autoApprovalGranted: false,
       relatedWorkItems: [],
     },
     resources: [

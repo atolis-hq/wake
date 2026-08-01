@@ -1,4 +1,5 @@
 ﻿import { workflowName } from '../../../src-next/orchestration/contracts/identifiers.js';
+import { configureIntakeRouting } from '../support/intake-routing.js';
 import { expect, it } from 'vitest';
 import { workId } from '../../support/identities.js';
 
@@ -11,6 +12,7 @@ import {
   integrationStream,
 } from '../../../src-next/integrations/github/index.js';
 import {} from '../../../src-next/work/index.js';
+import type { WorkflowRouter } from '../../../src-next/integrations/index.js';
 import { mergeAuthorityTestActivity } from '../support/merge-authority-activity.js';
 import { TestWorld } from '../support/world.js';
 
@@ -32,10 +34,8 @@ it.each([
   'denies %s through production GitHub review translation',
   async (_case, actor, allowed) => {
     const world = new TestWorld();
-    const translator = translatorFor(world);
-    await appendObservation(world);
-    await appendAcceptance(world, actor, allowed);
-    await translator.runOnce();
+    // The merge workflow must exist before admission starts it, since admission is now
+    // the sole place a primary workflow is started (routed to 'merge', not the default).
     world.registerActivity(
       mergeAuthorityTestActivity(createPullRequestMergeAuthorityGate(world.pullRequests)),
     );
@@ -48,11 +48,12 @@ it.each([
         },
       },
     });
+    const routeToMerge: WorkflowRouter = { select: () => workflowName('merge') };
+    const translator = translatorFor(world, routeToMerge);
+    await appendObservation(world);
+    await appendAcceptance(world, actor, allowed);
+    await translator.runOnce();
 
-    await world.startWorkflow({
-      workItemId: workId('2'),
-      workflowName: workflowName('merge'),
-    });
     await world.advance(workId('2'));
     await world.advance(workId('2'));
 
@@ -71,11 +72,13 @@ it.each([
   },
 );
 
-function translatorFor(world: TestWorld): InboundTranslator {
+function translatorFor(world: TestWorld, routing: WorkflowRouter = configureIntakeRouting(world)) {
   return new InboundTranslator(world.journal, world.checkpoints, world.work, world.resources, {
     pullRequests: world.pullRequests,
     ids: world.ids,
     lookup: world.resourceLookup,
+    orchestration: world.orchestration,
+    routing,
   });
 }
 

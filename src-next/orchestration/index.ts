@@ -15,3 +15,4 @@ export * from './application/watch-reactor.js';
 export * from './domain/compiler.js';
 export * from './domain/interpreter.js';
 export * from './domain/workflow-instance.js';
+export * from './domain/workflow-selector.js';

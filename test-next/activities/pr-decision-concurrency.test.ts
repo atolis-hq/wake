@@ -137,7 +137,14 @@ function authority(state: 'open' | 'closed'): PullRequestAuthorityInput {
   const resource = resId('1');
   const work = workId('1');
   return {
-    work: { workItemId: work, objective: 'merge', state: 'open', relatedWorkItems: [] },
+    work: {
+      workItemId: work,
+      objective: 'merge',
+      state: 'open',
+      tags: [],
+      autoApprovalGranted: false,
+      relatedWorkItems: [],
+    },
     resources: [
       {
         resource: invocationResource(),

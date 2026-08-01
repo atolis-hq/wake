@@ -14,6 +14,7 @@ import {
 import { createWorkService } from '../../../src-next/work/index.js';
 import { FakeClock } from '../support/world.js';
 import { createTestResourceServices } from '../../support/resource-lookup.js';
+import { createTestIntakeRouting } from '../../support/intake-routing.js';
 
 describe('E2E-WORK-002 external intake', () => {
   it('creates one WorkItem, Resource, and primary correlation when evidence is translated twice', async () => {
@@ -44,7 +45,12 @@ describe('E2E-WORK-002 external intake', () => {
       payload,
     });
     await journal.append(evidence.stream, 0, [evidence]);
-    const translator = new InboundTranslator(journal, checkpoints, work, resources, { lookup });
+    const { orchestration, routing } = createTestIntakeRouting(journal, work);
+    const translator = new InboundTranslator(journal, checkpoints, work, resources, {
+      lookup,
+      orchestration,
+      routing,
+    });
 
     await translator.runOnce();
     await checkpoints.reset('reactor:integration.github.inbound');

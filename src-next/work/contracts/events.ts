@@ -16,6 +16,8 @@ export const WorkEventType = {
   ItemLinked: 'work.item-linked',
   ItemClosed: 'work.item-closed',
   ItemCancelled: 'work.item-cancelled',
+  AutoApprovalGranted: 'work.auto-approval-granted',
+  AutoApprovalRevoked: 'work.auto-approval-revoked',
 } as const;
 
 export interface WorkItemLinkedPayload {
@@ -23,12 +25,20 @@ export interface WorkItemLinkedPayload {
   readonly relation: LinkWorkItems['relation'];
 }
 
+export interface WorkItemCreatedPayload {
+  readonly objective: string;
+  // Optional so events recorded before tags existed still decode.
+  readonly tags?: readonly string[] | undefined;
+}
+
 export interface WorkEventPayloads {
-  readonly [WorkEventType.ItemCreated]: { readonly objective: string };
+  readonly [WorkEventType.ItemCreated]: WorkItemCreatedPayload;
   readonly [WorkEventType.ObjectiveRevised]: { readonly objective: string };
   readonly [WorkEventType.ItemLinked]: WorkItemLinkedPayload;
   readonly [WorkEventType.ItemClosed]: { readonly reason: string };
   readonly [WorkEventType.ItemCancelled]: { readonly reason: string };
+  readonly [WorkEventType.AutoApprovalGranted]: Readonly<Record<never, never>>;
+  readonly [WorkEventType.AutoApprovalRevoked]: Readonly<Record<never, never>>;
 }
 
 export type WorkEvent = EventUnion<WorkEventPayloads, WorkItemStreamRef>;
@@ -48,11 +58,15 @@ const objectiveSchema = z
   })
   .strict();
 const reasonSchema = z.object({ reason: z.string() }).strict();
+const consentSchema = z.object({}).strict();
+const itemCreatedSchema = objectiveSchema.extend({
+  tags: z.array(z.string().trim().min(1)).readonly().optional(),
+});
 const eventSchema = z.discriminatedUnion('eventType', [
   eventEnvelopeSchema.extend({
     eventType: z.literal(WorkEventType.ItemCreated),
     stream: streamSchema,
-    payload: objectiveSchema,
+    payload: itemCreatedSchema,
   }),
   eventEnvelopeSchema.extend({
     eventType: z.literal(WorkEventType.ObjectiveRevised),
@@ -78,6 +92,16 @@ const eventSchema = z.discriminatedUnion('eventType', [
     eventType: z.literal(WorkEventType.ItemCancelled),
     stream: streamSchema,
     payload: reasonSchema,
+  }),
+  eventEnvelopeSchema.extend({
+    eventType: z.literal(WorkEventType.AutoApprovalGranted),
+    stream: streamSchema,
+    payload: consentSchema,
+  }),
+  eventEnvelopeSchema.extend({
+    eventType: z.literal(WorkEventType.AutoApprovalRevoked),
+    stream: streamSchema,
+    payload: consentSchema,
   }),
 ]);
 

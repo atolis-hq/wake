@@ -14,6 +14,8 @@ export interface WorkService {
   link(command: LinkWorkItems, context: CommandContext): Promise<WorkItemView>;
   close(workItemId: WorkItemId, reason: string, context: CommandContext): Promise<WorkItemView>;
   cancel(workItemId: WorkItemId, reason: string, context: CommandContext): Promise<WorkItemView>;
+  grantAutoApproval(workItemId: WorkItemId, context: CommandContext): Promise<WorkItemView>;
+  revokeAutoApproval(workItemId: WorkItemId, context: CommandContext): Promise<WorkItemView>;
   get(workItemId: WorkItemId): Promise<WorkItemView | null>;
 }
 
@@ -43,6 +45,7 @@ export function createWorkService(journal: EventJournal): WorkService {
       const loaded = await repository.load(command.workItemId);
       const draft = workDraft(command.workItemId, context, WorkEventType.ItemCreated, {
         objective: command.objective,
+        ...(command.tags === undefined ? {} : { tags: command.tags }),
       });
       if (loaded.view !== null) return change(command.workItemId, context, draft, true);
       return change(command.workItemId, context, draft, true);
@@ -80,10 +83,36 @@ export function createWorkService(journal: EventJournal): WorkService {
         workDraft(workItemId, context, WorkEventType.ItemCancelled, { reason }),
       );
     },
+    grantAutoApproval(workItemId, context) {
+      return setAutoApproval(repository, change, workItemId, context, true);
+    },
+    revokeAutoApproval(workItemId, context) {
+      return setAutoApproval(repository, change, workItemId, context, false);
+    },
     async get(workItemId) {
       return (await repository.load(workItemId)).view;
     },
   };
+}
+
+// Operator consent is a durable sibling of freeze/unfreeze. Setting it to the value it
+// already holds appends nothing, so replay cannot manufacture consent history.
+async function setAutoApproval(
+  repository: WorkRepository,
+  change: (
+    workItemId: WorkItemId,
+    context: CommandContext,
+    draft: WorkEventDraft,
+  ) => Promise<WorkItemView>,
+  workItemId: WorkItemId,
+  context: CommandContext,
+  granted: boolean,
+): Promise<WorkItemView> {
+  const current = (await repository.load(workItemId)).view;
+  if (current === null) throw new Error(`WorkItem ${workItemId} does not exist`);
+  if (current.autoApprovalGranted === granted) return current;
+  const eventType = granted ? WorkEventType.AutoApprovalGranted : WorkEventType.AutoApprovalRevoked;
+  return change(workItemId, context, workDraft(workItemId, context, eventType, {}));
 }
 
 function workDraft<Type extends keyof WorkEventPayloads>(

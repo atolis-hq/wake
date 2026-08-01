@@ -54,6 +54,8 @@ defineScenario(
       objective: 'Implement target spine',
       state: 'open',
       relatedWorkItems: [],
+      tags: [],
+      autoApprovalGranted: false,
     });
     expect((await journal.readAll(0)).map((event) => event.eventType)).toEqual([
       'work.item-created',

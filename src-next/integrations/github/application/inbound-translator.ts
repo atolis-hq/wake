@@ -1,9 +1,6 @@
 import {
-  correlationId,
-  EventActorKind,
   UlidIdGenerator,
   type CheckpointStore,
-  type CommandContext,
   type EventJournal,
   type IdGenerator,
 } from '../../../kernel/index.js';
@@ -17,9 +14,11 @@ import type { ResourceLookup, ResourceService } from '../../../resources/index.j
 import {
   BuiltInResourceCapability,
   BuiltInResourceKind,
+  ResourceCorrelationRole,
   resourceId,
   type ResourceId,
 } from '../../../resources/index.js';
+import type { OrchestrationService } from '../../../orchestration/index.js';
 import type { WorkService } from '../../../work/index.js';
 import { workItemId, type WorkItemId } from '../../../work/index.js';
 import type { ExternalWorkObservedPayload, GitHubAdapterEvent } from '../contracts/events.js';
@@ -27,6 +26,12 @@ import { GitHubEventType, selectGitHubAdapterEvent } from '../contracts/events.j
 import { UnknownGitHubIdentity } from '../contracts/vocabulary.js';
 import { GitHubAdapter } from '../contracts/vocabulary.js';
 import type { AdapterId } from '../../contracts/identifiers.js';
+import { evaluateIntakeRules, type IntakeRule } from '../../contracts/intake-rules.js';
+import type { WorkflowRouter } from '../../contracts/provider.js';
+import { admitObservedWork, type WorkAdmissionServices } from '../../application/work-admission.js';
+import { gitHubIntakeFacts, gitHubIntakeRules } from './intake-policy.js';
+import type { GitHubIntakeRuleConfig } from '../contracts/config.js';
+import { commandContext } from './inbound-context.js';
 import { observePullRequest } from './pull-request-translation.js';
 import { translateGitHubReviewCommand } from './review-command-translator.js';
 
@@ -54,6 +59,9 @@ interface InboundTranslatorDependencies {
   readonly ids?: IdGenerator;
   readonly lookup?: ResourceLookup;
   readonly adapter?: AdapterId;
+  readonly orchestration?: OrchestrationService;
+  readonly routing?: WorkflowRouter;
+  readonly intake?: readonly GitHubIntakeRuleConfig[];
 }
 
 export class InboundTranslator {
@@ -94,12 +102,18 @@ export class InboundTranslator {
     this.ids = dependencies.ids ?? new UlidIdGenerator();
     this.lookup = dependencies.lookup;
     this.adapter = dependencies.adapter ?? GitHubAdapter;
+    this.orchestration = dependencies.orchestration;
+    this.routing = dependencies.routing;
+    this.intake = gitHubIntakeRules(dependencies.intake ?? []);
   }
 
   private readonly pullRequests: PullRequestService | undefined;
   private readonly ids: IdGenerator;
   private readonly lookup: ResourceLookup | undefined;
   private readonly adapter: AdapterId;
+  private readonly orchestration: OrchestrationService | undefined;
+  private readonly routing: WorkflowRouter | undefined;
+  private readonly intake: readonly IntakeRule[];
 
   // Adapter filtering, checkpointing, and typed event dispatch must stay together.
   // eslint-disable-next-line complexity
@@ -133,10 +147,12 @@ export class InboundTranslator {
     const context = commandContext(event);
     const pullRequests =
       this.pullRequests ?? createPullRequestService(this.journal!, this.work, this.resources);
-    const identity = await this.resolveIdentity({
-      adapter: this.adapter,
-      key: payload.externalKey,
-    });
+    const intake = evaluateIntakeRules(this.intake, gitHubIntakeFacts(payload));
+    const identity = await this.resolveIdentity(
+      { adapter: this.adapter, key: payload.externalKey },
+      intake.admitted,
+    );
+    if (identity === null) return;
     if (!identity.created) {
       const current = await this.resources.get(identity.resourceId);
       if (current === null) throw new Error(`Resource ${identity.resourceId} could not be loaded`);
@@ -160,33 +176,36 @@ export class InboundTranslator {
       return;
     }
     const { resourceId: resourceIdValue, workItemId: workItemIdValue } = identity;
-    await this.resources.discover(
+    const isPullRequest = payload.kind === 'pull-request';
+    await admitObservedWork(
+      this.admissionServices(),
       {
+        adapter: this.adapter,
         resourceId: resourceIdValue,
-        kind:
-          payload.kind === 'pull-request'
-            ? BuiltInResourceKind.PullRequest
-            : BuiltInResourceKind.Issue,
+        workItemId: workItemIdValue,
+        kind: isPullRequest ? BuiltInResourceKind.PullRequest : BuiltInResourceKind.Issue,
         externalKey: { adapter: this.adapter, key: payload.externalKey },
-        capabilities:
-          payload.kind === 'pull-request'
-            ? [
-                BuiltInResourceCapability.Commentable,
-                BuiltInResourceCapability.Reviewable,
-                BuiltInResourceCapability.Revisioned,
-              ]
-            : [BuiltInResourceCapability.Commentable],
+        capabilities: isPullRequest
+          ? [
+              BuiltInResourceCapability.Commentable,
+              BuiltInResourceCapability.Reviewable,
+              BuiltInResourceCapability.Revisioned,
+            ]
+          : [BuiltInResourceCapability.Commentable],
+        objective: payload.title,
+        tags: intake.tags,
         revision: payload.revision,
       },
       context,
+      isPullRequest
+        ? async () => {
+            await pullRequests.observe(
+              observePullRequest(resourceIdValue, workItemIdValue, payload),
+              context,
+            );
+          }
+        : undefined,
     );
-    await this.work.create({ workItemId: workItemIdValue, objective: payload.title }, context);
-    await this.resources.correlate(resourceIdValue, workItemIdValue, 'primary', context);
-    if (payload.kind === 'pull-request')
-      await pullRequests.observe(
-        observePullRequest(resourceIdValue, workItemIdValue, payload),
-        context,
-      );
   }
 
   private async applyReviewSignal(
@@ -243,7 +262,26 @@ export class InboundTranslator {
     };
   }
 
-  private async resolveIdentity(externalKey: { readonly adapter: string; readonly key: string }) {
+  private admissionServices(): WorkAdmissionServices {
+    if (
+      this.work === undefined ||
+      this.resources === undefined ||
+      this.orchestration === undefined ||
+      this.routing === undefined
+    )
+      throw new Error('InboundTranslator requires work, resources, orchestration, and routing');
+    return {
+      work: this.work,
+      resources: this.resources,
+      orchestration: this.orchestration,
+      routing: this.routing,
+    };
+  }
+
+  private async resolveIdentity(
+    externalKey: { readonly adapter: string; readonly key: string },
+    admitted: boolean,
+  ) {
     const key = `${externalKey.adapter}:${externalKey.key}`;
     const inBatch = this.minted.get(key);
     if (inBatch !== undefined) return { ...inBatch, created: false };
@@ -252,7 +290,7 @@ export class InboundTranslator {
     if (resourceIdValue !== null) {
       if (this.resources === undefined) throw new Error('InboundTranslator resources are required');
       const correlation = (await this.resources.correlations(resourceIdValue)).find(
-        (value) => value.role === 'primary',
+        (value) => value.role === ResourceCorrelationRole.Primary,
       );
       if (correlation === undefined)
         throw new Error(`Resource ${resourceIdValue} has no primary WorkItem correlation`);
@@ -260,15 +298,8 @@ export class InboundTranslator {
       this.minted.set(key, identity);
       return { ...identity, created: false };
     }
+    // An ineligible object Wake has never seen produces no WorkItem, Run, or effect.
+    if (!admitted) return null;
     return { ...this.mintIdentity(externalKey), created: true };
   }
-}
-
-function commandContext(event: GitHubAdapterEvent): CommandContext {
-  return {
-    commandId: `${event.eventId}:inbound`,
-    correlationId: correlationId(event.correlationId),
-    occurredAt: event.occurredAt,
-    actor: { kind: EventActorKind.Integration, id: 'github' },
-  };
 }

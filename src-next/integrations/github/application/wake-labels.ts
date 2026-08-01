@@ -1,15 +1,11 @@
-const wakeLabelPrefixes = ['wake:status.', 'wake:stage.', 'wake:workflow.'] as const;
+import { isGitHubWakeMarker } from '../contracts/vocabulary.js';
 
 export function reconcileGitHubWakeLabels(
   current: readonly string[],
   desired: readonly string[],
 ): readonly string[] {
-  const userLabels = current.filter((label) => !isGitHubWakeLabel(label));
+  const userLabels = current.filter((label) => !isGitHubWakeMarker(label));
   return [...userLabels, ...desired];
-}
-
-function isGitHubWakeLabel(label: string): boolean {
-  return wakeLabelPrefixes.some((prefix) => label.startsWith(prefix));
 }
 
 export function isGitHubWakeEcho(input: {
@@ -21,6 +17,6 @@ export function isGitHubWakeEcho(input: {
   return (
     input.authorLogin.toLowerCase() === input.authenticatedLogin.toLowerCase() ||
     input.body.includes('<!-- wake:agent -->') ||
-    input.labels.some(isGitHubWakeLabel)
+    input.labels.some(isGitHubWakeMarker)
   );
 }

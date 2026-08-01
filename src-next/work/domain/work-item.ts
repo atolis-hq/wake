@@ -11,7 +11,9 @@ export function foldWorkItem(events: readonly WorkEvent[]): WorkItemView | null 
   const id = events[0].stream.id;
   const state = {
     objective: events[0].payload.objective,
+    tags: events[0].payload.tags ?? [],
     lifecycle: WorkStatus.Open as WorkState,
+    autoApprovalGranted: false,
     links: [] as WorkItemView['relatedWorkItems'][number][],
     linkKeys: new Set<string>(),
   };
@@ -21,6 +23,8 @@ export function foldWorkItem(events: readonly WorkEvent[]): WorkItemView | null 
     workItemId: id,
     objective: state.objective,
     state: state.lifecycle,
+    tags: state.tags,
+    autoApprovalGranted: state.autoApprovalGranted,
     relatedWorkItems: state.links,
   };
 }
@@ -28,7 +32,9 @@ export function foldWorkItem(events: readonly WorkEvent[]): WorkItemView | null 
 function applyEvent(
   state: {
     objective: string;
+    tags: readonly string[];
     lifecycle: WorkState;
+    autoApprovalGranted: boolean;
     links: WorkItemView['relatedWorkItems'][number][];
     linkKeys: Set<string>;
   },
@@ -54,6 +60,12 @@ function applyEvent(
       break;
     case WorkEventType.ItemLinked:
       addLink(state, { workItemId: event.payload.to, relation: event.payload.relation });
+      break;
+    case WorkEventType.AutoApprovalGranted:
+      state.autoApprovalGranted = true;
+      break;
+    case WorkEventType.AutoApprovalRevoked:
+      state.autoApprovalGranted = false;
       break;
     default:
       assertNever(event);

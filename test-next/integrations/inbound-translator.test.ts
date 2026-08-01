@@ -11,6 +11,7 @@ import { InMemoryCheckpointStore, InMemoryEventJournal } from '../../src-next/pe
 import { createWorkService } from '../../src-next/work/index.js';
 import { FakeClock } from '../e2e/support/world.js';
 import { createTestResourceServices } from '../support/resource-lookup.js';
+import { createTestIntakeRouting } from '../support/intake-routing.js';
 
 describe('InboundTranslator', () => {
   it('translates an external work observation into Work and Resource command candidates', () => {
@@ -49,7 +50,12 @@ describe('InboundTranslator', () => {
       payload: observation(),
     });
     await journal.append(event.stream, 0, [event]);
-    const translator = new InboundTranslator(journal, checkpoints, work, resources, { lookup });
+    const { orchestration, routing } = createTestIntakeRouting(journal, work);
+    const translator = new InboundTranslator(journal, checkpoints, work, resources, {
+      lookup,
+      orchestration,
+      routing,
+    });
 
     await translator.runOnce();
     await checkpoints.reset('reactor:integration.github.inbound');

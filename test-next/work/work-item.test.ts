@@ -38,6 +38,8 @@ describe('WorkItem', () => {
       objective: 'Implement the target spine',
       state: 'open',
       relatedWorkItems: [],
+      tags: [],
+      autoApprovalGranted: false,
     });
   });
 

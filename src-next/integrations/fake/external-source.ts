@@ -18,6 +18,8 @@ const missingIdentityPart = '_';
 export interface FakeWorkEvidence {
   readonly key: string;
   readonly title: string;
+  // Operator-assigned intake tags; Wake-owned data, never a provider passthrough.
+  readonly tags?: readonly string[] | undefined;
   readonly kind?: 'issue' | 'pull-request' | undefined;
   readonly revision?: string | undefined;
   readonly baseRevision?: string | undefined;

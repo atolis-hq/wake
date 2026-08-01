@@ -5,8 +5,18 @@ import type { ExternalEventSource, InboundTranslation } from './intake.js';
 import type { Clock, IdGenerator } from '../../kernel/index.js';
 import type { ResourceService } from '../../resources/index.js';
 import type { WorkService } from '../../work/index.js';
-import type { OrchestrationService } from '../../orchestration/index.js';
+import type {
+  OrchestrationService,
+  WorkflowCandidate,
+  WorkflowName,
+} from '../../orchestration/index.js';
 import type { PullRequestService } from '../../activities/index.js';
+
+// Configuration decides routing; providers supply facts. An adapter can ask which
+// workflow a candidate belongs to, but never proposes a workflow name.
+export interface WorkflowRouter {
+  select(candidate: WorkflowCandidate): WorkflowName;
+}
 
 export interface ProviderServices {
   readonly work: WorkService;
@@ -17,7 +27,7 @@ export interface ProviderServices {
   readonly clock: Clock;
   readonly journal: import('../../kernel/index.js').EventJournal;
   readonly checkpoints: import('../../kernel/index.js').CheckpointStore;
-  readonly defaultWorkflow: string;
+  readonly routing: WorkflowRouter;
 }
 
 export interface ProviderInstance {

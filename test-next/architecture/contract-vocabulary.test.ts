@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
-type RuleName = 'closed-vocabulary' | 'event-literals' | 'stream-literals';
+type RuleName = 'closed-vocabulary' | 'event-literals' | 'stream-literals' | 'provider-locality';
 
 interface ContractDiagnostic {
   readonly message: string;
@@ -54,11 +54,12 @@ const closedCatalogue = [
   '} as const);',
 ].join('\n');
 describe('contract vocabulary discovery', () => {
-  it('exposes only the three parser vocabulary rules', () => {
+  it('exposes the parser vocabulary rules and the provider-locality rule', () => {
     expect(CONTRACT_VOCABULARY_RULES).toEqual([
       'closed-vocabulary',
       'event-literals',
       'stream-literals',
+      'provider-locality',
     ]);
   });
 

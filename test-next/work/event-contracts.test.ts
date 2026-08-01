@@ -15,6 +15,8 @@ const samples = [
   [WorkEventType.ItemLinked, { to: workId('2'), relation: 'parent-of' }],
   [WorkEventType.ItemClosed, { reason: 'done' }],
   [WorkEventType.ItemCancelled, { reason: 'obsolete' }],
+  [WorkEventType.AutoApprovalGranted, {}],
+  [WorkEventType.AutoApprovalRevoked, {}],
 ] as const;
 
 describe('Work event contract', () => {

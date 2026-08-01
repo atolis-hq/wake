@@ -7,8 +7,14 @@ import {
   evaluateVocabulary,
   sortDiagnostics,
 } from './contract-vocabulary-rules.mjs';
+import { deriveProviders, evaluateProviderLocality } from './provider-locality-rule.mjs';
 
-export const CONTRACT_VOCABULARY_RULES = ['closed-vocabulary', 'event-literals', 'stream-literals'];
+export const CONTRACT_VOCABULARY_RULES = [
+  'closed-vocabulary',
+  'event-literals',
+  'stream-literals',
+  'provider-locality',
+];
 
 const allRules = new Set(CONTRACT_VOCABULARY_RULES);
 
@@ -30,6 +36,13 @@ export async function checkContractVocabulary(root, options = {}) {
 
   for (const detail of sourceDetails) {
     diagnostics.push(...evaluateVocabulary(detail, discovery.catalogues, rules));
+  }
+
+  if (rules.has('provider-locality')) {
+    const providers = await deriveProviders(resolve(scanRoot, 'integrations'));
+    for (const detail of sourceDetails) {
+      diagnostics.push(...evaluateProviderLocality(detail, providers));
+    }
   }
 
   return sortDiagnostics(diagnostics);

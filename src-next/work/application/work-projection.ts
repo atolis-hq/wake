@@ -12,37 +12,56 @@ export const workProjection: ProjectionDefinition<WorkItemView | null> = {
   project(previous, event) {
     const owned = selectWorkEvent(event);
     if (owned === null) return previous;
-    switch (owned.eventType) {
-      case WorkEventType.ItemCreated:
-        return {
-          workItemId: owned.stream.id,
-          objective: owned.payload.objective,
-          state: WorkStatus.Open,
-          relatedWorkItems: [],
-        };
-      case WorkEventType.ObjectiveRevised:
-        return previous === null ? previous : { ...previous, objective: owned.payload.objective };
-      case WorkEventType.ItemClosed:
-        return previous === null ? previous : { ...previous, state: WorkStatus.Closed };
-      case WorkEventType.ItemCancelled:
-        return previous === null ? previous : { ...previous, state: WorkStatus.Cancelled };
-      case WorkEventType.ItemLinked: {
-        if (previous === null) return previous;
-        const link = {
-          workItemId: owned.payload.to,
-          relation: owned.payload.relation,
-        };
-        return previous.relatedWorkItems.some(
-          (item) => item.workItemId === link.workItemId && item.relation === link.relation,
-        )
-          ? previous
-          : { ...previous, relatedWorkItems: [...previous.relatedWorkItems, link] };
-      }
-      default:
-        return assertNever(owned);
-    }
+    if (owned.eventType === WorkEventType.ItemCreated)
+      return {
+        workItemId: owned.stream.id,
+        objective: owned.payload.objective,
+        state: WorkStatus.Open,
+        tags: owned.payload.tags ?? [],
+        autoApprovalGranted: false,
+        relatedWorkItems: [],
+      };
+    // Every other event revises an existing item; a fold that has not seen the creation
+    // yet has nothing to revise.
+    return previous === null ? previous : revise(previous, owned);
   },
 };
+
+type ExistingWorkEvent = Exclude<
+  ReturnType<typeof selectWorkEvent>,
+  null | { eventType: typeof WorkEventType.ItemCreated }
+>;
+
+function revise(previous: WorkItemView, owned: ExistingWorkEvent): WorkItemView {
+  switch (owned.eventType) {
+    case WorkEventType.ObjectiveRevised:
+      return { ...previous, objective: owned.payload.objective };
+    case WorkEventType.ItemClosed:
+      return { ...previous, state: WorkStatus.Closed };
+    case WorkEventType.ItemCancelled:
+      return { ...previous, state: WorkStatus.Cancelled };
+    case WorkEventType.AutoApprovalGranted:
+      return { ...previous, autoApprovalGranted: true };
+    case WorkEventType.AutoApprovalRevoked:
+      return { ...previous, autoApprovalGranted: false };
+    case WorkEventType.ItemLinked:
+      return link(previous, owned.payload.to, owned.payload.relation);
+    default:
+      return assertNever(owned);
+  }
+}
+
+function link(
+  previous: WorkItemView,
+  workItemId: WorkItemView['relatedWorkItems'][number]['workItemId'],
+  relation: WorkItemView['relatedWorkItems'][number]['relation'],
+): WorkItemView {
+  return previous.relatedWorkItems.some(
+    (item) => item.workItemId === workItemId && item.relation === relation,
+  )
+    ? previous
+    : { ...previous, relatedWorkItems: [...previous.relatedWorkItems, { workItemId, relation }] };
+}
 
 function assertNever(value: never): never {
   throw new Error(`Unhandled Work event: ${JSON.stringify(value)}`);

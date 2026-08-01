@@ -42,6 +42,8 @@ describe('WorkService', () => {
       objective: 'Revised objective',
       state: 'open',
       relatedWorkItems: [{ workItemId: workId('2'), relation: 'relates-to' }],
+      tags: [],
+      autoApprovalGranted: false,
     });
   });
 

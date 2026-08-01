@@ -5,7 +5,11 @@ import { GitHubAdapter } from '../contracts/vocabulary.js';
 import type { AdapterId } from '../../contracts/identifiers.js';
 import { integrationStream } from '../../contracts/streams.js';
 import { formatGitHubResourceKey } from '../contracts/external-key.js';
-import type { GitHubIssuePayload } from '../contracts/payloads.js';
+import {
+  gitHubAssigneeLogins,
+  gitHubLabelNames,
+  type GitHubIssuePayload,
+} from '../contracts/payloads.js';
 import { GitHubEventType, type GitHubAdapterEventDraft } from '../contracts/events.js';
 import { UnknownGitHubIdentity } from '../contracts/vocabulary.js';
 
@@ -38,6 +42,8 @@ export function issueObservation(input: {
         id: input.issue.user?.login ?? UnknownGitHubIdentity,
         kind: input.issue.user?.type === 'Bot' ? ReviewActorKind.Bot : ReviewActorKind.Human,
       },
+      labels: gitHubLabelNames(input.issue),
+      assignees: gitHubAssigneeLogins(input.issue),
       raw: { number: input.issue.number },
     },
   });

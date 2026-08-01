@@ -1,7 +1,7 @@
 import { WorkflowStatus } from './vocabulary.js';
 import { z } from 'zod';
 
-import { EventActorKind } from '../../kernel/index.js';
+import { EventActorKind, MatchMode } from '../../kernel/index.js';
 import { type ActivityName } from '../../activities/index.js';
 import { WorkspaceMode, type WorkspaceMode as WorkspaceModeType } from '../../execution/index.js';
 import type { CommandName, SignalName, StageName, WorkflowName } from './identifiers.js';
@@ -94,6 +94,28 @@ export const workflowDefinitionConfigSchema = z
   })
   .strict();
 
+// A single identifier is shorthand for a one-entry list, so every facet is matched the same way.
+const selectorValues = z
+  .union([identifier, z.array(identifier).min(1)])
+  .transform((value): readonly string[] => (typeof value === 'string' ? [value] : value));
+export const workflowSelectorConfigSchema = z
+  .object({
+    match: z
+      .object({
+        tags: selectorValues.optional(),
+        kind: selectorValues.optional(),
+        adapter: selectorValues.optional(),
+      })
+      .strict()
+      .refine((value) => Object.values(value).some((facet) => facet !== undefined), {
+        message: 'Workflow selector match requires at least one of tags, kind, or adapter',
+      }),
+    matchMode: z.enum([MatchMode.Any, MatchMode.All]).default(MatchMode.Any),
+    workflow: identifier,
+  })
+  .strict();
+
+export type WorkflowSelectorConfig = z.infer<typeof workflowSelectorConfigSchema>;
 export type FollowOnActivityConfig = z.infer<typeof followOnActivityConfigSchema>;
 export type OutcomeRouteConfig = z.infer<typeof outcomeRouteConfigSchema>;
 export type StageConfig = z.infer<typeof stageConfigSchema>;

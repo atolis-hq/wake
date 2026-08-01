@@ -184,6 +184,27 @@ flow with incompatible resource capabilities.
 
 ---
 
+## Implementation status — 2026-08-01
+
+Recorded after the review-and-remediation pass. Green at target 146 files / 593 tests,
+legacy 83 files / 950 tests, with `check:catalogue`, `lint:contracts`,
+`lint:architecture`, `knip:next`, `verify:next` and `verify` all passing.
+
+| Item | State |
+| --- | --- |
+| 25A.0–25A.3, 25A.5, 25A.6, 25A.8, 25A.9 | Built |
+| 25A.4 value-level locality check | Built in remediation. Was missing entirely on first delivery; both path-scope and value-scope probes confirmed to fail the build |
+| 25A.7 routing half (tags, selectors, intake rules, echo-loop invariant, shared admission) | Built in remediation. `admitObservedWork` is the single path both providers use, so GitHub intake now starts a workflow |
+| 25A.7 approval authority (D16) — Work half | Built: consent events, idempotent commands, projection, view |
+| 25A.7 approval authority (D16) — Orchestration half | **Not built.** Specified by `test-next/orchestration/approval-authority.test.ts.pending`; see `test-next/orchestration/APPROVAL-AUTHORITY-PENDING.md` |
+| A4 merge policy (`maxFilesChanged`, `blockedPaths`, changed-files capability) | **Not built.** No `pr.merge` policy fields, and `activities/pr/policy.ts` still gates on `kind !== 'pull-request'` rather than capability |
+| 25B step 13 alternate runner selection | Seam only. `RunnerRegistry.resolve(tier, ineligible)` walks ordered candidates, but nothing in production populates `ineligibleRunners`; per-runner quota state does not exist |
+
+Two catalogue rows still describe intent rather than delivered capability —
+`ORCH-APPROVAL-AUTHORITY` (half built) and `ACT-PR-MERGE` (A4 fields absent). The
+catalogue records dispositions, not progress, so the rows are not wrong; this table is
+the progress record.
+
 ## Scenario matrix
 
 Scenario IDs used by this packet. `E2E-LIVE-*` are new process-level runs

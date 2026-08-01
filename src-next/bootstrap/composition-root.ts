@@ -13,14 +13,8 @@ import {
 } from '../control-plane/index.js';
 import {
   createExecutionService,
-  createCommandRunner,
-  createClaudeRunner,
-  createCodexRunner,
-  createCursorRunner,
-  FakeExecutionRunner,
   loadPromptTemplate,
   renderPromptTemplate,
-  RunnerRegistry,
 } from '../execution/index.js';
 import {
   SystemClock,
@@ -37,8 +31,11 @@ import {
 } from '../persistence/index.js';
 import {
   compileWorkflow,
+  compileWorkflowSelectors,
   createOrchestrationService,
   createWatchReactor,
+  selectWorkflow,
+  workflowName,
 } from '../orchestration/index.js';
 import { createResourceLookup, createResourceService, resourceId } from '../resources/index.js';
 import {
@@ -48,14 +45,19 @@ import {
   PollService,
   ProviderRegistry,
   fakeProviderDefinition,
-  gitHubProviderDefinition,
   type DeliveryIntentView,
   type ProviderInstance,
+  type WorkflowRouter,
 } from '../integrations/index.js';
+// The shared Integration barrel must not re-export a provider namespace
+// (see provider-locality); composition-root is the exempt production
+// composition point that is allowed to name it directly.
+import { gitHubProviderDefinition } from '../integrations/github/index.js';
 import { createWorkService } from '../work/index.js';
 import { loadConfig, type ResolvedWakeModulesConfig } from './config/load-config.js';
 import { resolveWakePaths, type WakePaths } from './paths.js';
 import { createRuntimeProjectionRunner } from './projection-runtime.js';
+import { createRunnerRegistry } from './runner-registry.js';
 import { hydrateFakeProviderEvidence } from './fake-provider-files.js';
 import { createStatusPublishActivity } from './status-publish-activity.js';
 
@@ -185,7 +187,7 @@ async function composeIntegrationRuntime(
       clock: input.clock,
       journal: input.journal,
       checkpoints: input.checkpoints,
-      defaultWorkflow: Object.keys(input.config.orchestration.workflows)[0] ?? 'default',
+      routing: createWorkflowRouter(input.config.orchestration),
     },
   );
   const projectionRunner = createRuntimeProjectionRunner(
@@ -274,31 +276,11 @@ function createBuiltInActivityRegistry(
   return activities;
 }
 
-function createRunnerRegistry(config: ResolvedWakeModulesConfig['execution']): RunnerRegistry {
-  const runners = Object.fromEntries(
-    Object.entries(config.agentRunners ?? {}).map(([name, runner]) => [
-      name,
-      createConfiguredRunner(runner),
-    ]),
-  );
-  return new RunnerRegistry(config.tiers, runners);
-}
-
-function createConfiguredRunner(
-  runner: NonNullable<ResolvedWakeModulesConfig['execution']['agentRunners']>[string],
-) {
-  switch (runner.kind) {
-    case 'fake':
-      return new FakeExecutionRunner();
-    case 'claude-cli':
-      return createClaudeRunner(runner.command, runner.timeoutMs, runner.args);
-    case 'codex-cli':
-      return createCodexRunner(runner.command, runner.timeoutMs, runner.args);
-    case 'cursor-cli':
-      return createCursorRunner(runner.command, runner.timeoutMs, runner.args);
-    case 'command': {
-      if (runner.command === undefined) throw new Error('Command runner requires a command');
-      return createCommandRunner(runner.command, runner.args, runner.timeoutMs);
-    }
-  }
+// Configuration is the only routing authority: adapters ask, they never propose.
+function createWorkflowRouter(
+  orchestration: ResolvedWakeModulesConfig['orchestration'],
+): WorkflowRouter {
+  const selectors = compileWorkflowSelectors(orchestration.workflowSelectors);
+  const fallback = workflowName(orchestration.default);
+  return { select: (candidate) => selectWorkflow(candidate, selectors, fallback) };
 }

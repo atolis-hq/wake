@@ -6,7 +6,22 @@ export interface GitHubIssuePayload {
   readonly state: typeof PullRequestState.Open | typeof PullRequestState.Closed;
   readonly updated_at: string;
   readonly user?: { readonly login?: string; readonly type?: string } | null;
+  readonly labels?: readonly (string | { readonly name?: string })[];
+  readonly assignees?: readonly ({ readonly login?: string } | null)[] | null;
   readonly pull_request?: Record<string, unknown>;
+}
+
+export function gitHubLabelNames(payload: GitHubIssuePayload): readonly string[] {
+  return (payload.labels ?? []).flatMap((label) => {
+    const name = typeof label === 'string' ? label : label.name;
+    return name === undefined ? [] : [name];
+  });
+}
+
+export function gitHubAssigneeLogins(payload: GitHubIssuePayload): readonly string[] {
+  return (payload.assignees ?? []).flatMap((assignee) =>
+    assignee?.login === undefined ? [] : [assignee.login],
+  );
 }
 
 export interface GitHubPullRequestPayload extends GitHubIssuePayload {

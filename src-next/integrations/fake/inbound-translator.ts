@@ -14,11 +14,8 @@ import {
   ReviewerAuthorizationSource,
 } from '../../activities/index.js';
 import { workItemId, type WorkItemId } from '../../work/index.js';
-import {
-  orchestrationGroupId,
-  workflowInstanceId,
-  workflowName,
-} from '../../orchestration/index.js';
+import { admitObservedWork } from '../application/work-admission.js';
+import type { AdapterId } from '../contracts/identifiers.js';
 import type { ProviderServices } from '../contracts/provider.js';
 import { FakeEventType, type FakeWorkEvidence } from './external-source.js';
 
@@ -26,6 +23,7 @@ const evidenceSchema = z
   .object({
     key: z.string().min(1),
     title: z.string().min(1),
+    tags: z.array(z.string().trim().min(1)).readonly().optional(),
     kind: z.enum(['issue', 'pull-request']).optional(),
     revision: z.string().min(1).optional(),
     baseRevision: z.string().min(1).optional(),
@@ -38,7 +36,7 @@ const evidenceSchema = z
 
 export class FakeInboundTranslator {
   constructor(
-    private readonly adapter: string,
+    private readonly adapter: AdapterId,
     private readonly services: ProviderServices,
   ) {}
 
@@ -75,9 +73,12 @@ export class FakeInboundTranslator {
     if (await this.updateExisting(externalKey, isPullRequest, evidence, event, context)) return;
     const resource = resourceId(this.services.ids.next('resource'));
     const work = workItemId(this.services.ids.next('work'));
-    await this.services.resources.discover(
+    await admitObservedWork(
+      this.services,
       {
+        adapter: this.adapter,
         resourceId: resource,
+        workItemId: work,
         kind: isPullRequest ? BuiltInResourceKind.PullRequest : BuiltInResourceKind.Issue,
         externalKey,
         capabilities: isPullRequest
@@ -89,27 +90,16 @@ export class FakeInboundTranslator {
               BuiltInResourceCapability.Revisioned,
             ]
           : [BuiltInResourceCapability.Commentable],
+        objective: evidence.title,
+        tags: evidence.tags ?? [],
         ...(evidence.revision === undefined ? {} : { revision: evidence.revision }),
       },
       context,
-    );
-    await this.services.work.create({ workItemId: work, objective: evidence.title }, context);
-    await this.services.resources.correlate(
-      resource,
-      work,
-      ResourceCorrelationRole.Primary,
-      context,
-    );
-    if (isPullRequest) await this.observePullRequest(resource, work, evidence, event, context);
-    const workflow = workflowInstanceId(`primary:${work}`);
-    await this.services.orchestration.start(
-      {
-        workflowInstanceId: workflow,
-        workItemId: work,
-        workflowName: workflowName(this.services.defaultWorkflow),
-        orchestrationGroupId: orchestrationGroupId(`primary:${work}`),
-      },
-      context,
+      isPullRequest
+        ? async () => {
+            await this.observePullRequest(resource, work, evidence, event, context);
+          }
+        : undefined,
     );
   }
 

@@ -2,6 +2,7 @@ import { PullRequestState } from '../../../activities/index.js';
 import { MergeMethod } from '../../../activities/index.js';
 import { Octokit } from '@octokit/rest';
 import { createEtagCache, fetchWithEtag } from './etag-cache.js';
+import { GitHubListState } from '../contracts/vocabulary.js';
 import type { GitHubOutboundAction } from '../contracts/vocabulary.js';
 import type { GitHubIssuePayload } from '../contracts/payloads.js';
 
@@ -84,7 +85,7 @@ function listIssues(
     .paginate(octokit.rest.issues.listForRepo, {
       owner,
       repo,
-      state: 'all',
+      state: GitHubListState.All,
       per_page: Math.min(maxResults, 100),
     })
     .then((items) => items.slice(0, maxResults).map(normalizeIssue));
@@ -97,6 +98,8 @@ function normalizeIssue(issue: {
   readonly state: string;
   readonly updated_at: string;
   readonly user?: { readonly login?: string; readonly type?: string } | null;
+  readonly labels?: readonly (string | { readonly name?: string })[];
+  readonly assignees?: readonly ({ readonly login?: string } | null)[] | null;
   readonly pull_request?: Record<string, unknown>;
 }): GitHubIssuePayload {
   return {
@@ -107,6 +110,8 @@ function normalizeIssue(issue: {
       issue.state === PullRequestState.Closed ? PullRequestState.Closed : PullRequestState.Open,
     updated_at: issue.updated_at,
     ...(issue.user === undefined ? {} : { user: issue.user }),
+    ...(issue.labels === undefined ? {} : { labels: issue.labels }),
+    ...(issue.assignees === undefined ? {} : { assignees: issue.assignees }),
     ...(issue.pull_request === undefined ? {} : { pull_request: issue.pull_request }),
   };
 }
@@ -116,7 +121,7 @@ async function listPullRequests(octokit: Octokit, owner: string, repo: string, m
   const pages = octokit.paginate.iterator(octokit.rest.pulls.list, {
     owner,
     repo,
-    state: 'all',
+    state: GitHubListState.All,
     per_page: Math.min(maxResults, 100),
   });
   for await (const page of pages) {

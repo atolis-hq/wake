@@ -56,6 +56,22 @@ describe('Execution runner selection', () => {
     await expect(service.attempt(activation(), context())).rejects.toThrow(/not registered/);
   });
 
+  it('falls sideways to the next tier candidate when the preferred runner is quota-ineligible', async () => {
+    const sonnet = runner('sonnet');
+    const codexMini = runner('codex-mini');
+    const service = fixture(
+      new RunnerRegistry(
+        { standard: ['sonnet', 'codex-mini'] },
+        { sonnet, 'codex-mini': codexMini },
+      ),
+    );
+
+    await service.attempt(activation(), context(new Set(['sonnet'])));
+
+    expect(codexMini.calls).toBe(1);
+    expect(sonnet.calls).toBe(0);
+  });
+
   it('persists a successful runner session and token usage on the Run', async () => {
     const standard: Runner = {
       async start() {
@@ -113,12 +129,13 @@ function activation(tier?: string) {
     status: 'pending' as const,
   };
 }
-function context() {
+function context(ineligibleRunners?: ReadonlySet<string>) {
   return {
     workItemId: workId('00000000000000000000000002'),
     workflowInstanceId: workflowInstanceId('workflow-1'),
     orchestrationGroupId: orchestrationGroupId('group-1'),
     resources: [],
+    ...(ineligibleRunners === undefined ? {} : { ineligibleRunners }),
   };
 }
 function runner(name: string): Runner & { readonly calls: number } {

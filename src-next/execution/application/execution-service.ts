@@ -83,7 +83,7 @@ async function attemptExecution(
   const definition = runtime.activities.describe(activation.activity);
   runtime.activities.validateInput(activation.activity, activation.input);
   validateResources(definition.resources, context.resources);
-  const runner = resolveRunner(runtime, definition.executionKind, activation);
+  const runner = resolveRunner(runtime, definition.executionKind, activation, context);
   const owner = context.owner ?? 'execution';
   const prior = await runtime.repository.list(activation.activationId);
   const existing = existingRun(prior, runtime.dependencies.clock, owner);
@@ -142,22 +142,28 @@ function resolveRunner(
   runtime: ExecutionRuntime,
   executionKind: ActivityExecutionKind,
   activation: ExecutionActivation,
+  context: ExecutionAttemptContext,
 ) {
   const tier = activation.execution?.tier ?? runtime.config.defaultTier;
   if (runtime.config.tiers[tier] === undefined) throw new Error(`Unknown execution tier: ${tier}`);
-  const resolved =
-    executionKind === ActivityExecutionKind.Agent
-      ? runtime.dependencies.runners?.resolve(tier)
-      : undefined;
+  if (executionKind !== ActivityExecutionKind.Agent) return { runner: undefined };
+  const resolved = runtime.dependencies.runners?.resolve(
+    tier,
+    context.ineligibleRunners ?? new Set(),
+  );
+  return describeResolvedRunner(runtime, resolved);
+}
+
+function describeResolvedRunner(
+  runtime: ExecutionRuntime,
+  resolved: ReturnType<NonNullable<ExecutionDependencies['runners']>['resolve']> | undefined,
+) {
+  if (resolved === undefined) return { runner: undefined };
   return {
-    runner: resolved?.runner,
-    ...(resolved === undefined
-      ? {}
-      : {
-          name: resolved.name,
-          model: runtime.config.agentRunners?.[resolved.name]?.model,
-          effort: runtime.config.agentRunners?.[resolved.name]?.effort,
-        }),
+    runner: resolved.runner,
+    name: resolved.name,
+    model: runtime.config.agentRunners?.[resolved.name]?.model,
+    effort: runtime.config.agentRunners?.[resolved.name]?.effort,
   };
 }
 

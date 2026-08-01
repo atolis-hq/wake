@@ -27,4 +27,6 @@ export interface ExecutionAttemptContext {
   readonly orchestrationGroupId: ActivityOrchestrationGroupId;
   readonly resources: readonly ResourceView[];
   readonly owner?: string;
+  /** Runner names currently quota-paused; unset means none. */
+  readonly ineligibleRunners?: ReadonlySet<string>;
 }

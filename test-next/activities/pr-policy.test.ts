@@ -18,7 +18,14 @@ function authorityInput(
   overrides: Partial<PullRequestAuthorityInput> = {},
 ): PullRequestAuthorityInput {
   return {
-    work: { workItemId: workItem, objective: 'Ship it', state: 'open', relatedWorkItems: [] },
+    work: {
+      workItemId: workItem,
+      objective: 'Ship it',
+      state: 'open',
+      tags: [],
+      autoApprovalGranted: false,
+      relatedWorkItems: [],
+    },
     resources: [
       {
         resource: {

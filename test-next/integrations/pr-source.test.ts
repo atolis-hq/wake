@@ -13,8 +13,15 @@ import {
   InMemoryEventJournal,
   InMemoryProjectionStore,
 } from '../../src-next/persistence/index.js';
-import { createResourceLookup, createResourceService } from '../../src-next/resources/index.js';
+import {
+  BuiltInResourceCapability,
+  BuiltInResourceKind,
+  ResourceCorrelationRole,
+  createResourceLookup,
+  createResourceService,
+} from '../../src-next/resources/index.js';
 import { createWorkService } from '../../src-next/work/index.js';
+import { resId, workId } from '../support/identities.js';
 import { createPullRequestService } from '../../src-next/activities/index.js';
 import { FakeClock } from '../e2e/support/world.js';
 
@@ -148,7 +155,9 @@ it('emits changed check evidence when GitHub checks change without PR metadata c
     checkRuns: async () => checkRuns.shift() ?? [],
     statuses: async () => [{ state: 'success' }],
   });
-  const { journal, lookup, translator, poll, pullRequests } = sourceRuntime(client);
+  const runtime = sourceRuntime(client);
+  const { journal, lookup, translator, poll, pullRequests } = runtime;
+  await admitPullRequest(runtime, 'checks-changed', 'owner/repo#7');
 
   await poll.pollOnce(new AbortController().signal);
   await translator.runOnce();
@@ -183,7 +192,9 @@ it('distinguishes pending to passing to a new pending run and deduplicates ident
     checkRuns: async () => checkRuns.shift() ?? [],
     statuses: async () => [{ id: 1, context: 'legacy', state: 'success' }],
   });
-  const { journal, lookup, translator, poll, pullRequests } = sourceRuntime(client);
+  const runtime = sourceRuntime(client);
+  const { journal, lookup, translator, poll, pullRequests } = runtime;
+  await admitPullRequest(runtime, 'pending-passing-pending', 'owner/repo#7');
 
   for (let index = 0; index < 4; index += 1) {
     await poll.pollOnce(new AbortController().signal);
@@ -329,6 +340,9 @@ function sourceRuntime(client: GitHubPullRequestSourceClient) {
   return {
     journal,
     lookup,
+    resources,
+    work,
+    clock,
     pullRequests,
     poll,
     translator: new InboundTranslator(journal, checkpoints, work, resources, {
@@ -336,6 +350,39 @@ function sourceRuntime(client: GitHubPullRequestSourceClient) {
       lookup,
     }),
   };
+}
+
+// These tests prove check-evidence translation, not admission, so the WorkItem/Resource are
+// pre-established: the translator resolves an existing identity on the first poll and never
+// needs a workflow to route into.
+async function admitPullRequest(
+  runtime: ReturnType<typeof sourceRuntime>,
+  seed: string,
+  externalKey: string,
+): Promise<void> {
+  const context = {
+    commandId: 'pre-admit',
+    correlationId: 'pre-admit' as never,
+    occurredAt: runtime.clock.now().toISOString(),
+    actor: { kind: 'integration' as const, id: 'github' },
+  };
+  const workItem = workId(seed);
+  const resource = resId(seed);
+  await runtime.work.create({ workItemId: workItem, objective: 'PR' }, context);
+  await runtime.resources.discover(
+    {
+      resourceId: resource,
+      kind: BuiltInResourceKind.PullRequest,
+      externalKey: { adapter: 'github', key: externalKey },
+      capabilities: [
+        BuiltInResourceCapability.Commentable,
+        BuiltInResourceCapability.Reviewable,
+        BuiltInResourceCapability.Revisioned,
+      ],
+    },
+    context,
+  );
+  await runtime.resources.correlate(resource, workItem, ResourceCorrelationRole.Primary, context);
 }
 
 function pagesOf(...pages: readonly { readonly data: unknown }[]) {

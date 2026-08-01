@@ -10,7 +10,7 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
-describe('loadPromptTemplate', () => {
+describe('E2E-PROMPT-001 loadPromptTemplate', () => {
   it('parses typed YAML frontmatter from the Wake root prompts directory', async () => {
     const root = await fixtureRoot();
     await writeFile(

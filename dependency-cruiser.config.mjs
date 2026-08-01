@@ -44,12 +44,29 @@ const dependencyMap = {
     'surfaces',
   ],
 };
+// composition-root is the sole production composition point; since the
+// integrations barrel must not re-export provider namespaces (provider-locality),
+// it alone may reach a provider's own index.ts directly.
 const internalBoundaryRules = modules.map((module) => ({
   name: `no-${module}-internals`,
   severity: 'error',
-  from: { pathNot: `^src-next/${module}/` },
+  from: {
+    pathNot:
+      module === 'integrations'
+        ? [`^src-next/${module}/`, '^src-next/bootstrap/composition-root\\.ts$']
+        : `^src-next/${module}/`,
+  },
   to: { path: `^src-next/${module}/(?!index\\.ts$)` },
 }));
+// The exemption above lets composition-root reach a provider barrel; it must not
+// become a licence to reach a provider's internals.
+const compositionRootBarrelRule = {
+  name: 'composition-root-provider-barrels-only',
+  severity: 'error',
+  comment: 'Bootstrap may import a provider barrel, never a module inside one.',
+  from: { path: '^src-next/bootstrap/composition-root\\.ts$' },
+  to: { path: '^src-next/integrations/(?!index\\.ts$)(?![^/]+/index\\.ts$)' },
+};
 const undeclaredDependencyRules = Object.entries(dependencyMap).map(([module, dependencies]) => ({
   name: `no-undeclared-${module}-dependency`,
   severity: 'error',
@@ -93,6 +110,7 @@ export default {
       to: { path: '^node:' },
     },
     ...internalBoundaryRules,
+    compositionRootBarrelRule,
     ...undeclaredDependencyRules,
   ],
   options: {

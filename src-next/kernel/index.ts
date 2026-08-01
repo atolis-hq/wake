@@ -18,6 +18,7 @@ export * from './contracts/schema.js';
 export * from './contracts/projection-store.js';
 export * from './contracts/vocabulary.js';
 export * from './domain/event-envelope.js';
+export * from './domain/match-mode.js';
 export * from './domain/relation.js';
 export * from './infrastructure/system-clock.js';
 export * from './infrastructure/ulid-id-generator.js';

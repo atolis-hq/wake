@@ -1,4 +1,4 @@
-retry:
+default:
   stages:
     attempt:
       activity: agent
