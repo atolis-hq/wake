@@ -34,7 +34,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.json && node scripts/embed-version.mjs",
     "prepack": "npm run build && npm run build:web",
-    "test": "vitest run --exclude test/adapters/git-workspace-manager.test.ts",
+    "test": "vitest run --exclude test/adapters/git-workspace-manager.test.ts --exclude test/core/tick-runner*.test.ts --exclude test/adapters/resource-index.test.ts",
+    "test:legacy": "vitest run test/core/tick-runner*.test.ts test/adapters/resource-index.test.ts",
     "test:integration": "vitest run test/adapters/git-workspace-manager.test.ts",
     "test:watch": "vitest",
     "check:catalogue": "node scripts/check-functional-catalogue.mjs",
@@ -62,7 +63,7 @@
     "smoke:codex": "tsx src/main.ts smoke codex",
     "smoke:cursor": "tsx src/main.ts smoke cursor",
     "verify": "npm run lint && npm run format:check && npm run build && npm test",
-    "verify:ci": "npm run verify && npm run verify:next && npm run test:integration && npm run test:next:e2e"
+    "verify:ci": "npm run verify && npm run verify:next && npm run test:integration && npm run test:legacy && npm run test:next:e2e"
   },
   "dependencies": {
     "@octokit/rest": "^22.0.0",

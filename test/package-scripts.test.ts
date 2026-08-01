@@ -11,11 +11,15 @@ describe('package scripts', () => {
     expect(packageJson.scripts.test).toContain(
       '--exclude test/adapters/git-workspace-manager.test.ts',
     );
+    expect(packageJson.scripts.test).toContain('--exclude test/core/tick-runner*.test.ts');
+    expect(packageJson.scripts['test:legacy']).toBe(
+      'vitest run test/core/tick-runner*.test.ts test/adapters/resource-index.test.ts',
+    );
     expect(packageJson.scripts['test:integration']).toBe(
       'vitest run test/adapters/git-workspace-manager.test.ts',
     );
     expect(packageJson.scripts['verify:ci']).toBe(
-      'npm run verify && npm run verify:next && npm run test:integration && npm run test:next:e2e',
+      'npm run verify && npm run verify:next && npm run test:integration && npm run test:legacy && npm run test:next:e2e',
     );
   });
 });
