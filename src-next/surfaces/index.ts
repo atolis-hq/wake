@@ -4,6 +4,10 @@ export * from './api/http-server.js';
 
 export * from './api/presenters/activities.js';
 
+export * from './api/presenters/board.js';
+
+export * from './api/presenters/status.js';
+
 export * from './api/presenters/control-plane.js';
 
 export * from './api/presenters/events.js';

@@ -4,7 +4,9 @@ import type { WorkflowInstanceView } from '../orchestration/index.js';
 import type { ResourceView } from '../resources/index.js';
 import {
   ApiCommandStatus,
+  presentBoardCard,
   presentResource,
+  presentStatus,
   presentWorkflowInstance,
   redactConfiguration,
   type ApiAdvanceCommandResult,
@@ -12,6 +14,12 @@ import {
   type ApiSystemApplications,
   type AuditEventResponse,
 } from '../surfaces/index.js';
+import { analyticsProjection, type AnalyticsProjectionView } from './analytics-projection.js';
+import {
+  boardConditionCounts,
+  boardProjection,
+  type BoardProjectionView,
+} from './board-projection.js';
 import type { CompositionRoot } from './composition-root.js';
 import { createExecutionApplications } from './surface-api-execution-applications.js';
 import { projectionMeta, sampledMeta } from './surface-api-metadata.js';
@@ -24,6 +32,8 @@ export function createSurfaceApiApplications(
 ): ApiApplications {
   return {
     now,
+    board: createBoardApplications(root, now),
+    status: createStatusApplications(root, now),
     controlPlane: createControlPlaneApplications(root, now),
     work: createSurfaceWorkApplications(root, now),
     resources: createResourceApplications(root, now),
@@ -32,6 +42,45 @@ export function createSurfaceApiApplications(
     events: createEventApplications(root, now),
     observability: createObservabilityApplications(root, now),
     system: createSystemApplications(root, now),
+  };
+}
+
+function createBoardApplications(root: CompositionRoot, now: () => string) {
+  return {
+    async list(query: Parameters<NonNullable<ApiApplications['board']>['list']>[0]) {
+      const stored = await root.projections.read<BoardProjectionView>(
+        boardProjection.name,
+        'global',
+      );
+      const cards = Object.values(stored?.value.cards ?? {}).sort((left, right) =>
+        left.workItemId.localeCompare(right.workItemId),
+      );
+      const offset = query.cursor?.position ?? 0;
+      return {
+        items: cards.slice(offset, offset + query.limit).map((card) => presentBoardCard(card)),
+        total: cards.length,
+        ...(offset + query.limit < cards.length ? { nextPosition: offset + query.limit } : {}),
+        conditionCounts: boardConditionCounts(stored?.value ?? boardProjection.initial('global')),
+        meta: await projectionMeta(root.journal, stored === null ? [] : [stored], now()),
+      };
+    },
+  };
+}
+
+function createStatusApplications(root: CompositionRoot, now: () => string) {
+  return {
+    async get() {
+      const stored = await root.projections.read<BoardProjectionView>(
+        boardProjection.name,
+        'global',
+      );
+      return {
+        data: presentStatus({
+          conditionCounts: boardConditionCounts(stored?.value ?? boardProjection.initial('global')),
+        }),
+        meta: await projectionMeta(root.journal, stored === null ? [] : [stored], now()),
+      };
+    },
   };
 }
 
@@ -96,22 +145,17 @@ function createEventApplications(root: CompositionRoot, now: () => string) {
 
 function createObservabilityApplications(root: CompositionRoot, now: () => string) {
   return {
-    async metrics() {
-      const events = await root.journal.readAll(0);
+    async metrics(query = { days: 7 }) {
       const collectedAt = now();
+      const stored = await root.projections.read<AnalyticsProjectionView>(
+        analyticsProjection.name,
+        'global',
+      );
+      const analytics = stored?.value ?? analyticsProjection.initial('global');
+      const window = analyticsWindow(analytics, collectedAt, query.days);
       return {
-        data: {
-          collectedAt,
-          values: {
-            events: events.length,
-            workItems: (await root.projections.list('work')).length,
-            runs: (await root.execution.list()).length,
-          },
-        },
-        meta: {
-          asOf: collectedAt,
-          ...(events.at(-1) === undefined ? {} : { position: events.at(-1)!.globalPosition }),
-        },
+        data: { collectedAt, window: window.range, values: window.values },
+        meta: await projectionMeta(root.journal, stored === null ? [] : [stored], collectedAt),
       };
     },
   };
@@ -233,4 +277,23 @@ function presentEvents(events: readonly EventEnvelope[]): readonly AuditEventRes
     causationId: event.causationId,
     correlationId: event.correlationId,
   }));
+}
+
+function analyticsWindow(analytics: AnalyticsProjectionView, collectedAt: string, days: number) {
+  const end = collectedAt.slice(0, 10);
+  const endDate = new Date(`${end}T00:00:00.000Z`);
+  const startDate = new Date(endDate);
+  startDate.setUTCDate(startDate.getUTCDate() - (days - 1));
+  const from = startDate.toISOString().slice(0, 10);
+  const values = Object.entries(analytics.days)
+    .filter(([day]) => day >= from && day <= end)
+    .reduce(
+      (totals, [, bucket]) => ({
+        events: totals.events + bucket.events,
+        workItems: totals.workItems + bucket.workItems,
+        runs: totals.runs + bucket.runs,
+      }),
+      { events: 0, workItems: 0, runs: 0 },
+    );
+  return { range: { days, from, to: end }, values };
 }

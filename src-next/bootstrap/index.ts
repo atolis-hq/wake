@@ -78,6 +78,10 @@ export function composeControlPlaneHosts(
 
 export * from './composition-root.js';
 
+export * from './analytics-projection.js';
+
+export * from './board-projection.js';
+
 export * from './config/load-config.js';
 
 export * from './config/root-schema.js';

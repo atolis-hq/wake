@@ -4,6 +4,7 @@ import {
   decodeAcceptedCommand,
   decodeAdvanceCommand,
   decodeAuditEvent,
+  decodeBoardCard,
   decodeControlPlaneStatus,
   decodeResourceItem,
   decodeRun,
@@ -30,6 +31,22 @@ export class ApiProblem extends Error {
 }
 
 export class WakeApiClient {
+  readonly board = {
+    list: (cursor?: string, signal?: AbortSignal) =>
+      this.get(`/board${query({ cursor })}`, collectionDecoder(decodeBoardCard), signal),
+  };
+
+  readonly status = {
+    get: (signal?: AbortSignal) =>
+      this.get(
+        '/status',
+        resourceDecoder(
+          (value) => value as { readonly conditionCounts: Readonly<Record<string, number>> },
+        ),
+        signal,
+      ),
+  };
+
   readonly controlPlane = {
     status: (signal?: AbortSignal) =>
       this.get('/control-plane/status', resourceDecoder(decodeControlPlaneStatus), signal),
@@ -115,8 +132,12 @@ export class WakeApiClient {
   };
 
   readonly observability = {
-    metrics: (signal?: AbortSignal) =>
-      this.get('/observability/metrics', resourceDecoder(decodeMetrics), signal),
+    metrics: (days = 7, signal?: AbortSignal) =>
+      this.get(
+        `/observability/metrics${query({ days: String(days) })}`,
+        resourceDecoder(decodeMetrics),
+        signal,
+      ),
   };
 
   readonly system = {

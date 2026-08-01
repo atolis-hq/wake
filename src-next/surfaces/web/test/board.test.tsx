@@ -13,29 +13,43 @@ function boardClient(fetchSpy?: (url: string) => void) {
       workItemKey: 'wk_a',
       workItemId: 'work-a',
       objective: 'Alpha',
-      state: 'open',
-      relatedWorkItems: [],
+      condition: 'ready',
+      workflowName: 'delivery',
+      stage: 'implement',
+      dwellSince: asOf,
+      runCount: 1,
     },
     {
       workItemKey: 'wk_b',
       workItemId: 'work-b',
       objective: 'Beta',
-      state: 'open',
-      relatedWorkItems: [],
+      condition: 'ready',
+      workflowName: 'delivery',
+      stage: 'implement',
+      dwellSince: asOf,
+      runCount: 1,
     },
     {
       workItemKey: 'wk_c',
       workItemId: 'work-c',
       objective: 'Gamma',
-      state: 'closed',
-      relatedWorkItems: [],
+      condition: 'finished',
+      workflowName: 'delivery',
+      stage: 'done',
+      dwellSince: asOf,
+      runCount: 1,
     },
   ];
   return new WakeApiClient(async (input) => {
     const url = String(input);
     fetchSpy?.(url);
-    const body = url.includes('/work-items')
-      ? { items, page: { nextCursor: null, hasMore: false }, meta: { asOf } }
+    const body = url.includes('/board')
+      ? {
+          items,
+          conditionCounts: { ready: 2, finished: 1 },
+          page: { nextCursor: null, hasMore: false },
+          meta: { asOf },
+        }
       : { data: { paused: false, updatedAt: asOf }, meta: { asOf } };
     return new Response(JSON.stringify(body), {
       status: 200,
@@ -54,10 +68,10 @@ describe('board', () => {
       </MemoryRouter>,
     );
     expect(
-      await screen.findByRole('heading', { name: 'Open (2)' }, { timeout: 5_000 }),
+      await screen.findByRole('heading', { name: 'Ready (2)' }, { timeout: 5_000 }),
     ).toBeTruthy();
-    expect(screen.getByRole('heading', { name: 'Closed (1)' })).toBeTruthy();
-    expect(screen.getByRole('heading', { name: 'Cancelled (0)' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Finished (1)' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Error (0)' })).toBeTruthy();
   });
 
   it('renders each card as a link to its work item key route', async () => {
@@ -79,7 +93,7 @@ describe('board', () => {
         <App client={boardClient((url) => seen.push(url))} />
       </MemoryRouter>,
     );
-    await screen.findByRole('heading', { name: 'Open (2)' });
+    await screen.findByRole('heading', { name: 'Ready (2)' });
     expect(seen.filter((url) => url.includes('/workflow-instances'))).toEqual([]);
     expect(seen.filter((url) => url.includes('/resources'))).toEqual([]);
   });
@@ -92,25 +106,25 @@ describe('board', () => {
         <App client={boardClient()} />
       </MemoryRouter>,
     );
-    const toggle = await screen.findByRole('button', { name: 'Collapse Open' });
+    const toggle = await screen.findByRole('button', { name: 'Collapse Ready' });
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
     await user.click(toggle);
 
     expect(screen.queryByRole('link', { name: 'Alpha' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Expand Open' }).getAttribute('aria-expanded')).toBe(
+    expect(screen.getByRole('button', { name: 'Expand Ready' }).getAttribute('aria-expanded')).toBe(
       'false',
     );
-    expect(window.localStorage.getItem('wake:board:collapsed-columns')).toBe('["open"]');
+    expect(window.localStorage.getItem('wake:board:collapsed-columns')).toBe('["ready"]');
   });
 
   it('restores collapsed columns from storage on first render', async () => {
-    window.localStorage.setItem('wake:board:collapsed-columns', '["closed"]');
+    window.localStorage.setItem('wake:board:collapsed-columns', '["finished"]');
     render(
       <MemoryRouter initialEntries={['/board']}>
         <App client={boardClient()} />
       </MemoryRouter>,
     );
-    expect(await screen.findByRole('button', { name: 'Expand Closed' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Expand Finished' })).toBeTruthy();
     expect(screen.queryByRole('link', { name: 'Gamma' })).toBeNull();
     window.localStorage.clear();
   });
