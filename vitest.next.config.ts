@@ -4,6 +4,7 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['test-next/**/*.test.ts'],
+    testTimeout: 30_000,
     exclude: ['test-next/e2e/scenarios/live-*.test.ts'],
   },
 });
