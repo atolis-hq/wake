@@ -1,15 +1,15 @@
 import { expect, it } from 'vitest';
 
+import { activationId, activityName } from '../../src-next/activities/index.js';
 import {
   ExecutionEventType,
   RecoveryService,
-  RunRepository,
   runId,
+  RunRepository,
   runStream,
 } from '../../src-next/execution/index.js';
-import { activationId, activityName } from '../../src-next/activities/index.js';
 import { createEventDraft, EventActorKind, EventSourceKind } from '../../src-next/kernel/index.js';
-import { workflowInstanceId, orchestrationGroupId } from '../../src-next/orchestration/index.js';
+import { orchestrationGroupId, workflowInstanceId } from '../../src-next/orchestration/index.js';
 import { executionFixture } from './support.js';
 
 it('exports RecoveryService for active Run reconciliation', () => {

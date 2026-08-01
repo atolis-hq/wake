@@ -1,6 +1,9 @@
 import { expect, it } from 'vitest';
-import { controlPlaneProjection } from '../../src-next/control-plane/index.js';
-import { ControlEventType, controlPlaneStream } from '../../src-next/control-plane/index.js';
+import {
+  ControlEventType,
+  controlPlaneProjection,
+  controlPlaneStream,
+} from '../../src-next/control-plane/index.js';
 import { causationId, correlationId, eventId } from '../../src-next/kernel/index.js';
 
 const event = (eventType: string, payload: unknown, globalPosition: number) => ({

@@ -1,13 +1,13 @@
-import { IntentAppendStatus } from '../contracts/vocabulary.js';
-import { EventActorKind } from '../../kernel/index.js';
 import {
   type CommandContext,
+  EventActorKind,
   type EventJournal,
   WrongExpectedSequenceError,
 } from '../../kernel/index.js';
 import type { ResourceStreamRef } from '../../resources/index.js';
 import type { WorkItemStreamRef } from '../../work/index.js';
 import type { ActivityFactDraft } from '../contracts/events.js';
+import { IntentAppendStatus } from '../contracts/vocabulary.js';
 
 export type IntentAppendResult =
   | typeof IntentAppendStatus.Appended

@@ -10,13 +10,13 @@ import {
   type ExternalDeliveryAdapter,
   type ReconciliationResult,
 } from '../../../src-next/integrations/index.js';
+import { OrchestrationEventType } from '../../../src-next/orchestration/index.js';
 import {
   InMemoryCheckpointStore,
   InMemoryProjectionStore,
 } from '../../../src-next/persistence/index.js';
-import { OrchestrationEventType } from '../../../src-next/orchestration/index.js';
-import { executeMerge, setupMergeScenario } from './pr-activity-fixtures.js';
 import { TestWorld } from '../support/world.js';
+import { executeMerge, setupMergeScenario } from './pr-activity-fixtures.js';
 
 describe('E2E-DELIVERY-001', () => {
   it('reconciles provider acceptance after a crash without a second merge', async () => {

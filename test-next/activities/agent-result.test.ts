@@ -1,12 +1,11 @@
 ﻿import { describe, expect, expectTypeOf, it } from 'vitest';
-import { workId } from '../support/identities.js';
 import {
   ActivityFailureCode,
   ActivityOutcomeKind,
   BuiltInActivityName,
+  activationId,
   activityOrchestrationGroupId,
   activityWorkflowInstanceId,
-  activationId,
   agentActivityOutcomeKinds,
   agentActivityOutcomeSchema,
   createAgentActivity,
@@ -14,6 +13,7 @@ import {
   type AgentActivityOutcome,
 } from '../../src-next/activities/index.js';
 import {} from '../../src-next/work/index.js';
+import { workId } from '../support/identities.js';
 describe('agent results', () => {
   it.each([
     ['DONE', 'done'],

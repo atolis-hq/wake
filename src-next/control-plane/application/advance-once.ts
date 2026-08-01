@@ -1,17 +1,17 @@
-import { EventActorKind } from '../../kernel/index.js';
-import { WorkflowStatus } from '../../orchestration/index.js';
+import type { RunView } from '../../execution/index.js';
 import { RunStatus } from '../../execution/index.js';
 import {
   correlationId,
+  EventActorKind,
   type Clock,
   type CommandContext,
   type IdGenerator,
 } from '../../kernel/index.js';
 import type { ActivityActivationView, WorkflowInstanceView } from '../../orchestration/index.js';
+import { WorkflowStatus } from '../../orchestration/index.js';
 import type { ResourceService } from '../../resources/index.js';
-import type { RunView } from '../../execution/index.js';
-import type { AdvanceOptions, AdvanceResult } from '../contracts/views.js';
 import { ControlStreamKind } from '../contracts/streams.js';
+import type { AdvanceOptions, AdvanceResult } from '../contracts/views.js';
 
 interface OrchestrationPort {
   reconcileChildCompletions(context: CommandContext): Promise<void>;

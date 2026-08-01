@@ -1,8 +1,8 @@
 ﻿import { readFile } from 'node:fs/promises';
 
-import { resourceKind, resourceCapability } from '../../src-next/resources/index.js';
 import { describe, expect, it } from 'vitest';
-import { workId, resId } from '../support/identities.js';
+import { resourceCapability, resourceKind } from '../../src-next/resources/index.js';
+import { resId, workId } from '../support/identities.js';
 
 import {
   decidePullRequestAuthority,

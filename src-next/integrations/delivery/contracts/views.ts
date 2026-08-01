@@ -1,6 +1,6 @@
-import type { ResourceId } from '../../../resources/index.js';
 import type { MergeMethod } from '../../../activities/index.js';
 import type { EventId } from '../../../kernel/index.js';
+import type { ResourceId } from '../../../resources/index.js';
 import {
   DeliveryIntentKind,
   type DeliveryIntentKind as DeliveryIntentKindValue,

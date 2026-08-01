@@ -1,4 +1,10 @@
 import { z } from 'zod';
+import {
+  PullRequestCheckState,
+  PullRequestState,
+  ReviewActorKind,
+  ReviewerAuthorizationSource,
+} from '../../activities/index.js';
 import { correlationId, EventActorKind, type CommandContext } from '../../kernel/index.js';
 import {
   BuiltInResourceCapability,
@@ -7,12 +13,6 @@ import {
   resourceId,
   type ResourceId,
 } from '../../resources/index.js';
-import {
-  PullRequestCheckState,
-  PullRequestState,
-  ReviewActorKind,
-  ReviewerAuthorizationSource,
-} from '../../activities/index.js';
 import { workItemId, type WorkItemId } from '../../work/index.js';
 import { admitObservedWork } from '../application/work-admission.js';
 import type { AdapterId } from '../contracts/identifiers.js';

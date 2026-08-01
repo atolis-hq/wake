@@ -1,8 +1,8 @@
-﻿import { orchestrationGroupId } from '../../src-next/orchestration/contracts/identifiers.js';
+﻿import { describe, expect, it } from 'vitest';
 import { activationId } from '../../src-next/activities/contracts/identifiers.js';
-import { resourceKind, resourceCapability } from '../../src-next/resources/index.js';
-import { describe, expect, it } from 'vitest';
-import { workId, resId } from '../support/identities.js';
+import { orchestrationGroupId } from '../../src-next/orchestration/contracts/identifiers.js';
+import { resourceCapability, resourceKind } from '../../src-next/resources/index.js';
+import { resId, workId } from '../support/identities.js';
 
 import { createPullRequestMergeAuthorityGate } from '../../src-next/activities/index.js';
 import { resourceId, resourceStream } from '../../src-next/resources/index.js';

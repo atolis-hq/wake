@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { workId } from '../support/identities.js';
 import { correlationId } from '../../src-next/kernel/index.js';
 import { InMemoryEventJournal } from '../../src-next/persistence/index.js';
 import {
@@ -9,8 +8,9 @@ import {
   workItemStream,
   workProjection,
 } from '../../src-next/work/index.js';
-import { eventEnvelope } from '../support/event-envelope.js';
 import { FakeClock } from '../e2e/support/world.js';
+import { eventEnvelope } from '../support/event-envelope.js';
+import { workId } from '../support/identities.js';
 
 const context = {
   commandId: 'command-1',

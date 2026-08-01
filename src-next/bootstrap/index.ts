@@ -1,14 +1,14 @@
+import { ResidentHost, TickHost, type AdvanceOnce } from '../control-plane/index.js';
 import {
   DeliveryOutcomeReactor,
+  deliveryProjectionDefinitions,
   DeliveryService,
-  type ExternalDeliveryAdapter,
   type DeliveryResourceLookup,
   type DeliveryServiceDependencies,
+  type ExternalDeliveryAdapter,
 } from '../integrations/index.js';
-import { deliveryProjectionDefinitions } from '../integrations/index.js';
-import type { OrchestrationService } from '../orchestration/index.js';
-import { ResidentHost, TickHost, type AdvanceOnce } from '../control-plane/index.js';
 import type { CheckpointStore, EventJournal, ProjectionStore } from '../kernel/index.js';
+import type { OrchestrationService } from '../orchestration/index.js';
 import { createRuntimeProjectionRunner } from './projection-runtime.js';
 
 export function composeDeliveryService(dependencies: DeliveryServiceDependencies): DeliveryService {
@@ -75,9 +75,9 @@ export function composeControlPlaneHosts(
   return { tick, resident: new ResidentHost(tick, sleep) };
 }
 
+export * from './composition-root.js';
 export * from './config/load-config.js';
 export * from './config/root-schema.js';
 export * from './paths.js';
-export * from './composition-root.js';
 export * from './projection-runtime.js';
 export * from './surface-applications.js';

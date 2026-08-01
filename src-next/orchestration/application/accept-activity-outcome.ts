@@ -1,7 +1,7 @@
 import type { ActivationId, ActivityOutcome } from '../../activities/index.js';
 import type { CommandContext } from '../../kernel/index.js';
-import type { WorkflowInstanceId } from '../contracts/identifiers.js';
 import { orchestrationActivityOutcome } from '../contracts/activity-outcome.js';
+import type { WorkflowInstanceId } from '../contracts/identifiers.js';
 import { acceptActivityOutcome as decideActivityOutcome } from '../domain/interpreter.js';
 import type { OrchestrationRepository } from './orchestration-repository.js';
 import type { StartWorkflow } from './start-workflow.js';

@@ -1,28 +1,29 @@
 import {
-  createEventDraft,
+  ActivityRegistry,
+  createPullRequestService,
+  activationId as parseActivationId,
+  type ActivityDefinition,
+} from '../../../src-next/activities/index.js';
+import {
+  createAdvanceOnce,
+  createWorkCancellationPolicy,
+  type AdvanceResult,
+} from '../../../src-next/control-plane/index.js';
+import {
+  createExecutionService,
+  createRecoveryCoordinator,
+  RecoveryService,
+  type ExternalExecutionInspector,
+  type RunView,
+} from '../../../src-next/execution/index.js';
+import {
   correlationId,
+  createEventDraft,
   type Clock,
   type EntityRef,
   type EventEnvelope,
   type IdGenerator,
 } from '../../../src-next/kernel/index.js';
-import {
-  InMemoryCheckpointStore,
-  InMemoryEventJournal,
-  InMemoryProjectionStore,
-} from '../../../src-next/persistence/index.js';
-import {
-  ActivityRegistry,
-  activationId as parseActivationId,
-  createPullRequestService,
-  type ActivityDefinition,
-} from '../../../src-next/activities/index.js';
-import { createWorkService, workItemId, type WorkItemId } from '../../../src-next/work/index.js';
-import {
-  createResourceLookup,
-  createResourceService,
-  type ResourceView,
-} from '../../../src-next/resources/index.js';
 import {
   compileWorkflow,
   createOrchestrationService,
@@ -35,17 +36,16 @@ import {
   type WorkflowInstanceView,
 } from '../../../src-next/orchestration/index.js';
 import {
-  createExecutionService,
-  createRecoveryCoordinator,
-  RecoveryService,
-  type ExternalExecutionInspector,
-  type RunView,
-} from '../../../src-next/execution/index.js';
+  InMemoryCheckpointStore,
+  InMemoryEventJournal,
+  InMemoryProjectionStore,
+} from '../../../src-next/persistence/index.js';
 import {
-  createAdvanceOnce,
-  createWorkCancellationPolicy,
-  type AdvanceResult,
-} from '../../../src-next/control-plane/index.js';
+  createResourceLookup,
+  createResourceService,
+  type ResourceView,
+} from '../../../src-next/resources/index.js';
+import { createWorkService, workItemId, type WorkItemId } from '../../../src-next/work/index.js';
 import { FaultInjector } from './faults.js';
 import { formatTrace } from './trace.js';
 

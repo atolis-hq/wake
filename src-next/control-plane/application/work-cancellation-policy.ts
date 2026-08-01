@@ -1,3 +1,4 @@
+import { ExecutionCancellationReason, type ActiveRunCancellation } from '../../execution/index.js';
 import {
   EventActorKind,
   correlationId,
@@ -5,9 +6,8 @@ import {
   type CommandContext,
   type IdGenerator,
 } from '../../kernel/index.js';
-import { ExecutionCancellationReason, type ActiveRunCancellation } from '../../execution/index.js';
-import type { WorkItemId, WorkItemView } from '../../work/index.js';
 import type { WorkflowInstanceView } from '../../orchestration/index.js';
+import type { WorkItemId, WorkItemView } from '../../work/index.js';
 import { ControlStreamKind } from '../contracts/streams.js';
 
 interface WorkPort {

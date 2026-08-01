@@ -1,9 +1,9 @@
-import { ApprovalAuthorityKind, WorkflowStatus } from './vocabulary.js';
 import { z } from 'zod';
+import { ApprovalAuthorityKind, WorkflowStatus } from './vocabulary.js';
 
-import { MatchMode } from '../../kernel/index.js';
 import { type ActivityName } from '../../activities/index.js';
 import { WorkspaceMode, type WorkspaceMode as WorkspaceModeType } from '../../execution/index.js';
+import { MatchMode } from '../../kernel/index.js';
 import type { CommandName, SignalName, StageName, WatchId, WorkflowName } from './identifiers.js';
 import { TransitionTargetKind } from './vocabulary.js';
 

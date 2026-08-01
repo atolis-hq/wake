@@ -1,9 +1,8 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
-import { afterEach, describe, expect, it } from 'vitest';
-import { cleanup } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
+import { afterEach, describe, expect, it } from 'vitest';
 import { WakeApiClient } from '../src/api/client.js';
 import { ApiClientContext } from '../src/api/context.js';
 import { queryKeys } from '../src/api/query-keys.js';

@@ -1,5 +1,5 @@
-import type { EventEnvelope } from '../kernel/index.js';
 import { ControlStreamKind } from '../control-plane/index.js';
+import type { EventEnvelope } from '../kernel/index.js';
 import type { WorkflowInstanceView } from '../orchestration/index.js';
 import type { ResourceView } from '../resources/index.js';
 import {
@@ -7,16 +7,16 @@ import {
   presentResource,
   presentWorkflowInstance,
   redactConfiguration,
-  type ApiApplications,
   type ApiAdvanceCommandResult,
+  type ApiApplications,
   type ApiSystemApplications,
   type AuditEventResponse,
 } from '../surfaces/index.js';
 import type { CompositionRoot } from './composition-root.js';
+import { createExecutionApplications } from './surface-api-execution-applications.js';
 import { projectionMeta, sampledMeta } from './surface-api-metadata.js';
 import { projectionPage } from './surface-api-projection-pages.js';
 import { createSurfaceWorkApplications } from './surface-api-work-applications.js';
-import { createExecutionApplications } from './surface-api-execution-applications.js';
 
 export function createSurfaceApiApplications(
   root: CompositionRoot,

@@ -2,8 +2,8 @@ import type { ProjectionDefinition } from '../../kernel/index.js';
 import { selectWorkflowOrchestrationEvent } from '../contracts/event-decoder.js';
 import { type WorkflowOrchestrationEvent } from '../contracts/events.js';
 import { isWorkflowInstanceStream } from '../contracts/streams.js';
-import { foldWorkflowInstance } from '../domain/workflow-instance.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
+import { foldWorkflowInstance } from '../domain/workflow-instance.js';
 type ProjectionValue = {
   readonly events: readonly WorkflowOrchestrationEvent[];
   readonly view: WorkflowInstanceView | null;

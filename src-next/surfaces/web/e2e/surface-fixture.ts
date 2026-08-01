@@ -3,13 +3,13 @@ import { resolve } from 'node:path';
 import { BuiltInActivityName, MergeMethod } from '../../../activities/index.js';
 import { RunStatus } from '../../../execution/index.js';
 import { WorkStatus } from '../../../work/index.js';
-import { createApiHttpServer, type ApiDispatcher } from '../../api/http-server.js';
 import {
   ApiCommandStatus,
   toWorkItemKey,
   type AuditEventResponse,
   type WorkItemResponse,
 } from '../../api/contracts/index.js';
+import { createApiHttpServer, type ApiDispatcher } from '../../api/http-server.js';
 import { createApiDispatcher, type ApiApplications } from '../../api/routes/index.js';
 import { PackagedAssets } from '../../web-host/packaged-assets.js';
 

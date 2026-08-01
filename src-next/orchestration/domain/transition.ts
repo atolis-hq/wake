@@ -5,8 +5,8 @@ import type {
   TransitionTarget,
 } from '../contracts/config.js';
 import type { WorkflowOrchestrationEventDraft } from '../contracts/events.js';
-import type { WorkflowInstanceView } from '../contracts/views.js';
 import { OrchestrationEventType } from '../contracts/events.js';
+import type { WorkflowInstanceView } from '../contracts/views.js';
 import { TransitionTargetKind } from '../contracts/vocabulary.js';
 import { activation, nextOrdinal, stateDraft } from './decision-events.js';
 

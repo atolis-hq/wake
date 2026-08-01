@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { MatchMode } from '../../src-next/kernel/index.js';
-import { evaluateIntakeRules } from '../../src-next/integrations/index.js';
 import {
   GitHubWakeMarkerPrefix,
   gitHubConfigSchema,
 } from '../../src-next/integrations/github/index.js';
+import { evaluateIntakeRules } from '../../src-next/integrations/index.js';
+import { MatchMode } from '../../src-next/kernel/index.js';
 
 const IntakeFacet = { Kind: 'kind', Label: 'label' } as const;
 

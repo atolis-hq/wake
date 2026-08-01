@@ -1,5 +1,7 @@
+import { BuiltInResourceCapability } from '../../resources/index.js';
+import { ActivityEventType } from '../contracts/events.js';
 import { ActivityResourceRole } from '../contracts/vocabulary.js';
-import { PullRequestCheckState, PullRequestDenialCode, PullRequestState } from './vocabulary.js';
+import { isPullRequestLikeResource } from './capability.js';
 import type {
   AcceptedReviewSignalView,
   PullRequestAuthorityDecision,
@@ -10,9 +12,7 @@ import type {
   PullRequestTarget,
   PullRequestView,
 } from './contracts.js';
-import { ActivityEventType } from '../contracts/events.js';
-import { BuiltInResourceCapability } from '../../resources/index.js';
-import { isPullRequestLikeResource } from './capability.js';
+import { PullRequestCheckState, PullRequestDenialCode, PullRequestState } from './vocabulary.js';
 
 export function decidePullRequestAuthority(
   input: PullRequestAuthorityInput,

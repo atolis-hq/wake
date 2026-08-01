@@ -1,11 +1,11 @@
 import type { MergeMethod } from '../../../activities/index.js';
-import type { DeliveryIntentView } from '../../delivery/contracts/views.js';
-import { DeliveryIntentKind } from '../../delivery/contracts/vocabulary.js';
-import { GitHubAdapter } from '../contracts/vocabulary.js';
 import type { ResourceView } from '../../../resources/index.js';
 import { BuiltInResourceKind } from '../../../resources/index.js';
+import type { DeliveryIntentView } from '../../delivery/contracts/views.js';
+import { DeliveryIntentKind } from '../../delivery/contracts/vocabulary.js';
 import { parseGitHubResourceKey } from '../contracts/external-key.js';
 import {
+  GitHubAdapter,
   GitHubOutboundAction,
   type GitHubOutboundAction as GitHubOutboundActionValue,
 } from '../contracts/vocabulary.js';

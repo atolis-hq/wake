@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  InboundTranslator,
   BuiltInAdapterId,
   createEventDraft,
+  InboundTranslator,
   integrationStream,
   type ExternalWorkObservedPayload,
 } from '../../../src-next/integrations/github/index.js';
@@ -12,9 +12,9 @@ import {
   InMemoryEventJournal,
 } from '../../../src-next/persistence/index.js';
 import { createWorkService } from '../../../src-next/work/index.js';
-import { FakeClock } from '../support/world.js';
-import { createTestResourceServices } from '../../support/resource-lookup.js';
 import { createTestIntakeRouting } from '../../support/intake-routing.js';
+import { createTestResourceServices } from '../../support/resource-lookup.js';
+import { FakeClock } from '../support/world.js';
 
 describe('E2E-WORK-002 external intake', () => {
   it('creates one WorkItem, Resource, and primary correlation when evidence is translated twice', async () => {

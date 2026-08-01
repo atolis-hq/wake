@@ -1,16 +1,15 @@
-import { EventActorKind, EventSourceKind } from '../../kernel/index.js';
-import { createEventDraft } from '../../kernel/index.js';
+import { createEventDraft, EventActorKind, EventSourceKind } from '../../kernel/index.js';
+import type {
+  ChildCoordinationEventPayloads,
+  ChildCoordinationMetadata,
+} from '../contracts/events.js';
+import { OrchestrationEventType } from '../contracts/events.js';
 import {
   workflowInstanceId,
   type WorkflowInstanceId,
   type WorkflowName,
 } from '../contracts/identifiers.js';
 import { workflowInstanceStream } from '../contracts/streams.js';
-import type {
-  ChildCoordinationEventPayloads,
-  ChildCoordinationMetadata,
-} from '../contracts/events.js';
-import { OrchestrationEventType } from '../contracts/events.js';
 
 interface CoordinationDraftContext {
   readonly workflowInstanceId: WorkflowInstanceId;

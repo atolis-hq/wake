@@ -1,12 +1,12 @@
-﻿import { workflowName } from '../../../src-next/orchestration/contracts/identifiers.js';
-import { resourceKind, resourceCapability } from '../../../src-next/resources/index.js';
-import { expect, it } from 'vitest';
-import { workId, resId } from '../../support/identities.js';
+﻿import { expect, it } from 'vitest';
+import { workflowName } from '../../../src-next/orchestration/contracts/identifiers.js';
+import { resourceCapability, resourceKind } from '../../../src-next/resources/index.js';
+import { resId, workId } from '../../support/identities.js';
 
 import {
   createPullRequestMergeAuthorityGate,
-  pullRequestProjection,
   decidePullRequestAuthority,
+  pullRequestProjection,
   type PullRequestAuthorityInput,
 } from '../../../src-next/activities/index.js';
 import { createEventDraft } from '../../../src-next/kernel/index.js';

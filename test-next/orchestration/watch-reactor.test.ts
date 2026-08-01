@@ -1,9 +1,9 @@
+import { expect, it } from 'vitest';
+import { createEventDraft, eventId, type EntityRef } from '../../src-next/kernel/index.js';
 import {
   orchestrationGroupId,
   workflowName,
 } from '../../src-next/orchestration/contracts/identifiers.js';
-import { expect, it } from 'vitest';
-import { createEventDraft, eventId, type EntityRef } from '../../src-next/kernel/index.js';
 import {
   createWatchReactor,
   OrchestrationEventType,

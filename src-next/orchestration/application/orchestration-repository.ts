@@ -1,12 +1,12 @@
 import type { EventJournal } from '../../kernel/index.js';
-import type {
-  WorkflowOrchestrationEvent,
-  WorkflowOrchestrationEventDraft,
-} from '../contracts/events.js';
 import {
   decodeOrchestrationEvent,
   selectWorkflowOrchestrationEvent,
 } from '../contracts/event-decoder.js';
+import type {
+  WorkflowOrchestrationEvent,
+  WorkflowOrchestrationEventDraft,
+} from '../contracts/events.js';
 import { workflowInstanceId } from '../contracts/identifiers.js';
 import { isWorkflowInstanceStream, workflowInstanceStream } from '../contracts/streams.js';
 import { foldWorkflowInstance } from '../domain/workflow-instance.js';

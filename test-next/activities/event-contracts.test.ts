@@ -1,11 +1,9 @@
 ﻿import { readFile } from 'node:fs/promises';
 
-import { signalName } from '../../src-next/orchestration/contracts/identifiers.js';
 import { describe, expect, expectTypeOf, it } from 'vitest';
-import { workId, resId } from '../support/identities.js';
 import {
-  activityDecisionStream,
   activationId,
+  activityDecisionStream,
   type ActivityEvent,
   ActivityEventType,
   decodeActivityEvent,
@@ -13,9 +11,11 @@ import {
   selectActivityEvent,
 } from '../../src-next/activities/index.js';
 import { createEventDraft } from '../../src-next/kernel/index.js';
+import { signalName } from '../../src-next/orchestration/contracts/identifiers.js';
 import { resourceStream } from '../../src-next/resources/index.js';
 import { workItemStream } from '../../src-next/work/index.js';
 import { eventEnvelope } from '../support/event-envelope.js';
+import { resId, workId } from '../support/identities.js';
 
 const resource = resourceStream(resId('1'));
 const work = workItemStream(workId('1'));

@@ -1,7 +1,7 @@
-import { resourceCapability } from '../../src-next/resources/index.js';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { ActivityRegistry, activityName } from '../../src-next/activities/index.js';
+import { resourceCapability } from '../../src-next/resources/index.js';
 
 const definition = (name = 'implement') => ({
   name: activityName(name),

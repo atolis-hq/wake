@@ -1,10 +1,9 @@
-import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
 import { useLocation } from 'react-router';
 import { useApiClient } from '../../api/context.js';
 import { queryKeys } from '../../api/query-keys.js';
 import { refreshPolicy } from '../../api/refresh-policy.js';
-import { BoardCard } from './board-card.js';
 import {
   EmptyState,
   ErrorState,
@@ -13,6 +12,7 @@ import {
   StaleIndicator,
 } from '../../components/primitives.js';
 import styles from '../features.module.css';
+import { BoardCard } from './board-card.js';
 
 const collapseStorageKey = 'wake:board:collapsed-columns';
 

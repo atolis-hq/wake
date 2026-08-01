@@ -1,13 +1,11 @@
-﻿import {
+﻿import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
+import { activationId } from '../../src-next/activities/contracts/identifiers.js';
+import { activityName, ActivityRegistry } from '../../src-next/activities/index.js';
+import {
   orchestrationGroupId,
   workflowInstanceId,
 } from '../../src-next/orchestration/contracts/identifiers.js';
-import { activationId } from '../../src-next/activities/contracts/identifiers.js';
-import { activityName } from '../../src-next/activities/index.js';
-import { z } from 'zod';
-import { describe, expect, it } from 'vitest';
-import { workId } from '../support/identities.js';
-import { ActivityRegistry } from '../../src-next/activities/index.js';
 import {
   acceptActivityOutcome,
   compileWorkflow,
@@ -16,6 +14,7 @@ import {
   startInstance,
 } from '../../src-next/orchestration/index.js';
 import {} from '../../src-next/work/index.js';
+import { workId } from '../support/identities.js';
 
 function retryFixture() {
   const activities = new ActivityRegistry();

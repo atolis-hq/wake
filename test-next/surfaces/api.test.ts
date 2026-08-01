@@ -1,5 +1,8 @@
 ﻿import { describe, expect, it } from 'vitest';
-import { workId, resId } from '../support/identities.js';
+import { activationId, activityName } from '../../src-next/activities/index.js';
+import { RunStatus, runId, type RunView } from '../../src-next/execution/index.js';
+import { orchestrationGroupId, workflowInstanceId } from '../../src-next/orchestration/index.js';
+import { resourceKind, type ResourceView } from '../../src-next/resources/index.js';
 import {
   collectionResponse,
   decodeCursor,
@@ -13,11 +16,8 @@ import {
 import { presentRun } from '../../src-next/surfaces/api/presenters/execution.js';
 import { presentResource } from '../../src-next/surfaces/api/presenters/resources.js';
 import { redactConfiguration } from '../../src-next/surfaces/api/presenters/system.js';
-import { RunStatus, runId, type RunView } from '../../src-next/execution/index.js';
-import { resourceKind, type ResourceView } from '../../src-next/resources/index.js';
-import { activationId, activityName } from '../../src-next/activities/index.js';
-import { orchestrationGroupId, workflowInstanceId } from '../../src-next/orchestration/index.js';
 import {} from '../../src-next/work/index.js';
+import { resId, workId } from '../support/identities.js';
 
 describe('surface API contracts', () => {
   it('keeps cross-domain WorkItem results nested and addresses them by WorkItemKey', () => {

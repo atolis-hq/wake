@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 import {
-  createRunnerControlService,
   ControlEventType,
+  createRunnerControlService,
 } from '../../src-next/control-plane/index.js';
 import { InMemoryEventJournal } from '../../src-next/persistence/index.js';
 import { FakeClock, SequentialIds } from '../e2e/support/world.js';

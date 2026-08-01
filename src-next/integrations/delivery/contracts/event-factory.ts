@@ -1,10 +1,10 @@
 import { createEventDraft, type EventDraftInput } from '../../../kernel/index.js';
+import type { DeliveryStreamRef } from '../../contracts/streams.js';
 import {
   DeliveryEventType,
   type DeliveryEventDraft,
   type DeliveryEventPayloads,
 } from './events.js';
-import type { DeliveryStreamRef } from '../../contracts/streams.js';
 
 export type DeliveryEventDraftInput = {
   [Type in keyof DeliveryEventPayloads]: EventDraftInput<

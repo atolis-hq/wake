@@ -1,13 +1,12 @@
-﻿import { workId, resId } from '../../support/identities.js';
-import { workflowName } from '../../../src-next/orchestration/contracts/identifiers.js';
-import { resourceCapability, resourceKind } from '../../../src-next/resources/index.js';
-import {
+﻿import {
   createPullRequestApproveActivity,
   createPullRequestMergeActivity,
 } from '../../../src-next/activities/index.js';
+import { workflowName } from '../../../src-next/orchestration/contracts/identifiers.js';
 import type { ResourceCapability } from '../../../src-next/resources/index.js';
-import { resourceId } from '../../../src-next/resources/index.js';
+import { resourceCapability, resourceId, resourceKind } from '../../../src-next/resources/index.js';
 import { type WorkItemId } from '../../../src-next/work/index.js';
+import { resId, workId } from '../../support/identities.js';
 import { TestWorld } from '../support/world.js';
 
 export type ApprovalScenario = 'missing' | 'capability-missing' | 'ambiguous' | 'conflict' | 'safe';

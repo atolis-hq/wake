@@ -1,14 +1,14 @@
+import { PullRequestCheckState } from '../../activities/index.js';
 import {
   causationId,
   correlationId,
-  eventId,
   EventActorKind,
+  eventId,
   EventSourceKind,
 } from '../../kernel/index.js';
-import { PullRequestCheckState } from '../../activities/index.js';
 import type { AdapterId } from '../contracts/identifiers.js';
-import { integrationStream } from '../contracts/streams.js';
 import type { ExternalEventSource, ProviderEventDraft } from '../contracts/intake.js';
+import { integrationStream } from '../contracts/streams.js';
 
 export const FakeEventType = {
   WorkObserved: 'fake.work-observed',

@@ -1,5 +1,5 @@
-import type { EntityRef } from '../../kernel/index.js';
 import type { ActivationId } from '../../activities/index.js';
+import type { EntityRef } from '../../kernel/index.js';
 import type { RunId } from './identifiers.js';
 
 export const ExecutionStreamKind = { Run: 'run', Activation: 'execution-activation' } as const;

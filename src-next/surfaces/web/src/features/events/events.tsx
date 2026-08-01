@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { AuditEventResponse } from '../../../../api/contracts/index.js';
 import { useApiClient } from '../../api/context.js';
 import { queryKeys } from '../../api/query-keys.js';
 import { refreshPolicy } from '../../api/refresh-policy.js';
-import { LocalTime } from '../../components/local-time.js';
 import { CursorPagination, useCursorNavigation } from '../../components/cursor-pagination.js';
+import { LocalTime } from '../../components/local-time.js';
 import {
   Button,
   EmptyState,

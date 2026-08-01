@@ -1,5 +1,3 @@
-import { PullRequestDenialCode } from './vocabulary.js';
-import { ActivityResourceRole } from '../contracts/vocabulary.js';
 import { type CommandContext, type EventJournal } from '../../kernel/index.js';
 import {
   resourceStream,
@@ -8,7 +6,9 @@ import {
 } from '../../resources/index.js';
 import { workItemStream, type WorkItemStreamRef, type WorkService } from '../../work/index.js';
 import { ActivityEventType, type ActivityFactDraft } from '../contracts/events.js';
+import { ActivityResourceRole } from '../contracts/vocabulary.js';
 import { isReviewAuthorized } from '../review/authorization.js';
+import { isPullRequestLikeResource } from './capability.js';
 import type {
   AcceptReviewSignal,
   ObservePullRequest,
@@ -32,7 +32,7 @@ import {
 } from './event-drafts.js';
 import { decidePullRequestAuthority } from './policy.js';
 import { acceptedReviewSignalProjection, pullRequestProjection } from './projection.js';
-import { isPullRequestLikeResource } from './capability.js';
+import { PullRequestDenialCode } from './vocabulary.js';
 
 export interface PullRequestService {
   observe(command: ObservePullRequest, context: CommandContext): Promise<PullRequestView>;

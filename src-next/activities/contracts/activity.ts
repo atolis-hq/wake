@@ -1,8 +1,7 @@
-import { ActivityOutcomeKind } from './vocabulary.js';
 import type { z } from 'zod';
+import type { Brand } from '../../kernel/index.js';
 import type { ResourceCapability, ResourceView } from '../../resources/index.js';
 import type { WorkItemId } from '../../work/index.js';
-import type { Brand } from '../../kernel/index.js';
 import type { ActivationId, ActivityName } from './identifiers.js';
 import type {
   ActivityExecutionKind,
@@ -10,6 +9,7 @@ import type {
   ActivityResourceRole,
   ExternalExecutionKind,
 } from './vocabulary.js';
+import { ActivityOutcomeKind } from './vocabulary.js';
 
 export interface ResourceRequirement {
   readonly capability: ResourceCapability;

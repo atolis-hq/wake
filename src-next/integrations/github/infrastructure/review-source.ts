@@ -1,12 +1,14 @@
 import { ReviewActorKind, ReviewerAuthorizationSource } from '../../../activities/index.js';
-import { EventSourceKind } from '../../../kernel/index.js';
-import { createEventDraft, EventActorKind } from '../../../kernel/index.js';
-import { GitHubAdapter } from '../contracts/vocabulary.js';
+import { createEventDraft, EventActorKind, EventSourceKind } from '../../../kernel/index.js';
 import { integrationStream } from '../../contracts/streams.js';
+import { GitHubEventType, type GitHubAdapterEventDraft } from '../contracts/events.js';
 import { formatGitHubResourceKey } from '../contracts/external-key.js';
 import type { GitHubPullRequestPayload, GitHubReviewPayload } from '../contracts/payloads.js';
-import { GitHubEventType, type GitHubAdapterEventDraft } from '../contracts/events.js';
-import { GitHubReviewState, UnknownGitHubIdentity } from '../contracts/vocabulary.js';
+import {
+  GitHubAdapter,
+  GitHubReviewState,
+  UnknownGitHubIdentity,
+} from '../contracts/vocabulary.js';
 
 export function githubReviewObservation(input: {
   readonly repository: string;

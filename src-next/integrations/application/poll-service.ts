@@ -1,6 +1,6 @@
 import type { EventJournal } from '../../kernel/index.js';
-import { integrationStream } from '../contracts/streams.js';
 import type { ProviderInstance } from '../contracts/provider.js';
+import { integrationStream } from '../contracts/streams.js';
 
 export class PollService {
   constructor(

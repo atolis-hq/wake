@@ -1,7 +1,7 @@
-import { WorkStatus } from '../contracts/vocabulary.js';
 import type { ProjectionDefinition } from '../../kernel/index.js';
 import { selectWorkEvent, WorkEventType } from '../contracts/events.js';
 import type { WorkItemView } from '../contracts/views.js';
+import { WorkStatus } from '../contracts/vocabulary.js';
 export const workProjection: ProjectionDefinition<WorkItemView | null> = {
   name: 'work',
   select(event) {

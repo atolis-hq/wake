@@ -8,8 +8,8 @@ import type { ExecutionConfig } from '../contracts/config.js';
 import { ExecutionEventType, type RunExecutionEventPayloads } from '../contracts/events.js';
 import { runId } from '../contracts/identifiers.js';
 import { runStream } from '../contracts/streams.js';
-import { RunStatus } from '../contracts/vocabulary.js';
 import type { RunView } from '../contracts/views.js';
+import { RunStatus } from '../contracts/vocabulary.js';
 import { RunRepository } from './run-repository.js';
 
 const defaultLeaseDurationMs = 60_000;

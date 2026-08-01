@@ -1,12 +1,12 @@
-﻿import {
+﻿import { expect, it } from 'vitest';
+import { activityName } from '../../src-next/activities/index.js';
+import {
   orchestrationGroupId,
   signalName,
   workflowInstanceId,
 } from '../../src-next/orchestration/contracts/identifiers.js';
-import { activityName } from '../../src-next/activities/index.js';
-import { resourceKind, resourceCapability } from '../../src-next/resources/index.js';
-import { expect, it } from 'vitest';
-import { workId, resId } from '../support/identities.js';
+import { resourceCapability, resourceKind } from '../../src-next/resources/index.js';
+import { resId, workId } from '../support/identities.js';
 
 import { activationId, createPullRequestMergeActivity } from '../../src-next/activities/index.js';
 import { type ResourceView } from '../../src-next/resources/index.js';

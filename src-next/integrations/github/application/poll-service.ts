@@ -1,8 +1,8 @@
-import { EventSourceKind } from '../../../kernel/index.js';
 import type { EventJournal } from '../../../kernel/index.js';
+import { EventSourceKind } from '../../../kernel/index.js';
+import { integrationStream } from '../../contracts/streams.js';
 import { GitHubEventType, type GitHubAdapterEventDraft } from '../contracts/events.js';
 import { GitHubAdapter } from '../contracts/vocabulary.js';
-import { integrationStream } from '../../contracts/streams.js';
 
 export interface ExternalEventSource {
   poll(signal: AbortSignal): Promise<readonly GitHubAdapterEventDraft[]>;

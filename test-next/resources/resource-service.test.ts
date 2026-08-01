@@ -1,6 +1,6 @@
 ﻿import { describe, expect, it } from 'vitest';
-import { resId } from '../support/identities.js';
 import { resourceId } from '../../src-next/resources/index.js';
+import { resId } from '../support/identities.js';
 
 describe('Resource identifiers', () => {
   it('accepts the canonical resource identifier shape', () => {

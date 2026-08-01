@@ -1,6 +1,9 @@
-import { ResourceCorrelationRole } from '../contracts/vocabulary.js';
-import { EventSourceKind } from '../../kernel/index.js';
-import { createEventDraft, type CommandContext, type EventJournal } from '../../kernel/index.js';
+import {
+  createEventDraft,
+  EventSourceKind,
+  type CommandContext,
+  type EventJournal,
+} from '../../kernel/index.js';
 import type { WorkItemId } from '../../work/index.js';
 import type { DiscoverResource } from '../contracts/commands.js';
 import {
@@ -15,8 +18,9 @@ import type {
   ResourceCorrelationView,
   ResourceView,
 } from '../contracts/views.js';
-import { ResourceRepository } from './resource-repository.js';
+import { ResourceCorrelationRole } from '../contracts/vocabulary.js';
 import type { ResourceLookup } from './resource-lookup.js';
+import { ResourceRepository } from './resource-repository.js';
 
 export interface ResourceService {
   discover(command: DiscoverResource, context: CommandContext): Promise<ResourceView>;

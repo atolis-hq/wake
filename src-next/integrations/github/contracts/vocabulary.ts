@@ -1,5 +1,5 @@
-import { defineClosedVocabulary, type ValueOf } from '../../../kernel/index.js';
 import { MergeMethod } from '../../../activities/index.js';
+import { defineClosedVocabulary, type ValueOf } from '../../../kernel/index.js';
 import { adapterId, type AdapterId } from '../../contracts/identifiers.js';
 
 export const GitHubAdapter: AdapterId = adapterId('github');

@@ -5,8 +5,8 @@ import {
   DurableFakeDeliveryProvider,
 } from '../../../src-next/integrations/index.js';
 import { InMemoryProjectionStore } from '../../../src-next/persistence/index.js';
-import { executeMerge, setupMergeScenario } from './pr-activity-fixtures.js';
 import { TestWorld } from '../support/world.js';
+import { executeMerge, setupMergeScenario } from './pr-activity-fixtures.js';
 
 describe('E2E-PR-MERGE-003', () => {
   it('delivers through projections and advances the waiting workflow only after confirmation', async () => {

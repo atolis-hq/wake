@@ -1,16 +1,16 @@
 ﻿import { describe, expect, it } from 'vitest';
-import { resId } from '../support/identities.js';
 import { MergeMethod } from '../../src-next/activities/index.js';
+import { translateGitHubOutbound } from '../../src-next/integrations/github/application/outbound-translator.js';
 import {
   BuiltInAdapterId,
   DeliveryIntentKind,
   DeliveryResultKind,
   DeliveryState,
 } from '../../src-next/integrations/github/index.js';
-import { translateGitHubOutbound } from '../../src-next/integrations/github/application/outbound-translator.js';
 import { createGitHubDelivery } from '../../src-next/integrations/github/infrastructure/delivery.js';
-import { BuiltInResourceKind } from '../../src-next/resources/index.js';
 import { eventId } from '../../src-next/kernel/index.js';
+import { BuiltInResourceKind } from '../../src-next/resources/index.js';
+import { resId } from '../support/identities.js';
 
 const mergeIntent = {
   intentEventId: eventId('intent'),

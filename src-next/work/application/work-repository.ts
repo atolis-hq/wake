@@ -5,10 +5,10 @@ import {
   type WorkEvent,
   type WorkEventDraft,
 } from '../contracts/events.js';
-import { foldWorkItem } from '../domain/work-item.js';
 import type { WorkItemId } from '../contracts/identifiers.js';
 import { workItemStream } from '../contracts/streams.js';
 import type { WorkItemView } from '../contracts/views.js';
+import { foldWorkItem } from '../domain/work-item.js';
 
 export interface LoadedWorkItem {
   readonly sequence: number;

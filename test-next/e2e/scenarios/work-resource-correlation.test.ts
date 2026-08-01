@@ -1,12 +1,12 @@
-﻿import { resourceKind } from '../../../src-next/resources/index.js';
-import { expect } from 'vitest';
-import { workId, resId } from '../../support/identities.js';
+﻿import { expect } from 'vitest';
 import { correlationId } from '../../../src-next/kernel/index.js';
 import { InMemoryEventJournal } from '../../../src-next/persistence/index.js';
+import { resourceKind } from '../../../src-next/resources/index.js';
 import { createWorkService } from '../../../src-next/work/index.js';
+import { resId, workId } from '../../support/identities.js';
+import { createTestResourceServices } from '../../support/resource-lookup.js';
 import { defineScenario } from '../support/scenario.js';
 import { FakeClock } from '../support/world.js';
-import { createTestResourceServices } from '../../support/resource-lookup.js';
 
 defineScenario(
   {

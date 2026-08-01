@@ -1,5 +1,4 @@
 ﻿import { describe, expect, it } from 'vitest';
-import { workId } from '../support/identities.js';
 import { createEventDraft } from '../../src-next/kernel/index.js';
 import {
   decodeWorkEvent,
@@ -7,6 +6,7 @@ import {
   type WorkEvent,
   workItemStream,
 } from '../../src-next/work/index.js';
+import { workId } from '../support/identities.js';
 
 const stream = workItemStream(workId('1'));
 

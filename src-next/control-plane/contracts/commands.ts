@@ -1,6 +1,6 @@
-import type { AdvanceOptions, AdvanceResult } from './views.js';
 import { ExecutionCancellationReason } from '../../execution/index.js';
 import { WorkflowStatus } from '../../orchestration/index.js';
+import type { AdvanceOptions, AdvanceResult } from './views.js';
 
 export const HostStopReason = {
   Idle: 'idle',

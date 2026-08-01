@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { parseWakeCommand } from '../../src-next/surfaces/cli/main.js';
 import { main } from '../../src-next/main.js';
+import { parseWakeCommand } from '../../src-next/surfaces/cli/main.js';
 
 describe('wake surface CLI', () => {
   it('routes commands without importing stores or provider clients', () => {

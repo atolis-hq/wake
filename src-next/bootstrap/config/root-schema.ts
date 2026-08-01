@@ -1,15 +1,15 @@
 import { z } from 'zod';
 import { activitiesConfigSchema, type ActivitiesConfig } from '../../activities/index.js';
+import { controlPlaneConfigSchema, type ControlPlaneConfig } from '../../control-plane/index.js';
 import { executionConfigSchema, type ExecutionConfig } from '../../execution/index.js';
 import { integrationsConfigSchema, type IntegrationsConfig } from '../../integrations/index.js';
 import {
   workflowDefinitionConfigSchema,
   workflowSelectorConfigSchema,
 } from '../../orchestration/index.js';
-import { workConfigSchema, type WorkConfig } from '../../work/index.js';
 import { resourcesConfigSchema, type ResourcesConfig } from '../../resources/index.js';
 import { surfacesConfigSchema, type SurfacesConfig } from '../../surfaces/index.js';
-import { controlPlaneConfigSchema, type ControlPlaneConfig } from '../../control-plane/index.js';
+import { workConfigSchema, type WorkConfig } from '../../work/index.js';
 
 const orchestrationConfigSchema = z
   .object({

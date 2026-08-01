@@ -1,10 +1,10 @@
+import { WorkflowStatus } from '../../orchestration/index.js';
 import {
   HostStopReason,
   type AdvanceOnce,
   type HostBudget,
   type HostResult,
 } from '../contracts/commands.js';
-import { WorkflowStatus } from '../../orchestration/index.js';
 
 export class TickHost {
   constructor(private readonly advance: AdvanceOnce) {}

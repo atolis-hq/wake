@@ -1,9 +1,9 @@
 import { expect, it } from 'vitest';
 import { createEventDraft, type EntityRef } from '../../src-next/kernel/index.js';
 import {
+  InMemoryCheckpointStore,
   InMemoryEventJournal,
   InMemoryProjectionStore,
-  InMemoryCheckpointStore,
   ProjectionRunner,
 } from '../../src-next/persistence/index.js';
 import { FakeClock } from '../e2e/support/world.js';

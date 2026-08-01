@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  PollService,
   BuiltInAdapterId,
   createEventDraft,
   type ExternalEventSource,
   integrationStream,
+  PollService,
 } from '../../src-next/integrations/github/index.js';
 import { InMemoryEventJournal } from '../../src-next/persistence/index.js';
 import { FakeClock } from '../e2e/support/world.js';

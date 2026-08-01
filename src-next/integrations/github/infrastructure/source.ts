@@ -1,5 +1,5 @@
-import type { ExternalEventSource } from '../../contracts/intake.js';
 import type { AdapterId } from '../../contracts/identifiers.js';
+import type { ExternalEventSource } from '../../contracts/intake.js';
 import type { GitHubConfig } from '../contracts/config.js';
 import { issueObservation } from './issue-source.js';
 import { createGitHubPullRequestSource, type GitHubPullRequestSourceClient } from './pr-source.js';

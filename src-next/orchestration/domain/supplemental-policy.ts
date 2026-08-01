@@ -1,6 +1,5 @@
 import { ActivityOutcomeKind } from '../../activities/index.js';
 import { EventActorKind, type EventActor } from '../../kernel/index.js';
-import { ApprovalAuthorityKind, WorkflowStatus } from '../contracts/vocabulary.js';
 import type { CompiledWorkflow } from '../contracts/config.js';
 import type {
   SupplementalActivityRequest,
@@ -9,6 +8,7 @@ import type {
 import { OrchestrationEventType } from '../contracts/events.js';
 import { stageName } from '../contracts/identifiers.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
+import { ApprovalAuthorityKind, WorkflowStatus } from '../contracts/vocabulary.js';
 import type {
   AcceptActivityOutcome,
   DecisionContext,

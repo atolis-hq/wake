@@ -1,13 +1,13 @@
+import { describe, expect, it } from 'vitest';
 import { activationId } from '../../src-next/activities/contracts/identifiers.js';
 import { activityName } from '../../src-next/activities/index.js';
-import { describe, expect, it } from 'vitest';
 import {
-  decodeExecutionEvent,
-  decodeActivationExecutionEvent,
-  decodeRunExecutionEvent,
-  ExecutionFailureCode,
-  ExecutionEventType,
   activationStream,
+  decodeActivationExecutionEvent,
+  decodeExecutionEvent,
+  decodeRunExecutionEvent,
+  ExecutionEventType,
+  ExecutionFailureCode,
   runId,
   runStream,
   selectExecutionEvent,

@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import { DurableFakeDeliveryProvider } from '../../src-next/integrations/fake/durable-delivery-provider.js';
 import {
   ProviderRegistry,
   adapterId,
   type ProviderDefinition,
 } from '../../src-next/integrations/index.js';
-import { DurableFakeDeliveryProvider } from '../../src-next/integrations/fake/durable-delivery-provider.js';
 
 function definition(): ProviderDefinition<{ readonly enabled: boolean }> {
   return {

@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import {
   ActivityFailureCode,
   ActivityOutcomeKind,
@@ -5,7 +6,6 @@ import {
   IntentAppendStatus,
 } from '../contracts/vocabulary.js';
 import { PullRequestDenialCode } from './vocabulary.js';
-import { z } from 'zod';
 
 import { type EventJournal } from '../../kernel/index.js';
 import {
@@ -13,19 +13,18 @@ import {
   resourceId,
   type ResourceCapability,
   type ResourceId,
-  type ResourceView,
   type ResourceStreamRef,
+  type ResourceView,
 } from '../../resources/index.js';
+import type { WorkItemId, WorkItemStreamRef } from '../../work/index.js';
+import type { ActivityFactDraft } from '../contracts/events.js';
 import { isPullRequestLikeResource } from './capability.js';
-import type { WorkItemStreamRef } from '../../work/index.js';
-import type { WorkItemId } from '../../work/index.js';
 import type {
   PullRequestActivityOutcome,
   PullRequestAuthorityInput,
   PullRequestTarget,
 } from './contracts.js';
 import type { IntentAppender, IntentAppendResult } from './intent.js';
-import type { ActivityFactDraft } from '../contracts/events.js';
 
 export const pullRequestTargetSchema = z
   .union([

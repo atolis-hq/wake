@@ -1,5 +1,5 @@
-import { ActivityFailureCode, ActivityOutcomeKind } from '../contracts/vocabulary.js';
 import { z } from 'zod';
+import { ActivityFailureCode, ActivityOutcomeKind } from '../contracts/vocabulary.js';
 
 const structuredResult = <Status extends string>(status: Status) =>
   z.object({ status: z.literal(status) }).catchall(z.unknown());

@@ -1,9 +1,9 @@
 ﻿import { describe, expect, it } from 'vitest';
-import { workId } from '../support/identities.js';
 import { correlationId } from '../../src-next/kernel/index.js';
 import { InMemoryEventJournal } from '../../src-next/persistence/index.js';
 import { createWorkService, workItemStream } from '../../src-next/work/index.js';
 import { FakeClock } from '../e2e/support/world.js';
+import { workId } from '../support/identities.js';
 
 const context = {
   commandId: 'command-1',

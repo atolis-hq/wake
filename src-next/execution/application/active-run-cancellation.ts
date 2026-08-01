@@ -1,9 +1,9 @@
 import type { Clock } from '../../kernel/index.js';
+import { runId } from '../contracts/identifiers.js';
 import type { ExecutionCancellationReason } from '../contracts/vocabulary.js';
 import { RunStatus } from '../contracts/vocabulary.js';
-import { runId } from '../contracts/identifiers.js';
-import { RunRepository } from './run-repository.js';
 import { confirmCancellation, requestCancellation } from './run-liveness-service.js';
+import { RunRepository } from './run-repository.js';
 
 export async function cancelActiveRuns(
   repository: RunRepository,

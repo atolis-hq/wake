@@ -1,6 +1,5 @@
 ﻿import { once } from 'node:events';
 import { describe, expect, it } from 'vitest';
-import { workId, resId } from '../../support/identities.js';
 import { z } from 'zod';
 import {
   ActivityExecutionKind,
@@ -25,12 +24,13 @@ import {
   InMemoryProjectionStore,
 } from '../../../src-next/persistence/index.js';
 import {
+  ResourceCorrelationRole,
   resourceCapability,
   resourceKind,
-  ResourceCorrelationRole,
 } from '../../../src-next/resources/index.js';
 import { createApiDispatcher, createApiHttpServer } from '../../../src-next/surfaces/index.js';
 import {} from '../../../src-next/work/index.js';
+import { resId, workId } from '../../support/identities.js';
 
 describe('E2E-SURFACE-001 API metadata provenance', () => {
   it('attributes a retracted resource correlation to Work detail absence', async () => {

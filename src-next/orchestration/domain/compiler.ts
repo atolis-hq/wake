@@ -1,5 +1,8 @@
-import { ActivityOutcomeKind } from '../../activities/index.js';
-import { activityName, type ActivityRegistry } from '../../activities/index.js';
+import {
+  activityName,
+  ActivityOutcomeKind,
+  type ActivityRegistry,
+} from '../../activities/index.js';
 import {
   workflowDefinitionConfigSchema,
   type ApprovalAuthority,

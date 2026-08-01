@@ -1,3 +1,4 @@
+import { defineClosedVocabulary, type ValueOf } from '../../../kernel/index.js';
 import type { ResourceResponse } from './common.js';
 
 export interface ControlPlaneStatusResponse {
@@ -28,7 +29,6 @@ export interface CommandConflictResponse {
 
 export type ApiCommandResult = AcceptedCommandResponse | CommandConflictResponse;
 export type ApiAdvanceCommandResult = AdvanceCommandResponse | CommandConflictResponse;
-import { defineClosedVocabulary, type ValueOf } from '../../../kernel/index.js';
 
 export const ApiCommandStatus = defineClosedVocabulary({
   Accepted: 'accepted',

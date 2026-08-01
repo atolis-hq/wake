@@ -1,5 +1,5 @@
-﻿import { signalName } from '../../../src-next/orchestration/contracts/identifiers.js';
-import { expect, it } from 'vitest';
+﻿import { expect, it } from 'vitest';
+import { signalName } from '../../../src-next/orchestration/contracts/identifiers.js';
 import { resId } from '../../support/identities.js';
 
 import { resourceStream } from '../../../src-next/resources/index.js';

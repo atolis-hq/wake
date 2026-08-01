@@ -1,13 +1,13 @@
-﻿import { resourceCapability } from '../../src-next/resources/index.js';
-import { describe, expect, it } from 'vitest';
-import { workId, resId } from '../support/identities.js';
+﻿import { describe, expect, it } from 'vitest';
 import {
   decodeResourceEvent,
+  resourceCapability,
   ResourceEventType,
   resourceStream,
   selectResourceEvent,
 } from '../../src-next/resources/index.js';
 import { eventEnvelope } from '../support/event-envelope.js';
+import { resId, workId } from '../support/identities.js';
 
 const stream = resourceStream(resId('one'));
 const samples = [

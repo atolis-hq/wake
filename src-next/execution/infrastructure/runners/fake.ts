@@ -1,6 +1,6 @@
-import { RunStatus } from '../../contracts/vocabulary.js';
 import { RetrySafety } from '../../../activities/index.js';
 import type { Runner, RunnerExecution, RunnerRequest } from '../../contracts/runner.js';
+import { RunStatus } from '../../contracts/vocabulary.js';
 
 export class FakeExecutionRunner implements Runner {
   readonly name = 'fake';

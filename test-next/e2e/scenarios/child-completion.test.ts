@@ -1,11 +1,11 @@
+import { expect } from 'vitest';
+import { z } from 'zod';
+import { activityName } from '../../../src-next/activities/index.js';
 import {
   signalName,
   workflowInstanceId,
   workflowName,
 } from '../../../src-next/orchestration/contracts/identifiers.js';
-import { activityName } from '../../../src-next/activities/index.js';
-import { z } from 'zod';
-import { expect } from 'vitest';
 import { defineScenario } from '../support/scenario.js';
 import { TestWorld } from '../support/world.js';
 

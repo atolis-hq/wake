@@ -1,7 +1,7 @@
 ﻿import { describe, expect, it } from 'vitest';
-import { workId } from '../support/identities.js';
 import { createEventDraft, type EventEnvelope } from '../../src-next/kernel/index.js';
 import { workItemStream } from '../../src-next/work/index.js';
+import { workId } from '../support/identities.js';
 import { FaultInjector, InjectedFaultError } from './support/faults.js';
 import { formatTrace } from './support/trace.js';
 import { FakeClock, SequentialIds } from './support/world.js';

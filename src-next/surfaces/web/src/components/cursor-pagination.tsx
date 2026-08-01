@@ -1,6 +1,6 @@
 import { useSearchParams } from 'react-router';
-import { Button } from './primitives.js';
 import styles from './components.module.css';
+import { Button } from './primitives.js';
 
 interface CursorNavigation {
   readonly cursor?: string;

@@ -1,8 +1,8 @@
 import { cleanup, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it } from 'vitest';
-import { App } from '../src/app/app.js';
 import { WakeApiClient } from '../src/api/client.js';
+import { App } from '../src/app/app.js';
 
 describe('Wake operator app', () => {
   afterEach(cleanup);

@@ -1,5 +1,5 @@
-import type { EventJournal } from '../../kernel/index.js';
 import type { ActivationId } from '../../activities/index.js';
+import type { EventJournal } from '../../kernel/index.js';
 import {
   decodeRunExecutionEvent,
   type RunExecutionEvent,

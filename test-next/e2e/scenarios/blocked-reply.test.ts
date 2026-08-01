@@ -1,9 +1,9 @@
-﻿import { signalName, workflowName } from '../../../src-next/orchestration/contracts/identifiers.js';
-import { activityName } from '../../../src-next/activities/index.js';
+﻿import { expect } from 'vitest';
 import { z } from 'zod';
-import { expect } from 'vitest';
-import { resId } from '../../support/identities.js';
+import { activityName } from '../../../src-next/activities/index.js';
+import { signalName, workflowName } from '../../../src-next/orchestration/contracts/identifiers.js';
 import {} from '../../../src-next/resources/index.js';
+import { resId } from '../../support/identities.js';
 import { defineScenario } from '../support/scenario.js';
 import { TestWorld } from '../support/world.js';
 

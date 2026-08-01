@@ -6,6 +6,7 @@ import {
   activityName,
   type ActivityDefinition,
 } from '../../src-next/activities/index.js';
+import type { WorkflowRouter } from '../../src-next/integrations/index.js';
 import type { EventJournal } from '../../src-next/kernel/index.js';
 import {
   compileWorkflow,
@@ -13,7 +14,6 @@ import {
   workflowName,
   type CompiledWorkflow,
 } from '../../src-next/orchestration/index.js';
-import type { WorkflowRouter } from '../../src-next/integrations/index.js';
 import type { WorkService } from '../../src-next/work/index.js';
 
 const INTAKE_WORKFLOW = 'default';

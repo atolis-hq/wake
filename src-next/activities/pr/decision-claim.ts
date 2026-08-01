@@ -1,21 +1,25 @@
-import { EventSourceKind } from '../../kernel/index.js';
 import {
-  ActivityFailureCode,
-  ActivityOutcomeKind,
-  IntentAppendStatus,
-} from '../contracts/vocabulary.js';
-import { createEventDraft, type EventEnvelope, type EventJournal } from '../../kernel/index.js';
+  createEventDraft,
+  EventSourceKind,
+  type EventEnvelope,
+  type EventJournal,
+} from '../../kernel/index.js';
 import {
   ActivityEventType,
   decodeActivityEvent,
   decodeActivityEventDraft,
   type ActivityEventPayloads,
 } from '../contracts/events.js';
-import { activityDecisionStream, type PullRequestDecisionAction } from '../contracts/streams.js';
 import type { ActivationId } from '../contracts/identifiers.js';
+import { activityDecisionStream, type PullRequestDecisionAction } from '../contracts/streams.js';
+import {
+  ActivityFailureCode,
+  ActivityOutcomeKind,
+  IntentAppendStatus,
+} from '../contracts/vocabulary.js';
+import { appendResolved } from './activity-support.js';
 import type { PullRequestActivityOutcome } from './contracts.js';
 import type { IntentAppender } from './intent.js';
-import { appendResolved } from './activity-support.js';
 
 type PullRequestDecisionKind = 'requested' | 'denied';
 export type PullRequestAction = PullRequestDecisionAction;

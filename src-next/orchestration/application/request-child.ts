@@ -1,9 +1,9 @@
 import type { CommandContext } from '../../kernel/index.js';
 import type { WorkItemId } from '../../work/index.js';
 import type {
+  ChildCompletionSignal,
   ChildCoordinationEventPayloads,
   ChildWorkflowRequest,
-  ChildCompletionSignal,
 } from '../contracts/events.js';
 import { OrchestrationEventType } from '../contracts/events.js';
 import { signalName, type WorkflowInstanceId } from '../contracts/identifiers.js';

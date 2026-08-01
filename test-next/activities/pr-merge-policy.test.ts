@@ -1,3 +1,4 @@
+import { expect, it } from 'vitest';
 import {
   orchestrationGroupId,
   signalName,
@@ -9,8 +10,7 @@ import {
   type ResourceCapability,
   type ResourceKind,
 } from '../../src-next/resources/index.js';
-import { expect, it } from 'vitest';
-import { workId, resId } from '../support/identities.js';
+import { resId, workId } from '../support/identities.js';
 
 import {
   activationId,

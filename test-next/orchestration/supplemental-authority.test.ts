@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { EventActorKind } from '../../src-next/kernel/index.js';
-import { ApprovalAuthorityKind } from '../../src-next/orchestration/index.js';
 import { isAuthorisedActor } from '../../src-next/orchestration/domain/supplemental-policy.js';
+import { ApprovalAuthorityKind } from '../../src-next/orchestration/index.js';
 
 const humanOnly = [ApprovalAuthorityKind.Human] as const;
 const autoOnly = [ApprovalAuthorityKind.Auto] as const;

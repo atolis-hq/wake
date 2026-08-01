@@ -3,7 +3,11 @@ import { z } from 'zod';
 import { activationId, activityName } from '../../activities/index.js';
 import { brandedStringSchema, type EventEnvelope } from '../../kernel/index.js';
 import { workItemId } from '../../work/index.js';
-import { orchestrationGroupId, stageName, workflowName } from './identifiers.js';
+import {
+  childGroupEnvelope,
+  primaryGroupEnvelope,
+  workflowEnvelope,
+} from './event-envelope-schema.js';
 import {
   activityRequestedSchema,
   childGroupIdSchema,
@@ -17,15 +21,11 @@ import {
   workflowInstanceIdSchema,
 } from './event-payload-schema.js';
 import {
-  childGroupEnvelope,
-  primaryGroupEnvelope,
-  workflowEnvelope,
-} from './event-envelope-schema.js';
-import {
   OrchestrationEventType,
   type OrchestrationEvent,
   type WorkflowOrchestrationEvent,
 } from './events.js';
+import { orchestrationGroupId, stageName, workflowName } from './identifiers.js';
 
 const primaryClaimedEnvelope = primaryGroupEnvelope(
   OrchestrationEventType.PrimaryClaimed,

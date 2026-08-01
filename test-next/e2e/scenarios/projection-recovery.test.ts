@@ -2,15 +2,15 @@
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, it } from 'vitest';
-import { workId } from '../../support/identities.js';
+import { correlationId } from '../../../src-next/kernel/index.js';
 import {
   FileCheckpointStore,
   FileEventJournal,
   FileProjectionStore,
   ProjectionRunner,
 } from '../../../src-next/persistence/index.js';
-import { correlationId } from '../../../src-next/kernel/index.js';
 import { createWorkService, workProjection } from '../../../src-next/work/index.js';
+import { workId } from '../../support/identities.js';
 import { FakeClock } from '../support/world.js';
 it('E2E-PROJECTION-001 rebuilds projections without changing journal bytes', async () => {
   const root = await mkdtemp(join(tmpdir(), 'wake-projection-recovery-'));

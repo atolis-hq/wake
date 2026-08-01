@@ -1,5 +1,5 @@
-export * from './contracts/clock.js';
 export * from './contracts/checkpoint-store.js';
+export * from './contracts/clock.js';
 export * from './contracts/commands.js';
 export * from './contracts/event-journal.js';
 export * from './contracts/event-schema.js';
@@ -13,9 +13,9 @@ export type {
   EntityRef,
   EventId,
 } from './contracts/identifiers.js';
+export * from './contracts/projection-store.js';
 export * from './contracts/relations.js';
 export * from './contracts/schema.js';
-export * from './contracts/projection-store.js';
 export * from './contracts/vocabulary.js';
 export * from './domain/event-envelope.js';
 export * from './domain/match-mode.js';

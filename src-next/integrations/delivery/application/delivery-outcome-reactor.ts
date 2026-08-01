@@ -1,5 +1,5 @@
-import { EventActorKind, type CheckpointStore, type EventJournal } from '../../../kernel/index.js';
 import { ActivityOutcomeKind, activationId } from '../../../activities/index.js';
+import { EventActorKind, type CheckpointStore, type EventJournal } from '../../../kernel/index.js';
 import { workflowInstanceId, type OrchestrationService } from '../../../orchestration/index.js';
 import { DeliveryEventType, selectDeliveryEvent } from '../contracts/events.js';
 import { DeliveryResultKind } from '../contracts/vocabulary.js';

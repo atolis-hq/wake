@@ -1,16 +1,16 @@
 import {
   ActivityRegistry,
-  createAgentActivity,
   agentActivityDefinition,
+  createAgentActivity,
   createPullRequestApproveActivity,
   createPullRequestMergeActivity,
   createPullRequestService,
 } from '../activities/index.js';
 import {
+  ControlStreamKind,
   createAdvanceOnce,
   createRunnerControlService,
   createTickPipeline,
-  ControlStreamKind,
   ineligibleRunners,
   type TickPipeline,
 } from '../control-plane/index.js';
@@ -19,28 +19,6 @@ import {
   loadPromptTemplate,
   renderPromptTemplate,
 } from '../execution/index.js';
-import {
-  SystemClock,
-  UlidIdGenerator,
-  type Clock,
-  type CheckpointStore,
-  type EventJournal,
-  type ProjectionStore,
-} from '../kernel/index.js';
-import {
-  FileCheckpointStore,
-  FileEventJournal,
-  FileProjectionStore,
-} from '../persistence/index.js';
-import {
-  compileWorkflow,
-  compileWorkflowSelectors,
-  createOrchestrationService,
-  createWatchReactor,
-  selectWorkflow,
-  workflowName,
-} from '../orchestration/index.js';
-import { createResourceLookup, createResourceService, resourceId } from '../resources/index.js';
 import {
   DeliveryOutcomeReactor,
   DeliveryService,
@@ -52,18 +30,40 @@ import {
   type ProviderInstance,
   type WorkflowRouter,
 } from '../integrations/index.js';
+import {
+  SystemClock,
+  UlidIdGenerator,
+  type CheckpointStore,
+  type Clock,
+  type EventJournal,
+  type ProjectionStore,
+} from '../kernel/index.js';
+import {
+  compileWorkflow,
+  compileWorkflowSelectors,
+  createOrchestrationService,
+  createWatchReactor,
+  selectWorkflow,
+  workflowName,
+} from '../orchestration/index.js';
+import {
+  FileCheckpointStore,
+  FileEventJournal,
+  FileProjectionStore,
+} from '../persistence/index.js';
+import { createResourceLookup, createResourceService, resourceId } from '../resources/index.js';
 // The shared Integration barrel must not re-export a provider namespace
 // (see provider-locality); composition-root is the exempt production
 // composition point that is allowed to name it directly.
 import { gitHubProviderDefinition } from '../integrations/github/index.js';
 import { createWorkService } from '../work/index.js';
 import { loadConfig, type ResolvedWakeModulesConfig } from './config/load-config.js';
+import { hydrateFakeProviderEvidence } from './fake-provider-files.js';
 import { resolveWakePaths, type WakePaths } from './paths.js';
 import { createRuntimeProjectionRunner } from './projection-runtime.js';
-import { createRunnerRegistry } from './runner-registry.js';
-import { hydrateFakeProviderEvidence } from './fake-provider-files.js';
-import { createStatusPublishActivity } from './status-publish-activity.js';
 import { createRunnerQuotaReporter } from './runner-quota-reporter.js';
+import { createRunnerRegistry } from './runner-registry.js';
+import { createStatusPublishActivity } from './status-publish-activity.js';
 
 export interface CompositionRootOptions {
   readonly config?: ResolvedWakeModulesConfig;

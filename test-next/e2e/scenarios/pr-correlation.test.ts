@@ -1,13 +1,13 @@
 ﻿import { expect, it } from 'vitest';
-import { workId, resId } from '../../support/identities.js';
+import { resId, workId } from '../../support/identities.js';
 
 import {
   createPullRequestService,
   pullRequestProjection,
 } from '../../../src-next/activities/index.js';
 import {
-  InboundTranslator,
   BuiltInAdapterId,
+  InboundTranslator,
   createEventDraft,
   integrationStream,
   type ExternalWorkObservedPayload,
@@ -15,9 +15,9 @@ import {
 import {
   InMemoryCheckpointStore,
   InMemoryEventJournal,
+  InMemoryProjectionStore,
+  ProjectionRunner,
 } from '../../../src-next/persistence/index.js';
-import { ProjectionRunner } from '../../../src-next/persistence/index.js';
-import { InMemoryProjectionStore } from '../../../src-next/persistence/index.js';
 import {
   BuiltInResourceCapability,
   BuiltInResourceKind,

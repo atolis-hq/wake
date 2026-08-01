@@ -1,11 +1,15 @@
-import { WorkStatus } from '../contracts/vocabulary.js';
-import { EventSourceKind } from '../../kernel/index.js';
-import { createEventDraft, type CommandContext, type EventJournal } from '../../kernel/index.js';
+import {
+  createEventDraft,
+  EventSourceKind,
+  type CommandContext,
+  type EventJournal,
+} from '../../kernel/index.js';
 import type { CreateWorkItem, LinkWorkItems, ReviseWorkObjective } from '../contracts/commands.js';
 import { WorkEventType, type WorkEventDraft, type WorkEventPayloads } from '../contracts/events.js';
 import type { WorkItemId } from '../contracts/identifiers.js';
 import { workItemStream } from '../contracts/streams.js';
 import type { WorkItemView } from '../contracts/views.js';
+import { WorkStatus } from '../contracts/vocabulary.js';
 import { WorkRepository } from './work-repository.js';
 
 export interface WorkService {

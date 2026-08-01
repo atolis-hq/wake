@@ -1,14 +1,9 @@
-﻿import {
-  orchestrationGroupId,
-  workflowInstanceId,
-} from '../../src-next/orchestration/contracts/identifiers.js';
-import { activationId } from '../../src-next/activities/contracts/identifiers.js';
-import { activityName } from '../../src-next/activities/index.js';
+﻿import { describe, expect, expectTypeOf, it } from 'vitest';
 import { z } from 'zod';
-import { describe, expect, expectTypeOf, it } from 'vitest';
-import { workId } from '../support/identities.js';
+import { activationId } from '../../src-next/activities/contracts/identifiers.js';
 import {
   ActivityExecutionKind,
+  activityName,
   ActivityRegistry,
   type ActivationId,
   type ActivityName,
@@ -21,9 +16,14 @@ import {
   type ExecutionActivation,
   type ExecutionAttemptContext,
 } from '../../src-next/execution/index.js';
+import {
+  orchestrationGroupId,
+  workflowInstanceId,
+} from '../../src-next/orchestration/contracts/identifiers.js';
 import { InMemoryEventJournal } from '../../src-next/persistence/index.js';
 import {} from '../../src-next/work/index.js';
 import { FakeClock, SequentialIds } from '../e2e/support/world.js';
+import { workId } from '../support/identities.js';
 
 function setup(workspace?: { acquire: (request: unknown) => Promise<never> }) {
   const registry = new ActivityRegistry();

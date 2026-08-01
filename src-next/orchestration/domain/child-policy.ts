@@ -1,12 +1,12 @@
-import { WorkflowInstanceKind } from '../contracts/vocabulary.js';
 import type { StartWorkflowInstance } from '../contracts/commands.js';
 import type { ChildCoordinationMetadata, ChildWorkflowRequest } from '../contracts/events.js';
-import type { WorkflowInstanceView } from '../contracts/views.js';
 import {
   workflowInstanceId,
   type OrchestrationGroupId,
   type WorkflowInstanceId,
 } from '../contracts/identifiers.js';
+import type { WorkflowInstanceView } from '../contracts/views.js';
+import { WorkflowInstanceKind } from '../contracts/vocabulary.js';
 
 interface ChildStartInput {
   readonly workflowInstanceId: WorkflowInstanceId;

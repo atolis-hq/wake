@@ -6,12 +6,12 @@ import {
   type EventJournal,
 } from '../../kernel/index.js';
 import type { ExecutionConfig } from '../contracts/config.js';
+import { createActivationExecutionEventDraft } from '../contracts/event-factory.js';
 import {
   decodeActivationExecutionEvent,
   ExecutionEventType,
   type ActivationExecutionEvent,
 } from '../contracts/events.js';
-import { createActivationExecutionEventDraft } from '../contracts/event-factory.js';
 import type { RunId } from '../contracts/identifiers.js';
 import { activationStream } from '../contracts/streams.js';
 

@@ -1,5 +1,4 @@
-import { EventSourceKind } from '../../kernel/index.js';
-import { createEventDraft, type CommandContext } from '../../kernel/index.js';
+import { createEventDraft, EventSourceKind, type CommandContext } from '../../kernel/index.js';
 import { resourceStream, type ResourceStreamRef } from '../../resources/index.js';
 import type { WorkItemStreamRef } from '../../work/index.js';
 import {

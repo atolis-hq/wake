@@ -1,4 +1,3 @@
-import type { ActivityActivationStatus, WorkflowStatus } from './vocabulary.js';
 import type { ActivationId, ActivityName, ActivityOutcome } from '../../activities/index.js';
 import type { WorkItemId } from '../../work/index.js';
 import type { ApprovalAuthority, StageConfig, TransitionTarget } from './config.js';
@@ -9,6 +8,7 @@ import type {
   WorkflowInstanceId,
   WorkflowName,
 } from './identifiers.js';
+import type { ActivityActivationStatus, WorkflowStatus } from './vocabulary.js';
 
 export interface ActivityActivationView {
   readonly activationId: ActivationId;

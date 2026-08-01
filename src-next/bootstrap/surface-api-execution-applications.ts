@@ -4,11 +4,10 @@ import {
   type ControlPlaneView,
 } from '../control-plane/index.js';
 import type { RunView } from '../execution/index.js';
-import { presentRun, type ApiApplications } from '../surfaces/index.js';
+import { ApiCommandStatus, presentRun, type ApiApplications } from '../surfaces/index.js';
 import type { CompositionRoot } from './composition-root.js';
 import { projectionMeta, sampledMeta } from './surface-api-metadata.js';
 import { projectionPage } from './surface-api-projection-pages.js';
-import { ApiCommandStatus } from '../surfaces/index.js';
 
 export function createExecutionApplications(
   root: CompositionRoot,

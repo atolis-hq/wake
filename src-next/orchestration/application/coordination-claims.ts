@@ -1,14 +1,14 @@
-import { EventSourceKind } from '../../kernel/index.js';
 import {
   createEventDraft,
+  EventSourceKind,
+  WrongExpectedSequenceError,
   type CommandContext,
   type EventJournal,
-  WrongExpectedSequenceError,
 } from '../../kernel/index.js';
 import type { WorkItemId } from '../../work/index.js';
+import { selectOrchestrationEvent } from '../contracts/event-decoder.js';
 import type { ChildWorkflowRequest } from '../contracts/events.js';
 import { OrchestrationEventType, type OrchestrationGroupEvent } from '../contracts/events.js';
-import { selectOrchestrationEvent } from '../contracts/event-decoder.js';
 import {
   isOrchestrationGroupStream,
   primaryOrchestrationGroupStream,

@@ -1,8 +1,8 @@
 import { z } from 'zod';
 import {
   brandedStringSchema,
-  eventId,
   eventEnvelopeSchema,
+  eventId,
   type EventDraftUnion,
   type EventEnvelope,
   type EventId,

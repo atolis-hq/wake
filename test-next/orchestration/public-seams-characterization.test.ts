@@ -1,10 +1,9 @@
-﻿import { z } from 'zod';
-import { expect, it } from 'vitest';
+﻿import { expect, it } from 'vitest';
+import { z } from 'zod';
 import { workId } from '../support/identities.js';
 
 import { ActivityRegistry, activityName } from '../../src-next/activities/index.js';
 import { correlationId, type CommandContext } from '../../src-next/kernel/index.js';
-import { InMemoryEventJournal } from '../../src-next/persistence/index.js';
 import {
   OrchestrationEventType,
   compileWorkflow,
@@ -18,6 +17,7 @@ import {
   workflowName,
   type OrchestrationService,
 } from '../../src-next/orchestration/index.js';
+import { InMemoryEventJournal } from '../../src-next/persistence/index.js';
 import { createWorkService } from '../../src-next/work/index.js';
 
 const occurredAt = '2026-07-30T12:00:00.000Z';

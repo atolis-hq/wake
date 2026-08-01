@@ -1,5 +1,5 @@
-import { ExecutionFailureCode } from '../contracts/vocabulary.js';
 import type { ExecutionFailure } from '../contracts/views.js';
+import { ExecutionFailureCode } from '../contracts/vocabulary.js';
 
 export function failureFrom(error: unknown): ExecutionFailure {
   const source = sourceFailure(error);

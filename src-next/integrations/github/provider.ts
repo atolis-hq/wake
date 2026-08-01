@@ -1,11 +1,11 @@
-import type { ProviderDefinition } from '../contracts/provider.js';
 import { resourceId } from '../../resources/index.js';
+import type { ProviderDefinition } from '../contracts/provider.js';
 import { InboundTranslator } from './application/inbound-translator.js';
 import { translateGitHubOutbound } from './application/outbound-translator.js';
 import { gitHubConfigSchema, type GitHubConfig } from './contracts/config.js';
 import { GitHubEventType } from './contracts/events.js';
-import { createGitHubDelivery } from './infrastructure/delivery.js';
 import { createGitHubClient } from './infrastructure/client.js';
+import { createGitHubDelivery } from './infrastructure/delivery.js';
 import { createGitHubSource } from './infrastructure/source.js';
 
 export const gitHubProviderDefinition: ProviderDefinition<GitHubConfig> = {

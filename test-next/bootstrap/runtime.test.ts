@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ActivityRegistry } from '../../src-next/activities/index.js';
-import { createCompositionRoot } from '../../src-next/bootstrap/index.js';
-import { parseRootConfig } from '../../src-next/bootstrap/index.js';
+import { createCompositionRoot, parseRootConfig } from '../../src-next/bootstrap/index.js';
 import {
   InMemoryCheckpointStore,
   InMemoryEventJournal,

@@ -1,6 +1,6 @@
+import Handlebars from 'handlebars';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import Handlebars from 'handlebars';
 import YAML from 'yaml';
 import { z } from 'zod';
 

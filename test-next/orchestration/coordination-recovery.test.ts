@@ -1,15 +1,6 @@
-﻿import {
-  orchestrationGroupId,
-  signalName,
-  workflowInstanceId,
-  workflowName,
-} from '../../src-next/orchestration/contracts/identifiers.js';
-import { activityName } from '../../src-next/activities/index.js';
+﻿import { expect, it } from 'vitest';
 import { z } from 'zod';
-import { expect, it } from 'vitest';
-import { workId } from '../support/identities.js';
-import { createTestResourceServices } from '../support/resource-lookup.js';
-import { ActivityRegistry } from '../../src-next/activities/index.js';
+import { activityName, ActivityRegistry } from '../../src-next/activities/index.js';
 import { createAdvanceOnce } from '../../src-next/control-plane/index.js';
 import { createExecutionService } from '../../src-next/execution/index.js';
 import {
@@ -21,6 +12,12 @@ import {
   type EventJournal,
 } from '../../src-next/kernel/index.js';
 import {
+  orchestrationGroupId,
+  signalName,
+  workflowInstanceId,
+  workflowName,
+} from '../../src-next/orchestration/contracts/identifiers.js';
+import {
   compileWorkflow,
   createOrchestrationService,
   createWatchReactor,
@@ -31,6 +28,8 @@ import { InMemoryCheckpointStore, InMemoryEventJournal } from '../../src-next/pe
 import { createWorkService, type WorkItemId } from '../../src-next/work/index.js';
 import { FakeClock, SequentialIds } from '../e2e/support/world.js';
 import { eventEnvelope } from '../support/event-envelope.js';
+import { workId } from '../support/identities.js';
+import { createTestResourceServices } from '../support/resource-lookup.js';
 
 const command = (commandId: string): CommandContext => ({
   commandId,

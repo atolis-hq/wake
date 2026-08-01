@@ -1,6 +1,6 @@
 import { afterEach, expect, it } from 'vitest';
-import { BuiltInResourceCapability, type ResourceView } from '../../../src-next/resources/index.js';
 import { DeliveryIntentEventType } from '../../../src-next/integrations/index.js';
+import { BuiltInResourceCapability, type ResourceView } from '../../../src-next/resources/index.js';
 import { ProcessWorld } from '../support/process-world.js';
 
 const worlds: ProcessWorld[] = [];

@@ -1,11 +1,11 @@
 import { EventActorKind, EventSourceKind, type EventJournal } from '../../../kernel/index.js';
 import { deliveryStream, IntegrationStreamKind } from '../../contracts/streams.js';
+import type { ExternalDeliveryAdapter } from '../contracts/config.js';
 import {
   createDeliveryEventDraft,
   type DeliveryEventDraftInput,
 } from '../contracts/event-factory.js';
 import { DeliveryEventType } from '../contracts/events.js';
-import type { ExternalDeliveryAdapter } from '../contracts/config.js';
 import type { DeliveryIntentView } from '../contracts/views.js';
 import { DeliveryResultKind, DeliveryState } from '../contracts/vocabulary.js';
 

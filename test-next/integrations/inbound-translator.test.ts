@@ -1,17 +1,17 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  InboundTranslator,
   BuiltInAdapterId,
   createEventDraft,
+  InboundTranslator,
   integrationStream,
   type ExternalWorkObservedPayload,
 } from '../../src-next/integrations/github/index.js';
 import { InMemoryCheckpointStore, InMemoryEventJournal } from '../../src-next/persistence/index.js';
 import { createWorkService } from '../../src-next/work/index.js';
 import { FakeClock } from '../e2e/support/world.js';
-import { createTestResourceServices } from '../support/resource-lookup.js';
 import { createTestIntakeRouting } from '../support/intake-routing.js';
+import { createTestResourceServices } from '../support/resource-lookup.js';
 
 describe('InboundTranslator', () => {
   it('translates an external work observation into Work and Resource command candidates', () => {

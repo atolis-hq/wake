@@ -1,16 +1,16 @@
-import type { ExternalDeliveryAdapter } from '../delivery/contracts/config.js';
-import { adapterId, type AdapterId } from './identifiers.js';
-import type { IntegrationsConfig } from './config.js';
-import type { ExternalEventSource, InboundTranslation } from './intake.js';
+import type { PullRequestService } from '../../activities/index.js';
 import type { Clock, IdGenerator } from '../../kernel/index.js';
-import type { ResourceService } from '../../resources/index.js';
-import type { WorkService } from '../../work/index.js';
 import type {
   OrchestrationService,
   WorkflowCandidate,
   WorkflowName,
 } from '../../orchestration/index.js';
-import type { PullRequestService } from '../../activities/index.js';
+import type { ResourceService } from '../../resources/index.js';
+import type { WorkService } from '../../work/index.js';
+import type { ExternalDeliveryAdapter } from '../delivery/contracts/config.js';
+import type { IntegrationsConfig } from './config.js';
+import { adapterId, type AdapterId } from './identifiers.js';
+import type { ExternalEventSource, InboundTranslation } from './intake.js';
 
 // Configuration decides routing; providers supply facts. An adapter can ask which
 // workflow a candidate belongs to, but never proposes a workflow name.

@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   createEventDraft,
+  WrongExpectedSequenceError,
   type Clock,
   type EntityRef,
   type EventDraft,
-  WrongExpectedSequenceError,
 } from '../../src-next/kernel/index.js';
 import { InMemoryEventJournal } from '../../src-next/persistence/index.js';
 

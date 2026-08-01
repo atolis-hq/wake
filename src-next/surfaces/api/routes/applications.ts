@@ -1,7 +1,7 @@
 import type {
-  AuditEventResponse,
   ApiAdvanceCommandResult,
   ApiCommandResult,
+  AuditEventResponse,
   ConfigurationResponse,
   ControlPlaneStatusResponse,
   HealthResponse,
@@ -12,8 +12,8 @@ import type {
   RunnerResponse,
   RunResponse,
   RunTranscriptResponse,
-  WorkflowInstanceResponse,
   WorkDetailResponse,
+  WorkflowInstanceResponse,
   WorkItemResponse,
 } from '../contracts/index.js';
 

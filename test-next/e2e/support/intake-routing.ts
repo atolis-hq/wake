@@ -5,8 +5,8 @@ import {
   activityName,
   type ActivityDefinition,
 } from '../../../src-next/activities/index.js';
-import { workflowName } from '../../../src-next/orchestration/index.js';
 import type { WorkflowRouter } from '../../../src-next/integrations/index.js';
+import { workflowName } from '../../../src-next/orchestration/index.js';
 import type { TestWorld } from './world.js';
 
 const INTAKE_WORKFLOW = 'default';

@@ -1,8 +1,8 @@
-import { ProviderPermission, ReviewActorKind, ReviewerAuthorizationSource } from './contracts.js';
 import type {
   ProviderPermission as ProviderPermissionValue,
   ReviewerAuthorizationEvidence,
 } from './contracts.js';
+import { ProviderPermission, ReviewActorKind, ReviewerAuthorizationSource } from './contracts.js';
 
 export function isReviewAuthorized(input: {
   readonly actorId: string;

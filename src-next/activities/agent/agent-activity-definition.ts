@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import { ActivityExecutionKind, BuiltInActivityName } from '../contracts/vocabulary.js';
 import type { ActivityDefinition } from '../contracts/activity.js';
+import { ActivityExecutionKind, BuiltInActivityName } from '../contracts/vocabulary.js';
 import { createAgentActivity } from './agent-activity.js';
 import {
   agentActivityOutcomeKinds,

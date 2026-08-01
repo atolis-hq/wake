@@ -1,6 +1,5 @@
-import { EventActorKind, EventSourceKind } from '../../kernel/index.js';
-import { createEventDraft } from '../../kernel/index.js';
 import { activationId, type ActivityName } from '../../activities/index.js';
+import { createEventDraft, EventActorKind, EventSourceKind } from '../../kernel/index.js';
 import {
   type ActivityRequestedPayload,
   type OrchestrationEventPayloads,

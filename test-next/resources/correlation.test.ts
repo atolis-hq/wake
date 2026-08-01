@@ -1,10 +1,14 @@
-﻿import { resourceKind, resourceCapability } from '../../src-next/resources/index.js';
-import { describe, expect, it } from 'vitest';
-import { workId, resId } from '../support/identities.js';
-import { resourceId, resourceStream } from '../../src-next/resources/index.js';
+﻿import { describe, expect, it } from 'vitest';
 import { InMemoryEventJournal } from '../../src-next/persistence/index.js';
+import {
+  resourceCapability,
+  resourceId,
+  resourceKind,
+  resourceStream,
+} from '../../src-next/resources/index.js';
 import {} from '../../src-next/work/index.js';
 import { FakeClock } from '../e2e/support/world.js';
+import { resId, workId } from '../support/identities.js';
 import { createTestResourceServices } from '../support/resource-lookup.js';
 
 const context = (commandId: string) => ({

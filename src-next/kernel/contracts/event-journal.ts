@@ -1,5 +1,5 @@
-import type { EntityRef } from './identifiers.js';
 import type { EventDraft, EventEnvelope } from './events.js';
+import type { EntityRef } from './identifiers.js';
 
 export class WrongExpectedSequenceError extends Error {}
 

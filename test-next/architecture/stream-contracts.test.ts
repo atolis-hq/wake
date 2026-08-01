@@ -1,5 +1,5 @@
 ﻿import { describe, expect, expectTypeOf, it } from 'vitest';
-import { workId, resId } from '../support/identities.js';
+import { resId, workId } from '../support/identities.js';
 
 import {
   activationId,
@@ -23,8 +23,8 @@ import {
   isIntegrationStream,
   type AdapterId,
 } from '../../src-next/integrations/github/index.js';
-import * as kernel from '../../src-next/kernel/index.js';
 import type { EntityRef } from '../../src-next/kernel/index.js';
+import * as kernel from '../../src-next/kernel/index.js';
 import {
   childOrchestrationGroupStream,
   isOrchestrationGroupStream,

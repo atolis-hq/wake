@@ -1,24 +1,16 @@
-import { ActivityOutcomeKind } from '../contracts/vocabulary.js';
 import { z } from 'zod';
+import { ActivityOutcomeKind } from '../contracts/vocabulary.js';
 
+import type { EventJournal } from '../../kernel/index.js';
+import { BuiltInResourceCapability, resourceStream } from '../../resources/index.js';
+import { workItemStream } from '../../work/index.js';
 import type {
   ActivityDefinition,
   ActivityExecutionContext,
   ActivityInvocation,
 } from '../contracts/activity.js';
-import { ActivityExecutionKind, BuiltInActivityName } from '../contracts/vocabulary.js';
 import { ActivityEventType } from '../contracts/events.js';
-import type { EventJournal } from '../../kernel/index.js';
-import { BuiltInResourceCapability, resourceStream } from '../../resources/index.js';
-import { workItemStream } from '../../work/index.js';
-import { approveDenied, deliveryIntentRequested } from './event-drafts.js';
-import {
-  activityCommandContext,
-  createJournalIntentAppender,
-  type IntentAppender,
-} from './intent.js';
-import type { PullRequestService } from './application.js';
-import type { PullRequestActivityOutcome, PullRequestApproveInput } from './contracts.js';
+import { ActivityExecutionKind, BuiltInActivityName } from '../contracts/vocabulary.js';
 import {
   pullRequestOutcomeSchema,
   pullRequestTargetSchema,
@@ -26,11 +18,19 @@ import {
   selectedDenialAudit,
   selectionDenialAudit,
 } from './activity-support.js';
+import type { PullRequestService } from './application.js';
+import type { PullRequestActivityOutcome, PullRequestApproveInput } from './contracts.js';
 import {
   claimAndCompleteDecision,
   completeDecisionClaim,
   readDecisionClaim,
 } from './decision-claim.js';
+import { approveDenied, deliveryIntentRequested } from './event-drafts.js';
+import {
+  activityCommandContext,
+  createJournalIntentAppender,
+  type IntentAppender,
+} from './intent.js';
 import { decidePullRequestAuthority } from './policy.js';
 
 const inputSchema: z.ZodType<PullRequestApproveInput> = z

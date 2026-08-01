@@ -1,19 +1,17 @@
-﻿import {
-  orchestrationGroupId,
-  signalName,
-  workflowInstanceId,
-  workflowName,
-} from '../../src-next/orchestration/contracts/identifiers.js';
-import { activityName } from '../../src-next/activities/index.js';
+﻿import { expect, it } from 'vitest';
 import { z } from 'zod';
-import { expect, it } from 'vitest';
-import { workId } from '../support/identities.js';
-import { ActivityRegistry } from '../../src-next/activities/index.js';
+import { activityName, ActivityRegistry } from '../../src-next/activities/index.js';
 import {
   correlationId,
   type CommandContext,
   type EventJournal,
 } from '../../src-next/kernel/index.js';
+import {
+  orchestrationGroupId,
+  signalName,
+  workflowInstanceId,
+  workflowName,
+} from '../../src-next/orchestration/contracts/identifiers.js';
 import {
   compileWorkflow,
   createOrchestrationService,
@@ -24,6 +22,7 @@ import {
 import { InMemoryEventJournal } from '../../src-next/persistence/index.js';
 import { createWorkService } from '../../src-next/work/index.js';
 import { FakeClock } from '../e2e/support/world.js';
+import { workId } from '../support/identities.js';
 
 const context = (commandId: string): CommandContext => ({
   commandId,

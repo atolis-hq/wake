@@ -1,8 +1,8 @@
 ﻿import { describe, expect, it } from 'vitest';
 import { resId } from '../support/identities.js';
 
-import {} from '../../src-next/resources/index.js';
 import { translateGitHubReviewCommand } from '../../src-next/integrations/github/index.js';
+import {} from '../../src-next/resources/index.js';
 
 const base = {
   resourceId: resId('github-owner-repo-1'),

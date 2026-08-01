@@ -2,7 +2,7 @@ import { once } from 'node:events';
 import type { Server } from 'node:http';
 import { ResidentHost, TickHost } from '../control-plane/index.js';
 import { correlationId, EventActorKind } from '../kernel/index.js';
-import { resourceId, ResourceCorrelationRole } from '../resources/index.js';
+import { ResourceCorrelationRole, resourceId } from '../resources/index.js';
 import {
   createApiDispatcher,
   createApiHttpServer,

@@ -1,5 +1,4 @@
 ﻿import { describe, expect, it } from 'vitest';
-import { workId } from '../support/identities.js';
 import {
   decodeWorkEvent,
   selectWorkEvent,
@@ -7,6 +6,7 @@ import {
   workItemStream,
 } from '../../src-next/work/index.js';
 import { eventEnvelope } from '../support/event-envelope.js';
+import { workId } from '../support/identities.js';
 
 const stream = workItemStream(workId('1'));
 const samples = [

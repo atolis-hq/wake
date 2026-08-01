@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import {
   ProviderPermission,
   PullRequestCheckState,
@@ -5,7 +6,6 @@ import {
   ReviewActorKind,
   ReviewerAuthorizationSource,
 } from '../../../activities/index.js';
-import { z } from 'zod';
 import {
   eventEnvelopeSchema,
   type EventDraftUnion,

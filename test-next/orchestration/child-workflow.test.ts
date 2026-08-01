@@ -1,7 +1,6 @@
-import { activityName } from '../../src-next/activities/index.js';
-import { z } from 'zod';
 import { expect, it } from 'vitest';
-import { ActivityRegistry } from '../../src-next/activities/index.js';
+import { z } from 'zod';
+import { activityName, ActivityRegistry } from '../../src-next/activities/index.js';
 import { compileWorkflow } from '../../src-next/orchestration/index.js';
 
 function registry() {

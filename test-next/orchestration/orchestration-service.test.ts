@@ -1,20 +1,19 @@
 ﻿import { readFile } from 'node:fs/promises';
 
+import { expect, it } from 'vitest';
+import { z } from 'zod';
+import { activityName, ActivityRegistry } from '../../src-next/activities/index.js';
+import { correlationId } from '../../src-next/kernel/index.js';
 import {
   orchestrationGroupId,
   workflowInstanceId,
   workflowName,
 } from '../../src-next/orchestration/contracts/identifiers.js';
-import { activityName } from '../../src-next/activities/index.js';
-import { z } from 'zod';
-import { expect, it } from 'vitest';
-import { workId } from '../support/identities.js';
-import { ActivityRegistry } from '../../src-next/activities/index.js';
-import { InMemoryEventJournal } from '../../src-next/persistence/index.js';
-import { correlationId } from '../../src-next/kernel/index.js';
-import { createWorkService } from '../../src-next/work/index.js';
 import { compileWorkflow, createOrchestrationService } from '../../src-next/orchestration/index.js';
+import { InMemoryEventJournal } from '../../src-next/persistence/index.js';
+import { createWorkService } from '../../src-next/work/index.js';
 import { FakeClock } from '../e2e/support/world.js';
+import { workId } from '../support/identities.js';
 
 it('uses the Work status vocabulary when checking whether work is open', async () => {
   const source = await readFile(

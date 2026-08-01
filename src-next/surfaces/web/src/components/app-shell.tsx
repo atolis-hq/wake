@@ -1,8 +1,8 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { NavLink } from 'react-router';
 import wakeLogo from '../../../../../assets/wake-logo.svg';
-import { ControlPlaneStatus } from './status.js';
 import styles from './components.module.css';
+import { ControlPlaneStatus } from './status.js';
 
 const navigation = [
   ['Board', '/board'],

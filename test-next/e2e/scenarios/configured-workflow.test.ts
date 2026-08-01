@@ -1,5 +1,4 @@
 ﻿import { describe, expect, it } from 'vitest';
-import { workId } from '../../support/identities.js';
 import { z } from 'zod';
 import {
   ActivityExecutionKind,
@@ -11,16 +10,17 @@ import {
 import { createCompositionRoot, parseRootConfig } from '../../../src-next/bootstrap/index.js';
 import { correlationId } from '../../../src-next/kernel/index.js';
 import {
-  InMemoryCheckpointStore,
-  InMemoryEventJournal,
-  InMemoryProjectionStore,
-} from '../../../src-next/persistence/index.js';
-import {
   orchestrationGroupId,
   workflowInstanceId,
   workflowName,
 } from '../../../src-next/orchestration/index.js';
+import {
+  InMemoryCheckpointStore,
+  InMemoryEventJournal,
+  InMemoryProjectionStore,
+} from '../../../src-next/persistence/index.js';
 import {} from '../../../src-next/work/index.js';
+import { workId } from '../../support/identities.js';
 
 describe('E2E-CONFIG-001 configured workflow', () => {
   it('composes the module subtrees and completes one fake activity stage', async () => {

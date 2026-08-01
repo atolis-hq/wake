@@ -1,9 +1,8 @@
 import { ActivityOutcomeKind } from '../../activities/index.js';
-import {
-  ActivityActivationStatus,
-  ApprovalAuthorityKind,
-  WorkflowStatus,
-} from '../contracts/vocabulary.js';
+import type {
+  OrchestrationActivityOutcome,
+  OrchestrationWaitingActivityOutcome,
+} from '../contracts/activity-outcome.js';
 import type { ApprovalAuthority, CompiledWorkflow } from '../contracts/config.js';
 import type {
   OrchestrationSignal,
@@ -13,10 +12,11 @@ import type {
 import { OrchestrationEventType } from '../contracts/events.js';
 import { stageName } from '../contracts/identifiers.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
-import type {
-  OrchestrationActivityOutcome,
-  OrchestrationWaitingActivityOutcome,
-} from '../contracts/activity-outcome.js';
+import {
+  ActivityActivationStatus,
+  ApprovalAuthorityKind,
+  WorkflowStatus,
+} from '../contracts/vocabulary.js';
 import type {
   AcceptActivityOutcome,
   DecisionContext,

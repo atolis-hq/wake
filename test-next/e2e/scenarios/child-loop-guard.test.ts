@@ -1,7 +1,7 @@
-import { signalName, workflowName } from '../../../src-next/orchestration/contracts/identifiers.js';
-import { activityName } from '../../../src-next/activities/index.js';
-import { z } from 'zod';
 import { expect } from 'vitest';
+import { z } from 'zod';
+import { activityName } from '../../../src-next/activities/index.js';
+import { signalName, workflowName } from '../../../src-next/orchestration/contracts/identifiers.js';
 import {
   OrchestrationEventType,
   selectOrchestrationEvent,

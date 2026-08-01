@@ -1,12 +1,12 @@
-import { EventActorKind } from '../../kernel/index.js';
 import {
   correlationId,
+  EventActorKind,
   type CheckpointStore,
   type CommandContext,
   type EventJournal,
 } from '../../kernel/index.js';
-import { type ChildWorkflowRequest, type OrchestrationEvent } from '../contracts/events.js';
 import { selectOrchestrationEvent } from '../contracts/event-decoder.js';
+import { type ChildWorkflowRequest, type OrchestrationEvent } from '../contracts/events.js';
 import {
   workflowInstanceId,
   workflowName,

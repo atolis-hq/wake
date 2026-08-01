@@ -1,13 +1,13 @@
-import {
-  ActivityFailureCode,
-  ActivityOutcomeKind,
-  ActivityRunnerTransportStatus,
-} from '../contracts/vocabulary.js';
 import type {
   ActivityHandler,
   ActivityInvocation,
   AgentRunnerPort,
 } from '../contracts/activity.js';
+import {
+  ActivityFailureCode,
+  ActivityOutcomeKind,
+  ActivityRunnerTransportStatus,
+} from '../contracts/vocabulary.js';
 import { translateAgentResult, type AgentActivityOutcome } from './agent-result.js';
 
 export interface AgentTemplateRenderer {

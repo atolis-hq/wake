@@ -1,7 +1,7 @@
 import { RetrySafety, type ActivityOutcome } from '../../activities/index.js';
 import type { CompiledOutcomeRoute, CompiledWorkflow } from '../contracts/config.js';
-import { OrchestrationEventType } from '../contracts/events.js';
 import type { WorkflowOrchestrationEventDraft } from '../contracts/events.js';
+import { OrchestrationEventType } from '../contracts/events.js';
 import { stageName } from '../contracts/identifiers.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
 import type { AcceptActivityOutcome } from './activation-policy.js';

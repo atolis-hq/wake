@@ -1,8 +1,8 @@
-import { workflowName } from '../../../src-next/orchestration/contracts/identifiers.js';
+import { expect, it } from 'vitest';
+import { z } from 'zod';
 import { activityName } from '../../../src-next/activities/index.js';
 import { ExecutionEventType } from '../../../src-next/execution/index.js';
-import { z } from 'zod';
-import { expect, it } from 'vitest';
+import { workflowName } from '../../../src-next/orchestration/contracts/identifiers.js';
 import { TestWorld } from '../support/world.js';
 
 it('E2E-GOLDEN-001 completes work through orchestration and an explicit Run', async () => {

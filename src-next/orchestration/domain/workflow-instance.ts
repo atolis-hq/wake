@@ -1,10 +1,10 @@
-import { WorkflowStatus } from '../contracts/vocabulary.js';
-import { OrchestrationEventType } from '../contracts/events.js';
 import type {
   WorkflowOrchestrationEvent,
   WorkflowOrchestrationEventDraft,
 } from '../contracts/events.js';
+import { OrchestrationEventType } from '../contracts/events.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
+import { WorkflowStatus } from '../contracts/vocabulary.js';
 import {
   applyWorkflowInstanceEvent,
   immutableWorkflowInstanceView,

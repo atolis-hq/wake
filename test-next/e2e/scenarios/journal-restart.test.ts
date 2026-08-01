@@ -2,10 +2,10 @@
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, it } from 'vitest';
-import { workId } from '../../support/identities.js';
-import { FileEventJournal } from '../../../src-next/persistence/index.js';
 import { correlationId } from '../../../src-next/kernel/index.js';
+import { FileEventJournal } from '../../../src-next/persistence/index.js';
 import { createWorkService } from '../../../src-next/work/index.js';
+import { workId } from '../../support/identities.js';
 import { FakeClock } from '../support/world.js';
 it('E2E-JOURNAL-001 reopens canonical events and continues positions', async () => {
   const root = await mkdtemp(join(tmpdir(), 'wake-restart-'));

@@ -1,16 +1,16 @@
-﻿import {
+﻿import { expect, it } from 'vitest';
+import { activityName, PullRequestDenialCode } from '../../src-next/activities/index.js';
+import {
   orchestrationGroupId,
   signalName,
   workflowInstanceId,
 } from '../../src-next/orchestration/contracts/identifiers.js';
-import { activityName, PullRequestDenialCode } from '../../src-next/activities/index.js';
-import { resourceKind, resourceCapability } from '../../src-next/resources/index.js';
-import { expect, it } from 'vitest';
-import { workId, resId } from '../support/identities.js';
+import { resourceCapability, resourceKind } from '../../src-next/resources/index.js';
+import { resId, workId } from '../support/identities.js';
 
 import { activationId, createPullRequestMergeActivity } from '../../src-next/activities/index.js';
-import { appendIntentOnce } from '../../src-next/activities/pr/intent.js';
 import { mergeDenied } from '../../src-next/activities/pr/event-drafts.js';
+import { appendIntentOnce } from '../../src-next/activities/pr/intent.js';
 import {
   correlationId,
   WrongExpectedSequenceError,

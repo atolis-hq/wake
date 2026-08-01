@@ -1,7 +1,7 @@
 import type { EventJournal, ProjectionDefinition, ProjectionStore } from '../../kernel/index.js';
+import type { WorkItemId } from '../../work/index.js';
 import type { ResourceId } from '../contracts/identifiers.js';
 import type { ExternalResourceKey, ResourceCorrelationView } from '../contracts/views.js';
-import type { WorkItemId } from '../../work/index.js';
 import {
   externalKeyProjectionKey,
   resourcesByExternalKeyProjection,

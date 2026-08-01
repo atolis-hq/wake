@@ -1,11 +1,11 @@
 import { ExternalExecutionKind } from '../../../activities/index.js';
-import { ExecutionCancellationReason, RunStatus } from '../../contracts/vocabulary.js';
 import type {
   Runner,
   RunnerExecution,
   RunnerRequest,
   RunnerResult,
 } from '../../contracts/runner.js';
+import { ExecutionCancellationReason, RunStatus } from '../../contracts/vocabulary.js';
 import { runProcess } from '../process-execution.js';
 
 export function createClaudeRunner(

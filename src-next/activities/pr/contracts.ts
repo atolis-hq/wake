@@ -1,19 +1,18 @@
+import type { ResourceCorrelationView, ResourceId, ResourceView } from '../../resources/index.js';
+import type { WorkItemId, WorkItemView } from '../../work/index.js';
+import {
+  ActivityFailureCode,
+  ActivityOutcomeKind,
+  ActivityResourceRole,
+} from '../contracts/vocabulary.js';
+import type { ReviewerAuthorizationEvidence } from '../review/contracts.js';
+import { ReviewActorKind } from '../review/contracts.js';
 import {
   MergeMethod,
   PullRequestCheckState,
   PullRequestDenialCode,
   PullRequestState,
 } from './vocabulary.js';
-import { ReviewActorKind } from '../review/contracts.js';
-import {
-  ActivityFailureCode,
-  ActivityOutcomeKind,
-  ActivityResourceRole,
-} from '../contracts/vocabulary.js';
-import type { ResourceCorrelationView, ResourceView } from '../../resources/index.js';
-import type { WorkItemId, WorkItemView } from '../../work/index.js';
-import type { ResourceId } from '../../resources/index.js';
-import type { ReviewerAuthorizationEvidence } from '../review/contracts.js';
 
 export interface PullRequestView {
   readonly resourceId: ResourceId;

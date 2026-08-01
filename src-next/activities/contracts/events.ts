@@ -1,11 +1,3 @@
-import {
-  MergeMethod,
-  PullRequestCheckState,
-  PullRequestDenialCode,
-  PullRequestState,
-} from '../pr/vocabulary.js';
-import { ActivityOutcomeKind } from './vocabulary.js';
-import { ReviewActorKind } from '../review/contracts.js';
 import { z } from 'zod';
 import {
   type EventDraft,
@@ -15,10 +7,18 @@ import {
 } from '../../kernel/index.js';
 import { type ResourceId, type ResourceStreamRef } from '../../resources/index.js';
 import { type WorkItemId, type WorkItemStreamRef } from '../../work/index.js';
-import { type ActivityDecisionStreamRef, type PullRequestDecisionAction } from './streams.js';
-import type { ActivationId } from './identifiers.js';
 import type { PullRequestActivityOutcome, PullRequestTarget } from '../pr/contracts.js';
+import {
+  MergeMethod,
+  PullRequestCheckState,
+  PullRequestDenialCode,
+  PullRequestState,
+} from '../pr/vocabulary.js';
+import { ReviewActorKind } from '../review/contracts.js';
 import { createActivityEventSchemas } from './event-schema.js';
+import type { ActivationId } from './identifiers.js';
+import { type ActivityDecisionStreamRef, type PullRequestDecisionAction } from './streams.js';
+import { ActivityOutcomeKind } from './vocabulary.js';
 
 export const ActivityEventType = {
   PrDiscovered: 'pr.discovered',

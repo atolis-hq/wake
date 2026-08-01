@@ -1,8 +1,8 @@
 import { once } from 'node:events';
 import { describe, expect, it } from 'vitest';
 import { createApiHttpServer } from '../../src-next/surfaces/api/http-server.js';
-import { createApiDispatcher } from '../../src-next/surfaces/api/routes/index.js';
 import { routeBrowserRequest } from '../../src-next/surfaces/api/router.js';
+import { createApiDispatcher } from '../../src-next/surfaces/api/routes/index.js';
 
 describe('browser history routing', () => {
   it('falls back only for extensionless non-API GET requests', () => {

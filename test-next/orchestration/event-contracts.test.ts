@@ -1,12 +1,11 @@
-﻿import {
+﻿import { describe, expect, expectTypeOf, it } from 'vitest';
+import { activationId } from '../../src-next/activities/contracts/identifiers.js';
+import { activityName } from '../../src-next/activities/index.js';
+import {
   orchestrationGroupId,
   signalName,
   workflowName,
 } from '../../src-next/orchestration/contracts/identifiers.js';
-import { activationId } from '../../src-next/activities/contracts/identifiers.js';
-import { activityName } from '../../src-next/activities/index.js';
-import { describe, expect, expectTypeOf, it } from 'vitest';
-import { workId } from '../support/identities.js';
 import {
   childOrchestrationGroupStream,
   decodeOrchestrationEvent,
@@ -22,6 +21,7 @@ import {
 } from '../../src-next/orchestration/index.js';
 import {} from '../../src-next/work/index.js';
 import { eventEnvelope } from '../support/event-envelope.js';
+import { workId } from '../support/identities.js';
 
 const workflow = workflowInstanceStream(workflowInstanceId('workflow-1'));
 const primaryGroup = primaryOrchestrationGroupStream(workId('1'));

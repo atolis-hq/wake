@@ -6,13 +6,13 @@ import {
   pullRequestProjection,
 } from '../../src-next/activities/index.js';
 import { createEventDraft, type EventEnvelope } from '../../src-next/kernel/index.js';
-import { resourceStream } from '../../src-next/resources/index.js';
 import {
   InMemoryCheckpointStore,
   InMemoryEventJournal,
   InMemoryProjectionStore,
   ProjectionRunner,
 } from '../../src-next/persistence/index.js';
+import { resourceStream } from '../../src-next/resources/index.js';
 import { FakeClock } from '../e2e/support/world.js';
 
 function event(type: string, payload: Record<string, unknown>): EventEnvelope {

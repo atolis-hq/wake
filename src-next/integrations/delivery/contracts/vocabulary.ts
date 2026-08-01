@@ -1,5 +1,5 @@
-import { defineClosedVocabulary, type ValueOf } from '../../../kernel/index.js';
 import { BuiltInActivityName } from '../../../activities/index.js';
+import { defineClosedVocabulary, type ValueOf } from '../../../kernel/index.js';
 
 export const DeliveryState = defineClosedVocabulary({
   Pending: 'pending',

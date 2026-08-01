@@ -1,22 +1,22 @@
 ﻿import { describe, expect, it } from 'vitest';
-import { workId, resId } from '../support/identities.js';
-import { createResourceLookup } from '../../src-next/resources/application/resource-lookup.js';
-import {
-  resourcesByExternalKeyProjection,
-  workCorrelationsProjection,
-} from '../../src-next/resources/application/lookup-projections.js';
-import {
-  createResourceService,
-  resourceCapability,
-  resourceKind,
-} from '../../src-next/resources/index.js';
 import {
   InMemoryCheckpointStore,
   InMemoryEventJournal,
   InMemoryProjectionStore,
   ProjectionRunner,
 } from '../../src-next/persistence/index.js';
+import {
+  resourcesByExternalKeyProjection,
+  workCorrelationsProjection,
+} from '../../src-next/resources/application/lookup-projections.js';
+import { createResourceLookup } from '../../src-next/resources/application/resource-lookup.js';
+import {
+  createResourceService,
+  resourceCapability,
+  resourceKind,
+} from '../../src-next/resources/index.js';
 import { FakeClock } from '../e2e/support/world.js';
+import { resId, workId } from '../support/identities.js';
 
 const context = (commandId: string) => ({
   commandId,

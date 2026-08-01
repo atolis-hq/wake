@@ -1,5 +1,5 @@
-import type { ApprovalAuthority, StageConfig, TransitionTarget } from './config.js';
 import type { ActivationId, ActivityName } from '../../activities/index.js';
+import type { ApprovalAuthority, StageConfig, TransitionTarget } from './config.js';
 import type {
   CommandName,
   OrchestrationGroupId,

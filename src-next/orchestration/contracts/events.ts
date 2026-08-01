@@ -3,18 +3,6 @@ import type { EventDraftUnion, EventUnion } from '../../kernel/index.js';
 import type { WorkItemId } from '../../work/index.js';
 import type { OrchestrationWaitingActivityOutcome } from './activity-outcome.js';
 import type {
-  OrchestrationGroupId,
-  StageName,
-  WorkflowInstanceId,
-  WorkflowName,
-} from './identifiers.js';
-import type {
-  ChildOrchestrationGroupStreamId,
-  ChildOrchestrationGroupStreamRef,
-  PrimaryOrchestrationGroupStreamRef,
-  WorkflowInstanceStreamRef,
-} from './streams.js';
-import type {
   ActivityRequestedPayload,
   CausalActivationRejectedPayload,
   ChildCompletedPayload,
@@ -26,6 +14,18 @@ import type {
   OrchestrationSignal,
   SignalExpectation,
 } from './event-types.js';
+import type {
+  OrchestrationGroupId,
+  StageName,
+  WorkflowInstanceId,
+  WorkflowName,
+} from './identifiers.js';
+import type {
+  ChildOrchestrationGroupStreamId,
+  ChildOrchestrationGroupStreamRef,
+  PrimaryOrchestrationGroupStreamRef,
+  WorkflowInstanceStreamRef,
+} from './streams.js';
 export type {
   ActivityRequestedPayload,
   CausalActivationRejectedPayload,

@@ -1,5 +1,5 @@
-import { z } from 'zod';
 import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
 import { ActivityRegistry, activityName } from '../../src-next/activities/index.js';
 import { correlationId } from '../../src-next/kernel/index.js';
 import {
@@ -19,8 +19,8 @@ import {
 } from '../../src-next/orchestration/index.js';
 import { InMemoryEventJournal } from '../../src-next/persistence/index.js';
 import { createWorkService } from '../../src-next/work/index.js';
-import { workId } from '../support/identities.js';
 import { FakeClock } from '../e2e/support/world.js';
+import { workId } from '../support/identities.js';
 
 const reviewWatch = {
   id: 'pr-review',

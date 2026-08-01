@@ -1,6 +1,6 @@
-import { ExecutionFailureCode, RunStatus } from '../contracts/vocabulary.js';
 import { ExecutionEventType, type RunExecutionEvent } from '../contracts/events.js';
 import type { RunView } from '../contracts/views.js';
+import { ExecutionFailureCode, RunStatus } from '../contracts/vocabulary.js';
 export function foldRun(events: readonly RunExecutionEvent[]): RunView | null {
   const started = events.find((event) => event.eventType === ExecutionEventType.RunStarted);
   if (started === undefined) return null;

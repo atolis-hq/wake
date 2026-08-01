@@ -1,4 +1,3 @@
-import { RunStatus, WorkspaceMode } from '../contracts/vocabulary.js';
 import {
   type ActivityExecutionContext,
   ActivityExecutionKind,
@@ -7,24 +6,25 @@ import {
 } from '../../activities/index.js';
 import { type Clock, type EventJournal, type IdGenerator } from '../../kernel/index.js';
 import type { ResourceView } from '../../resources/index.js';
-import type { ExecutionConfig } from '../contracts/config.js';
 import type { ExecutionActivation, ExecutionAttemptContext } from '../contracts/commands.js';
+import type { ExecutionConfig } from '../contracts/config.js';
 import { ExecutionEventType } from '../contracts/events.js';
 import { runId } from '../contracts/identifiers.js';
 import { ExecutionStreamKind } from '../contracts/streams.js';
+import { RunStatus, WorkspaceMode } from '../contracts/vocabulary.js';
 import type { WorkspaceLease, WorkspaceProvider } from '../contracts/workspace.js';
-import { RunRepository } from './run-repository.js';
+import { RunnerRegistry } from '../infrastructure/runners/registry.js';
+import { claimActivation, releaseActivation } from './activation-claim.js';
+import { cancelActiveRuns } from './active-run-cancellation.js';
 import { acquireWorkspace, validateResourceRequirements } from './execution-validation.js';
+import { createRunEvent, recordRunFailure, recordRunSuccess, startRun } from './run-lifecycle.js';
 import {
   claimRun,
   confirmCancellation,
   renewLease,
   requestCancellation,
 } from './run-liveness-service.js';
-import { claimActivation, releaseActivation } from './activation-claim.js';
-import { cancelActiveRuns } from './active-run-cancellation.js';
-import { RunnerRegistry } from '../infrastructure/runners/registry.js';
-import { createRunEvent, recordRunFailure, recordRunSuccess, startRun } from './run-lifecycle.js';
+import { RunRepository } from './run-repository.js';
 
 export interface ExecutionDependencies {
   readonly clock: Clock;

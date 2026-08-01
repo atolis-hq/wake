@@ -1,17 +1,15 @@
-import { EventSourceKind } from '../../../kernel/index.js';
 import { ReviewActorKind } from '../../../activities/index.js';
-import { createEventDraft, EventActorKind } from '../../../kernel/index.js';
-import { GitHubAdapter } from '../contracts/vocabulary.js';
+import { createEventDraft, EventActorKind, EventSourceKind } from '../../../kernel/index.js';
 import type { AdapterId } from '../../contracts/identifiers.js';
 import { integrationStream } from '../../contracts/streams.js';
+import { GitHubEventType, type GitHubAdapterEventDraft } from '../contracts/events.js';
 import { formatGitHubResourceKey } from '../contracts/external-key.js';
 import {
   gitHubAssigneeLogins,
   gitHubLabelNames,
   type GitHubIssuePayload,
 } from '../contracts/payloads.js';
-import { GitHubEventType, type GitHubAdapterEventDraft } from '../contracts/events.js';
-import { UnknownGitHubIdentity } from '../contracts/vocabulary.js';
+import { GitHubAdapter, UnknownGitHubIdentity } from '../contracts/vocabulary.js';
 
 export function issueObservation(input: {
   readonly repository: string;

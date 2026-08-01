@@ -1,10 +1,9 @@
-import { PullRequestState } from '../../../activities/index.js';
-import { MergeMethod } from '../../../activities/index.js';
 import { Octokit } from '@octokit/rest';
-import { createEtagCache, fetchWithEtag } from './etag-cache.js';
-import { GitHubListState } from '../contracts/vocabulary.js';
-import type { GitHubOutboundAction } from '../contracts/vocabulary.js';
+import { MergeMethod, PullRequestState } from '../../../activities/index.js';
 import type { GitHubIssuePayload } from '../contracts/payloads.js';
+import type { GitHubOutboundAction } from '../contracts/vocabulary.js';
+import { GitHubListState } from '../contracts/vocabulary.js';
+import { createEtagCache, fetchWithEtag } from './etag-cache.js';
 
 export function createGitHubClient(token: string) {
   const octokit = new Octokit({

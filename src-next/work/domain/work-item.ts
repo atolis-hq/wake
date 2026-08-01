@@ -1,6 +1,6 @@
-import { WorkStatus } from '../contracts/vocabulary.js';
 import { WorkEventType, type WorkEvent } from '../contracts/events.js';
 import type { WorkItemView, WorkState } from '../contracts/views.js';
+import { WorkStatus } from '../contracts/vocabulary.js';
 
 export function foldWorkItem(events: readonly WorkEvent[]): WorkItemView | null {
   if (events.length === 0) return null;

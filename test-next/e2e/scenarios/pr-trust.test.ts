@@ -1,18 +1,18 @@
-﻿import { workflowName } from '../../../src-next/orchestration/contracts/identifiers.js';
-import { configureIntakeRouting } from '../support/intake-routing.js';
-import { expect, it } from 'vitest';
+﻿import { expect, it } from 'vitest';
+import { workflowName } from '../../../src-next/orchestration/contracts/identifiers.js';
 import { workId } from '../../support/identities.js';
+import { configureIntakeRouting } from '../support/intake-routing.js';
 
 import { createPullRequestMergeAuthorityGate } from '../../../src-next/activities/index.js';
 import {
-  InboundTranslator,
   BuiltInAdapterId,
   createEventDraft,
   githubReviewObservation,
+  InboundTranslator,
   integrationStream,
 } from '../../../src-next/integrations/github/index.js';
-import {} from '../../../src-next/work/index.js';
 import type { WorkflowRouter } from '../../../src-next/integrations/index.js';
+import {} from '../../../src-next/work/index.js';
 import { mergeAuthorityTestActivity } from '../support/merge-authority-activity.js';
 import { TestWorld } from '../support/world.js';
 

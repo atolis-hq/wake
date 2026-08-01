@@ -3,14 +3,14 @@ import {
   type EventJournal,
   WrongExpectedSequenceError,
 } from '../../kernel/index.js';
-import { workflowInstanceId } from '../contracts/identifiers.js';
-import { workflowInstanceStream } from '../contracts/streams.js';
+import { selectOrchestrationEvent } from '../contracts/event-decoder.js';
 import type {
   ChildCoordinationMetadata,
   GroupBudgetExhaustedPayload,
 } from '../contracts/events.js';
 import { OrchestrationEventType } from '../contracts/events.js';
-import { selectOrchestrationEvent } from '../contracts/event-decoder.js';
+import { workflowInstanceId } from '../contracts/identifiers.js';
+import { workflowInstanceStream } from '../contracts/streams.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
 import { coordinationDraft } from '../domain/coordination-events.js';
 

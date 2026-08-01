@@ -1,6 +1,9 @@
 import { activityProjectionDefinitions } from '../activities/index.js';
+import { controlPlaneProjectionDefinitions } from '../control-plane/index.js';
+import { executionProjection } from '../execution/index.js';
 import { deliveryProjectionDefinitions, type DeliveryIntentView } from '../integrations/index.js';
 import type { CheckpointStore, EventJournal, ProjectionStore } from '../kernel/index.js';
+import { orchestrationProjection } from '../orchestration/index.js';
 import { ProjectionRunner } from '../persistence/index.js';
 import {
   resourceCorrelationProjection,
@@ -9,9 +12,6 @@ import {
   workCorrelationsProjection,
 } from '../resources/index.js';
 import { workProjection } from '../work/index.js';
-import { controlPlaneProjectionDefinitions } from '../control-plane/index.js';
-import { orchestrationProjection } from '../orchestration/index.js';
-import { executionProjection } from '../execution/index.js';
 
 export const runtimeProjectionDefinitions = [
   workProjection,

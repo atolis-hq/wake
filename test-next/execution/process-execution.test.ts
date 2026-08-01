@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { runProcess } from '../../src-next/execution/infrastructure/process-execution.js';
 import {
   claudeCommandArgs,
+  cliRunner,
   codexCommandArgs,
   cursorCommandArgs,
-  cliRunner,
   ExecutionCancellationReason,
 } from '../../src-next/execution/index.js';
+import { runProcess } from '../../src-next/execution/infrastructure/process-execution.js';
 
 describe('runProcess', () => {
   it('terminates a child process at the configured wall-clock deadline', async () => {

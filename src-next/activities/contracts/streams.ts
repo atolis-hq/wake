@@ -1,5 +1,5 @@
-import { MergeMethod } from '../pr/vocabulary.js';
 import type { Brand, EntityRef } from '../../kernel/index.js';
+import { MergeMethod } from '../pr/vocabulary.js';
 import type { ActivationId } from './identifiers.js';
 
 export const ActivityStreamKind = { Decision: 'activity-decision' } as const;

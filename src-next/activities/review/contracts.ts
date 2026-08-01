@@ -1,5 +1,5 @@
-import type { ResourceId } from '../../resources/index.js';
 import { defineClosedVocabulary, type ValueOf } from '../../kernel/index.js';
+import type { ResourceId } from '../../resources/index.js';
 
 export const ReviewerAuthorizationSource = defineClosedVocabulary({
   ConfiguredReviewer: 'configured-reviewer',

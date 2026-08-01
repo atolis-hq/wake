@@ -1,6 +1,6 @@
 ﻿import { describe, expect, it } from 'vitest';
-import { resId } from '../support/identities.js';
 import { ActivityEventType, MergeMethod, activationId } from '../../src-next/activities/index.js';
+import { projectDeliveries } from '../../src-next/integrations/delivery/application/delivery-projector.js';
 import {
   DeliveryEventType,
   DeliveryIntentEventType,
@@ -10,8 +10,8 @@ import {
   deliveryStream,
 } from '../../src-next/integrations/index.js';
 import { resourceStream } from '../../src-next/resources/index.js';
-import { projectDeliveries } from '../../src-next/integrations/delivery/application/delivery-projector.js';
 import { eventEnvelope } from '../support/event-envelope.js';
+import { resId } from '../support/identities.js';
 
 describe('delivery projector', () => {
   it('projects unresolved intent positions without copying payload authority', () => {

@@ -1,5 +1,5 @@
-import type { CorrelationId } from './identifiers.js';
 import type { EventActor } from './events.js';
+import type { CorrelationId } from './identifiers.js';
 
 export interface CommandContext {
   readonly commandId: string;

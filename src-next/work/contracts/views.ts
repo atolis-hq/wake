@@ -1,6 +1,6 @@
-import { WorkStatus } from './vocabulary.js';
 import type { LinkWorkItems } from './commands.js';
 import type { WorkItemId } from './identifiers.js';
+import { WorkStatus } from './vocabulary.js';
 
 export type WorkState =
   typeof WorkStatus.Open | typeof WorkStatus.Closed | typeof WorkStatus.Cancelled;

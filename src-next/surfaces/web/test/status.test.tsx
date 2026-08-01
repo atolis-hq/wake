@@ -1,9 +1,9 @@
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
-import { afterEach, describe, expect, it } from 'vitest';
 import { MemoryRouter } from 'react-router';
-import { App } from '../src/app/app.js';
+import { afterEach, describe, expect, it } from 'vitest';
 import { WakeApiClient } from '../src/api/client.js';
+import { App } from '../src/app/app.js';
 
 describe('control-plane mutation and connection state', () => {
   afterEach(() => {

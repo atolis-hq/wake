@@ -1,15 +1,15 @@
-import { EventSourceKind, createEventDraft, type CommandContext } from '../../kernel/index.js';
 import type { ActivationId } from '../../activities/index.js';
-import { WorkflowStatus } from '../contracts/vocabulary.js';
+import { EventSourceKind, createEventDraft, type CommandContext } from '../../kernel/index.js';
 import type { SupplementalActivityRequest } from '../contracts/events.js';
+import { OrchestrationEventType } from '../contracts/events.js';
 import {
   commandName,
   workflowInstanceId,
   type SignalName,
   type WorkflowInstanceId,
 } from '../contracts/identifiers.js';
-import { OrchestrationEventType } from '../contracts/events.js';
 import { workflowInstanceStream } from '../contracts/streams.js';
+import { WorkflowStatus } from '../contracts/vocabulary.js';
 import { requestSupplementalActivity as decideSupplementalActivity } from '../domain/interpreter.js';
 import { isAuthorisedActor } from '../domain/supplemental-policy.js';
 import type { OrchestrationRepository } from './orchestration-repository.js';

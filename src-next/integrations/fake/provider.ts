@@ -1,10 +1,9 @@
 import { z } from 'zod';
 import { PullRequestCheckState } from '../../activities/index.js';
 import type { ProviderDefinition } from '../contracts/provider.js';
-import { FakeExternalEventSource } from './external-source.js';
-import { FakeEventType } from './external-source.js';
-import { FakeInboundTranslator } from './inbound-translator.js';
 import { DurableFakeDeliveryProvider } from './durable-delivery-provider.js';
+import { FakeEventType, FakeExternalEventSource } from './external-source.js';
+import { FakeInboundTranslator } from './inbound-translator.js';
 
 const configSchema = z
   .object({

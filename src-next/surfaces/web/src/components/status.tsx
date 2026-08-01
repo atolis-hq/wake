@@ -3,8 +3,8 @@ import { ApiProblem } from '../api/client.js';
 import { useApiClient } from '../api/context.js';
 import { queryKeys } from '../api/query-keys.js';
 import { refreshPolicy } from '../api/refresh-policy.js';
-import { Button, MutationFeedback, StatusBadge } from './primitives.js';
 import styles from './components.module.css';
+import { Button, MutationFeedback, StatusBadge } from './primitives.js';
 
 export function ControlPlaneStatus() {
   const client = useApiClient();

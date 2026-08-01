@@ -4,8 +4,8 @@ import type { StartWorkflowInstance } from '../contracts/commands.js';
 import type { CompiledWorkflow } from '../contracts/config.js';
 import type { WorkflowName } from '../contracts/identifiers.js';
 import { WorkflowInstanceKind } from '../contracts/vocabulary.js';
-import { startInstance } from '../domain/interpreter.js';
 import { validateChildProvenance } from '../domain/child-policy.js';
+import { startInstance } from '../domain/interpreter.js';
 import type { CoordinationClaims } from './coordination-claims.js';
 import type { OrchestrationRepository } from './orchestration-repository.js';
 

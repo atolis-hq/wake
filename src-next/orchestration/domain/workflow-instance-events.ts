@@ -1,11 +1,11 @@
 import type { ActivationId } from '../../activities/index.js';
-import { ActivityActivationStatus, WorkflowStatus } from '../contracts/vocabulary.js';
 import {
   OrchestrationEventType,
   type WorkflowOrchestrationEvent,
   type WorkflowOrchestrationEventDraft,
 } from '../contracts/events.js';
 import type { ActivityActivationView, WorkflowInstanceView } from '../contracts/views.js';
+import { ActivityActivationStatus, WorkflowStatus } from '../contracts/vocabulary.js';
 
 type WorkflowFact = WorkflowOrchestrationEvent | WorkflowOrchestrationEventDraft;
 type FactsOf<Type extends WorkflowFact['eventType']> = Extract<

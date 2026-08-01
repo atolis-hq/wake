@@ -1,5 +1,5 @@
-import { activityName } from '../../../src-next/activities/index.js';
 import { z } from 'zod';
+import { activityName } from '../../../src-next/activities/index.js';
 
 import type {
   ActivityDefinition,

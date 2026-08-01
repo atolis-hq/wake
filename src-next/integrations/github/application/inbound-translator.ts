@@ -1,15 +1,16 @@
 import {
-  UlidIdGenerator,
-  type CheckpointStore,
-  type EventJournal,
-  type IdGenerator,
-} from '../../../kernel/index.js';
-import {
   createPullRequestService,
   ReviewDecisionKind,
   type ObservePullRequest,
   type PullRequestService,
 } from '../../../activities/index.js';
+import {
+  UlidIdGenerator,
+  type CheckpointStore,
+  type EventJournal,
+  type IdGenerator,
+} from '../../../kernel/index.js';
+import type { OrchestrationService } from '../../../orchestration/index.js';
 import type { ResourceLookup, ResourceService } from '../../../resources/index.js';
 import {
   BuiltInResourceCapability,
@@ -18,20 +19,18 @@ import {
   resourceId,
   type ResourceId,
 } from '../../../resources/index.js';
-import type { OrchestrationService } from '../../../orchestration/index.js';
 import type { WorkService } from '../../../work/index.js';
 import { workItemId, type WorkItemId } from '../../../work/index.js';
-import type { ExternalWorkObservedPayload, GitHubAdapterEvent } from '../contracts/events.js';
-import { GitHubEventType, selectGitHubAdapterEvent } from '../contracts/events.js';
-import { UnknownGitHubIdentity } from '../contracts/vocabulary.js';
-import { GitHubAdapter } from '../contracts/vocabulary.js';
+import { admitObservedWork, type WorkAdmissionServices } from '../../application/work-admission.js';
 import type { AdapterId } from '../../contracts/identifiers.js';
 import { evaluateIntakeRules, type IntakeRule } from '../../contracts/intake-rules.js';
 import type { WorkflowRouter } from '../../contracts/provider.js';
-import { admitObservedWork, type WorkAdmissionServices } from '../../application/work-admission.js';
-import { gitHubIntakeFacts, gitHubIntakeRules } from './intake-policy.js';
 import type { GitHubIntakeRuleConfig } from '../contracts/config.js';
+import type { ExternalWorkObservedPayload, GitHubAdapterEvent } from '../contracts/events.js';
+import { GitHubEventType, selectGitHubAdapterEvent } from '../contracts/events.js';
+import { GitHubAdapter, UnknownGitHubIdentity } from '../contracts/vocabulary.js';
 import { commandContext } from './inbound-context.js';
+import { gitHubIntakeFacts, gitHubIntakeRules } from './intake-policy.js';
 import { observePullRequest } from './pull-request-translation.js';
 import { translateGitHubReviewCommand } from './review-command-translator.js';
 

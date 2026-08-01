@@ -1,9 +1,9 @@
 import { cleanup, render, screen, within } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { App } from '../src/app/app.js';
+import { afterEach, describe, expect, it } from 'vitest';
 import { WakeApiClient } from '../src/api/client.js';
+import { App } from '../src/app/app.js';
 
 const asOf = '2026-07-31T10:00:00.000Z';
 

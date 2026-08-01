@@ -4,10 +4,10 @@ import type { RunResponse, WorkItemResponse } from '../../../../api/contracts/in
 import { useApiClient } from '../../api/context.js';
 import { queryKeys } from '../../api/query-keys.js';
 import { refreshPolicy } from '../../api/refresh-policy.js';
+import { Chip } from '../../components/chip.js';
+import { CursorPagination, useCursorNavigation } from '../../components/cursor-pagination.js';
 import { DataTable } from '../../components/data-table.js';
 import { LocalTime } from '../../components/local-time.js';
-import { CursorPagination, useCursorNavigation } from '../../components/cursor-pagination.js';
-import { Chip } from '../../components/chip.js';
 import {
   EmptyState,
   ErrorState,

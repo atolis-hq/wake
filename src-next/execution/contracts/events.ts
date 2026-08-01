@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import {
   activationId,
+  ExternalExecutionKind,
   type ActivationId,
   type ActivityName,
   type ActivityOrchestrationGroupId,
@@ -8,29 +9,28 @@ import {
   type ActivityWorkflowInstanceId,
 } from '../../activities/index.js';
 import {
-  eventEnvelopeSchema,
   brandedStringSchema,
+  eventEnvelopeSchema,
   offsetIsoTimestampSchema,
   type EventDraftUnion,
   type EventEnvelope,
   type EventUnion,
 } from '../../kernel/index.js';
+import {
+  leasePayloadSchema,
+  runnerResultPayloadSchema,
+  runStartedPayloadSchema,
+} from './event-schema-components.js';
 import { runId } from './identifiers.js';
-import { ExecutionStreamKind, type ActivationStreamRef, type RunStreamRef } from './streams.js';
-import { ExecutionCancellationReason, ExecutionFailureCode, WorkspaceMode } from './vocabulary.js';
-import { ExternalExecutionKind } from '../../activities/index.js';
-import type { ExecutionFailure } from './views.js';
 import type {
   Cancellation,
   ExternalExecutionReference,
   Lease,
   RecoveredRunResult,
 } from './liveness.js';
-import {
-  leasePayloadSchema,
-  runnerResultPayloadSchema,
-  runStartedPayloadSchema,
-} from './event-schema-components.js';
+import { ExecutionStreamKind, type ActivationStreamRef, type RunStreamRef } from './streams.js';
+import type { ExecutionFailure } from './views.js';
+import { ExecutionCancellationReason, ExecutionFailureCode, WorkspaceMode } from './vocabulary.js';
 
 export const ExecutionEventType = {
   RunStarted: 'execution.run-started',

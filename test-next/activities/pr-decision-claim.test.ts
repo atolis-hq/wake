@@ -1,20 +1,20 @@
-﻿import { signalName } from '../../src-next/orchestration/contracts/identifiers.js';
-import { expect, expectTypeOf, it } from 'vitest';
-import { resId } from '../support/identities.js';
+﻿import { expect, expectTypeOf, it } from 'vitest';
 import {
-  activityDecisionStream,
   activationId,
+  activityDecisionStream,
   ActivityEventType,
   decodeActivityEventDraft,
   type ActivityFactDraft,
 } from '../../src-next/activities/index.js';
+import type { PullRequestActivityOutcome } from '../../src-next/activities/pr/contracts.js';
 import {
   claimDecision,
   type PullRequestDecision,
 } from '../../src-next/activities/pr/decision-claim.js';
 import { createEventDraft, type EventJournal } from '../../src-next/kernel/index.js';
+import { signalName } from '../../src-next/orchestration/contracts/identifiers.js';
 import { resourceStream } from '../../src-next/resources/index.js';
-import type { PullRequestActivityOutcome } from '../../src-next/activities/pr/contracts.js';
+import { resId } from '../support/identities.js';
 
 type Fact<Type extends ActivityFactDraft['eventType']> = Extract<
   ActivityFactDraft,

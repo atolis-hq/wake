@@ -1,9 +1,11 @@
+import type { ActivityOutcome } from '../../activities/index.js';
 import {
   EventActorKind,
   EventSourceKind,
   createEventDraft,
   type Clock,
 } from '../../kernel/index.js';
+import type { ExecutionActivation, ExecutionAttemptContext } from '../contracts/commands.js';
 import type { ExecutionConfig } from '../contracts/config.js';
 import { ExecutionEventType, type RunExecutionEventPayloads } from '../contracts/events.js';
 import { runId } from '../contracts/identifiers.js';
@@ -13,8 +15,6 @@ import type { WorkspaceLease } from '../contracts/workspace.js';
 import { failureFrom } from '../domain/run-result.js';
 import { claimRun } from './run-liveness-service.js';
 import { RunRepository } from './run-repository.js';
-import type { ActivityOutcome } from '../../activities/index.js';
-import type { ExecutionActivation, ExecutionAttemptContext } from '../contracts/commands.js';
 
 interface RunLifecycleDependencies {
   readonly clock: Clock;

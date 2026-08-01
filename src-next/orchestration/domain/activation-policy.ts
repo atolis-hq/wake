@@ -1,14 +1,14 @@
 import type { ActivationId, ActivityName } from '../../activities/index.js';
 import type { WorkItemId } from '../../work/index.js';
+import type { OrchestrationActivityOutcome } from '../contracts/activity-outcome.js';
 import type { CompiledWorkflow } from '../contracts/config.js';
 import type { WorkflowOrchestrationEventDraft } from '../contracts/events.js';
 import { OrchestrationEventType } from '../contracts/events.js';
-import type { WorkflowInstanceView } from '../contracts/views.js';
-import type { OrchestrationActivityOutcome } from '../contracts/activity-outcome.js';
 import type { OrchestrationGroupId, WorkflowInstanceId } from '../contracts/identifiers.js';
-import { activation, startDraft, stateDraft } from './decision-events.js';
-import { childStartDrafts } from './coordination-events.js';
+import type { WorkflowInstanceView } from '../contracts/views.js';
 import { childStartMetadata } from './child-policy.js';
+import { childStartDrafts } from './coordination-events.js';
+import { activation, startDraft, stateDraft } from './decision-events.js';
 
 export type OrchestrationDecision =
   | { readonly kind: 'append'; readonly events: readonly WorkflowOrchestrationEventDraft[] }

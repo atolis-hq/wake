@@ -1,6 +1,7 @@
 ﻿import { beforeEach, expect, it, vi } from 'vitest';
 import {} from '../support/identities.js';
 
+import { createPullRequestService } from '../../src-next/activities/index.js';
 import {
   InboundTranslator,
   PollService,
@@ -21,9 +22,8 @@ import {
   createResourceService,
 } from '../../src-next/resources/index.js';
 import { createWorkService } from '../../src-next/work/index.js';
-import { resId, workId } from '../support/identities.js';
-import { createPullRequestService } from '../../src-next/activities/index.js';
 import { FakeClock } from '../e2e/support/world.js';
+import { resId, workId } from '../support/identities.js';
 
 const octokit = vi.hoisted(() => ({
   paginate: vi.fn(),
