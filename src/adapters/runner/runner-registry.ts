@@ -1,4 +1,4 @@
-import { createClaudeRunner } from '../claude/claude-runner.js';
+﻿import { createClaudeRunner } from '../claude/claude-runner.js';
 import { createCodexRunner } from '../codex/codex-runner.js';
 import { createCursorRunner } from '../cursor/cursor-runner.js';
 import { createFakeRunner } from '../fake/fake-runner.js';
@@ -149,7 +149,7 @@ export function createRegistryRunner(input: {
         })();
       if (routing === null) {
         throw new Error(
-          'No runner available: every candidate in the resolved tier is quota-paused.',
+          'No runner available: every candidate in the resolved runnerPool is quota-paused.',
         );
       }
       const cacheKey = `${routing.runnerKind}:${routing.runnerName}`;

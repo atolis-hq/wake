@@ -16,9 +16,9 @@ describe('target configuration ownership', () => {
         'execution:',
         '  agentRunners:',
         '    fake: { kind: fake }',
-        '  tiers:',
+        '  runnerPools:',
         '    standard: [fake]',
-        '  defaultTier: standard',
+        '  defaultRunnerPool: standard',
         'orchestration: { workflows: {} }',
         'controlPlane: {}',
         'integrations: {}',
@@ -28,7 +28,7 @@ describe('target configuration ownership', () => {
 
     const config = await loadConfig(root);
 
-    expect(config.execution.defaultTier).toBe('standard');
+    expect(config.execution.defaultRunnerPool).toBe('standard');
     expect(config.controlPlane.maxDispatches).toBe(1);
     expect(config.controlPlane.schedules).toEqual([]);
     expect(config.integrations).toEqual({});

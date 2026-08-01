@@ -43,7 +43,7 @@ function setup(workspace?: { acquire: (request: unknown) => Promise<never> }) {
   return createExecutionService(
     new InMemoryEventJournal(new FakeClock()),
     registry,
-    { tiers: { standard: ['fake'] }, defaultTier: 'standard' },
+    { runnerPools: { standard: ['fake'] }, defaultRunnerPool: 'standard' },
     {
       clock: new FakeClock(),
       ids: new SequentialIds(),
@@ -94,10 +94,10 @@ describe('ExecutionService', () => {
     }).attempt(activation, context);
     expect(calls).toBe(0);
   });
-  it('rejects an unregistered execution tier', async () => {
+  it('rejects an unregistered execution runner pool', async () => {
     await expect(
-      setup().attempt({ ...activation, execution: { tier: 'premium' } }, context),
-    ).rejects.toThrow(/tier/);
+      setup().attempt({ ...activation, execution: { runnerPool: 'premium' } }, context),
+    ).rejects.toThrow(/runner pool/);
   });
 
   it('preserves valid owner-specific output and rejects invalid owner output end to end', async () => {
@@ -126,7 +126,7 @@ describe('ExecutionService', () => {
     const service = createExecutionService(
       new InMemoryEventJournal(new FakeClock()),
       registry,
-      { tiers: { standard: ['fake'] }, defaultTier: 'standard' },
+      { runnerPools: { standard: ['fake'] }, defaultRunnerPool: 'standard' },
       { clock: new FakeClock(), ids: new SequentialIds() },
     );
     const scoreActivation = {

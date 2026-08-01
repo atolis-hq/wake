@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+﻿import { beforeEach, describe, expect, it } from 'vitest';
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -753,7 +753,7 @@ describe('tick runner', () => {
       expect(projection?.context.lastHandledCommentId).toBeUndefined();
       expect(completionEvent?.payload.handledCommentId).toBeUndefined();
       // A canceled run must not advance stage or record a workflow outcome even
-      // if the runner echoed DONE — the snapshot it acted on was superseded.
+      // if the runner echoed DONE â€” the snapshot it acted on was superseded.
       expect(completionEvent?.payload.nextStage).toBeUndefined();
       expect(completionEvent?.payload.workflowOutcome).toBeUndefined();
       expect(projection?.wake.stage).toBe('implement');
@@ -1247,7 +1247,7 @@ describe('tick runner', () => {
             refine: {
               action: 'refine',
               workspace: 'read-only',
-              tier: 'light',
+              runnerPool: 'light',
               onDone: 'done',
             },
           },

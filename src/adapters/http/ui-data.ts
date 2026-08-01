@@ -1,4 +1,4 @@
-import { readFile, readdir, stat } from 'node:fs/promises';
+﻿import { readFile, readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import type { ResourceIndex } from '../../core/contracts.js';
@@ -48,7 +48,7 @@ async function readLockInfo(
 
 /**
  * Reproduces the sentinel-driven part of policy eligibility for display purposes only.
- * It never decides anything the tick doesn't independently decide — this is a read model.
+ * It never decides anything the tick doesn't independently decide â€” this is a read model.
  */
 function deriveCondition(
   item: IssueStateRecord,
@@ -74,7 +74,7 @@ function deriveCondition(
     lastRun?.status === 'awaiting-approval' ||
     lastRun?.sentinel === 'BLOCKED' ||
     // A run record can never be written with this sentinel value again
-    // (ADR 0002), but a pre-existing run record on disk still can be —
+    // (ADR 0002), but a pre-existing run record on disk still can be â€”
     // legacyTolerantRunnerSentinelSchema keeps it readable, so this branch
     // stays to classify it correctly rather than falling through to 'ready'.
     lastRun?.sentinel === 'AWAITING_APPROVAL'
@@ -122,7 +122,7 @@ function activeChildRunsForItem(
   isWatcher: boolean;
   runnerName?: string;
   runnerKind?: string;
-  tier?: string;
+  runnerPool?: string;
 }> {
   return runs
     .filter(
@@ -141,7 +141,7 @@ function activeChildRunsForItem(
       isWatcher: run.metadata?.watcher === true,
       ...(run.routing?.runnerName === undefined ? {} : { runnerName: run.routing.runnerName }),
       ...(run.routing?.runnerKind === undefined ? {} : { runnerKind: run.routing.runnerKind }),
-      ...(run.routing?.tier === undefined ? {} : { tier: run.routing.tier }),
+      ...(run.routing?.runnerPool === undefined ? {} : { runnerPool: run.routing.runnerPool }),
     }));
 }
 
@@ -199,7 +199,9 @@ export async function buildBoard(input: { stateStore: StateStore; config: WakeCo
               ...(lastRun.routing?.runnerName === undefined
                 ? {}
                 : { runnerName: lastRun.routing.runnerName }),
-              ...(lastRun.routing?.tier === undefined ? {} : { tier: lastRun.routing.tier }),
+              ...(lastRun.routing?.runnerPool === undefined
+                ? {}
+                : { runnerPool: lastRun.routing.runnerPool }),
             }
           : undefined;
 
@@ -261,7 +263,7 @@ export async function buildStatus(input: {
   const runnerLockLive = runnerLock.present && runnerLock.pidAlive === true;
 
   // A quota-paused runner (#67) no longer stops the loop - routing falls
-  // sideways to another candidate in the tier, so only the manual pause file
+  // sideways to another candidate in the runnerPool, so only the manual pause file
   // is a hard stop here. Per-runner health is surfaced separately below.
   //
   // Intake (tick.lock) and agent execution (runner.lock) are separate locks -
@@ -607,7 +609,7 @@ export type MetricsMetric =
   | 'runs-by-repo'
   | 'runs-by-runner'
   | 'runs-by-model'
-  | 'runs-by-tier'
+  | 'runs-by-runnerPool'
   | 'tokens-over-time'
   | 'tokens-by-action'
   | 'tokens-by-runner'
@@ -642,7 +644,7 @@ const metricsMetrics = new Set<MetricsMetric>([
   'runs-by-repo',
   'runs-by-runner',
   'runs-by-model',
-  'runs-by-tier',
+  'runs-by-runnerPool',
   'tokens-over-time',
   'tokens-by-action',
   'tokens-by-runner',
@@ -891,7 +893,7 @@ function runnerKey(run: RunRecord): string {
 }
 
 function tierKey(run: RunRecord): string {
-  return run.routing?.tier ?? 'unknown';
+  return run.routing?.runnerPool ?? 'unknown';
 }
 
 function modelKey(run: RunRecord, config: WakeConfig): string {
@@ -1121,7 +1123,7 @@ export async function buildMetrics(input: {
           rows: groupCount(runs, (run) => modelKey(run, input.config)),
         },
       };
-    case 'runs-by-tier':
+    case 'runs-by-runnerPool':
       return {
         window,
         metric,
@@ -1129,7 +1131,7 @@ export async function buildMetrics(input: {
         summary,
         detail: {
           kind: 'run-counts' as const,
-          group: 'tier' as const,
+          group: 'runnerPool' as const,
           rows: groupCount(runs, tierKey),
         },
       };
@@ -1305,11 +1307,11 @@ export async function buildConfigView(input: {
 
   const routingTable = Object.entries(input.config.workflows).flatMap(([workflow, definition]) => {
     return Object.entries(definition.stages).map(([stage, route]) => {
-      const tier = route.tier ?? input.config.defaultTier;
-      const candidates = input.config.tiers[tier] ?? [];
+      const runnerPool = route.runnerPool ?? input.config.defaultRunnerPool;
+      const candidates = input.config.runnerPools[runnerPool] ?? [];
       const runnerName = route.runner ?? candidates[0];
       const runner = runnerName !== undefined ? input.config.runners[runnerName] : undefined;
-      // Full fallback order for the tier (#67), each candidate's current pause
+      // Full fallback order for the runnerPool (#67), each candidate's current pause
       // state so the UI can show not just who's active but who Wake would fall
       // sideways to next, and rotate back to once a pause expires.
       const candidateHealth = candidates.map((name) => {
@@ -1322,7 +1324,7 @@ export async function buildConfigView(input: {
         workflow,
         stage,
         action: route.action,
-        tier,
+        runnerPool,
         runnerName,
         runnerKind: runner?.kind,
         model: runner !== undefined && runner.kind !== 'fake' ? runner.model : undefined,

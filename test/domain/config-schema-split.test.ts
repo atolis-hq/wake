@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 
 import {
   wakeConfigSchema,
@@ -24,10 +24,17 @@ describe('wakeConfigSchema split', () => {
     expect(infraKeys.size + workflowKeys.size).toBe(allKeys.length);
   });
 
-  it('keeps runners/tiers/workflows/commands together in the workflow schema', () => {
+  it('keeps runners/runnerPools/workflows/commands together in the workflow schema', () => {
     const workflowKeys = Object.keys(wakeWorkflowConfigSchema.shape).sort();
     expect(workflowKeys).toEqual(
-      ['commands', 'defaultTier', 'runners', 'tiers', 'workflowSelectors', 'workflows'].sort(),
+      [
+        'commands',
+        'defaultRunnerPool',
+        'runners',
+        'runnerPools',
+        'workflowSelectors',
+        'workflows',
+      ].sort(),
     );
   });
 

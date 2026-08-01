@@ -1,4 +1,4 @@
-import { execFile as nodeExecFile } from 'node:child_process';
+﻿import { execFile as nodeExecFile } from 'node:child_process';
 import { access } from 'node:fs/promises';
 import { promisify } from 'node:util';
 
@@ -9,7 +9,7 @@ import { loadPromptTemplate } from '../adapters/runner/prompt-templates.js';
 const execFile = promisify(nodeExecFile);
 // Some CLIs (observed with Cursor's `agent --version`) take 5-6s to exit
 // when stdout isn't a TTY, likely due to a background update/telemetry
-// check — keep this comfortably above that or the probe kills a CLI that
+// check â€” keep this comfortably above that or the probe kills a CLI that
 // is actually fine.
 const runnerVersionProbeTimeoutMs = 20_000;
 
@@ -29,7 +29,7 @@ function activeRunnerNames(config: WakeConfig, runnerOverride: string | undefine
     return names;
   }
 
-  for (const candidates of Object.values(config.tiers)) {
+  for (const candidates of Object.values(config.runnerPools)) {
     for (const candidate of candidates) {
       names.add(candidate);
     }

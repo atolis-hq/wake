@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+﻿import { beforeEach, describe, expect, it } from 'vitest';
 import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -25,8 +25,8 @@ describe('tick runner', () => {
       if (claudeHaikuEntry?.kind === 'claude') {
         claudeHaikuEntry.timeoutMs = 60_000;
       }
-      config.tiers.light = ['claude-haiku'];
-      config.tiers.standard = ['claude-haiku'];
+      config.runnerPools.light = ['claude-haiku'];
+      config.runnerPools.standard = ['claude-haiku'];
       let runnerCallCount = 0;
 
       await store.writeIssueState({
@@ -104,7 +104,7 @@ describe('tick runner', () => {
 
     // Identity proof, not a perf proof: the run record's repo/issueNumber are a
     // human-readable snapshot, never the way its work item is found. Here the
-    // ticket has since moved repo (spec D3's motivating case — a GitHub transfer
+    // ticket has since moved repo (spec D3's motivating case â€” a GitHub transfer
     // assigns a new number in the target repo), so the projection is reachable
     // ONLY by the work id the record carries. Under a scan of `issue` snapshots
     // this run orphans and is wrongly superseded instead of reconciled.
@@ -116,10 +116,10 @@ describe('tick runner', () => {
       if (claudeHaikuEntry?.kind === 'claude') {
         claudeHaikuEntry.timeoutMs = 60_000;
       }
-      // Staleness uses the max timeout across runners active in tiers, so the
-      // tiers must be pinned to the 60s runner for the run to read as stale.
-      config.tiers.light = ['claude-haiku'];
-      config.tiers.standard = ['claude-haiku'];
+      // Staleness uses the max timeout across runners active in runnerPools, so the
+      // runnerPools must be pinned to the 60s runner for the run to read as stale.
+      config.runnerPools.light = ['claude-haiku'];
+      config.runnerPools.standard = ['claude-haiku'];
 
       await store.writeIssueState({
         schemaVersion: 1,
@@ -197,8 +197,8 @@ describe('tick runner', () => {
       if (claudeHaikuEntry?.kind === 'claude') {
         claudeHaikuEntry.timeoutMs = 60_000;
       }
-      config.tiers.light = ['claude-haiku'];
-      config.tiers.standard = ['claude-haiku'];
+      config.runnerPools.light = ['claude-haiku'];
+      config.runnerPools.standard = ['claude-haiku'];
 
       await store.writeIssueState({
         schemaVersion: 1,

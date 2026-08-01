@@ -40,7 +40,7 @@ const activation = {
   ordinal: 1,
   activity: activityName('implement'),
   input: { prompt: 'ship' },
-  execution: { workspace: 'branch', tier: 'standard' },
+  execution: { workspace: 'branch', runnerPool: 'standard' },
 } as const;
 const signal = {
   kind: signalName('review-accepted'),

@@ -1,4 +1,4 @@
-import { setTimeout as delay } from 'node:timers/promises';
+﻿import { setTimeout as delay } from 'node:timers/promises';
 import { access, appendFile, mkdir, readFile, readdir, rename } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
@@ -791,7 +791,7 @@ export function createStateStore({ wakeRoot }: { wakeRoot: string }) {
       // state/ is flat: state/<workId>.json, plus state/archive/ and the
       // reverse index's own state/index/ shards. Only those two subdirectories
       // exist, and index/ holds `{ resourceUri: workItemKey }` maps that are
-      // not projections at all — skip it rather than parse-and-discard.
+      // not projections at all â€” skip it rather than parse-and-discard.
       const visit = async (dir: string, isArchive: boolean): Promise<void> => {
         const entries = await readdir(dir, { withFileTypes: true }).catch((error) => {
           if (isMissingPathError(error)) {
@@ -918,7 +918,7 @@ export function createStateStore({ wakeRoot }: { wakeRoot: string }) {
     // Only the manual pause file is a hard stop on the whole loop. Quota
     // pauses are now per-runner (ledger.runners, #67): a paused runner skips
     // itself via routing fallback inside a tick, but the tick loop itself must
-    // keep running so polling, delivery retries, and other tiers still make
+    // keep running so polling, delivery retries, and other runnerPools still make
     // progress while one runner is paused.
     async isPaused(_now = new Date()): Promise<boolean> {
       try {

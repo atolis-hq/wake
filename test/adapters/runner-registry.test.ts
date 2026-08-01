@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 
 import { createDefaultWakeConfig } from '../../src/config/defaults.js';
 import {
@@ -7,12 +7,12 @@ import {
 } from '../../src/adapters/runner/runner-registry.js';
 
 describe('runner registry routing', () => {
-  it('resolves stage tiers to ordered named runner candidates', () => {
+  it('resolves stage runnerPools to ordered named runner candidates', () => {
     const config = createDefaultWakeConfig('/tmp/wake');
     config.runners['fake-light'] = { kind: 'fake', cli: 'Fake Light' };
     config.runners['fake-deep'] = { kind: 'fake', cli: 'Fake Deep' };
-    config.tiers.light = ['fake-light'];
-    config.tiers.standard = ['fake-deep', 'fake-light'];
+    config.runnerPools.light = ['fake-light'];
+    config.runnerPools.standard = ['fake-deep', 'fake-light'];
 
     expect(
       resolveRunnerRouting({
@@ -23,7 +23,7 @@ describe('runner registry routing', () => {
     ).toMatchObject({
       runnerName: 'fake-light',
       runnerKind: 'fake',
-      tier: 'light',
+      runnerPool: 'light',
     });
 
     expect(
@@ -35,15 +35,15 @@ describe('runner registry routing', () => {
     ).toMatchObject({
       runnerName: 'fake-deep',
       runnerKind: 'fake',
-      tier: 'standard',
+      runnerPool: 'standard',
     });
   });
 
-  it('falls sideways to the next tier candidate when the primary runner is quota-paused (#67)', () => {
+  it('falls sideways to the next runnerPool candidate when the primary runner is quota-paused (#67)', () => {
     const config = createDefaultWakeConfig('/tmp/wake');
     config.runners['fake-primary'] = { kind: 'fake', cli: 'Fake Primary' };
     config.runners['fake-secondary'] = { kind: 'fake', cli: 'Fake Secondary' };
-    config.tiers.standard = ['fake-primary', 'fake-secondary'];
+    config.runnerPools.standard = ['fake-primary', 'fake-secondary'];
 
     const now = new Date('2026-07-07T22:30:00.000Z');
     const ledger = {
@@ -78,7 +78,7 @@ describe('runner registry routing', () => {
   it('allows an early recovery probe on an estimated pause once the probe interval elapses', () => {
     const config = createDefaultWakeConfig('/tmp/wake');
     config.runners['fake-primary'] = { kind: 'fake', cli: 'Fake Primary' };
-    config.tiers.standard = ['fake-primary'];
+    config.runnerPools.standard = ['fake-primary'];
 
     const lastFailureAt = '2026-07-07T22:30:00.000Z';
     const ledger = {
@@ -124,7 +124,7 @@ describe('runner registry routing', () => {
   it('does not probe early on a reported (real) reset time - trusts it for its full duration', () => {
     const config = createDefaultWakeConfig('/tmp/wake');
     config.runners['fake-primary'] = { kind: 'fake', cli: 'Fake Primary' };
-    config.tiers.standard = ['fake-primary'];
+    config.runnerPools.standard = ['fake-primary'];
 
     const ledger = {
       schemaVersion: 1 as const,
@@ -149,11 +149,11 @@ describe('runner registry routing', () => {
     ).toBeNull();
   });
 
-  it('returns null when every tier candidate is quota-paused', () => {
+  it('returns null when every runnerPool candidate is quota-paused', () => {
     const config = createDefaultWakeConfig('/tmp/wake');
     config.runners['fake-primary'] = { kind: 'fake', cli: 'Fake Primary' };
     config.runners['fake-secondary'] = { kind: 'fake', cli: 'Fake Secondary' };
-    config.tiers.standard = ['fake-primary', 'fake-secondary'];
+    config.runnerPools.standard = ['fake-primary', 'fake-secondary'];
 
     const now = new Date('2026-07-07T22:30:00.000Z');
     const ledger = {
@@ -197,17 +197,17 @@ describe('runner registry routing', () => {
     const config = createDefaultWakeConfig('/tmp/wake');
     config.runners['fake-review'] = { kind: 'fake', cli: 'Fake Review' };
     config.runners['fake-inspect'] = { kind: 'fake', cli: 'Fake Inspect' };
-    config.tiers.standard = ['fake-review'];
-    config.tiers.deep = ['fake-inspect'];
+    config.runnerPools.standard = ['fake-review'];
+    config.runnerPools.deep = ['fake-inspect'];
     config.commands.codereview = {
       action: 'codereview',
       workspace: 'read-only',
-      tier: 'standard',
+      runnerPool: 'standard',
     };
     config.commands.inspect = {
       action: 'codereview',
       workspace: 'read-only',
-      tier: 'deep',
+      runnerPool: 'deep',
     };
 
     expect(
@@ -219,16 +219,16 @@ describe('runner registry routing', () => {
       }),
     ).toMatchObject({
       runnerName: 'fake-inspect',
-      tier: 'deep',
-      reason: 'command codereview tier deep selected runner fake-inspect',
+      runnerPool: 'deep',
+      reason: 'command codereview runnerPool deep selected runner fake-inspect',
     });
   });
 
   it('uses workflow stage routing for stage runner selection', () => {
     const config = createDefaultWakeConfig('/tmp/wake');
     config.runners['fake-workflow'] = { kind: 'fake', cli: 'Fake Workflow' };
-    config.tiers.standard = ['fake-workflow'];
-    config.workflows.default!.stages.implement!.tier = 'standard';
+    config.runnerPools.standard = ['fake-workflow'];
+    config.workflows.default!.stages.implement!.runnerPool = 'standard';
 
     expect(
       resolveRunnerRouting({
@@ -238,14 +238,14 @@ describe('runner registry routing', () => {
       }),
     ).toMatchObject({
       runnerName: 'fake-workflow',
-      tier: 'standard',
+      runnerPool: 'standard',
     });
   });
 
   it('executes through the registry path and stamps routing on the result', async () => {
     const config = createDefaultWakeConfig('/tmp/wake');
     config.runners['fake-light'] = { kind: 'fake', cli: 'Fake Light' };
-    config.tiers.light = ['fake-light'];
+    config.runnerPools.light = ['fake-light'];
 
     const runner = createRegistryRunner({ config, cwd: process.cwd() });
     const result = await runner.run({
@@ -286,7 +286,7 @@ describe('runner registry routing', () => {
     expect(result.routing).toMatchObject({
       runnerName: 'fake-light',
       runnerKind: 'fake',
-      tier: 'light',
+      runnerPool: 'light',
     });
   });
 });

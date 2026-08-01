@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+﻿import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -106,7 +106,7 @@ describe('issue state schema', () => {
   it('requires an explicit workItemKey rather than deriving one from the issue', () => {
     // Identity is minted by the resolver and stamped on the record; a
     // projection that arrives without one is a bug, not a record to guess a
-    // key for (spec §1/D1).
+    // key for (spec Â§1/D1).
     expect(() =>
       parseIssueStateRecord({
         schemaVersion: 1,
@@ -170,10 +170,10 @@ describe('issue state schema', () => {
     ).toThrow(/stage/i);
   });
 
-  // The legacy-stage normalization tests ('refined'/'failed'/'blocked' →
+  // The legacy-stage normalization tests ('refined'/'failed'/'blocked' â†’
   // canonical stages) are gone with the .preprocess() that implemented them.
   // The sanctioned fresh start of .wake/ means there is no event log or
-  // projection written under the old vocabulary left to read (spec §8).
+  // projection written under the old vocabulary left to read (spec Â§8).
 });
 
 describe('run and event schemas', () => {
@@ -242,7 +242,7 @@ describe('run and event schemas', () => {
   // Run records are Wake-owned state that Wake itself writes, so the work id is
   // always in hand at the write site. Required rather than optional: an optional
   // key would let a record exist that can only be resolved by scanning issue
-  // snapshots — the ticket-shaped ambiguity minted identity exists to remove.
+  // snapshots â€” the ticket-shaped ambiguity minted identity exists to remove.
   it('rejects run records with no workItemKey', () => {
     expect(() =>
       parseRunRecord({
@@ -285,7 +285,7 @@ describe('run and event schemas', () => {
     });
 
     // Taken verbatim from the envelope: the resolver stamped it, and nothing
-    // in the parse namespaces, derives, or rewrites it (spec §8).
+    // in the parse namespaces, derives, or rewrites it (spec Â§8).
     expect(event.workItemKey).toBe('work-01JZ0000000000000000000012');
     expect(event.streamScope).toBe('work-item');
   });
@@ -453,9 +453,9 @@ describe('run and event schemas', () => {
     expect(parseRunnerResultSentinel('notes DONE more notes\nDONE')).toBe('DONE');
   });
 
-  // The legacy `blockedFromAction` → `lastRunAction` context normalization is
+  // The legacy `blockedFromAction` â†’ `lastRunAction` context normalization is
   // gone with the .preprocess() that implemented it: the fresh start leaves no
-  // projection written under the old key (spec §8, "no migration code").
+  // projection written under the old key (spec Â§8, "no migration code").
 
   it('parses the last valid wake-result envelope and keeps only prose before it as body', () => {
     const parsed = parseRunnerResult(
@@ -610,7 +610,7 @@ describe('run and event schemas', () => {
   });
 
   it('does not match a sentinel word embedded in prose on the last line', () => {
-    // Last line contains prose, not an exact sentinel — should fall back to FAILED
+    // Last line contains prose, not an exact sentinel â€” should fall back to FAILED
     expect(parseRunnerResultSentinel('notes DONE more notes FAILED')).toBe('BLOCKED');
     expect(
       parseRunnerResultSentinel(
@@ -799,7 +799,7 @@ describe('run and event schemas', () => {
     expect(entry.smokeModel).toBe('gpt-5.4-mini');
   });
 
-  it('accepts named runners and workflow tier routing', () => {
+  it('accepts named runners and workflow runnerPool routing', () => {
     const config = parseWakeConfig({
       schemaVersion: 1,
       paths: {
@@ -822,19 +822,19 @@ describe('run and event schemas', () => {
           kind: 'fake',
         },
       },
-      tiers: {
+      runnerPools: {
         light: ['claude-haiku'],
         standard: ['claude-haiku'],
         deep: ['claude-opus', 'claude-haiku'],
       },
-      defaultTier: 'standard',
+      defaultRunnerPool: 'standard',
       workflows: {
         default: {
           stages: {
             refine: {
               action: 'refine',
               workspace: 'read-only',
-              tier: 'light',
+              runnerPool: 'light',
               onDone: 'refined',
             },
             refined: {
@@ -849,7 +849,7 @@ describe('run and event schemas', () => {
     });
 
     expect(config.runners['claude-haiku']?.kind).toBe('claude');
-    expect(config.tiers.deep).toEqual(['claude-opus', 'claude-haiku']);
+    expect(config.runnerPools.deep).toEqual(['claude-opus', 'claude-haiku']);
     expect(config.workflows.default?.stages.refined?.runner).toBe('claude-opus');
   });
 
@@ -1006,13 +1006,13 @@ describe('workflow config schema', () => {
       refine: {
         action: 'refine',
         workspace: 'read-only',
-        tier: 'light',
+        runnerPool: 'light',
         onDone: 'implement',
       },
       implement: {
         action: 'implement',
         workspace: 'branch',
-        tier: 'standard',
+        runnerPool: 'standard',
         onDone: 'done',
       },
     });
@@ -1027,13 +1027,13 @@ describe('workflow config schema', () => {
             refine: {
               action: 'refine',
               workspace: 'read-only',
-              tier: 'light',
+              runnerPool: 'light',
               onDone: 'implement',
             },
             implement: {
               action: 'implement',
               workspace: 'branch',
-              tier: 'standard',
+              runnerPool: 'standard',
               onDone: 'done',
             },
           },
@@ -1043,7 +1043,7 @@ describe('workflow config schema', () => {
             triage: {
               action: 'refine',
               workspace: 'read-only',
-              tier: 'light',
+              runnerPool: 'light',
               onDone: 'done',
             },
           },
@@ -1104,12 +1104,12 @@ describe('workflow config schema', () => {
     expect(config.commands.ask).toEqual({
       action: 'ask',
       workspace: 'read-only',
-      tier: 'light',
+      runnerPool: 'light',
     });
     expect(config.commands.codereview).toEqual({
       action: 'codereview',
       workspace: 'read-only',
-      tier: 'standard',
+      runnerPool: 'standard',
     });
   });
 

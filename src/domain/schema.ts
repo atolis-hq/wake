@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+﻿import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
@@ -179,7 +179,7 @@ const runnerEntrySchema = z.discriminatedUnion('kind', [
 
 const stageRouteSchema = z.object({
   action: identifierSchema.optional(),
-  tier: z.string().optional(),
+  runnerPool: z.string().optional(),
   runner: z.string().optional(),
   promptContext: z.record(z.string(), z.unknown()).optional(),
 });
@@ -187,7 +187,7 @@ const stageRouteSchema = z.object({
 const runnerRoutingSchema = z.object({
   runnerName: z.string(),
   runnerKind: z.enum(['fake', 'claude', 'codex', 'cursor']),
-  tier: z.string().optional(),
+  runnerPool: z.string().optional(),
   reason: z.string(),
 });
 
@@ -262,7 +262,7 @@ export const eventEnvelopeSourceRefsSchema = z.object({
   resourceUri: resourceUriSchema.optional(),
   // An adapter-supplied hint: the resourceUri of the resource this one
   // "belongs to" for correlation purposes (e.g. a PR review-thread comment's
-  // parent PR). Opaque to core — never parsed, only used as a fallback key
+  // parent PR). Opaque to core â€” never parsed, only used as a fallback key
   // for resourceIndex.resolve() when resourceUri itself misses the index.
   // The adapter that emits an event is the only party allowed to know its
   // own locator grammar; this keeps that knowledge out of core/.
@@ -275,7 +275,7 @@ export const eventEnvelopeSourceRefsSchema = z.object({
  * returns null, so these events are durable and inspectable via the event
  * log but must never materialize a projection or an index entry. Exported
  * from here (rather than only living in tick-runner.ts, which mints these
- * events) so projection-updater.ts's fold can also recognize and skip it —
+ * events) so projection-updater.ts's fold can also recognize and skip it â€”
  * an unqualified event's sourceEventType is still `ticket.upsert` /
  * `fake.issue.upsert` / etc., which the fold would otherwise happily turn
  * into a projection the first time it sees this key with no current record.
@@ -299,7 +299,7 @@ export const correlationRetractedPayloadSchema = z.object({
 });
 
 // Warning event emitted when a second `primary` registration lands on an
-// already-claimed URI (ADR 0001 §6). Fold behavior lives in the projection.
+// already-claimed URI (ADR 0001 Â§6). Fold behavior lives in the projection.
 export const correlationPrimaryConflictPayloadSchema = z.object({
   resourceUri: resourceUriSchema,
   incumbentWorkItemKey: z.string(),
@@ -307,7 +307,7 @@ export const correlationPrimaryConflictPayloadSchema = z.object({
 
 // Folded shape of a `wake.correlation.registered`/`wake.correlation.retracted`
 // event, one entry per resourceUri currently held by this work item
-// (ADR 0001 §5). `registeredAt` comes from the folding event's `occurredAt`.
+// (ADR 0001 Â§5). `registeredAt` comes from the folding event's `occurredAt`.
 export const correlatedResourceSchema = z.object({
   resourceUri: resourceUriSchema,
   role: correlationRoleSchema,
@@ -354,9 +354,9 @@ export const retrySafetySchema = z.enum([
   'NOT_RETRYABLE',
 ]);
 
-// Typed `context` — every field is optional so an on-disk projection missing
+// Typed `context` â€” every field is optional so an on-disk projection missing
 // some/all of them (pre-dating this schema, or simply untouched since) still
-// parses. See docs/superpowers/specs/2026-07-28-canonical-work-item-status-design.md §4/§8.
+// parses. See docs/superpowers/specs/2026-07-28-canonical-work-item-status-design.md Â§4/Â§8.
 export const issueContextSchema = z.object({
   // Retry/failure bookkeeping, folded from RUN_COMPLETED (projection-updater.ts).
   failureCount: z.number().int().nonnegative().optional(),
@@ -378,16 +378,16 @@ export const issueContextSchema = z.object({
   pendingApprovalAction: z.string().optional(),
   pendingApprovalAllowAutoApproval: z.boolean().optional(),
   // Workflow pinned at mint time (WORKFLOW_SELECTED_EVENT); re-read at every
-  // label write instead of trusting a threaded local (workflow-name-drift, §6).
+  // label write instead of trusting a threaded local (workflow-name-drift, Â§6).
   workflow: z.string().optional(),
-  // Canonical status — see work-item-status.ts. Additive alongside
-  // lastRunSentinel, not a replacement for it (§3).
+  // Canonical status â€” see work-item-status.ts. Additive alongside
+  // lastRunSentinel, not a replacement for it (Â§3).
   status: workItemStatusSchema.optional(),
   changesRequestedCount: z.number().int().nonnegative().optional(),
   // Feedback body threaded into the next auto-revise prompt as
-  // promptContextOverrides.parentPendingReviewBody (§5).
+  // promptContextOverrides.parentPendingReviewBody (Â§5).
   changesRequestedFeedback: z.string().optional(),
-  // Orthogonal facts — not folded into `status` (§2).
+  // Orthogonal facts â€” not folded into `status` (Â§2).
   frozen: z.object({ at: isoTimestampSchema, by: z.string() }).optional(),
   deleted: z.object({ at: isoTimestampSchema, by: z.string() }).optional(),
   scheduled: z.boolean().optional(),
@@ -485,9 +485,9 @@ export const runRecordSchema = z.preprocess(
     // write site, and an optional key would lie about runtime while re-admitting
     // the ticket-shaped ambiguity minted identity exists to remove.
     workItemKey: z.string(),
-    // Human-readable representation content only — the ticket this run was
+    // Human-readable representation content only â€” the ticket this run was
     // launched against (same reasoning as the projection's retained `issue`
-    // snapshot, spec §9). Never used to find the work item: a transferred issue
+    // snapshot, spec Â§9). Never used to find the work item: a transferred issue
     // gets a new repo/number while the work item and its runs persist (spec D3).
     repo: z.string(),
     issueNumber: z.number().int().positive(),
@@ -546,7 +546,7 @@ const workflowTriggerScheduleSchema = z.object({
 
 // Matches GitHub's PullRequestMergeMethod GraphQL enum. GitHub's
 // enablePullRequestAutoMerge mutation defaults to MERGE when unspecified,
-// which fails outright on a repo that only allows squash/rebase merges — so
+// which fails outright on a repo that only allows squash/rebase merges â€” so
 // this must be explicit rather than inferred.
 export const mergeMethodSchema = z.enum(['MERGE', 'SQUASH', 'REBASE']);
 
@@ -569,7 +569,7 @@ const approvedMergePolicySchema = z
 
 const watchSuccessPolicySchema = z.object({
   // Resolve the watched parent stage's pending approval gate when the child
-  // workflow run completes DONE — the child's sentinel is its verdict.
+  // workflow run completes DONE â€” the child's sentinel is its verdict.
   approve: z.boolean().default(false),
   merge: approvedMergePolicySchema.optional(),
 });
@@ -844,25 +844,25 @@ const wakeConfigBaseSchema = z.object({
       timeoutMs: 30 * 60 * 1000,
     },
   }),
-  tiers: z.record(z.string(), z.array(z.string().min(1)).min(1)).default({
+  runnerPools: z.record(z.string(), z.array(z.string().min(1)).min(1)).default({
     light: ['fake'],
     standard: ['fake'],
     deep: ['fake'],
   }),
-  defaultTier: z.string().default('standard'),
+  defaultRunnerPool: z.string().default('standard'),
   workflows: z.record(identifierSchema, workflowDefinitionSchema).default({
     default: {
       stages: {
         refine: {
           action: 'refine',
           workspace: 'read-only',
-          tier: 'light',
+          runnerPool: 'light',
           onDone: 'implement',
         },
         implement: {
           action: 'implement',
           workspace: 'branch',
-          tier: 'standard',
+          runnerPool: 'standard',
           onDone: 'done',
         },
       },
@@ -877,7 +877,7 @@ const wakeConfigBaseSchema = z.object({
         assign: {
           action: 'triage-assign',
           workspace: 'none',
-          tier: 'light',
+          runnerPool: 'light',
           onDone: 'done',
           promptContext: {
             triageCapacityAvailable: true,
@@ -893,12 +893,12 @@ const wakeConfigBaseSchema = z.object({
     ask: {
       action: 'ask',
       workspace: 'read-only',
-      tier: 'light',
+      runnerPool: 'light',
     },
     codereview: {
       action: 'codereview',
       workspace: 'read-only',
-      tier: 'standard',
+      runnerPool: 'standard',
     },
   }),
   ui: z
@@ -1014,8 +1014,8 @@ export const wakeInfraConfigSchema = wakeConfigBaseSchema.pick({
 
 export const wakeWorkflowConfigSchema = wakeConfigBaseSchema.pick({
   runners: true,
-  tiers: true,
-  defaultTier: true,
+  runnerPools: true,
+  defaultRunnerPool: true,
   workflows: true,
   workflowSelectors: true,
   commands: true,
@@ -1239,8 +1239,8 @@ export function parseClaudePrintResult(input: unknown) {
 function synthesizeBodyFromEnvelope(envelope: z.infer<typeof wakeResultEnvelopeSchema>): string {
   const labels: Record<string, string> = {
     DONE: 'Run completed.',
-    REJECTED: 'Run rejected — needs changes.',
-    BLOCKED: 'Run blocked — needs input.',
+    REJECTED: 'Run rejected â€” needs changes.',
+    BLOCKED: 'Run blocked â€” needs input.',
     FAILED: 'Run failed.',
   };
   return labels[envelope.status] ?? 'Run finished.';
@@ -1309,7 +1309,7 @@ export function parseRunnerResult(result: string): {
   const lines = result.split('\n');
   const lastLine = lines
     .map((line) => line.trim())
-    // Skip closing code fence lines — they appear as the last non-empty line when the
+    // Skip closing code fence lines â€” they appear as the last non-empty line when the
     // sentinel is embedded inside the fenced block or when a plain ``` fence is used.
     .filter((line) => line.length > 0 && line !== '```')
     .at(-1);
@@ -1321,7 +1321,7 @@ export function parseRunnerResult(result: string): {
     return {
       status: body.length === 0 ? 'FAILED' : 'BLOCKED',
       body,
-      // No structured envelope AND no recognizable bare sentinel at all —
+      // No structured envelope AND no recognizable bare sentinel at all â€”
       // distinct from 'degraded' (a deliberate bare-sentinel reply) so
       // callers can retry a runner that simply forgot the trailer instead
       // of trusting a fabricated BLOCKED/FAILED default.

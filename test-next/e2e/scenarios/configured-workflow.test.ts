@@ -41,8 +41,8 @@ describe('E2E-CONFIG-001 configured workflow', () => {
       resources: {},
       execution: {
         agentRunners: { fake: { kind: 'fake' } },
-        tiers: { standard: ['fake'] },
-        defaultTier: 'standard',
+        runnerPools: { standard: ['fake'] },
+        defaultRunnerPool: 'standard',
       },
       orchestration: {
         workflows: {
@@ -94,6 +94,6 @@ describe('E2E-CONFIG-001 configured workflow', () => {
     expect((await runtime.orchestration.get(workflow.workflowInstanceId))?.status).toBe(
       'completed',
     );
-    expect(runtime.config.execution.defaultTier).toBe('standard');
+    expect(runtime.config.execution.defaultRunnerPool).toBe('standard');
   });
 });

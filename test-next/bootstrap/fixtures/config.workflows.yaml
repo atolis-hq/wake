@@ -7,7 +7,7 @@ workflows:
           prompt: implement
         execution:
           workspace: none
-          tier: standard
+          runnerPool: standard
         on:
           done:
             then: done

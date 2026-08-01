@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+﻿import { beforeEach, describe, expect, it } from 'vitest';
 import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -96,7 +96,7 @@ describe('tick runner', () => {
       routing: {
         runnerName: 'claude-haiku',
         runnerKind: 'claude',
-        tier: 'light',
+        runnerPool: 'light',
         reason: 'test fixture stale run',
       },
     });
@@ -166,7 +166,7 @@ describe('tick runner', () => {
 
       // If the registration were stamped with the tick's own `nowIso` it would
       // sort before the 12:00:01 upsert that creates the projection, fold
-      // against `current === null`, and be silently dropped — leaving these two
+      // against `current === null`, and be silently dropped â€” leaving these two
       // assertions empty/undefined while the registration event still on record
       // stops any later tick from re-registering it. Permanent, silent loss.
       const after = await findByIssueRef(store, { repo: 'atolis-hq/wake', issueNumber: 62 });
@@ -192,7 +192,7 @@ describe('tick runner', () => {
 
       // A *sequenced* clock, not a frozen one. Every other fixture in this file
       // pins the tick clock and the source clock to the same instant, which makes
-      // every event in the tick tie on ingestedAt — and a tie is invisible here,
+      // every event in the tick tie on ingestedAt â€” and a tie is invisible here,
       // because the sort in rebuildFromEvents is stable and therefore silently
       // preserves append order, making replay accidentally correct. Only a clock
       // that advances across calls reproduces the production relationship: the
@@ -243,7 +243,7 @@ describe('tick runner', () => {
         'run:refine:claimed',
       );
 
-      // state/ is a rebuildable cache over events/ — nothing more.
+      // state/ is a rebuildable cache over events/ â€” nothing more.
       await rm(join(store.paths.dataRoot, 'state'), { recursive: true, force: true });
       await createProjectionUpdater({ stateStore: store, resourceIndex }).rebuildFromEvents(
         await store.listEventEnvelopes(),
@@ -255,7 +255,7 @@ describe('tick runner', () => {
       // projection they fold into. An event stamped from a frozen tick-start
       // snapshot folds against `current === null` on replay and is silently
       // discarded, costing the replayed projection its claimed stageHistory
-      // entry and recentEventIds — a divergence from the live fold.
+      // entry and recentEventIds â€” a divergence from the live fold.
       expect(after?.wake.stageHistory).toEqual(before?.wake.stageHistory);
       expect(after?.wake.lastRunId).toBe(before?.wake.lastRunId);
       expect(after?.context).toEqual(before?.context);
@@ -289,7 +289,7 @@ describe('tick runner', () => {
           // every read, so `eventStampNow()` cannot advance past the poll the way
           // a real clock does; polling at 12:00:01 would sort every Wake-stamped
           // event before the upsert that creates the projection and drop them on
-          // replay — a frozen-clock artifact, not a production defect.
+          // replay â€” a frozen-clock artifact, not a production defect.
           //
           // The cost is that this fixture cannot see ordering bugs: equal
           // timestamps tie, the stable sort keeps append order, and replay comes
@@ -350,10 +350,10 @@ describe('tick runner', () => {
       await projectionUpdater.rebuildFromEvents([prRegistration]);
 
       // A second, unrelated work item now shows up and tries to claim the same
-      // PR as its own primary — this must fold to a *real* secondary (a
+      // PR as its own primary â€” this must fold to a *real* secondary (a
       // registration on a uri another work item already holds as primary),
       // never an orphan one, and must record a primary-conflict event naming
-      // the incumbent (ADR 0001 §6). This is also the conflict path that
+      // the incumbent (ADR 0001 Â§6). This is also the conflict path that
       // appends an event mid-fold, which is exactly where replay divergence
       // would hide, so the rebuild guarantee below must hold across it too.
       const secondIssueUpsert = createEventEnvelope({
@@ -415,7 +415,7 @@ describe('tick runner', () => {
       }
 
       // A third and fourth work item whose *creation* order and *registration*
-      // order disagree — the fixture that catches grouped-by-workItemKey
+      // order disagree â€” the fixture that catches grouped-by-workItemKey
       // rebuild ordering bugs, which the #70/#90 pair above does not (there,
       // creation order and registration order happen to agree). Work item
       // #100 is created first (12:10) but registers the shared uri *second*
@@ -427,7 +427,7 @@ describe('tick runner', () => {
       // by workItemKey and folds group-by-group in Map insertion order would
       // instead process #100's group to completion first (its earliest event,
       // the 12:10 creation, appears first in the overall event array), making
-      // #100 the primary — silently disagreeing with the live result.
+      // #100 the primary â€” silently disagreeing with the live result.
       const thirdIssueUpsert = createEventEnvelope({
         eventId: 'fake-issue-atolis-hq-wake-100',
         workItemKey: workId(100),
@@ -534,7 +534,7 @@ describe('tick runner', () => {
       });
 
       // Fold strictly in chronological (ingestedAt) order, one event at a
-      // time, exactly like the live/incremental tick path does — this is the
+      // time, exactly like the live/incremental tick path does â€” this is the
       // "before" ground truth the rebuild must reproduce.
       for (const event of [
         thirdIssueUpsert,
@@ -618,7 +618,7 @@ describe('tick runner', () => {
         shardSnapshots.set(file, await readFile(join(indexDir, file), 'utf8'));
       }
 
-      // Delete state/ entirely — the projection AND the index are both
+      // Delete state/ entirely â€” the projection AND the index are both
       // rebuildable projections over events/, never source of truth.
       await rm(join(store.paths.dataRoot, 'state'), { recursive: true, force: true });
 
@@ -811,8 +811,8 @@ describe('tick runner', () => {
       config.sources.github.policy.requiredLabels = ['wake'];
       const runnerEntry = config.runners['claude-haiku'];
       if (runnerEntry?.kind === 'claude') runnerEntry.timeoutMs = 60_000;
-      config.tiers.light = ['claude-haiku'];
-      config.tiers.standard = ['claude-haiku'];
+      config.runnerPools.light = ['claude-haiku'];
+      config.runnerPools.standard = ['claude-haiku'];
 
       await writeEligibleIssueState({
         store,
@@ -1071,7 +1071,7 @@ describe('tick runner', () => {
               action: 'implement',
               workspace: 'branch',
               onDone: 'done',
-              tier: 'standard',
+              runnerPool: 'standard',
             },
           },
         },

@@ -1,4 +1,4 @@
-import type { AgentRunResult } from './contracts.js';
+﻿import type { AgentRunResult } from './contracts.js';
 import { LABELS_REQUESTED_EVENT, PUBLISH_INTENT_REQUESTED_EVENT } from '../domain/event-types.js';
 import { parseRunnerResult } from '../domain/schema.js';
 import type { AgentAction, EventEnvelope, IssueStateRecord } from '../domain/types.js';
@@ -22,7 +22,7 @@ function isReviewThreadResourceUri(resourceUri: string): boolean {
 // this work item has ever received," not "the comment that triggered the
 // currently completing run." Several needsWakeAction trigger paths (first
 // run, quota-failure retry, first workflow-stage pass) complete a run
-// with no fresh comment driving it at all — in those cases latestComment
+// with no fresh comment driving it at all â€” in those cases latestComment
 // may still be pointing at an older, already-handled comment from a
 // different surface (e.g. a PR) and must not be trusted as this run's
 // trigger. This mirrors policy-engine.ts's needsWakeAction "is there an
@@ -85,21 +85,21 @@ export function createPublishIntentEvent(input: {
       // Gated on isFreshTriggeringComment: latestComment is sticky (see
       // that function's comment) and several run-completion paths (first
       // run, quota retry, first workflow-stage pass) have no fresh
-      // comment behind them at all — for those, threading the stale
+      // comment behind them at all â€” for those, threading the stale
       // latestComment.resourceUri would misroute the reply to whatever
       // surface last happened to comment, even long after that comment
       // was already replied to.
       //
       // Never threads a pr-review-thread surface specifically: this is
       // Wake's own status, approval-request, or question card: a milestone
-      // message, not a targeted reply to one inline comment — burying it
+      // message, not a targeted reply to one inline comment â€” burying it
       // as a reply deep in a single review thread makes it easy to miss.
       // Omitting resourceUri here falls back to sourceOrigin in
       // sink-router.ts, landing it on the correlated issue (or, for a
       // standalone PR-only work item, GitHub's shared issue/PR comments
       // endpoint posts it as a top-level PR comment instead). Replies to
-      // individual review threads are the agent's own job now — see
-      // prompts/revise.md — via `gh api .../replies`, not this card.
+      // individual review threads are the agent's own job now â€” see
+      // prompts/revise.md â€” via `gh api .../replies`, not this card.
       ...(input.projection.latestComment?.resourceUri === undefined ||
       !isFreshTriggeringComment(input.projection) ||
       isReviewThreadResourceUri(input.projection.latestComment.resourceUri)
@@ -133,7 +133,7 @@ export function createPublishIntentEvent(input: {
         : {
             runnerName: input.runnerResult.routing.runnerName,
             runnerKind: input.runnerResult.routing.runnerKind,
-            runnerTier: input.runnerResult.routing.tier,
+            runnerPool: input.runnerResult.routing.runnerPool,
             runnerReason: input.runnerResult.routing.reason,
           }),
       ...(duration === undefined ? {} : { duration }),

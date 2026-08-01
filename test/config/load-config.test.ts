@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+﻿import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 
@@ -29,7 +29,7 @@ describe('loadWakeConfig', () => {
     await mkdir(join(dir, 'prompts'), { recursive: true });
     await writeFile(join(dir, 'prompts', 'refine.md'), 'refine prompt', 'utf8');
     // config.yaml omits promptsRoot (as a freshly scaffolded home does) but
-    // still carries a stale wakeRoot from a prior container-context read —
+    // still carries a stale wakeRoot from a prior container-context read â€”
     // promptsRoot must not be derived from that stale wakeRoot.
     await writeFile(join(dir, 'config.yaml'), 'paths:\n  wakeRoot: /wake\n', 'utf8');
 
@@ -56,7 +56,7 @@ describe('loadWakeConfig', () => {
   it('deep-merges every config*.yaml file present, sorted by filename', async () => {
     const dir = await mkdtemp(resolve(tmpdir(), 'wake-load-config-'));
     await writeFile(join(dir, 'config.yaml'), 'sandbox:\n  image: custom-image\n', 'utf8');
-    await writeFile(join(dir, 'config.workflows.yaml'), 'defaultTier: deep\n', 'utf8');
+    await writeFile(join(dir, 'config.workflows.yaml'), 'defaultRunnerPool: deep\n', 'utf8');
     await writeFile(
       join(dir, 'config.sources.yaml'),
       'sources:\n  github:\n    enabled: true\n    repos: [org/repo]\n',
@@ -66,7 +66,7 @@ describe('loadWakeConfig', () => {
     const config = await loadWakeConfig({ wakeRoot: dir });
 
     expect(config.sandbox.image).toBe('custom-image');
-    expect(config.defaultTier).toBe('deep');
+    expect(config.defaultRunnerPool).toBe('deep');
     expect(config.sources.github.enabled).toBe(true);
     expect(config.sources.github.repos).toEqual(['org/repo']);
   });
@@ -75,14 +75,14 @@ describe('loadWakeConfig', () => {
     const dir = await mkdtemp(resolve(tmpdir(), 'wake-load-config-'));
     await writeFile(
       join(dir, 'config.json'),
-      JSON.stringify({ sandbox: { image: 'legacy-image' }, defaultTier: 'deep' }),
+      JSON.stringify({ sandbox: { image: 'legacy-image' }, defaultRunnerPool: 'deep' }),
       'utf8',
     );
 
     const config = await loadWakeConfig({ wakeRoot: dir });
 
     expect(config.sandbox.image).toBe('legacy-image');
-    expect(config.defaultTier).toBe('deep');
+    expect(config.defaultRunnerPool).toBe('deep');
   });
 
   it('ignores the legacy config.json once any config*.yaml file exists', async () => {
@@ -128,16 +128,16 @@ describe('loadWakeConfig', () => {
 
     expect(config.sandbox.containerName).toBe(`wake-sandbox-${basename(dir).toLowerCase()}`);
     expect(Object.keys(config.runners).length).toBeGreaterThan(0);
-    expect(config.defaultTier).toBe('standard');
+    expect(config.defaultRunnerPool).toBe('standard');
   });
 
   it('lets the later-sorted config*.yaml file win when both set the same key', async () => {
     const dir = await mkdtemp(resolve(tmpdir(), 'wake-load-config-'));
-    await writeFile(join(dir, 'config.yaml'), 'defaultTier: standard\n', 'utf8');
-    await writeFile(join(dir, 'config.zzz-override.yaml'), 'defaultTier: deep\n', 'utf8');
+    await writeFile(join(dir, 'config.yaml'), 'defaultRunnerPool: standard\n', 'utf8');
+    await writeFile(join(dir, 'config.zzz-override.yaml'), 'defaultRunnerPool: deep\n', 'utf8');
 
     const config = await loadWakeConfig({ wakeRoot: dir });
 
-    expect(config.defaultTier).toBe('deep');
+    expect(config.defaultRunnerPool).toBe('deep');
   });
 });

@@ -313,7 +313,7 @@ export function formatWakeComment(
   const model = typeof payload.model === 'string' ? payload.model : undefined;
   const cli = typeof payload.cli === 'string' ? payload.cli : undefined;
   const runnerName = typeof payload.runnerName === 'string' ? payload.runnerName : undefined;
-  const runnerTier = typeof payload.runnerTier === 'string' ? payload.runnerTier : undefined;
+  const runnerPool = typeof payload.runnerPool === 'string' ? payload.runnerPool : undefined;
   const duration = typeof payload.duration === 'string' ? payload.duration : undefined;
   const tokens = typeof payload.tokens === 'string' ? payload.tokens : undefined;
   const cost = typeof payload.cost === 'string' ? payload.cost : undefined;
@@ -325,7 +325,7 @@ export function formatWakeComment(
   const details = [
     action === undefined ? undefined : `stage \`${action}\``,
     runnerName === undefined ? undefined : `runner \`${runnerName}\``,
-    runnerTier === undefined ? undefined : `tier \`${runnerTier}\``,
+    runnerPool === undefined ? undefined : `runnerPool \`${runnerPool}\``,
     cli === undefined ? undefined : `cli ${cli}`,
     model === undefined ? undefined : `model \`${model}\``,
     duration === undefined ? undefined : `duration ${duration}`,

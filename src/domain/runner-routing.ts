@@ -1,9 +1,9 @@
-import type { AgentAction, RunnerRouting, Stage, WakeConfig, WakeLedger } from './types.js';
+﻿import type { AgentAction, RunnerRouting, Stage, WakeConfig, WakeLedger } from './types.js';
 import { defaultWorkflowName } from './workflows.js';
 
 export function maxConfiguredRunnerTimeoutMs(config: WakeConfig): number {
   const activeRunnerNames = new Set(
-    Object.values(config.tiers).flatMap((candidates) => candidates),
+    Object.values(config.runnerPools).flatMap((candidates) => candidates),
   );
   for (const workflow of Object.values(config.workflows)) {
     for (const stageRoute of Object.values(workflow.stages)) {
@@ -58,9 +58,9 @@ function isRunnerPaused(input: { runnerName: string; ledger: WakeLedger | undefi
  *
  * A stage pinned directly to a runner (`stages[stage].runner`) has no
  * fallback list, so it always returns that runner regardless of health.
- * A stage routed through a `tier` walks the tier's ordered candidates and
+ * A stage routed through a `runnerPool` walks the runnerPool's ordered candidates and
  * skips any currently quota-paused per the ledger (#67 sideways fallback),
- * returning `null` only when every candidate in the tier is paused - callers
+ * returning `null` only when every candidate in the runnerPool is paused - callers
  * should treat that as "nothing to do this tick", not a config error. Once a
  * higher-priority candidate's pause expires, it is preferred again on the
  * next call, which is the "rotation" back to the primary runner.
@@ -97,7 +97,7 @@ export function resolveRunnerRouting(input: {
     return {
       runnerName,
       runnerKind: entry.kind,
-      ...(commandRoute.tier === undefined ? {} : { tier: commandRoute.tier }),
+      ...(commandRoute.runnerPool === undefined ? {} : { runnerPool: commandRoute.runnerPool }),
       reason: `command ${input.action} pins runner ${runnerName}`,
     };
   }
@@ -112,15 +112,16 @@ export function resolveRunnerRouting(input: {
     return {
       runnerName: stageRoute.runner,
       runnerKind: entry.kind,
-      ...(stageRoute.tier === undefined ? {} : { tier: stageRoute.tier }),
+      ...(stageRoute.runnerPool === undefined ? {} : { runnerPool: stageRoute.runnerPool }),
       reason: `stage ${input.stage} pins runner ${stageRoute.runner}`,
     };
   }
 
-  const tier = commandRoute?.tier ?? stageRoute?.tier ?? input.config.defaultTier;
-  const candidates = input.config.tiers[tier];
+  const runnerPool =
+    commandRoute?.runnerPool ?? stageRoute?.runnerPool ?? input.config.defaultRunnerPool;
+  const candidates = input.config.runnerPools[runnerPool];
   if (candidates === undefined || candidates.length === 0) {
-    throw new Error(`Stage ${input.stage} routes to unknown or empty tier "${tier}".`);
+    throw new Error(`Stage ${input.stage} routes to unknown or empty runnerPool "${runnerPool}".`);
   }
 
   const now = input.now ?? new Date();
@@ -139,7 +140,7 @@ export function resolveRunnerRouting(input: {
   const { runnerName, isProbe } = selected;
   const entry = input.config.runners[runnerName];
   if (entry === undefined) {
-    throw new Error(`Tier ${tier} references unknown runner "${runnerName}".`);
+    throw new Error(`runnerPool ${runnerPool} references unknown runner "${runnerName}".`);
   }
 
   const isFallback = runnerName !== candidates[0];
@@ -147,15 +148,15 @@ export function resolveRunnerRouting(input: {
   return {
     runnerName,
     runnerKind: entry.kind,
-    tier,
+    runnerPool,
     reason: isProbe
-      ? `tier ${tier} recovery probe on ${runnerName} (estimated pause not yet elapsed)`
+      ? `runnerPool ${runnerPool} recovery probe on ${runnerName} (estimated pause not yet elapsed)`
       : isFallback
-        ? `tier ${tier} fell back to ${runnerName} (higher-priority candidates paused)`
-        : commandRoute?.tier !== undefined
-          ? `command ${input.action} tier ${tier} selected runner ${runnerName}`
-          : stageRoute?.tier === undefined
-            ? `defaultTier ${tier} selected runner ${runnerName}`
-            : `stage ${input.stage} tier ${tier} selected runner ${runnerName}`,
+        ? `runnerPool ${runnerPool} fell back to ${runnerName} (higher-priority candidates paused)`
+        : commandRoute?.runnerPool !== undefined
+          ? `command ${input.action} runnerPool ${runnerPool} selected runner ${runnerName}`
+          : stageRoute?.runnerPool === undefined
+            ? `defaultRunnerPool ${runnerPool} selected runner ${runnerName}`
+            : `stage ${input.stage} runnerPool ${runnerPool} selected runner ${runnerName}`,
   };
 }

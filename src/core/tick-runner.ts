@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+﻿import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -326,13 +326,13 @@ export function createTickRunner(deps: {
   outboundSink?: OutboundSink;
   runner: AgentRunner;
   workspaceManager: WorkspaceManager;
-  // Required — see the matching note on createProjectionUpdater's
+  // Required â€” see the matching note on createProjectionUpdater's
   // resourceIndex: this is durable correlation state and must never be
   // cached in process memory across ticks or silently defaulted away.
   resourceIndex: ResourceIndex;
   // Optional: verifies agent-reported PR artifacts against the real provider
   // before they're registered as correlated resources. Undefined (e.g. no
-  // GitHub source configured) means artifact claims are never trusted —
+  // GitHub source configured) means artifact claims are never trusted â€”
   // registerReportedArtifacts becomes a no-op rather than registering
   // unverified free text.
   artifactVerifier?: ArtifactVerifier;
@@ -379,7 +379,7 @@ export function createTickRunner(deps: {
   function isAwaitingApproval(projection: IssueStateRecord): boolean {
     // pendingApprovalAction persists through a changes-requested review round
     // within the same gated cycle (that fold path never touches it), so it's
-    // the faithful "is this item currently gated on human sign-off" signal —
+    // the faithful "is this item currently gated on human sign-off" signal â€”
     // context.status alone flips between 'awaiting-approval' and
     // 'changes-requested' within the same gated cycle and can't be used here.
     // The lastRunSentinel fallback tolerates a projection folded before
@@ -834,7 +834,7 @@ export function createTickRunner(deps: {
 
   // Folds a human /changes reply onto the parent's context via the same
   // `changesRequested` RUN_COMPLETED payload shape a rejecting review watcher
-  // uses (projection-updater.ts) — same fold, same bounding against
+  // uses (projection-updater.ts) â€” same fold, same bounding against
   // config.retry.maxChangesRequestedRetries, so a human bouncing /changes
   // repeatedly escalates to 'blocked' exactly like an auto-revise loop would.
   async function applyChangesRequestedTransition(input: {
@@ -842,7 +842,7 @@ export function createTickRunner(deps: {
     requestId: string;
     requestedAt: string;
     feedbackBody?: string;
-    // Marked handled regardless of escalation — once Wake has acted on this
+    // Marked handled regardless of escalation â€” once Wake has acted on this
     // /changes reply (dispatched a revise, or escalated to blocked because
     // the retry cap was hit), it must not keep re-triggering every tick off
     // the same unhandled comment (that would re-increment the counter
@@ -891,12 +891,12 @@ export function createTickRunner(deps: {
   // out of the agent's free text, the agent emits a `wake-artifacts` fence
   // (domain/schema.ts's parseRunnerArtifacts) and Wake verifies each claim
   // against the real provider before trusting it. No verifier configured (no
-  // GitHub source) means no claim is ever trusted — this is a no-op, not a
+  // GitHub source) means no claim is ever trusted â€” this is a no-op, not a
   // silent "believe the agent" fallback.
   //
   // Uses a plain appendEventEnvelope + rebuildFromEvents pair, not
   // deliverOutboundEvent: wake.correlation.registered is not a publish-intent
-  // type, so attemptDelivery's outbound sink call would be a no-op anyway —
+  // type, so attemptDelivery's outbound sink call would be a no-op anyway â€”
   // this matches the same plain-append pattern used elsewhere for
   // internal-only events (see buildOriginCorrelationEvents' callers).
   async function registerReportedArtifacts(input: {
@@ -948,7 +948,7 @@ export function createTickRunner(deps: {
   // Events are stamped by reading the clock at the moment of stamping, never
   // from a frozen tick-start snapshot. `tickStartedAt` is the tick's *decision*
   // clock (policy/staleness), and reusing it to date events inverts them
-  // against the work source's own poll-time ingestedAt — pollEvents() runs
+  // against the work source's own poll-time ingestedAt â€” pollEvents() runs
   // after tickStartedAt is captured, so in production every polled upsert is
   // LATER than the tick's start. An event dated before the upsert that creates
   // the projection it folds into sorts ahead of it in rebuildFromEvents' global
@@ -969,7 +969,7 @@ export function createTickRunner(deps: {
   // The watchlist is every resource currently correlated to an open work
   // item, deduplicated by exact resourceUri. It is derived once per tick from
   // the pre-poll projection snapshot (see runTick's ordering note) and handed
-  // to every configured WorkSource. Core never interprets these URIs — it's
+  // to every configured WorkSource. Core never interprets these URIs â€” it's
   // each source's own job to recognize and filter down to the resourceUri
   // shapes it understands (e.g. the GitHub PR source only polls entries
   // starting with `github:pr:`, ignoring everything else, including its own
@@ -997,9 +997,9 @@ export function createTickRunner(deps: {
 
   // Runs against every open, non-deleted item every tick (not just ones with
   // an eligible next action) so a stale label self-heals even on a parked
-  // item nothing else would otherwise re-check — this is also where
+  // item nothing else would otherwise re-check â€” this is also where
   // wake:frozen/wake:scheduled-workflow get their only reconciliation
-  // coverage, since freeze/unfreeze no longer writes labels inline (§6).
+  // coverage, since freeze/unfreeze no longer writes labels inline (Â§6).
   async function markPendingActionableIssues(projections: IssueStateRecord[]): Promise<void> {
     const activeRunWorkItemKeys = new Set<string>();
     const now = deps.clock.now();
@@ -1022,7 +1022,7 @@ export function createTickRunner(deps: {
         (labels.frozenLabel === undefined || hasLabel(projection, labels.frozenLabel)) &&
         (labels.scheduledLabel === undefined || hasLabel(projection, labels.scheduledLabel));
       // A toggle label (frozen/scheduled) whose desired state is "absent"
-      // still needs to be checked for stray presence — the family-prefix
+      // still needs to be checked for stray presence â€” the family-prefix
       // labels above don't need this since removing them is folded into
       // "does the current one match" by construction.
       const hasStrayToggleLabel =
@@ -1324,7 +1324,7 @@ export function createTickRunner(deps: {
       await cleanupClosedIssueWorkspaces(projections);
       await sweepExpiredTranscriptDirs();
       // Runs every tick, not only when this tick happened to poll a fresh
-      // inbound event — a stale label on a parked item (nothing else ever
+      // inbound event â€” a stale label on a parked item (nothing else ever
       // re-checks it once there's no next action) otherwise never self-heals.
       await markPendingActionableIssues(projections);
 
@@ -1620,7 +1620,7 @@ export function createTickRunner(deps: {
     try {
       // The tick's *decision* clock: one consistent "now" for staleness and
       // policy, so a single tick's decisions can't disagree with themselves.
-      // It is deliberately NOT an event-stamping clock — see eventStampNow().
+      // It is deliberately NOT an event-stamping clock â€” see eventStampNow().
       // Its only remaining uses are the run records' startedAt (run records
       // are not events and take no part in the rebuild fold).
       const tickStartedAt = deps.clock.now();
@@ -1724,7 +1724,7 @@ export function createTickRunner(deps: {
         claimedStage = entryStageName;
         workspaceMode = entryStage.workspace;
         // The triggering event's own body (e.g. a refine plan comment) is
-        // durable and already local the moment this fires — projection.comments
+        // durable and already local the moment this fires â€” projection.comments
         // only gets it once a later GitHub poll echoes it back, which a watcher
         // dispatched off the same-tick completion event can easily outrace.
         const triggeringEvent =
@@ -1897,7 +1897,7 @@ export function createTickRunner(deps: {
         // any valid stage (e.g. 'implement'), so checking it first would
         // silently discard chooseRetryActionAfterHumanReply's decision
         // whenever a FAILED/BLOCKED run left a lateral action (like
-        // `revise`) unfinished with a fresh human reply waiting — instead
+        // `revise`) unfinished with a fresh human reply waiting â€” instead
         // of resuming that action, it would restart the stage from
         // scratch (#258 follow-up incident: a FAILED `revise` run fell
         // back to a full fresh `implement` run and lost the PR-feedback
@@ -1919,7 +1919,7 @@ export function createTickRunner(deps: {
       }
 
       // Resolve routing (with sideways fallback across quota-paused runners,
-      // #67) before claiming a run, so a fully-paused tier costs nothing more
+      // #67) before claiming a run, so a fully-paused runnerPool costs nothing more
       // than an idle tick instead of a claimed-but-doomed run record.
       const ledgerAtStart = await deps.stateStore.readLedger();
       const routing = resolveRunnerRouting({
@@ -2065,7 +2065,7 @@ export function createTickRunner(deps: {
 
       // Watcher runs execute a *different* workflow's stage (e.g. plan-review)
       // against the same parent projection, not a stage transition of the
-      // parent's own workflow — writing labels here would stamp the child
+      // parent's own workflow â€” writing labels here would stamp the child
       // workflow's stage/workflow onto the parent's GitHub issue. The parent's
       // labels must only ever reflect the parent's own action (see the mirrored
       // guard on the completion path below).
@@ -2316,13 +2316,13 @@ export function createTickRunner(deps: {
         leaseRenewalTimer = undefined;
         const parsedRunnerResult = parseRunnerResult(runnerResult.result);
         const sentinel = parsedRunnerResult.status;
-        // The approval gate is pure policy, never the agent's word choice —
+        // The approval gate is pure policy, never the agent's word choice â€”
         // a DONE on a stage configured with skipApproval: false is gated
         // regardless of what the agent wrote (ADR 0002).
         const skipApproval = runnerResult.metadata?.skipApproval;
         const approvalGated = sentinel === 'DONE' && skipApproval === false;
         // A canceled run must not advance the stage regardless of what the
-        // runner echoed back — the snapshot it acted on was superseded.
+        // runner echoed back â€” the snapshot it acted on was superseded.
         const nextStage =
           cancellationReason !== null
             ? null
@@ -2515,7 +2515,7 @@ export function createTickRunner(deps: {
         // the PR-artifact-verified path or a plain onSuccess.approve watcher
         // with no PR) can fold context.status = 'changes-requested' on the
         // parent via the same RUN_COMPLETED event, instead of requiring a
-        // separate marker comment round-trip (§5).
+        // separate marker comment round-trip (Â§5).
         const watcherSuccessPolicy =
           watcherRun && watcherDispatch !== null
             ? deps.config.workflows[watcherDispatch.parentWorkflowName]?.stages[
@@ -2563,7 +2563,7 @@ export function createTickRunner(deps: {
             ...(failureContext === undefined ? {} : failureContext),
             // Only mark the triggering comment handled when the run reached the
             // agent and produced a real outcome. Quota/infra failures are transient
-            // blips; canceled runs acted on a superseded snapshot — in both cases
+            // blips; canceled runs acted on a superseded snapshot â€” in both cases
             // leave handledCommentId unset so the next tick can retry (S9).
             ...(runnerResult.failureClass === 'quota' ||
             runnerResult.failureClass === 'infra' ||

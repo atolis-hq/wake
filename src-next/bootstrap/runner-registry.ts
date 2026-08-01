@@ -21,7 +21,7 @@ export function createRunnerRegistry(
       createConfiguredRunner(runner),
     ]),
   );
-  return new RunnerRegistry(config.tiers, runners);
+  return new RunnerRegistry(config.runnerPools, runners);
 }
 
 // `kind` names the transport adapter, not the vendor, so each variant carries only the
