@@ -510,3 +510,13 @@ in step 3.
 
 Record deviations, deferred rules with counts, and the step 7 measurements here
 as the task proceeds.
+
+- Step 2 used `prettier-plugin-organize-imports` successfully.
+- Step 7 measurement required target-local `tsconfig.json` discovery files for
+  `projectService`. The measured recommended-type-checked violations were:
+  `require-await` 196, `no-unsafe-assignment` 27, `unbound-method` 9,
+  `no-unused-vars` 8, `no-unnecessary-type-assertion` 6,
+  `no-unsafe-return` 2, `prefer-promise-reject-errors` 2, and one each of
+  `no-redundant-type-constituents`, `restrict-template-expressions`,
+  `no-unsafe-argument`, and `only-throw-error`; those rules are deferred for
+  a follow-up rather than suppressed. `switch-exhaustiveness-check` is adopted.

@@ -1,0 +1,5 @@
+{
+  "extends": "../tsconfig.next.json",
+  "include": ["**/*.ts"],
+  "exclude": ["surfaces/web/**"]
+}

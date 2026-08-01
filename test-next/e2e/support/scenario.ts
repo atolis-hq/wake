@@ -1,4 +1,4 @@
-import { it } from 'vitest';
+import { expect, it } from 'vitest';
 
 interface ScenarioDescription {
   readonly id: `E2E-${string}`;
@@ -15,5 +15,8 @@ export function defineScenario(description: ScenarioDescription, run: () => Prom
     ...description.when.map((value) => `When ${value}`),
     ...description.then.map((value) => `Then ${value}`),
   ].join('\n');
-  it(text, run);
+  it(text, async () => {
+    expect.hasAssertions();
+    await run();
+  });
 }
