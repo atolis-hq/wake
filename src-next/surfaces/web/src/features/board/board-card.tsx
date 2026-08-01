@@ -13,19 +13,19 @@ export function BoardCard({
   return (
     <li className={styles.card} aria-label={item.objective}>
       <Link
-        className={styles.cardTitle!}
+        className={styles.cardLink!}
         to={`/work/${encodeURIComponent(item.workItemKey)}`}
         state={{ background }}
       >
-        {item.objective}
+        <span className={styles.cardTitle}>{item.objective}</span>
+        <span className={styles.cardMeta}>
+          <Chip variant="outline">{item.state}</Chip>
+          {item.relatedWorkItems.length > 0 && (
+            <Chip variant="outline">{item.relatedWorkItems.length} related</Chip>
+          )}
+        </span>
+        <span className={styles.cardStats}>{item.workItemId}</span>
       </Link>
-      <div className={styles.cardMeta}>
-        <Chip variant="outline">{item.state}</Chip>
-        {item.relatedWorkItems.length > 0 && (
-          <Chip variant="outline">{item.relatedWorkItems.length} related</Chip>
-        )}
-      </div>
-      <div className={styles.cardStats}>{item.workItemId}</div>
     </li>
   );
 }

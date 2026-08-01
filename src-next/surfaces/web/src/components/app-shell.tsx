@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { NavLink } from 'react-router';
+import wakeLogo from '../../../../../assets/wake-logo.svg';
 import { ControlPlaneStatus } from './status.js';
 import styles from './components.module.css';
 
@@ -23,6 +24,7 @@ export function AppShell({ children }: { readonly children: ReactNode }) {
       )}
       <header className={styles.header}>
         <NavLink className={styles.brand!} to="/board">
+          <img className={styles.brandLogo!} src={wakeLogo} alt="Wake logo" />
           WAKE
         </NavLink>
       </header>

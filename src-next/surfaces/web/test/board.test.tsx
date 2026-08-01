@@ -67,9 +67,9 @@ describe('board', () => {
       </MemoryRouter>,
     );
     const card = await screen.findByRole('listitem', { name: 'Alpha' });
-    expect(within(card).getByRole('link', { name: 'Alpha' }).getAttribute('href')).toBe(
-      '/work/wk_a',
-    );
+    const link = within(card).getByRole('link', { name: /Alpha/ });
+    expect(link.getAttribute('href')).toBe('/work/wk_a');
+    expect(link.className).toContain('cardLink');
   });
 
   it('requests only the work item collection, never a second collection to join', async () => {

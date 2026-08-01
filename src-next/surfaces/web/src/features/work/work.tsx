@@ -200,9 +200,16 @@ export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
         aria-modal="true"
         aria-label="Work item detail"
       >
-        <button type="button" onClick={() => navigate(-1)}>
-          Close
-        </button>
+        <div className={styles.modalHeader}>
+          <button
+            className={styles.modalClose!}
+            type="button"
+            aria-label="Close work detail"
+            onClick={() => navigate(-1)}
+          >
+            Close
+          </button>
+        </div>
         {content}
       </section>
     </div>

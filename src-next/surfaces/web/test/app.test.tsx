@@ -37,6 +37,9 @@ describe('Wake operator app', () => {
     );
     const banner = await screen.findByRole('banner');
     expect(banner.textContent).toContain('WAKE');
+    expect(screen.getByRole('img', { name: 'Wake logo' }).getAttribute('src')).toMatch(
+      /^data:image\/svg\+xml/,
+    );
     const status = await screen.findByRole('status', { name: 'Control plane' });
     expect(status.textContent).toContain('Dispatch active');
     expect(within(banner).queryByText('Dispatch active')).toBeNull();
@@ -71,6 +74,7 @@ describe('Wake operator app', () => {
     );
     expect(await screen.findByRole('dialog', { name: 'Work item detail' })).toBeTruthy();
     expect(await screen.findByRole('heading', { name: 'Demo Wake' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Close work detail' })).toBeTruthy();
     desktop.unmount();
 
     setDesktop(false);
