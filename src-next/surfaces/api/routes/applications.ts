@@ -70,6 +70,7 @@ export interface ApiApplications {
     get?(runId: string): Promise<ApiResourceResult<RunResponse> | undefined>;
     transcript?(runId: string): Promise<ApiResourceResult<RunTranscriptResponse> | undefined>;
     runners?(query: CollectionQuery): Promise<ApiCollectionPage<RunnerResponse>>;
+    pauseRunner?(runnerId: string, command: ApiCommandRequest): Promise<ApiCommandResult>;
     unpauseRunner?(runnerId: string, command: ApiCommandRequest): Promise<ApiCommandResult>;
   };
   readonly events: {

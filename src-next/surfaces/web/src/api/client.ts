@@ -91,6 +91,20 @@ export class WakeApiClient {
       ),
     runners: (signal?: AbortSignal) =>
       this.get('/runners', collectionDecoder(decodeRunner), signal),
+    pauseRunner: (runnerId: string, idempotencyKey: string, signal?: AbortSignal) =>
+      this.command(
+        `/runners/${encodeURIComponent(runnerId)}/commands/pause`,
+        idempotencyKey,
+        decodeAcceptedCommand,
+        signal,
+      ),
+    unpauseRunner: (runnerId: string, idempotencyKey: string, signal?: AbortSignal) =>
+      this.command(
+        `/runners/${encodeURIComponent(runnerId)}/commands/unpause`,
+        idempotencyKey,
+        decodeAcceptedCommand,
+        signal,
+      ),
   };
   readonly events = {
     list: (cursor?: string, signal?: AbortSignal) =>

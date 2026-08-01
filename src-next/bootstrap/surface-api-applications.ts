@@ -1,12 +1,10 @@
-import { ControlStreamKind } from '../control-plane/index.js';
-import type { RunView } from '../execution/index.js';
 import type { EventEnvelope } from '../kernel/index.js';
+import { ControlStreamKind } from '../control-plane/index.js';
 import type { WorkflowInstanceView } from '../orchestration/index.js';
 import type { ResourceView } from '../resources/index.js';
 import {
   ApiCommandStatus,
   presentResource,
-  presentRun,
   presentWorkflowInstance,
   redactConfiguration,
   type ApiApplications,
@@ -18,6 +16,7 @@ import type { CompositionRoot } from './composition-root.js';
 import { projectionMeta, sampledMeta } from './surface-api-metadata.js';
 import { projectionPage } from './surface-api-projection-pages.js';
 import { createSurfaceWorkApplications } from './surface-api-work-applications.js';
+import { createExecutionApplications } from './surface-api-execution-applications.js';
 
 export function createSurfaceApiApplications(
   root: CompositionRoot,
@@ -220,58 +219,6 @@ async function readControlPlaneStatus(root: CompositionRoot, now: () => string) 
       updatedAt: meta.asOf,
     },
     meta,
-  };
-}
-
-function createExecutionApplications(
-  root: CompositionRoot,
-  now: () => string,
-): ApiApplications['execution'] {
-  return {
-    async list(query) {
-      const stored = (
-        await root.projections.list<{ readonly view: RunView | null }>('execution')
-      ).flatMap((entry) =>
-        entry.value.view === null ? [] : [{ ...entry, value: entry.value.view }],
-      );
-      const filtered = stored.filter(
-        (entry) => query.state === undefined || entry.value.status === query.state,
-      );
-      return projectionPage(root.journal, filtered, query, presentRun, {
-        emptyAsOf: now(),
-        provenance: stored,
-      });
-    },
-    async get(runId: string) {
-      const stored = await root.projections.read<{ readonly view: RunView | null }>(
-        'execution',
-        runId,
-      );
-      if (stored?.value.view == null) return undefined;
-      return {
-        data: presentRun(stored.value.view),
-        meta: await projectionMeta(root.journal, [stored], now()),
-      };
-    },
-    async runners(query) {
-      const sampledAt = now();
-      const all = [...new Set(Object.values(root.config.execution.tiers).flat())].map(
-        (runnerId) => ({
-          runnerId,
-          status: 'available',
-          available: true,
-          updatedAt: sampledAt,
-        }),
-      );
-      const offset = query.cursor?.position ?? 0;
-      const items = all.slice(offset, offset + query.limit);
-      return {
-        items,
-        total: all.length,
-        meta: sampledMeta(sampledAt),
-        ...(offset + items.length < all.length ? { nextPosition: offset + items.length } : {}),
-      };
-    },
   };
 }
 

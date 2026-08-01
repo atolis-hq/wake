@@ -7,6 +7,7 @@ import type {
 } from '../../src-next/surfaces/api/contracts/index.js';
 import type {
   ApiCollectionPage,
+  ApiApplications,
   CollectionQuery,
 } from '../../src-next/surfaces/api/routes/index.js';
 import { createApiDispatcher } from '../../src-next/surfaces/api/routes/index.js';
@@ -159,6 +160,35 @@ describe('API event pagination', () => {
 });
 
 describe('API command conflicts', () => {
+  it('dispatches explicit runner pause and unpause commands', async () => {
+    const calls: string[] = [];
+    const base = applications();
+    const dispatcher = createApiDispatcher({
+      ...base,
+      execution: {
+        ...base.execution,
+        pauseRunner: async (runnerId, command) => {
+          calls.push(`pause:${runnerId}:${command.idempotencyKey}`);
+          return commandResult(command.idempotencyKey);
+        },
+        unpauseRunner: async (runnerId, command) => {
+          calls.push(`unpause:${runnerId}:${command.idempotencyKey}`);
+          return commandResult(command.idempotencyKey);
+        },
+      },
+    } as ApiApplications);
+
+    for (const name of ['pause', 'unpause'] as const)
+      expect(
+        (
+          await dispatcher.dispatch('POST', `/api/v1/runners/sonnet/commands/${name}`, {
+            idempotencyKey: 'operator-42',
+          })
+        )?.status,
+      ).toBe(202);
+    expect(calls).toEqual(['pause:sonnet:operator-42', 'unpause:sonnet:operator-42']);
+  });
+
   it('keeps every required unavailable command route explicit and conflicting', async () => {
     const dispatcher = createApiDispatcher(applications());
     for (const path of [

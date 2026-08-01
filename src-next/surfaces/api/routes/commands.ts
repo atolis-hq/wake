@@ -77,16 +77,17 @@ async function dispatchRunnerCommand(
   pathname: string,
   request: ApiCommandRequest,
 ): Promise<ApiHttpResponse | undefined> {
-  const segment = /^\/api\/v1\/runners\/([^/]+)\/commands\/unpause$/.exec(pathname)?.[1];
-  if (segment === undefined) return undefined;
-  const runnerId = decodePathSegment(segment);
+  const match = /^\/api\/v1\/runners\/([^/]+)\/commands\/(pause|unpause)$/.exec(pathname);
+  if (match === null) return undefined;
+  const runnerId = decodePathSegment(match[1]!);
   if (runnerId instanceof ApiPathError) return invalidPath(runnerId.message);
-  if (applications.execution.unpauseRunner !== undefined)
-    return accepted(
-      await applications.execution.unpauseRunner(runnerId, request),
-      applications.now(),
-    );
-  return unavailable('runner-unpause', await currentRunner(applications, runnerId));
+  const operation =
+    match[2] === 'pause'
+      ? applications.execution.pauseRunner
+      : applications.execution.unpauseRunner;
+  if (operation !== undefined)
+    return accepted(await operation(runnerId, request), applications.now());
+  return unavailable(`runner-${match[2]}`, await currentRunner(applications, runnerId));
 }
 
 async function currentRunner(

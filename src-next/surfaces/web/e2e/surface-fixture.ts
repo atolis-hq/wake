@@ -21,6 +21,7 @@ interface FixtureState {
   advanced: boolean;
   eventsRead: number;
   runnersRead: number;
+  runnerPaused: boolean;
   events: AuditEventResponse[];
 }
 
@@ -107,18 +108,36 @@ const applications: ApiApplications = {
       runId === 'run-1' ? { data: run(), meta: { asOf: instant } } : undefined,
     async runners() {
       state.runnersRead += 1;
-      const available = state.runnersRead > 1;
+      const available = state.runnersRead > 1 && !state.runnerPaused;
       return {
         items: [
           {
             runnerId: 'runner-local',
-            status: available ? 'available' : 'refreshing',
+            status: state.runnerPaused ? 'paused' : available ? 'available' : 'refreshing',
             available,
             updatedAt: instant,
           },
         ],
         meta: { asOf: instant },
         total: 1,
+      };
+    },
+    async pauseRunner(_runnerId, command) {
+      state.runnerPaused = true;
+      return {
+        commandId: 'runner-pause-1',
+        idempotencyKey: command.idempotencyKey,
+        acceptedAt: instant,
+        status: ApiCommandStatus.Completed,
+      };
+    },
+    async unpauseRunner(_runnerId, command) {
+      state.runnerPaused = false;
+      return {
+        commandId: 'runner-unpause-1',
+        idempotencyKey: command.idempotencyKey,
+        acceptedAt: instant,
+        status: ApiCommandStatus.Completed,
       };
     },
   },
@@ -187,7 +206,13 @@ server.listen(4319, '127.0.0.1');
 for (const signal of ['SIGINT', 'SIGTERM'] as const) process.once(signal, () => server.close());
 
 function freshState(): FixtureState {
-  return { advanced: false, eventsRead: 0, runnersRead: 0, events: [event(1, 'work.created')] };
+  return {
+    advanced: false,
+    eventsRead: 0,
+    runnersRead: 0,
+    runnerPaused: false,
+    events: [event(1, 'work.created')],
+  };
 }
 function workSummary(): WorkItemResponse {
   return {

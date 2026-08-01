@@ -8,6 +8,7 @@ import {
 } from '../activities/index.js';
 import {
   createAdvanceOnce,
+  createRunnerControlService,
   createTickPipeline,
   ControlStreamKind,
   ineligibleRunners,
@@ -84,6 +85,7 @@ export interface CompositionRoot {
   readonly resources: ReturnType<typeof createResourceService>;
   readonly orchestration: ReturnType<typeof createOrchestrationService>;
   readonly execution: ReturnType<typeof createExecutionService>;
+  readonly runnerControls: ReturnType<typeof createRunnerControlService>;
   readonly advanceOnce: ReturnType<typeof createAdvanceOnce>;
   readonly projectionRunner: ReturnType<typeof createRuntimeProjectionRunner>;
   readonly providers: readonly ProviderInstance[];
@@ -120,6 +122,12 @@ export async function createCompositionRoot(
     ids,
     runners: createRunnerRegistry(config.execution),
     reportRunnerQuota: createRunnerQuotaReporter(journal, clock, ids),
+  });
+  const runnerControls = createRunnerControlService({
+    journal,
+    clock,
+    ids,
+    runners: new Set(Object.values(config.execution.tiers).flat()),
   });
   const advanceOnce = createAdvanceOnce(orchestration, execution, resources, clock, {
     ids,
@@ -158,6 +166,7 @@ export async function createCompositionRoot(
     resources,
     orchestration,
     execution,
+    runnerControls,
     advanceOnce,
     ...runtime,
   };

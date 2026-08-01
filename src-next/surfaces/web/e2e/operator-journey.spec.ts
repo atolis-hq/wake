@@ -54,6 +54,10 @@ test('operates Wake through the real HTTP Surface and packaged application', asy
   );
   await page.getByRole('button', { name: 'Refresh health' }).click();
   await expect(page.getByRole('table', { name: 'Runner availability' })).toContainText('available');
+  await page.getByRole('button', { name: 'Pause' }).click();
+  await expect(page.getByRole('table', { name: 'Runner availability' })).toContainText('paused');
+  await page.getByRole('button', { name: 'Unpause' }).click();
+  await expect(page.getByRole('table', { name: 'Runner availability' })).toContainText('available');
 
   await page.getByRole('link', { name: 'Board' }).focus();
   await page.keyboard.press('Tab');

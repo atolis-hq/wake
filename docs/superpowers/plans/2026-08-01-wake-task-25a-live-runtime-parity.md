@@ -198,7 +198,7 @@ legacy 83 files / 950 tests, with `check:catalogue`, `lint:contracts`,
 | 25A.7 approval authority (D16) — Work half | Built: consent events, idempotent commands, projection, view |
 | 25A.7 approval authority (D16) — Orchestration half | Built: `ApprovalAuthorityKind`, the authority union, `WatchId`, `await.from` compiled and watch-resolved, capability-and-consent enforcement, `SignalAccepted.authority` recorded apart from provenance |
 | A4 merge policy (`maxFilesChanged`, `blockedPaths`, changed-files capability) | Built, including explicit `changed-files-unavailable` denial when policy is configured but evidence is missing. PR activities gate on capability rather than resource kind |
-| 25B step 13 alternate runner selection | **In progress.** Operator approved durable runner pause/resume state: runner pauses can be manual or quota-driven, quota pauses have an optional expiry, and an explicit resume clears either. The composed runtime must derive `ineligibleRunners` from active runner pauses and pass it to `RunnerRegistry.resolve`. |
+| 25B step 13 alternate runner selection | **Built.** `RunnerPaused`/`RunnerResumed` durably represent quota and manual runner pauses; Bootstrap derives `ineligibleRunners` from the replayable control projection and passes it to `RunnerRegistry.resolve`. `E2E-CONTROL-QUOTA-001` proves same-tier fallback from `sonnet` to `codex-mini`, replay/restart, expiry, and early operator resume. The API reports paused runner health and the Health page provides Pause/Unpause controls. |
 
 **Developer-feedback decision recorded 2026-08-01.**
 `test/adapters/git-workspace-manager.test.ts` is a real-Git adapter integration

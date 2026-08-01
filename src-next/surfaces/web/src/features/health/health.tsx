@@ -25,6 +25,12 @@ export function HealthPage() {
     queryFn: ({ signal }) => client.execution.runners(signal),
     refetchInterval: refreshPolicy.runners,
   });
+  const toggleRunner = async (runnerId: string, paused: boolean) => {
+    const idempotencyKey = crypto.randomUUID();
+    if (paused) await client.execution.unpauseRunner(runnerId, idempotencyKey);
+    else await client.execution.pauseRunner(runnerId, idempotencyKey);
+    await runners.refetch();
+  };
   return (
     <>
       <PageHeader
@@ -84,6 +90,18 @@ export function HealthPage() {
               ),
             },
             { label: 'Detail', render: (runner) => runner.detail ?? '—' },
+            {
+              label: 'Control',
+              render: (runner) => (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => void toggleRunner(runner.runnerId, !runner.available)}
+                >
+                  {runner.available ? 'Pause' : 'Unpause'}
+                </Button>
+              ),
+            },
           ]}
         />
       )}
