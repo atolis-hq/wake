@@ -132,6 +132,22 @@ Activity with the existing `{ prompt, model?, allowedTools? }` input, and the
 fixture workflow's stages both use it with `with: { prompt }`. 25B step 10
 introduces template binding and may reintroduce per-purpose names then.
 
+**F7 — Two projection definitions are built but never registered.**
+`runtimeProjectionDefinitions` (`bootstrap/projection-runtime.ts:9-16`) registers
+work, resources, resource-correlations, activities, delivery, and control-plane.
+It omits `orchestrationProjection`
+(`orchestration/application/orchestration-projection.ts:11`) and
+`executionProjection` (`execution/application/execution-projection.ts:9`), both
+of which are exported and complete. This is adjacent to Appendix A.3 gap 9
+("projections never advance in a running process") but distinct from it and
+recorded nowhere in the packet design: even once catch-up runs every tick, the
+WorkflowInstance and Run views would still never be projected. Every
+`E2E-LIVE-*` assertion about workflow status or Run history depends on the fix,
+as does the `SURFACE-API` nested read model. Resolution in Step 6: register both,
+and assert the registry is complete rather than merely non-empty. Because
+`validate-state --rebuild-projections` iterates the same list, the replay
+guarantee also did not cover them until now.
+
 **F6 — `integrations/index.ts` re-exports the GitHub namespace, and tests depend
 on it.** `test-next/e2e/scenarios/external-intake.test.ts` imports
 `InboundTranslator`, `BuiltInAdapterId`, and `integrationStream` from the shared
@@ -642,19 +658,59 @@ export interface ResourceLookup {
 export function createResourceLookup(dependencies: {
   readonly journal: EventJournal;
   readonly projections: ProjectionStore;
-  readonly checkpoints: CheckpointStore;
 }): ResourceLookup {
   // The projection lags by at most one tick of catch-up, so both lookups fold the
-  // journal tail after the projection checkpoint. Without that tail, an intake in
-  // the same batch would miss and mint a second identity.
-  ...
+  // journal tail after the position the projection already reached. Without that
+  // tail, a second observation in the same batch would miss and mint a second
+  // identity.
+  const foldTail = async <View>(
+    definition: ProjectionDefinition<View>,
+    key: string,
+    seed: View,
+    position: number,
+  ): Promise<View> => {
+    let view = seed;
+    for (const event of await dependencies.journal.readAll(position)) {
+      if (definition.select(event)?.key !== key) continue;
+      view = definition.project(view, event);
+    }
+    return view;
+  };
+
+  // ProjectionStore.read returns a StoredProjection wrapper, not the bare view,
+  // and it carries lastGlobalPosition — so the tail starts from the stored
+  // position of *this key*, with no separate checkpoint read.
+  const seeded = async <View>(
+    definition: ProjectionDefinition<View>,
+    key: string,
+  ): Promise<View> => {
+    const stored = await dependencies.projections.read<View>(definition.name, key);
+    return foldTail(
+      definition,
+      key,
+      stored?.value ?? definition.initial(),
+      stored?.lastGlobalPosition ?? 0,
+    );
+  };
+
+  return {
+    resourceIdForExternalKey: (externalKey) =>
+      seeded(resourcesByExternalKeyProjection, externalKeyProjectionKey(externalKey)),
+    correlationsForWork: (workItemId) => seeded(workCorrelationsProjection, workItemId),
+  };
 }
 ```
 
-The tail fold reads `checkpoints.load(`projection:${definition.name}`)` — use
-whatever key `ProjectionRunner` already stores — then
-`journal.readAll(position)` and applies the same `project` function. Do not
-duplicate the fold logic; import the definitions and reuse `select`/`project`.
+`foldTail(definition, key, seed, position)` reads `journal.readAll(position)`,
+skips events whose `definition.select(event)?.key` is not `key`, and applies
+`definition.project`. Seeding the position from `StoredProjection.lastGlobalPosition`
+rather than a separate checkpoint is what keeps the tail from double-applying
+events the projection already folded. `CheckpointStore` is therefore **not** a
+dependency of this module — drop it from the `createResourceLookup` parameter
+object and from the `composition-root.ts` call site.
+
+Do not duplicate the fold logic: import the definitions and reuse their own
+`select` and `project`.
 
 Change `createResourceService(journal)` to
 `createResourceService(journal, lookup: ResourceLookup)` and delete
@@ -924,7 +980,9 @@ export function translateGitHubOutbound(
   resource: ResourceView,
   intent: DeliveryIntentView,
 ): GitHubOutboundCommand {
-  if (resource.externalKey.adapter !== GitHubAdapter)
+  // Still `BuiltInAdapterId.GitHub` at this point; Task 25A.3 Step 5 replaces it
+  // with the namespace-local `GitHubAdapter` constant.
+  if (resource.externalKey.adapter !== BuiltInAdapterId.GitHub)
     throw new Error('Resource is not a GitHub resource');
   const locator = parseGitHubResourceKey(resource.externalKey.key);
   const action = outboundAction(intent.kind);
@@ -1058,7 +1116,10 @@ over its payload; the provider owns the payload shape and its schema:
 import type { EventDraft } from '../../kernel/index.js';
 import type { IntegrationStreamRef } from './streams.js';
 
-export type ProviderEventDraft = EventDraft<unknown, IntegrationStreamRef>;
+// EventDraft is <Type extends string, Payload, Stream extends EntityRef>
+// (kernel/contracts/events.ts:25-28). All three parameters must be supplied in
+// that order; `EventDraft<unknown, …>` does not compile.
+export type ProviderEventDraft = EventDraft<string, unknown, IntegrationStreamRef>;
 
 export interface ExternalEventSource {
   poll(signal: AbortSignal): Promise<readonly ProviderEventDraft[]>;
@@ -1358,10 +1419,36 @@ Expected: FAIL — `Unknown Activity: agent` from `ActivityRegistry.entry`
 
 - [ ] **Step 3: Move the runner from construction into the Activity context (A1)**
 
-Extend `ActivityExecutionContext` in
-`src-next/activities/contracts/activity.ts`:
+First promote the runner shape to a named exported port. The interface currently
+declared privately at `agent-activity.ts:13-34` moves into
+`src-next/activities/contracts/activity.ts` verbatim under the name
+`AgentRunnerPort`, so `ActivityExecutionContext` can reference it without
+Activities importing Execution:
 
 ```ts
+export interface AgentRunnerPort {
+  start(
+    request: {
+      readonly runId: string;
+      readonly prompt: string;
+      readonly model?: string;
+      readonly allowedTools: readonly string[];
+    },
+    signal: AbortSignal,
+  ): Promise<{
+    readonly identity?: {
+      readonly kind: ExternalExecutionKind;
+      readonly id: string;
+      readonly startedAt: string;
+    };
+    readonly result: Promise<{
+      readonly transport: ActivityRunnerTransportStatus;
+      readonly output: string;
+      readonly failure?: { readonly kind: string; readonly message: string };
+    }>;
+  }>;
+}
+
 export interface ActivityExecutionContext {
   readonly signal: AbortSignal;
   readonly occurredAt: string;
@@ -1375,21 +1462,57 @@ export interface ActivityExecutionContext {
 ```
 
 `runner` is optional because only `executionKind: agent` Activities receive one;
-`script` and `deterministic` Activities never do. The agent handler reads it and
-fails explicitly when absent:
+`script` and `deterministic` Activities never do. `Runner` in
+`execution/contracts/runner.ts` remains structurally assignable to
+`AgentRunnerPort`, so `RunnerRegistry` needs no adapter.
+
+The handler body is unchanged from `agent-activity.ts:43-72` except that the
+runner comes from the context rather than a closure. Only the two marked lines
+differ:
 
 ```ts
 export function createAgentActivity(): ActivityHandler<AgentActivityInput, AgentActivityOutcome> {
   return {
-    async execute(invocation, context) {
+    async execute(invocation, context): Promise<AgentActivityOutcome> {
+      // Changed: the runner is resolved by Execution from the activation tier.
       if (context.runner === undefined)
         throw new Error('Agent Activity requires a runner resolved by Execution');
-      const execution = await context.runner.start({ ... }, context.signal);
-      ...
+      const input = invocation.input;
+      const execution = await context.runner.start(
+        {
+          runId: invocation.activationId,
+          prompt: input.prompt,
+          ...(input.model === undefined ? {} : { model: input.model }),
+          allowedTools: input.allowedTools ?? [],
+        },
+        context.signal,
+      );
+      if (execution.identity !== undefined)
+        await context.reportExternalExecution(execution.identity);
+      const result = await execution.result;
+      if (result.transport === ActivityRunnerTransportStatus.Ambiguous)
+        return {
+          kind: ActivityOutcomeKind.Blocked,
+          data: { reason: ActivityFailureCode.AmbiguousRunnerResult },
+        };
+      if (result.transport !== ActivityRunnerTransportStatus.Succeeded)
+        return {
+          kind: ActivityOutcomeKind.Failed,
+          data: {
+            reason: ActivityFailureCode.RunnerFailed,
+            ...(result.failure === undefined ? {} : { message: result.failure.message }),
+          },
+        };
+      return translateAgentResult(parseOutput(result.output));
     },
   };
 }
 ```
+
+Do not change the ambiguous-transport branch. Returning `Blocked` rather than
+`Failed` for an ambiguous runner result is the EXEC-RECOVERY constraint that
+review decision 3 preserves: ambiguous external state must not become assumed
+failure-and-retry.
 
 Create `src-next/activities/agent/agent-activity-definition.ts` exporting one
 `ActivityDefinition` named `agent`, with `executionKind: ActivityExecutionKind.Agent`
@@ -1564,7 +1687,7 @@ Extend `test-next/bootstrap/runtime.test.ts`:
 it('composes a provider registry from configured integration subtrees');
 it('composes the poll service, inbound translation, and delivery service');
 it('composes the signal, watch, and delivery-outcome reactors');
-it('registers every runtime projection definition with the projection runner');
+it('registers every exported projection definition, including orchestration and execution');
 it('passes no configuration aggregate to a domain constructor');
 ```
 
@@ -1580,7 +1703,42 @@ Expected: FAIL — `CompositionRoot` exposes only `work`, `resources`,
 `orchestration`, `execution`, `advanceOnce`, and `projectionRunner`
 (`composition-root.ts:31-44`).
 
-- [ ] **Step 3: Define the ordered tick pipeline (A2)**
+- [ ] **Step 3: Complete the projection registry (F7)**
+
+Before wiring catch-up, register the two projections that exist but were never
+listed. In `src-next/bootstrap/projection-runtime.ts`:
+
+```ts
+export const runtimeProjectionDefinitions = [
+  workProjection,
+  resourceProjection,
+  resourceCorrelationProjection,
+  resourcesByExternalKeyProjection,
+  workCorrelationsProjection,
+  orchestrationProjection, // F7 — defined since Task 10, never registered
+  executionProjection, // F7 — defined since Task 11, never registered
+  ...activityProjectionDefinitions,
+  ...deliveryProjectionDefinitions,
+  ...controlPlaneProjectionDefinitions,
+];
+```
+
+Catching up a projection that was never registered is a no-op, so this must land
+before Step 4 or every `E2E-LIVE-*` assertion about workflow status or Run
+history reads an empty namespace. Add to
+`test-next/bootstrap/projection-runtime.test.ts` an assertion that closes the
+hole permanently rather than restating the list:
+
+```ts
+it('registers every exported ProjectionDefinition in the target', async () => {
+  // Discover definitions by scanning module barrels, so a new projection that is
+  // never registered fails here instead of silently never advancing.
+  const exported = await discoverProjectionDefinitionNames('src-next');
+  expect(new Set(runtimeProjectionDefinitions.map((d) => d.name))).toEqual(new Set(exported));
+});
+```
+
+- [ ] **Step 4: Define the ordered tick pipeline (A2)**
 
 Create `src-next/control-plane/application/tick-pipeline.ts`. The order is
 load-bearing and matches finding F4:
@@ -1602,13 +1760,16 @@ Projection catch-up runs **once per tick in the host**, not inside
 reads (A2). It runs first so that intake's external-key lookup sees the previous
 tick's discoveries from the projection rather than only from the journal tail.
 
-- [ ] **Step 4: Compose the runtime**
+- [ ] **Step 5: Compose the runtime**
 
 Extend `createCompositionRoot` to build, from validated module subtrees only:
 
 ```ts
-const providers = createProviderRegistry([gitHubProvider, fakeProvider]).compose(config.integrations);
-const lookup = createResourceLookup({ journal, projections, checkpoints });
+const registry = new ProviderRegistry();
+registry.register(gitHubProvider);
+registry.register(fakeProvider);
+const providers = registry.compose(config.integrations);
+const lookup = createResourceLookup({ journal, projections });
 const resources = createResourceService(journal, lookup);
 registerBuiltInActivities(activities, { journal, work, resources });
 const runners = createRunnerRegistry(config.execution);
@@ -1624,7 +1785,7 @@ const pipeline = createTickPipeline({ projectionRunner, poll, providers, reactor
 Do not pass `ResolvedWakeModulesConfig` to any domain or adapter constructor —
 `test-next/bootstrap/config-ownership.test.ts` already asserts this.
 
-- [ ] **Step 5: Verify and commit**
+- [ ] **Step 6: Verify and commit**
 
 Run:
 
@@ -1762,6 +1923,22 @@ orchestration:
       workflow: default
   default: default
 ```
+
+`WatchId` does not exist yet — `orchestration/contracts/identifiers.ts` declares
+`CommandName`, `SignalName`, `StageName`, and `WorkflowName` but no watch brand,
+while `watchConfigSchema.id` is a bare `identifier`. Add it alongside the others
+first, so a stage name cannot be passed where a watch reference is required:
+
+```ts
+export type WatchId = Brand<string, 'WatchId'>;
+
+export const watchId = (value: string): WatchId => {
+  if (!/^[a-z][a-z0-9-]*$/.test(value)) throw new Error(`Invalid WatchId: ${value}`);
+  return value as WatchId;
+};
+```
+
+`CompiledWatch.id` becomes `WatchId`, branded by `compileWorkflow`.
 
 Add the authority union to `orchestration/contracts/config.ts`, as a
 discriminated union matching the existing `TransitionTarget` pattern — a flat
@@ -2017,11 +2194,19 @@ describe('E2E-LIVE-001 simple workflow through the composed process', () => {
     // When the composed process runs ticks until the workflow completes
     await world.runTicksUntilIdle();
 
-    // Then one WorkItem exists, carries a minted identity, and reached done
+    // Then one WorkItem exists and carries a minted identity
     const work = await world.readProjection('work');
     expect(work).toHaveLength(1);
     expect(work[0].workItemId).toMatch(/^work-[0-9a-hjkmnp-tv-z]{26}$/);
-    expect(work[0].state).toBe(WorkStatus.Closed);
+
+    // And its workflow reached completion. Assert the WorkflowInstance status,
+    // not WorkStatus: nothing in Orchestration or Control Plane closes a
+    // WorkItem when a workflow completes, and WORK-LIFECYCLE deliberately keeps
+    // workflow position off the WorkItem. Asserting WorkStatus.Closed here would
+    // be an assertion about behaviour this packet does not build.
+    const workflows = await world.readProjection('orchestration');
+    expect(workflows).toHaveLength(1);
+    expect(workflows[0].status).toBe(WorkflowStatus.Completed);
 
     // And exactly one effect was delivered
     expect(await world.provider.deliveredEffects()).toHaveLength(1);
@@ -2235,6 +2420,9 @@ gate, and Task 26 is blocked until both packets close.
       `npm run knip:next`, `npm run verify:next`, and `npm run verify` all pass.
 - [ ] `knip:next` reports nothing — in particular none of Appendix A.3 gap 14's
       fifteen services remains unreachable.
+- [ ] Every exported `ProjectionDefinition` is registered in
+      `runtimeProjectionDefinitions` (finding F7), and deleting `.wake/state/`
+      then replaying reproduces all of them identically to the live fold.
 - [ ] Target test counts exceed the `2bfeced` baseline of 119 files / 498 tests
       with web at 7 / 17, and no baseline test was weakened to pass.
 - [ ] `CLAUDE.md` no longer mandates `--max-turns`; the corrective design §3.1
