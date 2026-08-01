@@ -50,6 +50,16 @@ export * from './cli/commands/audit.js';
 
 export * from './cli/commands/correlate.js';
 
+export { runDoctor } from './cli/commands/doctor.js';
+
+export * from './cli/commands/init.js';
+
+export * from './cli/commands/sandbox.js';
+
+export * from './cli/commands/self-update.js';
+
+export * from './cli/commands/smoke.js';
+
 export * from './cli/commands/start.js';
 
 export * from './cli/commands/stop.js';
