@@ -265,3 +265,34 @@
     animation-duration: 0.01ms !important;
   }
 }
+.transcript {
+  list-style: none;
+  padding: 0;
+  margin: var(--space-3) 0 0;
+}
+.transcriptEntry {
+  background: var(--surface-inset);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  margin-bottom: 0.75rem;
+  overflow: hidden;
+}
+.transcriptHead {
+  display: flex;
+  gap: var(--space-3);
+  color: var(--ink-muted);
+  background: var(--surface-panel);
+  border-bottom: 1px solid var(--border);
+  padding: 0.45rem 0.6rem;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+.transcriptText {
+  white-space: pre-wrap;
+  margin: 0;
+  padding: 0.6rem;
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+  overflow-x: auto;
+}

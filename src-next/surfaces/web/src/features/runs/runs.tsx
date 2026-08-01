@@ -17,6 +17,7 @@ import {
   StaleIndicator,
   StatusBadge,
 } from '../../components/primitives.js';
+import styles from '../features.module.css';
 
 export function RunsList() {
   const client = useApiClient();
@@ -93,11 +94,40 @@ export function RunDetail() {
         run.data && (
           <Panel>
             <StatusBadge>{run.data.data.status}</StatusBadge>
-            <p>Activity: {run.data.data.activity}</p>
-            <JsonViewer value={run.data.data.outcome ?? run.data.data.failure ?? {}} />
+            <dl className={styles.summary}>
+              <dt>Activity</dt>
+              <dd>{run.data.data.activity}</dd>
+              <dt>Attempt</dt>
+              <dd>{run.data.data.attempt}</dd>
+              <dt>Started</dt>
+              <dd>
+                <LocalTime value={run.data.data.startedAt} />
+              </dd>
+              {run.data.data.finishedAt !== undefined && (
+                <>
+                  <dt>Finished</dt>
+                  <dd>
+                    <LocalTime value={run.data.data.finishedAt} />
+                  </dd>
+                </>
+              )}
+            </dl>
+            {(run.data.data.outcome ?? run.data.data.failure) !== undefined && (
+              <JsonViewer value={run.data.data.outcome ?? run.data.data.failure} />
+            )}
             <h2>Transcript</h2>
             {transcript.data?.data.available ? (
-              <JsonViewer value={transcript.data.data.entries} />
+              <ol className={styles.transcript} aria-label="Transcript">
+                {transcript.data.data.entries.map((entry, index) => (
+                  <li className={styles.transcriptEntry} key={`${entry.occurredAt}-${index}`}>
+                    <div className={styles.transcriptHead}>
+                      <span>{entry.channel}</span>
+                      <LocalTime value={entry.occurredAt} />
+                    </div>
+                    <pre className={styles.transcriptText}>{entry.text}</pre>
+                  </li>
+                ))}
+              </ol>
             ) : (
               <EmptyState>Transcript unavailable</EmptyState>
             )}
