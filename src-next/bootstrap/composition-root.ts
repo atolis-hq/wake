@@ -1,20 +1,27 @@
 import {
-  ActivityExecutionKind,
-  ActivityOutcomeKind,
   ActivityRegistry,
-  activityName,
+  createAgentActivity,
   agentActivityDefinition,
   createPullRequestApproveActivity,
   createPullRequestMergeActivity,
   createPullRequestService,
-  type ActivityDefinition,
 } from '../activities/index.js';
 import {
   createAdvanceOnce,
   createTickPipeline,
   type TickPipeline,
 } from '../control-plane/index.js';
-import { createExecutionService, FakeExecutionRunner, RunnerRegistry } from '../execution/index.js';
+import {
+  createExecutionService,
+  createCommandRunner,
+  createClaudeRunner,
+  createCodexRunner,
+  createCursorRunner,
+  FakeExecutionRunner,
+  loadPromptTemplate,
+  renderPromptTemplate,
+  RunnerRegistry,
+} from '../execution/index.js';
 import {
   SystemClock,
   UlidIdGenerator,
@@ -33,30 +40,24 @@ import {
   createOrchestrationService,
   createWatchReactor,
 } from '../orchestration/index.js';
-import {
-  createResourceLookup,
-  createResourceService,
-  resourceId,
-  resourceStream,
-} from '../resources/index.js';
+import { createResourceLookup, createResourceService, resourceId } from '../resources/index.js';
 import {
   DeliveryOutcomeReactor,
   DeliveryService,
-  DeliveryIntentEventType,
   IntegrationStreamKind,
   PollService,
   ProviderRegistry,
   fakeProviderDefinition,
+  gitHubProviderDefinition,
   type DeliveryIntentView,
   type ProviderInstance,
 } from '../integrations/index.js';
-import { createEventDraft, EventActorKind, EventSourceKind } from '../kernel/index.js';
-import { z } from 'zod';
 import { createWorkService } from '../work/index.js';
 import { loadConfig, type ResolvedWakeModulesConfig } from './config/load-config.js';
 import { resolveWakePaths, type WakePaths } from './paths.js';
 import { createRuntimeProjectionRunner } from './projection-runtime.js';
 import { hydrateFakeProviderEvidence } from './fake-provider-files.js';
+import { createStatusPublishActivity } from './status-publish-activity.js';
 
 export interface CompositionRootOptions {
   readonly config?: ResolvedWakeModulesConfig;
@@ -100,7 +101,8 @@ export async function createCompositionRoot(
   const lookup = createResourceLookup({ journal, projections });
   const resources = createResourceService(journal, lookup);
   const pullRequests = createPullRequestService(journal, work, resources);
-  const activities = options.activities ?? createBuiltInActivityRegistry(journal, pullRequests);
+  const activities =
+    options.activities ?? createBuiltInActivityRegistry(journal, pullRequests, wakeRoot);
   const definitions = Object.fromEntries(
     Object.entries(config.orchestration.workflows).map(([name, definition]) => [
       name,
@@ -171,6 +173,7 @@ async function composeIntegrationRuntime(
 ): Promise<IntegrationRuntime> {
   const registry = new ProviderRegistry();
   registry.register(fakeProviderDefinition);
+  registry.register(gitHubProviderDefinition);
   const providers = registry.compose(
     await hydrateFakeProviderEvidence(input.wakeRoot, input.config.integrations),
     {
@@ -241,63 +244,61 @@ async function composeIntegrationRuntime(
 function createBuiltInActivityRegistry(
   journal: EventJournal,
   pullRequests: ReturnType<typeof createPullRequestService>,
+  wakeRoot: string,
 ): ActivityRegistry {
   const activities = new ActivityRegistry();
-  activities.register(agentActivityDefinition);
-  activities.register(statusPublishActivity(journal));
+  activities.register({
+    ...agentActivityDefinition,
+    handler: createAgentActivity({
+      async render(name, context) {
+        const template = await loadPromptTemplate(wakeRoot, name);
+        return {
+          prompt: renderPromptTemplate(template, context),
+          ...(template.frontmatter.model === undefined || template.frontmatter.model === null
+            ? {}
+            : { model: template.frontmatter.model }),
+          ...(template.frontmatter.allowedTools === undefined ||
+          template.frontmatter.allowedTools === null
+            ? {}
+            : { allowedTools: template.frontmatter.allowedTools }),
+          ...(template.frontmatter.maxTurns === undefined
+            ? {}
+            : { maxTurns: template.frontmatter.maxTurns }),
+        };
+      },
+    }),
+  });
+  activities.register(createStatusPublishActivity(journal));
   activities.register(createPullRequestApproveActivity(journal, pullRequests));
   activities.register(createPullRequestMergeActivity(journal, pullRequests));
   return activities;
 }
 
-function statusPublishActivity(
-  journal: EventJournal,
-): ActivityDefinition<
-  ReturnType<typeof activityName>,
-  { body: string },
-  { kind: typeof ActivityOutcomeKind.Done }
-> {
-  return {
-    name: activityName('status.publish'),
-    inputSchema: z.object({ body: z.string().min(1) }).strict(),
-    outcomeSchema: z.object({ kind: z.literal(ActivityOutcomeKind.Done) }).strict(),
-    outcomeKinds: [ActivityOutcomeKind.Done],
-    resources: [],
-    executionKind: ActivityExecutionKind.Deterministic,
-    handler: {
-      async execute(invocation) {
-        const resource = invocation.resources[0];
-        if (resource === undefined) throw new Error('status.publish requires an intake resource');
-        const sequence = (await journal.readStream(resourceStream(resource.resourceId))).length;
-        await journal.append(resourceStream(resource.resourceId), sequence, [
-          createEventDraft({
-            eventId: `${invocation.activationId}:status.publish`,
-            eventType: DeliveryIntentEventType.StatusPublishRequested,
-            occurredAt: new Date().toISOString(),
-            correlationId: invocation.causationId,
-            causationId: invocation.causationId,
-            actor: { kind: EventActorKind.System, id: 'status.publish' },
-            source: { kind: EventSourceKind.Internal, id: 'status.publish' },
-            stream: resourceStream(resource.resourceId),
-            payload: {
-              workflowInstanceId: invocation.workflowInstanceId,
-              activationId: invocation.activationId,
-              resourceId: resource.resourceId,
-              body: invocation.input.body,
-            },
-          }),
-        ]);
-        return { kind: ActivityOutcomeKind.Done };
-      },
-    },
-  };
-}
-
 function createRunnerRegistry(config: ResolvedWakeModulesConfig['execution']): RunnerRegistry {
   const runners = Object.fromEntries(
-    Object.entries(config.agentRunners ?? {}).flatMap(([name, runner]) =>
-      runner.kind === 'fake' ? [[name, new FakeExecutionRunner()]] : [],
-    ),
+    Object.entries(config.agentRunners ?? {}).map(([name, runner]) => [
+      name,
+      createConfiguredRunner(runner),
+    ]),
   );
   return new RunnerRegistry(config.tiers, runners);
+}
+
+function createConfiguredRunner(
+  runner: NonNullable<ResolvedWakeModulesConfig['execution']['agentRunners']>[string],
+) {
+  switch (runner.kind) {
+    case 'fake':
+      return new FakeExecutionRunner();
+    case 'claude-cli':
+      return createClaudeRunner(runner.command, runner.timeoutMs, runner.args);
+    case 'codex-cli':
+      return createCodexRunner(runner.command, runner.timeoutMs, runner.args);
+    case 'cursor-cli':
+      return createCursorRunner(runner.command, runner.timeoutMs, runner.args);
+    case 'command': {
+      if (runner.command === undefined) throw new Error('Command runner requires a command');
+      return createCommandRunner(runner.command, runner.args, runner.timeoutMs);
+    }
+  }
 }

@@ -1,6 +1,9 @@
 import { PullRequestState } from '../../../activities/index.js';
+import { MergeMethod } from '../../../activities/index.js';
 import { Octokit } from '@octokit/rest';
 import { createEtagCache, fetchWithEtag } from './etag-cache.js';
+import type { GitHubOutboundAction } from '../contracts/vocabulary.js';
+import type { GitHubIssuePayload } from '../contracts/payloads.js';
 
 export function createGitHubClient(token: string) {
   const octokit = new Octokit({
@@ -20,10 +23,63 @@ export function createGitHubClient(token: string) {
       getCombinedStatusForRef(octokit, owner, repo, ref),
     branch: (owner: string, repo: string, name: string) =>
       branch(octokit, cache, owner, repo, name),
+    deliver: (command: GitHubDeliveryCommand) => deliver(octokit, command),
   };
 }
 
-function listIssues(octokit: Octokit, owner: string, repo: string, maxResults: number) {
+interface GitHubDeliveryCommand {
+  readonly owner: string;
+  readonly repo: string;
+  readonly issue_number?: number;
+  readonly pull_number?: number;
+  readonly action: GitHubOutboundAction;
+  readonly idempotencyKey: string;
+  readonly body?: string;
+  readonly merge_method?: MergeMethod;
+}
+
+async function deliver(octokit: Octokit, command: GitHubDeliveryCommand): Promise<string> {
+  const marker = `<!-- wake:delivery:${command.idempotencyKey} -->`;
+  if (command.action === 'approve') {
+    if (command.pull_number === undefined)
+      throw new Error('GitHub approval requires a pull request');
+    const response = await octokit.rest.pulls.createReview({
+      owner: command.owner,
+      repo: command.repo,
+      pull_number: command.pull_number,
+      event: 'APPROVE',
+      body: marker,
+    });
+    return String(response.data.id);
+  }
+  if (command.action === MergeMethod.Merge) {
+    if (command.pull_number === undefined) throw new Error('GitHub merge requires a pull request');
+    const response = await octokit.rest.pulls.merge({
+      owner: command.owner,
+      repo: command.repo,
+      pull_number: command.pull_number,
+      ...(command.merge_method === undefined ? {} : { merge_method: command.merge_method }),
+    });
+    return response.data.sha;
+  }
+  const issueNumber = command.issue_number ?? command.pull_number;
+  if (issueNumber === undefined)
+    throw new Error('GitHub comment requires an issue or pull request');
+  const response = await octokit.rest.issues.createComment({
+    owner: command.owner,
+    repo: command.repo,
+    issue_number: issueNumber,
+    body: `${command.body ?? ''}\n${marker}`,
+  });
+  return String(response.data.id);
+}
+
+function listIssues(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  maxResults: number,
+): Promise<readonly GitHubIssuePayload[]> {
   return octokit
     .paginate(octokit.rest.issues.listForRepo, {
       owner,
@@ -31,7 +87,28 @@ function listIssues(octokit: Octokit, owner: string, repo: string, maxResults: n
       state: 'all',
       per_page: Math.min(maxResults, 100),
     })
-    .then((items) => items.slice(0, maxResults));
+    .then((items) => items.slice(0, maxResults).map(normalizeIssue));
+}
+
+function normalizeIssue(issue: {
+  readonly number: number;
+  readonly title: string;
+  readonly body?: string | null;
+  readonly state: string;
+  readonly updated_at: string;
+  readonly user?: { readonly login?: string; readonly type?: string } | null;
+  readonly pull_request?: Record<string, unknown>;
+}): GitHubIssuePayload {
+  return {
+    number: issue.number,
+    title: issue.title,
+    body: issue.body ?? null,
+    state:
+      issue.state === PullRequestState.Closed ? PullRequestState.Closed : PullRequestState.Open,
+    updated_at: issue.updated_at,
+    ...(issue.user === undefined ? {} : { user: issue.user }),
+    ...(issue.pull_request === undefined ? {} : { pull_request: issue.pull_request }),
+  };
 }
 
 async function listPullRequests(octokit: Octokit, owner: string, repo: string, maxResults: number) {

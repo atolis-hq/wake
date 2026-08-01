@@ -8,6 +8,7 @@ import { EventSourceKind } from '../../../kernel/index.js';
 import { createHash } from 'node:crypto';
 import { createEventDraft, EventActorKind } from '../../../kernel/index.js';
 import { GitHubAdapter } from '../contracts/vocabulary.js';
+import type { AdapterId } from '../../contracts/identifiers.js';
 import { integrationStream } from '../../contracts/streams.js';
 import { formatGitHubResourceKey } from '../contracts/external-key.js';
 import type { ExternalEventSource } from '../application/poll-service.js';
@@ -52,6 +53,7 @@ export function createGitHubPullRequestSource(input: {
   readonly repository: string;
   readonly maxResults: number;
   readonly maxConcurrency?: number;
+  readonly adapter?: AdapterId;
 }): ExternalEventSource {
   const { owner, repo } = parseRepository(input.repository);
   return {
@@ -62,7 +64,12 @@ export function createGitHubPullRequestSource(input: {
         signal.throwIfAborted();
         const headRevision = fallback(pullRequest.head?.sha, pullRequest.updated_at);
         const evidence = await readCheckEvidence(input.client, owner, repo, headRevision);
-        return pullRequestObservation({ repository: input.repository, pullRequest, evidence });
+        return pullRequestObservation({
+          repository: input.repository,
+          pullRequest,
+          evidence,
+          ...(input.adapter === undefined ? {} : { adapter: input.adapter }),
+        });
       });
     },
   };
@@ -72,6 +79,7 @@ function pullRequestObservation(input: {
   readonly repository: string;
   readonly pullRequest: GitHubPullRequestPayload;
   readonly evidence: CheckEvidence;
+  readonly adapter?: AdapterId;
 }): Extract<GitHubAdapterEventDraft, { eventType: typeof GitHubEventType.WorkObserved }> {
   const pullRequest = input.pullRequest;
   const key = formatGitHubResourceKey({
@@ -106,8 +114,8 @@ function pullRequestObservation(input: {
     correlationId: `github:${key}`,
     causationId: `github:${key}:${fingerprint}`,
     actor: { kind: EventActorKind.Integration, id: 'github' },
-    source: { kind: EventSourceKind.Adapter, id: 'github' },
-    stream: integrationStream(GitHubAdapter),
+    source: { kind: EventSourceKind.Adapter, id: input.adapter ?? GitHubAdapter },
+    stream: integrationStream(input.adapter ?? GitHubAdapter),
     payload,
   });
 }

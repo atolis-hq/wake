@@ -2,6 +2,7 @@ import { EventSourceKind } from '../../../kernel/index.js';
 import { ReviewActorKind } from '../../../activities/index.js';
 import { createEventDraft, EventActorKind } from '../../../kernel/index.js';
 import { GitHubAdapter } from '../contracts/vocabulary.js';
+import type { AdapterId } from '../../contracts/identifiers.js';
 import { integrationStream } from '../../contracts/streams.js';
 import { formatGitHubResourceKey } from '../contracts/external-key.js';
 import type { GitHubIssuePayload } from '../contracts/payloads.js';
@@ -11,6 +12,7 @@ import { UnknownGitHubIdentity } from '../contracts/vocabulary.js';
 export function issueObservation(input: {
   readonly repository: string;
   readonly issue: GitHubIssuePayload;
+  readonly adapter?: AdapterId;
 }): Extract<GitHubAdapterEventDraft, { eventType: typeof GitHubEventType.WorkObserved }> {
   const key = formatGitHubResourceKey({
     ...parseRepository(input.repository),
@@ -23,8 +25,8 @@ export function issueObservation(input: {
     correlationId: `github:${key}`,
     causationId: `github:${key}:${input.issue.updated_at}`,
     actor: { kind: EventActorKind.Integration, id: 'github' },
-    source: { kind: EventSourceKind.Adapter, id: 'github' },
-    stream: integrationStream(GitHubAdapter),
+    source: { kind: EventSourceKind.Adapter, id: input.adapter ?? GitHubAdapter },
+    stream: integrationStream(input.adapter ?? GitHubAdapter),
     payload: {
       externalKey: key,
       kind: 'issue',

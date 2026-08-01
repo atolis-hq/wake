@@ -54,6 +54,7 @@ export interface AgentRunnerPort {
       readonly prompt: string;
       readonly model?: string;
       readonly allowedTools: readonly string[];
+      readonly maxTurns?: number;
     },
     signal: AbortSignal,
   ): Promise<{
@@ -65,6 +66,17 @@ export interface AgentRunnerPort {
     readonly result: Promise<{
       readonly transport: import('./vocabulary.js').ActivityRunnerTransportStatus;
       readonly output: string;
+      readonly runner?: string | undefined;
+      readonly sessionId?: string | undefined;
+      readonly tokenUsage?:
+        | {
+            readonly input: number;
+            readonly output: number;
+            readonly cacheRead?: number | undefined;
+            readonly cacheWrite?: number | undefined;
+            readonly costUsd?: number | undefined;
+          }
+        | undefined;
       readonly failure?: { readonly kind: string; readonly message: string } | undefined;
     }>;
   }>;
@@ -77,6 +89,23 @@ export interface ActivityExecutionContext {
     readonly kind: ExternalExecutionKind;
     readonly id: string;
     readonly startedAt: string;
+  }): Promise<void>;
+  reportRunnerResult?(result: {
+    readonly transport: import('./vocabulary.js').ActivityRunnerTransportStatus;
+    readonly output: string;
+    readonly runner: string;
+    readonly model?: string | undefined;
+    readonly sessionId?: string | undefined;
+    readonly tokenUsage?:
+      | {
+          readonly input: number;
+          readonly output: number;
+          readonly cacheRead?: number | undefined;
+          readonly cacheWrite?: number | undefined;
+          readonly costUsd?: number | undefined;
+        }
+      | undefined;
+    readonly failure?: { readonly kind: string; readonly message: string } | undefined;
   }): Promise<void>;
 }
 export interface ActivityHandler<Input, Outcome extends ActivityOutcome> {

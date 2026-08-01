@@ -30,7 +30,13 @@ export interface RunView {
   readonly attempt: number;
   readonly status: RunTransportStatus;
   readonly startedAt: string;
-  readonly runner?: { readonly name: string; readonly model?: string | undefined } | undefined;
+  readonly runner?:
+    | {
+        readonly name: string;
+        readonly model?: string | undefined;
+        readonly effort?: string | undefined;
+      }
+    | undefined;
   readonly finishedAt?: string;
   readonly outcome?: ActivityOutcome;
   readonly failure?: ExecutionFailure;
@@ -40,5 +46,15 @@ export interface RunView {
   };
   readonly lease?: Lease;
   readonly externalExecution?: ExternalExecutionReference;
+  readonly sessionId?: string | undefined;
+  readonly tokenUsage?:
+    | {
+        readonly input: number;
+        readonly output: number;
+        readonly cacheRead?: number | undefined;
+        readonly cacheWrite?: number | undefined;
+        readonly costUsd?: number | undefined;
+      }
+    | undefined;
   readonly cancellation?: Cancellation;
 }

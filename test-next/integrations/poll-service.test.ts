@@ -46,4 +46,45 @@ describe('PollService', () => {
       'integration.github.work-observed',
     ]);
   });
+
+  it('reads the integration stream once and appends a whole poll batch atomically', async () => {
+    const delegate = new InMemoryEventJournal(new FakeClock());
+    let reads = 0;
+    const journal = {
+      append: delegate.append.bind(delegate),
+      readAll: delegate.readAll.bind(delegate),
+      readStream: async (stream: Parameters<typeof delegate.readStream>[0]) => {
+        reads += 1;
+        return delegate.readStream(stream);
+      },
+    };
+    const draft = (id: string) =>
+      createEventDraft({
+        eventId: id,
+        eventType: 'integration.github.work-observed',
+        occurredAt: '2026-07-30T12:00:00.000Z',
+        correlationId: id,
+        causationId: id,
+        actor: { kind: 'integration', id: 'github' },
+        source: { kind: 'adapter', id: 'github' },
+        stream: integrationStream(BuiltInAdapterId.GitHub),
+        payload: {
+          externalKey: `owner/repo#${id}`,
+          kind: 'issue' as const,
+          title: id,
+          body: '',
+          state: 'open' as const,
+          revision: id,
+          actor: { id: 'octocat', kind: 'human' as const },
+          raw: {},
+        },
+      });
+
+    await new PollService(journal, { poll: async () => [draft('1'), draft('2')] }).pollOnce(
+      new AbortController().signal,
+    );
+
+    expect(reads).toBe(1);
+    expect(await delegate.readAll(0)).toHaveLength(2);
+  });
 });

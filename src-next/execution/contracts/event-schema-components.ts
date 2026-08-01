@@ -17,7 +17,11 @@ export const runStartedPayloadSchema = z
     attempt: z.number().int().positive(),
     startedAt: offsetIsoTimestampSchema,
     runner: z
-      .object({ name: z.string().min(1), model: z.string().min(1).optional() })
+      .object({
+        name: z.string().min(1),
+        model: z.string().min(1).optional(),
+        effort: z.string().min(1).optional(),
+      })
       .strict()
       .optional(),
     workspace: z

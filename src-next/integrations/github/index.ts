@@ -1,6 +1,7 @@
 export * from './application/inbound-translator.js';
 export * from './application/review-command-translator.js';
 export * from './application/poll-service.js';
+export * from './application/wake-labels.js';
 export * from './contracts/events.js';
 export * from './contracts/config.js';
 export * from './contracts/payloads.js';
@@ -10,6 +11,8 @@ export * from './infrastructure/etag-cache.js';
 export * from './infrastructure/issue-source.js';
 export * from './infrastructure/pr-source.js';
 export * from './infrastructure/review-source.js';
+export * from './infrastructure/source.js';
+export * from './provider.js';
 export * from '../../kernel/index.js';
 export * from '../contracts/identifiers.js';
 export * from '../contracts/streams.js';

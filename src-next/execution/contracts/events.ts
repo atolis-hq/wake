@@ -39,6 +39,7 @@ export const ExecutionEventType = {
   RunLeaseClaimed: 'execution.run-lease-claimed',
   RunLeaseRenewed: 'execution.run-lease-renewed',
   RunExternalExecutionReported: 'execution.run-external-execution-reported',
+  RunRunnerResultReported: 'execution.run-runner-result-reported',
   RunCancellationRequested: 'execution.run-cancellation-requested',
   RunCancellationConfirmed: 'execution.run-cancellation-confirmed',
   RunCancelled: 'execution.run-cancelled',
@@ -57,7 +58,13 @@ export interface RunStartedPayload {
   readonly orchestrationGroupId: ActivityOrchestrationGroupId;
   readonly attempt: number;
   readonly startedAt: string;
-  readonly runner?: { readonly name: string; readonly model?: string | undefined } | undefined;
+  readonly runner?:
+    | {
+        readonly name: string;
+        readonly model?: string | undefined;
+        readonly effort?: string | undefined;
+      }
+    | undefined;
   readonly workspace?:
     | {
         readonly mode: typeof WorkspaceMode.ReadOnly | typeof WorkspaceMode.Branch;
@@ -79,6 +86,7 @@ export interface RunExecutionEventPayloads {
   readonly [ExecutionEventType.RunLeaseClaimed]: Lease;
   readonly [ExecutionEventType.RunLeaseRenewed]: Lease;
   readonly [ExecutionEventType.RunExternalExecutionReported]: ExternalExecutionReference;
+  readonly [ExecutionEventType.RunRunnerResultReported]: import('./runner.js').RunnerResult;
   readonly [ExecutionEventType.RunCancellationRequested]: {
     readonly requestedAt: string;
     readonly reason: Cancellation['reason'];
@@ -134,6 +142,11 @@ const runEventSchema: z.ZodType<RunExecutionEvent> = z.discriminatedUnion('event
     eventType: z.literal(ExecutionEventType.RunStarted),
     stream: runStreamSchema,
     payload: runStartedPayloadSchema,
+  }),
+  eventEnvelopeSchema.extend({
+    eventType: z.literal(ExecutionEventType.RunRunnerResultReported),
+    stream: runStreamSchema,
+    payload: runnerResultPayloadSchema,
   }),
   eventEnvelopeSchema.extend({
     eventType: z.literal(ExecutionEventType.RunCancelled),

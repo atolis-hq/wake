@@ -28,6 +28,8 @@ export type ActivationExecutionEventDraftInput = {
 export type ExecutionEventDraftInput =
   RunExecutionEventDraftInput | ActivationExecutionEventDraftInput;
 
+// Exhaustive dispatch preserves the closed event-to-payload mapping.
+// eslint-disable-next-line complexity
 export function createRunExecutionEventDraft(
   input: RunExecutionEventDraftInput,
 ): RunExecutionEventDraft {
@@ -43,6 +45,8 @@ export function createRunExecutionEventDraft(
     case ExecutionEventType.RunLeaseRenewed:
       return createEventDraft(input);
     case ExecutionEventType.RunExternalExecutionReported:
+      return createEventDraft(input);
+    case ExecutionEventType.RunRunnerResultReported:
       return createEventDraft(input);
     case ExecutionEventType.RunCancellationRequested:
       return createEventDraft(input);

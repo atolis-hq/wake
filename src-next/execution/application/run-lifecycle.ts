@@ -25,6 +25,7 @@ interface RunLifecycleDependencies {
 interface ResolvedRunner {
   readonly name?: string | undefined;
   readonly model?: string | undefined;
+  readonly effort?: string | undefined;
 }
 
 export async function startRun(input: {
@@ -68,6 +69,7 @@ export async function startRun(input: {
               runner: {
                 name: runner.name,
                 ...(runner.model === undefined ? {} : { model: runner.model }),
+                ...(runner.effort === undefined ? {} : { effort: runner.effort }),
               },
             }),
         ...(lease === undefined ? {} : { workspace: { mode: lease.mode, path: lease.path } }),

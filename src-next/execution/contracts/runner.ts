@@ -6,6 +6,7 @@ export interface RunnerRequest {
   readonly model?: string;
   readonly workspacePath?: string;
   readonly allowedTools: readonly string[];
+  readonly maxTurns?: number;
   readonly resumeSessionId?: string;
 }
 

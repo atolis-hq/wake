@@ -13,7 +13,6 @@ import {
   type EventUnion,
 } from '../../../kernel/index.js';
 import { adapterId } from '../../contracts/identifiers.js';
-import { GitHubAdapter } from './vocabulary.js';
 import { IntegrationStreamKind, type IntegrationStreamRef } from '../../contracts/streams.js';
 
 export const GitHubEventType = {
@@ -91,7 +90,7 @@ export type GitHubAdapterEventDraft = EventDraftUnion<GitHubEventPayloads, Integ
 const streamSchema = z
   .object({
     kind: z.literal(IntegrationStreamKind.Integration),
-    id: z.literal(GitHubAdapter).transform(adapterId),
+    id: z.string().transform(adapterId),
   })
   .strict();
 const rawSchema = z.record(z.string(), z.unknown());

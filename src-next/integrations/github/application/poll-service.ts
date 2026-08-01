@@ -25,9 +25,14 @@ export class PollService {
       if (!gitHubEventTypes.has(draft.eventType)) {
         throw new Error('PollService cannot append canonical domain events');
       }
-      const stream = integrationStream(GitHubAdapter);
-      const existing = await this.journal.readStream(stream);
-      await this.journal.append(stream, existing.length, [{ ...draft, stream }]);
     }
+    if (drafts.length === 0) return;
+    const stream = integrationStream(GitHubAdapter);
+    const existing = await this.journal.readStream(stream);
+    await this.journal.append(
+      stream,
+      existing.length,
+      drafts.map((draft) => ({ ...draft, stream })),
+    );
   }
 }

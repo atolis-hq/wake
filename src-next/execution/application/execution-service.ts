@@ -156,6 +156,7 @@ function resolveRunner(
       : {
           name: resolved.name,
           model: runtime.config.agentRunners?.[resolved.name]?.model,
+          effort: runtime.config.agentRunners?.[resolved.name]?.effort,
         }),
   };
 }
@@ -247,6 +248,20 @@ async function executeActivity(
           correlationId: context.orchestrationGroupId,
           causationId: activation.activationId,
           payload: reference,
+        }),
+      ]);
+    },
+    reportRunnerResult: async (result) => {
+      const loaded = await runtime.repository.load(currentRunId);
+      await runtime.repository.append(currentRunId, loaded.sequence, [
+        createRunEvent({
+          runId: currentRunId,
+          eventId: `${currentRunId}:runner-result`,
+          eventType: ExecutionEventType.RunRunnerResultReported,
+          occurredAt: runtime.dependencies.clock.now().toISOString(),
+          correlationId: context.orchestrationGroupId,
+          causationId: activation.activationId,
+          payload: result,
         }),
       ]);
     },

@@ -68,6 +68,16 @@ const runSamples = [
     { kind: 'process', id: 'process-1', startedAt: '2026-07-31T12:00:00.000Z' },
   ],
   [
+    ExecutionEventType.RunRunnerResultReported,
+    {
+      transport: 'succeeded',
+      output: 'DONE',
+      runner: 'fake',
+      sessionId: 'session-1',
+      tokenUsage: { input: 10, output: 20, costUsd: 0.03 },
+    },
+  ],
+  [
     ExecutionEventType.RunCancellationRequested,
     { requestedAt: '2026-07-31T12:00:00.000Z', reason: 'timeout' },
   ],

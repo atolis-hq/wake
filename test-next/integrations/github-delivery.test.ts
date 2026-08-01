@@ -36,7 +36,7 @@ describe('GitHub outbound delivery', () => {
         {
           resourceId: resId('1'),
           kind: BuiltInResourceKind.PullRequest,
-          externalKey: { adapter: BuiltInAdapterId.GitHub, key: 'o/r/2' },
+          externalKey: { adapter: BuiltInAdapterId.GitHub, key: 'o/r#2' },
           capabilities: [],
         },
         mergeIntent,
@@ -52,13 +52,32 @@ describe('GitHub outbound delivery', () => {
           kind: BuiltInResourceKind.PullRequest,
           externalKey: {
             adapter: BuiltInAdapterId.GitHub,
-            key: 'o/r/9007199254740992',
+            key: 'o/r#9007199254740992',
           },
           capabilities: [],
         },
         mergeIntent,
       ),
     ).toThrow(/safe integer/i);
+  });
+
+  it('targets status publication at an observed issue rather than assuming a pull request', () => {
+    expect(
+      translateGitHubOutbound(
+        {
+          resourceId: resId('2'),
+          kind: BuiltInResourceKind.Issue,
+          externalKey: { adapter: BuiltInAdapterId.GitHub, key: 'o/r#3' },
+          capabilities: [],
+        },
+        {
+          ...mergeIntent,
+          resourceId: resId('2'),
+          kind: DeliveryIntentKind.StatusPublish,
+          payload: { kind: DeliveryIntentKind.StatusPublish, body: 'Working' },
+        },
+      ),
+    ).toMatchObject({ issue_number: 3, action: 'status' });
   });
 
   it('reports a stable message for a non-Error provider rejection', async () => {

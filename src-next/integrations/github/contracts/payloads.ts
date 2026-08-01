@@ -6,6 +6,7 @@ export interface GitHubIssuePayload {
   readonly state: typeof PullRequestState.Open | typeof PullRequestState.Closed;
   readonly updated_at: string;
   readonly user?: { readonly login?: string; readonly type?: string } | null;
+  readonly pull_request?: Record<string, unknown>;
 }
 
 export interface GitHubPullRequestPayload extends GitHubIssuePayload {

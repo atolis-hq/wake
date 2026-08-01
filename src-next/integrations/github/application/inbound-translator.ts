@@ -25,6 +25,8 @@ import { workItemId, type WorkItemId } from '../../../work/index.js';
 import type { ExternalWorkObservedPayload, GitHubAdapterEvent } from '../contracts/events.js';
 import { GitHubEventType, selectGitHubAdapterEvent } from '../contracts/events.js';
 import { UnknownGitHubIdentity } from '../contracts/vocabulary.js';
+import { GitHubAdapter } from '../contracts/vocabulary.js';
+import type { AdapterId } from '../../contracts/identifiers.js';
 import { observePullRequest } from './pull-request-translation.js';
 import { translateGitHubReviewCommand } from './review-command-translator.js';
 
@@ -32,7 +34,7 @@ type InboundCommandCandidate =
   | {
       readonly kind: 'discover-resource';
       readonly resourceId: ResourceId;
-      readonly externalKey: { readonly adapter: 'github'; readonly key: string };
+      readonly externalKey: { readonly adapter: AdapterId; readonly key: string };
       readonly revision: string;
     }
   | {
@@ -47,12 +49,11 @@ type InboundCommandCandidate =
     }
   | { readonly kind: 'pr.observe'; readonly input: ObservePullRequest };
 
-const checkpoint = 'reactor:integration.github.inbound';
-
 interface InboundTranslatorDependencies {
   readonly pullRequests?: PullRequestService;
   readonly ids?: IdGenerator;
   readonly lookup?: ResourceLookup;
+  readonly adapter?: AdapterId;
 }
 
 export class InboundTranslator {
@@ -60,14 +61,14 @@ export class InboundTranslator {
 
   translate(payload: ExternalWorkObservedPayload): readonly InboundCommandCandidate[] {
     const { resourceId: resourceIdValue, workItemId: workItemIdValue } = this.newIdentity({
-      adapter: 'github',
+      adapter: this.adapter,
       key: payload.externalKey,
     });
     const commands: InboundCommandCandidate[] = [
       {
         kind: 'discover-resource',
         resourceId: resourceIdValue,
-        externalKey: { adapter: 'github', key: payload.externalKey },
+        externalKey: { adapter: this.adapter, key: payload.externalKey },
         revision: payload.revision,
       },
       { kind: 'create-work-item', workItemId: workItemIdValue, objective: payload.title },
@@ -92,12 +93,16 @@ export class InboundTranslator {
     this.pullRequests = dependencies.pullRequests;
     this.ids = dependencies.ids ?? new UlidIdGenerator();
     this.lookup = dependencies.lookup;
+    this.adapter = dependencies.adapter ?? GitHubAdapter;
   }
 
   private readonly pullRequests: PullRequestService | undefined;
   private readonly ids: IdGenerator;
   private readonly lookup: ResourceLookup | undefined;
+  private readonly adapter: AdapterId;
 
+  // Adapter filtering, checkpointing, and typed event dispatch must stay together.
+  // eslint-disable-next-line complexity
   async runOnce(limit = 100): Promise<void> {
     if (
       this.journal === undefined ||
@@ -107,12 +112,15 @@ export class InboundTranslator {
     ) {
       throw new Error('InboundTranslator services are required to run evidence translation');
     }
+    const checkpoint = `reactor:integration.${this.adapter}.inbound`;
     const position = await this.checkpoints.load(checkpoint);
     const events = await this.journal.readAll(position, limit);
     for (const event of events) {
       const owned = selectGitHubAdapterEvent(event);
-      if (owned?.eventType === GitHubEventType.WorkObserved) await this.apply(owned);
-      if (owned?.eventType === GitHubEventType.CommentObserved) await this.applyReviewSignal(owned);
+      if (owned?.stream.id === this.adapter && owned.eventType === GitHubEventType.WorkObserved)
+        await this.apply(owned);
+      if (owned?.stream.id === this.adapter && owned.eventType === GitHubEventType.CommentObserved)
+        await this.applyReviewSignal(owned);
       await this.checkpoints.save(checkpoint, event.globalPosition);
     }
   }
@@ -125,7 +133,10 @@ export class InboundTranslator {
     const context = commandContext(event);
     const pullRequests =
       this.pullRequests ?? createPullRequestService(this.journal!, this.work, this.resources);
-    const identity = await this.resolveIdentity({ adapter: 'github', key: payload.externalKey });
+    const identity = await this.resolveIdentity({
+      adapter: this.adapter,
+      key: payload.externalKey,
+    });
     if (!identity.created) {
       const current = await this.resources.get(identity.resourceId);
       if (current === null) throw new Error(`Resource ${identity.resourceId} could not be loaded`);
@@ -156,7 +167,7 @@ export class InboundTranslator {
           payload.kind === 'pull-request'
             ? BuiltInResourceKind.PullRequest
             : BuiltInResourceKind.Issue,
-        externalKey: { adapter: 'github', key: payload.externalKey },
+        externalKey: { adapter: this.adapter, key: payload.externalKey },
         capabilities:
           payload.kind === 'pull-request'
             ? [
@@ -186,7 +197,7 @@ export class InboundTranslator {
     const payload = event.payload;
     if (this.lookup === undefined) throw new Error('InboundTranslator lookup is required');
     let resourceIdValue = await this.lookup.resourceIdForExternalKey({
-      adapter: 'github',
+      adapter: this.adapter,
       key: payload.externalKey,
     });
     if (resourceIdValue === null) resourceIdValue = resourceId(this.ids.next('resource'));

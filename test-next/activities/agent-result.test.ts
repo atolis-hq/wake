@@ -104,3 +104,55 @@ describe('agent results', () => {
     });
   });
 });
+
+describe('agent template input', () => {
+  it('renders a named prompt template and applies its frontmatter to the runner request', async () => {
+    const handler = createAgentActivity({
+      async render(name, context) {
+        expect(name).toBe('implement');
+        expect(context).toEqual({ workItemId: 'work-00000000000000000000000001' });
+        return {
+          prompt: 'Implement the change.',
+          model: 'gpt-5',
+          allowedTools: ['Bash(git *)'],
+          maxTurns: 40,
+        };
+      },
+    });
+    const requests: unknown[] = [];
+
+    await handler.execute(
+      {
+        activationId: activationId('activation-template'),
+        activity: BuiltInActivityName.Agent,
+        workItemId: workId('00000000000000000000000001'),
+        workflowInstanceId: activityWorkflowInstanceId('workflow-1'),
+        orchestrationGroupId: activityOrchestrationGroupId('group-1'),
+        causationId: 'cause-1',
+        input: { template: 'implement' },
+        resources: [],
+      },
+      {
+        signal: new AbortController().signal,
+        occurredAt: '2026-07-31T00:00:00.000Z',
+        runner: {
+          async start(request) {
+            requests.push(request);
+            return { result: Promise.resolve({ transport: 'succeeded' as const, output: 'DONE' }) };
+          },
+        },
+        async reportExternalExecution() {},
+      },
+    );
+
+    expect(requests).toEqual([
+      {
+        runId: 'activation-template',
+        prompt: 'Implement the change.',
+        model: 'gpt-5',
+        allowedTools: ['Bash(git *)'],
+        maxTurns: 40,
+      },
+    ]);
+  });
+});

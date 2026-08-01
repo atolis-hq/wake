@@ -39,19 +39,46 @@ describe('Execution runner selection', () => {
     expect(standard.calls).toBe(1);
   });
 
-  it('records the resolved runner name and configured model on the Run', async () => {
+  it('records the resolved runner name, model, and effort on the Run', async () => {
     const standard = runner('standard');
     const service = fixture(new RunnerRegistry({ standard: ['standard'] }, { standard }));
 
     const run = await service.attempt(activation(), context());
 
-    expect(run).toMatchObject({ runner: { name: 'standard', model: 'test-model' } });
+    expect(run).toMatchObject({
+      runner: { name: 'standard', model: 'test-model', effort: 'high' },
+    });
   });
 
   it('rejects a tier with no registered runner', async () => {
     const service = fixture(new RunnerRegistry({ standard: ['missing'] }, {}));
 
     await expect(service.attempt(activation(), context())).rejects.toThrow(/not registered/);
+  });
+
+  it('persists a successful runner session and token usage on the Run', async () => {
+    const standard: Runner = {
+      async start() {
+        return {
+          result: Promise.resolve({
+            transport: 'succeeded',
+            output: 'DONE',
+            runner: 'standard',
+            sessionId: 'session-1',
+            tokenUsage: { input: 10, output: 20, costUsd: 0.03 },
+          }),
+          async cancel() {},
+        };
+      },
+    };
+    const service = fixture(new RunnerRegistry({ standard: ['standard'] }, { standard }));
+
+    const run = await service.attempt(activation(), context());
+
+    expect(run).toMatchObject({
+      sessionId: 'session-1',
+      tokenUsage: { input: 10, output: 20, costUsd: 0.03 },
+    });
   });
 });
 
@@ -62,7 +89,9 @@ function fixture(runners: RunnerRegistry) {
     new InMemoryEventJournal(new FakeClock()),
     registry,
     {
-      agentRunners: { standard: { kind: 'fake', model: 'test-model', timeoutMs: 1_000, args: [] } },
+      agentRunners: {
+        standard: { kind: 'fake', model: 'test-model', effort: 'high', timeoutMs: 1_000, args: [] },
+      },
       tiers: { standard: ['standard'], premium: ['premium'] },
       defaultTier: 'standard',
     },

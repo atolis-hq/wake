@@ -1,10 +1,10 @@
-import { z } from 'zod';
-
 import type { MergeMethod } from '../../../activities/index.js';
 import type { DeliveryIntentView } from '../../delivery/contracts/views.js';
 import { DeliveryIntentKind } from '../../delivery/contracts/vocabulary.js';
 import { GitHubAdapter } from '../contracts/vocabulary.js';
 import type { ResourceView } from '../../../resources/index.js';
+import { BuiltInResourceKind } from '../../../resources/index.js';
+import { parseGitHubResourceKey } from '../contracts/external-key.js';
 import {
   GitHubOutboundAction,
   type GitHubOutboundAction as GitHubOutboundActionValue,
@@ -13,7 +13,8 @@ import {
 interface GitHubOutboundCommand {
   readonly owner: string;
   readonly repo: string;
-  readonly pull_number: number;
+  readonly issue_number?: number;
+  readonly pull_number?: number;
   readonly action: GitHubOutboundActionValue;
   readonly idempotencyKey: string;
   readonly body?: string;
@@ -21,38 +22,19 @@ interface GitHubOutboundCommand {
   readonly merge_method?: MergeMethod;
 }
 
-const resourceKeySchema = z.tuple([
-  z.string().min(1),
-  z.string().min(1),
-  z
-    .string()
-    .regex(/^\d+$/)
-    .pipe(
-      z.coerce
-        .number<string>()
-        .int()
-        .positive()
-        .max(9_007_199_254_740_991, 'Expected safe integer'),
-    ),
-]);
-
 export function translateGitHubOutbound(
   resource: ResourceView,
   intent: DeliveryIntentView,
 ): GitHubOutboundCommand {
   if (resource.externalKey.adapter !== GitHubAdapter)
     throw new Error('Resource is not a GitHub resource');
-  const parsed = resourceKeySchema.safeParse(resource.externalKey.key.split('/'));
-  if (!parsed.success)
-    throw new Error(
-      `Invalid GitHub resource key: ${resource.externalKey.key}: ${parsed.error.issues.map((issue) => issue.message).join('; ')}`,
-      { cause: parsed.error },
-    );
-  const [owner, repo, pullNumber] = parsed.data;
+  const { owner, repo, number } = parseGitHubResourceKey(resource.externalKey.key);
   return {
     owner,
     repo,
-    pull_number: pullNumber,
+    ...(resource.kind === BuiltInResourceKind.PullRequest
+      ? { pull_number: number }
+      : { issue_number: number }),
     action: outboundAction(intent.kind),
     idempotencyKey: intent.intentEventId,
     ...('body' in intent.payload ? { body: intent.payload.body } : {}),
