@@ -1,7 +1,6 @@
 ﻿import { describe, expect, it } from 'vitest';
 import { InMemoryEventJournal } from '../../src-next/persistence/index.js';
-import type {
-  resourceId} from '../../src-next/resources/index.js';
+import type { resourceId } from '../../src-next/resources/index.js';
 import {
   resourceCapability,
   resourceKind,

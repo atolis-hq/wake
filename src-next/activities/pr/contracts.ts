@@ -5,8 +5,7 @@ import type {
   ActivityOutcomeKind,
   ActivityResourceRole,
 } from '../contracts/vocabulary.js';
-import type { ReviewerAuthorizationEvidence } from '../review/contracts.js';
-import type { ReviewActorKind } from '../review/contracts.js';
+import type { ReviewActorKind, ReviewerAuthorizationEvidence } from '../review/contracts.js';
 import type {
   MergeMethod,
   PullRequestCheckState,

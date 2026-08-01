@@ -40,13 +40,8 @@ import {
   ResourceStreamKind,
   type ResourceId,
 } from '../../src-next/resources/index.js';
-import type {
-  WorkStreamKind} from '../../src-next/work/index.js';
-import {
-  isWorkItemStream,
-  workItemStream,
-  type WorkItemId,
-} from '../../src-next/work/index.js';
+import type { WorkStreamKind } from '../../src-next/work/index.js';
+import { isWorkItemStream, workItemStream, type WorkItemId } from '../../src-next/work/index.js';
 
 type StreamPredicate = (stream: EntityRef) => boolean;
 

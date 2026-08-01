@@ -9,7 +9,8 @@ import type {
   RunTranscriptResponse,
   WorkDetailResponse,
   WorkflowInstanceResponse,
-  WorkItemResponse} from '../../../api/contracts/index.js';
+  WorkItemResponse,
+} from '../../../api/contracts/index.js';
 import {
   type AcceptedCommandResponse,
   type AdvanceCommandResponse,

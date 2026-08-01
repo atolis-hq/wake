@@ -3,7 +3,7 @@
   createPullRequestMergeActivity,
 } from '../../../src-next/activities/index.js';
 import { workflowName } from '../../../src-next/orchestration/contracts/identifiers.js';
-import type { ResourceCapability , resourceId} from '../../../src-next/resources/index.js';
+import type { ResourceCapability, resourceId } from '../../../src-next/resources/index.js';
 import { resourceCapability, resourceKind } from '../../../src-next/resources/index.js';
 import { type WorkItemId } from '../../../src-next/work/index.js';
 import { resId, workId } from '../../support/identities.js';
