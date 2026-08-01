@@ -588,8 +588,25 @@ The gate is `npm run verify:next`, plus `npm run lint:contracts`,
 5. Events, runs, health, observability, configuration (§6.4-§6.6).
 6. Contrast and accessibility pass.
 
-Steps 3 through 5 are independent of one another once step 2 lands. Phase A is
-shippable on its own and does not depend on Phase B.
+Steps 3 through 5 are independent of one another once step 2 lands.
+
+Phase A has no blocking dependency on Phase B, on Task 25A, or on Task 25C, and
+the two phases can run in parallel rather than in sequence:
+
+- 25C explicitly excludes the web workspace from its rewrite, in prose and in
+  its ESLint `ignores`, so there is no file overlap.
+- 25A lists no file under `src-next/surfaces/web`.
+- The web e2e fixture (`e2e/surface-fixture.ts`) stands the HTTP surface up
+  against a hand-written `ApiApplications` stub, with no composition root,
+  journal, or projections — so Phase A is fully buildable and testable before
+  the live runtime is restored.
+
+**Consequence for review.** Until 25A wires intake, the fixture is the only place
+Phase A can be seen with data in it, which makes it the de-facto design review
+artifact. It currently carries a single work item. Phase A therefore includes
+widening the fixture to a representative set — enough items, states, long
+objectives, and empty columns to expose density and truncation problems that one
+card cannot.
 
 ### Phase B — operator read models
 
