@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { BuiltInActivityName } from '../../../activities/index.js';
+import { BuiltInActivityName, MergeMethod } from '../../../activities/index.js';
 import { RunStatus } from '../../../execution/index.js';
 import { WorkStatus } from '../../../work/index.js';
 import { createApiHttpServer, type ApiDispatcher } from '../../api/http-server.js';
@@ -87,7 +87,7 @@ const applications: ApiApplications = {
                   {
                     resourceId: 'resource-2',
                     kind: 'change-proposal',
-                    capabilities: ['review', 'merge'],
+                    capabilities: ['review', MergeMethod.Merge],
                   },
                 ]
               : [],

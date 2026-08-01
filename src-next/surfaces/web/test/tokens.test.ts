@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { WorkflowStatus } from '../../../orchestration/index.js';
 
 const read = (relative: string) =>
   readFileSync(fileURLToPath(new URL(relative, import.meta.url)), 'utf8');
@@ -51,7 +52,14 @@ function contrast(foreground: string, background: string): number {
   return (lighter + 0.05) / (darker + 0.05);
 }
 
-const conditions = ['ready', 'scheduled', 'active', 'needs-human', 'error', 'finished'] as const;
+const conditions = [
+  'ready',
+  'scheduled',
+  WorkflowStatus.Active,
+  'needs-human',
+  'error',
+  'finished',
+] as const;
 
 describe('Wake design tokens', () => {
   it('assigns every semantic token from the palette layer, not from a literal', () => {
