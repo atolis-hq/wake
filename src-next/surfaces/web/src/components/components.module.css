@@ -8,15 +8,14 @@
   align-items: center;
   gap: var(--space-2);
   padding: 0.55rem var(--space-4);
-  background: var(--surface-panel);
-  border-bottom: 1px solid var(--border);
-  color: var(--ink);
+  background: var(--brand);
+  color: var(--ink-inverse);
 }
 .brand {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
-  color: var(--ink);
+  color: var(--ink-inverse);
   font-weight: 800;
   font-size: var(--text-lg);
   text-decoration: none;
