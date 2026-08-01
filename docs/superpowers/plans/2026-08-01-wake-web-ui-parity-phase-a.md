@@ -2275,3 +2275,13 @@ git commit -m "test(web): cover restyled board operation and accessibility in bo
 - `npm run verify:next`, `npm run lint:contracts`, `npm run lint:architecture`, and `npm run knip:next` pass.
 - `git diff --stat main -- src-next` shows changes only under `src-next/surfaces/web/`.
 - No literal colour value remains outside `src/styles/palette.css`, enforced by `test/tokens.test.ts`.
+
+## Remaining UI work
+
+Phase A deliberately stops at presentational parity. The remaining operator-facing
+work is recorded in the [web UI parity design's gap register](../specs/2026-08-01-wake-web-ui-parity-design.md#8-gap-register-and-disposition)
+and its [Phase B operator read-model sequence](../specs/2026-08-01-wake-web-ui-parity-design.md#phase-b--operator-read-models).
+The next UI increment should start with GAP-01 (the board read model), then
+consider GAP-12 status counters and GAP-13 analytics. GAP-04 through GAP-16
+remain source-of-truth constraints for the deferred cost, runner, event,
+resource, routing, and command surfaces.
