@@ -43,7 +43,7 @@ export function StatusBadge({
   readonly tone?: 'neutral' | 'good' | 'warning' | 'bad';
 }) {
   return (
-    <span className={`${styles.badge} ${tone === 'neutral' ? '' : styles[tone]}`}>
+    <span className={`${styles.badge} ${tone === 'neutral' ? '' : styles[tone]!}`}>
       <span>{children}</span>
     </span>
   );
