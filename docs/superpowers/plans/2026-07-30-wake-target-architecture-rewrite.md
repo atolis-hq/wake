@@ -68,7 +68,7 @@ Hard rules:
 | B. Minimal domain spine | 4-12 | One WorkItem reaches workflow completion through real target modules and fake boundaries |
 | C. Durable operation | 13-18 | Filesystem replay, persisted projections, waits, retries, child workflows, and external-input scenarios pass |
 | D. Specialist SDLC safety | 19-21 | Revision-bound approval/merge and ambiguous external-effect scenarios pass |
-| E. Hosts and product surfaces | 22-26 | Cancellation/recovery, tick, resident, schedule, config, CLI, API, UI, and operational command decisions pass, plus the Task 25A packet gate |
+| E. Hosts and product surfaces | 22-26, 25A-25D | Cancellation/recovery, tick, resident, schedule, config, CLI, API, UI, operator read models, and operational command decisions pass, plus the Task 25A, 25B, and 25D packet gates |
 | F. Audit and cutover | 27-29 | Catalogue is complete, full verification passes, and legacy is isolated in a delete-ready archive |
 
 The plan deliberately builds only enough of each module to complete the first
@@ -4969,6 +4969,119 @@ contract is defined in
 [`2026-08-01-runner-pools-design.md`](../specs/2026-08-01-runner-pools-design.md)
 and its execution sequence is in
 [`2026-08-01-runner-pools-rename.md`](2026-08-01-runner-pools-rename.md).
+
+## Task 25D: Build operator read models for web UI parity Phase B
+
+**Authority:**
+
+- [`2026-08-01-wake-web-ui-parity-design.md`](../specs/2026-08-01-wake-web-ui-parity-design.md), sections 3.3, 6, 8, and 10;
+- the public module contracts and `MODULE.md` files remain authoritative over legacy UI implementation details.
+
+**Goal:** Replace the styled-list approximation with production operator read models for the board, status counters, and analytics without moving display derivation into HTTP handlers or the browser.
+
+**Files:**
+
+- Create: `src-next/surfaces/api/contracts/{board,status}.ts`
+- Create: `src-next/surfaces/api/presenters/{board,status}.ts`
+- Create: `src-next/surfaces/api/routes/{board,status}.ts`
+- Create: `src-next/bootstrap/{board-projection,analytics-projection,surface-api-operator-applications}.ts`
+- Create: `test-next/surfaces/{board-api,status-api,analytics-api}.test.ts`
+- Create: target projection tests under `test-next/bootstrap/`
+- Modify: `src-next/bootstrap/{composition-root,projection-runtime,surface-api-applications}.ts`
+- Modify: `src-next/surfaces/api/{contracts/index.ts,routes/index.ts,routes/applications.ts}`
+- Modify: `src-next/surfaces/web/src/{api/decoders.ts,api/query-keys.ts,features/board/board.tsx,features/work/work.tsx,features/observability/observability.tsx,components/app-shell.tsx}`
+- Modify: `src-next/surfaces/web/test/{board.test.tsx,collections.test.tsx,status.test.tsx}`
+- Modify: `src-next/surfaces/web/e2e/{surface-fixture.ts,operator-journey.spec.ts}`
+- Modify: `docs/architecture/functional-decision-catalogue.md`
+
+**Dependencies and coordination:**
+
+- Task 25A.8 must be complete before this task registers projections in the production composition root. It is complete before this packet is started.
+- This packet may run in parallel with Task 26 if ownership of `src-next/bootstrap/composition-root.ts`, `projection-runtime.ts`, and shared API-route registration is coordinated. It must be integrated before Task 27, because the coverage audit must prove its operator scenarios.
+- GAP-01 includes GAP-02. GAP-12 reuses the board projection's condition counts. GAP-13 is an independently maintained analytics projection. GAP-04 token/cost figures remain a separately scoped cheap-now follow-up; these views omit cost-dependent fields until that fact is exposed.
+
+- [ ] **Step 1: Define failing operator-read-model contracts and tests**
+
+Add focused projection and surface tests that prove:
+
+```ts
+it('projects a board card with condition, workflow, stage, dwell time, and run count');
+it('uses explicit degraded conditions when a frozen or scheduled fact is unavailable');
+it('returns per-condition counts from the board read model');
+it('serves the same board card facts to the board and Work list');
+it('maintains analytics incrementally without journal.readAll() in a request handler');
+it('returns bounded analytics windows with an explicit as-of position');
+```
+
+Run:
+
+```powershell
+npx vitest run --config vitest.next.config.ts test-next/bootstrap test-next/surfaces/board-api.test.ts test-next/surfaces/status-api.test.ts test-next/surfaces/analytics-api.test.ts
+```
+
+Expected: FAIL because the board, status, and analytics public applications do not yet exist.
+
+- [ ] **Step 2: Implement the board projection and application boundary**
+
+Fold journal facts into a persisted board projection. A board card owns only operator facts: WorkItem identity/objective, condition, current workflow and stage, dwell time, run count, and condition counts. It must not expose columns, colours, legacy status objects, raw provider payloads, or policy decisions.
+
+Register the projection through `projection-runtime.ts` and compose its application facade in `composition-root.ts`. The facade reads projections; it does not call domain repositories repeatedly or scan the journal per request.
+
+- [ ] **Step 3: Expose board and status facts through the API**
+
+Add versioned board and status contracts, presenters, and routes. Return UTC timestamps and normal collection metadata; use existing Problem Details mechanics for malformed input. Extend the web decoder and query-key layers without widening `WorkItemResponse` with display-only fields.
+
+Run:
+
+```powershell
+npx vitest run --config vitest.next.config.ts test-next/surfaces/board-api.test.ts test-next/surfaces/status-api.test.ts
+```
+
+Expected: PASS, including assertions that public responses contain no raw GitHub payload and no presentation-oriented colour/column fields.
+
+- [ ] **Step 4: Consume board facts in the board, Work list, and status bar**
+
+Replace the board and list's reconstruction from `/work-items` with the board read-model query. Retain Phase A's dark presentation, accessibility behaviour, persisted column collapse, and route-backed Work detail. Render only facts provided by the API; missing deferred facts display their explicit degraded state rather than inferred placeholders.
+
+Update browser tests to cover workflow/stage/dwell-time display, shared board and list facts, and condition counters.
+
+- [ ] **Step 5: Implement bounded incremental analytics**
+
+Add an analytics projection maintained from journal events and a public application/API route that reads the projection by an explicit window. Do not call `journal.readAll(0)` from an HTTP request path. Reuse the legacy metric vocabulary only where a target event/projection proves the fact; omit metrics whose required facts are deferred.
+
+Run:
+
+```powershell
+npx vitest run --config vitest.next.config.ts test-next/bootstrap test-next/surfaces/analytics-api.test.ts
+```
+
+Expected: PASS, proving projection replay and no request-time full-journal scan.
+
+- [ ] **Step 6: Prove the real operator journey**
+
+Replace the Phase A fixture-only assertions with real HTTP-surface coverage where the target composition can provide deterministic facts. Cover desktop and mobile board/list display, status counters, a bounded analytics refresh, clean deep links, keyboard navigation, and serious accessibility violations. Add named catalogue scenarios for the board and analytics capabilities.
+
+- [ ] **Step 7: Run the packet gate and commit**
+
+Run:
+
+```powershell
+npm run build:web
+npm run test:web
+npm run test:web:e2e
+npx vitest run --config vitest.next.config.ts test-next/bootstrap test-next/surfaces
+npm run lint:contracts
+npm run lint:architecture
+npm run knip:next
+npm run verify:next
+```
+
+Expected: all commands pass. The packet fails if an operator endpoint derives state with a per-request full-journal scan, if domain-shaped contracts acquire display-only fields, or if the web client reconstructs board conditions.
+
+```powershell
+git add src-next/bootstrap src-next/surfaces test-next/bootstrap test-next/surfaces docs/architecture/functional-decision-catalogue.md
+git commit -m "feat: add target operator read models"
+```
 
 ## Task 26: Port operational commands without leaking them into the domain
 
