@@ -69,7 +69,7 @@ Hard rules:
 | C. Durable operation | 13-18 | Filesystem replay, persisted projections, waits, retries, child workflows, and external-input scenarios pass |
 | D. Specialist SDLC safety | 19-21 | Revision-bound approval/merge and ambiguous external-effect scenarios pass |
 | E. Hosts and product surfaces | 22-26 | Cancellation/recovery, tick, resident, schedule, config, CLI, API, UI, and operational command decisions pass, plus the Task 25A packet gate |
-| F. Audit and cutover | 27-29 | Catalogue is complete, full verification passes, legacy is removed |
+| F. Audit and cutover | 27-29 | Catalogue is complete, full verification passes, and legacy is isolated in a delete-ready archive |
 
 The plan deliberately builds only enough of each module to complete the first
 golden path, then expands by capability. Do not finish an entire technical
@@ -5190,12 +5190,14 @@ git add scripts/check-scenario-coverage.mjs docs/architecture package.json test-
 git commit -m "test: prove target rewrite coverage"
 ```
 
-## Task 28: Cut over atomically and remove the legacy implementation
+## Task 28: Cut over atomically and archive the legacy implementation
 
 **Files:**
 
-- Delete: `src/**`
-- Delete: `test/**`
+- Move: `src/**` to `archive/legacy/src/**`
+- Move: `test/**` to `archive/legacy/test/**`
+- Move: legacy `tsconfig.json` and `vitest.config.ts` to `archive/legacy/`
+- Create: `archive/legacy/README.md`
 - Rename: `src-next/` to `src/`
 - Rename: `test-next/` to `test/`
 - Rename: `tsconfig.next.json` to `tsconfig.json`
@@ -5203,8 +5205,9 @@ git commit -m "test: prove target rewrite coverage"
 - Modify: `package.json`
 - Modify: `dependency-cruiser.config.mjs`
 - Modify: `knip.next.json`
+- Modify: ESLint and Prettier ignore configuration
 
-- [ ] **Step 1: Verify exact destructive targets**
+- [ ] **Step 1: Verify exact archive and rename targets**
 
 Run:
 
@@ -5213,12 +5216,13 @@ Resolve-Path -LiteralPath src
 Resolve-Path -LiteralPath test
 Resolve-Path -LiteralPath src-next
 Resolve-Path -LiteralPath test-next
+if (Test-Path -LiteralPath archive/legacy) { throw 'archive/legacy already exists' }
 git status --short
 ```
 
-Expected: all four paths resolve inside the repository and the worktree is
-clean. Stop if either target directory is absent or resolves outside the
-repository.
+Expected: all four paths resolve inside the repository, `archive/legacy` does
+not already contain a prior archive, and the worktree is clean. Stop if either
+target directory is absent or resolves outside the repository.
 
 - [ ] **Step 2: Run the last side-by-side gate**
 
@@ -5233,21 +5237,27 @@ npm run check:scenarios
 
 Expected: all PASS.
 
-- [ ] **Step 3: Remove legacy and rename target directories**
+- [ ] **Step 3: Archive legacy and rename target directories**
 
 Run only after Steps 1-2 pass:
 
 ```powershell
-git rm -r -- src test
+New-Item -ItemType Directory -Force archive/legacy | Out-Null
+git mv src archive/legacy/src
+git mv test archive/legacy/test
+git mv tsconfig.json archive/legacy/tsconfig.json
+git mv vitest.config.ts archive/legacy/vitest.config.ts
 git mv src-next src
 git mv test-next test
-git rm -- tsconfig.json vitest.config.ts
 git mv tsconfig.next.json tsconfig.json
 git mv vitest.next.config.ts vitest.config.ts
 ```
 
-This deletion is intentional and recoverable from Git history. Do not retain a
-`legacy`, `compat`, or bridge directory.
+Create `archive/legacy/README.md` with the archive boundary: it is retained
+behavioural evidence only, excluded from every build, test, lint, package, and
+runtime path; target code must never import it. The entire `archive/legacy/`
+directory is the single future deletion target once its retention period ends.
+Do not create a `compat` or bridge layer.
 
 - [ ] **Step 4: Apply mechanical path/script changes**
 
@@ -5260,10 +5270,15 @@ verify:next -> verify
 knip:next -> knip
 ```
 
-Remove legacy script definitions rather than keeping aliases. Update
+Remove active legacy script definitions rather than keeping aliases. Keep the
+archived configuration files as inert evidence only. Update
 dependency-cruiser roots from `src-next/` to `src/` and remove
-`no-legacy-imports` because no legacy source remains. Rename `knip.next.json`
-to `knip.json` and update paths.
+`no-legacy-imports` in favour of an `archive/legacy` import-ban. Rename
+`knip.next.json` to `knip.json`, exclude `archive/legacy/**` from analysis, and
+update paths. Add the same exclusion to ESLint and Prettier configuration; the
+archive must not affect active lint or formatting results. Keep the package
+`files` allow-list target-only and assert with `npm pack --dry-run` that no
+`archive/legacy` path is packaged.
 
 The final verification-related scripts are:
 
@@ -5326,9 +5341,15 @@ npm run knip
 rg -n 'src-next|test-next|src/core/tick-runner|IssueStateRecord|WakeConfig' src test package.json tsconfig.json vitest.config.ts
 ```
 
-Expected: verification and Knip PASS; `rg` returns no architectural legacy
-references. Historical evidence paths may remain only in the catalogue and
-design/history documents.
+Expected: verification and Knip PASS; the first `rg` returns no architectural
+legacy references in active source or tests. Also run:
+
+```powershell
+rg -n 'archive/legacy' src test package.json tsconfig.json vitest.config.ts
+```
+
+Expected: no result. Historical evidence remains isolated beneath
+`archive/legacy/` and in catalogue/design-history documents only.
 
 - [ ] **Step 7: Commit the atomic cutover**
 
@@ -5447,4 +5468,7 @@ true:
 - CLI/API/UI expose public domain views rather than storage objects;
 - dependency, complexity, scenario, catalogue, dead-code, build, test, and
   package verification all pass;
-- the legacy implementation and transition-only code are absent.
+- active code contains no legacy implementation or transition-only bridge; the
+  legacy implementation is isolated beneath `archive/legacy/`, excluded from
+  all active tooling and runtime paths, and can be deleted as that one directory
+  after its explicit retention decision.
