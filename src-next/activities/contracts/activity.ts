@@ -47,9 +47,32 @@ export interface WaitingActivityOutcome extends ActivityOutcome<
 > {
   readonly data: { readonly intentEventId: string; readonly signalKind: string };
 }
+export interface AgentRunnerPort {
+  start(
+    request: {
+      readonly runId: string;
+      readonly prompt: string;
+      readonly model?: string;
+      readonly allowedTools: readonly string[];
+    },
+    signal: AbortSignal,
+  ): Promise<{
+    readonly identity?: {
+      readonly kind: ExternalExecutionKind;
+      readonly id: string;
+      readonly startedAt: string;
+    };
+    readonly result: Promise<{
+      readonly transport: import('./vocabulary.js').ActivityRunnerTransportStatus;
+      readonly output: string;
+      readonly failure?: { readonly kind: string; readonly message: string } | undefined;
+    }>;
+  }>;
+}
 export interface ActivityExecutionContext {
   readonly signal: AbortSignal;
   readonly occurredAt: string;
+  readonly runner?: AgentRunnerPort;
   reportExternalExecution(reference: {
     readonly kind: ExternalExecutionKind;
     readonly id: string;

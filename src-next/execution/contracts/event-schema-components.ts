@@ -16,6 +16,10 @@ export const runStartedPayloadSchema = z
     orchestrationGroupId: brandedStringSchema(activityOrchestrationGroupId),
     attempt: z.number().int().positive(),
     startedAt: offsetIsoTimestampSchema,
+    runner: z
+      .object({ name: z.string().min(1), model: z.string().min(1).optional() })
+      .strict()
+      .optional(),
     workspace: z
       .object({
         mode: z.enum([WorkspaceMode.ReadOnly, WorkspaceMode.Branch]),

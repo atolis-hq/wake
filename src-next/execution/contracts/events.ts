@@ -57,6 +57,7 @@ export interface RunStartedPayload {
   readonly orchestrationGroupId: ActivityOrchestrationGroupId;
   readonly attempt: number;
   readonly startedAt: string;
+  readonly runner?: { readonly name: string; readonly model?: string | undefined } | undefined;
   readonly workspace?:
     | {
         readonly mode: typeof WorkspaceMode.ReadOnly | typeof WorkspaceMode.Branch;

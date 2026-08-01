@@ -66,24 +66,14 @@ describe('agent results', () => {
   });
 
   it('maps raw provider failures to the canonical Agent failure contract', async () => {
-    const handler = createAgentActivity({
-      async start() {
-        return {
-          result: Promise.resolve({
-            transport: 'failed' as const,
-            output: '',
-            failure: { kind: 'provider-quota-exceeded', message: 'quota exhausted' },
-          }),
-        };
-      },
-    });
+    const handler = createAgentActivity();
 
     await expect(
       handler.execute(
         {
           activationId: activationId('activation-1'),
           activity: BuiltInActivityName.Agent,
-          workItemId: workItemId('work-1'),
+          workItemId: workItemId('work-00000000000000000000000001'),
           workflowInstanceId: activityWorkflowInstanceId('workflow-1'),
           orchestrationGroupId: activityOrchestrationGroupId('group-1'),
           causationId: 'cause-1',
@@ -93,6 +83,17 @@ describe('agent results', () => {
         {
           signal: new AbortController().signal,
           occurredAt: '2026-07-31T00:00:00.000Z',
+          runner: {
+            async start() {
+              return {
+                result: Promise.resolve({
+                  transport: 'failed' as const,
+                  output: '',
+                  failure: { kind: 'provider-quota-exceeded', message: 'quota exhausted' },
+                }),
+              };
+            },
+          },
           async reportExternalExecution() {},
         },
       ),

@@ -6,11 +6,11 @@ export class RunnerRegistry {
     private readonly runners: Readonly<Record<string, Runner>>,
   ) {}
 
-  resolve(tier: string): Runner {
+  resolve(tier: string): { readonly name: string; readonly runner: Runner } {
     const name = this.tiers[tier]?.[0];
     if (name === undefined) throw new Error(`Execution tier ${tier} has no runner`);
     const runner = this.runners[name];
     if (runner === undefined) throw new Error(`Runner ${name} is not registered`);
-    return runner;
+    return { name, runner };
   }
 }

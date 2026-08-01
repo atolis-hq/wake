@@ -30,6 +30,7 @@ export interface RunView {
   readonly attempt: number;
   readonly status: RunTransportStatus;
   readonly startedAt: string;
+  readonly runner?: { readonly name: string; readonly model?: string | undefined } | undefined;
   readonly finishedAt?: string;
   readonly outcome?: ActivityOutcome;
   readonly failure?: ExecutionFailure;

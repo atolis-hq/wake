@@ -4,45 +4,18 @@ import {
   ActivityRunnerTransportStatus,
 } from '../contracts/vocabulary.js';
 import type { ActivityHandler } from '../contracts/activity.js';
-import type {
-  ActivityRunnerTransportStatus as ActivityRunnerTransportStatusValue,
-  ExternalExecutionKind as ExternalExecutionKindValue,
-} from '../contracts/vocabulary.js';
 import { translateAgentResult, type AgentActivityOutcome } from './agent-result.js';
 
-interface AgentRunner {
-  start(
-    request: {
-      readonly runId: string;
-      readonly prompt: string;
-      readonly model?: string;
-      readonly allowedTools: readonly string[];
-    },
-    signal: AbortSignal,
-  ): Promise<{
-    readonly identity?: {
-      readonly kind: ExternalExecutionKindValue;
-      readonly id: string;
-      readonly startedAt: string;
-    };
-    readonly result: Promise<{
-      readonly transport: ActivityRunnerTransportStatusValue;
-      readonly output: string;
-      readonly failure?: { readonly kind: string; readonly message: string };
-    }>;
-  }>;
-}
-
-export function createAgentActivity(
-  runner: AgentRunner,
-): ActivityHandler<
+export function createAgentActivity(): ActivityHandler<
   { prompt: string; model?: string; allowedTools?: readonly string[] },
   AgentActivityOutcome
 > {
   return {
     async execute(invocation, context): Promise<AgentActivityOutcome> {
+      if (context.runner === undefined)
+        throw new Error('Agent Activity requires a runner resolved by Execution');
       const input = invocation.input;
-      const execution = await runner.start(
+      const execution = await context.runner.start(
         {
           runId: invocation.activationId,
           prompt: input.prompt,

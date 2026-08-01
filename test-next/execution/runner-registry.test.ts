@@ -9,7 +9,7 @@ describe('RunnerRegistry', () => {
     };
     const registry = new RunnerRegistry({ standard: ['fake'] }, { fake: runner });
 
-    expect(registry.resolve('standard')).toBe(runner);
+    expect(registry.resolve('standard')).toEqual({ name: 'fake', runner });
   });
 });
 

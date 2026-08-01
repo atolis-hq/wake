@@ -13,6 +13,7 @@ export function foldRun(events: readonly RunExecutionEvent[]): RunView | null {
     attempt: started.payload.attempt,
     status: RunStatus.Started,
     startedAt: started.payload.startedAt,
+    ...(started.payload.runner === undefined ? {} : { runner: started.payload.runner }),
     ...(started.payload.workspace === undefined ? {} : { workspace: started.payload.workspace }),
   };
   for (const event of events) applyRunEvent(state, event);

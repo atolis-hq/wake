@@ -19,8 +19,8 @@ describe('Execution vocabulary ownership', () => {
     expect(WorkspaceMode.None).toBe('none');
     expect(executionVocabulary).toMatch(/export const WorkspaceMode/);
     expect(activityVocabulary).not.toMatch(/export const WorkspaceMode/);
-    expect(activityVocabulary).toMatch(/Agent:\s*activityName\('agent\.run'\)/);
-    expect(BuiltInActivityName.Agent).toBe('agent.run');
+    expect(activityVocabulary).toMatch(/Agent:\s*activityName\(ActivityExecutionKind\.Agent\)/);
+    expect(BuiltInActivityName.Agent).toBe('agent');
   });
 
   it('preserves the ResourceCapability contract while validating requirements', async () => {

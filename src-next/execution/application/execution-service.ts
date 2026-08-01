@@ -2,6 +2,7 @@ import { RunStatus, WorkspaceMode } from '../contracts/vocabulary.js';
 import { EventActorKind, EventSourceKind } from '../../kernel/index.js';
 import {
   type ActivityExecutionContext,
+  ActivityExecutionKind,
   type ActivityRegistry,
   type ResourceRequirement,
 } from '../../activities/index.js';
@@ -29,11 +30,13 @@ import {
 } from './run-liveness-service.js';
 import { claimActivation, releaseActivation } from './activation-claim.js';
 import { cancelActiveRuns } from './active-run-cancellation.js';
+import { RunnerRegistry } from '../infrastructure/runners/registry.js';
 
-interface ExecutionDependencies {
+export interface ExecutionDependencies {
   readonly clock: Clock;
   readonly ids: IdGenerator;
   readonly workspaces?: WorkspaceProvider;
+  readonly runners?: RunnerRegistry;
 }
 
 interface ExecutionRuntime {
@@ -88,6 +91,13 @@ async function attemptExecution(
   validateResources(definition.resources, context.resources);
   const tier = activation.execution?.tier ?? runtime.config.defaultTier;
   if (runtime.config.tiers[tier] === undefined) throw new Error(`Unknown execution tier: ${tier}`);
+  const resolvedRunner =
+    definition.executionKind === ActivityExecutionKind.Agent
+      ? runtime.dependencies.runners?.resolve(tier)
+      : undefined;
+  const runner = resolvedRunner?.runner;
+  const runnerConfig =
+    resolvedRunner === undefined ? undefined : runtime.config.agentRunners?.[resolvedRunner.name];
   const owner = context.owner ?? 'execution';
   const prior = await runtime.repository.list(activation.activationId);
   const existing = existingRun(prior, runtime.dependencies.clock, owner);
@@ -126,6 +136,14 @@ async function attemptExecution(
           orchestrationGroupId: context.orchestrationGroupId,
           attempt: prior.length + 1,
           startedAt,
+          ...(resolvedRunner === undefined
+            ? {}
+            : {
+                runner: {
+                  name: resolvedRunner.name,
+                  ...(runnerConfig?.model === undefined ? {} : { model: runnerConfig.model }),
+                },
+              }),
           ...(lease === undefined ? {} : { workspace: { mode: lease.mode, path: lease.path } }),
         },
       }),
@@ -141,6 +159,7 @@ async function attemptExecution(
       activation,
       context,
       occurredAt: startedAt,
+      runner,
     });
     await recordSuccess(runtime, currentRunId, activation, context, outcome);
   } catch (error) {
@@ -231,14 +250,16 @@ async function executeActivity(
     readonly activation: ExecutionActivation;
     readonly context: ExecutionAttemptContext;
     readonly occurredAt: string;
+    readonly runner: ActivityExecutionContext['runner'];
   },
 ) {
-  const { activation, context, occurredAt } = request;
+  const { activation, context, occurredAt, runner } = request;
   const controller = new AbortController();
   runtime.active.set(currentRunId, controller);
   const executionContext: ActivityExecutionContext = {
     signal: controller.signal,
     occurredAt,
+    ...(runner === undefined ? {} : { runner }),
     reportExternalExecution: async (reference) => {
       const loaded = await runtime.repository.load(currentRunId);
       await runtime.repository.append(currentRunId, loaded.sequence, [
