@@ -1,7 +1,7 @@
-import { waitForActiveRuns } from './stop-command.js';
 import type { SelfUpdateLedger } from '../adapters/fs/self-update-ledger.js';
 import type { RunRecord } from '../domain/types.js';
 import { resolveWakeVersion } from '../version.js';
+import { waitForActiveRuns } from './stop-command.js';
 
 const HEALTHCHECK_WAKE_ROOT = '/tmp/wake-self-update-healthcheck';
 const START_PROCESS_CHECK_ATTEMPTS = 15;

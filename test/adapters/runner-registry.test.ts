@@ -1,10 +1,10 @@
 ﻿import { describe, expect, it } from 'vitest';
 
-import { createDefaultWakeConfig } from '../../src/config/defaults.js';
 import {
   createRegistryRunner,
   resolveRunnerRouting,
 } from '../../src/adapters/runner/runner-registry.js';
+import { createDefaultWakeConfig } from '../../src/config/defaults.js';
 
 describe('runner registry routing', () => {
   it('resolves stage runnerPools to ordered named runner candidates', () => {

@@ -1,4 +1,5 @@
-﻿import type {
+﻿import { stageLabelForStage } from './stages.js';
+import type {
   EventEnvelope,
   IssueStateRecord,
   RunnerSentinel,
@@ -6,7 +7,6 @@
   WakeConfig,
   WorkflowDefinition,
 } from './types.js';
-import { stageLabelForStage } from './stages.js';
 
 export const universalQueueStage = 'queue';
 export const universalDoneStage = 'done';

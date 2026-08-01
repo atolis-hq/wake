@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import type { ResourceIndex } from '../../core/contracts.js';
 import { buildResourceUri } from '../../domain/resource-uri.js';
 import { isTerminalStage } from '../../domain/stages.js';
+import type { EventEnvelope, IssueStateRecord, RunRecord, WakeConfig } from '../../domain/types.js';
 import { isWorkItemDeleted, isWorkItemFrozen } from '../../domain/work-item-lifecycle.js';
 import type { WorkItemStatus } from '../../domain/work-item-status.js';
 import {
@@ -11,9 +12,8 @@ import {
   workflowForProjection,
   workflowNameForProjection,
 } from '../../domain/workflows.js';
-import type { EventEnvelope, IssueStateRecord, RunRecord, WakeConfig } from '../../domain/types.js';
-import type { createStateStore } from '../fs/state-store.js';
 import { readFileLockStatus, type ProcessInspector } from '../../lib/lock.js';
+import type { createStateStore } from '../fs/state-store.js';
 
 type StateStore = ReturnType<typeof createStateStore>;
 

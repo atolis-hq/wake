@@ -1,7 +1,7 @@
 import type { ResourceIndex, UnkeyedEventEnvelope } from '../../core/contracts.js';
-import type { EventEnvelope, WakeConfig } from '../../domain/types.js';
 import { buildResourceUri } from '../../domain/resource-uri.js';
-import { createUnkeyedEventEnvelope, createEventEnvelope } from '../../lib/event-log.js';
+import type { EventEnvelope, WakeConfig } from '../../domain/types.js';
+import { createEventEnvelope, createUnkeyedEventEnvelope } from '../../lib/event-log.js';
 import {
   formatGitHubError,
   formatWakeComment,

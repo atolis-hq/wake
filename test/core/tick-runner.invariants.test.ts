@@ -1,7 +1,7 @@
-﻿import { beforeEach, describe, expect, it } from 'vitest';
-import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+﻿import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { createFakeRunner } from '../../src/adapters/fake/fake-runner.js';
 import {
   createFakeTicketingSystem,

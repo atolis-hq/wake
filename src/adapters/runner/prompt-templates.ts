@@ -1,8 +1,8 @@
+import Handlebars from 'handlebars';
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import Handlebars from 'handlebars';
 
 export interface PromptTemplate {
   frontmatter: Record<string, string>;

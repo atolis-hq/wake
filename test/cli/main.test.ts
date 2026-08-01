@@ -4,6 +4,8 @@ import { join } from 'node:path';
 
 import { describe, expect, it, vi } from 'vitest';
 
+import { createStateStore } from '../../src/adapters/fs/state-store.js';
+import { createDefaultWakeConfig } from '../../src/config/defaults.js';
 import {
   CliUsageError,
   createResidentControlPlane,
@@ -12,8 +14,6 @@ import {
   printUsage,
   readFlagBeforeCommandTerminator,
 } from '../../src/main.js';
-import { createStateStore } from '../../src/adapters/fs/state-store.js';
-import { createDefaultWakeConfig } from '../../src/config/defaults.js';
 import { wakeVersion } from '../../src/version.js';
 
 async function makeTempWakeRootWithDockerfile(): Promise<string> {

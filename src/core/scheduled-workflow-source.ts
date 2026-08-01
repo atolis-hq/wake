@@ -1,10 +1,10 @@
-import type { UnkeyedEventEnvelope, WorkSource } from './contracts.js';
+import { buildResourceUri } from '../domain/resource-uri.js';
 import type { WakeConfig } from '../domain/types.js';
 import { createUnkeyedEventEnvelope } from '../lib/event-log.js';
-import { buildResourceUri } from '../domain/resource-uri.js';
 import { readJsonFile, writeJsonFile } from '../lib/json-file.js';
 import { createWakePaths } from '../lib/paths.js';
 import { isMissingPathError } from '../lib/state-health.js';
+import type { UnkeyedEventEnvelope, WorkSource } from './contracts.js';
 
 type StateStore = ReturnType<typeof import('../adapters/fs/state-store.js').createStateStore>;
 

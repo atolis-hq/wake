@@ -1,8 +1,8 @@
 ﻿import { describe, expect, it } from 'vitest';
 
 import { createDefaultWakeConfig } from '../../src/config/defaults.js';
-import { parseIssueStateRecord } from '../../src/domain/schema.js';
 import { createPolicyEngine } from '../../src/core/policy-engine.js';
+import { parseIssueStateRecord } from '../../src/domain/schema.js';
 
 /**
  * Identity is minted by the resolver and stamped on the projection; these

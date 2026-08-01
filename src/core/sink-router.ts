@@ -1,5 +1,5 @@
-import type { EventEnvelope, WakeConfig } from '../domain/types.js';
 import { LABELS_REQUESTED_EVENT, PUBLISH_INTENT_REQUESTED_EVENT } from '../domain/event-types.js';
+import type { EventEnvelope, WakeConfig } from '../domain/types.js';
 import type {
   OutboundSink,
   SourceRefreshResult,

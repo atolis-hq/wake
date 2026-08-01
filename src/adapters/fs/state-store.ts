@@ -1,8 +1,7 @@
-﻿import { setTimeout as delay } from 'node:timers/promises';
-import { access, appendFile, mkdir, readFile, readdir, rename } from 'node:fs/promises';
+﻿import { access, appendFile, mkdir, readFile, readdir, rename } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 
-import { validateResourceIndex } from './resource-index.js';
 import {
   parseEventEnvelope,
   parseIssueStateRecord,
@@ -25,13 +24,14 @@ import { appendJsonLine, readJsonFile, writeJsonFile } from '../../lib/json-file
 import { acquireFileLock } from '../../lib/lock.js';
 import { createWakePaths } from '../../lib/paths.js';
 import {
+  StateHealthError,
   isMissingPathError,
   stateHealthIssue,
-  StateHealthError,
   throwIfUnhealthy,
   type StateHealthIssue,
   type StateHealthReport,
 } from '../../lib/state-health.js';
+import { validateResourceIndex } from './resource-index.js';
 
 type ListIssueStatesOptions = {
   includeArchived?: boolean;

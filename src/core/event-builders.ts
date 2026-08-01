@@ -1,5 +1,4 @@
-﻿import type { AgentRunResult } from './contracts.js';
-import { LABELS_REQUESTED_EVENT, PUBLISH_INTENT_REQUESTED_EVENT } from '../domain/event-types.js';
+﻿import { LABELS_REQUESTED_EVENT, PUBLISH_INTENT_REQUESTED_EVENT } from '../domain/event-types.js';
 import { parseRunnerResult } from '../domain/schema.js';
 import type { AgentAction, EventEnvelope, IssueStateRecord } from '../domain/types.js';
 import { createEventEnvelope } from '../lib/event-log.js';
@@ -9,6 +8,7 @@ import {
   formatDuration,
   formatTokenCount,
 } from '../lib/format.js';
+import type { AgentRunResult } from './contracts.js';
 
 type ParsedRunnerResult = ReturnType<typeof parseRunnerResult>;
 

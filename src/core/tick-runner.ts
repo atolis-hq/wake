@@ -2,10 +2,67 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { createLifecycleService } from './lifecycle-service.js';
-import { createPolicyEngine } from './policy-engine.js';
-import type { ApprovalResolution } from './policy-engine.js';
-import { createProjectionUpdater } from './projection-updater.js';
+import { branchNameForIssue } from '../domain/branch-naming.js';
+import { customCommandWorkspace, isCustomCommandAction } from '../domain/custom-commands.js';
+import {
+  CORRELATION_PRIMARY_CONFLICT_EVENT,
+  CORRELATION_REGISTERED_EVENT,
+  PR_AUTO_MERGE_ENABLED_EVENT,
+  PR_REVIEW_APPROVED_EVENT,
+  PUBLISH_INTENT_REQUESTED_EVENT,
+  RUN_CLAIMED_EVENT,
+  RUN_COMPLETED_EVENT,
+} from '../domain/event-types.js';
+import { maxConfiguredRunnerTimeoutMs, resolveRunnerRouting } from '../domain/runner-routing.js';
+import { isMeaningfulRuntimeEvent } from '../domain/runtime-events.js';
+import { parseRunnerArtifacts, parseRunnerResult } from '../domain/schema.js';
+import type {
+  AgentAction,
+  EventEnvelope,
+  ExecutionAttemptLifecycle,
+  ExecutionOutcome,
+  ExternalSideEffects,
+  FailurePhase,
+  IssueStateRecord,
+  RetrySafety,
+  RunInputSnapshot,
+  RunnerFailureClass,
+  RunRecord,
+  RuntimeEventDraft,
+  Stage,
+  WakeConfig,
+  WorkflowDefinition,
+  WorkflowOutcome,
+  WorkflowStageDefinition,
+} from '../domain/types.js';
+import {
+  labelsForWorkItem,
+  SCHEDULED_WORKFLOW_LABEL,
+  type WorkItemLabels,
+} from '../domain/work-item-labels.js';
+import {
+  FROZEN_WORK_ITEM_LABEL,
+  isWorkItemDeleted,
+  isWorkItemRunnable,
+} from '../domain/work-item-lifecycle.js';
+import {
+  chooseAction as chooseWorkflowAction,
+  isKnownWorkflowStage,
+  workflowChangedBlockReason,
+  entryStage as workflowEntryStage,
+  workflowForProjection,
+  workflowNameForProjection,
+} from '../domain/workflows.js';
+import type { Clock } from '../lib/clock.js';
+import { createEventEnvelope } from '../lib/event-log.js';
+import { readJsonFile, writeJsonFile } from '../lib/json-file.js';
+import { acquireFileLock } from '../lib/lock.js';
+import { currentProcessIdentity, processIdentityMatches } from '../lib/process-identity.js';
+import { isMissingPathError } from '../lib/state-health.js';
+import {
+  workflowRevision as computeWorkflowRevision,
+  createAutonomousDecisionAuditEvent,
+} from './audit-events.js';
 import type {
   AgentRunner,
   AgentRunResult,
@@ -18,81 +75,24 @@ import type {
   WorkSource,
   WorkspaceManager,
 } from './contracts.js';
-import type { Clock } from '../lib/clock.js';
-import { acquireFileLock } from '../lib/lock.js';
-import {
-  CORRELATION_REGISTERED_EVENT,
-  CORRELATION_PRIMARY_CONFLICT_EVENT,
-  PR_AUTO_MERGE_ENABLED_EVENT,
-  PR_REVIEW_APPROVED_EVENT,
-  PUBLISH_INTENT_REQUESTED_EVENT,
-  RUN_CLAIMED_EVENT,
-  RUN_COMPLETED_EVENT,
-} from '../domain/event-types.js';
-import { parseRunnerArtifacts, parseRunnerResult } from '../domain/schema.js';
-import { maxConfiguredRunnerTimeoutMs, resolveRunnerRouting } from '../domain/runner-routing.js';
-import {
-  FROZEN_WORK_ITEM_LABEL,
-  isWorkItemDeleted,
-  isWorkItemRunnable,
-} from '../domain/work-item-lifecycle.js';
-import type {
-  AgentAction,
-  EventEnvelope,
-  ExecutionAttemptLifecycle,
-  ExecutionOutcome,
-  ExternalSideEffects,
-  FailurePhase,
-  IssueStateRecord,
-  RetrySafety,
-  RunnerFailureClass,
-  RunRecord,
-  RunInputSnapshot,
-  Stage,
-  WakeConfig,
-  WorkflowDefinition,
-  WorkflowStageDefinition,
-  WorkflowOutcome,
-  RuntimeEventDraft,
-} from '../domain/types.js';
-import { isMeaningfulRuntimeEvent } from '../domain/runtime-events.js';
-import {
-  chooseAction as chooseWorkflowAction,
-  entryStage as workflowEntryStage,
-  isKnownWorkflowStage,
-  workflowChangedBlockReason,
-  workflowForProjection,
-  workflowNameForProjection,
-} from '../domain/workflows.js';
-import {
-  labelsForWorkItem,
-  SCHEDULED_WORKFLOW_LABEL,
-  type WorkItemLabels,
-} from '../domain/work-item-labels.js';
-import { createEventEnvelope } from '../lib/event-log.js';
-import { branchNameForIssue } from '../domain/branch-naming.js';
-import { customCommandWorkspace, isCustomCommandAction } from '../domain/custom-commands.js';
-import { resolveQuotaPauseUntil } from './quota-backoff.js';
 import { createLabelsEvent, createPublishIntentEvent } from './event-builders.js';
-import { previousMatchingSlot } from './scheduled-workflow-source.js';
-import { createOutbox } from './outbox.js';
 import { createEventResolver } from './event-resolver.js';
-import { createStaleRunReconciler } from './stale-run-reconciler.js';
-import { createWorkspaceCleanup } from './workspace-cleanup.js';
+import { createLifecycleService } from './lifecycle-service.js';
 import { createAgentExecution } from './live-execution.js';
-import {
-  createAutonomousDecisionAuditEvent,
-  workflowRevision as computeWorkflowRevision,
-} from './audit-events.js';
+import { createOutbox } from './outbox.js';
+import type { ApprovalResolution } from './policy-engine.js';
+import { createPolicyEngine } from './policy-engine.js';
+import { createProjectionUpdater } from './projection-updater.js';
+import { resolveQuotaPauseUntil } from './quota-backoff.js';
 import {
   createRunLease,
   isRunLeaseExpired,
   renewRunLease,
   runLeaseRenewalIntervalMs,
 } from './run-lease.js';
-import { currentProcessIdentity, processIdentityMatches } from '../lib/process-identity.js';
-import { readJsonFile, writeJsonFile } from '../lib/json-file.js';
-import { isMissingPathError } from '../lib/state-health.js';
+import { previousMatchingSlot } from './scheduled-workflow-source.js';
+import { createStaleRunReconciler } from './stale-run-reconciler.js';
+import { createWorkspaceCleanup } from './workspace-cleanup.js';
 
 type TickOutcome =
   | { status: 'locked' | 'idle' }

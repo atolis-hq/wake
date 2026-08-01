@@ -1,12 +1,12 @@
-import { beforeEach, describe, expect, it } from 'vitest';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { beforeEach, describe, expect, it } from 'vitest';
 
 import { createStateStore } from '../../src/adapters/fs/state-store.js';
+import type { EventEnvelope, IssueStateRecord, RunRecord } from '../../src/domain/types.js';
 import { createWakePaths } from '../../src/lib/paths.js';
 import { StateHealthError } from '../../src/lib/state-health.js';
-import type { EventEnvelope, IssueStateRecord, RunRecord } from '../../src/domain/types.js';
 
 /**
  * A stable, ULID-shaped work id per issue number, so a fixture can name the

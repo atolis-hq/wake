@@ -1,7 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createFakeResourceIndex } from '../../src/adapters/fake/fake-resource-index.js';
 import { createStateStore } from '../../src/adapters/fs/state-store.js';

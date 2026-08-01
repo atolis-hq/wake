@@ -1,7 +1,7 @@
+import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { link, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { randomUUID } from 'node:crypto';
 
 export interface FileLockMetadata {
   pid: number;

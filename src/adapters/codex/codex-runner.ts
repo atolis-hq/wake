@@ -18,15 +18,15 @@
  * public CLI surface changes.
  */
 import type { AgentRunInput, AgentRunResult, AgentRunTokenUsage } from '../../core/contracts.js';
-import type { AgentAction, RunnerEntry } from '../../domain/types.js';
-
-type CodexRunnerSettings = Omit<Extract<RunnerEntry, { kind: 'codex' }>, 'kind'>;
-import { buildStagePrompt } from '../runner/stage-prompt.js';
-import { runAgentCliCommand } from '../runner/cli-command.js';
-import { emitRuntimeEvent, runnerRuntimeEvent } from '../runner/runtime-events.js';
-import { writeRunnerTranscript } from '../runner/transcripts.js';
 import { createAgentExecution } from '../../core/live-execution.js';
 import { parseRunnerResult } from '../../domain/schema.js';
+import type { AgentAction, RunnerEntry } from '../../domain/types.js';
+import { runAgentCliCommand } from '../runner/cli-command.js';
+import { emitRuntimeEvent, runnerRuntimeEvent } from '../runner/runtime-events.js';
+import { buildStagePrompt } from '../runner/stage-prompt.js';
+import { writeRunnerTranscript } from '../runner/transcripts.js';
+
+type CodexRunnerSettings = Omit<Extract<RunnerEntry, { kind: 'codex' }>, 'kind'>;
 
 const CODEX_CLI_NAME = 'Codex';
 

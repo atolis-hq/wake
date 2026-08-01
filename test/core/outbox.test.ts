@@ -1,15 +1,15 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { createFakeResourceIndex } from '../../src/adapters/fake/fake-resource-index.js';
 import { createStateStore } from '../../src/adapters/fs/state-store.js';
 import { createDefaultWakeConfig } from '../../src/config/defaults.js';
-import { createProjectionUpdater } from '../../src/core/projection-updater.js';
-import { createOutbox } from '../../src/core/outbox.js';
 import type { OutboundSink } from '../../src/core/contracts.js';
 import { createLabelsEvent } from '../../src/core/event-builders.js';
+import { createOutbox } from '../../src/core/outbox.js';
+import { createProjectionUpdater } from '../../src/core/projection-updater.js';
 import type { EventEnvelope, IssueStateRecord } from '../../src/domain/types.js';
 import { createEventEnvelope } from '../../src/lib/event-log.js';
 

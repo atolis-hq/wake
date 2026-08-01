@@ -2,8 +2,8 @@ import { access } from 'node:fs/promises';
 
 import type { UnkeyedEventEnvelope } from '../../core/contracts.js';
 import { LABELS_REQUESTED_EVENT } from '../../domain/event-types.js';
-import type { EventEnvelope } from '../../domain/types.js';
 import { buildResourceUri } from '../../domain/resource-uri.js';
+import type { EventEnvelope } from '../../domain/types.js';
 import { createEventEnvelope, createUnkeyedEventEnvelope } from '../../lib/event-log.js';
 import { readJsonFile } from '../../lib/json-file.js';
 

@@ -1,12 +1,12 @@
-import { resolve, join } from 'node:path';
-import { access } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
+import { access } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
 
-import { readJsonFile } from '../lib/json-file.js';
-import { readYamlFile } from '../lib/yaml-file.js';
-import { deepMergeRaw } from '../lib/deep-merge.js';
 import { parseWakeConfig } from '../domain/schema.js';
 import type { WakeConfig } from '../domain/types.js';
+import { deepMergeRaw } from '../lib/deep-merge.js';
+import { readJsonFile } from '../lib/json-file.js';
+import { readYamlFile } from '../lib/yaml-file.js';
 import { discoverConfigFiles } from './discover-config-files.js';
 
 async function readLegacyConfigIfPresent(wakeRoot: string): Promise<Record<string, unknown>> {

@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
 import { join } from 'node:path';
+import { describe, expect, it } from 'vitest';
 import { createWakePaths } from '../../src/lib/paths.js';
 
 describe('createWakePaths', () => {

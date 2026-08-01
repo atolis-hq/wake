@@ -1,18 +1,14 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { access, mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { AddressInfo } from 'node:net';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { createFakeResourceIndex } from '../../src/adapters/fake/fake-resource-index.js';
 import { createStateStore } from '../../src/adapters/fs/state-store.js';
-import { createDefaultWakeConfig } from '../../src/config/defaults.js';
 import { createUiServer } from '../../src/adapters/http/ui-server.js';
-import { readJsonFile } from '../../src/lib/json-file.js';
-import { wakeVersion } from '../../src/version.js';
-import { createEventEnvelope } from '../../src/lib/event-log.js';
+import { createDefaultWakeConfig } from '../../src/config/defaults.js';
 import { createProjectionUpdater } from '../../src/core/projection-updater.js';
-import { createWakePaths } from '../../src/lib/paths.js';
 import {
   CORRELATION_REGISTERED_EVENT,
   WORK_ITEM_DELETED_EVENT,
@@ -20,6 +16,10 @@ import {
   WORK_ITEM_UNFROZEN_EVENT,
 } from '../../src/domain/event-types.js';
 import { FROZEN_WORK_ITEM_LABEL } from '../../src/domain/work-item-lifecycle.js';
+import { createEventEnvelope } from '../../src/lib/event-log.js';
+import { readJsonFile } from '../../src/lib/json-file.js';
+import { createWakePaths } from '../../src/lib/paths.js';
+import { wakeVersion } from '../../src/version.js';
 
 function workId(issueNumber: number): string {
   return `work-01JZ${String(issueNumber).padStart(22, '0')}`;

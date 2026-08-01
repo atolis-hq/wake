@@ -1,9 +1,5 @@
 import { randomUUID } from 'node:crypto';
 
-import type { OutboundSink } from './contracts.js';
-import type { createProjectionUpdater } from './projection-updater.js';
-import type { Clock } from '../lib/clock.js';
-import type { EventEnvelope } from '../domain/types.js';
 import {
   LABELS_REQUESTED_EVENT,
   PUBLISH_CONFIRMED_EVENT,
@@ -11,7 +7,11 @@ import {
   PUBLISH_INTENT_REQUESTED_EVENT,
   PUBLISH_SENT_UNCONFIRMED_EVENT,
 } from '../domain/event-types.js';
+import type { EventEnvelope } from '../domain/types.js';
+import type { Clock } from '../lib/clock.js';
 import { createEventEnvelope } from '../lib/event-log.js';
+import type { OutboundSink } from './contracts.js';
+import type { createProjectionUpdater } from './projection-updater.js';
 
 type StateStore = ReturnType<typeof import('../adapters/fs/state-store.js').createStateStore>;
 type ProjectionUpdater = ReturnType<typeof createProjectionUpdater>;

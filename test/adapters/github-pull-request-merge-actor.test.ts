@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { createGitHubPullRequestMergeActor } from '../../src/adapters/github/github-pull-request-merge-actor.js';
 import type { createGitHubClient } from '../../src/adapters/github/github-client.js';
+import { createGitHubPullRequestMergeActor } from '../../src/adapters/github/github-pull-request-merge-actor.js';
 
 type GitHubClient = ReturnType<typeof createGitHubClient>;
 

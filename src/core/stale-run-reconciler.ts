@@ -1,9 +1,5 @@
-import type { createProjectionUpdater } from './projection-updater.js';
-import { createLabelsEvent } from './event-builders.js';
+import { join } from 'node:path';
 import { RUN_COMPLETED_EVENT } from '../domain/event-types.js';
-import { labelsForWorkItem } from '../domain/work-item-labels.js';
-import { readJsonFile, writeJsonFile } from '../lib/json-file.js';
-import { isMissingPathError } from '../lib/state-health.js';
 import type {
   EventEnvelope,
   ExecutionAttemptLifecycle,
@@ -15,8 +11,12 @@ import type {
   RunRecord,
   WakeConfig,
 } from '../domain/types.js';
+import { labelsForWorkItem } from '../domain/work-item-labels.js';
 import { createEventEnvelope } from '../lib/event-log.js';
-import { join } from 'node:path';
+import { readJsonFile, writeJsonFile } from '../lib/json-file.js';
+import { isMissingPathError } from '../lib/state-health.js';
+import { createLabelsEvent } from './event-builders.js';
+import type { createProjectionUpdater } from './projection-updater.js';
 
 type StateStore = ReturnType<typeof import('../adapters/fs/state-store.js').createStateStore>;
 type ProjectionUpdater = ReturnType<typeof createProjectionUpdater>;

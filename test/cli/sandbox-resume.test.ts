@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createStateStore } from '../../src/adapters/fs/state-store.js';
-import { runSandboxResumeCommand, chooseResumeTarget } from '../../src/cli/sandbox-resume.js';
+import { chooseResumeTarget, runSandboxResumeCommand } from '../../src/cli/sandbox-resume.js';
 import { createDefaultWakeConfig } from '../../src/config/defaults.js';
 
 describe('sandbox resume command', () => {

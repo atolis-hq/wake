@@ -1,6 +1,6 @@
 import { chmod, mkdtemp, readFile, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { platform } from 'node:process';
 
 import { describe, expect, it } from 'vitest';

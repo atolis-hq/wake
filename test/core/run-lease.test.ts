@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { describe, expect, it } from 'vitest';
 
 import { createStateStore } from '../../src/adapters/fs/state-store.js';
 import { createRunLease, renewRunLease } from '../../src/core/run-lease.js';

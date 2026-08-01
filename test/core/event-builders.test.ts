@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { createLabelsEvent, createPublishIntentEvent } from '../../src/core/event-builders.js';
 import type { AgentRunResult } from '../../src/core/contracts.js';
+import { createLabelsEvent, createPublishIntentEvent } from '../../src/core/event-builders.js';
 import { parseRunnerResult } from '../../src/domain/schema.js';
 import type { IssueStateRecord } from '../../src/domain/types.js';
 

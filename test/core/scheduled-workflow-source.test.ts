@@ -14,8 +14,8 @@ import { createProjectionUpdater } from '../../src/core/projection-updater.js';
 import { createScheduledWorkflowSource } from '../../src/core/scheduled-workflow-source.js';
 import { createTickRunner } from '../../src/core/tick-runner.js';
 import { AUTONOMOUS_DECISION_AUDIT_EVENT } from '../../src/domain/schema.js';
-import { chooseAction } from '../../src/domain/workflows.js';
 import type { IssueStateRecord } from '../../src/domain/types.js';
+import { chooseAction } from '../../src/domain/workflows.js';
 
 describe('scheduled workflow source', () => {
   let root: string;

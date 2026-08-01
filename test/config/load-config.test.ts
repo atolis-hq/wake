@@ -4,8 +4,8 @@ import { basename, join, resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { loadWakeConfig } from '../../src/config/load-config.js';
 import { scaffoldWakeHome } from '../../src/cli/scaffold-assets.js';
+import { loadWakeConfig } from '../../src/config/load-config.js';
 
 describe('loadWakeConfig', () => {
   it('always resolves paths.wakeRoot from the passed-in wakeRoot, never from a stale config file value', async () => {

@@ -1,7 +1,7 @@
-import { beforeEach, describe, expect, it } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { beforeEach, describe, expect, it } from 'vitest';
 
 import { createStateStore } from '../../src/adapters/fs/state-store.js';
 import { runAuditCommand } from '../../src/cli/audit-command.js';

@@ -1,12 +1,10 @@
-﻿import { beforeEach, describe, expect, it } from 'vitest';
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+﻿import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { beforeEach, describe, expect, it } from 'vitest';
 
 import { createFakeResourceIndex } from '../../src/adapters/fake/fake-resource-index.js';
 import { createStateStore } from '../../src/adapters/fs/state-store.js';
-import { acquireFileLock } from '../../src/lib/lock.js';
-import { createDefaultWakeConfig } from '../../src/config/defaults.js';
 import {
   buildBoard,
   buildConfigView,
@@ -16,9 +14,11 @@ import {
   buildMetrics,
   buildStatus,
 } from '../../src/adapters/http/ui-data.js';
-import { createWakePaths } from '../../src/lib/paths.js';
+import { createDefaultWakeConfig } from '../../src/config/defaults.js';
 import type { IssueStateRecord, RunRecord } from '../../src/domain/types.js';
 import type { WorkItemStatus } from '../../src/domain/work-item-status.js';
+import { acquireFileLock } from '../../src/lib/lock.js';
+import { createWakePaths } from '../../src/lib/paths.js';
 
 /** A stable, ULID-shaped work id per issue number; real ids come from createWorkId(). */
 function workId(issueNumber: number): string {

@@ -1,12 +1,12 @@
 import { readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { isAbsolute, join, relative } from 'node:path';
 
-import type { WorkspaceManager } from './contracts.js';
-import type { createProjectionUpdater } from './projection-updater.js';
-import type { Clock } from '../lib/clock.js';
 import { WORKSPACE_CLEANED_EVENT, WORKSPACE_CLEANUP_FAILED_EVENT } from '../domain/event-types.js';
 import type { IssueStateRecord, WakeConfig } from '../domain/types.js';
+import type { Clock } from '../lib/clock.js';
 import { createEventEnvelope } from '../lib/event-log.js';
+import type { WorkspaceManager } from './contracts.js';
+import type { createProjectionUpdater } from './projection-updater.js';
 
 type StateStore = ReturnType<typeof import('../adapters/fs/state-store.js').createStateStore>;
 type ProjectionUpdater = ReturnType<typeof createProjectionUpdater>;

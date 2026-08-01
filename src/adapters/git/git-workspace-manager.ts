@@ -3,12 +3,12 @@ import { access, mkdir, rm } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 
-import { createWakePaths } from '../../lib/paths.js';
-import { branchNameForIssue } from '../../domain/branch-naming.js';
 import type {
   WorkspaceBookkeepingResult,
   WorkspaceValidationResult,
 } from '../../core/contracts.js';
+import { branchNameForIssue } from '../../domain/branch-naming.js';
+import { createWakePaths } from '../../lib/paths.js';
 
 const execFile = promisify(nodeExecFile);
 

@@ -1,14 +1,14 @@
-import type { ResourceIndex, UnkeyedEventEnvelope } from './contracts.js';
-import type { createProjectionUpdater } from './projection-updater.js';
-import type { Clock } from '../lib/clock.js';
-import { createWorkId } from '../lib/work-id.js';
 import {
   CORRELATION_REGISTERED_EVENT,
   UNRESOLVED_WORK_ITEM_KEY,
   WORK_ITEM_CREATED_EVENT,
 } from '../domain/schema.js';
 import type { EventEnvelope, WakeConfig } from '../domain/types.js';
+import type { Clock } from '../lib/clock.js';
 import { createEventEnvelope } from '../lib/event-log.js';
+import { createWorkId } from '../lib/work-id.js';
+import type { ResourceIndex, UnkeyedEventEnvelope } from './contracts.js';
+import type { createProjectionUpdater } from './projection-updater.js';
 
 type StateStore = ReturnType<typeof import('../adapters/fs/state-store.js').createStateStore>;
 type ProjectionUpdater = ReturnType<typeof createProjectionUpdater>;

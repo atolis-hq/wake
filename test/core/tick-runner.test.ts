@@ -1,10 +1,9 @@
-﻿import { beforeEach, describe, expect, it } from 'vitest';
-import { mkdtemp, readFile } from 'node:fs/promises';
+﻿import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { beforeEach, describe, expect, it } from 'vitest';
 
 import { createFakeArtifactVerifier } from '../../src/adapters/fake/fake-artifact-verifier.js';
-import { labelsForWorkItem } from '../../src/domain/work-item-labels.js';
 import { createFakeGitHubPullRequestActivitySource } from '../../src/adapters/fake/fake-github-pull-request-activity-source.js';
 import { createFakeResourceIndex } from '../../src/adapters/fake/fake-resource-index.js';
 import { createFakeWorkspaceManager } from '../../src/adapters/fake/fake-workspace-manager.js';
@@ -14,6 +13,7 @@ import { createOutboundSinkRouter, createWorkSourceFanIn } from '../../src/core/
 import { createTickRunner } from '../../src/core/tick-runner.js';
 import { AUTONOMOUS_DECISION_AUDIT_EVENT } from '../../src/domain/schema.js';
 import type { EventEnvelope, IssueStateRecord } from '../../src/domain/types.js';
+import { labelsForWorkItem } from '../../src/domain/work-item-labels.js';
 import { createEventEnvelope, createUnkeyedEventEnvelope } from '../../src/lib/event-log.js';
 import {
   findByIssueRef,

@@ -20,13 +20,13 @@
  * public CLI surface changes.
  */
 import type { AgentRunInput, AgentRunResult, AgentRunTokenUsage } from '../../core/contracts.js';
-import type { AgentAction, RunnerEntry } from '../../domain/types.js';
+import { createAgentExecution } from '../../core/live-execution.js';
 import { parseRunnerResult } from '../../domain/schema.js';
-import { buildStagePrompt } from '../runner/stage-prompt.js';
+import type { AgentAction, RunnerEntry } from '../../domain/types.js';
 import { runAgentCliCommand } from '../runner/cli-command.js';
 import { emitRuntimeEvent, runnerRuntimeEvent } from '../runner/runtime-events.js';
+import { buildStagePrompt } from '../runner/stage-prompt.js';
 import { writeRunnerTranscript } from '../runner/transcripts.js';
-import { createAgentExecution } from '../../core/live-execution.js';
 
 type CursorRunnerSettings = Omit<Extract<RunnerEntry, { kind: 'cursor' }>, 'kind'>;
 

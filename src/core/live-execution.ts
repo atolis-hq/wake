@@ -1,11 +1,11 @@
+import type { RuntimeEventDraft } from '../domain/types.js';
+import { currentProcessIdentity } from '../lib/process-identity.js';
 import type {
   AgentExecution,
   AgentRunInput,
   AgentRunResult,
   CancellationReason,
 } from './contracts.js';
-import type { RuntimeEventDraft } from '../domain/types.js';
-import { currentProcessIdentity } from '../lib/process-identity.js';
 
 type QueuedEvent =
   | { kind: 'event'; event: RuntimeEventDraft }

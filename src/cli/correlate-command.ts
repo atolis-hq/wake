@@ -3,10 +3,10 @@ import { randomUUID } from 'node:crypto';
 import type { createStateStore } from '../adapters/fs/state-store.js';
 import type { ResourceIndex } from '../core/contracts.js';
 import { createProjectionUpdater } from '../core/projection-updater.js';
+import { correlationRoleSchema, resourceUriSchema } from '../domain/resource-uri.js';
+import { CORRELATION_REGISTERED_EVENT } from '../domain/schema.js';
 import type { Clock } from '../lib/clock.js';
 import { createEventEnvelope } from '../lib/event-log.js';
-import { CORRELATION_REGISTERED_EVENT } from '../domain/schema.js';
-import { correlationRoleSchema, resourceUriSchema } from '../domain/resource-uri.js';
 
 type StateStore = ReturnType<typeof createStateStore>;
 

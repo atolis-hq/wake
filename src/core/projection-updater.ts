@@ -1,28 +1,20 @@
+import { isCustomCommandAction } from '../domain/custom-commands.js';
 import {
   CORRELATION_PRIMARY_CONFLICT_EVENT,
   CORRELATION_REGISTERED_EVENT,
   CORRELATION_RETRACTED_EVENT,
   RETRY_REQUESTED_EVENT,
-  RUN_REQUESTED_EVENT,
   RUN_CLAIMED_EVENT,
   RUN_COMPLETED_EVENT,
+  RUN_REQUESTED_EVENT,
   WORKFLOW_SELECTED_EVENT,
+  WORKSPACE_CLEANED_EVENT,
   WORK_ITEM_DELETED_EVENT,
   WORK_ITEM_FROZEN_EVENT,
   WORK_ITEM_UNFROZEN_EVENT,
-  WORKSPACE_CLEANED_EVENT,
 } from '../domain/event-types.js';
 import { UNRESOLVED_WORK_ITEM_KEY, parseIssueStateRecord } from '../domain/schema.js';
 import { doneRunnerSentinel, rejectedRunnerSentinel, stageFromLabels } from '../domain/stages.js';
-import { FROZEN_WORK_ITEM_LABEL } from '../domain/work-item-lifecycle.js';
-import { workItemStatusForRunOutcome } from '../domain/work-item-status.js';
-import {
-  builtInDefaultWorkflowDefinition,
-  defaultWorkflowName,
-  selectWorkflowForEvent,
-  workflowStageVocabulary,
-} from '../domain/workflows.js';
-import { isCustomCommandAction } from '../domain/custom-commands.js';
 import type {
   CorrelatedResource,
   CorrelationRegisteredPayload,
@@ -31,6 +23,14 @@ import type {
   IssueStateRecord,
   WakeConfig,
 } from '../domain/types.js';
+import { FROZEN_WORK_ITEM_LABEL } from '../domain/work-item-lifecycle.js';
+import { workItemStatusForRunOutcome } from '../domain/work-item-status.js';
+import {
+  builtInDefaultWorkflowDefinition,
+  defaultWorkflowName,
+  selectWorkflowForEvent,
+  workflowStageVocabulary,
+} from '../domain/workflows.js';
 import { createEventEnvelope } from '../lib/event-log.js';
 import type { ResourceIndex } from './contracts.js';
 

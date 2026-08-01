@@ -1,5 +1,5 @@
-import { createUiServer } from '../adapters/http/ui-server.js';
 import type { createStateStore } from '../adapters/fs/state-store.js';
+import { createUiServer } from '../adapters/http/ui-server.js';
 import type { ResourceIndex } from '../core/contracts.js';
 import type { WakeConfig } from '../domain/types.js';
 

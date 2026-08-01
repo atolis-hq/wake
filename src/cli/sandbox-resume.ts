@@ -1,6 +1,6 @@
+import { join } from 'node:path';
 import { stdin as input, stdout as output } from 'node:process';
 import { createInterface } from 'node:readline/promises';
-import { join } from 'node:path';
 
 import type { DockerCli } from '../adapters/docker/docker-cli.js';
 import { listRunRecords } from '../adapters/fs/state-store.js';

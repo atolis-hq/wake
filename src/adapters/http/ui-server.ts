@@ -1,6 +1,6 @@
-import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { dirname } from 'node:path';
 
 import type { ResourceIndex } from '../../core/contracts.js';
@@ -16,11 +16,11 @@ import {
 } from '../../domain/event-types.js';
 import { configuredTicketSource } from '../../domain/sources.js';
 import type { EventEnvelope, IssueStateRecord, WakeConfig } from '../../domain/types.js';
+import { labelsForWorkItem } from '../../domain/work-item-labels.js';
 import { isWorkItemDeleted, isWorkItemFrozen } from '../../domain/work-item-lifecycle.js';
 import { createEventEnvelope } from '../../lib/event-log.js';
 import { writeJsonFile } from '../../lib/json-file.js';
 import type { createStateStore } from '../fs/state-store.js';
-import { labelsForWorkItem } from '../../domain/work-item-labels.js';
 import { indexHtml } from './ui-assets.js';
 import {
   buildBoard,

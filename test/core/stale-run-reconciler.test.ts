@@ -1,14 +1,14 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { createFakeResourceIndex } from '../../src/adapters/fake/fake-resource-index.js';
 import { createStateStore } from '../../src/adapters/fs/state-store.js';
 import { createDefaultWakeConfig } from '../../src/config/defaults.js';
 import { createProjectionUpdater } from '../../src/core/projection-updater.js';
-import { createStaleRunReconciler } from '../../src/core/stale-run-reconciler.js';
 import { isRunLeaseExpired } from '../../src/core/run-lease.js';
+import { createStaleRunReconciler } from '../../src/core/stale-run-reconciler.js';
 import type {
   EventEnvelope,
   ExecutionAttemptLifecycle,

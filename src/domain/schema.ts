@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 
 import { reservedCommandNames } from './custom-commands.js';
-import { runnerSentinelValues } from './stages.js';
+import { alwaysManualIgnoredLabels } from './manual-labels.js';
 import {
   correlationProvenanceSchema,
   correlationRelationSchema,
@@ -12,7 +12,7 @@ import {
   resourceUriSchema,
 } from './resource-uri.js';
 import { runtimeEventTypeValues } from './runtime-events.js';
-import { alwaysManualIgnoredLabels } from './manual-labels.js';
+import { runnerSentinelValues } from './stages.js';
 import { workItemStatusSchema } from './work-item-status.js';
 
 export {

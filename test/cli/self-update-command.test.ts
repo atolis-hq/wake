@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { runSelfUpdateCommand, runSelfUpdateLoop } from '../../src/cli/self-update-command.js';
 import type { SelfUpdateLedger } from '../../src/adapters/fs/self-update-ledger.js';
+import { runSelfUpdateCommand, runSelfUpdateLoop } from '../../src/cli/self-update-command.js';
 
 function baseDeps(overrides: Record<string, unknown> = {}) {
   const ledger: SelfUpdateLedger = {

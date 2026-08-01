@@ -1,11 +1,11 @@
-﻿import { resolve } from 'node:path';
-import { mkdir, mkdtemp, readFile, stat, writeFile } from 'node:fs/promises';
+﻿import { mkdir, mkdtemp, readFile, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
+import { resolve } from 'node:path';
 
 import { describe, expect, it, vi } from 'vitest';
 
-import { createDefaultWakeConfig } from '../../src/config/defaults.js';
 import { runSandboxCommand } from '../../src/cli/sandbox-command.js';
+import { createDefaultWakeConfig } from '../../src/config/defaults.js';
 
 describe('sandbox command', () => {
   const repoRoot = '/repo/wake';

@@ -6,9 +6,9 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import {
   DEFAULT_LOG_MAX_BYTES,
-  rotateLogFileIfNeeded,
   resolveLogMaxBytes,
   resolveLogRotateCheckIntervalMs,
+  rotateLogFileIfNeeded,
 } from '../../src/lib/log-rotation.js';
 
 describe('log rotation', () => {

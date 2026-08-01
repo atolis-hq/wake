@@ -2,9 +2,9 @@
 import { access } from 'node:fs/promises';
 import { promisify } from 'node:util';
 
+import { loadPromptTemplate } from '../adapters/runner/prompt-templates.js';
 import type { WorkspaceManager } from '../core/contracts.js';
 import type { RunnerEntry, WakeConfig } from '../domain/types.js';
-import { loadPromptTemplate } from '../adapters/runner/prompt-templates.js';
 
 const execFile = promisify(nodeExecFile);
 // Some CLIs (observed with Cursor's `agent --version`) take 5-6s to exit

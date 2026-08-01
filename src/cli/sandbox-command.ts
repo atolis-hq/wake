@@ -4,12 +4,11 @@ import { posix, resolve } from 'node:path';
 import type { DockerCli } from '../adapters/docker/docker-cli.js';
 import type { SelfUpdateLedger } from '../adapters/fs/self-update-ledger.js';
 import { createRunnerCliAdapter } from '../adapters/runner/runner-cli-adapter.js';
-import type { RunnerEntry, RunRecord } from '../domain/types.js';
+import type { RunnerEntry, RunRecord, WakeConfig } from '../domain/types.js';
+import { resolveWakeVersion, wakeVersion } from '../version.js';
 import { runSandboxResumeCommand } from './sandbox-resume.js';
 import { runSelfUpdateCommand, runSelfUpdateLoop } from './self-update-command.js';
 import { runStopCommand } from './stop-command.js';
-import type { WakeConfig } from '../domain/types.js';
-import { resolveWakeVersion, wakeVersion } from '../version.js';
 
 async function ensureDockerfile(input: {
   wakeRoot: string;

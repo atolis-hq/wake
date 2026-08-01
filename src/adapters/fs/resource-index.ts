@@ -3,14 +3,14 @@ import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
 
-import { acquireFileLock } from '../../lib/lock.js';
-import { readJsonFile, writeJsonFile } from '../../lib/json-file.js';
-import type { WakePaths } from '../../lib/paths.js';
 import type { ResourceIndex } from '../../core/contracts.js';
+import { readJsonFile, writeJsonFile } from '../../lib/json-file.js';
+import { acquireFileLock } from '../../lib/lock.js';
+import type { WakePaths } from '../../lib/paths.js';
 import {
   isMissingPathError,
-  stateHealthIssue,
   StateHealthError,
+  stateHealthIssue,
   type StateHealthIssue,
 } from '../../lib/state-health.js';
 

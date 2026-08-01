@@ -1,14 +1,14 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { createFakeResourceIndex } from '../../src/adapters/fake/fake-resource-index.js';
 import { createStateStore } from '../../src/adapters/fs/state-store.js';
 import { createDefaultWakeConfig } from '../../src/config/defaults.js';
+import type { WorkspaceManager } from '../../src/core/contracts.js';
 import { createProjectionUpdater } from '../../src/core/projection-updater.js';
 import { createWorkspaceCleanup } from '../../src/core/workspace-cleanup.js';
-import type { WorkspaceManager } from '../../src/core/contracts.js';
 
 const clock = { now: () => new Date('2026-07-05T12:05:00.000Z') };
 

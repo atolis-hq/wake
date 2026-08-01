@@ -1,6 +1,5 @@
 import { defaultAgentIdentity } from '../../domain/schema.js';
-import type { WakeConfig } from '../../domain/types.js';
-import type { AgentAction, IssueStateRecord } from '../../domain/types.js';
+import type { AgentAction, IssueStateRecord, WakeConfig } from '../../domain/types.js';
 import { chooseAction, workflowForProjection } from '../../domain/workflows.js';
 import { branchNameForIssue } from '../git/git-workspace-manager.js';
 import { loadPromptTemplate, renderPromptTemplate } from './prompt-templates.js';

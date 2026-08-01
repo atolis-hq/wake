@@ -1,14 +1,14 @@
-﻿import { beforeEach, describe, expect, it } from 'vitest';
-import { mkdtemp, readFile } from 'node:fs/promises';
+﻿import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { createFakeResourceIndex } from '../../src/adapters/fake/fake-resource-index.js';
 import { createFakeTicketingSystem } from '../../src/adapters/fake/fake-ticketing-system.js';
 import { createFakeWorkspaceManager } from '../../src/adapters/fake/fake-workspace-manager.js';
 import { createStateStore } from '../../src/adapters/fs/state-store.js';
 import { createDefaultWakeConfig } from '../../src/config/defaults.js';
-import { createTickRunner } from '../../src/core/tick-runner.js';
 import type { AgentRunResult } from '../../src/core/contracts.js';
+import { createTickRunner } from '../../src/core/tick-runner.js';
 import type { EventEnvelope, IssueStateRecord } from '../../src/domain/types.js';
 import { findByIssueRef } from './support/tick-runner-fixtures.js';
 

@@ -1,13 +1,13 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { createFakeResourceIndex } from '../../src/adapters/fake/fake-resource-index.js';
 import { createStateStore } from '../../src/adapters/fs/state-store.js';
 import { createDefaultWakeConfig } from '../../src/config/defaults.js';
-import { createProjectionUpdater } from '../../src/core/projection-updater.js';
 import { createEventResolver } from '../../src/core/event-resolver.js';
+import { createProjectionUpdater } from '../../src/core/projection-updater.js';
 import { UNRESOLVED_WORK_ITEM_KEY } from '../../src/domain/schema.js';
 import { createUnkeyedEventEnvelope } from '../../src/lib/event-log.js';
 import { isWorkId } from '../../src/lib/work-id.js';

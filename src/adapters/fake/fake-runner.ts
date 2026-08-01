@@ -1,6 +1,6 @@
 import type { AgentRunInput, AgentRunResult } from '../../core/contracts.js';
-import { emitRuntimeEvent, runnerRuntimeEvent } from '../runner/runtime-events.js';
 import { createAgentExecution } from '../../core/live-execution.js';
+import { emitRuntimeEvent, runnerRuntimeEvent } from '../runner/runtime-events.js';
 
 export function createFakeRunner(result?: AgentRunResult, options?: { cli?: string }) {
   const runner = {

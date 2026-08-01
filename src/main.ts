@@ -13,22 +13,22 @@ import {
 } from './adapters/docker/docker-cli.js';
 import { createFileBackedFakeTicketingSystem } from './adapters/fake/fake-ticketing-system.js';
 import { createFakeWorkspaceManager } from './adapters/fake/fake-workspace-manager.js';
-import { createGitWorkspaceManager } from './adapters/git/git-workspace-manager.js';
-import { createRunnerCliAdapter } from './adapters/runner/runner-cli-adapter.js';
-import { createRegistryRunner, runnerKindForOverride } from './adapters/runner/runner-registry.js';
 import { createResourceIndex } from './adapters/fs/resource-index.js';
-import { createStateStore } from './adapters/fs/state-store.js';
 import {
   readSelfUpdateLedger,
   writeSelfUpdateLedger,
   type SelfUpdateLedger,
 } from './adapters/fs/self-update-ledger.js';
-import { resolveGitHubToken } from './adapters/github/github-auth.js';
+import { createStateStore } from './adapters/fs/state-store.js';
+import { createGitWorkspaceManager } from './adapters/git/git-workspace-manager.js';
 import { createGitHubArtifactVerifier } from './adapters/github/github-artifact-verifier.js';
+import { resolveGitHubToken } from './adapters/github/github-auth.js';
 import { createGitHubClient } from './adapters/github/github-client.js';
 import { createGitHubIssuesWorkSource } from './adapters/github/github-issues-work-source.js';
 import { createGitHubPullRequestActivitySource } from './adapters/github/github-pull-request-activity-source.js';
 import { createGitHubPullRequestMergeActor } from './adapters/github/github-pull-request-merge-actor.js';
+import { createRunnerCliAdapter } from './adapters/runner/runner-cli-adapter.js';
+import { createRegistryRunner, runnerKindForOverride } from './adapters/runner/runner-registry.js';
 import { runAuditCommand } from './cli/audit-command.js';
 import { runCorrelateCommand } from './cli/correlate-command.js';
 import { runDoctorCommand, type DoctorDeps } from './cli/doctor-command.js';
@@ -41,17 +41,17 @@ import { runUiCommand } from './cli/ui-command.js';
 import { loadWakeConfig } from './config/load-config.js';
 import { createActiveRunRecovery } from './core/active-run-recovery.js';
 import { createControlPlane } from './core/control-plane.js';
-import { createOutboundSinkRouter, createWorkSourceFanIn } from './core/sink-router.js';
 import { createScheduledWorkflowSource } from './core/scheduled-workflow-source.js';
+import { createOutboundSinkRouter, createWorkSourceFanIn } from './core/sink-router.js';
 import { createTickRunner } from './core/tick-runner.js';
+import { configuredTicketSource } from './domain/sources.js';
+import type { RunRecord, WakeConfig } from './domain/types.js';
 import { systemClock } from './lib/clock.js';
 import { createDetachedProcessLogSink } from './lib/detached-process-logging.js';
 import { readJsonFile } from './lib/json-file.js';
 import { resolveLogMaxBytes, resolveLogRotateCheckIntervalMs } from './lib/log-rotation.js';
 import { StateHealthError, type StateHealthReport } from './lib/state-health.js';
-import { configuredTicketSource } from './domain/sources.js';
 import { wakeVersion } from './version.js';
-import type { RunRecord, WakeConfig } from './domain/types.js';
 
 function commandArgsBeforeTerminator(args: string[]): string[] {
   const terminatorIndex = args.indexOf('--');

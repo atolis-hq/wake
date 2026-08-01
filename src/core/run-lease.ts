@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
-import type { Clock } from '../lib/clock.js';
 import type { RunRecord } from '../domain/types.js';
+import type { Clock } from '../lib/clock.js';
 
 type StateStore = ReturnType<typeof import('../adapters/fs/state-store.js').createStateStore>;
 

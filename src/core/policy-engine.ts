@@ -1,6 +1,13 @@
-import { failedRunnerSentinel } from '../domain/stages.js';
-import { resolveCustomCommand } from '../domain/custom-commands.js';
 import type { CustomCommandResolution } from '../domain/custom-commands.js';
+import { resolveCustomCommand } from '../domain/custom-commands.js';
+import { alwaysManualIgnoredLabels } from '../domain/manual-labels.js';
+import { failedRunnerSentinel } from '../domain/stages.js';
+import type {
+  AgentAction,
+  IssueStateRecord,
+  WakeConfig,
+  WorkflowDefinition,
+} from '../domain/types.js';
 import {
   builtInDefaultWorkflowDefinition,
   chooseAction as chooseWorkflowAction,
@@ -8,13 +15,6 @@ import {
   selectWorkflowForEvent,
   workflowForProjection,
 } from '../domain/workflows.js';
-import type {
-  AgentAction,
-  IssueStateRecord,
-  WakeConfig,
-  WorkflowDefinition,
-} from '../domain/types.js';
-import { alwaysManualIgnoredLabels } from '../domain/manual-labels.js';
 import { autoApprovalLabel } from './approval-intents.js';
 import type { UnkeyedEventEnvelope } from './contracts.js';
 

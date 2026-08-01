@@ -4,6 +4,10 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import {
+  CORRELATION_PRIMARY_CONFLICT_EVENT,
+  CORRELATION_REGISTERED_EVENT,
+  CORRELATION_RETRACTED_EVENT,
+  WORK_ITEM_CREATED_EVENT,
   correlationPrimaryConflictPayloadSchema,
   correlationRegisteredPayloadSchema,
   correlationRetractedPayloadSchema,
@@ -11,17 +15,13 @@ import {
   eventEnvelopeSourceRefsSchema,
   parseEventEnvelope,
   parseIssueStateRecord,
-  parseSourceStateRecord,
-  parseWakeConfig,
   parseRunRecord,
+  parseRunnerArtifacts,
   parseRunnerResult,
   parseRunnerResultSentinel,
-  parseRunnerArtifacts,
+  parseSourceStateRecord,
+  parseWakeConfig,
   workItemCreatedPayloadSchema,
-  CORRELATION_PRIMARY_CONFLICT_EVENT,
-  CORRELATION_REGISTERED_EVENT,
-  CORRELATION_RETRACTED_EVENT,
-  WORK_ITEM_CREATED_EVENT,
 } from '../../src/domain/schema.js';
 import type { WakeDevConfig, WakeSandboxConfig } from '../../src/domain/types.js';
 

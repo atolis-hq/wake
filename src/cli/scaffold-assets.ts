@@ -3,8 +3,8 @@ import { basename, dirname, join, resolve } from 'node:path';
 
 import { createDefaultWakeConfig } from '../config/defaults.js';
 import { splitWakeConfig } from '../config/split-config.js';
-import { writeYamlFile } from '../lib/yaml-file.js';
 import { createWakePaths } from '../lib/paths.js';
+import { writeYamlFile } from '../lib/yaml-file.js';
 
 async function listPromptFileNames(repoRoot: string): Promise<string[]> {
   const entries = await readdir(join(repoRoot, 'prompts'));
