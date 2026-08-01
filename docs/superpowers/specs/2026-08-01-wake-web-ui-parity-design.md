@@ -8,22 +8,26 @@ Authority: [`2026-07-30-wake-web-surface-architecture-design.md`](2026-07-30-wak
 ## 1. Executive decision
 
 The `src-next` web surface is architecturally correct and visually bare. This
-work restyles it to the legacy control-plane look and closes the presentation
-gaps that today's `/api/v1` can already support, without changing the API,
-domains, or bootstrap composition.
+work restyles it to the legacy control-plane look, and introduces the operator
+read models the control-plane UI needs — starting with the board — as first-class
+APIs separate from the domain.
 
-Every content gap that requires a server change is recorded in the gap register
-in §8 rather than being worked around in the browser. The register is a
-deliverable of this design in its own right.
+Every remaining content gap is recorded in the gap register in §8 rather than
+being worked around in the browser. The register is a deliverable of this design
+in its own right.
 
-Three decisions govern the work:
+Four decisions govern the work:
 
 1. **Dark theme only, on a two-layer token system.** Components reference
    semantic tokens exclusively, so a light theme later is one assignment block
    and zero component edits.
-2. **UI-only scope.** No file under `src-next/surfaces/api/`,
-   `src-next/bootstrap/`, or any domain module is modified.
-3. **No control that cannot work.** A button whose route returns 501 is not
+2. **Operator read models are in scope; domain changes are not.** Phase A is
+   UI-only. Phase B adds operator capabilities (§3.3) as new projections,
+   applications, presenters, and routes. No domain module gains a field, a
+   method, or a behaviour because a screen wants it.
+3. **The browser stays generic.** Resources are opaque references; no component
+   branches on a resource kind, provider, or activity type (§6.3.1).
+4. **No control that cannot work.** A button whose route returns 501 is not
    shipped disabled or hopeful; it is not shipped.
 
 ## 2. Context and evidence base
@@ -79,7 +83,10 @@ and token spend in about 120px of height. The target card shows
   `wake_ui_token` cookie (`ui-server.ts:59-67`). The target surface is
   deliberately unauthenticated and locally scoped, per the web surface
   architecture design §1. Not ported, not registered as a gap.
-- **API, domain, or bootstrap changes.** Deferred to the tasks named in §8.
+- **Domain changes.** No work, orchestration, execution, resources, or
+  activities module is modified. Operator read models consume those domains;
+  they do not alter them. Gaps needing a domain fact stay in §8 and belong to
+  the rewrite packets named there.
 - **Integration- or activity-specific presentation.** The browser renders
   resources as generic references only (§6.3.1). No pull-request, issue, repo,
   or other kind-aware component ships, and no code branches on a resource kind
@@ -89,40 +96,50 @@ and token spend in about 120px of height. The target card shows
 - **Drag and drop.** Prohibited by the web surface design §7.2 — a visual move
   must not imply a workflow command the domain has not defined.
 
-### 3.3 API shape: no BFF
+### 3.3 API shape: operator read models, not denormalized domains
 
-Where a screen needs data joined or reshaped, the fix goes on the existing
-domain resource — never into a UI-specific endpoint. The web surface
-architecture design §1 already commits to "one UI-agnostic `/api/v1`"; this
-section records why that holds up under the pressure this work applies to it,
-and what to do instead.
+Three shapes were considered for data a screen needs joined or derived. Two are
+rejected.
 
-`/api/v1` has more than one consumer. `src-next/surfaces/cli` reads the same
-applications, and the HTTP surface is Wake's integration point. An endpoint
-shaped for one board layout couples the server to a presentation decision that
-changes far more often than the domain does.
+**Rejected — denormalize onto the domain resource.** Adding `currentStage` to
+`WorkItemResponse` because the board wants it makes a domain-shaped contract
+inherit a field for a presentation reason. The next screen adds another. Domain
+resources describe their domain; they do not accumulate columns on behalf of
+callers.
 
-The distinguishing test is: **does the response shape encode a fact, or a
-layout?**
+**Rejected — join in the browser.** Client-side joining breaks as soon as either
+side is paginated or filtered: the cursors are independent, so a row on one page
+can reference an entity outside the other's page. Fixing that generically means
+every collection endpoint grows set-selection (`?ids=`) purely to serve clients
+that are stitching — which contaminates every domain API instead of one. That is
+a worse outcome than the problem it avoids.
 
-- Denormalizing `currentStage` onto `WorkItemResponse` encodes a fact. Every
-  consumer benefits, one collection stays authoritative, pagination stays
-  coherent. This is the preferred fix and covers GAP-02.
-- A derived read model such as the condition vocabulary also encodes a fact, and
-  belongs on the resource that owns it — which is why GAP-01's home is a
-  presenter on the work resource, not a `/board` endpoint.
-- An endpoint returning six named columns encodes a layout. That is precisely
-  the legacy mistake: `deriveCondition` lives inside an HTTP adapter
-  (`ui-data.ts:53-101`), so the vocabulary is trapped there, invisible to the
-  CLI and untestable apart from the transport.
+**Adopted — operator capabilities are their own read models.** "What needs my
+attention" (board) and "what is this costing" (analytics) are operator
+questions, not renderings of a domain aggregate. Each gets its own projection,
+application, and resource, composed in the production root like any other
+projection, and sits alongside the domain-shaped resources rather than inside
+them.
 
-A genuine aggregate endpoint is justified only when a screen needs data from
-three or more collections with no single owning resource, and no denormalization
-would be honest. No surface in §6 meets that bar.
+These remain UI-agnostic in the sense that matters: they return operator facts —
+condition, dwell time, counts, spend — not columns, colours, or ordering. The
+test is whether a CLI would want the same endpoint. For board and analytics it
+plainly would (`wake board` is a reasonable command); for anything describing
+layout it would not. Presentation stays in the browser.
 
-Client-side joining is therefore a stopgap, permitted only while UI-only scope
-holds, and only where the resulting inaccuracy is stated. §6.1 is the one such
-case and states it.
+This is not a BFF. A BFF is a per-client transport that mirrors one UI's screens.
+An operator read model is a genuine capability with a single definition,
+consumable by the web UI, the CLI, and any future client alike.
+
+Legacy got the capability right and the placement wrong. `deriveCondition` is a
+legitimate read model, but it lives inside an HTTP adapter
+(`ui-data.ts:53-101`), so it cannot be tested apart from the transport and the
+CLI cannot reach it. The correction is to move that derivation into a composed,
+rebuildable projection — not to abolish the board endpoint.
+
+Where these read models should live as modules — a dedicated operator area
+versus extending an existing one — is deliberately left open here; it is a
+question for the task that builds them, not for a restyle.
 
 ## 4. Token architecture
 
@@ -186,27 +203,28 @@ Legacy groups into six derived conditions. The target groups into three
 `WorkItemResponse.state` values because the list endpoint carries nothing else
 (`contracts/work.ts:8-17`).
 
-**Mechanism, under protest.** The board additionally fetches
-`/api/v1/workflow-instances` — a real cursor-paginated collection route
-(`routes/read.ts:18`) — and joins client-side on
-`WorkflowInstanceResponse.workItemKey` (`contracts/orchestration.ts:3`). One
-extra request, no N+1, and it yields `currentStage`, `status`, and `waitingFor`
-per work item.
+**No client-side join.** An earlier draft of this design had the board fetch
+`/api/v1/workflow-instances` and join on `workItemKey` to recover stage. That is
+withdrawn under §3.3: the two collections paginate independently, so the join is
+wrong whenever either side pages or filters, and making it correct would require
+set-selection on every collection endpoint.
 
-This is a workaround forced by the UI-only scope, not the right shape, and it
-has a real defect: the two collections paginate independently, so their cursors
-do not align. A work item on the current `/work-items` page whose workflow
-instance falls outside the current `/workflow-instances` page renders without a
-stage chip. That is tolerable at present volumes and wrong in principle.
+**Phase A — restyled, not enriched.** The board groups by
+`WorkItemResponse.state` and shows only what that response carries. No stage
+chip, no dwell time, no condition colour, no run or cost stats. The card styling
+is nonetheless built to absorb those fields without restructuring: chip row,
+stats line, and condition border all exist and render empty.
 
-The correct fix is GAP-02 — denormalize stage and workflow status onto
-`WorkItemResponse` — which removes the second request, the join, and the cursor
-misalignment together. Per §3.3 that is a presenter change on an existing
-resource, not a new UI endpoint. The client-side join should be deleted the day
-GAP-02 lands.
+**Phase B — the board read model (GAP-01).** Columns become the six derived
+conditions and cards gain stage, dwell time, and spend, served by a dedicated
+operator projection rather than assembled by the client.
 
-**Columns** remain `state`-derived until GAP-01 lands. Stage, workflow status,
-and waiting-signal become card chips now.
+Two of the eight condition branches have missing inputs — the frozen check
+(GAP-11) and the scheduled marker (25A.7 tags). The read model must not fake
+them. `condition` is a closed vocabulary; the projection simply never emits
+`scheduled`, and never emits the frozen route into `needs-human`, until those
+inputs exist. Phase B therefore ships without waiting on either, and gains
+accuracy when they land.
 
 **Card** adopts the legacy treatment: title, status pill, meta chips, stats
 line, and a condition-coloured left border. Column headers gain counts.
@@ -219,9 +237,12 @@ as `chip-meta` and again in the label list) is not reproduced.
 
 ### 6.2 Work list
 
-`DataTable` is already sound. It gains stage and workflow-status columns from
-the §6.1 join, localized timestamps via the existing `LocalTime` component, and
-styled filter controls. Search and state filters already function.
+`DataTable` is already sound. It gains localized timestamps via the existing
+`LocalTime` component and styled filter controls. Search and state filters
+already function.
+
+Stage and workflow-status columns are **not** added, for the §6.1 reason — that
+data is not on `WorkItemResponse` and will arrive through GAP-01, not a join.
 
 ### 6.3 Work detail
 
@@ -296,7 +317,7 @@ ported.
 
 | Item | Reason |
 | --- | --- |
-| Analytics and charts | No chart framework (web surface design §8.1); metrics contract exposes three scalars (GAP-13) |
+| Charts and graphing | No chart framework (web surface design §8.1). The analytics read model is phase B (GAP-13); its visual treatment stays tabular, as legacy's is |
 | Light theme | Token layer makes it cheap later; no current demand |
 | Drag and drop | Prohibited by web surface design §7.2 |
 | Pull request panel, and any kind-aware resource presentation | §6.3.1 — needs a generic activity-presentation contract (GAP-16) |
@@ -308,14 +329,15 @@ ported.
 
 ## 8. API gap register
 
-Disposition values: **cheap-now** (unblocked, small, but out of this UI-only
-scope), **25A.x** / **25B** (an in-flight rewrite packet already covers the
-underlying fact), **new** (needs a decision and a task of its own).
+Disposition values: **phase B** (built by this work, per §10), **cheap-now**
+(unblocked and small, but out of scope here), **25A.x** / **25B** (an in-flight
+rewrite packet already covers the underlying fact), **new** (needs a decision and
+a task of its own).
 
 | ID | Gap | Disposition |
 | --- | --- | --- |
-| GAP-01 | Board condition vocabulary | Mostly derivable; blocked on GAP-11 and 25A.7 |
-| GAP-02 | Stage and workflow on the work list | cheap-now (worked around) |
+| GAP-01 | Board read model API | phase B — highest value; degrades without GAP-11 and 25A.7 |
+| GAP-02 | Stage, workflow, and dwell time for list surfaces | phase B — folded into GAP-01 |
 | GAP-03 | Tags and labels | 25A.7 |
 | GAP-04 | Token and cost figures | cheap-now |
 | GAP-05 | Runner and model on `RunResponse` | cheap-now |
@@ -325,42 +347,56 @@ underlying fact), **new** (needs a decision and a task of its own).
 | GAP-09 | Runner availability | 25B |
 | GAP-10 | Control-plane pause and resume | 25A.8 |
 | GAP-11 | Work commands: freeze, unfreeze, delete, retry | new |
-| GAP-12 | Status bar counters | Blocked on GAP-04 |
-| GAP-13 | Observability windows and metrics | new (correctness) |
+| GAP-12 | Status bar counters | phase B — cost figures need GAP-04 |
+| GAP-13 | Observability windows and metrics | phase B (also a correctness fix) |
 | GAP-14 | Routing table | new |
 | GAP-15 | Resource browse URL | new |
 | GAP-16 | Generic activity presentation contract | new |
 
-### GAP-01 — Board condition vocabulary
+### GAP-01 — Board read model API
 
-Legacy derives six conditions in `deriveCondition` (`ui-data.ts:53-101`), which
-its own comment documents as a display-only read model that "never decides
-anything the tick doesn't independently decide".
+The board is an operator capability — "what needs my attention" — and per §3.3 it
+deserves its own read model rather than being reconstructed from domain
+resources by a client.
 
-This is **not a new domain fact**. It is a derivation over inputs that largely
-exist in the target already: run status (`RunView.status`), workflow stage and
-status (`WorkflowInstanceResponse`), and terminal-stage knowledge from the
-compiled workflow. Two inputs are missing — the frozen flag (GAP-11) and the
-scheduled-workflow marker, which legacy reads from a label and which 25A.7
-replaces with WorkItem tags.
+Legacy proves the capability is real and cheap to derive. `deriveCondition`
+(`ui-data.ts:53-101`) documents itself as a display-only read model that "never
+decides anything the tick doesn't independently decide", and `buildBoard`
+assembles condition, dwell time, workflow, stage, labels, run counts, cost, and
+token spend per card. What legacy got wrong was placement: that derivation sits
+inside an HTTP adapter, so it is untestable apart from the transport and
+unreachable from the CLI.
 
-Correct home: an API presenter, once its two inputs exist. Not a domain change.
+**Shape.** One projection folded from the journal, registered in the production
+composition root like any other, exposing per-card operator facts — condition,
+current stage, workflow, dwell time, run count, spend — plus the per-condition
+counts legacy computes in `buildStatus` (`ui-data.ts:282-292`). It returns facts,
+not columns or colours.
 
-### GAP-02 — Stage and workflow on the work list
+**Inputs.** Most already exist: run status (`RunView.status`), workflow stage and
+status (`WorkflowInstanceResponse`), terminal-stage knowledge from the compiled
+workflow. Two do not: the frozen flag (GAP-11) and the scheduled marker, which
+legacy reads from a label and 25A.7 replaces with WorkItem tags. Spend requires
+GAP-04.
+
+**Sequencing note.** GAP-01 is the highest-value entry in this register — it is
+what makes the board a board rather than a styled list — and is built in phase B
+(§10). It is not blocked on GAP-11 or 25A.7: the condition vocabulary degrades
+explicitly rather than waiting, per §6.1.
+
+### GAP-02 — Stage, workflow, and dwell time for list surfaces
 
 `WorkItemResponse` carries `workItemKey`, `workItemId`, `objective`, `state`,
 and `relatedWorkItems` (`contracts/work.ts:8-17`). Stage lives on
-`WorkflowInstanceResponse` and reaches the browser only through the detail
-route.
+`WorkflowInstanceResponse` and reaches the browser only through the detail route.
 
-Worked around in §6.1 by joining `/workflow-instances` client-side, with the
-cursor-misalignment defect recorded there.
+**This is not fixed by extending `WorkItemResponse`.** Per §3.3, a domain-shaped
+contract must not inherit fields because list screens want them. It is folded
+into GAP-01 and served from the board read model, which the work list can consume
+as readily as the board.
 
-The fix is a presenter that denormalizes `currentStage` and workflow status onto
-`WorkItemResponse`. Per §3.3 this encodes a fact rather than a layout, so it
-serves the CLI as well, keeps one paginated collection authoritative, and lets
-the client-side join be deleted. This is the highest-value entry in the register
-relative to its cost.
+Retained as a separate entry only because it is the gap an implementer will feel
+first, and the obvious wrong fix is attractive enough to warrant naming.
 
 ### GAP-03 — Tags and labels
 
@@ -470,6 +506,15 @@ The target implementation also calls `journal.readAll(0)` on every request
 polling UI, the same class of problem that made legacy Analytics unusable. This
 should be fixed before the metrics surface grows, not after.
 
+Analytics is the second operator capability identified in §3.3 and takes the
+same shape as GAP-01: a projection maintained incrementally from the journal,
+not an aggregate computed per request. Legacy's summary
+(`ui-data.ts:621-632`) is a reasonable starting vocabulary. Windowing is what
+makes a per-request scan untenable, so the read model must be designed for it
+rather than having windows added to a scan.
+
+Depends on GAP-04 for any token or cost figure.
+
 ### GAP-14 — Routing table
 
 No endpoint exposes stage, action, tier, runner, model, and fallback order.
@@ -513,8 +558,10 @@ passing; the restyle changes presentation, not routes or query behaviour.
 
 New coverage:
 
-- the board's `/workflow-instances` join renders stage chips and tolerates a
-  work item with no workflow instance;
+- the board queries `/work-items` only — asserted by failing if any other
+  collection is requested, so the withdrawn join cannot be reintroduced casually;
+- board cards render their chip row, stats line, and condition border as empty
+  rather than broken when those fields are absent, which is every card today;
 - collapsible board columns persist across reload and are keyboard operable;
 - work detail renders resources generically from `kind` and `capabilities`,
   including a kind the test invents, proving no component branches on a known
@@ -531,11 +578,46 @@ The gate is `npm run verify:next`, plus `npm run lint:contracts`,
 
 ## 10. Sequencing
 
+### Phase A — UI only
+
 1. Token layer and shell (§4, §5) — every later step depends on the tokens.
 2. Shared components: `StatusBadge` condition tones, chips, pills, tiles.
-3. Board (§6.1), including the join and collapsible columns.
+3. Board (§6.1): card styling and collapsible columns, against `/work-items`
+   alone.
 4. Work list and work detail (§6.2, §6.3).
 5. Events, runs, health, observability, configuration (§6.4-§6.6).
 6. Contrast and accessibility pass.
 
-Steps 3 through 5 are independent of one another once step 2 lands.
+Steps 3 through 5 are independent of one another once step 2 lands. Phase A is
+shippable on its own and does not depend on Phase B.
+
+### Phase B — operator read models
+
+7. Board read model (GAP-01): projection, application, presenter, route,
+   registration; then the board and work list consume it.
+8. Status read model (GAP-12): the counters legacy computes in `buildStatus`,
+   which is the same capability at a smaller scale and reuses the board
+   projection's per-condition counts.
+9. Analytics read model (GAP-13), including the windowing the current
+   per-request scan cannot support.
+
+Step 7 is the value in this work; 8 and 9 are optional follow-ons and can be
+dropped without invalidating it.
+
+### Relationship to the rewrite plan
+
+Phase B builds production surface capability and therefore belongs in the
+rewrite plan's task sequence, not alongside it. It sits naturally with Task 25
+("Rebuild CLI, API, and UI over public application views"), whose remit already
+covers the API and UI surfaces, and should be slotted as a numbered packet with
+its own gate rather than carried informally on this branch.
+
+Conflict surface with in-flight work is small by construction: Phase B is
+almost entirely new files, because §3.3 keeps operator read models out of the
+domain modules that 25A and 25C are churning. The one shared touchpoint is
+projection and application registration in `bootstrap/composition-root.ts`,
+which 25A.8 also modifies — so Phase B should follow 25A.8 rather than race it.
+
+**Open decision:** whether Phase B becomes a new numbered packet (a Task 25D) or
+extends an existing one. That is a plan-ownership call, not a design call, and is
+left to the operator.
