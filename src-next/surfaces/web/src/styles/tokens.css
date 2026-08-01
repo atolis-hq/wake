@@ -1,18 +1,53 @@
+@import './palette.css';
+
+/* Layer 2: semantic tokens. Components reference only these names.
+   A light theme adds one :root[data-theme='light'] block here and nothing else. */
 :root {
-  --ink: #152235;
-  --muted: #526074;
-  --surface: #f4f7fa;
-  --surface-subtle: #eaf0f5;
-  --border: #ccd6e0;
-  --accent: #0b5cad;
-  --good: #087a4b;
-  --warning: #9a5b00;
-  --bad: #b42318;
+  --surface: var(--wake-ink-950);
+  --surface-panel: var(--wake-ink-900);
+  --surface-card: var(--wake-ink-850);
+  --surface-inset: var(--wake-ink-800);
+  --border: var(--wake-ink-700);
+  --border-strong: var(--wake-ink-600);
+  --ink: var(--wake-grey-100);
+  --ink-muted: var(--wake-grey-400);
+  --ink-inverse: var(--wake-white);
+  --brand: var(--wake-teal-600);
+  --brand-dark: var(--wake-teal-650);
+  --brand-darker: var(--wake-teal-700);
+  --nav-ink-idle: var(--wake-grey-300);
+  --accent: var(--wake-mint-400);
+  --accent-light: var(--wake-mint-300);
+  --good: var(--wake-green-300);
+  --warning: var(--wake-amber-300);
+  --bad: var(--wake-red-300);
+  --cond-ready-fg: var(--wake-green-300);
+  --cond-ready-bg: var(--wake-green-900);
+  --cond-scheduled-fg: var(--wake-blue-300);
+  --cond-scheduled-bg: var(--wake-blue-900);
+  --cond-active-fg: var(--wake-purple-300);
+  --cond-active-bg: var(--wake-purple-900);
+  --cond-needs-human-fg: var(--wake-amber-300);
+  --cond-needs-human-bg: var(--wake-amber-900);
+  --cond-error-fg: var(--wake-red-300);
+  --cond-error-bg: var(--wake-red-900);
+  --cond-finished-fg: var(--wake-slate-400);
+  --cond-finished-bg: var(--wake-slate-900);
   --space-2: 0.5rem;
   --space-3: 0.75rem;
   --space-4: 1rem;
   --space-5: 1.5rem;
   --space-6: 2rem;
   --radius: 0.65rem;
-  --shadow: 0 1px 3px rgb(18 34 52 / 0.12);
+  --radius-sm: 0.4rem;
+  --shadow: 0 1px 3px rgb(0 0 0 / 0.35);
+  --focus-ring: var(--wake-mint-300);
+  --font-sans: Inter, ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Consolas, monospace;
+  --text-xs: 0.72rem;
+  --text-sm: 0.8rem;
+  --text-base: 1rem;
+  --text-lg: 1.15rem;
+  --content-width: 76rem;
+  --motion-fast: 0.12s;
 }

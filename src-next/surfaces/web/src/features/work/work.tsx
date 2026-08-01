@@ -1,20 +1,20 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link, useLocation, useNavigate, useParams } from 'react-router';
-import type { WorkItemResponse } from '../../../../api/contracts/index.js';
+import type { RunResponse, WorkItemResponse } from '../../../../api/contracts/index.js';
 import { useApiClient } from '../../api/context.js';
 import { queryKeys } from '../../api/query-keys.js';
 import { refreshPolicy } from '../../api/refresh-policy.js';
 import { DataTable } from '../../components/data-table.js';
+import { LocalTime } from '../../components/local-time.js';
 import { CursorPagination, useCursorNavigation } from '../../components/cursor-pagination.js';
+import { Chip } from '../../components/chip.js';
 import {
   EmptyState,
   ErrorState,
-  JsonViewer,
   LoadingState,
   PageHeader,
   Panel,
   StaleIndicator,
-  StatusBadge,
 } from '../../components/primitives.js';
 import styles from '../features.module.css';
 
@@ -103,9 +103,7 @@ const columns = (location: ReturnType<typeof useLocation>) => [
   { label: 'Identity', render: (item: WorkItemResponse) => item.workItemId },
   {
     label: 'State',
-    render: (item: WorkItemResponse) => (
-      <StatusBadge tone={item.state === 'open' ? 'good' : 'neutral'}>{item.state}</StatusBadge>
-    ),
+    render: (item: WorkItemResponse) => <Chip variant="outline">{item.state}</Chip>,
   },
 ];
 
@@ -132,20 +130,57 @@ export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
             actions={<StaleIndicator refreshing={query.isFetching} stale={query.isStale} />}
           />
           <Panel>
-            <dl>
+            <dl className={styles.summary}>
               <dt>Work identity</dt>
               <dd>{query.data.data.work.workItemId}</dd>
               <dt>State</dt>
-              <dd>{query.data.data.work.state}</dd>
-              <dt>Workflow</dt>
+              <dd>
+                <Chip variant="outline">{query.data.data.work.state}</Chip>
+              </dd>
+              <dt>Stage</dt>
               <dd>{query.data.data.orchestration.primary?.currentStage ?? 'Not started'}</dd>
-              <dt>Resources</dt>
-              <dd>{query.data.data.resources.length}</dd>
-              <dt>Runs</dt>
-              <dd>{query.data.data.execution.runs.length}</dd>
+              <dt>Workflow</dt>
+              <dd>{query.data.data.orchestration.primary?.workflowName ?? '—'}</dd>
             </dl>
-            <JsonViewer value={query.data.data.activities} />
           </Panel>
+
+          <section aria-labelledby="work-resources">
+            <h2 id="work-resources">Resources</h2>
+            {query.data.data.resources.length === 0 ? (
+              <EmptyState>No correlated resources</EmptyState>
+            ) : (
+              <ul className={styles.resourceList} aria-label="Resources">
+                {query.data.data.resources.map((resource) => (
+                  <li key={resource.resourceId}>
+                    <Chip>{resource.kind}</Chip>
+                    <span className={styles.resourceId}>{resource.resourceId}</span>
+                    {resource.capabilities.map((capability) => (
+                      <Chip key={capability} variant="outline">
+                        {capability}
+                      </Chip>
+                    ))}
+                    {resource.revision !== undefined && (
+                      <span className={styles.resourceId}>{resource.revision}</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          <section aria-labelledby="work-runs">
+            <h2 id="work-runs">Runs</h2>
+            {query.data.data.execution.runs.length === 0 ? (
+              <EmptyState>No runs</EmptyState>
+            ) : (
+              <DataTable
+                caption="Runs"
+                rows={query.data.data.execution.runs}
+                rowKey={(run) => run.runId}
+                columns={runColumns}
+              />
+            )}
+          </section>
         </>
       ) : null}
     </div>
@@ -165,11 +200,30 @@ export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
         aria-modal="true"
         aria-label="Work item detail"
       >
-        <button type="button" onClick={() => navigate(-1)}>
-          Close
-        </button>
+        <div className={styles.modalHeader}>
+          <button
+            className={styles.modalClose!}
+            type="button"
+            aria-label="Close work detail"
+            onClick={() => navigate(-1)}
+          >
+            Close
+          </button>
+        </div>
         {content}
       </section>
     </div>
   );
 }
+
+const runColumns = [
+  {
+    label: 'Run',
+    render: (run: RunResponse) => (
+      <Link to={`/runs/${encodeURIComponent(run.runId)}`}>{run.runId}</Link>
+    ),
+  },
+  { label: 'Activity', render: (run: RunResponse) => run.activity },
+  { label: 'Status', render: (run: RunResponse) => <Chip variant="outline">{run.status}</Chip> },
+  { label: 'Started', render: (run: RunResponse) => <LocalTime value={run.startedAt} /> },
+];

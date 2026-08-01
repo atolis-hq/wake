@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it } from 'vitest';
 import { App } from '../src/app/app.js';
@@ -27,6 +27,22 @@ describe('Wake operator app', () => {
     expect(screen.getByRole('heading', { name: 'Work' })).toBeTruthy();
     expect(await screen.findByText('Dispatch active')).toBeTruthy();
     expect(screen.getByRole('table', { name: 'Work items' })).toBeTruthy();
+  });
+
+  it('separates the brand band from the status band so status is not a nav item', async () => {
+    render(
+      <MemoryRouter initialEntries={['/board']}>
+        <App client={client()} />
+      </MemoryRouter>,
+    );
+    const banner = await screen.findByRole('banner');
+    expect(banner.textContent).toContain('WAKE');
+    expect(screen.getByRole('img', { name: 'Wake logo' }).getAttribute('src')).toMatch(
+      /^data:image\/svg\+xml/,
+    );
+    const status = await screen.findByRole('status', { name: 'Control plane' });
+    expect(status.textContent).toContain('Dispatch active');
+    expect(within(banner).queryByText('Dispatch active')).toBeNull();
   });
 
   it('keeps empty and error states inside their feature route', async () => {
@@ -58,6 +74,7 @@ describe('Wake operator app', () => {
     );
     expect(await screen.findByRole('dialog', { name: 'Work item detail' })).toBeTruthy();
     expect(await screen.findByRole('heading', { name: 'Demo Wake' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Close work detail' })).toBeTruthy();
     desktop.unmount();
 
     setDesktop(false);

@@ -8,10 +8,10 @@ export const PageHeader = ({
   readonly title: string;
   readonly actions?: ReactNode;
 }) => (
-  <header className={styles.pageHeader}>
+  <div className={styles.pageHeader}>
     <h1>{title}</h1>
     {actions}
-  </header>
+  </div>
 );
 export const Panel = ({
   children,
@@ -43,7 +43,7 @@ export function StatusBadge({
   readonly tone?: 'neutral' | 'good' | 'warning' | 'bad';
 }) {
   return (
-    <span className={`${styles.badge} ${tone === 'neutral' ? '' : styles[tone]}`}>
+    <span className={`${styles.badge} ${tone === 'neutral' ? '' : styles[tone]!}`}>
       <span>{children}</span>
     </span>
   );

@@ -8,8 +8,8 @@ import {
   ErrorState,
   LoadingState,
   PageHeader,
-  Panel,
 } from '../../components/primitives.js';
+import { Tile } from '../../components/tile.js';
 import styles from '../features.module.css';
 
 export function ObservabilityPage() {
@@ -36,12 +36,9 @@ export function ObservabilityPage() {
       ) : Object.keys(query.data?.data.values ?? {}).length === 0 ? (
         <EmptyState>No metrics available</EmptyState>
       ) : (
-        <div className={styles.metricGrid}>
+        <div className={styles.tiles}>
           {Object.entries(query.data!.data.values).map(([name, value]) => (
-            <Panel key={name}>
-              <h2>{name}</h2>
-              <p className={styles.metric}>{value}</p>
-            </Panel>
+            <Tile key={name} label={name} value={String(value)} />
           ))}
         </div>
       )}
