@@ -11,6 +11,7 @@ import {
 import { OrchestrationEventType } from '../contracts/events.js';
 import { workflowInstanceStream } from '../contracts/streams.js';
 import { requestSupplementalActivity as decideSupplementalActivity } from '../domain/interpreter.js';
+import { isAuthorisedActor } from '../domain/supplemental-policy.js';
 import type { OrchestrationRepository } from './orchestration-repository.js';
 import type { StartWorkflow } from './start-workflow.js';
 
@@ -31,7 +32,7 @@ export class AdvanceWorkflow {
     ];
     if (configured === undefined)
       throw new Error(`Unknown supplemental command: ${request.command}`);
-    if (!configured.allowedActors.includes(context.actor.kind))
+    if (!isAuthorisedActor(configured.allowedActors, context.actor.kind))
       throw new Error(`Actor kind ${context.actor.kind} is not authorised for ${request.command}`);
     const decision = decideSupplementalActivity(
       loaded.view,

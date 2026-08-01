@@ -1,4 +1,4 @@
-import type { StageConfig } from './config.js';
+import type { ApprovalAuthority, StageConfig, TransitionTarget } from './config.js';
 import type { ActivationId, ActivityName } from '../../activities/index.js';
 import type {
   CommandName,
@@ -45,6 +45,9 @@ export interface SignalExpectation {
   readonly signalKind: SignalName;
   readonly resourceId?: string | undefined;
   readonly revision?: string | undefined;
+  // Present only for an authority-gated wait; absent waits accept any matching signal.
+  readonly from?: readonly ApprovalAuthority[] | undefined;
+  readonly resume?: TransitionTarget | undefined;
 }
 
 export interface OrchestrationSignal {
@@ -57,6 +60,8 @@ export interface OrchestrationSignal {
     readonly evidenceId: string;
   };
   readonly providerEventId: string;
+  // The permission under which the signal opens the gate; absent claims human authority.
+  readonly authority?: ApprovalAuthority | undefined;
 }
 
 export interface SupplementalActivityRequest {

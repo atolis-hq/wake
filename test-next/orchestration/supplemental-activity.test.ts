@@ -9,7 +9,11 @@ import { describe, expect, it } from 'vitest';
 import { workId } from '../support/identities.js';
 import { ActivityRegistry, activityName } from '../../src-next/activities/index.js';
 import { correlationId } from '../../src-next/kernel/index.js';
-import { compileWorkflow, createOrchestrationService } from '../../src-next/orchestration/index.js';
+import {
+  ApprovalAuthorityKind,
+  compileWorkflow,
+  createOrchestrationService,
+} from '../../src-next/orchestration/index.js';
 import { InMemoryEventJournal } from '../../src-next/persistence/index.js';
 import { createWorkService } from '../../src-next/work/index.js';
 import { FakeClock } from '../e2e/support/world.js';
@@ -49,7 +53,7 @@ async function fixture(actor: 'operator' | 'agent' = 'operator') {
         '/codereview': {
           activity: 'review',
           with: { prompt: 'review the current change' },
-          allowedActors: ['operator', 'integration'],
+          allowedActors: [ApprovalAuthorityKind.Human, ApprovalAuthorityKind.Auto],
         },
       },
       stages: {

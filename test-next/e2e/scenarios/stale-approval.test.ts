@@ -136,7 +136,7 @@ function authorityInput(
           resourceId: pullRequest.resourceId,
           kind: resourceKind('pull-request'),
           externalKey: { adapter: 'github', key: 'owner/repo#1' },
-          capabilities: [],
+          capabilities: [resourceCapability('reviewable'), resourceCapability('revisioned')],
         },
         correlations: [
           {

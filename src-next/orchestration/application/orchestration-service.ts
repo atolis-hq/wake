@@ -34,7 +34,7 @@ export class OrchestrationService {
     const repository = new OrchestrationRepository(journal);
     const claims = new CoordinationClaims(journal);
     this.startWorkflow = new StartWorkflow(repository, claims, work, definitions);
-    this.acceptWorkflowSignal = new AcceptSignal(repository, this.startWorkflow);
+    this.acceptWorkflowSignal = new AcceptSignal(repository, this.startWorkflow, work);
     this.advanceWorkflow = new AdvanceWorkflow(repository, this.startWorkflow);
     this.childWorkflows = new RequestChild(
       repository,

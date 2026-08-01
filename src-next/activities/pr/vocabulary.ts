@@ -31,5 +31,8 @@ export const PullRequestDenialCode = defineClosedVocabulary({
   ChecksPending: 'checks-pending',
   ChecksFailing: 'checks-failing',
   UntrustedActor: 'untrusted-actor',
+  TooManyFilesChanged: 'too-many-files-changed',
+  BlockedPathChanged: 'blocked-path-changed',
+  ChangedFilesUnavailable: 'changed-files-unavailable',
 } as const);
 export type PullRequestDenialCode = ValueOf<typeof PullRequestDenialCode>;

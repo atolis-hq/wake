@@ -196,14 +196,15 @@ legacy 83 files / 950 tests, with `check:catalogue`, `lint:contracts`,
 | 25A.4 value-level locality check | Built in remediation. Was missing entirely on first delivery; both path-scope and value-scope probes confirmed to fail the build |
 | 25A.7 routing half (tags, selectors, intake rules, echo-loop invariant, shared admission) | Built in remediation. `admitObservedWork` is the single path both providers use, so GitHub intake now starts a workflow |
 | 25A.7 approval authority (D16) — Work half | Built: consent events, idempotent commands, projection, view |
-| 25A.7 approval authority (D16) — Orchestration half | **Not built.** Specified by `test-next/orchestration/approval-authority.test.ts.pending`; see `test-next/orchestration/APPROVAL-AUTHORITY-PENDING.md` |
-| A4 merge policy (`maxFilesChanged`, `blockedPaths`, changed-files capability) | **Not built.** No `pr.merge` policy fields, and `activities/pr/policy.ts` still gates on `kind !== 'pull-request'` rather than capability |
+| 25A.7 approval authority (D16) — Orchestration half | Built: `ApprovalAuthorityKind`, the authority union, `WatchId`, `await.from` compiled and watch-resolved, capability-and-consent enforcement, `SignalAccepted.authority` recorded apart from provenance |
+| A4 merge policy (`maxFilesChanged`, `blockedPaths`, changed-files capability) | Built, including explicit `changed-files-unavailable` denial when policy is configured but evidence is missing. PR activities gate on capability rather than resource kind |
 | 25B step 13 alternate runner selection | Seam only. `RunnerRegistry.resolve(tier, ineligible)` walks ordered candidates, but nothing in production populates `ineligibleRunners`; per-runner quota state does not exist |
 
-Two catalogue rows still describe intent rather than delivered capability —
-`ORCH-APPROVAL-AUTHORITY` (half built) and `ACT-PR-MERGE` (A4 fields absent). The
-catalogue records dispositions, not progress, so the rows are not wrong; this table is
-the progress record.
+**One decision remains open.** Connecting quota to runner ineligibility reverses carried
+assumption A5, which recorded that operator pause and quota pause share a single global
+`ControlEventType.DispatchPaused` differing only in `reason`. Per-runner ineligibility
+needs either a new durable event or a runner scope on the existing one. That is an
+operator decision, not a wiring task, and nothing should be built until it is taken.
 
 ## Scenario matrix
 

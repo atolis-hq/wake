@@ -7,6 +7,7 @@ import {
   activityName,
 } from '../../src-next/activities/index.js';
 import {
+  ApprovalAuthorityKind,
   TransitionTargetKind,
   commandName,
   compileWorkflow,
@@ -60,7 +61,7 @@ describe('compiled workflow contracts', () => {
           '/retry': {
             activity: 'implement',
             with: {},
-            allowedActors: ['operator'],
+            allowedActors: [ApprovalAuthorityKind.Human],
           },
         },
         stages: {

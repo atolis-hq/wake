@@ -30,6 +30,8 @@ export interface FakeWorkEvidence {
     | typeof PullRequestCheckState.Failing
     | undefined;
   readonly acceptedReview?: boolean | undefined;
+  // Files the revision changed; presence models the changed-files capability.
+  readonly changedFiles?: readonly string[] | undefined;
   readonly watchEvent?: typeof FakeEventType.ReviewRequested | undefined;
   readonly eligible?: boolean | undefined;
 }

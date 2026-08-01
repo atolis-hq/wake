@@ -1,4 +1,5 @@
 import type { CommandContext } from '../../kernel/index.js';
+import type { WorkService } from '../../work/index.js';
 import type { OrchestrationSignal, SignalExpectation } from '../contracts/events.js';
 import type { WorkflowInstanceId } from '../contracts/identifiers.js';
 import {
@@ -12,6 +13,7 @@ export class AcceptSignal {
   constructor(
     private readonly repository: OrchestrationRepository,
     private readonly workflows: StartWorkflow,
+    private readonly work: WorkService,
   ) {}
 
   async wait(
@@ -35,6 +37,7 @@ export class AcceptSignal {
     context: CommandContext,
   ) {
     const loaded = await this.repository.loadRequired(workflowInstanceId);
+    const item = await this.work.get(loaded.view.workItemId);
     const decision = decideSignal(
       this.workflows.definition(loaded.view.workflowName),
       loaded.view,
@@ -42,6 +45,7 @@ export class AcceptSignal {
         signal,
         occurredAt: context.occurredAt,
         causationId: context.commandId,
+        consent: item?.autoApprovalGranted ?? false,
       },
     );
     if (decision.kind === 'append')

@@ -33,7 +33,11 @@ export const revisionChanged = (
   fact(
     command.resourceId,
     ActivityEventType.PrRevisionChanged,
-    { headRevision: command.headRevision, baseRevision: command.baseRevision },
+    {
+      headRevision: command.headRevision,
+      baseRevision: command.baseRevision,
+      ...(command.changedFiles === undefined ? {} : { changedFiles: command.changedFiles }),
+    },
     context,
   );
 

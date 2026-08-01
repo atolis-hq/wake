@@ -220,6 +220,8 @@ function applySignalWaitStarted(
     signalKind: event.payload.signalKind,
     ...(event.payload.resourceId === undefined ? {} : { resourceId: event.payload.resourceId }),
     ...(event.payload.revision === undefined ? {} : { revision: event.payload.revision }),
+    ...(event.payload.from === undefined ? {} : { from: event.payload.from }),
+    ...(event.payload.resume === undefined ? {} : { resume: event.payload.resume }),
   };
 }
 

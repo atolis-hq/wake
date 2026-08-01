@@ -19,6 +19,8 @@ export const BuiltInResourceCapability = {
   Mergeable: resourceCapability('mergeable'),
   Revisioned: resourceCapability('revisioned'),
   Editable: resourceCapability('editable'),
+  // Provider can report which file paths a revision changed.
+  ChangedFiles: resourceCapability('changed-files'),
 } as const;
 
 export const ResourceCorrelationRole = defineClosedVocabulary({

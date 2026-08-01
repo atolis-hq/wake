@@ -29,6 +29,7 @@ const evidenceSchema = z
     baseRevision: z.string().min(1).optional(),
     checks: z.enum(['unknown', 'pending', 'passing', 'failing']).optional(),
     acceptedReview: z.boolean().optional(),
+    changedFiles: z.array(z.string().min(1)).readonly().optional(),
     watchEvent: z.literal(FakeEventType.ReviewRequested).optional(),
     eligible: z.boolean().optional(),
   })
@@ -88,6 +89,9 @@ export class FakeInboundTranslator {
               BuiltInResourceCapability.Approvable,
               BuiltInResourceCapability.Mergeable,
               BuiltInResourceCapability.Revisioned,
+              ...(evidence.changedFiles === undefined
+                ? []
+                : [BuiltInResourceCapability.ChangedFiles]),
             ]
           : [BuiltInResourceCapability.Commentable],
         objective: evidence.title,
@@ -155,6 +159,7 @@ export class FakeInboundTranslator {
         headRevision: revision,
         baseRevision: evidence.baseRevision ?? 'unknown',
         checks: evidence.checks ?? PullRequestCheckState.Unknown,
+        ...(evidence.changedFiles === undefined ? {} : { changedFiles: evidence.changedFiles }),
       },
       context,
     );

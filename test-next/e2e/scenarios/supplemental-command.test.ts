@@ -2,6 +2,7 @@ import {
   commandName,
   workflowName,
 } from '../../../src-next/orchestration/contracts/identifiers.js';
+import { ApprovalAuthorityKind } from '../../../src-next/orchestration/contracts/vocabulary.js';
 import { z } from 'zod';
 import { expect } from 'vitest';
 import { activityName } from '../../../src-next/activities/index.js';
@@ -38,7 +39,7 @@ defineScenario(
         '/codereview': {
           activity: 'review',
           with: { prompt: 'review the current change' },
-          allowedActors: ['operator'],
+          allowedActors: [ApprovalAuthorityKind.Human],
         },
       },
       stages: {

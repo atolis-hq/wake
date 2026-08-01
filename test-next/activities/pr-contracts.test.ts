@@ -18,6 +18,7 @@ it('pr.merge defaults only target and keeps nested and top-level schemas strict'
     target: 'primary',
     method: 'rebase',
     requireChecks: false,
+    blockedPaths: [],
   });
   expect(() =>
     activity.inputSchema.parse({
@@ -33,6 +34,8 @@ it('exports the exact shared parsed merge input contract', () => {
     readonly target: 'primary' | { readonly resourceId: ReturnType<typeof resourceId> };
     readonly method: 'merge' | 'squash' | 'rebase';
     readonly requireChecks: boolean;
+    readonly maxFilesChanged?: number | undefined;
+    readonly blockedPaths: readonly string[];
   }>();
 });
 

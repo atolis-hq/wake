@@ -1,5 +1,6 @@
 import { ActivityOutcomeKind } from '../../activities/index.js';
-import { WorkflowStatus } from '../contracts/vocabulary.js';
+import { EventActorKind, type EventActor } from '../../kernel/index.js';
+import { ApprovalAuthorityKind, WorkflowStatus } from '../contracts/vocabulary.js';
 import type { CompiledWorkflow } from '../contracts/config.js';
 import type {
   SupplementalActivityRequest,
@@ -102,6 +103,30 @@ export function requestNextSupplemental(
       events.length + 2,
     ),
   );
+}
+
+// A command's `allowedActors` declares acceptance authority (ORCH-APPROVAL-AUTHORITY), not
+// event provenance, so the invoking actor's provenance is resolved to an authority first.
+export function isAuthorisedActor(
+  allowed: readonly ApprovalAuthorityKind[],
+  actorKind: EventActor['kind'],
+): boolean {
+  const authority = actorAuthority(actorKind);
+  return authority !== null && allowed.includes(authority);
+}
+
+// Provenance answers who emitted the event; authority answers who may invoke. A provider
+// relays a person typing in a ticket comment, which D16 counts as `human` on any surface.
+// `auto` is never inferred from transport: it requires operator consent, so granting it
+// from an actor kind would escalate authority without one.
+function actorAuthority(actorKind: EventActor['kind']): ApprovalAuthorityKind | null {
+  switch (actorKind) {
+    case EventActorKind.Operator:
+    case EventActorKind.Integration:
+      return ApprovalAuthorityKind.Human;
+    default:
+      return null;
+  }
 }
 
 export type { SupplementalActivityRequest };

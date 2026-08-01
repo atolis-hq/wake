@@ -27,6 +27,7 @@ const configSchema = z
               ])
               .optional(),
             acceptedReview: z.boolean().optional(),
+            changedFiles: z.array(z.string().min(1)).optional(),
             watchEvent: z.literal(FakeEventType.ReviewRequested).optional(),
             eligible: z.boolean().optional(),
           })

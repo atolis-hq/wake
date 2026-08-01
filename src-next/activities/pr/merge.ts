@@ -39,6 +39,8 @@ const inputSchema: z.ZodType<PullRequestMergeInput> = z
     target: pullRequestTargetSchema,
     method: z.enum([MergeMethod.Merge, MergeMethod.Squash, MergeMethod.Rebase]),
     requireChecks: z.boolean(),
+    maxFilesChanged: z.number().int().positive().optional(),
+    blockedPaths: z.array(z.string().min(1)).default([]),
   })
   .strict();
 
@@ -107,6 +109,12 @@ async function executeMerge(
     target: { resourceId: resource.resourceId },
     requireAcceptedReview: true,
     requireChecks: invocation.input.requireChecks,
+    mergePolicy: {
+      ...(invocation.input.maxFilesChanged === undefined
+        ? {}
+        : { maxFilesChanged: invocation.input.maxFilesChanged }),
+      blockedPaths: invocation.input.blockedPaths,
+    },
   });
   if (!decision.allowed) {
     const denial = mergeDenied(resourceStream(resource.resourceId), decision.reason, command, {

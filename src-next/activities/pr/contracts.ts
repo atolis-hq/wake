@@ -27,6 +27,8 @@ export interface PullRequestView {
     readonly actorId: string;
     readonly acceptedEventId: string;
   };
+  // Files the head revision changed, when the provider can report them.
+  readonly changedFiles?: readonly string[] | undefined;
 }
 
 export interface ObservePullRequest {
@@ -36,6 +38,7 @@ export interface ObservePullRequest {
   readonly headRevision: string;
   readonly baseRevision: string;
   readonly checks: PullRequestView['checks'];
+  readonly changedFiles?: readonly string[] | undefined;
 }
 
 export interface AcceptReviewSignal {
@@ -76,6 +79,8 @@ export interface PullRequestApproveInput extends PullRequestTargetInput {
 export interface PullRequestMergeInput extends PullRequestTargetInput {
   readonly method: MergeMethod;
   readonly requireChecks: boolean;
+  readonly maxFilesChanged?: number | undefined;
+  readonly blockedPaths: readonly string[];
 }
 export type PullRequestActivityOutcome =
   | {
@@ -95,10 +100,18 @@ export type PullRequestActivityOutcome =
       readonly data: { readonly reason: typeof ActivityFailureCode.IntentWriteFailed };
     };
 
+export interface PullRequestMergePolicy {
+  readonly maxFilesChanged?: number | undefined;
+  readonly blockedPaths: readonly string[];
+}
+
 export interface PullRequestAuthorityOptions {
   readonly target: PullRequestTarget;
   readonly requireAcceptedReview: boolean;
   readonly requireChecks: boolean;
+  // Absent means no deterministic file-change policy is configured for this
+  // decision (approve never sets it; merge sets it from its `with` input).
+  readonly mergePolicy?: PullRequestMergePolicy;
 }
 
 export interface AcceptedReviewSignalView {

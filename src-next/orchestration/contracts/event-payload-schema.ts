@@ -6,12 +6,19 @@ import {
   orchestrationActivityOutcome,
   type OrchestrationWaitingActivityOutcome,
 } from './activity-outcome.js';
-import { orchestrationGroupId, signalName, workflowInstanceId } from './identifiers.js';
+import {
+  orchestrationGroupId,
+  signalName,
+  stageName,
+  watchId,
+  workflowInstanceId,
+} from './identifiers.js';
 import {
   childOrchestrationGroupStreamId,
   OrchestrationStreamKind,
   primaryOrchestrationGroupStreamId,
 } from './streams.js';
+import { ApprovalAuthorityKind, TransitionTargetKind } from './vocabulary.js';
 
 export const workflowInstanceIdSchema = brandedStringSchema(workflowInstanceId);
 export const workflowStreamSchema = z
@@ -80,11 +87,32 @@ export const activityRequestedSchema = z
     supplemental: z.literal(true).optional(),
   })
   .strict();
+const approvalAuthoritySchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal(ApprovalAuthorityKind.Human) }).strict(),
+  z.object({ kind: z.literal(ApprovalAuthorityKind.Auto) }).strict(),
+  z
+    .object({ kind: z.literal(ApprovalAuthorityKind.Watch), watch: brandedStringSchema(watchId) })
+    .strict(),
+]);
+const transitionTargetSchema = z.discriminatedUnion('kind', [
+  z
+    .object({ kind: z.literal(TransitionTargetKind.Stage), stage: brandedStringSchema(stageName) })
+    .strict(),
+  z.object({ kind: z.literal(TransitionTargetKind.Complete) }).strict(),
+  z
+    .object({
+      kind: z.literal(TransitionTargetKind.AwaitSignal),
+      signal: brandedStringSchema(signalName),
+    })
+    .strict(),
+]);
 export const expectationSchema = z
   .object({
     signalKind: brandedStringSchema(signalName),
     resourceId: z.string().optional(),
     revision: z.string().optional(),
+    from: z.array(approvalAuthoritySchema).min(1).optional(),
+    resume: transitionTargetSchema.optional(),
   })
   .strict();
 export const signalSchema = z
@@ -97,6 +125,7 @@ export const signalSchema = z
     providerEventId: z.string().min(1),
     childWorkflowInstanceId: workflowInstanceIdSchema.optional(),
     requestId: z.string().optional(),
+    authority: approvalAuthoritySchema.optional(),
   })
   .strict();
 export const emptySchema = z.object({}).strict();

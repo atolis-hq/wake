@@ -29,3 +29,12 @@ export const WorkflowInstanceKind = defineClosedVocabulary({
   Child: 'child',
 } as const);
 export type WorkflowInstanceKind = ValueOf<typeof WorkflowInstanceKind>;
+
+// Who may satisfy a wait. Distinct from EventActorKind: that vocabulary answers
+// who emitted an event (provenance); this answers who may open a gate (authority).
+export const ApprovalAuthorityKind = defineClosedVocabulary({
+  Human: 'human',
+  Auto: 'auto',
+  Watch: 'watch',
+} as const);
+export type ApprovalAuthorityKind = ValueOf<typeof ApprovalAuthorityKind>;

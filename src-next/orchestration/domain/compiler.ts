@@ -2,6 +2,9 @@ import { ActivityOutcomeKind } from '../../activities/index.js';
 import { activityName, type ActivityRegistry } from '../../activities/index.js';
 import {
   workflowDefinitionConfigSchema,
+  type ApprovalAuthority,
+  type AwaitConfig,
+  type CompiledAwait,
   type CompiledOutcomeRoute,
   type CompiledStage,
   type CompiledSupplementalCommand,
@@ -13,10 +16,11 @@ import {
   commandName,
   signalName,
   stageName,
+  watchId,
   workflowName,
   type StageName,
 } from '../contracts/identifiers.js';
-import { TransitionTargetKind } from '../contracts/vocabulary.js';
+import { ApprovalAuthorityKind, TransitionTargetKind } from '../contracts/vocabulary.js';
 
 export function compileWorkflow(
   name: string,
@@ -34,7 +38,8 @@ export function compileWorkflow(
   const entry = config.entry ?? stageNames[0]!;
   if (!(entry in config.stages)) throw new Error(`Unknown workflow entry stage: ${entry}`);
   const compiledEntry = stageName(entry);
-  const stages = compileStages(compiledName, config.stages, activities);
+  const declaredWatchIds = new Set((config.watches ?? []).map((watch) => watch.id));
+  const stages = compileStages(compiledName, config.stages, activities, declaredWatchIds);
   const commands = compileCommands(config, activities);
   const watches = compileWatches(config, rawStageNames, knownWorkflowNames);
   assertReachable(compiledEntry, stages);
@@ -64,6 +69,7 @@ function compileWatches(
       throw new Error(`Unknown watch workflow: ${watch.workflow}`);
     return Object.freeze({
       ...watch,
+      id: watchId(watch.id),
       workflow: workflowName(watch.workflow),
       while: Object.freeze({
         stages: Object.freeze(watch.while.stages.map(stageName)),
@@ -77,26 +83,38 @@ function compileWatches(
   });
 }
 
+interface StageCompileContext {
+  readonly workflowName: ReturnType<typeof workflowName>;
+  readonly activities: ActivityRegistry;
+  readonly declaredWatchIds: ReadonlySet<string>;
+}
+
 function compileStages(
   compiledWorkflowName: ReturnType<typeof workflowName>,
   configured: WorkflowDefinitionConfig['stages'],
   activities: ActivityRegistry,
+  declaredWatchIds: ReadonlySet<string>,
 ): Record<StageName, CompiledStage> {
+  const context: StageCompileContext = {
+    workflowName: compiledWorkflowName,
+    activities,
+    declaredWatchIds,
+  };
   return Object.fromEntries(
     Object.entries(configured).map(([stageName, stage]) => [
       stageName,
-      compileStage(compiledWorkflowName, stageName, stage, configured, activities),
+      compileStage(context, stageName, stage, configured),
     ]),
   ) as Record<StageName, CompiledStage>;
 }
 
 function compileStage(
-  compiledWorkflowName: ReturnType<typeof workflowName>,
+  context: StageCompileContext,
   rawStageName: string,
   stage: StageConfig,
   allStages: WorkflowDefinitionConfig['stages'],
-  activities: ActivityRegistry,
 ): CompiledStage {
+  const { workflowName: compiledWorkflowName, activities, declaredWatchIds } = context;
   const definition = activities.describe(activityName(stage.activity));
   const on = Object.fromEntries(
     Object.entries(stage.on).map(([outcomeKind, route]) => {
@@ -110,11 +128,23 @@ function compileStage(
         use: activityName(activity.use),
         with: activities.validateInput(activityName(activity.use), activity.with),
       }));
+      const target = compileTarget(route.then, outcomeKind);
       const compiled: CompiledOutcomeRoute = Object.freeze({
-        target: compileTarget(route.then, outcomeKind),
+        target,
         ...(route.repeat === undefined ? {} : { repeat: route.repeat }),
         ...(route.retry === undefined ? {} : { retry: route.retry }),
         ...(followOns === undefined ? {} : { activities: Object.freeze(followOns) }),
+        ...(route.await === undefined
+          ? {}
+          : {
+              await: compileAwait(
+                compiledWorkflowName,
+                rawStageName,
+                target,
+                route.await,
+                declaredWatchIds,
+              ),
+            }),
         id: `${compiledWorkflowName}:${rawStageName}:${outcomeKind}`,
       });
       return [outcomeKind, compiled];
@@ -126,6 +156,37 @@ function compileStage(
     ...(stage.execution === undefined ? {} : { execution: stage.execution }),
     on: Object.freeze(on),
   });
+}
+
+function compileAwait(
+  workflow: ReturnType<typeof workflowName>,
+  rawStageName: string,
+  resume: CompiledOutcomeRoute['target'],
+  config: AwaitConfig,
+  declaredWatchIds: ReadonlySet<string>,
+): CompiledAwait {
+  return Object.freeze({
+    signal: signalName(config.signal),
+    from: Object.freeze(
+      config.from.map((entry) => compileAuthority(workflow, rawStageName, entry, declaredWatchIds)),
+    ),
+    resume,
+  });
+}
+
+function compileAuthority(
+  workflow: ReturnType<typeof workflowName>,
+  rawStageName: string,
+  entry: AwaitConfig['from'][number],
+  declaredWatchIds: ReadonlySet<string>,
+): ApprovalAuthority {
+  if (entry === ApprovalAuthorityKind.Human) return { kind: ApprovalAuthorityKind.Human };
+  if (entry === ApprovalAuthorityKind.Auto) return { kind: ApprovalAuthorityKind.Auto };
+  if (!declaredWatchIds.has(entry.id))
+    throw new Error(
+      `Unknown watch reference in workflow "${workflow}" stage "${rawStageName}": "${entry.id}"`,
+    );
+  return { kind: ApprovalAuthorityKind.Watch, watch: watchId(entry.id) };
 }
 
 function compileCommands(

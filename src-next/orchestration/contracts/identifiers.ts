@@ -6,6 +6,7 @@ export type SignalName = Brand<string, 'SignalName'>;
 export type CommandName = Brand<string, 'CommandName'>;
 export type WorkflowInstanceId = Brand<string, 'WorkflowInstanceId'>;
 export type OrchestrationGroupId = Brand<string, 'OrchestrationGroupId'>;
+export type WatchId = Brand<string, 'WatchId'>;
 
 export const workflowName = (value: string): WorkflowName => {
   if (!/^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$/.test(value))
@@ -38,4 +39,9 @@ export const workflowInstanceId = (value: string): WorkflowInstanceId => {
 export const orchestrationGroupId = (value: string): OrchestrationGroupId => {
   if (value.trim().length === 0) throw new Error('Orchestration group id must not be empty');
   return value as OrchestrationGroupId;
+};
+
+export const watchId = (value: string): WatchId => {
+  if (!/^[a-z][a-z0-9-]*$/.test(value)) throw new Error(`Invalid WatchId: ${value}`);
+  return value as WatchId;
 };

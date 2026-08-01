@@ -5,11 +5,14 @@ import type {
   PullRequestAuthorityDecision,
   PullRequestAuthorityInput,
   PullRequestAuthorityOptions,
+  PullRequestMergePolicy,
   PullRequestResourceView,
   PullRequestTarget,
   PullRequestView,
 } from './contracts.js';
 import { ActivityEventType } from '../contracts/events.js';
+import { BuiltInResourceCapability } from '../../resources/index.js';
+import { isPullRequestLikeResource } from './capability.js';
 
 export function decidePullRequestAuthority(
   input: PullRequestAuthorityInput,
@@ -32,6 +35,10 @@ export function decidePullRequestAuthority(
   if (options.requireChecks) {
     const checks = checkAuthority(pullRequest);
     if (checks !== null) return checks;
+  }
+  if (options.mergePolicy !== undefined) {
+    const files = changedFilesAuthority(pullRequest, resource, options.mergePolicy);
+    if (files !== null) return files;
   }
   return { allowed: true, resourceId: pullRequest.resourceId, revision: pullRequest.headRevision };
 }
@@ -80,7 +87,7 @@ function selectResource(
 }
 
 function isPrimaryPullRequest(resource: PullRequestResourceView, workItemId: string): boolean {
-  if (resource.resource.kind !== 'pull-request') return false;
+  if (!isPullRequestLikeResource(resource.resource.capabilities)) return false;
   return resource.correlations.some(
     (correlation) =>
       correlation.role === ActivityResourceRole.Primary && correlation.workItemId === workItemId,
@@ -139,6 +146,26 @@ function matchesAcceptedReview(
     candidate.revision === accepted.revision &&
     candidate.actorId === accepted.actorId
   );
+}
+
+function changedFilesAuthority(
+  pullRequest: PullRequestView,
+  resource: PullRequestResourceView,
+  policy: PullRequestMergePolicy,
+): Denial | null {
+  const configured = policy.maxFilesChanged !== undefined || policy.blockedPaths.length > 0;
+  if (!configured) return null;
+  const changedFiles = resource.resource.capabilities.includes(
+    BuiltInResourceCapability.ChangedFiles,
+  )
+    ? pullRequest.changedFiles
+    : undefined;
+  if (changedFiles === undefined) return denied(PullRequestDenialCode.ChangedFilesUnavailable);
+  if (policy.maxFilesChanged !== undefined && changedFiles.length > policy.maxFilesChanged)
+    return denied(PullRequestDenialCode.TooManyFilesChanged);
+  return policy.blockedPaths.some((blocked) => changedFiles.includes(blocked))
+    ? denied(PullRequestDenialCode.BlockedPathChanged)
+    : null;
 }
 
 function checkAuthority(pullRequest: PullRequestView): Denial | null {

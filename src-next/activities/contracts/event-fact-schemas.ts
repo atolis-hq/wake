@@ -82,6 +82,9 @@ const denialCodeSchema = z.enum([
   PullRequestDenialCode.ChecksPending,
   PullRequestDenialCode.ChecksFailing,
   PullRequestDenialCode.UntrustedActor,
+  PullRequestDenialCode.TooManyFilesChanged,
+  PullRequestDenialCode.BlockedPathChanged,
+  PullRequestDenialCode.ChangedFilesUnavailable,
 ]);
 const denialSchema = z
   .object({
@@ -153,12 +156,19 @@ export function createResourceFactDraftSchemas(eventTypes: ActivityEventTypes) {
           headRevision: z.string(),
           baseRevision: z.string(),
           checks: checksSchema,
+          changedFiles: z.array(z.string()).optional(),
         })
         .strict(),
     ),
     resourceFactDraft(
       eventTypes.PrRevisionChanged,
-      z.object({ headRevision: z.string(), baseRevision: z.string() }).strict(),
+      z
+        .object({
+          headRevision: z.string(),
+          baseRevision: z.string(),
+          changedFiles: z.array(z.string()).optional(),
+        })
+        .strict(),
     ),
     resourceFactDraft(eventTypes.PrStateChanged, z.object({ state: stateSchema }).strict()),
     resourceFactDraft(eventTypes.PrChecksChanged, z.object({ checks: checksSchema }).strict()),

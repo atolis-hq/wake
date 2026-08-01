@@ -50,6 +50,7 @@ export interface PullRequestDiscoveredPayload {
     | typeof PullRequestCheckState.Pending
     | typeof PullRequestCheckState.Passing
     | typeof PullRequestCheckState.Failing;
+  readonly changedFiles?: readonly string[] | undefined;
 }
 
 export interface PullRequestDenialPayload {
@@ -136,6 +137,7 @@ export interface ActivityEventPayloads {
   readonly [ActivityEventType.PrRevisionChanged]: {
     readonly headRevision: string;
     readonly baseRevision: string;
+    readonly changedFiles?: readonly string[] | undefined;
   };
   readonly [ActivityEventType.PrStateChanged]: {
     readonly state: PullRequestDiscoveredPayload['state'];

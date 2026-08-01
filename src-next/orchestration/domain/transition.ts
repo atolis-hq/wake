@@ -1,5 +1,9 @@
 import type { ActivityOutcome } from '../../activities/index.js';
-import type { CompiledOutcomeRoute, CompiledWorkflow } from '../contracts/config.js';
+import type {
+  CompiledOutcomeRoute,
+  CompiledWorkflow,
+  TransitionTarget,
+} from '../contracts/config.js';
 import type { WorkflowOrchestrationEventDraft } from '../contracts/events.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
 import { OrchestrationEventType } from '../contracts/events.js';
@@ -12,6 +16,11 @@ interface TransitionInput {
   readonly causationId: string;
 }
 
+interface DecisionContext {
+  readonly occurredAt: string;
+  readonly causationId: string;
+}
+
 export function finishRoute(
   events: WorkflowOrchestrationEventDraft[],
   definition: CompiledWorkflow,
@@ -19,22 +28,20 @@ export function finishRoute(
   input: TransitionInput,
   route: CompiledOutcomeRoute,
 ): void {
-  if (route.target.kind === TransitionTargetKind.Complete) {
-    events.push(
-      stateDraft(state, input, OrchestrationEventType.InstanceCompleted, {}, events.length + 1),
-    );
-    return;
-  }
-  if (route.target.kind === TransitionTargetKind.AwaitSignal) {
+  if (route.await !== undefined) {
     events.push(
       stateDraft(
         state,
         input,
         OrchestrationEventType.SignalWaitStarted,
-        { signalKind: route.target.signal },
+        { signalKind: route.await.signal, from: route.await.from, resume: route.await.resume },
         events.length + 1,
       ),
     );
+    return;
+  }
+  if (route.target.kind !== TransitionTargetKind.Stage) {
+    resumeToTarget(events, definition, state, input, route.target);
     return;
   }
   const count = (state.repeatCounts[route.id] ?? 0) + 1;
@@ -68,6 +75,54 @@ export function finishRoute(
       input,
       OrchestrationEventType.StageEntered,
       { stage: route.target.stage },
+      events.length + 1,
+    ),
+    stateDraft(
+      state,
+      input,
+      OrchestrationEventType.ActivityRequested,
+      activation(state.workflowInstanceId, nextOrdinal(state), stage.activity, stage.with, {
+        execution: stage.execution,
+      }),
+      events.length + 2,
+    ),
+  );
+}
+
+// Shared by a route with no gate (target reached directly) and a resumed wait
+// (target reached after an accepted signal); neither carries repeat counting.
+export function resumeToTarget(
+  events: WorkflowOrchestrationEventDraft[],
+  definition: CompiledWorkflow,
+  state: WorkflowInstanceView,
+  input: DecisionContext,
+  target: TransitionTarget,
+): void {
+  if (target.kind === TransitionTargetKind.Complete) {
+    events.push(
+      stateDraft(state, input, OrchestrationEventType.InstanceCompleted, {}, events.length + 1),
+    );
+    return;
+  }
+  if (target.kind === TransitionTargetKind.AwaitSignal) {
+    events.push(
+      stateDraft(
+        state,
+        input,
+        OrchestrationEventType.SignalWaitStarted,
+        { signalKind: target.signal },
+        events.length + 1,
+      ),
+    );
+    return;
+  }
+  const stage = definition.stages[target.stage]!;
+  events.push(
+    stateDraft(
+      state,
+      input,
+      OrchestrationEventType.StageEntered,
+      { stage: target.stage },
       events.length + 1,
     ),
     stateDraft(

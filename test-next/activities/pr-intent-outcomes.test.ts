@@ -162,7 +162,12 @@ function invocation(work: ReturnType<typeof workItemId>) {
     workflowInstanceId: workflowInstanceId('workflow-1'),
     orchestrationGroupId: orchestrationGroupId('group-1'),
     causationId: 'activation-1',
-    input: { target: 'primary' as const, method: 'merge' as const, requireChecks: true },
+    input: {
+      target: 'primary' as const,
+      method: 'merge' as const,
+      requireChecks: true,
+      blockedPaths: [],
+    },
     resources: [
       {
         resourceId: resId('1'),

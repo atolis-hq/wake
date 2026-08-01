@@ -1,7 +1,7 @@
 import type { ActivityActivationStatus, WorkflowStatus } from './vocabulary.js';
 import type { ActivationId, ActivityName, ActivityOutcome } from '../../activities/index.js';
 import type { WorkItemId } from '../../work/index.js';
-import type { StageConfig } from './config.js';
+import type { ApprovalAuthority, StageConfig, TransitionTarget } from './config.js';
 import type {
   OrchestrationGroupId,
   SignalName,
@@ -25,6 +25,8 @@ export interface SignalExpectationView {
   readonly intentEventId?: string;
   readonly resourceId?: string;
   readonly revision?: string;
+  readonly from?: readonly ApprovalAuthority[];
+  readonly resume?: TransitionTarget;
 }
 export interface SupplementalActivityView {
   readonly activity: ActivityName;

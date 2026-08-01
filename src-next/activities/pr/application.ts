@@ -32,6 +32,7 @@ import {
 } from './event-drafts.js';
 import { decidePullRequestAuthority } from './policy.js';
 import { acceptedReviewSignalProjection, pullRequestProjection } from './projection.js';
+import { isPullRequestLikeResource } from './capability.js';
 
 export interface PullRequestService {
   observe(command: ObservePullRequest, context: CommandContext): Promise<PullRequestView>;
@@ -189,7 +190,11 @@ class JournalPullRequestService implements PullRequestService {
 
   private async hasVerifiedPrimaryCorrelation(command: ObservePullRequest): Promise<boolean> {
     const resource = await this.resources.get(command.resourceId);
-    if (resource?.kind !== 'pull-request' || resource.primaryCorrelationConflict !== undefined)
+    if (
+      resource === null ||
+      !isPullRequestLikeResource(resource.capabilities) ||
+      resource.primaryCorrelationConflict !== undefined
+    )
       return false;
     const correlations = await this.resources.correlations(command.resourceId);
     const primary = correlations.filter((value) => value.role === ActivityResourceRole.Primary);
@@ -202,7 +207,7 @@ class JournalPullRequestService implements PullRequestService {
   ): Promise<PullRequestDenialCode | null> {
     const resource = await this.resources.get(resourceId);
     const view = await this.get(resourceId);
-    if (resource?.kind !== 'pull-request' || view === null)
+    if (resource === null || !isPullRequestLikeResource(resource.capabilities) || view === null)
       return PullRequestDenialCode.MissingResource;
     const correlations = await this.resources.correlations(resourceId);
     if (
@@ -262,7 +267,9 @@ function denialStream(
   input: PullRequestAuthorityInput,
   workItemId: ObservePullRequest['workItemId'],
 ): ResourceStreamRef | WorkItemStreamRef {
-  const resource = input.resources.find((entry) => entry.resource.kind === 'pull-request');
+  const resource = input.resources.find((entry) =>
+    isPullRequestLikeResource(entry.resource.capabilities),
+  );
   return resource === undefined
     ? workItemStream(workItemId)
     : resourceStream(resource.resource.resourceId);

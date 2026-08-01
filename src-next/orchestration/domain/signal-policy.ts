@@ -1,6 +1,10 @@
 import { ActivityOutcomeKind } from '../../activities/index.js';
-import { ActivityActivationStatus, WorkflowStatus } from '../contracts/vocabulary.js';
-import type { CompiledWorkflow } from '../contracts/config.js';
+import {
+  ActivityActivationStatus,
+  ApprovalAuthorityKind,
+  WorkflowStatus,
+} from '../contracts/vocabulary.js';
+import type { ApprovalAuthority, CompiledWorkflow } from '../contracts/config.js';
 import type {
   OrchestrationSignal,
   SignalExpectation,
@@ -19,9 +23,12 @@ import type {
   OrchestrationDecision,
 } from './activation-policy.js';
 import { activation, nextOrdinal, stateDraft } from './decision-events.js';
+import { resumeToTarget } from './transition.js';
 
 export interface AcceptSignal extends DecisionContext {
   readonly signal: OrchestrationSignal;
+  // Does the WorkItem carry operator consent for `auto` authority? Defaults to false.
+  readonly consent?: boolean;
 }
 
 export function waitForSignal(
@@ -56,12 +63,21 @@ export function acceptSignal(
     return { kind: 'ignored', reason: 'signal lacks authorized actor decision evidence' };
   if (signal.providerEventId.trim().length === 0)
     return { kind: 'ignored', reason: 'signal lacks provider event identity' };
+  const authority = signal.authority ?? { kind: ApprovalAuthorityKind.Human };
+  if (
+    expected.from !== undefined &&
+    !authorityAccepted(authority, expected.from, input.consent ?? false)
+  )
+    return { kind: 'ignored', reason: 'signal authority is not accepted by this wait' };
 
-  const stage = definition.stages[stageName(state.currentStage)]!;
-  return {
-    kind: 'append',
-    events: [
-      stateDraft(state, input, OrchestrationEventType.SignalAccepted, signal, 1),
+  const events: WorkflowOrchestrationEventDraft[] = [
+    stateDraft(state, input, OrchestrationEventType.SignalAccepted, { ...signal, authority }, 1),
+  ];
+  if (expected.resume !== undefined) {
+    resumeToTarget(events, definition, state, input, expected.resume);
+  } else {
+    const stage = definition.stages[stageName(state.currentStage)]!;
+    events.push(
       stateDraft(
         state,
         input,
@@ -69,10 +85,30 @@ export function acceptSignal(
         activation(state.workflowInstanceId, nextOrdinal(state), stage.activity, stage.with, {
           execution: stage.execution,
         }),
-        2,
+        events.length + 1,
       ),
-    ],
-  };
+    );
+  }
+  return { kind: 'append', events };
+}
+
+function authorityAccepted(
+  authority: ApprovalAuthority,
+  declared: readonly ApprovalAuthority[],
+  consent: boolean,
+): boolean {
+  switch (authority.kind) {
+    case ApprovalAuthorityKind.Human:
+      return declared.some((entry) => entry.kind === ApprovalAuthorityKind.Human);
+    case ApprovalAuthorityKind.Auto:
+      return consent && declared.some((entry) => entry.kind === ApprovalAuthorityKind.Auto);
+    case ApprovalAuthorityKind.Watch:
+      return declared.some(
+        (entry) => entry.kind === ApprovalAuthorityKind.Watch && entry.watch === authority.watch,
+      );
+    default:
+      return false;
+  }
 }
 
 export function acceptWaitingOutcome(

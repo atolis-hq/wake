@@ -1,10 +1,10 @@
-import { WorkflowStatus } from './vocabulary.js';
+import { ApprovalAuthorityKind, WorkflowStatus } from './vocabulary.js';
 import { z } from 'zod';
 
-import { EventActorKind, MatchMode } from '../../kernel/index.js';
+import { MatchMode } from '../../kernel/index.js';
 import { type ActivityName } from '../../activities/index.js';
 import { WorkspaceMode, type WorkspaceMode as WorkspaceModeType } from '../../execution/index.js';
-import type { CommandName, SignalName, StageName, WorkflowName } from './identifiers.js';
+import type { CommandName, SignalName, StageName, WatchId, WorkflowName } from './identifiers.js';
 import { TransitionTargetKind } from './vocabulary.js';
 
 export interface ActivityExecutionConfig {
@@ -14,12 +14,23 @@ export interface ActivityExecutionConfig {
 
 const identifier = z.string().trim().min(1);
 const bound = z.object({ max: z.number().int().positive() }).strict();
-const actorKind = z.enum([
-  EventActorKind.System,
-  EventActorKind.Operator,
-  EventActorKind.Agent,
-  EventActorKind.Integration,
+const approvalAuthorityKind = z.enum([
+  ApprovalAuthorityKind.Human,
+  ApprovalAuthorityKind.Auto,
+  ApprovalAuthorityKind.Watch,
 ]);
+// Shorthand: a bare `human`/`auto` string, or an explicit `{ kind: watch, id }` reference.
+const approvalAuthorityConfigSchema = z.union([
+  z.literal(ApprovalAuthorityKind.Human),
+  z.literal(ApprovalAuthorityKind.Auto),
+  z.object({ kind: z.literal(ApprovalAuthorityKind.Watch), id: identifier }).strict(),
+]);
+export const awaitConfigSchema = z
+  .object({
+    signal: identifier,
+    from: z.array(approvalAuthorityConfigSchema).min(1).readonly(),
+  })
+  .strict();
 const commandName = z.string().regex(/^\/[a-z][a-z0-9-]*$/);
 const canonicalEventName = z.string().regex(/^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)+$/);
 const watchStatus = z.enum([WorkflowStatus.Active, WorkflowStatus.Waiting, WorkflowStatus.Blocked]);
@@ -56,6 +67,7 @@ export const outcomeRouteConfigSchema = z
     then: identifier,
     repeat: bound.optional(),
     retry: bound.optional(),
+    await: awaitConfigSchema.optional(),
   })
   .strict();
 export const stageConfigSchema = z
@@ -80,7 +92,7 @@ export const supplementalCommandConfigSchema = z
   .object({
     activity: identifier,
     with: z.unknown().optional(),
-    allowedActors: z.array(actorKind).min(1).readonly(),
+    allowedActors: z.array(approvalAuthorityKind).min(1).readonly(),
   })
   .strict();
 export const workflowDefinitionConfigSchema = z
@@ -117,6 +129,7 @@ export const workflowSelectorConfigSchema = z
 
 export type WorkflowSelectorConfig = z.infer<typeof workflowSelectorConfigSchema>;
 export type FollowOnActivityConfig = z.infer<typeof followOnActivityConfigSchema>;
+export type AwaitConfig = z.infer<typeof awaitConfigSchema>;
 export type OutcomeRouteConfig = z.infer<typeof outcomeRouteConfigSchema>;
 export type StageConfig = z.infer<typeof stageConfigSchema>;
 export type SupplementalCommandConfig = z.infer<typeof supplementalCommandConfigSchema>;
@@ -128,14 +141,31 @@ export type TransitionTarget =
   | { readonly kind: typeof TransitionTargetKind.Complete }
   | { readonly kind: typeof TransitionTargetKind.AwaitSignal; readonly signal: SignalName };
 
+// A discriminated union, not `{ kind, id? }`: a flat optional id would let
+// `{ kind: 'human', id: x }` and `{ kind: 'watch' }` both type-check.
+export type ApprovalAuthority =
+  | { readonly kind: typeof ApprovalAuthorityKind.Human }
+  | { readonly kind: typeof ApprovalAuthorityKind.Auto }
+  | { readonly kind: typeof ApprovalAuthorityKind.Watch; readonly watch: WatchId };
+
+export interface CompiledAwait {
+  readonly signal: SignalName;
+  readonly from: readonly ApprovalAuthority[];
+  readonly resume: TransitionTarget;
+}
+
 export interface CompiledFollowOnActivity {
   readonly use: ActivityName;
   readonly with: unknown;
 }
-export interface CompiledOutcomeRoute extends Omit<OutcomeRouteConfig, 'activities' | 'then'> {
+export interface CompiledOutcomeRoute extends Omit<
+  OutcomeRouteConfig,
+  'activities' | 'then' | 'await'
+> {
   readonly id: string;
   readonly target: TransitionTarget;
   readonly activities?: readonly CompiledFollowOnActivity[];
+  readonly await?: CompiledAwait;
 }
 export interface CompiledStage extends Omit<StageConfig, 'activity' | 'execution' | 'on'> {
   readonly activity: ActivityName;
@@ -146,7 +176,8 @@ export interface CompiledSupplementalCommand extends Omit<SupplementalCommandCon
   readonly activity: ActivityName;
   readonly allowedActors: SupplementalCommandConfig['allowedActors'];
 }
-export interface CompiledWatch extends Omit<WatchConfig, 'workflow' | 'while'> {
+export interface CompiledWatch extends Omit<WatchConfig, 'workflow' | 'while' | 'id'> {
+  readonly id: WatchId;
   readonly workflow: WorkflowName;
   readonly while: Omit<WatchConfig['while'], 'stages'> & {
     readonly stages: readonly StageName[];

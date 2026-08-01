@@ -44,6 +44,16 @@ function clearReview(view: PullRequestView): PullRequestView {
   return copy;
 }
 
+// A new revision invalidates prior review and prior changed-file evidence;
+// the projected event payload re-supplies changedFiles only if the provider
+// reported it for this new revision.
+function clearRevisionEvidence(view: PullRequestView): PullRequestView {
+  const copy = { ...view };
+  delete copy.acceptedReview;
+  delete copy.changedFiles;
+  return copy;
+}
+
 function projectPullRequest(
   previous: PullRequestView | null,
   event: ActivityEvent,
@@ -52,7 +62,9 @@ function projectPullRequest(
     case ActivityEventType.PrDiscovered:
       return { resourceId: event.stream.id, ...event.payload };
     case ActivityEventType.PrRevisionChanged:
-      return previous === null ? previous : { ...clearReview(previous), ...event.payload };
+      return previous === null
+        ? previous
+        : { ...clearRevisionEvidence(previous), ...event.payload };
     case ActivityEventType.PrStateChanged:
       return previous === null ? previous : { ...previous, state: event.payload.state };
     case ActivityEventType.PrChecksChanged:

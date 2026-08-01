@@ -9,7 +9,6 @@ import { z } from 'zod';
 
 import { type EventJournal } from '../../kernel/index.js';
 import {
-  BuiltInResourceKind,
   ResourceCorrelationRole,
   resourceId,
   type ResourceCapability,
@@ -17,6 +16,7 @@ import {
   type ResourceView,
   type ResourceStreamRef,
 } from '../../resources/index.js';
+import { isPullRequestLikeResource } from './capability.js';
 import type { WorkItemStreamRef } from '../../work/index.js';
 import type { WorkItemId } from '../../work/index.js';
 import type {
@@ -63,6 +63,9 @@ export const pullRequestOutcomeSchema: z.ZodType<PullRequestActivityOutcome> = z
             PullRequestDenialCode.ChecksPending,
             PullRequestDenialCode.ChecksFailing,
             PullRequestDenialCode.UntrustedActor,
+            PullRequestDenialCode.TooManyFilesChanged,
+            PullRequestDenialCode.BlockedPathChanged,
+            PullRequestDenialCode.ChangedFilesUnavailable,
           ]),
         })
         .strict(),
@@ -104,7 +107,7 @@ export function resolvePrimaryCapability(
 ): CapabilityResolution {
   const primaryCandidates = authority.resources.filter(
     (entry) =>
-      entry.resource.kind === BuiltInResourceKind.PullRequest &&
+      isPullRequestLikeResource(entry.resource.capabilities) &&
       entry.correlations.some(
         (correlation) =>
           correlation.role === ResourceCorrelationRole.Primary &&
@@ -117,11 +120,7 @@ export function resolvePrimaryCapability(
   );
   const capableIds = new Set(
     invocationResources
-      .filter(
-        (resource) =>
-          resource.kind === BuiltInResourceKind.PullRequest &&
-          resource.capabilities.includes(capability),
-      )
+      .filter((resource) => resource.capabilities.includes(capability))
       .map((resource) => resource.resourceId),
   );
   const matches = targetedCandidates.filter((entry) => capableIds.has(entry.resource.resourceId));

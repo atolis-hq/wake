@@ -148,7 +148,7 @@ function invocation(
     workflowInstanceId: workflowInstanceId('workflow-1'),
     orchestrationGroupId: orchestrationGroupId('group-1'),
     causationId: 'activation-1',
-    input,
+    input: { ...input, blockedPaths: [] },
     resources: [
       {
         resourceId: resId('1'),
