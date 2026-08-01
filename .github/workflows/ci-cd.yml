@@ -25,9 +25,14 @@ jobs:
               - 'prompts/**'
               - 'scripts/**'
               - 'src/**'
+              - 'src-next/**'
               - 'test/**'
+              - 'test-next/**'
               - 'tsconfig.json'
+              - 'tsconfig.next.json'
               - 'vitest.config.ts'
+              - 'vitest.next.config.ts'
+              - 'vitest.next.e2e.config.ts'
 
   test:
     needs: changes

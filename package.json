@@ -44,6 +44,7 @@
     "test:web": "npm --workspace @atolis-hq/wake-web run test",
     "test:web:e2e": "npm --workspace @atolis-hq/wake-web run test:e2e",
     "test:next": "vitest run --config vitest.next.config.ts",
+    "test:next:e2e": "vitest run --config vitest.next.e2e.config.ts",
     "lint:contracts": "node scripts/check-contract-vocabulary.mjs",
     "verify:next": "npm run check:catalogue && npm run lint:architecture && npm run lint:next && npm run format:check:next && npm run build:next && npm run test:web && npm run test:next",
     "knip:next": "knip --config knip.next.json",
@@ -61,7 +62,7 @@
     "smoke:codex": "tsx src/main.ts smoke codex",
     "smoke:cursor": "tsx src/main.ts smoke cursor",
     "verify": "npm run lint && npm run format:check && npm run build && npm test",
-    "verify:ci": "npm run verify && npm run test:integration"
+    "verify:ci": "npm run verify && npm run verify:next && npm run test:integration && npm run test:next:e2e"
   },
   "dependencies": {
     "@octokit/rest": "^22.0.0",

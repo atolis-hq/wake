@@ -4,7 +4,6 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['test-next/**/*.test.ts'],
-    fileParallelism: false,
-    sequence: { concurrent: false },
+    exclude: ['test-next/e2e/scenarios/live-*.test.ts'],
   },
 });
