@@ -8,10 +8,10 @@ export const PageHeader = ({
   readonly title: string;
   readonly actions?: ReactNode;
 }) => (
-  <header className={styles.pageHeader}>
+  <div className={styles.pageHeader}>
     <h1>{title}</h1>
     {actions}
-  </header>
+  </div>
 );
 export const Panel = ({
   children,

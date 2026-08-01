@@ -25,8 +25,10 @@ export function AppShell({ children }: { readonly children: ReactNode }) {
         <NavLink className={styles.brand!} to="/board">
           WAKE
         </NavLink>
-        <ControlPlaneStatus />
       </header>
+      <div className={styles.statusBand} role="status" aria-label="Control plane">
+        <ControlPlaneStatus />
+      </div>
       <nav className={styles.nav} aria-label="Primary">
         {navigation.map(([label, path]) => (
           <NavLink key={path} to={path}>
