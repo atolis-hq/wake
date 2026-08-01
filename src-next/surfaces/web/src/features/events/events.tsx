@@ -132,9 +132,9 @@ export function EventsFeed({ records }: { readonly records: readonly AuditEventR
         >
           {ordered.map((record) => (
             <li className={styles.event} key={record.id}>
-              <strong>{record.id}</strong>
-              <span>{record.type}</span>
               <LocalTime value={record.occurredAt} />
+              <span className={styles.eventType}>{record.type}</span>
+              <span className={styles.eventId}>{record.id}</span>
             </li>
           ))}
         </ol>
