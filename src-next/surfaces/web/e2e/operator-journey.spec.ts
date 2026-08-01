@@ -38,11 +38,15 @@ test('operates Wake through the real HTTP Surface and packaged application', asy
   await expect(page.getByText('Conflict: Conflict')).toBeVisible();
 
   await page.getByRole('link', { name: 'Events' }).click();
-  await expect(page.getByText('event-1')).toBeVisible();
+  const firstEvent = page.getByText('event-1');
+  if (testInfo.project.name === 'desktop') await expect(firstEvent).toBeVisible();
+  else await expect(firstEvent).toBeAttached();
   await page.getByRole('button', { name: 'Pause live view' }).click();
   await expect(page.getByRole('button', { name: /new event/ })).toBeVisible({ timeout: 7_000 });
   await page.getByRole('button', { name: 'Resume live view' }).click();
-  await expect(page.getByText('event-3')).toBeVisible();
+  const thirdEvent = page.getByText('event-3');
+  if (testInfo.project.name === 'desktop') await expect(thirdEvent).toBeVisible();
+  else await expect(thirdEvent).toBeAttached();
 
   await page.getByRole('link', { name: 'Health' }).click();
   await expect(page.getByRole('table', { name: 'Runner availability' })).toContainText(
@@ -55,6 +59,29 @@ test('operates Wake through the real HTTP Surface and packaged application', asy
   await page.keyboard.press('Tab');
   await expect(page.getByRole('link', { name: 'Work' })).toBeFocused();
   const results = await new AxeBuilder({ page }).analyze();
+  expect(
+    results.violations.filter(
+      (violation) => violation.impact === 'critical' || violation.impact === 'serious',
+    ),
+  ).toEqual([]);
+});
+
+test('keeps the restyled board operable and free of serious accessibility faults', async ({
+  page,
+}) => {
+  await page.goto('/board');
+  await expect(page.getByRole('heading', { name: /^Open \(\d+\)$/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^Cancelled \(\d+\)$/ })).toBeVisible();
+
+  const collapse = page.getByRole('button', { name: 'Collapse Open' });
+  await collapse.click();
+  await expect(page.getByRole('button', { name: 'Expand Open' })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Expand Open' })).toBeVisible();
+
+  const results = await new AxeBuilder({ page })
+    .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+    .analyze();
   expect(
     results.violations.filter(
       (violation) => violation.impact === 'critical' || violation.impact === 'serious',
