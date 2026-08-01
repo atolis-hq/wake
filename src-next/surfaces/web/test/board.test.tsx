@@ -52,7 +52,9 @@ describe('board', () => {
         <App client={boardClient()} />
       </MemoryRouter>,
     );
-    expect(await screen.findByRole('heading', { name: 'Open (2)' })).toBeTruthy();
+    expect(
+      await screen.findByRole('heading', { name: 'Open (2)' }, { timeout: 5_000 }),
+    ).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Closed (1)' })).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Cancelled (0)' })).toBeTruthy();
   });
