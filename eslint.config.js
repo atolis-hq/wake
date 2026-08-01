@@ -67,6 +67,8 @@ export default tseslint.config(
       'src-next/**/*-fixture.ts',
       'test-next/**/*-fixture.test.ts',
       'src-next/surfaces/web/**/*.ts',
+      'vitest.next.config.ts',
+      'vitest.next.e2e.config.ts',
     ],
     extends: [tseslint.configs.disableTypeChecked],
   },
