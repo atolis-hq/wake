@@ -80,10 +80,49 @@ and token spend in about 120px of height. The target card shows
   deliberately unauthenticated and locally scoped, per the web surface
   architecture design §1. Not ported, not registered as a gap.
 - **API, domain, or bootstrap changes.** Deferred to the tasks named in §8.
+- **Integration- or activity-specific presentation.** The browser renders
+  resources as generic references only (§6.3.1). No pull-request, issue, repo,
+  or other kind-aware component ships, and no code branches on a resource kind
+  or provider.
 - **Charts.** No graph framework is installed, per the web surface design §8.1,
   and the metrics contract currently exposes three scalars.
 - **Drag and drop.** Prohibited by the web surface design §7.2 — a visual move
   must not imply a workflow command the domain has not defined.
+
+### 3.3 API shape: no BFF
+
+Where a screen needs data joined or reshaped, the fix goes on the existing
+domain resource — never into a UI-specific endpoint. The web surface
+architecture design §1 already commits to "one UI-agnostic `/api/v1`"; this
+section records why that holds up under the pressure this work applies to it,
+and what to do instead.
+
+`/api/v1` has more than one consumer. `src-next/surfaces/cli` reads the same
+applications, and the HTTP surface is Wake's integration point. An endpoint
+shaped for one board layout couples the server to a presentation decision that
+changes far more often than the domain does.
+
+The distinguishing test is: **does the response shape encode a fact, or a
+layout?**
+
+- Denormalizing `currentStage` onto `WorkItemResponse` encodes a fact. Every
+  consumer benefits, one collection stays authoritative, pagination stays
+  coherent. This is the preferred fix and covers GAP-02.
+- A derived read model such as the condition vocabulary also encodes a fact, and
+  belongs on the resource that owns it — which is why GAP-01's home is a
+  presenter on the work resource, not a `/board` endpoint.
+- An endpoint returning six named columns encodes a layout. That is precisely
+  the legacy mistake: `deriveCondition` lives inside an HTTP adapter
+  (`ui-data.ts:53-101`), so the vocabulary is trapped there, invisible to the
+  CLI and untestable apart from the transport.
+
+A genuine aggregate endpoint is justified only when a screen needs data from
+three or more collections with no single owning resource, and no denormalization
+would be honest. No surface in §6 meets that bar.
+
+Client-side joining is therefore a stopgap, permitted only while UI-only scope
+holds, and only where the resulting inaccuracy is stated. §6.1 is the one such
+case and states it.
 
 ## 4. Token architecture
 
@@ -147,12 +186,24 @@ Legacy groups into six derived conditions. The target groups into three
 `WorkItemResponse.state` values because the list endpoint carries nothing else
 (`contracts/work.ts:8-17`).
 
-**Mechanism.** The board additionally fetches `/api/v1/workflow-instances` — a
-real cursor-paginated collection route (`routes/read.ts:18`) — and joins
-client-side on `WorkflowInstanceResponse.workItemKey`
-(`contracts/orchestration.ts:3`), which exists for exactly this purpose. One
+**Mechanism, under protest.** The board additionally fetches
+`/api/v1/workflow-instances` — a real cursor-paginated collection route
+(`routes/read.ts:18`) — and joins client-side on
+`WorkflowInstanceResponse.workItemKey` (`contracts/orchestration.ts:3`). One
 extra request, no N+1, and it yields `currentStage`, `status`, and `waitingFor`
 per work item.
+
+This is a workaround forced by the UI-only scope, not the right shape, and it
+has a real defect: the two collections paginate independently, so their cursors
+do not align. A work item on the current `/work-items` page whose workflow
+instance falls outside the current `/workflow-instances` page renders without a
+stage chip. That is tolerable at present volumes and wrong in principle.
+
+The correct fix is GAP-02 — denormalize stage and workflow status onto
+`WorkItemResponse` — which removes the second request, the join, and the cursor
+misalignment together. Per §3.3 that is a presenter change on an existing
+resource, not a new UI endpoint. The client-side join should be deleted the day
+GAP-02 lands.
 
 **Columns** remain `state`-derived until GAP-01 lands. Stage, workflow status,
 and waiting-signal become card chips now.
@@ -179,16 +230,37 @@ This is the target's weakest surface: a five-row `<dl>` followed by
 labelled sections:
 
 - **Summary** — objective, work item key, state, current stage, workflow name.
-- **Resources** — role chip plus identifier per resource. A browsable link
-  requires GAP-15; until then the identifier renders as text, not a dead link.
+- **Resources** — a generic reference list, described in §6.3.1.
 - **Runs** — a table linking each row to `/runs/:runId`, with localized start
   time, computed duration, status badge, and runner once GAP-05 lands.
-- **Pull request** — `PullRequestResponse` already carries `state`,
-  `headRevision`, `baseRevision`, and `checks` (`contracts/work.ts:30-36`) and
-  is currently rendered only as raw JSON. It gets a real panel.
 
 `JsonViewer` is retained only where the raw structure is itself the evidence, per
 the web surface design §7.3.
+
+#### 6.3.1 Resources are a generic reference
+
+The browser treats a resource as an opaque reference and renders only the
+provider-neutral vocabulary the resource contract already exposes:
+`resourceId`, `kind`, `capabilities`, and `revision`
+(`contracts/resources.ts:1-6`).
+
+Presentation is driven by `kind` and `capabilities` as open values — a chip per
+capability, the kind as a label, the identifier as text. The browser must not
+branch on a specific kind, infer a provider, or parse a resource identifier.
+This is the client-side counterpart of the rule in ADR-0001 that core compares
+resource URIs for equality and never parses a locator.
+
+No integration- or activity-specific panel ships. In particular
+`WorkDetailResponse.activities.pullRequest` (`contracts/work.ts:27,30-36`) is
+**not** given bespoke presentation, even though the data is already there and a
+panel would be easy. Pull requests are a first-class Activities domain in
+`src-next/activities/pr/` and the view is provider-neutral, so this is not a
+GitHub leak — but "pull request" is still a concept only some integrations have,
+and a dedicated panel would put activity-kind knowledge in the shell. Deferred
+to §7 pending a generic activity-presentation contract.
+
+The consequence is honest rather than convenient: until that contract exists,
+activity-specific state such as PR checks or review status is simply not shown.
 
 Legacy's `context` blob (`ui-assets.ts:732-733`) has no target equivalent and is
 deliberately not reproduced — it is a projection internal, not operator
@@ -227,6 +299,7 @@ ported.
 | Analytics and charts | No chart framework (web surface design §8.1); metrics contract exposes three scalars (GAP-13) |
 | Light theme | Token layer makes it cheap later; no current demand |
 | Drag and drop | Prohibited by web surface design §7.2 |
+| Pull request panel, and any kind-aware resource presentation | §6.3.1 — needs a generic activity-presentation contract (GAP-16) |
 | Event payload viewer, direction filter | GAP-06 |
 | Per-work-item events tab | GAP-07 |
 | Freeze, unfreeze, delete, retry, pause, resume controls | GAP-10, GAP-11 — routes return 501 |
@@ -256,6 +329,7 @@ underlying fact), **new** (needs a decision and a task of its own).
 | GAP-13 | Observability windows and metrics | new (correctness) |
 | GAP-14 | Routing table | new |
 | GAP-15 | Resource browse URL | new |
+| GAP-16 | Generic activity presentation contract | new |
 
 ### GAP-01 — Board condition vocabulary
 
@@ -279,9 +353,14 @@ and `relatedWorkItems` (`contracts/work.ts:8-17`). Stage lives on
 `WorkflowInstanceResponse` and reaches the browser only through the detail
 route.
 
-Worked around in §6.1 by joining `/workflow-instances` client-side. A presenter
-that denormalized stage onto the list response would be cheaper and remove the
-second request.
+Worked around in §6.1 by joining `/workflow-instances` client-side, with the
+cursor-misalignment defect recorded there.
+
+The fix is a presenter that denormalizes `currentStage` and workflow status onto
+`WorkItemResponse`. Per §3.3 this encodes a fact rather than a layout, so it
+serves the CLI as well, keeps one paginated collection authoritative, and lets
+the client-side join be deleted. This is the highest-value entry in the register
+relative to its cost.
 
 ### GAP-03 — Tags and labels
 
@@ -404,9 +483,27 @@ Depends on GAP-09 for the per-candidate pause state that makes it useful.
 resource URI in the browser (`ui-assets.ts:463-476`).
 
 That approach is not available to the target: ADR-0001 establishes that core
-compares resource URIs for equality and never parses a locator. The browsable
-URL must therefore be emitted by the provider adapter as resource data, not
-reconstructed by a client.
+compares resource URIs for equality and never parses a locator, and §6.3.1
+extends the same rule to the browser. The browsable URL must therefore be
+emitted by the provider adapter as an opaque field on the resource, which the
+browser renders without interpreting.
+
+### GAP-16 — Generic activity presentation contract
+
+`WorkDetailResponse.activities` is currently a single optional
+`pullRequest` field (`contracts/work.ts:27`). Presenting it means the browser
+knows about one activity kind, which §6.3.1 forbids.
+
+What is missing is a provider- and kind-neutral way for an Activity to describe
+its own operator-facing state — something the browser can render generically
+(labelled fields, status values, capability chips) without a component per
+activity kind, and without the shell growing a branch each time an Activity is
+added.
+
+Until that exists, activity state is not shown at all. This is the deliberate
+cost of the rule, recorded so the omission is not mistaken for an oversight.
+Designing that contract is a task of its own and should not be improvised inside
+a restyle.
 
 ## 9. Testing
 
@@ -419,8 +516,11 @@ New coverage:
 - the board's `/workflow-instances` join renders stage chips and tolerates a
   work item with no workflow instance;
 - collapsible board columns persist across reload and are keyboard operable;
-- work detail renders the pull request panel when `activities.pullRequest` is
-  present and omits the section when absent;
+- work detail renders resources generically from `kind` and `capabilities`,
+  including a kind the test invents, proving no component branches on a known
+  kind;
+- work detail renders no activity-specific section even when
+  `activities.pullRequest` is present in the response;
 - run detail renders transcript entries structurally and shows the unavailable
   state when `available` is false;
 - contrast: every semantic token pair meets WCAG AA, asserted over the token
