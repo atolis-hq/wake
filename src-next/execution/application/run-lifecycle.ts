@@ -8,13 +8,13 @@ import {
 import type { ExecutionActivation, ExecutionAttemptContext } from '../contracts/commands.js';
 import type { ExecutionConfig } from '../contracts/config.js';
 import { ExecutionEventType, type RunExecutionEventPayloads } from '../contracts/events.js';
-import { runId } from '../contracts/identifiers.js';
+import type { runId } from '../contracts/identifiers.js';
 import { runStream } from '../contracts/streams.js';
 import { RunStatus } from '../contracts/vocabulary.js';
 import type { WorkspaceLease } from '../contracts/workspace.js';
 import { failureFrom } from '../domain/run-result.js';
 import { claimRun } from './run-liveness-service.js';
-import { RunRepository } from './run-repository.js';
+import type { RunRepository } from './run-repository.js';
 
 interface RunLifecycleDependencies {
   readonly clock: Clock;

@@ -1,4 +1,5 @@
-import { PullRequestState } from '../../../activities/index.js';
+import type { PullRequestState } from '../../../activities/index.js';
+
 export interface GitHubIssuePayload {
   readonly number: number;
   readonly title: string;

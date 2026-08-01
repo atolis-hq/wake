@@ -173,6 +173,7 @@ function createControlPlaneApplications(root: CompositionRoot, now: () => string
 }
 
 const recentAdvanceLimit = 100;
+
 function rememberRecentAdvance(
   commands: Map<string, ApiAdvanceCommandResult>,
   key: string,

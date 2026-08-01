@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, it } from 'vitest';
 import { FileCheckpointStore } from '../../src-next/persistence/index.js';
+
 it('loads, advances, resets, and rejects checkpoint regression', async () => {
   const store = new FileCheckpointStore(await mkdtemp(join(tmpdir(), 'wake-checkpoints-')));
   expect(await store.load('projection:work')).toBe(0);

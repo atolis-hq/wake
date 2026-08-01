@@ -2,10 +2,12 @@ import type { ProjectionDefinition } from '../../kernel/index.js';
 import { selectRunExecutionEvent, type RunExecutionEvent } from '../contracts/events.js';
 import type { RunView } from '../contracts/views.js';
 import { foldRun } from '../domain/run.js';
+
 type ProjectionValue = {
   readonly events: readonly RunExecutionEvent[];
   readonly view: RunView | null;
 };
+
 export const executionProjection: ProjectionDefinition<ProjectionValue> = {
   name: 'execution',
   select(event) {

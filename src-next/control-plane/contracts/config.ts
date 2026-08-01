@@ -12,6 +12,7 @@ export interface ControlPlaneConfig {
 }
 
 import { z } from 'zod';
+
 const scheduleSchema = z
   .object({
     id: z.string().trim().min(1),
@@ -20,6 +21,7 @@ const scheduleSchema = z
     objective: z.string().trim().min(1),
   })
   .strict();
+
 export const controlPlaneConfigSchema = z
   .object({
     maxDispatches: z.number().int().positive().default(1),

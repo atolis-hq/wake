@@ -29,6 +29,7 @@ function workDraftInput<Stream extends EntityRef>(stream: Stream) {
 describe('event envelope', () => {
   it('retains a branded stream id', () => {
     type WorkItemId = Brand<string, 'WorkItemId'>;
+
     const workItemId = 'work-1' as WorkItemId;
 
     const stream: EntityRef<'work-item', WorkItemId> = {
@@ -42,12 +43,16 @@ describe('event envelope', () => {
 
   it('maps each event type to its exact payload and stream', () => {
     type WorkItemId = Brand<string, 'WorkItemId'>;
+
     type WorkStream = EntityRef<'work-item', WorkItemId>;
+
     interface WorkEventPayloads {
       readonly 'work.item-created': { readonly objective: string };
       readonly 'work.item-closed': { readonly reason: string };
     }
+
     type WorkEvent = EventUnion<WorkEventPayloads, WorkStream>;
+
     type WorkEventDraft = EventDraftUnion<WorkEventPayloads, WorkStream>;
 
     expectTypeOf<Extract<WorkEvent, { eventType: 'work.item-created' }>>().toEqualTypeOf<
@@ -68,6 +73,7 @@ describe('event envelope', () => {
 
   it('supports an explicit two-generic draft input and factory call', () => {
     type Payload = { readonly objective: string };
+
     const input: EventDraftInput<'work.item-created', Payload> = workDraftInput({
       kind: 'work-item',
       id: 'work-1',
@@ -80,6 +86,7 @@ describe('event envelope', () => {
 
   it('retains exact stream inference for an unannotated draft factory call', () => {
     type WorkItemId = Brand<string, 'WorkItemId'>;
+
     const workItemId = 'work-1' as WorkItemId;
 
     const draft = createEventDraft(workDraftInput({ kind: 'work-item', id: workItemId } as const));

@@ -1,5 +1,6 @@
 import type { ExternalExecutionKind } from '../../activities/index.js';
 import type { FinishedRunStatus } from './vocabulary.js';
+
 export interface RunnerRequest {
   readonly runId: string;
   readonly prompt: string;

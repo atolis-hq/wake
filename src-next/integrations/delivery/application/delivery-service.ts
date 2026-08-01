@@ -16,9 +16,11 @@ export interface DeliveryServiceDependencies {
   readonly adapter: (name: string) => ExternalDeliveryAdapter;
   readonly now: () => string;
 }
+
 export type DeliveryResourceLookup = (
   resourceId: string,
 ) => Promise<{ readonly resourceId: string; readonly adapter: string } | null>;
+
 export class DeliveryService {
   constructor(private readonly dependencies: DeliveryServiceDependencies) {}
   async deliverNext(signal: AbortSignal): Promise<DeliveryIntentView | null> {
@@ -53,12 +55,14 @@ export class DeliveryService {
     }
     return intent;
   }
+
   private async append(draft: DeliveryEventDraftInput): Promise<void> {
     const sequence = (await this.dependencies.journal.readStream(draft.stream)).length;
     await this.dependencies.journal.append(draft.stream, sequence, [
       createDeliveryEventDraft(draft),
     ]);
   }
+
   private metadata(
     intent: DeliveryIntentView,
     occurrence: DeliveryOccurrence,
@@ -74,6 +78,7 @@ export class DeliveryService {
       stream: deliveryStream(intent.intentEventId),
     };
   }
+
   private correlation(intent: DeliveryIntentView, occurrence: DeliveryOccurrence) {
     return {
       intentEventId: intent.intentEventId,
@@ -83,6 +88,7 @@ export class DeliveryService {
       occurrenceOrdinal: occurrence.ordinal,
     };
   }
+
   private attemptStarted(
     intent: DeliveryIntentView,
     occurrence: DeliveryOccurrence,
@@ -93,6 +99,7 @@ export class DeliveryService {
       payload: this.correlation(intent, occurrence),
     };
   }
+
   private confirmed(
     intent: DeliveryIntentView,
     occurrence: DeliveryOccurrence,
@@ -104,6 +111,7 @@ export class DeliveryService {
       payload: { ...this.correlation(intent, occurrence), externalId },
     };
   }
+
   private failed(
     intent: DeliveryIntentView,
     occurrence: DeliveryOccurrence,
@@ -116,6 +124,7 @@ export class DeliveryService {
       payload: { ...this.correlation(intent, occurrence), code, message },
     };
   }
+
   private ambiguous(
     intent: DeliveryIntentView,
     occurrence: DeliveryOccurrence,
@@ -127,6 +136,7 @@ export class DeliveryService {
       payload: { ...this.correlation(intent, occurrence), reconciliationKey },
     };
   }
+
   private reconciled(
     intent: DeliveryIntentView,
     occurrence: DeliveryOccurrence,

@@ -132,6 +132,7 @@ function activation(runnerPool?: string) {
     status: 'pending' as const,
   };
 }
+
 function context(ineligibleRunners?: ReadonlySet<string>) {
   return {
     workItemId: workId('00000000000000000000000002'),
@@ -141,6 +142,7 @@ function context(ineligibleRunners?: ReadonlySet<string>) {
     ...(ineligibleRunners === undefined ? {} : { ineligibleRunners }),
   };
 }
+
 function runner(name: string): Runner & { readonly calls: number } {
   let calls = 0;
   return {

@@ -15,6 +15,7 @@ export const FakeEventType = {
   ReviewRequested: 'fake.review-requested',
 } as const;
 const missingIdentityPart = '_';
+
 export interface FakeWorkEvidence {
   readonly key: string;
   readonly title: string;

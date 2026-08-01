@@ -1,6 +1,7 @@
 import type { ProjectionDefinition } from '../../kernel/index.js';
 import { ResourceEventType, selectResourceEvent } from '../contracts/events.js';
 import type { ResourceCorrelationView, ResourceView } from '../contracts/views.js';
+
 export const resourceProjection: ProjectionDefinition<ResourceView | null> = {
   name: 'resources',
   select(event) {
@@ -41,6 +42,7 @@ export const resourceProjection: ProjectionDefinition<ResourceView | null> = {
     }
   },
 };
+
 export const resourceCorrelationProjection: ProjectionDefinition<
   readonly ResourceCorrelationView[]
 > = {

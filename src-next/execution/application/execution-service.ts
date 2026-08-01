@@ -11,9 +11,10 @@ import type { ExecutionConfig } from '../contracts/config.js';
 import { ExecutionEventType } from '../contracts/events.js';
 import { runId } from '../contracts/identifiers.js';
 import { ExecutionStreamKind } from '../contracts/streams.js';
+import type { RunView } from '../contracts/views.js';
 import { RunStatus, WorkspaceMode } from '../contracts/vocabulary.js';
 import type { WorkspaceLease, WorkspaceProvider } from '../contracts/workspace.js';
-import { RunnerRegistry } from '../infrastructure/runners/registry.js';
+import type { RunnerRegistry } from '../infrastructure/runners/registry.js';
 import { claimActivation, releaseActivation } from './activation-claim.js';
 import { cancelActiveRuns } from './active-run-cancellation.js';
 import { acquireWorkspace, validateResourceRequirements } from './execution-validation.js';
@@ -66,15 +67,13 @@ export function createExecutionService(
       claimRun(repository, dependencies.clock, config, runId(id), owner),
     renewLease: (id: string, owner: string) =>
       renewLease(repository, dependencies.clock, config, runId(id), owner),
-    requestCancellation: (
-      id: string,
-      reason: NonNullable<import('../contracts/views.js').RunView['cancellation']>['reason'],
-    ) => requestCancellation(repository, dependencies.clock, runId(id), reason, active),
+    requestCancellation: (id: string, reason: NonNullable<RunView['cancellation']>['reason']) =>
+      requestCancellation(repository, dependencies.clock, runId(id), reason, active),
     confirmCancellation: (id: string) =>
       confirmCancellation(repository, dependencies.clock, runId(id)),
     cancelActive: (
       workflowInstanceIds: readonly string[],
-      reason: NonNullable<import('../contracts/views.js').RunView['cancellation']>['reason'],
+      reason: NonNullable<RunView['cancellation']>['reason'],
     ) => cancelActiveRuns(repository, dependencies.clock, workflowInstanceIds, reason, active),
   };
 }
@@ -212,11 +211,7 @@ function acquireAttemptWorkspace(
   );
 }
 
-function existingRun(
-  runs: readonly import('../contracts/views.js').RunView[],
-  clock: Clock,
-  owner: string,
-) {
+function existingRun(runs: readonly RunView[], clock: Clock, owner: string) {
   const completed = runs.find((run) => run.status === RunStatus.Succeeded);
   if (completed !== undefined) return completed;
   const ambiguous = runs.find((run) => run.status === RunStatus.Ambiguous);
@@ -298,6 +293,7 @@ async function executeActivity(
     executionContext,
   );
 }
+
 function validateResources(
   requirements: readonly ResourceRequirement[],
   resources: readonly ResourceView[],

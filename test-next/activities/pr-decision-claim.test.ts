@@ -20,6 +20,7 @@ type Fact<Type extends ActivityFactDraft['eventType']> = Extract<
   ActivityFactDraft,
   { eventType: Type }
 >;
+
 type Outcome<Kind extends PullRequestActivityOutcome['kind']> = Extract<
   PullRequestActivityOutcome,
   { kind: Kind }
@@ -27,8 +28,11 @@ type Outcome<Kind extends PullRequestActivityOutcome['kind']> = Extract<
 
 it('maps action and decision kind to the exact canonical fact type', () => {
   type ApproveRequested = Extract<PullRequestDecision<'approve'>, { decisionKind: 'requested' }>;
+
   type ApproveDenied = Extract<PullRequestDecision<'approve'>, { decisionKind: 'denied' }>;
+
   type MergeRequested = Extract<PullRequestDecision<'merge'>, { decisionKind: 'requested' }>;
+
   type MergeDenied = Extract<PullRequestDecision<'merge'>, { decisionKind: 'denied' }>;
 
   expectTypeOf<ApproveRequested['fact']>().toEqualTypeOf<

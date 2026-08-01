@@ -1,5 +1,5 @@
 import type { ActivityOutcome } from '../../activities/index.js';
-import { ExternalExecutionKind } from '../../activities/index.js';
+import type { ExternalExecutionKind } from '../../activities/index.js';
 import type { RunnerResult } from './runner.js';
 import type { ExecutionCancellationReason } from './vocabulary.js';
 

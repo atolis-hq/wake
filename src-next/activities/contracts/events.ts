@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import type { z } from 'zod';
 import {
   type EventDraft,
   type EventDraftUnion,
@@ -8,17 +8,17 @@ import {
 import { type ResourceId, type ResourceStreamRef } from '../../resources/index.js';
 import { type WorkItemId, type WorkItemStreamRef } from '../../work/index.js';
 import type { PullRequestActivityOutcome, PullRequestTarget } from '../pr/contracts.js';
-import {
+import type {
   MergeMethod,
   PullRequestCheckState,
   PullRequestDenialCode,
   PullRequestState,
 } from '../pr/vocabulary.js';
-import { ReviewActorKind } from '../review/contracts.js';
+import type { ReviewActorKind } from '../review/contracts.js';
 import { createActivityEventSchemas } from './event-schema.js';
 import type { ActivationId } from './identifiers.js';
 import { type ActivityDecisionStreamRef, type PullRequestDecisionAction } from './streams.js';
-import { ActivityOutcomeKind } from './vocabulary.js';
+import type { ActivityOutcomeKind } from './vocabulary.js';
 
 export const ActivityEventType = {
   PrDiscovered: 'pr.discovered',
@@ -37,6 +37,7 @@ export const ActivityEventType = {
   PrApproveDecisionClaimed: 'pr.approve-decision-claimed',
   PrMergeDecisionClaimed: 'pr.merge-decision-claimed',
 } as const;
+
 export type ActivityEventTypes = typeof ActivityEventType;
 
 export interface PullRequestDiscoveredPayload {
@@ -94,10 +95,12 @@ type RequestedOutcome = Extract<
   PullRequestActivityOutcome,
   { readonly kind: typeof ActivityOutcomeKind.Waiting }
 >;
+
 type DeniedOutcome = Extract<
   PullRequestActivityOutcome,
   { readonly kind: typeof ActivityOutcomeKind.Blocked }
 >;
+
 type RequestedFact<Action extends PullRequestDecisionAction> = Action extends 'approve'
   ? EventDraft<
       typeof ActivityEventType.PrApproveRequested,
@@ -109,6 +112,7 @@ type RequestedFact<Action extends PullRequestDecisionAction> = Action extends 'a
       PullRequestMergeRequestedPayload,
       ResourceStreamRef
     >;
+
 type DeniedFact<Action extends PullRequestDecisionAction> = EventDraft<
   Action extends 'approve'
     ? typeof ActivityEventType.PrApproveDenied
@@ -116,6 +120,7 @@ type DeniedFact<Action extends PullRequestDecisionAction> = EventDraft<
   PullRequestDenialPayload,
   ResourceStreamRef | WorkItemStreamRef
 >;
+
 type PullRequestDecisionClaimPayload<Action extends PullRequestDecisionAction> =
   | {
       readonly action: Action;
@@ -187,14 +192,18 @@ type ResourceFactType =
   | typeof ActivityEventType.PrMergeAuthorized
   | typeof ActivityEventType.PrApproveRequested
   | typeof ActivityEventType.PrMergeRequested;
+
 type DenialType = typeof ActivityEventType.PrMergeDenied | typeof ActivityEventType.PrApproveDenied;
 
 type ResourceFactPayloads = Pick<ActivityEventPayloads, ResourceFactType>;
+
 type DenialPayloads = Pick<ActivityEventPayloads, DenialType>;
+
 type ApproveDecisionPayloads = Pick<
   ActivityEventPayloads,
   typeof ActivityEventType.PrApproveDecisionClaimed
 >;
+
 type MergeDecisionPayloads = Pick<
   ActivityEventPayloads,
   typeof ActivityEventType.PrMergeDecisionClaimed
@@ -203,13 +212,16 @@ type MergeDecisionPayloads = Pick<
 export type ActivityFact =
   | EventUnion<ResourceFactPayloads, ResourceStreamRef>
   | EventUnion<DenialPayloads, ResourceStreamRef | WorkItemStreamRef>;
+
 export type ActivityFactDraft =
   | EventDraftUnion<ResourceFactPayloads, ResourceStreamRef>
   | EventDraftUnion<DenialPayloads, ResourceStreamRef | WorkItemStreamRef>;
+
 export type ActivityEvent =
   | ActivityFact
   | EventUnion<ApproveDecisionPayloads, ActivityDecisionStreamRef<'approve'>>
   | EventUnion<MergeDecisionPayloads, ActivityDecisionStreamRef<typeof MergeMethod.Merge>>;
+
 export type ActivityEventDraft =
   | ActivityFactDraft
   | EventDraftUnion<ApproveDecisionPayloads, ActivityDecisionStreamRef<'approve'>>

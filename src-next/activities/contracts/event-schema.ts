@@ -13,7 +13,7 @@ import {
 } from './event-fact-schemas.js';
 import { activationId } from './identifiers.js';
 import { activityDecisionStream } from './streams.js';
-import { ActivityOutcomeKind } from './vocabulary.js';
+import type { ActivityOutcomeKind } from './vocabulary.js';
 
 export function createActivityEventSchemas(eventTypes: ActivityEventTypes) {
   const resourceFacts = createResourceFactDraftSchemas(eventTypes);

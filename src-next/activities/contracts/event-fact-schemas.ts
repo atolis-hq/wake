@@ -15,6 +15,7 @@ import { ActivityStreamKind, activityDecisionId } from './streams.js';
 import { ActivityOutcomeKind, ActivityResourceRole } from './vocabulary.js';
 
 type PullRequestEventName<Suffix extends string> = `pr.${Suffix}`;
+
 type ReviewEventName<Suffix extends string> = `review.${Suffix}`;
 
 export interface ActivityEventTypes {
@@ -56,7 +57,9 @@ const decisionStreamSchema = <Action extends 'approve' | typeof MergeMethod.Merg
       id: brandedStringSchema((id) => activityDecisionId(id, action)),
     })
     .strict();
+
 export const approveDecisionStreamSchema = decisionStreamSchema('approve');
+
 export const mergeDecisionStreamSchema = decisionStreamSchema(MergeMethod.Merge);
 const denialStreamSchema = z.union([resourceStreamSchema, workStreamSchema]);
 const workItemIdSchema = brandedStringSchema(workItemId);
@@ -127,6 +130,7 @@ const mergeRequestedSchema = z
     requireChecks: z.boolean(),
   })
   .strict();
+
 export const requestedOutcomeSchema = z
   .object({
     kind: z.literal(ActivityOutcomeKind.Waiting),
@@ -138,6 +142,7 @@ export const requestedOutcomeSchema = z
       .strict(),
   })
   .strict();
+
 export const deniedOutcomeSchema = z
   .object({
     kind: z.literal(ActivityOutcomeKind.Blocked),

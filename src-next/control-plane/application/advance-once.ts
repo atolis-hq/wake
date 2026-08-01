@@ -36,6 +36,7 @@ interface OrchestrationPort {
     context: CommandContext,
   ): Promise<WorkflowInstanceView | null>;
 }
+
 interface ExecutionPort {
   recoverActive?(owner: string): Promise<readonly RunView[]>;
   attempt(
@@ -50,10 +51,12 @@ interface ExecutionPort {
   ): Promise<RunView>;
   list(activationId?: ActivityActivationView['activationId']): Promise<readonly RunView[]>;
 }
+
 interface AdvanceOnceDependencies {
   readonly ids: IdGenerator;
   readonly runnerIneligibility?: () => Promise<ReadonlySet<string>>;
 }
+
 export function createAdvanceOnce(
   orchestration: OrchestrationPort,
   execution: ExecutionPort,
@@ -132,6 +135,7 @@ export function createAdvanceOnce(
         };
   };
 }
+
 async function findUnacceptedCompleted(
   pending: readonly { workflow: WorkflowInstanceView; activation: ActivityActivationView }[],
   execution: ExecutionPort,

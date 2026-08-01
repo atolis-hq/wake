@@ -75,9 +75,11 @@ export function createActivationExecutionEventDraft(
 export function createExecutionEventDraft(
   input: RunExecutionEventDraftInput,
 ): RunExecutionEventDraft;
+
 export function createExecutionEventDraft(
   input: ActivationExecutionEventDraftInput,
 ): ActivationExecutionEventDraft;
+
 export function createExecutionEventDraft(input: ExecutionEventDraftInput): ExecutionEventDraft {
   switch (input.eventType) {
     case ExecutionEventType.ActivationClaimed:

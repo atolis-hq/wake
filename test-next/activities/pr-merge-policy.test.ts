@@ -17,7 +17,7 @@ import {
   activityName,
   createPullRequestMergeActivity,
 } from '../../src-next/activities/index.js';
-import { workItemId } from '../../src-next/work/index.js';
+import type { workItemId } from '../../src-next/work/index.js';
 import { TestWorld } from '../e2e/support/world.js';
 
 // A4: pr.merge's provider-neutral deterministic merge policy (maxFilesChanged,

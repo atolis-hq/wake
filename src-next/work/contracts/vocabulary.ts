@@ -5,4 +5,5 @@ export const WorkStatus = defineClosedVocabulary({
   Closed: 'closed',
   Cancelled: 'cancelled',
 } as const);
+
 export type WorkStatus = ValueOf<typeof WorkStatus>;

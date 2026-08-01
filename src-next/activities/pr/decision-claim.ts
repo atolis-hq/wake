@@ -22,11 +22,13 @@ import type { PullRequestActivityOutcome } from './contracts.js';
 import type { IntentAppender } from './intent.js';
 
 type PullRequestDecisionKind = 'requested' | 'denied';
+
 export type PullRequestAction = PullRequestDecisionAction;
 
 type DecisionClaimPayload<Action extends PullRequestAction> = Action extends 'approve'
   ? ActivityEventPayloads[typeof ActivityEventType.PrApproveDecisionClaimed]
   : ActivityEventPayloads[typeof ActivityEventType.PrMergeDecisionClaimed];
+
 type DecisionFromClaim<Claim> = Claim extends {
   readonly decisionKind: infer Kind extends PullRequestDecisionKind;
   readonly outcome: infer Outcome extends PullRequestActivityOutcome;

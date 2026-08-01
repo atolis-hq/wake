@@ -3,6 +3,7 @@ import {
   DeliveryOutcomeReactor,
   deliveryProjectionDefinitions,
   DeliveryService,
+  type DeliveryIntentView,
   type DeliveryResourceLookup,
   type DeliveryServiceDependencies,
   type ExternalDeliveryAdapter,
@@ -43,7 +44,7 @@ export function composeDeliveryRuntime(dependencies: DeliveryRuntimeDependencies
     journal: dependencies.journal,
     intents: async () =>
       (
-        await dependencies.projections.list<import('../integrations/index.js').DeliveryIntentView>(
+        await dependencies.projections.list<DeliveryIntentView>(
           deliveryProjectionDefinitions[0]!.name,
         )
       ).map(({ value }) => value),
@@ -76,8 +77,13 @@ export function composeControlPlaneHosts(
 }
 
 export * from './composition-root.js';
+
 export * from './config/load-config.js';
+
 export * from './config/root-schema.js';
+
 export * from './paths.js';
+
 export * from './projection-runtime.js';
+
 export * from './surface-applications.js';

@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, it } from 'vitest';
 import { FileProjectionStore } from '../../src-next/persistence/index.js';
+
 it('stores and atomically replaces one projection without touching another namespace', async () => {
   const root = await mkdtemp(join(tmpdir(), 'wake-projections-'));
   const store = new FileProjectionStore(root);

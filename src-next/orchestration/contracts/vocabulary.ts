@@ -5,6 +5,7 @@ export const TransitionTargetKind = defineClosedVocabulary({
   Complete: 'complete',
   AwaitSignal: 'await-signal',
 } as const);
+
 export type TransitionTargetKind = ValueOf<typeof TransitionTargetKind>;
 
 export const WorkflowStatus = defineClosedVocabulary({
@@ -14,6 +15,7 @@ export const WorkflowStatus = defineClosedVocabulary({
   Blocked: 'blocked',
   Superseded: 'superseded',
 } as const);
+
 export type WorkflowStatus = ValueOf<typeof WorkflowStatus>;
 
 export const ActivityActivationStatus = defineClosedVocabulary({
@@ -22,12 +24,14 @@ export const ActivityActivationStatus = defineClosedVocabulary({
   Waiting: 'waiting',
   Completed: 'completed',
 } as const);
+
 export type ActivityActivationStatus = ValueOf<typeof ActivityActivationStatus>;
 
 export const WorkflowInstanceKind = defineClosedVocabulary({
   Primary: 'primary',
   Child: 'child',
 } as const);
+
 export type WorkflowInstanceKind = ValueOf<typeof WorkflowInstanceKind>;
 
 // Who may satisfy a wait. Distinct from EventActorKind: that vocabulary answers
@@ -37,4 +41,5 @@ export const ApprovalAuthorityKind = defineClosedVocabulary({
   Auto: 'auto',
   Watch: 'watch',
 } as const);
+
 export type ApprovalAuthorityKind = ValueOf<typeof ApprovalAuthorityKind>;

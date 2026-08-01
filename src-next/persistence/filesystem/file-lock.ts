@@ -1,11 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, open, readFile, rm } from 'node:fs/promises';
 import { dirname } from 'node:path';
+
 export interface FileLockMetadata {
   readonly pid: number;
   readonly acquiredAt: string;
   readonly lockId: string;
 }
+
 export async function acquireFileLock(
   path: string,
   options?: { staleAfterMs?: number; now?: Date },
@@ -59,6 +61,7 @@ export async function acquireFileLock(
     return { acquired: false, async release() {} };
   }
 }
+
 export async function withFileLock<Value>(
   path: string,
   operation: () => Promise<Value>,

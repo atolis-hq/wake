@@ -3,9 +3,11 @@ import type { EventEnvelope } from '../../../kernel/index.js';
 export interface AuditJournal {
   readAll(afterGlobalPosition: number, limit?: number): Promise<readonly EventEnvelope[]>;
 }
+
 export interface AuditWork {
   get(workItemId: string): Promise<unknown>;
 }
+
 export interface AuditFact {
   readonly event: EventEnvelope;
   readonly causalLinks: { readonly causationId: string; readonly correlationId: string };

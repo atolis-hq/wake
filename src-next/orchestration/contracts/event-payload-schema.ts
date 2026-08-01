@@ -21,6 +21,7 @@ import {
 import { ApprovalAuthorityKind, TransitionTargetKind } from './vocabulary.js';
 
 export const workflowInstanceIdSchema = brandedStringSchema(workflowInstanceId);
+
 export const workflowStreamSchema = z
   .object({
     kind: z.literal(OrchestrationStreamKind.WorkflowInstance),
@@ -28,19 +29,23 @@ export const workflowStreamSchema = z
   })
   .strict();
 const primaryGroupIdSchema = brandedStringSchema(primaryOrchestrationGroupStreamId);
+
 export const childGroupIdSchema = brandedStringSchema(childOrchestrationGroupStreamId);
+
 export const primaryGroupStreamSchema = z
   .object({
     kind: z.literal(OrchestrationStreamKind.Group),
     id: primaryGroupIdSchema,
   })
   .strict();
+
 export const childGroupStreamSchema = z
   .object({
     kind: z.literal(OrchestrationStreamKind.Group),
     id: childGroupIdSchema,
   })
   .strict();
+
 export const childMetadataShape = {
   parentWorkflowInstanceId: workflowInstanceIdSchema,
   watchId: z.string().min(1),
@@ -50,10 +55,13 @@ export const childMetadataShape = {
   requestId: z.string().min(1),
   childWorkflowInstanceId: workflowInstanceIdSchema,
 } as const;
+
 export const childMetadataSchema = z.object(childMetadataShape).strict();
+
 export const outcomeSchema = z
   .object({ kind: z.string().min(1), data: z.unknown().optional() })
   .strict();
+
 export const waitingOutcomeSchema = z
   .object({
     kind: z.literal(ActivityOutcomeKind.Waiting),
@@ -76,6 +84,7 @@ const executionSchema = z
     runnerPool: z.string().min(1).optional(),
   })
   .strict();
+
 export const activityRequestedSchema = z
   .object({
     activationId: brandedStringSchema(activationId),
@@ -106,6 +115,7 @@ const transitionTargetSchema = z.discriminatedUnion('kind', [
     })
     .strict(),
 ]);
+
 export const expectationSchema = z
   .object({
     signalKind: brandedStringSchema(signalName),
@@ -115,6 +125,7 @@ export const expectationSchema = z
     resume: transitionTargetSchema.optional(),
   })
   .strict();
+
 export const signalSchema = z
   .object({
     kind: brandedStringSchema(signalName),
@@ -128,4 +139,5 @@ export const signalSchema = z
     authority: approvalAuthoritySchema.optional(),
   })
   .strict();
+
 export const emptySchema = z.object({}).strict();

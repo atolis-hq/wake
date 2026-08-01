@@ -7,12 +7,15 @@ export const RunStatus = defineClosedVocabulary({
   Cancelled: 'cancelled',
   Ambiguous: 'ambiguous',
 } as const);
+
 export type RunStatus = ValueOf<typeof RunStatus>;
+
 export type FinishedRunStatus = Exclude<RunStatus, typeof RunStatus.Started>;
 
 export const ExecutionFailureCode = defineClosedVocabulary({
   Unexpected: 'unexpected-execution-failure',
 } as const);
+
 export type ExecutionFailureCode = ValueOf<typeof ExecutionFailureCode>;
 
 export const ExecutionCancellationReason = defineClosedVocabulary({
@@ -22,6 +25,7 @@ export const ExecutionCancellationReason = defineClosedVocabulary({
   Timeout: 'timeout',
   Shutdown: 'shutdown',
 } as const);
+
 export type ExecutionCancellationReason = ValueOf<typeof ExecutionCancellationReason>;
 
 export const ExternalExecutionState = defineClosedVocabulary({
@@ -30,6 +34,7 @@ export const ExternalExecutionState = defineClosedVocabulary({
   Absent: 'absent',
   Unknown: 'unknown',
 } as const);
+
 export type ExternalExecutionState = ValueOf<typeof ExternalExecutionState>;
 
 export const WorkspaceMode = defineClosedVocabulary({
@@ -37,4 +42,5 @@ export const WorkspaceMode = defineClosedVocabulary({
   ReadOnly: 'read-only',
   Branch: 'branch',
 } as const);
+
 export type WorkspaceMode = ValueOf<typeof WorkspaceMode>;

@@ -28,10 +28,12 @@ export interface CommandConflictResponse {
 }
 
 export type ApiCommandResult = AcceptedCommandResponse | CommandConflictResponse;
+
 export type ApiAdvanceCommandResult = AdvanceCommandResponse | CommandConflictResponse;
 
 export const ApiCommandStatus = defineClosedVocabulary({
   Accepted: 'accepted',
   Completed: 'completed',
 } as const);
+
 export type ApiCommandStatus = ValueOf<typeof ApiCommandStatus>;

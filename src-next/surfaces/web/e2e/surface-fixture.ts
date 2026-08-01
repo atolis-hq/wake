@@ -214,6 +214,7 @@ function freshState(): FixtureState {
     events: [event(1, 'work.created')],
   };
 }
+
 function workSummary(): WorkItemResponse {
   return {
     workItemKey,
@@ -223,6 +224,7 @@ function workSummary(): WorkItemResponse {
     relatedWorkItems: [],
   };
 }
+
 /** Review dataset: enough breadth to expose density, truncation, and empty columns.
     No objective may contain "Demo Wake" - the journey locates that link by substring. */
 function workItems(): readonly WorkItemResponse[] {
@@ -249,9 +251,11 @@ function workItems(): readonly WorkItemResponse[] {
     })),
   ];
 }
+
 function event(position: number, type: string): AuditEventResponse {
   return { id: `event-${position}`, type, occurredAt: instant, position };
 }
+
 function run() {
   return {
     runId: 'run-1',
@@ -266,6 +270,7 @@ function run() {
     finishedAt: instant,
   };
 }
+
 function delay(milliseconds: number) {
   return new Promise((resolveDelay) => setTimeout(resolveDelay, milliseconds));
 }

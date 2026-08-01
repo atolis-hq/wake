@@ -70,6 +70,7 @@ export class WakeApiClient {
     list: (cursor?: string, signal?: AbortSignal) =>
       this.get(`/resources${query({ cursor })}`, collectionDecoder(decodeResourceItem), signal),
   };
+
   readonly orchestration = {
     list: (cursor?: string, signal?: AbortSignal) =>
       this.get(
@@ -78,6 +79,7 @@ export class WakeApiClient {
         signal,
       ),
   };
+
   readonly execution = {
     runs: (cursor?: string, signal?: AbortSignal) =>
       this.get(`/runs${query({ cursor })}`, collectionDecoder(decodeRun), signal),
@@ -106,14 +108,17 @@ export class WakeApiClient {
         signal,
       ),
   };
+
   readonly events = {
     list: (cursor?: string, signal?: AbortSignal) =>
       this.get(`/events${query({ cursor })}`, collectionDecoder(decodeAuditEvent), signal),
   };
+
   readonly observability = {
     metrics: (signal?: AbortSignal) =>
       this.get('/observability/metrics', resourceDecoder(decodeMetrics), signal),
   };
+
   readonly system = {
     health: (signal?: AbortSignal) =>
       this.get('/system/health', resourceDecoder(decodeHealth), signal),

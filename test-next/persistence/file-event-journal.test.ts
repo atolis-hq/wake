@@ -5,6 +5,7 @@ import { expect, it } from 'vitest';
 import { createEventDraft, type EntityRef, type EventDraft } from '../../src-next/kernel/index.js';
 import { FileEventJournal } from '../../src-next/persistence/index.js';
 import { FakeClock } from '../e2e/support/world.js';
+
 it('reopens the journal and continues stream sequence and global position', async () => {
   const root = await mkdtemp(join(tmpdir(), 'wake-journal-'));
   const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };

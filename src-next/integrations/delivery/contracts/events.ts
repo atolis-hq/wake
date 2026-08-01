@@ -18,6 +18,7 @@ export const DeliveryEventType = {
   Ambiguous: 'delivery.ambiguous',
   Reconciled: 'delivery.reconciled',
 } as const;
+
 export const DeliveryEventNamespace = 'delivery.' as const;
 
 export interface DeliveryEventCorrelation {
@@ -54,6 +55,7 @@ export interface DeliveryEventPayloads {
 }
 
 export type DeliveryEvent = EventUnion<DeliveryEventPayloads, DeliveryStreamRef>;
+
 export type DeliveryEventDraft = EventDraftUnion<DeliveryEventPayloads, DeliveryStreamRef>;
 
 const correlationSchema = z
@@ -115,6 +117,7 @@ const eventSchema: z.ZodType<DeliveryEvent> = z
         message: 'Delivery intent payload id must identify its stream',
       });
   });
+
 export function decodeDeliveryEvent(event: EventEnvelope): DeliveryEvent {
   const result = eventSchema.safeParse(event);
   if (!result.success)
@@ -124,6 +127,7 @@ export function decodeDeliveryEvent(event: EventEnvelope): DeliveryEvent {
     );
   return result.data;
 }
+
 export function selectDeliveryEvent(event: EventEnvelope): DeliveryEvent | null {
   return event.eventType.startsWith(DeliveryEventNamespace) ? decodeDeliveryEvent(event) : null;
 }

@@ -10,7 +10,7 @@ import { resId, workId } from '../support/identities.js';
 
 import { activationId, createPullRequestMergeActivity } from '../../src-next/activities/index.js';
 import { type ResourceView } from '../../src-next/resources/index.js';
-import { workItemId } from '../../src-next/work/index.js';
+import type { workItemId } from '../../src-next/work/index.js';
 import { TestWorld } from '../e2e/support/world.js';
 
 it('keeps an activation denied when authority becomes allowed before retry', async () => {

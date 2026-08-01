@@ -1,13 +1,13 @@
 import type { ResourceCorrelationView, ResourceId, ResourceView } from '../../resources/index.js';
 import type { WorkItemId, WorkItemView } from '../../work/index.js';
-import {
+import type {
   ActivityFailureCode,
   ActivityOutcomeKind,
   ActivityResourceRole,
 } from '../contracts/vocabulary.js';
 import type { ReviewerAuthorizationEvidence } from '../review/contracts.js';
-import { ReviewActorKind } from '../review/contracts.js';
-import {
+import type { ReviewActorKind } from '../review/contracts.js';
+import type {
   MergeMethod,
   PullRequestCheckState,
   PullRequestDenialCode,
@@ -69,18 +69,22 @@ export interface PullRequestResourceView {
 
 export type PullRequestTarget =
   typeof ActivityResourceRole.Primary | { readonly resourceId: ResourceId };
+
 export interface PullRequestTargetInput {
   readonly target: PullRequestTarget;
 }
+
 export interface PullRequestApproveInput extends PullRequestTargetInput {
   readonly body?: string;
 }
+
 export interface PullRequestMergeInput extends PullRequestTargetInput {
   readonly method: MergeMethod;
   readonly requireChecks: boolean;
   readonly maxFilesChanged?: number | undefined;
   readonly blockedPaths: readonly string[];
 }
+
 export type PullRequestActivityOutcome =
   | {
       readonly kind: typeof ActivityOutcomeKind.Waiting;

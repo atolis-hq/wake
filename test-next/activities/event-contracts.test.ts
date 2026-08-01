@@ -197,6 +197,7 @@ describe('Activity event contract', () => {
       ActivityEvent,
       { readonly eventType: typeof ActivityEventType.PrReviewRejected }
     >;
+
     expectTypeOf<ReviewRejected['payload']['reason']>().toEqualTypeOf<PullRequestDenialCode>();
     expect(() =>
       decodeActivityEvent(

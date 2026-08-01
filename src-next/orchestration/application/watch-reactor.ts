@@ -39,6 +39,7 @@ interface WatchOrchestrationPort {
 }
 
 const checkpoint = 'reactor:orchestration.watch';
+
 type PersistedEvent = Parameters<typeof selectOrchestrationEvent>[0];
 
 export function createWatchReactor(

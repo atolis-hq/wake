@@ -15,6 +15,7 @@ import {
 } from './responses.js';
 
 type WorkCommandName = 'freeze' | 'unfreeze' | 'delete' | 'retry';
+
 type ControlCommandName = 'pause' | 'resume' | 'advance';
 
 export async function dispatchCommand(

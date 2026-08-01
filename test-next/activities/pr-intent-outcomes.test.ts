@@ -17,7 +17,8 @@ import {
   type EventJournal,
 } from '../../src-next/kernel/index.js';
 import {} from '../../src-next/resources/index.js';
-import { workItemId, workItemStream } from '../../src-next/work/index.js';
+import type { workItemId} from '../../src-next/work/index.js';
+import { workItemStream } from '../../src-next/work/index.js';
 import { TestWorld } from '../e2e/support/world.js';
 
 it('returns failed when the append boundary reports a definite failure', async () => {

@@ -48,6 +48,7 @@ export interface ResourceEventPayloads {
 }
 
 export type ResourceEvent = EventUnion<ResourceEventPayloads, ResourceStreamRef>;
+
 export type ResourceEventDraft = EventDraftUnion<ResourceEventPayloads, ResourceStreamRef>;
 
 export interface ResourceEventStream {

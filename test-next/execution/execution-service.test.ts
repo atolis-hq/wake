@@ -51,6 +51,7 @@ function setup(workspace?: { acquire: (request: unknown) => Promise<never> }) {
     },
   );
 }
+
 const activation = {
   activationId: activationId('workflow-1:activity:1'),
   ordinal: 1,

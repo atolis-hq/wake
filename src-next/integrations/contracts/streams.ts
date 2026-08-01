@@ -14,6 +14,7 @@ export const isIntegrationStream = (stream: EntityRef): stream is IntegrationStr
   stream.kind === IntegrationStreamKind.Integration;
 
 export type DeliveryStreamRef = EntityRef<typeof IntegrationStreamKind.Delivery, EventId>;
+
 export const deliveryStream = (intentEventId: EventId): DeliveryStreamRef => ({
   kind: IntegrationStreamKind.Delivery,
   id: intentEventId,

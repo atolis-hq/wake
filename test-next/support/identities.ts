@@ -19,4 +19,5 @@ function ulidLike(seed: string): string {
 }
 
 export const workId = (seed: string): WorkItemId => workItemId(`work-${ulidLike(seed)}`);
+
 export const resId = (seed: string): ResourceId => resourceId(`resource-${ulidLike(seed)}`);

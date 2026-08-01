@@ -33,4 +33,5 @@ export const surfacesConfigSchema = z
     },
     web: { enabled: value.web.enabled ?? false },
   }));
+
 export type SurfacesConfig = z.infer<typeof surfacesConfigSchema>;

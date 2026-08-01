@@ -14,6 +14,7 @@ import {
 } from '../../src-next/activities/index.js';
 import {} from '../../src-next/work/index.js';
 import { workId } from '../support/identities.js';
+
 describe('agent results', () => {
   it.each([
     ['DONE', 'done'],

@@ -15,7 +15,9 @@ type ActivityDraft<Type extends ActivityEventDraft['eventType']> = Extract<
   ActivityEventDraft,
   { eventType: Type }
 >;
+
 type DenialAudit = Omit<PullRequestDenialPayload, 'activationId' | 'idempotencyKey' | 'reason'>;
+
 type DeliveryIntentType =
   typeof ActivityEventType.PrApproveRequested | typeof ActivityEventType.PrMergeRequested;
 

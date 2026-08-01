@@ -1,4 +1,4 @@
-import type { ActivityRegistry } from '../../activities/index.js';
+import type { ActivityOutcome, ActivityRegistry } from '../../activities/index.js';
 import type { Clock, EventJournal } from '../../kernel/index.js';
 import { EventActorKind, EventSourceKind } from '../../kernel/index.js';
 import type { ExecutionConfig } from '../contracts/config.js';
@@ -90,11 +90,13 @@ export class RecoveryService {
       ),
     );
   }
+
   private async appendRecovered(id: RunId, run: RunView, result: RunnerResult) {
     const finishedAt = this.clock.now().toISOString();
     const outcome = recoveredOutcome(run, result, this.activities);
     return this.append(id, recoveredDraft(id, run, { result, outcome, finishedAt }, finishedAt));
   }
+
   private async appendFailure(id: RunId, run: RunView, message: string) {
     const finishedAt = this.clock.now().toISOString();
     return this.append(
@@ -107,10 +109,12 @@ export class RecoveryService {
       ),
     );
   }
+
   private async appendAmbiguous(id: RunId, run: RunView, reason: string) {
     const finishedAt = this.clock.now().toISOString();
     return this.append(id, ambiguousDraft(id, run, { reason, finishedAt }, finishedAt));
   }
+
   private async append(id: RunId, draft: RunExecutionEventDraft): Promise<RunView> {
     const loaded = await this.repository.load(id);
     if (loaded.view === null) throw new Error(`Run ${id} does not exist`);
@@ -136,12 +140,13 @@ function leaseRenewedDraft(
     payload,
   });
 }
+
 function recoveredDraft(
   id: RunId,
   run: RunView,
   payload: {
     readonly result: RunnerResult;
-    readonly outcome: import('../../activities/index.js').ActivityOutcome;
+    readonly outcome: ActivityOutcome;
     readonly finishedAt: string;
   },
   occurredAt: string,
@@ -152,6 +157,7 @@ function recoveredDraft(
     payload,
   });
 }
+
 function failedDraft(
   id: RunId,
   run: RunView,
@@ -170,6 +176,7 @@ function failedDraft(
     payload,
   });
 }
+
 function ambiguousDraft(
   id: RunId,
   run: RunView,
@@ -182,6 +189,7 @@ function ambiguousDraft(
     payload,
   });
 }
+
 function eventMetadata(
   id: RunId,
   run: RunView,

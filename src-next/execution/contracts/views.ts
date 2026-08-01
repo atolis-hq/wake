@@ -7,7 +7,9 @@ import type {
 } from '../../activities/index.js';
 import type { RunId } from './identifiers.js';
 import type { Cancellation, ExternalExecutionReference, Lease } from './liveness.js';
-import { WorkspaceMode, type ExecutionFailureCode, type RunStatus } from './vocabulary.js';
+import type { WorkspaceMode} from './vocabulary.js';
+import { type ExecutionFailureCode, type RunStatus } from './vocabulary.js';
+
 export type RunTransportStatus = RunStatus;
 
 export interface ExecutionFailure {

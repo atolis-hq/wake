@@ -88,6 +88,7 @@ export interface GitHubEventPayloads {
 }
 
 export type GitHubAdapterEvent = EventUnion<GitHubEventPayloads, IntegrationStreamRef>;
+
 export type GitHubAdapterEventDraft = EventDraftUnion<GitHubEventPayloads, IntegrationStreamRef>;
 
 const streamSchema = z

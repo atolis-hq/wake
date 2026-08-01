@@ -4,6 +4,7 @@ import type {
   ProjectionDefinition,
   ProjectionStore,
 } from '../../kernel/index.js';
+
 export class ProjectionRunner {
   constructor(
     private readonly journal: EventJournal,
@@ -11,12 +12,14 @@ export class ProjectionRunner {
     private readonly checkpoints: CheckpointStore,
     private readonly registered: readonly ProjectionDefinition[] = [],
   ) {}
+
   async runRegisteredOnce(limit = 100): Promise<number> {
     const counts = await Promise.all(
       this.registered.map((definition) => this.runOnce(definition, limit)),
     );
     return counts.reduce((total, count) => total + count, 0);
   }
+
   async runOnce<Value>(definition: ProjectionDefinition<Value>, limit = 100): Promise<number> {
     const consumer = `projection:${definition.name}`;
     const events = await this.journal.readAll(await this.checkpoints.load(consumer), limit);
@@ -37,6 +40,7 @@ export class ProjectionRunner {
     }
     return events.length;
   }
+
   async rebuild<Value>(definition: ProjectionDefinition<Value>): Promise<number> {
     await this.projections.clear(definition.name);
     await this.checkpoints.reset(`projection:${definition.name}`);

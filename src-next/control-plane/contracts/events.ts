@@ -16,8 +16,11 @@ export const ControlEventType = {
   RunnerPaused: 'control-plane.runner-paused',
   RunnerResumed: 'control-plane.runner-resumed',
 } as const;
+
 export const RunnerPauseCause = { Manual: 'manual', Quota: 'quota' } as const;
+
 export const ControlEventNamespace = 'control-plane.' as const;
+
 export interface ControlEventPayloads {
   readonly [ControlEventType.DispatchPaused]: {
     readonly resumeAt: string;
@@ -37,6 +40,7 @@ export interface ControlEventPayloads {
 }
 
 export type ControlEvent = EventUnion<ControlEventPayloads, ControlStreamRef>;
+
 export type ControlEventDraft = EventDraftUnion<ControlEventPayloads, ControlStreamRef>;
 
 const streamSchema = z

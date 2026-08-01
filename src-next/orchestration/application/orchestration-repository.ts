@@ -10,6 +10,7 @@ import type {
 import { workflowInstanceId } from '../contracts/identifiers.js';
 import { isWorkflowInstanceStream, workflowInstanceStream } from '../contracts/streams.js';
 import { foldWorkflowInstance } from '../domain/workflow-instance.js';
+
 export class OrchestrationRepository {
   constructor(private readonly journal: EventJournal) {}
   async load(id: string) {
@@ -22,11 +23,13 @@ export class OrchestrationRepository {
       );
     return { sequence: events.length, view: foldWorkflowInstance(owned) };
   }
+
   async loadRequired(id: string) {
     const loaded = await this.load(id);
     if (loaded.view === null) throw new Error('WorkflowInstance does not exist');
     return { sequence: loaded.sequence, view: loaded.view };
   }
+
   async append(
     id: string,
     sequence: number,
@@ -39,6 +42,7 @@ export class OrchestrationRepository {
     );
     return events.map(decodeOrchestrationEvent).filter(isWorkflowEvent);
   }
+
   async list() {
     const ids = new Set(
       (await this.journal.readAll(0))

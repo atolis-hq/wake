@@ -1,11 +1,17 @@
 import type { Brand } from '../../kernel/index.js';
 
 export type WorkflowName = Brand<string, 'WorkflowName'>;
+
 export type StageName = Brand<string, 'StageName'>;
+
 export type SignalName = Brand<string, 'SignalName'>;
+
 export type CommandName = Brand<string, 'CommandName'>;
+
 export type WorkflowInstanceId = Brand<string, 'WorkflowInstanceId'>;
+
 export type OrchestrationGroupId = Brand<string, 'OrchestrationGroupId'>;
+
 export type WatchId = Brand<string, 'WatchId'>;
 
 export const workflowName = (value: string): WorkflowName => {

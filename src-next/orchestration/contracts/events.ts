@@ -26,6 +26,7 @@ import type {
   PrimaryOrchestrationGroupStreamRef,
   WorkflowInstanceStreamRef,
 } from './streams.js';
+
 export type {
   ActivityRequestedPayload,
   CausalActivationRejectedPayload,
@@ -134,12 +135,16 @@ type WorkflowEventType = Exclude<
   keyof OrchestrationEventPayloads,
   typeof OrchestrationEventType.PrimaryClaimed | typeof OrchestrationEventType.GroupClaimed
 >;
+
 export type WorkflowOrchestrationEventName = WorkflowEventType;
+
 type WorkflowEventPayloads = Pick<OrchestrationEventPayloads, WorkflowEventType>;
+
 type PrimaryGroupEventPayloads = Pick<
   OrchestrationEventPayloads,
   typeof OrchestrationEventType.PrimaryClaimed
 >;
+
 type ChildGroupEventPayloads = Pick<
   OrchestrationEventPayloads,
   typeof OrchestrationEventType.GroupClaimed
@@ -149,32 +154,42 @@ export type WorkflowOrchestrationEvent = EventUnion<
   WorkflowEventPayloads,
   WorkflowInstanceStreamRef
 >;
+
 type PrimaryOrchestrationGroupEvent = EventUnion<
   PrimaryGroupEventPayloads,
   PrimaryOrchestrationGroupStreamRef
 >;
+
 type ChildOrchestrationGroupEvent = EventUnion<
   ChildGroupEventPayloads,
   ChildOrchestrationGroupStreamRef
 >;
+
 export type OrchestrationGroupEvent = PrimaryOrchestrationGroupEvent | ChildOrchestrationGroupEvent;
+
 export type WorkflowOrchestrationEventDraft = EventDraftUnion<
   WorkflowEventPayloads,
   WorkflowInstanceStreamRef
 >;
+
 type PrimaryOrchestrationGroupEventDraft = EventDraftUnion<
   PrimaryGroupEventPayloads,
   PrimaryOrchestrationGroupStreamRef
 >;
+
 type ChildOrchestrationGroupEventDraft = EventDraftUnion<
   ChildGroupEventPayloads,
   ChildOrchestrationGroupStreamRef
 >;
+
 export type OrchestrationGroupEventDraft =
   PrimaryOrchestrationGroupEventDraft | ChildOrchestrationGroupEventDraft;
+
 export type OrchestrationEvent = WorkflowOrchestrationEvent | OrchestrationGroupEvent;
+
 export type OrchestrationEventDraft =
   WorkflowOrchestrationEventDraft | OrchestrationGroupEventDraft;
+
 export type ChildCoordinationEventDraft = Extract<
   OrchestrationEventDraft,
   {
@@ -187,10 +202,12 @@ export type ChildCoordinationEventDraft = Extract<
       | typeof OrchestrationEventType.GroupBudgetExhausted;
   }
 >;
+
 export type ChildCoordinationEventPayloads = Pick<
   OrchestrationEventPayloads,
   ChildCoordinationEventDraft['eventType']
 >;
+
 export interface ChildCompletionSignal extends OrchestrationSignal {
   readonly childWorkflowInstanceId: WorkflowInstanceId;
   readonly requestId: string;

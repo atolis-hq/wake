@@ -1,5 +1,5 @@
 import type { DeliveryIntentView } from './views.js';
-import { DeliveryResultKind } from './vocabulary.js';
+import type { DeliveryResultKind } from './vocabulary.js';
 
 export interface ExternalDeliveryAdapter {
   deliver(intent: DeliveryIntentView, signal: AbortSignal): Promise<DeliveryResult>;

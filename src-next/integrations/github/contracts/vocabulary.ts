@@ -3,6 +3,7 @@ import { defineClosedVocabulary, type ValueOf } from '../../../kernel/index.js';
 import { adapterId, type AdapterId } from '../../contracts/identifiers.js';
 
 export const GitHubAdapter: AdapterId = adapterId('github');
+
 export const BuiltInAdapterId = { GitHub: GitHubAdapter } as const;
 
 export const GitHubCheckRunStatus = defineClosedVocabulary({
@@ -10,6 +11,7 @@ export const GitHubCheckRunStatus = defineClosedVocabulary({
   InProgress: 'in_progress',
   Completed: 'completed',
 } as const);
+
 export type GitHubCheckRunStatus = ValueOf<typeof GitHubCheckRunStatus>;
 
 // GitHub's own issue/PR listing filter. Distinct from Wake's MatchMode, which
@@ -19,12 +21,14 @@ export const GitHubListState = defineClosedVocabulary({
   Open: 'open',
   Closed: 'closed',
 } as const);
+
 export type GitHubListState = ValueOf<typeof GitHubListState>;
 
 export const GitHubReviewState = defineClosedVocabulary({
   Approved: 'APPROVED',
   ChangesRequested: 'CHANGES_REQUESTED',
 } as const);
+
 export type GitHubReviewState = ValueOf<typeof GitHubReviewState>;
 
 // Label families Wake owns and republishes. Nothing may tag intake from them: the
@@ -34,6 +38,7 @@ export const GitHubWakeMarkerPrefix = defineClosedVocabulary({
   Stage: 'wake:stage.',
   Workflow: 'wake:workflow.',
 } as const);
+
 export type GitHubWakeMarkerPrefix = ValueOf<typeof GitHubWakeMarkerPrefix>;
 
 export function isGitHubWakeMarker(label: string): boolean {
@@ -49,6 +54,7 @@ export const GitHubIntakeFacet = {
 } as const;
 
 export const UnknownGitHubIdentity = 'unknown-github-identity';
+
 export const UnknownGitHubRevision = 'unknown-github-revision';
 
 export const GitHubOutboundAction = {
@@ -57,4 +63,5 @@ export const GitHubOutboundAction = {
   Status: 'status',
   Reply: 'reply',
 } as const;
+
 export type GitHubOutboundAction = ValueOf<typeof GitHubOutboundAction>;

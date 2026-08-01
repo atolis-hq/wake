@@ -15,6 +15,7 @@ export const isRunStream = (stream: EntityRef): stream is RunStreamRef =>
   stream.kind === ExecutionStreamKind.Run;
 
 export type ActivationStreamRef = EntityRef<typeof ExecutionStreamKind.Activation, ActivationId>;
+
 export const activationStream = (id: ActivationId): ActivationStreamRef => ({
   kind: ExecutionStreamKind.Activation,
   id,

@@ -1,7 +1,9 @@
 import type { Brand } from '../../kernel/index.js';
 
 export type ResourceId = Brand<string, 'ResourceId'>;
+
 export type ResourceKind = Brand<string, 'ResourceKind'>;
+
 export type ResourceCapability = Brand<string, 'ResourceCapability'>;
 
 export const resourceId = (value: string): ResourceId => {

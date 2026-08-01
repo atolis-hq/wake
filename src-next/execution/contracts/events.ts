@@ -28,9 +28,11 @@ import type {
   Lease,
   RecoveredRunResult,
 } from './liveness.js';
+import type { RunnerResult } from './runner.js';
 import { ExecutionStreamKind, type ActivationStreamRef, type RunStreamRef } from './streams.js';
 import type { ExecutionFailure } from './views.js';
-import { ExecutionCancellationReason, ExecutionFailureCode, WorkspaceMode } from './vocabulary.js';
+import type { WorkspaceMode } from './vocabulary.js';
+import { ExecutionCancellationReason, ExecutionFailureCode } from './vocabulary.js';
 
 export const ExecutionEventType = {
   RunStarted: 'execution.run-started',
@@ -86,7 +88,7 @@ export interface RunExecutionEventPayloads {
   readonly [ExecutionEventType.RunLeaseClaimed]: Lease;
   readonly [ExecutionEventType.RunLeaseRenewed]: Lease;
   readonly [ExecutionEventType.RunExternalExecutionReported]: ExternalExecutionReference;
-  readonly [ExecutionEventType.RunRunnerResultReported]: import('./runner.js').RunnerResult;
+  readonly [ExecutionEventType.RunRunnerResultReported]: RunnerResult;
   readonly [ExecutionEventType.RunCancellationRequested]: {
     readonly requestedAt: string;
     readonly reason: Cancellation['reason'];
@@ -112,16 +114,21 @@ export interface ActivationExecutionEventPayloads {
 }
 
 export type RunExecutionEvent = EventUnion<RunExecutionEventPayloads, RunStreamRef>;
+
 export type RunExecutionEventDraft = EventDraftUnion<RunExecutionEventPayloads, RunStreamRef>;
+
 export type ActivationExecutionEvent = EventUnion<
   ActivationExecutionEventPayloads,
   ActivationStreamRef
 >;
+
 export type ActivationExecutionEventDraft = EventDraftUnion<
   ActivationExecutionEventPayloads,
   ActivationStreamRef
 >;
+
 export type ExecutionEvent = RunExecutionEvent | ActivationExecutionEvent;
+
 export type ExecutionEventDraft = RunExecutionEventDraft | ActivationExecutionEventDraft;
 
 const runStreamSchema = z

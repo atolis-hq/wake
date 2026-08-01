@@ -11,18 +11,24 @@ export type WorkflowInstanceStreamRef = EntityRef<
   typeof OrchestrationStreamKind.WorkflowInstance,
   WorkflowInstanceId
 >;
+
 export type PrimaryOrchestrationGroupStreamId = Brand<string, 'PrimaryOrchestrationGroupStreamId'>;
+
 export type ChildOrchestrationGroupStreamId = Brand<string, 'ChildOrchestrationGroupStreamId'>;
+
 export type OrchestrationGroupStreamId =
   PrimaryOrchestrationGroupStreamId | ChildOrchestrationGroupStreamId;
+
 export type PrimaryOrchestrationGroupStreamRef = EntityRef<
   typeof OrchestrationStreamKind.Group,
   PrimaryOrchestrationGroupStreamId
 >;
+
 export type ChildOrchestrationGroupStreamRef = EntityRef<
   typeof OrchestrationStreamKind.Group,
   ChildOrchestrationGroupStreamId
 >;
+
 export type OrchestrationGroupStreamRef =
   PrimaryOrchestrationGroupStreamRef | ChildOrchestrationGroupStreamRef;
 

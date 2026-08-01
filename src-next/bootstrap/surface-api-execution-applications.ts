@@ -78,6 +78,7 @@ export function createExecutionApplications(
     },
   };
 }
+
 function commandAccepted(command: { readonly idempotencyKey: string }, acceptedAt: string) {
   return {
     commandId: `runner:${command.idempotencyKey}`,

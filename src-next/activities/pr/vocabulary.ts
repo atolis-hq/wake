@@ -5,6 +5,7 @@ export const PullRequestState = defineClosedVocabulary({
   Closed: 'closed',
   Merged: 'merged',
 } as const);
+
 export type PullRequestState = ValueOf<typeof PullRequestState>;
 
 export const PullRequestCheckState = defineClosedVocabulary({
@@ -13,6 +14,7 @@ export const PullRequestCheckState = defineClosedVocabulary({
   Passing: 'passing',
   Failing: 'failing',
 } as const);
+
 export type PullRequestCheckState = ValueOf<typeof PullRequestCheckState>;
 
 export const MergeMethod = defineClosedVocabulary({
@@ -20,6 +22,7 @@ export const MergeMethod = defineClosedVocabulary({
   Squash: 'squash',
   Rebase: 'rebase',
 } as const);
+
 export type MergeMethod = ValueOf<typeof MergeMethod>;
 
 export const PullRequestDenialCode = defineClosedVocabulary({
@@ -35,4 +38,5 @@ export const PullRequestDenialCode = defineClosedVocabulary({
   BlockedPathChanged: 'blocked-path-changed',
   ChangedFilesUnavailable: 'changed-files-unavailable',
 } as const);
+
 export type PullRequestDenialCode = ValueOf<typeof PullRequestDenialCode>;

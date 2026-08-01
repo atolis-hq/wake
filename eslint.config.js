@@ -1,4 +1,6 @@
 import js from '@eslint/js';
+import stylistic from '@stylistic/eslint-plugin';
+import eslintConfigPrettier from 'eslint-config-prettier/flat';
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
@@ -95,6 +97,30 @@ export default tseslint.config(
           selector: 'CallExpression[callee.type="Identifier"][callee.name="Number"]',
           message: 'Decode typed domain values instead of calling Number().',
         },
+      ],
+    },
+  },
+  eslintConfigPrettier,
+  {
+    files: ['src-next/**/*.ts', 'test-next/**/*.ts'],
+    plugins: { '@stylistic': stylistic },
+    rules: {
+      '@stylistic/lines-between-class-members': [
+        'error',
+        'always',
+        { exceptAfterSingleLine: true },
+      ],
+      '@stylistic/padding-line-between-statements': [
+        'error',
+        { blankLine: 'always', prev: '*', next: ['function', 'class', 'interface', 'type'] },
+        { blankLine: 'always', prev: '*', next: 'export' },
+        { blankLine: 'always', prev: ['function', 'class', 'interface', 'type'], next: '*' },
+        { blankLine: 'always', prev: 'import', next: '*' },
+        { blankLine: 'any', prev: 'import', next: 'import' },
+      ],
+      '@typescript-eslint/consistent-type-imports': [
+        'error',
+        { prefer: 'type-imports', fixStyle: 'separate-type-imports' },
       ],
     },
   },

@@ -29,6 +29,7 @@ interface ModuleManifest {
 }
 
 type CheckModuleManifests = (root?: string) => Promise<readonly string[]>;
+
 const checkerModulePath = '../../scripts/check-module-manifests.mjs';
 const checker = (await import(checkerModulePath)) as {
   readonly checkModuleManifests: CheckModuleManifests;

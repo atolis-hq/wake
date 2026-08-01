@@ -8,12 +8,14 @@ import {
 import { runId, type RunId } from '../contracts/identifiers.js';
 import { isRunStream, runStream } from '../contracts/streams.js';
 import { foldRun } from '../domain/run.js';
+
 export class RunRepository {
   constructor(private readonly journal: EventJournal) {}
   async load(runId: RunId) {
     const events = await this.journal.readStream(runStream(runId));
     return { sequence: events.length, view: foldRun(events.map(decodeRunExecutionEvent)) };
   }
+
   async append(
     runId: RunId,
     sequence: number,
@@ -22,6 +24,7 @@ export class RunRepository {
     const events = await this.journal.append(runStream(runId), sequence, drafts);
     return events.map(decodeRunExecutionEvent);
   }
+
   async list(activationId?: ActivationId) {
     const ids = new Set(
       (await this.journal.readAll(0))

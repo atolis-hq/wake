@@ -14,8 +14,8 @@ import {
   type PullRequestActivityOutcome,
   type PullRequestApproveInput,
 } from '../../src-next/activities/index.js';
-import { resourceId } from '../../src-next/resources/index.js';
-import { workItemId } from '../../src-next/work/index.js';
+import type { resourceId } from '../../src-next/resources/index.js';
+import type { workItemId } from '../../src-next/work/index.js';
 import { TestWorld } from '../e2e/support/world.js';
 
 it('creates one provider-neutral approval intent for the current primary PR revision', async () => {
@@ -138,6 +138,7 @@ function context() {
     async reportExternalExecution() {},
   };
 }
+
 function command(world: TestWorld, commandId: string) {
   return {
     commandId,

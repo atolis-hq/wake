@@ -2,6 +2,7 @@ import { readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { CheckpointStore } from '../../kernel/index.js';
 import { atomicJson, encode } from './file-projection-store.js';
+
 export class FileCheckpointStore implements CheckpointStore {
   constructor(private readonly root: string) {}
   async load(consumer: string): Promise<number> {
@@ -22,14 +23,17 @@ export class FileCheckpointStore implements CheckpointStore {
       throw error;
     }
   }
+
   async save(consumer: string, globalPosition: number): Promise<void> {
     if (globalPosition < (await this.load(consumer)))
       throw new Error(`Checkpoint regression for ${consumer}`);
     await atomicJson(this.path(consumer), { consumer, globalPosition });
   }
+
   async reset(consumer: string): Promise<void> {
     await rm(this.path(consumer), { force: true });
   }
+
   private path(consumer: string) {
     return join(this.root, 'checkpoints', `${encode(consumer)}.json`);
   }

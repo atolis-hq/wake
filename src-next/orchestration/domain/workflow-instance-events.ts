@@ -8,6 +8,7 @@ import type { ActivityActivationView, WorkflowInstanceView } from '../contracts/
 import { ActivityActivationStatus, WorkflowStatus } from '../contracts/vocabulary.js';
 
 type WorkflowFact = WorkflowOrchestrationEvent | WorkflowOrchestrationEventDraft;
+
 type FactsOf<Type extends WorkflowFact['eventType']> = Extract<
   WorkflowFact,
   { readonly eventType: Type }
@@ -45,12 +46,14 @@ type ActivityFact = FactsOf<
   | typeof OrchestrationEventType.ActivityOutcomeAccepted
   | typeof OrchestrationEventType.ActivityWaiting
 >;
+
 type InteractionFact = FactsOf<
   | typeof OrchestrationEventType.SignalWaitStarted
   | typeof OrchestrationEventType.SignalAccepted
   | typeof OrchestrationEventType.SupplementalActivityQueued
   | typeof OrchestrationEventType.SupplementalActivityDequeued
 >;
+
 type LifecycleFact = FactsOf<
   | typeof OrchestrationEventType.RepeatCounted
   | typeof OrchestrationEventType.RetryCounted
@@ -58,6 +61,7 @@ type LifecycleFact = FactsOf<
   | typeof OrchestrationEventType.InstanceBlocked
   | typeof OrchestrationEventType.InstanceSuperseded
 >;
+
 type CoordinationFact = Exclude<WorkflowFact, ActivityFact | InteractionFact | LifecycleFact>;
 
 export function applyWorkflowInstanceEvent(

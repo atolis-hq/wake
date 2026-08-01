@@ -42,6 +42,7 @@ export interface WorkEventPayloads {
 }
 
 export type WorkEvent = EventUnion<WorkEventPayloads, WorkItemStreamRef>;
+
 export type WorkEventDraft = EventDraftUnion<WorkEventPayloads, WorkItemStreamRef>;
 
 const streamSchema = z

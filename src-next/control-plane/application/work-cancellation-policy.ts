@@ -13,6 +13,7 @@ import { ControlStreamKind } from '../contracts/streams.js';
 interface WorkPort {
   cancel(workItemId: WorkItemId, reason: string, context: CommandContext): Promise<WorkItemView>;
 }
+
 interface OrchestrationPort {
   listAll(): Promise<readonly WorkflowInstanceView[]>;
   block(

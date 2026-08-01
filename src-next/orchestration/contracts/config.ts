@@ -5,7 +5,7 @@ import { type ActivityName } from '../../activities/index.js';
 import { WorkspaceMode, type WorkspaceMode as WorkspaceModeType } from '../../execution/index.js';
 import { MatchMode } from '../../kernel/index.js';
 import type { CommandName, SignalName, StageName, WatchId, WorkflowName } from './identifiers.js';
-import { TransitionTargetKind } from './vocabulary.js';
+import type { TransitionTargetKind } from './vocabulary.js';
 
 export interface ActivityExecutionConfig {
   readonly workspace?: WorkspaceModeType | undefined;
@@ -25,6 +25,7 @@ const approvalAuthorityConfigSchema = z.union([
   z.literal(ApprovalAuthorityKind.Auto),
   z.object({ kind: z.literal(ApprovalAuthorityKind.Watch), id: identifier }).strict(),
 ]);
+
 export const awaitConfigSchema = z
   .object({
     signal: identifier,
@@ -34,6 +35,7 @@ export const awaitConfigSchema = z
 const commandName = z.string().regex(/^\/[a-z][a-z0-9-]*$/);
 const canonicalEventName = z.string().regex(/^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)+$/);
 const watchStatus = z.enum([WorkflowStatus.Active, WorkflowStatus.Waiting, WorkflowStatus.Blocked]);
+
 export const watchConfigSchema = z
   .object({
     id: identifier,
@@ -55,12 +57,14 @@ export const watchConfigSchema = z
   .refine((value) => value.on !== undefined || value.schedule !== undefined, {
     message: 'Watch requires on or schedule',
   });
+
 export const followOnActivityConfigSchema = z
   .object({
     use: identifier,
     with: z.unknown().optional(),
   })
   .strict();
+
 export const outcomeRouteConfigSchema = z
   .object({
     activities: z.array(followOnActivityConfigSchema).readonly().optional(),
@@ -70,6 +74,7 @@ export const outcomeRouteConfigSchema = z
     await: awaitConfigSchema.optional(),
   })
   .strict();
+
 export const stageConfigSchema = z
   .object({
     activity: identifier,
@@ -88,6 +93,7 @@ export const stageConfigSchema = z
       .refine((value) => Object.keys(value).length > 0),
   })
   .strict();
+
 export const supplementalCommandConfigSchema = z
   .object({
     activity: identifier,
@@ -95,6 +101,7 @@ export const supplementalCommandConfigSchema = z
     allowedActors: z.array(approvalAuthorityKind).min(1).readonly(),
   })
   .strict();
+
 export const workflowDefinitionConfigSchema = z
   .object({
     entry: identifier.optional(),
@@ -110,6 +117,7 @@ export const workflowDefinitionConfigSchema = z
 const selectorValues = z
   .union([identifier, z.array(identifier).min(1)])
   .transform((value): readonly string[] => (typeof value === 'string' ? [value] : value));
+
 export const workflowSelectorConfigSchema = z
   .object({
     match: z
@@ -128,12 +136,19 @@ export const workflowSelectorConfigSchema = z
   .strict();
 
 export type WorkflowSelectorConfig = z.infer<typeof workflowSelectorConfigSchema>;
+
 export type FollowOnActivityConfig = z.infer<typeof followOnActivityConfigSchema>;
+
 export type AwaitConfig = z.infer<typeof awaitConfigSchema>;
+
 export type OutcomeRouteConfig = z.infer<typeof outcomeRouteConfigSchema>;
+
 export type StageConfig = z.infer<typeof stageConfigSchema>;
+
 export type SupplementalCommandConfig = z.infer<typeof supplementalCommandConfigSchema>;
+
 export type WatchConfig = z.infer<typeof watchConfigSchema>;
+
 export type WorkflowDefinitionConfig = z.infer<typeof workflowDefinitionConfigSchema>;
 
 export type TransitionTarget =
@@ -158,6 +173,7 @@ export interface CompiledFollowOnActivity {
   readonly use: ActivityName;
   readonly with: unknown;
 }
+
 export interface CompiledOutcomeRoute extends Omit<
   OutcomeRouteConfig,
   'activities' | 'then' | 'await'
@@ -167,15 +183,18 @@ export interface CompiledOutcomeRoute extends Omit<
   readonly activities?: readonly CompiledFollowOnActivity[];
   readonly await?: CompiledAwait;
 }
+
 export interface CompiledStage extends Omit<StageConfig, 'activity' | 'execution' | 'on'> {
   readonly activity: ActivityName;
   readonly execution?: ActivityExecutionConfig;
   readonly on: Readonly<Record<string, CompiledOutcomeRoute>>;
 }
+
 export interface CompiledSupplementalCommand extends Omit<SupplementalCommandConfig, 'activity'> {
   readonly activity: ActivityName;
   readonly allowedActors: SupplementalCommandConfig['allowedActors'];
 }
+
 export interface CompiledWatch extends Omit<WatchConfig, 'workflow' | 'while' | 'id'> {
   readonly id: WatchId;
   readonly workflow: WorkflowName;
@@ -183,6 +202,7 @@ export interface CompiledWatch extends Omit<WatchConfig, 'workflow' | 'while' | 
     readonly stages: readonly StageName[];
   };
 }
+
 export interface CompiledWorkflow {
   readonly name: WorkflowName;
   readonly entry: StageName;

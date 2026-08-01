@@ -6,6 +6,7 @@ import { brandedStringSchema, offsetIsoTimestampSchema } from './schema.js';
 const nonEmptyString = z.string().refine((value) => value.trim().length > 0, {
   message: 'must not be empty',
 });
+
 export const eventActorSchema = z
   .object({
     kind: z.enum([

@@ -297,12 +297,15 @@ function applications(
 }
 
 const instant = '2026-07-31T10:00:00.000Z';
+
 function resource<T>(data: T) {
   return { data, meta: { asOf: instant } };
 }
+
 function page<T>(items: readonly T[]): ApiCollectionPage<T> {
   return { items, total: items.length, meta: { asOf: instant } };
 }
+
 function workItemsPage(
   items: readonly WorkItemResponse[],
   query: CollectionQuery,

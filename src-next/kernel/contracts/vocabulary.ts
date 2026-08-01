@@ -10,4 +10,5 @@ export const MatchMode = defineClosedVocabulary({
   Any: 'any',
   All: 'all',
 } as const);
+
 export type MatchMode = ValueOf<typeof MatchMode>;

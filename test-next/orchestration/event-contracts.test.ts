@@ -141,10 +141,12 @@ it('types decoded and draft ActivityWaiting outcomes with the Orchestration bran
     WorkflowOrchestrationEvent,
     { readonly eventType: typeof OrchestrationEventType.ActivityWaiting }
   >;
+
   type WaitingDraft = Extract<
     WorkflowOrchestrationEventDraft,
     { readonly eventType: typeof OrchestrationEventType.ActivityWaiting }
   >;
+
   expectTypeOf<
     WaitingEvent['payload']['outcome']
   >().toEqualTypeOf<OrchestrationWaitingActivityOutcome>();

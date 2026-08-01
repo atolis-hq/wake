@@ -27,6 +27,7 @@ export const ResourceCorrelationRole = defineClosedVocabulary({
   Primary: 'primary',
   Secondary: 'secondary',
 } as const);
+
 export type ResourceCorrelationRole = ValueOf<typeof ResourceCorrelationRole>;
 
 abstract class OpenResourceVocabularyRegistry<Value extends string> {

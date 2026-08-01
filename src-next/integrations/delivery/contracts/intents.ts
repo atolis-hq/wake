@@ -17,6 +17,7 @@ export const DeliveryIntentEventType = {
   StatusPublishRequested: 'status.publish-requested',
   ReplyPublishRequested: 'reply.publish-requested',
 } as const;
+
 export const DeliveryIntentEventNamespace = {
   Status: 'status.',
   Reply: 'reply.',

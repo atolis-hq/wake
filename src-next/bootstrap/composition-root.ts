@@ -12,6 +12,7 @@ import {
   createRunnerControlService,
   createTickPipeline,
   ineligibleRunners,
+  type ControlPlaneView,
   type TickPipeline,
 } from '../control-plane/index.js';
 import {
@@ -132,10 +133,7 @@ export async function createCompositionRoot(
   const advanceOnce = createAdvanceOnce(orchestration, execution, resources, clock, {
     ids,
     runnerIneligibility: async () => {
-      const stored = await projections.read<import('../control-plane/index.js').ControlPlaneView>(
-        ControlStreamKind.Global,
-        'global',
-      );
+      const stored = await projections.read<ControlPlaneView>(ControlStreamKind.Global, 'global');
       return stored === null
         ? new Set()
         : ineligibleRunners(stored.value, clock.now().toISOString());

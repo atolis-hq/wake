@@ -38,6 +38,7 @@ export const deliveryProjection: ProjectionDefinition<DeliveryIntentView | null>
     return foldDeliveryFact(previous, selectDeliveryEvent(event));
   },
 };
+
 export const deliveryProjectionDefinitions: readonly ProjectionDefinition[] = [deliveryProjection];
 
 function intentView(

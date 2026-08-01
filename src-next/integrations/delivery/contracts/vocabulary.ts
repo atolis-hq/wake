@@ -7,6 +7,7 @@ export const DeliveryState = defineClosedVocabulary({
   Failed: 'failed',
   Ambiguous: 'ambiguous',
 } as const);
+
 export type DeliveryState = ValueOf<typeof DeliveryState>;
 
 export const DeliveryResultKind = defineClosedVocabulary({
@@ -16,6 +17,7 @@ export const DeliveryResultKind = defineClosedVocabulary({
   NotFound: 'not-found',
   Unknown: 'unknown',
 } as const);
+
 export type DeliveryResultKind = ValueOf<typeof DeliveryResultKind>;
 
 export const DeliveryIntentKind = {
@@ -24,4 +26,5 @@ export const DeliveryIntentKind = {
   StatusPublish: 'status.publish',
   ReplyPublish: 'reply.publish',
 } as const;
+
 export type DeliveryIntentKind = ValueOf<typeof DeliveryIntentKind>;

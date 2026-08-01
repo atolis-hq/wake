@@ -16,6 +16,7 @@ import { finishSupplemental, requestNextSupplemental } from './supplemental-poli
 import { finishRoute } from './transition.js';
 
 export { startInstance } from './activation-policy.js';
+
 export type {
   AcceptActivityOutcome,
   DecisionContext,
@@ -23,9 +24,13 @@ export type {
   QueueSupplementalActivity,
   StartInstanceInput,
 } from './activation-policy.js';
+
 export { acceptSignal, waitForSignal } from './signal-policy.js';
+
 export type { AcceptSignal } from './signal-policy.js';
+
 export { requestSupplementalActivity } from './supplemental-policy.js';
+
 export type { SupplementalActivityRequest } from './supplemental-policy.js';
 
 export function acceptActivityOutcome(

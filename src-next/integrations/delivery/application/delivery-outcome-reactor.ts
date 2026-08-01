@@ -10,6 +10,7 @@ export class DeliveryOutcomeReactor {
     private readonly checkpoints: CheckpointStore,
     private readonly orchestration: Pick<OrchestrationService, 'acceptOutcome'>,
   ) {}
+
   async runOnce(): Promise<number> {
     const consumer = 'reactor:delivery-outcomes';
     const events = await this.journal.readAll(await this.checkpoints.load(consumer));

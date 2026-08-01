@@ -10,7 +10,8 @@ import {
   type PullRequestAuthorityInput,
 } from '../../../src-next/activities/index.js';
 import { createEventDraft } from '../../../src-next/kernel/index.js';
-import { resourceId, resourceStream } from '../../../src-next/resources/index.js';
+import type { resourceId} from '../../../src-next/resources/index.js';
+import { resourceStream } from '../../../src-next/resources/index.js';
 import {} from '../../../src-next/work/index.js';
 import { mergeAuthorityTestActivity } from '../support/merge-authority-activity.js';
 import { TestWorld } from '../support/world.js';

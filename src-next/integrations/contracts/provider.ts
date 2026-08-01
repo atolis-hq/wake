@@ -1,5 +1,5 @@
 import type { PullRequestService } from '../../activities/index.js';
-import type { Clock, IdGenerator } from '../../kernel/index.js';
+import type { CheckpointStore, Clock, EventJournal, IdGenerator } from '../../kernel/index.js';
 import type {
   OrchestrationService,
   WorkflowCandidate,
@@ -25,8 +25,8 @@ export interface ProviderServices {
   readonly pullRequests: PullRequestService;
   readonly ids: IdGenerator;
   readonly clock: Clock;
-  readonly journal: import('../../kernel/index.js').EventJournal;
-  readonly checkpoints: import('../../kernel/index.js').CheckpointStore;
+  readonly journal: EventJournal;
+  readonly checkpoints: CheckpointStore;
   readonly routing: WorkflowRouter;
 }
 

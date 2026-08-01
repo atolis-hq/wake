@@ -23,8 +23,11 @@ export interface ChildRequestedPayload extends ChildCoordinationMetadata {
 }
 
 export type ChildStartedPayload = ChildCoordinationMetadata;
+
 export type ChildCompletedPayload = ChildCoordinationMetadata;
+
 export type ChildCompletionConsumedPayload = ChildCoordinationMetadata;
+
 export type CausalActivationRejectedPayload = ChildCoordinationMetadata;
 
 export interface GroupBudgetExhaustedPayload extends ChildCoordinationMetadata {

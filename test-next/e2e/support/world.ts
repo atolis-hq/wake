@@ -86,6 +86,7 @@ export class TestWorld {
     journal: this.journal,
     projections: this.projections,
   });
+
   readonly resources = createResourceService(this.journal, this.resourceLookup);
   readonly pullRequests = createPullRequestService(this.journal, this.work, this.resources);
   readonly orchestration = createOrchestrationService(this.journal, this.work, this.definitions);
@@ -95,6 +96,7 @@ export class TestWorld {
     { runnerPools: { standard: ['fake'] }, defaultRunnerPool: 'standard' },
     { clock: this.clock, ids: this.ids },
   );
+
   private cancellation = createWorkCancellationPolicy(
     this.work,
     this.orchestration,
@@ -102,6 +104,7 @@ export class TestWorld {
     this.clock,
     this.ids,
   );
+
   private advanceOnce = createAdvanceOnce(
     this.orchestration,
     this.execution,
@@ -109,11 +112,13 @@ export class TestWorld {
     this.clock,
     { ids: this.ids },
   );
+
   private readonly watchReactor = createWatchReactor(
     this.orchestration,
     this.journal,
     this.checkpoints,
   );
+
   private readonly stream: EntityRef<'test', 'scenario'> = {
     kind: 'test',
     id: 'scenario',
@@ -149,6 +154,7 @@ export class TestWorld {
   registerActivity(definition: ActivityDefinition): void {
     this.activities.register(definition);
   }
+
   configureWorkflow(name: string, config: WorkflowDefinitionConfig): CompiledWorkflow {
     const compiled = compileWorkflow(name, config, this.activities, [
       ...Object.keys(this.definitions),
@@ -157,19 +163,24 @@ export class TestWorld {
     this.definitions[name] = compiled;
     return compiled;
   }
+
   async createWork(input: { objective: string; workItemId?: WorkItemId }) {
     const id = input.workItemId ?? workItemId(this.ids.next('work'));
     return this.work.create({ workItemId: id, objective: input.objective }, this.command());
   }
+
   async cancelWork(workItemId: WorkItemId, reason = 'operator cancellation') {
     return this.cancellation.cancelWork(workItemId, reason);
   }
+
   requestRunCancellation(runId: string, reason: NonNullable<RunView['cancellation']>['reason']) {
     return this.execution.requestCancellation(runId, reason);
   }
+
   confirmRunCancellation(runId: string) {
     return this.execution.confirmCancellation(runId);
   }
+
   restartExecution(inspector?: ExternalExecutionInspector): void {
     this.execution = createExecutionService(
       this.journal,
@@ -205,15 +216,18 @@ export class TestWorld {
       { ids: this.ids },
     );
   }
+
   async restartAndRecover(inspector: ExternalExecutionInspector): Promise<void> {
     this.restartExecution(inspector);
     await this.advance();
   }
+
   async discoverResource(
     input: Parameters<typeof this.resources.discover>[0],
   ): Promise<ResourceView> {
     return this.resources.discover(input, this.command());
   }
+
   async startWorkflow(input: {
     workItemId: WorkItemId;
     workflowName: string;
@@ -231,6 +245,7 @@ export class TestWorld {
       this.command(),
     );
   }
+
   waitForSignal(
     workflowInstanceId: string,
     expectation: Parameters<typeof this.orchestration.waitForSignal>[1],
@@ -241,6 +256,7 @@ export class TestWorld {
       this.command({ kind: 'operator', id: 'owner' }),
     );
   }
+
   acceptSignal(
     workflowInstanceId: string,
     signal: Parameters<typeof this.orchestration.acceptSignal>[1],
@@ -251,6 +267,7 @@ export class TestWorld {
       this.command({ kind: 'operator', id: 'owner' }),
     );
   }
+
   acceptOutcome(
     workflowInstanceId: string,
     activationId: string,
@@ -265,6 +282,7 @@ export class TestWorld {
       this.command({ kind: 'integration', id: 'synthetic-delivery' }),
     );
   }
+
   requestSupplementalActivity(
     workflowInstanceId: string,
     request: Parameters<typeof this.orchestration.requestSupplementalActivity>[1],
@@ -275,6 +293,7 @@ export class TestWorld {
       this.command({ kind: 'operator', id: 'owner' }),
     );
   }
+
   async advance(workItemId?: WorkItemId): Promise<AdvanceResult> {
     const result = await this.advanceOnce({
       ...(workItemId === undefined ? {} : { workItemId }),
@@ -283,6 +302,7 @@ export class TestWorld {
     await this.watchReactor.runOnce();
     return result;
   }
+
   async triggerWatch(
     eventType: string,
     eventId: string,
@@ -306,21 +326,26 @@ export class TestWorld {
     if (event === undefined) throw new Error('Watch trigger was not appended');
     await this.watchReactor.runOnce();
   }
+
   async events(type?: string): Promise<readonly EventEnvelope[]> {
     const events = await this.journal.readAll(0);
     return type === undefined ? events : events.filter((event) => event.eventType === type);
   }
+
   viewWork(id: WorkItemId) {
     return this.work.get(id);
   }
+
   viewWorkflow(id: string) {
     return this.orchestration.get(parseWorkflowInstanceId(id));
   }
+
   viewRuns(activationId?: string): Promise<readonly RunView[]> {
     return this.execution.list(
       activationId === undefined ? undefined : parseActivationId(activationId),
     );
   }
+
   private command(
     actor: { kind: 'system' | 'operator' | 'agent' | 'integration'; id: string } = {
       kind: 'system',

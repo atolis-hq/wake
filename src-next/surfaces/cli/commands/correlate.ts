@@ -10,6 +10,7 @@ export interface ResourceCorrelationApplication {
     context: CommandContext,
   ): Promise<unknown>;
 }
+
 export const correlate = (
   application: ResourceCorrelationApplication,
   resource: ResourceId,

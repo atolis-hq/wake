@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import YAML from 'yaml';
 import { parseRootConfig, type ResolvedWakeModulesConfig } from './root-schema.js';
+
 export type { ResolvedWakeModulesConfig } from './root-schema.js';
 
 export async function loadConfig(wakeRoot: string): Promise<ResolvedWakeModulesConfig> {

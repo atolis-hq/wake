@@ -79,6 +79,7 @@ describe('ResourceLookup projections', () => {
     await expect(world.lookup.correlationsForWork(work)).resolves.toEqual(before);
   });
 });
+
 function createWorld() {
   const journal = new InMemoryEventJournal(new FakeClock());
   const projections = new InMemoryProjectionStore();
@@ -91,10 +92,12 @@ function createWorld() {
     runner: new ProjectionRunner(journal, projections, checkpoints),
   };
 }
+
 async function catchUp(world: ReturnType<typeof createWorld>) {
   await world.runner.runOnce(resourcesByExternalKeyProjection);
   await world.runner.runOnce(workCorrelationsProjection);
 }
+
 function discovery(
   resourceId: ReturnType<typeof resId>,
   externalKey: { adapter: string; key: string },

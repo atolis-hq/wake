@@ -1,6 +1,7 @@
 import type { Brand } from '../../kernel/index.js';
 
 export type ActivityName = Brand<string, 'ActivityName'>;
+
 export type ActivationId = Brand<string, 'ActivationId'>;
 
 export const activityName = (value: string): ActivityName => {

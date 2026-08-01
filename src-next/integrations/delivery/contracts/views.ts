@@ -1,8 +1,9 @@
 import type { MergeMethod } from '../../../activities/index.js';
 import type { EventId } from '../../../kernel/index.js';
 import type { ResourceId } from '../../../resources/index.js';
+import type {
+  DeliveryIntentKind} from './vocabulary.js';
 import {
-  DeliveryIntentKind,
   type DeliveryIntentKind as DeliveryIntentKindValue,
   type DeliveryState as DeliveryStateValue,
 } from './vocabulary.js';

@@ -26,6 +26,7 @@ async function world() {
   });
   return result;
 }
+
 describe('advanceOnce', () => {
   it('does no work when no activation is pending', async () => {
     expect(await (await world()).advance()).toEqual({ kind: 'no-work' });

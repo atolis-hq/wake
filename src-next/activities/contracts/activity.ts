@@ -5,23 +5,28 @@ import type { WorkItemId } from '../../work/index.js';
 import type { ActivationId, ActivityName } from './identifiers.js';
 import type {
   ActivityExecutionKind,
+  ActivityOutcomeKind,
   ActivityResourceCardinality,
   ActivityResourceRole,
+  ActivityRunnerTransportStatus,
   ExternalExecutionKind,
 } from './vocabulary.js';
-import { ActivityOutcomeKind } from './vocabulary.js';
 
 export interface ResourceRequirement {
   readonly capability: ResourceCapability;
   readonly cardinality: ActivityResourceCardinality;
   readonly role?: ActivityResourceRole;
 }
+
 export type ActivityWorkflowInstanceId = Brand<string, 'WorkflowInstanceId'>;
+
 export type ActivityOrchestrationGroupId = Brand<string, 'OrchestrationGroupId'>;
+
 export const activityWorkflowInstanceId = (value: string): ActivityWorkflowInstanceId => {
   if (value.trim().length === 0) throw new Error('WorkflowInstance id must not be empty');
   return value as ActivityWorkflowInstanceId;
 };
+
 export const activityOrchestrationGroupId = (value: string): ActivityOrchestrationGroupId => {
   if (value.trim().length === 0) throw new Error('Orchestration group id must not be empty');
   return value as ActivityOrchestrationGroupId;
@@ -37,16 +42,19 @@ export interface ActivityInvocation<Input = unknown> {
   readonly input: Input;
   readonly resources: readonly ResourceView[];
 }
+
 export interface ActivityOutcome<Kind extends string = string, Data = unknown> {
   readonly kind: Kind;
   readonly data?: Data;
 }
+
 export interface WaitingActivityOutcome extends ActivityOutcome<
   typeof ActivityOutcomeKind.Waiting,
   { readonly intentEventId: string; readonly signalKind: string }
 > {
   readonly data: { readonly intentEventId: string; readonly signalKind: string };
 }
+
 export interface AgentRunnerPort {
   start(
     request: {
@@ -64,7 +72,7 @@ export interface AgentRunnerPort {
       readonly startedAt: string;
     };
     readonly result: Promise<{
-      readonly transport: import('./vocabulary.js').ActivityRunnerTransportStatus;
+      readonly transport: ActivityRunnerTransportStatus;
       readonly output: string;
       readonly runner?: string | undefined;
       readonly sessionId?: string | undefined;
@@ -81,6 +89,7 @@ export interface AgentRunnerPort {
     }>;
   }>;
 }
+
 export interface ActivityExecutionContext {
   readonly signal: AbortSignal;
   readonly occurredAt: string;
@@ -91,7 +100,7 @@ export interface ActivityExecutionContext {
     readonly startedAt: string;
   }): Promise<void>;
   reportRunnerResult?(result: {
-    readonly transport: import('./vocabulary.js').ActivityRunnerTransportStatus;
+    readonly transport: ActivityRunnerTransportStatus;
     readonly output: string;
     readonly runner: string;
     readonly model?: string | undefined;
@@ -108,12 +117,14 @@ export interface ActivityExecutionContext {
     readonly failure?: { readonly kind: string; readonly message: string } | undefined;
   }): Promise<void>;
 }
+
 export interface ActivityHandler<Input, Outcome extends ActivityOutcome> {
   execute(
     invocation: ActivityInvocation<Input>,
     context: ActivityExecutionContext,
   ): Promise<Outcome>;
 }
+
 export interface ActivityDefinition<
   Name extends ActivityName = ActivityName,
   Input = unknown,

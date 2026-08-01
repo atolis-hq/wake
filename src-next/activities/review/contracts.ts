@@ -6,6 +6,7 @@ export const ReviewerAuthorizationSource = defineClosedVocabulary({
   ProviderPermission: 'provider-permission',
   None: 'none',
 } as const);
+
 export type ReviewerAuthorizationSource = ValueOf<typeof ReviewerAuthorizationSource>;
 
 export const ProviderPermission = defineClosedVocabulary({
@@ -16,18 +17,21 @@ export const ProviderPermission = defineClosedVocabulary({
   Maintain: 'maintain',
   Admin: 'admin',
 } as const);
+
 export type ProviderPermission = ValueOf<typeof ProviderPermission>;
 
 export const ReviewActorKind = defineClosedVocabulary({
   Human: 'human',
   Bot: 'bot',
 } as const);
+
 export type ReviewActorKind = ValueOf<typeof ReviewActorKind>;
 
 export const ReviewDecisionKind = defineClosedVocabulary({
   Accepted: 'accepted',
   ChangesRequested: 'changes-requested',
 } as const);
+
 export type ReviewDecisionKind = ValueOf<typeof ReviewDecisionKind>;
 
 export type ReviewerAuthorizationEvidence =

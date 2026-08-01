@@ -5,7 +5,8 @@ import { resourceCapability, resourceKind } from '../../src-next/resources/index
 import { resId, workId } from '../support/identities.js';
 
 import { createPullRequestMergeAuthorityGate } from '../../src-next/activities/index.js';
-import { resourceId, resourceStream } from '../../src-next/resources/index.js';
+import type { resourceId} from '../../src-next/resources/index.js';
+import { resourceStream } from '../../src-next/resources/index.js';
 import { workItemStream } from '../../src-next/work/index.js';
 import { TestWorld } from '../e2e/support/world.js';
 

@@ -4,6 +4,7 @@ export const BrowserRouteOutcome = defineClosedVocabulary({
   Spa: 'spa',
   NotFound: 'not-found',
 } as const);
+
 export type BrowserRouteOutcome = ValueOf<typeof BrowserRouteOutcome>;
 
 /** Browser history fallback must never mask a missing API or static asset. */

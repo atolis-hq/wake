@@ -1,4 +1,4 @@
-import {
+import type {
   AuditEventResponse,
   CollectionResponse,
   ControlPlaneStatusResponse,
@@ -9,7 +9,8 @@ import {
   RunTranscriptResponse,
   WorkDetailResponse,
   WorkflowInstanceResponse,
-  WorkItemResponse,
+  WorkItemResponse} from '../../../api/contracts/index.js';
+import {
   type AcceptedCommandResponse,
   type AdvanceCommandResponse,
 } from '../../../api/contracts/index.js';
@@ -32,6 +33,7 @@ import {
   string,
   type Decoder,
 } from './decoder-primitives.js';
+
 export type { Decoder } from './decoder-primitives.js';
 
 export function resourceDecoder<Value>(decode: Decoder<Value>): Decoder<ResourceResponse<Value>> {

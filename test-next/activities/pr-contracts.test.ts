@@ -8,7 +8,7 @@ import {
   type PullRequestActivityOutcome,
   type PullRequestMergeInput,
 } from '../../src-next/activities/index.js';
-import { resourceId } from '../../src-next/resources/index.js';
+import type { resourceId } from '../../src-next/resources/index.js';
 import { TestWorld } from '../e2e/support/world.js';
 
 it('pr.merge defaults only target and keeps nested and top-level schemas strict', () => {
@@ -44,6 +44,7 @@ it('closes blocked and failed Pull Request outcome reasons to their owning vocab
     PullRequestActivityOutcome,
     { readonly kind: typeof ActivityOutcomeKind.Failed }
   >;
+
   expectTypeOf<FailedOutcome['data']['reason']>().toEqualTypeOf<
     typeof ActivityFailureCode.IntentWriteFailed
   >();

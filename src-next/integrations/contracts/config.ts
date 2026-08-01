@@ -14,4 +14,5 @@ const providerEntrySchema = z
 export const integrationsConfigSchema = z
   .record(z.string().regex(/^[a-z][a-z0-9-]*$/), providerEntrySchema)
   .default({});
+
 export type IntegrationsConfig = z.infer<typeof integrationsConfigSchema>;

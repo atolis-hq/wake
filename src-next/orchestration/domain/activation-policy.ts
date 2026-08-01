@@ -23,6 +23,7 @@ interface StartInstanceBase {
   readonly correlationId: string;
   readonly causationId: string;
 }
+
 type PrimaryInstanceStart = {
   readonly parentWorkflowInstanceId?: never;
   readonly watchId?: never;
@@ -30,6 +31,7 @@ type PrimaryInstanceStart = {
   readonly causalCycleId?: never;
   readonly requestId?: never;
 };
+
 type ChildInstanceStart = {
   readonly parentWorkflowInstanceId: WorkflowInstanceId;
   readonly watchId: string;
@@ -37,6 +39,7 @@ type ChildInstanceStart = {
   readonly causalCycleId: string;
   readonly requestId: string;
 };
+
 export type StartInstanceInput = StartInstanceBase & (PrimaryInstanceStart | ChildInstanceStart);
 
 export interface DecisionContext {

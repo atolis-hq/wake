@@ -7,6 +7,7 @@ import { FileEventJournal } from '../../../src-next/persistence/index.js';
 import { createWorkService } from '../../../src-next/work/index.js';
 import { workId } from '../../support/identities.js';
 import { FakeClock } from '../support/world.js';
+
 it('E2E-JOURNAL-001 reopens canonical events and continues positions', async () => {
   const root = await mkdtemp(join(tmpdir(), 'wake-restart-'));
   const clock = new FakeClock();

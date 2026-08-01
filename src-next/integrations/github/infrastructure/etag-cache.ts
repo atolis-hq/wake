@@ -1,4 +1,5 @@
 type EtagCache = Map<string, { readonly etag: string; readonly data: unknown }>;
+
 export const createEtagCache = (): EtagCache => new Map();
 
 export async function fetchWithEtag<T>(input: {

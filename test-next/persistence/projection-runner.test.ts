@@ -7,6 +7,7 @@ import {
   ProjectionRunner,
 } from '../../src-next/persistence/index.js';
 import { FakeClock } from '../e2e/support/world.js';
+
 it('replays a committed event exactly once and rebuilds derived state only', async () => {
   const journal = new InMemoryEventJournal(new FakeClock());
   const stream: EntityRef<'counter', 'one'> = { kind: 'counter', id: 'one' };

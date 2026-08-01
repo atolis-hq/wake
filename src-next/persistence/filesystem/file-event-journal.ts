@@ -10,11 +10,13 @@ import type {
 } from '../../kernel/index.js';
 import { decodeEventEnvelope, WrongExpectedSequenceError } from '../../kernel/index.js';
 import { withFileLock } from './file-lock.js';
+
 export class FileEventJournal implements EventJournal {
   constructor(
     private readonly root: string,
     private readonly clock: Clock,
   ) {}
+
   async append(
     stream: EntityRef,
     expectedSequence: number,
@@ -69,12 +71,15 @@ export class FileEventJournal implements EventJournal {
       return finalizedEnvelopes;
     });
   }
+
   async readStream(stream: EntityRef) {
     return (await this.scan()).filter((event) => key(event.stream) === key(stream));
   }
+
   async readAll(after: number, limit = Number.POSITIVE_INFINITY) {
     return (await this.scan()).filter((event) => event.globalPosition > after).slice(0, limit);
   }
+
   private async scan(): Promise<EventEnvelope[]> {
     const directory = join(this.root, 'events');
     let files: string[];
@@ -127,6 +132,7 @@ const sameDraft = (event: EventEnvelope, draft: EventDraft) =>
     },
     draft,
   );
+
 function validateEnvelope(event: EventEnvelope, expectedPosition: number): void {
   if (event.globalPosition !== expectedPosition) throw new Error('Invalid event envelope position');
 }

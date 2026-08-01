@@ -161,6 +161,7 @@ async function mapConcurrent<Input, Output>(
 ): Promise<Output[]> {
   const output = new Array<Output>(values.length);
   let nextIndex = 0;
+
   async function worker() {
     while (nextIndex < values.length) {
       const index = nextIndex;
@@ -168,6 +169,7 @@ async function mapConcurrent<Input, Output>(
       output[index] = await transform(values[index]!);
     }
   }
+
   const workerCount = Math.min(Math.max(1, concurrency), values.length);
   await Promise.all(Array.from({ length: workerCount }, worker));
   return output;

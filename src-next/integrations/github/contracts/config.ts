@@ -50,4 +50,5 @@ export const gitHubConfigSchema = z
   .strict();
 
 export type GitHubConfig = z.output<typeof gitHubConfigSchema>;
+
 export type GitHubIntakeRuleConfig = GitHubConfig['intake'][number];

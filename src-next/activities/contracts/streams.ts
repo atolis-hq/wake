@@ -1,15 +1,18 @@
 import type { Brand, EntityRef } from '../../kernel/index.js';
-import { MergeMethod } from '../pr/vocabulary.js';
+import type { MergeMethod } from '../pr/vocabulary.js';
 import type { ActivationId } from './identifiers.js';
 
 export const ActivityStreamKind = { Decision: 'activity-decision' } as const;
 
 export type PrAction = 'approve' | typeof MergeMethod.Merge;
+
 export type PullRequestDecisionAction = PrAction;
+
 export type ActivityDecisionId<Action extends PrAction = PrAction> = Brand<
   string,
   `ActivityDecisionId:${Action}`
 >;
+
 export type ActivityDecisionStreamRef<Action extends PrAction = PrAction> = EntityRef<
   typeof ActivityStreamKind.Decision,
   ActivityDecisionId<Action>

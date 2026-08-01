@@ -20,6 +20,7 @@ export interface ActivityActivationView {
   readonly followOnIndex?: number;
   readonly supplemental?: boolean;
 }
+
 export interface SignalExpectationView {
   readonly signalKind: SignalName;
   readonly intentEventId?: string;
@@ -28,15 +29,18 @@ export interface SignalExpectationView {
   readonly from?: readonly ApprovalAuthority[];
   readonly resume?: TransitionTarget;
 }
+
 export interface SupplementalActivityView {
   readonly activity: ActivityName;
   readonly input: unknown;
   readonly requestedBy: string;
 }
+
 export interface GroupBudgetExhaustedView {
   readonly kind: 'group-budget-exhausted';
   readonly requestId: string;
 }
+
 export interface WorkflowInstanceView {
   readonly workflowInstanceId: WorkflowInstanceId;
   readonly workItemId: WorkItemId;

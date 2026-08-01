@@ -7,6 +7,7 @@ export interface HealthResponse {
     readonly detail?: string;
   }[];
 }
+
 export interface ConfigurationResponse {
   readonly configuration: Readonly<Record<string, unknown>>;
 }
