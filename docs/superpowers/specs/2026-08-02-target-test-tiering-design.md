@@ -67,3 +67,7 @@ This amendment supersedes the earlier three-tier wording. The architecture confi
 `verify:local` is the single local finishing gate. It runs `verify` and `verify:next`, covering both legacy and target static checks, builds, unit tests, web component tests, and target architecture tests. It deliberately excludes legacy integration, target integration, non-live E2E, and live-provider E2E.
 
 `verify:ci` remains the GitHub CI aggregate. It runs `verify:local` and explicitly adds every non-live integration and E2E tier. Local development and branch completion do not require `verify:ci`; CI is the full-system protection layer for edge cases and real-boundary coverage.
+
+## Correction: local finishing gate scope (2026-08-03)
+
+`verify:local` runs only `verify:next`; it does not run the legacy `verify` suite. `verify:ci` explicitly runs `verify` first, then `verify:local`, followed by legacy integration/legacy suites and target integration/E2E. This keeps local finishing focused on the active target architecture without reducing CI coverage.

@@ -18,8 +18,9 @@ describe('package scripts', () => {
     expect(packageJson.scripts['test:integration']).toBe(
       'vitest run test/adapters/git-workspace-manager.test.ts',
     );
+    expect(packageJson.scripts['verify:local']).toBe('npm run verify:next');
     expect(packageJson.scripts['verify:ci']).toBe(
-      'npm run verify && npm run verify:next && npm run test:integration && npm run test:legacy && npm run test:next:integration && npm run test:next:e2e',
+      'npm run verify && npm run verify:local && npm run test:integration && npm run test:legacy && npm run test:next:integration && npm run test:next:e2e',
     );
   });
 });
