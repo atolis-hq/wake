@@ -1,5 +1,5 @@
 ---
-asOf: 570f5327a406b1993562cbe0e6b47e239b8827ee
+asOf: 312633a1f45b9182803dbfbce74b650069608da6
 ---
 
 # Surfaces — Module Specification
@@ -174,3 +174,8 @@ Surfaces does not own:
 - `board` and `status` capabilities on `ApiApplications` are optional; a
   runtime that does not compose them reports the corresponding route as
   unavailable rather than omitting it from routing.
+
+## Task 27B synchronization (2026-08-02)
+
+The public control-plane command is `tick` at `/control-plane/commands/tick`; it returns the bounded full-pipeline result rather than invoking bare advancement. The web client uses the same operation.
+

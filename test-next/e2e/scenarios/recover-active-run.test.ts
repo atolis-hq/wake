@@ -69,3 +69,58 @@ async function activeRun(world: TestWorld) {
   }
   throw new Error('Expected an active fake Run');
 }
+
+it('E2E-EXEC-RECOVER-002 escalates unknown recovery and accepts an operator resolution', async () => {
+  const world = new TestWorld();
+  world.registerActivity({
+    name: activityName('unknown-external-run'),
+    inputSchema: z.object({}).strict(),
+    outcomeSchema: z.object({ kind: z.literal('done') }).strict(),
+    outcomeKinds: ['done'],
+    resources: [],
+    executionKind: 'deterministic',
+    handler: {
+      async execute(_invocation, context) {
+        await context.reportExternalExecution({
+          kind: 'process',
+          id: 'process-unknown',
+          startedAt: context.occurredAt,
+        });
+        return new Promise(() => {});
+      },
+    },
+  });
+  world.configureWorkflow('unknown-recoverable', {
+    stages: {
+      run: {
+        activity: 'unknown-external-run',
+        with: {},
+        execution: { workspace: 'none' },
+        on: { done: { then: 'done' } },
+      },
+    },
+  });
+  const work = await world.createWork({ objective: 'recover unknown process' });
+  const workflow = await world.startWorkflow({
+    workItemId: work.workItemId,
+    workflowName: workflowName('unknown-recoverable'),
+  });
+  void world.advance(work.workItemId);
+  const run = await activeRun(world);
+  world.clock.advance(60_001);
+  world.restartExecution({
+    async inspect() {
+      return { kind: 'unknown' as const, reason: 'runner unavailable' };
+    },
+  });
+
+  await world.advance(work.workItemId);
+  await world.advance(work.workItemId);
+  await world.advance(work.workItemId);
+  expect((await world.viewRuns())[0]).toMatchObject({ status: 'ambiguous', escalated: true });
+  expect((await world.viewWorkflow(workflow.workflowInstanceId))?.status).toBe('blocked');
+
+  await world.resolveRun(run.runId, { kind: 'succeeded', outcome: { kind: 'done' } });
+  await expect(world.advance(work.workItemId)).resolves.toMatchObject({ kind: 'progressed' });
+  expect((await world.viewWorkflow(workflow.workflowInstanceId))?.status).toBe('completed');
+});

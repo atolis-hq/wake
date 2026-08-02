@@ -1,4 +1,4 @@
-﻿import { expect, it } from 'vitest';
+import { expect, it } from 'vitest';
 import { workflowName } from '../../../src-next/orchestration/contracts/identifiers.js';
 import { resourceCapability, resourceKind } from '../../../src-next/resources/index.js';
 import { resId, workId } from '../../support/identities.js';
@@ -144,6 +144,7 @@ function authorityInput(
             resourceId: pullRequest.resourceId,
             workItemId: pullRequest.workItemId,
             role: 'primary',
+            provenance: 'provider-observed',
             establishedByEventId: 'correlation-1',
           },
         ],

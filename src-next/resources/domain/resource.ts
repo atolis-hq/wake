@@ -48,6 +48,7 @@ function applyResourceEvent(
         resourceId: resource.resourceId,
         workItemId: event.payload.workItemId,
         role: event.payload.role,
+        provenance: event.payload.provenance,
         establishedByEventId: event.eventId,
       });
       break;

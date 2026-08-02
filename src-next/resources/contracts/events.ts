@@ -16,7 +16,12 @@ import {
 } from './identifiers.js';
 import { ResourceStreamKind, type ResourceStreamRef } from './streams.js';
 import type { ExternalResourceKey, ResourceCapability } from './views.js';
-import { ResourceCorrelationRole, type ResourceCorrelationRole as Role } from './vocabulary.js';
+import {
+  ResourceCorrelationProvenance,
+  ResourceCorrelationRole,
+  type ResourceCorrelationProvenance as Provenance,
+  type ResourceCorrelationRole as Role,
+} from './vocabulary.js';
 
 export const ResourceEventType = {
   ResourceDiscovered: 'resources.resource-discovered',
@@ -39,6 +44,7 @@ export interface ResourceEventPayloads {
   readonly [ResourceEventType.WorkCorrelationEstablished]: {
     readonly workItemId: WorkItemId;
     readonly role: Role;
+    readonly provenance: Provenance;
   };
   readonly [ResourceEventType.WorkCorrelationRetracted]: { readonly workItemId: WorkItemId };
   readonly [ResourceEventType.WorkCorrelationConflicted]: {
@@ -89,6 +95,11 @@ const eventSchema = z.discriminatedUnion('eventType', [
       .object({
         workItemId: workItemIdSchema,
         role: z.enum([ResourceCorrelationRole.Primary, ResourceCorrelationRole.Secondary]),
+        provenance: z.enum([
+          ResourceCorrelationProvenance.ProviderObserved,
+          ResourceCorrelationProvenance.AgentReported,
+          ResourceCorrelationProvenance.OperatorDeclared,
+        ]),
       })
       .strict(),
   }),

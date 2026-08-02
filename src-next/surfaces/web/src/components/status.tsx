@@ -21,7 +21,7 @@ export function ControlPlaneStatus() {
   });
   const mutation = useMutation({
     mutationKey: ['control-plane', 'advance-command'],
-    mutationFn: (idempotencyKey: string) => client.controlPlane.advance(idempotencyKey),
+    mutationFn: (idempotencyKey: string) => client.controlPlane.tick(idempotencyKey),
     onSuccess: async (response) => {
       cache.setQueryData(queryKeys.controlPlane.status, response.data.result);
       await Promise.all([

@@ -1,5 +1,5 @@
 ---
-asOf: 570f5327a406b1993562cbe0e6b47e239b8827ee
+asOf: 312633a1f45b9182803dbfbce74b650069608da6
 ---
 
 # Integrations — Module Specification
@@ -243,3 +243,8 @@ Integrations does not own:
 - `github.publication.postStatusComments` is accepted by configuration but
   not read by any current delivery or translation path; status delivery is
   not currently gated by it.
+
+## Task 27B synchronization (2026-08-02)
+
+Artifact claims are provider-verified before discovery/correlation. Transient verification uncertainty is checkpoint-independent, bounded, and escalated durably; confirmed negatives are failed. Delivery unknown reconciliation is likewise bounded and marks an intent escalated, after which only an operator resolution or a confirmed provider result can clear it. GitHub review intake consumes formal review evidence only. Each tick also reconciles Wake-owned GitHub status/stage/workflow labels for correlated resources while preserving user labels; labels are presentation, not commands that mutate arbitrary workflow stages.
+

@@ -34,6 +34,7 @@ export function githubReviewObservation(input: {
     stream: integrationStream(GitHubAdapter),
     payload: {
       externalKey: key,
+      reviewKind: 'formal',
       body: command,
       revision: input.review.commit_id,
       actor: {

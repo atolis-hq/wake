@@ -10,6 +10,7 @@ export type AdvanceResult =
       readonly workflowInstanceId: string;
       readonly reason: string;
     }
+  | { readonly kind: 'paused' }
   | { readonly kind: 'exhausted'; readonly progressCount: number };
 
 export interface AdvanceOptions {

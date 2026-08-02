@@ -1,4 +1,4 @@
-﻿import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { InMemoryEventJournal } from '../../src-next/persistence/index.js';
 import type { resourceId } from '../../src-next/resources/index.js';
 import {
@@ -63,8 +63,19 @@ describe('Resource correlations', () => {
       resourceId: resId('one'),
       workItemId: workId('one'),
       role: 'primary',
+      provenance: 'provider-observed',
       establishedByEventId: 'command-2:resources.work-correlation-established',
     });
+  });
+
+  it('records why an agent-reported artifact was correlated', async () => {
+    const service = createTestResourceServices(new InMemoryEventJournal(new FakeClock())).resources;
+    const resource = resId('agent-reported');
+    await service.discover(discovery(resource), context('discover'));
+
+    await expect(
+      service.correlate(resource, workId('one'), 'primary', context('correlate'), 'agent-reported'),
+    ).resolves.toMatchObject({ provenance: 'agent-reported' });
   });
 
   it('repeating the same correlation is idempotent', async () => {

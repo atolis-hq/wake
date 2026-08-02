@@ -31,6 +31,9 @@ export interface RunView {
   readonly orchestrationGroupId: ActivityOrchestrationGroupId;
   readonly attempt: number;
   readonly status: RunTransportStatus;
+  /** Unknown-state inspection count; only terminal ambiguity is escalated. */
+  readonly ambiguityAttempts: number;
+  readonly escalated: boolean;
   readonly startedAt: string;
   readonly runner?:
     | {
@@ -45,6 +48,7 @@ export interface RunView {
   readonly workspace?: {
     readonly mode: typeof WorkspaceMode.ReadOnly | typeof WorkspaceMode.Branch;
     readonly path: string;
+    readonly branch?: string | undefined;
   };
   readonly lease?: Lease;
   readonly externalExecution?: ExternalExecutionReference;

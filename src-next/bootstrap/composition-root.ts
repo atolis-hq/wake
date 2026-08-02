@@ -8,6 +8,8 @@ import {
 } from '../activities/index.js';
 import {
   ControlStreamKind,
+  DispatchPolicy,
+  ScheduleService,
   createAdvanceOnce,
   createRunnerControlService,
   createTickPipeline,
@@ -21,6 +23,7 @@ import {
   renderPromptTemplate,
 } from '../execution/index.js';
 import {
+  ArtifactRegistrationReactor,
   DeliveryOutcomeReactor,
   DeliveryService,
   IntegrationStreamKind,
@@ -32,6 +35,7 @@ import {
   type WorkflowRouter,
 } from '../integrations/index.js';
 import {
+  EventActorKind,
   SystemClock,
   UlidIdGenerator,
   type CheckpointStore,
@@ -64,6 +68,7 @@ import { resolveWakePaths, type WakePaths } from './paths.js';
 import { createRuntimeProjectionRunner } from './projection-runtime.js';
 import { createRunnerQuotaReporter } from './runner-quota-reporter.js';
 import { createRunnerRegistry } from './runner-registry.js';
+import { FileScheduleCheckpointStore } from './schedule-checkpoint-store.js';
 import { createStatusPublishActivity } from './status-publish-activity.js';
 
 export interface CompositionRootOptions {
@@ -84,6 +89,7 @@ export interface CompositionRoot {
   readonly activities: ActivityRegistry;
   readonly work: ReturnType<typeof createWorkService>;
   readonly resources: ReturnType<typeof createResourceService>;
+  readonly lookup: ReturnType<typeof createResourceLookup>;
   readonly orchestration: ReturnType<typeof createOrchestrationService>;
   readonly execution: ReturnType<typeof createExecutionService>;
   readonly runnerControls: ReturnType<typeof createRunnerControlService>;
@@ -132,6 +138,11 @@ export async function createCompositionRoot(
   });
   const advanceOnce = createAdvanceOnce(orchestration, execution, resources, clock, {
     ids,
+    dispatchPolicy: new DispatchPolicy({ maxDispatches: config.controlPlane.maxDispatches }),
+    isDispatchPaused: async () => {
+      const stored = await projections.read<ControlPlaneView>(ControlStreamKind.Global, 'global');
+      return stored !== null && stored.value.pausedUntil !== null;
+    },
     runnerIneligibility: async () => {
       const stored = await projections.read<ControlPlaneView>(ControlStreamKind.Global, 'global');
       return stored === null
@@ -145,8 +156,10 @@ export async function createCompositionRoot(
     projections,
     checkpoints,
     resources,
+    lookup,
     pullRequests,
     orchestration,
+    execution,
     advanceOnce,
     clock,
     work,
@@ -162,6 +175,7 @@ export async function createCompositionRoot(
     activities,
     work,
     resources,
+    lookup,
     orchestration,
     execution,
     runnerControls,
@@ -183,9 +197,11 @@ interface IntegrationRuntimeInput {
   readonly projections: ProjectionStore;
   readonly checkpoints: CheckpointStore;
   readonly resources: ReturnType<typeof createResourceService>;
+  readonly lookup: ReturnType<typeof createResourceLookup>;
   readonly pullRequests: ReturnType<typeof createPullRequestService>;
   readonly work: ReturnType<typeof createWorkService>;
   readonly orchestration: ReturnType<typeof createOrchestrationService>;
+  readonly execution: ReturnType<typeof createExecutionService>;
   readonly advanceOnce: ReturnType<typeof createAdvanceOnce>;
   readonly clock: Clock;
   readonly ids: UlidIdGenerator;
@@ -203,6 +219,7 @@ async function composeIntegrationRuntime(
     {
       work: input.work,
       resources: input.resources,
+      resourceLookup: input.lookup,
       pullRequests: input.pullRequests,
       orchestration: input.orchestration,
       ids: input.ids,
@@ -236,6 +253,21 @@ async function composeIntegrationRuntime(
     },
     now: () => input.clock.now().toISOString(),
   });
+  const schedules = new ScheduleService({
+    checkpoint: new FileScheduleCheckpointStore(resolveWakePaths(input.wakeRoot).dataRoot),
+    ids: input.ids,
+    work: input.work,
+    orchestration: input.orchestration,
+    now: () => input.clock.now().toISOString(),
+  });
+  const artifacts = new ArtifactRegistrationReactor({
+    journal: input.journal,
+    checkpoints: input.checkpoints,
+    resources: input.resources,
+    ids: input.ids,
+    providers,
+    runs: input.execution,
+  });
   const watch = createWatchReactor(input.orchestration, input.journal, input.checkpoints);
   const outcomes = new DeliveryOutcomeReactor(
     input.journal,
@@ -250,12 +282,23 @@ async function composeIntegrationRuntime(
       for (const provider of providers)
         await new PollService(input.journal, provider).pollOnce(signal);
     },
+    runSchedules: async () => {
+      for (const schedule of input.config.controlPlane.schedules)
+        await schedules.run(schedule, {
+          commandId: input.ids.next('command'),
+          correlationId: 'schedule-tick' as never,
+          occurredAt: input.clock.now().toISOString(),
+          actor: { kind: EventActorKind.System, id: ControlStreamKind.Global },
+        });
+    },
     translateInbound: async () => {
       for (const provider of providers) await provider.inbound.runOnce();
     },
     react: async () => {
       await watch.runOnce();
+      await artifacts.runOnce();
       await outcomes.runOnce();
+      for (const provider of providers) await provider.maintenance?.runOnce();
     },
     advance: input.advanceOnce,
     deliver: async (signal) => {

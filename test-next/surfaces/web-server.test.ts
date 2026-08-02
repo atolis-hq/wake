@@ -74,7 +74,7 @@ describe('HTTP Surface hardening', () => {
     if (address === null || typeof address === 'string') throw new Error('Expected TCP address');
     try {
       const response = await fetch(
-        `http://127.0.0.1:${address.port}/api/v1/control-plane/commands/advance`,
+        `http://127.0.0.1:${address.port}/api/v1/control-plane/commands/tick`,
         {
           method: 'POST',
           headers: { 'content-type': 'application/json' },

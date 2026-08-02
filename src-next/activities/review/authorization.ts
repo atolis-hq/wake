@@ -7,9 +7,11 @@ import { ProviderPermission, ReviewActorKind, ReviewerAuthorizationSource } from
 export function isReviewAuthorized(input: {
   readonly actorId: string;
   readonly actorKind: typeof ReviewActorKind.Human | typeof ReviewActorKind.Bot;
+  readonly origin?: 'provider-native-review';
   readonly resourceAuthorId: string;
   readonly authorization: ReviewerAuthorizationEvidence;
 }): boolean {
+  if (input.origin === 'provider-native-review') return true;
   if (input.actorKind !== ReviewActorKind.Human) return false;
   if (sameIdentity(input.actorId, input.resourceAuthorId)) return false;
   if (input.authorization.source === ReviewerAuthorizationSource.ConfiguredReviewer)

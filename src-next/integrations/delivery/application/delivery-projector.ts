@@ -18,7 +18,9 @@ export function projectDeliveries(events: readonly EventEnvelope[]): readonly De
   }
   return [...views.values()]
     .filter(
-      (view) => view.state === DeliveryState.Pending || view.state === DeliveryState.Ambiguous,
+      (view) =>
+        (view.state === DeliveryState.Pending || view.state === DeliveryState.Ambiguous) &&
+        view.escalation === undefined,
     )
     .sort((left, right) => left.globalPosition - right.globalPosition);
 }
@@ -63,6 +65,7 @@ function intentView(
         state: DeliveryState.Pending,
         attempts: 0,
         occurrenceOrdinal: 0,
+        reconciliationAttempts: 0,
       },
     };
   if (intent?.eventType === ActivityEventType.PrMergeRequested)
@@ -83,6 +86,7 @@ function intentView(
         state: DeliveryState.Pending,
         attempts: 0,
         occurrenceOrdinal: 0,
+        reconciliationAttempts: 0,
       },
     };
   const integrationIntent = selectDeliveryIntentEvent(event);
@@ -108,6 +112,7 @@ function intentView(
   };
 }
 
+// eslint-disable-next-line complexity
 function foldDeliveryFact(
   previous: DeliveryIntentView | null,
   delivery: ReturnType<typeof selectDeliveryEvent>,
@@ -135,9 +140,13 @@ function foldDeliveryFact(
         state: DeliveryState.Ambiguous,
         reconciliationKey: delivery.payload.reconciliationKey,
       };
+    case DeliveryEventType.Escalated:
+      return { ...current, escalation: { reason: delivery.payload.reason } };
     case DeliveryEventType.Reconciled:
-      return delivery.payload.result === DeliveryResultKind.Confirmed
-        ? { ...current, state: DeliveryState.Confirmed }
+      if (delivery.payload.result === DeliveryResultKind.Confirmed)
+        return { ...current, state: DeliveryState.Confirmed, escalation: undefined };
+      return delivery.payload.result === DeliveryResultKind.Unknown
+        ? { ...current, reconciliationAttempts: (current.reconciliationAttempts ?? 0) + 1 }
         : current;
   }
 }

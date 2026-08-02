@@ -1,9 +1,15 @@
+import { mkdtemp } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { expect, it } from 'vitest';
+
 import {
   ControlEventType,
+  controlPlaneStream,
+  createControlEventDraft,
   createRunnerControlService,
 } from '../../src-next/control-plane/index.js';
-import { InMemoryEventJournal } from '../../src-next/persistence/index.js';
+import { FileEventJournal, InMemoryEventJournal } from '../../src-next/persistence/index.js';
 import { FakeClock, SequentialIds } from '../e2e/support/world.js';
 
 it('writes durable manual pause and explicit resume facts for a configured runner', async () => {
@@ -40,4 +46,108 @@ it('rejects an operator command for an unconfigured runner', async () => {
     runners: new Set(['sonnet']),
   });
   await expect(service.pause('unknown', 'operator-42')).rejects.toThrow(/Unknown runner/);
+});
+
+it('rejects unpause when the runner is not currently paused', async () => {
+  const journal = new InMemoryEventJournal(new FakeClock());
+  const service = createRunnerControlService({
+    journal,
+    clock: new FakeClock(),
+    ids: new SequentialIds(),
+    runners: new Set(['sonnet']),
+  });
+
+  await expect(service.unpause('sonnet', 'operator-43')).rejects.toThrow(/not paused/i);
+  expect(await journal.readAll(0)).toHaveLength(0);
+});
+
+it('deduplicates an unpause after recreating the service from the same journal', async () => {
+  const clock = new FakeClock();
+  const journal = new InMemoryEventJournal(clock);
+  const input = { journal, clock, ids: new SequentialIds(), runners: new Set(['sonnet']) };
+  const first = createRunnerControlService(input);
+  await first.pause('sonnet', 'operator-42');
+  await first.unpause('sonnet', 'operator-43');
+
+  const second = createRunnerControlService({ ...input, ids: new SequentialIds() });
+  await second.unpause('sonnet', 'operator-43');
+  expect((await journal.readAll(0)).map((event) => event.eventType)).toEqual([
+    ControlEventType.RunnerPaused,
+    ControlEventType.RunnerResumed,
+  ]);
+});
+
+it('deduplicates an unpause after a filesystem-backed service restart', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-runner-control-'));
+  const clock = new FakeClock();
+  const first = createRunnerControlService({
+    journal: new FileEventJournal(root, clock),
+    clock,
+    ids: new SequentialIds(),
+    runners: new Set(['sonnet']),
+  });
+  await first.pause('sonnet', 'operator-42');
+  await first.unpause('sonnet', 'operator-43');
+
+  const reopened = new FileEventJournal(root, clock);
+  const restarted = createRunnerControlService({
+    journal: reopened,
+    clock,
+    ids: new SequentialIds(),
+    runners: new Set(['sonnet']),
+  });
+  await restarted.unpause('sonnet', 'operator-43');
+
+  expect((await reopened.readAll(0)).map((event) => event.eventType)).toEqual([
+    ControlEventType.RunnerPaused,
+    ControlEventType.RunnerResumed,
+  ]);
+});
+
+it('rejects unpause after a quota pause has elapsed', async () => {
+  const clock = new FakeClock();
+  const journal = new InMemoryEventJournal(clock);
+  await journal.append(controlPlaneStream(), 0, [
+    createControlEventDraft(
+      ControlEventType.RunnerPaused,
+      {
+        runnerName: 'sonnet',
+        cause: 'quota',
+        reason: 'quota',
+        resumeAt: new Date(clock.now().getTime() + 1_000).toISOString(),
+      },
+      {
+        commandId: 'quota',
+        correlationId: 'quota' as never,
+        occurredAt: clock.now().toISOString(),
+        actor: { kind: 'system', id: 'test' },
+      },
+    ),
+  ]);
+  clock.advance(1_000);
+  const service = createRunnerControlService({
+    journal,
+    clock,
+    ids: new SequentialIds(),
+    runners: new Set(['sonnet']),
+  });
+  await expect(service.unpause('sonnet', 'operator-43')).rejects.toThrow(/not paused/i);
+  expect(await journal.readAll(0)).toHaveLength(1);
+});
+
+it('converges concurrent durable unpause commands from separate service instances', async () => {
+  const clock = new FakeClock();
+  const journal = new InMemoryEventJournal(clock);
+  const input = { journal, clock, ids: new SequentialIds(), runners: new Set(['sonnet']) };
+  const first = createRunnerControlService(input);
+  await first.pause('sonnet', 'pause');
+  const second = createRunnerControlService({ ...input, ids: new SequentialIds() });
+  await expect(
+    Promise.all([first.unpause('sonnet', 'unpause'), second.unpause('sonnet', 'unpause')]),
+  ).resolves.toEqual([undefined, undefined]);
+  expect(
+    (await journal.readAll(0)).filter(
+      (event) => event.eventType === ControlEventType.RunnerResumed,
+    ),
+  ).toHaveLength(1);
 });

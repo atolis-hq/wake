@@ -24,8 +24,11 @@ export interface ScheduleServiceDependencies {
   readonly orchestration: Pick<
     {
       start(command: StartWorkflowInstance, context: CommandContext): Promise<unknown>;
+      get(
+        id: ReturnType<typeof workflowInstanceId>,
+      ): Promise<{ readonly workItemId: ReturnType<typeof workItemId> } | null>;
     },
-    'start'
+    'start' | 'get'
   >;
   readonly now: () => string;
 }
@@ -40,11 +43,14 @@ export class ScheduleService {
     const slots = this.policy.elapsedSlots(config, this.dependencies.now(), checkpoint);
     const accepted: string[] = [];
     for (const slot of slots) {
-      const item = workItemId(this.dependencies.ids.next('work'));
       const workflow = workflowInstanceId(`workflow-${safe(slot.at)}`);
       const slotContext = slotCommandContext(context, slot.identity);
-      const workCommand: CreateWorkItem = { workItemId: item, objective: config.objective };
-      await this.dependencies.work.create(workCommand, slotContext);
+      const existing = await this.dependencies.orchestration.get(workflow);
+      const item = existing?.workItemId ?? workItemId(this.dependencies.ids.next('work'));
+      if (existing === null) {
+        const workCommand: CreateWorkItem = { workItemId: item, objective: config.objective };
+        await this.dependencies.work.create(workCommand, slotContext);
+      }
       const start: StartWorkflowInstance = {
         workflowInstanceId: workflow,
         workItemId: item,

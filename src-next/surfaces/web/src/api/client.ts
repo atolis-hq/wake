@@ -2,13 +2,13 @@ import type { WakeProblemDetails } from '../../../api/contracts/index.js';
 import {
   collectionDecoder,
   decodeAcceptedCommand,
-  decodeAdvanceCommand,
   decodeAuditEvent,
   decodeBoardCard,
   decodeControlPlaneStatus,
   decodeResourceItem,
   decodeRun,
   decodeRunner,
+  decodeTickCommand,
   decodeTranscript,
   decodeWorkDetail,
   decodeWorkflow,
@@ -54,8 +54,8 @@ export class WakeApiClient {
       this.command('/control-plane/commands/pause', idempotencyKey, decodeAcceptedCommand, signal),
     resume: (idempotencyKey: string, signal?: AbortSignal) =>
       this.command('/control-plane/commands/resume', idempotencyKey, decodeAcceptedCommand, signal),
-    advance: (idempotencyKey: string, signal?: AbortSignal) =>
-      this.command('/control-plane/commands/advance', idempotencyKey, decodeAdvanceCommand, signal),
+    tick: (idempotencyKey: string, signal?: AbortSignal) =>
+      this.command('/control-plane/commands/tick', idempotencyKey, decodeTickCommand, signal),
   };
 
   readonly work = {

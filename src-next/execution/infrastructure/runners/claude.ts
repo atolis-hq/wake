@@ -29,6 +29,10 @@ export function claudeCommandArgs(
     '-p',
     request.prompt,
     ...(request.model === undefined ? [] : ['--model', request.model]),
+    ...(request.maxTurns === undefined ? [] : ['--max-turns', String(request.maxTurns)]),
+    ...(request.allowedTools.length === 0
+      ? []
+      : ['--allowedTools', request.allowedTools.join(' ')]),
     ...passthroughArgs,
   ];
 }

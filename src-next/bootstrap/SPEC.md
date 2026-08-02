@@ -1,5 +1,5 @@
 ---
-asOf: 570f5327a406b1993562cbe0e6b47e239b8827ee
+asOf: 312633a1f45b9182803dbfbce74b650069608da6
 ---
 
 # Bootstrap — Module Specification
@@ -194,3 +194,8 @@ Bootstrap does not own:
 - One composition root is built per `wakeRoot` per process invocation;
   Bootstrap does not support composing two independent application graphs
   against the same Wake home within one process.
+
+## Task 27B synchronization (2026-08-02)
+
+Composition wires provider artifact verification, GitHub label maintenance, schedule checkpoints, DispatchPolicy/global-pause checks, and the shared TickPipeline. API `tick` is composed through the same pipeline as resident and CLI ticks.
+

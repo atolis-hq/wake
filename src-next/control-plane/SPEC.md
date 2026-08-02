@@ -1,5 +1,5 @@
 ---
-asOf: 570f5327a406b1993562cbe0e6b47e239b8827ee
+asOf: 312633a1f45b9182803dbfbce74b650069608da6
 ---
 
 # Control Plane — Module Specification
@@ -191,3 +191,8 @@ Control Plane does not own:
 - Composing the above into the live Advancement/host path, and exposing Work
   cancellation as an operator command, are deferred capabilities, not
   rejected ones.
+
+## Task 27B synchronization (2026-08-02)
+
+`advanceOnce` is the global dispatch choke point: it checks global pause and applies DispatchPolicy selection. The full TickPipeline runs poll, inbound translation, schedule reconciliation, reactions, bounded advancement, delivery, and final projection/reaction passes. Schedule slots first look up their deterministic workflow identity before minting Work, preventing a crash before checkpoint persistence from leaking a second WorkItem. The API operation is `tick` and invokes that same full pipeline. Runner unpause is durable and rejects a runner that is not currently paused.
+

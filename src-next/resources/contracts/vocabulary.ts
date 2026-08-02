@@ -30,6 +30,14 @@ export const ResourceCorrelationRole = defineClosedVocabulary({
 
 export type ResourceCorrelationRole = ValueOf<typeof ResourceCorrelationRole>;
 
+export const ResourceCorrelationProvenance = defineClosedVocabulary({
+  ProviderObserved: 'provider-observed',
+  AgentReported: 'agent-reported',
+  OperatorDeclared: 'operator-declared',
+} as const);
+
+export type ResourceCorrelationProvenance = ValueOf<typeof ResourceCorrelationProvenance>;
+
 abstract class OpenResourceVocabularyRegistry<Value extends string> {
   private readonly values = new Set<Value>();
 

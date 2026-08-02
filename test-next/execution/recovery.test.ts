@@ -137,6 +137,7 @@ it('records unknown external execution as ambiguous', async () => {
       },
     },
     fixture.activities,
+    { maxAmbiguityReconciliationAttempts: 1 },
   );
 
   await expect(recovery.recover(run.runId, 'resident-b')).resolves.toMatchObject({
@@ -145,7 +146,7 @@ it('records unknown external execution as ambiguous', async () => {
   expect((await fixture.events()).at(-1)?.eventType).toBe(ExecutionEventType.RunAmbiguous);
 });
 
-it('never automatically retries an ambiguous Run', async () => {
+it('does not rerun an escalated ambiguous Run', async () => {
   const fixture = executionFixture();
   const run = await fixture.activeRunWithExternalExecution();
   fixture.expireLease();
@@ -158,6 +159,7 @@ it('never automatically retries an ambiguous Run', async () => {
       },
     },
     fixture.activities,
+    { maxAmbiguityReconciliationAttempts: 1 },
   );
 
   await recovery.recover(run.runId, 'resident-b');
@@ -166,5 +168,138 @@ it('never automatically retries an ambiguous Run', async () => {
     (await new RunRepository(fixture.journal).list()).filter(
       (view) => view.activationId === run.activationId,
     ),
+  ).toHaveLength(1);
+});
+
+it('keeps unknown executions recoverable until the configured ambiguity bound', async () => {
+  const fixture = executionFixture();
+  const run = await fixture.activeRunWithExternalExecution();
+  fixture.expireLease();
+  const recovery = new RecoveryService(
+    fixture.journal,
+    fixture.clock,
+    {
+      async inspect() {
+        return { kind: 'unknown' as const, reason: 'runner unavailable' };
+      },
+    },
+    fixture.activities,
+    { maxAmbiguityReconciliationAttempts: 2 },
+  );
+
+  await expect(recovery.recover(run.runId, 'resident-b')).resolves.toMatchObject({
+    status: 'started',
+    ambiguityAttempts: 1,
+    escalated: false,
+  });
+  await expect(recovery.recover(run.runId, 'resident-b')).resolves.toMatchObject({
+    status: 'ambiguous',
+    ambiguityAttempts: 2,
+    escalated: true,
+  });
+});
+
+it('blocks the owning workflow when ambiguity reaches the configured bound', async () => {
+  const fixture = executionFixture();
+  const run = await fixture.activeRunWithExternalExecution();
+  fixture.expireLease();
+  const blocked: Array<{ workflowInstanceId: string; reason: string }> = [];
+  const recovery = new RecoveryService(
+    fixture.journal,
+    fixture.clock,
+    {
+      async inspect() {
+        return { kind: 'unknown' as const, reason: 'runner unavailable' };
+      },
+    },
+    fixture.activities,
+    { maxAmbiguityReconciliationAttempts: 1 },
+    {
+      async block(workflowInstanceId, reason) {
+        blocked.push({ workflowInstanceId, reason });
+      },
+    },
+  );
+
+  await recovery.recover(run.runId, 'resident-b');
+  expect(blocked).toEqual([
+    { workflowInstanceId: run.workflowInstanceId, reason: 'run-ambiguous-after-1-attempts' },
+  ]);
+});
+
+it('accepts an operator resolution only after a Run is escalated', async () => {
+  const fixture = executionFixture();
+  const run = await fixture.activeRunWithExternalExecution();
+  fixture.expireLease();
+  const recovery = new RecoveryService(
+    fixture.journal,
+    fixture.clock,
+    {
+      async inspect() {
+        return { kind: 'unknown' as const, reason: 'runner unavailable' };
+      },
+    },
+    fixture.activities,
+    { maxAmbiguityReconciliationAttempts: 1 },
+  );
+  await recovery.recover(run.runId, 'resident-b');
+
+  await expect(
+    recovery.resolve(
+      run.runId,
+      { kind: 'succeeded', outcome: { kind: 'done' } },
+      {
+        commandId: 'operator-resolution',
+        correlationId: 'operator-resolution' as never,
+        occurredAt: fixture.clock.now().toISOString(),
+        actor: { kind: EventActorKind.Operator, id: 'operator-1' },
+      },
+    ),
+  ).resolves.toMatchObject({ status: 'succeeded', escalated: false, outcome: { kind: 'done' } });
+  expect((await fixture.events()).at(-1)?.actor).toEqual({
+    kind: EventActorKind.Operator,
+    id: 'operator-1',
+  });
+});
+
+it('rejects resolution before escalation and converges concurrent operator resolutions', async () => {
+  const fixture = executionFixture();
+  const run = await fixture.activeRunWithExternalExecution();
+  fixture.expireLease();
+  const recovery = new RecoveryService(
+    fixture.journal,
+    fixture.clock,
+    {
+      async inspect() {
+        return { kind: 'unknown' as const, reason: 'runner unavailable' };
+      },
+    },
+    fixture.activities,
+    { maxAmbiguityReconciliationAttempts: 1 },
+  );
+  const context = (id: string) => ({
+    commandId: id,
+    correlationId: id as never,
+    occurredAt: fixture.clock.now().toISOString(),
+    actor: { kind: EventActorKind.Operator, id },
+  });
+  await expect(
+    recovery.resolve(run.runId, { kind: 'succeeded', outcome: { kind: 'done' } }, context('early')),
+  ).rejects.toThrow(/not escalated/);
+  await recovery.recover(run.runId, 'resident-b');
+  const results = await Promise.all([
+    recovery.resolve(run.runId, { kind: 'succeeded', outcome: { kind: 'done' } }, context('one')),
+    recovery.resolve(
+      run.runId,
+      {
+        kind: 'failed',
+        failure: { kind: 'unexpected-execution-failure', message: 'operator says failed' },
+      },
+      context('two'),
+    ),
+  ]);
+  expect(results.map((result) => result.status)).toEqual([results[0]!.status, results[0]!.status]);
+  expect(
+    (await fixture.events()).filter((event) => event.actor.kind === EventActorKind.Operator),
   ).toHaveLength(1);
 });

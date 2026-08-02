@@ -16,7 +16,7 @@ import {
 
 type WorkCommandName = 'freeze' | 'unfreeze' | 'delete' | 'retry';
 
-type ControlCommandName = 'pause' | 'resume' | 'advance';
+type ControlCommandName = 'pause' | 'resume' | 'tick';
 
 export async function dispatchCommand(
   applications: ApiApplications,
@@ -70,7 +70,7 @@ function controlCommandName(pathname: string): ControlCommandName | undefined {
   const prefix = '/api/v1/control-plane/commands/';
   if (!pathname.startsWith(prefix)) return undefined;
   const name = pathname.slice(prefix.length);
-  return name === 'pause' || name === 'resume' || name === 'advance' ? name : undefined;
+  return name === 'pause' || name === 'resume' || name === 'tick' ? name : undefined;
 }
 
 async function dispatchRunnerCommand(

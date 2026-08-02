@@ -17,6 +17,29 @@ export function createGitHubClient(token: string) {
       listIssues(octokit, owner, repo, maxResults),
     listPullRequests: (owner: string, repo: string, maxResults: number) =>
       listPullRequests(octokit, owner, repo, maxResults),
+    getIssueLabels: async (owner: string, repo: string, issueNumber: number) =>
+      (
+        await octokit.rest.issues.get({ owner, repo, issue_number: issueNumber })
+      ).data.labels.flatMap((label) =>
+        typeof label === 'string' ? [label] : label.name === undefined ? [] : [label.name],
+      ),
+    setIssueLabels: async (
+      owner: string,
+      repo: string,
+      issueNumber: number,
+      labels: readonly string[],
+    ) => {
+      await octokit.rest.issues.setLabels({
+        owner,
+        repo,
+        issue_number: issueNumber,
+        labels: [...labels],
+      });
+    },
+    getPullRequest: (owner: string, repo: string, pullNumber: number) =>
+      octokit.rest.pulls.get({ owner, repo, pull_number: pullNumber }),
+    listReviews: (owner: string, repo: string, pullNumber: number, pageSize: number) =>
+      listReviews(octokit, owner, repo, pullNumber, pageSize),
     listCheckRunsForRef: (owner: string, repo: string, ref: string) =>
       listCheckRunsForRef(octokit, owner, repo, ref),
     getCombinedStatusForRef: (owner: string, repo: string, ref: string) =>
@@ -130,6 +153,35 @@ async function listPullRequests(octokit: Octokit, owner: string, repo: string, m
     }
   }
   return pullRequests;
+}
+
+async function listReviews(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  pullNumber: number,
+  pageSize: number,
+) {
+  const reviews = [];
+  const pages = octokit.paginate.iterator(octokit.rest.pulls.listReviews, {
+    owner,
+    repo,
+    pull_number: pullNumber,
+    per_page: pageSize,
+  });
+  for await (const page of pages) {
+    reviews.push(
+      ...page.data.map((review) => ({
+        id: review.id,
+        state: review.state,
+        body: review.body,
+        commit_id: review.commit_id ?? '',
+        submitted_at: review.submitted_at ?? '',
+        ...(review.user === undefined ? {} : { user: review.user }),
+      })),
+    );
+  }
+  return reviews;
 }
 
 async function listCheckRunsForRef(octokit: Octokit, owner: string, repo: string, ref: string) {

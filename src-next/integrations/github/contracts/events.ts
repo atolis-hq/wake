@@ -48,6 +48,7 @@ export interface ExternalWorkObservedPayload {
 }
 
 interface GitHubCommentObservedPayload {
+  readonly reviewKind: 'formal';
   readonly externalKey: string;
   readonly body: string;
   readonly revision: string;
@@ -158,6 +159,7 @@ const eventSchema = z.discriminatedUnion('eventType', [
     payload: z
       .object({
         externalKey: z.string(),
+        reviewKind: z.literal('formal'),
         body: z.string(),
         revision: z.string(),
         actor: actorSchema,

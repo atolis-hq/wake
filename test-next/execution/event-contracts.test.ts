@@ -26,7 +26,7 @@ const runSamples = [
       orchestrationGroupId: orchestrationGroupId('group-1'),
       attempt: 1,
       startedAt: '2026-07-31T12:00:00.000Z',
-      workspace: { mode: 'branch', path: 'C:\\repo' },
+      workspace: { mode: 'branch', path: 'C:\\repo', branch: 'wake/work-1' },
     },
   ],
   [
@@ -91,6 +91,7 @@ const runSamples = [
       finishedAt: '2026-07-31T12:01:00.000Z',
     },
   ],
+  [ExecutionEventType.RunAmbiguityObserved, { reason: 'runner unavailable', attempt: 1 }],
   [
     ExecutionEventType.RunAmbiguous,
     { reason: 'runner unavailable', finishedAt: '2026-07-31T12:01:00.000Z' },

@@ -15,7 +15,7 @@ export interface AcceptedCommandResponse {
   readonly status: ApiCommandStatus;
 }
 
-export interface AdvanceCommandResponse extends AcceptedCommandResponse {
+export interface TickCommandResponse extends AcceptedCommandResponse {
   readonly result: ResourceResponse<ControlPlaneStatusResponse>;
 }
 
@@ -29,7 +29,7 @@ export interface CommandConflictResponse {
 
 export type ApiCommandResult = AcceptedCommandResponse | CommandConflictResponse;
 
-export type ApiAdvanceCommandResult = AdvanceCommandResponse | CommandConflictResponse;
+export type ApiTickCommandResult = TickCommandResponse | CommandConflictResponse;
 
 export const ApiCommandStatus = defineClosedVocabulary({
   Accepted: 'accepted',

@@ -1,6 +1,7 @@
+/* eslint-disable max-lines, max-params */
 import type { ActivityOutcome, ActivityRegistry } from '../../activities/index.js';
-import type { Clock, EventJournal } from '../../kernel/index.js';
-import { EventActorKind, EventSourceKind } from '../../kernel/index.js';
+import type { Clock, CommandContext, EventJournal } from '../../kernel/index.js';
+import { correlationId, EventActorKind, EventSourceKind } from '../../kernel/index.js';
 import type { ExecutionConfig } from '../contracts/config.js';
 import type { RecoveryCoordinator } from '../contracts/control-plane.js';
 import { createRunExecutionEventDraft } from '../contracts/event-factory.js';
@@ -27,6 +28,20 @@ export interface ExternalExecutionInspector {
   >;
 }
 
+export type AmbiguityResolution =
+  | { readonly kind: typeof RunStatus.Succeeded; readonly outcome: ActivityOutcome }
+  | {
+      readonly kind: typeof RunStatus.Failed;
+      readonly failure: {
+        readonly kind: typeof ExecutionFailureCode.Unexpected;
+        readonly message: string;
+      };
+    };
+
+export interface AmbiguityWorkflowBlocker {
+  block(workflowInstanceId: string, reason: string, context: CommandContext): Promise<unknown>;
+}
+
 export class RecoveryService {
   private readonly repository: RunRepository;
 
@@ -37,8 +52,9 @@ export class RecoveryService {
     private readonly activities: Pick<ActivityRegistry, 'validateOutcome'>,
     private readonly config: Pick<
       ExecutionConfig,
-      'leaseDurationMs' | 'leaseRenewalIntervalMs'
+      'leaseDurationMs' | 'leaseRenewalIntervalMs' | 'maxAmbiguityReconciliationAttempts'
     > = {},
+    private readonly blocker?: AmbiguityWorkflowBlocker,
   ) {
     this.repository = new RunRepository(journal);
   }
@@ -59,7 +75,39 @@ export class RecoveryService {
       return this.appendRecovered(currentRunId, run, inspection.result);
     if (inspection.kind === ExternalExecutionState.Absent)
       return this.appendFailure(currentRunId, run, 'External execution is absent');
-    return this.appendAmbiguous(currentRunId, run, inspection.reason);
+    return this.appendAmbiguity(currentRunId, run, inspection.reason);
+  }
+
+  async resolve(
+    id: string,
+    resolution: AmbiguityResolution,
+    context: CommandContext,
+  ): Promise<RunView> {
+    if (context.actor.kind !== EventActorKind.Operator)
+      throw new Error('Ambiguous Run resolution requires an operator actor');
+    const currentRunId = runId(id);
+    const loaded = await this.repository.load(currentRunId);
+    if (loaded.view === null) throw new Error(`Run ${id} does not exist`);
+    if (!loaded.view.escalated || loaded.view.status !== RunStatus.Ambiguous)
+      throw new Error(`Run ${id} is not escalated`);
+    const draft =
+      resolution.kind === RunStatus.Succeeded
+        ? createRunExecutionEventDraft({
+            ...resolutionMetadata(currentRunId, loaded.view, context),
+            eventType: ExecutionEventType.RunSucceeded,
+            payload: { outcome: resolution.outcome, finishedAt: context.occurredAt },
+          })
+        : createRunExecutionEventDraft({
+            ...resolutionMetadata(currentRunId, loaded.view, context),
+            eventType: ExecutionEventType.RunFailed,
+            payload: { failure: resolution.failure, finishedAt: context.occurredAt },
+          });
+    try {
+      await this.repository.append(currentRunId, loaded.sequence, [draft]);
+    } catch {
+      // A concurrent resolution wins deterministically; return the resulting view.
+    }
+    return (await this.repository.load(currentRunId)).view!;
   }
 
   async recoverActive(owner: string): Promise<readonly RunView[]> {
@@ -110,9 +158,31 @@ export class RecoveryService {
     );
   }
 
-  private async appendAmbiguous(id: RunId, run: RunView, reason: string) {
-    const finishedAt = this.clock.now().toISOString();
-    return this.append(id, ambiguousDraft(id, run, { reason, finishedAt }, finishedAt));
+  private async appendAmbiguity(id: RunId, run: RunView, reason: string): Promise<RunView> {
+    const loaded = await this.repository.load(id);
+    if (loaded.view === null) throw new Error(`Run ${id} does not exist`);
+    if (loaded.view.status !== RunStatus.Started) return loaded.view;
+    const occurredAt = this.clock.now().toISOString();
+    const attempt = loaded.view.ambiguityAttempts + 1;
+    const drafts: RunExecutionEventDraft[] = [
+      ambiguityObservedDraft(id, loaded.view, { reason, attempt }, occurredAt),
+    ];
+    if (attempt >= (this.config.maxAmbiguityReconciliationAttempts ?? 3))
+      drafts.push(ambiguousDraft(id, loaded.view, { reason, finishedAt: occurredAt }, occurredAt));
+    await this.repository.append(id, loaded.sequence, drafts);
+    const updated = (await this.repository.load(id)).view!;
+    if (updated.escalated)
+      await this.blocker?.block(
+        updated.workflowInstanceId,
+        `run-ambiguous-after-${attempt}-attempts`,
+        {
+          commandId: `${id}:recovery-escalation:${attempt}`,
+          correlationId: correlationId(updated.orchestrationGroupId),
+          occurredAt,
+          actor: { kind: EventActorKind.System, id: 'execution-recovery' },
+        },
+      );
+    return updated;
   }
 
   private async append(id: RunId, draft: RunExecutionEventDraft): Promise<RunView> {
@@ -177,6 +247,20 @@ function failedDraft(
   });
 }
 
+function ambiguityObservedDraft(
+  id: RunId,
+  run: RunView,
+  payload: { readonly reason: string; readonly attempt: number },
+  occurredAt: string,
+): RunExecutionEventDraft {
+  return createRunExecutionEventDraft({
+    ...eventMetadata(id, run, occurredAt),
+    eventId: `${id}:recovery-ambiguity:${payload.attempt}:${occurredAt}`,
+    eventType: ExecutionEventType.RunAmbiguityObserved,
+    payload,
+  });
+}
+
 function ambiguousDraft(
   id: RunId,
   run: RunView,
@@ -188,6 +272,18 @@ function ambiguousDraft(
     eventType: ExecutionEventType.RunAmbiguous,
     payload,
   });
+}
+
+function resolutionMetadata(id: RunId, run: RunView, context: CommandContext) {
+  return {
+    eventId: `${context.commandId}:run-resolution`,
+    occurredAt: context.occurredAt,
+    correlationId: context.correlationId,
+    causationId: context.commandId,
+    actor: context.actor,
+    source: { kind: EventSourceKind.Internal, id: 'execution-recovery' },
+    stream: runStream(id),
+  };
 }
 
 function eventMetadata(

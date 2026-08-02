@@ -1,4 +1,4 @@
-﻿import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
   decodeResourceEvent,
   resourceCapability,
@@ -21,7 +21,10 @@ const samples = [
     },
   ],
   [ResourceEventType.ResourceRevisionObserved, { revision: 'def' }],
-  [ResourceEventType.WorkCorrelationEstablished, { workItemId: workId('one'), role: 'primary' }],
+  [
+    ResourceEventType.WorkCorrelationEstablished,
+    { workItemId: workId('one'), role: 'primary', provenance: 'provider-observed' },
+  ],
   [ResourceEventType.WorkCorrelationRetracted, { workItemId: workId('one') }],
   [
     ResourceEventType.WorkCorrelationConflicted,

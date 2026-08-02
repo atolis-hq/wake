@@ -23,7 +23,7 @@ describe('control-plane mutation and connection state', () => {
     });
     const client = new WakeApiClient(async (input, init) => {
       const url = String(input);
-      if (url.endsWith('/control-plane/commands/advance')) {
+      if (url.endsWith('/control-plane/commands/tick')) {
         advances += 1;
         const request = JSON.parse(String(init?.body)) as { idempotencyKey: string };
         idempotencyKeys.push(request.idempotencyKey);
@@ -83,7 +83,7 @@ describe('control-plane mutation and connection state', () => {
   it('presents Problem conflict state and a reconnecting banner without erasing the shell', async () => {
     const user = userEvent.setup();
     const client = new WakeApiClient(async (input, init) =>
-      String(input).endsWith('/control-plane/commands/advance')
+      String(input).endsWith('/control-plane/commands/tick')
         ? json(
             {
               type: 'https://wake.atolis.dev/problems/conflict',

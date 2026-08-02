@@ -5,9 +5,16 @@ import type {
   WorkflowCandidate,
   WorkflowName,
 } from '../../orchestration/index.js';
-import type { ResourceService } from '../../resources/index.js';
+import type {
+  ExternalResourceKey,
+  ResourceCapability,
+  ResourceKind,
+  ResourceLookup,
+  ResourceService,
+} from '../../resources/index.js';
 import type { WorkService } from '../../work/index.js';
 import type { ExternalDeliveryAdapter } from '../delivery/contracts/config.js';
+import type { ArtifactVerificationResult } from './artifact-vocabulary.js';
 import type { IntegrationsConfig } from './config.js';
 import { adapterId, type AdapterId } from './identifiers.js';
 import type { ExternalEventSource, InboundTranslation } from './intake.js';
@@ -21,6 +28,7 @@ export interface WorkflowRouter {
 export interface ProviderServices {
   readonly work: WorkService;
   readonly resources: ResourceService;
+  readonly resourceLookup: ResourceLookup;
   readonly orchestration: OrchestrationService;
   readonly pullRequests: PullRequestService;
   readonly ids: IdGenerator;
@@ -30,12 +38,26 @@ export interface ProviderServices {
   readonly routing: WorkflowRouter;
 }
 
+export interface VerifiedArtifact {
+  readonly kind: ResourceKind;
+  readonly externalKey: ExternalResourceKey;
+  readonly capabilities: readonly ResourceCapability[];
+  readonly revision?: string | undefined;
+}
+
 export interface ProviderInstance {
   readonly adapter: AdapterId;
   readonly source: ExternalEventSource;
   readonly delivery: ExternalDeliveryAdapter;
   readonly inbound: InboundTranslation;
   readonly eventTypes: readonly string[];
+  /** Provider-owned periodic reconciliation, invoked in the tick react phase. */
+  readonly maintenance?: { readonly runOnce: () => Promise<void> };
+  verifyArtifact(
+    kind: ResourceKind,
+    externalKey: ExternalResourceKey,
+    context: { readonly workspaceBranch: string },
+  ): Promise<VerifiedArtifact | ArtifactVerificationResult>;
   // Optional live reachability probe a caller (e.g. doctor diagnostics) can invoke
   // generically; resolves when the external system is reachable, rejects otherwise.
   readonly checkConnectivity?: () => Promise<void>;
@@ -44,6 +66,8 @@ export interface ProviderInstance {
 export interface ProviderDefinition<Config = unknown> {
   readonly provider: string;
   readonly eventTypes: readonly string[];
+  /** Provider-owned periodic reconciliation, invoked in the tick react phase. */
+  readonly maintenance?: { readonly runOnce: () => Promise<void> };
   parseConfig(value: unknown): Config;
   create(input: {
     readonly adapter: AdapterId;

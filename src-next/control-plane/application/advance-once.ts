@@ -1,3 +1,4 @@
+/* eslint-disable complexity, max-lines-per-function */
 import type { RunView } from '../../execution/index.js';
 import { RunStatus } from '../../execution/index.js';
 import {
@@ -12,6 +13,7 @@ import { WorkflowStatus } from '../../orchestration/index.js';
 import type { ResourceService } from '../../resources/index.js';
 import { ControlStreamKind } from '../contracts/streams.js';
 import type { AdvanceOptions, AdvanceResult } from '../contracts/views.js';
+import { DispatchPolicy } from '../domain/dispatch-policy.js';
 
 interface OrchestrationPort {
   reconcileChildCompletions(context: CommandContext): Promise<void>;
@@ -22,6 +24,7 @@ interface OrchestrationPort {
     }[]
   >;
   listWaiting(): Promise<readonly (WorkflowInstanceView | null)[]>;
+  listAll?(): Promise<readonly WorkflowInstanceView[]>;
   acceptOutcome(
     command: {
       workflowInstanceId: string;
@@ -55,6 +58,8 @@ interface ExecutionPort {
 interface AdvanceOnceDependencies {
   readonly ids: IdGenerator;
   readonly runnerIneligibility?: () => Promise<ReadonlySet<string>>;
+  readonly isDispatchPaused?: () => Promise<boolean>;
+  readonly dispatchPolicy?: DispatchPolicy;
 }
 
 export function createAdvanceOnce(
@@ -65,6 +70,8 @@ export function createAdvanceOnce(
   dependencies: AdvanceOnceDependencies,
 ) {
   const runnerIneligibility = dependencies.runnerIneligibility ?? (async () => new Set());
+  const isDispatchPaused = dependencies.isDispatchPaused ?? (async () => false);
+  const dispatchPolicy = dependencies.dispatchPolicy ?? new DispatchPolicy({ maxDispatches: 1 });
   const context = (cause: string) => ({
     commandId: dependencies.ids.next('command'),
     correlationId: correlationId(cause),
@@ -73,10 +80,18 @@ export function createAdvanceOnce(
   });
   return async (options: AdvanceOptions): Promise<AdvanceResult> => {
     if (options.maxProgress < 1) return { kind: 'exhausted', progressCount: 0 };
+    if (await isDispatchPaused()) return { kind: 'paused' };
     await execution.recoverActive?.(ControlStreamKind.Global);
     await orchestration.reconcileChildCompletions(context('child-completion-reconciliation'));
     const pending = await orchestration.listPendingActivations(options.workItemId);
-    const recovery = await findUnacceptedCompleted(pending, execution);
+    const blocked = ((await orchestration.listAll?.()) ?? []).flatMap((workflow) =>
+      workflow.status === WorkflowStatus.Blocked &&
+      workflow.pendingActivation !== undefined &&
+      (options.workItemId === undefined || workflow.workItemId === options.workItemId)
+        ? [{ workflow, activation: workflow.pendingActivation }]
+        : [],
+    );
+    const recovery = await findUnacceptedCompleted([...pending, ...blocked], execution);
     if (recovery !== undefined) {
       await orchestration.acceptOutcome(
         {
@@ -92,7 +107,23 @@ export function createAdvanceOnce(
         runId: recovery.run.runId,
       };
     }
-    const selected = pending[0];
+    const selectedCandidate = dispatchPolicy.select(
+      await Promise.all(
+        pending.map(async (item, requestedPosition) => ({
+          workItemId: item.workflow.workItemId,
+          activationId: item.activation.activationId,
+          requestedPosition,
+          hasActiveRun: (await execution.list(item.activation.activationId)).some(
+            (run) => run.status === RunStatus.Started,
+          ),
+          cancelled: false,
+        })),
+      ),
+    )[0];
+    const selected =
+      selectedCandidate === undefined
+        ? undefined
+        : pending.find((item) => item.activation.activationId === selectedCandidate.activationId);
     if (selected === undefined) {
       const waiting = (await orchestration.listWaiting()).find((view) => view !== null);
       return waiting === undefined

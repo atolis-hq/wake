@@ -24,6 +24,8 @@ export function createDeliveryEventDraft(input: DeliveryEventDraftInput): Delive
       return createEventDraft(input);
     case DeliveryEventType.Ambiguous:
       return createEventDraft(input);
+    case DeliveryEventType.Escalated:
+      return createEventDraft(input);
     case DeliveryEventType.Reconciled:
       return createEventDraft(input);
   }

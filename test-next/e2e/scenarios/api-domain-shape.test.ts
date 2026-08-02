@@ -1,4 +1,4 @@
-﻿import { once } from 'node:events';
+import { once } from 'node:events';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import {
@@ -174,7 +174,7 @@ describe('E2E-SURFACE-001 command idempotency', () => {
   it('deduplicates a production advance command by idempotency key', async () => {
     const { root, clock, context } = await createWorld();
     const surface = createSurfaceApplications(root, { now: () => clock.now().toISOString() });
-    const advance = surface.api.controlPlane.advance;
+    const advance = surface.api.controlPlane.tick;
     if (advance === undefined) throw new Error('Expected the production advance command');
 
     const first = await advance({ idempotencyKey: 'operator-action-1' });

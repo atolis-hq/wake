@@ -33,6 +33,16 @@ export type GitHubReviewState = ValueOf<typeof GitHubReviewState>;
 
 // Label families Wake owns and republishes. Nothing may tag intake from them: the
 // adapter would observe Wake's own marker, re-route, and publish again.
+export const GitHubWakeStatusLabel = defineClosedVocabulary({
+  Working: 'working',
+  AwaitingApproval: 'awaiting-approval',
+  Blocked: 'blocked',
+  Completed: 'completed',
+  Failed: 'failed',
+} as const);
+
+export type GitHubWakeStatusLabel = ValueOf<typeof GitHubWakeStatusLabel>;
+
 export const GitHubWakeMarkerPrefix = defineClosedVocabulary({
   Status: 'wake:status.',
   Stage: 'wake:stage.',

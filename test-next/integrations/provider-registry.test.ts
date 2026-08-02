@@ -27,6 +27,9 @@ function definition(): ProviderDefinition<{ readonly enabled: boolean }> {
         },
         delivery: new DurableFakeDeliveryProvider(),
         inbound: { async runOnce() {} },
+        async verifyArtifact() {
+          return 'not-found' as const;
+        },
       };
     },
   };

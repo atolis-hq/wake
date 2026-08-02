@@ -1,5 +1,5 @@
 ---
-asOf: 570f5327a406b1993562cbe0e6b47e239b8827ee
+asOf: 312633a1f45b9182803dbfbce74b650069608da6
 ---
 
 # Activities â€” Module Specification
@@ -199,3 +199,8 @@ Activities does not own:
   resolution fails.
 - Review-signal proposal (`proposeReviewSignal`) is a pass-through today; it
   validates nothing beyond its input's shape.
+
+## Task 27B synchronization (2026-08-02)
+
+Agent outcomes may carry structurally validated `reportedArtifacts`; malformed claims are discarded without changing the outcome. GitHub-native formal reviews are admitted only through the provider’s formal-review evidence path. PR comments, including command-looking text, remain feedback and never become Activity control signals.
+

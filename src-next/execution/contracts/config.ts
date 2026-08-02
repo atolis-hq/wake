@@ -36,6 +36,7 @@ export const executionConfigSchema = z
     defaultRunnerPool: z.string().trim().min(1),
     leaseDurationMs: z.number().int().positive().optional(),
     leaseRenewalIntervalMs: z.number().int().positive().optional(),
+    maxAmbiguityReconciliationAttempts: z.number().int().positive().optional(),
   })
   .strict();
 
@@ -57,4 +58,5 @@ export interface ExecutionConfig {
   readonly defaultRunnerPool: string;
   readonly leaseDurationMs?: number;
   readonly leaseRenewalIntervalMs?: number;
+  readonly maxAmbiguityReconciliationAttempts?: number;
 }

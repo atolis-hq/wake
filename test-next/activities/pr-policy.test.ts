@@ -1,4 +1,4 @@
-﻿import { readFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 
 import { describe, expect, it } from 'vitest';
 import { resourceCapability, resourceKind } from '../../src-next/resources/index.js';
@@ -40,6 +40,7 @@ function authorityInput(
             resourceId: resource,
             workItemId: workItem,
             role: 'primary',
+            provenance: 'provider-observed' as const,
             establishedByEventId: 'correlation-1',
           },
         ],
@@ -70,6 +71,7 @@ function authorityInput(
   };
 }
 
+/* eslint-disable max-lines-per-function */
 describe('decidePullRequestAuthority', () => {
   it('uses the Pull Request denial vocabulary for closed authority', async () => {
     const source = await readFile(
@@ -97,6 +99,7 @@ describe('decidePullRequestAuthority', () => {
                 resourceId: resId('2'),
                 workItemId: workItem,
                 role: 'primary' as const,
+                provenance: 'provider-observed' as const,
                 establishedByEventId: 'correlation-2',
               },
             ],
@@ -116,6 +119,7 @@ describe('decidePullRequestAuthority', () => {
                 resourceId: resource,
                 workItemId: workId('2'),
                 role: 'primary' as const,
+                provenance: 'provider-observed' as const,
                 establishedByEventId: 'correlation-2',
               },
             ],
@@ -173,6 +177,7 @@ describe('decidePullRequestAuthority', () => {
     });
   });
 });
+/* eslint-enable max-lines-per-function */
 
 function withoutAcceptedReview(
   pullRequest: PullRequestAuthorityInput['pullRequests'][number],

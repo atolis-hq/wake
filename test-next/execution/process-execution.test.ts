@@ -58,4 +58,35 @@ describe('cliRunner', () => {
       expect.arrayContaining(['--flag', 'cursor']),
     );
   });
+
+  it('forwards Claude maxTurns and allowedTools using the established CLI flags', () => {
+    const request = {
+      runId: 'run-1',
+      prompt: 'ship',
+      model: 'test-model',
+      allowedTools: ['Bash(git *)', 'Read'],
+      maxTurns: 12,
+    };
+
+    expect(claudeCommandArgs(request)).toEqual([
+      '-p',
+      'ship',
+      '--model',
+      'test-model',
+      '--max-turns',
+      '12',
+      '--allowedTools',
+      'Bash(git *) Read',
+    ]);
+  });
+
+  it('omits request-controlled Claude flags when their values are absent or empty', () => {
+    const request = {
+      runId: 'run-1',
+      prompt: 'ship',
+      allowedTools: [],
+    };
+
+    expect(claudeCommandArgs(request)).toEqual(['-p', 'ship']);
+  });
 });
