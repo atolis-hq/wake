@@ -8,6 +8,34 @@ through source code, and they do not link to proofs. Proof that behaviour
 matches a specification lives in `docs/architecture/rewrite-completion-audit.md`
 and the test suites it cites, never in the specification itself.
 
+## Staying current: the `asOf` checkpoint
+
+Every module `SPEC.md` (not each component `.spec.md` — see below) opens
+with frontmatter recording the commit its specification set was last
+confirmed accurate against:
+
+```markdown
+---
+asOf: <commit-sha>
+---
+```
+
+`npm run check:specs` diffs each module's directory against its `asOf`
+checkpoint (ignoring `.md` files) and reports which modules have drifted.
+The [sync-module-specs](../.claude/skills/sync-module-specs/SKILL.md) skill
+closes a reported gap: it reads the diff, updates only the specs a real
+behavioural change actually affects, and bumps the checkpoint. The check is
+deliberately directory-scoped, not file-scoped or component-scoped — a
+module page and all its component pages share one checkpoint, because a
+review pass reads the module as a whole regardless of which single file
+triggered it, and directory scope needs no per-file list to keep up to date
+as files are added or removed.
+
+When authoring a brand-new module `SPEC.md`, add this frontmatter with the
+commit you're about to author it against (typically the commit you're
+committing the spec files in). A component `.spec.md` never carries its own
+`asOf` — it's covered by its owning module's checkpoint.
+
 ## Why two levels
 
 A module owns a bounded area of behaviour (`work`, `orchestration`,

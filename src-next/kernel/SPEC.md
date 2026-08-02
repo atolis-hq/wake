@@ -1,3 +1,7 @@
+---
+asOf: 570f5327a406b1993562cbe0e6b47e239b8827ee
+---
+
 # Kernel — Module Specification
 
 ## Purpose and scope
