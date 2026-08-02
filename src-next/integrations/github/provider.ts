@@ -8,6 +8,7 @@ import { gitHubConfigSchema, type GitHubConfig } from './contracts/config.js';
 import { GitHubEventType } from './contracts/events.js';
 import { createGitHubClient } from './infrastructure/client.js';
 import { createGitHubDelivery } from './infrastructure/delivery.js';
+import { resolveGitHubCliToken } from './infrastructure/gh-auth.js';
 import { createGitHubSource } from './infrastructure/source.js';
 
 export const gitHubProviderDefinition: ProviderDefinition<GitHubConfig> = {
@@ -18,7 +19,7 @@ export const gitHubProviderDefinition: ProviderDefinition<GitHubConfig> = {
   },
   create({ adapter, config, services }) {
     if (services === undefined) throw new Error('GitHub provider requires composed services');
-    const client = createGitHubClient(config.token);
+    const client = createGitHubClient(config.token ?? resolveGitHubCliToken());
     return {
       adapter,
       eventTypes: Object.values(GitHubEventType),

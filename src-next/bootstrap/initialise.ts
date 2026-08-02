@@ -276,15 +276,19 @@ cover their situation.
 const dockerfile = `# syntax=docker/dockerfile:1
 FROM node:24-bookworm-slim
 
-# git/ssh for the repository operations the implement stage runs inside the
-# sandbox. A provider CLI (for opening pull requests against a specific
-# provider) is deliberately not installed here — this base image stays
-# provider-agnostic; add one in a derived Dockerfile if your integration
-# needs it.
+# Git/SSH support repository work. The GitHub CLI owns the sandbox's GitHub
+# session; Wake resolves it through \`gh auth token\` without persisting a token.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \\
     --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \\
   apt-get update \\
-  && apt-get install -y --no-install-recommends git openssh-client ca-certificates curl gnupg
+  && apt-get install -y --no-install-recommends git openssh-client ca-certificates curl gnupg \\
+  && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \\
+       -o /usr/share/keyrings/githubcli-archive-keyring.gpg \\
+  && chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \\
+  && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \\
+       > /etc/apt/sources.list.d/github-cli.list \\
+  && apt-get update \\
+  && apt-get install -y --no-install-recommends gh
 
 # execution.agentRunners entries of kind claude-cli / codex-cli / cursor-cli
 # invoke these binaries by name (see config.yaml).

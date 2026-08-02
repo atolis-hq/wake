@@ -44,6 +44,8 @@ export * from './infrastructure/client.js';
 
 export * from './infrastructure/etag-cache.js';
 
+export * from './infrastructure/gh-auth.js';
+
 export * from './infrastructure/issue-source.js';
 
 export * from './infrastructure/pr-source.js';

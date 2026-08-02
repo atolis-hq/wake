@@ -13,7 +13,7 @@ export type WakeCommand =
   | { readonly kind: 'correlate'; readonly resource: string; readonly workItemId: string }
   | { readonly kind: 'validate-state'; readonly rebuildProjections: boolean }
   | {
-      readonly kind: 'init' | 'doctor' | 'self-update' | 'smoke';
+      readonly kind: 'init' | 'doctor' | 'sandbox-setup' | 'self-update' | 'smoke';
       readonly arguments: readonly string[];
     }
   | { readonly kind: 'sandbox'; readonly arguments: readonly string[] };
@@ -32,6 +32,7 @@ export interface WakeCliApplications {
     readonly init: (arguments_: readonly string[]) => Promise<unknown>;
     readonly doctor: (arguments_: readonly string[]) => Promise<unknown>;
     readonly sandbox: (arguments_: readonly string[]) => Promise<unknown>;
+    readonly sandboxSetup: (arguments_: readonly string[]) => Promise<unknown>;
     readonly selfUpdate: (arguments_: readonly string[]) => Promise<unknown>;
     readonly smoke: (arguments_: readonly string[]) => Promise<unknown>;
   };
@@ -82,6 +83,7 @@ export function parseWakeCommand(arguments_: readonly string[]): WakeCommand {
       return parseResidentCommand(command, arguments_.slice(1));
     case 'init':
     case 'doctor':
+    case 'sandbox-setup':
     case 'sandbox':
     case 'self-update':
     case 'smoke':
@@ -130,6 +132,11 @@ export async function runWakeCommand(
     case 'sandbox':
       output.write(
         `${JSON.stringify(await operational(applications).sandbox(command.arguments))}\n`,
+      );
+      return;
+    case 'sandbox-setup':
+      output.write(
+        `${JSON.stringify(await operational(applications).sandboxSetup(command.arguments))}\n`,
       );
       return;
     case 'self-update':

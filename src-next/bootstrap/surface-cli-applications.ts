@@ -1,8 +1,9 @@
 import { execFile as nodeExecFile, spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { access } from 'node:fs/promises';
+import { access, copyFile, mkdir } from 'node:fs/promises';
 import type { Server } from 'node:http';
 import { join } from 'node:path';
+import { createInterface } from 'node:readline/promises';
 import { promisify } from 'node:util';
 import { BuiltInActivityName, agentActivityDefinition } from '../activities/index.js';
 import { ResidentHost, TickHost } from '../control-plane/index.js';
@@ -18,6 +19,7 @@ import {
   createSandboxDockerPort,
   runDoctor,
   runSandbox,
+  runSandboxSetup,
   runSelfUpdateLatestLoop,
   runTargetSmoke,
   waitForActiveRuns,
@@ -146,6 +148,12 @@ function createOperationalApplications(root: CompositionRoot) {
           },
         },
       }),
+    sandboxSetup: async (arguments_: readonly string[]) => {
+      if (arguments_.length > 0) throw new Error('wake sandbox-setup accepts no arguments');
+      await runSandboxSetup(
+        createSandboxSetupDependencies(root.config.host.sandbox.containerHomeMountPath),
+      );
+    },
     sandbox: async (arguments_: readonly string[]) =>
       runSandbox(
         arguments_,
@@ -467,4 +475,57 @@ async function closeAll(servers: Set<Server>): Promise<void> {
       servers.delete(server);
     }),
   );
+}
+
+function createSandboxSetupDependencies(home: string) {
+  const codexHome = join(home, '.codex');
+  const codexRuntimeHome = join(home, '.codex-runtime');
+  return {
+    prompt: async (message: string): Promise<boolean> => {
+      const readline = createInterface({ input: process.stdin, output: process.stdout });
+      try {
+        return /^(y|yes)$/i.test((await readline.question(`${message} `)).trim());
+      } finally {
+        readline.close();
+      }
+    },
+    runInteractive,
+    ensureSshKey: async (): Promise<void> => {
+      const sshDirectory = join(home, '.ssh');
+      const privateKey = join(sshDirectory, 'id_ed25519');
+      if (await isReadable(privateKey)) return;
+      await mkdir(sshDirectory, { recursive: true, mode: 0o700 });
+      await runInteractive('ssh-keygen', ['-t', 'ed25519', '-f', privateKey, '-N', '']);
+    },
+    prepareCodexHome: async (): Promise<void> => {
+      await mkdir(codexRuntimeHome, { recursive: true });
+      const config = join(codexHome, 'config.toml');
+      if (await isReadable(config)) await copyFile(config, join(codexRuntimeHome, 'config.toml'));
+      const sourceAuth = join(codexHome, 'auth.json');
+      const targetAuth = join(codexRuntimeHome, 'auth.json');
+      if ((await isReadable(sourceAuth)) && !(await isReadable(targetAuth)))
+        await copyFile(sourceAuth, targetAuth);
+    },
+    log: (message: string) => process.stdout.write(`${message}\n`),
+  };
+}
+
+async function isReadable(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function runInteractive(command: string, arguments_: readonly string[]): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, [...arguments_], { stdio: 'inherit' });
+    child.once('error', reject);
+    child.once('close', (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`${command} exited with code ${String(code)}`));
+    });
+  });
 }

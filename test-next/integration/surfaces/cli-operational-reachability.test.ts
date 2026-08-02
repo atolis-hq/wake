@@ -3,7 +3,7 @@ import { main } from '../../../src-next/main.js';
 import { parseWakeCommand, runWakeCommand } from '../../../src-next/surfaces/cli/main.js';
 
 describe('operational CLI reachability', () => {
-  it.each(['init', 'doctor', 'sandbox', 'self-update', 'smoke'] as const)(
+  it.each(['init', 'doctor', 'sandbox', 'sandbox-setup', 'self-update', 'smoke'] as const)(
     'parses %s as a target command',
     (name) => {
       expect(parseWakeCommand([name]).kind).toBe(name);
@@ -42,6 +42,7 @@ describe('operational CLI reachability', () => {
           init: async () => ({ wakeRoot: '/tmp/wake' }),
           doctor: async () => ({ failures: [], notices: ['target diagnostics'] }),
           sandbox: async () => undefined,
+          sandboxSetup: async () => undefined,
           selfUpdate: async () => ({ updated: false }),
           smoke: async () => ({ ok: true }),
         },

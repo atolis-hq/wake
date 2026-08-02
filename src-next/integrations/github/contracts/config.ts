@@ -31,7 +31,7 @@ const intakeRuleSchema = z
 export const gitHubConfigSchema = z
   .object({
     enabled: z.boolean(),
-    token: z.string().trim().min(1),
+    token: z.string().trim().min(1).optional(),
     repositories: z.array(repositorySchema).min(1),
     polling: z
       .object({

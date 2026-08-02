@@ -60,6 +60,8 @@ export * from './cli/commands/init.js';
 
 export * from './cli/commands/sandbox.js';
 
+export * from './cli/commands/sandbox-setup.js';
+
 export * from './cli/commands/self-update.js';
 
 export * from './cli/commands/smoke.js';

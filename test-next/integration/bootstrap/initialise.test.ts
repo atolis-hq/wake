@@ -98,6 +98,7 @@ describe('target initialise root', () => {
 
     expect(dockerfile).toContain('@anthropic-ai/claude-code');
     expect(dockerfile).toContain('@openai/codex');
+    expect(dockerfile).toContain('gh');
     expect(dockerfile).toContain('cursor.com/install');
   });
 });
