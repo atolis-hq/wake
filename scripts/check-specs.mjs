@@ -18,11 +18,10 @@ function readAsOf(specPath) {
 }
 
 function changedFiles(moduleDir, sha) {
-  const output = execFileSync(
-    'git',
-    ['diff', '--name-only', sha, '--', moduleDir],
-    { cwd: root, encoding: 'utf8' },
-  );
+  const output = execFileSync('git', ['diff', '--name-only', sha, '--', moduleDir], {
+    cwd: root,
+    encoding: 'utf8',
+  });
   return output
     .split(/\r?\n/)
     .map((line) => line.trim())
