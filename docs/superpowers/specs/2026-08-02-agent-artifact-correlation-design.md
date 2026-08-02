@@ -113,10 +113,11 @@ until this exists. Filed as finding X1 in
    existing reconcile-before-retry mechanism) — reads `ambiguous`-status
    `artifact-verification-unresolved` facts, retries verification, and either
    promotes to registration, flips to `failed`, or leaves `ambiguous` for
-   the next sweep. Shares the not-yet-solved unbounded-retry question
-   already open on finding I4 (GitHub delivery reconciliation) — whatever
-   bounded-retry/escalation design eventually answers that for I4 should
-   apply here too, rather than solving it twice.
+   the next sweep, up to the bounded attempt count decided in
+   `docs/superpowers/specs/2026-08-02-ambiguous-state-escalation-design.md`;
+   past that count it uses that design's Integrations escalated-marker
+   mechanism (the same one delivery reconciliation, finding I4, now uses)
+   rather than a third bespoke mechanism.
 7. `resources.work-correlation-established` payload gains `provenance`.
 8. Bootstrap wires the new reactor and sweep into the same composition
    points as the existing reactors.
@@ -163,8 +164,10 @@ until this exists. Filed as finding X1 in
 - Flows 1 (Wake-created artifacts, e.g. a future adapter opening a PR
   directly) and 3 (detected/operator-declared) are unaffected by this
   design and remain as the ADR describes them.
-- Bounded retry/escalation for `ambiguous` items is shared, open scope with
-  finding I4 — not solved here.
+- Bounded retry/escalation for `ambiguous` items is settled in
+  `docs/superpowers/specs/2026-08-02-ambiguous-state-escalation-design.md`
+  (also covers findings E1/E6 and I4) — this spec consumes that design
+  rather than re-deriving it.
 - Non-PR artifact kinds are supported by the schema shape but have no
   provider implementing `verifyArtifact` for them yet; nothing in this
   design blocks adding one later.
