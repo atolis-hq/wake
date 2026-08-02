@@ -2,9 +2,9 @@ import { ControlStreamKind } from '../control-plane/index.js';
 import type { EventEnvelope } from '../kernel/index.js';
 import type { WorkflowInstanceView } from '../orchestration/index.js';
 import type { ResourceView } from '../resources/index.js';
-import { fromWorkItemKey } from '../surfaces/api/contracts/work.js';
 import {
   ApiCommandStatus,
+  fromWorkItemKey,
   presentBoardCard,
   presentResource,
   presentStatus,
