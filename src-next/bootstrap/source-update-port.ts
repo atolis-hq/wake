@@ -25,12 +25,23 @@ export function createSourceUpdatePort(input: {
       if (tag === undefined) throw new Error('No source version tag is available');
       return tag;
     },
+    async candidateTags() {
+      const output = await execute('git', ['tag', '--sort=-v:refname'], input.repoRoot);
+      return output
+        .split(/\r?\n/u)
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0);
+    },
     async checkout(tag) {
       await execute('git', ['checkout', tag], input.repoRoot);
     },
     async healthy() {
       try {
-        await execute('git', ['rev-parse', '--verify', 'HEAD'], input.repoRoot);
+        // Verify the checked-out code can be built (TypeScript compiles).
+        // This is the minimal meaningful health check: the code must at least compile.
+        const buildCommand = 'npm';
+        const buildArgs = ['exec', 'tsc', '--'] as const;
+        await execute(buildCommand, [...buildArgs], input.repoRoot);
         return true;
       } catch {
         return false;
