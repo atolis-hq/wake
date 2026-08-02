@@ -40,6 +40,10 @@ export function createSelfUpdateApplication(input: {
       force = false,
     ): Promise<{ readonly tag: string; readonly updated: boolean }> {
       const candidates = await input.source.candidateTags();
+      const [latestCandidate] = candidates;
+      if (latestCandidate === undefined) {
+        throw new Error('No source version tags available');
+      }
       for (const tag of candidates) {
         if (!force && (await input.ledger.isBad(tag))) {
           continue;
@@ -54,11 +58,8 @@ export function createSelfUpdateApplication(input: {
           return { tag, updated: false };
         }
       }
-      // All candidates exhausted or no valid candidates
-      if (candidates.length === 0) {
-        throw new Error('No source version tags available');
-      }
-      return { tag: candidates[0], updated: false };
+      // All candidates exhausted
+      return { tag: latestCandidate, updated: false };
     },
   };
 }
