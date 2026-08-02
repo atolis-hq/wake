@@ -34,6 +34,9 @@ export const gitHubProviderDefinition: ProviderDefinition<GitHubConfig> = {
         services.resources,
         { pullRequests: services.pullRequests, ids: services.ids, adapter },
       ),
+      checkConnectivity: async () => {
+        await client.authenticatedLogin();
+      },
     };
   },
 };

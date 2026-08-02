@@ -35,6 +35,10 @@ const configSchema = z
       .default([]),
     deliveryEffects: z.record(z.string(), z.string()).default({}),
     effectsFile: z.string().min(1).optional(),
+    // Deterministic test hook: when set, checkConnectivity rejects with this
+    // message instead of resolving, so doctor's failure path is exercisable
+    // without a real network dependency.
+    connectivityError: z.string().min(1).optional(),
   })
   .passthrough();
 
@@ -55,6 +59,9 @@ export const fakeProviderDefinition: ProviderDefinition<z.output<typeof configSc
         ...(config.effectsFile === undefined ? {} : { effectsFile: config.effectsFile }),
       }),
       inbound: new FakeInboundTranslator(adapter, services),
+      checkConnectivity: async () => {
+        if (config.connectivityError !== undefined) throw new Error(config.connectivityError);
+      },
     };
   },
 };

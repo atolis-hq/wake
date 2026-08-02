@@ -4,9 +4,10 @@ import { access } from 'node:fs/promises';
 import type { Server } from 'node:http';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
+import { BuiltInActivityName, agentActivityDefinition } from '../activities/index.js';
 import { ResidentHost, TickHost } from '../control-plane/index.js';
-import { RunStatus } from '../execution/index.js';
-import { correlationId, EventActorKind } from '../kernel/index.js';
+import { RunStatus, loadPromptTemplate } from '../execution/index.js';
+import { EventActorKind, correlationId } from '../kernel/index.js';
 import { ResourceCorrelationRole, resourceId } from '../resources/index.js';
 import {
   createApiDispatcher,
@@ -22,10 +23,12 @@ import {
   waitForActiveRuns,
   type ApiApplications,
   type HostOptions,
+  type SandboxDockerInspection,
   type WakeCliApplications,
 } from '../surfaces/index.js';
 import { workItemId } from '../work/index.js';
 import type { CompositionRoot } from './composition-root.js';
+import { loadConfig } from './config/load-config.js';
 import { runtimeProjectionDefinitions } from './projection-runtime.js';
 import { createRunnerRegistry } from './runner-registry.js';
 import { createSelfUpdateApplication } from './self-update-application.js';
@@ -208,7 +211,7 @@ function createOperationalApplications(root: CompositionRoot) {
   };
 }
 
-function createDockerInspection(wakeRoot: string) {
+function createDockerInspection(wakeRoot: string): SandboxDockerInspection {
   return {
     async imageExists(image: string): Promise<boolean> {
       try {
@@ -241,23 +244,21 @@ async function doctorDiagnostics(root: CompositionRoot) {
   } catch (error) {
     failures.push(`runner pool availability: ${(error as Error).message}`);
   }
-  for (const provider of root.providers) {
-    if (provider.adapter.trim().length === 0)
-      failures.push('configured provider has no adapter identity');
-  }
-  if (root.providers.length === 0 && Object.keys(root.config.integrations).length > 0)
-    notices.push('no enabled integration provider is available');
   try {
-    await execFile('docker', ['version', '--format', '{{.Server.Version}}'], {
-      cwd: root.paths.wakeRoot,
-    });
-  } catch {
-    notices.push('Docker sandbox is unavailable; sandbox commands will remain unavailable');
+    await loadConfig(root.paths.wakeRoot);
+  } catch (error) {
+    failures.push(`configuration validation failed: ${(error as Error).message}`);
   }
+  for (const name of referencedPromptTemplateNames(root.config.orchestration.workflows)) {
+    try {
+      await loadPromptTemplate(root.paths.wakeRoot, name);
+    } catch (error) {
+      failures.push(`prompt template "${name}" is not readable: ${(error as Error).message}`);
+    }
+  }
+  await checkProviders(root, failures, notices);
+  notices.push(...(await dockerSandboxHealthNotices(root)));
   for (const [name, path] of Object.entries({
-    config: join(root.paths.wakeRoot, 'config.yaml'),
-    workflows: join(root.paths.wakeRoot, 'config.workflows.yaml'),
-    implementationPrompt: join(root.paths.wakeRoot, 'prompts', 'implement.md'),
     events: root.paths.eventsRoot,
     projections: root.paths.projectionsRoot,
     checkpoints: root.paths.checkpointsRoot,
@@ -272,6 +273,66 @@ async function doctorDiagnostics(root: CompositionRoot) {
     }
   }
   return { failures, notices };
+}
+
+// Derives the prompt template names doctor must validate from what configured
+// workflows actually reference, rather than a hardcoded filename that may not
+// correspond to anything a given deployment's workflows use.
+function referencedPromptTemplateNames(
+  workflows: CompositionRoot['config']['orchestration']['workflows'],
+): readonly string[] {
+  const names = new Set<string>();
+  for (const workflow of Object.values(workflows)) {
+    for (const stage of Object.values(workflow.stages)) {
+      if (stage.activity !== BuiltInActivityName.Agent) continue;
+      const parsed = agentActivityDefinition.inputSchema.safeParse(stage.with);
+      if (parsed.success && parsed.data.template !== undefined) names.add(parsed.data.template);
+    }
+  }
+  return [...names];
+}
+
+async function checkProviders(
+  root: CompositionRoot,
+  failures: string[],
+  notices: string[],
+): Promise<void> {
+  for (const provider of root.providers) {
+    if (provider.adapter.trim().length === 0) {
+      failures.push('configured provider has no adapter identity');
+      continue;
+    }
+    if (provider.checkConnectivity === undefined) continue;
+    try {
+      await provider.checkConnectivity();
+    } catch (error) {
+      failures.push(`provider "${provider.adapter}" is not reachable: ${(error as Error).message}`);
+    }
+  }
+  if (root.providers.length === 0 && Object.keys(root.config.integrations).length > 0)
+    notices.push('no enabled integration provider is available');
+}
+
+// Docker/sandbox absence must never fail doctor: target deployments may not
+// use the Docker sandbox at all, so every outcome here is informational.
+async function dockerSandboxHealthNotices(root: CompositionRoot): Promise<string[]> {
+  const inspect = createDockerInspection(root.paths.wakeRoot);
+  const image = root.config.host.sandbox.image;
+  const containerName = root.config.host.sandbox.containerName;
+  if (!(await inspect.imageExists(image)))
+    return [
+      `Docker sandbox image "${image}" was not found (or Docker is unavailable) — run \`wake sandbox build\` if this deployment uses the Docker sandbox`,
+    ];
+  const state = await inspect.containerState(containerName);
+  if (state === 'halted')
+    return [
+      `Docker sandbox container "${containerName}" is stopped — run \`wake sandbox up\` to resume it`,
+    ];
+  if (state === null)
+    return [
+      `Docker sandbox container "${containerName}" was not found — run \`wake sandbox up\` if this deployment uses the Docker sandbox`,
+    ];
+  return [];
 }
 
 async function projectionHealth(root: CompositionRoot) {
