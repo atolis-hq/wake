@@ -29,6 +29,36 @@ let state = freshState();
 
 const applications: ApiApplications = {
   now: () => instant,
+  board: {
+    async list() {
+      const items = workItems().map((work) => ({
+        workItemKey: work.workItemKey,
+        workItemId: work.workItemId,
+        objective: work.objective,
+        condition:
+          work.state === WorkStatus.Closed || work.state === WorkStatus.Cancelled
+            ? 'finished'
+            : ('ready' as const),
+        dwellSince: instant,
+        runCount: 0,
+      }));
+      return {
+        items,
+        conditionCounts: {
+          ready: items.filter((item) => item.condition === 'ready').length,
+          finished: items.filter((item) => item.condition === 'finished').length,
+        },
+        total: items.length,
+        meta: { asOf: instant },
+      };
+    },
+  },
+  status: {
+    get: async () => ({
+      data: { conditionCounts: { ready: 4, finished: 3 } },
+      meta: { asOf: instant },
+    }),
+  },
   controlPlane: {
     status: async () => ({
       data: {
@@ -160,7 +190,11 @@ const applications: ApiApplications = {
   },
   observability: {
     metrics: async () => ({
-      data: { collectedAt: instant, values: { events: state.events.length } },
+      data: {
+        collectedAt: instant,
+        window: { days: 7, from: instant.slice(0, 10), to: instant.slice(0, 10) },
+        values: { events: state.events.length },
+      },
       meta: { asOf: instant },
     }),
   },

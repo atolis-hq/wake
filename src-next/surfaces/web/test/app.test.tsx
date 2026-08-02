@@ -88,7 +88,18 @@ describe('Wake operator app', () => {
   });
 });
 
-function client(options: { workItems?: readonly unknown[]; failHealth?: boolean } = {}) {
+function client(
+  options: {
+    workItems?: readonly {
+      readonly workItemKey: string;
+      readonly workItemId: string;
+      readonly objective: string;
+      readonly state: string;
+      readonly relatedWorkItems: readonly unknown[];
+    }[];
+    failHealth?: boolean;
+  } = {},
+) {
   const asOf = '2026-07-31T10:00:00.000Z';
   return new WakeApiClient(async (input) => {
     const url = String(input);
@@ -122,9 +133,19 @@ function client(options: { workItems?: readonly unknown[]; failHealth?: boolean 
             ? undefined
             : undefined;
     const body =
-      url.endsWith('/work-items') || url.endsWith('/runners')
+      url.endsWith('/board') || url.endsWith('/runners')
         ? {
-            items: url.endsWith('/work-items') ? items : [],
+            items: url.endsWith('/board')
+              ? items.map((item) => ({
+                  workItemKey: item.workItemKey,
+                  workItemId: item.workItemId,
+                  objective: item.objective,
+                  condition: 'ready',
+                  dwellSince: asOf,
+                  runCount: 0,
+                }))
+              : [],
+            conditionCounts: {},
             page: { nextCursor: null, hasMore: false },
             meta: { asOf },
           }

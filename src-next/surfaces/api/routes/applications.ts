@@ -2,6 +2,8 @@ import type {
   ApiAdvanceCommandResult,
   ApiCommandResult,
   AuditEventResponse,
+  BoardCardResponse,
+  BoardResponse,
   ConfigurationResponse,
   ControlPlaneStatusResponse,
   HealthResponse,
@@ -12,6 +14,7 @@ import type {
   RunnerResponse,
   RunResponse,
   RunTranscriptResponse,
+  StatusResponse,
   WorkDetailResponse,
   WorkflowInstanceResponse,
   WorkItemResponse,
@@ -45,6 +48,14 @@ export interface ApiSystemApplications {
 
 export interface ApiApplications {
   readonly now: () => string;
+  readonly board?: {
+    list(query: CollectionQuery): Promise<
+      ApiCollectionPage<BoardCardResponse> & {
+        readonly conditionCounts: BoardResponse['conditionCounts'];
+      }
+    >;
+  };
+  readonly status?: { get(): Promise<ApiResourceResult<StatusResponse>> };
   readonly controlPlane: {
     status(): Promise<ApiResourceResult<ControlPlaneStatusResponse>>;
     pause?(command: ApiCommandRequest): Promise<ApiCommandResult>;
@@ -76,6 +87,8 @@ export interface ApiApplications {
   readonly events: {
     list(query: CollectionQuery): Promise<ApiCollectionPage<AuditEventResponse>>;
   };
-  readonly observability: { metrics(): Promise<ApiResourceResult<MetricsResponse>> };
+  readonly observability: {
+    metrics(query?: { readonly days: number }): Promise<ApiResourceResult<MetricsResponse>>;
+  };
   readonly system: ApiSystemApplications;
 }

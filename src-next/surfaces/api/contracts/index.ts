@@ -1,5 +1,7 @@
 export * from './activities.js';
 
+export * from './board.js';
+
 export * from './common.js';
 
 export * from './control-plane.js';
@@ -15,6 +17,8 @@ export * from './orchestration.js';
 export * from './resources.js';
 
 export * from './system.js';
+
+export * from './status.js';
 
 export * from './transport-values.js';
 

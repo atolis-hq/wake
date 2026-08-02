@@ -15,8 +15,8 @@ import styles from '../features.module.css';
 export function ObservabilityPage() {
   const client = useApiClient();
   const query = useQuery({
-    queryKey: queryKeys.observability.metrics,
-    queryFn: ({ signal }) => client.observability.metrics(signal),
+    queryKey: queryKeys.observability.metrics(7),
+    queryFn: ({ signal }) => client.observability.metrics(7, signal),
     refetchInterval: refreshPolicy.observability,
   });
   return (

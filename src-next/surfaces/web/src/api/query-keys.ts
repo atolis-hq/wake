@@ -1,4 +1,6 @@
 export const queryKeys = {
+  board: { list: (cursor = '') => ['board', 'list', cursor] as const },
+  status: { get: ['status'] as const },
   controlPlane: { status: ['controlPlane', 'status'] as const },
   work: {
     all: ['work'] as const,
@@ -19,6 +21,6 @@ export const queryKeys = {
     all: ['events'] as const,
     list: (cursor = '') => ['events', 'list', cursor] as const,
   },
-  observability: { metrics: ['observability', 'metrics'] as const },
+  observability: { metrics: (days: number) => ['observability', 'metrics', days] as const },
   system: { health: ['systemHealth'] as const, configuration: ['systemConfiguration'] as const },
 };
