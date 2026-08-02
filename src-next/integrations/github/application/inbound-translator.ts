@@ -213,6 +213,7 @@ export class InboundTranslator {
     if (this.journal === undefined || this.resources === undefined || this.work === undefined)
       return;
     const payload = event.payload;
+    if (payload.reviewKind !== 'formal') return;
     if (this.lookup === undefined) throw new Error('InboundTranslator lookup is required');
     let resourceIdValue = await this.lookup.resourceIdForExternalKey({
       adapter: this.adapter,
@@ -235,7 +236,11 @@ export class InboundTranslator {
       this.pullRequests ?? createPullRequestService(this.journal, this.work, this.resources);
     if (proposed.kind === ReviewDecisionKind.Accepted)
       await pullRequests.acceptReviewSignal(
-        { ...proposed, acceptedEventId: proposed.providerEventId },
+        {
+          ...proposed,
+          origin: 'provider-native-review',
+          acceptedEventId: proposed.providerEventId,
+        },
         context,
       );
     else

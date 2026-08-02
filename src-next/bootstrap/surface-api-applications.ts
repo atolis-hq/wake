@@ -10,9 +10,9 @@ import {
   presentStatus,
   presentWorkflowInstance,
   redactConfiguration,
-  type ApiAdvanceCommandResult,
   type ApiApplications,
   type ApiSystemApplications,
+  type ApiTickCommandResult,
   type AuditEventResponse,
 } from '../surfaces/index.js';
 import { analyticsProjection, type AnalyticsProjectionView } from './analytics-projection.js';
@@ -215,28 +215,28 @@ function createSystemApplications(root: CompositionRoot, now: () => string): Api
 }
 
 function createControlPlaneApplications(root: CompositionRoot, now: () => string) {
-  const activeAdvances = new Map<string, Promise<ApiAdvanceCommandResult>>();
-  const recentAdvances = new Map<string, ApiAdvanceCommandResult>();
+  const activeTicks = new Map<string, Promise<ApiTickCommandResult>>();
+  const recentTicks = new Map<string, ApiTickCommandResult>();
   let commandSequence = 0;
   return {
     status: () => readControlPlaneStatus(root, now),
-    advance(command: { readonly idempotencyKey: string }) {
-      const completed = recentAdvances.get(command.idempotencyKey);
+    tick(command: { readonly idempotencyKey: string }) {
+      const completed = recentTicks.get(command.idempotencyKey);
       if (completed !== undefined) return Promise.resolve(completed);
-      const active = activeAdvances.get(command.idempotencyKey);
+      const active = activeTicks.get(command.idempotencyKey);
       if (active !== undefined) return active;
-      const pending = performAdvance(root, now, command, ++commandSequence).then(
+      const pending = performTick(root, now, command, ++commandSequence).then(
         (result) => {
-          activeAdvances.delete(command.idempotencyKey);
-          rememberRecentAdvance(recentAdvances, command.idempotencyKey, result);
+          activeTicks.delete(command.idempotencyKey);
+          rememberRecentTick(recentTicks, command.idempotencyKey, result);
           return result;
         },
         (error: unknown) => {
-          activeAdvances.delete(command.idempotencyKey);
+          activeTicks.delete(command.idempotencyKey);
           throw error;
         },
       );
-      activeAdvances.set(command.idempotencyKey, pending);
+      activeTicks.set(command.idempotencyKey, pending);
       return pending;
     },
   };
@@ -244,10 +244,10 @@ function createControlPlaneApplications(root: CompositionRoot, now: () => string
 
 const recentAdvanceLimit = 100;
 
-function rememberRecentAdvance(
-  commands: Map<string, ApiAdvanceCommandResult>,
+function rememberRecentTick(
+  commands: Map<string, ApiTickCommandResult>,
   key: string,
-  result: ApiAdvanceCommandResult,
+  result: ApiTickCommandResult,
 ): void {
   commands.set(key, result);
   while (commands.size > recentAdvanceLimit) {
@@ -257,18 +257,18 @@ function rememberRecentAdvance(
   }
 }
 
-async function performAdvance(
+async function performTick(
   root: CompositionRoot,
   now: () => string,
   command: { readonly idempotencyKey: string },
   sequence: number,
-): Promise<ApiAdvanceCommandResult> {
+): Promise<ApiTickCommandResult> {
   const acceptedAt = now();
   await root.projectionRunner.runRegisteredOnce();
   await root.advanceOnce({ maxProgress: 1 });
   await root.projectionRunner.runRegisteredOnce();
   return {
-    commandId: `advance:${acceptedAt}:${sequence}`,
+    commandId: `tick:${acceptedAt}:${sequence}`,
     idempotencyKey: command.idempotencyKey,
     acceptedAt,
     status: ApiCommandStatus.Completed,

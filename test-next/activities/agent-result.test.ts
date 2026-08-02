@@ -1,4 +1,4 @@
-﻿import { describe, expect, expectTypeOf, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
 import {
   ActivityFailureCode,
   ActivityOutcomeKind,
@@ -15,6 +15,7 @@ import {
 import {} from '../../src-next/work/index.js';
 import { workId } from '../support/identities.js';
 
+// eslint-disable-next-line max-lines-per-function
 describe('agent results', () => {
   it.each([
     ['DONE', 'done'],
@@ -24,6 +25,25 @@ describe('agent results', () => {
   ] as const)('maps %s', (status, kind) =>
     expect(translateAgentResult({ status })).toEqual({ kind, data: { status } }),
   );
+  it('preserves only well-formed reported artifact claims on every terminal result', () =>
+    expect(
+      translateAgentResult({
+        status: 'BLOCKED',
+        reportedArtifacts: [
+          { kind: 'pull-request', externalKey: { adapter: 'github', key: 'org/repo#42' } },
+          { kind: '', externalKey: { adapter: 'github', key: 'ignored' } },
+        ],
+      }),
+    ).toEqual({
+      kind: 'blocked',
+      data: {
+        status: 'BLOCKED',
+        reportedArtifacts: [
+          { kind: 'pull-request', externalKey: { adapter: 'github', key: 'org/repo#42' } },
+        ],
+      },
+    }));
+
   it('never treats missing structured agent output as done', () =>
     expect(translateAgentResult(undefined)).toEqual({
       kind: 'failed',

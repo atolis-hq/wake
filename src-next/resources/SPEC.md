@@ -1,5 +1,5 @@
 ---
-asOf: 570f5327a406b1993562cbe0e6b47e239b8827ee
+asOf: 312633a1f45b9182803dbfbce74b650069608da6
 ---
 
 # Resources — Module Specification
@@ -153,3 +153,8 @@ Resources does not own:
 - Resources does not enforce that a correlated `WorkItemId` exists; a
   correlation may be recorded, and later retracted, against a `WorkItemId`
   Resources has no other knowledge of.
+
+## Task 27B synchronization (2026-08-02)
+
+Work correlations carry durable provenance. `provider-observed`, `agent-reported`, and `operator-declared` distinguish how a relation was learned; Resource remains the sole owner of conflict recording and an agent-reported primary conflict is never silently downgraded to secondary.
+

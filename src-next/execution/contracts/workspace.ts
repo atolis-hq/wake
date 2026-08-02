@@ -11,6 +11,8 @@ export interface WorkspaceRequest {
 export interface WorkspaceLease {
   readonly workspaceId: string;
   readonly path: string;
+  /** Branch actually checked out for this lease, when the provider can attest it. */
+  readonly branch?: string | undefined;
   readonly mode: WorkspaceRequest['mode'];
   release(): Promise<void>;
 }

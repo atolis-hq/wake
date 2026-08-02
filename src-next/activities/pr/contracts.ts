@@ -44,6 +44,8 @@ export interface AcceptReviewSignal {
   readonly revision: string;
   readonly actorId: string;
   readonly actorKind: ReviewActorKind;
+  /** The adapter validated this as a provider-native review, not a comment command. */
+  readonly origin?: 'provider-native-review';
   readonly acceptedEventId: string;
   readonly resourceAuthorId: string;
   readonly authorization: ReviewerAuthorizationEvidence;
@@ -121,6 +123,8 @@ export interface AcceptedReviewSignalView {
   readonly revision: string;
   readonly actorId: string;
   readonly actorKind: ReviewActorKind;
+  /** The adapter validated this as a provider-native review, not a comment command. */
+  readonly origin?: 'provider-native-review';
   readonly acceptedEventId: string;
   readonly trusted: boolean;
 }

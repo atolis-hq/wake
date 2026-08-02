@@ -36,6 +36,9 @@ it('creates one normal WorkItem and workflow for each accepted elapsed slot', as
       },
     },
     orchestration: {
+      async get() {
+        return null;
+      },
       async start(command) {
         started.push(command.workflowInstanceId);
         return {};

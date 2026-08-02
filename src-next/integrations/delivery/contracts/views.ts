@@ -31,4 +31,6 @@ export interface DeliveryIntentView {
   readonly attempts: number;
   readonly occurrenceOrdinal: number;
   readonly reconciliationKey?: string;
+  readonly reconciliationAttempts?: number;
+  readonly escalation?: { readonly reason: string } | undefined;
 }

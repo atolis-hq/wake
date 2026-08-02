@@ -1,6 +1,13 @@
 import { z } from 'zod';
 import { ActivityFailureCode, ActivityOutcomeKind } from '../contracts/vocabulary.js';
 
+export const reportedArtifactSchema = z
+  .object({
+    kind: z.string().min(1),
+    externalKey: z.object({ adapter: z.string().min(1), key: z.string().min(1) }).strict(),
+  })
+  .strict();
+
 const structuredResult = <Status extends string>(status: Status) =>
   z.object({ status: z.literal(status) }).catchall(z.unknown());
 
@@ -64,19 +71,40 @@ export function translateAgentResult(value: unknown): AgentActivityOutcome {
       kind: ActivityOutcomeKind.Failed,
       data: { reason: ActivityFailureCode.InvalidAgentResult },
     };
-  switch (value.status) {
+  const structured = value as Record<string, unknown> & { readonly status: string };
+  switch (structured.status) {
     case 'DONE':
-      return { kind: ActivityOutcomeKind.Done, data: { ...value, status: value.status } };
+      return terminalResult(ActivityOutcomeKind.Done, structured);
     case 'REJECTED':
-      return { kind: ActivityOutcomeKind.Rejected, data: { ...value, status: value.status } };
+      return terminalResult(ActivityOutcomeKind.Rejected, structured);
     case 'BLOCKED':
-      return { kind: ActivityOutcomeKind.Blocked, data: { ...value, status: value.status } };
+      return terminalResult(ActivityOutcomeKind.Blocked, structured);
     case 'FAILED':
-      return { kind: ActivityOutcomeKind.Failed, data: { ...value, status: value.status } };
+      return terminalResult(ActivityOutcomeKind.Failed, structured);
     default:
       return {
         kind: ActivityOutcomeKind.Failed,
         data: { reason: ActivityFailureCode.InvalidAgentResult },
       };
   }
+}
+
+function terminalResult(
+  kind: AgentActivityOutcome['kind'],
+  value: Record<string, unknown> & { readonly status: string },
+): AgentActivityOutcome {
+  const { reportedArtifacts, ...data } = value;
+  const artifacts = Array.isArray(reportedArtifacts)
+    ? reportedArtifacts
+        .map((artifact) => reportedArtifactSchema.safeParse(artifact))
+        .flatMap((result) => (result.success ? [result.data] : []))
+    : [];
+  return {
+    kind,
+    data: {
+      ...data,
+      status: value.status,
+      ...(artifacts.length === 0 ? {} : { reportedArtifacts: artifacts }),
+    },
+  } as AgentActivityOutcome;
 }

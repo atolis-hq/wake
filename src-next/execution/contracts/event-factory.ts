@@ -56,6 +56,8 @@ export function createRunExecutionEventDraft(
       return createEventDraft(input);
     case ExecutionEventType.RunRecovered:
       return createEventDraft(input);
+    case ExecutionEventType.RunAmbiguityObserved:
+      return createEventDraft(input);
     case ExecutionEventType.RunAmbiguous:
       return createEventDraft(input);
   }

@@ -1,4 +1,10 @@
-import { EventActorKind, EventSourceKind, type EventJournal } from '../../../kernel/index.js';
+/* eslint-disable complexity */
+import {
+  EventActorKind,
+  EventSourceKind,
+  type CommandContext,
+  type EventJournal,
+} from '../../../kernel/index.js';
 import { deliveryStream, IntegrationStreamKind } from '../../contracts/streams.js';
 import type { ExternalDeliveryAdapter } from '../contracts/config.js';
 import {
@@ -15,17 +21,77 @@ export interface DeliveryServiceDependencies {
   readonly resource: DeliveryResourceLookup;
   readonly adapter: (name: string) => ExternalDeliveryAdapter;
   readonly now: () => string;
+  readonly maxAmbiguityReconciliationAttempts?: number;
 }
 
 export type DeliveryResourceLookup = (
   resourceId: string,
 ) => Promise<{ readonly resourceId: string; readonly adapter: string } | null>;
 
+export type DeliveryResolution =
+  | { readonly kind: typeof DeliveryResultKind.Confirmed; readonly externalId: string }
+  | {
+      readonly kind: typeof DeliveryResultKind.Failed;
+      readonly code: string;
+      readonly message: string;
+    };
+
 export class DeliveryService {
   constructor(private readonly dependencies: DeliveryServiceDependencies) {}
+  async resolveDelivery(
+    intentId: string,
+    resolution: DeliveryResolution,
+    context: CommandContext,
+  ): Promise<DeliveryIntentView> {
+    if (context.actor.kind !== EventActorKind.Operator)
+      throw new Error('Delivery resolution requires an operator actor');
+    const intent = (await this.dependencies.intents()).find(
+      (item) => item.intentEventId === intentId,
+    );
+    if (intent === undefined) throw new Error(`Delivery intent ${intentId} does not exist`);
+    if (intent.state !== DeliveryState.Ambiguous || intent.escalation === undefined)
+      throw new Error(`Delivery intent ${intentId} is not escalated`);
+    const occurrence: DeliveryOccurrence = { ordinal: intent.occurrenceOrdinal + 1 };
+    const metadata = {
+      eventId: `${context.commandId}:delivery-resolution`,
+      occurredAt: context.occurredAt,
+      correlationId: context.correlationId,
+      causationId: context.commandId,
+      actor: context.actor,
+      source: { kind: EventSourceKind.Internal, id: IntegrationStreamKind.Delivery },
+      stream: deliveryStream(intent.intentEventId),
+    };
+    const draft: DeliveryEventDraftInput =
+      resolution.kind === DeliveryResultKind.Confirmed
+        ? {
+            ...metadata,
+            eventType: DeliveryEventType.Confirmed,
+            payload: { ...this.correlation(intent, occurrence), externalId: resolution.externalId },
+          }
+        : {
+            ...metadata,
+            eventType: DeliveryEventType.Failed,
+            payload: {
+              ...this.correlation(intent, occurrence),
+              code: resolution.code,
+              message: resolution.message,
+            },
+          };
+    try {
+      await this.append(draft);
+    } catch {
+      // A concurrent operator or automatic confirmation wins; return the projected state.
+    }
+    return (
+      (await this.dependencies.intents()).find((item) => item.intentEventId === intentId) ?? intent
+    );
+  }
+
   async deliverNext(signal: AbortSignal): Promise<DeliveryIntentView | null> {
     const intent = (await this.dependencies.intents()).find(
-      (item) => item.state === DeliveryState.Pending || item.state === DeliveryState.Ambiguous,
+      (item) =>
+        (item.state === DeliveryState.Pending || item.state === DeliveryState.Ambiguous) &&
+        item.escalation === undefined,
     );
     if (intent === undefined) return null;
     const resource = await this.dependencies.resource(intent.resourceId);
@@ -38,6 +104,12 @@ export class DeliveryService {
         signal,
       );
       await this.append(this.reconciled(intent, occurrence, reconciled));
+      if (reconciled.kind === DeliveryResultKind.Unknown) {
+        const count = (intent.reconciliationAttempts ?? 0) + 1;
+        if (count >= (this.dependencies.maxAmbiguityReconciliationAttempts ?? 3))
+          await this.append(this.escalated(intent, occurrence, count));
+        return intent;
+      }
       if (reconciled.kind !== DeliveryResultKind.NotFound) return intent;
     }
     await this.append(this.attemptStarted(intent, occurrence));
@@ -134,6 +206,21 @@ export class DeliveryService {
       ...this.metadata(intent, occurrence, DeliveryEventType.Ambiguous),
       eventType: DeliveryEventType.Ambiguous,
       payload: { ...this.correlation(intent, occurrence), reconciliationKey },
+    };
+  }
+
+  private escalated(
+    intent: DeliveryIntentView,
+    occurrence: DeliveryOccurrence,
+    attempt: number,
+  ): DeliveryEventDraftInput {
+    return {
+      ...this.metadata(intent, occurrence, DeliveryEventType.Escalated),
+      eventType: DeliveryEventType.Escalated,
+      payload: {
+        ...this.correlation(intent, occurrence),
+        reason: `delivery-ambiguous-after-${attempt}-attempts`,
+      },
     };
   }
 

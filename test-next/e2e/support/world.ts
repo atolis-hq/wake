@@ -90,6 +90,7 @@ export class TestWorld {
   readonly resources = createResourceService(this.journal, this.resourceLookup);
   readonly pullRequests = createPullRequestService(this.journal, this.work, this.resources);
   readonly orchestration = createOrchestrationService(this.journal, this.work, this.definitions);
+  private recovery: RecoveryService | undefined;
   private execution = createExecutionService(
     this.journal,
     this.activities,
@@ -195,15 +196,19 @@ export class TestWorld {
       this.clock,
       this.ids,
     );
-    const recovery =
+    this.recovery =
       inspector === undefined
         ? undefined
-        : createRecoveryCoordinator(
-            new RecoveryService(this.journal, this.clock, inspector, this.activities, {
-              leaseDurationMs: 60_000,
-              leaseRenewalIntervalMs: 30_000,
-            }),
+        : new RecoveryService(
+            this.journal,
+            this.clock,
+            inspector,
+            this.activities,
+            { leaseDurationMs: 60_000, leaseRenewalIntervalMs: 30_000 },
+            this.orchestration,
           );
+    const recovery =
+      this.recovery === undefined ? undefined : createRecoveryCoordinator(this.recovery);
     const dispatchExecution =
       recovery === undefined
         ? this.execution
@@ -214,6 +219,15 @@ export class TestWorld {
       this.resources,
       this.clock,
       { ids: this.ids },
+    );
+  }
+
+  resolveRun(runId: string, resolution: Parameters<RecoveryService['resolve']>[1]) {
+    if (this.recovery === undefined) throw new Error('Recovery is not configured');
+    return this.recovery.resolve(
+      runId,
+      resolution,
+      this.command({ kind: 'operator', id: 'owner' }),
     );
   }
 

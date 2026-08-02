@@ -1,9 +1,7 @@
-﻿import { expect, it } from 'vitest';
-import { workflowName } from '../../../src-next/orchestration/contracts/identifiers.js';
+import { expect, it } from 'vitest';
 import { workId } from '../../support/identities.js';
 import { configureIntakeRouting } from '../support/intake-routing.js';
 
-import { createPullRequestMergeAuthorityGate } from '../../../src-next/activities/index.js';
 import {
   BuiltInAdapterId,
   createEventDraft,
@@ -13,7 +11,6 @@ import {
 } from '../../../src-next/integrations/github/index.js';
 import type { WorkflowRouter } from '../../../src-next/integrations/index.js';
 import {} from '../../../src-next/work/index.js';
-import { mergeAuthorityTestActivity } from '../support/merge-authority-activity.js';
 import { TestWorld } from '../support/world.js';
 
 it('allows current-revision human acceptance through real merge authority', async () => {
@@ -27,50 +24,16 @@ it('allows current-revision human acceptance through real merge authority', asyn
   expect(await world.events('pr.review-accepted')).toHaveLength(1);
 });
 
-it.each([
-  ['unauthorized human', 'outsider', ['reviewer']],
-  ['PR author self-approval', 'author', ['author']],
-] as const)(
-  'denies %s through production GitHub review translation',
-  async (_case, actor, allowed) => {
-    const world = new TestWorld();
-    // The merge workflow must exist before admission starts it, since admission is now
-    // the sole place a primary workflow is started (routed to 'merge', not the default).
-    world.registerActivity(
-      mergeAuthorityTestActivity(createPullRequestMergeAuthorityGate(world.pullRequests)),
-    );
-    world.configureWorkflow('merge', {
-      stages: {
-        merge: {
-          activity: 'test.pr.merge-authority',
-          with: {},
-          on: { 'merge-denied': { then: 'merge', repeat: { max: 1 } } },
-        },
-      },
-    });
-    const routeToMerge: WorkflowRouter = { select: () => workflowName('merge') };
-    const translator = translatorFor(world, routeToMerge);
-    await appendObservation(world);
-    await appendAcceptance(world, actor, allowed);
-    await translator.runOnce();
+it('accepts a GitHub approval without replicating repository permissions', async () => {
+  const world = new TestWorld();
+  const translator = translatorFor(world);
+  await appendObservation(world);
+  await appendAcceptance(world, 'outsider', []);
+  await translator.runOnce();
 
-    await world.advance(workId('2'));
-    await world.advance(workId('2'));
-
-    expect(await world.events('pr.review-accepted')).toHaveLength(0);
-    expect(await world.events('pr.review-rejected')).toEqual([
-      expect.objectContaining({ payload: { reason: 'untrusted-actor' } }),
-    ]);
-    expect(await world.events('pr.merge-denied')).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          payload: expect.objectContaining({ reason: 'untrusted-actor' }),
-        }),
-      ]),
-    );
-    expect(await world.events('pr.merge-requested')).toHaveLength(0);
-  },
-);
+  expect(await world.events('pr.review-accepted')).toHaveLength(1);
+  expect(await world.events('pr.review-rejected')).toHaveLength(0);
+});
 
 function translatorFor(world: TestWorld, routing: WorkflowRouter = configureIntakeRouting(world)) {
   return new InboundTranslator(world.journal, world.checkpoints, world.work, world.resources, {

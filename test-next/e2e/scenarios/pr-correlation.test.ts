@@ -1,4 +1,4 @@
-﻿import { expect, it } from 'vitest';
+import { expect, it } from 'vitest';
 import { resId, workId } from '../../support/identities.js';
 
 import {
@@ -211,6 +211,7 @@ async function appendComment(
     stream: integrationStream(BuiltInAdapterId.GitHub),
     payload: {
       externalKey,
+      reviewKind: 'formal',
       body: '/accepted',
       revision,
       actor: { id: 'reviewer', kind: 'human' as const },

@@ -35,7 +35,7 @@ describe('typed Wake API client', () => {
         ),
     );
 
-    await expect(client.controlPlane.advance('command-1')).rejects.toMatchObject({
+    await expect(client.controlPlane.tick('command-1')).rejects.toMatchObject({
       problem: { status: 409, code: 'current-state', current: { paused: true } },
     });
   });

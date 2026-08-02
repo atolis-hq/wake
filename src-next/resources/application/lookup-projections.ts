@@ -41,6 +41,7 @@ export const workCorrelationsProjection: ProjectionDefinition<readonly ResourceC
           resourceId: owned.stream.id,
           workItemId: owned.payload.workItemId,
           role: owned.payload.role,
+          provenance: owned.payload.provenance,
           establishedByEventId: owned.eventId,
         };
         return previous.some((value) => value.resourceId === correlation.resourceId)

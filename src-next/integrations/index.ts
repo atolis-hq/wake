@@ -4,7 +4,13 @@ export * from './application/poll-service.js';
 
 export * from './application/work-admission.js';
 
+export * from './application/artifact-registration-reactor.js';
+
 export * from './contracts/config.js';
+
+export * from './contracts/artifact-events.js';
+
+export * from './contracts/artifact-vocabulary.js';
 
 export * from './contracts/identifiers.js';
 

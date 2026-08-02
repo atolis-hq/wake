@@ -1,5 +1,5 @@
 ---
-asOf: 570f5327a406b1993562cbe0e6b47e239b8827ee
+asOf: 312633a1f45b9182803dbfbce74b650069608da6
 ---
 
 # Execution — Module Specification
@@ -235,3 +235,8 @@ Execution does not own:
   process; see the Runner adapters specification.
 - Transcript persistence (prompt/response text per Run) exists as
   infrastructure but is not yet wired into the production attempt flow.
+
+## Task 27B synchronization (2026-08-02)
+
+Unknown recovery inspection is recorded as a countable ambiguity observation while a Run remains recoverable. At the configured bound, the Run becomes escalated/ambiguous and its owning workflow is blocked. Only an operator may resolve an escalated Run, by appending the normal succeeded or failed result with operator provenance; concurrent resolution is first-write-wins. A branch workspace lease records its branch when available so provider verification can compare agent artifacts to the actual execution branch. Claude CLI forwarding includes configured `maxTurns` and non-empty `allowedTools`.
+

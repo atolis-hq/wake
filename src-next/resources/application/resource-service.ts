@@ -18,7 +18,11 @@ import type {
   ResourceCorrelationView,
   ResourceView,
 } from '../contracts/views.js';
-import { ResourceCorrelationRole } from '../contracts/vocabulary.js';
+import {
+  ResourceCorrelationProvenance,
+  ResourceCorrelationRole,
+  type ResourceCorrelationProvenance as CorrelationProvenance,
+} from '../contracts/vocabulary.js';
 import type { ResourceLookup } from './resource-lookup.js';
 import { ResourceRepository } from './resource-repository.js';
 
@@ -33,6 +37,7 @@ export interface ResourceService {
     workItemId: WorkItemId,
     role: typeof ResourceCorrelationRole.Primary | typeof ResourceCorrelationRole.Secondary,
     context: CommandContext,
+    provenance?: CorrelationProvenance,
   ): Promise<ResourceCorrelationView>;
   retract(resourceId: ResourceId, workItemId: WorkItemId, context: CommandContext): Promise<void>;
 }
@@ -55,8 +60,8 @@ export function createResourceService(
       return (await repository.load(resourceId)).resource?.correlations ?? [];
     },
     correlationsForWork: (workItemId) => lookup.correlationsForWork(workItemId),
-    correlate: (resourceId, workItemId, role, context) =>
-      correlateResource(repository, resourceId, workItemId, role, context),
+    correlate: (resourceId, workItemId, role, context, provenance) =>
+      correlateResource(repository, resourceId, workItemId, role, context, provenance),
     async retract(resourceId, workItemId, context) {
       await appendResourceEvent(
         repository,
@@ -89,12 +94,15 @@ async function discoverResource(
   return resource.view;
 }
 
+// Provenance is an explicit fifth command argument; the repository dependency is the sixth implementation concern.
+// eslint-disable-next-line max-params
 async function correlateResource(
   repository: ResourceRepository,
   resourceId: ResourceId,
   workItemId: WorkItemId,
   role: typeof ResourceCorrelationRole.Primary | typeof ResourceCorrelationRole.Secondary,
   context: CommandContext,
+  provenance: CorrelationProvenance = ResourceCorrelationProvenance.ProviderObserved,
 ): Promise<ResourceCorrelationView> {
   const loaded = await repository.load(resourceId);
   if (loaded.resource === null) throw new Error(`Resource ${resourceId} does not exist`);
@@ -122,6 +130,7 @@ async function correlateResource(
     resourceDraft(resourceId, context, ResourceEventType.WorkCorrelationEstablished, {
       workItemId,
       role,
+      provenance,
     }),
   );
   const correlation = (await repository.load(resourceId)).resource?.correlations.find(

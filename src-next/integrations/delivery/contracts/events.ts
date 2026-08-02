@@ -17,6 +17,7 @@ export const DeliveryEventType = {
   Failed: 'delivery.failed',
   Ambiguous: 'delivery.ambiguous',
   Reconciled: 'delivery.reconciled',
+  Escalated: 'delivery.escalated',
 } as const;
 
 export const DeliveryEventNamespace = 'delivery.' as const;
@@ -41,6 +42,7 @@ export interface DeliveryEventPayloads {
   readonly [DeliveryEventType.Ambiguous]: DeliveryEventCorrelation & {
     readonly reconciliationKey: string;
   };
+  readonly [DeliveryEventType.Escalated]: DeliveryEventCorrelation & { readonly reason: string };
   readonly [DeliveryEventType.Reconciled]: DeliveryEventCorrelation &
     (
       | {
@@ -102,6 +104,11 @@ const eventSchema: z.ZodType<DeliveryEvent> = z
       eventType: z.literal(DeliveryEventType.Ambiguous),
       stream: deliveryStreamSchema,
       payload: correlationSchema.extend({ reconciliationKey: z.string().min(1) }),
+    }),
+    eventEnvelopeSchema.extend({
+      eventType: z.literal(DeliveryEventType.Escalated),
+      stream: deliveryStreamSchema,
+      payload: correlationSchema.extend({ reason: z.string().min(1) }),
     }),
     eventEnvelopeSchema.extend({
       eventType: z.literal(DeliveryEventType.Reconciled),

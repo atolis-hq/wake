@@ -14,7 +14,7 @@ import type {
 } from '../../../api/contracts/index.js';
 import {
   type AcceptedCommandResponse,
-  type AdvanceCommandResponse,
+  type TickCommandResponse,
 } from '../../../api/contracts/index.js';
 import {
   AcceptedCommandStatusValue,
@@ -95,7 +95,7 @@ export const decodeAcceptedCommand: Decoder<AcceptedCommandResponse> = (value, p
   };
 };
 
-export const decodeAdvanceCommand: Decoder<AdvanceCommandResponse> = (value, path = '') => {
+export const decodeTickCommand: Decoder<TickCommandResponse> = (value, path = '') => {
   const record = object(value, path);
   return {
     ...decodeAcceptedCommand(value, path),

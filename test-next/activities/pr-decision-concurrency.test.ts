@@ -1,4 +1,4 @@
-﻿import { expect, it } from 'vitest';
+import { expect, it } from 'vitest';
 import { activityName } from '../../src-next/activities/index.js';
 import {
   orchestrationGroupId,
@@ -153,6 +153,7 @@ function authority(state: 'open' | 'closed'): PullRequestAuthorityInput {
             resourceId: resource,
             workItemId: work,
             role: 'primary',
+            provenance: 'provider-observed',
             establishedByEventId: 'correlation-1',
           },
         ],

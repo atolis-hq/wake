@@ -1,3 +1,4 @@
+import { EventActorKind } from '../../kernel/index.js';
 import { ExecutionEventType, type RunExecutionEvent } from '../contracts/events.js';
 import type { RunView } from '../contracts/views.js';
 import { ExecutionFailureCode, RunStatus } from '../contracts/vocabulary.js';
@@ -13,6 +14,8 @@ export function foldRun(events: readonly RunExecutionEvent[]): RunView | null {
     orchestrationGroupId: started.payload.orchestrationGroupId,
     attempt: started.payload.attempt,
     status: RunStatus.Started,
+    ambiguityAttempts: 0,
+    escalated: false,
     startedAt: started.payload.startedAt,
     ...(started.payload.runner === undefined ? {} : { runner: started.payload.runner }),
     ...(started.payload.workspace === undefined ? {} : { workspace: started.payload.workspace }),
@@ -22,7 +25,16 @@ export function foldRun(events: readonly RunExecutionEvent[]): RunView | null {
 }
 
 function applyRunEvent(state: RunView, event: RunExecutionEvent): void {
-  if (state.status !== RunStatus.Started) return;
+  if (state.status !== RunStatus.Started) {
+    if (
+      state.status === RunStatus.Ambiguous &&
+      event.actor.kind === EventActorKind.Operator &&
+      (event.eventType === ExecutionEventType.RunSucceeded ||
+        event.eventType === ExecutionEventType.RunFailed)
+    )
+      return applyTerminalEvent(state, event);
+    return;
+  }
   switch (event.eventType) {
     case ExecutionEventType.RunStarted:
       return;
@@ -52,6 +64,7 @@ function applyTerminalEvent(
       status: RunStatus.Succeeded,
       finishedAt: event.payload.finishedAt,
       outcome: event.payload.outcome,
+      escalated: false,
     });
     return;
   }
@@ -63,9 +76,11 @@ function applyTerminalEvent(
     status: RunStatus.Failed,
     finishedAt: event.payload.finishedAt,
     failure: event.payload.failure,
+    escalated: false,
   });
 }
 
+// eslint-disable-next-line complexity
 function applyLivenessEvent(
   state: RunView,
   event: Exclude<
@@ -108,11 +123,18 @@ function applyLivenessEvent(
         recoveredState(event.payload.result, event.payload.finishedAt, event.payload.outcome),
       );
       return;
+    case ExecutionEventType.RunAmbiguityObserved:
+      Object.assign(state, {
+        ambiguityAttempts: event.payload.attempt,
+        failure: { kind: ExecutionFailureCode.Unexpected, message: event.payload.reason },
+      });
+      return;
     case ExecutionEventType.RunAmbiguous:
       Object.assign(state, {
         status: RunStatus.Ambiguous,
         finishedAt: event.payload.finishedAt,
         failure: { kind: ExecutionFailureCode.Unexpected, message: event.payload.reason },
+        escalated: true,
       });
       return;
     default:

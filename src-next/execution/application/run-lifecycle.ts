@@ -72,7 +72,15 @@ export async function startRun(input: {
                 ...(runner.effort === undefined ? {} : { effort: runner.effort }),
               },
             }),
-        ...(lease === undefined ? {} : { workspace: { mode: lease.mode, path: lease.path } }),
+        ...(lease === undefined
+          ? {}
+          : {
+              workspace: {
+                mode: lease.mode,
+                path: lease.path,
+                ...(lease.branch === undefined ? {} : { branch: lease.branch }),
+              },
+            }),
       },
     }),
   ]);

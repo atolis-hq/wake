@@ -56,6 +56,7 @@ export const runStartedPayloadSchema = z
       .object({
         mode: z.enum([WorkspaceMode.ReadOnly, WorkspaceMode.Branch]),
         path: z.string().min(1),
+        branch: z.string().min(1).optional(),
       })
       .strict()
       .optional(),
@@ -111,6 +112,7 @@ export const ExecutionEventType = {
   RunCancellationConfirmed: 'execution.run-cancellation-confirmed',
   RunCancelled: 'execution.run-cancelled',
   RunRecovered: 'execution.run-recovered',
+  RunAmbiguityObserved: 'execution.run-ambiguity-observed',
   RunAmbiguous: 'execution.run-ambiguous',
   ActivationClaimed: 'execution.activation-claimed',
   ActivationReleased: 'execution.activation-released',
@@ -136,6 +138,7 @@ export interface RunStartedPayload {
     | {
         readonly mode: typeof WorkspaceMode.ReadOnly | typeof WorkspaceMode.Branch;
         readonly path: string;
+        readonly branch?: string | undefined;
       }
     | undefined;
 }
@@ -161,6 +164,10 @@ export interface RunExecutionEventPayloads {
   readonly [ExecutionEventType.RunCancellationConfirmed]: { readonly confirmedAt: string };
   readonly [ExecutionEventType.RunCancelled]: { readonly finishedAt: string };
   readonly [ExecutionEventType.RunRecovered]: RecoveredRunResult;
+  readonly [ExecutionEventType.RunAmbiguityObserved]: {
+    readonly reason: string;
+    readonly attempt: number;
+  };
   readonly [ExecutionEventType.RunAmbiguous]: {
     readonly reason: string;
     readonly finishedAt: string;
@@ -308,6 +315,11 @@ const runEventSchema: z.ZodType<RunExecutionEvent> = z.discriminatedUnion('event
         finishedAt: offsetIsoTimestampSchema,
       })
       .strict(),
+  }),
+  eventEnvelopeSchema.extend({
+    eventType: z.literal(ExecutionEventType.RunAmbiguityObserved),
+    stream: runStreamSchema,
+    payload: z.object({ reason: z.string().min(1), attempt: z.number().int().positive() }).strict(),
   }),
   eventEnvelopeSchema.extend({
     eventType: z.literal(ExecutionEventType.RunAmbiguous),

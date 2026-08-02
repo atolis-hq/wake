@@ -40,6 +40,7 @@ const samples = [
       externalKey: 'atolis/wake#1',
       body: '/accepted',
       revision: 'abc',
+      reviewKind: 'formal',
       actor,
       resourceAuthorId: 'author',
       authorization: { source: 'configured-reviewer', reviewerId: 'octocat' },

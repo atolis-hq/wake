@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type {
   AcceptedCommandResponse,
-  AdvanceCommandResponse,
   AuditEventResponse,
+  TickCommandResponse,
   WorkItemResponse,
 } from '../../src-next/surfaces/api/contracts/index.js';
 import type {
@@ -208,9 +208,9 @@ describe('API command conflicts', () => {
 
   it('rejects malformed command bodies instead of deriving success defaults', async () => {
     const dispatcher = createApiDispatcher(
-      applications({ controlPlaneAdvance: async () => advanceCommandResult('operator-42') }),
+      applications({ controlPlaneTick: async () => tickCommandResult('operator-42') }),
     );
-    const response = await dispatcher.dispatch('POST', '/api/v1/control-plane/commands/advance', {
+    const response = await dispatcher.dispatch('POST', '/api/v1/control-plane/commands/tick', {
       idempotencyKey: '',
     });
     expect(response?.status).toBe(422);
@@ -223,14 +223,14 @@ describe('API command conflicts', () => {
   it('maps a typed public application command conflict with current state', async () => {
     const dispatcher = createApiDispatcher(
       applications({
-        controlPlaneAdvance: async () => ({
+        controlPlaneTick: async () => ({
           conflict: true,
           code: 'already-advanced',
           current: { paused: false },
         }),
       }),
     );
-    const response = await dispatcher.dispatch('POST', '/api/v1/control-plane/commands/advance', {
+    const response = await dispatcher.dispatch('POST', '/api/v1/control-plane/commands/tick', {
       idempotencyKey: 'operator-42',
     });
     expect(response?.status).toBe(409);
@@ -259,8 +259,8 @@ function applications(
       ): Promise<AcceptedCommandResponse>;
     }>;
     readonly workItems?: readonly WorkItemResponse[];
-    readonly controlPlaneAdvance?: () => Promise<
-      | AdvanceCommandResponse
+    readonly controlPlaneTick?: () => Promise<
+      | TickCommandResponse
       | { readonly conflict: true; readonly code: string; readonly current?: unknown }
     >;
     readonly eventsList?: (
@@ -272,9 +272,7 @@ function applications(
     now: () => '2026-07-31T10:00:00.000Z',
     controlPlane: {
       status: async () => resource({ paused: false, updatedAt: '2026-07-31T10:00:00.000Z' }),
-      ...(overrides.controlPlaneAdvance === undefined
-        ? {}
-        : { advance: overrides.controlPlaneAdvance }),
+      ...(overrides.controlPlaneTick === undefined ? {} : { tick: overrides.controlPlaneTick }),
     },
     work: {
       list: async (query: CollectionQuery) => workItemsPage(overrides.workItems ?? [], query),
@@ -333,7 +331,7 @@ function commandResult(idempotencyKey: string): AcceptedCommandResponse {
   };
 }
 
-function advanceCommandResult(idempotencyKey: string): AdvanceCommandResponse {
+function tickCommandResult(idempotencyKey: string): TickCommandResponse {
   return {
     ...commandResult(idempotencyKey),
     result: resource({ paused: false, updatedAt: instant }),

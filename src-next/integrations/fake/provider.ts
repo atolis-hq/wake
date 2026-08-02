@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import { PullRequestCheckState } from '../../activities/index.js';
+import { BuiltInResourceCapability } from '../../resources/index.js';
+import { ArtifactVerificationResult } from '../contracts/artifact-vocabulary.js';
 import type { ProviderDefinition } from '../contracts/provider.js';
 import { DurableFakeDeliveryProvider } from './durable-delivery-provider.js';
 import { FakeEventType, FakeExternalEventSource } from './external-source.js';
@@ -16,6 +18,7 @@ const configSchema = z
             title: z.string().min(1),
             kind: z.enum(['issue', 'pull-request']).optional(),
             revision: z.string().min(1).optional(),
+            branch: z.string().min(1).optional(),
             baseRevision: z.string().min(1).optional(),
             checks: z
               .enum([
@@ -58,6 +61,24 @@ export const fakeProviderDefinition: ProviderDefinition<z.output<typeof configSc
         effects: config.deliveryEffects,
         ...(config.effectsFile === undefined ? {} : { effectsFile: config.effectsFile }),
       }),
+      verifyArtifact: async (kind, externalKey, context) => {
+        const evidence = config.events.find((event) => event.key === externalKey.key);
+        if (evidence === undefined || (evidence.kind ?? 'issue') !== 'pull-request')
+          return ArtifactVerificationResult.NotFound;
+        if (kind !== 'pull-request' || evidence.branch !== context.workspaceBranch)
+          return ArtifactVerificationResult.NotFound;
+        return {
+          kind,
+          externalKey,
+          capabilities: [
+            BuiltInResourceCapability.Reviewable,
+            BuiltInResourceCapability.Approvable,
+            BuiltInResourceCapability.Mergeable,
+            BuiltInResourceCapability.Revisioned,
+          ],
+          ...(evidence.revision === undefined ? {} : { revision: evidence.revision }),
+        };
+      },
       inbound: new FakeInboundTranslator(adapter, services),
       checkConnectivity: async () => {
         if (config.connectivityError !== undefined) throw new Error(config.connectivityError);

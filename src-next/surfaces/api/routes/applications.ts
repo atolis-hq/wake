@@ -1,6 +1,6 @@
 import type {
-  ApiAdvanceCommandResult,
   ApiCommandResult,
+  ApiTickCommandResult,
   AuditEventResponse,
   BoardCardResponse,
   BoardResponse,
@@ -61,7 +61,7 @@ export interface ApiApplications {
     status(): Promise<ApiResourceResult<ControlPlaneStatusResponse>>;
     pause?(command: ApiCommandRequest): Promise<ApiCommandResult>;
     resume?(command: ApiCommandRequest): Promise<ApiCommandResult>;
-    advance?(command: ApiCommandRequest): Promise<ApiAdvanceCommandResult>;
+    tick?(command: ApiCommandRequest): Promise<ApiTickCommandResult>;
   };
   readonly work: {
     list(query: CollectionQuery): Promise<ApiCollectionPage<WorkItemResponse>>;

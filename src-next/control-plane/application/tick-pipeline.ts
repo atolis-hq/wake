@@ -5,6 +5,7 @@ export interface TickPipelineStages {
   readonly catchUpProjections: () => Promise<void>;
   readonly poll: (signal: AbortSignal) => Promise<void>;
   readonly translateInbound: () => Promise<void>;
+  readonly runSchedules: () => Promise<void>;
   readonly react: () => Promise<void>;
   readonly advance: AdvanceOnce;
   readonly deliver: (signal: AbortSignal) => Promise<void>;
@@ -21,6 +22,7 @@ export function createTickPipeline(stages: TickPipelineStages): TickPipeline {
       await stages.catchUpProjections();
       await stages.poll(signal);
       await stages.translateInbound();
+      await stages.runSchedules();
       await stages.react();
       const result = await stages.advance(options);
       await stages.catchUpProjections();
