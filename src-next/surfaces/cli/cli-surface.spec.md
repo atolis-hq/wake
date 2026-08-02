@@ -131,9 +131,7 @@ Does not own:
 
 ## Decisions, exclusions, and deferred capability
 
-- `init`, `sandbox`, `doctor`, `self-update`, and `smoke` are not reachable
-  through `parseWakeCommand`/`runWakeCommand` today; they exist as
-  standalone functions a caller composes directly.
+- `init`, `doctor`, `sandbox`, `self-update`, and `smoke` are parsed and routed through the operational Surface port. `init` executes before composition because it creates the root; `doctor`, `sandbox`, and `smoke` are Bootstrap-composed target applications. `self-update` remains a Surface command with an injected update boundary.
 - `correlate`'s primitive always requests the `Primary` correlation role;
   there is no way to request `Secondary` from the parsed command surface.
 - There is no `--no-sandbox` flag or automatic re-exec into a sandboxed

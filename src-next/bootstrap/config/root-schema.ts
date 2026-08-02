@@ -40,6 +40,72 @@ const orchestrationConfigSchema = z
   })
   .default({ workflows: {}, workflowSelectors: [], default: 'default' });
 
+const hostConfigSchema = z
+  .object({
+    sandbox: z
+      .object({
+        image: z.string().trim().min(1).default('wake-sandbox'),
+        imageRepository: z.string().trim().min(1).default('wake-sandbox'),
+        containerName: z.string().trim().min(1).default('wake-sandbox'),
+        wakeMountPath: z.string().trim().min(1).default('/wake'),
+        containerHomeMountPath: z.string().trim().min(1).default('/home/wake'),
+        start: z
+          .object({ enabled: z.boolean().default(true) })
+          .strict()
+          .default({ enabled: true }),
+        extraMounts: z
+          .array(
+            z
+              .object({
+                source: z.string().trim().min(1),
+                target: z.string().trim().min(1),
+                readOnly: z.boolean().optional(),
+              })
+              .strict(),
+          )
+          .readonly()
+          .default([]),
+      })
+      .strict()
+      .default({
+        image: 'wake-sandbox',
+        imageRepository: 'wake-sandbox',
+        containerName: 'wake-sandbox',
+        wakeMountPath: '/wake',
+        containerHomeMountPath: '/home/wake',
+        start: { enabled: true },
+        extraMounts: [],
+      }),
+    development: z
+      .object({
+        repoRoot: z.string().trim().min(1).optional(),
+        mode: z.enum(['source', 'packaged']).optional(),
+      })
+      .strict()
+      .default({}),
+  })
+  .strict()
+  .default({
+    sandbox: {
+      image: 'wake-sandbox',
+      imageRepository: 'wake-sandbox',
+      containerName: 'wake-sandbox',
+      wakeMountPath: '/wake',
+      containerHomeMountPath: '/home/wake',
+      start: { enabled: true },
+      extraMounts: [],
+    },
+    development: {},
+  })
+  .superRefine((value, context) => {
+    if (value.development.mode === 'source' && value.development.repoRoot === undefined)
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['development', 'repoRoot'],
+        message: 'source host development requires repoRoot',
+      });
+  });
+
 export const rootConfigSchema = z
   .object({
     schemaVersion: z.literal(1).default(1),
@@ -51,6 +117,7 @@ export const rootConfigSchema = z
     controlPlane: controlPlaneConfigSchema,
     integrations: integrationsConfigSchema,
     surfaces: surfacesConfigSchema,
+    host: hostConfigSchema,
   })
   .strict();
 
@@ -64,6 +131,7 @@ export interface ResolvedWakeModulesConfig {
   readonly controlPlane: ControlPlaneConfig;
   readonly integrations: IntegrationsConfig;
   readonly surfaces: SurfacesConfig;
+  readonly host: z.infer<typeof hostConfigSchema>;
 }
 
 export function parseRootConfig(input: unknown): ResolvedWakeModulesConfig {

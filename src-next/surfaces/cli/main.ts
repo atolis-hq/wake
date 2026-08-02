@@ -11,7 +11,12 @@ export type WakeCommand =
   | ({ readonly kind: 'api' | 'ui' } & HostOptions)
   | { readonly kind: 'audit'; readonly workItemId: string }
   | { readonly kind: 'correlate'; readonly resource: string; readonly workItemId: string }
-  | { readonly kind: 'validate-state'; readonly rebuildProjections: boolean };
+  | { readonly kind: 'validate-state'; readonly rebuildProjections: boolean }
+  | {
+      readonly kind: 'init' | 'doctor' | 'self-update' | 'smoke';
+      readonly arguments: readonly string[];
+    }
+  | { readonly kind: 'sandbox'; readonly arguments: readonly string[] };
 
 export interface AuditRecord {
   readonly eventId: string;
@@ -23,6 +28,13 @@ export interface AuditRecord {
 }
 
 export interface WakeCliApplications {
+  readonly operational?: {
+    readonly init: (arguments_: readonly string[]) => Promise<unknown>;
+    readonly doctor: (arguments_: readonly string[]) => Promise<unknown>;
+    readonly sandbox: (arguments_: readonly string[]) => Promise<unknown>;
+    readonly selfUpdate: (arguments_: readonly string[]) => Promise<unknown>;
+    readonly smoke: (arguments_: readonly string[]) => Promise<unknown>;
+  };
   readonly tick: { run(budget: HostBudget): Promise<HostResult> };
   readonly start: { run(signal: AbortSignal, budget: HostBudget): Promise<HostResult> };
   readonly stop: { stop(): Promise<void> };
@@ -47,6 +59,7 @@ export interface CliOutput {
 const defaultBudget: HostBudget = { maxAdvances: 100, maxRuns: 100, maxDurationMs: 30_000 };
 
 /** Parses Surface vocabulary only; Bootstrap supplies every application facade. */
+// eslint-disable-next-line complexity -- command vocabulary is intentionally exhaustive at the Surface boundary.
 export function parseWakeCommand(arguments_: readonly string[]): WakeCommand {
   const [command, first, second] = arguments_;
   switch (command) {
@@ -67,6 +80,12 @@ export function parseWakeCommand(arguments_: readonly string[]): WakeCommand {
     case 'start':
     case 'stop':
       return parseResidentCommand(command, arguments_.slice(1));
+    case 'init':
+    case 'doctor':
+    case 'sandbox':
+    case 'self-update':
+    case 'smoke':
+      return { kind: command, arguments: arguments_.slice(1) };
     default:
       throw new Error(`Unknown wake command: ${command ?? ''}`);
   }
@@ -92,6 +111,7 @@ function requiredArgument(value: string | undefined, label: string): string {
   return value;
 }
 
+// eslint-disable-next-line complexity -- each parsed command has one explicit application dispatch.
 export async function runWakeCommand(
   command: WakeCommand,
   applications: WakeCliApplications,
@@ -99,6 +119,27 @@ export async function runWakeCommand(
   signal: AbortSignal,
 ): Promise<void> {
   switch (command.kind) {
+    case 'init':
+      output.write(`${JSON.stringify(await operational(applications).init(command.arguments))}\n`);
+      return;
+    case 'doctor':
+      output.write(
+        `${JSON.stringify(await operational(applications).doctor(command.arguments))}\n`,
+      );
+      return;
+    case 'sandbox':
+      output.write(
+        `${JSON.stringify(await operational(applications).sandbox(command.arguments))}\n`,
+      );
+      return;
+    case 'self-update':
+      output.write(
+        `${JSON.stringify(await operational(applications).selfUpdate(command.arguments))}\n`,
+      );
+      return;
+    case 'smoke':
+      output.write(`${JSON.stringify(await operational(applications).smoke(command.arguments))}\n`);
+      return;
     case 'tick':
       output.write(`${JSON.stringify(await applications.tick.run(defaultBudget))}\n`);
       return;
@@ -129,6 +170,14 @@ export async function runWakeCommand(
       return;
     }
   }
+}
+
+function operational(
+  applications: WakeCliApplications,
+): NonNullable<WakeCliApplications['operational']> {
+  if (applications.operational === undefined)
+    throw new Error('Operational CLI applications were not composed');
+  return applications.operational;
 }
 
 function parseHostOptions(arguments_: readonly string[], allowNetwork = true): HostOptions {

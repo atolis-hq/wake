@@ -64,7 +64,9 @@
     "smoke:codex": "tsx src/main.ts smoke codex",
     "smoke:cursor": "tsx src/main.ts smoke cursor",
     "verify": "npm run lint && npm run format:check && npm run build && npm test",
-    "verify:ci": "npm run verify && npm run verify:next && npm run test:integration && npm run test:legacy && npm run test:next:e2e"
+    "verify:ci": "npm run verify && npm run verify:next && npm run test:integration && npm run test:legacy && npm run test:next:e2e",
+    "e2e:github-fake:legacy": "tsx scripts/e2e-github-fake.ts",
+    "e2e:github-fake:next": "tsx scripts-next/e2e-github-fake.ts"
   },
   "dependencies": {
     "@octokit/rest": "^22.0.0",

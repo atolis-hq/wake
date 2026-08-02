@@ -36,6 +36,9 @@ export interface ProviderInstance {
   readonly delivery: ExternalDeliveryAdapter;
   readonly inbound: InboundTranslation;
   readonly eventTypes: readonly string[];
+  // Optional live reachability probe a caller (e.g. doctor diagnostics) can invoke
+  // generically; resolves when the external system is reachable, rejects otherwise.
+  readonly checkConnectivity?: () => Promise<void>;
 }
 
 export interface ProviderDefinition<Config = unknown> {
