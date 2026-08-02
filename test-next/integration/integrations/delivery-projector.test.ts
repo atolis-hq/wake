@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { ActivityEventType, MergeMethod, activationId } from '../../../src-next/activities/index.js';
+import {
+  ActivityEventType,
+  MergeMethod,
+  activationId,
+} from '../../../src-next/activities/index.js';
 import { projectDeliveries } from '../../../src-next/integrations/delivery/application/delivery-projector.js';
 import {
   DeliveryEventType,

@@ -9,7 +9,10 @@ import {
   workflowInstanceId,
   workflowName,
 } from '../../../src-next/orchestration/contracts/identifiers.js';
-import { compileWorkflow, createOrchestrationService } from '../../../src-next/orchestration/index.js';
+import {
+  compileWorkflow,
+  createOrchestrationService,
+} from '../../../src-next/orchestration/index.js';
 import { InMemoryEventJournal } from '../../../src-next/persistence/index.js';
 import { createWorkService } from '../../../src-next/work/index.js';
 import { FakeClock } from '../../e2e/support/world.js';

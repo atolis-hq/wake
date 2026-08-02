@@ -2,7 +2,11 @@ import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, it } from 'vitest';
-import { createEventDraft, type EntityRef, type EventDraft } from '../../../src-next/kernel/index.js';
+import {
+  createEventDraft,
+  type EntityRef,
+  type EventDraft,
+} from '../../../src-next/kernel/index.js';
 import { FileEventJournal } from '../../../src-next/persistence/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 

@@ -7,7 +7,10 @@ import {
   integrationStream,
   type ExternalWorkObservedPayload,
 } from '../../../src-next/integrations/github/index.js';
-import { InMemoryCheckpointStore, InMemoryEventJournal } from '../../../src-next/persistence/index.js';
+import {
+  InMemoryCheckpointStore,
+  InMemoryEventJournal,
+} from '../../../src-next/persistence/index.js';
 import { createWorkService } from '../../../src-next/work/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 import { createTestIntakeRouting } from '../../support/intake-routing.js';

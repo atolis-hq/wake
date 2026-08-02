@@ -8,7 +8,11 @@ import {
   RunRepository,
   runStream,
 } from '../../../src-next/execution/index.js';
-import { createEventDraft, EventActorKind, EventSourceKind } from '../../../src-next/kernel/index.js';
+import {
+  createEventDraft,
+  EventActorKind,
+  EventSourceKind,
+} from '../../../src-next/kernel/index.js';
 import { orchestrationGroupId, workflowInstanceId } from '../../../src-next/orchestration/index.js';
 import { executionFixture } from './support.js';
 

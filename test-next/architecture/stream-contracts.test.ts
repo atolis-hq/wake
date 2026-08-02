@@ -1,5 +1,5 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
-import { resId, workId } from '../../support/identities.js';
+import { resId, workId } from '../support/identities.js';
 
 import {
   activationId,
@@ -7,14 +7,14 @@ import {
   ActivityStreamKind,
   isActivityDecisionStream,
   type ActivityDecisionStreamRef,
-} from '../../../src-next/activities/index.js';
+} from '../../src-next/activities/index.js';
 import {
   ExecutionStreamKind,
   isRunStream,
   runId,
   runStream,
   type RunId,
-} from '../../../src-next/execution/index.js';
+} from '../../src-next/execution/index.js';
 import {
   adapterId,
   BuiltInAdapterId,
@@ -22,9 +22,9 @@ import {
   IntegrationStreamKind,
   isIntegrationStream,
   type AdapterId,
-} from '../../../src-next/integrations/github/index.js';
-import type { EntityRef } from '../../../src-next/kernel/index.js';
-import * as kernel from '../../../src-next/kernel/index.js';
+} from '../../src-next/integrations/github/index.js';
+import type { EntityRef } from '../../src-next/kernel/index.js';
+import * as kernel from '../../src-next/kernel/index.js';
 import {
   childOrchestrationGroupStream,
   isOrchestrationGroupStream,
@@ -33,15 +33,15 @@ import {
   primaryOrchestrationGroupStream,
   workflowInstanceId,
   workflowInstanceStream,
-} from '../../../src-next/orchestration/index.js';
+} from '../../src-next/orchestration/index.js';
 import {
   isResourceStream,
   resourceStream,
   ResourceStreamKind,
   type ResourceId,
-} from '../../../src-next/resources/index.js';
-import type { WorkStreamKind } from '../../../src-next/work/index.js';
-import { isWorkItemStream, workItemStream, type WorkItemId } from '../../../src-next/work/index.js';
+} from '../../src-next/resources/index.js';
+import type { WorkStreamKind } from '../../src-next/work/index.js';
+import { isWorkItemStream, workItemStream, type WorkItemId } from '../../src-next/work/index.js';
 
 type StreamPredicate = (stream: EntityRef) => boolean;
 

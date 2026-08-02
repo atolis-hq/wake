@@ -35,7 +35,7 @@ describe('typed domain and application contract boundaries', () => {
     'src-next/work/contracts/allowed-fixture.ts',
     'src-next/integrations/github/application/allowed-fixture.ts',
     'src-next/persistence/application/allowed-fixture.ts',
-    'test-next/work/allowed-fixture.test.ts',
+    'test-next/unit/work/allowed-fixture.test.ts',
   ])('permits the exact %s boundary', async (filePath) => {
     await expect(restrictedRules(filePath)).resolves.toEqual([]);
   });

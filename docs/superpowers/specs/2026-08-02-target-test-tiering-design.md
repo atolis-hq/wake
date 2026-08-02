@@ -44,3 +44,20 @@ A small script-contract test reads `package.json` and the three Vitest configs t
 ## CI
 
 The existing CI workflow continues to execute `npm run verify:ci`. Its aggregate command, rather than `verify:next`, owns full target integration and E2E coverage. Pull requests therefore retain complete validation while normal local `verify:next` stays fast and does not contend on filesystem-heavy E2E fixtures.
+## Amendment: architecture tier (2026-08-02)
+
+Architecture tests are a fourth physical tier, `test-next/architecture/**`, not integration tests. They invoke repository-wide structural and governance tooling (ESLint, module-manifest, vocabulary, and build-lane checks), but the corrected suite completes quickly and therefore runs alongside unit tests in routine validation.
+
+The authoritative commands are:
+
+| Command | Scope |
+| --- | --- |
+| `test:next` / `test:next:unit` | `test-next/unit/**` |
+| `test:next:architecture` | `test-next/architecture/**` |
+| `test:next:integration` | `test-next/integration/**` |
+| `test:next:e2e` | non-live `test-next/e2e/**`, serially |
+| `test:next:e2e:live` | explicit live-provider subset only |
+| `verify:next` | unit plus architecture, never integration or E2E |
+| `verify:ci` | all four non-live tiers |
+
+This amendment supersedes the earlier three-tier wording. The architecture config is an explicit CI path-filter input.

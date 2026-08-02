@@ -10,7 +10,10 @@ import {
   workflowInstanceId,
   workflowInstanceStream,
 } from '../../../src-next/orchestration/index.js';
-import { InMemoryCheckpointStore, InMemoryEventJournal } from '../../../src-next/persistence/index.js';
+import {
+  InMemoryCheckpointStore,
+  InMemoryEventJournal,
+} from '../../../src-next/persistence/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 import { eventEnvelope } from '../../support/event-envelope.js';
 

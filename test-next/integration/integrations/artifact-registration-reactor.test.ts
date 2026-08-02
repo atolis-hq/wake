@@ -2,8 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { activationId, ActivityOutcomeKind } from '../../../src-next/activities/index.js';
 import { ArtifactRegistrationReactor } from '../../../src-next/integrations/index.js';
 import { createEventDraft, EventActorKind } from '../../../src-next/kernel/index.js';
-import { workflowInstanceId, workflowInstanceStream } from '../../../src-next/orchestration/index.js';
-import { InMemoryCheckpointStore, InMemoryEventJournal } from '../../../src-next/persistence/index.js';
+import {
+  workflowInstanceId,
+  workflowInstanceStream,
+} from '../../../src-next/orchestration/index.js';
+import {
+  InMemoryCheckpointStore,
+  InMemoryEventJournal,
+} from '../../../src-next/persistence/index.js';
 import { resourceKind } from '../../../src-next/resources/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 import { workId } from '../../support/identities.js';

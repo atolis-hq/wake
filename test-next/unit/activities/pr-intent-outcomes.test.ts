@@ -8,7 +8,10 @@ import {
 import { resourceCapability, resourceKind } from '../../../src-next/resources/index.js';
 import { resId, workId } from '../../support/identities.js';
 
-import { activationId, createPullRequestMergeActivity } from '../../../src-next/activities/index.js';
+import {
+  activationId,
+  createPullRequestMergeActivity,
+} from '../../../src-next/activities/index.js';
 import { mergeDenied } from '../../../src-next/activities/pr/event-drafts.js';
 import { appendIntentOnce } from '../../../src-next/activities/pr/intent.js';
 import {
