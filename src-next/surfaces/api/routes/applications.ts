@@ -25,6 +25,7 @@ export interface CollectionQuery {
   readonly limit: number;
   readonly search?: string;
   readonly state?: string;
+  readonly workItemKey?: string;
 }
 
 export interface ApiCollectionPage<T> {

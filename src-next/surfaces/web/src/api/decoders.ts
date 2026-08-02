@@ -249,6 +249,7 @@ export const decodeAuditEvent: Decoder<AuditEventResponse> = (value, path = '') 
         }),
     ...optionalStringProperty(record, 'causationId', path),
     ...optionalStringProperty(record, 'correlationId', path),
+    payload: record.payload,
   };
 };
 

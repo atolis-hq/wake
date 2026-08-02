@@ -6,4 +6,5 @@ export interface AuditEventResponse {
   readonly stream?: { readonly kind: string; readonly id: string };
   readonly causationId?: string;
   readonly correlationId?: string;
+  readonly payload?: unknown;
 }

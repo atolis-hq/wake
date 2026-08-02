@@ -2,6 +2,7 @@ import { ControlStreamKind } from '../control-plane/index.js';
 import type { EventEnvelope } from '../kernel/index.js';
 import type { WorkflowInstanceView } from '../orchestration/index.js';
 import type { ResourceView } from '../resources/index.js';
+import { fromWorkItemKey } from '../surfaces/api/contracts/work.js';
 import {
   ApiCommandStatus,
   presentBoardCard,
@@ -117,7 +118,32 @@ function createOrchestrationApplications(root: CompositionRoot, now: () => strin
 function createEventApplications(root: CompositionRoot, now: () => string) {
   return {
     async list(query: Parameters<ApiApplications['events']['list']>[0]) {
-      const events = await root.journal.readAll(query.cursor?.position ?? 0, query.limit + 1);
+      const all = await root.journal.readAll(0);
+      const workItemKey = query.workItemKey;
+      const workItemId =
+        workItemKey === undefined
+          ? undefined
+          : (() => {
+              try {
+                return fromWorkItemKey(workItemKey);
+              } catch {
+                return workItemKey;
+              }
+            })();
+      const filtered =
+        workItemId === undefined
+          ? all
+          : all.filter(
+              (event) =>
+                event.stream.id === workItemId ||
+                (typeof event.payload === 'object' &&
+                  event.payload !== null &&
+                  'workItemId' in event.payload &&
+                  event.payload.workItemId === workItemId),
+            );
+      const events = filtered
+        .filter((event) => event.globalPosition > (query.cursor?.position ?? 0))
+        .slice(0, query.limit + 1);
       const visible = events.slice(0, query.limit);
       const newest = visible.at(-1);
       const meta = await projectionMeta(
@@ -276,6 +302,7 @@ function presentEvents(events: readonly EventEnvelope[]): readonly AuditEventRes
     stream: event.stream,
     causationId: event.causationId,
     correlationId: event.correlationId,
+    payload: event.payload,
   }));
 }
 

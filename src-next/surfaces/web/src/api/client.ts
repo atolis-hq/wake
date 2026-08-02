@@ -127,8 +127,15 @@ export class WakeApiClient {
   };
 
   readonly events = {
-    list: (cursor?: string, signal?: AbortSignal) =>
-      this.get(`/events${query({ cursor })}`, collectionDecoder(decodeAuditEvent), signal),
+    list: (cursor?: string, workItemKeyOrSignal?: string | AbortSignal, signal?: AbortSignal) => {
+      const workItemKey = typeof workItemKeyOrSignal === 'string' ? workItemKeyOrSignal : undefined;
+      const requestSignal = typeof workItemKeyOrSignal === 'string' ? signal : workItemKeyOrSignal;
+      return this.get(
+        `/events${query({ cursor, workItemKey })}`,
+        collectionDecoder(decodeAuditEvent),
+        requestSignal,
+      );
+    },
   };
 
   readonly observability = {

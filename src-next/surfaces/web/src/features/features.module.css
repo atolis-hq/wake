@@ -337,3 +337,27 @@
   font-size: 0.76rem;
   overflow-x: auto;
 }
+
+.eventButton {
+  display: flex;
+  gap: 1rem;
+  width: 100%;
+  background: none;
+  border: 0;
+  color: inherit;
+  text-align: left;
+  padding: 0;
+  cursor: pointer;
+}
+.eventPayload {
+  white-space: pre-wrap;
+  margin: 0.5rem 0 0 1rem;
+}
+.tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin: 1rem 0;
+}
+.tabs button[aria-selected='true'] {
+  font-weight: 700;
+}

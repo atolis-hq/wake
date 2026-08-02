@@ -40,7 +40,7 @@ function EventsCollection({
   const query = useQuery({
     queryKey: queryKeys.events.list(navigation.cursor),
     queryFn: async ({ signal }) => {
-      return client.events.list(cursors.current.live, signal);
+      return client.events.list(cursors.current.live, undefined, signal);
     },
     refetchInterval: (state) =>
       state.state.data?.page.hasMore === true ? false : refreshPolicy.events,
@@ -74,6 +74,27 @@ function EventsCollection({
         </>
       )}
     </>
+  );
+}
+
+export function EventRow({ record }: { readonly record: AuditEventResponse }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <li className={styles.event}>
+      <button
+        type="button"
+        className={styles.eventButton}
+        onClick={() => setExpanded((value) => !value)}
+        aria-expanded={expanded}
+      >
+        <LocalTime value={record.occurredAt} />
+        <span className={styles.eventType}>{record.type}</span>
+        <span className={styles.eventId}>{record.id}</span>
+      </button>
+      {expanded && (
+        <pre className={styles.eventPayload}>{JSON.stringify(record.payload ?? {}, null, 2)}</pre>
+      )}
+    </li>
   );
 }
 
@@ -131,11 +152,7 @@ export function EventsFeed({ records }: { readonly records: readonly AuditEventR
           }}
         >
           {ordered.map((record) => (
-            <li className={styles.event} key={record.id}>
-              <LocalTime value={record.occurredAt} />
-              <span className={styles.eventType}>{record.type}</span>
-              <span className={styles.eventId}>{record.id}</span>
-            </li>
+            <EventRow record={record} key={record.id} />
           ))}
         </ol>
       )}

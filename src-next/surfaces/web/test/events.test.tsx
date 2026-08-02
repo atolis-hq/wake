@@ -6,7 +6,30 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { WakeApiClient } from '../src/api/client.js';
 import { ApiClientContext } from '../src/api/context.js';
 import { queryKeys } from '../src/api/query-keys.js';
-import { EventsFeed, EventsPage, mergeBoundedEvents } from '../src/features/events/events.js';
+import {
+  EventRow,
+  EventsFeed,
+  EventsPage,
+  mergeBoundedEvents,
+} from '../src/features/events/events.js';
+
+describe('event rows', () => {
+  afterEach(cleanup);
+
+  it('expands to show the complete JSON payload', async () => {
+    const user = userEvent.setup();
+    render(
+      <ol>
+        <EventRow
+          record={{ ...event(1), payload: { workItemId: 'work-a', nested: { ok: true } } }}
+        />
+      </ol>,
+    );
+    await user.click(screen.getByRole('button', { name: /work.created/ }));
+    expect(screen.getByText(/"nested": \{/)).toBeTruthy();
+    expect(screen.getByRole('button').getAttribute('aria-expanded')).toBe('true');
+  });
+});
 
 describe('incremental event feed', () => {
   afterEach(cleanup);

@@ -14,7 +14,15 @@ export function parseCollectionQuery(
   const cursor = parseCursor(parameters.get('cursor'));
   if ('status' in cursor) return cursor;
   const text = parseTextFilters(parameters);
-  return 'status' in text ? text : queryResult(limit, cursor.value, text.search, text.state);
+  return 'status' in text
+    ? text
+    : queryResult(
+        limit,
+        cursor.value,
+        text.search,
+        text.state,
+        parameters.get('workItemKey') ?? undefined,
+      );
 }
 
 export function collection<T>(page: ApiCollectionPage<T>, query: CollectionQuery): ApiHttpResponse {
@@ -92,11 +100,13 @@ function queryResult(
   cursor: CollectionQuery['cursor'],
   search?: string,
   state?: string,
+  workItemKey?: string,
 ): CollectionQuery {
   return {
     limit,
     ...(cursor === undefined ? {} : { cursor }),
     ...(search === undefined ? {} : { search }),
     ...(state === undefined ? {} : { state }),
+    ...(workItemKey === undefined ? {} : { workItemKey }),
   };
 }

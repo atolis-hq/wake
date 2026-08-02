@@ -18,7 +18,7 @@ const collectionRoutes = new Map<string, ReadonlySet<string>>([
   ['/api/v1/workflow-instances', new Set(['cursor', 'limit', 'state'])],
   ['/api/v1/runs', new Set(['cursor', 'limit', 'state'])],
   ['/api/v1/runners', new Set(['cursor', 'limit'])],
-  ['/api/v1/events', new Set(['cursor', 'limit'])],
+  ['/api/v1/events', new Set(['cursor', 'limit', 'workItemKey'])],
   ['/api/v1/board', new Set(['cursor', 'limit'])],
 ]);
 

@@ -1,6 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router';
-import type { BoardCardResponse, RunResponse } from '../../../../api/contracts/index.js';
+import type {
+  AuditEventResponse,
+  BoardCardResponse,
+  RunResponse,
+} from '../../../../api/contracts/index.js';
 import { useApiClient } from '../../api/context.js';
 import { queryKeys } from '../../api/query-keys.js';
 import { refreshPolicy } from '../../api/refresh-policy.js';
@@ -15,6 +20,7 @@ import {
   Panel,
   StaleIndicator,
 } from '../../components/primitives.js';
+import { EventRow } from '../events/events.js';
 import styles from '../features.module.css';
 
 export function WorkList() {
@@ -77,6 +83,13 @@ export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
     refetchInterval: refreshPolicy.openWork,
     enabled: workItemKey !== '',
   });
+  const [tab, setTab] = useState<'overview' | 'events'>('overview');
+  const eventsQuery = useQuery({
+    queryKey: queryKeys.events.list('', workItemKey),
+    queryFn: ({ signal }) => client.events.list(undefined, workItemKey, signal),
+    refetchInterval: refreshPolicy.events,
+    enabled: workItemKey !== '',
+  });
   const content = (
     <div className={styles.detail}>
       {query.isPending ? (
@@ -89,58 +102,91 @@ export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
             title={query.data.data.work.objective}
             actions={<StaleIndicator refreshing={query.isFetching} stale={query.isStale} />}
           />
-          <Panel>
-            <dl className={styles.summary}>
-              <dt>Work identity</dt>
-              <dd>{query.data.data.work.workItemId}</dd>
-              <dt>State</dt>
-              <dd>
-                <Chip variant="outline">{query.data.data.work.state}</Chip>
-              </dd>
-              <dt>Stage</dt>
-              <dd>{query.data.data.orchestration.primary?.currentStage ?? 'Not started'}</dd>
-              <dt>Workflow</dt>
-              <dd>{query.data.data.orchestration.primary?.workflowName ?? 'â€”'}</dd>
-            </dl>
-          </Panel>
+          <nav className={styles.tabs} aria-label="Work detail sections">
+            <button
+              type="button"
+              aria-selected={tab === 'overview'}
+              onClick={() => setTab('overview')}
+            >
+              Overview
+            </button>
+            <button type="button" aria-selected={tab === 'events'} onClick={() => setTab('events')}>
+              Events
+            </button>
+          </nav>
+          {tab === 'events' ? (
+            <section aria-labelledby="work-events">
+              <h2 id="work-events">Events</h2>
+              {eventsQuery.isPending ? (
+                <LoadingState label="Loading events" />
+              ) : eventsQuery.error ? (
+                <ErrorState error={eventsQuery.error} retry={() => void eventsQuery.refetch()} />
+              ) : eventsQuery.data?.items.length ? (
+                <ol className={styles.eventList}>
+                  {eventsQuery.data.items.map((event: AuditEventResponse) => (
+                    <EventRow record={event} key={event.id} />
+                  ))}
+                </ol>
+              ) : (
+                <EmptyState>No events</EmptyState>
+              )}
+            </section>
+          ) : (
+            <>
+              <Panel>
+                <dl className={styles.summary}>
+                  <dt>Work identity</dt>
+                  <dd>{query.data.data.work.workItemId}</dd>
+                  <dt>State</dt>
+                  <dd>
+                    <Chip variant="outline">{query.data.data.work.state}</Chip>
+                  </dd>
+                  <dt>Stage</dt>
+                  <dd>{query.data.data.orchestration.primary?.currentStage ?? 'Not started'}</dd>
+                  <dt>Workflow</dt>
+                  <dd>{query.data.data.orchestration.primary?.workflowName ?? 'â€”'}</dd>
+                </dl>
+              </Panel>
 
-          <section aria-labelledby="work-resources">
-            <h2 id="work-resources">Resources</h2>
-            {query.data.data.resources.length === 0 ? (
-              <EmptyState>No correlated resources</EmptyState>
-            ) : (
-              <ul className={styles.resourceList} aria-label="Resources">
-                {query.data.data.resources.map((resource) => (
-                  <li key={resource.resourceId}>
-                    <Chip>{resource.kind}</Chip>
-                    <span className={styles.resourceId}>{resource.resourceId}</span>
-                    {resource.capabilities.map((capability) => (
-                      <Chip key={capability} variant="outline">
-                        {capability}
-                      </Chip>
+              <section aria-labelledby="work-resources">
+                <h2 id="work-resources">Resources</h2>
+                {query.data.data.resources.length === 0 ? (
+                  <EmptyState>No correlated resources</EmptyState>
+                ) : (
+                  <ul className={styles.resourceList} aria-label="Resources">
+                    {query.data.data.resources.map((resource) => (
+                      <li key={resource.resourceId}>
+                        <Chip>{resource.kind}</Chip>
+                        <span className={styles.resourceId}>{resource.resourceId}</span>
+                        {resource.capabilities.map((capability) => (
+                          <Chip key={capability} variant="outline">
+                            {capability}
+                          </Chip>
+                        ))}
+                        {resource.revision !== undefined && (
+                          <span className={styles.resourceId}>{resource.revision}</span>
+                        )}
+                      </li>
                     ))}
-                    {resource.revision !== undefined && (
-                      <span className={styles.resourceId}>{resource.revision}</span>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
+                  </ul>
+                )}
+              </section>
 
-          <section aria-labelledby="work-runs">
-            <h2 id="work-runs">Runs</h2>
-            {query.data.data.execution.runs.length === 0 ? (
-              <EmptyState>No runs</EmptyState>
-            ) : (
-              <DataTable
-                caption="Runs"
-                rows={query.data.data.execution.runs}
-                rowKey={(run) => run.runId}
-                columns={runColumns}
-              />
-            )}
-          </section>
+              <section aria-labelledby="work-runs">
+                <h2 id="work-runs">Runs</h2>
+                {query.data.data.execution.runs.length === 0 ? (
+                  <EmptyState>No runs</EmptyState>
+                ) : (
+                  <DataTable
+                    caption="Runs"
+                    rows={query.data.data.execution.runs}
+                    rowKey={(run) => run.runId}
+                    columns={runColumns}
+                  />
+                )}
+              </section>
+            </>
+          )}
         </>
       ) : null}
     </div>
