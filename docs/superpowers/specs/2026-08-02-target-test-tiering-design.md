@@ -61,3 +61,9 @@ The authoritative commands are:
 | `verify:ci` | all four non-live tiers |
 
 This amendment supersedes the earlier three-tier wording. The architecture config is an explicit CI path-filter input.
+
+## Amendment: local finishing gate (2026-08-03)
+
+`verify:local` is the single local finishing gate. It runs `verify` and `verify:next`, covering both legacy and target static checks, builds, unit tests, web component tests, and target architecture tests. It deliberately excludes legacy integration, target integration, non-live E2E, and live-provider E2E.
+
+`verify:ci` remains the GitHub CI aggregate. It runs `verify:local` and explicitly adds every non-live integration and E2E tier. Local development and branch completion do not require `verify:ci`; CI is the full-system protection layer for edge cases and real-boundary coverage.
