@@ -1,5 +1,7 @@
 import { cleanup, render, screen, within } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it } from 'vitest';
 import { WakeApiClient } from '../src/api/client.js';
@@ -60,6 +62,20 @@ function boardClient(fetchSpy?: (url: string) => void) {
 
 describe('board', () => {
   afterEach(cleanup);
+
+  it('fits all five columns on desktop and stacks them on mobile', () => {
+    const stylesheet = readFileSync(
+      resolve(process.cwd(), 'src/features/features.module.css'),
+      'utf8',
+    );
+
+    expect(stylesheet).toMatch(
+      /\.board\s*\{[^}]*grid-template-columns:\s*repeat\(5,\s*minmax\(0,\s*1fr\)\)/s,
+    );
+    expect(stylesheet).toMatch(
+      /@media\s*\(max-width:\s*42rem\)[\s\S]*?\.board\s*\{[^}]*display:\s*block/s,
+    );
+  });
 
   it('labels every column with its item count and keeps empty columns visible', async () => {
     render(
