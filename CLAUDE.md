@@ -118,7 +118,7 @@ A Wake home is a directory holding `config.yaml`, `config.workflows.yaml`, `prom
 
 ### Claude smoke test
 
-The minimal smoke prompt used by `smoke:claude` is intentionally trivial (`This is Wake, reply with "hi Wake only"`) to prove the CLI/session/remote-control plumbing without spending meaningful tokens — don't make it more elaborate.
+The minimal smoke prompt used by `smoke:claude` is intentionally trivial (`This is Wake, reply with "Hi from Wake"`) to prove the CLI/session/remote-control plumbing without spending meaningful tokens — don't make it more elaborate.
 
 ## Working within the pluggable architecture
 

@@ -101,7 +101,7 @@ export const runtimeEventSchema = z.object({
 });
 
 export const defaultAgentIdentity = 'Wake';
-export const defaultSmokePrompt = `This is ${defaultAgentIdentity}, reply with "hi ${defaultAgentIdentity} only"`;
+export const defaultSmokePrompt = `This is ${defaultAgentIdentity}, reply with "Hi from ${defaultAgentIdentity}"`;
 
 const claudeEffortSchema = z.enum(['low', 'medium', 'high', 'xhigh', 'max']);
 const codexReasoningEffortSchema = z.enum(['low', 'medium', 'high']);

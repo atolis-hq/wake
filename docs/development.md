@@ -179,5 +179,5 @@ invokes Wake.
 The default smoke prompt is intentionally tiny:
 
 ```text
-This is Wake, reply with "hi Wake only"
+This is Wake, reply with "Hi from Wake"
 ```

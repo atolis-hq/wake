@@ -169,7 +169,7 @@ The repo supports two runner modes:
 The minimal smoke prompt is:
 
 ```text
-This is Wake, reply with "hi Wake only"
+This is Wake, reply with "Hi from Wake"
 ```
 
 That keeps token usage low while proving the CLI, session capture, and remote-control surfaces are wired correctly.
