@@ -7,6 +7,8 @@ const runtimeDirectories = [
   'checkpoints',
   'locks',
   'transcripts',
+  'logs',
+  'container-home',
 ] as const;
 
 /** Creates a new Wake home; runtime state always stays under its hidden .wake directory. */

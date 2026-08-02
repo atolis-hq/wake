@@ -74,6 +74,10 @@ export * from './cli/commands/ui.js';
 
 export * from './cli/commands/validate-state.js';
 
+export * from './cli/infrastructure/docker-cli.js';
+
+export * from './cli/infrastructure/process-log.js';
+
 export * from './cli/main.js';
 
 export * from './cli/usage.js';

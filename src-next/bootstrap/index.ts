@@ -84,6 +84,8 @@ export * from './board-projection.js';
 
 export * from './config/load-config.js';
 
+export * from './initialise.js';
+
 export * from './config/root-schema.js';
 
 export * from './paths.js';
@@ -91,3 +93,9 @@ export * from './paths.js';
 export * from './projection-runtime.js';
 
 export * from './surface-applications.js';
+
+export * from './update-ledger.js';
+
+export * from './self-update-application.js';
+
+export * from './source-update-port.js';
