@@ -1,4 +1,4 @@
-import { execFile as nodeExecFile } from 'node:child_process';
+import { execFile as nodeExecFile, spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { access } from 'node:fs/promises';
 import type { Server } from 'node:http';
@@ -21,6 +21,7 @@ import {
   runTargetSmoke,
   waitForActiveRuns,
   type ApiApplications,
+  type DockerProcessChunk,
   type HostOptions,
   type WakeCliApplications,
 } from '../surfaces/index.js';
@@ -148,10 +149,8 @@ function createOperationalApplications(root: CompositionRoot) {
         createSandboxDockerPort(
           createLoggedDockerCli(
             {
-              execute: async (arguments__) => {
-                const result = await execFile('docker', arguments__, { cwd: root.paths.wakeRoot });
-                return { stdout: result.stdout, stderr: result.stderr };
-              },
+              execute: (arguments__, onChunk) =>
+                spawnDocker(arguments__, onChunk, root.paths.wakeRoot),
             },
             createProcessLogSink(
               join(root.paths.wakeRoot, 'logs', 'sandbox.log'),
@@ -231,6 +230,47 @@ function createDockerInspection(wakeRoot: string) {
       }
     },
   };
+}
+
+/**
+ * Spawns `docker` directly (not execFile) so stdout/stderr chunks reach the
+ * caller as they arrive, letting the sandbox log sink write incrementally
+ * during a long `build`/`up` instead of buffering until exit. Rejects on a
+ * non-zero exit, matching execFile's throw-on-failure contract.
+ */
+function spawnDocker(
+  arguments_: readonly string[],
+  onChunk: (chunk: DockerProcessChunk) => void | Promise<void>,
+  cwd: string,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn('docker', [...arguments_], { cwd });
+    let chain = Promise.resolve();
+    let stderrTail = '';
+    const enqueue = (stream: DockerProcessChunk['stream'], text: string) => {
+      if (stream === 'stderr') stderrTail = `${stderrTail}${text}`.slice(-4000);
+      chain = chain.then(() => onChunk({ stream, text }));
+    };
+    child.stdout.on('data', (buffer: Buffer) => enqueue('stdout', buffer.toString('utf8')));
+    child.stderr.on('data', (buffer: Buffer) => enqueue('stderr', buffer.toString('utf8')));
+    child.on('error', (error) => {
+      void chain.then(() => reject(error));
+    });
+    child.on('close', (code) => {
+      void chain.then(() => {
+        if (code === 0) resolve();
+        else {
+          const detail = stderrTail.trim();
+          reject(
+            new Error(
+              `docker ${arguments_.join(' ')} exited with code ${String(code)}` +
+                (detail.length > 0 ? `: ${detail}` : ''),
+            ),
+          );
+        }
+      });
+    });
+  });
 }
 
 async function doctorDiagnostics(root: CompositionRoot) {

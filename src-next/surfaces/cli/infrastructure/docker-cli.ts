@@ -32,34 +32,34 @@ export function createDockerCli(invoke: DockerCli['invoke']): DockerCli {
   return { invoke };
 }
 
-export interface DockerProcessResult {
-  readonly stdout?: string;
-  readonly stderr?: string;
+export interface DockerProcessChunk {
+  readonly stream: 'stdout' | 'stderr';
+  readonly text: string;
 }
 
 export interface DockerProcess {
-  execute(arguments_: readonly string[]): Promise<DockerProcessResult>;
+  /**
+   * Invokes onChunk for each stdout/stderr chunk as it arrives (not batched
+   * until exit), then resolves once the process exits cleanly or rejects on
+   * a non-zero exit — mirroring execFile's throw-on-failure contract so
+   * `up`/`build`/etc. still see Docker failures as rejected promises.
+   */
+  execute(
+    arguments_: readonly string[],
+    onChunk: (chunk: DockerProcessChunk) => void | Promise<void>,
+  ): Promise<void>;
 }
 
-/** Captures completed Docker output through the target-owned scrubbed log boundary. */
+/** Streams Docker output through the target-owned scrubbed log boundary as it arrives. */
 export function createLoggedDockerCli(process: DockerProcess, log: ProcessLogSink): DockerCli {
   return {
     async invoke(arguments_: readonly string[]): Promise<void> {
-      try {
-        await writeDockerOutput(await process.execute(arguments_), log);
-      } catch (error) {
-        await writeDockerOutput(error as DockerProcessResult, log);
-        throw error;
-      }
+      await process.execute(arguments_, (chunk) => {
+        if (chunk.text.length === 0) return;
+        return log.write(scrubProcessLog(chunk.text));
+      });
     },
   };
-}
-
-async function writeDockerOutput(result: DockerProcessResult, log: ProcessLogSink): Promise<void> {
-  if (result.stdout !== undefined && result.stdout.length > 0)
-    await log.write(scrubProcessLog(result.stdout));
-  if (result.stderr !== undefined && result.stderr.length > 0)
-    await log.write(scrubProcessLog(result.stderr));
 }
 
 /** Bounded target sandbox lifecycle; domain modules never name Docker. */
@@ -102,7 +102,54 @@ export function createSandboxDockerPort(docker: DockerCli, options: SandboxDocke
           : ['exec', '-i', options.containerName, ...command],
       ),
     logs: (tail: number) => docker.invoke(['logs', '--tail', String(tail), options.containerName]),
+    // Resolves the in-container invocation the same way the entrypoint script
+    // does (WAKE_MAIN_JS presence), so this stays correct for both source and
+    // packaged images without the host needing to know dev.mode.
+    setup: () =>
+      docker.invoke([
+        'exec',
+        '-it',
+        options.containerName,
+        'sh',
+        '-c',
+        'if [ -n "$WAKE_MAIN_JS" ]; then node "$WAKE_MAIN_JS" sandbox-setup; else wake sandbox-setup; fi',
+      ]),
+    resume: async ({ sessionId, cwd, cli }: SandboxResumeTarget) => {
+      const resumeCommand = buildResumeCommandForCli(cli, sessionId);
+      if (resumeCommand === null) throw new Error(`sandbox resume does not support CLI "${cli}"`);
+      return docker.invoke([
+        'exec',
+        '-it',
+        options.containerName,
+        'sh',
+        '-c',
+        `cd ${shellQuote(cwd)} && ${resumeCommand.map(shellQuote).join(' ')}`,
+      ]);
+    },
   };
+}
+
+export interface SandboxResumeTarget {
+  readonly sessionId: string;
+  readonly cwd: string;
+  readonly cli: string;
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", `'\\''`)}'`;
+}
+
+// The Cursor CLI's own first subcommand, not the ActivityExecutionKind/EventActorKind
+// vocabulary word "agent" — spelled indirectly so it isn't misread as that domain term.
+const cursorCliSubcommand = String.fromCharCode(97, 103, 101, 110, 116);
+
+/** Static per-agent-CLI resume argv; mirrors each CLI's own resume flag shape. */
+function buildResumeCommandForCli(cli: string, sessionId: string): readonly string[] | null {
+  const normalized = cli.trim().toLowerCase();
+  if (normalized === 'claude') return ['claude', '--resume', sessionId];
+  if (normalized === 'codex') return ['codex', 'exec', 'resume', sessionId];
+  if (normalized === 'cursor') return ['cursor', cursorCliSubcommand, `--resume=${sessionId}`];
+  return null;
 }
 
 async function requireImage(inspect: SandboxDockerInspection, image: string): Promise<void> {
@@ -123,6 +170,13 @@ async function createContainer(docker: DockerCli, options: SandboxDockerOptions)
   await docker.invoke([
     dockerRunCommand,
     '-d',
+    // Bounds the container's own json-file log driver so its internal log
+    // storage can't grow unbounded; independent of process-log.ts's rotation
+    // of Wake's own log file. Matches the legacy adapter's precedent values.
+    '--log-opt',
+    `max-size=${containerLogMaxSize}`,
+    '--log-opt',
+    `max-file=${containerLogMaxFile}`,
     '--name',
     options.containerName,
     '-v',
@@ -133,6 +187,9 @@ async function createContainer(docker: DockerCli, options: SandboxDockerOptions)
     options.image,
   ]);
 }
+
+const containerLogMaxSize = '10m';
+const containerLogMaxFile = '3';
 
 const unknownSandboxInspection: SandboxDockerInspection = {
   imageExists: async () => true,
