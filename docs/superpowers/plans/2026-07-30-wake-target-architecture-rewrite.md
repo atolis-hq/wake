@@ -5188,6 +5188,14 @@ git commit -m "feat: port target operational commands"
 
 ## Task 27: Prove functional-decision and scenario coverage
 
+**Prerequisite:** Task 27B (below) must be complete first. `check:scenarios`
+only verifies a scenario ID exists in a test file, not that the test is
+rigorous — writing this task's scenarios against a gap Task 27B would
+otherwise close produces a scenario that either can't pass honestly or
+passes hollow (mocked, proving nothing), and has to be rewritten once the
+gap is actually closed. Close the gaps first so this task's scenario work
+only has to happen once, against real behaviour.
+
 **Files:**
 
 - Create: `scripts/check-scenario-coverage.mjs`
@@ -5471,6 +5479,76 @@ missing behavioural owner or stale module link before Task 28.
 ```powershell
 git add src-next docs/architecture/rewrite-completion-audit.md
 git commit -m "docs: specify target module behaviour"
+```
+
+## Task 27B: Close legacy-preservation gaps found while specifying
+
+Writing Task 27A's specs surfaced real gaps between `src-next` and
+catalogue rows already dispositioned `preserve`/`correct`/`consolidate` —
+recorded in `docs/reports/2026-08-02-target-architecture-spec-findings.md`
+(58 items across all modules; the `Cutover` column marks which ones cite a
+catalogue row). This task closes the ones that block Task 27, no more.
+
+**Files:** touch points named in the findings doc and the three design docs
+below; no new files beyond what those designs specify.
+
+- [ ] **Step 1: Port the mechanical items**
+
+No design needed — each already has a working legacy implementation to
+port. From the findings doc: **E2** (wire `maxTurns`/`allowedTools` through
+the CLI runner adapters), **I1** (wire up GitHub review-signal polling),
+**I2** (wire up GitHub label reconciliation — sequence this after Step 4
+below, since it depends on that design's resolution of which pipeline is
+"the tick"), **C6** (fix `unpause`'s missing paused-check and non-durable
+idempotency).
+
+- [ ] **Step 2: Implement agent-reported artifact correlation (X1)**
+
+Per `docs/superpowers/specs/2026-08-02-agent-artifact-correlation-design.md`.
+Closes finding X1 and the ADR 0001 amendment it documents.
+
+- [ ] **Step 3: Implement ambiguous-state escalation**
+
+Per `docs/superpowers/specs/2026-08-02-ambiguous-state-escalation-design.md`.
+Closes findings E1, E6, I4.
+
+- [ ] **Step 4: Implement control-plane Advancement wiring**
+
+Per `docs/superpowers/specs/2026-08-02-control-plane-advancement-wiring-design.md`.
+Closes findings C1, C2, C5, C8.
+
+- [ ] **Step 5: Re-sync drifted module specs**
+
+Steps 1-4 change `src-next` source. Run:
+
+```powershell
+npm run check:specs
+```
+
+Use the `sync-module-specs` skill against whatever it reports stale — this
+is a targeted re-verification of what changed, not a re-authoring pass.
+
+- [ ] **Step 6: Record decisions and verify**
+
+Fill in the `Decision` column for every row closed above in the findings
+doc. Run:
+
+```powershell
+npm run check:specs
+npm run verify:next
+npm run verify
+```
+
+Expected: `check:specs` reports all modules current; both verify commands
+PASS. Rows in the findings doc without a catalogue `Cutover` citation
+(deferred/low-priority items) are explicitly out of scope for this task —
+don't chase them here.
+
+- [ ] **Step 7: Commit**
+
+```powershell
+git add src-next test-next docs/reports/2026-08-02-target-architecture-spec-findings.md
+git commit -m "fix: close legacy-preservation gaps found while specifying"
 ```
 
 ## Task 28: Cut over atomically and archive the legacy implementation
