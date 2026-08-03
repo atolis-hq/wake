@@ -68,9 +68,9 @@
   font-weight: 700;
 }
 .main {
-  width: min(100% - 2rem, var(--content-width));
-  margin: 0 auto;
-  padding: var(--space-6) 0;
+  width: 100%;
+  margin: 0;
+  padding: var(--space-6) var(--space-4);
 }
 .pageHeader {
   display: flex;
@@ -239,8 +239,8 @@
     padding-inline: var(--space-2);
   }
   .main {
-    width: min(100% - 1rem, 76rem);
-    padding-top: var(--space-4);
+    width: 100%;
+    padding: var(--space-4) var(--space-2) 0;
   }
   .pageHeader {
     align-items: start;
