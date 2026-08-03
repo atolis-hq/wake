@@ -47,6 +47,7 @@ interface ExecutionPort {
     context: {
       workItemId: WorkflowInstanceView['workItemId'];
       workflowInstanceId: WorkflowInstanceView['workflowInstanceId'];
+      workflowName: WorkflowInstanceView['workflowName'];
       orchestrationGroupId: WorkflowInstanceView['orchestrationGroupId'];
       resources: readonly NonNullable<Awaited<ReturnType<ResourceService['get']>>>[];
       ineligibleRunners?: ReadonlySet<string>;
@@ -143,6 +144,7 @@ export function createAdvanceOnce(
     const run = await execution.attempt(selected.activation, {
       workItemId: selected.workflow.workItemId,
       workflowInstanceId: selected.workflow.workflowInstanceId,
+      workflowName: selected.workflow.workflowName,
       orchestrationGroupId: selected.workflow.orchestrationGroupId,
       resources: resourceViews,
       ...(ineligible.size === 0 ? {} : { ineligibleRunners: ineligible }),
