@@ -59,6 +59,8 @@ function collectionClient(requests: string[], kind: 'work' | 'runs') {
               condition: 'ready',
               dwellSince: asOf,
               runCount: 1,
+              totalTokens: 0,
+              totalCostUsd: 0,
             },
           ]
         : [
@@ -72,6 +74,9 @@ function collectionClient(requests: string[], kind: 'work' | 'runs') {
               status: 'succeeded',
               active: false,
               startedAt: asOf,
+              sentinel: 'SUCCEEDED',
+              totalTokens: 0,
+              totalCostUsd: 0,
             },
           ];
     const body =

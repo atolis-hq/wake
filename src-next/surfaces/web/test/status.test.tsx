@@ -60,7 +60,7 @@ describe('control-plane mutation and connection state', () => {
         <App client={client} />
       </MemoryRouter>,
     );
-    const advance = await screen.findByRole('button', { name: 'Advance' });
+    const advance = await screen.findByRole('button', { name: 'Tick now' });
     await screen.findByText('No work items');
     const initialWorkReads = workReads;
     await user.click(advance);
@@ -101,7 +101,7 @@ describe('control-plane mutation and connection state', () => {
         <App client={client} />
       </MemoryRouter>,
     );
-    await user.click(await screen.findByRole('button', { name: 'Advance' }));
+    await user.click(await screen.findByRole('button', { name: 'Tick now' }));
     expect(await screen.findByText('Conflict: Advance conflict')).toBeTruthy();
     window.dispatchEvent(new Event('offline'));
     expect(await screen.findByText('Connection lost; reconnecting')).toBeTruthy();

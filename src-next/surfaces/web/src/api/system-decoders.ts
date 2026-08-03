@@ -45,6 +45,7 @@ export const decodeHealth: Decoder<HealthResponse> = (value, path = '') => {
   const record = object(value, path);
   return {
     status: healthStatus(record.status, child(path, 'status')),
+    version: string(record.version, child(path, 'version')),
     checkedAt: string(record.checkedAt, child(path, 'checkedAt')),
     ...(record.checks === undefined
       ? {}

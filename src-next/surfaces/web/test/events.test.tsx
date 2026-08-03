@@ -40,7 +40,12 @@ describe('event rows', () => {
   });
 });
 describe('incremental event feed', () => {
-  afterEach(cleanup);
+  afterEach(() => {
+    cleanup();
+    const page = (document.scrollingElement ?? document.documentElement) as HTMLElement;
+    dimensions(page, { clientHeight: 0, scrollHeight: 0 });
+    page.scrollTop = 0;
+  });
   it('buffers incoming records while paused and resumes in stable bounded order', async () => {
     const user = userEvent.setup();
     const { rerender } = render(<EventsFeed records={[event(1)]} />);
@@ -59,12 +64,11 @@ describe('incremental event feed', () => {
     ).toHaveLength(200);
   });
   it('resumes logical live updates without moving the viewport or selection', async () => {
-    const user = userEvent.setup();
     const { rerender } = render(<EventsFeed records={[event(1)]} />);
-    const feed = screen.getByRole('list');
-    dimensions(feed, { clientHeight: 100, scrollHeight: 300 });
-    feed.scrollTop = 40;
-    fireEvent.scroll(feed);
+    const page = document.scrollingElement ?? document.documentElement;
+    dimensions(page as HTMLElement, { clientHeight: 100, scrollHeight: 300 });
+    (page as HTMLElement).scrollTop = 40;
+    fireEvent.scroll(window);
     rerender(<EventsFeed records={[event(1), event(2), event(2)]} />);
     expect(screen.getByRole('button', { name: '1 new event' })).toBeTruthy();
     const selectedText = screen.getByText('event-1').firstChild!;
@@ -76,13 +80,13 @@ describe('incremental event feed', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Resume live view' }));
     expect(screen.getByText('event-2')).toBeTruthy();
     expect(screen.queryByRole('button', { name: /new event/ })).toBeNull();
-    expect(feed.scrollTop).toBe(40);
+    expect((page as HTMLElement).scrollTop).toBe(40);
     expect(selection.toString()).toBe('event-1');
     expect(selection.anchorNode).toBe(selectedText);
     rerender(<EventsFeed records={[event(1), event(2), event(3)]} />);
     expect(screen.getByText('event-3')).toBeTruthy();
     expect(screen.queryByRole('button', { name: /new event/ })).toBeNull();
-    expect(feed.scrollTop).toBe(40);
+    expect((page as HTMLElement).scrollTop).toBe(40);
     expect(selection.toString()).toBe('event-1');
     expect(selection.anchorNode).toBe(selectedText);
   });

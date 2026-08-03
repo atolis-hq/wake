@@ -12,7 +12,7 @@ describe('Wake operator app', () => {
         <App client={client()} />
       </MemoryRouter>,
     );
-    expect(await screen.findByRole('heading', { name: 'Board' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Ready (1)' })).toBeTruthy();
   });
 
   it('renders a persistent semantic shell with clean route links and independent status', async () => {
@@ -24,7 +24,7 @@ describe('Wake operator app', () => {
 
     expect(await screen.findByRole('navigation', { name: 'Primary' })).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Board' }).getAttribute('href')).toBe('/board');
-    expect(screen.getByRole('heading', { name: 'Work' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Work' }).getAttribute('aria-current')).toBe('page');
     expect(await screen.findByText('Dispatch active')).toBeTruthy();
     expect(screen.getByRole('table', { name: 'Work items' })).toBeTruthy();
   });
@@ -36,7 +36,7 @@ describe('Wake operator app', () => {
       </MemoryRouter>,
     );
     const banner = await screen.findByRole('banner');
-    expect(banner.textContent).toContain('WAKE');
+    expect(banner.textContent).toContain('Wake');
     expect(screen.getByRole('img', { name: 'Wake logo' }).getAttribute('src')).toMatch(
       /^data:image\/svg\+xml/,
     );
@@ -120,7 +120,7 @@ function client(
     const data = url.endsWith('/control-plane/status')
       ? { paused: false, updatedAt: asOf }
       : url.endsWith('/system/health')
-        ? { status: 'ok', checkedAt: asOf, checks: [] }
+        ? { status: 'ok', version: '0.1.0-test', checkedAt: asOf, checks: [] }
         : url.endsWith('/work-items/wk_demo')
           ? {
               work: items[0],
@@ -143,6 +143,8 @@ function client(
                   condition: 'ready',
                   dwellSince: asOf,
                   runCount: 0,
+                  totalTokens: 0,
+                  totalCostUsd: 0,
                 }))
               : [],
             conditionCounts: {},

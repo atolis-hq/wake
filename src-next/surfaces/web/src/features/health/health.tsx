@@ -34,7 +34,6 @@ export function HealthPage() {
   return (
     <>
       <PageHeader
-        title="Health"
         actions={
           <Button
             type="button"

@@ -1,4 +1,4 @@
-﻿import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -1577,7 +1577,7 @@ describe('projection updater', () => {
       }),
     ]);
 
-    // Retry runs and fails outright â€” session must be cleared
+    // Retry runs and fails outright — session must be cleared
     const failedRun = createEventEnvelope({
       eventId: 'evt-sess-fail-run',
       workItemKey: workId(52),
@@ -1929,7 +1929,7 @@ describe('projection updater', () => {
     expect(projection?.context.scheduled).toBeUndefined();
   });
 
-  describe('correlation fold (ADR 0001 Â§5-6)', () => {
+  describe('correlation fold (ADR 0001 §5-6)', () => {
     it('rule 1: wake.correlation.registered appends to correlatedResources[] and registers in the index', async () => {
       const store = createStateStore({ wakeRoot: root });
       const resourceIndex = createResourceIndex({ paths: store.paths });
@@ -1993,7 +1993,7 @@ describe('projection updater', () => {
       expect(projection?.correlatedResources).toHaveLength(1);
     });
 
-    it('rule 3: last-write-wins per resourceUri â€” a role change updates the entry in place', async () => {
+    it('rule 3: last-write-wins per resourceUri — a role change updates the entry in place', async () => {
       const store = createStateStore({ wakeRoot: root });
       const resourceIndex = createResourceIndex({ paths: store.paths });
       const updater = createProjectionUpdater({ stateStore: store, resourceIndex });
@@ -2002,7 +2002,7 @@ describe('projection updater', () => {
         issueUpsert({ eventId: 'evt-c3-issue', issueNumber: 202, labels: ['wake:queue'] }),
       ]);
 
-      // A `secondary` is directly declarable on an unclaimed uri â€” ADR 0001 Â§6
+      // A `secondary` is directly declarable on an unclaimed uri — ADR 0001 §6
       // is a downgrade rule only, so the fold never promotes a requested
       // secondary. No artificial incumbent is needed to reach this state.
       await updater.rebuildFromEvents([
@@ -2178,8 +2178,8 @@ describe('projection updater', () => {
       ]);
 
       // Nobody holds this uri as primary yet, and the event requests
-      // 'secondary'. ADR 0001 Â§6 is a *downgrade* rule only â€” it never
-      // promotes â€” so this must stay 'secondary'. This is the shape
+      // 'secondary'. ADR 0001 §6 is a *downgrade* rule only — it never
+      // promotes — so this must stay 'secondary'. This is the shape
       // `wake correlate` (Task 7) emits when an operator declares "this Slack
       // thread is a secondary discussion resource for X"; folding it up to
       // primary would make that declaration unexpressible.
@@ -2206,13 +2206,13 @@ describe('projection updater', () => {
           registeredAt: '2026-07-05T13:00:00.000Z',
         },
       ]);
-      // The index is primary-only (ADR 0001 Â§5: the resolver stamps the
+      // The index is primary-only (ADR 0001 §5: the resolver stamps the
       // *primary* work item's canonical key), so a secondary is simply never
       // indexed. That is by design, not an orphan.
       expect(await resourceIndex.resolve('slack:thread:C900')).toBeUndefined();
     });
 
-    it('fix B: register primary, re-register the same uri, then retract â€” the index no longer credits this work item', async () => {
+    it('fix B: register primary, re-register the same uri, then retract — the index no longer credits this work item', async () => {
       const store = createStateStore({ wakeRoot: root });
       const resourceIndex = createResourceIndex({ paths: store.paths });
       const updater = createProjectionUpdater({ stateStore: store, resourceIndex });
@@ -2239,7 +2239,7 @@ describe('projection updater', () => {
       // this time. Under the old code, `relation === 'primary'` gated the
       // *only* place the index got touched on registration, so this local
       // relation flip could go unrecorded in the index while
-      // correlatedResources[] itself changed â€” stranding the index. The
+      // correlatedResources[] itself changed — stranding the index. The
       // gate must not depend on what the locally-stored relation happens to
       // be; retraction below must work off actual index ownership.
       await updater.rebuildFromEvents([

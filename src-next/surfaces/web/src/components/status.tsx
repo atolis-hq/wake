@@ -14,12 +14,19 @@ export function ControlPlaneStatus() {
     queryFn: ({ signal }) => client.controlPlane.status(signal),
     refetchInterval: refreshPolicy.status,
   });
-  const operatorStatus = useQuery({
-    queryKey: queryKeys.status.get,
-    queryFn: ({ signal }) => client.status.get(signal),
-    refetchInterval: refreshPolicy.status,
+  const runners = useQuery({
+    queryKey: queryKeys.execution.runners,
+    queryFn: ({ signal }) => client.execution.runners(signal),
+    refetchInterval: refreshPolicy.runners,
   });
-  const mutation = useMutation({
+  const pausedRunners = runners.data?.items.filter((runner) => !runner.available) ?? [];
+  const unpauseMutation = useMutation({
+    mutationKey: ['control-plane', 'unpause-runner'],
+    mutationFn: (runnerId: string) =>
+      client.execution.unpauseRunner(runnerId, commandKey('unpause')),
+    onSuccess: () => cache.invalidateQueries({ queryKey: queryKeys.execution.runners }),
+  });
+  const tickMutation = useMutation({
     mutationKey: ['control-plane', 'advance-command'],
     mutationFn: (idempotencyKey: string) => client.controlPlane.tick(idempotencyKey),
     onSuccess: async (response) => {
@@ -36,9 +43,9 @@ export function ControlPlaneStatus() {
     },
   });
   const conflict =
-    mutation.error instanceof ApiProblem && mutation.error.problem.status === 409
-      ? `Conflict: ${mutation.error.problem.title}`
-      : mutation.error?.message;
+    tickMutation.error instanceof ApiProblem && tickMutation.error.problem.status === 409
+      ? `Conflict: ${tickMutation.error.problem.title}`
+      : tickMutation.error?.message;
   return (
     <div className={styles.statusActions}>
       {status.data ? (
@@ -48,21 +55,28 @@ export function ControlPlaneStatus() {
       ) : (
         <StatusBadge tone="bad">API unavailable</StatusBadge>
       )}
-      {Object.entries(operatorStatus.data?.data?.conditionCounts ?? {}).map(
-        ([condition, count]) => (
-          <StatusBadge key={condition} tone="neutral">{`${condition}: ${count}`}</StatusBadge>
-        ),
-      )}
       <Button
         type="button"
-        variant="secondary"
-        disabled={mutation.isPending}
-        onClick={() => mutation.mutate(commandKey('advance'))}
+        className={styles.tickButton!}
+        disabled={tickMutation.isPending}
+        onClick={() => tickMutation.mutate(commandKey('advance'))}
       >
-        Advance
+        Tick now
       </Button>
+      {pausedRunners.map((runner) => (
+        <span key={runner.runnerId} className={styles.pauseControl!}>
+          {runner.runnerId} paused
+          <button
+            type="button"
+            disabled={unpauseMutation.isPending}
+            onClick={() => unpauseMutation.mutate(runner.runnerId)}
+          >
+            Unpause
+          </button>
+        </span>
+      ))}
       <MutationFeedback
-        pending={mutation.isPending}
+        pending={tickMutation.isPending}
         {...(conflict === undefined ? {} : { message: conflict })}
       />
     </div>

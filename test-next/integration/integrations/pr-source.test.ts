@@ -435,7 +435,9 @@ async function admitPullRequest(
   await runtime.resources.correlate(resource, workItem, ResourceCorrelationRole.Primary, context);
 }
 
-function pagesOf(...pages: readonly { readonly data: unknown }[]) {
+function pagesOf(
+  ...pages: readonly { readonly data: unknown; readonly headers?: Record<string, string> }[]
+) {
   return {
     async *[Symbol.asyncIterator]() {
       for (const page of pages) yield page;

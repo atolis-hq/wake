@@ -1,4 +1,4 @@
-﻿import { wakeVersion } from '../../version.js';
+import { wakeVersion } from '../../version.js';
 
 const logoSvg = `<svg viewBox="0 0 110 110" xmlns="http://www.w3.org/2000/svg">
   <g transform="translate(55 55)">
@@ -177,7 +177,7 @@ export const indexHtml = `<!DOCTYPE html>
   <span class="version">${wakeVersion}</span>
 </header>
 <div class="statusbar">
-  <span id="loop-pill" class="pill">â€¦</span>
+  <span id="loop-pill" class="pill">…</span>
   <button id="pause-toggle" type="button" class="pause-control">Pause</button>
   <button id="force-tick" type="button">Tick now</button>
   <span id="status-summary" class="meta"></span>
@@ -265,7 +265,7 @@ async function deleteJson(path) {
 }
 
 function fmtMs(ms) {
-  if (ms === undefined || ms === null) return 'â€”';
+  if (ms === undefined || ms === null) return '—';
   const s = Math.floor(ms / 1000);
   if (s < 60) return s + 's';
   const m = Math.floor(s / 60);
@@ -336,10 +336,10 @@ async function renderStatusBar() {
     const freshness = status.sourceFreshness.level;
     const summary = document.getElementById('status-summary');
     summary.textContent =
-      'runs today: ' + status.runsToday + ' Â· failures today: ' + status.failuresToday +
-      ' Â· cost today: $' + Number(status.costUsdToday ?? 0).toFixed(2) +
-      ' Â· source freshness: ' + freshness +
-      (status.lastRun ? ' Â· last run: ' + status.lastRun.repo + '#' + status.lastRun.issueNumber + ' ' + status.lastRun.action + ' â†’ ' + (status.lastRun.sentinel ?? status.lastRun.status) : '');
+      'runs today: ' + status.runsToday + ' · failures today: ' + status.failuresToday +
+      ' · cost today: $' + Number(status.costUsdToday ?? 0).toFixed(2) +
+      ' · source freshness: ' + freshness +
+      (status.lastRun ? ' · last run: ' + status.lastRun.repo + '#' + status.lastRun.issueNumber + ' ' + status.lastRun.action + ' → ' + (status.lastRun.sentinel ?? status.lastRun.status) : '');
   } catch (err) {
     document.getElementById('status-summary').textContent = 'status unavailable: ' + err.message;
   }
@@ -1037,9 +1037,9 @@ async function renderAnalytics(context) {
       tile('Failed', fmtNumber(metrics.summary.failedRuns)),
       tile('Tokens', fmtNumber(metrics.summary.totalTokens)),
       tile('Cost', fmtCost(metrics.summary.totalCostUsd)),
-      tile('Median run', fmtDuration(metrics.summary.medianRunDurationMs) || 'â€”'),
+      tile('Median run', fmtDuration(metrics.summary.medianRunDurationMs) || '—'),
       tile('Work done', fmtNumber(metrics.summary.completedWorkItems)),
-      tile('Median e2e', fmtDuration(metrics.summary.medianWorkItemDurationMs) || 'â€”'),
+      tile('Median e2e', fmtDuration(metrics.summary.medianWorkItemDurationMs) || '—'),
     ]),
     renderMetricDetail(metrics.detail),
   );
@@ -1076,7 +1076,7 @@ async function renderConfig(context) {
           const btn = el('button', { type: 'button', class: 'btn', text: 'Unpause', style: 'margin-top:0;font-size:0.7rem;padding:0.1rem 0.4rem;' });
           btn.addEventListener('click', async () => {
             btn.disabled = true;
-            btn.textContent = 'Unpausingâ€¦';
+            btn.textContent = 'Unpausing…';
             try {
               await postJson('/runners/' + encodeURIComponent(c.runnerName) + '/unpause');
               switchView('config');

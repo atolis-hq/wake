@@ -4,7 +4,13 @@ import {
   type ControlPlaneView,
 } from '../control-plane/index.js';
 import type { RunView } from '../execution/index.js';
-import { ApiCommandStatus, presentRun, type ApiApplications } from '../surfaces/index.js';
+import { workflowInstanceId } from '../orchestration/index.js';
+import {
+  ApiCommandStatus,
+  presentRun,
+  type ApiApplications,
+  type RunResponse,
+} from '../surfaces/index.js';
 import type { CompositionRoot } from './composition-root.js';
 import { projectionMeta, sampledMeta } from './surface-api-metadata.js';
 import { projectionPage } from './surface-api-projection-pages.js';
@@ -31,10 +37,11 @@ export function createExecutionApplications(
       const filtered = stored.filter(
         (entry) => query.state === undefined || entry.value.status === query.state,
       );
-      return projectionPage(root.journal, filtered, query, presentRun, {
+      const page = await projectionPage(root.journal, filtered, query, presentRun, {
         emptyAsOf: now(),
         provenance: stored,
       });
+      return { ...page, items: await Promise.all(page.items.map((item) => withWorkflowContext(root, item))) };
     },
     async get(runId) {
       const stored = await root.projections.read<{ readonly view: RunView | null }>(
@@ -43,7 +50,7 @@ export function createExecutionApplications(
       );
       if (stored?.value.view == null) return undefined;
       return {
-        data: presentRun(stored.value.view),
+        data: await withWorkflowContext(root, presentRun(stored.value.view)),
         meta: await projectionMeta(root.journal, [stored], now()),
       };
     },
@@ -77,6 +84,13 @@ export function createExecutionApplications(
       };
     },
   };
+}
+
+async function withWorkflowContext(root: CompositionRoot, run: RunResponse): Promise<RunResponse> {
+  const instance = await root.orchestration.get(workflowInstanceId(run.workflowInstanceId));
+  return instance === null
+    ? run
+    : { ...run, workflowName: instance.workflowName, stage: instance.currentStage };
 }
 
 function commandAccepted(command: { readonly idempotencyKey: string }, acceptedAt: string) {

@@ -1,4 +1,4 @@
-import { ExecutionEventType, selectRunExecutionEvent } from '../execution/index.js';
+import { agentTokenUsage, ExecutionEventType, selectRunExecutionEvent } from '../execution/index.js';
 import type { ProjectionDefinition } from '../kernel/index.js';
 import {
   OrchestrationEventType,
@@ -25,6 +25,12 @@ const BoardCondition = {
 
 type BoardConditionValue = (typeof BoardCondition)[keyof typeof BoardCondition];
 
+interface StoredActiveRun {
+  readonly action: string;
+  readonly runnerName?: string;
+  readonly startedAt: string;
+}
+
 interface StoredCard {
   readonly workItemKey: string;
   readonly workItemId: string;
@@ -35,17 +41,22 @@ interface StoredCard {
   readonly stage?: string;
   readonly dwellSince: string;
   readonly runCount: number;
+  readonly activeRun?: StoredActiveRun;
+  readonly lastRunAt?: string;
+  readonly totalTokens: number;
+  readonly totalCostUsd: number;
 }
 
 export interface BoardProjectionView {
   readonly cards: Readonly<Record<string, StoredCard>>;
   readonly workflows: Readonly<Record<string, string>>;
+  readonly runs: Readonly<Record<string, string>>;
 }
 
 export const boardProjection: ProjectionDefinition<BoardProjectionView> = {
   name: 'operator-board',
   select: () => ({ key: 'global' }),
-  initial: () => ({ cards: {}, workflows: {} }),
+  initial: () => ({ cards: {}, workflows: {}, runs: {} }),
   project(previous, envelope) {
     const work = selectWorkEvent(envelope);
     if (work !== null) return projectWork(previous, work, envelope.occurredAt);
@@ -82,6 +93,8 @@ function projectWork(
       condition: BoardCondition.Ready,
       dwellSince: occurredAt,
       runCount: 0,
+      totalTokens: 0,
+      totalCostUsd: 0,
     };
     return { ...view, cards: { ...view.cards, [id]: card } };
   }
@@ -114,6 +127,7 @@ function projectWorkflow(
     const card = view.cards[workId];
     if (card === undefined) return view;
     return {
+      ...view,
       cards: {
         ...view.cards,
         [workId]: {
@@ -171,23 +185,80 @@ function projectWorkflow(
   return view;
 }
 
+const runTerminalEventTypes = new Set<string>([
+  ExecutionEventType.RunSucceeded,
+  ExecutionEventType.RunFailed,
+  ExecutionEventType.RunCancelled,
+  ExecutionEventType.RunAmbiguous,
+]);
+
 function projectRun(
   view: BoardProjectionView,
   event: ReturnType<typeof selectRunExecutionEvent> & {},
   _occurredAt: string,
 ): BoardProjectionView {
-  if (event.eventType !== ExecutionEventType.RunStarted) return view;
+  if (event.eventType === ExecutionEventType.RunStarted) return projectRunStarted(view, event);
+
+  const workId = view.runs[event.stream.id];
+  const card = workId === undefined ? undefined : view.cards[workId];
+  if (card === undefined || workId === undefined) return view;
+
+  if (runTerminalEventTypes.has(event.eventType))
+    return { ...view, cards: { ...view.cards, [workId]: withoutActiveRun(card) } };
+
+  if (event.eventType === ExecutionEventType.RunRunnerResultReported)
+    return projectRunnerResult(view, workId, card, event.payload.agent?.metadata);
+
+  return view;
+}
+
+function projectRunStarted(
+  view: BoardProjectionView,
+  event: Extract<
+    ReturnType<typeof selectRunExecutionEvent> & {},
+    { eventType: typeof ExecutionEventType.RunStarted }
+  >,
+): BoardProjectionView {
   const workId = view.workflows[event.payload.workflowInstanceId];
   const card = workId === undefined ? undefined : view.cards[workId];
   if (card === undefined || workId === undefined) return view;
   return {
     ...view,
+    runs: { ...view.runs, [event.stream.id]: workId },
     cards: {
       ...view.cards,
       [workId]: {
         ...withoutAwaitingApproval(card),
         runCount: card.runCount + 1,
         condition: BoardCondition.Active,
+        lastRunAt: event.payload.startedAt,
+        activeRun: {
+          action: event.payload.activity,
+          startedAt: event.payload.startedAt,
+          ...(event.payload.runner?.name === undefined
+            ? {}
+            : { runnerName: event.payload.runner.name }),
+        },
+      },
+    },
+  };
+}
+
+function projectRunnerResult(
+  view: BoardProjectionView,
+  workId: string,
+  card: StoredCard,
+  metadata: Readonly<Record<string, string | number | boolean | null>> | undefined,
+): BoardProjectionView {
+  const usage = agentTokenUsage(metadata);
+  return {
+    ...view,
+    cards: {
+      ...view.cards,
+      [workId]: {
+        ...card,
+        totalTokens: card.totalTokens + usage.tokens,
+        totalCostUsd: card.totalCostUsd + usage.costUsd,
       },
     },
   };
@@ -196,4 +267,9 @@ function projectRun(
 function withoutAwaitingApproval(card: StoredCard): StoredCard {
   const { awaitingApproval: _awaitingApproval, ...withoutApproval } = card;
   return withoutApproval;
+}
+
+function withoutActiveRun(card: StoredCard): StoredCard {
+  const { activeRun: _activeRun, ...withoutRun } = card;
+  return withoutRun;
 }

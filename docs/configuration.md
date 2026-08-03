@@ -1,9 +1,9 @@
-﻿# Configuration
+?# Configuration
 
 Wake's behavior is configured through YAML files at the root of a Wake home
 directory (see [docs/getting-started.md](getting-started.md)). Wake reads
 **every file matching `config.yaml` or `config.<label>.yaml`** in that
-directory and deep-merges them together â€” nested objects merge key by key,
+directory and deep-merges them together — nested objects merge key by key,
 arrays and scalars are replaced wholesale by whichever file sets them last.
 Files are merged in alphabetical order by filename, so a later-sorting file
 wins on any key both files set. There's no required layout: split
@@ -11,14 +11,14 @@ configuration into as many or as few files as you want.
 
 `wake init` scaffolds a default two-file split:
 
-- **`config.yaml`** â€” infra/operational settings: storage paths, Docker
+- **`config.yaml`** — infra/operational settings: storage paths, Docker
   sandbox mounting, scheduler timing, transcripts, the control-plane UI, and
   which external sources (like GitHub) to monitor.
-- **`config.workflows.yaml`** â€” behavior/policy settings: the runner
+- **`config.workflows.yaml`** — behavior/policy settings: the runner
   registry, capability runnerPools, workflow and stage definitions, custom
   commands, and per-stage routing. These are kept together by default
-  because they reference each other by name â€” a stage route names a `runnerPool`,
-  a runnerPool names `runners`, a workflow selector names a `workflow` â€” but
+  because they reference each other by name — a stage route names a `runnerPool`,
+  a runnerPool names `runners`, a workflow selector names a `workflow` — but
   nothing stops you from splitting further, e.g. a standalone
   `config.sources.yaml` for GitHub polling settings.
 
@@ -146,11 +146,11 @@ sources:
     repos: [owner/repo]
 ```
 
-Wake merges this with whatever `config.yaml` also sets under `sources` â€”
+Wake merges this with whatever `config.yaml` also sets under `sources` —
 merging is recursive, not a whole-file override, so `config.yaml` can leave
 `sources` out entirely and this file is the only place it's set, or both
 files can set different sub-fields of `sources.github` and both take
-effect. Wake never rewrites these files â€” whatever split you create is the
+effect. Wake never rewrites these files — whatever split you create is the
 split that persists.
 
 ## Configuration Sections
@@ -163,12 +163,12 @@ Runtime and storage directories.
 
 | Property      | Type              | Description                                                                                                    | Default              |
 | ------------- | ----------------- | ---------------------------------------------------------------------------------------------------------------- | -------------------- |
-| `wakeRoot`    | string            | The Wake home directory itself. Always resolved fresh from `--wake-root`/the current directory â€” not user-set. | current directory    |
+| `wakeRoot`    | string            | The Wake home directory itself. Always resolved fresh from `--wake-root`/the current directory — not user-set. | current directory    |
 | `promptsRoot` | string (optional) | Explicit prompt-template root; defaults to `<wakeRoot>/prompts`                                                 | `<wakeRoot>/prompts` |
 
 Internal/durable data (`events/`, `state/`, `runs/`, `sources/`, `repos/`,
 `locks/`, `logs/`, `container-home/`, `ledger.json`) lives under a hidden
-`<wakeRoot>/.wake/` â€” see [docs/getting-started.md](getting-started.md) for
+`<wakeRoot>/.wake/` — see [docs/getting-started.md](getting-started.md) for
 the full directory layout.
 
 Prompt templates are Handlebars markdown files named `prompts/<action>.md`, for
@@ -216,7 +216,7 @@ item's workflow stage; they handle the command comment and leave the current
 lifecycle state in place.
 
 A plain comment posted while a run is active is treated as additional context
-for the next turn â€” it does not interrupt the in-progress run. Posting
+for the next turn — it does not interrupt the in-progress run. Posting
 `/interrupt` on the issue or PR thread cancels the active run immediately so
 the next tick can pick up the new direction, instead of letting the run finish
 against a now-superseded snapshot.
@@ -253,14 +253,14 @@ sandbox:
 ```
 
 `.credentials.json` carries login tokens and `settings.json` carries plugin
-enablement flags (e.g. `enabledPlugins`) â€” both are plain data with no
+enablement flags (e.g. `enabledPlugins`) — both are plain data with no
 filesystem paths baked in, so they're portable between the host OS and the
 sandbox's Linux container.
 
 **Do not mount the whole `~/.claude` directory.** Plugin bookkeeping files
 under `~/.claude/plugins/` (`installed_plugins.json`,
 `known_marketplaces.json`, `plugin-catalog-cache.json`) record _absolute
-install paths_ written by whichever OS's Claude process touched them last â€”
+install paths_ written by whichever OS's Claude process touched them last —
 e.g. `C:\Users\alice\.claude\plugins\cache\...` on Windows. If the entire
 directory is bind-mounted into the Linux container, the container's Claude
 CLI reads those same Windows paths and can't resolve them, so it reports the
@@ -278,7 +278,7 @@ host.
 
 `settings.json` must stay writable (`readOnly: false`). `claude plugin
 install`/`enable`/`disable` all write their enablement state back into
-`settings.json` â€” if it's mounted read-only, those commands fail outright
+`settings.json` — if it's mounted read-only, those commands fail outright
 (`Failed to update settings: ... EBUSY`), which also means the
 `enabledPlugins` entries the host declared can never be turned into an
 actual local install inside the sandbox.
@@ -419,7 +419,7 @@ different models, commands, or timeouts.
 The **Cursor runner** uses `cursor agent -p --output-format json` for
 non-interactive runs. Refine-stage runs pass `--mode ask` (read-only) and
 implement-stage runs pass `--force` (auto-approve writes). Session resume uses
-`--resume=<session_id>`. Credentials bind-mount from `~/.cursor` â€” see
+`--resume=<session_id>`. Credentials bind-mount from `~/.cursor` — see
 `docs/runner-comparison.md` for the recommended extraMounts configuration.
 
 ### runnerPools
@@ -461,7 +461,7 @@ takes precedence over `runnerPool`.
 
 Workflow stages may also define `watch` entries. `watch[].onSuccess` declares
 what Wake does when the watched child workflow run completes `DONE` or
-`REJECTED` â€” the child's sentinel is its verdict:
+`REJECTED` — the child's sentinel is its verdict:
 
 ```yaml
 workflows:
@@ -500,8 +500,8 @@ workflows:
 ```
 
 `onSuccess.approve` resolves the watched stage's pending approval through
-Wake's own approval transition â€” the same one a human `/approved` comment
-takes â€” when the child run completes `DONE` and no correlated PR carries the
+Wake's own approval transition — the same one a human `/approved` comment
+takes — when the child run completes `DONE` and no correlated PR carries the
 verdict. The approval is idempotent, recorded as a run-completed event with
 reason `watcher:approved`, and audited as an `approval.watcher-resolved`
 decision. A child `REJECTED` verdict posts the review body as feedback and
@@ -523,12 +523,12 @@ pending approval untouched.
 `mergeMethod` must match a method the repository actually allows (GitHub
 repo settings: "Allow merge commits" / "Allow squash merging" / "Allow rebase
 merging"). GitHub's auto-merge API defaults to `MERGE` when unspecified, which
-fails outright on a squash-only or rebase-only repository â€” set this
+fails outright on a squash-only or rebase-only repository — set this
 explicitly to match your repo's settings rather than relying on the default.
 
 `autoMerge` queues a merge that completes once required checks pass; GitHub
 rejects that queue request when the PR has nothing left to wait for (checks
-already green or skipped) â€” the common case for a small, fast-reviewed PR.
+already green or skipped) — the common case for a small, fast-reviewed PR.
 Wake detects that specific rejection and merges directly instead, using the
 same `mergeMethod`, rather than treating it as a policy block.
 
@@ -546,7 +546,7 @@ rejects a review approving the PR's own author with a 422 "Can not approve
 your own pull request" when `implement` and `pr-review` share one bot
 identity; or a repository's allowed merge methods reject the auto-merge
 request), Wake treats that failure as a policy block rather than an
-uncaught error â€” it posts the provider's own rejection message and moves the
+uncaught error — it posts the provider's own rejection message and moves the
 work item to `blocked`, without retrying the identical doomed call forever.
 `approve` and `autoMerge` are attempted independently: one failing doesn't
 prevent the other from running or from an already-succeeded step being
@@ -572,22 +572,22 @@ ui:
     authToken: null
 ```
 
-- `enabled` â€” when `true`, `wake sandbox up`/`wake sandbox update` publish
+- `enabled` — when `true`, `wake sandbox up`/`wake sandbox update` publish
   `ui.port` from the container to `127.0.0.1:<ui.port>` on the host and pass
   `WAKE_UI_ENABLED`/`WAKE_UI_PORT`/`WAKE_UI_TOKEN` into the container; the
   container's `wake sandbox-entrypoint` process then starts `wake ui --host
   0.0.0.0` automatically alongside the resident loop. `false` (the default) leaves the
-  container exactly as before â€” no published port, no auto-started process.
-- `port` â€” port `wake ui` binds (`--port` overrides this), and the port
+  container exactly as before — no published port, no auto-started process.
+- `port` — port `wake ui` binds (`--port` overrides this), and the port
   published from the container when `enabled` is true. Default `4317`.
-- `token` â€” optional shared-secret bearer token (also settable via `--token` or
+- `token` — optional shared-secret bearer token (also settable via `--token` or
   the `WAKE_UI_TOKEN` env var). When set, every UI request must include
   `Authorization: Bearer <token>` or a `wake_ui_token` cookie.
-- `tunnel.enabled` â€” when `true` and `ui.enabled` is also true, the sandbox
+- `tunnel.enabled` — when `true` and `ui.enabled` is also true, the sandbox
   entrypoint starts `ngrok http 127.0.0.1:<ui.port>` inside the container and
   writes the discovered public URL to `<wakeRoot>/.wake/control-plane-ui-url`. GitHub
   status comments then link the `Wake` header to that URL. Default `false`.
-- `tunnel.authToken` â€” optional ngrok authtoken passed to the container as
+- `tunnel.authToken` — optional ngrok authtoken passed to the container as
   `NGROK_AUTHTOKEN`. To avoid storing the token in `config.yaml`, leave this
   unset and export `NGROK_AUTHTOKEN` before `wake sandbox up` or
   `wake sandbox update`; the Docker run command passes it through when the
@@ -607,7 +607,7 @@ wake correlate <workItemKey> <resourceUri> [--role <role>] [--wake-root <path>]
 
 Operator escape hatch for the correlation registry (see
 [docs/superpowers/specs/2026-07-16-work-identity-correlation-design.md](superpowers/specs/2026-07-16-work-identity-correlation-design.md)
-Â§5â€“Â§6). Use it to declare by hand that a resource (a GitHub PR, a Slack
+§5–§6). Use it to declare by hand that a resource (a GitHub PR, a Slack
 thread, etc.) belongs to an existing work item when nothing detected the
 correlation automatically.
 
@@ -624,7 +624,7 @@ operator-declared`. If another work item already holds the URI as
   `wake.correlation.primary-conflict` event rather than stealing the URI.
 
 Like every other correlation-affecting change, this command appends an event
-and lets the projection fold decide the outcome â€” it never writes the
+and lets the projection fold decide the outcome — it never writes the
 resource index or a work item's projection directly, so `rm -rf state/` plus
 replay still reproduces the same result.
 
@@ -715,7 +715,7 @@ for standalone work adoption if they match the qualification policy.
 | `policy.requiredAuthors` | string[] | GitHub logins allowed to author new standalone PRs; empty means no uncorrelated PR will mint a new work item | `[]`    |
 
 **Important:** A pull request opened by Wake's own agent as an artifact from an issue
-never requires author qualification â€” it is registered through artifact verification,
+never requires author qualification — it is registered through artifact verification,
 not the `requiredAuthors` gate. Author qualification applies only to PRs already in
 the repository that Wake did not create.
 
@@ -723,7 +723,7 @@ the repository that Wake did not create.
 `awaiting-approval`, a new comment on a correlated PR (a review, a
 review-thread reply, a plain PR comment, or a newly failing required check)
 is treated as reviewer feedback
-and automatically triggers Wake's `revise` action â€” unlike comments on the
+and automatically triggers Wake's `revise` action — unlike comments on the
 originating issue, no slash command is required. The agent judges each comment
 independently: it may make the change, answer a question, or push back with
 justification or an alternative. The work item stays `awaiting-approval`
@@ -742,18 +742,18 @@ watcher configured, blocked items continue to wait for a human.
 ## Loading and Merging
 
 Wake loads every `config.yaml`/`config.<label>.yaml` file from the Wake
-home root (not `.wake/` â€” that hidden directory is durable runtime state,
+home root (not `.wake/` — that hidden directory is durable runtime state,
 not configuration) and deep-merges them in alphabetical filename order.
 Missing fields fall back to built-in defaults.
 
 Wake homes created before this file-splitting existed still have a single
 combined `config.json`. Wake reads it directly whenever no `config*.yaml`
-file is present â€” no migration step, and Wake never rewrites or renames it.
+file is present — no migration step, and Wake never rewrites or renames it.
 Once you add a `config.yaml` (by running `wake init` fresh, or by hand),
 `config.json` is ignored.
 
 Wake does not write resolved configuration back to disk. What's on disk is
-exactly what you put there (plus schema defaults applied in memory) â€” there
+exactly what you put there (plus schema defaults applied in memory) — there
 is no tick-time normalization step to work around when hand-splitting files.
 
 For sandbox debugging, `wake sandbox logs` tails Docker container logs for the durable sandbox. The sandbox entrypoint tees `wake start`, `wake ui`, and ngrok output to both `<wakeRoot>/.wake/logs/*.log` and container stdout so `docker logs` shows live tick diagnostics. File logs rotate at 20MB (keeping one `.1` backup); override with `WAKE_LOG_MAX_BYTES` and `WAKE_LOG_ROTATE_CHECK_INTERVAL_MS` (default five minutes) inside the container. `wake sandbox up`/`update` also pass Docker `json-file` log-driver limits (`max-size=10m`, `max-file=3`) as a second line of defense. Wake keeps structured run/event records durably, but raw sandbox stdout/stderr is treated as container log output rather than a Wake-managed on-disk archive.

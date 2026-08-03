@@ -20,6 +20,8 @@ function boardClient(fetchSpy?: (url: string) => void) {
       stage: 'implement',
       dwellSince: asOf,
       runCount: 1,
+      totalTokens: 0,
+      totalCostUsd: 0,
     },
     {
       workItemKey: 'wk_b',
@@ -30,6 +32,8 @@ function boardClient(fetchSpy?: (url: string) => void) {
       stage: 'implement',
       dwellSince: asOf,
       runCount: 1,
+      totalTokens: 0,
+      totalCostUsd: 0,
     },
     {
       workItemKey: 'wk_c',
@@ -40,6 +44,8 @@ function boardClient(fetchSpy?: (url: string) => void) {
       stage: 'done',
       dwellSince: asOf,
       runCount: 1,
+      totalTokens: 0,
+      totalCostUsd: 0,
     },
   ];
   return new WakeApiClient(async (input) => {
@@ -116,6 +122,8 @@ describe('board', () => {
                 awaitingApproval: true,
                 dwellSince: asOf,
                 runCount: 1,
+                totalTokens: 0,
+                totalCostUsd: 0,
               },
             ],
             conditionCounts: { 'needs-human': 1 },

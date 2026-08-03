@@ -1,4 +1,4 @@
-﻿import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import { createDefaultWakeConfig } from '../../src/config/defaults.js';
 import { createPolicyEngine } from '../../src/core/policy-engine.js';
@@ -259,7 +259,7 @@ describe('policy engine: requiredAssignees', () => {
     // Defense-in-depth: the issues source now filters PR-shaped items at poll
     // time (72b6f5f), so no NEW projection can ever have isPullRequest: true.
     // But a pre-existing state/<workId>.json written by a pre-this-branch
-    // version of Wake could still hold isPullRequest: true â€” the old fold
+    // version of Wake could still hold isPullRequest: true — the old fold
     // created projections regardless of eligibility. Without this guard, such
     // stale on-disk state with matching labels would newly become eligible
     // and get worked as if it were an issue.

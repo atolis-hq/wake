@@ -3,9 +3,11 @@
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 0.6rem;
   overflow-x: auto;
-  align-items: start;
+  align-items: stretch;
 }
 .column {
+  display: flex;
+  flex-direction: column;
   background: var(--surface-panel);
   border-radius: var(--radius);
   padding: 0.5rem;
@@ -60,6 +62,13 @@
   outline: 2px solid var(--focus-ring);
   outline-offset: -2px;
 }
+.cardRef {
+  display: block;
+  color: var(--ink-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  margin-bottom: 0.15rem;
+}
 .cardTitle {
   display: block;
   color: var(--ink);
@@ -78,8 +87,35 @@
   font-size: 0.7rem;
   margin-top: 0.3rem;
 }
+.childRun {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.25rem 0.45rem;
+  align-items: center;
+  margin-top: 0.45rem;
+  padding: 0.4rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface-inset);
+  border: 1px solid var(--border);
+  color: var(--ink-muted);
+  font-size: var(--text-xs);
+}
+.childRunDot {
+  width: 0.48rem;
+  height: 0.48rem;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px rgb(45 212 191 / 0.14);
+}
+.childRunTitle {
+  font-weight: 650;
+  color: var(--ink);
+}
+.childRunMeta {
+  color: var(--ink-muted);
+}
 .columnToggle {
-  display: inline-flex;
+  display: none;
   width: 1.65rem;
   height: 1.65rem;
   flex: 0 0 auto;
@@ -174,8 +210,6 @@
   display: flex;
   flex-direction: column;
   gap: 0.45rem;
-  max-height: 60vh;
-  overflow-y: auto;
 }
 .event {
   background: var(--surface-card);
@@ -240,8 +274,15 @@
 }
 .modalHeader {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
   margin-bottom: var(--space-3);
+}
+.modalRef {
+  color: var(--ink-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
 }
 .modalClose {
   appearance: none;
@@ -273,6 +314,9 @@
   .column {
     margin-bottom: 0.75rem;
     min-height: unset;
+  }
+  .columnToggle {
+    display: inline-flex;
   }
   .eventButton {
     grid-template-columns: minmax(8.5rem, 10rem) minmax(0, 1fr) 2.2rem;

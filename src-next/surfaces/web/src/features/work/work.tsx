@@ -11,15 +11,9 @@ import { queryKeys } from '../../api/query-keys.js';
 import { refreshPolicy } from '../../api/refresh-policy.js';
 import { Chip } from '../../components/chip.js';
 import { DataTable } from '../../components/data-table.js';
+import { fmtCompact, fmtCost } from '../../components/format.js';
 import { LocalTime } from '../../components/local-time.js';
-import {
-  EmptyState,
-  ErrorState,
-  LoadingState,
-  PageHeader,
-  Panel,
-  StaleIndicator,
-} from '../../components/primitives.js';
+import { EmptyState, ErrorState, LoadingState, Panel } from '../../components/primitives.js';
 import { EventRow } from '../events/events.js';
 import styles from '../features.module.css';
 
@@ -34,10 +28,6 @@ export function WorkList() {
   const items = query.data?.items ?? [];
   return (
     <>
-      <PageHeader
-        title="Work"
-        actions={<StaleIndicator refreshing={query.isFetching} stale={query.isStale} />}
-      />
       {query.isPending ? (
         <LoadingState label="Loading work" />
       ) : query.error && !query.data ? (
@@ -57,6 +47,7 @@ export function WorkList() {
 }
 
 const columns = (location: ReturnType<typeof useLocation>) => [
+  { label: 'Ref', render: (item: BoardCardResponse) => item.externalRef ?? '?' },
   {
     label: 'Work item',
     render: (item: BoardCardResponse) => (
@@ -69,9 +60,16 @@ const columns = (location: ReturnType<typeof useLocation>) => [
     label: 'Condition',
     render: (item: BoardCardResponse) => <Chip variant="outline">{item.condition}</Chip>,
   },
-  { label: 'Workflow', render: (item: BoardCardResponse) => item.workflowName ?? '—' },
-  { label: 'Stage', render: (item: BoardCardResponse) => item.stage ?? '—' },
+  { label: 'Workflow', render: (item: BoardCardResponse) => item.workflowName ?? '?' },
+  { label: 'Stage', render: (item: BoardCardResponse) => item.stage ?? '?' },
   { label: 'Runs', render: (item: BoardCardResponse) => item.runCount },
+  {
+    label: 'Last run',
+    render: (item: BoardCardResponse) =>
+      item.lastRunAt === undefined ? '?' : <LocalTime value={item.lastRunAt} />,
+  },
+  { label: 'Cost', render: (item: BoardCardResponse) => fmtCost(item.totalCostUsd) },
+  { label: 'Tokens', render: (item: BoardCardResponse) => fmtCompact(item.totalTokens) },
 ];
 export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
   const { workItemKey = '' } = useParams();
@@ -98,10 +96,7 @@ export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
         <ErrorState error={query.error} retry={() => void query.refetch()} />
       ) : query.data ? (
         <>
-          <PageHeader
-            title={query.data.data.work.objective}
-            actions={<StaleIndicator refreshing={query.isFetching} stale={query.isStale} />}
-          />
+          <h2>{query.data.data.work.objective}</h2>
           <nav className={styles.tabs} aria-label="Work detail sections">
             <button
               type="button"
@@ -144,7 +139,7 @@ export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
                   <dt>Stage</dt>
                   <dd>{query.data.data.orchestration.primary?.currentStage ?? 'Not started'}</dd>
                   <dt>Workflow</dt>
-                  <dd>{query.data.data.orchestration.primary?.workflowName ?? 'â€”'}</dd>
+                  <dd>{query.data.data.orchestration.primary?.workflowName ?? '?'}</dd>
                 </dl>
               </Panel>
 
@@ -207,6 +202,9 @@ export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
         aria-label="Work item detail"
       >
         <div className={styles.modalHeader}>
+          {query.data?.data.work.externalRef !== undefined && (
+            <span className={styles.modalRef}>{query.data.data.work.externalRef}</span>
+          )}
           <button
             className={styles.modalClose!}
             type="button"

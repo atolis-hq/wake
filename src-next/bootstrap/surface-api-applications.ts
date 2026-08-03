@@ -16,12 +16,14 @@ import {
   type AuditEventResponse,
 } from '../surfaces/index.js';
 import { analyticsProjection, type AnalyticsProjectionView } from './analytics-projection.js';
+import { wakeVersion } from './version.js';
 import {
   boardConditionCounts,
   boardProjection,
   type BoardProjectionView,
 } from './board-projection.js';
 import type { CompositionRoot } from './composition-root.js';
+import { primaryExternalRef } from './external-ref.js';
 import { createExecutionApplications } from './surface-api-execution-applications.js';
 import { projectionMeta, sampledMeta } from './surface-api-metadata.js';
 import { projectionPage } from './surface-api-projection-pages.js';
@@ -57,8 +59,17 @@ function createBoardApplications(root: CompositionRoot, now: () => string) {
         left.workItemId.localeCompare(right.workItemId),
       );
       const offset = query.cursor?.position ?? 0;
+      const page = cards.slice(offset, offset + query.limit);
+      const items = await Promise.all(
+        page.map(async (card) => {
+          const externalRef = await primaryExternalRef(root, card.workItemId);
+          return presentBoardCard(
+            externalRef === undefined ? card : { ...card, externalRef },
+          );
+        }),
+      );
       return {
-        items: cards.slice(offset, offset + query.limit).map((card) => presentBoardCard(card)),
+        items,
         total: cards.length,
         ...(offset + query.limit < cards.length ? { nextPosition: offset + query.limit } : {}),
         conditionCounts: boardConditionCounts(stored?.value ?? boardProjection.initial('global')),
@@ -194,6 +205,7 @@ function createSystemApplications(root: CompositionRoot, now: () => string): Api
       return {
         data: {
           status: 'ok',
+          version: wakeVersion,
           checkedAt,
           checks: [
             { name: 'journal', status: 'ok' },

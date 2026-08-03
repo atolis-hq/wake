@@ -1,4 +1,4 @@
-﻿import { access, appendFile, mkdir, readFile, readdir, rename } from 'node:fs/promises';
+import { access, appendFile, mkdir, readFile, readdir, rename } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 
@@ -791,7 +791,7 @@ export function createStateStore({ wakeRoot }: { wakeRoot: string }) {
       // state/ is flat: state/<workId>.json, plus state/archive/ and the
       // reverse index's own state/index/ shards. Only those two subdirectories
       // exist, and index/ holds `{ resourceUri: workItemKey }` maps that are
-      // not projections at all â€” skip it rather than parse-and-discard.
+      // not projections at all — skip it rather than parse-and-discard.
       const visit = async (dir: string, isArchive: boolean): Promise<void> => {
         const entries = await readdir(dir, { withFileTypes: true }).catch((error) => {
           if (isMissingPathError(error)) {

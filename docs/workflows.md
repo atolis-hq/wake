@@ -1,4 +1,4 @@
-﻿# Workflows
+?# Workflows
 
 Wake workflows define the stages a work item moves through and which prompt file is
 used to run each stage. They are deterministic control-plane configuration:
@@ -7,7 +7,7 @@ executes the selected action and reports a result.
 
 ## Where workflows live
 
-Workflows are configured in the `workflows` section of Wake config â€”
+Workflows are configured in the `workflows` section of Wake config —
 `config.workflows.yaml` at the root of the Wake home `--wake-root` (or the
 current directory, by default) resolves to. All config uses `schemaVersion: 1`.
 
@@ -159,7 +159,7 @@ stage, Wake reads that stage definition and dispatches:
 - the requested workspace mode,
 - the stage's runner routing hints.
 
-When a runner reports `DONE`, Wake follows the stage's `onDone` transition â€”
+When a runner reports `DONE`, Wake follows the stage's `onDone` transition —
 unless the stage is configured with `skipApproval: false`, in which case Wake
 holds the transition for human approval instead of advancing immediately. If
 the runner reports `BLOCKED`, `FAILED`, or `REJECTED`, Wake does not take the
@@ -197,7 +197,7 @@ workflows:
 ```
 
 A watcher's `onSuccess` block declares what Wake does when the child workflow
-run completes `DONE` or `REJECTED` â€” the sentinel is the child's verdict, so a
+run completes `DONE` or `REJECTED` — the sentinel is the child's verdict, so a
 `BLOCKED` or `FAILED` child (the reviewer couldn't render a verdict at all)
 never triggers it.
 

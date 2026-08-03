@@ -1,4 +1,4 @@
-﻿import { readFile, readdir, stat } from 'node:fs/promises';
+import { readFile, readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import type { ResourceIndex } from '../../core/contracts.js';
@@ -48,7 +48,7 @@ async function readLockInfo(
 
 /**
  * Reproduces the sentinel-driven part of policy eligibility for display purposes only.
- * It never decides anything the tick doesn't independently decide â€” this is a read model.
+ * It never decides anything the tick doesn't independently decide — this is a read model.
  */
 function deriveCondition(
   item: IssueStateRecord,
@@ -74,7 +74,7 @@ function deriveCondition(
     lastRun?.status === 'awaiting-approval' ||
     lastRun?.sentinel === 'BLOCKED' ||
     // A run record can never be written with this sentinel value again
-    // (ADR 0002), but a pre-existing run record on disk still can be â€”
+    // (ADR 0002), but a pre-existing run record on disk still can be —
     // legacyTolerantRunnerSentinelSchema keeps it readable, so this branch
     // stays to classify it correctly rather than falling through to 'ready'.
     lastRun?.sentinel === 'AWAITING_APPROVAL'

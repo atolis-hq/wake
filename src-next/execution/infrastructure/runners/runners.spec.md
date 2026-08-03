@@ -4,7 +4,7 @@
 
 Adapter. The runner adapters translate a `RunnerRequest` into an invocation
 of an external agent CLI, an arbitrary command, or an in-process fake, and
-translate whatever that invocation produces back into a `RunnerResult`. They
+translate whatever that invocation produces back into a `AgentRunnerResult`. They
 are the only place Execution reaches outside the process to carry out an
 agent-kind Activity.
 
@@ -13,7 +13,7 @@ agent-kind Activity.
 See the module specification for Runner and Runner pool. This component
 additionally distinguishes the **transport result** a runner reports
 (`succeeded` / `failed` / `cancelled` / `ambiguous`, carried in
-`RunnerResult.transport`) from the **process exit** that produced it for a
+`AgentRunnerResult.transport`) from the **process exit** that produced it for a
 CLI-based runner (exit code, timeout flag) — the mapping between the two is
 this component's own translation, not a pass-through of the OS exit code.
 
@@ -21,10 +21,10 @@ this component's own translation, not a pass-through of the OS exit code.
 
 Runner adapters own starting an agent invocation, enforcing its wall-clock
 timeout, reporting an external-execution identity where one is available,
-and resolving to a final `RunnerResult` once the invocation settles. They do
+and resolving to a final `AgentRunnerResult` once the invocation settles. They do
 not decide which runner or pool to use — the Execution service resolves a
 runner and invokes it — and they do not interpret the agent's own output;
-translating a `RunnerResult` into an Activity outcome is the agent Activity
+translating a `AgentRunnerResult` into an Activity outcome is the agent Activity
 handler's responsibility, not this component's.
 
 ## Core policies, invariants, and behaviours
@@ -104,7 +104,7 @@ handler's responsibility, not this component's.
 | `maxTurns` | integer, optional | Declared but not read by any current CLI-based or fake adapter. |
 | `resumeSessionId` | string, optional | Read only by the `codex-cli` adapter, to resume a prior session. |
 
-**RunnerResult**
+**AgentRunnerResult**
 
 | Field | Type | Description |
 | --- | --- | --- |

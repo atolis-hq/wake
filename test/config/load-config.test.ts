@@ -1,4 +1,4 @@
-﻿import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 
@@ -29,7 +29,7 @@ describe('loadWakeConfig', () => {
     await mkdir(join(dir, 'prompts'), { recursive: true });
     await writeFile(join(dir, 'prompts', 'refine.md'), 'refine prompt', 'utf8');
     // config.yaml omits promptsRoot (as a freshly scaffolded home does) but
-    // still carries a stale wakeRoot from a prior container-context read â€”
+    // still carries a stale wakeRoot from a prior container-context read —
     // promptsRoot must not be derived from that stale wakeRoot.
     await writeFile(join(dir, 'config.yaml'), 'paths:\n  wakeRoot: /wake\n', 'utf8');
 

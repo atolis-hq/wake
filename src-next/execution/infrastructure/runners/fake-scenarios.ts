@@ -52,6 +52,7 @@ const fileSchema = z
 
 export interface FakeScenarioMatch {
   readonly runner: string;
+  readonly workflow?: string;
   readonly action: string;
   readonly occurrence: number;
 }

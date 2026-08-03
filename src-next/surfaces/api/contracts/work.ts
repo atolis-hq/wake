@@ -14,6 +14,7 @@ export interface WorkItemResponse {
     readonly workItemKey: WorkItemKey;
     readonly relation: string;
   }[];
+  readonly externalRef?: string;
 }
 
 export interface WorkDetailResponse {

@@ -18,6 +18,9 @@ function runsClient(available: boolean) {
     active: false,
     startedAt: asOf,
     finishedAt: asOf,
+    sentinel: 'DONE',
+    totalTokens: 0,
+    totalCostUsd: 0,
   };
   return new WakeApiClient(async (input) => {
     const url = String(input);

@@ -22,7 +22,6 @@ export function ObservabilityPage() {
   return (
     <>
       <PageHeader
-        title="Observability"
         actions={
           <Button type="button" variant="secondary" onClick={() => void query.refetch()}>
             Refresh metrics

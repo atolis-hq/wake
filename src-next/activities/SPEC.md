@@ -2,7 +2,7 @@
 asOf: 312633a1f45b9182803dbfbce74b650069608da6
 ---
 
-# Activities — Module Specification
+# Activities ? Module Specification
 
 ## Purpose and scope
 
@@ -17,29 +17,29 @@ authority) those built-ins need to decide safely.
 
 Activities owns:
 
-- The generic Activity contract — typed input/outcome schemas, declared
-  outcome kinds, resource requirements, execution kind — and the registry
+- The generic Activity contract ? typed input/outcome schemas, declared
+  outcome kinds, resource requirements, execution kind ? and the registry
   that validates and executes a named Activity against that contract.
 - Specialist SDLC policy for pull requests: observed PR state, review-signal
   trust, and approve/merge authority decisions.
 - The `activity-decision` stream identity that makes a `pr.approve`/`pr.merge`
   Activity's decision idempotent per activation.
 - `pr.*` and `review.*` event types, recorded on a Resource's or WorkItem's
-  own stream (Activities does not own those streams — see below), plus a
+  own stream (Activities does not own those streams ? see below), plus a
   reserved but currently unused `activities.*` event namespace.
 
 Activities does not own:
 
 - Deciding which Activity to run next, retry/backoff policy, or how a
-  reported outcome changes workflow state — Orchestration's responsibility;
+  reported outcome changes workflow state ? Orchestration's responsibility;
   Activities only reports a typed outcome.
 - *How* an Activity runs: process lifecycle, runner pool selection, timeouts,
-  concurrency — Execution's responsibility; Activities receives an
+  concurrency ? Execution's responsibility; Activities receives an
   already-prepared `ActivityExecutionContext`.
-- Resource identity, capability registration, or correlation to a WorkItem —
+- Resource identity, capability registration, or correlation to a WorkItem ?
   Resources' responsibility; Activities only reads a `ResourceView` and its
   correlations, already recorded there.
-- WorkItem identity and lifecycle — Work's responsibility; Activities only
+- WorkItem identity and lifecycle ? Work's responsibility; Activities only
   reads a `WorkItemView` to decide PR authority.
 - Actually delivering an approve/merge action to a provider, or reporting its
   result. Activities records the *intent* to deliver as a durable fact and
@@ -48,28 +48,28 @@ Activities does not own:
 
 ## Ubiquitous language
 
-- **Activity** — a named, typed unit of specialist capability, registered
+- **Activity** ? a named, typed unit of specialist capability, registered
   once with an input schema, an outcome schema, a declared closed set of
   outcome kinds, declared resource requirements, and an execution kind.
-- **Activation** — one invocation of an Activity for one workflow step,
+- **Activation** ? one invocation of an Activity for one workflow step,
   identified by an `ActivationId`.
-- **Outcome** — the closed-vocabulary classification (`waiting` / `done` /
+- **Outcome** ? the closed-vocabulary classification (`waiting` / `done` /
   `rejected` / `blocked` / `failed`) of what an Activity's execution
   produced, always a member of that Activity's own declared set.
-- **ResourceRequirement** — a capability, cardinality, and optional role an
+- **ResourceRequirement** ? a capability, cardinality, and optional role an
   Activity declares it needs resolved before it runs.
-- **PR-shaped resource** — a Resource whose capabilities include
+- **PR-shaped resource** ? a Resource whose capabilities include
   `reviewable`, `approvable`, or `mergeable`; a behavioural definition, not a
   Resource kind.
-- **Delivery intent** — a fact recorded to mean "please deliver this
+- **Delivery intent** ? a fact recorded to mean "please deliver this
   approve/merge action"; something outside Activities performs it and later
   reports a `delivery-result` signal.
-- **Decision claim** — the durable, idempotent record that a `pr.approve` or
+- **Decision claim** ? the durable, idempotent record that a `pr.approve` or
   `pr.merge` activation resolved to a specific outcome, keyed by activation
   and action.
-- **Approve/merge authority** — the deterministic decision of whether a
+- **Approve/merge authority** ? the deterministic decision of whether a
   WorkItem's correlated pull request may currently be approved or merged.
-- **RetrySafety** — an optional, closed-vocabulary hint (`safe-to-retry` /
+- **RetrySafety** ? an optional, closed-vocabulary hint (`safe-to-retry` /
   `requires-reconciliation`) an outcome's data may carry; see below.
 
 ## Core policies, invariants, and behaviours
@@ -159,23 +159,23 @@ Activities does not own:
 
 ## Dependencies and system role
 
-- Kernel — event journal, envelope, closed-vocabulary, and branded-identifier
+- Kernel ? event journal, envelope, closed-vocabulary, and branded-identifier
   conventions Activities builds its own events and identifiers from.
-- Resources (Activities depends on it) — Activities reads `ResourceView` and
+- Resources (Activities depends on it) ? Activities reads `ResourceView` and
   correlation facts to resolve which Resource a PR command or Activity
   concerns; it never writes a resource-identity fact, only its own
   `pr.*`/`review.*` facts onto a Resource's stream.
-- Work (Activities depends on it) — Activities reads a WorkItem's identity
+- Work (Activities depends on it) ? Activities reads a WorkItem's identity
   and view to decide PR authority; it never writes `work.*` facts.
-- Execution (depends on Activities) — resolves and executes a named
+- Execution (depends on Activities) ? resolves and executes a named
   Activity's invocation, supplying the `ActivityExecutionContext` (signal,
   clock, runner port, reporting callbacks) and reading back the validated
   outcome.
-- Orchestration (depends on Activities) — compiles workflow steps against the
+- Orchestration (depends on Activities) ? compiles workflow steps against the
   registry's declared Activities and outcome kinds, and decides the next
   workflow transition from a reported outcome; Activities never decides that
   transition itself.
-- Integrations (depends on Activities) — the GitHub inbound translator calls
+- Integrations (depends on Activities) ? the GitHub inbound translator calls
   `observe`/`acceptReviewSignal`/`requestChangesSignal` to turn provider
   events into PR facts; a review-command translator builds the
   `ProposedReviewSignal` value this module's contract describes.
@@ -202,5 +202,5 @@ Activities does not own:
 
 ## Task 27B synchronization (2026-08-02)
 
-Agent outcomes may carry structurally validated `reportedArtifacts`; malformed claims are discarded without changing the outcome. GitHub-native formal reviews are admitted only through the provider�s formal-review evidence path. PR comments, including command-looking text, remain feedback and never become Activity control signals.
+Agent outcomes may carry structurally validated `reportedArtifacts`; malformed claims are discarded without changing the outcome. GitHub-native formal reviews are admitted only through the provider?s formal-review evidence path. PR comments, including command-looking text, remain feedback and never become Activity control signals.
 

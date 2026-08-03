@@ -1,10 +1,10 @@
-﻿# Wake Setup Guide (for the assisting agent)
+?# Wake Setup Guide (for the assisting agent)
 
 You are reading this because a human just ran `wake init` and asked you to
 help finish configuring this Wake home. This file is written as instructions
-to you, the assisting agent â€” not as prose for a human to read top to bottom.
+to you, the assisting agent — not as prose for a human to read top to bottom.
 
-Read `config.yaml` and `config.workflows.yaml` in this directory now â€” both
+Read `config.yaml` and `config.workflows.yaml` in this directory now — both
 already exist with working defaults from `wake init`. Everything below tells
 you which fields in those two files to change. Edit them directly; don't
 create a new `config.<label>.yaml` split unless the user asks for one.
@@ -45,8 +45,8 @@ Claude, Codex, and/or Cursor.
 `config.workflows.yaml` already has example `runners` entries for
 `claude-haiku`, `claude-opus`, `codex-mini`, `codex-flagship`, and
 `cursor-composer`, but every runnerPool (`light`/`standard`/`deep`, with
-`defaultRunnerPool: standard`) still points at the placeholder `fake` runner â€” none
-of them route to a real runner yet. Don't rewrite this from scratch â€” pick
+`defaultRunnerPool: standard`) still points at the placeholder `fake` runner — none
+of them route to a real runner yet. Don't rewrite this from scratch — pick
 which runner(s) the user actually has access to, and either:
 
 - repoint `runnerPools` so each runnerPool lists the real named runner(s) the user can
@@ -87,11 +87,11 @@ sandbox:
 
 `.credentials.json`/`auth.json` should be `readOnly: true` unless the user
 wants the sandbox able to refresh tokens on the host's behalf. `settings.json`
-must stay `readOnly: false` â€” Claude plugin commands write to it. Use the
+must stay `readOnly: false` — Claude plugin commands write to it. Use the
 actual host home directory path (resolve `~` yourself; don't write a literal
 tilde into YAML).
 
-Never mount the whole `~/.claude`, `~/.codex`, or `~/.cursor` directory â€”
+Never mount the whole `~/.claude`, `~/.codex`, or `~/.cursor` directory —
 only the specific files listed above. Mounting the whole directory leaks
 OS-specific absolute paths (e.g. Windows plugin cache paths) into the Linux
 sandbox and can cause the sandbox to overwrite the host's plugin bookkeeping.
@@ -104,12 +104,12 @@ https://github.com/atolis-hq/wake/blob/main/docs/configuration.md#sandbox
 
 ## After config looks right
 
-Don't try to explain the sandbox lifecycle yourself â€” point the user at (or
+Don't try to explain the sandbox lifecycle yourself — point the user at (or
 fetch, if you have web access):
 
-- https://github.com/atolis-hq/wake/blob/main/docs/getting-started.md â€”
+- https://github.com/atolis-hq/wake/blob/main/docs/getting-started.md —
   `wake sandbox build` / `up` / `setup` / `exec` / `down`
-- https://github.com/atolis-hq/wake/blob/main/docs/runner-comparison.md â€”
+- https://github.com/atolis-hq/wake/blob/main/docs/runner-comparison.md —
   deeper comparison of runner tradeoffs if the user asks which to pick
-- https://github.com/atolis-hq/wake/blob/main/docs/configuration.md â€” every
+- https://github.com/atolis-hq/wake/blob/main/docs/configuration.md — every
   config field, if something here doesn't cover their situation

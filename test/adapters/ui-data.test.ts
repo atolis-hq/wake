@@ -1,4 +1,4 @@
-﻿import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -413,7 +413,7 @@ describe('ui-data', () => {
     expect(detail?.runs.map((run) => run.runId)).toEqual(['run-7']);
     expect(listIssueStatesCalls).toBe(0);
 
-    // A ticket with no index entry is simply not found â€” never a scan.
+    // A ticket with no index entry is simply not found — never a scan.
     const missing = await buildItemDetail({
       stateStore: countingStore,
       resourceIndex,

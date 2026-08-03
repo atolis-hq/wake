@@ -21,7 +21,6 @@ export function ConfigurationPage() {
   return (
     <>
       <PageHeader
-        title="Configuration"
         actions={
           <Button type="button" variant="secondary" onClick={() => void query.refetch()}>
             Refresh configuration

@@ -1,4 +1,4 @@
-﻿import { mkdtemp, readFile } from 'node:fs/promises';
+import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -758,7 +758,7 @@ describe('tick runner', () => {
     it('stays idle when awaiting approval and issue.updatedAt changed but no new human comment (Wake activity false-positive)', async () => {
       // Regression test: when Wake posts its approval-request comment, GitHub bumps
       // issue.updatedAt, causing needsWakeAction() to return true even though no
-      // human has replied. The tick should return idle â€” not invoke the LLM.
+      // human has replied. The tick should return idle — not invoke the LLM.
       const store = createStateStore({ wakeRoot: root });
       let runnerCallCount = 0;
 
@@ -903,7 +903,7 @@ describe('tick runner', () => {
 
       expect(result.status).toBe('processed');
       expect(runnerCallCount).toBe(1);
-      // The /changes fold (Â§5, trigger 2) threads the human's own feedback
+      // The /changes fold (§5, trigger 2) threads the human's own feedback
       // into the same promptContextOverrides.parentPendingReviewBody
       // mechanism the BLOCKED-retry path already uses.
       expect(capturedPromptContextOverrides?.parentPendingReviewBody).toBe(
@@ -917,7 +917,7 @@ describe('tick runner', () => {
       expect(changesRequestedEvent).toBeDefined();
       expect(changesRequestedEvent?.payload.changesRequested).toBe(true);
       // Folding /changes must not touch stage/lastRunId itself (only the
-      // subsequent revise run, once it completes, may move the stage) â€” same
+      // subsequent revise run, once it completes, may move the stage) — same
       // watcher-isolation guarantee PR #479 established for other triggers.
       expect(changesRequestedEvent?.payload.nextStage).toBeUndefined();
       expect(changesRequestedEvent?.payload.claimedStage).toBeUndefined();
@@ -1690,7 +1690,7 @@ describe('tick runner', () => {
       await tickRunner.runTick();
 
       // Both items are missing their wake:workflow.* label (the fixture never
-      // set one), so the broadened reconciliation corrects it â€” using the
+      // set one), so the broadened reconciliation corrects it — using the
       // *actual* awaiting-approval status now that labelsForWorkItem reads
       // context.lastRunSentinel as a legacy fallback, not the old blanket
       // "pending" a stage-only mapping produced for any non-done stage.
@@ -1815,7 +1815,7 @@ describe('tick runner', () => {
       expect(deliveredEvents).toEqual([]);
     });
 
-    it('corrects a stale status label on the next tick even with no fresh inbound event or eligible next action (Â§6 reconciliation)', async () => {
+    it('corrects a stale status label on the next tick even with no fresh inbound event or eligible next action (§6 reconciliation)', async () => {
       const store = createStateStore({ wakeRoot: root });
       const deliveredEvents: Array<{ statusLabel: string; stageLabel: string }> = [];
 
@@ -1828,7 +1828,7 @@ describe('tick runner', () => {
           title: 'Stale Label Reconciliation',
           body: 'Body',
           // Actual GitHub labels are stuck on a stale "pending" status even
-          // though context already reflects a finished, approved item â€” no
+          // though context already reflects a finished, approved item — no
           // eligible next action exists (isAwaitingApproval is false, stage
           // is 'done'), so nothing except the broadened reconciliation pass
           // would ever notice or correct this.
@@ -1890,7 +1890,7 @@ describe('tick runner', () => {
 
       // Confirms the reconciliation pass diffed labelsForWorkItem's output
       // (derived from context.status='done' + stage='done') against the
-      // stale actual labels and requested the correction â€” the fake sink
+      // stale actual labels and requested the correction — the fake sink
       // here only records the request; the real github adapter's own
       // deliverIntent/reconcileIntent (github-issues-work-source.ts) is what
       // applies it back to issue.labels, covered separately.

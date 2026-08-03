@@ -27,6 +27,31 @@ export interface AgentRunResponse {
   }[] | undefined;
   readonly metadata: Readonly<Record<string, string | number | boolean | null>>;
 }
+
+export interface AgentTokenUsage {
+  readonly tokens: number;
+  readonly costUsd: number;
+}
+
+// inputTokens/outputTokens/cacheReadTokens/cacheWriteTokens/costUsd are the known
+// numeric keys agent-runner-adapter.ts writes into AgentRunResponse.metadata.
+export function agentTokenUsage(
+  metadata: AgentRunResponse['metadata'] | undefined,
+): AgentTokenUsage {
+  const numeric = (key: string): number => {
+    const value = metadata?.[key];
+    return typeof value === 'number' ? value : 0;
+  };
+  return {
+    tokens:
+      numeric('inputTokens') +
+      numeric('outputTokens') +
+      numeric('cacheReadTokens') +
+      numeric('cacheWriteTokens'),
+    costUsd: numeric('costUsd'),
+  };
+}
+
 export interface AgentRunnerResult {
   readonly transport: FinishedRunStatus;
   readonly output: string;

@@ -159,7 +159,11 @@ function applications() {
     },
     system: {
       health: async () => ({
-        data: { status: 'ok' as const, checkedAt: '2026-07-31T10:00:00.000Z' },
+        data: {
+          status: 'ok' as const,
+          version: '0.1.0-test',
+          checkedAt: '2026-07-31T10:00:00.000Z',
+        },
         meta,
       }),
       configuration: async () => ({ data: { configuration: {} }, meta }),

@@ -6,15 +6,14 @@ import { queryKeys } from '../../api/query-keys.js';
 import { refreshInterval, refreshPolicy } from '../../api/refresh-policy.js';
 import { CursorPagination, useCursorNavigation } from '../../components/cursor-pagination.js';
 import { DataTable } from '../../components/data-table.js';
+import { fmtCompact, fmtCost, fmtDuration } from '../../components/format.js';
 import { LocalTime } from '../../components/local-time.js';
 import {
   EmptyState,
   ErrorState,
   JsonViewer,
   LoadingState,
-  PageHeader,
   Panel,
-  StaleIndicator,
   StatusBadge,
 } from '../../components/primitives.js';
 import styles from '../features.module.css';
@@ -29,10 +28,6 @@ export function RunsList() {
   });
   return (
     <>
-      <PageHeader
-        title="Runs"
-        actions={<StaleIndicator refreshing={query.isFetching} stale={query.isStale} />}
-      />
       {query.isPending ? (
         <LoadingState label="Loading runs" />
       ) : query.error && !query.data ? (
@@ -65,9 +60,23 @@ const runColumns = [
     ),
   },
   { label: 'Activity', render: (run: RunResponse) => run.activity },
-  { label: 'Status', render: (run: RunResponse) => <StatusBadge>{run.status}</StatusBadge> },
+  { label: 'Workflow', render: (run: RunResponse) => run.workflowName ?? '?' },
+  { label: 'Stage', render: (run: RunResponse) => run.stage ?? '?' },
+  { label: 'Runner', render: (run: RunResponse) => runnerLabel(run) },
+  { label: 'Status', render: (run: RunResponse) => run.sentinel },
   { label: 'Started', render: (run: RunResponse) => <LocalTime value={run.startedAt} /> },
+  { label: 'Duration', render: (run: RunResponse) => runDuration(run) },
+  { label: 'Tokens', render: (run: RunResponse) => fmtCompact(run.totalTokens) },
+  { label: 'Cost', render: (run: RunResponse) => fmtCost(run.totalCostUsd) },
 ];
+function runnerLabel(run: RunResponse): string {
+  if (run.runnerName === undefined) return '?';
+  return run.runnerModel === undefined ? run.runnerName : `${run.runnerName} (${run.runnerModel})`;
+}
+function runDuration(run: RunResponse): string {
+  if (run.finishedAt === undefined) return '';
+  return fmtDuration(new Date(run.finishedAt).getTime() - new Date(run.startedAt).getTime());
+}
 export function RunDetail() {
   const { runId = '' } = useParams();
   const client = useApiClient();
@@ -85,7 +94,7 @@ export function RunDetail() {
   });
   return (
     <>
-      <PageHeader title={`Run ${runId}`} />
+      <h2>{`Run ${runId}`}</h2>
       {run.isPending ? (
         <LoadingState label="Loading run" />
       ) : run.error ? (

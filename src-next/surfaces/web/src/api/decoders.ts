@@ -111,6 +111,7 @@ export const decodeWorkItem: Decoder<WorkItemResponse> = (value, path = '') => {
     workItemId: string(record.workItemId, child(path, 'workItemId')),
     objective: string(record.objective, child(path, 'objective')),
     state: string(record.state, child(path, 'state')),
+    ...optionalStringProperty(record, 'externalRef', path),
     relatedWorkItems: array(
       record.relatedWorkItems,
       child(path, 'relatedWorkItems'),
@@ -137,8 +138,27 @@ export const decodeBoardCard: Decoder<BoardCardResponse> = (value, path = '') =>
     ...optionalStringProperty(record, boardStageField, path),
     dwellSince: string(record.dwellSince, child(path, 'dwellSince')),
     runCount: number(record.runCount, child(path, 'runCount')),
+    ...optionalStringProperty(record, 'lastRunAt', path),
+    totalTokens: number(record.totalTokens, child(path, 'totalTokens')),
+    totalCostUsd: number(record.totalCostUsd, child(path, 'totalCostUsd')),
+    ...(record.activeRun === undefined
+      ? {}
+      : { activeRun: decodeBoardCardActiveRun(record.activeRun, child(path, 'activeRun')) }),
+    ...optionalStringProperty(record, 'externalRef', path),
   };
 };
+
+function decodeBoardCardActiveRun(
+  value: unknown,
+  path: string,
+): NonNullable<BoardCardResponse['activeRun']> {
+  const record = object(value, path);
+  return {
+    action: string(record.action, child(path, 'action')),
+    startedAt: string(record.startedAt, child(path, 'startedAt')),
+    ...optionalStringProperty(record, 'runnerName', path),
+  };
+}
 
 export const decodeResourceItem: Decoder<ResourceItemResponse> = (value, path = '') => {
   const record = object(value, path);
@@ -188,6 +208,13 @@ export const decodeRun: Decoder<RunResponse> = (value, path = '') => {
     active: boolean(record.active, child(path, RunResponseField.Active)),
     startedAt: string(record.startedAt, child(path, 'startedAt')),
     ...optionalStringProperty(record, 'finishedAt', path),
+    sentinel: string(record.sentinel, child(path, 'sentinel')),
+    ...optionalStringProperty(record, 'runnerName', path),
+    ...optionalStringProperty(record, 'runnerModel', path),
+    ...optionalStringProperty(record, 'workflowName', path),
+    ...optionalStringProperty(record, boardStageField, path),
+    totalTokens: number(record.totalTokens, child(path, 'totalTokens')),
+    totalCostUsd: number(record.totalCostUsd, child(path, 'totalCostUsd')),
     ...(record.outcome === undefined
       ? {}
       : { outcome: json(record.outcome, child(path, 'outcome')) }),

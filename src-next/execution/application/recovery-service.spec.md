@@ -11,7 +11,7 @@ execution's actual state rather than trusting a Run's own recorded facts.
 
 See the module specification for Recovery and External execution reference.
 This component additionally defines the **inspection outcome** it acts on:
-`running`, `completed` (with a `RunnerResult`), `absent`, or `unknown` (with
+`running`, `completed` (with a `AgentRunnerResult`), `absent`, or `unknown` (with
 a reason) — reported by an injected external-execution inspector.
 
 ## Responsibilities and boundaries

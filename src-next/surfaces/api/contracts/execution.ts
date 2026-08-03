@@ -11,6 +11,13 @@ export interface RunResponse {
   readonly finishedAt?: string;
   readonly outcome?: unknown;
   readonly failure?: { readonly kind: string };
+  readonly sentinel: string;
+  readonly runnerName?: string;
+  readonly runnerModel?: string;
+  readonly workflowName?: string;
+  readonly stage?: string;
+  readonly totalTokens: number;
+  readonly totalCostUsd: number;
 }
 
 export interface RunTranscriptResponse {

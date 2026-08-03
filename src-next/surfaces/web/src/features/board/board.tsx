@@ -4,13 +4,7 @@ import { useLocation } from 'react-router';
 import { useApiClient } from '../../api/context.js';
 import { queryKeys } from '../../api/query-keys.js';
 import { refreshPolicy } from '../../api/refresh-policy.js';
-import {
-  EmptyState,
-  ErrorState,
-  LoadingState,
-  PageHeader,
-  StaleIndicator,
-} from '../../components/primitives.js';
+import { EmptyState, ErrorState, LoadingState } from '../../components/primitives.js';
 import styles from '../features.module.css';
 import { BoardCard } from './board-card.js';
 
@@ -52,27 +46,12 @@ export function Board() {
     writeCollapsed(next);
     setCollapsed(next);
   };
-  if (query.isPending)
-    return (
-      <>
-        <PageHeader title="Board" />
-        <LoadingState label="Loading board" />
-      </>
-    );
+  if (query.isPending) return <LoadingState label="Loading board" />;
   if (query.error && !query.data)
-    return (
-      <>
-        <PageHeader title="Board" />
-        <ErrorState error={query.error} retry={() => void query.refetch()} />
-      </>
-    );
+    return <ErrorState error={query.error} retry={() => void query.refetch()} />;
   const items = query.data?.items ?? [];
   return (
     <>
-      <PageHeader
-        title="Board"
-        actions={<StaleIndicator refreshing={query.isFetching} stale={query.isStale} />}
-      />
       {items.length === 0 ? (
         <EmptyState>No work items</EmptyState>
       ) : (
@@ -90,7 +69,7 @@ export function Board() {
                     aria-label={`${collapsed.has(condition) ? 'Expand' : 'Collapse'} ${label(condition)}`}
                     onClick={() => toggleColumn(condition)}
                   >
-                    {collapsed.has(condition) ? '+' : 'âˆ’'}
+                    {collapsed.has(condition) ? '+' : '−'}
                   </button>
                 </div>
                 {!collapsed.has(condition) && (

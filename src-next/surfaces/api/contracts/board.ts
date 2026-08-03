@@ -4,6 +4,12 @@ export const BoardCondition = BoardConditionValues;
 
 export type BoardCardCondition = (typeof BoardCondition)[keyof typeof BoardCondition];
 
+export interface BoardCardActiveRun {
+  readonly action: string;
+  readonly runnerName?: string;
+  readonly startedAt: string;
+}
+
 export interface BoardCardResponse {
   readonly workItemKey: string;
   readonly workItemId: string;
@@ -14,6 +20,11 @@ export interface BoardCardResponse {
   readonly stage?: string;
   readonly dwellSince: string;
   readonly runCount: number;
+  readonly activeRun?: BoardCardActiveRun;
+  readonly lastRunAt?: string;
+  readonly totalTokens: number;
+  readonly totalCostUsd: number;
+  readonly externalRef?: string;
 }
 
 export interface BoardResponse {

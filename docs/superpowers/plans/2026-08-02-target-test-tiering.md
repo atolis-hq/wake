@@ -228,7 +228,7 @@ Remove `vitest.next.config.ts`; no broad `test-next/**/*.test.ts` include may re
 
 - [ ] **Step 3: Add all new config names to CI path filtering**
 
-Add these paths under `.github/workflows/ci-cd.yml`’s `relevant` filter:
+Add these paths under `.github/workflows/ci-cd.yml`?s `relevant` filter:
 
 ```yaml
 - 'vitest.next.unit.config.ts'

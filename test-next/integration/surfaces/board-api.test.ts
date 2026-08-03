@@ -41,6 +41,8 @@ function applications(): ApiApplications {
             stage: 'implement',
             dwellSince: '2026-08-01T10:00:00.000Z',
             runCount: 2,
+            totalTokens: 0,
+            totalCostUsd: 0,
           },
         ],
         conditionCounts: { active: 1 },
@@ -81,7 +83,7 @@ function applications(): ApiApplications {
     },
     system: {
       health: async () => ({
-        data: { status: 'ok', checkedAt: '2026-08-01T10:00:00.000Z' },
+        data: { status: 'ok', version: '0.1.0-test', checkedAt: '2026-08-01T10:00:00.000Z' },
         meta: { asOf: '2026-08-01T10:00:00.000Z' },
       }),
       configuration: async () => ({

@@ -6,14 +6,7 @@ import { queryKeys } from '../../api/query-keys.js';
 import { refreshPolicy } from '../../api/refresh-policy.js';
 import { CursorPagination, useCursorNavigation } from '../../components/cursor-pagination.js';
 import { LocalTime } from '../../components/local-time.js';
-import {
-  Button,
-  EmptyState,
-  ErrorState,
-  LoadingState,
-  PageHeader,
-  StaleIndicator,
-} from '../../components/primitives.js';
+import { Button, EmptyState, ErrorState, LoadingState } from '../../components/primitives.js';
 import styles from '../features.module.css';
 
 export function EventsPage() {
@@ -53,10 +46,6 @@ function EventsCollection({
   }, [query.data]);
   return (
     <>
-      <PageHeader
-        title="Events"
-        actions={<StaleIndicator refreshing={query.isFetching} stale={query.isStale} />}
-      />
       {query.isPending ? (
         <LoadingState label="Loading events" />
       ) : query.error && !query.data ? (
@@ -111,6 +100,15 @@ export function EventsFeed({ records }: { readonly records: readonly AuditEventR
   const newest = useRef(visible.at(-1)?.position ?? -1);
   const paused = manualPaused || scrolledAway;
   useEffect(() => {
+    const checkScrolledAway = () => {
+      const scrollable = document.scrollingElement ?? document.documentElement;
+      setScrolledAway(scrollable.scrollHeight - scrollable.scrollTop - scrollable.clientHeight > 1);
+    };
+    checkScrolledAway();
+    window.addEventListener('scroll', checkScrolledAway, { passive: true });
+    return () => window.removeEventListener('scroll', checkScrolledAway);
+  }, []);
+  useEffect(() => {
     const incoming = records.filter((record) => record.position > newest.current);
     if (incoming.length === 0) return;
     if (paused) setBuffer((current) => mergeBoundedEvents(current, incoming));
@@ -149,13 +147,7 @@ export function EventsFeed({ records }: { readonly records: readonly AuditEventR
       {ordered.length === 0 ? (
         <EmptyState>No events</EmptyState>
       ) : (
-        <ol
-          className={styles.eventList}
-          onScroll={(event) => {
-            const list = event.currentTarget;
-            setScrolledAway(list.scrollHeight - list.scrollTop - list.clientHeight > 1);
-          }}
-        >
+        <ol className={styles.eventList}>
           {ordered.map((record) => (
             <EventRow record={record} key={record.id} />
           ))}

@@ -11,6 +11,7 @@ import {
 } from '../surfaces/index.js';
 import { workItemId, type WorkItemView } from '../work/index.js';
 import type { CompositionRoot } from './composition-root.js';
+import { primaryExternalRef } from './external-ref.js';
 import { projectionMeta } from './surface-api-metadata.js';
 import { projectionPage } from './surface-api-projection-pages.js';
 
@@ -63,8 +64,9 @@ async function workDetail(
     resources.some((resource) => resource.resourceId === entry.key),
   );
   const primary = workflows.find((value) => value.parentWorkflowInstanceId === undefined) ?? null;
+  const externalRef = await primaryExternalRef(root, work.workItemId);
   const data: WorkDetailResponse = {
-    work: presentWorkItem(work),
+    work: { ...presentWorkItem(work), ...(externalRef === undefined ? {} : { externalRef }) },
     resources: resources.map(presentResource),
     orchestration: {
       primary: primary === null ? null : presentWorkflowInstance(primary),

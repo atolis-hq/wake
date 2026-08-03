@@ -1,4 +1,4 @@
-﻿import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -106,7 +106,7 @@ describe('issue state schema', () => {
   it('requires an explicit workItemKey rather than deriving one from the issue', () => {
     // Identity is minted by the resolver and stamped on the record; a
     // projection that arrives without one is a bug, not a record to guess a
-    // key for (spec Â§1/D1).
+    // key for (spec §1/D1).
     expect(() =>
       parseIssueStateRecord({
         schemaVersion: 1,
@@ -170,10 +170,10 @@ describe('issue state schema', () => {
     ).toThrow(/stage/i);
   });
 
-  // The legacy-stage normalization tests ('refined'/'failed'/'blocked' â†’
+  // The legacy-stage normalization tests ('refined'/'failed'/'blocked' →
   // canonical stages) are gone with the .preprocess() that implemented them.
   // The sanctioned fresh start of .wake/ means there is no event log or
-  // projection written under the old vocabulary left to read (spec Â§8).
+  // projection written under the old vocabulary left to read (spec §8).
 });
 
 describe('run and event schemas', () => {
@@ -242,7 +242,7 @@ describe('run and event schemas', () => {
   // Run records are Wake-owned state that Wake itself writes, so the work id is
   // always in hand at the write site. Required rather than optional: an optional
   // key would let a record exist that can only be resolved by scanning issue
-  // snapshots â€” the ticket-shaped ambiguity minted identity exists to remove.
+  // snapshots — the ticket-shaped ambiguity minted identity exists to remove.
   it('rejects run records with no workItemKey', () => {
     expect(() =>
       parseRunRecord({
@@ -285,7 +285,7 @@ describe('run and event schemas', () => {
     });
 
     // Taken verbatim from the envelope: the resolver stamped it, and nothing
-    // in the parse namespaces, derives, or rewrites it (spec Â§8).
+    // in the parse namespaces, derives, or rewrites it (spec §8).
     expect(event.workItemKey).toBe('work-01JZ0000000000000000000012');
     expect(event.streamScope).toBe('work-item');
   });
@@ -453,9 +453,9 @@ describe('run and event schemas', () => {
     expect(parseRunnerResultSentinel('notes DONE more notes\nDONE')).toBe('DONE');
   });
 
-  // The legacy `blockedFromAction` â†’ `lastRunAction` context normalization is
+  // The legacy `blockedFromAction` → `lastRunAction` context normalization is
   // gone with the .preprocess() that implemented it: the fresh start leaves no
-  // projection written under the old key (spec Â§8, "no migration code").
+  // projection written under the old key (spec §8, "no migration code").
 
   it('parses the last valid wake-result envelope and keeps only prose before it as body', () => {
     const parsed = parseRunnerResult(
@@ -610,7 +610,7 @@ describe('run and event schemas', () => {
   });
 
   it('does not match a sentinel word embedded in prose on the last line', () => {
-    // Last line contains prose, not an exact sentinel â€” should fall back to FAILED
+    // Last line contains prose, not an exact sentinel — should fall back to FAILED
     expect(parseRunnerResultSentinel('notes DONE more notes FAILED')).toBe('BLOCKED');
     expect(
       parseRunnerResultSentinel(

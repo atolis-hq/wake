@@ -1,5 +1,6 @@
 export interface HealthResponse {
   readonly status: 'ok' | 'degraded';
+  readonly version: string;
   readonly checkedAt: string;
   readonly checks?: readonly {
     readonly name: string;

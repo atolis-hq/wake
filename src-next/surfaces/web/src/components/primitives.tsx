@@ -5,11 +5,11 @@ export const PageHeader = ({
   title,
   actions,
 }: {
-  readonly title: string;
+  readonly title?: string;
   readonly actions?: ReactNode;
 }) => (
   <div className={styles.pageHeader}>
-    <h1>{title}</h1>
+    {title !== undefined && <h1>{title}</h1>}
     {actions}
   </div>
 );
@@ -26,12 +26,15 @@ export const Panel = ({
 );
 export function Button({
   variant = 'primary',
+  className,
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & { readonly variant?: 'primary' | 'secondary' }) {
   return (
     <button
       {...props}
-      className={`${styles.button} ${variant === 'secondary' ? styles.secondary : ''}`}
+      className={[styles.button, variant === 'secondary' ? styles.secondary : '', className]
+        .filter(Boolean)
+        .join(' ')}
     />
   );
 }
@@ -72,18 +75,6 @@ export const ErrorState = ({
     )}
   </div>
 );
-export const StaleIndicator = ({
-  refreshing,
-  stale,
-}: {
-  readonly refreshing: boolean;
-  readonly stale: boolean;
-}) =>
-  refreshing || stale ? (
-    <span className={styles.stale} role="status">
-      {refreshing ? 'Refreshing cached data' : 'Showing stale data'}
-    </span>
-  ) : null;
 export const MutationFeedback = ({
   pending,
   message,

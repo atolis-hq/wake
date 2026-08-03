@@ -1,4 +1,4 @@
-﻿import { mkdtemp, readFile } from 'node:fs/promises';
+import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -104,7 +104,7 @@ describe('tick runner', () => {
 
     // Identity proof, not a perf proof: the run record's repo/issueNumber are a
     // human-readable snapshot, never the way its work item is found. Here the
-    // ticket has since moved repo (spec D3's motivating case â€” a GitHub transfer
+    // ticket has since moved repo (spec D3's motivating case — a GitHub transfer
     // assigns a new number in the target repo), so the projection is reachable
     // ONLY by the work id the record carries. Under a scan of `issue` snapshots
     // this run orphans and is wrongly superseded instead of reconciled.
