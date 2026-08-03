@@ -263,13 +263,12 @@ async function executeActivity(
     signal: controller.signal,
     occurredAt,
     ...(runner === undefined ? {} : { runner }),
-    ...(request.runnerName === undefined || context.workflowName === undefined
+    ...(request.runnerName === undefined
       ? {}
       : {
-          simulation: {
-            runner: request.runnerName,
-            workflow: context.workflowName,
-            occurrence: activation.ordinal,
+          runnerContext: {
+            runnerName: request.runnerName,
+            activationOrdinal: activation.ordinal,
           },
         }),
     reportExternalExecution: async (reference) => {

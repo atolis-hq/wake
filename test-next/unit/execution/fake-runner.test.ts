@@ -21,7 +21,7 @@ it('uses a configured scenario outcome and body', async () => {
     rules: [
       {
         name: 'fails-first',
-        when: { runner: 'fake-worker', workflow: 'dark-factory', action: 'refine', occurrence: 1 },
+        when: { runner: 'fake-worker', action: 'refine', occurrence: 1 },
         afterMs: 1,
         outcome: 'FAILED',
         retrySafety: 'safe-to-retry',
@@ -34,11 +34,10 @@ it('uses a configured scenario outcome and body', async () => {
       runId: 'run-1',
       prompt: 'complete',
       allowedTools: [],
-      simulation: {
-        runner: 'fake-worker',
-        workflow: 'dark-factory',
+      context: {
+        runnerName: 'fake-worker',
         action: 'refine',
-        occurrence: 1,
+        activationOrdinal: 1,
       },
     },
     new AbortController().signal,
@@ -61,7 +60,7 @@ it('rejects a delayed fake execution when its signal aborts', async () => {
     rules: [
       {
         name: 'slow',
-        when: { runner: 'fake-worker', workflow: 'default', action: 'implement' },
+        when: { runner: 'fake-worker', action: 'implement' },
         afterMs: 10_000,
         outcome: 'DONE',
       },
@@ -73,7 +72,7 @@ it('rejects a delayed fake execution when its signal aborts', async () => {
       runId: 'run-1',
       prompt: 'complete',
       allowedTools: [],
-      simulation: { runner: 'fake-worker', workflow: 'default', action: 'implement', occurrence: 1 },
+      context: { runnerName: 'fake-worker', action: 'implement', activationOrdinal: 1 },
     },
     controller.signal,
   );

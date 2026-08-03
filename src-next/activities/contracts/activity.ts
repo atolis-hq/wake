@@ -63,11 +63,10 @@ export interface AgentRunnerPort {
       readonly model?: string;
       readonly allowedTools: readonly string[];
       readonly maxTurns?: number;
-      readonly simulation?: {
-        readonly runner: string;
-        readonly workflow: string;
+      readonly context?: {
+        readonly runnerName: string;
         readonly action: string;
-        readonly occurrence: number;
+        readonly activationOrdinal: number;
       };
     },
     signal: AbortSignal,
@@ -100,10 +99,9 @@ export interface ActivityExecutionContext {
   readonly signal: AbortSignal;
   readonly occurredAt: string;
   readonly runner?: AgentRunnerPort;
-  readonly simulation?: {
-    readonly runner: string;
-    readonly workflow: string;
-    readonly occurrence: number;
+  readonly runnerContext?: {
+    readonly runnerName: string;
+    readonly activationOrdinal: number;
   };
   reportExternalExecution(reference: {
     readonly kind: ExternalExecutionKind;

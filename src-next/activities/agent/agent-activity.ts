@@ -35,7 +35,7 @@ export function createAgentActivity(templates?: AgentTemplateRenderer): Activity
     async execute(invocation, context): Promise<AgentActivityOutcome> {
       if (context.runner === undefined)
         throw new Error('Agent Activity requires a runner resolved by Execution');
-      const request = await agentRequest(invocation, templates, context.simulation);
+      const request = await agentRequest(invocation, templates, context.runnerContext);
       const execution = await context.runner.start(request, context.signal);
       if (execution.identity !== undefined)
         await context.reportExternalExecution(execution.identity);
@@ -54,11 +54,11 @@ async function agentRequest(
     allowedTools?: readonly string[];
   }>,
   templates: AgentTemplateRenderer | undefined,
-  simulation: { readonly runner: string; readonly workflow: string; readonly occurrence: number } | undefined,
+  runnerContext: { readonly runnerName: string; readonly activationOrdinal: number } | undefined,
 ) {
   const input = invocation.input;
   const template = await resolveTemplate(input.template, invocation.workItemId, templates);
-  return requestFrom(input, invocation.activationId, template, simulation);
+  return requestFrom(input, invocation.activationId, template, runnerContext);
 }
 
 async function resolveTemplate(
@@ -84,7 +84,7 @@ function requestFrom(
         readonly maxTurns?: number | undefined;
       }
     | undefined,
-  simulation: { readonly runner: string; readonly workflow: string; readonly occurrence: number } | undefined,
+  runnerContext: { readonly runnerName: string; readonly activationOrdinal: number } | undefined,
 ) {
   const model = input.model ?? template?.model;
   return {
@@ -93,9 +93,9 @@ function requestFrom(
     ...(model === undefined || model === null ? {} : { model }),
     allowedTools: input.allowedTools ?? template?.allowedTools ?? [],
     ...(template?.maxTurns === undefined ? {} : { maxTurns: template.maxTurns }),
-    ...(simulation === undefined
+    ...(runnerContext === undefined
       ? {}
-      : { simulation: { ...simulation, action: input.template ?? 'prompt' } }),
+      : { context: { ...runnerContext, action: input.template ?? 'prompt' } }),
   };
 }
 

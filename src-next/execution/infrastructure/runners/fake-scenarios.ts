@@ -4,7 +4,6 @@ const outcomeSchema = z.enum(['DONE', 'REJECTED', 'BLOCKED', 'FAILED']);
 const matchSchema = z
   .object({
     runner: z.string().trim().min(1),
-    workflow: z.string().trim().min(1),
     action: z.string().trim().min(1),
     occurrence: z.number().int().positive().optional(),
   })
@@ -53,7 +52,6 @@ const fileSchema = z
 
 export interface FakeScenarioMatch {
   readonly runner: string;
-  readonly workflow: string;
   readonly action: string;
   readonly occurrence: number;
 }
@@ -79,7 +77,6 @@ export function parseFakeScenarios(value: unknown): FakeScenarioResolver {
       const rule = parsed.rules.find(
         (candidate) =>
           candidate.when.runner === input.runner &&
-          candidate.when.workflow === input.workflow &&
           candidate.when.action === input.action &&
           (candidate.when.occurrence === undefined || candidate.when.occurrence === input.occurrence),
       );
@@ -98,7 +95,7 @@ export function parseFakeScenarios(value: unknown): FakeScenarioResolver {
 function resolveDelay(afterMs: z.output<typeof delaySchema>, input: FakeScenarioMatch): number {
   if (typeof afterMs === 'number') return afterMs;
   const range = afterMs.max - afterMs.min + 1;
-  return afterMs.min + (hash(`${afterMs.seed}:${input.runner}:${input.workflow}:${input.action}:${input.occurrence}`) % range);
+  return afterMs.min + (hash(`${afterMs.seed}:${input.runner}:${input.action}:${input.occurrence}`) % range);
 }
 
 function hash(value: string): number {

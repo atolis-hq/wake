@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { parseFakeScenarios } from '../../../src-next/execution/index.js';
 
 describe('fake scenarios', () => {
-  it('uses the first matching worker, workflow, action, and occurrence rule', () => {
+  it('uses the first matching runner, action, and occurrence rule', () => {
     const scenarios = parseFakeScenarios({
       schemaVersion: 1,
       rules: [
@@ -10,7 +10,6 @@ describe('fake scenarios', () => {
           name: 'first-match',
           when: {
             runner: 'fake-worker',
-            workflow: 'dark-factory',
             action: 'refine',
             occurrence: 1,
           },
@@ -22,7 +21,6 @@ describe('fake scenarios', () => {
           name: 'later-match',
           when: {
             runner: 'fake-worker',
-            workflow: 'dark-factory',
             action: 'refine',
             occurrence: 1,
           },
@@ -35,7 +33,6 @@ describe('fake scenarios', () => {
     expect(
       scenarios.resolve({
         runner: 'fake-worker',
-        workflow: 'dark-factory',
         action: 'refine',
         occurrence: 1,
       }),
@@ -48,13 +45,13 @@ describe('fake scenarios', () => {
       rules: [
         {
           name: 'seeded',
-          when: { runner: 'fake-worker', workflow: 'default', action: 'implement' },
+          when: { runner: 'fake-worker', action: 'implement' },
           afterMs: { min: 1000, max: 10000, seed: 42 },
           outcome: 'DONE',
         },
       ],
     });
-    const match = { runner: 'fake-worker', workflow: 'default', action: 'implement', occurrence: 1 };
+    const match = { runner: 'fake-worker', action: 'implement', occurrence: 1 };
 
     expect(scenarios.resolve(match)?.delayMs).toBe(scenarios.resolve(match)?.delayMs);
   });
@@ -66,7 +63,7 @@ describe('fake scenarios', () => {
         rules: [
           {
             name: 'bad-range',
-            when: { runner: 'fake', workflow: 'default', action: 'refine' },
+            when: { runner: 'fake', action: 'refine' },
             afterMs: { min: 10, max: 1, seed: 1 },
             outcome: 'DONE',
           },
@@ -80,7 +77,7 @@ describe('fake scenarios', () => {
         rules: [
           {
             name: 'bad-retry-safety',
-            when: { runner: 'fake', workflow: 'default', action: 'refine' },
+            when: { runner: 'fake', action: 'refine' },
             afterMs: 1,
             outcome: 'DONE',
             retrySafety: 'safe-to-retry',
