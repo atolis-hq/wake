@@ -46,6 +46,8 @@ export * from './infrastructure/runners/cursor.js';
 
 export * from './infrastructure/runners/fake.js';
 
+export * from './infrastructure/runners/fake-scenarios.js';
+
 export * from './infrastructure/runners/registry.js';
 
 export * from './infrastructure/transcripts.js';
