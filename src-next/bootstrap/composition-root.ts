@@ -67,6 +67,7 @@ import { gitHubProviderDefinition } from '../integrations/github/index.js';
 import { createWorkService } from '../work/index.js';
 import { loadConfig, type ResolvedWakeModulesConfig } from './config/load-config.js';
 import { hydrateFakeProviderEvidence } from './fake-provider-files.js';
+import { loadFakeScenarios } from './fake-scenarios.js';
 import { resolveWakePaths, type WakePaths } from './paths.js';
 import { createRuntimeProjectionRunner } from './projection-runtime.js';
 import { createRunnerQuotaReporter } from './runner-quota-reporter.js';
@@ -85,6 +86,7 @@ export interface CompositionRootOptions {
 
 export interface CompositionRoot {
   readonly config: ResolvedWakeModulesConfig;
+  readonly fakeScenarios: import('../execution/index.js').FakeScenarioResolver;
   readonly paths: WakePaths;
   readonly journal: EventJournal;
   readonly projections: ProjectionStore;
@@ -108,6 +110,7 @@ export async function createCompositionRoot(
   options: CompositionRootOptions = {},
 ): Promise<CompositionRoot> {
   const config = options.config ?? (await loadConfig(wakeRoot));
+  const fakeScenarios = await loadFakeScenarios(wakeRoot);
   const paths = resolveWakePaths(wakeRoot);
   const clock = options.clock ?? new SystemClock();
   const ids = new UlidIdGenerator();
@@ -130,7 +133,7 @@ export async function createCompositionRoot(
   const execution = createExecutionService(journal, activities, config.execution, {
     clock,
     ids,
-    runners: createRunnerRegistry(config.execution),
+    runners: createRunnerRegistry(config.execution, fakeScenarios),
     reportRunnerQuota: createRunnerQuotaReporter(journal, clock, ids),
     workspaces: new GitWorkspaceProvider(paths.workspacesRoot, {
       async cloneLocator(id) {
@@ -179,6 +182,7 @@ export async function createCompositionRoot(
   });
   return {
     config,
+    fakeScenarios,
     paths,
     journal,
     projections,

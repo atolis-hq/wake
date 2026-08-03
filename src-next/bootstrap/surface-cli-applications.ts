@@ -272,7 +272,7 @@ function createOperationalApplications(root: CompositionRoot) {
     },
     smoke: async () =>
       runTargetSmoke(
-        createRunnerRegistry(root.config.execution),
+        createRunnerRegistry(root.config.execution, root.fakeScenarios),
         root.config.execution.defaultRunnerPool,
         new AbortController().signal,
       ),
@@ -358,7 +358,9 @@ async function doctorDiagnostics(root: CompositionRoot) {
   const failures: string[] = [];
   const notices: string[] = [];
   try {
-    createRunnerRegistry(root.config.execution).resolve(root.config.execution.defaultRunnerPool);
+    createRunnerRegistry(root.config.execution, root.fakeScenarios).resolve(
+      root.config.execution.defaultRunnerPool,
+    );
   } catch (error) {
     failures.push(`runner pool availability: ${(error as Error).message}`);
   }
@@ -439,16 +441,16 @@ async function dockerSandboxHealthNotices(root: CompositionRoot): Promise<string
   const containerName = root.config.host.sandbox.containerName;
   if (!(await inspect.imageExists(image)))
     return [
-      `Docker sandbox image "${image}" was not found (or Docker is unavailable) ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â run \`wake sandbox build\` if this deployment uses the Docker sandbox`,
+      `Docker sandbox image "${image}" was not found (or Docker is unavailable) — run \`wake sandbox build\` if this deployment uses the Docker sandbox`,
     ];
   const state = await inspect.containerState(containerName);
   if (state === 'halted')
     return [
-      `Docker sandbox container "${containerName}" is stopped ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â run \`wake sandbox up\` to resume it`,
+      `Docker sandbox container "${containerName}" is stopped — run \`wake sandbox up\` to resume it`,
     ];
   if (state === null)
     return [
-      `Docker sandbox container "${containerName}" was not found ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â run \`wake sandbox up\` if this deployment uses the Docker sandbox`,
+      `Docker sandbox container "${containerName}" was not found — run \`wake sandbox up\` if this deployment uses the Docker sandbox`,
     ];
   return [];
 }

@@ -35,7 +35,7 @@ export function createAgentActivity(templates?: AgentTemplateRenderer): Activity
     async execute(invocation, context): Promise<AgentActivityOutcome> {
       if (context.runner === undefined)
         throw new Error('Agent Activity requires a runner resolved by Execution');
-      const request = await agentRequest(invocation, templates);
+      const request = await agentRequest(invocation, templates, context.simulation);
       const execution = await context.runner.start(request, context.signal);
       if (execution.identity !== undefined)
         await context.reportExternalExecution(execution.identity);
@@ -54,10 +54,11 @@ async function agentRequest(
     allowedTools?: readonly string[];
   }>,
   templates: AgentTemplateRenderer | undefined,
+  simulation: { readonly runner: string; readonly workflow: string; readonly occurrence: number } | undefined,
 ) {
   const input = invocation.input;
   const template = await resolveTemplate(input.template, invocation.workItemId, templates);
-  return requestFrom(input, invocation.activationId, template);
+  return requestFrom(input, invocation.activationId, template, simulation);
 }
 
 async function resolveTemplate(
@@ -73,7 +74,7 @@ async function resolveTemplate(
 }
 
 function requestFrom(
-  input: { prompt?: string; model?: string; allowedTools?: readonly string[] },
+  input: { prompt?: string; template?: string; model?: string; allowedTools?: readonly string[] },
   runId: string,
   template:
     | {
@@ -83,6 +84,7 @@ function requestFrom(
         readonly maxTurns?: number | undefined;
       }
     | undefined,
+  simulation: { readonly runner: string; readonly workflow: string; readonly occurrence: number } | undefined,
 ) {
   const model = input.model ?? template?.model;
   return {
@@ -91,6 +93,9 @@ function requestFrom(
     ...(model === undefined || model === null ? {} : { model }),
     allowedTools: input.allowedTools ?? template?.allowedTools ?? [],
     ...(template?.maxTurns === undefined ? {} : { maxTurns: template.maxTurns }),
+    ...(simulation === undefined
+      ? {}
+      : { simulation: { ...simulation, action: input.template ?? 'prompt' } }),
   };
 }
 

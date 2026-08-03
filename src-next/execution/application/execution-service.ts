@@ -263,6 +263,15 @@ async function executeActivity(
     signal: controller.signal,
     occurredAt,
     ...(runner === undefined ? {} : { runner }),
+    ...(request.runnerName === undefined || context.workflowName === undefined
+      ? {}
+      : {
+          simulation: {
+            runner: request.runnerName,
+            workflow: context.workflowName,
+            occurrence: activation.ordinal,
+          },
+        }),
     reportExternalExecution: async (reference) => {
       const loaded = await runtime.repository.load(currentRunId);
       await runtime.repository.append(currentRunId, loaded.sequence, [

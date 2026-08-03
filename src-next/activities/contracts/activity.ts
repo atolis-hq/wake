@@ -63,6 +63,12 @@ export interface AgentRunnerPort {
       readonly model?: string;
       readonly allowedTools: readonly string[];
       readonly maxTurns?: number;
+      readonly simulation?: {
+        readonly runner: string;
+        readonly workflow: string;
+        readonly action: string;
+        readonly occurrence: number;
+      };
     },
     signal: AbortSignal,
   ): Promise<{
@@ -94,6 +100,11 @@ export interface ActivityExecutionContext {
   readonly signal: AbortSignal;
   readonly occurredAt: string;
   readonly runner?: AgentRunnerPort;
+  readonly simulation?: {
+    readonly runner: string;
+    readonly workflow: string;
+    readonly occurrence: number;
+  };
   reportExternalExecution(reference: {
     readonly kind: ExternalExecutionKind;
     readonly id: string;

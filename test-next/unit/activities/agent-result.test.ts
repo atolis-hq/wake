@@ -156,6 +156,7 @@ describe('agent template input', () => {
       {
         signal: new AbortController().signal,
         occurredAt: '2026-07-31T00:00:00.000Z',
+        simulation: { runner: 'fake-worker', workflow: 'dark-factory', occurrence: 2 },
         runner: {
           async start(request) {
             requests.push(request);
@@ -173,6 +174,12 @@ describe('agent template input', () => {
         model: 'gpt-5',
         allowedTools: ['Bash(git *)'],
         maxTurns: 40,
+        simulation: {
+          runner: 'fake-worker',
+          workflow: 'dark-factory',
+          action: 'implement',
+          occurrence: 2,
+        },
       },
     ]);
   });

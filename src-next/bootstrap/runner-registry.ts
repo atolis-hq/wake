@@ -4,7 +4,9 @@ import {
   createCommandRunner,
   createCursorRunner,
   FakeExecutionRunner,
+  emptyFakeScenarios,
   RunnerRegistry,
+  type FakeScenarioResolver,
 } from '../execution/index.js';
 import type { ResolvedWakeModulesConfig } from './config/load-config.js';
 
@@ -14,11 +16,12 @@ type AgentRunnerConfig = NonNullable<
 
 export function createRunnerRegistry(
   config: ResolvedWakeModulesConfig['execution'],
+  scenarios: FakeScenarioResolver = emptyFakeScenarios,
 ): RunnerRegistry {
   const runners = Object.fromEntries(
     Object.entries(config.agentRunners ?? {}).map(([name, runner]) => [
       name,
-      createConfiguredRunner(runner),
+      createConfiguredRunner(name, runner, scenarios),
     ]),
   );
   return new RunnerRegistry(config.runnerPools, runners);
@@ -26,10 +29,14 @@ export function createRunnerRegistry(
 
 // `kind` names the transport adapter, not the vendor, so each variant carries only the
 // fields its transport actually needs.
-function createConfiguredRunner(runner: AgentRunnerConfig) {
+function createConfiguredRunner(
+  name: string,
+  runner: AgentRunnerConfig,
+  scenarios: FakeScenarioResolver,
+) {
   switch (runner.kind) {
     case 'fake':
-      return new FakeExecutionRunner();
+      return new FakeExecutionRunner(name, scenarios);
     case 'claude-cli':
       return createClaudeRunner(runner.command, runner.timeoutMs, runner.args);
     case 'codex-cli':

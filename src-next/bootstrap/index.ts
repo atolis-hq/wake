@@ -88,6 +88,8 @@ export * from './initialise.js';
 
 export * from './config/root-schema.js';
 
+export * from './fake-scenarios.js';
+
 export * from './paths.js';
 
 export * from './projection-runtime.js';

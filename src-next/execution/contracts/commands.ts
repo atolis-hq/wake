@@ -24,6 +24,7 @@ export interface ExecutionActivation {
 export interface ExecutionAttemptContext {
   readonly workItemId: WorkItemId;
   readonly workflowInstanceId: ActivityWorkflowInstanceId;
+  readonly workflowName?: string;
   readonly orchestrationGroupId: ActivityOrchestrationGroupId;
   readonly resources: readonly ResourceView[];
   readonly owner?: string;
