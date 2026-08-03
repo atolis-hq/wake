@@ -90,9 +90,14 @@ export function EventRow({ record }: { readonly record: AuditEventResponse }) {
         <LocalTime value={record.occurredAt} />
         <span className={styles.eventType}>{record.type}</span>
         <span className={styles.eventId}>{record.id}</span>
+        <span className={styles.eventChevron} aria-hidden="true">
+          {expanded ? 'v' : '>'}
+        </span>
       </button>
       {expanded && (
-        <pre className={styles.eventPayload}>{JSON.stringify(record.payload ?? {}, null, 2)}</pre>
+        <div className={styles.eventPayload}>
+          <pre>{JSON.stringify(record, null, 2)}</pre>
+        </div>
       )}
     </li>
   );

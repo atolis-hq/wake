@@ -12,25 +12,33 @@ import {
   EventsPage,
   mergeBoundedEvents,
 } from '../src/features/events/events.js';
-
 describe('event rows', () => {
   afterEach(cleanup);
-
-  it('expands to show the complete JSON payload', async () => {
+  it('renders the full event name and expands the complete event record', async () => {
     const user = userEvent.setup();
+    const record = {
+      ...event(1),
+      type: 'work.item.transitioned.from.intake.to.implementation',
+      correlationId: 'correlation-1',
+      payload: { workItemId: 'work-a', nested: { ok: true } },
+    };
     render(
       <ol>
-        <EventRow
-          record={{ ...event(1), payload: { workItemId: 'work-a', nested: { ok: true } } }}
-        />
+        {' '}
+        <EventRow record={record} />{' '}
       </ol>,
     );
-    await user.click(screen.getByRole('button', { name: /work.created/ }));
+    const summary = screen.getByRole('button', { name: /work\.item\.transitioned/ });
+    expect(summary.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.getByText(record.type)).toBeTruthy();
+    expect(screen.getByText('>')).toBeTruthy();
+    await user.click(summary);
     expect(screen.getByText(/"nested": \{/)).toBeTruthy();
-    expect(screen.getByRole('button').getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByText(/"correlationId": "correlation-1"/)).toBeTruthy();
+    expect(screen.getByText('v')).toBeTruthy();
+    expect(summary.getAttribute('aria-expanded')).toBe('true');
   });
 });
-
 describe('incremental event feed', () => {
   afterEach(cleanup);
   it('buffers incoming records while paused and resumes in stable bounded order', async () => {
@@ -38,7 +46,6 @@ describe('incremental event feed', () => {
     const { rerender } = render(<EventsFeed records={[event(1)]} />);
     await user.click(screen.getByRole('button', { name: 'Pause live view' }));
     rerender(<EventsFeed records={[event(1), event(2)]} />);
-
     expect(screen.getByRole('button', { name: '1 new event' })).toBeTruthy();
     expect(screen.queryByText('event-2')).toBeNull();
     await user.click(screen.getByRole('button', { name: '1 new event' }));
@@ -51,7 +58,6 @@ describe('incremental event feed', () => {
       ),
     ).toHaveLength(200);
   });
-
   it('resumes logical live updates without moving the viewport or selection', async () => {
     const user = userEvent.setup();
     const { rerender } = render(<EventsFeed records={[event(1)]} />);
@@ -60,7 +66,6 @@ describe('incremental event feed', () => {
     feed.scrollTop = 40;
     fireEvent.scroll(feed);
     rerender(<EventsFeed records={[event(1), event(2), event(2)]} />);
-
     expect(screen.getByRole('button', { name: '1 new event' })).toBeTruthy();
     const selectedText = screen.getByText('event-1').firstChild!;
     const selection = window.getSelection()!;
@@ -74,7 +79,6 @@ describe('incremental event feed', () => {
     expect(feed.scrollTop).toBe(40);
     expect(selection.toString()).toBe('event-1');
     expect(selection.anchorNode).toBe(selectedText);
-
     rerender(<EventsFeed records={[event(1), event(2), event(3)]} />);
     expect(screen.getByText('event-3')).toBeTruthy();
     expect(screen.queryByRole('button', { name: /new event/ })).toBeNull();
@@ -82,7 +86,6 @@ describe('incremental event feed', () => {
     expect(selection.toString()).toBe('event-1');
     expect(selection.anchorNode).toBe(selectedText);
   });
-
   it('navigates historical pages before applying the tail cursor to incremental polls', async () => {
     const user = userEvent.setup();
     const requests: string[] = [];
@@ -107,20 +110,21 @@ describe('incremental event feed', () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(
       <MemoryRouter initialEntries={['/events']}>
+        {' '}
         <QueryClientProvider client={queryClient}>
+          {' '}
           <ApiClientContext.Provider value={client}>
-            <EventsPage />
-          </ApiClientContext.Provider>
-        </QueryClientProvider>
+            {' '}
+            <EventsPage />{' '}
+          </ApiClientContext.Provider>{' '}
+        </QueryClientProvider>{' '}
       </MemoryRouter>,
     );
-
     expect(await screen.findByText('event-1')).toBeTruthy();
     await user.click(screen.getByRole('button', { name: 'Next page' }));
     expect(await screen.findByText('event-2')).toBeTruthy();
     expect(screen.queryByText('event-1')).toBeNull();
     await act(() => queryClient.refetchQueries({ queryKey: queryKeys.events.all, type: 'active' }));
-
     expect(requests.slice(0, 2)).toEqual(['/api/v1/events', '/api/v1/events?cursor=c_page2']);
     expect(requests.slice(2).every((request) => request === '/api/v1/events?cursor=c_tail')).toBe(
       true,
@@ -132,14 +136,12 @@ describe('incremental event feed', () => {
     expect(screen.queryByText('event-3')).toBeNull();
   });
 });
-
 const event = (position: number) => ({
   id: `event-${position}`,
   type: 'work.created',
   occurredAt: '2026-07-31T10:00:00.000Z',
   position,
 });
-
 function dimensions(
   element: HTMLElement,
   values: { readonly clientHeight: number; readonly scrollHeight: number },
