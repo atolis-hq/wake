@@ -34,3 +34,11 @@ live-update tests to show the shared event row preserves current behavior.
 
 No API changes are required. The direction indicator is an expansion chevron
 for now, not an event-direction value.
+
+## Shared page width
+
+The shared application-shell main region will use the full available viewport
+width for every route. It will retain responsive horizontal gutters (one rem on
+desktop and half a rem on narrow screens), but will not apply a maximum content
+width. Individual controls keep their existing sizing; this change only removes
+the common page-width cap.
