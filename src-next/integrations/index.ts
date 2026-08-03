@@ -1,10 +1,13 @@
-export * from '../kernel/index.js';
+﻿export * from '../kernel/index.js';
 
 export * from './application/poll-service.js';
 
 export * from './application/work-admission.js';
 
 export * from './application/artifact-registration-reactor.js';
+
+export * from './application/agent-run-publication-reactor.js';
+export * from './application/terminal-agent-run-report.js';
 
 export * from './contracts/config.js';
 

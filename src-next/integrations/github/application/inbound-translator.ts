@@ -10,7 +10,7 @@ import {
   type EventJournal,
   type IdGenerator,
 } from '../../../kernel/index.js';
-import type { OrchestrationService } from '../../../orchestration/index.js';
+import { signalName, type OrchestrationService } from '../../../orchestration/index.js';
 import type { ResourceLookup, ResourceService } from '../../../resources/index.js';
 import {
   BuiltInResourceCapability,
@@ -213,7 +213,10 @@ export class InboundTranslator {
     if (this.journal === undefined || this.resources === undefined || this.work === undefined)
       return;
     const payload = event.payload;
-    if (payload.reviewKind !== 'formal') return;
+    if (payload.reviewKind === 'issue') {
+      await this.applyIssueApprovalSignal(event);
+      return;
+    }
     if (this.lookup === undefined) throw new Error('InboundTranslator lookup is required');
     let resourceIdValue = await this.lookup.resourceIdForExternalKey({
       adapter: this.adapter,
@@ -248,6 +251,36 @@ export class InboundTranslator {
         { ...proposed, requestedEventId: proposed.providerEventId },
         context,
       );
+  }
+
+  private async applyIssueApprovalSignal(
+    event: Extract<GitHubAdapterEvent, { eventType: typeof GitHubEventType.CommentObserved }>,
+  ): Promise<void> {
+    if (this.resources === undefined || this.lookup === undefined || this.orchestration === undefined) return;
+    const resourceIdValue = await this.lookup.resourceIdForExternalKey({
+      adapter: this.adapter,
+      key: event.payload.externalKey,
+    });
+    if (resourceIdValue === null) return;
+    const workItemIds = (await this.resources.correlations(resourceIdValue))
+      .filter((correlation) => correlation.role === ResourceCorrelationRole.Primary)
+      .map((correlation) => correlation.workItemId);
+    for (const workflow of await this.orchestration.listAll()) {
+      if (!workItemIds.includes(workflow.workItemId)) continue;
+      await this.orchestration.acceptSignal(
+        workflow.workflowInstanceId,
+        {
+          kind: signalName('approved'),
+          actorId: event.payload.actor.id,
+          actorDecision: {
+            authorized: event.payload.actor.kind === 'human',
+            evidenceId: event.eventId,
+          },
+          providerEventId: event.eventId,
+        },
+        commandContext(event),
+      );
+    }
   }
 
   private mintIdentity(externalKey: { readonly adapter: string; readonly key: string }) {

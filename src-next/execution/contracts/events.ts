@@ -26,7 +26,7 @@ import type {
   Lease,
   RecoveredRunResult,
 } from './liveness.js';
-import type { RunnerResult } from './runner.js';
+import type { AgentRunResponse } from './runner.js';
 import { ExecutionStreamKind, type ActivationStreamRef, type RunStreamRef } from './streams.js';
 import type { ExecutionFailure } from './views.js';
 import {
@@ -49,6 +49,8 @@ export const runStartedPayloadSchema = z
         name: z.string().min(1),
         model: z.string().min(1).optional(),
         effort: z.string().min(1).optional(),
+        pool: z.string().min(1).optional(),
+        cli: z.string().min(1).optional(),
       })
       .strict()
       .optional(),
@@ -79,22 +81,16 @@ export const runnerResultPayloadSchema = z
       RunStatus.Cancelled,
       RunStatus.Ambiguous,
     ]),
-    output: z.string(),
-    runner: z.string().min(1),
-    model: z.string().optional(),
-    sessionId: z.string().optional(),
-    tokenUsage: z
+    // Legacy persisted events may still carry these fields; new writers never emit them.
+    output: z.string().optional(),
+    runner: z.string().min(1).optional(),
+    agent: z
       .object({
-        input: z.number(),
-        output: z.number(),
-        cacheRead: z.number().optional(),
-        cacheWrite: z.number().optional(),
-        costUsd: z.number().optional(),
+        outcome: z.enum(['DONE', 'REJECTED', 'BLOCKED', 'FAILED']),
+        displayBody: z.string(),
+        artifacts: z.array(z.object({ kind: z.string().min(1), externalKey: z.object({ adapter: z.string().min(1), key: z.string().min(1) }).strict() }).strict()).optional(),
+        metadata: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])),
       })
-      .strict()
-      .optional(),
-    failure: z
-      .object({ kind: z.string().min(1), message: z.string() })
       .strict()
       .optional(),
   })
@@ -108,6 +104,7 @@ export const ExecutionEventType = {
   RunLeaseRenewed: 'execution.run-lease-renewed',
   RunExternalExecutionReported: 'execution.run-external-execution-reported',
   RunRunnerResultReported: 'execution.run-runner-result-reported',
+  RunWorkspaceCleanupFailed: 'execution.workspace-cleanup-failed',
   RunCancellationRequested: 'execution.run-cancellation-requested',
   RunCancellationConfirmed: 'execution.run-cancellation-confirmed',
   RunCancelled: 'execution.run-cancelled',
@@ -132,6 +129,8 @@ export interface RunStartedPayload {
         readonly name: string;
         readonly model?: string | undefined;
         readonly effort?: string | undefined;
+        readonly pool?: string | undefined;
+        readonly cli?: string | undefined;
       }
     | undefined;
   readonly workspace?:
@@ -141,6 +140,14 @@ export interface RunStartedPayload {
         readonly branch?: string | undefined;
       }
     | undefined;
+}
+
+export interface RecordedRunnerResult {
+  readonly transport: typeof RunStatus.Succeeded | typeof RunStatus.Failed | typeof RunStatus.Cancelled | typeof RunStatus.Ambiguous;
+  /** Legacy decode-only compatibility. New execution facts never set these fields. */
+  readonly output?: string | undefined;
+  readonly runner?: string | undefined;
+  readonly agent?: AgentRunResponse | undefined;
 }
 
 export interface RunExecutionEventPayloads {
@@ -156,7 +163,8 @@ export interface RunExecutionEventPayloads {
   readonly [ExecutionEventType.RunLeaseClaimed]: Lease;
   readonly [ExecutionEventType.RunLeaseRenewed]: Lease;
   readonly [ExecutionEventType.RunExternalExecutionReported]: ExternalExecutionReference;
-  readonly [ExecutionEventType.RunRunnerResultReported]: RunnerResult;
+  readonly [ExecutionEventType.RunRunnerResultReported]: RecordedRunnerResult;
+  readonly [ExecutionEventType.RunWorkspaceCleanupFailed]: { readonly message: string };
   readonly [ExecutionEventType.RunCancellationRequested]: {
     readonly requestedAt: string;
     readonly reason: Cancellation['reason'];
@@ -228,6 +236,10 @@ const runEventSchema: z.ZodType<RunExecutionEvent> = z.discriminatedUnion('event
     payload: runnerResultPayloadSchema,
   }),
   eventEnvelopeSchema.extend({
+    eventType: z.literal(ExecutionEventType.RunWorkspaceCleanupFailed),
+    stream: runStreamSchema,
+    payload: z.object({ message: z.string().min(1) }).strict(),
+  }),  eventEnvelopeSchema.extend({
     eventType: z.literal(ExecutionEventType.RunCancelled),
     stream: runStreamSchema,
     payload: z.object({ finishedAt: offsetIsoTimestampSchema }).strict(),

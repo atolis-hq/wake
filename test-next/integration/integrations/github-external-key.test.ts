@@ -37,3 +37,31 @@ describe('GitHub external-key grammar', () => {
     expect(() => parseGitHubResourceKey('acme/widgets/42')).toThrow(/Invalid GitHub resource key/);
   });
 });
+
+it('observes only an exact issue /approved command', async () => {
+  const { issueCommentObservation } = await import(
+    '../../../src-next/integrations/github/infrastructure/issue-source.js'
+  );
+  const base = {
+    repository: 'acme/widgets',
+    issue: { number: 42 },
+    comment: {
+      id: 99,
+      body: ' /approved ',
+      created_at: '2026-08-03T00:00:00.000Z',
+      updated_at: '2026-08-03T00:00:00.000Z',
+      user: { login: 'maintainer', type: 'User' },
+    },
+  };
+
+  expect(issueCommentObservation(base)).toMatchObject({
+    eventType: 'integration.github.comment-observed',
+    payload: {
+      reviewKind: 'issue',
+      externalKey: 'acme/widgets#42',
+      body: '/approved',
+      actor: { id: 'maintainer', kind: 'human' },
+    },
+  });
+  expect(issueCommentObservation({ ...base, comment: { ...base.comment, body: 'looks good' } })).toBeNull();
+});

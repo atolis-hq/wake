@@ -57,7 +57,7 @@ EXPOSE 4317
 
 # Baked at build time so wake sandbox-entrypoint (and anything it spawns) can
 # find the compiled CLI without hardcoding /app in multiple places. Docker's
-# exec-form ENTRYPOINT below does not expand env vars, so it stays literal ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â
+# exec-form ENTRYPOINT below does not expand env vars, so it stays literal —
 # that's fine since it's the very first thing that runs.
 ENV WAKE_MAIN_JS=/app/dist-next/src-next/main.js
 

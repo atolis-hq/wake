@@ -1,4 +1,4 @@
-import { BuiltInActivityName } from '../../../activities/index.js';
+﻿import { BuiltInActivityName } from '../../../activities/index.js';
 import { defineClosedVocabulary, type ValueOf } from '../../../kernel/index.js';
 
 export const DeliveryState = defineClosedVocabulary({
@@ -25,6 +25,7 @@ export const DeliveryIntentKind = {
   PrMerge: BuiltInActivityName.PullRequestMerge,
   StatusPublish: 'status.publish',
   ReplyPublish: 'reply.publish',
+  AgentRunPublish: 'agent-run.publish',
 } as const;
 
 export type DeliveryIntentKind = ValueOf<typeof DeliveryIntentKind>;

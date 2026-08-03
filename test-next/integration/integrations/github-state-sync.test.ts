@@ -51,6 +51,9 @@ it('validates GitHub polling configuration and isolates a failed repository', as
     async listPullRequests() {
       return [];
     },
+    async listIssueComments() {
+      return [];
+    },
     async listReviews() {
       return [];
     },
@@ -133,6 +136,9 @@ it('polls pull request reviews into comment-observed review signals', async () =
           user: { login: 'author', type: 'User' },
         },
       ];
+    },
+    async listIssueComments() {
+      return [];
     },
     async listReviews() {
       return [
@@ -224,7 +230,10 @@ it('flows a tracked PR review from GitHub source polling through Activities acce
           },
         ];
       },
-      async listReviews() {
+      async listIssueComments() {
+      return [];
+    },
+    async listReviews() {
         return [
           {
             id: 101,
@@ -314,4 +323,79 @@ it('reconciles target workflow markers to correlated GitHub resources without re
       ],
     },
   ]);
+});
+
+it('polls an issue /approved comment as a typed approval signal', async () => {
+  const source = createGitHubSource(
+    gitHubConfigSchema.parse({
+      enabled: true,
+      token: 'token',
+      repositories: [{ owner: 'org', repo: 'repo' }],
+    }),
+    {
+      async listIssues() {
+        return [{ number: 8, title: 'Issue', body: null, state: 'open' as const, updated_at: '2026-08-03T00:00:00.000Z' }];
+      },
+      async listIssueComments() {
+        return [
+          { id: 1, body: 'not an approval', created_at: '2026-08-03T00:00:00.000Z', updated_at: '2026-08-03T00:00:00.000Z' },
+          { id: 2, body: '/approved', created_at: '2026-08-03T00:01:00.000Z', updated_at: '2026-08-03T00:01:00.000Z', user: { login: 'maintainer', type: 'User' } },
+        ];
+      },
+      async listPullRequests() { return []; },
+      async listReviews() { return []; },
+      async listCheckRunsForRef() { return []; },
+      async getCombinedStatusForRef() { return []; },
+    },
+  );
+
+  const events = await source.poll(new AbortController().signal);
+  expect(events.filter((event) => event.eventType === GitHubEventType.CommentObserved)).toMatchObject([
+    { payload: { reviewKind: 'issue', externalKey: 'org/repo#8', body: '/approved' } },
+  ]);
+});
+
+it('does not append a new work observation when only the GitHub revision and Wake-owned labels changed', async () => {
+  const clock = new FakeClock();
+  const journal = new InMemoryEventJournal(clock);
+  let poll = 0;
+  const source = createGitHubSource(
+    gitHubConfigSchema.parse({
+      enabled: true,
+      token: 'token',
+      repositories: [{ owner: 'org', repo: 'repo' }],
+      polling: { lookbackMs: 0 },
+    }),
+    {
+      async listIssues() {
+        poll += 1;
+        return [{
+          number: 8,
+          title: 'Issue',
+          body: null,
+          state: 'open' as const,
+          updated_at: poll === 1 ? '2026-08-03T00:00:00.000Z' : '2026-08-03T00:01:00.000Z',
+          labels: poll === 1 ? ['approval'] : ['approval', 'wake:status.awaiting-approval'],
+        }];
+      },
+      async listIssueComments() { return []; },
+      async listPullRequests() { return []; },
+      async listReviews() { return []; },
+      async listCheckRunsForRef() { return []; },
+      async getCombinedStatusForRef() { return []; },
+    },
+  );
+  const service = new PollService(journal, {
+    adapter: 'github' as never,
+    eventTypes: Object.values(GitHubEventType),
+    source,
+    delivery: {} as never,
+    inbound: {} as never,
+    verifyArtifact: async () => 'not-found' as const,
+  });
+
+  await service.pollOnce(new AbortController().signal);
+  await service.pollOnce(new AbortController().signal);
+
+  expect((await journal.readAll(0)).filter((event) => event.eventType === GitHubEventType.WorkObserved)).toHaveLength(1);
 });

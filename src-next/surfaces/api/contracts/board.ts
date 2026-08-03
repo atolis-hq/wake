@@ -9,6 +9,7 @@ export interface BoardCardResponse {
   readonly workItemId: string;
   readonly objective: string;
   readonly condition: BoardCardCondition;
+  readonly awaitingApproval?: boolean;
   readonly workflowName?: string;
   readonly stage?: string;
   readonly dwellSince: string;

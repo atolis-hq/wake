@@ -1,7 +1,8 @@
-import type { MergeMethod } from '../../../activities/index.js';
+﻿import type { MergeMethod } from '../../../activities/index.js';
 import type { EventId } from '../../../kernel/index.js';
 import type { ResourceId } from '../../../resources/index.js';
 import type { DeliveryIntentKind } from './vocabulary.js';
+import type { AgentRunPublicationReport } from './intents.js';
 import {
   type DeliveryIntentKind as DeliveryIntentKindValue,
   type DeliveryState as DeliveryStateValue,
@@ -26,7 +27,8 @@ export interface DeliveryIntentView {
         readonly method: MergeMethod;
       }
     | { readonly kind: typeof DeliveryIntentKind.StatusPublish; readonly body: string }
-    | { readonly kind: typeof DeliveryIntentKind.ReplyPublish; readonly body: string };
+    | { readonly kind: typeof DeliveryIntentKind.ReplyPublish; readonly body: string }
+    | { readonly kind: typeof DeliveryIntentKind.AgentRunPublish; readonly report: AgentRunPublicationReport };
   readonly state: DeliveryStateValue;
   readonly attempts: number;
   readonly occurrenceOrdinal: number;

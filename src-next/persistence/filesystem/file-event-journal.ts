@@ -1,4 +1,4 @@
-import { appendFile, mkdir, readdir, readFile } from 'node:fs/promises';
+import { appendFile, mkdir, readdir, readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import type {
@@ -16,6 +16,8 @@ export class FileEventJournal implements EventJournal {
     private readonly root: string,
     private readonly clock: Clock,
   ) {}
+
+  private cached: { readonly fingerprint: string; readonly events: EventEnvelope[] } | undefined;
 
   async append(
     stream: EntityRef,
@@ -68,6 +70,7 @@ export class FileEventJournal implements EventJournal {
           'utf8',
         );
       }
+      this.cached = undefined;
       return finalizedEnvelopes;
     });
   }
@@ -91,6 +94,15 @@ export class FileEventJournal implements EventJournal {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
       throw error;
     }
+    const fingerprint = (
+      await Promise.all(
+        files.map(async (file) => {
+          const info = await stat(join(directory, file));
+          return `${file}:${info.size}:${info.mtimeMs}`;
+        }),
+      )
+    ).join('|');
+    if (this.cached?.fingerprint === fingerprint) return this.cached.events;
     const events: EventEnvelope[] = [];
     for (const file of files) {
       const raw = await readFile(join(directory, file), 'utf8');
@@ -112,6 +124,7 @@ export class FileEventJournal implements EventJournal {
         }
       }
     }
+    this.cached = { fingerprint, events };
     return events;
   }
 }

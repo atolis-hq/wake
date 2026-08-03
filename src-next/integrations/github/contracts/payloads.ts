@@ -25,6 +25,14 @@ export function gitHubAssigneeLogins(payload: GitHubIssuePayload): readonly stri
   );
 }
 
+export interface GitHubIssueCommentPayload {
+  readonly id: number;
+  readonly body: string | null;
+  readonly created_at: string;
+  readonly updated_at: string;
+  readonly user?: { readonly login?: string; readonly type?: string } | null;
+}
+
 export interface GitHubPullRequestPayload extends GitHubIssuePayload {
   readonly pull_request?: Record<string, unknown>;
   readonly head?: { readonly sha?: string };

@@ -4,6 +4,7 @@ import {
   OrchestrationEventType,
   selectWorkflowOrchestrationEvent,
 } from '../orchestration/index.js';
+import { toWorkItemKey } from '../surfaces/api/contracts/work.js';
 import { selectWorkEvent, WorkEventType } from '../work/index.js';
 
 const conditionShape = {
@@ -29,6 +30,7 @@ interface StoredCard {
   readonly workItemId: string;
   readonly objective: string;
   readonly condition: BoardConditionValue;
+  readonly awaitingApproval?: boolean;
   readonly workflowName?: string;
   readonly stage?: string;
   readonly dwellSince: string;
@@ -74,7 +76,7 @@ function projectWork(
   const id = event.stream.id;
   if (event.eventType === WorkEventType.ItemCreated) {
     const card: StoredCard = {
-      workItemKey: `wk_${id}`,
+      workItemKey: toWorkItemKey(id),
       workItemId: id,
       objective: event.payload.objective,
       condition: BoardCondition.Ready,
@@ -144,6 +146,23 @@ function projectWorkflow(
       ...view,
       cards: { ...view.cards, [workId]: { ...card, condition: BoardCondition.NeedsHuman } },
     };
+  if (event.eventType === OrchestrationEventType.SignalWaitStarted)
+    return {
+      ...view,
+      cards: {
+        ...view.cards,
+        [workId]: {
+          ...card,
+          condition: BoardCondition.NeedsHuman,
+          ...(event.payload.signalKind === 'approved' ? { awaitingApproval: true } : {}),
+        },
+      },
+    };
+  if (event.eventType === OrchestrationEventType.SignalAccepted)
+    return {
+      ...view,
+      cards: { ...view.cards, [workId]: withoutAwaitingApproval(card) },
+    };
   if (event.eventType === OrchestrationEventType.InstanceCompleted)
     return {
       ...view,
@@ -165,7 +184,16 @@ function projectRun(
     ...view,
     cards: {
       ...view.cards,
-      [workId]: { ...card, runCount: card.runCount + 1, condition: BoardCondition.Active },
+      [workId]: {
+        ...withoutAwaitingApproval(card),
+        runCount: card.runCount + 1,
+        condition: BoardCondition.Active,
+      },
     },
   };
+}
+
+function withoutAwaitingApproval(card: StoredCard): StoredCard {
+  const { awaitingApproval: _awaitingApproval, ...withoutApproval } = card;
+  return withoutApproval;
 }

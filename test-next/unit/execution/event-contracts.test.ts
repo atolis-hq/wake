@@ -71,13 +71,14 @@ const runSamples = [
     ExecutionEventType.RunRunnerResultReported,
     {
       transport: 'succeeded',
-      output: 'DONE',
-      runner: 'fake',
-      sessionId: 'session-1',
-      tokenUsage: { input: 10, output: 20, costUsd: 0.03 },
+      agent: {
+        outcome: 'DONE',
+        displayBody: 'Completed the requested work.',
+        metadata: { runner: 'fake', sessionId: 'session-1', inputTokens: 10, outputTokens: 20, costUsd: 0.03 },
+      },
     },
   ],
-  [
+  [ExecutionEventType.RunWorkspaceCleanupFailed, { message: 'EACCES: workspace still in use' }],  [
     ExecutionEventType.RunCancellationRequested,
     { requestedAt: '2026-07-31T12:00:00.000Z', reason: 'timeout' },
   ],
@@ -86,7 +87,7 @@ const runSamples = [
   [
     ExecutionEventType.RunRecovered,
     {
-      result: { transport: 'succeeded', output: 'DONE', runner: 'fake' },
+      result: { transport: 'succeeded', agent: { outcome: 'DONE', displayBody: 'Recovered.', metadata: { runner: 'fake' } } },
       outcome: { kind: 'done' },
       finishedAt: '2026-07-31T12:01:00.000Z',
     },

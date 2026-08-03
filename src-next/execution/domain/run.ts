@@ -102,11 +102,10 @@ function applyLivenessEvent(
     case ExecutionEventType.RunExternalExecutionReported:
       Object.assign(state, { externalExecution: event.payload });
       return;
+    case ExecutionEventType.RunWorkspaceCleanupFailed:
+      return;
     case ExecutionEventType.RunRunnerResultReported:
-      Object.assign(state, {
-        ...(event.payload.sessionId === undefined ? {} : { sessionId: event.payload.sessionId }),
-        ...(event.payload.tokenUsage === undefined ? {} : { tokenUsage: event.payload.tokenUsage }),
-      });
+      Object.assign(state, event.payload.agent === undefined ? {} : { agent: event.payload.agent });
       return;
     case ExecutionEventType.RunCancellationRequested:
       Object.assign(state, { cancellation: event.payload });

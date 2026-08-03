@@ -7,7 +7,7 @@ import type { RecoveryCoordinator } from '../contracts/control-plane.js';
 import { createRunExecutionEventDraft } from '../contracts/event-factory.js';
 import { ExecutionEventType, type RunExecutionEventDraft } from '../contracts/events.js';
 import { runId, type RunId } from '../contracts/identifiers.js';
-import type { RunnerResult } from '../contracts/runner.js';
+import type { AgentRunnerResult } from '../contracts/runner.js';
 import { runStream } from '../contracts/streams.js';
 import type { RunView } from '../contracts/views.js';
 import {
@@ -22,7 +22,7 @@ export interface ExternalExecutionInspector {
     reference: NonNullable<RunView['externalExecution']>,
   ): Promise<
     | { readonly kind: typeof ExternalExecutionState.Running }
-    | { readonly kind: typeof ExternalExecutionState.Completed; readonly result: RunnerResult }
+    | { readonly kind: typeof ExternalExecutionState.Completed; readonly result: AgentRunnerResult }
     | { readonly kind: typeof ExternalExecutionState.Absent }
     | { readonly kind: typeof ExternalExecutionState.Unknown; readonly reason: string }
   >;
@@ -139,7 +139,7 @@ export class RecoveryService {
     );
   }
 
-  private async appendRecovered(id: RunId, run: RunView, result: RunnerResult) {
+  private async appendRecovered(id: RunId, run: RunView, result: AgentRunnerResult) {
     const finishedAt = this.clock.now().toISOString();
     const outcome = recoveredOutcome(run, result, this.activities);
     return this.append(id, recoveredDraft(id, run, { result, outcome, finishedAt }, finishedAt));
@@ -215,7 +215,7 @@ function recoveredDraft(
   id: RunId,
   run: RunView,
   payload: {
-    readonly result: RunnerResult;
+    readonly result: AgentRunnerResult;
     readonly outcome: ActivityOutcome;
     readonly finishedAt: string;
   },
@@ -312,7 +312,7 @@ function eventMetadata(
 
 function recoveredOutcome(
   run: RunView,
-  result: RunnerResult,
+  result: AgentRunnerResult,
   activities: Pick<ActivityRegistry, 'validateOutcome'>,
 ) {
   if (result.transport !== RunStatus.Succeeded)

@@ -40,6 +40,8 @@ export interface RunView {
         readonly name: string;
         readonly model?: string | undefined;
         readonly effort?: string | undefined;
+        readonly pool?: string | undefined;
+        readonly cli?: string | undefined;
       }
     | undefined;
   readonly finishedAt?: string;
@@ -52,15 +54,6 @@ export interface RunView {
   };
   readonly lease?: Lease;
   readonly externalExecution?: ExternalExecutionReference;
-  readonly sessionId?: string | undefined;
-  readonly tokenUsage?:
-    | {
-        readonly input: number;
-        readonly output: number;
-        readonly cacheRead?: number | undefined;
-        readonly cacheWrite?: number | undefined;
-        readonly costUsd?: number | undefined;
-      }
-    | undefined;
+  readonly agent?: import('./runner.js').AgentRunResponse | undefined;
   readonly cancellation?: Cancellation;
 }

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import {
   ActivityEventType,
   MergeMethod,
@@ -94,6 +94,10 @@ describe('delivery projector', () => {
 });
 
 describe('delivery integration intents', () => {
+  it('projects a dedicated agent-run publication intent separately from status and reply intents', () => {
+    const correlation = { activationId: activationId('activation-agent'), workflowInstanceId: 'workflow-agent', resourceId: resId('agent-resource') } as const;
+    expect(projectDeliveries([eventEnvelope(DeliveryIntentEventType.AgentRunPublishRequested, { ...correlation, report: { runId: 'run-agent', startedAt: '2026-08-03T12:00:00.000Z', finishedAt: '2026-08-03T12:00:01.000Z', displayBody: 'terminal agent report', outcome: 'FAILED', metadata: {} } }, resourceStream(correlation.resourceId), 1)])[0]).toMatchObject({ kind: DeliveryIntentKind.AgentRunPublish, payload: { kind: DeliveryIntentKind.AgentRunPublish, report: { runId: 'run-agent', displayBody: 'terminal agent report', outcome: 'FAILED' } } });
+  });
   it('retains provider status and reply delivery intents', () => {
     const correlation = {
       activationId: activationId('activation-1'),

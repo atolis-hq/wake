@@ -39,6 +39,12 @@ execution:
 # are fine for a first run.
 controlPlane: {}
 
+orchestration:
+  workflowSelectors:
+    - match: { tags: [approval] }
+      matchMode: all
+      workflow: approval
+
 # External providers Wake correlates inbound work with. Empty until you
 # configure one — see SETUP.md.
 integrations: {}
@@ -67,9 +73,7 @@ host:
 `;
 }
 
-const workflowsYaml = `# One workflow named "default": refine (read-only planning) then implement
-# (branch workspace, opens a PR). Both stages route through the "agent"
-# activity against the prompt templates in prompts/.
+const workflowsYaml = `# One workflow named "default": agent-run reports publish their own terminal comments.
 workflows:
   default:
     entry: refine
@@ -86,7 +90,25 @@ workflows:
         execution: { workspace: branch, runnerPool: standard }
         on:
           done: { then: done }
-`;
+  approval:
+    entry: refine
+    stages:
+      refine:
+        activity: agent
+        with: { template: refine }
+        execution: { workspace: read-only, runnerPool: light }
+        on:
+          done:
+            then: implement
+            await:
+              signal: approved
+              from: [human]
+      implement:
+        activity: agent
+        with: { template: implement }
+        execution: { workspace: branch, runnerPool: standard }
+        on:
+          done: { then: done }`;
 
 // Frontmatter is limited to model/maxTurns/allowedTools/extraArgs (see
 // execution/infrastructure/prompt-templates.ts) and the rendered body may
@@ -308,10 +330,37 @@ RUN curl https://cursor.com/install -fsS | HOME=/home/wake bash \\
   && chmod +x /home/wake/.local/bin/cursor \\
   && chown -R wake:wake /home/wake/.local
 
+WORKDIR /app
+COPY package*.json ./
+COPY src-next/surfaces/web/package.json src-next/surfaces/web/package.json
+RUN --mount=type=cache,target=/root/.npm \
+  if [ -f package-lock.json ]; then npm ci --include=dev; else npm install; fi
+COPY . .
+ARG WAKE_BUILD_TAG
+RUN WAKE_BUILD_TAG="$WAKE_BUILD_TAG" npm run build:next
+
 USER wake
-WORKDIR /wake
+WORKDIR /home/wake
+ENV WAKE_MAIN_JS=/app/dist-next/src-next/main.js
+ENTRYPOINT ["sh", "-c", "if [ \"$WAKE_START_ENABLED\" = \"true\" ]; then exec node /app/dist-next/src-next/main.js start --wake-root /wake --no-sandbox; else exec sleep infinity; fi"]
 `;
 
+const packagedDockerfile = `# syntax=docker/dockerfile:1
+FROM node:24-bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends git openssh-client ca-certificates curl gnupg \\
+  && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | gpg --dearmor -o /usr/share/keyrings/githubcli-archive-keyring.gpg \\
+  && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list \\
+  && apt-get update && apt-get install -y --no-install-recommends gh
+ARG WAKE_VERSION=0.1.0
+RUN npm install -g @anthropic-ai/claude-code @openai/codex "@atolis-hq/wake@\${WAKE_VERSION}"
+RUN useradd --create-home --shell /bin/bash wake && mkdir -p /home/wake/.codex-runtime /home/wake/.cursor && chown -R wake:wake /home/wake
+ENV CODEX_HOME=/home/wake/.codex-runtime
+ENV PATH=/home/wake/.local/bin:$PATH
+RUN curl https://cursor.com/install -fsS | HOME=/home/wake bash && printf '#!/bin/bash\\n[ "$1" = "agent" ] && shift\\nexec ~/.local/bin/agent "$@"\\n' > /home/wake/.local/bin/cursor && chmod +x /home/wake/.local/bin/cursor && chown -R wake:wake /home/wake/.local
+USER wake
+WORKDIR /home/wake
+ENTRYPOINT ["wake", "sandbox-entrypoint"]
+`;
 /** Creates an immediately-valid, human-readable target Wake root. */
 export async function initialiseWakeRoot(wakeRoot: string): Promise<{ readonly wakeRoot: string }> {
   const containerName = sanitizeContainerName(basename(wakeRoot));
@@ -322,6 +371,7 @@ export async function initialiseWakeRoot(wakeRoot: string): Promise<{ readonly w
     'prompts/implement.md': implementPrompt,
     'SETUP.md': setupMd,
     'docker/Dockerfile': dockerfile,
+    'docker/Dockerfile.packaged': packagedDockerfile,
   });
   return { wakeRoot };
 }

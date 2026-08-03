@@ -20,6 +20,7 @@ export function BoardCard({
         <span className={styles.cardTitle}>{item.objective}</span>
         <span className={styles.cardMeta}>
           <Chip variant="outline">{item.condition}</Chip>
+          {item.awaitingApproval === true && <Chip variant="outline">awaiting approval</Chip>}
           {item.workflowName !== undefined && <Chip variant="outline">{item.workflowName}</Chip>}
           {item.stage !== undefined && <Chip variant="outline">{item.stage}</Chip>}
         </span>

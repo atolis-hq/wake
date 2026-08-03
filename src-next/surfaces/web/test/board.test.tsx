@@ -102,6 +102,42 @@ describe('board', () => {
     expect(link.className).toContain('cardLink');
   });
 
+  it('shows an awaiting approval status for work in the Needs human column', async () => {
+    const client = new WakeApiClient(async (input) => {
+      const url = String(input);
+      const body = url.includes('/board')
+        ? {
+            items: [
+              {
+                workItemKey: 'wk_approval',
+                workItemId: 'work-approval',
+                objective: 'Approval required',
+                condition: 'needs-human',
+                awaitingApproval: true,
+                dwellSince: asOf,
+                runCount: 1,
+              },
+            ],
+            conditionCounts: { 'needs-human': 1 },
+            page: { nextCursor: null, hasMore: false },
+            meta: { asOf },
+          }
+        : { data: { paused: false, updatedAt: asOf }, meta: { asOf } };
+      return new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    });
+    render(
+      <MemoryRouter initialEntries={['/board']}>
+        <App client={client} />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole('heading', { name: 'Needs Human (1)' })).toBeTruthy();
+    expect(screen.getByText('awaiting approval')).toBeTruthy();
+  });
+
   it('requests only the work item collection, never a second collection to join', async () => {
     const seen: string[] = [];
     render(

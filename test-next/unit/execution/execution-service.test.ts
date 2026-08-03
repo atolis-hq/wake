@@ -15,17 +15,19 @@ import {
   ExecutionFailureCode,
   type ExecutionActivation,
   type ExecutionAttemptContext,
+  type WorkspaceProvider,
 } from '../../../src-next/execution/index.js';
 import {
   orchestrationGroupId,
   workflowInstanceId,
 } from '../../../src-next/orchestration/contracts/identifiers.js';
 import { InMemoryEventJournal } from '../../../src-next/persistence/index.js';
+import { BuiltInResourceKind } from '../../../src-next/resources/index.js';
 import {} from '../../../src-next/work/index.js';
 import { FakeClock, SequentialIds } from '../../e2e/support/world.js';
-import { workId } from '../../support/identities.js';
+import { resId, workId } from '../../support/identities.js';
 
-function setup(workspace?: { acquire: (request: unknown) => Promise<never> }) {
+function setup(workspace?: WorkspaceProvider) {
   const registry = new ActivityRegistry();
   registry.register({
     name: activityName('implement'),
@@ -40,8 +42,9 @@ function setup(workspace?: { acquire: (request: unknown) => Promise<never> }) {
       },
     },
   });
-  return createExecutionService(
-    new InMemoryEventJournal(new FakeClock()),
+  const journal = new InMemoryEventJournal(new FakeClock());
+  const service = createExecutionService(
+    journal,
     registry,
     { runnerPools: { standard: ['fake'] }, defaultRunnerPool: 'standard' },
     {
@@ -50,6 +53,7 @@ function setup(workspace?: { acquire: (request: unknown) => Promise<never> }) {
       ...(workspace === undefined ? {} : { workspaces: workspace }),
     },
   );
+  return { service, journal };
 }
 
 const activation = {
@@ -69,7 +73,7 @@ const context = {
 
 describe('ExecutionService', () => {
   it('creates one Run and records a validated outcome separately', async () => {
-    const run = await setup().attempt(activation, context);
+    const run = await setup().service.attempt(activation, context);
     expect(run).toMatchObject({
       activationId: activation.activationId,
       activity: activation.activity,
@@ -81,7 +85,7 @@ describe('ExecutionService', () => {
     });
   });
   it('validates input before run.started', async () => {
-    await expect(setup().attempt({ ...activation, input: {} }, context)).rejects.toThrow(
+    await expect(setup().service.attempt({ ...activation, input: {} }, context)).rejects.toThrow(
       /input invalid/,
     );
   });
@@ -92,12 +96,37 @@ describe('ExecutionService', () => {
         calls++;
         throw new Error('unexpected');
       },
-    }).attempt(activation, context);
+    }).service.attempt(activation, context);
     expect(calls).toBe(0);
+  });
+
+  it('records workspace cleanup failure without failing a completed run', async () => {
+    const fixture = setup({
+      async acquire() {
+        return {
+          workspaceId: 'workspace-1',
+          path: '/workspace-1',
+          mode: 'read-only',
+          async release() { throw new Error('EACCES: workspace still in use'); },
+        };
+      },
+    });
+    const run = await fixture.service.attempt(
+      { ...activation, execution: { workspace: 'read-only' } },
+      {
+        ...context,
+        resources: [{ resourceId: resId('repo'), kind: BuiltInResourceKind.Repository, externalKey: { adapter: 'github', key: 'atolis-hq/wake' }, capabilities: [] }],
+      },
+    );
+
+    expect(run.status).toBe('succeeded');
+    expect((await fixture.journal.readAll(0)).map((event) => event.eventType)).toContain(
+      'execution.workspace-cleanup-failed',
+    );
   });
   it('rejects an unregistered execution runner pool', async () => {
     await expect(
-      setup().attempt({ ...activation, execution: { runnerPool: 'premium' } }, context),
+      setup().service.attempt({ ...activation, execution: { runnerPool: 'premium' } }, context),
     ).rejects.toThrow(/runner pool/);
   });
 

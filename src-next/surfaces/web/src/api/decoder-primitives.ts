@@ -51,6 +51,10 @@ export function optionalNumberProperty(record: Record<string, unknown>, key: str
   return record[key] === undefined ? {} : { [key]: number(record[key], child(path, key)) };
 }
 
+export function optionalBooleanProperty(record: Record<string, unknown>, key: string, path: string) {
+  return record[key] === undefined ? {} : { [key]: boolean(record[key], child(path, key)) };
+}
+
 export function json(value: unknown, path: string): unknown {
   if (
     value === null ||

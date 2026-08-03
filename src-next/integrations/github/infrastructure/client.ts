@@ -1,9 +1,9 @@
 import { Octokit } from '@octokit/rest';
 import { MergeMethod, PullRequestState } from '../../../activities/index.js';
-import type { GitHubIssuePayload } from '../contracts/payloads.js';
+import type { GitHubIssueCommentPayload, GitHubIssuePayload } from '../contracts/payloads.js';
 import type { GitHubOutboundAction } from '../contracts/vocabulary.js';
 import { GitHubListState } from '../contracts/vocabulary.js';
-import { createEtagCache, fetchWithEtag } from './etag-cache.js';
+import { createEtagCache, fetchPaginatedWithEtag, fetchWithEtag } from './etag-cache.js';
 
 export function createGitHubClient(token: string) {
   const octokit = new Octokit({
@@ -14,9 +14,11 @@ export function createGitHubClient(token: string) {
   return {
     authenticatedLogin: async () => (await octokit.rest.users.getAuthenticated()).data.login,
     listIssues: (owner: string, repo: string, maxResults: number) =>
-      listIssues(octokit, owner, repo, maxResults),
+      listIssues(octokit, cache, owner, repo, maxResults),
     listPullRequests: (owner: string, repo: string, maxResults: number) =>
-      listPullRequests(octokit, owner, repo, maxResults),
+      listPullRequests(octokit, cache, owner, repo, maxResults),
+    listIssueComments: (owner: string, repo: string, issueNumber: number, pageSize: number) =>
+      listIssueComments(octokit, cache, owner, repo, issueNumber, pageSize),
     getIssueLabels: async (owner: string, repo: string, issueNumber: number) =>
       (
         await octokit.rest.issues.get({ owner, repo, issue_number: issueNumber })
@@ -39,7 +41,7 @@ export function createGitHubClient(token: string) {
     getPullRequest: (owner: string, repo: string, pullNumber: number) =>
       octokit.rest.pulls.get({ owner, repo, pull_number: pullNumber }),
     listReviews: (owner: string, repo: string, pullNumber: number, pageSize: number) =>
-      listReviews(octokit, owner, repo, pullNumber, pageSize),
+      listReviews(octokit, cache, owner, repo, pullNumber, pageSize),
     listCheckRunsForRef: (owner: string, repo: string, ref: string) =>
       listCheckRunsForRef(octokit, owner, repo, ref),
     getCombinedStatusForRef: (owner: string, repo: string, ref: string) =>
@@ -99,18 +101,14 @@ async function deliver(octokit: Octokit, command: GitHubDeliveryCommand): Promis
 
 function listIssues(
   octokit: Octokit,
+  cache: ReturnType<typeof createEtagCache>,
   owner: string,
   repo: string,
   maxResults: number,
 ): Promise<readonly GitHubIssuePayload[]> {
-  return octokit
-    .paginate(octokit.rest.issues.listForRepo, {
-      owner,
-      repo,
-      state: GitHubListState.All,
-      per_page: Math.min(maxResults, 100),
-    })
-    .then((items) => items.slice(0, maxResults).map(normalizeIssue));
+  return fetchPaginatedWithEtag({ cache, key: `issues:${owner}/${repo}`, maxResults, pages: (headers) =>
+    octokit.paginate.iterator(octokit.rest.issues.listForRepo, { owner, repo, state: GitHubListState.All, per_page: Math.min(maxResults, 100), ...(headers === undefined ? {} : { headers }) }),
+  }).then((items) => items.map(normalizeIssue));
 }
 
 function normalizeIssue(issue: {
@@ -138,50 +136,32 @@ function normalizeIssue(issue: {
   };
 }
 
-async function listPullRequests(octokit: Octokit, owner: string, repo: string, maxResults: number) {
-  const pullRequests = [];
-  const pages = octokit.paginate.iterator(octokit.rest.pulls.list, {
-    owner,
-    repo,
-    state: GitHubListState.All,
-    per_page: Math.min(maxResults, 100),
+async function listPullRequests(octokit: Octokit, cache: ReturnType<typeof createEtagCache>, owner: string, repo: string, maxResults: number) {
+  const pullRequests = await fetchPaginatedWithEtag({ cache, key: `pulls:${owner}/${repo}`, maxResults, pages: (headers) =>
+    octokit.paginate.iterator(octokit.rest.pulls.list, { owner, repo, state: GitHubListState.All, per_page: Math.min(maxResults, 100), ...(headers === undefined ? {} : { headers }) }),
   });
-  for await (const page of pages) {
-    for (const pullRequest of page.data) {
-      pullRequests.push(normalizePullRequestState(pullRequest));
-      if (pullRequests.length === maxResults) return pullRequests;
-    }
-  }
-  return pullRequests;
+  return pullRequests.map(normalizePullRequestState);
 }
 
 async function listReviews(
   octokit: Octokit,
+  cache: ReturnType<typeof createEtagCache>,
   owner: string,
   repo: string,
   pullNumber: number,
   pageSize: number,
 ) {
-  const reviews = [];
-  const pages = octokit.paginate.iterator(octokit.rest.pulls.listReviews, {
-    owner,
-    repo,
-    pull_number: pullNumber,
-    per_page: pageSize,
+  const reviews = await fetchPaginatedWithEtag({ cache, key: `reviews:${owner}/${repo}#${pullNumber}`, pages: (headers) =>
+    octokit.paginate.iterator(octokit.rest.pulls.listReviews, { owner, repo, pull_number: pullNumber, per_page: pageSize, ...(headers === undefined ? {} : { headers }) }),
   });
-  for await (const page of pages) {
-    reviews.push(
-      ...page.data.map((review) => ({
+  return reviews.map((review) => ({
         id: review.id,
         state: review.state,
         body: review.body,
         commit_id: review.commit_id ?? '',
         submitted_at: review.submitted_at ?? '',
         ...(review.user === undefined ? {} : { user: review.user }),
-      })),
-    );
-  }
-  return reviews;
+      }));
 }
 
 async function listCheckRunsForRef(octokit: Octokit, owner: string, repo: string, ref: string) {
@@ -251,4 +231,24 @@ function normalizePullRequestState<Value extends { readonly state: string }>(
         ? PullRequestState.Closed
         : PullRequestState.Open,
   };
+}
+
+async function listIssueComments(
+  octokit: Octokit,
+  cache: ReturnType<typeof createEtagCache>,
+  owner: string,
+  repo: string,
+  issueNumber: number,
+  pageSize: number,
+): Promise<readonly GitHubIssueCommentPayload[]> {
+  const comments = await fetchPaginatedWithEtag({ cache, key: `issue-comments:${owner}/${repo}#${issueNumber}`, pages: (headers) =>
+    octokit.paginate.iterator(octokit.rest.issues.listComments, { owner, repo, issue_number: issueNumber, per_page: Math.min(pageSize, 100), ...(headers === undefined ? {} : { headers }) }),
+  });
+  return comments.map((comment) => ({
+    id: comment.id,
+    body: comment.body ?? null,
+    created_at: comment.created_at,
+    updated_at: comment.updated_at,
+    ...(comment.user === undefined ? {} : { user: comment.user }),
+  }));
 }

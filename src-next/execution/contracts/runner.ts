@@ -11,7 +11,18 @@ export interface RunnerRequest {
   readonly resumeSessionId?: string;
 }
 
-export interface RunnerResult {
+export type AgentRunOutcome = 'DONE' | 'REJECTED' | 'BLOCKED' | 'FAILED';
+
+export interface AgentRunResponse {
+  readonly outcome: AgentRunOutcome;
+  readonly displayBody: string;
+  readonly artifacts?: readonly {
+    readonly kind: string;
+    readonly externalKey: { readonly adapter: string; readonly key: string };
+  }[] | undefined;
+  readonly metadata: Readonly<Record<string, string | number | boolean | null>>;
+}
+export interface AgentRunnerResult {
   readonly transport: FinishedRunStatus;
   readonly output: string;
   readonly runner: string;
@@ -35,7 +46,7 @@ export interface RunnerExecution {
     readonly id: string;
     readonly startedAt: string;
   };
-  readonly result: Promise<RunnerResult>;
+  readonly result: Promise<AgentRunnerResult>;
   cancel(reason: string): Promise<void>;
 }
 

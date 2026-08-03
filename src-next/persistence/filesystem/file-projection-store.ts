@@ -52,7 +52,7 @@ export class FileProjectionStore implements ProjectionStore {
 export function encode(value: string): string {
   if (value.length === 0 || /[\\/]/.test(value))
     throw new Error('Storage name must not contain path separators');
-  return encodeURIComponent(value).replace(/\./g, '%2E');
+  return encodeURIComponent(value).replace(/%/g, '~').replace(/\./g, '~2E');
 }
 
 export async function atomicJson(path: string, value: unknown): Promise<void> {

@@ -3,7 +3,7 @@ import type {
   Runner,
   RunnerExecution,
   RunnerRequest,
-  RunnerResult,
+  AgentRunnerResult,
 } from '../../contracts/runner.js';
 import { ExecutionCancellationReason, RunStatus } from '../../contracts/vocabulary.js';
 import { runProcess } from '../process-execution.js';
@@ -58,7 +58,7 @@ export function cliRunner(
           id: request.runId,
           startedAt: new Date().toISOString(),
         },
-        result: process.result.then((value): RunnerResult =>
+        result: process.result.then((value): AgentRunnerResult =>
           value.exitCode === 0 && !value.timedOut
             ? {
                 transport: RunStatus.Succeeded,

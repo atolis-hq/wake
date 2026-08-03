@@ -15,10 +15,11 @@ import type { RunView } from '../contracts/views.js';
 import { RunStatus, WorkspaceMode } from '../contracts/vocabulary.js';
 import type { WorkspaceLease, WorkspaceProvider } from '../contracts/workspace.js';
 import type { RunnerRegistry } from '../infrastructure/runners/registry.js';
+import { parseAgentRunnerResponse } from '../infrastructure/agent-runner-adapter.js';
 import { claimActivation, releaseActivation } from './activation-claim.js';
 import { cancelActiveRuns } from './active-run-cancellation.js';
 import { acquireWorkspace, validateResourceRequirements } from './execution-validation.js';
-import { createRunEvent, recordRunFailure, recordRunSuccess, startRun } from './run-lifecycle.js';
+import { createRunEvent, recordRunFailure, recordRunSuccess, recordWorkspaceCleanupFailure, startRun } from './run-lifecycle.js';
 import {
   claimRun,
   confirmCancellation,
@@ -137,7 +138,21 @@ async function attemptExecution(
       runId: currentRunId,
     });
     runtime.active.delete(currentRunId);
-    await lease?.release();
+    try {
+      await lease?.release();
+    } catch (error) {
+      try {
+        await recordWorkspaceCleanupFailure({
+          dependencies: runLifecycleDependencies(runtime),
+          runId: currentRunId,
+          activation,
+          context,
+          error,
+        });
+      } catch {
+        // A cleanup diagnostic must not make an already-finished run fatal.
+      }
+    }
   }
   return (await runtime.repository.load(currentRunId)).view!;
 }
@@ -156,11 +171,12 @@ function resolveRunner(
     runnerPool,
     context.ineligibleRunners ?? new Set(),
   );
-  return describeResolvedRunner(runtime, resolved);
+  return describeResolvedRunner(runtime, runnerPool, resolved);
 }
 
 function describeResolvedRunner(
   runtime: ExecutionRuntime,
+  pool: string,
   resolved: ReturnType<NonNullable<ExecutionDependencies['runners']>['resolve']> | undefined,
 ) {
   if (resolved === undefined) return { runner: undefined };
@@ -169,6 +185,8 @@ function describeResolvedRunner(
     name: resolved.name,
     model: runtime.config.agentRunners?.[resolved.name]?.model,
     effort: runtime.config.agentRunners?.[resolved.name]?.effort,
+    pool,
+    cli: runtime.config.agentRunners?.[resolved.name]?.kind,
   };
 }
 
@@ -269,7 +287,10 @@ async function executeActivity(
           occurredAt: runtime.dependencies.clock.now().toISOString(),
           correlationId: context.orchestrationGroupId,
           causationId: activation.activationId,
-          payload: result,
+          payload: {
+            transport: result.transport,
+            agent: parseAgentRunnerResponse(result),
+          },
         }),
       ]);
       if (result.failure?.kind === 'provider-quota-exceeded' && request.runnerName !== undefined)

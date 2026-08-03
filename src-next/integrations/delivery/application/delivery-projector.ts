@@ -1,4 +1,4 @@
-import { ActivityEventType, selectActivityEvent } from '../../../activities/index.js';
+﻿import { ActivityEventType, selectActivityEvent } from '../../../activities/index.js';
 import { type EventEnvelope, type ProjectionDefinition } from '../../../kernel/index.js';
 import { IntegrationStreamKind } from '../../contracts/streams.js';
 import { DeliveryEventType, selectDeliveryEvent } from '../contracts/events.js';
@@ -91,10 +91,18 @@ function intentView(
     };
   const integrationIntent = selectDeliveryIntentEvent(event);
   if (integrationIntent === null) return null;
-  const kind =
-    integrationIntent.eventType === DeliveryIntentEventType.StatusPublishRequested
-      ? DeliveryIntentKind.StatusPublish
-      : DeliveryIntentKind.ReplyPublish;
+  if (integrationIntent.eventType === DeliveryIntentEventType.AgentRunPublishRequested)
+    return {
+      eventId: integrationIntent.eventId,
+      view: {
+        intentEventId: integrationIntent.eventId, globalPosition: integrationIntent.globalPosition,
+        workflowInstanceId: integrationIntent.payload.workflowInstanceId, activationId: integrationIntent.payload.activationId,
+        kind: DeliveryIntentKind.AgentRunPublish, resourceId: integrationIntent.payload.resourceId,
+        payload: { kind: DeliveryIntentKind.AgentRunPublish, report: integrationIntent.payload.report }, state: DeliveryState.Pending,
+        attempts: 0, occurrenceOrdinal: 0,
+      },
+    };
+  const status = integrationIntent.eventType === DeliveryIntentEventType.StatusPublishRequested;
   return {
     eventId: integrationIntent.eventId,
     view: {
@@ -102,9 +110,9 @@ function intentView(
       globalPosition: integrationIntent.globalPosition,
       workflowInstanceId: integrationIntent.payload.workflowInstanceId,
       activationId: integrationIntent.payload.activationId,
-      kind,
+      kind: status ? DeliveryIntentKind.StatusPublish : DeliveryIntentKind.ReplyPublish,
       resourceId: integrationIntent.payload.resourceId,
-      payload: { kind, body: integrationIntent.payload.body },
+      payload: status ? { kind: DeliveryIntentKind.StatusPublish, body: integrationIntent.payload.body } : { kind: DeliveryIntentKind.ReplyPublish, body: integrationIntent.payload.body },
       state: DeliveryState.Pending,
       attempts: 0,
       occurrenceOrdinal: 0,

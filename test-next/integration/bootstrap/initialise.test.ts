@@ -47,16 +47,23 @@ describe('target initialise root', () => {
     expect(config.execution.agentRunners?.fake?.kind).toBe('fake');
     expect(config.execution.runnerPools.standard).toEqual(['fake']);
     expect(config.orchestration.workflows.default?.entry).toBe('refine');
-    expect(Object.keys(config.orchestration.workflows.default?.stages ?? {})).toEqual([
-      'refine',
-      'implement',
-    ]);
+    expect(config.orchestration.workflowSelectors).toContainEqual({
+      match: { tags: ['approval'] },
+      matchMode: 'all',
+      workflow: 'approval',
+    });
+    expect(Object.keys(config.orchestration.workflows.default?.stages ?? {})).toEqual(['refine', 'implement']);
+    expect(config.orchestration.workflows.default?.stages['announce-refine']).toBeUndefined();
     expect(config.orchestration.workflows.default?.stages.refine?.activity).toBe('agent');
     expect(config.orchestration.workflows.default?.stages.refine?.with).toEqual({
       template: 'refine',
     });
     expect(config.orchestration.workflows.default?.stages.implement?.with).toEqual({
       template: 'implement',
+    });
+    expect(config.orchestration.workflows.approval?.stages.refine?.on.done).toMatchObject({
+      then: 'implement',
+      await: { signal: 'approved', from: ['human'] },
     });
   });
 
@@ -100,5 +107,7 @@ describe('target initialise root', () => {
     expect(dockerfile).toContain('@openai/codex');
     expect(dockerfile).toContain('gh');
     expect(dockerfile).toContain('cursor.com/install');
+    expect(dockerfile).toContain('npm run build:next');
+    expect(dockerfile).toContain('dist-next/src-next/main.js');
   });
 });

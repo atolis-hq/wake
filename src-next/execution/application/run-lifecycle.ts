@@ -26,6 +26,8 @@ interface ResolvedRunner {
   readonly name?: string | undefined;
   readonly model?: string | undefined;
   readonly effort?: string | undefined;
+  readonly pool?: string | undefined;
+  readonly cli?: string | undefined;
 }
 
 export async function startRun(input: {
@@ -70,6 +72,8 @@ export async function startRun(input: {
                 name: runner.name,
                 ...(runner.model === undefined ? {} : { model: runner.model }),
                 ...(runner.effort === undefined ? {} : { effort: runner.effort }),
+                ...(runner.pool === undefined ? {} : { pool: runner.pool }),
+                ...(runner.cli === undefined ? {} : { cli: runner.cli }),
               },
             }),
         ...(lease === undefined
@@ -93,6 +97,27 @@ export async function startRun(input: {
   );
 }
 
+export async function recordWorkspaceCleanupFailure(input: {
+  readonly dependencies: RunLifecycleDependencies;
+  readonly runId: ReturnType<typeof runId>;
+  readonly activation: ExecutionActivation;
+  readonly context: ExecutionAttemptContext;
+  readonly error: unknown;
+}): Promise<void> {
+  const { dependencies, runId: currentRunId, activation, context, error } = input;
+  const loaded = await dependencies.repository.load(currentRunId);
+  await dependencies.repository.append(currentRunId, loaded.sequence, [
+    createRunEvent({
+      runId: currentRunId,
+      eventId: `${currentRunId}:workspace-cleanup-failed`,
+      eventType: ExecutionEventType.RunWorkspaceCleanupFailed,
+      occurredAt: dependencies.clock.now().toISOString(),
+      correlationId: context.orchestrationGroupId,
+      causationId: activation.activationId,
+      payload: { message: error instanceof Error ? error.message : String(error) },
+    }),
+  ]);
+}
 export async function recordRunSuccess(input: {
   readonly dependencies: RunLifecycleDependencies;
   readonly runId: ReturnType<typeof runId>;

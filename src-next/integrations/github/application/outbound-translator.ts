@@ -4,6 +4,7 @@ import { BuiltInResourceKind } from '../../../resources/index.js';
 import type { DeliveryIntentView } from '../../delivery/contracts/views.js';
 import { DeliveryIntentKind } from '../../delivery/contracts/vocabulary.js';
 import { parseGitHubResourceKey } from '../contracts/external-key.js';
+import { formatAgentRunComment } from './agent-run-comment.js';
 import {
   GitHubAdapter,
   GitHubOutboundAction,
@@ -37,7 +38,7 @@ export function translateGitHubOutbound(
       : { issue_number: number }),
     action: outboundAction(intent.kind),
     idempotencyKey: intent.intentEventId,
-    ...('body' in intent.payload ? { body: intent.payload.body } : {}),
+    ...('report' in intent.payload ? { body: formatAgentRunComment({ idempotencyKey: intent.intentEventId, ...intent.payload.report }) } : 'body' in intent.payload ? { body: intent.payload.body } : {}),
     ...('revision' in intent.payload ? { sha: intent.payload.revision } : {}),
     ...('method' in intent.payload ? { merge_method: intent.payload.method } : {}),
   };
@@ -52,6 +53,7 @@ function outboundAction(kind: DeliveryIntentView['kind']): GitHubOutboundActionV
     case DeliveryIntentKind.StatusPublish:
       return GitHubOutboundAction.Status;
     case DeliveryIntentKind.ReplyPublish:
+    case DeliveryIntentKind.AgentRunPublish:
       return GitHubOutboundAction.Reply;
   }
   throw new Error(`Unknown delivery intent kind: ${kind}`);

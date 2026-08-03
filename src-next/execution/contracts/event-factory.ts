@@ -48,6 +48,8 @@ export function createRunExecutionEventDraft(
       return createEventDraft(input);
     case ExecutionEventType.RunRunnerResultReported:
       return createEventDraft(input);
+    case ExecutionEventType.RunWorkspaceCleanupFailed:
+      return createEventDraft(input);
     case ExecutionEventType.RunCancellationRequested:
       return createEventDraft(input);
     case ExecutionEventType.RunCancellationConfirmed:

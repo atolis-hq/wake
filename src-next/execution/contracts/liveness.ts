@@ -1,5 +1,5 @@
 import type { ActivityOutcome, ExternalExecutionKind } from '../../activities/index.js';
-import type { RunnerResult } from './runner.js';
+import type { RecordedRunnerResult } from './events.js';
 import type { ExecutionCancellationReason } from './vocabulary.js';
 
 export interface Lease {
@@ -21,7 +21,7 @@ export interface Cancellation {
 }
 
 export interface RecoveredRunResult {
-  readonly result: RunnerResult;
+  readonly result: RecordedRunnerResult;
   readonly outcome: ActivityOutcome;
   readonly finishedAt: string;
 }

@@ -18,12 +18,14 @@ import {
   type TickPipeline,
 } from '../control-plane/index.js';
 import {
+  RunRepository,
   createExecutionService,
   GitWorkspaceProvider,
   loadPromptTemplate,
   renderPromptTemplate,
 } from '../execution/index.js';
 import {
+  AgentRunPublicationReactor,
   ArtifactRegistrationReactor,
   DeliveryOutcomeReactor,
   DeliveryService,
@@ -277,6 +279,7 @@ async function composeIntegrationRuntime(
     providers,
     runs: input.execution,
   });
+  const agentRunPublications = new AgentRunPublicationReactor({ journal: input.journal, checkpoints: input.checkpoints, runs: new RunRepository(input.journal), resources: input.resources, orchestration: input.orchestration });
   const watch = createWatchReactor(input.orchestration, input.journal, input.checkpoints);
   const outcomes = new DeliveryOutcomeReactor(
     input.journal,
@@ -306,6 +309,7 @@ async function composeIntegrationRuntime(
     react: async () => {
       await watch.runOnce();
       await artifacts.runOnce();
+      await agentRunPublications.runOnce();
       await outcomes.runOnce();
       for (const provider of providers) await provider.maintenance?.runOnce();
     },

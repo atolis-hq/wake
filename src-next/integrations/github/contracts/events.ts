@@ -47,7 +47,7 @@ export interface ExternalWorkObservedPayload {
   readonly raw: Readonly<Record<string, unknown>>;
 }
 
-interface GitHubCommentObservedPayload {
+interface GitHubFormalCommentObservedPayload {
   readonly reviewKind: 'formal';
   readonly externalKey: string;
   readonly body: string;
@@ -76,6 +76,22 @@ interface GitHubCommentObservedPayload {
     | undefined;
   readonly raw: Readonly<Record<string, unknown>>;
 }
+
+interface GitHubIssueCommentObservedPayload {
+  readonly reviewKind: 'issue';
+  readonly externalKey: string;
+  readonly body: string;
+  readonly revision: string;
+  readonly actor: {
+    readonly id: string;
+    readonly kind: typeof ReviewActorKind.Human | typeof ReviewActorKind.Bot;
+  };
+  readonly raw: Readonly<Record<string, unknown>>;
+}
+
+type GitHubCommentObservedPayload =
+  | GitHubFormalCommentObservedPayload
+  | GitHubIssueCommentObservedPayload;
 
 interface GitHubDeliveryObservedPayload {
   readonly deliveryId: string;
@@ -156,18 +172,30 @@ const eventSchema = z.discriminatedUnion('eventType', [
   eventEnvelopeSchema.extend({
     eventType: z.literal(GitHubEventType.CommentObserved),
     stream: streamSchema,
-    payload: z
-      .object({
-        externalKey: z.string(),
-        reviewKind: z.literal('formal'),
-        body: z.string(),
-        revision: z.string(),
-        actor: actorSchema,
-        resourceAuthorId: z.string().optional(),
-        authorization: authorizationSchema.optional(),
-        raw: rawSchema,
-      })
-      .strict(),
+    payload: z.discriminatedUnion('reviewKind', [
+      z
+        .object({
+          externalKey: z.string(),
+          reviewKind: z.literal('formal'),
+          body: z.string(),
+          revision: z.string(),
+          actor: actorSchema,
+          resourceAuthorId: z.string().optional(),
+          authorization: authorizationSchema.optional(),
+          raw: rawSchema,
+        })
+        .strict(),
+      z
+        .object({
+          externalKey: z.string(),
+          reviewKind: z.literal('issue'),
+          body: z.string(),
+          revision: z.string(),
+          actor: actorSchema,
+          raw: rawSchema,
+        })
+        .strict(),
+    ]),
   }),
   eventEnvelopeSchema.extend({
     eventType: z.literal(GitHubEventType.DeliveryObserved),

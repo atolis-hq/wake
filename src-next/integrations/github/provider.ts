@@ -78,6 +78,7 @@ export const gitHubProviderDefinition: ProviderDefinition<GitHubConfig> = {
           adapter,
           orchestration: services.orchestration,
           routing: services.routing,
+          intake: config.intake,
         },
       ),
       checkConnectivity: async () => {
