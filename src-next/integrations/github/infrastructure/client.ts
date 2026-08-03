@@ -43,9 +43,9 @@ export function createGitHubClient(token: string) {
     listReviews: (owner: string, repo: string, pullNumber: number, pageSize: number) =>
       listReviews(octokit, cache, owner, repo, pullNumber, pageSize),
     listCheckRunsForRef: (owner: string, repo: string, ref: string) =>
-      listCheckRunsForRef(octokit, owner, repo, ref),
+      listCheckRunsForRef(octokit, cache, owner, repo, ref),
     getCombinedStatusForRef: (owner: string, repo: string, ref: string) =>
-      getCombinedStatusForRef(octokit, owner, repo, ref),
+      getCombinedStatusForRef(octokit, cache, owner, repo, ref),
     branch: (owner: string, repo: string, name: string) =>
       branch(octokit, cache, owner, repo, name),
     deliver: (command: GitHubDeliveryCommand) => deliver(octokit, command),
@@ -164,34 +164,59 @@ async function listReviews(
       }));
 }
 
-async function listCheckRunsForRef(octokit: Octokit, owner: string, repo: string, ref: string) {
-  const checkRuns = [];
-  const pages = octokit.paginate.iterator(octokit.rest.checks.listForRef, {
-    owner,
-    repo,
-    ref,
-    per_page: 100,
+function listCheckRunsForRef(
+  octokit: Octokit,
+  cache: ReturnType<typeof createEtagCache>,
+  owner: string,
+  repo: string,
+  ref: string,
+) {
+  return fetchPaginatedWithEtag({
+    cache,
+    key: `check-runs:${owner}/${repo}@${ref}`,
+    pages: (headers) =>
+      octokit.paginate.iterator(octokit.rest.checks.listForRef, {
+        owner,
+        repo,
+        ref,
+        per_page: 100,
+        ...(headers === undefined ? {} : { headers }),
+      }),
   });
-  for await (const page of pages) checkRuns.push(...page.data);
-  return checkRuns;
 }
 
-async function getCombinedStatusForRef(octokit: Octokit, owner: string, repo: string, ref: string) {
-  const statuses = [];
-  let page = 1;
-  while (true) {
-    const response = await octokit.rest.repos.getCombinedStatusForRef({
-      owner,
-      repo,
-      ref,
-      per_page: 100,
-      page,
-    });
-    statuses.push(...response.data.statuses);
-    const totalCount = response.data.total_count;
-    if (response.data.statuses.length < 100 || statuses.length >= totalCount) return statuses;
-    page += 1;
-  }
+function getCombinedStatusForRef(
+  octokit: Octokit,
+  cache: ReturnType<typeof createEtagCache>,
+  owner: string,
+  repo: string,
+  ref: string,
+) {
+  return fetchPaginatedWithEtag({
+    cache,
+    key: `combined-status:${owner}/${repo}@${ref}`,
+    pages: (headers) => ({
+      async *[Symbol.asyncIterator]() {
+        let page = 1;
+        let count = 0;
+        while (true) {
+          const response = await octokit.rest.repos.getCombinedStatusForRef({
+            owner,
+            repo,
+            ref,
+            per_page: 100,
+            page,
+            ...(headers === undefined ? {} : { headers }),
+          });
+          const statuses = response.data.statuses;
+          count += statuses.length;
+          yield { data: statuses, headers: response.headers };
+          if (statuses.length < 100 || count >= response.data.total_count) return;
+          page += 1;
+        }
+      },
+    }),
+  });
 }
 
 function branch(

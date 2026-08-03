@@ -98,6 +98,56 @@ it('stops PR pagination at maxResults and reads every check-run page', async () 
   expect(statuses).toHaveLength(125);
 });
 
+it('conditionally polls check runs for an unchanged head revision', async () => {
+  let attempts = 0;
+  const requests: unknown[] = [];
+  octokit.paginateIterator.mockImplementation((endpoint, parameters) => {
+    if (endpoint !== octokit.listCheckRunsForRef) return pagesOf({ data: [] });
+    requests.push(parameters);
+    attempts += 1;
+    return attempts === 1
+      ? pagesOf({ data: [{ id: 1 }], headers: { etag: '"checks-v1"' } })
+      : notModifiedPages();
+  });
+  const client = createGitHubClient('token');
+
+  await expect(client.listCheckRunsForRef('owner', 'repo', 'head-a')).resolves.toEqual([{ id: 1 }]);
+  await expect(client.listCheckRunsForRef('owner', 'repo', 'head-a')).resolves.toEqual([{ id: 1 }]);
+
+  expect(requests).toEqual([
+    { owner: 'owner', repo: 'repo', ref: 'head-a', per_page: 100 },
+    {
+      owner: 'owner',
+      repo: 'repo',
+      ref: 'head-a',
+      per_page: 100,
+      headers: { 'if-none-match': '"checks-v1"' },
+    },
+  ]);
+});
+
+it('conditionally polls combined status for an unchanged head revision', async () => {
+  octokit.getCombinedStatusForRef
+    .mockResolvedValueOnce({
+      data: { total_count: 1, statuses: [{ id: 1 }] },
+      headers: { etag: '"status-v1"' },
+    })
+    .mockRejectedValueOnce(Object.assign(new Error('not modified'), { status: 304 }));
+  const client = createGitHubClient('token');
+
+  await expect(client.getCombinedStatusForRef('owner', 'repo', 'head-a')).resolves.toEqual([{ id: 1 }]);
+  await expect(client.getCombinedStatusForRef('owner', 'repo', 'head-a')).resolves.toEqual([{ id: 1 }]);
+
+  expect(octokit.getCombinedStatusForRef).toHaveBeenNthCalledWith(2, {
+    owner: 'owner',
+    repo: 'repo',
+    ref: 'head-a',
+    per_page: 100,
+    page: 1,
+    headers: { 'if-none-match': '"status-v1"' },
+  });
+});
+
 it.each([
   ['pending', [{ status: 'in_progress', conclusion: null }], [{ state: 'success' }]],
   ['passing', [{ status: 'completed', conclusion: 'success' }], [{ state: 'success' }]],
@@ -389,6 +439,14 @@ function pagesOf(...pages: readonly { readonly data: unknown }[]) {
   return {
     async *[Symbol.asyncIterator]() {
       for (const page of pages) yield page;
+    },
+  };
+}
+
+function notModifiedPages() {
+  return {
+    async *[Symbol.asyncIterator]() {
+      throw Object.assign(new Error('not modified'), { status: 304 });
     },
   };
 }
