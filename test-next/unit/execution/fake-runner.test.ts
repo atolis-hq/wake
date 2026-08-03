@@ -1,5 +1,9 @@
 import { expect, it } from 'vitest';
-import { FakeExecutionRunner, RunStatus } from '../../../src-next/execution/index.js';
+import {
+  FakeExecutionRunner,
+  RunStatus,
+  parseFakeScenarios,
+} from '../../../src-next/execution/index.js';
 import { parseAgentRunnerResponse } from '../../../src-next/execution/infrastructure/agent-runner-adapter.js';
 
 it('parses a legacy wake-result envelope into a typed response without retaining protocol output', () => {
@@ -9,6 +13,73 @@ it('parses a legacy wake-result envelope into a typed response without retaining
 it('completes a fake execution with the deterministic DONE sentinel', async () => {
   const execution = await new FakeExecutionRunner().start({ runId: 'run-1', prompt: 'complete', allowedTools: [] }, new AbortController().signal);
   await expect(execution.result).resolves.toEqual({ transport: RunStatus.Succeeded, output: JSON.stringify({ status: 'DONE' }), runner: 'fake' });
+});
+
+it('uses a configured scenario outcome and body', async () => {
+  const scenarios = parseFakeScenarios({
+    schemaVersion: 1,
+    rules: [
+      {
+        name: 'fails-first',
+        when: { runner: 'fake-worker', workflow: 'dark-factory', action: 'refine', occurrence: 1 },
+        afterMs: 1,
+        outcome: 'FAILED',
+        retrySafety: 'safe-to-retry',
+        displayBody: 'Fake worker failed safely.',
+      },
+    ],
+  });
+  const execution = await new FakeExecutionRunner('fake-worker', scenarios).start(
+    {
+      runId: 'run-1',
+      prompt: 'complete',
+      allowedTools: [],
+      simulation: {
+        runner: 'fake-worker',
+        workflow: 'dark-factory',
+        action: 'refine',
+        occurrence: 1,
+      },
+    },
+    new AbortController().signal,
+  );
+
+  await expect(execution.result).resolves.toEqual({
+    transport: RunStatus.Succeeded,
+    output: JSON.stringify({
+      status: 'FAILED',
+      retrySafety: 'safe-to-retry',
+      displayBody: 'Fake worker failed safely.',
+    }),
+    runner: 'fake-worker',
+  });
+});
+
+it('rejects a delayed fake execution when its signal aborts', async () => {
+  const scenarios = parseFakeScenarios({
+    schemaVersion: 1,
+    rules: [
+      {
+        name: 'slow',
+        when: { runner: 'fake-worker', workflow: 'default', action: 'implement' },
+        afterMs: 10_000,
+        outcome: 'DONE',
+      },
+    ],
+  });
+  const controller = new AbortController();
+  const execution = await new FakeExecutionRunner('fake-worker', scenarios).start(
+    {
+      runId: 'run-1',
+      prompt: 'complete',
+      allowedTools: [],
+      simulation: { runner: 'fake-worker', workflow: 'default', action: 'implement', occurrence: 1 },
+    },
+    controller.signal,
+  );
+  controller.abort();
+
+  await expect(execution.result).rejects.toThrow(/aborted/i);
 });
 
 it('parses a structured runner result without exposing its machine envelope', () => {

@@ -4,6 +4,12 @@ import type { FinishedRunStatus } from './vocabulary.js';
 export interface RunnerRequest {
   readonly runId: string;
   readonly prompt: string;
+  readonly simulation?: {
+    readonly runner: string;
+    readonly workflow: string;
+    readonly action: string;
+    readonly occurrence: number;
+  };
   readonly model?: string;
   readonly workspacePath?: string;
   readonly allowedTools: readonly string[];
