@@ -28,6 +28,10 @@ export interface AuditRecord {
 }
 
 export interface WakeCliApplications {
+  readonly sandboxRuntime?: {
+    hasDockerfile(): Promise<boolean>;
+    exec(arguments_: readonly string[]): Promise<void>;
+  };
   readonly operational?: {
     readonly init: (arguments_: readonly string[]) => Promise<unknown>;
     readonly doctor: (arguments_: readonly string[]) => Promise<unknown>;

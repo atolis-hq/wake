@@ -42,12 +42,13 @@ RUN echo "cursor cache bust: ${CURSOR_CACHE_BUST}" \
 
 WORKDIR /app
 COPY package*.json ./
+COPY src-next/surfaces/web/package.json src-next/surfaces/web/package.json
 RUN --mount=type=cache,target=/root/.npm \
-  if [ -f package-lock.json ]; then npm ci; else npm install; fi
+  if [ -f package-lock.json ]; then npm ci --include=dev; else npm install; fi
 
 COPY . .
 ARG WAKE_BUILD_TAG
-RUN WAKE_BUILD_TAG="$WAKE_BUILD_TAG" npm run build && npm run build:web
+RUN WAKE_BUILD_TAG="$WAKE_BUILD_TAG" npm run build && npm run build:next
 
 USER wake
 WORKDIR /home/wake
@@ -56,8 +57,8 @@ EXPOSE 4317
 
 # Baked at build time so wake sandbox-entrypoint (and anything it spawns) can
 # find the compiled CLI without hardcoding /app in multiple places. Docker's
-# exec-form ENTRYPOINT below does not expand env vars, so it stays literal —
+# exec-form ENTRYPOINT below does not expand env vars, so it stays literal ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â
 # that's fine since it's the very first thing that runs.
-ENV WAKE_MAIN_JS=/app/dist/src/main.js
+ENV WAKE_MAIN_JS=/app/dist-next/src-next/main.js
 
-ENTRYPOINT ["node", "/app/dist/src/main.js", "sandbox-entrypoint"]
+ENTRYPOINT ["sh", "-c", "if [ \"$WAKE_START_ENABLED\" = \"true\" ]; then exec node /app/dist-next/src-next/main.js start --wake-root /wake --no-sandbox; else exec sleep infinity; fi"]

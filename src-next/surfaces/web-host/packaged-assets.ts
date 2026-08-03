@@ -15,6 +15,7 @@ export class PackagedAssets implements AssetSource {
 
   async get(path: string): Promise<SurfaceAsset | undefined> {
     const normalized = path.replace(/^\/+/, '');
+    if (normalized.length === 0) return undefined;
     const body = await this.read(normalized);
     if (body === undefined) return undefined;
     const immutable = /[.-][a-z0-9]{4,}\.(?:js|css)$/i.test(normalized);

@@ -46,7 +46,15 @@ export function createSurfaceCliApplications(
   now: () => string,
 ): WakeCliApplications {
   const tick = new TickHost((options) => root.pipeline.run(options));
-  const resident = new ResidentHost(tick);
+  const resident = new ResidentHost(
+    tick,
+    (signal) => sleepUntilAbort(signal, root.config.controlPlane.resident?.idleBackoffMs ?? 1000),
+    async (error) => {
+      process.stderr.write(
+        `Wake resident tick failed: ${error instanceof Error ? error.message : String(error)}\n`,
+      );
+    },
+  );
   const servers = new Set<Server>();
   const startHttp = createHttpStarter(root, api, servers);
   return {
@@ -106,8 +114,17 @@ export function createSurfaceCliApplications(
       },
     },
     validateState: createValidationApplications(root),
+    sandboxRuntime: createSandboxRuntimeApplications(root),
     operational: createOperationalApplications(root),
   };
+}
+
+function sleepUntilAbort(signal: AbortSignal, milliseconds: number): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal.aborted) return resolve();
+    const timeout = setTimeout(resolve, milliseconds);
+    signal.addEventListener('abort', () => { clearTimeout(timeout); resolve(); }, { once: true });
+  });
 }
 
 function createHttpStarter(root: CompositionRoot, api: ApiApplications, servers: Set<Server>) {
@@ -133,6 +150,48 @@ function createHttpStarter(root: CompositionRoot, api: ApiApplications, servers:
   };
 }
 
+function createSandboxRuntimeApplications(root: CompositionRoot) {
+  const docker = createSandboxDockerPort(
+    createLoggedDockerCli(
+      {
+        execute: (arguments_, onChunk, options) => spawnDocker(arguments_, onChunk, root.paths.wakeRoot, options),
+      },
+      createProcessLogSink(
+        join(root.paths.wakeRoot, 'logs', 'sandbox.log'),
+        { write: (value) => process.stdout.write(value) },
+        { maxBytes: 10 * 1024 * 1024 },
+      ),
+    ),
+    {
+      wakeRoot: root.paths.wakeRoot,
+      containerHomeRoot: root.paths.containerHomeRoot,
+      image: root.config.host.sandbox.image,
+      development: root.config.host.development,
+      containerName: root.config.host.sandbox.containerName,
+      ...(root.config.surfaces.api.enabled ? { publishedPort: root.config.surfaces.api.port } : {}),
+      wakeMountPath: root.config.host.sandbox.wakeMountPath,
+      containerHomeMountPath: root.config.host.sandbox.containerHomeMountPath,
+      extraMounts: root.config.host.sandbox.extraMounts,
+      startEnabled: root.config.host.sandbox.start.enabled,
+      inspect: createDockerInspection(root.paths.wakeRoot),
+    },
+  );
+  const wakeInvocation =
+    root.config.host.development.mode === 'source'
+      ? ['node', '/app/dist-next/src-next/main.js']
+      : ['wake'];
+  return {
+    async hasDockerfile(): Promise<boolean> {
+      try {
+        await access(join(root.paths.wakeRoot, 'docker', 'Dockerfile'));
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    exec: (arguments_: readonly string[]) => docker.exec([...wakeInvocation, ...arguments_]),
+  };
+}
 function createOperationalApplications(root: CompositionRoot) {
   return {
     init: async () => unsupportedOperationalCommand('init'),
@@ -160,8 +219,8 @@ function createOperationalApplications(root: CompositionRoot) {
         createSandboxDockerPort(
           createLoggedDockerCli(
             {
-              execute: (arguments__, onChunk) =>
-                spawnDocker(arguments__, onChunk, root.paths.wakeRoot),
+              execute: (arguments__, onChunk, options) =>
+                spawnDocker(arguments__, onChunk, root.paths.wakeRoot, options),
             },
             createProcessLogSink(
               join(root.paths.wakeRoot, 'logs', 'sandbox.log'),
@@ -173,7 +232,9 @@ function createOperationalApplications(root: CompositionRoot) {
             wakeRoot: root.paths.wakeRoot,
             containerHomeRoot: root.paths.containerHomeRoot,
             image: root.config.host.sandbox.image,
+      development: root.config.host.development,
             containerName: root.config.host.sandbox.containerName,
+      ...(root.config.surfaces.api.enabled ? { publishedPort: root.config.surfaces.api.port } : {}),
             wakeMountPath: root.config.host.sandbox.wakeMountPath,
             containerHomeMountPath: root.config.host.sandbox.containerHomeMountPath,
             extraMounts: root.config.host.sandbox.extraMounts,
@@ -253,17 +314,26 @@ function spawnDocker(
   arguments_: readonly string[],
   onChunk: (chunk: DockerProcessChunk) => void | Promise<void>,
   cwd: string,
+  options?: { readonly interactive?: boolean },
 ): Promise<void> {
   return new Promise((resolve, reject) => {
-    const child = spawn('docker', [...arguments_], { cwd });
+    const child = spawn('docker', [...arguments_], options?.interactive ? { cwd, stdio: 'inherit' } : { cwd });
+    if (options?.interactive) {
+      child.on('error', reject);
+      child.on('close', (code) => {
+        if (code === 0) resolve();
+        else reject(new Error('docker ' + arguments_.join(' ') + ' exited with code ' + String(code)));
+      });
+      return;
+    }
     let chain = Promise.resolve();
     let stderrTail = '';
     const enqueue = (stream: DockerProcessChunk['stream'], text: string) => {
       if (stream === 'stderr') stderrTail = `${stderrTail}${text}`.slice(-4000);
       chain = chain.then(() => onChunk({ stream, text }));
     };
-    child.stdout.on('data', (buffer: Buffer) => enqueue('stdout', buffer.toString('utf8')));
-    child.stderr.on('data', (buffer: Buffer) => enqueue('stderr', buffer.toString('utf8')));
+    child.stdout!.on('data', (buffer: Buffer) => enqueue('stdout', buffer.toString('utf8')));
+    child.stderr!.on('data', (buffer: Buffer) => enqueue('stderr', buffer.toString('utf8')));
     child.on('error', (error) => {
       void chain.then(() => reject(error));
     });
@@ -369,16 +439,16 @@ async function dockerSandboxHealthNotices(root: CompositionRoot): Promise<string
   const containerName = root.config.host.sandbox.containerName;
   if (!(await inspect.imageExists(image)))
     return [
-      `Docker sandbox image "${image}" was not found (or Docker is unavailable) — run \`wake sandbox build\` if this deployment uses the Docker sandbox`,
+      `Docker sandbox image "${image}" was not found (or Docker is unavailable) ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â run \`wake sandbox build\` if this deployment uses the Docker sandbox`,
     ];
   const state = await inspect.containerState(containerName);
   if (state === 'halted')
     return [
-      `Docker sandbox container "${containerName}" is stopped — run \`wake sandbox up\` to resume it`,
+      `Docker sandbox container "${containerName}" is stopped ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â run \`wake sandbox up\` to resume it`,
     ];
   if (state === null)
     return [
-      `Docker sandbox container "${containerName}" was not found — run \`wake sandbox up\` if this deployment uses the Docker sandbox`,
+      `Docker sandbox container "${containerName}" was not found ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â run \`wake sandbox up\` if this deployment uses the Docker sandbox`,
     ];
   return [];
 }

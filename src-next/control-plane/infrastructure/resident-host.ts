@@ -13,17 +13,22 @@ export class ResidentHost {
         signal.addEventListener('abort', () => resolve(), { once: true });
       });
     },
+    private readonly reportError: (error: unknown) => Promise<void> = async () => {},
   ) {}
 
   async run(signal: AbortSignal, budget: HostBudget): Promise<HostResult> {
     let total: HostResult = { advances: 0, runs: 0, stoppedBecause: HostStopReason.Shutdown };
     while (!signal.aborted) {
-      const result = await this.tick.run(budget);
-      total = {
-        advances: total.advances + result.advances,
-        runs: total.runs + result.runs,
-        stoppedBecause: result.stoppedBecause,
-      };
+      try {
+        const result = await this.tick.run(budget);
+        total = {
+          advances: total.advances + result.advances,
+          runs: total.runs + result.runs,
+          stoppedBecause: result.stoppedBecause,
+        };
+      } catch (error) {
+        await this.reportError(error);
+      }
       if (signal.aborted) break;
       await this.sleep(signal);
     }

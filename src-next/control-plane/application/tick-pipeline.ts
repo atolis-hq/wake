@@ -20,16 +20,20 @@ export function createTickPipeline(stages: TickPipelineStages): TickPipeline {
   return {
     async run(options, signal = new AbortController().signal) {
       await stages.catchUpProjections();
-      await stages.poll(signal);
-      await stages.translateInbound();
-      await stages.runSchedules();
-      await stages.react();
-      const result = await stages.advance(options);
-      await stages.catchUpProjections();
-      await stages.deliver(signal);
-      await stages.catchUpProjections();
-      await stages.react();
-      return result;
+      try {
+        await stages.poll(signal);
+        await stages.translateInbound();
+        await stages.runSchedules();
+        await stages.react();
+        const result = await stages.advance(options);
+        await stages.catchUpProjections();
+        await stages.deliver(signal);
+        await stages.catchUpProjections();
+        await stages.react();
+        return result;
+      } finally {
+        await stages.catchUpProjections();
+      }
     },
   };
 }

@@ -192,6 +192,19 @@ describe('CLI infrastructure', () => {
       ],
     ]);
   });
+  it('publishes an enabled UI port on loopback only', async () => {
+    const calls: string[][] = [];
+    const docker = createSandboxDockerPort(
+      createDockerCli(async (arguments_) => { calls.push([...arguments_]); }),
+      {
+        wakeRoot: '/wake-root', image: 'wake-sandbox', containerName: 'wake-sandbox',
+        publishedPort: 4317,
+        inspect: { imageExists: async () => true, containerState: async () => null },
+      },
+    );
+    await docker.up();
+    expect(calls[0]).toEqual(expect.arrayContaining(['-p', '127.0.0.1:4317:4317']));
+  });
   it('does not create a second container when the sandbox is already running', async () => {
     const calls: string[][] = [];
     const docker = createSandboxDockerPort(
@@ -261,24 +274,29 @@ describe('CLI infrastructure', () => {
     );
   });
 
-  it('resolves the in-container wake invocation from WAKE_MAIN_JS for sandbox setup', async () => {
-    const calls: string[][] = [];
+  it('uses an inherited terminal for the in-container sandbox setup invocation', async () => {
+    const calls: { arguments_: string[]; interactive?: boolean | undefined }[] = [];
     const docker = createSandboxDockerPort(
-      createDockerCli(async (arguments_) => {
-        calls.push([...arguments_]);
+      createDockerCli(async (arguments_, options) => {
+        calls.push({ arguments_: [...arguments_], interactive: options?.interactive });
       }),
       { wakeRoot: '/wake-root', image: 'wake-sandbox', containerName: 'wake-sandbox' },
     );
     await docker.setup?.();
     expect(calls).toEqual([
-      [
-        'exec',
-        '-it',
-        'wake-sandbox',
-        'sh',
-        '-c',
-        'if [ -n "$WAKE_MAIN_JS" ]; then node "$WAKE_MAIN_JS" sandbox-setup; else wake sandbox-setup; fi',
-      ],
+      {
+        arguments_: [
+          'exec',
+          '-it',
+          '-w',
+          '/wake',
+          'wake-sandbox',
+          'sh',
+          '-c',
+          'if [ -n "$WAKE_MAIN_JS" ]; then node "$WAKE_MAIN_JS" sandbox-setup; else wake sandbox-setup; fi',
+        ],
+        interactive: true,
+      },
     ]);
   });
 
@@ -295,6 +313,8 @@ describe('CLI infrastructure', () => {
       [
         'exec',
         '-it',
+        '-w',
+        '/wake',
         'wake-sandbox',
         'sh',
         '-c',

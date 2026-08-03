@@ -19,6 +19,7 @@ import {
 } from '../control-plane/index.js';
 import {
   createExecutionService,
+  GitWorkspaceProvider,
   loadPromptTemplate,
   renderPromptTemplate,
 } from '../execution/index.js';
@@ -129,6 +130,14 @@ export async function createCompositionRoot(
     ids,
     runners: createRunnerRegistry(config.execution),
     reportRunnerQuota: createRunnerQuotaReporter(journal, clock, ids),
+    workspaces: new GitWorkspaceProvider(paths.workspacesRoot, {
+      async cloneLocator(id) {
+        const resource = await resources.get(resourceId(id));
+        const match = resource === null ? null : /^([^/]+\/[^#]+)#\d+$/.exec(resource.externalKey.key);
+        if (match === null) throw new Error('Workspace resource ' + id + ' does not identify a GitHub repository');
+        return 'https://github.com/' + match[1] + '.git';
+      },
+    }),
   });
   const runnerControls = createRunnerControlService({
     journal,

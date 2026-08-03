@@ -14,7 +14,7 @@ export async function acquireWorkspace(
   if (provider === undefined) throw new Error('Workspace provider is required');
   const repositoryResource = resources.find(
     (resource) => resource.kind === BuiltInResourceKind.Repository,
-  );
+  ) ?? resources.find((resource) => resource.kind === BuiltInResourceKind.Issue || resource.kind === BuiltInResourceKind.PullRequest);
   if (repositoryResource === undefined) throw new Error('Repository Resource is required');
   return provider.acquire({ mode, workItemId, repositoryResource });
 }

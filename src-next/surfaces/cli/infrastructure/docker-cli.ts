@@ -1,8 +1,12 @@
 import { scrubProcessLog, type ProcessLogSink } from './process-log.js';
 
 /** Surface-local Docker process boundary; composition supplies the real invoker. */
+export interface DockerInvokeOptions {
+  readonly interactive?: boolean;
+}
+
 export interface DockerCli {
-  invoke(arguments_: readonly string[]): Promise<void>;
+  invoke(arguments_: readonly string[], options?: DockerInvokeOptions): Promise<void>;
 }
 
 export type SandboxContainerState = 'live' | 'halted' | null;
@@ -15,7 +19,9 @@ export interface SandboxDockerInspection {
 export interface SandboxDockerOptions {
   readonly wakeRoot: string;
   readonly image: string;
+  readonly development?: { readonly mode?: 'source' | 'packaged' | undefined; readonly repoRoot?: string | undefined };
   readonly containerName: string;
+  readonly publishedPort?: number | undefined;
   readonly wakeMountPath?: string;
   readonly containerHomeRoot?: string;
   readonly containerHomeMountPath?: string;
@@ -41,23 +47,24 @@ export interface DockerProcess {
   /**
    * Invokes onChunk for each stdout/stderr chunk as it arrives (not batched
    * until exit), then resolves once the process exits cleanly or rejects on
-   * a non-zero exit — mirroring execFile's throw-on-failure contract so
+   * a non-zero exit ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â mirroring execFile's throw-on-failure contract so
    * `up`/`build`/etc. still see Docker failures as rejected promises.
    */
   execute(
     arguments_: readonly string[],
     onChunk: (chunk: DockerProcessChunk) => void | Promise<void>,
+    options?: DockerInvokeOptions,
   ): Promise<void>;
 }
 
 /** Streams Docker output through the target-owned scrubbed log boundary as it arrives. */
 export function createLoggedDockerCli(process: DockerProcess, log: ProcessLogSink): DockerCli {
   return {
-    async invoke(arguments_: readonly string[]): Promise<void> {
+    async invoke(arguments_: readonly string[], options?: DockerInvokeOptions): Promise<void> {
       await process.execute(arguments_, (chunk) => {
         if (chunk.text.length === 0) return;
         return log.write(scrubProcessLog(chunk.text));
-      });
+      }, options);
     },
   };
 }
@@ -68,15 +75,20 @@ const dockerRunCommand = String.fromCharCode(114, 117, 110);
 export function createSandboxDockerPort(docker: DockerCli, options: SandboxDockerOptions) {
   const inspect = options.inspect ?? unknownSandboxInspection;
   return {
-    build: () =>
-      docker.invoke([
+    build: () => {
+      const source = options.development?.mode === 'source';
+      const packaged = options.development?.mode === 'packaged';
+      const context = source ? options.development?.repoRoot : options.wakeRoot;
+      if (context === undefined) throw new Error('source sandbox build requires host.development.repoRoot');
+      return docker.invoke([
         'build',
         '-t',
         options.image,
         '-f',
-        `${options.wakeRoot}/docker/Dockerfile`,
-        options.wakeRoot,
-      ]),
+        `${source ? context : options.wakeRoot}/docker/${packaged ? 'Dockerfile.packaged' : 'Dockerfile'}`,
+        context,
+      ]);
+    },
     up: async () => {
       await requireImage(inspect, options.image);
       const state = await inspect.containerState(options.containerName);
@@ -109,17 +121,21 @@ export function createSandboxDockerPort(docker: DockerCli, options: SandboxDocke
       docker.invoke([
         'exec',
         '-it',
+        '-w',
+        options.wakeMountPath ?? '/wake',
         options.containerName,
         'sh',
         '-c',
         'if [ -n "$WAKE_MAIN_JS" ]; then node "$WAKE_MAIN_JS" sandbox-setup; else wake sandbox-setup; fi',
-      ]),
+      ], { interactive: true }),
     resume: async ({ sessionId, cwd, cli }: SandboxResumeTarget) => {
       const resumeCommand = buildResumeCommandForCli(cli, sessionId);
       if (resumeCommand === null) throw new Error(`sandbox resume does not support CLI "${cli}"`);
       return docker.invoke([
         'exec',
         '-it',
+        '-w',
+        options.wakeMountPath ?? '/wake',
         options.containerName,
         'sh',
         '-c',
@@ -140,7 +156,7 @@ function shellQuote(value: string): string {
 }
 
 // The Cursor CLI's own first subcommand, not the ActivityExecutionKind/EventActorKind
-// vocabulary word "agent" — spelled indirectly so it isn't misread as that domain term.
+// vocabulary word "agent" ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â spelled indirectly so it isn't misread as that domain term.
 const cursorCliSubcommand = String.fromCharCode(97, 103, 101, 110, 116);
 
 /** Static per-agent-CLI resume argv; mirrors each CLI's own resume flag shape. */
@@ -179,6 +195,7 @@ async function createContainer(docker: DockerCli, options: SandboxDockerOptions)
     `max-file=${containerLogMaxFile}`,
     '--name',
     options.containerName,
+    ...(options.publishedPort === undefined ? [] : ['-p', '127.0.0.1:' + String(options.publishedPort) + ':' + String(options.publishedPort)]),
     '-v',
     `${options.wakeRoot}:${wakeMountPath}`,
     ...containerHome,

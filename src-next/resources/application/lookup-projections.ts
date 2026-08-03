@@ -4,7 +4,7 @@ import type { ResourceId } from '../contracts/identifiers.js';
 import type { ExternalResourceKey, ResourceCorrelationView } from '../contracts/views.js';
 
 export const externalKeyProjectionKey = (externalKey: ExternalResourceKey): string =>
-  `${externalKey.adapter}:${externalKey.key}`;
+  `${encodeURIComponent(externalKey.adapter)}:${encodeURIComponent(externalKey.key)}`;
 
 export const resourcesByExternalKeyProjection: ProjectionDefinition<ResourceId | null> = {
   name: 'resources-by-external-key',

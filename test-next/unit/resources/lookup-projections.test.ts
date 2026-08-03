@@ -6,6 +6,7 @@ import {
   ProjectionRunner,
 } from '../../../src-next/persistence/index.js';
 import {
+  externalKeyProjectionKey,
   resourcesByExternalKeyProjection,
   workCorrelationsProjection,
 } from '../../../src-next/resources/application/lookup-projections.js';
@@ -36,6 +37,9 @@ describe('ResourceLookup projections', () => {
   });
   it('returns null for an unknown external key', async () => {
     await expect(createWorld().lookup.resourceIdForExternalKey(key('missing'))).resolves.toBeNull();
+  });
+  it('uses a filesystem-safe projection key for repository-scoped external keys', () => {
+    expect(externalKeyProjectionKey(key('atolis-hq/wake-test#27'))).not.toMatch(/[\\/]/);
   });
   it('projects correlated resource ids and roles per WorkItem', async () => {
     const world = createWorld();

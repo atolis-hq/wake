@@ -1,8 +1,7 @@
-.git
-.agents
-.codex
 node_modules
 dist
+dist-next
+.git
+.wake
 coverage
-.DS_Store
-Thumbs.db
+*.log

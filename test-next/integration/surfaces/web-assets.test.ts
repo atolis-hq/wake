@@ -16,6 +16,13 @@ describe('packaged web assets', () => {
     expect(response?.body).toEqual(new Uint8Array([1, 2]));
   });
 
+  it('leaves the asset root to the browser shell fallback', async () => {
+    const assets = new PackagedAssets(async () => {
+      throw new Error('asset root must not be read as a file');
+    });
+    await expect(assets.get('/')).resolves.toBeUndefined();
+  });
+
   it('resolves production assets adjacent to the compiled Surface host', () => {
     const compiledHost = pathToFileURL(
       resolve('package', 'dist-next', 'src-next', 'surfaces', 'web-host', 'packaged-assets.js'),
