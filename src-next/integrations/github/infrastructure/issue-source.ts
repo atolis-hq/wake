@@ -1,4 +1,4 @@
-import { ReviewActorKind } from '../../../activities/index.js';
+import { PullRequestState, ReviewActorKind } from '../../../activities/index.js';
 import { createEventDraft, EventActorKind, EventSourceKind } from '../../../kernel/index.js';
 import type { AdapterId } from '../../contracts/identifiers.js';
 import { ExternalWorkOutcome } from '../../contracts/outcome-vocabulary.js';
@@ -67,7 +67,7 @@ export function issueObservation(input: {
 }
 
 function issueOutcome(issue: GitHubIssuePayload): ExternalWorkOutcome | undefined {
-  if (issue.state !== 'closed') return undefined;
+  if (issue.state !== PullRequestState.Closed) return undefined;
   return issue.state_reason === 'not_planned'
     ? ExternalWorkOutcome.Cancelled
     : ExternalWorkOutcome.Completed;
