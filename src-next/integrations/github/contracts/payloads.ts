@@ -5,6 +5,7 @@ export interface GitHubIssuePayload {
   readonly title: string;
   readonly body: string | null;
   readonly state: typeof PullRequestState.Open | typeof PullRequestState.Closed;
+  readonly state_reason?: string | null;
   readonly updated_at: string;
   readonly user?: { readonly login?: string; readonly type?: string } | null;
   readonly labels?: readonly (string | { readonly name?: string })[];
