@@ -138,7 +138,7 @@ describe('claude runner command building', () => {
     expect(result.prompt).toContain('wake/issue-12');
     expect(result.prompt).toContain('git push -u origin wake/issue-12');
     expect(result.prompt).toContain('gh pr create');
-    expect(result.prompt).toContain('Closes #12');
+    expect(result.prompt).toContain('Refs #12');
     expect(result.permissionMode).toBe('acceptEdits');
     expect(result.allowedTools).toContain('Edit');
     expect(result.allowedTools).toContain('Bash(git *)');
