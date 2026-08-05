@@ -174,6 +174,10 @@ export class TestWorld {
     return this.cancellation.cancelWork(workItemId, reason);
   }
 
+  async closeWork(workItemId: WorkItemId, reason = 'operator close') {
+    return this.cancellation.closeWork(workItemId, reason);
+  }
+
   requestRunCancellation(runId: string, reason: NonNullable<RunView['cancellation']>['reason']) {
     return this.execution.requestCancellation(runId, reason);
   }
