@@ -166,36 +166,13 @@ export class InboundTranslator {
     );
     if (identity === null) return;
     if (!identity.created) {
-      const current = await this.resources.get(identity.resourceId);
-      if (current === null) throw new Error(`Resource ${identity.resourceId} could not be loaded`);
-      if (current.revision !== payload.revision) {
-        await this.resources.discover(
-          {
-            resourceId: current.resourceId,
-            kind: current.kind,
-            externalKey: current.externalKey,
-            capabilities: current.capabilities,
-            revision: payload.revision,
-            ...(current.title === undefined ? {} : { title: current.title }),
-          },
-          context,
-        );
-        if (payload.outcome !== undefined && this.conclusion !== undefined) {
-          await concludeObservedWork(
-            { work: this.work, conclusion: this.conclusion },
-            {
-              workItemId: identity.workItemId,
-              outcome: payload.outcome,
-              reason: `${this.adapter} ${payload.externalKey} closed`,
-            },
-          );
-        }
-      }
-      if (payload.kind === 'pull-request')
-        await pullRequests.observe(
-          observePullRequest(current.resourceId, identity.workItemId, payload),
-          context,
-        );
+      await this.applyReobservation({
+        payload,
+        context,
+        pullRequests,
+        resourceId: identity.resourceId,
+        workItemId: identity.workItemId,
+      });
       return;
     }
     const { resourceId: resourceIdValue, workItemId: workItemIdValue } = identity;
@@ -230,6 +207,46 @@ export class InboundTranslator {
           }
         : undefined,
     );
+  }
+
+  private async applyReobservation(input: {
+    readonly payload: ExternalWorkObservedPayload;
+    readonly context: ReturnType<typeof commandContext>;
+    readonly pullRequests: PullRequestService;
+    readonly resourceId: ResourceId;
+    readonly workItemId: WorkItemId;
+  }): Promise<void> {
+    const { payload, context, pullRequests, resourceId: resourceIdValue, workItemId: workItemIdValue } = input;
+    const current = await this.resources!.get(resourceIdValue);
+    if (current === null) throw new Error(`Resource ${resourceIdValue} could not be loaded`);
+    if (current.revision !== payload.revision) {
+      await this.resources!.discover(
+        {
+          resourceId: current.resourceId,
+          kind: current.kind,
+          externalKey: current.externalKey,
+          capabilities: current.capabilities,
+          revision: payload.revision,
+          ...(current.title === undefined ? {} : { title: current.title }),
+        },
+        context,
+      );
+      if (payload.outcome !== undefined && this.conclusion !== undefined) {
+        await concludeObservedWork(
+          { work: this.work!, conclusion: this.conclusion },
+          {
+            workItemId: workItemIdValue,
+            outcome: payload.outcome,
+            reason: `${this.adapter} ${payload.externalKey} closed`,
+          },
+        );
+      }
+    }
+    if (payload.kind === 'pull-request')
+      await pullRequests.observe(
+        observePullRequest(current.resourceId, workItemIdValue, payload),
+        context,
+      );
   }
 
   private mintIdentity(externalKey: { readonly adapter: string; readonly key: string }) {
