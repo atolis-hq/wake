@@ -38,7 +38,9 @@ function detailClient() {
               resources: [
                 {
                   resourceId: 'resource-1',
+                  adapter: 'unknown-adapter',
                   kind: 'unheard-of-kind',
+                  locatorLabel: 'unheard-of-kind resource-1',
                   capabilities: ['inspect', 'annotate'],
                   revision: 'rev-9',
                 },
@@ -106,10 +108,61 @@ describe('work detail', () => {
       </MemoryRouter>,
     );
     const resources = await screen.findByRole('list', { name: 'Resources' });
-    expect(resources.textContent).toContain('unheard-of-kind');
+    expect(resources.textContent).toContain('unheard-of-kind resource-1');
     expect(resources.textContent).toContain('inspect');
     expect(resources.textContent).toContain('annotate');
-    expect(resources.textContent).toContain('resource-1');
+    expect(screen.queryByRole('link', { name: /unheard-of-kind/ })).toBeNull();
+  });
+
+  it('links a resource with a title and resolved external URL', async () => {
+    const work = {
+      workItemKey: 'wk_a',
+      workItemId: 'work-a',
+      objective: 'Alpha',
+      state: 'open',
+      relatedWorkItems: [],
+    };
+    const client = new WakeApiClient(async (input) => {
+      const url = String(input);
+      const body = url.includes('/events')
+        ? { items: [], page: { nextCursor: null, hasMore: false }, meta: { asOf } }
+        : url.includes('/work-items/wk_a')
+          ? {
+              data: {
+                work,
+                resources: [
+                  {
+                    resourceId: 'resource-1',
+                    adapter: 'github',
+                    kind: 'issue',
+                    locatorLabel: 'issue owner/repo#412',
+                    title: 'Fix flaky checkout test',
+                    externalUrl: 'https://github.com/owner/repo/issues/412',
+                    capabilities: ['commentable'],
+                  },
+                ],
+                orchestration: { primary: null, children: [] },
+                execution: { runs: [] },
+                activities: {},
+              },
+              meta: { asOf },
+            }
+          : url.includes('/work-items')
+            ? { items: [work], page: { nextCursor: null, hasMore: false }, meta: { asOf } }
+            : { data: { paused: false, updatedAt: asOf }, meta: { asOf } };
+      return new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    });
+    render(
+      <MemoryRouter initialEntries={['/work/wk_a']}>
+        <App client={client} />
+      </MemoryRouter>,
+    );
+    const link = await screen.findByRole('link', { name: /Fix flaky checkout test/ });
+    expect(link.getAttribute('href')).toBe('https://github.com/owner/repo/issues/412');
+    expect(link.textContent).toContain('issue owner/repo#412');
   });
 
   it('renders no activity-specific section even when a pull request is present', async () => {

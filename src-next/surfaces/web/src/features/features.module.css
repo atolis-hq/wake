@@ -82,6 +82,11 @@
   flex-wrap: wrap;
   margin-top: 0.2rem;
 }
+.metaIcon {
+  width: 0.75rem;
+  height: 0.75rem;
+  flex: 0 0 auto;
+}
 .cardStats {
   color: var(--ink-muted);
   font-size: 0.7rem;
@@ -188,14 +193,57 @@
   list-style: none;
   padding: 0;
   margin: 0 0 var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
 }
-.resourceList li {
+.resourceCard {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-card);
+  color: inherit;
+  text-decoration: none;
+}
+a.resourceCard:hover {
+  border-color: var(--border-strong);
+}
+.resourceCardTop {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.resourceCardIcon {
+  flex: 0 0 auto;
+  color: var(--ink-muted);
+}
+.resourceCardTitle {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-weight: 600;
+  font-size: var(--text-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.resourceCardExt {
+  flex: 0 0 auto;
+  color: var(--ink-muted);
+  opacity: 0;
+}
+.resourceCard:hover .resourceCardExt {
+  opacity: 1;
+}
+.resourceCardMeta {
   display: flex;
   align-items: baseline;
   flex-wrap: wrap;
   gap: 0.4rem;
-  margin-bottom: 0.35rem;
   font-size: var(--text-sm);
+  padding-left: calc(18px + var(--space-2));
 }
 .resourceId {
   color: var(--ink-muted);

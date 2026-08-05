@@ -1,11 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router';
-import type {
-  AuditEventResponse,
-  BoardCardResponse,
-  RunResponse,
-} from '../../../../api/contracts/index.js';
+import type { AuditEventResponse, BoardCardResponse } from '../../../../api/contracts/index.js';
 import { useApiClient } from '../../api/context.js';
 import { queryKeys } from '../../api/query-keys.js';
 import { refreshPolicy } from '../../api/refresh-policy.js';
@@ -14,8 +10,14 @@ import { DataTable } from '../../components/data-table.js';
 import { fmtCompact, fmtCost } from '../../components/format.js';
 import { LocalTime } from '../../components/local-time.js';
 import { EmptyState, ErrorState, LoadingState, Panel } from '../../components/primitives.js';
+import { DocumentIcon, ExternalLinkIcon, GitHubIcon } from '../../components/resource-icons.js';
 import { EventRow } from '../events/events.js';
 import styles from '../features.module.css';
+import { runColumns } from '../runs/runs.js';
+
+const resourceIcons: Record<string, typeof GitHubIcon> = {
+  github: GitHubIcon,
+};
 
 export function WorkList() {
   const location = useLocation();
@@ -118,9 +120,11 @@ export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
                 <ErrorState error={eventsQuery.error} retry={() => void eventsQuery.refetch()} />
               ) : eventsQuery.data?.items.length ? (
                 <ol className={styles.eventList}>
-                  {eventsQuery.data.items.map((event: AuditEventResponse) => (
-                    <EventRow record={event} key={event.id} />
-                  ))}
+                  {[...eventsQuery.data.items]
+                    .sort((left, right) => right.position - left.position)
+                    .map((event: AuditEventResponse) => (
+                      <EventRow record={event} key={event.id} />
+                    ))}
                 </ol>
               ) : (
                 <EmptyState>No events</EmptyState>
@@ -149,20 +153,50 @@ export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
                   <EmptyState>No correlated resources</EmptyState>
                 ) : (
                   <ul className={styles.resourceList} aria-label="Resources">
-                    {query.data.data.resources.map((resource) => (
-                      <li key={resource.resourceId}>
-                        <Chip>{resource.kind}</Chip>
-                        <span className={styles.resourceId}>{resource.resourceId}</span>
-                        {resource.capabilities.map((capability) => (
-                          <Chip key={capability} variant="outline">
-                            {capability}
-                          </Chip>
-                        ))}
-                        {resource.revision !== undefined && (
-                          <span className={styles.resourceId}>{resource.revision}</span>
-                        )}
-                      </li>
-                    ))}
+                    {query.data.data.resources.map((resource) => {
+                      const Icon = resourceIcons[resource.adapter] ?? DocumentIcon;
+                      const heading = resource.title ?? resource.locatorLabel;
+                      const body = (
+                        <>
+                          <div className={styles.resourceCardTop}>
+                            <Icon className={styles.resourceCardIcon} />
+                            <span className={styles.resourceCardTitle}>{heading}</span>
+                            {resource.externalUrl !== undefined && (
+                              <ExternalLinkIcon className={styles.resourceCardExt} />
+                            )}
+                          </div>
+                          <div className={styles.resourceCardMeta}>
+                            {resource.title !== undefined && (
+                              <span className={styles.resourceId}>{resource.locatorLabel}</span>
+                            )}
+                            {resource.capabilities.map((capability) => (
+                              <Chip key={capability} variant="outline">
+                                {capability}
+                              </Chip>
+                            ))}
+                            {resource.revision !== undefined && (
+                              <span className={styles.resourceId}>{resource.revision}</span>
+                            )}
+                          </div>
+                        </>
+                      );
+                      return (
+                        <li key={resource.resourceId}>
+                          {resource.externalUrl !== undefined ? (
+                            <a
+                              className={styles.resourceCard}
+                              href={resource.externalUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              {body}
+                            </a>
+                          ) : (
+                            <div className={styles.resourceCard}>{body}</div>
+                          )}
+                        </li>
+                      );
+                    })}
                   </ul>
                 )}
               </section>
@@ -219,15 +253,3 @@ export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
     </div>
   );
 }
-
-const runColumns = [
-  {
-    label: 'Run',
-    render: (run: RunResponse) => (
-      <Link to={`/runs/${encodeURIComponent(run.runId)}`}>{run.runId}</Link>
-    ),
-  },
-  { label: 'Activity', render: (run: RunResponse) => run.activity },
-  { label: 'Status', render: (run: RunResponse) => <Chip variant="outline">{run.status}</Chip> },
-  { label: 'Started', render: (run: RunResponse) => <LocalTime value={run.startedAt} /> },
-];
