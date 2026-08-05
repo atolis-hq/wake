@@ -1,10 +1,10 @@
-import { faGithub } from '@fortawesome/free-brands-svg-icons/faGithub';
+﻿import { faGithub } from '@fortawesome/free-brands-svg-icons/faGithub';
 import { faArrowUpRightFromSquare } from '@fortawesome/free-solid-svg-icons/faArrowUpRightFromSquare';
 import { faFileLines } from '@fortawesome/free-solid-svg-icons/faFileLines';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 
 interface IconProps {
-  readonly className?: string;
+  readonly className?: string | undefined;
 }
 
 export function GitHubIcon({ className }: IconProps) {
@@ -20,3 +20,4 @@ export function ExternalLinkIcon({ className }: IconProps) {
     <FontAwesomeIcon icon={faArrowUpRightFromSquare} className={className} aria-hidden="true" />
   );
 }
+

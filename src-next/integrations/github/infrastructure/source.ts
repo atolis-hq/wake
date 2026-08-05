@@ -2,7 +2,6 @@ import type { AdapterId } from '../../contracts/identifiers.js';
 import type { ExternalEventSource } from '../../contracts/intake.js';
 import type { GitHubConfig } from '../contracts/config.js';
 import { GitHubEventType } from '../contracts/events.js';
-import { isGitHubWakeMarker } from '../contracts/vocabulary.js';
 import type { GitHubIssueCommentPayload, GitHubReviewPayload } from '../contracts/payloads.js';
 import { issueCommentObservation, issueObservation } from './issue-source.js';
 import { createGitHubPullRequestSource, type GitHubPullRequestSourceClient } from './pr-source.js';
@@ -34,106 +33,144 @@ export function createGitHubSource(
   adapter?: AdapterId,
 ): ExternalEventSource {
   let nextPollAt = 0;
-  const workFingerprints = new Map<string, string>();
+  // Draft eventIds are already content fingerprints (see issue-source.ts/pr-source.ts),
+  // so the journal itself is idempotent per item. This cache only avoids re-appending
+  // (and re-triggering downstream translation) an unchanged item on every poll within
+  // a single process lifetime — it's a perf optimization, not a correctness dependency,
+  // so it's safe for it to reset on restart.
+  const lastEventIds = new Map<string, string>();
   return {
     async poll(signal) {
       if (Date.now() < nextPollAt) return [];
       nextPollAt = Date.now() + config.polling.lookbackMs;
       const perRepository = await Promise.all(
-        config.repositories.map(async ({ owner, repo }) => {
-          try {
-            const repository = `${owner}/${repo}`;
-            const pullRequestPayloads = await client.listPullRequests(
-              owner,
-              repo,
-              config.polling.maxPerRepo,
-            );
-            const [issues, pullRequests, reviews] = await Promise.all([
-              client.listIssues(owner, repo, config.polling.maxPerRepo),
-              createGitHubPullRequestSource({
-                client: { ...client, listPullRequests: async () => pullRequestPayloads },
-                repository,
-                maxResults: config.polling.maxPerRepo,
-                ...(adapter === undefined ? {} : { adapter }),
-              }).poll(signal),
-              Promise.all(
-                pullRequestPayloads.map(async (pullRequest) => {
-                  const reviewEvents = await client.listReviews(
-                    owner,
-                    repo,
-                    pullRequest.number,
-                    config.polling.commentPageSize,
-                  );
-                  return reviewEvents.flatMap((review) => {
-                    const event = githubReviewObservation({
-                      repository,
-                      pullRequest,
-                      review,
-                      authorizedReviewers: [],
-                    });
-                    return event === null ? [] : [event];
-                  });
-                }),
-              ).then((items) => items.flat()),
-            ]);
-            const issueComments = (
-              await Promise.all(
-                issues
-                  .filter((issue) => issue.pull_request === undefined)
-                  .map(async (issue) =>
-                    (await client.listIssueComments(owner, repo, issue.number, config.polling.commentPageSize)).flatMap(
-                      (comment) => {
-                        const event = issueCommentObservation({
-                          repository,
-                          issue,
-                          comment,
-                          ...(adapter === undefined ? {} : { adapter }),
-                        });
-                        return event === null ? [] : [event];
-                      },
-                    ),
-                  ),
-              )
-            ).flat();
-            return [
-              ...issues
-                .filter((issue) => issue.pull_request === undefined)
-                .map((issue) =>
-                  issueObservation({
-                    repository,
-                    issue,
-                    ...(adapter === undefined ? {} : { adapter }),
-                  }),
-                ),
-              ...pullRequests,
-              ...reviews,
-              ...issueComments,
-            ];
-          } catch {
-            return [];
-          }
-        }),
+        config.repositories.map(({ owner, repo }) =>
+          pollRepository({ client, config, adapter, signal, owner, repo }),
+        ),
       );
       return perRepository.flat().filter((draft) => {
         if (draft.eventType !== GitHubEventType.WorkObserved) return true;
-        const fingerprint = workFingerprint(draft.payload);
-        const prior = workFingerprints.get(draft.payload.externalKey);
-        workFingerprints.set(draft.payload.externalKey, fingerprint);
-        return prior !== fingerprint;
+        const prior = lastEventIds.get(draft.payload.externalKey);
+        lastEventIds.set(draft.payload.externalKey, draft.eventId);
+        return prior !== draft.eventId;
       });
     },
   };
 }
 
-function workFingerprint(payload: Extract<ReturnType<typeof issueObservation>['payload'], { readonly externalKey: string }>) {
-  return JSON.stringify({
-    kind: payload.kind,
-    externalKey: payload.externalKey,
-    title: payload.title,
-    body: payload.body,
-    state: payload.state,
-    actor: payload.actor,
-    labels: (payload.labels ?? []).filter((label) => !isGitHubWakeMarker(label)).sort(),
-    assignees: [...(payload.assignees ?? [])].sort(),
-  });
+interface RepositoryPollContext {
+  readonly client: GitHubSourceClient;
+  readonly config: GitHubConfig;
+  readonly adapter: AdapterId | undefined;
+  readonly owner: string;
+  readonly repo: string;
+  readonly repository: string;
+}
+
+async function pollRepository(input: {
+  readonly client: GitHubSourceClient;
+  readonly config: GitHubConfig;
+  readonly adapter: AdapterId | undefined;
+  readonly signal: Parameters<ExternalEventSource['poll']>[0];
+  readonly owner: string;
+  readonly repo: string;
+}) {
+  const { client, config, adapter, signal, owner, repo } = input;
+  const context: RepositoryPollContext = {
+    client,
+    config,
+    adapter,
+    owner,
+    repo,
+    repository: `${owner}/${repo}`,
+  };
+  try {
+    const pullRequestPayloads = await client.listPullRequests(
+      owner,
+      repo,
+      config.polling.maxPerRepo,
+    );
+    const [issues, pullRequests, reviews] = await Promise.all([
+      client.listIssues(owner, repo, config.polling.maxPerRepo),
+      createGitHubPullRequestSource({
+        client: { ...client, listPullRequests: async () => pullRequestPayloads },
+        repository: context.repository,
+        maxResults: config.polling.maxPerRepo,
+        ...(adapter === undefined ? {} : { adapter }),
+      }).poll(signal),
+      reviewEventsFor(context, pullRequestPayloads),
+    ]);
+    const issueComments = await issueCommentEventsFor(context, issues);
+    return [
+      ...issues
+        .filter((issue) => issue.pull_request === undefined)
+        .map((issue) =>
+          issueObservation({
+            repository: context.repository,
+            issue,
+            ...(adapter === undefined ? {} : { adapter }),
+          }),
+        ),
+      ...pullRequests,
+      ...reviews,
+      ...issueComments,
+    ];
+  } catch {
+    return [];
+  }
+}
+
+async function reviewEventsFor(
+  context: RepositoryPollContext,
+  pullRequestPayloads: readonly Parameters<typeof githubReviewObservation>[0]['pullRequest'][],
+) {
+  const items = await Promise.all(
+    pullRequestPayloads.map(async (pullRequest) => {
+      const reviewEvents = await context.client.listReviews(
+        context.owner,
+        context.repo,
+        pullRequest.number,
+        context.config.polling.commentPageSize,
+      );
+      return reviewEvents.flatMap((review) => {
+        const event = githubReviewObservation({
+          repository: context.repository,
+          pullRequest,
+          review,
+          authorizedReviewers: [],
+        });
+        return event === null ? [] : [event];
+      });
+    }),
+  );
+  return items.flat();
+}
+
+async function issueCommentEventsFor(
+  context: RepositoryPollContext,
+  issues: readonly Parameters<typeof issueObservation>[0]['issue'][],
+) {
+  const items = await Promise.all(
+    issues
+      .filter((issue) => issue.pull_request === undefined)
+      .map(async (issue) =>
+        (
+          await context.client.listIssueComments(
+            context.owner,
+            context.repo,
+            issue.number,
+            context.config.polling.commentPageSize,
+          )
+        ).flatMap((comment) => {
+          const event = issueCommentObservation({
+            repository: context.repository,
+            issue,
+            comment,
+            ...(context.adapter === undefined ? {} : { adapter: context.adapter }),
+          });
+          return event === null ? [] : [event];
+        }),
+      ),
+  );
+  return items.flat();
 }

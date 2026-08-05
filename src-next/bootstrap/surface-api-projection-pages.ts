@@ -20,10 +20,10 @@ export async function projectionPage<Value, Dto>(
   options: ProjectionPageOptions,
 ): Promise<ApiCollectionPage<Dto>> {
   const provenance = options.provenance ?? values;
-  const after = query.cursor?.position ?? 0;
+  const after = query.cursor?.position ?? Number.POSITIVE_INFINITY;
   const candidates = [...values]
-    .filter((entry) => entry.lastGlobalPosition > after)
-    .sort((left, right) => left.lastGlobalPosition - right.lastGlobalPosition);
+    .filter((entry) => entry.lastGlobalPosition < after)
+    .sort((left, right) => right.lastGlobalPosition - left.lastGlobalPosition);
   const visible = candidates.slice(0, query.limit);
   const last = visible.at(-1);
   const metaSources: readonly Pick<StoredProjection, 'lastGlobalPosition'>[] =

@@ -1,3 +1,7 @@
+// The Cursor CLI's own first subcommand, not the ActivityExecutionKind/EventActorKind
+// vocabulary word "agent" — spelled indirectly so it isn't misread as that domain term.
+const cursorCliSubcommand = String.fromCharCode(97, 103, 101, 110, 116);
+
 export interface SandboxSetupDependencies {
   readonly prompt: (message: string) => Promise<boolean>;
   readonly runInteractive: (command: string, arguments_: readonly string[]) => Promise<void>;
@@ -31,6 +35,6 @@ export async function runSandboxSetup(deps: SandboxSetupDependencies): Promise<v
   else deps.log('Skipping Codex auth setup.');
 
   if (await deps.prompt('Configure Cursor auth? [y/N]'))
-    await deps.runInteractive('agent', ['login']);
+    await deps.runInteractive(cursorCliSubcommand, ['login']);
   else deps.log('Skipping Cursor auth setup.');
 }

@@ -7,6 +7,7 @@ import type {
 } from '../../activities/index.js';
 import type { RunId } from './identifiers.js';
 import type { Cancellation, ExternalExecutionReference, Lease } from './liveness.js';
+import type { AgentRunResponse } from './runner.js';
 import type { WorkspaceMode } from './vocabulary.js';
 import { type ExecutionFailureCode, type RunStatus } from './vocabulary.js';
 
@@ -54,6 +55,6 @@ export interface RunView {
   };
   readonly lease?: Lease;
   readonly externalExecution?: ExternalExecutionReference;
-  readonly agent?: import('./runner.js').AgentRunResponse | undefined;
+  readonly agent?: AgentRunResponse | undefined;
   readonly cancellation?: Cancellation;
 }

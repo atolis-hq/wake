@@ -20,8 +20,11 @@ function boardClient(fetchSpy?: (url: string) => void) {
       stage: 'implement',
       dwellSince: asOf,
       runCount: 1,
+      lastRunAt: asOf,
+      lastRunAgeMs: 125_000,
       totalTokens: 0,
       totalCostUsd: 0,
+      totalDurationMs: 300_000,
     },
     {
       workItemKey: 'wk_b',
@@ -34,6 +37,7 @@ function boardClient(fetchSpy?: (url: string) => void) {
       runCount: 1,
       totalTokens: 0,
       totalCostUsd: 0,
+      totalDurationMs: 0,
     },
     {
       workItemKey: 'wk_c',
@@ -46,6 +50,7 @@ function boardClient(fetchSpy?: (url: string) => void) {
       runCount: 1,
       totalTokens: 0,
       totalCostUsd: 0,
+      totalDurationMs: 0,
     },
   ];
   return new WakeApiClient(async (input) => {
@@ -108,25 +113,36 @@ describe('board', () => {
     expect(link.className).toContain('cardLink');
   });
 
-  it('shows an awaiting approval status for work in the Needs human column', async () => {
+  it('shows run count, last-run recency, total duration, cost, and tokens on the stats line', async () => {
+    render(
+      <MemoryRouter initialEntries={['/board']}>
+        <App client={boardClient()} />
+      </MemoryRouter>,
+    );
+    const card = await screen.findByRole('listitem', { name: 'Alpha' });
+    expect(
+      within(card).getByText('1 runs · last run 2m ago · 5m total · $0.0000 · 0 tokens'),
+    ).toBeTruthy();
+  });
+  it('shows the last run outcome returned by the board API', async () => {
     const client = new WakeApiClient(async (input) => {
-      const url = String(input);
-      const body = url.includes('/board')
+      const body = String(input).includes('/board')
         ? {
             items: [
               {
-                workItemKey: 'wk_approval',
-                workItemId: 'work-approval',
-                objective: 'Approval required',
-                condition: 'needs-human',
-                awaitingApproval: true,
+                workItemKey: 'wk_failed',
+                workItemId: 'work-failed',
+                objective: 'Failed work',
+                condition: 'error',
                 dwellSince: asOf,
                 runCount: 1,
+                lastRunOutcome: 'failed',
                 totalTokens: 0,
                 totalCostUsd: 0,
+                totalDurationMs: 0,
               },
             ],
-            conditionCounts: { 'needs-human': 1 },
+            conditionCounts: { error: 1 },
             page: { nextCursor: null, hasMore: false },
             meta: { asOf },
           }
@@ -142,7 +158,44 @@ describe('board', () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByRole('heading', { name: 'Needs Human (1)' })).toBeTruthy();
+    expect(await screen.findByText('failed')).toBeTruthy();
+  });
+  it('shows an awaiting approval status for work in the Needs Input column', async () => {
+    const client = new WakeApiClient(async (input) => {
+      const url = String(input);
+      const body = url.includes('/board')
+        ? {
+            items: [
+              {
+                workItemKey: 'wk_approval',
+                workItemId: 'work-approval',
+                objective: 'Approval required',
+                condition: 'needs-input',
+                awaitingApproval: true,
+                dwellSince: asOf,
+                runCount: 1,
+                totalTokens: 0,
+                totalCostUsd: 0,
+                totalDurationMs: 0,
+              },
+            ],
+            conditionCounts: { 'needs-input': 1 },
+            page: { nextCursor: null, hasMore: false },
+            meta: { asOf },
+          }
+        : { data: { paused: false, updatedAt: asOf }, meta: { asOf } };
+      return new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    });
+    render(
+      <MemoryRouter initialEntries={['/board']}>
+        <App client={client} />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole('heading', { name: 'Needs Input (1)' })).toBeTruthy();
     expect(screen.getByText('awaiting approval')).toBeTruthy();
   });
 

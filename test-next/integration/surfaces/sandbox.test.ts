@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import { runSandbox } from '../../../src-next/surfaces/cli/commands/sandbox.js';
 import { scrubProcessLog } from '../../../src-next/surfaces/cli/infrastructure/process-log.js';
 
-// eslint-disable-next-line max-lines-per-function -- scenario coverage shares one injected Docker port.
 describe('sandbox', () => {
   it('forwards an explicit subcommand only through the Docker port', async () => {
     const calls: string[] = [];

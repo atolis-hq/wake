@@ -61,6 +61,7 @@ function collectionClient(requests: string[], kind: 'work' | 'runs') {
               runCount: 1,
               totalTokens: 0,
               totalCostUsd: 0,
+              totalDurationMs: 0,
             },
           ]
         : [

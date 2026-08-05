@@ -24,6 +24,7 @@ import {
   UnknownGitHubIdentity,
   UnknownGitHubRevision,
 } from '../contracts/vocabulary.js';
+import { withoutWakeMarkers } from './content-fingerprint.js';
 
 interface CheckEvidence {
   readonly available: boolean;
@@ -175,13 +176,21 @@ async function mapConcurrent<Input, Output>(
   return output;
 }
 
-function evidenceFingerprint(payload: object, evidence: CheckEvidence): string {
+function evidenceFingerprint(
+  payload: { readonly labels: readonly string[] } & Record<string, unknown>,
+  evidence: CheckEvidence,
+): string {
   const providerEvidence = {
     available: evidence.available,
     checkRuns: evidence.checkRuns.map(checkRunIdentity).sort(compareJson),
     statuses: evidence.statuses.map(statusIdentity).sort(compareJson),
   };
-  return createHash('sha256').update(JSON.stringify({ payload, providerEvidence })).digest('hex');
+  // Wake's own status/stage/workflow labels are excluded so republishing them
+  // never looks like an external change and re-triggers a WorkObserved event.
+  const fingerprintPayload = { ...payload, labels: withoutWakeMarkers(payload.labels) };
+  return createHash('sha256')
+    .update(JSON.stringify({ payload: fingerprintPayload, providerEvidence }))
+    .digest('hex');
 }
 
 function checkRunIdentity(checkRun: GitHubCheckRunPayload) {

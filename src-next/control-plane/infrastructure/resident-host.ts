@@ -7,7 +7,10 @@ interface BoundedHost {
 export class ResidentHost {
   constructor(
     private readonly tick: BoundedHost,
-    private readonly sleep: (signal: AbortSignal) => Promise<void> = async (signal) => {
+    private readonly sleep: (
+      signal: AbortSignal,
+      consecutiveIdleTicks: number,
+    ) => Promise<void> = async (signal) => {
       await new Promise<void>((resolve) => {
         if (signal.aborted) return resolve();
         signal.addEventListener('abort', () => resolve(), { once: true });
@@ -18,9 +21,12 @@ export class ResidentHost {
 
   async run(signal: AbortSignal, budget: HostBudget): Promise<HostResult> {
     let total: HostResult = { advances: 0, runs: 0, stoppedBecause: HostStopReason.Shutdown };
+    let consecutiveIdleTicks = 0;
     while (!signal.aborted) {
+      let madeProgress = false;
       try {
         const result = await this.tick.run(budget);
+        madeProgress = result.advances > 0;
         total = {
           advances: total.advances + result.advances,
           runs: total.runs + result.runs,
@@ -29,8 +35,9 @@ export class ResidentHost {
       } catch (error) {
         await this.reportError(error);
       }
+      consecutiveIdleTicks = madeProgress ? 0 : consecutiveIdleTicks + 1;
       if (signal.aborted) break;
-      await this.sleep(signal);
+      await this.sleep(signal, consecutiveIdleTicks);
     }
     return { ...total, stoppedBecause: HostStopReason.Shutdown };
   }

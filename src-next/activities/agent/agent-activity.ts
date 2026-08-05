@@ -73,30 +73,45 @@ async function resolveTemplate(
   return template;
 }
 
+type AgentTemplate =
+  | {
+      readonly prompt: string;
+      readonly model?: string | null | undefined;
+      readonly allowedTools?: readonly string[] | null | undefined;
+      readonly maxTurns?: number | undefined;
+    }
+  | undefined;
+
 function requestFrom(
   input: { prompt?: string; template?: string; model?: string; allowedTools?: readonly string[] },
   runId: string,
-  template:
-    | {
-        readonly prompt: string;
-        readonly model?: string | null | undefined;
-        readonly allowedTools?: readonly string[] | null | undefined;
-        readonly maxTurns?: number | undefined;
-      }
-    | undefined,
+  template: AgentTemplate,
   runnerContext: { readonly runnerName: string; readonly activationOrdinal: number } | undefined,
 ) {
-  const model = input.model ?? template?.model;
   return {
     runId,
     prompt: input.prompt ?? template!.prompt,
-    ...(model === undefined || model === null ? {} : { model }),
+    ...modelField(input.model ?? template?.model),
     allowedTools: input.allowedTools ?? template?.allowedTools ?? [],
-    ...(template?.maxTurns === undefined ? {} : { maxTurns: template.maxTurns }),
-    ...(runnerContext === undefined
-      ? {}
-      : { context: { ...runnerContext, action: input.template ?? 'prompt' } }),
+    ...maxTurnsField(template?.maxTurns),
+    ...contextField(runnerContext, input.template),
   };
+}
+
+function modelField(model: string | null | undefined) {
+  return model === undefined || model === null ? {} : { model };
+}
+
+function maxTurnsField(maxTurns: number | undefined) {
+  return maxTurns === undefined ? {} : { maxTurns };
+}
+
+function contextField(
+  runnerContext: { readonly runnerName: string; readonly activationOrdinal: number } | undefined,
+  templateName: string | undefined,
+) {
+  if (runnerContext === undefined) return {};
+  return { context: { ...runnerContext, action: templateName ?? 'prompt' } };
 }
 
 function agentOutcome(

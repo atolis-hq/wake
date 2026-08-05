@@ -1,4 +1,4 @@
-/* eslint-disable max-lines, max-params */
+/* eslint-disable max-lines */
 import type { ActivityOutcome, ActivityRegistry } from '../../activities/index.js';
 import type { Clock, CommandContext, EventJournal } from '../../kernel/index.js';
 import { correlationId, EventActorKind, EventSourceKind } from '../../kernel/index.js';

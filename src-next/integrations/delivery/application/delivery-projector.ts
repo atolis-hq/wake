@@ -43,9 +43,16 @@ export const deliveryProjection: ProjectionDefinition<DeliveryIntentView | null>
 
 export const deliveryProjectionDefinitions: readonly ProjectionDefinition[] = [deliveryProjection];
 
-function intentView(
-  event: EventEnvelope,
-): { readonly eventId: string; readonly view: DeliveryIntentView } | null {
+type IntentViewResult = { readonly eventId: string; readonly view: DeliveryIntentView } | null;
+
+function intentView(event: EventEnvelope): IntentViewResult {
+  const activityIntent = activityIntentView(event);
+  if (activityIntent !== null) return activityIntent;
+  const integrationIntent = selectDeliveryIntentEvent(event);
+  return integrationIntent === null ? null : integrationIntentView(integrationIntent);
+}
+
+function activityIntentView(event: EventEnvelope): IntentViewResult {
   const intent = selectActivityEvent(event);
   if (intent?.eventType === ActivityEventType.PrApproveRequested)
     return {
@@ -89,17 +96,29 @@ function intentView(
         reconciliationAttempts: 0,
       },
     };
-  const integrationIntent = selectDeliveryIntentEvent(event);
-  if (integrationIntent === null) return null;
+  return null;
+}
+
+function integrationIntentView(
+  integrationIntent: NonNullable<ReturnType<typeof selectDeliveryIntentEvent>>,
+): IntentViewResult {
   if (integrationIntent.eventType === DeliveryIntentEventType.AgentRunPublishRequested)
     return {
       eventId: integrationIntent.eventId,
       view: {
-        intentEventId: integrationIntent.eventId, globalPosition: integrationIntent.globalPosition,
-        workflowInstanceId: integrationIntent.payload.workflowInstanceId, activationId: integrationIntent.payload.activationId,
-        kind: DeliveryIntentKind.AgentRunPublish, resourceId: integrationIntent.payload.resourceId,
-        payload: { kind: DeliveryIntentKind.AgentRunPublish, report: integrationIntent.payload.report }, state: DeliveryState.Pending,
-        attempts: 0, occurrenceOrdinal: 0,
+        intentEventId: integrationIntent.eventId,
+        globalPosition: integrationIntent.globalPosition,
+        workflowInstanceId: integrationIntent.payload.workflowInstanceId,
+        activationId: integrationIntent.payload.activationId,
+        kind: DeliveryIntentKind.AgentRunPublish,
+        resourceId: integrationIntent.payload.resourceId,
+        payload: {
+          kind: DeliveryIntentKind.AgentRunPublish,
+          report: integrationIntent.payload.report,
+        },
+        state: DeliveryState.Pending,
+        attempts: 0,
+        occurrenceOrdinal: 0,
       },
     };
   const status = integrationIntent.eventType === DeliveryIntentEventType.StatusPublishRequested;
@@ -112,7 +131,9 @@ function intentView(
       activationId: integrationIntent.payload.activationId,
       kind: status ? DeliveryIntentKind.StatusPublish : DeliveryIntentKind.ReplyPublish,
       resourceId: integrationIntent.payload.resourceId,
-      payload: status ? { kind: DeliveryIntentKind.StatusPublish, body: integrationIntent.payload.body } : { kind: DeliveryIntentKind.ReplyPublish, body: integrationIntent.payload.body },
+      payload: status
+        ? { kind: DeliveryIntentKind.StatusPublish, body: integrationIntent.payload.body }
+        : { kind: DeliveryIntentKind.ReplyPublish, body: integrationIntent.payload.body },
       state: DeliveryState.Pending,
       attempts: 0,
       occurrenceOrdinal: 0,

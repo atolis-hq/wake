@@ -27,8 +27,8 @@
   --cond-scheduled-bg: var(--wake-blue-900);
   --cond-active-fg: var(--wake-purple-300);
   --cond-active-bg: var(--wake-purple-900);
-  --cond-needs-human-fg: var(--wake-amber-300);
-  --cond-needs-human-bg: var(--wake-amber-900);
+  --cond-needs-input-fg: var(--wake-amber-300);
+  --cond-needs-input-bg: var(--wake-amber-900);
   --cond-error-fg: var(--wake-red-300);
   --cond-error-bg: var(--wake-red-900);
   --cond-finished-fg: var(--wake-slate-400);

@@ -88,7 +88,18 @@ export const runnerResultPayloadSchema = z
       .object({
         outcome: z.enum(['DONE', 'REJECTED', 'BLOCKED', 'FAILED']),
         displayBody: z.string(),
-        artifacts: z.array(z.object({ kind: z.string().min(1), externalKey: z.object({ adapter: z.string().min(1), key: z.string().min(1) }).strict() }).strict()).optional(),
+        artifacts: z
+          .array(
+            z
+              .object({
+                kind: z.string().min(1),
+                externalKey: z
+                  .object({ adapter: z.string().min(1), key: z.string().min(1) })
+                  .strict(),
+              })
+              .strict(),
+          )
+          .optional(),
         metadata: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])),
       })
       .strict()
@@ -143,7 +154,11 @@ export interface RunStartedPayload {
 }
 
 export interface RecordedRunnerResult {
-  readonly transport: typeof RunStatus.Succeeded | typeof RunStatus.Failed | typeof RunStatus.Cancelled | typeof RunStatus.Ambiguous;
+  readonly transport:
+    | typeof RunStatus.Succeeded
+    | typeof RunStatus.Failed
+    | typeof RunStatus.Cancelled
+    | typeof RunStatus.Ambiguous;
   /** Legacy decode-only compatibility. New execution facts never set these fields. */
   readonly output?: string | undefined;
   readonly runner?: string | undefined;
@@ -239,7 +254,8 @@ const runEventSchema: z.ZodType<RunExecutionEvent> = z.discriminatedUnion('event
     eventType: z.literal(ExecutionEventType.RunWorkspaceCleanupFailed),
     stream: runStreamSchema,
     payload: z.object({ message: z.string().min(1) }).strict(),
-  }),  eventEnvelopeSchema.extend({
+  }),
+  eventEnvelopeSchema.extend({
     eventType: z.literal(ExecutionEventType.RunCancelled),
     stream: runStreamSchema,
     payload: z.object({ finishedAt: offsetIsoTimestampSchema }).strict(),

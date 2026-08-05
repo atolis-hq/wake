@@ -76,6 +76,16 @@ export class InMemoryEventJournal implements EventJournal {
       .slice(0, limit);
   }
 
+  async readLatest(
+    beforeGlobalPosition = this.events.length + 1,
+    limit = Number.POSITIVE_INFINITY,
+  ): Promise<readonly EventEnvelope[]> {
+    return this.events
+      .slice(0, beforeGlobalPosition - 1)
+      .slice(-limit)
+      .reverse();
+  }
+
   private rejectChangedEventIds(
     drafts: readonly EventDraft[],
     existingEvents: readonly (IndexedEvent | undefined)[],

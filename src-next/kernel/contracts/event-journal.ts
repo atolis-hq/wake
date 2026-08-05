@@ -11,4 +11,5 @@ export interface EventJournal {
   ): Promise<readonly EventEnvelope[]>;
   readStream(stream: EntityRef): Promise<readonly EventEnvelope[]>;
   readAll(afterGlobalPosition: number, limit?: number): Promise<readonly EventEnvelope[]>;
+  readLatest?(beforeGlobalPosition?: number, limit?: number): Promise<readonly EventEnvelope[]>;
 }

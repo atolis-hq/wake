@@ -139,6 +139,7 @@ export const decodeBoardCard: Decoder<BoardCardResponse> = (value, path = '') =>
     dwellSince: string(record.dwellSince, child(path, 'dwellSince')),
     runCount: number(record.runCount, child(path, 'runCount')),
     ...optionalStringProperty(record, 'lastRunAt', path),
+    ...optionalStringProperty(record, 'lastRunOutcome', path),
     ...optionalNumberProperty(record, 'lastRunAgeMs', path),
     totalTokens: number(record.totalTokens, child(path, 'totalTokens')),
     totalCostUsd: number(record.totalCostUsd, child(path, 'totalCostUsd')),

@@ -43,28 +43,38 @@ describe('target initialise root', () => {
 
     const config = await loadConfig(root);
 
-    expect(config.execution.defaultRunnerPool).toBe('standard');
-    expect(config.execution.agentRunners?.fake?.kind).toBe('fake');
-    expect(config.execution.runnerPools.standard).toEqual(['fake']);
-    expect(config.orchestration.workflows.default?.entry).toBe('refine');
-    expect(config.orchestration.workflowSelectors).toContainEqual({
-      match: { tags: ['approval'] },
-      matchMode: 'all',
-      workflow: 'approval',
+    expect(config).toMatchObject({
+      execution: {
+        defaultRunnerPool: 'standard',
+        agentRunners: { fake: { kind: 'fake' } },
+        runnerPools: { standard: ['fake'] },
+      },
+      orchestration: {
+        workflowSelectors: expect.arrayContaining([
+          { match: { tags: ['approval'] }, matchMode: 'all', workflow: 'approval' },
+        ]),
+        workflows: {
+          default: {
+            entry: 'refine',
+            stages: {
+              refine: { activity: 'agent', with: { template: 'refine' } },
+              implement: { with: { template: 'implement' } },
+            },
+          },
+          approval: {
+            stages: {
+              refine: {
+                on: { done: { then: 'implement', await: { signal: 'approved', from: ['human'] } } },
+              },
+            },
+          },
+        },
+      },
     });
-    expect(Object.keys(config.orchestration.workflows.default?.stages ?? {})).toEqual(['refine', 'implement']);
-    expect(config.orchestration.workflows.default?.stages['announce-refine']).toBeUndefined();
-    expect(config.orchestration.workflows.default?.stages.refine?.activity).toBe('agent');
-    expect(config.orchestration.workflows.default?.stages.refine?.with).toEqual({
-      template: 'refine',
-    });
-    expect(config.orchestration.workflows.default?.stages.implement?.with).toEqual({
-      template: 'implement',
-    });
-    expect(config.orchestration.workflows.approval?.stages.refine?.on.done).toMatchObject({
-      then: 'implement',
-      await: { signal: 'approved', from: ['human'] },
-    });
+    expect(Object.keys(config.orchestration.workflows.default!.stages)).toEqual([
+      'refine',
+      'implement',
+    ]);
   });
 
   it('writes prompts/refine.md and prompts/implement.md as loadable, renderable templates', async () => {

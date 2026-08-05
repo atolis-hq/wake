@@ -22,11 +22,14 @@ import {
   runSandboxSetup,
   runSelfUpdateLatestLoop,
   runTargetSmoke,
+  verifyResidentStart,
   waitForActiveRuns,
   type ApiApplications,
+  type DockerCli,
   type DockerProcessChunk,
   type HostOptions,
   type SandboxDockerInspection,
+  type SandboxDockerOptions,
   type WakeCliApplications,
 } from '../surfaces/index.js';
 import { workItemId } from '../work/index.js';
@@ -35,8 +38,10 @@ import { loadConfig } from './config/load-config.js';
 import { runtimeProjectionDefinitions } from './projection-runtime.js';
 import { createRunnerRegistry } from './runner-registry.js';
 import { createSelfUpdateApplication } from './self-update-application.js';
+import { createSelfUpdateFailureLog } from './self-update-failure-log.js';
 import { createSourceUpdatePort } from './source-update-port.js';
 import { createUpdateLedger } from './update-ledger.js';
+import { resolveWakeVersion, wakeVersion } from './version.js';
 
 const execFile = promisify(nodeExecFile);
 
@@ -48,7 +53,11 @@ export function createSurfaceCliApplications(
   const tick = new TickHost((options) => root.pipeline.run(options));
   const resident = new ResidentHost(
     tick,
-    (signal) => sleepUntilAbort(signal, root.config.controlPlane.resident?.idleBackoffMs ?? 1000),
+    (signal, consecutiveIdleTicks) =>
+      sleepUntilAbort(
+        signal,
+        nextIdleBackoffMs(root.config.controlPlane.resident, consecutiveIdleTicks),
+      ),
     async (error) => {
       process.stderr.write(
         `Wake resident tick failed: ${error instanceof Error ? error.message : String(error)}\n`,
@@ -63,9 +72,16 @@ export function createSurfaceCliApplications(
       async run(signal, budget) {
         if (root.config.surfaces.web.enabled) await startHttp({}, true);
         else if (root.config.surfaces.api.enabled) await startHttp({}, false);
+        // Runs on its own cadence, independent of the tick loop: `advance()`
+        // blocks for an activity's full duration before a tick's own
+        // catchUpProjections runs again, so without this pump, projections
+        // (e.g. the board's active-run card) never reflect a run in
+        // progress — only its state before and after.
+        const projectionPump = runProjectionPump(root, signal);
         try {
           return await resident.run(signal, budget);
         } finally {
+          await projectionPump;
           await closeAll(servers);
         }
       },
@@ -73,14 +89,7 @@ export function createSurfaceCliApplications(
     stop: {
       stop: async () => {
         await waitForActiveRuns({
-          activeRunIds: async () =>
-            (
-              await root.projections.list<{
-                readonly view: { readonly status: string; readonly runId: string } | null;
-              }>('execution')
-            )
-              .filter(({ value }) => value.view?.status === RunStatus.Started)
-              .map(({ value }) => String(value.view?.runId)),
+          activeRunIds: () => activeExecutionRunIds(root),
           sleep: async (milliseconds) =>
             new Promise<void>((resolve) => setTimeout(resolve, milliseconds)),
         });
@@ -119,11 +128,41 @@ export function createSurfaceCliApplications(
   };
 }
 
+async function runProjectionPump(root: CompositionRoot, signal: AbortSignal): Promise<void> {
+  const intervalMs = 1000;
+  while (!signal.aborted) {
+    try {
+      await root.projectionRunner.runRegisteredOnce();
+    } catch (error) {
+      process.stderr.write(
+        `Wake projection pump failed: ${error instanceof Error ? error.message : String(error)}\n`,
+      );
+    }
+    await sleepUntilAbort(signal, intervalMs);
+  }
+}
+
+function nextIdleBackoffMs(
+  resident: { readonly idleBackoffMs: number; readonly maxIdleBackoffMs?: number } | undefined,
+  consecutiveIdleTicks: number,
+): number {
+  const baseMs = resident?.idleBackoffMs ?? 1000;
+  const maxMs = resident?.maxIdleBackoffMs ?? baseMs * 16;
+  return Math.min(baseMs * 2 ** Math.min(consecutiveIdleTicks, 20), maxMs);
+}
+
 function sleepUntilAbort(signal: AbortSignal, milliseconds: number): Promise<void> {
   return new Promise((resolve) => {
     if (signal.aborted) return resolve();
     const timeout = setTimeout(resolve, milliseconds);
-    signal.addEventListener('abort', () => { clearTimeout(timeout); resolve(); }, { once: true });
+    signal.addEventListener(
+      'abort',
+      () => {
+        clearTimeout(timeout);
+        resolve();
+      },
+      { once: true },
+    );
   });
 }
 
@@ -150,36 +189,73 @@ function createHttpStarter(root: CompositionRoot, api: ApiApplications, servers:
   };
 }
 
-function createSandboxRuntimeApplications(root: CompositionRoot) {
-  const docker = createSandboxDockerPort(
-    createLoggedDockerCli(
-      {
-        execute: (arguments_, onChunk, options) => spawnDocker(arguments_, onChunk, root.paths.wakeRoot, options),
-      },
-      createProcessLogSink(
-        join(root.paths.wakeRoot, 'logs', 'sandbox.log'),
-        { write: (value) => process.stdout.write(value) },
-        { maxBytes: 10 * 1024 * 1024 },
-      ),
-    ),
+function createDockerCliForRoot(root: CompositionRoot): DockerCli {
+  return createLoggedDockerCli(
     {
-      wakeRoot: root.paths.wakeRoot,
-      containerHomeRoot: root.paths.containerHomeRoot,
-      image: root.config.host.sandbox.image,
-      development: root.config.host.development,
-      containerName: root.config.host.sandbox.containerName,
-      ...(root.config.surfaces.api.enabled ? { publishedPort: root.config.surfaces.api.port } : {}),
-      wakeMountPath: root.config.host.sandbox.wakeMountPath,
-      containerHomeMountPath: root.config.host.sandbox.containerHomeMountPath,
-      extraMounts: root.config.host.sandbox.extraMounts,
-      startEnabled: root.config.host.sandbox.start.enabled,
-      inspect: createDockerInspection(root.paths.wakeRoot),
+      execute: (arguments_, onChunk, options) =>
+        spawnDocker(arguments_, onChunk, root.paths.wakeRoot, options),
     },
+    createProcessLogSink(
+      join(root.paths.wakeRoot, 'logs', 'sandbox.log'),
+      { write: (value) => process.stdout.write(value) },
+      { maxBytes: 10 * 1024 * 1024 },
+    ),
   );
-  const wakeInvocation =
-    root.config.host.development.mode === 'source'
-      ? ['node', '/app/dist-next/src-next/main.js']
-      : ['wake'];
+}
+
+function sandboxDockerOptions(
+  root: CompositionRoot,
+  overrides?: { readonly image?: string },
+): SandboxDockerOptions {
+  return {
+    wakeRoot: root.paths.wakeRoot,
+    containerHomeRoot: root.paths.containerHomeRoot,
+    image: overrides?.image ?? root.config.host.sandbox.image,
+    development: root.config.host.development,
+    containerName: root.config.host.sandbox.containerName,
+    ...(root.config.surfaces.api.enabled ? { publishedPort: root.config.surfaces.api.port } : {}),
+    wakeMountPath: root.config.host.sandbox.wakeMountPath,
+    containerHomeMountPath: root.config.host.sandbox.containerHomeMountPath,
+    extraMounts: root.config.host.sandbox.extraMounts,
+    startEnabled: root.config.host.sandbox.start.enabled,
+    inspect: createDockerInspection(root.paths.wakeRoot),
+    resolveBuildVersion: () => resolveSandboxBuildVersion(root),
+  };
+}
+
+function createSandboxDocker(root: CompositionRoot, overrides?: { readonly image?: string }) {
+  return createSandboxDockerPort(
+    createDockerCliForRoot(root),
+    sandboxDockerOptions(root, overrides),
+  );
+}
+
+async function resolveSandboxBuildVersion(root: CompositionRoot): Promise<string> {
+  const development = root.config.host.development;
+  return development.mode === 'source' && development.repoRoot !== undefined
+    ? resolveWakeVersion({ repoRoot: development.repoRoot })
+    : wakeVersion;
+}
+
+function sandboxWakeInvocation(root: CompositionRoot): readonly string[] {
+  return root.config.host.development.mode === 'source'
+    ? ['node', '/app/dist-next/src-next/main.js']
+    : ['wake'];
+}
+
+async function activeExecutionRunIds(root: CompositionRoot): Promise<readonly string[]> {
+  return (
+    await root.projections.list<{
+      readonly view: { readonly status: string; readonly runId: string } | null;
+    }>('execution')
+  )
+    .filter(({ value }) => value.view?.status === RunStatus.Started)
+    .map(({ value }) => String(value.view?.runId));
+}
+
+function createSandboxRuntimeApplications(root: CompositionRoot) {
+  const docker = createSandboxDocker(root);
+  const wakeInvocation = sandboxWakeInvocation(root);
   return {
     async hasDockerfile(): Promise<boolean> {
       try {
@@ -192,6 +268,42 @@ function createSandboxRuntimeApplications(root: CompositionRoot) {
     exec: (arguments_: readonly string[]) => docker.exec([...wakeInvocation, ...arguments_]),
   };
 }
+
+/**
+ * Builds a running self-update on the sandbox container onto a specific
+ * image tag: rebuild the image, swap the container onto it, and confirm the
+ * resident `wake start` process actually came back up. Reused for both the
+ * forward deploy and a same-shaped rollback to a previously-built tag.
+ */
+async function deploySandboxTag(
+  root: CompositionRoot,
+  docker: DockerCli,
+  tag: string,
+  image: string,
+) {
+  const port = createSandboxDockerPort(docker, sandboxDockerOptions(root, { image }));
+  await port.build();
+  await port.update();
+  const wakeInvocation = sandboxWakeInvocation(root);
+  await verifyResidentStart(
+    docker,
+    root.config.host.sandbox.containerName,
+    [...wakeInvocation, 'start', '--wake-root', '/wake'].join(' '),
+  );
+  await port.exec(['tick', '--wake-root', `/tmp/wake-self-update-healthcheck-${tag}`]);
+}
+
+async function rollbackSandboxTag(root: CompositionRoot, docker: DockerCli, image: string) {
+  const port = createSandboxDockerPort(docker, sandboxDockerOptions(root, { image }));
+  await port.update();
+  const wakeInvocation = sandboxWakeInvocation(root);
+  await verifyResidentStart(
+    docker,
+    root.config.host.sandbox.containerName,
+    [...wakeInvocation, 'start', '--wake-root', '/wake'].join(' '),
+  );
+}
+
 function createOperationalApplications(root: CompositionRoot) {
   return {
     init: async () => unsupportedOperationalCommand('init'),
@@ -214,35 +326,7 @@ function createOperationalApplications(root: CompositionRoot) {
       );
     },
     sandbox: async (arguments_: readonly string[]) =>
-      runSandbox(
-        arguments_,
-        createSandboxDockerPort(
-          createLoggedDockerCli(
-            {
-              execute: (arguments__, onChunk, options) =>
-                spawnDocker(arguments__, onChunk, root.paths.wakeRoot, options),
-            },
-            createProcessLogSink(
-              join(root.paths.wakeRoot, 'logs', 'sandbox.log'),
-              { write: (value) => process.stdout.write(value) },
-              { maxBytes: 10 * 1024 * 1024 },
-            ),
-          ),
-          {
-            wakeRoot: root.paths.wakeRoot,
-            containerHomeRoot: root.paths.containerHomeRoot,
-            image: root.config.host.sandbox.image,
-      development: root.config.host.development,
-            containerName: root.config.host.sandbox.containerName,
-      ...(root.config.surfaces.api.enabled ? { publishedPort: root.config.surfaces.api.port } : {}),
-            wakeMountPath: root.config.host.sandbox.wakeMountPath,
-            containerHomeMountPath: root.config.host.sandbox.containerHomeMountPath,
-            extraMounts: root.config.host.sandbox.extraMounts,
-            startEnabled: root.config.host.sandbox.start.enabled,
-            inspect: createDockerInspection(root.paths.wakeRoot),
-          },
-        ),
-      ),
+      runSandbox(arguments_, createSandboxDocker(root)),
     selfUpdate: async (arguments_: readonly string[]) => {
       if (root.config.host.development.mode !== 'source')
         throw new Error('wake self-update requires host.development.mode: source');
@@ -250,9 +334,28 @@ function createOperationalApplications(root: CompositionRoot) {
       if (repoRoot === undefined)
         throw new Error('wake self-update requires host.development.repoRoot');
       const tag = optionalOperationalOption(arguments_, '--tag');
+      const dockerCli = createDockerCliForRoot(root);
+      const imageRepository = root.config.host.sandbox.imageRepository;
+      const failureLog = createSelfUpdateFailureLog(root.paths.wakeRoot);
       const application = createSelfUpdateApplication({
         ledger: createUpdateLedger(root.paths.wakeRoot),
         source: createSourceUpdatePort({ repoRoot }),
+        rollout: {
+          async deploy(deployTag) {
+            await waitForActiveRuns({
+              activeRunIds: () => activeExecutionRunIds(root),
+              sleep: async (milliseconds) =>
+                new Promise<void>((resolve) => setTimeout(resolve, milliseconds)),
+            });
+            await deploySandboxTag(root, dockerCli, deployTag, `${imageRepository}:${deployTag}`);
+            // A later deploy succeeding after a prior rollback clears the stale warning.
+            await failureLog.clear();
+          },
+          async rollback(rollbackTag) {
+            await rollbackSandboxTag(root, dockerCli, `${imageRepository}:${rollbackTag}`);
+          },
+          recordFailure: (failedTag, error) => failureLog.record(failedTag, error),
+        },
       });
       const force = arguments_.includes('--force');
       if (arguments_.includes('--loop')) {
@@ -317,12 +420,17 @@ function spawnDocker(
   options?: { readonly interactive?: boolean },
 ): Promise<void> {
   return new Promise((resolve, reject) => {
-    const child = spawn('docker', [...arguments_], options?.interactive ? { cwd, stdio: 'inherit' } : { cwd });
+    const child = spawn(
+      'docker',
+      [...arguments_],
+      options?.interactive ? { cwd, stdio: 'inherit' } : { cwd },
+    );
     if (options?.interactive) {
       child.on('error', reject);
       child.on('close', (code) => {
         if (code === 0) resolve();
-        else reject(new Error('docker ' + arguments_.join(' ') + ' exited with code ' + String(code)));
+        else
+          reject(new Error('docker ' + arguments_.join(' ') + ' exited with code ' + String(code)));
       });
       return;
     }

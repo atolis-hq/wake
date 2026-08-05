@@ -21,10 +21,12 @@ export type AgentRunOutcome = 'DONE' | 'REJECTED' | 'BLOCKED' | 'FAILED';
 export interface AgentRunResponse {
   readonly outcome: AgentRunOutcome;
   readonly displayBody: string;
-  readonly artifacts?: readonly {
-    readonly kind: string;
-    readonly externalKey: { readonly adapter: string; readonly key: string };
-  }[] | undefined;
+  readonly artifacts?:
+    | readonly {
+        readonly kind: string;
+        readonly externalKey: { readonly adapter: string; readonly key: string };
+      }[]
+    | undefined;
   readonly metadata: Readonly<Record<string, string | number | boolean | null>>;
 }
 

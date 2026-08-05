@@ -14,19 +14,28 @@ export class FakeExecutionRunner implements Runner {
   ) {}
 
   async start(request: RunnerRequest, signal: AbortSignal): Promise<RunnerExecution> {
-    const scenario = request.context === undefined ? undefined : this.scenarios.resolve({
-      runner: request.context.runnerName,
-      action: request.context.action,
-      occurrence: request.context.activationOrdinal,
-    });
+    const scenario =
+      request.context === undefined
+        ? undefined
+        : this.scenarios.resolve({
+            runner: request.context.runnerName,
+            action: request.context.action,
+            occurrence: request.context.activationOrdinal,
+          });
     return {
-      result: waitFor(scenario?.delayMs ?? 0, signal).then(() => resultFor(this.name, scenario, request)),
+      result: waitFor(scenario?.delayMs ?? 0, signal).then(() =>
+        resultFor(this.name, scenario, request),
+      ),
       async cancel() {},
     };
   }
 }
 
-function resultFor(name: string, scenario: ResolvedFakeScenario | undefined, request: RunnerRequest) {
+function resultFor(
+  name: string,
+  scenario: ResolvedFakeScenario | undefined,
+  request: RunnerRequest,
+) {
   const status =
     scenario?.outcome ??
     (request.prompt.includes('[fake:failed]')

@@ -16,12 +16,14 @@ it('uses an empty resolver when fake-scenarios.yaml is absent', async () => {
   await expect(loadFakeScenarios(root)).resolves.toMatchObject({
     resolve: expect.any(Function),
   });
-  expect((await loadFakeScenarios(root)).resolve({
-    runner: 'fake',
-    workflow: 'default',
-    action: 'refine',
-    occurrence: 1,
-  })).toBeUndefined();
+  expect(
+    (await loadFakeScenarios(root)).resolve({
+      runner: 'fake',
+      workflow: 'default',
+      action: 'refine',
+      occurrence: 1,
+    }),
+  ).toBeUndefined();
 });
 
 it('names the optional file when scenario validation fails', async () => {

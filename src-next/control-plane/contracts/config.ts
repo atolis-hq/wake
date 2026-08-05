@@ -8,7 +8,7 @@ export interface ScheduleConfig {
 export interface ControlPlaneConfig {
   readonly maxDispatches: number;
   readonly schedules: readonly ScheduleConfig[];
-  readonly resident?: { readonly idleBackoffMs: number };
+  readonly resident?: { readonly idleBackoffMs: number; readonly maxIdleBackoffMs?: number };
 }
 
 import { z } from 'zod';
@@ -27,7 +27,10 @@ export const controlPlaneConfigSchema = z
     maxDispatches: z.number().int().positive().default(1),
     schedules: z.array(scheduleSchema).default([]),
     resident: z
-      .object({ idleBackoffMs: z.number().int().positive().default(1000) })
+      .object({
+        idleBackoffMs: z.number().int().positive().default(1000),
+        maxIdleBackoffMs: z.number().int().positive().optional(),
+      })
       .strict()
       .default({ idleBackoffMs: 1000 }),
   })

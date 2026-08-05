@@ -118,7 +118,7 @@ export function EventsFeed({ records }: { readonly records: readonly AuditEventR
     }
   }, [records, paused]);
   const ordered = useMemo(
-    () => [...visible].sort((left, right) => left.position - right.position),
+    () => [...visible].sort((left, right) => right.position - left.position),
     [visible],
   );
   const resume = () => {

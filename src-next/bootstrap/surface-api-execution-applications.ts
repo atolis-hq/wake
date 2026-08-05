@@ -41,7 +41,10 @@ export function createExecutionApplications(
         emptyAsOf: now(),
         provenance: stored,
       });
-      return { ...page, items: await Promise.all(page.items.map((item) => withWorkflowContext(root, item))) };
+      return {
+        ...page,
+        items: await Promise.all(page.items.map((item) => withWorkflowContext(root, item))),
+      };
     },
     async get(runId) {
       const stored = await root.projections.read<{ readonly view: RunView | null }>(

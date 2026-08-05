@@ -231,9 +231,9 @@ it('flows a tracked PR review from GitHub source polling through Activities acce
         ];
       },
       async listIssueComments() {
-      return [];
-    },
-    async listReviews() {
+        return [];
+      },
+      async listReviews() {
         return [
           {
             id: 101,
@@ -334,23 +334,52 @@ it('polls an issue /approved comment as a typed approval signal', async () => {
     }),
     {
       async listIssues() {
-        return [{ number: 8, title: 'Issue', body: null, state: 'open' as const, updated_at: '2026-08-03T00:00:00.000Z' }];
+        return [
+          {
+            number: 8,
+            title: 'Issue',
+            body: null,
+            state: 'open' as const,
+            updated_at: '2026-08-03T00:00:00.000Z',
+          },
+        ];
       },
       async listIssueComments() {
         return [
-          { id: 1, body: 'not an approval', created_at: '2026-08-03T00:00:00.000Z', updated_at: '2026-08-03T00:00:00.000Z' },
-          { id: 2, body: '/approved', created_at: '2026-08-03T00:01:00.000Z', updated_at: '2026-08-03T00:01:00.000Z', user: { login: 'maintainer', type: 'User' } },
+          {
+            id: 1,
+            body: 'not an approval',
+            created_at: '2026-08-03T00:00:00.000Z',
+            updated_at: '2026-08-03T00:00:00.000Z',
+          },
+          {
+            id: 2,
+            body: '/approved',
+            created_at: '2026-08-03T00:01:00.000Z',
+            updated_at: '2026-08-03T00:01:00.000Z',
+            user: { login: 'maintainer', type: 'User' },
+          },
         ];
       },
-      async listPullRequests() { return []; },
-      async listReviews() { return []; },
-      async listCheckRunsForRef() { return []; },
-      async getCombinedStatusForRef() { return []; },
+      async listPullRequests() {
+        return [];
+      },
+      async listReviews() {
+        return [];
+      },
+      async listCheckRunsForRef() {
+        return [];
+      },
+      async getCombinedStatusForRef() {
+        return [];
+      },
     },
   );
 
   const events = await source.poll(new AbortController().signal);
-  expect(events.filter((event) => event.eventType === GitHubEventType.CommentObserved)).toMatchObject([
+  expect(
+    events.filter((event) => event.eventType === GitHubEventType.CommentObserved),
+  ).toMatchObject([
     { payload: { reviewKind: 'issue', externalKey: 'org/repo#8', body: '/approved' } },
   ]);
 });
@@ -369,20 +398,32 @@ it('does not append a new work observation when only the GitHub revision and Wak
     {
       async listIssues() {
         poll += 1;
-        return [{
-          number: 8,
-          title: 'Issue',
-          body: null,
-          state: 'open' as const,
-          updated_at: poll === 1 ? '2026-08-03T00:00:00.000Z' : '2026-08-03T00:01:00.000Z',
-          labels: poll === 1 ? ['approval'] : ['approval', 'wake:status.awaiting-approval'],
-        }];
+        return [
+          {
+            number: 8,
+            title: 'Issue',
+            body: null,
+            state: 'open' as const,
+            updated_at: poll === 1 ? '2026-08-03T00:00:00.000Z' : '2026-08-03T00:01:00.000Z',
+            labels: poll === 1 ? ['approval'] : ['approval', 'wake:status.awaiting-approval'],
+          },
+        ];
       },
-      async listIssueComments() { return []; },
-      async listPullRequests() { return []; },
-      async listReviews() { return []; },
-      async listCheckRunsForRef() { return []; },
-      async getCombinedStatusForRef() { return []; },
+      async listIssueComments() {
+        return [];
+      },
+      async listPullRequests() {
+        return [];
+      },
+      async listReviews() {
+        return [];
+      },
+      async listCheckRunsForRef() {
+        return [];
+      },
+      async getCombinedStatusForRef() {
+        return [];
+      },
     },
   );
   const service = new PollService(journal, {
@@ -397,5 +438,7 @@ it('does not append a new work observation when only the GitHub revision and Wak
   await service.pollOnce(new AbortController().signal);
   await service.pollOnce(new AbortController().signal);
 
-  expect((await journal.readAll(0)).filter((event) => event.eventType === GitHubEventType.WorkObserved)).toHaveLength(1);
+  expect(
+    (await journal.readAll(0)).filter((event) => event.eventType === GitHubEventType.WorkObserved),
+  ).toHaveLength(1);
 });

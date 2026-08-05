@@ -41,6 +41,7 @@ const applications: ApiApplications = {
             : ('ready' as const),
         dwellSince: instant,
         runCount: 0,
+        totalDurationMs: 0,
       }));
       return {
         items,

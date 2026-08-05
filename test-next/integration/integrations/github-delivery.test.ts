@@ -81,7 +81,36 @@ describe('GitHub outbound delivery', () => {
   });
 
   it('translates an agent-run publication into a GitHub reply', () => {
-    expect(translateGitHubOutbound({ resourceId: resId('2'), kind: BuiltInResourceKind.Issue, externalKey: { adapter: BuiltInAdapterId.GitHub, key: 'o/r#3' }, capabilities: [] }, { ...mergeIntent, resourceId: resId('2'), kind: DeliveryIntentKind.AgentRunPublish, payload: { kind: DeliveryIntentKind.AgentRunPublish, report: { runId: 'run-1', startedAt: '2026-08-03T12:00:00.000Z', finishedAt: '2026-08-03T12:00:01.000Z', displayBody: 'terminal report', outcome: 'FAILED', metadata: {} } } })).toMatchObject({ issue_number: 3, action: 'reply', body: expect.stringContaining('terminal report') });
+    expect(
+      translateGitHubOutbound(
+        {
+          resourceId: resId('2'),
+          kind: BuiltInResourceKind.Issue,
+          externalKey: { adapter: BuiltInAdapterId.GitHub, key: 'o/r#3' },
+          capabilities: [],
+        },
+        {
+          ...mergeIntent,
+          resourceId: resId('2'),
+          kind: DeliveryIntentKind.AgentRunPublish,
+          payload: {
+            kind: DeliveryIntentKind.AgentRunPublish,
+            report: {
+              runId: 'run-1',
+              startedAt: '2026-08-03T12:00:00.000Z',
+              finishedAt: '2026-08-03T12:00:01.000Z',
+              displayBody: 'terminal report',
+              outcome: 'FAILED',
+              metadata: {},
+            },
+          },
+        },
+      ),
+    ).toMatchObject({
+      issue_number: 3,
+      action: 'reply',
+      body: expect.stringContaining('terminal report'),
+    });
   });
   it('reports a stable message for a non-Error provider rejection', async () => {
     const adapter = createGitHubDelivery(async () => {
@@ -98,16 +127,43 @@ describe('GitHub outbound delivery', () => {
 
 describe('GitHub agent-run comments', () => {
   it('formats a terminal agent result with durable Wake markers, outcome, and resume footer', async () => {
-    const { formatAgentRunComment } = await import('../../../src-next/integrations/github/application/agent-run-comment.js');
-    expect(formatAgentRunComment({
-      idempotencyKey: 'run-1', stage: 'implement', runner: 'codex', runnerPool: 'standard', cli: 'codex', model: 'gpt-5',
-      startedAt: '2026-08-03T12:00:00.000Z', finishedAt: '2026-08-03T12:01:30.000Z', runId: 'run-1',
-      displayBody: 'Implemented the requested change.', outcome: 'DONE', sessionId: 'session-1', workspacePath: '/workspace',
-      metadata: { inputTokens: 10, outputTokens: 20, costUsd: 0.03 }, awaitingApproval: true,
-    })).toContain('<!-- wake:delivery:run-1 -->');
-    const awaitingApproval = formatAgentRunComment({ idempotencyKey: 'run-1', displayBody: 'Plan complete.', outcome: 'DONE', metadata: {}, awaitingApproval: true });
+    const { formatAgentRunComment } =
+      await import('../../../src-next/integrations/github/application/agent-run-comment.js');
+    expect(
+      formatAgentRunComment({
+        idempotencyKey: 'run-1',
+        stage: 'implement',
+        runner: 'codex',
+        runnerPool: 'standard',
+        cli: 'codex',
+        model: 'gpt-5',
+        startedAt: '2026-08-03T12:00:00.000Z',
+        finishedAt: '2026-08-03T12:01:30.000Z',
+        runId: 'run-1',
+        displayBody: 'Implemented the requested change.',
+        outcome: 'DONE',
+        sessionId: 'session-1',
+        workspacePath: '/workspace',
+        metadata: { inputTokens: 10, outputTokens: 20, costUsd: 0.03 },
+        awaitingApproval: true,
+      }),
+    ).toContain('<!-- wake:delivery:run-1 -->');
+    const awaitingApproval = formatAgentRunComment({
+      idempotencyKey: 'run-1',
+      displayBody: 'Plan complete.',
+      outcome: 'DONE',
+      metadata: {},
+      awaitingApproval: true,
+    });
     expect(awaitingApproval).toContain('reply with /approved');
     expect(awaitingApproval).toContain('**Outcome:** ⏳ Awaiting approval');
-    expect(formatAgentRunComment({ idempotencyKey: 'run-1', displayBody: 'Blocked on approval.', outcome: 'BLOCKED', metadata: {} })).toContain('Blocked');
+    expect(
+      formatAgentRunComment({
+        idempotencyKey: 'run-1',
+        displayBody: 'Blocked on approval.',
+        outcome: 'BLOCKED',
+        metadata: {},
+      }),
+    ).toContain('Blocked');
   });
 });

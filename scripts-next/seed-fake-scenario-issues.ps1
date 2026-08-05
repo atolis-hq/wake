@@ -1,0 +1,180 @@
+<#
+.SYNOPSIS
+  Seeds GitHub issues in atolis-hq/wake-test with the labels and assignee
+  needed to exercise each fake-runner scenario configured in
+  fake-scenarios.yaml, via the intake rules in a wake-next config.yaml.
+
+.DESCRIPTION
+  Creates one issue per workflow selector so a resident `wake start`/`tick`
+  loop picks each of them up on its own workflow:
+    - wake-next-verify                                -> default workflow
+    - wake-next-verify, approval                       -> approval workflow
+    - wake-next-verify, fake-scenario-test             -> fake-scenario-test workflow
+    - wake-next-verify, dark-factory-test              -> dark-factory workflow
+
+  This script only creates issues (labels + assignee) — it does not run
+  Wake, poll for completion, or close anything afterwards.
+
+.PARAMETER Repo
+  GitHub "owner/repo" to create issues in. Defaults to atolis-hq/wake-test,
+  matching wake-next's config.yaml integrations.github.repositories.
+
+.PARAMETER Assignee
+  GitHub login to assign each issue to. Defaults to atolis-hq-agent,
+  matching wake-next's config.yaml requiredAssignees.
+
+.EXAMPLE
+  ./scripts-next/seed-fake-scenario-issues.ps1
+#>
+
+param(
+  [string]$Repo = 'atolis-hq/wake-test',
+  [string]$Assignee = 'atolis-hq-agent'
+)
+
+$ErrorActionPreference = 'Stop'
+
+function Test-GhCommand {
+  if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
+    throw 'gh CLI not found on PATH. Install https://cli.github.com/ and run `gh auth login` first.'
+  }
+}
+
+function Confirm-Label {
+  param([string]$Label)
+
+  try {
+    gh label create $Label --repo $Repo --color 'BFD4F2' --description 'Wake fake-scenario seed label' 2>$null | Out-Null
+  } catch {
+    # Label already exists or caller lacks permission; issue creation below fails clearly if unusable.
+  }
+}
+
+function New-ScenarioIssue {
+  param(
+    [string]$Name,
+    [string[]]$Labels,
+    [string]$Body
+  )
+
+  $title = "Wake fake-scenario seed: $Name ($(Get-Date -Format o))"
+  $labelArgs = $Labels | ForEach-Object { '--label', $_ }
+  $bodyFile = New-TemporaryFile
+  try {
+    Set-Content -Path $bodyFile -Value $Body -Encoding UTF8 -NoNewline
+
+    $url = gh issue create `
+      --repo $Repo `
+      --title $title `
+      --body-file $bodyFile `
+      --assignee $Assignee `
+      @labelArgs
+
+    if ($LASTEXITCODE -ne 0) {
+      throw "Failed to create issue for scenario '$Name'"
+    }
+  } finally {
+    Remove-Item -Path $bodyFile -Force -ErrorAction SilentlyContinue
+  }
+
+  [PSCustomObject]@{ Scenario = $Name; Labels = ($Labels -join ', '); Url = $url }
+}
+
+Test-GhCommand
+
+$scenarios = @(
+  @{
+    Name   = 'default'
+    Labels = @('wake-next-verify')
+    Body   = @'
+What should happen: this issue is picked up by the **default** workflow
+(refine -> implement, both on the `standard`/`light` runner pool, which
+resolves to the `fake` runner).
+
+Expected sequence:
+1. Wake stamps this issue into the `refine` stage and starts a run. The
+   board should show an active-run child card (refine running) for
+   about 20s (delayed by the `fake/refine` rule in fake-scenarios.yaml).
+2. That run finishes `DONE` and Wake advances the issue to `implement`,
+   again showing an active-run card (implement running) for about 20s
+   (the `implement-fake` rule).
+3. The run finishes `DONE` and the issue moves to `done` — no further
+   action expected, no human input required.
+'@
+  },
+  @{
+    Name   = 'approval'
+    Labels = @('wake-next-verify', 'approval')
+    Body   = @'
+What should happen: this issue is picked up by the **approval** workflow
+(refine -> implement, both gated on a human `approved` signal).
+
+Expected sequence:
+1. Wake runs `refine` (fake runner, ~20s active-run card), finishes
+   `DONE`, then stops and waits — the issue should show as blocked/awaiting
+   the `approved` signal rather than auto-advancing to `implement`.
+2. A human must post the approval signal (per the approval workflow's
+   `await` config) before Wake proceeds.
+3. Once approved, Wake runs `implement` (fake runner, ~20s active-run
+   card), finishes `DONE`, then again waits for a second `approved` signal
+   before moving the issue to `done`.
+'@
+  },
+  @{
+    Name   = 'fake-scenario-test'
+    Labels = @('wake-next-verify', 'fake-scenario-test')
+    Body   = @'
+What should happen: this issue is picked up by the **fake-scenario-test**
+workflow, which only has a `refine` stage with `retry: { max: 1 }` on
+failure.
+
+Expected sequence:
+1. First `refine` activation matches the `fail-first-refine` rule: after
+   ~20s it fails with outcome `FAILED` and `retrySafety: safe-to-retry`.
+2. Because the stage declares `retry: { max: 1 }`, Wake automatically
+   retries `refine` instead of blocking.
+3. Second `refine` activation matches `recover-on-retry`: after ~20s it
+   succeeds `DONE`, and the issue moves straight to `done` (this workflow
+   has no `implement` stage).
+4. You should see two consecutive ~20s active-run cards for `refine` on
+   this issue, with a visible failed-then-retried run history, and no
+   human intervention required.
+'@
+  },
+  @{
+    Name   = 'dark-factory-test'
+    Labels = @('wake-next-verify', 'dark-factory-test')
+    Body   = @'
+What should happen: this issue is picked up by the **dark-factory**
+workflow, which runs `refine`/`implement` on the `fake-worker` pool and
+spawns a `plan-review` watch (a separate `plan-review` workflow instance
+on the `fake-reviewer` pool) while `refine` is waiting.
+
+Expected sequence:
+1. Wake runs `refine` on `fake-worker` (~20s active-run card, outcome
+   `DONE` via the `refine-fake-worker` rule) and then waits for the
+   `plan-review` watch to complete before advancing.
+2. The `plan-review` watch spawns its own workflow instance: first
+   activation matches `fail-first-plan-review` (~20s, `FAILED`,
+   safe-to-retry), second activation matches
+   `recover-plan-review-on-retry` (~20s, `DONE`).
+3. Once the watch's child workflow reports `orchestration.child-completed`,
+   the parent issue advances to `implement` on `fake-worker` (~20s,
+   `DONE` via `implement-fake-worker`), then to `done`.
+4. Note: src-next does not yet model the plan-review watch as a nested
+   child-of the main run on the board — expect it to appear as an
+   independent run/card, not a watcher sub-card, until that UI work lands.
+'@
+  }
+)
+
+$allLabels = $scenarios | ForEach-Object { $_.Labels } | Select-Object -Unique
+foreach ($label in $allLabels) {
+  Confirm-Label -Label $label
+}
+
+$results = foreach ($scenario in $scenarios) {
+  New-ScenarioIssue -Name $scenario.Name -Labels $scenario.Labels -Body $scenario.Body
+}
+
+$results | Format-Table -AutoSize

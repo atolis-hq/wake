@@ -52,7 +52,7 @@ export function RunsList() {
     </>
   );
 }
-const runColumns = [
+export const runColumns = [
   {
     label: 'Run',
     render: (run: RunResponse) => (

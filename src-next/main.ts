@@ -2,12 +2,12 @@ import { spawn } from 'node:child_process';
 import { access } from 'node:fs/promises';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { loadConfig } from './bootstrap/config/load-config.js';
 import {
   createCompositionRoot,
   createSurfaceApplications,
   initialiseWakeRoot,
 } from './bootstrap/index.js';
-import { loadConfig } from './bootstrap/config/load-config.js';
 import {
   parseWakeCommand,
   runWakeCommand,
@@ -34,38 +34,55 @@ export async function main(
 ): Promise<void> {
   const suppliedArguments = argv.length === 0 ? ['tick'] : argv;
   const bypassSandbox = suppliedArguments.includes('--no-sandbox');
-  const command = parseWakeCommand(suppliedArguments.filter((argument) => argument !== '--no-sandbox'));
-  const wakeRoot =
-    'wakeRoot' in command && command.wakeRoot !== undefined
-      ? command.wakeRoot
-      : 'arguments' in command
-        ? (operationalWakeRoot(command.arguments) ?? process.cwd())
-        : process.cwd();
+  const command = parseWakeCommand(
+    suppliedArguments.filter((argument) => argument !== '--no-sandbox'),
+  );
+  const wakeRoot = resolveWakeRoot(command);
   if (command.kind === 'init') {
     const result = await (dependencies.initialise ?? initialiseWakeRoot)(wakeRoot);
     dependencies.output.write(`${JSON.stringify(result)}\n`);
     return;
   }
-  if (
-    isRuntimeCommand(command.kind) &&
-    !bypassSandbox &&
-    dependencies.sandboxRuntime !== undefined &&
-    (await dependencies.sandboxRuntime.hasDockerfile(wakeRoot))
-  ) {
-    await dependencies.sandboxRuntime.exec(wakeRoot, rewriteSandboxArguments(suppliedArguments));
-    return;
+  if (dependencies.sandboxRuntime !== undefined) {
+    const sandboxRuntime = dependencies.sandboxRuntime;
+    const ranInSandbox = await runInSandboxIfAvailable({
+      commandKind: command.kind,
+      bypassSandbox,
+      hasDockerfile: () => sandboxRuntime.hasDockerfile(wakeRoot),
+      exec: () => sandboxRuntime.exec(wakeRoot, rewriteSandboxArguments(suppliedArguments)),
+    });
+    if (ranInSandbox) return;
   }
   const applications = await dependencies.compose(wakeRoot);
-  if (
-    isRuntimeCommand(command.kind) &&
-    !bypassSandbox &&
-    applications.sandboxRuntime !== undefined &&
-    (await applications.sandboxRuntime.hasDockerfile())
-  ) {
-    await applications.sandboxRuntime.exec(rewriteSandboxArguments(suppliedArguments));
-    return;
+  if (applications.sandboxRuntime !== undefined) {
+    const sandboxRuntime = applications.sandboxRuntime;
+    const ranInSandbox = await runInSandboxIfAvailable({
+      commandKind: command.kind,
+      bypassSandbox,
+      hasDockerfile: () => sandboxRuntime.hasDockerfile(),
+      exec: () => sandboxRuntime.exec(rewriteSandboxArguments(suppliedArguments)),
+    });
+    if (ranInSandbox) return;
   }
   await runWakeCommand(command, applications, dependencies.output, dependencies.signal);
+}
+
+function resolveWakeRoot(command: Parameters<typeof runWakeCommand>[0]): string {
+  if ('wakeRoot' in command && command.wakeRoot !== undefined) return command.wakeRoot;
+  if ('arguments' in command) return operationalWakeRoot(command.arguments) ?? process.cwd();
+  return process.cwd();
+}
+
+async function runInSandboxIfAvailable(input: {
+  readonly commandKind: string;
+  readonly bypassSandbox: boolean;
+  readonly hasDockerfile: () => Promise<boolean>;
+  readonly exec: () => Promise<void>;
+}): Promise<boolean> {
+  if (input.bypassSandbox || !isRuntimeCommand(input.commandKind)) return false;
+  if (!(await input.hasDockerfile())) return false;
+  await input.exec();
+  return true;
 }
 
 function isRuntimeCommand(kind: string): boolean {
@@ -119,7 +136,13 @@ function productionSandboxRuntime(): SandboxRuntimeRouter {
         config.host.development.mode === 'source'
           ? ['node', '/app/dist-next/src-next/main.js']
           : ['wake'];
-      await runDocker(['exec', '-i', config.host.sandbox.containerName, ...invocation, ...arguments_]);
+      await runDocker([
+        'exec',
+        '-i',
+        config.host.sandbox.containerName,
+        ...invocation,
+        ...arguments_,
+      ]);
     },
   };
 }

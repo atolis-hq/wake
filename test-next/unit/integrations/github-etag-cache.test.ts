@@ -1,5 +1,8 @@
 import { expect, it } from 'vitest';
-import { createEtagCache, fetchPaginatedWithEtag } from '../../../src-next/integrations/github/infrastructure/etag-cache.js';
+import {
+  createEtagCache,
+  fetchPaginatedWithEtag,
+} from '../../../src-next/integrations/github/infrastructure/etag-cache.js';
 
 it('reuses a single-page GitHub list cache after a conditional 304 response', async () => {
   const cache = createEtagCache();
@@ -15,6 +18,7 @@ it('reuses a single-page GitHub list cache after a conditional 304 response', as
     cache,
     key: 'issues:org/repo',
     pages: (headers) => ({
+      // eslint-disable-next-line require-yield -- intentionally throws before any yield to exercise the 304 path
       async *[Symbol.asyncIterator]() {
         requestHeaders = headers;
         throw Object.assign(new Error('not modified'), { status: 304 });

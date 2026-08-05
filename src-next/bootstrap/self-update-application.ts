@@ -9,9 +9,22 @@ export interface SourceUpdatePort {
   healthy(): Promise<boolean>;
 }
 
+/**
+ * Optional Docker rollout alongside the source checkout — build+swap the
+ * sandbox container onto the new tag, roll it back on a failed deploy, and
+ * best-effort record the failure for the operator health screen. Absent for
+ * non-sandbox self-updates.
+ */
+export interface SelfUpdateRolloutPort {
+  deploy(tag: string): Promise<void>;
+  rollback(tag: string): Promise<void>;
+  recordFailure(tag: string, error: unknown): Promise<void>;
+}
+
 export function createSelfUpdateApplication(input: {
   readonly ledger: UpdateLedger;
   readonly source: SourceUpdatePort;
+  readonly rollout?: SelfUpdateRolloutPort;
 }) {
   return {
     async update(tag: string, force = false): Promise<boolean> {
@@ -21,17 +34,42 @@ export function createSelfUpdateApplication(input: {
       if (!(await input.source.isClean()))
         throw new Error('Self-update requires a clean source checkout');
       await input.ledger.begin(tag);
+      // A failed deploy surfaces as a failed health check (not a thrown
+      // update) so it goes through runSelfUpdate's existing rollback path,
+      // which only triggers on health() returning false.
+      let deployError: unknown;
       try {
         return await runSelfUpdate({
           tag,
           force: true,
           readLedger: input.ledger.read,
           writeLedger: input.ledger.write,
-          update: input.source.checkout,
-          health: input.source.healthy,
-          rollback: input.source.checkout,
+          update: async (nextTag) => {
+            await input.source.checkout(nextTag);
+            if (input.rollout === undefined) return;
+            try {
+              await input.rollout.deploy(nextTag);
+            } catch (error) {
+              deployError = error;
+            }
+          },
+          health: async () => {
+            if (deployError !== undefined) return false;
+            return input.source.healthy();
+          },
+          rollback: async (priorTag) => {
+            await input.source.checkout(priorTag);
+            await input.rollout?.rollback(priorTag);
+          },
         });
       } catch (error) {
+        if (input.rollout !== undefined) {
+          try {
+            await input.rollout.recordFailure(tag, deployError ?? error);
+          } catch {
+            // Best-effort: a failure-log write must never mask the original update failure.
+          }
+        }
         await input.ledger.recordBad(tag);
         throw error;
       }

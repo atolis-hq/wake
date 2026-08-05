@@ -3,8 +3,8 @@ import {
   createCodexRunner,
   createCommandRunner,
   createCursorRunner,
-  FakeExecutionRunner,
   emptyFakeScenarios,
+  FakeExecutionRunner,
   RunnerRegistry,
   type FakeScenarioResolver,
 } from '../execution/index.js';

@@ -1,4 +1,10 @@
-import { agentTokenUsage, ExecutionEventType, selectRunExecutionEvent } from '../execution/index.js';
+import { ActivityOutcomeKind } from '../activities/index.js';
+import {
+  agentTokenUsage,
+  ExecutionEventType,
+  RunStatus,
+  selectRunExecutionEvent,
+} from '../execution/index.js';
 import type { ProjectionDefinition } from '../kernel/index.js';
 import {
   OrchestrationEventType,
@@ -10,7 +16,7 @@ import { selectWorkEvent, WorkEventType } from '../work/index.js';
 const conditionShape = {
   ready: true,
   active: true,
-  'needs-human': true,
+  'needs-input': true,
   error: true,
   finished: true,
 };
@@ -18,7 +24,7 @@ const conditions = Object.keys(conditionShape);
 const BoardCondition = {
   Ready: conditions[0]!,
   Active: conditions[1]!,
-  NeedsHuman: conditions[2]!,
+  NeedsInput: conditions[2]!,
   Error: conditions[3]!,
   Finished: conditions[4]!,
 } as const;
@@ -43,8 +49,10 @@ interface StoredCard {
   readonly runCount: number;
   readonly activeRun?: StoredActiveRun;
   readonly lastRunAt?: string;
+  readonly lastRunOutcome?: string;
   readonly totalTokens: number;
   readonly totalCostUsd: number;
+  readonly totalDurationMs: number;
 }
 
 export interface BoardProjectionView {
@@ -95,6 +103,7 @@ function projectWork(
       runCount: 0,
       totalTokens: 0,
       totalCostUsd: 0,
+      totalDurationMs: 0,
     };
     return { ...view, cards: { ...view.cards, [id]: card } };
   }
@@ -141,9 +150,9 @@ function projectWorkflow(
       workflows: { ...view.workflows, [event.stream.id]: workId },
     };
   }
-  const workId = view.workflows[event.stream.id];
-  const card = workId === undefined ? undefined : view.cards[workId];
-  if (card === undefined || workId === undefined) return view;
+  const located = lookupWorkflowCard(view, event.stream.id);
+  if (located === undefined) return view;
+  const { workId, card } = located;
   if (event.eventType === OrchestrationEventType.StageEntered)
     return {
       ...view,
@@ -152,13 +161,10 @@ function projectWorkflow(
         [workId]: { ...card, stage: event.payload.stage, dwellSince: occurredAt },
       },
     };
-  if (
-    event.eventType === OrchestrationEventType.InstanceBlocked ||
-    event.eventType === OrchestrationEventType.ActivityWaiting
-  )
+  if (isBlockedOrWaiting(event.eventType))
     return {
       ...view,
-      cards: { ...view.cards, [workId]: { ...card, condition: BoardCondition.NeedsHuman } },
+      cards: { ...view.cards, [workId]: { ...card, condition: BoardCondition.NeedsInput } },
     };
   if (event.eventType === OrchestrationEventType.SignalWaitStarted)
     return {
@@ -167,8 +173,8 @@ function projectWorkflow(
         ...view.cards,
         [workId]: {
           ...card,
-          condition: BoardCondition.NeedsHuman,
-          ...(event.payload.signalKind === 'approved' ? { awaitingApproval: true } : {}),
+          condition: BoardCondition.NeedsInput,
+          ...awaitingApprovalField(event.payload.signalKind),
         },
       },
     };
@@ -185,12 +191,73 @@ function projectWorkflow(
   return view;
 }
 
+function lookupWorkflowCard(
+  view: BoardProjectionView,
+  streamId: string,
+): { readonly workId: string; readonly card: StoredCard } | undefined {
+  const workId = view.workflows[streamId];
+  if (workId === undefined) return undefined;
+  const card = view.cards[workId];
+  return card === undefined ? undefined : { workId, card };
+}
+
+function isBlockedOrWaiting(eventType: string): boolean {
+  return (
+    eventType === OrchestrationEventType.InstanceBlocked ||
+    eventType === OrchestrationEventType.ActivityWaiting
+  );
+}
+
+function awaitingApprovalField(signalKind: string) {
+  return signalKind === 'approved' ? { awaitingApproval: true } : {};
+}
+
 const runTerminalEventTypes = new Set<string>([
   ExecutionEventType.RunSucceeded,
   ExecutionEventType.RunFailed,
   ExecutionEventType.RunCancelled,
   ExecutionEventType.RunAmbiguous,
 ]);
+
+function terminalFinishedAt(
+  event: ReturnType<typeof selectRunExecutionEvent> & {},
+): string | undefined {
+  if (
+    event.eventType === ExecutionEventType.RunSucceeded ||
+    event.eventType === ExecutionEventType.RunFailed ||
+    event.eventType === ExecutionEventType.RunCancelled ||
+    event.eventType === ExecutionEventType.RunAmbiguous
+  )
+    return event.payload.finishedAt;
+  return undefined;
+}
+// RunSucceeded is a transport-level fact only: the agent can still report
+// a failed/blocked sentinel inside its outcome, so the board's condition
+// must follow outcome.kind, not just the event type, or a failed/blocked
+// run leaves the card silently stuck on the prior "active" condition.
+function terminalRunFields(
+  event: ReturnType<typeof selectRunExecutionEvent> & {},
+): Pick<StoredCard, 'lastRunOutcome' | 'condition'> | undefined {
+  if (event.eventType === ExecutionEventType.RunSucceeded) {
+    const kind = event.payload.outcome.kind;
+    return {
+      lastRunOutcome: kind,
+      condition:
+        kind === ActivityOutcomeKind.Failed
+          ? BoardCondition.Error
+          : kind === ActivityOutcomeKind.Blocked
+            ? BoardCondition.NeedsInput
+            : BoardCondition.Active,
+    };
+  }
+  if (event.eventType === ExecutionEventType.RunFailed)
+    return { lastRunOutcome: RunStatus.Failed, condition: BoardCondition.Error };
+  if (event.eventType === ExecutionEventType.RunCancelled)
+    return { lastRunOutcome: RunStatus.Cancelled, condition: BoardCondition.Error };
+  if (event.eventType === ExecutionEventType.RunAmbiguous)
+    return { lastRunOutcome: RunStatus.Ambiguous, condition: BoardCondition.Error };
+  return undefined;
+}
 
 function projectRun(
   view: BoardProjectionView,
@@ -203,8 +270,24 @@ function projectRun(
   const card = workId === undefined ? undefined : view.cards[workId];
   if (card === undefined || workId === undefined) return view;
 
-  if (runTerminalEventTypes.has(event.eventType))
-    return { ...view, cards: { ...view.cards, [workId]: withoutActiveRun(card) } };
+  if (runTerminalEventTypes.has(event.eventType)) {
+    const finishedAt = terminalFinishedAt(event);
+    const runDurationMs =
+      card.activeRun === undefined || finishedAt === undefined
+        ? 0
+        : Date.parse(finishedAt) - Date.parse(card.activeRun.startedAt);
+    return {
+      ...view,
+      cards: {
+        ...view.cards,
+        [workId]: {
+          ...withoutActiveRun(card),
+          ...terminalRunFields(event),
+          totalDurationMs: card.totalDurationMs + runDurationMs,
+        },
+      },
+    };
+  }
 
   if (event.eventType === ExecutionEventType.RunRunnerResultReported)
     return projectRunnerResult(view, workId, card, event.payload.agent?.metadata);
@@ -233,7 +316,7 @@ function projectRunStarted(
         condition: BoardCondition.Active,
         lastRunAt: event.payload.startedAt,
         activeRun: {
-          action: event.payload.activity,
+          action: card.stage ?? event.payload.activity,
           startedAt: event.payload.startedAt,
           ...(event.payload.runner?.name === undefined
             ? {}

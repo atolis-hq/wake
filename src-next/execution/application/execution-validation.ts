@@ -12,9 +12,13 @@ export async function acquireWorkspace(
 ): Promise<WorkspaceLease | undefined> {
   if (mode === WorkspaceMode.None) return undefined;
   if (provider === undefined) throw new Error('Workspace provider is required');
-  const repositoryResource = resources.find(
-    (resource) => resource.kind === BuiltInResourceKind.Repository,
-  ) ?? resources.find((resource) => resource.kind === BuiltInResourceKind.Issue || resource.kind === BuiltInResourceKind.PullRequest);
+  const repositoryResource =
+    resources.find((resource) => resource.kind === BuiltInResourceKind.Repository) ??
+    resources.find(
+      (resource) =>
+        resource.kind === BuiltInResourceKind.Issue ||
+        resource.kind === BuiltInResourceKind.PullRequest,
+    );
   if (repositoryResource === undefined) throw new Error('Repository Resource is required');
   return provider.acquire({ mode, workItemId, repositoryResource });
 }

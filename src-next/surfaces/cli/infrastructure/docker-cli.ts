@@ -19,7 +19,10 @@ export interface SandboxDockerInspection {
 export interface SandboxDockerOptions {
   readonly wakeRoot: string;
   readonly image: string;
-  readonly development?: { readonly mode?: 'source' | 'packaged' | undefined; readonly repoRoot?: string | undefined };
+  readonly development?: {
+    readonly mode?: 'source' | 'packaged' | undefined;
+    readonly repoRoot?: string | undefined;
+  };
   readonly containerName: string;
   readonly publishedPort?: number | undefined;
   readonly wakeMountPath?: string;
@@ -32,6 +35,7 @@ export interface SandboxDockerOptions {
   }[];
   readonly startEnabled?: boolean;
   readonly inspect?: SandboxDockerInspection;
+  readonly resolveBuildVersion?: () => Promise<string>;
 }
 
 export function createDockerCli(invoke: DockerCli['invoke']): DockerCli {
@@ -61,10 +65,14 @@ export interface DockerProcess {
 export function createLoggedDockerCli(process: DockerProcess, log: ProcessLogSink): DockerCli {
   return {
     async invoke(arguments_: readonly string[], options?: DockerInvokeOptions): Promise<void> {
-      await process.execute(arguments_, (chunk) => {
-        if (chunk.text.length === 0) return;
-        return log.write(scrubProcessLog(chunk.text));
-      }, options);
+      await process.execute(
+        arguments_,
+        (chunk) => {
+          if (chunk.text.length === 0) return;
+          return log.write(scrubProcessLog(chunk.text));
+        },
+        options,
+      );
     },
   };
 }
@@ -75,17 +83,31 @@ const dockerRunCommand = String.fromCharCode(114, 117, 110);
 export function createSandboxDockerPort(docker: DockerCli, options: SandboxDockerOptions) {
   const inspect = options.inspect ?? unknownSandboxInspection;
   return {
-    build: () => {
+    build: async () => {
       const source = options.development?.mode === 'source';
       const packaged = options.development?.mode === 'packaged';
       const context = source ? options.development?.repoRoot : options.wakeRoot;
-      if (context === undefined) throw new Error('source sandbox build requires host.development.repoRoot');
+      if (context === undefined)
+        throw new Error('source sandbox build requires host.development.repoRoot');
+      // Stamps the image with the resolved wake version so a running
+      // container can report/compare its own build — WAKE_VERSION for a
+      // packaged install, WAKE_BUILD_TAG for a source checkout, matching the
+      // Dockerfile templates' ARG names.
+      const buildVersion = await options.resolveBuildVersion?.();
+      const buildArgs =
+        buildVersion === undefined
+          ? []
+          : ['--build-arg', `${packaged ? 'WAKE_VERSION' : 'WAKE_BUILD_TAG'}=${buildVersion}`];
+      // Dockerfile always comes from the target Wake home, not the source
+      // checkout, so it stays user-customizable per home; only the build
+      // context (what COPY can see) varies with dev mode.
       return docker.invoke([
         'build',
         '-t',
         options.image,
         '-f',
-        `${source ? context : options.wakeRoot}/docker/${packaged ? 'Dockerfile.packaged' : 'Dockerfile'}`,
+        `${options.wakeRoot}/docker/${packaged ? 'Dockerfile.packaged' : 'Dockerfile'}`,
+        ...buildArgs,
         context,
       ]);
     },
@@ -118,16 +140,19 @@ export function createSandboxDockerPort(docker: DockerCli, options: SandboxDocke
     // does (WAKE_MAIN_JS presence), so this stays correct for both source and
     // packaged images without the host needing to know dev.mode.
     setup: () =>
-      docker.invoke([
-        'exec',
-        '-it',
-        '-w',
-        options.wakeMountPath ?? '/wake',
-        options.containerName,
-        'sh',
-        '-c',
-        'if [ -n "$WAKE_MAIN_JS" ]; then node "$WAKE_MAIN_JS" sandbox-setup; else wake sandbox-setup; fi',
-      ], { interactive: true }),
+      docker.invoke(
+        [
+          'exec',
+          '-it',
+          '-w',
+          options.wakeMountPath ?? '/wake',
+          options.containerName,
+          'sh',
+          '-c',
+          'if [ -n "$WAKE_MAIN_JS" ]; then node "$WAKE_MAIN_JS" sandbox-setup; else wake sandbox-setup; fi',
+        ],
+        { interactive: true },
+      ),
     resume: async ({ sessionId, cwd, cli }: SandboxResumeTarget) => {
       const resumeCommand = buildResumeCommandForCli(cli, sessionId);
       if (resumeCommand === null) throw new Error(`sandbox resume does not support CLI "${cli}"`);
@@ -149,6 +174,38 @@ export interface SandboxResumeTarget {
   readonly sessionId: string;
   readonly cwd: string;
   readonly cli: string;
+}
+
+/**
+ * Polls until the resident `wake start` process is alive inside the
+ * container (pid file + live pid + expected cmdline), retrying on any
+ * failure — `docker.invoke` already throws on a non-zero exit, so each
+ * attempt is just resolve-or-throw. Used after a self-update container swap
+ * to confirm the new image actually came up before trusting it.
+ */
+export async function verifyResidentStart(
+  docker: DockerCli,
+  containerName: string,
+  expectedCmdlineFragment: string,
+  options?: { readonly attempts?: number; readonly intervalMs?: number },
+): Promise<void> {
+  const attempts = options?.attempts ?? 15;
+  const intervalMs = options?.intervalMs ?? 1000;
+  const check = [
+    'pid="$(cat /wake/.wake/logs/start.pid)"',
+    'test -n "$pid"',
+    'kill -0 "$pid"',
+    `tr '\\0' ' ' < "/proc/$pid/cmdline" | grep -F ${shellQuote(expectedCmdlineFragment)} >/dev/null`,
+  ].join(' && ');
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      await docker.invoke(['exec', '-i', containerName, 'sh', '-lc', check]);
+      return;
+    } catch (error) {
+      if (attempt === attempts) throw error;
+      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    }
+  }
 }
 
 function shellQuote(value: string): string {
@@ -195,7 +252,9 @@ async function createContainer(docker: DockerCli, options: SandboxDockerOptions)
     `max-file=${containerLogMaxFile}`,
     '--name',
     options.containerName,
-    ...(options.publishedPort === undefined ? [] : ['-p', '127.0.0.1:' + String(options.publishedPort) + ':' + String(options.publishedPort)]),
+    ...(options.publishedPort === undefined
+      ? []
+      : ['-p', '127.0.0.1:' + String(options.publishedPort) + ':' + String(options.publishedPort)]),
     '-v',
     `${options.wakeRoot}:${wakeMountPath}`,
     ...containerHome,

@@ -15,7 +15,6 @@ import { FakeClock } from '../../e2e/support/world.js';
 import { workId } from '../../support/identities.js';
 import { createTestResourceServices } from '../../support/resource-lookup.js';
 
-/* eslint-disable max-lines-per-function */
 describe('ArtifactRegistrationReactor', () => {
   it('verifies a reported artifact before discovering and correlating it', async () => {
     const journal = new InMemoryEventJournal(new FakeClock());
@@ -174,5 +173,4 @@ function draft(
     stream: workflowInstanceStream(workflow),
     payload,
   });
-  /* eslint-enable max-lines-per-function */
 }

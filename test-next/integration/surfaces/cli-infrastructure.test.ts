@@ -6,7 +6,6 @@ import {
 } from '../../../src-next/surfaces/cli/infrastructure/docker-cli.js';
 import { scrubProcessLog } from '../../../src-next/surfaces/cli/infrastructure/process-log.js';
 
-// eslint-disable-next-line max-lines-per-function -- scenario coverage shares one injected CLI boundary.
 describe('CLI infrastructure', () => {
   it('delegates Docker invocation through its injected process boundary', async () => {
     const calls: string[][] = [];
@@ -195,9 +194,13 @@ describe('CLI infrastructure', () => {
   it('publishes an enabled UI port on loopback only', async () => {
     const calls: string[][] = [];
     const docker = createSandboxDockerPort(
-      createDockerCli(async (arguments_) => { calls.push([...arguments_]); }),
+      createDockerCli(async (arguments_) => {
+        calls.push([...arguments_]);
+      }),
       {
-        wakeRoot: '/wake-root', image: 'wake-sandbox', containerName: 'wake-sandbox',
+        wakeRoot: '/wake-root',
+        image: 'wake-sandbox',
+        containerName: 'wake-sandbox',
         publishedPort: 4317,
         inspect: { imageExists: async () => true, containerState: async () => null },
       },

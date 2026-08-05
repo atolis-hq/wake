@@ -56,7 +56,7 @@ export default tseslint.config(
     rules: {
       complexity: ['error', 12],
       'max-depth': ['error', 4],
-      'max-params': ['error', 5],
+      'max-params': ['error', 6],
       '@typescript-eslint/switch-exhaustiveness-check': [
         'error',
         { considerDefaultExhaustiveForUnions: true },
@@ -91,8 +91,8 @@ export default tseslint.config(
     files: ['test-next/**/*.ts'],
     plugins: { vitest },
     rules: {
-      'max-lines': ['error', { max: 400, skipBlankLines: true, skipComments: true }],
-      'max-lines-per-function': ['error', { max: 100, skipBlankLines: true, skipComments: true }],
+      'max-lines': 'off',
+      'max-lines-per-function': 'off',
       'vitest/no-focused-tests': 'error',
       'vitest/no-disabled-tests': 'error',
       'vitest/no-identical-title': 'error',

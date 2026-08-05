@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { RetrySafety } from '../../../activities/index.js';
 
 const outcomeSchema = z.enum(['DONE', 'REJECTED', 'BLOCKED', 'FAILED']);
 const matchSchema = z
@@ -25,7 +26,7 @@ const ruleSchema = z
     when: matchSchema,
     afterMs: delaySchema,
     outcome: outcomeSchema,
-    retrySafety: z.literal('safe-to-retry').optional(),
+    retrySafety: z.literal(RetrySafety.SafeToRetry).optional(),
     displayBody: z.string().trim().min(1).optional(),
   })
   .strict()
@@ -61,7 +62,7 @@ export interface ResolvedFakeScenario {
   readonly name: string;
   readonly delayMs: number;
   readonly outcome: z.output<typeof outcomeSchema>;
-  readonly retrySafety?: 'safe-to-retry';
+  readonly retrySafety?: typeof RetrySafety.SafeToRetry;
   readonly displayBody?: string;
 }
 
@@ -79,7 +80,8 @@ export function parseFakeScenarios(value: unknown): FakeScenarioResolver {
         (candidate) =>
           candidate.when.runner === input.runner &&
           candidate.when.action === input.action &&
-          (candidate.when.occurrence === undefined || candidate.when.occurrence === input.occurrence),
+          (candidate.when.occurrence === undefined ||
+            candidate.when.occurrence === input.occurrence),
       );
       if (rule === undefined) return undefined;
       return {
@@ -96,7 +98,10 @@ export function parseFakeScenarios(value: unknown): FakeScenarioResolver {
 function resolveDelay(afterMs: z.output<typeof delaySchema>, input: FakeScenarioMatch): number {
   if (typeof afterMs === 'number') return afterMs;
   const range = afterMs.max - afterMs.min + 1;
-  return afterMs.min + (hash(`${afterMs.seed}:${input.runner}:${input.action}:${input.occurrence}`) % range);
+  return (
+    afterMs.min +
+    (hash(`${afterMs.seed}:${input.runner}:${input.action}:${input.occurrence}`) % range)
+  );
 }
 
 function hash(value: string): number {

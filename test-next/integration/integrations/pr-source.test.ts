@@ -135,8 +135,12 @@ it('conditionally polls combined status for an unchanged head revision', async (
     .mockRejectedValueOnce(Object.assign(new Error('not modified'), { status: 304 }));
   const client = createGitHubClient('token');
 
-  await expect(client.getCombinedStatusForRef('owner', 'repo', 'head-a')).resolves.toEqual([{ id: 1 }]);
-  await expect(client.getCombinedStatusForRef('owner', 'repo', 'head-a')).resolves.toEqual([{ id: 1 }]);
+  await expect(client.getCombinedStatusForRef('owner', 'repo', 'head-a')).resolves.toEqual([
+    { id: 1 },
+  ]);
+  await expect(client.getCombinedStatusForRef('owner', 'repo', 'head-a')).resolves.toEqual([
+    { id: 1 },
+  ]);
 
   expect(octokit.getCombinedStatusForRef).toHaveBeenNthCalledWith(2, {
     owner: 'owner',
@@ -447,6 +451,7 @@ function pagesOf(
 
 function notModifiedPages() {
   return {
+    // eslint-disable-next-line require-yield -- intentionally throws before any yield to exercise the 304 path
     async *[Symbol.asyncIterator]() {
       throw Object.assign(new Error('not modified'), { status: 304 });
     },

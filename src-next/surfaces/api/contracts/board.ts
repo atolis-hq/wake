@@ -8,6 +8,7 @@ export interface BoardCardActiveRun {
   readonly action: string;
   readonly runnerName?: string;
   readonly startedAt: string;
+  readonly elapsedMs: number;
 }
 
 export interface BoardCardResponse {
@@ -22,8 +23,11 @@ export interface BoardCardResponse {
   readonly runCount: number;
   readonly activeRun?: BoardCardActiveRun;
   readonly lastRunAt?: string;
+  readonly lastRunAgeMs?: number;
+  readonly lastRunOutcome?: string;
   readonly totalTokens: number;
   readonly totalCostUsd: number;
+  readonly totalDurationMs: number;
   readonly externalRef?: string;
 }
 

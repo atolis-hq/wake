@@ -1,4 +1,4 @@
-import { ControlStreamKind } from '../control-plane/index.js';
+﻿import { ControlStreamKind } from '../control-plane/index.js';
 import type { EventEnvelope, EventJournal } from '../kernel/index.js';
 import type { WorkflowInstanceView } from '../orchestration/index.js';
 import type { ResourceView } from '../resources/index.js';
@@ -65,18 +65,20 @@ function createBoardApplications(root: CompositionRoot, now: () => string) {
       const items = await Promise.all(
         page.map(async (card) => {
           const externalRef = await primaryExternalRef(root, card.workItemId);
+          const { activeRun, ...withoutActiveRun } = card;
           return presentBoardCard({
-            ...card,
+            ...withoutActiveRun,
+            totalDurationMs: card.totalDurationMs ?? 0,
             ...(externalRef === undefined ? {} : { externalRef }),
             ...(card.lastRunAt === undefined
               ? {}
               : { lastRunAgeMs: elapsedSince(card.lastRunAt, nowMs) }),
-            ...(card.activeRun === undefined
+            ...(activeRun === undefined
               ? {}
               : {
                   activeRun: {
-                    ...card.activeRun,
-                    elapsedMs: elapsedSince(card.activeRun.startedAt, nowMs),
+                    ...activeRun,
+                    elapsedMs: elapsedSince(activeRun.startedAt, nowMs),
                   },
                 }),
           });
@@ -402,3 +404,5 @@ function analyticsWindow(analytics: AnalyticsProjectionView, collectedAt: string
     );
   return { range: { days, from, to: end }, values };
 }
+
+

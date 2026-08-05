@@ -16,7 +16,9 @@ export class GitWorkspaceProvider implements WorkspaceProvider {
   constructor(
     private readonly root: string,
     private readonly resolver: RepositoryCloneResolver,
-    private readonly git: GitRunner = async (arguments_) => { await exec('git', arguments_); },
+    private readonly git: GitRunner = async (arguments_) => {
+      await exec('git', arguments_);
+    },
   ) {}
 
   async acquire(request: WorkspaceRequest) {
@@ -31,7 +33,8 @@ export class GitWorkspaceProvider implements WorkspaceProvider {
       workspaceId: name,
       path,
       mode: request.mode,
-      release: async () => rm(path, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }),
+      release: async () =>
+        rm(path, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }),
     };
   }
 }

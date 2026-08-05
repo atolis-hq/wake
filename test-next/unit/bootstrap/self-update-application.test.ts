@@ -186,3 +186,103 @@ describe('self-update application: updateLatest with bad tag handling', () => {
     expect(calls).toEqual([]);
   });
 });
+
+function rollout(calls: string[], deployError?: Error) {
+  return {
+    deploy: async (tag: string) => {
+      calls.push(`deploy:${tag}`);
+      if (deployError !== undefined) throw deployError;
+    },
+    rollback: async (tag: string) => {
+      calls.push(`rollout-rollback:${tag}`);
+    },
+    recordFailure: async (tag: string, error: unknown) => {
+      calls.push(`record:${tag}:${error instanceof Error ? error.message : String(error)}`);
+    },
+  };
+}
+
+describe('self-update application: Docker rollout', () => {
+  it('deploys the sandbox container after a successful source checkout', async () => {
+    const calls: string[] = [];
+    const application = createSelfUpdateApplication({
+      ledger: ledger('v1', calls),
+      source: {
+        isClean: async () => true,
+        latestTag: async () => 'v2',
+        candidateTags: async () => ['v2'],
+        checkout: async (tag) => {
+          calls.push(`checkout:${tag}`);
+        },
+        healthy: async () => true,
+      },
+      rollout: rollout(calls),
+    });
+    await expect(application.update('v2')).resolves.toBe(true);
+    expect(calls).toEqual(['begin:v2', 'checkout:v2', 'deploy:v2', 'ledger:v2']);
+  });
+
+  it('rolls the container back and records the failure when a deploy fails', async () => {
+    const calls: string[] = [];
+    const deployError = new Error('docker build failed');
+    const application = createSelfUpdateApplication({
+      ledger: ledger('v1', calls),
+      source: {
+        isClean: async () => true,
+        latestTag: async () => 'v2',
+        candidateTags: async () => ['v2'],
+        checkout: async (tag) => {
+          calls.push(`checkout:${tag}`);
+        },
+        healthy: async () => true,
+      },
+      rollout: rollout(calls, deployError),
+    });
+    await expect(application.update('v2')).rejects.toThrow('health verification');
+    expect(calls).toEqual([
+      'begin:v2',
+      'checkout:v2',
+      'deploy:v2',
+      'checkout:v1',
+      'rollout-rollback:v1',
+      'record:v2:docker build failed',
+      'bad:v2',
+    ]);
+  });
+
+  it('never masks the original failure when recording itself fails', async () => {
+    const calls: string[] = [];
+    const application = createSelfUpdateApplication({
+      ledger: ledger('v1', calls),
+      source: {
+        isClean: async () => true,
+        latestTag: async () => 'v2',
+        candidateTags: async () => ['v2'],
+        checkout: async (tag) => {
+          calls.push(`checkout:${tag}`);
+        },
+        healthy: async () => false,
+      },
+      rollout: {
+        deploy: async (tag) => {
+          calls.push(`deploy:${tag}`);
+        },
+        rollback: async (tag) => {
+          calls.push(`rollout-rollback:${tag}`);
+        },
+        recordFailure: async () => {
+          throw new Error('disk write failed');
+        },
+      },
+    });
+    await expect(application.update('v2')).rejects.toThrow('health verification');
+    expect(calls).toEqual([
+      'begin:v2',
+      'checkout:v2',
+      'deploy:v2',
+      'checkout:v1',
+      'rollout-rollback:v1',
+      'bad:v2',
+    ]);
+  });
+});

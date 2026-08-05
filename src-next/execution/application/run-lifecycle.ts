@@ -114,10 +114,11 @@ export async function recordWorkspaceCleanupFailure(input: {
       occurredAt: dependencies.clock.now().toISOString(),
       correlationId: context.orchestrationGroupId,
       causationId: activation.activationId,
-      payload: { message: error instanceof Error ? error.message : String(error) },
+      payload: { message: error instanceof Error ? error.message : `${error}` },
     }),
   ]);
 }
+
 export async function recordRunSuccess(input: {
   readonly dependencies: RunLifecycleDependencies;
   readonly runId: ReturnType<typeof runId>;

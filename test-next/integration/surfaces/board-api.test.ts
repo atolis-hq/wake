@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import type { ApiApplications } from '../../../src-next/surfaces/api/routes/index.js';
 import { createApiDispatcher } from '../../../src-next/surfaces/api/routes/index.js';
 
@@ -43,6 +43,7 @@ function applications(): ApiApplications {
             runCount: 2,
             totalTokens: 0,
             totalCostUsd: 0,
+            totalDurationMs: 0,
           },
         ],
         conditionCounts: { active: 1 },
@@ -93,3 +94,4 @@ function applications(): ApiApplications {
     },
   };
 }
+

@@ -1,25 +1,31 @@
 import {
-  type ActivityExecutionContext,
   ActivityExecutionKind,
   type ActivityRegistry,
   type ResourceRequirement,
 } from '../../activities/index.js';
-import { type Clock, type EventJournal, type IdGenerator } from '../../kernel/index.js';
+import { type Clock, type EventJournal } from '../../kernel/index.js';
 import type { ResourceView } from '../../resources/index.js';
 import type { ExecutionActivation, ExecutionAttemptContext } from '../contracts/commands.js';
 import type { ExecutionConfig } from '../contracts/config.js';
-import { ExecutionEventType } from '../contracts/events.js';
 import { runId } from '../contracts/identifiers.js';
 import { ExecutionStreamKind } from '../contracts/streams.js';
 import type { RunView } from '../contracts/views.js';
 import { RunStatus, WorkspaceMode } from '../contracts/vocabulary.js';
-import type { WorkspaceLease, WorkspaceProvider } from '../contracts/workspace.js';
-import type { RunnerRegistry } from '../infrastructure/runners/registry.js';
-import { parseAgentRunnerResponse } from '../infrastructure/agent-runner-adapter.js';
+import type { WorkspaceLease } from '../contracts/workspace.js';
 import { claimActivation, releaseActivation } from './activation-claim.js';
 import { cancelActiveRuns } from './active-run-cancellation.js';
+import {
+  executeActivity,
+  type ExecutionDependencies,
+  type ExecutionRuntime,
+} from './execution-activity.js';
 import { acquireWorkspace, validateResourceRequirements } from './execution-validation.js';
-import { createRunEvent, recordRunFailure, recordRunSuccess, recordWorkspaceCleanupFailure, startRun } from './run-lifecycle.js';
+import {
+  recordRunFailure,
+  recordRunSuccess,
+  recordWorkspaceCleanupFailure,
+  startRun,
+} from './run-lifecycle.js';
 import {
   claimRun,
   confirmCancellation,
@@ -28,25 +34,7 @@ import {
 } from './run-liveness-service.js';
 import { RunRepository } from './run-repository.js';
 
-export interface ExecutionDependencies {
-  readonly clock: Clock;
-  readonly ids: IdGenerator;
-  readonly workspaces?: WorkspaceProvider;
-  readonly runners?: RunnerRegistry;
-  readonly reportRunnerQuota?: (input: {
-    readonly runnerName: string;
-    readonly message: string;
-  }) => Promise<void>;
-}
-
-interface ExecutionRuntime {
-  readonly activities: ActivityRegistry;
-  readonly config: ExecutionConfig;
-  readonly dependencies: ExecutionDependencies;
-  readonly repository: RunRepository;
-  readonly active: Map<string, AbortController>;
-  readonly journal: EventJournal;
-}
+export type { ExecutionDependencies };
 
 export function createExecutionService(
   journal: EventJournal,
@@ -243,84 +231,6 @@ function existingRun(runs: readonly RunView[], clock: Clock, owner: string) {
   )
     throw new Error(`Run ${active.runId} has an unexpired lease`);
   return active;
-}
-
-async function executeActivity(
-  runtime: ExecutionRuntime,
-  currentRunId: ReturnType<typeof runId>,
-  request: {
-    readonly activation: ExecutionActivation;
-    readonly context: ExecutionAttemptContext;
-    readonly occurredAt: string;
-    readonly runner: ActivityExecutionContext['runner'];
-    readonly runnerName?: string;
-  },
-) {
-  const { activation, context, occurredAt, runner } = request;
-  const controller = new AbortController();
-  runtime.active.set(currentRunId, controller);
-  const executionContext: ActivityExecutionContext = {
-    signal: controller.signal,
-    occurredAt,
-    ...(runner === undefined ? {} : { runner }),
-    ...(request.runnerName === undefined
-      ? {}
-      : {
-          runnerContext: {
-            runnerName: request.runnerName,
-            activationOrdinal: activation.ordinal,
-          },
-        }),
-    reportExternalExecution: async (reference) => {
-      const loaded = await runtime.repository.load(currentRunId);
-      await runtime.repository.append(currentRunId, loaded.sequence, [
-        createRunEvent({
-          runId: currentRunId,
-          eventId: `${currentRunId}:external:${reference.id}`,
-          eventType: ExecutionEventType.RunExternalExecutionReported,
-          occurredAt: runtime.dependencies.clock.now().toISOString(),
-          correlationId: context.orchestrationGroupId,
-          causationId: activation.activationId,
-          payload: reference,
-        }),
-      ]);
-    },
-    reportRunnerResult: async (result) => {
-      const loaded = await runtime.repository.load(currentRunId);
-      await runtime.repository.append(currentRunId, loaded.sequence, [
-        createRunEvent({
-          runId: currentRunId,
-          eventId: `${currentRunId}:runner-result`,
-          eventType: ExecutionEventType.RunRunnerResultReported,
-          occurredAt: runtime.dependencies.clock.now().toISOString(),
-          correlationId: context.orchestrationGroupId,
-          causationId: activation.activationId,
-          payload: {
-            transport: result.transport,
-            agent: parseAgentRunnerResponse(result),
-          },
-        }),
-      ]);
-      if (result.failure?.kind === 'provider-quota-exceeded' && request.runnerName !== undefined)
-        await runtime.dependencies.reportRunnerQuota?.({
-          runnerName: request.runnerName,
-          message: result.failure.message,
-        });
-    },
-  };
-  return runtime.activities.execute(
-    {
-      activationId: activation.activationId,
-      activity: activation.activity,
-      workItemId: context.workItemId,
-      workflowInstanceId: context.workflowInstanceId,
-      orchestrationGroupId: context.orchestrationGroupId,
-      causationId: activation.activationId,
-      input: activation.input,
-      resources: context.resources,
-    },
-    executionContext,
-  );
 }
 
 function validateResources(

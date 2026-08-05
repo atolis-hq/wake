@@ -71,7 +71,6 @@ function authorityInput(
   };
 }
 
-/* eslint-disable max-lines-per-function */
 describe('decidePullRequestAuthority', () => {
   it('uses the Pull Request denial vocabulary for closed authority', async () => {
     const source = await readFile(
@@ -177,7 +176,6 @@ describe('decidePullRequestAuthority', () => {
     });
   });
 });
-/* eslint-enable max-lines-per-function */
 
 function withoutAcceptedReview(
   pullRequest: PullRequestAuthorityInput['pullRequests'][number],

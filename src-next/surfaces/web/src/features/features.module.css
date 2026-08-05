@@ -1,4 +1,4 @@
-.board {
+﻿.board {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 0.6rem;
@@ -209,7 +209,8 @@
   text-decoration: none;
 }
 a.resourceCard:hover {
-  border-color: var(--border-strong);
+  border-color: var(--accent);
+  text-decoration: none;
 }
 .resourceCardTop {
   display: flex;
@@ -466,3 +467,4 @@ a.resourceCard:hover {
 .tabs button[aria-selected='true'] {
   font-weight: 700;
 }
+

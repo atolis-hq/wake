@@ -107,7 +107,9 @@ describe('ExecutionService', () => {
           workspaceId: 'workspace-1',
           path: '/workspace-1',
           mode: 'read-only',
-          async release() { throw new Error('EACCES: workspace still in use'); },
+          async release() {
+            throw new Error('EACCES: workspace still in use');
+          },
         };
       },
     });
@@ -115,7 +117,14 @@ describe('ExecutionService', () => {
       { ...activation, execution: { workspace: 'read-only' } },
       {
         ...context,
-        resources: [{ resourceId: resId('repo'), kind: BuiltInResourceKind.Repository, externalKey: { adapter: 'github', key: 'atolis-hq/wake' }, capabilities: [] }],
+        resources: [
+          {
+            resourceId: resId('repo'),
+            kind: BuiltInResourceKind.Repository,
+            externalKey: { adapter: 'github', key: 'atolis-hq/wake' },
+            capabilities: [],
+          },
+        ],
       },
     );
 

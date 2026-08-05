@@ -9,7 +9,7 @@ import styles from '../features.module.css';
 import { BoardCard } from './board-card.js';
 
 const collapseStorageKey = 'wake:board:collapsed-columns';
-const boardColumns = ['ready', 'active', 'needs-human', 'error', 'finished'] as const;
+const boardColumns = ['ready', 'active', 'needs-input', 'error', 'finished'] as const;
 
 function readCollapsed(): ReadonlySet<string> {
   try {

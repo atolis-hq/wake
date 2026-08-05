@@ -4,7 +4,7 @@
   "dependencies": ["kernel", "work", "resources", "activities", "orchestration"],
   "publicEntry": "./index.ts",
   "namespaces": {
-    "events": ["integration.", "delivery.", "status.", "reply."],
+    "events": ["integration.", "delivery.", "status.", "reply.", "agent-run."],
     "config": ["integrations"],
     "relations": ["integration."],
     "streams": ["integration", "delivery"]

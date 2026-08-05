@@ -72,6 +72,31 @@ describe('E2E-SURFACE-001 API metadata provenance', () => {
     expect(detail?.meta).toEqual({ asOf: retractedAt, position: 4 });
   });
 
+  it('pages events from the highest global position', async () => {
+    const { root, context } = await createWorld();
+    await root.work.create(
+      { workItemId: workId('earlier-event'), objective: 'Earlier event' },
+      context,
+    );
+    await root.work.create(
+      { workItemId: workId('later-event'), objective: 'Later event' },
+      {
+        ...context,
+        commandId: 'surface-event-later',
+        correlationId: correlationId('surface-event-later'),
+      },
+    );
+    const events = createSurfaceApplications(root, {
+      now: () => '2026-07-31T11:00:00.000Z',
+    }).api.events;
+
+    const first = await events.list({ limit: 1 });
+    const second = await events.list({ limit: 1, cursor: { position: first.nextPosition! } });
+
+    expect(first.items.map((event) => event.position)).toEqual([2]);
+    expect(first.nextPosition).toBe(2);
+    expect(second.items.map((event) => event.position)).toEqual([1]);
+  });
   it('timestamps collection totals and empty filters from the newest contributing fact', async () => {
     const { root, context } = await createWorld();
     await root.work.create({ workItemId: workId('earlier'), objective: 'Earlier work' }, context);

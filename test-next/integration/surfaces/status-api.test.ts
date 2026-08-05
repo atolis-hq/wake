@@ -5,7 +5,7 @@ it('keeps status condition vocabulary closed and degrades unavailable facts expl
   expect(BoardCondition).toEqual({
     Ready: 'ready',
     Active: 'active',
-    NeedsHuman: 'needs-human',
+    NeedsInput: 'needs-input',
     Error: 'error',
     Finished: 'finished',
   });

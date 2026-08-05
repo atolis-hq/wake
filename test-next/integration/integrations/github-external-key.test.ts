@@ -39,9 +39,8 @@ describe('GitHub external-key grammar', () => {
 });
 
 it('observes only an exact issue /approved command', async () => {
-  const { issueCommentObservation } = await import(
-    '../../../src-next/integrations/github/infrastructure/issue-source.js'
-  );
+  const { issueCommentObservation } =
+    await import('../../../src-next/integrations/github/infrastructure/issue-source.js');
   const base = {
     repository: 'acme/widgets',
     issue: { number: 42 },
@@ -63,5 +62,7 @@ it('observes only an exact issue /approved command', async () => {
       actor: { id: 'maintainer', kind: 'human' },
     },
   });
-  expect(issueCommentObservation({ ...base, comment: { ...base.comment, body: 'looks good' } })).toBeNull();
+  expect(
+    issueCommentObservation({ ...base, comment: { ...base.comment, body: 'looks good' } }),
+  ).toBeNull();
 });

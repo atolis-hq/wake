@@ -145,6 +145,7 @@ function client(
                   runCount: 0,
                   totalTokens: 0,
                   totalCostUsd: 0,
+                  totalDurationMs: 0,
                 }))
               : [],
             conditionCounts: {},

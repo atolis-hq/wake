@@ -1,5 +1,6 @@
 import type {
   CheckpointStore,
+  EventEnvelope,
   EventJournal,
   ProjectionDefinition,
   ProjectionStore,
@@ -13,9 +14,16 @@ export class ProjectionRunner {
     private readonly registered: readonly ProjectionDefinition[] = [],
   ) {}
 
+  // One shared journal read for every registered definition, not one per
+  // definition: readAll ultimately re-derives its content-fingerprint via
+  // readdir/stat on every call, so fanning that out per-definition costs a
+  // full filesystem probe per definition on every tick even when nothing
+  // changed. Fetching once and slicing per-checkpoint in memory keeps the
+  // same polling cadence at a fraction of the syscall cost.
   async runRegisteredOnce(limit = 100): Promise<number> {
+    const allEvents = await this.journal.readAll(0);
     const counts = await Promise.all(
-      this.registered.map((definition) => this.runOnce(definition, limit)),
+      this.registered.map((definition) => this.applyFrom(definition, allEvents, limit)),
     );
     return counts.reduce((total, count) => total + count, 0);
   }
@@ -23,6 +31,25 @@ export class ProjectionRunner {
   async runOnce<Value>(definition: ProjectionDefinition<Value>, limit = 100): Promise<number> {
     const consumer = `projection:${definition.name}`;
     const events = await this.journal.readAll(await this.checkpoints.load(consumer), limit);
+    return this.apply(definition, consumer, events);
+  }
+
+  private async applyFrom<Value>(
+    definition: ProjectionDefinition<Value>,
+    allEvents: readonly EventEnvelope[],
+    limit: number,
+  ): Promise<number> {
+    const consumer = `projection:${definition.name}`;
+    const checkpoint = await this.checkpoints.load(consumer);
+    const events = allEvents.filter((event) => event.globalPosition > checkpoint).slice(0, limit);
+    return this.apply(definition, consumer, events);
+  }
+
+  private async apply<Value>(
+    definition: ProjectionDefinition<Value>,
+    consumer: string,
+    events: readonly EventEnvelope[],
+  ): Promise<number> {
     for (const event of events) {
       const selected = definition.select(event);
       if (selected !== null) {

@@ -83,6 +83,15 @@ export class FileEventJournal implements EventJournal {
     return (await this.scan()).filter((event) => event.globalPosition > after).slice(0, limit);
   }
 
+  async readLatest(beforeGlobalPosition?: number, limit = Number.POSITIVE_INFINITY) {
+    const events = await this.scan();
+    const before = beforeGlobalPosition ?? events.length + 1;
+    return events
+      .slice(0, before - 1)
+      .slice(-limit)
+      .reverse();
+  }
+
   private async scan(): Promise<EventEnvelope[]> {
     const directory = join(this.root, 'events');
     let files: string[];

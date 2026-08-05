@@ -15,7 +15,7 @@ export const RunResponseField = { Active: Object.keys(runResponseShape)[0]! } as
 const boardConditionShape = {
   ready: true,
   active: true,
-  'needs-human': true,
+  'needs-input': true,
   error: true,
   finished: true,
 };
@@ -24,7 +24,7 @@ const boardConditions = Object.keys(boardConditionShape);
 export const BoardConditionValue = {
   Ready: boardConditions[0]!,
   Active: boardConditions[1]!,
-  NeedsHuman: boardConditions[2]!,
+  NeedsInput: boardConditions[2]!,
   Error: boardConditions[3]!,
   Finished: boardConditions[4]!,
 } as const;

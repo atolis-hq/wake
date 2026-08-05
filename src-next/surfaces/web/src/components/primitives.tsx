@@ -41,12 +41,14 @@ export function Button({
 export function StatusBadge({
   children,
   tone = 'neutral',
+  title,
 }: {
   readonly children: ReactNode;
   readonly tone?: 'neutral' | 'good' | 'warning' | 'bad';
+  readonly title?: string;
 }) {
   return (
-    <span className={`${styles.badge} ${tone === 'neutral' ? '' : styles[tone]!}`}>
+    <span className={`${styles.badge} ${tone === 'neutral' ? '' : styles[tone]!}`} title={title}>
       <span>{children}</span>
     </span>
   );

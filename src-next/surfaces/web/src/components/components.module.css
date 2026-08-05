@@ -113,6 +113,12 @@
   height: 0.55rem;
   border-radius: 50%;
   background: currentColor;
+  flex: 0 0 auto;
+}
+.badge > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
 }
 .good {
   color: var(--good);
@@ -257,7 +263,9 @@
   font-size: 0.75rem;
 }
 .chip {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
   background: var(--border);
   color: var(--ink);
   border-radius: var(--radius-sm);

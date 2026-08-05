@@ -48,7 +48,9 @@ describe('wake surface CLI', () => {
         ...fixtureApplications(),
         sandboxRuntime: {
           hasDockerfile: async () => true,
-          exec: async (arguments_) => { calls.push([...arguments_]); },
+          exec: async (arguments_) => {
+            calls.push([...arguments_]);
+          },
         },
       }),
       output: { write: () => undefined },
@@ -60,10 +62,17 @@ describe('wake surface CLI', () => {
   it('delegates runtime commands before composing host integrations', async () => {
     const calls: string[] = [];
     await main(['tick', '--wake-root', 'C:\\wake-home'], {
-      compose: async () => { throw new Error('host integrations must not compose'); },
+      compose: async () => {
+        throw new Error('host integrations must not compose');
+      },
       sandboxRuntime: {
-        hasDockerfile: async (wakeRoot) => { calls.push(wakeRoot); return true; },
-        exec: async (_wakeRoot, arguments_) => { calls.push(arguments_.join(' ')); },
+        hasDockerfile: async (wakeRoot) => {
+          calls.push(wakeRoot);
+          return true;
+        },
+        exec: async (_wakeRoot, arguments_) => {
+          calls.push(arguments_.join(' '));
+        },
       },
       output: { write: () => undefined },
       signal: new AbortController().signal,
@@ -78,7 +87,9 @@ describe('wake surface CLI', () => {
         ...fixtureApplications(calls),
         sandboxRuntime: {
           hasDockerfile: async () => true,
-          exec: async () => { calls.push('sandbox'); },
+          exec: async () => {
+            calls.push('sandbox');
+          },
         },
       }),
       output: { write: () => undefined },

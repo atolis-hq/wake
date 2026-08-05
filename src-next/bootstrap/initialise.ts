@@ -291,35 +291,105 @@ again (or consult the repository's own docs) if something here doesn't
 cover their situation.
 `;
 
-// No ENTRYPOINT: the target CLI does not yet compose a boot command for
-// docker-cli.ts's WAKE_START_ENABLED contract (createSandboxDockerPort in
-// surfaces/cli/infrastructure/docker-cli.ts) to invoke, so wiring container
-// startup is left to whoever finishes that composition.
+// Mirrors this checkout's own docker/Dockerfile and docker/Dockerfile.packaged
+// verbatim (see sync check in test-next, if any) so a freshly-initialised
+// source-mode Wake home builds the same image this repo builds for itself.
 const dockerfile = `# syntax=docker/dockerfile:1
 FROM node:24-bookworm-slim
 
-# Git/SSH support repository work. The GitHub CLI owns the sandbox's GitHub
-# session; Wake resolves it through \`gh auth token\` without persisting a token.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \\
     --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \\
   apt-get update \\
   && apt-get install -y --no-install-recommends git openssh-client ca-certificates curl gnupg \\
+  && mkdir -p /etc/apt/keyrings \\
   && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \\
-       -o /usr/share/keyrings/githubcli-archive-keyring.gpg \\
-  && chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \\
-  && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \\
-       > /etc/apt/sources.list.d/github-cli.list \\
+    | gpg --dearmor -o /etc/apt/keyrings/githubcli-archive-keyring.gpg \\
+  && chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \\
+  && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \\
+    > /etc/apt/sources.list.d/github-cli.list \\
+  && curl -fsSL https://ngrok-agent.s3.amazonaws.com/ngrok.asc \\
+    | gpg --dearmor -o /etc/apt/keyrings/ngrok-archive-keyring.gpg \\
+  && chmod go+r /etc/apt/keyrings/ngrok-archive-keyring.gpg \\
+  && echo "deb [signed-by=/etc/apt/keyrings/ngrok-archive-keyring.gpg] https://ngrok-agent.s3.amazonaws.com buster main" \\
+    > /etc/apt/sources.list.d/ngrok.list \\
   && apt-get update \\
-  && apt-get install -y --no-install-recommends gh
+  && apt-get install -y --no-install-recommends gh ngrok
 
-# execution.agentRunners entries of kind claude-cli / codex-cli / cursor-cli
-# invoke these binaries by name (see config.yaml).
 RUN --mount=type=cache,target=/root/.npm \\
   npm install -g @anthropic-ai/claude-code @openai/codex
 
 RUN useradd --create-home --shell /bin/bash wake \\
-  && mkdir -p /home/wake/.codex-runtime /home/wake/.cursor \\
-  && chown -R wake:wake /home/wake/.codex-runtime /home/wake/.cursor
+  && mkdir -p /home/wake/.codex-runtime \\
+  && mkdir -p /home/wake/.cursor \\
+  && chown -R wake:wake /home/wake/.codex-runtime \\
+  && chown -R wake:wake /home/wake/.cursor
+
+ENV CODEX_HOME=/home/wake/.codex-runtime
+ENV PATH=/home/wake/.local/bin:$PATH
+
+# Bump this date to force a fresh cursor.com/install instead of an indefinitely cached one.
+ARG CURSOR_CACHE_BUST=2026-07-26
+RUN echo "cursor cache bust: \${CURSOR_CACHE_BUST}" \\
+  && curl https://cursor.com/install -fsS | HOME=/home/wake bash \\
+  && printf '#!/bin/bash\\n[ "$1" = "agent" ] && shift\\nexec ~/.local/bin/agent "$@"\\n' \\
+     > /home/wake/.local/bin/cursor \\
+  && chmod +x /home/wake/.local/bin/cursor \\
+  && chown -R wake:wake /home/wake/.local
+
+WORKDIR /app
+COPY package*.json ./
+COPY src-next/surfaces/web/package.json src-next/surfaces/web/package.json
+RUN --mount=type=cache,target=/root/.npm \\
+  if [ -f package-lock.json ]; then npm ci --include=dev; else npm install; fi
+
+COPY . .
+ARG WAKE_BUILD_TAG
+RUN WAKE_BUILD_TAG="$WAKE_BUILD_TAG" npm run build:next
+
+USER wake
+WORKDIR /home/wake
+
+EXPOSE 4317
+
+# Baked at build time so wake sandbox-entrypoint (and anything it spawns) can
+# find the compiled CLI without hardcoding /app in multiple places. Docker's
+# exec-form ENTRYPOINT below does not expand env vars, so it stays literal —
+# that's fine since it's the very first thing that runs.
+ENV WAKE_MAIN_JS=/app/dist-next/src-next/main.js
+
+ENTRYPOINT ["sh", "-c", "if [ \\"$WAKE_START_ENABLED\\" = \\"true\\" ]; then exec node /app/dist-next/src-next/main.js start --wake-root /wake --no-sandbox; else exec sleep infinity; fi"]
+`;
+
+const packagedDockerfile = `# syntax=docker/dockerfile:1
+FROM node:24-bookworm-slim
+
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \\
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \\
+  apt-get update \\
+  && apt-get install -y --no-install-recommends git openssh-client ca-certificates curl gnupg \\
+  && mkdir -p /etc/apt/keyrings \\
+  && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \\
+    | gpg --dearmor -o /etc/apt/keyrings/githubcli-archive-keyring.gpg \\
+  && chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \\
+  && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \\
+    > /etc/apt/sources.list.d/github-cli.list \\
+  && curl -fsSL https://ngrok-agent.s3.amazonaws.com/ngrok.asc \\
+    | gpg --dearmor -o /etc/apt/keyrings/ngrok-archive-keyring.gpg \\
+  && chmod go+r /etc/apt/keyrings/ngrok-archive-keyring.gpg \\
+  && echo "deb [signed-by=/etc/apt/keyrings/ngrok-archive-keyring.gpg] https://ngrok-agent.s3.amazonaws.com buster main" \\
+    > /etc/apt/sources.list.d/ngrok.list \\
+  && apt-get update \\
+  && apt-get install -y --no-install-recommends gh ngrok
+
+ARG WAKE_VERSION=0.1.0
+RUN --mount=type=cache,target=/root/.npm \\
+  npm install -g @anthropic-ai/claude-code @openai/codex "@atolis-hq/wake@\${WAKE_VERSION}"
+
+RUN useradd --create-home --shell /bin/bash wake \\
+  && mkdir -p /home/wake/.codex-runtime \\
+  && mkdir -p /home/wake/.cursor \\
+  && chown -R wake:wake /home/wake/.codex-runtime \\
+  && chown -R wake:wake /home/wake/.cursor
 
 ENV CODEX_HOME=/home/wake/.codex-runtime
 ENV PATH=/home/wake/.local/bin:$PATH
@@ -330,37 +400,19 @@ RUN curl https://cursor.com/install -fsS | HOME=/home/wake bash \\
   && chmod +x /home/wake/.local/bin/cursor \\
   && chown -R wake:wake /home/wake/.local
 
-WORKDIR /app
-COPY package*.json ./
-COPY src-next/surfaces/web/package.json src-next/surfaces/web/package.json
-RUN --mount=type=cache,target=/root/.npm \
-  if [ -f package-lock.json ]; then npm ci --include=dev; else npm install; fi
-COPY . .
-ARG WAKE_BUILD_TAG
-RUN WAKE_BUILD_TAG="$WAKE_BUILD_TAG" npm run build:next
-
 USER wake
 WORKDIR /home/wake
-ENV WAKE_MAIN_JS=/app/dist-next/src-next/main.js
-ENTRYPOINT ["sh", "-c", "if [ \"$WAKE_START_ENABLED\" = \"true\" ]; then exec node /app/dist-next/src-next/main.js start --wake-root /wake --no-sandbox; else exec sleep infinity; fi"]
-`;
 
-const packagedDockerfile = `# syntax=docker/dockerfile:1
-FROM node:24-bookworm-slim
-RUN apt-get update && apt-get install -y --no-install-recommends git openssh-client ca-certificates curl gnupg \\
-  && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | gpg --dearmor -o /usr/share/keyrings/githubcli-archive-keyring.gpg \\
-  && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list \\
-  && apt-get update && apt-get install -y --no-install-recommends gh
-ARG WAKE_VERSION=0.1.0
-RUN npm install -g @anthropic-ai/claude-code @openai/codex "@atolis-hq/wake@\${WAKE_VERSION}"
-RUN useradd --create-home --shell /bin/bash wake && mkdir -p /home/wake/.codex-runtime /home/wake/.cursor && chown -R wake:wake /home/wake
-ENV CODEX_HOME=/home/wake/.codex-runtime
-ENV PATH=/home/wake/.local/bin:$PATH
-RUN curl https://cursor.com/install -fsS | HOME=/home/wake bash && printf '#!/bin/bash\\n[ "$1" = "agent" ] && shift\\nexec ~/.local/bin/agent "$@"\\n' > /home/wake/.local/bin/cursor && chmod +x /home/wake/.local/bin/cursor && chown -R wake:wake /home/wake/.local
-USER wake
-WORKDIR /home/wake
+EXPOSE 4317
+
+# No WAKE_MAIN_JS here: there is no /app in a packaged-mode image, and its
+# absence is the signal (see resolveWakeInvocation in
+# sandbox-entrypoint-command.ts) that the CLI should be invoked via the bare
+# \`wake\` binary that \`npm install -g\` puts on PATH, rather than a hardcoded
+# npm global lib path that varies by npm/OS setup.
 ENTRYPOINT ["wake", "sandbox-entrypoint"]
 `;
+
 /** Creates an immediately-valid, human-readable target Wake root. */
 export async function initialiseWakeRoot(wakeRoot: string): Promise<{ readonly wakeRoot: string }> {
   const containerName = sanitizeContainerName(basename(wakeRoot));

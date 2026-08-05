@@ -15,7 +15,6 @@ import {
 import {} from '../../../src-next/work/index.js';
 import { workId } from '../../support/identities.js';
 
-// eslint-disable-next-line max-lines-per-function
 describe('agent results', () => {
   it.each([
     ['DONE', 'done'],

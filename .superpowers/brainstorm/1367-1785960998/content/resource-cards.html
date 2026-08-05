@@ -1,0 +1,78 @@
+<h2>Resource card layout</h2>
+<p class="subtitle">Both show a GitHub issue resource with hover state. Click the one that feels right.</p>
+
+<style>
+  .rc-wrap { display:flex; flex-direction:column; gap:12px; max-width:640px; }
+  .rc-card { border:1px solid var(--border,#333); border-radius:10px; padding:12px 14px; display:flex; align-items:center; gap:12px; cursor:pointer; transition:all .15s ease; text-decoration:none; color:inherit; background:var(--card-bg,rgba(255,255,255,0.02)); }
+  .rc-card:hover { transform:translateY(-1px); box-shadow:0 4px 14px rgba(0,0,0,0.18); border-color:#6e7681; }
+  .rc-icon { flex:0 0 auto; width:28px; height:28px; display:flex; align-items:center; justify-content:center; }
+  .rc-body { flex:1 1 auto; min-width:0; }
+  .rc-title-row { display:flex; align-items:baseline; gap:6px; }
+  .rc-num { color:#8b949e; font-size:13px; }
+  .rc-title { font-weight:600; font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .rc-meta { margin-top:4px; display:flex; gap:6px; flex-wrap:wrap; }
+  .rc-chip { font-size:11px; padding:2px 8px; border-radius:999px; background:rgba(110,118,129,0.2); color:#8b949e; }
+  .rc-ext { flex:0 0 auto; opacity:0.5; }
+  .rc-card:hover .rc-ext { opacity:1; }
+
+  .rc-card-b { flex-direction:column; align-items:stretch; gap:8px; }
+  .rc-top-row { display:flex; align-items:center; gap:10px; }
+  .rc-sub { color:#8b949e; font-size:12px; margin-top:2px; }
+</style>
+
+<div class="options" data-multiselect="false">
+<div class="option" data-choice="a" onclick="toggleSelect(this)" style="flex-direction:column;align-items:stretch;">
+  <div class="letter">A</div>
+  <div class="content" style="width:100%">
+    <h3>Compact single-line row</h3>
+    <div class="rc-wrap">
+      <div class="rc-card">
+        <div class="rc-icon">
+          <svg viewBox="0 0 16 16" width="20" height="20" fill="#8b949e"><path d="M8 0a8 8 0 0 0-2.53 15.59c.4.07.55-.17.55-.38l-.01-1.49c-2.01.44-2.44-.97-2.44-.97-.33-.84-.81-1.06-.81-1.06-.66-.45.05-.44.05-.44.73.05 1.12.75 1.12.75.65 1.11 1.71.79 2.13.6.07-.48.26-.79.46-.98-1.6-.18-3.29-.8-3.29-3.57 0-.79.28-1.43.75-1.94-.08-.18-.32-.92.07-1.92 0 0 .61-.2 2 .74a6.9 6.9 0 0 1 3.65 0c1.39-.94 2-.74 2-.74.39 1 .15 1.74.07 1.92.47.51.75 1.15.75 1.94 0 2.78-1.69 3.39-3.3 3.57.27.23.5.68.5 1.38l-.01 2.04c0 .21.14.45.55.38A8 8 0 0 0 8 0z"/></svg>
+        </div>
+        <div class="rc-body">
+          <div class="rc-title-row">
+            <span class="rc-num">#412</span>
+            <span class="rc-title">Fix flaky checkout test on CI runner</span>
+          </div>
+          <div class="rc-meta">
+            <span class="rc-chip">issue</span>
+            <span class="rc-chip">commentable</span>
+            <span class="rc-chip">primary</span>
+          </div>
+        </div>
+        <div class="rc-ext">
+          <svg viewBox="0 0 16 16" width="16" height="16" fill="#8b949e"><path d="M10.75 1a.75.75 0 0 0 0 1.5h1.94L6.22 9.03a.75.75 0 1 0 1.06 1.06l6.47-6.47v1.94a.75.75 0 0 0 1.5 0V1h-4.5Z"/><path d="M3.5 3A1.5 1.5 0 0 0 2 4.5v8A1.5 1.5 0 0 0 3.5 14h8a1.5 1.5 0 0 0 1.5-1.5V9a.75.75 0 0 0-1.5 0v3.5h-8v-8H7A.75.75 0 0 0 7 3H3.5Z"/></svg>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="option" data-choice="b" onclick="toggleSelect(this)" style="flex-direction:column;align-items:stretch;">
+  <div class="letter">B</div>
+  <div class="content" style="width:100%">
+    <h3>Two-line card, header + subtitle</h3>
+    <div class="rc-wrap">
+      <div class="rc-card rc-card-b">
+        <div class="rc-top-row">
+          <div class="rc-icon">
+            <svg viewBox="0 0 16 16" width="22" height="22" fill="#8b949e"><path d="M8 0a8 8 0 0 0-2.53 15.59c.4.07.55-.17.55-.38l-.01-1.49c-2.01.44-2.44-.97-2.44-.97-.33-.84-.81-1.06-.81-1.06-.66-.45.05-.44.05-.44.73.05 1.12.75 1.12.75.65 1.11 1.71.79 2.13.6.07-.48.26-.79.46-.98-1.6-.18-3.29-.8-3.29-3.57 0-.79.28-1.43.75-1.94-.08-.18-.32-.92.07-1.92 0 0 .61-.2 2 .74a6.9 6.9 0 0 1 3.65 0c1.39-.94 2-.74 2-.74.39 1 .15 1.74.07 1.92.47.51.75 1.15.75 1.94 0 2.78-1.69 3.39-3.3 3.57.27.23.5.68.5 1.38l-.01 2.04c0 .21.14.45.55.38A8 8 0 0 0 8 0z"/></svg>
+          </div>
+          <div class="rc-body">
+            <div class="rc-title">Fix flaky checkout test on CI runner</div>
+            <div class="rc-sub">atolis-hq/wake · issue #412</div>
+          </div>
+          <div class="rc-ext">
+            <svg viewBox="0 0 16 16" width="16" height="16" fill="#8b949e"><path d="M10.75 1a.75.75 0 0 0 0 1.5h1.94L6.22 9.03a.75.75 0 1 0 1.06 1.06l6.47-6.47v1.94a.75.75 0 0 0 1.5 0V1h-4.5Z"/><path d="M3.5 3A1.5 1.5 0 0 0 2 4.5v8A1.5 1.5 0 0 0 3.5 14h8a1.5 1.5 0 0 0 1.5-1.5V9a.75.75 0 0 0-1.5 0v3.5h-8v-8H7A.75.75 0 0 0 7 3H3.5Z"/></svg>
+          </div>
+        </div>
+        <div class="rc-meta">
+          <span class="rc-chip">commentable</span>
+          <span class="rc-chip">primary</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>

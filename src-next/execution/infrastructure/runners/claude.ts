@@ -1,9 +1,9 @@
 import { ExternalExecutionKind } from '../../../activities/index.js';
 import type {
+  AgentRunnerResult,
   Runner,
   RunnerExecution,
   RunnerRequest,
-  AgentRunnerResult,
 } from '../../contracts/runner.js';
 import { ExecutionCancellationReason, RunStatus } from '../../contracts/vocabulary.js';
 import { runProcess } from '../process-execution.js';

@@ -56,7 +56,7 @@ const conditions = [
   'ready',
   'scheduled',
   WorkflowStatus.Active,
-  'needs-human',
+  'needs-input',
   'error',
   'finished',
 ] as const;

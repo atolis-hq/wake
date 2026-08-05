@@ -83,6 +83,20 @@ describe('in-memory event journal', () => {
     expect((await journal.readAll(1)).map(({ eventId }) => eventId)).toEqual(['evt-2', 'evt-3']);
   });
 
+  it('reads the newest events before an exclusive global position', async () => {
+    const journal = new InMemoryEventJournal(new FixedClock()) as InMemoryEventJournal & {
+      readLatest(before?: number, limit?: number): Promise<readonly { readonly eventId: string }[]>;
+    };
+    await journal.append(stream, 0, [event('evt-1'), event('evt-2'), event('evt-3')]);
+
+    expect((await journal.readLatest()).map(({ eventId }) => eventId)).toEqual([
+      'evt-3',
+      'evt-2',
+      'evt-1',
+    ]);
+    expect((await journal.readLatest(3, 1)).map(({ eventId }) => eventId)).toEqual(['evt-2']);
+  });
+
   it('returns the prior append for a repeated event id instead of duplicating it', async () => {
     const journal = new InMemoryEventJournal(new FixedClock());
     const draft = event('evt-1');

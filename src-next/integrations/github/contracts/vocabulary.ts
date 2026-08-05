@@ -51,8 +51,10 @@ export const GitHubWakeMarkerPrefix = defineClosedVocabulary({
 
 export type GitHubWakeMarkerPrefix = ValueOf<typeof GitHubWakeMarkerPrefix>;
 
+const GitHubWakeMarkerNamespace = 'wake:';
+
 export function isGitHubWakeMarker(label: string): boolean {
-  return Object.values(GitHubWakeMarkerPrefix).some((prefix) => label.startsWith(prefix));
+  return label.startsWith(GitHubWakeMarkerNamespace);
 }
 
 // Facets a GitHub intake rule may constrain, and the observation fields they read.
