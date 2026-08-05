@@ -13,16 +13,18 @@ import {
   createAdvanceOnce,
   createRunnerControlService,
   createTickPipeline,
+  createWorkCancellationPolicy,
   ineligibleRunners,
   type ControlPlaneView,
   type TickPipeline,
 } from '../control-plane/index.js';
 import {
+  GitWorkspaceProvider,
   RunRepository,
   createExecutionService,
-  GitWorkspaceProvider,
   loadPromptTemplate,
   renderPromptTemplate,
+  type FakeScenarioResolver,
 } from '../execution/index.js';
 import {
   AgentRunPublicationReactor,
@@ -86,7 +88,7 @@ export interface CompositionRootOptions {
 
 export interface CompositionRoot {
   readonly config: ResolvedWakeModulesConfig;
-  readonly fakeScenarios: import('../execution/index.js').FakeScenarioResolver;
+  readonly fakeScenarios: FakeScenarioResolver;
   readonly paths: WakePaths;
   readonly journal: EventJournal;
   readonly projections: ProjectionStore;
@@ -138,8 +140,10 @@ export async function createCompositionRoot(
     workspaces: new GitWorkspaceProvider(paths.workspacesRoot, {
       async cloneLocator(id) {
         const resource = await resources.get(resourceId(id));
-        const match = resource === null ? null : /^([^/]+\/[^#]+)#\d+$/.exec(resource.externalKey.key);
-        if (match === null) throw new Error('Workspace resource ' + id + ' does not identify a GitHub repository');
+        const match =
+          resource === null ? null : /^([^/]+\/[^#]+)#\d+$/.exec(resource.externalKey.key);
+        if (match === null)
+          throw new Error('Workspace resource ' + id + ' does not identify a GitHub repository');
         return 'https://github.com/' + match[1] + '.git';
       },
     }),
@@ -223,6 +227,19 @@ interface IntegrationRuntimeInput {
   readonly wakeRoot: string;
 }
 
+function serializeRunRegisteredOnce(
+  runner: ReturnType<typeof createRuntimeProjectionRunner>,
+): ReturnType<typeof createRuntimeProjectionRunner> {
+  let queue: Promise<unknown> = Promise.resolve();
+  const runRegisteredOnce = runner.runRegisteredOnce.bind(runner);
+  runner.runRegisteredOnce = (limit?: number) => {
+    const result = queue.then(() => runRegisteredOnce(limit));
+    queue = result.catch(() => {});
+    return result;
+  };
+  return runner;
+}
+
 async function composeIntegrationRuntime(
   input: IntegrationRuntimeInput,
 ): Promise<IntegrationRuntime> {
@@ -242,12 +259,24 @@ async function composeIntegrationRuntime(
       journal: input.journal,
       checkpoints: input.checkpoints,
       routing: createWorkflowRouter(input.config.orchestration),
+      conclusion: createWorkCancellationPolicy(
+        input.work,
+        input.orchestration,
+        input.execution,
+        input.clock,
+        input.ids,
+      ),
     },
   );
-  const projectionRunner = createRuntimeProjectionRunner(
-    input.journal,
-    input.projections,
-    input.checkpoints,
+  // FileCheckpointStore.save throws on any regression (persistence/filesystem/
+  // file-checkpoint-store.ts), so two concurrent runRegisteredOnce calls that
+  // interleave can race a slower caller's stale checkpoint save against a
+  // faster one that already advanced past it. Every caller (the tick
+  // pipeline's own catchUpProjections, the API's manual tick, and the
+  // resident's standalone projection pump) shares this one instance, so
+  // serializing it here in-process covers all of them without a file lock.
+  const projectionRunner = serializeRunRegisteredOnce(
+    createRuntimeProjectionRunner(input.journal, input.projections, input.checkpoints),
   );
   const delivery = new DeliveryService({
     journal: input.journal,
@@ -283,7 +312,13 @@ async function composeIntegrationRuntime(
     providers,
     runs: input.execution,
   });
-  const agentRunPublications = new AgentRunPublicationReactor({ journal: input.journal, checkpoints: input.checkpoints, runs: new RunRepository(input.journal), resources: input.resources, orchestration: input.orchestration });
+  const agentRunPublications = new AgentRunPublicationReactor({
+    journal: input.journal,
+    checkpoints: input.checkpoints,
+    runs: new RunRepository(input.journal),
+    resources: input.resources,
+    orchestration: input.orchestration,
+  });
   const watch = createWatchReactor(input.orchestration, input.journal, input.checkpoints);
   const outcomes = new DeliveryOutcomeReactor(
     input.journal,
