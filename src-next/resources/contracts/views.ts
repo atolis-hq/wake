@@ -15,12 +15,15 @@ export interface ResourceView {
   readonly externalKey: ExternalResourceKey;
   readonly capabilities: readonly ResourceCapability[];
   readonly revision?: string;
+  readonly title?: string;
   readonly primaryCorrelationConflict?: {
     readonly attemptedWorkItemId: WorkItemId;
     readonly existingWorkItemId: WorkItemId;
     readonly eventId: string;
   };
 }
+
+export type ResourceLinkResolver = (externalKey: ExternalResourceKey) => string | null;
 
 export interface ResourceCorrelationView {
   readonly resourceId: ResourceId;

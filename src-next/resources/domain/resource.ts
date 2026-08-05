@@ -23,12 +23,14 @@ function discoveredResource(
   event: Extract<ResourceEvent, { eventType: typeof ResourceEventType.ResourceDiscovered }>,
 ): ResourceView {
   const revision = event.payload.revision === undefined ? {} : { revision: event.payload.revision };
+  const title = event.payload.title === undefined ? {} : { title: event.payload.title };
   return {
     resourceId: event.stream.id,
     kind: event.payload.kind,
     externalKey: event.payload.externalKey,
     capabilities: event.payload.capabilities,
     ...revision,
+    ...title,
   };
 }
 

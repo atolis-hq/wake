@@ -87,6 +87,7 @@ async function discoverResource(
       externalKey: command.externalKey,
       capabilities: command.capabilities,
       ...(command.revision === undefined ? {} : { revision: command.revision }),
+      ...(command.title === undefined ? {} : { title: command.title }),
     }),
   );
   const resource = (await repository.load(command.resourceId)).resource;
@@ -95,7 +96,6 @@ async function discoverResource(
 }
 
 // Provenance is an explicit fifth command argument; the repository dependency is the sixth implementation concern.
-// eslint-disable-next-line max-params
 async function correlateResource(
   repository: ResourceRepository,
   resourceId: ResourceId,

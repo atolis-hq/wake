@@ -10,6 +10,7 @@ export interface DiscoverResource {
   readonly externalKey: ExternalResourceKey;
   readonly capabilities: readonly ResourceCapability[];
   readonly revision?: string;
+  readonly title?: string;
 }
 
 export interface ObserveResourceRevision {

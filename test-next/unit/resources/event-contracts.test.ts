@@ -18,6 +18,7 @@ const samples = [
       externalKey: { adapter: 'github', key: 'wake#1' },
       capabilities: [resourceCapability('commentable'), resourceCapability('reviewable')],
       revision: 'abc',
+      title: 'Improve intake',
     },
   ],
   [ResourceEventType.ResourceRevisionObserved, { revision: 'def' }],
@@ -85,5 +86,21 @@ describe('Resource event contract', () => {
     expect(() => selectResourceEvent(eventEnvelope('resources.unknown', {}, stream))).toThrow(
       /event-7.*position 7.*resources\.unknown/i,
     );
+  });
+
+  it('still decodes a ResourceDiscovered event recorded before title existed', () => {
+    expect(() =>
+      decodeResourceEvent(
+        eventEnvelope(
+          ResourceEventType.ResourceDiscovered,
+          {
+            kind: 'issue',
+            externalKey: { adapter: 'github', key: 'wake#2' },
+            capabilities: [resourceCapability('commentable')],
+          },
+          stream,
+        ),
+      ),
+    ).not.toThrow();
   });
 });

@@ -36,6 +36,7 @@ export interface ResourceDiscoveredPayload {
   readonly externalKey: ExternalResourceKey;
   readonly capabilities: readonly ResourceCapability[];
   readonly revision?: string | undefined;
+  readonly title?: string | undefined;
 }
 
 export interface ResourceEventPayloads {
@@ -80,6 +81,7 @@ const eventSchema = z.discriminatedUnion('eventType', [
         externalKey: z.object({ adapter: z.string(), key: z.string() }).strict(),
         capabilities: z.array(brandedStringSchema(resourceCapability)),
         revision: z.string().optional(),
+        title: z.string().optional(),
       })
       .strict(),
   }),

@@ -20,6 +20,7 @@ export const resourceProjection: ProjectionDefinition<ResourceView | null> = {
           externalKey: owned.payload.externalKey,
           capabilities: owned.payload.capabilities,
           ...(owned.payload.revision === undefined ? {} : { revision: owned.payload.revision }),
+          ...(owned.payload.title === undefined ? {} : { title: owned.payload.title }),
         };
       case ResourceEventType.ResourceRevisionObserved:
         return previous === null ? previous : { ...previous, revision: owned.payload.revision };

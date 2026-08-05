@@ -52,6 +52,25 @@ describe('Resource correlations', () => {
     });
   });
 
+  it('retains an optional title captured at discovery', async () => {
+    const service = createTestResourceServices(new InMemoryEventJournal(new FakeClock())).resources;
+
+    await service.discover(
+      {
+        resourceId: resId('titled'),
+        kind: resourceKind('issue'),
+        externalKey: { adapter: 'fake', key: 'repo/issues/9' },
+        capabilities: [resourceCapability('commentable')],
+        title: 'Fix flaky checkout test',
+      },
+      context('command-1'),
+    );
+
+    await expect(service.get(resId('titled'))).resolves.toMatchObject({
+      title: 'Fix flaky checkout test',
+    });
+  });
+
   it('correlates a Resource to a WorkItem using a registered relation definition', async () => {
     const service = createTestResourceServices(new InMemoryEventJournal(new FakeClock())).resources;
     const resource = resId('one');
