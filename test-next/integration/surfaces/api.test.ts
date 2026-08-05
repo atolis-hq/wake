@@ -65,8 +65,8 @@ describe('surface API contracts', () => {
     );
   });
 
-  it('removes provider locators and workspace paths from transport DTOs', () => {
-    const resource = presentResource({
+  it('resolves a display-oriented resource locator but still redacts workspace paths', () => {
+    const resource = presentResource(() => null)({
       resourceId: resId('1'),
       kind: resourceKind('pull-request'),
       externalKey: { adapter: 'github', key: 'owner/repo#42' },
@@ -90,8 +90,8 @@ describe('surface API contracts', () => {
       },
     } as unknown as RunView);
 
-    expect(JSON.stringify(resource)).not.toContain('github');
-    expect(JSON.stringify(resource)).not.toContain('owner/repo');
+    expect(resource).toMatchObject({ adapter: 'github', locatorLabel: 'pull-request owner/repo#42' });
+    expect(resource.externalUrl).toBeUndefined();
     expect(JSON.stringify(run)).not.toContain('private');
     expect(JSON.stringify(run)).not.toContain('provider-session');
   });

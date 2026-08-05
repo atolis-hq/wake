@@ -56,9 +56,11 @@ async function workDetail(
     await Promise.all(correlations.map((item) => root.resources.get(item.resourceId)))
   ).filter((value): value is ResourceView => value !== null);
   const workflows = (await root.orchestration.listAll()).filter((value) => value.workItemId === id);
-  const runs = (await root.execution.list()).filter((run) =>
-    workflows.some((workflow) => workflow.workflowInstanceId === run.workflowInstanceId),
-  );
+  const runs = (await root.execution.list())
+    .filter((run) =>
+      workflows.some((workflow) => workflow.workflowInstanceId === run.workflowInstanceId),
+    )
+    .sort((left, right) => right.startedAt.localeCompare(left.startedAt));
   const pullRequests = await root.projections.list<PullRequestView | null>('activities-pr');
   const pullRequest = pullRequests.find((entry) =>
     resources.some((resource) => resource.resourceId === entry.key),
@@ -67,7 +69,7 @@ async function workDetail(
   const externalRef = await primaryExternalRef(root, work.workItemId);
   const data: WorkDetailResponse = {
     work: { ...presentWorkItem(work), ...(externalRef === undefined ? {} : { externalRef }) },
-    resources: resources.map(presentResource),
+    resources: resources.map(presentResource(root.resolveResourceLink)),
     orchestration: {
       primary: primary === null ? null : presentWorkflowInstance(primary),
       children: workflows

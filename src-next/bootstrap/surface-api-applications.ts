@@ -1,5 +1,5 @@
 import { ControlStreamKind } from '../control-plane/index.js';
-import type { EventEnvelope } from '../kernel/index.js';
+import type { EventEnvelope, EventJournal } from '../kernel/index.js';
 import type { WorkflowInstanceView } from '../orchestration/index.js';
 import type { ResourceView } from '../resources/index.js';
 import {
@@ -16,7 +16,6 @@ import {
   type AuditEventResponse,
 } from '../surfaces/index.js';
 import { analyticsProjection, type AnalyticsProjectionView } from './analytics-projection.js';
-import { wakeVersion } from './version.js';
 import {
   boardConditionCounts,
   boardProjection,
@@ -24,10 +23,12 @@ import {
 } from './board-projection.js';
 import type { CompositionRoot } from './composition-root.js';
 import { primaryExternalRef } from './external-ref.js';
+import { createSelfUpdateFailureLog } from './self-update-failure-log.js';
 import { createExecutionApplications } from './surface-api-execution-applications.js';
 import { projectionMeta, sampledMeta } from './surface-api-metadata.js';
 import { projectionPage } from './surface-api-projection-pages.js';
 import { createSurfaceWorkApplications } from './surface-api-work-applications.js';
+import { wakeVersion } from './version.js';
 
 export function createSurfaceApiApplications(
   root: CompositionRoot,
@@ -56,16 +57,14 @@ function createBoardApplications(root: CompositionRoot, now: () => string) {
         'global',
       );
       const cards = Object.values(stored?.value.cards ?? {}).sort((left, right) =>
-        left.workItemId.localeCompare(right.workItemId),
+        cardRecency(right).localeCompare(cardRecency(left)),
       );
       const offset = query.cursor?.position ?? 0;
       const page = cards.slice(offset, offset + query.limit);
       const items = await Promise.all(
         page.map(async (card) => {
           const externalRef = await primaryExternalRef(root, card.workItemId);
-          return presentBoardCard(
-            externalRef === undefined ? card : { ...card, externalRef },
-          );
+          return presentBoardCard(externalRef === undefined ? card : { ...card, externalRef });
         }),
       );
       return {
@@ -102,7 +101,9 @@ function createResourceApplications(root: CompositionRoot, now: () => string) {
       const stored = (await root.projections.list<ResourceView | null>('resources')).flatMap(
         (entry) => (entry.value === null ? [] : [{ ...entry, value: entry.value }]),
       );
-      return projectionPage(root.journal, stored, query, presentResource, { emptyAsOf: now() });
+      return projectionPage(root.journal, stored, query, presentResource(root.resolveResourceLink), {
+        emptyAsOf: now(),
+      });
     },
   };
 }
@@ -129,7 +130,6 @@ function createOrchestrationApplications(root: CompositionRoot, now: () => strin
 function createEventApplications(root: CompositionRoot, now: () => string) {
   return {
     async list(query: Parameters<ApiApplications['events']['list']>[0]) {
-      const all = await root.journal.readAll(0);
       const workItemKey = query.workItemKey;
       const workItemId =
         workItemKey === undefined
@@ -141,22 +141,21 @@ function createEventApplications(root: CompositionRoot, now: () => string) {
                 return workItemKey;
               }
             })();
-      const filtered =
-        workItemId === undefined
-          ? all
-          : all.filter(
-              (event) =>
-                event.stream.id === workItemId ||
-                (typeof event.payload === 'object' &&
-                  event.payload !== null &&
-                  'workItemId' in event.payload &&
-                  event.payload.workItemId === workItemId),
-            );
-      const events = filtered
-        .filter((event) => event.globalPosition > (query.cursor?.position ?? 0))
-        .slice(0, query.limit + 1);
+      const events = await recentEvents(
+        root.journal,
+        query.cursor?.position,
+        query.limit + 1,
+        (event) =>
+          workItemId === undefined ||
+          event.stream.id === workItemId ||
+          (typeof event.payload === 'object' &&
+            event.payload !== null &&
+            'workItemId' in event.payload &&
+            event.payload.workItemId === workItemId),
+      );
       const visible = events.slice(0, query.limit);
-      const newest = visible.at(-1);
+      const newest = visible[0];
+      const oldest = visible.at(-1);
       const meta = await projectionMeta(
         root.journal,
         newest === undefined
@@ -169,15 +168,44 @@ function createEventApplications(root: CompositionRoot, now: () => string) {
       return {
         items: presentEvents(visible),
         meta,
-        ...(events.length > query.limit && newest !== undefined
-          ? { nextPosition: newest.globalPosition }
+        ...(events.length > query.limit && oldest !== undefined
+          ? { nextPosition: oldest.globalPosition }
           : {}),
         ...(newest === undefined && query.cursor === undefined
           ? {}
-          : { continuationPosition: newest?.globalPosition ?? query.cursor!.position }),
+          : { continuationPosition: oldest?.globalPosition ?? query.cursor!.position }),
       };
     },
   };
+}
+
+async function recentEvents(
+  journal: EventJournal,
+  beforeGlobalPosition: number | undefined,
+  limit: number,
+  include: (event: EventEnvelope) => boolean,
+): Promise<readonly EventEnvelope[]> {
+  const batchSize = Math.max(limit, 200);
+  const selected: EventEnvelope[] = [];
+  let before = beforeGlobalPosition;
+  while (selected.length < limit) {
+    const batch =
+      journal.readLatest === undefined
+        ? (await journal.readAll(0))
+            .filter((event) => before === undefined || event.globalPosition < before)
+            .slice(-batchSize)
+            .reverse()
+        : await journal.readLatest(before, batchSize);
+    if (batch.length === 0) return selected;
+    for (const event of batch) {
+      if (include(event)) selected.push(event);
+      if (selected.length === limit) return selected;
+    }
+    const oldest = batch.at(-1);
+    if (oldest === undefined || batch.length < batchSize) return selected;
+    before = oldest.globalPosition;
+  }
+  return selected;
 }
 
 function createObservabilityApplications(root: CompositionRoot, now: () => string) {
@@ -202,16 +230,25 @@ function createSystemApplications(root: CompositionRoot, now: () => string): Api
   return {
     async health() {
       const checkedAt = now();
+      const selfUpdateFailure = await createSelfUpdateFailureLog(root.paths.wakeRoot).read();
+      const checks = [
+        { name: 'journal', status: 'ok' as const },
+        { name: 'projections', status: 'ok' as const },
+        { name: 'checkpoints', status: 'ok' as const },
+        selfUpdateFailure === null
+          ? { name: 'self-update', status: 'ok' as const }
+          : {
+              name: 'self-update',
+              status: 'degraded' as const,
+              detail: `rolled back from ${selfUpdateFailure.tag} at ${selfUpdateFailure.occurredAt}: ${selfUpdateFailure.message}`,
+            },
+      ];
       return {
         data: {
-          status: 'ok',
+          status: checks.some((check) => check.status === 'degraded') ? 'degraded' : 'ok',
           version: wakeVersion,
           checkedAt,
-          checks: [
-            { name: 'journal', status: 'ok' },
-            { name: 'projections', status: 'ok' },
-            { name: 'checkpoints', status: 'ok' },
-          ],
+          checks,
         },
         meta: sampledMeta(checkedAt),
       };
@@ -303,6 +340,10 @@ async function readControlPlaneStatus(root: CompositionRoot, now: () => string) 
     },
     meta,
   };
+}
+
+function cardRecency(card: { readonly dwellSince: string; readonly lastRunAt?: string }): string {
+  return card.lastRunAt ?? card.dwellSince;
 }
 
 function presentEvents(events: readonly EventEnvelope[]): readonly AuditEventResponse[] {
