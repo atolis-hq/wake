@@ -126,7 +126,7 @@ the work some other way.
 
 ## Documentation
 
-`docs/configuration.md` (or wherever intake/adapter behavior is
-documented) gains a note that Wake concludes a work item when its source
-ticket closes, and that PR bodies reference rather than close the ticket
-so merge and ticket-closure stay independent signals.
+`docs/workflows.md` gains a note that Wake concludes a work item when its
+source ticket closes (mapped to closed/cancelled by outcome), and that PR
+bodies reference rather than close the ticket so merge and ticket-closure
+stay independent signals.
