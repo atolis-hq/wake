@@ -1,6 +1,6 @@
-import { faFileLines } from '@fortawesome/free-solid-svg-icons/faFileLines';
-import { faArrowUpRightFromSquare } from '@fortawesome/free-solid-svg-icons/faArrowUpRightFromSquare';
 import { faGithub } from '@fortawesome/free-brands-svg-icons/faGithub';
+import { faArrowUpRightFromSquare } from '@fortawesome/free-solid-svg-icons/faArrowUpRightFromSquare';
+import { faFileLines } from '@fortawesome/free-solid-svg-icons/faFileLines';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 
 interface IconProps {
@@ -16,5 +16,7 @@ export function DocumentIcon({ className }: IconProps) {
 }
 
 export function ExternalLinkIcon({ className }: IconProps) {
-  return <FontAwesomeIcon icon={faArrowUpRightFromSquare} className={className} aria-hidden="true" />;
+  return (
+    <FontAwesomeIcon icon={faArrowUpRightFromSquare} className={className} aria-hidden="true" />
+  );
 }

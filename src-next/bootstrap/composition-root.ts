@@ -70,7 +70,10 @@ import {
 // The shared Integration barrel must not re-export a provider namespace
 // (see provider-locality); composition-root is the exempt production
 // composition point that is allowed to name it directly.
-import { gitHubProviderDefinition, resolveGitHubResourceUrl } from '../integrations/github/index.js';
+import {
+  gitHubProviderDefinition,
+  resolveGitHubResourceUrl,
+} from '../integrations/github/index.js';
 import { createWorkService } from '../work/index.js';
 import { loadConfig, type ResolvedWakeModulesConfig } from './config/load-config.js';
 import { hydrateFakeProviderEvidence } from './fake-provider-files.js';
@@ -117,7 +120,10 @@ const resourceLinkResolvers: Record<string, ResourceLinkResolver> = {
   github: resolveGitHubResourceUrl,
 };
 
-function resolveResourceLink(externalKey: { readonly adapter: string; readonly key: string }): string | null {
+function resolveResourceLink(externalKey: {
+  readonly adapter: string;
+  readonly key: string;
+}): string | null {
   return resourceLinkResolvers[externalKey.adapter]?.(externalKey) ?? null;
 }
 

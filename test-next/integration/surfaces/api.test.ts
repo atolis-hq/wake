@@ -90,7 +90,10 @@ describe('surface API contracts', () => {
       },
     } as unknown as RunView);
 
-    expect(resource).toMatchObject({ adapter: 'github', locatorLabel: 'pull-request owner/repo#42' });
+    expect(resource).toMatchObject({
+      adapter: 'github',
+      locatorLabel: 'pull-request owner/repo#42',
+    });
     expect(resource.externalUrl).toBeUndefined();
     expect(JSON.stringify(run)).not.toContain('private');
     expect(JSON.stringify(run)).not.toContain('provider-session');

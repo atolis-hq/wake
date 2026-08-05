@@ -52,6 +52,7 @@ export function createSurfaceApiApplications(
 function createBoardApplications(root: CompositionRoot, now: () => string) {
   return {
     async list(query: Parameters<NonNullable<ApiApplications['board']>['list']>[0]) {
+      const nowMs = Date.parse(now());
       const stored = await root.projections.read<BoardProjectionView>(
         boardProjection.name,
         'global',
@@ -64,7 +65,21 @@ function createBoardApplications(root: CompositionRoot, now: () => string) {
       const items = await Promise.all(
         page.map(async (card) => {
           const externalRef = await primaryExternalRef(root, card.workItemId);
-          return presentBoardCard(externalRef === undefined ? card : { ...card, externalRef });
+          return presentBoardCard({
+            ...card,
+            ...(externalRef === undefined ? {} : { externalRef }),
+            ...(card.lastRunAt === undefined
+              ? {}
+              : { lastRunAgeMs: elapsedSince(card.lastRunAt, nowMs) }),
+            ...(card.activeRun === undefined
+              ? {}
+              : {
+                  activeRun: {
+                    ...card.activeRun,
+                    elapsedMs: elapsedSince(card.activeRun.startedAt, nowMs),
+                  },
+                }),
+          });
         }),
       );
       return {
@@ -101,9 +116,15 @@ function createResourceApplications(root: CompositionRoot, now: () => string) {
       const stored = (await root.projections.list<ResourceView | null>('resources')).flatMap(
         (entry) => (entry.value === null ? [] : [{ ...entry, value: entry.value }]),
       );
-      return projectionPage(root.journal, stored, query, presentResource(root.resolveResourceLink), {
-        emptyAsOf: now(),
-      });
+      return projectionPage(
+        root.journal,
+        stored,
+        query,
+        presentResource(root.resolveResourceLink),
+        {
+          emptyAsOf: now(),
+        },
+      );
     },
   };
 }
@@ -344,6 +365,10 @@ async function readControlPlaneStatus(root: CompositionRoot, now: () => string) 
 
 function cardRecency(card: { readonly dwellSince: string; readonly lastRunAt?: string }): string {
   return card.lastRunAt ?? card.dwellSince;
+}
+
+export function elapsedSince(timestamp: string, nowMs: number): number {
+  return nowMs - Date.parse(timestamp);
 }
 
 function presentEvents(events: readonly EventEnvelope[]): readonly AuditEventResponse[] {
