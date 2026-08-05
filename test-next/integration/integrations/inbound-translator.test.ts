@@ -107,6 +107,132 @@ describe('InboundTranslator', () => {
   });
 });
 
+describe('InboundTranslator conclusion', () => {
+  it('closes the work item when a re-observed issue carries a Completed outcome', async () => {
+    const clock = new FakeClock();
+    const journal = new InMemoryEventJournal(clock);
+    const { resources, lookup } = createTestResourceServices(journal);
+    const work = createWorkService(journal);
+    const checkpoints = new InMemoryCheckpointStore();
+    const { orchestration, routing } = createTestIntakeRouting(journal, work);
+    const calls: { method: 'closeWork' | 'cancelWork'; reason: string }[] = [];
+    const conclusion = {
+      async closeWork(workItemId: string, reason: string) {
+        calls.push({ method: 'closeWork', reason });
+        return work.get(workItemId as never) as never;
+      },
+      async cancelWork(workItemId: string, reason: string) {
+        calls.push({ method: 'cancelWork', reason });
+        return work.get(workItemId as never) as never;
+      },
+    };
+    const translator = new InboundTranslator(journal, checkpoints, work, resources, {
+      lookup,
+      orchestration,
+      routing,
+      conclusion,
+    });
+
+    const open = createEventDraft({
+      eventId: 'github:issue:owner/repo#9:v1',
+      eventType: 'integration.github.work-observed',
+      occurredAt: clock.now().toISOString(),
+      correlationId: 'github:owner/repo#9',
+      causationId: 'github:owner/repo#9:v1',
+      actor: { kind: 'integration', id: 'github' },
+      source: { kind: 'adapter', id: 'github' },
+      stream: integrationStream(BuiltInAdapterId.GitHub),
+      payload: { ...observation(), externalKey: 'owner/repo#9', revision: 'v1' },
+    });
+    await journal.append(open.stream, 0, [open]);
+    await translator.runOnce();
+
+    const closed = createEventDraft({
+      eventId: 'github:issue:owner/repo#9:v2',
+      eventType: 'integration.github.work-observed',
+      occurredAt: clock.now().toISOString(),
+      correlationId: 'github:owner/repo#9',
+      causationId: 'github:owner/repo#9:v2',
+      actor: { kind: 'integration', id: 'github' },
+      source: { kind: 'adapter', id: 'github' },
+      stream: integrationStream(BuiltInAdapterId.GitHub),
+      payload: {
+        ...observation(),
+        externalKey: 'owner/repo#9',
+        revision: 'v2',
+        state: 'closed',
+        outcome: 'completed',
+      },
+    });
+    await journal.append(closed.stream, 1, [closed]);
+    await translator.runOnce();
+
+    expect(calls).toEqual([{ method: 'closeWork', reason: expect.stringContaining('owner/repo#9') }]);
+  });
+
+  it('cancels the work item when a re-observed issue carries a Cancelled outcome', async () => {
+    const clock = new FakeClock();
+    const journal = new InMemoryEventJournal(clock);
+    const { resources, lookup } = createTestResourceServices(journal);
+    const work = createWorkService(journal);
+    const checkpoints = new InMemoryCheckpointStore();
+    const { orchestration, routing } = createTestIntakeRouting(journal, work);
+    const calls: { method: 'closeWork' | 'cancelWork'; reason: string }[] = [];
+    const conclusion = {
+      async closeWork(workItemId: string, reason: string) {
+        calls.push({ method: 'closeWork', reason });
+        return work.get(workItemId as never) as never;
+      },
+      async cancelWork(workItemId: string, reason: string) {
+        calls.push({ method: 'cancelWork', reason });
+        return work.get(workItemId as never) as never;
+      },
+    };
+    const translator = new InboundTranslator(journal, checkpoints, work, resources, {
+      lookup,
+      orchestration,
+      routing,
+      conclusion,
+    });
+
+    const open = createEventDraft({
+      eventId: 'github:issue:owner/repo#10:v1',
+      eventType: 'integration.github.work-observed',
+      occurredAt: clock.now().toISOString(),
+      correlationId: 'github:owner/repo#10',
+      causationId: 'github:owner/repo#10:v1',
+      actor: { kind: 'integration', id: 'github' },
+      source: { kind: 'adapter', id: 'github' },
+      stream: integrationStream(BuiltInAdapterId.GitHub),
+      payload: { ...observation(), externalKey: 'owner/repo#10', revision: 'v1' },
+    });
+    await journal.append(open.stream, 0, [open]);
+    await translator.runOnce();
+
+    const closed = createEventDraft({
+      eventId: 'github:issue:owner/repo#10:v2',
+      eventType: 'integration.github.work-observed',
+      occurredAt: clock.now().toISOString(),
+      correlationId: 'github:owner/repo#10',
+      causationId: 'github:owner/repo#10:v2',
+      actor: { kind: 'integration', id: 'github' },
+      source: { kind: 'adapter', id: 'github' },
+      stream: integrationStream(BuiltInAdapterId.GitHub),
+      payload: {
+        ...observation(),
+        externalKey: 'owner/repo#10',
+        revision: 'v2',
+        state: 'closed',
+        outcome: 'cancelled',
+      },
+    });
+    await journal.append(closed.stream, 1, [closed]);
+    await translator.runOnce();
+
+    expect(calls).toEqual([{ method: 'cancelWork', reason: expect.stringContaining('owner/repo#10') }]);
+  });
+});
+
 function observation(): ExternalWorkObservedPayload {
   return {
     externalKey: 'owner/repo#7',

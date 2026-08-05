@@ -21,9 +21,10 @@ import {
 import type { WorkService } from '../../../work/index.js';
 import { workItemId, type WorkItemId } from '../../../work/index.js';
 import { admitObservedWork, type WorkAdmissionServices } from '../../application/work-admission.js';
+import { concludeObservedWork } from '../../application/work-conclusion.js';
 import type { AdapterId } from '../../contracts/identifiers.js';
 import { evaluateIntakeRules, type IntakeRule } from '../../contracts/intake-rules.js';
-import type { WorkflowRouter } from '../../contracts/provider.js';
+import type { WorkConclusion, WorkflowRouter } from '../../contracts/provider.js';
 import type { GitHubIntakeRuleConfig } from '../contracts/config.js';
 import type { ExternalWorkObservedPayload, GitHubAdapterEvent } from '../contracts/events.js';
 import { GitHubEventType, selectGitHubAdapterEvent } from '../contracts/events.js';
@@ -60,6 +61,7 @@ interface InboundTranslatorDependencies {
   readonly orchestration?: OrchestrationService;
   readonly routing?: WorkflowRouter;
   readonly intake?: readonly GitHubIntakeRuleConfig[];
+  readonly conclusion?: WorkConclusion;
 }
 
 export class InboundTranslator {
@@ -103,6 +105,7 @@ export class InboundTranslator {
     this.orchestration = dependencies.orchestration;
     this.routing = dependencies.routing;
     this.intake = gitHubIntakeRules(dependencies.intake ?? []);
+    this.conclusion = dependencies.conclusion;
   }
 
   private readonly pullRequests: PullRequestService | undefined;
@@ -112,6 +115,7 @@ export class InboundTranslator {
   private readonly orchestration: OrchestrationService | undefined;
   private readonly routing: WorkflowRouter | undefined;
   private readonly intake: readonly IntakeRule[];
+  private readonly conclusion: WorkConclusion | undefined;
 
   // Adapter filtering, checkpointing, and typed event dispatch must stay together.
   // eslint-disable-next-line complexity
@@ -176,6 +180,16 @@ export class InboundTranslator {
           },
           context,
         );
+        if (payload.outcome !== undefined && this.conclusion !== undefined) {
+          await concludeObservedWork(
+            { work: this.work, conclusion: this.conclusion },
+            {
+              workItemId: identity.workItemId,
+              outcome: payload.outcome,
+              reason: `${this.adapter} ${payload.externalKey} closed`,
+            },
+          );
+        }
       }
       if (payload.kind === 'pull-request')
         await pullRequests.observe(
