@@ -41,8 +41,8 @@ export const gitHubProviderDefinition: ProviderDefinition<GitHubConfig> = {
         const parsed = parsePullRequestKey(externalKey.key);
         if (parsed === null) return ArtifactVerificationResult.NotFound;
         try {
-          const response = await client.getPullRequest(parsed.owner, parsed.repo, parsed.number);
-          if (response.data.head.ref !== context.workspaceBranch)
+          const pullRequest = await client.getPullRequest(parsed.owner, parsed.repo, parsed.number);
+          if (pullRequest.head.ref !== context.workspaceBranch)
             return ArtifactVerificationResult.NotFound;
           return {
             kind,
@@ -53,7 +53,7 @@ export const gitHubProviderDefinition: ProviderDefinition<GitHubConfig> = {
               BuiltInResourceCapability.Mergeable,
               BuiltInResourceCapability.Revisioned,
             ],
-            ...(response.data.head.sha === undefined ? {} : { revision: response.data.head.sha }),
+            ...(pullRequest.head.sha === undefined ? {} : { revision: pullRequest.head.sha }),
           };
         } catch (error) {
           if (
@@ -79,6 +79,7 @@ export const gitHubProviderDefinition: ProviderDefinition<GitHubConfig> = {
           orchestration: services.orchestration,
           routing: services.routing,
           intake: config.intake,
+          conclusion: services.conclusion,
         },
       ),
       checkConnectivity: async () => {
