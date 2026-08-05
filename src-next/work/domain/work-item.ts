@@ -14,6 +14,8 @@ export function foldWorkItem(events: readonly WorkEvent[]): WorkItemView | null 
     tags: events[0].payload.tags ?? [],
     lifecycle: WorkStatus.Open as WorkState,
     autoApprovalGranted: false,
+    frozen: false,
+    deleted: false,
     links: [] as WorkItemView['relatedWorkItems'][number][],
     linkKeys: new Set<string>(),
   };
@@ -25,6 +27,8 @@ export function foldWorkItem(events: readonly WorkEvent[]): WorkItemView | null 
     state: state.lifecycle,
     tags: state.tags,
     autoApprovalGranted: state.autoApprovalGranted,
+    frozen: state.frozen,
+    deleted: state.deleted,
     relatedWorkItems: state.links,
   };
 }
@@ -35,6 +39,8 @@ function applyEvent(
     tags: readonly string[];
     lifecycle: WorkState;
     autoApprovalGranted: boolean;
+    frozen: boolean;
+    deleted: boolean;
     links: WorkItemView['relatedWorkItems'][number][];
     linkKeys: Set<string>;
   },
@@ -66,6 +72,16 @@ function applyEvent(
       break;
     case WorkEventType.AutoApprovalRevoked:
       state.autoApprovalGranted = false;
+      break;
+    case WorkEventType.ItemFrozen:
+      state.frozen = true;
+      break;
+    case WorkEventType.ItemUnfrozen:
+      state.frozen = false;
+      break;
+    case WorkEventType.ItemDeleted:
+      state.deleted = true;
+      state.frozen = false;
       break;
     default:
       assertNever(event);

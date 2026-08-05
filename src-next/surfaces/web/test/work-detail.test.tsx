@@ -60,6 +60,8 @@ function detailClient() {
                     startedAt: asOf,
                     finishedAt: asOf,
                     sentinel: 'DONE',
+                    workflowName: 'delivery',
+                    stage: 'implement',
                     totalTokens: 0,
                     totalCostUsd: 0,
                   },
@@ -199,5 +201,7 @@ describe('work detail', () => {
     );
     const link = await screen.findByRole('link', { name: 'run-1' });
     expect(link.getAttribute('href')).toBe('/runs/run-1');
+    expect(screen.getByRole('cell', { name: 'delivery' })).toBeTruthy();
+    expect(screen.getByRole('cell', { name: 'implement' })).toBeTruthy();
   });
 });

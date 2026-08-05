@@ -1,4 +1,4 @@
-﻿import { ControlStreamKind } from '../control-plane/index.js';
+import { ControlStreamKind } from '../control-plane/index.js';
 import type { EventEnvelope, EventJournal } from '../kernel/index.js';
 import type { WorkflowInstanceView } from '../orchestration/index.js';
 import type { ResourceView } from '../resources/index.js';
@@ -286,12 +286,29 @@ function createSystemApplications(root: CompositionRoot, now: () => string): Api
   };
 }
 
+function commandAccepted(command: { readonly idempotencyKey: string }, acceptedAt: string) {
+  return {
+    commandId: 'control:' + command.idempotencyKey,
+    idempotencyKey: command.idempotencyKey,
+    acceptedAt,
+    status: ApiCommandStatus.Accepted,
+  };
+}
+
 function createControlPlaneApplications(root: CompositionRoot, now: () => string) {
   const activeTicks = new Map<string, Promise<ApiTickCommandResult>>();
   const recentTicks = new Map<string, ApiTickCommandResult>();
   let commandSequence = 0;
   return {
     status: () => readControlPlaneStatus(root, now),
+    async pause(command: { readonly idempotencyKey: string }) {
+      await root.controlPlane.pause(command.idempotencyKey);
+      return commandAccepted(command, now());
+    },
+    async resume(command: { readonly idempotencyKey: string }) {
+      await root.controlPlane.resume(command.idempotencyKey);
+      return commandAccepted(command, now());
+    },
     tick(command: { readonly idempotencyKey: string }) {
       const completed = recentTicks.get(command.idempotencyKey);
       if (completed !== undefined) return Promise.resolve(completed);
@@ -336,9 +353,7 @@ async function performTick(
   sequence: number,
 ): Promise<ApiTickCommandResult> {
   const acceptedAt = now();
-  await root.projectionRunner.runRegisteredOnce();
-  await root.advanceOnce({ maxProgress: 1 });
-  await root.projectionRunner.runRegisteredOnce();
+  await root.pipeline.run({ maxProgress: 1 });
   return {
     commandId: `tick:${acceptedAt}:${sequence}`,
     idempotencyKey: command.idempotencyKey,

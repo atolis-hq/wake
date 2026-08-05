@@ -18,6 +18,9 @@ export const WorkEventType = {
   ItemCancelled: 'work.item-cancelled',
   AutoApprovalGranted: 'work.auto-approval-granted',
   AutoApprovalRevoked: 'work.auto-approval-revoked',
+  ItemFrozen: 'work.item-frozen',
+  ItemUnfrozen: 'work.item-unfrozen',
+  ItemDeleted: 'work.item-deleted',
 } as const;
 
 export interface WorkItemLinkedPayload {
@@ -39,6 +42,9 @@ export interface WorkEventPayloads {
   readonly [WorkEventType.ItemCancelled]: { readonly reason: string };
   readonly [WorkEventType.AutoApprovalGranted]: Readonly<Record<never, never>>;
   readonly [WorkEventType.AutoApprovalRevoked]: Readonly<Record<never, never>>;
+  readonly [WorkEventType.ItemFrozen]: Readonly<Record<never, never>>;
+  readonly [WorkEventType.ItemUnfrozen]: Readonly<Record<never, never>>;
+  readonly [WorkEventType.ItemDeleted]: Readonly<Record<never, never>>;
 }
 
 export type WorkEvent = EventUnion<WorkEventPayloads, WorkItemStreamRef>;
@@ -101,6 +107,21 @@ const eventSchema = z.discriminatedUnion('eventType', [
   }),
   eventEnvelopeSchema.extend({
     eventType: z.literal(WorkEventType.AutoApprovalRevoked),
+    stream: streamSchema,
+    payload: consentSchema,
+  }),
+  eventEnvelopeSchema.extend({
+    eventType: z.literal(WorkEventType.ItemFrozen),
+    stream: streamSchema,
+    payload: consentSchema,
+  }),
+  eventEnvelopeSchema.extend({
+    eventType: z.literal(WorkEventType.ItemUnfrozen),
+    stream: streamSchema,
+    payload: consentSchema,
+  }),
+  eventEnvelopeSchema.extend({
+    eventType: z.literal(WorkEventType.ItemDeleted),
     stream: streamSchema,
     payload: consentSchema,
   }),

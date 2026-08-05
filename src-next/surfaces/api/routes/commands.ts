@@ -60,9 +60,12 @@ async function dispatchControlCommand(
 ): Promise<ApiHttpResponse | undefined> {
   const name = controlCommandName(pathname);
   if (name === undefined) return undefined;
+  const status = await applications.controlPlane.status();
+  if (name === 'tick' && status.data.paused)
+    return problem(409, 'Conflict', 'Ticks are paused', { code: 'paused', current: status.data });
   const operation = applications.controlPlane[name];
   return operation === undefined
-    ? unavailable(name, (await applications.controlPlane.status()).data)
+    ? unavailable(name, status.data)
     : accepted(await operation(request), applications.now());
 }
 

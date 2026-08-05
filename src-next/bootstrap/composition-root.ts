@@ -11,6 +11,7 @@ import {
   DispatchPolicy,
   ScheduleService,
   createAdvanceOnce,
+  createControlPlaneService,
   createRunnerControlService,
   createTickPipeline,
   createWorkCancellationPolicy,
@@ -108,6 +109,7 @@ export interface CompositionRoot {
   readonly orchestration: ReturnType<typeof createOrchestrationService>;
   readonly execution: ReturnType<typeof createExecutionService>;
   readonly runnerControls: ReturnType<typeof createRunnerControlService>;
+  readonly controlPlane: ReturnType<typeof createControlPlaneService>;
   readonly advanceOnce: ReturnType<typeof createAdvanceOnce>;
   readonly projectionRunner: ReturnType<typeof createRuntimeProjectionRunner>;
   readonly providers: readonly ProviderInstance[];
@@ -168,6 +170,7 @@ export async function createCompositionRoot(
       },
     }),
   });
+  const controlPlane = createControlPlaneService({ journal, clock, ids });
   const runnerControls = createRunnerControlService({
     journal,
     clock,
@@ -177,10 +180,8 @@ export async function createCompositionRoot(
   const advanceOnce = createAdvanceOnce(orchestration, execution, resources, clock, {
     ids,
     dispatchPolicy: new DispatchPolicy({ maxDispatches: config.controlPlane.maxDispatches }),
-    isDispatchPaused: async () => {
-      const stored = await projections.read<ControlPlaneView>(ControlStreamKind.Global, 'global');
-      return stored !== null && stored.value.pausedUntil !== null;
-    },
+    isDispatchPaused: () => controlPlane.isPaused(),
+    work,
     runnerIneligibility: async () => {
       const stored = await projections.read<ControlPlaneView>(ControlStreamKind.Global, 'global');
       return stored === null
@@ -199,6 +200,7 @@ export async function createCompositionRoot(
     orchestration,
     execution,
     advanceOnce,
+    controlPlane,
     clock,
     work,
     ids,
@@ -218,6 +220,7 @@ export async function createCompositionRoot(
     orchestration,
     execution,
     runnerControls,
+    controlPlane,
     advanceOnce,
     resolveResourceLink,
     ...runtime,
@@ -243,6 +246,7 @@ interface IntegrationRuntimeInput {
   readonly orchestration: ReturnType<typeof createOrchestrationService>;
   readonly execution: ReturnType<typeof createExecutionService>;
   readonly advanceOnce: ReturnType<typeof createAdvanceOnce>;
+  readonly controlPlane: ReturnType<typeof createControlPlaneService>;
   readonly clock: Clock;
   readonly ids: UlidIdGenerator;
   readonly wakeRoot: string;
@@ -347,6 +351,7 @@ async function composeIntegrationRuntime(
     input.orchestration,
   );
   const pipeline = createTickPipeline({
+    isPaused: input.controlPlane.isPaused,
     catchUpProjections: async () => {
       await projectionRunner.runRegisteredOnce();
     },

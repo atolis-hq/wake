@@ -112,6 +112,8 @@ export const decodeWorkItem: Decoder<WorkItemResponse> = (value, path = '') => {
     workItemId: string(record.workItemId, child(path, 'workItemId')),
     objective: string(record.objective, child(path, 'objective')),
     state: string(record.state, child(path, 'state')),
+    ...optionalBooleanProperty(record, 'frozen', path),
+    ...optionalBooleanProperty(record, 'deleted', path),
     ...optionalStringProperty(record, 'externalRef', path),
     relatedWorkItems: array(
       record.relatedWorkItems,
@@ -323,6 +325,8 @@ function decodePullRequest(value: unknown, path = '') {
   return {
     resourceId: string(record.resourceId, child(path, 'resourceId')),
     state: string(record.state, child(path, 'state')),
+    ...optionalBooleanProperty(record, 'frozen', path),
+    ...optionalBooleanProperty(record, 'deleted', path),
     headRevision: string(record.headRevision, child(path, 'headRevision')),
     baseRevision: string(record.baseRevision, child(path, 'baseRevision')),
     checks: string(record.checks, child(path, 'checks')),

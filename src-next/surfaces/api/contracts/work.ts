@@ -10,6 +10,8 @@ export interface WorkItemResponse {
   readonly workItemId: string;
   readonly objective: string;
   readonly state: string;
+  readonly frozen?: boolean;
+  readonly deleted?: boolean;
   readonly relatedWorkItems: readonly {
     readonly workItemKey: WorkItemKey;
     readonly relation: string;
@@ -31,6 +33,8 @@ export interface WorkDetailResponse {
 export interface PullRequestResponse {
   readonly resourceId: string;
   readonly state: string;
+  readonly frozen?: boolean;
+  readonly deleted?: boolean;
   readonly headRevision: string;
   readonly baseRevision: string;
   readonly checks: string;

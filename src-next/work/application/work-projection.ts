@@ -45,6 +45,12 @@ function revise(previous: WorkItemView, owned: ExistingWorkEvent): WorkItemView 
       return { ...previous, autoApprovalGranted: true };
     case WorkEventType.AutoApprovalRevoked:
       return { ...previous, autoApprovalGranted: false };
+    case WorkEventType.ItemFrozen:
+      return { ...previous, frozen: true };
+    case WorkEventType.ItemUnfrozen:
+      return { ...previous, frozen: false };
+    case WorkEventType.ItemDeleted:
+      return { ...previous, deleted: true, frozen: false };
     case WorkEventType.ItemLinked:
       return link(previous, owned.payload.to, owned.payload.relation);
     default:

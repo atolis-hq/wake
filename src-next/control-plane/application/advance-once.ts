@@ -57,6 +57,7 @@ interface ExecutionPort {
 
 interface AdvanceOnceDependencies {
   readonly ids: IdGenerator;
+  readonly work?: { get(workItemId: string): Promise<{ readonly frozen?: boolean; readonly deleted?: boolean } | null> };
   readonly runnerIneligibility?: () => Promise<ReadonlySet<string>>;
   readonly isDispatchPaused?: () => Promise<boolean>;
   readonly dispatchPolicy?: DispatchPolicy;
@@ -83,7 +84,15 @@ export function createAdvanceOnce(
     if (await isDispatchPaused()) return { kind: 'paused' };
     await execution.recoverActive?.(ControlStreamKind.Global);
     await orchestration.reconcileChildCompletions(context('child-completion-reconciliation'));
-    const pending = await orchestration.listPendingActivations(options.workItemId);
+    const rawPending = await orchestration.listPendingActivations(options.workItemId);
+    const pending = (
+      await Promise.all(
+        rawPending.map(async (candidate) => {
+          const work = await dependencies.work?.get(candidate.workflow.workItemId);
+          return work?.frozen || work?.deleted ? null : candidate;
+        }),
+      )
+    ).filter((candidate): candidate is (typeof rawPending)[number] => candidate !== null);
     const blocked = ((await orchestration.listAll?.()) ?? []).flatMap((workflow) =>
       workflow.status === WorkflowStatus.Blocked &&
       workflow.pendingActivation !== undefined &&

@@ -26,7 +26,16 @@ export function ControlPlaneStatus() {
       client.execution.unpauseRunner(runnerId, commandKey('unpause')),
     onSuccess: () => cache.invalidateQueries({ queryKey: queryKeys.execution.runners }),
   });
-  const tickMutation = useMutation({
+  const pauseMutation = useMutation({
+    mutationKey: ['control-plane', 'pause'],
+    mutationFn: (idempotencyKey: string) => client.controlPlane.pause(idempotencyKey),
+    onSuccess: () => cache.invalidateQueries({ queryKey: queryKeys.controlPlane.status }),
+  });
+  const resumeMutation = useMutation({
+    mutationKey: ['control-plane', 'resume'],
+    mutationFn: (idempotencyKey: string) => client.controlPlane.resume(idempotencyKey),
+    onSuccess: () => cache.invalidateQueries({ queryKey: queryKeys.controlPlane.status }),
+  });  const tickMutation = useMutation({
     mutationKey: ['control-plane', 'advance-command'],
     mutationFn: (idempotencyKey: string) => client.controlPlane.tick(idempotencyKey),
     onSuccess: async (response) => {
@@ -55,14 +64,20 @@ export function ControlPlaneStatus() {
       ) : (
         <StatusBadge tone="bad">API unavailable</StatusBadge>
       )}
-      <Button
-        type="button"
-        className={styles.tickButton!}
-        disabled={tickMutation.isPending}
-        onClick={() => tickMutation.mutate(commandKey('advance'))}
-      >
-        Tick now
-      </Button>
+      {status.data?.data.paused ? (
+        <Button type="button" disabled={resumeMutation.isPending} onClick={() => resumeMutation.mutate(commandKey('resume'))}>
+          Resume ticks
+        </Button>
+      ) : (
+        <>
+          <Button type="button" disabled={pauseMutation.isPending} onClick={() => pauseMutation.mutate(commandKey('pause'))}>
+            Pause ticks
+          </Button>
+          <Button type="button" className={styles.tickButton!} disabled={tickMutation.isPending} onClick={() => tickMutation.mutate(commandKey('tick'))}>
+            Tick now
+          </Button>
+        </>
+      )}
       {pausedRunners.map((runner) => (
         <span key={runner.runnerId} className={styles.pauseControl!}>
           {runner.runnerId} paused

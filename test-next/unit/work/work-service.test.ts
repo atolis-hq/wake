@@ -44,6 +44,8 @@ describe('WorkService', () => {
       relatedWorkItems: [{ workItemId: workId('2'), relation: 'relates-to' }],
       tags: [],
       autoApprovalGranted: false,
+      frozen: false,
+      deleted: false,
     });
   });
 
@@ -70,5 +72,23 @@ describe('WorkService', () => {
         { ...context, commandId: 'command-3' },
       ),
     ).rejects.toThrow('closed');
+  });
+
+  it('freezes and unfreezes an open work item idempotently', async () => {
+    const journal = new InMemoryEventJournal(new FakeClock());
+    const service = createWorkService(journal);
+    const item = workId('frozen');
+    await service.create({ workItemId: item, objective: 'Freeze me' }, context);
+    await expect(service.freeze(item, context)).resolves.toMatchObject({ frozen: true });
+    await expect(service.unfreeze(item, { ...context, commandId: 'unfreeze' })).resolves.toMatchObject({ frozen: false });
+    expect(await journal.readStream(workItemStream(item))).toHaveLength(3);
+  });
+
+  it('soft-deletes an item once and rejects later lifecycle changes', async () => {
+    const service = createWorkService(new InMemoryEventJournal(new FakeClock()));
+    const item = workId('deleted');
+    await service.create({ workItemId: item, objective: 'Delete me' }, context);
+    await expect(service.delete(item, { ...context, commandId: 'delete' })).resolves.toMatchObject({ deleted: true });
+    await expect(service.freeze(item, { ...context, commandId: 'freeze' })).rejects.toThrow('deleted');
   });
 });

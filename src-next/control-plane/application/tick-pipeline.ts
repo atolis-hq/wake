@@ -2,6 +2,7 @@ import type { AdvanceOnce } from '../contracts/commands.js';
 import type { AdvanceOptions, AdvanceResult } from '../contracts/views.js';
 
 export interface TickPipelineStages {
+  readonly isPaused?: () => Promise<boolean>;
   readonly catchUpProjections: () => Promise<void>;
   readonly poll: (signal: AbortSignal) => Promise<void>;
   readonly translateInbound: () => Promise<void>;
@@ -19,6 +20,7 @@ export interface TickPipeline {
 export function createTickPipeline(stages: TickPipelineStages): TickPipeline {
   return {
     async run(options, signal = new AbortController().signal) {
+      if (await stages.isPaused?.()) return { kind: 'paused' };
       await stages.catchUpProjections();
       try {
         await stages.poll(signal);

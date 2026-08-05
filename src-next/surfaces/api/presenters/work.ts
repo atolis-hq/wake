@@ -8,6 +8,8 @@ export function presentWorkItem(work: WorkItemView): WorkItemResponse {
     workItemId: work.workItemId,
     objective: work.objective,
     state: work.state,
+    ...(work.frozen === undefined ? {} : { frozen: work.frozen }),
+    ...(work.deleted === undefined ? {} : { deleted: work.deleted }),
     relatedWorkItems: work.relatedWorkItems.map((item) => ({
       workItemKey: toWorkItemKey(item.workItemId),
       relation: item.relation,

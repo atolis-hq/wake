@@ -17,5 +17,7 @@ export interface WorkItemView {
   readonly tags: readonly string[];
   // Operator consent for `auto` acceptance authority; capability is declared by the workflow route.
   readonly autoApprovalGranted: boolean;
+  readonly frozen?: boolean;
+  readonly deleted?: boolean;
   readonly relatedWorkItems: readonly RelatedWorkItemView[];
 }

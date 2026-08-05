@@ -72,12 +72,9 @@ describe('control-plane mutation and connection state', () => {
     expect(await screen.findByText('Dispatch paused')).toBeTruthy();
     await waitFor(() => expect(workReads).toBeGreaterThan(initialWorkReads));
     expect(statusReads).toBe(1);
-    await waitFor(() => expect(advance.hasAttribute('disabled')).toBe(false));
-    await user.click(advance);
-    await waitFor(() => expect(advances).toBe(2));
-    expect(idempotencyKeys[0]).toMatch(/^web:advance:/);
-    expect(idempotencyKeys[1]).toMatch(/^web:advance:/);
-    expect(idempotencyKeys[1]).not.toBe(idempotencyKeys[0]);
+    expect(screen.queryByRole('button', { name: 'Tick now' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Resume ticks' })).toBeTruthy();
+    expect(idempotencyKeys[0]).toMatch(/^web:tick:/);
   });
 
   it('presents Problem conflict state and a reconnecting banner without erasing the shell', async () => {

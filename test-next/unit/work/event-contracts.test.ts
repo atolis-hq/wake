@@ -17,6 +17,9 @@ const samples = [
   [WorkEventType.ItemCancelled, { reason: 'obsolete' }],
   [WorkEventType.AutoApprovalGranted, {}],
   [WorkEventType.AutoApprovalRevoked, {}],
+  [WorkEventType.ItemFrozen, {}],
+  [WorkEventType.ItemUnfrozen, {}],
+  [WorkEventType.ItemDeleted, {}],
 ] as const;
 
 describe('Work event contract', () => {

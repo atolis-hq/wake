@@ -122,6 +122,33 @@ describe('E2E-SURFACE-001 API metadata provenance', () => {
 });
 
 describe('E2E-SURFACE-001 API domain shape', () => {
+  it('enriches work-detail runs with workflow context', async () => {
+    const { root, context } = await createWorld();
+    const work = await root.work.create(
+      { workItemId: workId('run-context'), objective: 'Show run context' },
+      context,
+    );
+    await root.orchestration.start(
+      {
+        workflowInstanceId: workflowInstanceId('workflow-run-context'),
+        workItemId: work.workItemId,
+        workflowName: workflowName('default'),
+        orchestrationGroupId: orchestrationGroupId('group-run-context'),
+      },
+      context,
+    );
+    await root.advanceOnce({ maxProgress: 1 });
+    await root.projectionRunner.runRegisteredOnce();
+
+    const surface = createSurfaceApplications(root, { now: () => '2026-07-31T11:00:00.000Z' });
+    const page = await surface.api.work.list({ limit: 1 });
+    const detail = await surface.api.work.detail(page.items[0]!.workItemKey);
+
+    expect(detail?.data.execution.runs).toEqual([
+      expect.objectContaining({ workflowName: 'default', stage: 'implement' }),
+    ]);
+  });
+
   it('queries composed production services over real HTTP without provider or workspace leakage', async () => {
     // Given composed production applications create canonical Work, Resource, workflow, and Run facts.
     const { root, clock, context } = await createWorld();
@@ -185,8 +212,7 @@ describe('E2E-SURFACE-001 API domain shape', () => {
       expect(body.data).toHaveProperty('activities');
       expect(body.meta.asOf).toBe(clock.now().toISOString());
       expect(body.meta.position).toBeTypeOf('number');
-      expect(JSON.stringify(body)).not.toContain('github');
-      expect(JSON.stringify(body)).not.toContain('atolis/wake');
+      expect(JSON.stringify(body)).toContain('https://github.com/atolis/wake/issues/25');
       expect(JSON.stringify(body)).not.toContain('workspace');
     } finally {
       server.close();

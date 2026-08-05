@@ -1,4 +1,5 @@
 import type { PullRequestView } from '../activities/index.js';
+import { correlationId, EventActorKind } from '../kernel/index.js';
 import { ResourceEventType, selectResourceEvent, type ResourceView } from '../resources/index.js';
 import {
   fromWorkItemKey,
@@ -6,6 +7,7 @@ import {
   presentRun,
   presentWorkItem,
   presentWorkflowInstance,
+  ApiCommandStatus,
   type ApiApplications,
   type WorkDetailResponse,
 } from '../surfaces/index.js';
@@ -14,6 +16,7 @@ import type { CompositionRoot } from './composition-root.js';
 import { primaryExternalRef } from './external-ref.js';
 import { projectionMeta } from './surface-api-metadata.js';
 import { projectionPage } from './surface-api-projection-pages.js';
+import { withWorkflowContext } from './surface-api-run-context.js';
 
 export function createSurfaceWorkApplications(
   root: CompositionRoot,
@@ -39,7 +42,27 @@ export function createSurfaceWorkApplications(
       });
     },
     detail: (key) => workDetail(root, key, now),
-  };
+    async freeze(key, command) {
+      const id = decodeWorkItemId(key);
+      if (id === undefined) throw new Error('Work item not found');
+      await root.work.freeze(id, commandContext(command.idempotencyKey, now));
+      return accepted(command.idempotencyKey, now());
+    },
+    async unfreeze(key, command) {
+      const id = decodeWorkItemId(key);
+      if (id === undefined) throw new Error('Work item not found');
+      await root.work.unfreeze(id, commandContext(command.idempotencyKey, now));
+      return accepted(command.idempotencyKey, now());
+    },
+    async delete(key, command) {
+      const id = decodeWorkItemId(key);
+      if (id === undefined) throw new Error('Work item not found');
+      const context = commandContext(command.idempotencyKey, now);
+      const correlations = await root.resources.correlationsForWork(id);
+      await root.work.delete(id, context);
+      await Promise.all(correlations.map((entry) => root.resources.retract(entry.resourceId, id, context)));
+      return accepted(command.idempotencyKey, now());
+    },  };
 }
 
 async function workDetail(
@@ -76,7 +99,9 @@ async function workDetail(
         .filter((value) => value.parentWorkflowInstanceId !== undefined)
         .map(presentWorkflowInstance),
     },
-    execution: { runs: runs.map(presentRun) },
+    execution: {
+      runs: await Promise.all(runs.map((run) => withWorkflowContext(root, presentRun(run)))),
+    },
     activities: presentPullRequest(pullRequest?.value),
   };
   const [projections, correlationFacts] = await Promise.all([
@@ -147,4 +172,23 @@ async function contributingResourceCorrelationFacts(
       return [];
     return owned.payload.workItemId === id ? [{ lastGlobalPosition: owned.globalPosition }] : [];
   });
+}
+
+function commandContext(idempotencyKey: string, now: () => string) {
+  const occurredAt = now();
+  return {
+    commandId: `work:${idempotencyKey}`,
+    correlationId: correlationId(`work:${idempotencyKey}`),
+    occurredAt,
+    actor: { kind: EventActorKind.Operator, id: 'web' },
+  };
+}
+
+function accepted(idempotencyKey: string, acceptedAt: string) {
+  return {
+    commandId: `work:${idempotencyKey}`,
+    idempotencyKey,
+    acceptedAt,
+    status: ApiCommandStatus.Accepted,
+  };
 }

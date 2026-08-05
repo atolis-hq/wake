@@ -4,16 +4,11 @@ import {
   type ControlPlaneView,
 } from '../control-plane/index.js';
 import type { RunView } from '../execution/index.js';
-import { workflowInstanceId } from '../orchestration/index.js';
-import {
-  ApiCommandStatus,
-  presentRun,
-  type ApiApplications,
-  type RunResponse,
-} from '../surfaces/index.js';
+import { ApiCommandStatus, presentRun, type ApiApplications } from '../surfaces/index.js';
 import type { CompositionRoot } from './composition-root.js';
 import { projectionMeta, sampledMeta } from './surface-api-metadata.js';
 import { projectionPage } from './surface-api-projection-pages.js';
+import { withWorkflowContext } from './surface-api-run-context.js';
 
 export function createExecutionApplications(
   root: CompositionRoot,
@@ -87,13 +82,6 @@ export function createExecutionApplications(
       };
     },
   };
-}
-
-async function withWorkflowContext(root: CompositionRoot, run: RunResponse): Promise<RunResponse> {
-  const instance = await root.orchestration.get(workflowInstanceId(run.workflowInstanceId));
-  return instance === null
-    ? run
-    : { ...run, workflowName: instance.workflowName, stage: instance.currentStage };
 }
 
 function commandAccepted(command: { readonly idempotencyKey: string }, acceptedAt: string) {

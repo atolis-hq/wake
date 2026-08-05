@@ -20,6 +20,9 @@ export interface WorkService {
   cancel(workItemId: WorkItemId, reason: string, context: CommandContext): Promise<WorkItemView>;
   grantAutoApproval(workItemId: WorkItemId, context: CommandContext): Promise<WorkItemView>;
   revokeAutoApproval(workItemId: WorkItemId, context: CommandContext): Promise<WorkItemView>;
+  freeze(workItemId: WorkItemId, context: CommandContext): Promise<WorkItemView>;
+  unfreeze(workItemId: WorkItemId, context: CommandContext): Promise<WorkItemView>;
+  delete(workItemId: WorkItemId, context: CommandContext): Promise<WorkItemView>;
   get(workItemId: WorkItemId): Promise<WorkItemView | null>;
 }
 
@@ -35,6 +38,9 @@ export function createWorkService(journal: EventJournal): WorkService {
     const loaded = await repository.load(workItemId);
     if (!allowMissing && loaded.view === null)
       throw new Error(`WorkItem ${workItemId} does not exist`);
+    if (loaded.view !== null && loaded.view.deleted) {
+      throw new Error(`WorkItem ${workItemId} is deleted`);
+    }
     if (loaded.view !== null && loaded.view.state !== WorkStatus.Open) {
       throw new Error(`WorkItem ${workItemId} is ${loaded.view.state}`);
     }
@@ -93,6 +99,15 @@ export function createWorkService(journal: EventJournal): WorkService {
     revokeAutoApproval(workItemId, context) {
       return setAutoApproval(repository, change, workItemId, context, false);
     },
+    freeze(workItemId, context) {
+      return setFrozen(repository, change, workItemId, context, true);
+    },
+    unfreeze(workItemId, context) {
+      return setFrozen(repository, change, workItemId, context, false);
+    },
+    delete(workItemId, context) {
+      return setDeleted(repository, change, workItemId, context);
+    },
     async get(workItemId) {
       return (await repository.load(workItemId)).view;
     },
@@ -136,4 +151,42 @@ function workDraft<Type extends keyof WorkEventPayloads>(
     stream: workItemStream(workItemId),
     payload,
   });
+}
+
+async function setFrozen(
+  repository: WorkRepository,
+  change: (
+    workItemId: WorkItemId,
+    context: CommandContext,
+    draft: WorkEventDraft,
+  ) => Promise<WorkItemView>,
+  workItemId: WorkItemId,
+  context: CommandContext,
+  frozen: boolean,
+): Promise<WorkItemView> {
+  const current = (await repository.load(workItemId)).view;
+  if (current === null) throw new Error(`WorkItem ${workItemId} does not exist`);
+  if (current.deleted) throw new Error(`WorkItem ${workItemId} is deleted`);
+  if (current.frozen === frozen) return current;
+  return change(
+    workItemId,
+    context,
+    workDraft(workItemId, context, frozen ? WorkEventType.ItemFrozen : WorkEventType.ItemUnfrozen, {}),
+  );
+}
+
+async function setDeleted(
+  repository: WorkRepository,
+  change: (
+    workItemId: WorkItemId,
+    context: CommandContext,
+    draft: WorkEventDraft,
+  ) => Promise<WorkItemView>,
+  workItemId: WorkItemId,
+  context: CommandContext,
+): Promise<WorkItemView> {
+  const current = (await repository.load(workItemId)).view;
+  if (current === null) throw new Error(`WorkItem ${workItemId} does not exist`);
+  if (current.deleted) return current;
+  return change(workItemId, context, workDraft(workItemId, context, WorkEventType.ItemDeleted, {}));
 }
