@@ -13,6 +13,7 @@ import {
   type EventUnion,
 } from '../../../kernel/index.js';
 import { adapterId } from '../../contracts/identifiers.js';
+import { ExternalWorkOutcome } from '../../contracts/outcome-vocabulary.js';
 import { IntegrationStreamKind, type IntegrationStreamRef } from '../../contracts/streams.js';
 
 export const GitHubEventType = {
@@ -28,6 +29,7 @@ export interface ExternalWorkObservedPayload {
   readonly body: string;
   readonly state:
     typeof PullRequestState.Open | typeof PullRequestState.Closed | typeof PullRequestState.Merged;
+  readonly outcome?: ExternalWorkOutcome | undefined;
   readonly revision: string;
   readonly headRevision?: string | undefined;
   readonly baseRevision?: string | undefined;
@@ -90,8 +92,7 @@ interface GitHubIssueCommentObservedPayload {
 }
 
 type GitHubCommentObservedPayload =
-  | GitHubFormalCommentObservedPayload
-  | GitHubIssueCommentObservedPayload;
+  GitHubFormalCommentObservedPayload | GitHubIssueCommentObservedPayload;
 
 interface GitHubDeliveryObservedPayload {
   readonly deliveryId: string;
@@ -151,6 +152,7 @@ const eventSchema = z.discriminatedUnion('eventType', [
         title: z.string(),
         body: z.string(),
         state: z.enum([PullRequestState.Open, PullRequestState.Closed, PullRequestState.Merged]),
+        outcome: z.enum([ExternalWorkOutcome.Completed, ExternalWorkOutcome.Cancelled]).optional(),
         revision: z.string(),
         headRevision: z.string().optional(),
         baseRevision: z.string().optional(),
