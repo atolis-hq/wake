@@ -248,6 +248,25 @@ wake:stage.done
 These labels mirror the control-plane state. They do not define prompt
 behavior by themselves; the workflow configuration and prompt files do that.
 
+## Ticket closure
+
+When the ticket backing a work item closes on its source tracker, Wake
+concludes the work item to match: closed as completed closes the work
+item, closed as not planned (or its provider's equivalent) cancels it.
+Either way, Wake cancels any active Run and blocks any active workflow for
+that work item — closing the ticket stops the work.
+
+Wake's own generated PR bodies reference the issue (`Refs #<number>`)
+rather than using a closing keyword (`Closes #<number>`), so merging a PR
+never auto-closes the issue on GitHub. This keeps "the PR merged" and "the
+ticket closed" independent signals: a workflow with stages after merge
+(review, verify) keeps running until it reaches `done` on its own, and the
+ticket only closes when a human closes it or Wake does so as the workflow's
+final step.
+
+Reopening the ticket does not currently reopen the work item — closing or
+cancelling a work item is a one-way move.
+
 ## Checklist for a custom workflow
 
 1. Add every action prompt to `paths.promptsRoot`.
