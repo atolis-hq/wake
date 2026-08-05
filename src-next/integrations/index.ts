@@ -4,6 +4,8 @@ export * from './application/poll-service.js';
 
 export * from './application/work-admission.js';
 
+export * from './application/work-conclusion.js';
+
 export * from './application/artifact-registration-reactor.js';
 
 export * from './application/agent-run-publication-reactor.js';
