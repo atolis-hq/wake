@@ -125,10 +125,22 @@ describe('provider-locality value scope', () => {
 });
 
 describe('provider-locality path scope', () => {
+  it('permits a provider name in operational string and template literals outside its namespace', async () => {
+    const diagnostics = await check({
+      'src-next/integrations/github/index.ts': 'export const marker = true;',
+      'src-next/bootstrap/sandbox-template.ts': [
+        "export const prompt = 'Configure GitHub auth?';",
+        'export const dockerfile = `curl https://cli.github.com/packages`;',
+      ].join('\\n'),
+    });
+
+    expect(diagnostics).toEqual([]);
+  });
+
   it('rejects a provider name in a file outside the provider namespace', async () => {
     const diagnostics = await check({
       'src-next/integrations/github/index.ts': 'export const marker = true;',
-      'src-next/work/domain/leak.ts': "export const label = 'uses github api';",
+      'src-next/work/domain/leak.ts': 'export const usesGithubApi = true;',
     });
 
     expect(diagnostics).toHaveLength(1);
@@ -166,7 +178,7 @@ describe('provider-locality path scope', () => {
       'src-next/integrations/fake/marker.ts': 'export const marker = true;',
       'src-next/integrations/github/index.ts': 'export const marker = true;',
       'src-next/integrations/gitlab/index.ts': 'export const marker = true;',
-      'src-next/work/domain/leak.ts': "export const label = 'uses gitlab api';",
+      'src-next/work/domain/leak.ts': 'export const usesGitlabApi = true;',
     });
 
     expect(diagnostics).toHaveLength(1);

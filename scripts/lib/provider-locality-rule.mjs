@@ -73,10 +73,6 @@ function pathScopeDiagnostics(detail, providers) {
   visit(detail.source, (node) => {
     if (ts.isIdentifier(node)) {
       matchProviders(detail, node, node.text, providers, diagnostics, pathScopeMessage);
-      return;
-    }
-    if (isLiteralTextNode(node) && !isPermittedProviderLiteral(node)) {
-      matchProviders(detail, node, node.text, providers, diagnostics, pathScopeMessage);
     }
   });
   return diagnostics;
