@@ -12,6 +12,10 @@ const runResponseShape = { active: true };
 
 export const RunResponseField = { Active: Object.keys(runResponseShape)[0]! } as const;
 
+const resourceItemFieldShape = { adapter: true };
+
+export const ResourceItemField = { Adapter: Object.keys(resourceItemFieldShape)[0]! } as const;
+
 const boardConditionShape = {
   ready: true,
   active: true,

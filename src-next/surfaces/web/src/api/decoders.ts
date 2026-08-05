@@ -18,6 +18,7 @@ import {
 } from '../../../api/contracts/index.js';
 import {
   AcceptedCommandStatusValue,
+  ResourceItemField,
   RunResponseField,
 } from '../../../api/contracts/transport-values.js';
 import {
@@ -168,7 +169,7 @@ export const decodeResourceItem: Decoder<ResourceItemResponse> = (value, path = 
   const record = object(value, path);
   return {
     resourceId: string(record.resourceId, child(path, 'resourceId')),
-    adapter: string(record.adapter, child(path, 'adapter')),
+    adapter: string(record[ResourceItemField.Adapter], child(path, ResourceItemField.Adapter)),
     kind: string(record.kind, child(path, 'kind')),
     locatorLabel: string(record.locatorLabel, child(path, 'locatorLabel')),
     capabilities: array(record.capabilities, child(path, 'capabilities'), string),
