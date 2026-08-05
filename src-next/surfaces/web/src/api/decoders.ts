@@ -30,8 +30,8 @@ import {
   nullableString,
   number,
   object,
-  optionalNumberProperty,
   optionalBooleanProperty,
+  optionalNumberProperty,
   optionalStringProperty,
   string,
   type Decoder,
@@ -164,8 +164,12 @@ export const decodeResourceItem: Decoder<ResourceItemResponse> = (value, path = 
   const record = object(value, path);
   return {
     resourceId: string(record.resourceId, child(path, 'resourceId')),
+    adapter: string(record.adapter, child(path, 'adapter')),
     kind: string(record.kind, child(path, 'kind')),
+    locatorLabel: string(record.locatorLabel, child(path, 'locatorLabel')),
     capabilities: array(record.capabilities, child(path, 'capabilities'), string),
+    ...optionalStringProperty(record, 'title', path),
+    ...optionalStringProperty(record, 'externalUrl', path),
     ...optionalStringProperty(record, 'revision', path),
   };
 };
