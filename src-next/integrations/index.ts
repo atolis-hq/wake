@@ -7,6 +7,7 @@ export * from './application/work-admission.js';
 export * from './application/artifact-registration-reactor.js';
 
 export * from './application/agent-run-publication-reactor.js';
+
 export * from './application/terminal-agent-run-report.js';
 
 export * from './contracts/config.js';
@@ -14,6 +15,8 @@ export * from './contracts/config.js';
 export * from './contracts/artifact-events.js';
 
 export * from './contracts/artifact-vocabulary.js';
+
+export * from './contracts/outcome-vocabulary.js';
 
 export * from './contracts/identifiers.js';
 
