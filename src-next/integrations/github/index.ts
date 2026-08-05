@@ -28,6 +28,8 @@ export * from './application/inbound-translator.js';
 
 export * from './application/poll-service.js';
 
+export * from './application/resource-links.js';
+
 export * from './application/review-command-translator.js';
 
 export * from './application/wake-labels.js';
