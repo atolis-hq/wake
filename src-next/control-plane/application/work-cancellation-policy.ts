@@ -11,6 +11,7 @@ import type { WorkItemId, WorkItemView } from '../../work/index.js';
 import { ControlStreamKind } from '../contracts/streams.js';
 
 interface WorkPort {
+  close(workItemId: WorkItemId, reason: string, context: CommandContext): Promise<WorkItemView>;
   cancel(workItemId: WorkItemId, reason: string, context: CommandContext): Promise<WorkItemView>;
 }
 
@@ -23,32 +24,62 @@ interface OrchestrationPort {
   ): Promise<WorkflowInstanceView | null>;
 }
 
-/** Applies a Work cancellation consistently to active workflows and their Runs. */
+export interface WorkConclusionPolicy {
+  cancelWork(workItemId: WorkItemId, reason: string): Promise<WorkItemView>;
+  closeWork(workItemId: WorkItemId, reason: string): Promise<WorkItemView>;
+}
+
+/** Applies a Work conclusion (close or cancel) consistently to active workflows and their Runs. */
 export function createWorkCancellationPolicy(
   work: WorkPort,
   orchestration: OrchestrationPort,
   execution: ActiveRunCancellation,
   clock: Clock,
   ids: IdGenerator,
-) {
+): WorkConclusionPolicy {
+  async function conclude(
+    workItemId: WorkItemId,
+    reason: string,
+    workAction: (context: CommandContext) => Promise<WorkItemView>,
+    executionReason: ExecutionCancellationReason,
+    blockReasonPrefix: string,
+  ): Promise<WorkItemView> {
+    const context = commandContext(clock, ids, workItemId);
+    const concluded = await workAction(context);
+    const workflows = (await orchestration.listAll()).filter(
+      (workflow) => workflow.workItemId === workItemId,
+    );
+    await execution.cancelActive(
+      workflows.map((workflow) => workflow.workflowInstanceId),
+      executionReason,
+    );
+    for (const workflow of workflows)
+      await orchestration.block(
+        workflow.workflowInstanceId,
+        `${blockReasonPrefix}: ${reason}`,
+        context,
+      );
+    return concluded;
+  }
+
   return {
-    async cancelWork(workItemId: WorkItemId, reason: string): Promise<WorkItemView> {
-      const context = commandContext(clock, ids, workItemId);
-      const cancelled = await work.cancel(workItemId, reason, context);
-      const workflows = (await orchestration.listAll()).filter(
-        (workflow) => workflow.workItemId === workItemId,
-      );
-      await execution.cancelActive(
-        workflows.map((workflow) => workflow.workflowInstanceId),
+    cancelWork(workItemId, reason) {
+      return conclude(
+        workItemId,
+        reason,
+        (context) => work.cancel(workItemId, reason, context),
         ExecutionCancellationReason.WorkCancelled,
+        'work cancelled',
       );
-      for (const workflow of workflows)
-        await orchestration.block(
-          workflow.workflowInstanceId,
-          `work cancelled: ${reason}`,
-          context,
-        );
-      return cancelled;
+    },
+    closeWork(workItemId, reason) {
+      return conclude(
+        workItemId,
+        reason,
+        (context) => work.close(workItemId, reason, context),
+        ExecutionCancellationReason.WorkClosed,
+        'work closed',
+      );
     },
   };
 }
