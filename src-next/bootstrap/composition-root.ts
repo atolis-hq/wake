@@ -61,11 +61,16 @@ import {
   FileEventJournal,
   FileProjectionStore,
 } from '../persistence/index.js';
-import { createResourceLookup, createResourceService, resourceId } from '../resources/index.js';
+import {
+  createResourceLookup,
+  createResourceService,
+  resourceId,
+  type ResourceLinkResolver,
+} from '../resources/index.js';
 // The shared Integration barrel must not re-export a provider namespace
 // (see provider-locality); composition-root is the exempt production
 // composition point that is allowed to name it directly.
-import { gitHubProviderDefinition } from '../integrations/github/index.js';
+import { gitHubProviderDefinition, resolveGitHubResourceUrl } from '../integrations/github/index.js';
 import { createWorkService } from '../work/index.js';
 import { loadConfig, type ResolvedWakeModulesConfig } from './config/load-config.js';
 import { hydrateFakeProviderEvidence } from './fake-provider-files.js';
@@ -105,6 +110,15 @@ export interface CompositionRoot {
   readonly providers: readonly ProviderInstance[];
   readonly delivery: DeliveryService;
   readonly pipeline: TickPipeline;
+  readonly resolveResourceLink: ResourceLinkResolver;
+}
+
+const resourceLinkResolvers: Record<string, ResourceLinkResolver> = {
+  github: resolveGitHubResourceUrl,
+};
+
+function resolveResourceLink(externalKey: { readonly adapter: string; readonly key: string }): string | null {
+  return resourceLinkResolvers[externalKey.adapter]?.(externalKey) ?? null;
 }
 
 export async function createCompositionRoot(
@@ -199,6 +213,7 @@ export async function createCompositionRoot(
     execution,
     runnerControls,
     advanceOnce,
+    resolveResourceLink,
     ...runtime,
   };
 }
