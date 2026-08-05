@@ -74,6 +74,37 @@ describe('InboundTranslator', () => {
       await resources.correlationsForWork((await resources.correlations(resource!))[0]!.workItemId),
     ).toHaveLength(1);
   });
+
+  it('captures the observed title on the discovered resource', async () => {
+    const clock = new FakeClock();
+    const journal = new InMemoryEventJournal(clock);
+    const { resources, lookup } = createTestResourceServices(journal);
+    const work = createWorkService(journal);
+    const checkpoints = new InMemoryCheckpointStore();
+    const event = createEventDraft({
+      eventId: 'github:delivery-8',
+      eventType: 'integration.github.work-observed',
+      occurredAt: clock.now().toISOString(),
+      correlationId: 'github:delivery-8',
+      causationId: 'github:delivery-8',
+      actor: { kind: 'integration', id: 'github' },
+      source: { kind: 'adapter', id: 'github' },
+      stream: integrationStream(BuiltInAdapterId.GitHub),
+      payload: observation(),
+    });
+    await journal.append(event.stream, 0, [event]);
+    const { orchestration, routing } = createTestIntakeRouting(journal, work);
+    const translator = new InboundTranslator(journal, checkpoints, work, resources, {
+      lookup,
+      orchestration,
+      routing,
+    });
+
+    await translator.runOnce();
+
+    const resourceId = await lookup.resourceIdForExternalKey({ adapter: 'github', key: 'owner/repo#7' });
+    await expect(resources.get(resourceId!)).resolves.toMatchObject({ title: 'Improve intake' });
+  });
 });
 
 function observation(): ExternalWorkObservedPayload {

@@ -32,6 +32,7 @@ export interface AdmitObservedWork {
   readonly objective: string;
   readonly tags: readonly string[];
   readonly revision?: string | undefined;
+  readonly title?: string | undefined;
 }
 
 // The single place a newly observed external object becomes Wake work: discover the
@@ -51,6 +52,7 @@ export async function admitObservedWork(
       externalKey: input.externalKey,
       capabilities: input.capabilities,
       ...(input.revision === undefined ? {} : { revision: input.revision }),
+      ...(input.title === undefined ? {} : { title: input.title }),
     },
     context,
   );

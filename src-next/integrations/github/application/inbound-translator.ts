@@ -1,6 +1,5 @@
 import {
   createPullRequestService,
-  ReviewDecisionKind,
   type ObservePullRequest,
   type PullRequestService,
 } from '../../../activities/index.js';
@@ -10,7 +9,7 @@ import {
   type EventJournal,
   type IdGenerator,
 } from '../../../kernel/index.js';
-import { signalName, type OrchestrationService } from '../../../orchestration/index.js';
+import type { OrchestrationService } from '../../../orchestration/index.js';
 import type { ResourceLookup, ResourceService } from '../../../resources/index.js';
 import {
   BuiltInResourceCapability,
@@ -28,11 +27,11 @@ import type { WorkflowRouter } from '../../contracts/provider.js';
 import type { GitHubIntakeRuleConfig } from '../contracts/config.js';
 import type { ExternalWorkObservedPayload, GitHubAdapterEvent } from '../contracts/events.js';
 import { GitHubEventType, selectGitHubAdapterEvent } from '../contracts/events.js';
-import { GitHubAdapter, UnknownGitHubIdentity } from '../contracts/vocabulary.js';
+import { GitHubAdapter } from '../contracts/vocabulary.js';
 import { commandContext } from './inbound-context.js';
+import { applyReviewSignal } from './inbound-review-signals.js';
 import { gitHubIntakeFacts, gitHubIntakeRules } from './intake-policy.js';
 import { observePullRequest } from './pull-request-translation.js';
-import { translateGitHubReviewCommand } from './review-command-translator.js';
 
 type InboundCommandCandidate =
   | {
@@ -133,7 +132,17 @@ export class InboundTranslator {
       if (owned?.stream.id === this.adapter && owned.eventType === GitHubEventType.WorkObserved)
         await this.apply(owned);
       if (owned?.stream.id === this.adapter && owned.eventType === GitHubEventType.CommentObserved)
-        await this.applyReviewSignal(owned);
+        await applyReviewSignal({
+          event: owned,
+          journal: this.journal,
+          resources: this.resources,
+          work: this.work,
+          lookup: this.lookup,
+          pullRequests: this.pullRequests,
+          ids: this.ids,
+          adapter: this.adapter,
+          orchestration: this.orchestration,
+        });
       await this.checkpoints.save(checkpoint, event.globalPosition);
     }
   }
@@ -163,6 +172,7 @@ export class InboundTranslator {
             externalKey: current.externalKey,
             capabilities: current.capabilities,
             revision: payload.revision,
+            ...(current.title === undefined ? {} : { title: current.title }),
           },
           context,
         );
@@ -194,6 +204,7 @@ export class InboundTranslator {
         objective: payload.title,
         tags: intake.tags,
         revision: payload.revision,
+        title: payload.title,
       },
       context,
       isPullRequest
@@ -205,82 +216,6 @@ export class InboundTranslator {
           }
         : undefined,
     );
-  }
-
-  private async applyReviewSignal(
-    event: Extract<GitHubAdapterEvent, { eventType: typeof GitHubEventType.CommentObserved }>,
-  ): Promise<void> {
-    if (this.journal === undefined || this.resources === undefined || this.work === undefined)
-      return;
-    const payload = event.payload;
-    if (payload.reviewKind === 'issue') {
-      await this.applyIssueApprovalSignal(event);
-      return;
-    }
-    if (this.lookup === undefined) throw new Error('InboundTranslator lookup is required');
-    let resourceIdValue = await this.lookup.resourceIdForExternalKey({
-      adapter: this.adapter,
-      key: payload.externalKey,
-    });
-    if (resourceIdValue === null) resourceIdValue = resourceId(this.ids.next('resource'));
-    const proposed = translateGitHubReviewCommand({
-      resourceId: resourceIdValue,
-      revision: payload.revision,
-      actorId: payload.actor.id,
-      actorKind: payload.actor.kind,
-      resourceAuthorId: payload.resourceAuthorId ?? UnknownGitHubIdentity,
-      authorization: payload.authorization ?? { source: 'none' },
-      providerEventId: event.eventId,
-      body: payload.body,
-    });
-    if (proposed === null) return;
-    const context = commandContext(event);
-    const pullRequests =
-      this.pullRequests ?? createPullRequestService(this.journal, this.work, this.resources);
-    if (proposed.kind === ReviewDecisionKind.Accepted)
-      await pullRequests.acceptReviewSignal(
-        {
-          ...proposed,
-          origin: 'provider-native-review',
-          acceptedEventId: proposed.providerEventId,
-        },
-        context,
-      );
-    else
-      await pullRequests.requestChangesSignal(
-        { ...proposed, requestedEventId: proposed.providerEventId },
-        context,
-      );
-  }
-
-  private async applyIssueApprovalSignal(
-    event: Extract<GitHubAdapterEvent, { eventType: typeof GitHubEventType.CommentObserved }>,
-  ): Promise<void> {
-    if (this.resources === undefined || this.lookup === undefined || this.orchestration === undefined) return;
-    const resourceIdValue = await this.lookup.resourceIdForExternalKey({
-      adapter: this.adapter,
-      key: event.payload.externalKey,
-    });
-    if (resourceIdValue === null) return;
-    const workItemIds = (await this.resources.correlations(resourceIdValue))
-      .filter((correlation) => correlation.role === ResourceCorrelationRole.Primary)
-      .map((correlation) => correlation.workItemId);
-    for (const workflow of await this.orchestration.listAll()) {
-      if (!workItemIds.includes(workflow.workItemId)) continue;
-      await this.orchestration.acceptSignal(
-        workflow.workflowInstanceId,
-        {
-          kind: signalName('approved'),
-          actorId: event.payload.actor.id,
-          actorDecision: {
-            authorized: event.payload.actor.kind === 'human',
-            evidenceId: event.eventId,
-          },
-          providerEventId: event.eventId,
-        },
-        commandContext(event),
-      );
-    }
   }
 
   private mintIdentity(externalKey: { readonly adapter: string; readonly key: string }) {
