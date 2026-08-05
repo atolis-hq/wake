@@ -12,7 +12,7 @@ import type {
   ResourceLookup,
   ResourceService,
 } from '../../resources/index.js';
-import type { WorkService } from '../../work/index.js';
+import type { WorkItemId, WorkItemView, WorkService } from '../../work/index.js';
 import type { ExternalDeliveryAdapter } from '../delivery/contracts/config.js';
 import type { ArtifactVerificationResult } from './artifact-vocabulary.js';
 import type { IntegrationsConfig } from './config.js';
@@ -23,6 +23,14 @@ import type { ExternalEventSource, InboundTranslation } from './intake.js';
 // workflow a candidate belongs to, but never proposes a workflow name.
 export interface WorkflowRouter {
   select(candidate: WorkflowCandidate): WorkflowName;
+}
+
+// Structurally matches control-plane's WorkConclusionPolicy without importing
+// it — integrations may not depend on control-plane (dependency-cruiser.config.mjs).
+// bootstrap/composition-root.ts supplies the real cascade; this is the shape it must satisfy.
+export interface WorkConclusion {
+  closeWork(workItemId: WorkItemId, reason: string): Promise<WorkItemView>;
+  cancelWork(workItemId: WorkItemId, reason: string): Promise<WorkItemView>;
 }
 
 export interface ProviderServices {
@@ -36,6 +44,7 @@ export interface ProviderServices {
   readonly journal: EventJournal;
   readonly checkpoints: CheckpointStore;
   readonly routing: WorkflowRouter;
+  readonly conclusion: WorkConclusion;
 }
 
 export interface VerifiedArtifact {
