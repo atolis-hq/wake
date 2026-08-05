@@ -21,6 +21,7 @@ export type ExecutionFailureCode = ValueOf<typeof ExecutionFailureCode>;
 export const ExecutionCancellationReason = defineClosedVocabulary({
   Operator: 'operator',
   WorkCancelled: 'work-cancelled',
+  WorkClosed: 'work-closed',
   WorkflowSuperseded: 'workflow-superseded',
   Timeout: 'timeout',
   Shutdown: 'shutdown',
