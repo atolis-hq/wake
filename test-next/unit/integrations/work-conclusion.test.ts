@@ -5,8 +5,8 @@ import {
   type WorkConclusion,
   type WorkConclusionServices,
 } from '../../../src-next/integrations/index.js';
-import { workId } from '../../support/identities.js';
 import type { WorkItemId, WorkItemView, WorkService } from '../../../src-next/work/index.js';
+import { workId } from '../../support/identities.js';
 
 function fakeWork(state: WorkItemView['state'] | null): WorkService {
   return {
@@ -17,7 +17,8 @@ function fakeWork(state: WorkItemView['state'] | null): WorkService {
 }
 
 function fakeConclusion() {
-  const calls: { method: 'closeWork' | 'cancelWork'; workItemId: WorkItemId; reason: string }[] = [];
+  const calls: { method: 'closeWork' | 'cancelWork'; workItemId: WorkItemId; reason: string }[] =
+    [];
   const conclusion: WorkConclusion = {
     async closeWork(id, reason) {
       calls.push({ method: 'closeWork', workItemId: id, reason });

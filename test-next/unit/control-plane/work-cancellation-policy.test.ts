@@ -31,7 +31,9 @@ function fakeWorkPort() {
   };
 }
 
-function fakeOrchestrationPort(workflows: { workflowInstanceId: string; workItemId: WorkItemId }[]) {
+function fakeOrchestrationPort(
+  workflows: { workflowInstanceId: string; workItemId: WorkItemId }[],
+) {
   const blocked: { workflowInstanceId: string; reason: string }[] = [];
   return {
     blocked,

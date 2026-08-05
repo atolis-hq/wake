@@ -216,7 +216,13 @@ export class InboundTranslator {
     readonly resourceId: ResourceId;
     readonly workItemId: WorkItemId;
   }): Promise<void> {
-    const { payload, context, pullRequests, resourceId: resourceIdValue, workItemId: workItemIdValue } = input;
+    const {
+      payload,
+      context,
+      pullRequests,
+      resourceId: resourceIdValue,
+      workItemId: workItemIdValue,
+    } = input;
     const current = await this.resources!.get(resourceIdValue);
     if (current === null) throw new Error(`Resource ${resourceIdValue} could not be loaded`);
     if (current.revision !== payload.revision) {

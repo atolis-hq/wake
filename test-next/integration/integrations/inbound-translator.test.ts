@@ -102,7 +102,10 @@ describe('InboundTranslator', () => {
 
     await translator.runOnce();
 
-    const resourceId = await lookup.resourceIdForExternalKey({ adapter: 'github', key: 'owner/repo#7' });
+    const resourceId = await lookup.resourceIdForExternalKey({
+      adapter: 'github',
+      key: 'owner/repo#7',
+    });
     await expect(resources.get(resourceId!)).resolves.toMatchObject({ title: 'Improve intake' });
   });
 });
@@ -167,7 +170,9 @@ describe('InboundTranslator conclusion', () => {
     await journal.append(closed.stream, 1, [closed]);
     await translator.runOnce();
 
-    expect(calls).toEqual([{ method: 'closeWork', reason: expect.stringContaining('owner/repo#9') }]);
+    expect(calls).toEqual([
+      { method: 'closeWork', reason: expect.stringContaining('owner/repo#9') },
+    ]);
   });
 
   it('cancels the work item when a re-observed issue carries a Cancelled outcome', async () => {
@@ -229,7 +234,9 @@ describe('InboundTranslator conclusion', () => {
     await journal.append(closed.stream, 1, [closed]);
     await translator.runOnce();
 
-    expect(calls).toEqual([{ method: 'cancelWork', reason: expect.stringContaining('owner/repo#10') }]);
+    expect(calls).toEqual([
+      { method: 'cancelWork', reason: expect.stringContaining('owner/repo#10') },
+    ]);
   });
 });
 

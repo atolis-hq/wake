@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { ExternalWorkOutcome } from '../../../src-next/integrations/index.js';
 import { issueObservation } from '../../../src-next/integrations/github/index.js';
+import { ExternalWorkOutcome } from '../../../src-next/integrations/index.js';
 
 describe('issueObservation outcome mapping', () => {
   it('has no outcome for an open issue', () => {
