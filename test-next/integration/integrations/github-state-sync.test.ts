@@ -325,6 +325,127 @@ it('reconciles target workflow markers to correlated GitHub resources without re
   ]);
 });
 
+it('reflects only the primary workflow in labels, adding a watching marker while a watch child is active', async () => {
+  const published: Array<{
+    owner: string;
+    repo: string;
+    number: number;
+    labels: readonly string[];
+  }> = [];
+  const reconciler = createGitHubWakeLabelReconciler({
+    orchestration: {
+      async listAll() {
+        return [
+          {
+            workflowInstanceId: 'primary-1',
+            workItemId: workId('watch-work'),
+            workflowName: 'dark-factory',
+            orchestrationGroupId: 'group-1',
+            status: 'waiting',
+            currentStage: 'refine',
+          },
+          {
+            workflowInstanceId: 'child-1',
+            parentWorkflowInstanceId: 'primary-1',
+            workItemId: workId('watch-work'),
+            workflowName: 'plan-review',
+            orchestrationGroupId: 'group-1',
+            status: 'active',
+            currentStage: 'review',
+          },
+        ] as never;
+      },
+    },
+    resources: {
+      async correlationsForWork() {
+        return [{ resourceId: resId('watch-resource') }] as never;
+      },
+      async get() {
+        return { externalKey: { adapter: 'github', key: 'org/repo#43' } } as never;
+      },
+    },
+    async getLabels() {
+      return [];
+    },
+    async setLabels(owner, repo, number, labels) {
+      published.push({ owner, repo, number, labels });
+    },
+  });
+
+  await reconciler.runOnce();
+  expect(published).toEqual([
+    {
+      owner: 'org',
+      repo: 'repo',
+      number: 43,
+      labels: [
+        'wake:status.awaiting-approval',
+        'wake:stage.refine',
+        'wake:workflow.dark-factory',
+        'wake:watching',
+      ],
+    },
+  ]);
+});
+
+it('drops the watching marker once every watch child has completed', async () => {
+  const published: Array<{
+    owner: string;
+    repo: string;
+    number: number;
+    labels: readonly string[];
+  }> = [];
+  const reconciler = createGitHubWakeLabelReconciler({
+    orchestration: {
+      async listAll() {
+        return [
+          {
+            workflowInstanceId: 'primary-1',
+            workItemId: workId('watch-work'),
+            workflowName: 'dark-factory',
+            orchestrationGroupId: 'group-1',
+            status: 'active',
+            currentStage: 'implement',
+          },
+          {
+            workflowInstanceId: 'child-1',
+            parentWorkflowInstanceId: 'primary-1',
+            workItemId: workId('watch-work'),
+            workflowName: 'plan-review',
+            orchestrationGroupId: 'group-1',
+            status: 'completed',
+            currentStage: 'review',
+          },
+        ] as never;
+      },
+    },
+    resources: {
+      async correlationsForWork() {
+        return [{ resourceId: resId('watch-resource') }] as never;
+      },
+      async get() {
+        return { externalKey: { adapter: 'github', key: 'org/repo#43' } } as never;
+      },
+    },
+    async getLabels() {
+      return ['wake:watching'];
+    },
+    async setLabels(owner, repo, number, labels) {
+      published.push({ owner, repo, number, labels });
+    },
+  });
+
+  await reconciler.runOnce();
+  expect(published).toEqual([
+    {
+      owner: 'org',
+      repo: 'repo',
+      number: 43,
+      labels: ['wake:status.working', 'wake:stage.implement', 'wake:workflow.dark-factory'],
+    },
+  ]);
+});
+
 it('polls issue comments, including an /approved command', async () => {
   const source = createGitHubSource(
     gitHubConfigSchema.parse({

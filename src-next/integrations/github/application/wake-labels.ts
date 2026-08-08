@@ -44,8 +44,20 @@ export function createGitHubWakeLabelReconciler(input: {
 }): GitHubWakeLabelReconciler {
   return {
     async runOnce() {
-      for (const workflow of await input.orchestration.listAll()) {
-        const desired = desiredWakeLabels(workflow);
+      const workflows = await input.orchestration.listAll();
+      // A watch's spawned child shares its parent's work item (and so its GitHub
+      // resource) but is not the canonical state for that issue — only the
+      // top-level (non-child) workflow instance drives its stage/status labels.
+      // An active child instead surfaces as the watching marker below, so the
+      // issue's own progress labels stay stable while a background review runs.
+      for (const workflow of workflows) {
+        if (workflow.parentWorkflowInstanceId !== undefined) continue;
+        const watching = workflows.some(
+          (candidate) =>
+            candidate.parentWorkflowInstanceId === workflow.workflowInstanceId &&
+            candidate.status !== WorkflowStatus.Completed,
+        );
+        const desired = desiredWakeLabels(workflow, watching);
         for (const correlation of await input.resources.correlationsForWork(workflow.workItemId)) {
           const resource = await input.resources.get(correlation.resourceId);
           if (resource?.externalKey.adapter !== 'github') continue;
@@ -61,15 +73,19 @@ export function createGitHubWakeLabelReconciler(input: {
   };
 }
 
-function desiredWakeLabels(workflow: {
-  readonly status: WorkflowStatus;
-  readonly currentStage: string;
-  readonly workflowName: string;
-}): readonly string[] {
+function desiredWakeLabels(
+  workflow: {
+    readonly status: WorkflowStatus;
+    readonly currentStage: string;
+    readonly workflowName: string;
+  },
+  watching: boolean,
+): readonly string[] {
   return [
     `wake:status.${statusLabel(workflow.status)}`,
     `wake:stage.${workflow.currentStage}`,
     `wake:workflow.${workflow.workflowName}`,
+    ...(watching ? ['wake:watching'] : []),
   ];
 }
 

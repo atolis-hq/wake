@@ -13,6 +13,7 @@ import {
   createExecutionService,
   createRecoveryCoordinator,
   RecoveryService,
+  RunRepository,
   type ExternalExecutionInspector,
   type RunView,
 } from '../../../src-next/execution/index.js';
@@ -118,6 +119,7 @@ export class TestWorld {
     this.orchestration,
     this.journal,
     this.checkpoints,
+    new RunRepository(this.journal),
   );
 
   private readonly stream: EntityRef<'test', 'scenario'> = {

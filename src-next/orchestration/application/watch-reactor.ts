@@ -1,3 +1,4 @@
+import { selectRunExecutionEvent, type RunRepository } from '../../execution/index.js';
 import {
   correlationId,
   EventActorKind,
@@ -46,11 +47,18 @@ export function createWatchReactor(
   orchestration: WatchOrchestrationPort,
   journal?: EventJournal,
   checkpoints?: CheckpointStore,
+  runs?: Pick<RunRepository, 'load'>,
 ) {
   return {
     async react(event: PersistedEvent, context: CommandContext): Promise<void> {
       const causalCycle = orchestrationCausalCycleId(selectOrchestrationEvent(event));
+      const sourceWorkflowInstanceId = await resolveRunWorkflowInstanceId(event, runs);
       for (const match of await orchestration.listWatchMatches(event.eventType)) {
+        if (
+          sourceWorkflowInstanceId !== undefined &&
+          match.parent.workflowInstanceId !== sourceWorkflowInstanceId
+        )
+          continue;
         const requestId = workflowInstanceId(
           `${match.parent.workflowInstanceId}:watch:${match.watch.id}:trigger:${event.eventId}`,
         );
@@ -103,6 +111,25 @@ function commandContext(event: PersistedEvent): CommandContext {
     occurredAt: event.occurredAt,
     actor: { kind: EventActorKind.System, id: 'watch-reactor' },
   };
+}
+
+/**
+ * A run-lifecycle event (e.g. `execution.run-succeeded`) fires for every run
+ * in the system, including a watch's own spawned child re-running its own
+ * activity on retry. Without this, `listWatchMatches` would treat any
+ * currently-eligible parent's declared event type as a match regardless of
+ * which run actually produced it, causing a child's own retry (or an
+ * unrelated workflow's run) to spuriously re-trigger the same watch.
+ */
+async function resolveRunWorkflowInstanceId(
+  event: PersistedEvent,
+  runs: Pick<RunRepository, 'load'> | undefined,
+): Promise<string | undefined> {
+  if (runs === undefined) return undefined;
+  const runEvent = selectRunExecutionEvent(event);
+  if (runEvent === null) return undefined;
+  const run = (await runs.load(runEvent.stream.id)).view;
+  return run?.workflowInstanceId;
 }
 
 function orchestrationCausalCycleId(event: OrchestrationEvent | null): string | undefined {

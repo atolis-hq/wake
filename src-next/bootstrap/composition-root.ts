@@ -339,14 +339,15 @@ async function composeIntegrationRuntime(
     providers,
     runs: input.execution,
   });
+  const runs = new RunRepository(input.journal);
   const agentRunPublications = new AgentRunPublicationReactor({
     journal: input.journal,
     checkpoints: input.checkpoints,
-    runs: new RunRepository(input.journal),
+    runs,
     resources: input.resources,
     orchestration: input.orchestration,
   });
-  const watch = createWatchReactor(input.orchestration, input.journal, input.checkpoints);
+  const watch = createWatchReactor(input.orchestration, input.journal, input.checkpoints, runs);
   const outcomes = new DeliveryOutcomeReactor(
     input.journal,
     input.checkpoints,

@@ -146,24 +146,32 @@ Expected sequence:
     Labels = @('wake-next-verify', 'dark-factory-test')
     Body   = @'
 What should happen: this issue is picked up by the **dark-factory**
-workflow, which runs `refine`/`implement` on the `fake-worker` pool and
-spawns a `plan-review` watch (a separate `plan-review` workflow instance
-on the `fake-reviewer` pool) while `refine` is waiting.
+workflow, which gates both `refine` and `implement` on a `watchGates`
+route — each stage spawns a review watch and waits for that watch's
+own verdict to arrive back through a real GitHub comment before
+advancing.
 
 Expected sequence:
 1. Wake runs `refine` on `fake-worker` (~20s active-run card, outcome
-   `DONE` via the `refine-fake-worker` rule) and then waits for the
-   `plan-review` watch to complete before advancing.
+   `DONE` via the `refine-fake-worker` rule), then waits on the
+   `plan-review` watchGate.
 2. The `plan-review` watch spawns its own workflow instance: first
    activation matches `fail-first-plan-review` (~20s, `FAILED`,
-   safe-to-retry), second activation matches
-   `recover-plan-review-on-retry` (~20s, `DONE`).
-3. Once the watch's child workflow reports `orchestration.child-completed`,
-   the parent issue advances to `implement` on `fake-worker` (~20s,
-   `DONE` via `implement-fake-worker`), then to `done`.
-4. Note: src-next does not yet model the plan-review watch as a nested
-   child-of the main run on the board — expect it to appear as an
-   independent run/card, not a watcher sub-card, until that UI work lands.
+   safe-to-retry — a technical failure, retried automatically within
+   that child), second activation matches `recover-plan-review-on-retry`
+   (~20s, `DONE` — a real verdict). That child's own run-completion
+   comment on this issue carries a `wake.watchGateVerdict` JSON marker;
+   once Wake polls and observes that comment, the parent's `plan-review`
+   gate resolves and the issue advances to `implement`.
+3. Wake runs `implement` on `fake-worker` (~20s, `DONE` via
+   `implement-fake-worker`), then waits on the `pr-review` watchGate.
+4. The `pr-review` watch spawns its own workflow instance: `pr-review-approves`
+   (~20s, `DONE`) posts its own verdict marker; once observed, the
+   `pr-review` gate resolves and the issue moves to `done`.
+5. A human (or an external reviewer) can also resolve either gate
+   directly by commenting `/approved` or `/changes` on this issue —
+   the same override Wake already recognizes for the plain `approval`
+   workflow.
 '@
   }
 )
