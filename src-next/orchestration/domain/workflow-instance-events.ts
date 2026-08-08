@@ -226,6 +226,9 @@ function applySignalWaitStarted(
     ...(event.payload.revision === undefined ? {} : { revision: event.payload.revision }),
     ...(event.payload.from === undefined ? {} : { from: event.payload.from }),
     ...(event.payload.resume === undefined ? {} : { resume: event.payload.resume }),
+    ...(event.payload.onRejectResume === undefined
+      ? {}
+      : { onRejectResume: event.payload.onRejectResume }),
   };
 }
 

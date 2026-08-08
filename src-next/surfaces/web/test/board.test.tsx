@@ -25,6 +25,7 @@ function boardClient(fetchSpy?: (url: string) => void) {
       totalTokens: 0,
       totalCostUsd: 0,
       totalDurationMs: 300_000,
+      activeRun: { action: 'pr-review', runnerName: 'fake', startedAt: asOf, elapsedMs: 12_000 },
     },
     {
       workItemKey: 'wk_b',
@@ -123,6 +124,17 @@ describe('board', () => {
     expect(
       within(card).getByText('1 runs · last run 2m ago · 5m total · $0.0000 · 0 tokens'),
     ).toBeTruthy();
+  });
+  it('shows the child-run indicator only for a work item with an active child run', async () => {
+    render(
+      <MemoryRouter initialEntries={['/board']}>
+        <App client={boardClient()} />
+      </MemoryRouter>,
+    );
+    const active = await screen.findByRole('listitem', { name: 'Alpha' });
+    const inactive = screen.getByRole('listitem', { name: 'Beta' });
+    expect(within(active).getByText('pr-review running')).toBeTruthy();
+    expect(within(inactive).queryByText(/running/i)).toBeNull();
   });
   it('shows the last run outcome returned by the board API', async () => {
     const client = new WakeApiClient(async (input) => {

@@ -5,9 +5,9 @@ import type {
   TransitionTarget,
 } from '../contracts/config.js';
 import type { WorkflowOrchestrationEventDraft } from '../contracts/events.js';
-import { OrchestrationEventType } from '../contracts/events.js';
+import { OrchestrationEventType, WatchGateVerdictSignal } from '../contracts/events.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
-import { TransitionTargetKind } from '../contracts/vocabulary.js';
+import { ApprovalAuthorityKind, TransitionTargetKind } from '../contracts/vocabulary.js';
 import { activation, nextOrdinal, stateDraft } from './decision-events.js';
 
 interface TransitionInput {
@@ -28,6 +28,27 @@ export function finishRoute(
   input: TransitionInput,
   route: CompiledOutcomeRoute,
 ): void {
+  if (route.watchGates !== undefined) {
+    const gate = route.watchGates[0]!;
+    events.push(
+      stateDraft(
+        state,
+        input,
+        OrchestrationEventType.SignalWaitStarted,
+        {
+          signalKind: WatchGateVerdictSignal,
+          from: Object.freeze([
+            { kind: ApprovalAuthorityKind.Watch, watch: gate.watch },
+            { kind: ApprovalAuthorityKind.Human },
+          ]),
+          resume: route.target,
+          onRejectResume: gate.onRejectTarget,
+        },
+        events.length + 1,
+      ),
+    );
+    return;
+  }
   if (route.await !== undefined) {
     events.push(
       stateDraft(

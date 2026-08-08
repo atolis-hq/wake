@@ -92,8 +92,14 @@ describe('Execution runner selection', () => {
     const run = await service.attempt(activation(), context());
 
     expect(run).toMatchObject({
-      sessionId: 'session-1',
-      tokenUsage: { input: 10, output: 20, costUsd: 0.03 },
+      agent: {
+        metadata: {
+          sessionId: 'session-1',
+          inputTokens: 10,
+          outputTokens: 20,
+          costUsd: 0.03,
+        },
+      },
     });
   });
 });

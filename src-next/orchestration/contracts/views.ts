@@ -28,6 +28,7 @@ export interface SignalExpectationView {
   readonly revision?: string;
   readonly from?: readonly ApprovalAuthority[];
   readonly resume?: TransitionTarget;
+  readonly onRejectResume?: TransitionTarget;
 }
 
 export interface SupplementalActivityView {

@@ -4,6 +4,7 @@ import { activityName } from '../../../src-next/activities/index.js';
 import {
   orchestrationGroupId,
   signalName,
+  stageName,
   workflowName,
 } from '../../../src-next/orchestration/contracts/identifiers.js';
 import {
@@ -302,5 +303,38 @@ describe('Orchestration event contract', () => {
     expect(() =>
       selectOrchestrationEvent(eventEnvelope('orchestration.unknown', {}, workflow)),
     ).toThrow(/event-7.*position 7.*orchestration\.unknown/i);
+  });
+
+  it('round-trips a SignalWaitStarted event carrying onRejectResume', () => {
+    const decoded = decodeOrchestrationEvent(
+      eventEnvelope(
+        OrchestrationEventType.SignalWaitStarted,
+        {
+          signalKind: signalName('orchestration.watch-gate-verdict'),
+          resume: { kind: 'complete' },
+          onRejectResume: { kind: 'stage', stage: stageName('implement') },
+        },
+        workflow,
+      ),
+    );
+    if (decoded.eventType !== OrchestrationEventType.SignalWaitStarted)
+      throw new Error('expected SignalWaitStarted');
+    expect(decoded.payload.onRejectResume).toEqual({
+      kind: 'stage',
+      stage: stageName('implement'),
+    });
+  });
+
+  it('round-trips a SignalAccepted event carrying outcome', () => {
+    const decoded = decodeOrchestrationEvent(
+      eventEnvelope(
+        OrchestrationEventType.SignalAccepted,
+        { ...signal, outcome: 'rejected' },
+        workflow,
+      ),
+    );
+    if (decoded.eventType !== OrchestrationEventType.SignalAccepted)
+      throw new Error('expected SignalAccepted');
+    expect(decoded.payload.outcome).toBe('rejected');
   });
 });

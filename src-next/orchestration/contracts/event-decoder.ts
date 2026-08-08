@@ -135,6 +135,7 @@ export const expectationSchema = z
     revision: z.string().optional(),
     from: z.array(approvalAuthoritySchema).min(1).optional(),
     resume: transitionTargetSchema.optional(),
+    onRejectResume: transitionTargetSchema.optional(),
   })
   .strict();
 
@@ -149,6 +150,14 @@ export const signalSchema = z
     childWorkflowInstanceId: workflowInstanceIdSchema.optional(),
     requestId: z.string().optional(),
     authority: approvalAuthoritySchema.optional(),
+    outcome: z
+      .enum([
+        ActivityOutcomeKind.Done,
+        ActivityOutcomeKind.Rejected,
+        ActivityOutcomeKind.Blocked,
+        ActivityOutcomeKind.Failed,
+      ])
+      .optional(),
   })
   .strict();
 

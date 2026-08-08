@@ -13,6 +13,7 @@ import { workflowInstanceId } from '../contracts/identifiers.js';
 import { workflowInstanceStream } from '../contracts/streams.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
 import { coordinationDraft } from '../domain/coordination-events.js';
+import { stateDraft } from '../domain/decision-events.js';
 
 export class GroupBudgetRecorder {
   constructor(private readonly journal: EventJournal) {}
@@ -50,6 +51,13 @@ export class GroupBudgetRecorder {
             OrchestrationEventType.GroupBudgetExhausted,
             payload,
             1,
+          ),
+          stateDraft(
+            parent,
+            { occurredAt: context.occurredAt, causationId: context.commandId },
+            OrchestrationEventType.InstanceBlocked,
+            { reason: `watch group budget exhausted for ${metadata.watchId}` },
+            2,
           ),
         ]);
         return;

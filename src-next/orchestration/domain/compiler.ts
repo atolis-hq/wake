@@ -11,8 +11,10 @@ import {
   type CompiledOutcomeRoute,
   type CompiledStage,
   type CompiledSupplementalCommand,
+  type CompiledWatchGate,
   type CompiledWorkflow,
   type StageConfig,
+  type WatchGateConfig,
   type WorkflowDefinitionConfig,
 } from '../contracts/config.js';
 import {
@@ -127,6 +129,10 @@ function compileStage(
         );
       if (!isReservedTerminal(route.then) && !(route.then in allStages))
         throw new Error(`Unknown transition target: ${route.then}`);
+      if (route.await !== undefined && route.watchGates !== undefined)
+        throw new Error(
+          `Route ${compiledWorkflowName}:${rawStageName}:${outcomeKind} cannot configure both await and watchGates`,
+        );
       const followOns = route.activities?.map((activity) => ({
         use: activityName(activity.use),
         with: activities.validateInput(activityName(activity.use), activity.with),
@@ -148,6 +154,18 @@ function compileStage(
                 declaredWatchIds,
               ),
             }),
+        ...(route.watchGates === undefined
+          ? {}
+          : {
+              watchGates: compileWatchGates(
+                compiledWorkflowName,
+                rawStageName,
+                outcomeKind,
+                route.watchGates,
+                declaredWatchIds,
+                allStages,
+              ),
+            }),
         id: `${compiledWorkflowName}:${rawStageName}:${outcomeKind}`,
       });
       return [outcomeKind, compiled];
@@ -159,6 +177,36 @@ function compileStage(
     ...(stage.execution === undefined ? {} : { execution: stage.execution }),
     on: Object.freeze(on),
   });
+}
+
+function compileWatchGates(
+  workflow: ReturnType<typeof workflowName>,
+  rawStageName: string,
+  outcomeKind: string,
+  entries: readonly WatchGateConfig[],
+  declaredWatchIds: ReadonlySet<string>,
+  allStages: WorkflowDefinitionConfig['stages'],
+): readonly CompiledWatchGate[] {
+  if (entries.length !== 1)
+    throw new Error(
+      `Route ${workflow}:${rawStageName}:${outcomeKind} configures ${entries.length} watchGates; exactly 1 is supported`,
+    );
+  return Object.freeze(
+    entries.map((entry) => {
+      const normalized = typeof entry === 'string' ? { watch: entry } : entry;
+      if (!declaredWatchIds.has(normalized.watch))
+        throw new Error(
+          `Unknown watch reference in workflow "${workflow}" stage "${rawStageName}": "${normalized.watch}"`,
+        );
+      const onRejectThen = normalized.onReject?.then ?? rawStageName;
+      if (!isReservedTerminal(onRejectThen) && !(onRejectThen in allStages))
+        throw new Error(`Unknown watchGates onReject target: ${onRejectThen}`);
+      return Object.freeze({
+        watch: watchId(normalized.watch),
+        onRejectTarget: compileTarget(onRejectThen, outcomeKind),
+      });
+    }),
+  );
 }
 
 function compileAwait(

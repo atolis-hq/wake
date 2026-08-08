@@ -32,6 +32,15 @@ export const awaitConfigSchema = z
     from: z.array(approvalAuthorityConfigSchema).min(1).readonly(),
   })
   .strict();
+const watchGateConfigSchema = z.union([
+  identifier,
+  z
+    .object({
+      watch: identifier,
+      onReject: z.object({ then: identifier }).strict().optional(),
+    })
+    .strict(),
+]);
 const commandName = z.string().regex(/^\/[a-z][a-z0-9-]*$/);
 const canonicalEventName = z.string().regex(/^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)+$/);
 const watchStatus = z.enum([WorkflowStatus.Active, WorkflowStatus.Waiting, WorkflowStatus.Blocked]);
@@ -72,6 +81,7 @@ export const outcomeRouteConfigSchema = z
     repeat: bound.optional(),
     retry: bound.optional(),
     await: awaitConfigSchema.optional(),
+    watchGates: z.array(watchGateConfigSchema).optional(),
   })
   .strict();
 
@@ -141,6 +151,8 @@ export type FollowOnActivityConfig = z.infer<typeof followOnActivityConfigSchema
 
 export type AwaitConfig = z.infer<typeof awaitConfigSchema>;
 
+export type WatchGateConfig = z.infer<typeof watchGateConfigSchema>;
+
 export type OutcomeRouteConfig = z.infer<typeof outcomeRouteConfigSchema>;
 
 export type StageConfig = z.infer<typeof stageConfigSchema>;
@@ -169,6 +181,11 @@ export interface CompiledAwait {
   readonly resume: TransitionTarget;
 }
 
+export interface CompiledWatchGate {
+  readonly watch: WatchId;
+  readonly onRejectTarget: TransitionTarget;
+}
+
 export interface CompiledFollowOnActivity {
   readonly use: ActivityName;
   readonly with: unknown;
@@ -176,12 +193,13 @@ export interface CompiledFollowOnActivity {
 
 export interface CompiledOutcomeRoute extends Omit<
   OutcomeRouteConfig,
-  'activities' | 'then' | 'await'
+  'activities' | 'then' | 'await' | 'watchGates'
 > {
   readonly id: string;
   readonly target: TransitionTarget;
   readonly activities?: readonly CompiledFollowOnActivity[];
   readonly await?: CompiledAwait;
+  readonly watchGates?: readonly CompiledWatchGate[];
 }
 
 export interface CompiledStage extends Omit<StageConfig, 'activity' | 'execution' | 'on'> {

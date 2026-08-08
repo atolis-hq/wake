@@ -40,6 +40,8 @@ describe('WorkItem', () => {
       relatedWorkItems: [],
       tags: [],
       autoApprovalGranted: false,
+      frozen: false,
+      deleted: false,
     });
   });
 
