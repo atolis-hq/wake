@@ -11,6 +11,7 @@ import {
   TransitionTargetKind,
   commandName,
   compileWorkflow,
+  outcomeRouteConfigSchema,
   signalName,
   stageName,
   workflowName,
@@ -35,6 +36,28 @@ function registry(): ActivityRegistry {
 }
 
 describe('compiled workflow contracts', () => {
+  it('accepts a bare watch id as watchGates shorthand', () => {
+    expect(outcomeRouteConfigSchema.safeParse({ then: 'done', watchGates: ['pr-review'] }).success).toBe(true);
+  });
+
+  it('accepts a full watchGates entry with onReject', () => {
+    expect(
+      outcomeRouteConfigSchema.safeParse({
+        then: 'done',
+        watchGates: [{ watch: 'pr-review', onReject: { then: 'implement' } }],
+      }).success,
+    ).toBe(true);
+  });
+
+  it('rejects a watchGates entry with unknown fields', () => {
+    expect(
+      outcomeRouteConfigSchema.safeParse({
+        then: 'done',
+        watchGates: [{ watch: 'pr-review', extra: true }],
+      }).success,
+    ).toBe(false);
+  });
+
   it('rejects a workflow outcome route not declared by its Activity', () => {
     expect(() =>
       compileWorkflow(
