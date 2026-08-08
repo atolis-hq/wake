@@ -3,12 +3,11 @@ import { main } from '../../../src-next/main.js';
 import { parseWakeCommand, runWakeCommand } from '../../../src-next/surfaces/cli/main.js';
 
 describe('operational CLI reachability', () => {
-  it.each(['init', 'doctor', 'sandbox', 'sandbox-setup', 'self-update', 'smoke'] as const)(
-    'parses %s as a target command',
-    (name) => {
-      expect(parseWakeCommand([name]).kind).toBe(name);
-    },
-  );
+  it.each(
+    ['init', 'doctor', 'sandbox', 'sandbox-setup', 'sandbox-entrypoint', 'self-update', 'smoke'] as const,
+  )('parses %s as a target command', (name) => {
+    expect(parseWakeCommand([name]).kind).toBe(name);
+  });
 
   it('initialises before composing a target root', async () => {
     const calls: string[] = [];
@@ -43,6 +42,7 @@ describe('operational CLI reachability', () => {
           doctor: async () => ({ failures: [], notices: ['target diagnostics'] }),
           sandbox: async () => undefined,
           sandboxSetup: async () => undefined,
+          sandboxEntrypoint: async () => undefined,
           selfUpdate: async () => ({ updated: false }),
           smoke: async () => ({ ok: true }),
         },
@@ -51,5 +51,39 @@ describe('operational CLI reachability', () => {
       new AbortController().signal,
     );
     expect(output).toEqual(['{"failures":[],"notices":["target diagnostics"]}\n']);
+  });
+
+  it('dispatches sandbox-entrypoint through the injected target operational application', async () => {
+    const calls: (readonly string[])[] = [];
+    await runWakeCommand(
+      parseWakeCommand(['sandbox-entrypoint', '--wake-root', '/wake']),
+      {
+        tick: { run: async () => ({ advances: 0, runs: 0, stoppedBecause: 'idle' }) },
+        start: { run: async () => ({ advances: 0, runs: 0, stoppedBecause: 'idle' }) },
+        stop: { stop: async () => undefined },
+        api: { start: async () => undefined },
+        ui: { start: async () => undefined },
+        audit: { read: async () => [] },
+        correlate: { correlate: async () => ({}) },
+        validateState: {
+          health: async () => ({ journal: 'ok', projections: 'ok', checkpoints: 'ok' }),
+          rebuildProjections: async () => undefined,
+        },
+        operational: {
+          init: async () => ({ wakeRoot: '/tmp/wake' }),
+          doctor: async () => ({ failures: [], notices: [] }),
+          sandbox: async () => undefined,
+          sandboxSetup: async () => undefined,
+          sandboxEntrypoint: async (arguments_) => {
+            calls.push(arguments_);
+          },
+          selfUpdate: async () => ({ updated: false }),
+          smoke: async () => ({ ok: true }),
+        },
+      },
+      { write: () => {} },
+      new AbortController().signal,
+    );
+    expect(calls).toEqual([['--wake-root', '/wake']]);
   });
 });
