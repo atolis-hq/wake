@@ -1,6 +1,6 @@
-import { execFile as nodeExecFile, spawn } from 'node:child_process';
+import { execFile as nodeExecFile, spawn, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
-import { access, copyFile, mkdir } from 'node:fs/promises';
+import { access, copyFile, mkdir, writeFile as writeFileContent } from 'node:fs/promises';
 import type { Server } from 'node:http';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline/promises';
@@ -19,6 +19,7 @@ import {
   createSandboxDockerPort,
   runDoctor,
   runSandbox,
+  runSandboxEntrypoint,
   runSandboxSetup,
   runSelfUpdateLatestLoop,
   runTargetSmoke,
@@ -30,6 +31,7 @@ import {
   type HostOptions,
   type SandboxDockerInspection,
   type SandboxDockerOptions,
+  type SandboxEntrypointDependencies,
   type WakeCliApplications,
 } from '../surfaces/index.js';
 import { workItemId } from '../work/index.js';
@@ -327,6 +329,9 @@ function createOperationalApplications(root: CompositionRoot) {
     },
     sandbox: async (arguments_: readonly string[]) =>
       runSandbox(arguments_, createSandboxDocker(root)),
+    sandboxEntrypoint: async () => {
+      await runSandboxEntrypoint(createSandboxEntrypointDependencies(root));
+    },
     selfUpdate: async (arguments_: readonly string[]) => {
       if (root.config.host.development.mode !== 'source')
         throw new Error('wake self-update requires host.development.mode: source');
@@ -655,6 +660,71 @@ async function closeAll(servers: Set<Server>): Promise<void> {
       servers.delete(server);
     }),
   );
+}
+
+const DEFAULT_START_RESTART_DELAY_SECONDS = 10;
+
+function createSandboxEntrypointDependencies(
+  root: CompositionRoot,
+): SandboxEntrypointDependencies {
+  const logDirectory = join(root.paths.dataRoot, 'logs');
+  const pidFile = join(logDirectory, 'start.pid');
+  const startLogFile = join(logDirectory, 'start.log');
+  const children = new Map<number, ChildProcess>();
+  return {
+    startEnabled: process.env.WAKE_START_ENABLED === 'true',
+    restartDelaySeconds: resolveRestartDelaySeconds(process.env),
+    wakeInvocation: sandboxWakeInvocation(root),
+    pidFile,
+    startLogFile,
+    ensureLogDirectory: async () => {
+      await mkdir(logDirectory, { recursive: true });
+    },
+    spawnDetached: (command, arguments_, options) => {
+      const sink = createProcessLogSink(
+        options.logFile,
+        { write: () => {} },
+        { maxBytes: 10 * 1024 * 1024 },
+      );
+      const child = spawn(command, [...arguments_], {
+        cwd: root.paths.wakeRoot,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        detached: true,
+      });
+      if (typeof child.pid !== 'number')
+        throw new Error('failed to spawn detached wake start process');
+      children.set(child.pid, child);
+      const forward = (chunk: Buffer) => void sink.write(chunk.toString('utf8'));
+      child.stdout?.on('data', forward);
+      child.stderr?.on('data', forward);
+      child.on('exit', () => {
+        if (typeof child.pid === 'number') children.delete(child.pid);
+        void sink.close();
+      });
+      child.unref();
+      return { pid: child.pid };
+    },
+    waitForExit: (pid) =>
+      new Promise<number>((resolve) => {
+        const child = children.get(pid);
+        if (child === undefined) {
+          resolve(1);
+          return;
+        }
+        child.on('exit', (code) => resolve(code ?? 1));
+      }),
+    writeFile: (path, content) => writeFileContent(path, content, 'utf8'),
+    sleep: (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
+    waitForever: () => new Promise<never>(() => {}),
+    log: (message) => process.stdout.write(`${message}\n`),
+  };
+}
+
+function resolveRestartDelaySeconds(env: NodeJS.ProcessEnv): number {
+  const value = env.WAKE_START_RESTART_DELAY_SECONDS;
+  if (value === undefined) return DEFAULT_START_RESTART_DELAY_SECONDS;
+  const seconds = Number(value);
+  return Number.isFinite(seconds) && seconds > 0 ? seconds : DEFAULT_START_RESTART_DELAY_SECONDS;
 }
 
 function createSandboxSetupDependencies(home: string) {
