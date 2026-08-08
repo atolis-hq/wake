@@ -73,7 +73,11 @@ export function acceptSignal(
   const events: WorkflowOrchestrationEventDraft[] = [
     stateDraft(state, input, OrchestrationEventType.SignalAccepted, { ...signal, authority }, 1),
   ];
-  if (expected.resume !== undefined) {
+  const rejectTarget =
+    signal.outcome === ActivityOutcomeKind.Rejected ? expected.onRejectResume : undefined;
+  if (rejectTarget !== undefined) {
+    resumeToTarget(events, definition, state, input, rejectTarget);
+  } else if (expected.resume !== undefined) {
     resumeToTarget(events, definition, state, input, expected.resume);
   } else {
     const stage = definition.stages[stageName(state.currentStage)]!;
