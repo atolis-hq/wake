@@ -37,7 +37,9 @@ function registry(): ActivityRegistry {
 
 describe('compiled workflow contracts', () => {
   it('accepts a bare watch id as watchGates shorthand', () => {
-    expect(outcomeRouteConfigSchema.safeParse({ then: 'done', watchGates: ['pr-review'] }).success).toBe(true);
+    expect(
+      outcomeRouteConfigSchema.safeParse({ then: 'done', watchGates: ['pr-review'] }).success,
+    ).toBe(true);
   });
 
   it('accepts a full watchGates entry with onReject', () => {

@@ -319,7 +319,10 @@ describe('Orchestration event contract', () => {
     );
     if (decoded.eventType !== OrchestrationEventType.SignalWaitStarted)
       throw new Error('expected SignalWaitStarted');
-    expect(decoded.payload.onRejectResume).toEqual({ kind: 'stage', stage: stageName('implement') });
+    expect(decoded.payload.onRejectResume).toEqual({
+      kind: 'stage',
+      stage: stageName('implement'),
+    });
   });
 
   it('round-trips a SignalAccepted event carrying outcome', () => {

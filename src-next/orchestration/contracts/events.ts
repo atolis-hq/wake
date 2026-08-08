@@ -8,7 +8,6 @@ import type { EventDraftUnion, EventUnion } from '../../kernel/index.js';
 import type { WorkItemId } from '../../work/index.js';
 import type { OrchestrationWaitingActivityOutcome } from './activity-outcome.js';
 import type { ApprovalAuthority, StageConfig, TransitionTarget } from './config.js';
-import { signalName } from './identifiers.js';
 import type {
   CommandName,
   OrchestrationGroupId,
@@ -17,6 +16,7 @@ import type {
   WorkflowInstanceId,
   WorkflowName,
 } from './identifiers.js';
+import { signalName } from './identifiers.js';
 import type {
   ChildOrchestrationGroupStreamId,
   ChildOrchestrationGroupStreamRef,

@@ -106,13 +106,77 @@ describe('compileWorkflow', () => {
   });
 
   it('compiles a watch gate with a self-loop rejection target', () => {
-    const compiled = compileWorkflow('parent', { stages: { implement: { activity: 'implement', with: { prompt: 'x' }, on: { done: { then: 'done', watchGates: ['pr-review'] } } } }, watches: [{ id: 'pr-review', while: { stages: ['implement'], statuses: ['waiting'] }, on: { events: ['review.requested'] }, workflow: 'pr-review', maxPerGroup: 1 }] }, registry(), ['parent', 'pr-review']);
-    expect(compiled.stages[stageName('implement')]?.on.done?.watchGates?.[0]).toEqual({ watch: 'pr-review', onRejectTarget: { kind: 'stage', stage: 'implement' } });
+    const compiled = compileWorkflow(
+      'parent',
+      {
+        stages: {
+          implement: {
+            activity: 'implement',
+            with: { prompt: 'x' },
+            on: { done: { then: 'done', watchGates: ['pr-review'] } },
+          },
+        },
+        watches: [
+          {
+            id: 'pr-review',
+            while: { stages: ['implement'], statuses: ['waiting'] },
+            on: { events: ['review.requested'] },
+            workflow: 'pr-review',
+            maxPerGroup: 1,
+          },
+        ],
+      },
+      registry(),
+      ['parent', 'pr-review'],
+    );
+    expect(compiled.stages[stageName('implement')]?.on.done?.watchGates?.[0]).toEqual({
+      watch: 'pr-review',
+      onRejectTarget: { kind: 'stage', stage: 'implement' },
+    });
   });
 
   it('validates watchGate references and multiplicity', () => {
-    const base = { stages: { implement: { activity: 'implement', with: { prompt: 'x' }, on: { done: { then: 'done', watchGates: ['ghost'] } } } } };
+    const base = {
+      stages: {
+        implement: {
+          activity: 'implement',
+          with: { prompt: 'x' },
+          on: { done: { then: 'done', watchGates: ['ghost'] } },
+        },
+      },
+    };
     expect(() => compileWorkflow('parent', base, registry())).toThrow(/Unknown watch reference/);
-    expect(() => compileWorkflow('parent', { ...base, stages: { implement: { ...base.stages.implement, on: { done: { then: 'done', watchGates: ['a', 'b'] } } } }, watches: [{ id: 'a', while: { stages: ['implement'], statuses: ['waiting'] }, on: { events: ['a.event'] }, workflow: 'a', maxPerGroup: 1 }, { id: 'b', while: { stages: ['implement'], statuses: ['waiting'] }, on: { events: ['b.event'] }, workflow: 'b', maxPerGroup: 1 }] }, registry(), ['parent', 'a', 'b'])).toThrow(/exactly 1 is supported/);
+    expect(() =>
+      compileWorkflow(
+        'parent',
+        {
+          ...base,
+          stages: {
+            implement: {
+              ...base.stages.implement,
+              on: { done: { then: 'done', watchGates: ['a', 'b'] } },
+            },
+          },
+          watches: [
+            {
+              id: 'a',
+              while: { stages: ['implement'], statuses: ['waiting'] },
+              on: { events: ['a.event'] },
+              workflow: 'a',
+              maxPerGroup: 1,
+            },
+            {
+              id: 'b',
+              while: { stages: ['implement'], statuses: ['waiting'] },
+              on: { events: ['b.event'] },
+              workflow: 'b',
+              maxPerGroup: 1,
+            },
+          ],
+        },
+        registry(),
+        ['parent', 'a', 'b'],
+      ),
+    ).toThrow(/exactly 1 is supported/);
   });
 });
