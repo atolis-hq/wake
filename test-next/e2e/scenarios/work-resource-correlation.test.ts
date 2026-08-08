@@ -56,6 +56,8 @@ defineScenario(
       relatedWorkItems: [],
       tags: [],
       autoApprovalGranted: false,
+      frozen: false,
+      deleted: false,
     });
     expect((await journal.readAll(0)).map((event) => event.eventType)).toEqual([
       'work.item-created',
