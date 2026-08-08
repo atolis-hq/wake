@@ -325,7 +325,7 @@ it('reconciles target workflow markers to correlated GitHub resources without re
   ]);
 });
 
-it('polls an issue /approved comment as a typed approval signal', async () => {
+it('polls issue comments, including an /approved command', async () => {
   const source = createGitHubSource(
     gitHubConfigSchema.parse({
       enabled: true,
@@ -380,6 +380,7 @@ it('polls an issue /approved comment as a typed approval signal', async () => {
   expect(
     events.filter((event) => event.eventType === GitHubEventType.CommentObserved),
   ).toMatchObject([
+    { payload: { reviewKind: 'issue', externalKey: 'org/repo#8', body: 'not an approval' } },
     { payload: { reviewKind: 'issue', externalKey: 'org/repo#8', body: '/approved' } },
   ]);
 });

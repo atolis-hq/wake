@@ -77,6 +77,7 @@ export const gitHubProviderDefinition: ProviderDefinition<GitHubConfig> = {
           lookup: services.resourceLookup,
           adapter,
           orchestration: services.orchestration,
+          runs: services.runs,
           routing: services.routing,
           intake: config.intake,
           conclusion: services.conclusion,

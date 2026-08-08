@@ -1,8 +1,10 @@
+/* eslint-disable max-lines */
 import {
   createPullRequestService,
   type ObservePullRequest,
   type PullRequestService,
 } from '../../../activities/index.js';
+import type { RunRepository } from '../../../execution/index.js';
 import {
   UlidIdGenerator,
   type CheckpointStore,
@@ -31,6 +33,7 @@ import { GitHubEventType, selectGitHubAdapterEvent } from '../contracts/events.j
 import { GitHubAdapter } from '../contracts/vocabulary.js';
 import { commandContext } from './inbound-context.js';
 import { applyReviewSignal } from './inbound-review-signals.js';
+import { applyWatchGateVerdictSignal } from './inbound-watch-gate-signals.js';
 import { gitHubIntakeFacts, gitHubIntakeRules } from './intake-policy.js';
 import { observePullRequest } from './pull-request-translation.js';
 
@@ -59,6 +62,7 @@ interface InboundTranslatorDependencies {
   readonly lookup?: ResourceLookup;
   readonly adapter?: AdapterId;
   readonly orchestration?: OrchestrationService;
+  readonly runs?: RunRepository;
   readonly routing?: WorkflowRouter;
   readonly intake?: readonly GitHubIntakeRuleConfig[];
   readonly conclusion?: WorkConclusion;
@@ -103,6 +107,7 @@ export class InboundTranslator {
     this.lookup = dependencies.lookup;
     this.adapter = dependencies.adapter ?? GitHubAdapter;
     this.orchestration = dependencies.orchestration;
+    this.runs = dependencies.runs;
     this.routing = dependencies.routing;
     this.intake = gitHubIntakeRules(dependencies.intake ?? []);
     this.conclusion = dependencies.conclusion;
@@ -113,6 +118,7 @@ export class InboundTranslator {
   private readonly lookup: ResourceLookup | undefined;
   private readonly adapter: AdapterId;
   private readonly orchestration: OrchestrationService | undefined;
+  private readonly runs: RunRepository | undefined;
   private readonly routing: WorkflowRouter | undefined;
   private readonly intake: readonly IntakeRule[];
   private readonly conclusion: WorkConclusion | undefined;
@@ -135,7 +141,10 @@ export class InboundTranslator {
       const owned = selectGitHubAdapterEvent(event);
       if (owned?.stream.id === this.adapter && owned.eventType === GitHubEventType.WorkObserved)
         await this.apply(owned);
-      if (owned?.stream.id === this.adapter && owned.eventType === GitHubEventType.CommentObserved)
+      if (
+        owned?.stream.id === this.adapter &&
+        owned.eventType === GitHubEventType.CommentObserved
+      ) {
         await applyReviewSignal({
           event: owned,
           journal: this.journal,
@@ -147,6 +156,12 @@ export class InboundTranslator {
           adapter: this.adapter,
           orchestration: this.orchestration,
         });
+        await applyWatchGateVerdictSignal({
+          event: owned,
+          runs: this.runs,
+          orchestration: this.orchestration,
+        });
+      }
       await this.checkpoints.save(checkpoint, event.globalPosition);
     }
   }

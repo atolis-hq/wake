@@ -1,4 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
+
+import { activityName } from '../../../src-next/activities/index.js';
+import { RunRepository } from '../../../src-next/execution/index.js';
 
 import {
   BuiltInAdapterId,
@@ -7,12 +11,13 @@ import {
   integrationStream,
   type ExternalWorkObservedPayload,
 } from '../../../src-next/integrations/github/index.js';
+import { workflowName } from '../../../src-next/orchestration/index.js';
 import {
   InMemoryCheckpointStore,
   InMemoryEventJournal,
 } from '../../../src-next/persistence/index.js';
 import { createWorkService } from '../../../src-next/work/index.js';
-import { FakeClock } from '../../e2e/support/world.js';
+import { FakeClock, TestWorld } from '../../e2e/support/world.js';
 import { createTestIntakeRouting } from '../../support/intake-routing.js';
 import { createTestResourceServices } from '../../support/resource-lookup.js';
 
@@ -107,6 +112,45 @@ describe('InboundTranslator', () => {
       key: 'owner/repo#7',
     });
     await expect(resources.get(resourceId!)).resolves.toMatchObject({ title: 'Improve intake' });
+  });
+
+  it('delivers a watch-gate verdict marker from a comment to its waiting parent', async () => {
+    const fixture = await waitingWatchGate();
+    const translator = new InboundTranslator(
+      fixture.world.journal,
+      fixture.world.checkpoints,
+      fixture.world.work,
+      fixture.world.resources,
+      {
+        orchestration: fixture.world.orchestration,
+        runs: new RunRepository(fixture.world.journal),
+      },
+    );
+    const event = createEventDraft({
+      eventId: 'github:comment:watch-gate-verdict',
+      eventType: 'integration.github.comment-observed',
+      occurredAt: fixture.world.clock.now().toISOString(),
+      correlationId: 'github:atolis-hq/wake#1',
+      causationId: 'github:comment:watch-gate-verdict',
+      actor: { kind: 'integration', id: 'github' },
+      source: { kind: 'adapter', id: 'github' },
+      stream: integrationStream(BuiltInAdapterId.GitHub),
+      payload: {
+        reviewKind: 'issue',
+        externalKey: 'atolis-hq/wake#1',
+        body: watchGateVerdictMarker(fixture.run.runId),
+        revision: fixture.world.clock.now().toISOString(),
+        actor: { id: 'wake-bot', kind: 'bot' },
+        raw: { id: 1 },
+      },
+    });
+    await fixture.world.journal.append(event.stream, 0, [event]);
+
+    await translator.runOnce();
+
+    expect((await fixture.world.viewWorkflow(fixture.parent.workflowInstanceId))?.status).toBe(
+      'completed',
+    );
   });
 });
 
@@ -251,4 +295,72 @@ function observation(): ExternalWorkObservedPayload {
     actor: { id: 'octocat', kind: 'human' },
     raw: { 'private-provider-field': true },
   };
+}
+
+async function waitingWatchGate() {
+  const world = new TestWorld();
+  world.registerActivity(testActivity('parent-work'));
+  world.registerActivity(testActivity('pr-review'));
+  world.configureWorkflow('pr-review', {
+    stages: { review: { activity: 'pr-review', with: {}, on: { done: { then: 'done' } } } },
+  });
+  world.configureWorkflow('parent', {
+    stages: {
+      work: {
+        activity: 'parent-work',
+        with: {},
+        on: { done: { then: 'done', watchGates: ['pr-review'] } },
+      },
+    },
+    watches: [
+      {
+        id: 'pr-review',
+        while: { stages: ['work'], statuses: ['waiting'] },
+        on: { events: ['pr-review.requested'] },
+        workflow: 'pr-review',
+        maxPerGroup: 1,
+      },
+    ],
+  });
+  const work = await world.createWork({ objective: 'inbound verdict' });
+  const parent = await world.startWorkflow({
+    workItemId: work.workItemId,
+    workflowName: workflowName('parent'),
+  });
+  await world.advance(work.workItemId);
+  await world.triggerWatch('pr-review.requested', 'pr-review-trigger');
+  await world.advance(work.workItemId);
+  const child = (await world.orchestration.listAll()).find(
+    (workflow) => workflow.parentWorkflowInstanceId === parent.workflowInstanceId,
+  );
+  if (child === undefined) throw new Error('Expected a watch child workflow');
+  const run = (await world.viewRuns()).find(
+    (candidate) => candidate.workflowInstanceId === child.workflowInstanceId,
+  );
+  if (run === undefined) throw new Error('Expected a real child run');
+  return { world, parent, run };
+}
+
+function testActivity(name: string) {
+  return {
+    name: activityName(name),
+    inputSchema: z.object({}).strict(),
+    outcomeSchema: z.object({ kind: z.literal('done') }).strict(),
+    outcomeKinds: ['done'] as const,
+    resources: [],
+    executionKind: 'deterministic' as const,
+    handler: {
+      async execute() {
+        return { kind: 'done' } as const;
+      },
+    },
+  };
+}
+
+function watchGateVerdictMarker(runId: string): string {
+  return [
+    '```json',
+    JSON.stringify({ wake: { watchGateVerdict: { runId, outcome: 'DONE' } } }),
+    '```',
+  ].join('\n');
 }

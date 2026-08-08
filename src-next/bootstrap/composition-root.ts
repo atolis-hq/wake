@@ -72,6 +72,7 @@ import {
 // (see provider-locality); composition-root is the exempt production
 // composition point that is allowed to name it directly.
 import {
+  createGitHubAgentContextReader,
   gitHubProviderDefinition,
   resolveGitHubResourceUrl,
 } from '../integrations/github/index.js';
@@ -146,7 +147,7 @@ export async function createCompositionRoot(
   const resources = createResourceService(journal, lookup);
   const pullRequests = createPullRequestService(journal, work, resources);
   const activities =
-    options.activities ?? createBuiltInActivityRegistry(journal, pullRequests, wakeRoot);
+    options.activities ?? createBuiltInActivityRegistry(journal, pullRequests, resources, wakeRoot);
   const definitions = Object.fromEntries(
     Object.entries(config.orchestration.workflows).map(([name, definition]) => [
       name,
@@ -278,6 +279,7 @@ async function composeIntegrationRuntime(
       resources: input.resources,
       resourceLookup: input.lookup,
       pullRequests: input.pullRequests,
+      runs: new RunRepository(input.journal),
       orchestration: input.orchestration,
       ids: input.ids,
       clock: input.clock,
@@ -389,29 +391,34 @@ async function composeIntegrationRuntime(
 function createBuiltInActivityRegistry(
   journal: EventJournal,
   pullRequests: ReturnType<typeof createPullRequestService>,
+  resources: ReturnType<typeof createResourceService>,
   wakeRoot: string,
 ): ActivityRegistry {
   const activities = new ActivityRegistry();
+  const contextReader = createGitHubAgentContextReader(journal, resources);
   activities.register({
     ...agentActivityDefinition,
-    handler: createAgentActivity({
-      async render(name, context) {
-        const template = await loadPromptTemplate(wakeRoot, name);
-        return {
-          prompt: renderPromptTemplate(template, context),
-          ...(template.frontmatter.model === undefined || template.frontmatter.model === null
-            ? {}
-            : { model: template.frontmatter.model }),
-          ...(template.frontmatter.allowedTools === undefined ||
-          template.frontmatter.allowedTools === null
-            ? {}
-            : { allowedTools: template.frontmatter.allowedTools }),
-          ...(template.frontmatter.maxTurns === undefined
-            ? {}
-            : { maxTurns: template.frontmatter.maxTurns }),
-        };
+    handler: createAgentActivity(
+      {
+        async render(name, context) {
+          const template = await loadPromptTemplate(wakeRoot, name);
+          return {
+            prompt: renderPromptTemplate(template, context),
+            ...(template.frontmatter.model === undefined || template.frontmatter.model === null
+              ? {}
+              : { model: template.frontmatter.model }),
+            ...(template.frontmatter.allowedTools === undefined ||
+            template.frontmatter.allowedTools === null
+              ? {}
+              : { allowedTools: template.frontmatter.allowedTools }),
+            ...(template.frontmatter.maxTurns === undefined
+              ? {}
+              : { maxTurns: template.frontmatter.maxTurns }),
+          };
+        },
       },
-    }),
+      contextReader,
+    ),
   });
   activities.register(createStatusPublishActivity(journal));
   activities.register(createPullRequestApproveActivity(journal, pullRequests));

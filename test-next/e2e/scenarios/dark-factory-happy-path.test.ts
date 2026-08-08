@@ -1,11 +1,19 @@
 import { expect } from 'vitest';
 import { z } from 'zod';
-import { activityName } from '../../../src-next/activities/index.js';
+import { activityName, createAgentActivity } from '../../../src-next/activities/index.js';
+import { formatAgentRunComment } from '../../../src-next/integrations/github/application/agent-run-comment.js';
+import { createCommentHistoryReader } from '../../../src-next/integrations/github/application/comment-history-reader.js';
 import {
-  watchId,
-  workflowName,
-} from '../../../src-next/orchestration/contracts/identifiers.js';
+  BuiltInAdapterId,
+  GitHubEventType,
+  integrationStream,
+} from '../../../src-next/integrations/github/index.js';
+import { correlationId, createEventDraft } from '../../../src-next/kernel/index.js';
+import { watchId, workflowName } from '../../../src-next/orchestration/contracts/identifiers.js';
 import { WatchGateVerdictSignal } from '../../../src-next/orchestration/index.js';
+import { resourceKind } from '../../../src-next/resources/index.js';
+import type { WorkItemId } from '../../../src-next/work/index.js';
+import { resId } from '../../support/identities.js';
 import { defineScenario } from '../support/scenario.js';
 import { TestWorld } from '../support/world.js';
 
@@ -19,6 +27,24 @@ defineScenario(
   },
   async () => {
     const world = new TestWorld();
+    const implementPrompts: string[] = [];
+    const commentHistory = createCommentHistoryReader(world.journal, world.resources);
+    const implementAgent = createAgentActivity(
+      {
+        async render() {
+          return { prompt: 'Implement the requested changes.' };
+        },
+      },
+      {
+        async forWorkItem(workItemId) {
+          return {
+            title: '',
+            body: '',
+            comments: await commentHistory.forWorkItem(workItemId as WorkItemId),
+          };
+        },
+      },
+    );
     let implementAttempts = 0;
     let prReviewAttempts = 0;
     world.registerActivity({
@@ -28,19 +54,44 @@ defineScenario(
       outcomeKinds: ['done'],
       resources: [],
       executionKind: 'deterministic',
-      handler: { async execute() { return { kind: 'done' } as const; } },
+      handler: {
+        async execute() {
+          return { kind: 'done' } as const;
+        },
+      },
     });
     world.registerActivity({
       name: activityName('implement'),
-      inputSchema: z.object({}).strict(),
-      outcomeSchema: z.object({ kind: z.literal('done') }).strict(),
+      inputSchema: z.object({ template: z.literal('implement') }).strict(),
+      outcomeSchema: z
+        .object({
+          kind: z.literal('done'),
+          data: z.object({ status: z.literal('DONE') }).passthrough(),
+        })
+        .strict(),
       outcomeKinds: ['done'],
       resources: [],
       executionKind: 'deterministic',
       handler: {
-        async execute() {
+        async execute(invocation, context) {
           implementAttempts += 1;
-          return { kind: 'done' } as const;
+          return implementAgent.execute(
+            invocation as Parameters<typeof implementAgent.execute>[0],
+            {
+              ...context,
+              runner: {
+                async start(request) {
+                  implementPrompts.push(request.prompt);
+                  return {
+                    result: Promise.resolve({
+                      transport: 'succeeded' as const,
+                      output: JSON.stringify({ status: 'DONE' }),
+                    }),
+                  };
+                },
+              },
+            },
+          );
         },
       },
     });
@@ -59,22 +110,38 @@ defineScenario(
       },
     });
     world.configureWorkflow('pr-review', {
-      stages: { review: { activity: 'pr-review', with: {}, on: { done: { then: 'done' }, rejected: { then: 'done' } } } },
+      stages: {
+        review: {
+          activity: 'pr-review',
+          with: {},
+          on: { done: { then: 'done' }, rejected: { then: 'done' } },
+        },
+      },
     });
     world.configureWorkflow('plan-review', {
       stages: { review: { activity: 'refine', with: {}, on: { done: { then: 'done' } } } },
     });
     world.configureWorkflow('dark-factory', {
       stages: {
-        refine: { activity: 'refine', with: {}, on: { done: { then: 'implement', watchGates: ['plan-review'] } } },
+        refine: {
+          activity: 'refine',
+          with: {},
+          on: { done: { then: 'implement', watchGates: ['plan-review'] } },
+        },
         implement: {
           activity: 'implement',
-          with: {},
+          with: { template: 'implement' },
           on: { done: { then: 'done', watchGates: ['pr-review'] } },
         },
       },
       watches: [
-        { id: 'plan-review', while: { stages: ['refine'], statuses: ['waiting'] }, on: { events: ['plan-review.requested'] }, workflow: 'plan-review', maxPerGroup: 1 },
+        {
+          id: 'plan-review',
+          while: { stages: ['refine'], statuses: ['waiting'] },
+          on: { events: ['plan-review.requested'] },
+          workflow: 'plan-review',
+          maxPerGroup: 1,
+        },
         {
           id: 'pr-review',
           while: { stages: ['implement'], statuses: ['waiting'] },
@@ -85,6 +152,18 @@ defineScenario(
       ],
     });
     const work = await world.createWork({ objective: 'review loop' });
+    const resource = await world.discoverResource({
+      resourceId: resId('dark-factory-issue'),
+      kind: resourceKind('issue'),
+      externalKey: { adapter: BuiltInAdapterId.GitHub, key: 'owner/repo#7' },
+      capabilities: [],
+    });
+    await world.resources.correlate(resource.resourceId, work.workItemId, 'primary', {
+      commandId: 'correlate-dark-factory-issue',
+      correlationId: correlationId('dark-factory'),
+      occurredAt: world.clock.now().toISOString(),
+      actor: { kind: 'operator', id: 'owner' },
+    });
     const parent = await world.startWorkflow({
       workItemId: work.workItemId,
       workflowName: workflowName('dark-factory'),
@@ -114,7 +193,19 @@ defineScenario(
     expect((await world.viewWorkflow(parent.workflowInstanceId))?.pendingActivation?.ordinal).toBe(
       3,
     );
+    const rejectionDisplayBody = 'Please handle the failed error path before retrying.';
+    await appendGitHubComment(
+      world,
+      formatAgentRunComment({
+        idempotencyKey: 'pr-review-rejection',
+        outcome: 'REJECTED',
+        displayBody: rejectionDisplayBody,
+        metadata: {},
+      }),
+    );
     await world.advance(work.workItemId);
+    expect(implementPrompts).toHaveLength(2);
+    expect(implementPrompts[1]).toContain(rejectionDisplayBody);
     await world.triggerWatch('pr-review.requested', 'pr-2');
     await world.advance(work.workItemId);
     await world.acceptSignal(parent.workflowInstanceId, {
@@ -127,8 +218,37 @@ defineScenario(
     });
     expect(implementAttempts).toBe(2);
     const requests = await world.events('orchestration.child-requested');
-    expect(requests.filter((event) => (event.payload as { watchId: string }).watchId === 'plan-review')).toHaveLength(1);
-    expect(requests.filter((event) => (event.payload as { watchId: string }).watchId === 'pr-review')).toHaveLength(2);
+    expect(
+      requests.filter((event) => (event.payload as { watchId: string }).watchId === 'plan-review'),
+    ).toHaveLength(1);
+    expect(
+      requests.filter((event) => (event.payload as { watchId: string }).watchId === 'pr-review'),
+    ).toHaveLength(2);
     expect((await world.viewWorkflow(parent.workflowInstanceId))?.status).toBe('completed');
   },
 );
+
+async function appendGitHubComment(world: TestWorld, body: string): Promise<void> {
+  const stream = integrationStream(BuiltInAdapterId.GitHub);
+  const events = await world.journal.readStream(stream);
+  await world.journal.append(stream, events.length, [
+    createEventDraft({
+      eventId: 'github:issue-comment:dark-factory-rejection',
+      eventType: GitHubEventType.CommentObserved,
+      occurredAt: world.clock.now().toISOString(),
+      correlationId: 'github:owner/repo#7',
+      causationId: 'github:issue-comment:dark-factory-rejection',
+      actor: { kind: 'integration', id: 'github' },
+      source: { kind: 'adapter', id: 'github' },
+      stream,
+      payload: {
+        reviewKind: 'issue',
+        externalKey: 'owner/repo#7',
+        body,
+        revision: world.clock.now().toISOString(),
+        actor: { id: 'wake-bot', kind: 'bot' },
+        raw: { id: 1 },
+      },
+    }),
+  ]);
+}

@@ -5,6 +5,8 @@ import { correlationId } from '../../../src-next/kernel/index.js';
 import {
   orchestrationGroupId,
   signalName,
+  stageName,
+  watchId,
   workflowInstanceId,
   workflowName,
 } from '../../../src-next/orchestration/contracts/identifiers.js';
@@ -12,6 +14,7 @@ import {
   compileWorkflow,
   createOrchestrationService,
   createSignalReactor,
+  WatchGateVerdictSignal,
 } from '../../../src-next/orchestration/index.js';
 import { InMemoryEventJournal } from '../../../src-next/persistence/index.js';
 import {} from '../../../src-next/resources/index.js';
@@ -19,7 +22,7 @@ import { createWorkService } from '../../../src-next/work/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 import { resId, workId } from '../../support/identities.js';
 
-async function waitingService() {
+async function waitingService(input: { readonly watchGate?: boolean } = {}) {
   const journal = new InMemoryEventJournal(new FakeClock());
   const work = createWorkService(journal);
   const baseContext = {
@@ -90,9 +93,15 @@ async function waitingService() {
   await service.waitForSignal(
     waiting.workflowInstanceId,
     {
-      signalKind: signalName('accepted'),
+      signalKind: input.watchGate ? WatchGateVerdictSignal : signalName('accepted'),
       resourceId: resId('pr-1'),
       revision: 'abc123',
+      ...(input.watchGate
+        ? {
+            from: [{ kind: 'watch' as const, watch: watchId('pr-review') }],
+            onRejectResume: { kind: 'stage' as const, stage: stageName('implement') },
+          }
+        : {}),
     },
     { ...baseContext, commandId: 'wait' },
   );
@@ -169,3 +178,28 @@ it('ignores mismatched or unauthorised signal evidence', async () => {
   expect(mismatched.status).toBe('waiting');
   expect(unauthorised.acceptedSignalIds).toEqual([]);
 });
+
+it.each(['failed', 'blocked'] as const)(
+  'ignores a watch-gate signal whose outcome is %s',
+  async (outcome) => {
+    const { service, baseContext } = await waitingService({ watchGate: true });
+
+    const result = await service.acceptSignal(
+      workflowInstanceId('workflow-1'),
+      {
+        kind: WatchGateVerdictSignal,
+        resourceId: resId('pr-1'),
+        revision: 'abc123',
+        outcome,
+        actorId: 'bot',
+        actorDecision: { authorized: true, evidenceId: 'watch-verdict' },
+        providerEventId: `github-comment-${outcome}`,
+        authority: { kind: 'watch', watch: watchId('pr-review') },
+      },
+      { ...baseContext, commandId: `bad-verdict-${outcome}` },
+    );
+
+    expect(result.status).toBe('waiting');
+    expect(result.acceptedSignalIds).toEqual([]);
+  },
+);

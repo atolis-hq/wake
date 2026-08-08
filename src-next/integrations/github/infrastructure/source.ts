@@ -151,26 +151,24 @@ async function issueCommentEventsFor(
   issues: readonly Parameters<typeof issueObservation>[0]['issue'][],
 ) {
   const items = await Promise.all(
-    issues
-      .filter((issue) => issue.pull_request === undefined)
-      .map(async (issue) =>
-        (
-          await context.client.listIssueComments(
-            context.owner,
-            context.repo,
-            issue.number,
-            context.config.polling.commentPageSize,
-          )
-        ).flatMap((comment) => {
-          const event = issueCommentObservation({
-            repository: context.repository,
-            issue,
-            comment,
-            ...(context.adapter === undefined ? {} : { adapter: context.adapter }),
-          });
-          return event === null ? [] : [event];
-        }),
-      ),
+    issues.map(async (issue) =>
+      (
+        await context.client.listIssueComments(
+          context.owner,
+          context.repo,
+          issue.number,
+          context.config.polling.commentPageSize,
+        )
+      ).flatMap((comment) => {
+        const event = issueCommentObservation({
+          repository: context.repository,
+          issue,
+          comment,
+          ...(context.adapter === undefined ? {} : { adapter: context.adapter }),
+        });
+        return event === null ? [] : [event];
+      }),
+    ),
   );
   return items.flat();
 }

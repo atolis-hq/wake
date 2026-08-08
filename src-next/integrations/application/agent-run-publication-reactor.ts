@@ -7,8 +7,14 @@ import {
   type CheckpointStore,
   type EventJournal,
 } from '../../kernel/index.js';
-import { OrchestrationEventType, OrchestrationStreamKind } from '../../orchestration/index.js';
-import type { OrchestrationService } from '../../orchestration/index.js';
+import {
+  ApprovalAuthorityKind,
+  OrchestrationEventType,
+  OrchestrationStreamKind,
+  WatchGateVerdictSignal,
+  type OrchestrationService,
+  type WorkflowInstanceView,
+} from '../../orchestration/index.js';
 import type { ResourceService } from '../../resources/index.js';
 import { ResourceCorrelationRole, resourceStream } from '../../resources/index.js';
 import { DeliveryIntentEventType } from '../delivery/contracts/intents.js';
@@ -51,7 +57,8 @@ export class AgentRunPublicationReactor {
   ) {
     const run = (await this.dependencies.runs.load(id as never)).view;
     if (run?.activity !== BuiltInActivityName.Agent || run.finishedAt === undefined) return;
-    const workflow = (await this.dependencies.orchestration.listAll()).find(
+    const allWorkflows = await this.dependencies.orchestration.listAll();
+    const workflow = allWorkflows.find(
       (value) => value.workflowInstanceId === run.workflowInstanceId,
     );
     if (workflow === undefined) return;
@@ -60,9 +67,7 @@ export class AgentRunPublicationReactor {
     ).find((value) => value.role === ResourceCorrelationRole.Primary);
     if (primary === undefined) return;
     const stage = await this.stageForActivation(workflow.workflowInstanceId, run.activationId);
-    const report = projectTerminalAgentRunReport(
-      reportInput(run, stage, workflow.waitingFor?.signalKind === 'approved'),
-    );
+    const report = projectTerminalAgentRunReport(reportInput(run, stage, workflow, allWorkflows));
     if (report === null) return;
     const stream = resourceStream(primary.resourceId);
     const sequence = (await this.dependencies.journal.readStream(stream)).length;
@@ -115,11 +120,35 @@ export class AgentRunPublicationReactor {
 function reportInput(
   run: TerminalRun,
   stage: string | undefined,
-  awaitingApproval: boolean,
+  workflow: WorkflowInstanceView,
+  allWorkflows: readonly WorkflowInstanceView[],
 ): Parameters<typeof projectTerminalAgentRunReport>[0] {
+  const watchGateVerdict = watchGateVerdictFor(run, workflow, allWorkflows);
+  const isWaiting =
+    workflow.waitingFor?.signalKind === 'approved' ||
+    workflow.waitingFor?.signalKind === WatchGateVerdictSignal;
   return {
     run,
     ...(stage === undefined ? {} : { stage }),
-    ...(awaitingApproval ? { awaitingApproval: true } : {}),
+    ...(isWaiting ? { awaitingApproval: true } : {}),
+    ...(watchGateVerdict === undefined ? {} : { watchGateVerdict }),
   };
+}
+
+function watchGateVerdictFor(
+  run: TerminalRun,
+  workflow: WorkflowInstanceView,
+  allWorkflows: readonly WorkflowInstanceView[],
+): { readonly runId: string } | undefined {
+  if (run.agent?.outcome !== 'DONE' && run.agent?.outcome !== 'REJECTED') return undefined;
+  if (workflow.parentWorkflowInstanceId === undefined || workflow.watchId === undefined)
+    return undefined;
+  const parent = allWorkflows.find(
+    (value) => value.workflowInstanceId === workflow.parentWorkflowInstanceId,
+  );
+  if (parent?.waitingFor?.signalKind !== WatchGateVerdictSignal) return undefined;
+  const namesThisWatch = parent.waitingFor.from?.some(
+    (entry) => entry.kind === ApprovalAuthorityKind.Watch && entry.watch === workflow.watchId,
+  );
+  return namesThisWatch === true ? { runId: run.runId } : undefined;
 }

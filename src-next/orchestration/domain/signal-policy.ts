@@ -51,25 +51,12 @@ export function acceptSignal(
   state: WorkflowInstanceView,
   input: AcceptSignal,
 ): OrchestrationDecision {
-  const signal = input.signal;
-  if (state.acceptedSignalIds.includes(signal.providerEventId))
-    return { kind: 'ignored', reason: 'provider signal was already accepted' };
-  const expected = state.waitingFor;
-  if (state.status !== WorkflowStatus.Waiting || expected === undefined)
-    return { kind: 'ignored', reason: 'WorkflowInstance is not waiting for a signal' };
-  if (!matchesExpectation(signal, expected))
-    return { kind: 'ignored', reason: 'signal does not match the current expectation' };
-  if (!hasDecisionEvidence(signal))
-    return { kind: 'ignored', reason: 'signal lacks authorized actor decision evidence' };
-  if (signal.providerEventId.trim().length === 0)
-    return { kind: 'ignored', reason: 'signal lacks provider event identity' };
-  const authority = signal.authority ?? { kind: ApprovalAuthorityKind.Human };
-  if (
-    expected.from !== undefined &&
-    !authorityAccepted(authority, expected.from, input.consent ?? false)
-  )
-    return { kind: 'ignored', reason: 'signal authority is not accepted by this wait' };
+  const rejection = signalRejectionReason(state, input);
+  if (rejection !== null) return { kind: 'ignored', reason: rejection };
 
+  const signal = input.signal;
+  const expected = state.waitingFor!;
+  const authority = signal.authority ?? { kind: ApprovalAuthorityKind.Human };
   const events: WorkflowOrchestrationEventDraft[] = [
     stateDraft(state, input, OrchestrationEventType.SignalAccepted, { ...signal, authority }, 1),
   ];
@@ -94,6 +81,45 @@ export function acceptSignal(
     );
   }
   return { kind: 'append', events };
+}
+
+function signalRejectionReason(state: WorkflowInstanceView, input: AcceptSignal): string | null {
+  const signal = input.signal;
+  if (state.acceptedSignalIds.includes(signal.providerEventId))
+    return 'provider signal was already accepted';
+  const expected = state.waitingFor;
+  if (state.status !== WorkflowStatus.Waiting || expected === undefined)
+    return 'WorkflowInstance is not waiting for a signal';
+  if (!matchesExpectation(signal, expected)) return 'signal does not match the current expectation';
+  if (!hasDecisionEvidence(signal)) return 'signal lacks authorized actor decision evidence';
+  if (signal.providerEventId.trim().length === 0) return 'signal lacks provider event identity';
+  if (!signalAuthorityAccepted(signal, expected, input.consent ?? false))
+    return 'signal authority is not accepted by this wait';
+  if (!watchGateOutcomeAccepted(signal, expected))
+    return 'watch-gate signal outcome is neither done nor rejected';
+  return null;
+}
+
+function signalAuthorityAccepted(
+  signal: OrchestrationSignal,
+  expected: NonNullable<WorkflowInstanceView['waitingFor']>,
+  consent: boolean,
+): boolean {
+  if (expected.from === undefined) return true;
+  const authority = signal.authority ?? { kind: ApprovalAuthorityKind.Human };
+  return authorityAccepted(authority, expected.from, consent);
+}
+
+function watchGateOutcomeAccepted(
+  signal: OrchestrationSignal,
+  expected: NonNullable<WorkflowInstanceView['waitingFor']>,
+): boolean {
+  return (
+    expected.onRejectResume === undefined ||
+    signal.outcome === undefined ||
+    signal.outcome === ActivityOutcomeKind.Done ||
+    signal.outcome === ActivityOutcomeKind.Rejected
+  );
 }
 
 function authorityAccepted(

@@ -38,7 +38,7 @@ describe('GitHub external-key grammar', () => {
   });
 });
 
-it('observes only an exact issue /approved command', async () => {
+it('observes issue comments with their trimmed bodies', async () => {
   const { issueCommentObservation } =
     await import('../../../src-next/integrations/github/infrastructure/issue-source.js');
   const base = {
@@ -64,5 +64,7 @@ it('observes only an exact issue /approved command', async () => {
   });
   expect(
     issueCommentObservation({ ...base, comment: { ...base.comment, body: 'looks good' } }),
-  ).toBeNull();
+  ).toMatchObject({
+    payload: { body: 'looks good' },
+  });
 });

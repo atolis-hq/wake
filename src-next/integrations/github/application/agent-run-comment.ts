@@ -14,6 +14,7 @@ export interface AgentRunComment {
   readonly sessionId?: string | undefined;
   readonly workspacePath?: string | undefined;
   readonly awaitingApproval?: boolean | undefined;
+  readonly watchGateVerdict?: { readonly runId: string } | undefined;
 }
 
 export function formatAgentRunComment(value: AgentRunComment): string {
@@ -35,7 +36,22 @@ export function formatAgentRunComment(value: AgentRunComment): string {
     );
   const session = sessionSection(value);
   if (session !== undefined) sections.push(session);
+  const marker = watchGateMarkerSection(value);
+  if (marker !== undefined) sections.push(marker);
   return sections.join('\n\n');
+}
+
+function watchGateMarkerSection(value: AgentRunComment): string | undefined {
+  if (value.watchGateVerdict === undefined) return undefined;
+  const marker = {
+    wake: {
+      watchGateVerdict: {
+        runId: value.watchGateVerdict.runId,
+        outcome: value.outcome,
+      },
+    },
+  };
+  return ['```json', JSON.stringify(marker, null, 2), '```'].join('\n');
 }
 
 function detailsLine(value: AgentRunComment): string {

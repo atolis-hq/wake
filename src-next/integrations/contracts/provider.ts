@@ -1,4 +1,5 @@
 import type { PullRequestService } from '../../activities/index.js';
+import type { RunRepository } from '../../execution/index.js';
 import type { CheckpointStore, Clock, EventJournal, IdGenerator } from '../../kernel/index.js';
 import type {
   OrchestrationService,
@@ -39,6 +40,7 @@ export interface ProviderServices {
   readonly resourceLookup: ResourceLookup;
   readonly orchestration: OrchestrationService;
   readonly pullRequests: PullRequestService;
+  readonly runs: RunRepository;
   readonly ids: IdGenerator;
   readonly clock: Clock;
   readonly journal: EventJournal;

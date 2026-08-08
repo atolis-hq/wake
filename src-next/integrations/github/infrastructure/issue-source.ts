@@ -86,7 +86,8 @@ export function issueCommentObservation(input: {
   readonly comment: GitHubIssueCommentPayload;
   readonly adapter?: AdapterId;
 }): Extract<GitHubAdapterEventDraft, { eventType: typeof GitHubEventType.CommentObserved }> | null {
-  if (input.comment.body?.trim().toLowerCase() !== '/approved') return null;
+  const body = input.comment.body?.trim();
+  if (body === undefined || body.length === 0) return null;
   const key = formatGitHubResourceKey({
     ...parseRepository(input.repository),
     number: input.issue.number,
@@ -103,7 +104,7 @@ export function issueCommentObservation(input: {
     payload: {
       reviewKind: 'issue',
       externalKey: key,
-      body: '/approved',
+      body,
       revision: input.comment.updated_at,
       actor: {
         id: input.comment.user?.login ?? UnknownGitHubIdentity,

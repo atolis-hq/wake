@@ -31,6 +31,7 @@ export function projectTerminalAgentRunReport(input: {
   readonly run: TerminalRun;
   readonly stage?: string;
   readonly awaitingApproval?: boolean;
+  readonly watchGateVerdict?: { readonly runId: string };
 }): AgentRunPublicationReport | null {
   if (input.run.finishedAt === undefined) return null;
   const agent = input.run.agent;
@@ -46,6 +47,7 @@ export function projectTerminalAgentRunReport(input: {
     ...(input.run.workspace === undefined ? {} : { workspacePath: input.run.workspace.path }),
     metadata: agent?.metadata ?? {},
     ...(input.awaitingApproval === true ? { awaitingApproval: true } : {}),
+    ...(input.watchGateVerdict === undefined ? {} : { watchGateVerdict: input.watchGateVerdict }),
   };
 }
 
