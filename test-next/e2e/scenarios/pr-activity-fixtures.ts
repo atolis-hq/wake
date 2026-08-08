@@ -146,6 +146,7 @@ export async function executeApproval(world: TestWorld, work: WorkItemId) {
         activity: 'pr.approve',
         with: { body: 'Reviewed' },
         on: outcomeRoutes(),
+        requiresApproval: false,
       },
     },
   });
@@ -173,6 +174,7 @@ export async function executeMerge(
           requireChecks: true,
         },
         on: outcomeRoutes(),
+        requiresApproval: false,
       },
     },
   });

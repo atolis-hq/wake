@@ -85,7 +85,12 @@ async function fixture() {
       'child',
       {
         stages: {
-          work: { activity: 'child-work', with: {}, on: { done: { then: 'done' } } },
+          work: {
+            activity: 'child-work',
+            with: {},
+            on: { done: { then: 'done' } },
+            requiresApproval: false,
+          },
         },
       },
       activities,

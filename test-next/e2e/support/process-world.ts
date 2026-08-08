@@ -7,6 +7,10 @@ import {
   type CompositionRoot,
 } from '../../../src-next/bootstrap/index.js';
 import { main } from '../../../src-next/main.js';
+import {
+  workflowInstanceId as parseWorkflowInstanceId,
+  type OrchestrationSignal,
+} from '../../../src-next/orchestration/index.js';
 
 export class ProcessWorld {
   private root: CompositionRoot | undefined;
@@ -61,6 +65,20 @@ export class ProcessWorld {
   async events() {
     if (this.root === undefined) throw new Error('ProcessWorld has not run');
     return this.root.journal.readAll(0);
+  }
+
+  async acceptSignal(workflowInstanceId: string, signal: OrchestrationSignal): Promise<void> {
+    if (this.root === undefined) throw new Error('ProcessWorld has not run');
+    await this.root.orchestration.acceptSignal(
+      parseWorkflowInstanceId(workflowInstanceId),
+      signal,
+      {
+        commandId: `${signal.providerEventId}:accept`,
+        correlationId: 'process-world-signal' as never,
+        occurredAt: new Date().toISOString(),
+        actor: { kind: 'operator', id: 'owner' },
+      },
+    );
   }
 
   async dispose(): Promise<void> {

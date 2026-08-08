@@ -95,6 +95,7 @@ async function fixture() {
               failed: { retry: { max: 1 }, then: 'await-human' },
               blocked: { then: 'await-human' },
             },
+            requiresApproval: false,
           },
         },
       },
@@ -105,7 +106,12 @@ async function fixture() {
       'child',
       {
         stages: {
-          work: { activity: 'child-work', with: {}, on: { done: { then: 'done' } } },
+          work: {
+            activity: 'child-work',
+            with: {},
+            on: { done: { then: 'done' } },
+            requiresApproval: false,
+          },
         },
       },
       registry,

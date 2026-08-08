@@ -34,6 +34,7 @@ it('E2E-EXEC-RECOVER-001 restarts after external completion before the Run resul
         with: {},
         execution: { workspace: 'none' },
         on: { done: { then: 'done' } },
+        requiresApproval: false,
       },
     },
   });
@@ -97,6 +98,7 @@ it('E2E-EXEC-RECOVER-002 escalates unknown recovery and accepts an operator reso
         with: {},
         execution: { workspace: 'none' },
         on: { done: { then: 'done' } },
+        requiresApproval: false,
       },
     },
   });

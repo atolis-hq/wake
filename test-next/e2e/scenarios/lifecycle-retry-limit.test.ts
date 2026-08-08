@@ -56,12 +56,14 @@ defineScenario(
           with: {},
           execution: { workspace: 'none' },
           on: { done: { then: 'implement' }, failed: { retry: { max: 2 }, then: 'await-human' } },
+          requiresApproval: false,
         },
         implement: {
           activity: 'implement',
           with: {},
           execution: { workspace: 'none' },
           on: { done: { then: 'done' } },
+          requiresApproval: false,
         },
       },
     });

@@ -26,6 +26,7 @@ import {
   type StageName,
 } from '../contracts/identifiers.js';
 import { ApprovalAuthorityKind, TransitionTargetKind } from '../contracts/vocabulary.js';
+import { defaultApprovalAwait } from './approval-defaults.js';
 
 export function compileWorkflow(
   name: string,
@@ -138,19 +139,20 @@ function compileStage(
         with: activities.validateInput(activityName(activity.use), activity.with),
       }));
       const target = compileTarget(route.then, outcomeKind);
+      const effectiveAwait = defaultApprovalAwait(stage, outcomeKind, route);
       const compiled: CompiledOutcomeRoute = Object.freeze({
         target,
         ...(route.repeat === undefined ? {} : { repeat: route.repeat }),
         ...(route.retry === undefined ? {} : { retry: route.retry }),
         ...(followOns === undefined ? {} : { activities: Object.freeze(followOns) }),
-        ...(route.await === undefined
+        ...(effectiveAwait === undefined
           ? {}
           : {
               await: compileAwait(
                 compiledWorkflowName,
                 rawStageName,
                 target,
-                route.await,
+                effectiveAwait,
                 declaredWatchIds,
               ),
             }),

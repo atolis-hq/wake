@@ -52,6 +52,7 @@ describe('E2E-CONFIG-001 configured workflow', () => {
                 activity: 'implement',
                 with: { prompt: 'implement' },
                 on: { done: { then: 'done' } },
+                requiresApproval: false,
               },
             },
           },

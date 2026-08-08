@@ -54,7 +54,12 @@ it('persists instances and accepts outcomes idempotently', async () => {
     'default',
     {
       stages: {
-        implement: { activity: 'implement', with: {}, on: { done: { then: 'done' } } },
+        implement: {
+          activity: 'implement',
+          with: {},
+          on: { done: { then: 'done' } },
+          requiresApproval: false,
+        },
       },
     },
     registry,

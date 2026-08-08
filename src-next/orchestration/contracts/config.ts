@@ -101,6 +101,7 @@ export const stageConfigSchema = z
     on: z
       .record(identifier, outcomeRouteConfigSchema)
       .refine((value) => Object.keys(value).length > 0),
+    requiresApproval: z.boolean().optional(),
   })
   .strict();
 

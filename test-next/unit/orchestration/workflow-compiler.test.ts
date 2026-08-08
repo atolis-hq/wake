@@ -179,4 +179,75 @@ describe('compileWorkflow', () => {
       ),
     ).toThrow(/exactly 1 is supported/);
   });
+
+  it('requires approval on a done route by default when nothing else gates it', () => {
+    const compiled = compileWorkflow(
+      'default',
+      {
+        stages: {
+          implement: {
+            activity: 'implement',
+            with: { prompt: 'x' },
+            on: { done: { then: 'done' } },
+          },
+        },
+      },
+      registry(),
+    );
+    expect(compiled.stages[stageName('implement')]?.on.done?.await).toEqual({
+      signal: 'approved',
+      from: [{ kind: 'human' }],
+      resume: { kind: 'complete' },
+    });
+  });
+
+  it('skips the default approval when the stage opts out with requiresApproval: false', () => {
+    const compiled = compileWorkflow(
+      'default',
+      {
+        stages: {
+          implement: {
+            activity: 'implement',
+            with: { prompt: 'x' },
+            on: { done: { then: 'done' } },
+            requiresApproval: false,
+          },
+        },
+      },
+      registry(),
+    );
+    expect(compiled.stages[stageName('implement')]?.on.done?.await).toBeUndefined();
+  });
+
+  it('never layers the default approval on top of an explicit watchGate', () => {
+    for (const requiresApproval of [undefined, true, false] as const) {
+      const compiled = compileWorkflow(
+        'parent',
+        {
+          stages: {
+            implement: {
+              activity: 'implement',
+              with: { prompt: 'x' },
+              on: { done: { then: 'done', watchGates: ['pr-review'] } },
+              ...(requiresApproval === undefined ? {} : { requiresApproval }),
+            },
+          },
+          watches: [
+            {
+              id: 'pr-review',
+              while: { stages: ['implement'], statuses: ['waiting'] },
+              on: { events: ['review.requested'] },
+              workflow: 'pr-review',
+              maxPerGroup: 1,
+            },
+          ],
+        },
+        registry(),
+        ['parent', 'pr-review'],
+      );
+      const route = compiled.stages[stageName('implement')]?.on.done;
+      expect(route?.await).toBeUndefined();
+      expect(route?.watchGates).toHaveLength(1);
+    }
+  });
 });

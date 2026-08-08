@@ -46,7 +46,14 @@ defineScenario(
       },
     });
     world.configureWorkflow('pr-review', {
-      stages: { review: { activity: 'pr-review', with: {}, on: { done: { then: 'done' } } } },
+      stages: {
+        review: {
+          activity: 'pr-review',
+          with: {},
+          on: { done: { then: 'done' } },
+          requiresApproval: false,
+        },
+      },
     });
     world.configureWorkflow('parent', {
       stages: {

@@ -46,6 +46,7 @@ defineScenario(
             done: { then: 'done' },
             failed: { retry: { max: 1 }, then: 'await-human' },
           },
+          requiresApproval: false,
         },
       },
     });

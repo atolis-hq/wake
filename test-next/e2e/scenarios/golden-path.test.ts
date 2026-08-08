@@ -27,6 +27,7 @@ it('E2E-GOLDEN-001 completes work through orchestration and an explicit Run', as
         with: {},
         execution: { workspace: 'none' },
         on: { done: { then: 'done' } },
+        requiresApproval: false,
       },
     },
   });
