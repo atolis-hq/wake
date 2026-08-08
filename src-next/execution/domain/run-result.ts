@@ -1,4 +1,4 @@
-import type { ExecutionFailure } from '../contracts/views.js';
+import type { ExecutionFailure } from '../contracts/results.js';
 import { ExecutionFailureCode } from '../contracts/vocabulary.js';
 
 export function failureFrom(error: unknown): ExecutionFailure {

@@ -22,6 +22,8 @@ export * from './contracts/liveness.js';
 
 export * from './contracts/runner.js';
 
+export * from './contracts/results.js';
+
 export * from './contracts/streams.js';
 
 export * from './contracts/views.js';

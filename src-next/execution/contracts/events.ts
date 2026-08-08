@@ -20,15 +20,9 @@ import {
   type EventUnion,
 } from '../../kernel/index.js';
 import { runId } from './identifiers.js';
-import type {
-  Cancellation,
-  ExternalExecutionReference,
-  Lease,
-  RecoveredRunResult,
-} from './liveness.js';
-import type { AgentRunResponse } from './runner.js';
+import type { Cancellation, ExternalExecutionReference, Lease } from './liveness.js';
+import type { ExecutionFailure, RecordedRunnerResult, RecoveredRunResult } from './results.js';
 import { ExecutionStreamKind, type ActivationStreamRef, type RunStreamRef } from './streams.js';
-import type { ExecutionFailure } from './views.js';
 import {
   ExecutionCancellationReason,
   ExecutionFailureCode,
@@ -151,18 +145,6 @@ export interface RunStartedPayload {
         readonly branch?: string | undefined;
       }
     | undefined;
-}
-
-export interface RecordedRunnerResult {
-  readonly transport:
-    | typeof RunStatus.Succeeded
-    | typeof RunStatus.Failed
-    | typeof RunStatus.Cancelled
-    | typeof RunStatus.Ambiguous;
-  /** Legacy decode-only compatibility. New execution facts never set these fields. */
-  readonly output?: string | undefined;
-  readonly runner?: string | undefined;
-  readonly agent?: AgentRunResponse | undefined;
 }
 
 export interface RunExecutionEventPayloads {

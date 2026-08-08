@@ -1,5 +1,4 @@
-import type { ActivityOutcome, ExternalExecutionKind } from '../../activities/index.js';
-import type { RecordedRunnerResult } from './events.js';
+import type { ExternalExecutionKind } from '../../activities/index.js';
 import type { ExecutionCancellationReason } from './vocabulary.js';
 
 export interface Lease {
@@ -18,10 +17,4 @@ export interface Cancellation {
   readonly requestedAt: string;
   readonly reason: ExecutionCancellationReason;
   readonly confirmedAt?: string;
-}
-
-export interface RecoveredRunResult {
-  readonly result: RecordedRunnerResult;
-  readonly outcome: ActivityOutcome;
-  readonly finishedAt: string;
 }

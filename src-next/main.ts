@@ -2,11 +2,11 @@ import { spawn } from 'node:child_process';
 import { access } from 'node:fs/promises';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { loadConfig } from './bootstrap/config/load-config.js';
 import {
   createCompositionRoot,
   createSurfaceApplications,
   initialiseWakeRoot,
+  loadConfig,
 } from './bootstrap/index.js';
 import {
   parseWakeCommand,

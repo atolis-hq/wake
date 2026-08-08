@@ -10,7 +10,7 @@ import {
   OrchestrationEventType,
   selectWorkflowOrchestrationEvent,
 } from '../orchestration/index.js';
-import { toWorkItemKey } from '../surfaces/api/contracts/work.js';
+import { toWorkItemKey } from '../surfaces/index.js';
 import { selectWorkEvent, WorkEventType } from '../work/index.js';
 
 const conditionShape = {
