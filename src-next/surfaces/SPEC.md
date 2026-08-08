@@ -166,7 +166,7 @@ Surfaces does not own:
   yet exercised: no surface currently checks caller identity or permission
   before executing a well-formed request. Every accepted command runs
   unconditionally once validation passes.
-- The CLI command parser recognizes `tick`, `start`, `stop`, `api`, `ui`, `audit`, `correlate`, `validate-state`, `init`, `doctor`, `sandbox`, `self-update`, and `smoke`. `init` creates its root before Bootstrap composes it. The other operational commands route through a Bootstrap-owned operational Surface port.
+- The CLI command parser recognizes `tick`, `start`, `stop`, `api`, `ui`, `audit`, `correlate`, `validate-state`, `init`, `doctor`, `sandbox`, `sandbox-setup`, `sandbox-entrypoint`, `self-update`, and `smoke`. `init` creates its root before Bootstrap composes it. The other operational commands route through a Bootstrap-owned operational Surface port.
 - The web client and API share no runtime code; the web client decodes every
   response field defensively (an unknown or missing field throws) rather
   than trusting that the API and web packages were deployed from the same

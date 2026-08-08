@@ -48,6 +48,10 @@ wake sandbox setup
   rebuild with `sandbox build` after editing it.
 - `sandbox up` starts the persistent container, mounting the Wake home at
   `/wake` and a durable `container-home` at `/home/wake` for auth state.
+  The container supervises the resident loop and restarts it automatically
+  if it exits (for example because sandbox auth isn't configured yet) — the
+  container itself never exits, so `sandbox setup` and `sandbox exec` can
+  always reach it.
 - `sandbox setup` runs first-time auth inside the container: GitHub, SSH
   keygen, Claude, Codex. Optional best practice: use a dedicated GitHub
   identity for Wake-managed work rather than your main account.

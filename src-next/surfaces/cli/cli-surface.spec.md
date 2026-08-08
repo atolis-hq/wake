@@ -17,9 +17,10 @@ caller can compose independently of the parsed argument surface.
 - **Host command** — `api` or `ui`; accepts `--wake-root`, `--host`, and
   `--port`.
 - **Command primitive** — a small function under `cli/commands/` (e.g.
-  `init`, `sandbox`, `doctor`, `self-update`, `smoke`, and the ones wired
-  into `WakeCommand`) performing exactly one CLI action against a narrow
-  interface, independent of `parseWakeCommand`'s argument grammar.
+  `init`, `sandbox`, `doctor`, `self-update`, `smoke`, `sandbox-entrypoint`,
+  and the ones wired into `WakeCommand`) performing exactly one CLI action
+  against a narrow interface, independent of `parseWakeCommand`'s argument
+  grammar.
 
 ## Responsibilities and boundaries
 
@@ -131,7 +132,12 @@ Does not own:
 
 ## Decisions, exclusions, and deferred capability
 
-- `init`, `doctor`, `sandbox`, `self-update`, and `smoke` are parsed and routed through the operational Surface port. `init` executes before composition because it creates the root; `doctor`, `sandbox`, and `smoke` are Bootstrap-composed target applications. `self-update` remains a Surface command with an injected update boundary.
+- `init`, `doctor`, `sandbox`, `sandbox-setup`, `sandbox-entrypoint`,
+  `self-update`, and `smoke` are parsed and routed through the operational
+  Surface port. `init` executes before composition because it creates the
+  root; `doctor`, `sandbox`, `sandbox-entrypoint`, and `smoke` are
+  Bootstrap-composed target applications. `self-update` remains a Surface
+  command with an injected update boundary.
 - `correlate`'s primitive always requests the `Primary` correlation role;
   there is no way to request `Secondary` from the parsed command surface.
 - There is no `--no-sandbox` flag or automatic re-exec into a sandboxed
