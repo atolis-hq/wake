@@ -12,14 +12,24 @@ import { TestWorld } from '../support/world.js';
 defineScenario(
   {
     id: 'E2E-DARKFACTORY-001',
-    title: 'a rejected watch verdict re-runs implement and a done verdict completes it',
-    given: ['implement gated by pr-review'],
-    when: ['a watch rejects then approves'],
-    then: ['implement runs twice and completes after approval'],
+    title: 'real review-watch children gate refine and implement',
+    given: ['refine gated by plan-review and implement gated by pr-review'],
+    when: ['plan-review approves; pr-review rejects once then approves'],
+    then: ['one plan-review and two pr-review children are requested within their budgets'],
   },
   async () => {
     const world = new TestWorld();
-    let attempts = 0;
+    let implementAttempts = 0;
+    let prReviewAttempts = 0;
+    world.registerActivity({
+      name: activityName('refine'),
+      inputSchema: z.object({}).strict(),
+      outcomeSchema: z.object({ kind: z.literal('done') }).strict(),
+      outcomeKinds: ['done'],
+      resources: [],
+      executionKind: 'deterministic',
+      handler: { async execute() { return { kind: 'done' } as const; } },
+    });
     world.registerActivity({
       name: activityName('implement'),
       inputSchema: z.object({}).strict(),
@@ -29,7 +39,7 @@ defineScenario(
       executionKind: 'deterministic',
       handler: {
         async execute() {
-          attempts += 1;
+          implementAttempts += 1;
           return { kind: 'done' } as const;
         },
       },
@@ -37,21 +47,26 @@ defineScenario(
     world.registerActivity({
       name: activityName('pr-review'),
       inputSchema: z.object({}).strict(),
-      outcomeSchema: z.object({ kind: z.literal('done') }).strict(),
-      outcomeKinds: ['done'],
+      outcomeSchema: z.object({ kind: z.enum(['done', 'rejected']) }).strict(),
+      outcomeKinds: ['done', 'rejected'],
       resources: [],
       executionKind: 'deterministic',
       handler: {
         async execute() {
-          return { kind: 'done' } as const;
+          prReviewAttempts += 1;
+          return prReviewAttempts === 1 ? { kind: 'rejected' } : { kind: 'done' };
         },
       },
     });
     world.configureWorkflow('pr-review', {
-      stages: { review: { activity: 'pr-review', with: {}, on: { done: { then: 'done' } } } },
+      stages: { review: { activity: 'pr-review', with: {}, on: { done: { then: 'done' }, rejected: { then: 'done' } } } },
+    });
+    world.configureWorkflow('plan-review', {
+      stages: { review: { activity: 'refine', with: {}, on: { done: { then: 'done' } } } },
     });
     world.configureWorkflow('dark-factory', {
       stages: {
+        refine: { activity: 'refine', with: {}, on: { done: { then: 'implement', watchGates: ['plan-review'] } } },
         implement: {
           activity: 'implement',
           with: {},
@@ -59,6 +74,7 @@ defineScenario(
         },
       },
       watches: [
+        { id: 'plan-review', while: { stages: ['refine'], statuses: ['waiting'] }, on: { events: ['plan-review.requested'] }, workflow: 'plan-review', maxPerGroup: 1 },
         {
           id: 'pr-review',
           while: { stages: ['implement'], statuses: ['waiting'] },
@@ -74,6 +90,19 @@ defineScenario(
       workflowName: workflowName('dark-factory'),
     });
     await world.advance(work.workItemId);
+    await world.triggerWatch('plan-review.requested', 'plan-1');
+    await world.advance(work.workItemId);
+    await world.acceptSignal(parent.workflowInstanceId, {
+      kind: WatchGateVerdictSignal,
+      outcome: 'done',
+      actorId: 'plan-review-bot',
+      actorDecision: { authorized: true, evidenceId: 'plan-1' },
+      providerEventId: 'plan-1',
+      authority: { kind: 'watch', watch: watchId('plan-review') },
+    });
+    await world.advance(work.workItemId);
+    await world.triggerWatch('pr-review.requested', 'pr-1');
+    await world.advance(work.workItemId);
     await world.acceptSignal(parent.workflowInstanceId, {
       kind: WatchGateVerdictSignal,
       outcome: 'rejected',
@@ -83,8 +112,10 @@ defineScenario(
       authority: { kind: 'watch', watch: watchId('pr-review') },
     });
     expect((await world.viewWorkflow(parent.workflowInstanceId))?.pendingActivation?.ordinal).toBe(
-      2,
+      3,
     );
+    await world.advance(work.workItemId);
+    await world.triggerWatch('pr-review.requested', 'pr-2');
     await world.advance(work.workItemId);
     await world.acceptSignal(parent.workflowInstanceId, {
       kind: WatchGateVerdictSignal,
@@ -94,7 +125,10 @@ defineScenario(
       providerEventId: 'approve',
       authority: { kind: 'watch', watch: watchId('pr-review') },
     });
-    expect(attempts).toBe(2);
+    expect(implementAttempts).toBe(2);
+    const requests = await world.events('orchestration.child-requested');
+    expect(requests.filter((event) => (event.payload as { watchId: string }).watchId === 'plan-review')).toHaveLength(1);
+    expect(requests.filter((event) => (event.payload as { watchId: string }).watchId === 'pr-review')).toHaveLength(2);
     expect((await world.viewWorkflow(parent.workflowInstanceId))?.status).toBe('completed');
   },
 );
