@@ -50,7 +50,10 @@ it is given.
   claim; a failed claim MUST NOT start the child. Instead, a
   `GroupBudgetExhausted` fact is recorded on the **parent's** stream, keyed
   by the request's own identity so recording it twice for the same request
-  is a no-op, and a typed `group-budget-exhausted` result is returned to the
+  is a no-op. The same append MUST then record `InstanceBlocked` on the
+  parent: exhausting a Watch's `maxPerGroup` means the parent cannot continue
+  the bounded Watch/parent loop automatically. A typed
+  `group-budget-exhausted` result is returned to the
   caller — not an error.
 - A successful budget claim MUST proceed to start the child with complete
   provenance (parent, Watch, trigger, causal cycle, request identity); the
@@ -124,11 +127,11 @@ it is given.
 | --- | --- | --- |
 | `orchestration.child-requested` | A budget claim succeeds for a genuine new request | A child is being started under this parent, Watch, and trigger. |
 | `orchestration.child-started` | Immediately following a child request being accepted | The child WorkflowInstance now exists. |
-| `orchestration.group-budget-exhausted` | A budget claim fails for a request not already recorded | This trigger did not start a child; the Watch's `maxPerGroup` is already met. |
+| `orchestration.group-budget-exhausted` | A budget claim fails for a request not already recorded | This trigger did not start a child; the Watch's `maxPerGroup` is already met, and the parent is blocked in the same append. |
 | `orchestration.child-completed` | A completed child's own completion is first recorded | This fact now exists on the child's own stream, ready for its parent to consume. |
 | `orchestration.child-completion-consumed` | The parent accepts its child's completion as a Signal | The parent has now processed this specific child's completion. |
 | `orchestration.causal-activation-rejected` | A Watch trigger is recognised as a causal repeat | This trigger will not start a child; recorded on the parent. |
-| `orchestration.instance-blocked` | Immediately following a causal rejection | The parent that would have spawned the repeat cannot proceed automatically. |
+| `orchestration.instance-blocked` | Immediately following a causal rejection or exhausted Watch budget | The parent cannot proceed automatically. |
 
 ## Conceptual schema
 

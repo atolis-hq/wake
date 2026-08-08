@@ -135,14 +135,14 @@ Orchestration does not own:
 | `orchestration.repeat-counted` | A Stage-target route with a repeat bound is taken again | The route's repeat count has advanced towards its configured maximum. |
 | `orchestration.retry-counted` | The same Stage is retried after a non-`done` outcome | The Stage-and-outcome-kind retry count has advanced towards its configured maximum. |
 | `orchestration.instance-completed` | A transition target of `complete` is reached | The WorkflowInstance is finished; no further Activation or wait applies. |
-| `orchestration.instance-blocked` | Retries/repeats are exhausted, a supplemental activity fails, a causal cycle is rejected, or an operator/explicit block command applies | The instance cannot proceed automatically and needs human attention. |
+| `orchestration.instance-blocked` | Retries/repeats are exhausted, a supplemental activity fails, a causal cycle is rejected, a Watch budget is exhausted, or an operator/explicit block command applies | The instance cannot proceed automatically and needs human attention. |
 | `orchestration.instance-superseded` | Reserved; not currently produced | Would mark an instance as replaced by another; see Decisions. |
 | `orchestration.child-requested` | A child WorkflowInstance's start is decided | A child is being started under this parent, Watch, and trigger. |
 | `orchestration.child-started` | Immediately following a child request being accepted | The child WorkflowInstance now exists (recorded on the child's own stream). |
 | `orchestration.child-completed` | A child reaches `completed` status | The child's completion is now a durable fact on the child's own stream, ready for its parent to consume. |
 | `orchestration.child-completion-consumed` | The parent accepts its child's completion as a Signal | The parent has now processed this specific child's completion; it will not be reconsidered. |
 | `orchestration.causal-activation-rejected` | A Watch trigger is recognised as a causal repeat within the same orchestration group | This trigger will not start a child; recorded on the parent, which is also blocked. |
-| `orchestration.group-budget-exhausted` | A child claim fails because a Watch's per-group budget is already claimed out | This trigger did not start a child because the Watch's configured `maxPerGroup` is already met. |
+| `orchestration.group-budget-exhausted` | A child claim fails because a Watch's per-group budget is already claimed out | This trigger did not start a child because the Watch's configured `maxPerGroup` is already met; the parent is blocked in the same append. |
 | `orchestration.primary-claimed` | A WorkItem's primary WorkflowInstance ownership is claimed | This WorkflowInstance identity is now the WorkItem's one active primary. |
 | `orchestration.group-claimed` | A child request's slot within a Watch's per-group budget is claimed | This request now counts against the Watch's `maxPerGroup` for this orchestration group. |
 
