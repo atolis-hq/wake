@@ -1,8 +1,14 @@
-import type { ActivationId, ActivityName, ActivityOutcome } from '../../activities/index.js';
+import type {
+  ActivationId,
+  ActivityName,
+  ActivityOutcome,
+  ActivityOutcomeKind,
+} from '../../activities/index.js';
 import type { EventDraftUnion, EventUnion } from '../../kernel/index.js';
 import type { WorkItemId } from '../../work/index.js';
 import type { OrchestrationWaitingActivityOutcome } from './activity-outcome.js';
 import type { ApprovalAuthority, StageConfig, TransitionTarget } from './config.js';
+import { signalName } from './identifiers.js';
 import type {
   CommandName,
   OrchestrationGroupId,
@@ -231,6 +237,7 @@ export interface SignalExpectation {
   readonly revision?: string | undefined;
   readonly from?: readonly ApprovalAuthority[] | undefined;
   readonly resume?: TransitionTarget | undefined;
+  readonly onRejectResume?: TransitionTarget | undefined;
 }
 
 export interface OrchestrationSignal {
@@ -241,6 +248,7 @@ export interface OrchestrationSignal {
   readonly actorDecision: { readonly authorized: boolean; readonly evidenceId: string };
   readonly providerEventId: string;
   readonly authority?: ApprovalAuthority | undefined;
+  readonly outcome?: ActivityOutcomeKind | undefined;
 }
 
 export interface SupplementalActivityRequest {
@@ -255,3 +263,5 @@ export interface ChildWorkflowRequest {
   readonly causalCycleId: string;
   readonly requestId: WorkflowInstanceId;
 }
+
+export const WatchGateVerdictSignal = signalName('orchestration.watch-gate-verdict');
