@@ -89,17 +89,23 @@ $scenarios = @(
     Body   = @'
 What should happen: this issue is picked up by the **default** workflow
 (refine -> implement, both on the `standard`/`light` runner pool, which
-resolves to the `fake` runner).
+resolves to the `fake` runner). A stage's `done` route requires human
+approval by default unless it opts out, so both stages here pause for a
+human reply — this is the same behavior as the **approval** workflow
+below, just reached implicitly rather than via an explicit `await`.
 
 Expected sequence:
 1. Wake stamps this issue into the `refine` stage and starts a run. The
    board should show an active-run child card (refine running) for
    about 20s (delayed by the `fake/refine` rule in fake-scenarios.yaml).
-2. That run finishes `DONE` and Wake advances the issue to `implement`,
-   again showing an active-run card (implement running) for about 20s
-   (the `implement-fake` rule).
-3. The run finishes `DONE` and the issue moves to `done` — no further
-   action expected, no human input required.
+2. That run finishes `DONE` and Wake stops and waits — the issue should
+   show as awaiting the `approved` signal rather than auto-advancing to
+   `implement`.
+3. A human must reply `/approved` before Wake proceeds. Wake then runs
+   `implement`, again showing an active-run card for about 20s (the
+   `implement-fake` rule).
+4. That run finishes `DONE` and Wake again waits for a second `/approved`
+   reply before moving the issue to `done`.
 '@
   },
   @{
@@ -134,11 +140,13 @@ Expected sequence:
 2. Because the stage declares `retry: { max: 1 }`, Wake automatically
    retries `refine` instead of blocking.
 3. Second `refine` activation matches `recover-on-retry`: after ~20s it
-   succeeds `DONE`, and the issue moves straight to `done` (this workflow
-   has no `implement` stage).
+   succeeds `DONE`, and Wake stops and waits for approval — a stage's
+   `done` route requires human approval by default, so a `/approved`
+   reply is needed before the issue moves to `done` (this workflow has no
+   `implement` stage).
 4. You should see two consecutive ~20s active-run cards for `refine` on
-   this issue, with a visible failed-then-retried run history, and no
-   human intervention required.
+   this issue, with a visible failed-then-retried run history, then one
+   human `/approved` reply to finish.
 '@
   },
   @{
