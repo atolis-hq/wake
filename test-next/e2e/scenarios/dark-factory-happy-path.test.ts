@@ -2,10 +2,10 @@ import { expect } from 'vitest';
 import { z } from 'zod';
 import { activityName } from '../../../src-next/activities/index.js';
 import {
-  signalName,
   watchId,
   workflowName,
 } from '../../../src-next/orchestration/contracts/identifiers.js';
+import { WatchGateVerdictSignal } from '../../../src-next/orchestration/index.js';
 import { defineScenario } from '../support/scenario.js';
 import { TestWorld } from '../support/world.js';
 
@@ -75,7 +75,7 @@ defineScenario(
     });
     await world.advance(work.workItemId);
     await world.acceptSignal(parent.workflowInstanceId, {
-      kind: signalName('orchestration.watch-gate-verdict'),
+      kind: WatchGateVerdictSignal,
       outcome: 'rejected',
       actorId: 'bot',
       actorDecision: { authorized: true, evidenceId: 'reject' },
@@ -87,7 +87,7 @@ defineScenario(
     );
     await world.advance(work.workItemId);
     await world.acceptSignal(parent.workflowInstanceId, {
-      kind: signalName('orchestration.watch-gate-verdict'),
+      kind: WatchGateVerdictSignal,
       outcome: 'done',
       actorId: 'bot',
       actorDecision: { authorized: true, evidenceId: 'approve' },

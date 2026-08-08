@@ -1,7 +1,8 @@
 import { expect } from 'vitest';
 import { z } from 'zod';
 import { activityName } from '../../../src-next/activities/index.js';
-import { signalName, workflowName } from '../../../src-next/orchestration/contracts/identifiers.js';
+import { workflowName } from '../../../src-next/orchestration/contracts/identifiers.js';
+import { WatchGateVerdictSignal } from '../../../src-next/orchestration/index.js';
 import { defineScenario } from '../support/scenario.js';
 import { TestWorld } from '../support/world.js';
 
@@ -69,10 +70,10 @@ defineScenario(
     });
     await world.advance(work.workItemId);
     expect((await world.viewWorkflow(parent.workflowInstanceId))?.waitingFor?.signalKind).toBe(
-      signalName('orchestration.watch-gate-verdict'),
+      WatchGateVerdictSignal,
     );
     await world.acceptSignal(parent.workflowInstanceId, {
-      kind: signalName('orchestration.watch-gate-verdict'),
+      kind: WatchGateVerdictSignal,
       outcome: 'done',
       actorId: 'human',
       actorDecision: { authorized: true, evidenceId: 'comment-1' },
