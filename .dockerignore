@@ -5,3 +5,10 @@ dist-next
 .wake
 coverage
 *.log
+.superpowers
+.worktrees
+tmp
+src
+test
+test-next
+docs

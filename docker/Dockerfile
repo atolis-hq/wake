@@ -46,9 +46,12 @@ COPY src-next/surfaces/web/package.json src-next/surfaces/web/package.json
 RUN --mount=type=cache,target=/root/.npm \
   if [ -f package-lock.json ]; then npm ci --include=dev; else npm install; fi
 
-COPY . .
+COPY tsconfig.json tsconfig.next.json tsconfig.next.docker.json ./
+COPY scripts/embed-version-next.mjs scripts/embed-version-next.mjs
+COPY assets/ assets/
+COPY src-next/ src-next/
 ARG WAKE_BUILD_TAG
-RUN WAKE_BUILD_TAG="$WAKE_BUILD_TAG" npm run build:next
+RUN WAKE_BUILD_TAG="$WAKE_BUILD_TAG" npm run build:next:docker
 
 USER wake
 WORKDIR /home/wake

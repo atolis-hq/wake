@@ -42,6 +42,7 @@
     "check:specs": "node scripts/check-specs.mjs",
     "lint:architecture": "node scripts/check-module-manifests.mjs && node scripts/check-contract-vocabulary.mjs && depcruise --config dependency-cruiser.config.mjs src-next",
     "build:next": "tsc -p tsconfig.next.json && node scripts/embed-version-next.mjs && npm run build:web",
+    "build:next:docker": "tsc -p tsconfig.next.docker.json && node scripts/embed-version-next.mjs && npm run build:web",
     "build:web": "npm --workspace @atolis-hq/wake-web run build",
     "test:web": "npm --workspace @atolis-hq/wake-web run test",
     "test:web:e2e": "npm --workspace @atolis-hq/wake-web run test:e2e",
