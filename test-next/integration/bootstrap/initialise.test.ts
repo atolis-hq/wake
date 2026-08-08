@@ -120,4 +120,16 @@ describe('target initialise root', () => {
     expect(dockerfile).toContain('npm run build:next');
     expect(dockerfile).toContain('dist-next/src-next/main.js');
   });
+
+  it('points the source-mode Dockerfile entrypoint at the supervised sandbox-entrypoint command', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wake-initialise-root-'));
+    await initialiseWakeRoot(root);
+
+    const dockerfile = await readFile(join(root, 'docker', 'Dockerfile'), 'utf8');
+
+    expect(dockerfile).toContain('ENV WAKE_MAIN_JS=/app/dist-next/src-next/main.js');
+    expect(dockerfile).toContain('sandbox-entrypoint');
+    expect(dockerfile).not.toContain('sleep infinity');
+    expect(dockerfile).not.toContain('WAKE_START_ENABLED" = "true"');
+  });
 });

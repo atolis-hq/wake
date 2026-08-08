@@ -352,12 +352,15 @@ WORKDIR /home/wake
 EXPOSE 4317
 
 # Baked at build time so wake sandbox-entrypoint (and anything it spawns) can
-# find the compiled CLI without hardcoding /app in multiple places. Docker's
-# exec-form ENTRYPOINT below does not expand env vars, so it stays literal —
-# that's fine since it's the very first thing that runs.
+# find the compiled CLI without hardcoding /app in multiple places.
 ENV WAKE_MAIN_JS=/app/dist-next/src-next/main.js
 
-ENTRYPOINT ["sh", "-c", "if [ \\"$WAKE_START_ENABLED\\" = \\"true\\" ]; then exec node /app/dist-next/src-next/main.js start --wake-root /wake --no-sandbox; else exec sleep infinity; fi"]
+# The supervised entrypoint (surfaces/cli/commands/sandbox-entrypoint.ts) is
+# PID 1 and never exits on its own, so the container always stays reachable
+# for \`docker exec\` (i.e. \`wake sandbox setup\`/\`wake sandbox exec\`) even
+# when WAKE_START_ENABLED's supervised \`wake start\` child keeps crashing —
+# e.g. on first boot, before sandbox auth has been configured.
+ENTRYPOINT ["sh", "-c", "exec node \\"$WAKE_MAIN_JS\\" sandbox-entrypoint --wake-root /wake"]
 `;
 
 const packagedDockerfile = `# syntax=docker/dockerfile:1
