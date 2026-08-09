@@ -59,12 +59,19 @@ export interface BoardProjectionView {
   readonly cards: Readonly<Record<string, StoredCard>>;
   readonly workflows: Readonly<Record<string, string>>;
   readonly runs: Readonly<Record<string, string>>;
+  // A watch's spawned child shares its parent's work item (and so its board
+  // card) but is not the canonical state for that card — only a primary
+  // (non-child) instance's own stage/condition/awaitingApproval drives it,
+  // the same rule GitHub label reconciliation already follows. Child
+  // streams still register in `workflows` above so their own Runs keep
+  // counting toward the card's totals.
+  readonly children: Readonly<Record<string, true>>;
 }
 
 export const boardProjection: ProjectionDefinition<BoardProjectionView> = {
   name: 'operator-board',
   select: () => ({ key: 'global' }),
-  initial: () => ({ cards: {}, workflows: {}, runs: {} }),
+  initial: () => ({ cards: {}, workflows: {}, runs: {}, children: {} }),
   project(previous, envelope) {
     const work = selectWorkEvent(envelope);
     if (work !== null) return projectWork(previous, work, envelope.occurredAt);
@@ -135,6 +142,9 @@ function projectWorkflow(
     const workId = event.payload.workItemId;
     const card = view.cards[workId];
     if (card === undefined) return view;
+    const workflows = { ...view.workflows, [event.stream.id]: workId };
+    if ('parentWorkflowInstanceId' in event.payload)
+      return { ...view, workflows, children: { ...view.children, [event.stream.id]: true } };
     return {
       ...view,
       cards: {
@@ -147,9 +157,10 @@ function projectWorkflow(
           condition: BoardCondition.Ready,
         },
       },
-      workflows: { ...view.workflows, [event.stream.id]: workId },
+      workflows,
     };
   }
+  if (view.children[event.stream.id] === true) return view;
   const located = lookupWorkflowCard(view, event.stream.id);
   if (located === undefined) return view;
   const { workId, card } = located;

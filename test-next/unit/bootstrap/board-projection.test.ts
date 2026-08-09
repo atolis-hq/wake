@@ -55,6 +55,68 @@ describe('operator board projection', () => {
     });
   });
 
+  it("does not let a watch child's own instance start reset the shared card out of Needs Input", () => {
+    const workItemId = workId('board-watch-gate');
+    const workflowId = workflowInstanceId(`primary:${workItemId}`);
+    const childWorkflowId = workflowInstanceId(`primary:${workItemId}:watch:review:trigger:run-1`);
+    const events = [
+      eventEnvelope(
+        WorkEventType.ItemCreated,
+        { objective: 'Gate on a watch review' },
+        workItemStream(workItemId),
+        1,
+      ),
+      eventEnvelope(
+        OrchestrationEventType.InstanceStarted,
+        {
+          workItemId,
+          workflowName: 'dark-factory',
+          orchestrationGroupId: `primary:${workItemId}`,
+          entry: 'refine',
+        },
+        workflowInstanceStream(workflowId),
+        2,
+      ),
+      eventEnvelope(
+        OrchestrationEventType.SignalWaitStarted,
+        {
+          signalKind: 'orchestration.watch-gate-verdict',
+          from: [{ kind: 'watch', watch: 'review' }],
+        },
+        workflowInstanceStream(workflowId),
+        3,
+      ),
+      eventEnvelope(
+        OrchestrationEventType.InstanceStarted,
+        {
+          workItemId,
+          workflowName: 'review',
+          orchestrationGroupId: `primary:${workItemId}`,
+          entry: 'review',
+          parentWorkflowInstanceId: workflowId,
+          watchId: 'review',
+          triggerId: 'run-1',
+          causalCycleId: 'cycle-1',
+          requestId: 'request-1',
+          childWorkflowInstanceId: childWorkflowId,
+        },
+        workflowInstanceStream(childWorkflowId),
+        4,
+      ),
+    ];
+
+    const view = events.reduce(
+      (current, event) => boardProjection.project(current, event),
+      boardProjection.initial('global'),
+    );
+
+    expect(view.cards[workItemId]).toMatchObject({
+      condition: 'needs-input',
+      stage: 'refine',
+      workflowName: 'dark-factory',
+    });
+  });
+
   it('shows an active run, accumulates token/cost totals, and clears the run on completion', () => {
     const item = workId('board-run');
     const workflowId = workflowInstanceId(`primary:${item}`);
