@@ -187,10 +187,9 @@ function projectWorkflow(
   // must not resurrect the card out of Finished.
   if (card.condition === BoardCondition.Finished) return view;
   // A new stage is always Ready regardless of the condition it inherits —
-  // Error from the prior stage's failed run, or Active from the
-  // SignalAccepted that unblocked it — until something in this stage
-  // actually picks the work up (ActivityRequested/RunStarted -> Active,
-  // or a fresh SignalWaitStarted -> Needs Input).
+  // Error from the prior stage's failed run, or whatever it held before the
+  // SignalAccepted that unblocked it — until a Run actually starts (Active)
+  // or a fresh SignalWaitStarted arrives (Needs Input).
   if (event.eventType === OrchestrationEventType.StageEntered)
     return {
       ...view,
@@ -228,8 +227,10 @@ function projectWorkflow(
 
 function boardConditionForStatus(status: WorkflowStatus): BoardConditionValue {
   switch (status) {
+    // Orchestration "active" means outstanding work, not a run in flight —
+    // the board's Active condition is reserved for RunStarted (below).
     case WorkflowStatus.Active:
-      return BoardCondition.Active;
+      return BoardCondition.Ready;
     case WorkflowStatus.Waiting:
     case WorkflowStatus.Blocked:
       return BoardCondition.NeedsInput;

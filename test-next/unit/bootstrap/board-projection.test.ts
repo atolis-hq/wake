@@ -55,7 +55,7 @@ describe('operator board projection', () => {
     });
   });
 
-  it('moves the card to Active as soon as the activity is requested, not only once its Run starts', () => {
+  it('stays Ready once the activity is requested, moving to Active only once its Run starts', () => {
     const item = workId('board-activity-requested');
     const workflowId = workflowInstanceId(`primary:${item}`);
     const events = [
@@ -100,7 +100,26 @@ describe('operator board projection', () => {
       boardProjection.initial('global'),
     );
 
-    expect(view.cards[item]).toMatchObject({ condition: 'active', stage: 'refine' });
+    expect(view.cards[item]).toMatchObject({ condition: 'ready', stage: 'refine' });
+
+    const withRun = boardProjection.project(
+      view,
+      eventEnvelope(
+        ExecutionEventType.RunStarted,
+        {
+          activationId: activationId('activation-1'),
+          activity: activityName('agent'),
+          workflowInstanceId: workflowId,
+          orchestrationGroupId: orchestrationGroupId(`primary:${item}`),
+          attempt: 1,
+          startedAt: '2026-08-09T12:00:00.000Z',
+        },
+        runStream(runId('run-activity-requested-1')),
+        5,
+      ),
+    );
+
+    expect(withRun.cards[item]).toMatchObject({ condition: 'active', stage: 'refine' });
   });
 
   it("does not let a watch child's own instance start reset the shared card out of Needs Input", () => {
