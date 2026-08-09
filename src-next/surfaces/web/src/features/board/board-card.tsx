@@ -169,6 +169,3 @@ export function BoardCard({
     </li>
   );
 }
-
-
-

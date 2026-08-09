@@ -57,7 +57,11 @@ interface ExecutionPort {
 
 interface AdvanceOnceDependencies {
   readonly ids: IdGenerator;
-  readonly work?: { get(workItemId: string): Promise<{ readonly frozen?: boolean; readonly deleted?: boolean } | null> };
+  readonly work?: {
+    get(
+      workItemId: string,
+    ): Promise<{ readonly frozen?: boolean; readonly deleted?: boolean } | null>;
+  };
   readonly runnerIneligibility?: () => Promise<ReadonlySet<string>>;
   readonly isDispatchPaused?: () => Promise<boolean>;
   readonly dispatchPolicy?: DispatchPolicy;

@@ -2,12 +2,12 @@ import type { PullRequestView } from '../activities/index.js';
 import { correlationId, EventActorKind } from '../kernel/index.js';
 import { ResourceEventType, selectResourceEvent, type ResourceView } from '../resources/index.js';
 import {
+  ApiCommandStatus,
   fromWorkItemKey,
   presentResource,
   presentRun,
-  presentWorkItem,
   presentWorkflowInstance,
-  ApiCommandStatus,
+  presentWorkItem,
   type ApiApplications,
   type WorkDetailResponse,
 } from '../surfaces/index.js';
@@ -60,9 +60,12 @@ export function createSurfaceWorkApplications(
       const context = commandContext(command.idempotencyKey, now);
       const correlations = await root.resources.correlationsForWork(id);
       await root.work.delete(id, context);
-      await Promise.all(correlations.map((entry) => root.resources.retract(entry.resourceId, id, context)));
+      await Promise.all(
+        correlations.map((entry) => root.resources.retract(entry.resourceId, id, context)),
+      );
       return accepted(command.idempotencyKey, now());
-    },  };
+    },
+  };
 }
 
 async function workDetail(

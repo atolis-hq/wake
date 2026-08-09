@@ -58,14 +58,37 @@ function applyEvent(
     case WorkEventType.ObjectiveRevised:
       state.objective = event.payload.objective;
       break;
+    case WorkEventType.ItemLinked:
+      addLink(state, { workItemId: event.payload.to, relation: event.payload.relation });
+      break;
+    default:
+      applyStatusEvent(state, event);
+  }
+}
+
+function applyStatusEvent(
+  state: {
+    lifecycle: WorkState;
+    autoApprovalGranted: boolean;
+    frozen: boolean;
+    deleted: boolean;
+  },
+  event: Exclude<
+    WorkEvent,
+    {
+      eventType:
+        | typeof WorkEventType.ItemCreated
+        | typeof WorkEventType.ObjectiveRevised
+        | typeof WorkEventType.ItemLinked;
+    }
+  >,
+): void {
+  switch (event.eventType) {
     case WorkEventType.ItemClosed:
       state.lifecycle = WorkStatus.Closed;
       break;
     case WorkEventType.ItemCancelled:
       state.lifecycle = WorkStatus.Cancelled;
-      break;
-    case WorkEventType.ItemLinked:
-      addLink(state, { workItemId: event.payload.to, relation: event.payload.relation });
       break;
     case WorkEventType.AutoApprovalGranted:
       state.autoApprovalGranted = true;

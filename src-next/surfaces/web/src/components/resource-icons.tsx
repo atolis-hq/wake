@@ -20,4 +20,3 @@ export function ExternalLinkIcon({ className }: IconProps) {
     <FontAwesomeIcon icon={faArrowUpRightFromSquare} className={className} aria-hidden="true" />
   );
 }
-

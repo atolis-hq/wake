@@ -9,7 +9,14 @@ import { Chip } from '../../components/chip.js';
 import { DataTable } from '../../components/data-table.js';
 import { fmtCompact, fmtCost } from '../../components/format.js';
 import { LocalTime } from '../../components/local-time.js';
-import { Button, EmptyState, ErrorState, LoadingState, MutationFeedback, Panel } from '../../components/primitives.js';
+import {
+  Button,
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  MutationFeedback,
+  Panel,
+} from '../../components/primitives.js';
 import { DocumentIcon, ExternalLinkIcon, GitHubIcon } from '../../components/resource-icons.js';
 import { EventRow } from '../events/events.js';
 import styles from '../features.module.css';
@@ -86,9 +93,14 @@ export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
     ]);
   };
   const command = useMutation({
-    mutationFn: (name: 'freeze' | 'unfreeze' | 'delete') => client.work.command(workItemKey, name, `web:${name}:${globalThis.crypto.randomUUID()}`),
-    onSuccess: async (_result, name) => { await refresh(); if (name === 'delete') navigate('/work'); },
-  });  const query = useQuery({
+    mutationFn: (name: 'freeze' | 'unfreeze' | 'delete') =>
+      client.work.command(workItemKey, name, `web:${name}:${globalThis.crypto.randomUUID()}`),
+    onSuccess: async (_result, name) => {
+      await refresh();
+      if (name === 'delete') navigate('/work');
+    },
+  });
+  const query = useQuery({
     queryKey: queryKeys.work.detail(workItemKey),
     queryFn: ({ signal }) => client.work.detail(workItemKey, signal),
     refetchInterval: refreshPolicy.openWork,
@@ -111,13 +123,32 @@ export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
         <>
           <h2>{query.data.data.work.objective}</h2>
           <div className={styles.actionBar}>
-            <Button type="button" disabled={command.isPending} onClick={() => command.mutate(query.data.data.work.frozen ? 'unfreeze' : 'freeze')}>
+            <Button
+              type="button"
+              disabled={command.isPending}
+              onClick={() => command.mutate(query.data.data.work.frozen ? 'unfreeze' : 'freeze')}
+            >
               {query.data.data.work.frozen ? 'Unfreeze' : 'Freeze'}
             </Button>
-            <Button type="button" className={styles.dangerButton!} disabled={command.isPending} onClick={() => { if (window.confirm('Delete this work item from the board and remove its resource correlations?')) command.mutate('delete'); }}>
+            <Button
+              type="button"
+              className={styles.dangerButton!}
+              disabled={command.isPending}
+              onClick={() => {
+                if (
+                  window.confirm(
+                    'Delete this work item from the board and remove its resource correlations?',
+                  )
+                )
+                  command.mutate('delete');
+              }}
+            >
               Delete
             </Button>
-            <MutationFeedback pending={command.isPending} {...(command.error === null ? {} : { message: command.error?.message })} />
+            <MutationFeedback
+              pending={command.isPending}
+              {...(command.error === null ? {} : { message: command.error?.message })}
+            />
           </div>
           <nav className={styles.tabs} aria-label="Work detail sections">
             <button

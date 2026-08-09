@@ -35,7 +35,8 @@ export function ControlPlaneStatus() {
     mutationKey: ['control-plane', 'resume'],
     mutationFn: (idempotencyKey: string) => client.controlPlane.resume(idempotencyKey),
     onSuccess: () => cache.invalidateQueries({ queryKey: queryKeys.controlPlane.status }),
-  });  const tickMutation = useMutation({
+  });
+  const tickMutation = useMutation({
     mutationKey: ['control-plane', 'advance-command'],
     mutationFn: (idempotencyKey: string) => client.controlPlane.tick(idempotencyKey),
     onSuccess: async (response) => {
@@ -65,15 +66,28 @@ export function ControlPlaneStatus() {
         <StatusBadge tone="bad">API unavailable</StatusBadge>
       )}
       {status.data?.data.paused ? (
-        <Button type="button" disabled={resumeMutation.isPending} onClick={() => resumeMutation.mutate(commandKey('resume'))}>
+        <Button
+          type="button"
+          disabled={resumeMutation.isPending}
+          onClick={() => resumeMutation.mutate(commandKey('resume'))}
+        >
           Resume ticks
         </Button>
       ) : (
         <>
-          <Button type="button" disabled={pauseMutation.isPending} onClick={() => pauseMutation.mutate(commandKey('pause'))}>
+          <Button
+            type="button"
+            disabled={pauseMutation.isPending}
+            onClick={() => pauseMutation.mutate(commandKey('pause'))}
+          >
             Pause ticks
           </Button>
-          <Button type="button" className={styles.tickButton!} disabled={tickMutation.isPending} onClick={() => tickMutation.mutate(commandKey('tick'))}>
+          <Button
+            type="button"
+            className={styles.tickButton!}
+            disabled={tickMutation.isPending}
+            onClick={() => tickMutation.mutate(commandKey('tick'))}
+          >
             Tick now
           </Button>
         </>

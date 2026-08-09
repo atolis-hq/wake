@@ -488,5 +488,13 @@ a.resourceCard:hover {
   font-weight: 700;
 }
 
-.actionBar { display: flex; gap: var(--space-2); align-items: center; margin: var(--space-3) 0; }
-.dangerButton { border-color: var(--bad); color: var(--bad); }
+.actionBar {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  margin: var(--space-3) 0;
+}
+.dangerButton {
+  border-color: var(--bad);
+  color: var(--bad);
+}

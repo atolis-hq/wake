@@ -5,7 +5,11 @@ import {
   type EventJournal,
   type IdGenerator,
 } from '../../kernel/index.js';
-import { ControlEventType, createControlEventDraft, selectControlEvent } from '../contracts/events.js';
+import {
+  ControlEventType,
+  createControlEventDraft,
+  selectControlEvent,
+} from '../contracts/events.js';
 import { controlPlaneStream } from '../contracts/streams.js';
 
 export interface ControlPlaneService {
@@ -41,15 +45,32 @@ async function change(
 ): Promise<void> {
   const stream = controlPlaneStream();
   const events = await input.journal.readStream(stream);
-  const eventType = operation === 'pause' ? ControlEventType.DispatchPaused : ControlEventType.DispatchResumed;
+  const eventType =
+    operation === 'pause' ? ControlEventType.DispatchPaused : ControlEventType.DispatchResumed;
   const correlation = correlationId(`control:${operation}:${idempotencyKey}`);
-  if (events.some((event) => event.eventType === eventType && event.correlationId === correlation)) return;
+  if (events.some((event) => event.eventType === eventType && event.correlationId === correlation))
+    return;
   const currentlyPaused = await createControlPlaneService(input).isPaused();
-  if ((operation === 'pause' && currentlyPaused) || (operation === 'resume' && !currentlyPaused)) return;
+  if ((operation === 'pause' && currentlyPaused) || (operation === 'resume' && !currentlyPaused))
+    return;
   const occurredAt = input.clock.now().toISOString();
-  const context = { commandId: input.ids.next('command'), correlationId: correlation, occurredAt, actor: { kind: EventActorKind.Operator, id: 'web' } };
-  const event = operation === 'pause'
-    ? createControlEventDraft(ControlEventType.DispatchPaused, { resumeAt: '9999-12-31T23:59:59.999Z', reason: 'paused by operator' }, context)
-    : createControlEventDraft(ControlEventType.DispatchResumed, { resumedAt: occurredAt }, context);
+  const context = {
+    commandId: input.ids.next('command'),
+    correlationId: correlation,
+    occurredAt,
+    actor: { kind: EventActorKind.Operator, id: 'web' },
+  };
+  const event =
+    operation === 'pause'
+      ? createControlEventDraft(
+          ControlEventType.DispatchPaused,
+          { resumeAt: '9999-12-31T23:59:59.999Z', reason: 'paused by operator' },
+          context,
+        )
+      : createControlEventDraft(
+          ControlEventType.DispatchResumed,
+          { resumedAt: occurredAt },
+          context,
+        );
   await input.journal.append(stream, events.length, [event]);
 }

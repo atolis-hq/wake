@@ -419,5 +419,3 @@ function analyticsWindow(analytics: AnalyticsProjectionView, collectedAt: string
     );
   return { range: { days, from, to: end }, values };
 }
-
-

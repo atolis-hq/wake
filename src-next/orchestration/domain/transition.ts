@@ -6,6 +6,7 @@ import type {
 } from '../contracts/config.js';
 import type { WorkflowOrchestrationEventDraft } from '../contracts/events.js';
 import { OrchestrationEventType, WatchGateVerdictSignal } from '../contracts/events.js';
+import type { StageName } from '../contracts/identifiers.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
 import { ApprovalAuthorityKind, TransitionTargetKind } from '../contracts/vocabulary.js';
 import { activation, nextOrdinal, stateDraft } from './decision-events.js';
@@ -89,13 +90,23 @@ export function finishRoute(
       ),
     );
   }
-  const stage = definition.stages[route.target.stage]!;
+  pushStageEntry(events, definition, state, input, route.target.stage);
+}
+
+function pushStageEntry(
+  events: WorkflowOrchestrationEventDraft[],
+  definition: CompiledWorkflow,
+  state: WorkflowInstanceView,
+  input: DecisionContext,
+  stageName: StageName,
+): void {
+  const stage = definition.stages[stageName]!;
   events.push(
     stateDraft(
       state,
       input,
       OrchestrationEventType.StageEntered,
-      { stage: route.target.stage },
+      { stage: stageName },
       events.length + 1,
     ),
     stateDraft(
@@ -137,23 +148,5 @@ export function resumeToTarget(
     );
     return;
   }
-  const stage = definition.stages[target.stage]!;
-  events.push(
-    stateDraft(
-      state,
-      input,
-      OrchestrationEventType.StageEntered,
-      { stage: target.stage },
-      events.length + 1,
-    ),
-    stateDraft(
-      state,
-      input,
-      OrchestrationEventType.ActivityRequested,
-      activation(state.workflowInstanceId, nextOrdinal(state), stage.activity, stage.with, {
-        execution: stage.execution,
-      }),
-      events.length + 2,
-    ),
-  );
+  pushStageEntry(events, definition, state, input, target.stage);
 }

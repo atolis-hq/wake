@@ -1,6 +1,9 @@
 import { ActivityOutcomeKind } from '../../activities/index.js';
 import type { CompiledWorkflow } from '../contracts/config.js';
-import { OrchestrationEventType, type WorkflowOrchestrationEventDraft } from '../contracts/events.js';
+import {
+  OrchestrationEventType,
+  type WorkflowOrchestrationEventDraft,
+} from '../contracts/events.js';
 import { stageName } from '../contracts/identifiers.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
 import {
