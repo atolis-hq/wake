@@ -174,4 +174,35 @@ describe('workflow outcome acceptance', () => {
     if (waiting.kind !== 'append') throw new Error('expected events');
     expect(foldWorkflowInstance([...started.events, ...waiting.events])?.status).toBe('waiting');
   });
+
+  it('durably blocks — rather than silently dropping — an outcome its stage never routed', () => {
+    const started = startInstance(start);
+    if (started.kind !== 'append') throw new Error('expected events');
+    const state = foldWorkflowInstance(started.events)!;
+    const activation = state.pendingActivation!.activationId;
+
+    const decision = acceptActivityOutcome(definition, state, {
+      activationId: activation,
+      outcome: orchestrationActivityOutcome({ kind: 'failed' }),
+      occurredAt: start.occurredAt,
+      causationId: 'run-unrouted',
+    });
+    expect(decision.kind).toBe('append');
+    if (decision.kind !== 'append') return;
+    const resolved = foldWorkflowInstance([...started.events, ...decision.events])!;
+
+    expect(resolved.status).toBe('blocked');
+    // The outcome is recorded as accepted even though it had nowhere to
+    // route, so nothing can later mistake this activation for still being
+    // open and resolve it through an unrelated signal.
+    expect(resolved.acceptedOutcomes).toContain(activation);
+
+    const late = acceptActivityOutcome(definition, resolved, {
+      activationId: activation,
+      outcome: orchestrationActivityOutcome({ kind: 'done' }),
+      occurredAt: start.occurredAt,
+      causationId: 'run-unrouted-late',
+    });
+    expect(late.kind).toBe('ignored');
+  });
 });

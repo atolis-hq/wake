@@ -19,7 +19,7 @@ export function composeDeliveryService(dependencies: DeliveryServiceDependencies
 export function composeDeliveryOutcomeReactor(
   journal: EventJournal,
   checkpoints: CheckpointStore,
-  orchestration: Pick<OrchestrationService, 'acceptOutcome'>,
+  orchestration: Pick<OrchestrationService, 'acceptOutcome' | 'get'>,
 ): DeliveryOutcomeReactor {
   return new DeliveryOutcomeReactor(journal, checkpoints, orchestration);
 }
@@ -31,7 +31,7 @@ export interface DeliveryRuntimeDependencies {
   readonly resource: DeliveryResourceLookup;
   readonly adapter: (name: string) => ExternalDeliveryAdapter;
   readonly now: () => string;
-  readonly orchestration: Pick<OrchestrationService, 'acceptOutcome'>;
+  readonly orchestration: Pick<OrchestrationService, 'acceptOutcome' | 'get'>;
 }
 
 export function composeDeliveryRuntime(dependencies: DeliveryRuntimeDependencies) {
