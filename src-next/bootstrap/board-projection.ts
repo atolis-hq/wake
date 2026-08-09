@@ -68,14 +68,23 @@ export interface BoardProjectionView {
   // (non-child) instance's own stage/condition/awaitingApproval drives it,
   // the same rule GitHub label reconciliation already follows. Child
   // streams still register in `workflows` above so their own Runs keep
-  // counting toward the card's totals.
-  readonly children: Readonly<Record<string, true>>;
+  // counting toward the card's totals. The value is the child's own entry
+  // stage (e.g. "review"), so a Run dispatched under that child can label
+  // itself correctly instead of borrowing the primary's current stage.
+  readonly children: Readonly<Record<string, string>>;
+  // Same non-driving rule as `children`, applied to the Run stream once it
+  // starts: a Run dispatched under a watch child (e.g. the reviewer agent)
+  // must not flip the shared card to Active or clear awaitingApproval —
+  // the primary is still genuinely waiting on that child's verdict, so the
+  // card stays Needs Input while activeRun/runCount/totals still reflect
+  // the child's Run for display.
+  readonly childRuns: Readonly<Record<string, true>>;
 }
 
 export const boardProjection: ProjectionDefinition<BoardProjectionView> = {
   name: 'operator-board',
   select: () => ({ key: 'global' }),
-  initial: () => ({ cards: {}, workflows: {}, runs: {}, children: {} }),
+  initial: () => ({ cards: {}, workflows: {}, runs: {}, children: {}, childRuns: {} }),
   project(previous, envelope) {
     const work = selectWorkEvent(envelope);
     if (work !== null) return projectWork(previous, work, envelope.occurredAt);
@@ -148,7 +157,11 @@ function projectWorkflow(
     if (card === undefined) return view;
     const workflows = { ...view.workflows, [event.stream.id]: workId };
     if ('parentWorkflowInstanceId' in event.payload)
-      return { ...view, workflows, children: { ...view.children, [event.stream.id]: true } };
+      return {
+        ...view,
+        workflows,
+        children: { ...view.children, [event.stream.id]: event.payload.entry },
+      };
     return {
       ...view,
       cards: {
@@ -164,16 +177,26 @@ function projectWorkflow(
       workflows,
     };
   }
-  if (view.children?.[event.stream.id] === true) return view;
+  if (view.children?.[event.stream.id] !== undefined) return view;
   const located = lookupWorkflowCard(view, event.stream.id);
   if (located === undefined) return view;
   const { workId, card } = located;
+  // A new stage is always Ready regardless of the condition it inherits —
+  // Error from the prior stage's failed run, or Active from the
+  // SignalAccepted that unblocked it — until something in this stage
+  // actually picks the work up (ActivityRequested/RunStarted -> Active,
+  // or a fresh SignalWaitStarted -> Needs Input).
   if (event.eventType === OrchestrationEventType.StageEntered)
     return {
       ...view,
       cards: {
         ...view.cards,
-        [workId]: { ...card, stage: event.payload.stage, dwellSince: occurredAt },
+        [workId]: {
+          ...card,
+          stage: event.payload.stage,
+          dwellSince: occurredAt,
+          condition: BoardCondition.Ready,
+        },
       },
     };
   // Every event that changes a workflow instance's status is looked up from
@@ -245,6 +268,7 @@ function terminalFinishedAt(
     return event.payload.finishedAt;
   return undefined;
 }
+
 // RunSucceeded is a transport-level fact only: the agent can still report
 // a failed/blocked sentinel inside its outcome, so the board's condition
 // must follow outcome.kind, not just the event type, or a failed/blocked
@@ -254,6 +278,11 @@ function terminalRunFields(
 ): Pick<StoredCard, 'lastRunOutcome' | 'condition'> | undefined {
   if (event.eventType === ExecutionEventType.RunSucceeded) {
     const kind = event.payload.outcome.kind;
+    // A successful (or rejected) outcome means nothing is running right now —
+    // the card sits Ready until the orchestration's own next event (a new
+    // ActivityRequested, a SignalWaitStarted, or InstanceCompleted) says
+    // otherwise. Leaving it Active here made it lie about being busy for
+    // however long the gap to that next event took.
     return {
       lastRunOutcome: kind,
       condition:
@@ -261,7 +290,7 @@ function terminalRunFields(
           ? BoardCondition.Error
           : kind === ActivityOutcomeKind.Blocked
             ? BoardCondition.NeedsInput
-            : BoardCondition.Active,
+            : BoardCondition.Ready,
     };
   }
   if (event.eventType === ExecutionEventType.RunFailed)
@@ -284,29 +313,40 @@ function projectRun(
   const card = workId === undefined ? undefined : view.cards[workId];
   if (card === undefined || workId === undefined) return view;
 
-  if (runTerminalEventTypes.has(event.eventType)) {
-    const finishedAt = terminalFinishedAt(event);
-    const runDurationMs =
-      card.activeRun === undefined || finishedAt === undefined
-        ? 0
-        : Date.parse(finishedAt) - Date.parse(card.activeRun.startedAt);
-    return {
-      ...view,
-      cards: {
-        ...view.cards,
-        [workId]: {
-          ...withoutActiveRun(card),
-          ...terminalRunFields(event),
-          totalDurationMs: card.totalDurationMs + runDurationMs,
-        },
-      },
-    };
-  }
+  if (runTerminalEventTypes.has(event.eventType))
+    return projectRunTerminal(view, event, workId, card);
 
   if (event.eventType === ExecutionEventType.RunRunnerResultReported)
     return projectRunnerResult(view, workId, card, event.payload.agent?.metadata);
 
   return view;
+}
+
+function projectRunTerminal(
+  view: BoardProjectionView,
+  event: ReturnType<typeof selectRunExecutionEvent> & {},
+  workId: string,
+  card: StoredCard,
+): BoardProjectionView {
+  const finishedAt = terminalFinishedAt(event);
+  const runDurationMs =
+    card.activeRun === undefined || finishedAt === undefined
+      ? 0
+      : Date.parse(finishedAt) - Date.parse(card.activeRun.startedAt);
+  const terminal = terminalRunFields(event);
+  const isChildRun = view.childRuns[event.stream.id] === true;
+  return {
+    ...view,
+    cards: {
+      ...view.cards,
+      [workId]: {
+        ...withoutActiveRun(card),
+        ...(terminal === undefined ? {} : { lastRunOutcome: terminal.lastRunOutcome }),
+        ...(terminal === undefined || isChildRun ? {} : { condition: terminal.condition }),
+        totalDurationMs: card.totalDurationMs + runDurationMs,
+      },
+    },
+  };
 }
 
 function projectRunStarted(
@@ -319,18 +359,21 @@ function projectRunStarted(
   const workId = view.workflows[event.payload.workflowInstanceId];
   const card = workId === undefined ? undefined : view.cards[workId];
   if (card === undefined || workId === undefined) return view;
+  const childAction = view.children[event.payload.workflowInstanceId];
+  const isChildRun = childAction !== undefined;
   return {
     ...view,
     runs: { ...view.runs, [event.stream.id]: workId },
+    ...(isChildRun ? { childRuns: { ...view.childRuns, [event.stream.id]: true } } : {}),
     cards: {
       ...view.cards,
       [workId]: {
-        ...withoutAwaitingApproval(card),
+        ...(isChildRun ? card : withoutAwaitingApproval(card)),
         runCount: card.runCount + 1,
-        condition: BoardCondition.Active,
+        ...(isChildRun ? {} : { condition: BoardCondition.Active }),
         lastRunAt: event.payload.startedAt,
         activeRun: {
-          action: card.stage ?? event.payload.activity,
+          action: childAction ?? card.stage ?? event.payload.activity,
           startedAt: event.payload.startedAt,
           ...(event.payload.runner?.name === undefined
             ? {}

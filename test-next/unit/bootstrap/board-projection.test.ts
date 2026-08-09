@@ -165,6 +165,163 @@ describe('operator board projection', () => {
     });
   });
 
+  it("keeps a card in Needs Input, with awaitingApproval intact, while its watch child's own run is in flight and after it finishes", () => {
+    const workItemId = workId('board-watch-run-needs-input');
+    const workflowId = workflowInstanceId(`primary:${workItemId}`);
+    const childWorkflowId = workflowInstanceId(`primary:${workItemId}:watch:review:trigger:run-1`);
+    const run = runId('run-watch-child-1');
+    const withChildStarted = [
+      eventEnvelope(
+        WorkEventType.ItemCreated,
+        { objective: 'Gate on a watch review' },
+        workItemStream(workItemId),
+        1,
+      ),
+      eventEnvelope(
+        OrchestrationEventType.InstanceStarted,
+        {
+          workItemId,
+          workflowName: 'dark-factory',
+          orchestrationGroupId: `primary:${workItemId}`,
+          entry: 'refine',
+        },
+        workflowInstanceStream(workflowId),
+        2,
+      ),
+      eventEnvelope(
+        OrchestrationEventType.SignalWaitStarted,
+        {
+          signalKind: 'orchestration.watch-gate-verdict',
+          from: [{ kind: 'watch', watch: 'review' }],
+        },
+        workflowInstanceStream(workflowId),
+        3,
+      ),
+      eventEnvelope(
+        OrchestrationEventType.InstanceStarted,
+        {
+          workItemId,
+          workflowName: 'review',
+          orchestrationGroupId: `primary:${workItemId}`,
+          entry: 'review',
+          parentWorkflowInstanceId: workflowId,
+          watchId: 'review',
+          triggerId: 'run-1',
+          causalCycleId: 'cycle-1',
+          requestId: 'request-1',
+          childWorkflowInstanceId: childWorkflowId,
+        },
+        workflowInstanceStream(childWorkflowId),
+        4,
+      ),
+      eventEnvelope(
+        ExecutionEventType.RunStarted,
+        {
+          activationId: activationId('activation-watch-1'),
+          activity: activityName('agent'),
+          workflowInstanceId: childWorkflowId,
+          orchestrationGroupId: orchestrationGroupId(`primary:${workItemId}`),
+          attempt: 1,
+          startedAt: '2026-08-09T12:00:00.000Z',
+        },
+        runStream(run),
+        5,
+      ),
+    ].reduce(
+      (current, event) => boardProjection.project(current, event),
+      boardProjection.initial('global'),
+    );
+
+    expect(withChildStarted.cards[workItemId]).toMatchObject({
+      condition: 'needs-input',
+      awaitingApproval: true,
+      activeRun: { action: 'review' },
+    });
+
+    const finished = boardProjection.project(
+      withChildStarted,
+      eventEnvelope(
+        ExecutionEventType.RunSucceeded,
+        { outcome: { kind: 'done' }, finishedAt: '2026-08-09T12:01:00.000Z' },
+        runStream(run),
+        6,
+      ),
+    );
+
+    expect(finished.cards[workItemId]).toMatchObject({
+      condition: 'needs-input',
+      awaitingApproval: true,
+      lastRunOutcome: 'done',
+    });
+    expect(finished.cards[workItemId]!.activeRun).toBeUndefined();
+  });
+
+  it("labels an active run with the watch child's own action, not the parent's current stage", () => {
+    const workItemId = workId('board-child-run-label');
+    const workflowId = workflowInstanceId(`primary:${workItemId}`);
+    const childWorkflowId = workflowInstanceId(`primary:${workItemId}:watch:review:trigger:run-1`);
+    const run = runId('run-child-1');
+    const events = [
+      eventEnvelope(
+        WorkEventType.ItemCreated,
+        { objective: 'Gate on a watch review' },
+        workItemStream(workItemId),
+        1,
+      ),
+      eventEnvelope(
+        OrchestrationEventType.InstanceStarted,
+        {
+          workItemId,
+          workflowName: 'dark-factory',
+          orchestrationGroupId: `primary:${workItemId}`,
+          entry: 'implement',
+        },
+        workflowInstanceStream(workflowId),
+        2,
+      ),
+      eventEnvelope(
+        OrchestrationEventType.InstanceStarted,
+        {
+          workItemId,
+          workflowName: 'review',
+          orchestrationGroupId: `primary:${workItemId}`,
+          entry: 'review',
+          parentWorkflowInstanceId: workflowId,
+          watchId: 'review',
+          triggerId: 'run-1',
+          causalCycleId: 'cycle-1',
+          requestId: 'request-1',
+          childWorkflowInstanceId: childWorkflowId,
+        },
+        workflowInstanceStream(childWorkflowId),
+        3,
+      ),
+      eventEnvelope(
+        ExecutionEventType.RunStarted,
+        {
+          activationId: activationId('activation-child-1'),
+          activity: activityName('agent'),
+          workflowInstanceId: childWorkflowId,
+          orchestrationGroupId: orchestrationGroupId(`primary:${workItemId}`),
+          attempt: 1,
+          startedAt: '2026-08-09T12:00:00.000Z',
+        },
+        runStream(run),
+        4,
+      ),
+    ];
+
+    const view = events.reduce(
+      (current, event) => boardProjection.project(current, event),
+      boardProjection.initial('global'),
+    );
+
+    expect(view.cards[workItemId]).toMatchObject({
+      stage: 'implement',
+      activeRun: { action: 'review' },
+    });
+  });
+
   it('folds a workflow event against a checkpoint persisted before the children field existed', () => {
     const workItemId = workId('board-legacy-checkpoint');
     const workflowId = workflowInstanceId(`primary:${workItemId}`);
@@ -290,6 +447,54 @@ describe('operator board projection', () => {
     });
   });
 
+  it('returns a successfully finished run to Ready rather than leaving the card Active', () => {
+    const item = workId('board-run-ready');
+    const workflowId = workflowInstanceId(`primary:${item}`);
+    const run = runId('run-ready-1');
+    const started = [
+      eventEnvelope(WorkEventType.ItemCreated, { objective: 'Ship it' }, workItemStream(item), 1),
+      eventEnvelope(
+        OrchestrationEventType.InstanceStarted,
+        {
+          workItemId: item,
+          workflowName: 'delivery',
+          orchestrationGroupId: orchestrationGroupId(`primary:${item}`),
+          entry: 'refine',
+        },
+        workflowInstanceStream(workflowId),
+        2,
+      ),
+      eventEnvelope(
+        ExecutionEventType.RunStarted,
+        {
+          activationId: activationId('activation-ready-1'),
+          activity: activityName('refine'),
+          workflowInstanceId: workflowId,
+          orchestrationGroupId: orchestrationGroupId(`primary:${item}`),
+          attempt: 1,
+          startedAt: '2026-08-03T12:00:00.000Z',
+        },
+        runStream(run),
+        3,
+      ),
+    ].reduce(
+      (view, event) => boardProjection.project(view, event),
+      boardProjection.initial('global'),
+    );
+
+    const finished = boardProjection.project(
+      started,
+      eventEnvelope(
+        ExecutionEventType.RunSucceeded,
+        { outcome: { kind: 'done' }, finishedAt: '2026-08-03T12:05:00.000Z' },
+        runStream(run),
+        4,
+      ),
+    );
+
+    expect(finished.cards[item]).toMatchObject({ condition: 'ready' });
+  });
+
   it('moves a card to error and clears the active run when the agent reports a failed outcome', () => {
     const item = workId('board-run-failed');
     const workflowId = workflowInstanceId(`primary:${item}`);
@@ -341,5 +546,60 @@ describe('operator board projection', () => {
       totalDurationMs: 300_000,
     });
     expect(failed.cards[item]!.activeRun).toBeUndefined();
+  });
+
+  it('resets a card to Ready on entering a new stage regardless of the condition it inherits', () => {
+    const item = workId('board-stage-reset');
+    const workflowId = workflowInstanceId(`primary:${item}`);
+    const run = runId('run-stage-reset-1');
+    const failed = [
+      eventEnvelope(WorkEventType.ItemCreated, { objective: 'Ship it' }, workItemStream(item), 1),
+      eventEnvelope(
+        OrchestrationEventType.InstanceStarted,
+        {
+          workItemId: item,
+          workflowName: 'dark-factory',
+          orchestrationGroupId: orchestrationGroupId(`primary:${item}`),
+          entry: 'refine',
+        },
+        workflowInstanceStream(workflowId),
+        2,
+      ),
+      eventEnvelope(
+        ExecutionEventType.RunStarted,
+        {
+          activationId: activationId('activation-stage-reset-1'),
+          activity: activityName('refine'),
+          workflowInstanceId: workflowId,
+          orchestrationGroupId: orchestrationGroupId(`primary:${item}`),
+          attempt: 1,
+          startedAt: '2026-08-03T12:00:00.000Z',
+        },
+        runStream(run),
+        3,
+      ),
+      eventEnvelope(
+        ExecutionEventType.RunSucceeded,
+        { outcome: { kind: 'failed' }, finishedAt: '2026-08-03T12:05:00.000Z' },
+        runStream(run),
+        4,
+      ),
+    ].reduce(
+      (view, event) => boardProjection.project(view, event),
+      boardProjection.initial('global'),
+    );
+    expect(failed.cards[item]).toMatchObject({ condition: 'error' });
+
+    const nextStage = boardProjection.project(
+      failed,
+      eventEnvelope(
+        OrchestrationEventType.StageEntered,
+        { stage: 'refine' },
+        workflowInstanceStream(workflowId),
+        5,
+      ),
+    );
+
+    expect(nextStage.cards[item]).toMatchObject({ condition: 'ready', stage: 'refine' });
   });
 });
