@@ -37,6 +37,7 @@ import {
   ProviderRegistry,
   fakeProviderDefinition,
   type DeliveryIntentView,
+  type ProviderCompositionFailure,
   type ProviderInstance,
   type WorkflowRouter,
 } from '../integrations/index.js';
@@ -114,6 +115,7 @@ export interface CompositionRoot {
   readonly advanceOnce: ReturnType<typeof createAdvanceOnce>;
   readonly projectionRunner: ReturnType<typeof createRuntimeProjectionRunner>;
   readonly providers: readonly ProviderInstance[];
+  readonly providerFailures: readonly ProviderCompositionFailure[];
   readonly delivery: DeliveryService;
   readonly pipeline: TickPipeline;
   readonly resolveResourceLink: ResourceLinkResolver;
@@ -231,6 +233,7 @@ export async function createCompositionRoot(
 interface IntegrationRuntime {
   readonly projectionRunner: ReturnType<typeof createRuntimeProjectionRunner>;
   readonly providers: readonly ProviderInstance[];
+  readonly providerFailures: readonly ProviderCompositionFailure[];
   readonly delivery: DeliveryService;
   readonly pipeline: TickPipeline;
 }
@@ -272,7 +275,7 @@ async function composeIntegrationRuntime(
   const registry = new ProviderRegistry();
   registry.register(fakeProviderDefinition);
   registry.register(gitHubProviderDefinition);
-  const providers = registry.compose(
+  const { instances: providers, failures: providerFailures } = registry.compose(
     await hydrateFakeProviderEvidence(input.wakeRoot, input.config.integrations),
     {
       work: input.work,
@@ -386,7 +389,7 @@ async function composeIntegrationRuntime(
       await delivery.deliverNext(signal);
     },
   });
-  return { projectionRunner, providers, delivery, pipeline };
+  return { projectionRunner, providers, providerFailures, delivery, pipeline };
 }
 
 function createBuiltInActivityRegistry(

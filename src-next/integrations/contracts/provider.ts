@@ -87,6 +87,22 @@ export interface ProviderDefinition<Config = unknown> {
   }): ProviderInstance;
 }
 
+// A provider that fails to construct (bad config, unreachable credentials —
+// e.g. sandbox auth not configured yet) must not take composition down with
+// it: every other command (doctor, sandbox-setup, sandbox-entrypoint) still
+// needs to run. An adapter naming a provider Wake doesn't know about at all
+// is a different, unrecoverable class of error and still throws.
+export interface ProviderCompositionFailure {
+  readonly adapter: AdapterId;
+  readonly provider: string;
+  readonly error: string;
+}
+
+export interface ProviderCompositionResult {
+  readonly instances: readonly ProviderInstance[];
+  readonly failures: readonly ProviderCompositionFailure[];
+}
+
 export class ProviderRegistry {
   private readonly definitions = new Map<string, ProviderDefinition>();
 
@@ -96,19 +112,31 @@ export class ProviderRegistry {
     this.definitions.set(definition.provider, definition);
   }
 
-  compose(config: IntegrationsConfig, services?: ProviderServices): readonly ProviderInstance[] {
-    return Object.entries(config).flatMap(([name, entry]) => {
-      if (!entry.enabled) return [];
+  compose(config: IntegrationsConfig, services?: ProviderServices): ProviderCompositionResult {
+    const instances: ProviderInstance[] = [];
+    const failures: ProviderCompositionFailure[] = [];
+    for (const [name, entry] of Object.entries(config)) {
+      if (!entry.enabled) continue;
       const provider = entry.provider ?? name;
       const definition = this.definitions.get(provider);
       if (definition === undefined) throw new Error(`Provider ${provider} is not registered`);
-      return [
-        definition.create({
-          adapter: adapterId(name),
-          config: definition.parseConfig(entry),
-          ...(services === undefined ? {} : { services }),
-        }),
-      ];
-    });
+      const adapter = adapterId(name);
+      try {
+        instances.push(
+          definition.create({
+            adapter,
+            config: definition.parseConfig(entry),
+            ...(services === undefined ? {} : { services }),
+          }),
+        );
+      } catch (error) {
+        failures.push({
+          adapter,
+          provider,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    return { instances, failures };
   }
 }

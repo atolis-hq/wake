@@ -42,6 +42,11 @@ const configSchema = z
     // message instead of resolving, so doctor's failure path is exercisable
     // without a real network dependency.
     connectivityError: z.string().min(1).optional(),
+    // Deterministic test hook: when set, create() throws this message instead
+    // of constructing the provider, so composition's provider-construction
+    // failure tolerance (e.g. missing sandbox auth) is exercisable without a
+    // real credential dependency.
+    createError: z.string().min(1).optional(),
   })
   .passthrough();
 
@@ -52,6 +57,7 @@ export const fakeProviderDefinition: ProviderDefinition<z.output<typeof configSc
     return configSchema.parse(value);
   },
   create({ adapter, config, services }) {
+    if (config.createError !== undefined) throw new Error(config.createError);
     if (services === undefined) throw new Error('Fake provider requires composed services');
     return {
       adapter,

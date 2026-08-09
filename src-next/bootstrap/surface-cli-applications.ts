@@ -542,7 +542,13 @@ async function checkProviders(
       failures.push(`provider "${provider.adapter}" is not reachable: ${(error as Error).message}`);
     }
   }
-  if (root.providers.length === 0 && Object.keys(root.config.integrations).length > 0)
+  for (const failure of root.providerFailures)
+    failures.push(`provider "${failure.adapter}" failed to initialize: ${failure.error}`);
+  if (
+    root.providers.length === 0 &&
+    root.providerFailures.length === 0 &&
+    Object.keys(root.config.integrations).length > 0
+  )
     notices.push('no enabled integration provider is available');
 }
 

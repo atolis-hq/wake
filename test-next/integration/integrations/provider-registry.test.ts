@@ -40,7 +40,7 @@ describe('ProviderRegistry', () => {
     const registry = new ProviderRegistry();
     registry.register(definition());
 
-    const instances = registry.compose({
+    const { instances, failures } = registry.compose({
       fake: { enabled: true },
       second: { provider: 'fake', enabled: true },
     });
@@ -49,6 +49,7 @@ describe('ProviderRegistry', () => {
       adapterId('fake'),
       adapterId('second'),
     ]);
+    expect(failures).toEqual([]);
   });
 
   it('rejects an adapter that does not name a registered provider', () => {
@@ -56,4 +57,35 @@ describe('ProviderRegistry', () => {
       'not registered',
     );
   });
+
+  it('reports a provider that fails to construct as a failure instead of throwing', () => {
+    const registry = new ProviderRegistry();
+    registry.register(definition());
+    registry.register(brokenDefinition());
+
+    const { instances, failures } = registry.compose({
+      fake: { enabled: true },
+      broken: { provider: 'broken', enabled: true },
+    });
+
+    expect(instances.map((instance) => instance.adapter)).toEqual([adapterId('fake')]);
+    expect(failures).toEqual([
+      { adapter: adapterId('broken'), provider: 'broken', error: 'provider unavailable' },
+    ]);
+  });
 });
+
+function brokenDefinition(): ProviderDefinition<{ readonly enabled: boolean }> {
+  return {
+    provider: 'broken',
+    eventTypes: [],
+    parseConfig(value) {
+      if (typeof value !== 'object' || value === null || !('enabled' in value))
+        throw new Error('enabled is required');
+      return { enabled: value.enabled === true };
+    },
+    create() {
+      throw new Error('provider unavailable');
+    },
+  };
+}

@@ -118,6 +118,43 @@ surfaces:
       ]),
     );
   });
+
+  it('reports a provider that fails to construct as a failure instead of crashing doctor', async () => {
+    const world = await ProcessWorld.create();
+    worlds.push(world);
+    await world.tick();
+    await writeFile(
+      join(world.wakeRoot, 'config.yaml'),
+      `schemaVersion: 1
+execution:
+  agentRunners:
+    fake: { kind: fake, timeoutMs: 5000 }
+  runnerPools: { standard: [fake] }
+  defaultRunnerPool: standard
+controlPlane: {}
+integrations:
+  fake:
+    provider: fake
+    enabled: true
+    evidenceFile: provider/evidence.json
+    effectsFile: provider/effects.json
+    createError: simulated missing sandbox auth
+surfaces:
+  api: { enabled: false }
+  web: { enabled: false }
+`,
+    );
+
+    const report = await runDoctor(world.wakeRoot);
+
+    expect(report.failures).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(
+          /provider "fake" failed to initialize: simulated missing sandbox auth/,
+        ),
+      ]),
+    );
+  });
 });
 
 describe('E2E-OPS-002: doctor diagnostics — sandbox absence and configuration drift', () => {
