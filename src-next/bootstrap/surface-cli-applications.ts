@@ -54,34 +54,44 @@ export function createSurfaceCliApplications(
 ): WakeCliApplications {
   const runnerTick = new TickHost((options) => root.runnerPipeline.run(options));
   const intakeHost = new IntakeHost((signal) => root.intakePipeline.run(signal));
-  const reportResidentError = async (error: unknown) => {
+  const reportResidentError = (label: 'intake' | 'runner') => async (error: unknown) => {
     process.stderr.write(
-      `Wake resident tick failed: ${error instanceof Error ? error.message : String(error)}\n`,
+      `Wake ${label} tick failed: ${error instanceof Error ? error.message : String(error)}\n`,
     );
   };
-  // Only intake polls a rate-limited external API (GitHub), so only its
-  // resident loop backs off exponentially when idle. The runner loop
-  // (schedules, reactors, Advancement, delivery) never touches that API on
-  // its own, so it stays on a fast, fixed cadence — mirroring legacy
-  // src/core/control-plane.ts's `runIntakeTick`/`runRunnerTick` split
-  // (idleBackoff: true vs false), just as two ResidentHosts instead of two
-  // hand-rolled loops.
+  // Only intake unconditionally polls a rate-limited external API (GitHub),
+  // so only its resident loop backs off exponentially when idle. The
+  // runner loop (schedules, reactors, Advancement, delivery, GitHub label
+  // maintenance) stays on a fast, fixed cadence when it simply has nothing
+  // to do locally — mirroring legacy src/core/control-plane.ts's
+  // `runIntakeTick`/`runRunnerTick` split (idleBackoff: true vs false), just
+  // as two ResidentHosts instead of two hand-rolled loops. But some runner
+  // stages (deliver, label maintenance) DO call that same external API, so a
+  // run of consecutive *errors* — as opposed to ordinary "no local work"
+  // idling — still backs off exponentially, or a live rate-limit window gets
+  // hammered every cycle instead of given a chance to recover.
   const runnerResident = new ResidentHost(
     runnerTick,
-    (signal, consecutiveIdleTicks) =>
-      consecutiveIdleTicks === 0
+    (signal, { consecutiveIdleTicks, consecutiveErrorTicks }) => {
+      if (consecutiveErrorTicks > 0)
+        return sleepUntilAbort(
+          signal,
+          nextIdleBackoffMs(root.config.controlPlane.resident, consecutiveErrorTicks),
+        );
+      return consecutiveIdleTicks === 0
         ? Promise.resolve()
-        : sleepUntilAbort(signal, root.config.controlPlane.resident?.idleBackoffMs ?? 1000),
-    reportResidentError,
+        : sleepUntilAbort(signal, root.config.controlPlane.resident?.idleBackoffMs ?? 1000);
+    },
+    reportResidentError('runner'),
   );
   const intakeResident = new ResidentHost(
     intakeHost,
-    (signal, consecutiveIdleTicks) =>
+    (signal, { consecutiveIdleTicks }) =>
       sleepUntilAbort(
         signal,
         nextIdleBackoffMs(root.config.controlPlane.resident, consecutiveIdleTicks),
       ),
-    reportResidentError,
+    reportResidentError('intake'),
   );
   const servers = new Set<Server>();
   const startHttp = createHttpStarter(root, api, servers);

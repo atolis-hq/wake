@@ -57,9 +57,14 @@ Does not own:
 - A `HEAD` request MUST receive the same status and headers as the
   equivalent `GET` would, with no response body.
 - Malformed JSON in a request body MUST produce a 400 problem response with
-  code `malformed-json`; any other unexpected error during dispatch MUST
-  produce a generic 500 problem response that never exposes the underlying
-  error's message or stack.
+  code `malformed-json`. An error shaped like an upstream HTTP client
+  failure (any thrown value with a numeric `status` field ≥ 400 — e.g. an
+  octokit `RequestError` from a rate-limited or unreachable GitHub call)
+  MUST produce a 502 problem response with code `upstream-provider-error`,
+  distinguishing an external provider outage from a genuine Wake bug. Any
+  other unexpected error during dispatch MUST produce a generic 500 problem
+  response. Neither the 502 nor the 500 case exposes the underlying error's
+  message or stack.
 - An immutable-looking static asset filename (a hashed/fingerprinted `.js`
   or `.css` name) MUST be served with a one-year immutable cache-control
   header; every other asset MUST be served with `no-cache`.

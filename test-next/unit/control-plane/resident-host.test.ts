@@ -70,3 +70,35 @@ it('logs a failed tick and continues polling', async () => {
   expect(calls).toBe(2);
   expect(errors).toEqual([expect.objectContaining({ message: 'workspace cleanup failed' })]);
 });
+
+it('tracks consecutive errors separately from consecutive idle ticks, resetting errors on any non-throwing cycle', async () => {
+  const controller = new AbortController();
+  // throw, throw, idle (no progress, no throw), throw, then abort.
+  const outcomes: readonly ('throw' | 'idle')[] = ['throw', 'throw', 'idle', 'throw'];
+  let calls = 0;
+  const cadences: { consecutiveIdleTicks: number; consecutiveErrorTicks: number }[] = [];
+  const host = new ResidentHost(
+    {
+      async run() {
+        const outcome = outcomes[calls]!;
+        calls += 1;
+        if (outcome === 'throw') throw new Error(`failure ${calls}`);
+        return { advances: 0, runs: 0, stoppedBecause: 'idle' as const };
+      },
+    },
+    async (_signal, cadence) => {
+      cadences.push(cadence);
+      if (calls === outcomes.length) controller.abort();
+    },
+    async () => undefined,
+  );
+
+  await host.run(controller.signal, budget);
+
+  expect(cadences).toEqual([
+    { consecutiveIdleTicks: 1, consecutiveErrorTicks: 1 },
+    { consecutiveIdleTicks: 2, consecutiveErrorTicks: 2 },
+    { consecutiveIdleTicks: 3, consecutiveErrorTicks: 0 },
+    { consecutiveIdleTicks: 4, consecutiveErrorTicks: 1 },
+  ]);
+});

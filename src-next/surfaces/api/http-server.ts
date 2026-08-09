@@ -90,19 +90,47 @@ async function serveWebRequest(
 }
 
 function errorResult(error: unknown): ApiHttpResponse {
-  return error instanceof MalformedJsonError
-    ? {
-        status: 400,
-        body: problemDetails(400, 'Bad Request', 'The request body is not valid JSON.', {
-          code: 'malformed-json',
-        }),
-        contentType: 'application/problem+json',
-      }
-    : {
-        status: 500,
-        body: problemDetails(500, 'Internal Server Error', 'Wake could not complete the request.'),
-        contentType: 'application/problem+json',
-      };
+  if (error instanceof MalformedJsonError)
+    return {
+      status: 400,
+      body: problemDetails(400, 'Bad Request', 'The request body is not valid JSON.', {
+        code: 'malformed-json',
+      }),
+      contentType: 'application/problem+json',
+    };
+  if (isUpstreamProviderError(error))
+    return {
+      status: 502,
+      body: problemDetails(
+        502,
+        'Bad Gateway',
+        'Wake could not complete the request because an external provider call failed (e.g. GitHub rate-limited or was unreachable). Retrying shortly usually resolves this.',
+        { code: 'upstream-provider-error' },
+      ),
+      contentType: 'application/problem+json',
+    };
+  return {
+    status: 500,
+    body: problemDetails(500, 'Internal Server Error', 'Wake could not complete the request.'),
+    contentType: 'application/problem+json',
+  };
+}
+
+// Duck-types an octokit RequestError (or any similarly-shaped upstream HTTP
+// client failure) by its `.status` field — the same detection already used
+// for GitHub 404s in integrations/github/provider.ts's verifyArtifact. A
+// synchronous command (like manual tick) that happens to run while an
+// external provider is rate-limited or unreachable should surface as a
+// distinguishable gateway failure, not an opaque "Internal Server Error"
+// indistinguishable from an actual Wake bug.
+function isUpstreamProviderError(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'status' in error &&
+    typeof error.status === 'number' &&
+    error.status >= 400
+  );
 }
 
 async function jsonBody(request: IncomingMessage): Promise<unknown> {

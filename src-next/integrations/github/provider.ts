@@ -27,6 +27,7 @@ export const gitHubProviderDefinition: ProviderDefinition<GitHubConfig> = {
       maintenance: createGitHubWakeLabelReconciler({
         orchestration: services.orchestration,
         resources: services.resources,
+        work: services.work,
         getLabels: client.getIssueLabels,
         setLabels: client.setIssueLabels,
       }),

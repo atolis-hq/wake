@@ -22,7 +22,7 @@ import {
   createResourceLookup,
   createResourceService,
 } from '../../../src-next/resources/index.js';
-import { createWorkService } from '../../../src-next/work/index.js';
+import { WorkStatus, createWorkService } from '../../../src-next/work/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 import { resId, workId } from '../../support/identities.js';
 
@@ -301,6 +301,11 @@ it('reconciles target workflow markers to correlated GitHub resources without re
         return { externalKey: { adapter: 'github', key: 'org/repo#42' } } as never;
       },
     },
+    work: {
+      async get() {
+        return { state: WorkStatus.Open } as never;
+      },
+    },
     async getLabels() {
       return ['bug', 'wake:status.working', 'wake:stage.implement'];
     },
@@ -362,6 +367,11 @@ it('reflects only the primary workflow in labels, adding a watching marker while
       },
       async get() {
         return { externalKey: { adapter: 'github', key: 'org/repo#43' } } as never;
+      },
+    },
+    work: {
+      async get() {
+        return { state: WorkStatus.Open } as never;
       },
     },
     async getLabels() {
@@ -427,6 +437,11 @@ it('drops the watching marker once every watch child has completed', async () =>
         return { externalKey: { adapter: 'github', key: 'org/repo#43' } } as never;
       },
     },
+    work: {
+      async get() {
+        return { state: WorkStatus.Open } as never;
+      },
+    },
     async getLabels() {
       return ['wake:watching'];
     },
@@ -444,6 +459,49 @@ it('drops the watching marker once every watch child has completed', async () =>
       labels: ['wake:status.working', 'wake:stage.implement', 'wake:workflow.dark-factory'],
     },
   ]);
+});
+
+it('skips a closed WorkItem entirely, never calling getLabels for it', async () => {
+  let getLabelsCalls = 0;
+  const reconciler = createGitHubWakeLabelReconciler({
+    orchestration: {
+      async listAll() {
+        return [
+          {
+            workflowInstanceId: 'primary-1',
+            workItemId: workId('closed-work'),
+            workflowName: 'dark-factory',
+            orchestrationGroupId: 'group-1',
+            status: 'blocked',
+            currentStage: 'refine',
+          },
+        ] as never;
+      },
+    },
+    resources: {
+      async correlationsForWork() {
+        return [{ resourceId: resId('closed-resource') }] as never;
+      },
+      async get() {
+        return { externalKey: { adapter: 'github', key: 'org/repo#44' } } as never;
+      },
+    },
+    work: {
+      async get() {
+        return { state: WorkStatus.Closed } as never;
+      },
+    },
+    async getLabels() {
+      getLabelsCalls += 1;
+      return [];
+    },
+    async setLabels() {
+      throw new Error('should not sync labels for a closed WorkItem');
+    },
+  });
+
+  await reconciler.runOnce();
+  expect(getLabelsCalls).toBe(0);
 });
 
 it('polls issue comments, including an /approved command', async () => {

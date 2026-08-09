@@ -66,8 +66,16 @@ Decisions below).
 - `ResidentHost.run` MUST repeat `TickHost.run(budget)` (or `IntakeHost`'s
   equivalent) while the signal is not aborted, accumulating `advances` and
   `runs` as a running total across the whole resident lifetime (not per
-  cycle), and MUST call the injected `sleep(signal)` between cycles only
-  when the signal has not aborted since the last cycle completed.
+  cycle), and MUST call the injected `sleep(signal, cadence)` between cycles
+  only when the signal has not aborted since the last cycle completed.
+- `cadence.consecutiveIdleTicks` MUST increment on any cycle that does not
+  progress (`advances === 0`, whether it returned cleanly or threw) and MUST
+  reset to 0 on any cycle that progresses. `cadence.consecutiveErrorTicks`
+  MUST increment only on a cycle that throws and MUST reset to 0 on any
+  cycle that completes without throwing, progress or not — it is a strict
+  subset of `consecutiveIdleTicks`, letting a sleep strategy back off
+  specifically on a run of failures (e.g. a rate-limited external call)
+  without also slowing down ordinary "nothing to do locally" idling.
 - The default `sleep` implementation MUST wait for the signal's own abort
   event (resolving immediately if already aborted) and never resolves on a
   timer — so a resident run with no caller-supplied `sleep` performs exactly
@@ -114,11 +122,17 @@ Decisions below).
   not consulted by Advancement.
 - The resident host's inter-cycle sleep is caller-supplied. Production
   composition (`bootstrap/surface-cli-applications.ts`) supplies two
-  different strategies: the intake `ResidentHost` backs off exponentially
-  when idle (`controlPlane.resident.idleBackoffMs`/`maxIdleBackoffMs`),
-  because only intake polls a rate-limited external API (GitHub); the
-  runner `ResidentHost` sleeps only a fixed, un-backed-off interval when
-  idle and not at all when the prior cycle made progress, since dispatch,
-  delivery, and projections never poll that API on their own. This mirrors
-  legacy `src/core/control-plane.ts`'s `runIntakeTick`/`runRunnerTick` split
-  (`idleBackoff: true` vs `false`).
+  different strategies: the intake `ResidentHost` backs off exponentially on
+  `consecutiveIdleTicks` (`controlPlane.resident.idleBackoffMs`/
+  `maxIdleBackoffMs`), because it unconditionally polls a rate-limited
+  external API (GitHub) every cycle; the runner `ResidentHost` sleeps only a
+  fixed, un-backed-off interval when idle-without-error and not at all when
+  the prior cycle made progress, since dispatch and projections never poll
+  that API on their own. This mirrors legacy `src/core/control-plane.ts`'s
+  `runIntakeTick`/`runRunnerTick` split (`idleBackoff: true` vs `false`).
+  But some runner stages (delivery, GitHub label maintenance) do call that
+  same external API on their own schedule, not a poll, so the runner
+  `ResidentHost` still backs off exponentially on `consecutiveErrorTicks`
+  specifically — a repeated failure (e.g. that API rate-limiting) gets the
+  same exponential relief as intake, without slowing down the case that
+  motivated the split: noticing and starting already-pending local work.

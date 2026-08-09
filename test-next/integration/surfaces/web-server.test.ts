@@ -66,6 +66,29 @@ describe('HTTP Surface hardening', () => {
     }
   });
 
+  it('maps an upstream provider failure (e.g. a GitHub rate-limit error) to a 502, not a 500', async () => {
+    const server = createApiHttpServer({
+      dispatch: async () => {
+        throw Object.assign(new Error('API rate limit exceeded for user ID 300234579'), {
+          status: 403,
+        });
+      },
+    });
+    server.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    const address = server.address();
+    if (address === null || typeof address === 'string') throw new Error('Expected TCP address');
+    try {
+      const response = await fetch(`http://127.0.0.1:${address.port}/api/v1/system/health`);
+      expect(response.status).toBe(502);
+      expect(response.headers.get('content-type')).toBe('application/problem+json');
+      expect(await response.json()).toMatchObject({ status: 502, code: 'upstream-provider-error' });
+    } finally {
+      server.close();
+      await once(server, 'close');
+    }
+  });
+
   it('maps malformed JSON to an exact RFC9457 400 response', async () => {
     const server = createApiHttpServer(createApiDispatcher(applications()));
     server.listen(0, '127.0.0.1');
