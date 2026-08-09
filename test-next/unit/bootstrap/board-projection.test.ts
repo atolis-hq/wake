@@ -365,6 +365,64 @@ describe('operator board projection', () => {
     expect(next.cards[workItemId]).toMatchObject({ stage: 'implement' });
   });
 
+  it('folds a run-terminal event against a checkpoint persisted before the childRuns field existed', () => {
+    const item = workId('board-legacy-childruns');
+    const workflowId = workflowInstanceId(`primary:${item}`);
+    const run = runId('run-legacy-1');
+    const seeded = [
+      eventEnvelope(
+        WorkEventType.ItemCreated,
+        { objective: 'Pre-dates the childRuns field' },
+        workItemStream(item),
+        1,
+      ),
+      eventEnvelope(
+        OrchestrationEventType.InstanceStarted,
+        {
+          workItemId: item,
+          workflowName: 'dark-factory',
+          orchestrationGroupId: orchestrationGroupId(`primary:${item}`),
+          entry: 'refine',
+        },
+        workflowInstanceStream(workflowId),
+        2,
+      ),
+      eventEnvelope(
+        ExecutionEventType.RunStarted,
+        {
+          activationId: activationId('activation-legacy-1'),
+          activity: activityName('refine'),
+          workflowInstanceId: workflowId,
+          orchestrationGroupId: orchestrationGroupId(`primary:${item}`),
+          attempt: 1,
+          startedAt: '2026-08-09T13:40:37.355Z',
+          runner: { name: 'fake-worker' },
+        },
+        runStream(run),
+        3,
+      ),
+    ].reduce(
+      (current, event) => boardProjection.project(current, event),
+      boardProjection.initial('global'),
+    );
+    // A checkpoint written before `childRuns` was added (same as the
+    // `children` case above) round-trips through storage without it.
+    const { childRuns: _childRuns, ...legacyView } = seeded;
+
+    const next = boardProjection.project(
+      legacyView as typeof seeded,
+      eventEnvelope(
+        ExecutionEventType.RunSucceeded,
+        { outcome: { kind: 'done' }, finishedAt: '2026-08-09T13:40:59.015Z' },
+        runStream(run),
+        4,
+      ),
+    );
+
+    expect(next.cards[item]).toMatchObject({ condition: 'ready' });
+    expect(next.cards[item]!.activeRun).toBeUndefined();
+  });
+
   it('shows an active run, accumulates token/cost totals, and clears the run on completion', () => {
     const item = workId('board-run');
     const workflowId = workflowInstanceId(`primary:${item}`);
@@ -601,5 +659,40 @@ describe('operator board projection', () => {
     );
 
     expect(nextStage.cards[item]).toMatchObject({ condition: 'ready', stage: 'refine' });
+  });
+
+  it('keeps a closed item in Finished even when its orphaned workflow instance is blocked afterward', () => {
+    const item = workId('board-closed-then-blocked');
+    const workflowId = workflowInstanceId(`primary:${item}`);
+    const view = [
+      eventEnvelope(WorkEventType.ItemCreated, { objective: 'Ship it' }, workItemStream(item), 1),
+      eventEnvelope(
+        OrchestrationEventType.InstanceStarted,
+        {
+          workItemId: item,
+          workflowName: 'dark-factory',
+          orchestrationGroupId: orchestrationGroupId(`primary:${item}`),
+          entry: 'refine',
+        },
+        workflowInstanceStream(workflowId),
+        2,
+      ),
+      // There is no reopen command (work-item.spec.md) — closed/cancelled is
+      // terminal — but the workflow instance can still emit a status event of
+      // its own (e.g. InstanceBlocked, halting the now-orphaned instance)
+      // after the item closes.
+      eventEnvelope(WorkEventType.ItemClosed, { reason: 'done' }, workItemStream(item), 3),
+      eventEnvelope(
+        OrchestrationEventType.InstanceBlocked,
+        { reason: 'work item closed' },
+        workflowInstanceStream(workflowId),
+        4,
+      ),
+    ].reduce(
+      (current, event) => boardProjection.project(current, event),
+      boardProjection.initial('global'),
+    );
+
+    expect(view.cards[item]).toMatchObject({ condition: 'finished' });
   });
 });

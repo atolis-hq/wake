@@ -181,6 +181,11 @@ function projectWorkflow(
   const located = lookupWorkflowCard(view, event.stream.id);
   if (located === undefined) return view;
   const { workId, card } = located;
+  // Closed/cancelled is terminal for a WorkItem — there is no reopen path
+  // (see work-item.spec.md) — so a workflow status event that arrives after
+  // closure (e.g. InstanceBlocked from the now-orphaned instance halting)
+  // must not resurrect the card out of Finished.
+  if (card.condition === BoardCondition.Finished) return view;
   // A new stage is always Ready regardless of the condition it inherits —
   // Error from the prior stage's failed run, or Active from the
   // SignalAccepted that unblocked it — until something in this stage
@@ -334,7 +339,10 @@ function projectRunTerminal(
       ? 0
       : Date.parse(finishedAt) - Date.parse(card.activeRun.startedAt);
   const terminal = terminalRunFields(event);
-  const isChildRun = view.childRuns[event.stream.id] === true;
+  // Same legacy-checkpoint tolerance as the `children` guard above: a
+  // checkpoint persisted before `childRuns` was added round-trips without
+  // it, and this is the first read of the field after a Run starts.
+  const isChildRun = view.childRuns?.[event.stream.id] === true;
   return {
     ...view,
     cards: {
@@ -359,7 +367,10 @@ function projectRunStarted(
   const workId = view.workflows[event.payload.workflowInstanceId];
   const card = workId === undefined ? undefined : view.cards[workId];
   if (card === undefined || workId === undefined) return view;
-  const childAction = view.children[event.payload.workflowInstanceId];
+  // Same legacy-checkpoint tolerance as the `children` guard in
+  // projectWorkflow: a RunStarted event reaches this field independently of
+  // that guard, so a checkpoint predating `children` must not crash here either.
+  const childAction = view.children?.[event.payload.workflowInstanceId];
   const isChildRun = childAction !== undefined;
   return {
     ...view,
