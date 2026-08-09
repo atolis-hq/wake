@@ -9,7 +9,14 @@ import { Chip } from '../../components/chip.js';
 import { DataTable } from '../../components/data-table.js';
 import { fmtCompact, fmtCost } from '../../components/format.js';
 import { LocalTime } from '../../components/local-time.js';
-import { Button, EmptyState, ErrorState, LoadingState, MutationFeedback, Panel } from '../../components/primitives.js';
+import {
+  Button,
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  MutationFeedback,
+  Panel,
+} from '../../components/primitives.js';
 import { DocumentIcon, ExternalLinkIcon, GitHubIcon } from '../../components/resource-icons.js';
 import { EventRow } from '../events/events.js';
 import styles from '../features.module.css';
@@ -86,9 +93,14 @@ export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
     ]);
   };
   const command = useMutation({
-    mutationFn: (name: 'freeze' | 'unfreeze' | 'delete') => client.work.command(workItemKey, name, `web:${name}:${globalThis.crypto.randomUUID()}`),
-    onSuccess: async (_result, name) => { await refresh(); if (name === 'delete') navigate('/work'); },
-  });  const query = useQuery({
+    mutationFn: (name: 'freeze' | 'unfreeze' | 'delete') =>
+      client.work.command(workItemKey, name, `web:${name}:${globalThis.crypto.randomUUID()}`),
+    onSuccess: async (_result, name) => {
+      await refresh();
+      if (name === 'delete') navigate('/work');
+    },
+  });
+  const query = useQuery({
     queryKey: queryKeys.work.detail(workItemKey),
     queryFn: ({ signal }) => client.work.detail(workItemKey, signal),
     refetchInterval: refreshPolicy.openWork,
@@ -110,15 +122,6 @@ export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
       ) : query.data ? (
         <>
           <h2>{query.data.data.work.objective}</h2>
-          <div className={styles.actionBar}>
-            <Button type="button" disabled={command.isPending} onClick={() => command.mutate(query.data.data.work.frozen ? 'unfreeze' : 'freeze')}>
-              {query.data.data.work.frozen ? 'Unfreeze' : 'Freeze'}
-            </Button>
-            <Button type="button" className={styles.dangerButton!} disabled={command.isPending} onClick={() => { if (window.confirm('Delete this work item from the board and remove its resource correlations?')) command.mutate('delete'); }}>
-              Delete
-            </Button>
-            <MutationFeedback pending={command.isPending} {...(command.error === null ? {} : { message: command.error?.message })} />
-          </div>
           <nav className={styles.tabs} aria-label="Work detail sections">
             <button
               type="button"
@@ -151,77 +154,108 @@ export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
               )}
             </section>
           ) : (
-            <>
-              <Panel>
-                <dl className={styles.summary}>
-                  <dt>Work identity</dt>
-                  <dd>{query.data.data.work.workItemId}</dd>
-                  <dt>State</dt>
-                  <dd>
-                    <Chip variant="outline">{query.data.data.work.state}</Chip>
-                  </dd>
-                  <dt>Stage</dt>
-                  <dd>{query.data.data.orchestration.primary?.currentStage ?? 'Not started'}</dd>
-                  <dt>Workflow</dt>
-                  <dd>{query.data.data.orchestration.primary?.workflowName ?? '?'}</dd>
-                </dl>
-              </Panel>
+            <div className={styles.overviewLayout}>
+              <aside className={styles.overviewSidebar}>
+                <div className={styles.actionBar}>
+                  <Button
+                    type="button"
+                    disabled={command.isPending}
+                    onClick={() =>
+                      command.mutate(query.data.data.work.frozen ? 'unfreeze' : 'freeze')
+                    }
+                  >
+                    {query.data.data.work.frozen ? 'Unfreeze' : 'Freeze'}
+                  </Button>
+                  <Button
+                    type="button"
+                    className={styles.dangerButton!}
+                    disabled={command.isPending}
+                    onClick={() => {
+                      if (
+                        window.confirm(
+                          'Delete this work item from the board and remove its resource correlations?',
+                        )
+                      )
+                        command.mutate('delete');
+                    }}
+                  >
+                    Delete
+                  </Button>
+                  <MutationFeedback
+                    pending={command.isPending}
+                    {...(command.error === null ? {} : { message: command.error?.message })}
+                  />
+                </div>
+                <Panel>
+                  <dl className={styles.summary}>
+                    <dt>Work identity</dt>
+                    <dd>{query.data.data.work.workItemId}</dd>
+                    <dt>State</dt>
+                    <dd>
+                      <Chip variant="outline">{query.data.data.work.state}</Chip>
+                    </dd>
+                    <dt>Workflow</dt>
+                    <dd>{query.data.data.orchestration.primary?.workflowName ?? '?'}</dd>
+                    <dt>Stage</dt>
+                    <dd>{query.data.data.orchestration.primary?.currentStage ?? 'Not started'}</dd>
+                  </dl>
+                </Panel>
 
-              <section aria-labelledby="work-resources">
-                <h2 id="work-resources">Resources</h2>
-                {query.data.data.resources.length === 0 ? (
-                  <EmptyState>No correlated resources</EmptyState>
-                ) : (
-                  <ul className={styles.resourceList} aria-label="Resources">
-                    {query.data.data.resources.map((resource) => {
-                      const Icon = resourceIcons[resource.adapter] ?? DocumentIcon;
-                      const heading = resource.title ?? resource.locatorLabel;
-                      const body = (
-                        <>
-                          <div className={styles.resourceCardTop}>
-                            <Icon className={styles.resourceCardIcon} />
-                            <span className={styles.resourceCardTitle}>{heading}</span>
-                            {resource.externalUrl !== undefined && (
-                              <ExternalLinkIcon className={styles.resourceCardExt} />
+                <section aria-labelledby="work-resources">
+                  <h2 id="work-resources" className={styles.sidebarSectionTitle}>
+                    Resources
+                  </h2>
+                  {query.data.data.resources.length === 0 ? (
+                    <EmptyState>No correlated resources</EmptyState>
+                  ) : (
+                    <ul className={styles.resourceList} aria-label="Resources">
+                      {query.data.data.resources.map((resource) => {
+                        const Icon = resourceIcons[resource.adapter] ?? DocumentIcon;
+                        const heading = resource.title ?? resource.locatorLabel;
+                        const body = (
+                          <>
+                            <div className={styles.resourceCardTop}>
+                              <Icon className={styles.resourceCardIcon} />
+                              <span className={styles.resourceCardTitle}>{heading}</span>
+                              {resource.externalUrl !== undefined && (
+                                <ExternalLinkIcon className={styles.resourceCardExt} />
+                              )}
+                            </div>
+                            <div className={styles.resourceCardMeta}>
+                              {resource.title !== undefined && (
+                                <span className={styles.resourceId}>{resource.locatorLabel}</span>
+                              )}
+                              {resource.capabilities.map((capability) => (
+                                <Chip key={capability} variant="outline">
+                                  {capability}
+                                </Chip>
+                              ))}
+                            </div>
+                          </>
+                        );
+                        return (
+                          <li key={resource.resourceId}>
+                            {resource.externalUrl !== undefined ? (
+                              <a
+                                className={styles.resourceCard}
+                                href={resource.externalUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                              >
+                                {body}
+                              </a>
+                            ) : (
+                              <div className={styles.resourceCard}>{body}</div>
                             )}
-                          </div>
-                          <div className={styles.resourceCardMeta}>
-                            {resource.title !== undefined && (
-                              <span className={styles.resourceId}>{resource.locatorLabel}</span>
-                            )}
-                            {resource.capabilities.map((capability) => (
-                              <Chip key={capability} variant="outline">
-                                {capability}
-                              </Chip>
-                            ))}
-                            {resource.revision !== undefined && (
-                              <span className={styles.resourceId}>{resource.revision}</span>
-                            )}
-                          </div>
-                        </>
-                      );
-                      return (
-                        <li key={resource.resourceId}>
-                          {resource.externalUrl !== undefined ? (
-                            <a
-                              className={styles.resourceCard}
-                              href={resource.externalUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                            >
-                              {body}
-                            </a>
-                          ) : (
-                            <div className={styles.resourceCard}>{body}</div>
-                          )}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-              </section>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </section>
+              </aside>
 
-              <section aria-labelledby="work-runs">
+              <section className={styles.overviewMain} aria-labelledby="work-runs">
                 <h2 id="work-runs">Runs</h2>
                 {query.data.data.execution.runs.length === 0 ? (
                   <EmptyState>No runs</EmptyState>
@@ -234,7 +268,7 @@ export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
                   />
                 )}
               </section>
-            </>
+            </div>
           )}
         </>
       ) : null}
