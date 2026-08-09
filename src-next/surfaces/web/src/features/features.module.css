@@ -170,7 +170,10 @@
 }
 .detail {
   display: grid;
-  gap: 1rem;
+  gap: var(--space-3);
+}
+.detail > h2 {
+  margin: 0;
 }
 .summary {
   display: grid;
@@ -191,18 +194,20 @@
 }
 .overviewLayout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(16rem, 22rem);
-  gap: var(--space-4);
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: var(--space-5);
   align-items: start;
 }
 .overviewSidebar {
   grid-column: 2;
+  min-width: 0;
   display: grid;
   gap: var(--space-3);
 }
 .overviewMain {
   grid-column: 1;
   grid-row: 1;
+  min-width: 0;
 }
 .sidebarSectionTitle {
   font-size: var(--text-sm);
@@ -488,7 +493,7 @@ a.resourceCard:hover {
 .tabs {
   display: flex;
   gap: 0.25rem;
-  margin: 1rem 0;
+  margin: 0;
   padding: 0.4rem var(--space-4) 0;
   background: transparent;
   border-bottom: 1px solid var(--border);

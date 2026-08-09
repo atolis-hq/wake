@@ -156,6 +156,20 @@ export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
           ) : (
             <div className={styles.overviewLayout}>
               <aside className={styles.overviewSidebar}>
+                <Panel>
+                  <dl className={styles.summary}>
+                    <dt>Work identity</dt>
+                    <dd>{query.data.data.work.workItemId}</dd>
+                    <dt>State</dt>
+                    <dd>
+                      <Chip variant="outline">{query.data.data.work.state}</Chip>
+                    </dd>
+                    <dt>Workflow</dt>
+                    <dd>{query.data.data.orchestration.primary?.workflowName ?? '?'}</dd>
+                    <dt>Stage</dt>
+                    <dd>{query.data.data.orchestration.primary?.currentStage ?? 'Not started'}</dd>
+                  </dl>
+                </Panel>
                 <div className={styles.actionBar}>
                   <Button
                     type="button"
@@ -186,20 +200,6 @@ export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
                     {...(command.error === null ? {} : { message: command.error?.message })}
                   />
                 </div>
-                <Panel>
-                  <dl className={styles.summary}>
-                    <dt>Work identity</dt>
-                    <dd>{query.data.data.work.workItemId}</dd>
-                    <dt>State</dt>
-                    <dd>
-                      <Chip variant="outline">{query.data.data.work.state}</Chip>
-                    </dd>
-                    <dt>Workflow</dt>
-                    <dd>{query.data.data.orchestration.primary?.workflowName ?? '?'}</dd>
-                    <dt>Stage</dt>
-                    <dd>{query.data.data.orchestration.primary?.currentStage ?? 'Not started'}</dd>
-                  </dl>
-                </Panel>
 
                 <section aria-labelledby="work-resources">
                   <h2 id="work-resources" className={styles.sidebarSectionTitle}>

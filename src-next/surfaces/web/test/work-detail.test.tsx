@@ -122,6 +122,17 @@ describe('work detail', () => {
     expect(resources.textContent).not.toContain('rev-9');
   });
 
+  it('places work actions below the detail panel in the overview sidebar', async () => {
+    render(
+      <MemoryRouter initialEntries={['/work/wk_a']}>
+        <App client={detailClient()} />
+      </MemoryRouter>,
+    );
+    const details = await screen.findByText('Work identity');
+    const freeze = screen.getByRole('button', { name: 'Freeze' });
+    expect(details.compareDocumentPosition(freeze) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+  });
+
   it('renders an unknown resource kind generically, proving no kind-specific branch', async () => {
     render(
       <MemoryRouter initialEntries={['/work/wk_a']}>
