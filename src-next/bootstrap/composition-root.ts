@@ -12,12 +12,14 @@ import {
   ScheduleService,
   createAdvanceOnce,
   createControlPlaneService,
+  createIntakePipeline,
   createRunnerControlService,
-  createTickPipeline,
+  createRunnerPipeline,
   createWorkCancellationPolicy,
   ineligibleRunners,
   type ControlPlaneView,
-  type TickPipeline,
+  type IntakePipeline,
+  type RunnerPipeline,
 } from '../control-plane/index.js';
 import {
   GitWorkspaceProvider,
@@ -117,7 +119,8 @@ export interface CompositionRoot {
   readonly providers: readonly ProviderInstance[];
   readonly providerFailures: readonly ProviderCompositionFailure[];
   readonly delivery: DeliveryService;
-  readonly pipeline: TickPipeline;
+  readonly intakePipeline: IntakePipeline;
+  readonly runnerPipeline: RunnerPipeline;
   readonly resolveResourceLink: ResourceLinkResolver;
 }
 
@@ -235,7 +238,8 @@ interface IntegrationRuntime {
   readonly providers: readonly ProviderInstance[];
   readonly providerFailures: readonly ProviderCompositionFailure[];
   readonly delivery: DeliveryService;
-  readonly pipeline: TickPipeline;
+  readonly intakePipeline: IntakePipeline;
+  readonly runnerPipeline: RunnerPipeline;
 }
 
 interface IntegrationRuntimeInput {
@@ -356,15 +360,29 @@ async function composeIntegrationRuntime(
     input.checkpoints,
     input.orchestration,
   );
-  const pipeline = createTickPipeline({
+  const catchUpProjections = async () => {
+    await projectionRunner.runRegisteredOnce();
+  };
+  // Only poll hits a rate-limited external API, so only this half of the
+  // tick needs a backing-off host — see bootstrap/surface-cli-applications.ts.
+  const intakePipeline = createIntakePipeline({
     isPaused: input.controlPlane.isPaused,
-    catchUpProjections: async () => {
-      await projectionRunner.runRegisteredOnce();
-    },
+    catchUpProjections,
     poll: async (signal) => {
+      let appended = 0;
       for (const provider of providers)
-        await new PollService(input.journal, provider).pollOnce(signal);
+        appended += await new PollService(input.journal, provider).pollOnce(signal);
+      return appended;
     },
+    translateInbound: async () => {
+      let translated = 0;
+      for (const provider of providers) translated += await provider.inbound.runOnce();
+      return translated;
+    },
+  });
+  const runnerPipeline = createRunnerPipeline({
+    isPaused: input.controlPlane.isPaused,
+    catchUpProjections,
     runSchedules: async () => {
       for (const schedule of input.config.controlPlane.schedules)
         await schedules.run(schedule, {
@@ -373,9 +391,6 @@ async function composeIntegrationRuntime(
           occurredAt: input.clock.now().toISOString(),
           actor: { kind: EventActorKind.System, id: ControlStreamKind.Global },
         });
-    },
-    translateInbound: async () => {
-      for (const provider of providers) await provider.inbound.runOnce();
     },
     react: async () => {
       await watch.runOnce();
@@ -389,7 +404,14 @@ async function composeIntegrationRuntime(
       await delivery.deliverNext(signal);
     },
   });
-  return { projectionRunner, providers, providerFailures, delivery, pipeline };
+  return {
+    projectionRunner,
+    providers,
+    providerFailures,
+    delivery,
+    intakePipeline,
+    runnerPipeline,
+  };
 }
 
 function createBuiltInActivityRegistry(

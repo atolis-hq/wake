@@ -21,11 +21,14 @@ tick, producing the composed callback the Tick and Resident Hosts repeat.
   and accepting it, in preference to starting new dispatch.
 - **Selection** — choosing which pending activation to dispatch next when no
   reconciliation candidate exists.
-- **Tick pipeline** — the fixed ordered stage sequence
-  (`catchUpProjections` → `poll` → `translateInbound` → `react` →
-  Advancement → `catchUpProjections` → `deliver` → `catchUpProjections` →
-  `react`) that one call to `TickPipeline.run` performs, wrapping exactly one
-  Advancement call.
+- **Runner pipeline** — the fixed ordered stage sequence
+  (`catchUpProjections` → `runSchedules` → `react` → Advancement →
+  `catchUpProjections` → `deliver` → `catchUpProjections` → `react`) that
+  one call to `RunnerPipeline.run` performs, wrapping exactly one
+  Advancement call. `poll` and `translateInbound` — the externally
+  rate-limited half of a tick — run on a separate `IntakePipeline` instead,
+  not embedded in this sequence; see control-plane's `tick-host.spec.md`
+  for why the two are split across independently-scheduled hosts.
 
 ## Responsibilities and boundaries
 
@@ -85,15 +88,16 @@ supplier and passes the result through to Execution unchanged.
   workflow instance id and the run's failure message (defaulting to
   `'execution failed'`); it does not itself record a block or failure fact —
   Execution's own run-failure event is the durable record of what happened.
-- The Tick pipeline MUST run its nine stages in the fixed order given above,
-  awaiting each stage fully before starting the next, exactly once per
-  `run` call, and MUST return the `AdvanceResult` of the embedded Advancement
-  call. `catchUpProjections` runs three times (before poll, after
-  Advancement, after deliver) so each stage observes projections caught up
-  to the facts the prior stage produced. `react` runs twice: once for
-  newly translated inbound events before Advancement, once for delivery
-  outcomes after `deliver`.
-- `TickPipeline.run`'s `signal` parameter defaults to a fresh,
+- The Runner pipeline MUST run its eight stages in the fixed order given
+  above, awaiting each stage fully before starting the next, exactly once
+  per `run` call, and MUST return the `AdvanceResult` of the embedded
+  Advancement call. `catchUpProjections` runs three times (before
+  `runSchedules`, after Advancement, after `deliver`) so each stage
+  observes projections caught up to the facts the prior stage produced.
+  `react` runs twice: once before Advancement, once for delivery outcomes
+  after `deliver`. A `finally` block runs `catchUpProjections` a fourth
+  time regardless of outcome, including when an earlier stage throws.
+- `RunnerPipeline.run`'s `signal` parameter defaults to a fresh,
   never-aborted `AbortController`'s signal when the caller omits one.
 
 ## Conceptual schema

@@ -26,7 +26,11 @@ function definition(): ProviderDefinition<{ readonly enabled: boolean }> {
           },
         },
         delivery: new DurableFakeDeliveryProvider(),
-        inbound: { async runOnce() {} },
+        inbound: {
+          async runOnce() {
+            return 0;
+          },
+        },
         async verifyArtifact() {
           return 'not-found' as const;
         },

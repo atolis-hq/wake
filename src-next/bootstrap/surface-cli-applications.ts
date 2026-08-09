@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { promisify } from 'node:util';
 import { BuiltInActivityName, agentActivityDefinition } from '../activities/index.js';
-import { ResidentHost, TickHost } from '../control-plane/index.js';
+import { IntakeHost, ResidentHost, TickHost } from '../control-plane/index.js';
 import { RunStatus, loadPromptTemplate } from '../execution/index.js';
 import { EventActorKind, correlationId } from '../kernel/index.js';
 import { ResourceCorrelationRole, resourceId } from '../resources/index.js';
@@ -52,37 +52,63 @@ export function createSurfaceCliApplications(
   api: ApiApplications,
   now: () => string,
 ): WakeCliApplications {
-  const tick = new TickHost((options) => root.pipeline.run(options));
-  const resident = new ResidentHost(
-    tick,
+  const runnerTick = new TickHost((options) => root.runnerPipeline.run(options));
+  const intakeHost = new IntakeHost((signal) => root.intakePipeline.run(signal));
+  const reportResidentError = async (error: unknown) => {
+    process.stderr.write(
+      `Wake resident tick failed: ${error instanceof Error ? error.message : String(error)}\n`,
+    );
+  };
+  // Only intake polls a rate-limited external API (GitHub), so only its
+  // resident loop backs off exponentially when idle. The runner loop
+  // (schedules, reactors, Advancement, delivery) never touches that API on
+  // its own, so it stays on a fast, fixed cadence — mirroring legacy
+  // src/core/control-plane.ts's `runIntakeTick`/`runRunnerTick` split
+  // (idleBackoff: true vs false), just as two ResidentHosts instead of two
+  // hand-rolled loops.
+  const runnerResident = new ResidentHost(
+    runnerTick,
+    (signal, consecutiveIdleTicks) =>
+      consecutiveIdleTicks === 0
+        ? Promise.resolve()
+        : sleepUntilAbort(signal, root.config.controlPlane.resident?.idleBackoffMs ?? 1000),
+    reportResidentError,
+  );
+  const intakeResident = new ResidentHost(
+    intakeHost,
     (signal, consecutiveIdleTicks) =>
       sleepUntilAbort(
         signal,
         nextIdleBackoffMs(root.config.controlPlane.resident, consecutiveIdleTicks),
       ),
-    async (error) => {
-      process.stderr.write(
-        `Wake resident tick failed: ${error instanceof Error ? error.message : String(error)}\n`,
-      );
-    },
+    reportResidentError,
   );
   const servers = new Set<Server>();
   const startHttp = createHttpStarter(root, api, servers);
   return {
-    tick,
+    tick: {
+      async run(budget) {
+        // Mirrors legacy's combined one-shot `runTick`: intake once, then
+        // let the runner loop drain up to its own budget.
+        await intakeHost.run(budget);
+        return runnerTick.run(budget);
+      },
+    },
     start: {
       async run(signal, budget) {
         if (root.config.surfaces.web.enabled) await startHttp({}, true);
         else if (root.config.surfaces.api.enabled) await startHttp({}, false);
-        // Runs on its own cadence, independent of the tick loop: `advance()`
-        // blocks for an activity's full duration before a tick's own
-        // catchUpProjections runs again, so without this pump, projections
-        // (e.g. the board's active-run card) never reflect a run in
-        // progress — only its state before and after.
+        // Runs on its own cadence, independent of both resident loops:
+        // `advance()` blocks for an activity's full duration before the
+        // runner loop's own catchUpProjections runs again, so without this
+        // pump, projections (e.g. the board's active-run card) never
+        // reflect a run in progress — only its state before and after.
         const projectionPump = runProjectionPump(root, signal);
+        const intakeRun = intakeResident.run(signal, budget);
         try {
-          return await resident.run(signal, budget);
+          return await runnerResident.run(signal, budget);
         } finally {
+          await intakeRun;
           await projectionPump;
           await closeAll(servers);
         }

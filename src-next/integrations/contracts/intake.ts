@@ -8,5 +8,6 @@ export interface ExternalEventSource {
 }
 
 export interface InboundTranslation {
-  runOnce(limit?: number): Promise<void>;
+  /** Resolves to the count of inbound events processed this pass, so callers can tell activity from a quiet checkpoint. */
+  runOnce(limit?: number): Promise<number>;
 }

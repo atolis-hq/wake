@@ -1,15 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { createTickPipeline } from '../../../src-next/control-plane/application/tick-pipeline.js';
+import { createRunnerPipeline } from '../../../src-next/control-plane/application/runner-pipeline.js';
 
-describe('TickPipeline', () => {
+describe('RunnerPipeline', () => {
   it('catches projections up after a later stage fails', async () => {
     let projectionCatchUps = 0;
-    const pipeline = createTickPipeline({
+    const pipeline = createRunnerPipeline({
       catchUpProjections: async () => {
         projectionCatchUps += 1;
       },
-      poll: async () => undefined,
-      translateInbound: async () => undefined,
       runSchedules: async () => undefined,
       react: async () => {
         throw new Error('label delivery denied');

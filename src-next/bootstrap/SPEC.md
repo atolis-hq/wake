@@ -197,5 +197,5 @@ Bootstrap does not own:
 
 ## Task 27B synchronization (2026-08-02)
 
-Composition wires provider artifact verification, GitHub label maintenance, schedule checkpoints, DispatchPolicy/global-pause checks, and the shared TickPipeline. API `tick` is composed through the same pipeline as resident and CLI ticks.
+Composition wires provider artifact verification, GitHub label maintenance, schedule checkpoints, DispatchPolicy/global-pause checks, and the intake/runner pipeline split (`root.intakePipeline`, `root.runnerPipeline`). API `tick` is composed through the same `RunnerPipeline` as the CLI one-shot and resident runner loop; CLI `start` additionally runs `root.intakePipeline` on its own resident loop, independently scheduled from the runner loop.
 

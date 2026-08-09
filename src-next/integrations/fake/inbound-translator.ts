@@ -41,7 +41,7 @@ export class FakeInboundTranslator {
     private readonly services: ProviderServices,
   ) {}
 
-  async runOnce(limit = 100): Promise<void> {
+  async runOnce(limit = 100): Promise<number> {
     const checkpoint = `reactor:integration.${this.adapter}.inbound`;
     const events = await this.services.journal.readAll(
       await this.services.checkpoints.load(checkpoint),
@@ -52,6 +52,7 @@ export class FakeInboundTranslator {
         await this.apply(evidenceSchema.parse(event.payload), event);
       await this.services.checkpoints.save(checkpoint, event.globalPosition);
     }
+    return events.length;
   }
 
   private async apply(

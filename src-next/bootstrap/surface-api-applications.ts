@@ -353,7 +353,7 @@ async function performTick(
   sequence: number,
 ): Promise<ApiTickCommandResult> {
   const acceptedAt = now();
-  await root.pipeline.run({ maxProgress: 1 });
+  await root.runnerPipeline.run({ maxProgress: 1 });
   return {
     commandId: `tick:${acceptedAt}:${sequence}`,
     idempotencyKey: command.idempotencyKey,

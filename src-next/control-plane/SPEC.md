@@ -183,16 +183,17 @@ Control Plane does not own:
 - `HostStopReason.Paused` is defined and part of `HostResult`'s type, but no
   code path currently produces it, since global dispatch pausing is not yet
   wired into Advancement.
-- The resident host's inter-cycle sleep is caller-supplied; the composed
-  production system does not currently supply one, so a composed resident
-  run performs one bounded cycle and then blocks until externally aborted.
-  `controlPlane.resident.idleBackoffMs` is validated configuration with no
-  consumer today.
+- The resident host's inter-cycle sleep is caller-supplied. Production
+  composition runs two independently-scheduled resident hosts (see
+  `infrastructure/tick-host.spec.md`): intake backs off exponentially when
+  idle using `controlPlane.resident.idleBackoffMs`/`maxIdleBackoffMs`
+  (only intake polls the rate-limited GitHub API); the runner loop sleeps a
+  fixed interval when idle and not at all when the prior cycle progressed.
 - Composing the above into the live Advancement/host path, and exposing Work
   cancellation as an operator command, are deferred capabilities, not
   rejected ones.
 
 ## Task 27B synchronization (2026-08-02)
 
-`advanceOnce` is the global dispatch choke point: it checks global pause and applies DispatchPolicy selection. The full TickPipeline runs poll, inbound translation, schedule reconciliation, reactions, bounded advancement, delivery, and final projection/reaction passes. Schedule slots first look up their deterministic workflow identity before minting Work, preventing a crash before checkpoint persistence from leaking a second WorkItem. The API operation is `tick` and invokes that same full pipeline. Runner unpause is durable and rejects a runner that is not currently paused.
+`advanceOnce` is the global dispatch choke point: it checks global pause and applies DispatchPolicy selection. The tick is split across two independently-scheduled pipelines: IntakePipeline runs poll and inbound translation (backed off when idle, since it is the only half that hits the rate-limited GitHub API), and RunnerPipeline runs schedule reconciliation, reactions, bounded advancement, delivery, and final projection/reaction passes (fast, un-backed-off cadence). Schedule slots first look up their deterministic workflow identity before minting Work, preventing a crash before checkpoint persistence from leaking a second WorkItem. The API operation is `tick` and invokes that same RunnerPipeline. Runner unpause is durable and rejects a runner that is not currently paused.
 

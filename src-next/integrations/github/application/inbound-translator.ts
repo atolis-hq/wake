@@ -125,7 +125,7 @@ export class InboundTranslator {
 
   // Adapter filtering, checkpointing, and typed event dispatch must stay together.
   // eslint-disable-next-line complexity
-  async runOnce(limit = 100): Promise<void> {
+  async runOnce(limit = 100): Promise<number> {
     if (
       this.journal === undefined ||
       this.checkpoints === undefined ||
@@ -164,6 +164,7 @@ export class InboundTranslator {
       }
       await this.checkpoints.save(checkpoint, event.globalPosition);
     }
+    return events.length;
   }
 
   private async apply(
