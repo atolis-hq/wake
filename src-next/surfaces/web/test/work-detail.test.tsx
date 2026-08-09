@@ -103,6 +103,25 @@ describe('work detail', () => {
     expect(screen.getByRole('table', { name: 'Runs' })).toBeTruthy();
   });
 
+  it('places overview navigation before sidebar actions and hides resource revisions', async () => {
+    render(
+      <MemoryRouter initialEntries={['/work/wk_a']}>
+        <App client={detailClient()} />
+      </MemoryRouter>,
+    );
+    const title = await screen.findByRole('heading', { name: 'Alpha' });
+    expect(title.nextElementSibling?.tagName).toBe('NAV');
+    expect(screen.getByRole('navigation', { name: 'Work detail sections' }).textContent).toContain(
+      'Overview',
+    );
+
+    const details = title.parentElement?.querySelector('dl');
+    expect(details?.textContent).toMatch(/Work identity.*State.*Workflow.*Stage/);
+
+    const resources = screen.getByRole('list', { name: 'Resources' });
+    expect(resources.textContent).not.toContain('rev-9');
+  });
+
   it('renders an unknown resource kind generically, proving no kind-specific branch', async () => {
     render(
       <MemoryRouter initialEntries={['/work/wk_a']}>
