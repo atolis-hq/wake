@@ -9,6 +9,26 @@ import { ActivityActivationStatus, WorkflowStatus } from '../contracts/vocabular
 
 type WorkflowFact = WorkflowOrchestrationEvent | WorkflowOrchestrationEventDraft;
 
+/**
+ * The single source of truth for which orchestration events change a
+ * workflow instance's status, and to what — every other consumer that needs
+ * to reflect status externally (GitHub labels, the operator board, delivery
+ * reactors) must derive from this table rather than hand-matching event
+ * types itself, or it silently falls out of sync whenever a new
+ * status-changing event type is introduced here.
+ */
+export const orchestrationStatusTransitions: Readonly<
+  Partial<Record<WorkflowFact['eventType'], WorkflowInstanceView['status']>>
+> = {
+  [OrchestrationEventType.ActivityRequested]: WorkflowStatus.Active,
+  [OrchestrationEventType.ActivityWaiting]: WorkflowStatus.Waiting,
+  [OrchestrationEventType.SignalWaitStarted]: WorkflowStatus.Waiting,
+  [OrchestrationEventType.SignalAccepted]: WorkflowStatus.Active,
+  [OrchestrationEventType.InstanceCompleted]: WorkflowStatus.Completed,
+  [OrchestrationEventType.InstanceBlocked]: WorkflowStatus.Blocked,
+  [OrchestrationEventType.InstanceSuperseded]: WorkflowStatus.Superseded,
+};
+
 type FactsOf<Type extends WorkflowFact['eventType']> = Extract<
   WorkflowFact,
   { readonly eventType: Type }
@@ -129,7 +149,7 @@ function applyInteractionFact(state: MutableWorkflowInstance, event: Interaction
       applySignalWaitStarted(state, event);
       return;
     case OrchestrationEventType.SignalAccepted:
-      state.status = WorkflowStatus.Active;
+      state.status = orchestrationStatusTransitions[OrchestrationEventType.SignalAccepted]!;
       state.acceptedSignalIds.push(event.payload.providerEventId);
       delete state.waitingFor;
       return;
@@ -166,15 +186,15 @@ function applyLifecycleFact(state: MutableWorkflowInstance, event: LifecycleFact
       state.retryCounts[event.payload.retryKey] = event.payload.count;
       return;
     case OrchestrationEventType.InstanceCompleted:
-      state.status = WorkflowStatus.Completed;
+      state.status = orchestrationStatusTransitions[OrchestrationEventType.InstanceCompleted]!;
       delete state.pendingActivation;
       delete state.waitingFor;
       return;
     case OrchestrationEventType.InstanceBlocked:
-      state.status = WorkflowStatus.Blocked;
+      state.status = orchestrationStatusTransitions[OrchestrationEventType.InstanceBlocked]!;
       return;
     case OrchestrationEventType.InstanceSuperseded:
-      state.status = WorkflowStatus.Superseded;
+      state.status = orchestrationStatusTransitions[OrchestrationEventType.InstanceSuperseded]!;
       return;
     default:
       assertNever(event);
@@ -206,7 +226,7 @@ function applyActivityWaiting(
   state: MutableWorkflowInstance,
   event: FactsOf<typeof OrchestrationEventType.ActivityWaiting>,
 ): void {
-  state.status = WorkflowStatus.Waiting;
+  state.status = orchestrationStatusTransitions[OrchestrationEventType.ActivityWaiting]!;
   state.waitingFor = {
     signalKind: event.payload.outcome.data.signalKind,
     intentEventId: event.payload.outcome.data.intentEventId,
@@ -219,7 +239,7 @@ function applySignalWaitStarted(
   state: MutableWorkflowInstance,
   event: FactsOf<typeof OrchestrationEventType.SignalWaitStarted>,
 ): void {
-  state.status = WorkflowStatus.Waiting;
+  state.status = orchestrationStatusTransitions[OrchestrationEventType.SignalWaitStarted]!;
   state.waitingFor = {
     signalKind: event.payload.signalKind,
     ...(event.payload.resourceId === undefined ? {} : { resourceId: event.payload.resourceId }),
@@ -245,7 +265,7 @@ function applyActivityRequested(
   state: MutableWorkflowInstance,
   payload: FactsOf<typeof OrchestrationEventType.ActivityRequested>['payload'],
 ): void {
-  state.status = WorkflowStatus.Active;
+  state.status = orchestrationStatusTransitions[OrchestrationEventType.ActivityRequested]!;
   delete state.waitingFor;
   state.pendingActivation = {
     activationId: payload.activationId,

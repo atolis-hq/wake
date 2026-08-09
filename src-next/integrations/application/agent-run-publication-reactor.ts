@@ -1,14 +1,15 @@
 import { BuiltInActivityName } from '../../activities/index.js';
 import { ExecutionEventType, type RunRepository } from '../../execution/index.js';
 import {
+  createEventDraft,
   EventActorKind,
   EventSourceKind,
-  createEventDraft,
   type CheckpointStore,
   type EventJournal,
 } from '../../kernel/index.js';
 import {
   ApprovalAuthorityKind,
+  isApprovalAwaitingSignalKind,
   OrchestrationEventType,
   OrchestrationStreamKind,
   WatchGateVerdictSignal,
@@ -125,8 +126,8 @@ function reportInput(
 ): Parameters<typeof projectTerminalAgentRunReport>[0] {
   const watchGateVerdict = watchGateVerdictFor(run, workflow, allWorkflows);
   const isWaiting =
-    workflow.waitingFor?.signalKind === 'approved' ||
-    workflow.waitingFor?.signalKind === WatchGateVerdictSignal;
+    workflow.waitingFor !== undefined &&
+    isApprovalAwaitingSignalKind(workflow.waitingFor.signalKind);
   return {
     run,
     ...(stage === undefined ? {} : { stage }),

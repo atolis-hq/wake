@@ -265,3 +265,17 @@ export interface ChildWorkflowRequest {
 }
 
 export const WatchGateVerdictSignal = signalName('orchestration.watch-gate-verdict');
+
+export const ApprovedSignal = signalName('approved');
+
+/**
+ * Every consumer that needs to know whether a wait renders as "awaiting
+ * approval" externally (GitHub labels, the operator board, the agent-run
+ * comment footer) must derive it from this single predicate, or it silently
+ * falls out of sync whenever a new approval-style signal kind is added —
+ * exactly what happened when the watchGate verdict channel shipped and only
+ * some of those consumers were updated to recognize it.
+ */
+export function isApprovalAwaitingSignalKind(signalKind: SignalName): boolean {
+  return signalKind === ApprovedSignal || signalKind === WatchGateVerdictSignal;
+}

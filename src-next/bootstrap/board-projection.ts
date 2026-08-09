@@ -7,8 +7,12 @@ import {
 } from '../execution/index.js';
 import type { ProjectionDefinition } from '../kernel/index.js';
 import {
+  isApprovalAwaitingSignalKind,
   OrchestrationEventType,
+  orchestrationStatusTransitions,
   selectWorkflowOrchestrationEvent,
+  WorkflowStatus,
+  type SignalName,
 } from '../orchestration/index.js';
 import { toWorkItemKey } from '../surfaces/index.js';
 import { selectWorkEvent, WorkEventType } from '../work/index.js';
@@ -160,7 +164,7 @@ function projectWorkflow(
       workflows,
     };
   }
-  if (view.children[event.stream.id] === true) return view;
+  if (view.children?.[event.stream.id] === true) return view;
   const located = lookupWorkflowCard(view, event.stream.id);
   if (located === undefined) return view;
   const { workId, card } = located;
@@ -172,34 +176,40 @@ function projectWorkflow(
         [workId]: { ...card, stage: event.payload.stage, dwellSince: occurredAt },
       },
     };
-  if (isBlockedOrWaiting(event.eventType))
-    return {
-      ...view,
-      cards: { ...view.cards, [workId]: { ...card, condition: BoardCondition.NeedsInput } },
-    };
+  // Every event that changes a workflow instance's status is looked up from
+  // orchestrationStatusTransitions rather than hand-matched here, so a new
+  // status-changing event type added to the engine automatically reaches
+  // the board instead of silently sitting at whatever condition it had
+  // before — this is exactly the class of gap that let the card sit in
+  // Ready while GitHub's own label already said working.
+  const status = orchestrationStatusTransitions[event.eventType];
+  if (status === undefined) return view;
+  const withCondition = { ...card, condition: boardConditionForStatus(status) };
   if (event.eventType === OrchestrationEventType.SignalWaitStarted)
     return {
       ...view,
       cards: {
         ...view.cards,
-        [workId]: {
-          ...card,
-          condition: BoardCondition.NeedsInput,
-          ...awaitingApprovalField(event.payload.signalKind),
-        },
+        [workId]: { ...withCondition, ...awaitingApprovalField(event.payload.signalKind) },
       },
     };
   if (event.eventType === OrchestrationEventType.SignalAccepted)
-    return {
-      ...view,
-      cards: { ...view.cards, [workId]: withoutAwaitingApproval(card) },
-    };
-  if (event.eventType === OrchestrationEventType.InstanceCompleted)
-    return {
-      ...view,
-      cards: { ...view.cards, [workId]: { ...card, condition: BoardCondition.Finished } },
-    };
-  return view;
+    return { ...view, cards: { ...view.cards, [workId]: withoutAwaitingApproval(withCondition) } };
+  return { ...view, cards: { ...view.cards, [workId]: withCondition } };
+}
+
+function boardConditionForStatus(status: WorkflowStatus): BoardConditionValue {
+  switch (status) {
+    case WorkflowStatus.Active:
+      return BoardCondition.Active;
+    case WorkflowStatus.Waiting:
+    case WorkflowStatus.Blocked:
+      return BoardCondition.NeedsInput;
+    case WorkflowStatus.Completed:
+      return BoardCondition.Finished;
+    case WorkflowStatus.Superseded:
+      return BoardCondition.Error;
+  }
 }
 
 function lookupWorkflowCard(
@@ -212,15 +222,8 @@ function lookupWorkflowCard(
   return card === undefined ? undefined : { workId, card };
 }
 
-function isBlockedOrWaiting(eventType: string): boolean {
-  return (
-    eventType === OrchestrationEventType.InstanceBlocked ||
-    eventType === OrchestrationEventType.ActivityWaiting
-  );
-}
-
-function awaitingApprovalField(signalKind: string) {
-  return signalKind === 'approved' ? { awaitingApproval: true } : {};
+function awaitingApprovalField(signalKind: SignalName) {
+  return isApprovalAwaitingSignalKind(signalKind) ? { awaitingApproval: true } : {};
 }
 
 const runTerminalEventTypes = new Set<string>([

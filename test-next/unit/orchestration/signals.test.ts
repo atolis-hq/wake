@@ -11,10 +11,15 @@ import {
   workflowName,
 } from '../../../src-next/orchestration/contracts/identifiers.js';
 import {
+  ApprovedSignal,
   compileWorkflow,
   createOrchestrationService,
   createSignalReactor,
+  isApprovalAwaitingSignalKind,
+  OrchestrationEventType,
+  orchestrationStatusTransitions,
   WatchGateVerdictSignal,
+  WorkflowStatus,
 } from '../../../src-next/orchestration/index.js';
 import { InMemoryEventJournal } from '../../../src-next/persistence/index.js';
 import {} from '../../../src-next/resources/index.js';
@@ -203,3 +208,22 @@ it.each(['failed', 'blocked'] as const)(
     expect(result.acceptedSignalIds).toEqual([]);
   },
 );
+
+it('recognizes only the plain approval and watchGate verdict signal kinds as awaiting approval', () => {
+  expect(isApprovalAwaitingSignalKind(ApprovedSignal)).toBe(true);
+  expect(isApprovalAwaitingSignalKind(WatchGateVerdictSignal)).toBe(true);
+  expect(isApprovalAwaitingSignalKind(signalName('delivery-result'))).toBe(false);
+  expect(isApprovalAwaitingSignalKind(signalName('orchestration.child-completed'))).toBe(false);
+});
+
+it('is the single source every status-changing orchestration event derives from', () => {
+  expect(orchestrationStatusTransitions).toEqual({
+    [OrchestrationEventType.ActivityRequested]: WorkflowStatus.Active,
+    [OrchestrationEventType.ActivityWaiting]: WorkflowStatus.Waiting,
+    [OrchestrationEventType.SignalWaitStarted]: WorkflowStatus.Waiting,
+    [OrchestrationEventType.SignalAccepted]: WorkflowStatus.Active,
+    [OrchestrationEventType.InstanceCompleted]: WorkflowStatus.Completed,
+    [OrchestrationEventType.InstanceBlocked]: WorkflowStatus.Blocked,
+    [OrchestrationEventType.InstanceSuperseded]: WorkflowStatus.Superseded,
+  });
+});

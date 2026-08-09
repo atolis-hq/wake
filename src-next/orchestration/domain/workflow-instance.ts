@@ -8,8 +8,11 @@ import { WorkflowStatus } from '../contracts/vocabulary.js';
 import {
   applyWorkflowInstanceEvent,
   immutableWorkflowInstanceView,
+  orchestrationStatusTransitions,
   type MutableWorkflowInstance,
 } from './workflow-instance-events.js';
+
+export { orchestrationStatusTransitions };
 
 type WorkflowFact = WorkflowOrchestrationEvent | WorkflowOrchestrationEventDraft;
 

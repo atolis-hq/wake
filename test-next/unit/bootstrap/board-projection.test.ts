@@ -55,6 +55,54 @@ describe('operator board projection', () => {
     });
   });
 
+  it('moves the card to Active as soon as the activity is requested, not only once its Run starts', () => {
+    const item = workId('board-activity-requested');
+    const workflowId = workflowInstanceId(`primary:${item}`);
+    const events = [
+      eventEnvelope(
+        WorkEventType.ItemCreated,
+        { objective: 'Dispatch soon' },
+        workItemStream(item),
+        1,
+      ),
+      eventEnvelope(
+        OrchestrationEventType.InstanceStarted,
+        {
+          workItemId: item,
+          workflowName: 'dark-factory',
+          orchestrationGroupId: `primary:${item}`,
+          entry: 'refine',
+        },
+        workflowInstanceStream(workflowId),
+        2,
+      ),
+      eventEnvelope(
+        OrchestrationEventType.StageEntered,
+        { stage: 'refine' },
+        workflowInstanceStream(workflowId),
+        3,
+      ),
+      eventEnvelope(
+        OrchestrationEventType.ActivityRequested,
+        {
+          activationId: activationId('activation-1'),
+          ordinal: 1,
+          activity: activityName('agent'),
+          input: {},
+        },
+        workflowInstanceStream(workflowId),
+        4,
+      ),
+    ];
+
+    const view = events.reduce(
+      (current, event) => boardProjection.project(current, event),
+      boardProjection.initial('global'),
+    );
+
+    expect(view.cards[item]).toMatchObject({ condition: 'active', stage: 'refine' });
+  });
+
   it("does not let a watch child's own instance start reset the shared card out of Needs Input", () => {
     const workItemId = workId('board-watch-gate');
     const workflowId = workflowInstanceId(`primary:${workItemId}`);
@@ -115,6 +163,49 @@ describe('operator board projection', () => {
       stage: 'refine',
       workflowName: 'dark-factory',
     });
+  });
+
+  it('folds a workflow event against a checkpoint persisted before the children field existed', () => {
+    const workItemId = workId('board-legacy-checkpoint');
+    const workflowId = workflowInstanceId(`primary:${workItemId}`);
+    const seeded = [
+      eventEnvelope(
+        WorkEventType.ItemCreated,
+        { objective: 'Pre-dates the children field' },
+        workItemStream(workItemId),
+        1,
+      ),
+      eventEnvelope(
+        OrchestrationEventType.InstanceStarted,
+        {
+          workItemId,
+          workflowName: 'dark-factory',
+          orchestrationGroupId: `primary:${workItemId}`,
+          entry: 'refine',
+        },
+        workflowInstanceStream(workflowId),
+        2,
+      ),
+    ].reduce(
+      (current, event) => boardProjection.project(current, event),
+      boardProjection.initial('global'),
+    );
+    // A checkpoint written before the `children` field was added round-trips
+    // through storage without it, the same as ProjectionRunner resuming from
+    // a persisted value rather than calling initial() again.
+    const { children: _children, ...legacyView } = seeded;
+
+    const next = boardProjection.project(
+      legacyView as typeof seeded,
+      eventEnvelope(
+        OrchestrationEventType.StageEntered,
+        { stage: 'implement' },
+        workflowInstanceStream(workflowId),
+        3,
+      ),
+    );
+
+    expect(next.cards[workItemId]).toMatchObject({ stage: 'implement' });
   });
 
   it('shows an active run, accumulates token/cost totals, and clears the run on completion', () => {
