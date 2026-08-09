@@ -26,9 +26,7 @@ export interface SandboxEntrypointDependencies extends ResidentSupervisorDepende
  * to fixing it (`wake sandbox setup`) also depends on this loop's container
  * staying alive.
  */
-export async function runResidentSupervisor(
-  deps: ResidentSupervisorDependencies,
-): Promise<never> {
+export async function runResidentSupervisor(deps: ResidentSupervisorDependencies): Promise<never> {
   const [command, ...prefix] = deps.wakeInvocation;
   if (command === undefined) throw new Error('sandbox entrypoint requires a wake invocation');
   for (;;) {

@@ -14,12 +14,7 @@ export type WakeCommand =
   | { readonly kind: 'validate-state'; readonly rebuildProjections: boolean }
   | {
       readonly kind:
-        | 'init'
-        | 'doctor'
-        | 'sandbox-setup'
-        | 'sandbox-entrypoint'
-        | 'self-update'
-        | 'smoke';
+        'init' | 'doctor' | 'sandbox-setup' | 'sandbox-entrypoint' | 'self-update' | 'smoke';
       readonly arguments: readonly string[];
     }
   | { readonly kind: 'sandbox'; readonly arguments: readonly string[] };

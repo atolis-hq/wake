@@ -3,9 +3,15 @@ import { main } from '../../../src-next/main.js';
 import { parseWakeCommand, runWakeCommand } from '../../../src-next/surfaces/cli/main.js';
 
 describe('operational CLI reachability', () => {
-  it.each(
-    ['init', 'doctor', 'sandbox', 'sandbox-setup', 'sandbox-entrypoint', 'self-update', 'smoke'] as const,
-  )('parses %s as a target command', (name) => {
+  it.each([
+    'init',
+    'doctor',
+    'sandbox',
+    'sandbox-setup',
+    'sandbox-entrypoint',
+    'self-update',
+    'smoke',
+  ] as const)('parses %s as a target command', (name) => {
     expect(parseWakeCommand([name]).kind).toBe(name);
   });
 

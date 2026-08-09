@@ -664,9 +664,7 @@ async function closeAll(servers: Set<Server>): Promise<void> {
 
 const DEFAULT_START_RESTART_DELAY_SECONDS = 10;
 
-function createSandboxEntrypointDependencies(
-  root: CompositionRoot,
-): SandboxEntrypointDependencies {
+function createSandboxEntrypointDependencies(root: CompositionRoot): SandboxEntrypointDependencies {
   const logDirectory = join(root.paths.dataRoot, 'logs');
   const pidFile = join(logDirectory, 'start.pid');
   const startLogFile = join(logDirectory, 'start.log');
