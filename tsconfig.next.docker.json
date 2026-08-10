@@ -6,5 +6,12 @@
     "types": ["node"]
   },
   "include": ["src-next/**/*.ts"],
-  "exclude": ["src/**", "test/**", "test-next/**", "src-next/surfaces/web/**", "dist/**", "dist-next/**"]
+  "exclude": [
+    "src/**",
+    "test/**",
+    "test-next/**",
+    "src-next/surfaces/web/**",
+    "dist/**",
+    "dist-next/**"
+  ]
 }

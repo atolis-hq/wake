@@ -16,7 +16,9 @@ import {} from '../../../src-next/work/index.js';
 import { mergeAuthorityTestActivity } from '../support/merge-authority-activity.js';
 import { TestWorld } from '../support/world.js';
 
-it('E2E-PR-002 denies a merge after an accepted review becomes stale', async () => {
+const scenario = { id: 'E2E-PR-002' } as const;
+
+it(`${scenario.id} denies a merge after an accepted review becomes stale`, async () => {
   const workItem = workId('1');
   const resource = resId('1');
   const discovered = pullRequestProjection.project(

@@ -57,6 +57,7 @@ export function createAgentActivity(
         templates,
         contextReader,
         context.runnerContext,
+        context.runId,
       );
       const execution = await context.runner.start(request, context.signal);
       if (execution.identity !== undefined)
@@ -78,6 +79,7 @@ async function agentRequest(
   templates: AgentTemplateRenderer | undefined,
   contextReader: AgentContextReader | undefined,
   runnerContext: { readonly runnerName: string; readonly activationOrdinal: number } | undefined,
+  currentRunId: string | undefined,
 ) {
   const input = invocation.input;
   const template = await resolveTemplate(
@@ -86,7 +88,7 @@ async function agentRequest(
     templates,
     contextReader,
   );
-  return requestFrom(input, invocation.activationId, template, runnerContext);
+  return requestFrom(input, currentRunId ?? invocation.activationId, template, runnerContext);
 }
 
 async function resolveTemplate(

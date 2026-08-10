@@ -1,5 +1,5 @@
 ---
-asOf: 4e8c5f6d6955ee3bf6a926063cb1c6446f4b1e0b
+asOf: 9186824935973dd9f2a93be269dc919852a92cd4
 ---
 
 # Execution — Module Specification
@@ -261,3 +261,8 @@ Execution does not own:
 
 Unknown recovery inspection is recorded as a countable ambiguity observation while a Run remains recoverable. At the configured bound, the Run becomes escalated/ambiguous and its owning workflow is blocked. Only an operator may resolve an escalated Run, by appending the normal succeeded or failed result with operator provenance; concurrent resolution is first-write-wins. A branch workspace lease records its branch when available so provider verification can compare agent artifacts to the actual execution branch. Claude CLI forwarding includes configured `maxTurns` and non-empty `allowedTools`.
 
+## Task 27 synchronization (2026-08-10)
+
+Execution passes the durable Run identity to an Activity context. Runner-result
+reporting appends idempotently: if a concurrent append advances the stream,
+the reporter reloads its sequence and retries the same deterministic event.

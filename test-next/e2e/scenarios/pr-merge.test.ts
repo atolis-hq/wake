@@ -7,7 +7,9 @@ import { workItemStream } from '../../../src-next/work/index.js';
 import { TestWorld } from '../support/world.js';
 import { executeMerge, setupMergeScenario, type MergeScenario } from './pr-activity-fixtures.js';
 
-it('E2E-PR-MERGE-001 emits the configured method and remains waiting for delivery', async () => {
+const mergeScenario = { id: 'E2E-PR-MERGE-001' } as const;
+
+it(`${mergeScenario.id} emits the configured method and remains waiting for delivery`, async () => {
   const world = new TestWorld();
   const setup = await setupMergeScenario(world, 'safe');
   const workflowId = await executeMerge(world, setup.workItemId);
@@ -106,6 +108,8 @@ it('attributes an invalid explicit target denial to the WorkItem', async () => {
   expect(await world.events('pr.merge-requested')).toHaveLength(0);
 });
 
+const deniedMergeScenario = { id: 'E2E-PR-MERGE-002' } as const;
+
 it.each([
   ['missing', 'missing-resource'],
   ['capability-missing', 'missing-resource'],
@@ -117,7 +121,7 @@ it.each([
   ['pending', 'checks-pending'],
   ['failing', 'checks-failing'],
 ] as const)(
-  'E2E-PR-MERGE-002 blocks %s through public execution with one auditable denial',
+  `${deniedMergeScenario.id} blocks %s through public execution with one auditable denial`,
   async (scenario, reason) => {
     const world = new TestWorld();
     const setup = await setupMergeScenario(world, scenario as MergeScenario);

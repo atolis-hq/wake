@@ -4,7 +4,7 @@ import { workItemStream } from '../../src-next/work/index.js';
 import { workId } from '../support/identities.js';
 import { FaultInjector, InjectedFaultError } from './support/faults.js';
 import { formatTrace } from './support/trace.js';
-import { FakeClock, SequentialIds } from './support/world.js';
+import { FakeClock, SequentialIds, TestWorld } from './support/world.js';
 
 describe('event-model support', () => {
   it('advances deterministic time without exposing its mutable date', () => {
@@ -33,6 +33,21 @@ describe('event-model support', () => {
 
     expect(() => faults.check('journal.append')).toThrow(InjectedFaultError);
     expect(() => faults.check('journal.append')).not.toThrow();
+  });
+
+  it('routes TestWorld journal appends through before and after fault boundaries', async () => {
+    const world = new TestWorld();
+    world.faults.failOnce('journal.append.before');
+
+    await expect(world.createWork({ objective: 'before fault' })).rejects.toMatchObject({
+      faultName: 'journal.append.before',
+    });
+
+    world.faults.failOnce('journal.append.after');
+    await expect(world.createWork({ objective: 'after fault' })).rejects.toMatchObject({
+      faultName: 'journal.append.after',
+    });
+    expect((await world.events('work.item-created')).length).toBe(1);
   });
 
   it('formats stable causal traces without recorded time', () => {

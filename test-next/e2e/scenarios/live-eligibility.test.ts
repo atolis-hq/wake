@@ -7,7 +7,9 @@ afterEach(async () => {
   await Promise.all(worlds.splice(0).map((world) => world.dispose()));
 });
 
-it('E2E-LIVE-005 leaves ineligible fake evidence outside Wake domain state', async () => {
+const scenario = { id: 'E2E-LIVE-005' } as const;
+
+it(`${scenario.id} leaves ineligible fake evidence outside Wake domain state`, async () => {
   const world = await ProcessWorld.create();
   worlds.push(world);
   await world.publishEvidence([{ key: 'ignored#1', title: 'Ignore this', eligible: false }]);

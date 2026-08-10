@@ -12,7 +12,9 @@ afterEach(async () => {
   await Promise.all(worlds.splice(0).map((world) => world.dispose()));
 });
 
-it('E2E-LIVE-009 delivers against the Resource identity intake minted in this run', async () => {
+const scenario = { id: 'E2E-LIVE-009' } as const;
+
+it(`${scenario.id} delivers against the Resource identity intake minted in this run`, async () => {
   const world = await ProcessWorld.create();
   worlds.push(world);
   await world.tick();

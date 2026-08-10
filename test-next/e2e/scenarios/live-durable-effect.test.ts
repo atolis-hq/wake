@@ -3,7 +3,9 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ProcessWorld } from '../support/process-world.js';
 
-describe('E2E-LIVE-001', () => {
+const scenario = { id: 'E2E-LIVE-001' } as const;
+
+describe(scenario.id, () => {
   let world: ProcessWorld | undefined;
 
   afterEach(async () => world?.dispose());

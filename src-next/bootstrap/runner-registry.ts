@@ -7,6 +7,7 @@ import {
   FakeExecutionRunner,
   RunnerRegistry,
   type FakeScenarioResolver,
+  type Runner,
 } from '../execution/index.js';
 import type { ResolvedWakeModulesConfig } from './config/load-config.js';
 
@@ -17,14 +18,19 @@ type AgentRunnerConfig = NonNullable<
 export function createRunnerRegistry(
   config: ResolvedWakeModulesConfig['execution'],
   scenarios: FakeScenarioResolver = emptyFakeScenarios,
+  decorateRunner?: (runner: Runner, name: string) => Runner,
 ): RunnerRegistry {
   const runners = Object.fromEntries(
     Object.entries(config.agentRunners ?? {}).map(([name, runner]) => [
       name,
-      createConfiguredRunner(name, runner, scenarios),
+      (decorateRunner ?? identity)(createConfiguredRunner(name, runner, scenarios), name),
     ]),
   );
   return new RunnerRegistry(config.runnerPools, runners);
+}
+
+function identity<T>(value: T): T {
+  return value;
 }
 
 // `kind` names the transport adapter, not the vendor, so each variant carries only the

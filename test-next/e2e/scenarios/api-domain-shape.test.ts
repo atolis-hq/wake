@@ -32,7 +32,9 @@ import { createApiDispatcher, createApiHttpServer } from '../../../src-next/surf
 import {} from '../../../src-next/work/index.js';
 import { resId, workId } from '../../support/identities.js';
 
-describe('E2E-SURFACE-001 API metadata provenance', () => {
+const scenario = { id: 'E2E-SURFACE-001' } as const;
+
+describe(`${scenario.id} API metadata provenance`, () => {
   it('attributes a retracted resource correlation to Work detail absence', async () => {
     const { root, context } = await createWorld();
     await root.work.create(
@@ -121,7 +123,7 @@ describe('E2E-SURFACE-001 API metadata provenance', () => {
   });
 });
 
-describe('E2E-SURFACE-001 API domain shape', () => {
+describe(`${scenario.id} API domain shape`, () => {
   it('enriches work-detail runs with workflow context', async () => {
     const { root, context } = await createWorld();
     const work = await root.work.create(
@@ -221,7 +223,7 @@ describe('E2E-SURFACE-001 API domain shape', () => {
   });
 });
 
-describe('E2E-SURFACE-001 command idempotency', () => {
+describe(`${scenario.id} command idempotency`, () => {
   it('deduplicates a production advance command by idempotency key', async () => {
     const { root, clock, context } = await createWorld();
     const surface = createSurfaceApplications(root, { now: () => clock.now().toISOString() });
@@ -277,6 +279,54 @@ describe('E2E-SURFACE-001 command idempotency', () => {
     await advance({ idempotencyKey: 'operator-action-1' });
     expect(await root.execution.list()).toHaveLength(2);
   });
+});
+
+const boardScenario = { id: 'E2E-SURFACE-BOARD-001' } as const;
+
+it(`${boardScenario.id} projects composed Work and Run state into bounded operator board cards`, async () => {
+  const { root, context } = await createWorld();
+  const work = await root.work.create(
+    { workItemId: workId('board-card'), objective: 'Show operator board state' },
+    context,
+  );
+  await root.orchestration.start(
+    {
+      workflowInstanceId: workflowInstanceId('workflow-board-card'),
+      workItemId: work.workItemId,
+      workflowName: workflowName('default'),
+      orchestrationGroupId: orchestrationGroupId('group-board-card'),
+    },
+    context,
+  );
+  await root.advanceOnce({ maxProgress: 1 });
+  await root.projectionRunner.runRegisteredOnce();
+
+  const page = await createSurfaceApplications(root, {
+    now: () => '2026-07-31T11:00:00.000Z',
+  }).api.board!.list({ limit: 10 });
+
+  expect(page.total).toBe(1);
+  expect(page.items[0]).toMatchObject({ workItemKey: expect.stringMatching(/^wk_/) });
+  expect(page.conditionCounts).toEqual(expect.any(Object));
+});
+
+const analyticsScenario = { id: 'E2E-SURFACE-ANALYTICS-001' } as const;
+
+it(`${analyticsScenario.id} returns an incremental composed analytics window with projection provenance`, async () => {
+  const { root, context } = await createWorld();
+  await root.work.create(
+    { workItemId: workId('analytics'), objective: 'Count analytics facts' },
+    context,
+  );
+  await root.projectionRunner.runRegisteredOnce();
+
+  const result = await createSurfaceApplications(root, {
+    now: () => '2026-07-31T11:00:00.000Z',
+  }).api.observability!.metrics({ days: 1 });
+
+  expect(result.data.window).toEqual({ days: 1, from: '2026-07-31', to: '2026-07-31' });
+  expect(result.data.values).toMatchObject({ events: expect.any(Number), workItems: 1 });
+  expect(result.meta.position).toBeTypeOf('number');
 });
 
 async function createWorld() {

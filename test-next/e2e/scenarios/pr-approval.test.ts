@@ -10,7 +10,9 @@ import {
   type ApprovalScenario,
 } from './pr-activity-fixtures.js';
 
-it('E2E-PR-APPROVE-001 emits one exact-revision provider-neutral approval intent', async () => {
+const scenario = { id: 'E2E-PR-APPROVE-001' } as const;
+
+it(`${scenario.id} emits one exact-revision provider-neutral approval intent`, async () => {
   const world = new TestWorld();
   const setup = await setupApprovalScenario(world, 'safe');
   const workflowId = await executeApproval(world, setup.workItemId);

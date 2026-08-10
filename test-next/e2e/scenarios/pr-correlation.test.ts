@@ -28,7 +28,9 @@ import {
 import { createWorkService } from '../../../src-next/work/index.js';
 import { FakeClock } from '../support/world.js';
 
-it('E2E-PR-001 correlates a verified primary PR and rejects uncorrelated or conflicting review evidence', async () => {
+const scenario = { id: 'E2E-PR-001' } as const;
+
+it(`${scenario.id} correlates a verified primary PR and rejects uncorrelated or conflicting review evidence`, async () => {
   const clock = new FakeClock();
   const journal = new InMemoryEventJournal(clock);
   const checkpoints = new InMemoryCheckpointStore();

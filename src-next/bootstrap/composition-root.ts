@@ -20,7 +20,9 @@ import {
   type ControlPlaneView,
   type IntakePipeline,
   type RunnerPipeline,
+  type ScheduleCheckpointStore,
 } from '../control-plane/index.js';
+import type { Runner } from '../execution/index.js';
 import {
   GitWorkspaceProvider,
   RunRepository,
@@ -39,6 +41,8 @@ import {
   ProviderRegistry,
   fakeProviderDefinition,
   type DeliveryIntentView,
+  type DurableFakeDeliveryProvider,
+  type ExternalDeliveryAdapter,
   type ProviderCompositionFailure,
   type ProviderInstance,
   type WorkflowRouter,
@@ -97,6 +101,22 @@ export interface CompositionRootOptions {
   readonly checkpoints?: CheckpointStore;
   readonly activities?: ActivityRegistry;
   readonly clock?: Clock;
+  /**
+   * Optional integration-boundary decorators. They are applied once, before
+   * any composed service receives the port, so observability and fault
+   * injection can exercise the real production topology without domain hooks.
+   */
+  readonly decorateJournal?: (journal: EventJournal) => EventJournal;
+  readonly decorateProjections?: (projections: ProjectionStore) => ProjectionStore;
+  readonly decorateCheckpoints?: (checkpoints: CheckpointStore) => CheckpointStore;
+  readonly scheduleCheckpoints?: ScheduleCheckpointStore;
+  readonly decorateDeliveryAdapter?: (
+    adapter: ExternalDeliveryAdapter,
+    provider: ProviderInstance,
+  ) => ExternalDeliveryAdapter;
+  readonly decorateRunner?: (runner: Runner, name: string) => Runner;
+  /** A real fake-provider adapter for deterministic composed integration evidence. */
+  readonly fakeDeliveryProvider?: DurableFakeDeliveryProvider;
 }
 
 export interface CompositionRoot {
@@ -144,9 +164,7 @@ export async function createCompositionRoot(
   const paths = resolveWakePaths(wakeRoot);
   const clock = options.clock ?? new SystemClock();
   const ids = new UlidIdGenerator();
-  const journal = options.journal ?? new FileEventJournal(paths.dataRoot, clock);
-  const projections = options.projections ?? new FileProjectionStore(paths.dataRoot);
-  const checkpoints = options.checkpoints ?? new FileCheckpointStore(paths.dataRoot);
+  const { journal, projections, checkpoints } = composePersistence(paths, clock, options);
   const work = createWorkService(journal);
   const lookup = createResourceLookup({ journal, projections });
   const resources = createResourceService(journal, lookup);
@@ -163,7 +181,7 @@ export async function createCompositionRoot(
   const execution = createExecutionService(journal, activities, config.execution, {
     clock,
     ids,
-    runners: createRunnerRegistry(config.execution, fakeScenarios),
+    runners: createRunnerRegistry(config.execution, fakeScenarios, options.decorateRunner),
     reportRunnerQuota: createRunnerQuotaReporter(journal, clock, ids),
     workspaces: new GitWorkspaceProvider(paths.workspacesRoot, {
       async cloneLocator(id) {
@@ -211,6 +229,14 @@ export async function createCompositionRoot(
     work,
     ids,
     wakeRoot,
+    scheduleCheckpoints:
+      options.scheduleCheckpoints ?? new FileScheduleCheckpointStore(paths.dataRoot),
+    ...(options.decorateDeliveryAdapter === undefined
+      ? {}
+      : { decorateDeliveryAdapter: options.decorateDeliveryAdapter }),
+    ...(options.fakeDeliveryProvider === undefined
+      ? {}
+      : { fakeDeliveryProvider: options.fakeDeliveryProvider }),
   });
   return {
     config,
@@ -258,6 +284,12 @@ interface IntegrationRuntimeInput {
   readonly clock: Clock;
   readonly ids: UlidIdGenerator;
   readonly wakeRoot: string;
+  readonly scheduleCheckpoints: ScheduleCheckpointStore;
+  readonly decorateDeliveryAdapter?: (
+    adapter: ExternalDeliveryAdapter,
+    provider: ProviderInstance,
+  ) => ExternalDeliveryAdapter;
+  readonly fakeDeliveryProvider?: DurableFakeDeliveryProvider;
 }
 
 function serializeRunRegisteredOnce(
@@ -279,7 +311,7 @@ async function composeIntegrationRuntime(
   const registry = new ProviderRegistry();
   registry.register(fakeProviderDefinition);
   registry.register(gitHubProviderDefinition);
-  const { instances: providers, failures: providerFailures } = registry.compose(
+  const { instances, failures: providerFailures } = registry.compose(
     await hydrateFakeProviderEvidence(input.wakeRoot, input.config.integrations),
     {
       work: input.work,
@@ -302,6 +334,20 @@ async function composeIntegrationRuntime(
       ),
     },
   );
+  const composedProviders =
+    input.fakeDeliveryProvider === undefined
+      ? instances
+      : instances.map((provider) =>
+          provider.adapter === 'fake'
+            ? { ...provider, delivery: input.fakeDeliveryProvider! }
+            : provider,
+        );
+  const providers = input.decorateDeliveryAdapter
+    ? composedProviders.map((provider) => ({
+        ...provider,
+        delivery: input.decorateDeliveryAdapter!(provider.delivery, provider),
+      }))
+    : composedProviders;
   // FileCheckpointStore.save throws on any regression (persistence/filesystem/
   // file-checkpoint-store.ts), so two concurrent runRegisteredOnce calls that
   // interleave can race a slower caller's stale checkpoint save against a
@@ -332,7 +378,7 @@ async function composeIntegrationRuntime(
     now: () => input.clock.now().toISOString(),
   });
   const schedules = new ScheduleService({
-    checkpoint: new FileScheduleCheckpointStore(resolveWakePaths(input.wakeRoot).dataRoot),
+    checkpoint: input.scheduleCheckpoints,
     ids: input.ids,
     work: input.work,
     orchestration: input.orchestration,
@@ -411,6 +457,28 @@ async function composeIntegrationRuntime(
     delivery,
     intakePipeline,
     runnerPipeline,
+  };
+}
+
+function identity<T>(value: T): T {
+  return value;
+}
+
+function composePersistence(
+  paths: WakePaths,
+  clock: Clock,
+  options: CompositionRootOptions,
+): Pick<CompositionRoot, 'journal' | 'projections' | 'checkpoints'> {
+  return {
+    journal: (options.decorateJournal ?? identity)(
+      options.journal ?? new FileEventJournal(paths.dataRoot, clock),
+    ),
+    projections: (options.decorateProjections ?? identity)(
+      options.projections ?? new FileProjectionStore(paths.dataRoot),
+    ),
+    checkpoints: (options.decorateCheckpoints ?? identity)(
+      options.checkpoints ?? new FileCheckpointStore(paths.dataRoot),
+    ),
   };
 }
 

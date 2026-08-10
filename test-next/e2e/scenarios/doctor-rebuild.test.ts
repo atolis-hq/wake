@@ -10,7 +10,9 @@ afterEach(async () => {
   await Promise.all(worlds.splice(0).map((world) => world.dispose()));
 });
 
-describe('E2E-OPS-001: doctor rebuild', () => {
+const scenario = { id: 'E2E-OPS-001' } as const;
+
+describe(`${scenario.id}: doctor rebuild`, () => {
   it('repairs a disposable projection without changing canonical journal bytes', async () => {
     const world = await ProcessWorld.create();
     worlds.push(world);

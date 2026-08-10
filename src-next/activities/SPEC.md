@@ -1,5 +1,5 @@
 ---
-asOf: 4e8c5f6d6955ee3bf6a926063cb1c6446f4b1e0b
+asOf: 9186824935973dd9f2a93be269dc919852a92cd4
 ---
 
 # Activities ? Module Specification
@@ -204,3 +204,9 @@ Activities does not own:
 
 Agent outcomes may carry structurally validated `reportedArtifacts`; malformed claims are discarded without changing the outcome. GitHub-native formal reviews are admitted only through the provider?s formal-review evidence path. PR comments, including command-looking text, remain feedback and never become Activity control signals.
 
+## Task 27 synchronization (2026-08-10)
+
+Execution supplies an optional durable `runId` in an Activity execution
+context. The Agent Activity uses that identity as the runner request's run
+identity when present, preserving the activation identity only for callers
+outside an Execution run.

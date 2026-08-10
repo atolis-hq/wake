@@ -10,7 +10,9 @@ afterEach(async () => {
   await Promise.all(worlds.splice(0).map((world) => world.dispose()));
 });
 
-it('takes fake provider evidence through the composed on-disk process', async () => {
+const scenario = { id: 'E2E-EXEC-001' } as const;
+
+it(`${scenario.id} takes fake provider evidence through the composed on-disk process`, async () => {
   const world = await ProcessWorld.create();
   worlds.push(world);
   await world.tick();
@@ -23,7 +25,9 @@ it('takes fake provider evidence through the composed on-disk process', async ()
   ).toHaveLength(1);
 });
 
-it('renders a Wake-root prompt template through the composed on-disk process', async () => {
+const promptScenario = { id: 'E2E-PROMPT-001' } as const;
+
+it(`${promptScenario.id} renders a Wake-root prompt template through the composed on-disk process`, async () => {
   const world = await ProcessWorld.create();
   worlds.push(world);
   await mkdir(join(world.wakeRoot, 'prompts'));

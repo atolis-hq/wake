@@ -8,7 +8,9 @@ import { workflowName } from '../../../src-next/orchestration/index.js';
 import { resourceKind } from '../../../src-next/resources/index.js';
 import { TestWorld } from '../support/world.js';
 
-it('E2E-EXEC-CANCEL-001 cancels Work with a live fake Run across Execution restart', async () => {
+const scenario = { id: 'E2E-EXEC-CANCEL-001' } as const;
+
+it(`${scenario.id} cancels Work with a live fake Run across Execution restart`, async () => {
   const world = new TestWorld();
   let complete!: () => void;
   world.registerActivity({

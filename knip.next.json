@@ -3,8 +3,7 @@
   "workspaces": {
     ".": {
       "entry": ["src-next/main.ts", "src-next/*/index.ts", "test-next/**/*.test.ts"],
-      "project": ["src-next/**/*.ts", "!src-next/surfaces/web/**", "test-next/**/*.ts"],
-      "ignoreDependencies": ["handlebars"]
+      "project": ["src-next/**/*.ts", "!src-next/surfaces/web/**", "test-next/**/*.ts"]
     },
     "src-next/surfaces/web": {
       "entry": ["e2e/*.spec.ts", "e2e/surface-fixture.ts"],

@@ -22,7 +22,9 @@ import {
 import {} from '../../../src-next/work/index.js';
 import { workId } from '../../support/identities.js';
 
-describe('E2E-CONFIG-001 configured workflow', () => {
+const scenario = { id: 'E2E-CONFIG-001' } as const;
+
+describe(`${scenario.id} configured workflow`, () => {
   it('composes the module subtrees and completes one fake activity stage', async () => {
     const activity: ActivityDefinition = {
       name: activityName('implement'),

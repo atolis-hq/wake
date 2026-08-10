@@ -5,7 +5,9 @@ import { ExecutionEventType } from '../../../src-next/execution/index.js';
 import { workflowName } from '../../../src-next/orchestration/contracts/identifiers.js';
 import { TestWorld } from '../support/world.js';
 
-it('E2E-GOLDEN-001 completes work through orchestration and an explicit Run', async () => {
+const scenario = { id: 'E2E-GOLDEN-001' } as const;
+
+it(`${scenario.id} completes work through orchestration and an explicit Run`, async () => {
   const world = new TestWorld();
   world.registerActivity({
     name: activityName('implement'),

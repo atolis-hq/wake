@@ -47,7 +47,12 @@ import {
   type ResourceView,
 } from '../../../src-next/resources/index.js';
 import { createWorkService, workItemId, type WorkItemId } from '../../../src-next/work/index.js';
-import { FaultInjector } from './faults.js';
+import {
+  faultInjectingCheckpoints,
+  faultInjectingJournal,
+  faultInjectingProjections,
+  FaultInjector,
+} from './faults.js';
 import { formatTrace } from './trace.js';
 
 export class FakeClock implements Clock {
@@ -77,9 +82,9 @@ export class TestWorld {
   readonly clock = new FakeClock();
   readonly ids = new SequentialIds();
   readonly faults = new FaultInjector();
-  readonly journal = new InMemoryEventJournal(this.clock);
-  readonly projections = new InMemoryProjectionStore();
-  readonly checkpoints = new InMemoryCheckpointStore();
+  readonly journal = faultInjectingJournal(new InMemoryEventJournal(this.clock), this.faults);
+  readonly projections = faultInjectingProjections(new InMemoryProjectionStore(), this.faults);
+  readonly checkpoints = faultInjectingCheckpoints(new InMemoryCheckpointStore(), this.faults);
   readonly activities = new ActivityRegistry();
   private readonly definitions: Record<string, CompiledWorkflow> = {};
   readonly work = createWorkService(this.journal);

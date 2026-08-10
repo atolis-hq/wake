@@ -1,3 +1,4 @@
+import type { ReviewActorKind } from '../../activities/index.js';
 import { PullRequestCheckState } from '../../activities/index.js';
 import {
   causationId,
@@ -31,6 +32,9 @@ export interface FakeWorkEvidence {
     | typeof PullRequestCheckState.Failing
     | undefined;
   readonly acceptedReview?: boolean | undefined;
+  readonly reviewActorId?: string | undefined;
+  readonly reviewActorKind?: typeof ReviewActorKind.Human | typeof ReviewActorKind.Bot | undefined;
+  readonly reviewerId?: string | undefined;
   // Files the revision changed; presence models the changed-files capability.
   readonly changedFiles?: readonly string[] | undefined;
   readonly watchEvent?: typeof FakeEventType.ReviewRequested | undefined;

@@ -1,7 +1,9 @@
 import { expect, it } from 'vitest';
 import { composeControlPlaneHosts } from '../../../src-next/bootstrap/index.js';
 
-it('E2E-CONTROL-002: TickHost and ResidentHost share bounded advancement', async () => {
+const scenario = { id: 'E2E-CONTROL-002' } as const;
+
+it(`${scenario.id}: TickHost and ResidentHost share bounded advancement`, async () => {
   const calls: number[] = [];
   const controller = new AbortController();
   const runtime = composeControlPlaneHosts(async () => {

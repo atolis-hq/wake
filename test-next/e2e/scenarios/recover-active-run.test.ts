@@ -5,7 +5,9 @@ import { activityName } from '../../../src-next/activities/index.js';
 import { workflowName } from '../../../src-next/orchestration/index.js';
 import { TestWorld } from '../support/world.js';
 
-it('E2E-EXEC-RECOVER-001 restarts after external completion before the Run result append', async () => {
+const recoveryScenario = { id: 'E2E-EXEC-RECOVER-001' } as const;
+
+it(`${recoveryScenario.id} restarts after external completion before the Run result append`, async () => {
   const world = new TestWorld();
   let starts = 0;
   world.registerActivity({

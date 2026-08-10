@@ -8,7 +8,9 @@ import { workflowName } from '../../../src-next/orchestration/index.js';
 import { resourceKind } from '../../../src-next/resources/index.js';
 import { TestWorld } from '../support/world.js';
 
-it('E2E-EXEC-CONCLUDE-001 closeWork cancels a live fake Run and blocks the workflow', async () => {
+const scenario = { id: 'E2E-WORK-003' } as const;
+
+it(`${scenario.id} closes Work without treating the cancelled Run as its lifecycle state`, async () => {
   const world = new TestWorld();
   let complete!: () => void;
   world.registerActivity({

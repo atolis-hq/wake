@@ -1,5 +1,5 @@
 ---
-asOf: 4e8c5f6d6955ee3bf6a926063cb1c6446f4b1e0b
+asOf: 9186824935973dd9f2a93be269dc919852a92cd4
 ---
 
 # Bootstrap — Module Specification
@@ -232,3 +232,11 @@ Bootstrap does not own:
   Bootstrap does not support composing two independent application graphs
   against the same Wake home within one process.
 
+## Task 27 synchronization (2026-08-10)
+
+Composition options may decorate persistence ports, delivery adapters, and
+configured runners at the Bootstrap boundary. An optional fake delivery
+adapter and schedule checkpoint store provide deterministic composed-runtime
+evidence without adding hooks to domain modules. Provider types are consumed
+through the Integrations public entry point; Bootstrap does not import a
+provider implementation file.

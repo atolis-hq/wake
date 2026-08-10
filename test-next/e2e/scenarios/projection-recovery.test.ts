@@ -13,7 +13,9 @@ import { createWorkService, workProjection } from '../../../src-next/work/index.
 import { workId } from '../../support/identities.js';
 import { FakeClock } from '../support/world.js';
 
-it('E2E-PROJECTION-001 rebuilds projections without changing journal bytes', async () => {
+const scenario = { id: 'E2E-PROJECTION-001' } as const;
+
+it(`${scenario.id} rebuilds projections without changing journal bytes`, async () => {
   const root = await mkdtemp(join(tmpdir(), 'wake-projection-recovery-'));
   const clock = new FakeClock();
   const journal = new FileEventJournal(root, clock);

@@ -18,7 +18,9 @@ import {
 import { TestWorld } from '../support/world.js';
 import { executeMerge, setupMergeScenario } from './pr-activity-fixtures.js';
 
-describe('E2E-DELIVERY-001', () => {
+const scenario = { id: 'E2E-DELIVERY-001' } as const;
+
+describe(scenario.id, () => {
   it('reconciles provider acceptance after a crash without a second merge', async () => {
     const world = new TestWorld();
     const setup = await setupMergeScenario(world, 'safe');

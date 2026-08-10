@@ -16,7 +16,15 @@ import { createTestIntakeRouting } from '../../support/intake-routing.js';
 import { createTestResourceServices } from '../../support/resource-lookup.js';
 import { FakeClock } from '../support/world.js';
 
-describe('E2E-WORK-002 external intake', () => {
+const scenario = {
+  id: 'E2E-WORK-002',
+  title: 'external intake',
+  given: ['provider evidence'],
+  when: ['the inbound translator is replayed'],
+  then: ['one canonical WorkItem and Resource remain'],
+} as const;
+
+describe(`${scenario.id} ${scenario.title}`, () => {
   it('creates one WorkItem, Resource, and primary correlation when evidence is translated twice', async () => {
     const clock = new FakeClock();
     const journal = new InMemoryEventJournal(clock);

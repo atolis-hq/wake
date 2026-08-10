@@ -98,6 +98,8 @@ export interface AgentRunnerPort {
 export interface ActivityExecutionContext {
   readonly signal: AbortSignal;
   readonly occurredAt: string;
+  /** Durable Execution Run identity when the activity is invoked by Execution. */
+  readonly runId?: string;
   readonly runner?: AgentRunnerPort;
   readonly runnerContext?: {
     readonly runnerName: string;

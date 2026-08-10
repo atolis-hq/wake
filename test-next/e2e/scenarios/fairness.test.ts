@@ -1,7 +1,9 @@
 import { expect, it } from 'vitest';
 import { DispatchPolicy } from '../../../src-next/control-plane/index.js';
 
-it('E2E-CONTROL-001: alternates eligible WorkItems by ready position under a global budget', () => {
+const scenario = { id: 'E2E-CONTROL-001' } as const;
+
+it(`${scenario.id}: alternates eligible WorkItems by ready position under a global budget`, () => {
   const selected = new DispatchPolicy({ maxDispatches: 2 }).select([
     {
       workItemId: 'work-a',

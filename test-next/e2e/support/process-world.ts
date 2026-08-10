@@ -1,4 +1,4 @@
-import { cp, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -6,6 +6,7 @@ import {
   createSurfaceApplications,
   type CompositionRoot,
 } from '../../../src-next/bootstrap/index.js';
+import { RunStatus } from '../../../src-next/execution/index.js';
 import { main } from '../../../src-next/main.js';
 import {
   workflowInstanceId as parseWorkflowInstanceId,
@@ -43,6 +44,11 @@ export class ProcessWorld {
       readonly baseRevision?: string;
       readonly checks?: 'unknown' | 'pending' | 'passing' | 'failing';
       readonly acceptedReview?: boolean;
+      readonly reviewActorId?: string;
+      readonly reviewActorKind?: 'human' | 'bot';
+      readonly reviewerId?: string;
+      readonly branch?: string;
+      readonly changedFiles?: readonly string[];
       readonly watchEvent?: string;
       readonly eligible?: boolean;
     }[],
@@ -57,6 +63,11 @@ export class ProcessWorld {
     for (let index = 0; index < limit; index += 1) await this.tick();
   }
 
+  async pollProviderEvidence(): Promise<void> {
+    if (this.root === undefined) throw new Error('ProcessWorld has not run');
+    await this.root.intakePipeline.run(new AbortController().signal);
+  }
+
   async readProjection<Value>(name: string) {
     if (this.root === undefined) throw new Error('ProcessWorld has not run');
     return this.root.projections.list<Value>(name);
@@ -67,6 +78,64 @@ export class ProcessWorld {
     return this.root.journal.readAll(0);
   }
 
+  async workflowInstances() {
+    if (this.root === undefined) throw new Error('ProcessWorld has not run');
+    return this.root.orchestration.listAll();
+  }
+
+  async repeatAcceptedRunOutcome(): Promise<void> {
+    if (this.root === undefined) throw new Error('ProcessWorld has not run');
+    for (const workflow of await this.root.orchestration.listAll()) {
+      for (const activationId of workflow.acceptedOutcomes) {
+        const run = (await this.root.execution.list(activationId)).find(
+          (candidate) =>
+            candidate.status === RunStatus.Succeeded && candidate.outcome !== undefined,
+        );
+        if (run === undefined || run.outcome === undefined) continue;
+        await this.root.orchestration.acceptOutcome(
+          { workflowInstanceId: workflow.workflowInstanceId, activationId, outcome: run.outcome },
+          {
+            commandId: `process-world-repeat-run-outcome:${run.runId}`,
+            correlationId: 'process-world-duplicate' as never,
+            occurredAt: new Date().toISOString(),
+            actor: { kind: 'operator', id: 'owner' },
+          },
+        );
+        return;
+      }
+    }
+    throw new Error('No accepted Run outcome is available to repeat');
+  }
+
+  async retryConfirmedDelivery() {
+    if (this.root === undefined) throw new Error('ProcessWorld has not run');
+    return this.root.delivery.deliverNext(new AbortController().signal);
+  }
+
+  async reconcileChildCompletions(): Promise<void> {
+    if (this.root === undefined) throw new Error('ProcessWorld has not run');
+    await this.root.orchestration.reconcileChildCompletions({
+      commandId: 'process-world-repeat-child-completion',
+      correlationId: 'process-world-duplicate' as never,
+      occurredAt: new Date().toISOString(),
+      actor: { kind: 'operator', id: 'owner' },
+    });
+  }
+
+  async deliveryEffects(): Promise<string> {
+    return readFile(join(this.wakeRoot, 'provider', 'effects.json'), 'utf8');
+  }
+
+  async providerEffects(): Promise<Record<string, string>> {
+    if (this.root === undefined) throw new Error('ProcessWorld has not run');
+    const provider = this.root.providers.find((candidate) => candidate.adapter === 'fake');
+    if (provider === undefined || !('effects' in provider.delivery))
+      throw new Error('Fake provider delivery effects are unavailable');
+    const effects = provider.delivery.effects;
+    if (!(effects instanceof Map)) throw new Error('Fake provider delivery effects are invalid');
+    return Object.fromEntries(effects);
+  }
+
   async acceptSignal(workflowInstanceId: string, signal: OrchestrationSignal): Promise<void> {
     if (this.root === undefined) throw new Error('ProcessWorld has not run');
     await this.root.orchestration.acceptSignal(
@@ -74,6 +143,23 @@ export class ProcessWorld {
       signal,
       {
         commandId: `${signal.providerEventId}:accept`,
+        correlationId: 'process-world-signal' as never,
+        occurredAt: new Date().toISOString(),
+        actor: { kind: 'operator', id: 'owner' },
+      },
+    );
+  }
+
+  async waitForSignal(
+    workflowInstanceId: string,
+    expectation: Parameters<CompositionRoot['orchestration']['waitForSignal']>[1],
+  ): Promise<void> {
+    if (this.root === undefined) throw new Error('ProcessWorld has not run');
+    await this.root.orchestration.waitForSignal(
+      parseWorkflowInstanceId(workflowInstanceId),
+      expectation,
+      {
+        commandId: `process-world-wait:${workflowInstanceId}`,
         correlationId: 'process-world-signal' as never,
         occurredAt: new Date().toISOString(),
         actor: { kind: 'operator', id: 'owner' },

@@ -2,7 +2,7 @@ import { type ActivityExecutionContext, type ActivityRegistry } from '../../acti
 import { type Clock, type EventJournal, type IdGenerator } from '../../kernel/index.js';
 import type { ExecutionActivation, ExecutionAttemptContext } from '../contracts/commands.js';
 import type { ExecutionConfig } from '../contracts/config.js';
-import { ExecutionEventType } from '../contracts/events.js';
+import { ExecutionEventType, type RunExecutionEventDraft } from '../contracts/events.js';
 import type { runId } from '../contracts/identifiers.js';
 import type { WorkspaceProvider } from '../contracts/workspace.js';
 import { parseAgentRunnerResponse } from '../infrastructure/agent-runner-adapter.js';
@@ -47,6 +47,7 @@ export async function executeActivity(
   const executionContext: ActivityExecutionContext = {
     signal: controller.signal,
     occurredAt,
+    runId: currentRunId,
     ...(runner === undefined ? {} : { runner }),
     ...(request.runnerName === undefined
       ? {}
@@ -72,20 +73,19 @@ export async function executeActivity(
     },
     reportRunnerResult: async (result) => {
       const loaded = await runtime.repository.load(currentRunId);
-      await runtime.repository.append(currentRunId, loaded.sequence, [
-        createRunEvent({
-          runId: currentRunId,
-          eventId: `${currentRunId}:runner-result`,
-          eventType: ExecutionEventType.RunRunnerResultReported,
-          occurredAt: runtime.dependencies.clock.now().toISOString(),
-          correlationId: context.orchestrationGroupId,
-          causationId: activation.activationId,
-          payload: {
-            transport: result.transport,
-            agent: parseAgentRunnerResponse(result),
-          },
-        }),
-      ]);
+      const event = createRunEvent({
+        runId: currentRunId,
+        eventId: `${currentRunId}:runner-result`,
+        eventType: ExecutionEventType.RunRunnerResultReported,
+        occurredAt: runtime.dependencies.clock.now().toISOString(),
+        correlationId: context.orchestrationGroupId,
+        causationId: activation.activationId,
+        payload: {
+          transport: result.transport,
+          agent: parseAgentRunnerResponse(result),
+        },
+      }) as RunExecutionEventDraft;
+      await appendIdempotently(runtime.repository, currentRunId, loaded.sequence, event);
       if (result.failure?.kind === 'provider-quota-exceeded' && request.runnerName !== undefined)
         await runtime.dependencies.reportRunnerQuota?.({
           runnerName: request.runnerName,
@@ -106,4 +106,18 @@ export async function executeActivity(
     },
     executionContext,
   );
+}
+
+async function appendIdempotently(
+  repository: RunRepository,
+  currentRunId: ReturnType<typeof runId>,
+  sequence: number,
+  event: RunExecutionEventDraft,
+): Promise<void> {
+  try {
+    await repository.append(currentRunId, sequence, [event]);
+  } catch {
+    const current = await repository.load(currentRunId);
+    await repository.append(currentRunId, current.sequence, [event]);
+  }
 }

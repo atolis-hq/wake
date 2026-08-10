@@ -8,7 +8,7 @@ import { TestWorld } from '../support/world.js';
 
 defineScenario(
   {
-    id: 'E2E-DARKFACTORY-004',
+    id: 'E2E-DARKFACTORY-005',
     title: "a human's own decision always overrides a watchGate",
     given: ['implement gated by pr-review'],
     when: ['a human accepts done'],

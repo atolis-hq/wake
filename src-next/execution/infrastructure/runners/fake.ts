@@ -36,26 +36,34 @@ function resultFor(
   scenario: ResolvedFakeScenario | undefined,
   request: RunnerRequest,
 ) {
-  const status =
-    scenario?.outcome ??
-    (request.prompt.includes('[fake:failed]')
-      ? 'FAILED'
-      : request.prompt.includes('[fake:blocked]')
-        ? 'BLOCKED'
-        : 'DONE');
   return {
     transport: RunStatus.Succeeded,
-    output: JSON.stringify({
-      status,
-      ...(scenario?.retrySafety === undefined && status === 'FAILED'
-        ? { retrySafety: RetrySafety.SafeToRetry }
-        : scenario?.retrySafety === undefined
-          ? {}
-          : { retrySafety: scenario.retrySafety }),
-      ...(scenario?.displayBody === undefined ? {} : { displayBody: scenario.displayBody }),
-    }),
+    output: JSON.stringify(outputFor(scenario, request.prompt)),
     runner: name,
   };
+}
+
+function outputFor(scenario: ResolvedFakeScenario | undefined, prompt: string) {
+  const status = statusFor(scenario, prompt);
+  return {
+    status,
+    ...retrySafetyFor(scenario, status),
+    ...(scenario?.displayBody === undefined ? {} : { displayBody: scenario.displayBody }),
+    ...(scenario?.reportedArtifacts === undefined
+      ? {}
+      : { reportedArtifacts: scenario.reportedArtifacts }),
+  };
+}
+
+function statusFor(scenario: ResolvedFakeScenario | undefined, prompt: string) {
+  if (scenario !== undefined) return scenario.outcome;
+  if (prompt.includes('[fake:failed]')) return 'FAILED';
+  return prompt.includes('[fake:blocked]') ? 'BLOCKED' : 'DONE';
+}
+
+function retrySafetyFor(scenario: ResolvedFakeScenario | undefined, status: string) {
+  if (scenario?.retrySafety !== undefined) return { retrySafety: scenario.retrySafety };
+  return status === 'FAILED' ? { retrySafety: RetrySafety.SafeToRetry } : {};
 }
 
 function waitFor(delayMs: number, signal: AbortSignal): Promise<void> {

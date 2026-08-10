@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { PullRequestCheckState } from '../../activities/index.js';
+import { PullRequestCheckState, ReviewActorKind } from '../../activities/index.js';
 import { BuiltInResourceCapability } from '../../resources/index.js';
 import { ArtifactVerificationResult } from '../contracts/artifact-vocabulary.js';
 import type { ProviderDefinition } from '../contracts/provider.js';
@@ -29,6 +29,9 @@ const configSchema = z
               ])
               .optional(),
             acceptedReview: z.boolean().optional(),
+            reviewActorId: z.string().min(1).optional(),
+            reviewActorKind: z.enum([ReviewActorKind.Human, ReviewActorKind.Bot]).optional(),
+            reviewerId: z.string().min(1).optional(),
             changedFiles: z.array(z.string().min(1)).optional(),
             watchEvent: z.literal(FakeEventType.ReviewRequested).optional(),
             eligible: z.boolean().optional(),

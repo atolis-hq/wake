@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   ActivityRegistry,
   BuiltInActivityName,
@@ -15,7 +15,19 @@ import {
   issueCommentObservation,
   issueObservation,
 } from '../../../src-next/integrations/github/infrastructure/issue-source.js';
-import { correlationId } from '../../../src-next/kernel/index.js';
+import { DeliveryIntentEventType } from '../../../src-next/integrations/index.js';
+import type {
+  CheckpointStore,
+  EventJournal,
+  ProjectionStore,
+} from '../../../src-next/kernel/index.js';
+import {
+  EventActorKind,
+  EventSourceKind,
+  causationId,
+  correlationId,
+  eventId,
+} from '../../../src-next/kernel/index.js';
 import {
   InMemoryCheckpointStore,
   InMemoryEventJournal,
@@ -26,7 +38,7 @@ import {
   resourceCapability,
   resourceKind,
 } from '../../../src-next/resources/index.js';
-import { workId } from '../../support/identities.js';
+import { resId, workId } from '../../support/identities.js';
 
 const roots: string[] = [];
 
@@ -35,6 +47,179 @@ afterEach(async () => {
 });
 
 describe('target composition root', () => {
+  it('routes composed journal writes through an optional integration decorator', async () => {
+    const clock = { now: () => new Date('2026-08-10T00:00:00.000Z') };
+    const journal = new InMemoryEventJournal(clock);
+    const writes: string[] = [];
+    const decoratedJournal: EventJournal = {
+      async append(stream, expectedSequence, events) {
+        writes.push(`${stream.kind}:${stream.id}`);
+        return journal.append(stream, expectedSequence, events);
+      },
+      readStream: journal.readStream.bind(journal),
+      readAll: journal.readAll.bind(journal),
+      readLatest: journal.readLatest?.bind(journal),
+    };
+    const decorator = vi.fn((base: EventJournal) => {
+      expect(base).toBe(journal);
+      return decoratedJournal;
+    });
+    const runtime = await createCompositionRoot('C:/wake-home', {
+      config: rootConfig(),
+      journal,
+      projections: new InMemoryProjectionStore(),
+      checkpoints: new InMemoryCheckpointStore(),
+      decorateJournal: decorator,
+    });
+
+    await runtime.work.create(
+      { workItemId: workId('decorated-journal'), objective: 'prove integration decoration' },
+      {
+        commandId: 'decorated-journal',
+        correlationId: correlationId('decorated-journal'),
+        occurredAt: clock.now().toISOString(),
+        actor: { kind: 'system', id: 'test' },
+      },
+    );
+
+    expect(decorator).toHaveBeenCalledExactlyOnceWith(journal);
+    expect(writes).toHaveLength(1);
+    expect(writes[0]).toMatch(/^work-item:/);
+  });
+
+  it('routes projection writes through the decorated projection port', async () => {
+    const clock = { now: () => new Date('2026-08-10T00:00:00.000Z') };
+    const projections = new InMemoryProjectionStore();
+    let writes = 0;
+    const runtime = await createCompositionRoot('C:/wake-home', {
+      config: rootConfig(),
+      journal: new InMemoryEventJournal(clock),
+      projections,
+      checkpoints: new InMemoryCheckpointStore(),
+      decorateProjections: (base): ProjectionStore => ({
+        read: base.read.bind(base),
+        async write(projection) {
+          writes += 1;
+          await base.write(projection);
+        },
+        list: base.list.bind(base),
+        clear: base.clear.bind(base),
+      }),
+    });
+
+    await runtime.work.create(
+      { workItemId: workId('decorated-projections'), objective: 'prove projection decoration' },
+      commandContext(clock, 'decorated-projections'),
+    );
+    await runtime.projectionRunner.runRegisteredOnce();
+
+    expect(writes).toBeGreaterThan(0);
+  });
+
+  it('routes projection checkpoints through the decorated checkpoint port', async () => {
+    const clock = { now: () => new Date('2026-08-10T00:00:00.000Z') };
+    const checkpoints = new InMemoryCheckpointStore();
+    let saves = 0;
+    const runtime = await createCompositionRoot('C:/wake-home', {
+      config: rootConfig(),
+      journal: new InMemoryEventJournal(clock),
+      projections: new InMemoryProjectionStore(),
+      checkpoints,
+      decorateCheckpoints: (base): CheckpointStore => ({
+        load: base.load.bind(base),
+        async save(consumer, position) {
+          saves += 1;
+          await base.save(consumer, position);
+        },
+        reset: base.reset.bind(base),
+      }),
+    });
+
+    await runtime.work.create(
+      { workItemId: workId('decorated-checkpoints'), objective: 'prove checkpoint decoration' },
+      commandContext(clock, 'decorated-checkpoints'),
+    );
+    await runtime.projectionRunner.runRegisteredOnce();
+
+    expect(saves).toBeGreaterThan(0);
+  });
+
+  it('routes schedule slots through the supplied schedule checkpoint store', async () => {
+    const clock = { now: () => new Date('2026-08-10T00:01:30.000Z') };
+    const saves: string[] = [];
+    const runtime = await createCompositionRoot('C:/wake-home', {
+      config: scheduledRootConfig(),
+      journal: new InMemoryEventJournal(clock),
+      projections: new InMemoryProjectionStore(),
+      checkpoints: new InMemoryCheckpointStore(),
+      scheduleCheckpoints: {
+        async load() {
+          return '2026-08-10T00:00:00.000Z';
+        },
+        async save(_scheduleId, slot) {
+          saves.push(slot);
+        },
+      },
+      clock,
+    });
+
+    await runtime.runnerPipeline.run({ maxProgress: 1 }, new AbortController().signal);
+
+    expect(saves).toEqual(['2026-08-10T00:01:00.000Z']);
+  });
+
+  it('routes composed delivery through the decorated provider adapter', async () => {
+    const clock = { now: () => new Date('2026-08-10T00:00:00.000Z') };
+    const journal = new InMemoryEventJournal(clock);
+    let deliveries = 0;
+    const runtime = await createCompositionRoot('C:/wake-home', {
+      config: fakeProviderRootConfig(),
+      journal,
+      projections: new InMemoryProjectionStore(),
+      checkpoints: new InMemoryCheckpointStore(),
+      decorateDeliveryAdapter: (adapter) => ({
+        async deliver(intent, signal) {
+          deliveries += 1;
+          return adapter.deliver(intent, signal);
+        },
+        reconcile: adapter.reconcile.bind(adapter),
+      }),
+    });
+    const resource = await runtime.resources.discover(
+      {
+        resourceId: resId('decorated-delivery'),
+        kind: resourceKind('issue'),
+        externalKey: { adapter: 'fake', key: 'delivery-1' },
+        capabilities: [],
+      },
+      commandContext(clock, 'decorated-delivery'),
+    );
+    await journal.append({ kind: 'resource', id: resource.resourceId }, 1, [
+      {
+        eventId: eventId('decorated-delivery-intent'),
+        eventType: DeliveryIntentEventType.StatusPublishRequested,
+        schemaVersion: 1,
+        occurredAt: clock.now().toISOString(),
+        correlationId: correlationId('decorated-delivery'),
+        causationId: causationId('decorated-delivery'),
+        actor: { kind: EventActorKind.System, id: 'test' },
+        source: { kind: EventSourceKind.Internal, id: 'test' },
+        stream: { kind: 'resource', id: resource.resourceId },
+        payload: {
+          workflowInstanceId: 'workflow-decorated-delivery',
+          activationId: 'activation-decorated-delivery',
+          resourceId: resource.resourceId,
+          body: 'decorated delivery',
+        },
+      },
+    ]);
+    await runtime.projectionRunner.runRegisteredOnce();
+
+    await runtime.delivery.deliverNext(new AbortController().signal);
+
+    expect(deliveries).toBe(1);
+  });
+
   it('injects only domain-owned config and central persistence ports', async () => {
     const config = parseRootConfig({
       schemaVersion: 1,
@@ -182,6 +367,66 @@ function rootConfig() {
     integrations: {},
     surfaces: {},
   });
+}
+
+function scheduledRootConfig() {
+  return parseRootConfig({
+    schemaVersion: 1,
+    work: {},
+    resources: {},
+    execution: {
+      agentRunners: { fake: { kind: 'fake' } },
+      runnerPools: { standard: ['fake'] },
+      defaultRunnerPool: 'standard',
+    },
+    orchestration: {
+      default: 'scheduled',
+      workflows: {
+        scheduled: {
+          stages: {
+            start: {
+              activity: 'agent',
+              with: { template: 'scheduled' },
+              on: { done: { then: 'done' } },
+            },
+          },
+        },
+      },
+    },
+    controlPlane: {
+      schedules: [
+        { id: 'hourly', workflow: 'scheduled', cron: '* * * * *', objective: 'Scheduled work' },
+      ],
+    },
+    integrations: {},
+    surfaces: {},
+  });
+}
+
+function fakeProviderRootConfig() {
+  return parseRootConfig({
+    schemaVersion: 1,
+    work: {},
+    resources: {},
+    execution: {
+      agentRunners: { fake: { kind: 'fake' } },
+      runnerPools: { standard: ['fake'] },
+      defaultRunnerPool: 'standard',
+    },
+    orchestration: { workflows: {} },
+    controlPlane: {},
+    integrations: { fake: { enabled: true, provider: 'fake' } },
+    surfaces: {},
+  });
+}
+
+function commandContext(clock: { now(): Date }, commandId: string) {
+  return {
+    commandId,
+    correlationId: correlationId(commandId),
+    occurredAt: clock.now().toISOString(),
+    actor: { kind: EventActorKind.System, id: 'test' },
+  };
 }
 
 async function fixtureRoot(): Promise<string> {

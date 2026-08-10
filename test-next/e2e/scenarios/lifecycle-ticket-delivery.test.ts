@@ -8,8 +8,10 @@ afterEach(async () => {
   await Promise.all(worlds.splice(0).map((world) => world.dispose()));
 });
 
+const scenario = { id: 'E2E-SIGNAL-001' } as const;
+
 it(
-  'E2E-LIFECYCLE-004 mints a work item from a ticket and delivers a comment per stage, ' +
+  `${scenario.id} mints a work item from a ticket and delivers a comment per stage, ` +
     'pausing for approval by default at each stage',
   async () => {
     const world = await ProcessWorld.create('wake-root-lifecycle');

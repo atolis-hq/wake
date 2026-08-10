@@ -28,6 +28,18 @@ const ruleSchema = z
     outcome: outcomeSchema,
     retrySafety: z.literal(RetrySafety.SafeToRetry).optional(),
     displayBody: z.string().trim().min(1).optional(),
+    reportedArtifacts: z
+      .array(
+        z
+          .object({
+            kind: z.string().trim().min(1),
+            externalKey: z
+              .object({ adapter: z.string().trim().min(1), key: z.string().trim().min(1) })
+              .strict(),
+          })
+          .strict(),
+      )
+      .optional(),
   })
   .strict()
   .refine((value) => value.outcome === 'FAILED' || value.retrySafety === undefined, {
@@ -64,6 +76,10 @@ export interface ResolvedFakeScenario {
   readonly outcome: z.output<typeof outcomeSchema>;
   readonly retrySafety?: typeof RetrySafety.SafeToRetry;
   readonly displayBody?: string;
+  readonly reportedArtifacts?: readonly {
+    readonly kind: string;
+    readonly externalKey: { readonly adapter: string; readonly key: string };
+  }[];
 }
 
 export interface FakeScenarioResolver {
@@ -90,6 +106,9 @@ export function parseFakeScenarios(value: unknown): FakeScenarioResolver {
         outcome: rule.outcome,
         ...(rule.retrySafety === undefined ? {} : { retrySafety: rule.retrySafety }),
         ...(rule.displayBody === undefined ? {} : { displayBody: rule.displayBody }),
+        ...(rule.reportedArtifacts === undefined
+          ? {}
+          : { reportedArtifacts: rule.reportedArtifacts }),
       };
     },
   };
