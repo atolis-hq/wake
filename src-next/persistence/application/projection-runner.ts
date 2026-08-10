@@ -7,6 +7,8 @@ import type {
 } from '../../kernel/index.js';
 
 export class ProjectionRunner {
+  private caughtUpToGlobalPosition: number | undefined;
+
   constructor(
     private readonly journal: EventJournal,
     private readonly projections: ProjectionStore,
@@ -20,11 +22,28 @@ export class ProjectionRunner {
   // full filesystem probe per definition on every tick even when nothing
   // changed. Fetching once and slicing per-checkpoint in memory keeps the
   // same polling cadence at a fraction of the syscall cost.
+  //
+  // Resident hosts call this on a fast, fixed idle cadence (control-plane
+  // never backs off the internal runner loop, only the external poll), so a
+  // fully idle system still calls this multiple times a second. Without this
+  // short-circuit that means a per-registered-projection checkpoint file
+  // read every call forever, even though nothing changed. Only mark a
+  // position "caught up" once every definition processed fewer than a full
+  // batch — otherwise a backlog bigger than `limit` would get marked caught
+  // up after its first (partial) batch and never finish draining.
   async runRegisteredOnce(limit = 100): Promise<number> {
     const allEvents = await this.journal.readAll(0);
+    const latestGlobalPosition = allEvents.at(-1)?.globalPosition ?? 0;
+    if (
+      this.caughtUpToGlobalPosition !== undefined &&
+      latestGlobalPosition <= this.caughtUpToGlobalPosition
+    )
+      return 0;
     const counts = await Promise.all(
       this.registered.map((definition) => this.applyFrom(definition, allEvents, limit)),
     );
+    if (counts.every((count) => count < limit))
+      this.caughtUpToGlobalPosition = latestGlobalPosition;
     return counts.reduce((total, count) => total + count, 0);
   }
 
