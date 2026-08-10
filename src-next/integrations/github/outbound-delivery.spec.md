@@ -30,14 +30,29 @@ already happened before an intent reached delivery.
   number; any other Resource MUST address it by issue number, both parsed
   from the Resource's own external key.
 - The delivered action MUST derive from the intent's own kind:
-  `pr.approve` → an approving review, `pr.merge` → a merge, `status.publish`
-  and `reply.publish` → an issue comment. There is no GitHub action for any
-  other delivery intent kind.
+  `pr.approve` → an approving review, `pr.merge` → a merge, `status.publish`,
+  `reply.publish`, and `agent-run.publish` → an issue comment. There is no
+  GitHub action for any other delivery intent kind.
 - Every delivered review or comment body MUST carry the idempotency marker
   for its own intent's event id. A status or reply comment's body MUST be
   the intent's own body text followed by the marker; an approval's review
   body MUST be the marker alone — a `pr.approve` intent's own optional
-  `body` is not currently included in the delivered review.
+  `body` is not currently included in the delivered review. An
+  `agent-run.publish` comment's body MUST be its own report rendered as
+  markdown by the formatter below, which embeds its own copy of the
+  idempotency marker in addition to the marker every delivered comment
+  carries.
+- Rendering an `agent-run.publish` intent's report MUST produce: a header
+  line naming whichever of stage, runner, runner pool, CLI, model,
+  duration, token/cost metadata, and run id are present; an outcome line
+  reading "Awaiting approval" when the report is awaiting approval,
+  otherwise the run's own outcome (`DONE`/`REJECTED`/`BLOCKED`/`FAILED`);
+  the report's own display body, or a fixed per-outcome fallback when it is
+  empty; reply instructions when awaiting approval or blocked; a session
+  resume section when a session id is present; and, when the report carries
+  a watch-gate verdict, a trailing fenced JSON block naming that verdict's
+  run id and outcome — the same marker GitHub Inbound Translation later
+  recognizes and verifies.
 - An approval MUST fail before calling GitHub when the intent has no pull
   number to address; likewise a merge.
 - A successful GitHub call MUST report `DeliveryResultKind.Confirmed` with
@@ -67,7 +82,8 @@ already happened before an intent reached delivery.
   without ever reaching `not-found` (permitting a fresh attempt) or
   `confirmed`. Recovering such an intent currently requires action outside
   this component.
-- GitHub label reconciliation and self-echo detection
-  (`reconcileGitHubWakeLabels`, `isGitHubWakeEcho`) are not called from
-  this component; there is no GitHub outbound action that writes a label.
-  See the module page's decisions for the full statement.
+- GitHub label writing is not part of this component or the delivery-intent
+  pipeline it serves; it happens through GitHub Label Reconciliation's own
+  provider-maintenance cycle instead. Self-echo detection
+  (`isGitHubWakeEcho`) is implemented and exported but not called by any
+  composed path.

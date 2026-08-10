@@ -20,8 +20,9 @@ what a resolved outcome means to a workflow.
 
 - A `DeliveryIntentView` MUST be created the moment its requesting fact
   (`pr.approve-requested`, `pr.merge-requested`, `status.publish-requested`,
-  or `reply.publish-requested`) is observed, at state `pending`, zero
-  attempts, and occurrence ordinal zero, keyed by that fact's own event id.
+  `reply.publish-requested`, or `agent-run.publish-requested`) is observed,
+  at state `pending`, zero attempts, and occurrence ordinal zero, keyed by
+  that fact's own event id.
 - A `delivery.*` fact whose `intentEventId`/`intentGlobalPosition` does not
   match the view it would otherwise apply to MUST be ignored, leaving the
   view unchanged.
@@ -44,6 +45,7 @@ what a resolved outcome means to a workflow.
 | --- | --- | --- |
 | `pr.approve-requested` / `pr.merge-requested` | Activities' PR Approve & Merge Decision records a delivery intent | An approve/merge delivery intent now exists for this projection to track. |
 | `status.publish-requested` / `reply.publish-requested` | A status/reply-publish Activity records a delivery intent | A status/reply delivery intent now exists for this projection to track. |
+| `agent-run.publish-requested` | Agent Run Publication records a terminal run's own report | An agent-run delivery intent now exists for this projection to track. |
 | `delivery.attempt-started` / `delivery.confirmed` / `delivery.failed` / `delivery.ambiguous` / `delivery.reconciled` | The Delivery aggregate records an attempt or outcome fact | The tracked intent's state, attempt count, or occurrence ordinal advances. |
 
 ## Conceptual schema
@@ -56,6 +58,8 @@ this component is that view's sole projector.
 - Activities (this projection depends on it) — reads the
   `pr.approve-requested`/`pr.merge-requested` facts Activities' PR Approve &
   Merge Decision records; never writes them.
+- Agent Run Publication (this projection depends on it) — reads the
+  `agent-run.publish-requested` facts it records; never writes them.
 - Kernel — event reading and sorting conventions this projection folds
   over.
 - Delivery aggregate — supplies this projection's own `delivery.*` source

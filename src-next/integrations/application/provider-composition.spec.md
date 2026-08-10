@@ -32,7 +32,13 @@ module's intake-rule vocabulary, applied by each provider's own translator.
 - A config entry's provider type MUST resolve from its own `provider` field
   when present, otherwise from the config entry's own key (its adapter
   name); composing an entry whose resolved provider type is not registered
-  MUST be rejected.
+  is an unrecoverable configuration error and MUST throw, taking the whole
+  composition call down with it.
+- A registered provider type whose own `create` call throws (e.g. bad
+  config, an unreachable credential) MUST NOT take composition down with
+  it: that entry's failure MUST be collected, by adapter name, provider
+  name, and the thrown error's own message, and composing every other
+  entry MUST still proceed to completion.
 - Ingesting an evidence draft whose event type is not among the composed
   instance's own declared `eventTypes` MUST be rejected.
 - An evidence draft MUST be appended to its adapter's `integration` stream
@@ -51,6 +57,13 @@ module's intake-rule vocabulary, applied by each provider's own translator.
 | `inbound` | InboundTranslation | Turns this adapter's evidence into commands. |
 | `eventTypes` | list of event type | The closed set of event types this instance may emit; anything else is rejected. |
 
+**ProviderCompositionResult** (`compose`'s own return value)
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `instances` | list of ProviderInstance | Every entry that composed successfully. |
+| `failures` | list of `{ adapter, provider, error }` | Every enabled, registered entry whose own `create` call threw, and why. |
+
 ## Dependencies and system role
 
 - Kernel — event journal read/append for evidence ingestion; this
@@ -66,3 +79,10 @@ module's intake-rule vocabulary, applied by each provider's own translator.
 
 - There is no provider hot-reload or de-registration; composition happens
   once from the configuration a runtime is started with.
+- Construction failure is deliberately tolerated (collected as a
+  `ProviderCompositionFailure`) rather than thrown, because commands that
+  do not need that specific provider — `doctor`, `sandbox-setup`,
+  `sandbox-entrypoint` — must still run even when one provider cannot
+  construct (e.g. missing sandbox credentials); an unregistered provider
+  type, by contrast, is a configuration error with no such recovery path
+  and still throws.

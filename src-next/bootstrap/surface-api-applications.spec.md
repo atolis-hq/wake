@@ -16,7 +16,8 @@ are a distinct component; see
   data is guaranteed current as of.
 - **Cursor position** — a caller-supplied journal global position; a
   collection response only returns items whose contributing facts are
-  strictly after it.
+  strictly before it (unbounded, i.e. the newest facts first, when absent),
+  walking backward through history one page at a time.
 
 ## Responsibilities and boundaries
 
@@ -33,11 +34,16 @@ for a single WorkItem (see the Work detail component).
 **Freshness and pagination (shared by every list/detail response below)**
 
 - A collection response MUST only include items whose contributing
-  projection's last recorded global position is strictly after the caller's
-  cursor position, ordered ascending by that position.
+  projection's last recorded global position is strictly before the
+  caller's cursor position, ordered descending by that position — newest
+  first. `events.list` applies the same before/descending rule directly to
+  raw journal global positions rather than to a projection's recorded
+  position.
 - A collection response's `total` MUST report the full filtered-eligible
   count, not just the returned page; a `nextPosition` MUST be present only
-  when further items remain beyond the returned page.
+  when further (older) items remain beyond the returned page, carrying the
+  page's oldest visible item's own position so the next call continues
+  further back in time.
 - A response's freshness metadata MUST be derived from the highest
   contributing global position among the items or projections that produced
   it, resolved back to that position's actual journal fact. If a computed
@@ -54,13 +60,39 @@ for a single WorkItem (see the Work detail component).
   stores to confirm they are reachable — it is an optimistic signal, not an
   active probe. (Contrast the CLI surface application's `validate-state`
   health command, which does actively probe each store.)
+- `health` MUST additionally report a `self-update` check that is `ok` when
+  no self-update failure is on record and `degraded`, with the rolled-back
+  tag/time/message as its detail, when one is — this check does actively
+  read the self-update failure log rather than reporting optimistically.
+  The response's overall `status` MUST be `degraded` when any check is
+  degraded, `ok` otherwise, and MUST include this installation's resolved
+  version string.
 - `configuration` MUST return the composed root configuration with any key
   whose name looks secret-shaped redacted before it is returned; this
   component supplies the full configuration value, and Surfaces' own
   presenter decides what is redacted.
 
+**Board and status**
+
+- `board.list` MUST order cards by recency — a card's most recent run start
+  time, falling back to when it entered its current stage — newest first,
+  and MUST paginate by page offset rather than by the shared global-position
+  cursor convention used elsewhere in this component.
+  Each card MUST be enriched at read time with: its primary correlated
+  resource's resolved external reference, when one exists; an elapsed-time
+  duration for its active run and for how long ago its last run started,
+  computed against the call's own current time rather than stored on the
+  projection. `conditionCounts` MUST be computed from the same underlying
+  board projection as the returned page, not from the page's own contents.
+- `status.get` MUST report the same `conditionCounts` the board itself
+  reports, with no additional fields.
+
 **Control plane**
 
+- `pause`/`resume` MUST delegate to the composed control-plane service
+  keyed by the caller's idempotency key and MUST report accepted once the
+  command has been durably recorded, mirroring `pauseRunner`/`unpauseRunner`'s
+  own idempotency contract below.
 - `status` MUST report whether dispatch is currently paused, from the
   control-plane projection; `pausedUntil`/`reason` MUST be present only
   when a pause is currently recorded. A control plane that has never
@@ -75,15 +107,21 @@ for a single WorkItem (see the Work detail component).
   durable command-idempotency guarantee — a caller that retries after a
   process restart, or once the key has aged out of the remembered window,
   MUST NOT expect the prior result back.
-- One `advance` call MUST perform at most one bounded unit of control-plane
-  progress, never more, and MUST catch projections up before and after that
-  step so the returned status reflects it.
+- One `advance` call MUST run a full pass of the same composed runner
+  pipeline the CLI `tick` command and the resident runner loop run —
+  schedules, reactors, one bounded unit of control-plane progress, and one
+  outbound delivery attempt, each surrounded by a projection catch-up — not
+  merely an isolated advance step; `advance` is this component's only entry
+  point into that pipeline, so its returned status always reflects the same
+  work a tick would have done.
 
 **Resources and orchestration**
 
 - Resources' `list` MUST expose every currently known resource; a
   tombstoned (nulled) resource entry MUST be excluded rather than presented
-  as an empty row.
+  as an empty row. Each presented resource MUST carry an `externalUrl` when
+  the composed link resolver can produce one for that resource's adapter/key
+  pair, and MUST omit it otherwise rather than presenting a broken link.
 - Orchestration's `list` MUST support an optional `state` filter and MUST
   exclude any workflow instance whose projection has no current view.
 
@@ -95,7 +133,10 @@ for a single WorkItem (see the Work detail component).
   idempotency is control-plane's own durable per-key dedup, not this
   component's in-process memoization.
 - `list` MUST support an optional `state` filter; `get` MUST report absent
-  for a run id with no recorded view rather than an error.
+  for a run id with no recorded view rather than an error. Both MUST enrich
+  a present run with its owning workflow instance's current `workflowName`
+  and `stage` when that instance is still known, leaving the run unenriched
+  when it is not (e.g. the instance has since been superseded away).
 - `runners` MUST synthesize availability purely from the configured runner
   pools crossed with the currently ineligible runner set computed from the
   control-plane projection at call time. A runner absent from every
@@ -128,10 +169,9 @@ for a single WorkItem (see the Work detail component).
 - `observability.metrics` accepts no time-window parameter at this
   composition; whatever window a caller requests, the response is always
   computed over the entire journal.
-- Board and top-level status read models, and Work's freeze/unfreeze/
-  delete/retry commands, are not composed at this layer — this component
-  wires only the read/command surfaces described above; capabilities not
-  wired here are simply absent from this composition, not rejected at
+- Work's `retry` command is not composed at this layer — this component
+  wires only the read/command surfaces described above; a capability not
+  wired here is simply absent from this composition, not rejected at
   request time.
 - `advance`'s in-process idempotency memoization is bounded to the most
   recently seen 100 keys; older keys are evicted and a repeated call with

@@ -51,14 +51,15 @@ workspace mechanics itself — it only resolves and invokes them.
   the attempt if the resolved pool name is not configured at all. Pool
   resolution happens even for a non-agent-kind Activity, which then simply
   resolves no runner.
-- A runner's `model`/`effort` recorded onto the Run (`RunView.runner`) is
-  sourced from the resolved runner's own configuration entry
-  (`agentRunners[name]`), independent of whatever `model` the Activity
-  handler actually requests from the runner at invocation time (for the
-  built-in agent Activity, that comes from the invocation input or its
-  prompt template). The two values are not guaranteed to agree; the
-  recorded field is descriptive of which configured runner was selected,
-  not a guarantee of what was passed to it.
+- A runner's `model`/`effort`/`cli` recorded onto the Run (`RunView.runner`)
+  is sourced from the resolved runner's own configuration entry
+  (`agentRunners[name]`), and `pool` records the resolved runner pool's own
+  name — independent of whatever `model` the Activity handler actually
+  requests from the runner at invocation time (for the built-in agent
+  Activity, that comes from the invocation input or its prompt template).
+  The two `model` values are not guaranteed to agree; the recorded field is
+  descriptive of which configured runner was selected, not a guarantee of
+  what was passed to it.
 
 **Existing-attempt semantics**
 
@@ -86,8 +87,13 @@ workspace mechanics itself — it only resolves and invokes them.
 - Once claimed, a workspace MUST be acquired when the Activation requests
   `read-only` or `branch` mode, and MUST NOT be acquired for `none`
   (including when no mode is specified). Acquiring for a non-`none` mode
-  without a configured workspace provider, or without a `Repository`-kind
-  resource among the attempt's resources, MUST reject the attempt.
+  without a configured workspace provider MUST reject the attempt.
+  Resolving the resource a workspace is acquired from prefers a
+  `Repository`-kind resource among the attempt's resources; when none is
+  present, an `Issue`- or `PullRequest`-kind resource is used as a fallback
+  clone source instead. Acquiring for a non-`none` mode with none of the
+  three kinds present among the attempt's resources MUST reject the
+  attempt.
 - `RunStarted` MUST be appended before the Activity handler is invoked, and
   the Run's own lease MUST be claimed for the requesting owner (defaulting
   to `"execution"` when none is supplied) as part of the same creation step.
@@ -103,6 +109,10 @@ workspace mechanics itself — it only resolves and invokes them.
   if the Run has already reached a terminal status through a concurrent
   cancellation; the Run aggregate's fold, not this component, is what makes
   a late-arriving fact after termination inert.
+- A reported runner result MUST be translated into a structured
+  `AgentRunResponse` (see the Agent run response translation specification)
+  before it is appended as `RunRunnerResultReported`; a newly-recorded fact
+  never carries the runner's raw output directly.
 - A runner result reporting failure kind `provider-quota-exceeded` for a
   named runner MUST invoke the configured runner-quota callback, naming
   that runner; Execution does not itself decide what happens to a
@@ -120,7 +130,11 @@ workspace mechanics itself — it only resolves and invokes them.
   terminal status by a concurrent cancellation, the Activation claim MUST
   be released, the tracked `AbortController` MUST be removed, and any
   acquired workspace lease MUST be released — in that order — before the
-  attempt call returns or its error propagates.
+  attempt call returns or its error propagates. A workspace lease's
+  `release()` failing MUST NOT propagate from `attempt`: it MUST instead be
+  recorded as a `RunWorkspaceCleanupFailed` diagnostic fact on the Run, and
+  recording that diagnostic is itself best-effort — a failure while
+  recording it is swallowed rather than raised.
 - `attempt` only rejects (propagates an error to its caller) for upfront
   validation failures, an unexpired different-owner lease, a lost
   activation-claim race, or an error before `RunStarted` was appended. Every
@@ -154,6 +168,9 @@ its own beyond what it reads and writes through the Run repository.
 - Runner adapters, and Workspace adapters (both depend on) — resolved and
   invoked once per attempt when the Activity is agent-kind or a workspace
   mode other than `none` is requested, respectively.
+- Agent run response translation (depends on) — invoked to parse a reported
+  runner result into the `AgentRunResponse` this component appends onto
+  `RunRunnerResultReported`.
 - A Run repository (depends on, internal) — loads and appends Run streams
   directly by folding each stream's events on every call, rather than
   reading through the registered Run projection; `list()` reads the whole
@@ -167,9 +184,10 @@ its own beyond what it reads and writes through the Run repository.
 ## Decisions, exclusions, and deferred capability
 
 - There is no partial rollback of a workspace or activation claim on a
-  failed attempt short of the unconditional release in the `finally`
-  path: if that release itself fails (for example the workspace provider's
-  `release` rejects), that failure propagates from `attempt` and can mask
-  an otherwise-successful or already-recorded Run outcome from the caller.
+  failed attempt short of the unconditional release in the `finally` path.
+  A workspace release failure no longer masks the attempt's outcome: it is
+  caught, recorded as a `RunWorkspaceCleanupFailed` diagnostic fact (itself
+  best-effort), and `attempt` still returns the Run's already-recorded
+  outcome normally.
 - Runner pool failover only moves within the pool resolved for one attempt;
   see the module specification's own exclusion.

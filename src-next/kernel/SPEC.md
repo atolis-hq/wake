@@ -1,5 +1,5 @@
 ---
-asOf: 570f5327a406b1993562cbe0e6b47e239b8827ee
+asOf: 4e8c5f6d6955ee3bf6a926063cb1c6446f4b1e0b
 ---
 
 # Kernel — Module Specification
@@ -21,9 +21,9 @@ Kernel owns:
 - The event draft and event envelope shape, and the rules for constructing a
   valid draft.
 - The storage and time ports every other module programs against:
-  `EventJournal` (append/readStream/readAll), `ProjectionStore`
-  (read/write/list/clear), `CheckpointStore` (load/save/reset), `Clock`,
-  `IdGenerator`.
+  `EventJournal` (append/readStream/readAll, plus an optional `readLatest`
+  for backward reads), `ProjectionStore` (read/write/list/clear),
+  `CheckpointStore` (load/save/reset), `Clock`, `IdGenerator`.
 - Identifier branding conventions (`Brand<T, Name>`, `EventId`,
   `CorrelationId`, `CausationId`) and the `EntityRef` shape used to address
   any stream or related entity by kind and id.
@@ -160,6 +160,12 @@ command handling safe to retry.
   than the given cursor, in increasing `globalPosition` order, honouring an
   optional result limit — this is what lets a checkpointed consumer resume
   a forward-only replay of the whole journal.
+- `readLatest` is an optional `EventJournal` capability; a journal MAY leave
+  it unimplemented. When implemented, it MUST return only events with
+  `globalPosition` strictly less than the given cursor (or every event, when
+  the cursor is omitted), in decreasing `globalPosition` order, honouring an
+  optional result limit — this is what lets a consumer read backward from
+  the most recent event without scanning the whole journal forward first.
 
 **Checkpoints and stored projections**
 

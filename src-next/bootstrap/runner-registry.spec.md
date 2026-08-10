@@ -25,6 +25,11 @@ runner — it only builds the registry those other decisions are made against.
   wherever a runner pool references it.
 - Every configured runner name MUST produce exactly one constructed runner
   instance, keyed by that same name.
+- A `fake`-kind runner MUST be constructed with its own configured name and
+  the composed fake-scenario resolver, so a fixture can script that
+  specific runner's behaviour by the name it was registered under; when no
+  `fake-scenarios.yaml` was composed, an empty resolver MUST be used instead
+  of failing construction.
 - A `command`-kind runner MUST have a non-empty `command` configured;
   constructing one without a command MUST fail immediately rather than
   producing a runner that would fail only once invoked.
@@ -40,6 +45,8 @@ runner — it only builds the registry those other decisions are made against.
 
 - Execution — supplies the runner-kind constructors this component selects
   between, and defines the registry shape being assembled.
+- [Fake scenario resolution](fake-scenarios.spec.md) — supplies the resolver
+  every `fake`-kind runner is constructed with.
 - Root configuration (depends on, indirectly) — this component only ever
   operates on an already-validated `execution` configuration section; it
   does not itself validate runner shapes (for example, the reserved

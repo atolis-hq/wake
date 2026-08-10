@@ -57,6 +57,7 @@ workflow name and never proposes one itself.
 | `objective` | string | The WorkItem's initial objective. |
 | `tags` | list of string | The WorkItem's initial tags, already decided by the caller's intake decision. |
 | `revision` | string (optional) | The Resource's observed revision, when the provider reports one. |
+| `title` | string (optional) | The Resource's observed title, when the provider reports one, recorded onto the Resource alongside its discovery. |
 
 ## Dependencies and system role
 

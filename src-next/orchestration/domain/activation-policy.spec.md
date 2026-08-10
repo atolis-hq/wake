@@ -59,8 +59,11 @@ child start requires complete provenance to already be validated.
   consult the current Stage's configured `OutcomeRoute`, retry policy, or
   follow-on Activities for that outcome at all.
 - Otherwise, the outcome kind MUST be looked up against the current Stage's
-  configured routes; an outcome kind with no configured route MUST be
-  ignored ("unconfigured outcome").
+  configured routes. An outcome kind with no configured route MUST NOT be
+  silently ignored: `InstanceBlocked` (reason `unconfigured outcome
+  <kind>`) is appended after the `ActivityOutcomeAccepted` fact, so the
+  outcome is durably recorded as resolved and the instance stops rather than
+  leaving an Activation that looks unresolved.
 - For a non-`done` outcome with a configured route: the retry policy is
   consulted first. If it grants a retry, the retry policy's events are
   appended and dispatch stops; otherwise the route's transition is resolved
@@ -74,6 +77,15 @@ child start requires complete provenance to already be validated.
 
 **Resolving a transition**
 
+- A route whose `watchGates` is configured MUST always emit
+  `SignalWaitStarted` for the reserved `orchestration.watch-gate-verdict`
+  Signal, regardless of what the route's own transition target is — a Watch
+  gate intercepts even a `Stage` or `complete` target the same way an
+  `await` does. The expectation's `from` is exactly the gate's own Watch
+  authority plus `human` (either may satisfy it), its `resume` target is the
+  route's own target, and its `onRejectResume` target is the gate's
+  compiled rejection target. The compiler guarantees a route never
+  configures both `watchGates` and `await`.
 - A route whose `await` is configured MUST always emit `SignalWaitStarted`
   for that Signal, regardless of what the route's own transition target
   is — an await gate intercepts even a `Stage` or `complete` target; the
@@ -105,8 +117,8 @@ child start requires complete provenance to already be validated.
 | `orchestration.activity-outcome-accepted` | A non-waiting outcome is accepted for the pending Activation | The outcome is now part of the instance's history. |
 | `orchestration.repeat-counted` | A cycle-closing route is taken again, below its bound | The route's repeat count has advanced. |
 | `orchestration.instance-completed` | A `complete` target is resolved | The instance is finished. |
-| `orchestration.instance-blocked` | A repeat bound is exceeded | The instance cannot proceed automatically. |
-| `orchestration.signal-wait-started` | An `await` route or an implicit-wait target resolves | The instance is now waiting for the stated Signal. |
+| `orchestration.instance-blocked` | A repeat bound is exceeded, or an accepted outcome's kind has no configured route on the current Stage | The instance cannot proceed automatically. |
+| `orchestration.signal-wait-started` | An `await` route, a `watchGates` route, or an implicit-wait target resolves | The instance is now waiting for the stated Signal. |
 
 ## Conceptual schema
 

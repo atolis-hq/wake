@@ -21,13 +21,20 @@ it reads `delivery.*` facts directly from the journal.
   the journal returns them, and the checkpoint MUST advance to each event's
   own journal position after it is handled, whether or not that event
   carried a `delivery.*` fact — so a processed batch is never replayed.
+- A resolved fact MUST only report an outcome when the named workflow
+  instance's own pending activation is currently waiting, with signal kind
+  `delivery-result`, on that same intent's own event id; any other
+  case — the activation already resolved, waiting on an unrelated signal,
+  or not pending at all — MUST report no outcome, so a delivery resolving
+  after its activation moved on for an unrelated reason (e.g. a technical
+  failure with no configured route) never misattributes its result.
 - A `delivery.confirmed` fact, or a `delivery.reconciled` fact whose result
   is `confirmed`, MUST report a `done` outcome, carrying the delivery
   fact's own event id, to the workflow instance and activation the
-  originating intent named.
+  originating intent named — subject to the awaiting check above.
 - A `delivery.failed` fact MUST report a `failed` outcome, carrying the
   failure's own code as the reason, to the same workflow instance and
-  activation.
+  activation — subject to the same awaiting check.
 - `delivery.attempt-started`, `delivery.ambiguous`, and a
   `delivery.reconciled` fact whose result is not `confirmed` MUST NOT
   report any outcome; the workflow remains waiting.
@@ -49,8 +56,10 @@ it reads `delivery.*` facts directly from the journal.
   dependency for reading delivery facts.
 - Delivery aggregate (this component depends on it) — the sole producer of
   the `delivery.*` facts this component reacts to.
-- Orchestration (this component depends on it) — `acceptOutcome` is called
-  to report the resolved `done`/`failed` outcome.
+- Orchestration (this component depends on it) — `acceptOutcome` reports
+  the resolved `done`/`failed` outcome; `get` reads the workflow instance's
+  own pending activation and waiting state to check it is still awaiting
+  this exact delivery before reporting.
 
 ## Decisions, exclusions, and deferred capability
 

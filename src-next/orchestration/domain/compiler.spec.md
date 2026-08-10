@@ -35,6 +35,23 @@ name is recognised.
   compilation.
 - Every outcome route's `then` MUST be `done`, `await-human`, or another
   configured stage; any other value fails compilation.
+- A route MUST NOT configure both `await` and `watchGates`; declaring both
+  fails compilation.
+- A route's `watchGates` MUST list exactly one entry; today's decision
+  policies support exactly one Watch gate per route, not several. Each
+  entry's `watch` (a bare string, or `{ watch, onReject: { then } }`) MUST
+  reference a Watch id already declared in the same workflow's `watches`; an
+  undeclared reference fails compilation. `onReject.then` defaults to the
+  route's own Stage when omitted, and MUST otherwise be `done`,
+  `await-human`, or another configured stage, validated the same way as a
+  route's own `then`.
+- A `done` outcome route with neither an explicit `await` nor `watchGates`
+  compiles an implicit Await gating on the `approved` Signal from `human` —
+  approval-by-default — unless its Stage sets `requiresApproval: false`. A
+  non-`done` outcome kind is never subject to approval-by-default. This
+  compiled Await is otherwise indistinguishable from one the operator wrote
+  explicitly; downstream components have no notion of "default" vs
+  "explicit".
 - Every follow-on Activity listed on a route MUST validate its own name and
   input the same way a Stage's own Activity does.
 - An `await` config's `from` list MAY reference `human` or `auto` directly;
@@ -87,7 +104,15 @@ workflow.
 | `repeat` | optional `{ max }` | Present when this route closes a cycle; required whenever it does. |
 | `retry` | optional `{ max }` | Present when a non-`done` outcome at this route may retry the Stage. |
 | `activities` | optional list of CompiledFollowOnActivity | Follow-on Activities to run, in order, before transitioning. |
-| `await` | optional CompiledAwait | Present when this route gates its target behind an explicit Signal. |
+| `await` | optional CompiledAwait | Present when this route gates its target behind an explicit Signal (operator-written or approval-by-default). Mutually exclusive with `watchGates`. |
+| `watchGates` | optional list of CompiledWatchGate | Present when this route gates its target behind a Watch's verdict; today always exactly one entry. Mutually exclusive with `await`. |
+
+**CompiledWatchGate**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `watch` | Watch identity | The Watch whose verdict this gate waits for. |
+| `onRejectTarget` | TransitionTarget | The resolved Stage, `complete`, or implicit-wait target to reach on a rejecting verdict; defaults to the route's own Stage when the operator didn't configure `onReject`. |
 
 **CompiledWatch**
 

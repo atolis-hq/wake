@@ -26,10 +26,10 @@ command it receives is currently valid.
   format) before a discovery command is accepted. Resource does not derive
   identity from the external key.
 - Discovering a `ResourceId` for the first time MUST establish it with the
-  given kind, external key, capabilities, and (if given) revision.
+  given kind, external key, capabilities, and (if given) revision and title.
 - Discovering a `ResourceId` that already exists MUST be accepted, but MUST
-  NOT change the Resource's recorded kind, external key, capabilities, or
-  revision: the first-recorded discovery remains canonical for this
+  NOT change the Resource's recorded kind, external key, capabilities,
+  revision, or title: the first-recorded discovery remains canonical for this
   aggregate's own view. A repeat discovery is therefore observably a no-op
   even though it is accepted rather than rejected.
 
@@ -78,7 +78,7 @@ command it receives is currently valid.
 
 | Event | Recorded when | Meaning |
 | --- | --- | --- |
-| `resources.resource-discovered` | A discovery command is accepted | This `ResourceId` now denotes a known, provider-neutral Resource with the given kind, external key, capabilities, and optional revision. Recorded on every accepted discovery, including repeats, though only the first is canonical. |
+| `resources.resource-discovered` | A discovery command is accepted | This `ResourceId` now denotes a known, provider-neutral Resource with the given kind, external key, capabilities, and optional revision and title. Recorded on every accepted discovery, including repeats, though only the first is canonical. |
 | `resources.resource-revision-observed` | A revision command is accepted | The Resource's observed content marker has moved to the new value. |
 | `resources.work-correlation-established` | A correlate command is accepted | A correlation of the given role now exists from this Resource to the named `WorkItemId`. |
 | `resources.work-correlation-retracted` | A retract command is accepted | The named `WorkItemId`'s correlation to this Resource, if any, no longer exists. |
@@ -97,6 +97,7 @@ fact; a stream with no such fact folds to no Resource at all.
 | `externalKey` | `{ adapter, key }` pair | Set by the first discovery fact; unaffected by any later discovery fact. |
 | `capabilities` | list of vocabulary value | Set by the first discovery fact; unaffected by any later discovery fact. |
 | `revision` | optional string | Set by the first discovery fact if given; updated by each accepted revision fact. |
+| `title` | optional string | Set by the first discovery fact if given; unaffected by any later discovery fact. |
 | `primaryCorrelationConflict` | optional conflict record | Absent until the first conflict fact; replaced wholesale by each subsequent conflict fact. |
 | `correlations` | list of `Resource correlation` entry | Starts empty; gains or updates one entry per distinct `workItemId` established, keyed by `workItemId`, and loses an entry on retraction. |
 

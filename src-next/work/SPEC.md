@@ -1,5 +1,5 @@
 ---
-asOf: 570f5327a406b1993562cbe0e6b47e239b8827ee
+asOf: 4e8c5f6d6955ee3bf6a926063cb1c6446f4b1e0b
 ---
 
 # Work — Module Specification
@@ -19,6 +19,8 @@ Work owns:
   relations.
 - Operator consent for automatic acceptance authority (auto-approval), as a
   durable fact separate from lifecycle.
+- Operator-set freeze and permanent-delete flags, as durable facts separate
+  from lifecycle state.
 - Acceptance and rejection of commands that change a WorkItem.
 
 Work does not own:
@@ -45,6 +47,11 @@ Work does not own:
 - **Auto-approval** — an operator-granted consent that a WorkItem's future
   acceptance decisions may be taken automatically. Work records only the
   consent; which decisions are eligible to use it is decided elsewhere.
+- **Frozen** — an operator-set durable flag that pauses further automatic
+  progress on an `open` WorkItem without ending its lifecycle. Work records
+  only the flag; what freezing suppresses is decided elsewhere.
+- **Deleted** — a permanent purge flag, independent of lifecycle state, that
+  once set blocks every further command against the WorkItem's identity.
 - **Relation** — a directed, named connection from one WorkItem to another
   (`relates-to`, `parent-of`, `child-of`).
 
@@ -62,6 +69,18 @@ Work does not own:
   no-op regardless of lifecycle state. Setting it to a new value is a
   state-changing command and is therefore subject to the same open-only rule
   as any other.
+- Setting frozen to the value it already holds MUST be accepted as a no-op
+  regardless of lifecycle state, exactly like auto-approval. Setting it to a
+  new value is a state-changing command and is therefore subject to the same
+  open-only rule as any other.
+- Deletion MUST be accepted for a WorkItem in any lifecycle state — `open`,
+  `closed`, or `cancelled` alike — unlike every other command. Deleting an
+  already-deleted WorkItem MUST be accepted as a no-op. Deletion also clears
+  the frozen flag.
+- Once deleted, a WorkItem MUST reject every further command against its
+  identity, including a repeated creation command and freeze/unfreeze;
+  deletion is more final than `closed` or `cancelled` because it exists
+  independently of lifecycle state.
 - A relation between two WorkItems MUST be idempotent: recording the same
   `(to, relation)` pair against a WorkItem more than once MUST NOT duplicate
   it in that WorkItem's related-items view.
@@ -77,6 +96,9 @@ Work does not own:
 | `work.item-cancelled` | The WorkItem reaches an abandoned, final lifecycle state | The unit of work was abandoned before completion; no further state-changing command applies. |
 | `work.auto-approval-granted` | An operator consents to automatic acceptance for this WorkItem | Future eligible acceptance decisions for this WorkItem may proceed without a human in the loop. |
 | `work.auto-approval-revoked` | An operator withdraws that consent | Future acceptance decisions for this WorkItem require a human again. |
+| `work.item-frozen` | An operator freezes an `open` WorkItem | Further automatic progress on this WorkItem should pause; the lifecycle itself is unchanged. |
+| `work.item-unfrozen` | An operator lifts a freeze | This WorkItem is no longer paused. |
+| `work.item-deleted` | An operator permanently purges the WorkItem | This WorkItem's identity is retired; no further command against it will be accepted. |
 
 ## Conceptual schema
 
@@ -89,6 +111,8 @@ Work does not own:
 | `tags` | list of string | Operator-assigned classification labels; empty by default. |
 | `state` | closed vocabulary: `open` / `closed` / `cancelled` | Lifecycle state; only `open` accepts further state-changing commands. |
 | `autoApprovalGranted` | boolean | Whether operator consent for automatic acceptance is currently in force. |
+| `frozen` | boolean | Whether the WorkItem is currently paused; always `false` once `deleted` is `true`. |
+| `deleted` | boolean | Whether the WorkItem has been permanently purged; once `true`, no further command is accepted. |
 | `relatedWorkItems` | list of `Related WorkItem entry` | The WorkItem's related-item entries (see below). |
 
 **Related WorkItem entry** (child entity of WorkItem)
@@ -119,12 +143,17 @@ Work does not own:
   Work state only through Work's own commands.
 - Control-plane (depends on Work) — cascades a Work cancellation into
   blocking the workflows and Runs correlated to that WorkItem, by calling
-  Work's `cancel` command rather than writing `work.*` facts itself.
+  Work's `cancel` command rather than writing `work.*` facts itself; also
+  reads a WorkItem's `frozen` and `deleted` facts to exclude it from
+  workflow activation advancement.
 
 ## Decisions, exclusions, and deferred capability
 
 - There is no command to reopen a `closed` or `cancelled` WorkItem. A new
   need is a new WorkItem.
+- There is no command to restore a deleted WorkItem. Deletion is permanent
+  and, unlike closing or cancelling, also blocks recreation of the same
+  identity.
 - Work does not version or retain objective history; only the current
   objective is a durable fact of the read model. The event log itself
   remains the historical record.

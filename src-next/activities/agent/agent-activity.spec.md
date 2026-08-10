@@ -19,22 +19,32 @@ result back into one of the Activity's declared outcomes.
 - **Template** — a named, externally rendered prompt (prompt text, optional
   model, allowed tools, and `maxTurns`) an invocation may reference instead
   of supplying a literal prompt.
+- **Untrusted ticket context** — a `template` invocation's WorkItem title,
+  body, and comments, resolved via an injected `AgentContextReader` and
+  supplied to the renderer and the rendered prompt as data, never as
+  instructions.
+- **Runner context** — the `runnerName`, `activationOrdinal`, and `action`
+  attached to a runner request so the runner can correlate its logs to the
+  activation that caused it.
 
 ## Responsibilities and boundaries
 
 Agent Activity owns building the runner request from invocation input (or a
-rendered template), reporting the runner's external-execution identity and
-final result back through the execution context, and translating a
-transport result and sentinel into one of the Activity's declared outcome
-kinds.
+rendered template); for a `template` invocation, resolving untrusted ticket
+context and appending it to the rendered prompt as delimited data; attaching
+runner context to the request when Execution supplies one; reporting the
+runner's external-execution identity and final result back through the
+execution context; and translating a transport result and sentinel into one
+of the Activity's declared outcome kinds.
 
-It does not start or supervise the runner process itself — that is the
-`AgentRunnerPort` implementation Execution resolves. It does not render a
-named template's content — that is an injected `AgentTemplateRenderer`; if a
-template is referenced but no renderer is configured, execution fails with
-an error rather than guessing at prompt content. It does not choose a
-model or allowed-tools default beyond what invocation input or the template
-itself supplies.
+It does not start or supervise the runner process itself (the
+`AgentRunnerPort` Execution resolves), render a named template's content
+(the injected `AgentTemplateRenderer`; a referenced template with no
+renderer configured fails execution with an error, not a guessed prompt),
+or fetch a WorkItem's ticket data itself (the injected `AgentContextReader`;
+it only shapes what that reader returns). It does not choose a model or
+allowed-tools default beyond what invocation input or the template itself
+supplies.
 
 ## Core policies, invariants, and behaviours
 
@@ -69,6 +79,22 @@ itself supplies.
 - The runner's external-execution identity (when the runner provides one)
   and its final result MUST be reported back through the execution context
   before the Activity returns, regardless of the translated outcome kind.
+- Only a `template` invocation resolves untrusted ticket context and
+  receives an untrusted-data block; a literal `prompt` invocation MUST NOT
+  consult `AgentContextReader` and MUST NOT have such a block appended.
+- For a `template` invocation, the renderer MUST receive `workItemId` plus
+  the resolved `issueTitle`, `issueBody`, and `comments`, defaulting to `''`,
+  `''`, and `[]` when no `AgentContextReader` is configured (resolution
+  still happens; it isn't skipped).
+- The rendered prompt MUST have the untrusted ticket context appended as a
+  delimited `<wake-untrusted-data>` block of escaped JSON (`<`, `>`, `&` as
+  Unicode escapes) preceded by an explicit notice that the data is not
+  instructions.
+- When Execution supplies `runnerContext` (`runnerName`, `activationOrdinal`)
+  on the execution context, the runner request MUST include a `context`
+  field carrying that pair plus an `action` equal to the template name, or
+  `'prompt'` for a literal-prompt invocation; with no `runnerContext`
+  supplied, the field MUST be omitted entirely.
 
 ## Conceptual schema
 
@@ -90,14 +116,28 @@ itself supplies.
 | `message` | string (optional) | The runner's own failure message, when `runner-failed` and one was reported. |
 | `retrySafety` | closed-vocabulary value, agent-supplied (optional) | Free-form data in a recognized `FAILED` sentinel; Orchestration, not this Activity, interprets `requires-reconciliation` as disqualifying retry — see the module page. |
 
+**Untrusted ticket context** (resolved per `template` invocation, not
+durable)
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `issueTitle` | string | The WorkItem's ticket title; `''` when no `AgentContextReader` is configured. |
+| `issueBody` | string | The WorkItem's ticket body; `''` when no `AgentContextReader` is configured. |
+| `comments` | list of `{ author, occurredAt, body }` | Ticket comments in the reader's own order; `[]` when no reader is configured. |
+
 ## Dependencies and system role
 
 - Execution (Agent Activity depends on it) — supplies the concrete
-  `AgentRunnerPort`, the abort signal, and the reporting callbacks this
-  Activity calls; without a resolved runner, execution fails.
+  `AgentRunnerPort`, the abort signal, the reporting callbacks, and an
+  optional `runnerContext` (`runnerName`, `activationOrdinal`) this Activity
+  forwards into the runner request; without a resolved runner, execution
+  fails.
 - `AgentTemplateRenderer` (injected, optional) — the source of a named
-  template's prompt/model/allowedTools/maxTurns; not implemented by this
-  module.
+  template's prompt/model/allowedTools/maxTurns; not implemented here.
+- `AgentContextReader` (injected, optional) — resolves a `template`
+  invocation's WorkItem title, body, and comments for the untrusted-data
+  block; not implemented here. Absent, the block carries empty values
+  rather than being skipped.
 - Activity Registry (depends on Agent Activity) — registers this as the
   built-in `agent` Activity.
 
@@ -108,3 +148,6 @@ itself supplies.
   retry policy independently interprets.
 - There is no cancellation or timeout policy owned here; the abort signal
   and any timeout are Execution's concern.
+- The Activity does not sanitize ticket content beyond JSON-escaping
+  `<`/`>`/`&`; guarding against prompt injection is a prompt convention
+  (delimited, labeled-as-data block), not a content policy.

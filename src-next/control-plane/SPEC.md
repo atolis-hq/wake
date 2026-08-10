@@ -1,5 +1,5 @@
 ---
-asOf: 312633a1f45b9182803dbfbce74b650069608da6
+asOf: 4e8c5f6d6955ee3bf6a926063cb1c6446f4b1e0b
 ---
 
 # Control Plane — Module Specification
@@ -13,8 +13,8 @@ resolves, and recording the outcome back into Orchestration. It also owns the
 signals that make Advancement selective (runner and global dispatch pauses),
 the budgets that bound how many times a host may call it in one cycle, and the
 hosts (`tick`, resident) that repeat it. It coordinates a cross-module Work
-cancellation cascade and cron-derived schedule slots as further bounded
-applications of the same coordination role.
+conclusion (close or cancel) cascade and cron-derived schedule slots as
+further bounded applications of the same coordination role.
 
 ## Responsibilities and boundaries
 
@@ -27,8 +27,8 @@ Control Plane owns:
   that derives current runner eligibility from them.
 - Host budgets (`HostBudget`) and the two bounded execution surfaces (`tick`,
   resident) that repeat Advancement under those budgets.
-- The cross-module cascade a Work cancellation triggers across Orchestration
-  and Execution.
+- The cross-module cascade a Work conclusion (close or cancel) triggers
+  across Orchestration and Execution.
 - Recognising which cron-configured schedule slots have elapsed and turning
   each into a WorkItem and a started WorkflowInstance.
 
@@ -68,8 +68,9 @@ Control Plane does not own:
   elapsed slots.
 - **Slot** — one elapsed minute matching a schedule's cron expression,
   identified stably as `schedule:<id>:<slot-timestamp>`.
-- **Cascade** — the ordered cross-module effects one Work cancellation
-  triggers: cancelling active Runs and blocking affected WorkflowInstances.
+- **Cascade** — the ordered cross-module effects one Work conclusion (close
+  or cancel) triggers: cancelling active Runs and blocking affected
+  WorkflowInstances.
 
 ## Core policies, invariants, and behaviours
 
@@ -138,24 +139,26 @@ Control Plane does not own:
 | [Advancement](application/advance-once.spec.md) | policy/process | Recovery, reconciliation, selection, and dispatch for one bounded unit of progress | Reads Orchestration/Execution/Resources ports directly and reads the Control Plane view for runner eligibility; the only capability the hosts and the API advance command invoke. |
 | [Control Plane view](application/control-plane-projection.spec.md) | projection | The current dispatch/runner pause read model and derived runner eligibility | Folds this module's own events; read by Advancement and by the execution runner-status surface. |
 | [Runner Pause and Resume](application/runner-control-service.spec.md) | policy/process | Operator pause/unpause command handling and quota resume-deadline derivation | Appends the `runner-paused`/`runner-resumed` facts the Control Plane view folds; the only composed command path to a manual runner pause. |
+| [Global Dispatch Pause and Resume](application/control-plane-service.spec.md) | policy/process | Operator pause/resume command handling for global dispatch, and the `isPaused` read | Appends the `dispatch-paused`/`dispatch-resumed` facts the Control Plane view also folds (independently); its `isPaused` is Advancement's `isDispatchPaused` gate. |
 | [Dispatch Policy](domain/dispatch-policy.spec.md) | policy/process | Pure fairness-ordered dispatch selection and dispatch-quota pause/resume decisions | Designed to feed Advancement's selection and to drive global dispatch pause events; not currently invoked by any composed caller. |
 | [Schedule Policy and Service](domain/schedule-policy.spec.md) | policy/process | Elapsed-slot computation and the create-WorkItem/start-WorkflowInstance/checkpoint sequence per slot | Calls Work's create command and Orchestration's start command; not currently invoked by any composed host. |
-| [Work Cancellation Policy](application/work-cancellation-policy.spec.md) | policy/process | The ordered cross-module cancellation cascade for one WorkItem | Calls Work's cancel command, then Execution's cancel-active contract, then Orchestration's block command; not currently reachable from any composed command surface. |
-| [Tick and Resident Hosts](infrastructure/tick-host.spec.md) | surface application | Pipeline stage ordering, budget-bounded cycles, and resident repetition | The composed entry point CLI `tick`/`start` use to repeat Advancement; wraps Advancement with no knowledge of its internals. |
+| [Work Conclusion Policy](application/work-cancellation-policy.spec.md) | policy/process | The ordered cross-module close/cancel cascade for one WorkItem | Calls Work's close or cancel command, then Execution's cancel-active contract, then Orchestration's block command; reachable today via the GitHub provider's `WorkConclusion` port. |
+| [Tick, Intake, and Resident Hosts](infrastructure/tick-host.spec.md) | surface application | Pipeline stage ordering, budget-bounded cycles, and resident repetition, split across a fast internal `TickHost`/`RunnerPipeline` and a backed-off `IntakeHost`/`IntakePipeline` | The composed entry point CLI `tick`/`start` use to repeat Advancement and intake; wraps each pipeline with no knowledge of its internals. |
 
 ## Dependencies and system role
 
 - Kernel — event journal, projections, checkpoints, clock, id generation, and
   command-context conventions; Control Plane's foundational dependency for
   its own stream and for every command it issues to other modules.
-- Work (depends on and is depended on by) — Work Cancellation Policy and
-  Schedule Service call Work's own commands; Control Plane never writes
-  `work.*` facts directly.
+- Work (depends on and is depended on by) — Work Conclusion Policy and
+  Schedule Service call Work's own commands; Advancement reads a WorkItem's
+  `frozen`/`deleted` state to exclude it from pending-activation
+  consideration; Control Plane never writes `work.*` facts directly.
 - Orchestration (dependency) — Advancement reads pending/waiting workflow
-  state and accepts outcomes; Work Cancellation Policy blocks workflows;
+  state and accepts outcomes; Work Conclusion Policy blocks workflows;
   Schedule Service starts workflow instances.
 - Execution (dependency) — Advancement dispatches to and recovers active
-  Runs; Work Cancellation Policy cancels active Runs; the runner-quota path
+  Runs; Work Conclusion Policy cancels active Runs; the runner-quota path
   (composed outside this module, in bootstrap) reports quota conditions that
   this module's resume-deadline derivation resolves into a pause.
 - Resources (dependency) — Advancement resolves a selected WorkItem's
@@ -163,9 +166,9 @@ Control Plane does not own:
 - Bootstrap composition root (dependent) — the only place that wires this
   module's application services into concrete adapters and CLI/API surfaces;
   Control Plane itself never selects a concrete adapter.
-- CLI/API surfaces (dependents) — invoke the Tick and Resident Hosts, the
-  runner pause/unpause commands, and the control-plane status/advance API
-  command.
+- CLI/API surfaces (dependents) — invoke the Tick, Intake, and Resident
+  Hosts, the runner and global dispatch pause/resume commands, and the
+  control-plane status/advance API command.
 
 ## Decisions, exclusions, and deferred capability
 
@@ -173,25 +176,29 @@ Control Plane does not own:
   quota pausing are implemented as pure decision logic (Dispatch Policy) but
   are not yet composed into Advancement: the composed system's selection is
   unordered first-pending-candidate, bounded only by one accepted outcome per
-  call, and no composed process ever appends `control-plane.dispatch-paused`
-  or `control-plane.dispatch-resumed`. `controlPlane.maxDispatches` is
-  validated configuration with no consumer today.
+  call. `controlPlane.maxDispatches` is validated configuration with no
+  consumer today. A manual, operator-triggered global dispatch pause/resume
+  is composed and live (Global Dispatch Pause and Resume), but the
+  count-based, quota-driven pause/resume Dispatch Policy computes is not —
+  it is the only capability in that sentence still deferred.
 - Schedule Service is implemented but not invoked by any composed host;
   `controlPlane.schedules` is validated configuration with no consumer today.
-- Work Cancellation Policy is implemented but not reachable from any composed
-  CLI or API command; no operator-facing "cancel work" command exists yet.
+- Work Conclusion Policy is composed and reachable via the GitHub provider's
+  external-close reactor; no direct operator-facing "cancel work" or "close
+  work" command exists yet.
 - `HostStopReason.Paused` is defined and part of `HostResult`'s type, but no
-  code path currently produces it, since global dispatch pausing is not yet
-  wired into Advancement.
+  code path currently produces it: Advancement does consult and act on the
+  global dispatch pause, but `TickHost` maps a `paused` `AdvanceResult` to
+  `HostStopReason.Budget`, not `Paused` (see `advance-once.spec.md`).
 - The resident host's inter-cycle sleep is caller-supplied. Production
   composition runs two independently-scheduled resident hosts (see
   `infrastructure/tick-host.spec.md`): intake backs off exponentially when
   idle using `controlPlane.resident.idleBackoffMs`/`maxIdleBackoffMs`
   (only intake polls the rate-limited GitHub API); the runner loop sleeps a
   fixed interval when idle and not at all when the prior cycle progressed.
-- Composing the above into the live Advancement/host path, and exposing Work
-  cancellation as an operator command, are deferred capabilities, not
-  rejected ones.
+- Composing Dispatch Policy's fairness ordering and quota-driven pause into
+  the live Advancement/host path, and exposing Work conclusion as a direct
+  operator command, are deferred capabilities, not rejected ones.
 
 ## Task 27B synchronization (2026-08-02)
 

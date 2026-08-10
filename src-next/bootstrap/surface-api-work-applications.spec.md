@@ -20,6 +20,19 @@ reads and combines their current projections.
 
 ## Core policies, invariants, and behaviours
 
+**Commands**
+
+- `freeze`, `unfreeze`, and `delete` MUST decode the caller's key as a
+  WorkItemKey first, identically to `detail`, and MUST reject an
+  undecodable or unknown key as not found rather than issuing a command
+  against it.
+- `delete` MUST also retract every resource correlation currently held for
+  that WorkItem, alongside deleting the WorkItem itself, so no resource is
+  left correlated to an id that can no longer be read back.
+- Each command MUST report accepted, keyed by the caller's idempotency key,
+  once its underlying Work command has been issued; this component does not
+  itself wait for or report the command's downstream projection effects.
+
 **List**
 
 - `list` MUST support an optional case-insensitive substring `search` over
@@ -47,6 +60,14 @@ reads and combines their current projections.
   `workflowInstanceId` matching an already-included workflow instance. Runs
   and pull requests are never included by a more direct link to the
   WorkItem itself.
+- The WorkItem's own presented value MUST carry an `externalRef` — its
+  primary correlated resource's adapter-formatted key — when one exists;
+  each presented resource MUST carry a resolved `externalUrl` under the
+  same rule the API surface application's resource listing uses. Included
+  runs MUST be ordered by start time, most recent first, and each MUST be
+  enriched with its owning workflow instance's current `workflowName`/
+  `stage` when that instance is still known, matching the API surface
+  application's own run presentation.
 - The response's freshness metadata MUST reflect every fact that could
   change the assembled content: the WorkItem's own projection; every
   included resource's, workflow instance's, and run's projection; the
@@ -75,10 +96,13 @@ reads and combines their current projections.
 ## Dependencies and system role
 
 - Work — owns the WorkItem projection this component reads for both list and
-  detail, and owns the WorkItemKey encode/decode this component's key
-  handling relies on.
-- Resources — owns resource projections and the work-correlation events this
-  component scans the journal for to compute detail freshness.
+  detail, owns the WorkItemKey encode/decode this component's key handling
+  relies on, and owns the `freeze`/`unfreeze`/`delete` command semantics this
+  component only issues, never implements.
+- Resources — owns resource projections, the work-correlation events this
+  component scans the journal for to compute detail freshness, the resolved
+  external-link presentation `delete` and `detail` both rely on, and the
+  correlation-retraction command `delete` issues per correlated resource.
 - Orchestration — owns the workflow instance projection this component reads
   to determine workflow membership and primary/child structure.
 - Execution — owns the run projection this component reads to determine run

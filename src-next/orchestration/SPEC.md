@@ -1,5 +1,5 @@
 ---
-asOf: 570f5327a406b1993562cbe0e6b47e239b8827ee
+asOf: 4e8c5f6d6955ee3bf6a926063cb1c6446f4b1e0b
 ---
 
 # Orchestration — Module Specification
@@ -67,13 +67,24 @@ Orchestration does not own:
   Activities module and consumed here to decide the next OutcomeRoute.
 - **Signal** — an external fact (a provider event, an operator decision, a
   child's completion) that a WorkflowInstance is explicitly waiting for,
-  matched by kind, and optionally by resource and revision.
+  matched by kind, and optionally by resource and revision, and optionally
+  carrying an approve/reject outcome (e.g. a watch gate's verdict).
 - **Wait** — the state of a WorkflowInstance that is paused for a Signal,
   either because an Activity outcome itself reported waiting, or because an
-  OutcomeRoute or explicit command declared an Await.
+  OutcomeRoute or explicit command declared an Await or a Watch gate.
 - **Approval authority** — who may satisfy a Wait's gate: `human`, `auto`
   (only if the WorkItem carries operator auto-approval consent), or a named
   Watch.
+- **Watch gate** — a `done` OutcomeRoute's alternative to an explicit Await:
+  it starts a wait on the reserved `orchestration.watch-gate-verdict` Signal,
+  satisfiable by either the named Watch or a human, then transitions to the
+  route's own target on an approving (`done`) verdict or to a configured (or
+  same-Stage default) `onReject` target on a rejecting (`rejected`) verdict.
+  A route MUST NOT configure both an explicit Await and a Watch gate.
+- **Approval-by-default** — a `done` OutcomeRoute with neither an explicit
+  Await nor a Watch gate compiles an implicit human-approval Await (the
+  `approved` Signal, from `human`); a Stage opts out with
+  `requiresApproval: false`.
 - **Supplemental activity** — an Activity requested out-of-band against an
   Active WorkflowInstance by a configured Command, queued and run before the
   WorkflowInstance's own pending Stage activity resumes.
@@ -109,14 +120,29 @@ Orchestration does not own:
   naturally idempotent rather than requiring a separate deduplication step.
 - Configuration is validated once, at compile time. A compiled
   WorkflowDefinition MUST NOT contain an unreachable Stage, an unbounded
-  cycle, an outcome route for a kind the named Activity cannot produce, or a
-  transition target that does not exist.
+  cycle, an outcome route for a kind the named Activity cannot produce, a
+  transition target that does not exist, or a route configuring both an
+  explicit Await and a Watch gate.
+- An Activity outcome kind that arrives for a Stage with no configured route
+  for it MUST still be recorded and MUST block the instance
+  (`InstanceBlocked`), not merely be silently ignored — the outcome durably
+  happened even though the Stage never declared how to route it.
+- A Watch MUST only match an event actually produced by the run belonging to
+  its own currently-eligible parent, not merely a matching event type from
+  anywhere in the system; this stops one of a Watch's own already-started
+  children (e.g. a retry re-running the same Activity) from spuriously
+  re-triggering the same Watch for a different eligible parent.
 - Persisted events MUST be decoded through Orchestration's own event decoder
   before they enter the WorkflowInstance fold or any group claim read;
   malformed events are rejected, not silently coerced.
 - Domain decision functions consume typed state and typed input and return
   event drafts to append (or a reason the input was ignored); they perform
   no IO and import no journal, clock, or adapter.
+- Every consumer that needs to know whether a wait renders as "awaiting
+  approval" externally, or how an `orchestration.*` event changes a
+  WorkflowInstance's status, MUST derive it from the module's own
+  `isApprovalAwaitingSignalKind` predicate and `orchestrationStatusTransitions`
+  table respectively, rather than hand-matching event or signal types itself.
 
 ## Event catalogue
 
@@ -135,7 +161,7 @@ Orchestration does not own:
 | `orchestration.repeat-counted` | A Stage-target route with a repeat bound is taken again | The route's repeat count has advanced towards its configured maximum. |
 | `orchestration.retry-counted` | The same Stage is retried after a non-`done` outcome | The Stage-and-outcome-kind retry count has advanced towards its configured maximum. |
 | `orchestration.instance-completed` | A transition target of `complete` is reached | The WorkflowInstance is finished; no further Activation or wait applies. |
-| `orchestration.instance-blocked` | Retries/repeats are exhausted, a supplemental activity fails, a causal cycle is rejected, a Watch budget is exhausted, or an operator/explicit block command applies | The instance cannot proceed automatically and needs human attention. |
+| `orchestration.instance-blocked` | Retries/repeats are exhausted, a supplemental activity fails, a causal cycle is rejected, a Watch budget is exhausted, an outcome kind has no configured route, or an operator/explicit block command applies | The instance cannot proceed automatically and needs human attention. |
 | `orchestration.instance-superseded` | Reserved; not currently produced | Would mark an instance as replaced by another; see Decisions. |
 | `orchestration.child-requested` | A child WorkflowInstance's start is decided | A child is being started under this parent, Watch, and trigger. |
 | `orchestration.child-started` | Immediately following a child request being accepted | The child WorkflowInstance now exists (recorded on the child's own stream). |
@@ -178,7 +204,7 @@ Orchestration does not own:
 | [Signal policy](domain/signal-policy.spec.md) | policy/process | Starting and accepting explicit Signal waits; recording an Activity's own waiting outcome; approval authority acceptance (including reading a WorkItem's auto-approval consent) | Produces the events that resume a Waiting instance; shares transition-target resolution with the activation policy. |
 | [Supplemental activity policy](domain/supplemental-policy.spec.md) | policy/process | Queueing and running out-of-band commands against an Active instance; actor-to-authority authorisation | Interrupts and later hands control back to the Stage's own pending Activation. |
 | [Child workflow policy](domain/child-workflow-policy.spec.md) | policy/process | Deriving a child's deterministic request identity; claiming its group budget; detecting and rejecting causal repeats; reconciling a completed child back to its parent as a Signal | Depends on OrchestrationGroup for the budget claim and on WorkflowInstance to actually start the child. |
-| [Workflow compiler](domain/compiler.spec.md) | adapter | Validating and compiling configured workflow definitions into the immutable runtime form every other component consumes | The boundary where operator-authored configuration becomes typed, branded, invariant-checked data. |
+| [Workflow compiler](domain/compiler.spec.md) | adapter | Validating and compiling configured workflow definitions into the immutable runtime form every other component consumes, including Watch gates and approval-by-default | The boundary where operator-authored configuration becomes typed, branded, invariant-checked data. |
 | [Workflow selector](domain/workflow-selector.spec.md) | policy/process | Matching a WorkItem's tags/kind/adapter facts to a configured workflow name | Consumed by another module's port, not by anything inside Orchestration itself. |
 | [Orchestration projection](application/orchestration-projection.spec.md) | projection | A checkpointed, queryable `WorkflowInstanceView` per WorkflowInstance | Rebuilds purely from `orchestration.*` facts on workflow-instance streams; read by other modules' surfaces rather than by Orchestration's own command handling, which reloads state directly from the stream. |
 
@@ -194,18 +220,26 @@ Orchestration does not own:
   supplies the outcome kinds a Stage may route on and validates each
   Activity's input at compile time; the Outcome vocabulary is defined there
   and only interpreted here.
-- Execution (depends on: this module carries its config) — a Stage's
-  optional workspace mode is passed through an Activation request
-  unmodified; Orchestration does not itself run or provision anything.
+- Execution (depends on: this module carries its config and reads its Run
+  projection) — a Stage's optional workspace mode is passed through an
+  Activation request unmodified; a Watch trigger's owning WorkflowInstance is
+  resolved through Execution's Run repository so a match is scoped to the
+  run that actually produced the triggering event. Orchestration does not
+  itself run or provision anything.
 - Control-plane (depends on this module) — decides when to advance a
   WorkflowInstance, cancels or blocks one on a WorkItem cancellation, and
   reads its projection for tick and read-model purposes.
 - Integrations (depends on this module) — translates inbound provider events
-  into Signals and Activity outcomes accepted here, and selects a workflow
-  for newly admitted work through the workflow-selector port.
+  into Signals (including watch-gate verdicts) and Activity outcomes accepted
+  here, selects a workflow for newly admitted work through the
+  workflow-selector port, and derives externally-visible approval/status
+  state from `isApprovalAwaitingSignalKind` and `orchestrationStatusTransitions`
+  rather than re-deriving it.
 - API and board surfaces (depend on this module) — read the Orchestration
-  projection to present WorkflowInstance state; they do not append to its
-  streams directly.
+  projection to present WorkflowInstance state, deriving the same
+  approval/status facts from `isApprovalAwaitingSignalKind` and
+  `orchestrationStatusTransitions`; they do not append to its streams
+  directly.
 
 ## Decisions, exclusions, and deferred capability
 

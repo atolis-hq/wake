@@ -33,6 +33,9 @@ stored value for its key.
   path separator, since both are encoded directly into the storage path;
   this restriction is specific to the filesystem implementation and is not
   part of the port's own contract.
+- The filesystem implementation's storage-name encoding MUST NOT produce a
+  `%` character in the resulting path segment, so two distinct namespace or
+  key strings can never collide onto the same stored file.
 
 ## Conceptual schema
 

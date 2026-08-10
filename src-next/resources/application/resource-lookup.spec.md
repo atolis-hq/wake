@@ -35,6 +35,9 @@ external key is canonical beyond first-discovered-wins (see below).
   first Resource ever discovered under it. A later discovery fact using the
   same external key but a different `ResourceId` MUST NOT change the index
   entry: the index is first-discovered-wins per external key, permanently.
+  The index key MUST be derived so two distinct `(adapter, key)` pairs never
+  collide, even when the adapter or key value itself contains the separator
+  used to combine them.
 - The per-`ResourceId` summary projection MUST reflect the most recently
   observed kind, external key, capabilities, and revision from that
   Resource's discovery and revision facts, and the most recently recorded
@@ -75,13 +78,14 @@ projections.
 | `externalKey` | `{ adapter, key }` pair | Overwritten by every accepted discovery fact for this `resourceId`. |
 | `capabilities` | list of vocabulary value | Overwritten by every accepted discovery fact for this `resourceId`. |
 | `revision` | optional string | Set by discovery if given; updated by each revision fact. |
+| `title` | optional string | Set by discovery if given; a later discovery fact for the same `resourceId` updates it as given, or drops it if that fact omits it. |
 | `primaryCorrelationConflict` | optional conflict record | Replaced wholesale by each conflict fact. |
 
 **External-key index entry**
 
 | Field | Type | Description |
 | --- | --- | --- |
-| key | `adapter:key` string | Derived from a Resource's external key. |
+| key | URI-component-encoded `adapter:key` string | Derived from a Resource's external key; each component is encoded before joining so a colon inside an adapter or key value cannot be mistaken for the separator. |
 | value | Resource identity or absent | The `ResourceId` first discovered under this external key; absent until a discovery fact for it exists. |
 
 **Resource correlation** (per `resourceId` and, mirrored, per `workItemId`)

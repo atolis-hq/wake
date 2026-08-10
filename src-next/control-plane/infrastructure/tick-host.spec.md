@@ -80,6 +80,11 @@ Decisions below).
   event (resolving immediately if already aborted) and never resolves on a
   timer — so a resident run with no caller-supplied `sleep` performs exactly
   one bounded cycle and then blocks until the signal is aborted externally.
+- `ResidentHost.run` MUST catch any error thrown by the wrapped host's `run`,
+  pass it to the injected `reportError` callback (default: a no-op), and
+  continue the resident loop rather than letting the error propagate and end
+  the resident run. A cycle that throws contributes nothing to the
+  accumulated `advances`/`runs` totals.
 - `ResidentHost.run`'s returned `stoppedBecause` MUST always be
   `HostStopReason.Shutdown`, regardless of the last cycle's own stop reason
   — the only way `run` returns is because the signal aborted, so every
@@ -118,8 +123,15 @@ Decisions below).
 ## Decisions, exclusions, and deferred capability
 
 - `HostStopReason.Paused` is defined and part of `HostResult`'s type, but no
-  path through either host produces it, since global dispatch pausing is
-  not consulted by Advancement.
+  path through either host produces it: Advancement does consult the global
+  dispatch pause and can return `{ kind: 'paused' }`, but `TickHost` maps
+  that (and any other non-`progressed`/`no-work`/`waiting`/`blocked` kind) to
+  `HostStopReason.Budget`, not `Paused` (see `advance-once.spec.md`).
+- The default `reportError` is a no-op; production composition
+  (`bootstrap/surface-cli-applications.ts`) supplies one that writes the
+  error to `stderr` per resident (`intake`/`runner`), so a thrown error is
+  surfaced as a log line, not silently dropped, while the resident loop
+  itself keeps running.
 - The resident host's inter-cycle sleep is caller-supplied. Production
   composition (`bootstrap/surface-cli-applications.ts`) supplies two
   different strategies: the intake `ResidentHost` backs off exponentially on

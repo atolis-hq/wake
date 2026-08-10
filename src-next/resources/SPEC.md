@@ -1,5 +1,5 @@
 ---
-asOf: 312633a1f45b9182803dbfbce74b650069608da6
+asOf: 4e8c5f6d6955ee3bf6a926063cb1c6446f4b1e0b
 ---
 
 # Resources — Module Specification
@@ -28,6 +28,10 @@ Resources does not own:
 - Provider payload shape or translation. Turning provider evidence into a
   `discover`/`correlate` command is an adapter's responsibility, outside this
   module.
+- Resolving an external key to a browsable provider link. Resources declares
+  the resolver contract's shape (`ExternalResourceKey` in, a URL or `null`
+  out); building the actual URL from a provider's locator conventions is an
+  adapter or surface's responsibility.
 - `WorkItemId` minting or Work's own lifecycle. Resources correlates to a
   `WorkItemId` it did not mint and never creates or transitions a WorkItem
   itself.
@@ -48,6 +52,8 @@ Resources does not own:
   discovered from.
 - **Revision** — an opaque marker for a Resource's current version or content
   (e.g. a commit SHA), as observed from the provider.
+- **Title** — an optional human-readable label for a Resource, captured at
+  discovery when the provider offers one, for display purposes only.
 - **Correlation** — a fact linking a Resource to a `WorkItemId` under a role.
 - **Primary correlation** — a Resource's canonical WorkItem; at most one is
   active at a time.
@@ -93,6 +99,7 @@ Resources does not own:
 | `externalKey` | `{ adapter, key }` pair | The provider-owned identity the Resource was discovered from. |
 | `capabilities` | list of vocabulary value (built-in: commentable, reviewable, approvable, mergeable, revisioned, editable, changed-files) | What the Resource supports. |
 | `revision` | optional string | The most recently observed provider-side content marker. |
+| `title` | optional string | A human-readable label captured at discovery, if the provider offered one; display-only. |
 | `primaryCorrelationConflict` | optional conflict record | Present only after a rejected, disagreeing primary correlation attempt; holds the attempted and existing `WorkItemId`. |
 
 **Resource correlation**

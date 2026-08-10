@@ -76,7 +76,8 @@ recovery facts, but its fold applies them, since they share its stream.
 | `execution.run-failed` | This aggregate records a failed attempt, or Recovery cannot establish success | The attempt did not complete; an `ExecutionFailure` explains why. |
 | `execution.run-lease-claimed` / `execution.run-lease-renewed` | Recorded by the liveness component or Recovery | Folded into `lease`; see the liveness and recovery specifications. |
 | `execution.run-external-execution-reported` | Recorded by the Execution service once a runner reports an identity | Folded into `externalExecution`. |
-| `execution.run-runner-result-reported` | Recorded by the Execution service once a runner's invocation settles | Folded into `sessionId`/`tokenUsage`. |
+| `execution.run-runner-result-reported` | Recorded by the Execution service once a runner's invocation settles | Folded into `agent`, when the reported result carries one. |
+| `execution.workspace-cleanup-failed` | Recorded by the Execution service when releasing an acquired workspace after the attempt has concluded throws | Not folded into any `RunView` field; a diagnostic-only fact. |
 | `execution.run-cancellation-requested` / `execution.run-cancellation-confirmed` / `execution.run-cancelled` | Recorded by the liveness component | Folded into `cancellation` and, on confirmation, the terminal `cancelled` status. |
 | `execution.run-recovered` | Recorded by Recovery once the external execution is found complete | Folded into the terminal status implied by the recovered result. |
 | `execution.run-ambiguous` | Recorded by Recovery when the external execution's state cannot be determined | Folded into the terminal `ambiguous` status. |

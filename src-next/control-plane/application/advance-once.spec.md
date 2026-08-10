@@ -7,9 +7,11 @@ makes at most one unit of cross-module progress: it recovers interrupted
 Execution state, reconciles Orchestration outcomes that were never accepted,
 selects one pending unit of orchestration work, dispatches it to Execution
 with its resolved Resources, and records the outcome. This component also
-owns the Tick pipeline: the fixed stage sequence that wraps one Advancement
-call with the surrounding poll/translate/react/deliver stages of one Wake
-tick, producing the composed callback the Tick and Resident Hosts repeat.
+owns the Runner pipeline: the fixed stage sequence that wraps one Advancement
+call with the surrounding schedule/react/deliver stages of the internal half
+of one Wake tick, producing the composed callback the Tick and Resident Hosts
+repeat. The externally rate-limited half (poll, translate inbound) is a
+separate `IntakePipeline`, not owned by this component.
 
 ## Ubiquitous language
 
@@ -33,14 +35,19 @@ tick, producing the composed callback the Tick and Resident Hosts repeat.
 ## Responsibilities and boundaries
 
 Advancement owns the recovery → reconciliation → selection → dispatch →
-outcome-acceptance sequence for one call, and (as the Tick pipeline) the
-ordering of the IO stages around that one call for one tick. It does not
-define what makes an activation pending or a workflow waiting — it reads
-Orchestration's own readiness reports. It does not implement `poll`,
-`translateInbound`, `react`, or `deliver` — those stages are supplied by the
-caller (bootstrap composition) and only sequenced here. It does not decide
-runner eligibility itself — it calls an injected `runnerIneligibility`
-supplier and passes the result through to Execution unchanged.
+outcome-acceptance sequence for one call, and (as the Runner pipeline) the
+ordering of the IO stages around that one call for the internal half of one
+tick. It does not define what makes an activation pending or a workflow
+waiting — it reads Orchestration's own readiness reports. It does not
+implement `runSchedules`, `react`, or `deliver` — those stages are supplied
+by the caller (bootstrap composition) and only sequenced here; `poll` and
+`translateInbound` are not sequenced by this component at all, since they run
+on the separate `IntakePipeline`. It does not decide runner eligibility
+itself — it calls an injected `runnerIneligibility` supplier and passes the
+result through to Execution unchanged. It does not decide whether a WorkItem
+is frozen or deleted — it calls an injected `work.get` lookup per candidate
+and excludes one whose WorkItem is currently frozen or deleted, but Work's
+own aggregate remains the source of that state.
 
 ## Core policies, invariants, and behaviours
 
@@ -58,6 +65,11 @@ supplier and passes the result through to Execution unchanged.
   accepted outcome per call" invariant means in this component.
 - Listing pending activations MUST be scoped to `options.workItemId` when
   given, and MUST cover all WorkItems otherwise.
+- When a `work` lookup is supplied, every listed pending activation MUST be
+  checked against its owning WorkItem before reconciliation or selection
+  considers it; a candidate whose WorkItem is currently `frozen` or `deleted`
+  MUST be excluded from both. When no `work` lookup is supplied, no candidate
+  is excluded on this basis.
 - Reconciliation MUST take priority over new selection: Advancement scans
   pending activations in the order Orchestration returned them and accepts
   the first one whose Execution Run already succeeded with a defined outcome
@@ -70,11 +82,12 @@ supplier and passes the result through to Execution unchanged.
 - When there is no pending activation at all, Advancement checks
   Orchestration's waiting workflows: it reports the first waiting instance
   found (`kind: Waiting`) or `no-work` if none are waiting.
-- Advancement does not consult the global dispatch pause (`pausedUntil`) at
-  all; only the injected `runnerIneligibility` result (default: empty set)
-  is applied, and only to the Execution `attempt` call, by including
-  `ineligibleRunners` in the attempt context solely when that set is
-  non-empty.
+- The global dispatch pause check (`isDispatchPaused`, described below) is
+  the only pause signal Advancement consults before proceeding; runner-level
+  pause is applied differently — only the injected `runnerIneligibility`
+  result (default: empty set) feeds it, and only into the Execution
+  `attempt` call, by including `ineligibleRunners` in the attempt context
+  solely when that set is non-empty.
 - Selecting a candidate MUST mark its activation started in Orchestration
   before the Execution attempt is made, regardless of whether that attempt
   later succeeds or fails.
@@ -131,20 +144,31 @@ supplier and passes the result through to Execution unchanged.
 - Control Plane view (indirect) — the composed `runnerIneligibility`
   supplier reads the projection and calls `ineligibleRunners`; Advancement
   itself depends only on the injected async function, not the projection.
+- Work (indirect) — the composed `work` lookup reads WorkItem `frozen`/
+  `deleted` state; Advancement itself depends only on the injected async
+  function, not Work's own service.
 - Kernel — Clock, IdGenerator, and command-context/correlation conventions
   for every downstream command Advancement issues.
 - Tick and Resident Hosts (dependent) — in production composition, wrap the
-  Tick pipeline (not the bare Advancement call) as their repeated unit of
+  Runner pipeline (not the bare Advancement call) as their repeated unit of
   work.
 - The API `advance` command (dependent) — invokes the bare Advancement
-  function directly, without the surrounding Tick pipeline stages, so an
-  API-triggered advance performs no poll/translate/deliver.
+  function directly, without the surrounding Runner pipeline stages, so an
+  API-triggered advance performs no schedule reconciliation/react/deliver
+  (and, as with any bare Advancement call, no poll/translate — those never
+  ran here, even before the Runner/Intake split).
 
 ## Decisions, exclusions, and deferred capability
 
 - Selection is unordered first-pending-candidate; Dispatch Policy's
   fairness-ordered `select` exists as pure logic but is not called from
   here.
-- `HostStopReason.Paused` is never produced by any path reachable through
-  Advancement, because Advancement never reads or acts on the global
-  dispatch pause recorded in the Control Plane view.
+- Advancement does consult the injected `isDispatchPaused` supplier (default:
+  always `false`) and returns `{ kind: 'paused' }` immediately when it
+  resolves `true`, before recovery or reconciliation; in production this
+  supplier is Control Plane Service's `isPaused` (see
+  `control-plane-service.spec.md`), not a direct read of the Control Plane
+  view projection. `HostStopReason.Paused` is still never produced by any
+  path reachable through Advancement even so, because `TickHost` maps every
+  non-`progressed`/`no-work`/`waiting`/`blocked` `AdvanceResult.kind`
+  (including `paused`) to `HostStopReason.Budget`, not `Paused`.

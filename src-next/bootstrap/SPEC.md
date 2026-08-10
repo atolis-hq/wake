@@ -1,5 +1,5 @@
 ---
-asOf: 312633a1f45b9182803dbfbce74b650069608da6
+asOf: 4e8c5f6d6955ee3bf6a926063cb1c6446f4b1e0b
 ---
 
 # Bootstrap — Module Specification
@@ -31,12 +31,18 @@ Bootstrap owns:
   set.
 - A small number of built-in cross-module behaviours that only make sense
   once the graph exists: rendering an agent activity's prompt from a
-  Wake-home template, reporting an execution runner's quota exhaustion as a
-  control-plane fact, and publishing a workflow's status update onto its
-  target resource's stream.
+  Wake-home template (with a GitHub-sourced work item title/body/comment
+  history available to that render), reporting an execution runner's quota
+  exhaustion as a control-plane fact, publishing a workflow's status update
+  onto its target resource's stream, and resolving a correlated resource's
+  adapter-formatted key to a human-followable external URL when that
+  adapter's link resolver supports it.
 - Assembling the CLI and HTTP API surface applications that translate the
   composed graph's state into the response shapes `surfaces` defines, and
   dispatching commands from those surfaces into the composed services.
+- Scaffolding a brand-new Wake home (`wake init`): default `config.yaml`/
+  `config.workflows.yaml`, prompt templates, `SETUP.md`, and the sandbox
+  Dockerfiles — independently of and before any composition root exists.
 
 Bootstrap does not own:
 
@@ -83,16 +89,36 @@ Bootstrap does not own:
   validated or unvalidated configuration value.
 - The set of projections registered for production composition MUST be
   exactly the union of every composed module's own projection definitions;
-  the tick pipeline's catch-up step and an explicit full rebuild MUST process
+  every pipeline's catch-up step and an explicit full rebuild MUST process
   that identical set — a projection reachable by one path and not the other
   would break the rebuild-equals-fold guarantee the wider system depends on.
-- A tick MUST run its composed stages in a fixed order: catch up
-  projections, poll every configured provider, translate polled provider
-  input into facts, react to newly appended facts (watch and
-  delivery-outcome reactions), advance the control plane by one bounded
-  step, then attempt one outbound delivery. Bootstrap decides what each
-  stage does by supplying it a concrete implementation; it does not itself
-  decide whether a stage runs.
+- Bootstrap composes a tick as two independently invokable pipelines rather
+  than one fixed sequence: an intake pipeline (catch up projections, poll
+  every configured provider, translate polled provider input into facts)
+  and a runner pipeline (catch up projections, run configured schedules,
+  react to newly appended facts — watch, artifact-registration,
+  agent-run-publication, and delivery-outcome reactions — advance the
+  control plane by one bounded step, then attempt one outbound delivery).
+  Only the intake pipeline touches an externally rate-limited API, which is
+  why it is kept separate: a caller that only needs runner-side progress
+  (the HTTP API's `advance` command, a resident runner loop) never pays for
+  a poll. Bootstrap decides what each stage does by supplying it a concrete
+  implementation; it does not itself decide whether a stage runs.
+- Both pipelines MUST check the composed control-plane's pause state before
+  doing anything else, including their own projection catch-up; a paused
+  pipeline invocation MUST be a complete no-op.
+- The composed projection runner's catch-up MUST be safe to call
+  concurrently from every in-process caller that shares it (the runner
+  pipeline's own catch-up, the API's manual tick, a CLI resident
+  projection pump) — Bootstrap MUST serialize overlapping calls in-process
+  so a slower caller's checkpoint save can never race a faster caller's
+  already-advanced one.
+- When composing execution's git workspace provider, resolving a workflow's
+  clone locator MUST derive it from the WorkItem's correlated resource
+  external key, in the form `<owner>/<repo>#<number>`, into a
+  `https://github.com/<owner>/<repo>.git` clone URL; a resource whose
+  external key does not match that shape MUST fail workspace preparation
+  rather than clone an unrelated repository.
 - When composing the built-in agent activity's prompt renderer, a template's
   `maxTurns` frontmatter value MUST be forwarded to the runner verbatim when
   present and MUST be omitted entirely — never defaulted, never clamped —
@@ -105,6 +131,10 @@ Bootstrap does not own:
 - Bootstrap MUST NOT leak a concrete adapter type across a module boundary:
   every collaborator handed to a module's service constructor is typed to
   that module's own interface, never to the concrete adapter's own type.
+- `wake init` MUST scaffold both a source-mode `docker/Dockerfile` and a
+  packaged-mode `docker/Dockerfile.packaged`, regardless of the detected
+  `dev.mode`, so `wake sandbox build` can pick the one its configured mode
+  calls for without the operator re-running init after a mode change.
 
 ## Conceptual schema
 
@@ -140,15 +170,19 @@ Bootstrap does not own:
 | Field | Type | Description |
 | --- | --- | --- |
 | `config` | Root configuration | The validated configuration this graph was built from. |
+| `fakeScenarios` | fixture scenario resolver | Resolves a `fake`-kind runner's scripted-by-name behaviour from an optional `fake-scenarios.yaml`; empty when the file is absent. |
 | `paths` | Wake paths | This graph's derived filesystem layout. |
 | `journal` / `projections` / `checkpoints` | concrete persistence adapters | The one shared event journal, projection store, and checkpoint store every composed service reads and writes through. |
 | `work` / `resources` / `orchestration` / `execution` | module service instances | Each module's own composed service, ready for a surface application or another module's service to call. |
 | `runnerControls` | runner pause/unpause command surface | Backs the execution surface application's pause/unpause commands. |
-| `advanceOnce` | one bounded control-plane advance step | The unit of forward progress a tick, or an `advance` API command, performs. |
-| `projectionRunner` | catch-up/rebuild runner over the registered projection set | Shared by the tick pipeline and the CLI's `validate-state` rebuild command. |
-| `providers` | composed provider instances | One per configured/enabled integration; each contributes poll/inbound/delivery behaviour to the tick pipeline. |
-| `delivery` | outbound delivery service | Delivers the next eligible delivery intent to its resource's provider on each tick. |
-| `pipeline` | the composed tick pipeline | Runs one full tick's fixed stage sequence. |
+| `controlPlane` | control-plane service | Backs both pipelines' pause gate and the API surface application's `pause`/`resume` commands. |
+| `advanceOnce` | one bounded control-plane advance step | The unit of forward progress the runner pipeline's own advance stage performs. |
+| `projectionRunner` | catch-up/rebuild runner over the registered projection set | Shared by both pipelines and the CLI's `validate-state` rebuild command. |
+| `providers` | composed provider instances | One per configured/enabled integration; each contributes poll/inbound/delivery behaviour to the intake and runner pipelines. |
+| `providerFailures` | list of provider composition failures | Providers that failed to construct; surfaced by `doctor` without blocking the providers that did construct successfully. |
+| `delivery` | outbound delivery service | Delivers the next eligible delivery intent to its resource's provider on each runner-pipeline pass. |
+| `intakePipeline` / `runnerPipeline` | the composed intake and runner pipelines | The externally-rate-limited half and the internal half of a tick, each independently invokable. |
+| `resolveResourceLink` | resource external-link resolver | Resolves a correlated resource's adapter/key pair to a human-followable URL, per adapter, when supported. |
 
 ## Child components and interactions
 
@@ -157,11 +191,14 @@ Bootstrap does not own:
 | [Root configuration](config/root-configuration.spec.md) | adapter | Loading, merging, and validating `config.yaml`/`config.workflows.yaml` into the typed root configuration | Its output is the only configuration the composition root and every downstream component reads. |
 | [Fake provider evidence hydration](fake-provider-evidence.spec.md) | adapter | Resolving fixture evidence/effects files for `fake`-shaped integration entries | Runs on the validated root configuration before providers are composed; only fixture entries are affected. |
 | [Runner registry composition](runner-registry.spec.md) | adapter | Selecting a concrete agent-runner implementation per configured runner | Supplies execution's runner registry; the composition root does not itself know which runner kinds exist. |
+| [Fake scenario resolution](fake-scenarios.spec.md) | adapter | Loading an optional `fake-scenarios.yaml` into the resolver a `fake`-kind runner scripts its responses from | Given to runner registry composition so a fixture can script a specific fake runner by its configured name. |
 | [Runner quota reporter](runner-quota-reporter.spec.md) | adapter | Translating an execution runner's quota-exhaustion signal into a control-plane fact | Given to execution as a callback; execution never appends control-plane facts itself. |
 | [Status-publish built-in activity](status-publish-activity.spec.md) | adapter | The `status.publish` Activity, available to every workflow without operator configuration | Registered into the activity registry the composition root builds; appends to the target resource's own stream. |
-| [API surface application](surface-api-applications.spec.md) | surface application | Translating the composed graph's state into the HTTP API's system, control-plane, resources, orchestration, execution, events, and observability responses | The only path the HTTP API and the CLI's own HTTP-hosting commands use to reach the composed graph. |
-| [Work detail and list surface application](surface-api-work-applications.spec.md) | surface application | Aggregating Work, Resources, Orchestration, Execution, and Activities state into one work list/detail response | Composed alongside the rest of the API surface application; the only component that reads across that many modules for one response. |
-| [CLI surface application](surface-cli-applications.spec.md) | surface application | Tick/start/stop, on-demand HTTP hosting, audit read, correlate, and validate-state commands | The only path the CLI entry point uses to reach the composed graph; hosts the HTTP server the API surface application is served over. |
+| [Board projection](board-projection.spec.md) | projection | Folding Work, Orchestration, and Execution events into one per-WorkItem operator-board card | Read by the API surface application's board and status responses; registered for production catch-up/rebuild alongside every other module's own projections. |
+| [Self-update](self-update.spec.md) | policy/process | The update-then-verify-then-rollback sequence this installation's own source checkout (and, when sandboxed, its Docker container) advances through | Invoked by the CLI surface application's `self-update` command with concrete git/Docker collaborators; its failure log is read directly by the API surface application's `system.health` check. |
+| [API surface application](surface-api-applications.spec.md) | surface application | Translating the composed graph's state into the HTTP API's system, control-plane, board, resources, orchestration, execution, events, and observability responses | The only path the HTTP API and the CLI's own HTTP-hosting commands use to reach the composed graph. |
+| [Work detail and list surface application](surface-api-work-applications.spec.md) | surface application | Aggregating Work, Resources, Orchestration, Execution, and Activities state into one work list/detail response, and issuing Work's freeze/unfreeze/delete commands | Composed alongside the rest of the API surface application; the only component that reads across that many modules for one response. |
+| [CLI surface application](surface-cli-applications.spec.md) | surface application | Tick/start/stop, on-demand HTTP hosting, audit read, correlate, validate-state, and the sandbox/self-update/doctor operational commands | The only path the CLI entry point uses to reach the composed graph; hosts the HTTP server the API surface application is served over. |
 
 ## Dependencies and system role
 
@@ -194,8 +231,4 @@ Bootstrap does not own:
 - One composition root is built per `wakeRoot` per process invocation;
   Bootstrap does not support composing two independent application graphs
   against the same Wake home within one process.
-
-## Task 27B synchronization (2026-08-02)
-
-Composition wires provider artifact verification, GitHub label maintenance, schedule checkpoints, DispatchPolicy/global-pause checks, and the intake/runner pipeline split (`root.intakePipeline`, `root.runnerPipeline`). API `tick` is composed through the same `RunnerPipeline` as the CLI one-shot and resident runner loop; CLI `start` additionally runs `root.intakePipeline` on its own resident loop, independently scheduled from the runner loop.
 

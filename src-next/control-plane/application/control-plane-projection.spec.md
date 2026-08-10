@@ -91,8 +91,15 @@ read time from stored history, not by rewriting that history.
 
 ## Decisions, exclusions, and deferred capability
 
-- No composed process ever appends `control-plane.dispatch-paused` or
-  `control-plane.dispatch-resumed`, so `pausedUntil`/`reason` never leave
-  their initial `null`/absent state in the current composed system; the fold
-  logic for them is implemented and exercised only by direct events, not by
-  any live producer.
+- Control Plane Service (`control-plane-service.spec.md`) is a composed,
+  reachable appender of `control-plane.dispatch-paused`/
+  `control-plane.dispatch-resumed` (a manual, operator-triggered pause), so
+  `pausedUntil`/`reason` do leave their initial `null`/absent state in the
+  current composed system. Advancement's own dispatch-pause gate does not
+  read this projection to learn that, though — it calls Control Plane
+  Service's independently-folding `isPaused` instead; this projection's
+  `pausedUntil` is read only for status display (the API's control-plane
+  status surface).
+- The count-based, quota-driven dispatch pause Dispatch Policy computes is
+  not composed into any path that appends these two events; only the manual
+  pause/resume path is live today.

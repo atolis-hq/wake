@@ -65,6 +65,11 @@ and, for `auto` authority, the WorkItem's consent fact.
   `auto` **and** the caller-supplied consent is `true`; `watch` is accepted
   only if a declared `watch` entry's id equals the signal authority's watch
   id.
+- When the current expectation declares an `onRejectResume` target (a Watch
+  gate's wait), the signal's `outcome` — if present — MUST be `done` or
+  `rejected`; a `blocked` or `failed` outcome MUST be ignored ("watch-gate
+  signal outcome is neither done nor rejected"). An expectation with no
+  `onRejectResume` places no constraint on `outcome`.
 - **Auto-approval consent is read from Work, not carried on the Signal
   itself.** The application command that invokes `acceptSignal`
   (`AcceptSignal.execute`) loads the instance's WorkItem via `WorkService`
@@ -74,12 +79,15 @@ and, for `auto` authority, the WorkItem's consent fact.
   the module specification's approval-authority language refers to; the
   domain decision itself never queries Work directly.
 - On acceptance: `SignalAccepted` (carrying the resolved authority) is
-  appended first. If the satisfied expectation declared a `resume` target,
-  the shared transition resolution reaches that target next. If it declared
-  no `resume` target — the case for a wait recorded from an Activity's own
-  `waiting` outcome — the current Stage's own configured Activity is
-  requested again, resuming the interrupted Activation rather than
-  transitioning anywhere.
+  appended first. If the expectation declares an `onRejectResume` target and
+  the signal's `outcome` is `rejected`, the shared transition resolution
+  reaches `onRejectResume` instead — this is how a Watch gate's rejecting
+  verdict routes differently from its approving one. Otherwise, if the
+  satisfied expectation declared a `resume` target, the shared transition
+  resolution reaches that target next. If it declared no `resume` target —
+  the case for a wait recorded from an Activity's own `waiting` outcome —
+  the current Stage's own configured Activity is requested again, resuming
+  the interrupted Activation rather than transitioning anywhere.
 
 **Recording an Activity's own wait (`acceptWaitingOutcome`)**
 
@@ -119,6 +127,7 @@ persisted independently of the `SignalAccepted` fact it produces.
 | `actorDecision` | `{ authorized, evidenceId }` | Decision evidence; both fields required for acceptance. |
 | `providerEventId` | provider event identity | Deduplication key; guards against re-accepting the same signal. |
 | `authority` | optional ApprovalAuthority | The authority making this signal; defaults to `human` when absent. |
+| `outcome` | optional closed vocabulary: `done` / `rejected` / `blocked` / `failed` | The Activity-outcome-shaped verdict this signal carries, e.g. a Watch gate's approve/reject decision; constrained to `done`/`rejected` when the current wait declares `onRejectResume`. |
 
 ## Dependencies and system role
 

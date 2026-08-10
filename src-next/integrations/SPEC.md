@@ -1,5 +1,5 @@
 ---
-asOf: 312633a1f45b9182803dbfbce74b650069608da6
+asOf: 4e8c5f6d6955ee3bf6a926063cb1c6446f4b1e0b
 ---
 
 # Integrations — Module Specification
@@ -23,12 +23,20 @@ Integrations owns:
 - `work-admission` — the single process by which a newly observed, eligible
   external object becomes Wake work: discovering its Resource, creating its
   WorkItem, correlating the two, and starting the WorkItem's workflow.
+- `work-conclusion` — the single, adapter-neutral process by which an
+  already-admitted WorkItem is concluded because its correlated external
+  object reached a terminal state outside Wake.
 - Provider-neutral intake vocabulary — facets, rules, and match modes a
   provider's own translator maps its vocabulary onto to decide eligibility
   and tags.
 - Durable outbound delivery — turning a delivery intent (PR approve/merge,
-  status publish, reply publish) into a confirmed/failed/ambiguous external
-  effect, with crash-safe idempotent retry via reconciliation.
+  status publish, reply publish, agent-run publish) into a
+  confirmed/failed/ambiguous external effect, with crash-safe idempotent
+  retry via reconciliation.
+- Terminal agent-run publication — projecting a finished Agent-activity
+  run into exactly one durable outbound intent per run, addressed to its
+  workflow's primary Resource, so an agent's own outcome reaches its
+  provider through the same delivery pipeline as every other outbound fact.
 - The concrete GitHub provider — polling issues and pull requests into
   evidence, translating that evidence into Work/Resources/Activities
   commands, and translating outbound delivery intents into GitHub API calls.
@@ -67,6 +75,9 @@ Integrations does not own:
   an already-minted Resource/WorkItem identity pair, discovers the Resource,
   creates the WorkItem, correlates them as `primary`, and starts the
   WorkItem's workflow.
+- **work-conclusion** — the process that closes or cancels an already-Open
+  WorkItem once a caller reports its correlated external object reached a
+  terminal state, idempotent against a WorkItem already concluded.
 - **DeliveryIntent** — a durable fact requesting one external effect (PR
   approve, PR merge, status publish, reply publish), identified by the
   event id of the fact that requested it.
@@ -100,6 +111,10 @@ Integrations does not own:
   starts (e.g. an initial PR observation). `work-admission` MUST record it
   after correlation and before starting orchestration, so the workflow's
   entry stage sees it from its first tick.
+- `work-conclusion` MUST be a no-op for a WorkItem that cannot be found or
+  is not currently Open, so a duplicate observation, a replayed event, or
+  Wake's own conclusion echoing back through a later poll is always safe to
+  call again.
 - Each delivery intent owns its own `delivery` stream, keyed by the intent's
   own event id; delivery facts for one intent MUST NOT be recorded against
   another intent's stream.
@@ -123,6 +138,7 @@ Integrations does not own:
 | `integration.<adapter>.*` | A provider adapter polls and reports new or changed external state | Provider evidence now exists on that adapter's own stream, independent of whether it becomes a Wake command. |
 | `status.publish-requested` | A workflow step requests a status update be delivered to a Resource's provider | A durable delivery intent now exists for a status comment. |
 | `reply.publish-requested` | A workflow step requests a reply be delivered to a Resource's provider | A durable delivery intent now exists for a reply comment. |
+| `agent-run.publish-requested` | Agent Run Publication projects a terminal Agent-activity run | A durable delivery intent now exists for that run's own outbound report. |
 | `delivery.attempt-started` | The delivery loop begins one attempt against an intent | An external effect is about to be attempted; a later retry without a terminal fact after this one means the attempt's result is unknown. |
 | `delivery.confirmed` | The provider confirms the intent's effect occurred | The intent is durably done; no further delivery attempt is made. |
 | `delivery.failed` | The provider rejects or errors the intent's effect | The intent is durably failed; no further automatic delivery attempt is made. |
@@ -154,7 +170,7 @@ Integrations does not own:
 | `globalPosition` | integer | The requesting fact's position in the journal. |
 | `workflowInstanceId` | Workflow instance identity | Where the delivery outcome is reported back to. |
 | `activationId` | Activation identity | Which activation's outcome the delivery result corresponds to. |
-| `kind` | closed vocabulary: `pr.approve` / `pr.merge` / `status.publish` / `reply.publish` | What kind of external effect this intent requests. |
+| `kind` | closed vocabulary: `pr.approve` / `pr.merge` / `status.publish` / `reply.publish` / `agent-run.publish` | What kind of external effect this intent requests. |
 | `resourceId` | Resource identity | Which Resource, and therefore which adapter, delivers this intent. |
 | `payload` | kind-specific payload | The effect's own data (revision/body/merge method, as applicable to its kind). |
 | `state` | closed vocabulary: `pending` / `confirmed` / `failed` / `ambiguous` | Current delivery state, folded from this intent's own `delivery.*` facts. |
@@ -169,7 +185,9 @@ Integrations does not own:
 | Component | Type | Owns | Interaction |
 | --- | --- | --- | --- |
 | [Work Admission](application/work-admission.spec.md) | policy/process | The discover → create → correlate → start sequence for one eligible observation | The single path by which any provider's inbound translation turns an eligible observation into Work, Resources, and an orchestration start. |
+| [Work Conclusion](application/work-conclusion.spec.md) | policy/process | The idempotent close-or-cancel sequence for an already-admitted WorkItem | The single path by which any provider's inbound translation reports an observed terminal outcome as a concluded WorkItem. |
 | [Provider Composition & Inbound Polling](application/provider-composition.spec.md) | adapter | Provider registration/composition from config, and idempotent evidence ingestion onto the `integration` stream | Instantiates each configured `ProviderInstance` (GitHub, fake) and is the entry every provider's own poll loop appends evidence through. |
+| [Agent Run Publication](application/agent-run-publication.spec.md) | policy/process | Projecting each terminal Agent-activity run into one `agent-run.publish-requested` delivery intent | Reads Execution's terminal run facts and Orchestration's workflow state, and records the intent the Delivery Intent Projection and Delivery aggregate then carry to a provider. |
 
 **Delivery**
 
@@ -183,54 +201,68 @@ Integrations does not own:
 
 | Component | Type | Owns | Interaction |
 | --- | --- | --- | --- |
-| [GitHub Inbound Evidence](github/inbound-evidence.spec.md) | adapter | Polling GitHub issues/PRs into `integration.github.work-observed` evidence | Feeds Provider Composition's generic ingestion; produces the evidence GitHub Inbound Translation consumes. |
-| [GitHub Inbound Translation](github/inbound-translation.spec.md) | adapter | Turning GitHub evidence into Work/Resources/Activities commands | Consumes evidence from GitHub Inbound Evidence; calls Work Admission for new objects and Activities' PR Observation for pull-request state. |
+| [GitHub Inbound Evidence](github/inbound-evidence.spec.md) | adapter | Polling GitHub issues/PRs/reviews/comments into `integration.github.work-observed`/`integration.github.comment-observed` evidence | Feeds Provider Composition's generic ingestion; produces the evidence GitHub Inbound Translation consumes. |
+| [GitHub Inbound Translation](github/inbound-translation.spec.md) | adapter | Turning GitHub evidence into Work/Resources/Activities/Orchestration commands | Consumes evidence from GitHub Inbound Evidence; calls Work Admission for new objects, Work Conclusion for terminal outcomes, and Activities' PR Observation for pull-request state; signals Orchestration for issue approvals and verified watch-gate verdicts. |
 | [GitHub Outbound Delivery](github/outbound-delivery.spec.md) | adapter | Translating a `DeliveryIntentView` into a GitHub API mutation | The `ExternalDeliveryAdapter` the Delivery aggregate calls for any intent whose Resource is a GitHub resource. |
+| [GitHub Label Reconciliation](github/wake-labels.spec.md) | adapter | Reconciling Wake-owned status/stage/workflow labels on correlated GitHub resources | Runs as the GitHub provider's own `maintenance` cycle, reading Orchestration/Resources/Work state; independent of the delivery-intent pipeline. |
+| [GitHub Agent Context](github/agent-context.spec.md) | adapter | Folding recorded GitHub evidence into a WorkItem's current content and comment history | Implements Activities' `AgentContextReader` for GitHub, composed directly by Bootstrap to build an agent run's prompt context. |
 
 ## Dependencies and system role
 
 - Kernel — event journal, checkpoint store, envelope/stream conventions, and
   closed-vocabulary helpers every component in this module builds on.
-- Work (Integrations depends on it) — `work-admission` creates WorkItems and
-  reads correlation state; Integrations never writes `work.*` facts.
-- Resources (Integrations depends on it) — `work-admission` and GitHub
-  Inbound Translation discover/correlate Resources and read `ResourceView`;
-  Integrations never writes resource-identity facts.
+- Work (Integrations depends on it) — `work-admission` creates WorkItems,
+  `work-conclusion` closes/cancels them, and both read correlation/current
+  state; Integrations never writes `work.*` facts directly.
+- Resources (Integrations depends on it) — `work-admission`, GitHub Inbound
+  Translation, and GitHub Agent Context discover/correlate Resources and
+  read `ResourceView`; GitHub's `resolveGitHubResourceUrl` implements
+  Resources' own `ResourceLinkResolver` contract, composed directly by
+  Bootstrap rather than through `ProviderInstance`; Integrations never
+  writes resource-identity facts.
 - Activities (Integrations depends on it) — GitHub Inbound Translation calls
   PR Observation's `observe`/`acceptReviewSignal`/`requestChangesSignal`
   commands; the Delivery Intent Projection reads the `pr.approve-requested`/
   `pr.merge-requested` facts Activities' PR Approve & Merge Decision
-  produces.
+  produces; GitHub Agent Context implements Activities' `AgentContextReader`
+  contract.
 - Orchestration (Integrations depends on it) — `work-admission` starts a
   WorkItem's workflow; the Delivery Outcome Reactor reports outcomes back to
-  it; a `WorkflowRouter` and `WorkflowCandidate`/`WorkflowName` types are
-  Orchestration's own contracts, supplied to this module by its composition
-  root.
+  it; GitHub Inbound Translation signals it for issue approvals and verified
+  watch-gate verdicts; Agent Run Publication and GitHub Label Reconciliation
+  read its workflow-instance state; a `WorkflowRouter` and
+  `WorkflowCandidate`/`WorkflowName` types are Orchestration's own contracts,
+  supplied to this module by its composition root, as is `WorkConclusion`'s
+  real cascade.
+- Execution (Integrations depends on it) — Agent Run Publication reads
+  `RunRepository` to project a terminal Agent-activity run's own report;
+  GitHub Inbound Translation reads it to verify a watch-gate verdict
+  marker's claimed run before trusting it.
 - Bootstrap (depends on Integrations) — a status/reply-publish Activity
   outside this module records `status.publish-requested`/
   `reply.publish-requested` facts on a Resource's own stream, using this
-  module's own event type constants.
+  module's own event type constants; Bootstrap composes GitHub Agent
+  Context and `resolveGitHubResourceUrl` directly, and supplies the real
+  `WorkConclusion` cascade from control-plane's own conclusion policy.
 - The runtime composition root (outside any module) — instantiates
-  `ProviderInstance`s from configuration and drives the poll, inbound
-  translation, delivery, and outcome-reactor loops each tick. No domain
-  module other than Bootstrap depends on Integrations directly.
+  `ProviderInstance`s from configuration, tolerating a construction failure
+  per provider, and drives the poll, inbound translation, delivery,
+  agent-run-publication, and outcome-reactor loops each tick, plus each
+  provider's own `maintenance` cycle. No domain module other than Bootstrap
+  depends on Integrations directly.
 
 ## Decisions, exclusions, and deferred capability
 
-- GitHub label reconciliation (`reconcileGitHubWakeLabels`) and self-echo
-  detection (`isGitHubWakeEcho`) are implemented and exported but not
-  invoked by the composed GitHub inbound or outbound pipeline: the inbound
-  translator reads labels only as intake-matching facts, and no outbound
-  action writes a label back to GitHub. Reconciling Wake-owned labels
-  against a local projection every tick is not current `src-next` GitHub
-  behavior; these functions exist as building blocks for that future wiring.
-- GitHub PR review-signal evidence (comment/review observation, and the
-  `integration.github.comment-observed` event it would produce) is fully
-  consumed by GitHub Inbound Translation's `/accepted`/`/changes`
-  review-command handling, but the composed GitHub source does not
-  currently poll comments or reviews to produce that evidence. Until a
-  poller is wired, GitHub review acceptance signals cannot reach Activities
-  through polling.
+- GitHub Label Reconciliation is invoked every tick, as the GitHub
+  provider's own `maintenance` cycle, independently of the inbound/outbound
+  delivery pipeline; it writes Wake-owned status/stage/workflow labels back
+  to each open WorkItem's correlated GitHub resources. Self-echo detection
+  (`isGitHubWakeEcho`) remains implemented and exported but is not invoked
+  by any composed path.
+- GitHub PR review evidence (formal reviews) and issue/PR comment evidence
+  are both polled and produce `integration.github.comment-observed`
+  evidence, consumed by GitHub Inbound Translation's formal-review,
+  issue-approval, and watch-gate-verdict handling respectively.
 - The fake provider's evidence events (`fake.work-observed`,
   `fake.review-requested`) intentionally use a `fake.` prefix rather than
   the `integration.<adapter>.` convention real providers use; they are a
@@ -243,8 +275,13 @@ Integrations does not own:
 - `github.publication.postStatusComments` is accepted by configuration but
   not read by any current delivery or translation path; status delivery is
   not currently gated by it.
+- GitHub's own `token` config is now optional: when absent, the GitHub
+  provider resolves a credential from the sandboxed GitHub CLI (`gh auth
+  token`) at construction time, and fails to construct — a failure Provider
+  Composition tolerates rather than crashing — when neither a configured
+  token nor a usable CLI credential is available.
 
 ## Task 27B synchronization (2026-08-02)
 
-Artifact claims are provider-verified before discovery/correlation. Transient verification uncertainty is checkpoint-independent, bounded, and escalated durably; confirmed negatives are failed. Delivery unknown reconciliation is likewise bounded and marks an intent escalated, after which only an operator resolution or a confirmed provider result can clear it. GitHub review intake consumes formal review evidence only. Each tick also reconciles Wake-owned GitHub status/stage/workflow labels for correlated resources while preserving user labels; labels are presentation, not commands that mutate arbitrary workflow stages.
+Artifact claims are provider-verified before discovery/correlation. Transient verification uncertainty is checkpoint-independent, bounded, and escalated durably; confirmed negatives are failed. Delivery unknown reconciliation is likewise bounded and marks an intent escalated, after which only an operator resolution or a confirmed provider result can clear it. GitHub review intake consumes formal review evidence for PR review commands, plus separate issue-comment evidence for issue-level approval commands and watch-gate verdict markers (see GitHub Inbound Translation). Each tick also reconciles Wake-owned GitHub status/stage/workflow labels for correlated resources while preserving user labels; labels are presentation, not commands that mutate arbitrary workflow stages.
 

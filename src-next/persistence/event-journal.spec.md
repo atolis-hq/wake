@@ -23,8 +23,9 @@ sequencing, journal-wide ordering, and append idempotency.
 The Event Journal owns: assigning `recordedAt`, `sequence`, and
 `globalPosition` to each newly accepted draft; enforcing stream-level
 optimistic concurrency; enforcing event-id idempotency, both within a batch
-and against everything previously recorded; and the one true replay order
-across the whole journal.
+and against everything previously recorded; the one true replay order
+across the whole journal; and reading backward from the most recent event
+without a full forward scan.
 
 It does not own: interpreting an event's type or payload; deciding stream
 identity — the caller supplies the `(kind, id)` pair; or retrying on its
@@ -68,6 +69,17 @@ caller's behalf when a write cannot currently be accepted.
 - Every draft in one append call MUST target the same stream as the call
   itself; a draft naming a different stream MUST cause the whole append to
   be rejected.
+
+**Backward reads**
+
+- `readLatest` MUST return only events with `globalPosition` strictly less
+  than the given cursor (or every event, when the cursor is omitted), in
+  decreasing `globalPosition` order, honouring an optional result limit.
+  Both the filesystem and in-memory implementations provide it, so a caller
+  can page backward from the most recent event without first reading the
+  journal forward from the start.
+- `readLatest` MUST NOT advance or otherwise affect any checkpoint; it is a
+  read-only capability alongside `readAll`.
 
 **Corruption**
 

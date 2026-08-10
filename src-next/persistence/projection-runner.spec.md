@@ -46,6 +46,15 @@ tick pipeline, operator diagnostics) schedule that.
   independently; one definition's failure MUST NOT be silently absorbed —
   it MUST surface as a failure of the overall call, and MUST NOT prevent
   the other definitions' passes, already started, from completing.
+- Running every registered definition MUST remember the highest global
+  position at which every definition's pass most recently read fewer events
+  than the batch limit — that is, the point at which all of them were fully
+  drained. While the journal's latest event has not advanced past that
+  point, a further call MUST return 0 immediately, without reading any
+  checkpoint or writing to the projection store. A backlog larger than one
+  call's limit MUST keep being drained across repeated calls, and MUST NOT
+  be treated as drained until every definition's pass reads fewer than the
+  limit in the same call.
 - Rebuilding a definition MUST clear that projection's entire stored
   namespace and reset its checkpoint before replaying, then MUST continue
   running bounded passes until a pass returns fewer events than its batch

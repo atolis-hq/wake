@@ -80,6 +80,10 @@ Does not own:
 - `freeze`/`unfreeze` commands complete synchronously at this boundary and
   MUST return HTTP 200; `delete`/`retry`, control-plane, and runner commands
   are accepted for asynchronous processing and MUST return HTTP 202.
+- The control-plane `tick` command MUST be rejected as a 409 conflict (code
+  `paused`, carrying the current control-plane status) before it reaches the
+  domain application, whenever that status reports the control plane as
+  paused; `pause` and `resume` are never blocked this way.
 - A command or read capability absent from the composed `ApiApplications`
   facade for the current runtime (for example `board`, `status`,
   `execution.runners`, or `work.freeze`) MUST be presented as a 409 conflict
@@ -102,6 +106,15 @@ Does not own:
   condition, response field names the web client also reads) MUST be
   compared and constructed via the shared exported constants in
   `transport-values.ts`, never as ad hoc string literals.
+- A resource's `locatorLabel` MUST be presented as its kind followed by its
+  external key (`"<kind> <externalKey.key>"`); its `externalUrl` MUST be
+  resolved through the injected `ResourceLinkResolver` and omitted whenever
+  the resolver reports no link.
+- A run's `sentinel` MUST be derived from the run's own activity outcome kind
+  (`DONE`/`REJECTED`/`BLOCKED`/`FAILED`/`WAITING`), falling back to the run's
+  own status uppercased when no outcome is present yet; `totalTokens` and
+  `totalCostUsd` MUST be aggregated from the run's agent metadata rather than
+  left for the caller to compute.
 
 ## Conceptual schema
 
@@ -142,7 +155,10 @@ Does not own:
 - Work, Resources, Orchestration, Execution, Control-plane, Observability,
   System (via the `ApiApplications` facade Bootstrap composes) — the actual
   source of every response's data and every command's accept/reject
-  decision; this component holds none of that state itself.
+  decision; this component holds none of that state itself. Resources also
+  supplies the `ResourceLinkResolver` and Execution the token-usage helper
+  this component's presenters call to derive `externalUrl` and
+  `totalTokens`/`totalCostUsd`.
 - [Web API client](../web/web-api-client.spec.md) (depends on this
   component) — treats this component's response and problem shapes as its
   wire contract; a breaking change here is a breaking change for the web

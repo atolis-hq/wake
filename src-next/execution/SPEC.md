@@ -1,5 +1,5 @@
 ---
-asOf: 312633a1f45b9182803dbfbce74b650069608da6
+asOf: 4e8c5f6d6955ee3bf6a926063cb1c6446f4b1e0b
 ---
 
 # Execution — Module Specification
@@ -57,6 +57,13 @@ Execution does not own:
   level. This is distinct from an Activity's own outcome (done, blocked,
   rejected, failed), which is opaque data Execution carries but does not
   interpret.
+- **Agent run response** — a structured `{outcome, displayBody, artifacts,
+  metadata}` record Execution itself derives from an agent-kind runner's raw
+  output once its invocation settles, attached to the Run as `agent`. Its
+  `outcome` uses the same `DONE`/`REJECTED`/`BLOCKED`/`FAILED` vocabulary as
+  an Activity's own outcome, but is Execution's own independent parse of the
+  runner's raw text — it is not derived from, and does not substitute for,
+  the Activity outcome recorded via `RunSucceeded`.
 - **Lease** — a time-bounded ownership claim (`owner`, `acquiredAt`,
   `expiresAt`) over a Run, held by whichever process is currently driving
   it. A Run's lease is distinct from the Activation claim below.
@@ -107,6 +114,10 @@ Execution does not own:
 - A further attempt at an Activation whose most recent Run is `started` and
   currently held under an unexpired lease owned by a different owner MUST
   be rejected.
+- A failure while releasing an acquired workspace after an attempt has
+  already concluded MUST NOT alter the Run's already-recorded terminal
+  outcome; it MUST be recorded as a `RunWorkspaceCleanupFailed` diagnostic
+  fact instead.
 
 ## Event catalogue
 
@@ -118,7 +129,8 @@ Execution does not own:
 | `execution.run-lease-claimed` | An owner first claims a Run | That owner is now responsible for driving this Run to completion. |
 | `execution.run-lease-renewed` | The owning process, or recovery, extends the claim | The lease's expiry has moved forward; the Run is still being actively driven. |
 | `execution.run-external-execution-reported` | The runner reports an identity for the real process/session it started | Recovery now has something to inspect if this Run's lease later expires. |
-| `execution.run-runner-result-reported` | The runner's invocation settles | The raw transport result (including token usage, if any) is now attached to the Run, independent of whether it ultimately succeeds or fails. |
+| `execution.run-runner-result-reported` | The runner's invocation settles | The transport result, together with Execution's own parsed `agent` run response (outcome, display text, and diagnostic metadata including token usage), is now attached to the Run, independent of whether it ultimately succeeds or fails. |
+| `execution.workspace-cleanup-failed` | Releasing an acquired workspace after an attempt has already concluded throws | A diagnostic fact recording why cleanup failed; the Run's already-recorded terminal outcome is unaffected. |
 | `execution.run-cancellation-requested` | A cancellation is requested (operator, Work cancellation, or shutdown) | The Run is now marked for cancellation and its in-process execution is signalled to abort. |
 | `execution.run-cancellation-confirmed` | The requested cancellation is confirmed | The cancellation request now has a confirmation time. |
 | `execution.run-cancelled` | Immediately following confirmation | The Run has reached its terminal `cancelled` status. |
@@ -142,15 +154,23 @@ Execution does not own:
 | `status` | closed vocabulary: `started` / `succeeded` / `failed` / `cancelled` / `ambiguous` | Transport status; terminal once anything but `started`. |
 | `startedAt` | timestamp | When this attempt began. |
 | `finishedAt` | timestamp | Set once the Run reaches a terminal status. |
-| `runner` | Runner descriptor | Which runner (and model/effort) this Run is bound to, if the Activity is agent-kind. |
+| `runner` | Runner descriptor | Which runner (and model/effort/pool/cli) this Run is bound to, if the Activity is agent-kind. |
 | `workspace` | Workspace reference | The acquired workspace's mode and path, if one was requested. |
 | `outcome` | Activity outcome (owned by Activities) | Carried opaquely on `succeeded`; Execution does not interpret it. |
 | `failure` | Execution failure | Carried on `failed` and `ambiguous`. |
 | `lease` | Lease | Current ownership claim over this Run; see the liveness component. |
 | `externalExecution` | External execution reference | What Recovery inspects if the lease expires. |
-| `sessionId` | string | Runner-reported session id, if the runner supports resumable sessions. |
-| `tokenUsage` | Token usage | Runner-reported token counts and cost, if reported. |
+| `agent` | Agent run response | Execution's own parsed record of an agent-kind runner's raw output, once reported; see below. Absent on a Run recorded before this field existed, and never set by Recovery's recorded-result path. |
 | `cancellation` | Cancellation | Present once a cancellation has been requested for this Run. |
+
+**Agent run response**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `outcome` | closed vocabulary: `DONE` / `REJECTED` / `BLOCKED` / `FAILED` | Execution's own parse of the runner's raw output; shares its vocabulary with, but is independent of, an Activity's own outcome. |
+| `displayBody` | string | Human-readable text extracted from the runner's raw output, for display outside Execution. |
+| `artifacts` | list of `{kind, externalKey}`, optional | Reserved for artifacts the agent reported inline in its output; not currently populated by Execution's own parse. |
+| `metadata` | open map of string to scalar | Diagnostic values carried from the runner's result (runner name, model, session id, and token/cost counters when available); `agentTokenUsage()` recovers a token-usage summary from it. |
 
 **Execution failure**
 
@@ -193,7 +213,8 @@ Execution does not own:
 | [Run liveness and cancellation](application/run-liveness-service.spec.md) | policy/process | Lease claim/renewal and the cancellation request/confirm protocol | Keeps a Run's ownership current and lets an operator, Control-plane, or shutdown stop an active Run. |
 | [Recovery](application/recovery-service.spec.md) | policy/process | Reconciling an expired-lease Run with its real external execution | Runs before new work is dispatched so a crashed owner's Runs are resolved before they are touched again. |
 | [Execution service](application/execution-service.spec.md) | surface application | The `attempt`/`list`/`claim`/cancellation entry points; runner resolution, resource validation, workspace acquisition, and activation-claim orchestration around one attempt | The only path by which Orchestration or Control-plane reaches Execution's behaviour. |
-| [Runner adapters](infrastructure/runners/runners.spec.md) | adapter | Translating a `RunnerRequest` into an invoked CLI/process/fake and back into a `AgentRunnerResult` | Invoked by the Execution service once per attempt of an agent-kind Activity; enforces the wall-clock timeout. |
+| [Runner adapters](infrastructure/runners/runners.spec.md) | adapter | Translating a `RunnerRequest` into an invoked CLI/process/fake and back into an `AgentRunnerResult` | Invoked by the Execution service once per attempt of an agent-kind Activity; enforces the wall-clock timeout. |
+| [Agent run response translation](infrastructure/agent-runner-adapter.spec.md) | adapter | Parsing an agent-kind runner's raw `AgentRunnerResult` output into the structured `AgentRunResponse` attached to `RunRunnerResultReported` | Invoked by the Execution service immediately before recording a runner's result onto the Run; downstream consumers (for example the API surface and Integrations) read `RunView.agent` rather than re-parsing raw output themselves. |
 | [Workspace adapters](infrastructure/workspace/workspace.spec.md) | adapter | Preparing and releasing an isolated working directory for a Run | Invoked by the Execution service when a workspace mode other than `none` is requested. |
 | [Prompt templates and transcripts](infrastructure/prompt-templates.spec.md) | adapter | Rendering a wake-root prompt template into a prompt string, and persisting prompt/response text | Used by the agent Activity handler (via Bootstrap wiring) to build the prompt a runner receives. |
 

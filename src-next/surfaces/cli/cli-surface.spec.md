@@ -32,7 +32,8 @@ Owns:
   facade.
 - Shaping output as newline-delimited JSON.
 - The standalone command primitives' own narrow behavioural contracts: home
-  directory scaffolding, sandbox build/up/down passthrough, doctor
+  directory scaffolding, sandbox build/up/down passthrough, resident-process
+  supervision inside the container, interactive credential setup, doctor
   diagnostics ordering, self-update idempotency, audit journal reads,
   resource correlation, and smoke passthrough.
 - Redacting secret-shaped fields from process log text before it is written
@@ -48,6 +49,11 @@ Does not own:
 - Wiring `init`, `sandbox`, `doctor`, `self-update`, or `smoke` into the
   parsed command surface — none is currently reachable from
   `parseWakeCommand`.
+- Deciding whether to auto-exec into a sandboxed process. `WakeCliApplications`
+  optionally carries a `sandboxRuntime` capability (`hasDockerfile`/`exec`),
+  but neither `parseWakeCommand` nor `runWakeCommand` ever reads it; that
+  decision belongs to the process entrypoint that composes this facade,
+  before `runWakeCommand` is called.
 
 ## Core policies, invariants, and behaviours
 
@@ -73,7 +79,35 @@ Does not own:
   line summarizing their result; `start` MUST write exactly one JSON line
   when it returns; `audit` MUST write one JSON line per audit record, in the
   order the journal returns them; `stop`, `api`, and `ui` write nothing
-  themselves — their applications own any output.
+  themselves — their applications own any output. `sandbox-entrypoint` also
+  writes nothing and, unlike every other operational command, MUST NOT
+  return under normal operation.
+- `sandbox-entrypoint` MUST keep its container process alive indefinitely
+  regardless of whether the resident `wake start` process can run, and, when
+  supervision is enabled, MUST restart `wake start` after every exit (any
+  exit code), recording the new process's pid to a pid file before waiting
+  on its exit and pausing a fixed delay before the next restart.
+- `sandbox-setup` MUST unconditionally prepare the Codex home directory and
+  ensure an SSH key exists before prompting, then interactively ask, in a
+  fixed order (GitHub, then Claude, then Codex, then Cursor), whether to
+  configure each provider's auth, skipping any provider the operator
+  declines.
+- Sandbox image build MUST choose its build context and Dockerfile from
+  `host.development.mode`: source mode builds `development.repoRoot` with
+  `docker/Dockerfile`; packaged mode builds the wake root with
+  `docker/Dockerfile.packaged`. When a build-version resolver is supplied,
+  the build MUST pass it as a `WAKE_BUILD_TAG` (source) or `WAKE_VERSION`
+  (packaged) build argument.
+- Sandbox `setup` and `resume` exec MUST run with the container's working
+  directory set to the mounted wake root. Sandbox `up`/container creation MAY
+  publish a `127.0.0.1:<port>:<port>` host port mapping when a published
+  port is configured.
+- The Docker CLI primitive's resident-liveness check (used to confirm a
+  self-update container swap actually came up) MUST poll, up to a bounded
+  attempt count with a fixed interval between attempts, for the resident
+  process's pid file, a live pid, and the pid's expected cmdline fragment
+  all being true inside the container, and MUST throw once attempts are
+  exhausted without all three holding.
 - `init` MUST refuse to scaffold into a non-empty target directory, and MUST
   create the fixed runtime directory set (`events`, `projections`,
   `checkpoints`, `locks`, `transcripts` under `.wake/`, plus `workspaces`)

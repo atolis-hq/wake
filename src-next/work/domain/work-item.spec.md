@@ -10,11 +10,12 @@ fact recorded for that identity.
 ## Responsibilities and boundaries
 
 WorkItem owns command acceptance/rejection, lifecycle transitions, objective
-revision, relation recording, and auto-approval consent for its own identity.
-It does not decide *when* a caller should close, cancel, or grant/revoke
-consent — it only enforces whether the command it receives is currently
-valid. It does not validate the existence or state of a relation's target
-WorkItem; a relation's `to` identity is recorded as given.
+revision, relation recording, auto-approval consent, and the freeze and
+delete flags for its own identity. It does not decide *when* a caller should
+close, cancel, grant/revoke consent, freeze, or delete — it only enforces
+whether the command it receives is currently valid. It does not validate the
+existence or state of a relation's target WorkItem; a relation's `to`
+identity is recorded as given.
 
 ## Core policies, invariants, and behaviours
 
@@ -30,6 +31,8 @@ WorkItem; a relation's `to` identity is recorded as given.
   creation fact for that identity.
 - Creating a `WorkItemId` that already exists and is `closed` or `cancelled`
   MUST be rejected.
+- Creating a `WorkItemId` that already exists and is deleted MUST be
+  rejected, the same as any other command against a deleted identity.
 - The objective MUST be non-empty for both creation and revision.
 
 **Existence and lifecycle gating**
@@ -50,6 +53,30 @@ WorkItem; a relation's `to` identity is recorded as given.
   no-op regardless of lifecycle state, and MUST NOT record a new fact.
 - Setting auto-approval to a new value is a state-changing command and is
   therefore rejected unless the WorkItem is `open`.
+
+**Freeze**
+
+- Setting frozen to the value it already holds MUST be accepted as a no-op
+  regardless of lifecycle state, and MUST NOT record a new fact — the same
+  pattern as auto-approval.
+- Setting frozen to a new value is a state-changing command and is therefore
+  rejected unless the WorkItem is `open`.
+- Deletion clears frozen: a deleted WorkItem is never reported as frozen,
+  regardless of its frozen state immediately before deletion.
+
+**Deletion**
+
+- Deletion MUST be accepted for a WorkItem in any lifecycle state — `open`,
+  `closed`, or `cancelled` alike. Unlike every other state-changing command,
+  it is not gated on the WorkItem being `open`, because deletion is a purge
+  escape hatch rather than a lifecycle transition.
+- Deleting an already-deleted WorkItem MUST be accepted as a no-op and MUST
+  NOT record a new fact.
+- Once deleted, a WorkItem MUST reject every subsequent command that would
+  record a new fact against it, including creation, revision, linking,
+  closing, cancelling, auto-approval changes, and freeze/unfreeze — even one
+  that would otherwise be valid for the WorkItem's lifecycle state. Deletion
+  is independent of and more final than `closed` or `cancelled`.
 
 **Duplicate relations**
 
@@ -75,6 +102,9 @@ WorkItem; a relation's `to` identity is recorded as given.
 | `work.item-cancelled` | A cancel command is accepted | This WorkItem has reached its final, abandoned lifecycle state, for the stated reason. |
 | `work.auto-approval-granted` | A grant command changes consent from withheld to granted | This WorkItem's future eligible acceptance decisions may now proceed automatically. |
 | `work.auto-approval-revoked` | A revoke command changes consent from granted to withheld | This WorkItem's future acceptance decisions now require a human again. |
+| `work.item-frozen` | A freeze command changes frozen from `false` to `true` | This WorkItem is now paused; its lifecycle state is unchanged. |
+| `work.item-unfrozen` | An unfreeze command changes frozen from `true` to `false` | This WorkItem is no longer paused. |
+| `work.item-deleted` | A delete command is accepted for a not-yet-deleted identity | This WorkItem's identity is now permanently purged; no further command against it will be accepted. |
 
 ## Conceptual schema
 
@@ -87,6 +117,8 @@ WorkItem state is the fold of its own `work.*` facts, keyed by `workItemId`.
 | `tags` | list of string | Set by the first fact; not revisable after creation. |
 | `state` | closed vocabulary: `open` / `closed` / `cancelled` | Starts `open` on creation; moves to `closed` or `cancelled` and then never changes again. |
 | `autoApprovalGranted` | boolean | Starts `false` on creation; flips on each accepted grant/revoke. |
+| `frozen` | boolean | Starts `false` on creation; flips on each accepted freeze/unfreeze; forced back to `false` on deletion. |
+| `deleted` | boolean | Starts `false` on creation; becomes `true` on an accepted delete and then never changes again. |
 | `relatedWorkItems` | list of `Related WorkItem entry` | Starts empty; gains one entry per distinct `(workItemId, relation)` pair accepted (see below). |
 
 **Related WorkItem entry** (child entity)
@@ -110,6 +142,9 @@ WorkItem state is the fold of its own `work.*` facts, keyed by `workItemId`.
 
 - There is no reopen command. A closed or cancelled WorkItem's identity is
   permanently final; a new need is expressed as a new WorkItem.
+- There is no restore command. A deleted WorkItem's identity is permanently
+  final and, unlike closing or cancelling, cannot even be recreated by a
+  later creation command against the same identity.
 - WorkItem does not validate relation graph consistency (e.g. it does not
   reject a `child-of` cycle, or require a reciprocal relation on the target).
 - WorkItem does not retain prior objectives as queryable history; the event

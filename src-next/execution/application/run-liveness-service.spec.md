@@ -108,7 +108,7 @@ lease-renewal event to record a takeover.
 | Field | Type | Description |
 | --- | --- | --- |
 | `requestedAt` | timestamp | When cancellation was requested; overwritten by a later request before confirmation. |
-| `reason` | closed vocabulary: `operator` / `work-cancelled` / `workflow-superseded` / `timeout` / `shutdown` | Why cancellation was requested. |
+| `reason` | closed vocabulary: `operator` / `work-cancelled` / `work-closed` / `workflow-superseded` / `timeout` / `shutdown` | Why cancellation was requested. |
 | `confirmedAt` | timestamp, optional | Set once confirmation is recorded; absent while cancellation is only requested. |
 
 ## Dependencies and system role

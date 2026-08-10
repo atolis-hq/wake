@@ -81,6 +81,16 @@ it is given.
 
 **Reacting to a Watch match**
 
+- When the triggering event is a run-lifecycle fact (e.g.
+  `execution.run-succeeded`), the reactor first resolves the run's own
+  owning WorkflowInstance id and discards any (parent, Watch) match whose
+  parent is not that run's own instance. A run-lifecycle event fires for
+  every run in the system, including one belonging to a Watch's own
+  already-started child re-running its Activity on retry; without this
+  scoping, any currently-eligible parent's declared event type would match
+  regardless of which run actually produced it, spuriously re-triggering
+  the Watch. A triggering event that is not a run-lifecycle fact is not
+  scoped this way.
 - For each (parent, Watch) match returned for a triggering event, the
   child's causal cycle is the triggering event's own `causalCycleId` when
   its payload carries one, or the derived request identity itself
@@ -169,6 +179,10 @@ budget claim, returned to the caller instead of a started child.
 - Activation and transition policy / its query surface (depended on) —
   supplies the (parent, Watch) matches for a triggering event; this
   component does not itself scan for Watch matches.
+- Execution (depended on) — the watch reactor resolves a run-lifecycle
+  triggering event's owning WorkflowInstance through Execution's Run
+  repository, to scope a Watch match to the run that actually produced the
+  event.
 - Kernel — event journal and checkpoint conventions for the watch reactor's
   own durable, resumable sweep of the event journal.
 

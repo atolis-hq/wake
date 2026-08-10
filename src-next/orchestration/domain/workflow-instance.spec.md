@@ -134,6 +134,11 @@ workflow-instance stream identified by `workflowInstanceId`.
   aggregate's fold) — both derive `WorkflowInstanceView` by applying the
   same fold to `orchestration.*` facts, one as a checkpointed materialised
   view, the other by rereading the stream directly before each command.
+- Integrations and board/API surfaces outside this module (depend on this
+  aggregate's exported `orchestrationStatusTransitions` table) — derive an
+  externally-visible status (e.g. a GitHub label, a board column) from the
+  same event-type-to-status mapping the fold itself uses, rather than
+  hand-matching `orchestration.*` event types independently.
 
 ## Decisions, exclusions, and deferred capability
 
