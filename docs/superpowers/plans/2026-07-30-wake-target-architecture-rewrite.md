@@ -75,6 +75,12 @@ The plan deliberately builds only enough of each module to complete the first
 golden path, then expands by capability. Do not finish an entire technical
 layer before running the E2E spine.
 
+**Status (as of 2026-08-10):** Packets A-E complete (Tasks 1-26, 25A, 25C,
+25D). Packet F in progress: Task 27A (behavioural specifications) and Task
+27B (legacy-preservation gap closure) are complete; Task 27
+(functional-decision and scenario coverage), Task 28 (atomic cutover), and
+Task 29 (final documentation and audit) remain open.
+
 ## 3. Target file map
 
 This map fixes ownership. Add smaller files inside the listed areas when a file
@@ -233,7 +239,7 @@ test-next/
 - Create: `scripts/check-functional-catalogue.mjs`
 - Modify: `package.json`
 
-- [ ] **Step 1: Record the legacy verification baseline**
+- [x] **Step 1: Record the legacy verification baseline**
 
 Run:
 
@@ -244,7 +250,7 @@ npm run verify
 Expected: PASS. Record any pre-existing failure in the catalogue introduction
 with the exact command and output; do not repair it as part of this task.
 
-- [ ] **Step 2: Freeze the test and surface evidence lists**
+- [x] **Step 2: Freeze the test and surface evidence lists**
 
 Run:
 
@@ -274,7 +280,7 @@ $wakeSurfaceEvidence |
 Expected: the first file contains every current `*.test.ts` path exactly once;
 the second contains every listed path that exists.
 
-- [ ] **Step 3: Write the catalogue using the enforced row format**
+- [x] **Step 3: Write the catalogue using the enforced row format**
 
 Create the document with these columns:
 
@@ -318,7 +324,7 @@ Every line in both evidence files must appear in at least one catalogue
 must name at least one target scenario ID. `remove` and `defer` rows must state
 the reason in the intent/constraint cell.
 
-- [ ] **Step 4: Add a deterministic catalogue checker**
+- [x] **Step 4: Add a deterministic catalogue checker**
 
 Create `scripts/check-functional-catalogue.mjs`:
 
@@ -376,7 +382,7 @@ if (failures.length > 0) {
 }
 ```
 
-- [ ] **Step 5: Add and run the catalogue command**
+- [x] **Step 5: Add and run the catalogue command**
 
 Add to `package.json`:
 
@@ -392,7 +398,7 @@ npm run check:catalogue
 
 Expected: `Catalogue valid: <non-zero> decisions`.
 
-- [ ] **Step 6: Obtain one catalogue disposition review**
+- [x] **Step 6: Obtain one catalogue disposition review**
 
 Present the grouped `correct`, `consolidate`, `remove`, and `defer` rows to the
 operator or designated architecture reviewer. Resolve comments in the
@@ -405,7 +411,7 @@ catalogue and record:
 Do not start target implementation while this line is absent. Later changes to
 these dispositions require a new dated review line.
 
-- [ ] **Step 7: Commit the evidence baseline**
+- [x] **Step 7: Commit the evidence baseline**
 
 ```powershell
 git add docs/architecture scripts/check-functional-catalogue.mjs package.json
@@ -422,7 +428,7 @@ git commit -m "docs: catalogue Wake capability decisions"
 - Modify: `package.json`
 - Modify: `package-lock.json`
 
-- [ ] **Step 1: Write the target-lane smoke test**
+- [x] **Step 1: Write the target-lane smoke test**
 
 Create `test-next/architecture/build-lane.test.ts`:
 
@@ -436,7 +442,7 @@ describe('target build lane', () => {
 });
 ```
 
-- [ ] **Step 2: Run the test before the lane exists**
+- [x] **Step 2: Run the test before the lane exists**
 
 Run:
 
@@ -446,7 +452,7 @@ npx vitest run --config vitest.next.config.ts
 
 Expected: FAIL because `vitest.next.config.ts` does not exist.
 
-- [ ] **Step 3: Add isolated TypeScript and Vitest configuration**
+- [x] **Step 3: Add isolated TypeScript and Vitest configuration**
 
 Create `tsconfig.next.json`:
 
@@ -481,7 +487,7 @@ export default defineConfig({
 });
 ```
 
-- [ ] **Step 4: Install the approved OSS guardrail tools**
+- [x] **Step 4: Install the approved OSS guardrail tools**
 
 Run:
 
@@ -491,7 +497,7 @@ npm install --save-dev dependency-cruiser knip
 
 Expected: `package.json` and `package-lock.json` contain both dev dependencies.
 
-- [ ] **Step 5: Add target scripts**
+- [x] **Step 5: Add target scripts**
 
 Add these `package.json` scripts:
 
@@ -504,7 +510,7 @@ Add these `package.json` scripts:
 
 Leave the legacy `build`, `test`, and `verify` scripts unchanged.
 
-- [ ] **Step 6: Run the isolated lane**
+- [x] **Step 6: Run the isolated lane**
 
 Run:
 
@@ -517,7 +523,7 @@ npm test
 Expected: target build and one target test PASS; the complete legacy test suite
 still PASSes.
 
-- [ ] **Step 7: Commit the lane**
+- [x] **Step 7: Commit the lane**
 
 ```powershell
 git add package.json package-lock.json tsconfig.next.json vitest.next.config.ts test-next
@@ -538,7 +544,7 @@ git commit -m "build: add isolated target architecture lane"
 - Modify: `eslint.config.js`
 - Modify: `package.json`
 
-- [ ] **Step 1: Write the manifest architecture test**
+- [x] **Step 1: Write the manifest architecture test**
 
 Create `test-next/architecture/module-manifests.test.ts`:
 
@@ -575,7 +581,7 @@ describe('module manifests', () => {
 });
 ```
 
-- [ ] **Step 2: Run the test and confirm missing manifests**
+- [x] **Step 2: Run the test and confirm missing manifests**
 
 Run:
 
@@ -585,7 +591,7 @@ npx vitest run --config vitest.next.config.ts test-next/architecture/module-mani
 
 Expected: FAIL with `ENOENT` for the first missing `module.json`.
 
-- [ ] **Step 3: Create all module manifests**
+- [x] **Step 3: Create all module manifests**
 
 Use this exact dependency map:
 
@@ -626,7 +632,7 @@ Use `kind: "foundation"` for `kernel`, `kind: "supporting"` for `persistence`,
 `integrations`, `kind: "surface"` for `surfaces`, and `kind: "composition"` for
 `bootstrap`. Use `kind: "domain"` for the other modules.
 
-- [ ] **Step 4: Create concise module charters and public entries**
+- [x] **Step 4: Create concise module charters and public entries**
 
 Every `MODULE.md` must contain exactly these top-level sections:
 
@@ -652,7 +658,7 @@ file under 150 lines. Create an empty `index.ts` containing:
 export {};
 ```
 
-- [ ] **Step 5: Implement the manifest checker**
+- [x] **Step 5: Implement the manifest checker**
 
 Create `scripts/check-module-manifests.mjs`:
 
@@ -703,7 +709,7 @@ if (failures.length > 0) {
 }
 ```
 
-- [ ] **Step 6: Add dependency-cruiser rules**
+- [x] **Step 6: Add dependency-cruiser rules**
 
 Create `dependency-cruiser.config.mjs` with these required rules:
 
@@ -793,7 +799,7 @@ export default {
 };
 ```
 
-- [ ] **Step 7: Add maintainability limits and Knip config**
+- [x] **Step 7: Add maintainability limits and Knip config**
 
 Add this TypeScript override to `eslint.config.js`:
 
@@ -826,7 +832,7 @@ Add this `package.json` script:
 "lint:architecture": "node scripts/check-module-manifests.mjs && depcruise --config dependency-cruiser.config.mjs src-next"
 ```
 
-- [ ] **Step 8: Verify guardrails**
+- [x] **Step 8: Verify guardrails**
 
 Run:
 
@@ -838,7 +844,7 @@ npm run verify:next
 
 Expected: all commands PASS and report eleven valid modules.
 
-- [ ] **Step 9: Commit the boundaries**
+- [x] **Step 9: Commit the boundaries**
 
 ```powershell
 git add src-next test-next/architecture dependency-cruiser.config.mjs knip.next.json scripts/check-module-manifests.mjs eslint.config.js package.json
@@ -858,7 +864,7 @@ git commit -m "build: enforce target module boundaries"
 - Create: `test-next/kernel/event-envelope.test.ts`
 - Create: `test-next/persistence/in-memory-event-journal.test.ts`
 
-- [ ] **Step 1: Write event-envelope and optimistic-append tests**
+- [x] **Step 1: Write event-envelope and optimistic-append tests**
 
 Create `test-next/kernel/event-envelope.test.ts`:
 
@@ -897,7 +903,7 @@ it('reads all events after an exclusive global position');
 it('returns the prior append for a repeated event id instead of duplicating it');
 ```
 
-- [ ] **Step 2: Run the tests and confirm missing kernel exports**
+- [x] **Step 2: Run the tests and confirm missing kernel exports**
 
 Run:
 
@@ -907,7 +913,7 @@ npx vitest run --config vitest.next.config.ts test-next/kernel test-next/persist
 
 Expected: FAIL because `src-next/kernel/index.ts` does not export the contracts.
 
-- [ ] **Step 3: Define the universal identifiers and envelope**
+- [x] **Step 3: Define the universal identifiers and envelope**
 
 Use these contracts:
 
@@ -991,7 +997,7 @@ export interface CommandContext {
 `createEventDraft` validates non-empty identifiers, valid ISO timestamps,
 non-empty event type, and returns `schemaVersion: 1`. It performs no I/O.
 
-- [ ] **Step 4: Define the journal and clock ports**
+- [x] **Step 4: Define the journal and clock ports**
 
 ```ts
 // contracts/event-journal.ts
@@ -1025,7 +1031,7 @@ export interface IdGenerator {
 }
 ```
 
-- [ ] **Step 5: Implement the in-memory Persistence adapter**
+- [x] **Step 5: Implement the in-memory Persistence adapter**
 
 The implementation must:
 
@@ -1045,7 +1051,7 @@ export class InMemoryEventJournal implements EventJournal {
 }
 ```
 
-- [ ] **Step 6: Export Kernel contracts and the Persistence adapter**
+- [x] **Step 6: Export Kernel contracts and the Persistence adapter**
 
 `src-next/kernel/index.ts` exports only contracts, pure constructors, system
 clock, and ID generation:
@@ -1095,7 +1101,7 @@ export interface Relation<Name extends string = string> {
 entity kinds. Do not export a constructor that accepts an unregistered relation
 name without a `RelationDefinition`.
 
-- [ ] **Step 7: Verify and commit**
+- [x] **Step 7: Verify and commit**
 
 Run:
 
@@ -1119,7 +1125,7 @@ git commit -m "feat: add target event kernel"
 - Create: `test-next/e2e/support/{faults,scenario,trace,world}.ts`
 - Create: `test-next/e2e/scenario-harness.test.ts`
 
-- [ ] **Step 1: Write the harness contract test**
+- [x] **Step 1: Write the harness contract test**
 
 Create `test-next/e2e/scenario-harness.test.ts`:
 
@@ -1148,7 +1154,7 @@ describe('event-model scenario harness', () => {
 });
 ```
 
-- [ ] **Step 2: Run the test and confirm missing support code**
+- [x] **Step 2: Run the test and confirm missing support code**
 
 Run:
 
@@ -1158,7 +1164,7 @@ npx vitest run --config vitest.next.config.ts test-next/e2e/scenario-harness.tes
 
 Expected: FAIL resolving `./support/scenario.js`.
 
-- [ ] **Step 3: Implement the thin scenario wrapper**
+- [x] **Step 3: Implement the thin scenario wrapper**
 
 `defineScenario` must use the scenario ID and event-model sentences as the test
 name; it must not implement policy:
@@ -1188,7 +1194,7 @@ export function defineScenario(
 }
 ```
 
-- [ ] **Step 4: Implement deterministic time, IDs, trace, and faults**
+- [x] **Step 4: Implement deterministic time, IDs, trace, and faults**
 
 `TestWorld` uses:
 
@@ -1217,7 +1223,7 @@ No production module imports this class.
 type, stream, causation ID, and JSON payload. Do not include volatile
 `recordedAt` in traces.
 
-- [ ] **Step 5: Verify and commit**
+- [x] **Step 5: Verify and commit**
 
 Run:
 
@@ -1243,7 +1249,7 @@ git commit -m "test: add target event-model scenario world"
 - Modify: `src-next/work/index.ts`
 - Create: `test-next/work/{work-item,work-service}.test.ts`
 
-- [ ] **Step 1: Write WorkItem aggregate tests**
+- [x] **Step 1: Write WorkItem aggregate tests**
 
 Cover these exact cases:
 
@@ -1266,7 +1272,7 @@ The first expected view is:
 }
 ```
 
-- [ ] **Step 2: Run the tests and confirm missing Work contracts**
+- [x] **Step 2: Run the tests and confirm missing Work contracts**
 
 Run:
 
@@ -1276,7 +1282,7 @@ npx vitest run --config vitest.next.config.ts test-next/work
 
 Expected: FAIL resolving `src-next/work/index.js`.
 
-- [ ] **Step 3: Define Work commands, events, and view**
+- [x] **Step 3: Define Work commands, events, and view**
 
 Use these public types:
 
@@ -1316,7 +1322,7 @@ export type WorkEvent =
 `WorkItemView` contains only Work-owned fields. Do not add `stage`,
 `lastRunId`, `repo`, `issueNumber`, or provider labels.
 
-- [ ] **Step 4: Implement pure folding and repository append**
+- [x] **Step 4: Implement pure folding and repository append**
 
 `foldWorkItem(events)`:
 
@@ -1330,7 +1336,7 @@ export type WorkEvent =
 `WorkRepository.append(id, expectedSequence, drafts)` delegates to the journal.
 It contains no filesystem logic.
 
-- [ ] **Step 5: Implement WorkService commands**
+- [x] **Step 5: Implement WorkService commands**
 
 Use this API:
 
@@ -1353,7 +1359,7 @@ Every command:
 - reloads and returns the public view;
 - relies on event-ID idempotency for a repeated command.
 
-- [ ] **Step 6: Verify and commit**
+- [x] **Step 6: Verify and commit**
 
 Run:
 
@@ -1381,7 +1387,7 @@ git commit -m "feat: add target WorkItem domain"
 - Create: `test-next/resources/{correlation,resource-service}.test.ts`
 - Create: `test-next/e2e/scenarios/work-resource-correlation.test.ts`
 
-- [ ] **Step 1: Write correlation tests**
+- [x] **Step 1: Write correlation tests**
 
 Cover:
 
@@ -1406,7 +1412,7 @@ The target resource view must use:
 }
 ```
 
-- [ ] **Step 2: Run tests and confirm missing Resource contracts**
+- [x] **Step 2: Run tests and confirm missing Resource contracts**
 
 Run:
 
@@ -1416,7 +1422,7 @@ npx vitest run --config vitest.next.config.ts test-next/resources
 
 Expected: FAIL resolving Resource exports.
 
-- [ ] **Step 3: Define canonical Resource contracts**
+- [x] **Step 3: Define canonical Resource contracts**
 
 Use:
 
@@ -1453,7 +1459,7 @@ export interface ResourceCorrelationView {
 
 Provider payloads and GitHub field names are absent.
 
-- [ ] **Step 4: Define owned events and relation**
+- [x] **Step 4: Define owned events and relation**
 
 Events:
 
@@ -1478,7 +1484,7 @@ export const resourceRepresentsWork = {
 
 Only `ResourceService` may establish or retract this relation.
 
-- [ ] **Step 5: Implement replay-based lookup and conflict policy**
+- [x] **Step 5: Implement replay-based lookup and conflict policy**
 
 The initial `ResourceRepository` reads the journal and folds:
 
@@ -1490,7 +1496,7 @@ No mutable index is required yet. `correlate(..., role: 'primary')` emits a
 conflict event and returns a rejected result if another WorkItem already holds
 the primary link. It does not silently demote the requested link.
 
-- [ ] **Step 6: Add the target event-model scenario**
+- [x] **Step 6: Add the target event-model scenario**
 
 Use scenario ID `E2E-WORK-001`:
 
@@ -1505,7 +1511,7 @@ Then  work.item-created
 
 Drive public services with the test world and assert canonical events/views.
 
-- [ ] **Step 7: Verify and commit**
+- [x] **Step 7: Verify and commit**
 
 Run:
 
@@ -1531,7 +1537,7 @@ git commit -m "feat: add target Resource correlation domain"
 - Modify: `src-next/activities/index.ts`
 - Create: `test-next/activities/{activity-registry,agent-result}.test.ts`
 
-- [ ] **Step 1: Write Activity contract tests**
+- [x] **Step 1: Write Activity contract tests**
 
 Cover:
 
@@ -1544,7 +1550,7 @@ it('maps a structured agent result to done, rejected, blocked, or failed');
 it('never treats missing structured agent output as done');
 ```
 
-- [ ] **Step 2: Run and confirm missing Activity registry**
+- [x] **Step 2: Run and confirm missing Activity registry**
 
 Run:
 
@@ -1554,7 +1560,7 @@ npx vitest run --config vitest.next.config.ts test-next/activities
 
 Expected: FAIL resolving Activity exports.
 
-- [ ] **Step 3: Implement the public Activity contract**
+- [x] **Step 3: Implement the public Activity contract**
 
 ```ts
 import type { z } from 'zod';
@@ -1607,7 +1613,7 @@ export interface ActivityDefinition<Input = unknown> {
 }
 ```
 
-- [ ] **Step 4: Implement ActivityRegistry**
+- [x] **Step 4: Implement ActivityRegistry**
 
 API:
 
@@ -1623,7 +1629,7 @@ Names must match `/^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$/`. Registry lookup,
 input validation, and output validation errors include the Activity name and
 Zod issue path.
 
-- [ ] **Step 5: Implement the initial agent result translator**
+- [x] **Step 5: Implement the initial agent result translator**
 
 Accept the structured Wake result envelope and map:
 
@@ -1638,7 +1644,7 @@ missing/malformed -> { kind: 'failed', data: { reason: 'invalid-agent-result' } 
 The translator consumes runner output; it does not choose workflow
 transitions.
 
-- [ ] **Step 6: Verify and commit**
+- [x] **Step 6: Verify and commit**
 
 Run:
 
@@ -1664,7 +1670,7 @@ git commit -m "feat: define target Activity contracts"
 - Modify: `src-next/orchestration/index.ts`
 - Create: `test-next/orchestration/workflow-compiler.test.ts`
 
-- [ ] **Step 1: Write compiler tests**
+- [x] **Step 1: Write compiler tests**
 
 Cover:
 
@@ -1680,7 +1686,7 @@ it('accepts a cycle when every cycle-closing route declares repeat.max');
 it('does not require a repository, issue, or provider in workflow config');
 ```
 
-- [ ] **Step 2: Run and confirm compiler absence**
+- [x] **Step 2: Run and confirm compiler absence**
 
 Run:
 
@@ -1690,7 +1696,7 @@ npx vitest run --config vitest.next.config.ts test-next/orchestration/workflow-c
 
 Expected: FAIL resolving the compiler.
 
-- [ ] **Step 3: Define the raw and compiled configuration**
+- [x] **Step 3: Define the raw and compiled configuration**
 
 ```ts
 export interface FollowOnActivityConfig {
@@ -1728,7 +1734,7 @@ same stage Activity before following `then`; it is not an Execution transport
 retry. `with` remains `unknown` until ActivityRegistry validation. Execution
 performs its own resolved-config validation in Task 11.
 
-- [ ] **Step 4: Implement graph validation**
+- [x] **Step 4: Implement graph validation**
 
 `compileWorkflow(name, config, activityRegistry)` returns immutable compiled
 stages and:
@@ -1744,7 +1750,7 @@ stages and:
 
 Do not add workflow-definition persistence or versions.
 
-- [ ] **Step 5: Verify and commit**
+- [x] **Step 5: Verify and commit**
 
 Run:
 
@@ -1771,7 +1777,7 @@ git commit -m "feat: compile target workflow definitions"
 - Modify: `src-next/orchestration/index.ts`
 - Create: `test-next/orchestration/{interpreter,orchestration-service}.test.ts`
 
-- [ ] **Step 1: Write pure interpreter tests**
+- [x] **Step 1: Write pure interpreter tests**
 
 Cover:
 
@@ -1787,7 +1793,7 @@ it('counts bounded repeats by route and orchestration group');
 it('blocks before repeat.max is exceeded');
 ```
 
-- [ ] **Step 2: Run and confirm interpreter absence**
+- [x] **Step 2: Run and confirm interpreter absence**
 
 Run:
 
@@ -1797,7 +1803,7 @@ npx vitest run --config vitest.next.config.ts test-next/orchestration
 
 Expected: FAIL resolving interpreter/service exports.
 
-- [ ] **Step 3: Define WorkflowInstance view and events**
+- [x] **Step 3: Define WorkflowInstance view and events**
 
 ```ts
 export interface ActivityActivationView {
@@ -1840,7 +1846,7 @@ orchestration.instance-superseded
 WorkItem contains only the WorkflowInstance reference/history relation, never
 these fields.
 
-- [ ] **Step 4: Implement the pure decision API**
+- [x] **Step 4: Implement the pure decision API**
 
 ```ts
 export type OrchestrationDecision =
@@ -1867,7 +1873,7 @@ signal, `blocked` blocks the instance, and `failed` follows its Orchestration
 retry/route policy. Only `done` advances to the next follow-on Activity or
 transition.
 
-- [ ] **Step 5: Implement repository and service**
+- [x] **Step 5: Implement repository and service**
 
 `OrchestrationRepository` loads/folds one instance stream. The service:
 
@@ -1879,7 +1885,7 @@ transition.
 
 It performs no Activity execution.
 
-- [ ] **Step 6: Verify and commit**
+- [x] **Step 6: Verify and commit**
 
 Run:
 
@@ -1907,7 +1913,7 @@ git commit -m "feat: add target workflow instances"
 - Modify: `src-next/execution/index.ts`
 - Create: `test-next/execution/{execution-service,run}.test.ts`
 
-- [ ] **Step 1: Write Run boundary tests**
+- [x] **Step 1: Write Run boundary tests**
 
 Cover:
 
@@ -1920,7 +1926,7 @@ it('does not allocate a workspace when execution.workspace is none');
 it('rejects an unregistered execution tier');
 ```
 
-- [ ] **Step 2: Run and confirm Execution absence**
+- [x] **Step 2: Run and confirm Execution absence**
 
 Run:
 
@@ -1930,7 +1936,7 @@ npx vitest run --config vitest.next.config.ts test-next/execution
 
 Expected: FAIL resolving Execution exports.
 
-- [ ] **Step 3: Define Run contracts**
+- [x] **Step 3: Define Run contracts**
 
 ```ts
 export type RunTransportStatus =
@@ -1971,7 +1977,7 @@ execution.run-ambiguous
 execution.run-reconciled
 ```
 
-- [ ] **Step 4: Define the workspace port**
+- [x] **Step 4: Define the workspace port**
 
 ```ts
 export interface WorkspaceRequest {
@@ -1995,7 +2001,7 @@ export interface WorkspaceProvider {
 No `repo` or `issueNumber` is present. Repository location and branch naming
 are resolved from Resource capabilities inside the concrete provider.
 
-- [ ] **Step 5: Implement ExecutionService**
+- [x] **Step 5: Implement ExecutionService**
 
 API:
 
@@ -2026,7 +2032,7 @@ The service:
 
 It does not call Orchestration.
 
-- [ ] **Step 6: Verify and commit**
+- [x] **Step 6: Verify and commit**
 
 Run:
 
@@ -2054,7 +2060,7 @@ git commit -m "feat: execute target Activities as Runs"
 - Create: `test-next/e2e/scenarios/golden-path.test.ts`
 - Create: `test-next/control-plane/advance-once.test.ts`
 
-- [ ] **Step 1: Write the golden-path scenario**
+- [x] **Step 1: Write the golden-path scenario**
 
 Use `E2E-GOLDEN-001`:
 
@@ -2075,7 +2081,7 @@ Then  orchestration.activity-requested
 Assert the exact causal order, public Work view, WorkflowInstance view, and Run
 view.
 
-- [ ] **Step 2: Run and confirm missing control plane**
+- [x] **Step 2: Run and confirm missing control plane**
 
 Run:
 
@@ -2085,7 +2091,7 @@ npx vitest run --config vitest.next.config.ts test-next/e2e/scenarios/golden-pat
 
 Expected: FAIL resolving `control-plane`.
 
-- [ ] **Step 3: Implement bounded `advanceOnce`**
+- [x] **Step 3: Implement bounded `advanceOnce`**
 
 ```ts
 export type AdvanceResult =
@@ -2113,7 +2119,7 @@ One `advanceOnce` call:
 `maxProgress` is consumed by the resident/tick host in Task 22; it is not reset
 by successful child work.
 
-- [ ] **Step 4: Extend TestWorld with real target services**
+- [x] **Step 4: Extend TestWorld with real target services**
 
 `TestWorld` constructs one in-memory journal, fake clock, sequential IDs,
 registries, repositories, and public application services. Provide only
@@ -2134,7 +2140,7 @@ viewRuns(activationId?: string): Promise<readonly RunView[]>;
 
 Do not expose repositories or aggregate mutation to scenarios.
 
-- [ ] **Step 5: Add crash-idempotency unit cases**
+- [x] **Step 5: Add crash-idempotency unit cases**
 
 `advance-once.test.ts` covers:
 
@@ -2145,7 +2151,7 @@ it('does not create a second Run for a completed activation');
 it('performs at most one execution attempt per call');
 ```
 
-- [ ] **Step 6: Pass Packet B gate**
+- [x] **Step 6: Pass Packet B gate**
 
 Run:
 
@@ -2160,7 +2166,7 @@ npm run verify
 Expected: one complete target workflow through real target modules; every
 command PASSes.
 
-- [ ] **Step 7: Commit the golden path**
+- [x] **Step 7: Commit the golden path**
 
 ```powershell
 git add src-next/control-plane test-next/control-plane test-next/e2e docs/architecture/functional-decision-catalogue.md
@@ -2179,7 +2185,7 @@ git commit -m "feat: complete target orchestration golden path"
 - Create: `test-next/persistence/{file-checkpoint-store,file-event-journal,file-lock,file-projection-store,projection-runner}.test.ts`
 - Create: `test-next/e2e/scenarios/{journal-restart,projection-recovery}.test.ts`
 
-- [ ] **Step 1: Write storage-port tests**
+- [x] **Step 1: Write storage-port tests**
 
 Define tests for:
 
@@ -2191,7 +2197,7 @@ it('rejects checkpoint regression');
 it('deletes all derived projections without deleting events');
 ```
 
-- [ ] **Step 2: Define Kernel storage ports**
+- [x] **Step 2: Define Kernel storage ports**
 
 Create:
 
@@ -2228,7 +2234,7 @@ export interface ProjectionDefinition<Value = unknown> {
 
 Export ports from `kernel/index.ts`. Kernel contains no filesystem imports.
 
-- [ ] **Step 3: Run and confirm filesystem adapters are absent**
+- [x] **Step 3: Run and confirm filesystem adapters are absent**
 
 Run:
 
@@ -2238,7 +2244,7 @@ npx vitest run --config vitest.next.config.ts test-next/persistence
 
 Expected: FAIL resolving `src-next/persistence/index.js`.
 
-- [ ] **Step 4: Port the proven lock primitive into Persistence**
+- [x] **Step 4: Port the proven lock primitive into Persistence**
 
 Copy, do not import, the low-level lock:
 
@@ -2251,7 +2257,7 @@ Remove legacy domain imports and retarget the test. Persistence owns locking
 for journal/projection/checkpoint files; Work and Orchestration never import
 this implementation.
 
-- [ ] **Step 5: Implement FileEventJournal under the hidden data root**
+- [x] **Step 5: Implement FileEventJournal under the hidden data root**
 
 Constructor:
 
@@ -2278,7 +2284,7 @@ idempotency, then append one newline-terminated batch. A corrupted complete
 line reports file and line. A partial trailing line is reported as incomplete
 state and is never returned as a valid event.
 
-- [ ] **Step 6: Implement atomic projection and checkpoint adapters**
+- [x] **Step 6: Implement atomic projection and checkpoint adapters**
 
 Paths:
 
@@ -2311,7 +2317,7 @@ Checkpoint JSON:
 }
 ```
 
-- [ ] **Step 7: Implement the generic ProjectionRunner**
+- [x] **Step 7: Implement the generic ProjectionRunner**
 
 ```ts
 export class ProjectionRunner {
@@ -2339,7 +2345,7 @@ For each event after `projection:<definition.name>`:
 `rebuild` clears only that definition's namespace and checkpoint, then replays
 the journal. It never changes events.
 
-- [ ] **Step 8: Register domain projection definitions**
+- [x] **Step 8: Register domain projection definitions**
 
 Export pure `ProjectionDefinition`s from Work, Resources, Orchestration, and
 Execution using their existing fold functions. Their namespaces are:
@@ -2355,7 +2361,7 @@ execution
 Add target tests proving the same input event and prior view always return the
 same output and do not append an event.
 
-- [ ] **Step 9: Add persistence scenarios**
+- [x] **Step 9: Add persistence scenarios**
 
 `E2E-JOURNAL-001`:
 
@@ -2377,7 +2383,7 @@ Then  the event is applied exactly once by global position
   And deleting projections followed by rebuild restores the same views
 ```
 
-- [ ] **Step 10: Verify and commit**
+- [x] **Step 10: Verify and commit**
 
 Run:
 
@@ -2409,7 +2415,7 @@ git commit -m "feat: persist target state beneath Wake home"
 - Create: `test-next/integrations/{inbound-translator,poll-service}.test.ts`
 - Create: `test-next/e2e/scenarios/external-intake.test.ts`
 
-- [ ] **Step 1: Write the directional-ingress tests**
+- [x] **Step 1: Write the directional-ingress tests**
 
 Cover:
 
@@ -2421,7 +2427,7 @@ it('reprocessing the same adapter event does not mint another WorkItem');
 it('does not let an integration append work.item-created directly');
 ```
 
-- [ ] **Step 2: Run and confirm integration services are absent**
+- [x] **Step 2: Run and confirm integration services are absent**
 
 Run:
 
@@ -2431,7 +2437,7 @@ npx vitest run --config vitest.next.config.ts test-next/integrations
 
 Expected: FAIL resolving integration exports.
 
-- [ ] **Step 3: Define adapter-owned evidence**
+- [x] **Step 3: Define adapter-owned evidence**
 
 Use this provider-owned event shape:
 
@@ -2456,7 +2462,7 @@ export type GitHubAdapterEvent =
 These events use `source: { kind: 'adapter', id: 'github' }`. No other module
 imports these payload types.
 
-- [ ] **Step 4: Implement PollService**
+- [x] **Step 4: Implement PollService**
 
 Port:
 
@@ -2470,7 +2476,7 @@ export interface ExternalEventSource {
 adapter stream. Stable provider delivery IDs become stable Wake event IDs.
 Polling does not call Work, Resources, or Orchestration.
 
-- [ ] **Step 5: Implement InboundTranslator**
+- [x] **Step 5: Implement InboundTranslator**
 
 `translate(event)` is pure and returns provider-neutral command candidates.
 `runOnce(limit)` reads adapter events after checkpoint
@@ -2490,7 +2496,7 @@ services:
 Stable command/event IDs make replay safe. The checkpoint is stored beneath
 `.wake/checkpoints` by the Persistence adapter and is never business state.
 
-- [ ] **Step 6: Add scenario `E2E-WORK-002`**
+- [x] **Step 6: Add scenario `E2E-WORK-002`**
 
 ```text
 Given integration.github.work-observed for issue owner/repo#7
@@ -2501,7 +2507,7 @@ Then  exactly one WorkItem exists
   And the adapter payload remains outside Work and Resource views
 ```
 
-- [ ] **Step 7: Verify and commit**
+- [x] **Step 7: Verify and commit**
 
 Run:
 
@@ -2531,7 +2537,7 @@ git commit -m "feat: add directional target ingress"
 - Create: `test-next/activities/review-signals.test.ts`
 - Create: `test-next/e2e/scenarios/{external-closure,human-signal}.test.ts`
 
-- [ ] **Step 1: Port accepted low-level GitHub client tests**
+- [x] **Step 1: Port accepted low-level GitHub client tests**
 
 Copy these tests and change imports to target files:
 
@@ -2545,7 +2551,7 @@ Delete assertions that encode core EventEnvelope or WorkItem shapes. Retain
 HTTP construction, pagination, ETag, authentication failure, rate metadata,
 and request-scrubbing assertions.
 
-- [ ] **Step 2: Run and confirm target GitHub infrastructure is missing**
+- [x] **Step 2: Run and confirm target GitHub infrastructure is missing**
 
 Run:
 
@@ -2555,7 +2561,7 @@ npx vitest run --config vitest.next.config.ts test-next/integrations/github-clie
 
 Expected: FAIL resolving the target GitHub client.
 
-- [ ] **Step 3: Port the isolated client and ETag implementation**
+- [x] **Step 3: Port the isolated client and ETag implementation**
 
 Copy:
 
@@ -2568,7 +2574,7 @@ Replace legacy domain imports with GitHub-owned payload/config contracts. The
 client returns provider DTOs and rate metadata only. It does not construct
 canonical events.
 
-- [ ] **Step 4: Rewrite issue and PR sources around adapter evidence**
+- [x] **Step 4: Rewrite issue and PR sources around adapter evidence**
 
 Implement sources with these responsibilities:
 
@@ -2589,7 +2595,7 @@ test/adapters/github-pull-request-activity-source.test.ts
 
 Split target test files by observation type so each stays below 400 lines.
 
-- [ ] **Step 5: Define proposed review signals**
+- [x] **Step 5: Define proposed review signals**
 
 Integration parsing emits:
 
@@ -2617,7 +2623,7 @@ activities.review-signal-accepted
 activities.review-signal-rejected
 ```
 
-- [ ] **Step 6: Add external closure and human-signal scenarios**
+- [x] **Step 6: Add external closure and human-signal scenarios**
 
 `E2E-WORK-003`:
 
@@ -2641,7 +2647,7 @@ Then  activities.review-signal-accepted
 Add variants for bot actor, unauthorised human, stale revision, duplicate
 provider event, wrong Resource, conversational substring, and `/changes`.
 
-- [ ] **Step 7: Verify and commit**
+- [x] **Step 7: Verify and commit**
 
 Run:
 
@@ -2670,7 +2676,7 @@ git commit -m "feat: translate GitHub evidence and human signals"
 - Create: `test-next/execution/{claude-runner,codex-runner,cursor-runner,runner-registry,transcripts,git-workspace}.test.ts`
 - Create: `test-next/e2e/scenarios/agent-workspace.test.ts`
 
-- [ ] **Step 1: Define target runner contracts before copying transports**
+- [x] **Step 1: Define target runner contracts before copying transports**
 
 ```ts
 export interface RunnerRequest {
@@ -2716,7 +2722,7 @@ export interface Runner {
 No Work projection, WakeConfig, repository, issue number, or workflow
 transition appears.
 
-- [ ] **Step 2: Port accepted transport tests**
+- [x] **Step 2: Port accepted transport tests**
 
 Copy and retarget:
 
@@ -2734,7 +2740,7 @@ failure classification, cancellation, transcript retention, git isolation,
 dirty-state, upstream, and cleanup cases. Remove tests that assert legacy
 global input shapes.
 
-- [ ] **Step 3: Run and confirm missing transports**
+- [x] **Step 3: Run and confirm missing transports**
 
 Run:
 
@@ -2744,7 +2750,7 @@ npx vitest run --config vitest.next.config.ts test-next/execution/claude-runner.
 
 Expected: FAIL resolving target runner implementation.
 
-- [ ] **Step 4: Copy transport mechanics into their final owner**
+- [x] **Step 4: Copy transport mechanics into their final owner**
 
 Use the legacy runner/process/workspace implementations as algorithmic
 evidence, but rewrite their public boundary to the contracts above. No copied
@@ -2758,7 +2764,7 @@ Git workspace resolution consumes a canonical repository Resource with an
 adapter-owned clone locator supplied through a narrow resolver port. Branch
 names derive from WorkItem ID plus a safe objective slug, not issue number.
 
-- [ ] **Step 5: Implement AgentActivity handler**
+- [x] **Step 5: Implement AgentActivity handler**
 
 The handler:
 
@@ -2774,7 +2780,7 @@ The handler:
 
 It cannot append Orchestration or Resource events directly.
 
-- [ ] **Step 6: Add `E2E-EXEC-001`**
+- [x] **Step 6: Add `E2E-EXEC-001`**
 
 ```text
 Given implement requires a branch workspace and a fake agent runner
@@ -2787,7 +2793,7 @@ Then  execution.run-started names the workspace lease
 
 Add no-workspace and read-only variants.
 
-- [ ] **Step 7: Verify and commit**
+- [x] **Step 7: Verify and commit**
 
 Run:
 
@@ -2815,7 +2821,7 @@ git commit -m "feat: port target agent execution capabilities"
 - Create: `test-next/orchestration/{retry-policy,signals,supplemental-activity}.test.ts`
 - Create: `test-next/e2e/scenarios/{blocked-reply,retry-boundary,supplemental-command}.test.ts`
 
-- [ ] **Step 1: Write retry-boundary tests**
+- [x] **Step 1: Write retry-boundary tests**
 
 Cover:
 
@@ -2827,7 +2833,7 @@ it('does not let a human reply reset the retry count');
 it('accepts one matching signal while waiting and ignores duplicates');
 ```
 
-- [ ] **Step 2: Write supplemental-command tests**
+- [x] **Step 2: Write supplemental-command tests**
 
 Cover:
 
@@ -2838,7 +2844,7 @@ it('rejects an unknown or unauthorised command');
 it('does not allow a supplemental command to bypass a blocked destructive gate');
 ```
 
-- [ ] **Step 3: Run and confirm missing policy semantics**
+- [x] **Step 3: Run and confirm missing policy semantics**
 
 Run:
 
@@ -2848,7 +2854,7 @@ npx vitest run --config vitest.next.config.ts test-next/orchestration/retry-poli
 
 Expected: FAIL because retry counts and supplemental activations are absent.
 
-- [ ] **Step 4: Extend WorkflowInstance state**
+- [x] **Step 4: Extend WorkflowInstance state**
 
 Add:
 
@@ -2869,7 +2875,7 @@ readonly supplementalQueue: readonly {
 Retry keys are `${stageName}:${outcomeKind}`. A retry creates a new activation
 ordinal. Execution never repeats a Run on its own.
 
-- [ ] **Step 5: Implement signal and supplemental APIs**
+- [x] **Step 5: Implement signal and supplemental APIs**
 
 ```ts
 waitForSignal(instanceId, expectation, context): Promise<WorkflowInstanceView>;
@@ -2884,7 +2890,7 @@ sequential and cannot execute concurrently with the primary activation.
 Compile configured custom commands into validated supplemental Activity
 requests at bootstrap. Do not create a second global command policy engine.
 
-- [ ] **Step 6: Add E2E scenarios**
+- [x] **Step 6: Add E2E scenarios**
 
 `E2E-ORCH-RETRY-001`: failed safe outcome creates Run attempt 2; attempt 1 is
 unchanged; count survives restart.
@@ -2897,7 +2903,7 @@ review Activity, completes, and leaves the primary stage unchanged. Any
 communication-oriented custom command receives an explicit catalogue
 disposition and is not used to introduce a general communication Activity.
 
-- [ ] **Step 7: Verify and commit**
+- [x] **Step 7: Verify and commit**
 
 Run:
 
@@ -2925,7 +2931,7 @@ git commit -m "feat: add target workflow wait and retry policy"
 - Create: `test-next/orchestration/{child-workflow,watch-reactor}.test.ts`
 - Create: `test-next/e2e/scenarios/{child-completion,child-loop-guard}.test.ts`
 
-- [ ] **Step 1: Write the regression scenario for the known loop**
+- [x] **Step 1: Write the regression scenario for the known loop**
 
 Use `E2E-ORCH-LOOP-001`:
 
@@ -2940,7 +2946,7 @@ Then  one trigger event creates at most one child instance
   And repeated causal activation blocks instead of looping
 ```
 
-- [ ] **Step 2: Run and confirm child semantics are absent**
+- [x] **Step 2: Run and confirm child semantics are absent**
 
 Run:
 
@@ -2950,7 +2956,7 @@ npx vitest run --config vitest.next.config.ts test-next/e2e/scenarios/child-loop
 
 Expected: FAIL because watch/child contracts are absent.
 
-- [ ] **Step 3: Add explicit watch configuration**
+- [x] **Step 3: Add explicit watch configuration**
 
 ```ts
 export interface WatchConfig {
@@ -2970,7 +2976,7 @@ A watch declares at least `on` or `schedule`. Compiler validation requires
 known stage/workflow names, positive `maxPerGroup`, canonical event names, and
 no duplicate watch IDs.
 
-- [ ] **Step 4: Add child/group events and view fields**
+- [x] **Step 4: Add child/group events and view fields**
 
 Events:
 
@@ -2993,7 +2999,7 @@ and causal-cycle ID. Stable child request ID:
 The WorkItem retains one primary active WorkflowInstance reference. Subordinate
 children exist only through their parent/group links.
 
-- [ ] **Step 5: Implement WatchReactor**
+- [x] **Step 5: Implement WatchReactor**
 
 For each canonical event or durable schedule slot:
 
@@ -3008,13 +3014,13 @@ For each canonical event or durable schedule slot:
 Child success never decrements or resets counts. A child completion is accepted
 by the parent once.
 
-- [ ] **Step 6: Add a normal child-completion scenario**
+- [x] **Step 6: Add a normal child-completion scenario**
 
 `E2E-ORCH-CHILD-001` proves a child can complete, deliver one typed signal to
 its parent, and allow the parent to progress without becoming a second primary
 workflow.
 
-- [ ] **Step 7: Pass Packet C orchestration gate**
+- [x] **Step 7: Pass Packet C orchestration gate**
 
 Run:
 
@@ -3028,7 +3034,7 @@ npm run verify
 Expected: child success and loop regression scenarios PASS; all verification
 commands PASS.
 
-- [ ] **Step 8: Commit child safety**
+- [x] **Step 8: Commit child safety**
 
 ```powershell
 git add src-next/orchestration test-next/orchestration test-next/e2e docs/architecture/functional-decision-catalogue.md
@@ -3046,7 +3052,7 @@ git commit -m "feat: bound target child workflow activation"
 - Create: `test-next/activities/{pr-policy,pr-projection}.test.ts`
 - Create: `test-next/e2e/scenarios/{pr-correlation,stale-approval}.test.ts`
 
-- [ ] **Step 1: Write pull-request policy tests**
+- [x] **Step 1: Write pull-request policy tests**
 
 Cover:
 
@@ -3060,7 +3066,7 @@ it('rejects missing or multiple primary pull-request resources');
 it('distinguishes checks pending, passing, and failing');
 ```
 
-- [ ] **Step 2: Run and confirm specialist PR contracts are absent**
+- [x] **Step 2: Run and confirm specialist PR contracts are absent**
 
 Run:
 
@@ -3070,7 +3076,7 @@ npx vitest run --config vitest.next.config.ts test-next/activities/pr-policy.tes
 
 Expected: FAIL resolving PR contracts.
 
-- [ ] **Step 3: Define the specialist PR view**
+- [x] **Step 3: Define the specialist PR view**
 
 ```ts
 export interface PullRequestView {
@@ -3111,7 +3117,7 @@ pr.review-rejected
 Update `activities/module.json` event namespaces to
 `["activities.", "pr.", "review."]`.
 
-- [ ] **Step 4: Implement pure authority policy**
+- [x] **Step 4: Implement pure authority policy**
 
 ```ts
 export type PullRequestAuthorityDecision =
@@ -3133,7 +3139,7 @@ export type PullRequestAuthorityDecision =
 The policy receives only public Work, Resource, PR, and accepted-signal views.
 It performs no provider query or append.
 
-- [ ] **Step 5: Translate GitHub PR evidence into commands**
+- [x] **Step 5: Translate GitHub PR evidence into commands**
 
 InboundTranslator maps GitHub PR observations to `pr.observe` and Resource
 commands. Only PR application policy emits canonical `pr.*` facts. A head SHA
@@ -3141,7 +3147,7 @@ change appends `pr.revision-changed` even when title/body are unchanged.
 Export the pure PR view fold as projection namespace `activities-pr` and
 register it with ProjectionRunner.
 
-- [ ] **Step 6: Add scenarios**
+- [x] **Step 6: Add scenarios**
 
 `E2E-PR-001`: a verified primary PR correlation creates a specialist PR view;
 an uncorrelated or conflicting reported artifact cannot affect the WorkItem.
@@ -3158,7 +3164,7 @@ Then  pr.merge-denied reason stale-approval
   And not pr.merge-requested
 ```
 
-- [ ] **Step 7: Verify and commit**
+- [x] **Step 7: Verify and commit**
 
 Run:
 
@@ -3186,7 +3192,7 @@ git commit -m "feat: bind target PR authority to revisions"
 - Create: `test-next/activities/{pr-approve,pr-merge}.test.ts`
 - Create: `test-next/e2e/scenarios/{pr-approval,pr-merge}.test.ts`
 
-- [ ] **Step 1: Write Activity tests**
+- [x] **Step 1: Write Activity tests**
 
 Cover:
 
@@ -3200,7 +3206,7 @@ it('pr.merge emits one provider-neutral intent when every gate passes');
 it('neither Activity receives a GitHub client or token');
 ```
 
-- [ ] **Step 2: Run and confirm handlers are absent**
+- [x] **Step 2: Run and confirm handlers are absent**
 
 Run:
 
@@ -3210,7 +3216,7 @@ npx vitest run --config vitest.next.config.ts test-next/activities/pr-merge.test
 
 Expected: FAIL resolving `pr.merge`.
 
-- [ ] **Step 3: Define Activity inputs and outcomes**
+- [x] **Step 3: Define Activity inputs and outcomes**
 
 ```ts
 export interface PullRequestTargetInput {
@@ -3239,7 +3245,7 @@ export type PullRequestActivityOutcome =
 Zod schemas are strict. Default target is `primary`; merge method has no
 implicit default unless bootstrap configuration supplies one.
 
-- [ ] **Step 4: Implement deterministic handlers**
+- [x] **Step 4: Implement deterministic handlers**
 
 Both handlers:
 
@@ -3259,7 +3265,7 @@ workflow until Task 21 translates a confirmed delivery into its final `done`
 outcome. Definite failure becomes `failed`; unresolved ambiguity remains
 waiting.
 
-- [ ] **Step 5: Add safe and denied scenarios**
+- [x] **Step 5: Add safe and denied scenarios**
 
 `E2E-PR-APPROVE-001`: accepted revision A produces one approval intent for A.
 
@@ -3270,7 +3276,7 @@ for delivery.
 `E2E-PR-MERGE-002`: missing, ambiguous, stale, conflicting, closed, pending,
 failing, and unauthorised variants each block without `pr.merge-requested`.
 
-- [ ] **Step 6: Verify and commit**
+- [x] **Step 6: Verify and commit**
 
 Run:
 
@@ -3308,7 +3314,7 @@ git commit -m "feat: add safe target PR Activities"
 - Create: `test-next/architecture/contract-vocabulary.test.ts`
 - Modify: `package.json`
 
-- [ ] **Step 1: Write failing kernel and checker tests**
+- [x] **Step 1: Write failing kernel and checker tests**
 
 Add kernel assertions proving a stream ID retains its brand and an event union
 retains its exact event/payload/stream relationship through
@@ -3328,7 +3334,7 @@ invoke the exported `checkContractVocabulary(root)` function. They assert
 diagnostics containing relative path, line, offending value, and replacement
 catalogue owner.
 
-- [ ] **Step 2: Run tests and confirm the contracts/checker are absent**
+- [x] **Step 2: Run tests and confirm the contracts/checker are absent**
 
 Run:
 
@@ -3339,7 +3345,7 @@ npx vitest run --config vitest.next.config.ts test-next/kernel test-next/archite
 Expected: FAIL resolving `EventUnion`, the two-parameter `EntityRef`, or
 `scripts/lib/contract-vocabulary.mjs`.
 
-- [ ] **Step 3: Add generic strong-contract primitives**
+- [x] **Step 3: Add generic strong-contract primitives**
 
 Implement:
 
@@ -3411,7 +3417,7 @@ export type EventDraftUnion<
 Existing kernel and persistence defaults remain generic. Do not add a domain
 registry to `kernel`.
 
-- [ ] **Step 4: Preserve exact streams through the public draft factory**
+- [x] **Step 4: Preserve exact streams through the public draft factory**
 
 Thread `Stream extends EntityRef` through `EventDraftInput` and
 `createEventDraft()` in `kernel/domain/event-envelope.ts`:
@@ -3433,7 +3439,7 @@ export function createEventDraft<
 The compile-only test must fail if the returned stream loses its exact kind or
 branded ID.
 
-- [ ] **Step 5: Implement the deliberately small AST vocabulary checker**
+- [x] **Step 5: Implement the deliberately small AST vocabulary checker**
 
 Use the TypeScript parser for syntax traversal, not regular expressions and
 not a TypeScript `Program`/`TypeChecker`. The checker must:
@@ -3463,7 +3469,7 @@ those concerns.
 exits non-zero on diagnostics. Do not add a baseline, suppression file, or list
 of current violations.
 
-- [ ] **Step 6: Keep the checker executable but defer the root gate**
+- [x] **Step 6: Keep the checker executable but defer the root gate**
 
 Add:
 
@@ -3474,7 +3480,7 @@ Add:
 Do not add it to `lint:architecture` until Task 20E because Tasks 20B-20D remove
 the violations it is designed to expose.
 
-- [ ] **Step 7: Verify and commit**
+- [x] **Step 7: Verify and commit**
 
 Run:
 
@@ -3508,7 +3514,7 @@ git commit -m "refactor: establish strong contract primitives"
 - Create: `test-next/architecture/stream-contracts.test.ts`
 - Modify: affected Work, Resource, PR, Orchestration, Execution, and integration tests
 
-- [ ] **Step 1: Write failing stream ownership and regression tests**
+- [x] **Step 1: Write failing stream ownership and regression tests**
 
 Assert:
 
@@ -3523,7 +3529,7 @@ it('records a PR denial on the canonical work-item stream rather than a new work
 The final regression must expose the current accidental difference between
 `'work'` and `'work-item'`.
 
-- [ ] **Step 2: Run and confirm stream contracts are absent**
+- [x] **Step 2: Run and confirm stream contracts are absent**
 
 Run:
 
@@ -3534,7 +3540,7 @@ npx vitest run --config vitest.next.config.ts test-next/architecture/stream-cont
 Expected: FAIL resolving the owned stream constructors or observing the
 non-canonical denial stream.
 
-- [ ] **Step 3: Define domain-owned stream catalogues and constructors**
+- [x] **Step 3: Define domain-owned stream catalogues and constructors**
 
 Use this pattern in each `contracts/streams.ts`:
 
@@ -3574,14 +3580,14 @@ After migration, remove `entityRef` from `kernel/index.ts`. It may remain an
 internal kernel implementation/test helper, but no domain module can import it
 through the public boundary.
 
-- [ ] **Step 4: Declare and verify stream ownership**
+- [x] **Step 4: Declare and verify stream ownership**
 
 Add an exact `streams` array beside `events`, `config`, and `relations` in
 every module manifest, including an empty array where the module owns none.
 Update both manifest checks to require arrays, reject duplicate owners, and
 ensure every exported `*StreamKind` value is declared by the same module.
 
-- [ ] **Step 5: Migrate all production stream construction and matching**
+- [x] **Step 5: Migrate all production stream construction and matching**
 
 Replace every direct call and comparison in `src-next`. Repositories, event
 factories, projectors, policies, and integration pollers use their owning
@@ -3600,7 +3606,7 @@ Expected locations:
 src-next/kernel/contracts/identifiers.ts
 ```
 
-- [ ] **Step 6: Verify and commit**
+- [x] **Step 6: Verify and commit**
 
 Run:
 
@@ -3634,7 +3640,7 @@ git commit -m "refactor: type logical stream identities"
 - Create: `test-next/{work,resources,activities,orchestration,execution,integrations}/event-contracts.test.ts`
 - Modify: affected E2E scenario tests
 
-- [ ] **Step 1: Write failing decoding and exhaustiveness tests**
+- [x] **Step 1: Write failing decoding and exhaustiveness tests**
 
 For each owner assert:
 
@@ -3649,7 +3655,7 @@ it('ignores an unrelated namespace in a projector selector');
 Also assert that the filesystem journal rejects malformed JSON and malformed
 common envelopes with file/line context rather than returning a cast value.
 
-- [ ] **Step 2: Run and confirm persisted payloads are still erased**
+- [x] **Step 2: Run and confirm persisted payloads are still erased**
 
 Run:
 
@@ -3660,7 +3666,7 @@ npx vitest run --config vitest.next.config.ts test-next/kernel/event-decoding.te
 Expected: FAIL because common/domain decoders are absent and folds still accept
 generic payloads.
 
-- [ ] **Step 3: Add strict common-envelope decoding**
+- [x] **Step 3: Add strict common-envelope decoding**
 
 `kernel/contracts/event-schema.ts` owns strict Zod schemas for actor, source,
 stream, draft metadata, and recorded envelope metadata. Export:
@@ -3674,7 +3680,7 @@ positive sequence/global position, and unknown payload. The filesystem journal
 calls this function after `JSON.parse`; remove
 `JSON.parse(line) as EventEnvelope`.
 
-- [ ] **Step 4: Give every domain a catalogue, payload map, union, and decoder**
+- [x] **Step 4: Give every domain a catalogue, payload map, union, and decoder**
 
 Use the Work pattern from the strong-contract design:
 
@@ -3710,7 +3716,7 @@ their branded constructors.
 `select*Event` returns `null` only outside the owner's declared namespace. It
 throws for an unknown/malformed event inside that namespace.
 
-- [ ] **Step 5: Migrate factories, folds, projectors, and reactors**
+- [x] **Step 5: Migrate factories, folds, projectors, and reactors**
 
 Event factories return exact draft union members. Domain folds accept exact
 owned unions. Generic projection selectors decode before calling a fold.
@@ -3727,7 +3733,7 @@ Remove:
 The journal, audit query, projection runner, and adapter intake boundary remain
 generic by design.
 
-- [ ] **Step 6: Verify event architecture and behavior**
+- [x] **Step 6: Verify event architecture and behavior**
 
 Run:
 
@@ -3741,7 +3747,7 @@ Expected: all domain event decoding and E2E tests PASS, with no event/stream
 literal diagnostic. The unscoped checker may still report closed/open
 vocabulary work explicitly assigned to Task 20D.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```powershell
 git add src-next test-next
@@ -3769,7 +3775,7 @@ git commit -m "refactor: enforce typed event contracts"
 - Create: `test-next/integrations/review-command-translator.test.ts`
 - Modify: affected unit and E2E tests
 
-- [ ] **Step 1: Write failing closed/open vocabulary tests**
+- [x] **Step 1: Write failing closed/open vocabulary tests**
 
 Add:
 
@@ -3785,7 +3791,7 @@ it('translates exact GitHub slash commands to canonical review decisions at the 
 it('does not let activities/review parse GitHub comment syntax');
 ```
 
-- [ ] **Step 2: Run and confirm the contracts are currently open strings**
+- [x] **Step 2: Run and confirm the contracts are currently open strings**
 
 Run:
 
@@ -3796,7 +3802,7 @@ npx vitest run --config vitest.next.config.ts test-next/activities/activity-outc
 Expected: FAIL on missing branded names, structural targets, registries, or
 boundary translator.
 
-- [ ] **Step 3: Make Activity input and outcome generic end-to-end**
+- [x] **Step 3: Make Activity input and outcome generic end-to-end**
 
 Implement:
 
@@ -3829,7 +3835,7 @@ of a resolved definition preserves that definition's input/outcome type.
 Registration verifies unique `outcomeKinds` and that sample/returned outcomes
 are accepted by the schema.
 
-- [ ] **Step 4: Compile open names and structural transition targets**
+- [x] **Step 4: Compile open names and structural transition targets**
 
 Add brands and validators for workflow, stage, signal, command, activation,
 workflow-instance, and orchestration-group identities. Keep raw strings only
@@ -3855,7 +3861,7 @@ The compiler resolves every Activity, validates route keys against
 contracts. Interpreter code never compares a target with `'done'` or
 `'await-human'`.
 
-- [ ] **Step 5: Catalogue closed machine vocabularies**
+- [x] **Step 5: Catalogue closed machine vocabularies**
 
 Create domain-owned `defineClosedVocabulary({ ... } as const)` catalogues and
 derived types for current closed values including Activity execution
@@ -3867,7 +3873,7 @@ Do not force open Activity, Resource, adapter, workflow, stage, command, or
 signal names into closed global unions. Give those brands, validators,
 registries, and built-in constants.
 
-- [ ] **Step 6: Move GitHub comment conventions to the integration**
+- [x] **Step 6: Move GitHub comment conventions to the integration**
 
 `review-command-translator.ts` recognizes only normalized, exact GitHub
 commands such as `/accepted` and `/changes` according to current approved
@@ -3876,7 +3882,7 @@ behavior and returns canonical typed review-decision candidates.
 comment text parsing. Other integrations can translate different conventions
 to the same canonical decision without importing GitHub.
 
-- [ ] **Step 7: Verify and commit**
+- [x] **Step 7: Verify and commit**
 
 Run:
 
@@ -3908,7 +3914,7 @@ git commit -m "refactor: type domain vocabularies and workflow contracts"
 - Modify: orchestration unit and E2E tests only where imports move
 - Modify: `test-next/architecture/contract-vocabulary.test.ts`
 
-- [ ] **Step 1: Add characterization tests for public orchestration seams**
+- [x] **Step 1: Add characterization tests for public orchestration seams**
 
 Using only public Orchestration contracts/services, retain tests for:
 
@@ -3923,7 +3929,7 @@ it('replays the same event sequence to the same public view');
 
 Run them before moving code and confirm they PASS.
 
-- [ ] **Step 2: Split by decision and use case without changing public behavior**
+- [x] **Step 2: Split by decision and use case without changing public behavior**
 
 Application files become focused use cases:
 
@@ -3958,14 +3964,14 @@ orchestration/domain/
 No extracted file imports journal, clock, adapter, or execution
 infrastructure. Do not introduce a generic process manager or service locator.
 
-- [ ] **Step 3: Ratchet comprehensibility limits**
+- [x] **Step 3: Ratchet comprehensibility limits**
 
 Reduce the `src-next` `max-lines` limit from 400 to 300 and
 `max-lines-per-function` from 100 to 80. If a non-generated file fails, split
 it by responsibility; do not add path exceptions. Keep complexity at 12 and
 depth at 4 unless the existing limit is already stricter.
 
-- [ ] **Step 4: Enable deterministic contract enforcement**
+- [x] **Step 4: Enable deterministic contract enforcement**
 
 Add an ESLint override for
 `src-next/{work,resources,activities,orchestration,execution}/{domain,application}/**/*.ts`
@@ -3992,7 +3998,7 @@ Run the checker and ESLint with no baseline, ignored current violation, or
 broad path suppression. Provider/persistence/config exceptions must be exact
 structural rules already covered by checker tests.
 
-- [ ] **Step 5: Update module policy**
+- [x] **Step 5: Update module policy**
 
 Update `orchestration/MODULE.md` with:
 
@@ -4003,7 +4009,7 @@ Update `orchestration/MODULE.md` with:
 - child/group, retry, signal, and supplemental policies remain independent;
 - persisted events are decoded before folding.
 
-- [ ] **Step 6: Verify the corrective gate and commit**
+- [x] **Step 6: Verify the corrective gate and commit**
 
 Run:
 
@@ -4034,7 +4040,7 @@ git commit -m "refactor: enforce typed orchestration seams"
 - Create: `test-next/integrations/{delivery-projector,delivery-service,github-delivery}.test.ts`
 - Create: `test-next/e2e/scenarios/{outbox-crash,pr-merge-delivery}.test.ts`
 
-- [ ] **Step 1: Write durable-delivery tests**
+- [x] **Step 1: Write durable-delivery tests**
 
 Cover:
 
@@ -4049,7 +4055,7 @@ it('rebuilds unresolved delivery work from the central journal');
 it('completes the originating Activity only after confirmed delivery');
 ```
 
-- [ ] **Step 2: Run and confirm delivery capability is absent**
+- [x] **Step 2: Run and confirm delivery capability is absent**
 
 Run:
 
@@ -4059,7 +4065,7 @@ npx vitest run --config vitest.next.config.ts test-next/integrations/delivery-se
 
 Expected: FAIL resolving delivery contracts.
 
-- [ ] **Step 3: Define delivery contracts**
+- [x] **Step 3: Define delivery contracts**
 
 ```ts
 export interface DeliveryIntentView {
@@ -4107,7 +4113,7 @@ delivery.reconciled
 `status.publish` and `reply.publish` preserve necessary provider delivery
 behaviour. They are Integration intents, not general communication Activities.
 
-- [ ] **Step 4: Implement the pure delivery projector**
+- [x] **Step 4: Implement the pure delivery projector**
 
 `projectDeliveries(events)` recognizes configured canonical intent types by
 event ID/global position and folds delivery-result events. It returns
@@ -4115,7 +4121,7 @@ unresolved views sorted by intent global position. Export it as the `delivery`
 `ProjectionDefinition` and register it with the same ProjectionRunner used by
 the other domains. It cannot append, call a clock, or invoke an adapter.
 
-- [ ] **Step 5: Implement delivery and GitHub translation**
+- [x] **Step 5: Implement delivery and GitHub translation**
 
 `DeliveryService.deliverNext`:
 
@@ -4149,7 +4155,7 @@ that request but keep the Activity waiting until inbound PR evidence records
 `pr.state-changed` to `merged`. Do not equate “auto-merge enabled” with
 “merged”.
 
-- [ ] **Step 6: Add crash-window scenarios**
+- [x] **Step 6: Add crash-window scenarios**
 
 `E2E-DELIVERY-001` injects a crash after fake provider acceptance but before
 `delivery.confirmed`; restart projects ambiguous/pending work, reconciliation
@@ -4159,7 +4165,7 @@ finds the existing effect, and no second merge call occurs.
 and produces canonical confirmation. The parent WorkflowInstance remains
 waiting before confirmation and progresses exactly once after confirmation.
 
-- [ ] **Step 7: Pass Packet D gate**
+- [x] **Step 7: Pass Packet D gate**
 
 Run:
 
@@ -4172,7 +4178,7 @@ npm run verify
 
 Expected: delivery crash/reconciliation and complete PR safety suite PASS.
 
-- [ ] **Step 8: Commit reliable delivery**
+- [x] **Step 8: Commit reliable delivery**
 
 ```powershell
 git add src-next/integrations test-next/integrations test-next/e2e docs/architecture/functional-decision-catalogue.md
@@ -4190,7 +4196,7 @@ git commit -m "feat: deliver target effects from the event journal"
 - Create: `test-next/execution/{cancellation,lease,recovery,timeout}.test.ts`
 - Create: `test-next/e2e/scenarios/{cancel-active-run,recover-active-run}.test.ts`
 
-- [ ] **Step 1: Write Run-liveness tests**
+- [x] **Step 1: Write Run-liveness tests**
 
 Cover:
 
@@ -4206,7 +4212,7 @@ it('records unknown external execution as ambiguous');
 it('never automatically retries an ambiguous Run');
 ```
 
-- [ ] **Step 2: Run and confirm recovery semantics are absent**
+- [x] **Step 2: Run and confirm recovery semantics are absent**
 
 Run:
 
@@ -4216,7 +4222,7 @@ npx vitest run --config vitest.next.config.ts test-next/execution/recovery.test.
 
 Expected: FAIL resolving `RecoveryService`.
 
-- [ ] **Step 3: Extend the Run view**
+- [x] **Step 3: Extend the Run view**
 
 Add:
 
@@ -4245,7 +4251,7 @@ readonly cancellation?: {
 
 Lease duration and renewal interval are Execution-owned configuration.
 
-- [ ] **Step 4: Implement cancellation and lease commands**
+- [x] **Step 4: Implement cancellation and lease commands**
 
 APIs:
 
@@ -4263,7 +4269,7 @@ A handler reports external execution identity through
 `ActivityExecutionContext`. An in-process AbortController is only a signalling
 mechanism; durable events remain authoritative.
 
-- [ ] **Step 5: Implement RecoveryService**
+- [x] **Step 5: Implement RecoveryService**
 
 Define:
 
@@ -4286,7 +4292,7 @@ export interface ExternalExecutionInspector {
 - records ambiguous when inspector cannot establish truth;
 - never calls `ActivityHandler.execute` again.
 
-- [ ] **Step 6: Add E2E scenarios**
+- [x] **Step 6: Add E2E scenarios**
 
 `E2E-EXEC-CANCEL-001`: cancel Work while a fake runner is active; request and
 confirmation survive restart; WorkflowInstance blocks/cancels according to its
@@ -4296,7 +4302,7 @@ policy.
 completion append; recovery records the existing result and produces no second
 runner start.
 
-- [ ] **Step 7: Verify and commit**
+- [x] **Step 7: Verify and commit**
 
 Run:
 
@@ -4474,7 +4480,7 @@ git commit -m "feat: compose target control-plane hosts"
 - Create: `test-next/bootstrap/fixtures/config.yaml`
 - Create: `test-next/bootstrap/fixtures/config.workflows.yaml`
 
-- [ ] **Step 1: Write configuration-ownership tests**
+- [x] **Step 1: Write configuration-ownership tests**
 
 Cover:
 
@@ -4488,7 +4494,7 @@ it('does not pass WakeConfig to any module constructor');
 it('resolves runtime data root to <wakeRoot>/.wake');
 ```
 
-- [ ] **Step 2: Run and confirm bootstrap config is absent**
+- [x] **Step 2: Run and confirm bootstrap config is absent**
 
 Run:
 
@@ -4498,7 +4504,7 @@ npx vitest run --config vitest.next.config.ts test-next/bootstrap/config-ownersh
 
 Expected: FAIL resolving target bootstrap.
 
-- [ ] **Step 3: Define domain-shaped root configuration**
+- [x] **Step 3: Define domain-shaped root configuration**
 
 Use:
 
@@ -4556,7 +4562,7 @@ surfaces:
 
 Do not add communication/conversation or document Activities.
 
-- [ ] **Step 4: Implement root composition without global config**
+- [x] **Step 4: Implement root composition without global config**
 
 `loadConfig(wakeRoot)` loads/merges YAML, then calls each module schema.
 `ResolvedWakeModulesConfig` is a bootstrap-local aggregate. CompositionRoot
@@ -4575,7 +4581,7 @@ surfaceConfig -> Surfaces
 
 No exported domain/application signature accepts the aggregate.
 
-- [ ] **Step 5: Wire filesystem persistence**
+- [x] **Step 5: Wire filesystem persistence**
 
 `resolveWakePaths(wakeRoot)` returns:
 
@@ -4596,12 +4602,12 @@ CompositionRoot constructs FileEventJournal, FileProjectionStore, and
 FileCheckpointStore and injects only their Kernel port types. It registers all
 domain projectors and does not import domain internals.
 
-- [ ] **Step 6: Add configured-workflow scenario**
+- [x] **Step 6: Add configured-workflow scenario**
 
 `E2E-CONFIG-001` loads the example config from a temporary Wake root, executes
 one fake `implement` stage, and proves each module receives only its subtree.
 
-- [ ] **Step 7: Verify and commit**
+- [x] **Step 7: Verify and commit**
 
 Run:
 
@@ -4682,7 +4688,7 @@ The companion design and this amended task satisfy the web-architecture
 decision gate. Reconfirm only if implementation discovers a need for a
 dependency or boundary that the companion design explicitly excludes.
 
-- [ ] **Step 1: Write surface-boundary tests**
+- [x] **Step 1: Write surface-boundary tests**
 
 Cover:
 
@@ -4713,7 +4719,7 @@ Under `src-next/surfaces/web/test`, add behavior tests for:
 - events/audit pause, buffered count, and resume without viewport movement;
 - semantic tables, keyboard focus, and accessible status.
 
-- [ ] **Step 2: Run and confirm surfaces are absent**
+- [x] **Step 2: Run and confirm surfaces are absent**
 
 Run:
 
@@ -4725,7 +4731,7 @@ npm run test:web
 Expected: FAIL resolving target surfaces and the unimplemented web
 application.
 
-- [ ] **Step 3: Define domain-shaped API contracts**
+- [x] **Step 3: Define domain-shaped API contracts**
 
 ```ts
 export interface WorkDetailResponse {
@@ -4774,7 +4780,7 @@ Collection cursors are opaque. API timestamps are UTC RFC 3339 values with a
 `Z` suffix. Errors use `application/problem+json`; stable extensions may
 include `code`, `retryable`, `current`, and `violations`.
 
-- [ ] **Step 4: Rebuild runtime CLI commands**
+- [x] **Step 4: Rebuild runtime CLI commands**
 
 Commands:
 
@@ -4814,7 +4820,7 @@ surfaces:
 Bind loopback by default; Docker may publish an internal bind only to host
 loopback.
 
-- [ ] **Step 5: Port HTTP mechanics and implement the approved web application**
+- [x] **Step 5: Port HTTP mechanics and implement the approved web application**
 
 Port accepted routing, compiled-asset serving, and error-mapping behavior from:
 
@@ -4898,7 +4904,7 @@ content-hashed assets as immutable. SPA fallback applies only to extensionless
 non-API application `GET`/`HEAD` paths. Verify npm and both Docker builds
 contain the assets and `wake init` contains none.
 
-- [ ] **Step 6: Add `E2E-SURFACE-001`**
+- [x] **Step 6: Add `E2E-SURFACE-001`**
 
 Create work, resource, workflow, and Run through public commands; query the API
 and assert the nested domain shape and absence of raw GitHub payload.
@@ -4910,7 +4916,7 @@ reconciliation, Problem Details conflict, event pause/buffer/resume, health
 refresh, keyboard navigation, and serious automated accessibility violations.
 Do not create a standalone mock server.
 
-- [ ] **Step 7: Verify and commit**
+- [x] **Step 7: Verify and commit**
 
 Run:
 
@@ -5000,7 +5006,7 @@ and its execution sequence is in
 - This packet may run in parallel with Task 26 if ownership of `src-next/bootstrap/composition-root.ts`, `projection-runtime.ts`, and shared API-route registration is coordinated. It must be integrated before Task 27, because the coverage audit must prove its operator scenarios.
 - GAP-01 includes GAP-02. GAP-12 reuses the board projection's condition counts. GAP-13 is an independently maintained analytics projection. GAP-04 token/cost figures remain a separately scoped cheap-now follow-up; these views omit cost-dependent fields until that fact is exposed.
 
-- [ ] **Step 1: Define failing operator-read-model contracts and tests**
+- [x] **Step 1: Define failing operator-read-model contracts and tests**
 
 Add focused projection and surface tests that prove:
 
@@ -5021,13 +5027,13 @@ npx vitest run --config vitest.next.config.ts test-next/bootstrap test-next/surf
 
 Expected: FAIL because the board, status, and analytics public applications do not yet exist.
 
-- [ ] **Step 2: Implement the board projection and application boundary**
+- [x] **Step 2: Implement the board projection and application boundary**
 
 Fold journal facts into a persisted board projection. A board card owns only operator facts: WorkItem identity/objective, condition, current workflow and stage, dwell time, run count, and condition counts. It must not expose columns, colours, legacy status objects, raw provider payloads, or policy decisions.
 
 Register the projection through `projection-runtime.ts` and compose its application facade in `composition-root.ts`. The facade reads projections; it does not call domain repositories repeatedly or scan the journal per request.
 
-- [ ] **Step 3: Expose board and status facts through the API**
+- [x] **Step 3: Expose board and status facts through the API**
 
 Add versioned board and status contracts, presenters, and routes. Return UTC timestamps and normal collection metadata; use existing Problem Details mechanics for malformed input. Extend the web decoder and query-key layers without widening `WorkItemResponse` with display-only fields.
 
@@ -5039,13 +5045,13 @@ npx vitest run --config vitest.next.config.ts test-next/surfaces/board-api.test.
 
 Expected: PASS, including assertions that public responses contain no raw GitHub payload and no presentation-oriented colour/column fields.
 
-- [ ] **Step 4: Consume board facts in the board, Work list, and status bar**
+- [x] **Step 4: Consume board facts in the board, Work list, and status bar**
 
 Replace the board and list's reconstruction from `/work-items` with the board read-model query. Retain Phase A's dark presentation, accessibility behaviour, persisted column collapse, and route-backed Work detail. Render only facts provided by the API; missing deferred facts display their explicit degraded state rather than inferred placeholders.
 
 Update browser tests to cover workflow/stage/dwell-time display, shared board and list facts, and condition counters.
 
-- [ ] **Step 5: Implement bounded incremental analytics**
+- [x] **Step 5: Implement bounded incremental analytics**
 
 Add an analytics projection maintained from journal events and a public application/API route that reads the projection by an explicit window. Do not call `journal.readAll(0)` from an HTTP request path. Reuse the legacy metric vocabulary only where a target event/projection proves the fact; omit metrics whose required facts are deferred.
 
@@ -5057,11 +5063,11 @@ npx vitest run --config vitest.next.config.ts test-next/bootstrap test-next/surf
 
 Expected: PASS, proving projection replay and no request-time full-journal scan.
 
-- [ ] **Step 6: Prove the real operator journey**
+- [x] **Step 6: Prove the real operator journey**
 
 Replace the Phase A fixture-only assertions with real HTTP-surface coverage where the target composition can provide deterministic facts. Cover desktop and mobile board/list display, status counters, a bounded analytics refresh, clean deep links, keyboard navigation, and serious accessibility violations. Add named catalogue scenarios for the board and analytics capabilities.
 
-- [ ] **Step 7: Run the packet gate and commit**
+- [x] **Step 7: Run the packet gate and commit**
 
 Run:
 
@@ -5094,7 +5100,7 @@ git commit -m "feat: add target operator read models"
 - Create: `test-next/e2e/scenarios/doctor-rebuild.test.ts`
 - Modify: `scripts/e2e-github-fake.ts`
 
-- [ ] **Step 1: Classify operational evidence in the catalogue**
+- [x] **Step 1: Classify operational evidence in the catalogue**
 
 For every test under these prefixes, mark preserve/correct/consolidate/remove
 before porting:
@@ -5114,7 +5120,7 @@ test/lib/detached-process-logging.test.ts
 Operational convenience does not justify imports into Work, Orchestration,
 Activities, or Execution domain code.
 
-- [ ] **Step 2: Port accepted tests and run them failing**
+- [x] **Step 2: Port accepted tests and run them failing**
 
 Create focused target test files under 400 lines and update imports. Run:
 
@@ -5124,7 +5130,7 @@ npx vitest run --config vitest.next.config.ts test-next/surfaces/doctor.test.ts
 
 Expected: FAIL resolving target operational commands.
 
-- [ ] **Step 3: Implement `init` and `doctor` around the target layout**
+- [x] **Step 3: Implement `init` and `doctor` around the target layout**
 
 `init` creates visible config/prompt assets and these runtime directories:
 
@@ -5143,7 +5149,7 @@ and optional Docker/sandbox health. It never repairs canonical events. An
 explicit `--rebuild-projections` uses the injected ProjectionMaintenance port
 to clear and replay derived views.
 
-- [ ] **Step 4: Port sandbox, self-update, and smoke mechanics**
+- [x] **Step 4: Port sandbox, self-update, and smoke mechanics**
 
 Keep process invocation, logging, secret scrubbing, container detection,
 version drift, update-loop, and runner smoke behaviours whose catalogue
@@ -5153,19 +5159,19 @@ Surface infrastructure folder and pass them as command dependencies.
 The self-update mechanism may replace application files but cannot rewrite
 journal events or projection truth. Smoke uses target Runner contracts.
 
-- [ ] **Step 5: Retarget the fake GitHub E2E script**
+- [x] **Step 5: Retarget the fake GitHub E2E script**
 
 `scripts/e2e-github-fake.ts` constructs target bootstrap with fake integration
 and runner boundaries. It writes all runtime state under a temporary
 `<wakeRoot>/.wake` and asserts no legacy state file is created.
 
-- [ ] **Step 6: Add `E2E-OPS-001`**
+- [x] **Step 6: Add `E2E-OPS-001`**
 
 Corrupt a disposable projection file while leaving events valid. `doctor`
 reports the path/namespace, rebuild restores the public view, and journal bytes
 remain unchanged.
 
-- [ ] **Step 7: Pass Packet E gate**
+- [x] **Step 7: Pass Packet E gate**
 
 Run:
 
@@ -5179,7 +5185,7 @@ npm run verify
 Expected: target product/operations surfaces and the complete legacy suite
 PASS.
 
-- [ ] **Step 8: Commit operational surfaces**
+- [x] **Step 8: Commit operational surfaces**
 
 ```powershell
 git add src-next/surfaces src-next/bootstrap test-next/surfaces test-next/e2e scripts/e2e-github-fake.ts docs/architecture/functional-decision-catalogue.md
@@ -5356,7 +5362,7 @@ coupling the specification to source-file structure or test evidence.
   A specification's conceptual schema describes meaning, identity,
   relationships, and lifecycle rather than reproducing field declarations.
 
-- [ ] **Step 1: Establish the source-adjacent specification standard**
+- [x] **Step 1: Establish the source-adjacent specification standard**
 
 Create `src-next/SPECIFICATION.md` with the required ordering for both levels:
 
@@ -5389,7 +5395,7 @@ Define the allowed component types as `aggregate`, `projection`,
 `policy/process`, `adapter`, and `surface application`. State that empty
 headings are removed rather than retained as placeholders.
 
-- [ ] **Step 2: Write the two-level Work pilot**
+- [x] **Step 2: Write the two-level Work pilot**
 
 Create `src-next/work/SPEC.md` as the high-level Work module specification.
 It defines Work ownership, WorkItem vocabulary, module-level policies and
@@ -5404,7 +5410,7 @@ idempotency, durable facts, cancellation/closure behaviour, and the semantic
 meaning of Work events. It does not name TypeScript functions or reproduce Zod
 shapes.
 
-- [ ] **Step 3: Obtain pilot-format approval before scaling**
+- [x] **Step 3: Obtain pilot-format approval before scaling**
 
 Present both Work specifications for operator review. Confirm that:
 
@@ -5420,7 +5426,7 @@ Do not create the remaining specifications until the pilot format is approved.
 Incorporate the approved changes into `src-next/SPECIFICATION.md`,
 `src-next/work/SPEC.md`, and `src-next/work/domain/work-item.spec.md`.
 
-- [ ] **Step 4: Inventory behavioural owners by module**
+- [x] **Step 4: Inventory behavioural owners by module**
 
 For every target module, list the behavioural owners that need a component
 specification. Include only a component that owns a meaningful aggregate,
@@ -5428,7 +5434,7 @@ projection, policy/process, adapter translation, or public surface application;
 do not create a page for every source file. Add the child names and links to the
 owning module's `SPEC.md` before writing detailed pages.
 
-- [ ] **Step 5: Write the remaining module and component specifications**
+- [x] **Step 5: Write the remaining module and component specifications**
 
 Create the remaining `SPEC.md` and component `.spec.md` files from the approved
 standard. A module page describes how its children collaborate and what it
@@ -5441,7 +5447,7 @@ contract, or public contract disagrees. Record deliberate exclusions and
 unimplemented capabilities in the final section rather than silently omitting
 them.
 
-- [ ] **Step 6: Review specification completeness and cutover readiness**
+- [x] **Step 6: Review specification completeness and cutover readiness**
 
 Review every module page and linked component page against this checklist:
 
@@ -5458,7 +5464,7 @@ Update `docs/architecture/rewrite-completion-audit.md` to name the completed
 specification set as a cutover requirement, without adding proof links to the
 specifications themselves.
 
-- [ ] **Step 7: Run the documentation and pre-cutover gate**
+- [x] **Step 7: Run the documentation and pre-cutover gate**
 
 Run:
 
@@ -5474,7 +5480,7 @@ Expected: every target module has a `SPEC.md`; every linked component
 specification resolves; all verification commands pass. Stop and resolve any
 missing behavioural owner or stale module link before Task 28.
 
-- [ ] **Step 8: Commit the behavioural specifications**
+- [x] **Step 8: Commit the behavioural specifications**
 
 ```powershell
 git add src-next docs/architecture/rewrite-completion-audit.md
@@ -5492,7 +5498,7 @@ catalogue row). This task closes the ones that block Task 27, no more.
 **Files:** touch points named in the findings doc and the three design docs
 below; no new files beyond what those designs specify.
 
-- [ ] **Step 1: Port the mechanical items**
+- [x] **Step 1: Port the mechanical items**
 
 No design needed — each already has a working legacy implementation to
 port. From the findings doc: **E2** (wire `maxTurns`/`allowedTools` through
@@ -5502,22 +5508,22 @@ below, since it depends on that design's resolution of which pipeline is
 "the tick"), **C6** (fix `unpause`'s missing paused-check and non-durable
 idempotency).
 
-- [ ] **Step 2: Implement agent-reported artifact correlation (X1)**
+- [x] **Step 2: Implement agent-reported artifact correlation (X1)**
 
 Per `docs/superpowers/specs/2026-08-02-agent-artifact-correlation-design.md`.
 Closes finding X1 and the ADR 0001 amendment it documents.
 
-- [ ] **Step 3: Implement ambiguous-state escalation**
+- [x] **Step 3: Implement ambiguous-state escalation**
 
 Per `docs/superpowers/specs/2026-08-02-ambiguous-state-escalation-design.md`.
 Closes findings E1, E6, I4.
 
-- [ ] **Step 4: Implement control-plane Advancement wiring**
+- [x] **Step 4: Implement control-plane Advancement wiring**
 
 Per `docs/superpowers/specs/2026-08-02-control-plane-advancement-wiring-design.md`.
 Closes findings C1, C2, C5, C8.
 
-- [ ] **Step 5: Re-sync drifted module specs**
+- [x] **Step 5: Re-sync drifted module specs**
 
 Steps 1-4 change `src-next` source. Run:
 
@@ -5528,7 +5534,7 @@ npm run check:specs
 Use the `sync-module-specs` skill against whatever it reports stale — this
 is a targeted re-verification of what changed, not a re-authoring pass.
 
-- [ ] **Step 6: Record decisions and verify**
+- [x] **Step 6: Record decisions and verify**
 
 Fill in the `Decision` column for every row closed above in the findings
 doc. Run:
@@ -5544,7 +5550,7 @@ PASS. Rows in the findings doc without a catalogue `Cutover` citation
 (deferred/low-priority items) are explicitly out of scope for this task —
 don't chase them here.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```powershell
 git add src-next test-next docs/reports/2026-08-02-target-architecture-spec-findings.md
