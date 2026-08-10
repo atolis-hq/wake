@@ -172,6 +172,43 @@ describe('board', () => {
 
     expect(await screen.findByText('failed')).toBeTruthy();
   });
+  it('does not show the last run outcome badge when it is done', async () => {
+    const client = new WakeApiClient(async (input) => {
+      const body = String(input).includes('/board')
+        ? {
+            items: [
+              {
+                workItemKey: 'wk_done',
+                workItemId: 'work-done',
+                objective: 'Done work',
+                condition: 'finished',
+                dwellSince: asOf,
+                runCount: 1,
+                lastRunOutcome: 'done',
+                totalTokens: 0,
+                totalCostUsd: 0,
+                totalDurationMs: 0,
+              },
+            ],
+            conditionCounts: { finished: 1 },
+            page: { nextCursor: null, hasMore: false },
+            meta: { asOf },
+          }
+        : { data: { paused: false, updatedAt: asOf }, meta: { asOf } };
+      return new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    });
+    render(
+      <MemoryRouter initialEntries={['/board']}>
+        <App client={client} />
+      </MemoryRouter>,
+    );
+
+    const card = await screen.findByRole('listitem', { name: 'Done work' });
+    expect(within(card).queryByText('done')).toBeNull();
+  });
   it('shows an awaiting approval status for work in the Needs Input column', async () => {
     const client = new WakeApiClient(async (input) => {
       const url = String(input);

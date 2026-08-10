@@ -117,7 +117,7 @@ export function BoardCard({
         )}
         <span className={styles.cardTitle}>{item.objective}</span>
         <span className={styles.cardMeta}>
-          {item.lastRunOutcome !== undefined && (
+          {item.lastRunOutcome !== undefined && item.lastRunOutcome !== 'done' && (
             <StatusBadge
               tone={outcomeTone(item.lastRunOutcome)}
               title="Outcome of the most recent run"
