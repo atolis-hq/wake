@@ -80,7 +80,9 @@ describe('WorkService', () => {
     const item = workId('frozen');
     await service.create({ workItemId: item, objective: 'Freeze me' }, context);
     await expect(service.freeze(item, context)).resolves.toMatchObject({ frozen: true });
-    await expect(service.unfreeze(item, { ...context, commandId: 'unfreeze' })).resolves.toMatchObject({ frozen: false });
+    await expect(
+      service.unfreeze(item, { ...context, commandId: 'unfreeze' }),
+    ).resolves.toMatchObject({ frozen: false });
     expect(await journal.readStream(workItemStream(item))).toHaveLength(3);
   });
 
@@ -88,7 +90,26 @@ describe('WorkService', () => {
     const service = createWorkService(new InMemoryEventJournal(new FakeClock()));
     const item = workId('deleted');
     await service.create({ workItemId: item, objective: 'Delete me' }, context);
-    await expect(service.delete(item, { ...context, commandId: 'delete' })).resolves.toMatchObject({ deleted: true });
-    await expect(service.freeze(item, { ...context, commandId: 'freeze' })).rejects.toThrow('deleted');
+    await expect(service.delete(item, { ...context, commandId: 'delete' })).resolves.toMatchObject({
+      deleted: true,
+    });
+    await expect(service.freeze(item, { ...context, commandId: 'freeze' })).rejects.toThrow(
+      'deleted',
+    );
+  });
+
+  it('deletes a closed item, unlike other lifecycle-guarded commands', async () => {
+    const service = createWorkService(new InMemoryEventJournal(new FakeClock()));
+    const item = workId('closed-deleted');
+    await service.create({ workItemId: item, objective: 'Close then delete me' }, context);
+    await service.close(item, 'completed', { ...context, commandId: 'close' });
+
+    await expect(service.delete(item, { ...context, commandId: 'delete' })).resolves.toMatchObject({
+      deleted: true,
+      state: 'closed',
+    });
+    await expect(
+      service.delete(item, { ...context, commandId: 'delete-again' }),
+    ).resolves.toMatchObject({ deleted: true, state: 'closed' });
   });
 });

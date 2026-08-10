@@ -28,27 +28,13 @@ export interface WorkService {
 
 export function createWorkService(journal: EventJournal): WorkService {
   const repository = new WorkRepository(journal);
-
-  async function change(
+  const change = (
     workItemId: WorkItemId,
     context: CommandContext,
     draft: WorkEventDraft,
-    allowMissing = false,
-  ): Promise<WorkItemView> {
-    const loaded = await repository.load(workItemId);
-    if (!allowMissing && loaded.view === null)
-      throw new Error(`WorkItem ${workItemId} does not exist`);
-    if (loaded.view !== null && loaded.view.deleted) {
-      throw new Error(`WorkItem ${workItemId} is deleted`);
-    }
-    if (loaded.view !== null && loaded.view.state !== WorkStatus.Open) {
-      throw new Error(`WorkItem ${workItemId} is ${loaded.view.state}`);
-    }
-    await repository.append(workItemId, loaded.sequence, [draft]);
-    const result = await repository.load(workItemId);
-    if (result.view === null) throw new Error(`WorkItem ${workItemId} was not created`);
-    return result.view;
-  }
+    allowMissing?: boolean,
+    requireOpen?: boolean,
+  ) => changeWorkItem(repository, workItemId, context, draft, allowMissing, requireOpen);
 
   return {
     async create(command, context) {
@@ -114,6 +100,29 @@ export function createWorkService(journal: EventJournal): WorkService {
   };
 }
 
+async function changeWorkItem(
+  repository: WorkRepository,
+  workItemId: WorkItemId,
+  context: CommandContext,
+  draft: WorkEventDraft,
+  allowMissing = false,
+  requireOpen = true,
+): Promise<WorkItemView> {
+  const loaded = await repository.load(workItemId);
+  if (!allowMissing && loaded.view === null)
+    throw new Error(`WorkItem ${workItemId} does not exist`);
+  if (loaded.view !== null && loaded.view.deleted) {
+    throw new Error(`WorkItem ${workItemId} is deleted`);
+  }
+  if (requireOpen && loaded.view !== null && loaded.view.state !== WorkStatus.Open) {
+    throw new Error(`WorkItem ${workItemId} is ${loaded.view.state}`);
+  }
+  await repository.append(workItemId, loaded.sequence, [draft]);
+  const result = await repository.load(workItemId);
+  if (result.view === null) throw new Error(`WorkItem ${workItemId} was not created`);
+  return result.view;
+}
+
 // Operator consent is a durable sibling of freeze/unfreeze. Setting it to the value it
 // already holds appends nothing, so replay cannot manufacture consent history.
 async function setAutoApproval(
@@ -171,7 +180,12 @@ async function setFrozen(
   return change(
     workItemId,
     context,
-    workDraft(workItemId, context, frozen ? WorkEventType.ItemFrozen : WorkEventType.ItemUnfrozen, {}),
+    workDraft(
+      workItemId,
+      context,
+      frozen ? WorkEventType.ItemFrozen : WorkEventType.ItemUnfrozen,
+      {},
+    ),
   );
 }
 
@@ -181,6 +195,8 @@ async function setDeleted(
     workItemId: WorkItemId,
     context: CommandContext,
     draft: WorkEventDraft,
+    allowMissing?: boolean,
+    requireOpen?: boolean,
   ) => Promise<WorkItemView>,
   workItemId: WorkItemId,
   context: CommandContext,
@@ -188,5 +204,14 @@ async function setDeleted(
   const current = (await repository.load(workItemId)).view;
   if (current === null) throw new Error(`WorkItem ${workItemId} does not exist`);
   if (current.deleted) return current;
-  return change(workItemId, context, workDraft(workItemId, context, WorkEventType.ItemDeleted, {}));
+  // Deletion is a purge escape hatch, not a lifecycle transition — unlike
+  // freeze/revise/etc it must still work once a WorkItem is closed or
+  // cancelled, since that's the common case operators need it for.
+  return change(
+    workItemId,
+    context,
+    workDraft(workItemId, context, WorkEventType.ItemDeleted, {}),
+    false,
+    false,
+  );
 }

@@ -714,4 +714,17 @@ describe('operator board projection', () => {
 
     expect(view.cards[item]).toMatchObject({ condition: 'finished' });
   });
+
+  it('removes a card entirely once its work item is deleted', () => {
+    const item = workId('board-deleted');
+    const view = [
+      eventEnvelope(WorkEventType.ItemCreated, { objective: 'Ship it' }, workItemStream(item), 1),
+      eventEnvelope(WorkEventType.ItemDeleted, {}, workItemStream(item), 2),
+    ].reduce(
+      (current, event) => boardProjection.project(current, event),
+      boardProjection.initial('global'),
+    );
+
+    expect(view.cards[item]).toBeUndefined();
+  });
 });

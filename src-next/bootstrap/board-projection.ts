@@ -143,6 +143,12 @@ function projectWork(
       cards: { ...view.cards, [id]: { ...current, condition: BoardCondition.Finished } },
     };
   }
+  // Deletion is a purge, not a lifecycle outcome — the card must disappear
+  // from the board entirely rather than settle into any condition column.
+  if (event.eventType === WorkEventType.ItemDeleted) {
+    const { [id]: _removed, ...cards } = view.cards;
+    return { ...view, cards };
+  }
   return view;
 }
 
