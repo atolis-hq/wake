@@ -1,5 +1,5 @@
 ---
-asOf: 4e8c5f6d6955ee3bf6a926063cb1c6446f4b1e0b
+asOf: 1e3248c96b0df64118974c98e4672a6dc1208212
 ---
 
 # Integrations — Module Specification
@@ -285,3 +285,10 @@ Integrations does not own:
 
 Artifact claims are provider-verified before discovery/correlation. Transient verification uncertainty is checkpoint-independent, bounded, and escalated durably; confirmed negatives are failed. Delivery unknown reconciliation is likewise bounded and marks an intent escalated, after which only an operator resolution or a confirmed provider result can clear it. GitHub review intake consumes formal review evidence for PR review commands, plus separate issue-comment evidence for issue-level approval commands and watch-gate verdict markers (see GitHub Inbound Translation). Each tick also reconciles Wake-owned GitHub status/stage/workflow labels for correlated resources while preserving user labels; labels are presentation, not commands that mutate arbitrary workflow stages.
 
+## Task 27 synchronization (2026-08-10)
+
+Fake pull-request evidence may identify the reviewing actor, whether it is a
+human or bot, and the configured reviewer identity used to authorize an
+accepted-review signal. These fixture inputs exercise the same review-trust
+rules as provider evidence; omitted values retain the deterministic fake
+reviewer defaults.
