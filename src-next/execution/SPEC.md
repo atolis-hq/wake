@@ -1,5 +1,5 @@
 ---
-asOf: 9d0d99ced6fab08eeead3005efed8e12eb1fe8af
+asOf: aee590b2a849efdfe5654719860bbbb31ace49e7
 ---
 
 # Execution — Module Specification
@@ -256,6 +256,11 @@ Execution does not own:
   process; see the Runner adapters specification.
 - Transcript persistence (prompt/response text per Run) exists as
   infrastructure but is not yet wired into the production attempt flow.
+- Crash-orphan workspace cleanup is deliberately not implemented. The same
+  attempt releases an acquired workspace in its `finally` path on normal
+  completion, failure, or retry, but Recovery has no durable workspace-owner
+  record or reaper and therefore does not reclaim a directory left by a
+  process crash.
 
 ## Task 27B synchronization (2026-08-02)
 

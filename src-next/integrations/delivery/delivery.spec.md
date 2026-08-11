@@ -34,9 +34,15 @@ or reconciles an effect — that is each provider's own delivery adapter.
 
 ## Core policies, invariants, and behaviours
 
+Delivery is intentionally not a generic multi-sink fanout router: one intent
+is addressed to one Resource and therefore one provider adapter.
+
 - `deliverNext` MUST pick the first pending-or-ambiguous intent its injected
   intent source returns; when none exists, it MUST record no facts and
   return nothing.
+- The intent source exposes actionable intents in requesting journal order.
+  Delivery processes one such intent per call; a terminal failure for one
+  intent must leave later intents independently actionable in their order.
 - An intent whose Resource cannot be resolved MUST fail the call outright
   (not record a per-intent outcome fact); this is a hard error for the
   cycle, not a delivery outcome.

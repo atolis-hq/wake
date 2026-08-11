@@ -1,5 +1,5 @@
 ---
-asOf: 9dd56cc87f2389ec5fce811a963e99e3e210ab09
+asOf: aee590b2a849efdfe5654719860bbbb31ace49e7
 ---
 
 # Integrations — Module Specification
@@ -32,7 +32,9 @@ Integrations owns:
 - Durable outbound delivery — turning a delivery intent (PR approve/merge,
   status publish, reply publish, agent-run publish) into a
   confirmed/failed/ambiguous external effect, with crash-safe idempotent
-  retry via reconciliation.
+  retry via reconciliation. A delivery intent addresses one Resource and
+  therefore exactly one owning provider; Integrations deliberately does not
+  reproduce legacy generic multi-sink fanout.
 - Terminal agent-run publication — projecting a finished Agent-activity
   run into exactly one durable outbound intent per run, addressed to its
   workflow's primary Resource, so an agent's own outcome reaches its
@@ -118,6 +120,9 @@ Integrations does not own:
 - Each delivery intent owns its own `delivery` stream, keyed by the intent's
   own event id; delivery facts for one intent MUST NOT be recorded against
   another intent's stream.
+- Actionable delivery intents MUST be processed in requesting journal order,
+  one intent at a time. A terminal failure for one Resource/provider MUST NOT
+  prevent a later intent for another Resource/provider from being processed.
 - A delivery attempt MUST resolve, per occurrence, to exactly one of
   confirmed, failed, or ambiguous. Ambiguous and interrupted (attempted but
   not yet resolved) intents remain eligible for a further delivery cycle;
