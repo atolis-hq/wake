@@ -1,5 +1,5 @@
 ---
-asOf: 1e3248c96b0df64118974c98e4672a6dc1208212
+asOf: 9dd56cc87f2389ec5fce811a963e99e3e210ab09
 ---
 
 # Integrations — Module Specification
@@ -292,3 +292,14 @@ human or bot, and the configured reviewer identity used to authorize an
 accepted-review signal. These fixture inputs exercise the same review-trust
 rules as provider evidence; omitted values retain the deterministic fake
 reviewer defaults.
+
+## GitHub transport synchronization (2026-08-11)
+
+The concrete GitHub client is independently contract-tested at the Octokit
+boundary: a configured token is supplied to Octokit and a `401` authentication
+failure is preserved; bounded issue reads use conditional ETag requests after
+an ETag-bearing response; and merge and reply delivery map to the exact
+GitHub requests (including the durable reply marker) while preserving provider
+failures. Actual Octokit `429`/`500` request failures produce redacted
+diagnostic output, while routine `304 Not Modified` traffic is quiet. These
+tests do not claim a raw multi-page source-ordering compatibility contract.
