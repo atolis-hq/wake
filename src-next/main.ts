@@ -8,6 +8,8 @@ import {
   initialiseWakeRoot,
   loadConfig,
 } from './bootstrap/index.js';
+import { wakeVersion } from './bootstrap/version.js';
+import { usage } from './surfaces/cli/usage.js';
 import {
   parseWakeCommand,
   runWakeCommand,
@@ -29,22 +31,25 @@ export interface SandboxRuntimeRouter {
 }
 
 export async function main(
-  argv = process.argv.slice(2),
-  dependencies: TargetMainDependencies = productionDependencies(),
+  argv: readonly string[] = process.argv.slice(2),
+  dependencies?: TargetMainDependencies,
 ): Promise<void> {
-  const suppliedArguments = argv.length === 0 ? ['tick'] : argv;
+  const suppliedArguments = argv;
+  const output = dependencies?.output ?? productionOutput();
+  if (writeMetaCommand(suppliedArguments, output)) return;
+  const resolvedDependencies = dependencies ?? productionDependencies();
   const bypassSandbox = suppliedArguments.includes('--no-sandbox');
   const command = parseWakeCommand(
     suppliedArguments.filter((argument) => argument !== '--no-sandbox'),
   );
   const wakeRoot = resolveWakeRoot(command);
   if (command.kind === 'init') {
-    const result = await (dependencies.initialise ?? initialiseWakeRoot)(wakeRoot);
-    dependencies.output.write(`${JSON.stringify(result)}\n`);
+    const result = await (resolvedDependencies.initialise ?? initialiseWakeRoot)(wakeRoot);
+    resolvedDependencies.output.write(`${JSON.stringify(result)}\n`);
     return;
   }
-  if (dependencies.sandboxRuntime !== undefined) {
-    const sandboxRuntime = dependencies.sandboxRuntime;
+  if (resolvedDependencies.sandboxRuntime !== undefined) {
+    const sandboxRuntime = resolvedDependencies.sandboxRuntime;
     const ranInSandbox = await runInSandboxIfAvailable({
       commandKind: command.kind,
       bypassSandbox,
@@ -53,7 +58,7 @@ export async function main(
     });
     if (ranInSandbox) return;
   }
-  const applications = await dependencies.compose(wakeRoot);
+  const applications = await resolvedDependencies.compose(wakeRoot);
   if (applications.sandboxRuntime !== undefined) {
     const sandboxRuntime = applications.sandboxRuntime;
     const ranInSandbox = await runInSandboxIfAvailable({
@@ -64,13 +69,47 @@ export async function main(
     });
     if (ranInSandbox) return;
   }
-  await runWakeCommand(command, applications, dependencies.output, dependencies.signal);
+  await runWakeCommand(
+    command,
+    applications,
+    resolvedDependencies.output,
+    resolvedDependencies.signal,
+  );
+}
+
+function writeMetaCommand(arguments_: readonly string[], output: CliOutput): boolean {
+  if (isHelpCommand(arguments_)) {
+    output.write(`${usage}\n`);
+    return true;
+  }
+  if (isVersionCommand(arguments_)) {
+    output.write(`${wakeVersion}\n`);
+    return true;
+  }
+  return false;
+}
+
+function isHelpCommand(arguments_: readonly string[]): boolean {
+  return arguments_.length === 0 || ['--help', '-h', 'help'].includes(arguments_[0] ?? '');
+}
+
+function isVersionCommand(arguments_: readonly string[]): boolean {
+  return ['--version', '-v'].includes(arguments_[0] ?? '');
 }
 
 function resolveWakeRoot(command: Parameters<typeof runWakeCommand>[0]): string {
   if ('wakeRoot' in command && command.wakeRoot !== undefined) return command.wakeRoot;
-  if ('arguments' in command) return operationalWakeRoot(command.arguments) ?? process.cwd();
+  if ('arguments' in command) {
+    const explicitWakeRoot = operationalWakeRoot(command.arguments);
+    if (explicitWakeRoot !== undefined) return explicitWakeRoot;
+    if (command.kind === 'init') return initWakeRoot(command.arguments) ?? process.cwd();
+  }
   return process.cwd();
+}
+
+function initWakeRoot(arguments_: readonly string[]): string | undefined {
+  const positional = arguments_[0];
+  return positional !== undefined && !positional.startsWith('--') ? positional : undefined;
 }
 
 async function runInSandboxIfAvailable(input: {
@@ -115,9 +154,13 @@ function productionDependencies(): TargetMainDependencies {
       const root = await createCompositionRoot(wakeRoot);
       return createSurfaceApplications(root).cli;
     },
-    output: { write: (value) => process.stdout.write(value) },
+    output: productionOutput(),
     signal: controller.signal,
   };
+}
+
+function productionOutput(): CliOutput {
+  return { write: (value) => process.stdout.write(value) };
 }
 
 function productionSandboxRuntime(): SandboxRuntimeRouter {
