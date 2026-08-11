@@ -3,15 +3,16 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Resume a prior opaque vendor session on a retry of the same agent
-activation, with current full context and a safe adapter-local fresh-session
-fallback.
+activation, with current full context and no automatic fresh-session fallback
+after a resume failure.
 
 **Architecture:** Execution derives a generic resume candidate from its
 journal-folded prior Runs for the current activation, matching the selected
 runner adapter kind. Agent Activity forwards that opaque value in its existing
 runner request after rendering the current prompt. Concrete runner adapters
-own resume argv, minimal output parsing, and the sole known-unavailable
-fallback; they return only generic session and token values.
+own resume argv and minimal output parsing; they return only generic session
+and token values. A failed resume remains a normal failure and is never
+classified or replayed as a fresh invocation.
 
 **Tech Stack:** TypeScript, existing Execution journal/Run projection, runner
 adapters, Vitest.
@@ -30,7 +31,7 @@ adapters, Vitest.
   vocabulary; add only a small shared adapter helper type if duplication would
   otherwise leak policy.
 - `src-next/execution/infrastructure/runners/{claude,codex,cursor}.ts` — own
-  vendor argv, private result parsing, and known-unavailable resume fallback.
+  vendor argv and private result parsing.
 - `src-next/execution/infrastructure/runners/{claude,codex,cursor}.spec.md`
   (or the shared `runners.spec.md`) — describe the completed adapter contract.
 - `test-next/unit/execution/runner-selection.test.ts` — prove durable
@@ -38,7 +39,8 @@ adapters, Vitest.
 - `test-next/unit/activities/agent-activity.test.ts` — prove forwarding after
   full prompt/template context is constructed.
 - `test-next/integration/execution/process-execution.test.ts` — prove precise
-  CLI argv and generic parsing/fallback behaviour using controlled processes.
+  CLI argv, generic parsing, and non-replay behaviour using controlled
+  processes.
 
 ### Task 1: Carry the opaque resume candidate through Execution
 
@@ -131,50 +133,14 @@ adapters, Vitest.
   git commit -m "feat: add vendor session resume adapters"
   ```
 
-### Task 3: Deferred — safely fall back when a session is known unavailable
+### Task 3: Settled policy — never auto-fallback after a resume failure
 
-**Status:** Deferred. Claude/Cursor documentation does not currently provide
-an authoritative machine-readable unavailable-session signature; guessing from
-free-form stderr could replay a side-effecting agent request. Revisit only
-when each adapter has an authoritative signature.
-
-**Files when unblocked:** Modify `src-next/execution/infrastructure/runners/{claude,codex,cursor}.ts`; test `test-next/integration/execution/process-execution.test.ts`.
-
-- [ ] **Step 1: Write failing per-adapter fallback tests.** Script each
-  adapter's process seam so a resume produces its explicitly recognised
-  unavailable-session response and a fresh invocation succeeds. Assert two
-  invocations only: resume with the ID then fresh without it, both with the
-  identical full prompt. Add timeout, cancellation, and arbitrary non-zero
-  controls asserting exactly one invocation and the original failure.
-
-- [ ] **Step 2: Run the focused test and verify it fails.**
-
-  Run: `npx vitest run test-next/integration/execution/process-execution.test.ts`
-
-  Expected: current CLI runner returns the first process failure and performs
-  no constrained fresh fallback.
-
-- [ ] **Step 3: Implement the bounded local policy.** Make each adapter's
-  private classifier recognise only its explicit invalid/expired/unsupported
-  session response. On that classification, invoke its normal fresh command
-  once with the original complete `RunnerRequest` but no `resumeSessionId`.
-  Do not fall back for timeout, abort, ambiguous state, quota, or an unknown
-  non-zero result. Return the fresh result normally so its newly parsed ID is
-  durably recorded by the unchanged reporting path.
-
-- [ ] **Step 4: Rerun the fallback proof.**
-
-  Run: `npx vitest run test-next/integration/execution/process-execution.test.ts`
-
-  Expected: PASS; every safe fallback is bounded and every uncertain failure
-  remains non-replayed.
-
-- [ ] **Step 5: Commit.**
-
-  ```bash
-  git add src-next/execution/infrastructure/runners/claude.ts src-next/execution/infrastructure/runners/codex.ts src-next/execution/infrastructure/runners/cursor.ts test-next/integration/execution/process-execution.test.ts
-  git commit -m "fix: fall back from unavailable agent sessions"
-  ```
+**Status:** Complete by design. Wake does not detect missing, expired, or
+unavailable vendor sessions. Every failed resumed invocation is returned once
+through the ordinary failure/retry/escalation path; it is never retried as a
+fresh session by a runner adapter. The process-execution proof asserts this
+single-invocation boundary for timeout, cancellation, and unclassified
+failures.
 
 ### Task 4: Specify and verify the complete contract
 
@@ -185,7 +151,7 @@ unit/integration suites.
 
 - [ ] **Step 1: Update the three specifications.** State activation plus
   adapter-kind scope, opaque cross-layer ID, current prompt forwarding,
-  adapter-private parsing, deferred known-unavailable fallback, and the
+  adapter-private parsing and the
   explicit no-replay failure boundary. Correct the current runners specification's
   stale claim that only Codex reads `resumeSessionId` and no adapter populates
   session/token usage.

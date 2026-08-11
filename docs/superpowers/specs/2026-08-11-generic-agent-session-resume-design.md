@@ -49,13 +49,11 @@ parsing. It receives an optional generic `resumeSessionId` and must use its
 vendor-supported resume invocation when present. It must still supply the
 full newly-rendered Wake prompt/context to that invocation.
 
-Automatic fresh fallback after a failed resume is deferred. The current
-Claude/Codex/Cursor documentation does not supply an authoritative,
-machine-readable unavailable-session signal for every adapter, and guessing
-from free-form stderr could replay a side-effecting agent request. A future
-adapter may add one bounded fresh invocation only after it has such an
-authoritative unavailable-session signature; that invocation must retain the
-same full request context and omit the ID. The adapter must not surface raw
+Wake does not detect an unavailable or expired session ID and does not start a
+fresh session automatically after a resumed invocation fails. Resume failure
+is an ordinary failed or ambiguous Run result, handled through Wake's normal
+failure, retry, and escalation policy. Adapters must not classify free-form
+stderr as an unavailable-session signal. The adapter must not surface raw
 vendor payloads through `AgentRunnerResult` metadata.
 
 An ordinary process failure, timeout, cancellation, ambiguous outcome, or
@@ -81,7 +79,7 @@ Execution supplies S; Agent Activity renders current full context
         |
 adapter attempts vendor resume(S, current prompt)
         |-- succeeds -> return parsed generic result (possibly new S')
-        |-- any failed/unavailable resume today -> return failure; no replay
+        |-- any failed/unavailable resume -> return failure; no replay
         |-- any other failure -> return failure; no replay
 ```
 
@@ -90,8 +88,6 @@ adapter attempts vendor resume(S, current prompt)
 Tests must prove durable selection only from the same activation and adapter
 kind, current context forwarding, opaque generic persistence,
 vendor-specific CLI resume arguments, parsed generic session/token outputs,
-and no retry on timeout or unclassified failure. They must also prove that a
-different activation and a different adapter kind begin fresh. No test may
-assert vendor-private raw JSON outside the corresponding adapter test. A
-future fallback test requires the adapter's authoritative unavailable-session
-signature as part of its fixture and contract.
+and no retry after any failed resume. They must also prove that a different
+activation and a different adapter kind begin fresh. No test may assert
+vendor-private raw JSON outside the corresponding adapter test.

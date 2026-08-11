@@ -84,10 +84,10 @@ component's responsibility.
 - A concrete adapter MUST never expose its raw vendor response object. It may
   return a session id and token/cost fields only through the generic result
   contract, and only when it can establish a complete corresponding count.
-- A failed resume is not retried as a fresh invocation unless that adapter has
-  an authoritative unavailable-session signature. No current adapter has
-  that signature, so timeouts, cancellation, and all failed or unclassified
-  resume attempts are returned once without replay.
+- A failed resume is never retried as a fresh invocation. Adapters do not
+  detect or classify unavailable-session IDs from vendor output. Timeouts,
+  cancellation, unavailable sessions, and every other failed or unclassified
+  resume attempt are returned once without replay.
 
 **Fake runner**
 
@@ -212,10 +212,9 @@ component's responsibility.
 - No adapter streams partial output; the full captured output is only
   available once the underlying process or fake invocation has fully
   settled.
-- Known-unavailable-session fallback is deliberately deferred until each
-  vendor publishes an authoritative machine-readable unavailable-session
-  signal. Guessing from free-form stderr could replay a side-effecting agent
-  request, so no adapter currently makes a fresh retry after a resume error.
+- Resume failure never causes a fresh-session fallback. Vendor adapters do
+  not classify unavailable-session signals, including free-form stderr; all
+  resume errors follow the normal failed/ambiguous Run path without replay.
 - There is no scenario "consumption": a matched rule can resolve the same
   way for every request that matches its `when` clause; nothing marks a
   rule as already used or advances it to a different outcome after one
