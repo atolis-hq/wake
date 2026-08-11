@@ -4,7 +4,7 @@
 
 **Goal:** Safely quiesce Wake before source-mode self-update, recover from interruption, and preserve loop retry semantics for newly published tags.
 
-**Architecture:** Bootstrap persists a maintenance lease beside the update ledger. Control Plane blocks dispatch while the lease is active; Bootstrap drains, requests cancellation, then invokes checkout/rollout/rollback. The loop keeps polling after failures but skips ledger-recorded bad tags.
+**Architecture:** Bootstrap persists a maintenance lease beside the update ledger. Entering maintenance pauses provider intake and all tick-driven work, then Bootstrap drains existing Runs, requests cancellation, and invokes checkout/rollout/rollback. Healthy completion clears the lease and resumes normal intake/ticks. The loop keeps polling after failures but skips ledger-recorded bad tags.
 
 **Tech Stack:** Node.js, TypeScript, Zod, Vitest, atomic JSON state, append-only journal/projections.
 
@@ -34,7 +34,7 @@
 
 - [ ] Write failing composed scenarios: no new Run dispatch while quiescing; completing Run drains without cancellation; slow Run is durably cancelled; checkout waits for empty active views.
 - [ ] Run the new E2E; expect dispatch still permitted.
-- [ ] Compose lease, active-run lookup, cancellation, clock, and timeouts. `advanceOnce` must not dispatch during `quiescing`, `updating`, or `rolling-back`; intake, projections, recovery, and delivery reconciliation continue.
+- [ ] Compose lease, active-run lookup, cancellation, clock, and timeouts. Entering maintenance must atomically pause provider intake and all tick-driven work before drain; no dispatch, projection advancement, recovery, reconciliation, or delivery can occur until the healthy lease clear resumes them.
 - [ ] Rerun the E2E and `npm run lint:architecture`, then commit `feat: maintain safe self update quiesce`.
 
 ## Task 4: Recover and continue loop on new tags

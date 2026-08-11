@@ -1,6 +1,6 @@
 # Safe self-update design
 
-**Status:** Proposed for review
+**Status:** Approved
 
 ## Decision
 
@@ -11,8 +11,9 @@ any Runs that remain, and updates only after the system is quiescent.
 ## Scope
 
 This closes granular-review gap G-M6 for source-mode self-update. It covers
-active agent Runs, outbound delivery, interruption, health failure, rollback,
-and restart. It does not add a packaged-install self-update path.
+active agent Runs, intake, tick-driven processing, outbound delivery,
+interruption, health failure, rollback, and restart. It does not add a
+packaged-install self-update path.
 
 ## Maintenance lease
 
@@ -28,8 +29,15 @@ not begin a competing update.
 ## Quiesce protocol
 
 1. Create or resume the maintenance lease in `quiescing`.
-2. Control Plane rejects new Run dispatch while the lease is active. Intake,
-   projections, recovery, and delivery reconciliation continue.
+2. Enter maintenance mode before the drain. Provider intake and all
+   tick-driven processing pause: no new Run dispatch, projection advancement,
+   recovery, reconciliation, or delivery occurs while the version changes.
+   Already-started Runs remain observable solely for the bounded drain and
+   cancellation protocol.
+
+Maintenance reuses Wake's existing Control Plane pause and Intake Pipeline
+pause hooks. The maintenance lease supplies their durable pause condition; it
+does not introduce a second resident host, scheduler, or polling mechanism.
 3. Wait for active Runs through a configured bounded grace interval.
 4. For Runs still active, issue durable cancellation requests with reason
    `maintenance`; wait through a configured cancellation interval.
@@ -38,9 +46,11 @@ not begin a competing update.
 6. Once no active Runs remain, continue with the existing pending-ledger,
    checkout, optional rollout, health-check, and rollback sequence.
 
-Delivery reconciliation continues during quiescing, but no new potentially
-effectful delivery is initiated after the update phase begins. An ambiguous
-external effect remains an explicit escalation; self-update never repeats it.
+No provider polling, delivery reconciliation, or new potentially effectful
+delivery is initiated during maintenance. An ambiguous external effect remains
+an explicit escalation; self-update never repeats it. After a healthy update,
+the lease is cleared and normal intake/ticks resume from their durable
+checkpoints.
 
 ## Recovery and rollback
 
