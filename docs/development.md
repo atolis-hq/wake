@@ -74,7 +74,7 @@ cd bin && npm link && cd ..
 ```
 
 `npm link` (run from `bin/`, which is its own tiny local package) registers
-a `wake-dev` command on your `PATH` that runs `src/main.ts` live via this
+a `wake-dev` command on your `PATH` that runs `src-next/main.ts` live via this
 checkout's own `tsx` — no build step, and every invocation picks up your
 latest source changes immediately. It works from any directory (e.g. after
 you `cd` into a wake-home), the same as the packaged `wake` binary. Linking
