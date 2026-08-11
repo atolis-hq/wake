@@ -17,6 +17,7 @@ import {
   type ExecutionAttemptContext,
   type WorkspaceProvider,
 } from '../../../src-next/execution/index.js';
+import { type EventJournal } from '../../../src-next/kernel/index.js';
 import {
   orchestrationGroupId,
   workflowInstanceId,
@@ -27,7 +28,7 @@ import {} from '../../../src-next/work/index.js';
 import { FakeClock, SequentialIds } from '../../e2e/support/world.js';
 import { resId, workId } from '../../support/identities.js';
 
-function setup(workspace?: WorkspaceProvider) {
+function setup(workspace?: WorkspaceProvider, journal?: EventJournal) {
   const registry = new ActivityRegistry();
   registry.register({
     name: activityName('implement'),
@@ -42,9 +43,9 @@ function setup(workspace?: WorkspaceProvider) {
       },
     },
   });
-  const journal = new InMemoryEventJournal(new FakeClock());
+  const eventJournal = journal ?? new InMemoryEventJournal(new FakeClock());
   const service = createExecutionService(
-    journal,
+    eventJournal,
     registry,
     { runnerPools: { standard: ['fake'] }, defaultRunnerPool: 'standard' },
     {
@@ -53,7 +54,7 @@ function setup(workspace?: WorkspaceProvider) {
       ...(workspace === undefined ? {} : { workspaces: workspace }),
     },
   );
-  return { service, journal };
+  return { service, journal: eventJournal };
 }
 
 const activation = {
@@ -132,6 +133,65 @@ describe('ExecutionService', () => {
     expect((await fixture.journal.readAll(0)).map((event) => event.eventType)).toContain(
       'execution.workspace-cleanup-failed',
     );
+  });
+
+  it('releases an allocated workspace when persisting run start is interrupted, then allows retry', async () => {
+    const base = new InMemoryEventJournal(new FakeClock());
+    let failStartOnce = true;
+    const interruptedJournal: EventJournal = {
+      async append(stream, expectedSequence, events) {
+        if (failStartOnce && events.some((event) => event.eventType === 'execution.run-started')) {
+          failStartOnce = false;
+          throw new Error('run start append interrupted');
+        }
+        return base.append(stream, expectedSequence, events);
+      },
+      readStream: base.readStream.bind(base),
+      readAll: base.readAll.bind(base),
+      readLatest: base.readLatest?.bind(base),
+    };
+    let acquired = 0;
+    let released = 0;
+    const fixture = setup(
+      {
+        async acquire() {
+          acquired += 1;
+          return {
+            workspaceId: `workspace-${acquired}`,
+            path: `/workspace-${acquired}`,
+            mode: 'read-only',
+            async release() {
+              released += 1;
+            },
+          };
+        },
+      },
+      interruptedJournal,
+    );
+    const workspaceActivation = { ...activation, execution: { workspace: 'read-only' as const } };
+    const workspaceContext = {
+      ...context,
+      resources: [
+        {
+          resourceId: resId('repo'),
+          kind: BuiltInResourceKind.Repository,
+          externalKey: { adapter: 'github', key: 'atolis-hq/wake' },
+          capabilities: [],
+        },
+      ],
+    };
+
+    await expect(fixture.service.attempt(workspaceActivation, workspaceContext)).rejects.toThrow(
+      'run start append interrupted',
+    );
+    expect({ acquired, released }).toEqual({ acquired: 1, released: 1 });
+
+    await expect(
+      fixture.service.attempt(workspaceActivation, workspaceContext),
+    ).resolves.toMatchObject({
+      status: 'succeeded',
+    });
+    expect({ acquired, released }).toEqual({ acquired: 2, released: 2 });
   });
   it('rejects an unregistered execution runner pool', async () => {
     await expect(
