@@ -1,5 +1,9 @@
 # CLI Surface — Component Specification
 
+---
+asOf: 725a0bc
+---
+
 ## Type, purpose, and scope
 
 Surface application. The CLI surface is the single, minimal entry point that
@@ -38,6 +42,8 @@ Owns:
   resource correlation, and smoke passthrough.
 - Redacting secret-shaped fields from process log text before it is written
   or displayed.
+- Streaming, serialising, rotating, and closing target-owned process logs for
+  detached sandbox-start output.
 
 Does not own:
 
@@ -125,10 +131,19 @@ Does not own:
   diagnostics and reading projection health, so the reported health reflects
   the rebuilt state.
 - `audit` MUST read from the canonical event journal, not a projection, and
-  MUST scope results to the given work item's own stream.
+  MUST select every event whose stream id equals the supplied id, regardless
+  of stream kind.
 - Process log text MUST have any `token=`, `secret=`, `password=`, or
   `key=`-prefixed value replaced with a fixed redaction marker before being
   written or displayed.
+- A process-log sink MUST serialise chunk writes, tee the same scrubbed text
+  to its caller and durable target-owned file, and, when configured with a
+  byte bound, rotate the existing non-empty file to one `.1` generation before
+  appending a chunk that would exceed that bound. A failed write must reject
+  its own caller yet leave the queue usable by a later write.
+- Detached child output MUST remain attached until Node reports `close` (not
+  merely `exit`), then drain queued writes and close the sink. A sink/reporting
+  failure is reported but never left as an unhandled rejected drain promise.
 
 ## Conceptual schema
 

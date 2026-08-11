@@ -1,5 +1,5 @@
 ---
-asOf: 4e8c5f6d6955ee3bf6a926063cb1c6446f4b1e0b
+asOf: 725a0bc
 ---
 
 # Surfaces — Module Specification
@@ -178,4 +178,3 @@ Surfaces does not own:
 ## Task 27B synchronization (2026-08-02)
 
 The public control-plane command is `tick` at `/control-plane/commands/tick`; it returns the bounded full-pipeline result rather than invoking bare advancement. The web client uses the same operation.
-

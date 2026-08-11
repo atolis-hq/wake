@@ -1,5 +1,9 @@
 # CLI surface application — Component Specification
 
+---
+asOf: 725a0bc
+---
+
 ## Type, purpose, and scope
 
 Surface application. The CLI surface application is the only path the CLI
@@ -100,6 +104,13 @@ application's own responses — it only decides when to serve them.
   container reachable for `sandbox exec` even while `start` itself keeps
   failing — and MUST only launch `start` at all when the container was
   built with start enabled.
+- The detached `wake start` child spawned for sandbox-entrypoint supervision
+  MUST write stdout and stderr through the target-owned process log, remain
+  drainable until the child `close` event, and keep later logging viable after
+  a transient write error. Logged text is scrubbed before it is persisted;
+  sink failures are reported to stderr rather than escaping as unhandled
+  background rejections. The start log keeps one rotated predecessor when its
+  configured 10 MiB bound would otherwise be exceeded.
 - `sandboxRuntime.exec` MUST invoke the composed CLI inside the sandbox
   container using the invocation this deployment's `host.development.mode`
   implies (a direct `node`/build-output invocation for `source` mode, the

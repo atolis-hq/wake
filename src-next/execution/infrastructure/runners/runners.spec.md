@@ -1,5 +1,9 @@
 # Runner adapters — Component Specification
 
+---
+asOf: 725a0bc
+---
+
 ## Type, purpose, and scope
 
 Adapter. The runner adapters translate a `RunnerRequest` into an invocation
@@ -26,9 +30,11 @@ They do not decide which runner or pool to use — the Execution service
 resolves a runner and invokes it — and they do not interpret the agent's own
 output for workflow purposes; translating an `AgentRunnerResult` into an
 Activity outcome remains the agent Activity handler's responsibility.
-Parsing a runner's raw output into Execution's own `AgentRunResponse` record
-is owned by a separate component (Agent run response translation), not by
-this one.
+Each concrete vendor adapter may privately recognise its own structured CLI
+output only to translate it into generic `output`, `sessionId`, and complete
+`tokenUsage` fields. Parsing that generic output into Execution's
+`AgentRunResponse` record remains the separate agent-response translation
+component's responsibility.
 
 ## Core policies, invariants, and behaviours
 
@@ -51,8 +57,10 @@ this one.
   Execution's cancellation protocol, and the Run's own transport status
   becomes whatever the Activity handler subsequently returns for it.
 - On a clean exit with code zero and no timeout, the runner MUST report
-  transport `succeeded` with the process's captured standard output as
-  `output`. On any other exit, the runner MUST report transport `failed`
+  transport `succeeded` with captured standard output as `output`, unless its
+  concrete adapter recognises a valid vendor result and replaces it with that
+  result's generic output. Unrecognised or malformed successful stdout stays
+  raw. On any other exit, the runner MUST report transport `failed`
   with failure kind `process-exit` and a message drawn from standard error,
   or the exit code when standard error is empty.
 - Aborting the request's signal (from a cancellation request) MUST kill the
@@ -62,9 +70,10 @@ this one.
   invocation.
 - `RunnerRequest` declares `maxTurns` and `allowedTools`; none of the
   CLI-based runners read or forward either field into the invoked process's
-  arguments. The `claude-cli`, `codex-cli`, and `cursor-cli` variants build
-  their arguments from the request's `prompt` and, when present, `model`
-  (and, for `codex-cli` only, `resumeSessionId`); the `command` variant
+  arguments except Claude, which forwards its established turn/tool options.
+  The `claude-cli`, `codex-cli`, and `cursor-cli` variants build their
+  vendor-specific fresh or resumed arguments from the request's full `prompt`,
+  `model` when present, and optional opaque `resumeSessionId`; the `command` variant
   ignores the request entirely and always invokes its configured command
   with its configured static arguments, so it does not forward the
   request's prompt, model, or any other field.
@@ -72,6 +81,13 @@ this one.
   the request's own `runId` as the identity's `id` — not an OS process id —
   with kind `process`. This is what Recovery's inspector later receives to
   find the real execution again.
+- A concrete adapter MUST never expose its raw vendor response object. It may
+  return a session id and token/cost fields only through the generic result
+  contract, and only when it can establish a complete corresponding count.
+- A failed resume is not retried as a fresh invocation unless that adapter has
+  an authoritative unavailable-session signature. No current adapter has
+  that signature, so timeouts, cancellation, and all failed or unclassified
+  resume attempts are returned once without replay.
 
 **Fake runner**
 
@@ -141,18 +157,18 @@ this one.
 | `workspacePath` | string, optional | Working directory for a spawned process. |
 | `allowedTools` | list of string | Declared but not read by any current CLI-based or fake adapter. |
 | `maxTurns` | integer, optional | Declared but not read by any current CLI-based or fake adapter. |
-| `resumeSessionId` | string, optional | Read only by the `codex-cli` adapter, to resume a prior session. |
+| `resumeSessionId` | string, optional | Opaque prior-session reference selected by Execution. Claude, Codex, and Cursor each pass it in their own vendor-supported resume shape while still forwarding the complete current prompt; generic command and fake runners do not manufacture or interpret it. |
 
 **AgentRunnerResult**
 
 | Field | Type | Description |
 | --- | --- | --- |
 | `transport` | closed vocabulary: `succeeded` / `failed` / `cancelled` / `ambiguous` | What happened to the invocation. Current adapters only ever report `succeeded` or `failed`; `cancelled` and `ambiguous` are permitted by the contract for a future adapter (for example a remote-session runner able to ask a provider directly) but unreached by any adapter read here. |
-| `output` | string | Captured standard output (CLI-based) or the encoded sentinel (fake). |
+| `output` | string | Raw captured standard output when no structured vendor result is recognised; otherwise the adapter-private parsed generic answer; or the encoded sentinel (fake). |
 | `runner` | string | The runner's own name, echoed onto the result. |
 | `model` | string, optional | Echoed back when the request specified one. |
-| `sessionId` | string, optional | Not populated by any current adapter. |
-| `tokenUsage` | Token usage, optional | Not populated by any current adapter. |
+| `sessionId` | string, optional | Opaque generic session reference returned by a concrete vendor adapter when present in recognised output. |
+| `tokenUsage` | Token usage, optional | Generic complete token/cost fields returned by a concrete vendor adapter when recognised; partial counts are omitted rather than defaulted. |
 | `failure` | `{ kind, message }`, optional | Present on a non-`succeeded` transport; `kind` is an open string (`timeout`, `process-exit`, or provider-specific values such as `provider-quota-exceeded`), not a closed vocabulary. |
 
 **Fake scenario rule** (validated from an operator-supplied scenario file)
@@ -196,6 +212,10 @@ this one.
 - No adapter streams partial output; the full captured output is only
   available once the underlying process or fake invocation has fully
   settled.
+- Known-unavailable-session fallback is deliberately deferred until each
+  vendor publishes an authoritative machine-readable unavailable-session
+  signal. Guessing from free-form stderr could replay a side-effecting agent
+  request, so no adapter currently makes a fresh retry after a resume error.
 - There is no scenario "consumption": a matched rule can resolve the same
   way for every request that matches its `when` clause; nothing marks a
   rule as already used or advances it to a different outcome after one

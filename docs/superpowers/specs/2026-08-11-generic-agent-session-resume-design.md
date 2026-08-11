@@ -49,19 +49,19 @@ parsing. It receives an optional generic `resumeSessionId` and must use its
 vendor-supported resume invocation when present. It must still supply the
 full newly-rendered Wake prompt/context to that invocation.
 
-If the adapter can positively classify the resume attempt as unavailable for
-that session (for example a documented invalid, expired, or unsupported
-session response), it makes exactly one fresh invocation with the same full
-request context and without the ID. The fresh result becomes the normal result
-for the Run and, when it reports a new ID, becomes the candidate for a later
-attempt. The adapter may record an adapter-local diagnostic, but must not
-surface raw vendor payloads through `AgentRunnerResult` metadata.
+Automatic fresh fallback after a failed resume is deferred. The current
+Claude/Codex/Cursor documentation does not supply an authoritative,
+machine-readable unavailable-session signal for every adapter, and guessing
+from free-form stderr could replay a side-effecting agent request. A future
+adapter may add one bounded fresh invocation only after it has such an
+authoritative unavailable-session signature; that invocation must retain the
+same full request context and omit the ID. The adapter must not surface raw
+vendor payloads through `AgentRunnerResult` metadata.
 
 An ordinary process failure, timeout, cancellation, ambiguous outcome, or
 unrecognised error is *not* evidence that resume is unavailable. It must be
 returned as the normal failed/ambiguous result; Wake must not replay an agent
-request after an uncertain external effect. The fallback is bounded to one
-known-unavailable resume failure followed by one fresh attempt.
+request after an uncertain external effect.
 
 Configured generic `command` and fake runners do not claim vendor resume
 support. They receive no session ID behaviour beyond their existing request
@@ -81,16 +81,17 @@ Execution supplies S; Agent Activity renders current full context
         |
 adapter attempts vendor resume(S, current prompt)
         |-- succeeds -> return parsed generic result (possibly new S')
-        |-- known session unavailable -> one fresh start(current prompt)
+        |-- any failed/unavailable resume today -> return failure; no replay
         |-- any other failure -> return failure; no replay
 ```
 
 ## Required proof
 
 Tests must prove durable selection only from the same activation and adapter
-kind, current context forwarding on both paths, opaque generic persistence,
+kind, current context forwarding, opaque generic persistence,
 vendor-specific CLI resume arguments, parsed generic session/token outputs,
-one known-unavailable fallback, and no fallback on a timeout or unclassified
-failure. They must also prove that a different activation and a different
-adapter kind begin fresh. No test may assert vendor-private raw JSON outside
-the corresponding adapter test.
+and no retry on timeout or unclassified failure. They must also prove that a
+different activation and a different adapter kind begin fresh. No test may
+assert vendor-private raw JSON outside the corresponding adapter test. A
+future fallback test requires the adapter's authoritative unavailable-session
+signature as part of its fixture and contract.

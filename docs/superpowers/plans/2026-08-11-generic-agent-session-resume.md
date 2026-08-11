@@ -131,9 +131,14 @@ adapters, Vitest.
   git commit -m "feat: add vendor session resume adapters"
   ```
 
-### Task 3: Safely fall back when a session is known unavailable
+### Task 3: Deferred â€” safely fall back when a session is known unavailable
 
-**Files:** Modify `src-next/execution/infrastructure/runners/{claude,codex,cursor}.ts`; test `test-next/integration/execution/process-execution.test.ts`.
+**Status:** Deferred. Claude/Cursor documentation does not currently provide
+an authoritative machine-readable unavailable-session signature; guessing from
+free-form stderr could replay a side-effecting agent request. Revisit only
+when each adapter has an authoritative signature.
+
+**Files when unblocked:** Modify `src-next/execution/infrastructure/runners/{claude,codex,cursor}.ts`; test `test-next/integration/execution/process-execution.test.ts`.
 
 - [ ] **Step 1: Write failing per-adapter fallback tests.** Script each
   adapter's process seam so a resume produces its explicitly recognised
@@ -180,8 +185,8 @@ unit/integration suites.
 
 - [ ] **Step 1: Update the three specifications.** State activation plus
   adapter-kind scope, opaque cross-layer ID, current prompt forwarding,
-  adapter-private parsing, one known-unavailable fallback, and the explicit
-  no-replay failure boundary. Correct the current runners specification's
+  adapter-private parsing, deferred known-unavailable fallback, and the
+  explicit no-replay failure boundary. Correct the current runners specification's
   stale claim that only Codex reads `resumeSessionId` and no adapter populates
   session/token usage.
 

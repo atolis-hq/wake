@@ -1,5 +1,9 @@
 # Agent Activity — Component Specification
 
+---
+asOf: 725a0bc
+---
+
 ## Type, purpose, and scope
 
 Adapter. Agent Activity is the built-in `agent` Activity: it translates a
@@ -95,6 +99,10 @@ supplies.
   field carrying that pair plus an `action` equal to the template name, or
   `'prompt'` for a literal-prompt invocation; with no `runnerContext`
   supplied, the field MUST be omitted entirely.
+- When Execution supplies an opaque `resumeSessionId`, this Activity MUST
+  forward it unchanged with the freshly rendered complete request. It neither
+  parses, validates, persists, nor exposes vendor-specific session details;
+  the selected runner adapter decides its resume invocation.
 
 ## Conceptual schema
 

@@ -1,5 +1,9 @@
 # Execution service — Component Specification
 
+---
+asOf: 725a0bc
+---
+
 ## Type, purpose, and scope
 
 Surface application. The Execution service is the only entry point through
@@ -78,6 +82,13 @@ workspace mechanics itself — it only resolves and invokes them.
   Activation does an attempt proceed to claim the Activation and create a
   fresh Run, with attempt number one greater than the count of Runs already
   recorded for it.
+- Before starting a genuinely fresh agent attempt, Execution MAY select one
+  opaque prior session only from terminal Runs for the same Activation whose
+  recorded runner `cli` equals the newly selected adapter kind. It chooses the
+  newest terminal result with a non-empty generic session id, ordered by
+  finish time, attempt, then Run id. It forwards that id unchanged to the
+  Activity with the current prompt/context; different adapter kinds, started
+  or ambiguous Runs, and missing ids start fresh.
 
 **Claim, workspace, and Run creation**
 
