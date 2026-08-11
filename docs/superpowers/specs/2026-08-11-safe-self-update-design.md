@@ -71,10 +71,14 @@ Each iteration acquires and releases its own maintenance lease; a successful
 or no-op iteration waits the configured interval before checking again. It
 must not retain maintenance mode between iterations.
 
-Any failed quiesce, update, health check, or rollback stops the loop and
-leaves the failed lease visible for the operator. The loop does not silently
-retry a failed operation. It respects process shutdown while waiting between
-iterations and while quiescing.
+Any failed quiesce, update, health check, or rollback records that attempted
+tag as bad and leaves the failed lease visible for the operator. The loop logs
+the failure, waits its configured interval, and checks candidates again. It
+MUST NOT retry that bad tag unless the operator uses `--force`, but it MUST
+attempt a newer candidate tag once one is published. A successful update
+clears the failed maintenance lease and the loop continues normally. It
+respects process shutdown while waiting between iterations and while
+quiescing.
 
 ## Tests
 
