@@ -40,9 +40,10 @@ appends the result.
   each convention in order and using the first that matches:
   1. **Bare envelope** — the entire trimmed output parses as JSON with a
      `status` field naming one of `DONE`/`REJECTED`/`BLOCKED`/`FAILED`.
-     `displayBody` in this case MUST be a fixed, outcome-specific sentence
-     (there is no other text to show once the whole output was the
-     envelope).
+     When that envelope supplies a non-blank string `displayBody`, it MUST
+     be retained verbatim. Otherwise `displayBody` MUST be a fixed,
+     outcome-specific sentence (there is no other text to show once the
+     whole output was the envelope).
   2. **Wake-result fence** — the *last* fenced code block in the output
      whose fence is tagged `wake-result` contains, after stripping a
      trailing bare sentinel-word line, JSON with a recognized `status`.
