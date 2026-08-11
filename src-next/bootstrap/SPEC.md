@@ -1,5 +1,5 @@
 ---
-asOf: 960e92f8972f78b4baa2998c8c03421ffecea863
+asOf: 0c5a46c
 ---
 
 # Bootstrap — Module Specification
@@ -150,6 +150,11 @@ Bootstrap does not own:
   runtime work. A failed attempt stays visible and paused; a distinct new
   candidate may replace it atomically, while the same bad tag is skipped
   unless forced.
+- Bootstrap composes its Git workspace provider into Control Plane's existing
+  pre-dispatch recovery pass. It supplies no workspace-cleanup setting or
+  independent host: valid marker-owned terminal/never-started workspaces are
+  reclaimed by Execution, while the shared pause state prevents maintenance
+  from starting tick-driven recovery work.
 
 ## Conceptual schema
 

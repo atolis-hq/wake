@@ -1,5 +1,5 @@
 ---
-asOf: aee590b2a849efdfe5654719860bbbb31ace49e7
+asOf: 0c5a46c
 ---
 
 # Execution — Module Specification
@@ -118,6 +118,19 @@ Execution does not own:
   already concluded MUST NOT alter the Run's already-recorded terminal
   outcome; it MUST be recorded as a `RunWorkspaceCleanupFailed` diagnostic
   fact instead.
+- Before a Git workspace is cloned, its adapter MUST persist a managed
+  ownership marker containing the Run ID, WorkItem ID, repository Resource
+  ID, workspace mode, workspace ID, and absolute path. This bridges the
+  crash window before `execution.run-started` becomes durable.
+- During the existing pre-dispatch recovery pass, a workspace adapter may
+  reclaim only a valid marker-owned path below its managed workspace root
+  when its owner Run is terminal or absent (never started). Started and
+  ambiguous owners, unmarked directories, malformed markers, and paths that
+  are outside or resolve outside that root MUST be retained for inspection.
+- Workspace crash recovery is pause-aware: the existing dispatch pause stops
+  the sweep between independent reclaims, so maintenance performs no
+  tick-driven deletion. It has no resident reaper, age threshold, or new
+  user configuration; repeated recovery is idempotent.
 
 ## Event catalogue
 
@@ -256,11 +269,9 @@ Execution does not own:
   process; see the Runner adapters specification.
 - Transcript persistence (prompt/response text per Run) exists as
   infrastructure but is not yet wired into the production attempt flow.
-- Crash-orphan workspace cleanup is deliberately not implemented. The same
-  attempt releases an acquired workspace in its `finally` path on normal
-  completion, failure, or retry, but Recovery has no durable workspace-owner
-  record or reaper and therefore does not reclaim a directory left by a
-  process crash.
+- Workspace ownership markers support only the narrow crash-orphan recovery
+  policy above. They do not make it safe to delete an active or ambiguous
+  Run's workspace, infer ownership from a directory name, or clean up by age.
 
 ## Task 27B synchronization (2026-08-02)
 

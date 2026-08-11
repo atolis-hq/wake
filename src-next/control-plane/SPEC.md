@@ -1,5 +1,5 @@
 ---
-asOf: 03d77755a82091cbe78985c6bf156475bca531f2
+asOf: 0c5a46c
 ---
 
 # Control Plane — Module Specification
@@ -85,6 +85,11 @@ Control Plane does not own:
 - Runner and global dispatch pause state MUST be recorded as durable events
   on the control-plane stream, not cached only in process memory, so it
   survives a restart.
+- Before reconciliation or selection, Advancement invokes Execution's
+  crash-workspace recovery capability when Bootstrap supplies it. The same
+  dispatch-pause gate is sampled before and between safe reclaims: a paused
+  tick performs no recovery deletion, and recovery never becomes a resident
+  or age-based Control Plane service.
 
 ## Event catalogue
 
