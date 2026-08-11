@@ -98,6 +98,8 @@ export * from './surface-applications.js';
 
 export * from './update-ledger.js';
 
+export * from './update-maintenance-lease.js';
+
 export * from './self-update-application.js';
 
 export * from './source-update-port.js';
