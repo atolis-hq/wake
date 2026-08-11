@@ -117,11 +117,24 @@ describe('agent activity template context', () => {
   it('forwards an opaque resume session with the fully rendered current prompt', async () => {
     const requests: Array<{ readonly prompt: string; readonly resumeSessionId?: string }> = [];
     const activity = createAgentActivity(
-      { async render() { return { prompt: 'Current instructions' }; } },
-      { async forWorkItem() { return { title: 'Current ticket', body: 'Current body', comments: [] }; } },
+      {
+        async render() {
+          return { prompt: 'Current instructions' };
+        },
+      },
+      {
+        async forWorkItem() {
+          return { title: 'Current ticket', body: 'Current body', comments: [] };
+        },
+      },
     );
 
-    await execute(activity, (request) => requests.push(request), { template: 'implement' }, 'session-1');
+    await execute(
+      activity,
+      (request) => requests.push(request),
+      { template: 'implement' },
+      'session-1',
+    );
 
     expect(requests).toEqual([
       expect.objectContaining({

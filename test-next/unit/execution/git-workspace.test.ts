@@ -1,7 +1,7 @@
-import { afterEach, describe, expect, it } from 'vitest';
 import { access, mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { afterEach, describe, expect, it } from 'vitest';
 import { runId } from '../../../src-next/execution/contracts/identifiers.js';
 import { GitWorkspaceProvider } from '../../../src-next/execution/infrastructure/workspace/git-workspace.js';
 import { resourceKind } from '../../../src-next/resources/index.js';

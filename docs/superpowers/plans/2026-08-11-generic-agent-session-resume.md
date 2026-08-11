@@ -131,7 +131,7 @@ adapters, Vitest.
   git commit -m "feat: add vendor session resume adapters"
   ```
 
-### Task 3: Deferred â€” safely fall back when a session is known unavailable
+### Task 3: Deferred — safely fall back when a session is known unavailable
 
 **Status:** Deferred. Claude/Cursor documentation does not currently provide
 an authoritative machine-readable unavailable-session signature; guessing from
