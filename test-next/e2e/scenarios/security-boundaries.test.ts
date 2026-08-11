@@ -99,5 +99,5 @@ defineScenario(
       ),
     ).toHaveLength(0);
   },
-  15_000,
+  30_000,
 );

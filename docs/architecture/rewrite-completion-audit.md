@@ -1,9 +1,27 @@
 # Rewrite Completion Audit
 
 This is an evidence record for Task 27, not a claim that the legacy and target
-internals are equivalent. Results below are from the commands in the **Verification**
-column on 2026-08-10. The accepted comparison surface is public lifecycle,
+internals are equivalent. The original section-level table below is retained
+as the evidence index. The current Task 27 closure record on 2026-08-11
+supersedes any older PASS/PARTIAL counts in that table. The accepted comparison
+surface is public lifecycle,
 external effects, selected Activity, workspace mode, and operator output only.
+
+## Current Task 27 closure record (2026-08-11)
+
+All Task 27 gates passed on the current target tree:
+
+| Requirement | Direct evidence | Result |
+| --- | --- | --- |
+| Catalogue and scenario completeness | `npm run check:catalogue` reports 64 decisions; `npm run check:scenarios` reports 62 catalogue scenario IDs. | PASS |
+| Architectural and specification guardrails | `npm run lint:architecture` passes 11 manifests, contract vocabulary, and dependency-cruiser for 400 modules/1649 dependencies; `npm run check:specs` reports all 11 module specifications current. | PASS |
+| Maintainability and target verification | `npm run lint:next`, `npm run format:check:next`, and `npm run build:next` pass; target verification groups pass: web 13 files/53 tests, unit 108 files/527 tests, architecture 11 files/102 tests. | PASS |
+| Legacy regression evidence | `npm run verify` passes legacy lint, format, build, 72 files/797 tests (4 skipped); the accepted preserve subset passes 9 files/71 tests. | PASS |
+| Cross-cutting fault, duplicate, and security scenarios | `E2E-FAULT-001`, `E2E-DUPLICATE-001`, and `E2E-SECURITY-001` are descriptor-backed catalogue scenarios. Fault injection covers the ten required before/after boundaries; duplicate and security scenarios exercise the required composed paths. The latter two have a bounded 30-second scenario budget because their full composed multi-world paths take 14-20 seconds. | PASS |
+| Target E2E evidence | The exact ten accepted preserve scenarios pass 10 files/19 tests. `npm run test:next:e2e` passes the full non-live suite: 53 files/101 tests. | PASS |
+
+The Task 27 implementation deliberately does not claim Task 28 atomic cutover
+or Task 29 final operator documentation; those are separate plan tasks.
 
 ## Accepted differential checks for `preserve` decisions
 

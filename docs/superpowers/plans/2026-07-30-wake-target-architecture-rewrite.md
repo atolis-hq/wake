@@ -75,11 +75,9 @@ The plan deliberately builds only enough of each module to complete the first
 golden path, then expands by capability. Do not finish an entire technical
 layer before running the E2E spine.
 
-**Status (as of 2026-08-10):** Packets A-E complete (Tasks 1-26, 25A, 25C,
-25D). Packet F in progress: Task 27A (behavioural specifications) and Task
-27B (legacy-preservation gap closure) are complete; Task 27
-(functional-decision and scenario coverage), Task 28 (atomic cutover), and
-Task 29 (final documentation and audit) remain open.
+**Status (as of 2026-08-11):** Packets A-E and Task 27 of Packet F are
+complete. Task 28 (atomic cutover) and Task 29 (final documentation and audit)
+remain open.
 
 ## 3. Target file map
 
@@ -5210,7 +5208,7 @@ only has to happen once, against real behaviour.
 - Modify: `package.json`
 - Modify: `docs/architecture/functional-decision-catalogue.md`
 
-- [ ] **Step 1: Add the scenario-coverage checker**
+- [x] **Step 1: Add the scenario-coverage checker**
 
 Implement a script that:
 
@@ -5230,7 +5228,7 @@ Add:
 
 Include it in `verify:next` after `check:catalogue`.
 
-- [ ] **Step 2: Run coverage and close every reported gap**
+- [x] **Step 2: Run coverage and close every reported gap**
 
 Run:
 
@@ -5243,7 +5241,7 @@ Expected: both PASS. For each failure, either add the named target scenario or
 change the catalogue disposition with an explicit reason. Never delete
 evidence paths to make the check pass.
 
-- [ ] **Step 3: Complete cross-cutting fault scenarios**
+- [x] **Step 3: Complete cross-cutting fault scenarios**
 
 `E2E-FAULT-001` injects a failure immediately before and after each of:
 
@@ -5271,7 +5269,7 @@ unchanged after the first accepted fact.
 wrong Resource correlation, stale revision, and agent-reported merge request.
 None bypass domain validation.
 
-- [ ] **Step 4: Run accepted differential checks**
+- [x] **Step 4: Run accepted differential checks**
 
 For catalogue rows marked `preserve`, drive legacy and target fakes with the
 same high-level input where practical and compare only:
@@ -5288,7 +5286,7 @@ Do not compare internal events, file paths, projections, or legacy status
 objects. Record rows that cannot be compared and point to their target scenario
 instead.
 
-- [ ] **Step 5: Write the completion audit**
+- [x] **Step 5: Write the completion audit**
 
 `docs/architecture/rewrite-completion-audit.md` contains one section per
 design section 1-20 and records:
@@ -5304,7 +5302,7 @@ result
 Every deferred design capability cites its catalogue decision. No row may say
 “covered by tests” without naming the tests.
 
-- [ ] **Step 6: Run maintainability and full pre-cutover verification**
+- [x] **Step 6: Run maintainability and full pre-cutover verification**
 
 Run:
 
@@ -5320,7 +5318,7 @@ npm run verify
 Expected: all PASS. Review every Knip ignore; each must name the runtime loading
 mechanism that requires it.
 
-- [ ] **Step 7: Commit the audit**
+- [x] **Step 7: Commit the audit**
 
 ```powershell
 git add scripts/check-scenario-coverage.mjs docs/architecture package.json test-next/e2e
