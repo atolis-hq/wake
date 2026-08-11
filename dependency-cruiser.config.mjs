@@ -53,10 +53,10 @@ const internalBoundaryRules = modules.map((module) => ({
   from: {
     pathNot:
       module === 'integrations'
-        ? [`^src-next/${module}/`, '^src-next/bootstrap/composition-root\\.ts$']
-        : `^src-next/${module}/`,
+        ? [`^src/${module}/`, '^src/bootstrap/composition-root\\.ts$']
+        : `^src/${module}/`,
   },
-  to: { path: `^src-next/${module}/(?!index\\.ts$)` },
+  to: { path: `^src/${module}/(?!index\\.ts$)` },
 }));
 // The exemption above lets composition-root reach a provider barrel; it must not
 // become a licence to reach a provider's internals.
@@ -64,49 +64,49 @@ const compositionRootBarrelRule = {
   name: 'composition-root-provider-barrels-only',
   severity: 'error',
   comment: 'Bootstrap may import a provider barrel, never a module inside one.',
-  from: { path: '^src-next/bootstrap/composition-root\\.ts$' },
-  to: { path: '^src-next/integrations/(?!index\\.ts$)(?![^/]+/index\\.ts$)' },
+  from: { path: '^src/bootstrap/composition-root\\.ts$' },
+  to: { path: '^src/integrations/(?!index\\.ts$)(?![^/]+/index\\.ts$)' },
 };
 const undeclaredDependencyRules = Object.entries(dependencyMap).map(([module, dependencies]) => ({
   name: `no-undeclared-${module}-dependency`,
   severity: 'error',
-  from: { path: `^src-next/${module}/` },
-  to: { path: `^src-next/(?!(?:${[module, ...dependencies].join('|')})/)` },
+  from: { path: `^src/${module}/` },
+  to: { path: `^src/(?!(?:${[module, ...dependencies].join('|')})/)` },
 }));
 
 export default {
   forbidden: [
     { name: 'no-circular', severity: 'error', from: {}, to: { circular: true } },
     {
-      name: 'no-legacy-imports',
+      name: 'no-archive-imports',
       severity: 'error',
-      from: { path: '^src-next/' },
-      to: { path: '^src/' },
+      from: { path: '^src/' },
+      to: { path: '^archive/legacy/' },
     },
     {
       name: 'kernel-has-no-domain-dependencies',
       severity: 'error',
-      from: { path: '^src-next/kernel/' },
-      to: { path: '^src-next/(?!kernel/)' },
+      from: { path: '^src/kernel/' },
+      to: { path: '^src/(?!kernel/)' },
     },
     {
       name: 'filesystem-io-stays-in-adapters',
       severity: 'error',
       from: {
-        path: '^src-next/(?!persistence/|execution/infrastructure/(?:workspace/|transcripts\\.ts$)|bootstrap/|surfaces/web-host/)',
+        path: '^src/(?!persistence/|execution/infrastructure/(?:workspace/|transcripts\\.ts$)|bootstrap/|surfaces/web-host/)',
       },
       to: { path: '^node:fs' },
     },
     {
       name: 'browser-imports-only-surface-transport-contracts',
       severity: 'error',
-      from: { path: '^src-next/surfaces/web/src/' },
-      to: { path: '^src-next/(?!surfaces/(?:web/src/|api/contracts/))' },
+      from: { path: '^src/surfaces/web/src/' },
+      to: { path: '^src/(?!surfaces/(?:web/src/|api/contracts/))' },
     },
     {
       name: 'browser-has-no-node-runtime-dependencies',
       severity: 'error',
-      from: { path: '^src-next/surfaces/web/src/' },
+      from: { path: '^src/surfaces/web/src/' },
       to: { path: '^node:' },
     },
     ...internalBoundaryRules,
@@ -115,8 +115,8 @@ export default {
   ],
   options: {
     doNotFollow: { path: 'node_modules' },
-    exclude: { path: '(^|/)(dist|dist-next|node_modules)/' },
+    exclude: { path: '(^|/)(archive/legacy|dist|dist-next|node_modules)/' },
     tsPreCompilationDeps: true,
-    tsConfig: { fileName: 'tsconfig.next.json' },
+    tsConfig: { fileName: 'tsconfig.json' },
   },
 };

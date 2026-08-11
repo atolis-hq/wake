@@ -4,8 +4,8 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const versionModulePath = resolve(repoRoot, 'dist/src/version.js');
-const { resolveWakeVersion } = await import(`../dist/src/version.js`);
+const versionModulePath = resolve(repoRoot, 'dist/src/bootstrap/version.js');
+const { resolveWakeVersion } = await import('../dist/src/bootstrap/version.js');
 
 function resolveBuildVersion() {
   const explicitTag = process.env.WAKE_BUILD_TAG?.trim();
@@ -35,4 +35,4 @@ if (updated === source) {
 }
 
 writeFileSync(versionModulePath, updated);
-console.log(`Embedded Wake version ${buildVersion}`);
+console.log(`Embedded Wake version ${buildVersion} (src)`);

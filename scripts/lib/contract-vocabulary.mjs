@@ -63,10 +63,10 @@ function selectRules(requested) {
 
 async function roots(root) {
   const requestedRoot = resolve(root);
-  if (basename(requestedRoot).toLowerCase() === 'src-next') {
+  if (basename(requestedRoot).toLowerCase() === 'src') {
     return { scanRoot: requestedRoot, displayRoot: dirname(requestedRoot) };
   }
-  const nestedSourceRoot = resolve(requestedRoot, 'src-next');
+  const nestedSourceRoot = resolve(requestedRoot, 'src');
   if (await isDirectory(nestedSourceRoot)) {
     return { scanRoot: nestedSourceRoot, displayRoot: requestedRoot };
   }

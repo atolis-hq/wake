@@ -11,6 +11,7 @@ export default tseslint.config(
       'coverage/**',
       'dist/**',
       'dist-next/**',
+      'archive/legacy/**',
       'node_modules/**',
       '.wake/**',
       '.claude/worktrees/**',
@@ -52,7 +53,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ['src-next/**/*.ts', 'test-next/**/*.ts'],
+    files: ['src/**/*.ts', 'test/**/*.ts'],
     rules: {
       complexity: ['error', 12],
       'max-depth': ['error', 4],
@@ -65,30 +66,34 @@ export default tseslint.config(
   },
   {
     files: [
-      'src-next/**/*-fixture.ts',
-      'test-next/**/*-fixture.test.ts',
-      'src-next/surfaces/web/**/*.ts',
-      'vitest.next.config.ts',
-      'vitest.next.e2e.config.ts',
+      'src/**/*-fixture.ts',
+      'test/**/*-fixture.test.ts',
+      'src/surfaces/web/**/*.ts',
+      'vitest.config.ts',
+      'vitest.unit.config.ts',
+      'vitest.architecture.config.ts',
+      'vitest.integration.config.ts',
+      'vitest.e2e.config.ts',
+      'vitest.live-e2e.config.ts',
     ],
     extends: [tseslint.configs.disableTypeChecked],
   },
   {
-    files: ['src-next/**/contracts/**/*.ts'],
+    files: ['src/**/contracts/**/*.ts'],
     rules: {
       'max-lines': ['error', { max: 500, skipBlankLines: true, skipComments: true }],
       'max-lines-per-function': ['error', { max: 80, skipBlankLines: true, skipComments: true }],
     },
   },
   {
-    files: ['src-next/**/{application,domain,infrastructure}/**/*.ts'],
+    files: ['src/**/{application,domain,infrastructure}/**/*.ts'],
     rules: {
       'max-lines': ['error', { max: 300, skipBlankLines: true, skipComments: true }],
       'max-lines-per-function': ['error', { max: 80, skipBlankLines: true, skipComments: true }],
     },
   },
   {
-    files: ['test-next/**/*.ts'],
+    files: ['test/**/*.ts'],
     plugins: { vitest },
     rules: {
       'max-lines': 'off',
@@ -103,9 +108,7 @@ export default tseslint.config(
     },
   },
   {
-    files: [
-      'src-next/{work,resources,activities,orchestration,execution}/{domain,application}/**/*.ts',
-    ],
+    files: ['src/{work,resources,activities,orchestration,execution}/{domain,application}/**/*.ts'],
     rules: {
       'no-restricted-imports': [
         'error',
@@ -134,7 +137,7 @@ export default tseslint.config(
   },
   eslintConfigPrettier,
   {
-    files: ['src-next/**/*.ts', 'test-next/**/*.ts'],
+    files: ['src/**/*.ts', 'test/**/*.ts'],
     plugins: { '@stylistic': stylistic },
     rules: {
       '@stylistic/lines-between-class-members': [

@@ -522,7 +522,7 @@ function isEventContractPath(path) {
 
 function isCanonicalModuleContractPath(path, fileName) {
   const parts = path.toLowerCase().split('/');
-  const modulePath = parts[0] === 'src-next' ? parts.slice(1) : parts;
+  const modulePath = parts[0] === 'src' ? parts.slice(1) : parts;
   return modulePath.length === 3 && modulePath[1] === 'contracts' && modulePath[2] === fileName;
 }
 

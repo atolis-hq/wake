@@ -8,7 +8,7 @@ if (selection.error !== undefined) {
   process.stderr.write(`${selection.error}\n${usage}\n`);
   process.exitCode = 1;
 } else {
-  const diagnostics = await checkContractVocabulary(resolve('src-next'), {
+  const diagnostics = await checkContractVocabulary(resolve('src'), {
     rules: selection.rules,
   });
   if (diagnostics.length > 0) {

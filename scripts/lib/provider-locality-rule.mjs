@@ -4,7 +4,7 @@ import ts from 'typescript';
 
 const RULE_NAME = 'provider-locality';
 
-// A provider is any directory under src-next/integrations that is not part of
+// A provider is any directory under src/integrations that is not part of
 // the shared provider-agnostic scaffolding (contracts/application/delivery/fake).
 const NON_PROVIDER_DIRECTORIES = new Set(['contracts', 'application', 'delivery', 'fake']);
 
@@ -233,7 +233,7 @@ function matchProviders(detail, node, text, providers, diagnostics, messageFor) 
 }
 
 function pathScopeMessage(provider) {
-  return `Provider "${provider}" must not appear outside src-next/integrations/${provider}/**`;
+  return `Provider "${provider}" must not appear outside src/integrations/${provider}/**`;
 }
 
 function identityMessage(provider, calleeName) {

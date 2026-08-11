@@ -37,14 +37,14 @@ function shaExists(sha) {
   }
 }
 
-const srcNextRoot = resolve(root, 'src-next');
+const srcNextRoot = resolve(root, 'src');
 const specPaths = readdirSync(srcNextRoot, { withFileTypes: true })
   .filter((entry) => entry.isDirectory())
-  .map((entry) => `src-next/${entry.name}/SPEC.md`)
+  .map((entry) => `src/${entry.name}/SPEC.md`)
   .filter((relativePath) => existsSync(resolve(root, relativePath)))
   .sort();
 if (specPaths.length === 0) {
-  console.error('No module SPEC.md files found under src-next/*/SPEC.md');
+  console.error('No module SPEC.md files found under src/*/SPEC.md');
   process.exitCode = 1;
 } else {
   const stale = [];

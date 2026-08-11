@@ -5,7 +5,7 @@ import ts from 'typescript';
 
 import { discoverCatalogues } from './lib/contract-vocabulary-catalogues.mjs';
 
-export async function checkModuleManifests(root = 'src-next') {
+export async function checkModuleManifests(root = 'src') {
   const resolvedRoot = resolve(root);
   const modules = (await readdir(resolvedRoot, { withFileTypes: true }))
     .filter((entry) => entry.isDirectory())
@@ -138,8 +138,8 @@ if (invokedPath !== undefined && import.meta.url === pathToFileURL(resolve(invok
     process.stderr.write(`${failures.join('\n')}\n`);
     process.exitCode = 1;
   } else {
-    const moduleCount = (await readdir(resolve('src-next'), { withFileTypes: true })).filter(
-      (entry) => entry.isDirectory(),
+    const moduleCount = (await readdir(resolve('src'), { withFileTypes: true })).filter((entry) =>
+      entry.isDirectory(),
     ).length;
     process.stdout.write(`Module manifests valid: ${moduleCount} modules\n`);
   }
