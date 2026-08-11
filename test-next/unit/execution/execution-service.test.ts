@@ -101,6 +101,38 @@ describe('ExecutionService', () => {
     expect(calls).toBe(0);
   });
 
+  it('passes the newly allocated Run ID to workspace acquisition', async () => {
+    let acquiredRunId: string | undefined;
+    const fixture = setup({
+      async acquire(request) {
+        acquiredRunId = request.runId;
+        return {
+          workspaceId: 'workspace-1',
+          path: '/workspace-1',
+          mode: 'read-only',
+          async release() {},
+        };
+      },
+    });
+
+    await fixture.service.attempt(
+      { ...activation, execution: { workspace: 'read-only' } },
+      {
+        ...context,
+        resources: [
+          {
+            resourceId: resId('repo'),
+            kind: BuiltInResourceKind.Repository,
+            externalKey: { adapter: 'github', key: 'atolis-hq/wake' },
+            capabilities: [],
+          },
+        ],
+      },
+    );
+
+    expect(acquiredRunId).toBe('run-1');
+  });
+
   it('records workspace cleanup failure without failing a completed run', async () => {
     const fixture = setup({
       async acquire() {

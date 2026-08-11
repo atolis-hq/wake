@@ -1,10 +1,12 @@
 import { ActivityResourceCardinality, type ResourceRequirement } from '../../activities/index.js';
 import { BuiltInResourceKind, type ResourceView } from '../../resources/index.js';
 import type { WorkItemId } from '../../work/index.js';
+import type { RunId } from '../contracts/identifiers.js';
 import { WorkspaceMode } from '../contracts/vocabulary.js';
 import type { WorkspaceLease, WorkspaceProvider } from '../contracts/workspace.js';
 
 export async function acquireWorkspace(
+  runId: RunId,
   mode: typeof WorkspaceMode.None | typeof WorkspaceMode.ReadOnly | typeof WorkspaceMode.Branch,
   workItemId: WorkItemId,
   resources: readonly ResourceView[],
@@ -20,7 +22,7 @@ export async function acquireWorkspace(
         resource.kind === BuiltInResourceKind.PullRequest,
     );
   if (repositoryResource === undefined) throw new Error('Repository Resource is required');
-  return provider.acquire({ mode, workItemId, repositoryResource });
+  return provider.acquire({ runId, mode, workItemId, repositoryResource });
 }
 
 export function validateResourceRequirements(

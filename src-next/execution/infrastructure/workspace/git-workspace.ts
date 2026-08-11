@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
-import { access, mkdir, rm } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { access, mkdir, rm, writeFile } from 'node:fs/promises';
+import { dirname, join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import type { WorkspaceProvider, WorkspaceRequest } from '../../contracts/workspace.js';
 
@@ -24,7 +24,21 @@ export class GitWorkspaceProvider implements WorkspaceProvider {
   async acquire(request: WorkspaceRequest) {
     const locator = await this.resolver.cloneLocator(request.repositoryResource.resourceId);
     const name = `${request.workItemId}-${slug(locator)}`;
-    const path = join(this.root, name);
+    const path = resolve(this.root, name);
+    const markerPath = join(this.root, '.wake-workspace-ownership', `${name}.json`);
+    await mkdir(dirname(markerPath), { recursive: true });
+    await writeFile(
+      markerPath,
+      JSON.stringify({
+        runId: request.runId,
+        workItemId: request.workItemId,
+        repositoryResourceId: request.repositoryResource.resourceId,
+        mode: request.mode,
+        workspaceId: name,
+        path,
+      }),
+      'utf8',
+    );
     if (!(await exists(join(path, '.git')))) {
       await mkdir(dirname(path), { recursive: true });
       await this.git(['clone', locator, path]);
@@ -33,8 +47,10 @@ export class GitWorkspaceProvider implements WorkspaceProvider {
       workspaceId: name,
       path,
       mode: request.mode,
-      release: async () =>
-        rm(path, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }),
+      release: async () => {
+        await rm(path, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+        await rm(markerPath, { force: true });
+      },
     };
   }
 }

@@ -1,8 +1,10 @@
 import type { ResourceView } from '../../resources/index.js';
 import type { WorkItemId } from '../../work/index.js';
+import type { RunId } from './identifiers.js';
 import type { WorkspaceMode } from './vocabulary.js';
 
 export interface WorkspaceRequest {
+  readonly runId: RunId;
   readonly mode: typeof WorkspaceMode.ReadOnly | typeof WorkspaceMode.Branch;
   readonly workItemId: WorkItemId;
   readonly repositoryResource: ResourceView;

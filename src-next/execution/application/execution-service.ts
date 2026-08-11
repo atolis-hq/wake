@@ -85,7 +85,7 @@ async function attemptExecution(
   await claimActivationForAttempt(runtime, activation, currentRunId, owner, startedAt);
   let lease: WorkspaceLease | undefined;
   try {
-    lease = await acquireAttemptWorkspace(runtime, activation, context);
+    lease = await acquireAttemptWorkspace(runtime, activation, context, currentRunId);
     await startRun({
       dependencies: runLifecycleDependencies(runtime),
       runId: currentRunId,
@@ -208,8 +208,10 @@ function acquireAttemptWorkspace(
   runtime: ExecutionRuntime,
   activation: ExecutionActivation,
   context: ExecutionAttemptContext,
+  currentRunId: ReturnType<typeof runId>,
 ) {
   return acquireWorkspace(
+    currentRunId,
     activation.execution?.workspace ?? WorkspaceMode.None,
     context.workItemId,
     context.resources,
