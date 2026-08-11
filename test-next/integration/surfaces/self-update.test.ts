@@ -3,6 +3,7 @@ import {
   runSelfUpdate,
   runSelfUpdateLatestLoop,
 } from '../../../src-next/surfaces/cli/commands/self-update.js';
+import { createSelfUpdateApplication } from '../../../src-next/bootstrap/self-update-application.js';
 
 describe('self-update', () => {
   it('does not rerun an already-applied update without force', async () => {
@@ -80,5 +81,93 @@ describe('self-update', () => {
       ),
     ).rejects.toThrow('shutdown');
     expect(tags).toEqual(['update']);
+  });
+
+  it('skips a failed tag on the next loop iteration and applies a newly published tag once', async () => {
+    const calls: string[] = [];
+    const badTags = new Set<string>();
+    let lease: { tag: string; phase: 'quiescing' | 'failed' } | null = null;
+    let candidatesRead = 0;
+    let healthy = false;
+    const application = createSelfUpdateApplication({
+      ledger: {
+        read: async () => 'v1',
+        begin: async (tag) => {
+          calls.push(`begin:${tag}`);
+        },
+        write: async (tag) => {
+          calls.push(`healthy:${tag}`);
+        },
+        recover: async () => null,
+        isBad: async (tag) => badTags.has(tag),
+        recordBad: async (tag) => {
+          badTags.add(tag);
+        },
+      },
+      source: {
+        isClean: async () => true,
+        latestTag: async () => 'v2',
+        candidateTags: async () => {
+          candidatesRead += 1;
+          return candidatesRead === 1 ? ['v2'] : ['v2', 'v3'];
+        },
+        checkout: async (tag) => {
+          calls.push(`checkout:${tag}`);
+        },
+        healthy: async () => healthy,
+      },
+      quiesce: {
+        acquire: async (tag) => {
+          if (lease?.phase === 'failed' && lease.tag !== tag) lease = null;
+          lease ??= { tag, phase: 'quiescing' };
+          calls.push(`lease:${lease.tag}`);
+          return {
+            attemptId: lease.tag,
+            tag: lease.tag,
+            phase: lease.phase,
+            startedAt: '2026-08-11T10:00:00.000Z',
+          };
+        },
+        activeRuns: async () => [],
+        requestMaintenanceCancellation: async () => {},
+        sleep: async () => {},
+        now: () => 0,
+        fail: async () => {
+          if (lease !== null) lease = { ...lease, phase: 'failed' };
+        },
+        transition: async () => {},
+        clear: async () => {
+          lease = null;
+        },
+      },
+      drainTimeoutMs: 0,
+      cancellationTimeoutMs: 0,
+    });
+    let waits = 0;
+
+    await expect(
+      runSelfUpdateLatestLoop(
+        async () => {
+          await application.updateLatest();
+        },
+        async () => {
+          waits += 1;
+          if (waits === 1) healthy = true;
+          if (waits === 2) throw new Error('shutdown');
+        },
+      ),
+    ).rejects.toThrow('shutdown');
+
+    expect(calls).toEqual([
+      'lease:v2',
+      'begin:v2',
+      'checkout:v2',
+      'checkout:v1',
+      'lease:v3',
+      'begin:v3',
+      'checkout:v3',
+      'healthy:v3',
+    ]);
+    expect(badTags).toEqual(new Set(['v2']));
   });
 });

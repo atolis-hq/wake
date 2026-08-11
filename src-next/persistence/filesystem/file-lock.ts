@@ -8,9 +8,17 @@ export interface FileLockMetadata {
   readonly lockId: string;
 }
 
+export interface FileLockOptions {
+  readonly staleAfterMs?: number;
+  readonly now?: Date;
+  /** Attempt locks may not steal a stale file while its recorded local owner still lives. */
+  readonly staleRequiresDeadProcess?: boolean;
+  readonly isProcessAlive?: (pid: number) => boolean;
+}
+
 export async function acquireFileLock(
   path: string,
-  options?: { staleAfterMs?: number; now?: Date },
+  options?: FileLockOptions,
 ) {
   await mkdir(dirname(path), { recursive: true });
   const metadata: FileLockMetadata = {
@@ -50,6 +58,8 @@ export async function acquireFileLock(
           (options.now ?? new Date()).getTime() - Date.parse(prior.acquiredAt) >=
           options.staleAfterMs
         ) {
+          if (options.staleRequiresDeadProcess && ownerMayBeAlive(options, prior.pid))
+            return { acquired: false, async release() {} };
           await rm(path, { force: true });
           return attempt();
         }
@@ -59,6 +69,24 @@ export async function acquireFileLock(
       }
     }
     return { acquired: false, async release() {} };
+  }
+}
+
+function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function ownerMayBeAlive(options: FileLockOptions, pid: number): boolean {
+  try {
+    return (options.isProcessAlive ?? isProcessAlive)(pid);
+  } catch {
+    // Permission and platform-probe failures are indeterminate: never steal a live owner's lock.
+    return true;
   }
 }
 

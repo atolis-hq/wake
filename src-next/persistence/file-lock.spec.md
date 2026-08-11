@@ -28,6 +28,11 @@ the single lock path it is given.
   acquisition time is older than that threshold MUST be treated as
   abandoned and reclaimed automatically on the next attempt, without
   requiring its original holder to release it.
+- An acquirer that opts into local-owner liveness MAY require a stale lock
+  to be reclaimed only after its recorded PID is proven dead. An indeterminate
+  liveness probe (including permission failure) MUST be treated as live, so
+  the lock is retained. Callers that do not opt in retain the time-only stale
+  reclamation policy above.
 - Releasing a lock MUST remove the lock file only if it still holds the
   same lock identity that was acquired; it MUST NOT remove a lock file that
   has since been reclaimed by a different holder. Release MUST be

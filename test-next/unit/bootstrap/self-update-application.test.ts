@@ -67,6 +67,39 @@ describe('self-update application: update operations', () => {
     ]);
   });
 
+  it('continues when a concurrent completion makes a failed cancellation request irrelevant', async () => {
+    const calls: string[] = [];
+    const base = quiesce(calls, [['run-1'], ['run-1'], [], []]);
+    const application = createSelfUpdateApplication({
+      ledger: ledger('v1', calls),
+      source: source(calls),
+      quiesce: {
+        ...base,
+        requestMaintenanceCancellation: async (runIds: readonly string[]) => {
+          calls.push(`cancel:${runIds.join(',')}`);
+          throw new Error('journal lock lost to completion');
+        },
+      },
+      drainTimeoutMs: 100,
+      cancellationTimeoutMs: 100,
+    });
+
+    await expect(application.update('v2')).resolves.toBe(true);
+    expect(calls).toEqual([
+      'quiesce:v2',
+      'active',
+      'sleep:100',
+      'active',
+      'cancel:run-1',
+      'active',
+      'begin:v2',
+      'phase:updating',
+      'checkout:v2',
+      'ledger:v2',
+      'clear',
+    ]);
+  });
+
   it('refuses to checkout when maintenance cancellation remains unconfirmed', async () => {
     const calls: string[] = [];
     const application = createSelfUpdateApplication({
@@ -220,6 +253,89 @@ describe('self-update application: update operations', () => {
     ]);
   });
 
+  it('recovers an interrupted updating lease without repeating its forward checkout or rollout', async () => {
+    const calls: string[] = [];
+    const application = createSelfUpdateApplication({
+      ledger: { ...ledger('v1', calls), recover: async () => (calls.push('recover'), 'v1') },
+      source: source(calls),
+      rollout: rollout(calls),
+      quiesce: {
+        ...quiesce(calls, [[]]),
+        acquire: async (tag: string) => {
+          calls.push(`quiesce:${tag}`);
+          return {
+            attemptId: 'attempt-1',
+            tag,
+            phase: 'updating' as const,
+            startedAt: '2026-08-11T10:00:00.000Z',
+          };
+        },
+      },
+    });
+
+    await expect(application.update('v2')).resolves.toBe(false);
+    expect(calls).toEqual([
+      'quiesce:v2',
+      'recover',
+      'checkout:v1',
+      'rollout-rollback:v1',
+      'bad:v2',
+      'clear',
+    ]);
+  });
+
+  it('finishes an interrupted rollback by marking its target bad before resuming ticks', async () => {
+    const calls: string[] = [];
+    const application = createSelfUpdateApplication({
+      ledger: { ...ledger('v1', calls), recover: async () => (calls.push('recover'), 'v1') },
+      source: source(calls),
+      quiesce: {
+        ...quiesce(calls, [[]]),
+        acquire: async (tag: string) => {
+          calls.push(`quiesce:${tag}`);
+          return {
+            attemptId: 'attempt-1',
+            tag,
+            phase: 'rolling-back' as const,
+            startedAt: '2026-08-11T10:00:00.000Z',
+          };
+        },
+      },
+    });
+
+    await expect(application.update('v2')).resolves.toBe(false);
+    expect(calls).toEqual(['quiesce:v2', 'recover', 'checkout:v1', 'bad:v2', 'clear']);
+  });
+
+  it('records the interrupted lease tag when recovery fails before a newer candidate can start', async () => {
+    const calls: string[] = [];
+    const application = createSelfUpdateApplication({
+      ledger: { ...ledger('v1', calls), recover: async () => (calls.push('recover'), 'v1') },
+      source: { ...source(calls), healthy: async () => false },
+      quiesce: {
+        ...quiesce(calls, [[]]),
+        acquire: async (tag: string) => {
+          calls.push(`quiesce:${tag}`);
+          return {
+            attemptId: 'attempt-1',
+            tag: 'v2',
+            phase: 'updating' as const,
+            startedAt: '2026-08-11T10:00:00.000Z',
+          };
+        },
+      },
+    });
+
+    await expect(application.update('v3')).rejects.toThrow('could not verify the prior tag');
+    expect(calls).toEqual([
+      'quiesce:v3',
+      'recover',
+      'checkout:v1',
+      'quiesce-failed:Self-update recovery could not verify the prior tag v1',
+      'bad:v2',
+    ]);
+  });
+
   it('keeps an ambiguous Run as a drain blocker without attempting to cancel it', async () => {
     const calls: string[] = [];
     const application = createSelfUpdateApplication({
@@ -277,7 +393,7 @@ describe('self-update application: update operations', () => {
       quiesce: quiesce(calls, [[]]),
     });
     await expect(application.update('v2')).resolves.toBe(false);
-    expect(calls).toEqual(['quiesce:v2', 'active', 'clear']);
+    expect(calls).toEqual([]);
   });
 });
 
@@ -306,6 +422,12 @@ function quiesce(
   return {
     acquire: async (tag: string) => {
       calls.push(`quiesce:${tag}`);
+      return {
+        attemptId: 'attempt-1',
+        tag,
+        phase: 'quiescing' as const,
+        startedAt: '2026-08-11T10:00:00.000Z',
+      };
     },
     activeRuns: async () => {
       calls.push('active');

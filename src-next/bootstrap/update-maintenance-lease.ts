@@ -23,41 +23,59 @@ export interface UpdateMaintenanceState {
 
 export interface UpdateMaintenanceLease {
   read(): Promise<UpdateMaintenanceState | null>;
-  acquire(tag: string): Promise<UpdateMaintenanceState>;
+  acquire(tag: string, retryFailed?: boolean): Promise<UpdateMaintenanceState>;
+  runExclusive<Value>(
+    tag: string,
+    retryFailed: boolean,
+    operation: (state: UpdateMaintenanceState) => Promise<Value>,
+  ): Promise<Value>;
   transition(
     phase: Exclude<UpdateMaintenancePhase, typeof UpdateMaintenancePhase.Failed>,
+    attemptId?: string,
   ): Promise<UpdateMaintenanceState>;
-  fail(error: unknown): Promise<UpdateMaintenanceState>;
-  clear(): Promise<void>;
+  fail(error: unknown, attemptId?: string): Promise<UpdateMaintenanceState>;
+  clear(attemptId?: string): Promise<void>;
 }
 
 export function createUpdateMaintenanceLease(
   wakeRoot: string,
   now: () => string = () => new Date().toISOString(),
   createAttemptId: () => string = randomUUID,
+  isProcessAlive?: (pid: number) => boolean,
 ): UpdateMaintenanceLease {
   const path = join(wakeRoot, '.wake', 'update-maintenance.json');
+  const acquire = async (tag: string, retryFailed = false) =>
+    withLeaseLock(path, async () => {
+      const existing = await readState(path);
+      if (
+        existing !== null &&
+        !(
+          existing.phase === UpdateMaintenancePhase.Failed &&
+          (existing.tag !== tag || retryFailed)
+        )
+      )
+        return existing;
+      const initial: UpdateMaintenanceState = {
+        attemptId: createAttemptId(),
+        tag,
+        phase: UpdateMaintenancePhase.Quiescing,
+        startedAt: now(),
+      };
+      await writeState(path, initial);
+      return initial;
+    });
   return {
     async read() {
       return readState(path);
     },
-    async acquire(tag) {
-      return withLeaseLock(path, async () => {
-        const existing = await readState(path);
-        if (existing !== null) return existing;
-        const initial: UpdateMaintenanceState = {
-          attemptId: createAttemptId(),
-          tag,
-          phase: UpdateMaintenancePhase.Quiescing,
-          startedAt: now(),
-        };
-        await writeState(path, initial);
-        return initial;
-      });
+    acquire,
+    async runExclusive(tag, retryFailed, operation) {
+      return withAttemptLock(path, isProcessAlive, async () => operation(await acquire(tag, retryFailed)));
     },
-    async transition(phase) {
+    async transition(phase, attemptId) {
       return withLeaseLock(path, async () => {
         const current = await requireState(path);
+        requireOwnership(current, attemptId);
         if (!canTransition(current.phase, phase)) {
           throw new Error(`Invalid maintenance lease transition from ${current.phase} to ${phase}`);
         }
@@ -66,9 +84,10 @@ export function createUpdateMaintenanceLease(
         return next;
       });
     },
-    async fail(error) {
+    async fail(error, attemptId) {
       return withLeaseLock(path, async () => {
         const current = await requireState(path);
+        requireOwnership(current, attemptId);
         if (current.phase === UpdateMaintenancePhase.Failed) return current;
         const next: UpdateMaintenanceState = {
           ...current,
@@ -79,10 +98,23 @@ export function createUpdateMaintenanceLease(
         return next;
       });
     },
-    async clear() {
-      await withLeaseLock(path, () => rm(path, { force: true }));
+    async clear(attemptId) {
+      await withLeaseLock(path, async () => {
+        const current = await readState(path);
+        if (current === null) {
+          if (attemptId !== undefined) throw new Error('No maintenance lease is active');
+          return;
+        }
+        requireOwnership(current, attemptId);
+        await rm(path, { force: true });
+      });
     },
   };
+}
+
+function requireOwnership(state: UpdateMaintenanceState, attemptId: string | undefined): void {
+  if (attemptId !== undefined && state.attemptId !== attemptId)
+    throw new Error(`Maintenance attempt ${attemptId} no longer owns the lease`);
 }
 
 function canTransition(
@@ -144,7 +176,44 @@ async function writeState(path: string, state: UpdateMaintenanceState): Promise<
 async function withLeaseLock<Value>(path: string, operation: () => Promise<Value>): Promise<Value> {
   const lockPath = `${path}.lock`;
   while (true) {
-    const lock = await acquireFileLock(lockPath, { staleAfterMs: 60_000 });
+    let lock;
+    try {
+      lock = await acquireFileLock(lockPath, { staleAfterMs: 60_000 });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EPERM') throw error;
+      await new Promise<void>((resolve) => setTimeout(resolve, 1));
+      continue;
+    }
+    if (lock.acquired) {
+      try {
+        return await operation();
+      } finally {
+        await lock.release();
+      }
+    }
+    await new Promise<void>((resolve) => setTimeout(resolve, 1));
+  }
+}
+
+async function withAttemptLock<Value>(
+  path: string,
+  isProcessAlive: ((pid: number) => boolean) | undefined,
+  operation: () => Promise<Value>,
+): Promise<Value> {
+  const lockPath = `${path}.attempt.lock`;
+  while (true) {
+    let lock;
+    try {
+      lock = await acquireFileLock(lockPath, {
+        staleAfterMs: 60_000,
+        staleRequiresDeadProcess: true,
+        ...(isProcessAlive === undefined ? {} : { isProcessAlive }),
+      });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EPERM') throw error;
+      await new Promise<void>((resolve) => setTimeout(resolve, 1));
+      continue;
+    }
     if (lock.acquired) {
       try {
         return await operation();

@@ -18,9 +18,9 @@ packaged-install self-update path.
 ## Maintenance lease
 
 Bootstrap owns an operational JSON record beneath `.wake/`. It contains a
-stable update attempt ID, requested tag, phase, timestamps, and the prior
-healthy tag when known. Its phases are `quiescing`, `updating`, `rolling-back`,
-and `failed`.
+stable update attempt ID, requested tag, phase, and timestamps. The separate
+update ledger remains the single durable owner of the prior healthy tag. Its
+phases are `quiescing`, `updating`, `rolling-back`, and `failed`.
 
 Starting an update atomically creates the lease before source checkout. A
 second self-update observes the existing lease and resumes its phase; it does
@@ -85,10 +85,11 @@ Any failed quiesce, update, health check, or rollback records that attempted
 tag as bad and leaves the failed lease visible for the operator. The loop logs
 the failure, waits its configured interval, and checks candidates again. It
 MUST NOT retry that bad tag unless the operator uses `--force`, but it MUST
-attempt a newer candidate tag once one is published. A successful update
-clears the failed maintenance lease and the loop continues normally. It
-respects process shutdown while waiting between iterations and while
-quiescing.
+attempt a newer candidate tag once one is published. For that newer candidate,
+the durable failure record remains in the ledger/failure log while its failed
+lease is atomically replaced by a fresh `quiescing` lease. A successful update
+clears its lease and the loop continues normally. It respects process shutdown
+while waiting between iterations and while quiescing.
 
 ## Tests
 

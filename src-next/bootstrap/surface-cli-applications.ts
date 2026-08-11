@@ -305,9 +305,9 @@ async function activeExecutionRunIds(root: CompositionRoot): Promise<readonly st
 /** The production maintenance boundary shared by the CLI update application. */
 export function createSelfUpdateQuiescePort(root: CompositionRoot): SelfUpdateQuiescePort {
   return {
-    acquire: async (tag) => {
-      await root.maintenance.acquire(tag);
-    },
+    acquire: (tag, retryFailed) => root.maintenance.acquire(tag, retryFailed),
+    exclusive: (tag, retryFailed, operation) =>
+      root.maintenance.runExclusive(tag, retryFailed, operation),
     activeRuns: () => activeExecutionRuns(root),
     requestMaintenanceCancellation: async (runIds) => {
       for (const runId of runIds)
@@ -315,13 +315,13 @@ export function createSelfUpdateQuiescePort(root: CompositionRoot): SelfUpdateQu
     },
     sleep: (milliseconds) => new Promise<void>((resolve) => setTimeout(resolve, milliseconds)),
     now: () => Date.now(),
-    fail: async (error) => {
-      await root.maintenance.fail(error);
+    fail: async (error, attemptId) => {
+      await root.maintenance.fail(error, attemptId);
     },
-    transition: async (phase) => {
-      await root.maintenance.transition(phase);
+    transition: async (phase, attemptId) => {
+      await root.maintenance.transition(phase, attemptId);
     },
-    clear: () => root.maintenance.clear(),
+    clear: (attemptId) => root.maintenance.clear(attemptId),
   };
 }
 

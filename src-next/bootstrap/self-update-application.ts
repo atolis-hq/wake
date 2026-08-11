@@ -1,6 +1,9 @@
 import { runSelfUpdate } from '../surfaces/index.js';
 import type { UpdateLedger } from './update-ledger.js';
-import { UpdateMaintenancePhase } from './update-maintenance-lease.js';
+import {
+  UpdateMaintenancePhase,
+  type UpdateMaintenanceState,
+} from './update-maintenance-lease.js';
 
 export interface SourceUpdatePort {
   isClean(): Promise<boolean>;
@@ -29,18 +32,24 @@ export interface SelfUpdateRolloutPort {
  * durably record every supplied Run's maintenance request.
  */
 export interface SelfUpdateQuiescePort {
-  acquire(tag: string): Promise<void>;
+  acquire(tag: string, retryFailed?: boolean): Promise<UpdateMaintenanceState>;
+  exclusive?<Value>(
+    tag: string,
+    retryFailed: boolean,
+    operation: (state: UpdateMaintenanceState) => Promise<Value>,
+  ): Promise<Value>;
   activeRuns(): Promise<
     readonly { readonly runId: string; readonly maintenanceCancellable: boolean }[]
   >;
   requestMaintenanceCancellation(runIds: readonly string[]): Promise<void>;
   sleep(milliseconds: number): Promise<void>;
   now(): number;
-  fail(error: unknown): Promise<void>;
+  fail(error: unknown, attemptId?: string): Promise<void>;
   transition(
     phase: Exclude<UpdateMaintenancePhase, typeof UpdateMaintenancePhase.Failed>,
+    attemptId?: string,
   ): Promise<void>;
-  clear(): Promise<void>;
+  clear(attemptId?: string): Promise<void>;
 }
 
 export function createSelfUpdateApplication(input: {
@@ -55,74 +64,10 @@ export function createSelfUpdateApplication(input: {
     // The operational update sequence deliberately keeps each failure boundary explicit.
     // eslint-disable-next-line complexity
     async update(tag: string, force = false): Promise<boolean> {
-      await input.quiesce?.acquire(tag);
-      let deployError: unknown;
-      // A failed deploy surfaces as a failed health check (not a thrown
-      // update) so it goes through runSelfUpdate's existing rollback path,
-      // which only triggers on health() returning false.
-      try {
-        if (input.quiesce !== undefined)
-          await quiesceActiveRuns(
-            input.quiesce,
-            input.drainTimeoutMs ?? 30_000,
-            input.cancellationTimeoutMs ?? 30_000,
-          );
-        await recoverPendingUpdate(input.ledger, input.source);
-        if (!force && ((await input.ledger.read()) === tag || (await input.ledger.isBad(tag)))) {
-          await input.quiesce?.clear();
-          return false;
-        }
-        if (!(await input.source.isClean()))
-          throw new Error('Self-update requires a clean source checkout');
-        await input.ledger.begin(tag);
-        await input.quiesce?.transition(UpdateMaintenancePhase.Updating);
-        const updated = await runSelfUpdate({
-          tag,
-          force: true,
-          readLedger: input.ledger.read,
-          writeLedger: input.ledger.write,
-          update: async (nextTag) => {
-            await input.source.checkout(nextTag);
-            if (input.rollout === undefined) return;
-            try {
-              await input.rollout.deploy(nextTag);
-            } catch (error) {
-              deployError = error;
-            }
-          },
-          health: async () => {
-            if (deployError !== undefined) return false;
-            return input.source.healthy();
-          },
-          rollback: async (priorTag) => {
-            await input.quiesce?.transition(UpdateMaintenancePhase.RollingBack);
-            await input.source.checkout(priorTag);
-            await input.rollout?.rollback(priorTag);
-          },
-        });
-        await input.quiesce?.clear();
-        return updated;
-      } catch (error) {
-        try {
-          await input.quiesce?.fail(error);
-        } catch (persistenceError) {
-          await input.ledger.recordBad(tag);
-          throw new Error(
-            `Could not persist failed maintenance lease: ${formatError(persistenceError)}. ` +
-              `Quiesce remains unresolved: ${formatError(error)}`,
-            { cause: persistenceError },
-          );
-        }
-        if (input.rollout !== undefined) {
-          try {
-            await input.rollout.recordFailure(tag, deployError ?? error);
-          } catch {
-            // Best-effort: a failure-log write must never mask the original update failure.
-          }
-        }
-        await input.ledger.recordBad(tag);
-        throw error;
-      }
+      if (!force && (await input.ledger.isBad(tag))) return false;
+      if (input.quiesce?.exclusive !== undefined)
+        return input.quiesce.exclusive(tag, force, (lease) => updateAttempt(input, tag, force, lease));
+      return updateAttempt(input, tag, force, await input.quiesce?.acquire(tag, force));
     },
     async updateLatest(
       force = false,
@@ -152,6 +97,112 @@ export function createSelfUpdateApplication(input: {
   };
 }
 
+async function updateAttempt(
+  input: Parameters<typeof createSelfUpdateApplication>[0],
+  tag: string,
+  force: boolean,
+  lease: UpdateMaintenanceState | undefined,
+): Promise<boolean> {
+  const maintenanceTag = lease?.tag ?? tag;
+  const attemptId = lease?.attemptId;
+  let deployError: unknown;
+  try {
+    if (
+      lease !== undefined &&
+      lease.phase !== UpdateMaintenancePhase.Quiescing &&
+      lease.phase !== UpdateMaintenancePhase.Failed
+    ) {
+      await resumePendingMaintenance(input, lease);
+      return false;
+    }
+    if (lease?.phase === UpdateMaintenancePhase.Failed) return false;
+    if (lease !== undefined && lease.tag !== tag) return false;
+    if (input.quiesce !== undefined)
+      await quiesceActiveRuns(
+        input.quiesce,
+        input.drainTimeoutMs ?? 30_000,
+        input.cancellationTimeoutMs ?? 30_000,
+      );
+    await recoverPendingUpdate(input.ledger, input.source);
+    if (!force && (await input.ledger.read()) === tag) {
+      await input.quiesce?.clear(attemptId);
+      return false;
+    }
+    if (!(await input.source.isClean())) throw new Error('Self-update requires a clean source checkout');
+    await input.ledger.begin(tag);
+    await input.quiesce?.transition(UpdateMaintenancePhase.Updating, attemptId);
+    const updated = await runSelfUpdate({
+      tag,
+      force: true,
+      readLedger: input.ledger.read,
+      writeLedger: input.ledger.write,
+      update: async (nextTag) => {
+        await input.source.checkout(nextTag);
+        if (input.rollout === undefined) return;
+        try {
+          await input.rollout.deploy(nextTag);
+        } catch (error) {
+          deployError = error;
+        }
+      },
+      health: async () => deployError === undefined && input.source.healthy(),
+      rollback: async (priorTag) => {
+        await input.quiesce?.transition(UpdateMaintenancePhase.RollingBack, attemptId);
+        await input.source.checkout(priorTag);
+        await input.rollout?.rollback(priorTag);
+      },
+    });
+    await input.quiesce?.clear(attemptId);
+    return updated;
+  } catch (error) {
+    try {
+      await input.quiesce?.fail(error, attemptId);
+    } catch (persistenceError) {
+      await input.ledger.recordBad(maintenanceTag);
+      throw new Error(
+        `Could not persist failed maintenance lease: ${formatError(persistenceError)}. ` +
+          `Quiesce remains unresolved: ${formatError(error)}`,
+        { cause: persistenceError },
+      );
+    }
+    if (input.rollout !== undefined) {
+      try {
+        await input.rollout.recordFailure(maintenanceTag, deployError ?? error);
+      } catch {
+        // Best-effort: a failure-log write must never mask the original update failure.
+      }
+    }
+    await input.ledger.recordBad(maintenanceTag);
+    throw error;
+  }
+}
+
+/**
+ * A restart must never repeat a forward deploy. The persisted phase tells us
+ * that source/rollout work may already have begun, so recover the prior
+ * healthy revision while the durable lease continues to pause the runtime.
+ */
+async function resumePendingMaintenance(
+  input: {
+    readonly ledger: UpdateLedger;
+    readonly source: SourceUpdatePort;
+    readonly rollout?: SelfUpdateRolloutPort;
+    readonly quiesce?: SelfUpdateQuiescePort;
+  },
+  lease: UpdateMaintenanceState,
+): Promise<void> {
+  if (lease.phase === UpdateMaintenancePhase.Quiescing) return;
+  const priorTag = await input.ledger.recover();
+  if (priorTag === null)
+    throw new Error(`Self-update recovery has no prior healthy tag for ${lease.tag}`);
+  await input.source.checkout(priorTag);
+  await input.rollout?.rollback(priorTag);
+  if (!(await input.source.healthy()))
+    throw new Error(`Self-update recovery could not verify the prior tag ${priorTag}`);
+  await input.ledger.recordBad(lease.tag);
+  await input.quiesce?.clear(lease.attemptId);
+}
+
 async function quiesceActiveRuns(
   quiesce: SelfUpdateQuiescePort,
   drainTimeoutMs: number,
@@ -160,11 +211,19 @@ async function quiesceActiveRuns(
   let remaining = await waitForActiveRunsToDrain(quiesce, drainTimeoutMs);
   if (remaining.length === 0) return;
 
-  await quiesce.requestMaintenanceCancellation(
-    remaining.filter((run) => run.maintenanceCancellable).map((run) => run.runId),
-  );
+  const cancellationIds = remaining
+    .filter((run) => run.maintenanceCancellable)
+    .map((run) => run.runId);
+  let cancellationError: unknown;
+  try {
+    await quiesce.requestMaintenanceCancellation(cancellationIds);
+  } catch (error) {
+    cancellationError = error;
+  }
   remaining = await waitForActiveRunsToDrain(quiesce, cancellationTimeoutMs);
   if (remaining.length === 0) return;
+
+  if (cancellationError !== undefined) throw cancellationError;
 
   throw new Error(
     `active Runs remain after maintenance cancellation: ${remaining.map((run) => run.runId).join(', ')}`,
