@@ -1,6 +1,7 @@
 import type { ResourceView } from '../../resources/index.js';
 import type { WorkItemId } from '../../work/index.js';
 import type { RunId } from './identifiers.js';
+import type { RunView } from './views.js';
 import type { WorkspaceMode } from './vocabulary.js';
 
 export interface WorkspaceRequest {
@@ -21,4 +22,21 @@ export interface WorkspaceLease {
 
 export interface WorkspaceProvider {
   acquire(request: WorkspaceRequest): Promise<WorkspaceLease>;
+}
+
+/** Optional capability for reclaiming workspaces whose journal owner is safe to remove. */
+export interface WorkspaceRecovery {
+  recover(runs: readonly RunView[]): Promise<WorkspaceRecoveryResult>;
+}
+
+export interface WorkspaceRecoveryResult {
+  readonly reclaimed: number;
+  readonly failures: readonly WorkspaceRecoveryFailure[];
+}
+
+/** A recoverable cleanup failure retained for the next startup pass. */
+export interface WorkspaceRecoveryFailure {
+  readonly markerPath: string;
+  readonly path: string;
+  readonly message: string;
 }
