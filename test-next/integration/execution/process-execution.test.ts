@@ -7,6 +7,9 @@ import {
   ExecutionCancellationReason,
 } from '../../../src-next/execution/index.js';
 import { runProcess } from '../../../src-next/execution/infrastructure/process-execution.js';
+import { parseClaudeOutput } from '../../../src-next/execution/infrastructure/runners/claude.js';
+import { parseCodexOutput } from '../../../src-next/execution/infrastructure/runners/codex.js';
+import { parseCursorOutput } from '../../../src-next/execution/infrastructure/runners/cursor.js';
 
 describe('runProcess', () => {
   it('terminates a child process at the configured wall-clock deadline', async () => {
@@ -37,13 +40,18 @@ describe('cliRunner', () => {
         }),
       expected: [
         '-p',
-        'ship',
+        '--output-format',
+        'json',
+        '--resume',
+        'prior-session',
         '--model',
         'claude-test',
         '--max-turns',
         '3',
         '--allowedTools',
         'Read',
+        '--',
+        'ship',
       ],
     },
     {
@@ -56,7 +64,7 @@ describe('cliRunner', () => {
           allowedTools: [],
           resumeSessionId: 'prior-session',
         }),
-      expected: ['exec', 'ship', '--model', 'gpt-test', 'resume', 'prior-session'],
+      expected: ['exec', '--json', '--model', 'gpt-test', 'resume', 'prior-session', 'ship'],
     },
     {
       name: 'Cursor',
@@ -68,7 +76,16 @@ describe('cliRunner', () => {
           allowedTools: [],
           resumeSessionId: 'prior-session',
         }),
-      expected: ['--print', 'ship', '--model', 'cursor-test'],
+      expected: [
+        'agent',
+        '-p',
+        '--output-format',
+        'json',
+        '--model',
+        'cursor-test',
+        '--resume=prior-session',
+        'ship',
+      ],
     },
   ])('uses the configured $name CLI transport shape', ({ args, expected }) => {
     expect(args()).toEqual(expected);
@@ -139,13 +156,16 @@ describe('cliRunner', () => {
 
     expect(claudeCommandArgs(request)).toEqual([
       '-p',
-      'ship',
+      '--output-format',
+      'json',
       '--model',
       'test-model',
       '--max-turns',
       '12',
       '--allowedTools',
       'Bash(git *) Read',
+      '--',
+      'ship',
     ]);
   });
 
@@ -156,6 +176,100 @@ describe('cliRunner', () => {
       allowedTools: [],
     };
 
-    expect(claudeCommandArgs(request)).toEqual(['-p', 'ship']);
+    expect(claudeCommandArgs(request)).toEqual(['-p', '--output-format', 'json', '--', 'ship']);
   });
+
+  it.each([
+    {
+      name: 'Claude',
+      parse: parseClaudeOutput,
+      stdout: JSON.stringify({
+        result: 'claude answer',
+        session_id: 'claude-session',
+        usage: { input_tokens: 11, output_tokens: 13, cache_read_input_tokens: 17 },
+        total_cost_usd: 0.02,
+      }),
+      expected: {
+        output: 'claude answer',
+        sessionId: 'claude-session',
+        tokenUsage: { input: 11, output: 13, cacheRead: 17, costUsd: 0.02 },
+      },
+    },
+    {
+      name: 'Codex',
+      parse: parseCodexOutput,
+      stdout: [
+        JSON.stringify({ type: 'thread.started', thread_id: 'codex-session' }),
+        JSON.stringify({
+          type: 'item.completed',
+          item: { type: 'agent_message', text: 'codex answer' },
+        }),
+        JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 19, output_tokens: 23 } }),
+      ].join('\n'),
+      expected: {
+        output: 'codex answer',
+        sessionId: 'codex-session',
+        tokenUsage: { input: 19, output: 23 },
+      },
+    },
+    {
+      name: 'Cursor',
+      parse: parseCursorOutput,
+      stdout: JSON.stringify({
+        type: 'result',
+        result: 'cursor answer',
+        session_id: 'cursor-session',
+        usage: { inputTokens: 29, outputTokens: 31, cacheReadTokens: 37, cacheWriteTokens: 41 },
+      }),
+      expected: {
+        output: 'cursor answer',
+        sessionId: 'cursor-session',
+        tokenUsage: { input: 29, output: 31, cacheRead: 37, cacheWrite: 41 },
+      },
+    },
+  ])(
+    'uses $name structured output only inside its concrete adapter',
+    ({ parse, stdout, expected }) => {
+      expect(parse(stdout)).toEqual(expected);
+    },
+  );
+
+  it.each([
+    { name: 'Claude', parse: parseClaudeOutput },
+    { name: 'Codex', parse: parseCodexOutput },
+    { name: 'Cursor', parse: parseCursorOutput },
+  ])(
+    'leaves $name stdout untouched when it emits no recognizable structured result',
+    ({ parse }) => {
+      expect(parse('plain stdout')).toEqual({});
+    },
+  );
+
+  it.each([
+    {
+      name: 'Claude',
+      parse: parseClaudeOutput,
+      partial: '{"result":"answer","usage":{"input_tokens":1}}',
+      expected: { output: 'answer' },
+    },
+    {
+      name: 'Codex',
+      parse: parseCodexOutput,
+      partial: '{"type":"turn.completed","usage":{"input_tokens":1}}',
+      expected: {},
+    },
+    {
+      name: 'Cursor',
+      parse: parseCursorOutput,
+      partial: '{"result":"answer","usage":{"inputTokens":1}}',
+      expected: { output: 'answer' },
+    },
+  ])(
+    '$name ignores null, arrays, and partial usage without manufacturing token counts',
+    ({ parse, partial, expected }) => {
+      expect(parse('null')).toEqual({});
+      expect(parse('[]')).toEqual({});
+      expect(parse(partial)).toEqual(expected);
+    },
+  );
 });
