@@ -58,6 +58,24 @@ describe('GitWorkspaceProvider workspace recovery', () => {
     await expect(access(ambiguous.markerPath)).resolves.toBeUndefined();
   });
 
+  it('stops before the next owned workspace when the existing dispatch pause becomes active', async () => {
+    const root = await workspaceRoot();
+    const provider = new GitWorkspaceProvider(root, { cloneLocator: async () => 'unused' });
+    const first = await ownedWorkspace(root, 'a-first', 'first-run');
+    const later = await ownedWorkspace(root, 'b-later', 'later-run');
+    let checks = 0;
+
+    const result = await (provider as WorkspaceRecovery).recover([], {
+      isPaused: async () => ++checks > 1,
+    });
+
+    expect(result.reclaimed).toBe(1);
+    await expect(access(first.path)).rejects.toThrow();
+    await expect(access(first.markerPath)).rejects.toThrow();
+    await expect(access(later.path)).resolves.toBeUndefined();
+    await expect(access(later.markerPath)).resolves.toBeUndefined();
+  });
+
   it('retains unknown directories, malformed markers, and out-of-root marker paths', async () => {
     const root = await workspaceRoot();
     const provider = new GitWorkspaceProvider(root, { cloneLocator: async () => 'unused' });
@@ -132,7 +150,9 @@ describe('GitWorkspaceProvider workspace recovery', () => {
 
     expect(result).toMatchObject({
       reclaimed: 1,
-      failures: [expect.objectContaining({ markerPath: broken.markerPath, message: 'marker access denied' })],
+      failures: [
+        expect.objectContaining({ markerPath: broken.markerPath, message: 'marker access denied' }),
+      ],
     });
     await expect(access(broken.path)).resolves.toBeUndefined();
     await expect(access(broken.markerPath)).resolves.toBeUndefined();

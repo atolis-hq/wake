@@ -1,5 +1,5 @@
 /* eslint-disable complexity, max-lines-per-function */
-import type { RunView } from '../../execution/index.js';
+import type { RunView, WorkspaceRecovery } from '../../execution/index.js';
 import { RunStatus } from '../../execution/index.js';
 import {
   correlationId,
@@ -64,6 +64,8 @@ interface AdvanceOnceDependencies {
   };
   readonly runnerIneligibility?: () => Promise<ReadonlySet<string>>;
   readonly isDispatchPaused?: () => Promise<boolean>;
+  /** Crash-only workspace cleanup, deliberately run by the existing recovery pass. */
+  readonly workspaceRecovery?: WorkspaceRecovery;
   readonly dispatchPolicy?: DispatchPolicy;
 }
 
@@ -76,6 +78,7 @@ export function createAdvanceOnce(
 ) {
   const runnerIneligibility = dependencies.runnerIneligibility ?? (async () => new Set());
   const isDispatchPaused = dependencies.isDispatchPaused ?? (async () => false);
+  const workspaceRecovery = dependencies.workspaceRecovery;
   const dispatchPolicy = dependencies.dispatchPolicy ?? new DispatchPolicy({ maxDispatches: 1 });
   const context = (cause: string) => ({
     commandId: dependencies.ids.next('command'),
@@ -87,6 +90,9 @@ export function createAdvanceOnce(
     if (options.maxProgress < 1) return { kind: 'exhausted', progressCount: 0 };
     if (await isDispatchPaused()) return { kind: 'paused' };
     await execution.recoverActive?.(ControlStreamKind.Global);
+    if (await isDispatchPaused()) return { kind: 'paused' };
+    if (workspaceRecovery !== undefined)
+      await workspaceRecovery.recover(await execution.list(), { isPaused: isDispatchPaused });
     if (await isDispatchPaused()) return { kind: 'paused' };
     await orchestration.reconcileChildCompletions(context('child-completion-reconciliation'));
     if (await isDispatchPaused()) return { kind: 'paused' };

@@ -186,21 +186,22 @@ export async function createCompositionRoot(
     ]),
   );
   const orchestration = createOrchestrationService(journal, work, definitions);
+  const workspaces = new GitWorkspaceProvider(paths.workspacesRoot, {
+    async cloneLocator(id) {
+      const resource = await resources.get(resourceId(id));
+      const match =
+        resource === null ? null : /^([^/]+\/[^#]+)#\d+$/.exec(resource.externalKey.key);
+      if (match === null)
+        throw new Error('Workspace resource ' + id + ' does not identify a GitHub repository');
+      return 'https://github.com/' + match[1] + '.git';
+    },
+  });
   const execution = createExecutionService(journal, activities, config.execution, {
     clock,
     ids,
     runners: createRunnerRegistry(config.execution, fakeScenarios, options.decorateRunner),
     reportRunnerQuota: createRunnerQuotaReporter(journal, clock, ids),
-    workspaces: new GitWorkspaceProvider(paths.workspacesRoot, {
-      async cloneLocator(id) {
-        const resource = await resources.get(resourceId(id));
-        const match =
-          resource === null ? null : /^([^/]+\/[^#]+)#\d+$/.exec(resource.externalKey.key);
-        if (match === null)
-          throw new Error('Workspace resource ' + id + ' does not identify a GitHub repository');
-        return 'https://github.com/' + match[1] + '.git';
-      },
-    }),
+    workspaces,
   });
   const controlPlane = createControlPlaneService({ journal, clock, ids });
   const isRuntimePaused = async () =>
@@ -215,6 +216,7 @@ export async function createCompositionRoot(
     ids,
     dispatchPolicy: new DispatchPolicy({ maxDispatches: config.controlPlane.maxDispatches }),
     isDispatchPaused: isRuntimePaused,
+    workspaceRecovery: workspaces,
     work,
     runnerIneligibility: async () => {
       const stored = await projections.read<ControlPlaneView>(ControlStreamKind.Global, 'global');

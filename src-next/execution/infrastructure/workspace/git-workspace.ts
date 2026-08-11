@@ -8,6 +8,7 @@ import type {
   WorkspaceProvider,
   WorkspaceRecovery,
   WorkspaceRecoveryFailure,
+  WorkspaceRecoveryOptions,
   WorkspaceRecoveryResult,
   WorkspaceRequest,
 } from '../../contracts/workspace.js';
@@ -78,7 +79,10 @@ export class GitWorkspaceProvider implements WorkspaceProvider, WorkspaceRecover
     };
   }
 
-  async recover(runs: readonly RunView[]): Promise<WorkspaceRecoveryResult> {
+  async recover(
+    runs: readonly RunView[],
+    options: WorkspaceRecoveryOptions = {},
+  ): Promise<WorkspaceRecoveryResult> {
     const byId = new Map(runs.map((run) => [run.runId, run]));
     const scope = await recoveryScope(this.root, this.markerRoot);
     if (scope === null) return emptyRecovery();
@@ -86,6 +90,7 @@ export class GitWorkspaceProvider implements WorkspaceProvider, WorkspaceRecover
     let reclaimed = 0;
     const failures: WorkspaceRecoveryFailure[] = [];
     for (const filename of markers) {
+      if (await options.isPaused?.()) break;
       const result = await recoverMarker({
         filename,
         markerRoot: this.markerRoot,
@@ -155,7 +160,10 @@ async function reclaimOwnedMarker(
   markerPath: string,
   marker: WorkspaceOwnershipMarker | null,
 ): Promise<WorkspaceRecoveryResult> {
-  if (marker === null || !(await isOwnedWorkspace(input.scope, markerPath, marker, input.fileSystem)))
+  if (
+    marker === null ||
+    !(await isOwnedWorkspace(input.scope, markerPath, marker, input.fileSystem))
+  )
     return emptyRecovery();
   const run = input.runs.get(marker.runId as RunView['runId']);
   if (run?.status === RunStatus.Started || run?.status === RunStatus.Ambiguous)

@@ -26,7 +26,15 @@ export interface WorkspaceProvider {
 
 /** Optional capability for reclaiming workspaces whose journal owner is safe to remove. */
 export interface WorkspaceRecovery {
-  recover(runs: readonly RunView[]): Promise<WorkspaceRecoveryResult>;
+  recover(
+    runs: readonly RunView[],
+    options?: WorkspaceRecoveryOptions,
+  ): Promise<WorkspaceRecoveryResult>;
+}
+
+/** Existing control-plane pause state, sampled between independent reclaims. */
+export interface WorkspaceRecoveryOptions {
+  isPaused?(): Promise<boolean>;
 }
 
 export interface WorkspaceRecoveryResult {
