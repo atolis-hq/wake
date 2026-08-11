@@ -17,29 +17,29 @@
 - Modify: `src-next/surfaces/cli/main.ts`
 - Modify: `src-next/surfaces/cli/commands/sandbox.ts`
 - Test: `test-next/integration/surfaces/cli-main-contract.test.ts`
-- Test: `test-next/unit/surfaces/cli/sandbox.test.ts`
+- Test: `test-next/integration/surfaces/sandbox.test.ts`
 
-- [ ] **Step 1: Write failing public CLI tests**
+- [x] **Step 1: Write failing public CLI tests**
 
 Add assertions that default help contains the README URL and that `parseWakeCommand(['dev', 'sandbox'])` and `parseWakeCommand(['dev', 'sandbox', '--help'])` select a no-effect sandbox-help command.
 
-- [ ] **Step 2: Run focused tests to verify they fail**
+- [x] **Step 2: Run focused tests to verify they fail**
 
 Run: `npx vitest run --config vitest.next.integration.config.ts test-next/integration/surfaces/cli-main-contract.test.ts`
 
 Expected: FAIL because `dev` is currently an unknown top-level command.
 
-- [ ] **Step 3: Implement the smallest Surface-only behaviour**
+- [x] **Step 3: Implement the smallest Surface-only behaviour**
 
 Append `https://github.com/atolis-hq/wake#readme` after Getting started. Normalize `dev sandbox` to `sandbox`; have an empty sandbox command or sole `--help` return the sandbox usage string before any Docker port call.
 
-- [ ] **Step 4: Run focused tests to verify they pass**
+- [x] **Step 4: Run focused tests to verify they pass**
 
 Run: `npx vitest run --config vitest.next.integration.config.ts test-next/integration/surfaces/cli-main-contract.test.ts test-next/unit/surfaces/cli/sandbox.test.ts`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit implementation**
+- [x] **Step 5: Commit implementation**
 
 ```powershell
 git add src-next/surfaces/cli/usage.ts src-next/surfaces/cli/main.ts src-next/surfaces/cli/commands/sandbox.ts test-next/integration/surfaces/cli-main-contract.test.ts test-next/unit/surfaces/cli/sandbox.test.ts
