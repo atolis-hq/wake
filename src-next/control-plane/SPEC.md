@@ -1,5 +1,5 @@
 ---
-asOf: 4e8c5f6d6955ee3bf6a926063cb1c6446f4b1e0b
+asOf: 03d77755a82091cbe78985c6bf156475bca531f2
 ---
 
 # Control Plane — Module Specification
@@ -203,4 +203,3 @@ Control Plane does not own:
 ## Task 27B synchronization (2026-08-02)
 
 `advanceOnce` is the global dispatch choke point: it checks global pause and applies DispatchPolicy selection. The tick is split across two independently-scheduled pipelines: IntakePipeline runs poll and inbound translation (backed off when idle, since it is the only half that hits the rate-limited GitHub API), and RunnerPipeline runs schedule reconciliation, reactions, bounded advancement, delivery, and final projection/reaction passes (fast, un-backed-off cadence). Schedule slots first look up their deterministic workflow identity before minting Work, preventing a crash before checkpoint persistence from leaking a second WorkItem. The API operation is `tick` and invokes that same RunnerPipeline. Runner unpause is durable and rejects a runner that is not currently paused.
-

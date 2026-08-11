@@ -88,6 +88,11 @@ own aggregate remains the source of that state.
   result (default: empty set) feeds it, and only into the Execution
   `attempt` call, by including `ineligibleRunners` in the attempt context
   solely when that set is non-empty.
+- Bootstrap safe self-update supplies the existing `isDispatchPaused` check.
+  A present maintenance lease therefore returns `paused` before recovery,
+  reconciliation, selection, dispatch, or outcome acceptance; it is a full
+  tick pause, not merely a prohibition on new Run dispatch. Clearing a
+  healthy lease resumes this same ordinary path without another scheduler.
 - Selecting a candidate MUST mark its activation started in Orchestration
   before the Execution attempt is made, regardless of whether that attempt
   later succeeds or fails.

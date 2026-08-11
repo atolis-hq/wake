@@ -20,10 +20,17 @@ not.
 - **Bad tag** — a tag a prior update attempt failed and rolled back from;
   skipped by later attempts unless the caller forces a retry.
 
+**Maintenance lease** is the durable single-owner record that pauses Wake
+while an update drains, changes source, and verifies or recovers it. An
+**attempt lock** owns the whole maintenance attempt; its stale check considers
+recorded local PID liveness, so a live slow update cannot be taken over and a
+crashed owner can be reclaimed.
+
 ## Responsibilities and boundaries
 
-This component owns the update-then-verify-then-commit-or-rollback sequence
-and the ledger that makes it resumable after a crash mid-update. It does
+This component owns the maintenance-then-update-then-verify-then-commit-or-
+rollback sequence, its durable maintenance lease, and the ledger that makes
+it resumable after a crash mid-update. It does
 not own how a source checkout is performed (the source-update port's own
 git plumbing), how a Docker rollout builds and swaps a container (composed
 by the CLI surface application from Docker primitives), or exposing this as
@@ -69,6 +76,30 @@ a CLI command.
   `updated: false`. With no candidate tags at all, `updateLatest` MUST
   throw.
 
+- Before any recovery or forward checkout, an update with a composed quiesce
+  port MUST acquire maintenance. The existing Bootstrap pause checks then
+  stop intake/polling, projection advancement, schedules, reactions, direct
+  and host-driven advancement, recovery, reconciliation, and delivery. The
+  only work observed in the maintenance window is existing active Run views.
+- Lease phases are `quiescing` -> `updating` -> `rolling-back`, with `failed`
+  reachable from an active phase. State contains attempt id, tag, start time,
+  and operator-visible failure. Only healthy update or verified recovery
+  clears the lease; failure retains it and the complete runtime pause.
+- In `quiescing`, the updater waits for every active or ambiguous Run view to
+  empty for the configured positive drain timeout. It then requests durable
+  `maintenance` cancellation only for started, not already-cancelled Runs,
+  waits the configured cancellation timeout, and fails without checkout if
+  any active/ambiguous view remains. A cancellation write collision is safe
+  only when rereading the public view proves the Run has become terminal.
+- Restarting `updating` or `rolling-back` restores and verifies the last
+  healthy source (and rollout when configured), records the interrupted tag
+  bad, and clears maintenance without repeating a forward checkout. Recovery
+  failure leaves a visible failed lease.
+- Each resident-loop iteration re-discovers candidate tags. A bad `v2` is
+  skipped on later ordinary iterations, but newly published `v3` can replace
+  v2's failed lease and is attempted once. The same tag retries only with
+  `--force`.
+
 **Update ledger**
 
 - `read` MUST report the last tag written healthy, or `null` if none has
@@ -81,6 +112,16 @@ a CLI command.
   known-good state to fall back to.
 - `recordBad`/`isBad` MUST track a deduplicated set of unusable tags,
   independent of the pending/healthy markers.
+
+**Maintenance lease state**
+
+- `acquire` atomically retains an active attempt despite another caller's
+  requested tag. It replaces a failed attempt only for a different candidate
+  tag or an explicit forced retry.
+- Lease state writes are atomic and phase/clear/fail operations check attempt
+  ownership. The short state lock only serializes mutation; the full attempt
+  lock covers quiesce/update/recovery and is not stale-reclaimed while its
+  recorded local PID is alive.
 
 **Self-update failure log**
 
@@ -106,8 +147,14 @@ a CLI command.
   component directly) — resolves the tag/build-version string a Docker
   rollout is built and tagged with.
 
+- Bootstrap composition root (co-composes maintenance) maps a present lease
+  into the existing runtime pause supplier; no parallel scheduler is added.
+
 ## Decisions, exclusions, and deferred capability
 
+- The maintenance lease is operational JSON under `.wake`, not a journal
+  fact: it controls the installation that owns the journal and must survive
+  process replacement before normal services resume.
 - Self-update requires `host.development.mode: source` and a configured
   `host.development.repoRoot`; there is no packaged-install self-update
   path composed here.

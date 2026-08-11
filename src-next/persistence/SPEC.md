@@ -1,5 +1,5 @@
 ---
-asOf: 4e8c5f6d6955ee3bf6a926063cb1c6446f4b1e0b
+asOf: e60e528
 ---
 
 # Persistence — Module Specification
@@ -29,7 +29,9 @@ Persistence owns:
 - Durable storage of per-consumer checkpoints, the read cursors that let a
   projection resume without rescanning the whole journal.
 - A general-purpose filesystem lock, and its use to serialize concurrent
-  journal writers on a real filesystem.
+  journal writers on a real filesystem. Callers may additionally require a
+  stale lock's recorded local PID to be dead before reclaiming it, for a
+  long-lived exclusive operational attempt such as self-update.
 - The process that reads each registered projection from its own checkpoint,
   applies newly available events, and can rebuild a projection from scratch.
 - Basic operational diagnostics: confirming the journal, projections, and
@@ -132,7 +134,7 @@ Persistence does not own:
 | [Event Journal](event-journal.spec.md) | adapter | Append, per-stream and journal-wide ordering, idempotent replay of event envelopes | The durable record every other component and module ultimately reads from; the Projection Runner's event source. |
 | [Projection Store](projection-store.spec.md) | adapter | Keyed storage of current projection values, stamped with the position they reflect | Written by the Projection Runner; read by every module's query paths and by diagnostics. |
 | [Checkpoint Store](checkpoint-store.spec.md) | adapter | Per-consumer durable read cursor into the journal | Read and advanced by the Projection Runner to avoid rescanning the journal; reset to force a full rebuild. |
-| [File Lock](file-lock.spec.md) | adapter | Mutual exclusion over a filesystem path, with stale-lock reclamation | Used by the filesystem Event Journal to serialize concurrent writers; exported for reuse by anything needing the same primitive. |
+| [File Lock](file-lock.spec.md) | adapter | Mutual exclusion over a filesystem path, with optional PID-liveness-protected stale reclamation | Used by the filesystem Event Journal to serialize concurrent writers and by Bootstrap safe self-update for exclusive full attempts; exported for reuse. |
 | [Projection Runner](projection-runner.spec.md) | policy/process | Advancing every registered projection from the journal; rebuilding one from scratch | The only component that coordinates the Event Journal, Projection Store, and Checkpoint Store together. |
 
 ## Dependencies and system role

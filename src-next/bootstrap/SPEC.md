@@ -1,5 +1,5 @@
 ---
-asOf: 1e3248c96b0df64118974c98e4672a6dc1208212
+asOf: e60e528
 ---
 
 # Bootstrap — Module Specification
@@ -135,6 +135,19 @@ Bootstrap does not own:
   packaged-mode `docker/Dockerfile.packaged`, regardless of the detected
   `dev.mode`, so `wake sandbox build` can pick the one its configured mode
   calls for without the operator re-running init after a mode change.
+- A source-mode self-update MUST acquire its durable maintenance lease before
+  inspecting active Runs or checking out source. While any lease exists, the
+  one composed pause supplier makes intake, projection pumping, runner/tick
+  work, recovery, reconciliation, and delivery complete no-ops.
+- Maintenance state is operational JSON under `.wake`, with unique attempt
+  id, target tag, start time, failure, and closed phases `quiescing`,
+  `updating`, `rolling-back`, or `failed`. State mutation is atomic. A
+  separate full-attempt lock checks recorded local PID liveness before stale
+  reclaim, so a live slow updater is not taken over while a crashed one is.
+- Only a healthy update/recovery clears maintenance and resumes normal
+  runtime work. A failed attempt stays visible and paused; a distinct new
+  candidate may replace it atomically, while the same bad tag is skipped
+  unless forced.
 
 ## Conceptual schema
 
@@ -164,6 +177,7 @@ Bootstrap does not own:
 | `controlPlane` | Control-plane's own configuration | Dispatch limits, schedules, resident idle backoff. |
 | `integrations` | map of provider name to provider entry | Which providers are active and, for fixture providers, where their evidence lives. |
 | `surfaces` | Surfaces' own configuration | Whether the HTTP API/web surface is enabled, and where it listens. |
+| `host.selfUpdate` | Bootstrap self-update configuration | Positive drain and cancellation timeouts; each defaults to 30 seconds. |
 
 **Composition root**
 
@@ -176,6 +190,7 @@ Bootstrap does not own:
 | `work` / `resources` / `orchestration` / `execution` | module service instances | Each module's own composed service, ready for a surface application or another module's service to call. |
 | `runnerControls` | runner pause/unpause command surface | Backs the execution surface application's pause/unpause commands. |
 | `controlPlane` | control-plane service | Backs both pipelines' pause gate and the API surface application's `pause`/`resume` commands. |
+| `maintenance` | durable self-update maintenance lease | Shared pause source and exclusive ownership state for one source update. |
 | `advanceOnce` | one bounded control-plane advance step | The unit of forward progress the runner pipeline's own advance stage performs. |
 | `projectionRunner` | catch-up/rebuild runner over the registered projection set | Shared by both pipelines and the CLI's `validate-state` rebuild command. |
 | `providers` | composed provider instances | One per configured/enabled integration; each contributes poll/inbound/delivery behaviour to the intake and runner pipelines. |
@@ -195,7 +210,7 @@ Bootstrap does not own:
 | [Runner quota reporter](runner-quota-reporter.spec.md) | adapter | Translating an execution runner's quota-exhaustion signal into a control-plane fact | Given to execution as a callback; execution never appends control-plane facts itself. |
 | [Status-publish built-in activity](status-publish-activity.spec.md) | adapter | The `status.publish` Activity, available to every workflow without operator configuration | Registered into the activity registry the composition root builds; appends to the target resource's own stream. |
 | [Board projection](board-projection.spec.md) | projection | Folding Work, Orchestration, and Execution events into one per-WorkItem operator-board card | Read by the API surface application's board and status responses; registered for production catch-up/rebuild alongside every other module's own projections. |
-| [Self-update](self-update.spec.md) | policy/process | The update-then-verify-then-rollback sequence this installation's own source checkout (and, when sandboxed, its Docker container) advances through | Invoked by the CLI surface application's `self-update` command with concrete git/Docker collaborators; its failure log is read directly by the API surface application's `system.health` check. |
+| [Self-update](self-update.spec.md) | policy/process | The maintenance-lease, drain/cancel, update-verify-rollback sequence this installation's source checkout (and, when sandboxed, Docker container) advances through | Invoked by the CLI surface application's `self-update` command with concrete git/Docker collaborators; its failure log is read directly by the API surface application's `system.health` check. |
 | [API surface application](surface-api-applications.spec.md) | surface application | Translating the composed graph's state into the HTTP API's system, control-plane, board, resources, orchestration, execution, events, and observability responses | The only path the HTTP API and the CLI's own HTTP-hosting commands use to reach the composed graph. |
 | [Work detail and list surface application](surface-api-work-applications.spec.md) | surface application | Aggregating Work, Resources, Orchestration, Execution, and Activities state into one work list/detail response, and issuing Work's freeze/unfreeze/delete commands | Composed alongside the rest of the API surface application; the only component that reads across that many modules for one response. |
 | [CLI surface application](surface-cli-applications.spec.md) | surface application | Tick/start/stop, on-demand HTTP hosting, audit read, correlate, validate-state, and the sandbox/self-update/doctor operational commands | The only path the CLI entry point uses to reach the composed graph; hosts the HTTP server the API surface application is served over. |

@@ -108,8 +108,12 @@ lease-renewal event to record a takeover.
 | Field | Type | Description |
 | --- | --- | --- |
 | `requestedAt` | timestamp | When cancellation was requested; overwritten by a later request before confirmation. |
-| `reason` | closed vocabulary: `operator` / `work-cancelled` / `work-closed` / `workflow-superseded` / `timeout` / `shutdown` | Why cancellation was requested. |
+| `reason` | closed vocabulary: `operator` / `work-cancelled` / `work-closed` / `workflow-superseded` / `timeout` / `shutdown` / `maintenance` | Why cancellation was requested. |
 | `confirmedAt` | timestamp, optional | Set once confirmation is recorded; absent while cancellation is only requested. |
+
+`reason` additionally includes the closed value `maintenance`: safe
+self-update exhausted its grace drain and requested cancellation before
+checkout.
 
 ## Dependencies and system role
 
@@ -126,6 +130,12 @@ lease-renewal event to record a takeover.
   execution was found still running.
 - Control-plane (depends on, via cascading cancellation) — cascades a Work
   cancellation into every active Run of the affected workflow instances.
+
+- Bootstrap safe self-update (depends on the public Execution service) reads
+  active and ambiguous Run views for its bounded drain, requests only
+  started maintenance-cancellable Runs with reason `maintenance`, and waits
+  for terminal public views before checkout. It does not add another
+  cancellation protocol.
 
 ## Decisions, exclusions, and deferred capability
 
