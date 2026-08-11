@@ -39,6 +39,7 @@ export async function executeActivity(
     readonly occurredAt: string;
     readonly runner: ActivityExecutionContext['runner'];
     readonly runnerName?: string;
+    readonly resumeSessionId?: string;
   },
 ) {
   const { activation, context, occurredAt, runner } = request;
@@ -48,6 +49,7 @@ export async function executeActivity(
     signal: controller.signal,
     occurredAt,
     runId: currentRunId,
+    ...(request.resumeSessionId === undefined ? {} : { resumeSessionId: request.resumeSessionId }),
     ...(runner === undefined ? {} : { runner }),
     ...(request.runnerName === undefined
       ? {}

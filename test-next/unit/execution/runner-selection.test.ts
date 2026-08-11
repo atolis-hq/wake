@@ -6,11 +6,22 @@ import {
   ActivityRegistry,
   agentActivityDefinition,
 } from '../../../src-next/activities/index.js';
+import * as executionServiceModule from '../../../src-next/execution/application/execution-service.js';
 import {
   createExecutionService,
+  ExecutionEventType,
+  runId,
   RunnerRegistry,
+  RunStatus,
+  runStream,
   type Runner,
+  type RunView,
 } from '../../../src-next/execution/index.js';
+import {
+  createEventDraft,
+  EventActorKind,
+  EventSourceKind,
+} from '../../../src-next/kernel/index.js';
 import { orchestrationGroupId, workflowInstanceId } from '../../../src-next/orchestration/index.js';
 import { InMemoryEventJournal } from '../../../src-next/persistence/index.js';
 import {} from '../../../src-next/work/index.js';
@@ -102,13 +113,83 @@ describe('Execution runner selection', () => {
       },
     });
   });
+
+  it('forwards the newest same-adapter durable session from this activation', async () => {
+    const standard = capturingRunner('standard');
+    const journal = new InMemoryEventJournal(new FakeClock());
+    await seedPriorRun(journal, activation(), 'prior-standard', 'fake', 'session-1');
+    const service = fixtureWithJournal(
+      journal,
+      new RunnerRegistry({ standard: ['standard'] }, { standard }),
+    );
+
+    await service.attempt(activation(), context());
+
+    expect(standard.requests).toEqual([expect.objectContaining({ resumeSessionId: 'session-1' })]);
+  });
+
+  it('does not resume absent sessions or sessions from another adapter or activation', async () => {
+    const standard = capturingRunner('standard');
+    const journal = new InMemoryEventJournal(new FakeClock());
+    await seedPriorRun(journal, activation(), 'prior-other-cli', 'codex-cli', 'wrong-cli');
+    await seedPriorRun(journal, activation(), 'prior-without-session', 'fake');
+    await seedPriorRun(
+      journal,
+      { ...activation(), activationId: activationId('agent:other') },
+      'prior-other-activation',
+      'fake',
+      'wrong-activation',
+    );
+    const service = fixtureWithJournal(
+      journal,
+      new RunnerRegistry({ standard: ['standard'] }, { standard }),
+    );
+
+    await service.attempt(activation(), context());
+
+    expect(standard.requests).toEqual([
+      expect.not.objectContaining({ resumeSessionId: expect.anything() }),
+    ]);
+  });
+
+  it('selects only conclusively terminal sessions and breaks newest ties deterministically', () => {
+    const select = (
+      executionServiceModule as unknown as {
+        readonly resumeSessionIdFor?: (
+          runs: readonly RunView[],
+          cli: string | undefined,
+        ) => string | undefined;
+      }
+    ).resumeSessionIdFor;
+    const runs = [
+      resumeRun('old', RunStatus.Failed, 'session-old', '2026-08-11T11:00:00.000Z', 1),
+      resumeRun('inflight', RunStatus.Started, 'session-inflight', undefined, 99),
+      resumeRun(
+        'unresolved',
+        RunStatus.Ambiguous,
+        'session-unresolved',
+        '2026-08-11T13:00:00.000Z',
+        99,
+      ),
+      resumeRun('attempt-five', RunStatus.Cancelled, 'session-five', '2026-08-11T12:00:00.000Z', 5),
+      resumeRun('tie-a', RunStatus.Failed, 'session-a', '2026-08-11T12:00:00.000Z', 6),
+      resumeRun('tie-z', RunStatus.Failed, 'session-z', '2026-08-11T12:00:00.000Z', 6),
+    ];
+
+    expect(select).toBeTypeOf('function');
+    expect(select?.(runs, 'fake')).toBe('session-z');
+  });
 });
 
 function fixture(runners: RunnerRegistry) {
+  return fixtureWithJournal(new InMemoryEventJournal(new FakeClock()), runners);
+}
+
+function fixtureWithJournal(journal: InMemoryEventJournal, runners: RunnerRegistry) {
   const registry = new ActivityRegistry();
   registry.register(agentActivityDefinition);
   return createExecutionService(
-    new InMemoryEventJournal(new FakeClock()),
+    journal,
     registry,
     {
       agentRunners: {
@@ -123,6 +204,110 @@ function fixture(runners: RunnerRegistry) {
       runners,
     },
   );
+}
+
+function capturingRunner(name: string): Runner & { readonly requests: readonly unknown[] } {
+  const requests: unknown[] = [];
+  return {
+    get requests() {
+      return requests;
+    },
+    async start(request) {
+      requests.push(request);
+      return {
+        result: Promise.resolve({ transport: 'succeeded', output: 'DONE', runner: name }),
+        async cancel() {},
+      };
+    },
+  };
+}
+
+async function seedPriorRun(
+  journal: InMemoryEventJournal,
+  activationValue: ReturnType<typeof activation>,
+  id: string,
+  cli: string,
+  sessionId?: string,
+) {
+  const clock = new FakeClock();
+  const stream = runStream(runId(id));
+  await journal.append(stream, 0, [
+    createEventDraft({
+      eventId: `${id}:started`,
+      eventType: ExecutionEventType.RunStarted,
+      occurredAt: clock.now().toISOString(),
+      correlationId: 'group-1',
+      causationId: activationValue.activationId,
+      actor: { kind: EventActorKind.System, id: 'test' },
+      source: { kind: EventSourceKind.Internal, id: 'test' },
+      stream,
+      payload: {
+        activationId: activationValue.activationId,
+        activity: activationValue.activity,
+        workflowInstanceId: workflowInstanceId('workflow-1'),
+        orchestrationGroupId: orchestrationGroupId('group-1'),
+        attempt: 1,
+        startedAt: clock.now().toISOString(),
+        runner: { name: 'standard', cli },
+      },
+    }),
+    createEventDraft({
+      eventId: `${id}:result`,
+      eventType: ExecutionEventType.RunRunnerResultReported,
+      occurredAt: clock.now().toISOString(),
+      correlationId: 'group-1',
+      causationId: activationValue.activationId,
+      actor: { kind: EventActorKind.System, id: 'test' },
+      source: { kind: EventSourceKind.Internal, id: 'test' },
+      stream,
+      payload: {
+        transport: 'failed',
+        agent: {
+          outcome: 'FAILED',
+          displayBody: 'failed',
+          metadata: sessionId === undefined ? {} : { sessionId },
+        },
+      },
+    }),
+    createEventDraft({
+      eventId: `${id}:failed`,
+      eventType: ExecutionEventType.RunFailed,
+      occurredAt: clock.now().toISOString(),
+      correlationId: 'group-1',
+      causationId: activationValue.activationId,
+      actor: { kind: EventActorKind.System, id: 'test' },
+      source: { kind: EventSourceKind.Internal, id: 'test' },
+      stream,
+      payload: {
+        failure: { kind: 'unexpected-execution-failure', message: 'failed' },
+        finishedAt: clock.now().toISOString(),
+      },
+    }),
+  ]);
+}
+
+function resumeRun(
+  id: string,
+  status: RunStatus,
+  sessionId: string,
+  finishedAt: string | undefined,
+  attempt: number,
+): RunView {
+  return {
+    runId: runId(id),
+    activationId: activationId('agent:default'),
+    activity: agentActivityDefinition.name,
+    workflowInstanceId: workflowInstanceId('workflow-1'),
+    orchestrationGroupId: orchestrationGroupId('group-1'),
+    attempt,
+    status,
+    ambiguityAttempts: 0,
+    escalated: status === RunStatus.Ambiguous,
+    startedAt: '2026-08-11T10:00:00.000Z',
+    runner: { name: 'standard', cli: 'fake' },
+    ...(finishedAt === undefined ? {} : { finishedAt }),
+    agent: { outcome: 'FAILED', displayBody: 'failed', metadata: { sessionId } },
+  };
 }
 
 function activation(runnerPool?: string) {

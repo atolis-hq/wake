@@ -78,6 +78,7 @@ async function attemptExecution(
   const runner = resolveRunner(runtime, definition.executionKind, activation, context);
   const owner = context.owner ?? 'execution';
   const prior = await runtime.repository.list(activation.activationId);
+  const resumeSessionId = resumeSessionIdFor(prior, runner.cli);
   const existing = existingRun(prior, runtime.dependencies.clock, owner);
   if (existing !== undefined) return existing;
   const currentRunId = runId(runtime.dependencies.ids.next(ExecutionStreamKind.Run));
@@ -102,6 +103,7 @@ async function attemptExecution(
       occurredAt: startedAt,
       runner: runner.runner,
       ...(runner.name === undefined ? {} : { runnerName: runner.name }),
+      ...(resumeSessionId === undefined ? {} : { resumeSessionId }),
     });
     await recordRunSuccess({
       dependencies: runLifecycleDependencies(runtime),
@@ -143,6 +145,33 @@ async function attemptExecution(
     }
   }
   return (await runtime.repository.load(currentRunId)).view!;
+}
+
+export function resumeSessionIdFor(prior: readonly RunView[], cli: string | undefined) {
+  if (cli === undefined) return undefined;
+  return [...prior]
+    .filter((run) => isResumeTerminal(run.status))
+    .sort(compareNewestTerminalRun)
+    .find(
+      (run) =>
+        run.runner?.cli === cli &&
+        typeof run.agent?.metadata.sessionId === 'string' &&
+        run.agent.metadata.sessionId.trim().length > 0,
+    )?.agent?.metadata.sessionId as string | undefined;
+}
+
+function isResumeTerminal(status: RunStatus): boolean {
+  return (
+    status === RunStatus.Succeeded || status === RunStatus.Failed || status === RunStatus.Cancelled
+  );
+}
+
+function compareNewestTerminalRun(left: RunView, right: RunView): number {
+  const byFinishedAt = (right.finishedAt ?? '').localeCompare(left.finishedAt ?? '');
+  if (byFinishedAt !== 0) return byFinishedAt;
+  const byAttempt = right.attempt - left.attempt;
+  if (byAttempt !== 0) return byAttempt;
+  return String(right.runId).localeCompare(String(left.runId));
 }
 
 function resolveRunner(

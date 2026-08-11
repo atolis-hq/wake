@@ -58,6 +58,7 @@ export function createAgentActivity(
         contextReader,
         context.runnerContext,
         context.runId,
+        context.resumeSessionId,
       );
       const execution = await context.runner.start(request, context.signal);
       if (execution.identity !== undefined)
@@ -80,6 +81,7 @@ async function agentRequest(
   contextReader: AgentContextReader | undefined,
   runnerContext: { readonly runnerName: string; readonly activationOrdinal: number } | undefined,
   currentRunId: string | undefined,
+  resumeSessionId: string | undefined,
 ) {
   const input = invocation.input;
   const template = await resolveTemplate(
@@ -88,7 +90,13 @@ async function agentRequest(
     templates,
     contextReader,
   );
-  return requestFrom(input, currentRunId ?? invocation.activationId, template, runnerContext);
+  return requestFrom(
+    input,
+    currentRunId ?? invocation.activationId,
+    template,
+    runnerContext,
+    resumeSessionId,
+  );
 }
 
 async function resolveTemplate(
@@ -172,6 +180,7 @@ function requestFrom(
   runId: string,
   template: AgentTemplate,
   runnerContext: { readonly runnerName: string; readonly activationOrdinal: number } | undefined,
+  resumeSessionId: string | undefined,
 ) {
   return {
     runId,
@@ -180,6 +189,7 @@ function requestFrom(
     allowedTools: input.allowedTools ?? template?.allowedTools ?? [],
     ...maxTurnsField(template?.maxTurns),
     ...contextField(runnerContext, input.template),
+    ...(resumeSessionId === undefined ? {} : { resumeSessionId }),
   };
 }
 

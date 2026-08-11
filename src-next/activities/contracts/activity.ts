@@ -63,6 +63,8 @@ export interface AgentRunnerPort {
       readonly model?: string;
       readonly allowedTools: readonly string[];
       readonly maxTurns?: number;
+      /** Opaque prior adapter session selected by Execution for this activation. */
+      readonly resumeSessionId?: string;
       readonly context?: {
         readonly runnerName: string;
         readonly action: string;
@@ -100,6 +102,8 @@ export interface ActivityExecutionContext {
   readonly occurredAt: string;
   /** Durable Execution Run identity when the activity is invoked by Execution. */
   readonly runId?: string;
+  /** Opaque prior adapter session selected by Execution for this activation. */
+  readonly resumeSessionId?: string;
   readonly runner?: AgentRunnerPort;
   readonly runnerContext?: {
     readonly runnerName: string;

@@ -114,6 +114,25 @@ describe('agent activity template context', () => {
     expect(prompt.split('</wake-untrusted-data>')).toHaveLength(2);
   });
 
+  it('forwards an opaque resume session with the fully rendered current prompt', async () => {
+    const requests: Array<{ readonly prompt: string; readonly resumeSessionId?: string }> = [];
+    const activity = createAgentActivity(
+      { async render() { return { prompt: 'Current instructions' }; } },
+      { async forWorkItem() { return { title: 'Current ticket', body: 'Current body', comments: [] }; } },
+    );
+
+    await execute(activity, (request) => requests.push(request), { template: 'implement' }, 'session-1');
+
+    expect(requests).toEqual([
+      expect.objectContaining({
+        resumeSessionId: 'session-1',
+        prompt: expect.stringContaining('<wake-untrusted-data>'),
+      }),
+    ]);
+    expect(requests[0]!.prompt).toContain('Current instructions');
+    expect(requests[0]!.prompt).toContain('Current ticket');
+  });
+
   it('does not append ticket context to a direct input prompt', async () => {
     const requests: Array<{ readonly prompt: string }> = [];
     const activity = createAgentActivity();
@@ -128,6 +147,7 @@ async function execute(
   activity: ReturnType<typeof createAgentActivity>,
   recordRequest?: (request: { readonly prompt: string }) => void,
   input: { prompt?: string; template?: string } = { template: 'implement' },
+  resumeSessionId?: string,
 ) {
   await activity.execute(
     {
@@ -143,6 +163,7 @@ async function execute(
     {
       signal: new AbortController().signal,
       occurredAt: '2026-08-08T00:00:00.000Z',
+      ...(resumeSessionId === undefined ? {} : { resumeSessionId }),
       runner: {
         async start(request) {
           recordRequest?.(request);
