@@ -1,4 +1,16 @@
 import { describe, expect, it, vi } from 'vitest';
+import {
+  createSurfaceApplications,
+  type CompositionRoot,
+} from '../../../src-next/bootstrap/index.js';
+import {
+  EventActorKind,
+  EventSourceKind,
+  causationId,
+  correlationId,
+  eventId,
+} from '../../../src-next/kernel/index.js';
+import { InMemoryEventJournal } from '../../../src-next/persistence/index.js';
 import { runWakeCommand, type WakeCliApplications } from '../../../src-next/surfaces/cli/main.js';
 
 describe('Wake target CLI runtime commands', () => {
@@ -19,19 +31,85 @@ describe('Wake target CLI runtime commands', () => {
     },
   );
 
-  it('formats canonical audit facts and causal links without depending on projections', async () => {
-    const write = vi.fn();
-    const applications = fixtureApplications([]);
+  it('reads audit facts from the composed canonical journal and formats target records', async () => {
+    const clock = { now: () => new Date('2026-08-11T12:00:00.000Z') };
+    const journal = new InMemoryEventJournal(clock);
+    await journal.append({ kind: 'work-item', id: 'work-demo' }, 0, [
+      {
+        eventId: eventId('audit-event'),
+        eventType: 'work.created',
+        schemaVersion: 1,
+        occurredAt: clock.now().toISOString(),
+        correlationId: correlationId('audit-correlation'),
+        causationId: causationId('audit-causation'),
+        actor: { kind: EventActorKind.System, id: 'test' },
+        source: { kind: EventSourceKind.Internal, id: 'test' },
+        stream: { kind: 'work-item', id: 'work-demo' },
+        payload: { objective: 'Audit the canonical journal' },
+      },
+    ]);
+    await journal.append({ kind: 'resource', id: 'work-demo' }, 0, [
+      {
+        eventId: eventId('same-id-non-work-event'),
+        eventType: 'resource.registered',
+        schemaVersion: 1,
+        occurredAt: clock.now().toISOString(),
+        correlationId: correlationId('non-work-correlation'),
+        causationId: causationId('non-work-causation'),
+        actor: { kind: EventActorKind.System, id: 'test' },
+        source: { kind: EventSourceKind.Internal, id: 'test' },
+        stream: { kind: 'resource', id: 'work-demo' },
+        payload: { provider: 'test' },
+      },
+    ]);
+    const root = {
+      journal,
+      paths: { wakeRoot: 'C:/wake' },
+      config: {
+        host: {
+          development: { mode: 'packaged' },
+          sandbox: {
+            image: 'wake:test',
+            containerName: 'wake-test',
+            wakeMountPath: '/wake',
+            containerHomeMountPath: '/home/wake',
+            extraMounts: [],
+            start: { enabled: false },
+          },
+        },
+        surfaces: { api: { enabled: false } },
+      },
+      projections: new Proxy(
+        {},
+        {
+          get() {
+            throw new Error('audit must not read projections');
+          },
+        },
+      ),
+    } as unknown as CompositionRoot;
+    const applications = createSurfaceApplications(root, {
+      now: () => clock.now().toISOString(),
+    }).cli;
+    const output: string[] = [];
 
     await runWakeCommand(
       { kind: 'audit', workItemId: 'work-demo' },
       applications,
-      { write },
+      { write: (value) => output.push(value) },
       new AbortController().signal,
     );
 
-    expect(write).toHaveBeenCalledWith(expect.stringContaining('work.created'));
-    expect(write).toHaveBeenCalledWith(expect.stringContaining('cause-1'));
+    expect(output).toEqual([
+      `${JSON.stringify({
+        eventId: 'audit-event',
+        eventType: 'work.created',
+        occurredAt: '2026-08-11T12:00:00.000Z',
+        stream: 'work-item:work-demo',
+        causationId: 'audit-causation',
+        correlationId: 'audit-correlation',
+      })}\n`,
+    ]);
   });
 
   it('runs explicit projection rebuilding only when requested', async () => {

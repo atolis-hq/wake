@@ -1,4 +1,4 @@
-import { execFile as nodeExecFile, spawn, type ChildProcess } from 'node:child_process';
+import { execFile as nodeExecFile, spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { access, copyFile, mkdir, writeFile as writeFileContent } from 'node:fs/promises';
 import type { Server } from 'node:http';
@@ -17,6 +17,7 @@ import {
   createPackagedAssetSource,
   createProcessLogSink,
   createSandboxDockerPort,
+  drainProcessOutput,
   runDoctor,
   runSandbox,
   runSandboxEntrypoint,
@@ -34,7 +35,7 @@ import {
   type SandboxEntrypointDependencies,
   type WakeCliApplications,
 } from '../surfaces/index.js';
-import { workItemId } from '../work/index.js';
+import { WorkStreamKind, workItemId } from '../work/index.js';
 import type { CompositionRoot } from './composition-root.js';
 import { loadConfig } from './config/load-config.js';
 import { runtimeProjectionDefinitions } from './projection-runtime.js';
@@ -142,7 +143,9 @@ export function createSurfaceCliApplications(
     audit: {
       async read(id) {
         return (await root.journal.readAll(0))
-          .filter((event) => event.stream.id === id)
+          .filter(
+            (event) => event.stream.kind === WorkStreamKind.WorkItem && event.stream.id === id,
+          )
           .map((event) => ({
             eventId: event.eventId,
             eventType: event.eventType,
@@ -747,7 +750,7 @@ function createSandboxEntrypointDependencies(root: CompositionRoot): SandboxEntr
   const logDirectory = join(root.paths.dataRoot, 'logs');
   const pidFile = join(logDirectory, 'start.pid');
   const startLogFile = join(logDirectory, 'start.log');
-  const children = new Map<number, ChildProcess>();
+  const children = new Map<number, Promise<number>>();
   return {
     startEnabled: process.env.WAKE_START_ENABLED === 'true',
     restartDelaySeconds: resolveRestartDelaySeconds(process.env),
@@ -770,26 +773,25 @@ function createSandboxEntrypointDependencies(root: CompositionRoot): SandboxEntr
       });
       if (typeof child.pid !== 'number')
         throw new Error('failed to spawn detached wake start process');
-      children.set(child.pid, child);
-      const forward = (chunk: Buffer) => void sink.write(chunk.toString('utf8'));
-      child.stdout?.on('data', forward);
-      child.stderr?.on('data', forward);
-      child.on('exit', () => {
-        if (typeof child.pid === 'number') children.delete(child.pid);
-        void sink.close();
+      let closeStatus = 1;
+      const closed = new Promise<void>((resolve) => {
+        child.once('close', (code) => {
+          closeStatus = code ?? 1;
+          resolve();
+        });
       });
+      const drained = drainProcessOutput(child, sink, (error) => {
+        process.stderr.write(
+          `Wake detached start log failure: ${error instanceof Error ? error.message : String(error)}\n`,
+        );
+      });
+      const completion = closed.then(() => drained).then(() => closeStatus);
+      children.set(child.pid, completion);
+      void completion.then(() => children.delete(child.pid!));
       child.unref();
       return { pid: child.pid };
     },
-    waitForExit: (pid) =>
-      new Promise<number>((resolve) => {
-        const child = children.get(pid);
-        if (child === undefined) {
-          resolve(1);
-          return;
-        }
-        child.on('exit', (code) => resolve(code ?? 1));
-      }),
+    waitForExit: async (pid) => children.get(pid) ?? 1,
     writeFile: (path, content) => writeFileContent(path, content, 'utf8'),
     sleep: (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
     waitForever: () => new Promise<never>(() => {}),

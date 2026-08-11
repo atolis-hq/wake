@@ -1,4 +1,4 @@
-import { mkdtemp, readdir, readFile } from 'node:fs/promises';
+import { mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -47,5 +47,21 @@ describe('init', () => {
     await expect(readFile(join(root, 'nested', 'deep', 'asset.txt'), 'utf8')).resolves.toBe(
       'nested content\n',
     );
+  });
+
+  it('refuses a non-empty root without replacing an operator-customized asset', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wake-init-'));
+    const customConfig = 'operator-owned: preserve me\n';
+    await writeFile(join(root, 'config.yaml'), customConfig, 'utf8');
+
+    await expect(
+      initialiseWakeHome(root, {
+        'config.yaml': 'schemaVersion: 1\n',
+        'prompts/implement.md': '# generated\n',
+      }),
+    ).rejects.toThrow(`Wake root is not empty: ${root}`);
+
+    await expect(readFile(join(root, 'config.yaml'), 'utf8')).resolves.toBe(customConfig);
+    await expect(readdir(root)).resolves.toEqual(['config.yaml']);
   });
 });

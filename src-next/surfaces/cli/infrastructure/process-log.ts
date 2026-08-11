@@ -17,6 +17,13 @@ export interface ProcessLogOptions {
   maxBytes?: number;
 }
 
+export interface ProcessOutputSource {
+  readonly stdout?: NodeJS.ReadableStream | null;
+  readonly stderr?: NodeJS.ReadableStream | null;
+  on(event: 'error', listener: (error: Error) => void): unknown;
+  once(event: 'close', listener: (code: number | null) => void): unknown;
+}
+
 /** Redacts recognised secret-shaped values before process output is displayed or persisted. */
 export function scrubProcessLog(value: string): string {
   return value
@@ -33,24 +40,66 @@ export function createProcessLogSink(
   output: ProcessLogOutput,
   options: ProcessLogOptions = {},
 ): ProcessLogSink {
-  let closed = false;
+  let acceptingWrites = true;
+  let writes = Promise.resolve();
 
   return {
     async write(value: string): Promise<void> {
-      if (closed) {
-        return;
-      }
-
-      const scrubbed = scrubProcessLog(value);
-      await mkdir(dirname(path), { recursive: true });
-      await rotateIfRequired(path, Buffer.byteLength(scrubbed), options.maxBytes);
-      await appendFile(path, scrubbed, 'utf8');
-      output.write(scrubbed);
+      if (!acceptingWrites) return;
+      const write = writes.then(async () => {
+        const scrubbed = scrubProcessLog(value);
+        await mkdir(dirname(path), { recursive: true });
+        await rotateIfRequired(path, Buffer.byteLength(scrubbed), options.maxBytes);
+        await appendFile(path, scrubbed, 'utf8');
+        output.write(scrubbed);
+      });
+      // Keep the durable queue live after a failed operation while preserving
+      // that operation's rejection for the caller that initiated it.
+      writes = write.catch(() => undefined);
+      return write;
     },
     async close(): Promise<void> {
-      closed = true;
+      acceptingWrites = false;
+      await writes;
     },
   };
+}
+
+/**
+ * Serializes detached child output into a sink and resolves only after Node's
+ * `close` event confirms its stdio streams have closed. Sink failures are
+ * reported rather than becoming detached, unhandled promise rejections.
+ */
+export function drainProcessOutput(
+  process: ProcessOutputSource,
+  sink: ProcessLogSink,
+  reportError: (error: unknown) => void,
+): Promise<void> {
+  let writes = Promise.resolve();
+  const report = (error: unknown) => {
+    try {
+      reportError(error);
+    } catch {
+      // A reporting failure must not make a detached child unhandled.
+    }
+  };
+  const enqueue = (chunk: Buffer | string) => {
+    const value = chunk.toString();
+    writes = writes.then(() => sink.write(value)).catch(report);
+  };
+
+  process.stdout?.on('data', enqueue);
+  process.stderr?.on('data', enqueue);
+  process.on('error', report);
+
+  return new Promise((resolve) => {
+    process.once('close', () => {
+      void writes
+        .then(() => sink.close())
+        .catch(report)
+        .then(resolve);
+    });
+  });
 }
 
 async function rotateIfRequired(
