@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { runSandbox } from '../../../src-next/surfaces/cli/commands/sandbox.js';
 import {
   createDockerCli,
   createLoggedDockerCli,
@@ -324,6 +325,63 @@ describe('CLI infrastructure', () => {
         `cd '/wake/workspaces/o'\\''brien' && 'claude' '--resume' 'abc-123'`,
       ],
     ]);
+  });
+
+  it.each([
+    ['codex', ['codex', 'exec', 'resume', 'session-7']],
+    ['cursor', ['cursor', 'agent', '--resume=session-7']],
+  ])(
+    'preserves %s session state through the sandbox surface and Docker boundary',
+    async (cli, expectedResume) => {
+      const calls: string[][] = [];
+      const docker = createSandboxDockerPort(
+        createDockerCli(async (arguments_) => {
+          calls.push([...arguments_]);
+        }),
+        { wakeRoot: '/wake-root', image: 'wake-sandbox', containerName: 'wake-sandbox' },
+      );
+
+      await runSandbox(['resume', 'session-7', '--cwd', '/work/item-7', '--cli', cli], docker);
+
+      expect(calls).toEqual([
+        [
+          'exec',
+          '-it',
+          '-w',
+          '/wake',
+          'wake-sandbox',
+          'sh',
+          '-c',
+          `cd '/work/item-7' && ${expectedResume.map((value) => `'${value}'`).join(' ')}`,
+        ],
+      ]);
+    },
+  );
+
+  it('propagates a Docker exec failure through the sandbox command after recording its output', async () => {
+    const entries: string[] = [];
+    const docker = createSandboxDockerPort(
+      createLoggedDockerCli(
+        {
+          execute: async (_arguments, onChunk) => {
+            await onChunk({ stream: 'stderr', text: 'GITHUB_TOKEN=secret failed\\n' });
+            throw new Error('docker exec exited with code 23');
+          },
+        },
+        {
+          write: async (value) => {
+            entries.push(value);
+          },
+          close: async () => {},
+        },
+      ),
+      { wakeRoot: '/wake-root', image: 'wake-sandbox', containerName: 'wake-sandbox' },
+    );
+
+    await expect(runSandbox(['exec', '--', 'false'], docker)).rejects.toThrow(
+      'exited with code 23',
+    );
+    expect(entries).toEqual(['GITHUB_TOKEN=[REDACTED] failed\\n']);
   });
 
   it('rejects a resume request for an unsupported agent CLI', async () => {
