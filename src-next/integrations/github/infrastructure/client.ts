@@ -14,10 +14,34 @@ import {
 } from './client-reads.js';
 import { createEtagCache } from './etag-cache.js';
 
+// Octokit's request-log plugin reports every non-2xx response through this
+// callback, including the expected 304 responses produced by conditional ETag
+// reads. Keep those cache hits quiet, but retain a small, safe operator signal
+// for actual GitHub failures. Octokit may pass error context after the message;
+// deliberately ignore it because it can contain request authentication data.
+function requestLogStatus(message: string): number | undefined {
+  const match = / - (\d{3}) with id /.exec(message);
+  return match === null ? undefined : Number(match[1]);
+}
+
+export function redactGitHubRequestMessage(message: unknown): string {
+  if (typeof message !== 'string') return 'GitHub request failed';
+  return message
+    .replace(/\b(?:gh[pousr]_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+)\b/g, '<redacted>')
+    .replace(/\b(?:bearer|token|basic)\s+\S+/gi, '<redacted>')
+    .replace(/([?&](?:access_token|token|authorization)=)[^&\s]+/gi, '$1<redacted>');
+}
+
+function logGitHubRequestFailure(message: unknown): void {
+  const text = redactGitHubRequestMessage(message);
+  if (requestLogStatus(text) === 304) return;
+  process.stderr.write(`GitHub request failed: ${text}\n`);
+}
+
 export function createGitHubClient(token: string) {
   const octokit = new Octokit({
     auth: token,
-    log: { debug() {}, info() {}, warn() {}, error() {} },
+    log: { debug() {}, info() {}, warn() {}, error: logGitHubRequestFailure },
   });
   const cache = createEtagCache();
   return {
