@@ -102,6 +102,11 @@ Does not own:
   directory set to the mounted wake root. Sandbox `up`/container creation MAY
   publish a `127.0.0.1:<port>:<port>` host port mapping when a published
   port is configured.
+- Sandbox UI/tunnel environment injection and ngrok forwarding are not
+  sandbox capabilities: `WAKE_UI_ENABLED`, `WAKE_UI_PORT`, `WAKE_UI_TOKEN`,
+  `WAKE_UI_TUNNEL_ENABLED`, and `NGROK_AUTHTOKEN` MUST NOT be read or passed
+  through this Surface. Target API/web configuration is the operator-facing
+  replacement; a remote/tunnel feature requires a separately approved design.
 - The Docker CLI primitive's resident-liveness check (used to confirm a
   self-update container swap actually came up) MUST poll, up to a bounded
   attempt count with a fixed interval between attempts, for the resident
@@ -176,3 +181,7 @@ Does not own:
   there is no way to request `Secondary` from the parsed command surface.
 - There is no `--no-sandbox` flag or automatic re-exec into a sandboxed
   process at this layer.
+- There is no zero-argument interactive sandbox resume picker. `sandbox
+  resume` requires an explicit session id, working directory, and runner
+  kind; normal agent-session continuation is Execution's generic runner
+  request concern rather than a manual sandbox-history UI.

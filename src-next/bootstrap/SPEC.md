@@ -1,5 +1,5 @@
 ---
-asOf: f47de22
+asOf: 960e92f8972f78b4baa2998c8c03421ffecea863
 ---
 
 # Bootstrap — Module Specification

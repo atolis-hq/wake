@@ -106,6 +106,10 @@ application's own responses — it only decides when to serve them.
   installed `wake` binary for `packaged` mode); `sandboxRuntime.hasDockerfile`
   MUST report whether `docker/Dockerfile` exists under this Wake root,
   without itself building or inspecting an image.
+- Sandbox composition MUST NOT introduce legacy UI/tunnel environment
+  forwarding or ngrok credentials. The composed Docker options intentionally
+  omit `WAKE_UI_*` and `NGROK_AUTHTOKEN`; API/web Surface configuration owns
+  the target operator surface instead.
 - `smoke` MUST resolve the default runner pool through the same runner
   registry composition (including the composed fake-scenario resolver) that
   production execution uses, so a fake-runner smoke test can be scripted
@@ -140,3 +144,6 @@ application's own responses — it only decides when to serve them.
   process against the same Wake home.
 - `correlate` always establishes a `Primary` correlation role; this
   component does not expose any other correlation role from the CLI.
+- Sandbox attended resume remains explicit (`sessionId`, `cwd`, and runner
+  kind). This component does not compose the removed legacy zero-argument
+  session picker.
