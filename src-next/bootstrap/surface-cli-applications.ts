@@ -7,7 +7,7 @@ import { createInterface } from 'node:readline/promises';
 import { promisify } from 'node:util';
 import { BuiltInActivityName, agentActivityDefinition } from '../activities/index.js';
 import { IntakeHost, ResidentHost, TickHost } from '../control-plane/index.js';
-import { RunStatus, loadPromptTemplate } from '../execution/index.js';
+import { ExecutionCancellationReason, RunStatus, loadPromptTemplate } from '../execution/index.js';
 import { EventActorKind, correlationId } from '../kernel/index.js';
 import { ResourceCorrelationRole, resourceId } from '../resources/index.js';
 import {
@@ -39,7 +39,10 @@ import type { CompositionRoot } from './composition-root.js';
 import { loadConfig } from './config/load-config.js';
 import { runtimeProjectionDefinitions } from './projection-runtime.js';
 import { createRunnerRegistry } from './runner-registry.js';
-import { createSelfUpdateApplication } from './self-update-application.js';
+import {
+  createSelfUpdateApplication,
+  type SelfUpdateQuiescePort,
+} from './self-update-application.js';
 import { createSelfUpdateFailureLog } from './self-update-failure-log.js';
 import { createSourceUpdatePort } from './source-update-port.js';
 import { createUpdateLedger } from './update-ledger.js';
@@ -166,11 +169,14 @@ export function createSurfaceCliApplications(
   };
 }
 
-async function runProjectionPump(root: CompositionRoot, signal: AbortSignal): Promise<void> {
+export async function runProjectionPump(
+  root: Pick<CompositionRoot, 'isPaused' | 'projectionRunner'>,
+  signal: AbortSignal,
+): Promise<void> {
   const intervalMs = 1000;
   while (!signal.aborted) {
     try {
-      await root.projectionRunner.runRegisteredOnce();
+      if (!(await root.isPaused())) await root.projectionRunner.runRegisteredOnce();
     } catch (error) {
       process.stderr.write(
         `Wake projection pump failed: ${error instanceof Error ? error.message : String(error)}\n`,
@@ -281,14 +287,42 @@ function sandboxWakeInvocation(root: CompositionRoot): readonly string[] {
     : ['wake'];
 }
 
+async function activeExecutionRuns(root: CompositionRoot) {
+  return (await root.execution.list())
+    .filter((run) => run.status === RunStatus.Started || run.status === RunStatus.Ambiguous)
+    .map((run) => ({
+      runId: run.runId,
+      maintenanceCancellable: run.status === RunStatus.Started && run.cancellation === undefined,
+    }));
+}
+
 async function activeExecutionRunIds(root: CompositionRoot): Promise<readonly string[]> {
-  return (
-    await root.projections.list<{
-      readonly view: { readonly status: string; readonly runId: string } | null;
-    }>('execution')
-  )
-    .filter(({ value }) => value.view?.status === RunStatus.Started)
-    .map(({ value }) => String(value.view?.runId));
+  return (await root.execution.list())
+    .filter((run) => run.status === RunStatus.Started)
+    .map((run) => run.runId);
+}
+
+/** The production maintenance boundary shared by the CLI update application. */
+export function createSelfUpdateQuiescePort(root: CompositionRoot): SelfUpdateQuiescePort {
+  return {
+    acquire: async (tag) => {
+      await root.maintenance.acquire(tag);
+    },
+    activeRuns: () => activeExecutionRuns(root),
+    requestMaintenanceCancellation: async (runIds) => {
+      for (const runId of runIds)
+        await root.execution.requestCancellation(runId, ExecutionCancellationReason.Maintenance);
+    },
+    sleep: (milliseconds) => new Promise<void>((resolve) => setTimeout(resolve, milliseconds)),
+    now: () => Date.now(),
+    fail: async (error) => {
+      await root.maintenance.fail(error);
+    },
+    transition: async (phase) => {
+      await root.maintenance.transition(phase);
+    },
+    clear: () => root.maintenance.clear(),
+  };
 }
 
 function createSandboxRuntimeApplications(root: CompositionRoot) {
@@ -397,6 +431,9 @@ function createOperationalApplications(root: CompositionRoot) {
           },
           recordFailure: (failedTag, error) => failureLog.record(failedTag, error),
         },
+        quiesce: createSelfUpdateQuiescePort(root),
+        drainTimeoutMs: root.config.host.selfUpdate.drainTimeoutMs,
+        cancellationTimeoutMs: root.config.host.selfUpdate.cancellationTimeoutMs,
       });
       const force = arguments_.includes('--force');
       if (arguments_.includes('--loop')) {

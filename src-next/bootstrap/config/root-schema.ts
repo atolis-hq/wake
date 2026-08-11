@@ -83,6 +83,13 @@ const hostConfigSchema = z
       })
       .strict()
       .default({}),
+    selfUpdate: z
+      .object({
+        drainTimeoutMs: z.number().int().positive().default(30_000),
+        cancellationTimeoutMs: z.number().int().positive().default(30_000),
+      })
+      .strict()
+      .default({ drainTimeoutMs: 30_000, cancellationTimeoutMs: 30_000 }),
   })
   .strict()
   .default({
@@ -96,6 +103,7 @@ const hostConfigSchema = z
       extraMounts: [],
     },
     development: {},
+    selfUpdate: { drainTimeoutMs: 30_000, cancellationTimeoutMs: 30_000 },
   })
   .superRefine((value, context) => {
     if (value.development.mode === 'source' && value.development.repoRoot === undefined)

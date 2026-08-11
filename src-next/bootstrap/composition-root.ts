@@ -93,6 +93,10 @@ import { createRunnerQuotaReporter } from './runner-quota-reporter.js';
 import { createRunnerRegistry } from './runner-registry.js';
 import { FileScheduleCheckpointStore } from './schedule-checkpoint-store.js';
 import { createStatusPublishActivity } from './status-publish-activity.js';
+import {
+  createUpdateMaintenanceLease,
+  type UpdateMaintenanceLease,
+} from './update-maintenance-lease.js';
 
 export interface CompositionRootOptions {
   readonly config?: ResolvedWakeModulesConfig;
@@ -123,6 +127,7 @@ export interface CompositionRoot {
   readonly config: ResolvedWakeModulesConfig;
   readonly fakeScenarios: FakeScenarioResolver;
   readonly paths: WakePaths;
+  readonly maintenance: UpdateMaintenanceLease;
   readonly journal: EventJournal;
   readonly projections: ProjectionStore;
   readonly checkpoints: CheckpointStore;
@@ -134,6 +139,8 @@ export interface CompositionRoot {
   readonly execution: ReturnType<typeof createExecutionService>;
   readonly runnerControls: ReturnType<typeof createRunnerControlService>;
   readonly controlPlane: ReturnType<typeof createControlPlaneService>;
+  /** Shared operator-or-maintenance pause supplier for every resident runtime loop. */
+  readonly isPaused: () => Promise<boolean>;
   readonly advanceOnce: ReturnType<typeof createAdvanceOnce>;
   readonly projectionRunner: ReturnType<typeof createRuntimeProjectionRunner>;
   readonly providers: readonly ProviderInstance[];
@@ -162,6 +169,7 @@ export async function createCompositionRoot(
   const config = options.config ?? (await loadConfig(wakeRoot));
   const fakeScenarios = await loadFakeScenarios(wakeRoot);
   const paths = resolveWakePaths(wakeRoot);
+  const maintenance = createUpdateMaintenanceLease(paths.wakeRoot);
   const clock = options.clock ?? new SystemClock();
   const ids = new UlidIdGenerator();
   const { journal, projections, checkpoints } = composePersistence(paths, clock, options);
@@ -195,6 +203,8 @@ export async function createCompositionRoot(
     }),
   });
   const controlPlane = createControlPlaneService({ journal, clock, ids });
+  const isRuntimePaused = async () =>
+    (await controlPlane.isPaused()) || (await maintenanceBlocksRuntime(maintenance));
   const runnerControls = createRunnerControlService({
     journal,
     clock,
@@ -204,7 +214,7 @@ export async function createCompositionRoot(
   const advanceOnce = createAdvanceOnce(orchestration, execution, resources, clock, {
     ids,
     dispatchPolicy: new DispatchPolicy({ maxDispatches: config.controlPlane.maxDispatches }),
-    isDispatchPaused: () => controlPlane.isPaused(),
+    isDispatchPaused: isRuntimePaused,
     work,
     runnerIneligibility: async () => {
       const stored = await projections.read<ControlPlaneView>(ControlStreamKind.Global, 'global');
@@ -225,6 +235,7 @@ export async function createCompositionRoot(
     execution,
     advanceOnce,
     controlPlane,
+    isPaused: isRuntimePaused,
     clock,
     work,
     ids,
@@ -242,6 +253,7 @@ export async function createCompositionRoot(
     config,
     fakeScenarios,
     paths,
+    maintenance,
     journal,
     projections,
     checkpoints,
@@ -253,10 +265,15 @@ export async function createCompositionRoot(
     execution,
     runnerControls,
     controlPlane,
+    isPaused: isRuntimePaused,
     advanceOnce,
     resolveResourceLink,
     ...runtime,
   };
+}
+
+async function maintenanceBlocksRuntime(maintenance: UpdateMaintenanceLease): Promise<boolean> {
+  return (await maintenance.read()) !== null;
 }
 
 interface IntegrationRuntime {
@@ -281,6 +298,7 @@ interface IntegrationRuntimeInput {
   readonly execution: ReturnType<typeof createExecutionService>;
   readonly advanceOnce: ReturnType<typeof createAdvanceOnce>;
   readonly controlPlane: ReturnType<typeof createControlPlaneService>;
+  readonly isPaused: () => Promise<boolean>;
   readonly clock: Clock;
   readonly ids: UlidIdGenerator;
   readonly wakeRoot: string;
@@ -412,7 +430,7 @@ async function composeIntegrationRuntime(
   // Only poll hits a rate-limited external API, so only this half of the
   // tick needs a backing-off host — see bootstrap/surface-cli-applications.ts.
   const intakePipeline = createIntakePipeline({
-    isPaused: input.controlPlane.isPaused,
+    isPaused: input.isPaused,
     catchUpProjections,
     poll: async (signal) => {
       let appended = 0;
@@ -427,7 +445,7 @@ async function composeIntegrationRuntime(
     },
   });
   const runnerPipeline = createRunnerPipeline({
-    isPaused: input.controlPlane.isPaused,
+    isPaused: input.isPaused,
     catchUpProjections,
     runSchedules: async () => {
       for (const schedule of input.config.controlPlane.schedules)

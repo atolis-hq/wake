@@ -26,6 +26,7 @@ describe('target host configuration', () => {
         extraMounts: [],
       },
       development: {},
+      selfUpdate: { drainTimeoutMs: 30_000, cancellationTimeoutMs: 30_000 },
     });
   });
 
@@ -46,6 +47,21 @@ describe('target host configuration', () => {
       parseRootConfig({
         ...baseConfig,
         host: { sandbox: { extraMounts: [{ source: '', target: '/repos' }] } },
+      }),
+    ).toThrow();
+  });
+
+  it('accepts only positive self-update drain and cancellation timeouts', () => {
+    expect(
+      parseRootConfig({
+        ...baseConfig,
+        host: { selfUpdate: { drainTimeoutMs: 1, cancellationTimeoutMs: 2 } },
+      }).host.selfUpdate,
+    ).toEqual({ drainTimeoutMs: 1, cancellationTimeoutMs: 2 });
+    expect(() =>
+      parseRootConfig({
+        ...baseConfig,
+        host: { selfUpdate: { drainTimeoutMs: 0, cancellationTimeoutMs: 1 } },
       }),
     ).toThrow();
   });

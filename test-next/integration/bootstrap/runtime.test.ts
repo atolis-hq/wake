@@ -168,6 +168,86 @@ describe('target composition root', () => {
     expect(saves).toEqual(['2026-08-10T00:01:00.000Z']);
   });
 
+  it('pauses the composed runner pipeline for maintenance and resumes it after a healthy update clears the lease', async () => {
+    const clock = { now: () => new Date('2026-08-10T00:01:30.000Z') };
+    const saves: string[] = [];
+    const root = await fixtureRoot();
+    const runtime = await createCompositionRoot(root, {
+      config: scheduledRootConfig(),
+      journal: new InMemoryEventJournal(clock),
+      projections: new InMemoryProjectionStore(),
+      checkpoints: new InMemoryCheckpointStore(),
+      scheduleCheckpoints: {
+        async load() {
+          return '2026-08-10T00:00:00.000Z';
+        },
+        async save(_scheduleId, slot) {
+          saves.push(slot);
+        },
+      },
+      clock,
+    });
+
+    await runtime.maintenance.acquire('v2');
+    await expect(runtime.runnerPipeline.run({ maxProgress: 1 })).resolves.toEqual({
+      kind: 'paused',
+    });
+    expect(saves).toEqual([]);
+
+    await runtime.maintenance.clear();
+    await runtime.runnerPipeline.run({ maxProgress: 1 });
+    expect(saves).toEqual(['2026-08-10T00:01:00.000Z']);
+  });
+
+  it('does not poll or translate provider intake during maintenance, then resumes intake after the lease clears', async () => {
+    const root = await fixtureRoot();
+    const clock = { now: () => new Date('2026-08-10T00:01:30.000Z') };
+    const runtime = await createCompositionRoot(root, {
+      config: parseRootConfig({
+        schemaVersion: 1,
+        work: {},
+        resources: {},
+        execution: {
+          agentRunners: { fake: { kind: 'fake' } },
+          runnerPools: { standard: ['fake'] },
+          defaultRunnerPool: 'standard',
+        },
+        orchestration: { workflows: {} },
+        controlPlane: {},
+        integrations: {
+          fake: {
+            enabled: true,
+            provider: 'fake',
+            events: [
+              {
+                key: 'maintenance-intake',
+                title: 'must wait for update completion',
+                eligible: false,
+              },
+            ],
+          },
+        },
+        surfaces: {},
+      }),
+      journal: new InMemoryEventJournal(clock),
+      projections: new InMemoryProjectionStore(),
+      checkpoints: new InMemoryCheckpointStore(),
+      clock,
+    });
+
+    await runtime.maintenance.acquire('v2');
+    await expect(runtime.intakePipeline.run(new AbortController().signal)).resolves.toEqual({
+      processed: false,
+    });
+    expect(await runtime.journal.readAll(0)).toEqual([]);
+
+    await runtime.maintenance.clear();
+    await expect(runtime.intakePipeline.run(new AbortController().signal)).resolves.toEqual({
+      processed: true,
+    });
+    expect(await runtime.journal.readAll(0)).not.toEqual([]);
+  });
+
   it('routes composed delivery through the decorated provider adapter', async () => {
     const clock = { now: () => new Date('2026-08-10T00:00:00.000Z') };
     const journal = new InMemoryEventJournal(clock);

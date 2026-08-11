@@ -25,6 +25,7 @@ export const ExecutionCancellationReason = defineClosedVocabulary({
   WorkflowSuperseded: 'workflow-superseded',
   Timeout: 'timeout',
   Shutdown: 'shutdown',
+  Maintenance: 'maintenance',
 } as const);
 
 export type ExecutionCancellationReason = ValueOf<typeof ExecutionCancellationReason>;

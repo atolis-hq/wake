@@ -21,21 +21,29 @@ export interface RunnerPipeline {
  * half that does need backoff.
  */
 export function createRunnerPipeline(stages: RunnerPipelineStages): RunnerPipeline {
+  const isPaused = async () => (await stages.isPaused?.()) ?? false;
   return {
     async run(options, signal = new AbortController().signal) {
-      if (await stages.isPaused?.()) return { kind: 'paused' };
+      if (await isPaused()) return { kind: 'paused' };
       await stages.catchUpProjections();
       try {
+        if (await isPaused()) return { kind: 'paused' };
         await stages.runSchedules();
+        if (await isPaused()) return { kind: 'paused' };
         await stages.react();
+        if (await isPaused()) return { kind: 'paused' };
         const result = await stages.advance(options);
+        if (await isPaused()) return { kind: 'paused' };
         await stages.catchUpProjections();
+        if (await isPaused()) return { kind: 'paused' };
         await stages.deliver(signal);
+        if (await isPaused()) return { kind: 'paused' };
         await stages.catchUpProjections();
+        if (await isPaused()) return { kind: 'paused' };
         await stages.react();
         return result;
       } finally {
-        await stages.catchUpProjections();
+        if (!(await isPaused())) await stages.catchUpProjections();
       }
     },
   };

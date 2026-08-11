@@ -87,7 +87,9 @@ export function createAdvanceOnce(
     if (options.maxProgress < 1) return { kind: 'exhausted', progressCount: 0 };
     if (await isDispatchPaused()) return { kind: 'paused' };
     await execution.recoverActive?.(ControlStreamKind.Global);
+    if (await isDispatchPaused()) return { kind: 'paused' };
     await orchestration.reconcileChildCompletions(context('child-completion-reconciliation'));
+    if (await isDispatchPaused()) return { kind: 'paused' };
     const rawPending = await orchestration.listPendingActivations(options.workItemId);
     const pending = (
       await Promise.all(
@@ -106,6 +108,7 @@ export function createAdvanceOnce(
     );
     const recovery = await findUnacceptedCompleted([...pending, ...blocked], execution);
     if (recovery !== undefined) {
+      if (await isDispatchPaused()) return { kind: 'paused' };
       await orchestration.acceptOutcome(
         {
           workflowInstanceId: recovery.item.workflow.workflowInstanceId,
@@ -143,6 +146,8 @@ export function createAdvanceOnce(
         ? { kind: 'no-work' }
         : { kind: WorkflowStatus.Waiting, workflowInstanceId: waiting.workflowInstanceId };
     }
+    // Recheck at the dispatch boundary so maintenance cannot race a selected activation.
+    if (await isDispatchPaused()) return { kind: 'paused' };
     await orchestration.markActivationStarted(
       selected.workflow.workflowInstanceId,
       selected.activation.activationId,
@@ -161,6 +166,7 @@ export function createAdvanceOnce(
       ...(ineligible.size === 0 ? {} : { ineligibleRunners: ineligible }),
     });
     if (run.status === RunStatus.Succeeded && run.outcome !== undefined) {
+      if (await isDispatchPaused()) return { kind: 'paused' };
       await orchestration.acceptOutcome(
         {
           workflowInstanceId: selected.workflow.workflowInstanceId,

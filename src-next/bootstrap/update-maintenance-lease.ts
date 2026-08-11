@@ -1,9 +1,17 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import { defineClosedVocabulary, type ValueOf } from '../kernel/index.js';
 import { acquireFileLock } from '../persistence/index.js';
 
-export type UpdateMaintenancePhase = 'quiescing' | 'updating' | 'rolling-back' | 'failed';
+export const UpdateMaintenancePhase = defineClosedVocabulary({
+  Quiescing: 'quiescing',
+  Updating: 'updating',
+  RollingBack: 'rolling-back',
+  Failed: 'failed',
+} as const);
+
+export type UpdateMaintenancePhase = ValueOf<typeof UpdateMaintenancePhase>;
 
 export interface UpdateMaintenanceState {
   readonly attemptId: string;
@@ -16,7 +24,9 @@ export interface UpdateMaintenanceState {
 export interface UpdateMaintenanceLease {
   read(): Promise<UpdateMaintenanceState | null>;
   acquire(tag: string): Promise<UpdateMaintenanceState>;
-  transition(phase: Exclude<UpdateMaintenancePhase, 'failed'>): Promise<UpdateMaintenanceState>;
+  transition(
+    phase: Exclude<UpdateMaintenancePhase, typeof UpdateMaintenancePhase.Failed>,
+  ): Promise<UpdateMaintenanceState>;
   fail(error: unknown): Promise<UpdateMaintenanceState>;
   clear(): Promise<void>;
 }
@@ -38,7 +48,7 @@ export function createUpdateMaintenanceLease(
         const initial: UpdateMaintenanceState = {
           attemptId: createAttemptId(),
           tag,
-          phase: 'quiescing',
+          phase: UpdateMaintenancePhase.Quiescing,
           startedAt: now(),
         };
         await writeState(path, initial);
@@ -59,10 +69,10 @@ export function createUpdateMaintenanceLease(
     async fail(error) {
       return withLeaseLock(path, async () => {
         const current = await requireState(path);
-        if (current.phase === 'failed') return current;
+        if (current.phase === UpdateMaintenancePhase.Failed) return current;
         const next: UpdateMaintenanceState = {
           ...current,
-          phase: 'failed',
+          phase: UpdateMaintenancePhase.Failed,
           failure: error instanceof Error ? error.message : String(error),
         };
         await writeState(path, next);
@@ -77,10 +87,11 @@ export function createUpdateMaintenanceLease(
 
 function canTransition(
   from: UpdateMaintenancePhase,
-  to: Exclude<UpdateMaintenancePhase, 'failed'>,
+  to: Exclude<UpdateMaintenancePhase, typeof UpdateMaintenancePhase.Failed>,
 ): boolean {
   return (
-    (from === 'quiescing' && to === 'updating') || (from === 'updating' && to === 'rolling-back')
+    (from === UpdateMaintenancePhase.Quiescing && to === UpdateMaintenancePhase.Updating) ||
+    (from === UpdateMaintenancePhase.Updating && to === UpdateMaintenancePhase.RollingBack)
   );
 }
 
@@ -116,7 +127,10 @@ function parseState(value: unknown): UpdateMaintenanceState {
 
 function isPhase(value: unknown): value is UpdateMaintenancePhase {
   return (
-    value === 'quiescing' || value === 'updating' || value === 'rolling-back' || value === 'failed'
+    value === UpdateMaintenancePhase.Quiescing ||
+    value === UpdateMaintenancePhase.Updating ||
+    value === UpdateMaintenancePhase.RollingBack ||
+    value === UpdateMaintenancePhase.Failed
   );
 }
 

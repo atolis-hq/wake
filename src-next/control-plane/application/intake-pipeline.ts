@@ -20,16 +20,19 @@ export interface IntakePipeline {
  * rate-limited external API.
  */
 export function createIntakePipeline(stages: IntakePipelineStages): IntakePipeline {
+  const isPaused = async () => (await stages.isPaused?.()) ?? false;
   return {
     async run(signal) {
-      if (await stages.isPaused?.()) return { processed: false };
+      if (await isPaused()) return { processed: false };
       await stages.catchUpProjections();
       try {
+        if (await isPaused()) return { processed: false };
         const polled = await stages.poll(signal);
+        if (await isPaused()) return { processed: false };
         const translated = await stages.translateInbound();
         return { processed: polled > 0 || translated > 0 };
       } finally {
-        await stages.catchUpProjections();
+        if (!(await isPaused())) await stages.catchUpProjections();
       }
     },
   };
