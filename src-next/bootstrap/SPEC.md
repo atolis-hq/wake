@@ -1,5 +1,5 @@
 ---
-asOf: e60e528
+asOf: f47de22
 ---
 
 # Bootstrap — Module Specification
@@ -40,6 +40,8 @@ Bootstrap owns:
 - Assembling the CLI and HTTP API surface applications that translate the
   composed graph's state into the response shapes `surfaces` defines, and
   dispatching commands from those surfaces into the composed services.
+- Publishing the embedded build version through Bootstrap's public entry so
+  the outer process entry point need not import a Bootstrap internal.
 - Scaffolding a brand-new Wake home (`wake init`): default `config.yaml`/
   `config.workflows.yaml`, prompt templates, `SETUP.md`, and the sandbox
   Dockerfiles — independently of and before any composition root exists.
