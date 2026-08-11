@@ -1,9 +1,6 @@
 import { runSelfUpdate } from '../surfaces/index.js';
 import type { UpdateLedger } from './update-ledger.js';
-import {
-  UpdateMaintenancePhase,
-  type UpdateMaintenanceState,
-} from './update-maintenance-lease.js';
+import { UpdateMaintenancePhase, type UpdateMaintenanceState } from './update-maintenance-lease.js';
 
 export interface SourceUpdatePort {
   isClean(): Promise<boolean>;
@@ -61,13 +58,9 @@ export function createSelfUpdateApplication(input: {
   readonly cancellationTimeoutMs?: number;
 }) {
   return {
-    // The operational update sequence deliberately keeps each failure boundary explicit.
-    // eslint-disable-next-line complexity
     async update(tag: string, force = false): Promise<boolean> {
       if (!force && (await input.ledger.isBad(tag))) return false;
-      if (input.quiesce?.exclusive !== undefined)
-        return input.quiesce.exclusive(tag, force, (lease) => updateAttempt(input, tag, force, lease));
-      return updateAttempt(input, tag, force, await input.quiesce?.acquire(tag, force));
+      return startUpdateAttempt(input, tag, force);
     },
     async updateLatest(
       force = false,
@@ -97,6 +90,16 @@ export function createSelfUpdateApplication(input: {
   };
 }
 
+async function startUpdateAttempt(
+  input: Parameters<typeof createSelfUpdateApplication>[0],
+  tag: string,
+  force: boolean,
+): Promise<boolean> {
+  if (input.quiesce?.exclusive !== undefined)
+    return input.quiesce.exclusive(tag, force, (lease) => updateAttempt(input, tag, force, lease));
+  return updateAttempt(input, tag, force, await input.quiesce?.acquire(tag, force));
+}
+
 async function updateAttempt(
   input: Parameters<typeof createSelfUpdateApplication>[0],
   tag: string,
@@ -105,75 +108,153 @@ async function updateAttempt(
 ): Promise<boolean> {
   const maintenanceTag = lease?.tag ?? tag;
   const attemptId = lease?.attemptId;
-  let deployError: unknown;
+  const context: UpdateAttemptContext = {};
   try {
-    if (
-      lease !== undefined &&
-      lease.phase !== UpdateMaintenancePhase.Quiescing &&
-      lease.phase !== UpdateMaintenancePhase.Failed
-    ) {
-      await resumePendingMaintenance(input, lease);
-      return false;
-    }
-    if (lease?.phase === UpdateMaintenancePhase.Failed) return false;
-    if (lease !== undefined && lease.tag !== tag) return false;
-    if (input.quiesce !== undefined)
-      await quiesceActiveRuns(
-        input.quiesce,
-        input.drainTimeoutMs ?? 30_000,
-        input.cancellationTimeoutMs ?? 30_000,
-      );
-    await recoverPendingUpdate(input.ledger, input.source);
-    if (!force && (await input.ledger.read()) === tag) {
-      await input.quiesce?.clear(attemptId);
-      return false;
-    }
-    if (!(await input.source.isClean())) throw new Error('Self-update requires a clean source checkout');
-    await input.ledger.begin(tag);
-    await input.quiesce?.transition(UpdateMaintenancePhase.Updating, attemptId);
-    const updated = await runSelfUpdate({
-      tag,
-      force: true,
-      readLedger: input.ledger.read,
-      writeLedger: input.ledger.write,
-      update: async (nextTag) => {
-        await input.source.checkout(nextTag);
-        if (input.rollout === undefined) return;
-        try {
-          await input.rollout.deploy(nextTag);
-        } catch (error) {
-          deployError = error;
-        }
-      },
-      health: async () => deployError === undefined && input.source.healthy(),
-      rollback: async (priorTag) => {
-        await input.quiesce?.transition(UpdateMaintenancePhase.RollingBack, attemptId);
-        await input.source.checkout(priorTag);
-        await input.rollout?.rollback(priorTag);
-      },
-    });
-    await input.quiesce?.clear(attemptId);
-    return updated;
+    return await performUpdateAttempt(input, tag, force, lease, context);
   } catch (error) {
-    try {
-      await input.quiesce?.fail(error, attemptId);
-    } catch (persistenceError) {
-      await input.ledger.recordBad(maintenanceTag);
-      throw new Error(
-        `Could not persist failed maintenance lease: ${formatError(persistenceError)}. ` +
-          `Quiesce remains unresolved: ${formatError(error)}`,
-        { cause: persistenceError },
-      );
-    }
-    if (input.rollout !== undefined) {
-      try {
-        await input.rollout.recordFailure(maintenanceTag, deployError ?? error);
-      } catch {
-        // Best-effort: a failure-log write must never mask the original update failure.
-      }
-    }
-    await input.ledger.recordBad(maintenanceTag);
+    await recordUpdateFailure(
+      input,
+      maintenanceTag,
+      attemptId,
+      context.deployError ?? error,
+      error,
+    );
     throw error;
+  }
+}
+
+interface UpdateAttemptContext {
+  deployError?: unknown;
+}
+
+async function performUpdateAttempt(
+  input: Parameters<typeof createSelfUpdateApplication>[0],
+  tag: string,
+  force: boolean,
+  lease: UpdateMaintenanceState | undefined,
+  context: UpdateAttemptContext,
+): Promise<boolean> {
+  if (lease !== undefined && requiresMaintenanceRecovery(lease)) {
+    await resumePendingMaintenance(input, lease);
+    return false;
+  }
+  if (!isStartableMaintenanceLease(lease, tag)) return false;
+  await quiesceForUpdate(input);
+  await recoverPendingUpdate(input.ledger, input.source);
+  if (!force && (await input.ledger.read()) === tag) {
+    await input.quiesce?.clear(lease?.attemptId);
+    return false;
+  }
+  return runForwardUpdate(input, tag, lease?.attemptId, context);
+}
+
+function requiresMaintenanceRecovery(lease: UpdateMaintenanceState): boolean {
+  return (
+    lease.phase !== UpdateMaintenancePhase.Quiescing &&
+    lease.phase !== UpdateMaintenancePhase.Failed
+  );
+}
+
+function isStartableMaintenanceLease(
+  lease: UpdateMaintenanceState | undefined,
+  tag: string,
+): boolean {
+  return (
+    lease === undefined || (lease.phase === UpdateMaintenancePhase.Quiescing && lease.tag === tag)
+  );
+}
+
+async function quiesceForUpdate(
+  input: Parameters<typeof createSelfUpdateApplication>[0],
+): Promise<void> {
+  if (input.quiesce === undefined) return;
+  await quiesceActiveRuns(
+    input.quiesce,
+    input.drainTimeoutMs ?? 30_000,
+    input.cancellationTimeoutMs ?? 30_000,
+  );
+}
+
+async function runForwardUpdate(
+  input: Parameters<typeof createSelfUpdateApplication>[0],
+  tag: string,
+  attemptId: string | undefined,
+  context: UpdateAttemptContext,
+): Promise<boolean> {
+  if (!(await input.source.isClean()))
+    throw new Error('Self-update requires a clean source checkout');
+  await input.ledger.begin(tag);
+  await input.quiesce?.transition(UpdateMaintenancePhase.Updating, attemptId);
+  const updated = await runSelfUpdate({
+    tag,
+    force: true,
+    readLedger: input.ledger.read,
+    writeLedger: input.ledger.write,
+    update: async (nextTag) => {
+      await input.source.checkout(nextTag);
+      context.deployError = await deployRollout(input.rollout, nextTag);
+    },
+    health: async () => context.deployError === undefined && input.source.healthy(),
+    rollback: async (priorTag) => rollbackUpdate(input, priorTag, attemptId),
+  });
+  await input.quiesce?.clear(attemptId);
+  return updated;
+}
+
+async function deployRollout(
+  rollout: SelfUpdateRolloutPort | undefined,
+  tag: string,
+): Promise<unknown> {
+  if (rollout === undefined) return undefined;
+  try {
+    await rollout.deploy(tag);
+    return undefined;
+  } catch (error) {
+    return error;
+  }
+}
+
+async function rollbackUpdate(
+  input: Parameters<typeof createSelfUpdateApplication>[0],
+  priorTag: string,
+  attemptId: string | undefined,
+): Promise<void> {
+  await input.quiesce?.transition(UpdateMaintenancePhase.RollingBack, attemptId);
+  await input.source.checkout(priorTag);
+  await input.rollout?.rollback(priorTag);
+}
+
+async function recordUpdateFailure(
+  input: Parameters<typeof createSelfUpdateApplication>[0],
+  tag: string,
+  attemptId: string | undefined,
+  rolloutError: unknown,
+  originalError: unknown,
+): Promise<void> {
+  try {
+    await input.quiesce?.fail(originalError, attemptId);
+  } catch (persistenceError) {
+    await input.ledger.recordBad(tag);
+    throw new Error(
+      `Could not persist failed maintenance lease: ${formatError(persistenceError)}. ` +
+        `Quiesce remains unresolved: ${formatError(originalError)}`,
+      { cause: persistenceError },
+    );
+  }
+  await recordRolloutFailure(input.rollout, tag, rolloutError);
+  await input.ledger.recordBad(tag);
+}
+
+async function recordRolloutFailure(
+  rollout: SelfUpdateRolloutPort | undefined,
+  tag: string,
+  error: unknown,
+): Promise<void> {
+  if (rollout === undefined) return;
+  try {
+    await rollout.recordFailure(tag, error);
+  } catch {
+    // Best-effort: a failure-log write must never mask the original update failure.
   }
 }
 

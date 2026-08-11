@@ -16,60 +16,80 @@ export interface FileLockOptions {
   readonly isProcessAlive?: (pid: number) => boolean;
 }
 
-export async function acquireFileLock(
-  path: string,
-  options?: FileLockOptions,
-) {
+interface AcquiredFileLock {
+  readonly acquired: true;
+  readonly metadata: FileLockMetadata;
+  readonly release: () => Promise<void>;
+}
+
+interface UnavailableFileLock {
+  readonly acquired: false;
+  readonly release: () => Promise<void>;
+}
+
+type FileLockAttempt = AcquiredFileLock | UnavailableFileLock;
+
+export async function acquireFileLock(path: string, options?: FileLockOptions) {
   await mkdir(dirname(path), { recursive: true });
   const metadata: FileLockMetadata = {
     pid: process.pid,
     acquiredAt: (options?.now ?? new Date()).toISOString(),
     lockId: randomUUID(),
   };
-  const attempt = async () => {
-    const handle = await open(path, 'wx');
-    try {
-      await handle.writeFile(`${JSON.stringify(metadata)}\n`, 'utf8');
-      await handle.sync();
-    } finally {
-      await handle.close();
-    }
-    return {
-      acquired: true,
-      metadata,
-      async release() {
-        try {
-          const current = JSON.parse(await readFile(path, 'utf8')) as FileLockMetadata;
-          if (current.lockId === metadata.lockId) await rm(path, { force: true });
-        } catch {
-          /* already released */
-        }
-      },
-    };
-  };
   try {
-    return await attempt();
+    return await createFileLock(path, metadata);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-    if (options?.staleAfterMs !== undefined) {
-      try {
-        const prior = JSON.parse(await readFile(path, 'utf8')) as FileLockMetadata;
-        if (
-          (options.now ?? new Date()).getTime() - Date.parse(prior.acquiredAt) >=
-          options.staleAfterMs
-        ) {
-          if (options.staleRequiresDeadProcess && ownerMayBeAlive(options, prior.pid))
-            return { acquired: false, async release() {} };
-          await rm(path, { force: true });
-          return attempt();
-        }
-      } catch {
-        await rm(path, { force: true });
-        return attempt();
-      }
-    }
-    return { acquired: false, async release() {} };
+    return reclaimStaleFileLock(path, metadata, options);
   }
+}
+
+async function createFileLock(path: string, metadata: FileLockMetadata): Promise<AcquiredFileLock> {
+  const handle = await open(path, 'wx');
+  try {
+    await handle.writeFile(`${JSON.stringify(metadata)}\n`, 'utf8');
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+  return { acquired: true, metadata, release: () => releaseFileLock(path, metadata) };
+}
+
+async function releaseFileLock(path: string, metadata: FileLockMetadata): Promise<void> {
+  try {
+    const current = JSON.parse(await readFile(path, 'utf8')) as FileLockMetadata;
+    if (current.lockId === metadata.lockId) await rm(path, { force: true });
+  } catch {
+    /* already released */
+  }
+}
+
+async function reclaimStaleFileLock(
+  path: string,
+  metadata: FileLockMetadata,
+  options: FileLockOptions | undefined,
+): Promise<FileLockAttempt> {
+  if (options?.staleAfterMs === undefined) return unavailableFileLock();
+  try {
+    const prior = JSON.parse(await readFile(path, 'utf8')) as FileLockMetadata;
+    if (!isStale(prior, options)) return unavailableFileLock();
+    if (options.staleRequiresDeadProcess && ownerMayBeAlive(options, prior.pid))
+      return unavailableFileLock();
+  } catch {
+    // A corrupt or vanished lock has no trustworthy owner and can be reclaimed.
+  }
+  await rm(path, { force: true });
+  return createFileLock(path, metadata);
+}
+
+function isStale(prior: FileLockMetadata, options: FileLockOptions): boolean {
+  return (
+    (options.now ?? new Date()).getTime() - Date.parse(prior.acquiredAt) >= options.staleAfterMs!
+  );
+}
+
+function unavailableFileLock(): UnavailableFileLock {
+  return { acquired: false, async release() {} };
 }
 
 function isProcessAlive(pid: number): boolean {

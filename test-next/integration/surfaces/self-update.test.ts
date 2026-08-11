@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { createSelfUpdateApplication } from '../../../src-next/bootstrap/self-update-application.js';
 import {
   runSelfUpdate,
   runSelfUpdateLatestLoop,
 } from '../../../src-next/surfaces/cli/commands/self-update.js';
-import { createSelfUpdateApplication } from '../../../src-next/bootstrap/self-update-application.js';
 
 describe('self-update', () => {
   it('does not rerun an already-applied update without force', async () => {

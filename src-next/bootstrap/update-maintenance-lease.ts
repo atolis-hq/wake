@@ -49,10 +49,7 @@ export function createUpdateMaintenanceLease(
       const existing = await readState(path);
       if (
         existing !== null &&
-        !(
-          existing.phase === UpdateMaintenancePhase.Failed &&
-          (existing.tag !== tag || retryFailed)
-        )
+        !(existing.phase === UpdateMaintenancePhase.Failed && (existing.tag !== tag || retryFailed))
       )
         return existing;
       const initial: UpdateMaintenanceState = {
@@ -70,7 +67,9 @@ export function createUpdateMaintenanceLease(
     },
     acquire,
     async runExclusive(tag, retryFailed, operation) {
-      return withAttemptLock(path, isProcessAlive, async () => operation(await acquire(tag, retryFailed)));
+      return withAttemptLock(path, isProcessAlive, async () =>
+        operation(await acquire(tag, retryFailed)),
+      );
     },
     async transition(phase, attemptId) {
       return withLeaseLock(path, async () => {

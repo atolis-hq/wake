@@ -2,9 +2,9 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { createUpdateMaintenanceLease } from '../../../src-next/bootstrap/update-maintenance-lease.js';
 import { createSelfUpdateApplication } from '../../../src-next/bootstrap/self-update-application.js';
 import { createUpdateLedger } from '../../../src-next/bootstrap/update-ledger.js';
+import { createUpdateMaintenanceLease } from '../../../src-next/bootstrap/update-maintenance-lease.js';
 
 describe('update maintenance lease', () => {
   const roots: string[] = [];
