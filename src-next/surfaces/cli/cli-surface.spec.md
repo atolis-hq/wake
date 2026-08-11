@@ -1,7 +1,7 @@
 # CLI Surface — Component Specification
 
 ---
-asOf: 725a0bc
+asOf: 2418c4a
 ---
 
 ## Type, purpose, and scope
@@ -32,6 +32,14 @@ Owns:
 
 - Parsing process arguments into a `WakeCommand`, and the validation errors
   that parsing can raise.
+- Rendering the static, dependency-free public help text before Bootstrap
+  composition. `wake`, `wake --help`, `wake -h`, and `wake help` render the
+  same legacy-style shared-command layout, Getting started guidance, README
+  link, and sandbox delegation note; target-only public commands appear
+  separately under **Additional target commands**.
+- Normalizing `wake dev sandbox` to the existing sandbox command. With no
+  sandbox child command, or with `--help`, it renders sandbox-specific help
+  before Bootstrap composition or any Docker call.
 - Dispatching a parsed command to the matching member of the application
   facade.
 - Shaping output as newline-delimited JSON.
