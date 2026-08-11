@@ -103,3 +103,5 @@ export * from './update-maintenance-lease.js';
 export * from './self-update-application.js';
 
 export * from './source-update-port.js';
+
+export * from './version.js';

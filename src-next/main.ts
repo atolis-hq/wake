@@ -7,12 +7,12 @@ import {
   createSurfaceApplications,
   initialiseWakeRoot,
   loadConfig,
+  wakeVersion,
 } from './bootstrap/index.js';
-import { wakeVersion } from './bootstrap/version.js';
-import { usage } from './surfaces/cli/usage.js';
 import {
   parseWakeCommand,
   runWakeCommand,
+  usage,
   type CliOutput,
   type WakeCliApplications,
 } from './surfaces/index.js';
