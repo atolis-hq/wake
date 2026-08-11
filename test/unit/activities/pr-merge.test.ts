@@ -96,12 +96,70 @@ describe('pr.merge Activity', () => {
     const activity = createPullRequestMergeActivity(world.journal, world.pullRequests);
     expect(() => activity.inputSchema.parse({ requireChecks: true })).toThrow();
   });
+
+  it('defaults to an approved direct merge', () => {
+    const world = new TestWorld();
+    const activity = createPullRequestMergeActivity(world.journal, world.pullRequests);
+
+    expect(
+      activity.inputSchema.parse({
+        target: 'primary',
+        method: 'squash',
+        requireChecks: true,
+        blockedPaths: [],
+      }),
+    ).toMatchObject({ requireApproval: true, autoMerge: false });
+  });
+
+  it('allows a pending-check auto-merge after the workflow review gate without a native review', async () => {
+    const world = new TestWorld();
+    const work = await world.createWork({ objective: 'merge', workItemId: workId('1') });
+    await setupApprovedPullRequest(world, work.workItemId, 'pending', false);
+    const activity = createPullRequestMergeActivity(world.journal, world.pullRequests);
+
+    await expect(
+      activity.handler.execute(
+        invocation(work.workItemId, {
+          target: 'primary',
+          method: 'squash',
+          requireChecks: true,
+          requireApproval: false,
+          autoMerge: true,
+        }),
+        context(),
+      ),
+    ).resolves.toMatchObject({ kind: 'waiting' });
+    expect(await world.events('pr.merge-requested')).toMatchObject([
+      { payload: { autoMerge: true } },
+    ]);
+  });
+
+  it('rejects an unapproved direct merge at the public Activity boundary', () => {
+    const world = new TestWorld();
+    const activity = createPullRequestMergeActivity(world.journal, world.pullRequests);
+
+    const result = activity.inputSchema.safeParse({
+      target: 'primary',
+      method: 'squash',
+      requireChecks: true,
+      requireApproval: false,
+      autoMerge: false,
+      blockedPaths: [],
+    });
+
+    expect(result.success).toBe(false);
+    if (!result.success)
+      expect(result.error.issues).toContainEqual(
+        expect.objectContaining({ path: ['requireApproval'] }),
+      );
+  });
 });
 
 async function setupApprovedPullRequest(
   world: TestWorld,
   work: ReturnType<typeof workItemId>,
   checks: 'pending' | 'passing' | 'failing' = 'passing',
+  reviewed = true,
 ) {
   const resource = resId('1');
   await world.discoverResource({
@@ -122,24 +180,31 @@ async function setupApprovedPullRequest(
     },
     command(world, 'observe'),
   );
-  await world.pullRequests.acceptReviewSignal(
-    {
-      resourceId: resource,
-      revision: 'head-a',
-      actorId: 'reviewer',
-      actorKind: 'human',
-      acceptedEventId: 'review-1',
-      resourceAuthorId: 'author',
-      authorization: { source: 'configured-reviewer', reviewerId: 'reviewer' },
-    },
-    command(world, 'approve'),
-  );
+  if (reviewed)
+    await world.pullRequests.acceptReviewSignal(
+      {
+        resourceId: resource,
+        revision: 'head-a',
+        actorId: 'reviewer',
+        actorKind: 'human',
+        acceptedEventId: 'review-1',
+        resourceAuthorId: 'author',
+        authorization: { source: 'configured-reviewer', reviewerId: 'reviewer' },
+      },
+      command(world, 'approve'),
+    );
   return resource;
 }
 
 function invocation(
   work: ReturnType<typeof workItemId>,
-  input: { target: 'primary'; method: 'merge' | 'squash' | 'rebase'; requireChecks: boolean },
+  input: {
+    target: 'primary';
+    method: 'merge' | 'squash' | 'rebase';
+    requireChecks: boolean;
+    requireApproval?: boolean;
+    autoMerge?: boolean;
+  },
 ) {
   return {
     activationId: activationId('activation-1'),

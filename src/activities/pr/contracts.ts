@@ -82,6 +82,8 @@ export interface PullRequestApproveInput extends PullRequestTargetInput {
 export interface PullRequestMergeInput extends PullRequestTargetInput {
   readonly method: MergeMethod;
   readonly requireChecks: boolean;
+  readonly requireApproval?: boolean | undefined;
+  readonly autoMerge?: boolean | undefined;
   readonly maxFilesChanged?: number | undefined;
   readonly blockedPaths: readonly string[];
 }
@@ -113,6 +115,7 @@ export interface PullRequestAuthorityOptions {
   readonly target: PullRequestTarget;
   readonly requireAcceptedReview: boolean;
   readonly requireChecks: boolean;
+  readonly allowPendingChecks?: boolean | undefined;
   // Absent means no deterministic file-change policy is configured for this
   // decision (approve never sets it; merge sets it from its `with` input).
   readonly mergePolicy?: PullRequestMergePolicy;

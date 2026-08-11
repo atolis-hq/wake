@@ -44,6 +44,23 @@ describe('GitHub outbound delivery', () => {
     ).toMatchObject({ idempotencyKey: 'intent', merge_method: MergeMethod.Squash });
   });
 
+  it('translates an auto-merge intent to the provider-native auto-merge action', () => {
+    expect(
+      translateGitHubOutbound(
+        {
+          resourceId: resId('1'),
+          kind: BuiltInResourceKind.PullRequest,
+          externalKey: { adapter: BuiltInAdapterId.GitHub, key: 'o/r#2' },
+          capabilities: [],
+        },
+        {
+          ...mergeIntent,
+          payload: { ...mergeIntent.payload, autoMerge: true },
+        },
+      ),
+    ).toMatchObject({ action: 'enable-auto-merge', merge_method: MergeMethod.Squash });
+  });
+
   it('rejects a pull request number outside JavaScript safe integer bounds', () => {
     expect(() =>
       translateGitHubOutbound(

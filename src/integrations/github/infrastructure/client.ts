@@ -1,6 +1,6 @@
 import { Octokit } from '@octokit/rest';
 import { MergeMethod } from '../../../activities/index.js';
-import type { GitHubOutboundAction } from '../contracts/vocabulary.js';
+import { GitHubOutboundAction } from '../contracts/vocabulary.js';
 import {
   branch,
   getCombinedStatusForRef,
@@ -108,13 +108,10 @@ async function deliver(octokit: Octokit, command: GitHubDeliveryCommand): Promis
   }
   if (command.action === MergeMethod.Merge) {
     if (command.pull_number === undefined) throw new Error('GitHub merge requires a pull request');
-    const response = await octokit.rest.pulls.merge({
-      owner: command.owner,
-      repo: command.repo,
-      pull_number: command.pull_number,
-      ...(command.merge_method === undefined ? {} : { merge_method: command.merge_method }),
-    });
-    return response.data.sha;
+    return directMerge(octokit, command);
+  }
+  if (command.action === GitHubOutboundAction.EnableAutoMerge) {
+    return enableAutoMerge(octokit, command);
   }
   const issueNumber = command.issue_number ?? command.pull_number;
   if (issueNumber === undefined)
@@ -126,4 +123,53 @@ async function deliver(octokit: Octokit, command: GitHubDeliveryCommand): Promis
     body: `${command.body ?? ''}\n${marker}`,
   });
   return String(response.data.id);
+}
+
+async function enableAutoMerge(octokit: Octokit, command: GitHubDeliveryCommand): Promise<string> {
+  if (command.pull_number === undefined)
+    throw new Error('GitHub auto-merge requires a pull request');
+  if (command.merge_method === undefined)
+    throw new Error('GitHub auto-merge requires an explicit merge method');
+  const pullRequest = await octokit.rest.pulls.get({
+    owner: command.owner,
+    repo: command.repo,
+    pull_number: command.pull_number,
+  });
+  try {
+    const result = await octokit.graphql<{
+      enablePullRequestAutoMerge: { readonly pullRequest: { readonly id: string } };
+    }>(
+      `mutation EnableWakeAutoMerge($pullRequestId: ID!, $mergeMethod: PullRequestMergeMethod!) {
+        enablePullRequestAutoMerge(input: { pullRequestId: $pullRequestId, mergeMethod: $mergeMethod }) {
+          pullRequest { id }
+        }
+      }`,
+      {
+        pullRequestId: pullRequest.data.node_id,
+        mergeMethod: graphQlMergeMethod(command.merge_method),
+      },
+    );
+    return result.enablePullRequestAutoMerge.pullRequest.id;
+  } catch (error) {
+    if (!isAlreadyCleanError(error)) throw error;
+    return directMerge(octokit, command);
+  }
+}
+
+async function directMerge(octokit: Octokit, command: GitHubDeliveryCommand): Promise<string> {
+  const response = await octokit.rest.pulls.merge({
+    owner: command.owner,
+    repo: command.repo,
+    pull_number: command.pull_number!,
+    ...(command.merge_method === undefined ? {} : { merge_method: command.merge_method }),
+  });
+  return response.data.sha;
+}
+
+function graphQlMergeMethod(method: MergeMethod): 'MERGE' | 'SQUASH' | 'REBASE' {
+  return method.toUpperCase() as 'MERGE' | 'SQUASH' | 'REBASE';
+}
+
+function isAlreadyCleanError(error: unknown): boolean {
+  return error instanceof Error && /is in clean status/i.test(error.message);
 }

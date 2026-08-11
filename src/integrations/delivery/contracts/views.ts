@@ -25,6 +25,7 @@ export interface DeliveryIntentView {
         readonly kind: typeof DeliveryIntentKind.PrMerge;
         readonly revision: string;
         readonly method: MergeMethod;
+        readonly autoMerge: boolean;
       }
     | { readonly kind: typeof DeliveryIntentKind.StatusPublish; readonly body: string }
     | { readonly kind: typeof DeliveryIntentKind.ReplyPublish; readonly body: string }

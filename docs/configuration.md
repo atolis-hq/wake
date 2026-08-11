@@ -509,6 +509,15 @@ moves the parent to `changes-requested` instead of approving; a `BLOCKED` or
 `FAILED` child (no verdict could be rendered at all) leaves the parent's
 pending approval untouched.
 
+> **Current target configuration:** use a `pr.merge` Activity stage rather
+> than `onSuccess.merge`. Its `with` block has `target`, `method`,
+> `requireApproval` (default `true`), `requireChecks`, `autoMerge` (default
+> `false`), `maxFilesChanged`, and `blockedPaths`. `requireApproval: false`
+> is valid only with `autoMerge: true` after an independent review watch gate.
+> In that mode pending checks are left to GitHub branch protection; failed and
+> unknown checks are rejected. Wake enables native auto-merge and falls back
+> to a direct merge only when GitHub reports the PR is already in clean status.
+
 `onSuccess.merge` is an opt-in deterministic action for PR-review approvals:
 
 | Property          | Type     | Description                                                       | Default |

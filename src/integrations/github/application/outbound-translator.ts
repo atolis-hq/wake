@@ -36,7 +36,7 @@ export function translateGitHubOutbound(
     ...(resource.kind === BuiltInResourceKind.PullRequest
       ? { pull_number: number }
       : { issue_number: number }),
-    action: outboundAction(intent.kind),
+    action: outboundAction(intent),
     idempotencyKey: intent.intentEventId,
     ...('report' in intent.payload
       ? {
@@ -53,17 +53,19 @@ export function translateGitHubOutbound(
   };
 }
 
-function outboundAction(kind: DeliveryIntentView['kind']): GitHubOutboundActionValue {
-  switch (kind) {
+function outboundAction(intent: DeliveryIntentView): GitHubOutboundActionValue {
+  switch (intent.kind) {
     case DeliveryIntentKind.PrApprove:
       return GitHubOutboundAction.Approve;
     case DeliveryIntentKind.PrMerge:
-      return GitHubOutboundAction.Merge;
+      return 'autoMerge' in intent.payload && intent.payload.autoMerge
+        ? GitHubOutboundAction.EnableAutoMerge
+        : GitHubOutboundAction.Merge;
     case DeliveryIntentKind.StatusPublish:
       return GitHubOutboundAction.Status;
     case DeliveryIntentKind.ReplyPublish:
     case DeliveryIntentKind.AgentRunPublish:
       return GitHubOutboundAction.Reply;
   }
-  throw new Error(`Unknown delivery intent kind: ${kind}`);
+  throw new Error(`Unknown delivery intent kind: ${intent.kind}`);
 }

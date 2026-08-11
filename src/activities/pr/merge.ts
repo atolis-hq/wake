@@ -39,10 +39,20 @@ const inputSchema: z.ZodType<PullRequestMergeInput> = z
     target: pullRequestTargetSchema,
     method: z.enum([MergeMethod.Merge, MergeMethod.Squash, MergeMethod.Rebase]),
     requireChecks: z.boolean(),
+    requireApproval: z.boolean().default(true),
+    autoMerge: z.boolean().default(false),
     maxFilesChanged: z.number().int().positive().optional(),
     blockedPaths: z.array(z.string().min(1)).default([]),
   })
-  .strict();
+  .strict()
+  .superRefine((input, context) => {
+    if (!input.requireApproval && !input.autoMerge)
+      context.addIssue({
+        code: 'custom',
+        path: ['requireApproval'],
+        message: 'requireApproval may be false only when autoMerge is true',
+      });
+  });
 
 export function createPullRequestMergeActivity(
   journal: EventJournal,
@@ -79,6 +89,8 @@ async function executeMerge(
   invocation: ActivityInvocation<PullRequestMergeInput>,
   context: ActivityExecutionContext,
 ): Promise<PullRequestActivityOutcome> {
+  const requireApproval = invocation.input.requireApproval ?? true;
+  const autoMerge = invocation.input.autoMerge ?? false;
   const command = activityCommandContext(
     invocation.activationId,
     invocation.orchestrationGroupId,
@@ -107,8 +119,9 @@ async function executeMerge(
   }
   const decision = decidePullRequestAuthority(authority, {
     target: { resourceId: resource.resourceId },
-    requireAcceptedReview: true,
+    requireAcceptedReview: requireApproval,
     requireChecks: invocation.input.requireChecks,
+    allowPendingChecks: autoMerge,
     mergePolicy: {
       ...(invocation.input.maxFilesChanged === undefined
         ? {}
@@ -137,6 +150,7 @@ async function executeMerge(
       revision: decision.revision,
       method: invocation.input.method,
       requireChecks: invocation.input.requireChecks,
+      autoMerge,
     },
     command,
   );

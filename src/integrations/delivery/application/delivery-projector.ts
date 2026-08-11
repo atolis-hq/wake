@@ -89,6 +89,7 @@ function activityIntentView(event: EventEnvelope): IntentViewResult {
           kind: DeliveryIntentKind.PrMerge,
           revision: intent.payload.revision,
           method: intent.payload.method,
+          autoMerge: intent.payload.autoMerge,
         },
         state: DeliveryState.Pending,
         attempts: 0,

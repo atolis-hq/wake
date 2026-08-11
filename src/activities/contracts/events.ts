@@ -89,6 +89,7 @@ export interface PullRequestMergeRequestedPayload {
   readonly revision: string;
   readonly method: typeof MergeMethod.Merge | typeof MergeMethod.Squash | typeof MergeMethod.Rebase;
   readonly requireChecks: boolean;
+  readonly autoMerge: boolean;
 }
 
 type RequestedOutcome = Extract<

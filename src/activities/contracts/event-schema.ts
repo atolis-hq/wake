@@ -128,6 +128,7 @@ const mergeRequestedSchema = z
     revision: z.string(),
     method: z.enum([MergeMethod.Merge, MergeMethod.Squash, MergeMethod.Rebase]),
     requireChecks: z.boolean(),
+    autoMerge: z.boolean().default(false),
   })
   .strict();
 

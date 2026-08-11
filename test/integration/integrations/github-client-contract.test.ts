@@ -7,6 +7,8 @@ const octokit = vi.hoisted(() => ({
   getAuthenticated: vi.fn(),
   createComment: vi.fn(),
   merge: vi.fn(),
+  getPullRequest: vi.fn(),
+  graphql: vi.fn(),
 }));
 
 vi.mock('@octokit/rest', () => ({
@@ -20,8 +22,9 @@ vi.mock('@octokit/rest', () => ({
           listForRepo: octokit.listIssues,
           createComment: octokit.createComment,
         },
-        pulls: { merge: octokit.merge },
+        pulls: { get: octokit.getPullRequest, merge: octokit.merge },
       },
+      graphql: octokit.graphql,
     };
   }),
 }));
@@ -129,6 +132,79 @@ describe('GitHub client transport contract', () => {
         idempotencyKey: 'delivery-comment-8',
       }),
     ).rejects.toMatchObject({ message: 'rate limited', status: 429 });
+  });
+
+  it('enables native auto-merge using the pull request node id and selected method', async () => {
+    octokit.getPullRequest.mockResolvedValueOnce({ data: { node_id: 'PR_node_7' } });
+    octokit.graphql.mockResolvedValueOnce({
+      enablePullRequestAutoMerge: { pullRequest: { id: 'PR_node_7' } },
+    });
+    const client = createGitHubClient('token');
+
+    await expect(
+      client.deliver({
+        owner: 'owner',
+        repo: 'repo',
+        pull_number: 7,
+        action: 'enable-auto-merge',
+        merge_method: MergeMethod.Squash,
+        idempotencyKey: 'delivery-auto-merge-7',
+      }),
+    ).resolves.toBe('PR_node_7');
+
+    expect(octokit.getPullRequest).toHaveBeenCalledWith({
+      owner: 'owner',
+      repo: 'repo',
+      pull_number: 7,
+    });
+    expect(octokit.graphql).toHaveBeenCalledWith(
+      expect.stringContaining('enablePullRequestAutoMerge'),
+      { pullRequestId: 'PR_node_7', mergeMethod: 'SQUASH' },
+    );
+    expect(octokit.merge).not.toHaveBeenCalled();
+  });
+
+  it('falls back to direct merge only when GitHub reports an already-clean pull request', async () => {
+    octokit.getPullRequest.mockResolvedValueOnce({ data: { node_id: 'PR_node_7' } });
+    octokit.graphql.mockRejectedValueOnce(new Error('Pull request is in clean status'));
+    octokit.merge.mockResolvedValueOnce({ data: { sha: 'merged-sha' } });
+    const client = createGitHubClient('token');
+
+    await expect(
+      client.deliver({
+        owner: 'owner',
+        repo: 'repo',
+        pull_number: 7,
+        action: 'enable-auto-merge',
+        merge_method: MergeMethod.Squash,
+        idempotencyKey: 'delivery-auto-merge-7',
+      }),
+    ).resolves.toBe('merged-sha');
+
+    expect(octokit.merge).toHaveBeenCalledWith({
+      owner: 'owner',
+      repo: 'repo',
+      pull_number: 7,
+      merge_method: MergeMethod.Squash,
+    });
+  });
+
+  it('does not fall back to direct merge for other auto-merge failures', async () => {
+    octokit.getPullRequest.mockResolvedValueOnce({ data: { node_id: 'PR_node_7' } });
+    octokit.graphql.mockRejectedValueOnce(new Error('Auto-merge is disabled for this repository'));
+    const client = createGitHubClient('token');
+
+    await expect(
+      client.deliver({
+        owner: 'owner',
+        repo: 'repo',
+        pull_number: 7,
+        action: 'enable-auto-merge',
+        merge_method: MergeMethod.Squash,
+        idempotencyKey: 'delivery-auto-merge-7',
+      }),
+    ).rejects.toThrow('Auto-merge is disabled for this repository');
+    expect(octokit.merge).not.toHaveBeenCalled();
   });
 });
 

@@ -28,19 +28,30 @@ export function decidePullRequestAuthority(
   const pullRequest = selectPullRequest(input, resource, input.work.workItemId);
   if (isDenial(pullRequest)) return pullRequest;
   if (pullRequest.state !== PullRequestState.Open) return denied(PullRequestDenialCode.Closed);
+  const authority = finalizeAuthority(input, resource, pullRequest, options);
+  if (authority !== null) return authority;
+  return { allowed: true, resourceId: pullRequest.resourceId, revision: pullRequest.headRevision };
+}
+
+function finalizeAuthority(
+  input: PullRequestAuthorityInput,
+  resource: PullRequestResourceView,
+  pullRequest: PullRequestView,
+  options: PullRequestAuthorityOptions,
+): Denial | null {
   if (options.requireAcceptedReview) {
     const review = reviewAuthority(pullRequest, input.acceptedSignals);
     if (review !== null) return review;
   }
   if (options.requireChecks) {
-    const checks = checkAuthority(pullRequest);
+    const checks = checkAuthority(pullRequest, options.allowPendingChecks ?? false);
     if (checks !== null) return checks;
   }
   if (options.mergePolicy !== undefined) {
     const files = changedFilesAuthority(pullRequest, resource, options.mergePolicy);
     if (files !== null) return files;
   }
-  return { allowed: true, resourceId: pullRequest.resourceId, revision: pullRequest.headRevision };
+  return null;
 }
 
 export function createPullRequestMergeDenial(decision: PullRequestAuthorityDecision): {
@@ -168,11 +179,10 @@ function changedFilesAuthority(
     : null;
 }
 
-function checkAuthority(pullRequest: PullRequestView): Denial | null {
-  if (
-    pullRequest.checks === PullRequestCheckState.Unknown ||
-    pullRequest.checks === PullRequestCheckState.Pending
-  )
+function checkAuthority(pullRequest: PullRequestView, allowPendingChecks: boolean): Denial | null {
+  if (pullRequest.checks === PullRequestCheckState.Unknown)
+    return denied(PullRequestDenialCode.ChecksPending);
+  if (pullRequest.checks === PullRequestCheckState.Pending && !allowPendingChecks)
     return denied(PullRequestDenialCode.ChecksPending);
   return pullRequest.checks === PullRequestCheckState.Failing
     ? denied(PullRequestDenialCode.ChecksFailing)

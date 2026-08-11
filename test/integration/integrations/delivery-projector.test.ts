@@ -14,6 +14,31 @@ import { eventEnvelope } from '../../support/event-envelope.js';
 import { resId } from '../../support/identities.js';
 
 describe('delivery projector', () => {
+  it('preserves an auto-merge request in the projected delivery intent', () => {
+    const [view] = projectDeliveries([
+      eventEnvelope(
+        ActivityEventType.PrMergeRequested,
+        {
+          idempotencyKey: 'auto-merge-intent',
+          activationId: activationId('activation-auto-merge'),
+          workflowInstanceId: 'workflow-auto-merge',
+          resourceId: resId('1'),
+          revision: 'head-a',
+          method: MergeMethod.Squash,
+          requireChecks: true,
+          autoMerge: true,
+        },
+        resourceStream(resId('1')),
+        1,
+      ),
+    ]);
+
+    expect(view).toMatchObject({
+      kind: DeliveryIntentKind.PrMerge,
+      payload: { kind: DeliveryIntentKind.PrMerge, method: MergeMethod.Squash, autoMerge: true },
+    });
+  });
+
   it('projects unresolved intent positions without copying payload authority', () => {
     const views = projectDeliveries([
       eventEnvelope(
@@ -26,6 +51,7 @@ describe('delivery projector', () => {
           revision: 'b',
           method: MergeMethod.Merge,
           requireChecks: true,
+          autoMerge: false,
         },
         resourceStream(resId('1')),
         2,
@@ -61,6 +87,7 @@ describe('delivery projector', () => {
         revision: 'a',
         method: MergeMethod.Merge,
         requireChecks: true,
+        autoMerge: false,
       },
       resourceStream(resId('1')),
       1,

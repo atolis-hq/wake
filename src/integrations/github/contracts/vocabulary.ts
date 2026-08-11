@@ -71,6 +71,7 @@ export const UnknownGitHubRevision = 'unknown-github-revision';
 
 export const GitHubOutboundAction = {
   Approve: 'approve',
+  EnableAutoMerge: 'enable-auto-merge',
   Merge: MergeMethod.Merge,
   Status: 'status',
   Reply: 'reply',
