@@ -9,6 +9,16 @@ export interface SandboxDockerPort {
   resume?(target: { sessionId: string; cwd: string; cli: string }): Promise<unknown>;
 }
 
+export const sandboxUsage = [
+  'Sandbox usage:',
+  '  wake sandbox build',
+  '  wake sandbox up | down | update',
+  '  wake sandbox exec [-- <command...>]',
+  '  wake sandbox logs [--tail <positive integer>]',
+  '  wake sandbox setup',
+  '  wake sandbox resume <sessionId> --cwd <path> --cli <claude|codex|cursor>',
+].join('\n');
+
 export async function runSandbox(
   arguments_: readonly string[],
   docker: SandboxDockerPort,

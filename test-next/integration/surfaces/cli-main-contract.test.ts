@@ -2,11 +2,55 @@ import { describe, expect, it, vi } from 'vitest';
 import { wakeVersion } from '../../../src-next/bootstrap/version.js';
 import { main } from '../../../src-next/main.js';
 
+const expectedUsage = [
+  'Wake - an autonomous agent control plane for software development.',
+  '',
+  'Usage:',
+  '  wake init <path>           Scaffold a new Wake home directory',
+  '  wake sandbox <subcommand>  Build/run/manage the Docker sandbox (build, up, update, down, stop, self-update, setup, exec, logs, resume)',
+  '  wake tick                  Run one control-plane tick',
+  '  wake start                 Run the resident loop',
+  '  wake validate-state        Validate .wake/ control-plane state health',
+  '  wake stop                  Wait for active runs to finish',
+  '  wake smoke                 Smoke-test the configured runner',
+  '  wake ui                    Run the control-plane UI server',
+  '  wake audit                 Show autonomous decision audit history',
+  '  wake correlate             Manually correlate a resource to a work item',
+  '  wake doctor                Diagnose config/GitHub/Docker/sandbox setup problems',
+  '  wake --version             Print the installed Wake version',
+  '  wake --help                Show this message',
+  '',
+  'Additional target commands:',
+  '  wake api                   Run the target API surface',
+  '  wake sandbox-entrypoint    Run the sandbox resident entrypoint',
+  '  wake self-update           Safely update a source installation',
+  '',
+  'Getting started:',
+  '  1. wake init ./wake-home',
+  '  2. cd wake-home && wake start',
+  '  https://github.com/atolis-hq/wake#readme',
+  '',
+  'Runtime commands (tick/start/ui/smoke/audit/correlate/validate-state) auto-delegate into the sandbox',
+  'when docker/Dockerfile exists at --wake-root (i.e. after `wake sandbox build`),',
+  'defaulting --wake-root to the current directory. Pass --no-sandbox to run',
+  'directly on the host instead.',
+].join('\n');
+
+const expectedSandboxUsage = [
+  'Sandbox usage:',
+  '  wake sandbox build',
+  '  wake sandbox up | down | update',
+  '  wake sandbox exec [-- <command...>]',
+  '  wake sandbox logs [--tail <positive integer>]',
+  '  wake sandbox setup',
+  '  wake sandbox resume <sessionId> --cwd <path> --cli <claude|codex|cursor>',
+].join('\n');
+
 describe('target CLI main contract', () => {
   it.each([
-    ['--help', 'wake <tick|start|stop'],
-    ['-h', 'wake <tick|start|stop'],
-    ['help', 'wake <tick|start|stop'],
+    ['--help', 'Usage:'],
+    ['-h', 'Usage:'],
+    ['help', 'Usage:'],
   ])('prints usage for %s without composing applications', async (argument, expected) => {
     const output: string[] = [];
     const compose = vi.fn(async () => applications());
@@ -15,6 +59,26 @@ describe('target CLI main contract', () => {
 
     expect(output.join('')).toContain(expected);
     expect(compose).not.toHaveBeenCalled();
+  });
+
+  it('renders identical complete pre-composition help for every public form', async () => {
+    const helpOutputs: string[] = [];
+    for (const arguments_ of [['--help'], ['-h'], ['help'], []] as const) {
+      const output: string[] = [];
+      const compose = vi.fn(async () => applications());
+
+      await main(arguments_, dependencies(compose, output));
+
+      expect(compose).not.toHaveBeenCalled();
+      helpOutputs.push(output.join(''));
+    }
+
+    expect(helpOutputs).toEqual([
+      `${expectedUsage}\n`,
+      `${expectedUsage}\n`,
+      `${expectedUsage}\n`,
+      `${expectedUsage}\n`,
+    ]);
   });
 
   it.each(['--version', '-v'])(
@@ -71,10 +135,26 @@ describe('target CLI main contract', () => {
 
     await main([], dependencies(compose, output));
 
-    expect(output.join('')).toContain('wake <tick|start|stop');
+    expect(output.join('')).toContain('Usage:');
     expect(compose).not.toHaveBeenCalled();
     expect(calls).toEqual([]);
   });
+
+  it.each([
+    ['dev', 'sandbox'],
+    ['dev', 'sandbox', '--help'],
+  ] as const)(
+    'prints sandbox usage for wake %s without composing applications',
+    async (...arguments_) => {
+      const output: string[] = [];
+      const compose = vi.fn(async () => applications());
+
+      await main(arguments_, dependencies(compose, output));
+
+      expect(output).toEqual([`${expectedSandboxUsage}\n`]);
+      expect(compose).not.toHaveBeenCalled();
+    },
+  );
 
   it('rejects unknown commands before composing applications', async () => {
     const compose = vi.fn(async () => applications());

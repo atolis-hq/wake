@@ -12,6 +12,7 @@ import {
 import {
   parseWakeCommand,
   runWakeCommand,
+  sandboxUsage,
   usage,
   type CliOutput,
   type WakeCliApplications,
@@ -34,9 +35,9 @@ export async function main(
   argv: readonly string[] = process.argv.slice(2),
   dependencies?: TargetMainDependencies,
 ): Promise<void> {
-  const suppliedArguments = argv;
+  const suppliedArguments = normalizeDeveloperAlias(argv);
   const output = dependencies?.output ?? productionOutput();
-  if (writeMetaCommand(suppliedArguments, output)) return;
+  if (writePrecompositionCommand(suppliedArguments, output)) return;
   const resolvedDependencies = dependencies ?? productionDependencies();
   const bypassSandbox = suppliedArguments.includes('--no-sandbox');
   const command = parseWakeCommand(
@@ -77,6 +78,15 @@ export async function main(
   );
 }
 
+function normalizeDeveloperAlias(arguments_: readonly string[]): readonly string[] {
+  if (arguments_[0] !== 'dev' || arguments_[1] !== 'sandbox') return arguments_;
+  return ['sandbox', ...arguments_.slice(2)];
+}
+
+function writePrecompositionCommand(arguments_: readonly string[], output: CliOutput): boolean {
+  return writeMetaCommand(arguments_, output) || writeSandboxHelpCommand(arguments_, output);
+}
+
 function writeMetaCommand(arguments_: readonly string[], output: CliOutput): boolean {
   if (isHelpCommand(arguments_)) {
     output.write(`${usage}\n`);
@@ -87,6 +97,14 @@ function writeMetaCommand(arguments_: readonly string[], output: CliOutput): boo
     return true;
   }
   return false;
+}
+
+function writeSandboxHelpCommand(arguments_: readonly string[], output: CliOutput): boolean {
+  if (arguments_[0] !== 'sandbox') return false;
+  if (arguments_.length !== 1 && !['--help', '-h', 'help'].includes(arguments_[1] ?? ''))
+    return false;
+  output.write(`${sandboxUsage}\n`);
+  return true;
 }
 
 function isHelpCommand(arguments_: readonly string[]): boolean {
