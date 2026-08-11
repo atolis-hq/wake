@@ -64,6 +64,18 @@ operator explicitly clears it.
 Defaults are conservative and the CLI may override neither value in this
 packet.
 
+## Update loop
+
+`wake self-update --loop` preserves the legacy periodic-update capability.
+Each iteration acquires and releases its own maintenance lease; a successful
+or no-op iteration waits the configured interval before checking again. It
+must not retain maintenance mode between iterations.
+
+Any failed quiesce, update, health check, or rollback stops the loop and
+leaves the failed lease visible for the operator. The loop does not silently
+retry a failed operation. It respects process shutdown while waiting between
+iterations and while quiescing.
+
 ## Tests
 
 The implementation must add composed tests for:
