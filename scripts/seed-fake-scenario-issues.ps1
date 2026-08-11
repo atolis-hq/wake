@@ -24,7 +24,7 @@
   matching wake-next's config.yaml requiredAssignees.
 
 .EXAMPLE
-  ./scripts-next/seed-fake-scenario-issues.ps1
+  ./scripts/seed-fake-scenario-issues.ps1
 #>
 
 param(

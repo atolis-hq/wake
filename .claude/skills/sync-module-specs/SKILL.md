@@ -1,20 +1,20 @@
 ---
 name: sync-module-specs
-description: Use when asked to update, refresh, or sync the src-next module specifications (SPEC.md / *.spec.md), when npm run check:specs reports a module as stale or unchecked, or before trusting that a spec still describes current behaviour. Do not use for authoring specs for a module that has none yet — that's the original authoring pass documented in src-next/SPECIFICATION.md, not a sync.
+description: Use when asked to update, refresh, or sync the src module specifications (SPEC.md / *.spec.md), when npm run check:specs reports a module as stale or unchecked, or before trusting that a spec still describes current behaviour. Do not use for authoring specs for a module that has none yet — that's the original authoring pass documented in src/SPECIFICATION.md, not a sync.
 ---
 
 # Sync Module Specs
 
 ## Overview
 
-Every module under `src-next/` has a `SPEC.md` carrying an `asOf: <sha>`
+Every module under `src/` has a `SPEC.md` carrying an `asOf: <sha>`
 frontmatter checkpoint — the commit its specification set was last confirmed
 accurate against. `npm run check:specs` diffs each module's directory
 against its checkpoint and reports which modules have non-doc changes since
 then. This skill closes that gap: read what actually changed, update only
 the specs that need it, and bump the checkpoint.
 
-This is a **targeted re-verification**, not a rewrite. Read `src-next/SPECIFICATION.md`
+This is a **targeted re-verification**, not a rewrite. Read `src/SPECIFICATION.md`
 first if you haven't already — every rule there (MUST/MUST NOT wording,
 Field/Type/Description schema tables, `Item — reason` dependency bullets,
 line budgets, no test names/scenario IDs/proof links) still applies to any
@@ -37,11 +37,11 @@ just a diff), or `Current` (nothing to do).
 Read the actual diff, not just the file list:
 
 ```
-git diff <asOf-sha> -- src-next/<module>/
+git diff <asOf-sha> -- src/<module>/
 ```
 
 (For an unchecked module with no sha, just read every source file in
-`src-next/<module>/` — you have no baseline to diff from.)
+`src/<module>/` — you have no baseline to diff from.)
 
 Then read that module's existing `SPEC.md` and every linked `*.spec.md`, and
 work out which of three cases each changed file falls into:
@@ -53,7 +53,7 @@ work out which of three cases each changed file falls into:
   policy/process, adapter, or public surface application that the module
   page's "Child components and interactions" table doesn't already cover) —
   write a new `.spec.md` for it and add its row to that table. Not every new
-  file needs a new page (see `src-next/SPECIFICATION.md`'s guidance on what
+  file needs a new page (see `src/SPECIFICATION.md`'s guidance on what
   counts as a behavioural owner); most new files extend an existing
   component and fall into the case above instead.
 - **Pure refactor with no behavioural change** (renamed file, extracted

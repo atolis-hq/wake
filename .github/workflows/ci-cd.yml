@@ -19,23 +19,20 @@ jobs:
           filters: |
             relevant:
               - '.github/workflows/ci-cd.yml'
+              - '.dockerignore'
               - 'docker/**'
               - 'package.json'
               - 'package-lock.json'
+              - 'assets/**'
+              - 'dependency-cruiser.config.mjs'
+              - 'eslint.config.js'
+              - 'knip.json'
               - 'prompts/**'
               - 'scripts/**'
               - 'src/**'
-              - 'src-next/**'
               - 'test/**'
-              - 'test-next/**'
-              - 'tsconfig.json'
-              - 'tsconfig.next.json'
-              - 'vitest.config.ts'
-              - 'vitest.next.unit.config.ts'
-              - 'vitest.next.architecture.config.ts'
-              - 'vitest.next.integration.config.ts'
-              - 'vitest.next.live-e2e.config.ts'
-              - 'vitest.next.e2e.config.ts'
+              - 'tsconfig*.json'
+              - 'vitest*.config.ts'
 
   test:
     needs: changes
@@ -49,7 +46,12 @@ jobs:
         with:
           node-version: '24'
       - run: npm ci
-      - run: npm run verify:ci
+      - name: Verify architecture, formatting, build, and core tests
+        run: npm run verify
+      - name: Check unused dependencies and exports
+        run: npm run knip
+      - name: Run web workspace tests
+        run: npm run test:web
 
   docker-smoke:
     needs: changes

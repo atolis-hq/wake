@@ -8,7 +8,5 @@ coverage
 .superpowers
 .worktrees
 tmp
-src
 test
-test-next
 docs

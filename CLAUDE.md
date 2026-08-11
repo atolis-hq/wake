@@ -11,9 +11,9 @@ Wake is an autonomous agent control plane for software development. It coordinat
 ```bash
 npm install
 npm run build        # tsc -p tsconfig.json
-npm run verify:next  # architecture + contracts + lint + format + build + all src-next tests
-npm run knip:next    # unused files, exports, types, and dependencies in the target rewrite
-npm run check:specs  # reports which src-next/*/SPEC.md have drifted from their `asOf` checkpoint (see src-next/SPECIFICATION.md); resolve with the sync-module-specs skill
+npm run verify       # architecture + contracts + lint + format + build + all non-live tests
+npm run knip         # unused files, exports, types, and dependencies
+npm run check:specs  # reports module-specification drift from each `asOf` checkpoint; resolve with the sync-module-specs skill
 npm test             # vitest run
 npm run test:watch   # vitest watch mode
 npm run verify       # lint + format:check + build + test — run this exact command (not a manual build+test) before considering work done. Do not skip the lint step — unused-import/no-unused-vars errors are easy to introduce (e.g. splitting a file and over-copying its import list) and won't show up in `tsc`/`vitest` alone.
@@ -29,15 +29,14 @@ npm run smoke:claude -- --remote-control  # remote-control smoke session
 Run a single test file: `npx vitest run test/core/tick-runner.test.ts`
 Run tests matching a name: `npx vitest run -t "some test name"`
 
-CI (`.github/workflows/ci-cd.yml`) runs `npm ci && npm test` on push/PR to `main`, then auto-tags semantic versions on `main` pushes based on `(MAJOR)`/`(MINOR)` markers in commit messages.
+CI (`.github/workflows/ci-cd.yml`) runs `npm run verify`, `npm run knip`, and `npm run test:web` on relevant push/PR changes, then auto-tags semantic versions on `main` pushes based on `(MAJOR)`/`(MINOR)` markers in commit messages.
 
 ## Architecture
 
-### Target rewrite (`src-next/`)
+### Active architecture (`src/`)
 
-`src-next/` is the active target architecture. Legacy `src/` is behavioural
-evidence, not an architectural or model template. Before changing a target
-module, read its `MODULE.md`, `module.json`, the active task in
+`src/` is the active architecture. Before changing a module, read its
+`MODULE.md`, `module.json`, the active task in
 `docs/superpowers/plans/2026-07-30-wake-target-architecture-rewrite.md`, and any
 linked corrective plan.
 
@@ -66,9 +65,8 @@ Keep domain seams explicit:
   concise Given/When/Then comments or test structure and cover success,
   failure, crash/restart, and idempotency where relevant.
 
-Before completing any `src-next/` task, run `npm run lint:contracts`,
-`npm run lint:architecture`, `npm run knip:next`, and `npm run verify:next`.
-Until the legacy replacement gate in Task 28, also run `npm run verify`.
+Before completing a task, run `npm run verify` and `npm run knip`. Run
+`npm run test:web` when the web workspace changes.
 
 ### Module boundaries (`src/`)
 

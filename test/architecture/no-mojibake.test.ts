@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 const forbidden = [
@@ -17,6 +17,7 @@ describe('committed source encoding', () => {
       .filter(Boolean);
     const offenders = files.filter((file) => {
       if (excluded.test(file)) return false;
+      if (!existsSync(file)) return false;
       const content = readFileSync(file);
       if (content.includes(0)) return false;
       const text = content.toString('utf8');

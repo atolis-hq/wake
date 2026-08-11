@@ -42,16 +42,16 @@ RUN echo "cursor cache bust: ${CURSOR_CACHE_BUST}" \
 
 WORKDIR /app
 COPY package*.json ./
-COPY src-next/surfaces/web/package.json src-next/surfaces/web/package.json
+COPY src/surfaces/web/package.json src/surfaces/web/package.json
 RUN --mount=type=cache,target=/root/.npm \
   if [ -f package-lock.json ]; then npm ci --include=dev; else npm install; fi
 
-COPY tsconfig.json tsconfig.next.json tsconfig.next.docker.json ./
-COPY scripts/embed-version-next.mjs scripts/embed-version-next.mjs
+COPY tsconfig.json tsconfig.docker.json ./
+COPY scripts/embed-version.mjs scripts/embed-version.mjs
 COPY assets/ assets/
-COPY src-next/ src-next/
+COPY src/ src/
 ARG WAKE_BUILD_TAG
-RUN WAKE_BUILD_TAG="$WAKE_BUILD_TAG" npm run build:next:docker
+RUN WAKE_BUILD_TAG="$WAKE_BUILD_TAG" npm run build:docker
 
 USER wake
 WORKDIR /home/wake
@@ -62,6 +62,6 @@ EXPOSE 4317
 # find the compiled CLI without hardcoding /app in multiple places. Docker's
 # exec-form ENTRYPOINT below does not expand env vars, so it stays literal —
 # that's fine since it's the very first thing that runs.
-ENV WAKE_MAIN_JS=/app/dist-next/src-next/main.js
+ENV WAKE_MAIN_JS=/app/dist/src/main.js
 
-ENTRYPOINT ["sh", "-c", "if [ \"$WAKE_START_ENABLED\" = \"true\" ]; then exec node /app/dist-next/src-next/main.js start --wake-root /wake --no-sandbox; else exec sleep infinity; fi"]
+ENTRYPOINT ["sh", "-c", "if [ \"$WAKE_START_ENABLED\" = \"true\" ]; then exec node /app/dist/src/main.js start --wake-root /wake --no-sandbox; else exec sleep infinity; fi"]
