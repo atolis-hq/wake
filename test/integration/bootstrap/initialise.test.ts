@@ -117,7 +117,7 @@ describe('target initialise root', () => {
     expect(dockerfile).toContain('@openai/codex');
     expect(dockerfile).toContain('gh');
     expect(dockerfile).toContain('cursor.com/install');
-    expect(dockerfile).toContain('npm run build:next');
+    expect(dockerfile).toContain('npm run build:docker');
     expect(dockerfile).toContain('dist/src/main.js');
   });
 

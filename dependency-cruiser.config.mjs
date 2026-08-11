@@ -115,7 +115,7 @@ export default {
   ],
   options: {
     doNotFollow: { path: 'node_modules' },
-    exclude: { path: '(^|/)(archive/legacy|dist|dist-next|node_modules)/' },
+    exclude: { path: '(^|/)(archive/legacy|dist|node_modules)/' },
     tsPreCompilationDeps: true,
     tsConfig: { fileName: 'tsconfig.json' },
   },

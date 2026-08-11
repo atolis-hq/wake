@@ -72,9 +72,10 @@ jobs:
       - name: Run tick with fake sources
         run: |
           docker run --rm \
-            --entrypoint node \
+            --entrypoint sh \
             wake-ci-smoke \
-            /app/dist/src/main.js tick --wake-root /tmp/wake-smoke
+            -c 'node /app/dist/src/main.js init /tmp/wake-smoke &&
+                node /app/dist/src/main.js tick --wake-root /tmp/wake-smoke --no-sandbox'
 
   tag:
     needs: [test, docker-smoke]

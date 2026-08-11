@@ -10,6 +10,14 @@ describe('target build lane', () => {
 
     expect(packageJson.scripts.build).toContain('tsconfig.json');
     expect(packageJson.scripts.build).not.toContain('archive/' + 'legacy');
-    expect(packageJson.scripts).not.toHaveProperty('build:next');
+  });
+
+  it('initializes the Docker smoke root before ticking it', async () => {
+    const workflow = await readFile('.github/workflows/ci-cd.yml', 'utf8');
+
+    expect(workflow).toContain('/app/dist/src/main.js init /tmp/wake-smoke');
+    expect(workflow).toContain(
+      '/app/dist/src/main.js tick --wake-root /tmp/wake-smoke --no-sandbox',
+    );
   });
 });

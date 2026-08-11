@@ -2,26 +2,26 @@
 .SYNOPSIS
   Seeds GitHub issues in atolis-hq/wake-test with the labels and assignee
   needed to exercise each fake-runner scenario configured in
-  fake-scenarios.yaml, via the intake rules in a wake-next config.yaml.
+  fake-scenarios.yaml, via the intake rules in a Wake config.yaml.
 
 .DESCRIPTION
   Creates one issue per workflow selector so a resident `wake start`/`tick`
   loop picks each of them up on its own workflow:
-    - wake-next-verify                                -> default workflow
-    - wake-next-verify, approval                       -> approval workflow
-    - wake-next-verify, fake-scenario-test             -> fake-scenario-test workflow
-    - wake-next-verify, dark-factory-test              -> dark-factory workflow
+    - wake-verify                                     -> default workflow
+    - wake-verify, approval                            -> approval workflow
+    - wake-verify, fake-scenario-test                  -> fake-scenario-test workflow
+    - wake-verify, dark-factory-test                   -> dark-factory workflow
 
   This script only creates issues (labels + assignee) — it does not run
   Wake, poll for completion, or close anything afterwards.
 
 .PARAMETER Repo
   GitHub "owner/repo" to create issues in. Defaults to atolis-hq/wake-test,
-  matching wake-next's config.yaml integrations.github.repositories.
+  matching Wake's config.yaml integrations.github.repositories.
 
 .PARAMETER Assignee
   GitHub login to assign each issue to. Defaults to atolis-hq-agent,
-  matching wake-next's config.yaml requiredAssignees.
+  matching Wake's config.yaml requiredAssignees.
 
 .EXAMPLE
   ./scripts/seed-fake-scenario-issues.ps1
@@ -85,7 +85,7 @@ Test-GhCommand
 $scenarios = @(
   @{
     Name   = 'default'
-    Labels = @('wake-next-verify')
+    Labels = @('wake-verify')
     Body   = @'
 What should happen: this issue is picked up by the **default** workflow
 (refine -> implement, both on the `standard`/`light` runner pool, which
@@ -110,7 +110,7 @@ Expected sequence:
   },
   @{
     Name   = 'approval'
-    Labels = @('wake-next-verify', 'approval')
+    Labels = @('wake-verify', 'approval')
     Body   = @'
 What should happen: this issue is picked up by the **approval** workflow
 (refine -> implement, both gated on a human `approved` signal).
@@ -128,7 +128,7 @@ Expected sequence:
   },
   @{
     Name   = 'fake-scenario-test'
-    Labels = @('wake-next-verify', 'fake-scenario-test')
+    Labels = @('wake-verify', 'fake-scenario-test')
     Body   = @'
 What should happen: this issue is picked up by the **fake-scenario-test**
 workflow, which only has a `refine` stage with `retry: { max: 1 }` on
@@ -151,7 +151,7 @@ Expected sequence:
   },
   @{
     Name   = 'dark-factory-test'
-    Labels = @('wake-next-verify', 'dark-factory-test')
+    Labels = @('wake-verify', 'dark-factory-test')
     Body   = @'
 What should happen: this issue is picked up by the **dark-factory**
 workflow, which gates both `refine` and `implement` on a `watchGates`

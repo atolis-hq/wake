@@ -46,8 +46,8 @@ describe('target development launcher', () => {
 
       expect(result.status).not.toBe(0);
       expect(result.stderr).toContain(`Unknown wake command: ${command}`);
-      expect(result.stdout).not.toContain('wake-dev-shell-injection');
-      expect(result.stderr).not.toContain('wake-dev-shell-injection\n');
+      expect(result.stdout).toBe('');
+      expect(result.stderr).not.toContain('\nwake-dev-shell-injection\n');
     },
   );
 

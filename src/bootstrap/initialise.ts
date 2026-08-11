@@ -344,7 +344,7 @@ RUN --mount=type=cache,target=/root/.npm \\
 
 COPY . .
 ARG WAKE_BUILD_TAG
-RUN WAKE_BUILD_TAG="$WAKE_BUILD_TAG" npm run build:next
+RUN WAKE_BUILD_TAG="$WAKE_BUILD_TAG" npm run build:docker
 
 USER wake
 WORKDIR /home/wake

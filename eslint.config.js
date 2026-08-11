@@ -10,7 +10,6 @@ export default tseslint.config(
     ignores: [
       'coverage/**',
       'dist/**',
-      'dist-next/**',
       'archive/legacy/**',
       'node_modules/**',
       '.wake/**',
