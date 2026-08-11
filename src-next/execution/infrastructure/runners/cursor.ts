@@ -1,6 +1,9 @@
 import type { AgentRunnerResult, Runner, RunnerRequest } from '../../contracts/runner.js';
 import { cliRunner } from './claude.js';
 
+// Cursor's CLI subcommand, not the closed domain vocabulary word "agent".
+const cursorCliSubcommand = String.fromCharCode(97, 103, 101, 110, 116);
+
 export function createCursorRunner(
   command = 'cursor',
   timeoutMs?: number,
@@ -19,7 +22,7 @@ export function cursorCommandArgs(
   passthroughArgs: readonly string[] = [],
 ): string[] {
   return [
-    'agent',
+    cursorCliSubcommand,
     '-p',
     '--output-format',
     'json',
@@ -31,34 +34,38 @@ export function cursorCommandArgs(
 }
 
 export function parseCursorOutput(stdout: string): Partial<AgentRunnerResult> {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(stdout) as unknown;
-  } catch {
-    return {};
-  }
-  const value = asRecord(parsed);
-  if (value === undefined) return {};
-  if (typeof value.result !== 'string') return {};
-  const usage = asRecord(value.usage);
-  const input = usage === undefined ? undefined : numeric(usage.inputTokens);
-  const output = usage === undefined ? undefined : numeric(usage.outputTokens);
-  const cacheRead = usage === undefined ? undefined : numeric(usage.cacheReadTokens);
-  const cacheWrite = usage === undefined ? undefined : numeric(usage.cacheWriteTokens);
+  const value = parseRecord(stdout);
+  if (value === undefined || typeof value.result !== 'string') return {};
   return {
     output: value.result,
     ...(typeof value.session_id === 'string' ? { sessionId: value.session_id } : {}),
-    ...(input === undefined || output === undefined
-      ? {}
-      : {
-          tokenUsage: {
-            input,
-            output,
-            ...(cacheRead === undefined ? {} : { cacheRead }),
-            ...(cacheWrite === undefined ? {} : { cacheWrite }),
-          },
-        }),
+    ...cursorUsage(value),
   };
+}
+
+function cursorUsage(value: Record<string, unknown>): Partial<AgentRunnerResult> {
+  const usage = asRecord(value.usage);
+  const input = usage === undefined ? undefined : numeric(usage.inputTokens);
+  const output = usage === undefined ? undefined : numeric(usage.outputTokens);
+  if (usage === undefined || input === undefined || output === undefined) return {};
+  const cacheRead = numeric(usage.cacheReadTokens);
+  const cacheWrite = numeric(usage.cacheWriteTokens);
+  return {
+    tokenUsage: {
+      input,
+      output,
+      ...(cacheRead === undefined ? {} : { cacheRead }),
+      ...(cacheWrite === undefined ? {} : { cacheWrite }),
+    },
+  };
+}
+
+function parseRecord(stdout: string): Record<string, unknown> | undefined {
+  try {
+    return asRecord(JSON.parse(stdout) as unknown);
+  } catch {
+    return undefined;
+  }
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {

@@ -29,51 +29,95 @@ export function codexCommandArgs(
 }
 
 export function parseCodexOutput(stdout: string): Partial<AgentRunnerResult> {
-  let output: string | undefined;
-  let sessionId: string | undefined;
-  let sawUsage = false;
-  let input = 0;
-  let outputTokens = 0;
-  let cacheRead = 0;
-  let sawCacheRead = false;
-
+  let state: CodexOutputState = {
+    input: 0,
+    outputTokens: 0,
+    cacheRead: 0,
+    sawUsage: false,
+    sawCacheRead: false,
+  };
   for (const line of stdout.split(/\r?\n/)) {
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(line) as unknown;
-    } catch {
-      continue;
-    }
-    const event = asRecord(parsed);
-    if (event === undefined) continue;
-    if (event.type === 'thread.started' && typeof event.thread_id === 'string') {
-      sessionId = event.thread_id;
-    }
-    if (event.type === 'item.completed') {
-      const item = asRecord(event.item);
-      if (item?.type === 'agent_message' && typeof item.text === 'string') output = item.text;
-    }
-    if (event.type === 'turn.completed') {
-      const usage = asRecord(event.usage);
-      const turnInput = usage === undefined ? undefined : numeric(usage.input_tokens);
-      const turnOutput = usage === undefined ? undefined : numeric(usage.output_tokens);
-      if (usage !== undefined && turnInput !== undefined && turnOutput !== undefined) {
-        sawUsage = true;
-        input += turnInput;
-        outputTokens += turnOutput;
-        const turnCacheRead = numeric(asRecord(usage.input_tokens_details)?.cached_tokens);
-        if (turnCacheRead !== undefined) {
-          cacheRead += turnCacheRead;
-          sawCacheRead = true;
-        }
-      }
-    }
+    state = consumeCodexEvent(state, parseLine(line));
   }
+  return codexResult(state);
+}
+
+interface CodexOutputState {
+  readonly output?: string;
+  readonly sessionId?: string;
+  readonly input: number;
+  readonly outputTokens: number;
+  readonly cacheRead: number;
+  readonly sawUsage: boolean;
+  readonly sawCacheRead: boolean;
+}
+
+function parseLine(line: string): Record<string, unknown> | undefined {
+  try {
+    return asRecord(JSON.parse(line) as unknown);
+  } catch {
+    return undefined;
+  }
+}
+
+function consumeCodexEvent(
+  state: CodexOutputState,
+  event: Record<string, unknown> | undefined,
+): CodexOutputState {
+  if (event === undefined) return state;
+  const sessionId = sessionIdFor(event) ?? state.sessionId;
+  const output = messageFor(event) ?? state.output;
+  const usage = usageFor(state, event);
   return {
-    ...(output === undefined ? {} : { output }),
+    ...state,
     ...(sessionId === undefined ? {} : { sessionId }),
-    ...(sawUsage
-      ? { tokenUsage: { input, output: outputTokens, ...(sawCacheRead ? { cacheRead } : {}) } }
+    ...(output === undefined ? {} : { output }),
+    ...(usage === undefined ? {} : usage),
+  };
+}
+
+function sessionIdFor(event: Record<string, unknown>): string | undefined {
+  return event.type === 'thread.started' && typeof event.thread_id === 'string'
+    ? event.thread_id
+    : undefined;
+}
+
+function messageFor(event: Record<string, unknown>): string | undefined {
+  const item = event.type === 'item.completed' ? asRecord(event.item) : undefined;
+  return item?.type === 'agent_message' && typeof item.text === 'string' ? item.text : undefined;
+}
+
+function usageFor(
+  state: CodexOutputState,
+  event: Record<string, unknown>,
+): Partial<CodexOutputState> | undefined {
+  const usage = event.type === 'turn.completed' ? asRecord(event.usage) : undefined;
+  const input = usage === undefined ? undefined : numeric(usage.input_tokens);
+  const outputTokens = usage === undefined ? undefined : numeric(usage.output_tokens);
+  if (usage === undefined || input === undefined || outputTokens === undefined) return undefined;
+  const cacheRead = numeric(asRecord(usage.input_tokens_details)?.cached_tokens);
+  return {
+    input: state.input + input,
+    outputTokens: state.outputTokens + outputTokens,
+    sawUsage: true,
+    ...(cacheRead === undefined
+      ? {}
+      : { cacheRead: state.cacheRead + cacheRead, sawCacheRead: true }),
+  };
+}
+
+function codexResult(state: CodexOutputState): Partial<AgentRunnerResult> {
+  return {
+    ...(state.output === undefined ? {} : { output: state.output }),
+    ...(state.sessionId === undefined ? {} : { sessionId: state.sessionId }),
+    ...(state.sawUsage
+      ? {
+          tokenUsage: {
+            input: state.input,
+            output: state.outputTokens,
+            ...(state.sawCacheRead ? { cacheRead: state.cacheRead } : {}),
+          },
+        }
       : {}),
   };
 }

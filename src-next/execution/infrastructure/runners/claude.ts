@@ -20,36 +20,40 @@ export function createClaudeRunner(
 }
 
 export function parseClaudeOutput(stdout: string): Partial<AgentRunnerResult> {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(stdout) as unknown;
-  } catch {
-    return {};
-  }
-  const value = record(parsed);
-  if (value === undefined) return {};
-  if (typeof value.result !== 'string') return {};
-  const usage = record(value.usage);
-  const input = usage === undefined ? undefined : numeric(usage.input_tokens);
-  const output = usage === undefined ? undefined : numeric(usage.output_tokens);
-  const cacheRead = usage === undefined ? undefined : numeric(usage.cache_read_input_tokens);
-  const cacheWrite = usage === undefined ? undefined : numeric(usage.cache_creation_input_tokens);
-  const costUsd = numeric(value.total_cost_usd);
+  const value = parseRecord(stdout);
+  if (value === undefined || typeof value.result !== 'string') return {};
   return {
     output: value.result,
     ...(typeof value.session_id === 'string' ? { sessionId: value.session_id } : {}),
-    ...(input === undefined || output === undefined
-      ? {}
-      : {
-          tokenUsage: {
-            input,
-            output,
-            ...(cacheRead === undefined ? {} : { cacheRead }),
-            ...(cacheWrite === undefined ? {} : { cacheWrite }),
-            ...(costUsd === undefined ? {} : { costUsd }),
-          },
-        }),
+    ...claudeUsage(value),
   };
+}
+
+function claudeUsage(value: Record<string, unknown>): Partial<AgentRunnerResult> {
+  const usage = record(value.usage);
+  const input = usage === undefined ? undefined : numeric(usage.input_tokens);
+  const output = usage === undefined ? undefined : numeric(usage.output_tokens);
+  if (usage === undefined || input === undefined || output === undefined) return {};
+  const cacheRead = numeric(usage.cache_read_input_tokens);
+  const cacheWrite = numeric(usage.cache_creation_input_tokens);
+  const costUsd = numeric(value.total_cost_usd);
+  return {
+    tokenUsage: {
+      input,
+      output,
+      ...(cacheRead === undefined ? {} : { cacheRead }),
+      ...(cacheWrite === undefined ? {} : { cacheWrite }),
+      ...(costUsd === undefined ? {} : { costUsd }),
+    },
+  };
+}
+
+function parseRecord(stdout: string): Record<string, unknown> | undefined {
+  try {
+    return record(JSON.parse(stdout) as unknown);
+  } catch {
+    return undefined;
+  }
 }
 
 function record(value: unknown): Record<string, unknown> | undefined {

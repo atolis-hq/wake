@@ -171,7 +171,7 @@ function compareNewestTerminalRun(left: RunView, right: RunView): number {
   if (byFinishedAt !== 0) return byFinishedAt;
   const byAttempt = right.attempt - left.attempt;
   if (byAttempt !== 0) return byAttempt;
-  return String(right.runId).localeCompare(String(left.runId));
+  return right.runId.localeCompare(left.runId);
 }
 
 function resolveRunner(
