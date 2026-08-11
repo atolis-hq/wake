@@ -118,3 +118,26 @@ it('parses a structured runner result without exposing its machine envelope', ()
   expect(response.displayBody).toContain('Run rejected');
   expect(response.displayBody).not.toContain('status');
 });
+
+it('preserves an explicit result-envelope display body', () => {
+  expect(
+    parseAgentRunnerResponse({
+      transport: RunStatus.Succeeded,
+      output: JSON.stringify({ status: 'BLOCKED', displayBody: 'Waiting for reviewer input.' }),
+      runner: 'fake',
+    }),
+  ).toMatchObject({
+    outcome: 'BLOCKED',
+    displayBody: 'Waiting for reviewer input.',
+  });
+});
+
+it.each([
+  { name: 'empty output', output: '', outcome: 'FAILED' },
+  { name: 'malformed result envelope', output: '{"status":', outcome: 'BLOCKED' },
+  { name: 'unknown result status', output: '{"status":"PENDING"}', outcome: 'BLOCKED' },
+])('classifies $name without accepting it as a result envelope', ({ output, outcome }) => {
+  expect(
+    parseAgentRunnerResponse({ transport: RunStatus.Succeeded, output, runner: 'fake' }),
+  ).toMatchObject({ outcome, displayBody: output });
+});

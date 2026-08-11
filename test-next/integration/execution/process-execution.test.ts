@@ -23,6 +23,75 @@ describe('runProcess', () => {
 });
 
 describe('cliRunner', () => {
+  it.each([
+    {
+      name: 'Claude',
+      args: () =>
+        claudeCommandArgs({
+          runId: 'run-1',
+          prompt: 'ship',
+          model: 'claude-test',
+          allowedTools: ['Read'],
+          maxTurns: 3,
+          resumeSessionId: 'prior-session',
+        }),
+      expected: [
+        '-p',
+        'ship',
+        '--model',
+        'claude-test',
+        '--max-turns',
+        '3',
+        '--allowedTools',
+        'Read',
+      ],
+    },
+    {
+      name: 'Codex',
+      args: () =>
+        codexCommandArgs({
+          runId: 'run-1',
+          prompt: 'ship',
+          model: 'gpt-test',
+          allowedTools: [],
+          resumeSessionId: 'prior-session',
+        }),
+      expected: ['exec', 'ship', '--model', 'gpt-test', 'resume', 'prior-session'],
+    },
+    {
+      name: 'Cursor',
+      args: () =>
+        cursorCommandArgs({
+          runId: 'run-1',
+          prompt: 'ship',
+          model: 'cursor-test',
+          allowedTools: [],
+          resumeSessionId: 'prior-session',
+        }),
+      expected: ['--print', 'ship', '--model', 'cursor-test'],
+    },
+  ])('uses the configured $name CLI transport shape', ({ args, expected }) => {
+    expect(args()).toEqual(expected);
+  });
+
+  it('returns captured stdout and stderr detail for a non-zero process exit', async () => {
+    const runner = cliRunner('test-cli', process.execPath, () => [
+      '-e',
+      'process.stdout.write("partial output"); process.stderr.write("diagnostic"); process.exit(7)',
+    ]);
+    const execution = await runner.start(
+      { runId: 'run-1', prompt: 'ignored', allowedTools: [] },
+      new AbortController().signal,
+    );
+
+    await expect(execution.result).resolves.toEqual({
+      transport: 'failed',
+      output: 'partial output',
+      runner: 'test-cli',
+      failure: { kind: 'process-exit', message: 'diagnostic' },
+    });
+  });
+
   it('classifies a wall-clock timeout as a runner timeout failure', async () => {
     const runner = cliRunner(
       'test-cli',

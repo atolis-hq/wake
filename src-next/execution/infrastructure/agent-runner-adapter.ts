@@ -18,7 +18,11 @@ function parseResult(output: string): {
   readonly displayBody: string;
 } {
   const direct = parseEnvelope(output);
-  if (direct !== undefined) return { outcome: direct, displayBody: synthesized(direct) };
+  if (direct !== undefined)
+    return {
+      outcome: direct.status,
+      displayBody: direct.displayBody ?? synthesized(direct.status),
+    };
   const fence =
     /^```(?:wake-result[^\n]*\n|[ \t]*\n[ \t]*wake-result[ \t]*\n)([\s\S]*?)^```[ \t]*$/gm;
   let last: RegExpExecArray | null = null;
@@ -66,10 +70,18 @@ function parseResult(output: string): {
   };
 }
 
-function parseEnvelope(value: string): AgentRunOutcome | undefined {
+function parseEnvelope(
+  value: string,
+): { readonly status: AgentRunOutcome; readonly displayBody?: string } | undefined {
   try {
-    const parsed = JSON.parse(value.trim()) as { status?: unknown };
-    return isOutcome(parsed.status) ? parsed.status : undefined;
+    const parsed = JSON.parse(value.trim()) as { status?: unknown; displayBody?: unknown };
+    if (!isOutcome(parsed.status)) return undefined;
+    return {
+      status: parsed.status,
+      ...(typeof parsed.displayBody === 'string' && parsed.displayBody.trim().length > 0
+        ? { displayBody: parsed.displayBody }
+        : {}),
+    };
   } catch {
     return undefined;
   }
