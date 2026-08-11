@@ -104,10 +104,10 @@ describe('DeliveryService', () => {
         deliver: async () => {
           calls.push(name);
           return name === 'first'
-            ? { kind: DeliveryResultKind.Failed as const, code: 'denied', message: 'first failed' }
-            : { kind: DeliveryResultKind.Confirmed as const, externalId: 'second-confirmed' };
+            ? { kind: DeliveryResultKind.Failed, code: 'denied', message: 'first failed' }
+            : { kind: DeliveryResultKind.Confirmed, externalId: 'second-confirmed' };
         },
-        reconcile: async () => ({ kind: DeliveryResultKind.NotFound as const }),
+        reconcile: async () => ({ kind: DeliveryResultKind.NotFound }),
       }),
       now: () => '2026-07-31T12:00:00.000Z',
     });
