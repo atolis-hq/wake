@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -374,6 +374,38 @@ describe('target composition root', () => {
     expect(runtime.execution).toBeDefined();
   });
 
+  it('only creates transcript artifacts for agent executions when capture is enabled', async () => {
+    const disabledRoot = await fixtureRoot();
+    const disabled = await createTranscriptRuntime(disabledRoot, false);
+
+    await executeComposedAgent(disabled.runtime);
+
+    await expect(readdir(disabled.runtime.paths.transcriptsRoot)).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+
+    const enabledRoot = await fixtureRoot();
+    const enabled = await createTranscriptRuntime(enabledRoot, true);
+
+    await executeComposedAgent(enabled.runtime);
+
+    const workItemDirectory = join(enabled.runtime.paths.transcriptsRoot, transcriptWorkItemId);
+    const [group] = await readdir(workItemDirectory);
+    if (group === undefined) throw new Error('Expected a captured transcript group');
+    const artifacts = await readdir(join(workItemDirectory, group));
+    const promptFile = artifacts.find((file) => file.endsWith('.prompt.txt'));
+    const responseFile = artifacts.find((file) => file.endsWith('.response.txt'));
+    if (promptFile === undefined || responseFile === undefined)
+      throw new Error('Expected prompt and response transcript artifacts');
+
+    expect(await readFile(join(workItemDirectory, group, promptFile), 'utf8')).toBe(
+      enabled.requests[0]?.prompt,
+    );
+    expect(await readFile(join(workItemDirectory, group, responseFile), 'utf8')).toContain(
+      '"DONE"',
+    );
+  });
+
   it('supplies GitHub issue and comment history only through the untrusted agent context', async () => {
     const root = await fixtureRoot();
     await writeFile(
@@ -489,6 +521,63 @@ function rootConfig() {
     surfaces: {},
   });
 }
+
+async function createTranscriptRuntime(root: string, enabled: boolean) {
+  const requests: Array<{ readonly prompt: string }> = [];
+  const runtime = await createCompositionRoot(root, {
+    config: parseRootConfig({
+      schemaVersion: 1,
+      work: {},
+      resources: {},
+      transcripts: { enabled },
+      execution: {
+        agentRunners: { fake: { kind: 'fake' } },
+        runnerPools: { standard: ['fake'] },
+        defaultRunnerPool: 'standard',
+      },
+      orchestration: { workflows: {} },
+      controlPlane: {},
+      integrations: {},
+      surfaces: {},
+    }),
+    journal: new InMemoryEventJournal({ now: () => new Date('2026-08-12T10:00:00.000Z') }),
+    projections: new InMemoryProjectionStore(),
+    checkpoints: new InMemoryCheckpointStore(),
+    decorateRunner(runner) {
+      return {
+        async start(request, signal) {
+          requests.push(request);
+          return runner.start(request, signal);
+        },
+      };
+    },
+  });
+  return { runtime, requests };
+}
+
+async function executeComposedAgent(runtime: Awaited<ReturnType<typeof createCompositionRoot>>) {
+  const activation = activationId(`transcript-${Math.random().toString(36).slice(2)}`);
+  await runtime.execution.attempt(
+    {
+      activationId: activation,
+      ordinal: 1,
+      activity: BuiltInActivityName.Agent,
+      input: { prompt: 'Exact composed prompt\nwith whitespace' },
+      execution: undefined,
+    },
+    {
+      workItemId: transcriptWorkItemId,
+      workflowInstanceId: activityWorkflowInstanceId('workflow-transcript-capture'),
+      orchestrationGroupId: activityOrchestrationGroupId('group-transcript-capture'),
+      resources: [],
+    },
+  );
+  await vi.waitFor(async () => {
+    expect((await runtime.execution.list(activation))[0]?.status).toBe('succeeded');
+  });
+}
+
+const transcriptWorkItemId = workId('transcript-capture');
 
 function scheduledRootConfig() {
   return parseRootConfig({
