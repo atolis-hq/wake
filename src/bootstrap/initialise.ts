@@ -52,6 +52,11 @@ integrations: {}
 # Operator-facing HTTP API / web UI. Disabled by default.
 surfaces: {}
 
+# Transcript capture is opt-in. Captured transcripts expire after one day.
+transcripts:
+  enabled: false
+  retentionMs: 86400000
+
 # Host-level settings: the Docker sandbox this Wake home builds and runs,
 # and (for a source checkout only) where the Wake source lives so
 # \`wake self-update\` can pull and rebuild it.

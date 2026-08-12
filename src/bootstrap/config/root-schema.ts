@@ -40,6 +40,14 @@ const orchestrationConfigSchema = z
   })
   .default({ workflows: {}, workflowSelectors: [], default: 'default' });
 
+const transcriptsConfigSchema = z
+  .object({
+    enabled: z.boolean().default(false),
+    retentionMs: z.number().int().nonnegative().default(86_400_000),
+  })
+  .strict()
+  .default({ enabled: false, retentionMs: 86_400_000 });
+
 const hostConfigSchema = z
   .object({
     sandbox: z
@@ -121,6 +129,7 @@ export const rootConfigSchema = z
     resources: resourcesConfigSchema.default({}),
     activities: activitiesConfigSchema.default({}),
     orchestration: orchestrationConfigSchema,
+    transcripts: transcriptsConfigSchema,
     execution: executionConfigSchema,
     controlPlane: controlPlaneConfigSchema,
     integrations: integrationsConfigSchema,
@@ -135,6 +144,7 @@ export interface ResolvedWakeModulesConfig {
   readonly resources: ResourcesConfig;
   readonly activities: ActivitiesConfig;
   readonly orchestration: z.infer<typeof orchestrationConfigSchema>;
+  readonly transcripts: z.infer<typeof transcriptsConfigSchema>;
   readonly execution: ExecutionConfig;
   readonly controlPlane: ControlPlaneConfig;
   readonly integrations: IntegrationsConfig;
