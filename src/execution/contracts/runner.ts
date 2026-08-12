@@ -16,6 +16,12 @@ export interface RunnerRequest {
   readonly allowedTools: readonly string[];
   readonly maxTurns?: number;
   readonly resumeSessionId?: string;
+  readonly usageBaseline?: {
+    readonly input: number;
+    readonly output: number;
+    readonly cacheRead?: number;
+    readonly cacheWrite?: number;
+  };
 }
 
 export type AgentRunOutcome = 'DONE' | 'REJECTED' | 'BLOCKED' | 'FAILED';

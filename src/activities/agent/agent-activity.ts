@@ -61,6 +61,7 @@ export function createAgentActivity(
         runnerContext: context.runnerContext,
         runId: context.runId,
         resumeSessionId: context.resumeSessionId,
+        usageBaseline: context.usageBaseline,
         workspace: context.workspace,
       });
       const execution = await context.runner.start(request, context.signal);
@@ -97,6 +98,7 @@ async function agentRequest(
     template,
     context.runnerContext,
     context.resumeSessionId,
+    context.usageBaseline,
     context.workspace,
   );
 }
@@ -112,6 +114,14 @@ interface AgentRequestContext {
     | undefined;
   readonly runId: string | undefined;
   readonly resumeSessionId: string | undefined;
+  readonly usageBaseline:
+    | {
+        readonly input: number;
+        readonly output: number;
+        readonly cacheRead?: number;
+        readonly cacheWrite?: number;
+      }
+    | undefined;
   readonly workspace: { readonly path: string; readonly mode: 'read-only' | 'branch' } | undefined;
 }
 
@@ -204,6 +214,14 @@ function requestFrom(
       }
     | undefined,
   resumeSessionId: string | undefined,
+  usageBaseline:
+    | {
+        readonly input: number;
+        readonly output: number;
+        readonly cacheRead?: number;
+        readonly cacheWrite?: number;
+      }
+    | undefined,
   workspace: { readonly path: string; readonly mode: 'read-only' | 'branch' } | undefined,
 ) {
   return {
@@ -215,6 +233,7 @@ function requestFrom(
     ...maxTurnsField(template?.maxTurns),
     ...contextField(runnerContext, input.template),
     ...(resumeSessionId === undefined ? {} : { resumeSessionId }),
+    ...(usageBaseline === undefined ? {} : { usageBaseline }),
     ...(workspace === undefined
       ? {}
       : { workspacePath: workspace.path, workspaceMode: workspace.mode }),

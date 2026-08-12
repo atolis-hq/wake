@@ -136,6 +136,30 @@ describe('Execution runner selection', () => {
     expect(standard.requests).toEqual([expect.objectContaining({ resumeSessionId: 'session-1' })]);
   });
 
+  it('forwards the accumulated usage baseline for a resumed session', async () => {
+    const standard = capturingRunner('standard');
+    const journal = new InMemoryEventJournal(new FakeClock());
+    await seedPriorRun(journal, activation(), 'prior-standard', 'fake', 'session-1', {
+      inputTokens: 10,
+      outputTokens: 20,
+      cacheReadTokens: 30,
+      cacheWriteTokens: 40,
+    });
+    const service = fixtureWithJournal(
+      journal,
+      new RunnerRegistry({ standard: ['standard'] }, { standard }),
+    );
+
+    await service.attempt(activation(), context());
+
+    expect(standard.requests).toEqual([
+      expect.objectContaining({
+        resumeSessionId: 'session-1',
+        usageBaseline: { input: 10, output: 20, cacheRead: 30, cacheWrite: 40 },
+      }),
+    ]);
+  });
+
   it('resumes the newest same-CLI session when a primary stage is re-entered', async () => {
     const standard = capturingRunner('standard');
     const journal = new InMemoryEventJournal(new FakeClock());
@@ -281,6 +305,7 @@ async function seedPriorRun(
   id: string,
   cli: string,
   sessionId?: string,
+  usage?: Readonly<Record<string, number>>,
 ) {
   const clock = new FakeClock();
   const stream = runStream(runId(id));
@@ -319,7 +344,7 @@ async function seedPriorRun(
         agent: {
           outcome: 'FAILED',
           displayBody: 'failed',
-          metadata: sessionId === undefined ? {} : { sessionId },
+          metadata: { ...(sessionId === undefined ? {} : { sessionId }), ...usage },
         },
       },
     }),

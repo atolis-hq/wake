@@ -66,6 +66,12 @@ export interface AgentRunnerPort {
       readonly maxTurns?: number;
       /** Opaque prior adapter session selected by Execution for this activation. */
       readonly resumeSessionId?: string;
+      readonly usageBaseline?: {
+        readonly input: number;
+        readonly output: number;
+        readonly cacheRead?: number;
+        readonly cacheWrite?: number;
+      };
       readonly context?: {
         readonly runnerName: string;
         readonly action: string;
@@ -105,6 +111,12 @@ export interface ActivityExecutionContext {
   readonly runId?: string;
   /** Opaque prior adapter session selected by Execution for this activation. */
   readonly resumeSessionId?: string;
+  readonly usageBaseline?: {
+    readonly input: number;
+    readonly output: number;
+    readonly cacheRead?: number;
+    readonly cacheWrite?: number;
+  };
   /** Isolated workspace leased by Execution for this invocation, when requested. */
   readonly workspace?: { readonly path: string; readonly mode: 'read-only' | 'branch' };
   readonly runner?: AgentRunnerPort;

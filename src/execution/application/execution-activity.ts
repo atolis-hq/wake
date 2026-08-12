@@ -42,6 +42,12 @@ export async function executeActivity(
     readonly runnerModel?: string;
     readonly runnerEffort?: string;
     readonly resumeSessionId?: string;
+    readonly usageBaseline?: {
+      readonly input: number;
+      readonly output: number;
+      readonly cacheRead?: number;
+      readonly cacheWrite?: number;
+    };
     readonly workspace?: { readonly path: string; readonly mode: 'read-only' | 'branch' };
   },
 ) {
@@ -53,6 +59,7 @@ export async function executeActivity(
     occurredAt,
     runId: currentRunId,
     ...(request.resumeSessionId === undefined ? {} : { resumeSessionId: request.resumeSessionId }),
+    ...(request.usageBaseline === undefined ? {} : { usageBaseline: request.usageBaseline }),
     ...workspaceContext(request.workspace),
     ...(runner === undefined ? {} : { runner }),
     ...(request.runnerName === undefined

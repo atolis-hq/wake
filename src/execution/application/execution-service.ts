@@ -79,15 +79,15 @@ async function attemptExecution(
   const runner = resolveRunner(runtime, definition.executionKind, activation, context);
   const owner = context.owner ?? 'execution';
   const prior = await runtime.repository.list(activation.activationId);
-  const resumeSessionId = resumeSessionIdFor(
-    context.sessionPolicy === 'resume-stage' ? await runtime.repository.list() : prior,
-    runner.cli,
-    {
-      workflowInstanceId: context.workflowInstanceId,
-      stage: activation.stage,
-      ...(context.sessionPolicy === undefined ? {} : { policy: context.sessionPolicy }),
-    },
-  );
+  const resumeCandidates =
+    context.sessionPolicy === 'resume-stage' ? await runtime.repository.list() : prior;
+  const resumeScope = {
+    workflowInstanceId: context.workflowInstanceId,
+    stage: activation.stage,
+    ...(context.sessionPolicy === undefined ? {} : { policy: context.sessionPolicy }),
+  };
+  const resumeSessionId = resumeSessionIdFor(resumeCandidates, runner.cli, resumeScope);
+  const usageBaseline = usageBaselineFor(resumeCandidates, runner.cli, resumeSessionId, resumeScope);
   const existing = existingRun(prior, runtime.dependencies.clock, owner);
   if (existing !== undefined) return existing;
   const currentRunId = runId(runtime.dependencies.ids.next(ExecutionStreamKind.Run));
@@ -136,6 +136,7 @@ async function attemptExecution(
     startedAt,
     runner,
     resumeSessionId,
+    usageBaseline,
     lease,
   ).catch(() => {
     // A detached worker must never create an unhandled rejection for its caller.
@@ -151,6 +152,7 @@ async function completeRun(
   startedAt: string,
   runner: ReturnType<typeof resolveRunner>,
   resumeSessionId: string | undefined,
+  usageBaseline: ReturnType<typeof usageBaselineFor>,
   lease: WorkspaceLease | undefined,
 ): Promise<void> {
   const renewal = renewWhileRunning(runtime, currentRunId, context.owner ?? 'execution');
@@ -164,6 +166,7 @@ async function completeRun(
       ...(runner.model === undefined ? {} : { runnerModel: runner.model }),
       ...(runner.effort === undefined ? {} : { runnerEffort: runner.effort }),
       ...(resumeSessionId === undefined ? {} : { resumeSessionId }),
+      ...(usageBaseline === undefined ? {} : { usageBaseline }),
       ...(lease === undefined ? {} : { workspace: { path: lease.path, mode: lease.mode } }),
     });
     await renewal.stop();
@@ -301,12 +304,7 @@ export function resumeSessionIdFor(
   },
 ) {
   if (cli === undefined || scope?.policy === 'fresh') return undefined;
-  const eligible =
-    scope?.policy !== 'resume-stage' || scope.stage === undefined
-      ? prior
-      : prior.filter(
-          (run) => run.workflowInstanceId === scope.workflowInstanceId && run.stage === scope.stage,
-        );
+  const eligible = resumeEligibleRuns(prior, scope);
   return [...eligible]
     .filter((run) => isResumeTerminal(run.status))
     .sort(compareNewestTerminalRun)
@@ -316,6 +314,53 @@ export function resumeSessionIdFor(
         typeof run.agent?.metadata.sessionId === 'string' &&
         run.agent.metadata.sessionId.trim().length > 0,
     )?.agent?.metadata.sessionId as string | undefined;
+}
+
+function usageBaselineFor(
+  prior: readonly RunView[],
+  cli: string | undefined,
+  sessionId: string | undefined,
+  scope?: {
+    readonly policy?: 'fresh' | 'resume-stage';
+    readonly workflowInstanceId: string;
+    readonly stage?: string | undefined;
+  },
+) {
+  if (cli === undefined || sessionId === undefined) return undefined;
+  const matching = resumeEligibleRuns(prior, scope).filter(
+    (run) =>
+      isResumeTerminal(run.status) &&
+      run.runner?.cli === cli &&
+      run.agent?.metadata.sessionId === sessionId,
+  );
+  const sum = (key: string) =>
+    matching.reduce((total, run) => {
+      const value = run.agent?.metadata[key];
+      return total + (typeof value === 'number' ? value : 0);
+    }, 0);
+  return {
+    input: sum('inputTokens'),
+    output: sum('outputTokens'),
+    cacheRead: sum('cacheReadTokens'),
+    cacheWrite: sum('cacheWriteTokens'),
+  };
+}
+
+function resumeEligibleRuns(
+  prior: readonly RunView[],
+  scope:
+    | {
+        readonly policy?: 'fresh' | 'resume-stage';
+        readonly workflowInstanceId: string;
+        readonly stage?: string | undefined;
+      }
+    | undefined,
+) {
+  return scope?.policy !== 'resume-stage' || scope.stage === undefined
+    ? prior
+    : prior.filter(
+        (run) => run.workflowInstanceId === scope.workflowInstanceId && run.stage === scope.stage,
+      );
 }
 
 function isResumeTerminal(status: RunStatus): boolean {
