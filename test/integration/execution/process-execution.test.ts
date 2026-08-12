@@ -186,6 +186,31 @@ describe('cliRunner', () => {
     });
   });
 
+  it('keeps Claude invocation usage unchanged when shared parser plumbing receives a baseline', async () => {
+    const stdout = JSON.stringify({
+      result: 'claude answer',
+      usage: { input_tokens: 11, output_tokens: 13, cache_read_input_tokens: 17 },
+      total_cost_usd: 0.02,
+    });
+    const runner = cliRunner('claude', process.execPath, () => [
+      '-e',
+      `process.stdout.write(${JSON.stringify(stdout)})`,
+    ], { parseSuccessfulOutput: parseClaudeOutput });
+    const execution = await runner.start(
+      {
+        runId: 'run-1',
+        prompt: 'ignored',
+        allowedTools: [],
+        usageBaseline: { input: 1_000, output: 2_000, cacheRead: 3_000 },
+      },
+      new AbortController().signal,
+    );
+
+    await expect(execution.result).resolves.toMatchObject({
+      tokenUsage: { input: 11, output: 13, cacheRead: 17, costUsd: 0.02 },
+    });
+  });
+
   it('preserves configured passthrough arguments for every vendor transport', () => {
     const request = {
       runId: 'run-1',
@@ -349,18 +374,18 @@ describe('cliRunner', () => {
       usage: {
         input_tokens: 29,
         output_tokens: 31,
-        input_tokens_details: { cached_tokens: 37 },
+        input_tokens_details: { cached_tokens: 37, cache_creation_tokens: 41 },
       },
     });
     const request = {
       runId: 'run-1',
       prompt: 'ship',
       allowedTools: [],
-      usageBaseline: { input: 19, output: 23, cacheRead: 29 },
+      usageBaseline: { input: 19, output: 23, cacheRead: 29, cacheWrite: 31 },
     };
 
     expect(parseCodexOutput(stdout, request)).toEqual({
-      tokenUsage: { input: 10, output: 8, cacheRead: 8 },
+      tokenUsage: { input: 10, output: 8, cacheRead: 8, cacheWrite: 10 },
     });
   });
 

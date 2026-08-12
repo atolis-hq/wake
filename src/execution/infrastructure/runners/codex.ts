@@ -133,22 +133,16 @@ function codexTokenUsage(
   baseline: RunnerRequest['usageBaseline'],
 ): AgentRunnerResult['tokenUsage'] | undefined {
   if (usage === undefined) return undefined;
-  if (baseline === undefined) {
-    return Object.values(usage).every((value) => Number.isFinite(value) && value >= 0)
-      ? usage
-      : undefined;
-  }
+  if (baseline === undefined) return nonNegativeUsage(usage);
   const input = subtract(usage.input, baseline.input);
   const output = subtract(usage.output, baseline.output);
   const cacheRead = cacheDelta(usage.cacheRead, baseline.cacheRead);
   const cacheWrite = cacheDelta(usage.cacheWrite, baseline.cacheWrite);
   if (
-    input === undefined ||
-    output === undefined ||
-    cacheRead === 'inconsistent' ||
-    cacheWrite === 'inconsistent' ||
-    (cacheRead !== undefined && typeof cacheRead !== 'number') ||
-    (cacheWrite !== undefined && typeof cacheWrite !== 'number')
+    !isRequiredDelta(input) ||
+    !isRequiredDelta(output) ||
+    !isOptionalDelta(cacheRead) ||
+    !isOptionalDelta(cacheWrite)
   ) {
     return undefined;
   }
@@ -158,6 +152,20 @@ function codexTokenUsage(
     ...(cacheRead === undefined ? {} : { cacheRead }),
     ...(cacheWrite === undefined ? {} : { cacheWrite }),
   };
+}
+
+function nonNegativeUsage(usage: CodexUsage): CodexUsage | undefined {
+  return Object.values(usage).every((value) => Number.isFinite(value) && value >= 0)
+    ? usage
+    : undefined;
+}
+
+function isRequiredDelta(value: number | undefined): value is number {
+  return typeof value === 'number';
+}
+
+function isOptionalDelta(value: number | 'inconsistent' | undefined): value is number | undefined {
+  return value === undefined || typeof value === 'number';
 }
 
 function subtract(total: number, baseline: number): number | undefined {
