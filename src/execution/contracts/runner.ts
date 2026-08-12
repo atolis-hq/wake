@@ -10,6 +10,7 @@ export interface RunnerRequest {
     readonly activationOrdinal: number;
   };
   readonly model?: string;
+  readonly effort?: string;
   readonly workspacePath?: string;
   readonly workspaceMode?: 'read-only' | 'branch';
   readonly allowedTools: readonly string[];

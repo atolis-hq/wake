@@ -153,6 +153,8 @@ async function completeRun(
       occurredAt: startedAt,
       runner: runner.runner,
       ...(runner.name === undefined ? {} : { runnerName: runner.name }),
+      ...(runner.model === undefined ? {} : { runnerModel: runner.model }),
+      ...(runner.effort === undefined ? {} : { runnerEffort: runner.effort }),
       ...(resumeSessionId === undefined ? {} : { resumeSessionId }),
       ...(lease === undefined ? {} : { workspace: { path: lease.path, mode: lease.mode } }),
     });

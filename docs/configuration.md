@@ -45,6 +45,42 @@ sandbox:
 scheduler:
   intervalMs: 60000
   maxIntervalMs: 300000
+execution:
+  agentRunners:
+    fake:
+      kind: fake
+    claude-haiku:
+      kind: claude-cli
+      command: claude
+      model: claude-haiku-4-5
+      timeoutMs: 600000
+    claude-opus:
+      kind: claude-cli
+      command: claude
+      model: claude-opus-4-8
+      timeoutMs: 1800000
+    codex-standard:
+      kind: codex-cli
+      command: codex
+      model: gpt-5.4
+      effort: medium
+      timeoutMs: 1200000
+    codex-flagship:
+      kind: codex-cli
+      command: codex
+      model: gpt-5.5
+      effort: high
+      timeoutMs: 1800000
+    cursor-composer:
+      kind: cursor-cli
+      command: cursor
+      model: composer-2.5
+      timeoutMs: 1800000
+  runnerPools:
+    light: [claude-haiku]
+    standard: [codex-standard, claude-haiku]
+    deep: [claude-opus, codex-flagship]
+  defaultRunnerPool: standard
 transcripts:
   enabled: false
   retentionMs: 259200000
@@ -81,41 +117,6 @@ sources:
 `config.workflows.yaml`:
 
 ```yaml
-runners:
-  fake:
-    kind: fake
-  claude-haiku:
-    kind: claude
-    command: claude
-    model: claude-haiku-4-5
-    timeoutMs: 600000
-  claude-opus:
-    kind: claude
-    command: claude
-    model: claude-opus-4-8
-    timeoutMs: 1800000
-  codex-standard:
-    kind: codex
-    command: codex
-    model: gpt-5.4
-    timeoutMs: 1200000
-    reasoningEffort: medium
-  codex-flagship:
-    kind: codex
-    command: codex
-    model: gpt-5.5
-    timeoutMs: 1800000
-    reasoningEffort: high
-  cursor-composer:
-    kind: cursor
-    command: cursor
-    model: composer-2.5
-    timeoutMs: 1800000
-runnerPools:
-  light: [claude-haiku]
-  standard: [codex-standard, claude-haiku]
-  deep: [claude-opus, codex-flagship]
-defaultRunnerPool: standard
 workflows:
   default:
     stages:
@@ -399,22 +400,22 @@ audit event (see `wake audit`) explaining why.
 | `windowMs`      | number | Trailing window, in milliseconds, to count runs over | `3600000` (1 hour) |
 | `maxDispatches` | number | Maximum runner invocations allowed within the window | `20`                |
 
-### runners
+### execution.agentRunners
 
-_Lives in `config.workflows.yaml`._
+_Lives in `config.yaml`, under `execution`._
 
 Named runner registry. The object key is the routing target; `kind` selects the
-adapter implementation. Multiple entries can share the same `kind` with
-different models, commands, or timeouts.
+transport adapter. Multiple entries can share the same `kind` with different
+models, commands, static arguments, timeouts, or effort.
 
-| Property          | Type                                                                 | Description                                                                                                                                               |
-| ----------------- | -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `kind`            | `"fake"` \| `"claude"` \| `"codex"` \| `"cursor"`                    | Adapter kind to use for this named runner                                                                                                                 |
-| `command`         | string                                                               | CLI command for real runner kinds                                                                                                                         |
-| `model`           | string                                                               | Default model for this named runner                                                                                                                       |
-| `timeoutMs`       | number                                                               | Wall-clock timeout for this named runner                                                                                                                  |
-| `effort`          | `"low"` \| `"medium"` \| `"high"` \| `"xhigh"` \| `"max"` (optional) | **Claude only.** Thinking effort level passed as `--effort` to the CLI. Controls extended reasoning depth.                                                |
-| `reasoningEffort` | `"low"` \| `"medium"` \| `"high"` (optional)                         | **Codex only.** Reasoning effort passed as `-c model_reasoning_effort=<level>`. Controls how much compute the model spends on planning before responding. |
+| Property | Type | Description |
+| --- | --- | --- |
+| `kind` | `"claude-cli"` \| `"codex-cli"` \| `"cursor-cli"` \| `"command"` \| `"fake"` | Transport adapter for this named runner. All but `fake` require `command`. |
+| `command` | string (required except `fake`) | CLI command for command-style runner kinds. |
+| `model` | string (optional) | Default model for this named runner. |
+| `effort` | string (optional) | Portable reasoning-effort selection. Codex maps it to `-c model_reasoning_effort=<effort>`; Claude, Cursor, `command`, and `fake` omit it because they have no mapping. |
+| `timeoutMs` | positive integer (optional) | Wall-clock timeout; defaults to `1800000` milliseconds. |
+| `args` | string array (optional) | Static CLI arguments; defaults to `[]`. Do not include `--output-format` or `--resume`, which Wake owns. |
 
 The **Cursor runner** uses `cursor agent -p --output-format json` for
 non-interactive runs. Refine-stage runs pass `--mode ask` (read-only) and
@@ -422,9 +423,9 @@ implement-stage runs pass `--force` (auto-approve writes). Session resume uses
 `--resume=<session_id>`. Credentials bind-mount from `~/.cursor` — see
 `docs/runner-comparison.md` for the recommended extraMounts configuration.
 
-### runnerPools
+### execution.runnerPools
 
-_Lives in `config.workflows.yaml`._
+_Lives in `config.yaml`, under `execution`._
 
 Capability runnerPools map a closed category name to an ordered list of named runner
 candidates. Wake normally uses the first configured candidate in the runnerPool, but
@@ -445,9 +446,9 @@ fully elapsed, in case the guess overshot and quota actually reset sooner. A
 failed probe simply recomputes the backoff from the new failure, same as any
 other quota failure.
 
-### defaultRunnerPool
+### execution.defaultRunnerPool
 
-_Lives in `config.workflows.yaml`._
+_Lives in `config.yaml`, under `execution`._
 
 Fallback runnerPool used when a stage does not set `runnerPool` or `runner`.
 

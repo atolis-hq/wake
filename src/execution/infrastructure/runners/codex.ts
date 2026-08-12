@@ -29,7 +29,9 @@ export function codexCommandArgs(
       : ['--sandbox', codexSandboxMode(request.workspaceMode)]),
     ...(request.workspacePath === undefined ? [] : ['--cd', request.workspacePath]),
     ...(model === undefined ? [] : ['--model', model]),
-    ...(defaults.effort === undefined ? [] : ['-c', `model_reasoning_effort="${defaults.effort}"`]),
+    ...(request.effort ?? defaults.effort) === undefined
+      ? []
+      : ['-c', `model_reasoning_effort=${request.effort ?? defaults.effort}`],
     ...(request.resumeSessionId === undefined ? [] : ['resume', request.resumeSessionId]),
     ...passthroughArgs,
     request.prompt,

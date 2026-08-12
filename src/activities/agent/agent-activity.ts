@@ -102,7 +102,14 @@ async function agentRequest(
 }
 
 interface AgentRequestContext {
-  readonly runnerContext: { readonly runnerName: string; readonly activationOrdinal: number } | undefined;
+  readonly runnerContext:
+    | {
+        readonly runnerName: string;
+        readonly activationOrdinal: number;
+        readonly model?: string;
+        readonly effort?: string;
+      }
+    | undefined;
   readonly runId: string | undefined;
   readonly resumeSessionId: string | undefined;
   readonly workspace: { readonly path: string; readonly mode: 'read-only' | 'branch' } | undefined;
@@ -188,14 +195,22 @@ function requestFrom(
   input: { prompt?: string; template?: string; model?: string; allowedTools?: readonly string[] },
   runId: string,
   template: AgentTemplate,
-  runnerContext: { readonly runnerName: string; readonly activationOrdinal: number } | undefined,
+  runnerContext:
+    | {
+        readonly runnerName: string;
+        readonly activationOrdinal: number;
+        readonly model?: string;
+        readonly effort?: string;
+      }
+    | undefined,
   resumeSessionId: string | undefined,
   workspace: { readonly path: string; readonly mode: 'read-only' | 'branch' } | undefined,
 ) {
   return {
     runId,
     prompt: input.prompt ?? template!.prompt,
-    ...modelField(input.model ?? template?.model),
+    ...modelField(input.model ?? template?.model ?? runnerContext?.model),
+    ...effortField(runnerContext?.effort),
     allowedTools: input.allowedTools ?? template?.allowedTools ?? [],
     ...maxTurnsField(template?.maxTurns),
     ...contextField(runnerContext, input.template),
@@ -208,12 +223,23 @@ function modelField(model: string | null | undefined) {
   return model === undefined || model === null ? {} : { model };
 }
 
+function effortField(effort: string | undefined) {
+  return effort === undefined ? {} : { effort };
+}
+
 function maxTurnsField(maxTurns: number | undefined) {
   return maxTurns === undefined ? {} : { maxTurns };
 }
 
 function contextField(
-  runnerContext: { readonly runnerName: string; readonly activationOrdinal: number } | undefined,
+  runnerContext:
+    | {
+        readonly runnerName: string;
+        readonly activationOrdinal: number;
+        readonly model?: string;
+        readonly effort?: string;
+      }
+    | undefined,
   templateName: string | undefined,
 ) {
   if (runnerContext === undefined) return {};
