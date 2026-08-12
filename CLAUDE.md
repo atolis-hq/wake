@@ -65,8 +65,20 @@ Keep domain seams explicit:
   concise Given/When/Then comments or test structure and cover success,
   failure, crash/restart, and idempotency where relevant.
 
-Before completing a task, run `npm run verify` and `npm run knip`. Run
-`npm run test:web` when the web workspace changes.
+Use verification proportional to the changed surface:
+
+- UI-only work: run the focused UI test and `npm run build:web`.
+- Web/API/view-model work: also run the relevant projection or API test and
+  `npm run test:web`.
+- Domain or service work: run the relevant unit or integration tests and the
+  applicable build.
+- Workflow, persistence, runner, or external-integration work: also run the
+  relevant targeted E2E scenario.
+
+CI is the broad gate for pushes and pull requests: it runs `npm run verify`,
+`npm run knip`, and `npm run test:web`. Do not routinely run the entire suite
+locally for a scoped change; use it when investigating a cross-cutting failure
+or when explicitly requested.
 
 ### Module boundaries (`src/`)
 
