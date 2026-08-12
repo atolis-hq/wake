@@ -114,6 +114,10 @@ workspace mechanics itself — it only resolves and invokes them.
 - Invoking the Activity handler MUST track an `AbortController` for the
   Run's id for the duration of the call, so a cancellation request against
   this Run can signal it while it is still running in this process.
+- While that local handler is running, Execution MUST renew the Run lease and
+  local recovery MUST exclude the tracked Run. A fresh process has no tracked
+  worker and therefore remains responsible for reconciling an expired durable
+  Run after restart.
 - The handler's reported external-execution identity and final runner
   result MUST each be appended to the Run stream as they arrive,
   independent of the Run's current status — these facts are appended even

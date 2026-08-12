@@ -110,10 +110,14 @@ export class RecoveryService {
     return (await this.repository.load(currentRunId)).view!;
   }
 
-  async recoverActive(owner: string): Promise<readonly RunView[]> {
+  async recoverActive(
+    owner: string,
+    isLocallyActive: (runId: string) => boolean = () => false,
+  ): Promise<readonly RunView[]> {
     const recovered: RunView[] = [];
     for (const run of await this.repository.list()) {
       if (run.status !== RunStatus.Started) continue;
+      if (isLocallyActive(run.runId)) continue;
       if (run.lease !== undefined && new Date(run.lease.expiresAt) > this.clock.now()) continue;
       recovered.push(await this.recover(run.runId, owner));
     }

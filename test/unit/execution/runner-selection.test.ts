@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { workId } from '../../support/identities.js';
 
 import {
@@ -96,7 +96,8 @@ describe('Execution runner selection', () => {
     };
     const service = fixture(new RunnerRegistry({ standard: ['standard'] }, { standard }));
 
-    const run = await service.attempt(activation(), context());
+    await service.attempt(activation(), context());
+    const run = await finishedRun(service, activation().activationId);
 
     expect(run).toMatchObject({
       agent: {
@@ -344,4 +345,14 @@ function runner(name: string): Runner & { readonly calls: number } {
       };
     },
   };
+}
+
+async function finishedRun(
+  service: ReturnType<typeof createExecutionService>,
+  id: ReturnType<typeof activation>['activationId'],
+): Promise<RunView> {
+  await vi.waitFor(async () => {
+    expect((await service.list(id))[0]?.status).toBe(RunStatus.Succeeded);
+  });
+  return (await service.list(id))[0]!;
 }

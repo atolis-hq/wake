@@ -1,8 +1,9 @@
+import { expect, vi } from 'vitest';
 import { z } from 'zod';
 import { workId } from '../../support/identities.js';
 
 import { ActivityRegistry, activationId, activityName } from '../../../src/activities/index.js';
-import { createExecutionService, type RunView } from '../../../src/execution/index.js';
+import { createExecutionService, RunStatus, type RunView } from '../../../src/execution/index.js';
 import { orchestrationGroupId, workflowInstanceId } from '../../../src/orchestration/index.js';
 import { InMemoryEventJournal } from '../../../src/persistence/index.js';
 import {} from '../../../src/work/index.js';
@@ -83,6 +84,12 @@ export function executionFixture() {
     service,
     start,
     started,
+    async finished(status: RunStatus): Promise<RunView> {
+      await vi.waitFor(async () => {
+        expect((await service.list())[0]?.status).toBe(status);
+      });
+      return (await service.list())[0]!;
+    },
     complete(outcome: { kind: 'done' }) {
       resolve(outcome);
     },

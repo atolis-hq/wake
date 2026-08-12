@@ -268,6 +268,15 @@ wake:stage.done
 These labels mirror the control-plane state. They do not define prompt
 behavior by themselves; the workflow configuration and prompt files do that.
 
+### Live Run status
+
+A started Run is durable and is shown as `wake:status.working` while its runner
+executes. Terminal status labels remain derived from the Run outcome, rather
+than from the runner starting. After a restart, Wake recovers durable active
+Runs and continues that same outcome-based reconciliation. A live local runner
+renews its lease and is not mistaken for a crashed process during recovery.
+Runner comments are unchanged.
+
 ## Ticket closure
 
 When the ticket backing a work item closes on its source tracker, Wake

@@ -22,14 +22,16 @@ import {
   type RunnerPipeline,
   type ScheduleCheckpointStore,
 } from '../control-plane/index.js';
-import type { Runner } from '../execution/index.js';
 import {
+  ExternalExecutionState,
   GitWorkspaceProvider,
+  RecoveryService,
   RunRepository,
   createExecutionService,
   loadPromptTemplate,
   renderPromptTemplate,
   type FakeScenarioResolver,
+  type Runner,
 } from '../execution/index.js';
 import {
   AgentRunPublicationReactor,
@@ -203,6 +205,24 @@ export async function createCompositionRoot(
     reportRunnerQuota: createRunnerQuotaReporter(journal, clock, ids),
     workspaces,
   });
+  const recovery = new RecoveryService(
+    journal,
+    clock,
+    {
+      async inspect() {
+        // Runner adapters do not yet expose a portable process-inspection API.
+        // Preserve safety on restart: unknown external work is reconciled through
+        // the existing ambiguity path rather than being guessed as absent.
+        return {
+          kind: ExternalExecutionState.Unknown,
+          reason: 'External execution inspection is not configured for this runtime',
+        };
+      },
+    },
+    activities,
+    config.execution,
+    orchestration,
+  );
   const controlPlane = createControlPlaneService({ journal, clock, ids });
   const isRuntimePaused = async () =>
     (await controlPlane.isPaused()) || (await maintenanceBlocksRuntime(maintenance));
@@ -212,19 +232,28 @@ export async function createCompositionRoot(
     ids,
     runners: new Set(Object.values(config.execution.runnerPools).flat()),
   });
-  const advanceOnce = createAdvanceOnce(orchestration, execution, resources, clock, {
-    ids,
-    dispatchPolicy: new DispatchPolicy({ maxDispatches: config.controlPlane.maxDispatches }),
-    isDispatchPaused: isRuntimePaused,
-    workspaceRecovery: workspaces,
-    work,
-    runnerIneligibility: async () => {
-      const stored = await projections.read<ControlPlaneView>(ControlStreamKind.Global, 'global');
-      return stored === null
-        ? new Set()
-        : ineligibleRunners(stored.value, clock.now().toISOString());
+  const advanceOnce = createAdvanceOnce(
+    orchestration,
+    {
+      ...execution,
+      recoverActive: (owner) => recovery.recoverActive(owner, execution.isLocallyActive),
     },
-  });
+    resources,
+    clock,
+    {
+      ids,
+      dispatchPolicy: new DispatchPolicy({ maxDispatches: config.controlPlane.maxDispatches }),
+      isDispatchPaused: isRuntimePaused,
+      workspaceRecovery: workspaces,
+      work,
+      runnerIneligibility: async () => {
+        const stored = await projections.read<ControlPlaneView>(ControlStreamKind.Global, 'global');
+        return stored === null
+          ? new Set()
+          : ineligibleRunners(stored.value, clock.now().toISOString());
+      },
+    },
+  );
   const runtime = await composeIntegrationRuntime({
     config,
     journal,

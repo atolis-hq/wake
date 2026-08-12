@@ -88,4 +88,29 @@ describe('RunnerPipeline', () => {
     await expect(pipeline.run({ maxProgress: 1 })).rejects.toThrow('label delivery denied');
     expect(projectionCatchUps).toBe(2);
   });
+
+  it('reacts again after a progressed dispatch', async () => {
+    const stages: string[] = [];
+    const pipeline = createRunnerPipeline({
+      catchUpProjections: async () => {
+        stages.push('projections');
+      },
+      runSchedules: async () => {
+        stages.push('schedules');
+      },
+      react: async () => {
+        stages.push('react');
+      },
+      advance: async () => {
+        stages.push('advance');
+        return { kind: 'progressed', activationId: 'activation-1', runId: 'run-1' };
+      },
+      deliver: async () => {
+        stages.push('deliver');
+      },
+    });
+
+    await expect(pipeline.run({ maxProgress: 1 })).resolves.toMatchObject({ kind: 'progressed' });
+    expect(stages.lastIndexOf('react')).toBeGreaterThan(stages.indexOf('advance'));
+  });
 });

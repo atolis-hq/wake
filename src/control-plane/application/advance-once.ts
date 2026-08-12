@@ -182,7 +182,7 @@ export function createAdvanceOnce(
         context(run.runId),
       );
     }
-    return run.status === RunStatus.Succeeded
+    return run.status === RunStatus.Succeeded || run.status === RunStatus.Started
       ? { kind: 'progressed', activationId: selected.activation.activationId, runId: run.runId }
       : {
           kind: WorkflowStatus.Blocked,

@@ -325,7 +325,9 @@ async function waitingWatchGate() {
     workflowName: workflowName('parent'),
   });
   await world.advance(work.workItemId);
+  await world.advance(work.workItemId);
   await world.triggerWatch('pr-review.requested', 'pr-review-trigger');
+  await world.advance(work.workItemId);
   await world.advance(work.workItemId);
   const child = (await world.orchestration.listAll()).find(
     (workflow) => workflow.parentWorkflowInstanceId === parent.workflowInstanceId,

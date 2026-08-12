@@ -330,6 +330,58 @@ it('reconciles target workflow markers to correlated GitHub resources without re
   ]);
 });
 
+it('replaces a failed status label with working for an active primary workflow', async () => {
+  const published: Array<{ labels: readonly string[] }> = [];
+  const reconciler = createGitHubWakeLabelReconciler({
+    orchestration: {
+      async listAll() {
+        return [
+          {
+            workflowInstanceId: 'primary-1',
+            workItemId: workId('active-work'),
+            workflowName: 'dark-factory',
+            orchestrationGroupId: 'group-1',
+            status: 'active',
+            currentStage: 'implement',
+          },
+        ] as never;
+      },
+    },
+    resources: {
+      async correlationsForWork() {
+        return [{ resourceId: resId('active-resource') }] as never;
+      },
+      async get() {
+        return { externalKey: { adapter: 'github', key: 'org/repo#45' } } as never;
+      },
+    },
+    work: {
+      async get() {
+        return { state: WorkStatus.Open } as never;
+      },
+    },
+    async getLabels() {
+      return ['bug', 'wake:status.failed', 'wake:stage.refine'];
+    },
+    async setLabels(_owner, _repo, _number, labels) {
+      published.push({ labels });
+    },
+  });
+
+  await reconciler.runOnce();
+
+  expect(published).toEqual([
+    {
+      labels: [
+        'bug',
+        'wake:status.working',
+        'wake:stage.implement',
+        'wake:workflow.dark-factory',
+      ],
+    },
+  ]);
+});
+
 it('reflects only the primary workflow in labels, adding a watching marker while a watch child is active', async () => {
   const published: Array<{
     owner: string;

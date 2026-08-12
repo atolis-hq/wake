@@ -1,4 +1,4 @@
-import { describe, expect, expectTypeOf, it } from 'vitest';
+import { describe, expect, expectTypeOf, it, vi } from 'vitest';
 import { z } from 'zod';
 import { activationId } from '../../../src/activities/contracts/identifiers.js';
 import {
@@ -12,6 +12,7 @@ import {
 } from '../../../src/activities/index.js';
 import {
   createExecutionService,
+  ExecutionEventType,
   ExecutionFailureCode,
   type ExecutionActivation,
   type ExecutionAttemptContext,
@@ -72,9 +73,160 @@ const context = {
   resources: [],
 };
 
+async function waitForRunStatus(
+  service: ReturnType<typeof createExecutionService>,
+  id: ExecutionActivation['activationId'],
+  status: 'succeeded' | 'failed',
+) {
+  await vi.waitFor(async () => {
+    expect((await service.list(id))[0]?.status).toBe(status);
+  });
+  return (await service.list(id))[0]!;
+}
+
 describe('ExecutionService', () => {
+  it('returns a durable started Run before a pending handler completes', async () => {
+    const registry = new ActivityRegistry();
+    let handlerEntered!: () => void;
+    const handlerStarted = new Promise<void>((resolve) => {
+      handlerEntered = resolve;
+    });
+    let releaseHandler!: () => void;
+    const handlerReleased = new Promise<void>((resolve) => {
+      releaseHandler = resolve;
+    });
+    let handlerCalls = 0;
+    registry.register({
+      name: activityName('pending'),
+      inputSchema: z.object({ prompt: z.string() }).strict(),
+      outcomeSchema: z.object({ kind: z.literal('done') }).strict(),
+      outcomeKinds: ['done'],
+      resources: [],
+      executionKind: ActivityExecutionKind.Deterministic,
+      handler: {
+        async execute() {
+          handlerCalls += 1;
+          handlerEntered();
+          await handlerReleased;
+          return { kind: 'done' };
+        },
+      },
+    });
+    const journal = new InMemoryEventJournal(new FakeClock());
+    const service = createExecutionService(
+      journal,
+      registry,
+      { runnerPools: { standard: ['fake'] }, defaultRunnerPool: 'standard' },
+      { clock: new FakeClock(), ids: new SequentialIds() },
+    );
+    const pendingActivation = { ...activation, activity: activityName('pending') };
+
+    const started = await service.attempt(pendingActivation, context);
+    await handlerStarted;
+
+    expect(started.status).toBe('started');
+    expect(
+      (await journal.readAll(0)).filter((event) => event.eventType === 'execution.run-started'),
+    ).toHaveLength(1);
+    expect((await service.list(pendingActivation.activationId))[0]).toMatchObject({
+      runId: started.runId,
+      status: 'started',
+    });
+
+    const duplicate = await service.attempt(pendingActivation, context);
+    expect(duplicate).toMatchObject({ runId: started.runId, status: 'started' });
+    expect(handlerCalls).toBe(1);
+    expect(
+      (await journal.readAll(0)).filter((event) => event.eventType === 'execution.run-started'),
+    ).toHaveLength(1);
+
+    releaseHandler();
+    await vi.waitFor(async () => {
+      expect((await service.list(pendingActivation.activationId))[0]?.status).toBe('succeeded');
+    });
+  });
+
+  it('drains an in-flight lease renewal before recording a successful terminal outcome', async () => {
+    vi.useFakeTimers();
+    try {
+      const clock = new FakeClock();
+      const base = new InMemoryEventJournal(clock);
+      let releaseRenewal!: () => void;
+      const renewalBlocked = new Promise<void>((resolve) => {
+        releaseRenewal = resolve;
+      });
+      let renewalEntered!: () => void;
+      const renewalStarted = new Promise<void>((resolve) => {
+        renewalEntered = resolve;
+      });
+      const journal: EventJournal = {
+        async append(stream, expectedSequence, events) {
+          if (events.some((event) => event.eventType === ExecutionEventType.RunLeaseRenewed)) {
+            renewalEntered();
+            await renewalBlocked;
+          }
+          return base.append(stream, expectedSequence, events);
+        },
+        readStream: base.readStream.bind(base),
+        readAll: base.readAll.bind(base),
+        readLatest: base.readLatest?.bind(base),
+      };
+      const registry = new ActivityRegistry();
+      let releaseHandler!: () => void;
+      registry.register({
+        name: activityName('renewal-race'),
+        inputSchema: z.object({ prompt: z.string() }).strict(),
+        outcomeSchema: z.object({ kind: z.literal('done') }).strict(),
+        outcomeKinds: ['done'],
+        resources: [],
+        executionKind: ActivityExecutionKind.Deterministic,
+        handler: {
+          async execute() {
+            await new Promise<void>((resolve) => {
+              releaseHandler = resolve;
+            });
+            return { kind: 'done' };
+          },
+        },
+      });
+      const service = createExecutionService(
+        journal,
+        registry,
+        {
+          runnerPools: { standard: ['fake'] },
+          defaultRunnerPool: 'standard',
+          leaseDurationMs: 2,
+          leaseRenewalIntervalMs: 1,
+        },
+        { clock, ids: new SequentialIds() },
+      );
+      const raceActivation = { ...activation, activity: activityName('renewal-race') };
+
+      await service.attempt(raceActivation, context);
+      clock.advance(1);
+      await vi.advanceTimersByTimeAsync(1);
+      await renewalStarted;
+      releaseHandler();
+      await Promise.resolve();
+      expect((await service.list(raceActivation.activationId))[0]?.status).toBe('started');
+
+      releaseRenewal();
+      await vi.runAllTimersAsync();
+      await expect(
+        waitForRunStatus(service, raceActivation.activationId, 'succeeded'),
+      ).resolves.toMatchObject({
+        status: 'succeeded',
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('creates one Run and records a validated outcome separately', async () => {
-    const run = await setup().service.attempt(activation, context);
+    const fixture = setup();
+    const started = await fixture.service.attempt(activation, context);
+    expect(started.status).toBe('started');
+    const run = await waitForRunStatus(fixture.service, activation.activationId, 'succeeded');
     expect(run).toMatchObject({
       activationId: activation.activationId,
       activity: activation.activity,
@@ -146,7 +298,7 @@ describe('ExecutionService', () => {
         };
       },
     });
-    const run = await fixture.service.attempt(
+    const started = await fixture.service.attempt(
       { ...activation, execution: { workspace: 'read-only' } },
       {
         ...context,
@@ -161,9 +313,68 @@ describe('ExecutionService', () => {
       },
     );
 
-    expect(run.status).toBe('succeeded');
-    expect((await fixture.journal.readAll(0)).map((event) => event.eventType)).toContain(
-      'execution.workspace-cleanup-failed',
+    expect(started.status).toBe('started');
+    await waitForRunStatus(fixture.service, activation.activationId, 'succeeded');
+    await vi.waitFor(async () => {
+      expect((await fixture.journal.readAll(0)).map((event) => event.eventType)).toContain(
+        'execution.workspace-cleanup-failed',
+      );
+    });
+  });
+
+  it('releases the workspace and clears cancellation after activation release fails', async () => {
+    const base = new InMemoryEventJournal(new FakeClock());
+    let failReleaseOnce = true;
+    const releaseInterruptedJournal: EventJournal = {
+      async append(stream, expectedSequence, events) {
+        if (
+          failReleaseOnce &&
+          events.some((event) => event.eventType === 'execution.activation-released')
+        ) {
+          failReleaseOnce = false;
+          throw new Error('activation release append interrupted');
+        }
+        return base.append(stream, expectedSequence, events);
+      },
+      readStream: base.readStream.bind(base),
+      readAll: base.readAll.bind(base),
+      readLatest: base.readLatest?.bind(base),
+    };
+    let released = 0;
+    const fixture = setup(
+      {
+        async acquire() {
+          return {
+            workspaceId: 'workspace-1',
+            path: '/workspace-1',
+            mode: 'read-only',
+            async release() {
+              released += 1;
+            },
+          };
+        },
+      },
+      releaseInterruptedJournal,
+    );
+    const workspaceActivation = { ...activation, execution: { workspace: 'read-only' as const } };
+    const workspaceContext = {
+      ...context,
+      resources: [
+        {
+          resourceId: resId('repo'),
+          kind: BuiltInResourceKind.Repository,
+          externalKey: { adapter: 'github', key: 'atolis-hq/wake' },
+          capabilities: [],
+        },
+      ],
+    };
+
+    const started = await fixture.service.attempt(workspaceActivation, workspaceContext);
+    await waitForRunStatus(fixture.service, workspaceActivation.activationId, 'succeeded');
+
+    await vi.waitFor(() => expect(released).toBe(1));
+    await expect(fixture.service.requestCancellation(started.runId, 'operator')).rejects.toThrow(
+      'Run is not active',
     );
   });
 
@@ -218,11 +429,9 @@ describe('ExecutionService', () => {
     );
     expect({ acquired, released }).toEqual({ acquired: 1, released: 1 });
 
-    await expect(
-      fixture.service.attempt(workspaceActivation, workspaceContext),
-    ).resolves.toMatchObject({
-      status: 'succeeded',
-    });
+    const retry = await fixture.service.attempt(workspaceActivation, workspaceContext);
+    expect(retry.status).toBe('started');
+    await waitForRunStatus(fixture.service, workspaceActivation.activationId, 'succeeded');
     expect({ acquired, released }).toEqual({ acquired: 2, released: 2 });
   });
   it('rejects an unregistered execution runner pool', async () => {
@@ -266,15 +475,21 @@ describe('ExecutionService', () => {
       input: { value: 7 },
     };
 
-    await expect(service.attempt(scoreActivation, context)).resolves.toMatchObject({
+    expect((await service.attempt(scoreActivation, context)).status).toBe('started');
+    await expect(
+      waitForRunStatus(service, scoreActivation.activationId, 'succeeded'),
+    ).resolves.toMatchObject({
       status: 'succeeded',
       outcome: { kind: 'scored', data: { score: 7 } },
     });
+    const invalidActivation = {
+      ...scoreActivation,
+      activationId: activationId('score-invalid'),
+      input: { value: 0 },
+    };
+    expect((await service.attempt(invalidActivation, context)).status).toBe('started');
     await expect(
-      service.attempt(
-        { ...scoreActivation, activationId: activationId('score-invalid'), input: { value: 0 } },
-        context,
-      ),
+      waitForRunStatus(service, invalidActivation.activationId, 'failed'),
     ).resolves.toMatchObject({
       status: 'failed',
       failure: {

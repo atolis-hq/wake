@@ -16,6 +16,31 @@ it('exports RecoveryService for active Run reconciliation', () => {
   expect(RecoveryService).toBeTypeOf('function');
 });
 
+it('does not recover a locally tracked Run after its lease duration elapses', async () => {
+  const fixture = executionFixture();
+  const run = await fixture.activeRunWithExternalExecution();
+  fixture.expireLease();
+  const recovery = new RecoveryService(
+    fixture.journal,
+    fixture.clock,
+    {
+      async inspect() {
+        throw new Error('A local worker must not be inspected as a crashed process');
+      },
+    },
+    fixture.activities,
+  );
+
+  await expect(
+    recovery.recoverActive('resident-a', fixture.service.isLocallyActive),
+  ).resolves.toEqual([]);
+  await expect(fixture.service.list()).resolves.toMatchObject([
+    { runId: run.runId, status: 'started' },
+  ]);
+  fixture.complete({ kind: 'done' });
+  await fixture.finished('succeeded');
+});
+
 it('reconciles definitely completed execution without rerunning it', async () => {
   const fixture = executionFixture();
   const run = await fixture.activeRunWithExternalExecution();

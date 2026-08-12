@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { ExecutionEventType } from '../../../src/execution/index.js';
+import { ExecutionEventType, RunStatus } from '../../../src/execution/index.js';
 import { executionFixture } from './support.js';
 
 describe('Run cancellation', () => {
@@ -17,9 +17,9 @@ describe('Run cancellation', () => {
     expect(fixture.cancelled).toBe(true);
     fixture.complete({ kind: 'done' });
     await pending;
-    await expect(fixture.service.list()).resolves.toEqual([
-      expect.objectContaining({ status: 'succeeded' }),
-    ]);
+    await expect(fixture.finished(RunStatus.Succeeded)).resolves.toMatchObject({
+      status: 'succeeded',
+    });
   });
 
   it('records cancellation confirmation separately', async () => {
@@ -35,8 +35,8 @@ describe('Run cancellation', () => {
 
     fixture.complete({ kind: 'done' });
     await pending;
-    await expect(fixture.service.list()).resolves.toEqual([
-      expect.objectContaining({ status: 'cancelled' }),
-    ]);
+    await expect(fixture.finished(RunStatus.Cancelled)).resolves.toMatchObject({
+      status: 'cancelled',
+    });
   });
 });

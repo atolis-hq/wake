@@ -10,6 +10,7 @@ import {
   activityWorkflowInstanceId,
 } from '../../../src/activities/index.js';
 import { createCompositionRoot, parseRootConfig } from '../../../src/bootstrap/index.js';
+import { ExecutionEventType, runId, runStream } from '../../../src/execution/index.js';
 import { GitHubAdapter } from '../../../src/integrations/github/contracts/vocabulary.js';
 import {
   issueCommentObservation,
@@ -22,6 +23,7 @@ import {
   EventSourceKind,
   causationId,
   correlationId,
+  createEventDraft,
   eventId,
 } from '../../../src/kernel/index.js';
 import {
@@ -43,6 +45,49 @@ afterEach(async () => {
 });
 
 describe('target composition root', () => {
+  it('recovers durable started Runs through the live advance composition', async () => {
+    const clock = { now: () => new Date('2026-08-10T00:00:00.000Z') };
+    const journal = new InMemoryEventJournal(clock);
+    const id = runId('run-restart-recovery');
+    await journal.append(runStream(id), 0, [
+      createEventDraft({
+        eventId: 'run-restart-recovery:started',
+        eventType: ExecutionEventType.RunStarted,
+        occurredAt: clock.now().toISOString(),
+        correlationId: 'run-restart-recovery',
+        causationId: 'run-restart-recovery',
+        actor: { kind: EventActorKind.System, id: 'test' },
+        source: { kind: EventSourceKind.Internal, id: 'test' },
+        stream: runStream(id),
+        payload: {
+          activationId: activationId('activation-restart-recovery'),
+          activity: BuiltInActivityName.Agent,
+          workflowInstanceId: activityWorkflowInstanceId('workflow-restart-recovery'),
+          orchestrationGroupId: activityOrchestrationGroupId('group-restart-recovery'),
+          attempt: 1,
+          startedAt: clock.now().toISOString(),
+        },
+      }),
+    ]);
+    const runtime = await createCompositionRoot('C:/wake-home', {
+      config: rootConfig(),
+      journal,
+      projections: new InMemoryProjectionStore(),
+      checkpoints: new InMemoryCheckpointStore(),
+      clock,
+    });
+
+    await runtime.runnerPipeline.run({ maxProgress: 1 });
+
+    await expect(runtime.execution.list()).resolves.toMatchObject([
+      {
+        runId: id,
+        status: 'failed',
+        failure: { message: 'External execution was never reported' },
+      },
+    ]);
+  });
+
   it('routes composed journal writes through an optional integration decorator', async () => {
     const clock = { now: () => new Date('2026-08-10T00:00:00.000Z') };
     const journal = new InMemoryEventJournal(clock);

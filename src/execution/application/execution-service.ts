@@ -52,6 +52,7 @@ export function createExecutionService(
         context,
       ),
     list: (activationId?: ExecutionActivation['activationId']) => repository.list(activationId),
+    isLocallyActive: (id: string) => active.has(runId(id)),
     claim: (id: string, owner: string) =>
       claimRun(repository, dependencies.clock, config, runId(id), owner),
     renewLease: (id: string, owner: string) =>
@@ -83,9 +84,11 @@ async function attemptExecution(
   if (existing !== undefined) return existing;
   const currentRunId = runId(runtime.dependencies.ids.next(ExecutionStreamKind.Run));
   const startedAt = runtime.dependencies.clock.now().toISOString();
-  await claimActivationForAttempt(runtime, activation, currentRunId, owner, startedAt);
   let lease: WorkspaceLease | undefined;
+  let claimed = false;
   try {
+    await claimActivationForAttempt(runtime, activation, currentRunId, owner, startedAt);
+    claimed = true;
     lease = await acquireAttemptWorkspace(runtime, activation, context, currentRunId);
     await startRun({
       dependencies: runLifecycleDependencies(runtime),
@@ -97,6 +100,53 @@ async function attemptExecution(
       runner,
       lease,
     });
+  } catch (error) {
+    const persisted = await runtime.repository.load(currentRunId);
+    if (persisted.view?.status === RunStatus.Started) {
+      try {
+        await recordRunFailure({
+          dependencies: runLifecycleDependencies(runtime),
+          runId: currentRunId,
+          activation,
+          context,
+          error,
+        });
+      } finally {
+        await cleanupRun(runtime, currentRunId, activation, context, lease);
+      }
+      return (await runtime.repository.load(currentRunId)).view!;
+    }
+    await releasePreStartResources(runtime, activation, currentRunId, lease, claimed);
+    throw error;
+  }
+
+  void completeRun(
+    runtime,
+    currentRunId,
+    activation,
+    context,
+    startedAt,
+    runner,
+    resumeSessionId,
+    lease,
+  ).catch(() => {
+    // A detached worker must never create an unhandled rejection for its caller.
+  });
+  return (await runtime.repository.load(currentRunId)).view!;
+}
+
+async function completeRun(
+  runtime: ExecutionRuntime,
+  currentRunId: ReturnType<typeof runId>,
+  activation: ExecutionActivation,
+  context: ExecutionAttemptContext,
+  startedAt: string,
+  runner: ReturnType<typeof resolveRunner>,
+  resumeSessionId: string | undefined,
+  lease: WorkspaceLease | undefined,
+): Promise<void> {
+  const renewal = renewWhileRunning(runtime, currentRunId, context.owner ?? 'execution');
+  try {
     const outcome = await executeActivity(runtime, currentRunId, {
       activation,
       context,
@@ -106,6 +156,7 @@ async function attemptExecution(
       ...(resumeSessionId === undefined ? {} : { resumeSessionId }),
       ...(lease === undefined ? {} : { workspace: { path: lease.path, mode: lease.mode } }),
     });
+    await renewal.stop();
     await recordRunSuccess({
       dependencies: runLifecycleDependencies(runtime),
       runId: currentRunId,
@@ -114,20 +165,77 @@ async function attemptExecution(
       outcome,
     });
   } catch (error) {
-    await recordRunFailure({
-      dependencies: runLifecycleDependencies(runtime),
-      runId: currentRunId,
-      activation,
-      context,
-      error,
-    });
+    try {
+      await renewal.stop();
+      await recordRunFailure({
+        dependencies: runLifecycleDependencies(runtime),
+        runId: currentRunId,
+        activation,
+        context,
+        error,
+      });
+    } catch {
+      // The caller already has a durable started Run; cleanup must still run.
+    }
   } finally {
+    await renewal.stop();
+    await cleanupRun(runtime, currentRunId, activation, context, lease);
+  }
+}
+
+function renewWhileRunning(
+  runtime: ExecutionRuntime,
+  currentRunId: ReturnType<typeof runId>,
+  owner: string,
+): { stop(): Promise<void> } {
+  const leaseDurationMs = runtime.config.leaseDurationMs ?? 60_000;
+  const intervalMs =
+    runtime.config.leaseRenewalIntervalMs ?? Math.max(1, Math.floor(leaseDurationMs / 2));
+  let inFlight: Promise<void> | undefined;
+  let stopped = false;
+  const timer = setInterval(() => {
+    if (stopped || inFlight !== undefined) return;
+    const renewal = renewLease(
+      runtime.repository,
+      runtime.dependencies.clock,
+      runtime.config,
+      currentRunId,
+      owner,
+    ).then(
+      () => undefined,
+      () => {
+        // Recovery will reconcile a worker only after this process no longer tracks it.
+      },
+    );
+    inFlight = renewal;
+    void renewal.finally(() => {
+      if (inFlight === renewal) inFlight = undefined;
+    });
+  }, intervalMs);
+  return {
+    async stop() {
+      stopped = true;
+      clearInterval(timer);
+      await inFlight;
+    },
+  };
+}
+
+async function cleanupRun(
+  runtime: ExecutionRuntime,
+  currentRunId: ReturnType<typeof runId>,
+  activation: ExecutionActivation,
+  context: ExecutionAttemptContext,
+  lease: WorkspaceLease | undefined,
+): Promise<void> {
+  try {
     await releaseActivation({
       journal: runtime.journal,
       clock: runtime.dependencies.clock,
       activationId: activation.activationId,
       runId: currentRunId,
     });
+  } finally {
     runtime.active.delete(currentRunId);
     try {
       await lease?.release();
@@ -145,7 +253,32 @@ async function attemptExecution(
       }
     }
   }
-  return (await runtime.repository.load(currentRunId)).view!;
+}
+
+async function releasePreStartResources(
+  runtime: ExecutionRuntime,
+  activation: ExecutionActivation,
+  currentRunId: ReturnType<typeof runId>,
+  lease: WorkspaceLease | undefined,
+  claimed: boolean,
+): Promise<void> {
+  if (claimed) {
+    try {
+      await releaseActivation({
+        journal: runtime.journal,
+        clock: runtime.dependencies.clock,
+        activationId: activation.activationId,
+        runId: currentRunId,
+      });
+    } catch {
+      // Preserve the original pre-start failure.
+    }
+  }
+  try {
+    await lease?.release();
+  } catch {
+    // There is no durable Run on which to record a cleanup diagnostic.
+  }
 }
 
 export function resumeSessionIdFor(prior: readonly RunView[], cli: string | undefined) {
