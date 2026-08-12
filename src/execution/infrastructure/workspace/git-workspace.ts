@@ -48,7 +48,7 @@ export class GitWorkspaceProvider implements WorkspaceProvider, WorkspaceRecover
 
   async acquire(request: WorkspaceRequest) {
     const locator = await this.resolver.cloneLocator(request.repositoryResource.resourceId);
-    const name = `${request.workItemId}-${slug(locator)}`;
+    const name = `${request.workItemId}-${request.mode}-${slug(locator)}`;
     const path = resolve(this.root, name);
     const markerPath = join(this.markerRoot, `${name}.json`);
     await mkdir(dirname(markerPath), { recursive: true });
@@ -64,18 +64,27 @@ export class GitWorkspaceProvider implements WorkspaceProvider, WorkspaceRecover
       }),
       'utf8',
     );
-    if (!(await exists(join(path, '.git')))) {
+    const existingWorkspace = await exists(join(path, '.git'));
+    if (!existingWorkspace) {
       await mkdir(dirname(path), { recursive: true });
       await this.git(['clone', locator, path]);
     }
     const branch = request.mode === WorkspaceMode.Branch ? request.workItemId : undefined;
-    if (branch !== undefined) await this.git(['-C', path, 'switch', '--create', branch]);
+    if (branch !== undefined)
+      await this.git([
+        '-C',
+        path,
+        'switch',
+        ...(existingWorkspace ? [] : ['--create']),
+        branch,
+      ]);
     return {
       workspaceId: name,
       path,
       mode: request.mode,
       ...(branch === undefined ? {} : { branch }),
       release: async () => {
+        if (request.mode !== WorkspaceMode.ReadOnly) return;
         await rm(path, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
         await rm(markerPath, { force: true });
       },
@@ -86,7 +95,6 @@ export class GitWorkspaceProvider implements WorkspaceProvider, WorkspaceRecover
     runs: readonly RunView[],
     options: WorkspaceRecoveryOptions = {},
   ): Promise<WorkspaceRecoveryResult> {
-    const byId = new Map(runs.map((run) => [run.runId, run]));
     const scope = await recoveryScope(this.root, this.markerRoot);
     if (scope === null) return emptyRecovery();
     const markers = await recoveryMarkerNames(this.markerRoot);
@@ -98,8 +106,9 @@ export class GitWorkspaceProvider implements WorkspaceProvider, WorkspaceRecover
         filename,
         markerRoot: this.markerRoot,
         scope,
-        runs: byId,
+        runs,
         fileSystem: this.recoveryFileSystem,
+        options,
       });
       reclaimed += result.reclaimed;
       failures.push(...result.failures);
@@ -138,8 +147,9 @@ async function recoverMarker(input: {
   readonly filename: string;
   readonly markerRoot: string;
   readonly scope: RecoveryScope;
-  readonly runs: ReadonlyMap<RunView['runId'], RunView>;
+  readonly runs: readonly RunView[];
   readonly fileSystem: WorkspaceRecoveryFileSystem;
+  readonly options: WorkspaceRecoveryOptions;
 }): Promise<WorkspaceRecoveryResult> {
   if (!input.filename.endsWith('.json')) return emptyRecovery();
   const markerPath = join(input.markerRoot, input.filename);
@@ -157,8 +167,9 @@ async function recoverMarker(input: {
 async function reclaimOwnedMarker(
   input: {
     readonly scope: RecoveryScope;
-    readonly runs: ReadonlyMap<RunView['runId'], RunView>;
+    readonly runs: readonly RunView[];
     readonly fileSystem: WorkspaceRecoveryFileSystem;
+    readonly options: WorkspaceRecoveryOptions;
   },
   markerPath: string,
   marker: WorkspaceOwnershipMarker | null,
@@ -168,8 +179,15 @@ async function reclaimOwnedMarker(
     !(await isOwnedWorkspace(input.scope, markerPath, marker, input.fileSystem))
   )
     return emptyRecovery();
-  const run = input.runs.get(marker.runId as RunView['runId']);
-  if (run?.status === RunStatus.Started || run?.status === RunStatus.Ambiguous)
+  if (
+    input.runs.some(
+      (run) =>
+        (run.status === RunStatus.Started || run.status === RunStatus.Ambiguous) &&
+        (run.runId === marker.runId || run.workspace?.path === marker.path),
+    )
+  )
+    return emptyRecovery();
+  if ((await input.options.retainWorkItem?.(marker.workItemId as never)) === true)
     return emptyRecovery();
   if (!(await canRemoveOwnedWorkspace(input.scope, marker.path))) return emptyRecovery();
   if ((await canonicalPath(marker.path)) !== null) await input.fileSystem.remove(marker.path);

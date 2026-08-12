@@ -50,6 +50,7 @@ describe('GitWorkspaceProvider', () => {
       { cloneLocator: async () => 'https://github.com/atolis-hq/wake-test.git' },
       async (args) => {
         commands.push([...args]);
+        if (args[0] === 'clone') await mkdir(join(args[2]!, '.git'), { recursive: true });
       },
     );
 
@@ -72,14 +73,54 @@ describe('GitWorkspaceProvider', () => {
       ['-C', lease.path, 'switch', '--create', workItemId],
     ]);
     await lease.release();
+    await expect(access(lease.path)).resolves.toBeUndefined();
+    await expect(
+      access(join(root, '.wake-workspace-ownership', `${lease.workspaceId}.json`)),
+    ).resolves.toBeUndefined();
   });
 
-  it('records ownership before cloning and removes it when the lease releases', async () => {
+  it('reuses a retained branch workspace for a follow-up activity', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wake-workspace-'));
+    roots.push(root);
+    const commands: string[][] = [];
+    const provider = new GitWorkspaceProvider(
+      root,
+      { cloneLocator: async () => 'https://github.com/atolis-hq/wake-test.git' },
+      async (args) => {
+        commands.push([...args]);
+        if (args[0] === 'clone') await mkdir(join(args[2]!, '.git'), { recursive: true });
+      },
+    );
+    const workItemId = workId('follow-up');
+    const request = {
+      mode: 'branch' as const,
+      workItemId,
+      repositoryResource: {
+        resourceId: resId('workspace-resource'),
+        kind: resourceKind('issue'),
+        externalKey: { adapter: 'github', key: 'atolis-hq/wake-test#1' },
+        capabilities: [],
+      },
+    };
+
+    const first = await provider.acquire({ ...request, runId: runId('run-first') });
+    await first.release();
+    const followUp = await provider.acquire({ ...request, runId: runId('run-follow-up') });
+
+    expect(followUp.path).toBe(first.path);
+    expect(commands).toEqual([
+      ['clone', 'https://github.com/atolis-hq/wake-test.git', first.path],
+      ['-C', first.path, 'switch', '--create', workItemId],
+      ['-C', first.path, 'switch', workItemId],
+    ]);
+  });
+
+  it('records ownership before cloning and removes a read-only workspace when the lease releases', async () => {
     const root = await mkdtemp(join(tmpdir(), 'wake-workspace-'));
     roots.push(root);
     const workItemId = workId('one');
     const repositoryResourceId = resId('workspace-resource');
-    const workspaceId = `${workItemId}-https-github-com-atolis-hq-wake-test-git`;
+    const workspaceId = `${workItemId}-read-only-https-github-com-atolis-hq-wake-test-git`;
     const markerPath = join(root, '.wake-workspace-ownership', `${workspaceId}.json`);
     const provider = new GitWorkspaceProvider(
       root,
