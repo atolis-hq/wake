@@ -68,10 +68,13 @@ export class GitWorkspaceProvider implements WorkspaceProvider, WorkspaceRecover
       await mkdir(dirname(path), { recursive: true });
       await this.git(['clone', locator, path]);
     }
+    const branch = request.mode === WorkspaceMode.Branch ? request.workItemId : undefined;
+    if (branch !== undefined) await this.git(['-C', path, 'switch', '--create', branch]);
     return {
       workspaceId: name,
       path,
       mode: request.mode,
+      ...(branch === undefined ? {} : { branch }),
       release: async () => {
         await rm(path, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
         await rm(markerPath, { force: true });
