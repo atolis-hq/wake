@@ -11,11 +11,12 @@ Wake is an autonomous agent control plane for software development. It coordinat
 ```bash
 npm install
 npm run build        # tsc -p tsconfig.json
-npm run verify       # architecture + contracts + lint + format + build + all non-live tests
 npm run knip         # unused files, exports, types, and dependencies
 npm run check:specs  # reports module-specification drift from each `asOf` checkpoint; resolve with the sync-module-specs skill
-npm test             # vitest run
-npm run test:watch   # vitest watch mode
+npm run test:fast    # parallel unit suite
+npm run test:integration  # parallel integration suite
+npm run test:e2e     # serial non-live E2E suite
+npm test             # all non-live tests
 npm run verify       # lint + format:check + build + test — run this exact command (not a manual build+test) before considering work done. Do not skip the lint step — unused-import/no-unused-vars errors are easy to introduce (e.g. splitting a file and over-copying its import list) and won't show up in `tsc`/`vitest` alone.
 npm run tick         # run one control-plane tick against .wake/ (fake ticketing data if no GitHub source configured)
 npm run start        # run the resident loop
@@ -30,6 +31,34 @@ Run a single test file: `npx vitest run test/core/tick-runner.test.ts`
 Run tests matching a name: `npx vitest run -t "some test name"`
 
 CI (`.github/workflows/ci-cd.yml`) runs `npm run verify`, `npm run knip`, and `npm run test:web` on relevant push/PR changes, then auto-tags semantic versions on `main` pushes based on `(MAJOR)`/`(MINOR)` markers in commit messages.
+
+## Testing and verification policy
+
+This is the single source of truth for local test selection. It overrides the
+generic full-verification comment in the command list above; the detailed
+policy below is intentionally more specific.
+
+Start with the smallest command that directly exercises the changed behavior:
+
+- UI-only work: run the focused UI test and `npm run build:web`.
+- Web/API/view-model work: also run the relevant projection or API test and
+  `npm run test:web`.
+- Domain or service work: run the relevant unit or integration tests and the
+  applicable build.
+- Workflow, persistence, runner, or external-integration work: also run the
+  relevant targeted E2E scenario.
+
+For a broader local check, use `npm run test:fast` first, then the relevant
+`npm run test:integration` or `npm run test:e2e` suite. Unit and integration
+test files may run in parallel; E2E remains serial because some scenarios use
+processes and filesystem fixtures.
+
+CI is the broad gate for pushes and pull requests: it runs `npm run verify`,
+`npm run knip`, and `npm run test:web`. Do not routinely run `npm test` or
+`npm run verify` locally for a scoped change. Run the full non-live suite only
+when investigating a cross-cutting failure, when the change affects shared test
+or runtime infrastructure, or when explicitly requested. Before handoff,
+report the focused checks run and any checks intentionally left to CI.
 
 ## Architecture
 
@@ -65,20 +94,8 @@ Keep domain seams explicit:
   concise Given/When/Then comments or test structure and cover success,
   failure, crash/restart, and idempotency where relevant.
 
-Use verification proportional to the changed surface:
-
-- UI-only work: run the focused UI test and `npm run build:web`.
-- Web/API/view-model work: also run the relevant projection or API test and
-  `npm run test:web`.
-- Domain or service work: run the relevant unit or integration tests and the
-  applicable build.
-- Workflow, persistence, runner, or external-integration work: also run the
-  relevant targeted E2E scenario.
-
-CI is the broad gate for pushes and pull requests: it runs `npm run verify`,
-`npm run knip`, and `npm run test:web`. Do not routinely run the entire suite
-locally for a scoped change; use it when investigating a cross-cutting failure
-or when explicitly requested.
+Follow the [testing and verification policy](#testing-and-verification-policy)
+when selecting local checks for a change.
 
 ### Module boundaries (`src/`)
 
