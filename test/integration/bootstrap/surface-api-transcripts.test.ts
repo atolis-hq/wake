@@ -155,7 +155,7 @@ describe('surface transcript applications', () => {
     });
   });
 
-  it('reads a selected work group from projections without replaying orchestration', async () => {
+  it('reads a selected deleted-work group from projections without replaying services', async () => {
     const workItemId = workId('transcript-work-group');
     const store = new TranscriptStore(await transcriptRoot());
     await store.capturePrompt({
@@ -177,9 +177,11 @@ describe('surface transcript applications', () => {
     const applications = createSurfaceWorkApplications(
       {
         transcriptStore: store,
-        work: { get: async () => ({}) },
+        work: { get: async () => Promise.reject(new Error('journal replay')) },
         orchestration: { listAll: async () => Promise.reject(new Error('journal replay')) },
         projections: {
+          read: async (stream: string, key: string) =>
+            stream === 'work' && key === workItemId ? { value: { deleted: true } } : null,
           list: async (stream: string) =>
             stream === 'orchestration'
               ? [

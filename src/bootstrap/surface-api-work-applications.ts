@@ -51,7 +51,9 @@ export function createSurfaceWorkApplications(
     detail: (key) => workDetail(root, key, now),
     async transcript(key, groupId) {
       const id = decodeWorkItemId(key);
-      if (id === undefined || (await root.work.get(id)) === null) return undefined;
+      if (id === undefined) return undefined;
+      const work = await root.projections.read<WorkItemView | null>('work', id);
+      if (work === null || work.value === null) return undefined;
       return readWorkTranscript(
         root.transcriptStore,
         id,
