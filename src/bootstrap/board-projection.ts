@@ -294,23 +294,18 @@ function terminalFinishedAt(
 // run leaves the card silently stuck on the prior "active" condition.
 function terminalRunFields(
   event: ReturnType<typeof selectRunExecutionEvent> & {},
-): Pick<StoredCard, 'lastRunOutcome' | 'condition'> | undefined {
+): (Pick<StoredCard, 'lastRunOutcome'> & Partial<Pick<StoredCard, 'condition'>>) | undefined {
   if (event.eventType === ExecutionEventType.RunSucceeded) {
     const kind = event.payload.outcome.kind;
-    // A successful (or rejected) outcome means nothing is running right now —
-    // the card sits Ready until the orchestration's own next event (a new
-    // ActivityRequested, a SignalWaitStarted, or InstanceCompleted) says
-    // otherwise. Leaving it Active here made it lie about being busy for
-    // however long the gap to that next event took.
-    return {
-      lastRunOutcome: kind,
-      condition:
-        kind === ActivityOutcomeKind.Failed
-          ? BoardCondition.Error
-          : kind === ActivityOutcomeKind.Blocked
-            ? BoardCondition.NeedsInput
-            : BoardCondition.Ready,
-    };
+    // A successful outcome means the runner has stopped, but does not decide
+    // the workflow's next state. Keep the workflow-owned condition until its
+    // next lifecycle event (ActivityRequested, SignalWaitStarted, or
+    // InstanceCompleted) changes it.
+    if (kind === ActivityOutcomeKind.Failed)
+      return { lastRunOutcome: kind, condition: BoardCondition.Error };
+    if (kind === ActivityOutcomeKind.Blocked)
+      return { lastRunOutcome: kind, condition: BoardCondition.NeedsInput };
+    return { lastRunOutcome: kind };
   }
   if (event.eventType === ExecutionEventType.RunFailed)
     return { lastRunOutcome: RunStatus.Failed, condition: BoardCondition.Error };
@@ -364,7 +359,9 @@ function projectRunTerminal(
       [workId]: {
         ...withoutActiveRun(card),
         ...(terminal === undefined ? {} : { lastRunOutcome: terminal.lastRunOutcome }),
-        ...(terminal === undefined || isChildRun ? {} : { condition: terminal.condition }),
+        ...(terminal === undefined || isChildRun || terminal.condition === undefined
+          ? {}
+          : { condition: terminal.condition }),
         totalDurationMs: card.totalDurationMs + runDurationMs,
       },
     },
