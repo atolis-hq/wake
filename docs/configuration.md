@@ -413,7 +413,7 @@ models, commands, static arguments, timeouts, or effort.
 | `kind` | `"claude-cli"` \| `"codex-cli"` \| `"cursor-cli"` \| `"command"` \| `"fake"` | Transport adapter for this named runner. All but `fake` require `command`. |
 | `command` | string (required except `fake`) | CLI command for command-style runner kinds. |
 | `model` | string (optional) | Default model for this named runner. |
-| `effort` | string (optional) | Portable reasoning-effort selection. Codex maps it to `-c model_reasoning_effort=<effort>`; Claude, Cursor, `command`, and `fake` omit it because they have no mapping. |
+| `effort` | string (optional) | Portable reasoning-effort selection. Codex maps it to `-c model_reasoning_effort=<effort>` and Claude maps it to `--effort <effort>`; Cursor, `command`, and `fake` omit it because they have no mapping. |
 | `timeoutMs` | positive integer (optional) | Wall-clock timeout; defaults to `1800000` milliseconds. |
 | `args` | string array (optional) | Static CLI arguments; defaults to `[]`. Do not include `--output-format` or `--resume`, which Wake owns. |
 

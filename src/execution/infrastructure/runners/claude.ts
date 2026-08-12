@@ -69,13 +69,14 @@ export function claudeCommandArgs(
   defaults: RunnerDefaults = {},
 ): string[] {
   const model = request.model ?? defaults.model;
+  const effort = request.effort ?? defaults.effort;
   return [
     '-p',
     '--output-format',
     'json',
     ...(request.resumeSessionId === undefined ? [] : ['--resume', request.resumeSessionId]),
     ...(model === undefined ? [] : ['--model', model]),
-    ...(defaults.effort === undefined ? [] : ['--effort', defaults.effort]),
+    ...(effort === undefined ? [] : ['--effort', effort]),
     ...(request.maxTurns === undefined ? [] : ['--max-turns', String(request.maxTurns)]),
     ...(request.allowedTools.length === 0
       ? []

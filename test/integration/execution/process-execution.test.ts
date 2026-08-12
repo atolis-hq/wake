@@ -59,6 +59,8 @@ describe('cliRunner', () => {
         'prior-session',
         '--model',
         'claude-test',
+        '--effort',
+        'medium',
         '--max-turns',
         '3',
         '--allowedTools',
@@ -136,7 +138,16 @@ describe('cliRunner', () => {
         allowedTools: [],
         resumeSessionId: 'prior-session',
       }),
-    ).toEqual(['exec', '--json', '--model', 'gpt-test', 'resume', 'prior-session', 'ship']);
+    ).toEqual([
+      'exec',
+      '--json',
+      '--skip-git-repo-check',
+      '--model',
+      'gpt-test',
+      'resume',
+      'prior-session',
+      'ship',
+    ]);
   });
 
   it('returns captured stdout and stderr detail for a non-zero process exit', async () => {
@@ -238,7 +249,7 @@ describe('cliRunner', () => {
         '--model',
         'gpt-default',
         '-c',
-        'model_reasoning_effort="medium"',
+        'model_reasoning_effort=medium',
       ]),
     );
     expect(cursorCommandArgs(request, [], { model: 'cursor-default' })).toEqual(

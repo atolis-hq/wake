@@ -74,8 +74,8 @@ component's responsibility.
   `cursor-cli` variants build their vendor-specific fresh or resumed arguments
   from the request's full `prompt`, `model` when present, and optional opaque
   `resumeSessionId`. Codex additionally maps a requested `effort` to
-  `-c model_reasoning_effort=<effort>`; Claude and Cursor omit it because they
-  have no mapping. `RunnerRequest` also declares `maxTurns` and `allowedTools`;
+  `-c model_reasoning_effort=<effort>`; Claude maps it to `--effort <effort>`;
+  Cursor omits it because it has no mapping. `RunnerRequest` also declares `maxTurns` and `allowedTools`;
   only Claude forwards its established turn/tool options. The `command` variant
   ignores the request entirely and always invokes its configured command with
   its configured static arguments, so it does not forward the request's prompt,
@@ -157,7 +157,7 @@ component's responsibility.
 | `prompt` | string | The rendered prompt text. |
 | `context` | `{runnerName, action, activationOrdinal}`, optional | Supplied by the Execution service when a runner was resolved; read only by the fake runner, to match a scripted scenario rule. No CLI-based runner reads it. |
 | `model` | string, optional | Overrides the runner's own default model, when the adapter reads it. |
-| `effort` | string, optional | Portable generic reasoning-effort selection. Each adapter maps it only when it has a vendor-specific syntax; Codex maps it to `model_reasoning_effort`, while Claude and Cursor omit it. |
+| `effort` | string, optional | Portable generic reasoning-effort selection. Each adapter maps it only when it has a vendor-specific syntax; Codex maps it to `model_reasoning_effort`, Claude maps it to `--effort`, and Cursor omits it. |
 | `workspacePath` | string, optional | Working directory for a spawned process. |
 | `allowedTools` | list of string | Claude forwards its established tool option; Codex, Cursor, and fake adapters do not read it. |
 | `maxTurns` | integer, optional | Claude forwards its established turn option; Codex, Cursor, and fake adapters do not read it. |
