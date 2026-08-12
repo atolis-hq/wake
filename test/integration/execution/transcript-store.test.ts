@@ -1,4 +1,4 @@
-import { mkdtemp, readdir, readFile } from 'node:fs/promises';
+import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -246,5 +246,38 @@ describe('TranscriptStore', () => {
     await store.markWorkItemCleaned('work-1', 0, '2026-08-12T10:00:00.000Z');
 
     await expect(store.listGroups('work-1')).resolves.toEqual([]);
+  });
+
+  it('continues sweeping later marked work items after a transcript filesystem failure', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wake-transcript-store-'));
+    const failedDirectory = join(root, 'work-failed');
+    const store = new TranscriptStore(root, {
+      async remove(path, options) {
+        if (path === failedDirectory) throw new Error('locked');
+        await rm(path, options);
+      },
+    });
+    const failures: string[] = [];
+    for (const workItemId of ['work-failed', 'work-reclaimed']) {
+      await store.capturePrompt({
+        workItemId,
+        runId: 'run-1',
+        cli: 'codex',
+        timestamp: '2026-08-12T10:00:00.000Z',
+        text: 'Prompt',
+      });
+      await store.markWorkItemCleaned(workItemId, 1_000, '2026-08-12T10:00:00.000Z');
+    }
+
+    await expect(
+      store.sweepExpired(1_000, '2026-08-12T10:00:01.000Z', (workItemId, error) =>
+        failures.push(`${workItemId}:${error instanceof Error ? error.message : String(error)}`),
+      ),
+    ).resolves.toEqual(['work-reclaimed']);
+    expect(failures).toEqual(['work-failed:locked']);
+    await expect(readFile(join(root, 'work-failed', '.cleaned-at'), 'utf8')).resolves.toBe(
+      '2026-08-12T10:00:00.000Z',
+    );
+    await expect(store.listGroups('work-reclaimed')).resolves.toEqual([]);
   });
 });

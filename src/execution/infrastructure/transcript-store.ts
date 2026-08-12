@@ -26,8 +26,15 @@ export interface TranscriptMessage {
   readonly text: string;
 }
 
+export interface TranscriptStoreFileSystem {
+  remove(path: string, options: { readonly recursive: true; readonly force: true }): Promise<void>;
+}
+
 export class TranscriptStore {
-  public constructor(private readonly transcriptsRoot: string) {}
+  public constructor(
+    private readonly transcriptsRoot: string,
+    private readonly fileSystem: TranscriptStoreFileSystem = { remove: rm },
+  ) {}
 
   public async capturePrompt(capture: TranscriptCapture): Promise<void> {
     const timestamp = timestampForFile(capture.timestamp);
@@ -54,7 +61,7 @@ export class TranscriptStore {
     for (const promptFile of promptFiles.filter((file) => file.endsWith('.prompt.txt'))) {
       await rename(join(staging, promptFile), join(destination, promptFile));
     }
-    await rm(staging, { recursive: true, force: true });
+    await this.fileSystem.remove(staging, { recursive: true, force: true });
     await writeFile(
       join(destination, messageFile(timestamp, capture.runId, 'response')),
       capture.text,
@@ -106,7 +113,7 @@ export class TranscriptStore {
     assertRetention(retentionMs);
     const directory = this.workItemDirectory(workItemId);
     if (retentionMs === 0) {
-      await rm(directory, { recursive: true, force: true });
+      await this.fileSystem.remove(directory, { recursive: true, force: true });
       return;
     }
     const timestamp = normaliseTimestamp(cleanedAt);
@@ -114,7 +121,11 @@ export class TranscriptStore {
     await writeFile(join(directory, '.cleaned-at'), timestamp, 'utf8');
   }
 
-  public async sweepExpired(retentionMs: number, now: string): Promise<readonly string[]> {
+  public async sweepExpired(
+    retentionMs: number,
+    now: string,
+    onError: (workItemId: string, error: unknown) => void = () => {},
+  ): Promise<readonly string[]> {
     assertRetention(retentionMs);
     const currentTime = Date.parse(normaliseTimestamp(now));
     const expired: string[] = [];
@@ -126,11 +137,16 @@ export class TranscriptStore {
         cleanedAt = await readFile(marker, 'utf8');
       } catch (error: unknown) {
         if (isMissing(error)) continue;
-        throw error;
+        onError(workItemId, error);
+        continue;
       }
-      if (Date.parse(normaliseTimestamp(cleanedAt)) + retentionMs <= currentTime) {
-        await rm(directory, { recursive: true });
-        expired.push(workItemId);
+      try {
+        if (Date.parse(normaliseTimestamp(cleanedAt)) + retentionMs <= currentTime) {
+          await this.fileSystem.remove(directory, { recursive: true, force: true });
+          expired.push(workItemId);
+        }
+      } catch (error: unknown) {
+        onError(workItemId, error);
       }
     }
     return expired.sort();

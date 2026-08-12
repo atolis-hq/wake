@@ -3,6 +3,7 @@ import { access, mkdir, readdir, readFile, realpath, rm, writeFile } from 'node:
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import type { RunView } from '../../contracts/views.js';
+import type { WorkItemId } from '../../../work/index.js';
 import { RunStatus, WorkspaceMode } from '../../contracts/vocabulary.js';
 import type {
   WorkspaceProvider,
@@ -99,6 +100,7 @@ export class GitWorkspaceProvider implements WorkspaceProvider, WorkspaceRecover
     if (scope === null) return emptyRecovery();
     const markers = await recoveryMarkerNames(this.markerRoot);
     let reclaimed = 0;
+    const reclaimedWorkItemIds: WorkItemId[] = [];
     const failures: WorkspaceRecoveryFailure[] = [];
     for (const filename of markers) {
       if (await options.isPaused?.()) break;
@@ -111,9 +113,10 @@ export class GitWorkspaceProvider implements WorkspaceProvider, WorkspaceRecover
         options,
       });
       reclaimed += result.reclaimed;
+      reclaimedWorkItemIds.push(...(result.reclaimedWorkItemIds ?? []));
       failures.push(...result.failures);
     }
-    return { reclaimed, failures };
+    return { reclaimed, reclaimedWorkItemIds, failures };
   }
 }
 
@@ -192,11 +195,15 @@ async function reclaimOwnedMarker(
   if (!(await canRemoveOwnedWorkspace(input.scope, marker.path))) return emptyRecovery();
   if ((await canonicalPath(marker.path)) !== null) await input.fileSystem.remove(marker.path);
   await rm(markerPath, { force: true });
-  return { reclaimed: 1, failures: [] };
+  return {
+    reclaimed: 1,
+    reclaimedWorkItemIds: [marker.workItemId as WorkItemId],
+    failures: [],
+  };
 }
 
 function emptyRecovery(): WorkspaceRecoveryResult {
-  return { reclaimed: 0, failures: [] };
+  return { reclaimed: 0, reclaimedWorkItemIds: [], failures: [] };
 }
 
 async function canRemoveOwnedWorkspace(scope: RecoveryScope, path: string): Promise<boolean> {

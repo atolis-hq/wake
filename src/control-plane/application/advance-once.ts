@@ -70,6 +70,10 @@ interface AdvanceOnceDependencies {
   readonly isDispatchPaused?: () => Promise<boolean>;
   /** Crash-only workspace cleanup, deliberately run by the existing recovery pass. */
   readonly workspaceRecovery?: WorkspaceRecovery;
+  readonly transcriptRetention?: {
+    markClosedWorkItem(workItemId: string): Promise<void>;
+    sweep(): Promise<void>;
+  };
   readonly dispatchPolicy?: DispatchPolicy;
 }
 
@@ -83,6 +87,7 @@ export function createAdvanceOnce(
   const runnerIneligibility = dependencies.runnerIneligibility ?? (async () => new Set());
   const isDispatchPaused = dependencies.isDispatchPaused ?? (async () => false);
   const workspaceRecovery = dependencies.workspaceRecovery;
+  const transcriptRetention = dependencies.transcriptRetention;
   const dispatchPolicy = dependencies.dispatchPolicy ?? new DispatchPolicy({ maxDispatches: 1 });
   const context = (cause: string) => ({
     commandId: dependencies.ids.next('command'),
@@ -95,14 +100,29 @@ export function createAdvanceOnce(
     if (await isDispatchPaused()) return { kind: 'paused' };
     await execution.recoverActive?.(ControlStreamKind.Global);
     if (await isDispatchPaused()) return { kind: 'paused' };
-    if (workspaceRecovery !== undefined)
-      await workspaceRecovery.recover(await execution.list(), {
+    if (workspaceRecovery !== undefined) {
+      const recovered = await workspaceRecovery.recover(await execution.list(), {
         isPaused: isDispatchPaused,
         retainWorkItem: async (workItemId) => {
           const work = await dependencies.work?.get(workItemId);
           return work?.state === WorkStatus.Open && work.deleted !== true;
         },
       });
+      for (const workItemId of recovered.reclaimedWorkItemIds ?? []) {
+        const work = await dependencies.work?.get(workItemId);
+        if (work?.state !== WorkStatus.Closed || work.deleted === true) continue;
+        try {
+          await transcriptRetention?.markClosedWorkItem(workItemId);
+        } catch {
+          // Transcript filesystem failures must not affect workspace recovery.
+        }
+      }
+    }
+    try {
+      await transcriptRetention?.sweep();
+    } catch {
+      // Retention is operational filesystem maintenance, not Run lifecycle state.
+    }
     if (await isDispatchPaused()) return { kind: 'paused' };
     await orchestration.reconcileChildCompletions(context('child-completion-reconciliation'));
     if (await isDispatchPaused()) return { kind: 'paused' };

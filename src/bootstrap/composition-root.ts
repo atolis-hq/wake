@@ -199,14 +199,17 @@ export async function createCompositionRoot(
       return 'https://github.com/' + match[1] + '.git';
     },
   });
+  const transcriptStore = config.transcripts.enabled
+    ? new TranscriptStore(paths.transcriptsRoot)
+    : undefined;
   const execution = createExecutionService(journal, activities, config.execution, {
     clock,
     ids,
     runners: createRunnerRegistry(config.execution, fakeScenarios, options.decorateRunner),
     reportRunnerQuota: createRunnerQuotaReporter(journal, clock, ids),
-    ...(config.transcripts.enabled
+    ...(transcriptStore !== undefined
       ? {
-          transcriptRecorder: new TranscriptStore(paths.transcriptsRoot),
+          transcriptRecorder: transcriptStore,
           logOperationalError(error) {
             console.error('Transcript capture failed', error);
           },
@@ -255,6 +258,34 @@ export async function createCompositionRoot(
       isDispatchPaused: isRuntimePaused,
       workspaceRecovery: workspaces,
       work,
+      ...(transcriptStore === undefined
+        ? {}
+        : {
+            transcriptRetention: {
+              async markClosedWorkItem(workItemId) {
+                try {
+                  await transcriptStore.markWorkItemCleaned(
+                    workItemId,
+                    config.transcripts.retentionMs,
+                    clock.now().toISOString(),
+                  );
+                } catch (error) {
+                  console.error('Transcript retention failed', error);
+                }
+              },
+              async sweep() {
+                try {
+                  await transcriptStore.sweepExpired(
+                    config.transcripts.retentionMs,
+                    clock.now().toISOString(),
+                    (_workItemId, error) => console.error('Transcript retention failed', error),
+                  );
+                } catch (error) {
+                  console.error('Transcript retention failed', error);
+                }
+              },
+            },
+          }),
       runnerIneligibility: async () => {
         const stored = await projections.read<ControlPlaneView>(ControlStreamKind.Global, 'global');
         return stored === null

@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -10,7 +10,12 @@ import {
   activityWorkflowInstanceId,
 } from '../../../src/activities/index.js';
 import { createCompositionRoot, parseRootConfig } from '../../../src/bootstrap/index.js';
-import { ExecutionEventType, runId, runStream } from '../../../src/execution/index.js';
+import {
+  ExecutionEventType,
+  runId,
+  runStream,
+  TranscriptStore,
+} from '../../../src/execution/index.js';
 import { GitHubAdapter } from '../../../src/integrations/github/contracts/vocabulary.js';
 import {
   issueCommentObservation,
@@ -406,6 +411,65 @@ describe('target composition root', () => {
     );
   });
 
+  it('marks transcripts after reclaiming a closed workspace without writing journal events', async () => {
+    const root = await fixtureRoot();
+    let now = new Date('2026-08-12T10:00:00.000Z');
+    const clock = { now: () => now };
+    const journal = new InMemoryEventJournal(clock);
+    const runtime = await createCompositionRoot(root, {
+      config: transcriptRetentionConfig(),
+      journal,
+      projections: new InMemoryProjectionStore(),
+      checkpoints: new InMemoryCheckpointStore(),
+      clock,
+    });
+    const closed = workId('transcript-retention-closed');
+    const open = workId('transcript-retention-open');
+    await runtime.work.create({ workItemId: closed, objective: 'close me' }, commandContext(clock, 'create-closed'));
+    await runtime.work.close(closed, 'complete', commandContext(clock, 'close-work'));
+    await runtime.work.create({ workItemId: open, objective: 'retain me' }, commandContext(clock, 'create-open'));
+    const transcripts = new TranscriptStore(runtime.paths.transcriptsRoot);
+    await transcripts.capturePrompt({ workItemId: closed, runId: 'run-closed', cli: 'fake', timestamp: clock.now().toISOString(), text: 'closed' });
+    await transcripts.capturePrompt({ workItemId: open, runId: 'run-open', cli: 'fake', timestamp: clock.now().toISOString(), text: 'open' });
+    const closedWorkspace = await ownedWorkspace(runtime.paths.workspacesRoot, 'closed-workspace', closed, 'closed-run');
+    const openWorkspace = await ownedWorkspace(runtime.paths.workspacesRoot, 'open-workspace', open, 'open-run');
+    const eventsBefore = await journal.readAll(0);
+
+    await runtime.runnerPipeline.run({ maxProgress: 1 });
+
+    await expect(access(closedWorkspace.path)).rejects.toThrow();
+    await expect(access(openWorkspace.path)).resolves.toBeUndefined();
+    await expect(readFile(join(runtime.paths.transcriptsRoot, closed, '.cleaned-at'), 'utf8')).resolves.toBe(clock.now().toISOString());
+    await expect(access(join(runtime.paths.transcriptsRoot, open, '.cleaned-at'))).rejects.toThrow();
+    expect(await journal.readAll(0)).toEqual(eventsBefore);
+
+    now = new Date('2026-08-13T10:00:00.000Z');
+    await runtime.runnerPipeline.run({ maxProgress: 1 });
+    await expect(access(join(runtime.paths.transcriptsRoot, closed))).rejects.toThrow();
+  });
+
+  it('removes transcripts immediately when closed workspace cleanup uses zero retention', async () => {
+    const root = await fixtureRoot();
+    const clock = { now: () => new Date('2026-08-12T10:00:00.000Z') };
+    const runtime = await createCompositionRoot(root, {
+      config: transcriptRetentionConfig(0),
+      journal: new InMemoryEventJournal(clock),
+      projections: new InMemoryProjectionStore(),
+      checkpoints: new InMemoryCheckpointStore(),
+      clock,
+    });
+    const closed = workId('transcript-retention-zero');
+    await runtime.work.create({ workItemId: closed, objective: 'close me' }, commandContext(clock, 'create-zero'));
+    await runtime.work.close(closed, 'complete', commandContext(clock, 'close-zero'));
+    const transcripts = new TranscriptStore(runtime.paths.transcriptsRoot);
+    await transcripts.capturePrompt({ workItemId: closed, runId: 'run-zero', cli: 'fake', timestamp: clock.now().toISOString(), text: 'remove now' });
+    await ownedWorkspace(runtime.paths.workspacesRoot, 'zero-workspace', closed, 'zero-run');
+
+    await runtime.runnerPipeline.run({ maxProgress: 1 });
+
+    await expect(access(join(runtime.paths.transcriptsRoot, closed))).rejects.toThrow();
+  });
+
   it('supplies GitHub issue and comment history only through the untrusted agent context', async () => {
     const root = await fixtureRoot();
     await writeFile(
@@ -628,6 +692,43 @@ function fakeProviderRootConfig() {
     integrations: { fake: { enabled: true, provider: 'fake' } },
     surfaces: {},
   });
+}
+
+function transcriptRetentionConfig(retentionMs = 86_400_000) {
+  return parseRootConfig({
+    schemaVersion: 1,
+    work: {},
+    resources: {},
+    transcripts: { enabled: true, retentionMs },
+    execution: {
+      agentRunners: { fake: { kind: 'fake' } },
+      runnerPools: { standard: ['fake'] },
+      defaultRunnerPool: 'standard',
+    },
+    orchestration: { workflows: {} },
+    controlPlane: {},
+    integrations: {},
+    surfaces: {},
+  });
+}
+
+async function ownedWorkspace(root: string, workspaceId: string, workItemId: string, runId: string) {
+  const path = join(root, workspaceId);
+  const markerPath = join(root, '.wake-workspace-ownership', `${workspaceId}.json`);
+  await mkdir(path, { recursive: true });
+  await mkdir(join(root, '.wake-workspace-ownership'), { recursive: true });
+  await writeFile(
+    markerPath,
+    JSON.stringify({
+      runId,
+      workItemId,
+      repositoryResourceId: 'resource-00000000000000000000000000',
+      mode: 'read-only',
+      workspaceId,
+      path,
+    }),
+  );
+  return { path, markerPath };
 }
 
 function commandContext(clock: { now(): Date }, commandId: string) {

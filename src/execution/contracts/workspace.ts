@@ -42,6 +42,8 @@ export interface WorkspaceRecoveryOptions {
 
 export interface WorkspaceRecoveryResult {
   readonly reclaimed: number;
+  /** WorkItems whose owned workspace was successfully reclaimed in this pass. */
+  readonly reclaimedWorkItemIds?: readonly WorkItemId[];
   readonly failures: readonly WorkspaceRecoveryFailure[];
 }
 
