@@ -224,6 +224,64 @@ describe(`${scenario.id} API domain shape`, () => {
 });
 
 describe(`${scenario.id} command idempotency`, () => {
+  it('accepts an eligible blocked-work retry over the composed HTTP API', async () => {
+    const { root, clock, context } = await createRetryWorld();
+    const work = await root.work.create(
+      { workItemId: workId('surface-retry'), objective: 'Retry blocked work' },
+      context,
+    );
+    await root.orchestration.start(
+      {
+        workflowInstanceId: workflowInstanceId('workflow-surface-retry'),
+        workItemId: work.workItemId,
+        workflowName: workflowName('default'),
+        orchestrationGroupId: orchestrationGroupId('group-surface-retry'),
+      },
+      context,
+    );
+    await root.advanceOnce({ maxProgress: 1 });
+    await root.projectionRunner.runRegisteredOnce();
+
+    const surface = createSurfaceApplications(root, { now: () => clock.now().toISOString() });
+    const page = await surface.api.work.list({ limit: 1 });
+    const detail = await surface.api.work.detail(page.items[0]!.workItemKey);
+    expect(detail?.data.orchestration.primary?.retryEligible).toBe(true);
+
+    const response = await createApiDispatcher(surface.api).dispatch(
+      'POST',
+      `/api/v1/work-items/${encodeURIComponent(page.items[0]!.workItemKey)}/commands/retry`,
+      { idempotencyKey: 'operator-retry-1' },
+    );
+
+    expect(response?.status).toBe(202);
+    expect(response?.body).toMatchObject({
+      data: { idempotencyKey: 'operator-retry-1', status: 'accepted' },
+    });
+  });
+
+  it('rejects an ineligible retry over the composed HTTP API', async () => {
+    const { root, clock, context } = await createRetryWorld();
+    const work = await root.work.create(
+      { workItemId: workId('surface-retry-ineligible'), objective: 'Cannot retry without workflow' },
+      context,
+    );
+    await root.projectionRunner.runRegisteredOnce();
+
+    const surface = createSurfaceApplications(root, { now: () => clock.now().toISOString() });
+    const page = await surface.api.work.list({ limit: 1 });
+    const response = await createApiDispatcher(surface.api).dispatch(
+      'POST',
+      `/api/v1/work-items/${encodeURIComponent(page.items[0]!.workItemKey)}/commands/retry`,
+      { idempotencyKey: 'operator-retry-ineligible' },
+    );
+
+    expect(response?.status).toBe(409);
+    expect(response?.body).toMatchObject({
+      code: 'retry-ineligible',
+      detail: 'Work item has no primary workflow',
+    });
+  });
+
   it('deduplicates a production advance command by idempotency key', async () => {
     const { root, clock, context } = await createWorld();
     const surface = createSurfaceApplications(root, { now: () => clock.now().toISOString() });
@@ -377,6 +435,62 @@ async function createWorld() {
     context: {
       commandId: 'surface-flow',
       correlationId: correlationId('surface-flow'),
+      occurredAt: clock.now().toISOString(),
+      actor: { kind: 'system' as const, id: 'test' },
+    },
+  };
+}
+
+async function createRetryWorld() {
+  const activities = new ActivityRegistry();
+  activities.register({
+    name: activityName('implement'),
+    inputSchema: z.object({}).strict(),
+    outcomeSchema: z
+      .object({ kind: z.enum([ActivityOutcomeKind.Done, ActivityOutcomeKind.Failed]) })
+      .strict(),
+    outcomeKinds: [ActivityOutcomeKind.Done, ActivityOutcomeKind.Failed],
+    resources: [],
+    executionKind: ActivityExecutionKind.Deterministic,
+    handler: { execute: async () => ({ kind: ActivityOutcomeKind.Failed }) },
+  });
+  const clock = { now: () => new Date('2026-07-31T10:00:00.000Z') };
+  const root = await createCompositionRoot('C:/wake-home', {
+    config: parseRootConfig({
+      schemaVersion: 1,
+      work: {},
+      resources: {},
+      activities: {},
+      orchestration: {
+        workflows: {
+          default: {
+            stages: {
+              implement: { activity: 'implement', with: {}, on: { done: { then: 'done' } } },
+            },
+          },
+        },
+      },
+      execution: {
+        agentRunners: { fake: { kind: 'fake' } },
+        runnerPools: { standard: ['fake'] },
+        defaultRunnerPool: 'standard',
+      },
+      controlPlane: {},
+      integrations: {},
+      surfaces: {},
+    }),
+    activities,
+    clock,
+    journal: new InMemoryEventJournal(clock),
+    projections: new InMemoryProjectionStore(),
+    checkpoints: new InMemoryCheckpointStore(),
+  });
+  return {
+    root,
+    clock,
+    context: {
+      commandId: 'surface-retry-flow',
+      correlationId: correlationId('surface-retry-flow'),
       occurredAt: clock.now().toISOString(),
       actor: { kind: 'system' as const, id: 'test' },
     },

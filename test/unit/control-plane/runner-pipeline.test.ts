@@ -1,7 +1,41 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createRunnerPipeline } from '../../../src/control-plane/application/runner-pipeline.js';
 
 describe('RunnerPipeline', () => {
+  it('serializes overlapping ticks', async () => {
+    let releaseFirstCatchUp: (() => void) | undefined;
+    const firstCatchUpStarted = new Promise<void>((resolve) => {
+      releaseFirstCatchUp = resolve;
+    });
+    let allowFirstCatchUp: (() => void) | undefined;
+    const firstCatchUpMayFinish = new Promise<void>((resolve) => {
+      allowFirstCatchUp = resolve;
+    });
+    const catchUpProjections = vi.fn(async () => {
+      if (catchUpProjections.mock.calls.length === 1) {
+        releaseFirstCatchUp?.();
+        await firstCatchUpMayFinish;
+      }
+    });
+    const pipeline = createRunnerPipeline({
+      catchUpProjections,
+      runSchedules: async () => undefined,
+      react: async () => undefined,
+      advance: async () => ({ kind: 'no-work' as const }),
+      deliver: async () => undefined,
+    });
+
+    const first = pipeline.run({ maxProgress: 1 });
+    await firstCatchUpStarted;
+    const second = pipeline.run({ maxProgress: 1 });
+
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(catchUpProjections).toHaveBeenCalledOnce();
+
+    allowFirstCatchUp?.();
+    await Promise.all([first, second]);
+  });
+
   it('stops an in-flight tick at the next stage boundary when maintenance acquires', async () => {
     let paused = false;
     let projections = 0;

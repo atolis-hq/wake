@@ -146,4 +146,28 @@ describe('target initialise root', () => {
       expect(dockerfile).toContain('USER root');
     }
   });
+
+  it('repairs ownership of Wake runtime state before dropping sandbox privileges', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wake-initialise-root-'));
+    await initialiseWakeRoot(root);
+
+    for (const filename of ['Dockerfile', 'Dockerfile.packaged']) {
+      const dockerfile = await readFile(join(root, 'docker', filename), 'utf8');
+
+      expect(dockerfile).toContain('mkdir -p /wake/.wake');
+      expect(dockerfile).toContain('chown -R wake:wake /wake/.wake');
+      expect(dockerfile).toContain('su wake');
+    }
+  });
+
+  it('keeps repository sandbox images able to repair Wake runtime ownership', async () => {
+    for (const filename of ['Dockerfile', 'Dockerfile.packaged']) {
+      const dockerfile = await readFile(join(process.cwd(), 'docker', filename), 'utf8');
+
+      expect(dockerfile).toContain('USER root');
+      expect(dockerfile).toContain('mkdir -p /wake/.wake');
+      expect(dockerfile).toContain('chown -R wake:wake /wake/.wake');
+      expect(dockerfile).toContain('su wake');
+    }
+  });
 });

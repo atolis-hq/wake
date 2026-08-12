@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type {
   AcceptedCommandResponse,
+  ApiCommandResult,
   AuditEventResponse,
   TickCommandResponse,
   WorkItemResponse,
@@ -236,6 +237,32 @@ describe('API command conflicts', () => {
     expect(response?.status).toBe(409);
     expect(response?.body).toMatchObject({ code: 'already-advanced', current: { paused: false } });
   });
+
+  it('returns the retry application conflict as a 409 problem', async () => {
+    const dispatcher = createApiDispatcher(
+      applications({
+        work: {
+          retry: async () => ({
+            conflict: true,
+            code: 'retry-ineligible',
+            detail: 'Workflow is not retry eligible',
+          }),
+        },
+      }),
+    );
+
+    const response = await dispatcher.dispatch(
+      'POST',
+      '/api/v1/work-items/wk_demo/commands/retry',
+      { idempotencyKey: 'operator-42' },
+    );
+
+    expect(response?.status).toBe(409);
+    expect(response?.body).toMatchObject({
+      code: 'retry-ineligible',
+      detail: 'Workflow is not retry eligible',
+    });
+  });
 });
 
 function applications(
@@ -256,7 +283,7 @@ function applications(
       retry(
         key: string,
         command: { readonly idempotencyKey: string },
-      ): Promise<AcceptedCommandResponse>;
+      ): Promise<ApiCommandResult>;
     }>;
     readonly workItems?: readonly WorkItemResponse[];
     readonly controlPlaneTick?: () => Promise<

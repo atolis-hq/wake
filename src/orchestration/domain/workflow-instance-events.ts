@@ -45,6 +45,7 @@ export type MutableWorkflowInstance = {
   causalCycleId?: string;
   requestId?: string;
   status: WorkflowInstanceView['status'];
+  blockReason?: string;
   currentStage: WorkflowInstanceView['currentStage'];
   pendingActivation?: ActivityActivationView;
   repeatCounts: Record<string, number>;
@@ -52,6 +53,7 @@ export type MutableWorkflowInstance = {
   waitingFor?: WorkflowInstanceView['waitingFor'];
   supplementalQueue: Array<WorkflowInstanceView['supplementalQueue'][number]>;
   acceptedSignalIds: string[];
+  operatorRetryCommandIds: string[];
   acceptedOutcomes: ActivationId[];
   acceptedChildCompletionIds: WorkflowInstanceView['workflowInstanceId'][];
   causalRejectionIds: string[];
@@ -79,6 +81,7 @@ type LifecycleFact = FactsOf<
   | typeof OrchestrationEventType.RetryCounted
   | typeof OrchestrationEventType.InstanceCompleted
   | typeof OrchestrationEventType.InstanceBlocked
+  | typeof OrchestrationEventType.OperatorRetryRequested
   | typeof OrchestrationEventType.InstanceSuperseded
 >;
 
@@ -170,6 +173,7 @@ function isLifecycleFact(event: WorkflowFact): event is LifecycleFact {
     case OrchestrationEventType.RetryCounted:
     case OrchestrationEventType.InstanceCompleted:
     case OrchestrationEventType.InstanceBlocked:
+    case OrchestrationEventType.OperatorRetryRequested:
     case OrchestrationEventType.InstanceSuperseded:
       return true;
     default:
@@ -192,6 +196,10 @@ function applyLifecycleFact(state: MutableWorkflowInstance, event: LifecycleFact
       return;
     case OrchestrationEventType.InstanceBlocked:
       state.status = orchestrationStatusTransitions[OrchestrationEventType.InstanceBlocked]!;
+      state.blockReason = event.payload.reason;
+      return;
+    case OrchestrationEventType.OperatorRetryRequested:
+      state.operatorRetryCommandIds.push(event.payload.commandId);
       return;
     case OrchestrationEventType.InstanceSuperseded:
       state.status = orchestrationStatusTransitions[OrchestrationEventType.InstanceSuperseded]!;
@@ -295,11 +303,13 @@ export function immutableWorkflowInstanceView(
     ...(state.causalCycleId === undefined ? {} : { causalCycleId: state.causalCycleId }),
     ...(state.requestId === undefined ? {} : { requestId: state.requestId }),
     status: state.status,
+    ...(state.blockReason === undefined ? {} : { blockReason: state.blockReason }),
     currentStage: state.currentStage,
     repeatCounts: state.repeatCounts,
     retryCounts: state.retryCounts,
     supplementalQueue: state.supplementalQueue,
     acceptedSignalIds: state.acceptedSignalIds,
+    operatorRetryCommandIds: state.operatorRetryCommandIds,
     acceptedOutcomes: state.acceptedOutcomes,
     acceptedChildCompletionIds: state.acceptedChildCompletionIds,
     causalRejectionIds: state.causalRejectionIds,

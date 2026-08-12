@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -7,7 +7,11 @@ import { App } from '../src/app/app.js';
 
 const asOf = '2026-07-31T10:00:00.000Z';
 
-function detailClient() {
+function detailClient(
+  primary: Record<string, unknown> | null = null,
+  commandResponse: Response | undefined = undefined,
+  requests: Array<{ readonly url: string; readonly init: RequestInit | undefined }> = [],
+) {
   const work = {
     workItemKey: 'wk_a',
     workItemId: 'work-a',
@@ -15,8 +19,22 @@ function detailClient() {
     state: 'open',
     relatedWorkItems: [],
   };
-  return new WakeApiClient(async (input) => {
+  return new WakeApiClient(async (input, init) => {
     const url = String(input);
+    requests.push({ url, init });
+    if (url.endsWith('/commands/retry'))
+      return (
+        commandResponse ??
+        new Response(
+          JSON.stringify({
+            commandId: 'command-1',
+            idempotencyKey: 'key-1',
+            acceptedAt: asOf,
+            status: 'accepted',
+          }),
+          { status: 202, headers: { 'content-type': 'application/json' } },
+        )
+      );
     const body = url.includes('/events')
       ? {
           items: [
@@ -45,7 +63,10 @@ function detailClient() {
                   revision: 'rev-9',
                 },
               ],
-              orchestration: { primary: null, children: [] },
+              orchestration: {
+                primary: primary === null ? null : { workItemKey: 'wk_a', ...primary },
+                children: [],
+              },
               execution: {
                 runs: [
                   {
@@ -131,6 +152,92 @@ describe('work detail', () => {
     const details = await screen.findByText('Work identity');
     const freeze = screen.getByRole('button', { name: 'Freeze' });
     expect(details.compareDocumentPosition(freeze) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+  });
+
+  it('hides Retry without an eligible primary workflow', async () => {
+    const { unmount } = render(
+      <MemoryRouter initialEntries={['/work/wk_a']}>
+        <App client={detailClient()} />
+      </MemoryRouter>,
+    );
+    await screen.findByRole('heading', { name: 'Alpha' });
+    expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
+    unmount();
+
+    render(
+      <MemoryRouter initialEntries={['/work/wk_a']}>
+        <App
+          client={detailClient({
+            workflowInstanceId: 'workflow-1',
+            workflowName: 'delivery',
+            orchestrationGroupId: 'group-1',
+            status: 'blocked',
+            currentStage: 'implement',
+            retryEligible: false,
+          })}
+        />
+      </MemoryRouter>,
+    );
+    await screen.findByRole('heading', { name: 'Alpha' });
+    expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
+  });
+
+  it('posts Retry and refreshes the work detail when the primary workflow is eligible', async () => {
+    const user = userEvent.setup();
+    const requests: Array<{ readonly url: string; readonly init: RequestInit | undefined }> = [];
+    render(
+      <MemoryRouter initialEntries={['/work/wk_a']}>
+        <App
+          client={detailClient(
+            {
+              workflowInstanceId: 'workflow-1',
+              workflowName: 'delivery',
+              orchestrationGroupId: 'group-1',
+              status: 'blocked',
+              currentStage: 'implement',
+              retryEligible: true,
+            },
+            undefined,
+            requests,
+          )}
+        />
+      </MemoryRouter>,
+    );
+    await user.click(await screen.findByRole('button', { name: 'Retry' }));
+    await waitFor(() =>
+      expect(requests.filter(({ url }) => url.endsWith('/commands/retry'))).toHaveLength(1),
+    );
+    expect(requests.filter(({ url }) => url.includes('/work-items/wk_a'))).toHaveLength(2);
+    expect(requests.find(({ url }) => url.endsWith('/commands/retry'))?.init?.method).toBe('POST');
+  });
+
+  it('shows a Retry command failure', async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={['/work/wk_a']}>
+        <App
+          client={detailClient(
+            {
+              workflowInstanceId: 'workflow-1',
+              workflowName: 'delivery',
+              orchestrationGroupId: 'group-1',
+              status: 'blocked',
+              currentStage: 'implement',
+              retryEligible: true,
+            },
+            new Response(
+              JSON.stringify({ type: 'about:blank', title: 'Retry rejected', status: 409 }),
+              {
+                status: 409,
+                headers: { 'content-type': 'application/problem+json' },
+              },
+            ),
+          )}
+        />
+      </MemoryRouter>,
+    );
+    await user.click(await screen.findByRole('button', { name: 'Retry' }));
+    expect(await screen.findByText('Retry rejected')).toBeTruthy();
   });
 
   it('renders an unknown resource kind generically, proving no kind-specific branch', async () => {

@@ -360,7 +360,7 @@ ENV WAKE_MAIN_JS=/app/dist/src/main.js
 # for \`docker exec\` (i.e. \`wake sandbox setup\`/\`wake sandbox exec\`) even
 # when WAKE_START_ENABLED's supervised \`wake start\` child keeps crashing —
 # e.g. on first boot, before sandbox auth has been configured.
-ENTRYPOINT ["sh", "-c", "set -eu; if [ -n \\"$WAKE_HOME_INIT_DIRS\\" ]; then printf '%s\\n' \\"$WAKE_HOME_INIT_DIRS\\" | while IFS= read -r directory; do case \\"$directory\\" in \\"$WAKE_HOME_INIT_ROOT\\"/*) mkdir -p \\"$directory\\"; chown wake:wake \\"$directory\\" ;; *) exit 1 ;; esac; done; fi; exec su wake -s /bin/sh -c 'HOME=/home/wake exec node \\"$WAKE_MAIN_JS\\" sandbox-entrypoint --wake-root /wake'"]
+ENTRYPOINT ["sh", "-c", "set -eu; mkdir -p /wake/.wake; chown -R wake:wake /wake/.wake; if [ -n \\"$WAKE_HOME_INIT_DIRS\\" ]; then printf '%s\\n' \\"$WAKE_HOME_INIT_DIRS\\" | while IFS= read -r directory; do case \\"$directory\\" in \\"$WAKE_HOME_INIT_ROOT\\"/*) mkdir -p \\"$directory\\"; chown wake:wake \\"$directory\\" ;; *) exit 1 ;; esac; done; fi; exec su wake -s /bin/sh -c 'HOME=/home/wake exec node \\"$WAKE_MAIN_JS\\" sandbox-entrypoint --wake-root /wake'"]
 `;
 
 const packagedDockerfile = `# syntax=docker/dockerfile:1
@@ -413,7 +413,7 @@ EXPOSE 4317
 # sandbox-entrypoint-command.ts) that the CLI should be invoked via the bare
 # \`wake\` binary that \`npm install -g\` puts on PATH, rather than a hardcoded
 # npm global lib path that varies by npm/OS setup.
-ENTRYPOINT ["sh", "-c", "set -eu; if [ -n \\"$WAKE_HOME_INIT_DIRS\\" ]; then printf '%s\\n' \\"$WAKE_HOME_INIT_DIRS\\" | while IFS= read -r directory; do case \\"$directory\\" in \\"$WAKE_HOME_INIT_ROOT\\"/*) mkdir -p \\"$directory\\"; chown wake:wake \\"$directory\\" ;; *) exit 1 ;; esac; done; fi; exec su wake -s /bin/sh -c 'HOME=/home/wake exec wake sandbox-entrypoint'"]
+ENTRYPOINT ["sh", "-c", "set -eu; mkdir -p /wake/.wake; chown -R wake:wake /wake/.wake; if [ -n \\"$WAKE_HOME_INIT_DIRS\\" ]; then printf '%s\\n' \\"$WAKE_HOME_INIT_DIRS\\" | while IFS= read -r directory; do case \\"$directory\\" in \\"$WAKE_HOME_INIT_ROOT\\"/*) mkdir -p \\"$directory\\"; chown wake:wake \\"$directory\\" ;; *) exit 1 ;; esac; done; fi; exec su wake -s /bin/sh -c 'HOME=/home/wake exec wake sandbox-entrypoint'"]
 `;
 
 /** Creates an immediately-valid, human-readable target Wake root. */

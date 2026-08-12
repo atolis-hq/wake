@@ -303,6 +303,15 @@ const eventSchema = z.discriminatedUnion('eventType', [
     OrchestrationEventType.InstanceBlocked,
     z.object({ reason: z.string() }).strict(),
   ),
+  workflowEnvelope(
+    OrchestrationEventType.OperatorRetryRequested,
+    z
+      .object({
+        activationId: brandedStringSchema(activationId),
+        commandId: z.string().min(1),
+      })
+      .strict(),
+  ),
   workflowEnvelope(OrchestrationEventType.InstanceSuperseded, emptySchema),
   workflowEnvelope(
     OrchestrationEventType.ChildRequested,

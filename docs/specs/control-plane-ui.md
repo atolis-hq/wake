@@ -165,6 +165,13 @@ Every mutation response includes what was written (file path or event id) so the
 
 Ordered by value. Everything else stays read-only in v1.
 
+The work-detail Retry control is available only when the primary workflow reports
+`retryEligible: true`: the ordinary current stage is blocked by an unconfigured
+failed outcome. It creates a new activation with that stage's existing compiled
+activity, input, and execution configuration and retains the failed activation
+and Run as immutable history. Completed, waiting, active, supplemental,
+follow-on, and otherwise blocked workflows remain ineligible.
+
 1. **Pause / resume** — _no new mechanics._ Pause-now writes the `PAUSE` file; pause-until writes `ledger.pausedUntil` (note: `pausedUntil` is currently never read by `isPaused()` — report E13 wires it; this spec depends on that fix or ships the same two-line change). Resume deletes both. Value: the safe "stop the world" button during incidents, and the manual fallback for quota exhaustion until E13's automatic backoff lands.
 
 2. **Release stale tick lock** — deletes `locks/tick.lock` only after re-running the same staleness logic as `lib/lock.ts` server-side (age past threshold _or_ holder pid dead) at the moment of the request. Refuses if the lock looks live. Value: today a wedged lock means shelling into the container; this makes the recovery observable and safe.
@@ -186,6 +193,12 @@ Ordered by value. Everything else stays read-only in v1.
 5. **Workspace cleanup** — for items that are `done`/`failed`/closed with a per-issue workspace still on disk: triggers the existing `cleanupWorkspace` path and appends the existing `wake.workspace.cleaned` event so the projection updates. Server-side guard: refuse any path outside `workspaces/` (same rule as `isPerIssueWorkspacePath`). Value: the leak mitigation until report E1 makes automatic cleanup reachable.
 
 Explicit **non-mutations** (rejected for v1): approving work (`/approved` must stay a ticket-channel act so the audit trail lives with the work item — the UI links to the ticket instead), editing config (operators edit `config.yaml`/`config.workflows.yaml` (or any `config.*.yaml` split they've made); the UI only displays), retrying a specific run with different parameters (that's routing policy, owned by config), and anything that posts to the external tracker.
+
+### Retry parameter boundary
+
+Retry is fixed-parameter recovery only. Retrying an arbitrary Run with changed
+action, input, runner, model, timeout, or other execution parameters remains
+routing policy owned by workflow configuration.
 
 ## 7. Non-goals
 

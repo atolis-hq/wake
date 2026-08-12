@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { WorkStatus } from '../../../work/index.js';
 import { WakeApiClient } from '../src/api/client.js';
+import { decodeWorkflow } from '../src/api/decoders.js';
 
 describe('typed Wake API client', () => {
   it('groups requests by domain and decodes resource envelopes', async () => {
@@ -82,5 +83,19 @@ describe('typed Wake API client', () => {
     await expect(client.work.list()).rejects.toThrow(
       'Invalid Wake API response at items[0].objective',
     );
+  });
+
+  it('decodes the optional workflow retry eligibility capability', () => {
+    expect(
+      decodeWorkflow({
+        workflowInstanceId: 'workflow-1',
+        workItemKey: 'wk_demo',
+        workflowName: 'default',
+        orchestrationGroupId: 'group-1',
+        status: 'blocked',
+        currentStage: 'implement',
+        retryEligible: true,
+      }),
+    ).toMatchObject({ retryEligible: true });
   });
 });

@@ -135,6 +135,11 @@ const samples = [
     { key: childGroup.id, requestId: 'request-1' },
     childGroup,
   ),
+  eventEnvelope(
+    OrchestrationEventType.OperatorRetryRequested,
+    { activationId: activation.activationId, commandId: 'retry-command-1' },
+    workflow,
+  ),
 ] as const;
 
 it('types decoded and draft ActivityWaiting outcomes with the Orchestration brand', () => {
@@ -225,6 +230,34 @@ describe('Orchestration event contract', () => {
         ),
       ),
     ).toThrow();
+    expect(() =>
+      decodeOrchestrationEvent(
+        eventEnvelope(
+          OrchestrationEventType.OperatorRetryRequested,
+          { activationId: activation.activationId, commandId: '' },
+          workflow,
+        ),
+      ),
+    ).toThrow();
+  });
+
+  it('folds a block reason and operator retry command identifiers', () => {
+    const started = decodeOrchestrationEvent(samples[0]);
+    if (started.eventType !== OrchestrationEventType.InstanceStarted)
+      throw new Error('expected InstanceStarted');
+    const blocked = decodeOrchestrationEvent(
+      eventEnvelope(OrchestrationEventType.InstanceBlocked, { reason: 'failed' }, workflow),
+    );
+    if (blocked.eventType !== OrchestrationEventType.InstanceBlocked)
+      throw new Error('expected InstanceBlocked');
+    const retryRequested = decodeOrchestrationEvent(samples[23]);
+    if (retryRequested.eventType !== OrchestrationEventType.OperatorRetryRequested)
+      throw new Error('expected OperatorRetryRequested');
+
+    expect(foldWorkflowInstance([started, blocked, retryRequested])).toMatchObject({
+      blockReason: 'failed',
+      operatorRetryCommandIds: ['retry-command-1'],
+    });
   });
 
   it("rejects each stream group's events on the other stream kind", () => {

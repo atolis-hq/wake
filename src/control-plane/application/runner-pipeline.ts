@@ -22,29 +22,39 @@ export interface RunnerPipeline {
  */
 export function createRunnerPipeline(stages: RunnerPipelineStages): RunnerPipeline {
   const isPaused = async () => (await stages.isPaused?.()) ?? false;
-  return {
-    async run(options, signal = new AbortController().signal) {
+  const runOnce = async (options: AdvanceOptions, signal: AbortSignal): Promise<AdvanceResult> => {
+    if (await isPaused()) return { kind: 'paused' };
+    await stages.catchUpProjections();
+    try {
+      if (await isPaused()) return { kind: 'paused' };
+      await stages.runSchedules();
+      if (await isPaused()) return { kind: 'paused' };
+      await stages.react();
+      if (await isPaused()) return { kind: 'paused' };
+      const result = await stages.advance(options);
       if (await isPaused()) return { kind: 'paused' };
       await stages.catchUpProjections();
-      try {
-        if (await isPaused()) return { kind: 'paused' };
-        await stages.runSchedules();
-        if (await isPaused()) return { kind: 'paused' };
-        await stages.react();
-        if (await isPaused()) return { kind: 'paused' };
-        const result = await stages.advance(options);
-        if (await isPaused()) return { kind: 'paused' };
-        await stages.catchUpProjections();
-        if (await isPaused()) return { kind: 'paused' };
-        await stages.deliver(signal);
-        if (await isPaused()) return { kind: 'paused' };
-        await stages.catchUpProjections();
-        if (await isPaused()) return { kind: 'paused' };
-        await stages.react();
-        return result;
-      } finally {
-        if (!(await isPaused())) await stages.catchUpProjections();
-      }
+      if (await isPaused()) return { kind: 'paused' };
+      await stages.deliver(signal);
+      if (await isPaused()) return { kind: 'paused' };
+      await stages.catchUpProjections();
+      if (await isPaused()) return { kind: 'paused' };
+      await stages.react();
+      return result;
+    } finally {
+      if (!(await isPaused())) await stages.catchUpProjections();
+    }
+  };
+  // The API's manual Tick Now endpoint and the resident tick host share this
+  // pipeline. Serializing all callers prevents them from racing the same run
+  // claim, checkpoint, and workspace lifecycle within one Wake process.
+  let queue: Promise<unknown> = Promise.resolve();
+  return {
+    run(options, signal = new AbortController().signal) {
+      const result = queue.then(() => runOnce(options, signal));
+      // A rejected tick must not prevent the next requested tick from running.
+      queue = result.catch(() => {});
+      return result;
     },
   };
 }

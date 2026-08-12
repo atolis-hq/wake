@@ -65,6 +65,9 @@ then folds.
   block an instance directly (independent of any policy decision); doing so
   when the instance is already `blocked` MUST be a no-op that appends no
   new fact.
+- `InstanceBlocked` MUST record its reason as `blockReason` for operator
+  read models. `OperatorRetryRequested` records the originating command's
+  identity in `operatorRetryCommandIds`; this list only grows as facts fold.
 - Marking an Activation as started (`ActivityStarted`) MUST only update the
   pending Activation when the given ActivationId matches the instance's
   current pending Activation; otherwise it MUST be a no-op.
@@ -95,6 +98,7 @@ workflow-instance stream identified by `workflowInstanceId`.
 | `parentWorkflowInstanceId` | optional WorkflowInstance identity | Present only for a child; identifies its parent. |
 | `watchId` / `triggerId` / `causalCycleId` / `requestId` | optional strings | Present only for a child; its full provenance back to the Watch match that started it. |
 | `status` | closed vocabulary: `active` / `waiting` / `completed` / `blocked` / `superseded` | The instance's current run state; see lifecycle rules above. |
+| `blockReason` | optional string | The reason carried by the most recent `InstanceBlocked` fact. |
 | `currentStage` | Stage name | The Stage the instance is currently in; changes only on `StageEntered`. |
 | `pendingActivation` | optional Activation (below) | The one outstanding Activation, if any. |
 | `repeatCounts` | map of route identity to count | How many times each cycle-closing OutcomeRoute has been taken. |
@@ -102,6 +106,7 @@ workflow-instance stream identified by `workflowInstanceId`.
 | `waitingFor` | optional Signal expectation | Set while `waiting`; cleared on resume. |
 | `supplementalQueue` | list of queued supplemental activity | FIFO of commands requested against this instance, not yet run. |
 | `acceptedSignalIds` | list of provider event identities | Every Signal this instance has accepted, by provider event identity; guards against re-accepting the same Signal. |
+| `operatorRetryCommandIds` | list of command identities | Every operator retry command requested against this instance. |
 | `acceptedOutcomes` | list of ActivationId | Every non-waiting outcome this instance has accepted. |
 | `acceptedChildCompletionIds` | list of WorkflowInstance identity | Children whose completion this instance has already consumed. |
 | `causalRejectionIds` | list of trigger identities | Trigger identities this instance has rejected as causal repeats. |

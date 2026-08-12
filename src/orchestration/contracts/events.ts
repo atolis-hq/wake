@@ -39,6 +39,7 @@ export const OrchestrationEventType = {
   RetryCounted: 'orchestration.retry-counted',
   InstanceCompleted: 'orchestration.instance-completed',
   InstanceBlocked: 'orchestration.instance-blocked',
+  OperatorRetryRequested: 'orchestration.operator-retry-requested',
   InstanceSuperseded: 'orchestration.instance-superseded',
   ChildRequested: 'orchestration.child-requested',
   ChildStarted: 'orchestration.child-started',
@@ -96,6 +97,10 @@ export interface OrchestrationEventPayloads {
   };
   readonly [OrchestrationEventType.InstanceCompleted]: Readonly<Record<never, never>>;
   readonly [OrchestrationEventType.InstanceBlocked]: { readonly reason: string };
+  readonly [OrchestrationEventType.OperatorRetryRequested]: {
+    readonly activationId: ActivationId;
+    readonly commandId: string;
+  };
   readonly [OrchestrationEventType.InstanceSuperseded]: Readonly<Record<never, never>>;
   readonly [OrchestrationEventType.ChildRequested]: ChildRequestedPayload;
   readonly [OrchestrationEventType.ChildStarted]: ChildStartedPayload;

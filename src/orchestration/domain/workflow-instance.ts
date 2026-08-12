@@ -31,6 +31,7 @@ export function foldWorkflowInstance(events: readonly WorkflowFact[]): WorkflowI
     retryCounts: {},
     supplementalQueue: [],
     acceptedSignalIds: [],
+    operatorRetryCommandIds: [],
     acceptedOutcomes: [],
     acceptedChildCompletionIds: [],
     causalRejectionIds: [],

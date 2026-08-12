@@ -37,6 +37,10 @@ export { requestSupplementalActivity } from './supplemental-policy.js';
 
 export type { SupplementalActivityRequest } from './supplemental-policy.js';
 
+export { isOperatorRetryEligible, requestOperatorRetry } from './operator-retry-policy.js';
+
+export type { OperatorRetryRequest } from './operator-retry-policy.js';
+
 export function acceptActivityOutcome(
   definition: CompiledWorkflow,
   state: WorkflowInstanceView,

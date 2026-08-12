@@ -6,5 +6,6 @@ export interface WorkflowInstanceResponse {
   readonly parentWorkflowInstanceId?: string;
   readonly status: string;
   readonly currentStage: string;
+  readonly retryEligible?: boolean;
   readonly waitingFor?: { readonly signalKind: string };
 }

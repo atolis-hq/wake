@@ -1,5 +1,6 @@
 import type { PullRequestView } from '../activities/index.js';
 import { correlationId, EventActorKind } from '../kernel/index.js';
+import { isOperatorRetryEligible, OperatorRetryIneligibleError } from '../orchestration/index.js';
 import { ResourceEventType, selectResourceEvent, type ResourceView } from '../resources/index.js';
 import {
   ApiCommandStatus,
@@ -63,6 +64,29 @@ export function createSurfaceWorkApplications(
       await Promise.all(
         correlations.map((entry) => root.resources.retract(entry.resourceId, id, context)),
       );
+      return accepted(command.idempotencyKey, now());
+    },
+    async retry(key, command) {
+      const id = decodeWorkItemId(key);
+      if (id === undefined) return retryIneligible('Work item was not found');
+      const work = await root.work.get(id);
+      if (work === null) return retryIneligible('Work item was not found');
+      if (work.deleted === true) return retryIneligible('Work item is deleted');
+      if (work.state !== 'open') return retryIneligible('Work item is not open');
+      const primary = (await root.orchestration.listAll()).find(
+        (value) => value.workItemId === id && value.parentWorkflowInstanceId === undefined,
+      );
+      if (primary === undefined) return retryIneligible('Work item has no primary workflow');
+      if (!isOperatorRetryEligible(primary)) return retryIneligible('Workflow is not retry eligible');
+      try {
+        await root.orchestration.retryBlockedFailedStage(
+          primary.workflowInstanceId,
+          commandContext(command.idempotencyKey, now),
+        );
+      } catch (error) {
+        if (error instanceof OperatorRetryIneligibleError) return retryIneligible(error.message);
+        throw error;
+      }
       return accepted(command.idempotencyKey, now());
     },
   };
@@ -194,4 +218,8 @@ function accepted(idempotencyKey: string, acceptedAt: string) {
     acceptedAt,
     status: ApiCommandStatus.Accepted,
   };
+}
+
+function retryIneligible(detail: string) {
+  return { conflict: true as const, code: 'retry-ineligible', detail };
 }

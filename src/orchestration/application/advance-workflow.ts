@@ -10,10 +10,20 @@ import {
 } from '../contracts/identifiers.js';
 import { workflowInstanceStream } from '../contracts/streams.js';
 import { WorkflowStatus } from '../contracts/vocabulary.js';
-import { requestSupplementalActivity as decideSupplementalActivity } from '../domain/interpreter.js';
+import {
+  requestOperatorRetry as decideOperatorRetry,
+  requestSupplementalActivity as decideSupplementalActivity,
+} from '../domain/interpreter.js';
 import { isAuthorisedActor } from '../domain/supplemental-policy.js';
 import type { OrchestrationRepository } from './orchestration-repository.js';
 import type { StartWorkflow } from './start-workflow.js';
+
+export class OperatorRetryIneligibleError extends Error {
+  constructor(detail: string) {
+    super(detail);
+    this.name = 'OperatorRetryIneligibleError';
+  }
+}
 
 export class AdvanceWorkflow {
   constructor(
@@ -86,6 +96,30 @@ export class AdvanceWorkflow {
     });
     await this.repository.append(id, loaded.sequence, [event]);
     return (await this.repository.load(id)).view;
+  }
+
+  async retryBlockedFailedStage(id: WorkflowInstanceId, context: CommandContext) {
+    const loaded = await this.repository.load(id);
+    if (loaded.view === null) throw new OperatorRetryIneligibleError('WorkflowInstance does not exist');
+    if (loaded.view.operatorRetryCommandIds.includes(context.commandId)) return loaded.view;
+    const decision = decideOperatorRetry(
+      this.workflows.definition(loaded.view.workflowName),
+      loaded.view,
+      {
+        commandId: context.commandId,
+        occurredAt: context.occurredAt,
+        causationId: context.commandId,
+      },
+    );
+    if (decision.kind === 'ignored') throw new OperatorRetryIneligibleError(decision.reason);
+    try {
+      await this.repository.append(id, loaded.sequence, decision.events);
+    } catch (error) {
+      const reloaded = await this.repository.loadRequired(id);
+      if (reloaded.view.operatorRetryCommandIds.includes(context.commandId)) return reloaded.view;
+      throw error;
+    }
+    return (await this.repository.loadRequired(id)).view;
   }
 
   async get(id: WorkflowInstanceId) {

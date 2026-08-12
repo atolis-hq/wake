@@ -40,7 +40,7 @@ RUN curl https://cursor.com/install -fsS | HOME=/home/wake bash \
   && chmod +x /home/wake/.local/bin/cursor \
   && chown -R wake:wake /home/wake/.local
 
-USER wake
+USER root
 WORKDIR /home/wake
 
 EXPOSE 4317
@@ -50,4 +50,4 @@ EXPOSE 4317
 # sandbox-entrypoint-command.ts) that the CLI should be invoked via the bare
 # `wake` binary that `npm install -g` puts on PATH, rather than a hardcoded
 # npm global lib path that varies by npm/OS setup.
-ENTRYPOINT ["wake", "sandbox-entrypoint"]
+ENTRYPOINT ["sh", "-c", "set -eu; mkdir -p /wake/.wake; chown -R wake:wake /wake/.wake; exec su wake -s /bin/sh -c 'exec wake sandbox-entrypoint'"]

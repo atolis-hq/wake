@@ -22,7 +22,7 @@ reads and combines their current projections.
 
 **Commands**
 
-- `freeze`, `unfreeze`, and `delete` MUST decode the caller's key as a
+- `freeze`, `unfreeze`, `delete`, and `retry` MUST decode the caller's key as a
   WorkItemKey first, identically to `detail`, and MUST reject an
   undecodable or unknown key as not found rather than issuing a command
   against it.
@@ -32,6 +32,12 @@ reads and combines their current projections.
 - Each command MUST report accepted, keyed by the caller's idempotency key,
   once its underlying Work command has been issued; this component does not
   itself wait for or report the command's downstream projection effects.
+- `retry` MUST only issue Orchestration's retry command when the WorkItem is
+  open and not deleted, has a primary workflow instance, and that workflow
+  satisfies Orchestration's pure operator-retry eligibility policy. Every
+  ineligible state, including a policy race while issuing the command, MUST
+  return the typed `retry-ineligible` conflict with an explanatory detail;
+  unexpected application errors are not recast as policy conflicts.
 
 **List**
 

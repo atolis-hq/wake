@@ -112,6 +112,10 @@ export class OrchestrationService {
     return this.advanceWorkflow.block(workflowInstanceId, reason, context);
   }
 
+  retryBlockedFailedStage(workflowInstanceId: WorkflowInstanceId, context: CommandContext) {
+    return this.advanceWorkflow.retryBlockedFailedStage(workflowInstanceId, context);
+  }
+
   get(id: WorkflowInstanceId) {
     return this.advanceWorkflow.get(id);
   }

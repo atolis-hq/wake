@@ -53,7 +53,7 @@ COPY src/ src/
 ARG WAKE_BUILD_TAG
 RUN WAKE_BUILD_TAG="$WAKE_BUILD_TAG" npm run build:docker
 
-USER wake
+USER root
 WORKDIR /home/wake
 
 EXPOSE 4317
@@ -64,4 +64,4 @@ EXPOSE 4317
 # that's fine since it's the very first thing that runs.
 ENV WAKE_MAIN_JS=/app/dist/src/main.js
 
-ENTRYPOINT ["sh", "-c", "if [ \"$WAKE_START_ENABLED\" = \"true\" ]; then exec node /app/dist/src/main.js start --wake-root /wake --no-sandbox; else exec sleep infinity; fi"]
+ENTRYPOINT ["sh", "-c", "set -eu; mkdir -p /wake/.wake; chown -R wake:wake /wake/.wake; exec su wake -s /bin/sh -c 'if [ \"$WAKE_START_ENABLED\" = \"true\" ]; then exec node /app/dist/src/main.js start --wake-root /wake --no-sandbox; else exec sleep infinity; fi'"]

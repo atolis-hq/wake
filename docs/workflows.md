@@ -165,6 +165,18 @@ holds the transition for human approval instead of advancing immediately. If
 the runner reports `BLOCKED`, `FAILED`, or `REJECTED`, Wake does not take the
 `onDone` transition automatically.
 
+## Operator retry for a failed stage
+
+When a primary workflow is blocked because its current ordinary stage produced
+an unconfigured `failed` outcome, the work-detail UI offers **Retry**. The
+command creates a new activation using that stage's existing compiled activity,
+input, and execution configuration; it does not alter the failed activation or
+its Run. Wake displays the control only when this recovery is currently safe.
+
+This is fixed-parameter recovery, not a way to retry an arbitrary Run. Changing
+the action, input, runner, model, timeout, or other execution parameters remains
+routing policy owned by workflow configuration.
+
 ## Stage watchers
 
 A stage can attach watcher workflows that run while the parent work item is in a

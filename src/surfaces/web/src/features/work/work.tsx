@@ -93,7 +93,7 @@ export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
     ]);
   };
   const command = useMutation({
-    mutationFn: (name: 'freeze' | 'unfreeze' | 'delete') =>
+    mutationFn: (name: 'freeze' | 'unfreeze' | 'delete' | 'retry') =>
       client.work.command(workItemKey, name, `web:${name}:${globalThis.crypto.randomUUID()}`),
     onSuccess: async (_result, name) => {
       await refresh();
@@ -171,6 +171,15 @@ export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
                   </dl>
                 </Panel>
                 <div className={styles.actionBar}>
+                  {query.data.data.orchestration.primary?.retryEligible === true && (
+                    <Button
+                      type="button"
+                      disabled={command.isPending}
+                      onClick={() => command.mutate('retry')}
+                    >
+                      Retry
+                    </Button>
+                  )}
                   <Button
                     type="button"
                     disabled={command.isPending}

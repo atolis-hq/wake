@@ -53,6 +53,7 @@ export interface WorkflowInstanceView {
   readonly causalCycleId?: string;
   readonly requestId?: string;
   readonly status: WorkflowStatus;
+  readonly blockReason?: string;
   readonly currentStage: StageName;
   readonly pendingActivation?: ActivityActivationView;
   readonly repeatCounts: Readonly<Record<string, number>>;
@@ -60,6 +61,7 @@ export interface WorkflowInstanceView {
   readonly waitingFor?: SignalExpectationView;
   readonly supplementalQueue: readonly SupplementalActivityView[];
   readonly acceptedSignalIds: readonly string[];
+  readonly operatorRetryCommandIds: readonly string[];
   readonly acceptedOutcomes: readonly ActivationId[];
   readonly acceptedChildCompletionIds: readonly WorkflowInstanceId[];
   readonly causalRejectionIds: readonly string[];
