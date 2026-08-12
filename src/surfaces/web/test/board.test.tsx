@@ -16,6 +16,7 @@ function boardClient(fetchSpy?: (url: string) => void) {
       workItemId: 'work-a',
       objective: 'Alpha',
       condition: 'ready',
+      frozen: true,
       workflowName: 'delivery',
       stage: 'implement',
       dwellSince: asOf,
@@ -246,6 +247,23 @@ describe('board', () => {
 
     expect(await screen.findByRole('heading', { name: 'Needs Input (1)' })).toBeTruthy();
     expect(screen.getByText('awaiting approval')).toBeTruthy();
+  });
+
+  it('shows a frozen indicator only for a frozen work item', async () => {
+    render(
+      <MemoryRouter initialEntries={['/board']}>
+        <App client={boardClient()} />
+      </MemoryRouter>,
+    );
+
+    const frozen = await screen.findByRole('listitem', { name: 'Alpha' });
+    const unfrozen = screen.getByRole('listitem', { name: 'Beta' });
+
+    expect(
+      within(frozen).getByTitle('Automatic progress is paused while this work item is frozen')
+        .textContent,
+    ).toContain('frozen');
+    expect(within(unfrozen).queryByText('frozen')).toBeNull();
   });
 
   it('requests only the work item collection, never a second collection to join', async () => {

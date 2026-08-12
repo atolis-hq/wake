@@ -129,6 +129,11 @@
 .bad {
   color: var(--bad);
 }
+.cold {
+  color: #7dd3fc;
+  background: rgb(14 116 144 / 0.18);
+  box-shadow: inset 0 0 0 1px rgb(125 211 252 / 0.35);
+}
 .button {
   appearance: none;
   border: 1px solid var(--border-strong);

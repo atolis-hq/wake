@@ -56,6 +56,31 @@ function ApprovalIcon() {
   );
 }
 
+function FrozenIcon() {
+  return (
+    <svg
+      className={styles.metaIcon}
+      viewBox="0 0 16 16"
+      fill="none"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path
+        d="M8 1.75v12.5M2.6 4.875l10.8 6.25M2.6 11.125l10.8-6.25"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+      />
+      <path
+        d="m5.65 3.1-1.3 1.775m7.3 6.25-1.3 1.775M5.65 12.9l-1.3-1.775m7.3-6.25-1.3-1.775"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
 function WorkflowIcon() {
   return (
     <svg
@@ -117,6 +142,15 @@ export function BoardCard({
         )}
         <span className={styles.cardTitle}>{item.objective}</span>
         <span className={styles.cardMeta}>
+          {item.frozen === true && (
+            <StatusBadge
+              tone="cold"
+              title="Automatic progress is paused while this work item is frozen"
+            >
+              <FrozenIcon />
+              frozen
+            </StatusBadge>
+          )}
           {item.lastRunOutcome !== undefined && item.lastRunOutcome !== 'done' && (
             <StatusBadge
               tone={outcomeTone(item.lastRunOutcome)}

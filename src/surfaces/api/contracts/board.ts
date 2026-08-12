@@ -16,6 +16,7 @@ export interface BoardCardResponse {
   readonly workItemId: string;
   readonly objective: string;
   readonly condition: BoardCardCondition;
+  readonly frozen?: boolean;
   readonly awaitingApproval?: boolean;
   readonly workflowName?: string;
   readonly stage?: string;

@@ -14,6 +14,43 @@ import { eventEnvelope } from '../../support/event-envelope.js';
 import { workId } from '../../support/identities.js';
 
 describe('operator board projection', () => {
+  it('preserves a work item freeze on its board card', () => {
+    const workItemId = workId('board-frozen');
+    const view = [
+      eventEnvelope(
+        WorkEventType.ItemCreated,
+        { objective: 'Pause automatic progress' },
+        workItemStream(workItemId),
+        1,
+      ),
+      eventEnvelope(WorkEventType.ItemFrozen, {}, workItemStream(workItemId), 2),
+    ].reduce(
+      (current, event) => boardProjection.project(current, event),
+      boardProjection.initial('global'),
+    );
+
+    expect(view.cards[workItemId]).toMatchObject({ frozen: true });
+  });
+
+  it('clears a work item freeze from its board card', () => {
+    const workItemId = workId('board-unfrozen');
+    const view = [
+      eventEnvelope(
+        WorkEventType.ItemCreated,
+        { objective: 'Resume automatic progress' },
+        workItemStream(workItemId),
+        1,
+      ),
+      eventEnvelope(WorkEventType.ItemFrozen, {}, workItemStream(workItemId), 2),
+      eventEnvelope(WorkEventType.ItemUnfrozen, {}, workItemStream(workItemId), 3),
+    ].reduce(
+      (current, event) => boardProjection.project(current, event),
+      boardProjection.initial('global'),
+    );
+
+    expect(view.cards[workItemId]?.frozen).toBeUndefined();
+  });
+
   it('places an approval signal wait in Needs Input with the canonical work-item key', () => {
     const workItemId = workId('board-approval');
     const workflowId = workflowInstanceId(`primary:${workItemId}`);

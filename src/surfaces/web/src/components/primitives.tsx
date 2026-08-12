@@ -44,7 +44,7 @@ export function StatusBadge({
   title,
 }: {
   readonly children: ReactNode;
-  readonly tone?: 'neutral' | 'good' | 'warning' | 'bad';
+  readonly tone?: 'neutral' | 'good' | 'warning' | 'bad' | 'cold';
   readonly title?: string;
 }) {
   return (

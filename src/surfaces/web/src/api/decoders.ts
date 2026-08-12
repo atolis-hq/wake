@@ -136,6 +136,7 @@ export const decodeBoardCard: Decoder<BoardCardResponse> = (value, path = '') =>
     workItemId: string(record.workItemId, child(path, 'workItemId')),
     objective: string(record.objective, child(path, 'objective')),
     condition: string(record.condition, child(path, 'condition')) as BoardCardResponse['condition'],
+    ...optionalBooleanProperty(record, 'frozen', path),
     ...optionalBooleanProperty(record, 'awaitingApproval', path),
     ...optionalStringProperty(record, 'workflowName', path),
     ...optionalStringProperty(record, boardStageField, path),

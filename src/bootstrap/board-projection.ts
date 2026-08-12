@@ -46,6 +46,7 @@ interface StoredCard {
   readonly workItemId: string;
   readonly objective: string;
   readonly condition: BoardConditionValue;
+  readonly frozen?: boolean;
   readonly awaitingApproval?: boolean;
   readonly workflowName?: string;
   readonly stage?: string;
@@ -134,6 +135,12 @@ function projectWork(
       ...view,
       cards: { ...view.cards, [id]: { ...current, objective: event.payload.objective } },
     };
+  if (event.eventType === WorkEventType.ItemFrozen)
+    return { ...view, cards: { ...view.cards, [id]: { ...current, frozen: true } } };
+  if (event.eventType === WorkEventType.ItemUnfrozen) {
+    const { frozen: _frozen, ...unfrozen } = current;
+    return { ...view, cards: { ...view.cards, [id]: unfrozen } };
+  }
   if (
     event.eventType === WorkEventType.ItemClosed ||
     event.eventType === WorkEventType.ItemCancelled
