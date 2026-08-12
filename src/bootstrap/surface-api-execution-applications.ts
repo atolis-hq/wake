@@ -9,6 +9,7 @@ import type { CompositionRoot } from './composition-root.js';
 import { projectionMeta, sampledMeta } from './surface-api-metadata.js';
 import { projectionPage } from './surface-api-projection-pages.js';
 import { withWorkflowContext } from './surface-api-run-context.js';
+import { readWorkTranscript } from './surface-api-transcripts.js';
 
 export function createExecutionApplications(
   root: CompositionRoot,
@@ -50,6 +51,23 @@ export function createExecutionApplications(
       return {
         data: await withWorkflowContext(root, presentRun(stored.value.view)),
         meta: await projectionMeta(root.journal, [stored], now()),
+      };
+    },
+    async transcript(runId) {
+      const run = (await root.execution.list()).find((item) => item.runId === runId);
+      if (run === undefined) return undefined;
+      const workflow = await root.orchestration.get(run.workflowInstanceId);
+      if (workflow === null) return { data: { runId, available: false, entries: [] }, meta: sampledMeta(now()) };
+      const groupId = await root.transcriptStore?.groupForRun(workflow.workItemId, runId);
+      if (groupId === undefined)
+        return { data: { runId, available: false, entries: [] }, meta: sampledMeta(now()) };
+      const group = await readWorkTranscript(root.transcriptStore, workflow.workItemId, groupId, [run]);
+      return {
+        data:
+          group === undefined
+            ? { runId, available: false, entries: [] }
+            : { runId, groupId, available: group.available, entries: group.entries },
+        meta: sampledMeta(now()),
       };
     },
     async runners(query) {

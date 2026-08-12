@@ -141,6 +141,7 @@ export interface CompositionRoot {
   readonly lookup: ReturnType<typeof createResourceLookup>;
   readonly orchestration: ReturnType<typeof createOrchestrationService>;
   readonly execution: ReturnType<typeof createExecutionService>;
+  readonly transcriptStore?: TranscriptStore;
   readonly runnerControls: ReturnType<typeof createRunnerControlService>;
   readonly controlPlane: ReturnType<typeof createControlPlaneService>;
   /** Shared operator-or-maintenance pause supplier for every resident runtime loop. */
@@ -307,6 +308,7 @@ export async function createCompositionRoot(
     pullRequests,
     orchestration,
     execution,
+    ...(transcriptStore === undefined ? {} : { transcriptStore }),
     advanceOnce,
     controlPlane,
     isPaused: isRuntimePaused,

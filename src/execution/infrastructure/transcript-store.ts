@@ -1,4 +1,5 @@
 import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 
 export interface TranscriptCapture {
@@ -16,6 +17,8 @@ export interface TranscriptResponseCapture extends TranscriptCapture {
 export interface TranscriptGroup {
   readonly id: string;
   readonly kind: 'session' | 'run';
+  readonly cli?: string;
+  readonly latestAt: string;
   readonly runIds: readonly string[];
 }
 
@@ -75,7 +78,13 @@ export class TranscriptStore {
       const parsed = parseGroup(name);
       if (parsed === undefined) continue;
       const messages = await this.readGroup(workItemId, name);
-      groups.push({ ...parsed, runIds: [...new Set(messages.map((message) => message.runId))] });
+      const latest = messages.at(-1);
+      if (latest === undefined) continue;
+      groups.push({
+        ...parsed,
+        latestAt: latest.timestamp,
+        runIds: [...new Set(messages.map((message) => message.runId))],
+      });
     }
     return groups.sort((left, right) => {
       if (left.kind !== right.kind) return left.kind === 'session' ? -1 : 1;
@@ -172,11 +181,15 @@ function runGroup(runId: string): string {
 }
 
 function sessionGroup(cli: string, sessionId: string): string {
-  return `session--${safe(cli)}--${safe(sessionId)}`;
+  return `session--${safe(cli)}--${opaque(sessionId)}`;
 }
 
 function safe(value: string): string {
   return encodeURIComponent(value).replaceAll('-', '%2D').replaceAll('.', '%2E');
+}
+
+function opaque(value: string): string {
+  return createHash('sha256').update(value).digest('base64url');
 }
 
 function messageFile(timestamp: string, runId: string, kind: TranscriptMessage['kind']): string {
@@ -197,10 +210,10 @@ function parseMessageFile(file: string): Omit<TranscriptMessage, 'text'> | undef
   };
 }
 
-function parseGroup(id: string): Omit<TranscriptGroup, 'runIds'> | undefined {
+function parseGroup(id: string): Omit<TranscriptGroup, 'runIds' | 'latestAt'> | undefined {
   const session = /^session--(.+)--(.+)$/.exec(id);
   if (session?.[1] !== undefined && session[2] !== undefined) {
-    return { id, kind: 'session' };
+    return { id, kind: 'session', cli: decodeURIComponent(session[1]) };
   }
   if (/^run--.+$/.test(id)) return { id, kind: 'run' };
   return undefined;

@@ -2,18 +2,102 @@ import { describe, expect, it } from 'vitest';
 import type {
   AcceptedCommandResponse,
   ApiCommandResult,
+  RunTranscriptResponse,
   AuditEventResponse,
   TickCommandResponse,
   WorkItemResponse,
+  WorkItemTranscriptResponse,
 } from '../../../src/surfaces/api/contracts/index.js';
 import type {
   ApiApplications,
   ApiCollectionPage,
+  ApiResourceResult,
   CollectionQuery,
 } from '../../../src/surfaces/api/routes/index.js';
 import { createApiDispatcher } from '../../../src/surfaces/api/routes/index.js';
 
 describe('API domain routes', () => {
+  it('reads a work item transcript group without exposing storage details', async () => {
+    const key = 'wk_d29yay1kZW1v';
+    const dispatcher = createApiDispatcher(
+      applications({
+        work: {
+          transcript: async (receivedKey, groupId) => {
+            expect(receivedKey).toBe(key);
+            expect(groupId).toBe('session--codex--opaque-group');
+            return resource({
+              groupId,
+              available: true,
+              entries: [
+                {
+                  occurredAt: '2026-07-31T10:00:00.000Z',
+                  channel: 'input',
+                  text: 'Investigate the failure',
+                  runId: 'run-1',
+                  groupId,
+                  durationMs: 1_000,
+                },
+              ],
+            });
+          },
+        },
+      }),
+    );
+
+    const response = await dispatcher.dispatch(
+      'GET',
+      `/api/v1/work-items/${key}/transcripts/session--codex--opaque-group`,
+      undefined,
+    );
+
+    expect(response?.status).toBe(200);
+    const encoded = JSON.stringify(response?.body);
+    expect(encoded).not.toContain('C:\\private');
+    expect(encoded).not.toContain('provider-session');
+  });
+
+  it('retains the run transcript deep link by resolving its containing group', async () => {
+    const dispatcher = createApiDispatcher(
+      applications({
+        execution: {
+          transcript: async (runId) =>
+            resource({
+              runId,
+              groupId: 'run--opaque-group',
+              available: true,
+              entries: [
+                {
+                  occurredAt: '2026-07-31T10:00:00.000Z',
+                  channel: 'agent',
+                  text: 'DONE',
+                  runId,
+                  groupId: 'run--opaque-group',
+                },
+              ],
+            }),
+        },
+      }),
+    );
+
+    expect((await dispatcher.dispatch('GET', '/api/v1/runs/run-1/transcript', undefined))?.body).toMatchObject({
+      data: { groupId: 'run--opaque-group', entries: [{ runId: 'run-1' }] },
+    });
+  });
+
+  it('keeps missing transcript artifacts unavailable rather than reconstructing them', async () => {
+    const dispatcher = createApiDispatcher(
+      applications({
+        execution: {
+          transcript: async (runId) => resource({ runId, available: false, entries: [] }),
+        },
+      }),
+    );
+
+    expect((await dispatcher.dispatch('GET', '/api/v1/runs/run-1/transcript', undefined))?.body).toMatchObject({
+      data: { available: false, entries: [] },
+    });
+  });
+
   it('uses the newest contributing sample for resource metadata instead of serialization time', async () => {
     const dispatcher = createApiDispatcher({
       ...applications(),
@@ -268,6 +352,10 @@ describe('API command conflicts', () => {
 function applications(
   overrides: {
     readonly work?: Partial<{
+      transcript(
+        key: string,
+        groupId: string,
+      ): Promise<ApiResourceResult<WorkItemTranscriptResponse>>;
       freeze(
         key: string,
         command: { readonly idempotencyKey: string },
@@ -284,6 +372,9 @@ function applications(
         key: string,
         command: { readonly idempotencyKey: string },
       ): Promise<ApiCommandResult>;
+    }>;
+    readonly execution?: Partial<{
+      transcript(runId: string): Promise<ApiResourceResult<RunTranscriptResponse>>;
     }>;
     readonly workItems?: readonly WorkItemResponse[];
     readonly controlPlaneTick?: () => Promise<
@@ -308,7 +399,7 @@ function applications(
     },
     resources: { list: async () => page([]) },
     orchestration: { list: async () => page([]) },
-    execution: { list: async () => page([]) },
+    execution: { list: async () => page([]), ...overrides.execution },
     events: { list: overrides.eventsList ?? (async () => page([])) },
     observability: {
       metrics: async () =>

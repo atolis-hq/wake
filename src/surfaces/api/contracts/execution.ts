@@ -22,12 +22,32 @@ export interface RunResponse {
 
 export interface RunTranscriptResponse {
   readonly runId: string;
+  readonly groupId?: string;
   readonly available: boolean;
-  readonly entries: readonly {
-    readonly occurredAt: string;
-    readonly channel: string;
-    readonly text: string;
-  }[];
+  readonly entries: readonly TranscriptEntryResponse[];
+}
+
+export interface TranscriptEntryResponse {
+  readonly occurredAt: string;
+  readonly channel: 'input' | 'agent';
+  readonly text: string;
+  readonly runId: string;
+  readonly groupId: string;
+  readonly durationMs?: number;
+}
+
+export interface TranscriptGroupResponse {
+  readonly groupId: string;
+  readonly kind: 'session' | 'run';
+  readonly cli?: string;
+  readonly latestAt: string;
+  readonly runIds: readonly string[];
+}
+
+export interface WorkItemTranscriptResponse {
+  readonly groupId: string;
+  readonly available: boolean;
+  readonly entries: readonly TranscriptEntryResponse[];
 }
 
 export interface RunnerResponse {

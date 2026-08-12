@@ -1,4 +1,4 @@
-import type { RunResponse } from './execution.js';
+import type { RunResponse, TranscriptGroupResponse } from './execution.js';
 import type { WorkflowInstanceResponse } from './orchestration.js';
 import type { ResourceItemResponse } from './resources.js';
 
@@ -26,7 +26,10 @@ export interface WorkDetailResponse {
     readonly primary: WorkflowInstanceResponse | null;
     readonly children: readonly WorkflowInstanceResponse[];
   };
-  readonly execution: { readonly runs: readonly RunResponse[] };
+  readonly execution: {
+    readonly runs: readonly RunResponse[];
+    readonly transcriptGroups: readonly TranscriptGroupResponse[];
+  };
   readonly activities: { readonly pullRequest?: PullRequestResponse };
 }
 
