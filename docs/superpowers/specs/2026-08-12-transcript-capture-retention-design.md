@@ -71,24 +71,34 @@ workspace cleanup.
 
 ## API and UI
 
-The transcript endpoint takes a run ID and uses the existing durable Run view
-as an index to its work item and session metadata. It reads only the matching
-filesystem conversation group; it does not replay events or store transcript
-contents in projections. The response returns ordered entries with timestamp,
-channel, text, source run ID, and group identity.
+The work-item detail screen is the primary transcript surface. Its Transcripts
+section lists filesystem conversation groups: session groups first, then
+one-run fallback groups. Each list item identifies the CLI and opaque session
+reference or fallback run ID, latest activity, and its included run IDs.
+Selecting a group displays it as a chat-like conversation rather than a raw
+log.
 
-The Run detail UI defaults to a conversation view for the selected session
-group. It presents chronological prompt/response entries as a chat, with
-visible run separators or source-run labels. A run-only filter is available,
-so an operator can inspect just the selected run even when it resumed an
-existing CLI session. A missing, expired, or disabled transcript is shown as
-unavailable.
+Inputs and agent replies are visually distinct. Message text is the focus;
+each card has subdued metadata for its timestamp and source run ID. Agent
+replies also show duration when it can be derived from the source Run's
+`startedAt` and `finishedAt`. Visible run separators clarify a conversation's
+cross-run history. The default is the full selected session conversation, with
+a `This run only` filter for focused inspection. Raw text is safely rendered
+as pre-wrapped plain content; Wake does not render model output as Markdown.
+
+The API provides a work-item transcript-group index and a selected-group
+conversation read. The existing run transcript endpoint remains a direct deep
+link and resolves to the run's group. Each read uses durable Run metadata only
+as an index to filesystem artifacts; it does not replay events or store
+transcript contents in projections. Responses return group identity and ordered
+entries with timestamp, channel, text, and source run ID.
 
 ## Tests and documentation
 
 Tests prove configuration defaults and validation, disabled capture, exact
-prompt-before-response capture, session and run fallback grouping, ordered API
-retrieval, run-only filtering, post-close 24-hour retention, zero retention,
-and non-fatal filesystem failures. The configuration and execution reference
+prompt-before-response capture, session and run fallback grouping, work-item
+group index and ordered conversation API reads, run-only filtering, chat
+presentation metadata, post-close 24-hour retention, zero retention, and
+non-fatal filesystem failures. The configuration and execution reference
 documentation describe the feature as current behavior and remove the deferred
 implementation statement.
