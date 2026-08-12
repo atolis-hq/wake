@@ -68,15 +68,18 @@ component's responsibility.
   succeeded/failed exit-code branching as any other exit — the CLI runner
   contract does not produce a `cancelled` transport result for an aborted
   invocation.
-- `RunnerRequest` declares `maxTurns` and `allowedTools`; none of the
-  CLI-based runners read or forward either field into the invoked process's
-  arguments except Claude, which forwards its established turn/tool options.
-  The `claude-cli`, `codex-cli`, and `cursor-cli` variants build their
-  vendor-specific fresh or resumed arguments from the request's full `prompt`,
-  `model` when present, and optional opaque `resumeSessionId`; the `command` variant
-  ignores the request entirely and always invokes its configured command
-  with its configured static arguments, so it does not forward the
-  request's prompt, model, or any other field.
+- `RunnerRequest` makes `model` and `effort` portable selection controls;
+  each concrete adapter maps only the controls it supports into its own vendor
+  syntax and omits unsupported controls. The `claude-cli`, `codex-cli`, and
+  `cursor-cli` variants build their vendor-specific fresh or resumed arguments
+  from the request's full `prompt`, `model` when present, and optional opaque
+  `resumeSessionId`. Codex additionally maps a requested `effort` to
+  `-c model_reasoning_effort=<effort>`; Claude and Cursor omit it because they
+  have no mapping. `RunnerRequest` also declares `maxTurns` and `allowedTools`;
+  only Claude forwards its established turn/tool options. The `command` variant
+  ignores the request entirely and always invokes its configured command with
+  its configured static arguments, so it does not forward the request's prompt,
+  model, effort, or any other field.
 - The external-execution identity reported for a CLI-based runner MUST use
   the request's own `runId` as the identity's `id` — not an OS process id —
   with kind `process`. This is what Recovery's inspector later receives to
@@ -154,9 +157,10 @@ component's responsibility.
 | `prompt` | string | The rendered prompt text. |
 | `context` | `{runnerName, action, activationOrdinal}`, optional | Supplied by the Execution service when a runner was resolved; read only by the fake runner, to match a scripted scenario rule. No CLI-based runner reads it. |
 | `model` | string, optional | Overrides the runner's own default model, when the adapter reads it. |
+| `effort` | string, optional | Portable generic reasoning-effort selection. Each adapter maps it only when it has a vendor-specific syntax; Codex maps it to `model_reasoning_effort`, while Claude and Cursor omit it. |
 | `workspacePath` | string, optional | Working directory for a spawned process. |
-| `allowedTools` | list of string | Declared but not read by any current CLI-based or fake adapter. |
-| `maxTurns` | integer, optional | Declared but not read by any current CLI-based or fake adapter. |
+| `allowedTools` | list of string | Claude forwards its established tool option; Codex, Cursor, and fake adapters do not read it. |
+| `maxTurns` | integer, optional | Claude forwards its established turn option; Codex, Cursor, and fake adapters do not read it. |
 | `resumeSessionId` | string, optional | Opaque prior-session reference selected by Execution. Claude, Codex, and Cursor each pass it in their own vendor-supported resume shape while still forwarding the complete current prompt; generic command and fake runners do not manufacture or interpret it. |
 
 **AgentRunnerResult**
@@ -203,9 +207,9 @@ component's responsibility.
 
 ## Decisions, exclusions, and deferred capability
 
-- `maxTurns` and `allowedTools` are carried on the shared port but not
-  consumed by any current adapter; see the module specification's own
-  deferred-capability note.
+- `maxTurns` and `allowedTools` are carried on the shared port. Claude forwards
+  its established turn/tool options; Codex and Cursor do not consume either
+  field.
 - The `command` runner variant does not forward any part of the request
   (prompt, model, or otherwise) to its invoked process; it is only useful
   for a fixed, request-independent command.

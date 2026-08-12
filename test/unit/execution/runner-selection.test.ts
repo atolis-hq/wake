@@ -57,6 +57,17 @@ describe('Execution runner selection', () => {
     });
   });
 
+  it('forwards the selected runner model and effort to the runner request', async () => {
+    const standard = capturingRunner('standard');
+    const service = fixture(new RunnerRegistry({ standard: ['standard'] }, { standard }));
+
+    await service.attempt(activation(), context());
+
+    expect(standard.requests).toEqual([
+      expect.objectContaining({ model: 'test-model', effort: 'high' }),
+    ]);
+  });
+
   it('rejects a runner pool with no registered runner', async () => {
     const service = fixture(new RunnerRegistry({ standard: ['missing'] }, {}));
 

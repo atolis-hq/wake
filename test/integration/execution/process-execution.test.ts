@@ -34,6 +34,7 @@ describe('cliRunner', () => {
           runId: 'run-1',
           prompt: 'ship',
           model: 'claude-test',
+          effort: 'medium',
           allowedTools: ['Read'],
           maxTurns: 3,
           resumeSessionId: 'prior-session',
@@ -61,10 +62,22 @@ describe('cliRunner', () => {
           runId: 'run-1',
           prompt: 'ship',
           model: 'gpt-test',
-          allowedTools: [],
+          effort: 'medium',
+          allowedTools: ['Read'],
+          maxTurns: 3,
           resumeSessionId: 'prior-session',
         }),
-      expected: ['exec', '--json', '--model', 'gpt-test', 'resume', 'prior-session', 'ship'],
+      expected: [
+        'exec',
+        '--json',
+        '--model',
+        'gpt-test',
+        '-c',
+        'model_reasoning_effort=medium',
+        'resume',
+        'prior-session',
+        'ship',
+      ],
     },
     {
       name: 'Cursor',
@@ -73,7 +86,9 @@ describe('cliRunner', () => {
           runId: 'run-1',
           prompt: 'ship',
           model: 'cursor-test',
-          allowedTools: [],
+          effort: 'medium',
+          allowedTools: ['Read'],
+          maxTurns: 3,
           resumeSessionId: 'prior-session',
         }),
       expected: [
@@ -89,6 +104,18 @@ describe('cliRunner', () => {
     },
   ])('uses the configured $name CLI transport shape', ({ args, expected }) => {
     expect(args()).toEqual(expected);
+  });
+
+  it('omits Codex reasoning-effort configuration when no effort is requested', () => {
+    expect(
+      codexCommandArgs({
+        runId: 'run-1',
+        prompt: 'ship',
+        model: 'gpt-test',
+        allowedTools: [],
+        resumeSessionId: 'prior-session',
+      }),
+    ).toEqual(['exec', '--json', '--model', 'gpt-test', 'resume', 'prior-session', 'ship']);
   });
 
   it('returns captured stdout and stderr detail for a non-zero process exit', async () => {

@@ -39,6 +39,8 @@ export async function executeActivity(
     readonly occurredAt: string;
     readonly runner: ActivityExecutionContext['runner'];
     readonly runnerName?: string;
+    readonly runnerModel?: string;
+    readonly runnerEffort?: string;
     readonly resumeSessionId?: string;
   },
 ) {
@@ -57,6 +59,8 @@ export async function executeActivity(
           runnerContext: {
             runnerName: request.runnerName,
             activationOrdinal: activation.ordinal,
+            ...(request.runnerModel === undefined ? {} : { model: request.runnerModel }),
+            ...(request.runnerEffort === undefined ? {} : { effort: request.runnerEffort }),
           },
         }),
     reportExternalExecution: async (reference) => {

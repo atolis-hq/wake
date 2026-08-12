@@ -61,6 +61,7 @@ export interface AgentRunnerPort {
       readonly runId: string;
       readonly prompt: string;
       readonly model?: string;
+      readonly effort?: string;
       readonly allowedTools: readonly string[];
       readonly maxTurns?: number;
       /** Opaque prior adapter session selected by Execution for this activation. */
@@ -108,6 +109,8 @@ export interface ActivityExecutionContext {
   readonly runnerContext?: {
     readonly runnerName: string;
     readonly activationOrdinal: number;
+    readonly model?: string;
+    readonly effort?: string;
   };
   reportExternalExecution(reference: {
     readonly kind: ExternalExecutionKind;

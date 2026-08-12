@@ -126,7 +126,7 @@ describe('agent results', () => {
 });
 
 describe('agent template input', () => {
-  it('renders a named prompt template and applies its frontmatter to the runner request', async () => {
+  it('uses a template model in preference to the selected runner default', async () => {
     const handler = createAgentActivity({
       async render(name, context) {
         expect(name).toBe('implement');
@@ -160,7 +160,11 @@ describe('agent template input', () => {
       {
         signal: new AbortController().signal,
         occurredAt: '2026-07-31T00:00:00.000Z',
-        runnerContext: { runnerName: 'fake-worker', activationOrdinal: 2 },
+        runnerContext: {
+          runnerName: 'fake-worker',
+          activationOrdinal: 2,
+          model: 'runner-default',
+        },
         runner: {
           async start(request) {
             requests.push(request);
@@ -195,8 +199,49 @@ Structured ticket context (JSON):
           runnerName: 'fake-worker',
           action: 'implement',
           activationOrdinal: 2,
+          model: 'runner-default',
         },
       },
     ]);
+  });
+
+  it('uses an activity input model in preference to a template model', async () => {
+    const handler = createAgentActivity({
+      async render() {
+        return { prompt: 'Implement the change.', model: 'template-model' };
+      },
+    });
+    const requests: unknown[] = [];
+
+    await handler.execute(
+      {
+        activationId: activationId('activation-input-model'),
+        activity: BuiltInActivityName.Agent,
+        workItemId: workId('00000000000000000000000001'),
+        workflowInstanceId: activityWorkflowInstanceId('workflow-1'),
+        orchestrationGroupId: activityOrchestrationGroupId('group-1'),
+        causationId: 'cause-1',
+        input: { template: 'implement', model: 'activity-model' },
+        resources: [],
+      },
+      {
+        signal: new AbortController().signal,
+        occurredAt: '2026-07-31T00:00:00.000Z',
+        runnerContext: {
+          runnerName: 'fake-worker',
+          activationOrdinal: 2,
+          model: 'runner-default',
+        },
+        runner: {
+          async start(request) {
+            requests.push(request);
+            return { result: Promise.resolve({ transport: 'succeeded' as const, output: 'DONE' }) };
+          },
+        },
+        async reportExternalExecution() {},
+      },
+    );
+
+    expect(requests).toEqual([expect.objectContaining({ model: 'activity-model' })]);
   });
 });

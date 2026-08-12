@@ -264,9 +264,9 @@ Execution does not own:
   runner is quota-ineligible, Execution tries the next candidate in that
   pool and never crosses to a different pool.
 - `RunnerRequest` declares `maxTurns` and `allowedTools` fields shared with
-  Activities' agent-runner port, but the current CLI-based runner adapters
-  do not read or forward either field when invoking their underlying
-  process; see the Runner adapters specification.
+  Activities' agent-runner port. The Claude CLI adapter forwards both fields
+  when invoking its underlying process; the Codex and Cursor CLI adapters do
+  not read or forward either field. See the Runner adapters specification.
 - Transcript persistence (prompt/response text per Run) exists as
   infrastructure but is not yet wired into the production attempt flow.
 - Workspace ownership markers support only the narrow crash-orphan recovery

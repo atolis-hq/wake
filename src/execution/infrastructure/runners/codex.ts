@@ -22,6 +22,7 @@ export function codexCommandArgs(
     'exec',
     '--json',
     ...(request.model === undefined ? [] : ['--model', request.model]),
+    ...(request.effort === undefined ? [] : ['-c', `model_reasoning_effort=${request.effort}`]),
     ...(request.resumeSessionId === undefined ? [] : ['resume', request.resumeSessionId]),
     ...passthroughArgs,
     request.prompt,
