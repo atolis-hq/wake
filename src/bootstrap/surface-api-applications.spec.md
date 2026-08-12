@@ -134,9 +134,11 @@ for a single WorkItem (see the Work detail component).
   component's in-process memoization.
 - `list` MUST support an optional `state` filter; `get` MUST report absent
   for a run id with no recorded view rather than an error. Both MUST enrich
-  a present run with its owning workflow instance's current `workflowName`
-  and `stage` when that instance is still known, leaving the run unenriched
-  when it is not (e.g. the instance has since been superseded away).
+  a present run with its owning workflow instance's `workflowName` when
+  that instance is still known, while preserving the run's durable
+  originating `stage`; it MUST NOT derive a historic stage from current
+  workflow state, and MUST leave the run unenriched when the instance is
+  not known (e.g. it has since been superseded away).
 - `runners` MUST synthesize availability purely from the configured runner
   pools crossed with the currently ineligible runner set computed from the
   control-plane projection at call time. A runner absent from every
