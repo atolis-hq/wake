@@ -475,7 +475,7 @@ describe('operator board projection', () => {
       ),
     );
 
-    expect(next.cards[item]).toMatchObject({ condition: 'ready' });
+    expect(next.cards[item]).toMatchObject({ condition: 'active', lastRunOutcome: 'done' });
     expect(next.cards[item]!.activeRun).toBeUndefined();
   });
 
@@ -561,7 +561,7 @@ describe('operator board projection', () => {
     });
   });
 
-  it('returns a successfully finished run to Ready rather than leaving the card Active', () => {
+  it('keeps the lifecycle condition while clearing a successfully completed primary run', () => {
     const item = workId('board-run-ready');
     const workflowId = workflowInstanceId(`primary:${item}`);
     const run = runId('run-ready-1');
@@ -606,7 +606,8 @@ describe('operator board projection', () => {
       ),
     );
 
-    expect(finished.cards[item]).toMatchObject({ condition: 'ready' });
+    expect(finished.cards[item]).toMatchObject({ condition: 'active', lastRunOutcome: 'done' });
+    expect(finished.cards[item]!.activeRun).toBeUndefined();
   });
 
   it('moves a card to error and clears the active run when the agent reports a failed outcome', () => {
