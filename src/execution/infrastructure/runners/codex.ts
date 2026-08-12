@@ -134,6 +134,7 @@ function codexTokenUsage(
 ): AgentRunnerResult['tokenUsage'] | undefined {
   if (usage === undefined) return undefined;
   if (baseline === undefined) return nonNegativeUsage(usage);
+  if (!nonNegativeUsage(baseline)) return undefined;
   const input = subtract(usage.input, baseline.input);
   const output = subtract(usage.output, baseline.output);
   const cacheRead = cacheDelta(usage.cacheRead, baseline.cacheRead);

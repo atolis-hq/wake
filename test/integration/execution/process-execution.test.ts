@@ -400,6 +400,11 @@ describe('cliRunner', () => {
       usage: { input_tokens: 29, output_tokens: 31 },
       baseline: { input: 19, output: 23, cacheRead: 29 },
     },
+    {
+      name: 'a negative baseline counter',
+      usage: { input_tokens: 29, output_tokens: 31 },
+      baseline: { input: -10, output: 23 },
+    },
   ])('omits Codex token usage for $name', ({ usage, baseline }) => {
     const request = { runId: 'run-1', prompt: 'ship', allowedTools: [], usageBaseline: baseline };
 
