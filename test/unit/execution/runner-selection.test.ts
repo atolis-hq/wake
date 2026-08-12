@@ -160,6 +160,50 @@ describe('Execution runner selection', () => {
     ]);
   });
 
+  it('sums only scoped terminal runs with finite metadata counters for the resumed session', async () => {
+    const standard = capturingRunner('standard');
+    const journal = new InMemoryEventJournal(new FakeClock());
+    const implement = { ...activation(), stage: 'implement' };
+    await seedPriorRun(journal, implement, 'implement-first', 'fake', 'session-1', {
+      inputTokens: 10,
+      outputTokens: 'not-a-number',
+      cacheWriteTokens: 0,
+    });
+    await seedPriorRun(journal, implement, 'implement-second', 'fake', 'session-1', {
+      inputTokens: 0,
+      outputTokens: 20,
+      cacheReadTokens: 5,
+    });
+    await seedPriorRun(journal, implement, 'different-cli', 'other-cli', 'session-1', {
+      inputTokens: 100,
+      outputTokens: 100,
+    });
+    await seedPriorRun(
+      journal,
+      { ...activation(), stage: 'design' },
+      'different-stage',
+      'fake',
+      'session-1',
+      { inputTokens: 100, outputTokens: 100 },
+    );
+    const service = fixtureWithJournal(
+      journal,
+      new RunnerRegistry({ standard: ['standard'] }, { standard }),
+    );
+
+    await service.attempt(
+      { ...implement, activationId: activationId('agent:implement:next'), ordinal: 2 },
+      { ...context(), sessionPolicy: 'resume-stage' },
+    );
+
+    expect(standard.requests).toEqual([
+      expect.objectContaining({
+        resumeSessionId: 'session-1',
+        usageBaseline: { input: 10, output: 20, cacheRead: 5, cacheWrite: 0 },
+      }),
+    ]);
+  });
+
   it('resumes the newest same-CLI session when a primary stage is re-entered', async () => {
     const standard = capturingRunner('standard');
     const journal = new InMemoryEventJournal(new FakeClock());
@@ -202,6 +246,62 @@ describe('Execution runner selection', () => {
 
     expect(standard.requests).toEqual([
       expect.not.objectContaining({ resumeSessionId: expect.anything() }),
+    ]);
+    expect(standard.requests).toEqual([
+      expect.not.objectContaining({ usageBaseline: expect.anything() }),
+    ]);
+  });
+
+  it('ignores non-finite metadata counters when deriving a usage baseline', () => {
+    const baseline = (
+      executionServiceModule as unknown as {
+        readonly usageBaselineFor?: (
+          runs: readonly RunView[],
+          cli: string | undefined,
+          sessionId: string | undefined,
+        ) => unknown;
+      }
+    ).usageBaselineFor;
+    const run = (metadata: Readonly<Record<string, string | number | boolean | null>>) => ({
+      ...resumeRun('prior', RunStatus.Failed, 'session-1', '2026-08-11T12:00:00.000Z', 1),
+      agent: { outcome: 'FAILED' as const, displayBody: 'failed', metadata },
+    });
+
+    expect(baseline).toBeTypeOf('function');
+    expect(
+      baseline?.(
+        [
+          run({
+            sessionId: 'session-1',
+            inputTokens: 10,
+            outputTokens: 'invalid',
+            cacheReadTokens: Number.NaN,
+            cacheWriteTokens: Number.POSITIVE_INFINITY,
+          }),
+          run({ sessionId: 'session-1', inputTokens: 0, outputTokens: 20, cacheReadTokens: 5 }),
+        ],
+        'fake',
+        'session-1',
+      ),
+    ).toEqual({ input: 10, output: 20, cacheRead: 5, cacheWrite: 0 });
+  });
+
+  it('does not forward a usage baseline when no durable session is selected', async () => {
+    const standard = capturingRunner('standard');
+    const journal = new InMemoryEventJournal(new FakeClock());
+    await seedPriorRun(journal, activation(), 'prior-without-session', 'fake', undefined, {
+      inputTokens: 10,
+      outputTokens: 20,
+    });
+    const service = fixtureWithJournal(
+      journal,
+      new RunnerRegistry({ standard: ['standard'] }, { standard }),
+    );
+
+    await service.attempt(activation(), context());
+
+    expect(standard.requests).toEqual([
+      expect.not.objectContaining({ usageBaseline: expect.anything() }),
     ]);
   });
 
@@ -305,7 +405,7 @@ async function seedPriorRun(
   id: string,
   cli: string,
   sessionId?: string,
-  usage?: Readonly<Record<string, number>>,
+  usage?: Readonly<Record<string, string | number | boolean | null>>,
 ) {
   const clock = new FakeClock();
   const stream = runStream(runId(id));

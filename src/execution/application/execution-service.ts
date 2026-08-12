@@ -316,7 +316,7 @@ export function resumeSessionIdFor(
     )?.agent?.metadata.sessionId as string | undefined;
 }
 
-function usageBaselineFor(
+export function usageBaselineFor(
   prior: readonly RunView[],
   cli: string | undefined,
   sessionId: string | undefined,
@@ -336,7 +336,7 @@ function usageBaselineFor(
   const sum = (key: string) =>
     matching.reduce((total, run) => {
       const value = run.agent?.metadata[key];
-      return total + (typeof value === 'number' ? value : 0);
+      return total + (typeof value === 'number' && Number.isFinite(value) ? value : 0);
     }, 0);
   return {
     input: sum('inputTokens'),
