@@ -1,7 +1,11 @@
 import type { PullRequestView } from '../activities/index.js';
 import type { RunView } from '../execution/index.js';
 import { correlationId, EventActorKind } from '../kernel/index.js';
-import { isOperatorRetryEligible, OperatorRetryIneligibleError } from '../orchestration/index.js';
+import {
+  isOperatorRetryEligible,
+  OperatorRetryIneligibleError,
+  type WorkflowInstanceView,
+} from '../orchestration/index.js';
 import { ResourceEventType, selectResourceEvent, type ResourceView } from '../resources/index.js';
 import {
   ApiCommandStatus,
@@ -161,7 +165,10 @@ async function runsForWorkItem(
   workflows?: readonly { readonly workflowInstanceId: string }[],
 ) {
   const matching =
-    workflows ?? (await root.orchestration.listAll()).filter((value) => value.workItemId === id);
+    workflows ??
+    (await root.projections.list<{ readonly view: WorkflowInstanceView | null }>('orchestration'))
+      .flatMap((entry) => (entry.value.view === null ? [] : [entry.value.view]))
+      .filter((workflow) => workflow.workItemId === id);
   return (await root.projections.list<{ readonly view: RunView | null }>('execution'))
     .flatMap((entry) => (entry.value.view === null ? [] : [entry.value.view]))
     .filter((run) =>

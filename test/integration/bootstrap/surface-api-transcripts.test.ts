@@ -8,7 +8,10 @@ import {
   readWorkTranscript,
   transcriptGroups,
 } from '../../../src/bootstrap/surface-api-transcripts.js';
+import { createSurfaceWorkApplications } from '../../../src/bootstrap/surface-api-work-applications.js';
 import { TranscriptStore, type RunView } from '../../../src/execution/index.js';
+import { toWorkItemKey } from '../../../src/surfaces/api/contracts/index.js';
+import { workId } from '../../support/identities.js';
 
 const temporaryRoots: string[] = [];
 
@@ -145,6 +148,63 @@ describe('surface transcript applications', () => {
     );
 
     await expect(applications.transcript?.('run-1')).resolves.toMatchObject({
+      data: {
+        available: true,
+        entries: expect.arrayContaining([expect.objectContaining({ runId: 'run-1' })]),
+      },
+    });
+  });
+
+  it('reads a selected work group from projections without replaying orchestration', async () => {
+    const workItemId = workId('transcript-work-group');
+    const store = new TranscriptStore(await transcriptRoot());
+    await store.capturePrompt({
+      workItemId,
+      runId: 'run-1',
+      cli: 'codex',
+      timestamp: '2026-08-13T10:00:01.000Z',
+      text: 'input',
+    });
+    await store.captureResponse({
+      workItemId,
+      runId: 'run-1',
+      cli: 'codex',
+      timestamp: '2026-08-13T10:00:02.000Z',
+      text: 'output',
+    });
+    const [group] = await store.listGroups(workItemId);
+    if (group === undefined) throw new Error('Expected transcript group');
+    const applications = createSurfaceWorkApplications(
+      {
+        transcriptStore: store,
+        work: { get: async () => ({}) },
+        orchestration: { listAll: async () => Promise.reject(new Error('journal replay')) },
+        projections: {
+          list: async (stream: string) =>
+            stream === 'orchestration'
+              ? [
+                  {
+                    value: { view: { workflowInstanceId: 'workflow-1', workItemId } },
+                  },
+                ]
+              : [
+                  {
+                    value: {
+                      view: {
+                        ...run('run-1', '2026-08-13T10:00:00.000Z', '2026-08-13T10:00:05.000Z'),
+                        workflowInstanceId: 'workflow-1',
+                      },
+                    },
+                  },
+                ],
+        },
+      } as unknown as CompositionRoot,
+      () => '2026-08-13T10:00:05.000Z',
+    );
+
+    await expect(
+      applications.transcript?.(toWorkItemKey(workItemId), group.id),
+    ).resolves.toMatchObject({
       data: {
         available: true,
         entries: expect.arrayContaining([expect.objectContaining({ runId: 'run-1' })]),
