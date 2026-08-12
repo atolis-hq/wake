@@ -347,6 +347,21 @@ describe('Execution runner selection', () => {
     expect(
       baseline(
         [
+          run('missing-cache', { sessionId: 'session-1', inputTokens: 10, outputTokens: 20 }),
+          run('negative-cache-after-missing', {
+            sessionId: 'session-1',
+            inputTokens: 10,
+            outputTokens: 20,
+            cacheReadTokens: -1,
+          }),
+        ],
+        'fake',
+        'session-1',
+      ),
+    ).toBeUndefined();
+    expect(
+      baseline(
+        [
           run('negative-cache', { sessionId: 'session-1', inputTokens: 10, outputTokens: 20, cacheReadTokens: -1 }),
         ],
         'fake',

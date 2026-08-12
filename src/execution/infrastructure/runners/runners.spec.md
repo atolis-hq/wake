@@ -88,10 +88,11 @@ component's responsibility.
   return a session id and token/cost fields only through the generic result
   contract, and only when it can establish a complete corresponding count.
 - Codex's `turn.completed` usage is a cumulative snapshot when a session is
-  resumed. Its adapter MUST convert that snapshot to this invocation's usage
-  by subtracting the optional `usageBaseline` supplied by Execution; absent or
-  inconsistent baselines/counts yield no generic usage rather than a made-up
-  value. Claude's parsed JSON usage remains per invocation and is not
+  resumed. When Execution supplies a `usageBaseline`, its adapter MUST convert
+  that snapshot to this invocation's usage by subtracting the baseline. With
+  no baseline, the adapter reports the final cumulative snapshot; with a
+  supplied baseline that cannot safely be subtracted, it reports no generic
+  usage. Claude's parsed JSON usage remains per invocation and is not
   baseline-adjusted. Generic aggregate token totals are `input + output`;
   cache-read and cache-write counters are diagnostic subsets of input, not
   additional aggregate tokens. Adapters record a reported cost only and never

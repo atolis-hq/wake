@@ -363,13 +363,17 @@ function optionalCacheBaseline(
   key: string,
 ): number | 'invalid' | undefined {
   const values = runs.map((run) => run.agent?.metadata[key]);
-  if (values.some((value) => value === undefined)) return undefined;
+  let incomplete = false;
   let total = 0;
   for (const value of values) {
+    if (value === undefined) {
+      incomplete = true;
+      continue;
+    }
     if (!isValidHistoricalCounter(value)) return 'invalid';
     total += value;
   }
-  return total;
+  return incomplete ? undefined : total;
 }
 
 function isValidHistoricalCounter(value: unknown): value is number {
