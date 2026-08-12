@@ -8,15 +8,29 @@ import type {
 export async function transcriptGroups(
   store: TranscriptStore | undefined,
   workItemId: string,
+  runs: readonly RunView[],
 ): Promise<readonly TranscriptGroupResponse[]> {
   if (store === undefined) return [];
-  return (await store.listGroups(workItemId)).map((group) => ({
-    groupId: group.id,
-    kind: group.kind,
-    ...(group.cli === undefined ? {} : { cli: group.cli }),
-    latestAt: group.latestAt,
-    runIds: group.runIds,
-  }));
+  const owned = new Set<string>(runs.map((run) => run.runId));
+  const visible: readonly (TranscriptGroupResponse | undefined)[] = await Promise.all(
+    (await store.listGroups(workItemId)).map(
+      async (group): Promise<TranscriptGroupResponse | undefined> => {
+        const messages = (await store.readGroup(workItemId, group.id)).filter((message) =>
+          owned.has(message.runId),
+        );
+        const latest = messages.at(-1);
+        if (latest === undefined) return undefined;
+        return {
+          groupId: group.id,
+          kind: group.kind,
+          ...(group.cli === undefined ? {} : { cli: group.cli }),
+          latestAt: latest.timestamp,
+          runIds: [...new Set(messages.map((message) => message.runId))],
+        };
+      },
+    ),
+  );
+  return visible.filter((group): group is TranscriptGroupResponse => group !== undefined);
 }
 
 export async function readWorkTranscript(
@@ -24,15 +38,15 @@ export async function readWorkTranscript(
   workItemId: string,
   groupId: string,
   runs: readonly RunView[],
-): Promise<WorkItemTranscriptResponse | undefined> {
-  if (store === undefined) return undefined;
+): Promise<WorkItemTranscriptResponse> {
+  if (store === undefined) return unavailable(groupId);
   const group = (await store.listGroups(workItemId)).find((item) => item.id === groupId);
-  if (group === undefined) return undefined;
+  if (group === undefined) return unavailable(groupId);
   const included = new Set(group.runIds);
   const metadata = new Map<string, RunView>(
     runs.filter((run) => included.has(run.runId)).map((run) => [run.runId, run]),
   );
-  if (metadata.size === 0) return undefined;
+  if (metadata.size === 0) return unavailable(groupId);
   return {
     groupId,
     available: true,
@@ -40,6 +54,10 @@ export async function readWorkTranscript(
       .filter((message) => metadata.has(message.runId))
       .map((message) => presentEntry(message, groupId, metadata.get(message.runId))),
   };
+}
+
+function unavailable(groupId: string): WorkItemTranscriptResponse {
+  return { groupId, available: false, entries: [] };
 }
 
 export function presentEntry(

@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import type {
   AcceptedCommandResponse,
   ApiCommandResult,
-  RunTranscriptResponse,
   AuditEventResponse,
+  RunTranscriptResponse,
   TickCommandResponse,
   WorkItemResponse,
   WorkItemTranscriptResponse,
@@ -79,7 +79,9 @@ describe('API domain routes', () => {
       }),
     );
 
-    expect((await dispatcher.dispatch('GET', '/api/v1/runs/run-1/transcript', undefined))?.body).toMatchObject({
+    expect(
+      (await dispatcher.dispatch('GET', '/api/v1/runs/run-1/transcript', undefined))?.body,
+    ).toMatchObject({
       data: { groupId: 'run--opaque-group', entries: [{ runId: 'run-1' }] },
     });
   });
@@ -93,9 +95,30 @@ describe('API domain routes', () => {
       }),
     );
 
-    expect((await dispatcher.dispatch('GET', '/api/v1/runs/run-1/transcript', undefined))?.body).toMatchObject({
+    expect(
+      (await dispatcher.dispatch('GET', '/api/v1/runs/run-1/transcript', undefined))?.body,
+    ).toMatchObject({
       data: { available: false, entries: [] },
     });
+  });
+
+  it('keeps an expired work-item transcript group unavailable instead of returning a 404', async () => {
+    const dispatcher = createApiDispatcher(
+      applications({
+        work: {
+          transcript: async (_key, groupId) => resource({ groupId, available: false, entries: [] }),
+        },
+      }),
+    );
+
+    const response = await dispatcher.dispatch(
+      'GET',
+      '/api/v1/work-items/wk_d29yay1kZW1v/transcripts/run--expired',
+      undefined,
+    );
+
+    expect(response?.status).toBe(200);
+    expect(response?.body).toMatchObject({ data: { available: false, entries: [] } });
   });
 
   it('uses the newest contributing sample for resource metadata instead of serialization time', async () => {
@@ -368,10 +391,7 @@ function applications(
         key: string,
         command: { readonly idempotencyKey: string },
       ): Promise<AcceptedCommandResponse>;
-      retry(
-        key: string,
-        command: { readonly idempotencyKey: string },
-      ): Promise<ApiCommandResult>;
+      retry(key: string, command: { readonly idempotencyKey: string }): Promise<ApiCommandResult>;
     }>;
     readonly execution?: Partial<{
       transcript(runId: string): Promise<ApiResourceResult<RunTranscriptResponse>>;

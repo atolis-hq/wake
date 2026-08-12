@@ -4,6 +4,7 @@ import {
   type ControlPlaneView,
 } from '../control-plane/index.js';
 import type { RunView } from '../execution/index.js';
+import type { WorkflowInstanceView } from '../orchestration/index.js';
 import { ApiCommandStatus, presentRun, type ApiApplications } from '../surfaces/index.js';
 import type { CompositionRoot } from './composition-root.js';
 import { projectionMeta, sampledMeta } from './surface-api-metadata.js';
@@ -54,19 +55,25 @@ export function createExecutionApplications(
       };
     },
     async transcript(runId) {
-      const run = (await root.execution.list()).find((item) => item.runId === runId);
-      if (run === undefined) return undefined;
-      const workflow = await root.orchestration.get(run.workflowInstanceId);
-      if (workflow === null) return { data: { runId, available: false, entries: [] }, meta: sampledMeta(now()) };
-      const groupId = await root.transcriptStore?.groupForRun(workflow.workItemId, runId);
+      const stored = await root.projections.read<{ readonly view: RunView | null }>(
+        'execution',
+        runId,
+      );
+      const run = stored?.value.view;
+      if (run === null || run === undefined) return undefined;
+      const workflow = await root.projections.read<{ readonly view: WorkflowInstanceView | null }>(
+        'orchestration',
+        run.workflowInstanceId,
+      );
+      const workItemId = workflow?.value.view?.workItemId;
+      if (workItemId === undefined)
+        return { data: { runId, available: false, entries: [] }, meta: sampledMeta(now()) };
+      const groupId = await root.transcriptStore?.groupForRun(workItemId, runId);
       if (groupId === undefined)
         return { data: { runId, available: false, entries: [] }, meta: sampledMeta(now()) };
-      const group = await readWorkTranscript(root.transcriptStore, workflow.workItemId, groupId, [run]);
+      const group = await readWorkTranscript(root.transcriptStore, workItemId, groupId, [run]);
       return {
-        data:
-          group === undefined
-            ? { runId, available: false, entries: [] }
-            : { runId, groupId, available: group.available, entries: group.entries },
+        data: { runId, groupId, available: group.available, entries: group.entries },
         meta: sampledMeta(now()),
       };
     },
