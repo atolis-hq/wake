@@ -333,17 +333,47 @@ export function usageBaselineFor(
       run.runner?.cli === cli &&
       run.agent?.metadata.sessionId === sessionId,
   );
-  const sum = (key: string) =>
-    matching.reduce((total, run) => {
-      const value = run.agent?.metadata[key];
-      return total + (typeof value === 'number' && Number.isFinite(value) ? value : 0);
-    }, 0);
+  if (matching.length === 0) return undefined;
+  const requiredInput = sumCompleteCounters(matching, 'inputTokens');
+  const requiredOutput = sumCompleteCounters(matching, 'outputTokens');
+  if (requiredInput === undefined || requiredOutput === undefined) return undefined;
+  const cacheRead = optionalCacheBaseline(matching, 'cacheReadTokens');
+  const cacheWrite = optionalCacheBaseline(matching, 'cacheWriteTokens');
+  if (cacheRead === 'invalid' || cacheWrite === 'invalid') return undefined;
   return {
-    input: sum('inputTokens'),
-    output: sum('outputTokens'),
-    cacheRead: sum('cacheReadTokens'),
-    cacheWrite: sum('cacheWriteTokens'),
+    input: requiredInput,
+    output: requiredOutput,
+    ...(cacheRead === undefined ? {} : { cacheRead }),
+    ...(cacheWrite === undefined ? {} : { cacheWrite }),
   };
+}
+
+function sumCompleteCounters(runs: readonly RunView[], key: string): number | undefined {
+  let total = 0;
+  for (const run of runs) {
+    const value = run.agent?.metadata[key];
+    if (!isValidHistoricalCounter(value)) return undefined;
+    total += value;
+  }
+  return total;
+}
+
+function optionalCacheBaseline(
+  runs: readonly RunView[],
+  key: string,
+): number | 'invalid' | undefined {
+  const values = runs.map((run) => run.agent?.metadata[key]);
+  if (values.some((value) => value === undefined)) return undefined;
+  let total = 0;
+  for (const value of values) {
+    if (!isValidHistoricalCounter(value)) return 'invalid';
+    total += value;
+  }
+  return total;
+}
+
+function isValidHistoricalCounter(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0;
 }
 
 function resumeEligibleRuns(

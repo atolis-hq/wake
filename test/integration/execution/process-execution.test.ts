@@ -389,6 +389,16 @@ describe('cliRunner', () => {
     });
   });
 
+  it('reports the final Codex usage snapshot when resume history cannot provide a safe baseline', () => {
+    const stdout = JSON.stringify({
+      type: 'turn.completed',
+      usage: { input_tokens: 29, output_tokens: 31 },
+    });
+    const request = { runId: 'run-1', prompt: 'ship', allowedTools: [] };
+
+    expect(parseCodexOutput(stdout, request)).toEqual({ tokenUsage: { input: 29, output: 31 } });
+  });
+
   it.each([
     {
       name: 'a negative delta',
