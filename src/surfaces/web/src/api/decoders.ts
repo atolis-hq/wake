@@ -11,6 +11,7 @@ import type {
   WorkDetailResponse,
   WorkflowInstanceResponse,
   WorkItemResponse,
+  WorkItemTranscriptResponse,
 } from '../../../api/contracts/index.js';
 import {
   type AcceptedCommandResponse,
@@ -341,6 +342,27 @@ export const decodeTranscript: Decoder<RunTranscriptResponse> = (value, path = '
     }),
   };
 };
+
+export const decodeWorkTranscript: Decoder<WorkItemTranscriptResponse> = (value, path = '') => {
+  const record = object(value, path);
+  return {
+    groupId: string(record.groupId, child(path, 'groupId')),
+    available: boolean(record.available, child(path, 'available')),
+    entries: array(record.entries, child(path, 'entries'), decodeTranscriptEntry),
+  };
+};
+
+function decodeTranscriptEntry(item: unknown, itemPath = '') {
+  const entry = object(item, itemPath);
+  return {
+    occurredAt: string(entry.occurredAt, child(itemPath, 'occurredAt')),
+    channel: transcriptChannel(entry.channel, child(itemPath, 'channel')),
+    text: string(entry.text, child(itemPath, 'text')),
+    runId: string(entry.runId, child(itemPath, 'runId')),
+    groupId: string(entry.groupId, child(itemPath, 'groupId')),
+    ...optionalNumberProperty(entry, 'durationMs', itemPath),
+  };
+}
 
 function transcriptChannel(value: unknown, path: string): 'input' | 'agent' {
   const channel = string(value, path);

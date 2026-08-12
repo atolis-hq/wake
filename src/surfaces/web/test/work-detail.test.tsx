@@ -11,6 +11,11 @@ function detailClient(
   primary: Record<string, unknown> | null = null,
   commandResponse: Response | undefined = undefined,
   requests: Array<{ readonly url: string; readonly init: RequestInit | undefined }> = [],
+  transcripts: {
+    readonly groups: readonly Record<string, unknown>[];
+    readonly entries: readonly Record<string, unknown>[];
+    readonly available?: boolean;
+  } = { groups: [], entries: [] },
 ) {
   const work = {
     workItemKey: 'wk_a',
@@ -49,60 +54,70 @@ function detailClient(
           page: { nextCursor: null, hasMore: false },
           meta: { asOf },
         }
-      : url.includes('/work-items/wk_a')
+      : url.includes('/work-items/wk_a/transcripts/')
         ? {
             data: {
-              work,
-              resources: [
-                {
-                  resourceId: 'resource-1',
-                  adapter: 'unknown-adapter',
-                  kind: 'unheard-of-kind',
-                  locatorLabel: 'unheard-of-kind resource-1',
-                  capabilities: ['inspect', 'annotate'],
-                  revision: 'rev-9',
-                },
-              ],
-              orchestration: {
-                primary: primary === null ? null : { workItemKey: 'wk_a', ...primary },
-                children: [],
-              },
-              execution: {
-                runs: [
-                  {
-                    runId: 'run-1',
-                    activationId: 'activation-1',
-                    activity: 'agent',
-                    workflowInstanceId: 'workflow-1',
-                    orchestrationGroupId: 'group-1',
-                    attempt: 1,
-                    status: 'succeeded',
-                    active: false,
-                    startedAt: asOf,
-                    finishedAt: asOf,
-                    sentinel: 'DONE',
-                    workflowName: 'delivery',
-                    stage: 'implement',
-                    totalTokens: 0,
-                    totalCostUsd: 0,
-                  },
-                ],
-              },
-              activities: {
-                pullRequest: {
-                  resourceId: 'resource-1',
-                  state: 'open',
-                  headRevision: 'abc123',
-                  baseRevision: 'def456',
-                  checks: 'passing',
-                },
-              },
+              groupId: decodeURIComponent(url.split('/').at(-1) ?? ''),
+              available: transcripts.available ?? true,
+              entries: transcripts.entries,
             },
             meta: { asOf },
           }
-        : url.includes('/work-items')
-          ? { items: [work], page: { nextCursor: null, hasMore: false }, meta: { asOf } }
-          : { data: { paused: false, updatedAt: asOf }, meta: { asOf } };
+        : url.includes('/work-items/wk_a')
+          ? {
+              data: {
+                work,
+                resources: [
+                  {
+                    resourceId: 'resource-1',
+                    adapter: 'unknown-adapter',
+                    kind: 'unheard-of-kind',
+                    locatorLabel: 'unheard-of-kind resource-1',
+                    capabilities: ['inspect', 'annotate'],
+                    revision: 'rev-9',
+                  },
+                ],
+                orchestration: {
+                  primary: primary === null ? null : { workItemKey: 'wk_a', ...primary },
+                  children: [],
+                },
+                execution: {
+                  transcriptGroups: transcripts.groups,
+                  runs: [
+                    {
+                      runId: 'run-1',
+                      activationId: 'activation-1',
+                      activity: 'agent',
+                      workflowInstanceId: 'workflow-1',
+                      orchestrationGroupId: 'group-1',
+                      attempt: 1,
+                      status: 'succeeded',
+                      active: false,
+                      startedAt: asOf,
+                      finishedAt: asOf,
+                      sentinel: 'DONE',
+                      workflowName: 'delivery',
+                      stage: 'implement',
+                      totalTokens: 0,
+                      totalCostUsd: 0,
+                    },
+                  ],
+                },
+                activities: {
+                  pullRequest: {
+                    resourceId: 'resource-1',
+                    state: 'open',
+                    headRevision: 'abc123',
+                    baseRevision: 'def456',
+                    checks: 'passing',
+                  },
+                },
+              },
+              meta: { asOf },
+            }
+          : url.includes('/work-items')
+            ? { items: [work], page: { nextCursor: null, hasMore: false }, meta: { asOf } }
+            : { data: { paused: false, updatedAt: asOf }, meta: { asOf } };
     return new Response(JSON.stringify(body), {
       status: 200,
       headers: { 'content-type': 'application/json' },
@@ -281,7 +296,7 @@ describe('work detail', () => {
                   },
                 ],
                 orchestration: { primary: null, children: [] },
-                execution: { runs: [] },
+                execution: { runs: [], transcriptGroups: [] },
                 activities: {},
               },
               meta: { asOf },
@@ -328,6 +343,93 @@ describe('work detail', () => {
     expect(await screen.findByText('work.created')).toBeTruthy();
     await user.click(screen.getByRole('button', { name: /work.created/ }));
     expect(screen.getByText(/workItemId/)).toBeTruthy();
+  });
+
+  it('renders a grouped transcript conversation with literal messages and run separators', async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={['/work/wk_a']}>
+        <App
+          client={detailClient(null, undefined, [], {
+            groups: [
+              {
+                groupId: 'run--fallback',
+                kind: 'run',
+                latestAt: '2026-07-31T11:00:00.000Z',
+                runIds: ['run-3'],
+              },
+              {
+                groupId: 'session--opaque-identity',
+                kind: 'session',
+                cli: 'codex',
+                latestAt: '2026-07-31T10:00:00.000Z',
+                runIds: ['run-1', 'run-2'],
+              },
+            ],
+            entries: [
+              {
+                occurredAt: '2026-07-31T10:02:00.000Z',
+                channel: 'agent',
+                text: 'Reply <b>as literal text</b>',
+                runId: 'run-2',
+                groupId: 'session--opaque-identity',
+                durationMs: 2_000,
+              },
+              {
+                occurredAt: '2026-07-31T10:01:00.000Z',
+                channel: 'input',
+                text: 'Prompt\\nwith a second line',
+                runId: 'run-1',
+                groupId: 'session--opaque-identity',
+              },
+            ],
+          })}
+        />
+      </MemoryRouter>,
+    );
+    await user.click(await screen.findByRole('button', { name: 'Transcripts' }));
+
+    const groups = await screen.findByRole('list', { name: 'Transcript groups' });
+    expect(groups.textContent).toMatch(/session--opaque-identity.*codex.*run-1.*run-2/);
+    expect(groups.textContent).toMatch(/run--fallback/);
+    expect(groups.firstElementChild?.textContent).toContain('session--opaque-identity');
+
+    expect(await screen.findByRole('article', { name: 'Input message from run-1' })).toBeTruthy();
+    expect(screen.getByRole('article', { name: 'Agent message from run-2' })).toBeTruthy();
+    expect(screen.getByText('Reply <b>as literal text</b>')).toBeTruthy();
+    expect(screen.queryByText('as literal text', { selector: 'b' })).toBeNull();
+    expect(screen.getByText('2s')).toBeTruthy();
+    expect(screen.getByLabelText(/exact UTC 2026-07-31T10:02:00.000Z/)).toBeTruthy();
+    expect(screen.getByRole('separator', { name: 'Run run-2' })).toBeTruthy();
+    expect(screen.getByRole('checkbox', { name: 'This run only' })).toBeTruthy();
+
+    await user.click(screen.getByRole('checkbox', { name: 'This run only' }));
+    expect(screen.queryByRole('article', { name: 'Input message from run-1' })).toBeNull();
+    expect(screen.getByRole('article', { name: 'Agent message from run-2' })).toBeTruthy();
+  });
+
+  it('shows an unavailable transcript group state', async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={['/work/wk_a']}>
+        <App
+          client={detailClient(null, undefined, [], {
+            groups: [
+              {
+                groupId: 'run--expired',
+                kind: 'run',
+                latestAt: asOf,
+                runIds: ['run-1'],
+              },
+            ],
+            entries: [],
+            available: false,
+          })}
+        />
+      </MemoryRouter>,
+    );
+    await user.click(await screen.findByRole('button', { name: 'Transcripts' }));
+    expect(await screen.findByText('Transcript unavailable')).toBeTruthy();
   });
 
   it('links each run row to its own route', async () => {

@@ -7,7 +7,7 @@ import { queryKeys } from '../../api/query-keys.js';
 import { refreshPolicy } from '../../api/refresh-policy.js';
 import { Chip } from '../../components/chip.js';
 import { DataTable } from '../../components/data-table.js';
-import { fmtCompact, fmtCost } from '../../components/format.js';
+import { fmtCompact, fmtCost, fmtDuration } from '../../components/format.js';
 import { LocalTime } from '../../components/local-time.js';
 import {
   Button,
@@ -106,13 +106,39 @@ export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
     refetchInterval: refreshPolicy.openWork,
     enabled: workItemKey !== '',
   });
-  const [tab, setTab] = useState<'overview' | 'events'>('overview');
+  const [tab, setTab] = useState<'overview' | 'events' | 'transcripts'>('overview');
+  const [selectedGroupId, setSelectedGroupId] = useState<string>();
+  const [thisRunOnly, setThisRunOnly] = useState(false);
+  const [selectedRunId, setSelectedRunId] = useState<string>();
   const eventsQuery = useQuery({
     queryKey: queryKeys.events.list('', workItemKey),
     queryFn: ({ signal }) => client.events.list(undefined, workItemKey, signal),
     refetchInterval: refreshPolicy.events,
     enabled: workItemKey !== '',
   });
+  const transcriptGroups = [...(query.data?.data.execution.transcriptGroups ?? [])].sort(
+    (left, right) =>
+      Number(left.kind === 'run') - Number(right.kind === 'run') ||
+      right.latestAt.localeCompare(left.latestAt),
+  );
+  const selectedGroup =
+    transcriptGroups.find((group) => group.groupId === selectedGroupId) ?? transcriptGroups[0];
+  const transcriptQuery = useQuery({
+    queryKey: queryKeys.work.transcript(workItemKey, selectedGroup?.groupId ?? ''),
+    queryFn: ({ signal }) => client.work.transcript(workItemKey, selectedGroup!.groupId, signal),
+    refetchInterval: refreshPolicy.historicalRuns,
+    enabled: tab === 'transcripts' && workItemKey !== '' && selectedGroup !== undefined,
+  });
+  const selectedRun = selectedRunId ?? selectedGroup?.runIds.at(-1);
+  const transcriptEntries = [...(transcriptQuery.data?.data.entries ?? [])]
+    .sort((left, right) => left.occurredAt.localeCompare(right.occurredAt))
+    .filter((entry) => !thisRunOnly || entry.runId === selectedRun);
+  const selectTranscriptGroup = (groupId: string) => {
+    const group = transcriptGroups.find((candidate) => candidate.groupId === groupId);
+    setSelectedGroupId(groupId);
+    setSelectedRunId(group?.runIds.at(-1));
+    setThisRunOnly(false);
+  };
   const content = (
     <div className={styles.detail}>
       {query.isPending ? (
@@ -133,8 +159,116 @@ export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
             <button type="button" aria-selected={tab === 'events'} onClick={() => setTab('events')}>
               Events
             </button>
+            <button
+              type="button"
+              aria-selected={tab === 'transcripts'}
+              onClick={() => setTab('transcripts')}
+            >
+              Transcripts
+            </button>
           </nav>
-          {tab === 'events' ? (
+          {tab === 'transcripts' ? (
+            <section aria-labelledby="work-transcripts">
+              <h2 id="work-transcripts">Transcript conversations</h2>
+              {transcriptGroups.length === 0 ? (
+                <EmptyState>No transcript conversations</EmptyState>
+              ) : (
+                <div className={styles.transcriptLayout}>
+                  <ol className={styles.transcriptGroups} aria-label="Transcript groups">
+                    {transcriptGroups.map((group) => (
+                      <li key={group.groupId}>
+                        <button
+                          type="button"
+                          className={styles.transcriptGroup}
+                          aria-pressed={selectedGroup?.groupId === group.groupId}
+                          onClick={() => selectTranscriptGroup(group.groupId)}
+                        >
+                          <span>{group.groupId}</span>
+                          <span>{group.kind === 'session' ? 'Session' : 'Run fallback'}</span>
+                          {group.cli !== undefined && <span>{group.cli}</span>}
+                          <LocalTime value={group.latestAt} />
+                          <span>{group.runIds.join(', ')}</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ol>
+                  <div className={styles.transcriptConversation}>
+                    {selectedGroup !== undefined && selectedGroup.runIds.length > 1 && (
+                      <div className={styles.transcriptFilters}>
+                        <label>
+                          Run
+                          <select
+                            value={selectedRun ?? ''}
+                            onChange={(event) => setSelectedRunId(event.target.value)}
+                          >
+                            {selectedGroup.runIds.map((runId) => (
+                              <option key={runId} value={runId}>
+                                {runId}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label>
+                          <input
+                            type="checkbox"
+                            checked={thisRunOnly}
+                            onChange={(event) => setThisRunOnly(event.target.checked)}
+                          />
+                          This run only
+                        </label>
+                      </div>
+                    )}
+                    {transcriptQuery.isPending ? (
+                      <LoadingState label="Loading transcript" />
+                    ) : transcriptQuery.error ? (
+                      <ErrorState
+                        error={transcriptQuery.error}
+                        retry={() => void transcriptQuery.refetch()}
+                      />
+                    ) : transcriptQuery.data?.data.available === false ? (
+                      <EmptyState>Transcript unavailable</EmptyState>
+                    ) : transcriptEntries.length === 0 ? (
+                      <EmptyState>No transcript messages</EmptyState>
+                    ) : (
+                      <ol className={styles.transcript} aria-label="Transcript conversation">
+                        {transcriptEntries.map((entry, index) => (
+                          <li key={`${entry.occurredAt}-${index}`}>
+                            {index > 0 && transcriptEntries[index - 1]?.runId !== entry.runId && (
+                              <div
+                                className={styles.transcriptRunSeparator}
+                                role="separator"
+                                aria-label={`Run ${entry.runId}`}
+                              >
+                                Run {entry.runId}
+                              </div>
+                            )}
+                            <article
+                              className={
+                                entry.channel === 'input'
+                                  ? styles.transcriptInput
+                                  : styles.transcriptAgent
+                              }
+                              aria-label={`${entry.channel === 'input' ? 'Input' : 'Agent'} message from ${entry.runId}`}
+                            >
+                              <div className={styles.transcriptHead}>
+                                <span>{entry.channel === 'input' ? 'Input' : 'Agent'}</span>
+                                <LocalTime value={entry.occurredAt} />
+                                <span>Run {entry.runId}</span>
+                                {entry.durationMs !== undefined && (
+                                  <span>{fmtDuration(entry.durationMs)}</span>
+                                )}
+                              </div>
+                              <pre className={styles.transcriptText}>{entry.text}</pre>
+                            </article>
+                          </li>
+                        ))}
+                      </ol>
+                    )}
+                  </div>
+                </div>
+              )}
+            </section>
+          ) : tab === 'events' ? (
             <section aria-labelledby="work-events">
               <h2 id="work-events">Events</h2>
               {eventsQuery.isPending ? (
