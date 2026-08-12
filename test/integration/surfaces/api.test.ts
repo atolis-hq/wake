@@ -81,6 +81,7 @@ describe('surface API contracts', () => {
       orchestrationGroupId: orchestrationGroupId('group-1'),
       attempt: 1,
       status: RunStatus.Started,
+      stage: 'refine',
       startedAt: '2026-07-31T10:00:00.000Z',
       workspace: { mode: 'branch', path: 'C:\\private\\worktree' },
       externalExecution: {
@@ -97,6 +98,7 @@ describe('surface API contracts', () => {
     expect(resource.externalUrl).toBeUndefined();
     expect(JSON.stringify(run)).not.toContain('private');
     expect(JSON.stringify(run)).not.toContain('provider-session');
+    expect(run.stage).toBe('refine');
   });
 
   it('redacts configuration secrets recursively, including array entries', () => {

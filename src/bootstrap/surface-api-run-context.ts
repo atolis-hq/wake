@@ -7,7 +7,5 @@ export async function withWorkflowContext(
   run: RunResponse,
 ): Promise<RunResponse> {
   const instance = await root.orchestration.get(workflowInstanceId(run.workflowInstanceId));
-  return instance === null
-    ? run
-    : { ...run, workflowName: instance.workflowName, stage: instance.currentStage };
+  return instance === null ? run : { ...run, workflowName: instance.workflowName };
 }
