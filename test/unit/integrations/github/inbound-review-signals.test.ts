@@ -62,6 +62,33 @@ it('rejects a watchGate wait with /changes', async () => {
   expect(workflow?.pendingActivation?.activity).toBe(activityName('implement'));
 });
 
+it('retries refinement on /changes and advances to implementation on /approved', async () => {
+  const fixture = await twoStageIssueWorkflow();
+
+  await fixture.world.acceptOutcome(fixture.workflowId, fixture.initialActivationId, {
+    kind: ActivityOutcomeKind.Done,
+  });
+  await applyHumanIssueCommand(fixture, '/changes please revise the approach');
+
+  expect(await fixture.world.viewWorkflow(fixture.workflowId)).toMatchObject({
+    status: 'active',
+    currentStage: 'refine',
+    pendingActivation: { activity: 'refine' },
+  });
+
+  const retried = await fixture.world.viewWorkflow(fixture.workflowId);
+  await fixture.world.acceptOutcome(fixture.workflowId, retried!.pendingActivation!.activationId, {
+    kind: ActivityOutcomeKind.Done,
+  });
+  await applyHumanIssueCommand(fixture, '/approved');
+
+  expect(await fixture.world.viewWorkflow(fixture.workflowId)).toMatchObject({
+    status: 'active',
+    currentStage: 'implement',
+    pendingActivation: { activity: 'implement' },
+  });
+});
+
 it('still satisfies the plain approval workflow unchanged', async () => {
   const fixture = await waitingIssueWorkflow(signalName('approved'));
 
@@ -261,6 +288,56 @@ async function waitingIssueWorkflow(signalKind: ReturnType<typeof signalName>) {
     workflowId: started.workflowInstanceId,
     workItemId: work.workItemId,
     commandEventId: (body: string) => `github:issue-comment:atolis-hq/wake-test#7:99:${body}`,
+  };
+}
+
+async function twoStageIssueWorkflow() {
+  const world = new TestWorld();
+  for (const name of ['refine', 'implement']) {
+    world.registerActivity({
+      name: activityName(name),
+      inputSchema: z.object({}).strict(),
+      outcomeSchema: z.discriminatedUnion('kind', [
+        z.object({ kind: z.literal(ActivityOutcomeKind.Done) }).strict(),
+      ]),
+      outcomeKinds: [ActivityOutcomeKind.Done],
+      resources: [],
+      executionKind: 'deterministic',
+      handler: {
+        async execute() {
+          return { kind: ActivityOutcomeKind.Done } as const;
+        },
+      },
+    });
+  }
+  world.configureWorkflow('issue-command-two-stage', {
+    stages: {
+      refine: { activity: 'refine', with: {}, on: { done: { then: 'implement' } } },
+      implement: { activity: 'implement', with: {}, on: { done: { then: 'done' } } },
+    },
+  });
+  const work = await world.createWork({ objective: 'human command signal' });
+  const resource = await world.discoverResource({
+    resourceId: `resource-${'0'.repeat(26)}` as never,
+    kind: resourceKind('issue'),
+    externalKey: { adapter: GitHubAdapter, key: 'atolis-hq/wake-test#7' },
+    capabilities: [resourceCapability('commentable')],
+  });
+  await world.resources.correlate(resource.resourceId, work.workItemId, 'primary', {
+    commandId: 'correlate-resource',
+    correlationId: correlationId('issue-command'),
+    occurredAt: world.clock.now().toISOString(),
+    actor: { kind: 'system', id: 'test' },
+  });
+  const started = await world.startWorkflow({
+    workItemId: work.workItemId,
+    workflowName: workflowName('issue-command-two-stage'),
+  });
+  return {
+    world,
+    workflowId: started.workflowInstanceId,
+    workItemId: work.workItemId,
+    initialActivationId: started.pendingActivation!.activationId,
   };
 }
 
