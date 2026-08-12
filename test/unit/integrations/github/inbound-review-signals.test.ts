@@ -70,6 +70,77 @@ it('still satisfies the plain approval workflow unchanged', async () => {
   expect((await fixture.world.viewWorkflow(fixture.workflowId))?.status).not.toBe('waiting');
 });
 
+it('re-runs a default implementation after substantive human feedback on a correlated PR', async () => {
+  const fixture = await waitingIssueWorkflow(signalName('approved'));
+  const pr = await fixture.world.discoverResource({
+    resourceId: `resource-${'0'.repeat(25)}1` as never,
+    kind: resourceKind('pull-request'),
+    externalKey: { adapter: GitHubAdapter, key: 'atolis-hq/wake-test#8' },
+    capabilities: [resourceCapability('commentable'), resourceCapability('reviewable')],
+  });
+  await fixture.world.resources.correlate(pr.resourceId, fixture.workItemId, 'primary', {
+    commandId: 'correlate-pr-feedback',
+    correlationId: correlationId('pr-feedback'),
+    occurredAt: fixture.world.clock.now().toISOString(),
+    actor: { kind: 'system', id: 'test' },
+  });
+
+  await applyHumanPrComment(fixture, 'Please handle the null response before retrying.');
+
+  const revised = await fixture.world.viewWorkflow(fixture.workflowId);
+  expect(await fixture.world.events('orchestration.signal-accepted')).toHaveLength(1);
+  expect(revised).toMatchObject({
+    status: 'active',
+    currentStage: 'implement',
+    pendingActivation: { activity: 'implement' },
+  });
+  await fixture.world.acceptOutcome(fixture.workflowId, revised!.pendingActivation!.activationId, {
+    kind: ActivityOutcomeKind.Done,
+  });
+  expect((await fixture.world.viewWorkflow(fixture.workflowId))?.status).toBe('waiting');
+});
+
+it('ignores Wake delivery comments on a correlated PR', async () => {
+  const fixture = await waitingIssueWorkflow(signalName('approved'));
+  const pr = await fixture.world.discoverResource({
+    resourceId: `resource-${'0'.repeat(25)}1` as never,
+    kind: resourceKind('pull-request'),
+    externalKey: { adapter: GitHubAdapter, key: 'atolis-hq/wake-test#8' },
+    capabilities: [resourceCapability('commentable'), resourceCapability('reviewable')],
+  });
+  await fixture.world.resources.correlate(pr.resourceId, fixture.workItemId, 'primary', {
+    commandId: 'correlate-pr-delivery',
+    correlationId: correlationId('pr-delivery'),
+    occurredAt: fixture.world.clock.now().toISOString(),
+    actor: { kind: 'system', id: 'test' },
+  });
+
+  await applyHumanPrComment(fixture, '<!-- wake:agent -->\n**Wake** status update');
+
+  expect((await fixture.world.viewWorkflow(fixture.workflowId))?.status).toBe('waiting');
+  expect(await fixture.world.events('orchestration.signal-accepted')).toHaveLength(0);
+});
+
+it('accepts an explicit /approved command from a correlated PR', async () => {
+  const fixture = await waitingIssueWorkflow(signalName('approved'));
+  const pr = await fixture.world.discoverResource({
+    resourceId: `resource-${'0'.repeat(25)}1` as never,
+    kind: resourceKind('pull-request'),
+    externalKey: { adapter: GitHubAdapter, key: 'atolis-hq/wake-test#8' },
+    capabilities: [resourceCapability('commentable'), resourceCapability('reviewable')],
+  });
+  await fixture.world.resources.correlate(pr.resourceId, fixture.workItemId, 'primary', {
+    commandId: 'correlate-pr-approval',
+    correlationId: correlationId('pr-approval'),
+    occurredAt: fixture.world.clock.now().toISOString(),
+    actor: { kind: 'system', id: 'test' },
+  });
+
+  await applyHumanPrComment(fixture, '/approved');
+
+  expect((await fixture.world.viewWorkflow(fixture.workflowId))?.status).toBe('completed');
+});
+
 async function issueCommentSignals(body: string): Promise<unknown[]> {
   const acceptedSignals: unknown[] = [];
 
@@ -98,6 +169,9 @@ async function issueCommentSignals(body: string): Promise<unknown[]> {
     resources: {
       async correlations() {
         return [{ role: 'primary', workItemId: 'work-7' }];
+      },
+      async get() {
+        return { kind: resourceKind('issue') };
       },
     } as never,
     work: {} as never,
@@ -179,11 +253,13 @@ async function waitingIssueWorkflow(signalKind: ReturnType<typeof signalName>) {
   });
   await world.waitForSignal(started.workflowInstanceId, {
     signalKind,
+    resume: { kind: TransitionTargetKind.Complete },
     onRejectResume: { kind: TransitionTargetKind.Stage, stage: stageName('implement') },
   });
   return {
     world,
     workflowId: started.workflowInstanceId,
+    workItemId: work.workItemId,
     commandEventId: (body: string) => `github:issue-comment:atolis-hq/wake-test#7:99:${body}`,
   };
 }
@@ -209,6 +285,42 @@ async function applyHumanIssueCommand(
         revision: fixture.world.clock.now().toISOString(),
         actor: { id: 'a-reviewer', kind: ReviewActorKind.Human },
         raw: { id: 99 },
+      },
+      globalPosition: 0,
+      ingestedAt: fixture.world.clock.now().toISOString(),
+    } as never,
+    journal: fixture.world.journal,
+    resources: fixture.world.resources,
+    work: fixture.world.work,
+    lookup: fixture.world.resourceLookup,
+    pullRequests: fixture.world.pullRequests,
+    ids: fixture.world.ids,
+    adapter: GitHubAdapter,
+    orchestration: fixture.world.orchestration,
+  });
+}
+
+async function applyHumanPrComment(
+  fixture: Awaited<ReturnType<typeof waitingIssueWorkflow>>,
+  body: string,
+): Promise<void> {
+  await applyReviewSignal({
+    event: {
+      eventId: `github:pr-comment:atolis-hq/wake-test#8:${body}`,
+      eventType: GitHubEventType.CommentObserved,
+      occurredAt: fixture.world.clock.now().toISOString(),
+      correlationId: 'github:atolis-hq/wake-test#8',
+      causationId: 'github:pr-comment:101',
+      actor: { kind: 'integration', id: 'github' },
+      source: { kind: 'adapter', id: GitHubAdapter },
+      stream: { kind: 'integration', id: GitHubAdapter },
+      payload: {
+        reviewKind: 'issue',
+        externalKey: 'atolis-hq/wake-test#8',
+        body,
+        revision: fixture.world.clock.now().toISOString(),
+        actor: { id: 'a-reviewer', kind: ReviewActorKind.Human },
+        raw: { id: 101 },
       },
       globalPosition: 0,
       ingestedAt: fixture.world.clock.now().toISOString(),

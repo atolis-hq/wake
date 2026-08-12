@@ -107,6 +107,35 @@ export async function listReviews(
   }));
 }
 
+export async function listReviewComments(
+  octokit: Octokit,
+  cache: ReturnType<typeof createEtagCache>,
+  owner: string,
+  repo: string,
+  pullNumber: number,
+  pageSize: number,
+): Promise<readonly GitHubIssueCommentPayload[]> {
+  const comments = await fetchPaginatedWithEtag({
+    cache,
+    key: `review-comments:${owner}/${repo}#${pullNumber}`,
+    pages: (headers) =>
+      octokit.paginate.iterator(octokit.rest.pulls.listReviewComments, {
+        owner,
+        repo,
+        pull_number: pullNumber,
+        per_page: Math.min(pageSize, 100),
+        ...(headers === undefined ? {} : { headers }),
+      }),
+  });
+  return comments.map((comment) => ({
+    id: comment.id,
+    body: comment.body ?? null,
+    created_at: comment.created_at,
+    updated_at: comment.updated_at,
+    ...(comment.user === undefined ? {} : { user: comment.user }),
+  }));
+}
+
 export function listCheckRunsForRef(
   octokit: Octokit,
   cache: ReturnType<typeof createEtagCache>,
