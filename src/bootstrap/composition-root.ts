@@ -108,6 +108,7 @@ export interface CompositionRootOptions {
   readonly checkpoints?: CheckpointStore;
   readonly activities?: ActivityRegistry;
   readonly clock?: Clock;
+  readonly transcriptStore?: TranscriptStore;
   /**
    * Optional integration-boundary decorators. They are applied once, before
    * any composed service receives the port, so observability and fault
@@ -200,7 +201,7 @@ export async function createCompositionRoot(
     },
   });
   const transcriptStore = config.transcripts.enabled
-    ? new TranscriptStore(paths.transcriptsRoot)
+    ? (options.transcriptStore ?? new TranscriptStore(paths.transcriptsRoot))
     : undefined;
   const execution = createExecutionService(journal, activities, config.execution, {
     clock,
@@ -269,8 +270,10 @@ export async function createCompositionRoot(
                     config.transcripts.retentionMs,
                     clock.now().toISOString(),
                   );
+                  return true;
                 } catch (error) {
                   console.error('Transcript retention failed', error);
+                  return false;
                 }
               },
               async sweep() {

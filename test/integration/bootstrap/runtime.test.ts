@@ -473,6 +473,47 @@ describe('target composition root', () => {
     await expect(access(join(runtime.paths.transcriptsRoot, closed))).rejects.toThrow();
   });
 
+  it('retries zero-retention cleanup after a transient transcript filesystem failure without journal events', async () => {
+    const root = await fixtureRoot();
+    const clock = { now: () => new Date('2026-08-12T10:00:00.000Z') };
+    let failRemoval = true;
+    const transcriptStore = new TranscriptStore(join(root, '.wake', 'transcripts'), {
+      async remove(path, options) {
+        if (failRemoval) throw new Error('locked');
+        await rm(path, options);
+      },
+    });
+    const journal = new InMemoryEventJournal(clock);
+    const runtime = await createCompositionRoot(root, {
+      config: transcriptRetentionConfig(0),
+      transcriptStore,
+      journal,
+      projections: new InMemoryProjectionStore(),
+      checkpoints: new InMemoryCheckpointStore(),
+      clock,
+    });
+    const closed = workId('transcript-retention-retry');
+    await runtime.work.create({ workItemId: closed, objective: 'close me' }, commandContext(clock, 'create-retry'));
+    await runtime.work.close(closed, 'complete', commandContext(clock, 'close-retry'));
+    await runtime.work.delete(closed, commandContext(clock, 'delete-retry'));
+    await transcriptStore.capturePrompt({ workItemId: closed, runId: 'run-retry', cli: 'fake', timestamp: clock.now().toISOString(), text: 'retry' });
+    const workspace = await ownedWorkspace(runtime.paths.workspacesRoot, 'retry-workspace', closed, 'retry-run');
+    const eventsBefore = await journal.readAll(0);
+
+    await runtime.runnerPipeline.run({ maxProgress: 1 });
+
+    await expect(access(workspace.markerPath)).resolves.toBeUndefined();
+    await expect(access(join(runtime.paths.transcriptsRoot, closed))).resolves.toBeUndefined();
+    expect(await journal.readAll(0)).toEqual(eventsBefore);
+
+    failRemoval = false;
+    await runtime.runnerPipeline.run({ maxProgress: 1 });
+
+    await expect(access(workspace.markerPath)).rejects.toThrow();
+    await expect(access(join(runtime.paths.transcriptsRoot, closed))).rejects.toThrow();
+    expect(await journal.readAll(0)).toEqual(eventsBefore);
+  });
+
   it('supplies GitHub issue and comment history only through the untrusted agent context', async () => {
     const root = await fixtureRoot();
     await writeFile(

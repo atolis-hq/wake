@@ -194,6 +194,8 @@ async function reclaimOwnedMarker(
     return emptyRecovery();
   if (!(await canRemoveOwnedWorkspace(input.scope, marker.path))) return emptyRecovery();
   if ((await canonicalPath(marker.path)) !== null) await input.fileSystem.remove(marker.path);
+  if ((await input.options.onWorkspaceReclaimed?.(marker.workItemId as WorkItemId)) === false)
+    return emptyRecovery();
   await rm(markerPath, { force: true });
   return {
     reclaimed: 1,

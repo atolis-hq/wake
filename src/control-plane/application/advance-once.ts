@@ -71,7 +71,7 @@ interface AdvanceOnceDependencies {
   /** Crash-only workspace cleanup, deliberately run by the existing recovery pass. */
   readonly workspaceRecovery?: WorkspaceRecovery;
   readonly transcriptRetention?: {
-    markClosedWorkItem(workItemId: string): Promise<void>;
+    markClosedWorkItem(workItemId: string): Promise<boolean>;
     sweep(): Promise<void>;
   };
   readonly dispatchPolicy?: DispatchPolicy;
@@ -101,23 +101,25 @@ export function createAdvanceOnce(
     await execution.recoverActive?.(ControlStreamKind.Global);
     if (await isDispatchPaused()) return { kind: 'paused' };
     if (workspaceRecovery !== undefined) {
-      const recovered = await workspaceRecovery.recover(await execution.list(), {
+      await workspaceRecovery.recover(await execution.list(), {
         isPaused: isDispatchPaused,
         retainWorkItem: async (workItemId) => {
           const work = await dependencies.work?.get(workItemId);
           return work?.state === WorkStatus.Open && work.deleted !== true;
         },
+        onWorkspaceReclaimed: async (workItemId) => {
+          if (await isDispatchPaused()) return false;
+          const work = await dependencies.work?.get(workItemId);
+          if (work?.state !== WorkStatus.Closed) return true;
+          try {
+            return (await transcriptRetention?.markClosedWorkItem(workItemId)) ?? true;
+          } catch {
+            return false;
+          }
+        },
       });
-      for (const workItemId of recovered.reclaimedWorkItemIds ?? []) {
-        const work = await dependencies.work?.get(workItemId);
-        if (work?.state !== WorkStatus.Closed) continue;
-        try {
-          await transcriptRetention?.markClosedWorkItem(workItemId);
-        } catch {
-          // Transcript filesystem failures must not affect workspace recovery.
-        }
-      }
     }
+    if (await isDispatchPaused()) return { kind: 'paused' };
     try {
       await transcriptRetention?.sweep();
     } catch {
