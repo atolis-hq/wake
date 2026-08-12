@@ -41,6 +41,39 @@ describe('GitWorkspaceProvider', () => {
     await lease.release();
   });
 
+  it('creates and attests the WorkItem branch for a branch workspace', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wake-workspace-'));
+    roots.push(root);
+    const commands: string[][] = [];
+    const provider = new GitWorkspaceProvider(
+      root,
+      { cloneLocator: async () => 'https://github.com/atolis-hq/wake-test.git' },
+      async (args) => {
+        commands.push([...args]);
+      },
+    );
+
+    const workItemId = workId('work-branch');
+    const lease = await provider.acquire({
+      runId: runId('run-branch'),
+      mode: 'branch',
+      workItemId,
+      repositoryResource: {
+        resourceId: resId('workspace-resource'),
+        kind: resourceKind('issue'),
+        externalKey: { adapter: 'github', key: 'atolis-hq/wake-test#1' },
+        capabilities: [],
+      },
+    });
+
+    expect(lease.branch).toBe(workItemId);
+    expect(commands).toEqual([
+      ['clone', 'https://github.com/atolis-hq/wake-test.git', lease.path],
+      ['-C', lease.path, 'switch', '--create', workItemId],
+    ]);
+    await lease.release();
+  });
+
   it('records ownership before cloning and removes it when the lease releases', async () => {
     const root = await mkdtemp(join(tmpdir(), 'wake-workspace-'));
     roots.push(root);
