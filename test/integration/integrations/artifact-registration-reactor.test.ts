@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { activationId, ActivityOutcomeKind } from '../../../src/activities/index.js';
+import {
+  activationId,
+  activityOrchestrationGroupId,
+  activityWorkflowInstanceId,
+  ActivityOutcomeKind,
+  BuiltInActivityName,
+  createAgentActivity,
+} from '../../../src/activities/index.js';
 import { ArtifactRegistrationReactor } from '../../../src/integrations/index.js';
 import { createEventDraft, EventActorKind } from '../../../src/kernel/index.js';
 import { workflowInstanceId, workflowInstanceStream } from '../../../src/orchestration/index.js';
@@ -78,6 +85,96 @@ describe('ArtifactRegistrationReactor', () => {
     expect(resource).toMatchObject({ kind: resourceKind('pull-request'), revision: 'head-a' });
     await expect(resources.correlations(resource!.resourceId)).resolves.toMatchObject([
       { workItemId: workId('artifact-work'), role: 'primary', provenance: 'agent-reported' },
+    ]);
+  });
+
+  it('correlates a PR declared in a raw agent report with the originating WorkItem', async () => {
+    const journal = new InMemoryEventJournal(new FakeClock());
+    const checkpoints = new InMemoryCheckpointStore();
+    const { resources } = createTestResourceServices(journal);
+    const workflow = workflowInstanceId('workflow-artifact-raw');
+    const activation = activationId('activation-artifact-raw');
+    const rawOutput = `Opened https://github.com/atolis-hq/wake/pull/537.
+
+\`\`\`wake-artifacts
+{ "artifacts": [{ "kind": "pr", "url": "https://github.com/atolis-hq/wake/pull/537" }] }
+\`\`\`
+
+DONE`;
+    const outcome = await createAgentActivity().execute(
+      {
+        activationId: activation,
+        activity: BuiltInActivityName.Agent,
+        workItemId: workId('artifact-raw-work'),
+        workflowInstanceId: activityWorkflowInstanceId(workflow),
+        orchestrationGroupId: activityOrchestrationGroupId('group-1'),
+        causationId: 'raw-agent-report',
+        input: { prompt: 'ship' },
+        resources: [],
+      },
+      {
+        signal: new AbortController().signal,
+        occurredAt: '2026-08-12T00:00:00.000Z',
+        runner: {
+          async start() {
+            return { result: Promise.resolve({ transport: 'succeeded' as const, output: rawOutput }) };
+          },
+        },
+        async reportExternalExecution() {},
+      },
+    );
+    await journal.append(workflowInstanceStream(workflow), 0, [
+      draft(
+        'orchestration.instance-started',
+        {
+          workItemId: workId('artifact-raw-work'),
+          workflowName: 'default',
+          orchestrationGroupId: 'group-1',
+          entry: 'implement',
+        },
+        workflow,
+      ),
+      draft(
+        'orchestration.activity-outcome-accepted',
+        { activationId: activation, outcome },
+        workflow,
+      ),
+    ]);
+    const reactor = new ArtifactRegistrationReactor({
+      journal,
+      checkpoints,
+      resources,
+      ids: { next: () => 'resource-00000000000000000000000000' },
+      runs: {
+        async list() {
+          return [
+            { workspace: { mode: 'branch' as const, path: '/tmp', branch: 'wake/raw-work' } },
+          ] as never;
+        },
+      },
+      providers: [
+        {
+          adapter: 'github' as never,
+          eventTypes: [],
+          source: {} as never,
+          delivery: {} as never,
+          inbound: {} as never,
+          async verifyArtifact(kind, externalKey, context) {
+            expect(context.workspaceBranch).toBe('wake/raw-work');
+            return { kind, externalKey, capabilities: [], revision: 'head-a' };
+          },
+        },
+      ],
+    });
+
+    await reactor.runOnce();
+
+    const resource = await resources.findByExternalKey({
+      adapter: 'github',
+      key: 'atolis-hq/wake#537',
+    });
+    await expect(resources.correlations(resource!.resourceId)).resolves.toMatchObject([
+      { workItemId: workId('artifact-raw-work'), role: 'primary', provenance: 'agent-reported' },
     ]);
   });
 

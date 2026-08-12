@@ -174,8 +174,7 @@ Completion requirements:
 - Push the branch, then open a pull request against the default branch
   using whatever tooling is available to you in this sandbox. Do not merge
   it yourself — a human reviews and merges it.
-- Include the pull request URL in your response and report it in this exact
-  artifact fence before the final status line:
+- Include every pull request URL in the normal prose response. Then repeat each URL in this exact artifact fence immediately below the prose report, before the final status line:
 
   \`\`\`wake-artifacts
   { "artifacts": [{ "kind": "pr", "url": "<the pull request URL>" }] }
