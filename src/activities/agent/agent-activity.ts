@@ -22,6 +22,11 @@ export interface AgentContextComment {
   readonly author: string;
   readonly occurredAt: string;
   readonly body: string;
+  readonly location?: {
+    readonly path: string;
+    readonly line: number;
+    readonly side: 'LEFT' | 'RIGHT';
+  };
 }
 
 export interface AgentTemplateRenderer {
@@ -52,17 +57,12 @@ export function createAgentActivity(
     async execute(invocation, context): Promise<AgentActivityOutcome> {
       if (context.runner === undefined)
         throw new Error('Agent Activity requires a runner resolved by Execution');
-      const request = await agentRequest(
-        invocation,
-        templates,
-        contextReader,
-        {
-          runnerContext: context.runnerContext,
-          runId: context.runId,
-          resumeSessionId: context.resumeSessionId,
-          workspace: context.workspace,
-        },
-      );
+      const request = await agentRequest(invocation, templates, contextReader, {
+        runnerContext: context.runnerContext,
+        runId: context.runId,
+        resumeSessionId: context.resumeSessionId,
+        workspace: context.workspace,
+      });
       const execution = await context.runner.start(request, context.signal);
       if (execution.identity !== undefined)
         await context.reportExternalExecution(execution.identity);
@@ -215,7 +215,9 @@ function requestFrom(
     ...maxTurnsField(template?.maxTurns),
     ...contextField(runnerContext, input.template),
     ...(resumeSessionId === undefined ? {} : { resumeSessionId }),
-    ...(workspace === undefined ? {} : { workspacePath: workspace.path, workspaceMode: workspace.mode }),
+    ...(workspace === undefined
+      ? {}
+      : { workspacePath: workspace.path, workspaceMode: workspace.mode }),
   };
 }
 
@@ -266,17 +268,5 @@ function agentOutcome(
 }
 
 function parseOutput(output: string): unknown {
-  try {
-    return JSON.parse(output);
-  } catch {
-    return { status: terminalStatus(output) ?? output.trim() };
-  }
-}
-
-function terminalStatus(output: string): string | undefined {
-  return output
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0)
-    .at(-1);
+  return output;
 }

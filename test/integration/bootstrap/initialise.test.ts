@@ -90,6 +90,7 @@ describe('target initialise root', () => {
       });
       expect(rendered).toContain('work-01test0000000000000000');
       expect(rendered).toMatch(/DONE, BLOCKED, or FAILED/);
+      if (name === 'implement') expect(rendered).toContain('```wake-artifacts');
     }
   });
 

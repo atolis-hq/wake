@@ -8,6 +8,11 @@ export interface CommentHistoryEntry {
   readonly author: string;
   readonly occurredAt: string;
   readonly body: string;
+  readonly location?: {
+    readonly path: string;
+    readonly line: number;
+    readonly side: 'LEFT' | 'RIGHT';
+  };
 }
 
 export interface CommentHistoryReader {
@@ -42,6 +47,9 @@ export function createCommentHistoryReader(
             author: observed.payload.actor.id,
             occurredAt: observed.occurredAt,
             body: observed.payload.body,
+            ...(observed.payload.reviewKind !== 'issue' || observed.payload.location === undefined
+              ? {}
+              : { location: observed.payload.location }),
           },
         ];
       });

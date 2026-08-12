@@ -43,6 +43,25 @@ describe('agent results', () => {
       },
     }));
 
+  it('converts a legacy wake-artifacts PR fence into a verified artifact claim', () =>
+    expect(
+      translateAgentResult(`Created the pull request.
+
+\`\`\`wake-artifacts
+{ "artifacts": [{ "kind": "pr", "url": "https://github.com/atolis-hq/wake/pull/536" }] }
+\`\`\`
+
+DONE`),
+    ).toEqual({
+      kind: 'done',
+      data: {
+        status: 'DONE',
+        reportedArtifacts: [
+          { kind: 'pull-request', externalKey: { adapter: 'github', key: 'atolis-hq/wake#536' } },
+        ],
+      },
+    }));
+
   it('never treats missing structured agent output as done', () =>
     expect(translateAgentResult(undefined)).toEqual({
       kind: 'failed',

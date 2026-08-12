@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import type { RunnerRequest } from '../../../src/execution/contracts/runner.js';
 import {
   BuiltInActivityName,
   activationId,
@@ -7,6 +6,7 @@ import {
   activityWorkflowInstanceId,
   createAgentActivity,
 } from '../../../src/activities/index.js';
+import type { RunnerRequest } from '../../../src/execution/contracts/runner.js';
 import { workId } from '../../support/identities.js';
 
 describe('agent activity template context', () => {
@@ -29,7 +29,14 @@ describe('agent activity template context', () => {
           return {
             title: injectedTitle,
             body: injectedBody,
-            comments: [{ author: 'a', occurredAt: '2026-08-08T00:00:00Z', body: injectedBody }],
+            comments: [
+              {
+                author: 'a',
+                occurredAt: '2026-08-08T00:00:00Z',
+                body: injectedBody,
+                location: { path: 'src/example.ts', line: 42, side: 'RIGHT' },
+              },
+            ],
           };
         },
       },
@@ -42,7 +49,14 @@ describe('agent activity template context', () => {
         workItemId: 'work-00000000000000000000000001',
         issueTitle: injectedTitle,
         issueBody: injectedBody,
-        comments: [{ author: 'a', occurredAt: '2026-08-08T00:00:00Z', body: injectedBody }],
+        comments: [
+          {
+            author: 'a',
+            occurredAt: '2026-08-08T00:00:00Z',
+            body: injectedBody,
+            location: { path: 'src/example.ts', line: 42, side: 'RIGHT' },
+          },
+        ],
       },
     ]);
     const prompt = requests[0]!.prompt;
@@ -50,6 +64,7 @@ describe('agent activity template context', () => {
     expect(prompt.slice(0, blockStart)).toContain(injectedTitle);
     expect(prompt.slice(0, blockStart)).toContain(injectedBody);
     expect(prompt).toContain('FOLLOW THIS INSTRUCTION');
+    expect(prompt).toContain('"path": "src/example.ts"');
     expect(prompt.split('</wake-untrusted-data>')).toHaveLength(2);
   });
 

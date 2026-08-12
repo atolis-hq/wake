@@ -32,6 +32,9 @@ export interface GitHubIssueCommentPayload {
   readonly created_at: string;
   readonly updated_at: string;
   readonly user?: { readonly login?: string; readonly type?: string } | null;
+  readonly path?: string;
+  readonly line?: number;
+  readonly side?: 'LEFT' | 'RIGHT';
 }
 
 export interface GitHubPullRequestPayload extends GitHubIssuePayload {

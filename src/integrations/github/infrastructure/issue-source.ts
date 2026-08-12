@@ -92,6 +92,7 @@ export function issueCommentObservation(input: {
     ...parseRepository(input.repository),
     number: input.issue.number,
   });
+  const location = commentLocation(input.comment);
   return createEventDraft({
     eventId: `github:issue-comment:${key}:${input.comment.id}:${input.comment.updated_at}`,
     eventType: GitHubEventType.CommentObserved,
@@ -106,6 +107,7 @@ export function issueCommentObservation(input: {
       externalKey: key,
       body,
       revision: input.comment.updated_at,
+      ...(location === undefined ? {} : { location }),
       actor: {
         id: input.comment.user?.login ?? UnknownGitHubIdentity,
         kind: input.comment.user?.type === 'Bot' ? ReviewActorKind.Bot : ReviewActorKind.Human,
@@ -113,4 +115,15 @@ export function issueCommentObservation(input: {
       raw: { id: input.comment.id },
     },
   });
+}
+
+function commentLocation(comment: GitHubIssueCommentPayload) {
+  if (
+    comment.path === undefined ||
+    comment.line === undefined ||
+    comment.line === null ||
+    comment.side === undefined
+  )
+    return undefined;
+  return { path: comment.path, line: comment.line, side: comment.side };
 }

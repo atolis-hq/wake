@@ -61,6 +61,7 @@ export const agentActivityOutcomeKinds = [
 ] as const satisfies readonly AgentActivityOutcome['kind'][];
 
 export function translateAgentResult(value: unknown): AgentActivityOutcome {
+  if (typeof value === 'string') return translateRawAgentResult(value);
   if (
     typeof value !== 'object' ||
     value === null ||
@@ -87,6 +88,61 @@ export function translateAgentResult(value: unknown): AgentActivityOutcome {
         data: { reason: ActivityFailureCode.InvalidAgentResult },
       };
   }
+}
+
+function translateRawAgentResult(output: string): AgentActivityOutcome {
+  try {
+    return translateAgentResult(JSON.parse(output));
+  } catch {
+    const status = output
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+      .at(-1);
+    return translateAgentResult({
+      status: status ?? output.trim(),
+      reportedArtifacts: wakeArtifacts(output),
+    });
+  }
+}
+
+function wakeArtifacts(output: string): readonly unknown[] {
+  const artifacts: unknown[] = [];
+  for (const match of output.matchAll(/```wake-artifacts\s*([\s\S]*?)```/g)) {
+    if (match[1] === undefined) continue;
+    try {
+      const value = JSON.parse(match[1]) as { readonly artifacts?: unknown };
+      if (!Array.isArray(value.artifacts)) continue;
+      artifacts.push(...value.artifacts.flatMap(normalizeWakeArtifact));
+    } catch {
+      // A malformed artifact fence is ordinary agent prose, never an artifact claim.
+    }
+  }
+  return artifacts;
+}
+
+function normalizeWakeArtifact(value: unknown): readonly unknown[] {
+  if (typeof value !== 'object' || value === null) return [];
+  const artifact = value as { readonly kind?: unknown; readonly url?: unknown };
+  if (
+    (artifact.kind !== 'pr' && artifact.kind !== 'pull-request') ||
+    typeof artifact.url !== 'string'
+  )
+    return [];
+  const match =
+    /^https:\/\/github\.com\/(?<owner>[^/]+)\/(?<repo>[^/]+)\/pull\/(?<number>[1-9]\d*)\/?$/.exec(
+      artifact.url,
+    );
+  if (match?.groups === undefined) return [];
+  return [
+    {
+      kind: 'pull-request',
+      externalKey: {
+        adapter: 'github',
+        key: `${match.groups.owner!}/${match.groups.repo!}#${match.groups.number!}`,
+      },
+    },
+  ];
 }
 
 function terminalResult(

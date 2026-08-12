@@ -84,6 +84,13 @@ interface GitHubIssueCommentObservedPayload {
   readonly externalKey: string;
   readonly body: string;
   readonly revision: string;
+  readonly location?:
+    | {
+        readonly path: string;
+        readonly line: number;
+        readonly side: 'LEFT' | 'RIGHT';
+      }
+    | undefined;
   readonly actor: {
     readonly id: string;
     readonly kind: typeof ReviewActorKind.Human | typeof ReviewActorKind.Bot;
@@ -193,6 +200,14 @@ const eventSchema = z.discriminatedUnion('eventType', [
           reviewKind: z.literal('issue'),
           body: z.string(),
           revision: z.string(),
+          location: z
+            .object({
+              path: z.string(),
+              line: z.number().int(),
+              side: z.enum(['LEFT', 'RIGHT']),
+            })
+            .strict()
+            .optional(),
           actor: actorSchema,
           raw: rawSchema,
         })

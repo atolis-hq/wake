@@ -174,7 +174,14 @@ Completion requirements:
 - Push the branch, then open a pull request against the default branch
   using whatever tooling is available to you in this sandbox. Do not merge
   it yourself — a human reviews and merges it.
-- Include the pull request URL in your response.
+- Include the pull request URL in your response and report it in this exact
+  artifact fence before the final status line:
+
+  \`\`\`wake-artifacts
+  { "artifacts": [{ "kind": "pr", "url": "<the pull request URL>" }] }
+  \`\`\`
+
+  Report every pull request you created or identified for this work item.
 - If you cannot safely complete the change, leave the workspace as-is and
   end with BLOCKED or FAILED instead of guessing.
 

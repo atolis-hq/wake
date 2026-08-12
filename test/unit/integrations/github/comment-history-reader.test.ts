@@ -52,13 +52,19 @@ it("returns the primary correlated resource's comments in journal order", async 
     body: 'second',
     author: 'b',
     updatedAt: '2026-08-08T00:02:00.000Z',
+    location: { path: 'src/example.ts', line: 42, side: 'RIGHT' },
   });
 
   const reader = createCommentHistoryReader(world.journal, world.resources);
 
   await expect(reader.forWorkItem(work.workItemId)).resolves.toEqual([
     { author: 'a', occurredAt: '2026-08-08T00:00:00.000Z', body: 'first' },
-    { author: 'b', occurredAt: '2026-08-08T00:02:00.000Z', body: 'second' },
+    {
+      author: 'b',
+      occurredAt: '2026-08-08T00:02:00.000Z',
+      body: 'second',
+      location: { path: 'src/example.ts', line: 42, side: 'RIGHT' },
+    },
   ]);
 });
 
@@ -200,10 +206,15 @@ async function appendIssueComment(
     readonly body: string;
     readonly author: string;
     readonly updatedAt: string;
+    readonly location?: {
+      readonly path: string;
+      readonly line: number;
+      readonly side: 'LEFT' | 'RIGHT';
+    };
     readonly adapter?: typeof GitHubAdapter;
   },
 ): Promise<void> {
-  const { issueNumber, id, body, author, updatedAt, adapter = GitHubAdapter } = input;
+  const { issueNumber, id, body, author, updatedAt, location, adapter = GitHubAdapter } = input;
   const event = issueCommentObservation({
     repository: 'atolis-hq/wake',
     adapter,
@@ -214,6 +225,7 @@ async function appendIssueComment(
       created_at: updatedAt,
       updated_at: updatedAt,
       user: { login: author, type: 'User' },
+      ...(location === undefined ? {} : location),
     },
   });
   if (event === null) throw new Error('Test comment observation was unexpectedly empty');

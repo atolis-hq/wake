@@ -133,6 +133,9 @@ export async function listReviewComments(
     created_at: comment.created_at,
     updated_at: comment.updated_at,
     ...(comment.user === undefined ? {} : { user: comment.user }),
+    ...(comment.path === undefined ? {} : { path: comment.path }),
+    ...(comment.line === undefined || comment.line === null ? {} : { line: comment.line }),
+    ...(comment.side === undefined ? {} : { side: comment.side }),
   }));
 }
 

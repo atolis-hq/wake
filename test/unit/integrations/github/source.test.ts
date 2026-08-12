@@ -1,7 +1,10 @@
 import { expect, it } from 'vitest';
 import { gitHubConfigSchema } from '../../../../src/integrations/github/contracts/config.js';
 import { GitHubEventType } from '../../../../src/integrations/github/contracts/events.js';
-import type { GitHubIssuePayload } from '../../../../src/integrations/github/contracts/payloads.js';
+import type {
+  GitHubIssueCommentPayload,
+  GitHubIssuePayload,
+} from '../../../../src/integrations/github/contracts/payloads.js';
 import { createGitHubSource } from '../../../../src/integrations/github/infrastructure/source.js';
 
 it('polls comments for pull requests, not only pure issues', async () => {
@@ -17,7 +20,16 @@ it('polls comments for pull requests, not only pure issues', async () => {
         5: [comment(1, 'issue comment')],
         6: [comment(2, 'pr comment')],
       },
-      reviewComments: { 6: [comment(3, 'inline review comment')] },
+      reviewComments: {
+        6: [
+          {
+            ...comment(3, 'inline review comment'),
+            path: 'src/example.ts',
+            line: 42,
+            side: 'RIGHT',
+          },
+        ],
+      },
     }),
   );
 
@@ -29,6 +41,21 @@ it('polls comments for pull requests, not only pure issues', async () => {
   expect(commentBodies).toContain('issue comment');
   expect(commentBodies).toContain('pr comment');
   expect(commentBodies).toContain('inline review comment');
+  const inlineReview = drafts.find(
+    (draft) =>
+      draft.eventType === GitHubEventType.CommentObserved &&
+      (draft.payload as { readonly body: string }).body === 'inline review comment',
+  ) as { readonly payload: unknown } | undefined;
+  expect(inlineReview?.payload).toMatchObject({
+    location: { path: 'src/example.ts', line: 42, side: 'RIGHT' },
+  });
+  expect(
+    drafts.find(
+      (draft) =>
+        draft.eventType === GitHubEventType.CommentObserved &&
+        (draft.payload as { readonly body: string }).body === 'issue comment',
+    )?.payload,
+  ).not.toHaveProperty('location');
 });
 
 function fakeClient(input: {
@@ -72,7 +99,7 @@ function issue(number: number, title: string): GitHubIssuePayload {
   };
 }
 
-function comment(id: number, body: string) {
+function comment(id: number, body: string): GitHubIssueCommentPayload {
   return {
     id,
     body,
