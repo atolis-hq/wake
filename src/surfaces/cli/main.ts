@@ -129,33 +129,25 @@ export async function runWakeCommand(
 ): Promise<void> {
   switch (command.kind) {
     case 'init':
-      output.write(`${JSON.stringify(await operational(applications).init(command.arguments))}\n`);
+      writeResult(output, await operational(applications).init(command.arguments));
       return;
     case 'doctor':
-      output.write(
-        `${JSON.stringify(await operational(applications).doctor(command.arguments))}\n`,
-      );
+      writeResult(output, await operational(applications).doctor(command.arguments));
       return;
     case 'sandbox':
-      output.write(
-        `${JSON.stringify(await operational(applications).sandbox(command.arguments))}\n`,
-      );
+      writeResult(output, await operational(applications).sandbox(command.arguments));
       return;
     case 'sandbox-setup':
-      output.write(
-        `${JSON.stringify(await operational(applications).sandboxSetup(command.arguments))}\n`,
-      );
+      writeResult(output, await operational(applications).sandboxSetup(command.arguments));
       return;
     case 'sandbox-entrypoint':
       await operational(applications).sandboxEntrypoint(command.arguments);
       return;
     case 'self-update':
-      output.write(
-        `${JSON.stringify(await operational(applications).selfUpdate(command.arguments))}\n`,
-      );
+      writeResult(output, await operational(applications).selfUpdate(command.arguments));
       return;
     case 'smoke':
-      output.write(`${JSON.stringify(await operational(applications).smoke(command.arguments))}\n`);
+      writeResult(output, await operational(applications).smoke(command.arguments));
       return;
     case 'tick':
       output.write(`${JSON.stringify(await applications.tick.run(defaultBudget))}\n`);
@@ -187,6 +179,10 @@ export async function runWakeCommand(
       return;
     }
   }
+}
+
+function writeResult(output: CliOutput, value: unknown): void {
+  if (value !== undefined) output.write(`${JSON.stringify(value)}\n`);
 }
 
 function operational(

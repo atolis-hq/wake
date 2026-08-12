@@ -59,6 +59,38 @@ describe('operational CLI reachability', () => {
     expect(output).toEqual(['{"failures":[],"notices":["target diagnostics"]}\n']);
   });
 
+  it('does not print undefined when a sandbox command has no result', async () => {
+    const output: string[] = [];
+    await runWakeCommand(
+      parseWakeCommand(['sandbox', 'up']),
+      {
+        tick: { run: async () => ({ advances: 0, runs: 0, stoppedBecause: 'idle' }) },
+        start: { run: async () => ({ advances: 0, runs: 0, stoppedBecause: 'idle' }) },
+        stop: { stop: async () => undefined },
+        api: { start: async () => undefined },
+        ui: { start: async () => undefined },
+        audit: { read: async () => [] },
+        correlate: { correlate: async () => ({}) },
+        validateState: {
+          health: async () => ({ journal: 'ok', projections: 'ok', checkpoints: 'ok' }),
+          rebuildProjections: async () => undefined,
+        },
+        operational: {
+          init: async () => ({ wakeRoot: '/tmp/wake' }),
+          doctor: async () => ({ failures: [], notices: [] }),
+          sandbox: async () => undefined,
+          sandboxSetup: async () => undefined,
+          sandboxEntrypoint: async () => undefined,
+          selfUpdate: async () => ({ updated: false }),
+          smoke: async () => ({ ok: true }),
+        },
+      },
+      { write: (value) => output.push(value) },
+      new AbortController().signal,
+    );
+    expect(output).toEqual([]);
+  });
+
   it('dispatches sandbox-entrypoint through the injected target operational application', async () => {
     const calls: (readonly string[])[] = [];
     await runWakeCommand(
