@@ -2,7 +2,6 @@
 import type { BoardCardResponse } from '../../../../api/contracts/index.js';
 import { Chip } from '../../components/chip.js';
 import { fmtCompact, fmtCost, fmtDuration } from '../../components/format.js';
-import { StatusBadge } from '../../components/primitives.js';
 import styles from '../features.module.css';
 
 const badTones = new Set(['failed', 'cancelled', 'ambiguous']);
@@ -143,28 +142,30 @@ export function BoardCard({
         <span className={styles.cardTitle}>{item.objective}</span>
         <span className={styles.cardMeta}>
           {item.frozen === true && (
-            <StatusBadge
+            <Chip
+              variant="outline"
               tone="cold"
               title="Automatic progress is paused while this work item is frozen"
             >
               <FrozenIcon />
               frozen
-            </StatusBadge>
+            </Chip>
           )}
           {item.lastRunOutcome !== undefined && item.lastRunOutcome !== 'done' && (
-            <StatusBadge
+            <Chip
+              variant="outline"
               tone={outcomeTone(item.lastRunOutcome)}
               title="Outcome of the most recent run"
             >
               <OutcomeIcon />
               {item.lastRunOutcome}
-            </StatusBadge>
+            </Chip>
           )}
           {item.awaitingApproval === true && (
-            <StatusBadge tone="warning" title="Waiting on human approval to continue">
+            <Chip variant="outline" tone="warning" title="Waiting on human approval to continue">
               <ApprovalIcon />
               awaiting approval
-            </StatusBadge>
+            </Chip>
           )}
           {item.workflowName !== undefined && (
             <Chip variant="outline" title="Workflow driving this item">

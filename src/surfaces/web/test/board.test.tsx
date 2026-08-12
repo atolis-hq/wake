@@ -171,7 +171,9 @@ describe('board', () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByText('failed')).toBeTruthy();
+    const outcome = await screen.findByText('failed');
+    expect(outcome.className).toContain('chip');
+    expect(outcome.className).toContain('chipOutline');
   });
   it('does not show the last run outcome badge when it is done', async () => {
     const client = new WakeApiClient(async (input) => {
@@ -259,10 +261,13 @@ describe('board', () => {
     const frozen = await screen.findByRole('listitem', { name: 'Alpha' });
     const unfrozen = screen.getByRole('listitem', { name: 'Beta' });
 
-    expect(
-      within(frozen).getByTitle('Automatic progress is paused while this work item is frozen')
-        .textContent,
-    ).toContain('frozen');
+    const indicator = within(frozen).getByTitle(
+      'Automatic progress is paused while this work item is frozen',
+    );
+    expect(indicator.textContent).toContain('frozen');
+    expect(indicator.className).toContain('chip');
+    expect(indicator.className).toContain('chipOutline');
+    expect(indicator.className).toContain('cold');
     expect(within(unfrozen).queryByText('frozen')).toBeNull();
   });
 
