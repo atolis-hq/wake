@@ -10,6 +10,7 @@ import {
   listIssueComments,
   listIssues,
   listPullRequests,
+  listReviewComments,
   listReviews,
 } from './client-reads.js';
 import { createEtagCache } from './etag-cache.js';
@@ -52,6 +53,8 @@ export function createGitHubClient(token: string) {
       listPullRequests(octokit, cache, owner, repo, maxResults),
     listIssueComments: (owner: string, repo: string, issueNumber: number, pageSize: number) =>
       listIssueComments(octokit, cache, owner, repo, issueNumber, pageSize),
+    listReviewComments: (owner: string, repo: string, pullNumber: number, pageSize: number) =>
+      listReviewComments(octokit, cache, owner, repo, pullNumber, pageSize),
     getIssueLabels: (owner: string, repo: string, issueNumber: number) =>
       getIssueLabels(octokit, cache, owner, repo, issueNumber),
     setIssueLabels: async (

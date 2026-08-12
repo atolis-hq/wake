@@ -10,6 +10,7 @@ import type { EventJournal, IdGenerator } from '../../../kernel/index.js';
 import { type OrchestrationService } from '../../../orchestration/index.js';
 import type { ResourceLookup, ResourceService } from '../../../resources/index.js';
 import {
+  BuiltInResourceKind,
   ResourceCorrelationRole,
   ResourceStreamKind,
   resourceId,
@@ -37,14 +38,31 @@ export async function applyReviewSignal(input: {
   readonly adapter: AdapterId;
   readonly orchestration: OrchestrationService | undefined;
 }): Promise<void> {
-  const { event, journal, resources, work, lookup, pullRequests, ids, adapter, orchestration } =
-    input;
+  const { event, journal, resources, work, lookup, adapter, orchestration } = input;
   if (journal === undefined || resources === undefined || work === undefined) return;
   const payload = event.payload;
   if (payload.reviewKind === 'issue') {
     await applyIssueReviewSignal({ event, resources, lookup, orchestration, adapter });
     return;
   }
+  await applyFormalReviewSignal({ ...input, journal, resources, work });
+}
+
+async function applyFormalReviewSignal(input: {
+  readonly event: CommentObservedEvent;
+  readonly journal: EventJournal;
+  readonly resources: ResourceService;
+  readonly work: WorkService;
+  readonly lookup: ResourceLookup | undefined;
+  readonly pullRequests: PullRequestService | undefined;
+  readonly ids: IdGenerator;
+  readonly adapter: AdapterId;
+  readonly orchestration: OrchestrationService | undefined;
+}): Promise<void> {
+  const { event, journal, resources, work, lookup, pullRequests, ids, adapter, orchestration } =
+    input;
+  const payload = event.payload;
+  if (payload.reviewKind !== 'formal') return;
   if (lookup === undefined) throw new Error('InboundTranslator lookup is required');
   let resourceIdValue = await lookup.resourceIdForExternalKey({
     adapter,
@@ -74,6 +92,17 @@ export async function applyReviewSignal(input: {
       { ...proposed, requestedEventId: proposed.providerEventId },
       context,
     );
+  await applyPullRequestWorkflowSignal({
+    event,
+    resources,
+    lookup,
+    orchestration,
+    adapter,
+    outcome:
+      proposed.kind === ReviewDecisionKind.Accepted
+        ? ActivityOutcomeKind.Done
+        : ActivityOutcomeKind.Rejected,
+  });
 }
 
 async function applyIssueReviewSignal(input: {
@@ -83,9 +112,31 @@ async function applyIssueReviewSignal(input: {
   readonly orchestration: OrchestrationService | undefined;
   readonly adapter: AdapterId;
 }): Promise<void> {
-  const command = recognizedCommand(input.event.payload.body);
-  if (command === null) return;
-  await applyIssueApprovalSignal({ ...input, command });
+  const { event, resources, lookup, orchestration, adapter } = input;
+  if (event.payload.actor.kind !== ReviewActorKind.Human || isWakeDelivery(event.payload.body))
+    return;
+  if (resources === undefined || lookup === undefined || orchestration === undefined) return;
+  const resourceIdValue = await lookup.resourceIdForExternalKey({
+    adapter,
+    key: event.payload.externalKey,
+  });
+  if (resourceIdValue === null) return;
+  const resource = await resources.get(resourceIdValue);
+  if (resource?.kind === BuiltInResourceKind.PullRequest) {
+    await applyWorkflowSignal({
+      event,
+      resources,
+      orchestration,
+      resourceId: resourceIdValue,
+      outcome:
+        recognizedCommand(event.payload.body) === '/approved'
+          ? ActivityOutcomeKind.Done
+          : ActivityOutcomeKind.Rejected,
+    });
+    return;
+  }
+  const command = recognizedCommand(event.payload.body);
+  if (command !== null) await applyIssueApprovalSignal({ ...input, command });
 }
 
 async function applyIssueApprovalSignal(input: {
@@ -103,10 +154,56 @@ async function applyIssueApprovalSignal(input: {
     key: event.payload.externalKey,
   });
   if (resourceIdValue === null) return;
+  await applyWorkflowSignal({
+    event,
+    resources,
+    orchestration,
+    resourceId: resourceIdValue,
+    outcome: command === '/approved' ? ActivityOutcomeKind.Done : ActivityOutcomeKind.Rejected,
+  });
+}
+
+async function applyPullRequestWorkflowSignal(input: {
+  readonly event: CommentObservedEvent;
+  readonly resources: ResourceService | undefined;
+  readonly lookup: ResourceLookup | undefined;
+  readonly orchestration: OrchestrationService | undefined;
+  readonly adapter: AdapterId;
+  readonly outcome: typeof ActivityOutcomeKind.Done | typeof ActivityOutcomeKind.Rejected;
+}): Promise<void> {
+  const { event, lookup, resources, orchestration, adapter, outcome } = input;
+  if (
+    event.payload.actor.kind !== ReviewActorKind.Human ||
+    lookup === undefined ||
+    resources === undefined ||
+    orchestration === undefined
+  )
+    return;
+  const resourceIdValue = await lookup.resourceIdForExternalKey({
+    adapter,
+    key: event.payload.externalKey,
+  });
+  if (resourceIdValue === null) return;
+  await applyWorkflowSignal({
+    event,
+    resources,
+    orchestration,
+    resourceId: resourceIdValue,
+    outcome,
+  });
+}
+
+async function applyWorkflowSignal(input: {
+  readonly event: CommentObservedEvent;
+  readonly resources: ResourceService;
+  readonly orchestration: OrchestrationService;
+  readonly resourceId: ReturnType<typeof resourceId>;
+  readonly outcome: typeof ActivityOutcomeKind.Done | typeof ActivityOutcomeKind.Rejected;
+}): Promise<void> {
+  const { event, resources, orchestration, resourceId: resourceIdValue, outcome } = input;
   const workItemIds = (await resources.correlations(resourceIdValue))
     .filter((correlation) => correlation.role === ResourceCorrelationRole.Primary)
     .map((correlation) => correlation.workItemId);
-  const outcome = command === '/approved' ? ActivityOutcomeKind.Done : ActivityOutcomeKind.Rejected;
   for (const workflow of await orchestration.listAll()) {
     if (!workItemIds.includes(workflow.workItemId)) continue;
     if (workflow.waitingFor === undefined) continue;
@@ -125,6 +222,10 @@ async function applyIssueApprovalSignal(input: {
       commandContext(event),
     );
   }
+}
+
+function isWakeDelivery(body: string): boolean {
+  return body.includes('<!-- wake:');
 }
 
 function recognizedCommand(body: string): '/approved' | '/changes' | null {

@@ -25,6 +25,12 @@ interface GitHubSourceClient extends GitHubPullRequestSourceClient {
     pullNumber: number,
     pageSize: number,
   ): Promise<readonly GitHubReviewPayload[]>;
+  listReviewComments?(
+    owner: string,
+    repo: string,
+    pullNumber: number,
+    pageSize: number,
+  ): Promise<readonly GitHubIssueCommentPayload[]>;
 }
 
 export function createGitHubSource(
@@ -90,7 +96,7 @@ async function pollRepository(input: {
       repo,
       config.polling.maxPerRepo,
     );
-    const [issues, pullRequests, reviews] = await Promise.all([
+    const [issues, pullRequests, reviews, reviewComments] = await Promise.all([
       client.listIssues(owner, repo, config.polling.maxPerRepo),
       createGitHubPullRequestSource({
         client: { ...client, listPullRequests: async () => pullRequestPayloads },
@@ -99,6 +105,7 @@ async function pollRepository(input: {
         ...(adapter === undefined ? {} : { adapter }),
       }).poll(signal),
       reviewEventsFor(context, pullRequestPayloads),
+      reviewCommentEventsFor(context, pullRequestPayloads),
     ]);
     const issueComments = await issueCommentEventsFor(context, issues);
     return [
@@ -113,11 +120,40 @@ async function pollRepository(input: {
         ),
       ...pullRequests,
       ...reviews,
+      ...reviewComments,
       ...issueComments,
     ];
   } catch {
     return [];
   }
+}
+
+async function reviewCommentEventsFor(
+  context: RepositoryPollContext,
+  pullRequests: readonly Parameters<typeof githubReviewObservation>[0]['pullRequest'][],
+) {
+  if (context.client.listReviewComments === undefined) return [];
+  const items = await Promise.all(
+    pullRequests.map(async (pullRequest) =>
+      (
+        await context.client.listReviewComments!(
+          context.owner,
+          context.repo,
+          pullRequest.number,
+          context.config.polling.commentPageSize,
+        )
+      ).flatMap((comment) => {
+        const event = issueCommentObservation({
+          repository: context.repository,
+          issue: pullRequest,
+          comment,
+          ...(context.adapter === undefined ? {} : { adapter: context.adapter }),
+        });
+        return event === null ? [] : [event];
+      }),
+    ),
+  );
+  return items.flat();
 }
 
 async function reviewEventsFor(

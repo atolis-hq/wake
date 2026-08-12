@@ -2,7 +2,6 @@ import type { EventJournal } from '../../../kernel/index.js';
 import { ResourceCorrelationRole, type ResourceService } from '../../../resources/index.js';
 import type { WorkItemId } from '../../../work/index.js';
 import { adapterId } from '../../contracts/identifiers.js';
-import { integrationStream } from '../../contracts/streams.js';
 import { GitHubEventType, selectGitHubAdapterEvent } from '../contracts/events.js';
 
 export interface CommentHistoryEntry {
@@ -21,20 +20,23 @@ export function createCommentHistoryReader(
 ): CommentHistoryReader {
   return {
     async forWorkItem(workItemId) {
-      const primary = (await resources.correlationsForWork(workItemId)).find(
-        (correlation) => correlation.role === ResourceCorrelationRole.Primary,
+      const keys = new Set(
+        (
+          await Promise.all(
+            (await resources.correlationsForWork(workItemId))
+              .filter((correlation) => correlation.role === ResourceCorrelationRole.Primary)
+              .map((correlation) => resources.get(correlation.resourceId)),
+          )
+        ).flatMap((resource) => {
+          if (resource === null || parseAdapterId(resource.externalKey.adapter) === null) return [];
+          return [`${resource.externalKey.adapter}:${resource.externalKey.key}`];
+        }),
       );
-      if (primary === undefined) return [];
-
-      const resource = await resources.get(primary.resourceId);
-      if (resource === null) return [];
-      const adapter = parseAdapterId(resource.externalKey.adapter);
-      if (adapter === null) return [];
-
-      return (await journal.readStream(integrationStream(adapter))).flatMap((event) => {
+      if (keys.size === 0) return [];
+      return (await journal.readAll(0)).flatMap((event) => {
         const observed = selectGitHubAdapterEvent(event);
         if (observed?.eventType !== GitHubEventType.CommentObserved) return [];
-        if (observed.payload.externalKey !== resource.externalKey.key) return [];
+        if (!keys.has(`${observed.stream.id}:${observed.payload.externalKey}`)) return [];
         return [
           {
             author: observed.payload.actor.id,

@@ -17,6 +17,7 @@ it('polls comments for pull requests, not only pure issues', async () => {
         5: [comment(1, 'issue comment')],
         6: [comment(2, 'pr comment')],
       },
+      reviewComments: { 6: [comment(3, 'inline review comment')] },
     }),
   );
 
@@ -27,24 +28,29 @@ it('polls comments for pull requests, not only pure issues', async () => {
 
   expect(commentBodies).toContain('issue comment');
   expect(commentBodies).toContain('pr comment');
+  expect(commentBodies).toContain('inline review comment');
 });
 
 function fakeClient(input: {
   readonly issues: readonly ReturnType<typeof issue>[];
   readonly issueComments: Readonly<Record<number, readonly ReturnType<typeof comment>[]>>;
+  readonly reviewComments?: Readonly<Record<number, readonly ReturnType<typeof comment>[]>>;
 }) {
   return {
     async listIssues() {
       return input.issues;
     },
     async listPullRequests() {
-      return [];
+      return input.issues as never;
     },
     async listIssueComments(_owner: string, _repo: string, issueNumber: number) {
       return input.issueComments[issueNumber] ?? [];
     },
     async listReviews() {
       return [];
+    },
+    async listReviewComments(_owner: string, _repo: string, pullNumber: number) {
+      return input.reviewComments?.[pullNumber] ?? [];
     },
     async listCheckRunsForRef() {
       return [];
