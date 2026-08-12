@@ -201,6 +201,7 @@ Execution does not own:
 | `activationId` | Activation identity | Identity of the Activation being attempted. |
 | `ordinal` | integer | The Activation's position, as assigned by Orchestration. |
 | `activity` | Activity name | Which Activity definition to run. |
+| `stage` | Stage name, optional | Originating Stage provenance, when the Activation was requested for a Stage. |
 | `input` | open value | The Activity's input, validated by Activities before execution. |
 | `execution.workspace` | closed vocabulary: `none` / `read-only` / `branch`, optional | Requested workspace mode; absent means `none`. |
 | `execution.runnerPool` | string, optional | Requested runner pool; absent means the configured default pool. |

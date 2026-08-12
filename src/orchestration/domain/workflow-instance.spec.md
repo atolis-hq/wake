@@ -120,6 +120,7 @@ workflow-instance stream identified by `workflowInstanceId`.
 | `activationId` | Activation identity | Deterministic from the instance identity and ordinal. |
 | `ordinal` | positive integer | This Activation's position among all Activations this instance has ever had. |
 | `activity` | Activity name | The Activity requested. |
+| `stage` | optional Stage name | Originating Stage provenance. Primary Stage Activations carry it; supplemental and follow-on Activations omit it. |
 | `input` | unknown, Activity-defined | The validated input passed to the Activity. |
 | `execution` | optional execution config | Workspace mode / runner pool hint, carried through from the Stage's configuration. |
 | `status` | closed vocabulary: `pending` / `running` / `waiting` / `completed` | This Activation's own progress, independent of the instance's overall status. |

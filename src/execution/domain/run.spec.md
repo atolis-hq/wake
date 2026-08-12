@@ -29,8 +29,9 @@ recovery facts, but its fold applies them, since they share its stream.
 
 - Starting a Run MUST append `RunStarted` as the first event on a fresh
   `RunId`'s stream (at sequence 0). The event records the Activation,
-  activity, workflow correlation ids, a positive attempt number, the start
-  time, and optionally a runner descriptor and workspace reference.
+  activity, optional originating Stage provenance, workflow correlation ids,
+  a positive attempt number, the start time, and optionally a runner
+  descriptor and workspace reference.
 - Starting a Run MUST also claim its lease for the starting owner as part of
   the same operation (see the liveness component); a Run is never left
   without an owner between creation and its first lease fact.
@@ -91,7 +92,7 @@ aggregate itself is authoritative for:
 | Field | Type | Description |
 | --- | --- | --- |
 | `runId` | Run identity | The stream's identity; every fact in the stream belongs to it. |
-| `activationId`, `activity`, `workflowInstanceId`, `orchestrationGroupId`, `attempt` | see module schema | Set once, by `RunStarted`; never revised. |
+| `activationId`, `activity`, `stage`, `workflowInstanceId`, `orchestrationGroupId`, `attempt` | see module schema | Set once, by `RunStarted`; `stage` is optional; none are revised. |
 | `status` | closed vocabulary: `started` / `succeeded` / `failed` / `cancelled` / `ambiguous` | Starts `started`; moves to a terminal value at most once. |
 | `startedAt` / `finishedAt` | timestamp | Set by `RunStarted` and by whichever terminal fact is recorded. |
 | `runner` | Runner descriptor | Set by `RunStarted` when the Activity is agent-kind; omitted otherwise. |
