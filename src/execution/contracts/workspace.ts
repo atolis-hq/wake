@@ -17,6 +17,7 @@ export interface WorkspaceLease {
   /** Branch actually checked out for this lease, when the provider can attest it. */
   readonly branch?: string | undefined;
   readonly mode: WorkspaceRequest['mode'];
+  /** Ends this Run's use of the workspace; branch-workspace disposal is WorkItem-scoped recovery. */
   release(): Promise<void>;
 }
 
@@ -35,6 +36,8 @@ export interface WorkspaceRecovery {
 /** Existing control-plane pause state, sampled between independent reclaims. */
 export interface WorkspaceRecoveryOptions {
   isPaused?(): Promise<boolean>;
+  /** Whether this WorkItem still owns its workspace after its active Runs finish. */
+  retainWorkItem?(workItemId: WorkItemId): Promise<boolean>;
 }
 
 export interface WorkspaceRecoveryResult {

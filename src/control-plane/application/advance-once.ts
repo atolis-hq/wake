@@ -1,6 +1,6 @@
 /* eslint-disable complexity, max-lines-per-function */
 import type { RunView, WorkspaceRecovery } from '../../execution/index.js';
-import { RunStatus } from '../../execution/index.js';
+import { RunStatus, WorkspaceMode } from '../../execution/index.js';
 import {
   correlationId,
   EventActorKind,
@@ -11,6 +11,7 @@ import {
 import type { ActivityActivationView, WorkflowInstanceView } from '../../orchestration/index.js';
 import { WorkflowStatus } from '../../orchestration/index.js';
 import type { ResourceService } from '../../resources/index.js';
+import { WorkStatus } from '../../work/index.js';
 import { ControlStreamKind } from '../contracts/streams.js';
 import type { AdvanceOptions, AdvanceResult } from '../contracts/views.js';
 import { DispatchPolicy } from '../domain/dispatch-policy.js';
@@ -60,7 +61,11 @@ interface AdvanceOnceDependencies {
   readonly work?: {
     get(
       workItemId: string,
-    ): Promise<{ readonly frozen?: boolean; readonly deleted?: boolean } | null>;
+    ): Promise<{
+      readonly state: WorkStatus;
+      readonly frozen?: boolean;
+      readonly deleted?: boolean;
+    } | null>;
   };
   readonly runnerIneligibility?: () => Promise<ReadonlySet<string>>;
   readonly isDispatchPaused?: () => Promise<boolean>;
@@ -92,7 +97,13 @@ export function createAdvanceOnce(
     await execution.recoverActive?.(ControlStreamKind.Global);
     if (await isDispatchPaused()) return { kind: 'paused' };
     if (workspaceRecovery !== undefined)
-      await workspaceRecovery.recover(await execution.list(), { isPaused: isDispatchPaused });
+      await workspaceRecovery.recover(await execution.list(), {
+        isPaused: isDispatchPaused,
+        retainWorkItem: async (workItemId) => {
+          const work = await dependencies.work?.get(workItemId);
+          return work?.state === WorkStatus.Open && work.deleted !== true;
+        },
+      });
     if (await isDispatchPaused()) return { kind: 'paused' };
     await orchestration.reconcileChildCompletions(context('child-completion-reconciliation'));
     if (await isDispatchPaused()) return { kind: 'paused' };
@@ -129,15 +140,23 @@ export function createAdvanceOnce(
         runId: recovery.run.runId,
       };
     }
+    const allRuns = await execution.list();
     const selectedCandidate = dispatchPolicy.select(
       await Promise.all(
         pending.map(async (item, requestedPosition) => ({
           workItemId: item.workflow.workItemId,
           activationId: item.activation.activationId,
           requestedPosition,
-          hasActiveRun: (await execution.list(item.activation.activationId)).some(
-            (run) => run.status === RunStatus.Started,
-          ),
+          hasActiveRun:
+            (await execution.list(item.activation.activationId)).some(
+              (run) => run.status === RunStatus.Started,
+            ) ||
+            allRuns.some(
+              (run) =>
+                run.status === RunStatus.Started &&
+                run.workflowInstanceId === item.workflow.workflowInstanceId &&
+                run.workspace?.mode === WorkspaceMode.Branch,
+            ),
           cancelled: false,
         })),
       ),

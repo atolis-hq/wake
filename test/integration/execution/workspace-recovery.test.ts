@@ -17,28 +17,34 @@ describe('GitWorkspaceProvider workspace recovery', () => {
     await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
   });
 
-  it('reclaims owned workspaces for terminal and never-started Runs', async () => {
+  it('retains an owned workspace for an open WorkItem after a terminal Run', async () => {
     const root = await workspaceRoot();
     const provider = new GitWorkspaceProvider(root, { cloneLocator: async () => 'unused' });
     const terminal = await ownedWorkspace(root, 'terminal', 'terminal-run');
-    const failed = await ownedWorkspace(root, 'failed', 'failed-run');
-    const cancelled = await ownedWorkspace(root, 'cancelled', 'cancelled-run');
-    const absent = await ownedWorkspace(root, 'absent', 'absent-run');
 
     await (provider as WorkspaceRecovery).recover([
       run('terminal-run', RunStatus.Succeeded),
-      run('failed-run', RunStatus.Failed),
-      run('cancelled-run', RunStatus.Cancelled),
-    ]);
+    ], { retainWorkItem: async () => true } as never);
 
-    await expect(access(terminal.path)).rejects.toThrow();
-    await expect(access(terminal.markerPath)).rejects.toThrow();
-    await expect(access(failed.path)).rejects.toThrow();
-    await expect(access(failed.markerPath)).rejects.toThrow();
-    await expect(access(cancelled.path)).rejects.toThrow();
-    await expect(access(cancelled.markerPath)).rejects.toThrow();
-    await expect(access(absent.path)).rejects.toThrow();
-    await expect(access(absent.markerPath)).rejects.toThrow();
+    await expect(access(terminal.path)).resolves.toBeUndefined();
+    await expect(access(terminal.markerPath)).resolves.toBeUndefined();
+  });
+
+  it('reclaims an owned workspace once its WorkItem is closed or deleted', async () => {
+    const root = await workspaceRoot();
+    const provider = new GitWorkspaceProvider(root, { cloneLocator: async () => 'unused' });
+    const closed = await ownedWorkspace(root, 'closed', 'closed-run');
+    const deleted = await ownedWorkspace(root, 'deleted', 'deleted-run');
+
+    await (provider as WorkspaceRecovery).recover(
+      [run('closed-run', RunStatus.Succeeded), run('deleted-run', RunStatus.Cancelled)],
+      { retainWorkItem: async () => false },
+    );
+
+    await expect(access(closed.path)).rejects.toThrow();
+    await expect(access(closed.markerPath)).rejects.toThrow();
+    await expect(access(deleted.path)).rejects.toThrow();
+    await expect(access(deleted.markerPath)).rejects.toThrow();
   });
 
   it('retains started and ambiguous owned workspaces', async () => {
@@ -56,6 +62,24 @@ describe('GitWorkspaceProvider workspace recovery', () => {
     await expect(access(started.markerPath)).resolves.toBeUndefined();
     await expect(access(ambiguous.path)).resolves.toBeUndefined();
     await expect(access(ambiguous.markerPath)).resolves.toBeUndefined();
+  });
+
+  it('never reclaims a workspace while another Run using its path is active', async () => {
+    const root = await workspaceRoot();
+    const provider = new GitWorkspaceProvider(root, { cloneLocator: async () => 'unused' });
+    const workspace = await ownedWorkspace(root, 'shared', 'finished-run');
+    const active = {
+      ...run('active-run', RunStatus.Started),
+      workspace: { mode: 'branch' as const, path: workspace.path, branch: 'work-active' },
+    };
+
+    await (provider as WorkspaceRecovery).recover(
+      [run('finished-run', RunStatus.Succeeded), active],
+      { retainWorkItem: async () => false },
+    );
+
+    await expect(access(workspace.path)).resolves.toBeUndefined();
+    await expect(access(workspace.markerPath)).resolves.toBeUndefined();
   });
 
   it('stops before the next owned workspace when the existing dispatch pause becomes active', async () => {

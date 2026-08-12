@@ -89,7 +89,7 @@ describe('advanceOnce', () => {
       workItemId: 'work-00000000000000000000000001',
       orchestrationGroupId: 'group-00000000000000000000000001',
       acceptedOutcomes: [],
-    } as never;
+    } as unknown as WorkflowInstanceView;
     const advance = createAdvanceOnce(
       {
         reconcileChildCompletions: async () => undefined,
@@ -169,6 +169,87 @@ describe('advanceOnce', () => {
     await expect(advance({ maxProgress: 1 })).resolves.toEqual({ kind: 'paused' });
     expect(recovered).toBe(false);
     expect(reconciled).toBe(false);
+  });
+
+  it('retains workspaces only while their WorkItem remains open', async () => {
+    const workItemId = 'work-00000000000000000000000001';
+    let retained: boolean | undefined;
+    const advance = createAdvanceOnce(
+      {
+        reconcileChildCompletions: async () => undefined,
+        listPendingActivations: async () => [],
+        listWaiting: async () => [],
+        acceptOutcome: async () => {
+          throw new Error('No outcome should be accepted');
+        },
+        markActivationStarted: async () => {
+          throw new Error('No activation should start');
+        },
+      },
+      {
+        attempt: async () => {
+          throw new Error('No execution attempt should begin');
+        },
+        list: async () => [],
+      },
+      { correlationsForWork: async () => [] } as never,
+      { now: () => new Date('2026-08-11T00:00:00.000Z') },
+      {
+        ids: { next: () => 'command-00000000000000000000000001' } as never,
+        work: { get: async () => ({ state: 'open', deleted: false }) },
+        workspaceRecovery: {
+          recover: async (_runs, options) => {
+            retained = await options?.retainWorkItem?.(workItemId as never);
+            return { reclaimed: 0, failures: [] };
+          },
+        },
+      },
+    );
+
+    await expect(advance({ maxProgress: 1 })).resolves.toEqual({ kind: 'no-work' });
+    expect(retained).toBe(true);
+  });
+
+  it('does not dispatch a second branch workspace activity while its workflow has an active branch Run', async () => {
+    const workflow = {
+      workflowInstanceId: 'workflow-00000000000000000000000001',
+      workItemId: 'work-00000000000000000000000001',
+      orchestrationGroupId: 'group-00000000000000000000000001',
+      acceptedOutcomes: [],
+    } as unknown as WorkflowInstanceView;
+    const activation = { activationId: 'activation-00000000000000000000000002' } as never;
+    let attempts = 0;
+    const advance = createAdvanceOnce(
+      {
+        reconcileChildCompletions: async () => undefined,
+        listPendingActivations: async () => [{ workflow, activation }],
+        listWaiting: async () => [],
+        acceptOutcome: async () => workflow,
+        markActivationStarted: async () => workflow,
+      },
+      {
+        attempt: async () => {
+          attempts++;
+          return {} as never;
+        },
+        list: async (activationId) =>
+          (activationId === undefined
+            ? [
+                {
+                  status: 'started',
+                  workflowInstanceId: workflow.workflowInstanceId,
+                  workspace: { mode: 'branch', path: '/workspace' },
+                },
+              ]
+            : []) as never,
+      },
+      { correlationsForWork: async () => [] } as never,
+      { now: () => new Date('2026-08-11T00:00:00.000Z') },
+      { ids: { next: () => 'command-00000000000000000000000001' } as never },
+    );
+
+    await expect(advance({ maxProgress: 1 })).resolves.toEqual({ kind: 'no-work' });
+    expect(attempts).toBe(0);
   });
 
   it('does no work when no activation is pending', async () => {
