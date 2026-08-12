@@ -27,6 +27,7 @@ import {
   GitWorkspaceProvider,
   RecoveryService,
   RunRepository,
+  TranscriptStore,
   createExecutionService,
   loadPromptTemplate,
   renderPromptTemplate,
@@ -203,6 +204,14 @@ export async function createCompositionRoot(
     ids,
     runners: createRunnerRegistry(config.execution, fakeScenarios, options.decorateRunner),
     reportRunnerQuota: createRunnerQuotaReporter(journal, clock, ids),
+    ...(config.transcripts.enabled
+      ? {
+          transcriptRecorder: new TranscriptStore(paths.transcriptsRoot),
+          logOperationalError(error) {
+            console.error('Transcript capture failed', error);
+          },
+        }
+      : {}),
     workspaces,
   });
   const recovery = new RecoveryService(

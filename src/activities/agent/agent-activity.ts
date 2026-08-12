@@ -1,4 +1,5 @@
 import type {
+  ActivityExecutionContext,
   ActivityHandler,
   ActivityInvocation,
   AgentRunnerPort,
@@ -63,14 +64,69 @@ export function createAgentActivity(
         resumeSessionId: context.resumeSessionId,
         workspace: context.workspace,
       });
+      await capturePrompt(context, invocation.workItemId, request);
       const execution = await context.runner.start(request, context.signal);
       if (execution.identity !== undefined)
         await context.reportExternalExecution(execution.identity);
       const result = await execution.result;
+      await captureResponse(context, invocation.workItemId, request, result);
       await context.reportRunnerResult?.({ ...result, runner: result.runner ?? 'unknown-runner' });
       return agentOutcome(result);
     },
   };
+}
+
+async function capturePrompt(
+  context: ActivityExecutionContext,
+  workItemId: string,
+  request: { readonly runId: string; readonly prompt: string },
+): Promise<void> {
+  await recordTranscript(context, () =>
+    context.transcriptRecorder?.capturePrompt({
+      ...transcriptIdentity(context, workItemId, request.runId),
+      text: request.prompt,
+    }),
+  );
+}
+
+async function captureResponse(
+  context: ActivityExecutionContext,
+  workItemId: string,
+  request: { readonly runId: string; readonly prompt: string },
+  result: { readonly output: string; readonly sessionId?: string | undefined },
+): Promise<void> {
+  await recordTranscript(context, () =>
+    context.transcriptRecorder?.captureResponse({
+      ...transcriptIdentity(context, workItemId, request.runId),
+      sessionId: result.sessionId,
+      text: result.output,
+    }),
+  );
+}
+
+function transcriptIdentity(context: ActivityExecutionContext, workItemId: string, runId: string) {
+  return {
+    workItemId,
+    runId,
+    cli: context.runnerContext?.runnerCli ?? context.runnerContext?.runnerName ?? 'unknown-runner',
+    timestamp: context.occurredAt,
+  };
+}
+
+async function recordTranscript(
+  context: ActivityExecutionContext,
+  write: () => Promise<void> | undefined,
+): Promise<void> {
+  if (context.transcriptRecorder === undefined) return;
+  try {
+    await write();
+  } catch (error) {
+    try {
+      context.logOperationalError?.(error);
+    } catch {
+      // Transcript diagnostics must not change the runner outcome.
+    }
+  }
 }
 
 async function agentRequest(
@@ -105,6 +161,7 @@ interface AgentRequestContext {
   readonly runnerContext:
     | {
         readonly runnerName: string;
+        readonly runnerCli?: string;
         readonly activationOrdinal: number;
         readonly model?: string;
         readonly effort?: string;
@@ -198,6 +255,7 @@ function requestFrom(
   runnerContext:
     | {
         readonly runnerName: string;
+        readonly runnerCli?: string;
         readonly activationOrdinal: number;
         readonly model?: string;
         readonly effort?: string;
@@ -215,10 +273,16 @@ function requestFrom(
     ...maxTurnsField(template?.maxTurns),
     ...contextField(runnerContext, input.template),
     ...(resumeSessionId === undefined ? {} : { resumeSessionId }),
-    ...(workspace === undefined
-      ? {}
-      : { workspacePath: workspace.path, workspaceMode: workspace.mode }),
+    ...workspaceFields(workspace),
   };
+}
+
+function workspaceFields(
+  workspace: { readonly path: string; readonly mode: 'read-only' | 'branch' } | undefined,
+) {
+  return workspace === undefined
+    ? {}
+    : { workspacePath: workspace.path, workspaceMode: workspace.mode };
 }
 
 function modelField(model: string | null | undefined) {
@@ -237,6 +301,7 @@ function contextField(
   runnerContext:
     | {
         readonly runnerName: string;
+        readonly runnerCli?: string;
         readonly activationOrdinal: number;
         readonly model?: string;
         readonly effort?: string;

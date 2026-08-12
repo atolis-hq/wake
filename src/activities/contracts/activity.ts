@@ -110,10 +110,32 @@ export interface ActivityExecutionContext {
   readonly runner?: AgentRunnerPort;
   readonly runnerContext?: {
     readonly runnerName: string;
+    /** CLI identity configured for the resolved runner. */
+    readonly runnerCli?: string;
     readonly activationOrdinal: number;
     readonly model?: string;
     readonly effort?: string;
   };
+  /** Optional operational capture of the exact agent conversation. */
+  readonly transcriptRecorder?: {
+    capturePrompt(capture: {
+      readonly workItemId: string;
+      readonly runId: string;
+      readonly cli: string;
+      readonly timestamp: string;
+      readonly text: string;
+    }): Promise<void>;
+    captureResponse(capture: {
+      readonly workItemId: string;
+      readonly runId: string;
+      readonly cli: string;
+      readonly sessionId?: string | undefined;
+      readonly timestamp: string;
+      readonly text: string;
+    }): Promise<void>;
+  };
+  /** Best-effort operational diagnostics that must not affect activity execution. */
+  readonly logOperationalError?: (error: unknown) => void;
   reportExternalExecution(reference: {
     readonly kind: ExternalExecutionKind;
     readonly id: string;
