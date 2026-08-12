@@ -30,4 +30,6 @@ export interface ExecutionAttemptContext {
   readonly owner?: string;
   /** Runner names currently quota-paused; unset means none. */
   readonly ineligibleRunners?: ReadonlySet<string>;
+  /** Watch workflows always start fresh; primary stages resume their own compatible session. */
+  readonly sessionPolicy?: 'fresh' | 'resume-stage';
 }

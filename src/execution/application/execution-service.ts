@@ -79,7 +79,15 @@ async function attemptExecution(
   const runner = resolveRunner(runtime, definition.executionKind, activation, context);
   const owner = context.owner ?? 'execution';
   const prior = await runtime.repository.list(activation.activationId);
-  const resumeSessionId = resumeSessionIdFor(prior, runner.cli);
+  const resumeSessionId = resumeSessionIdFor(
+    context.sessionPolicy === 'resume-stage' ? await runtime.repository.list() : prior,
+    runner.cli,
+    {
+      workflowInstanceId: context.workflowInstanceId,
+      stage: activation.stage,
+      ...(context.sessionPolicy === undefined ? {} : { policy: context.sessionPolicy }),
+    },
+  );
   const existing = existingRun(prior, runtime.dependencies.clock, owner);
   if (existing !== undefined) return existing;
   const currentRunId = runId(runtime.dependencies.ids.next(ExecutionStreamKind.Run));
@@ -283,9 +291,23 @@ async function releasePreStartResources(
   }
 }
 
-export function resumeSessionIdFor(prior: readonly RunView[], cli: string | undefined) {
-  if (cli === undefined) return undefined;
-  return [...prior]
+export function resumeSessionIdFor(
+  prior: readonly RunView[],
+  cli: string | undefined,
+  scope?: {
+    readonly policy?: 'fresh' | 'resume-stage';
+    readonly workflowInstanceId: string;
+    readonly stage?: string | undefined;
+  },
+) {
+  if (cli === undefined || scope?.policy === 'fresh') return undefined;
+  const eligible =
+    scope?.policy !== 'resume-stage' || scope.stage === undefined
+      ? prior
+      : prior.filter(
+          (run) => run.workflowInstanceId === scope.workflowInstanceId && run.stage === scope.stage,
+        );
+  return [...eligible]
     .filter((run) => isResumeTerminal(run.status))
     .sort(compareNewestTerminalRun)
     .find(
