@@ -338,6 +338,7 @@ async function twoStageIssueWorkflow() {
     workflowId: started.workflowInstanceId,
     workItemId: work.workItemId,
     initialActivationId: started.pendingActivation!.activationId,
+    commandEventId: (body: string) => `github:issue-comment:atolis-hq/wake-test#7:99:${body}`,
   };
 }
 
