@@ -8,13 +8,10 @@ import type {
 import { ExecutionCancellationReason, RunStatus } from '../../contracts/vocabulary.js';
 import { runProcess } from '../process-execution.js';
 
-export function createClaudeRunner(
-  command = 'claude',
-  timeoutMs?: number,
-  passthroughArgs: readonly string[] = [],
-): Runner {
-  return cliRunner('claude', command, (request) => claudeCommandArgs(request, passthroughArgs), {
-    ...(timeoutMs === undefined ? {} : { timeoutMs }),
+export function createClaudeRunner(options: CliRunnerOptions = {}): Runner {
+  return cliRunner('claude', options.command ?? 'claude', (request) => claudeCommandArgs(request, options.args, options), {
+    ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+    ...(options.model === undefined ? {} : { defaultModel: options.model }),
     parseSuccessfulOutput: parseClaudeOutput,
   });
 }
@@ -69,13 +66,16 @@ function numeric(value: unknown): number | undefined {
 export function claudeCommandArgs(
   request: RunnerRequest,
   passthroughArgs: readonly string[] = [],
+  defaults: RunnerDefaults = {},
 ): string[] {
+  const model = request.model ?? defaults.model;
   return [
     '-p',
     '--output-format',
     'json',
     ...(request.resumeSessionId === undefined ? [] : ['--resume', request.resumeSessionId]),
-    ...(request.model === undefined ? [] : ['--model', request.model]),
+    ...(model === undefined ? [] : ['--model', model]),
+    ...(defaults.effort === undefined ? [] : ['--effort', defaults.effort]),
     ...(request.maxTurns === undefined ? [] : ['--max-turns', String(request.maxTurns)]),
     ...(request.allowedTools.length === 0
       ? []
@@ -92,6 +92,7 @@ export function cliRunner(
   args: (request: RunnerRequest) => string[],
   options: {
     readonly timeoutMs?: number;
+    readonly defaultModel?: string;
     readonly parseSuccessfulOutput?: (stdout: string) => Partial<AgentRunnerResult>;
   } = {},
 ): Runner {
@@ -116,7 +117,9 @@ export function cliRunner(
                 transport: RunStatus.Succeeded,
                 output: value.stdout,
                 runner: name,
-                ...(request.model === undefined ? {} : { model: request.model }),
+                ...(request.model ?? options.defaultModel) === undefined
+                  ? {}
+                  : { model: request.model ?? options.defaultModel },
                 ...parseSuccessfulOutput(value.stdout, options.parseSuccessfulOutput),
               }
             : {
@@ -135,6 +138,17 @@ export function cliRunner(
       };
     },
   };
+}
+
+export interface RunnerDefaults {
+  readonly model?: string;
+  readonly effort?: string;
+}
+
+export interface CliRunnerOptions extends RunnerDefaults {
+  readonly command?: string;
+  readonly timeoutMs?: number;
+  readonly args?: readonly string[];
 }
 
 function parseSuccessfulOutput(

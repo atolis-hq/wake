@@ -1,31 +1,43 @@
 import type { AgentRunnerResult, Runner, RunnerRequest } from '../../contracts/runner.js';
-import { cliRunner } from './claude.js';
+import { cliRunner, type CliRunnerOptions, type RunnerDefaults } from './claude.js';
 
-export function createCodexRunner(
-  command = 'codex',
-  timeoutMs?: number,
-  passthroughArgs: readonly string[] = [],
-): Runner {
+export function createCodexRunner(options: CliRunnerOptions = {}): Runner {
   return cliRunner(
     'codex',
-    command,
-    (request: RunnerRequest) => codexCommandArgs(request, passthroughArgs),
-    { ...(timeoutMs === undefined ? {} : { timeoutMs }), parseSuccessfulOutput: parseCodexOutput },
+    options.command ?? 'codex',
+    (request: RunnerRequest) => codexCommandArgs(request, options.args, options),
+    {
+      ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+      ...(options.model === undefined ? {} : { defaultModel: options.model }),
+      parseSuccessfulOutput: parseCodexOutput,
+    },
   );
 }
 
 export function codexCommandArgs(
   request: RunnerRequest,
   passthroughArgs: readonly string[] = [],
+  defaults: RunnerDefaults = {},
 ): string[] {
+  const model = request.model ?? defaults.model;
   return [
     'exec',
     '--json',
-    ...(request.model === undefined ? [] : ['--model', request.model]),
+    '--skip-git-repo-check',
+    ...(request.workspaceMode === undefined
+      ? []
+      : ['--sandbox', codexSandboxMode(request.workspaceMode)]),
+    ...(request.workspacePath === undefined ? [] : ['--cd', request.workspacePath]),
+    ...(model === undefined ? [] : ['--model', model]),
+    ...(defaults.effort === undefined ? [] : ['-c', `model_reasoning_effort="${defaults.effort}"`]),
     ...(request.resumeSessionId === undefined ? [] : ['resume', request.resumeSessionId]),
     ...passthroughArgs,
     request.prompt,
   ];
+}
+
+function codexSandboxMode(workspaceMode: NonNullable<RunnerRequest['workspaceMode']>) {
+  return workspaceMode === 'branch' ? 'danger-full-access' : 'workspace-write';
 }
 
 export function parseCodexOutput(stdout: string): Partial<AgentRunnerResult> {

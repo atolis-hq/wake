@@ -12,6 +12,18 @@ import { parseCodexOutput } from '../../../src/execution/infrastructure/runners/
 import { parseCursorOutput } from '../../../src/execution/infrastructure/runners/cursor.js';
 
 describe('runProcess', () => {
+  it('closes stdin so non-interactive CLIs do not wait for more input', async () => {
+    const execution = runProcess(
+      process.execPath,
+      ['-e', 'process.stdin.resume(); process.stdin.once("end", () => process.exit(0));'],
+      undefined,
+      new AbortController().signal,
+      1_000,
+    );
+
+    await expect(execution.result).resolves.toMatchObject({ exitCode: 0, timedOut: false });
+  });
+
   it('terminates a child process at the configured wall-clock deadline', async () => {
     const execution = runProcess(
       process.execPath,
@@ -62,9 +74,24 @@ describe('cliRunner', () => {
           prompt: 'ship',
           model: 'gpt-test',
           allowedTools: [],
+          workspacePath: '/workspace',
+          workspaceMode: 'read-only',
           resumeSessionId: 'prior-session',
         }),
-      expected: ['exec', '--json', '--model', 'gpt-test', 'resume', 'prior-session', 'ship'],
+      expected: [
+        'exec',
+        '--json',
+        '--skip-git-repo-check',
+        '--sandbox',
+        'workspace-write',
+        '--cd',
+        '/workspace',
+        '--model',
+        'gpt-test',
+        'resume',
+        'prior-session',
+        'ship',
+      ],
     },
     {
       name: 'Cursor',
@@ -83,6 +110,8 @@ describe('cliRunner', () => {
         'json',
         '--model',
         'cursor-test',
+        '--trust',
+        '--force',
         '--resume=prior-session',
         'ship',
       ],
@@ -177,6 +206,47 @@ describe('cliRunner', () => {
     };
 
     expect(claudeCommandArgs(request)).toEqual(['-p', '--output-format', 'json', '--', 'ship']);
+  });
+
+  it('uses configured runner model and effort when an agent request does not override them', () => {
+    const request = { runId: 'run-1', prompt: 'ship', allowedTools: [] };
+
+    expect(claudeCommandArgs(request, [], { model: 'claude-default', effort: 'high' })).toEqual(
+      expect.arrayContaining(['--model', 'claude-default', '--effort', 'high']),
+    );
+    expect(codexCommandArgs(request, [], { model: 'gpt-default', effort: 'medium' })).toEqual(
+      expect.arrayContaining([
+        '--model',
+        'gpt-default',
+        '-c',
+        'model_reasoning_effort="medium"',
+      ]),
+    );
+    expect(cursorCommandArgs(request, [], { model: 'cursor-default' })).toEqual(
+      expect.arrayContaining(['--model', 'cursor-default']),
+    );
+  });
+
+  it('maps Wake workspace modes to Codex sandbox modes', () => {
+    const request = { runId: 'run-1', prompt: 'ship', allowedTools: [], workspacePath: '/workspace' };
+
+    expect(codexCommandArgs({ ...request, workspaceMode: 'read-only' })).toEqual(
+      expect.arrayContaining(['--sandbox', 'workspace-write', '--cd', '/workspace']),
+    );
+    expect(codexCommandArgs({ ...request, workspaceMode: 'branch' })).toEqual(
+      expect.arrayContaining(['--sandbox', 'danger-full-access', '--cd', '/workspace']),
+    );
+  });
+
+  it('uses Cursor trust mode with the legacy workspace permission policy', () => {
+    const request = { runId: 'run-1', prompt: 'ship', allowedTools: [] };
+
+    expect(cursorCommandArgs({ ...request, workspaceMode: 'read-only' })).toEqual(
+      expect.arrayContaining(['--trust', '--mode', 'ask']),
+    );
+    expect(cursorCommandArgs({ ...request, workspaceMode: 'branch' })).toEqual(
+      expect.arrayContaining(['--trust', '--force']),
+    );
   });
 
   it.each([

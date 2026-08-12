@@ -44,11 +44,11 @@ function createConfiguredRunner(
     case 'fake':
       return new FakeExecutionRunner(name, scenarios);
     case 'claude-cli':
-      return createClaudeRunner(runner.command, runner.timeoutMs, runner.args);
+      return createClaudeRunner(runner);
     case 'codex-cli':
-      return createCodexRunner(runner.command, runner.timeoutMs, runner.args);
+      return createCodexRunner(runner);
     case 'cursor-cli':
-      return createCursorRunner(runner.command, runner.timeoutMs, runner.args);
+      return createCursorRunner(runner);
     case 'command': {
       if (runner.command === undefined) throw new Error('Command runner requires a command');
       return createCommandRunner(runner.command, runner.args, runner.timeoutMs);

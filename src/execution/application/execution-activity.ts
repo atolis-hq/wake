@@ -40,6 +40,7 @@ export async function executeActivity(
     readonly runner: ActivityExecutionContext['runner'];
     readonly runnerName?: string;
     readonly resumeSessionId?: string;
+    readonly workspace?: { readonly path: string; readonly mode: 'read-only' | 'branch' };
   },
 ) {
   const { activation, context, occurredAt, runner } = request;
@@ -50,15 +51,9 @@ export async function executeActivity(
     occurredAt,
     runId: currentRunId,
     ...(request.resumeSessionId === undefined ? {} : { resumeSessionId: request.resumeSessionId }),
+    ...workspaceContext(request.workspace),
     ...(runner === undefined ? {} : { runner }),
-    ...(request.runnerName === undefined
-      ? {}
-      : {
-          runnerContext: {
-            runnerName: request.runnerName,
-            activationOrdinal: activation.ordinal,
-          },
-        }),
+    ...runnerContext(request.runnerName, activation.ordinal),
     reportExternalExecution: async (reference) => {
       const loaded = await runtime.repository.load(currentRunId);
       await runtime.repository.append(currentRunId, loaded.sequence, [
@@ -108,6 +103,14 @@ export async function executeActivity(
     },
     executionContext,
   );
+}
+
+function workspaceContext(workspace: { readonly path: string; readonly mode: 'read-only' | 'branch' } | undefined) {
+  return workspace === undefined ? {} : { workspace };
+}
+
+function runnerContext(runnerName: string | undefined, activationOrdinal: number) {
+  return runnerName === undefined ? {} : { runnerContext: { runnerName, activationOrdinal } };
 }
 
 async function appendIdempotently(

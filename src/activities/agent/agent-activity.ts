@@ -56,9 +56,12 @@ export function createAgentActivity(
         invocation,
         templates,
         contextReader,
-        context.runnerContext,
-        context.runId,
-        context.resumeSessionId,
+        {
+          runnerContext: context.runnerContext,
+          runId: context.runId,
+          resumeSessionId: context.resumeSessionId,
+          workspace: context.workspace,
+        },
       );
       const execution = await context.runner.start(request, context.signal);
       if (execution.identity !== undefined)
@@ -79,9 +82,7 @@ async function agentRequest(
   }>,
   templates: AgentTemplateRenderer | undefined,
   contextReader: AgentContextReader | undefined,
-  runnerContext: { readonly runnerName: string; readonly activationOrdinal: number } | undefined,
-  currentRunId: string | undefined,
-  resumeSessionId: string | undefined,
+  context: AgentRequestContext,
 ) {
   const input = invocation.input;
   const template = await resolveTemplate(
@@ -92,11 +93,19 @@ async function agentRequest(
   );
   return requestFrom(
     input,
-    currentRunId ?? invocation.activationId,
+    context.runId ?? invocation.activationId,
     template,
-    runnerContext,
-    resumeSessionId,
+    context.runnerContext,
+    context.resumeSessionId,
+    context.workspace,
   );
+}
+
+interface AgentRequestContext {
+  readonly runnerContext: { readonly runnerName: string; readonly activationOrdinal: number } | undefined;
+  readonly runId: string | undefined;
+  readonly resumeSessionId: string | undefined;
+  readonly workspace: { readonly path: string; readonly mode: 'read-only' | 'branch' } | undefined;
 }
 
 async function resolveTemplate(
@@ -181,6 +190,7 @@ function requestFrom(
   template: AgentTemplate,
   runnerContext: { readonly runnerName: string; readonly activationOrdinal: number } | undefined,
   resumeSessionId: string | undefined,
+  workspace: { readonly path: string; readonly mode: 'read-only' | 'branch' } | undefined,
 ) {
   return {
     runId,
@@ -190,6 +200,7 @@ function requestFrom(
     ...maxTurnsField(template?.maxTurns),
     ...contextField(runnerContext, input.template),
     ...(resumeSessionId === undefined ? {} : { resumeSessionId }),
+    ...(workspace === undefined ? {} : { workspacePath: workspace.path, workspaceMode: workspace.mode }),
   };
 }
 
@@ -232,6 +243,14 @@ function parseOutput(output: string): unknown {
   try {
     return JSON.parse(output);
   } catch {
-    return { status: output.trim() };
+    return { status: terminalStatus(output) ?? output.trim() };
   }
+}
+
+function terminalStatus(output: string): string | undefined {
+  return output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .at(-1);
 }

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { RunnerRequest } from '../../../src/execution/contracts/runner.js';
 import {
   BuiltInActivityName,
   activationId,
@@ -154,11 +155,79 @@ describe('agent activity template context', () => {
 
     expect(requests).toEqual([expect.objectContaining({ prompt: 'Direct prompt' })]);
   });
+
+  it('forwards the leased workspace to the runner request', async () => {
+    const requests: RunnerRequest[] = [];
+    const activity = createAgentActivity();
+
+    await activity.execute(
+      {
+        activationId: activationId('activation-workspace'),
+        activity: BuiltInActivityName.Agent,
+        workItemId: workId('00000000000000000000000001'),
+        workflowInstanceId: activityWorkflowInstanceId('workflow-1'),
+        orchestrationGroupId: activityOrchestrationGroupId('group-1'),
+        causationId: 'cause-1',
+        input: { prompt: 'Direct prompt' },
+        resources: [],
+      },
+      {
+        signal: new AbortController().signal,
+        occurredAt: '2026-08-08T00:00:00.000Z',
+        workspace: { path: '/wake/workspaces/run-1', mode: 'branch' },
+        runner: {
+          async start(request) {
+            requests.push(request);
+            return { result: Promise.resolve({ transport: 'succeeded' as const, output: 'DONE' }) };
+          },
+        },
+        async reportExternalExecution() {},
+      },
+    );
+
+    expect(requests).toEqual([
+      expect.objectContaining({ workspacePath: '/wake/workspaces/run-1', workspaceMode: 'branch' }),
+    ]);
+  });
+
+  it('treats a final standalone DONE line as a successful agent outcome', async () => {
+    const activity = createAgentActivity();
+
+    const outcome = await activity.execute(
+      {
+        activationId: activationId('activation-terminal-line'),
+        activity: BuiltInActivityName.Agent,
+        workItemId: workId('00000000000000000000000001'),
+        workflowInstanceId: activityWorkflowInstanceId('workflow-1'),
+        orchestrationGroupId: activityOrchestrationGroupId('group-1'),
+        causationId: 'cause-1',
+        input: { prompt: 'Direct prompt' },
+        resources: [],
+      },
+      {
+        signal: new AbortController().signal,
+        occurredAt: '2026-08-08T00:00:00.000Z',
+        runner: {
+          async start() {
+            return {
+              result: Promise.resolve({
+                transport: 'succeeded' as const,
+                output: 'Implementation plan:\n1. Create the file.\n\nDONE',
+              }),
+            };
+          },
+        },
+        async reportExternalExecution() {},
+      },
+    );
+
+    expect(outcome).toEqual({ kind: 'done', data: { status: 'DONE' } });
+  });
 });
 
 async function execute(
   activity: ReturnType<typeof createAgentActivity>,
-  recordRequest?: (request: { readonly prompt: string }) => void,
+  recordRequest?: (request: RunnerRequest) => void,
   input: { prompt?: string; template?: string } = { template: 'implement' },
   resumeSessionId?: string,
 ) {

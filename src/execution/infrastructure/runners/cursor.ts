@@ -1,32 +1,36 @@
 import type { AgentRunnerResult, Runner, RunnerRequest } from '../../contracts/runner.js';
-import { cliRunner } from './claude.js';
+import { cliRunner, type CliRunnerOptions, type RunnerDefaults } from './claude.js';
 
 // Cursor's CLI subcommand, not the closed domain vocabulary word "agent".
 const cursorCliSubcommand = String.fromCharCode(97, 103, 101, 110, 116);
 
-export function createCursorRunner(
-  command = 'cursor',
-  timeoutMs?: number,
-  passthroughArgs: readonly string[] = [],
-): Runner {
+export function createCursorRunner(options: CliRunnerOptions = {}): Runner {
   return cliRunner(
     'cursor',
-    command,
-    (request: RunnerRequest) => cursorCommandArgs(request, passthroughArgs),
-    { ...(timeoutMs === undefined ? {} : { timeoutMs }), parseSuccessfulOutput: parseCursorOutput },
+    options.command ?? 'cursor',
+    (request: RunnerRequest) => cursorCommandArgs(request, options.args, options),
+    {
+      ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+      ...(options.model === undefined ? {} : { defaultModel: options.model }),
+      parseSuccessfulOutput: parseCursorOutput,
+    },
   );
 }
 
 export function cursorCommandArgs(
   request: RunnerRequest,
   passthroughArgs: readonly string[] = [],
+  defaults: RunnerDefaults = {},
 ): string[] {
+  const model = request.model ?? defaults.model;
   return [
     cursorCliSubcommand,
     '-p',
     '--output-format',
     'json',
-    ...(request.model === undefined ? [] : ['--model', request.model]),
+    ...(model === undefined ? [] : ['--model', model]),
+    '--trust',
+    ...(request.workspaceMode === 'read-only' ? ['--mode', 'ask'] : ['--force']),
     ...(request.resumeSessionId === undefined ? [] : [`--resume=${request.resumeSessionId}`]),
     ...passthroughArgs,
     request.prompt,

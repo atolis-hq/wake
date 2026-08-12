@@ -104,6 +104,7 @@ async function attemptExecution(
       runner: runner.runner,
       ...(runner.name === undefined ? {} : { runnerName: runner.name }),
       ...(resumeSessionId === undefined ? {} : { resumeSessionId }),
+      ...(lease === undefined ? {} : { workspace: { path: lease.path, mode: lease.mode } }),
     });
     await recordRunSuccess({
       dependencies: runLifecycleDependencies(runtime),

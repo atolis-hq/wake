@@ -11,6 +11,7 @@ export interface RunnerRequest {
   };
   readonly model?: string;
   readonly workspacePath?: string;
+  readonly workspaceMode?: 'read-only' | 'branch';
   readonly allowedTools: readonly string[];
   readonly maxTurns?: number;
   readonly resumeSessionId?: string;

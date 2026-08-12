@@ -14,7 +14,7 @@ export function runProcess(
   signal: AbortSignal,
   timeoutMs?: number,
 ): { readonly result: Promise<ProcessExecutionResult>; cancel(): Promise<void> } {
-  const child = spawn(command, args, { cwd, shell: false });
+  const child = spawn(command, args, { cwd, shell: false, stdio: ['ignore', 'pipe', 'pipe'] });
   const result = new Promise<ProcessExecutionResult>((resolve, reject) => {
     let stdout = '';
     let stderr = '';
