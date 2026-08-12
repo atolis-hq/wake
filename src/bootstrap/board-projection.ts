@@ -393,7 +393,7 @@ function projectRunStarted(
     cards: {
       ...view.cards,
       [workId]: {
-        ...(isChildRun ? card : withoutAwaitingApproval(card)),
+        ...(isChildRun ? card : withoutLastRunOutcome(withoutAwaitingApproval(card))),
         runCount: card.runCount + 1,
         ...(isChildRun ? {} : { condition: BoardCondition.Active }),
         lastRunAt: event.payload.startedAt,
@@ -437,4 +437,9 @@ function withoutAwaitingApproval(card: StoredCard): StoredCard {
 function withoutActiveRun(card: StoredCard): StoredCard {
   const { activeRun: _activeRun, ...withoutRun } = card;
   return withoutRun;
+}
+
+function withoutLastRunOutcome(card: StoredCard): StoredCard {
+  const { lastRunOutcome: _lastRunOutcome, ...withoutOutcome } = card;
+  return withoutOutcome;
 }

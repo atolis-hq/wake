@@ -662,6 +662,67 @@ describe('operator board projection', () => {
     expect(failed.cards[item]!.activeRun).toBeUndefined();
   });
 
+  it('clears a terminal outcome when a primary retry starts', () => {
+    const item = workId('board-run-retry');
+    const workflowId = workflowInstanceId(`primary:${item}`);
+    const failedRun = runId('run-retry-failed');
+    const retried = [
+      eventEnvelope(WorkEventType.ItemCreated, { objective: 'Ship it' }, workItemStream(item), 1),
+      eventEnvelope(
+        OrchestrationEventType.InstanceStarted,
+        {
+          workItemId: item,
+          workflowName: 'delivery',
+          orchestrationGroupId: orchestrationGroupId(`primary:${item}`),
+          entry: 'refine',
+        },
+        workflowInstanceStream(workflowId),
+        2,
+      ),
+      eventEnvelope(
+        ExecutionEventType.RunStarted,
+        {
+          activationId: activationId('activation-retry-failed'),
+          activity: activityName('refine'),
+          workflowInstanceId: workflowId,
+          orchestrationGroupId: orchestrationGroupId(`primary:${item}`),
+          attempt: 1,
+          startedAt: '2026-08-03T12:00:00.000Z',
+        },
+        runStream(failedRun),
+        3,
+      ),
+      eventEnvelope(
+        ExecutionEventType.RunSucceeded,
+        { outcome: { kind: 'failed' }, finishedAt: '2026-08-03T12:05:00.000Z' },
+        runStream(failedRun),
+        4,
+      ),
+      eventEnvelope(
+        ExecutionEventType.RunStarted,
+        {
+          activationId: activationId('activation-retry-active'),
+          activity: activityName('refine'),
+          workflowInstanceId: workflowId,
+          orchestrationGroupId: orchestrationGroupId(`primary:${item}`),
+          attempt: 2,
+          startedAt: '2026-08-03T12:06:00.000Z',
+        },
+        runStream(runId('run-retry-active')),
+        5,
+      ),
+    ].reduce(
+      (view, event) => boardProjection.project(view, event),
+      boardProjection.initial('global'),
+    );
+
+    expect(retried.cards[item]).toMatchObject({
+      condition: 'active',
+      activeRun: { action: 'refine', startedAt: '2026-08-03T12:06:00.000Z' },
+    });
+    expect(retried.cards[item]!.lastRunOutcome).toBeUndefined();
+  });
+
   it('resets a card to Ready on entering a new stage regardless of the condition it inherits', () => {
     const item = workId('board-stage-reset');
     const workflowId = workflowInstanceId(`primary:${item}`);
