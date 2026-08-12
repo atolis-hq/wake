@@ -127,6 +127,7 @@ describe('supplemental Activity commands', () => {
       activity: 'review',
       supplemental: true,
     });
+    expect(reviewing.pendingActivation?.stage).toBeUndefined();
     const resumed = await service.acceptOutcome(
       {
         workflowInstanceId: instance.workflowInstanceId,
@@ -139,6 +140,7 @@ describe('supplemental Activity commands', () => {
     expect(resumed.pendingActivation).toMatchObject({
       activity: 'implement',
       ordinal: 3,
+      stage: 'implement',
     });
     expect(resumed.supplementalQueue).toEqual([]);
   });

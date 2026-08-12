@@ -22,6 +22,7 @@ const runSamples = [
     {
       activationId: activationId('activation-1'),
       activity: activityName('implement'),
+      stage: 'refine',
       workflowInstanceId: workflowInstanceId('workflow-1'),
       orchestrationGroupId: orchestrationGroupId('group-1'),
       attempt: 1,
@@ -218,5 +219,13 @@ describe('Execution event contract', () => {
         ),
       ),
     ).toThrow();
+  });
+
+  it('rejects an empty originating stage', () => {
+    expect(() =>
+      decodeExecutionEvent(
+        eventEnvelope(ExecutionEventType.RunStarted, { ...runSamples[0][1], stage: '' }, stream),
+      ),
+    ).toThrow(/stage/i);
   });
 });

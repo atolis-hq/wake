@@ -115,6 +115,7 @@ function pushStageEntry(
       OrchestrationEventType.ActivityRequested,
       activation(state.workflowInstanceId, nextOrdinal(state), stage.activity, stage.with, {
         execution: stage.execution,
+        stage: stageName,
       }),
       events.length + 2,
     ),

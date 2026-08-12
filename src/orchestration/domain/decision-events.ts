@@ -5,7 +5,11 @@ import {
   type OrchestrationEventPayloads,
   type WorkflowOrchestrationEventName,
 } from '../contracts/events.js';
-import { workflowInstanceId, type WorkflowInstanceId } from '../contracts/identifiers.js';
+import {
+  workflowInstanceId,
+  type StageName,
+  type WorkflowInstanceId,
+} from '../contracts/identifiers.js';
 import { workflowInstanceStream } from '../contracts/streams.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
 
@@ -33,6 +37,7 @@ export function activation(
   input: unknown,
   options: {
     readonly execution: ActivityRequestedPayload['execution'];
+    readonly stage?: StageName;
     readonly followOnIndex?: number;
     readonly supplemental?: boolean;
   },
@@ -41,6 +46,7 @@ export function activation(
     activationId: activationId(`${id}:activity:${ordinal}`),
     ordinal,
     activity,
+    ...(options.stage === undefined ? {} : { stage: options.stage }),
     input,
     execution: options.execution,
     ...(options.followOnIndex === undefined ? {} : { followOnIndex: options.followOnIndex }),

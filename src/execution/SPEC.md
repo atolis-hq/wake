@@ -161,6 +161,7 @@ Execution does not own:
 | `runId` | Run identity | Freshly minted per attempt; never reused. |
 | `activationId` | Activation identity (owned by Activities) | The Activation this Run is attempting. |
 | `activity` | Activity name (owned by Activities) | Which Activity definition is being run. |
+| `stage` | Stage name, optional | Originating Stage provenance, when the Activation was requested for a Stage. |
 | `workflowInstanceId` | Workflow instance identity (owned by Orchestration) | Correlates the Run back to its workflow, opaque to Execution. |
 | `orchestrationGroupId` | Orchestration group identity (owned by Orchestration) | Correlation id used on every event this Run produces. |
 | `attempt` | positive integer | This Run's 1-based ordinal among Runs for the same Activation. |
@@ -201,6 +202,7 @@ Execution does not own:
 | `activationId` | Activation identity | Identity of the Activation being attempted. |
 | `ordinal` | integer | The Activation's position, as assigned by Orchestration. |
 | `activity` | Activity name | Which Activity definition to run. |
+| `stage` | Stage name, optional | Originating Stage provenance, when the Activation was requested for a Stage. |
 | `input` | open value | The Activity's input, validated by Activities before execution. |
 | `execution.workspace` | closed vocabulary: `none` / `read-only` / `branch`, optional | Requested workspace mode; absent means `none`. |
 | `execution.runnerPool` | string, optional | Requested runner pool; absent means the configured default pool. |

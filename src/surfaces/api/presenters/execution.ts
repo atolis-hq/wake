@@ -20,6 +20,7 @@ export function presentRun(value: RunView): RunResponse {
     runId: value.runId,
     activationId: value.activationId,
     activity: value.activity,
+    ...(value.stage === undefined ? {} : { stage: value.stage }),
     workflowInstanceId: value.workflowInstanceId,
     orchestrationGroupId: value.orchestrationGroupId,
     attempt: value.attempt,

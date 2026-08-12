@@ -79,15 +79,16 @@ and, for `auto` authority, the WorkItem's consent fact.
   the module specification's approval-authority language refers to; the
   domain decision itself never queries Work directly.
 - On acceptance: `SignalAccepted` (carrying the resolved authority) is
-  appended first. If the expectation declares an `onRejectResume` target and
-  the signal's `outcome` is `rejected`, the shared transition resolution
-  reaches `onRejectResume` instead — this is how a Watch gate's rejecting
-  verdict routes differently from its approving one. Otherwise, if the
-  satisfied expectation declared a `resume` target, the shared transition
-  resolution reaches that target next. If it declared no `resume` target —
-  the case for a wait recorded from an Activity's own `waiting` outcome —
-  the current Stage's own configured Activity is requested again, resuming
-  the interrupted Activation rather than transitioning anywhere.
+  appended first. When the signal's `outcome` is `rejected`, an explicit
+  `onRejectResume` target wins and the shared transition resolution reaches
+  it. Without `onRejectResume`, rejection re-requests the current Stage's
+  configured Activity and MUST NOT use the success `resume` target. For any
+  other accepted outcome, if the expectation declares a `resume` target, the
+  shared transition resolution reaches that target next. If it declares no
+  `resume` target — the case for a wait recorded from an Activity's own
+  `waiting` outcome — the current Stage's own configured Activity is
+  requested again, resuming the interrupted Activation rather than
+  transitioning anywhere.
 
 **Recording an Activity's own wait (`acceptWaitingOutcome`)**
 

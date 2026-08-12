@@ -72,6 +72,7 @@ export function finishSupplemental(
       OrchestrationEventType.ActivityRequested,
       activation(state.workflowInstanceId, nextOrdinal(state), stage.activity, stage.with, {
         execution: stage.execution,
+        stage: stageName(state.currentStage),
       }),
       events.length + 1,
     ),

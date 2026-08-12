@@ -12,6 +12,7 @@ export interface ExecutionActivation {
   readonly activationId: ActivationId;
   readonly ordinal: number;
   readonly activity: ActivityName;
+  readonly stage?: string | undefined;
   readonly input: unknown;
   readonly execution:
     | {

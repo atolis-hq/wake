@@ -71,9 +71,10 @@ reads and combines their current projections.
   each presented resource MUST carry a resolved `externalUrl` under the
   same rule the API surface application's resource listing uses. Included
   runs MUST be ordered by start time, most recent first, and each MUST be
-  enriched with its owning workflow instance's current `workflowName`/
-  `stage` when that instance is still known, matching the API surface
-  application's own run presentation.
+  enriched with its owning workflow instance's `workflowName` when that
+  instance is still known, while preserving the run's durable originating
+  `stage`; historic stage MUST NOT be derived from current workflow state,
+  matching the API surface application's own run presentation.
 - The response's freshness metadata MUST reflect every fact that could
   change the assembled content: the WorkItem's own projection; every
   included resource's, workflow instance's, and run's projection; the

@@ -102,6 +102,7 @@ export const activityRequestedSchema = z
     activationId: brandedStringSchema(activationId),
     ordinal: z.number().int().positive(),
     activity: brandedStringSchema(activityName),
+    stage: brandedStringSchema(stageName).optional(),
     input: z.unknown(),
     execution: executionSchema.optional(),
     followOnIndex: z.number().int().nonnegative().optional(),
