@@ -7,6 +7,7 @@ export interface RunnerPipelineStages {
   readonly runSchedules: () => Promise<void>;
   readonly react: () => Promise<void>;
   readonly advance: AdvanceOnce;
+  readonly publishAgentRuns?: () => Promise<void>;
   readonly deliver: (signal: AbortSignal) => Promise<void>;
 }
 
@@ -32,6 +33,8 @@ export function createRunnerPipeline(stages: RunnerPipelineStages): RunnerPipeli
       await stages.react();
       if (await isPaused()) return { kind: 'paused' };
       const result = await stages.advance(options);
+      if (await isPaused()) return { kind: 'paused' };
+      await stages.publishAgentRuns?.();
       if (await isPaused()) return { kind: 'paused' };
       await stages.catchUpProjections();
       if (await isPaused()) return { kind: 'paused' };

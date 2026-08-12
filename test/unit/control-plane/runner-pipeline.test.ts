@@ -113,4 +113,30 @@ describe('RunnerPipeline', () => {
     await expect(pipeline.run({ maxProgress: 1 })).resolves.toMatchObject({ kind: 'progressed' });
     expect(stages.lastIndexOf('react')).toBeGreaterThan(stages.indexOf('advance'));
   });
+
+  it('publishes agent-run reports after advancement and before delivery', async () => {
+    const stages: string[] = [];
+    const pipeline = createRunnerPipeline({
+      catchUpProjections: async () => undefined,
+      runSchedules: async () => undefined,
+      react: async () => {
+        stages.push('react');
+      },
+      advance: async () => {
+        stages.push('advance');
+        return { kind: 'progressed', activationId: 'activation-1', runId: 'run-1' };
+      },
+      publishAgentRuns: async () => {
+        stages.push('publish-agent-runs');
+      },
+      deliver: async () => {
+        stages.push('deliver');
+      },
+    });
+
+    await pipeline.run({ maxProgress: 1 });
+
+    expect(stages.indexOf('publish-agent-runs')).toBeGreaterThan(stages.indexOf('advance'));
+    expect(stages.indexOf('publish-agent-runs')).toBeLessThan(stages.indexOf('deliver'));
+  });
 });

@@ -490,11 +490,13 @@ async function composeIntegrationRuntime(
     react: async () => {
       await watch.runOnce();
       await artifacts.runOnce();
-      await agentRunPublications.runOnce();
       await outcomes.runOnce();
       for (const provider of providers) await provider.maintenance?.runOnce();
     },
     advance: input.advanceOnce,
+    publishAgentRuns: async () => {
+      await agentRunPublications.runOnce();
+    },
     deliver: async (signal) => {
       await delivery.deliverNext(signal);
     },
