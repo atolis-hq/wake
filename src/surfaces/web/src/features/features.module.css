@@ -398,9 +398,6 @@ a.resourceCard:hover {
   .columnToggle {
     display: inline-flex;
   }
-  .eventButton {
-    grid-template-columns: minmax(8.5rem, 10rem) minmax(0, 1fr) 2.2rem;
-  }
   .eventId {
     display: none;
   }
@@ -476,6 +473,20 @@ a.resourceCard:hover {
   text-overflow: clip;
   white-space: normal;
   overflow-wrap: anywhere;
+}
+@media (max-width: 42rem) {
+  .eventButton {
+    grid-template-columns: minmax(0, 1fr) 2.2rem;
+    grid-template-rows: auto auto;
+  }
+  .eventType {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    overflow-wrap: normal;
+  }
 }
 .eventChevron {
   justify-self: end;

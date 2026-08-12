@@ -265,7 +265,6 @@ export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
               </aside>
 
               <section className={styles.overviewMain} aria-labelledby="work-runs">
-                <h2 id="work-runs">Runs</h2>
                 {query.data.data.execution.runs.length === 0 ? (
                   <EmptyState>No runs</EmptyState>
                 ) : (
