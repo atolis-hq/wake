@@ -260,7 +260,23 @@ export const decodeWorkDetail: Decoder<WorkDetailResponse> = (value, path = '') 
         decodeWorkflow,
       ),
     },
-    execution: { runs: array(execution.runs, child(path, 'execution.runs'), decodeRun) },
+    execution: {
+      runs: array(execution.runs, child(path, 'execution.runs'), decodeRun),
+      transcriptGroups: array(
+        execution.transcriptGroups,
+        child(path, 'execution.transcriptGroups'),
+        (item, itemPath = '') => {
+          const group = object(item, itemPath);
+          return {
+            groupId: string(group.groupId, child(itemPath, 'groupId')),
+            kind: transcriptGroupKind(group.kind, child(itemPath, 'kind')),
+            ...optionalStringProperty(group, 'cli', itemPath),
+            latestAt: string(group.latestAt, child(itemPath, 'latestAt')),
+            runIds: array(group.runIds, child(itemPath, 'runIds'), string),
+          };
+        },
+      ),
+    },
     activities:
       activities.pullRequest === undefined
         ? {}
@@ -310,17 +326,33 @@ export const decodeTranscript: Decoder<RunTranscriptResponse> = (value, path = '
   const record = object(value, path);
   return {
     runId: string(record.runId, child(path, 'runId')),
+    ...optionalStringProperty(record, 'groupId', path),
     available: boolean(record.available, child(path, 'available')),
     entries: array(record.entries, child(path, 'entries'), (item, itemPath = '') => {
       const entry = object(item, itemPath);
       return {
         occurredAt: string(entry.occurredAt, child(itemPath, 'occurredAt')),
-        channel: string(entry.channel, child(itemPath, 'channel')),
+        channel: transcriptChannel(entry.channel, child(itemPath, 'channel')),
         text: string(entry.text, child(itemPath, 'text')),
+        runId: string(entry.runId, child(itemPath, 'runId')),
+        groupId: string(entry.groupId, child(itemPath, 'groupId')),
+        ...optionalNumberProperty(entry, 'durationMs', itemPath),
       };
     }),
   };
 };
+
+function transcriptChannel(value: unknown, path: string): 'input' | 'agent' {
+  const channel = string(value, path);
+  if (channel !== 'input' && channel !== 'agent') invalid(path);
+  return channel;
+}
+
+function transcriptGroupKind(value: unknown, path: string): 'session' | 'run' {
+  const kind = string(value, path);
+  if (kind !== 'session' && kind !== 'run') invalid(path);
+  return kind;
+}
 
 function decodePullRequest(value: unknown, path = '') {
   const record = object(value, path);

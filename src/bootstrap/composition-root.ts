@@ -339,6 +339,7 @@ export async function createCompositionRoot(
     lookup,
     orchestration,
     execution,
+    ...(transcriptStore === undefined ? {} : { transcriptStore }),
     runnerControls,
     controlPlane,
     isPaused: isRuntimePaused,
