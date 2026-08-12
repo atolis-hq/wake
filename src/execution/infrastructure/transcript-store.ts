@@ -147,7 +147,7 @@ export class TranscriptStore {
   }
 
   private stagingDirectory(workItemId: string, runId: string): string {
-    return join(this.workItemDirectory(workItemId), `.pending--${encodeURIComponent(runId)}`);
+    return join(this.workItemDirectory(workItemId), `.pending--${safe(runId)}`);
   }
 }
 

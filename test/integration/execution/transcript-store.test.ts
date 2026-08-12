@@ -119,6 +119,46 @@ describe('TranscriptStore', () => {
     ]);
   });
 
+  it('keeps pending prompts distinct when one run ID has a trailing dot', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wake-transcript-store-'));
+    const store = new TranscriptStore(root);
+
+    for (const runId of ['run', 'run.']) {
+      await store.capturePrompt({
+        workItemId: 'work-1',
+        runId,
+        cli: 'codex',
+        timestamp: '2026-08-12T10:00:00.000Z',
+        text: `prompt for ${runId}`,
+      });
+    }
+
+    expect(await readdir(join(root, 'work-1'))).toEqual(['.pending--run', '.pending--run%2E']);
+
+    for (const runId of ['run', 'run.']) {
+      await store.captureResponse({
+        workItemId: 'work-1',
+        runId,
+        cli: 'codex',
+        timestamp: '2026-08-12T10:01:00.000Z',
+        text: `response for ${runId}`,
+      });
+    }
+
+    await expect(store.readGroup('work-1', 'run--run')).resolves.toContainEqual({
+      timestamp: '2026-08-12T10:00:00.000Z',
+      runId: 'run',
+      kind: 'prompt',
+      text: 'prompt for run',
+    });
+    await expect(store.readGroup('work-1', 'run--run%2E')).resolves.toContainEqual({
+      timestamp: '2026-08-12T10:00:00.000Z',
+      runId: 'run.',
+      kind: 'prompt',
+      text: 'prompt for run.',
+    });
+  });
+
   it('keeps session groups distinct when CLI and session IDs contain group delimiters', async () => {
     const root = await mkdtemp(join(tmpdir(), 'wake-transcript-store-'));
     const store = new TranscriptStore(root);
