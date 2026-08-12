@@ -254,11 +254,16 @@ export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
                                 <span>{entry.channel === 'input' ? 'Input' : 'Agent'}</span>
                                 <LocalTime value={entry.occurredAt} />
                                 <span>Run {entry.runId}</span>
-                                {entry.durationMs !== undefined && (
+                                {entry.channel === 'agent' && entry.durationMs !== undefined && (
                                   <span>{fmtDuration(entry.durationMs)}</span>
                                 )}
                               </div>
-                              <pre className={styles.transcriptText}>{entry.text}</pre>
+                              <pre
+                                className={styles.transcriptText}
+                                style={{ whiteSpace: 'pre-wrap' }}
+                              >
+                                {entry.text}
+                              </pre>
                             </article>
                           </li>
                         ))}

@@ -15,6 +15,14 @@ function detailClient(
     readonly groups: readonly Record<string, unknown>[];
     readonly entries: readonly Record<string, unknown>[];
     readonly available?: boolean;
+    readonly byGroup?: Readonly<
+      Record<
+        string,
+        { readonly entries: readonly Record<string, unknown>[]; readonly available?: boolean }
+      >
+    >;
+    readonly waitFor?: Promise<void>;
+    readonly error?: boolean;
   } = { groups: [], entries: [] },
 ) {
   const work = {
@@ -40,6 +48,14 @@ function detailClient(
           { status: 202, headers: { 'content-type': 'application/json' } },
         )
       );
+    if (url.includes('/work-items/wk_a/transcripts/')) {
+      const response = await transcriptResponse(url, transcripts);
+      if (response instanceof Response) return response;
+      return new Response(JSON.stringify(response), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
     const body = url.includes('/events')
       ? {
           items: [
@@ -54,75 +70,102 @@ function detailClient(
           page: { nextCursor: null, hasMore: false },
           meta: { asOf },
         }
-      : url.includes('/work-items/wk_a/transcripts/')
+      : url.includes('/work-items/wk_a')
         ? {
             data: {
-              groupId: decodeURIComponent(url.split('/').at(-1) ?? ''),
-              available: transcripts.available ?? true,
-              entries: transcripts.entries,
+              work,
+              resources: [
+                {
+                  resourceId: 'resource-1',
+                  adapter: 'unknown-adapter',
+                  kind: 'unheard-of-kind',
+                  locatorLabel: 'unheard-of-kind resource-1',
+                  capabilities: ['inspect', 'annotate'],
+                  revision: 'rev-9',
+                },
+              ],
+              orchestration: {
+                primary: primary === null ? null : { workItemKey: 'wk_a', ...primary },
+                children: [],
+              },
+              execution: {
+                transcriptGroups: transcripts.groups,
+                runs: [
+                  {
+                    runId: 'run-1',
+                    activationId: 'activation-1',
+                    activity: 'agent',
+                    workflowInstanceId: 'workflow-1',
+                    orchestrationGroupId: 'group-1',
+                    attempt: 1,
+                    status: 'succeeded',
+                    active: false,
+                    startedAt: asOf,
+                    finishedAt: asOf,
+                    sentinel: 'DONE',
+                    workflowName: 'delivery',
+                    stage: 'implement',
+                    totalTokens: 0,
+                    totalCostUsd: 0,
+                  },
+                ],
+              },
+              activities: {
+                pullRequest: {
+                  resourceId: 'resource-1',
+                  state: 'open',
+                  headRevision: 'abc123',
+                  baseRevision: 'def456',
+                  checks: 'passing',
+                },
+              },
             },
             meta: { asOf },
           }
-        : url.includes('/work-items/wk_a')
-          ? {
-              data: {
-                work,
-                resources: [
-                  {
-                    resourceId: 'resource-1',
-                    adapter: 'unknown-adapter',
-                    kind: 'unheard-of-kind',
-                    locatorLabel: 'unheard-of-kind resource-1',
-                    capabilities: ['inspect', 'annotate'],
-                    revision: 'rev-9',
-                  },
-                ],
-                orchestration: {
-                  primary: primary === null ? null : { workItemKey: 'wk_a', ...primary },
-                  children: [],
-                },
-                execution: {
-                  transcriptGroups: transcripts.groups,
-                  runs: [
-                    {
-                      runId: 'run-1',
-                      activationId: 'activation-1',
-                      activity: 'agent',
-                      workflowInstanceId: 'workflow-1',
-                      orchestrationGroupId: 'group-1',
-                      attempt: 1,
-                      status: 'succeeded',
-                      active: false,
-                      startedAt: asOf,
-                      finishedAt: asOf,
-                      sentinel: 'DONE',
-                      workflowName: 'delivery',
-                      stage: 'implement',
-                      totalTokens: 0,
-                      totalCostUsd: 0,
-                    },
-                  ],
-                },
-                activities: {
-                  pullRequest: {
-                    resourceId: 'resource-1',
-                    state: 'open',
-                    headRevision: 'abc123',
-                    baseRevision: 'def456',
-                    checks: 'passing',
-                  },
-                },
-              },
-              meta: { asOf },
-            }
-          : url.includes('/work-items')
-            ? { items: [work], page: { nextCursor: null, hasMore: false }, meta: { asOf } }
-            : { data: { paused: false, updatedAt: asOf }, meta: { asOf } };
+        : url.includes('/work-items')
+          ? { items: [work], page: { nextCursor: null, hasMore: false }, meta: { asOf } }
+          : { data: { paused: false, updatedAt: asOf }, meta: { asOf } };
     return new Response(JSON.stringify(body), {
       status: 200,
       headers: { 'content-type': 'application/json' },
     });
   });
+}
+
+async function transcriptResponse(
+  url: string,
+  transcripts: {
+    readonly entries: readonly Record<string, unknown>[];
+    readonly available?: boolean;
+    readonly byGroup?: Readonly<
+      Record<
+        string,
+        { readonly entries: readonly Record<string, unknown>[]; readonly available?: boolean }
+      >
+    >;
+    readonly waitFor?: Promise<void>;
+    readonly error?: boolean;
+  },
+) {
+  await transcripts.waitFor;
+  if (transcripts.error)
+    return new Response(
+      JSON.stringify({ type: 'about:blank', title: 'Transcript read failed', status: 500 }),
+      {
+        status: 500,
+        headers: { 'content-type': 'application/problem+json' },
+      },
+    );
+  const groupId = decodeURIComponent(url.split('/').at(-1) ?? '');
+  const group = transcripts.byGroup?.[groupId];
+  return {
+    data: {
+      groupId,
+      available: group?.available ?? transcripts.available ?? true,
+      entries: group?.entries ?? transcripts.entries,
+    },
+    meta: { asOf },
+  };
 }
 
 describe('work detail', () => {
@@ -378,9 +421,10 @@ describe('work detail', () => {
               {
                 occurredAt: '2026-07-31T10:01:00.000Z',
                 channel: 'input',
-                text: 'Prompt\\nwith a second line',
+                text: 'Prompt\nwith a second line',
                 runId: 'run-1',
                 groupId: 'session--opaque-identity',
+                durationMs: 9_000,
               },
             ],
           })}
@@ -394,11 +438,15 @@ describe('work detail', () => {
     expect(groups.textContent).toMatch(/run--fallback/);
     expect(groups.firstElementChild?.textContent).toContain('session--opaque-identity');
 
-    expect(await screen.findByRole('article', { name: 'Input message from run-1' })).toBeTruthy();
+    const input = await screen.findByRole('article', { name: 'Input message from run-1' });
     expect(screen.getByRole('article', { name: 'Agent message from run-2' })).toBeTruthy();
     expect(screen.getByText('Reply <b>as literal text</b>')).toBeTruthy();
     expect(screen.queryByText('as literal text', { selector: 'b' })).toBeNull();
     expect(screen.getByText('2s')).toBeTruthy();
+    expect(input.textContent).not.toContain('9s');
+    const inputText = input.querySelector('pre');
+    expect(inputText?.textContent).toBe('Prompt\nwith a second line');
+    expect(getComputedStyle(inputText!).whiteSpace).toBe('pre-wrap');
     expect(screen.getByLabelText(/exact UTC 2026-07-31T10:02:00.000Z/)).toBeTruthy();
     expect(screen.getByRole('separator', { name: 'Run run-2' })).toBeTruthy();
     expect(screen.getByRole('checkbox', { name: 'This run only' })).toBeTruthy();
@@ -430,6 +478,112 @@ describe('work detail', () => {
     );
     await user.click(await screen.findByRole('button', { name: 'Transcripts' }));
     expect(await screen.findByText('Transcript unavailable')).toBeTruthy();
+  });
+
+  it('shows an empty transcript index without requesting a conversation', async () => {
+    const user = userEvent.setup();
+    const requests: Array<{ readonly url: string; readonly init: RequestInit | undefined }> = [];
+    render(
+      <MemoryRouter initialEntries={['/work/wk_a']}>
+        <App client={detailClient(null, undefined, requests)} />
+      </MemoryRouter>,
+    );
+    await user.click(await screen.findByRole('button', { name: 'Transcripts' }));
+    expect(await screen.findByText('No transcript conversations')).toBeTruthy();
+    expect(requests.some(({ url }) => url.includes('/transcripts/'))).toBe(false);
+  });
+
+  it('shows an empty available transcript conversation', async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={['/work/wk_a']}>
+        <App
+          client={detailClient(null, undefined, [], {
+            groups: [{ groupId: 'run--empty', kind: 'run', latestAt: asOf, runIds: ['run-1'] }],
+            entries: [],
+          })}
+        />
+      </MemoryRouter>,
+    );
+    await user.click(await screen.findByRole('button', { name: 'Transcripts' }));
+    expect(await screen.findByText('No transcript messages')).toBeTruthy();
+  });
+
+  it('loads the selected conversation and requests the selected opaque group', async () => {
+    const user = userEvent.setup();
+    const requests: Array<{ readonly url: string; readonly init: RequestInit | undefined }> = [];
+    render(
+      <MemoryRouter initialEntries={['/work/wk_a']}>
+        <App
+          client={detailClient(null, undefined, requests, {
+            groups: [
+              { groupId: 'session--first', kind: 'session', latestAt: asOf, runIds: ['run-1'] },
+              { groupId: 'session--second', kind: 'session', latestAt: asOf, runIds: ['run-2'] },
+            ],
+            entries: [],
+            byGroup: {
+              'session--second': {
+                entries: [
+                  {
+                    occurredAt: asOf,
+                    channel: 'agent',
+                    text: 'Second conversation',
+                    runId: 'run-2',
+                    groupId: 'session--second',
+                  },
+                ],
+              },
+            },
+          })}
+        />
+      </MemoryRouter>,
+    );
+    await user.click(await screen.findByRole('button', { name: 'Transcripts' }));
+    await user.click(await screen.findByRole('button', { name: /session--second/ }));
+    expect(await screen.findByText('Second conversation')).toBeTruthy();
+    expect(requests.some(({ url }) => url.endsWith('/transcripts/session--second'))).toBe(true);
+  });
+
+  it('shows transcript loading and an error with retry', async () => {
+    const user = userEvent.setup();
+    let release: (() => void) | undefined;
+    const waitForTranscript = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const requests: Array<{ readonly url: string; readonly init: RequestInit | undefined }> = [];
+    const groups = [{ groupId: 'run--failure', kind: 'run', latestAt: asOf, runIds: ['run-1'] }];
+    const { unmount } = render(
+      <MemoryRouter initialEntries={['/work/wk_a']}>
+        <App
+          client={detailClient(null, undefined, requests, {
+            groups,
+            entries: [],
+            waitFor: waitForTranscript,
+          })}
+        />
+      </MemoryRouter>,
+    );
+    await user.click(await screen.findByRole('button', { name: 'Transcripts' }));
+    expect(await screen.findByText(/Loading transcript/)).toBeTruthy();
+    release?.();
+    expect(await screen.findByText('No transcript messages')).toBeTruthy();
+    unmount();
+
+    render(
+      <MemoryRouter initialEntries={['/work/wk_a']}>
+        <App
+          client={detailClient(null, undefined, requests, { groups, entries: [], error: true })}
+        />
+      </MemoryRouter>,
+    );
+    await user.click(await screen.findByRole('button', { name: 'Transcripts' }));
+    expect((await screen.findByRole('alert')).textContent).toContain('Transcript read failed');
+    await user.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() =>
+      expect(requests.filter(({ url }) => url.endsWith('/transcripts/run--failure'))).toHaveLength(
+        3,
+      ),
+    );
   });
 
   it('links each run row to its own route', async () => {
