@@ -9,14 +9,22 @@ import { ExecutionCancellationReason, RunStatus } from '../../contracts/vocabula
 import { runProcess } from '../process-execution.js';
 
 export function createClaudeRunner(options: CliRunnerOptions = {}): Runner {
-  return cliRunner('claude', options.command ?? 'claude', (request) => claudeCommandArgs(request, options.args, options), {
-    ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
-    ...(options.model === undefined ? {} : { defaultModel: options.model }),
-    parseSuccessfulOutput: parseClaudeOutput,
-  });
+  return cliRunner(
+    'claude',
+    options.command ?? 'claude',
+    (request) => claudeCommandArgs(request, options.args, options),
+    {
+      ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+      ...(options.model === undefined ? {} : { defaultModel: options.model }),
+      parseSuccessfulOutput: parseClaudeOutput,
+    },
+  );
 }
 
-export function parseClaudeOutput(stdout: string): Partial<AgentRunnerResult> {
+export function parseClaudeOutput(
+  stdout: string,
+  _request?: RunnerRequest,
+): Partial<AgentRunnerResult> {
   const value = parseRecord(stdout);
   if (value === undefined || typeof value.result !== 'string') return {};
   return {
@@ -94,7 +102,10 @@ export function cliRunner(
   options: {
     readonly timeoutMs?: number;
     readonly defaultModel?: string;
-    readonly parseSuccessfulOutput?: (stdout: string) => Partial<AgentRunnerResult>;
+    readonly parseSuccessfulOutput?: (
+      stdout: string,
+      request: RunnerRequest,
+    ) => Partial<AgentRunnerResult>;
   } = {},
 ): Runner {
   return {
@@ -118,10 +129,10 @@ export function cliRunner(
                 transport: RunStatus.Succeeded,
                 output: value.stdout,
                 runner: name,
-                ...(request.model ?? options.defaultModel) === undefined
+                ...((request.model ?? options.defaultModel) === undefined
                   ? {}
-                  : { model: request.model ?? options.defaultModel },
-                ...parseSuccessfulOutput(value.stdout, options.parseSuccessfulOutput),
+                  : { model: request.model ?? options.defaultModel }),
+                ...parseSuccessfulOutput(value.stdout, request, options.parseSuccessfulOutput),
               }
             : {
                 transport: RunStatus.Failed,
@@ -154,11 +165,12 @@ export interface CliRunnerOptions extends RunnerDefaults {
 
 function parseSuccessfulOutput(
   stdout: string,
-  parser: ((stdout: string) => Partial<AgentRunnerResult>) | undefined,
+  request: RunnerRequest,
+  parser: ((stdout: string, request: RunnerRequest) => Partial<AgentRunnerResult>) | undefined,
 ): Partial<AgentRunnerResult> {
   if (parser === undefined) return {};
   try {
-    return parser(stdout);
+    return parser(stdout, request);
   } catch {
     return {};
   }

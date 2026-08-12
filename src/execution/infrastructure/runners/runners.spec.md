@@ -87,6 +87,16 @@ component's responsibility.
 - A concrete adapter MUST never expose its raw vendor response object. It may
   return a session id and token/cost fields only through the generic result
   contract, and only when it can establish a complete corresponding count.
+- Codex's `turn.completed` usage is a cumulative snapshot when a session is
+  resumed. When Execution supplies a `usageBaseline`, its adapter MUST convert
+  that snapshot to this invocation's usage by subtracting the baseline. With
+  no baseline, the adapter reports the final cumulative snapshot; with a
+  supplied baseline that cannot safely be subtracted, it reports no generic
+  usage. Claude's parsed JSON usage remains per invocation and is not
+  baseline-adjusted. Generic aggregate token totals are `input + output`;
+  cache-read and cache-write counters are diagnostic subsets of input, not
+  additional aggregate tokens. Adapters record a reported cost only and never
+  estimate one.
 - A failed resume is never retried as a fresh invocation. Adapters do not
   detect or classify unavailable-session IDs from vendor output. Timeouts,
   cancellation, unavailable sessions, and every other failed or unclassified
@@ -162,6 +172,7 @@ component's responsibility.
 | `allowedTools` | list of string | Claude forwards its established tool option; Codex, Cursor, and fake adapters do not read it. |
 | `maxTurns` | integer, optional | Claude forwards its established turn option; Codex, Cursor, and fake adapters do not read it. |
 | `resumeSessionId` | string, optional | Opaque prior-session reference selected by Execution. Claude, Codex, and Cursor each pass it in their own vendor-supported resume shape while still forwarding the complete current prompt; generic command and fake runners do not manufacture or interpret it. |
+| `usageBaseline` | `{input, output, cacheRead?, cacheWrite?}`, optional | Previous per-invocation usage totals selected by Execution for the resumed session. Only Codex consumes it, subtracting it from its cumulative resumed-session snapshot to report this invocation's delta. |
 
 **AgentRunnerResult**
 

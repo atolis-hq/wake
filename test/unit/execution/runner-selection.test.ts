@@ -136,6 +136,94 @@ describe('Execution runner selection', () => {
     expect(standard.requests).toEqual([expect.objectContaining({ resumeSessionId: 'session-1' })]);
   });
 
+  it('forwards the accumulated usage baseline for a resumed session', async () => {
+    const standard = capturingRunner('standard');
+    const journal = new InMemoryEventJournal(new FakeClock());
+    await seedPriorRun(journal, activation(), 'prior-standard', 'fake', 'session-1', {
+      inputTokens: 10,
+      outputTokens: 20,
+      cacheReadTokens: 30,
+      cacheWriteTokens: 40,
+    });
+    const service = fixtureWithJournal(
+      journal,
+      new RunnerRegistry({ standard: ['standard'] }, { standard }),
+    );
+
+    await service.attempt(activation(), context());
+
+    expect(standard.requests).toEqual([
+      expect.objectContaining({
+        resumeSessionId: 'session-1',
+        usageBaseline: { input: 10, output: 20, cacheRead: 30, cacheWrite: 40 },
+      }),
+    ]);
+  });
+
+  it('sums only scoped terminal runs with finite metadata counters for the resumed session', async () => {
+    const standard = capturingRunner('standard');
+    const journal = new InMemoryEventJournal(new FakeClock());
+    const implement = { ...activation(), stage: 'implement' };
+    await seedPriorRun(journal, implement, 'implement-first', 'fake', 'session-1', {
+      inputTokens: 10,
+      outputTokens: 0,
+      cacheWriteTokens: 0,
+    });
+    await seedPriorRun(journal, implement, 'implement-second', 'fake', 'session-1', {
+      inputTokens: 0,
+      outputTokens: 20,
+      cacheReadTokens: 5,
+    });
+    await seedPriorRun(
+      journal,
+      implement,
+      'started-session-1',
+      'fake',
+      'session-1',
+      { inputTokens: 1_000, outputTokens: 1_000, testStatus: 'started' },
+    );
+    await seedPriorRun(
+      journal,
+      implement,
+      'ambiguous-session-1',
+      'fake',
+      'session-1',
+      { inputTokens: 1_000, outputTokens: 1_000, testStatus: 'ambiguous' },
+    );
+    await seedPriorRun(journal, implement, 'a-terminal-session-2', 'fake', 'session-2', {
+      inputTokens: 1_000,
+      outputTokens: 1_000,
+    });
+    await seedPriorRun(journal, implement, 'different-cli', 'other-cli', 'session-1', {
+      inputTokens: 100,
+      outputTokens: 100,
+    });
+    await seedPriorRun(
+      journal,
+      { ...activation(), stage: 'design' },
+      'different-stage',
+      'fake',
+      'session-1',
+      { inputTokens: 100, outputTokens: 100 },
+    );
+    const service = fixtureWithJournal(
+      journal,
+      new RunnerRegistry({ standard: ['standard'] }, { standard }),
+    );
+
+    await service.attempt(
+      { ...implement, activationId: activationId('agent:implement:next'), ordinal: 2 },
+      { ...context(), sessionPolicy: 'resume-stage' },
+    );
+
+    expect(standard.requests).toEqual([
+      expect.objectContaining({
+        resumeSessionId: 'session-1',
+        usageBaseline: { input: 10, output: 20 },
+      }),
+    ]);
+  });
+
   it('resumes the newest same-CLI session when a primary stage is re-entered', async () => {
     const standard = capturingRunner('standard');
     const journal = new InMemoryEventJournal(new FakeClock());
@@ -178,6 +266,147 @@ describe('Execution runner selection', () => {
 
     expect(standard.requests).toEqual([
       expect.not.objectContaining({ resumeSessionId: expect.anything() }),
+    ]);
+    expect(standard.requests).toEqual([
+      expect.not.objectContaining({ usageBaseline: expect.anything() }),
+    ]);
+  });
+
+  it('suppresses the entire baseline when matched history has non-finite required counters', () => {
+    const baseline = (
+      executionServiceModule as unknown as {
+        readonly usageBaselineFor?: (
+          runs: readonly RunView[],
+          cli: string | undefined,
+          sessionId: string | undefined,
+        ) => unknown;
+      }
+    ).usageBaselineFor;
+    const run = (metadata: Readonly<Record<string, string | number | boolean | null>>) => ({
+      ...resumeRun('prior', RunStatus.Failed, 'session-1', '2026-08-11T12:00:00.000Z', 1),
+      agent: { outcome: 'FAILED' as const, displayBody: 'failed', metadata },
+    });
+
+    expect(baseline).toBeTypeOf('function');
+    expect(
+      baseline?.(
+        [
+          run({
+            sessionId: 'session-1',
+            inputTokens: 10,
+            outputTokens: 'invalid',
+            cacheReadTokens: Number.NaN,
+            cacheWriteTokens: Number.POSITIVE_INFINITY,
+          }),
+          run({ sessionId: 'session-1', inputTokens: 0, outputTokens: 20, cacheReadTokens: 5 }),
+        ],
+        'fake',
+        'session-1',
+      ),
+    ).toBeUndefined();
+  });
+
+  it('does not forward a baseline when matched terminal history lacks valid required counters', async () => {
+    const standard = capturingRunner('standard');
+    const journal = new InMemoryEventJournal(new FakeClock());
+    await seedPriorRun(journal, activation(), 'complete-history', 'fake', 'session-1', {
+      inputTokens: 10,
+      outputTokens: 20,
+    });
+    await seedPriorRun(journal, activation(), 'missing-input-history', 'fake', 'session-1', {
+      outputTokens: 20,
+    });
+    const service = fixtureWithJournal(
+      journal,
+      new RunnerRegistry({ standard: ['standard'] }, { standard }),
+    );
+
+    await service.attempt(activation(), context());
+
+    expect(standard.requests).toEqual([expect.objectContaining({ resumeSessionId: 'session-1' })]);
+    expect(standard.requests[0]).not.toEqual(expect.objectContaining({ usageBaseline: expect.anything() }));
+  });
+
+  it('omits incomplete cache baselines but rejects malformed cache history', () => {
+    const baseline = executionServiceModule.usageBaselineFor;
+    const run = (id: string, metadata: Readonly<Record<string, string | number | boolean | null>>) => ({
+      ...resumeRun(id, RunStatus.Failed, 'session-1', '2026-08-11T12:00:00.000Z', 1),
+      agent: { outcome: 'FAILED' as const, displayBody: 'failed', metadata },
+    });
+
+    expect(
+      baseline(
+        [
+          run('with-cache', { sessionId: 'session-1', inputTokens: 10, outputTokens: 20, cacheReadTokens: 5 }),
+          run('without-cache', { sessionId: 'session-1', inputTokens: 10, outputTokens: 20 }),
+        ],
+        'fake',
+        'session-1',
+      ),
+    ).toEqual({ input: 20, output: 40 });
+    expect(
+      baseline(
+        [
+          run('missing-cache', { sessionId: 'session-1', inputTokens: 10, outputTokens: 20 }),
+          run('negative-cache-after-missing', {
+            sessionId: 'session-1',
+            inputTokens: 10,
+            outputTokens: 20,
+            cacheReadTokens: -1,
+          }),
+        ],
+        'fake',
+        'session-1',
+      ),
+    ).toBeUndefined();
+    expect(
+      baseline(
+        [
+          run('negative-cache', { sessionId: 'session-1', inputTokens: 10, outputTokens: 20, cacheReadTokens: -1 }),
+        ],
+        'fake',
+        'session-1',
+      ),
+    ).toBeUndefined();
+    expect(
+      baseline(
+        [run('negative-input', { sessionId: 'session-1', inputTokens: -1, outputTokens: 20 })],
+        'fake',
+        'session-1',
+      ),
+    ).toBeUndefined();
+    expect(
+      baseline(
+        [
+          run('malformed-cache', {
+            sessionId: 'session-1',
+            inputTokens: 10,
+            outputTokens: 20,
+            cacheWriteTokens: 'invalid',
+          }),
+        ],
+        'fake',
+        'session-1',
+      ),
+    ).toBeUndefined();
+  });
+
+  it('does not forward a usage baseline when no durable session is selected', async () => {
+    const standard = capturingRunner('standard');
+    const journal = new InMemoryEventJournal(new FakeClock());
+    await seedPriorRun(journal, activation(), 'prior-without-session', 'fake', undefined, {
+      inputTokens: 10,
+      outputTokens: 20,
+    });
+    const service = fixtureWithJournal(
+      journal,
+      new RunnerRegistry({ standard: ['standard'] }, { standard }),
+    );
+
+    await service.attempt(activation(), context());
+
+    expect(standard.requests).toEqual([
+      expect.not.objectContaining({ usageBaseline: expect.anything() }),
     ]);
   });
 
@@ -281,9 +510,15 @@ async function seedPriorRun(
   id: string,
   cli: string,
   sessionId?: string,
+  usage?:
+    | (Readonly<Record<string, string | number | boolean | null>> & {
+        readonly testStatus?: 'started' | 'ambiguous';
+      })
+    | undefined,
 ) {
   const clock = new FakeClock();
   const stream = runStream(runId(id));
+  const { testStatus: status = 'failed', ...metadata } = usage ?? {};
   await journal.append(stream, 0, [
     createEventDraft({
       eventId: `${id}:started`,
@@ -319,24 +554,42 @@ async function seedPriorRun(
         agent: {
           outcome: 'FAILED',
           displayBody: 'failed',
-          metadata: sessionId === undefined ? {} : { sessionId },
+          metadata: { ...(sessionId === undefined ? {} : { sessionId }), ...metadata },
         },
       },
     }),
-    createEventDraft({
-      eventId: `${id}:failed`,
-      eventType: ExecutionEventType.RunFailed,
-      occurredAt: clock.now().toISOString(),
-      correlationId: 'group-1',
-      causationId: activationValue.activationId,
-      actor: { kind: EventActorKind.System, id: 'test' },
-      source: { kind: EventSourceKind.Internal, id: 'test' },
-      stream,
-      payload: {
-        failure: { kind: 'unexpected-execution-failure', message: 'failed' },
-        finishedAt: clock.now().toISOString(),
-      },
-    }),
+    ...(status === 'started'
+      ? []
+      : status === 'ambiguous'
+        ? [
+            createEventDraft({
+              eventId: `${id}:ambiguous`,
+              eventType: ExecutionEventType.RunAmbiguous,
+              occurredAt: clock.now().toISOString(),
+              correlationId: 'group-1',
+              causationId: activationValue.activationId,
+              actor: { kind: EventActorKind.System, id: 'test' },
+              source: { kind: EventSourceKind.Internal, id: 'test' },
+              stream,
+              payload: { reason: 'ambiguous', finishedAt: clock.now().toISOString() },
+            }),
+          ]
+        : [
+            createEventDraft({
+              eventId: `${id}:failed`,
+              eventType: ExecutionEventType.RunFailed,
+              occurredAt: clock.now().toISOString(),
+              correlationId: 'group-1',
+              causationId: activationValue.activationId,
+              actor: { kind: EventActorKind.System, id: 'test' },
+              source: { kind: EventSourceKind.Internal, id: 'test' },
+              stream,
+              payload: {
+                failure: { kind: 'unexpected-execution-failure', message: 'failed' },
+                finishedAt: clock.now().toISOString(),
+              },
+            }),
+          ]),
   ]);
 }
 

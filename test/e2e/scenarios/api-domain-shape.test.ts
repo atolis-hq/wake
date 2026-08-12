@@ -1,5 +1,5 @@
 import { once } from 'node:events';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import {
   ActivityExecutionKind,
@@ -239,6 +239,10 @@ describe(`${scenario.id} command idempotency`, () => {
       },
       context,
     );
+    await root.advanceOnce({ maxProgress: 1 });
+    await vi.waitFor(async () => {
+      expect((await root.execution.list()).at(0)?.status).toBe('succeeded');
+    });
     await root.advanceOnce({ maxProgress: 1 });
     await root.projectionRunner.runRegisteredOnce();
 

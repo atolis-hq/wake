@@ -186,6 +186,31 @@ describe('cliRunner', () => {
     });
   });
 
+  it('keeps Claude invocation usage unchanged when shared parser plumbing receives a baseline', async () => {
+    const stdout = JSON.stringify({
+      result: 'claude answer',
+      usage: { input_tokens: 11, output_tokens: 13, cache_read_input_tokens: 17 },
+      total_cost_usd: 0.02,
+    });
+    const runner = cliRunner('claude', process.execPath, () => [
+      '-e',
+      `process.stdout.write(${JSON.stringify(stdout)})`,
+    ], { parseSuccessfulOutput: parseClaudeOutput });
+    const execution = await runner.start(
+      {
+        runId: 'run-1',
+        prompt: 'ignored',
+        allowedTools: [],
+        usageBaseline: { input: 1_000, output: 2_000, cacheRead: 3_000 },
+      },
+      new AbortController().signal,
+    );
+
+    await expect(execution.result).resolves.toMatchObject({
+      tokenUsage: { input: 11, output: 13, cacheRead: 17, costUsd: 0.02 },
+    });
+  });
+
   it('preserves configured passthrough arguments for every vendor transport', () => {
     const request = {
       runId: 'run-1',
@@ -245,12 +270,7 @@ describe('cliRunner', () => {
       expect.arrayContaining(['--model', 'claude-default', '--effort', 'high']),
     );
     expect(codexCommandArgs(request, [], { model: 'gpt-default', effort: 'medium' })).toEqual(
-      expect.arrayContaining([
-        '--model',
-        'gpt-default',
-        '-c',
-        'model_reasoning_effort=medium',
-      ]),
+      expect.arrayContaining(['--model', 'gpt-default', '-c', 'model_reasoning_effort=medium']),
     );
     expect(cursorCommandArgs(request, [], { model: 'cursor-default' })).toEqual(
       expect.arrayContaining(['--model', 'cursor-default']),
@@ -258,7 +278,12 @@ describe('cliRunner', () => {
   });
 
   it('maps Wake workspace modes to Codex sandbox modes', () => {
-    const request = { runId: 'run-1', prompt: 'ship', allowedTools: [], workspacePath: '/workspace' };
+    const request = {
+      runId: 'run-1',
+      prompt: 'ship',
+      allowedTools: [],
+      workspacePath: '/workspace',
+    };
 
     expect(codexCommandArgs({ ...request, workspaceMode: 'read-only' })).toEqual(
       expect.arrayContaining(['--sandbox', 'workspace-write', '--cd', '/workspace']),
@@ -333,6 +358,70 @@ describe('cliRunner', () => {
       expect(parse(stdout)).toEqual(expected);
     },
   );
+
+  it('uses the final Codex turn usage snapshot instead of summing snapshots', () => {
+    const stdout = [
+      JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 19, output_tokens: 23 } }),
+      JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 29, output_tokens: 31 } }),
+    ].join('\n');
+
+    expect(parseCodexOutput(stdout)).toEqual({ tokenUsage: { input: 29, output: 31 } });
+  });
+
+  it('subtracts the resumed Codex usage baseline from the final cumulative snapshot', () => {
+    const stdout = JSON.stringify({
+      type: 'turn.completed',
+      usage: {
+        input_tokens: 29,
+        output_tokens: 31,
+        input_tokens_details: { cached_tokens: 37, cache_creation_tokens: 41 },
+      },
+    });
+    const request = {
+      runId: 'run-1',
+      prompt: 'ship',
+      allowedTools: [],
+      usageBaseline: { input: 19, output: 23, cacheRead: 29, cacheWrite: 31 },
+    };
+
+    expect(parseCodexOutput(stdout, request)).toEqual({
+      tokenUsage: { input: 10, output: 8, cacheRead: 8, cacheWrite: 10 },
+    });
+  });
+
+  it('reports the final Codex usage snapshot when resume history cannot provide a safe baseline', () => {
+    const stdout = JSON.stringify({
+      type: 'turn.completed',
+      usage: { input_tokens: 29, output_tokens: 31 },
+    });
+    const request = { runId: 'run-1', prompt: 'ship', allowedTools: [] };
+
+    expect(parseCodexOutput(stdout, request)).toEqual({ tokenUsage: { input: 29, output: 31 } });
+  });
+
+  it.each([
+    {
+      name: 'a negative delta',
+      usage: { input_tokens: 18, output_tokens: 31, input_tokens_details: { cached_tokens: 37 } },
+      baseline: { input: 19, output: 23, cacheRead: 29 },
+    },
+    {
+      name: 'a missing cache counter that exists in the baseline',
+      usage: { input_tokens: 29, output_tokens: 31 },
+      baseline: { input: 19, output: 23, cacheRead: 29 },
+    },
+    {
+      name: 'a negative baseline counter',
+      usage: { input_tokens: 29, output_tokens: 31 },
+      baseline: { input: -10, output: 23 },
+    },
+  ])('omits Codex token usage for $name', ({ usage, baseline }) => {
+    const request = { runId: 'run-1', prompt: 'ship', allowedTools: [], usageBaseline: baseline };
+
+    expect(parseCodexOutput(JSON.stringify({ type: 'turn.completed', usage }), request)).toEqual(
+      {},
+    );
+  });
 
   it.each([
     { name: 'Claude', parse: parseClaudeOutput },
