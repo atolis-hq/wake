@@ -1,3 +1,4 @@
+import { dirname, normalize } from 'node:path/posix';
 import { scrubProcessLog, type ProcessLogSink } from './process-log.js';
 
 /** Surface-local Docker process boundary; composition supplies the real invoker. */
@@ -232,6 +233,10 @@ async function requireImage(inspect: SandboxDockerInspection, image: string): Pr
 
 async function createContainer(docker: DockerCli, options: SandboxDockerOptions): Promise<void> {
   const wakeMountPath = options.wakeMountPath ?? '/wake';
+  const homeInitDirectories = sandboxHomeInitDirectories(
+    options.containerHomeMountPath,
+    options.extraMounts ?? [],
+  );
   const containerHome =
     options.containerHomeRoot === undefined || options.containerHomeMountPath === undefined
       ? []
@@ -259,9 +264,35 @@ async function createContainer(docker: DockerCli, options: SandboxDockerOptions)
     `${options.wakeRoot}:${wakeMountPath}`,
     ...containerHome,
     ...extraMounts,
+    ...(homeInitDirectories.length === 0
+      ? []
+      : [
+          '-e',
+          `WAKE_HOME_INIT_ROOT=${options.containerHomeMountPath}`,
+          '-e',
+          `WAKE_HOME_INIT_DIRS=${homeInitDirectories.join('\n')}`,
+        ]),
     ...(options.startEnabled === true ? ['-e', 'WAKE_START_ENABLED=true'] : []),
     options.image,
   ]);
+}
+
+function sandboxHomeInitDirectories(
+  containerHomeMountPath: string | undefined,
+  extraMounts: readonly { readonly target: string }[],
+): readonly string[] {
+  if (containerHomeMountPath === undefined) return [];
+  const home = normalize(containerHomeMountPath);
+  const prefix = home === '/' ? '/' : `${home}/`;
+  const directories = new Set<string>();
+  for (const mount of extraMounts) {
+    let current = dirname(normalize(mount.target));
+    while (current !== home && current.startsWith(prefix)) {
+      directories.add(current);
+      current = dirname(current);
+    }
+  }
+  return [...directories].sort();
 }
 
 const containerLogMaxSize = '10m';

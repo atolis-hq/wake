@@ -192,6 +192,39 @@ describe('CLI infrastructure', () => {
       ],
     ]);
   });
+
+  it('derives writable sandbox-home mount parents from configured extra mounts', async () => {
+    const calls: string[][] = [];
+    const docker = createSandboxDockerPort(
+      createDockerCli(async (arguments_) => {
+        calls.push([...arguments_]);
+      }),
+      {
+        wakeRoot: '/wake-root',
+        image: 'configured-image',
+        containerName: 'configured-name',
+        containerHomeRoot: '/wake-root/.wake/container-home',
+        containerHomeMountPath: '/home/wake',
+        extraMounts: [
+          { source: '/cursor-auth', target: '/home/wake/.config/cursor/auth.json', readOnly: true },
+          { source: '/codex-auth', target: '/home/wake/.codex/auth.json', readOnly: true },
+          { source: '/outside', target: '/other/auth.json', readOnly: true },
+        ],
+        inspect: { imageExists: async () => true, containerState: async () => null },
+      },
+    );
+
+    await docker.up();
+
+    expect(calls[0]).toEqual(
+      expect.arrayContaining([
+        '-e',
+        'WAKE_HOME_INIT_ROOT=/home/wake',
+        '-e',
+        'WAKE_HOME_INIT_DIRS=/home/wake/.codex\n/home/wake/.config\n/home/wake/.config/cursor',
+      ]),
+    );
+  });
   it('publishes an enabled UI port on loopback only', async () => {
     const calls: string[][] = [];
     const docker = createSandboxDockerPort(

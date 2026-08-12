@@ -132,4 +132,18 @@ describe('target initialise root', () => {
     expect(dockerfile).not.toContain('sleep infinity');
     expect(dockerfile).not.toContain('WAKE_START_ENABLED" = "true"');
   });
+
+  it('bootstraps only config-derived sandbox-home mount parents before dropping privileges', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wake-initialise-root-'));
+    await initialiseWakeRoot(root);
+
+    for (const filename of ['Dockerfile', 'Dockerfile.packaged']) {
+      const dockerfile = await readFile(join(root, 'docker', filename), 'utf8');
+      expect(dockerfile).toContain('WAKE_HOME_INIT_DIRS');
+      expect(dockerfile).toContain('mkdir -p \\"$directory\\"');
+      expect(dockerfile).toContain('chown wake:wake \\"$directory\\"');
+      expect(dockerfile).toContain('su wake');
+      expect(dockerfile).toContain('USER root');
+    }
+  });
 });
