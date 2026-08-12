@@ -411,7 +411,7 @@ describe('target composition root', () => {
     );
   });
 
-  it('marks transcripts after reclaiming a closed workspace without writing journal events', async () => {
+  it('marks transcripts after reclaiming a closed then deleted workspace without writing journal events', async () => {
     const root = await fixtureRoot();
     let now = new Date('2026-08-12T10:00:00.000Z');
     const clock = { now: () => now };
@@ -423,10 +423,12 @@ describe('target composition root', () => {
       checkpoints: new InMemoryCheckpointStore(),
       clock,
     });
+    expect(runtime.config.transcripts.retentionMs).toBe(86_400_000);
     const closed = workId('transcript-retention-closed');
     const open = workId('transcript-retention-open');
     await runtime.work.create({ workItemId: closed, objective: 'close me' }, commandContext(clock, 'create-closed'));
     await runtime.work.close(closed, 'complete', commandContext(clock, 'close-work'));
+    await runtime.work.delete(closed, commandContext(clock, 'delete-closed'));
     await runtime.work.create({ workItemId: open, objective: 'retain me' }, commandContext(clock, 'create-open'));
     const transcripts = new TranscriptStore(runtime.paths.transcriptsRoot);
     await transcripts.capturePrompt({ workItemId: closed, runId: 'run-closed', cli: 'fake', timestamp: clock.now().toISOString(), text: 'closed' });
@@ -448,7 +450,7 @@ describe('target composition root', () => {
     await expect(access(join(runtime.paths.transcriptsRoot, closed))).rejects.toThrow();
   });
 
-  it('removes transcripts immediately when closed workspace cleanup uses zero retention', async () => {
+  it('removes transcripts immediately when a closed then deleted workspace uses zero retention', async () => {
     const root = await fixtureRoot();
     const clock = { now: () => new Date('2026-08-12T10:00:00.000Z') };
     const runtime = await createCompositionRoot(root, {
@@ -461,6 +463,7 @@ describe('target composition root', () => {
     const closed = workId('transcript-retention-zero');
     await runtime.work.create({ workItemId: closed, objective: 'close me' }, commandContext(clock, 'create-zero'));
     await runtime.work.close(closed, 'complete', commandContext(clock, 'close-zero'));
+    await runtime.work.delete(closed, commandContext(clock, 'delete-zero'));
     const transcripts = new TranscriptStore(runtime.paths.transcriptsRoot);
     await transcripts.capturePrompt({ workItemId: closed, runId: 'run-zero', cli: 'fake', timestamp: clock.now().toISOString(), text: 'remove now' });
     await ownedWorkspace(runtime.paths.workspacesRoot, 'zero-workspace', closed, 'zero-run');
@@ -694,12 +697,12 @@ function fakeProviderRootConfig() {
   });
 }
 
-function transcriptRetentionConfig(retentionMs = 86_400_000) {
+function transcriptRetentionConfig(retentionMs?: number) {
   return parseRootConfig({
     schemaVersion: 1,
     work: {},
     resources: {},
-    transcripts: { enabled: true, retentionMs },
+    transcripts: retentionMs === undefined ? { enabled: true } : { enabled: true, retentionMs },
     execution: {
       agentRunners: { fake: { kind: 'fake' } },
       runnerPools: { standard: ['fake'] },

@@ -110,7 +110,7 @@ export function createAdvanceOnce(
       });
       for (const workItemId of recovered.reclaimedWorkItemIds ?? []) {
         const work = await dependencies.work?.get(workItemId);
-        if (work?.state !== WorkStatus.Closed || work.deleted === true) continue;
+        if (work?.state !== WorkStatus.Closed) continue;
         try {
           await transcriptRetention?.markClosedWorkItem(workItemId);
         } catch {
