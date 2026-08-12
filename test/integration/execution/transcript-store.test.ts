@@ -28,12 +28,12 @@ describe('TranscriptStore', () => {
 
     expect(await store.listGroups('work-1')).toEqual([
       {
-        id: 'session--codex-cli--session-1',
+        id: 'session--codex%20cli--session%2F1',
         kind: 'session',
         runIds: ['run/1'],
       },
     ]);
-    expect(await store.readGroup('work-1', 'session--codex-cli--session-1')).toEqual([
+    expect(await store.readGroup('work-1', 'session--codex%20cli--session%2F1')).toEqual([
       {
         timestamp: '2026-08-12T10:00:00.000Z',
         runId: 'run/1',
@@ -68,8 +68,62 @@ describe('TranscriptStore', () => {
       text: 'Response',
     });
 
-    expect(await store.groupForRun('work-1', 'run/1')).toBe('run--run-1');
-    expect(await readdir(join(root, 'work-1'))).toEqual(['run--run-1']);
+    expect(await store.groupForRun('work-1', 'run/1')).toBe('run--run%2F1');
+    expect(await readdir(join(root, 'work-1'))).toEqual(['run--run%2F1']);
+  });
+
+  it('keeps fallback runs whose identifiers need the same safe substitution in distinct groups', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wake-transcript-store-'));
+    const store = new TranscriptStore(root);
+
+    for (const runId of ['run/a', 'run?a']) {
+      await store.capturePrompt({
+        workItemId: 'work-1',
+        runId,
+        cli: 'codex',
+        timestamp: '2026-08-12T10:00:00.000Z',
+        text: runId,
+      });
+      await store.captureResponse({
+        workItemId: 'work-1',
+        runId,
+        cli: 'codex',
+        timestamp: '2026-08-12T10:01:00.000Z',
+        text: runId,
+      });
+    }
+
+    expect(await store.listGroups('work-1')).toEqual([
+      { id: 'run--run%2Fa', kind: 'run', runIds: ['run/a'] },
+      { id: 'run--run%3Fa', kind: 'run', runIds: ['run?a'] },
+    ]);
+  });
+
+  it('keeps session groups distinct when CLI and session IDs contain group delimiters', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wake-transcript-store-'));
+    const store = new TranscriptStore(root);
+
+    await store.captureResponse({
+      workItemId: 'work-1',
+      runId: 'run-1',
+      cli: 'a--b',
+      sessionId: 'c',
+      timestamp: '2026-08-12T10:00:00.000Z',
+      text: 'first',
+    });
+    await store.captureResponse({
+      workItemId: 'work-1',
+      runId: 'run-2',
+      cli: 'a',
+      sessionId: 'b--c',
+      timestamp: '2026-08-12T10:01:00.000Z',
+      text: 'second',
+    });
+
+    expect(await store.listGroups('work-1')).toEqual([
+      { id: 'session--a--b%2D%2Dc', kind: 'session', runIds: ['run-2'] },
+      { id: 'session--a%2D%2Db--c', kind: 'session', runIds: ['run-1'] },
+    ]);
   });
 
   it('reads messages in timestamp order rather than filesystem modification time', async () => {
@@ -91,10 +145,9 @@ describe('TranscriptStore', () => {
       text: 'Earlier',
     });
 
-    expect((await store.readGroup('work-1', 'run--run-1')).map((message) => message.text)).toEqual([
-      'Earlier',
-      'Later',
-    ]);
+    expect(
+      (await store.readGroup('work-1', 'run--run%2D1')).map((message) => message.text),
+    ).toEqual(['Earlier', 'Later']);
   });
 
   it('marks a work item for expiry and removes it only after the retention interval', async () => {
