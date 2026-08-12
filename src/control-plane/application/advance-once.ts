@@ -51,6 +51,7 @@ interface ExecutionPort {
       orchestrationGroupId: WorkflowInstanceView['orchestrationGroupId'];
       resources: readonly NonNullable<Awaited<ReturnType<ResourceService['get']>>>[];
       ineligibleRunners?: ReadonlySet<string>;
+      sessionPolicy?: 'fresh' | 'resume-stage';
     },
   ): Promise<RunView>;
   list(activationId?: ActivityActivationView['activationId']): Promise<readonly RunView[]>;
@@ -59,9 +60,7 @@ interface ExecutionPort {
 interface AdvanceOnceDependencies {
   readonly ids: IdGenerator;
   readonly work?: {
-    get(
-      workItemId: string,
-    ): Promise<{
+    get(workItemId: string): Promise<{
       readonly state: WorkStatus;
       readonly frozen?: boolean;
       readonly deleted?: boolean;
@@ -188,6 +187,8 @@ export function createAdvanceOnce(
       workflowInstanceId: selected.workflow.workflowInstanceId,
       orchestrationGroupId: selected.workflow.orchestrationGroupId,
       resources: resourceViews,
+      sessionPolicy:
+        selected.workflow.parentWorkflowInstanceId === undefined ? 'resume-stage' : 'fresh',
       ...(ineligible.size === 0 ? {} : { ineligibleRunners: ineligible }),
     });
     if (run.status === RunStatus.Succeeded && run.outcome !== undefined) {

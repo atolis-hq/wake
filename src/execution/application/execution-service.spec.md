@@ -83,12 +83,14 @@ workspace mechanics itself — it only resolves and invokes them.
   fresh Run, with attempt number one greater than the count of Runs already
   recorded for it.
 - Before starting a genuinely fresh agent attempt, Execution MAY select one
-  opaque prior session only from terminal Runs for the same Activation whose
-  recorded runner `cli` equals the newly selected adapter kind. It chooses the
-  newest terminal result with a non-empty generic session id, ordered by
-  finish time, attempt, then Run id. It forwards that id unchanged to the
-  Activity with the current prompt/context; different adapter kinds, started
-  or ambiguous Runs, and missing ids start fresh.
+  opaque prior session from terminal Runs whose recorded runner `cli` equals
+  the newly selected adapter kind. A `resume-stage` attempt selects only Runs
+  for its own workflow instance and stage; a `fresh` attempt never selects a
+  prior session. If no policy is supplied, the legacy same-Activation lookup
+  applies. It chooses the newest terminal result with a non-empty generic
+  session id, ordered by finish time, attempt, then Run id. It forwards that
+  id unchanged to the Activity with the current prompt/context; different
+  adapter kinds, started or ambiguous Runs, and missing ids start fresh.
 
 **Claim, workspace, and Run creation**
 

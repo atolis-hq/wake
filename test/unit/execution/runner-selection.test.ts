@@ -136,6 +136,51 @@ describe('Execution runner selection', () => {
     expect(standard.requests).toEqual([expect.objectContaining({ resumeSessionId: 'session-1' })]);
   });
 
+  it('resumes the newest same-CLI session when a primary stage is re-entered', async () => {
+    const standard = capturingRunner('standard');
+    const journal = new InMemoryEventJournal(new FakeClock());
+    const first = {
+      ...activation(),
+      activationId: activationId('agent:implement:1'),
+      stage: 'implement',
+    };
+    const returnedToStage = {
+      ...first,
+      activationId: activationId('agent:implement:2'),
+      ordinal: 2,
+    };
+    await seedPriorRun(journal, first, 'first-implement', 'fake', 'session-first');
+    const service = fixtureWithJournal(
+      journal,
+      new RunnerRegistry({ standard: ['standard'] }, { standard }),
+    );
+
+    await service.attempt(returnedToStage, {
+      ...context(),
+      sessionPolicy: 'resume-stage',
+    });
+
+    expect(standard.requests).toEqual([
+      expect.objectContaining({ resumeSessionId: 'session-first' }),
+    ]);
+  });
+
+  it('starts a fresh session for a watch workflow', async () => {
+    const standard = capturingRunner('standard');
+    const journal = new InMemoryEventJournal(new FakeClock());
+    await seedPriorRun(journal, activation(), 'watch-prior', 'fake', 'watch-session');
+    const service = fixtureWithJournal(
+      journal,
+      new RunnerRegistry({ standard: ['standard'] }, { standard }),
+    );
+
+    await service.attempt(activation(), { ...context(), sessionPolicy: 'fresh' });
+
+    expect(standard.requests).toEqual([
+      expect.not.objectContaining({ resumeSessionId: expect.anything() }),
+    ]);
+  });
+
   it('does not resume absent sessions or sessions from another adapter or activation', async () => {
     const standard = capturingRunner('standard');
     const journal = new InMemoryEventJournal(new FakeClock());
@@ -232,7 +277,7 @@ function capturingRunner(name: string): Runner & { readonly requests: readonly u
 
 async function seedPriorRun(
   journal: InMemoryEventJournal,
-  activationValue: ReturnType<typeof activation>,
+  activationValue: ReturnType<typeof activation> & { readonly stage?: string },
   id: string,
   cli: string,
   sessionId?: string,
@@ -252,6 +297,7 @@ async function seedPriorRun(
       payload: {
         activationId: activationValue.activationId,
         activity: activationValue.activity,
+        ...(activationValue.stage === undefined ? {} : { stage: activationValue.stage }),
         workflowInstanceId: workflowInstanceId('workflow-1'),
         orchestrationGroupId: orchestrationGroupId('group-1'),
         attempt: 1,

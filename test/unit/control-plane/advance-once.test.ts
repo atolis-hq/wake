@@ -3,11 +3,11 @@ import { z } from 'zod';
 import { activityName } from '../../../src/activities/index.js';
 import { createAdvanceOnce } from '../../../src/control-plane/index.js';
 import { type RunView } from '../../../src/execution/index.js';
+import { workflowName } from '../../../src/orchestration/contracts/identifiers.js';
 import {
   type ActivityActivationView,
   type WorkflowInstanceView,
 } from '../../../src/orchestration/index.js';
-import { workflowName } from '../../../src/orchestration/contracts/identifiers.js';
 import { TestWorld } from '../../e2e/support/world.js';
 
 async function world() {
@@ -250,6 +250,50 @@ describe('advanceOnce', () => {
 
     await expect(advance({ maxProgress: 1 })).resolves.toEqual({ kind: 'no-work' });
     expect(attempts).toBe(0);
+  });
+
+  it('uses stage resume only for a primary workflow activation', async () => {
+    const activation = { activationId: 'activation-00000000000000000000000001' } as never;
+    const primary = {
+      workflowInstanceId: 'workflow-primary',
+      workItemId: 'work-00000000000000000000000001',
+      orchestrationGroupId: 'group-00000000000000000000000001',
+      acceptedOutcomes: [],
+    } as unknown as WorkflowInstanceView;
+    const watch = {
+      ...primary,
+      workflowInstanceId: 'workflow-watch',
+      parentWorkflowInstanceId: primary.workflowInstanceId,
+    } as WorkflowInstanceView;
+    const policies: string[] = [];
+    let pending: readonly { workflow: WorkflowInstanceView; activation: ActivityActivationView }[] =
+      [{ workflow: primary, activation }];
+    const advance = createAdvanceOnce(
+      {
+        reconcileChildCompletions: async () => undefined,
+        listPendingActivations: async () => pending,
+        listWaiting: async () => [],
+        acceptOutcome: async () => primary,
+        markActivationStarted: async () => primary,
+      },
+      {
+        attempt: async (_activation, context) => {
+          policies.push(context.sessionPolicy ?? 'missing');
+          pending = [];
+          return { status: 'started', runId: `run-${policies.length}` } as never;
+        },
+        list: async () => [],
+      },
+      { correlationsForWork: async () => [] } as never,
+      { now: () => new Date('2026-08-11T00:00:00.000Z') },
+      { ids: { next: () => 'command-00000000000000000000000001' } as never },
+    );
+
+    await advance({ maxProgress: 1 });
+    pending = [{ workflow: watch, activation }];
+    await advance({ maxProgress: 1 });
+
+    expect(policies).toEqual(['resume-stage', 'fresh']);
   });
 
   it('does no work when no activation is pending', async () => {
