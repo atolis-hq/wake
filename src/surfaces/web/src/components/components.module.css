@@ -283,6 +283,18 @@
   border: 1px solid var(--border-strong);
   color: var(--ink-muted);
 }
+.chipOutline.good {
+  color: var(--good);
+}
+.chipOutline.warning {
+  color: var(--warning);
+}
+.chipOutline.bad {
+  color: var(--bad);
+}
+.chipOutline.cold {
+  color: #7dd3fc;
+}
 .tile {
   background: var(--surface-panel);
   border-radius: var(--radius);

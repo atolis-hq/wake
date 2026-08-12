@@ -90,6 +90,16 @@ describe('board', () => {
     );
   });
 
+  it('keeps semantic colors on outlined board status chips', () => {
+    const stylesheet = readFileSync(
+      resolve(process.cwd(), 'src/components/components.module.css'),
+      'utf8',
+    );
+
+    expect(stylesheet).toMatch(/\.chipOutline\.bad\s*\{[^}]*color:\s*var\(--bad\)/s);
+    expect(stylesheet).toMatch(/\.chipOutline\.cold\s*\{[^}]*color:\s*#7dd3fc/s);
+  });
+
   it('labels every column with its item count and keeps empty columns visible', async () => {
     render(
       <MemoryRouter initialEntries={['/board']}>
@@ -174,6 +184,7 @@ describe('board', () => {
     const outcome = await screen.findByText('failed');
     expect(outcome.className).toContain('chip');
     expect(outcome.className).toContain('chipOutline');
+    expect(outcome.className).toContain('bad');
   });
   it('does not show the last run outcome badge when it is done', async () => {
     const client = new WakeApiClient(async (input) => {
