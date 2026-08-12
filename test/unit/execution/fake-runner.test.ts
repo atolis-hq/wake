@@ -30,6 +30,26 @@ it('parses a legacy wake-result envelope into a typed response without retaining
   });
 });
 
+it('retains a prose PR link and its artifact fence while removing the terminal sentinel', () => {
+  const response = parseAgentRunnerResponse({
+    transport: RunStatus.Succeeded,
+    output: `Opened https://github.com/atolis-hq/wake/pull/537.
+
+\`\`\`wake-artifacts
+{ "artifacts": [{ "kind": "pr", "url": "https://github.com/atolis-hq/wake/pull/537" }] }
+\`\`\`
+
+DONE`,
+    runner: 'codex',
+  });
+
+  expect(response).toMatchObject({ outcome: 'DONE' });
+  const [prose, artifactFence] = response.displayBody.split('```wake-artifacts');
+  expect(prose).toContain('Opened https://github.com/atolis-hq/wake/pull/537.');
+  expect(artifactFence).toContain('https://github.com/atolis-hq/wake/pull/537');
+  expect(response.displayBody).not.toMatch(/\nDONE$/);
+});
+
 it('completes a fake execution with the deterministic DONE sentinel', async () => {
   const execution = await new FakeExecutionRunner().start(
     { runId: 'run-1', prompt: 'complete', allowedTools: [] },

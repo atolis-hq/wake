@@ -90,7 +90,11 @@ describe('target initialise root', () => {
       });
       expect(rendered).toContain('work-01test0000000000000000');
       expect(rendered).toMatch(/DONE, BLOCKED, or FAILED/);
-      if (name === 'implement') expect(rendered).toContain('```wake-artifacts');
+      if (name === 'implement') {
+        expect(rendered).toContain('Include every pull request URL in the normal prose response.');
+        expect(rendered).toContain('Then repeat each URL in this exact artifact fence');
+        expect(rendered).toContain('```wake-artifacts');
+      }
     }
   });
 
