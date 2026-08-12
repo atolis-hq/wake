@@ -174,6 +174,28 @@ describe('Execution runner selection', () => {
       outputTokens: 20,
       cacheReadTokens: 5,
     });
+    await seedPriorRun(
+      journal,
+      implement,
+      'started-session-1',
+      'fake',
+      'session-1',
+      { inputTokens: 1_000, outputTokens: 1_000 },
+      'started',
+    );
+    await seedPriorRun(
+      journal,
+      implement,
+      'ambiguous-session-1',
+      'fake',
+      'session-1',
+      { inputTokens: 1_000, outputTokens: 1_000 },
+      'ambiguous',
+    );
+    await seedPriorRun(journal, implement, 'a-terminal-session-2', 'fake', 'session-2', {
+      inputTokens: 1_000,
+      outputTokens: 1_000,
+    });
     await seedPriorRun(journal, implement, 'different-cli', 'other-cli', 'session-1', {
       inputTokens: 100,
       outputTokens: 100,
@@ -406,6 +428,7 @@ async function seedPriorRun(
   cli: string,
   sessionId?: string,
   usage?: Readonly<Record<string, string | number | boolean | null>>,
+  status: 'failed' | 'started' | 'ambiguous' = 'failed',
 ) {
   const clock = new FakeClock();
   const stream = runStream(runId(id));
@@ -448,20 +471,38 @@ async function seedPriorRun(
         },
       },
     }),
-    createEventDraft({
-      eventId: `${id}:failed`,
-      eventType: ExecutionEventType.RunFailed,
-      occurredAt: clock.now().toISOString(),
-      correlationId: 'group-1',
-      causationId: activationValue.activationId,
-      actor: { kind: EventActorKind.System, id: 'test' },
-      source: { kind: EventSourceKind.Internal, id: 'test' },
-      stream,
-      payload: {
-        failure: { kind: 'unexpected-execution-failure', message: 'failed' },
-        finishedAt: clock.now().toISOString(),
-      },
-    }),
+    ...(status === 'started'
+      ? []
+      : status === 'ambiguous'
+        ? [
+            createEventDraft({
+              eventId: `${id}:ambiguous`,
+              eventType: ExecutionEventType.RunAmbiguous,
+              occurredAt: clock.now().toISOString(),
+              correlationId: 'group-1',
+              causationId: activationValue.activationId,
+              actor: { kind: EventActorKind.System, id: 'test' },
+              source: { kind: EventSourceKind.Internal, id: 'test' },
+              stream,
+              payload: { reason: 'ambiguous', finishedAt: clock.now().toISOString() },
+            }),
+          ]
+        : [
+            createEventDraft({
+              eventId: `${id}:failed`,
+              eventType: ExecutionEventType.RunFailed,
+              occurredAt: clock.now().toISOString(),
+              correlationId: 'group-1',
+              causationId: activationValue.activationId,
+              actor: { kind: EventActorKind.System, id: 'test' },
+              source: { kind: EventSourceKind.Internal, id: 'test' },
+              stream,
+              payload: {
+                failure: { kind: 'unexpected-execution-failure', message: 'failed' },
+                finishedAt: clock.now().toISOString(),
+              },
+            }),
+          ]),
   ]);
 }
 
