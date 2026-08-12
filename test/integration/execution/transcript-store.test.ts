@@ -99,6 +99,26 @@ describe('TranscriptStore', () => {
     ]);
   });
 
+  it('keeps a trailing-dot run identity distinct on Windows filesystems', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wake-transcript-store-'));
+    const store = new TranscriptStore(root);
+
+    for (const runId of ['run', 'run.']) {
+      await store.captureResponse({
+        workItemId: 'work-1',
+        runId,
+        cli: 'codex',
+        timestamp: '2026-08-12T10:00:00.000Z',
+        text: runId,
+      });
+    }
+
+    expect(await store.listGroups('work-1')).toEqual([
+      { id: 'run--run', kind: 'run', runIds: ['run'] },
+      { id: 'run--run%2E', kind: 'run', runIds: ['run.'] },
+    ]);
+  });
+
   it('keeps session groups distinct when CLI and session IDs contain group delimiters', async () => {
     const root = await mkdtemp(join(tmpdir(), 'wake-transcript-store-'));
     const store = new TranscriptStore(root);

@@ -160,7 +160,7 @@ function sessionGroup(cli: string, sessionId: string): string {
 }
 
 function safe(value: string): string {
-  return encodeURIComponent(value).replaceAll('-', '%2D');
+  return encodeURIComponent(value).replaceAll('-', '%2D').replaceAll('.', '%2E');
 }
 
 function messageFile(timestamp: string, runId: string, kind: TranscriptMessage['kind']): string {
