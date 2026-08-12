@@ -44,7 +44,7 @@ defineScenario(
       workItemId: work.workItemId,
       workflowName: workflowName('unattended'),
     });
-    await world.advance(work.workItemId);
+    await world.advanceUntilSettled(work.workItemId);
     expect((await world.viewWorkflow(workflow.workflowInstanceId))?.status).toBe('completed');
     expect(await world.events('orchestration.signal-wait-started')).toHaveLength(0);
   },

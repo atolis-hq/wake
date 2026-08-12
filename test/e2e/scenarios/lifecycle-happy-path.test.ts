@@ -62,7 +62,7 @@ defineScenario(
       workItemId: work.workItemId,
       workflowName: workflowName('default'),
     });
-    await world.advance(work.workItemId);
+    await world.advanceUntilSettled(work.workItemId);
     expect((await world.viewWorkflow(workflow.workflowInstanceId))?.status).toBe('waiting');
     await world.acceptSignal(workflow.workflowInstanceId, {
       kind: signalName('approved'),
@@ -70,7 +70,7 @@ defineScenario(
       actorDecision: { authorized: true, evidenceId: 'approve-refine' },
       providerEventId: 'approve-refine',
     });
-    await world.advance(work.workItemId);
+    await world.advanceUntilSettled(work.workItemId);
     expect((await world.viewWorkflow(workflow.workflowInstanceId))?.status).toBe('waiting');
     await world.acceptSignal(workflow.workflowInstanceId, {
       kind: signalName('approved'),

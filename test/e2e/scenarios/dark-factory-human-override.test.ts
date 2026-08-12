@@ -68,7 +68,7 @@ defineScenario(
       workItemId: work.workItemId,
       workflowName: workflowName('dark-factory'),
     });
-    await world.advance(work.workItemId);
+    await world.advanceUntilSettled(work.workItemId);
     expect((await world.viewWorkflow(parent.workflowInstanceId))?.waitingFor?.signalKind).toBe(
       WatchGateVerdictSignal,
     );

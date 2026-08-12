@@ -81,14 +81,14 @@ defineScenario(
         workflowInstanceId: workflowInstanceId('second-primary'),
       }),
     ).rejects.toThrow(/primary workflow/);
-    await world.advance(work.workItemId);
+    await world.advanceUntilSettled(work.workItemId);
     await world.waitForSignal(parent.workflowInstanceId, {
       signalKind: signalName('orchestration.child-completed'),
     });
     await world.triggerWatch('review.requested', 'review-request-1');
     const childId = `${parent.workflowInstanceId}:watch:review:trigger:review-request-1`;
 
-    await world.advance(work.workItemId);
+    await world.advanceUntilSettled(work.workItemId);
 
     expect((await world.viewWorkflow(childId))?.status).toBe('completed');
     expect(

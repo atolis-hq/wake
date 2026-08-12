@@ -328,6 +328,19 @@ export class TestWorld {
     return result;
   }
 
+  async advanceUntilSettled(workItemId?: WorkItemId): Promise<AdvanceResult> {
+    let result: AdvanceResult = { kind: 'no-work' };
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      result = await this.advance(workItemId);
+      await Promise.resolve();
+      const hasStartedRun = (await this.execution.list()).some((run) => run.status === 'started');
+      const hasPendingActivation =
+        (await this.orchestration.listPendingActivations(workItemId)).length > 0;
+      if (!hasStartedRun && !hasPendingActivation) return result;
+    }
+    throw new Error(`Workflow did not settle after 20 ticks:\n${await this.trace()}`);
+  }
+
   async triggerWatch(
     eventType: string,
     eventId: string,

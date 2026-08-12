@@ -55,8 +55,8 @@ defineScenario(
       workItemId: work.workItemId,
       workflowName: workflowName('default'),
     });
-    await world.advance(work.workItemId);
-    await world.advance(work.workItemId);
+    await world.advanceUntilSettled(work.workItemId);
+    await world.advanceUntilSettled(work.workItemId);
     const runs = await world.viewRuns();
     expect(runs).toHaveLength(2);
     expect(runs.map((run) => run.activationId)).toEqual([
