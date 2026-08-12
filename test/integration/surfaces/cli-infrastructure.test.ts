@@ -300,8 +300,8 @@ describe('CLI infrastructure', () => {
     await docker.exec([]);
     await docker.exec(['pwd']);
     expect(calls).toEqual([
-      ['exec', '-it', 'wake-sandbox', 'bash'],
-      ['exec', '-i', 'wake-sandbox', 'pwd'],
+      ['exec', '-u', 'wake', '-it', 'wake-sandbox', 'bash'],
+      ['exec', '-u', 'wake', '-i', 'wake-sandbox', 'pwd'],
     ]);
   });
 
@@ -324,6 +324,8 @@ describe('CLI infrastructure', () => {
       {
         arguments_: [
           'exec',
+          '-u',
+          'wake',
           '-it',
           '-w',
           '/wake',
@@ -349,6 +351,8 @@ describe('CLI infrastructure', () => {
     expect(calls).toEqual([
       [
         'exec',
+        '-u',
+        'wake',
         '-it',
         '-w',
         '/wake',
@@ -379,6 +383,8 @@ describe('CLI infrastructure', () => {
       expect(calls).toEqual([
         [
           'exec',
+          '-u',
+          'wake',
           '-it',
           '-w',
           '/wake',

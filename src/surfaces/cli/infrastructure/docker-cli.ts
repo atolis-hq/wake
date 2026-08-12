@@ -133,8 +133,8 @@ export function createSandboxDockerPort(docker: DockerCli, options: SandboxDocke
     exec: (command: readonly string[]) =>
       docker.invoke(
         command.length === 0
-          ? ['exec', '-it', options.containerName, 'bash']
-          : ['exec', '-i', options.containerName, ...command],
+          ? ['exec', '-u', 'wake', '-it', options.containerName, 'bash']
+          : ['exec', '-u', 'wake', '-i', options.containerName, ...command],
       ),
     logs: (tail: number) => docker.invoke(['logs', '--tail', String(tail), options.containerName]),
     // Resolves the in-container invocation the same way the entrypoint script
@@ -144,6 +144,8 @@ export function createSandboxDockerPort(docker: DockerCli, options: SandboxDocke
       docker.invoke(
         [
           'exec',
+          '-u',
+          'wake',
           '-it',
           '-w',
           options.wakeMountPath ?? '/wake',
@@ -159,6 +161,8 @@ export function createSandboxDockerPort(docker: DockerCli, options: SandboxDocke
       if (resumeCommand === null) throw new Error(`sandbox resume does not support CLI "${cli}"`);
       return docker.invoke([
         'exec',
+        '-u',
+        'wake',
         '-it',
         '-w',
         options.wakeMountPath ?? '/wake',
