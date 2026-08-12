@@ -71,7 +71,8 @@ describe('run detail', () => {
       </MemoryRouter>,
     );
     const transcript = await screen.findByRole('list', { name: 'Transcript' });
-    expect(transcript.textContent).toContain('prompt');
+    expect(transcript.textContent).toContain('input');
+    expect(transcript.textContent).toContain('agent');
     expect(transcript.textContent).toContain('Investigate the failure');
     expect(transcript.textContent).toContain('wake-result DONE');
     expect(screen.queryByText('Structured details')).toBeNull();
