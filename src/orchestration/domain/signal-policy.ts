@@ -60,27 +60,38 @@ export function acceptSignal(
   const events: WorkflowOrchestrationEventDraft[] = [
     stateDraft(state, input, OrchestrationEventType.SignalAccepted, { ...signal, authority }, 1),
   ];
-  const rejectTarget =
-    signal.outcome === ActivityOutcomeKind.Rejected ? expected.onRejectResume : undefined;
-  if (rejectTarget !== undefined) {
-    resumeToTarget(events, definition, state, input, rejectTarget);
+  if (signal.outcome === ActivityOutcomeKind.Rejected) {
+    if (expected.onRejectResume !== undefined) {
+      resumeToTarget(events, definition, state, input, expected.onRejectResume);
+    } else {
+      requestCurrentStage(events, definition, state, input);
+    }
   } else if (expected.resume !== undefined) {
     resumeToTarget(events, definition, state, input, expected.resume);
   } else {
-    const stage = definition.stages[stageName(state.currentStage)]!;
-    events.push(
-      stateDraft(
-        state,
-        input,
-        OrchestrationEventType.ActivityRequested,
-        activation(state.workflowInstanceId, nextOrdinal(state), stage.activity, stage.with, {
-          execution: stage.execution,
-        }),
-        events.length + 1,
-      ),
-    );
+    requestCurrentStage(events, definition, state, input);
   }
   return { kind: 'append', events };
+}
+
+function requestCurrentStage(
+  events: WorkflowOrchestrationEventDraft[],
+  definition: CompiledWorkflow,
+  state: WorkflowInstanceView,
+  input: DecisionContext,
+): void {
+  const stage = definition.stages[stageName(state.currentStage)]!;
+  events.push(
+    stateDraft(
+      state,
+      input,
+      OrchestrationEventType.ActivityRequested,
+      activation(state.workflowInstanceId, nextOrdinal(state), stage.activity, stage.with, {
+        execution: stage.execution,
+      }),
+      events.length + 1,
+    ),
+  );
 }
 
 function signalRejectionReason(state: WorkflowInstanceView, input: AcceptSignal): string | null {
