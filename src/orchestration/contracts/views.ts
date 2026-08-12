@@ -14,6 +14,7 @@ export interface ActivityActivationView {
   readonly activationId: ActivationId;
   readonly ordinal: number;
   readonly activity: ActivityName;
+  readonly stage?: StageName;
   readonly input: unknown;
   readonly execution: StageConfig['execution'];
   readonly status: ActivityActivationStatus;

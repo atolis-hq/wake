@@ -102,6 +102,7 @@ export function startInstance(input: StartInstanceInput): OrchestrationDecision 
         OrchestrationEventType.ActivityRequested,
         activation(input.workflowInstanceId, 1, stage.activity, stage.with, {
           execution: stage.execution,
+          stage: input.definition.entry,
         }),
         childEvents.length + 3,
       ),

@@ -230,6 +230,7 @@ export interface ActivityRequestedPayload {
   readonly activationId: ActivationId;
   readonly ordinal: number;
   readonly activity: ActivityName;
+  readonly stage?: StageName | undefined;
   readonly input: unknown;
   readonly execution?: StageConfig['execution'] | undefined;
   readonly followOnIndex?: number | undefined;

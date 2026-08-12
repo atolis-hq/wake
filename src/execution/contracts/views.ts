@@ -18,6 +18,7 @@ export interface RunView {
   readonly runId: RunId;
   readonly activationId: ActivationId;
   readonly activity: ActivityName;
+  readonly stage?: string | undefined;
   readonly workflowInstanceId: ActivityWorkflowInstanceId;
   readonly orchestrationGroupId: ActivityOrchestrationGroupId;
   readonly attempt: number;

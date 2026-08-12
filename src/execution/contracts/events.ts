@@ -34,6 +34,7 @@ export const runStartedPayloadSchema = z
   .object({
     activationId: brandedStringSchema(activationId),
     activity: brandedStringSchema(activityName),
+    stage: z.string().min(1).optional(),
     workflowInstanceId: brandedStringSchema(activityWorkflowInstanceId),
     orchestrationGroupId: brandedStringSchema(activityOrchestrationGroupId),
     attempt: z.number().int().positive(),
@@ -125,6 +126,7 @@ export const ExecutionEventNamespace = 'execution.' as const;
 export interface RunStartedPayload {
   readonly activationId: ActivationId;
   readonly activity: ActivityName;
+  readonly stage?: string | undefined;
   readonly workflowInstanceId: ActivityWorkflowInstanceId;
   readonly orchestrationGroupId: ActivityOrchestrationGroupId;
   readonly attempt: number;

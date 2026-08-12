@@ -61,6 +61,7 @@ export async function startRun(input: {
       payload: {
         activationId: activation.activationId,
         activity: activation.activity,
+        ...(activation.stage === undefined ? {} : { stage: activation.stage }),
         workflowInstanceId: context.workflowInstanceId,
         orchestrationGroupId: context.orchestrationGroupId,
         attempt,

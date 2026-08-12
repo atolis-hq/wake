@@ -279,6 +279,7 @@ function applyActivityRequested(
     activationId: payload.activationId,
     ordinal: payload.ordinal,
     activity: payload.activity,
+    ...(payload.stage === undefined ? {} : { stage: payload.stage }),
     input: payload.input,
     execution: payload.execution,
     status: ActivityActivationStatus.Pending,

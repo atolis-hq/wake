@@ -10,6 +10,7 @@ export function foldRun(events: readonly RunExecutionEvent[]): RunView | null {
     runId: started.stream.id,
     activationId: started.payload.activationId,
     activity: started.payload.activity,
+    ...(started.payload.stage === undefined ? {} : { stage: started.payload.stage }),
     workflowInstanceId: started.payload.workflowInstanceId,
     orchestrationGroupId: started.payload.orchestrationGroupId,
     attempt: started.payload.attempt,
