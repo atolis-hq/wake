@@ -50,7 +50,7 @@ defineScenario(
       workflowName: workflowName('default'),
     });
 
-    await world.advance(work.workItemId);
+    await world.advanceUntilSettled(work.workItemId);
     expect((await world.viewWorkflow(workflow.workflowInstanceId))?.status).toBe('blocked');
     expect(await world.viewRuns()).toHaveLength(1);
 
@@ -71,7 +71,7 @@ defineScenario(
     expect(repeated).toEqual(retried);
     expect(retried.pendingActivation?.ordinal).toBe(2);
 
-    await world.advance(work.workItemId);
+    await world.advanceUntilSettled(work.workItemId);
     const runs = await world.viewRuns();
     expect(runs).toHaveLength(2);
     expect(runs.map((run) => run.activationId)).toEqual([

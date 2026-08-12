@@ -14,6 +14,7 @@ From the Wake repo root:
 
 ```bash
 npm install
+npm run test:fast
 npm run verify
 npm test
 npm run tick
@@ -28,6 +29,8 @@ Useful commands:
 - `npm run format:check` verifies Prettier formatting without changing files.
 - `npm run verify` runs linting, formatting checks, a TypeScript build, and the
   test suite. CI runs this command for pull requests and pushes to `main`.
+- For the authoritative local test-selection policy, including when to use the
+  full suite, see [CLAUDE.md](../CLAUDE.md#testing-and-verification-policy).
 - `npm run start` runs the resident loop.
 - `npm run ui` runs the read-only control-plane UI, including the status bar,
   condition board, item detail, activity feed, config, and health views. It

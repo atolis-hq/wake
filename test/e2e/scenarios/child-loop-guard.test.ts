@@ -74,7 +74,7 @@ defineScenario(
       workItemId: work.workItemId,
       workflowName: workflowName('parent'),
     });
-    await world.advance(work.workItemId);
+    await world.advanceUntilSettled(work.workItemId);
     await world.waitForSignal(parent.workflowInstanceId, {
       signalKind: signalName('orchestration.child-completed'),
     });
@@ -88,14 +88,14 @@ defineScenario(
       parent.workflowInstanceId,
     );
 
-    await world.advance(work.workItemId);
+    await world.advanceUntilSettled(work.workItemId);
     const resumed = await world.viewWorkflow(parent.workflowInstanceId);
     expect(resumed?.acceptedChildCompletionIds, await world.trace()).toEqual([childId]);
     expect(resumed?.pendingActivation?.ordinal).toBe(2);
     expect(await world.events('orchestration.child-completion-consumed')).toHaveLength(1);
 
-    await world.advance(work.workItemId);
-    await world.advance(work.workItemId);
+    await world.advanceUntilSettled(work.workItemId);
+    await world.advanceUntilSettled(work.workItemId);
     expect(await world.events('orchestration.child-requested')).toHaveLength(1);
 
     const [childCompleted] = await world.events('orchestration.child-completed');

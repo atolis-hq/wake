@@ -35,6 +35,7 @@
     "build": "tsc -p tsconfig.json && node scripts/embed-version.mjs",
     "prepack": "npm run build && npm run build:web",
     "test": "vitest run",
+    "test:fast": "npm run test:unit",
     "check:catalogue": "node scripts/check-functional-catalogue.mjs",
     "check:scenarios": "node scripts/check-scenario-coverage.mjs",
     "check:specs": "node scripts/check-specs.mjs",

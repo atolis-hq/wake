@@ -30,6 +30,11 @@ The default `npm test` command remains the full non-live suite because CI's
 quick local feedback. Development documentation will distinguish focused and
 unit checks from the authoritative full CI verification.
 
+Unit and integration configurations will state their file-level parallelism
+explicitly. Their tests have no shared on-disk test root. E2E remains serial:
+some scenarios start processes or make filesystem changes, so parallelizing it
+without further isolation would trade speed for flaky results.
+
 ## Scope and safety
 
 No production scheduler, runner, filesystem, or CI behavior changes. The
