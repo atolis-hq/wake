@@ -47,7 +47,7 @@ letters, digits, and hyphens and resolve to `prompts/<name>.md`.
 
 ```markdown
 ---
-model: gpt-5.5
+model: gpt-5.6-terra
 maxTurns: 20
 allowedTools: [Read, Edit, Bash]
 ---
