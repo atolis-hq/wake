@@ -232,40 +232,30 @@ and either:
   then reference it from \`runnerPools\`.
 - remove entries which are not needed.
 
-## 2. GitHub source
+## 2. External integrations
 
 Ask the user:
 
-- Which GitHub repository or repositories should Wake monitor? (each is an
-  \`owner/repo\` pair)
-- Which issue or pull-request labels should opt work in?
+- Which external source or sources should feed Wake work items?
+- Which provider-specific rule should opt work in?
 - Should polling start immediately, or stay disabled until they are ready?
 
-Configure the built-in provider under \`integrations\` in \`config.yaml\`:
+Configure each provider under \`integrations\` in \`config.yaml\`:
 
 \`\`\`yaml
 integrations:
-  github:
-    provider: github
+  <name>:
+    provider: <provider-id>
     enabled: true # or leave false to configure now, enable later
-    repositories:
-      - owner: owner
-        repo: repo
-    intake:
-      - where: { kind: issue, labels: [automation] }
-        matchMode: all
-        tags: [automation]
+    # Provider-specific fields select resources, configure credentials,
+    # and define which observed work is admitted.
 \`\`\`
 
-Wake reconciles its own labels on correlated issues and pull requests:
-\`wake:status.<working|awaiting-approval|blocked|completed|failed>\`,
-\`wake:stage.<current-stage>\`, \`wake:workflow.<workflow-name>\`, and
-\`wake:watching\` while a child watch runs. It preserves all non-\`wake:\`
-labels. These are status projections, not commands; never use a \`wake:\`
-label in an intake selector.
-
-For every GitHub field, including credentials and polling, consult
-https://github.com/atolis-hq/wake/blob/main/docs/configuration.md#built-in-github-provider.
+The fields beneath an integration entry are provider-owned and validated by
+that provider. Consult
+https://github.com/atolis-hq/wake/blob/main/docs/configuration.md for each
+supported provider's current schema, credential guidance, polling controls,
+and intake rules.
 
 ## 3. Credential mounts (check before asking)
 

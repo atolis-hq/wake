@@ -27,7 +27,7 @@ npx @atolis-hq/wake init ./wake-home
 
 `wake init` scaffolds `config.yaml`, `config.workflows.yaml`, `prompts/`,
 `workspaces/`, `docker/`, and a `SETUP.md` guide written for an assisting agent
-to use to finish configuring the GitHub source, runner/runnerPool, and
+to use to finish configuring external integrations, runner/runnerPool, and
 credential mounts. Point your agent CLI at it (for example, "read SETUP.md and
 help me configure this") once `wake init` finishes.
 
