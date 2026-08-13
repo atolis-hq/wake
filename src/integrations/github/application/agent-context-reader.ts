@@ -87,8 +87,41 @@ function pullRequestContext(payload: WorkObservedEvent['payload']): AgentContext
   };
 }
 
+const maxEvidenceEntries = 20;
+const maxEvidenceBytes = 12_000;
+
 function rawEvidenceList(value: unknown): readonly Readonly<Record<string, unknown>>[] {
-  return Array.isArray(value) ? value.filter(isRecord) : [];
+  const entries = Array.isArray(value) ? value.filter(isRecord).map(diagnosticEvidence) : [];
+  const bounded: Readonly<Record<string, unknown>>[] = [];
+  let bytes = 0;
+  for (const entry of entries.slice(0, maxEvidenceEntries)) {
+    const entryBytes = Buffer.byteLength(JSON.stringify(entry), 'utf8');
+    if (bytes + entryBytes > maxEvidenceBytes) break;
+    bounded.push(entry);
+    bytes += entryBytes;
+  }
+  return bounded;
+}
+
+function diagnosticEvidence(
+  entry: Readonly<Record<string, unknown>>,
+): Readonly<Record<string, unknown>> {
+  return Object.fromEntries(
+    [
+      'name',
+      'status',
+      'conclusion',
+      'started_at',
+      'completed_at',
+      'details_url',
+      'html_url',
+      'context',
+      'state',
+      'target_url',
+    ].flatMap((key) =>
+      typeof entry[key] === 'string' || entry[key] === null ? [[key, entry[key]]] : [],
+    ),
+  );
 }
 
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {

@@ -101,23 +101,39 @@ it('includes the latest correlated pull request check evidence without reading c
       headRevision: 'head-8',
       raw: {
         number: 8,
-        checkRuns: [{ id: 21, name: 'newest', status: 'completed', conclusion: 'failure' }],
-        statuses: [{ id: 22, context: 'deploy', state: 'failure' }],
+        checkRuns: Array.from({ length: 21 }, (_, index) => ({
+          id: index + 1,
+          name: `newest-${index + 1}`,
+          status: 'completed',
+          conclusion: 'failure',
+          unexpected: 'x'.repeat(100_000),
+        })),
+        statuses: [
+          { id: 22, context: 'deploy', state: 'failure', unexpected: 'x'.repeat(100_000) },
+        ],
       },
     },
   });
   await world.journal.append(olderObservation.stream, 0, [olderObservation, latestObservation]);
 
-  await expect(
-    createGitHubAgentContextReader(world.journal, world.resources).forWorkItem(work.workItemId),
-  ).resolves.toEqual({
+  const agentContext = await createGitHubAgentContextReader(
+    world.journal,
+    world.resources,
+  ).forWorkItem(work.workItemId);
+
+  expect(agentContext).toMatchObject({
     title: '',
     body: '',
     comments: [],
     pullRequest: {
       checks: 'failing',
-      checkRuns: [{ id: 21, name: 'newest', status: 'completed', conclusion: 'failure' }],
-      statuses: [{ id: 22, context: 'deploy', state: 'failure' }],
+      statuses: [{ context: 'deploy', state: 'failure' }],
     },
+  });
+  expect(agentContext.pullRequest?.checkRuns).toHaveLength(20);
+  expect(agentContext.pullRequest?.checkRuns.at(-1)).toEqual({
+    name: 'newest-20',
+    status: 'completed',
+    conclusion: 'failure',
   });
 });
