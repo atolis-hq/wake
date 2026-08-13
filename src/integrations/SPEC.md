@@ -1,5 +1,5 @@
 ---
-asOf: 31cb84460b6099ea50edc17a70d3ec679ba08cc5
+asOf: f1cd25e219207b9710ccb19632faac67ee757ae8
 ---
 
 # Integrations — Module Specification
