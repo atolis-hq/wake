@@ -65,15 +65,27 @@ export function createAgentActivity(
         workspace: context.workspace,
       });
       await capturePrompt(context, invocation.workItemId, request);
-      const execution = await context.runner.start(request, context.signal);
-      if (execution.identity !== undefined)
-        await context.reportExternalExecution(execution.identity);
-      const result = await execution.result;
+      const result = await runnerResult(context, invocation.workItemId, request);
       await captureResponse(context, invocation.workItemId, request, result);
       await context.reportRunnerResult?.({ ...result, runner: result.runner ?? 'unknown-runner' });
       return agentOutcome(result);
     },
   };
+}
+
+async function runnerResult(
+  context: ActivityExecutionContext,
+  workItemId: string,
+  request: Parameters<AgentRunnerPort['start']>[0],
+) {
+  try {
+    const execution = await context.runner!.start(request, context.signal);
+    if (execution.identity !== undefined) await context.reportExternalExecution(execution.identity);
+    return await execution.result;
+  } catch (error) {
+    await finalisePrompt(context, workItemId, request);
+    throw error;
+  }
 }
 
 async function capturePrompt(
@@ -101,6 +113,18 @@ async function captureResponse(
       sessionId: result.sessionId,
       text: result.output,
     }),
+  );
+}
+
+async function finalisePrompt(
+  context: ActivityExecutionContext,
+  workItemId: string,
+  request: { readonly runId: string; readonly prompt: string },
+): Promise<void> {
+  await recordTranscript(context, () =>
+    context.transcriptRecorder?.finalisePrompt?.(
+      transcriptIdentity(context, workItemId, request.runId),
+    ),
   );
 }
 

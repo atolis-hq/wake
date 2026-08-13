@@ -133,6 +133,12 @@ export interface ActivityExecutionContext {
       readonly timestamp: string;
       readonly text: string;
     }): Promise<void>;
+    finalisePrompt?(capture: {
+      readonly workItemId: string;
+      readonly runId: string;
+      readonly cli: string;
+      readonly timestamp: string;
+    }): Promise<void>;
   };
   /** Best-effort operational diagnostics that must not affect activity execution. */
   readonly logOperationalError?: (error: unknown) => void;

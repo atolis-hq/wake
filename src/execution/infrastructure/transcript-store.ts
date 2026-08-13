@@ -14,6 +14,8 @@ export interface TranscriptResponseCapture extends TranscriptCapture {
   readonly sessionId?: string | undefined;
 }
 
+export interface TranscriptPromptFinalisation extends Omit<TranscriptCapture, 'text'> {}
+
 export interface TranscriptGroup {
   readonly id: string;
   readonly kind: 'session' | 'run';
@@ -57,19 +59,26 @@ export class TranscriptStore {
         ? runGroup(capture.runId)
         : sessionGroup(capture.cli, capture.sessionId);
     const destination = this.groupDirectory(capture.workItemId, group);
-    const staging = this.stagingDirectory(capture.workItemId, capture.runId);
-    await mkdir(destination, { recursive: true });
-
-    const promptFiles = await filesOrEmpty(staging);
-    for (const promptFile of promptFiles.filter((file) => file.endsWith('.prompt.txt'))) {
-      await rename(join(staging, promptFile), join(destination, promptFile));
-    }
-    await this.fileSystem.remove(staging, { recursive: true, force: true });
+    await this.moveStagedPrompt(capture.workItemId, capture.runId, destination);
     await writeFile(
       join(destination, messageFile(timestamp, capture.runId, 'response')),
       capture.text,
       'utf8',
     );
+  }
+
+  public async finalisePrompt(capture: TranscriptPromptFinalisation): Promise<void> {
+    const staging = this.stagingDirectory(capture.workItemId, capture.runId);
+    const promptFiles = (await filesOrEmpty(staging)).filter((file) =>
+      file.endsWith('.prompt.txt'),
+    );
+    if (promptFiles.length === 0) return;
+    const destination = this.groupDirectory(capture.workItemId, runGroup(capture.runId));
+    await mkdir(destination, { recursive: true });
+    for (const promptFile of promptFiles) {
+      await rename(join(staging, promptFile), join(destination, promptFile));
+    }
+    await this.fileSystem.remove(staging, { recursive: true, force: true });
   }
 
   public async listGroups(workItemId: string): Promise<readonly TranscriptGroup[]> {
@@ -173,6 +182,20 @@ export class TranscriptStore {
 
   private stagingDirectory(workItemId: string, runId: string): string {
     return join(this.workItemDirectory(workItemId), `.pending--${safe(runId)}`);
+  }
+
+  private async moveStagedPrompt(
+    workItemId: string,
+    runId: string,
+    destination: string,
+  ): Promise<void> {
+    const staging = this.stagingDirectory(workItemId, runId);
+    await mkdir(destination, { recursive: true });
+    const promptFiles = await filesOrEmpty(staging);
+    for (const promptFile of promptFiles.filter((file) => file.endsWith('.prompt.txt'))) {
+      await rename(join(staging, promptFile), join(destination, promptFile));
+    }
+    await this.fileSystem.remove(staging, { recursive: true, force: true });
   }
 }
 

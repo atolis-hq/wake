@@ -77,6 +77,35 @@ describe('TranscriptStore', () => {
     expect(await readdir(join(root, 'work-1'))).toEqual(['run--run%2F1']);
   });
 
+  it('finalises a captured prompt into a fallback run group without adding a response', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wake-transcript-store-'));
+    const store = new TranscriptStore(root);
+
+    await store.capturePrompt({
+      workItemId: 'work-1',
+      runId: 'run/1',
+      cli: 'codex',
+      timestamp: '2026-08-12T10:00:00.000Z',
+      text: 'Prompt',
+    });
+    await store.finalisePrompt({
+      workItemId: 'work-1',
+      runId: 'run/1',
+      cli: 'codex',
+      timestamp: '2026-08-12T10:01:00.000Z',
+    });
+
+    expect(await readdir(join(root, 'work-1'))).toEqual(['run--run%2F1']);
+    await expect(store.readGroup('work-1', 'run--run%2F1')).resolves.toEqual([
+      {
+        timestamp: '2026-08-12T10:00:00.000Z',
+        runId: 'run/1',
+        kind: 'prompt',
+        text: 'Prompt',
+      },
+    ]);
+  });
+
   it('keeps fallback runs whose identifiers need the same safe substitution in distinct groups', async () => {
     const root = await mkdtemp(join(tmpdir(), 'wake-transcript-store-'));
     const store = new TranscriptStore(root);

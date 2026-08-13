@@ -111,6 +111,99 @@ describe('agent activity template context', () => {
     expect(logged).toHaveLength(2);
   });
 
+  it('finalises the captured prompt and preserves a start rejection', async () => {
+    const activity = createAgentActivity();
+    const captured: unknown[] = [];
+    const runnerFailure = new Error('runner did not start');
+    const reported: unknown[] = [];
+
+    await expect(
+      activity.execute(invocation({ prompt: 'Prompt' }), {
+        signal: new AbortController().signal,
+        occurredAt: '2026-08-12T10:00:00.000Z',
+        runId: 'run-123',
+        runnerContext: { runnerName: 'configured-codex', runnerCli: 'codex', activationOrdinal: 1 },
+        transcriptRecorder: {
+          async capturePrompt() {},
+          async captureResponse() {},
+          async finalisePrompt(value) {
+            captured.push(value);
+          },
+        },
+        runner: {
+          async start() {
+            throw runnerFailure;
+          },
+        },
+        async reportExternalExecution() {},
+        async reportRunnerResult(result) {
+          reported.push(result);
+        },
+      }),
+    ).rejects.toBe(runnerFailure);
+
+    expect(captured).toEqual([
+      {
+        workItemId: 'work-00000000000000000000000001',
+        runId: 'run-123',
+        cli: 'codex',
+        timestamp: '2026-08-12T10:00:00.000Z',
+      },
+    ]);
+    expect(reported).toEqual([]);
+  });
+
+  it('finalises the captured prompt and preserves a result rejection', async () => {
+    const activity = createAgentActivity();
+    const captured: unknown[] = [];
+    const runnerFailure = new Error('runner result failed');
+    const externalExecutions: unknown[] = [];
+    const reported: unknown[] = [];
+
+    await expect(
+      activity.execute(invocation({ prompt: 'Prompt' }), {
+        signal: new AbortController().signal,
+        occurredAt: '2026-08-12T10:00:00.000Z',
+        runId: 'run-123',
+        runnerContext: { runnerName: 'configured-codex', runnerCli: 'codex', activationOrdinal: 1 },
+        transcriptRecorder: {
+          async capturePrompt() {},
+          async captureResponse() {},
+          async finalisePrompt(value) {
+            captured.push(value);
+          },
+        },
+        runner: {
+          async start() {
+            return {
+              identity: { kind: 'process', id: 'pid-1', startedAt: '2026-08-12T10:00:01.000Z' },
+              result: Promise.reject(runnerFailure),
+            };
+          },
+        },
+        async reportExternalExecution(reference) {
+          externalExecutions.push(reference);
+        },
+        async reportRunnerResult(result) {
+          reported.push(result);
+        },
+      }),
+    ).rejects.toBe(runnerFailure);
+
+    expect(captured).toEqual([
+      {
+        workItemId: 'work-00000000000000000000000001',
+        runId: 'run-123',
+        cli: 'codex',
+        timestamp: '2026-08-12T10:00:00.000Z',
+      },
+    ]);
+    expect(externalExecutions).toEqual([
+      { kind: 'process', id: 'pid-1', startedAt: '2026-08-12T10:00:01.000Z' },
+    ]);
+    expect(reported).toEqual([]);
+  });
+
   it('passes enriched ticket data to template interpolation', async () => {
     const rendered: unknown[] = [];
     const requests: Array<{ readonly prompt: string }> = [];
