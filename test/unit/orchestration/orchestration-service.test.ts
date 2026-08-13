@@ -97,8 +97,8 @@ it('persists instances and accepts outcomes idempotently', async () => {
     {
       entry: 'first',
       stages: {
-        first: { activity: 'implement', on: { done: { then: 'second' } } },
-        second: { activity: 'implement', on: { done: { then: 'done' } } },
+        first: { activity: 'implement', with: {}, on: { done: { then: 'second' } } },
+        second: { activity: 'implement', with: {}, on: { done: { then: 'done' } } },
       },
     },
     registry,
@@ -115,7 +115,7 @@ it('persists instances and accepts outcomes idempotently', async () => {
     { workItemId: workId('2'), objective: 'ship again' },
     { ...context, commandId: 'create-work-2' },
   );
-  await service.start(
+  const newInstance = await restarted.start(
     {
       workflowInstanceId: workflowInstanceId('workflow-2'),
       workItemId: workId('2'),
@@ -128,8 +128,11 @@ it('persists instances and accepts outcomes idempotently', async () => {
     (await journal.readAll(0)).filter(
       (event) => event.eventType === 'orchestration.workflow-definition-registered',
     ),
-  ).toHaveLength(1);
-  expect((await service.listPendingActivations()).length).toBe(1);
+  ).toHaveLength(2);
+  expect(newInstance.workflowDefinitionFingerprint).not.toBe(
+    instance.workflowDefinitionFingerprint,
+  );
+  expect((await restarted.listPendingActivations()).length).toBe(2);
   await expect(
     service.acceptOutcome(
       {
