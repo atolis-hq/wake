@@ -108,7 +108,11 @@ function pullRequestObservation(input: {
     },
     labels: gitHubLabelNames(pullRequest),
     assignees: gitHubAssigneeLogins(pullRequest),
-    raw: { number: pullRequest.number },
+    raw: {
+      number: pullRequest.number,
+      checkRuns: input.evidence.checkRuns,
+      statuses: input.evidence.statuses,
+    },
   };
   const fingerprint = evidenceFingerprint(payload, input.evidence);
   return createEventDraft({

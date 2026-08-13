@@ -196,6 +196,7 @@ it.each([
       headRevision: 'head-a',
       baseRevision: 'base-a',
       checks: expected,
+      raw: { checkRuns, statuses },
     });
   },
 );
