@@ -291,7 +291,7 @@ workflows:
         while:
           stages: [implement]
           statuses: [waiting]
-        on: { events: [{ type: execution.run-succeeded }] }
+        on: { events: [execution.run-succeeded] }
         workflow: review
         maxPerGroup: 1
 ```
@@ -318,10 +318,8 @@ workflows:
         while:
           stages: [implement]
           statuses: [active]
-        on:
-          events:
-            - type: pr.checks-changed
-              where: { checks: failing }
+        on: { events: [pr.checks-changed] }
+        where: { checks: failing }
         workflow: ci-fix
         maxPerGroup: 1
 
@@ -354,7 +352,8 @@ A watch has:
 | `id` | Unique identity used by `watchGates` and watch-based approval authority. |
 | `while.stages` | Non-empty parent-stage list where the watch is eligible. |
 | `while.statuses` | Non-empty list drawn from `active`, `waiting`, and `blocked`. |
-| `on.events` | Optional non-empty list of event trigger objects. Each requires `type`, a canonical event name; supported triggers may add a `where` predicate. |
+| `on.events` | Optional non-empty list of canonical event-name strings. |
+| `where` | Optional failure-only predicate: `{ checks: failing }`, valid only when `on.events` includes `pr.checks-changed`. |
 | `schedule.cron` | Optional cron trigger. At least one of `on` or `schedule` is required. |
 | `workflow` | Existing workflow to start as the child. |
 | `maxPerGroup` | Positive upper bound on child starts for the group and this watch. |
