@@ -780,11 +780,16 @@ function createSandboxEntrypointDependencies(root: CompositionRoot): SandboxEntr
           resolve();
         });
       });
-      const drained = drainProcessOutput(child, sink, (error) => {
-        process.stderr.write(
-          `Wake detached start log failure: ${error instanceof Error ? error.message : String(error)}\n`,
-        );
-      });
+      const drained = drainProcessOutput(
+        child,
+        sink,
+        (value) => process.stderr.write(value),
+        (error) => {
+          process.stderr.write(
+            `Wake detached start log failure: ${error instanceof Error ? error.message : String(error)}\n`,
+          );
+        },
+      );
       const completion = closed.then(() => drained).then(() => closeStatus);
       children.set(child.pid, completion);
       void completion.then(() => children.delete(child.pid!));

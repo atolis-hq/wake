@@ -152,6 +152,12 @@ Does not own:
 - Detached child output MUST remain attached until Node reports `close` (not
   merely `exit`), then drain queued writes and close the sink. A sink/reporting
   failure is reported but never left as an unhandled rejected drain promise.
+- Detached child stdout and stderr MUST both reach the durable sink in full,
+  but only stderr chunks are additionally handed to the drain's escalation
+  callback, scrubbed the same way as the sink write. The child is expected to
+  write actionable failures to its own stderr and routine detail to stdout;
+  this lets a supervisor surface only the actionable half on its own stderr
+  without re-deriving severity from log text.
 
 ## Conceptual schema
 

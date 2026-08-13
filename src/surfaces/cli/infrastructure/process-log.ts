@@ -69,10 +69,17 @@ export function createProcessLogSink(
  * Serializes detached child output into a sink and resolves only after Node's
  * `close` event confirms its stdio streams have closed. Sink failures are
  * reported rather than becoming detached, unhandled promise rejections.
+ *
+ * The child's full stdout+stderr always reaches the sink (durable file), but
+ * only stderr is also handed to `onStderr` — the child already writes its
+ * actionable failures there (GitHub request failures, tick failures) and
+ * routine detail to stdout, so this lets a detached supervisor surface just
+ * the actionable half on its own stderr without re-deriving severity here.
  */
 export function drainProcessOutput(
   process: ProcessOutputSource,
   sink: ProcessLogSink,
+  onStderr: (value: string) => void,
   reportError: (error: unknown) => void,
 ): Promise<void> {
   let writes = Promise.resolve();
@@ -83,13 +90,18 @@ export function drainProcessOutput(
       // A reporting failure must not make a detached child unhandled.
     }
   };
-  const enqueue = (chunk: Buffer | string) => {
+  const enqueue = (chunk: Buffer | string, escalate: boolean) => {
     const value = chunk.toString();
-    writes = writes.then(() => sink.write(value)).catch(report);
+    writes = writes
+      .then(() => sink.write(value))
+      .then(() => {
+        if (escalate) onStderr(scrubProcessLog(value));
+      })
+      .catch(report);
   };
 
-  process.stdout?.on('data', enqueue);
-  process.stderr?.on('data', enqueue);
+  process.stdout?.on('data', (chunk: Buffer | string) => enqueue(chunk, false));
+  process.stderr?.on('data', (chunk: Buffer | string) => enqueue(chunk, true));
   process.on('error', report);
 
   return new Promise((resolve) => {

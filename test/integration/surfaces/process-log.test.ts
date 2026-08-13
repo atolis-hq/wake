@@ -58,7 +58,12 @@ describe('target process log sink', () => {
     const child = Object.assign(new EventEmitter(), { stdout, stderr });
     const sink = createProcessLogSink(path, { write: () => undefined }, { maxBytes: 1024 });
 
-    const drained = drainProcessOutput(child, sink, () => undefined);
+    const drained = drainProcessOutput(
+      child,
+      sink,
+      () => undefined,
+      () => undefined,
+    );
     child.emit('exit', 1);
     stdout.write('stdout GITHUB_TOKEN=secret\n');
     stderr.write('late stderr github_pat_secret\n');
@@ -69,6 +74,34 @@ describe('target process log sink', () => {
     await drained;
     await expect(readFile(path, 'utf8')).resolves.toBe(
       'stdout GITHUB_TOKEN=[REDACTED]\nlate stderr [REDACTED]\n',
+    );
+  });
+
+  it('escalates only stderr chunks to the caller, scrubbed, leaving stdout in the file only', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wake-process-log-'));
+    const path = join(root, 'start.log');
+    const stdout = new PassThrough();
+    const stderr = new PassThrough();
+    const child = Object.assign(new EventEmitter(), { stdout, stderr });
+    const sink = createProcessLogSink(path, { write: () => undefined }, { maxBytes: 1024 });
+    const escalated: string[] = [];
+
+    const drained = drainProcessOutput(
+      child,
+      sink,
+      (value) => escalated.push(value),
+      () => undefined,
+    );
+    stdout.write('routine stdout detail\n');
+    stderr.write('actionable failure GITHUB_TOKEN=secret\n');
+    stdout.end();
+    stderr.end();
+    child.emit('close', 1);
+
+    await drained;
+    expect(escalated).toEqual(['actionable failure GITHUB_TOKEN=[REDACTED]\n']);
+    await expect(readFile(path, 'utf8')).resolves.toBe(
+      'routine stdout detail\nactionable failure GITHUB_TOKEN=[REDACTED]\n',
     );
   });
 
@@ -85,7 +118,12 @@ describe('target process log sink', () => {
       },
     };
 
-    const drained = drainProcessOutput(child, sink, (error) => errors.push(String(error)));
+    const drained = drainProcessOutput(
+      child,
+      sink,
+      () => undefined,
+      (error) => errors.push(String(error)),
+    );
     stdout.end('late output\n');
     child.emit('close', 1);
 
