@@ -1,0 +1,257 @@
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { afterEach, describe, expect, it } from 'vitest';
+
+const modules = [
+  'kernel',
+  'persistence',
+  'work',
+  'resources',
+  'activities',
+  'orchestration',
+  'execution',
+  'control-plane',
+  'integrations',
+  'surfaces',
+  'bootstrap',
+] as const;
+
+interface ModuleManifest {
+  readonly name: string;
+  readonly publicEntry: string;
+  readonly namespaces: {
+    readonly events: readonly string[];
+    readonly config: readonly string[];
+    readonly relations: readonly string[];
+    readonly streams: readonly string[];
+  };
+}
+
+type CheckModuleManifests = (root?: string) => Promise<readonly string[]>;
+
+const checkerModulePath = '../../scripts/check-module-manifests.mjs';
+const checker = (await import(checkerModulePath)) as {
+  readonly checkModuleManifests: CheckModuleManifests;
+};
+const fixtureRoots: string[] = [];
+
+afterEach(async () => {
+  await Promise.all(
+    fixtureRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
+  );
+});
+
+describe('module manifests', () => {
+  it.each(modules)('%s has matching human and machine contracts', async (name) => {
+    const manifest = JSON.parse(
+      await readFile(`src/${name}/module.json`, 'utf8'),
+    ) as ModuleManifest;
+    const moduleDoc = await readFile(`src/${name}/MODULE.md`, 'utf8');
+    expect(manifest.name).toBe(name);
+    expect(manifest.publicEntry).toBe('./index.ts');
+    expect(manifest.namespaces.streams).toEqual(expect.any(Array));
+    expect(moduleDoc).toContain(`# ${name}`);
+    expect(moduleDoc).toContain('## Does not own');
+    expect(moduleDoc).toContain('## Invariants');
+  });
+
+  it('gives every logical stream kind exactly one manifest owner matching its catalogue', async () => {
+    await expect(checker.checkModuleManifests()).resolves.toEqual([]);
+  });
+
+  it('rejects duplicate stream ownership', async () => {
+    const root = await manifestFixture({
+      work: {
+        streams: ['work-item'],
+        source: "export const WorkStreamKind = { WorkItem: 'work-item' } as const;",
+      },
+      resources: {
+        streams: ['work-item'],
+        source: "export const ResourceStreamKind = { Resource: 'work-item' } as const;",
+      },
+    });
+
+    await expect(checker.checkModuleManifests(root)).resolves.toContain(
+      'stream kind work-item has duplicate manifest owners: resources, work',
+    );
+  });
+
+  it('rejects a stream catalogue declared outside its manifest owner', async () => {
+    const root = await manifestFixture({
+      work: {
+        streams: [],
+        source: "export const WorkStreamKind = { WorkItem: 'work-item' } as const;",
+      },
+    });
+
+    await expect(checker.checkModuleManifests(root)).resolves.toContain(
+      'work: stream catalogue value work-item is not declared in its manifest',
+    );
+  });
+
+  it('rejects a stream catalogue exported outside contracts/streams.ts', async () => {
+    const root = await manifestFixture({
+      work: {
+        streams: ['work-item'],
+        sourcePath: 'application/stream-values.ts',
+        source: "export const WorkStreamKind = { WorkItem: 'work-item' } as const;",
+      },
+    });
+
+    await expect(checker.checkModuleManifests(root)).resolves.toContain(
+      'work/application/stream-values.ts:1:14 [stream-literals] WorkStreamKind must be declared in contracts/streams.ts',
+    );
+  });
+
+  it('rejects a nested contracts/streams.ts as a module stream catalogue', async () => {
+    const root = await manifestFixture({
+      work: {
+        streams: ['work-item'],
+        sourcePath: 'application/contracts/streams.ts',
+        source: "export const WorkStreamKind = { WorkItem: 'work-item' } as const;",
+      },
+    });
+
+    await expect(checker.checkModuleManifests(root)).resolves.toContain(
+      'work/application/contracts/streams.ts:1:14 [stream-literals] WorkStreamKind must be declared in contracts/streams.ts',
+    );
+  });
+});
+
+describe('module manifest catalogue integrity', () => {
+  it('rejects multiple StreamKind catalogues in the canonical file', async () => {
+    const root = await manifestFixture({
+      work: {
+        streams: ['work-item', 'legacy'],
+        source: [
+          "export const WorkStreamKind = { WorkItem: 'work-item' } as const;",
+          "export const LegacyStreamKind = { Legacy: 'legacy' } as const;",
+        ].join('\n'),
+      },
+    });
+
+    await expect(checker.checkModuleManifests(root)).resolves.toContain(
+      'work/contracts/streams.ts:2:14 [stream-literals] LegacyStreamKind duplicates WorkStreamKind; contracts/streams.ts must declare exactly one StreamKind catalogue',
+    );
+  });
+
+  it('rejects duplicate stream registrations from one catalogue owner', async () => {
+    const root = await manifestFixture({
+      work: {
+        streams: ['work-item'],
+        source:
+          "export const WorkStreamKind = { WorkItem: 'work-item', Alias: 'work-item' } as const;",
+      },
+    });
+
+    await expect(checker.checkModuleManifests(root)).resolves.toContain(
+      'stream kind work-item has duplicate catalogue owners: work, work',
+    );
+  });
+
+  it('rejects nested delivery events outside the manifest event namespace', async () => {
+    const root = await manifestFixture({
+      integrations: {
+        streams: ['delivery'],
+        events: ['integration.'],
+        source: "export const IntegrationStreamKind = { Delivery: 'delivery' } as const;",
+        eventSourcePath: 'delivery/contracts/events.ts',
+        eventSource:
+          "export const DeliveryEventType = { Confirmed: 'delivery.confirmed' } as const;",
+      },
+    });
+
+    await expect(checker.checkModuleManifests(root)).resolves.toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(
+          /^integrations\/delivery\/contracts\/events\.ts:\d+:\d+ \[event-literals\] delivery\.confirmed is not declared in integrations module manifest events$/,
+        ),
+      ]),
+    );
+  });
+
+  it('rejects nested delivery intent events outside the manifest event namespaces', async () => {
+    const root = await manifestFixture({
+      integrations: {
+        streams: ['delivery'],
+        events: ['integration.', 'delivery.'],
+        source: "export const IntegrationStreamKind = { Delivery: 'delivery' } as const;",
+        eventSourcePath: 'delivery/contracts/intents.ts',
+        eventSource: [
+          'export const DeliveryIntentEventType = {',
+          "  StatusPublishRequested: 'status.publish-requested',",
+          "  ReplyPublishRequested: 'reply.publish-requested',",
+          '} as const;',
+        ].join('\n'),
+      },
+    });
+
+    await expect(checker.checkModuleManifests(root)).resolves.toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(
+          /^integrations\/delivery\/contracts\/intents\.ts:\d+:\d+ \[event-literals\] status\.publish-requested is not declared in integrations module manifest events$/,
+        ),
+        expect.stringMatching(
+          /^integrations\/delivery\/contracts\/intents\.ts:\d+:\d+ \[event-literals\] reply\.publish-requested is not declared in integrations module manifest events$/,
+        ),
+      ]),
+    );
+  });
+});
+
+async function manifestFixture(
+  fixtures: Readonly<
+    Record<
+      string,
+      {
+        readonly streams: readonly string[];
+        readonly events?: readonly string[];
+        readonly source: string;
+        readonly sourcePath?: string;
+        readonly eventSource?: string;
+        readonly eventSourcePath?: string;
+      }
+    >
+  >,
+): Promise<string> {
+  const root = await mkdtemp(join(tmpdir(), 'wake-module-manifests-'));
+  fixtureRoots.push(root);
+  await Promise.all(
+    Object.entries(fixtures).flatMap(([name, fixture]) => {
+      const manifestPath = join(root, name, 'module.json');
+      const streamsPath = join(root, name, fixture.sourcePath ?? 'contracts/streams.ts');
+      const manifest = {
+        name,
+        kind: 'domain',
+        dependencies: [],
+        publicEntry: './index.ts',
+        namespaces: {
+          events: fixture.events ?? [],
+          config: [],
+          relations: [],
+          streams: fixture.streams,
+        },
+      };
+      const files = [
+        writeFixture(manifestPath, `${JSON.stringify(manifest)}\n`),
+        writeFixture(streamsPath, fixture.source),
+      ];
+      if (fixture.eventSource !== undefined) {
+        files.push(
+          writeFixture(
+            join(root, name, fixture.eventSourcePath ?? 'contracts/events.ts'),
+            fixture.eventSource,
+          ),
+        );
+      }
+      return files;
+    }),
+  );
+  return root;
+}
+
+async function writeFixture(path: string, source: string): Promise<void> {
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, source, 'utf8');
+}

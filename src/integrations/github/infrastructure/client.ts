@@ -1,0 +1,178 @@
+import { Octokit } from '@octokit/rest';
+import { MergeMethod } from '../../../activities/index.js';
+import { GitHubOutboundAction } from '../contracts/vocabulary.js';
+import {
+  branch,
+  getCombinedStatusForRef,
+  getIssueLabels,
+  getPullRequest,
+  listCheckRunsForRef,
+  listIssueComments,
+  listIssues,
+  listPullRequests,
+  listReviewComments,
+  listReviews,
+} from './client-reads.js';
+import { createEtagCache } from './etag-cache.js';
+
+// Octokit's request-log plugin reports every non-2xx response through this
+// callback, including the expected 304 responses produced by conditional ETag
+// reads. Keep those cache hits quiet, but retain a small, safe operator signal
+// for actual GitHub failures. Octokit may pass error context after the message;
+// deliberately ignore it because it can contain request authentication data.
+function requestLogStatus(message: string): number | undefined {
+  const match = / - (\d{3}) with id /.exec(message);
+  return match === null ? undefined : Number(match[1]);
+}
+
+export function redactGitHubRequestMessage(message: unknown): string {
+  if (typeof message !== 'string') return 'GitHub request failed';
+  return message
+    .replace(/\b(?:gh[pousr]_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+)\b/g, '<redacted>')
+    .replace(/\b(?:bearer|token|basic)\s+\S+/gi, '<redacted>')
+    .replace(/([?&](?:access_token|token|authorization)=)[^&\s]+/gi, '$1<redacted>');
+}
+
+function logGitHubRequestFailure(message: unknown): void {
+  const text = redactGitHubRequestMessage(message);
+  if (requestLogStatus(text) === 304) return;
+  process.stderr.write(`GitHub request failed: ${text}\n`);
+}
+
+export function createGitHubClient(token: string) {
+  const octokit = new Octokit({
+    auth: token,
+    log: { debug() {}, info() {}, warn() {}, error: logGitHubRequestFailure },
+  });
+  const cache = createEtagCache();
+  return {
+    authenticatedLogin: async () => (await octokit.rest.users.getAuthenticated()).data.login,
+    listIssues: (owner: string, repo: string, maxResults: number) =>
+      listIssues(octokit, cache, owner, repo, maxResults),
+    listPullRequests: (owner: string, repo: string, maxResults: number) =>
+      listPullRequests(octokit, cache, owner, repo, maxResults),
+    listIssueComments: (owner: string, repo: string, issueNumber: number, pageSize: number) =>
+      listIssueComments(octokit, cache, owner, repo, issueNumber, pageSize),
+    listReviewComments: (owner: string, repo: string, pullNumber: number, pageSize: number) =>
+      listReviewComments(octokit, cache, owner, repo, pullNumber, pageSize),
+    getIssueLabels: (owner: string, repo: string, issueNumber: number) =>
+      getIssueLabels(octokit, cache, owner, repo, issueNumber),
+    setIssueLabels: async (
+      owner: string,
+      repo: string,
+      issueNumber: number,
+      labels: readonly string[],
+    ) => {
+      await octokit.rest.issues.setLabels({
+        owner,
+        repo,
+        issue_number: issueNumber,
+        labels: [...labels],
+      });
+    },
+    getPullRequest: (owner: string, repo: string, pullNumber: number) =>
+      getPullRequest(octokit, cache, owner, repo, pullNumber),
+    listReviews: (owner: string, repo: string, pullNumber: number, pageSize: number) =>
+      listReviews(octokit, cache, owner, repo, pullNumber, pageSize),
+    listCheckRunsForRef: (owner: string, repo: string, ref: string) =>
+      listCheckRunsForRef(octokit, cache, owner, repo, ref),
+    getCombinedStatusForRef: (owner: string, repo: string, ref: string) =>
+      getCombinedStatusForRef(octokit, cache, owner, repo, ref),
+    branch: (owner: string, repo: string, name: string) =>
+      branch(octokit, cache, owner, repo, name),
+    deliver: (command: GitHubDeliveryCommand) => deliver(octokit, command),
+  };
+}
+
+interface GitHubDeliveryCommand {
+  readonly owner: string;
+  readonly repo: string;
+  readonly issue_number?: number;
+  readonly pull_number?: number;
+  readonly action: GitHubOutboundAction;
+  readonly idempotencyKey: string;
+  readonly body?: string;
+  readonly merge_method?: MergeMethod;
+}
+
+async function deliver(octokit: Octokit, command: GitHubDeliveryCommand): Promise<string> {
+  const marker = `<!-- wake:delivery:${command.idempotencyKey} -->`;
+  if (command.action === 'approve') {
+    if (command.pull_number === undefined)
+      throw new Error('GitHub approval requires a pull request');
+    const response = await octokit.rest.pulls.createReview({
+      owner: command.owner,
+      repo: command.repo,
+      pull_number: command.pull_number,
+      event: 'APPROVE',
+      body: marker,
+    });
+    return String(response.data.id);
+  }
+  if (command.action === MergeMethod.Merge) {
+    if (command.pull_number === undefined) throw new Error('GitHub merge requires a pull request');
+    return directMerge(octokit, command);
+  }
+  if (command.action === GitHubOutboundAction.EnableAutoMerge) {
+    return enableAutoMerge(octokit, command);
+  }
+  const issueNumber = command.issue_number ?? command.pull_number;
+  if (issueNumber === undefined)
+    throw new Error('GitHub comment requires an issue or pull request');
+  const response = await octokit.rest.issues.createComment({
+    owner: command.owner,
+    repo: command.repo,
+    issue_number: issueNumber,
+    body: `${command.body ?? ''}\n${marker}`,
+  });
+  return String(response.data.id);
+}
+
+async function enableAutoMerge(octokit: Octokit, command: GitHubDeliveryCommand): Promise<string> {
+  if (command.pull_number === undefined)
+    throw new Error('GitHub auto-merge requires a pull request');
+  if (command.merge_method === undefined)
+    throw new Error('GitHub auto-merge requires an explicit merge method');
+  const pullRequest = await octokit.rest.pulls.get({
+    owner: command.owner,
+    repo: command.repo,
+    pull_number: command.pull_number,
+  });
+  try {
+    const result = await octokit.graphql<{
+      enablePullRequestAutoMerge: { readonly pullRequest: { readonly id: string } };
+    }>(
+      `mutation EnableWakeAutoMerge($pullRequestId: ID!, $mergeMethod: PullRequestMergeMethod!) {
+        enablePullRequestAutoMerge(input: { pullRequestId: $pullRequestId, mergeMethod: $mergeMethod }) {
+          pullRequest { id }
+        }
+      }`,
+      {
+        pullRequestId: pullRequest.data.node_id,
+        mergeMethod: graphQlMergeMethod(command.merge_method),
+      },
+    );
+    return result.enablePullRequestAutoMerge.pullRequest.id;
+  } catch (error) {
+    if (!isAlreadyCleanError(error)) throw error;
+    return directMerge(octokit, command);
+  }
+}
+
+async function directMerge(octokit: Octokit, command: GitHubDeliveryCommand): Promise<string> {
+  const response = await octokit.rest.pulls.merge({
+    owner: command.owner,
+    repo: command.repo,
+    pull_number: command.pull_number!,
+    ...(command.merge_method === undefined ? {} : { merge_method: command.merge_method }),
+  });
+  return response.data.sha;
+}
+
+function graphQlMergeMethod(method: MergeMethod): 'MERGE' | 'SQUASH' | 'REBASE' {
+  return method.toUpperCase() as 'MERGE' | 'SQUASH' | 'REBASE';
+}
+
+function isAlreadyCleanError(error: unknown): boolean {
+  return error instanceof Error && /is in clean status/i.test(error.message);
+}

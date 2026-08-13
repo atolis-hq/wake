@@ -1,0 +1,12 @@
+{
+  "name": "integrations",
+  "kind": "adapter",
+  "dependencies": ["kernel", "work", "resources", "activities", "orchestration", "execution"],
+  "publicEntry": "./index.ts",
+  "namespaces": {
+    "events": ["integration.", "delivery.", "status.", "reply.", "agent-run."],
+    "config": ["integrations"],
+    "relations": ["integration."],
+    "streams": ["integration", "delivery"]
+  }
+}

@@ -1,4 +1,4 @@
-# Configuration
+?# Configuration
 
 Wake's behavior is configured through YAML files at the root of a Wake home
 directory (see [docs/getting-started.md](getting-started.md)). Wake reads
@@ -15,10 +15,10 @@ configuration into as many or as few files as you want.
   sandbox mounting, scheduler timing, transcripts, the control-plane UI, and
   which external sources (like GitHub) to monitor.
 - **`config.workflows.yaml`** — behavior/policy settings: the runner
-  registry, capability tiers, workflow and stage definitions, custom
+  registry, capability runnerPools, workflow and stage definitions, custom
   commands, and per-stage routing. These are kept together by default
-  because they reference each other by name — a stage route names a `tier`,
-  a tier names `runners`, a workflow selector names a `workflow` — but
+  because they reference each other by name — a stage route names a `runnerPool`,
+  a runnerPool names `runners`, a workflow selector names a `workflow` — but
   nothing stops you from splitting further, e.g. a standalone
   `config.sources.yaml` for GitHub polling settings.
 
@@ -45,9 +45,45 @@ sandbox:
 scheduler:
   intervalMs: 60000
   maxIntervalMs: 300000
+execution:
+  agentRunners:
+    fake:
+      kind: fake
+    claude-haiku:
+      kind: claude-cli
+      command: claude
+      model: claude-haiku-4-5
+      timeoutMs: 600000
+    claude-opus:
+      kind: claude-cli
+      command: claude
+      model: claude-opus-4-8
+      timeoutMs: 1800000
+    codex-standard:
+      kind: codex-cli
+      command: codex
+      model: gpt-5.4
+      effort: medium
+      timeoutMs: 1200000
+    codex-flagship:
+      kind: codex-cli
+      command: codex
+      model: gpt-5.5
+      effort: high
+      timeoutMs: 1800000
+    cursor-composer:
+      kind: cursor-cli
+      command: cursor
+      model: composer-2.5
+      timeoutMs: 1800000
+  runnerPools:
+    light: [claude-haiku]
+    standard: [codex-standard, claude-haiku]
+    deep: [claude-opus, codex-flagship]
+  defaultRunnerPool: standard
 transcripts:
   enabled: false
-  retentionMs: 259200000
+  retentionMs: 86400000
 retry:
   maxFailureRetries: 5
   maxChangesRequestedRetries: 3
@@ -81,53 +117,18 @@ sources:
 `config.workflows.yaml`:
 
 ```yaml
-runners:
-  fake:
-    kind: fake
-  claude-haiku:
-    kind: claude
-    command: claude
-    model: claude-haiku-4-5
-    timeoutMs: 600000
-  claude-opus:
-    kind: claude
-    command: claude
-    model: claude-opus-4-8
-    timeoutMs: 1800000
-  codex-standard:
-    kind: codex
-    command: codex
-    model: gpt-5.4
-    timeoutMs: 1200000
-    reasoningEffort: medium
-  codex-flagship:
-    kind: codex
-    command: codex
-    model: gpt-5.5
-    timeoutMs: 1800000
-    reasoningEffort: high
-  cursor-composer:
-    kind: cursor
-    command: cursor
-    model: composer-2.5
-    timeoutMs: 1800000
-tiers:
-  light: [claude-haiku]
-  standard: [codex-standard, claude-haiku]
-  deep: [claude-opus, codex-flagship]
-defaultTier: standard
 workflows:
   default:
     stages:
       refine:
         action: refine
         workspace: read-only
-        tier: light
+        runnerPool: light
         onDone: implement
       implement:
         action: implement
         workspace: branch
-        tier: standard
+        runnerPool: standard
         onDone: done
 ```
 
@@ -195,19 +196,19 @@ commands:
   ask:
     action: ask
     workspace: read-only
-    tier: light
+    runnerPool: light
   codereview:
     action: codereview
     workspace: read-only
-    tier: standard
+    runnerPool: standard
 ```
 
 | Property    | Type                                    | Description                                                                           | Default       |
 | ----------- | --------------------------------------- | ------------------------------------------------------------------------------------- | ------------- |
 | `action`    | string (optional)                       | Prompt action to run; defaults to the command name and expects `prompts/<command>.md` | command name  |
 | `workspace` | `"none"` \| `"read-only"` \| `"branch"` | Workspace kind prepared for the command run                                           | `"read-only"` |
-| `tier`      | string (optional)                       | Runner tier for this command; falls back to `defaultTier` when omitted                | unset         |
-| `runner`    | string (optional)                       | Concrete runner to use for this command; takes precedence over `tier`                 | unset         |
+| `runnerPool`      | string (optional)                       | Runner runnerPool for this command; falls back to `defaultRunnerPool` when omitted                | unset         |
+| `runner`    | string (optional)                       | Concrete runner to use for this command; takes precedence over `runnerPool`                 | unset         |
 
 `/ask` and `/codereview` are built-in custom commands. `/approved`, `/changes`,
 and `/interrupt` are reserved for Wake's own control flow and cannot be
@@ -342,25 +343,37 @@ Re-authenticate inside the sandbox when the session expires by running
 
 _Lives in `config.yaml`._
 
-Raw runner prompt and response capture for debugging.
+Opt-in raw runner prompt and response capture for debugging. `transcripts` is a
+strict root configuration section: unknown keys are rejected rather than
+ignored.
 
 When enabled, Wake writes text files under
 `<wakeRoot>/.wake/transcripts/<workId>/<session-or-run>/`, where `<workId>` is
 the work item's minted `work-<ulid>` identity (the same key used by
-`.wake/state/<workId>.json`). Each runner run
-writes a separate `*.prompt.txt` file with the exact prompt text passed to the
-CLI prompt argument and a matching `*.response.txt` file with raw stdout from
-the CLI. Initial runs are grouped by Wake `runId`; resumed runs are grouped by
-the previously recorded agent session ID when Wake has one.
+`.wake/state/<workId>.json`). Each agent run writes the exact prompt passed to
+the runner and the raw runner response as filesystem artifacts only.
+Transcript text and retention bookkeeping are never written to events,
+projections, or the journal. Initial runs use a typed, safe run group; a
+response with a returned agent session ID uses a typed, safe session group
+(including its CLI identity), so resumed turns share one conversation without
+exposing the raw session ID in a path.
 
 | Property      | Type    | Description                                                                                                  | Default     |
 | ------------- | ------- | ------------------------------------------------------------------------------------------------------------ | ----------- |
 | `enabled`     | boolean | Write raw runner prompt and response text files                                                              | `false`     |
-| `retentionMs` | integer | Milliseconds to retain transcripts after workspace cleanup. Set `0` to delete immediately during cleanup.    | `259200000` |
+| `retentionMs` | non-negative integer | Milliseconds to retain transcripts after pre-dispatch recovery reclaims a closed work item's owned workspace. Set `0` to delete immediately during that reclaim. | `86400000` (24 hours) |
 
 The legacy `retainAfterWorkspaceCleanup` boolean is no longer supported. Wake
 fails config parsing if that key is present so existing retention settings do
 not silently change behavior on upgrade.
+
+Only when pre-dispatch workspace recovery reclaims an owned workspace for a
+closed work item, Wake either removes its transcript directory immediately
+(`retentionMs: 0`) or records a filesystem-only cleanup marker. Subsequent
+control-plane ticks sweep marked directories once they expire. Transcript I/O
+failures are logged, do not change run or workspace outcomes, and are retried
+by later ticks; a paused control plane does not perform recovery, marking, or
+sweeping.
 
 ### retry
 
@@ -399,22 +412,22 @@ audit event (see `wake audit`) explaining why.
 | `windowMs`      | number | Trailing window, in milliseconds, to count runs over | `3600000` (1 hour) |
 | `maxDispatches` | number | Maximum runner invocations allowed within the window | `20`                |
 
-### runners
+### execution.agentRunners
 
-_Lives in `config.workflows.yaml`._
+_Lives in `config.yaml`, under `execution`._
 
 Named runner registry. The object key is the routing target; `kind` selects the
-adapter implementation. Multiple entries can share the same `kind` with
-different models, commands, or timeouts.
+transport adapter. Multiple entries can share the same `kind` with different
+models, commands, static arguments, timeouts, or effort.
 
-| Property          | Type                                                                 | Description                                                                                                                                               |
-| ----------------- | -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `kind`            | `"fake"` \| `"claude"` \| `"codex"` \| `"cursor"`                    | Adapter kind to use for this named runner                                                                                                                 |
-| `command`         | string                                                               | CLI command for real runner kinds                                                                                                                         |
-| `model`           | string                                                               | Default model for this named runner                                                                                                                       |
-| `timeoutMs`       | number                                                               | Wall-clock timeout for this named runner                                                                                                                  |
-| `effort`          | `"low"` \| `"medium"` \| `"high"` \| `"xhigh"` \| `"max"` (optional) | **Claude only.** Thinking effort level passed as `--effort` to the CLI. Controls extended reasoning depth.                                                |
-| `reasoningEffort` | `"low"` \| `"medium"` \| `"high"` (optional)                         | **Codex only.** Reasoning effort passed as `-c model_reasoning_effort=<level>`. Controls how much compute the model spends on planning before responding. |
+| Property | Type | Description |
+| --- | --- | --- |
+| `kind` | `"claude-cli"` \| `"codex-cli"` \| `"cursor-cli"` \| `"command"` \| `"fake"` | Transport adapter for this named runner. All but `fake` require `command`. |
+| `command` | string (required except `fake`) | CLI command for command-style runner kinds. |
+| `model` | string (optional) | Default model for this named runner. |
+| `effort` | string (optional) | Portable reasoning-effort selection. Codex maps it to `-c model_reasoning_effort=<effort>` and Claude maps it to `--effort <effort>`; Cursor, `command`, and `fake` omit it because they have no mapping. |
+| `timeoutMs` | positive integer (optional) | Wall-clock timeout; defaults to `1800000` milliseconds. |
+| `args` | string array (optional) | Static CLI arguments; defaults to `[]`. Do not include `--output-format` or `--resume`, which Wake owns. |
 
 The **Cursor runner** uses `cursor agent -p --output-format json` for
 non-interactive runs. Refine-stage runs pass `--mode ask` (read-only) and
@@ -422,16 +435,16 @@ implement-stage runs pass `--force` (auto-approve writes). Session resume uses
 `--resume=<session_id>`. Credentials bind-mount from `~/.cursor` — see
 `docs/runner-comparison.md` for the recommended extraMounts configuration.
 
-### tiers
+### execution.runnerPools
 
-_Lives in `config.workflows.yaml`._
+_Lives in `config.yaml`, under `execution`._
 
-Capability tiers map a closed category name to an ordered list of named runner
-candidates. Wake normally uses the first configured candidate in the tier, but
+Capability runnerPools map a closed category name to an ordered list of named runner
+candidates. Wake normally uses the first configured candidate in the runnerPool, but
 falls sideways to the next candidate whenever a higher-priority one is
 currently quota-paused (tracked per-runner in `ledger.json`, see below), and
 rotates back to the primary candidate automatically once its pause expires. If
-every candidate in a tier is paused, Wake leaves that item alone for the tick
+every candidate in a runnerPool is paused, Wake leaves that item alone for the tick
 (no run is claimed) rather than running against a runner it already knows is
 exhausted.
 
@@ -445,19 +458,19 @@ fully elapsed, in case the guess overshot and quota actually reset sooner. A
 failed probe simply recomputes the backoff from the new failure, same as any
 other quota failure.
 
-### defaultTier
+### execution.defaultRunnerPool
 
-_Lives in `config.workflows.yaml`._
+_Lives in `config.yaml`, under `execution`._
 
-Fallback tier used when a stage does not set `tier` or `runner`.
+Fallback runnerPool used when a stage does not set `runnerPool` or `runner`.
 
 ### workflows
 
 _Lives in `config.workflows.yaml`._
 
 Workflow definitions contain the runnable stages and their actions. A workflow
-stage normally routes to a `tier`; `runner` pins a concrete named runner and
-takes precedence over `tier`.
+stage normally routes to a `runnerPool`; `runner` pins a concrete named runner and
+takes precedence over `runnerPool`.
 
 Workflow stages may also define `watch` entries. `watch[].onSuccess` declares
 what Wake does when the watched child workflow run completes `DONE` or
@@ -508,6 +521,15 @@ decision. A child `REJECTED` verdict posts the review body as feedback and
 moves the parent to `changes-requested` instead of approving; a `BLOCKED` or
 `FAILED` child (no verdict could be rendered at all) leaves the parent's
 pending approval untouched.
+
+> **Current target configuration:** use a `pr.merge` Activity stage rather
+> than `onSuccess.merge`. Its `with` block has `target`, `method`,
+> `requireApproval` (default `true`), `requireChecks`, `autoMerge` (default
+> `false`), `maxFilesChanged`, and `blockedPaths`. `requireApproval: false`
+> is valid only with `autoMerge: true` after an independent review watch gate.
+> In that mode pending checks are left to GitHub branch protection; failed and
+> unknown checks are rejected. Wake enables native auto-merge and falls back
+> to a direct merge only when GitHub reports the PR is already in clean status.
 
 `onSuccess.merge` is an opt-in deterministic action for PR-review approvals:
 

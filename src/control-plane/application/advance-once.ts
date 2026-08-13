@@ -1,0 +1,303 @@
+/* eslint-disable complexity, max-lines-per-function */
+import type { RunView, WorkspaceRecovery } from '../../execution/index.js';
+import { RunStatus, WorkspaceMode } from '../../execution/index.js';
+import {
+  correlationId,
+  EventActorKind,
+  type Clock,
+  type CommandContext,
+  type IdGenerator,
+} from '../../kernel/index.js';
+import type { ActivityActivationView, WorkflowInstanceView } from '../../orchestration/index.js';
+import { WorkflowStatus } from '../../orchestration/index.js';
+import type { ResourceService } from '../../resources/index.js';
+import { WorkStatus } from '../../work/index.js';
+import { ControlStreamKind } from '../contracts/streams.js';
+import type { AdvanceOptions, AdvanceResult } from '../contracts/views.js';
+import { DispatchPolicy } from '../domain/dispatch-policy.js';
+
+interface OrchestrationPort {
+  reconcileChildCompletions(context: CommandContext): Promise<void>;
+  listPendingActivations(workItemId?: string): Promise<
+    readonly {
+      workflow: WorkflowInstanceView;
+      activation: ActivityActivationView;
+    }[]
+  >;
+  listWaiting(): Promise<readonly (WorkflowInstanceView | null)[]>;
+  listAll?(): Promise<readonly WorkflowInstanceView[]>;
+  acceptOutcome(
+    command: {
+      workflowInstanceId: string;
+      activationId: string;
+      outcome: NonNullable<RunView['outcome']>;
+    },
+    context: CommandContext,
+  ): Promise<WorkflowInstanceView>;
+  resolveExecutionFailure?(
+    workflowInstanceId: string,
+    input: { readonly activationId: string; readonly runId: string; readonly reason: string },
+    context: CommandContext,
+  ): Promise<WorkflowInstanceView | null>;
+  markActivationStarted(
+    workflowInstanceId: string,
+    activationId: string,
+    context: CommandContext,
+  ): Promise<WorkflowInstanceView | null>;
+}
+
+interface ExecutionPort {
+  recoverActive?(owner: string): Promise<readonly RunView[]>;
+  attempt(
+    activation: ActivityActivationView,
+    context: {
+      workItemId: WorkflowInstanceView['workItemId'];
+      workflowInstanceId: WorkflowInstanceView['workflowInstanceId'];
+      orchestrationGroupId: WorkflowInstanceView['orchestrationGroupId'];
+      resources: readonly NonNullable<Awaited<ReturnType<ResourceService['get']>>>[];
+      ineligibleRunners?: ReadonlySet<string>;
+      sessionPolicy?: 'fresh' | 'resume-stage';
+      awaitImmediateCompletion?: boolean;
+    },
+  ): Promise<RunView>;
+  list(activationId?: ActivityActivationView['activationId']): Promise<readonly RunView[]>;
+}
+
+interface AdvanceOnceDependencies {
+  readonly ids: IdGenerator;
+  readonly work?: {
+    get(workItemId: string): Promise<{
+      readonly state: WorkStatus;
+      readonly frozen?: boolean;
+      readonly deleted?: boolean;
+    } | null>;
+  };
+  readonly runnerIneligibility?: () => Promise<ReadonlySet<string>>;
+  readonly isDispatchPaused?: () => Promise<boolean>;
+  /** Crash-only workspace cleanup, deliberately run by the existing recovery pass. */
+  readonly workspaceRecovery?: WorkspaceRecovery;
+  readonly transcriptRetention?: {
+    markClosedWorkItem(workItemId: string): Promise<boolean>;
+    sweep(): Promise<void>;
+  };
+  /** Durable closed WorkItem projection keys eligible for transcript retention. */
+  readonly closedWorkItemIds?: () => Promise<readonly string[]>;
+  readonly dispatchPolicy?: DispatchPolicy;
+}
+
+export function createAdvanceOnce(
+  orchestration: OrchestrationPort,
+  execution: ExecutionPort,
+  resources: ResourceService,
+  clock: Clock,
+  dependencies: AdvanceOnceDependencies,
+) {
+  const runnerIneligibility = dependencies.runnerIneligibility ?? (async () => new Set());
+  const isDispatchPaused = dependencies.isDispatchPaused ?? (async () => false);
+  const workspaceRecovery = dependencies.workspaceRecovery;
+  const transcriptRetention = dependencies.transcriptRetention;
+  const dispatchPolicy = dependencies.dispatchPolicy ?? new DispatchPolicy({ maxDispatches: 1 });
+  const context = (cause: string) => ({
+    commandId: dependencies.ids.next('command'),
+    correlationId: correlationId(cause),
+    occurredAt: clock.now().toISOString(),
+    actor: { kind: EventActorKind.System, id: ControlStreamKind.Global },
+  });
+  return async (options: AdvanceOptions): Promise<AdvanceResult> => {
+    if (options.maxProgress < 1) return { kind: 'exhausted', progressCount: 0 };
+    if (await isDispatchPaused()) return { kind: 'paused' };
+    if (workspaceRecovery !== undefined) {
+      await workspaceRecovery.recover(await execution.list(), {
+        isPaused: isDispatchPaused,
+        retainWorkItem: async (workItemId) => {
+          const work = await dependencies.work?.get(workItemId);
+          return work?.state === WorkStatus.Open && work.deleted !== true;
+        },
+        onWorkspaceReclaimed: async (workItemId) => {
+          if (await isDispatchPaused()) return false;
+          const work = await dependencies.work?.get(workItemId);
+          if (work?.state !== WorkStatus.Closed) return true;
+          try {
+            return (await transcriptRetention?.markClosedWorkItem(workItemId)) ?? true;
+          } catch {
+            return false;
+          }
+        },
+      });
+    }
+    if (await isDispatchPaused()) return { kind: 'paused' };
+    await execution.recoverActive?.(ControlStreamKind.Global);
+    if (await isDispatchPaused()) return { kind: 'paused' };
+    if (transcriptRetention !== undefined) {
+      for (const workItemId of (await dependencies.closedWorkItemIds?.()) ?? []) {
+        if (await isDispatchPaused()) return { kind: 'paused' };
+        try {
+          await transcriptRetention.markClosedWorkItem(workItemId);
+        } catch {
+          // Retention is operational filesystem maintenance, not Run lifecycle state.
+        }
+      }
+    }
+    if (await isDispatchPaused()) return { kind: 'paused' };
+    try {
+      await transcriptRetention?.sweep();
+    } catch {
+      // Retention is operational filesystem maintenance, not Run lifecycle state.
+    }
+    if (await isDispatchPaused()) return { kind: 'paused' };
+    await orchestration.reconcileChildCompletions(context('child-completion-reconciliation'));
+    if (await isDispatchPaused()) return { kind: 'paused' };
+    const rawPending = await orchestration.listPendingActivations(options.workItemId);
+    const pending = (
+      await Promise.all(
+        rawPending.map(async (candidate) => {
+          const work = await dependencies.work?.get(candidate.workflow.workItemId);
+          return work?.frozen || work?.deleted ? null : candidate;
+        }),
+      )
+    ).filter((candidate): candidate is (typeof rawPending)[number] => candidate !== null);
+    const blocked = ((await orchestration.listAll?.()) ?? []).flatMap((workflow) =>
+      workflow.status === WorkflowStatus.Blocked &&
+      workflow.pendingActivation !== undefined &&
+      (options.workItemId === undefined || workflow.workItemId === options.workItemId)
+        ? [{ workflow, activation: workflow.pendingActivation }]
+        : [],
+    );
+    const recovery = await findUnresolvedTerminal([...pending, ...blocked], execution);
+    if (recovery !== undefined) {
+      if (await isDispatchPaused()) return { kind: 'paused' };
+      if (recovery.run.status === RunStatus.Succeeded) {
+        await orchestration.acceptOutcome(
+          {
+            workflowInstanceId: recovery.item.workflow.workflowInstanceId,
+            activationId: recovery.item.activation.activationId,
+            outcome: recovery.run.outcome!,
+          },
+          context(recovery.run.runId),
+        );
+        return {
+          kind: 'progressed',
+          activationId: recovery.item.activation.activationId,
+          runId: recovery.run.runId,
+        };
+      }
+      await orchestration.resolveExecutionFailure?.(
+        recovery.item.workflow.workflowInstanceId,
+        {
+          activationId: recovery.item.activation.activationId,
+          runId: recovery.run.runId,
+          reason: recovery.run.failure?.message ?? 'execution failed',
+        },
+        context(recovery.run.runId),
+      );
+      return {
+        kind: WorkflowStatus.Blocked,
+        workflowInstanceId: recovery.item.workflow.workflowInstanceId,
+        reason: recovery.run.failure?.message ?? 'execution failed',
+      };
+    }
+    const allRuns = await execution.list();
+    const selectedCandidate = dispatchPolicy.select(
+      await Promise.all(
+        pending.map(async (item, requestedPosition) => ({
+          workItemId: item.workflow.workItemId,
+          activationId: item.activation.activationId,
+          requestedPosition,
+          hasActiveRun:
+            (await execution.list(item.activation.activationId)).some(
+              (run) => run.status === RunStatus.Started,
+            ) ||
+            allRuns.some(
+              (run) =>
+                run.status === RunStatus.Started &&
+                run.workflowInstanceId === item.workflow.workflowInstanceId &&
+                run.workspace?.mode === WorkspaceMode.Branch,
+            ),
+          cancelled: false,
+        })),
+      ),
+    )[0];
+    const selected =
+      selectedCandidate === undefined
+        ? undefined
+        : pending.find((item) => item.activation.activationId === selectedCandidate.activationId);
+    if (selected === undefined) {
+      const waiting = (await orchestration.listWaiting()).find((view) => view !== null);
+      return waiting === undefined
+        ? { kind: 'no-work' }
+        : { kind: WorkflowStatus.Waiting, workflowInstanceId: waiting.workflowInstanceId };
+    }
+    // Recheck at the dispatch boundary so maintenance cannot race a selected activation.
+    if (await isDispatchPaused()) return { kind: 'paused' };
+    await orchestration.markActivationStarted(
+      selected.workflow.workflowInstanceId,
+      selected.activation.activationId,
+      context(selected.activation.activationId),
+    );
+    const correlated = await resources.correlationsForWork(selected.workflow.workItemId);
+    const resourceViews = (
+      await Promise.all(correlated.map((entry) => resources.get(entry.resourceId)))
+    ).filter((resource) => resource !== null);
+    const ineligible = await runnerIneligibility();
+    const run = await execution.attempt(selected.activation, {
+      workItemId: selected.workflow.workItemId,
+      workflowInstanceId: selected.workflow.workflowInstanceId,
+      orchestrationGroupId: selected.workflow.orchestrationGroupId,
+      resources: resourceViews,
+      sessionPolicy:
+        selected.workflow.parentWorkflowInstanceId === undefined ? 'resume-stage' : 'fresh',
+      awaitImmediateCompletion: true,
+      ...(ineligible.size === 0 ? {} : { ineligibleRunners: ineligible }),
+    });
+    if (run.status === RunStatus.Succeeded && run.outcome !== undefined) {
+      if (await isDispatchPaused()) return { kind: 'paused' };
+      await orchestration.acceptOutcome(
+        {
+          workflowInstanceId: selected.workflow.workflowInstanceId,
+          activationId: selected.activation.activationId,
+          outcome: run.outcome,
+        },
+        context(run.runId),
+      );
+    }
+    if (isExecutionFailureTerminal(run.status))
+      await orchestration.resolveExecutionFailure?.(
+        selected.workflow.workflowInstanceId,
+        {
+          activationId: selected.activation.activationId,
+          runId: run.runId,
+          reason: run.failure?.message ?? 'execution failed',
+        },
+        context(run.runId),
+      );
+    return run.status === RunStatus.Succeeded || run.status === RunStatus.Started
+      ? { kind: 'progressed', activationId: selected.activation.activationId, runId: run.runId }
+      : {
+          kind: WorkflowStatus.Blocked,
+          workflowInstanceId: selected.workflow.workflowInstanceId,
+          reason: run.failure?.message ?? 'execution failed',
+        };
+  };
+}
+
+async function findUnresolvedTerminal(
+  pending: readonly { workflow: WorkflowInstanceView; activation: ActivityActivationView }[],
+  execution: ExecutionPort,
+): Promise<{ item: (typeof pending)[number]; run: RunView } | undefined> {
+  for (const item of pending) {
+    const run = (await execution.list(item.activation.activationId)).find(
+      (candidate) =>
+        (candidate.status === RunStatus.Succeeded && candidate.outcome !== undefined) ||
+        isExecutionFailureTerminal(candidate.status),
+    );
+    if (run !== undefined && !item.workflow.acceptedOutcomes.includes(item.activation.activationId))
+      return { item, run };
+  }
+  return undefined;
+}
+
+function isExecutionFailureTerminal(status: RunStatus): boolean {
+  return (
+    status === RunStatus.Failed || status === RunStatus.Cancelled || status === RunStatus.Ambiguous
+  );
+}

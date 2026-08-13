@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM node:20-bookworm-slim
+FROM node:24-bookworm-slim
 
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
@@ -42,14 +42,18 @@ RUN echo "cursor cache bust: ${CURSOR_CACHE_BUST}" \
 
 WORKDIR /app
 COPY package*.json ./
+COPY src/surfaces/web/package.json src/surfaces/web/package.json
 RUN --mount=type=cache,target=/root/.npm \
-  if [ -f package-lock.json ]; then npm ci; else npm install; fi
+  if [ -f package-lock.json ]; then npm ci --include=dev; else npm install; fi
 
-COPY . .
+COPY tsconfig.json tsconfig.docker.json ./
+COPY scripts/embed-version.mjs scripts/embed-version.mjs
+COPY assets/ assets/
+COPY src/ src/
 ARG WAKE_BUILD_TAG
-RUN WAKE_BUILD_TAG="$WAKE_BUILD_TAG" npm run build
+RUN WAKE_BUILD_TAG="$WAKE_BUILD_TAG" npm run build:docker
 
-USER wake
+USER root
 WORKDIR /home/wake
 
 EXPOSE 4317
@@ -60,4 +64,4 @@ EXPOSE 4317
 # that's fine since it's the very first thing that runs.
 ENV WAKE_MAIN_JS=/app/dist/src/main.js
 
-ENTRYPOINT ["node", "/app/dist/src/main.js", "sandbox-entrypoint"]
+ENTRYPOINT ["sh", "-c", "set -eu; mkdir -p /wake/.wake; chown -R wake:wake /wake/.wake; exec su wake -s /bin/sh -c 'if [ \"$WAKE_START_ENABLED\" = \"true\" ]; then exec node /app/dist/src/main.js start --wake-root /wake --no-sandbox; else exec sleep infinity; fi'"]

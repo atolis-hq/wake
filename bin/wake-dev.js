@@ -15,23 +15,16 @@ const mainTs = resolve(repoRoot, 'src', 'main.ts');
 if (!existsSync(mainTs)) {
   console.error(
     'wake-dev only works from a source checkout (no src/main.ts found next to this install).\n' +
-      'This is a packaged install — use `wake` instead.',
+      'This is a packaged install — use wake instead.',
   );
   process.exit(1);
 }
 
-const tsxBin = resolve(
-  repoRoot,
-  'node_modules',
-  '.bin',
-  process.platform === 'win32' ? 'tsx.cmd' : 'tsx',
-);
+const tsxCli = resolve(repoRoot, 'node_modules', 'tsx', 'dist', 'cli.mjs');
 
-const result = spawnSync(tsxBin, [mainTs, ...process.argv.slice(2)], {
+const result = spawnSync(process.execPath, [tsxCli, mainTs, ...process.argv.slice(2)], {
   stdio: 'inherit',
-  // Windows npm bin shims (tsx.cmd) are batch files — CreateProcess can't
-  // exec them directly, they need the shell to interpret them.
-  shell: process.platform === 'win32',
+  shell: false,
 });
 
 if (result.error) {

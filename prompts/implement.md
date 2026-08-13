@@ -21,7 +21,7 @@ Completion requirements:
   commit message.
 - Push the branch with `git push -u origin {{branch}}`.
 - Open a pull request against main with `gh pr create --base main --head
-  {{branch}} --title "<summary>" --body "Closes #{{issueNumber}}
+  {{branch}} --title "<summary>" --body "Refs #{{issueNumber}}
 
   <!-- wake:work-item {{workItemKey}} -->"`. Include the
 
@@ -47,7 +47,7 @@ New comments since your last turn (excludes Wake/bot comments):
 Wake will provide them below in a delimited untrusted data block.
 
 Reminder of the completion requirements: commit, push {{branch}}, open a PR
-with `gh pr create` closing #{{issueNumber}}, and never merge it yourself. The
+with `gh pr create` referencing #{{issueNumber}}, and never merge it yourself. The
 PR body must include the `<!-- wake:work-item {{workItemKey}} -->` marker
 verbatim.
 {{/if}}

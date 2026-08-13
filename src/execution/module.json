@@ -1,0 +1,12 @@
+{
+  "name": "execution",
+  "kind": "domain",
+  "dependencies": ["kernel", "work", "resources", "activities"],
+  "publicEntry": "./index.ts",
+  "namespaces": {
+    "events": ["execution."],
+    "config": ["execution"],
+    "relations": ["run."],
+    "streams": ["run", "execution-activation"]
+  }
+}

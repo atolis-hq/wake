@@ -1,0 +1,26 @@
+import { readFile } from 'node:fs/promises';
+
+import { describe, expect, it } from 'vitest';
+
+describe('package scripts', () => {
+  it('keeps explicit integration suites out of default loops and in CI', async () => {
+    const packageJson = JSON.parse(await readFile('package.json', 'utf8')) as {
+      scripts: Record<string, string>;
+    };
+
+    expect(packageJson.scripts.test).toContain(
+      '--exclude test/adapters/git-workspace-manager.test.ts',
+    );
+    expect(packageJson.scripts.test).toContain('--exclude test/core/tick-runner*.test.ts');
+    expect(packageJson.scripts['test:legacy']).toBe(
+      'vitest run test/core/tick-runner*.test.ts test/adapters/resource-index.test.ts',
+    );
+    expect(packageJson.scripts['test:integration']).toBe(
+      'vitest run test/adapters/git-workspace-manager.test.ts',
+    );
+    expect(packageJson.scripts['verify:local']).toBe('npm run verify:next');
+    expect(packageJson.scripts['verify:ci']).toBe(
+      'npm run verify && npm run verify:local && npm run test:integration && npm run test:legacy && npm run test:next:integration && npm run test:next:e2e',
+    );
+  });
+});

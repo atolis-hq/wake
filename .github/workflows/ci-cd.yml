@@ -19,15 +19,20 @@ jobs:
           filters: |
             relevant:
               - '.github/workflows/ci-cd.yml'
+              - '.dockerignore'
               - 'docker/**'
               - 'package.json'
               - 'package-lock.json'
+              - 'assets/**'
+              - 'dependency-cruiser.config.mjs'
+              - 'eslint.config.js'
+              - 'knip.json'
               - 'prompts/**'
               - 'scripts/**'
               - 'src/**'
               - 'test/**'
-              - 'tsconfig.json'
-              - 'vitest.config.ts'
+              - 'tsconfig*.json'
+              - 'vitest*.config.ts'
 
   test:
     needs: changes
@@ -41,7 +46,12 @@ jobs:
         with:
           node-version: '24'
       - run: npm ci
-      - run: npm run verify
+      - name: Verify architecture, formatting, build, and core tests
+        run: npm run verify
+      - name: Check unused dependencies and exports
+        run: npm run knip
+      - name: Run web workspace tests
+        run: npm run test:web
 
   docker-smoke:
     needs: changes
@@ -62,9 +72,10 @@ jobs:
       - name: Run tick with fake sources
         run: |
           docker run --rm \
-            --entrypoint node \
+            --entrypoint sh \
             wake-ci-smoke \
-            /app/dist/src/main.js tick --wake-root /tmp/wake-smoke
+            -c 'node /app/dist/src/main.js init /tmp/wake-smoke &&
+                node /app/dist/src/main.js tick --wake-root /tmp/wake-smoke --no-sandbox'
 
   tag:
     needs: [test, docker-smoke]

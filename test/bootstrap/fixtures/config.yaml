@@ -1,0 +1,12 @@
+schemaVersion: 1
+work: {}
+resources: {}
+execution:
+  runners:
+    fake: { kind: fake }
+  runnerPools:
+    standard: [fake]
+  defaultRunnerPool: standard
+controlPlane: {}
+integrations: {}
+surfaces: {}

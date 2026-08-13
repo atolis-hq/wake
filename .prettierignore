@@ -1,5 +1,6 @@
 coverage
 dist
+archive/legacy
 node_modules
 .wake
 docs

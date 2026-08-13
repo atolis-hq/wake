@@ -1,4 +1,4 @@
-# Getting Started
+?# Getting Started
 
 Wake runs from a **Wake home** directory: a plain-file directory holding
 `config.yaml`, `config.workflows.yaml`, `prompts/`, `workspaces/`, and a hidden `.wake/` for durable
@@ -27,7 +27,7 @@ npx @atolis-hq/wake init ./wake-home
 
 `wake init` scaffolds `config.yaml`, `config.workflows.yaml`, `prompts/`, `workspaces/`, and a
 `SETUP.md` guide written for an assisting agent to read and use to finish
-configuring the GitHub source, runner/tier, and credential mounts — point
+configuring the GitHub source, runner/runnerPool, and credential mounts — point
 your agent CLI at it (e.g. "read SETUP.md and help me configure this") once
 `wake init` finishes. `wake init` does not create `docker/` — that's written
 lazily by `wake sandbox build` (see below).
@@ -48,6 +48,10 @@ wake sandbox setup
   rebuild with `sandbox build` after editing it.
 - `sandbox up` starts the persistent container, mounting the Wake home at
   `/wake` and a durable `container-home` at `/home/wake` for auth state.
+  The container supervises the resident loop and restarts it automatically
+  if it exits (for example because sandbox auth isn't configured yet) — the
+  container itself never exits, so `sandbox setup` and `sandbox exec` can
+  always reach it.
 - `sandbox setup` runs first-time auth inside the container: GitHub, SSH
   keygen, Claude, Codex. Optional best practice: use a dedicated GitHub
   identity for Wake-managed work rather than your main account.
@@ -84,7 +88,7 @@ defaults (notices).
 ```
 wake-home/
   config.yaml           # infra/sandbox/sources — edit this
-  config.workflows.yaml # runners/tiers/workflows — edit this
+  config.workflows.yaml # runners/runnerPools/workflows — edit this
   prompts/              # edit these
   SETUP.md              # agent-directed config guide
   docker/Dockerfile     # edit this (written by first `sandbox build`)

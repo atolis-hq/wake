@@ -1,4 +1,4 @@
-# Workflows
+?# Workflows
 
 Wake workflows define the stages a work item moves through and which prompt file is
 used to run each stage. They are deterministic control-plane configuration:
@@ -20,12 +20,12 @@ workflows:
       refine:
         action: refine
         workspace: read-only
-        tier: light
+        runnerPool: light
         onDone: implement
       implement:
         action: implement
         workspace: branch
-        tier: standard
+        runnerPool: standard
         onDone: done
 ```
 
@@ -46,12 +46,12 @@ workflows:
       triage:
         action: refine
         workspace: read-only
-        tier: light
+        runnerPool: light
         onDone: patch
       patch:
         action: implement
         workspace: branch
-        tier: standard
+        runnerPool: standard
         onDone: verify
       verify:
         action: verify
@@ -72,9 +72,9 @@ Each stage has:
 - `onDone`: the next stage name, or `done`.
 - `action`: optional prompt-template name. If omitted, Wake uses the stage name
   as the action.
-- `tier`: optional runner tier to route this stage through.
+- `runnerPool`: optional runner runnerPool to route this stage through.
 - `runner`: optional concrete runner name. A runner pin takes precedence over a
-  tier.
+  runnerPool.
 
 Wake validates the workflow at config load. It rejects empty workflows,
 `entryStage: "queue"`, unknown `entryStage` values, transitions to unknown
@@ -165,6 +165,18 @@ holds the transition for human approval instead of advancing immediately. If
 the runner reports `BLOCKED`, `FAILED`, or `REJECTED`, Wake does not take the
 `onDone` transition automatically.
 
+## Operator retry for a failed stage
+
+When a primary workflow is blocked because its current ordinary stage produced
+an unconfigured `failed` outcome, the work-detail UI offers **Retry**. The
+command creates a new activation using that stage's existing compiled activity,
+input, and execution configuration; it does not alter the failed activation or
+its Run. Wake displays the control only when this recovery is currently safe.
+
+This is fixed-parameter recovery, not a way to retry an arbitrary Run. Changing
+the action, input, runner, model, timeout, or other execution parameters remains
+routing policy owned by workflow configuration.
+
 ## Stage watchers
 
 A stage can attach watcher workflows that run while the parent work item is in a
@@ -213,17 +225,25 @@ review body as feedback and moves the parent to `changes-requested` instead of
 approving; a `BLOCKED` or `FAILED` child leaves the parent's pending approval
 untouched.
 
-`onSuccess.merge` runs only when Wake has already recognized a bot-authored
-PR review approval marker on a correlated PR. It does not fire for a human
-`/approved` command on the issue thread. The deterministic gate can submit a
-GitHub approval review and enable GitHub native auto-merge after the local risk
-policy passes. If `autoMerge` is enabled, configure branch protection with
-required status checks so GitHub holds the final merge until CI is green.
+### `pr.merge`
 
-The merge risk policy checks the correlated PR ownership, `maxFilesChanged`,
-`blockedPaths`, and `blockedLabels`. If any rule fails, Wake posts the review
-message plus the policy exception on the PR and blocks the work item for a
-human.
+`pr.merge` is a deterministic activity that acts on the correlated primary PR.
+It accepts `target`, `method` (`merge`, `squash`, or `rebase`),
+`requireChecks`, `requireApproval`, `autoMerge`, `maxFilesChanged`, and
+`blockedPaths`.
+
+`requireApproval` defaults to `true`; direct merges always require a current
+trusted GitHub review. Set it to `false` only with `autoMerge: true`, after an
+independent review watch gate has passed. `requireChecks: true` requires
+currently passing checks for a direct merge. For native auto-merge it permits
+pending checks but rejects unknown or failing checks, leaving GitHub branch
+protection to hold the merge until required checks pass.
+
+With `autoMerge: true`, Wake enables GitHub native auto-merge using `method`.
+If GitHub reports that the PR is already in clean status, Wake falls back to a
+direct merge with the same method. Other provider errors do not fall back.
+Enable repository auto-merge and configure GitHub required-check protection
+before using this route.
 
 ## Labels
 
@@ -248,6 +268,34 @@ wake:stage.done
 These labels mirror the control-plane state. They do not define prompt
 behavior by themselves; the workflow configuration and prompt files do that.
 
+### Live Run status
+
+A started Run is durable and is shown as `wake:status.working` while its runner
+executes. Terminal status labels remain derived from the Run outcome, rather
+than from the runner starting. After a restart, Wake recovers durable active
+Runs and continues that same outcome-based reconciliation. A live local runner
+renews its lease and is not mistaken for a crashed process during recovery.
+Runner comments are unchanged.
+
+## Ticket closure
+
+When the ticket backing a work item closes on its source tracker, Wake
+concludes the work item to match: closed as completed closes the work
+item, closed as not planned (or its provider's equivalent) cancels it.
+Either way, Wake cancels any active Run and blocks any active workflow for
+that work item — closing the ticket stops the work.
+
+Wake's own generated PR bodies reference the issue (`Refs #<number>`)
+rather than using a closing keyword (`Closes #<number>`), so merging a PR
+never auto-closes the issue on GitHub. This keeps "the PR merged" and "the
+ticket closed" independent signals: a workflow with stages after merge
+(review, verify) keeps running until it reaches `done` on its own, and the
+ticket only closes when a human closes it or Wake does so as the workflow's
+final step.
+
+Reopening the ticket does not currently reopen the work item — closing or
+cancelling a work item is a one-way move.
+
 ## Checklist for a custom workflow
 
 1. Add every action prompt to `paths.promptsRoot`.
@@ -255,5 +303,5 @@ behavior by themselves; the workflow configuration and prompt files do that.
 3. Add a workflow with runnable stage names under `workflows`.
 4. Set each stage's `workspace` and `onDone`.
 5. Add `action` when the prompt name differs from the stage name.
-6. Add `tier` or `runner` when a stage needs specific routing.
+6. Add `runnerPool` or `runner` when a stage needs specific routing.
 7. Confirm the entry stage can reach `done`.

@@ -1,0 +1,182 @@
+import { BuiltInActivityName } from '../../activities/index.js';
+import { RunStatus, type RunRepository } from '../../execution/index.js';
+import {
+  createEventDraft,
+  EventActorKind,
+  EventSourceKind,
+  type CheckpointStore,
+  type EventJournal,
+} from '../../kernel/index.js';
+import {
+  ApprovalAuthorityKind,
+  isApprovalAwaitingSignalKind,
+  OrchestrationEventType,
+  OrchestrationStreamKind,
+  WatchGateVerdictSignal,
+  type OrchestrationService,
+  type WorkflowInstanceView,
+} from '../../orchestration/index.js';
+import type { ResourceService } from '../../resources/index.js';
+import { ResourceCorrelationRole, resourceStream } from '../../resources/index.js';
+import { DeliveryIntentEventType } from '../delivery/contracts/intents.js';
+import { projectTerminalAgentRunReport, type TerminalRun } from './terminal-agent-run-report.js';
+
+/** Projects terminal agent runs into one durable outbound intent per primary resource. */
+export class AgentRunPublicationReactor {
+  constructor(
+    private readonly dependencies: {
+      readonly journal: EventJournal;
+      readonly checkpoints: CheckpointStore;
+      readonly runs: RunRepository;
+      readonly resources: Pick<ResourceService, 'correlationsForWork'>;
+      readonly orchestration: Pick<OrchestrationService, 'listAll'>;
+    },
+  ) {}
+
+  async runOnce(limit = 100): Promise<number> {
+    const consumer = 'reactor:agent-run-publication';
+    const events = await this.dependencies.journal.readAll(
+      await this.dependencies.checkpoints.load(consumer),
+      limit,
+    );
+    for (const event of events) {
+      if (event.eventType === OrchestrationEventType.ActivityOutcomeAccepted)
+        await this.publishAcceptedOutcome(
+          event.stream.id,
+          (event.payload as { readonly activationId: string }).activationId,
+          event.recordedAt,
+          event.eventId,
+          event.correlationId,
+        );
+      if (event.eventType === OrchestrationEventType.ActivityExecutionFailed)
+        await this.publish(
+          (event.payload as { readonly runId: string }).runId,
+          event.recordedAt,
+          event.eventId,
+          event.correlationId,
+        );
+      await this.dependencies.checkpoints.save(consumer, event.globalPosition);
+    }
+    return events.length;
+  }
+
+  private async publishAcceptedOutcome(
+    workflowInstanceId: string,
+    activationId: string,
+    occurredAt: string,
+    causationId: string,
+    correlationId: string,
+  ) {
+    const run = (await this.dependencies.runs.list(activationId as never)).find(
+      (candidate) =>
+        candidate.workflowInstanceId === workflowInstanceId &&
+        candidate.status === RunStatus.Succeeded &&
+        candidate.activity === BuiltInActivityName.Agent,
+    );
+    if (run === undefined) return;
+    await this.publish(run.runId, occurredAt, causationId, correlationId);
+  }
+
+  private async publish(
+    id: string,
+    occurredAt: string,
+    causationId: string,
+    correlationId: string,
+  ) {
+    const run = (await this.dependencies.runs.load(id as never)).view;
+    if (run?.activity !== BuiltInActivityName.Agent || run.finishedAt === undefined) return;
+    const allWorkflows = await this.dependencies.orchestration.listAll();
+    const workflow = allWorkflows.find(
+      (value) => value.workflowInstanceId === run.workflowInstanceId,
+    );
+    if (workflow === undefined) return;
+    const primary = (
+      await this.dependencies.resources.correlationsForWork(workflow.workItemId)
+    ).find((value) => value.role === ResourceCorrelationRole.Primary);
+    if (primary === undefined) return;
+    const stage = await this.stageForActivation(workflow.workflowInstanceId, run.activationId);
+    const report = projectTerminalAgentRunReport(reportInput(run, stage, workflow, allWorkflows));
+    if (report === null) return;
+    const stream = resourceStream(primary.resourceId);
+    const sequence = (await this.dependencies.journal.readStream(stream)).length;
+    try {
+      await this.dependencies.journal.append(stream, sequence, [
+        createEventDraft({
+          eventId: `agent-run:${run.runId}`,
+          eventType: DeliveryIntentEventType.AgentRunPublishRequested,
+          occurredAt,
+          correlationId: correlationId as never,
+          causationId: causationId as never,
+          actor: { kind: EventActorKind.Integration, id: 'agent-run-publication' },
+          source: { kind: EventSourceKind.Internal, id: 'agent-run-publication' },
+          stream,
+          payload: {
+            workflowInstanceId: run.workflowInstanceId,
+            activationId: run.activationId,
+            resourceId: primary.resourceId,
+            report,
+          },
+        }),
+      ]);
+    } catch {
+      /* idempotency is the deterministic run event id */
+    }
+  }
+
+  private async stageForActivation(
+    workflowInstanceId: string,
+    activationId: string,
+  ): Promise<string | undefined> {
+    const events = await this.dependencies.journal.readStream({
+      kind: OrchestrationStreamKind.WorkflowInstance,
+      id: workflowInstanceId,
+    } as never);
+    const request = events.findIndex(
+      (event) =>
+        event.eventType === OrchestrationEventType.ActivityRequested &&
+        (event.payload as { readonly activationId: string }).activationId === activationId,
+    );
+    for (let index = request - 1; index >= 0; index -= 1) {
+      const event = events[index];
+      if (event?.eventType === OrchestrationEventType.StageEntered)
+        return (event.payload as { readonly stage: string }).stage;
+    }
+    return undefined;
+  }
+}
+
+function reportInput(
+  run: TerminalRun,
+  stage: string | undefined,
+  workflow: WorkflowInstanceView,
+  allWorkflows: readonly WorkflowInstanceView[],
+): Parameters<typeof projectTerminalAgentRunReport>[0] {
+  const watchGateVerdict = watchGateVerdictFor(run, workflow, allWorkflows);
+  const isWaiting =
+    workflow.waitingFor !== undefined &&
+    isApprovalAwaitingSignalKind(workflow.waitingFor.signalKind);
+  return {
+    run,
+    ...(stage === undefined ? {} : { stage }),
+    ...(isWaiting ? { awaitingApproval: true } : {}),
+    ...(watchGateVerdict === undefined ? {} : { watchGateVerdict }),
+  };
+}
+
+function watchGateVerdictFor(
+  run: TerminalRun,
+  workflow: WorkflowInstanceView,
+  allWorkflows: readonly WorkflowInstanceView[],
+): { readonly runId: string } | undefined {
+  if (run.agent?.outcome !== 'DONE' && run.agent?.outcome !== 'REJECTED') return undefined;
+  if (workflow.parentWorkflowInstanceId === undefined || workflow.watchId === undefined)
+    return undefined;
+  const parent = allWorkflows.find(
+    (value) => value.workflowInstanceId === workflow.parentWorkflowInstanceId,
+  );
+  if (parent?.waitingFor?.signalKind !== WatchGateVerdictSignal) return undefined;
+  const namesThisWatch = parent.waitingFor.from?.some(
+    (entry) => entry.kind === ApprovalAuthorityKind.Watch && entry.watch === workflow.watchId,
+  );
+  return namesThisWatch === true ? { runId: run.runId } : undefined;
+}

@@ -1,0 +1,953 @@
+import { readFile } from 'node:fs/promises';
+
+import { autoApprovalLabel, resolveAutoApprovalIntent } from '../../core/approval-intents.js';
+import type { ResourceIndex, UnkeyedEventEnvelope } from '../../core/contracts.js';
+import { LABELS_REQUESTED_EVENT } from '../../domain/event-types.js';
+import { buildResourceUri } from '../../domain/resource-uri.js';
+import { defaultAgentIdentity } from '../../domain/schema.js';
+import { wakeStageLabelPrefix } from '../../domain/stages.js';
+import type { EventEnvelope, IssueStateRecord, WakeConfig } from '../../domain/types.js';
+import { SCHEDULED_WORKFLOW_LABEL } from '../../domain/work-item-labels.js';
+import { FROZEN_WORK_ITEM_LABEL } from '../../domain/work-item-lifecycle.js';
+import { wakeWorkflowLabelPrefix } from '../../domain/workflows.js';
+import { createEventEnvelope, createUnkeyedEventEnvelope } from '../../lib/event-log.js';
+import { createWakePaths } from '../../lib/paths.js';
+import { wakeVersion } from '../../version.js';
+import { buildResumeCommandForCli } from '../runner/runner-cli-adapter.js';
+
+const wakeStatusLabelPrefix = 'wake:status.';
+const pollOverlapMs = 60 * 60 * 1000;
+
+// Hidden marker appended to every comment Wake posts. `expectedEcho` normally
+// suppresses Wake's own comments from re-entering the projection, but if Wake
+// crashes after posting and before the reply-published event is processed,
+// expectedEcho is never updated — on restart the comment would otherwise be
+// polled back in as a new human comment. The marker is a second, independent
+// signal so bot-authored detection doesn't depend on account type or
+// expectedEcho bookkeeping surviving a crash (#145).
+const wakeCommentMarker = '<!-- wake:agent -->';
+const githubSource = 'github';
+
+export function wakeIdempotencyMarker(idempotencyKey: unknown): string | undefined {
+  return typeof idempotencyKey === 'string'
+    ? `<!-- wake:idempotency ${idempotencyKey} -->`
+    : undefined;
+}
+
+type GitHubIssue = {
+  number: number;
+  title: string;
+  body?: string | null;
+  state: string;
+  html_url: string;
+  created_at: string;
+  updated_at: string;
+  labels?: Array<string | { name?: string }>;
+  assignees?: Array<{ login?: string }> | null;
+  pull_request?: Record<string, unknown>;
+};
+
+type GitHubComment = {
+  id: number;
+  body?: string;
+  user?: { login?: string; type?: string } | null;
+  created_at: string;
+  updated_at: string;
+  html_url?: string;
+};
+
+function normalizeTicketUpsert(input: {
+  repo: string;
+  issue: GitHubIssue;
+  ingestedAt: string;
+  expectedEcho?: boolean;
+}): UnkeyedEventEnvelope {
+  // Names the resource, never the work item — the resolver stamps the
+  // canonical workItemKey after the poll (spec D1).
+  return createUnkeyedEventEnvelope({
+    eventId: `github-issue-${input.repo}-${input.issue.number}-${input.issue.updated_at}`,
+    streamScope: 'global-intake',
+    direction: 'inbound',
+    sourceSystem: 'github',
+    sourceEventType: 'ticket.upsert',
+    sourceRefs: {
+      repo: input.repo,
+      issueNumber: input.issue.number,
+      sourceUrl: input.issue.html_url,
+      resourceUri: buildResourceUri(githubSource, 'issue', `${input.repo}#${input.issue.number}`),
+    },
+    occurredAt: input.issue.updated_at,
+    ingestedAt: input.ingestedAt,
+    trigger: input.expectedEcho === true ? 'context-only' : 'immediate',
+    payload: {
+      ticket: {
+        repo: input.repo,
+        number: input.issue.number,
+        title: input.issue.title,
+        body: input.issue.body ?? '',
+        labels: (input.issue.labels ?? [])
+          .map((label) => (typeof label === 'string' ? label : label.name))
+          .filter((label): label is string => typeof label === 'string'),
+        assignees: (input.issue.assignees ?? [])
+          .map((assignee) => assignee.login)
+          .filter((login): login is string => typeof login === 'string'),
+        isPullRequest: input.issue.pull_request !== undefined,
+        state: input.issue.state === 'closed' ? 'closed' : 'open',
+        url: input.issue.html_url,
+        createdAt: input.issue.created_at,
+        updatedAt: input.issue.updated_at,
+      },
+      providerEventType: 'github.issue.upsert',
+    },
+    raw: {
+      github: {
+        issueUpdatedAt: input.issue.updated_at,
+      },
+    },
+    ...(input.expectedEcho === true ? { derivedHints: { expectedEcho: true } } : {}),
+  });
+}
+
+function normalizeTicketCommentEvent(input: {
+  repo: string;
+  issueNumber: number;
+  comment: GitHubComment;
+  ingestedAt: string;
+  existingUpdatedAt?: string;
+  selfLogin?: string;
+}): UnkeyedEventEnvelope {
+  const isUpdate =
+    input.existingUpdatedAt !== undefined && input.existingUpdatedAt !== input.comment.updated_at;
+
+  return createUnkeyedEventEnvelope({
+    eventId: `github-comment-${input.repo}-${input.issueNumber}-${input.comment.id}-${input.comment.updated_at}`,
+    streamScope: 'work-item',
+    direction: 'inbound',
+    sourceSystem: 'github',
+    sourceEventType: isUpdate ? 'ticket.comment.updated' : 'ticket.comment.created',
+    sourceRefs: {
+      repo: input.repo,
+      issueNumber: input.issueNumber,
+      commentId: String(input.comment.id),
+      sourceUrl: input.comment.html_url,
+      // The comment belongs to the issue's work item; the issue is the
+      // resource the resolver knows it by.
+      resourceUri: buildResourceUri(githubSource, 'issue', `${input.repo}#${input.issueNumber}`),
+    },
+    occurredAt: input.comment.updated_at,
+    ingestedAt: input.ingestedAt,
+    trigger: 'context-only',
+    payload: {
+      comment: {
+        id: String(input.comment.id),
+        body: input.comment.body ?? '',
+        author: {
+          login: input.comment.user?.login ?? 'unknown',
+        },
+        createdAt: input.comment.created_at,
+        updatedAt: input.comment.updated_at,
+      },
+      providerEventType: isUpdate ? 'github.issue.comment.updated' : 'github.issue.comment.created',
+    },
+    derivedHints: {
+      // Third-party bots/integrations (CI, Dependabot, Renovate, etc.) must
+      // not be able to unblock a blocked issue; only an actual human reply should.
+      // The marker check catches Wake's own comments even when expectedEcho
+      // missed them (crash-recovery gap) or the agent account type is 'User'.
+      // The selfLogin check catches a comment posted by direct API/CLI call
+      // (e.g. a `revise` run replying via `gh api`) that never carries the
+      // marker at all — without it, Wake's own reply looks human and
+      // re-triggers another run against itself (#258 follow-up incident: 99
+      // duplicate replies from exactly this gap).
+      botAuthoredComment:
+        input.comment.user?.type === 'Bot' ||
+        (input.comment.body ?? '').includes(wakeCommentMarker) ||
+        (input.selfLogin !== undefined && input.comment.user?.login === input.selfLogin),
+    },
+  });
+}
+
+function normalizeLabels(labels: string[]): string[] {
+  return [...labels].sort();
+}
+
+function labelsMatch(left: string[], right: string[]): boolean {
+  const normalizedLeft = normalizeLabels(left);
+  const normalizedRight = normalizeLabels(right);
+  return (
+    normalizedLeft.length === normalizedRight.length &&
+    normalizedLeft.every((label, index) => label === normalizedRight[index])
+  );
+}
+
+function issueLabels(issue: GitHubIssue): string[] {
+  return (issue.labels ?? [])
+    .map((label) => (typeof label === 'string' ? label : label.name))
+    .filter((label): label is string => typeof label === 'string');
+}
+
+function issueAssignees(issue: GitHubIssue): string[] {
+  return (issue.assignees ?? [])
+    .map((assignee) => assignee.login)
+    .filter((login): login is string => typeof login === 'string');
+}
+
+function issueWithAutoApprovalLabel(issue: GitHubIssue): GitHubIssue {
+  return {
+    ...issue,
+    labels: [...issueLabels(issue), autoApprovalLabel],
+  };
+}
+
+async function ensureAutoApprovalLabel(input: {
+  owner: string;
+  repoName: string;
+  issueNumber: number;
+  issue: GitHubIssue;
+  setLabels: (
+    owner: string,
+    repo: string,
+    issueNumber: number,
+    labels: string[],
+  ) => Promise<unknown>;
+}): Promise<boolean> {
+  if (issueLabels(input.issue).includes(autoApprovalLabel)) {
+    return false;
+  }
+
+  await input.setLabels(input.owner, input.repoName, input.issueNumber, [
+    ...issueLabels(input.issue),
+    autoApprovalLabel,
+  ]);
+  return true;
+}
+
+function isExpectedLabelEcho(issue: GitHubIssue, local: IssueStateRecord | null): boolean {
+  if (local === null || local.wake.expectedEcho.labels.length === 0) {
+    return false;
+  }
+
+  return (
+    issue.title === local.issue.title &&
+    (issue.body ?? '') === local.issue.body &&
+    (issue.state === 'closed' ? 'closed' : 'open') === local.issue.state &&
+    issue.html_url === local.issue.url &&
+    labelsMatch(issueAssignees(issue), local.issue.assignees) &&
+    labelsMatch(issueLabels(issue), local.wake.expectedEcho.labels)
+  );
+}
+
+function extractCreatedCommentId(response: unknown): string | undefined {
+  if (response === null || typeof response !== 'object') {
+    return undefined;
+  }
+
+  const directId = (response as { id?: unknown }).id;
+  if (typeof directId === 'number' || typeof directId === 'string') {
+    return String(directId);
+  }
+
+  const data = (response as { data?: unknown }).data;
+  if (data !== null && typeof data === 'object') {
+    const dataId = (data as { id?: unknown }).id;
+    if (typeof dataId === 'number' || typeof dataId === 'string') {
+      return String(dataId);
+    }
+  }
+
+  return undefined;
+}
+
+function formatControlPlaneLink(url: string): string | null {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return null;
+    }
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
+export async function readControlPlaneUiUrl(wakeRoot: string): Promise<string | undefined> {
+  try {
+    const raw = await readFile(createWakePaths(wakeRoot).controlPlaneUiUrlFile, 'utf8');
+    return formatControlPlaneLink(raw.trim()) ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+type OctokitError = Error & { status?: number; response?: { headers?: Record<string, string> } };
+
+function isGitHubNotFound(error: unknown): boolean {
+  return error instanceof Error && (error as OctokitError).status === 404;
+}
+
+export function formatGitHubError(error: unknown): string {
+  if (error instanceof Error) {
+    const octokit = error as OctokitError;
+    if (octokit.status !== undefined) {
+      const headers = octokit.response?.headers ?? {};
+      const parts = [`status=${octokit.status}`];
+      if (headers['x-ratelimit-remaining'] !== undefined)
+        parts.push(`ratelimit-remaining=${headers['x-ratelimit-remaining']}`);
+      if (headers['retry-after'] !== undefined) parts.push(`retry-after=${headers['retry-after']}`);
+      return parts.join(' ');
+    }
+    return error.message.slice(0, 300);
+  }
+  return String(error).slice(0, 300);
+}
+
+export function formatWakeComment(
+  payload: Record<string, unknown>,
+  controlPlaneUrl?: string,
+): string {
+  const body = typeof payload.body === 'string' ? payload.body : '';
+  const kind = typeof payload.kind === 'string' ? payload.kind : undefined;
+  const action = typeof payload.action === 'string' ? payload.action : undefined;
+  const runId = typeof payload.runId === 'string' ? payload.runId : undefined;
+  const sessionId = typeof payload.sessionId === 'string' ? payload.sessionId : undefined;
+  const model = typeof payload.model === 'string' ? payload.model : undefined;
+  const cli = typeof payload.cli === 'string' ? payload.cli : undefined;
+  const runnerName = typeof payload.runnerName === 'string' ? payload.runnerName : undefined;
+  const runnerPool = typeof payload.runnerPool === 'string' ? payload.runnerPool : undefined;
+  const duration = typeof payload.duration === 'string' ? payload.duration : undefined;
+  const tokens = typeof payload.tokens === 'string' ? payload.tokens : undefined;
+  const cost = typeof payload.cost === 'string' ? payload.cost : undefined;
+  const workspacePath =
+    typeof payload.workspacePath === 'string' ? payload.workspacePath : undefined;
+  const idempotencyMarker = wakeIdempotencyMarker(payload.idempotencyKey);
+  const outcomeLine = formatOutcomeLine(payload);
+
+  const details = [
+    action === undefined ? undefined : `stage \`${action}\``,
+    runnerName === undefined ? undefined : `runner \`${runnerName}\``,
+    runnerPool === undefined ? undefined : `runnerPool \`${runnerPool}\``,
+    cli === undefined ? undefined : `cli ${cli}`,
+    model === undefined ? undefined : `model \`${model}\``,
+    duration === undefined ? undefined : `duration ${duration}`,
+    tokens === undefined ? undefined : `tokens ${tokens}`,
+    cost === undefined ? undefined : `cost ${cost}`,
+    runId === undefined ? undefined : `run \`${runId}\``,
+  ].filter((part): part is string => part !== undefined);
+
+  const name =
+    controlPlaneUrl === undefined
+      ? defaultAgentIdentity
+      : `[${defaultAgentIdentity}](${controlPlaneUrl})`;
+  const header = `**${name}** _(Wake ${wakeVersion}${details.length > 0 ? ` · ${details.join(' · ')}` : ''})_`;
+  const sections = [wakeCommentMarker, idempotencyMarker, header, outcomeLine, body].filter(
+    (section): section is string => section !== undefined,
+  );
+
+  if (kind === 'approval-request') {
+    sections.push(
+      '_To approve this work, reply with `/approved`. To request changes, reply with `/changes` followed by your feedback. To ask a question without requesting changes, reply with `/ask` followed by your question._',
+    );
+  }
+
+  if (kind === 'question') {
+    sections.push(
+      '_Reply on this thread to continue — any reply will resume Wake with your response. To request changes to the overall approach instead, reply with `/changes` followed by your feedback._',
+    );
+  }
+
+  if (sessionId !== undefined) {
+    const resumeCommandArgs =
+      cli === undefined
+        ? null
+        : buildResumeCommandForCli({
+            cli,
+            sessionId,
+          });
+    const resumeCommandText =
+      cli === undefined
+        ? `<resume command unavailable: missing runner identity for session ${sessionId}>`
+        : resumeCommandArgs === null
+          ? `<resume command unavailable: unsupported runner identity for session ${sessionId}>`
+          : resumeCommandArgs.join(' ');
+    const resumeCommand =
+      workspacePath === undefined
+        ? resumeCommandText
+        : `cd "${workspacePath}"\n${resumeCommandText}`;
+
+    sections.push(
+      [
+        '---',
+        `_Next steps: reply on this thread to continue, or resume this exact ${defaultAgentIdentity} session locally:_`,
+        '```',
+        resumeCommand,
+        '```',
+      ].join('\n'),
+    );
+  }
+
+  return sections.join('\n\n');
+}
+
+function formatOutcomeLine(payload: Record<string, unknown>): string | undefined {
+  const sentinel = typeof payload.sentinel === 'string' ? payload.sentinel : undefined;
+  const kind = typeof payload.kind === 'string' ? payload.kind : undefined;
+
+  if (kind === 'approval-request') {
+    return '**Outcome:** 🟡 Awaiting Approval';
+  }
+  if (sentinel === 'DONE') {
+    return '**Outcome:** ✅ Done';
+  }
+  if (sentinel === 'REJECTED') {
+    return '**Outcome:** 🔴 Changes Requested';
+  }
+  if (sentinel === 'BLOCKED' || kind === 'question') {
+    return '**Outcome:** 🟠 Blocked';
+  }
+  if (sentinel === 'FAILED' || kind === 'failure') {
+    return '**Outcome:** ❌ Failed';
+  }
+
+  return undefined;
+}
+
+function createIssueCommentPublishedEvent(input: {
+  event: EventEnvelope;
+  repo: string;
+  issueNumber: number;
+  publishedAt: string;
+  commentId?: string;
+}): EventEnvelope {
+  return createEventEnvelope({
+    eventId: `${input.event.eventId}-published`,
+    workItemKey: input.event.workItemKey,
+    streamScope: 'work-item',
+    direction: 'outbound',
+    sourceSystem: 'github',
+    sourceEventType: 'ticket.reply.published',
+    sourceRefs: {
+      repo: input.repo,
+      issueNumber: input.issueNumber,
+      ...(input.commentId === undefined ? {} : { commentId: input.commentId }),
+    },
+    occurredAt: input.publishedAt,
+    ingestedAt: input.publishedAt,
+    trigger: 'context-only',
+    payload: {
+      intentEventId: input.event.eventId,
+      idempotencyKey: input.event.payload.idempotencyKey,
+      deliveryState: 'CONFIRMED',
+      kind: input.event.payload.kind,
+      body: input.event.payload.body,
+      providerEventType: 'github.issue.comment.published',
+      ...(input.commentId === undefined ? {} : { providerId: input.commentId }),
+    },
+  });
+}
+
+export function createGitHubIssuesWorkSource(deps: {
+  client: {
+    listIssues: (
+      owner: string,
+      repo: string,
+      perPage: number,
+      since?: string,
+    ) => Promise<GitHubIssue[]>;
+    listComments: (
+      owner: string,
+      repo: string,
+      issueNumber: number,
+      perPage: number,
+    ) => Promise<GitHubComment[]>;
+    getIssue?: (owner: string, repo: string, issueNumber: number) => Promise<GitHubIssue>;
+    createComment: (
+      owner: string,
+      repo: string,
+      issueNumber: number,
+      body: string,
+    ) => Promise<unknown>;
+    setLabels: (
+      owner: string,
+      repo: string,
+      issueNumber: number,
+      labels: string[],
+    ) => Promise<unknown>;
+  };
+  stateStore: ReturnType<typeof import('../fs/state-store.js').createStateStore>;
+  config: WakeConfig;
+  // Read-only resolution of uris this source constructs itself, for poll dedup
+  // and echo suppression. This is NOT self-keying (spec D1): pollEvents still
+  // returns UnkeyedEventEnvelope[] and the central resolver in tick-runner is
+  // still the only thing that stamps workItemKey. Required, never defaulted —
+  // a forgotten index must fail loudly, not silently degrade to a scan.
+  resourceIndex: ResourceIndex;
+  now: () => Date;
+  // The GitHub login Wake itself authenticates as, used as a third signal
+  // (alongside account type and the wake:agent marker) for bot-authored
+  // detection — see normalizeTicketCommentEvent. Optional because it's
+  // undefined when the GitHub client is a fake/test double.
+  selfLogin?: string;
+}) {
+  /** O(1): one shard read, then a direct projection read by work id. */
+  async function readProjectionForIssue(
+    repo: string,
+    issueNumber: number,
+  ): Promise<IssueStateRecord | null> {
+    const uri = buildResourceUri(githubSource, 'issue', `${repo}#${issueNumber}`);
+    const workItemKey = await deps.resourceIndex.resolve(uri);
+    if (workItemKey === undefined) {
+      return null;
+    }
+    return deps.stateStore.readIssueState(workItemKey);
+  }
+
+  return {
+    async refreshForDispatch(input: { projection: IssueStateRecord }) {
+      const repoRef = input.projection.issue.repo;
+      if (deps.client.getIssue === undefined) {
+        return null;
+      }
+      if (!deps.config.sources.github.repos.includes(repoRef)) {
+        return null;
+      }
+
+      const [owner, repo] = repoRef.split('/');
+      if (owner === undefined || repo === undefined) {
+        return null;
+      }
+
+      const ingestedAt = deps.now().toISOString();
+      let issue: GitHubIssue;
+      try {
+        issue = await deps.client.getIssue(owner, repo, input.projection.issue.number);
+      } catch (error) {
+        if (isGitHubNotFound(error)) {
+          return {
+            events: [],
+            sourceRevision: `github:issue:${repoRef}#${input.projection.issue.number}@missing`,
+            sourceExists: false,
+          };
+        }
+        throw error;
+      }
+      const events: UnkeyedEventEnvelope[] = [];
+
+      if (input.projection.issue.updatedAt !== issue.updated_at) {
+        events.push(
+          normalizeTicketUpsert({
+            repo: repoRef,
+            issue,
+            ingestedAt,
+            expectedEcho: isExpectedLabelEcho(issue, input.projection),
+          }),
+        );
+      }
+
+      const comments = await deps.client.listComments(
+        owner,
+        repo,
+        input.projection.issue.number,
+        deps.config.sources.github.polling.commentPageSize,
+      );
+      let latestCommentRevision = '';
+      let autoApprovalLabelAdded = false;
+
+      for (const comment of comments) {
+        if (comment.updated_at > latestCommentRevision) {
+          latestCommentRevision = comment.updated_at;
+        }
+
+        const known = input.projection.comments.find((entry) => entry.id === String(comment.id));
+        if (known?.updatedAt === comment.updated_at) {
+          continue;
+        }
+
+        if (input.projection.wake.expectedEcho.commentIds.includes(String(comment.id))) {
+          continue;
+        }
+
+        if (
+          !autoApprovalLabelAdded &&
+          resolveAutoApprovalIntent(comment.body) !== null &&
+          comment.user?.type !== 'Bot' &&
+          !(comment.body ?? '').includes(wakeCommentMarker) &&
+          (deps.selfLogin === undefined || comment.user?.login !== deps.selfLogin)
+        ) {
+          autoApprovalLabelAdded = await ensureAutoApprovalLabel({
+            owner,
+            repoName: repo,
+            issueNumber: input.projection.issue.number,
+            issue,
+            setLabels: deps.client.setLabels,
+          });
+        }
+
+        events.push(
+          normalizeTicketCommentEvent({
+            repo: repoRef,
+            issueNumber: input.projection.issue.number,
+            comment,
+            ingestedAt,
+            ...(deps.selfLogin === undefined ? {} : { selfLogin: deps.selfLogin }),
+            ...(known?.updatedAt === undefined ? {} : { existingUpdatedAt: known.updatedAt }),
+          }),
+        );
+      }
+
+      if (autoApprovalLabelAdded) {
+        events.push(
+          normalizeTicketUpsert({
+            repo: repoRef,
+            issue: issueWithAutoApprovalLabel(issue),
+            ingestedAt,
+          }),
+        );
+      }
+
+      return {
+        events,
+        sourceRevision:
+          latestCommentRevision.length > 0
+            ? `github:issue:${repoRef}#${issue.number}@${issue.updated_at};comments@${latestCommentRevision}`
+            : `github:issue:${repoRef}#${issue.number}@${issue.updated_at}`,
+      };
+    },
+    async pollEvents(_input?: {
+      watch: Array<{ resourceUri: string }>;
+    }): Promise<UnkeyedEventEnvelope[]> {
+      const ingestedAt = deps.now().toISOString();
+      const events: UnkeyedEventEnvelope[] = [];
+
+      for (const repoRef of deps.config.sources.github.repos) {
+        const [owner, repo] = repoRef.split('/');
+        if (owner === undefined || repo === undefined) {
+          continue;
+        }
+
+        // One repo's failure (deleted repo, revoked access, transient API
+        // error) must not stop polling for every other configured repo (E3).
+        // Skipping `writeSourceState` below on failure means the `since`
+        // cursor doesn't advance, so the next tick retries this repo from the
+        // same point instead of silently losing the gap.
+        try {
+          const previousPoll = await deps.stateStore.readSourceState('github', repoRef);
+          const since =
+            previousPoll === null
+              ? undefined
+              : new Date(
+                  Date.parse(previousPoll.lastSuccessfulPollAt) - pollOverlapMs,
+                ).toISOString();
+          const issues =
+            since === undefined
+              ? await deps.client.listIssues(
+                  owner,
+                  repo,
+                  deps.config.sources.github.polling.maxIssuesPerRepo,
+                )
+              : await deps.client.listIssues(
+                  owner,
+                  repo,
+                  deps.config.sources.github.polling.maxIssuesPerRepo,
+                  since,
+                );
+
+          for (const issue of issues) {
+            if (issue.pull_request !== undefined) {
+              continue;
+            }
+
+            // Poll dedup + echo suppression only, never identity: the uri is
+            // constructed (never parsed) and resolved through the index, which
+            // keeps a poll flat in the number of work items rather than
+            // O(issues x projections) (spec D2).
+            const local = await readProjectionForIssue(repoRef, issue.number);
+
+            if (local?.issue.updatedAt !== issue.updated_at) {
+              events.push(
+                normalizeTicketUpsert({
+                  repo: repoRef,
+                  issue,
+                  ingestedAt,
+                  expectedEcho: isExpectedLabelEcho(issue, local ?? null),
+                }),
+              );
+            }
+
+            const comments = await deps.client.listComments(
+              owner,
+              repo,
+              issue.number,
+              deps.config.sources.github.polling.commentPageSize,
+            );
+            let autoApprovalLabelAdded = false;
+
+            for (const comment of comments) {
+              const known = local?.comments.find((entry) => entry.id === String(comment.id));
+
+              if (known?.updatedAt === comment.updated_at) {
+                continue;
+              }
+
+              if (local?.wake.expectedEcho.commentIds.includes(String(comment.id)) === true) {
+                continue;
+              }
+
+              if (
+                !autoApprovalLabelAdded &&
+                resolveAutoApprovalIntent(comment.body) !== null &&
+                comment.user?.type !== 'Bot' &&
+                !(comment.body ?? '').includes(wakeCommentMarker) &&
+                (deps.selfLogin === undefined || comment.user?.login !== deps.selfLogin)
+              ) {
+                autoApprovalLabelAdded = await ensureAutoApprovalLabel({
+                  owner,
+                  repoName: repo,
+                  issueNumber: issue.number,
+                  issue,
+                  setLabels: deps.client.setLabels,
+                });
+              }
+
+              events.push(
+                normalizeTicketCommentEvent({
+                  repo: repoRef,
+                  issueNumber: issue.number,
+                  comment,
+                  ingestedAt,
+                  ...(deps.selfLogin === undefined ? {} : { selfLogin: deps.selfLogin }),
+                  ...(known?.updatedAt === undefined ? {} : { existingUpdatedAt: known.updatedAt }),
+                }),
+              );
+            }
+
+            if (autoApprovalLabelAdded) {
+              events.push(
+                normalizeTicketUpsert({
+                  repo: repoRef,
+                  issue: issueWithAutoApprovalLabel(issue),
+                  ingestedAt,
+                }),
+              );
+            }
+          }
+
+          await deps.stateStore.writeSourceState({
+            schemaVersion: 1,
+            source: 'github',
+            key: repoRef,
+            lastSuccessfulPollAt: ingestedAt,
+          });
+        } catch (error) {
+          console.error(
+            `[github-work-source] poll failed for ${repoRef}, skipping this tick: ${formatGitHubError(
+              error,
+            )}`,
+          );
+        }
+      }
+
+      return events;
+    },
+    async deliverIntent(input: { event: EventEnvelope }): Promise<EventEnvelope[]> {
+      const repo = input.event.sourceRefs.repo;
+      const issueNumber = input.event.sourceRefs.issueNumber;
+
+      if (repo === undefined || issueNumber === undefined) {
+        throw new Error(
+          `cannot deliver intent ${input.event.eventId}: missing sourceRefs.repo/issueNumber`,
+        );
+      }
+
+      const [owner, repoName] = repo.split('/');
+      if (owner === undefined || repoName === undefined) {
+        throw new Error(`cannot deliver intent ${input.event.eventId}: malformed repo "${repo}"`);
+      }
+
+      const publishedAt = deps.now().toISOString();
+      if (input.event.sourceEventType === LABELS_REQUESTED_EVENT) {
+        // Outbound intents are keyed envelopes Wake itself minted, so the work
+        // item is already named on the event — a direct read, not a lookup.
+        const projection = await deps.stateStore.readIssueState(input.event.workItemKey);
+        const currentLabels = projection?.issue.labels ?? [];
+        const nextStatusLabel =
+          typeof input.event.payload.statusLabel === 'string'
+            ? input.event.payload.statusLabel
+            : undefined;
+        const nextStageLabel =
+          typeof input.event.payload.stageLabel === 'string'
+            ? input.event.payload.stageLabel
+            : undefined;
+        const nextWorkflowLabel =
+          typeof input.event.payload.workflowLabel === 'string'
+            ? input.event.payload.workflowLabel
+            : undefined;
+        // Unlike the three label families above, frozen/scheduled are single
+        // toggle labels: every call site now computes the full authoritative
+        // desired state via labelsForWorkItem, so their absence here means
+        // "should not be present" (not "leave unspecified as before").
+        const nextFrozenLabel =
+          typeof input.event.payload.frozenLabel === 'string'
+            ? input.event.payload.frozenLabel
+            : undefined;
+        const nextScheduledLabel =
+          typeof input.event.payload.scheduledLabel === 'string'
+            ? input.event.payload.scheduledLabel
+            : undefined;
+
+        const nextLabels = [
+          ...currentLabels.filter(
+            (label) =>
+              !label.startsWith(wakeStatusLabelPrefix) &&
+              !label.startsWith(wakeStageLabelPrefix) &&
+              !label.startsWith(wakeWorkflowLabelPrefix) &&
+              label !== FROZEN_WORK_ITEM_LABEL &&
+              label !== SCHEDULED_WORKFLOW_LABEL,
+          ),
+          ...(nextStatusLabel !== undefined
+            ? [nextStatusLabel]
+            : currentLabels.filter((label) => label.startsWith(wakeStatusLabelPrefix))),
+          ...(nextStageLabel !== undefined
+            ? [nextStageLabel]
+            : currentLabels.filter((label) => label.startsWith(wakeStageLabelPrefix))),
+          ...(nextWorkflowLabel !== undefined
+            ? [nextWorkflowLabel]
+            : currentLabels.filter((label) => label.startsWith(wakeWorkflowLabelPrefix))),
+          ...(nextFrozenLabel !== undefined ? [nextFrozenLabel] : []),
+          ...(nextScheduledLabel !== undefined ? [nextScheduledLabel] : []),
+        ];
+
+        const labelsChanged =
+          nextLabels.length !== currentLabels.length ||
+          !nextLabels.every((label, index) => label === currentLabels[index]);
+
+        if (labelsChanged) {
+          await deps.client.setLabels(owner, repoName, issueNumber, nextLabels);
+
+          return [
+            createEventEnvelope({
+              eventId: `${input.event.eventId}-labels-updated`,
+              workItemKey: input.event.workItemKey,
+              streamScope: 'work-item',
+              direction: 'outbound',
+              sourceSystem: 'github',
+              sourceEventType: 'ticket.labels.updated',
+              sourceRefs: {
+                repo,
+                issueNumber,
+              },
+              occurredAt: publishedAt,
+              ingestedAt: publishedAt,
+              trigger: 'context-only',
+              payload: {
+                intentEventId: input.event.eventId,
+                idempotencyKey: input.event.payload.idempotencyKey,
+                deliveryState: 'CONFIRMED',
+                ...(nextStatusLabel !== undefined ? { statusLabel: nextStatusLabel } : {}),
+                ...(nextStageLabel !== undefined ? { stageLabel: nextStageLabel } : {}),
+                ...(nextWorkflowLabel !== undefined ? { workflowLabel: nextWorkflowLabel } : {}),
+                ...(nextFrozenLabel !== undefined ? { frozenLabel: nextFrozenLabel } : {}),
+                ...(nextScheduledLabel !== undefined ? { scheduledLabel: nextScheduledLabel } : {}),
+                labels: nextLabels,
+                providerEventType: 'github.issue.labels.updated',
+              },
+            }),
+          ];
+        }
+
+        return [];
+      }
+
+      const response = await deps.client.createComment(
+        owner,
+        repoName,
+        issueNumber,
+        formatWakeComment(
+          input.event.payload,
+          await readControlPlaneUiUrl(deps.config.paths.wakeRoot),
+        ),
+      );
+      const commentId = extractCreatedCommentId(response);
+
+      return [
+        createIssueCommentPublishedEvent({
+          event: input.event,
+          repo,
+          issueNumber,
+          publishedAt,
+          ...(commentId === undefined ? {} : { commentId }),
+        }),
+      ];
+    },
+    async reconcileIntent(input: { event: EventEnvelope }): Promise<EventEnvelope[]> {
+      const repo = input.event.sourceRefs.repo;
+      const issueNumber = input.event.sourceRefs.issueNumber;
+      if (repo === undefined || issueNumber === undefined) {
+        return [];
+      }
+      const [owner, repoName] = repo.split('/');
+      if (owner === undefined || repoName === undefined) {
+        return [];
+      }
+      const publishedAt = deps.now().toISOString();
+      if (input.event.sourceEventType === LABELS_REQUESTED_EVENT) {
+        const projection = await deps.stateStore.readIssueState(input.event.workItemKey);
+        const currentLabels = projection?.issue.labels ?? [];
+        const expected = [
+          input.event.payload.statusLabel,
+          input.event.payload.stageLabel,
+          input.event.payload.workflowLabel,
+          input.event.payload.frozenLabel,
+          input.event.payload.scheduledLabel,
+        ].filter((label): label is string => typeof label === 'string');
+        if (expected.every((label) => currentLabels.includes(label))) {
+          return [
+            createEventEnvelope({
+              eventId: `${input.event.eventId}-labels-updated`,
+              workItemKey: input.event.workItemKey,
+              streamScope: 'work-item',
+              direction: 'outbound',
+              sourceSystem: 'github',
+              sourceEventType: 'ticket.labels.updated',
+              sourceRefs: { repo, issueNumber },
+              occurredAt: publishedAt,
+              ingestedAt: publishedAt,
+              trigger: 'context-only',
+              payload: {
+                intentEventId: input.event.eventId,
+                idempotencyKey: input.event.payload.idempotencyKey,
+                deliveryState: 'CONFIRMED',
+                labels: currentLabels,
+                providerEventType: 'github.issue.labels.updated',
+              },
+            }),
+          ];
+        }
+        return [];
+      }
+
+      const marker = wakeIdempotencyMarker(input.event.payload.idempotencyKey);
+      if (marker === undefined) {
+        return [];
+      }
+      const comments = await deps.client.listComments(
+        owner,
+        repoName,
+        issueNumber,
+        deps.config.sources.github.polling.commentPageSize,
+      );
+      const existing = comments.find((comment) => (comment.body ?? '').includes(marker));
+      if (existing === undefined) {
+        return [];
+      }
+      return [
+        createIssueCommentPublishedEvent({
+          event: input.event,
+          repo,
+          issueNumber,
+          publishedAt,
+          commentId: String(existing.id),
+        }),
+      ];
+    },
+  };
+}

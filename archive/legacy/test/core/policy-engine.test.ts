@@ -1,0 +1,1209 @@
+import { describe, expect, it } from 'vitest';
+
+import { createDefaultWakeConfig } from '../../src/config/defaults.js';
+import { createPolicyEngine } from '../../src/core/policy-engine.js';
+import { parseIssueStateRecord } from '../../src/domain/schema.js';
+
+/**
+ * Identity is minted by the resolver and stamped on the projection; these
+ * fixtures only need a well-formed one, and the policy engine never reads it.
+ */
+const workId = 'work-01JZ0000000000000000000050';
+
+function buildAwaitingApprovalIssue(options: {
+  latestCommentBody?: string;
+  pendingApprovalAction?: string;
+}) {
+  return parseIssueStateRecord({
+    schemaVersion: 1,
+    workItemKey: workId,
+    issue: {
+      repo: 'atolis-hq/wake',
+      number: 50,
+      title: 'Example',
+      body: 'Body',
+      labels: [],
+      assignees: [],
+      isPullRequest: false,
+      state: 'open',
+      url: 'https://example.test/issues/50',
+      createdAt: '2026-07-06T00:00:00.000Z',
+      updatedAt: '2026-07-06T00:00:00.000Z',
+    },
+    comments:
+      options.latestCommentBody !== undefined
+        ? [
+            {
+              id: 'c-1',
+              body: options.latestCommentBody,
+              author: { login: 'owner' },
+              createdAt: '2026-07-06T01:00:00.000Z',
+              updatedAt: '2026-07-06T01:00:00.000Z',
+            },
+          ]
+        : [],
+    wake: {
+      stage: options.pendingApprovalAction === 'refine' ? 'refine' : 'implement',
+      syncedAt: '2026-07-06T00:00:00.000Z',
+      stageHistory: [],
+    },
+    context: {
+      lastRunSentinel: 'AWAITING_APPROVAL',
+      ...(options.pendingApprovalAction !== undefined
+        ? { pendingApprovalAction: options.pendingApprovalAction }
+        : {}),
+    },
+  });
+}
+
+function buildIssue(overrides: {
+  labels?: string[];
+  assignees?: string[];
+  isPullRequest?: boolean;
+}) {
+  return parseIssueStateRecord({
+    schemaVersion: 1,
+    workItemKey: workId,
+    issue: {
+      repo: 'atolis-hq/wake',
+      number: 1,
+      title: 'Example',
+      body: 'Body',
+      labels: overrides.labels ?? [],
+      assignees: overrides.assignees ?? [],
+      isPullRequest: overrides.isPullRequest ?? false,
+      state: 'open',
+      url: 'https://example.test/issues/1',
+      createdAt: '2026-07-06T00:00:00.000Z',
+      updatedAt: '2026-07-06T00:00:00.000Z',
+    },
+    wake: {
+      stage: 'queue',
+      syncedAt: '2026-07-06T00:00:00.000Z',
+      stageHistory: [],
+    },
+  });
+}
+
+function buildNeedsWakeActionIssue(overrides: {
+  updatedAt?: string;
+  latestCommentId?: string;
+  lastHandledCommentId?: string;
+  lastRunSentinel?: string;
+  lastFailureClass?: string;
+  lastRetrySafety?: string;
+  failureCount?: number;
+  lastCompletedAction?: string;
+  correlatedResources?: Array<{
+    resourceUri: string;
+    role:
+      'representation' | 'implementation' | 'discussion' | 'review' | 'documentation' | 'decision';
+    relation: 'primary' | 'secondary';
+    provenance: 'wake-created' | 'agent-reported' | 'detected' | 'operator-declared';
+    registeredAt: string;
+  }>;
+}) {
+  return parseIssueStateRecord({
+    schemaVersion: 1,
+    workItemKey: workId,
+    issue: {
+      repo: 'atolis-hq/wake',
+      number: 61,
+      title: 'Example',
+      body: 'Body',
+      labels: ['wake:implement'],
+      assignees: [],
+      isPullRequest: false,
+      state: 'open',
+      url: 'https://example.test/issues/61',
+      createdAt: '2026-07-06T00:00:00.000Z',
+      updatedAt: overrides.updatedAt ?? '2026-07-07T00:00:00.000Z',
+    },
+    comments:
+      overrides.latestCommentId === undefined
+        ? []
+        : [
+            {
+              id: overrides.latestCommentId,
+              body: 'Comment',
+              author: { login: 'owner' },
+              createdAt: '2026-07-06T01:00:00.000Z',
+              updatedAt: '2026-07-06T01:00:00.000Z',
+            },
+          ],
+    latestComment:
+      overrides.latestCommentId === undefined
+        ? undefined
+        : {
+            id: overrides.latestCommentId,
+            body: 'Comment',
+            author: { login: 'owner' },
+            createdAt: '2026-07-06T01:00:00.000Z',
+            updatedAt: '2026-07-06T01:00:00.000Z',
+          },
+    wake: {
+      stage: 'implement',
+      lastRunId: 'run-61-1',
+      syncedAt: '2026-07-07T00:00:00.000Z',
+      stageHistory: [],
+    },
+    context: {
+      ...(overrides.lastHandledCommentId === undefined
+        ? {}
+        : { lastHandledCommentId: overrides.lastHandledCommentId }),
+      ...(overrides.lastRunSentinel === undefined
+        ? {}
+        : { lastRunSentinel: overrides.lastRunSentinel }),
+      ...(overrides.lastFailureClass === undefined
+        ? {}
+        : { lastFailureClass: overrides.lastFailureClass }),
+      ...(overrides.lastRetrySafety === undefined
+        ? {}
+        : { lastRetrySafety: overrides.lastRetrySafety }),
+      ...(overrides.failureCount === undefined ? {} : { failureCount: overrides.failureCount }),
+      ...(overrides.lastCompletedAction === undefined
+        ? {}
+        : { lastCompletedAction: overrides.lastCompletedAction }),
+    },
+    correlatedResources: overrides.correlatedResources ?? [],
+  });
+}
+
+function buildBlockedOrFailedIssue(overrides: {
+  stage: string;
+  latestCommentId?: string;
+  latestCommentIsBotAuthored?: boolean;
+  lastHandledCommentId?: string;
+  lastRunAction?: string;
+  blockedFromStage?: string;
+  lastRunSentinel?: string;
+}) {
+  return parseIssueStateRecord({
+    schemaVersion: 1,
+    workItemKey: workId,
+    issue: {
+      repo: 'atolis-hq/wake',
+      number: 62,
+      title: 'Example',
+      body: 'Body',
+      labels: ['wake'],
+      assignees: [],
+      isPullRequest: false,
+      state: 'open',
+      url: 'https://example.test/issues/62',
+      createdAt: '2026-07-06T00:00:00.000Z',
+      updatedAt: '2026-07-07T00:00:00.000Z',
+    },
+    comments:
+      overrides.latestCommentId === undefined
+        ? []
+        : [
+            {
+              id: overrides.latestCommentId,
+              body: 'Here is the missing context.',
+              author: { login: overrides.latestCommentIsBotAuthored ? 'wake-bot' : 'owner' },
+              createdAt: '2026-07-06T01:00:00.000Z',
+              updatedAt: '2026-07-06T01:00:00.000Z',
+              isBotAuthored: overrides.latestCommentIsBotAuthored ?? false,
+            },
+          ],
+    wake: {
+      stage: overrides.stage,
+      lastRunId: 'run-62-1',
+      syncedAt: '2026-07-07T00:00:00.000Z',
+      stageHistory: [],
+    },
+    context: {
+      ...(overrides.lastHandledCommentId === undefined
+        ? {}
+        : { lastHandledCommentId: overrides.lastHandledCommentId }),
+      ...(overrides.lastRunAction === undefined ? {} : { lastRunAction: overrides.lastRunAction }),
+      ...(overrides.blockedFromStage === undefined
+        ? {}
+        : { blockedFromStage: overrides.blockedFromStage }),
+      ...(overrides.lastRunSentinel === undefined
+        ? {}
+        : { lastRunSentinel: overrides.lastRunSentinel }),
+    },
+  });
+}
+
+describe('policy engine: requiredAssignees', () => {
+  it('is ineligible when both requiredLabels and requiredAssignees are empty', () => {
+    const policy = createPolicyEngine();
+    const config = createDefaultWakeConfig('/tmp/wake-root');
+    const issue = buildIssue({ assignees: [] });
+
+    expect(policy.isEligible(issue, config)).toBe(false);
+  });
+
+  it('is eligible when issue is assigned to a listed login', () => {
+    const policy = createPolicyEngine();
+    const config = createDefaultWakeConfig('/tmp/wake-root');
+    config.sources.github.policy.requiredAssignees = ['octocat'];
+    const issue = buildIssue({ assignees: ['octocat'] });
+
+    expect(policy.isEligible(issue, config)).toBe(true);
+  });
+
+  it('is ineligible when issue has no assignees but requiredAssignees is set', () => {
+    const policy = createPolicyEngine();
+    const config = createDefaultWakeConfig('/tmp/wake-root');
+    config.sources.github.policy.requiredAssignees = ['octocat'];
+    const issue = buildIssue({ assignees: [] });
+
+    expect(policy.isEligible(issue, config)).toBe(false);
+  });
+
+  it('is ineligible when the work item is a pull request', () => {
+    // Defense-in-depth: the issues source now filters PR-shaped items at poll
+    // time (72b6f5f), so no NEW projection can ever have isPullRequest: true.
+    // But a pre-existing state/<workId>.json written by a pre-this-branch
+    // version of Wake could still hold isPullRequest: true — the old fold
+    // created projections regardless of eligibility. Without this guard, such
+    // stale on-disk state with matching labels would newly become eligible
+    // and get worked as if it were an issue.
+    const policy = createPolicyEngine();
+    const config = createDefaultWakeConfig('/tmp/wake-root');
+    config.sources.github.policy.requiredLabels = ['wake'];
+    const issue = buildIssue({ labels: ['wake'], isPullRequest: true });
+
+    expect(policy.isEligible(issue, config)).toBe(false);
+  });
+
+  it('is ineligible when issue is assigned to a non-listed login only', () => {
+    const policy = createPolicyEngine();
+    const config = createDefaultWakeConfig('/tmp/wake-root');
+    config.sources.github.policy.requiredAssignees = ['octocat'];
+    const issue = buildIssue({ assignees: ['someone-else'] });
+
+    expect(policy.isEligible(issue, config)).toBe(false);
+  });
+
+  it('is eligible when issue matches any one of multiple requiredAssignees (OR semantics)', () => {
+    const policy = createPolicyEngine();
+    const config = createDefaultWakeConfig('/tmp/wake-root');
+    config.sources.github.policy.requiredLabels = [];
+    config.sources.github.policy.requiredAssignees = ['octocat', 'other-user'];
+    const issue = parseIssueStateRecord({
+      schemaVersion: 1,
+      workItemKey: workId,
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 1,
+        title: 'Example',
+        body: 'Body',
+        labels: [],
+        assignees: ['other-user'],
+        isPullRequest: false,
+        state: 'open',
+        url: 'https://example.test/issues/1',
+        createdAt: '2026-07-06T00:00:00.000Z',
+        updatedAt: '2026-07-06T00:00:00.000Z',
+      },
+      wake: {
+        stage: 'queue',
+        syncedAt: '2026-07-06T00:00:00.000Z',
+        stageHistory: [],
+      },
+    });
+
+    expect(policy.isEligible(issue, config)).toBe(true);
+  });
+
+  it('combines requiredAssignees and requiredLabels with AND semantics', () => {
+    const policy = createPolicyEngine();
+    const config = createDefaultWakeConfig('/tmp/wake-root');
+    config.sources.github.policy.requiredAssignees = ['octocat'];
+    config.sources.github.policy.requiredLabels = ['wake'];
+
+    const matchesAssigneeOnly = buildIssue({ assignees: ['octocat'], labels: [] });
+    const matchesLabelOnly = buildIssue({ assignees: [], labels: ['wake'] });
+    const matchesBoth = buildIssue({ assignees: ['octocat'], labels: ['wake'] });
+
+    expect(policy.isEligible(matchesAssigneeOnly, config)).toBe(false);
+    expect(policy.isEligible(matchesLabelOnly, config)).toBe(false);
+    expect(policy.isEligible(matchesBoth, config)).toBe(true);
+  });
+
+  it('requires source policy compliance even when workflowSelectors are configured', () => {
+    const policy = createPolicyEngine();
+    const config = createDefaultWakeConfig('/tmp/wake-root');
+    config.sources.github.policy.requiredLabels = ['legacy-label'];
+    config.workflowSelectors = [
+      {
+        workflow: 'default',
+        match: {
+          kind: 'issue',
+          requiredLabels: ['bug'],
+          ignoredLabels: [],
+          requiredAssignees: [],
+          requiredAuthors: [],
+        },
+      },
+    ];
+    const issueFailingSourcePolicy = buildIssue({ labels: ['bug'] });
+
+    expect(policy.isEligible(issueFailingSourcePolicy, config)).toBe(false);
+    issueFailingSourcePolicy.context.workflow = 'default';
+    expect(policy.isEligible(issueFailingSourcePolicy, config)).toBe(false);
+
+    const issuePassingSourcePolicy = buildIssue({ labels: ['legacy-label', 'bug'] });
+    expect(policy.isEligible(issuePassingSourcePolicy, config)).toBe(false);
+    issuePassingSourcePolicy.context.workflow = 'default';
+    expect(policy.isEligible(issuePassingSourcePolicy, config)).toBe(true);
+  });
+});
+
+describe('policy engine: resolveApprovalTransition', () => {
+  it('returns null when issue is not awaiting approval', () => {
+    const policy = createPolicyEngine();
+    const issue = buildIssue({ labels: ['wake'] });
+    expect(policy.resolveApprovalTransition(issue)).toBeNull();
+  });
+
+  it('returns approved=true when latest human comment contains /approved', () => {
+    const policy = createPolicyEngine();
+    const issue = buildAwaitingApprovalIssue({
+      latestCommentBody: '/approved',
+      pendingApprovalAction: 'refine',
+    });
+    const resolution = policy.resolveApprovalTransition(issue);
+    expect(resolution?.approved).toBe(true);
+    expect(resolution?.pendingAction).toBe('refine');
+  });
+
+  it('returns approved=true when /approved is on its own line within a longer comment', () => {
+    const policy = createPolicyEngine();
+    const issue = buildAwaitingApprovalIssue({
+      latestCommentBody: 'Looks good!\n/approved',
+      pendingApprovalAction: 'implement',
+    });
+    const resolution = policy.resolveApprovalTransition(issue);
+    expect(resolution?.approved).toBe(true);
+    expect(resolution?.pendingAction).toBe('implement');
+  });
+
+  it('does not approve when /approved appears mid-line as a substring, not a command (S2)', () => {
+    const policy = createPolicyEngine();
+    const issue = buildAwaitingApprovalIssue({
+      latestCommentBody: 'I have *not* /approved this yet.',
+      pendingApprovalAction: 'implement',
+    });
+    expect(policy.resolveApprovalTransition(issue)).toBeNull();
+  });
+
+  it('returns approved=false when latest comment is an explicit /changes command (S2)', () => {
+    const policy = createPolicyEngine();
+    const issue = buildAwaitingApprovalIssue({
+      latestCommentBody: '/changes Can you change the approach?',
+      pendingApprovalAction: 'implement',
+    });
+    const resolution = policy.resolveApprovalTransition(issue);
+    expect(resolution?.approved).toBe(false);
+    expect(resolution?.pendingAction).toBe('implement');
+  });
+
+  it('flags changesRequested and threads the triggering comment for an explicit /changes command', () => {
+    const policy = createPolicyEngine();
+    const issue = buildAwaitingApprovalIssue({
+      latestCommentBody: '/changes Can you change the approach?',
+      pendingApprovalAction: 'implement',
+    });
+    const resolution = policy.resolveApprovalTransition(issue);
+    expect(resolution?.changesRequested).toBe(true);
+    expect(resolution?.triggeringCommentId).toBe('c-1');
+    expect(resolution?.triggeringCommentBody).toBe('/changes Can you change the approach?');
+  });
+
+  it('does not set changesRequested on an /approved resolution', () => {
+    const policy = createPolicyEngine();
+    const issue = buildAwaitingApprovalIssue({
+      latestCommentBody: '/approved',
+      pendingApprovalAction: 'implement',
+    });
+    const resolution = policy.resolveApprovalTransition(issue);
+    expect(resolution?.changesRequested).toBeUndefined();
+  });
+
+  it('does not treat a legacy question command as an approval-control command', () => {
+    const policy = createPolicyEngine();
+    const issue = buildAwaitingApprovalIssue({
+      latestCommentBody: '/quest' + 'ion What tradeoff did you make here?',
+      pendingApprovalAction: 'implement',
+    });
+    expect(policy.resolveApprovalTransition(issue)).toBeNull();
+  });
+
+  it('returns null (holds state) when the latest comment is conversation, not a command (S2)', () => {
+    const policy = createPolicyEngine();
+    const issue = buildAwaitingApprovalIssue({
+      latestCommentBody: 'Can you explain the approach?',
+      pendingApprovalAction: 'implement',
+    });
+    expect(policy.resolveApprovalTransition(issue)).toBeNull();
+  });
+
+  it('returns null when there are no human comments', () => {
+    const policy = createPolicyEngine();
+    const issue = buildAwaitingApprovalIssue({});
+    expect(policy.resolveApprovalTransition(issue)).toBeNull();
+  });
+
+  it('does not infer a pending approval action when legacy state omitted it', () => {
+    const policy = createPolicyEngine();
+    const issue = buildAwaitingApprovalIssue({
+      latestCommentBody: '/approved',
+    });
+
+    expect(policy.resolveApprovalTransition(issue)).toBeNull();
+  });
+
+  it('treats a bot-authored pr-review approval marker on a PR surface as approval', () => {
+    const policy = createPolicyEngine();
+    const issue = parseIssueStateRecord({
+      schemaVersion: 1,
+      workItemKey: workId,
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 50,
+        title: 'Example',
+        body: 'Body',
+        labels: [],
+        assignees: [],
+        isPullRequest: false,
+        state: 'open',
+        url: 'https://example.test/issues/50',
+        createdAt: '2026-07-06T00:00:00.000Z',
+        updatedAt: '2026-07-06T00:00:00.000Z',
+      },
+      comments: [
+        {
+          id: 'pr-900',
+          body: 'Safe to merge.\n\n<!-- wake:pr-review-approved -->',
+          author: { login: 'wake-bot' },
+          createdAt: '2026-07-06T01:00:00.000Z',
+          updatedAt: '2026-07-06T01:00:00.000Z',
+          isBotAuthored: true,
+          resourceUri: 'github:pr:atolis-hq/wake#51',
+        },
+      ],
+      wake: {
+        stage: 'implement',
+        syncedAt: '2026-07-06T00:00:00.000Z',
+        stageHistory: [],
+      },
+      context: {
+        lastRunSentinel: 'AWAITING_APPROVAL',
+        pendingApprovalAction: 'implement',
+      },
+    });
+
+    expect(policy.resolveApprovalTransition(issue)).toEqual({
+      approved: true,
+      pendingAction: 'implement',
+      targetResourceUri: 'github:pr:atolis-hq/wake#51',
+      triggeringCommentId: 'pr-900',
+      triggeringCommentBody: 'Safe to merge.\n\n<!-- wake:pr-review-approved -->',
+    });
+  });
+
+  it('returns null when the latest human comment was already handled', () => {
+    const policy = createPolicyEngine();
+    const issue = parseIssueStateRecord({
+      schemaVersion: 1,
+      workItemKey: workId,
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 50,
+        title: 'Example',
+        body: 'Body',
+        labels: [],
+        assignees: [],
+        isPullRequest: false,
+        state: 'open',
+        url: 'https://example.test/issues/50',
+        createdAt: '2026-07-06T00:00:00.000Z',
+        updatedAt: '2026-07-07T00:00:00.000Z',
+      },
+      comments: [
+        {
+          id: 'c-1',
+          body: 'Please start the implementation.',
+          author: { login: 'owner' },
+          createdAt: '2026-07-06T01:00:00.000Z',
+          updatedAt: '2026-07-06T01:00:00.000Z',
+        },
+      ],
+      wake: {
+        stage: 'implement',
+        syncedAt: '2026-07-07T00:00:00.000Z',
+        stageHistory: [],
+      },
+      context: {
+        lastRunSentinel: 'AWAITING_APPROVAL',
+        pendingApprovalAction: 'implement',
+        lastHandledCommentId: 'c-1',
+      },
+    });
+    expect(policy.resolveApprovalTransition(issue)).toBeNull();
+  });
+
+  it('ignores a /approved comment that predates the last bot comment', () => {
+    const policy = createPolicyEngine();
+    const issue = parseIssueStateRecord({
+      schemaVersion: 1,
+      workItemKey: workId,
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 50,
+        title: 'Example',
+        body: 'Body',
+        labels: [],
+        assignees: [],
+        isPullRequest: false,
+        state: 'open',
+        url: 'https://example.test/issues/50',
+        createdAt: '2026-07-06T00:00:00.000Z',
+        updatedAt: '2026-07-07T00:00:00.000Z',
+      },
+      comments: [
+        {
+          id: 'c-human-approved',
+          body: '/approved',
+          author: { login: 'owner' },
+          createdAt: '2026-07-06T01:00:00.000Z',
+          updatedAt: '2026-07-06T01:00:00.000Z',
+          isBotAuthored: false,
+        },
+        {
+          id: 'c-bot-approval-request',
+          body: 'Implementation PR is open. Wake is awaiting your approval.',
+          author: { login: 'wake-bot' },
+          createdAt: '2026-07-06T02:00:00.000Z',
+          updatedAt: '2026-07-06T02:00:00.000Z',
+          isBotAuthored: true,
+        },
+      ],
+      wake: {
+        stage: 'implement',
+        syncedAt: '2026-07-07T00:00:00.000Z',
+        stageHistory: [],
+      },
+      context: {
+        lastRunSentinel: 'AWAITING_APPROVAL',
+        pendingApprovalAction: 'implement',
+      },
+    });
+    expect(policy.resolveApprovalTransition(issue)).toBeNull();
+  });
+
+  it('accepts a /approved comment that follows the last bot comment', () => {
+    const policy = createPolicyEngine();
+    const issue = parseIssueStateRecord({
+      schemaVersion: 1,
+      workItemKey: workId,
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 50,
+        title: 'Example',
+        body: 'Body',
+        labels: [],
+        assignees: [],
+        isPullRequest: false,
+        state: 'open',
+        url: 'https://example.test/issues/50',
+        createdAt: '2026-07-06T00:00:00.000Z',
+        updatedAt: '2026-07-07T00:00:00.000Z',
+      },
+      comments: [
+        {
+          id: 'c-bot-approval-request',
+          body: 'Implementation PR is open. Wake is awaiting your approval.',
+          author: { login: 'wake-bot' },
+          createdAt: '2026-07-06T02:00:00.000Z',
+          updatedAt: '2026-07-06T02:00:00.000Z',
+          isBotAuthored: true,
+        },
+        {
+          id: 'c-human-approved',
+          body: '/approved',
+          author: { login: 'owner' },
+          createdAt: '2026-07-06T03:00:00.000Z',
+          updatedAt: '2026-07-06T03:00:00.000Z',
+          isBotAuthored: false,
+        },
+      ],
+      wake: {
+        stage: 'implement',
+        syncedAt: '2026-07-07T00:00:00.000Z',
+        stageHistory: [],
+      },
+      context: {
+        lastRunSentinel: 'AWAITING_APPROVAL',
+        pendingApprovalAction: 'implement',
+      },
+    });
+    const resolution = policy.resolveApprovalTransition(issue);
+    expect(resolution?.approved).toBe(true);
+  });
+});
+
+describe('policy engine: resolveChangesRequestedAction', () => {
+  it('returns null when issue is not awaiting approval', () => {
+    const policy = createPolicyEngine();
+    const issue = buildIssue({ labels: ['wake'] });
+    expect(policy.resolveChangesRequestedAction(issue)).toBeNull();
+  });
+
+  it('returns null when status is not changes-requested', () => {
+    const policy = createPolicyEngine();
+    const issue = buildAwaitingApprovalIssue({ pendingApprovalAction: 'implement' });
+    expect(policy.resolveChangesRequestedAction(issue)).toBeNull();
+  });
+
+  it('returns the stored pendingApprovalAction with no fresh comment required, once status is changes-requested', () => {
+    const policy = createPolicyEngine();
+    const issue = parseIssueStateRecord({
+      schemaVersion: 1,
+      workItemKey: workId,
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 50,
+        title: 'Example',
+        body: 'Body',
+        labels: [],
+        assignees: [],
+        isPullRequest: false,
+        state: 'open',
+        url: 'https://example.test/issues/50',
+        createdAt: '2026-07-06T00:00:00.000Z',
+        updatedAt: '2026-07-06T00:00:00.000Z',
+      },
+      comments: [],
+      wake: {
+        stage: 'refine',
+        syncedAt: '2026-07-06T00:00:00.000Z',
+        stageHistory: [],
+      },
+      context: {
+        lastRunSentinel: 'AWAITING_APPROVAL',
+        pendingApprovalAction: 'refine',
+        status: 'changes-requested',
+        changesRequestedCount: 1,
+      },
+    });
+    expect(policy.resolveChangesRequestedAction(issue)).toBe('refine');
+  });
+
+  it('returns null once escalated to blocked (bounding already applied at fold time)', () => {
+    const policy = createPolicyEngine();
+    const issue = parseIssueStateRecord({
+      schemaVersion: 1,
+      workItemKey: workId,
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 50,
+        title: 'Example',
+        body: 'Body',
+        labels: [],
+        assignees: [],
+        isPullRequest: false,
+        state: 'open',
+        url: 'https://example.test/issues/50',
+        createdAt: '2026-07-06T00:00:00.000Z',
+        updatedAt: '2026-07-06T00:00:00.000Z',
+      },
+      comments: [],
+      wake: {
+        stage: 'refine',
+        syncedAt: '2026-07-06T00:00:00.000Z',
+        stageHistory: [],
+      },
+      context: {
+        lastRunSentinel: 'AWAITING_APPROVAL',
+        pendingApprovalAction: 'refine',
+        status: 'blocked',
+        changesRequestedCount: 6,
+      },
+    });
+    expect(policy.resolveChangesRequestedAction(issue)).toBeNull();
+  });
+});
+
+describe('policy engine: resolvePendingReviewFeedback', () => {
+  it('returns null when issue is not awaiting approval', () => {
+    const policy = createPolicyEngine();
+    const issue = buildIssue({ labels: ['wake'] });
+    expect(policy.resolvePendingReviewFeedback(issue)).toBeNull();
+  });
+
+  it('returns null when the latest unhandled comment has no resourceUri (issue thread, not a PR surface)', () => {
+    const policy = createPolicyEngine();
+    const issue = buildAwaitingApprovalIssue({
+      latestCommentBody: 'Looks reasonable to me.',
+      pendingApprovalAction: 'implement',
+    });
+    expect(policy.resolvePendingReviewFeedback(issue)).toBeNull();
+  });
+
+  it('returns "revise" when the latest unhandled comment came from a correlated PR surface, even without a pendingApprovalAction (legacy state)', () => {
+    const policy = createPolicyEngine();
+    const issue = parseIssueStateRecord({
+      schemaVersion: 1,
+      workItemKey: workId,
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 50,
+        title: 'Example',
+        body: 'Body',
+        labels: [],
+        assignees: [],
+        isPullRequest: false,
+        state: 'open',
+        url: 'https://example.test/issues/50',
+        createdAt: '2026-07-06T00:00:00.000Z',
+        updatedAt: '2026-07-06T00:00:00.000Z',
+      },
+      comments: [
+        {
+          id: 'pr-review-comment-501',
+          body: 'Rename "item" to "work item"',
+          author: { login: 'reviewer' },
+          createdAt: '2026-07-06T01:00:00.000Z',
+          updatedAt: '2026-07-06T01:00:00.000Z',
+          isBotAuthored: false,
+          resourceUri: 'github:pr-review-thread:atolis-hq/wake#51/rt_501',
+          reviewThread: { path: 'docs/example.md', line: 3 },
+        },
+      ],
+      wake: {
+        stage: 'implement',
+        syncedAt: '2026-07-06T00:00:00.000Z',
+        stageHistory: [],
+      },
+      context: {
+        lastRunSentinel: 'AWAITING_APPROVAL',
+      },
+    });
+
+    expect(policy.resolvePendingReviewFeedback(issue)).toBe('revise');
+  });
+
+  it('returns null when the latest PR-sourced comment was already handled', () => {
+    const policy = createPolicyEngine();
+    const issue = parseIssueStateRecord({
+      schemaVersion: 1,
+      workItemKey: workId,
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 50,
+        title: 'Example',
+        body: 'Body',
+        labels: [],
+        assignees: [],
+        isPullRequest: false,
+        state: 'open',
+        url: 'https://example.test/issues/50',
+        createdAt: '2026-07-06T00:00:00.000Z',
+        updatedAt: '2026-07-06T00:00:00.000Z',
+      },
+      comments: [
+        {
+          id: 'pr-review-comment-501',
+          body: 'Rename "item" to "work item"',
+          author: { login: 'reviewer' },
+          createdAt: '2026-07-06T01:00:00.000Z',
+          updatedAt: '2026-07-06T01:00:00.000Z',
+          isBotAuthored: false,
+          resourceUri: 'github:pr-review-thread:atolis-hq/wake#51/rt_501',
+        },
+      ],
+      wake: {
+        stage: 'implement',
+        syncedAt: '2026-07-06T00:00:00.000Z',
+        stageHistory: [],
+      },
+      context: {
+        lastRunSentinel: 'AWAITING_APPROVAL',
+        lastHandledCommentId: 'pr-review-comment-501',
+      },
+    });
+
+    expect(policy.resolvePendingReviewFeedback(issue)).toBeNull();
+  });
+
+  it('routes a bot-authored pr-review changes marker on a PR surface to revise', () => {
+    const policy = createPolicyEngine();
+    const issue = parseIssueStateRecord({
+      schemaVersion: 1,
+      workItemKey: workId,
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 50,
+        title: 'Example',
+        body: 'Body',
+        labels: [],
+        assignees: [],
+        isPullRequest: false,
+        state: 'open',
+        url: 'https://example.test/issues/50',
+        createdAt: '2026-07-06T00:00:00.000Z',
+        updatedAt: '2026-07-06T00:00:00.000Z',
+      },
+      comments: [
+        {
+          id: 'pr-901',
+          body: 'Please fix the failing path.\n\n<!-- wake:pr-review-changes-requested -->',
+          author: { login: 'wake-bot' },
+          createdAt: '2026-07-06T01:00:00.000Z',
+          updatedAt: '2026-07-06T01:00:00.000Z',
+          isBotAuthored: true,
+          resourceUri: 'github:pr:atolis-hq/wake#51',
+        },
+      ],
+      wake: {
+        stage: 'implement',
+        syncedAt: '2026-07-06T00:00:00.000Z',
+        stageHistory: [],
+      },
+      context: {
+        lastRunSentinel: 'AWAITING_APPROVAL',
+      },
+    });
+
+    expect(policy.resolvePendingReviewFeedback(issue)).toBe('revise');
+  });
+});
+
+describe('policy engine: needsWakeAction', () => {
+  it('ignores updatedAt-only changes while waiting for a human reply after a failed run', () => {
+    const policy = createPolicyEngine();
+    const issue = buildNeedsWakeActionIssue({
+      updatedAt: '2026-07-07T00:05:00.000Z',
+      lastRunSentinel: 'FAILED',
+    });
+
+    expect(policy.needsWakeAction(issue)).toBe(false);
+  });
+
+  it('still wakes up when a new human comment arrives after a failed run', () => {
+    const policy = createPolicyEngine();
+    const issue = buildNeedsWakeActionIssue({
+      updatedAt: '2026-07-07T00:05:00.000Z',
+      latestCommentId: 'c-2',
+      lastHandledCommentId: 'c-1',
+      lastRunSentinel: 'FAILED',
+    });
+
+    expect(policy.needsWakeAction(issue)).toBe(true);
+  });
+
+  it('does not let an unhandled human comment bypass the configured failure retry limit', () => {
+    const policy = createPolicyEngine();
+    const config = createDefaultWakeConfig('/tmp/wake-root');
+    config.retry.maxFailureRetries = 3;
+    const issue = buildNeedsWakeActionIssue({
+      updatedAt: '2026-07-07T00:05:00.000Z',
+      latestCommentId: 'c-2',
+      lastHandledCommentId: 'c-1',
+      lastRunSentinel: 'FAILED',
+      failureCount: 3,
+    });
+
+    expect(policy.needsWakeAction(issue, undefined, config)).toBe(false);
+  });
+
+  it('continues to implement after refine completed without relying on updatedAt churn', () => {
+    const policy = createPolicyEngine();
+    const issue = buildNeedsWakeActionIssue({
+      lastRunSentinel: 'DONE',
+      lastCompletedAction: 'refine',
+    });
+
+    expect(policy.needsWakeAction(issue)).toBe(true);
+  });
+
+  it('does not repeat implement when the refined stage action is already complete', () => {
+    const policy = createPolicyEngine();
+    const issue = buildNeedsWakeActionIssue({
+      lastRunSentinel: 'DONE',
+      lastCompletedAction: 'implement',
+    });
+
+    expect(policy.needsWakeAction(issue)).toBe(false);
+  });
+
+  it('does not wake an implement-stage item only because it is awaiting approval', () => {
+    const policy = createPolicyEngine();
+    const issue = buildNeedsWakeActionIssue({
+      lastRunSentinel: 'AWAITING_APPROVAL',
+    });
+
+    expect(policy.needsWakeAction(issue)).toBe(false);
+  });
+
+  it('retries quota failures below the configured failure retry limit', () => {
+    const policy = createPolicyEngine();
+    const config = createDefaultWakeConfig('/tmp/wake-root');
+    config.retry.maxFailureRetries = 3;
+    const issue = buildNeedsWakeActionIssue({
+      lastRunSentinel: 'FAILED',
+      lastFailureClass: 'quota',
+      lastRetrySafety: 'SAFE_TO_RETRY',
+      failureCount: 2,
+    });
+
+    expect(policy.needsWakeAction(issue, undefined, config)).toBe(true);
+  });
+
+  it('stops retrying quota failures at the configured failure retry limit', () => {
+    const policy = createPolicyEngine();
+    const config = createDefaultWakeConfig('/tmp/wake-root');
+    config.retry.maxFailureRetries = 3;
+    const issue = buildNeedsWakeActionIssue({
+      lastRunSentinel: 'FAILED',
+      lastFailureClass: 'quota',
+      lastRetrySafety: 'SAFE_TO_RETRY',
+      failureCount: 3,
+    });
+
+    expect(policy.needsWakeAction(issue, undefined, config)).toBe(false);
+  });
+
+  it('retries a failed run only when retry safety says pre-side-effect retry is safe', () => {
+    const policy = createPolicyEngine();
+    const config = createDefaultWakeConfig('/tmp/wake-root');
+    config.retry.maxFailureRetries = 3;
+    const issue = buildNeedsWakeActionIssue({
+      lastRunSentinel: 'FAILED',
+      lastFailureClass: 'infra',
+      lastRetrySafety: 'SAFE_TO_RETRY',
+      failureCount: 1,
+    });
+
+    expect(policy.needsWakeAction(issue, undefined, config)).toBe(true);
+  });
+
+  it('does not blindly retry a failed run after a PR side effect requires reconciliation', () => {
+    const policy = createPolicyEngine();
+    const config = createDefaultWakeConfig('/tmp/wake-root');
+    config.retry.maxFailureRetries = 3;
+    const issue = buildNeedsWakeActionIssue({
+      lastRunSentinel: 'FAILED',
+      lastFailureClass: 'infra',
+      lastRetrySafety: 'REQUIRES_RECONCILIATION',
+      failureCount: 1,
+      correlatedResources: [
+        {
+          resourceUri: 'github:pr:atolis-hq/wake#357',
+          role: 'implementation',
+          relation: 'primary',
+          provenance: 'agent-reported',
+          registeredAt: '2026-07-06T01:00:00.000Z',
+        },
+      ],
+    });
+
+    expect(policy.needsWakeAction(issue, undefined, config)).toBe(false);
+  });
+});
+
+describe('policy engine: resolveCustomCommandRequest', () => {
+  it('returns the built-in ask action for an unhandled /ask command', () => {
+    const policy = createPolicyEngine();
+    const config = createDefaultWakeConfig();
+    const issue = buildNeedsWakeActionIssue({
+      latestCommentId: 'c-2',
+      lastHandledCommentId: 'c-1',
+      lastRunSentinel: 'AWAITING_APPROVAL',
+    });
+    issue.latestComment!.body = '/ask What changed in the implementation?';
+    issue.comments[0]!.body = '/ask What changed in the implementation?';
+
+    expect(policy.resolveCustomCommandRequest(issue, config)).toMatchObject({
+      action: 'ask',
+      command: 'ask',
+      workspace: 'read-only',
+    });
+  });
+
+  it('returns the configured action for an unhandled custom command', () => {
+    const policy = createPolicyEngine();
+    const config = createDefaultWakeConfig();
+    config.commands.inspect = {
+      action: 'codereview',
+      workspace: 'read-only',
+      runnerPool: 'standard',
+    };
+    const issue = buildNeedsWakeActionIssue({
+      latestCommentId: 'c-2',
+      lastHandledCommentId: 'c-1',
+      lastRunSentinel: 'AWAITING_APPROVAL',
+    });
+    issue.latestComment!.body = '/inspect check just the data layer';
+    issue.comments[0]!.body = '/inspect check just the data layer';
+
+    expect(policy.resolveCustomCommandRequest(issue, config)?.action).toBe('codereview');
+    expect(policy.resolveCustomCommandRequest(issue, config)?.command).toBe('inspect');
+  });
+
+  it('ignores already handled custom commands and inline mentions', () => {
+    const policy = createPolicyEngine();
+    const config = createDefaultWakeConfig();
+    const handled = buildNeedsWakeActionIssue({
+      latestCommentId: 'c-2',
+      lastHandledCommentId: 'c-2',
+      lastRunSentinel: 'AWAITING_APPROVAL',
+    });
+    handled.latestComment!.body = '/codereview';
+    handled.comments[0]!.body = '/codereview';
+
+    const inline = buildNeedsWakeActionIssue({
+      latestCommentId: 'c-3',
+      lastHandledCommentId: 'c-2',
+      lastRunSentinel: 'AWAITING_APPROVAL',
+    });
+    inline.latestComment!.body = 'Could you run /codereview on this?';
+    inline.comments[0]!.body = 'Could you run /codereview on this?';
+
+    expect(policy.resolveCustomCommandRequest(handled, config)).toBeNull();
+    expect(policy.resolveCustomCommandRequest(inline, config)).toBeNull();
+  });
+});
+
+describe('policy engine: chooseRetryActionAfterHumanReply', () => {
+  it('retries the blocked-from stage action for a blocked issue with an unhandled human reply', () => {
+    const policy = createPolicyEngine();
+    const issue = buildBlockedOrFailedIssue({
+      stage: 'implement',
+      latestCommentId: 'c-2',
+      lastHandledCommentId: 'c-1',
+      blockedFromStage: 'implement',
+      lastRunSentinel: 'BLOCKED',
+    });
+
+    expect(policy.chooseRetryActionAfterHumanReply(issue)).toBe('implement');
+  });
+
+  it('retries the blocked-from stage action for a failed issue with an unhandled human reply', () => {
+    const policy = createPolicyEngine();
+    const issue = buildBlockedOrFailedIssue({
+      stage: 'refine',
+      latestCommentId: 'c-2',
+      lastHandledCommentId: 'c-1',
+      blockedFromStage: 'refine',
+    });
+    issue.context.lastRunSentinel = 'FAILED';
+
+    expect(policy.chooseRetryActionAfterHumanReply(issue)).toBe('refine');
+  });
+
+  it('retries a quota-failed action after the control-plane pause expires without a human reply', () => {
+    const policy = createPolicyEngine();
+    const config = createDefaultWakeConfig('/tmp/wake-root');
+    const issue = buildBlockedOrFailedIssue({
+      stage: 'refine',
+      lastRunAction: 'refine',
+    });
+    issue.context.lastRunSentinel = 'FAILED';
+    issue.context.lastFailureClass = 'quota';
+    issue.context.lastRetrySafety = 'SAFE_TO_RETRY';
+
+    expect(policy.needsWakeAction(issue, undefined, config)).toBe(true);
+    expect(policy.chooseRetryActionAfterHumanReply(issue)).toBe('refine');
+  });
+
+  it('does not retry when the latest human reply was already handled', () => {
+    const policy = createPolicyEngine();
+    const issue = buildBlockedOrFailedIssue({
+      stage: 'implement',
+      latestCommentId: 'c-1',
+      lastHandledCommentId: 'c-1',
+      blockedFromStage: 'implement',
+      lastRunSentinel: 'BLOCKED',
+    });
+
+    expect(policy.chooseRetryActionAfterHumanReply(issue)).toBeNull();
+  });
+
+  it('does not retry for bot comments or runs that did not fail or block', () => {
+    const policy = createPolicyEngine();
+    const botReply = buildBlockedOrFailedIssue({
+      stage: 'implement',
+      latestCommentId: 'c-2',
+      latestCommentIsBotAuthored: true,
+      blockedFromStage: 'implement',
+      lastRunSentinel: 'BLOCKED',
+    });
+    const queued = buildBlockedOrFailedIssue({
+      stage: 'queue',
+      latestCommentId: 'c-2',
+      blockedFromStage: 'queue',
+    });
+
+    expect(policy.chooseRetryActionAfterHumanReply(botReply)).toBeNull();
+    expect(policy.chooseRetryActionAfterHumanReply(queued)).toBeNull();
+  });
+
+  it('maps blockedFromStage through the selected workflow stage action', () => {
+    const policy = createPolicyEngine();
+    const issue = buildBlockedOrFailedIssue({
+      stage: 'qa',
+      latestCommentId: 'c-2',
+      lastHandledCommentId: 'c-1',
+      blockedFromStage: 'qa',
+      lastRunSentinel: 'BLOCKED',
+    });
+
+    expect(
+      policy.chooseRetryActionAfterHumanReply(issue, {
+        stages: {
+          qa: {
+            action: 'verify',
+            workspace: 'read-only',
+            runnerPool: 'light',
+            onDone: 'done',
+          },
+        },
+      }),
+    ).toBe('verify');
+  });
+});
+
+describe('policy engine: resolveNextEligibleAction', () => {
+  it('resolves the next action for an eligible issue with a fresh human comment', () => {
+    const policy = createPolicyEngine();
+    const config = createDefaultWakeConfig('/tmp/wake-root');
+    config.sources.github.policy.requiredLabels = ['wake:implement'];
+    const issue = buildNeedsWakeActionIssue({ latestCommentId: 'c-2' });
+
+    const resolution = policy.resolveNextEligibleAction(issue, config);
+
+    expect(resolution).not.toBeNull();
+    expect(resolution?.action).toBe('implement');
+    expect(resolution?.workflow).toBeDefined();
+  });
+
+  it('returns null when the issue is not eligible', () => {
+    const policy = createPolicyEngine();
+    const config = createDefaultWakeConfig('/tmp/wake-root');
+    config.sources.github.policy.requiredLabels = ['some-other-label'];
+    const issue = buildNeedsWakeActionIssue({ latestCommentId: 'c-2' });
+
+    expect(policy.resolveNextEligibleAction(issue, config)).toBeNull();
+  });
+
+  it('returns null for an awaiting-approval issue whose latest comment is not a decision', () => {
+    const policy = createPolicyEngine();
+    const config = createDefaultWakeConfig('/tmp/wake-root');
+    config.sources.github.policy.requiredAssignees = ['owner'];
+    const issue = buildAwaitingApprovalIssue({
+      latestCommentBody: 'just thinking out loud',
+      pendingApprovalAction: 'implement',
+    });
+    issue.issue.assignees = ['owner'];
+
+    expect(policy.resolveNextEligibleAction(issue, config)).toBeNull();
+  });
+});

@@ -1,0 +1,1238 @@
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { describe, expect, it } from 'vitest';
+
+import {
+  CORRELATION_PRIMARY_CONFLICT_EVENT,
+  CORRELATION_REGISTERED_EVENT,
+  CORRELATION_RETRACTED_EVENT,
+  WORK_ITEM_CREATED_EVENT,
+  correlationPrimaryConflictPayloadSchema,
+  correlationRegisteredPayloadSchema,
+  correlationRetractedPayloadSchema,
+  eventEnvelopeSchema,
+  eventEnvelopeSourceRefsSchema,
+  parseEventEnvelope,
+  parseIssueStateRecord,
+  parseRunRecord,
+  parseRunnerArtifacts,
+  parseRunnerResult,
+  parseRunnerResultSentinel,
+  parseSourceStateRecord,
+  parseWakeConfig,
+  workItemCreatedPayloadSchema,
+} from '../../src/domain/schema.js';
+import type { WakeDevConfig, WakeSandboxConfig } from '../../src/domain/types.js';
+
+describe('issue state schema', () => {
+  it('accepts canonical issue and comment fields plus known typed context fields', () => {
+    const record = parseIssueStateRecord({
+      schemaVersion: 1,
+      workItemKey: 'work-01JZ0000000000000000000012',
+      origin: 'github',
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 12,
+        title: 'Example',
+        body: 'Body',
+        labels: ['wake:queue'],
+        assignees: [],
+        isPullRequest: false,
+        state: 'open',
+        url: 'https://example.test/issues/12',
+        createdAt: '2026-07-05T12:00:00.000Z',
+        updatedAt: '2026-07-05T12:00:00.000Z',
+      },
+      comments: [
+        {
+          id: 'c1',
+          body: 'Need more detail',
+          author: { login: 'shared-user' },
+          createdAt: '2026-07-05T12:00:00.000Z',
+          updatedAt: '2026-07-05T12:00:00.000Z',
+        },
+      ],
+      wake: {
+        stage: 'queue',
+        stageHistory: [],
+        syncedAt: '2026-07-05T12:00:00.000Z',
+      },
+      context: {
+        status: 'awaiting-approval',
+      },
+    });
+
+    expect(record.context.status).toBe('awaiting-approval');
+    expect(record.wake.expectedEcho).toEqual({ commentIds: [], labels: [] });
+    expect(record.issue.isPullRequest).toBe(false);
+    // The key is taken verbatim: nothing derives, namespaces, or rewrites it.
+    expect(record.workItemKey).toBe('work-01JZ0000000000000000000012');
+  });
+
+  it('silently strips an unknown context key instead of erroring (the typed schema catches typos on read, not by throwing on write)', () => {
+    const record = parseIssueStateRecord({
+      schemaVersion: 1,
+      workItemKey: 'work-01JZ0000000000000000000013',
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 13,
+        title: 'Example',
+        body: 'Body',
+        labels: ['wake:queue'],
+        assignees: [],
+        isPullRequest: false,
+        state: 'open',
+        url: 'https://example.test/issues/13',
+        createdAt: '2026-07-05T12:00:00.000Z',
+        updatedAt: '2026-07-05T12:00:00.000Z',
+      },
+      comments: [],
+      wake: {
+        stage: 'queue',
+        stageHistory: [],
+        syncedAt: '2026-07-05T12:00:00.000Z',
+      },
+      context: {
+        status: 'queued',
+        agentBrief: 'a typo or a field nobody wired into the schema yet',
+      },
+    });
+
+    expect(record.context.status).toBe('queued');
+    expect((record.context as Record<string, unknown>).agentBrief).toBeUndefined();
+  });
+
+  it('requires an explicit workItemKey rather than deriving one from the issue', () => {
+    // Identity is minted by the resolver and stamped on the record; a
+    // projection that arrives without one is a bug, not a record to guess a
+    // key for (spec §1/D1).
+    expect(() =>
+      parseIssueStateRecord({
+        schemaVersion: 1,
+        issue: {
+          repo: 'atolis-hq/wake',
+          number: 12,
+          title: 'Example',
+          body: 'Body',
+          labels: [],
+          assignees: [],
+          isPullRequest: false,
+          state: 'open',
+          url: 'https://example.test/issues/12',
+          createdAt: '2026-07-05T12:00:00.000Z',
+          updatedAt: '2026-07-05T12:00:00.000Z',
+        },
+        wake: {
+          stage: 'queue',
+          stageHistory: [],
+          syncedAt: '2026-07-05T12:00:00.000Z',
+        },
+      }),
+    ).toThrow(/workItemKey/);
+  });
+
+  it('accepts an explicit pull-request discriminator on canonical issues', () => {
+    const record = parseIssueStateRecord({
+      schemaVersion: 1,
+      workItemKey: 'work-01JZ0000000000000000000014',
+      issue: {
+        repo: 'atolis-hq/wake',
+        number: 14,
+        title: 'Example PR',
+        body: 'Body',
+        labels: ['wake:queue'],
+        assignees: [],
+        isPullRequest: true,
+        state: 'open',
+        url: 'https://example.test/pull/14',
+        createdAt: '2026-07-05T12:00:00.000Z',
+        updatedAt: '2026-07-05T12:00:00.000Z',
+      },
+      wake: {
+        stage: 'queue',
+        stageHistory: [],
+        syncedAt: '2026-07-05T12:00:00.000Z',
+      },
+    });
+
+    expect(record.issue.isPullRequest).toBe(true);
+  });
+
+  it('rejects missing canonical wake stage', () => {
+    expect(() =>
+      parseIssueStateRecord({
+        schemaVersion: 1,
+        issue: {},
+        comments: [],
+        wake: {},
+      }),
+    ).toThrow(/stage/i);
+  });
+
+  // The legacy-stage normalization tests ('refined'/'failed'/'blocked' →
+  // canonical stages) are gone with the .preprocess() that implemented them.
+  // The sanctioned fresh start of .wake/ means there is no event log or
+  // projection written under the old vocabulary left to read (spec §8).
+});
+
+describe('run and event schemas', () => {
+  it('exports an explicit sandbox config helper type', () => {
+    // Bidirectional assignability is equivalent to structural type equality and is
+    // more robust than toEqualTypeOf across TypeScript major versions.
+    type ExpectedSandboxConfig = {
+      image: string;
+      imageRepository: string;
+      containerName: string;
+      containerMountPath: string;
+      containerHomeMountPath: string;
+      start: { enabled: boolean };
+      extraMounts: Array<{ source: string; target: string; readOnly?: boolean | undefined }>;
+    };
+    const _a: ExpectedSandboxConfig = {} as WakeSandboxConfig;
+    const _b: WakeSandboxConfig = {} as ExpectedSandboxConfig;
+    void _a;
+    void _b;
+  });
+
+  it('exports an explicit local-development config helper type', () => {
+    type ExpectedDevConfig = {
+      repoRoot?: string | undefined;
+      mode?: 'source' | 'packaged' | undefined;
+    };
+    const _a: ExpectedDevConfig = {} as WakeDevConfig;
+    const _b: WakeDevConfig = {} as ExpectedDevConfig;
+    void _a;
+    void _b;
+  });
+
+  it('accepts running run records', () => {
+    const run = parseRunRecord({
+      schemaVersion: 1,
+      runId: 'run-1',
+      workItemKey: 'work-01JZ0000000000000000000012',
+      repo: 'atolis-hq/wake',
+      issueNumber: 12,
+      action: 'refine',
+      status: 'running',
+      startedAt: '2026-07-05T12:00:00.000Z',
+    });
+
+    expect(run.status).toBe('running');
+    expect(run.lifecycle).toBe('RUNNING');
+    expect(run.workItemKey).toBe('work-01JZ0000000000000000000012');
+  });
+
+  it('accepts explicit execution attempt lifecycle states', () => {
+    const run = parseRunRecord({
+      schemaVersion: 1,
+      runId: 'run-2',
+      workItemKey: 'work-01JZ0000000000000000000012',
+      repo: 'atolis-hq/wake',
+      issueNumber: 12,
+      action: 'refine',
+      lifecycle: 'CLAIMED',
+      status: 'running',
+      startedAt: '2026-07-05T12:00:00.000Z',
+    });
+
+    expect(run.lifecycle).toBe('CLAIMED');
+  });
+
+  // Run records are Wake-owned state that Wake itself writes, so the work id is
+  // always in hand at the write site. Required rather than optional: an optional
+  // key would let a record exist that can only be resolved by scanning issue
+  // snapshots — the ticket-shaped ambiguity minted identity exists to remove.
+  it('rejects run records with no workItemKey', () => {
+    expect(() =>
+      parseRunRecord({
+        schemaVersion: 1,
+        runId: 'run-1',
+        repo: 'atolis-hq/wake',
+        issueNumber: 12,
+        action: 'refine',
+        status: 'running',
+        startedAt: '2026-07-05T12:00:00.000Z',
+      }),
+    ).toThrow(/workItemKey/);
+  });
+
+  it('accepts canonical event envelopes with work item correlation', () => {
+    const event = parseEventEnvelope({
+      schemaVersion: 1,
+      eventId: 'evt-1',
+      workItemKey: 'work-01JZ0000000000000000000012',
+      streamScope: 'work-item',
+      direction: 'inbound',
+      sourceSystem: 'github',
+      sourceEventType: 'github.issue.comment.created',
+      sourceRefs: {
+        repo: 'atolis-hq/wake',
+        issueNumber: 12,
+        commentId: 'c-1',
+        sourceUrl: 'https://example.test/issues/12#issuecomment-1',
+      },
+      occurredAt: '2026-07-05T12:00:00.000Z',
+      ingestedAt: '2026-07-05T12:00:01.000Z',
+      trigger: 'immediate',
+      payload: {
+        body: 'Need more detail',
+      },
+      raw: {
+        body: 'Need more detail',
+      },
+      derivedHints: {},
+    });
+
+    // Taken verbatim from the envelope: the resolver stamped it, and nothing
+    // in the parse namespaces, derives, or rewrites it (spec §8).
+    expect(event.workItemKey).toBe('work-01JZ0000000000000000000012');
+    expect(event.streamScope).toBe('work-item');
+  });
+
+  it('accepts a valid resourceUri on sourceRefs', () => {
+    const refs = eventEnvelopeSourceRefsSchema.parse({
+      resourceUri: 'github:pr:atolis-hq/wake#91',
+    });
+
+    expect(refs.resourceUri).toBe('github:pr:atolis-hq/wake#91');
+  });
+
+  it('rejects a malformed resourceUri on sourceRefs', () => {
+    expect(() =>
+      eventEnvelopeSourceRefsSchema.parse({ resourceUri: 'not-a-resource-uri' }),
+    ).toThrow();
+  });
+
+  it('parses sourceRefs successfully when resourceUri is absent', () => {
+    const refs = eventEnvelopeSourceRefsSchema.parse({
+      repo: 'atolis-hq/wake',
+      issueNumber: 12,
+    });
+
+    expect(refs.resourceUri).toBeUndefined();
+  });
+
+  it('accepts a full correlation registered payload', () => {
+    const payload = correlationRegisteredPayloadSchema.parse({
+      resourceUri: 'github:pr:atolis-hq/wake#91',
+      role: 'implementation',
+      relation: 'primary',
+      provenance: 'operator-declared',
+      registeredBy: 'run-1',
+    });
+
+    expect(payload.registeredBy).toBe('run-1');
+  });
+
+  it('accepts a correlation registered payload with registeredBy omitted', () => {
+    const payload = correlationRegisteredPayloadSchema.parse({
+      resourceUri: 'github:pr:atolis-hq/wake#91',
+      role: 'implementation',
+      relation: 'primary',
+      provenance: 'operator-declared',
+    });
+
+    expect(payload.registeredBy).toBeUndefined();
+  });
+
+  it('rejects a correlation registered payload with an unknown role', () => {
+    expect(() =>
+      correlationRegisteredPayloadSchema.parse({
+        resourceUri: 'github:pr:atolis-hq/wake#91',
+        role: 'pr',
+        relation: 'primary',
+        provenance: 'operator-declared',
+      }),
+    ).toThrow();
+  });
+
+  it('rejects a correlation registered payload with an unknown relation', () => {
+    expect(() =>
+      correlationRegisteredPayloadSchema.parse({
+        resourceUri: 'github:pr:atolis-hq/wake#91',
+        role: 'implementation',
+        relation: 'tertiary',
+        provenance: 'operator-declared',
+      }),
+    ).toThrow();
+  });
+
+  it('rejects a correlation registered payload with an unknown provenance', () => {
+    expect(() =>
+      correlationRegisteredPayloadSchema.parse({
+        resourceUri: 'github:pr:atolis-hq/wake#91',
+        role: 'implementation',
+        relation: 'primary',
+        provenance: 'human-declared',
+      }),
+    ).toThrow();
+  });
+
+  it('rejects a correlation registered payload with a malformed resourceUri', () => {
+    expect(() =>
+      correlationRegisteredPayloadSchema.parse({
+        resourceUri: 'not-a-resource-uri',
+        role: 'implementation',
+        relation: 'primary',
+        provenance: 'operator-declared',
+      }),
+    ).toThrow();
+  });
+
+  it('accepts a correlation retracted payload', () => {
+    const payload = correlationRetractedPayloadSchema.parse({
+      resourceUri: 'github:pr:atolis-hq/wake#91',
+    });
+
+    expect(payload.resourceUri).toBe('github:pr:atolis-hq/wake#91');
+  });
+
+  it('rejects a correlation retracted payload missing resourceUri', () => {
+    expect(() => correlationRetractedPayloadSchema.parse({})).toThrow();
+  });
+
+  it('accepts an empty work item created payload', () => {
+    expect(workItemCreatedPayloadSchema.parse({})).toEqual({});
+  });
+
+  it('accepts a correlation primary-conflict payload', () => {
+    const payload = correlationPrimaryConflictPayloadSchema.parse({
+      resourceUri: 'github:pr:atolis-hq/wake#91',
+      incumbentWorkItemKey: 'work-01ABC',
+    });
+
+    expect(payload.incumbentWorkItemKey).toBe('work-01ABC');
+  });
+
+  it('round-trips a wake.correlation.registered envelope through eventEnvelopeSchema', () => {
+    const event = parseEventEnvelope({
+      schemaVersion: 1,
+      eventId: 'evt-2',
+      workItemKey: 'work-01JXYZ',
+      streamScope: 'work-item',
+      direction: 'internal',
+      sourceSystem: 'wake',
+      sourceEventType: CORRELATION_REGISTERED_EVENT,
+      sourceRefs: {
+        resourceUri: 'github:pr:atolis-hq/wake#91',
+      },
+      occurredAt: '2026-07-05T12:00:00.000Z',
+      ingestedAt: '2026-07-05T12:00:01.000Z',
+      trigger: 'context-only',
+      payload: correlationRegisteredPayloadSchema.parse({
+        resourceUri: 'github:pr:atolis-hq/wake#91',
+        role: 'implementation',
+        relation: 'primary',
+        provenance: 'operator-declared',
+        registeredBy: 'run-1',
+      }),
+    });
+
+    expect(event.sourceEventType).toBe(CORRELATION_REGISTERED_EVENT);
+    expect(event.sourceRefs.resourceUri).toBe('github:pr:atolis-hq/wake#91');
+    expect(event.payload).toEqual({
+      resourceUri: 'github:pr:atolis-hq/wake#91',
+      role: 'implementation',
+      relation: 'primary',
+      provenance: 'operator-declared',
+      registeredBy: 'run-1',
+    });
+  });
+
+  it('exposes the four correlation event type constants', () => {
+    expect(WORK_ITEM_CREATED_EVENT).toBe('wake.workitem.created');
+    expect(CORRELATION_REGISTERED_EVENT).toBe('wake.correlation.registered');
+    expect(CORRELATION_RETRACTED_EVENT).toBe('wake.correlation.retracted');
+    expect(CORRELATION_PRIMARY_CONFLICT_EVENT).toBe('wake.correlation.primary-conflict');
+    expect(eventEnvelopeSchema).toBeDefined();
+  });
+
+  it('parses the sentinel from the last non-empty line only', () => {
+    expect(parseRunnerResultSentinel('notes DONE more notes\nFAILED')).toBe('FAILED');
+    expect(parseRunnerResultSentinel('notes DONE more notes\nDONE')).toBe('DONE');
+  });
+
+  // The legacy `blockedFromAction` → `lastRunAction` context normalization is
+  // gone with the .preprocess() that implemented it: the fresh start leaves no
+  // projection written under the old key (spec §8, "no migration code").
+
+  it('parses the last valid wake-result envelope and keeps only prose before it as body', () => {
+    const parsed = parseRunnerResult(
+      [
+        'The prose mentions FAILED legitimately.',
+        '',
+        '```wake-result',
+        '{ "status": "BLOCKED" }',
+        '```',
+        '',
+        'Updated summary after an earlier sample.',
+        '',
+        '```wake-result',
+        '{ "status": "DONE", "ignored": true }',
+        '```',
+        'DONE',
+      ].join('\n'),
+    );
+
+    expect(parsed).toEqual({
+      status: 'DONE',
+      body: [
+        'The prose mentions FAILED legitimately.',
+        '',
+        '```wake-result',
+        '{ "status": "BLOCKED" }',
+        '```',
+        '',
+        'Updated summary after an earlier sample.',
+      ].join('\n'),
+      envelope: 'structured',
+      result: {
+        status: 'DONE',
+      },
+    });
+  });
+
+  it('synthesizes a generic status body for REJECTED when structured envelope has no prose', () => {
+    const parsed = parseRunnerResult(
+      ['```wake-result', '{"status":"REJECTED"}', '```', 'REJECTED'].join('\n'),
+    );
+
+    expect(parsed.status).toBe('REJECTED');
+    expect(parsed.envelope).toBe('structured');
+    expect(parsed.body).toBeTruthy();
+  });
+
+  it('no longer recognizes AWAITING_APPROVAL as a bare sentinel', () => {
+    const parsed = parseRunnerResult('Done with the work.\nAWAITING_APPROVAL');
+
+    expect(parsed.envelope).toBe('missing');
+    expect(parsed.status).toBe('BLOCKED');
+  });
+
+  it('synthesizes a generic status sentence when structured envelope has no prose', () => {
+    const parsed = parseRunnerResult(
+      ['```wake-result', '{"status":"DONE"}', '```', 'DONE'].join('\n'),
+    );
+
+    expect(parsed.status).toBe('DONE');
+    expect(parsed.envelope).toBe('structured');
+    expect(parsed.body).toBeTruthy();
+  });
+
+  it('does not synthesize body when prose already precedes the structured envelope', () => {
+    const parsed = parseRunnerResult(
+      ['Here is my plan.', '', '```wake-result', '{"status":"REJECTED"}', '```', 'REJECTED'].join(
+        '\n',
+      ),
+    );
+
+    expect(parsed.body).toBe('Here is my plan.');
+  });
+
+  it('degrades to the final bare sentinel when the wake-result envelope is malformed', () => {
+    const parsed = parseRunnerResult(
+      ['Summary', '', '```wake-result', '{ "status": "NOT_A_STATUS" }', '```', 'BLOCKED'].join(
+        '\n',
+      ),
+    );
+
+    expect(parsed.status).toBe('BLOCKED');
+    expect(parsed.envelope).toBe('degraded');
+    expect(parsed.body).toBe('Summary\n\n```wake-result\n{ "status": "NOT_A_STATUS" }\n```');
+  });
+
+  it('parses structured envelope when sentinel is inside the fenced block', () => {
+    const parsed = parseRunnerResult(
+      [
+        'PR opened and ready for review.',
+        '',
+        '```wake-result',
+        '{"status": "REJECTED"}',
+        'REJECTED',
+        '```',
+      ].join('\n'),
+    );
+
+    expect(parsed.status).toBe('REJECTED');
+    expect(parsed.envelope).toBe('structured');
+    expect(parsed.body).toBe('PR opened and ready for review.');
+  });
+
+  it('falls back to sentinel inside block when structured parse fails and closing fence is last line', () => {
+    const parsed = parseRunnerResult(
+      ['Summary.', '', '```wake-result', '{ "status": "NOT_A_STATUS" }', 'BLOCKED', '```'].join(
+        '\n',
+      ),
+    );
+
+    expect(parsed.status).toBe('BLOCKED');
+    expect(parsed.envelope).toBe('degraded');
+  });
+
+  it('accepts markdown-decorated sentinels on the final line', () => {
+    const parsed = parseRunnerResult('I need the repository owner to choose.\n\n**BLOCKED**');
+
+    expect(parsed.status).toBe('BLOCKED');
+    expect(parsed.body).toBe('I need the repository owner to choose.');
+    expect(parsed.envelope).toBe('degraded');
+  });
+
+  it('parses an off-fence wake-result envelope', () => {
+    const parsed = parseRunnerResult(
+      ['I need one missing detail.', '', '```wake-result', '```', '{"status":"BLOCKED"}'].join(
+        '\n',
+      ),
+    );
+
+    expect(parsed.status).toBe('BLOCKED');
+    expect(parsed.body).toBe('I need one missing detail.');
+    expect(parsed.envelope).toBe('structured');
+  });
+
+  it('parses wake-result when its marker is on the line after the fence opener', () => {
+    const parsed = parseRunnerResult(
+      ['I need one missing detail.', '', '```', 'wake-result', '{"status":"BLOCKED"}', '```'].join(
+        '\n',
+      ),
+    );
+
+    expect(parsed.status).toBe('BLOCKED');
+    expect(parsed.body).toBe('I need one missing detail.');
+    expect(parsed.envelope).toBe('structured');
+  });
+
+  it('treats substantive output without any sentinel as blocked, flagged as a missing envelope', () => {
+    const parsed = parseRunnerResult('Should I create a migration or preserve the legacy format?');
+
+    expect(parsed.status).toBe('BLOCKED');
+    expect(parsed.envelope).toBe('missing');
+  });
+
+  it('does not match a sentinel word embedded in prose on the last line', () => {
+    // Last line contains prose, not an exact sentinel — should fall back to FAILED
+    expect(parseRunnerResultSentinel('notes DONE more notes FAILED')).toBe('BLOCKED');
+    expect(
+      parseRunnerResultSentinel(
+        'the previous run FAILED, so I re-ran the tests\nIf they had FAILED again it would be bad\nDONE. Finished.',
+      ),
+    ).toBe('BLOCKED');
+  });
+
+  it('parses REJECTED sentinel from last line', () => {
+    expect(parseRunnerResultSentinel('Reviewed the diff, needs changes.\nREJECTED')).toBe(
+      'REJECTED',
+    );
+  });
+
+  it('blocks on substantive output and fails on empty output when no sentinel is present', () => {
+    expect(parseRunnerResultSentinel('Should I proceed with creating the worktree?')).toBe(
+      'BLOCKED',
+    );
+    expect(parseRunnerResultSentinel('')).toBe('FAILED');
+  });
+
+  it('accepts source state records for provider poll watermarks', () => {
+    const sourceState = parseSourceStateRecord({
+      schemaVersion: 1,
+      source: 'github',
+      key: 'atolis-hq/wake',
+      lastSuccessfulPollAt: '2026-07-05T12:00:00.000Z',
+    });
+
+    expect(sourceState.source).toBe('github');
+  });
+
+  it('accepts github source configuration', () => {
+    const config = parseWakeConfig({
+      schemaVersion: 1,
+      paths: {
+        wakeRoot: '/tmp/wake',
+        promptsRoot: '/tmp/wake/prompts',
+      },
+      sandbox: {
+        image: 'wake-sandbox',
+        containerName: 'wake-sandbox-1',
+        containerMountPath: '/wake',
+        containerHomeMountPath: '/home/wake',
+        extraMounts: [
+          {
+            source: '/host/.claude/skills',
+            target: '/home/wake/.claude/skills',
+            readOnly: true,
+          },
+        ],
+      },
+      scheduler: {
+        intervalMs: 1000,
+      },
+      runner: {
+        mode: 'fake',
+        claude: {
+          command: 'claude',
+          model: 'haiku',
+          smokeModel: 'haiku',
+          sessionName: 'Wake',
+          remoteControlName: 'Wake',
+          smokePrompt: 'hi',
+          timeoutMs: 60_000,
+          remoteControl: {
+            enabled: false,
+          },
+        },
+      },
+      sources: {
+        github: {
+          enabled: false,
+          repos: ['atolis-hq/wake'],
+          polling: {
+            maxIssuesPerRepo: 25,
+            commentPageSize: 25,
+            lookbackMs: 60000,
+          },
+          policy: {
+            requiredLabels: [],
+            ignoredLabels: [],
+            requiredAssignees: [],
+          },
+          publication: {
+            postStatusComments: true,
+          },
+        },
+      },
+    });
+
+    expect(config.sources.github.repos).toEqual(['atolis-hq/wake']);
+    expect(config.paths.promptsRoot).toBe('/tmp/wake/prompts');
+    expect(config.sandbox.containerName).toBe('wake-sandbox-1');
+    expect(config.sandbox.start).toEqual({ enabled: true });
+    expect(config.transcripts).toEqual({ enabled: false, retentionMs: 259200000 });
+    expect(config.ui.archiveFreshnessDays).toBe(5);
+    expect(config.ui.tunnel).toEqual({ enabled: false });
+    expect(config.sandbox.extraMounts).toEqual([
+      {
+        source: '/host/.claude/skills',
+        target: '/home/wake/.claude/skills',
+        readOnly: true,
+      },
+    ]);
+  });
+
+  it('accepts transcript logging configuration', () => {
+    const config = parseWakeConfig({
+      schemaVersion: 1,
+      paths: {
+        wakeRoot: '/tmp/wake',
+      },
+      transcripts: {
+        enabled: true,
+        retentionMs: 60000,
+      },
+    });
+
+    expect(config.transcripts).toEqual({
+      enabled: true,
+      retentionMs: 60000,
+    });
+  });
+
+  it('rejects the legacy transcript retention boolean', () => {
+    expect(() =>
+      parseWakeConfig({
+        schemaVersion: 1,
+        paths: {
+          wakeRoot: '/tmp/wake',
+        },
+        transcripts: {
+          enabled: true,
+          retainAfterWorkspaceCleanup: false,
+        },
+      }),
+    ).toThrow(
+      'transcripts.retainAfterWorkspaceCleanup is no longer supported; use transcripts.retentionMs instead.',
+    );
+  });
+
+  it('accepts retry configuration with a default maximum failure retry count', () => {
+    const defaulted = parseWakeConfig({
+      schemaVersion: 1,
+      paths: {
+        wakeRoot: '/tmp/wake',
+      },
+    });
+    expect(defaulted.retry.maxFailureRetries).toBe(5);
+
+    const configured = parseWakeConfig({
+      schemaVersion: 1,
+      paths: {
+        wakeRoot: '/tmp/wake',
+      },
+      retry: {
+        maxFailureRetries: 2,
+      },
+    });
+    expect(configured.retry.maxFailureRetries).toBe(2);
+  });
+
+  it('accepts codex runner configuration via registry', () => {
+    const config = parseWakeConfig({
+      schemaVersion: 1,
+      paths: {
+        wakeRoot: '/tmp/wake',
+      },
+      runners: {
+        'codex-flagship': {
+          kind: 'codex',
+          command: 'codex',
+          model: 'gpt-5.5',
+          smokeModel: 'gpt-5.4-mini',
+          smokePrompt: 'hello',
+          timeoutMs: 60_000,
+        },
+      },
+    });
+
+    const entry = config.runners['codex-flagship'];
+    expect(entry?.kind).toBe('codex');
+    if (entry?.kind !== 'codex') throw new Error('unreachable');
+    expect(entry.command).toBe('codex');
+    expect(entry.smokeModel).toBe('gpt-5.4-mini');
+  });
+
+  it('accepts named runners and workflow runnerPool routing', () => {
+    const config = parseWakeConfig({
+      schemaVersion: 1,
+      paths: {
+        wakeRoot: '/tmp/wake',
+      },
+      runners: {
+        'claude-haiku': {
+          kind: 'claude',
+          command: 'claude',
+          model: 'claude-haiku-4-5',
+          timeoutMs: 600_000,
+        },
+        'claude-opus': {
+          kind: 'claude',
+          command: 'claude',
+          model: 'claude-opus-4-8',
+          timeoutMs: 1_800_000,
+        },
+        fake: {
+          kind: 'fake',
+        },
+      },
+      runnerPools: {
+        light: ['claude-haiku'],
+        standard: ['claude-haiku'],
+        deep: ['claude-opus', 'claude-haiku'],
+      },
+      defaultRunnerPool: 'standard',
+      workflows: {
+        default: {
+          stages: {
+            refine: {
+              action: 'refine',
+              workspace: 'read-only',
+              runnerPool: 'light',
+              onDone: 'refined',
+            },
+            refined: {
+              action: 'implement',
+              workspace: 'branch',
+              runner: 'claude-opus',
+              onDone: 'done',
+            },
+          },
+        },
+      },
+    });
+
+    expect(config.runners['claude-haiku']?.kind).toBe('claude');
+    expect(config.runnerPools.deep).toEqual(['claude-opus', 'claude-haiku']);
+    expect(config.workflows.default?.stages.refined?.runner).toBe('claude-opus');
+  });
+
+  it('accepts optional local-development repo root configuration', () => {
+    const config = parseWakeConfig({
+      schemaVersion: 1,
+      paths: {
+        wakeRoot: '/tmp/wake',
+      },
+      sandbox: {
+        image: 'wake-sandbox',
+        containerName: 'wake-sandbox',
+        containerMountPath: '/wake',
+        containerHomeMountPath: '/home/wake',
+        extraMounts: [],
+      },
+      dev: {
+        repoRoot: '/tmp/wake-repo',
+      },
+      scheduler: {
+        intervalMs: 1000,
+      },
+      runner: {
+        mode: 'fake',
+        claude: {
+          command: 'claude',
+          model: 'haiku',
+          smokeModel: 'haiku',
+          sessionName: 'Wake',
+          remoteControlName: 'Wake',
+          smokePrompt: 'hi',
+          timeoutMs: 60_000,
+          remoteControl: {
+            enabled: false,
+          },
+        },
+      },
+      sources: {
+        github: {
+          enabled: false,
+          repos: [],
+          polling: {
+            maxIssuesPerRepo: 25,
+            commentPageSize: 25,
+            lookbackMs: 60000,
+          },
+          policy: {
+            requiredLabels: [],
+            ignoredLabels: [],
+            requiredAssignees: [],
+          },
+          publication: {
+            postStatusComments: true,
+          },
+        },
+      },
+    });
+
+    expect(config.dev?.repoRoot).toBe('/tmp/wake-repo');
+  });
+
+  it('parses sources.github.policy.requiredAssignees', () => {
+    const config = parseWakeConfig({
+      schemaVersion: 1,
+      paths: {
+        wakeRoot: '/tmp/wake',
+        promptsRoot: '/tmp/wake/prompts',
+      },
+      sandbox: {
+        image: 'wake-sandbox',
+        containerName: 'wake-sandbox-1',
+        containerMountPath: '/wake',
+        containerHomeMountPath: '/home/wake',
+        extraMounts: [
+          {
+            source: '/host/.claude/skills',
+            target: '/home/wake/.claude/skills',
+            readOnly: true,
+          },
+        ],
+      },
+      scheduler: {
+        intervalMs: 1000,
+      },
+      runner: {
+        mode: 'fake',
+        claude: {
+          command: 'claude',
+          model: 'haiku',
+          smokeModel: 'haiku',
+          sessionName: 'Wake',
+          remoteControlName: 'Wake',
+          smokePrompt: 'hi',
+          timeoutMs: 60_000,
+          remoteControl: {
+            enabled: false,
+          },
+        },
+      },
+      sources: {
+        github: {
+          enabled: false,
+          repos: ['atolis-hq/wake'],
+          polling: {
+            maxIssuesPerRepo: 25,
+            commentPageSize: 25,
+            lookbackMs: 60000,
+          },
+          policy: {
+            requiredLabels: [],
+            ignoredLabels: [],
+            requiredAssignees: ['octocat'],
+          },
+          publication: {
+            postStatusComments: true,
+          },
+        },
+      },
+    });
+
+    expect(config.sources.github.policy.requiredAssignees).toEqual(['octocat']);
+  });
+
+  it('accepts dev.mode as "source" or "packaged", and leaves it undefined by default', () => {
+    const withSource = parseWakeConfig({
+      paths: { wakeRoot: '/tmp/wake' },
+      dev: { mode: 'source' },
+    });
+    expect(withSource.dev?.mode).toBe('source');
+
+    const withPackaged = parseWakeConfig({
+      paths: { wakeRoot: '/tmp/wake' },
+      dev: { mode: 'packaged' },
+    });
+    expect(withPackaged.dev?.mode).toBe('packaged');
+
+    const withoutMode = parseWakeConfig({ paths: { wakeRoot: '/tmp/wake' } });
+    expect(withoutMode.dev?.mode).toBeUndefined();
+  });
+});
+
+describe('workflow config schema', () => {
+  function parseWorkflow(workflow: unknown) {
+    return parseWakeConfig({
+      paths: { wakeRoot: '/tmp/wake' },
+      workflows: { custom: workflow },
+    });
+  }
+
+  it('defines the built-in default workflow without queue or done stages', () => {
+    const config = parseWakeConfig({ paths: { wakeRoot: '/tmp/wake' } });
+
+    expect(config.workflows.default?.stages).toEqual({
+      refine: {
+        action: 'refine',
+        workspace: 'read-only',
+        runnerPool: 'light',
+        onDone: 'implement',
+      },
+      implement: {
+        action: 'implement',
+        workspace: 'branch',
+        runnerPool: 'standard',
+        onDone: 'done',
+      },
+    });
+  });
+
+  it('parses workflow selectors with source and metadata matches', () => {
+    const config = parseWakeConfig({
+      paths: { wakeRoot: '/tmp/wake' },
+      workflows: {
+        default: {
+          stages: {
+            refine: {
+              action: 'refine',
+              workspace: 'read-only',
+              runnerPool: 'light',
+              onDone: 'implement',
+            },
+            implement: {
+              action: 'implement',
+              workspace: 'branch',
+              runnerPool: 'standard',
+              onDone: 'done',
+            },
+          },
+        },
+        bug: {
+          stages: {
+            triage: {
+              action: 'refine',
+              workspace: 'read-only',
+              runnerPool: 'light',
+              onDone: 'done',
+            },
+          },
+        },
+      },
+      workflowSelectors: [
+        {
+          workflow: 'bug',
+          match: {
+            kind: 'issue',
+            sourceEventType: 'ticket.upsert',
+            repo: 'atolis-hq/wake',
+            requiredLabels: ['bug'],
+            ignoredLabels: ['wontfix'],
+            requiredAssignees: ['octocat'],
+          },
+        },
+      ],
+    });
+
+    expect(config.workflowSelectors).toEqual([
+      {
+        workflow: 'bug',
+        match: {
+          kind: 'issue',
+          sourceEventType: 'ticket.upsert',
+          repo: 'atolis-hq/wake',
+          requiredLabels: ['bug'],
+          ignoredLabels: ['wontfix'],
+          requiredAssignees: ['octocat'],
+          requiredAuthors: [],
+        },
+      },
+    ]);
+  });
+
+  it('rejects workflow selectors that target an unknown workflow', () => {
+    expect(() =>
+      parseWakeConfig({
+        paths: { wakeRoot: '/tmp/wake' },
+        workflowSelectors: [{ workflow: 'missing', match: { kind: 'issue' } }],
+      }),
+    ).toThrow(/Workflow selector targets unknown workflow/);
+  });
+
+  it('returns isolated default workflow objects for each parsed config', () => {
+    const first = parseWakeConfig({ paths: { wakeRoot: '/tmp/wake-1' } });
+    first.workflows.default!.stages.implement!.runner = 'pinned';
+
+    const second = parseWakeConfig({ paths: { wakeRoot: '/tmp/wake-2' } });
+
+    expect(second.workflows.default?.stages.implement?.runner).toBeUndefined();
+  });
+
+  it('defines the built-in ask and codereview custom commands', () => {
+    const config = parseWakeConfig({ paths: { wakeRoot: '/tmp/wake' } });
+
+    expect(config.commands.ask).toEqual({
+      action: 'ask',
+      workspace: 'read-only',
+      runnerPool: 'light',
+    });
+    expect(config.commands.codereview).toEqual({
+      action: 'codereview',
+      workspace: 'read-only',
+      runnerPool: 'standard',
+    });
+  });
+
+  it('rejects custom commands that shadow approval control commands', () => {
+    expect(() =>
+      parseWakeConfig({
+        paths: { wakeRoot: '/tmp/wake' },
+        commands: {
+          approved: {
+            action: 'codereview',
+            workspace: 'read-only',
+          },
+        },
+      }),
+    ).toThrow(/reserved/);
+  });
+
+  it.each([
+    [
+      'missing onDone',
+      { stages: { refine: { action: 'refine', workspace: 'read-only' } } },
+      /onDone/,
+    ],
+    [
+      'defined queue stage',
+      { stages: { queue: { action: 'refine', workspace: 'read-only', onDone: 'done' } } },
+      /queue/,
+    ],
+    [
+      'defined done stage',
+      { stages: { done: { action: 'refine', workspace: 'read-only', onDone: 'done' } } },
+      /done/,
+    ],
+    [
+      'entryStage queue',
+      {
+        entryStage: 'queue',
+        stages: { refine: { action: 'refine', workspace: 'read-only', onDone: 'done' } },
+      },
+      /entryStage/,
+    ],
+    [
+      'transition to queue',
+      { stages: { refine: { action: 'refine', workspace: 'read-only', onDone: 'queue' } } },
+      /queue/,
+    ],
+    [
+      'unknown transition target',
+      { stages: { refine: { action: 'refine', workspace: 'read-only', onDone: 'missing' } } },
+      /unknown stage/,
+    ],
+    [
+      'no path to done',
+      { stages: { refine: { action: 'refine', workspace: 'read-only', onDone: 'refine' } } },
+      /cannot reach done/,
+    ],
+  ])('rejects %s', (_name, workflow, message) => {
+    expect(() => parseWorkflow(workflow)).toThrow(message);
+  });
+
+  it('allows omitted action when a stage-named prompt exists', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wake-workflow-prompts-'));
+    const promptsRoot = join(root, 'prompts');
+    await mkdir(promptsRoot);
+    await writeFile(join(promptsRoot, 'triage.md'), '---\nmaxTurns: 1\n---\nTriage', 'utf8');
+
+    const config = parseWakeConfig({
+      paths: { wakeRoot: root, promptsRoot },
+      workflows: {
+        custom: {
+          stages: {
+            triage: {
+              workspace: 'read-only',
+              onDone: 'done',
+            },
+          },
+        },
+      },
+    });
+
+    expect(config.workflows.custom?.stages.triage?.action).toBeUndefined();
+  });
+
+  it('rejects omitted action when no stage-named prompt exists', () => {
+    expect(() =>
+      parseWorkflow({
+        stages: {
+          triage: {
+            workspace: 'read-only',
+            onDone: 'done',
+          },
+        },
+      }),
+    ).toThrow(/omits action/);
+  });
+});
+
+describe('parseRunnerArtifacts', () => {
+  it('parses a wake-artifacts fence', () => {
+    const result = [
+      'I opened a PR.',
+      '',
+      '```wake-artifacts',
+      '{ "artifacts": [{ "kind": "pr", "url": "https://github.com/org/repo/pull/91" }] }',
+      '```',
+      '',
+      '```wake-result',
+      '{ "status": "DONE" }',
+      '```',
+      'DONE',
+    ].join('\n');
+
+    expect(parseRunnerArtifacts(result)).toEqual({
+      artifacts: [{ kind: 'pr', url: 'https://github.com/org/repo/pull/91' }],
+    });
+  });
+
+  it('returns no artifacts when the fence is absent', () => {
+    expect(parseRunnerArtifacts('Nothing to report.\n\nDONE')).toEqual({ artifacts: [] });
+  });
+
+  it('returns no artifacts when the fence is malformed', () => {
+    const result = ['```wake-artifacts', 'not json', '```', 'DONE'].join('\n');
+    expect(parseRunnerArtifacts(result)).toEqual({ artifacts: [] });
+  });
+});

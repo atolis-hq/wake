@@ -218,6 +218,27 @@ Implementation of #82 confirms this decision when:
 4. A PR opened out-of-band with the branch-name convention (or hidden marker) is recovered by detection with `provenance: detected`, or adoptable via operator declaration.
 5. Wake's own PR comments are suppressed by the per-`resourceUri` echo rule without any PR-specific suppression code.
 
+## Amendment (2026-08-02): conflict handling for agent-reported artifacts (flow 2)
+
+§3's "second `primary` on an already-claimed URI is folded as `secondary`" is
+the right default for flows 1 and 3, where a human or an out-of-band actor is
+the one asserting the correlation and a genuine multi-issue PR is plausible.
+It does not hold for flow 2. An agent-reported artifact is created inside a
+run Wake itself dispatched for one specific WorkItem, so a primary conflict
+on it is not a legitimate shared-resource case — it is a signal that
+something upstream is wrong (a reused/stale branch, a duplicate dispatch, or
+a misreported locator). Auto-folding to `secondary` would silently accept
+one of those failure modes as if it were ordinary sharing. Flow 2 therefore
+does **not** auto-fold on conflict: the durable `wake.correlation.conflicted`
+fact stands as the record, no correlation is established, and resolution
+requires deliberate operator action (flow 3) rather than an automatic guess.
+`secondary` remains flow 2's non-outcome for a second reason, independent of
+conflict handling: because a flow-2 artifact is scoped to the one WorkItem
+that dispatched its run, there is no case in this flow where an agent's own
+newly-created artifact should legitimately register as `secondary` to begin
+with — that role is for artifacts correlated after the fact (flows 1 and 3),
+not for a creation report from the run that produced them.
+
 ## More Information
 
 - `docs/architecture.md` — event-first flow this builds on.

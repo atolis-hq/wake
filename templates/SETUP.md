@@ -1,4 +1,4 @@
-# Wake Setup Guide (for the assisting agent)
+?# Wake Setup Guide (for the assisting agent)
 
 You are reading this because a human just ran `wake init` and asked you to
 help finish configuring this Wake home. This file is written as instructions
@@ -37,29 +37,29 @@ preserves any other labels already on the issue.
 Full reference:
 https://github.com/atolis-hq/wake/blob/main/docs/configuration.md#sourcesgithub
 
-## 2. Runner and tier
+## 2. Runner and runnerPool
 
 Ask the user which agent CLI(s) they have authenticated on this host:
 Claude, Codex, and/or Cursor.
 
 `config.workflows.yaml` already has example `runners` entries for
 `claude-haiku`, `claude-opus`, `codex-mini`, `codex-flagship`, and
-`cursor-composer`, but every tier (`light`/`standard`/`deep`, with
-`defaultTier: standard`) still points at the placeholder `fake` runner — none
+`cursor-composer`, but every runnerPool (`light`/`standard`/`deep`, with
+`defaultRunnerPool: standard`) still points at the placeholder `fake` runner — none
 of them route to a real runner yet. Don't rewrite this from scratch — pick
 which runner(s) the user actually has access to, and either:
 
-- repoint `tiers` so each tier lists the real named runner(s) the user can
+- repoint `runnerPools` so each runnerPool lists the real named runner(s) the user can
   actually use instead of `fake`, or
 - if the user has a runner not already listed (a different model, a
   different CLI), add a new named entry under `runners` following the
-  existing pattern, then reference it from `tiers`.
+  existing pattern, then reference it from `runnerPools`.
 - remove entries which are not needed.
 
 Full reference:
 https://github.com/atolis-hq/wake/blob/main/docs/configuration.md#runners
 and
-https://github.com/atolis-hq/wake/blob/main/docs/configuration.md#tiers
+https://github.com/atolis-hq/wake/blob/main/docs/configuration.md#runnerPools
 
 ## 3. Credential mounts (check before asking)
 

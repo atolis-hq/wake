@@ -1,0 +1,35 @@
+@import './tokens.css';
+* {
+  box-sizing: border-box;
+}
+html {
+  color: var(--ink);
+  background: var(--surface);
+  font-family: var(--font-sans);
+  line-height: 1.5;
+}
+body {
+  margin: 0;
+}
+a {
+  color: var(--accent-light);
+  text-decoration: none;
+  text-underline-offset: 0.18em;
+}
+a:hover {
+  text-decoration: underline;
+}
+button,
+input,
+select {
+  font: inherit;
+}
+:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}

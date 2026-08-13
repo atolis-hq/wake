@@ -1,0 +1,12 @@
+{
+  "name": "activities",
+  "kind": "domain",
+  "dependencies": ["kernel", "work", "resources"],
+  "publicEntry": "./index.ts",
+  "namespaces": {
+    "events": ["activities.", "pr.", "review."],
+    "config": ["activities"],
+    "relations": ["activity."],
+    "streams": ["activity-decision"]
+  }
+}

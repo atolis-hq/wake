@@ -1,5 +1,6 @@
 {
-  "endOfLine": "auto",
+  "plugins": ["prettier-plugin-organize-imports"],
+  "endOfLine": "lf",
   "printWidth": 100,
   "singleQuote": true,
   "trailingComma": "all"

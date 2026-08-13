@@ -1,0 +1,142 @@
+import type { PullRequestService } from '../../activities/index.js';
+import type { RunRepository } from '../../execution/index.js';
+import type { CheckpointStore, Clock, EventJournal, IdGenerator } from '../../kernel/index.js';
+import type {
+  OrchestrationService,
+  WorkflowCandidate,
+  WorkflowName,
+} from '../../orchestration/index.js';
+import type {
+  ExternalResourceKey,
+  ResourceCapability,
+  ResourceKind,
+  ResourceLookup,
+  ResourceService,
+} from '../../resources/index.js';
+import type { WorkItemId, WorkItemView, WorkService } from '../../work/index.js';
+import type { ExternalDeliveryAdapter } from '../delivery/contracts/config.js';
+import type { ArtifactVerificationResult } from './artifact-vocabulary.js';
+import type { IntegrationsConfig } from './config.js';
+import { adapterId, type AdapterId } from './identifiers.js';
+import type { ExternalEventSource, InboundTranslation } from './intake.js';
+
+// Configuration decides routing; providers supply facts. An adapter can ask which
+// workflow a candidate belongs to, but never proposes a workflow name.
+export interface WorkflowRouter {
+  select(candidate: WorkflowCandidate): WorkflowName;
+}
+
+// Structurally matches control-plane's WorkConclusionPolicy without importing
+// it — integrations may not depend on control-plane (dependency-cruiser.config.mjs).
+// bootstrap/composition-root.ts supplies the real cascade; this is the shape it must satisfy.
+export interface WorkConclusion {
+  closeWork(workItemId: WorkItemId, reason: string): Promise<WorkItemView>;
+  cancelWork(workItemId: WorkItemId, reason: string): Promise<WorkItemView>;
+}
+
+export interface ProviderServices {
+  readonly work: WorkService;
+  readonly resources: ResourceService;
+  readonly resourceLookup: ResourceLookup;
+  readonly orchestration: OrchestrationService;
+  readonly pullRequests: PullRequestService;
+  readonly runs: RunRepository;
+  readonly ids: IdGenerator;
+  readonly clock: Clock;
+  readonly journal: EventJournal;
+  readonly checkpoints: CheckpointStore;
+  readonly routing: WorkflowRouter;
+  readonly conclusion: WorkConclusion;
+}
+
+export interface VerifiedArtifact {
+  readonly kind: ResourceKind;
+  readonly externalKey: ExternalResourceKey;
+  readonly capabilities: readonly ResourceCapability[];
+  readonly revision?: string | undefined;
+}
+
+export interface ProviderInstance {
+  readonly adapter: AdapterId;
+  readonly source: ExternalEventSource;
+  readonly delivery: ExternalDeliveryAdapter;
+  readonly inbound: InboundTranslation;
+  readonly eventTypes: readonly string[];
+  /** Provider-owned periodic reconciliation, invoked in the tick react phase. */
+  readonly maintenance?: { readonly runOnce: () => Promise<void> };
+  verifyArtifact(
+    kind: ResourceKind,
+    externalKey: ExternalResourceKey,
+    context: { readonly workspaceBranch: string },
+  ): Promise<VerifiedArtifact | ArtifactVerificationResult>;
+  // Optional live reachability probe a caller (e.g. doctor diagnostics) can invoke
+  // generically; resolves when the external system is reachable, rejects otherwise.
+  readonly checkConnectivity?: () => Promise<void>;
+}
+
+export interface ProviderDefinition<Config = unknown> {
+  readonly provider: string;
+  readonly eventTypes: readonly string[];
+  /** Provider-owned periodic reconciliation, invoked in the tick react phase. */
+  readonly maintenance?: { readonly runOnce: () => Promise<void> };
+  parseConfig(value: unknown): Config;
+  create(input: {
+    readonly adapter: AdapterId;
+    readonly config: Config;
+    readonly services?: ProviderServices;
+  }): ProviderInstance;
+}
+
+// A provider that fails to construct (bad config, unreachable credentials —
+// e.g. sandbox auth not configured yet) must not take composition down with
+// it: every other command (doctor, sandbox-setup, sandbox-entrypoint) still
+// needs to run. An adapter naming a provider Wake doesn't know about at all
+// is a different, unrecoverable class of error and still throws.
+export interface ProviderCompositionFailure {
+  readonly adapter: AdapterId;
+  readonly provider: string;
+  readonly error: string;
+}
+
+export interface ProviderCompositionResult {
+  readonly instances: readonly ProviderInstance[];
+  readonly failures: readonly ProviderCompositionFailure[];
+}
+
+export class ProviderRegistry {
+  private readonly definitions = new Map<string, ProviderDefinition>();
+
+  register(definition: ProviderDefinition): void {
+    if (this.definitions.has(definition.provider))
+      throw new Error(`Provider ${definition.provider} exists`);
+    this.definitions.set(definition.provider, definition);
+  }
+
+  compose(config: IntegrationsConfig, services?: ProviderServices): ProviderCompositionResult {
+    const instances: ProviderInstance[] = [];
+    const failures: ProviderCompositionFailure[] = [];
+    for (const [name, entry] of Object.entries(config)) {
+      if (!entry.enabled) continue;
+      const provider = entry.provider ?? name;
+      const definition = this.definitions.get(provider);
+      if (definition === undefined) throw new Error(`Provider ${provider} is not registered`);
+      const adapter = adapterId(name);
+      try {
+        instances.push(
+          definition.create({
+            adapter,
+            config: definition.parseConfig(entry),
+            ...(services === undefined ? {} : { services }),
+          }),
+        );
+      } catch (error) {
+        failures.push({
+          adapter,
+          provider,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    return { instances, failures };
+  }
+}

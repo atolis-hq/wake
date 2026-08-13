@@ -1,0 +1,19 @@
+schemaVersion: 1
+execution:
+  agentRunners:
+    fake: { kind: fake, timeoutMs: 5000 }
+  runnerPools: { standard: [fake] }
+  defaultRunnerPool: standard
+controlPlane: {}
+integrations:
+  primary:
+    provider: fake
+    enabled: true
+    evidenceFile: provider/primary.json
+  secondary:
+    provider: fake
+    enabled: true
+    evidenceFile: provider/secondary.json
+surfaces:
+  api: { enabled: false }
+  web: { enabled: false }

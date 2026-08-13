@@ -1,0 +1,11 @@
+[
+  {
+    "key": "pr#1",
+    "title": "Merge the verified change",
+    "kind": "pull-request",
+    "revision": "head-1",
+    "baseRevision": "base-1",
+    "checks": "passing",
+    "acceptedReview": true
+  }
+]

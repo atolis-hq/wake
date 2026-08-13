@@ -1,8 +1,11 @@
-.git
-.agents
-.codex
 node_modules
 dist
+.git
+.wake
 coverage
-.DS_Store
-Thumbs.db
+*.log
+.superpowers
+.worktrees
+tmp
+test
+docs
