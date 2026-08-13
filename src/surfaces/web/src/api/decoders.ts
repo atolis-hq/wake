@@ -8,6 +8,8 @@ import type {
   RunnerResponse,
   RunResponse,
   RunTranscriptResponse,
+  TranscriptEntryResponse,
+  TranscriptGroupResponse,
   WorkDetailResponse,
   WorkflowInstanceResponse,
   WorkItemResponse,

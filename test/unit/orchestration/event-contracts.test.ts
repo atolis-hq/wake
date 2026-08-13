@@ -76,6 +76,11 @@ const samples = [
     workflow,
   ),
   eventEnvelope(
+    OrchestrationEventType.ActivityExecutionFailed,
+    { activationId: activation.activationId, runId: 'run-1', reason: 'runner failed' },
+    workflow,
+  ),
+  eventEnvelope(
     OrchestrationEventType.ActivityWaiting,
     {
       activationId: activation.activationId,
@@ -250,7 +255,7 @@ describe('Orchestration event contract', () => {
     );
     if (blocked.eventType !== OrchestrationEventType.InstanceBlocked)
       throw new Error('expected InstanceBlocked');
-    const retryRequested = decodeOrchestrationEvent(samples[23]);
+    const retryRequested = decodeOrchestrationEvent(samples[24]);
     if (retryRequested.eventType !== OrchestrationEventType.OperatorRetryRequested)
       throw new Error('expected OperatorRetryRequested');
 
@@ -268,7 +273,7 @@ describe('Orchestration event contract', () => {
     ).toThrow();
     expect(() =>
       decodeOrchestrationEvent(
-        eventEnvelope(OrchestrationEventType.GroupClaimed, samples[22].payload, workflow),
+        eventEnvelope(OrchestrationEventType.GroupClaimed, samples[23].payload, workflow),
       ),
     ).toThrow();
   });
@@ -276,7 +281,7 @@ describe('Orchestration event contract', () => {
   it('rejects a primary claim on a child/watch group stream', () => {
     expect(() =>
       decodeOrchestrationEvent(
-        eventEnvelope(OrchestrationEventType.PrimaryClaimed, samples[21].payload, childGroup),
+        eventEnvelope(OrchestrationEventType.PrimaryClaimed, samples[22].payload, childGroup),
       ),
     ).toThrow();
   });
@@ -284,7 +289,7 @@ describe('Orchestration event contract', () => {
   it('rejects a child/watch group claim on a primary group stream', () => {
     expect(() =>
       decodeOrchestrationEvent(
-        eventEnvelope(OrchestrationEventType.GroupClaimed, samples[22].payload, primaryGroup),
+        eventEnvelope(OrchestrationEventType.GroupClaimed, samples[23].payload, primaryGroup),
       ),
     ).toThrow();
   });
@@ -311,7 +316,7 @@ describe('Orchestration event contract', () => {
       decodeOrchestrationEvent(
         eventEnvelope(
           OrchestrationEventType.PrimaryClaimed,
-          { ...samples[21].payload, workItemId: workId('2') },
+          { ...samples[22].payload, workItemId: workId('2') },
           primaryGroup,
         ),
       ),
@@ -324,7 +329,7 @@ describe('Orchestration event contract', () => {
       decodeOrchestrationEvent(
         eventEnvelope(
           OrchestrationEventType.GroupClaimed,
-          { ...samples[22].payload, key: otherChildGroup.id },
+          { ...samples[23].payload, key: otherChildGroup.id },
           childGroup,
         ),
       ),

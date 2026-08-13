@@ -343,7 +343,7 @@ export class TestWorld {
     let result: AdvanceResult;
     for (let attempt = 0; attempt < 20; attempt += 1) {
       result = await this.advance(workItemId);
-      await Promise.resolve();
+      await new Promise<void>((resolve) => setImmediate(resolve));
       const hasStartedRun = (await this.execution.list()).some((run) => run.status === 'started');
       const hasPendingActivation =
         (await this.orchestration.listPendingActivations(workItemId)).length > 0;

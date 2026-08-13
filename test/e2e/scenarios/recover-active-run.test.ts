@@ -68,7 +68,7 @@ async function activeRun(world: TestWorld) {
   for (let attempt = 0; attempt < 20; attempt++) {
     const [run] = await world.viewRuns();
     if (run?.externalExecution !== undefined) return run;
-    await Promise.resolve();
+    await new Promise<void>((resolve) => setImmediate(resolve));
   }
   throw new Error('Expected an active fake Run');
 }

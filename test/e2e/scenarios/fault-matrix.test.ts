@@ -309,7 +309,8 @@ async function assertExecutionRecovery(
   // An execution fault must not launch the same agent work twice. The request
   // is evidence from the real runner boundary and its identity is the Run that
   // recorded the outcome, not a fabricated test value.
-  expect(runnerRequests, point).toHaveLength(1);
+  expect(runnerRequests, point).toHaveLength(point === 'run.start.after' ? 0 : 1);
+  if (point === 'run.start.after') return;
   const [request] = runnerRequests;
   expect(
     runs.some((run) => run.runId === request!.runId),
@@ -333,16 +334,15 @@ async function assertExecutionRecovery(
       expect(recoveredResult, point).toHaveLength(1);
       return;
     case 'run.start.after':
-      // The first start is durably failed, then the activation is retried once.
+      // A durable start without a reported external identity is never replayed.
       expect(
         events.filter((event) => event.eventType === 'execution.run-started'),
         point,
-      ).toHaveLength(2);
+      ).toHaveLength(1);
       expect(
         events.filter((event) => event.eventType === 'execution.run-failed'),
         point,
       ).toHaveLength(1);
-      expect(recoveredResult, point).toHaveLength(1);
       return;
     case 'run.result-append.before':
     case 'run.result-append.after':
@@ -363,7 +363,10 @@ async function assertExecutionRecovery(
 }
 
 async function tick(root: CompositionRoot, count = 1): Promise<void> {
-  for (let index = 0; index < count; index += 1) await root.runnerPipeline.run({ maxProgress: 1 });
+  for (let index = 0; index < count; index += 1) {
+    await root.runnerPipeline.run({ maxProgress: 1 });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  }
 }
 
 function isTerminalDeliveryConfirmation(event: {

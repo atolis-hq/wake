@@ -148,7 +148,12 @@ async function attemptExecution(
   ).catch(() => {
     // A detached worker must never create an unhandled rejection for its caller.
   });
+  await yieldToRunStart();
   return (await runtime.repository.load(currentRunId)).view!;
+}
+
+function yieldToRunStart(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
 }
 
 // A Run completion atomically carries the full execution lease context.
