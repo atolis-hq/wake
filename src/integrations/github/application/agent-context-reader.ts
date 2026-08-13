@@ -63,7 +63,7 @@ async function currentPullRequestContext(
   resources: Pick<ResourceService, 'correlationsForWork' | 'get'>,
   workItemId: WorkItemId,
 ): Promise<AgentContextPullRequest | undefined> {
-  let current: AgentContextPullRequest | undefined;
+  let current: { readonly context: AgentContextPullRequest; readonly position: number } | undefined;
   for (const correlation of await resources.correlationsForWork(workItemId)) {
     const resource = await resources.get(correlation.resourceId);
     if (resource?.kind !== BuiltInResourceKind.PullRequest) continue;
@@ -72,10 +72,11 @@ async function currentPullRequestContext(
     for (const event of await journal.readStream(integrationStream(adapter))) {
       const observed = selectGitHubAdapterEvent(event);
       if (!isCurrentPullRequestObservedEvent(observed, adapter, resource.externalKey.key)) continue;
-      current = pullRequestContext(observed.payload);
+      if (current === undefined || event.globalPosition > current.position)
+        current = { context: pullRequestContext(observed.payload), position: event.globalPosition };
     }
   }
-  return current;
+  return current?.context;
 }
 
 function pullRequestContext(payload: WorkObservedEvent['payload']): AgentContextPullRequest {
