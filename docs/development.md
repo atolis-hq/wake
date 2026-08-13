@@ -1,186 +1,115 @@
-?# Development
+# Developing Wake
 
-This guide covers local Wake development from a source checkout: dev-mode
-setup, npm scripts, formatting, and the source-checkout-specific parts of
-the sandbox workflow (self-update, GitHub polling). For the packaged-install
-path (`npm install -g @atolis-hq/wake`), see
-[docs/getting-started.md](getting-started.md) — the sandbox `build`/`up`/
-`setup` walkthrough there applies to a source checkout too, once `wake-dev`
-is set up below.
+This guide is for a source checkout of Wake. For installing and operating a
+Wake home, see [Getting started](getting-started.md),
+[Configuration](configuration.md), and [Workflows](workflows.md).
 
-## Local Commands
+## Local commands
 
-From the Wake repo root:
+From the repository root:
 
 ```bash
 npm install
+npm run build
 npm run test:fast
+npm run test:integration
+npm run test:e2e
+npm run test:web
+npm run check:specs
 npm run verify
-npm test
-npm run tick
 ```
 
-Useful commands:
+`npm run verify` is the complete local gate: functional-decision and scenario
+coverage, architecture checks, linting, formatting, a TypeScript build, and
+the non-live test suite. For a scoped change, start with the smallest relevant
+test and report the checks actually run. `npm run check:specs` reports module
+specifications whose `asOf` checkpoint needs a source-grounded refresh.
 
-- `npm run tick` runs one control-plane tick using fake ticketing-system data
-  from `.wake/fixtures/issues.json` when present.
-- `npm run lint` runs ESLint over the TypeScript and JavaScript source files.
-- `npm run format` rewrites supported files with Prettier.
-- `npm run format:check` verifies Prettier formatting without changing files.
-- `npm run verify` runs linting, formatting checks, a TypeScript build, and the
-  test suite. CI runs this command for pull requests and pushes to `main`.
-- For the authoritative local test-selection policy, including when to use the
-  full suite, see [CLAUDE.md](../CLAUDE.md#testing-and-verification-policy).
-- `npm run start` runs the resident loop.
-- `npm run ui` runs the read-only control-plane UI, including the status bar,
-  condition board, item detail, activity feed, config, and health views. It
-  binds `127.0.0.1:4317` by default. See
-  [docs/specs/control-plane-ui.md](specs/control-plane-ui.md) for the full
-  design and `--port`, `--host`, and `--token` flags.
-- `npm run smoke` runs a smoke test against the configured real runner.
-- `npm run smoke:claude` runs a minimal Claude Haiku smoke test.
-- `npm run smoke:codex` runs a minimal Codex smoke test with the lower-cost
-  `gpt-5.4-mini` model.
-- `npm run smoke:cursor` runs a minimal Cursor smoke test.
-- `npm run smoke:claude -- --remote-control` starts a minimal remote-control
-  Claude smoke session.
+`npm run tick`, `npm run start`, `npm run ui`, and `npm run smoke` invoke the
+source entry point against the current Wake home. They use the current directory
+unless `--wake-root` is supplied.
 
-## Formatting Workflow
+## Useful command reference
 
-Use editor save hooks for formatting when available. They give both humans and
-agents immediate feedback before changes are staged, which keeps review diffs
-focused on the actual code change.
+| Command | When to use it |
+| --- | --- |
+| `npx vitest run <path>` | Run one focused test file while developing a scoped behaviour change. |
+| `npx vitest run -t "name"` | Run tests whose name matches a focused scenario. |
+| `npm run test:unit` / `test:fast` | Run the unit suite. `test:fast` is the normal quick local suite. |
+| `npm run test:integration` | Exercise composed services and durable infrastructure boundaries. |
+| `npm run test:e2e` | Exercise serial, non-live end-to-end scenarios. |
+| `npm run test:e2e:live` | Run live-provider E2E scenarios only when the required external setup is available. |
+| `npm run test:architecture` | Run architecture-focused tests. |
+| `npm run test:web` / `npm run build:web` | Test or build the web surface after web/API/view-model changes. |
+| `npm run build` | Type-check and embed the source version. |
+| `npm run build:docker` | Build the TypeScript and web artefacts used by the Docker image. |
+| `npm run lint` / `npm run format:check` | Check linting or formatting without modifying files. |
+| `npm run format` | Apply Prettier formatting across supported files. |
+| `npm run lint:architecture` | Validate module manifests, contract vocabulary, and dependency boundaries. |
+| `npm run check:catalogue` / `npm run check:scenarios` | Validate functional-decision catalogue and scenario coverage. |
+| `npm run check:specs` | Detect module specifications that need source-grounded synchronization. |
+| `npm run knip` | Check unused files, exports, types, and dependencies. |
+| `npm run verify` | Run the broad local verification gate before a cross-cutting handoff. |
+| `npm run tick` / `npm run start` | Run one control-plane pass or the resident loop against a Wake home. |
+| `npm run ui` | Start the source UI host. |
+| `npm run smoke`, `npm run smoke:claude`, `npm run smoke:codex`, `npm run smoke:cursor` | Smoke-test the configured default or a specific runner path. |
 
-Commit hooks are useful as a final local guard, but they are intentionally not
-required by this repo yet because Wake often commits from non-interactive agent
-sessions where hook installation and shell startup behavior can vary. If hooks
-are added later, prefer a lightweight pre-commit hook that runs `npm run lint`
-and `npm run format:check`, leaving `npm run verify` and CI as the authoritative
-full check.
+Use the narrowest command that proves the changed behaviour first. Add the
+relevant integration or E2E scenario when changing workflow, persistence,
+runner, or provider behaviour; use `npm run verify` when the change is
+cross-cutting or before a broad integration handoff.
 
-## Configuration
+## Development CLI
 
-Wake's behavior can be customized through its YAML config files, at the root
-of whichever Wake home `--wake-root` (or the current directory, by default)
-resolves to. `wake init`/`wake-dev init` creates `wake-home/config.yaml` and
-`wake-home/config.workflows.yaml`.
-
-See [docs/configuration.md](configuration.md) for the full config structure and
-available options. For current Claude, Codex, and Cursor runner capability
-differences, see [docs/runner-comparison.md](runner-comparison.md).
-
-## Dev Mode Setup
+To use this checkout without replacing a globally installed `wake`, link the
+small `bin` package rather than the repository root:
 
 ```bash
 npm install
 cd bin && npm link && cd ..
-```
-
-`npm link` (run from `bin/`, which is its own tiny local package) registers
-a `wake-dev` command on your `PATH` that runs `src/main.ts` live via this
-checkout's own `tsx` — no build step, and every invocation picks up your
-latest source changes immediately. It works from any directory (e.g. after
-you `cd` into a wake-home), the same as the packaged `wake` binary. Linking
-from `bin/` rather than the repo root keeps this independent of a real
-`wake` install — running `npm link` from the repo root would overwrite the
-global `wake` symlink with this checkout too, which isn't what you want if
-you also use the published package.
-
-```bash
 wake-dev init ./wake-home
-cd ./wake-home
 ```
 
-`wake-dev init --dev` / `wake-dev init --packaged` force a specific
-`dev.mode` if auto-detection ever picks the wrong one (e.g. testing a local
-`npm pack` install from inside a source checkout).
+`wake-dev` executes this checkout's `src/main.ts` through its local `tsx`, so
+each invocation picks up source changes without a build step. It accepts the
+same commands as `wake`.
 
-From here, follow [docs/getting-started.md](getting-started.md)'s "Build and
-start the sandbox" / "Run it" / "Check your setup" sections, using `wake-dev`
-in place of `wake`.
+## Source-mode sandbox and self-update
 
-## Self-update
+`wake-dev init --dev` writes a Wake home intended for a source checkout. Set
+`host.development.mode: source` and
+`host.development.repoRoot: /path/to/wake` when configuring it manually; source
+mode requires `repoRoot`. A packaged install uses `mode: packaged` (or leaves
+development settings empty).
 
-Only available when `config.dev.mode` is `"source"` — a packaged install
-(`dev.mode: "packaged"`, or unset on an older wake-home) gets a clear error
-pointing at the packaged-mode update path instead: `npm install -g
-@atolis-hq/wake@latest && wake sandbox build && wake sandbox update`.
-
-Run with `--wake-root` pointing at your **wake-home** directory (the one
-scaffolded by `wake init`, containing `config.yaml`) — like every other
-sandbox lifecycle command (`build`/`up`/`down`), `self-update` is not an npm
-script. Running it from the dev repo checkout without `--wake-root` fails
-with "Sandbox self-update requires config.dev.repoRoot", because that's the
-one field that only exists in your scaffolded `config.yaml`, not in the repo:
+Run source self-update against the Wake home, not against the repository root:
 
 ```bash
-wake-dev sandbox self-update --wake-root /path/to/your/wake-home
+wake-dev self-update --wake-root /path/to/wake-home
 ```
 
-`self-update` checks for a newer version tag on `origin`, and if found: waits
-for any active run to finish (same mechanism as `wake stop`), checks out the
-tag, builds a versioned image (`<sandbox.imageRepository>:<tag>`), replaces
-the running container, verifies the entrypoint-managed `wake start` process is
-running, and health-checks it with a real `tick` against a throwaway
-`--wake-root`. On failure it rolls back to the last-known-good
-image/tag, records the failed tag in `<wake-root>/self-update-ledger.json` so
-it's never silently retried, and files a GitHub issue with the failure detail
-via `gh issue create`.
+The update process pauses new control-plane work, drains or cancels active
+runs within the configured host timeouts, updates the source checkout, builds
+the configured sandbox image, restores service, health-checks it, and rolls
+back a failed deployment while recording the failure. It requires a clean
+source working tree and is unavailable in packaged mode.
 
-Flags:
+| Option | Meaning |
+| --- | --- |
+| `--tag <tag>` | Update to one explicit tag instead of discovering the latest eligible tag. |
+| `--force` | Proceed when the tag is already applied or marked as a prior failed update. |
+| `--loop` | Continue checking and applying updates until interrupted. |
+| `--loop-interval-ms <ms>` | Positive loop delay in milliseconds; default `60000`. |
 
-- `--force` — proceed even if the tag matches what's already applied, or is
-  recorded as a known-bad tag.
-- `--tag <tag>` — target an explicit tag instead of discovering the latest
-  one (useful for testing/rehearsal).
-- `--loop` — don't exit after one check; repeat forever, sleeping
-  `--loop-interval-ms` (default 5 minutes) between checks. Each iteration is
-  independent: a failed iteration (a transient git/docker error, for example)
-  is logged and the loop continues rather than exiting, and a healthy no-op
-  check (already on the latest tag) is cheap — it's just `git fetch --tags`
-  plus a tag comparison, no rebuild.
+## Design boundaries
 
-Requires a clean git working tree in `config.dev.repoRoot` and `gh`
-authenticated with permission to create issues on the repo.
+Read the target module's `MODULE.md`, `module.json`, public `index.ts`, and
+current `SPEC.md` before changing it. Each bounded module owns its event types,
+payloads, stream references, decoder, and draft factory. The journal is
+authoritative; projections are rebuildable read models registered in Bootstrap.
 
-**`self-update` (with or without `--loop`) runs on the host, not inside the
-sandbox container.** It has to be able to stop and replace the very container
-it might be updating, and the host `docker`/`git` CLIs aren't reachable from
-inside the container. `wake stop`/`sandbox` are already routed to the host by
-`dispatchMainCommand` itself, so this falls out of the existing routing — you
-just need something on the host keeping the process alive.
-
-To run it continuously with no external scheduler, start the loop as a
-long-lived host process:
-
-```bash
-wake-dev sandbox self-update --wake-root /path/to/your/wake-home --loop
-```
-
-Leave it running in a background terminal, a `tmux`/`screen` session, or a
-dedicated terminal tab. It polls indefinitely until the process is stopped
-(Ctrl+C, or killed) — there's no separate scheduler or cron job to configure.
-If you want it to survive terminal closes or host reboots, wrap it with
-whatever process supervisor you'd use for any other long-running host script
-(e.g. `pm2 start wake-dev -- sandbox self-update --wake-root /path/to/your/wake-home --loop`,
-an `nssm`/Windows service, or a systemd unit) — that's optional and outside
-Wake's own scope, since Wake only owns what happens inside the loop, not how the host keeps a
-process alive.
-
-## GitHub Issues Polling
-
-Wake can poll configured GitHub repositories when `sources.github.enabled` is
-set to `true`. Authentication is resolved from the current GitHub CLI session
-via `gh auth token`, and Wake routes work through configured named runners and
-capability runnerPools. `--runner fake` remains available as a global local override.
-
-GitHub Issues sync runs inside the normal tick path. Each tick polls GitHub,
-translates provider payloads into canonical ticket events, appends those events,
-rebuilds local projections, decides whether work is needed, and only then
-invokes Wake.
-
-The default smoke prompt is intentionally tiny:
-
-```text
-This is Wake, reply with "Hi from Wake"
-```
+Use durable fakes and the composed Bootstrap graph for E2E work. Do not import
+another module's internals or make a surface reconstruct an event. Reference
+documents describe current behaviour only; ADRs, reports, plans, and designs
+are historical records and should not be revised during ordinary implementation
+work.

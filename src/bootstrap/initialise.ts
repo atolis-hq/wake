@@ -232,28 +232,40 @@ and either:
   then reference it from \`runnerPools\`.
 - remove entries which are not needed.
 
-## 2. External integrations
+## 2. GitHub source
 
-Ask the user which external source(s) should feed Wake work items (an issue
-tracker, for example), and whether it should start polling immediately or
-stay off until they're ready.
+Ask the user:
 
-Add an entry under \`integrations\` in \`config.yaml\`, for example:
+- Which GitHub repository or repositories should Wake monitor? (each is an
+  \`owner/repo\` pair)
+- Which issue or pull-request labels should opt work in?
+- Should polling start immediately, or stay disabled until they are ready?
+
+Configure the built-in provider under \`integrations\` in \`config.yaml\`:
 
 \`\`\`yaml
 integrations:
-  <name>:
-    provider: <provider-id>
+  github:
+    provider: github
     enabled: true # or leave false to configure now, enable later
-    # the remaining fields are specific to that provider — ask the user, or
-    # check that provider's own configuration reference, for the exact
-    # fields it needs (which repositories/projects to watch, credentials,
-    # which events opt an item in).
+    repositories:
+      - owner: owner
+        repo: repo
+    intake:
+      - where: { kind: issue, labels: [automation] }
+        matchMode: all
+        tags: [automation]
 \`\`\`
 
-This file intentionally does not hardcode any one provider's field shape —
-Wake's integration providers are pluggable, and each owns its own
-configuration schema.
+Wake reconciles its own labels on correlated issues and pull requests:
+\`wake:status.<working|awaiting-approval|blocked|completed|failed>\`,
+\`wake:stage.<current-stage>\`, \`wake:workflow.<workflow-name>\`, and
+\`wake:watching\` while a child watch runs. It preserves all non-\`wake:\`
+labels. These are status projections, not commands; never use a \`wake:\`
+label in an intake selector.
+
+For every GitHub field, including credentials and polling, consult
+https://github.com/atolis-hq/wake/blob/main/docs/configuration.md#built-in-github-provider.
 
 ## 3. Credential mounts (check before asking)
 

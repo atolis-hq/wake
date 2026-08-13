@@ -108,8 +108,8 @@ For more detail, see [docs/vision.md](docs/vision.md) and
   provider.
 - **Human resumption.** A human can pick up the exact local agent session when a
   direct terminal intervention is the best way forward.
-- **Operator correlation escape hatch.** `wake correlate <workItemKey>
-<resourceUri>` lets an operator hand-declare that a resource (a PR, a Slack
+- **Operator correlation escape hatch.** `wake correlate <resourceUri>
+<workItemId>` lets an operator hand-declare that a resource (a PR, a Slack
   thread, etc.) belongs to an existing work item when nothing detected the
   link automatically. See [docs/configuration.md](docs/configuration.md).
 
@@ -138,10 +138,10 @@ adapters currently exist for:
 - **[Codex](https://openai.com/codex/)**
 - **[Cursor](https://cursor.com/cli)**
 
-Each runner sits behind the same `AgentRunner` contract, so Wake's routing,
+Each runner sits behind the same execution contract, so Wake's routing,
 lifecycle, and sandbox behavior stay the same regardless of which CLI executes
-a given step. A fake runner adapter also exists for zero-token testing of the
-control plane itself. See [docs/runner-comparison.md](docs/runner-comparison.md)
+a given activity. A fake runner adapter also exists for zero-token testing of
+the control plane itself. See [docs/runner-comparison.md](docs/runner-comparison.md)
 for capability differences between runners.
 
 ## Getting Started

@@ -1,9 +1,5 @@
 # Agent Activity — Component Specification
 
----
-asOf: 725a0bc
----
-
 ## Type, purpose, and scope
 
 Adapter. Agent Activity is the built-in `agent` Activity: it translates a

@@ -1,30 +1,58 @@
-# Wake event types
+# Wake events
 
-Wake event envelopes store the literal event type in `sourceEventType`. Wake-owned event types use the `wake.<noun>.<verb-or-state>` convention and are defined in `src/domain/event-types.ts`.
+Wake stores immutable, globally ordered event envelopes. The envelope contract
+is defined by `src/kernel/contracts/events.ts`; every event has an identifier,
+an event type, a typed stream reference, a payload, and an occurrence time.
+The append-only journal is the durable record. Projections are rebuildable
+read models and never define or reconstruct events.
 
-External adapters also emit provider event types such as `ticket.*`, `pr.*`, and `fake.*`; those are source-specific vocabularies and are not part of this Wake-owned catalog.
+## Event ownership
 
-| Event type | Meaning | Payload shape |
-| --- | --- | --- |
-| `wake.audit.autonomous-decision` | Records an autonomous workflow decision and the inputs used to make it. | `{ decisionType, workItemId, runId, workflowRevision, inputsConsidered, outcome, timestamp }` |
-| `wake.correlation.primary-conflict` | Warns that a requested primary resource correlation was downgraded because another work item already owns the resource. | `{ resourceUri, incumbentWorkItemKey }` |
-| `wake.correlation.registered` | Registers a resource URI as correlated to a work item. | `{ resourceUri, role, relation, provenance, registeredBy? }` |
-| `wake.correlation.retracted` | Removes a resource URI correlation from a work item. | `{ resourceUri }` |
-| `wake.labels.requested` | Requests outbound synchronization of Wake status, stage, and workflow labels. | `{ statusLabel, stageLabel, workflowLabel, origin, idempotencyKey, deliveryState: 'PENDING' }` |
-| `wake.pr-auto-merge.enabled` | Records that Wake enabled auto-merge for an approved pull request. | `{ idempotencyKey }` |
-| `wake.pr-review.approved` | Records that Wake approved a pull request review after approval policy passed. | `{ idempotencyKey }` |
-| `wake.publish.confirmed` | Confirms that an outbound publish intent was delivered or intentionally suppressed. | `{ intentEventId, idempotencyKey, deliveryState: 'CONFIRMED', ...sinkDetails }` |
-| `wake.publish.failed` | Records a failed outbound publish attempt for bounded retry. | `{ intentEventId, intentEventType, idempotencyKey, deliveryState: 'PENDING', error }` |
-| `wake.publish.intent.requested` | Requests an outbound comment, reply, status update, question, or approval card. | `{ kind, origin, body, action, sentinel, runId, idempotencyKey, deliveryState: 'PENDING', sessionId?, model?, cli?, duration?, tokens?, cost?, workspacePath?, failureRepeated?, previousFailureClass? }` |
-| `wake.publish.sent-unconfirmed` | Marks an outbound publish intent as sent before Wake has observed confirmation. | `{ intentEventId, intentEventType, idempotencyKey, deliveryState: 'SENT_UNCONFIRMED' }` |
-| `wake.retry.requested` | Requests that a failed work item be retried. | `{ requestedBy }` |
-| `wake.run.claimed` | Records that Wake claimed a work item for an agent run. | `{ action, priorStage, claimedStage?, sourceRevision, watcherRun?, watcherTrigger? }` |
-| `wake.run.completed` | Records the terminal result of an agent run or internal lifecycle transition. | `{ action?, sentinel, nextStage?, runId, sessionId?, sessionCli?, workspacePath?, reason?, handledCommentId?, failureClass?, blockReason?, executionOutcome?, workflowOutcome?, watcherRun?, allowAutoApproval?, body? }` |
-| `wake.run.requested` | Requests that a scheduled work item be run immediately. | `{ requestedBy }` |
-| `wake.workflow.selected` | Pins the workflow selected for a newly minted work item. | `{ workflow, selectedFromEventId }` |
-| `wake.workitem.created` | Mints a Wake work item identity before resource correlation is registered. | `{}` |
-| `wake.workitem.deleted` | Soft-deletes a work item and excludes it from board display and execution. | `{ requestedBy }` |
-| `wake.workitem.frozen` | Marks a work item as frozen so runner ticks will not execute it. | `{ requestedBy }` |
-| `wake.workitem.unfrozen` | Clears a work item freeze so runner ticks may execute it again. | `{ requestedBy }` |
-| `wake.workspace.cleaned` | Records successful cleanup of a closed issue workspace. | `{ workspacePath }` |
-| `wake.workspace.cleanup-failed` | Records a workspace cleanup failure without aborting the cleanup sweep. | `{ workspacePath, error }` |
+Event types are owned by the bounded module that defines their payload schema.
+Use that module's `contracts/events.ts` as the exact catalogue and decoder:
+
+| Owner | Event namespace / role |
+| --- | --- |
+| `work` | `work.` facts for a work item's objective, links, lifecycle controls, and closure. |
+| `resources` | `resources.` facts for discovered external resources and work-item correlation. |
+| `activities` | `activities.`, `pr.`, and `review.` facts and decisions for activities. |
+| `orchestration` | `orchestration.` facts for instances, activations, stages, signals, child workflows, and outcomes. |
+| `execution` | `execution.` facts for runs, leases, runner results, cancellation, and recovery. |
+| `control-plane` | `control.` facts for control-plane coordination and runner quotas. |
+| `integrations` | Provider observations, artifact facts, and delivery intents/outcomes. GitHub-specific contracts live in `src/integrations/github/contracts/events.ts`. |
+
+## Current event catalogue
+
+The following is the current Wake-owned catalogue. Event names are stable
+contracts; their exact payloads and permitted streams remain defined by the
+owning module's contract source.
+
+| Owner | Event types |
+| --- | --- |
+| `work` | `work.item-created`, `work.objective-revised`, `work.item-linked`, `work.item-closed`, `work.item-cancelled`, `work.auto-approval-granted`, `work.auto-approval-revoked`, `work.item-frozen`, `work.item-unfrozen`, `work.item-deleted` |
+| `resources` | `resources.resource-discovered`, `resources.resource-revision-observed`, `resources.work-correlation-established`, `resources.work-correlation-retracted`, `resources.work-correlation-conflicted` |
+| `activities` | `pr.discovered`, `pr.revision-changed`, `pr.state-changed`, `pr.checks-changed`, `pr.review-accepted`, `review.acceptance-signal-recorded`, `pr.review-changes-requested`, `pr.review-rejected`, `pr.merge-denied`, `pr.approve-denied`, `pr.merge-authorized`, `pr.approve-requested`, `pr.merge-requested`, `pr.approve-decision-claimed`, `pr.merge-decision-claimed` |
+| `orchestration` | `orchestration.instance-started`, `orchestration.stage-entered`, `orchestration.activity-requested`, `orchestration.activity-started`, `orchestration.activity-outcome-accepted`, `orchestration.activity-execution-failed`, `orchestration.activity-waiting`, `orchestration.signal-wait-started`, `orchestration.signal-accepted`, `orchestration.supplemental-activity-queued`, `orchestration.supplemental-activity-dequeued`, `orchestration.repeat-counted`, `orchestration.retry-counted`, `orchestration.instance-completed`, `orchestration.instance-blocked`, `orchestration.operator-retry-requested`, `orchestration.instance-superseded`, `orchestration.child-requested`, `orchestration.child-started`, `orchestration.child-completed`, `orchestration.child-completion-consumed`, `orchestration.causal-activation-rejected`, `orchestration.group-budget-exhausted`, `orchestration.primary-claimed`, `orchestration.group-claimed` |
+| `execution` | `execution.run-started`, `execution.run-succeeded`, `execution.run-failed`, `execution.run-lease-claimed`, `execution.run-lease-renewed`, `execution.run-external-execution-reported`, `execution.run-runner-result-reported`, `execution.workspace-cleanup-failed`, `execution.run-cancellation-requested`, `execution.run-cancellation-confirmed`, `execution.run-cancelled`, `execution.run-recovered`, `execution.run-ambiguity-observed`, `execution.run-ambiguous`, `execution.activation-claimed`, `execution.activation-released` |
+| `control-plane` | `control-plane.dispatch-paused`, `control-plane.dispatch-resumed`, `control-plane.runner-paused`, `control-plane.runner-resumed` |
+| `integrations` | `integration.github.work-observed`, `integration.github.comment-observed`, `integration.github.delivery-observed`, `integration.artifact-verification-unresolved`, `delivery.attempt-started`, `delivery.confirmed`, `delivery.failed`, `delivery.ambiguous`, `delivery.reconciled`, `delivery.escalated` |
+
+An event must be written only to the stream kind required by its schema. Typed
+draft factories enforce this at compile time; runtime selectors validate it
+when replaying persisted data. Selectors return `null` for another module's
+namespace and throw if an event in their own namespace is malformed.
+
+## Event handling rules
+
+- Preserve the original envelope and append a new fact; never mutate an event
+  to represent a later state.
+- Decode persisted data before folding it into a domain object or projection.
+- Keep provider payload validation at the integration boundary, then translate
+  it into typed Wake facts.
+- Express cross-module links with the exported stream identifiers and relation
+  vocabulary, not magic strings or copied provider locators.
+- Register production projections in Bootstrap so replay and normal operation
+  observe the same event sequence.
+
+For the current module topology and advancement path, see
+[Architecture](architecture.md).

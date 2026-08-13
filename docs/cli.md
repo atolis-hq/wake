@@ -1,111 +1,63 @@
-# CLI Reference
+# CLI reference
 
-Every command accepts `--wake-root <path>` (defaults to the current
-directory) and, for the runtime commands, `--no-sandbox` to force host
-execution even when `docker/Dockerfile` exists. See
-[getting-started.md](getting-started.md) for the end-to-end walkthrough.
+`--wake-root <path>` selects a Wake home and defaults to the current directory.
+After `wake sandbox build` creates `<wake-root>/docker/Dockerfile`, runtime
+commands automatically execute in the sandbox; pass `--no-sandbox` to run them
+on the host. See [Getting started](getting-started.md) for an operational
+walkthrough and [Configuration](configuration.md) for Wake-home settings.
 
-```
-wake init <path>           Scaffold a new Wake home directory
-wake sandbox <subcommand>  Build/run/manage the Docker sandbox
-wake tick                  Run one control-plane tick
-wake start                 Run the resident loop
-wake stop                  Stop the sandbox container gracefully
-wake smoke                 Smoke-test the configured runner
-wake ui                    Run the control-plane UI server
-wake audit                 Show autonomous decision audit history
-wake correlate             Manually correlate a resource to a work item
-wake doctor                Diagnose config/GitHub/Docker/sandbox setup problems
-wake --version              Print the installed Wake version
-wake --help                 Show this message
-```
+## Commands
 
-Run `wake --help` at any time for this list with one-line descriptions.
-
-## `wake init <path>`
-
-Scaffolds a new Wake home at `<path>`: `config.yaml`,
-`config.workflows.yaml`, `prompts/`, and `workspaces/`. Does not create
-`docker/` — that's written lazily by `wake sandbox build`.
-
-- `--dev` — force `dev.mode: "source"` (build the sandbox from a local
-  checkout rather than installing the published npm package).
-- `--packaged` — force `dev.mode: "packaged"`.
-- With neither flag, the mode is auto-detected from whether `init` is run
-  from inside a Wake source checkout.
-
-## `wake sandbox <subcommand>`
-
-Run with no subcommand, `--help`, `-h`, or `help` to print this list.
-
-| Subcommand | Description |
+| Command | Purpose |
 | --- | --- |
-| `build` | Generate `docker/Dockerfile` (if missing) and build the sandbox image. |
-| `up` | Start the sandbox container. |
-| `update` | Recreate the sandbox container from the current image. |
-| `down` | Stop and remove the sandbox container. |
-| `stop` | Stop the resident loop gracefully, then the container. |
-| `self-update` | Pull the latest tag and rebuild (`dev.mode: "source"` only). |
-| `setup` | Run interactive first-time setup inside the container. |
-| `exec [-- <command>]` | Run a command inside the sandbox container, or drop into an interactive shell if no command is given. |
-| `logs [--tail <n>]` | Print sandbox container logs (default 200 lines). |
-| `resume` | Resume a previous agent session inside the sandbox. |
+| `wake init <path>` | Scaffolds an empty Wake home with configuration, prompts, setup guide, workspace directory, and empty durable-state directories. `--dev` selects `host.development.mode: source`; `--packaged` selects `packaged`. |
+| `wake tick` | Runs one bounded control-plane advancement pass. |
+| `wake start` | Runs the resident advancement loop. |
+| `wake stop` | Waits for active runs to finish before stopping the resident flow. |
+| `wake ui` | Starts the web UI surface; its API host and port come from `surfaces.api`. |
+| `wake api` | Starts the target API surface. |
+| `wake smoke` | Starts a smoke invocation using the configured default runner pool. |
+| `wake doctor` | Diagnoses configuration, provider, Docker, and sandbox setup. It runs on the host. |
+| `wake validate-state` | Validates control-plane state health under `.wake/`. |
+| `wake audit` | Shows durable autonomous-decision audit history. |
+| `wake correlate` | Manually correlates a resource with a WorkItem through the public control-plane surface. |
+| `wake self-update` | Safely updates a source installation. |
+| `wake --help` / `wake --version` | Shows the authoritative command summary / installed version. |
 
-`docker/Dockerfile` is generated once from a template that matches
-`config.dev.mode` (`source` copies this checkout in; `packaged` installs
-`@atolis-hq/wake` from npm at the pinned version). Once it exists it is
-never overwritten — it's yours to edit; rebuild with `sandbox build` after
-editing it.
+## Sandbox commands
 
-## `wake tick`
+| Command | Purpose |
+| --- | --- |
+| `wake sandbox build` | Generates `docker/Dockerfile` if it is missing and builds the configured image. Wake does not overwrite an existing Dockerfile. |
+| `wake sandbox up` / `down` / `update` | Starts, stops/removes, or recreates the sandbox container. |
+| `wake sandbox exec [-- <command>]` | Runs a command inside the container; omitting a command opens the configured interactive execution path. |
+| `wake sandbox logs [--tail <positive integer>]` | Reads container logs; the default tail length is 200 lines. |
+| `wake sandbox setup` | Runs interactive sandbox-owned authentication and git setup. |
+| `wake sandbox resume <sessionId> --cwd <path> --cli <claude|codex|cursor>` | Manually resumes a known CLI session for debugging. Normal workflow dispatch handles compatible session resumption itself. |
 
-Runs one control-plane tick: polls configured sources, folds events into
-projections, and applies at most one deterministic policy decision per
-work item (launching an agent run if the tick calls for one).
+The Dockerfile template is selected from `host.development.mode`: source mode
+uses the configured `host.development.repoRoot`; packaged mode uses the
+installed package. `host.development.repoRoot` is required for source mode.
 
-## `wake start`
+## Operational model
 
-Runs the resident loop — repeated ticks on `config.scheduler.intervalMs`,
-backing off toward `maxIntervalMs` when idle.
+`tick`, `start`, `ui`, `smoke`, `audit`, `correlate`, and `validate-state` are
+runtime commands. They operate on the same durable journal, projections, and
+configuration selected by `--wake-root`; a tick is not a separate legacy
+scheduler. Use `wake doctor` after initialization and sandbox build, and use
+`wake smoke` only after selecting a real runner in an execution pool.
 
-## `wake stop`
+## Arguments and recovery
 
-Signals the resident loop to stop gracefully: waits for any active run to
-finish, then stops the container. Accepts `--poll-interval-ms` and
-`--timeout-ms` to tune how long it waits before giving up.
-
-## `wake smoke [claude|codex|cursor]`
-
-Runs a minimal smoke prompt against a configured real runner entry to
-verify the CLI/session plumbing works, without spending meaningful tokens.
-Pass a runner kind to pick a specific configured entry; otherwise the
-first real (non-fake) entry in `config.runners` is used.
-
-## `wake ui`
-
-Starts the control-plane UI server (default `127.0.0.1:4317`, configurable
-via `config.ui`).
-
-## `wake audit <workItemKey>`
-
-Prints the append-only autonomous decision history for a work item, including
-trigger firings, watcher dispatches, review verdicts, and auto-resolutions.
-The command reads `.wake/events/*.jsonl` directly rather than projection state,
-so the history remains available after `.wake/state/` is deleted and rebuilt.
-
-## `wake correlate <workItemKey> <resourceUri> [--role <role>]`
-
-Manually correlates an external resource (e.g. a GitHub issue or PR URI)
-to an existing work item, for cases the automatic reverse-index lookup
-missed. `--role` defaults to `implementation`.
-
-## `wake doctor`
-
-Diagnoses config, GitHub, Docker, and sandbox setup problems. Run after
-`wake init` and `wake sandbox build`. Reports prompt/runner config issues
-and GitHub token resolvability as failures (exits non-zero); reports
-sandbox-vs-CLI version drift and prompt/Dockerfile customizations that
-have drifted from the shipped defaults as notices (does not fail).
-
-Runs on the host only — it never auto-delegates into the sandbox, since
-its job is to report on sandbox reachability from the outside.
+- `wake audit <workItemId>` reads canonical journal facts for that WorkItem,
+  rather than relying on a projection, so it remains useful while views are
+  rebuilt.
+- `wake correlate <resource> <workItemId>` records a manual resource
+  correlation in that order. Use it only when normal integration correlation
+  cannot establish the intended link.
+- `wake validate-state [--rebuild-projections]` checks durable state health.
+  The optional flag rebuilds projections from the authoritative journal; it
+  does not replace or discard journal facts.
+- `wake stop` waits for active runs to finish before it stops the resident
+  flow. `wake doctor` is the host-side diagnostic to run after initialization
+  and after a sandbox build.

@@ -1,175 +1,150 @@
 # Wake Architecture
 
-## Principles
+Wake is an event-driven control plane for autonomous software work. It keeps
+workflow decisions, execution attempts, external observations, and operator
+actions durable and replayable; an agent runner performs an activity but never
+decides the workflow itself.
 
-- Wake is a control plane, not a long-lived worker session.
-- Durable state files are schema-validated state-of-record.
-- Immutable event envelopes are the primary durable record.
-- Canonical deterministic fields stay separate from extensible agent-readable context.
-- Structured event audits drive automation and diagnostics.
-- Agent-produced outbound intents use the same event model as imported source events.
-- Fake ticketing-system and runner adapters are permanent test harnesses and future real-adapter seams.
-- Real runner integrations live behind the same adapter boundary, with Claude Haiku smoke tests kept intentionally minimal.
-- Ticketing adapters must translate provider-specific payloads into canonical
-  ticket events before core consumes them.
+## Architectural principles
 
-## Module Boundaries
+The following principles guide both changes to the current system and future
+extensions. They are intentionally independent of a particular provider, CLI,
+or workflow shape.
 
-- `src/domain`: pure types, schemas, sentinels, and comment-marker rules
-- `src/core`: lifecycle orchestration, tick policy, and resident loop control
-- `src/adapters`: filesystem IO, fake integrations, and real runner adapters
-- `src/lib`: focused utilities for paths, files, locks, and event shaping
+- **Wake is a control plane, not a long-lived agent session.** The control
+  plane chooses and records work deterministically; an agent is an interruptible
+  external executor of one Activity. Process memory must not be the only place
+  a decision, claim, or result exists.
+- **Facts are immutable; views are disposable.** The append-only journal is
+  the durable record. A projection, checkpoint, board, API response, or UI
+  model is a rebuildable interpretation of facts, never an alternate source of
+  truth.
+- **A bounded module owns its vocabulary.** Event names, payloads, stream
+  references, closed status/outcome vocabularies, decoders, and draft factories
+  belong to one module. Consumers use its public contract rather than copying
+  strings or reconstructing envelopes.
+- **Policy is deterministic and separate from execution.** Orchestration
+  interprets compiled workflow policy; Execution runs an Activity; Integrations
+  translate provider interaction. An agent response is an input to policy, not
+  permission to change policy.
+- **Open input becomes typed internal fact at the boundary.** Provider payloads
+  and agent-readable context are untrusted external data. Validate them at the
+  integration or Activity boundary, then translate them to typed Wake contracts
+  before domain logic or a projection consumes them.
+- **Wake owns channel routing and delivery.** Activities express outcomes and
+  artifacts through Wake-owned contracts. Integrations turn durable delivery
+  work into provider-specific API calls, so a workflow and agent prompt do not
+  need to know a particular issue tracker, chat system, or pull-request API.
+- **Recovery and idempotency are normal paths.** Leases, activation claims,
+  durable result facts, checkpoints, and delivery reconciliation make restarts
+  and duplicate observations explicit cases to handle rather than exceptional
+  conditions to hide.
+- **Fakes are first-class seams.** Fake providers and runners are durable test
+  harnesses for composed, zero-token scenarios. New real integrations should
+  meet the same public contracts rather than bypass them with special-case
+  control-plane logic.
 
-## Durable State
+## Module boundaries
 
-Wake owns a Wake home directory (`config.yaml`, `config.workflows.yaml`, `prompts/`, `workspaces/` at
-the visible top level, everything else under a hidden `.wake/` — see
-[docs/getting-started.md](getting-started.md)). The canonical durable record
-is an append-only event stream; projections and summaries are derived from
-it:
+`src/` is organised as bounded modules. Each module exposes only its
+`index.ts`; Bootstrap is the sole composition root.
 
-- `config.yaml`/`config.workflows.yaml` for versioned config
-- `.wake/ledger.json` for pause windows and future budget state
-- `.wake/events/<date>.jsonl` for immutable imported and internal event envelopes
-- `.wake/state/<workId>.json` for a derived projection of the current work item
-- `.wake/state/index/<xx>.json` for the reverse index that resolves a resource to its work item
-- `.wake/runs/<run-id>.json` for per-invocation records
-- optional future prompt/context artifacts derived from events plus projections
+| Module | Owns |
+| --- | --- |
+| `kernel` | Event envelopes, identifiers, relations, clocks, and persistence contracts. |
+| `persistence` | Filesystem and in-memory event journals, checkpoints, projections, and locks. |
+| `work` | Work-item facts, lifecycle controls, and work projections. |
+| `resources` | External-resource facts and their correlation to work items. |
+| `activities` | Activity definitions and pull-request/review activities. |
+| `orchestration` | Compiled workflow definitions, durable workflow instances, activations, waits, watches, and retry policy. |
+| `execution` | Runs, runner adapters, workspaces, leases, cancellation, recovery, and transcripts. |
+| `control-plane` | Bounded advancement, intake, selection, scheduling, quotas, and resident/tick hosts. |
+| `integrations` | Provider polling, inbound translation, artifact registration, and outbound delivery. |
+| `surfaces` | CLI, HTTP API, and web presentation. |
+| `bootstrap` | Root configuration, paths, concrete adapter selection, projections, and composition. |
 
-The projection file is no longer the source of truth. It is a materialized view
-used for fast deterministic routing. If projection logic changes, Wake should be
-able to rebuild `.wake/state/` from the canonical event stream.
+No domain module imports a provider client, filesystem implementation, or
+surface. Surfaces call public applications and views; they do not write facts
+directly. Bootstrap selects concrete infrastructure and connects the complete
+application graph.
 
-A work item's identity is a minted `work-<ulid>`, not the ticket that started it.
-Sources do not assign it: they stamp `sourceRefs.resourceUri` (a
-`<provider>:<kind>:<locator>` string, e.g. `github:issue:owner/repo#82`), and the
-control plane resolves that through the reverse index to the owning work item,
-minting a new one on a miss. This is why no durable path embeds a provider, repo,
-or issue number — a ticket can be transferred or renumbered, and one work item may
-have several representations. See
-[ADR 0001](adrs/0001-correlating-external-resources-to-work-items.md) and the
-[work identity and correlation design](superpowers/specs/2026-07-16-work-identity-correlation-design.md).
+## Durable model
 
-Each event envelope should carry:
+The append-only journal is authoritative. Events have a globally ordered
+envelope with an event type, stream reference, payload, and occurrence time.
+Every owning module supplies strict event decoders; a decoder returns `null`
+for another namespace and rejects malformed events in its own namespace.
 
-- a stable event id and schema version
-- source system and source event type such as `github.issue_comment.created`
-- correlation identifiers for the work item, issue, comment, review, or PR
-- `occurredAt` and `ingestedAt`
-- a normalized canonical payload Wake scripts can rely on
-- optional source-specific raw payload fragments
-- optional derived hints computed cheaply during ingestion
+Projections are derived read models. The filesystem implementation stores the
+journal and projection/checkpoint data below the Wake home's `.wake/`
+directory, but consumers must treat the journal—not a projection file—as the
+source of truth. The production projection runtime rebuilds and updates the
+board, analytics, resource lookup, and module projections from that journal.
 
-Core modules should branch on canonical ticket events such as `ticket.upsert`,
-`ticket.comment.created`, `ticket.comment.updated`, and
-`ticket.reply.published`. Provider-specific event names such as GitHub issue
-webhook or API concepts belong in `sourceSystem`, `sourceRefs`, and optional
-`raw` fragments for diagnostics only.
+Work-item identities are minted by Wake. Resources are separate durable facts
+and are correlated to work items through `resources`; provider locators do not
+become Wake identifiers or filesystem path components.
 
-This lets the same durable artifacts serve three roles:
+Events serve multiple architectural roles at once: they trigger deterministic
+advancement, form the replayable audit trail, preserve the inputs needed to
+rebuild operational views, and carry integration/delivery work across module
+boundaries. Wake does not ask an agent to scan an unbounded journal by default;
+Activity composition supplies the bounded task context required for its current
+Activation.
 
-- trigger Wake when relevant external or internal changes arrive
-- provide agent context for continuing work
-- provide a replayable audit trail
+## Advancement flow
 
-They should also support a fourth role:
+1. An integration polls an external provider and appends typed observation
+   events.
+2. Inbound translation admits work, creates or updates resources, and records
+   correlations and signals.
+3. The control plane performs one bounded `advanceOnce` pass: it applies
+   eligibility, quotas, schedules, and coordination claims.
+4. Orchestration interprets the compiled workflow instance and requests an
+   activity when a position is ready.
+5. Execution claims and runs an activity, recording lifecycle, lease, runner,
+   and result facts on the appropriate streams.
+6. Orchestration accepts the activity outcome and deterministically advances,
+   waits, retries, blocks, or completes the workflow.
+7. Integration reactors translate publication and artifact facts to the
+   configured external provider. Surface projections expose the same durable
+   state to the CLI, API, and UI.
 
-- represent outbound agent intents that the control plane will publish to one or
-  more configured channels
+The tick, resident loop, and scheduled host all use the same control-plane
+advancement capability. Recovery is explicit: execution leases and result
+envelopes make incomplete attempts visible after restart rather than relying on
+process memory.
 
-Per-issue projection files should deliberately separate canonical deterministic
-fields from optional `context` payloads that can grow for agent-facing data later
-without destabilizing scripts.
+## Designing for extension
 
-## Event-First Flow
+New capability should extend a bounded seam rather than introduce a parallel
+path around it:
 
-The intended flow is:
+- A **provider** validates its own configuration and external payloads,
+  translates observations through Integrations, and implements delivery without
+  leaking provider types into Work, Orchestration, or Execution.
+- An **Activity** declares its input and outcome contracts. It may invoke
+  infrastructure through Execution, but it does not decide the next workflow
+  transition.
+- A **runner** implements Execution's runner contract and is selected by
+  configuration through a named pool; it never becomes a workflow router.
+- A **surface** calls public applications and presents projections. It does not
+  append another module's facts directly or infer lifecycle from UI state.
 
-1. ingest a source event from GitHub, Jira, or another system
-2. resolve its `sourceRefs.resourceUri` to a work item through the reverse index,
-   minting a new work item on a miss, and stamp the resulting `workItemKey`
-3. write an immutable event envelope
-4. update one or more projections such as `state/<workId>.json`
-5. let deterministic policy read projections and selected event slices
-6. let the runner prompt receive a compact projection summary plus relevant
-   recent events, with direct event-file reading available when needed
+This keeps additions testable with durable fakes, makes production reachability
+provable through Bootstrap, and ensures a new transport or CLI does not change
+the meaning of existing workflow facts.
 
-Wake should not require the model to scan a full raw event stream by default.
-The control plane should pick the relevant slice and keep prompts cheap.
+## Configuration and extension
 
-## Inbound And Outbound Events
+The root schema is composed in
+`src/bootstrap/config/root-schema.ts`. Its top-level sections are `work`,
+`resources`, `activities`, `orchestration`, `execution`, `controlPlane`,
+`integrations`, `surfaces`, `transcripts`, and `host`. `wake init` writes the
+current `config.yaml` and `config.workflows.yaml` scaffold.
 
-The event stream is not just an import log. Wake should use one canonical event
-model for both:
-
-- **inbound source events**
-  - GitHub issue created
-  - GitHub issue comment created
-  - PR review submitted
-  - Jira ticket updated
-- **outbound Wake intents**
-  - question publish requested
-  - status update publish requested
-  - handoff message publish requested
-  - PR link publish requested
-
-The agent should not need to know which delivery channel to integrate with.
-Instead it can emit a Wake event or request an event through a Wake-owned
-surface. The control plane then decides how to publish that event to GitHub,
-Slack, or another configured sink.
-
-This preserves channel independence:
-
-- the agent expresses intent
-- Wake owns routing and delivery policy
-- sink-specific formatting lives in adapters, not agent prompts
-
-## GitHub Sources
-
-Wake maintains two separate GitHub work sources:
-
-- **github-issues**: the primary source polling for issues matching configured
-  repositories and policies. When enabled, it discovers new issues for adoption
-  and polls activity (comments) on issues already correlated to work items.
-- **github-pr**: an optional secondary source for pull request activity. When
-  enabled, it is primarily **watchlist-driven**: it polls comments and reviews
-  on PRs already correlated to work items (e.g., PRs opened by Wake's agent as
-  artifacts). However, it also performs its own lightweight repository-level
-  discovery for uncorrelated PRs; whether a discovered PR can mint a new work
-  item is gated by the `policy.requiredAuthors` configuration — an empty list
-  means only PRs correlated through artifacts are polled, never standalone PRs.
-
-For the complete specification of the PR activity source including discovery
-qualification, artifact registration, and activity polling behavior, see
-[docs/superpowers/specs/2026-07-18-pr-activity-source-design.md](superpowers/specs/2026-07-18-pr-activity-source-design.md).
-
-## Global Intake And Work-Item Streams
-
-Not every important event originates inside a single issue thread. Wake should
-distinguish between:
-
-- **global intake/index events**
-  - all synced work signals across systems
-  - used for scanning, prioritization, and pickup decisions
-- **correlated work-item streams**
-  - the subset of events linked to a chosen `workItemKey`
-  - used as detailed execution context for a run
-
-When a ticket or item is picked up, Wake should correlate the relevant intake
-events into a work-item stream and build projections from that stream. That lets
-the queue stay broad while each active run stays context-rich and focused.
-
-## Runner Strategy
-
-The repo supports two runner modes:
-
-- `fake`: deterministic tests and local tick development without token spend
-- `claude`: a real Claude Code adapter with JSON-print mode for smoke tests and a remote-control smoke path
-
-The minimal smoke prompt is:
-
-```text
-This is Wake, reply with "Hi from Wake"
-```
-
-That keeps token usage low while proving the CLI, session capture, and remote-control surfaces are wired correctly.
+To add a provider, activity, runner, or surface, keep provider and process
+details in the relevant infrastructure module, expose a typed public contract,
+and register the concrete implementation in Bootstrap. Do not bypass event
+ownership by emitting another module's event type or reconstructing event
+envelopes in a view.

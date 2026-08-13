@@ -99,7 +99,7 @@ describe('target initialise root', () => {
     }
   });
 
-  it('writes a SETUP.md that covers runners, integrations, and credential mounts', async () => {
+  it('writes a SETUP.md that covers runners, GitHub, and credential mounts', async () => {
     const root = await mkdtemp(join(tmpdir(), 'wake-initialise-root-'));
     await initialiseWakeRoot(root);
 
@@ -108,7 +108,9 @@ describe('target initialise root', () => {
     expect(setup).toContain('execution.agentRunners');
     expect(setup).toContain('runnerPools');
     expect(setup).toContain('integrations');
-    expect(setup).toContain('provider: <provider-id>');
+    expect(setup).toContain('provider: github');
+    expect(setup).toContain('repositories');
+    expect(setup).toContain('wake:status.');
     expect(setup).toContain('host.sandbox.extraMounts');
     expect(setup).toContain('.credentials.json');
   });

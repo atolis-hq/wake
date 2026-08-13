@@ -1,5 +1,5 @@
 ---
-asOf: 4e8c5f6d6955ee3bf6a926063cb1c6446f4b1e0b
+asOf: 31cb84460b6099ea50edc17a70d3ec679ba08cc5
 ---
 
 # Resources — Module Specification
@@ -164,4 +164,3 @@ Resources does not own:
 ## Task 27B synchronization (2026-08-02)
 
 Work correlations carry durable provenance. `provider-observed`, `agent-reported`, and `operator-declared` distinguish how a relation was learned; Resource remains the sole owner of conflict recording and an agent-reported primary conflict is never silently downgraded to secondary.
-
