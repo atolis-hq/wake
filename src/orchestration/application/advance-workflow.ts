@@ -200,10 +200,15 @@ export class AdvanceWorkflow {
     return (await this.repository.list()).filter((view) => view !== null);
   }
 
-  async listWatchMatches(eventType: string) {
+  async listWatchMatches(eventType: string, context?: CommandContext) {
     const matches = await Promise.all(
       (await this.listAll()).map(async (parent) => {
-        const definition = await this.workflows.definitionFor(parent);
+        const loaded = await this.repository.loadRequired(parent.workflowInstanceId);
+        const definition =
+          context === undefined
+            ? await this.workflows.definitionFor(loaded.view)
+            : await this.workflows.definitionForOperation(loaded.view, loaded.sequence, context);
+        if (definition === null) return [];
         return definition.watches
         .filter(
           (watch) =>

@@ -79,6 +79,24 @@ it('persists instances and accepts outcomes idempotently', async () => {
       (event) => event.eventType === 'orchestration.workflow-definition-registered',
     ),
   ).toHaveLength(1);
+  await createWorkService(journal).create(
+    { workItemId: workId('2'), objective: 'ship again' },
+    { ...context, commandId: 'create-work-2' },
+  );
+  await service.start(
+    {
+      workflowInstanceId: workflowInstanceId('workflow-2'),
+      workItemId: workId('2'),
+      workflowName: workflowName('default'),
+      orchestrationGroupId: orchestrationGroupId('group-2'),
+    },
+    { ...context, commandId: 'start-2' },
+  );
+  expect(
+    (await journal.readAll(0)).filter(
+      (event) => event.eventType === 'orchestration.workflow-definition-registered',
+    ),
+  ).toHaveLength(1);
   expect((await service.listPendingActivations()).length).toBe(1);
   await expect(
     service.acceptOutcome(

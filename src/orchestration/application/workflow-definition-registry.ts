@@ -12,7 +12,7 @@ import type { CompiledWorkflow } from '../contracts/config.js';
 import { selectOrchestrationEvent } from '../contracts/event-decoder.js';
 import { OrchestrationEventType } from '../contracts/events.js';
 import { type WorkflowName } from '../contracts/identifiers.js';
-import { workflowDefinitionsStream } from '../contracts/streams.js';
+import { OrchestrationStreamKind, workflowDefinitionsStream } from '../contracts/streams.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
 
 export const workflowDefinitionFingerprint = (definition: CompiledWorkflow): string =>
@@ -22,7 +22,7 @@ export const workflowDefinitionKey = (name: WorkflowName, fingerprint: string): 
   `${name}:${fingerprint}`;
 
 export const workflowDefinitionsProjection: ProjectionDefinition<CompiledWorkflow> = {
-  name: 'workflow-definitions',
+  name: OrchestrationStreamKind.WorkflowDefinitions,
   select(event) {
     const owned = selectOrchestrationEvent(event);
     return owned?.eventType === OrchestrationEventType.WorkflowDefinitionRegistered
@@ -65,6 +65,7 @@ export class WorkflowDefinitionRegistry {
     context: { readonly occurredAt: string; readonly correlationId: string; readonly commandId: string },
   ): Promise<void> {
     const stream = workflowDefinitionsStream();
+    if (await this.isRegistered(name, fingerprint)) return;
     const draft = createEventDraft({
       eventId: `workflow-definition:${name}:${fingerprint}`,
       eventType: OrchestrationEventType.WorkflowDefinitionRegistered,
@@ -84,9 +85,21 @@ export class WorkflowDefinitionRegistry {
         await this.journal.append(stream, sequence, [draft]);
         return;
       } catch (error) {
+        if (await this.isRegistered(name, fingerprint)) return;
         if (!(error instanceof WrongExpectedSequenceError)) throw error;
       }
     }
+  }
+
+  private async isRegistered(name: WorkflowName, fingerprint: string): Promise<boolean> {
+    return (await this.journal.readStream(workflowDefinitionsStream())).some((event) => {
+      const owned = selectOrchestrationEvent(event);
+      return (
+        owned?.eventType === OrchestrationEventType.WorkflowDefinitionRegistered &&
+        owned.payload.workflowName === name &&
+        owned.payload.fingerprint === fingerprint
+      );
+    });
   }
 
   async resolve(

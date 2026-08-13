@@ -2,7 +2,7 @@ import { createEventDraft, EventSourceKind, type CommandContext } from '../../ke
 import { WorkStatus, type WorkService } from '../../work/index.js';
 import type { StartWorkflowInstance } from '../contracts/commands.js';
 import type { WorkflowName } from '../contracts/identifiers.js';
-import { WorkflowInstanceKind } from '../contracts/vocabulary.js';
+import { WorkflowInstanceKind, WorkflowStatus } from '../contracts/vocabulary.js';
 import { OrchestrationEventType } from '../contracts/events.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
 import { workflowInstanceStream } from '../contracts/streams.js';
@@ -72,7 +72,7 @@ export class StartWorkflow {
       return await this.definitions.resolve(view);
     } catch (error) {
       if (!(error instanceof WorkflowDefinitionUnavailableError)) throw error;
-      if (view.status !== 'blocked')
+      if (view.status !== WorkflowStatus.Blocked)
         await this.repository.append(view.workflowInstanceId, sequence, [
           createEventDraft({
             eventId: `${context.commandId}:${OrchestrationEventType.InstanceBlocked}`,
