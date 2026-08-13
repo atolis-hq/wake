@@ -9,6 +9,7 @@ import { createEventDraft, EventActorKind, EventSourceKind } from '../../../kern
 import type { AdapterId } from '../../contracts/identifiers.js';
 import { integrationStream } from '../../contracts/streams.js';
 import type { ExternalEventSource } from '../application/poll-service.js';
+import { boundedDiagnosticEvidence } from '../contracts/check-evidence.js';
 import { GitHubEventType, type GitHubAdapterEventDraft } from '../contracts/events.js';
 import { formatGitHubResourceKey } from '../contracts/external-key.js';
 import {
@@ -110,8 +111,8 @@ function pullRequestObservation(input: {
     assignees: gitHubAssigneeLogins(pullRequest),
     raw: {
       number: pullRequest.number,
-      checkRuns: diagnosticCheckRuns(input.evidence.checkRuns),
-      statuses: diagnosticStatuses(input.evidence.statuses),
+      checkRuns: boundedDiagnosticEvidence(input.evidence.checkRuns),
+      statuses: boundedDiagnosticEvidence(input.evidence.statuses),
     },
   };
   const fingerprint = evidenceFingerprint(payload, input.evidence);
@@ -126,28 +127,6 @@ function pullRequestObservation(input: {
     stream: integrationStream(input.adapter ?? GitHubAdapter),
     payload,
   });
-}
-
-function diagnosticCheckRuns(checkRuns: readonly GitHubCheckRunPayload[]) {
-  return checkRuns.map(
-    ({ name, status, conclusion, started_at, completed_at, details_url, html_url }) => ({
-      ...(name === undefined ? {} : { name }),
-      ...(status === undefined ? {} : { status }),
-      ...(conclusion === undefined ? {} : { conclusion }),
-      ...(started_at === undefined ? {} : { started_at }),
-      ...(completed_at === undefined ? {} : { completed_at }),
-      ...(details_url === undefined ? {} : { details_url }),
-      ...(html_url === undefined ? {} : { html_url }),
-    }),
-  );
-}
-
-function diagnosticStatuses(statuses: readonly GitHubCommitStatusPayload[]) {
-  return statuses.map(({ context, state, target_url }) => ({
-    ...(context === undefined ? {} : { context }),
-    ...(state === undefined ? {} : { state }),
-    ...(target_url === undefined ? {} : { target_url }),
-  }));
 }
 
 function normalizeCheckEvidence(
