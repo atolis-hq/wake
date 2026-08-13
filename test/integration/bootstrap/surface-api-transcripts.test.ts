@@ -128,20 +128,66 @@ describe('surface transcript applications', () => {
       cli: 'codex',
       timestamp: '2026-08-13T10:00:02.000Z',
       text: 'output',
+      sessionId: 'session-1',
     });
+    await store.capturePrompt({
+      workItemId: 'work-1',
+      runId: 'run-2',
+      cli: 'codex',
+      timestamp: '2026-08-13T10:00:03.000Z',
+      text: 'follow-up input',
+    });
+    await store.captureResponse({
+      workItemId: 'work-1',
+      runId: 'run-2',
+      cli: 'codex',
+      sessionId: 'session-1',
+      timestamp: '2026-08-13T10:00:04.000Z',
+      text: 'follow-up output',
+    });
+    let replayedRunRepository = false;
     const applications = createExecutionApplications(
       {
         transcriptStore: store,
-        execution: { list: async () => Promise.reject(new Error('journal replay')) },
+        execution: {
+          list: async () => {
+            replayedRunRepository = true;
+            return Promise.reject(new Error('journal replay'));
+          },
+        },
         projections: {
           read: async (stream: string, key: string) =>
             stream === 'execution' && key === 'run-1'
               ? {
                   value: {
-                    view: run('run-1', '2026-08-13T10:00:00.000Z', '2026-08-13T10:00:05.000Z'),
+                    view: {
+                      ...run('run-1', '2026-08-13T10:00:00.000Z', '2026-08-13T10:00:05.000Z'),
+                      workflowInstanceId: 'workflow-1',
+                    },
                   },
                 }
               : { value: { view: { workItemId: 'work-1' } } },
+          list: async (stream: string) =>
+            stream === 'execution'
+              ? [
+                  {
+                    value: {
+                      view: {
+                        ...run('run-1', '2026-08-13T10:00:00.000Z', '2026-08-13T10:00:05.000Z'),
+                        workflowInstanceId: 'workflow-1',
+                      },
+                    },
+                  },
+                  {
+                    value: {
+                      view: {
+                        ...run('run-2', '2026-08-13T10:00:02.000Z', '2026-08-13T10:00:06.000Z'),
+                        workflowInstanceId: 'workflow-1',
+                      },
+                    },
+                  },
+                ]
+              : [],
         },
       } as unknown as CompositionRoot,
       () => '2026-08-13T10:00:05.000Z',
@@ -150,9 +196,13 @@ describe('surface transcript applications', () => {
     await expect(applications.transcript?.('run-1')).resolves.toMatchObject({
       data: {
         available: true,
-        entries: expect.arrayContaining([expect.objectContaining({ runId: 'run-1' })]),
+        entries: expect.arrayContaining([
+          expect.objectContaining({ runId: 'run-1' }),
+          expect.objectContaining({ runId: 'run-2' }),
+        ]),
       },
     });
+    expect(replayedRunRepository).toBe(false);
   });
 
   it('reads a selected deleted-work group from projections without replaying services', async () => {
