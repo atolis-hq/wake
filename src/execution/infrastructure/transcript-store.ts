@@ -1,6 +1,10 @@
 import { createHash } from 'node:crypto';
 import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import {
+  TranscriptGroupKind,
+  type TranscriptGroupKind as TranscriptGroupKindValue,
+} from '../contracts/vocabulary.js';
 
 export interface TranscriptCapture {
   readonly workItemId: string;
@@ -14,11 +18,11 @@ export interface TranscriptResponseCapture extends TranscriptCapture {
   readonly sessionId?: string | undefined;
 }
 
-export interface TranscriptPromptFinalisation extends Omit<TranscriptCapture, 'text'> {}
+export type TranscriptPromptFinalisation = Omit<TranscriptCapture, 'text'>;
 
 export interface TranscriptGroup {
   readonly id: string;
-  readonly kind: 'session' | 'run';
+  readonly kind: TranscriptGroupKindValue;
   readonly cli?: string;
   readonly latestAt: string;
   readonly runIds: readonly string[];
@@ -96,7 +100,7 @@ export class TranscriptStore {
       });
     }
     return groups.sort((left, right) => {
-      if (left.kind !== right.kind) return left.kind === 'session' ? -1 : 1;
+      if (left.kind !== right.kind) return left.kind === TranscriptGroupKind.Session ? -1 : 1;
       return left.id.localeCompare(right.id);
     });
   }
@@ -242,9 +246,9 @@ function parseMessageFile(file: string): Omit<TranscriptMessage, 'text'> | undef
 function parseGroup(id: string): Omit<TranscriptGroup, 'runIds' | 'latestAt'> | undefined {
   const session = /^session--(.+)--(.+)$/.exec(id);
   if (session?.[1] !== undefined && session[2] !== undefined) {
-    return { id, kind: 'session', cli: decodeURIComponent(session[1]) };
+    return { id, kind: TranscriptGroupKind.Session, cli: decodeURIComponent(session[1]) };
   }
-  if (/^run--.+$/.test(id)) return { id, kind: 'run' };
+  if (/^run--.+$/.test(id)) return { id, kind: TranscriptGroupKind.Run };
   return undefined;
 }
 

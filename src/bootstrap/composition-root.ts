@@ -167,6 +167,8 @@ function resolveResourceLink(externalKey: {
   return resourceLinkResolvers[externalKey.adapter]?.(externalKey) ?? null;
 }
 
+// Composition is deliberately the one place that assembles every module.
+// eslint-disable-next-line complexity
 export async function createCompositionRoot(
   wakeRoot: string,
   options: CompositionRootOptions = {},

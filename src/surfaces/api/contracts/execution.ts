@@ -33,7 +33,7 @@ export interface RunTranscriptResponse {
 
 export interface TranscriptEntryResponse {
   readonly occurredAt: string;
-  readonly channel: 'input' | 'agent';
+  readonly channel: TranscriptChannel;
   readonly text: string;
   readonly runId: string;
   readonly groupId: string;
@@ -42,7 +42,7 @@ export interface TranscriptEntryResponse {
 
 export interface TranscriptGroupResponse {
   readonly groupId: string;
-  readonly kind: 'session' | 'run';
+  readonly kind: TranscriptGroupKind;
   readonly cli?: string;
   readonly latestAt: string;
   readonly runIds: readonly string[];
@@ -61,3 +61,4 @@ export interface RunnerResponse {
   readonly detail?: string;
   readonly updatedAt: string;
 }
+import type { TranscriptChannel, TranscriptGroupKind } from '../../../execution/index.js';

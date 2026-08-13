@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { withWorkflowContext } from '../../../src/bootstrap/surface-api-run-context.js';
 import type { CompositionRoot } from '../../../src/bootstrap/composition-root.js';
+import { withWorkflowContext } from '../../../src/bootstrap/surface-api-run-context.js';
 import type { RunResponse } from '../../../src/surfaces/api/contracts/execution.js';
 
 const run: RunResponse = {

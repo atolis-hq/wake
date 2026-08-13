@@ -13,7 +13,11 @@ it('records one execution failure and blocks its pending activation', async () =
     outcomeKinds: ['done'],
     resources: [],
     executionKind: 'deterministic',
-    handler: { async execute() { return { kind: 'done' } as const; } },
+    handler: {
+      async execute() {
+        return { kind: 'done' } as const;
+      },
+    },
   });
   world.configureWorkflow('default', {
     stages: {

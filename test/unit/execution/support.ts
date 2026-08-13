@@ -3,10 +3,13 @@ import { z } from 'zod';
 import { workId } from '../../support/identities.js';
 
 import { ActivityRegistry, activationId, activityName } from '../../../src/activities/index.js';
-import { createExecutionService, RunStatus, type RunView } from '../../../src/execution/index.js';
+import {
+  createExecutionService,
+  type RunStatus,
+  type RunView,
+} from '../../../src/execution/index.js';
 import { orchestrationGroupId, workflowInstanceId } from '../../../src/orchestration/index.js';
 import { InMemoryEventJournal } from '../../../src/persistence/index.js';
-import {} from '../../../src/work/index.js';
 import { FakeClock, SequentialIds } from '../../e2e/support/world.js';
 
 export function executionFixture() {

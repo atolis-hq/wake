@@ -203,7 +203,7 @@ interface AgentRequestContext {
         readonly cacheWrite?: number;
       }
     | undefined;
-  readonly workspace: { readonly path: string; readonly mode: 'read-only' | 'branch' } | undefined;
+  readonly workspace: ActivityExecutionContext['workspace'];
 }
 
 async function resolveTemplate(
@@ -282,6 +282,8 @@ type AgentTemplate =
     }
   | undefined;
 
+// The runner request maps each independently optional execution concern.
+// eslint-disable-next-line max-params, complexity
 function requestFrom(
   input: { prompt?: string; template?: string; model?: string; allowedTools?: readonly string[] },
   runId: string,
@@ -304,7 +306,7 @@ function requestFrom(
         readonly cacheWrite?: number;
       }
     | undefined,
-  workspace: { readonly path: string; readonly mode: 'read-only' | 'branch' } | undefined,
+  workspace: ActivityExecutionContext['workspace'],
 ) {
   return {
     runId,
@@ -320,9 +322,7 @@ function requestFrom(
   };
 }
 
-function workspaceFields(
-  workspace: { readonly path: string; readonly mode: 'read-only' | 'branch' } | undefined,
-) {
+function workspaceFields(workspace: ActivityExecutionContext['workspace']) {
   return workspace === undefined
     ? {}
     : { workspacePath: workspace.path, workspaceMode: workspace.mode };

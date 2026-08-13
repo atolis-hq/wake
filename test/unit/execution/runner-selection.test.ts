@@ -174,22 +174,16 @@ describe('Execution runner selection', () => {
       outputTokens: 20,
       cacheReadTokens: 5,
     });
-    await seedPriorRun(
-      journal,
-      implement,
-      'started-session-1',
-      'fake',
-      'session-1',
-      { inputTokens: 1_000, outputTokens: 1_000, testStatus: 'started' },
-    );
-    await seedPriorRun(
-      journal,
-      implement,
-      'ambiguous-session-1',
-      'fake',
-      'session-1',
-      { inputTokens: 1_000, outputTokens: 1_000, testStatus: 'ambiguous' },
-    );
+    await seedPriorRun(journal, implement, 'started-session-1', 'fake', 'session-1', {
+      inputTokens: 1_000,
+      outputTokens: 1_000,
+      testStatus: 'started',
+    });
+    await seedPriorRun(journal, implement, 'ambiguous-session-1', 'fake', 'session-1', {
+      inputTokens: 1_000,
+      outputTokens: 1_000,
+      testStatus: 'ambiguous',
+    });
     await seedPriorRun(journal, implement, 'a-terminal-session-2', 'fake', 'session-2', {
       inputTokens: 1_000,
       outputTokens: 1_000,
@@ -324,12 +318,17 @@ describe('Execution runner selection', () => {
     await service.attempt(activation(), context());
 
     expect(standard.requests).toEqual([expect.objectContaining({ resumeSessionId: 'session-1' })]);
-    expect(standard.requests[0]).not.toEqual(expect.objectContaining({ usageBaseline: expect.anything() }));
+    expect(standard.requests[0]).not.toEqual(
+      expect.objectContaining({ usageBaseline: expect.anything() }),
+    );
   });
 
   it('omits incomplete cache baselines but rejects malformed cache history', () => {
     const baseline = executionServiceModule.usageBaselineFor;
-    const run = (id: string, metadata: Readonly<Record<string, string | number | boolean | null>>) => ({
+    const run = (
+      id: string,
+      metadata: Readonly<Record<string, string | number | boolean | null>>,
+    ) => ({
       ...resumeRun(id, RunStatus.Failed, 'session-1', '2026-08-11T12:00:00.000Z', 1),
       agent: { outcome: 'FAILED' as const, displayBody: 'failed', metadata },
     });
@@ -337,7 +336,12 @@ describe('Execution runner selection', () => {
     expect(
       baseline(
         [
-          run('with-cache', { sessionId: 'session-1', inputTokens: 10, outputTokens: 20, cacheReadTokens: 5 }),
+          run('with-cache', {
+            sessionId: 'session-1',
+            inputTokens: 10,
+            outputTokens: 20,
+            cacheReadTokens: 5,
+          }),
           run('without-cache', { sessionId: 'session-1', inputTokens: 10, outputTokens: 20 }),
         ],
         'fake',
@@ -362,7 +366,12 @@ describe('Execution runner selection', () => {
     expect(
       baseline(
         [
-          run('negative-cache', { sessionId: 'session-1', inputTokens: 10, outputTokens: 20, cacheReadTokens: -1 }),
+          run('negative-cache', {
+            sessionId: 'session-1',
+            inputTokens: 10,
+            outputTokens: 20,
+            cacheReadTokens: -1,
+          }),
         ],
         'fake',
         'session-1',

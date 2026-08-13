@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   activationId,
   activityOrchestrationGroupId,
-  activityWorkflowInstanceId,
   ActivityOutcomeKind,
+  activityWorkflowInstanceId,
   BuiltInActivityName,
   createAgentActivity,
 } from '../../../src/activities/index.js';
@@ -117,7 +117,9 @@ DONE`;
         occurredAt: '2026-08-12T00:00:00.000Z',
         runner: {
           async start() {
-            return { result: Promise.resolve({ transport: 'succeeded' as const, output: rawOutput }) };
+            return {
+              result: Promise.resolve({ transport: 'succeeded' as const, output: rawOutput }),
+            };
           },
         },
         async reportExternalExecution() {},

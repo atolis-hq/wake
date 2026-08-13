@@ -117,9 +117,10 @@ async function waitingService(input: { readonly watchGate?: boolean } = {}) {
   return { service, baseContext };
 }
 
-async function rejectedApprovalWaitingService(
-  onRejectResume?: { readonly kind: 'stage'; readonly stage: ReturnType<typeof stageName> },
-) {
+async function rejectedApprovalWaitingService(onRejectResume?: {
+  readonly kind: 'stage';
+  readonly stage: ReturnType<typeof stageName>;
+}) {
   const journal = new InMemoryEventJournal(new FakeClock());
   const work = createWorkService(journal);
   const baseContext = {
@@ -140,7 +141,11 @@ async function rejectedApprovalWaitingService(
       outcomeKinds: ['blocked'],
       resources: [],
       executionKind: 'deterministic',
-      handler: { async execute() { return { kind: 'blocked' }; } },
+      handler: {
+        async execute() {
+          return { kind: 'blocked' };
+        },
+      },
     });
   }
   const definition = compileWorkflow(

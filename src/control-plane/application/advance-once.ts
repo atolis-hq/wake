@@ -288,10 +288,7 @@ async function findUnresolvedTerminal(
         (candidate.status === RunStatus.Succeeded && candidate.outcome !== undefined) ||
         isExecutionFailureTerminal(candidate.status),
     );
-    if (
-      run !== undefined &&
-      !item.workflow.acceptedOutcomes.includes(item.activation.activationId)
-    )
+    if (run !== undefined && !item.workflow.acceptedOutcomes.includes(item.activation.activationId))
       return { item, run };
   }
   return undefined;
@@ -299,8 +296,6 @@ async function findUnresolvedTerminal(
 
 function isExecutionFailureTerminal(status: RunStatus): boolean {
   return (
-    status === RunStatus.Failed ||
-    status === RunStatus.Cancelled ||
-    status === RunStatus.Ambiguous
+    status === RunStatus.Failed || status === RunStatus.Cancelled || status === RunStatus.Ambiguous
   );
 }

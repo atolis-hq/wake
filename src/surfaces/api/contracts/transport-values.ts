@@ -36,3 +36,19 @@ export const BoardConditionValue = {
 const boardCardFieldShape = { stage: true };
 
 export const BoardCardField = { Stage: Object.keys(boardCardFieldShape)[0]! } as const;
+
+const transcriptChannelShape = { input: true, agent: true };
+const transcriptChannels = Object.keys(transcriptChannelShape);
+
+export const TranscriptChannelValue = {
+  Input: transcriptChannels[0]!,
+  Agent: transcriptChannels[1]!,
+} as const;
+
+const transcriptGroupKindShape = { session: true, run: true };
+const transcriptGroupKinds = Object.keys(transcriptGroupKindShape);
+
+export const TranscriptGroupKindValue = {
+  Session: transcriptGroupKinds[0]!,
+  Run: transcriptGroupKinds[1]!,
+} as const;

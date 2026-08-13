@@ -9,6 +9,7 @@ import type {
   ActivityResourceCardinality,
   ActivityResourceRole,
   ActivityRunnerTransportStatus,
+  ActivityWorkspaceMode,
   ExternalExecutionKind,
 } from './vocabulary.js';
 
@@ -118,7 +119,7 @@ export interface ActivityExecutionContext {
     readonly cacheWrite?: number;
   };
   /** Isolated workspace leased by Execution for this invocation, when requested. */
-  readonly workspace?: { readonly path: string; readonly mode: 'read-only' | 'branch' };
+  readonly workspace?: { readonly path: string; readonly mode: ActivityWorkspaceMode };
   readonly runner?: AgentRunnerPort;
   readonly runnerContext?: {
     readonly runnerName: string;

@@ -1,5 +1,5 @@
 import type { ExternalExecutionKind } from '../../activities/index.js';
-import type { FinishedRunStatus } from './vocabulary.js';
+import type { FinishedRunStatus, WorkspaceMode } from './vocabulary.js';
 
 export interface RunnerRequest {
   readonly runId: string;
@@ -12,7 +12,7 @@ export interface RunnerRequest {
   readonly model?: string;
   readonly effort?: string;
   readonly workspacePath?: string;
-  readonly workspaceMode?: 'read-only' | 'branch';
+  readonly workspaceMode?: Exclude<WorkspaceMode, typeof WorkspaceMode.None>;
   readonly allowedTools: readonly string[];
   readonly maxTurns?: number;
   readonly resumeSessionId?: string;

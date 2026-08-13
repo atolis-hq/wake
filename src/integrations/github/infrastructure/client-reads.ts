@@ -1,3 +1,5 @@
+/* eslint-disable max-lines */
+
 import type { Octokit } from '@octokit/rest';
 import { PullRequestState } from '../../../activities/index.js';
 import type { GitHubIssueCommentPayload, GitHubIssuePayload } from '../contracts/payloads.js';

@@ -1,5 +1,10 @@
 import { ActivityOutcomeKind } from '../../../activities/index.js';
-import { agentTokenUsage, RunStatus, type RunView } from '../../../execution/index.js';
+import {
+  agentTokenUsage,
+  RunStatus,
+  type AgentRunResponse,
+  type RunView,
+} from '../../../execution/index.js';
 import type { RunResponse } from '../contracts/execution.js';
 
 const outcomeSentinels: Readonly<Record<ActivityOutcomeKind, string>> = {
@@ -10,6 +15,8 @@ const outcomeSentinels: Readonly<Record<ActivityOutcomeKind, string>> = {
   [ActivityOutcomeKind.Waiting]: 'WAITING',
 };
 
+// The response preserves optional run facts without introducing a second view model.
+// eslint-disable-next-line complexity
 export function presentRun(value: RunView): RunResponse {
   const usage = agentTokenUsage(value.agent?.metadata);
   const sentinel =
@@ -39,7 +46,7 @@ export function presentRun(value: RunView): RunResponse {
   };
 }
 
-function tokenBreakdown(metadata: NonNullable<RunView['agent']>['metadata'] | undefined) {
+function tokenBreakdown(metadata: AgentRunResponse['metadata'] | undefined) {
   const numeric = (key: string): number | undefined => {
     const value = metadata?.[key];
     return typeof value === 'number' ? value : undefined;

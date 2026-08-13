@@ -1,3 +1,5 @@
+/* eslint-disable max-lines */
+
 import {
   ActivityExecutionKind,
   type ActivityRegistry,
@@ -87,7 +89,12 @@ async function attemptExecution(
     ...(context.sessionPolicy === undefined ? {} : { policy: context.sessionPolicy }),
   };
   const resumeSessionId = resumeSessionIdFor(resumeCandidates, runner.cli, resumeScope);
-  const usageBaseline = usageBaselineFor(resumeCandidates, runner.cli, resumeSessionId, resumeScope);
+  const usageBaseline = usageBaselineFor(
+    resumeCandidates,
+    runner.cli,
+    resumeSessionId,
+    resumeScope,
+  );
   const existing = existingRun(prior, runtime.dependencies.clock, owner);
   if (existing !== undefined) return existing;
   const currentRunId = runId(runtime.dependencies.ids.next(ExecutionStreamKind.Run));
@@ -144,6 +151,8 @@ async function attemptExecution(
   return (await runtime.repository.load(currentRunId)).view!;
 }
 
+// A Run completion atomically carries the full execution lease context.
+// eslint-disable-next-line max-params
 async function completeRun(
   runtime: ExecutionRuntime,
   currentRunId: ReturnType<typeof runId>,

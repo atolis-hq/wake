@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { WorkflowStatus } from '../../../orchestration/index.js';
 import { WorkStatus } from '../../../work/index.js';
 import { WakeApiClient } from '../src/api/client.js';
 import { decodeWorkflow } from '../src/api/decoders.js';
@@ -92,7 +93,7 @@ describe('typed Wake API client', () => {
         workItemKey: 'wk_demo',
         workflowName: 'default',
         orchestrationGroupId: 'group-1',
-        status: 'blocked',
+        status: WorkflowStatus.Blocked,
         currentStage: 'implement',
         retryEligible: true,
       }),

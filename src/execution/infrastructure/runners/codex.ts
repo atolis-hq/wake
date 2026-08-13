@@ -1,4 +1,5 @@
 import type { AgentRunnerResult, Runner, RunnerRequest } from '../../contracts/runner.js';
+import { WorkspaceMode } from '../../contracts/vocabulary.js';
 import { cliRunner, type CliRunnerOptions, type RunnerDefaults } from './claude.js';
 
 export function createCodexRunner(options: CliRunnerOptions = {}): Runner {
@@ -39,7 +40,7 @@ export function codexCommandArgs(
 }
 
 function codexSandboxMode(workspaceMode: NonNullable<RunnerRequest['workspaceMode']>) {
-  return workspaceMode === 'branch' ? 'danger-full-access' : 'workspace-write';
+  return workspaceMode === WorkspaceMode.Branch ? 'danger-full-access' : 'workspace-write';
 }
 
 export function parseCodexOutput(

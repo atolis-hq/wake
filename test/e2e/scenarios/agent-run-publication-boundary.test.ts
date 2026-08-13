@@ -1,12 +1,17 @@
 import { expect, it } from 'vitest';
 import { z } from 'zod';
 import { activityName } from '../../../src/activities/index.js';
-import { ExecutionEventType, RunRepository, runId, runStream } from '../../../src/execution/index.js';
+import {
+  ExecutionEventType,
+  RunRepository,
+  runId,
+  runStream,
+} from '../../../src/execution/index.js';
 import { AgentRunPublicationReactor } from '../../../src/integrations/application/agent-run-publication-reactor.js';
 import { projectDeliveries } from '../../../src/integrations/delivery/application/delivery-projector.js';
+import { BuiltInAdapterId } from '../../../src/integrations/github/index.js';
 import { correlationId, createEventDraft } from '../../../src/kernel/index.js';
 import { workflowName } from '../../../src/orchestration/index.js';
-import { BuiltInAdapterId } from '../../../src/integrations/github/index.js';
 import { resourceKind } from '../../../src/resources/index.js';
 import { resId } from '../../support/identities.js';
 import { TestWorld } from '../support/world.js';
@@ -20,7 +25,11 @@ it('E2E-AGENT-PUBLICATION-001 waits for the approval decision before publishing 
     outcomeKinds: ['done'],
     resources: [],
     executionKind: 'deterministic',
-    handler: { async execute() { return { kind: 'done' } as const; } },
+    handler: {
+      async execute() {
+        return { kind: 'done' } as const;
+      },
+    },
   });
   world.configureWorkflow('default', {
     stages: { refine: { activity: 'agent', with: {}, on: { done: { then: 'done' } } } },
@@ -74,7 +83,11 @@ it('E2E-AGENT-PUBLICATION-002 publishes a transport failure after it is resolved
     outcomeKinds: ['done'],
     resources: [],
     executionKind: 'deterministic',
-    handler: { async execute() { return { kind: 'done' } as const; } },
+    handler: {
+      async execute() {
+        return { kind: 'done' } as const;
+      },
+    },
   });
   world.configureWorkflow('default', {
     stages: { implement: { activity: 'agent', with: {}, on: { done: { then: 'done' } } } },
@@ -137,21 +150,46 @@ async function appendTerminalAgentRun(
   const now = world.clock.now().toISOString();
   await world.journal.append(stream, 0, [
     createEventDraft({
-      eventId: `${id}:started`, eventType: ExecutionEventType.RunStarted, occurredAt: now,
-      correlationId: 'publication-boundary', causationId: 'publication-boundary',
-      actor: { kind: 'system', id: 'test' }, source: { kind: 'internal', id: 'test' }, stream,
-      payload: { activationId, activity: 'agent', workflowInstanceId, orchestrationGroupId: workflowInstanceId, attempt: 1, startedAt: now },
+      eventId: `${id}:started`,
+      eventType: ExecutionEventType.RunStarted,
+      occurredAt: now,
+      correlationId: 'publication-boundary',
+      causationId: 'publication-boundary',
+      actor: { kind: 'system', id: 'test' },
+      source: { kind: 'internal', id: 'test' },
+      stream,
+      payload: {
+        activationId,
+        activity: 'agent',
+        workflowInstanceId,
+        orchestrationGroupId: workflowInstanceId,
+        attempt: 1,
+        startedAt: now,
+      },
     }),
     createEventDraft({
-      eventId: `${id}:agent-result`, eventType: ExecutionEventType.RunRunnerResultReported, occurredAt: now,
-      correlationId: 'publication-boundary', causationId: 'publication-boundary',
-      actor: { kind: 'system', id: 'test' }, source: { kind: 'internal', id: 'test' }, stream,
-      payload: { transport: 'succeeded', agent: { outcome: 'DONE', displayBody: 'Plan complete.', metadata: {} } },
+      eventId: `${id}:agent-result`,
+      eventType: ExecutionEventType.RunRunnerResultReported,
+      occurredAt: now,
+      correlationId: 'publication-boundary',
+      causationId: 'publication-boundary',
+      actor: { kind: 'system', id: 'test' },
+      source: { kind: 'internal', id: 'test' },
+      stream,
+      payload: {
+        transport: 'succeeded',
+        agent: { outcome: 'DONE', displayBody: 'Plan complete.', metadata: {} },
+      },
     }),
     createEventDraft({
-      eventId: `${id}:succeeded`, eventType: ExecutionEventType.RunSucceeded, occurredAt: now,
-      correlationId: 'publication-boundary', causationId: 'publication-boundary',
-      actor: { kind: 'system', id: 'test' }, source: { kind: 'internal', id: 'test' }, stream,
+      eventId: `${id}:succeeded`,
+      eventType: ExecutionEventType.RunSucceeded,
+      occurredAt: now,
+      correlationId: 'publication-boundary',
+      causationId: 'publication-boundary',
+      actor: { kind: 'system', id: 'test' },
+      source: { kind: 'internal', id: 'test' },
+      stream,
       payload: { outcome: { kind: 'done' }, finishedAt: now },
     }),
   ] as never);
@@ -167,15 +205,32 @@ async function appendFailedAgentRun(
   const now = world.clock.now().toISOString();
   await world.journal.append(stream, 0, [
     createEventDraft({
-      eventId: `${id}:started`, eventType: ExecutionEventType.RunStarted, occurredAt: now,
-      correlationId: 'publication-failure', causationId: 'publication-failure',
-      actor: { kind: 'system', id: 'test' }, source: { kind: 'internal', id: 'test' }, stream,
-      payload: { activationId, activity: 'agent', workflowInstanceId, orchestrationGroupId: workflowInstanceId, attempt: 1, startedAt: now },
+      eventId: `${id}:started`,
+      eventType: ExecutionEventType.RunStarted,
+      occurredAt: now,
+      correlationId: 'publication-failure',
+      causationId: 'publication-failure',
+      actor: { kind: 'system', id: 'test' },
+      source: { kind: 'internal', id: 'test' },
+      stream,
+      payload: {
+        activationId,
+        activity: 'agent',
+        workflowInstanceId,
+        orchestrationGroupId: workflowInstanceId,
+        attempt: 1,
+        startedAt: now,
+      },
     }),
     createEventDraft({
-      eventId: `${id}:failed`, eventType: ExecutionEventType.RunFailed, occurredAt: now,
-      correlationId: 'publication-failure', causationId: 'publication-failure',
-      actor: { kind: 'system', id: 'test' }, source: { kind: 'internal', id: 'test' }, stream,
+      eventId: `${id}:failed`,
+      eventType: ExecutionEventType.RunFailed,
+      occurredAt: now,
+      correlationId: 'publication-failure',
+      causationId: 'publication-failure',
+      actor: { kind: 'system', id: 'test' },
+      source: { kind: 'internal', id: 'test' },
+      stream,
       payload: {
         failure: {
           kind: 'unexpected-execution-failure',

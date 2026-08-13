@@ -372,12 +372,7 @@ it('replaces a failed status label with working for an active primary workflow',
 
   expect(published).toEqual([
     {
-      labels: [
-        'bug',
-        'wake:status.working',
-        'wake:stage.implement',
-        'wake:workflow.dark-factory',
-      ],
+      labels: ['bug', 'wake:status.working', 'wake:stage.implement', 'wake:workflow.dark-factory'],
     },
   ]);
 });

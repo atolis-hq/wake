@@ -440,11 +440,12 @@ describe('advanceOnce', () => {
         },
       } as never,
       {
-        attempt: async () => ({
-          runId: 'run-00000000000000000000000001',
-          status: 'failed',
-          failure: { message: 'runner exited 1' },
-        } as never),
+        attempt: async () =>
+          ({
+            runId: 'run-00000000000000000000000001',
+            status: 'failed',
+            failure: { message: 'runner exited 1' },
+          }) as never,
         list: async () => [],
       },
       { correlationsForWork: async () => [] } as never,
@@ -472,54 +473,55 @@ describe('advanceOnce', () => {
   it.each(['failed', 'cancelled', 'ambiguous'] as const)(
     'resolves a detached %s Run before dispatching another attempt',
     async (status) => {
-    const activation = {
-      activationId: 'activation-00000000000000000000000001',
-    } as unknown as ActivityActivationView;
-    const workflow = {
-      workflowInstanceId: 'workflow-00000000000000000000000001',
-      workItemId: 'work-00000000000000000000000001',
-      orchestrationGroupId: 'group-00000000000000000000000001',
-      acceptedOutcomes: [],
-    } as unknown as WorkflowInstanceView;
-    let attempts = 0;
-    const resolutions: unknown[] = [];
-    const advance = createAdvanceOnce(
-      {
-        reconcileChildCompletions: async () => undefined,
-        listPendingActivations: async () => [{ workflow, activation }],
-        listWaiting: async () => [],
-        acceptOutcome: async () => workflow,
-        markActivationStarted: async () => workflow,
-        resolveExecutionFailure: async (...input: unknown[]) => {
-          resolutions.push(input);
-          return workflow;
-        },
-      } as never,
-      {
-        attempt: async () => {
-          attempts += 1;
-          return { status: 'started', runId: 'unexpected-retry' } as never;
-        },
-        list: async () => [
-          {
-            runId: 'run-00000000000000000000000001',
-            status,
-            activationId: activation.activationId,
-            ...(status === 'cancelled' ? {} : { failure: { message: 'runner exited 1' } }),
+      const activation = {
+        activationId: 'activation-00000000000000000000000001',
+      } as unknown as ActivityActivationView;
+      const workflow = {
+        workflowInstanceId: 'workflow-00000000000000000000000001',
+        workItemId: 'work-00000000000000000000000001',
+        orchestrationGroupId: 'group-00000000000000000000000001',
+        acceptedOutcomes: [],
+      } as unknown as WorkflowInstanceView;
+      let attempts = 0;
+      const resolutions: unknown[] = [];
+      const advance = createAdvanceOnce(
+        {
+          reconcileChildCompletions: async () => undefined,
+          listPendingActivations: async () => [{ workflow, activation }],
+          listWaiting: async () => [],
+          acceptOutcome: async () => workflow,
+          markActivationStarted: async () => workflow,
+          resolveExecutionFailure: async (...input: unknown[]) => {
+            resolutions.push(input);
+            return workflow;
           },
-        ] as never,
-      },
-      { correlationsForWork: async () => [] } as never,
-      { now: () => new Date('2026-08-11T00:00:00.000Z') },
-      { ids: { next: () => 'command-00000000000000000000000001' } as never },
-    );
+        } as never,
+        {
+          attempt: async () => {
+            attempts += 1;
+            return { status: 'started', runId: 'unexpected-retry' } as never;
+          },
+          list: async () =>
+            [
+              {
+                runId: 'run-00000000000000000000000001',
+                status,
+                activationId: activation.activationId,
+                ...(status === 'cancelled' ? {} : { failure: { message: 'runner exited 1' } }),
+              },
+            ] as never,
+        },
+        { correlationsForWork: async () => [] } as never,
+        { now: () => new Date('2026-08-11T00:00:00.000Z') },
+        { ids: { next: () => 'command-00000000000000000000000001' } as never },
+      );
 
-    await expect(advance({ maxProgress: 1 })).resolves.toMatchObject({
-      kind: 'blocked',
-      reason: status === 'cancelled' ? 'execution failed' : 'runner exited 1',
-    });
-    expect(attempts).toBe(0);
-    expect(resolutions).toHaveLength(1);
+      await expect(advance({ maxProgress: 1 })).resolves.toMatchObject({
+        kind: 'blocked',
+        reason: status === 'cancelled' ? 'execution failed' : 'runner exited 1',
+      });
+      expect(attempts).toBe(0);
+      expect(resolutions).toHaveLength(1);
     },
   );
 

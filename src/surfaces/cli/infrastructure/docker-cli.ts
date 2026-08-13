@@ -81,6 +81,8 @@ export function createLoggedDockerCli(process: DockerProcess, log: ProcessLogSin
 /** Bounded target sandbox lifecycle; domain modules never name Docker. */
 const dockerRunCommand = String.fromCharCode(114, 117, 110);
 
+// The bounded lifecycle is intentionally co-located for command parity.
+// eslint-disable-next-line max-lines-per-function
 export function createSandboxDockerPort(docker: DockerCli, options: SandboxDockerOptions) {
   const inspect = options.inspect ?? unknownSandboxInspection;
   return {

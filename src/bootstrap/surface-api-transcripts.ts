@@ -1,4 +1,4 @@
-import type { RunView, TranscriptStore } from '../execution/index.js';
+import { TranscriptChannel, type RunView, type TranscriptStore } from '../execution/index.js';
 import type {
   TranscriptEntryResponse,
   TranscriptGroupResponse,
@@ -73,7 +73,7 @@ export function presentEntry(
   const durationMs = runDuration(run);
   return {
     occurredAt: message.timestamp,
-    channel: message.kind === 'prompt' ? 'input' : 'agent',
+    channel: message.kind === 'prompt' ? TranscriptChannel.Input : TranscriptChannel.Agent,
     text: message.text,
     runId: message.runId,
     groupId,

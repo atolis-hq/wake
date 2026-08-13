@@ -9,6 +9,13 @@ export const ActivityExecutionKind = defineClosedVocabulary({
 
 export type ActivityExecutionKind = ValueOf<typeof ActivityExecutionKind>;
 
+export const ActivityWorkspaceMode = defineClosedVocabulary({
+  ReadOnly: 'read-only',
+  Branch: 'branch',
+} as const);
+
+export type ActivityWorkspaceMode = ValueOf<typeof ActivityWorkspaceMode>;
+
 export const ActivityResourceCardinality = defineClosedVocabulary({
   ZeroOrOne: 'zero-or-one',
   ExactlyOne: 'exactly-one',

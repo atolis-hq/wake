@@ -265,8 +265,11 @@ describe(`${scenario.id} command idempotency`, () => {
 
   it('rejects an ineligible retry over the composed HTTP API', async () => {
     const { root, clock, context } = await createRetryWorld();
-    const work = await root.work.create(
-      { workItemId: workId('surface-retry-ineligible'), objective: 'Cannot retry without workflow' },
+    await root.work.create(
+      {
+        workItemId: workId('surface-retry-ineligible'),
+        objective: 'Cannot retry without workflow',
+      },
       context,
     );
     await root.projectionRunner.runRegisteredOnce();

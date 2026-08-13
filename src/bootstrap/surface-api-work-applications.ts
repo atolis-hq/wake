@@ -17,7 +17,7 @@ import {
   type ApiApplications,
   type WorkDetailResponse,
 } from '../surfaces/index.js';
-import { workItemId, type WorkItemView } from '../work/index.js';
+import { workItemId, WorkStatus, type WorkItemView } from '../work/index.js';
 import type { CompositionRoot } from './composition-root.js';
 import { primaryExternalRef } from './external-ref.js';
 import { projectionMeta } from './surface-api-metadata.js';
@@ -90,7 +90,7 @@ export function createSurfaceWorkApplications(
       const work = await root.work.get(id);
       if (work === null) return retryIneligible('Work item was not found');
       if (work.deleted === true) return retryIneligible('Work item is deleted');
-      if (work.state !== 'open') return retryIneligible('Work item is not open');
+      if (work.state !== WorkStatus.Open) return retryIneligible('Work item is not open');
       const primary = (await root.orchestration.listAll()).find(
         (value) => value.workItemId === id && value.parentWorkflowInstanceId === undefined,
       );

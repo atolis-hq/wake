@@ -340,7 +340,7 @@ export class TestWorld {
   }
 
   async advanceUntilSettled(workItemId?: WorkItemId): Promise<AdvanceResult> {
-    let result: AdvanceResult = { kind: 'no-work' };
+    let result: AdvanceResult;
     for (let attempt = 0; attempt < 20; attempt += 1) {
       result = await this.advance(workItemId);
       await Promise.resolve();

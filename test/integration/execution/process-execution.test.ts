@@ -192,10 +192,12 @@ describe('cliRunner', () => {
       usage: { input_tokens: 11, output_tokens: 13, cache_read_input_tokens: 17 },
       total_cost_usd: 0.02,
     });
-    const runner = cliRunner('claude', process.execPath, () => [
-      '-e',
-      `process.stdout.write(${JSON.stringify(stdout)})`,
-    ], { parseSuccessfulOutput: parseClaudeOutput });
+    const runner = cliRunner(
+      'claude',
+      process.execPath,
+      () => ['-e', `process.stdout.write(${JSON.stringify(stdout)})`],
+      { parseSuccessfulOutput: parseClaudeOutput },
+    );
     const execution = await runner.start(
       {
         runId: 'run-1',

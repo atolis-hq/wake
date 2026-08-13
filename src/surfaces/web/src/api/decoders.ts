@@ -21,6 +21,8 @@ import {
   AcceptedCommandStatusValue,
   ResourceItemField,
   RunResponseField,
+  TranscriptChannelValue,
+  TranscriptGroupKindValue,
 } from '../../../api/contracts/transport-values.js';
 import {
   array,
@@ -372,15 +374,17 @@ function decodeTranscriptEntry(item: unknown, itemPath = '') {
   };
 }
 
-function transcriptChannel(value: unknown, path: string): 'input' | 'agent' {
+function transcriptChannel(value: unknown, path: string): TranscriptEntryResponse['channel'] {
   const channel = string(value, path);
-  if (channel !== 'input' && channel !== 'agent') invalid(path);
+  if (channel !== TranscriptChannelValue.Input && channel !== TranscriptChannelValue.Agent)
+    invalid(path);
   return channel;
 }
 
-function transcriptGroupKind(value: unknown, path: string): 'session' | 'run' {
+function transcriptGroupKind(value: unknown, path: string): TranscriptGroupResponse['kind'] {
   const kind = string(value, path);
-  if (kind !== 'session' && kind !== 'run') invalid(path);
+  if (kind !== TranscriptGroupKindValue.Session && kind !== TranscriptGroupKindValue.Run)
+    invalid(path);
   return kind;
 }
 

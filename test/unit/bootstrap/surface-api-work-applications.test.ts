@@ -1,11 +1,11 @@
 import { expect, it } from 'vitest';
+import type { CompositionRoot } from '../../../src/bootstrap/composition-root.js';
+import { createSurfaceWorkApplications } from '../../../src/bootstrap/surface-api-work-applications.js';
 import {
   OperatorRetryIneligibleError,
   type WorkflowInstanceView,
 } from '../../../src/orchestration/index.js';
 import { toWorkItemKey } from '../../../src/surfaces/api/contracts/work.js';
-import { createSurfaceWorkApplications } from '../../../src/bootstrap/surface-api-work-applications.js';
-import type { CompositionRoot } from '../../../src/bootstrap/composition-root.js';
 import { workId } from '../../support/identities.js';
 
 const id = workId('surface-retry-error');
@@ -34,9 +34,7 @@ it('rethrows an unexpected operator retry error', async () => {
   const retry = applications.retry;
   if (retry === undefined) throw new Error('Expected retry work application');
 
-  await expect(retry(toWorkItemKey(id), { idempotencyKey: 'operator-1' })).rejects.toBe(
-    unexpected,
-  );
+  await expect(retry(toWorkItemKey(id), { idempotencyKey: 'operator-1' })).rejects.toBe(unexpected);
 });
 
 function rootThatRejectsRetry(error: Error): CompositionRoot {

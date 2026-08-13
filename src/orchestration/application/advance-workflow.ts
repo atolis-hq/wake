@@ -141,7 +141,8 @@ export class AdvanceWorkflow {
 
   async retryBlockedFailedStage(id: WorkflowInstanceId, context: CommandContext) {
     const loaded = await this.repository.load(id);
-    if (loaded.view === null) throw new OperatorRetryIneligibleError('WorkflowInstance does not exist');
+    if (loaded.view === null)
+      throw new OperatorRetryIneligibleError('WorkflowInstance does not exist');
     if (loaded.view.operatorRetryCommandIds.includes(context.commandId)) return loaded.view;
     const decision = decideOperatorRetry(
       this.workflows.definition(loaded.view.workflowName),

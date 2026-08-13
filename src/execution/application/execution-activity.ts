@@ -51,7 +51,7 @@ export async function executeActivity(
       readonly cacheRead?: number;
       readonly cacheWrite?: number;
     };
-    readonly workspace?: { readonly path: string; readonly mode: 'read-only' | 'branch' };
+    readonly workspace?: ActivityExecutionContext['workspace'];
   },
 ) {
   const { activation, context, occurredAt, runner } = request;
@@ -149,9 +149,7 @@ function runnerResultReporter(
   };
 }
 
-function workspaceContext(
-  workspace: { readonly path: string; readonly mode: 'read-only' | 'branch' } | undefined,
-) {
+function workspaceContext(workspace: ActivityExecutionContext['workspace']) {
   return workspace === undefined ? {} : { workspace };
 }
 

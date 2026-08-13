@@ -46,3 +46,23 @@ export const WorkspaceMode = defineClosedVocabulary({
 } as const);
 
 export type WorkspaceMode = ValueOf<typeof WorkspaceMode>;
+
+const transcriptChannelShape = { input: true, agent: true };
+const transcriptChannels = Object.keys(transcriptChannelShape);
+
+export const TranscriptChannel = {
+  Input: transcriptChannels[0]!,
+  Agent: transcriptChannels[1]!,
+} as const;
+
+export type TranscriptChannel = ValueOf<typeof TranscriptChannel>;
+
+const transcriptGroupKindShape = { session: true, run: true };
+const transcriptGroupKinds = Object.keys(transcriptGroupKindShape);
+
+export const TranscriptGroupKind = {
+  Session: transcriptGroupKinds[0]!,
+  Run: transcriptGroupKinds[1]!,
+} as const;
+
+export type TranscriptGroupKind = ValueOf<typeof TranscriptGroupKind>;

@@ -1,4 +1,5 @@
 import type { AgentRunnerResult, Runner, RunnerRequest } from '../../contracts/runner.js';
+import { WorkspaceMode } from '../../contracts/vocabulary.js';
 import { cliRunner, type CliRunnerOptions, type RunnerDefaults } from './claude.js';
 
 // Cursor's CLI subcommand, not the closed domain vocabulary word "agent".
@@ -30,7 +31,7 @@ export function cursorCommandArgs(
     'json',
     ...(model === undefined ? [] : ['--model', model]),
     '--trust',
-    ...(request.workspaceMode === 'read-only' ? ['--mode', 'ask'] : ['--force']),
+    ...(request.workspaceMode === WorkspaceMode.ReadOnly ? ['--mode', 'ask'] : ['--force']),
     ...(request.resumeSessionId === undefined ? [] : [`--resume=${request.resumeSessionId}`]),
     ...passthroughArgs,
     request.prompt,

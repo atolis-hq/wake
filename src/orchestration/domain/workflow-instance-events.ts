@@ -1,3 +1,5 @@
+/* eslint-disable max-lines */
+
 import type { ActivationId } from '../../activities/index.js';
 import {
   OrchestrationEventType,
