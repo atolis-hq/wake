@@ -1,5 +1,5 @@
 import { BuiltInActivityName } from '../../activities/index.js';
-import { ExecutionEventType, type RunRepository } from '../../execution/index.js';
+import { RunStatus, type RunRepository } from '../../execution/index.js';
 import {
   createEventDraft,
   EventActorKind,
@@ -40,14 +40,41 @@ export class AgentRunPublicationReactor {
       limit,
     );
     for (const event of events) {
-      if (
-        event.eventType === ExecutionEventType.RunSucceeded ||
-        event.eventType === ExecutionEventType.RunFailed
-      )
-        await this.publish(event.stream.id, event.recordedAt, event.eventId, event.correlationId);
+      if (event.eventType === OrchestrationEventType.ActivityOutcomeAccepted)
+        await this.publishAcceptedOutcome(
+          event.stream.id,
+          (event.payload as { readonly activationId: string }).activationId,
+          event.recordedAt,
+          event.eventId,
+          event.correlationId,
+        );
+      if (event.eventType === OrchestrationEventType.ActivityExecutionFailed)
+        await this.publish(
+          (event.payload as { readonly runId: string }).runId,
+          event.recordedAt,
+          event.eventId,
+          event.correlationId,
+        );
       await this.dependencies.checkpoints.save(consumer, event.globalPosition);
     }
     return events.length;
+  }
+
+  private async publishAcceptedOutcome(
+    workflowInstanceId: string,
+    activationId: string,
+    occurredAt: string,
+    causationId: string,
+    correlationId: string,
+  ) {
+    const run = (await this.dependencies.runs.list(activationId as never)).find(
+      (candidate) =>
+        candidate.workflowInstanceId === workflowInstanceId &&
+        candidate.status === RunStatus.Succeeded &&
+        candidate.activity === BuiltInActivityName.Agent,
+    );
+    if (run === undefined) return;
+    await this.publish(run.runId, occurredAt, causationId, correlationId);
   }
 
   private async publish(

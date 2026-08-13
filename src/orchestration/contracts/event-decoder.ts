@@ -262,6 +262,16 @@ const eventSchema = z.discriminatedUnion('eventType', [
       .strict(),
   ),
   workflowEnvelope(
+    OrchestrationEventType.ActivityExecutionFailed,
+    z
+      .object({
+        activationId: brandedStringSchema(activationId),
+        runId: z.string().min(1),
+        reason: z.string().min(1),
+      })
+      .strict(),
+  ),
+  workflowEnvelope(
     OrchestrationEventType.ActivityWaiting,
     z
       .object({

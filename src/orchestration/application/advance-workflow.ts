@@ -98,6 +98,47 @@ export class AdvanceWorkflow {
     return (await this.repository.load(id)).view;
   }
 
+  async resolveExecutionFailure(
+    id: WorkflowInstanceId,
+    input: { readonly activationId: ActivationId; readonly runId: string; readonly reason: string },
+    context: CommandContext,
+  ) {
+    const loaded = await this.repository.load(id);
+    if (
+      loaded.view === null ||
+      loaded.view.status === WorkflowStatus.Blocked ||
+      loaded.view.pendingActivation?.activationId !== input.activationId ||
+      loaded.view.acceptedOutcomes.includes(input.activationId)
+    )
+      return loaded.view;
+    const stream = workflowInstanceStream(id);
+    await this.repository.append(id, loaded.sequence, [
+      createEventDraft({
+        eventId: `${context.commandId}:${OrchestrationEventType.ActivityExecutionFailed}`,
+        eventType: OrchestrationEventType.ActivityExecutionFailed,
+        occurredAt: context.occurredAt,
+        correlationId: context.correlationId,
+        causationId: context.commandId,
+        actor: context.actor,
+        source: { kind: EventSourceKind.Internal, id: 'orchestration-service' },
+        stream,
+        payload: input,
+      }),
+      createEventDraft({
+        eventId: `${context.commandId}:${OrchestrationEventType.InstanceBlocked}`,
+        eventType: OrchestrationEventType.InstanceBlocked,
+        occurredAt: context.occurredAt,
+        correlationId: context.correlationId,
+        causationId: context.commandId,
+        actor: context.actor,
+        source: { kind: EventSourceKind.Internal, id: 'orchestration-service' },
+        stream,
+        payload: { reason: input.reason },
+      }),
+    ]);
+    return (await this.repository.load(id)).view;
+  }
+
   async retryBlockedFailedStage(id: WorkflowInstanceId, context: CommandContext) {
     const loaded = await this.repository.load(id);
     if (loaded.view === null) throw new OperatorRetryIneligibleError('WorkflowInstance does not exist');

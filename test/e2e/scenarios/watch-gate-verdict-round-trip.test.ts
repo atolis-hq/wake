@@ -36,7 +36,17 @@ it('E2E-WATCH-GATE-VERDICT-001 publishes a child verdict marker that resolves it
     actor: { kind: 'operator', id: 'owner' },
   });
   const run = runId('run-watch-gate-child');
-  await appendTerminalAgentRun(fixture.world, run, fixture.child.workflowInstanceId);
+  await appendTerminalAgentRun(
+    fixture.world,
+    run,
+    fixture.child.workflowInstanceId,
+    fixture.child.pendingActivation!.activationId,
+  );
+  await fixture.world.acceptOutcome(
+    fixture.child.workflowInstanceId,
+    fixture.child.pendingActivation!.activationId,
+    { kind: 'done' },
+  );
 
   await new AgentRunPublicationReactor({
     journal: fixture.world.journal,
@@ -117,7 +127,7 @@ async function waitingWatchGate() {
     workItemId: work.workItemId,
     workflowName: workflowName('parent'),
   });
-  await world.advance(work.workItemId);
+  await world.advanceUntilSettled(work.workItemId);
   await world.triggerWatch('pr-review.requested', 'pr-review-trigger');
   const child = (await world.orchestration.listAll()).find(
     (workflow) => workflow.parentWorkflowInstanceId === parent.workflowInstanceId,
@@ -130,6 +140,7 @@ async function appendTerminalAgentRun(
   world: TestWorld,
   id: ReturnType<typeof runId>,
   workflow: string,
+  activationId: string,
 ) {
   const stream = runStream(id);
   const now = world.clock.now().toISOString();
@@ -144,7 +155,7 @@ async function appendTerminalAgentRun(
       source: { kind: 'internal', id: 'test' },
       stream,
       payload: {
-        activationId: 'activation-watch-gate-child',
+        activationId,
         activity: 'agent',
         workflowInstanceId: workflow,
         orchestrationGroupId: workflow,

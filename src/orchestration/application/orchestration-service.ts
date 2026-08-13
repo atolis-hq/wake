@@ -112,6 +112,14 @@ export class OrchestrationService {
     return this.advanceWorkflow.block(workflowInstanceId, reason, context);
   }
 
+  resolveExecutionFailure(
+    workflowInstanceId: WorkflowInstanceId,
+    input: { readonly activationId: ActivationId; readonly runId: string; readonly reason: string },
+    context: CommandContext,
+  ) {
+    return this.advanceWorkflow.resolveExecutionFailure(workflowInstanceId, input, context);
+  }
+
   retryBlockedFailedStage(workflowInstanceId: WorkflowInstanceId, context: CommandContext) {
     return this.advanceWorkflow.retryBlockedFailedStage(workflowInstanceId, context);
   }

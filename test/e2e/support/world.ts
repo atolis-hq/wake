@@ -308,6 +308,17 @@ export class TestWorld {
     );
   }
 
+  resolveExecutionFailure(
+    workflowInstanceId: string,
+    input: Parameters<typeof this.orchestration.resolveExecutionFailure>[1],
+  ) {
+    return this.orchestration.resolveExecutionFailure(
+      parseWorkflowInstanceId(workflowInstanceId),
+      input,
+      this.command({ kind: 'integration', id: 'synthetic-delivery' }),
+    );
+  }
+
   requestSupplementalActivity(
     workflowInstanceId: string,
     request: Parameters<typeof this.orchestration.requestSupplementalActivity>[1],

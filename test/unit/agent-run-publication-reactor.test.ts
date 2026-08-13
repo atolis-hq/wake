@@ -1,5 +1,65 @@
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { AgentRunPublicationReactor } from '../../src/integrations/application/agent-run-publication-reactor.js';
+
+it('does not publish from a raw execution completion before orchestration resolves it', async () => {
+  const reactor = new AgentRunPublicationReactor({
+    journal: {
+      readAll: async () => [
+        {
+          eventType: 'execution.run-succeeded',
+          stream: { id: 'run-1' },
+          recordedAt: '2026-08-08T00:01:00.000Z',
+          eventId: 'run-1:succeeded',
+          correlationId: 'correlation-1',
+          globalPosition: 1,
+        },
+      ],
+    },
+    checkpoints: { load: async () => 0, save: async () => undefined },
+    runs: {},
+    resources: {},
+    orchestration: {},
+  } as never);
+  const publish = vi.fn();
+  (reactor as never as { publish: typeof publish }).publish = publish;
+
+  await reactor.runOnce();
+
+  expect(publish).not.toHaveBeenCalled();
+});
+
+it('publishes a failed Run only after orchestration records its execution failure', async () => {
+  const reactor = new AgentRunPublicationReactor({
+    journal: {
+      readAll: async () => [
+        {
+          eventType: 'orchestration.activity-execution-failed',
+          stream: { id: 'workflow-1' },
+          payload: { activationId: 'activation-1', runId: 'run-failed', reason: 'runner exited 1' },
+          recordedAt: '2026-08-08T00:01:00.000Z',
+          eventId: 'workflow-1:execution-failed',
+          correlationId: 'correlation-1',
+          globalPosition: 1,
+        },
+      ],
+    },
+    checkpoints: { load: async () => 0, save: async () => undefined },
+    runs: { load: async () => ({ view: { runId: 'run-failed' } }) },
+    resources: {},
+    orchestration: {},
+  } as never);
+  const publish = vi.fn();
+  (reactor as never as { publish: typeof publish }).publish = publish;
+
+  await reactor.runOnce();
+
+  expect(publish).toHaveBeenCalledWith(
+    'run-failed',
+    '2026-08-08T00:01:00.000Z',
+    'workflow-1:execution-failed',
+    'correlation-1',
+  );
+});
 
 it('uses the stage immediately preceding the run activation rather than a later advanced stage', async () => {
   const reactor = new AgentRunPublicationReactor({

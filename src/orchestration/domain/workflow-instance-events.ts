@@ -66,6 +66,7 @@ type ActivityFact = FactsOf<
   | typeof OrchestrationEventType.ActivityRequested
   | typeof OrchestrationEventType.ActivityStarted
   | typeof OrchestrationEventType.ActivityOutcomeAccepted
+  | typeof OrchestrationEventType.ActivityExecutionFailed
   | typeof OrchestrationEventType.ActivityWaiting
 >;
 
@@ -103,6 +104,7 @@ function isActivityFact(event: WorkflowFact): event is ActivityFact {
     case OrchestrationEventType.ActivityRequested:
     case OrchestrationEventType.ActivityStarted:
     case OrchestrationEventType.ActivityOutcomeAccepted:
+    case OrchestrationEventType.ActivityExecutionFailed:
     case OrchestrationEventType.ActivityWaiting:
       return true;
     default:
@@ -124,6 +126,10 @@ function applyActivityFact(state: MutableWorkflowInstance, event: ActivityFact):
     case OrchestrationEventType.ActivityOutcomeAccepted:
       state.acceptedOutcomes.push(event.payload.activationId);
       state.lastOutcome = event.payload.outcome;
+      updateActivationStatus(state, event.payload.activationId, ActivityActivationStatus.Completed);
+      return;
+    case OrchestrationEventType.ActivityExecutionFailed:
+      state.acceptedOutcomes.push(event.payload.activationId);
       updateActivationStatus(state, event.payload.activationId, ActivityActivationStatus.Completed);
       return;
     case OrchestrationEventType.ActivityWaiting:

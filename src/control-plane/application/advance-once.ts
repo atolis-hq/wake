@@ -34,6 +34,11 @@ interface OrchestrationPort {
     },
     context: CommandContext,
   ): Promise<WorkflowInstanceView>;
+  resolveExecutionFailure?(
+    workflowInstanceId: string,
+    input: { readonly activationId: string; readonly runId: string; readonly reason: string },
+    context: CommandContext,
+  ): Promise<WorkflowInstanceView | null>;
   markActivationStarted(
     workflowInstanceId: string,
     activationId: string,
@@ -157,21 +162,37 @@ export function createAdvanceOnce(
         ? [{ workflow, activation: workflow.pendingActivation }]
         : [],
     );
-    const recovery = await findUnacceptedCompleted([...pending, ...blocked], execution);
+    const recovery = await findUnresolvedTerminal([...pending, ...blocked], execution);
     if (recovery !== undefined) {
       if (await isDispatchPaused()) return { kind: 'paused' };
-      await orchestration.acceptOutcome(
-        {
-          workflowInstanceId: recovery.item.workflow.workflowInstanceId,
+      if (recovery.run.status === RunStatus.Succeeded) {
+        await orchestration.acceptOutcome(
+          {
+            workflowInstanceId: recovery.item.workflow.workflowInstanceId,
+            activationId: recovery.item.activation.activationId,
+            outcome: recovery.run.outcome!,
+          },
+          context(recovery.run.runId),
+        );
+        return {
+          kind: 'progressed',
           activationId: recovery.item.activation.activationId,
-          outcome: recovery.run.outcome!,
+          runId: recovery.run.runId,
+        };
+      }
+      await orchestration.resolveExecutionFailure?.(
+        recovery.item.workflow.workflowInstanceId,
+        {
+          activationId: recovery.item.activation.activationId,
+          runId: recovery.run.runId,
+          reason: recovery.run.failure?.message ?? 'execution failed',
         },
         context(recovery.run.runId),
       );
       return {
-        kind: 'progressed',
-        activationId: recovery.item.activation.activationId,
-        runId: recovery.run.runId,
+        kind: WorkflowStatus.Blocked,
+        workflowInstanceId: recovery.item.workflow.workflowInstanceId,
+        reason: recovery.run.failure?.message ?? 'execution failed',
       };
     }
     const allRuns = await execution.list();
@@ -237,6 +258,16 @@ export function createAdvanceOnce(
         context(run.runId),
       );
     }
+    if (isExecutionFailureTerminal(run.status))
+      await orchestration.resolveExecutionFailure?.(
+        selected.workflow.workflowInstanceId,
+        {
+          activationId: selected.activation.activationId,
+          runId: run.runId,
+          reason: run.failure?.message ?? 'execution failed',
+        },
+        context(run.runId),
+      );
     return run.status === RunStatus.Succeeded || run.status === RunStatus.Started
       ? { kind: 'progressed', activationId: selected.activation.activationId, runId: run.runId }
       : {
@@ -247,16 +278,29 @@ export function createAdvanceOnce(
   };
 }
 
-async function findUnacceptedCompleted(
+async function findUnresolvedTerminal(
   pending: readonly { workflow: WorkflowInstanceView; activation: ActivityActivationView }[],
   execution: ExecutionPort,
 ): Promise<{ item: (typeof pending)[number]; run: RunView } | undefined> {
   for (const item of pending) {
     const run = (await execution.list(item.activation.activationId)).find(
-      (candidate) => candidate.status === RunStatus.Succeeded && candidate.outcome !== undefined,
+      (candidate) =>
+        (candidate.status === RunStatus.Succeeded && candidate.outcome !== undefined) ||
+        isExecutionFailureTerminal(candidate.status),
     );
-    if (run !== undefined && !item.workflow.acceptedOutcomes.includes(item.activation.activationId))
+    if (
+      run !== undefined &&
+      !item.workflow.acceptedOutcomes.includes(item.activation.activationId)
+    )
       return { item, run };
   }
   return undefined;
+}
+
+function isExecutionFailureTerminal(status: RunStatus): boolean {
+  return (
+    status === RunStatus.Failed ||
+    status === RunStatus.Cancelled ||
+    status === RunStatus.Ambiguous
+  );
 }

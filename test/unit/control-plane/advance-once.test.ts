@@ -305,7 +305,9 @@ describe('advanceOnce', () => {
   });
 
   it('uses stage resume only for a primary workflow activation', async () => {
-    const activation = { activationId: 'activation-00000000000000000000000001' } as never;
+    const activation = {
+      activationId: 'activation-00000000000000000000000001',
+    } as unknown as ActivityActivationView;
     const primary = {
       workflowInstanceId: 'workflow-primary',
       workItemId: 'work-00000000000000000000000001',
@@ -412,6 +414,161 @@ describe('advanceOnce', () => {
     expect(accepted).toBe(1);
     await expect(advance({ maxProgress: 1 })).resolves.toEqual({ kind: 'no-work' });
     expect(accepted).toBe(1);
+  });
+
+  it('resolves a failed Run in orchestration before reporting it as blocked', async () => {
+    const activation = {
+      activationId: 'activation-00000000000000000000000001',
+    } as unknown as ActivityActivationView;
+    const workflow = {
+      workflowInstanceId: 'workflow-00000000000000000000000001',
+      workItemId: 'work-00000000000000000000000001',
+      orchestrationGroupId: 'group-00000000000000000000000001',
+      acceptedOutcomes: [],
+    } as unknown as WorkflowInstanceView;
+    const resolved: unknown[] = [];
+    const advance = createAdvanceOnce(
+      {
+        reconcileChildCompletions: async () => undefined,
+        listPendingActivations: async () => [{ workflow, activation }],
+        listWaiting: async () => [],
+        acceptOutcome: async () => workflow,
+        markActivationStarted: async () => workflow,
+        resolveExecutionFailure: async (...input: unknown[]) => {
+          resolved.push(input);
+          return workflow;
+        },
+      } as never,
+      {
+        attempt: async () => ({
+          runId: 'run-00000000000000000000000001',
+          status: 'failed',
+          failure: { message: 'runner exited 1' },
+        } as never),
+        list: async () => [],
+      },
+      { correlationsForWork: async () => [] } as never,
+      { now: () => new Date('2026-08-11T00:00:00.000Z') },
+      { ids: { next: () => 'command-00000000000000000000000001' } as never },
+    );
+
+    await expect(advance({ maxProgress: 1 })).resolves.toMatchObject({
+      kind: 'blocked',
+      reason: 'runner exited 1',
+    });
+    expect(resolved).toEqual([
+      [
+        workflow.workflowInstanceId,
+        {
+          activationId: activation.activationId,
+          runId: 'run-00000000000000000000000001',
+          reason: 'runner exited 1',
+        },
+        expect.anything(),
+      ],
+    ]);
+  });
+
+  it.each(['failed', 'cancelled', 'ambiguous'] as const)(
+    'resolves a detached %s Run before dispatching another attempt',
+    async (status) => {
+    const activation = {
+      activationId: 'activation-00000000000000000000000001',
+    } as unknown as ActivityActivationView;
+    const workflow = {
+      workflowInstanceId: 'workflow-00000000000000000000000001',
+      workItemId: 'work-00000000000000000000000001',
+      orchestrationGroupId: 'group-00000000000000000000000001',
+      acceptedOutcomes: [],
+    } as unknown as WorkflowInstanceView;
+    let attempts = 0;
+    const resolutions: unknown[] = [];
+    const advance = createAdvanceOnce(
+      {
+        reconcileChildCompletions: async () => undefined,
+        listPendingActivations: async () => [{ workflow, activation }],
+        listWaiting: async () => [],
+        acceptOutcome: async () => workflow,
+        markActivationStarted: async () => workflow,
+        resolveExecutionFailure: async (...input: unknown[]) => {
+          resolutions.push(input);
+          return workflow;
+        },
+      } as never,
+      {
+        attempt: async () => {
+          attempts += 1;
+          return { status: 'started', runId: 'unexpected-retry' } as never;
+        },
+        list: async () => [
+          {
+            runId: 'run-00000000000000000000000001',
+            status,
+            activationId: activation.activationId,
+            ...(status === 'cancelled' ? {} : { failure: { message: 'runner exited 1' } }),
+          },
+        ] as never,
+      },
+      { correlationsForWork: async () => [] } as never,
+      { now: () => new Date('2026-08-11T00:00:00.000Z') },
+      { ids: { next: () => 'command-00000000000000000000000001' } as never },
+    );
+
+    await expect(advance({ maxProgress: 1 })).resolves.toMatchObject({
+      kind: 'blocked',
+      reason: status === 'cancelled' ? 'execution failed' : 'runner exited 1',
+    });
+    expect(attempts).toBe(0);
+    expect(resolutions).toHaveLength(1);
+    },
+  );
+
+  it('does not rescan a failure already resolved by orchestration', async () => {
+    const resolved = {
+      workflowInstanceId: 'workflow-resolved',
+      workItemId: 'work-resolved',
+      orchestrationGroupId: 'group-resolved',
+      status: 'blocked',
+      acceptedOutcomes: ['activation-resolved'],
+      pendingActivation: { activationId: 'activation-resolved' },
+    } as unknown as WorkflowInstanceView;
+    const pending = {
+      workflowInstanceId: 'workflow-pending',
+      workItemId: 'work-pending',
+      orchestrationGroupId: 'group-pending',
+      acceptedOutcomes: [],
+    } as unknown as WorkflowInstanceView;
+    const activation = { activationId: 'activation-pending' } as unknown as ActivityActivationView;
+    let attempts = 0;
+    const advance = createAdvanceOnce(
+      {
+        reconcileChildCompletions: async () => undefined,
+        listPendingActivations: async () => [{ workflow: pending, activation }],
+        listWaiting: async () => [],
+        listAll: async () => [resolved, pending],
+        acceptOutcome: async () => pending,
+        markActivationStarted: async () => pending,
+      },
+      {
+        attempt: async () => {
+          attempts += 1;
+          return { status: 'started', runId: 'run-pending' } as never;
+        },
+        list: async (activationId) =>
+          (activationId === 'activation-resolved'
+            ? [{ status: 'failed', runId: 'run-resolved', failure: { message: 'old failure' } }]
+            : []) as never,
+      },
+      { correlationsForWork: async () => [] } as never,
+      { now: () => new Date('2026-08-11T00:00:00.000Z') },
+      { ids: { next: () => 'command-00000000000000000000000001' } as never },
+    );
+
+    await expect(advance({ maxProgress: 1 })).resolves.toMatchObject({
+      kind: 'progressed',
+      runId: 'run-pending',
+    });
+    expect(attempts).toBe(1);
   });
 
   it('performs one execution attempt and recovers its completed activation once', async () => {
