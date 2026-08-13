@@ -12,11 +12,14 @@ Run events are tied to Run streams; activation claim events are tied to activati
 ## Public contracts
 `index.ts` is the only public entry.
 ## Configuration
-Owns `execution`.
+Uses strict root `transcripts`: opt-in `enabled` defaults to `false` and
+non-negative `retentionMs` defaults to `86400000` (24 hours).
 ## Relations and events
 Owns `execution.` events and `run.` relations.
 ## Failure and recovery
-Leases and result envelopes make recovery explicit.
+Leases and result envelopes make recovery explicit. Transcript capture is
+filesystem-only; post-close marker/sweep maintenance pauses with dispatch and
+retries operational filesystem failures on later ticks.
 ## Extension rules
 Concrete adapters stay in infrastructure and Bootstrap wires them.
 ## Scenarios

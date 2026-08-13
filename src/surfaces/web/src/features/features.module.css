@@ -454,6 +454,94 @@ a.resourceCard:hover {
   font-size: 0.76rem;
   overflow-x: auto;
 }
+.transcriptLayout {
+  display: grid;
+  grid-template-columns: minmax(15rem, 22rem) minmax(0, 1fr);
+  gap: var(--space-4);
+  margin-top: var(--space-3);
+}
+.transcriptGroups {
+  list-style: none;
+  display: grid;
+  gap: var(--space-2);
+  padding: 0;
+  margin: 0;
+}
+.transcriptGroup {
+  display: grid;
+  width: 100%;
+  gap: 0.2rem;
+  padding: var(--space-2);
+  color: var(--ink);
+  text-align: left;
+  background: var(--surface-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--text-xs);
+  overflow-wrap: anywhere;
+}
+.transcriptGroup:hover,
+.transcriptGroup[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: var(--surface-inset);
+}
+.transcriptConversation {
+  min-width: 0;
+}
+.transcriptFilters {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+.transcriptFilters label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--ink-muted);
+  font-size: var(--text-sm);
+}
+.transcriptFilters select {
+  color: var(--ink);
+  background: var(--surface-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font: inherit;
+}
+.transcriptInput,
+.transcriptAgent {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.transcriptInput {
+  margin-left: 12%;
+  background: var(--surface-inset);
+  border-left: 3px solid var(--accent);
+}
+.transcriptAgent {
+  margin-right: 12%;
+  background: var(--surface-card);
+  border-left: 3px solid var(--border-strong);
+}
+.transcriptRunSeparator {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-3) 0;
+  color: var(--ink-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+.transcriptRunSeparator::before,
+.transcriptRunSeparator::after {
+  content: '';
+  height: 1px;
+  flex: 1;
+  background: var(--border);
+}
 
 .eventButton {
   display: grid;
@@ -475,6 +563,13 @@ a.resourceCard:hover {
   overflow-wrap: anywhere;
 }
 @media (max-width: 42rem) {
+  .transcriptLayout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .transcriptInput,
+  .transcriptAgent {
+    margin-inline: 0;
+  }
   .eventButton {
     grid-template-columns: minmax(0, 1fr) 2.2rem;
     grid-template-rows: auto auto;

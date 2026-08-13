@@ -22,9 +22,9 @@ describe('GitWorkspaceProvider workspace recovery', () => {
     const provider = new GitWorkspaceProvider(root, { cloneLocator: async () => 'unused' });
     const terminal = await ownedWorkspace(root, 'terminal', 'terminal-run');
 
-    await (provider as WorkspaceRecovery).recover([
-      run('terminal-run', RunStatus.Succeeded),
-    ], { retainWorkItem: async () => true } as never);
+    await (provider as WorkspaceRecovery).recover([run('terminal-run', RunStatus.Succeeded)], {
+      retainWorkItem: async () => true,
+    } as never);
 
     await expect(access(terminal.path)).resolves.toBeUndefined();
     await expect(access(terminal.markerPath)).resolves.toBeUndefined();
@@ -182,6 +182,26 @@ describe('GitWorkspaceProvider workspace recovery', () => {
     await expect(access(broken.markerPath)).resolves.toBeUndefined();
     await expect(access(reclaimed.path)).rejects.toThrow();
     await expect(access(reclaimed.markerPath)).rejects.toThrow();
+  });
+
+  it('retains the ownership marker when transcript retention fails, then retries on the next recovery', async () => {
+    const root = await workspaceRoot();
+    const provider = new GitWorkspaceProvider(root, { cloneLocator: async () => 'unused' });
+    const workspace = await ownedWorkspace(root, 'retention-retry', 'retention-run');
+    let attempts = 0;
+    const options = {
+      onWorkspaceReclaimed: async () => ++attempts > 1,
+    };
+
+    await (provider as WorkspaceRecovery).recover([], options);
+
+    await expect(access(workspace.path)).rejects.toThrow();
+    await expect(access(workspace.markerPath)).resolves.toBeUndefined();
+
+    await (provider as WorkspaceRecovery).recover([], options);
+
+    expect(attempts).toBe(2);
+    await expect(access(workspace.markerPath)).rejects.toThrow();
   });
 
   it('never treats the ownership marker directory itself as a workspace', async () => {

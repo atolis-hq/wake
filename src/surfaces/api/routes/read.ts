@@ -118,12 +118,28 @@ async function readDetail(
   applications: ApiApplications,
   pathname: string,
 ): Promise<ApiHttpResponse | undefined> {
+  const workTranscript = /^\/api\/v1\/work-items\/([^/]+)\/transcripts\/([^/]+)$/.exec(pathname);
+  if (workTranscript?.[1] !== undefined && workTranscript[2] !== undefined)
+    return readWorkTranscript(applications, workTranscript[1], workTranscript[2]);
   const transcript = /^\/api\/v1\/runs\/([^/]+)\/transcript$/.exec(pathname)?.[1];
   if (transcript !== undefined) return readTranscript(applications, transcript);
   const work = /^\/api\/v1\/work-items\/([^/]+)$/.exec(pathname)?.[1];
   if (work !== undefined) return readWork(applications, work);
   const run = /^\/api\/v1\/runs\/([^/]+)$/.exec(pathname)?.[1];
   return run === undefined ? undefined : readRun(applications, run);
+}
+
+async function readWorkTranscript(
+  applications: ApiApplications,
+  keySegment: string,
+  groupSegment: string,
+) {
+  const key = decodePathSegment(keySegment);
+  const groupId = decodePathSegment(groupSegment);
+  if (key instanceof ApiPathError) return invalidPath(key.message);
+  if (groupId instanceof ApiPathError) return invalidPath(groupId.message);
+  if (applications.work.transcript === undefined) return unavailable('transcript');
+  return found(await applications.work.transcript(key, groupId));
 }
 
 async function readTranscript(applications: ApiApplications, segment: string) {

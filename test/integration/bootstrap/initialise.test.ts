@@ -15,6 +15,7 @@ describe('target initialise root', () => {
     expect(config).toContain('host:');
     expect(config).toContain('sandbox:');
     expect(config).toContain('containerName: wake-sandbox');
+    expect(config).toContain('transcripts:\n  enabled: false\n  retentionMs: 86400000');
     expect(await readdir(join(root, '.wake'))).toEqual(
       expect.arrayContaining([
         'events',

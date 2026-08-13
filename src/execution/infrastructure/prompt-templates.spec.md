@@ -3,19 +3,19 @@
 ## Type, purpose, and scope
 
 Adapter. This component renders a named wake-root prompt template into the
-prompt text a runner receives, and provides a write-only helper for
-persisting prompt/response text per Run. It is a translation boundary
-between the filesystem (`prompts/*.md`) and the plain string a runner
-invocation needs.
+prompt text a runner receives. Its adjacent transcript store persists opt-in,
+filesystem-only raw prompt/response artifacts as safe run or session groups
+per WorkItem. Together they are the translation boundary between the
+filesystem (`prompts/*.md` and `.wake/transcripts/`) and the plain strings a
+runner invocation and transcript reader need.
 
 ## Responsibilities and boundaries
 
 This component owns loading a template file, validating its YAML
 frontmatter, and rendering its Handlebars body against a supplied context.
-It also owns writing a transcript file for a given Run. It does not decide
-which template an invocation should use, does not build the runner request
-from the rendered output (the agent Activity handler does that), and does
-not itself invoke a runner.
+The transcript store owns capture, grouping, reading, and retention of raw
+text. Neither chooses a template, builds the runner request from rendered
+output (the agent Activity handler does that), nor invokes a runner.
 
 ## Core policies, invariants, and behaviours
 
@@ -43,12 +43,23 @@ not itself invoke a runner.
 
 **Transcripts**
 
-- Writing a transcript MUST create its target directory if it does not
-  already exist, and MUST write to a filename derived from the Run id with
-  every character outside `[a-zA-Z0-9._-]` replaced by a hyphen, suffixed
-  by `.prompt.txt` or `.response.txt` depending on which kind is written.
-- Writing a transcript MUST overwrite any existing file at that path; there
-  is no append or versioning behaviour.
+- With capture enabled, the agent Activity MUST store the exact runner prompt
+  before invoking the runner and its raw response after the runner settles.
+  This data is filesystem-only: it MUST NOT be placed in events, projections,
+  or journal records.
+- A prompt is staged by safe WorkItem/run path. A response moves it to a safe
+  run group when no session ID is returned, or to a safe session group keyed
+  by CLI identity plus an opaque session identifier; the raw session ID is not
+  used as a filesystem path segment.
+- Group readers return timestamp-ordered prompt/response messages and group
+  metadata. Bootstrap presents them as CLI-neutral `input` and `agent`
+  conversation entries for the API and web UI.
+- Only when pre-dispatch workspace recovery reclaims an owned workspace for a
+  closed WorkItem, a zero retention period deletes its transcript directory
+  immediately; otherwise a filesystem cleanup marker is swept after the
+  configured retention period. Failures are operational diagnostics, are
+  retried by later unpaused control-plane ticks, and do not affect the run or
+  workspace outcome.
 
 ## Conceptual schema
 
@@ -68,7 +79,8 @@ not itself invoke a runner.
 - Handlebars, and the `yaml` parsing library — the templating and
   frontmatter-parsing engines this adapter wraps.
 - `node:fs/promises` — the external effect boundary for reading a template
-  file and writing a transcript file.
+  file and storing, grouping, reading, marking, and sweeping transcript
+  files.
 - Bootstrap (depends on) — the only current caller of `loadPromptTemplate`
   and `renderPromptTemplate`, wiring them into the built-in agent Activity's
   template renderer; it plucks `model`, `allowedTools`, and `maxTurns` from
@@ -78,10 +90,9 @@ not itself invoke a runner.
 
 ## Decisions, exclusions, and deferred capability
 
-- Transcript persistence exists as infrastructure but is not invoked from
-  the production attempt flow; nothing in Bootstrap's wiring calls
-  `writeTranscript`. See the module specification's own deferred-capability
-  note.
+- Transcript capture is enabled only by the strict root `transcripts`
+  configuration and Bootstrap composes no transcript store when it is off.
 - There is no template cache; every call to load a template re-reads and
   re-parses the file from disk.
-- There is no reader counterpart to `writeTranscript` in this component.
+- Transcript artifact access is mediated by Bootstrap applications; neither
+  templates nor the store expose transcript contents as journal state.

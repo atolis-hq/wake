@@ -1,9 +1,13 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router';
+import { MemoryRouter, Route, Routes } from 'react-router';
 import { afterEach, describe, expect, it } from 'vitest';
 import { WakeApiClient } from '../src/api/client.js';
+import { ApiClientContext } from '../src/api/context.js';
+import { queryKeys } from '../src/api/query-keys.js';
 import { App } from '../src/app/app.js';
+import { WorkDetail } from '../src/features/work/work.js';
 
 const asOf = '2026-07-31T10:00:00.000Z';
 
@@ -11,6 +15,19 @@ function detailClient(
   primary: Record<string, unknown> | null = null,
   commandResponse: Response | undefined = undefined,
   requests: Array<{ readonly url: string; readonly init: RequestInit | undefined }> = [],
+  transcripts: {
+    readonly groups: readonly Record<string, unknown>[];
+    readonly entries: readonly Record<string, unknown>[];
+    readonly available?: boolean;
+    readonly byGroup?: Readonly<
+      Record<
+        string,
+        { readonly entries: readonly Record<string, unknown>[]; readonly available?: boolean }
+      >
+    >;
+    readonly waitFor?: Promise<void>;
+    readonly error?: boolean;
+  } = { groups: [], entries: [] },
 ) {
   const work = {
     workItemKey: 'wk_a',
@@ -35,6 +52,14 @@ function detailClient(
           { status: 202, headers: { 'content-type': 'application/json' } },
         )
       );
+    if (url.includes('/work-items/wk_a/transcripts/')) {
+      const response = await transcriptResponse(url, transcripts);
+      if (response instanceof Response) return response;
+      return new Response(JSON.stringify(response), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
     const body = url.includes('/events')
       ? {
           items: [
@@ -68,6 +93,7 @@ function detailClient(
                 children: [],
               },
               execution: {
+                transcriptGroups: transcripts.groups,
                 runs: [
                   {
                     runId: 'run-1',
@@ -110,6 +136,42 @@ function detailClient(
   });
 }
 
+async function transcriptResponse(
+  url: string,
+  transcripts: {
+    readonly entries: readonly Record<string, unknown>[];
+    readonly available?: boolean;
+    readonly byGroup?: Readonly<
+      Record<
+        string,
+        { readonly entries: readonly Record<string, unknown>[]; readonly available?: boolean }
+      >
+    >;
+    readonly waitFor?: Promise<void>;
+    readonly error?: boolean;
+  },
+) {
+  await transcripts.waitFor;
+  if (transcripts.error)
+    return new Response(
+      JSON.stringify({ type: 'about:blank', title: 'Transcript read failed', status: 500 }),
+      {
+        status: 500,
+        headers: { 'content-type': 'application/problem+json' },
+      },
+    );
+  const groupId = decodeURIComponent(url.split('/').at(-1) ?? '');
+  const group = transcripts.byGroup?.[groupId];
+  return {
+    data: {
+      groupId,
+      available: group?.available ?? transcripts.available ?? true,
+      entries: group?.entries ?? transcripts.entries,
+    },
+    meta: { asOf },
+  };
+}
+
 describe('work detail', () => {
   afterEach(cleanup);
 
@@ -131,8 +193,8 @@ describe('work detail', () => {
       </MemoryRouter>,
     );
     const title = await screen.findByRole('heading', { name: 'Alpha' });
-    expect(title.nextElementSibling?.tagName).toBe('NAV');
-    expect(screen.getByRole('navigation', { name: 'Work detail sections' }).textContent).toContain(
+    expect(title.nextElementSibling?.getAttribute('role')).toBe('tablist');
+    expect(screen.getByRole('tablist', { name: 'Work detail sections' }).textContent).toContain(
       'Overview',
     );
 
@@ -141,6 +203,59 @@ describe('work detail', () => {
 
     const resources = screen.getByRole('list', { name: 'Resources' });
     expect(resources.textContent).not.toContain('rev-9');
+  });
+
+  it('uses accessible tab and tabpanel semantics for detail sections', async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={['/work/wk_a']}>
+        <App client={detailClient()} />
+      </MemoryRouter>,
+    );
+    const tablist = await screen.findByRole('tablist', { name: 'Work detail sections' });
+    const overview = screen.getByRole('tab', { name: 'Overview' });
+    expect(overview.getAttribute('aria-selected')).toBe('true');
+    expect(overview.getAttribute('aria-controls')).toBe('work-detail-overview-panel');
+    expect(screen.getByRole('tabpanel', { name: 'Overview' }).id).toBe(
+      'work-detail-overview-panel',
+    );
+    expect(tablist.contains(overview)).toBe(true);
+
+    await user.click(screen.getByRole('tab', { name: 'Events' }));
+    expect(screen.getByRole('tab', { name: 'Events' }).getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByRole('tabpanel', { name: 'Events' }).id).toBe('work-detail-events-panel');
+  });
+
+  it('uses APG keyboard navigation to move and activate work detail tabs', async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={['/work/wk_a']}>
+        <App client={detailClient()} />
+      </MemoryRouter>,
+    );
+    const overview = await screen.findByRole('tab', { name: 'Overview' });
+    const events = screen.getByRole('tab', { name: 'Events' });
+    const transcripts = screen.getByRole('tab', { name: 'Transcripts' });
+    expect(overview.tabIndex).toBe(0);
+    expect(events.tabIndex).toBe(-1);
+
+    overview.focus();
+    await user.keyboard('{ArrowRight}');
+    expect(document.activeElement).toBe(events);
+    expect(events.getAttribute('aria-selected')).toBe('true');
+
+    await user.keyboard('{End}');
+    expect(document.activeElement).toBe(transcripts);
+    expect(transcripts.getAttribute('aria-selected')).toBe('true');
+
+    await user.keyboard('{ArrowRight}');
+    expect(document.activeElement).toBe(overview);
+    expect(overview.getAttribute('aria-selected')).toBe('true');
+
+    await user.keyboard('{Home}');
+    expect(document.activeElement).toBe(overview);
+    await user.keyboard('{ArrowLeft}');
+    expect(document.activeElement).toBe(transcripts);
   });
 
   it('places work actions below the detail panel in the overview sidebar', async () => {
@@ -281,7 +396,7 @@ describe('work detail', () => {
                   },
                 ],
                 orchestration: { primary: null, children: [] },
-                execution: { runs: [] },
+                execution: { runs: [], transcriptGroups: [] },
                 activities: {},
               },
               meta: { asOf },
@@ -324,10 +439,277 @@ describe('work detail', () => {
       </MemoryRouter>,
     );
     await screen.findByRole('heading', { name: 'Alpha' });
-    await user.click(screen.getByRole('button', { name: 'Events' }));
+    await user.click(screen.getByRole('tab', { name: 'Events' }));
     expect(await screen.findByText('work.created')).toBeTruthy();
     await user.click(screen.getByRole('button', { name: /work.created/ }));
     expect(screen.getByText(/workItemId/)).toBeTruthy();
+  });
+
+  it('renders a grouped transcript conversation with literal messages and run separators', async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={['/work/wk_a']}>
+        <App
+          client={detailClient(null, undefined, [], {
+            groups: [
+              {
+                groupId: 'run--fallback',
+                kind: 'run',
+                latestAt: '2026-07-31T11:00:00.000Z',
+                runIds: ['run-3'],
+              },
+              {
+                groupId: 'session--opaque-identity',
+                kind: 'session',
+                cli: 'codex',
+                latestAt: '2026-07-31T10:00:00.000Z',
+                runIds: ['run-1', 'run-2'],
+              },
+            ],
+            entries: [
+              {
+                occurredAt: '2026-07-31T10:02:00.000Z',
+                channel: 'agent',
+                text: 'Reply <b>as literal text</b>',
+                runId: 'run-2',
+                groupId: 'session--opaque-identity',
+                durationMs: 2_000,
+              },
+              {
+                occurredAt: '2026-07-31T10:01:00.000Z',
+                channel: 'input',
+                text: 'Prompt\nwith a second line',
+                runId: 'run-1',
+                groupId: 'session--opaque-identity',
+                durationMs: 9_000,
+              },
+            ],
+          })}
+        />
+      </MemoryRouter>,
+    );
+    await user.click(await screen.findByRole('tab', { name: 'Transcripts' }));
+
+    const groups = await screen.findByRole('list', { name: 'Transcript groups' });
+    expect(groups.textContent).toMatch(/session--opaque-identity.*codex.*run-1.*run-2/);
+    expect(groups.textContent).toMatch(/run--fallback/);
+    expect(groups.firstElementChild?.textContent).toContain('session--opaque-identity');
+
+    const input = await screen.findByRole('article', { name: 'Input message from run-1' });
+    expect(screen.getByRole('article', { name: 'Agent message from run-2' })).toBeTruthy();
+    expect(screen.getByText('Reply <b>as literal text</b>')).toBeTruthy();
+    expect(screen.queryByText('as literal text', { selector: 'b' })).toBeNull();
+    expect(screen.getByText('2s')).toBeTruthy();
+    expect(input.textContent).not.toContain('9s');
+    const inputText = input.querySelector('pre');
+    expect(inputText?.textContent).toBe('Prompt\nwith a second line');
+    expect(getComputedStyle(inputText!).whiteSpace).toBe('pre-wrap');
+    expect(screen.getByLabelText(/exact UTC 2026-07-31T10:02:00.000Z/)).toBeTruthy();
+    expect(screen.getByRole('separator', { name: 'Run run-2' })).toBeTruthy();
+    expect(screen.getByRole('checkbox', { name: 'This run only' })).toBeTruthy();
+
+    await user.click(screen.getByRole('checkbox', { name: 'This run only' }));
+    expect(screen.queryByRole('article', { name: 'Input message from run-1' })).toBeNull();
+    expect(screen.getByRole('article', { name: 'Agent message from run-2' })).toBeTruthy();
+  });
+
+  it('shows an unavailable transcript group state', async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={['/work/wk_a']}>
+        <App
+          client={detailClient(null, undefined, [], {
+            groups: [
+              {
+                groupId: 'run--expired',
+                kind: 'run',
+                latestAt: asOf,
+                runIds: ['run-1'],
+              },
+            ],
+            entries: [],
+            available: false,
+          })}
+        />
+      </MemoryRouter>,
+    );
+    await user.click(await screen.findByRole('tab', { name: 'Transcripts' }));
+    expect(await screen.findByText('Transcript unavailable')).toBeTruthy();
+  });
+
+  it('shows an empty transcript index without requesting a conversation', async () => {
+    const user = userEvent.setup();
+    const requests: Array<{ readonly url: string; readonly init: RequestInit | undefined }> = [];
+    render(
+      <MemoryRouter initialEntries={['/work/wk_a']}>
+        <App client={detailClient(null, undefined, requests)} />
+      </MemoryRouter>,
+    );
+    await user.click(await screen.findByRole('tab', { name: 'Transcripts' }));
+    expect(await screen.findByText('No transcript conversations')).toBeTruthy();
+    expect(requests.some(({ url }) => url.includes('/transcripts/'))).toBe(false);
+  });
+
+  it('shows an empty available transcript conversation', async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={['/work/wk_a']}>
+        <App
+          client={detailClient(null, undefined, [], {
+            groups: [{ groupId: 'run--empty', kind: 'run', latestAt: asOf, runIds: ['run-1'] }],
+            entries: [],
+          })}
+        />
+      </MemoryRouter>,
+    );
+    await user.click(await screen.findByRole('tab', { name: 'Transcripts' }));
+    expect(await screen.findByText('No transcript messages')).toBeTruthy();
+  });
+
+  it('loads the selected conversation and requests the selected opaque group', async () => {
+    const user = userEvent.setup();
+    const requests: Array<{ readonly url: string; readonly init: RequestInit | undefined }> = [];
+    render(
+      <MemoryRouter initialEntries={['/work/wk_a']}>
+        <App
+          client={detailClient(null, undefined, requests, {
+            groups: [
+              { groupId: 'session--first', kind: 'session', latestAt: asOf, runIds: ['run-1'] },
+              { groupId: 'session--second', kind: 'session', latestAt: asOf, runIds: ['run-2'] },
+            ],
+            entries: [],
+            byGroup: {
+              'session--second': {
+                entries: [
+                  {
+                    occurredAt: asOf,
+                    channel: 'agent',
+                    text: 'Second conversation',
+                    runId: 'run-2',
+                    groupId: 'session--second',
+                  },
+                ],
+              },
+            },
+          })}
+        />
+      </MemoryRouter>,
+    );
+    await user.click(await screen.findByRole('tab', { name: 'Transcripts' }));
+    await user.click(await screen.findByRole('button', { name: /session--second/ }));
+    expect(await screen.findByText('Second conversation')).toBeTruthy();
+    expect(requests.some(({ url }) => url.endsWith('/transcripts/session--second'))).toBe(true);
+  });
+
+  it('shows transcript loading and an error with retry', async () => {
+    const user = userEvent.setup();
+    let release: (() => void) | undefined;
+    const waitForTranscript = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const requests: Array<{ readonly url: string; readonly init: RequestInit | undefined }> = [];
+    const groups = [{ groupId: 'run--failure', kind: 'run', latestAt: asOf, runIds: ['run-1'] }];
+    const { unmount } = render(
+      <MemoryRouter initialEntries={['/work/wk_a']}>
+        <App
+          client={detailClient(null, undefined, requests, {
+            groups,
+            entries: [],
+            waitFor: waitForTranscript,
+          })}
+        />
+      </MemoryRouter>,
+    );
+    await user.click(await screen.findByRole('tab', { name: 'Transcripts' }));
+    expect(await screen.findByText(/Loading transcript/)).toBeTruthy();
+    release?.();
+    expect(await screen.findByText('No transcript messages')).toBeTruthy();
+    unmount();
+
+    render(
+      <MemoryRouter initialEntries={['/work/wk_a']}>
+        <App
+          client={detailClient(null, undefined, requests, { groups, entries: [], error: true })}
+        />
+      </MemoryRouter>,
+    );
+    await user.click(await screen.findByRole('tab', { name: 'Transcripts' }));
+    expect((await screen.findByRole('alert')).textContent).toContain('Transcript read failed');
+    await user.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() =>
+      expect(requests.filter(({ url }) => url.endsWith('/transcripts/run--failure'))).toHaveLength(
+        3,
+      ),
+    );
+  });
+
+  it('validates the selected run when a refreshed group index removes the selected group', async () => {
+    const user = userEvent.setup();
+    const groups: Record<string, unknown>[] = [
+      { groupId: 'session--first', kind: 'session', latestAt: asOf, runIds: ['run-1', 'run-3'] },
+      { groupId: 'session--second', kind: 'session', latestAt: asOf, runIds: ['run-2'] },
+    ];
+    const client = detailClient(null, undefined, [], {
+      groups,
+      entries: [],
+      byGroup: {
+        'session--first': {
+          entries: [
+            {
+              occurredAt: asOf,
+              channel: 'agent',
+              text: 'First run',
+              runId: 'run-1',
+              groupId: 'session--first',
+            },
+            {
+              occurredAt: '2026-07-31T10:01:00.000Z',
+              channel: 'agent',
+              text: 'Newest run',
+              runId: 'run-3',
+              groupId: 'session--first',
+            },
+          ],
+        },
+        'session--second': {
+          entries: [
+            {
+              occurredAt: asOf,
+              channel: 'agent',
+              text: 'Second run',
+              runId: 'run-2',
+              groupId: 'session--second',
+            },
+          ],
+        },
+      },
+    });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <MemoryRouter initialEntries={['/work/wk_a']}>
+        <QueryClientProvider client={queryClient}>
+          <ApiClientContext.Provider value={client}>
+            <Routes>
+              <Route path="/work/:workItemKey" element={<WorkDetail />} />
+            </Routes>
+          </ApiClientContext.Provider>
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+    await user.click(await screen.findByRole('tab', { name: 'Transcripts' }));
+    await user.click(await screen.findByRole('button', { name: /session--second/ }));
+    expect(await screen.findByText('Second run')).toBeTruthy();
+
+    groups.splice(1, 1);
+    await act(() =>
+      queryClient.refetchQueries({ queryKey: queryKeys.work.detail('wk_a'), type: 'active' }),
+    );
+    expect(
+      ((await screen.findByRole('combobox', { name: 'Run' })) as HTMLSelectElement).value,
+    ).toBe('run-3');
+    await user.click(screen.getByRole('checkbox', { name: 'This run only' }));
+    expect(await screen.findByText('Newest run')).toBeTruthy();
+    expect(screen.queryByText('First run')).toBeNull();
   });
 
   it('links each run row to its own route', async () => {

@@ -7,6 +7,7 @@ export const queryKeys = {
     list: (search = '', state = '', cursor = '') =>
       ['work', 'list', search, state, cursor] as const,
     detail: (key: string) => ['work', 'detail', key] as const,
+    transcript: (key: string, groupId: string) => ['work', 'transcript', key, groupId] as const,
   },
   resources: { list: ['resources', 'list'] as const },
   orchestration: { list: ['orchestration', 'list'] as const },

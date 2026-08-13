@@ -4,11 +4,13 @@ import {
   type ControlPlaneView,
 } from '../control-plane/index.js';
 import type { RunView } from '../execution/index.js';
+import type { WorkflowInstanceView } from '../orchestration/index.js';
 import { ApiCommandStatus, presentRun, type ApiApplications } from '../surfaces/index.js';
 import type { CompositionRoot } from './composition-root.js';
 import { projectionMeta, sampledMeta } from './surface-api-metadata.js';
 import { projectionPage } from './surface-api-projection-pages.js';
 import { withWorkflowContext } from './surface-api-run-context.js';
+import { readWorkTranscript } from './surface-api-transcripts.js';
 
 export function createExecutionApplications(
   root: CompositionRoot,
@@ -50,6 +52,50 @@ export function createExecutionApplications(
       return {
         data: await withWorkflowContext(root, presentRun(stored.value.view)),
         meta: await projectionMeta(root.journal, [stored], now()),
+      };
+    },
+    async transcript(runId) {
+      const stored = await root.projections.read<{ readonly view: RunView | null }>(
+        'execution',
+        runId,
+      );
+      const run = stored?.value.view;
+      if (run === null || run === undefined) return undefined;
+      const workflow = await root.projections.read<{ readonly view: WorkflowInstanceView | null }>(
+        'orchestration',
+        run.workflowInstanceId,
+      );
+      const workItemId = workflow?.value.view?.workItemId;
+      if (workItemId === undefined)
+        return { data: { runId, available: false, entries: [] }, meta: sampledMeta(now()) };
+      const groupId = await root.transcriptStore?.groupForRun(workItemId, runId);
+      if (groupId === undefined)
+        return { data: { runId, available: false, entries: [] }, meta: sampledMeta(now()) };
+      const runs = (
+        await root.projections.list<{ readonly view: RunView | null }>('execution')
+      ).flatMap((entry) => (entry.value.view === null ? [] : [entry.value.view]));
+      const workflowIds = [...new Set(runs.map((candidate) => candidate.workflowInstanceId))];
+      const workflows = await Promise.all(
+        workflowIds.map(async (workflowInstanceId) =>
+          root.projections.read<{ readonly view: WorkflowInstanceView | null }>(
+            'orchestration',
+            workflowInstanceId,
+          ),
+        ),
+      );
+      const workItemIdsByWorkflow = new Map(
+        workflowIds.map((workflowInstanceId, index) => [
+          workflowInstanceId,
+          workflows[index]?.value.view?.workItemId,
+        ]),
+      );
+      const groupRuns = runs.filter(
+        (candidate) => workItemIdsByWorkflow.get(candidate.workflowInstanceId) === workItemId,
+      );
+      const group = await readWorkTranscript(root.transcriptStore, workItemId, groupId, groupRuns);
+      return {
+        data: { runId, groupId, available: group.available, entries: group.entries },
+        meta: sampledMeta(now()),
       };
     },
     async runners(query) {

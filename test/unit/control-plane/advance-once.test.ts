@@ -210,6 +210,58 @@ describe('advanceOnce', () => {
     expect(retained).toBe(true);
   });
 
+  it('does not mutate transcript retention after maintenance pauses during workspace recovery', async () => {
+    const workItemId = 'work-00000000000000000000000001';
+    let paused = false;
+    let marked = 0;
+    let swept = 0;
+    const advance = createAdvanceOnce(
+      {
+        reconcileChildCompletions: async () => undefined,
+        listPendingActivations: async () => [],
+        listWaiting: async () => [],
+        acceptOutcome: async () => {
+          throw new Error('No outcome should be accepted');
+        },
+        markActivationStarted: async () => {
+          throw new Error('No activation should start');
+        },
+      },
+      {
+        attempt: async () => {
+          throw new Error('No execution attempt should begin');
+        },
+        list: async () => [],
+      },
+      { correlationsForWork: async () => [] } as never,
+      { now: () => new Date('2026-08-11T00:00:00.000Z') },
+      {
+        ids: { next: () => 'command-00000000000000000000000001' } as never,
+        isDispatchPaused: async () => paused,
+        work: { get: async () => ({ state: 'closed', deleted: false }) },
+        workspaceRecovery: {
+          recover: async () => {
+            paused = true;
+            return { reclaimed: 1, reclaimedWorkItemIds: [workItemId as never], failures: [] };
+          },
+        },
+        transcriptRetention: {
+          markClosedWorkItem: async () => {
+            marked += 1;
+            return true;
+          },
+          sweep: async () => {
+            swept += 1;
+          },
+        },
+      },
+    );
+
+    await expect(advance({ maxProgress: 1 })).resolves.toEqual({ kind: 'paused' });
+    expect(marked).toBe(0);
+    expect(swept).toBe(0);
+  });
+
   it('does not dispatch a second branch workspace activity while its workflow has an active branch Run', async () => {
     const workflow = {
       workflowInstanceId: 'workflow-00000000000000000000000001',

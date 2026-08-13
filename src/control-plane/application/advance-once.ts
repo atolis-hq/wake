@@ -70,6 +70,12 @@ interface AdvanceOnceDependencies {
   readonly isDispatchPaused?: () => Promise<boolean>;
   /** Crash-only workspace cleanup, deliberately run by the existing recovery pass. */
   readonly workspaceRecovery?: WorkspaceRecovery;
+  readonly transcriptRetention?: {
+    markClosedWorkItem(workItemId: string): Promise<boolean>;
+    sweep(): Promise<void>;
+  };
+  /** Durable closed WorkItem projection keys eligible for transcript retention. */
+  readonly closedWorkItemIds?: () => Promise<readonly string[]>;
   readonly dispatchPolicy?: DispatchPolicy;
 }
 
@@ -83,6 +89,7 @@ export function createAdvanceOnce(
   const runnerIneligibility = dependencies.runnerIneligibility ?? (async () => new Set());
   const isDispatchPaused = dependencies.isDispatchPaused ?? (async () => false);
   const workspaceRecovery = dependencies.workspaceRecovery;
+  const transcriptRetention = dependencies.transcriptRetention;
   const dispatchPolicy = dependencies.dispatchPolicy ?? new DispatchPolicy({ maxDispatches: 1 });
   const context = (cause: string) => ({
     commandId: dependencies.ids.next('command'),
@@ -95,14 +102,42 @@ export function createAdvanceOnce(
     if (await isDispatchPaused()) return { kind: 'paused' };
     await execution.recoverActive?.(ControlStreamKind.Global);
     if (await isDispatchPaused()) return { kind: 'paused' };
-    if (workspaceRecovery !== undefined)
+    if (workspaceRecovery !== undefined) {
       await workspaceRecovery.recover(await execution.list(), {
         isPaused: isDispatchPaused,
         retainWorkItem: async (workItemId) => {
           const work = await dependencies.work?.get(workItemId);
           return work?.state === WorkStatus.Open && work.deleted !== true;
         },
+        onWorkspaceReclaimed: async (workItemId) => {
+          if (await isDispatchPaused()) return false;
+          const work = await dependencies.work?.get(workItemId);
+          if (work?.state !== WorkStatus.Closed) return true;
+          try {
+            return (await transcriptRetention?.markClosedWorkItem(workItemId)) ?? true;
+          } catch {
+            return false;
+          }
+        },
       });
+    }
+    if (await isDispatchPaused()) return { kind: 'paused' };
+    if (transcriptRetention !== undefined) {
+      for (const workItemId of (await dependencies.closedWorkItemIds?.()) ?? []) {
+        if (await isDispatchPaused()) return { kind: 'paused' };
+        try {
+          await transcriptRetention.markClosedWorkItem(workItemId);
+        } catch {
+          // Retention is operational filesystem maintenance, not Run lifecycle state.
+        }
+      }
+    }
+    if (await isDispatchPaused()) return { kind: 'paused' };
+    try {
+      await transcriptRetention?.sweep();
+    } catch {
+      // Retention is operational filesystem maintenance, not Run lifecycle state.
+    }
     if (await isDispatchPaused()) return { kind: 'paused' };
     await orchestration.reconcileChildCompletions(context('child-completion-reconciliation'));
     if (await isDispatchPaused()) return { kind: 'paused' };

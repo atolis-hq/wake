@@ -31,7 +31,7 @@ describe('surface API contracts', () => {
       },
       resources: [],
       orchestration: { primary: null, children: [] },
-      execution: { runs: [] },
+      execution: { runs: [], transcriptGroups: [] },
       activities: {},
     };
 

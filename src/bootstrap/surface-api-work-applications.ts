@@ -1,6 +1,11 @@
 import type { PullRequestView } from '../activities/index.js';
+import type { RunView } from '../execution/index.js';
 import { correlationId, EventActorKind } from '../kernel/index.js';
-import { isOperatorRetryEligible, OperatorRetryIneligibleError } from '../orchestration/index.js';
+import {
+  isOperatorRetryEligible,
+  OperatorRetryIneligibleError,
+  type WorkflowInstanceView,
+} from '../orchestration/index.js';
 import { ResourceEventType, selectResourceEvent, type ResourceView } from '../resources/index.js';
 import {
   ApiCommandStatus,
@@ -18,6 +23,7 @@ import { primaryExternalRef } from './external-ref.js';
 import { projectionMeta } from './surface-api-metadata.js';
 import { projectionPage } from './surface-api-projection-pages.js';
 import { withWorkflowContext } from './surface-api-run-context.js';
+import { readWorkTranscript, transcriptGroups } from './surface-api-transcripts.js';
 
 export function createSurfaceWorkApplications(
   root: CompositionRoot,
@@ -43,6 +49,18 @@ export function createSurfaceWorkApplications(
       });
     },
     detail: (key) => workDetail(root, key, now),
+    async transcript(key, groupId) {
+      const id = decodeWorkItemId(key);
+      if (id === undefined) return undefined;
+      const work = await root.projections.read<WorkItemView | null>('work', id);
+      if (work === null || work.value === null) return undefined;
+      return readWorkTranscript(
+        root.transcriptStore,
+        id,
+        groupId,
+        await runsForWorkItem(root, id),
+      ).then(async (data) => ({ data, meta: await projectionMeta(root.journal, [], now()) }));
+    },
     async freeze(key, command) {
       const id = decodeWorkItemId(key);
       if (id === undefined) throw new Error('Work item not found');
@@ -77,7 +95,8 @@ export function createSurfaceWorkApplications(
         (value) => value.workItemId === id && value.parentWorkflowInstanceId === undefined,
       );
       if (primary === undefined) return retryIneligible('Work item has no primary workflow');
-      if (!isOperatorRetryEligible(primary)) return retryIneligible('Workflow is not retry eligible');
+      if (!isOperatorRetryEligible(primary))
+        return retryIneligible('Workflow is not retry eligible');
       try {
         await root.orchestration.retryBlockedFailedStage(
           primary.workflowInstanceId,
@@ -106,11 +125,7 @@ async function workDetail(
     await Promise.all(correlations.map((item) => root.resources.get(item.resourceId)))
   ).filter((value): value is ResourceView => value !== null);
   const workflows = (await root.orchestration.listAll()).filter((value) => value.workItemId === id);
-  const runs = (await root.execution.list())
-    .filter((run) =>
-      workflows.some((workflow) => workflow.workflowInstanceId === run.workflowInstanceId),
-    )
-    .sort((left, right) => right.startedAt.localeCompare(left.startedAt));
+  const runs = await runsForWorkItem(root, id, workflows);
   const pullRequests = await root.projections.list<PullRequestView | null>('activities-pr');
   const pullRequest = pullRequests.find((entry) =>
     resources.some((resource) => resource.resourceId === entry.key),
@@ -128,6 +143,7 @@ async function workDetail(
     },
     execution: {
       runs: await Promise.all(runs.map((run) => withWorkflowContext(root, presentRun(run)))),
+      transcriptGroups: await transcriptGroups(root.transcriptStore, id, runs),
     },
     activities: presentPullRequest(pullRequest?.value),
   };
@@ -143,6 +159,24 @@ async function workDetail(
       now(),
     ),
   };
+}
+
+async function runsForWorkItem(
+  root: CompositionRoot,
+  id: ReturnType<typeof workItemId>,
+  workflows?: readonly { readonly workflowInstanceId: string }[],
+) {
+  const matching =
+    workflows ??
+    (await root.projections.list<{ readonly view: WorkflowInstanceView | null }>('orchestration'))
+      .flatMap((entry) => (entry.value.view === null ? [] : [entry.value.view]))
+      .filter((workflow) => workflow.workItemId === id);
+  return (await root.projections.list<{ readonly view: RunView | null }>('execution'))
+    .flatMap((entry) => (entry.value.view === null ? [] : [entry.value.view]))
+    .filter((run) =>
+      matching.some((workflow) => workflow.workflowInstanceId === run.workflowInstanceId),
+    )
+    .sort((left, right) => right.startedAt.localeCompare(left.startedAt));
 }
 
 function decodeWorkItemId(key: string): ReturnType<typeof workItemId> | undefined {

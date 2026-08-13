@@ -86,6 +86,10 @@ Execution does not own:
   resolves the first candidate not currently marked quota-ineligible.
 - **Workspace** — an optional isolated working directory (`none`,
   `read-only`, or `branch`) prepared for a Run via a `WorkspaceProvider`.
+- **Transcript group** — a filesystem-only conversation for one WorkItem.
+  A safe `run` group contains a single run when no agent session is returned;
+  a safe `session` group joins turns that share a returned session ID and
+  records the CLI identity without using the raw session ID as a path segment.
 
 ## Core policies, invariants, and behaviours
 
@@ -131,6 +135,17 @@ Execution does not own:
   the sweep between independent reclaims, so maintenance performs no
   tick-driven deletion. It has no resident reaper, age threshold, or new
   user configuration; repeated recovery is idempotent.
+- When transcript capture is enabled, the agent Activity records the exact
+  runner prompt before invocation and the raw runner response after it
+  settles. These are operational filesystem artifacts, never event,
+  projection, or journal content; capture failures are diagnostics and never
+  alter a Run outcome.
+- Only when pre-dispatch workspace recovery reclaims an owned workspace for a
+  closed WorkItem, transcript retention either removes its directory
+  immediately when configured as zero, or writes a filesystem-only cleanup
+  marker. Later control-plane ticks sweep marked, expired directories;
+  recovery, marking, and sweeping are skipped while dispatch is paused, and
+  failed filesystem operations are logged and retried by later ticks.
 
 ## Event catalogue
 
@@ -231,7 +246,7 @@ Execution does not own:
 | [Runner adapters](infrastructure/runners/runners.spec.md) | adapter | Translating a `RunnerRequest` into an invoked CLI/process/fake and back into an `AgentRunnerResult` | Invoked by the Execution service once per attempt of an agent-kind Activity; enforces the wall-clock timeout. |
 | [Agent run response translation](infrastructure/agent-runner-adapter.spec.md) | adapter | Parsing an agent-kind runner's raw `AgentRunnerResult` output into the structured `AgentRunResponse` attached to `RunRunnerResultReported` | Invoked by the Execution service immediately before recording a runner's result onto the Run; downstream consumers (for example the API surface and Integrations) read `RunView.agent` rather than re-parsing raw output themselves. |
 | [Workspace adapters](infrastructure/workspace/workspace.spec.md) | adapter | Preparing and releasing an isolated working directory for a Run | Invoked by the Execution service when a workspace mode other than `none` is requested. |
-| [Prompt templates and transcripts](infrastructure/prompt-templates.spec.md) | adapter | Rendering a wake-root prompt template into a prompt string, and persisting prompt/response text | Used by the agent Activity handler (via Bootstrap wiring) to build the prompt a runner receives. |
+| [Prompt templates and transcripts](infrastructure/prompt-templates.spec.md) | adapter | Rendering a wake-root prompt template and storing grouped raw prompt/response artifacts | Bootstrap wires the store into the agent Activity when opt-in capture is enabled; API/UI readers use the store through Bootstrap applications. |
 
 ## Dependencies and system role
 
@@ -269,8 +284,10 @@ Execution does not own:
   Activities' agent-runner port. The Claude CLI adapter forwards both fields
   when invoking its underlying process; the Codex and Cursor CLI adapters do
   not read or forward either field. See the Runner adapters specification.
-- Transcript persistence (prompt/response text per Run) exists as
-  infrastructure but is not yet wired into the production attempt flow.
+- Transcript capture is opt-in operational storage. Its run/session groups
+  and raw prompt/response text are intentionally outside Execution's event
+  history; the standard API/UI presentation maps them to CLI-neutral `input`
+  and `agent` conversation entries.
 - Workspace ownership markers support only the narrow crash-orphan recovery
   policy above. They do not make it safe to delete an active or ambiguous
   Run's workspace, infer ownership from a directory name, or clean up by age.

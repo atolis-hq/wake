@@ -18,6 +18,7 @@ import type {
   WorkDetailResponse,
   WorkflowInstanceResponse,
   WorkItemResponse,
+  WorkItemTranscriptResponse,
 } from '../contracts/index.js';
 
 export interface CollectionQuery {
@@ -66,6 +67,10 @@ export interface ApiApplications {
   readonly work: {
     list(query: CollectionQuery): Promise<ApiCollectionPage<WorkItemResponse>>;
     detail(key: string): Promise<ApiResourceResult<WorkDetailResponse> | undefined>;
+    transcript?(
+      key: string,
+      groupId: string,
+    ): Promise<ApiResourceResult<WorkItemTranscriptResponse> | undefined>;
     freeze?(key: string, command: ApiCommandRequest): Promise<ApiCommandResult>;
     unfreeze?(key: string, command: ApiCommandRequest): Promise<ApiCommandResult>;
     delete?(key: string, command: ApiCommandRequest): Promise<ApiCommandResult>;

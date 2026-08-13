@@ -27,6 +27,7 @@ import {
   GitWorkspaceProvider,
   RecoveryService,
   RunRepository,
+  TranscriptStore,
   createExecutionService,
   loadPromptTemplate,
   renderPromptTemplate,
@@ -85,7 +86,7 @@ import {
   gitHubProviderDefinition,
   resolveGitHubResourceUrl,
 } from '../integrations/github/index.js';
-import { createWorkService } from '../work/index.js';
+import { WorkStatus, createWorkService, type WorkItemView } from '../work/index.js';
 import { loadConfig, type ResolvedWakeModulesConfig } from './config/load-config.js';
 import { hydrateFakeProviderEvidence } from './fake-provider-files.js';
 import { loadFakeScenarios } from './fake-scenarios.js';
@@ -107,6 +108,7 @@ export interface CompositionRootOptions {
   readonly checkpoints?: CheckpointStore;
   readonly activities?: ActivityRegistry;
   readonly clock?: Clock;
+  readonly transcriptStore?: TranscriptStore;
   /**
    * Optional integration-boundary decorators. They are applied once, before
    * any composed service receives the port, so observability and fault
@@ -139,6 +141,7 @@ export interface CompositionRoot {
   readonly lookup: ReturnType<typeof createResourceLookup>;
   readonly orchestration: ReturnType<typeof createOrchestrationService>;
   readonly execution: ReturnType<typeof createExecutionService>;
+  readonly transcriptStore?: TranscriptStore;
   readonly runnerControls: ReturnType<typeof createRunnerControlService>;
   readonly controlPlane: ReturnType<typeof createControlPlaneService>;
   /** Shared operator-or-maintenance pause supplier for every resident runtime loop. */
@@ -198,11 +201,22 @@ export async function createCompositionRoot(
       return 'https://github.com/' + match[1] + '.git';
     },
   });
+  const transcriptStore = config.transcripts.enabled
+    ? (options.transcriptStore ?? new TranscriptStore(paths.transcriptsRoot))
+    : undefined;
   const execution = createExecutionService(journal, activities, config.execution, {
     clock,
     ids,
     runners: createRunnerRegistry(config.execution, fakeScenarios, options.decorateRunner),
     reportRunnerQuota: createRunnerQuotaReporter(journal, clock, ids),
+    ...(transcriptStore !== undefined
+      ? {
+          transcriptRecorder: transcriptStore,
+          logOperationalError(error) {
+            console.error('Transcript capture failed', error);
+          },
+        }
+      : {}),
     workspaces,
   });
   const recovery = new RecoveryService(
@@ -246,6 +260,37 @@ export async function createCompositionRoot(
       isDispatchPaused: isRuntimePaused,
       workspaceRecovery: workspaces,
       work,
+      ...(transcriptStore === undefined
+        ? {}
+        : {
+            transcriptRetention: {
+              async markClosedWorkItem(workItemId) {
+                try {
+                  await transcriptStore.markWorkItemCleaned(
+                    workItemId,
+                    config.transcripts.retentionMs,
+                    clock.now().toISOString(),
+                  );
+                  return true;
+                } catch (error) {
+                  console.error('Transcript retention failed', error);
+                  return false;
+                }
+              },
+              async sweep() {
+                try {
+                  await transcriptStore.sweepExpired(
+                    config.transcripts.retentionMs,
+                    clock.now().toISOString(),
+                    (_workItemId, error) => console.error('Transcript retention failed', error),
+                  );
+                } catch (error) {
+                  console.error('Transcript retention failed', error);
+                }
+              },
+            },
+            closedWorkItemIds: () => closedWorkItemIds(projections),
+          }),
       runnerIneligibility: async () => {
         const stored = await projections.read<ControlPlaneView>(ControlStreamKind.Global, 'global');
         return stored === null
@@ -264,6 +309,7 @@ export async function createCompositionRoot(
     pullRequests,
     orchestration,
     execution,
+    ...(transcriptStore === undefined ? {} : { transcriptStore }),
     advanceOnce,
     controlPlane,
     isPaused: isRuntimePaused,
@@ -294,6 +340,7 @@ export async function createCompositionRoot(
     lookup,
     orchestration,
     execution,
+    ...(transcriptStore === undefined ? {} : { transcriptStore }),
     runnerControls,
     controlPlane,
     isPaused: isRuntimePaused,
@@ -305,6 +352,12 @@ export async function createCompositionRoot(
 
 async function maintenanceBlocksRuntime(maintenance: UpdateMaintenanceLease): Promise<boolean> {
   return (await maintenance.read()) !== null;
+}
+
+async function closedWorkItemIds(projections: ProjectionStore): Promise<readonly string[]> {
+  return (await projections.list<WorkItemView | null>('work')).flatMap(({ value }) =>
+    value?.state === WorkStatus.Closed ? [value.workItemId] : [],
+  );
 }
 
 interface IntegrationRuntime {

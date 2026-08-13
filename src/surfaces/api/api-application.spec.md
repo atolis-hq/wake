@@ -92,9 +92,18 @@ Does not own:
 - A malformed path segment (invalid percent-encoding) MUST be rejected as an
   invalid-path failure before it reaches any domain application.
 - A WorkItem's detail response MUST nest `work`, `resources`,
-  `orchestration` (`primary`/`children`), `execution` (`runs`), and
+  `orchestration` (`primary`/`children`), `execution` (`runs`,
+  `transcriptGroups`), and
   `activities` as separate keys, never flattened, per the module's
   cross-domain nesting invariant.
+- A WorkItem detail's `execution.transcriptGroups` is the transcript-group
+  index. `GET /api/v1/work-items/:workItemKey/transcripts/:groupId` reads one
+  selected group, while `GET /api/v1/runs/:runId/transcript` remains the
+  direct run deep link. The group read identifies its selected `groupId`; the
+  run read identifies its requested `runId` and includes `groupId` only when
+  an artifact group is available. Both use the same CLI-neutral ordered
+  `input` (prompt) and `agent` (response) entries with text, time, run, group,
+  and optional run duration metadata.
 - The board collection response MUST additionally carry `conditionCounts`
   alongside its paginated `items`, giving one combined snapshot-plus-listing
   shape for that route.
@@ -145,6 +154,23 @@ Does not own:
 | `conflict` | boolean, present only on a conflict result | Discriminates a conflict result from an accepted one. |
 | `code` | closed vocabulary | Machine-comparable conflict reason on a conflict result. |
 | `current` | domain view, optional | The state that caused the conflict, when available. |
+
+**Selected transcript-group response**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `groupId` | string | Safe session or run group identity. |
+| `available` | boolean | Whether the requested artifact group remains available. |
+| `entries` | ordered list | CLI-neutral conversation entries: `input` for the exact prompt and `agent` for the raw response, each with occurrence time, text, run ID, and group ID; response entries may include run duration. |
+
+**Run transcript response**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `runId` | string | Requested run identity. |
+| `groupId` | string, optional | The safe transcript-group identity when an artifact group is available for the run. |
+| `available` | boolean | Whether transcript artifacts for the requested run remain available. |
+| `entries` | ordered list | The same CLI-neutral conversation entry shape as a selected transcript-group response, filtered to the requested run. |
 
 ## Dependencies and system role
 

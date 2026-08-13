@@ -28,11 +28,24 @@ function runsClient(available: boolean) {
       ? {
           data: {
             runId: 'run-1',
+            groupId: 'run--run-1',
             available,
             entries: available
               ? [
-                  { occurredAt: asOf, channel: 'prompt', text: 'Investigate the failure' },
-                  { occurredAt: asOf, channel: 'result', text: 'wake-result DONE' },
+                  {
+                    occurredAt: asOf,
+                    channel: 'input',
+                    text: 'Investigate the failure',
+                    runId: 'run-1',
+                    groupId: 'run--run-1',
+                  },
+                  {
+                    occurredAt: asOf,
+                    channel: 'agent',
+                    text: 'wake-result DONE',
+                    runId: 'run-1',
+                    groupId: 'run--run-1',
+                  },
                 ]
               : [],
           },
@@ -58,7 +71,8 @@ describe('run detail', () => {
       </MemoryRouter>,
     );
     const transcript = await screen.findByRole('list', { name: 'Transcript' });
-    expect(transcript.textContent).toContain('prompt');
+    expect(transcript.textContent).toContain('input');
+    expect(transcript.textContent).toContain('agent');
     expect(transcript.textContent).toContain('Investigate the failure');
     expect(transcript.textContent).toContain('wake-result DONE');
     expect(screen.queryByText('Structured details')).toBeNull();

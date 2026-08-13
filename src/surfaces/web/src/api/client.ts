@@ -13,6 +13,7 @@ import {
   decodeWorkDetail,
   decodeWorkflow,
   decodeWorkItem,
+  decodeWorkTranscript,
   resourceDecoder,
   type Decoder,
 } from './decoders.js';
@@ -69,6 +70,12 @@ export class WakeApiClient {
     ) => this.get(`/work-items${query(parameters)}`, collectionDecoder(decodeWorkItem), signal),
     detail: (key: string, signal?: AbortSignal) =>
       this.get(`/work-items/${encodeURIComponent(key)}`, resourceDecoder(decodeWorkDetail), signal),
+    transcript: (key: string, groupId: string, signal?: AbortSignal) =>
+      this.get(
+        `/work-items/${encodeURIComponent(key)}/transcripts/${encodeURIComponent(groupId)}`,
+        resourceDecoder(decodeWorkTranscript),
+        signal,
+      ),
     command: (
       key: string,
       name: 'freeze' | 'unfreeze' | 'delete' | 'retry',

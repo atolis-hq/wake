@@ -38,10 +38,14 @@ export interface WorkspaceRecoveryOptions {
   isPaused?(): Promise<boolean>;
   /** Whether this WorkItem still owns its workspace after its active Runs finish. */
   retainWorkItem?(workItemId: WorkItemId): Promise<boolean>;
+  /** Called after an owned workspace is removed; false preserves its marker for retry. */
+  onWorkspaceReclaimed?(workItemId: WorkItemId): Promise<boolean>;
 }
 
 export interface WorkspaceRecoveryResult {
   readonly reclaimed: number;
+  /** WorkItems whose owned workspace was successfully reclaimed in this pass. */
+  readonly reclaimedWorkItemIds?: readonly WorkItemId[];
   readonly failures: readonly WorkspaceRecoveryFailure[];
 }
 

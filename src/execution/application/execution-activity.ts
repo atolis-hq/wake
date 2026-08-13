@@ -15,6 +15,8 @@ export interface ExecutionDependencies {
   readonly ids: IdGenerator;
   readonly workspaces?: WorkspaceProvider;
   readonly runners?: RunnerRegistry;
+  readonly transcriptRecorder?: ActivityExecutionContext['transcriptRecorder'];
+  readonly logOperationalError?: ActivityExecutionContext['logOperationalError'];
   readonly reportRunnerQuota?: (input: {
     readonly runnerName: string;
     readonly message: string;
@@ -39,6 +41,7 @@ export async function executeActivity(
     readonly occurredAt: string;
     readonly runner: ActivityExecutionContext['runner'];
     readonly runnerName?: string;
+    readonly runnerCli?: string;
     readonly runnerModel?: string;
     readonly runnerEffort?: string;
     readonly resumeSessionId?: string;
@@ -62,51 +65,25 @@ export async function executeActivity(
     ...(request.usageBaseline === undefined ? {} : { usageBaseline: request.usageBaseline }),
     ...workspaceContext(request.workspace),
     ...(runner === undefined ? {} : { runner }),
+    ...(runtime.dependencies.transcriptRecorder === undefined
+      ? {}
+      : { transcriptRecorder: runtime.dependencies.transcriptRecorder }),
+    ...(runtime.dependencies.logOperationalError === undefined
+      ? {}
+      : { logOperationalError: runtime.dependencies.logOperationalError }),
     ...(request.runnerName === undefined
       ? {}
       : {
           runnerContext: {
             runnerName: request.runnerName,
+            ...(request.runnerCli === undefined ? {} : { runnerCli: request.runnerCli }),
             activationOrdinal: activation.ordinal,
             ...(request.runnerModel === undefined ? {} : { model: request.runnerModel }),
             ...(request.runnerEffort === undefined ? {} : { effort: request.runnerEffort }),
           },
         }),
-    reportExternalExecution: async (reference) => {
-      const loaded = await runtime.repository.load(currentRunId);
-      await runtime.repository.append(currentRunId, loaded.sequence, [
-        createRunEvent({
-          runId: currentRunId,
-          eventId: `${currentRunId}:external:${reference.id}`,
-          eventType: ExecutionEventType.RunExternalExecutionReported,
-          occurredAt: runtime.dependencies.clock.now().toISOString(),
-          correlationId: context.orchestrationGroupId,
-          causationId: activation.activationId,
-          payload: reference,
-        }),
-      ]);
-    },
-    reportRunnerResult: async (result) => {
-      const loaded = await runtime.repository.load(currentRunId);
-      const event = createRunEvent({
-        runId: currentRunId,
-        eventId: `${currentRunId}:runner-result`,
-        eventType: ExecutionEventType.RunRunnerResultReported,
-        occurredAt: runtime.dependencies.clock.now().toISOString(),
-        correlationId: context.orchestrationGroupId,
-        causationId: activation.activationId,
-        payload: {
-          transport: result.transport,
-          agent: parseAgentRunnerResponse(result),
-        },
-      }) as RunExecutionEventDraft;
-      await appendIdempotently(runtime.repository, currentRunId, loaded.sequence, event);
-      if (result.failure?.kind === 'provider-quota-exceeded' && request.runnerName !== undefined)
-        await runtime.dependencies.reportRunnerQuota?.({
-          runnerName: request.runnerName,
-          message: result.failure.message,
-        });
-    },
+    reportExternalExecution: externalExecutionReporter(runtime, currentRunId, context, activation),
+    reportRunnerResult: runnerResultReporter(runtime, currentRunId, context, activation, request),
   };
   return runtime.activities.execute(
     {
@@ -123,7 +100,58 @@ export async function executeActivity(
   );
 }
 
-function workspaceContext(workspace: { readonly path: string; readonly mode: 'read-only' | 'branch' } | undefined) {
+function externalExecutionReporter(
+  runtime: ExecutionRuntime,
+  currentRunId: ReturnType<typeof runId>,
+  context: ExecutionAttemptContext,
+  activation: ExecutionActivation,
+): ActivityExecutionContext['reportExternalExecution'] {
+  return async (reference) => {
+    const loaded = await runtime.repository.load(currentRunId);
+    await runtime.repository.append(currentRunId, loaded.sequence, [
+      createRunEvent({
+        runId: currentRunId,
+        eventId: `${currentRunId}:external:${reference.id}`,
+        eventType: ExecutionEventType.RunExternalExecutionReported,
+        occurredAt: runtime.dependencies.clock.now().toISOString(),
+        correlationId: context.orchestrationGroupId,
+        causationId: activation.activationId,
+        payload: reference,
+      }),
+    ]);
+  };
+}
+
+function runnerResultReporter(
+  runtime: ExecutionRuntime,
+  currentRunId: ReturnType<typeof runId>,
+  context: ExecutionAttemptContext,
+  activation: ExecutionActivation,
+  request: { readonly runnerName?: string },
+): NonNullable<ActivityExecutionContext['reportRunnerResult']> {
+  return async (result) => {
+    const loaded = await runtime.repository.load(currentRunId);
+    const event = createRunEvent({
+      runId: currentRunId,
+      eventId: `${currentRunId}:runner-result`,
+      eventType: ExecutionEventType.RunRunnerResultReported,
+      occurredAt: runtime.dependencies.clock.now().toISOString(),
+      correlationId: context.orchestrationGroupId,
+      causationId: activation.activationId,
+      payload: { transport: result.transport, agent: parseAgentRunnerResponse(result) },
+    }) as RunExecutionEventDraft;
+    await appendIdempotently(runtime.repository, currentRunId, loaded.sequence, event);
+    if (result.failure?.kind === 'provider-quota-exceeded' && request.runnerName !== undefined)
+      await runtime.dependencies.reportRunnerQuota?.({
+        runnerName: request.runnerName,
+        message: result.failure.message,
+      });
+  };
+}
+
+function workspaceContext(
+  workspace: { readonly path: string; readonly mode: 'read-only' | 'branch' } | undefined,
+) {
   return workspace === undefined ? {} : { workspace };
 }
 

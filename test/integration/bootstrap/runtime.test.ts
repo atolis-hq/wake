@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -9,8 +9,17 @@ import {
   activityOrchestrationGroupId,
   activityWorkflowInstanceId,
 } from '../../../src/activities/index.js';
-import { createCompositionRoot, parseRootConfig } from '../../../src/bootstrap/index.js';
-import { ExecutionEventType, runId, runStream } from '../../../src/execution/index.js';
+import {
+  createCompositionRoot,
+  createSurfaceApplications,
+  parseRootConfig,
+} from '../../../src/bootstrap/index.js';
+import {
+  ExecutionEventType,
+  TranscriptStore,
+  runId,
+  runStream,
+} from '../../../src/execution/index.js';
 import { GitHubAdapter } from '../../../src/integrations/github/contracts/vocabulary.js';
 import {
   issueCommentObservation,
@@ -374,6 +383,358 @@ describe('target composition root', () => {
     expect(runtime.execution).toBeDefined();
   });
 
+  it('only creates transcript artifacts for agent executions when capture is enabled', async () => {
+    const disabledRoot = await fixtureRoot();
+    const disabled = await createTranscriptRuntime(disabledRoot, false);
+
+    await executeComposedAgent(disabled.runtime);
+
+    await expect(readdir(disabled.runtime.paths.transcriptsRoot)).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+
+    const enabledRoot = await fixtureRoot();
+    const enabled = await createTranscriptRuntime(enabledRoot, true);
+
+    await executeComposedAgent(enabled.runtime);
+
+    const workItemDirectory = join(enabled.runtime.paths.transcriptsRoot, transcriptWorkItemId);
+    const [group] = await readdir(workItemDirectory);
+    if (group === undefined) throw new Error('Expected a captured transcript group');
+    const artifacts = await readdir(join(workItemDirectory, group));
+    const promptFile = artifacts.find((file) => file.endsWith('.prompt.txt'));
+    const responseFile = artifacts.find((file) => file.endsWith('.response.txt'));
+    if (promptFile === undefined || responseFile === undefined)
+      throw new Error('Expected prompt and response transcript artifacts');
+
+    expect(await readFile(join(workItemDirectory, group, promptFile), 'utf8')).toBe(
+      enabled.requests[0]?.prompt,
+    );
+    expect(await readFile(join(workItemDirectory, group, responseFile), 'utf8')).toContain(
+      '"DONE"',
+    );
+  });
+
+  it('exposes the composed transcript store when capture is enabled', async () => {
+    const root = await fixtureRoot();
+    const { runtime } = await createTranscriptRuntime(root, true);
+
+    expect(runtime.transcriptStore).toBeDefined();
+    expect(runtime.transcriptStore).toBeInstanceOf(TranscriptStore);
+  });
+
+  it('reads captured content through a real composed API root', async () => {
+    const root = await fixtureRoot();
+    const { runtime } = await createTranscriptRuntime(root, true);
+    const store = runtime.transcriptStore;
+    if (store === undefined) throw new Error('Expected composed transcript store');
+    await store.capturePrompt({
+      workItemId: 'work-transcript',
+      runId: 'run-transcript',
+      cli: 'fake',
+      timestamp: '2026-08-12T10:00:00.000Z',
+      text: 'captured input',
+    });
+    await store.captureResponse({
+      workItemId: 'work-transcript',
+      runId: 'run-transcript',
+      cli: 'fake',
+      timestamp: '2026-08-12T10:00:01.000Z',
+      text: 'captured output',
+    });
+    await runtime.projections.write({
+      namespace: 'execution',
+      key: 'run-transcript',
+      lastGlobalPosition: 0,
+      value: {
+        view: {
+          runId: 'run-transcript',
+          workflowInstanceId: 'workflow-transcript',
+          startedAt: '2026-08-12T10:00:00.000Z',
+        },
+      },
+    });
+    await runtime.projections.write({
+      namespace: 'orchestration',
+      key: 'workflow-transcript',
+      lastGlobalPosition: 0,
+      value: { view: { workItemId: 'work-transcript' } },
+    });
+
+    await expect(
+      createSurfaceApplications(runtime).api.execution.transcript?.('run-transcript'),
+    ).resolves.toMatchObject({
+      data: { available: true, entries: [{ text: 'captured input' }, { text: 'captured output' }] },
+    });
+  });
+
+  it('reads the full durable resumed-session transcript from a run deep link', async () => {
+    const root = await fixtureRoot();
+    const { runtime } = await createTranscriptRuntime(root, true);
+    const store = runtime.transcriptStore;
+    if (store === undefined) throw new Error('Expected composed transcript store');
+    for (const [runId, timestamp, text] of [
+      ['run-session-first', '2026-08-12T10:00:00.000Z', 'first prompt'],
+      ['run-session-second', '2026-08-12T10:01:00.000Z', 'second prompt'],
+    ] as const) {
+      await store.capturePrompt({
+        workItemId: 'work-session',
+        runId,
+        cli: 'fake',
+        timestamp,
+        text,
+      });
+      await store.captureResponse({
+        workItemId: 'work-session',
+        runId,
+        cli: 'fake',
+        sessionId: 'resumed-session',
+        timestamp: new Date(Date.parse(timestamp) + 1).toISOString(),
+        text: `${text} response`,
+      });
+      await runtime.projections.write({
+        namespace: 'execution',
+        key: runId,
+        lastGlobalPosition: 0,
+        value: { view: { runId, workflowInstanceId: 'workflow-session', startedAt: timestamp } },
+      });
+    }
+    await runtime.projections.write({
+      namespace: 'orchestration',
+      key: 'workflow-session',
+      lastGlobalPosition: 0,
+      value: { view: { workItemId: 'work-session' } },
+    });
+
+    await expect(
+      createSurfaceApplications(runtime).api.execution.transcript?.('run-session-second'),
+    ).resolves.toMatchObject({
+      data: {
+        runId: 'run-session-second',
+        available: true,
+        entries: [
+          { runId: 'run-session-first', text: 'first prompt' },
+          { runId: 'run-session-first', text: 'first prompt response' },
+          { runId: 'run-session-second', text: 'second prompt' },
+          { runId: 'run-session-second', text: 'second prompt response' },
+        ],
+      },
+    });
+  });
+
+  it('marks transcripts after reclaiming a closed then deleted workspace without writing journal events', async () => {
+    const root = await fixtureRoot();
+    let now = new Date('2026-08-12T10:00:00.000Z');
+    const clock = { now: () => now };
+    const journal = new InMemoryEventJournal(clock);
+    const runtime = await createCompositionRoot(root, {
+      config: transcriptRetentionConfig(),
+      journal,
+      projections: new InMemoryProjectionStore(),
+      checkpoints: new InMemoryCheckpointStore(),
+      clock,
+    });
+    expect(runtime.config.transcripts.retentionMs).toBe(86_400_000);
+    const closed = workId('transcript-retention-closed');
+    const open = workId('transcript-retention-open');
+    await runtime.work.create(
+      { workItemId: closed, objective: 'close me' },
+      commandContext(clock, 'create-closed'),
+    );
+    await runtime.work.close(closed, 'complete', commandContext(clock, 'close-work'));
+    await runtime.work.delete(closed, commandContext(clock, 'delete-closed'));
+    await runtime.work.create(
+      { workItemId: open, objective: 'retain me' },
+      commandContext(clock, 'create-open'),
+    );
+    const transcripts = new TranscriptStore(runtime.paths.transcriptsRoot);
+    await transcripts.capturePrompt({
+      workItemId: closed,
+      runId: 'run-closed',
+      cli: 'fake',
+      timestamp: clock.now().toISOString(),
+      text: 'closed',
+    });
+    await transcripts.capturePrompt({
+      workItemId: open,
+      runId: 'run-open',
+      cli: 'fake',
+      timestamp: clock.now().toISOString(),
+      text: 'open',
+    });
+    const closedWorkspace = await ownedWorkspace(
+      runtime.paths.workspacesRoot,
+      'closed-workspace',
+      closed,
+      'closed-run',
+    );
+    const openWorkspace = await ownedWorkspace(
+      runtime.paths.workspacesRoot,
+      'open-workspace',
+      open,
+      'open-run',
+    );
+    const eventsBefore = await journal.readAll(0);
+
+    await runtime.runnerPipeline.run({ maxProgress: 1 });
+
+    await expect(access(closedWorkspace.path)).rejects.toThrow();
+    await expect(access(openWorkspace.path)).resolves.toBeUndefined();
+    await expect(
+      readFile(join(runtime.paths.transcriptsRoot, closed, '.cleaned-at'), 'utf8'),
+    ).resolves.toBe(clock.now().toISOString());
+    await expect(
+      access(join(runtime.paths.transcriptsRoot, open, '.cleaned-at')),
+    ).rejects.toThrow();
+    expect(await journal.readAll(0)).toEqual(eventsBefore);
+
+    now = new Date('2026-08-13T10:00:00.000Z');
+    await runtime.runnerPipeline.run({ maxProgress: 1 });
+    await expect(access(join(runtime.paths.transcriptsRoot, closed))).rejects.toThrow();
+  });
+
+  it('expires a closed work item transcript without workspace ownership and leaves open transcripts unmarked', async () => {
+    const root = await fixtureRoot();
+    let now = new Date('2026-08-12T10:00:00.000Z');
+    const clock = { now: () => now };
+    const journal = new InMemoryEventJournal(clock);
+    const runtime = await createCompositionRoot(root, {
+      config: transcriptRetentionConfig(),
+      journal,
+      projections: new InMemoryProjectionStore(),
+      checkpoints: new InMemoryCheckpointStore(),
+      clock,
+    });
+    const closed = workId('retentionnoworkclosed');
+    const open = workId('retentionnoworkopen');
+    await runtime.work.create(
+      { workItemId: closed, objective: 'close me' },
+      commandContext(clock, 'create-closed'),
+    );
+    await runtime.work.close(closed, 'complete', commandContext(clock, 'close-closed'));
+    await runtime.work.create(
+      { workItemId: open, objective: 'keep me' },
+      commandContext(clock, 'create-open'),
+    );
+    const transcripts = new TranscriptStore(runtime.paths.transcriptsRoot);
+    for (const [workItemId, runId] of [
+      [closed, 'run-closed'],
+      [open, 'run-open'],
+    ] as const)
+      await transcripts.capturePrompt({
+        workItemId,
+        runId,
+        cli: 'fake',
+        timestamp: clock.now().toISOString(),
+        text: workItemId,
+      });
+    const eventsBefore = await journal.readAll(0);
+
+    await runtime.runnerPipeline.run({ maxProgress: 1 });
+
+    await expect(
+      readFile(join(runtime.paths.transcriptsRoot, closed, '.cleaned-at'), 'utf8'),
+    ).resolves.toBe(clock.now().toISOString());
+    await expect(
+      access(join(runtime.paths.transcriptsRoot, open, '.cleaned-at')),
+    ).rejects.toThrow();
+    expect(await journal.readAll(0)).toEqual(eventsBefore);
+
+    now = new Date('2026-08-13T10:00:00.000Z');
+    await runtime.runnerPipeline.run({ maxProgress: 1 });
+
+    await expect(access(join(runtime.paths.transcriptsRoot, closed))).rejects.toThrow();
+    await expect(access(join(runtime.paths.transcriptsRoot, open))).resolves.toBeUndefined();
+    expect(await journal.readAll(0)).toEqual(eventsBefore);
+  });
+
+  it('removes transcripts immediately when a closed then deleted workspace uses zero retention', async () => {
+    const root = await fixtureRoot();
+    const clock = { now: () => new Date('2026-08-12T10:00:00.000Z') };
+    const runtime = await createCompositionRoot(root, {
+      config: transcriptRetentionConfig(0),
+      journal: new InMemoryEventJournal(clock),
+      projections: new InMemoryProjectionStore(),
+      checkpoints: new InMemoryCheckpointStore(),
+      clock,
+    });
+    const closed = workId('transcript-retention-zero');
+    await runtime.work.create(
+      { workItemId: closed, objective: 'close me' },
+      commandContext(clock, 'create-zero'),
+    );
+    await runtime.work.close(closed, 'complete', commandContext(clock, 'close-zero'));
+    await runtime.work.delete(closed, commandContext(clock, 'delete-zero'));
+    const transcripts = new TranscriptStore(runtime.paths.transcriptsRoot);
+    await transcripts.capturePrompt({
+      workItemId: closed,
+      runId: 'run-zero',
+      cli: 'fake',
+      timestamp: clock.now().toISOString(),
+      text: 'remove now',
+    });
+    await ownedWorkspace(runtime.paths.workspacesRoot, 'zero-workspace', closed, 'zero-run');
+
+    await runtime.runnerPipeline.run({ maxProgress: 1 });
+
+    await expect(access(join(runtime.paths.transcriptsRoot, closed))).rejects.toThrow();
+  });
+
+  it('retries zero-retention cleanup after a transient transcript filesystem failure without journal events', async () => {
+    const root = await fixtureRoot();
+    const clock = { now: () => new Date('2026-08-12T10:00:00.000Z') };
+    let failRemoval = true;
+    const transcriptStore = new TranscriptStore(join(root, '.wake', 'transcripts'), {
+      async remove(path, options) {
+        if (failRemoval) throw new Error('locked');
+        await rm(path, options);
+      },
+    });
+    const journal = new InMemoryEventJournal(clock);
+    const runtime = await createCompositionRoot(root, {
+      config: transcriptRetentionConfig(0),
+      transcriptStore,
+      journal,
+      projections: new InMemoryProjectionStore(),
+      checkpoints: new InMemoryCheckpointStore(),
+      clock,
+    });
+    const closed = workId('transcript-retention-retry');
+    await runtime.work.create(
+      { workItemId: closed, objective: 'close me' },
+      commandContext(clock, 'create-retry'),
+    );
+    await runtime.work.close(closed, 'complete', commandContext(clock, 'close-retry'));
+    await runtime.work.delete(closed, commandContext(clock, 'delete-retry'));
+    await transcriptStore.capturePrompt({
+      workItemId: closed,
+      runId: 'run-retry',
+      cli: 'fake',
+      timestamp: clock.now().toISOString(),
+      text: 'retry',
+    });
+    const workspace = await ownedWorkspace(
+      runtime.paths.workspacesRoot,
+      'retry-workspace',
+      closed,
+      'retry-run',
+    );
+    const eventsBefore = await journal.readAll(0);
+
+    await runtime.runnerPipeline.run({ maxProgress: 1 });
+
+    await expect(access(workspace.markerPath)).resolves.toBeUndefined();
+    await expect(access(join(runtime.paths.transcriptsRoot, closed))).resolves.toBeUndefined();
+    expect(await journal.readAll(0)).toEqual(eventsBefore);
+
+    failRemoval = false;
+    await runtime.runnerPipeline.run({ maxProgress: 1 });
+
+    await expect(access(workspace.markerPath)).rejects.toThrow();
+    await expect(access(join(runtime.paths.transcriptsRoot, closed))).rejects.toThrow();
+    expect(await journal.readAll(0)).toEqual(eventsBefore);
+  });
+
   it('supplies GitHub issue and comment history only through the untrusted agent context', async () => {
     const root = await fixtureRoot();
     await writeFile(
@@ -490,6 +851,63 @@ function rootConfig() {
   });
 }
 
+async function createTranscriptRuntime(root: string, enabled: boolean) {
+  const requests: Array<{ readonly prompt: string }> = [];
+  const runtime = await createCompositionRoot(root, {
+    config: parseRootConfig({
+      schemaVersion: 1,
+      work: {},
+      resources: {},
+      transcripts: { enabled },
+      execution: {
+        agentRunners: { fake: { kind: 'fake' } },
+        runnerPools: { standard: ['fake'] },
+        defaultRunnerPool: 'standard',
+      },
+      orchestration: { workflows: {} },
+      controlPlane: {},
+      integrations: {},
+      surfaces: {},
+    }),
+    journal: new InMemoryEventJournal({ now: () => new Date('2026-08-12T10:00:00.000Z') }),
+    projections: new InMemoryProjectionStore(),
+    checkpoints: new InMemoryCheckpointStore(),
+    decorateRunner(runner) {
+      return {
+        async start(request, signal) {
+          requests.push(request);
+          return runner.start(request, signal);
+        },
+      };
+    },
+  });
+  return { runtime, requests };
+}
+
+async function executeComposedAgent(runtime: Awaited<ReturnType<typeof createCompositionRoot>>) {
+  const activation = activationId(`transcript-${Math.random().toString(36).slice(2)}`);
+  await runtime.execution.attempt(
+    {
+      activationId: activation,
+      ordinal: 1,
+      activity: BuiltInActivityName.Agent,
+      input: { prompt: 'Exact composed prompt\nwith whitespace' },
+      execution: undefined,
+    },
+    {
+      workItemId: transcriptWorkItemId,
+      workflowInstanceId: activityWorkflowInstanceId('workflow-transcript-capture'),
+      orchestrationGroupId: activityOrchestrationGroupId('group-transcript-capture'),
+      resources: [],
+    },
+  );
+  await vi.waitFor(async () => {
+    expect((await runtime.execution.list(activation))[0]?.status).toBe('succeeded');
+  });
+}
+
+const transcriptWorkItemId = workId('transcript-capture');
+
 function scheduledRootConfig() {
   return parseRootConfig({
     schemaVersion: 1,
@@ -539,6 +957,48 @@ function fakeProviderRootConfig() {
     integrations: { fake: { enabled: true, provider: 'fake' } },
     surfaces: {},
   });
+}
+
+function transcriptRetentionConfig(retentionMs?: number) {
+  return parseRootConfig({
+    schemaVersion: 1,
+    work: {},
+    resources: {},
+    transcripts: retentionMs === undefined ? { enabled: true } : { enabled: true, retentionMs },
+    execution: {
+      agentRunners: { fake: { kind: 'fake' } },
+      runnerPools: { standard: ['fake'] },
+      defaultRunnerPool: 'standard',
+    },
+    orchestration: { workflows: {} },
+    controlPlane: {},
+    integrations: {},
+    surfaces: {},
+  });
+}
+
+async function ownedWorkspace(
+  root: string,
+  workspaceId: string,
+  workItemId: string,
+  runId: string,
+) {
+  const path = join(root, workspaceId);
+  const markerPath = join(root, '.wake-workspace-ownership', `${workspaceId}.json`);
+  await mkdir(path, { recursive: true });
+  await mkdir(join(root, '.wake-workspace-ownership'), { recursive: true });
+  await writeFile(
+    markerPath,
+    JSON.stringify({
+      runId,
+      workItemId,
+      repositoryResourceId: 'resource-00000000000000000000000000',
+      mode: 'read-only',
+      workspaceId,
+      path,
+    }),
+  );
+  return { path, markerPath };
 }
 
 function commandContext(clock: { now(): Date }, commandId: string) {
