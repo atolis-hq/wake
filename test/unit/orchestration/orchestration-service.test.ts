@@ -73,6 +73,12 @@ it('persists instances and accepts outcomes idempotently', async () => {
     },
     context,
   );
+  expect(instance.workflowDefinitionFingerprint).toMatch(/^[a-f0-9]{64}$/);
+  expect(
+    (await journal.readAll(0)).filter(
+      (event) => event.eventType === 'orchestration.workflow-definition-registered',
+    ),
+  ).toHaveLength(1);
   expect((await service.listPendingActivations()).length).toBe(1);
   await expect(
     service.acceptOutcome(

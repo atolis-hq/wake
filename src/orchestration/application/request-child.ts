@@ -136,7 +136,7 @@ export class RequestChild {
       requestId: metadata.requestId,
     };
     const decision = decideSignal(
-      this.workflows.definition(parent.view.workflowName),
+      await this.workflows.definitionFor(parent.view),
       parent.view,
       {
         signal,

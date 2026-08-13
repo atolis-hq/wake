@@ -9,6 +9,7 @@ export * from './application/advance-workflow.js';
 export * from './application/signal-reactor.js';
 
 export * from './application/watch-reactor.js';
+export * from './application/workflow-definition-registry.js';
 
 export * from './contracts/activity-outcome.js';
 

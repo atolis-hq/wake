@@ -7,7 +7,7 @@ import type {
 import type { EventDraftUnion, EventUnion } from '../../kernel/index.js';
 import type { WorkItemId } from '../../work/index.js';
 import type { OrchestrationWaitingActivityOutcome } from './activity-outcome.js';
-import type { ApprovalAuthority, StageConfig, TransitionTarget } from './config.js';
+import type { ApprovalAuthority, CompiledWorkflow, StageConfig, TransitionTarget } from './config.js';
 import type {
   CommandName,
   OrchestrationGroupId,
@@ -22,9 +22,11 @@ import type {
   ChildOrchestrationGroupStreamRef,
   PrimaryOrchestrationGroupStreamRef,
   WorkflowInstanceStreamRef,
+  WorkflowDefinitionsStreamRef,
 } from './streams.js';
 
 export const OrchestrationEventType = {
+  WorkflowDefinitionRegistered: 'orchestration.workflow-definition-registered',
   InstanceStarted: 'orchestration.instance-started',
   StageEntered: 'orchestration.stage-entered',
   ActivityRequested: 'orchestration.activity-requested',
@@ -59,13 +61,20 @@ export interface OrchestrationEventPayloads {
         readonly workflowName: WorkflowName;
         readonly orchestrationGroupId: OrchestrationGroupId;
         readonly entry: StageName;
+        readonly workflowDefinitionFingerprint?: string;
       }
     | ({
         readonly workItemId: WorkItemId;
         readonly workflowName: WorkflowName;
         readonly orchestrationGroupId: OrchestrationGroupId;
         readonly entry: StageName;
+        readonly workflowDefinitionFingerprint?: string;
       } & ChildCoordinationMetadata);
+  readonly [OrchestrationEventType.WorkflowDefinitionRegistered]: {
+    readonly workflowName: WorkflowName;
+    readonly fingerprint: string;
+    readonly compiledDefinition: CompiledWorkflow;
+  };
   readonly [OrchestrationEventType.StageEntered]: { readonly stage: StageName };
   readonly [OrchestrationEventType.ActivityRequested]: ActivityRequestedPayload;
   readonly [OrchestrationEventType.ActivityStarted]: { readonly activationId: ActivationId };
@@ -126,7 +135,9 @@ export interface OrchestrationEventPayloads {
 
 type WorkflowEventType = Exclude<
   keyof OrchestrationEventPayloads,
-  typeof OrchestrationEventType.PrimaryClaimed | typeof OrchestrationEventType.GroupClaimed
+  | typeof OrchestrationEventType.PrimaryClaimed
+  | typeof OrchestrationEventType.GroupClaimed
+  | typeof OrchestrationEventType.WorkflowDefinitionRegistered
 >;
 
 export type WorkflowOrchestrationEventName = WorkflowEventType;
@@ -143,6 +154,11 @@ type ChildGroupEventPayloads = Pick<
   typeof OrchestrationEventType.GroupClaimed
 >;
 
+type WorkflowDefinitionEventPayloads = Pick<
+  OrchestrationEventPayloads,
+  typeof OrchestrationEventType.WorkflowDefinitionRegistered
+>;
+
 export type WorkflowOrchestrationEvent = EventUnion<
   WorkflowEventPayloads,
   WorkflowInstanceStreamRef
@@ -156,6 +172,11 @@ type PrimaryOrchestrationGroupEvent = EventUnion<
 type ChildOrchestrationGroupEvent = EventUnion<
   ChildGroupEventPayloads,
   ChildOrchestrationGroupStreamRef
+>;
+
+export type WorkflowDefinitionRegisteredEvent = EventUnion<
+  WorkflowDefinitionEventPayloads,
+  WorkflowDefinitionsStreamRef
 >;
 
 export type OrchestrationGroupEvent = PrimaryOrchestrationGroupEvent | ChildOrchestrationGroupEvent;
@@ -178,7 +199,10 @@ type ChildOrchestrationGroupEventDraft = EventDraftUnion<
 export type OrchestrationGroupEventDraft =
   PrimaryOrchestrationGroupEventDraft | ChildOrchestrationGroupEventDraft;
 
-export type OrchestrationEvent = WorkflowOrchestrationEvent | OrchestrationGroupEvent;
+export type OrchestrationEvent =
+  | WorkflowOrchestrationEvent
+  | OrchestrationGroupEvent
+  | WorkflowDefinitionRegisteredEvent;
 
 export type OrchestrationEventDraft =
   WorkflowOrchestrationEventDraft | OrchestrationGroupEventDraft;

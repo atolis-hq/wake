@@ -5,7 +5,15 @@ import type { WorkflowInstanceId } from './identifiers.js';
 export const OrchestrationStreamKind = {
   WorkflowInstance: 'workflow-instance',
   Group: 'orchestration-group',
+  WorkflowDefinitions: 'workflow-definitions',
 } as const;
+
+export const workflowDefinitionsStream = () => ({
+  kind: OrchestrationStreamKind.WorkflowDefinitions,
+  id: 'registry',
+} as const);
+
+export type WorkflowDefinitionsStreamRef = ReturnType<typeof workflowDefinitionsStream>;
 
 export type WorkflowInstanceStreamRef = EntityRef<
   typeof OrchestrationStreamKind.WorkflowInstance,

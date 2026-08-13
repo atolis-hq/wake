@@ -37,7 +37,7 @@ export class AdvanceWorkflow {
     context: CommandContext,
   ) {
     const loaded = await this.repository.loadRequired(id);
-    const configured = this.workflows.definition(loaded.view.workflowName).commands[
+    const configured = (await this.workflows.definitionFor(loaded.view)).commands[
       commandName(request.command)
     ];
     if (configured === undefined)
@@ -145,7 +145,7 @@ export class AdvanceWorkflow {
       throw new OperatorRetryIneligibleError('WorkflowInstance does not exist');
     if (loaded.view.operatorRetryCommandIds.includes(context.commandId)) return loaded.view;
     const decision = decideOperatorRetry(
-      this.workflows.definition(loaded.view.workflowName),
+      await this.workflows.definitionFor(loaded.view),
       loaded.view,
       {
         commandId: context.commandId,
@@ -193,16 +193,19 @@ export class AdvanceWorkflow {
   }
 
   async listWatchMatches(eventType: string) {
-    return (await this.listAll()).flatMap((parent) => {
-      const definition = this.workflows.definition(parent.workflowName);
-      return definition.watches
+    const matches = await Promise.all(
+      (await this.listAll()).map(async (parent) => {
+        const definition = await this.workflows.definitionFor(parent);
+        return definition.watches
         .filter(
           (watch) =>
             watch.on?.events.includes(eventType) === true &&
             watch.while.stages.includes(parent.currentStage) &&
             watch.while.statuses.some((status) => status === parent.status),
         )
-        .map((watch) => ({ parent, watch }));
-    });
+          .map((watch) => ({ parent, watch }));
+      }),
+    );
+    return matches.flat();
   }
 }

@@ -40,6 +40,7 @@ export type MutableWorkflowInstance = {
   workflowInstanceId: WorkflowInstanceView['workflowInstanceId'];
   workItemId: WorkflowInstanceView['workItemId'];
   workflowName: WorkflowInstanceView['workflowName'];
+  workflowDefinitionFingerprint?: string;
   orchestrationGroupId: WorkflowInstanceView['orchestrationGroupId'];
   parentWorkflowInstanceId?: WorkflowInstanceView['parentWorkflowInstanceId'];
   watchId?: string;

@@ -47,6 +47,7 @@ export interface WorkflowInstanceView {
   readonly workflowInstanceId: WorkflowInstanceId;
   readonly workItemId: WorkItemId;
   readonly workflowName: WorkflowName;
+  readonly workflowDefinitionFingerprint?: string;
   readonly orchestrationGroupId: OrchestrationGroupId;
   readonly parentWorkflowInstanceId?: WorkflowInstanceId;
   readonly watchId?: string;
