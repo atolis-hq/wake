@@ -26,14 +26,19 @@ describe('TranscriptStore', () => {
       text: 'Fixed it',
     });
 
-    expect(await store.listGroups('work-1')).toEqual([
-      {
-        id: 'session--codex%20cli--session%2F1',
+    const [group] = await store.listGroups('work-1');
+    expect(group).toEqual(
+      expect.objectContaining({
+        id: expect.stringMatching(/^session--codex%20cli--[A-Za-z0-9_-]{43}$/),
         kind: 'session',
+        cli: 'codex cli',
+        latestAt: '2026-08-12T10:01:00.000Z',
         runIds: ['run/1'],
-      },
-    ]);
-    expect(await store.readGroup('work-1', 'session--codex%20cli--session%2F1')).toEqual([
+      }),
+    );
+    expect(group).toBeDefined();
+    if (group === undefined) throw new Error('Expected transcript group');
+    expect(await store.readGroup('work-1', group.id)).toEqual([
       {
         timestamp: '2026-08-12T10:00:00.000Z',
         runId: 'run/1',
@@ -94,8 +99,18 @@ describe('TranscriptStore', () => {
     }
 
     expect(await store.listGroups('work-1')).toEqual([
-      { id: 'run--run%2Fa', kind: 'run', runIds: ['run/a'] },
-      { id: 'run--run%3Fa', kind: 'run', runIds: ['run?a'] },
+      expect.objectContaining({
+        id: 'run--run%2Fa',
+        kind: 'run',
+        latestAt: '2026-08-12T10:01:00.000Z',
+        runIds: ['run/a'],
+      }),
+      expect.objectContaining({
+        id: 'run--run%3Fa',
+        kind: 'run',
+        latestAt: '2026-08-12T10:01:00.000Z',
+        runIds: ['run?a'],
+      }),
     ]);
   });
 
@@ -114,8 +129,18 @@ describe('TranscriptStore', () => {
     }
 
     expect(await store.listGroups('work-1')).toEqual([
-      { id: 'run--run', kind: 'run', runIds: ['run'] },
-      { id: 'run--run%2E', kind: 'run', runIds: ['run.'] },
+      expect.objectContaining({
+        id: 'run--run',
+        kind: 'run',
+        latestAt: '2026-08-12T10:00:00.000Z',
+        runIds: ['run'],
+      }),
+      expect.objectContaining({
+        id: 'run--run%2E',
+        kind: 'run',
+        latestAt: '2026-08-12T10:00:00.000Z',
+        runIds: ['run.'],
+      }),
     ]);
   });
 
@@ -180,10 +205,27 @@ describe('TranscriptStore', () => {
       text: 'second',
     });
 
-    expect(await store.listGroups('work-1')).toEqual([
-      { id: 'session--a--b%2D%2Dc', kind: 'session', runIds: ['run-2'] },
-      { id: 'session--a%2D%2Db--c', kind: 'session', runIds: ['run-1'] },
-    ]);
+    const groups = await store.listGroups('work-1');
+    expect(groups).toHaveLength(2);
+    expect(groups).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: expect.stringMatching(/^session--a--[A-Za-z0-9_-]{43}$/),
+          kind: 'session',
+          cli: 'a',
+          latestAt: '2026-08-12T10:01:00.000Z',
+          runIds: ['run-2'],
+        }),
+        expect.objectContaining({
+          id: expect.stringMatching(/^session--a%2D%2Db--[A-Za-z0-9_-]{43}$/),
+          kind: 'session',
+          cli: 'a--b',
+          latestAt: '2026-08-12T10:00:00.000Z',
+          runIds: ['run-1'],
+        }),
+      ]),
+    );
+    expect(new Set(groups.map((group) => group.id))).toHaveLength(2);
   });
 
   it('reads messages in timestamp order rather than filesystem modification time', async () => {
