@@ -15,37 +15,56 @@ export function githubReviewObservation(input: {
   readonly pullRequest: GitHubPullRequestPayload;
   readonly review: GitHubReviewPayload;
   readonly authorizedReviewers: readonly string[];
-}): Extract<GitHubAdapterEventDraft, { eventType: typeof GitHubEventType.CommentObserved }> | null {
+}): readonly Extract<
+  GitHubAdapterEventDraft,
+  { eventType: typeof GitHubEventType.CommentObserved }
+>[] {
+  const body = input.review.body?.trim();
   const command = reviewCommand(input.review.state);
-  if (command === null) return null;
   const actorId = input.review.user?.login ?? UnknownGitHubIdentity;
   const key = formatGitHubResourceKey({
     ...parseRepository(input.repository),
     number: input.pullRequest.number,
   });
-  return createEventDraft({
-    eventId: `github:review:${key}:${input.review.id}:${input.review.state}:${input.review.commit_id}`,
-    eventType: GitHubEventType.CommentObserved,
-    occurredAt: input.review.submitted_at,
-    correlationId: `github:${key}`,
-    causationId: `github:review:${input.review.id}`,
-    actor: { kind: EventActorKind.Integration, id: 'github' },
-    source: { kind: EventSourceKind.Adapter, id: 'github' },
-    stream: integrationStream(GitHubAdapter),
-    payload: {
-      externalKey: key,
-      reviewKind: 'formal',
-      body: command,
-      revision: input.review.commit_id,
-      actor: {
-        id: actorId,
-        kind: input.review.user?.type === 'Bot' ? ReviewActorKind.Bot : ReviewActorKind.Human,
+  const draft = (eventId: string, content: string) =>
+    createEventDraft({
+      eventId,
+      eventType: GitHubEventType.CommentObserved,
+      occurredAt: input.review.submitted_at,
+      correlationId: `github:${key}`,
+      causationId: `github:review:${input.review.id}`,
+      actor: { kind: EventActorKind.Integration, id: 'github' },
+      source: { kind: EventSourceKind.Adapter, id: 'github' },
+      stream: integrationStream(GitHubAdapter),
+      payload: {
+        externalKey: key,
+        reviewKind: 'formal' as const,
+        body: content,
+        revision: input.review.commit_id,
+        actor: {
+          id: actorId,
+          kind: input.review.user?.type === 'Bot' ? ReviewActorKind.Bot : ReviewActorKind.Human,
+        },
+        resourceAuthorId: input.pullRequest.user?.login ?? UnknownGitHubIdentity,
+        authorization: configuredAuthorization(actorId, input.authorizedReviewers),
+        raw: { reviewId: input.review.id, state: input.review.state },
       },
-      resourceAuthorId: input.pullRequest.user?.login ?? UnknownGitHubIdentity,
-      authorization: configuredAuthorization(actorId, input.authorizedReviewers),
-      raw: { reviewId: input.review.id, state: input.review.state },
-    },
-  });
+    });
+  return [
+    ...(body === undefined || body.length === 0
+      ? []
+      : [
+          draft(`github:review-feedback:${key}:${input.review.id}:${input.review.commit_id}`, body),
+        ]),
+    ...(command === null
+      ? []
+      : [
+          draft(
+            `github:review:${key}:${input.review.id}:${input.review.state}:${input.review.commit_id}`,
+            command,
+          ),
+        ]),
+  ];
 }
 
 function parseRepository(repository: string): { readonly owner: string; readonly repo: string } {

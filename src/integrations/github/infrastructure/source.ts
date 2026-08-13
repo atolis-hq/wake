@@ -168,15 +168,14 @@ async function reviewEventsFor(
         pullRequest.number,
         context.config.polling.commentPageSize,
       );
-      return reviewEvents.flatMap((review) => {
-        const event = githubReviewObservation({
+      return reviewEvents.flatMap((review) =>
+        githubReviewObservation({
           repository: context.repository,
           pullRequest,
           review,
           authorizedReviewers: [],
-        });
-        return event === null ? [] : [event];
-      });
+        }),
+      );
     }),
   );
   return items.flat();
