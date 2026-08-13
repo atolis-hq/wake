@@ -56,6 +56,10 @@ interface StoredCard {
   readonly lastRunAt?: string;
   readonly lastRunOutcome?: string;
   readonly totalTokens: number;
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+  readonly cacheReadTokens: number;
+  readonly cacheWriteTokens: number;
   readonly totalCostUsd: number;
   readonly totalDurationMs: number;
 }
@@ -123,6 +127,10 @@ function projectWork(
       dwellSince: occurredAt,
       runCount: 0,
       totalTokens: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
       totalCostUsd: 0,
       totalDurationMs: 0,
     };
@@ -420,10 +428,22 @@ function projectRunnerResult(
       [workId]: {
         ...card,
         totalTokens: card.totalTokens + usage.tokens,
+        inputTokens: (card.inputTokens ?? 0) + numeric(metadata, 'inputTokens'),
+        outputTokens: (card.outputTokens ?? 0) + numeric(metadata, 'outputTokens'),
+        cacheReadTokens: (card.cacheReadTokens ?? 0) + numeric(metadata, 'cacheReadTokens'),
+        cacheWriteTokens: (card.cacheWriteTokens ?? 0) + numeric(metadata, 'cacheWriteTokens'),
         totalCostUsd: card.totalCostUsd + usage.costUsd,
       },
     },
   };
+}
+
+function numeric(
+  metadata: Readonly<Record<string, string | number | boolean | null>> | undefined,
+  key: string,
+): number {
+  const value = metadata?.[key];
+  return typeof value === 'number' ? value : 0;
 }
 
 function withoutAwaitingApproval(card: StoredCard): StoredCard {

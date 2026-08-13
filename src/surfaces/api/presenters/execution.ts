@@ -34,7 +34,26 @@ export function presentRun(value: RunView): RunResponse {
     ...(value.runner?.name === undefined ? {} : { runnerName: value.runner.name }),
     ...(value.runner?.model === undefined ? {} : { runnerModel: value.runner.model }),
     totalTokens: usage.tokens,
+    ...tokenBreakdown(value.agent?.metadata),
     totalCostUsd: usage.costUsd,
+  };
+}
+
+function tokenBreakdown(metadata: NonNullable<RunView['agent']>['metadata'] | undefined) {
+  const numeric = (key: string): number | undefined => {
+    const value = metadata?.[key];
+    return typeof value === 'number' ? value : undefined;
+  };
+  const inputTokens = numeric('inputTokens');
+  const outputTokens = numeric('outputTokens');
+  if (inputTokens === undefined || outputTokens === undefined) return {};
+  const cacheReadTokens = numeric('cacheReadTokens');
+  const cacheWriteTokens = numeric('cacheWriteTokens');
+  return {
+    inputTokens,
+    outputTokens,
+    ...(cacheReadTokens === undefined ? {} : { cacheReadTokens }),
+    ...(cacheWriteTokens === undefined ? {} : { cacheWriteTokens }),
   };
 }
 

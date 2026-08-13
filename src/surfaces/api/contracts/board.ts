@@ -27,6 +27,10 @@ export interface BoardCardResponse {
   readonly lastRunAgeMs?: number;
   readonly lastRunOutcome?: string;
   readonly totalTokens: number;
+  readonly inputTokens?: number;
+  readonly outputTokens?: number;
+  readonly cacheReadTokens?: number;
+  readonly cacheWriteTokens?: number;
   readonly totalCostUsd: number;
   readonly totalDurationMs: number;
   readonly externalRef?: string;

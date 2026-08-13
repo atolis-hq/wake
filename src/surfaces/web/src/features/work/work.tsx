@@ -7,7 +7,7 @@ import { queryKeys } from '../../api/query-keys.js';
 import { refreshPolicy } from '../../api/refresh-policy.js';
 import { Chip } from '../../components/chip.js';
 import { DataTable } from '../../components/data-table.js';
-import { fmtCompact, fmtCost, fmtDuration } from '../../components/format.js';
+import { fmtCost, fmtDuration } from '../../components/format.js';
 import { LocalTime } from '../../components/local-time.js';
 import {
   Button,
@@ -18,6 +18,7 @@ import {
   Panel,
 } from '../../components/primitives.js';
 import { DocumentIcon, ExternalLinkIcon, GitHubIcon } from '../../components/resource-icons.js';
+import { TokenUsage } from '../../components/token-usage.js';
 import { EventRow } from '../events/events.js';
 import styles from '../features.module.css';
 import { runColumns } from '../runs/runs.js';
@@ -78,7 +79,7 @@ const columns = (location: ReturnType<typeof useLocation>) => [
       item.lastRunAt === undefined ? '?' : <LocalTime value={item.lastRunAt} />,
   },
   { label: 'Cost', render: (item: BoardCardResponse) => fmtCost(item.totalCostUsd) },
-  { label: 'Tokens', render: (item: BoardCardResponse) => fmtCompact(item.totalTokens) },
+  { label: 'Usage', render: (item: BoardCardResponse) => <TokenUsage usage={item} /> },
 ];
 export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
   const { workItemKey = '' } = useParams();

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { agentTokenUsage } from '../../../src/execution/contracts/runner.js';
 
 describe('agentTokenUsage', () => {
-  it('excludes cache token subsets from the aggregate token count', () => {
+  it('sums every reported token counter for the displayed aggregate', () => {
     expect(
       agentTokenUsage({
         inputTokens: 100,
@@ -11,7 +11,7 @@ describe('agentTokenUsage', () => {
         cacheReadTokens: 80,
         cacheWriteTokens: 5,
       }),
-    ).toEqual({ tokens: 110, costUsd: 0 });
+    ).toEqual({ tokens: 195, costUsd: 0 });
   });
 
   it('handles metadata without cache token fields', () => {

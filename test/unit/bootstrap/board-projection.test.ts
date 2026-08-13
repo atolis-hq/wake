@@ -541,7 +541,14 @@ describe('operator board projection', () => {
         4,
       ),
     );
-    expect(withResult.cards[item]).toMatchObject({ totalTokens: 30, totalCostUsd: 0.03 });
+    expect(withResult.cards[item]).toMatchObject({
+      totalTokens: 35,
+      inputTokens: 10,
+      outputTokens: 20,
+      cacheReadTokens: 5,
+      cacheWriteTokens: 0,
+      totalCostUsd: 0.03,
+    });
     expect(withResult.cards[item]!.activeRun).toBeDefined();
 
     const finished = boardProjection.project(
@@ -555,7 +562,7 @@ describe('operator board projection', () => {
     );
     expect(finished.cards[item]!.activeRun).toBeUndefined();
     expect(finished.cards[item]).toMatchObject({
-      totalTokens: 30,
+      totalTokens: 35,
       totalCostUsd: 0.03,
       totalDurationMs: 300_000,
     });
