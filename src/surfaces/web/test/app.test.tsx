@@ -126,7 +126,7 @@ function client(
               work: items[0],
               resources: [],
               orchestration: { primary: null, children: [] },
-              execution: { runs: [] },
+              execution: { runs: [], transcriptGroups: [] },
               activities: {},
             }
           : url.endsWith('/runners')
