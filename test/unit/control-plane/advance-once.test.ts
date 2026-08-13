@@ -581,7 +581,7 @@ describe('advanceOnce', () => {
       workflowName: workflowName('default'),
     });
     expect((await test.advance(work.workItemId)).kind).toBe('progressed');
-    expect((await test.advance(work.workItemId)).kind).toBe('progressed');
+    expect((await test.advance(work.workItemId)).kind).toBe('no-work');
     expect(await test.advance(work.workItemId)).toEqual({ kind: 'no-work' });
     expect((await test.viewRuns()).length).toBe(1);
   });

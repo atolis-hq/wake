@@ -32,4 +32,6 @@ export interface ExecutionAttemptContext {
   readonly ineligibleRunners?: ReadonlySet<string>;
   /** Watch workflows always start fresh; primary stages resume their own compatible session. */
   readonly sessionPolicy?: 'fresh' | 'resume-stage';
+  /** Let a control-plane tick observe an immediate deterministic completion before returning. */
+  readonly awaitImmediateCompletion?: boolean;
 }

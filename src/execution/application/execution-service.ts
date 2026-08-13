@@ -153,16 +153,24 @@ async function attemptExecution(
     lease,
     reportRunnerStarted,
   );
-  if (definition.executionKind === ActivityExecutionKind.Deterministic) {
-    await completion;
-    return (await runtime.repository.load(currentRunId)).view!;
-  }
   void completion.catch(() => {
     reportRunnerStarted();
     // A detached worker must never create an unhandled rejection for its caller.
   });
-  if (runner.runner !== undefined) await runnerStarted;
+  await yieldToRunStart(
+    definition.executionKind === ActivityExecutionKind.Deterministic &&
+      context.awaitImmediateCompletion
+      ? undefined
+      : definition.executionKind === ActivityExecutionKind.Deterministic
+        ? Promise.resolve()
+        : runnerStarted,
+  );
   return (await runtime.repository.load(currentRunId)).view!;
+}
+
+async function yieldToRunStart(runnerStarted: Promise<void> | undefined): Promise<void> {
+  if (runnerStarted !== undefined) return runnerStarted;
+  await new Promise<void>((resolve) => setImmediate(resolve));
 }
 
 // A Run completion atomically carries the full execution lease context.

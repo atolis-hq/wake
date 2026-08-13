@@ -57,6 +57,7 @@ interface ExecutionPort {
       resources: readonly NonNullable<Awaited<ReturnType<ResourceService['get']>>>[];
       ineligibleRunners?: ReadonlySet<string>;
       sessionPolicy?: 'fresh' | 'resume-stage';
+      awaitImmediateCompletion?: boolean;
     },
   ): Promise<RunView>;
   list(activationId?: ActivityActivationView['activationId']): Promise<readonly RunView[]>;
@@ -105,8 +106,6 @@ export function createAdvanceOnce(
   return async (options: AdvanceOptions): Promise<AdvanceResult> => {
     if (options.maxProgress < 1) return { kind: 'exhausted', progressCount: 0 };
     if (await isDispatchPaused()) return { kind: 'paused' };
-    await execution.recoverActive?.(ControlStreamKind.Global);
-    if (await isDispatchPaused()) return { kind: 'paused' };
     if (workspaceRecovery !== undefined) {
       await workspaceRecovery.recover(await execution.list(), {
         isPaused: isDispatchPaused,
@@ -126,6 +125,8 @@ export function createAdvanceOnce(
         },
       });
     }
+    if (await isDispatchPaused()) return { kind: 'paused' };
+    await execution.recoverActive?.(ControlStreamKind.Global);
     if (await isDispatchPaused()) return { kind: 'paused' };
     if (transcriptRetention !== undefined) {
       for (const workItemId of (await dependencies.closedWorkItemIds?.()) ?? []) {
@@ -245,6 +246,7 @@ export function createAdvanceOnce(
       resources: resourceViews,
       sessionPolicy:
         selected.workflow.parentWorkflowInstanceId === undefined ? 'resume-stage' : 'fresh',
+      awaitImmediateCompletion: true,
       ...(ineligible.size === 0 ? {} : { ineligibleRunners: ineligible }),
     });
     if (run.status === RunStatus.Succeeded && run.outcome !== undefined) {

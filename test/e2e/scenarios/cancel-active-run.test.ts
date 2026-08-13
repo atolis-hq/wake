@@ -79,7 +79,7 @@ it(`${scenario.id} cancels Work with a live fake Run across Execution restart`, 
   );
 
   complete();
-  await expect(advancing).resolves.toMatchObject({ kind: 'progressed' });
+  await expect(advancing).resolves.toMatchObject({ kind: 'blocked' });
   expect(await world.viewWorkflow(workflow.workflowInstanceId)).toMatchObject({
     status: 'blocked',
   });

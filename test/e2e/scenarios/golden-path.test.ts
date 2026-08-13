@@ -40,7 +40,7 @@ it(`${scenario.id} completes work through orchestration and an explicit Run`, as
   });
   const result = await world.advance(work.workItemId);
   expect(result.kind).toBe('progressed');
-  expect((await world.advance(work.workItemId)).kind).toBe('progressed');
+  expect((await world.advance(work.workItemId)).kind).toBe('no-work');
   expect((await world.viewWorkflow(workflow.workflowInstanceId))?.status).toBe('completed');
   expect((await world.viewRuns())[0]).toMatchObject({
     status: 'succeeded',
