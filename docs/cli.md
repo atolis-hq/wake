@@ -10,7 +10,7 @@ walkthrough and [Configuration](configuration.md) for Wake-home settings.
 
 | Command | Purpose |
 | --- | --- |
-| `wake init <path>` | Scaffolds an empty Wake home with configuration, prompts, setup guide, workspace directory, and empty durable-state directories. `--dev` selects `host.development.mode: source`; `--packaged` selects `packaged`. |
+| `wake init <path>` | Scaffolds an empty Wake home with configuration, prompts, setup guide, workspace directory, Dockerfiles, and empty durable-state directories. To use a source checkout, set `host.development.mode: source` and `host.development.repoRoot` in `config.yaml` after initialization. |
 | `wake tick` | Runs one bounded control-plane advancement pass. |
 | `wake start` | Runs the resident advancement loop. |
 | `wake stop` | Waits for active runs to finish before stopping the resident flow. |

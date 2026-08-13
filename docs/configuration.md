@@ -422,11 +422,12 @@ selector: it can feed Wake's own output back into admission and routing.
 
 ### Terminal external resources
 
-When GitHub later observes a terminal state for a resource already correlated
-to a WorkItem, Wake concludes that WorkItem idempotently: a completed resource
-closes it, while a cancelled or not-planned resource cancels it. WorkItem
-lifecycles are final, so reopening the external issue or pull request does not
-reopen the concluded WorkItem; admit or create new work for a new lifecycle.
+When GitHub later observes a closed state for a resource already correlated to
+a WorkItem, Wake concludes that WorkItem idempotently. GitHub's `not_planned`
+closure maps to Wake's `cancelled` outcome and cancels the WorkItem; every
+other GitHub closure maps to `completed` and closes it. WorkItem lifecycles are
+final, so reopening the external issue or pull request does not reopen the
+concluded WorkItem; admit or create new work for a new lifecycle.
 
 ```yaml
 integrations:

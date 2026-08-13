@@ -76,11 +76,18 @@ same commands as `wake`.
 
 ## Source-mode sandbox and self-update
 
-`wake-dev init --dev` writes a Wake home intended for a source checkout. Set
-`host.development.mode: source` and
-`host.development.repoRoot: /path/to/wake` when configuring it manually; source
-mode requires `repoRoot`. A packaged install uses `mode: packaged` (or leaves
-development settings empty).
+After `wake-dev init <path>`, configure a source-mode Wake home explicitly in
+its `config.yaml`:
+
+```yaml
+host:
+  development:
+    mode: source
+    repoRoot: /path/to/wake
+```
+
+Source mode requires `repoRoot`. A packaged install uses `mode: packaged` (or
+leaves development settings empty).
 
 Run source self-update against the Wake home, not against the repository root:
 
