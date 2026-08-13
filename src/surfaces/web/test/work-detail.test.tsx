@@ -226,6 +226,38 @@ describe('work detail', () => {
     expect(screen.getByRole('tabpanel', { name: 'Events' }).id).toBe('work-detail-events-panel');
   });
 
+  it('uses APG keyboard navigation to move and activate work detail tabs', async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={['/work/wk_a']}>
+        <App client={detailClient()} />
+      </MemoryRouter>,
+    );
+    const overview = await screen.findByRole('tab', { name: 'Overview' });
+    const events = screen.getByRole('tab', { name: 'Events' });
+    const transcripts = screen.getByRole('tab', { name: 'Transcripts' });
+    expect(overview.tabIndex).toBe(0);
+    expect(events.tabIndex).toBe(-1);
+
+    overview.focus();
+    await user.keyboard('{ArrowRight}');
+    expect(document.activeElement).toBe(events);
+    expect(events.getAttribute('aria-selected')).toBe('true');
+
+    await user.keyboard('{End}');
+    expect(document.activeElement).toBe(transcripts);
+    expect(transcripts.getAttribute('aria-selected')).toBe('true');
+
+    await user.keyboard('{ArrowRight}');
+    expect(document.activeElement).toBe(overview);
+    expect(overview.getAttribute('aria-selected')).toBe('true');
+
+    await user.keyboard('{Home}');
+    expect(document.activeElement).toBe(overview);
+    await user.keyboard('{ArrowLeft}');
+    expect(document.activeElement).toBe(transcripts);
+  });
+
   it('places work actions below the detail panel in the overview sidebar', async () => {
     render(
       <MemoryRouter initialEntries={['/work/wk_a']}>

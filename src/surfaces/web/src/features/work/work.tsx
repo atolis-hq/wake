@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { type KeyboardEvent, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router';
 import type { AuditEventResponse, BoardCardResponse } from '../../../../api/contracts/index.js';
 import { useApiClient } from '../../api/context.js';
@@ -142,6 +142,30 @@ export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
     setSelectedRunId(group?.runIds.at(-1));
     setThisRunOnly(false);
   };
+  const navigateTabs = (event: KeyboardEvent<HTMLButtonElement>) => {
+    const tabs = Array.from(
+      event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]') ?? [],
+    );
+    const currentIndex = tabs.indexOf(event.currentTarget);
+    if (currentIndex < 0) return;
+    const nextIndex =
+      event.key === 'ArrowRight'
+        ? (currentIndex + 1) % tabs.length
+        : event.key === 'ArrowLeft'
+          ? (currentIndex - 1 + tabs.length) % tabs.length
+          : event.key === 'Home'
+            ? 0
+            : event.key === 'End'
+              ? tabs.length - 1
+              : undefined;
+    if (nextIndex === undefined) return;
+    event.preventDefault();
+    const nextTab = tabs[nextIndex];
+    if (nextTab === undefined) return;
+    const next = nextTab.dataset.tab as typeof tab;
+    setTab(next);
+    nextTab.focus();
+  };
   const content = (
     <div className={styles.detail}>
       {query.isPending ? (
@@ -155,9 +179,12 @@ export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
             <button
               type="button"
               role="tab"
+              data-tab="overview"
               id="work-detail-overview-tab"
               aria-controls="work-detail-overview-panel"
               aria-selected={tab === 'overview'}
+              tabIndex={tab === 'overview' ? 0 : -1}
+              onKeyDown={navigateTabs}
               onClick={() => setTab('overview')}
             >
               Overview
@@ -165,9 +192,12 @@ export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
             <button
               type="button"
               role="tab"
+              data-tab="events"
               id="work-detail-events-tab"
               aria-controls="work-detail-events-panel"
               aria-selected={tab === 'events'}
+              tabIndex={tab === 'events' ? 0 : -1}
+              onKeyDown={navigateTabs}
               onClick={() => setTab('events')}
             >
               Events
@@ -175,9 +205,12 @@ export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
             <button
               type="button"
               role="tab"
+              data-tab="transcripts"
               id="work-detail-transcripts-tab"
               aria-controls="work-detail-transcripts-panel"
               aria-selected={tab === 'transcripts'}
+              tabIndex={tab === 'transcripts' ? 0 : -1}
+              onKeyDown={navigateTabs}
               onClick={() => setTab('transcripts')}
             >
               Transcripts
