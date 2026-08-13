@@ -140,12 +140,12 @@ Execution does not own:
   settles. These are operational filesystem artifacts, never event,
   projection, or journal content; capture failures are diagnostics and never
   alter a Run outcome.
-- After closed-workspace cleanup, transcript retention either removes the
-  WorkItem directory immediately when configured as zero, or writes a
-  filesystem-only cleanup marker. Later control-plane ticks sweep marked,
-  expired directories; marking and sweeping are skipped while dispatch is
-  paused, and failed filesystem operations are logged and retried by later
-  ticks.
+- Only when pre-dispatch workspace recovery reclaims an owned workspace for a
+  closed WorkItem, transcript retention either removes its directory
+  immediately when configured as zero, or writes a filesystem-only cleanup
+  marker. Later control-plane ticks sweep marked, expired directories;
+  recovery, marking, and sweeping are skipped while dispatch is paused, and
+  failed filesystem operations are logged and retried by later ticks.
 
 ## Event catalogue
 

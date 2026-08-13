@@ -54,11 +54,12 @@ output (the agent Activity handler does that), nor invokes a runner.
 - Group readers return timestamp-ordered prompt/response messages and group
   metadata. Bootstrap presents them as CLI-neutral `input` and `agent`
   conversation entries for the API and web UI.
-- After closed-workspace cleanup, a zero retention period deletes the WorkItem
-  transcript directory immediately; otherwise a filesystem cleanup marker is
-  swept after the configured retention period. Failures are operational
-  diagnostics, are retried by later unpaused control-plane ticks, and do not
-  affect the run or workspace outcome.
+- Only when pre-dispatch workspace recovery reclaims an owned workspace for a
+  closed WorkItem, a zero retention period deletes its transcript directory
+  immediately; otherwise a filesystem cleanup marker is swept after the
+  configured retention period. Failures are operational diagnostics, are
+  retried by later unpaused control-plane ticks, and do not affect the run or
+  workspace outcome.
 
 ## Conceptual schema
 

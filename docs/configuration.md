@@ -361,18 +361,19 @@ exposing the raw session ID in a path.
 | Property      | Type    | Description                                                                                                  | Default     |
 | ------------- | ------- | ------------------------------------------------------------------------------------------------------------ | ----------- |
 | `enabled`     | boolean | Write raw runner prompt and response text files                                                              | `false`     |
-| `retentionMs` | non-negative integer | Milliseconds to retain transcripts after closed-workspace cleanup. Set `0` to delete immediately during that cleanup. | `86400000` (24 hours) |
+| `retentionMs` | non-negative integer | Milliseconds to retain transcripts after pre-dispatch recovery reclaims a closed work item's owned workspace. Set `0` to delete immediately during that reclaim. | `86400000` (24 hours) |
 
 The legacy `retainAfterWorkspaceCleanup` boolean is no longer supported. Wake
 fails config parsing if that key is present so existing retention settings do
 not silently change behavior on upgrade.
 
-After a closed work item's workspace has been cleaned up, Wake either removes
-its transcript directory immediately (`retentionMs: 0`) or records a
-filesystem-only cleanup marker. Subsequent control-plane ticks sweep marked
-directories once they expire. Transcript I/O failures are logged, do not
-change run or workspace outcomes, and are retried by later ticks; a paused
-control plane does not perform marking or sweeping.
+Only when pre-dispatch workspace recovery reclaims an owned workspace for a
+closed work item, Wake either removes its transcript directory immediately
+(`retentionMs: 0`) or records a filesystem-only cleanup marker. Subsequent
+control-plane ticks sweep marked directories once they expire. Transcript I/O
+failures are logged, do not change run or workspace outcomes, and are retried
+by later ticks; a paused control plane does not perform recovery, marking, or
+sweeping.
 
 ### retry
 
