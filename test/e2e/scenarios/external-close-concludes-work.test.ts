@@ -72,7 +72,7 @@ it(`${scenario.id} closes Work without treating the cancelled Run as its lifecyc
   });
 
   complete();
-  await expect(advancing).resolves.toMatchObject({ kind: 'progressed' });
+  await expect(advancing).resolves.toMatchObject({ kind: 'blocked' });
   expect(await world.viewWorkflow(workflow.workflowInstanceId)).toMatchObject({
     status: 'blocked',
   });
