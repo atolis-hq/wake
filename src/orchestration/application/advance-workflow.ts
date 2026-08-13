@@ -219,7 +219,7 @@ export class AdvanceWorkflow {
 }
 
 function matchesWatchPredicate(
-  predicate: { readonly checks: 'failing' } | undefined,
+  predicate: { readonly checks: typeof PullRequestCheckState.Failing } | undefined,
   event: EventEnvelope,
 ): boolean {
   if (predicate === undefined) return true;
