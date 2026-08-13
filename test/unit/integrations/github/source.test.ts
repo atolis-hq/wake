@@ -4,6 +4,7 @@ import { GitHubEventType } from '../../../../src/integrations/github/contracts/e
 import type {
   GitHubIssueCommentPayload,
   GitHubIssuePayload,
+  GitHubReviewPayload,
 } from '../../../../src/integrations/github/contracts/payloads.js';
 import { createGitHubSource } from '../../../../src/integrations/github/infrastructure/source.js';
 
@@ -58,10 +59,63 @@ it('polls comments for pull requests, not only pure issues', async () => {
   ).not.toHaveProperty('location');
 });
 
+it('emits a submitted COMMENTED review body as formal feedback', async () => {
+  const source = createGitHubSource(
+    gitHubConfigSchema.parse({
+      enabled: true,
+      token: 'token',
+      repositories: [{ owner: 'atolis-hq', repo: 'wake-test' }],
+    }),
+    fakeClient({
+      issues: [{ ...issue(6, 'A PR'), pull_request: {} }],
+      issueComments: {},
+      reviews: {
+        6: [review(4, 'COMMENTED', 'general review feedback')],
+      },
+    }),
+  );
+
+  const drafts = await source.poll(new AbortController().signal);
+
+  expect(drafts).toContainEqual(
+    expect.objectContaining({
+      eventType: GitHubEventType.CommentObserved,
+      payload: expect.objectContaining({
+        reviewKind: 'formal',
+        body: 'general review feedback',
+      }),
+    }),
+  );
+});
+
+it('keeps an approved review body separate from its acceptance command', async () => {
+  const source = createGitHubSource(
+    gitHubConfigSchema.parse({
+      enabled: true,
+      token: 'token',
+      repositories: [{ owner: 'atolis-hq', repo: 'wake-test' }],
+    }),
+    fakeClient({
+      issues: [{ ...issue(6, 'A PR'), pull_request: {} }],
+      issueComments: {},
+      reviews: {
+        6: [review(4, 'APPROVED', 'general approval feedback')],
+      },
+    }),
+  );
+
+  const bodies = (await source.poll(new AbortController().signal))
+    .filter((draft) => draft.eventType === GitHubEventType.CommentObserved)
+    .map((draft) => (draft.payload as { readonly body: string }).body);
+
+  expect(bodies).toEqual(['general approval feedback', '/accepted']);
+});
+
 function fakeClient(input: {
   readonly issues: readonly ReturnType<typeof issue>[];
   readonly issueComments: Readonly<Record<number, readonly ReturnType<typeof comment>[]>>;
   readonly reviewComments?: Readonly<Record<number, readonly ReturnType<typeof comment>[]>>;
+  readonly reviews?: Readonly<Record<number, readonly GitHubReviewPayload[]>>;
 }) {
   return {
     async listIssues() {
@@ -73,8 +127,8 @@ function fakeClient(input: {
     async listIssueComments(_owner: string, _repo: string, issueNumber: number) {
       return input.issueComments[issueNumber] ?? [];
     },
-    async listReviews() {
-      return [];
+    async listReviews(_owner: string, _repo: string, pullNumber: number) {
+      return input.reviews?.[pullNumber] ?? [];
     },
     async listReviewComments(_owner: string, _repo: string, pullNumber: number) {
       return input.reviewComments?.[pullNumber] ?? [];
@@ -105,6 +159,17 @@ function comment(id: number, body: string): GitHubIssueCommentPayload {
     body,
     created_at: '2026-08-08T00:00:00Z',
     updated_at: '2026-08-08T00:00:00Z',
+    user: { login: 'a', type: 'User' },
+  };
+}
+
+function review(id: number, state: string, body: string): GitHubReviewPayload {
+  return {
+    id,
+    state,
+    body,
+    commit_id: 'head-a',
+    submitted_at: '2026-08-08T00:00:00Z',
     user: { login: 'a', type: 'User' },
   };
 }

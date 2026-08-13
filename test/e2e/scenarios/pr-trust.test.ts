@@ -66,7 +66,7 @@ async function appendAcceptance(
   actorId: string,
   authorizedReviewers: readonly string[],
 ): Promise<void> {
-  const event = githubReviewObservation({
+  const events = githubReviewObservation({
     repository: 'owner/repo',
     pullRequest: pullRequestPayload(),
     review: {
@@ -79,7 +79,8 @@ async function appendAcceptance(
     },
     authorizedReviewers,
   });
-  if (event === null) throw new Error('Approved GitHub review was not translated');
+  const event = events.find((candidate) => candidate.payload.body === '/accepted');
+  if (event === undefined) throw new Error('Approved GitHub review was not translated');
   await world.journal.append(event.stream, (await world.journal.readStream(event.stream)).length, [
     event,
   ]);
