@@ -141,7 +141,7 @@ async function attemptExecution(
     throw error;
   }
 
-  void completeRun(
+  const completion = completeRun(
     runtime,
     currentRunId,
     activation,
@@ -152,7 +152,12 @@ async function attemptExecution(
     usageBaseline,
     lease,
     reportRunnerStarted,
-  ).catch(() => {
+  );
+  if (definition.executionKind === ActivityExecutionKind.Deterministic) {
+    await completion;
+    return (await runtime.repository.load(currentRunId)).view!;
+  }
+  void completion.catch(() => {
     reportRunnerStarted();
     // A detached worker must never create an unhandled rejection for its caller.
   });
@@ -212,6 +217,7 @@ async function completeRun(
       // The caller already has a durable started Run; cleanup must still run.
     }
   } finally {
+    reportRunnerStarted();
     await renewal.stop();
     await cleanupRun(runtime, currentRunId, activation, context, lease);
   }
