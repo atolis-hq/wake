@@ -77,6 +77,85 @@ describe('InboundTranslator', () => {
     ).toHaveLength(1);
   });
 
+  it('ignores a re-observed resource whose deleted WorkItem retracted its primary correlation', async () => {
+    const clock = new FakeClock();
+    const journal = new InMemoryEventJournal(clock);
+    const { resources, lookup } = createTestResourceServices(journal);
+    const work = createWorkService(journal);
+    const checkpoints = new InMemoryCheckpointStore();
+    const { orchestration, routing } = createTestIntakeRouting(journal, work);
+    const translator = new InboundTranslator(journal, checkpoints, work, resources, {
+      lookup,
+      orchestration,
+      routing,
+    });
+    const initial = createEventDraft({
+      eventId: 'github:issue:owner/repo#7:v1',
+      eventType: 'integration.github.work-observed',
+      occurredAt: clock.now().toISOString(),
+      correlationId: 'github:owner/repo#7',
+      causationId: 'github:issue:owner/repo#7:v1',
+      actor: { kind: 'integration', id: 'github' },
+      source: { kind: 'adapter', id: 'github' },
+      stream: integrationStream(BuiltInAdapterId.GitHub),
+      payload: observation(),
+    });
+    await journal.append(initial.stream, 0, [initial]);
+    await translator.runOnce();
+    const staleResource = await lookup.resourceIdForExternalKey({
+      adapter: 'github',
+      key: 'owner/repo#7',
+    });
+    const staleWork = (await resources.correlations(staleResource!))[0]!.workItemId;
+    const deletion = {
+      commandId: 'delete-stale-work',
+      correlationId: 'delete-stale-work' as never,
+      occurredAt: clock.now().toISOString(),
+      actor: { kind: 'operator' as const, id: 'web' },
+    };
+    await work.delete(staleWork, deletion);
+    await resources.retract(staleResource!, staleWork, deletion);
+    const resumed = new InboundTranslator(journal, checkpoints, work, resources, {
+      lookup,
+      orchestration,
+      routing,
+    });
+
+    const [ignored, admitted] = await journal.append(initial.stream, 1, [
+      createEventDraft({
+        eventId: 'github:issue:owner/repo#7:v2',
+        eventType: 'integration.github.work-observed',
+        occurredAt: clock.now().toISOString(),
+        correlationId: 'github:owner/repo#7',
+        causationId: 'github:issue:owner/repo#7:v2',
+        actor: { kind: 'integration', id: 'github' },
+        source: { kind: 'adapter', id: 'github' },
+        stream: integrationStream(BuiltInAdapterId.GitHub),
+        payload: { ...observation(), revision: 'def456' },
+      }),
+      createEventDraft({
+        eventId: 'github:issue:owner/repo#8:v1',
+        eventType: 'integration.github.work-observed',
+        occurredAt: clock.now().toISOString(),
+        correlationId: 'github:owner/repo#8',
+        causationId: 'github:issue:owner/repo#8:v1',
+        actor: { kind: 'integration', id: 'github' },
+        source: { kind: 'adapter', id: 'github' },
+        stream: integrationStream(BuiltInAdapterId.GitHub),
+        payload: { ...observation(), externalKey: 'owner/repo#8', revision: 'ghi789' },
+      }),
+    ]);
+
+    await expect(resumed.runOnce()).resolves.toBeGreaterThan(0);
+    expect(await checkpoints.load('reactor:integration.github.inbound')).toBe(
+      admitted!.globalPosition,
+    );
+    expect(ignored).toBeDefined();
+    expect(
+      await lookup.resourceIdForExternalKey({ adapter: 'github', key: 'owner/repo#8' }),
+    ).not.toBeNull();
+  });
+
   it('captures the observed title on the discovered resource', async () => {
     const clock = new FakeClock();
     const journal = new InMemoryEventJournal(clock);

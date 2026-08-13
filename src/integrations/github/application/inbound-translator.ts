@@ -317,8 +317,9 @@ export class InboundTranslator {
       const correlation = (await this.resources.correlations(resourceIdValue)).find(
         (value) => value.role === ResourceCorrelationRole.Primary,
       );
-      if (correlation === undefined)
-        throw new Error(`Resource ${resourceIdValue} has no primary WorkItem correlation`);
+      // A deleted WorkItem retracts its primary correlation while retaining the external
+      // resource as a durable tombstone. Do not remint it or let it block later intake.
+      if (correlation === undefined) return null;
       const identity = { resourceId: resourceIdValue, workItemId: correlation.workItemId };
       this.minted.set(key, identity);
       return { ...identity, created: false };
