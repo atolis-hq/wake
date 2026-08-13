@@ -133,7 +133,9 @@ describe('board', () => {
     );
     const card = await screen.findByRole('listitem', { name: 'Alpha' });
     expect(
-      within(card).getByText('1 runs · last run 2m ago · 5m total · $0.0000 · 0 tokens'),
+      within(card).getByText('1 runs · last run 2m ago · 5m total · $0.0000 ·', {
+        exact: false,
+      }),
     ).toBeTruthy();
   });
   it('shows the child-run indicator only for a work item with an active child run', async () => {

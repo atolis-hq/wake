@@ -1,7 +1,8 @@
 ﻿import { Link, useLocation } from 'react-router';
 import type { BoardCardResponse } from '../../../../api/contracts/index.js';
 import { Chip } from '../../components/chip.js';
-import { fmtCompact, fmtCost, fmtDuration } from '../../components/format.js';
+import { fmtCost, fmtDuration } from '../../components/format.js';
+import { TokenUsage } from '../../components/token-usage.js';
 import styles from '../features.module.css';
 
 const badTones = new Set(['failed', 'cancelled', 'ambiguous']);
@@ -185,7 +186,8 @@ export function BoardCard({
             item.lastRunAgeMs === undefined
               ? 'no runs yet'
               : `last run ${fmtDuration(item.lastRunAgeMs)} ago`
-          } \u00b7 ${fmtDuration(item.totalDurationMs)} total \u00b7 ${fmtCost(item.totalCostUsd)} \u00b7 ${fmtCompact(item.totalTokens)} tokens`}
+          } \u00b7 ${fmtDuration(item.totalDurationMs)} total \u00b7 ${fmtCost(item.totalCostUsd)} \u00b7 `}
+          <TokenUsage usage={item} /> usage tokens
         </span>
         {item.activeRun !== undefined && (
           <div className={styles.childRun}>

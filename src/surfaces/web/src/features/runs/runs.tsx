@@ -6,7 +6,7 @@ import { queryKeys } from '../../api/query-keys.js';
 import { refreshInterval, refreshPolicy } from '../../api/refresh-policy.js';
 import { CursorPagination, useCursorNavigation } from '../../components/cursor-pagination.js';
 import { DataTable } from '../../components/data-table.js';
-import { fmtCompact, fmtCost, fmtDuration } from '../../components/format.js';
+import { fmtCost, fmtDuration } from '../../components/format.js';
 import { LocalTime } from '../../components/local-time.js';
 import {
   EmptyState,
@@ -16,6 +16,7 @@ import {
   Panel,
   StatusBadge,
 } from '../../components/primitives.js';
+import { TokenUsage } from '../../components/token-usage.js';
 import styles from '../features.module.css';
 
 export function RunsList() {
@@ -66,7 +67,7 @@ export const runColumns = [
   { label: 'Status', render: (run: RunResponse) => run.sentinel },
   { label: 'Started', render: (run: RunResponse) => <LocalTime value={run.startedAt} /> },
   { label: 'Duration', render: (run: RunResponse) => runDuration(run) },
-  { label: 'Tokens', render: (run: RunResponse) => fmtCompact(run.totalTokens) },
+  { label: 'Usage', render: (run: RunResponse) => <TokenUsage usage={run} /> },
   { label: 'Cost', render: (run: RunResponse) => fmtCost(run.totalCostUsd) },
 ];
 function runnerLabel(run: RunResponse): string {

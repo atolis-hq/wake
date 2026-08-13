@@ -147,6 +147,10 @@ export const decodeBoardCard: Decoder<BoardCardResponse> = (value, path = '') =>
     ...optionalStringProperty(record, 'lastRunOutcome', path),
     ...optionalNumberProperty(record, 'lastRunAgeMs', path),
     totalTokens: number(record.totalTokens, child(path, 'totalTokens')),
+    ...optionalNumberProperty(record, 'inputTokens', path),
+    ...optionalNumberProperty(record, 'outputTokens', path),
+    ...optionalNumberProperty(record, 'cacheReadTokens', path),
+    ...optionalNumberProperty(record, 'cacheWriteTokens', path),
     totalCostUsd: number(record.totalCostUsd, child(path, 'totalCostUsd')),
     totalDurationMs: number(record.totalDurationMs, child(path, 'totalDurationMs')),
     ...(record.activeRun === undefined
@@ -228,6 +232,10 @@ export const decodeRun: Decoder<RunResponse> = (value, path = '') => {
     ...optionalStringProperty(record, 'workflowName', path),
     ...optionalStringProperty(record, boardStageField, path),
     totalTokens: number(record.totalTokens, child(path, 'totalTokens')),
+    ...optionalNumberProperty(record, 'inputTokens', path),
+    ...optionalNumberProperty(record, 'outputTokens', path),
+    ...optionalNumberProperty(record, 'cacheReadTokens', path),
+    ...optionalNumberProperty(record, 'cacheWriteTokens', path),
     totalCostUsd: number(record.totalCostUsd, child(path, 'totalCostUsd')),
     ...(record.outcome === undefined
       ? {}

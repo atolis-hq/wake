@@ -93,9 +93,10 @@ component's responsibility.
   no baseline, the adapter reports the final cumulative snapshot; with a
   supplied baseline that cannot safely be subtracted, it reports no generic
   usage. Claude's parsed JSON usage remains per invocation and is not
-  baseline-adjusted. Generic aggregate token totals are `input + output`;
-  cache-read and cache-write counters are diagnostic subsets of input, not
-  additional aggregate tokens. Adapters record a reported cost only and never
+  baseline-adjusted. The operational usage total sums every reported counter
+  (`input`, `output`, cache read, and cache write), while retaining the
+  individual counters for a provider-specific breakdown. Adapters record a
+  reported cost only and never
   estimate one.
 - A failed resume is never retried as a fresh invocation. Adapters do not
   detect or classify unavailable-session IDs from vendor output. Timeouts,

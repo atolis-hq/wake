@@ -53,7 +53,11 @@ export function agentTokenUsage(
     return typeof value === 'number' ? value : 0;
   };
   return {
-    tokens: numeric('inputTokens') + numeric('outputTokens'),
+    tokens:
+      numeric('inputTokens') +
+      numeric('outputTokens') +
+      numeric('cacheReadTokens') +
+      numeric('cacheWriteTokens'),
     costUsd: numeric('costUsd'),
   };
 }
