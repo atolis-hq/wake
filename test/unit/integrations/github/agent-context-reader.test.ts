@@ -101,13 +101,16 @@ it('includes the latest correlated pull request check evidence without reading c
       headRevision: 'head-8',
       raw: {
         number: 8,
-        checkRuns: Array.from({ length: 21 }, (_, index) => ({
-          id: index + 1,
-          name: `newest-${index + 1}`,
-          status: 'completed',
-          conclusion: 'failure',
-          unexpected: 'x'.repeat(100_000),
-        })),
+        checkRuns: [
+          'malformed historic evidence',
+          ...Array.from({ length: 21 }, (_, index) => ({
+            id: index + 1,
+            name: `newest-${index + 1}`,
+            status: 'completed',
+            conclusion: 'failure',
+            unexpected: 'x'.repeat(100_000),
+          })),
+        ],
         statuses: [
           { id: 22, context: 'deploy', state: 'failure', unexpected: 'x'.repeat(100_000) },
         ],

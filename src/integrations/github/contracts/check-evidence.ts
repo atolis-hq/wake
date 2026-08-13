@@ -20,7 +20,8 @@ export function boundedDiagnosticEvidence(
   const bounded: Readonly<Record<string, string | null>>[] = [];
   let bytes = 0;
   for (const value of evidence) {
-    if (bounded.length === maxEvidenceEntries || !isRecord(value)) break;
+    if (bounded.length === maxEvidenceEntries) break;
+    if (!isRecord(value)) continue;
     const diagnostic = diagnosticEvidence(value);
     const entryBytes = Buffer.byteLength(JSON.stringify(diagnostic), 'utf8');
     if (bytes + entryBytes > maxEvidenceBytes) break;
