@@ -71,7 +71,28 @@ export function createExecutionApplications(
       const groupId = await root.transcriptStore?.groupForRun(workItemId, runId);
       if (groupId === undefined)
         return { data: { runId, available: false, entries: [] }, meta: sampledMeta(now()) };
-      const group = await readWorkTranscript(root.transcriptStore, workItemId, groupId, [run]);
+      const runs = (
+        await root.projections.list<{ readonly view: RunView | null }>('execution')
+      ).flatMap((entry) => (entry.value.view === null ? [] : [entry.value.view]));
+      const workflowIds = [...new Set(runs.map((candidate) => candidate.workflowInstanceId))];
+      const workflows = await Promise.all(
+        workflowIds.map(async (workflowInstanceId) =>
+          root.projections.read<{ readonly view: WorkflowInstanceView | null }>(
+            'orchestration',
+            workflowInstanceId,
+          ),
+        ),
+      );
+      const workItemIdsByWorkflow = new Map(
+        workflowIds.map((workflowInstanceId, index) => [
+          workflowInstanceId,
+          workflows[index]?.value.view?.workItemId,
+        ]),
+      );
+      const groupRuns = runs.filter(
+        (candidate) => workItemIdsByWorkflow.get(candidate.workflowInstanceId) === workItemId,
+      );
+      const group = await readWorkTranscript(root.transcriptStore, workItemId, groupId, groupRuns);
       return {
         data: { runId, groupId, available: group.available, entries: group.entries },
         meta: sampledMeta(now()),

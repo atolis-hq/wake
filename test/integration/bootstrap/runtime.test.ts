@@ -468,6 +468,60 @@ describe('target composition root', () => {
     });
   });
 
+  it('reads the full durable resumed-session transcript from a run deep link', async () => {
+    const root = await fixtureRoot();
+    const { runtime } = await createTranscriptRuntime(root, true);
+    const store = runtime.transcriptStore;
+    if (store === undefined) throw new Error('Expected composed transcript store');
+    for (const [runId, timestamp, text] of [
+      ['run-session-first', '2026-08-12T10:00:00.000Z', 'first prompt'],
+      ['run-session-second', '2026-08-12T10:01:00.000Z', 'second prompt'],
+    ] as const) {
+      await store.capturePrompt({
+        workItemId: 'work-session',
+        runId,
+        cli: 'fake',
+        timestamp,
+        text,
+      });
+      await store.captureResponse({
+        workItemId: 'work-session',
+        runId,
+        cli: 'fake',
+        sessionId: 'resumed-session',
+        timestamp: new Date(Date.parse(timestamp) + 1).toISOString(),
+        text: `${text} response`,
+      });
+      await runtime.projections.write({
+        namespace: 'execution',
+        key: runId,
+        lastGlobalPosition: 0,
+        value: { view: { runId, workflowInstanceId: 'workflow-session', startedAt: timestamp } },
+      });
+    }
+    await runtime.projections.write({
+      namespace: 'orchestration',
+      key: 'workflow-session',
+      lastGlobalPosition: 0,
+      value: { view: { workItemId: 'work-session' } },
+    });
+
+    await expect(
+      createSurfaceApplications(runtime).api.execution.transcript?.('run-session-second'),
+    ).resolves.toMatchObject({
+      data: {
+        runId: 'run-session-second',
+        available: true,
+        entries: [
+          { runId: 'run-session-first', text: 'first prompt' },
+          { runId: 'run-session-first', text: 'first prompt response' },
+          { runId: 'run-session-second', text: 'second prompt' },
+          { runId: 'run-session-second', text: 'second prompt response' },
+        ],
+      },
+    });
+  });
+
   it('marks transcripts after reclaiming a closed then deleted workspace without writing journal events', async () => {
     const root = await fixtureRoot();
     let now = new Date('2026-08-12T10:00:00.000Z');
@@ -537,6 +591,61 @@ describe('target composition root', () => {
     now = new Date('2026-08-13T10:00:00.000Z');
     await runtime.runnerPipeline.run({ maxProgress: 1 });
     await expect(access(join(runtime.paths.transcriptsRoot, closed))).rejects.toThrow();
+  });
+
+  it('expires a closed work item transcript without workspace ownership and leaves open transcripts unmarked', async () => {
+    const root = await fixtureRoot();
+    let now = new Date('2026-08-12T10:00:00.000Z');
+    const clock = { now: () => now };
+    const journal = new InMemoryEventJournal(clock);
+    const runtime = await createCompositionRoot(root, {
+      config: transcriptRetentionConfig(),
+      journal,
+      projections: new InMemoryProjectionStore(),
+      checkpoints: new InMemoryCheckpointStore(),
+      clock,
+    });
+    const closed = workId('retentionnoworkclosed');
+    const open = workId('retentionnoworkopen');
+    await runtime.work.create(
+      { workItemId: closed, objective: 'close me' },
+      commandContext(clock, 'create-closed'),
+    );
+    await runtime.work.close(closed, 'complete', commandContext(clock, 'close-closed'));
+    await runtime.work.create(
+      { workItemId: open, objective: 'keep me' },
+      commandContext(clock, 'create-open'),
+    );
+    const transcripts = new TranscriptStore(runtime.paths.transcriptsRoot);
+    for (const [workItemId, runId] of [
+      [closed, 'run-closed'],
+      [open, 'run-open'],
+    ] as const)
+      await transcripts.capturePrompt({
+        workItemId,
+        runId,
+        cli: 'fake',
+        timestamp: clock.now().toISOString(),
+        text: workItemId,
+      });
+    const eventsBefore = await journal.readAll(0);
+
+    await runtime.runnerPipeline.run({ maxProgress: 1 });
+
+    await expect(
+      readFile(join(runtime.paths.transcriptsRoot, closed, '.cleaned-at'), 'utf8'),
+    ).resolves.toBe(clock.now().toISOString());
+    await expect(
+      access(join(runtime.paths.transcriptsRoot, open, '.cleaned-at')),
+    ).rejects.toThrow();
+    expect(await journal.readAll(0)).toEqual(eventsBefore);
+
+    now = new Date('2026-08-13T10:00:00.000Z');
+    await runtime.runnerPipeline.run({ maxProgress: 1 });
+
+    await expect(access(join(runtime.paths.transcriptsRoot, closed))).rejects.toThrow();
+    await expect(access(join(runtime.paths.transcriptsRoot, open))).resolves.toBeUndefined();
+    expect(await journal.readAll(0)).toEqual(eventsBefore);
   });
 
   it('removes transcripts immediately when a closed then deleted workspace uses zero retention', async () => {

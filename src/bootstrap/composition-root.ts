@@ -86,7 +86,7 @@ import {
   gitHubProviderDefinition,
   resolveGitHubResourceUrl,
 } from '../integrations/github/index.js';
-import { createWorkService } from '../work/index.js';
+import { WorkStatus, createWorkService, type WorkItemView } from '../work/index.js';
 import { loadConfig, type ResolvedWakeModulesConfig } from './config/load-config.js';
 import { hydrateFakeProviderEvidence } from './fake-provider-files.js';
 import { loadFakeScenarios } from './fake-scenarios.js';
@@ -289,6 +289,7 @@ export async function createCompositionRoot(
                 }
               },
             },
+            closedWorkItemIds: () => closedWorkItemIds(projections),
           }),
       runnerIneligibility: async () => {
         const stored = await projections.read<ControlPlaneView>(ControlStreamKind.Global, 'global');
@@ -351,6 +352,12 @@ export async function createCompositionRoot(
 
 async function maintenanceBlocksRuntime(maintenance: UpdateMaintenanceLease): Promise<boolean> {
   return (await maintenance.read()) !== null;
+}
+
+async function closedWorkItemIds(projections: ProjectionStore): Promise<readonly string[]> {
+  return (await projections.list<WorkItemView | null>('work')).flatMap(({ value }) =>
+    value?.state === WorkStatus.Closed ? [value.workItemId] : [],
+  );
 }
 
 interface IntegrationRuntime {

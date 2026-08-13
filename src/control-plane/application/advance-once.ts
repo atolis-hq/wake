@@ -74,6 +74,8 @@ interface AdvanceOnceDependencies {
     markClosedWorkItem(workItemId: string): Promise<boolean>;
     sweep(): Promise<void>;
   };
+  /** Durable closed WorkItem projection keys eligible for transcript retention. */
+  readonly closedWorkItemIds?: () => Promise<readonly string[]>;
   readonly dispatchPolicy?: DispatchPolicy;
 }
 
@@ -118,6 +120,17 @@ export function createAdvanceOnce(
           }
         },
       });
+    }
+    if (await isDispatchPaused()) return { kind: 'paused' };
+    if (transcriptRetention !== undefined) {
+      for (const workItemId of (await dependencies.closedWorkItemIds?.()) ?? []) {
+        if (await isDispatchPaused()) return { kind: 'paused' };
+        try {
+          await transcriptRetention.markClosedWorkItem(workItemId);
+        } catch {
+          // Retention is operational filesystem maintenance, not Run lifecycle state.
+        }
+      }
     }
     if (await isDispatchPaused()) return { kind: 'paused' };
     try {

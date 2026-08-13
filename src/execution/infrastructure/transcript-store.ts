@@ -134,6 +134,12 @@ export class TranscriptStore {
       await this.fileSystem.remove(directory, { recursive: true, force: true });
       return;
     }
+    try {
+      await readFile(join(directory, '.cleaned-at'), 'utf8');
+      return;
+    } catch (error: unknown) {
+      if (!isMissing(error)) throw error;
+    }
     const timestamp = normaliseTimestamp(cleanedAt);
     await mkdir(directory, { recursive: true });
     await writeFile(join(directory, '.cleaned-at'), timestamp, 'utf8');
