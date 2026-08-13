@@ -275,7 +275,7 @@ text is literal pre-wrapped text, not Markdown or HTML.
 
 - [ ] **Step 2: Run the focused test to verify it fails**
 
-Run: `npm run test:web -- --run src/surfaces/web/test/work-detail.test.tsx`
+Run: `npm run test:web -- work-detail.test.tsx`
 
 Expected: FAIL because the transcript section is absent.
 
@@ -287,7 +287,7 @@ do not branch rendering by CLI.
 
 - [ ] **Step 4: Run focused UI test and web build**
 
-Run: `npm run test:web -- --run src/surfaces/web/test/work-detail.test.tsx`
+Run: `npm run test:web -- work-detail.test.tsx`
 
 Run: `npm run build:web`
 
