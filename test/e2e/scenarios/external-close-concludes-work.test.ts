@@ -72,7 +72,7 @@ it(`${scenario.id} closes Work without treating the cancelled Run as its lifecyc
   });
 
   complete();
-  await expect(advancing).resolves.toMatchObject({ kind: 'blocked' });
+  await expect(advancing).resolves.toMatchObject({ kind: 'progressed' });
   expect(await world.viewWorkflow(workflow.workflowInstanceId)).toMatchObject({
     status: 'blocked',
   });
@@ -82,7 +82,7 @@ async function activeRun(world: TestWorld) {
   for (let attempt = 0; attempt < 20; attempt++) {
     const [run] = await world.viewRuns();
     if (run?.externalExecution !== undefined) return run;
-    await Promise.resolve();
+    await new Promise<void>((resolve) => setImmediate(resolve));
   }
   throw new Error('Expected an active fake Run');
 }

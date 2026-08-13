@@ -155,6 +155,8 @@ export interface ActivityExecutionContext {
   };
   /** Best-effort operational diagnostics that must not affect activity execution. */
   readonly logOperationalError?: (error: unknown) => void;
+  /** Signals that an agent runner invocation has begun. */
+  readonly reportRunnerStarted?: () => void;
   reportExternalExecution(reference: {
     readonly kind: ExternalExecutionKind;
     readonly id: string;

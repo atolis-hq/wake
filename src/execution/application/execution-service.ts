@@ -70,6 +70,8 @@ export function createExecutionService(
   };
 }
 
+// Starts the durable Run and hands agent invocation ownership to the detached worker.
+// eslint-disable-next-line max-lines-per-function
 async function attemptExecution(
   runtime: ExecutionRuntime,
   activation: ExecutionActivation,
@@ -99,6 +101,10 @@ async function attemptExecution(
   if (existing !== undefined) return existing;
   const currentRunId = runId(runtime.dependencies.ids.next(ExecutionStreamKind.Run));
   const startedAt = runtime.dependencies.clock.now().toISOString();
+  let reportRunnerStarted: () => void = () => {};
+  const runnerStarted = new Promise<void>((resolve) => {
+    reportRunnerStarted = resolve;
+  });
   let lease: WorkspaceLease | undefined;
   let claimed = false;
   try {
@@ -145,15 +151,13 @@ async function attemptExecution(
     resumeSessionId,
     usageBaseline,
     lease,
+    reportRunnerStarted,
   ).catch(() => {
+    reportRunnerStarted();
     // A detached worker must never create an unhandled rejection for its caller.
   });
-  await yieldToRunStart();
+  if (runner.runner !== undefined) await runnerStarted;
   return (await runtime.repository.load(currentRunId)).view!;
-}
-
-function yieldToRunStart(): Promise<void> {
-  return new Promise((resolve) => setImmediate(resolve));
 }
 
 // A Run completion atomically carries the full execution lease context.
@@ -168,6 +172,7 @@ async function completeRun(
   resumeSessionId: string | undefined,
   usageBaseline: ReturnType<typeof usageBaselineFor>,
   lease: WorkspaceLease | undefined,
+  reportRunnerStarted: () => void,
 ): Promise<void> {
   const renewal = renewWhileRunning(runtime, currentRunId, context.owner ?? 'execution');
   try {
@@ -183,6 +188,7 @@ async function completeRun(
       ...(resumeSessionId === undefined ? {} : { resumeSessionId }),
       ...(usageBaseline === undefined ? {} : { usageBaseline }),
       ...(lease === undefined ? {} : { workspace: { path: lease.path, mode: lease.mode } }),
+      reportRunnerStarted,
     });
     await renewal.stop();
     await recordRunSuccess({

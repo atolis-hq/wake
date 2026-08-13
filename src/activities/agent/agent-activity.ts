@@ -80,6 +80,7 @@ async function runnerResult(
   request: Parameters<AgentRunnerPort['start']>[0],
 ) {
   try {
+    context.reportRunnerStarted?.();
     const execution = await context.runner!.start(request, context.signal);
     if (execution.identity !== undefined) await context.reportExternalExecution(execution.identity);
     return await execution.result;

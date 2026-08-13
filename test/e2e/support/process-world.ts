@@ -60,7 +60,10 @@ export class ProcessWorld {
   }
 
   async runTicksUntilIdle(limit = 10): Promise<void> {
-    for (let index = 0; index < limit; index += 1) await this.tick();
+    for (let index = 0; index < limit; index += 1) {
+      await this.tick();
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    }
   }
 
   async pollProviderEvidence(): Promise<void> {

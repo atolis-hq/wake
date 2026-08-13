@@ -52,6 +52,7 @@ export async function executeActivity(
       readonly cacheWrite?: number;
     };
     readonly workspace?: ActivityExecutionContext['workspace'];
+    readonly reportRunnerStarted?: () => void;
   },
 ) {
   const { activation, context, occurredAt, runner } = request;
@@ -63,6 +64,9 @@ export async function executeActivity(
     runId: currentRunId,
     ...(request.resumeSessionId === undefined ? {} : { resumeSessionId: request.resumeSessionId }),
     ...(request.usageBaseline === undefined ? {} : { usageBaseline: request.usageBaseline }),
+    ...(request.reportRunnerStarted === undefined
+      ? {}
+      : { reportRunnerStarted: request.reportRunnerStarted }),
     ...workspaceContext(request.workspace),
     ...(runner === undefined ? {} : { runner }),
     ...(runtime.dependencies.transcriptRecorder === undefined

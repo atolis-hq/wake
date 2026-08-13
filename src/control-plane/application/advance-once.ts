@@ -105,6 +105,8 @@ export function createAdvanceOnce(
   return async (options: AdvanceOptions): Promise<AdvanceResult> => {
     if (options.maxProgress < 1) return { kind: 'exhausted', progressCount: 0 };
     if (await isDispatchPaused()) return { kind: 'paused' };
+    await execution.recoverActive?.(ControlStreamKind.Global);
+    if (await isDispatchPaused()) return { kind: 'paused' };
     if (workspaceRecovery !== undefined) {
       await workspaceRecovery.recover(await execution.list(), {
         isPaused: isDispatchPaused,
@@ -124,8 +126,6 @@ export function createAdvanceOnce(
         },
       });
     }
-    if (await isDispatchPaused()) return { kind: 'paused' };
-    await execution.recoverActive?.(ControlStreamKind.Global);
     if (await isDispatchPaused()) return { kind: 'paused' };
     if (transcriptRetention !== undefined) {
       for (const workItemId of (await dependencies.closedWorkItemIds?.()) ?? []) {
