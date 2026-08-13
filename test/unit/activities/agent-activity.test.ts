@@ -204,6 +204,40 @@ describe('agent activity template context', () => {
     expect(reported).toEqual([]);
   });
 
+  it('logs a prompt finalisation failure without replacing the runner rejection', async () => {
+    const activity = createAgentActivity();
+    const runnerFailure = new Error('runner did not start');
+    const finalisationFailure = new Error('transcript disk unavailable');
+    const logged: unknown[] = [];
+
+    await expect(
+      activity.execute(invocation({ prompt: 'Prompt' }), {
+        signal: new AbortController().signal,
+        occurredAt: '2026-08-12T10:00:00.000Z',
+        runId: 'run-123',
+        runnerContext: { runnerName: 'configured-codex', runnerCli: 'codex', activationOrdinal: 1 },
+        transcriptRecorder: {
+          async capturePrompt() {},
+          async captureResponse() {},
+          async finalisePrompt() {
+            throw finalisationFailure;
+          },
+        },
+        runner: {
+          async start() {
+            throw runnerFailure;
+          },
+        },
+        logOperationalError(error) {
+          logged.push(error);
+        },
+        async reportExternalExecution() {},
+      }),
+    ).rejects.toBe(runnerFailure);
+
+    expect(logged).toEqual([finalisationFailure]);
+  });
+
   it('passes enriched ticket data to template interpolation', async () => {
     const rendered: unknown[] = [];
     const requests: Array<{ readonly prompt: string }> = [];
