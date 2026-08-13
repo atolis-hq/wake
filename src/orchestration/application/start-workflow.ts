@@ -11,9 +11,9 @@ import { startInstance } from '../domain/interpreter.js';
 import type { CoordinationClaims } from './coordination-claims.js';
 import type { OrchestrationRepository } from './orchestration-repository.js';
 import {
-  WorkflowDefinitionRegistry,
   WorkflowDefinitionUnavailableError,
 } from './workflow-definition-registry.js';
+import type { WorkflowDefinitionRegistry } from './workflow-definition-registry.js';
 
 export class StartWorkflow {
   constructor(
