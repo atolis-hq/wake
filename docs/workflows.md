@@ -299,8 +299,8 @@ workflows:
 ### Repair a newly failing CI check
 
 This pattern starts a bounded, branch-based repair workflow when Wake observes
-that the primary pull request's checks have changed to `failing` while the
-parent implementation stage is active:
+a `pr.checks-changed` event whose checks are `failing` while the parent
+implementation stage is active:
 
 ```yaml
 workflows:
@@ -353,7 +353,7 @@ A watch has:
 | `while.stages` | Non-empty parent-stage list where the watch is eligible. |
 | `while.statuses` | Non-empty list drawn from `active`, `waiting`, and `blocked`. |
 | `on.events` | Optional non-empty list of canonical event-name strings. |
-| `where` | Optional failure-only predicate: `{ checks: failing }`, valid only when `on.events` includes `pr.checks-changed`. |
+| `where` | Optional failure-only predicate: `{ checks: failing }`, valid only when `on.events` contains only `pr.checks-changed`. |
 | `schedule.cron` | Optional cron trigger. At least one of `on` or `schedule` is required. |
 | `workflow` | Existing workflow to start as the child. |
 | `maxPerGroup` | Positive upper bound on child starts for the group and this watch. |
