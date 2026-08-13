@@ -14,6 +14,7 @@ import {
   OrchestrationEventType,
   primaryOrchestrationGroupStream,
   selectOrchestrationEvent,
+  workflowDefinitionsStream,
   workflowInstanceId,
   workflowInstanceStream,
   type OrchestrationWaitingActivityOutcome,
@@ -27,6 +28,7 @@ import { workId } from '../../support/identities.js';
 const workflow = workflowInstanceStream(workflowInstanceId('workflow-1'));
 const primaryGroup = primaryOrchestrationGroupStream(workId('1'));
 const childGroup = childOrchestrationGroupStream('group-1', 'watch-1');
+const workflowDefinitions = workflowDefinitionsStream();
 const metadata = {
   parentWorkflowInstanceId: workflowInstanceId('workflow-parent'),
   watchId: 'watch-1',
@@ -144,6 +146,21 @@ const samples = [
     OrchestrationEventType.OperatorRetryRequested,
     { activationId: activation.activationId, commandId: 'retry-command-1' },
     workflow,
+  ),
+  eventEnvelope(
+    OrchestrationEventType.WorkflowDefinitionRegistered,
+    {
+      workflowName: workflowName('default'),
+      fingerprint: 'a'.repeat(64),
+      compiledDefinition: {
+        name: workflowName('default'),
+        entry: stageName('implement'),
+        commands: {},
+        watches: [],
+        stages: {},
+      },
+    },
+    workflowDefinitions,
   ),
 ] as const;
 

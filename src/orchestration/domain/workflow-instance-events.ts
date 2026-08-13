@@ -304,6 +304,9 @@ export function immutableWorkflowInstanceView(
     workflowInstanceId: state.workflowInstanceId,
     workItemId: state.workItemId,
     workflowName: state.workflowName,
+    ...(state.workflowDefinitionFingerprint === undefined
+      ? {}
+      : { workflowDefinitionFingerprint: state.workflowDefinitionFingerprint }),
     orchestrationGroupId: state.orchestrationGroupId,
     ...(state.parentWorkflowInstanceId === undefined
       ? {}

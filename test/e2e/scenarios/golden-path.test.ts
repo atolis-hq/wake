@@ -49,6 +49,7 @@ it(`${scenario.id} completes work through orchestration and an explicit Run`, as
   expect((await world.events()).map((event) => event.eventType)).toEqual([
     'work.item-created',
     'orchestration.primary-claimed',
+    'orchestration.workflow-definition-registered',
     'orchestration.instance-started',
     'orchestration.stage-entered',
     'orchestration.activity-requested',
