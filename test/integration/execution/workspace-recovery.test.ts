@@ -22,9 +22,9 @@ describe('GitWorkspaceProvider workspace recovery', () => {
     const provider = new GitWorkspaceProvider(root, { cloneLocator: async () => 'unused' });
     const terminal = await ownedWorkspace(root, 'terminal', 'terminal-run');
 
-    await (provider as WorkspaceRecovery).recover([
-      run('terminal-run', RunStatus.Succeeded),
-    ], { retainWorkItem: async () => true } as never);
+    await (provider as WorkspaceRecovery).recover([run('terminal-run', RunStatus.Succeeded)], {
+      retainWorkItem: async () => true,
+    } as never);
 
     await expect(access(terminal.path)).resolves.toBeUndefined();
     await expect(access(terminal.markerPath)).resolves.toBeUndefined();

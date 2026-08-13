@@ -2,8 +2,8 @@ import { execFile } from 'node:child_process';
 import { access, mkdir, readdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { promisify } from 'node:util';
-import type { RunView } from '../../contracts/views.js';
 import type { WorkItemId } from '../../../work/index.js';
+import type { RunView } from '../../contracts/views.js';
 import { RunStatus, WorkspaceMode } from '../../contracts/vocabulary.js';
 import type {
   WorkspaceProvider,
@@ -72,13 +72,7 @@ export class GitWorkspaceProvider implements WorkspaceProvider, WorkspaceRecover
     }
     const branch = request.mode === WorkspaceMode.Branch ? request.workItemId : undefined;
     if (branch !== undefined)
-      await this.git([
-        '-C',
-        path,
-        'switch',
-        ...(existingWorkspace ? [] : ['--create']),
-        branch,
-      ]);
+      await this.git(['-C', path, 'switch', ...(existingWorkspace ? [] : ['--create']), branch]);
     return {
       workspaceId: name,
       path,

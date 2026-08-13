@@ -129,7 +129,11 @@ async function readDetail(
   return run === undefined ? undefined : readRun(applications, run);
 }
 
-async function readWorkTranscript(applications: ApiApplications, keySegment: string, groupSegment: string) {
+async function readWorkTranscript(
+  applications: ApiApplications,
+  keySegment: string,
+  groupSegment: string,
+) {
   const key = decodePathSegment(keySegment);
   const groupId = decodePathSegment(groupSegment);
   if (key instanceof ApiPathError) return invalidPath(key.message);

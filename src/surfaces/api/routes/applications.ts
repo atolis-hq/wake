@@ -16,9 +16,9 @@ import type {
   RunTranscriptResponse,
   StatusResponse,
   WorkDetailResponse,
-  WorkItemTranscriptResponse,
   WorkflowInstanceResponse,
   WorkItemResponse,
+  WorkItemTranscriptResponse,
 } from '../contracts/index.js';
 
 export interface CollectionQuery {
