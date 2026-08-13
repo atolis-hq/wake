@@ -110,4 +110,21 @@ it('persists instances and accepts outcomes idempotently', async () => {
     { ...context, commandId: 'run-1' },
   );
   expect((await service.get(instance.workflowInstanceId))?.status).toBe('completed');
+
+  const withoutHistoricalDefinition = createOrchestrationService(
+    journal,
+    createWorkService(journal),
+    {},
+  );
+  await withoutHistoricalDefinition.acceptOutcome(
+    {
+      workflowInstanceId: instance.workflowInstanceId,
+      activationId: instance.pendingActivation!.activationId,
+      outcome: { kind: 'done' },
+    },
+    { ...context, commandId: 'missing-definition' },
+  );
+  expect((await withoutHistoricalDefinition.get(instance.workflowInstanceId))?.blockReason).toBe(
+    'workflow-definition-unavailable',
+  );
 });

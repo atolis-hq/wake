@@ -37,7 +37,9 @@ export class AdvanceWorkflow {
     context: CommandContext,
   ) {
     const loaded = await this.repository.loadRequired(id);
-    const configured = (await this.workflows.definitionFor(loaded.view)).commands[
+    const definition = await this.workflows.definitionForOperation(loaded.view, loaded.sequence, context);
+    if (definition === null) return (await this.repository.loadRequired(id)).view;
+    const configured = definition.commands[
       commandName(request.command)
     ];
     if (configured === undefined)
@@ -144,8 +146,14 @@ export class AdvanceWorkflow {
     if (loaded.view === null)
       throw new OperatorRetryIneligibleError('WorkflowInstance does not exist');
     if (loaded.view.operatorRetryCommandIds.includes(context.commandId)) return loaded.view;
+    const definition = await this.workflows.definitionForOperation(
+      loaded.view,
+      loaded.sequence,
+      context,
+    );
+    if (definition === null) return (await this.repository.loadRequired(id)).view;
     const decision = decideOperatorRetry(
-      await this.workflows.definitionFor(loaded.view),
+      definition,
       loaded.view,
       {
         commandId: context.commandId,

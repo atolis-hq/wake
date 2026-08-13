@@ -361,7 +361,9 @@ const eventSchema = z.discriminatedUnion('eventType', [
 export function decodeOrchestrationEvent(event: EventEnvelope): OrchestrationEvent {
   const result = eventSchema.safeParse(event);
   if (!result.success) throw invalidOrchestrationEvent(event, result.error);
-  return result.data;
+  // Zod represents optional object members as `T | undefined`; the durable
+  // contract uses exact optional members for compatibility with old events.
+  return result.data as OrchestrationEvent;
 }
 
 export function selectOrchestrationEvent(event: EventEnvelope): OrchestrationEvent | null {

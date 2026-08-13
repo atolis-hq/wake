@@ -21,8 +21,10 @@ export class AcceptActivityOutcome {
 
   async execute(command: AcceptActivityOutcomeCommand, context: CommandContext) {
     const loaded = await this.repository.loadRequired(command.workflowInstanceId);
+    const definition = await this.workflows.definitionForOperation(loaded.view, loaded.sequence, context);
+    if (definition === null) return (await this.repository.loadRequired(command.workflowInstanceId)).view;
     const decision = decideActivityOutcome(
-      await this.workflows.definitionFor(loaded.view),
+      definition,
       loaded.view,
       {
         ...command,

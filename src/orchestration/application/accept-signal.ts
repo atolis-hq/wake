@@ -38,8 +38,10 @@ export class AcceptSignal {
   ) {
     const loaded = await this.repository.loadRequired(workflowInstanceId);
     const item = await this.work.get(loaded.view.workItemId);
+    const definition = await this.workflows.definitionForOperation(loaded.view, loaded.sequence, context);
+    if (definition === null) return (await this.repository.loadRequired(workflowInstanceId)).view;
     const decision = decideSignal(
-      await this.workflows.definitionFor(loaded.view),
+      definition,
       loaded.view,
       {
         signal,

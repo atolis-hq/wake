@@ -1,13 +1,19 @@
-import type { CommandContext } from '../../kernel/index.js';
+import { createEventDraft, EventSourceKind, type CommandContext } from '../../kernel/index.js';
 import { WorkStatus, type WorkService } from '../../work/index.js';
 import type { StartWorkflowInstance } from '../contracts/commands.js';
 import type { WorkflowName } from '../contracts/identifiers.js';
 import { WorkflowInstanceKind } from '../contracts/vocabulary.js';
+import { OrchestrationEventType } from '../contracts/events.js';
+import type { WorkflowInstanceView } from '../contracts/views.js';
+import { workflowInstanceStream } from '../contracts/streams.js';
 import { validateChildProvenance } from '../domain/child-policy.js';
 import { startInstance } from '../domain/interpreter.js';
 import type { CoordinationClaims } from './coordination-claims.js';
 import type { OrchestrationRepository } from './orchestration-repository.js';
-import { WorkflowDefinitionRegistry } from './workflow-definition-registry.js';
+import {
+  WorkflowDefinitionRegistry,
+  WorkflowDefinitionUnavailableError,
+} from './workflow-definition-registry.js';
 
 export class StartWorkflow {
   constructor(
@@ -55,5 +61,32 @@ export class StartWorkflow {
 
   definitionFor(view: Parameters<WorkflowDefinitionRegistry['resolve']>[0]) {
     return this.definitions.resolve(view);
+  }
+
+  async definitionForOperation(
+    view: WorkflowInstanceView,
+    sequence: number,
+    context: CommandContext,
+  ) {
+    try {
+      return await this.definitions.resolve(view);
+    } catch (error) {
+      if (!(error instanceof WorkflowDefinitionUnavailableError)) throw error;
+      if (view.status !== 'blocked')
+        await this.repository.append(view.workflowInstanceId, sequence, [
+          createEventDraft({
+            eventId: `${context.commandId}:${OrchestrationEventType.InstanceBlocked}`,
+            eventType: OrchestrationEventType.InstanceBlocked,
+            occurredAt: context.occurredAt,
+            correlationId: context.correlationId,
+            causationId: context.commandId,
+            actor: context.actor,
+            source: { kind: EventSourceKind.Internal, id: 'orchestration-service' },
+            stream: workflowInstanceStream(view.workflowInstanceId),
+            payload: { reason: 'workflow-definition-unavailable' },
+          }),
+        ]);
+      return null;
+    }
   }
 }

@@ -135,8 +135,10 @@ export class RequestChild {
       childWorkflowInstanceId: child.workflowInstanceId,
       requestId: metadata.requestId,
     };
+    const definition = await this.workflows.definitionForOperation(parent.view, parent.sequence, context);
+    if (definition === null) return;
     const decision = decideSignal(
-      await this.workflows.definitionFor(parent.view),
+      definition,
       parent.view,
       {
         signal,
