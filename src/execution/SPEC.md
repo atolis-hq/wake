@@ -1,5 +1,5 @@
 ---
-asOf: e710ea8
+asOf: 31cb84460b6099ea50edc17a70d3ec679ba08cc5
 ---
 
 # Execution — Module Specification
@@ -232,6 +232,7 @@ Execution does not own:
 | `resources` | list of Resource view | Resources available to validate the Activity's requirements against and to acquire a workspace from. |
 | `owner` | string, optional | Lease owner identity for this attempt; defaults to `"execution"`. |
 | `ineligibleRunners` | set of string, optional | Runner names currently quota-paused, supplied by Control-plane. |
+| `awaitImmediateCompletion` | boolean, optional | Makes a deterministic attempt wait for its detached completion before returning. |
 
 ## Child components and interactions
 

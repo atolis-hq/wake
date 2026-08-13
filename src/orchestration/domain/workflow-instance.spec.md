@@ -57,6 +57,10 @@ then folds.
 - `ActivityWaiting` and `SignalWaitStarted` MUST set status to `waiting` and
   record a wait expectation; `SignalAccepted` MUST return status to `active`
   and clear it.
+- `ActivityExecutionFailed` MUST mark its Activation accepted and completed,
+  without treating it as an Activity outcome. It is followed by
+  `InstanceBlocked`, so the failed execution cannot be redispatched or later
+  accepted as a duplicate outcome.
 - `InstanceCompleted` MUST set status to `completed` and clear both the
   pending Activation and any wait expectation; once `completed`, the
   instance is terminal for this fold (no further status change is defined

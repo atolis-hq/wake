@@ -1,18 +1,26 @@
-# Execution Invariants
+# Execution invariants
 
-This page documents Wake's current execution guarantees. These are properties of the scheduler and runner handoff as implemented today, not future design promises.
+Wake records execution as durable facts rather than inferring it from a live
+agent process. The current guarantees are implemented by `execution`,
+`orchestration`, and `control-plane`:
 
-## Current Guarantees
+- An activity attempt is represented by a Run stream. Run lifecycle, lease,
+  runner result, cancellation, recovery, and ambiguity facts are typed
+  `execution.` events.
+- Execution never advances a workflow itself. Orchestration accepts a durable
+  activity outcome and interprets the configured route.
+- A dispatch is claimed before an external runner is invoked. Leases have a
+  configured duration and renewal path, making incomplete work visible to
+  recovery after a restart.
+- Cancellation and recovery append facts to the Run stream; they do not mutate
+  a prior result or rely on process-local history.
+- Workspaces are optional execution infrastructure. Workspace preparation and
+  cleanup do not define workflow state.
+- Raw transcript capture is opt-in, filesystem-only, and subject to configured
+  retention; it is not inserted into the event journal.
+- The control plane applies bounded selection and dispatch through the same
+  `advanceOnce` capability for tick, resident, and scheduled hosts.
 
-- **Single active run per work item.** Wake dispatches runner work through the runner lock and the durable run-record capacity check. With the current scheduler, dispatch is strictly serial: a second runner tick does not start while another runner tick owns the runner lock, and an active running record prevents new dispatch.
-- **Durable claim before launch.** A run record is written, a `wake.run.claimed` event is appended, and the projection is rebuilt from that claim before Wake prepares the workspace and invokes the runner.
-- **Reconciliation before dispatch.** Each intake tick and runner tick reconciles stale or incomplete running records before selecting new work. Startup-era claims without a run record are recovered into a terminal completion event before new runner work begins.
-- **Eligibility is rechecked immediately before launch.** Wake refreshes the candidate's source state before claiming. If the source no longer exists, the refresh fails, or the refreshed projection is no longer policy-eligible, Wake leaves the tick idle and does not start a run.
-- **Launched processes are identifiable and cancellable.** Run records carry the work item key, repository and issue snapshot, action, routing runner, start time, worker process identity, lease owner, lease id, and workspace metadata when a workspace is prepared. Runners that report their child process identity persist the agent PID and process start time on the same run record. The active lease and process identities are the cancellation/recovery path used by reconciliation.
-- **Runs finish once.** A completed attempt is recorded by moving its run record to lifecycle `TERMINAL` with one terminal status/sentinel/outcome and by appending one `wake.run.completed` event for that run id. Reconciliation uses the same terminal event shape for recovered stale runs.
-- **Workspace state is reconciled on startup.** Because startup enters the same tick path, Wake validates state health and reconciles stale running records or missing run-record claims before dispatching any new runner work.
-- **Dispatch order is deterministic.** When multiple projections are eligible, Wake reads projections from durable state in sorted work-item-key order and dispatches the first eligible item. Current execution is serial, so there is no parallel tie-breaker beyond that order.
-
-## Test Coverage
-
-The executable coverage for these guarantees lives in `test/core/tick-runner.invariants.test.ts` under `explicit scheduler/execution invariants`. The tests exercise durable state and fake adapters (`createFakeRunner`, `createFileBackedFakeTicketingSystem`, `createFakeWorkspaceManager`) rather than mocked scheduler internals, and they run as part of the normal `npm run verify` suite.
+The executable contracts live in `src/execution/`, with cross-domain
+advancement in `src/control-plane/` and `src/orchestration/`. See
+[Architecture](architecture.md) for the complete flow.

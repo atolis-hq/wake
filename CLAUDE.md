@@ -1,174 +1,133 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file gives implementation guidance for Wake.
 
 ## What Wake is
 
-Wake is an autonomous agent control plane for software development. It coordinates local agent execution (`Wake`) by taking work from external channels (e.g. GitHub issues), deciding the next lifecycle step deterministically, and launching/resuming local agent CLI sessions (Claude Code, Codex) only when agentic execution is actually needed. See `README.md` and `docs/vision.md`/`docs/architecture.md` for the full rationale; this file focuses on what's needed to work in the code.
+Wake is an event-driven control plane for autonomous software development. It
+turns external observations into durable work and resource facts, interprets
+configured workflows deterministically, runs activities through local agent
+CLIs when needed, and publishes results through integrations. The append-only
+event journal is authoritative; projections are rebuildable read models.
 
 ## Commands
 
 ```bash
 npm install
-npm run build        # tsc -p tsconfig.json
-npm run knip         # unused files, exports, types, and dependencies
-npm run check:specs  # reports module-specification drift from each `asOf` checkpoint; resolve with the sync-module-specs skill
-npm run test:fast    # parallel unit suite
-npm run test:integration  # parallel integration suite
-npm run test:e2e     # serial non-live E2E suite
-npm test             # all non-live tests
-npm run verify       # lint + format:check + build + test — run this exact command (not a manual build+test) before considering work done. Do not skip the lint step — unused-import/no-unused-vars errors are easy to introduce (e.g. splitting a file and over-copying its import list) and won't show up in `tsc`/`vitest` alone.
-npm run tick         # run one control-plane tick against .wake/ (fake ticketing data if no GitHub source configured)
-npm run start        # run the resident loop
-npm run smoke        # smoke test the configured real runner
-npm run smoke:claude # minimal Claude Haiku smoke test (see prompt below)
-npm run smoke:codex  # minimal Codex smoke test using gpt-5.4-mini
-npm run smoke:cursor # minimal Cursor smoke test
-npm run smoke:claude -- --remote-control  # remote-control smoke session
+npm run build              # Type-check and embed the build version
+npm run check:catalogue    # Validate functional decision catalogue coverage
+npm run check:scenarios    # Validate scenario coverage
+npm run check:specs        # Report module-specification drift
+npm run lint:architecture  # Module manifests, vocabulary, and dependency boundaries
+npm run lint
+npm run format:check
+npm run test:fast          # Unit suite
+npm run test:integration
+npm run test:e2e
+npm run test:web
+npm run verify             # Full local verification gate
+npm run tick               # One control-plane pass against the current Wake home
+npm run start              # Resident loop
+npm run ui                 # UI host
+npm run smoke              # Configured runner smoke test
 ```
 
-Run a single test file: `npx vitest run test/core/tick-runner.test.ts`
-Run tests matching a name: `npx vitest run -t "some test name"`
+Run a focused test with `npx vitest run <path>` or
+`npx vitest run -t "name"`.
 
-CI (`.github/workflows/ci-cd.yml`) runs `npm run verify`, `npm run knip`, and `npm run test:web` on relevant push/PR changes, then auto-tags semantic versions on `main` pushes based on `(MAJOR)`/`(MINOR)` markers in commit messages.
+Start with the smallest check that exercises the changed behavior. UI/API work
+also needs the relevant surface test; domain/service work needs its focused
+unit or integration coverage; persistence, runner, workflow, or provider work
+needs the relevant E2E scenario. Use `npm run verify` for cross-cutting changes
+or when explicitly requested. Before handoff, report the checks actually run.
 
-## Testing and verification policy
-
-This is the single source of truth for local test selection. It overrides the
-generic full-verification comment in the command list above; the detailed
-policy below is intentionally more specific.
-
-Start with the smallest command that directly exercises the changed behavior:
-
-- UI-only work: run the focused UI test and `npm run build:web`.
-- Web/API/view-model work: also run the relevant projection or API test and
-  `npm run test:web`.
-- Domain or service work: run the relevant unit or integration tests and the
-  applicable build.
-- Workflow, persistence, runner, or external-integration work: also run the
-  relevant targeted E2E scenario.
-
-For a broader local check, use `npm run test:fast` first, then the relevant
-`npm run test:integration` or `npm run test:e2e` suite. Unit and integration
-test files may run in parallel; E2E remains serial because some scenarios use
-processes and filesystem fixtures.
-
-CI is the broad gate for pushes and pull requests: it runs `npm run verify`,
-`npm run knip`, and `npm run test:web`. Do not routinely run `npm test` or
-`npm run verify` locally for a scoped change. Run the full non-live suite only
-when investigating a cross-cutting failure, when the change affects shared test
-or runtime infrastructure, or when explicitly requested. Before handoff,
-report the focused checks run and any checks intentionally left to CI.
+E2E scenarios that use processes or filesystem fixtures run serially; use the
+relevant E2E scenario when changing workflow, persistence, runner, or provider
+behaviour. CI runs `npm run verify`, `npm run knip`, and `npm run test:web` on
+relevant changes. Report focused checks run and checks intentionally left to
+CI.
 
 ## Architecture
 
-### Active architecture (`src/`)
+Read the target module's `MODULE.md`, `module.json`, public `index.ts`, and
+its relevant contracts before changing it. Historical plans, reports, ADRs, and
+design notes do not describe the active implementation.
 
-`src/` is the active architecture. Before changing a module, read its
-`MODULE.md`, `module.json`, the active task in
-`docs/superpowers/plans/2026-07-30-wake-target-architecture-rewrite.md`, and any
-linked corrective plan.
+| Module | Responsibility |
+| --- | --- |
+| `kernel` | Event envelopes, identifiers, relations, clocks, and storage contracts. |
+| `persistence` | Filesystem and in-memory journals, projections, checkpoints, and locks. |
+| `work` | Work-item facts and projections. |
+| `resources` | External-resource facts and work correlation. |
+| `activities` | Activity contracts and PR/review activities. |
+| `orchestration` | Compiled workflows, instances, activations, waits, watches, and retry policy. |
+| `execution` | Runs, runner adapters, workspaces, leases, cancellation, recovery, and transcripts. |
+| `control-plane` | Intake, bounded advancement, selection, schedules, quotas, and hosts. |
+| `integrations` | Provider polling, translation, artifacts, and delivery. |
+| `surfaces` | CLI, API, and web presentation. |
+| `bootstrap` | Root config, paths, concrete composition, and production projections. |
 
-Keep domain seams explicit:
+Each module exposes only its `index.ts`. Bootstrap is the only place that knows
+the complete application graph; it composes concrete runners, providers,
+persistence, activity registry, projections, and surface applications.
 
-- A domain owns its event-type constants, exact payload map, typed event and
-  draft unions, stream refs, strict runtime decoder/selector, and typed draft
-  factory. An event type must be tied to its permitted stream at compile time
-  and runtime.
-- Compare closed concepts through exported constants or closed-vocabulary
-  values. Do not repeat event types, stream kinds, statuses, outcomes, relation
-  kinds, or config keys as magic strings in production code or tests.
-- Decode persisted events before folding them. A selector returns `null` for an
-  unrelated namespace and throws for malformed events owned by its domain.
-- Do not recover domain data with `Record<string, unknown>`, `Reflect.get`,
-  `String(...)`, `Number(...)`, `as never`, or reconstructed synthetic event
-  envelopes. Validate genuinely open provider payloads at the adapter boundary,
-  then translate them to typed internal contracts.
-- The append-only event journal is authoritative. Projections are pure,
-  rebuildable, and registered in production composition; views never define or
-  reconstruct events.
-- Prove reachability through the production composition root. An isolated
-  service test with callback mocks is a unit test, not an E2E test.
-- E2E scenarios use composed production services, the journal,
-  projections/checkpoints, and durable fakes. Describe the business flow in
-  concise Given/When/Then comments or test structure and cover success,
-  failure, crash/restart, and idempotency where relevant.
+Keep ownership explicit:
 
-Follow the [testing and verification policy](#testing-and-verification-policy)
-when selecting local checks for a change.
+- A bounded module owns its event types, payload map, stream references,
+  decoder/selector, and draft factory. Persisted events must be decoded before
+  folding.
+- Event types are tied to their permitted streams at compile time and runtime.
+  A selector returns `null` for another namespace and rejects malformed events
+  in its own namespace.
+- Compare closed concepts through exported vocabulary values. Do not introduce
+  magic strings for event types, stream kinds, statuses, outcomes, relations,
+  or config keys.
+- The journal is authoritative. Projections are pure, rebuildable, and
+  registered in Bootstrap; surfaces never define or reconstruct events.
+- Validate genuinely open provider payloads at the integration boundary, then
+  translate them into typed internal contracts. Do not recover domain state
+  with `Record<string, unknown>`, reflection, coercion, or synthetic envelopes.
+- Activities execute work but do not decide workflow transitions. Orchestration
+  accepts durable outcomes and applies the configured route.
 
-### Module boundaries (`src/`)
+The bounded operational flow is: integrations poll and translate observations;
+the control plane runs `advanceOnce`; orchestration requests ready activities;
+execution claims and runs them; orchestration accepts outcomes; integrations
+react to artifacts and deliver outbound intents. Tick, resident, and scheduled
+hosts share that control-plane advancement capability.
 
-- `domain/`: pure types, zod schemas, and the sentinel/stage vocabulary (no IO, no logic)
-- `core/`: lifecycle orchestration, deterministic tick policy, and the resident-loop controller — this is "Wake" itself
-- `adapters/`: filesystem IO, fake test harnesses, and real integrations (GitHub, Claude, Docker, git worktrees) behind the `core/contracts.ts` interfaces
-- `lib/`: small focused utilities (paths, file locking, event envelope shaping, clock)
-- `cli/`: `init`/`sandbox` command implementations invoked from `main.ts`
+## Wake home and configuration
 
-`main.ts` is the entrypoint and command dispatcher (`tick`, `start`, `init`, `sandbox`, `smoke`). It wires together the adapters selected by config/flags (`--runner`, `--wake-root`) into a `tickRunner` via `buildRuntime`.
+`--wake-root` defaults to the current directory. `resolveWakePaths` in
+`src/bootstrap/paths.ts` is the source of truth for paths: durable data lives
+under `.wake/` (events, projections, checkpoints, locks, transcripts, and
+container home) while workspaces live at `workspaces/`.
 
-### Adapter seams (`src/core/contracts.ts`)
+The strict root config schema is in `src/bootstrap/config/root-schema.ts`.
+Its sections are `work`, `resources`, `activities`, `orchestration`,
+`execution`, `controlPlane`, `integrations`, `surfaces`, `transcripts`, and
+`host`. `wake init` writes the current config/workflow/prompt/sandbox scaffold.
 
-Everything core depends on is an interface, with fake and real implementations selected at runtime:
+Runtime commands (`tick`, `start`, `ui`, `smoke`, `audit`, `correlate`, and
+`validate-state`) delegate into the configured sandbox when its Dockerfile is
+present unless `--no-sandbox` is supplied. `init` and explicit `sandbox`
+commands run on the host.
 
-- `WorkSource` / `OutboundSink` — pulls in ticket events and delivers outbound intents (`fake-ticketing-system.ts` vs `github-issues-work-source.ts`)
-- `AgentRunner` — executes an `AgentAction` against a projection (`fake-runner.ts` vs `claude-runner.ts`)
-- `WorkspaceManager` — prepares an isolated working directory for a run (`fake-workspace-manager.ts` vs `git-workspace-manager.ts`)
+## Implementation and testing conventions
 
-Fake adapters are permanent test harnesses, not throwaway stubs — they exist so `tick`/`start` can be exercised deterministically with zero token spend, and they double as the future adapter contract for new real integrations.
+- Keep concrete process, filesystem, and provider details in infrastructure
+  modules; expose typed contracts through the owning module's public surface.
+- Preserve permanent fake adapters and composed fakes as deterministic,
+  zero-token test infrastructure. Prove production reachability through the
+  composition root; a callback-mocked service test is not an E2E test.
+- Runner invocations use the configured timeout. Do not implement silent
+  retry-with-a-bigger-model behavior; bounded retry belongs to workflow policy.
+- Keep comments short and rationale-focused. Do not narrate obvious code.
 
-### Event-first, projection-driven flow
+## Documentation requirements
 
-The durable record is an append-only event stream, not the projection:
-
-1. an inbound source event (e.g. GitHub issue/comment) is polled _unkeyed_ — sources never assign identity — and `tick-runner.ts` resolves its `sourceRefs.resourceUri` through the reverse index (`state/index/<xx>.json`) to stamp the owning `workItemKey`, minting a new work item on a miss. It is then written as an immutable event envelope (`events/<date>.jsonl`)
-2. `projection-updater.ts` folds relevant events into a per-item projection (`state/<workId>.json`)
-3. `policy-engine.ts` reads the projection (plus a relevant event slice) and deterministically decides the next `AgentAction` / stage transition — no tokens spent here
-4. `lifecycle-service.ts` applies the resulting stage transition
-5. `tick-runner.ts` orchestrates one pass of the above and, when agentic work is required, invokes the `AgentRunner` with a compact projection summary plus recent events (not the full event log)
-6. agent-produced outbound intents (status updates, questions, PR links) go back through the same event model via `OutboundSink`, so the agent never needs to know the delivery channel — Wake owns routing/formatting per sink
-
-Stages (`domain/stages.ts`): `queue -> refine -> implement -> done`, with `blocked` for work awaiting human input. `AWAITING_APPROVAL` and `FAILED` are run statuses and do not change the current stage. Runner sentinels are `DONE` / `AWAITING_APPROVAL` / `BLOCKED` / `FAILED`, parsed from agent output via `domain/schema.ts`.
-
-### Wake home (`wake-home/`)
-
-A Wake home is a directory holding `config.yaml`, `config.workflows.yaml`, `prompts/`, `workspaces/`, and a hidden `.wake/` for everything internal/durable: `ledger.json` (pause windows), `events/`, `state/`, `runs/`, `sources/`, `repos/`, `locks/`, `logs/`, `container-home/`. `--wake-root` defaults to the current directory; `src/lib/paths.ts` is the single place that derives every path from it (see `createWakePaths`), splitting the visible root from the `.wake/` data root. Treat `state/` as a rebuildable projection, not source of truth — if projection logic changes, it should be derivable again from `events/`. That guarantee is exact and load-bearing: `rm -rf .wake/state/` + replay must reproduce projections **and** the reverse index identically to the live fold. Two traps have already broken it, so check both when touching the fold or event stamping:
-
-- **Event stamping.** Stamp `occurredAt`/`ingestedAt` via `eventStampNow()` at the moment of stamping. A frozen per-tick timestamp reused across a tick sorts Wake's own events _before_ the polled event that creates their projection (sources stamp at poll time, which is later), so replay folds them against `null` and silently discards them. Also note **parallel work is coming** — the tick will not lock on a single item forever.
-- **`rebuildFromEvents` ordering.** The sort is stable on `ingestedAt` with deliberately **no `eventId` tie-break** — ids are not chronological, and tie-breaking on them reorders same-timestamp events against what actually happened. Equal timestamps must keep append order.
-
-**Identity is minted, not borrowed.** A work item is a `work-<ulid>`; the ticket that started it is just its first correlated resource. No durable path embeds a provider, repo, or issue number. Core compares `resourceUri` strings for equality and **never parses a locator**. See `docs/adrs/0001-correlating-external-resources-to-work-items.md`.
-
-### Sandbox / Docker flow
-
-`wake init <path>` scaffolds a Wake home outside the repo checkout with `config.yaml`, `config.workflows.yaml`, `prompts/`, and `workspaces/` — no `docker/` yet. `wake sandbox build` writes `docker/Dockerfile` lazily on first run, from whichever `dev.mode` (`"source"` | `"packaged"`, auto-detected at `init`) template applies; `dev.repoRoot` (recorded at scaffold time) is what a source-mode build points back at. The installed `wake` binary itself decides routing — `dispatchMainCommand` in `src/main.ts` auto-execs runtime commands (`tick`/`start`/`ui`/`smoke`/`correlate`) into `sandbox exec` once `docker/Dockerfile` exists, unless `--no-sandbox` is passed; `init` and explicit `sandbox ...` subcommands always run on the host. `--wake-root` defaults to the current directory, so no generated launcher scripts are needed. From a source checkout, `cd bin && npm link` registers a `wake-dev` command (runs `src/main.ts` live via this checkout's own `tsx`, no build step) that behaves identically to `wake` but never touches a real `wake` install, since it's declared in its own local package rather than the main one. See `docs/getting-started.md` for the full `sandbox build` / `up` / `setup` / `exec` / `down` walkthrough.
-
-### Claude smoke test
-
-The minimal smoke prompt used by `smoke:claude` is intentionally trivial (`This is Wake, reply with "Hi from Wake"`) to prove the CLI/session/remote-control plumbing without spending meaningful tokens — don't make it more elaborate.
-
-## Working within the pluggable architecture
-
-Wake's core selling point is being model/CLI/workflow-agnostic. This only holds if new capability is added behind the existing seams rather than by special-casing `core/`:
-
-- New ticketing sources, runners, or workspace strategies must implement the interfaces in `src/core/contracts.ts` (`WorkSource`, `OutboundSink`, `AgentRunner`, `WorkspaceManager`). `core/` must never import a concrete adapter directly — only `main.ts`'s `buildRuntime` wires a concrete adapter in.
-- If you change one of those interfaces, update the fake and the real implementation together (e.g. `fake-runner.ts` and `claude-runner.ts`), plus `buildRuntime`. They're kept deliberately symmetric so `tick`/`start` stay testable at zero token cost — don't let the fake drift into a stub that no longer exercises the real contract.
-- **Wake decides, the agent runs.** The runner prompt must never ask the agent to choose a model, apply labels, or move stage. The agent's only outputs are code/PR/comments plus the sentinel (`DONE`/`BLOCKED`/`FAILED`); only the control plane applies state transitions, after parsing that result.
-- **The tick is a pure function of durable state.** Never cache "what happened last tick" in process memory — if a decision needs it, persist it under `.wake/` first. This is what makes the resident loop crash/restart safe; don't add logic that only works if the process stays alive between ticks.
-- **GitHub is half the state.** Labels can be edited by a human at any time. Reconcile labels → local projection at the start of every tick; GitHub wins for _stage_, local files win for _history/attempts_.
-
-## Code comments
-
-Keep comments short — one line stating a non-obvious rationale, not a multi-sentence narrative of what the code does or why a change was made. If removing a comment wouldn't confuse a future reader, don't add it.
-
-## Testing conventions specific to this repo
-
-- Prefer exercising `core/` logic through the fake adapters (`createFakeRunner`, `createFileBackedFakeTicketingSystem`, `createFakeWorkspaceManager`) rather than mocking `core/contracts.ts` interfaces ad hoc — the fakes already model the real contract and are maintained for exactly this purpose.
-- Any new runner invocation must enforce a wall-clock timeout — it is the mandatory runaway-cost protection, and it is a runner/execution config setting with an operator-adjustable default. `maxTurns` is operator policy, not a Wake default: it is passed to the runner verbatim when a prompt declares it and the flag is omitted entirely when it does not. Wake never injects a default and never clamps the value.
-- Don't add retry-with-bigger-model logic on a failed run; a failed attempt should surface as `BLOCKED` (bad spec), not trigger silent model escalation.
-
-# Documentation requirements
-
-Whenever changing the cli command surface or config file options, you must update the relevant documentation, such as the `README.md` or `docs\configuration.md`. Keep changes minimal and scoped only to changes you made.
-
-Reference docs (`README.md`, everything under `docs/` except `docs/handoffs/`, `docs/plans/`, `docs/reports/`, `docs/vision-inputs/`, `docs/adrs/`, and `docs/superpowers/`, which are dated historical records and stay as-is) must describe **only the current state** of the system. Don't explain what something used to do, why it changed, or reference a prior design — that content belongs in the PR description and commit messages, not in docs a future reader relies on to understand how Wake works today. If a past decision's reasoning is genuinely load-bearing for a future reader (not just interesting history), an ADR under `docs/adrs/` is the right place for it, not inline prose in a reference doc.
+When changing the CLI surface or configuration schema, update the relevant
+current-state reference documentation. `README.md` and reference docs under
+`docs/` must describe the system as it exists now. Do not rewrite ADRs,
+historical designs, handoffs, plans, reports, `docs/superpowers/`,
+`docs/vision-inputs/`, or specifications merely to reflect a later design.

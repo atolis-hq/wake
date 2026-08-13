@@ -234,26 +234,28 @@ and either:
 
 ## 2. External integrations
 
-Ask the user which external source(s) should feed Wake work items (an issue
-tracker, for example), and whether it should start polling immediately or
-stay off until they're ready.
+Ask the user:
 
-Add an entry under \`integrations\` in \`config.yaml\`, for example:
+- Which external source or sources should feed Wake work items?
+- Which provider-specific rule should opt work in?
+- Should polling start immediately, or stay disabled until they are ready?
+
+Configure each provider under \`integrations\` in \`config.yaml\`:
 
 \`\`\`yaml
 integrations:
   <name>:
     provider: <provider-id>
     enabled: true # or leave false to configure now, enable later
-    # the remaining fields are specific to that provider — ask the user, or
-    # check that provider's own configuration reference, for the exact
-    # fields it needs (which repositories/projects to watch, credentials,
-    # which events opt an item in).
+    # Provider-specific fields select resources, configure credentials,
+    # and define which observed work is admitted.
 \`\`\`
 
-This file intentionally does not hardcode any one provider's field shape —
-Wake's integration providers are pluggable, and each owns its own
-configuration schema.
+The fields beneath an integration entry are provider-owned and validated by
+that provider. Consult
+https://github.com/atolis-hq/wake/blob/main/docs/configuration.md for each
+supported provider's current schema, credential guidance, polling controls,
+and intake rules.
 
 ## 3. Credential mounts (check before asking)
 

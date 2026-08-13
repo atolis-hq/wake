@@ -1,122 +1,81 @@
-﻿# Runner Comparison
+# Runner comparison
 
-This page documents the current behavioral contract of Wake's real runner
-adapters and, just as importantly, where the contract is not yet portable
-across CLIs.
+Wake chooses runners through `execution.agentRunners` and ordered
+`execution.runnerPools`; a workflow stage names a pool, not a CLI. Every
+runner implements the same Execution `Runner` contract: it starts an external
+execution, exposes cancellation, returns a normalized transport result, and is
+protected by the configured wall-clock timeout. See
+[Configuration](configuration.md) for runner definitions and pools.
 
-Wake normalizes all real runners behind `AgentRunner`, `smoke`, and
-`sandbox resume`, but some controls remain CLI-specific.
+## Shared behaviour
 
-## Summary
+Claude, Codex, Cursor, command, and fake runners all receive the rendered
+prompt, optional model/effort, workspace details, a resume session identifier,
+and the same cancellation signal. Wake records the selected runner, its model
+metadata, lifecycle, reported session identity, raw runner result, and final
+normalized Activity outcome in durable Run facts.
 
-| Feature / Control                        | Claude runner          | Codex runner        | Cursor runner                | Notes                                                                             |
-| ---------------------------------------- | ---------------------- | ------------------- | ---------------------------- | --------------------------------------------------------------------------------- |
-| `runner.mode` support                    | Yes                    | Yes                 | Yes                          | All three are first-class runtime modes.                                          |
-| Normalized `AgentRunResult` into `core/` | Yes                    | Yes                 | Yes                          | All return `result`, `model`, `cli`, optional `session_id`, and failure metadata. |
-| Stage prompt templates                   | Yes                    | Yes                 | Yes                          | All use the shared Wake prompt templates.                                         |
-| Runner-level model selection             | Yes                    | Yes                 | Yes                          | Each named runner has one `model`; stage routing chooses among runners via runnerPools. |
-| Wall-clock timeout                       | Yes                    | Yes                 | Yes                          | All runners kill hung CLI processes and return `FAILED`.                          |
-| `wake smoke` support                     | Yes                    | Yes                 | Yes                          | All support the generic smoke surface.                                            |
-| Explicit smoke command                   | `smoke claude`         | `smoke codex`       | `smoke cursor`               | All supported.                                                                    |
-| Session resume command generation        | `claude --resume <id>` | `codex exec resume <id>` | `cursor agent --resume=<id>` | All supported in `wake sandbox resume` and GitHub comments.                       |
-| Stage-specific access control            | Per-tool allowlist     | Sandbox mode        | `--mode ask` / default       | Mechanisms differ; all separate refine from implement.                            |
-| Parsed raw CLI output in metadata        | Yes                    | Yes                 | Yes                          | Claude: parsed JSON; Codex: parsed JSONL; Cursor: parsed JSON.                    |
-| Run correlation logging                  | Yes                    | Yes                 | Yes                          | All emit start/success/failure log lines.                                         |
+The process timeout defaults to 30 minutes (`timeoutMs: 1800000`). A timeout or
+non-zero process exit is a failed transport result, not a successful workflow
+outcome. The Activity translates a successful runner response into `DONE`,
+`REJECTED`, `BLOCKED`, or `FAILED`; Orchestration then applies the configured
+workflow route.
 
-## Control-Level Comparison
+## CLI capability matrix
 
-| Control                         | Claude                    | Codex                                    | Cursor                                | Current Wake behavior                                                                                                        |
-| ------------------------------- | ------------------------- | ---------------------------------------- | ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| Max-turn cap                    | Supported                 | Not supported                            | Not supported                         | Wake enforces `maxTurns` for Claude only. Codex and Cursor read the same prompt templates but cannot enforce a CLI turn cap. |
-| Per-tool allowlist              | Supported                 | Not supported                            | Not supported                         | Claude enforces `allowedTools`; Codex and Cursor rely on prompt instructions plus mode/sandbox controls.                     |
-| Permission / approval policy    | Supported                 | Supported                                | Supported                             | Claude: permission mode flags; Codex: `--ask-for-approval never`; Cursor: `--force` for implement.                           |
-| Read-only refine enforcement    | `allowedTools` (per-tool) | `--sandbox workspace-write` (filesystem) | `--mode ask` (CLI-enforced read-only) | All three restrict refine differently; Cursor's `--mode ask` is CLI-enforced at the agent level.                             |
-| Remote-control smoke automation | Supported                 | Not supported from CLI                   | Not supported from CLI                | Claude has a CLI remote-control path. Codex and Cursor remote control are app-driven.                                        |
-| Session naming                  | Supported                 | Not supported                            | Not supported                         | Claude stamps `sessionName`; Codex and Cursor `exec`/`agent` do not expose equivalent naming flags.                          |
+| Capability | Claude (`claude-cli`) | Codex (`codex-cli`) | Cursor (`cursor-cli`) |
+| --- | --- | --- | --- |
+| Structured output | `--output-format json` | `exec --json` JSONL | `--output-format json` |
+| Resume | `--resume <session>` | `exec ... resume <session>` | `--resume=<session>` |
+| Model | `--model` | `--model` | `--model` |
+| Effort | `--effort` | `-c model_reasoning_effort=<value>` | No adapter flag |
+| `maxTurns` | `--max-turns` | No adapter flag | No adapter flag |
+| `allowedTools` | `--allowedTools` | No adapter flag | No adapter flag |
+| Read-only workspace | Prompt/tool policy only | `--sandbox workspace-write` | `--mode ask` |
+| Branch workspace | Prompt/tool policy only | `--sandbox danger-full-access` | `--force` |
+| Session id parsing | JSON `session_id` | JSONL `thread.started.thread_id` | JSON `session_id` |
+| Token usage parsing | JSON `usage` and cost | JSONL `turn.completed.usage` | JSON `usage` |
 
-## Practical Consequences
+`allowedTools` and `maxTurns` in a prompt template are therefore portable
+metadata but are enforced at the CLI boundary only by Claude. Codex and Cursor
+still receive the prompt instruction and are bounded by the outer execution
+timeout. Choose a runner pool based on the enforcement level your stage needs,
+not merely model preference.
 
-### Refine-stage confinement
+## Workspace policy
 
-**Claude refine** is the most granular because Wake can pass an explicit tool
-allowlist and deny edit tools at the CLI boundary.
+Wake owns workspace acquisition; a runner only receives the resulting path and
+mode. `workspace: none` does not pass a workspace mode. For a read-only or
+branch workspace, Codex maps the mode to its sandbox setting and Cursor maps it
+to `ask` or `--force`. Claude does not derive a filesystem sandbox mode from
+the workspace setting; use its allowed-tool policy and a prompt that states the
+boundary.
 
-**Codex refine** is a middle ground:
+No runner is entitled to choose a workspace, pool, workflow transition, or
+provider action. Keep those decisions in workflow configuration.
 
-- Wake passes a Codex-specific capability note about shell read commands
-- Wake selects the less-permissive Codex sandbox mode (`workspace-write`)
-- Codex cannot be told "only read-only shell commands" at per-tool granularity
+## Resume and fallback
 
-**Cursor refine** uses `--mode ask` which is a CLI-enforced read-only mode:
+Execution may select a compatible terminal session for a primary-stage
+Activation when its session policy permits resumption. A compatible session is
+from the same CLI adapter kind; a `fresh` policy never resumes one. If the
+first runner is quota-paused, Wake falls sideways to the next configured member
+of that same pool. It never silently changes to a different pool.
 
-- The Cursor CLI itself refuses write operations in ask mode
-- Wake also passes a Cursor-specific capability note explaining ask mode
-- This provides CLI-level enforcement without per-tool granularity
+## `command` and `fake`
 
-**Cursor implement** omits `--mode` entirely, using Cursor's default agent mode
-which allows file edits, and passes `--force` to auto-approve writes.
+`command` runs exactly the configured executable and argument list, without
+adding a CLI protocol. Use it for a runner that already conforms to Wake's
+expected result contract or for controlled integration environments.
 
-### Turn budgeting
+`fake` is a deterministic zero-token runner intended for local tests, initial
+Wake-home scaffolds, and configuration verification. Keeping it in a pool is a
+safe way to exercise workflow composition before enabling a real CLI.
 
-Wake prompt templates carry `maxTurns`, and Claude enforces that with a real
-CLI flag. Codex and Cursor currently have no documented equivalent, so their
-runs depend on:
+## Sandbox credentials
 
-- the prompt's completion contract
-- the outer wall-clock timeout
-- the CLI's own completion behavior
-
-### Remote control
-
-Wake exposes `smoke claude -- --remote-control` because Claude has a CLI flow
-for that path. Codex and Cursor remote access are documented as desktop app
-setups, not CLI setups, so Wake does not expose remote-control smoke paths
-for those runners.
-
-## What Wake deliberately does not fake
-
-Wake does not pretend unsupported controls exist.
-
-Specifically, Wake does not:
-
-- invent a fake `maxTurns` layer for Codex or Cursor
-- advertise per-tool enforcement for Codex or Cursor when only mode-level controls exist
-- expose fake remote-control smoke paths for Codex or Cursor
-- claim session naming parity for Codex or Cursor that their CLIs do not provide
-
-## Credential bind-mounts (Docker sandbox)
-
-Each CLI stores credentials in a specific location that can be bind-mounted
-from the host machine into the container (recommended to avoid re-authenticating
-on every container rebuild):
-
-| CLI         | Host credential path | Container path       | Notes                                               |
-| ----------- | -------------------- | -------------------- | --------------------------------------------------- |
-| Claude Code | `~/.claude`          | `/home/wake/.claude` | Add to `sandbox.extraMounts` with `readOnly: false` |
-| Codex       | `~/.codex`           | `/home/wake/.codex`  | Add to `sandbox.extraMounts` with `readOnly: false` |
-| Cursor      | `~/.cursor`          | `/home/wake/.cursor` | Add to `sandbox.extraMounts` with `readOnly: false` |
-
-Example `config.yaml` extraMounts for all three:
-
-```yaml
-sandbox:
-  extraMounts:
-    - source: ~/.claude
-      target: /home/wake/.claude
-    - source: ~/.codex
-      target: /home/wake/.codex
-    - source: ~/.cursor
-      target: /home/wake/.cursor
-```
-
-## Sources
-
-These parity notes were checked against the installed CLI surface and official
-docs:
-
-- Codex CLI command reference: https://developers.openai.com/codex/cli/reference
-- Codex config basics: https://developers.openai.com/codex/config-basic
-- Codex config reference: https://developers.openai.com/codex/config-reference
-- Cursor CLI headless mode: https://cursor.com/docs/cli/headless
-- Cursor CLI output format: https://cursor.com/docs/cli/reference/output-format
-- Cursor CLI overview: https://cursor.com/docs/cli/overview
+Mount only credential files that a runner needs through
+`host.sandbox.extraMounts`; do not bind-mount an entire CLI configuration
+directory. The generated `SETUP.md` explains the supported narrow mounts and
+their read-only trade-offs. Run `wake sandbox setup` to configure credentials
+inside the sandbox and `wake smoke` to exercise the configured default pool.

@@ -1,5 +1,5 @@
 ---
-asOf: 4e8c5f6d6955ee3bf6a926063cb1c6446f4b1e0b
+asOf: 31cb84460b6099ea50edc17a70d3ec679ba08cc5
 ---
 
 # Orchestration — Module Specification
@@ -153,6 +153,7 @@ Orchestration does not own:
 | `orchestration.activity-requested` | An Activation is decided | An Activity with the given input is now the instance's pending Activation. |
 | `orchestration.activity-started` | The executor confirms it has begun the pending Activation | The pending Activation is now running, not merely requested. |
 | `orchestration.activity-outcome-accepted` | A non-waiting outcome is accepted for the pending Activation | The Activation is complete and its outcome is now part of the instance's history. |
+| `orchestration.activity-execution-failed` | Execution reports that it could not complete the pending Activation | The failed Activation is durably accepted without an Activity outcome, before the instance is blocked. |
 | `orchestration.activity-waiting` | The pending Activation itself reports a waiting outcome | The Activation is paused mid-execution on a named Signal; it has not completed. |
 | `orchestration.signal-wait-started` | The instance begins waiting for a Signal | The instance is now Waiting for the stated Signal expectation, from any declared approval authority. |
 | `orchestration.signal-accepted` | A Signal matching the current wait is accepted | The wait is now satisfied by this specific provider event; the instance resumes. |

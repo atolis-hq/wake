@@ -134,6 +134,11 @@ workspace mechanics itself — it only resolves and invokes them.
   named runner MUST invoke the configured runner-quota callback, naming
   that runner; Execution does not itself decide what happens to a
   quota-ineligible runner beyond reporting the signal.
+- An ordinary agent attempt MUST return once its runner invocation has
+  actually started, while its completion remains detached and owns the normal
+  terminal-recording and cleanup path. A deterministic attempt normally
+  yields one event-loop turn before returning; only a caller that explicitly
+  requests immediate completion waits for that deterministic completion.
 - When the Activity handler returns normally, its outcome MUST be recorded
   via `RunSucceeded` regardless of what outcome kind it reports — Execution
   does not distinguish a `done` outcome from a `failed` or `blocked` one at

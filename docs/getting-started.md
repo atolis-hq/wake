@@ -25,12 +25,11 @@ Or run it once without installing globally:
 npx @atolis-hq/wake init ./wake-home
 ```
 
-`wake init` scaffolds `config.yaml`, `config.workflows.yaml`, `prompts/`, `workspaces/`, and a
-`SETUP.md` guide written for an assisting agent to read and use to finish
-configuring the GitHub source, runner/runnerPool, and credential mounts — point
-your agent CLI at it (e.g. "read SETUP.md and help me configure this") once
-`wake init` finishes. `wake init` does not create `docker/` — that's written
-lazily by `wake sandbox build` (see below).
+`wake init` scaffolds `config.yaml`, `config.workflows.yaml`, `prompts/`,
+`workspaces/`, `docker/`, and a `SETUP.md` guide written for an assisting agent
+to use to finish configuring external integrations, runner/runnerPool, and
+credential mounts. Point your agent CLI at it (for example, "read SETUP.md and
+help me configure this") once `wake init` finishes.
 
 ## Build and start the sandbox
 
@@ -43,7 +42,7 @@ wake sandbox setup
 ```
 
 - `sandbox build` writes `docker/Dockerfile` from the template matching your
-  `dev.mode` and builds it. Existing `docker/Dockerfile` is never
+  `host.development.mode` and builds it. Existing `docker/Dockerfile` is never
   overwritten — it's yours to edit (add tools your repos need, etc.);
   rebuild with `sandbox build` after editing it.
 - `sandbox up` starts the persistent container, mounting the Wake home at
@@ -94,12 +93,19 @@ wake-home/
   docker/Dockerfile     # edit this (written by first `sandbox build`)
   workspaces/           # real per-work-item git checkouts — browsable
   .wake/                # hidden: durable internal state
-    events/, state/, runs/, sources/, repos/, locks/, logs/, container-home/
+    events/             # authoritative append-only journal
+    projections/        # rebuildable read models
+    checkpoints/        # rebuildable integration progress
+    locks/              # coordination state
+    transcripts/        # optional raw agent I/O capture
+    logs/               # operational logs
+    container-home/     # persistent sandbox-home state
 ```
 
-Everything under `.wake/` is generated and rebuildable — safe to delete
-(except `container-home/`, which holds sandbox auth state) if you want a
-clean slate.
+The journal under `.wake/events/` is authoritative and must be retained.
+Projections and checkpoints are rebuildable; `container-home/` holds sandbox
+auth state. See [Architecture](architecture.md) before removing any durable
+data.
 
 ## Updating
 

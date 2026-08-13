@@ -1,307 +1,339 @@
-?# Workflows
+# Workflows
 
-Wake workflows define the stages a work item moves through and which prompt file is
-used to run each stage. They are deterministic control-plane configuration:
-Wake chooses the stage, workspace mode, and runner route; the agent only
-executes the selected action and reports a result.
+Workflows are Wake's deterministic control-plane policy. They live under
+`orchestration.workflows` (normally in `config.workflows.yaml`), are compiled
+before use, and are persisted as durable WorkflowInstances. An agent executes
+an Activity; Orchestration alone decides what that result means and what runs
+next. Prompt text cannot select a runner, advance a stage, or change provider
+state.
 
-## Where workflows live
+Use this page with [Configuration](configuration.md) and
+[Agent prompt templates](prompts.md) to author a complete configuration.
 
-Workflows are configured in the `workflows` section of Wake config —
-`config.workflows.yaml` at the root of the Wake home `--wake-root` (or the
-current directory, by default) resolves to. All config uses `schemaVersion: 1`.
-
-If no workflow is configured, Wake uses this built-in default:
+## A minimal, safe workflow
 
 ```yaml
 workflows:
   default:
+    entry: refine
     stages:
       refine:
-        action: refine
-        workspace: read-only
-        runnerPool: light
-        onDone: implement
+        activity: agent
+        with: { template: refine }
+        execution: { workspace: read-only, runnerPool: light }
+        requiresApproval: false
+        on:
+          done: { then: implement }
+          blocked: { then: await-human }
       implement:
-        action: implement
-        workspace: branch
-        runnerPool: standard
-        onDone: done
+        activity: agent
+        with: { template: implement }
+        execution: { workspace: branch, runnerPool: standard }
+        on:
+          done: { then: done }
+          blocked: { then: await-human }
+          failed: { then: implement, retry: { max: 2 } }
 ```
 
-That means queued work first runs the `refine` action with a read-only
-workspace. When the agent reports `DONE`, Wake moves the work item to
-`implement`. When `implement` reports `DONE`, Wake moves the work item to
-`done`.
+Every workflow has a non-empty `stages` map. `entry` is optional; if omitted,
+Wake uses the first declared stage. Stage names cannot be `done` or
+`await-human`. The compiler validates that the entry can reach completion,
+every route names a real stage or terminal target, every referenced Activity
+and its input are valid, and every graph cycle is bounded.
 
-## Workflow fields
+`done` completes the WorkflowInstance. `await-human` is a terminal route
+shorthand that waits for a signal whose name is the current outcome kind.
 
-A workflow has an optional `entryStage` and a required `stages` object:
+## Stages: work, input, and execution policy
+
+Each stage says what to run and how to run it.
+
+| Field | Required | Meaning |
+| --- | --- | --- |
+| `activity` | Yes | A registered Activity name. The built-in `agent` Activity invokes a local agent runner; PR activities provide deterministic review/merge operations. |
+| `with` | No | Activity input, validated against the selected Activity before the workflow compiles. For `agent`, provide exactly one of `template` or `prompt`, with optional `model` and `allowedTools` overrides. |
+| `execution.workspace` | No | `none`, `read-only`, or `branch`. It controls whether Execution acquires a workspace for this Activation. |
+| `execution.runnerPool` | No | Ordered runner candidates from `execution.runnerPools`. If omitted, Execution uses `defaultRunnerPool`. |
+| `requiresApproval` | No | Completion policy for ordinary `done` outcomes. The important default is explained below. |
+| `on` | Yes | Non-empty mapping from Activity outcome kind to its route. Only outcomes declared by the Activity are accepted. |
+
+`execution` is routing policy, not agent input. Keep stable operational choices
+(workspace isolation and runner capability) in the stage; put task-specific
+instructions in a prompt template.
+
+### Built-in deterministic PR activities
+
+`pr.approve` and `pr.merge` are registered Activities for provider-backed pull
+request decisions. They are deterministic: they evaluate durable resource,
+revision, review, check, and change-policy facts before asking an Integration
+to deliver the provider action. They do not invoke an agent runner.
+
+Both take `target`, either `primary` (the default) or
+`{ resourceId: "..." }`. The selected target must resolve to exactly one
+pull-request resource correlated as primary to the WorkItem; a missing or
+ambiguous target blocks the Activity rather than guessing.
+
+`pr.approve` takes an optional `body`:
 
 ```yaml
-workflows:
-  bugfix:
-    entryStage: triage
-    stages:
-      triage:
-        action: refine
-        workspace: read-only
-        runnerPool: light
-        onDone: patch
-      patch:
-        action: implement
-        workspace: branch
-        runnerPool: standard
-        onDone: verify
-      verify:
-        action: verify
-        workspace: branch
-        runner: codex-flagship
-        onDone: done
+activity: pr.approve
+with:
+  target: primary
+  body: "Approved after deterministic validation."
+on:
+  done: { then: done }
+  blocked: { then: await-human }
+  failed: { then: await-human }
 ```
 
-`entryStage` is the first configured stage to run after the universal `queue`
-stage. If omitted, Wake uses the first key in `stages`.
+`pr.merge` requires `method` (`merge`, `squash`, or `rebase`) and
+`requireChecks`. It also accepts the following guardrails:
 
-`stages` contains the runnable stages for the workflow. Do not define `queue`
-or `done` here; they are universal implicit stages.
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `requireApproval` | `true` | Requires a current accepted review for the PR revision. It may be `false` only when `autoMerge` is `true`. |
+| `autoMerge` | `false` | Requests native provider auto-merge. Pending checks are permitted; unknown or failing checks are not. |
+| `maxFilesChanged` | unset | Blocks when the provider reports more changed files than this positive limit. |
+| `blockedPaths` | `[]` | Blocks when a changed path exactly equals one of these protected paths. |
 
-Each stage has:
+```yaml
+activity: pr.merge
+with:
+  target: primary
+  method: squash
+  requireChecks: true
+  requireApproval: true
+  maxFilesChanged: 20
+  blockedPaths: [".github/workflows/release.yml", "infra/production.yml"]
+on:
+  done: { then: done }
+  blocked: { then: await-human }
+  failed: { then: await-human }
+```
 
-- `workspace`: one of `none`, `read-only`, or `branch`.
-- `onDone`: the next stage name, or `done`.
-- `action`: optional prompt-template name. If omitted, Wake uses the stage name
-  as the action.
-- `runnerPool`: optional runner runnerPool to route this stage through.
-- `runner`: optional concrete runner name. A runner pin takes precedence over a
-  runnerPool.
+Both Activities first return `waiting` after recording a durable delivery
+intent. Orchestration treats that as a durable wait for the delivery result,
+rather than following an ordinary `on.waiting` route. The resolved outcome is
+`done` after provider delivery is confirmed, `blocked` when deterministic
+authority checks fail, or `failed` when Wake cannot durably record the intent.
+Route those resolved outcomes explicitly.
 
-Wake validates the workflow at config load. It rejects empty workflows,
-`entryStage: "queue"`, unknown `entryStage` values, transitions to unknown
-stages, transitions back to `queue`, and workflows whose entry stage cannot
-reach `done`.
+## Outcome routes and their evaluation order
 
-## Prompt files
+Every `on.<outcome>` route requires `then`: another stage, `done`, or
+`await-human`. Its additional fields are:
 
-A stage's `action` is the prompt-template name. If a stage omits `action`,
-Wake looks for a prompt named after the stage.
+| Field | Use |
+| --- | --- |
+| `activities` | Serial follow-on Activities to run before the route continues. Each is `{ use, with? }`. |
+| `repeat` | `{ max: positive integer }`; bounds traversals of this route when it changes stage. |
+| `retry` | `{ max: positive integer }`; retries the current stage for this outcome. |
+| `await` | `{ signal, from }`; waits for a named signal from declared authorities before `then`. |
+| `watchGates` | One named watch, optionally with `onReject: { then }`; waits for a child-workflow verdict. |
 
-See [Prompt Templates](prompts.md) for prompt template location, frontmatter, and
-Handlebars context details.
+Wake first records every non-waiting Activity outcome. If the stage does not
+declare a route for it, the instance blocks with `unconfigured outcome <kind>`;
+Wake never guesses a transition. Design a route for every outcome that should
+be recoverable.
 
-For example:
+For `done`, Wake first drains queued supplemental commands, then runs route
+`activities` in order, then applies the route policy. Follow-on Activities are
+separate Activations and do not inherit the stage's workspace or runner-pool
+settings. A follow-on outcome other than `done` blocks the instance.
+
+For another outcome, Wake retries only when the route has `retry` capacity and
+the Activity did not mark the outcome as requiring reconciliation. Otherwise
+it applies the route directly.
+
+```yaml
+on:
+  done:
+    activities:
+      - use: pr.merge
+        with: { method: squash }
+    then: done
+  failed:
+    then: implement
+    retry: { max: 2 }
+```
+
+## Approval and signals
+
+An ordinary `done` route waits for a human `approved` signal by default. This
+is true when it declares neither `await` nor `watchGates`. Set
+`requiresApproval: false` to opt a stage into immediate advancement after
+`done`; use it deliberately for deterministic or low-risk stages.
+
+Use `await` to make the policy explicit or to wait for a different signal.
+`from` is an authority policy, not a provider identity:
+
+- `human` accepts a provider-relayed authorized human decision.
+- `auto` accepts only a deterministic automatic decision and only when the
+  WorkItem has durable operator consent; an integration event alone never
+  grants automatic authority.
+- `{ kind: watch, id: review }` accepts the verdict from that named watch.
+
+Accepted signals must match the current signal name, resource, and revision;
+they are idempotent by provider-event identity. A rejected signal normally
+restarts the current stage. A watch gate can instead declare `onReject.then`
+to route to a correction stage.
 
 ```yaml
 stages:
-  verify:
-    action: verify
-    workspace: branch
-    onDone: done
+  plan:
+    activity: agent
+    with: { template: refine }
+    execution: { workspace: read-only, runnerPool: light }
+    on:
+      done:
+        then: implement
+        await:
+          signal: approved
+          from: [human, auto]
 ```
 
-requires a `verify` prompt template under `paths.promptsRoot`, normally
-`<wakeRoot>/prompts`:
+## Retry, repeat, and loop safety
 
-```text
-prompts/verify.md
-```
+`retry` runs the current stage's primary Activity again. Its counter is scoped
+to `<stage>:<outcome>`, so it is appropriate for an explicitly tolerated,
+transient failure. It must not be used to repeat an outcome that requires
+external reconciliation.
 
-## How Wake determines the workflow
-
-Wake stores work item state in an issue projection. The workflow name is
-determined from that projection:
-
-1. If `projection.context.workflow` is a string, Wake uses that workflow name.
-2. Otherwise, when `workflowSelectors` is configured, Wake selects the first
-   matching workflow when the item first qualifies for intake and records a
-   `wake.workflow.selected` event.
-3. Otherwise, Wake uses the first workflow configured in `config.workflows`.
-
-Selectors match source-level facts, so the same config can classify issues, PRs,
-or future event sources:
+`repeat` bounds a particular route as it transitions to another stage. Use it
+for intentional review/revision loops. Once `max` is exceeded, Wake blocks the
+instance rather than cycling forever. The compiler rejects an unbounded cycle.
 
 ```yaml
-workflowSelectors:
-  - workflow: bug
-    match:
-      kind: issue
-      repo: atolis-hq/wake
-      requiredLabels: [bug]
-      ignoredLabels: [wontfix]
-  - workflow: pr-review
-    match:
-      kind: pr
-      requiredAuthors: [trusted-human]
+stages:
+  review:
+    activity: agent
+    with: { template: review }
+    on:
+      rejected:
+        then: implement
+        repeat: { max: 3 }
+      done: { then: done }
 ```
 
-Wake then looks up that workflow in config. If the named workflow no longer
-exists, or if the work item's current stage is not known to that workflow, Wake
-does not guess a replacement. It blocks the work item with the
-`workflow-changed` reason so a human can choose how to repair or requeue it.
+## Workflow selection
 
-Workflow selection is therefore a durable property of the work item once stored
-in projection context. Changing labels or reordering config does not safely
-move already-pinned in-flight items to a different workflow.
+`orchestration.workflowSelectors` selects a workflow once for a newly admitted
+resource; the selected workflow is then durable instance state. Rules are
+evaluated in declared order, with `orchestration.default` used if none match.
 
-## How Wake chooses the next action
+Each selector has a `workflow`, one or more `match` facets, and optional
+`matchMode`:
 
-Wake treats `queue` and `done` as universal stages around every configured
-workflow:
+- `match.tags`, `match.kind`, and `match.adapter` accept one value or a list.
+- `matchMode: any` is the default; `all` requires every declared facet to
+  match.
+- The selector's workflow and the default must name configured workflows.
 
-- `queue` dispatches the workflow entry stage.
-- Configured stages dispatch their `action`.
-- `done` is terminal and dispatches nothing.
+```yaml
+orchestration:
+  workflowSelectors:
+    - workflow: approval
+      match: { tags: [approval], kind: issue, adapter: github }
+      matchMode: all
+  default: default
+```
 
-For a queued work item, Wake runs the workflow entry stage. For any other known
-stage, Wake reads that stage definition and dispatches:
+Integration intake rules add the tags that selectors inspect. Configure intake
+first, then select workflows from those provider-neutral tags rather than from
+agent prompt text.
 
-- the resolved action name,
-- the requested workspace mode,
-- the stage's runner routing hints.
+## Supplemental commands
 
-When a runner reports `DONE`, Wake follows the stage's `onDone` transition —
-unless the stage is configured with `skipApproval: false`, in which case Wake
-holds the transition for human approval instead of advancing immediately. If
-the runner reports `BLOCKED`, `FAILED`, or `REJECTED`, Wake does not take the
-`onDone` transition automatically.
+`commands` attaches authorized slash commands to one workflow. A command is
+not a stage transition: it queues a supplemental Activity while the instance
+is active and has a pending Activation. When the current Activity completes,
+the queued supplemental work runs before the normal stage continues.
 
-## Operator retry for a failed stage
+```yaml
+workflows:
+  default:
+    commands:
+      /summarize:
+        activity: agent
+        with: { template: summarize }
+        allowedActors: [human]
+```
 
-When a primary workflow is blocked because its current ordinary stage produced
-an unconfigured `failed` outcome, the work-detail UI offers **Retry**. The
-command creates a new activation using that stage's existing compiled activity,
-input, and execution configuration; it does not alter the failed activation or
-its Run. Wake displays the control only when this recovery is currently safe.
+Command keys must match `/[a-z][a-z0-9-]*`. `allowedActors` is authority
+policy: `human`, `auto`, or `watch`. An integration carrying a human's command
+is treated as human authority; automatic authority is never inferred from the
+transport. A supplemental Activity that returns anything other than `done`
+blocks the workflow, so use a dedicated template that can reliably complete or
+ask to be retried through the normal workflow policy.
 
-This is fixed-parameter recovery, not a way to retry an arbitrary Run. Changing
-the action, input, runner, model, timeout, or other execution parameters remains
-routing policy owned by workflow configuration.
+## Watches and watch gates
 
-## Stage watchers
-
-A stage can attach watcher workflows that run while the parent work item is in a
-specific status. For example, an implementation stage can dispatch an
-independent `pr-review` workflow while it is `awaiting-approval`:
+A watch starts a child workflow in the same WorkItem and orchestration group
+when its parent is at a selected stage/status and an event or schedule fires.
+Use it for asynchronous review, monitoring, or a bounded second opinion—not
+as a replacement for a stage whose work must happen synchronously.
 
 ```yaml
 workflows:
   default:
     stages:
       implement:
-        action: implement
-        workspace: branch
-        onDone: done
-        watch:
-          - while: { status: [awaiting-approval] }
-            on: { event: [wake.run.completed] }
-            schedule: { cron: "*/10 * * * *" }
-            workflow: pr-review
-            onSuccess:
-              merge:
-                approve: true
-                autoMerge: true
-                maxFilesChanged: 10
-                blockedPaths:
-                  - src/core/contracts.ts
-                  - docker/*
-                blockedLabels:
-                  - security
+        activity: agent
+        with: { template: implement }
+        execution: { workspace: branch, runnerPool: standard }
+        on:
+          done:
+            then: done
+            watchGates:
+              - pr-review
+    watches:
+      - id: pr-review
+        while:
+          stages: [implement]
+          statuses: [waiting]
+        on: { events: [execution.run-succeeded] }
+        workflow: review
+        maxPerGroup: 1
 ```
 
-A watcher's `onSuccess` block declares what Wake does when the child workflow
-run completes `DONE` or `REJECTED` — the sentinel is the child's verdict, so a
-`BLOCKED` or `FAILED` child (the reviewer couldn't render a verdict at all)
-never triggers it.
+A watch has:
 
-`onSuccess.approve: true` lets the child workflow approve the watched parent
-stage directly. When the child completes `DONE` and no correlated PR carries
-the verdict (for example a `plan-review` workflow reviewing a refine plan on
-the issue thread), Wake resolves the parent's pending approval through the
-same transition a human `/approved` comment takes: the child's review body is
-posted to the issue, an approval run-completed event with reason
-`watcher:approved` is appended, an `approval.watcher-resolved` decision is
-audited, and the parent stage advances. A child `REJECTED` verdict posts the
-review body as feedback and moves the parent to `changes-requested` instead of
-approving; a `BLOCKED` or `FAILED` child leaves the parent's pending approval
-untouched.
+| Field | Meaning |
+| --- | --- |
+| `id` | Unique identity used by `watchGates` and watch-based approval authority. |
+| `while.stages` | Non-empty parent-stage list where the watch is eligible. |
+| `while.statuses` | Non-empty list drawn from `active`, `waiting`, and `blocked`. |
+| `on.events` | Optional non-empty canonical event-name trigger list. |
+| `schedule.cron` | Optional cron trigger. At least one of `on` or `schedule` is required. |
+| `workflow` | Existing workflow to start as the child. |
+| `maxPerGroup` | Positive upper bound on child starts for the group and this watch. |
 
-### `pr.merge`
+The watch reactor checkpoints its journal position, so event-triggered watches
+survive process restart. It gives every child deterministic parent, watch,
+trigger, and causal-cycle provenance. A repeated causal trigger is rejected
+and blocks the parent instead of recursively spawning children. `maxPerGroup`
+is an additional durable circuit breaker.
 
-`pr.merge` is a deterministic activity that acts on the correlated primary PR.
-It accepts `target`, `method` (`merge`, `squash`, or `rebase`),
-`requireChecks`, `requireApproval`, `autoMerge`, `maxFilesChanged`, and
-`blockedPaths`.
+A route may declare exactly one `watchGates` entry. On its `done` outcome,
+Wake waits for the named child workflow's verdict; a `done` verdict follows
+the route's `then`, while a `rejected` verdict follows `onReject.then` or
+returns to the gated stage. A human may satisfy that gate as an override.
 
-`requireApproval` defaults to `true`; direct merges always require a current
-trusted GitHub review. Set it to `false` only with `autoMerge: true`, after an
-independent review watch gate has passed. `requireChecks: true` requires
-currently passing checks for a direct merge. For native auto-merge it permits
-pending checks but rejects unknown or failing checks, leaving GitHub branch
-protection to hold the merge until required checks pass.
+## Authoring checklist
 
-With `autoMerge: true`, Wake enables GitHub native auto-merge using `method`.
-If GitHub reports that the PR is already in clean status, Wake falls back to a
-direct merge with the same method. Other provider errors do not fall back.
-Enable repository auto-merge and configure GitHub required-check protection
-before using this route.
+1. Define every named runner and pool in `config.yaml`; keep a safe `fake`
+   pool for deterministic local verification.
+2. Define one prompt for every `agent` template reference and keep execution
+   routing out of prompt text.
+3. Give each stage an Activity, validated input, workspace mode, and runner
+   pool appropriate to its actual work.
+4. Declare routes for all expected Activity outcomes; do not rely on an
+   unconfigured outcome to mean "blocked".
+5. Choose approval intentionally: accept the default human gate, make an
+   explicit `await`, use a watch gate, or set `requiresApproval: false`.
+6. Bound every retry and workflow loop; use retries only for safe outcomes.
+7. Use selectors over provider-neutral intake tags and set a valid fallback.
+8. Give every watch a narrow stage/status trigger and a small `maxPerGroup`.
 
-## Labels
-
-Wake's stage labels use the workflow vocabulary:
-
-```text
-wake:stage.queue
-wake:stage.<configured-stage>
-wake:stage.done
-```
-
-For the `bugfix` example above, the known labels are:
-
-```text
-wake:stage.queue
-wake:stage.triage
-wake:stage.patch
-wake:stage.verify
-wake:stage.done
-```
-
-These labels mirror the control-plane state. They do not define prompt
-behavior by themselves; the workflow configuration and prompt files do that.
-
-### Live Run status
-
-A started Run is durable and is shown as `wake:status.working` while its runner
-executes. Terminal status labels remain derived from the Run outcome, rather
-than from the runner starting. After a restart, Wake recovers durable active
-Runs and continues that same outcome-based reconciliation. A live local runner
-renews its lease and is not mistaken for a crashed process during recovery.
-Runner comments are unchanged.
-
-## Ticket closure
-
-When the ticket backing a work item closes on its source tracker, Wake
-concludes the work item to match: closed as completed closes the work
-item, closed as not planned (or its provider's equivalent) cancels it.
-Either way, Wake cancels any active Run and blocks any active workflow for
-that work item — closing the ticket stops the work.
-
-Wake's own generated PR bodies reference the issue (`Refs #<number>`)
-rather than using a closing keyword (`Closes #<number>`), so merging a PR
-never auto-closes the issue on GitHub. This keeps "the PR merged" and "the
-ticket closed" independent signals: a workflow with stages after merge
-(review, verify) keeps running until it reaches `done` on its own, and the
-ticket only closes when a human closes it or Wake does so as the workflow's
-final step.
-
-Reopening the ticket does not currently reopen the work item — closing or
-cancelling a work item is a one-way move.
-
-## Checklist for a custom workflow
-
-1. Add every action prompt to `paths.promptsRoot`.
-2. Give each prompt a `maxTurns` frontmatter value.
-3. Add a workflow with runnable stage names under `workflows`.
-4. Set each stage's `workspace` and `onDone`.
-5. Add `action` when the prompt name differs from the stage name.
-6. Add `runnerPool` or `runner` when a stage needs specific routing.
-7. Confirm the entry stage can reach `done`.
+The exact machine-validated schema is in
+`src/orchestration/contracts/config.ts`.
