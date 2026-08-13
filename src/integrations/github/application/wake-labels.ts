@@ -32,6 +32,13 @@ export interface GitHubWakeLabelReconciler {
   runOnce(): Promise<void>;
 }
 
+export interface GitHubWakeLabelReconcileFailure {
+  readonly workItemId: WorkItemId;
+  readonly owner: string;
+  readonly repo: string;
+  readonly number: number;
+}
+
 export function createGitHubWakeLabelReconciler(input: {
   readonly orchestration: Pick<OrchestrationService, 'listAll'>;
   readonly resources: Pick<ResourceService, 'correlationsForWork' | 'get'>;
@@ -43,6 +50,7 @@ export function createGitHubWakeLabelReconciler(input: {
     number: number,
     labels: readonly string[],
   ) => Promise<void>;
+  readonly onError?: (failure: GitHubWakeLabelReconcileFailure, error: unknown) => void;
 }): GitHubWakeLabelReconciler {
   const openWorkItemIds = async (
     workItemIds: ReadonlySet<WorkItemId>,
@@ -54,6 +62,7 @@ export function createGitHubWakeLabelReconciler(input: {
     }
     return open;
   };
+  const onError = input.onError ?? defaultOnError;
 
   return {
     async runOnce() {
@@ -83,14 +92,30 @@ export function createGitHubWakeLabelReconciler(input: {
           if (resource?.externalKey.adapter !== 'github') continue;
           const locator = parseGitHubIssueKey(resource.externalKey.key);
           if (locator === null) continue;
-          const current = await input.getLabels(locator.owner, locator.repo, locator.number);
-          const next = reconcileGitHubWakeLabels(current, desired);
-          if (!sameLabels(current, next))
-            await input.setLabels(locator.owner, locator.repo, locator.number, next);
+          // One issue's persistent failure (rate limit, permissions, a stale
+          // resource) must not stop every other open work item from being
+          // reconciled this pass — each correlation is an independent GitHub
+          // call with no ordering dependency on the others.
+          try {
+            const current = await input.getLabels(locator.owner, locator.repo, locator.number);
+            const next = reconcileGitHubWakeLabels(current, desired);
+            if (!sameLabels(current, next))
+              await input.setLabels(locator.owner, locator.repo, locator.number, next);
+          } catch (error) {
+            onError({ workItemId: workflow.workItemId, ...locator }, error);
+          }
         }
       }
     },
   };
+}
+
+function defaultOnError(failure: GitHubWakeLabelReconcileFailure, error: unknown): void {
+  process.stderr.write(
+    `GitHub label reconcile failed for ${failure.owner}/${failure.repo}#${failure.number}: ${
+      error instanceof Error ? error.message : String(error)
+    }\n`,
+  );
 }
 
 function desiredWakeLabels(

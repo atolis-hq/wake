@@ -47,6 +47,10 @@ cycle.
   this component only ever calls GitHub's own label APIs.
 - A correlated resource whose current and desired label sets are already
   identical (same labels, same order) MUST NOT issue a write call.
+- A `getLabels`/`setLabels` failure for one correlated resource MUST NOT
+  stop reconciliation of any other open WorkItem's correlated resources in
+  the same `runOnce` pass; the failure is reported via `onError` (defaulting
+  to a stderr write identifying the GitHub issue/PR) and the loop continues.
 
 ## Dependencies and system role
 
