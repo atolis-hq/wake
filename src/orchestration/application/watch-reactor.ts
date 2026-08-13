@@ -4,6 +4,7 @@ import {
   EventActorKind,
   type CheckpointStore,
   type CommandContext,
+  type EventEnvelope,
   type EventJournal,
 } from '../../kernel/index.js';
 import { selectOrchestrationEvent } from '../contracts/event-decoder.js';
@@ -25,7 +26,7 @@ interface WatchMatch {
 }
 
 interface WatchOrchestrationPort {
-  listWatchMatches(eventType: string): Promise<readonly WatchMatch[]>;
+  listWatchMatches(event: EventEnvelope): Promise<readonly WatchMatch[]>;
   requestChild(
     request: ChildWorkflowRequest & { readonly maxPerGroup: number },
     context: CommandContext,
@@ -53,7 +54,7 @@ export function createWatchReactor(
     async react(event: PersistedEvent, context: CommandContext): Promise<void> {
       const causalCycle = orchestrationCausalCycleId(selectOrchestrationEvent(event));
       const sourceWorkflowInstanceId = await resolveRunWorkflowInstanceId(event, runs);
-      for (const match of await orchestration.listWatchMatches(event.eventType)) {
+      for (const match of await orchestration.listWatchMatches(event)) {
         if (
           sourceWorkflowInstanceId !== undefined &&
           match.parent.workflowInstanceId !== sourceWorkflowInstanceId

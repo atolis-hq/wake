@@ -1,5 +1,5 @@
 import type { ActivationId, ActivityOutcome } from '../../activities/index.js';
-import type { CommandContext, EventJournal } from '../../kernel/index.js';
+import type { CommandContext, EventEnvelope, EventJournal } from '../../kernel/index.js';
 import type { WorkItemId, WorkService } from '../../work/index.js';
 import type { StartWorkflowInstance } from '../contracts/commands.js';
 import type { CompiledWorkflow } from '../contracts/config.js';
@@ -162,8 +162,8 @@ export class OrchestrationService {
     );
   }
 
-  listWatchMatches(eventType: string) {
-    return this.advanceWorkflow.listWatchMatches(eventType);
+  listWatchMatches(event: EventEnvelope) {
+    return this.advanceWorkflow.listWatchMatches(event);
   }
 }
 
