@@ -8,10 +8,11 @@ export const OrchestrationStreamKind = {
   WorkflowDefinitions: 'workflow-definitions',
 } as const;
 
-export const workflowDefinitionsStream = () => ({
-  kind: OrchestrationStreamKind.WorkflowDefinitions,
-  id: 'registry',
-} as const);
+export const workflowDefinitionsStream = () =>
+  ({
+    kind: OrchestrationStreamKind.WorkflowDefinitions,
+    id: 'registry',
+  }) as const;
 
 export type WorkflowDefinitionsStreamRef = ReturnType<typeof workflowDefinitionsStream>;
 

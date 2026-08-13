@@ -7,7 +7,12 @@ import type {
 import type { EventDraftUnion, EventUnion } from '../../kernel/index.js';
 import type { WorkItemId } from '../../work/index.js';
 import type { OrchestrationWaitingActivityOutcome } from './activity-outcome.js';
-import type { ApprovalAuthority, CompiledWorkflow, StageConfig, TransitionTarget } from './config.js';
+import type {
+  ApprovalAuthority,
+  CompiledWorkflow,
+  StageConfig,
+  TransitionTarget,
+} from './config.js';
 import type {
   CommandName,
   OrchestrationGroupId,
@@ -21,8 +26,8 @@ import type {
   ChildOrchestrationGroupStreamId,
   ChildOrchestrationGroupStreamRef,
   PrimaryOrchestrationGroupStreamRef,
-  WorkflowInstanceStreamRef,
   WorkflowDefinitionsStreamRef,
+  WorkflowInstanceStreamRef,
 } from './streams.js';
 
 export const OrchestrationEventType = {
@@ -200,9 +205,7 @@ export type OrchestrationGroupEventDraft =
   PrimaryOrchestrationGroupEventDraft | ChildOrchestrationGroupEventDraft;
 
 export type OrchestrationEvent =
-  | WorkflowOrchestrationEvent
-  | OrchestrationGroupEvent
-  | WorkflowDefinitionRegisteredEvent;
+  WorkflowOrchestrationEvent | OrchestrationGroupEvent | WorkflowDefinitionRegisteredEvent;
 
 export type OrchestrationEventDraft =
   WorkflowOrchestrationEventDraft | OrchestrationGroupEventDraft;

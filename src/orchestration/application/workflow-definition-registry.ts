@@ -3,10 +3,10 @@ import {
   createEventDraft,
   EventActorKind,
   EventSourceKind,
+  WrongExpectedSequenceError,
   type EventJournal,
   type ProjectionDefinition,
   type ProjectionStore,
-  WrongExpectedSequenceError,
 } from '../../kernel/index.js';
 import type { CompiledWorkflow } from '../contracts/config.js';
 import { selectOrchestrationEvent } from '../contracts/event-decoder.js';
@@ -52,7 +52,10 @@ export class WorkflowDefinitionRegistry {
     private readonly current: Readonly<Record<string, CompiledWorkflow>>,
   ) {}
 
-  currentDefinition(name: WorkflowName): { readonly definition: CompiledWorkflow; readonly fingerprint: string } {
+  currentDefinition(name: WorkflowName): {
+    readonly definition: CompiledWorkflow;
+    readonly fingerprint: string;
+  } {
     const definition = this.current[name];
     if (definition === undefined) throw new Error(`Unknown workflow: ${name}`);
     return { definition, fingerprint: workflowDefinitionFingerprint(definition) };
@@ -62,7 +65,11 @@ export class WorkflowDefinitionRegistry {
     name: WorkflowName,
     fingerprint: string,
     definition: CompiledWorkflow,
-    context: { readonly occurredAt: string; readonly correlationId: string; readonly commandId: string },
+    context: {
+      readonly occurredAt: string;
+      readonly correlationId: string;
+      readonly commandId: string;
+    },
   ): Promise<void> {
     const stream = workflowDefinitionsStream();
     if (await this.isRegistered(name, fingerprint)) return;
@@ -108,7 +115,10 @@ export class WorkflowDefinitionRegistry {
     if (view.workflowDefinitionFingerprint === undefined)
       return this.currentDefinition(view.workflowName).definition;
     const current = this.current[view.workflowName];
-    if (current !== undefined && workflowDefinitionFingerprint(current) === view.workflowDefinitionFingerprint)
+    if (
+      current !== undefined &&
+      workflowDefinitionFingerprint(current) === view.workflowDefinitionFingerprint
+    )
       return current;
     const stored = await this.projections?.read<CompiledWorkflow>(
       workflowDefinitionsProjection.name,

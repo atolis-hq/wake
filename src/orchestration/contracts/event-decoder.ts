@@ -12,6 +12,7 @@ import {
   orchestrationActivityOutcome,
   type OrchestrationWaitingActivityOutcome,
 } from './activity-outcome.js';
+import type { CompiledWorkflow } from './config.js';
 import {
   OrchestrationEventType,
   type OrchestrationEvent,
@@ -25,7 +26,6 @@ import {
   workflowInstanceId,
   workflowName,
 } from './identifiers.js';
-import type { CompiledWorkflow } from './config.js';
 import {
   childOrchestrationGroupStreamId,
   OrchestrationStreamKind,
@@ -60,7 +60,10 @@ export const childGroupStreamSchema = z
   .strict();
 
 const workflowDefinitionsStreamSchema = z
-  .object({ kind: z.literal(OrchestrationStreamKind.WorkflowDefinitions), id: z.literal('registry') })
+  .object({
+    kind: z.literal(OrchestrationStreamKind.WorkflowDefinitions),
+    id: z.literal('registry'),
+  })
   .strict();
 
 export const childMetadataShape = {

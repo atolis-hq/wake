@@ -37,11 +37,13 @@ export class AdvanceWorkflow {
     context: CommandContext,
   ) {
     const loaded = await this.repository.loadRequired(id);
-    const definition = await this.workflows.definitionForOperation(loaded.view, loaded.sequence, context);
+    const definition = await this.workflows.definitionForOperation(
+      loaded.view,
+      loaded.sequence,
+      context,
+    );
     if (definition === null) return (await this.repository.loadRequired(id)).view;
-    const configured = definition.commands[
-      commandName(request.command)
-    ];
+    const configured = definition.commands[commandName(request.command)];
     if (configured === undefined)
       throw new Error(`Unknown supplemental command: ${request.command}`);
     if (!isAuthorisedActor(configured.allowedActors, context.actor.kind))
@@ -152,15 +154,11 @@ export class AdvanceWorkflow {
       context,
     );
     if (definition === null) return (await this.repository.loadRequired(id)).view;
-    const decision = decideOperatorRetry(
-      definition,
-      loaded.view,
-      {
-        commandId: context.commandId,
-        occurredAt: context.occurredAt,
-        causationId: context.commandId,
-      },
-    );
+    const decision = decideOperatorRetry(definition, loaded.view, {
+      commandId: context.commandId,
+      occurredAt: context.occurredAt,
+      causationId: context.commandId,
+    });
     if (decision.kind === 'ignored') throw new OperatorRetryIneligibleError(decision.reason);
     try {
       await this.repository.append(id, loaded.sequence, decision.events);
@@ -210,12 +208,12 @@ export class AdvanceWorkflow {
             : await this.workflows.definitionForOperation(loaded.view, loaded.sequence, context);
         if (definition === null) return [];
         return definition.watches
-        .filter(
-          (watch) =>
-            watch.on?.events.includes(eventType) === true &&
-            watch.while.stages.includes(parent.currentStage) &&
-            watch.while.statuses.some((status) => status === parent.status),
-        )
+          .filter(
+            (watch) =>
+              watch.on?.events.includes(eventType) === true &&
+              watch.while.stages.includes(parent.currentStage) &&
+              watch.while.statuses.some((status) => status === parent.status),
+          )
           .map((watch) => ({ parent, watch }));
       }),
     );

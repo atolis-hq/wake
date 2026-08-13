@@ -38,18 +38,18 @@ export class AcceptSignal {
   ) {
     const loaded = await this.repository.loadRequired(workflowInstanceId);
     const item = await this.work.get(loaded.view.workItemId);
-    const definition = await this.workflows.definitionForOperation(loaded.view, loaded.sequence, context);
-    if (definition === null) return (await this.repository.loadRequired(workflowInstanceId)).view;
-    const decision = decideSignal(
-      definition,
+    const definition = await this.workflows.definitionForOperation(
       loaded.view,
-      {
-        signal,
-        occurredAt: context.occurredAt,
-        causationId: context.commandId,
-        consent: item?.autoApprovalGranted ?? false,
-      },
+      loaded.sequence,
+      context,
     );
+    if (definition === null) return (await this.repository.loadRequired(workflowInstanceId)).view;
+    const decision = decideSignal(definition, loaded.view, {
+      signal,
+      occurredAt: context.occurredAt,
+      causationId: context.commandId,
+      consent: item?.autoApprovalGranted ?? false,
+    });
     if (decision.kind === 'append')
       await this.repository.append(workflowInstanceId, loaded.sequence, decision.events);
     return (await this.repository.loadRequired(workflowInstanceId)).view;

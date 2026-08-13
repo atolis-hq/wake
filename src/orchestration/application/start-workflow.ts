@@ -1,19 +1,17 @@
 import { createEventDraft, EventSourceKind, type CommandContext } from '../../kernel/index.js';
 import { WorkStatus, type WorkService } from '../../work/index.js';
 import type { StartWorkflowInstance } from '../contracts/commands.js';
-import type { WorkflowName } from '../contracts/identifiers.js';
-import { WorkflowInstanceKind, WorkflowStatus } from '../contracts/vocabulary.js';
 import { OrchestrationEventType } from '../contracts/events.js';
-import type { WorkflowInstanceView } from '../contracts/views.js';
+import type { WorkflowName } from '../contracts/identifiers.js';
 import { workflowInstanceStream } from '../contracts/streams.js';
+import type { WorkflowInstanceView } from '../contracts/views.js';
+import { WorkflowInstanceKind, WorkflowStatus } from '../contracts/vocabulary.js';
 import { validateChildProvenance } from '../domain/child-policy.js';
 import { startInstance } from '../domain/interpreter.js';
 import type { CoordinationClaims } from './coordination-claims.js';
 import type { OrchestrationRepository } from './orchestration-repository.js';
-import {
-  WorkflowDefinitionUnavailableError,
-} from './workflow-definition-registry.js';
 import type { WorkflowDefinitionRegistry } from './workflow-definition-registry.js';
+import { WorkflowDefinitionUnavailableError } from './workflow-definition-registry.js';
 
 export class StartWorkflow {
   constructor(

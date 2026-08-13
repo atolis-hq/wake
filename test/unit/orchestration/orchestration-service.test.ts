@@ -9,8 +9,17 @@ import {
   workflowInstanceId,
   workflowName,
 } from '../../../src/orchestration/contracts/identifiers.js';
-import { compileWorkflow, createOrchestrationService } from '../../../src/orchestration/index.js';
-import { InMemoryEventJournal } from '../../../src/persistence/index.js';
+import {
+  compileWorkflow,
+  createOrchestrationService,
+  workflowDefinitionsProjection,
+} from '../../../src/orchestration/index.js';
+import {
+  InMemoryCheckpointStore,
+  InMemoryEventJournal,
+  InMemoryProjectionStore,
+  ProjectionRunner,
+} from '../../../src/persistence/index.js';
 import { createWorkService } from '../../../src/work/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 import { workId } from '../../support/identities.js';
@@ -79,6 +88,29 @@ it('persists instances and accepts outcomes idempotently', async () => {
       (event) => event.eventType === 'orchestration.workflow-definition-registered',
     ),
   ).toHaveLength(1);
+  const projections = new InMemoryProjectionStore();
+  await new ProjectionRunner(journal, projections, new InMemoryCheckpointStore()).runOnce(
+    workflowDefinitionsProjection,
+  );
+  const changedDefinition = compileWorkflow(
+    'default',
+    {
+      entry: 'first',
+      stages: {
+        first: { activity: 'implement', on: { done: { then: 'second' } } },
+        second: { activity: 'implement', on: { done: { then: 'done' } } },
+      },
+    },
+    registry,
+  );
+  const restarted = createOrchestrationService(
+    journal,
+    createWorkService(journal),
+    {
+      default: changedDefinition,
+    },
+    projections,
+  );
   await createWorkService(journal).create(
     { workItemId: workId('2'), objective: 'ship again' },
     { ...context, commandId: 'create-work-2' },
@@ -111,7 +143,9 @@ it('persists instances and accepts outcomes idempotently', async () => {
       { ...context, commandId: 'invalid-waiting' },
     ),
   ).rejects.toThrow(/invalid signal name.*needs_input/i);
-  await service.acceptOutcome(
+  // The fingerprinted instance retains definition A after a restart that
+  // compiles definition B, so A's terminal route still completes it.
+  await restarted.acceptOutcome(
     {
       workflowInstanceId: instance.workflowInstanceId,
       activationId: instance.pendingActivation!.activationId,
@@ -119,7 +153,7 @@ it('persists instances and accepts outcomes idempotently', async () => {
     },
     { ...context, commandId: 'run-1' },
   );
-  await service.acceptOutcome(
+  await restarted.acceptOutcome(
     {
       workflowInstanceId: instance.workflowInstanceId,
       activationId: instance.pendingActivation!.activationId,
@@ -127,7 +161,7 @@ it('persists instances and accepts outcomes idempotently', async () => {
     },
     { ...context, commandId: 'run-1' },
   );
-  expect((await service.get(instance.workflowInstanceId))?.status).toBe('completed');
+  expect((await restarted.get(instance.workflowInstanceId))?.status).toBe('completed');
 
   const withoutHistoricalDefinition = createOrchestrationService(
     journal,
