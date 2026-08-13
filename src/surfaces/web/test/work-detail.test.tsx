@@ -1,9 +1,13 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router';
+import { MemoryRouter, Route, Routes } from 'react-router';
 import { afterEach, describe, expect, it } from 'vitest';
 import { WakeApiClient } from '../src/api/client.js';
+import { ApiClientContext } from '../src/api/context.js';
+import { queryKeys } from '../src/api/query-keys.js';
 import { App } from '../src/app/app.js';
+import { WorkDetail } from '../src/features/work/work.js';
 
 const asOf = '2026-07-31T10:00:00.000Z';
 
@@ -189,8 +193,8 @@ describe('work detail', () => {
       </MemoryRouter>,
     );
     const title = await screen.findByRole('heading', { name: 'Alpha' });
-    expect(title.nextElementSibling?.tagName).toBe('NAV');
-    expect(screen.getByRole('navigation', { name: 'Work detail sections' }).textContent).toContain(
+    expect(title.nextElementSibling?.getAttribute('role')).toBe('tablist');
+    expect(screen.getByRole('tablist', { name: 'Work detail sections' }).textContent).toContain(
       'Overview',
     );
 
@@ -199,6 +203,27 @@ describe('work detail', () => {
 
     const resources = screen.getByRole('list', { name: 'Resources' });
     expect(resources.textContent).not.toContain('rev-9');
+  });
+
+  it('uses accessible tab and tabpanel semantics for detail sections', async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={['/work/wk_a']}>
+        <App client={detailClient()} />
+      </MemoryRouter>,
+    );
+    const tablist = await screen.findByRole('tablist', { name: 'Work detail sections' });
+    const overview = screen.getByRole('tab', { name: 'Overview' });
+    expect(overview.getAttribute('aria-selected')).toBe('true');
+    expect(overview.getAttribute('aria-controls')).toBe('work-detail-overview-panel');
+    expect(screen.getByRole('tabpanel', { name: 'Overview' }).id).toBe(
+      'work-detail-overview-panel',
+    );
+    expect(tablist.contains(overview)).toBe(true);
+
+    await user.click(screen.getByRole('tab', { name: 'Events' }));
+    expect(screen.getByRole('tab', { name: 'Events' }).getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByRole('tabpanel', { name: 'Events' }).id).toBe('work-detail-events-panel');
   });
 
   it('places work actions below the detail panel in the overview sidebar', async () => {
@@ -382,7 +407,7 @@ describe('work detail', () => {
       </MemoryRouter>,
     );
     await screen.findByRole('heading', { name: 'Alpha' });
-    await user.click(screen.getByRole('button', { name: 'Events' }));
+    await user.click(screen.getByRole('tab', { name: 'Events' }));
     expect(await screen.findByText('work.created')).toBeTruthy();
     await user.click(screen.getByRole('button', { name: /work.created/ }));
     expect(screen.getByText(/workItemId/)).toBeTruthy();
@@ -431,7 +456,7 @@ describe('work detail', () => {
         />
       </MemoryRouter>,
     );
-    await user.click(await screen.findByRole('button', { name: 'Transcripts' }));
+    await user.click(await screen.findByRole('tab', { name: 'Transcripts' }));
 
     const groups = await screen.findByRole('list', { name: 'Transcript groups' });
     expect(groups.textContent).toMatch(/session--opaque-identity.*codex.*run-1.*run-2/);
@@ -476,7 +501,7 @@ describe('work detail', () => {
         />
       </MemoryRouter>,
     );
-    await user.click(await screen.findByRole('button', { name: 'Transcripts' }));
+    await user.click(await screen.findByRole('tab', { name: 'Transcripts' }));
     expect(await screen.findByText('Transcript unavailable')).toBeTruthy();
   });
 
@@ -488,7 +513,7 @@ describe('work detail', () => {
         <App client={detailClient(null, undefined, requests)} />
       </MemoryRouter>,
     );
-    await user.click(await screen.findByRole('button', { name: 'Transcripts' }));
+    await user.click(await screen.findByRole('tab', { name: 'Transcripts' }));
     expect(await screen.findByText('No transcript conversations')).toBeTruthy();
     expect(requests.some(({ url }) => url.includes('/transcripts/'))).toBe(false);
   });
@@ -505,7 +530,7 @@ describe('work detail', () => {
         />
       </MemoryRouter>,
     );
-    await user.click(await screen.findByRole('button', { name: 'Transcripts' }));
+    await user.click(await screen.findByRole('tab', { name: 'Transcripts' }));
     expect(await screen.findByText('No transcript messages')).toBeTruthy();
   });
 
@@ -538,7 +563,7 @@ describe('work detail', () => {
         />
       </MemoryRouter>,
     );
-    await user.click(await screen.findByRole('button', { name: 'Transcripts' }));
+    await user.click(await screen.findByRole('tab', { name: 'Transcripts' }));
     await user.click(await screen.findByRole('button', { name: /session--second/ }));
     expect(await screen.findByText('Second conversation')).toBeTruthy();
     expect(requests.some(({ url }) => url.endsWith('/transcripts/session--second'))).toBe(true);
@@ -563,7 +588,7 @@ describe('work detail', () => {
         />
       </MemoryRouter>,
     );
-    await user.click(await screen.findByRole('button', { name: 'Transcripts' }));
+    await user.click(await screen.findByRole('tab', { name: 'Transcripts' }));
     expect(await screen.findByText(/Loading transcript/)).toBeTruthy();
     release?.();
     expect(await screen.findByText('No transcript messages')).toBeTruthy();
@@ -576,7 +601,7 @@ describe('work detail', () => {
         />
       </MemoryRouter>,
     );
-    await user.click(await screen.findByRole('button', { name: 'Transcripts' }));
+    await user.click(await screen.findByRole('tab', { name: 'Transcripts' }));
     expect((await screen.findByRole('alert')).textContent).toContain('Transcript read failed');
     await user.click(screen.getByRole('button', { name: 'Retry' }));
     await waitFor(() =>
@@ -584,6 +609,75 @@ describe('work detail', () => {
         3,
       ),
     );
+  });
+
+  it('validates the selected run when a refreshed group index removes the selected group', async () => {
+    const user = userEvent.setup();
+    const groups: Record<string, unknown>[] = [
+      { groupId: 'session--first', kind: 'session', latestAt: asOf, runIds: ['run-1', 'run-3'] },
+      { groupId: 'session--second', kind: 'session', latestAt: asOf, runIds: ['run-2'] },
+    ];
+    const client = detailClient(null, undefined, [], {
+      groups,
+      entries: [],
+      byGroup: {
+        'session--first': {
+          entries: [
+            {
+              occurredAt: asOf,
+              channel: 'agent',
+              text: 'First run',
+              runId: 'run-1',
+              groupId: 'session--first',
+            },
+            {
+              occurredAt: '2026-07-31T10:01:00.000Z',
+              channel: 'agent',
+              text: 'Newest run',
+              runId: 'run-3',
+              groupId: 'session--first',
+            },
+          ],
+        },
+        'session--second': {
+          entries: [
+            {
+              occurredAt: asOf,
+              channel: 'agent',
+              text: 'Second run',
+              runId: 'run-2',
+              groupId: 'session--second',
+            },
+          ],
+        },
+      },
+    });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <MemoryRouter initialEntries={['/work/wk_a']}>
+        <QueryClientProvider client={queryClient}>
+          <ApiClientContext.Provider value={client}>
+            <Routes>
+              <Route path="/work/:workItemKey" element={<WorkDetail />} />
+            </Routes>
+          </ApiClientContext.Provider>
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+    await user.click(await screen.findByRole('tab', { name: 'Transcripts' }));
+    await user.click(await screen.findByRole('button', { name: /session--second/ }));
+    expect(await screen.findByText('Second run')).toBeTruthy();
+
+    groups.splice(1, 1);
+    await act(() =>
+      queryClient.refetchQueries({ queryKey: queryKeys.work.detail('wk_a'), type: 'active' }),
+    );
+    expect(
+      ((await screen.findByRole('combobox', { name: 'Run' })) as HTMLSelectElement).value,
+    ).toBe('run-3');
+    await user.click(screen.getByRole('checkbox', { name: 'This run only' }));
+    expect(await screen.findByText('Newest run')).toBeTruthy();
+    expect(screen.queryByText('First run')).toBeNull();
   });
 
   it('links each run row to its own route', async () => {

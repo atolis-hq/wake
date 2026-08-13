@@ -129,7 +129,10 @@ export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
     refetchInterval: refreshPolicy.historicalRuns,
     enabled: tab === 'transcripts' && workItemKey !== '' && selectedGroup !== undefined,
   });
-  const selectedRun = selectedRunId ?? selectedGroup?.runIds.at(-1);
+  const selectedRun =
+    selectedRunId !== undefined && selectedGroup?.runIds.includes(selectedRunId)
+      ? selectedRunId
+      : selectedGroup?.runIds.at(-1);
   const transcriptEntries = [...(transcriptQuery.data?.data.entries ?? [])]
     .sort((left, right) => left.occurredAt.localeCompare(right.occurredAt))
     .filter((entry) => !thisRunOnly || entry.runId === selectedRun);
@@ -148,27 +151,44 @@ export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
       ) : query.data ? (
         <>
           <h2>{query.data.data.work.objective}</h2>
-          <nav className={styles.tabs} aria-label="Work detail sections">
+          <div className={styles.tabs} role="tablist" aria-label="Work detail sections">
             <button
               type="button"
+              role="tab"
+              id="work-detail-overview-tab"
+              aria-controls="work-detail-overview-panel"
               aria-selected={tab === 'overview'}
               onClick={() => setTab('overview')}
             >
               Overview
             </button>
-            <button type="button" aria-selected={tab === 'events'} onClick={() => setTab('events')}>
+            <button
+              type="button"
+              role="tab"
+              id="work-detail-events-tab"
+              aria-controls="work-detail-events-panel"
+              aria-selected={tab === 'events'}
+              onClick={() => setTab('events')}
+            >
               Events
             </button>
             <button
               type="button"
+              role="tab"
+              id="work-detail-transcripts-tab"
+              aria-controls="work-detail-transcripts-panel"
               aria-selected={tab === 'transcripts'}
               onClick={() => setTab('transcripts')}
             >
               Transcripts
             </button>
-          </nav>
+          </div>
           {tab === 'transcripts' ? (
-            <section aria-labelledby="work-transcripts">
+            <section
+              id="work-detail-transcripts-panel"
+              role="tabpanel"
+              aria-labelledby="work-detail-transcripts-tab"
+            >
               <h2 id="work-transcripts">Transcript conversations</h2>
               {transcriptGroups.length === 0 ? (
                 <EmptyState>No transcript conversations</EmptyState>
@@ -274,7 +294,11 @@ export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
               )}
             </section>
           ) : tab === 'events' ? (
-            <section aria-labelledby="work-events">
+            <section
+              id="work-detail-events-panel"
+              role="tabpanel"
+              aria-labelledby="work-detail-events-tab"
+            >
               <h2 id="work-events">Events</h2>
               {eventsQuery.isPending ? (
                 <LoadingState label="Loading events" />
@@ -293,7 +317,12 @@ export function WorkDetail({ modal = false }: { readonly modal?: boolean }) {
               )}
             </section>
           ) : (
-            <div className={styles.overviewLayout}>
+            <div
+              id="work-detail-overview-panel"
+              className={styles.overviewLayout}
+              role="tabpanel"
+              aria-labelledby="work-detail-overview-tab"
+            >
               <aside className={styles.overviewSidebar}>
                 <Panel>
                   <dl className={styles.summary}>
