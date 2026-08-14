@@ -256,9 +256,8 @@ it('blocks multiple instances with unresolvable definitions in one watch batch w
   // every matched parent.
   const withoutDefinitions = createOrchestrationService(journal, work, {});
   const sharedContext = { ...context, commandId: 'watch-1' };
-  await expect(withoutDefinitions.listWatchMatches('some.event', sharedContext)).resolves.toEqual(
-    [],
-  );
+  const watchEvent = eventEnvelope('some.event', {}, resourceStream(resId('watch-1')));
+  await expect(withoutDefinitions.listWatchMatches(watchEvent, sharedContext)).resolves.toEqual([]);
   expect((await withoutDefinitions.get(first.workflowInstanceId))?.blockReason).toBe(
     'workflow-definition-unavailable',
   );

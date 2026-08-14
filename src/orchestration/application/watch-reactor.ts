@@ -27,10 +27,7 @@ interface WatchMatch {
 }
 
 interface WatchOrchestrationPort {
-  listWatchMatches(
-    event: PersistedEvent,
-    context?: CommandContext,
-  ): Promise<readonly WatchMatch[]>;
+  listWatchMatches(event: PersistedEvent, context?: CommandContext): Promise<readonly WatchMatch[]>;
   requestChild(
     request: ChildWorkflowRequest & { readonly maxPerGroup: number },
     context: CommandContext,
