@@ -22,6 +22,7 @@ const samples = [
     },
   ],
   [ResourceEventType.ResourceRevisionObserved, { revision: 'def' }],
+  [ResourceEventType.IssueCompletionObservationConsumed, { intentEventId: 'complete-intent' }],
   [
     ResourceEventType.WorkCorrelationEstablished,
     { workItemId: workId('one'), role: 'primary', provenance: 'provider-observed' },

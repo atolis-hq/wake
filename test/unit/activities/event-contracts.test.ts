@@ -74,6 +74,16 @@ const approveDenial = createEventDraft({
 });
 
 const samples = [
+  eventEnvelope(
+    ActivityEventType.IssueCompleteRequested,
+    {
+      idempotencyKey: 'complete-intent',
+      activationId: activation,
+      workflowInstanceId: 'workflow-1',
+      resourceId: resId('1'),
+    },
+    resource,
+  ),
   eventEnvelope(ActivityEventType.PrDiscovered, context, resource),
   eventEnvelope(
     ActivityEventType.PrRevisionChanged,

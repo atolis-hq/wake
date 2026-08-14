@@ -261,6 +261,7 @@ export function decodeActivityEventDraft(draft: EventDraft): ActivityEventDraft 
 function ownsActivityEventType(eventType: string): boolean {
   return (
     eventType.startsWith('activities.') ||
+    eventType.startsWith('issue.') ||
     eventType.startsWith('pr.') ||
     eventType.startsWith('review.')
   );
