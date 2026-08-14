@@ -90,18 +90,7 @@ async function attemptExecution(
     stage: activation.stage,
     ...(context.sessionPolicy === undefined ? {} : { policy: context.sessionPolicy }),
   };
-  const resumedRun =
-    runner.supportsSessionResume === true
-      ? resumeRunFor(resumeCandidates, runner.cli, runner.name, resumeScope)
-      : undefined;
-  const resumeSessionId = resumedRun?.agent?.metadata.sessionId as string | undefined;
-  const usageBaseline = usageBaselineFor(
-    resumeCandidates,
-    runner.cli,
-    resumeSessionId,
-    resumeScope,
-    runner.name,
-  );
+  const resume = resumeContextFor(resumeCandidates, runner, resumeScope);
   const existing = existingRun(prior, runtime.dependencies.clock, owner);
   if (existing !== undefined) return existing;
   const currentRunId = runId(runtime.dependencies.ids.next(ExecutionStreamKind.Run));
@@ -153,9 +142,9 @@ async function attemptExecution(
     context,
     startedAt,
     runner,
-    resumeSessionId,
-    resumedRun?.startedAt,
-    usageBaseline,
+    resume.sessionId,
+    resume.startedAt,
+    resume.usageBaseline,
     lease,
     reportRunnerStarted,
   );
@@ -347,7 +336,27 @@ export function resumeSessionIdFor(
   },
   runnerName?: string,
 ) {
-  return resumeRunFor(prior, cli, runnerName, scope)?.agent?.metadata.sessionId as string | undefined;
+  return resumeRunFor(prior, cli, runnerName, scope)?.agent?.metadata.sessionId as
+    string | undefined;
+}
+
+function resumeContextFor(
+  candidates: readonly RunView[],
+  runner: ReturnType<typeof resolveRunner>,
+  scope: Parameters<typeof resumeRunFor>[3],
+) {
+  if (runner.supportsSessionResume !== true) return {};
+  const resumedRun = resumeRunFor(candidates, runner.cli, runner.name, scope);
+  const sessionId = resumedRun?.agent?.metadata.sessionId as string | undefined;
+  return {
+    ...(sessionId === undefined ? {} : { sessionId }),
+    ...(resumedRun?.startedAt === undefined ? {} : { startedAt: resumedRun.startedAt }),
+    ...(sessionId === undefined
+      ? {}
+      : {
+          usageBaseline: usageBaselineFor(candidates, runner.cli, sessionId, scope, runner.name),
+        }),
+  };
 }
 
 function resumeRunFor(

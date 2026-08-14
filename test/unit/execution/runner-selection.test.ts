@@ -14,8 +14,8 @@ import {
   RunnerRegistry,
   RunStatus,
   runStream,
-  type Runner,
   type ExecutionConfig,
+  type Runner,
   type RunView,
 } from '../../../src/execution/index.js';
 import { createEventDraft, EventActorKind, EventSourceKind } from '../../../src/kernel/index.js';
@@ -156,13 +156,21 @@ describe('Execution runner selection', () => {
   it('starts fresh when a different configured runner is selected', async () => {
     const replacement = capturingRunner('replacement');
     const journal = new InMemoryEventJournal(new FakeClock());
-    await seedPriorRun(journal, activation(), 'paused-runner', 'fake', 'session-1', undefined, 'paused');
+    await seedPriorRun(journal, activation(), 'paused-runner', 'fake', 'session-1', {
+      runnerName: 'paused',
+    });
     const service = fixtureWithJournal(
       journal,
       new RunnerRegistry({ standard: ['replacement'] }, { replacement }),
       {
         paused: { kind: 'fake', model: 'test-model', effort: 'high', timeoutMs: 1_000, args: [] },
-        replacement: { kind: 'fake', model: 'test-model', effort: 'high', timeoutMs: 1_000, args: [] },
+        replacement: {
+          kind: 'fake',
+          model: 'test-model',
+          effort: 'high',
+          timeoutMs: 1_000,
+          args: [],
+        },
       },
     );
 
@@ -537,7 +545,13 @@ function fixtureWithJournal(
 }
 
 const standardAgentRunners = {
-  standard: { kind: 'fake' as const, model: 'test-model', effort: 'high', timeoutMs: 1_000, args: [] },
+  standard: {
+    kind: 'fake' as const,
+    model: 'test-model',
+    effort: 'high',
+    timeoutMs: 1_000,
+    args: [],
+  },
 } satisfies NonNullable<ExecutionConfig['agentRunners']>;
 
 function capturingRunner(
@@ -569,13 +583,13 @@ async function seedPriorRun(
   usage?:
     | (Readonly<Record<string, string | number | boolean | null>> & {
         readonly testStatus?: 'started' | 'ambiguous';
+        readonly runnerName?: string;
       })
     | undefined,
-  runnerName = 'standard',
 ) {
   const clock = new FakeClock();
   const stream = runStream(runId(id));
-  const { testStatus: status = 'failed', ...metadata } = usage ?? {};
+  const { testStatus: status = 'failed', runnerName = 'standard', ...metadata } = usage ?? {};
   await journal.append(stream, 0, [
     createEventDraft({
       eventId: `${id}:started`,
