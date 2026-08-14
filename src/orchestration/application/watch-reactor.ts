@@ -7,7 +7,7 @@ import {
   type EventJournal,
 } from '../../kernel/index.js';
 import { selectOrchestrationEvent } from '../contracts/event-decoder.js';
-import { type ChildWorkflowRequest, type OrchestrationEvent } from '../contracts/events.js';
+import { type ChildWorkflowRequest, type OrchestrationEvent, OrchestrationEventType } from '../contracts/events.js';
 import {
   workflowInstanceId,
   workflowName,
@@ -117,20 +117,27 @@ function commandContext(event: PersistedEvent): CommandContext {
 /**
  * A run-lifecycle event (e.g. `execution.run-succeeded`) fires for every run
  * in the system, including a watch's own spawned child re-running its own
- * activity on retry. An orchestration event, by contrast, is already scoped
- * to its owning WorkflowInstance via its own stream, so it needs no lookup —
- * only run-lifecycle events fall through to the async resolver below.
- * Without either scoping, `listWatchMatches` would treat any currently-
- * eligible parent's declared event type as a match regardless of which
- * instance actually produced the triggering event, causing an unrelated
- * WorkflowInstance's own retry or state transition to spuriously re-trigger
- * a different instance's Watch.
+ * activity on retry. Without scoping, `listWatchMatches` would treat any
+ * currently-eligible parent's declared event type as a match regardless of
+ * which run actually produced it, causing a child's own retry (or an
+ * unrelated workflow's run) to spuriously re-trigger the same watch.
+ *
+ * For orchestration events, only `SignalWaitStarted` is scoped to its
+ * stream's instance; this is currently the only orchestration event type
+ * known to benefit from stream-based filtering. Other orchestration events
+ * like `ChildCompleted` are cross-instance coordination facts by design and
+ * must fall through unchanged to the async resolver to preserve their
+ * existing multi-instance coordination paths.
  */
 async function resolveTriggerWorkflowInstanceId(
   event: PersistedEvent,
   runs: Pick<RunRepository, 'load'> | undefined,
 ): Promise<string | undefined> {
-  if (isWorkflowInstanceStream(event.stream)) return event.stream.id;
+  if (
+    event.eventType === OrchestrationEventType.SignalWaitStarted &&
+    isWorkflowInstanceStream(event.stream)
+  )
+    return event.stream.id;
   return resolveRunWorkflowInstanceId(event, runs);
 }
 

@@ -153,7 +153,7 @@ it('rejects a causal event instead of dispatching another child', async () => {
         requestId: 'request-1',
         childWorkflowInstanceId: workflowInstanceId('workflow-child'),
       },
-      workflowInstanceStream(workflowInstanceId('parent-1')),
+      workflowInstanceStream(workflowInstanceId('workflow-child')),
     ),
     {
       commandId: 'react-1',
