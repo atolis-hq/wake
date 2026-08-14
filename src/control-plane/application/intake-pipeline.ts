@@ -35,7 +35,7 @@ export function createIntakePipeline(stages: IntakePipelineStages): IntakePipeli
         const translated = await stages.translateInbound();
         return { processed: polled > 0 || translated > 0 };
       } finally {
-        if (!(await isPaused())) await stages.catchUpProjections();
+        await stages.catchUpProjections();
       }
     },
   };

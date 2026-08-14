@@ -48,7 +48,7 @@ export function createRunnerPipeline(stages: RunnerPipelineStages): RunnerPipeli
       await stages.react();
       return result;
     } finally {
-      if (!(await isPaused())) await stages.catchUpProjections();
+      await stages.catchUpProjections();
     }
   };
   // The API's manual Tick Now endpoint and the resident tick host share this

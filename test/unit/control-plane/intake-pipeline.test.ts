@@ -25,7 +25,7 @@ describe('IntakePipeline', () => {
 
     await expect(pipeline.run(new AbortController().signal)).resolves.toEqual({ processed: false });
     expect({ projectionCatchUps, polls, translations }).toEqual({
-      projectionCatchUps: 1,
+      projectionCatchUps: 2,
       polls: 0,
       translations: 0,
     });
@@ -33,10 +33,13 @@ describe('IntakePipeline', () => {
 
   it('does not translate inbound work after maintenance acquires during a poll', async () => {
     let paused = false;
+    let projectionCatchUps = 0;
     let translations = 0;
     const pipeline = createIntakePipeline({
       isPaused: async () => paused,
-      catchUpProjections: async () => undefined,
+      catchUpProjections: async () => {
+        projectionCatchUps += 1;
+      },
       poll: async () => {
         paused = true;
         return 1;
@@ -48,6 +51,7 @@ describe('IntakePipeline', () => {
     });
 
     await expect(pipeline.run(new AbortController().signal)).resolves.toEqual({ processed: false });
+    expect(projectionCatchUps).toBe(2);
     expect(translations).toBe(0);
   });
 

@@ -90,7 +90,7 @@ describe('RunnerPipeline', () => {
 
     await expect(pipeline.run({ maxProgress: 1 })).resolves.toEqual({ kind: 'paused' });
     expect({ projections, reactions, advances, deliveries }).toEqual({
-      projections: 1,
+      projections: 2,
       reactions: 0,
       advances: 0,
       deliveries: 0,
