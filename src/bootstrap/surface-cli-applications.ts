@@ -173,13 +173,13 @@ export function createSurfaceCliApplications(
 }
 
 export async function runProjectionPump(
-  root: Pick<CompositionRoot, 'isPaused' | 'projectionRunner'>,
+  root: Pick<CompositionRoot, 'projectionRunner'>,
   signal: AbortSignal,
 ): Promise<void> {
   const intervalMs = 1000;
   while (!signal.aborted) {
     try {
-      if (!(await root.isPaused())) await root.projectionRunner.runRegisteredOnce();
+      await root.projectionRunner.runRegisteredOnce();
     } catch (error) {
       process.stderr.write(
         `Wake projection pump failed: ${error instanceof Error ? error.message : String(error)}\n`,

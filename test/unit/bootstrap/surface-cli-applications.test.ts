@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 import { runProjectionPump } from '../../../src/bootstrap/surface-cli-applications.js';
 
-it('does not advance the resident projection pump while the shared maintenance pause is active', async () => {
+it('advances the resident projection pump while the shared maintenance pause is active', async () => {
   const controller = new AbortController();
   let projectionRuns = 0;
 
@@ -21,5 +21,5 @@ it('does not advance the resident projection pump while the shared maintenance p
     controller.signal,
   );
 
-  expect(projectionRuns).toBe(0);
+  expect(projectionRuns).toBe(1);
 });
