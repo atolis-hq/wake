@@ -89,7 +89,7 @@ describe('RunnerPipeline', () => {
     expect(projectionCatchUps).toBe(2);
   });
 
-  it('reacts again after a progressed dispatch', async () => {
+  it('reacts after a progressed dispatch so watches see the resulting wait state', async () => {
     const stages: string[] = [];
     const pipeline = createRunnerPipeline({
       catchUpProjections: async () => {
@@ -111,6 +111,7 @@ describe('RunnerPipeline', () => {
     });
 
     await expect(pipeline.run({ maxProgress: 1 })).resolves.toMatchObject({ kind: 'progressed' });
+    expect(stages.indexOf('react')).toBeGreaterThan(stages.indexOf('advance'));
     expect(stages.lastIndexOf('react')).toBeGreaterThan(stages.indexOf('advance'));
   });
 

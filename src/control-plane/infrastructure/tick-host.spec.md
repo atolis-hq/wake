@@ -27,7 +27,7 @@ call, counting advances/runs, enforcing the budget's wall-clock and count
 caps, and mapping each stopping condition to a `HostStopReason`. It does not
 decide what one `advance` call does — in production composition it is given
 `RunnerPipeline.run`, so each loop iteration performs the internal half of a
-tick (schedules, react, Advancement, deliver, react — no external poll).
+tick (schedules, Advancement, react, deliver, react — no external poll).
 `IntakeHost` owns running its cycle callback once per call and mapping
 `processed`/not to `advances`/`stoppedBecause`; it does not loop within a
 budget the way `TickHost` does, since one poll-and-translate pass is already

@@ -24,7 +24,7 @@ separate `IntakePipeline`, not owned by this component.
 - **Selection** — choosing which pending activation to dispatch next when no
   reconciliation candidate exists.
 - **Runner pipeline** — the fixed ordered stage sequence
-  (`catchUpProjections` → `runSchedules` → `react` → Advancement →
+  (`catchUpProjections` → `runSchedules` → Advancement → `react` →
   `catchUpProjections` → `deliver` → `catchUpProjections` → `react`) that
   one call to `RunnerPipeline.run` performs, wrapping exactly one
   Advancement call. `poll` and `translateInbound` — the externally
@@ -112,8 +112,9 @@ own aggregate remains the source of that state.
   Advancement call. `catchUpProjections` runs three times (before
   `runSchedules`, after Advancement, after `deliver`) so each stage
   observes projections caught up to the facts the prior stage produced.
-  `react` runs twice: once before Advancement, once for delivery outcomes
-  after `deliver`. A `finally` block runs `catchUpProjections` a fourth
+  `react` runs twice: once after Advancement so watch reactors observe state
+  transitions from accepted outcomes, and once for delivery outcomes after
+  `deliver`. A `finally` block runs `catchUpProjections` a fourth
   time regardless of outcome, including when an earlier stage throws.
 - `RunnerPipeline.run`'s `signal` parameter defaults to a fresh,
   never-aborted `AbortController`'s signal when the caller omits one.

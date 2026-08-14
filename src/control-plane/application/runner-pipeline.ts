@@ -30,9 +30,9 @@ export function createRunnerPipeline(stages: RunnerPipelineStages): RunnerPipeli
       if (await isPaused()) return { kind: 'paused' };
       await stages.runSchedules();
       if (await isPaused()) return { kind: 'paused' };
-      await stages.react();
-      if (await isPaused()) return { kind: 'paused' };
       const result = await stages.advance(options);
+      if (await isPaused()) return { kind: 'paused' };
+      await stages.react();
       if (await isPaused()) return { kind: 'paused' };
       await stages.publishAgentRuns?.();
       if (await isPaused()) return { kind: 'paused' };
