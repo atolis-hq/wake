@@ -160,6 +160,7 @@ async function applyIssueApprovalSignal(input: {
     orchestration,
     resourceId: resourceIdValue,
     outcome: command === '/approved' ? ActivityOutcomeKind.Done : ActivityOutcomeKind.Rejected,
+    resumeBlockedOnChanges: command === '/changes',
   });
 }
 
@@ -199,28 +200,42 @@ async function applyWorkflowSignal(input: {
   readonly orchestration: OrchestrationService;
   readonly resourceId: ReturnType<typeof resourceId>;
   readonly outcome: typeof ActivityOutcomeKind.Done | typeof ActivityOutcomeKind.Rejected;
+  readonly resumeBlockedOnChanges?: boolean;
 }): Promise<void> {
-  const { event, resources, orchestration, resourceId: resourceIdValue, outcome } = input;
+  const {
+    event,
+    resources,
+    orchestration,
+    resourceId: resourceIdValue,
+    outcome,
+    resumeBlockedOnChanges = false,
+  } = input;
   const workItemIds = (await resources.correlations(resourceIdValue))
     .filter((correlation) => correlation.role === ResourceCorrelationRole.Primary)
     .map((correlation) => correlation.workItemId);
   for (const workflow of await orchestration.listAll()) {
     if (!workItemIds.includes(workflow.workItemId)) continue;
-    if (workflow.waitingFor === undefined) continue;
-    await orchestration.acceptSignal(
-      workflow.workflowInstanceId,
-      {
-        kind: workflow.waitingFor.signalKind,
-        outcome,
-        actorId: event.payload.actor.id,
-        actorDecision: {
-          authorized: event.payload.actor.kind === ReviewActorKind.Human,
-          evidenceId: event.eventId,
+    if (workflow.waitingFor !== undefined) {
+      await orchestration.acceptSignal(
+        workflow.workflowInstanceId,
+        {
+          kind: workflow.waitingFor.signalKind,
+          outcome,
+          actorId: event.payload.actor.id,
+          actorDecision: {
+            authorized: event.payload.actor.kind === ReviewActorKind.Human,
+            evidenceId: event.eventId,
+          },
+          providerEventId: event.eventId,
         },
-        providerEventId: event.eventId,
-      },
-      commandContext(event),
-    );
+        commandContext(event),
+      );
+    } else if (resumeBlockedOnChanges) {
+      await orchestration.resumeBlockedStageForChanges(
+        workflow.workflowInstanceId,
+        commandContext(event),
+      );
+    }
   }
 }
 

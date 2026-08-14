@@ -31,6 +31,46 @@ it('recognizes /changes with feedback as an issue command', async () => {
   expect(await issueCommentSignals('/changes please retry the error handling')).toHaveLength(1);
 });
 
+it('resumes an eligible blocked issue workflow on /changes', async () => {
+  const resumes: unknown[] = [];
+
+  await applyReviewSignal({
+    event: issueCommentEvent('/changes clarify the closure provenance'),
+    journal: {} as never,
+    resources: {
+      async correlations() {
+        return [{ role: 'primary', workItemId: 'work-7' }];
+      },
+      async get() {
+        return { kind: resourceKind('issue') };
+      },
+    } as never,
+    work: {} as never,
+    lookup: {
+      async resourceIdForExternalKey() {
+        return 'resource-7';
+      },
+    } as never,
+    pullRequests: undefined,
+    ids: {} as never,
+    adapter: GitHubAdapter,
+    orchestration: {
+      async listAll() {
+        return [{ workflowInstanceId: 'workflow-7', workItemId: 'work-7', status: 'blocked' }];
+      },
+      async resumeBlockedStageForChanges(...input: unknown[]) {
+        resumes.push(input);
+      },
+    } as never,
+  });
+
+  expect(resumes).toHaveLength(1);
+  expect(resumes[0]).toMatchObject([
+    'workflow-7',
+    { commandId: 'github:issue-comment:atolis-hq/wake-test#7:99:2026-08-08T00:00:00Z:inbound' },
+  ]);
+});
+
 it('satisfies a watchGate wait with /approved using its own signal kind', async () => {
   const fixture = await waitingIssueWorkflow(WatchGateVerdictSignal);
 
@@ -87,6 +127,20 @@ it('retries refinement on /changes and advances to implementation on /approved',
     currentStage: 'implement',
     pendingActivation: { activity: 'implement' },
   });
+});
+
+it('restarts a blocked agent refinement on /changes', async () => {
+  const fixture = await blockedIssueWorkflow();
+
+  await applyHumanIssueCommand(fixture, '/changes clarify the closure provenance');
+  await applyHumanIssueCommand(fixture, '/changes clarify the closure provenance');
+
+  expect(await fixture.world.viewWorkflow(fixture.workflowId)).toMatchObject({
+    status: 'active',
+    currentStage: 'refine',
+    pendingActivation: { activity: activityName('agent'), ordinal: 2 },
+  });
+  expect(await fixture.world.events('orchestration.operator-retry-requested')).toHaveLength(1);
 });
 
 it('still satisfies the plain approval workflow unchanged', async () => {
@@ -172,26 +226,7 @@ async function issueCommentSignals(body: string): Promise<unknown[]> {
   const acceptedSignals: unknown[] = [];
 
   await applyReviewSignal({
-    event: {
-      eventId: 'github:issue-comment:atolis-hq/wake-test#7:99:2026-08-08T00:00:00Z',
-      eventType: GitHubEventType.CommentObserved,
-      occurredAt: '2026-08-08T00:00:00Z',
-      correlationId: 'github:atolis-hq/wake-test#7',
-      causationId: 'github:issue-comment:99',
-      actor: { kind: 'integration', id: 'github' },
-      source: { kind: 'adapter', id: GitHubAdapter },
-      stream: { kind: 'integration', id: GitHubAdapter },
-      payload: {
-        reviewKind: 'issue',
-        externalKey: 'atolis-hq/wake-test#7',
-        body,
-        revision: '2026-08-08T00:00:00Z',
-        actor: { id: 'a-reviewer', kind: ReviewActorKind.Human },
-        raw: { id: 99 },
-      },
-      globalPosition: 0,
-      ingestedAt: '2026-08-08T00:00:00Z',
-    } as never,
+    event: issueCommentEvent(body),
     journal: {} as never,
     resources: {
       async correlations() {
@@ -227,6 +262,29 @@ async function issueCommentSignals(body: string): Promise<unknown[]> {
   });
 
   return acceptedSignals;
+}
+
+function issueCommentEvent(body: string) {
+  return {
+    eventId: 'github:issue-comment:atolis-hq/wake-test#7:99:2026-08-08T00:00:00Z',
+    eventType: GitHubEventType.CommentObserved,
+    occurredAt: '2026-08-08T00:00:00Z',
+    correlationId: 'github:atolis-hq/wake-test#7',
+    causationId: 'github:issue-comment:99',
+    actor: { kind: 'integration', id: 'github' },
+    source: { kind: 'adapter', id: GitHubAdapter },
+    stream: { kind: 'integration', id: GitHubAdapter },
+    payload: {
+      reviewKind: 'issue',
+      externalKey: 'atolis-hq/wake-test#7',
+      body,
+      revision: '2026-08-08T00:00:00Z',
+      actor: { id: 'a-reviewer', kind: ReviewActorKind.Human },
+      raw: { id: 99 },
+    },
+    globalPosition: 0,
+    ingestedAt: '2026-08-08T00:00:00Z',
+  } as never;
 }
 
 async function waitingIssueWorkflow(signalKind: ReturnType<typeof signalName>) {
@@ -342,8 +400,57 @@ async function twoStageIssueWorkflow() {
   };
 }
 
+async function blockedIssueWorkflow() {
+  const world = new TestWorld();
+  world.registerActivity({
+    name: activityName('agent'),
+    inputSchema: z.object({}).strict(),
+    outcomeSchema: z
+      .object({ kind: z.enum([ActivityOutcomeKind.Done, ActivityOutcomeKind.Blocked]) })
+      .strict(),
+    outcomeKinds: [ActivityOutcomeKind.Done, ActivityOutcomeKind.Blocked],
+    resources: [],
+    executionKind: 'deterministic',
+    handler: {
+      async execute() {
+        return { kind: ActivityOutcomeKind.Done } as const;
+      },
+    },
+  });
+  world.configureWorkflow('blocked-issue-command', {
+    stages: {
+      refine: { activity: 'agent', with: {}, on: { done: { then: 'done' } } },
+    },
+  });
+  const work = await world.createWork({ objective: 'blocked human command' });
+  const resource = await world.discoverResource({
+    resourceId: `resource-${'0'.repeat(25)}2` as never,
+    kind: resourceKind('issue'),
+    externalKey: { adapter: GitHubAdapter, key: 'atolis-hq/wake-test#7' },
+    capabilities: [resourceCapability('commentable')],
+  });
+  await world.resources.correlate(resource.resourceId, work.workItemId, 'primary', {
+    commandId: 'correlate-blocked-resource',
+    correlationId: correlationId('blocked-issue-command'),
+    occurredAt: world.clock.now().toISOString(),
+    actor: { kind: 'system', id: 'test' },
+  });
+  const started = await world.startWorkflow({
+    workItemId: work.workItemId,
+    workflowName: workflowName('blocked-issue-command'),
+  });
+  await world.acceptOutcome(started.workflowInstanceId, started.pendingActivation!.activationId, {
+    kind: ActivityOutcomeKind.Blocked,
+  });
+  return { world, workflowId: started.workflowInstanceId, workItemId: work.workItemId };
+}
+
 async function applyHumanIssueCommand(
-  fixture: Awaited<ReturnType<typeof waitingIssueWorkflow>>,
+  fixture: {
+    readonly world: TestWorld;
+    readonly workflowId: string;
+    readonly workItemId: string;
+  },
   body: string,
 ): Promise<void> {
   await applyReviewSignal({
