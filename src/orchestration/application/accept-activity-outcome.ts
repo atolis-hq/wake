@@ -21,18 +21,21 @@ export class AcceptActivityOutcome {
 
   async execute(command: AcceptActivityOutcomeCommand, context: CommandContext) {
     const loaded = await this.repository.loadRequired(command.workflowInstanceId);
-    const decision = decideActivityOutcome(
-      this.workflows.definition(loaded.view.workflowName),
+    const definition = await this.workflows.definitionForOperation(
       loaded.view,
-      {
+      loaded.sequence,
+      context,
+    );
+    if (definition !== null) {
+      const decision = decideActivityOutcome(definition, loaded.view, {
         ...command,
         outcome: orchestrationActivityOutcome(command.outcome),
         occurredAt: context.occurredAt,
         causationId: context.commandId,
-      },
-    );
-    if (decision.kind === 'append')
-      await this.repository.append(command.workflowInstanceId, loaded.sequence, decision.events);
+      });
+      if (decision.kind === 'append')
+        await this.repository.append(command.workflowInstanceId, loaded.sequence, decision.events);
+    }
     await this.reconcileChildCompletions(context);
     return (await this.repository.loadRequired(command.workflowInstanceId)).view;
   }

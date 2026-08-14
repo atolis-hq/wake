@@ -12,6 +12,7 @@ import {
   orchestrationActivityOutcome,
   type OrchestrationWaitingActivityOutcome,
 } from './activity-outcome.js';
+import type { CompiledWorkflow } from './config.js';
 import {
   OrchestrationEventType,
   type OrchestrationEvent,
@@ -55,6 +56,13 @@ export const childGroupStreamSchema = z
   .object({
     kind: z.literal(OrchestrationStreamKind.Group),
     id: childGroupIdSchema,
+  })
+  .strict();
+
+const workflowDefinitionsStreamSchema = z
+  .object({
+    kind: z.literal(OrchestrationStreamKind.WorkflowDefinitions),
+    id: z.literal('registry'),
   })
   .strict();
 
@@ -231,6 +239,7 @@ const eventSchema = z.discriminatedUnion('eventType', [
           workflowName: brandedStringSchema(workflowName),
           orchestrationGroupId: brandedStringSchema(orchestrationGroupId),
           entry: brandedStringSchema(stageName),
+          workflowDefinitionFingerprint: z.string().min(1).optional(),
         })
         .strict(),
       z
@@ -238,11 +247,23 @@ const eventSchema = z.discriminatedUnion('eventType', [
           workItemId: brandedStringSchema(workItemId),
           workflowName: brandedStringSchema(workflowName),
           entry: brandedStringSchema(stageName),
+          workflowDefinitionFingerprint: z.string().min(1).optional(),
           ...childMetadataShape,
         })
         .strict(),
     ]),
   ),
+  eventEnvelopeSchema.extend({
+    eventType: z.literal(OrchestrationEventType.WorkflowDefinitionRegistered),
+    stream: workflowDefinitionsStreamSchema,
+    payload: z
+      .object({
+        workflowName: brandedStringSchema(workflowName),
+        fingerprint: z.string().min(1),
+        compiledDefinition: z.custom<CompiledWorkflow>(),
+      })
+      .strict(),
+  }),
   workflowEnvelope(
     OrchestrationEventType.StageEntered,
     z.object({ stage: brandedStringSchema(stageName) }).strict(),
@@ -343,7 +364,9 @@ const eventSchema = z.discriminatedUnion('eventType', [
 export function decodeOrchestrationEvent(event: EventEnvelope): OrchestrationEvent {
   const result = eventSchema.safeParse(event);
   if (!result.success) throw invalidOrchestrationEvent(event, result.error);
-  return result.data;
+  // Zod represents optional object members as `T | undefined`; the durable
+  // contract uses exact optional members for compatibility with old events.
+  return result.data as OrchestrationEvent;
 }
 
 export function selectOrchestrationEvent(event: EventEnvelope): OrchestrationEvent | null {
@@ -358,6 +381,7 @@ export function selectWorkflowOrchestrationEvent(
   switch (owned.eventType) {
     case OrchestrationEventType.PrimaryClaimed:
     case OrchestrationEventType.GroupClaimed:
+    case OrchestrationEventType.WorkflowDefinitionRegistered:
       return null;
     default:
       return owned;

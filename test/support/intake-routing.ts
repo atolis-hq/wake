@@ -7,7 +7,7 @@ import {
   type ActivityDefinition,
 } from '../../src/activities/index.js';
 import type { WorkflowRouter } from '../../src/integrations/index.js';
-import type { EventJournal } from '../../src/kernel/index.js';
+import type { EventJournal, ProjectionStore } from '../../src/kernel/index.js';
 import {
   compileWorkflow,
   createOrchestrationService,
@@ -24,6 +24,7 @@ const INTAKE_WORKFLOW = 'default';
 export function createTestIntakeRouting(
   journal: EventJournal,
   work: WorkService,
+  projections?: ProjectionStore,
 ): { orchestration: ReturnType<typeof createOrchestrationService>; routing: WorkflowRouter } {
   const noop: ActivityDefinition = {
     name: activityName('intake.noop'),
@@ -44,7 +45,7 @@ export function createTestIntakeRouting(
     [INTAKE_WORKFLOW],
   );
   return {
-    orchestration: createOrchestrationService(journal, work, definitions),
+    orchestration: createOrchestrationService(journal, work, definitions, projections),
     routing: { select: () => workflowName(INTAKE_WORKFLOW) },
   };
 }

@@ -7,6 +7,6 @@
     "events": ["orchestration."],
     "config": ["orchestration"],
     "relations": ["workflow."],
-    "streams": ["workflow-instance", "orchestration-group"]
+    "streams": ["workflow-instance", "orchestration-group", "workflow-definitions"]
   }
 }

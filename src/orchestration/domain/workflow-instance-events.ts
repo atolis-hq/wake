@@ -40,6 +40,7 @@ export type MutableWorkflowInstance = {
   workflowInstanceId: WorkflowInstanceView['workflowInstanceId'];
   workItemId: WorkflowInstanceView['workItemId'];
   workflowName: WorkflowInstanceView['workflowName'];
+  workflowDefinitionFingerprint?: string;
   orchestrationGroupId: WorkflowInstanceView['orchestrationGroupId'];
   parentWorkflowInstanceId?: WorkflowInstanceView['parentWorkflowInstanceId'];
   watchId?: string;
@@ -303,6 +304,9 @@ export function immutableWorkflowInstanceView(
     workflowInstanceId: state.workflowInstanceId,
     workItemId: state.workItemId,
     workflowName: state.workflowName,
+    ...(state.workflowDefinitionFingerprint === undefined
+      ? {}
+      : { workflowDefinitionFingerprint: state.workflowDefinitionFingerprint }),
     orchestrationGroupId: state.orchestrationGroupId,
     ...(state.parentWorkflowInstanceId === undefined
       ? {}

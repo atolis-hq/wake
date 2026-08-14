@@ -27,7 +27,7 @@ interface WatchMatch {
 }
 
 interface WatchOrchestrationPort {
-  listWatchMatches(event: PersistedEvent): Promise<readonly WatchMatch[]>;
+  listWatchMatches(event: PersistedEvent, context?: CommandContext): Promise<readonly WatchMatch[]>;
   requestChild(
     request: ChildWorkflowRequest & { readonly maxPerGroup: number },
     context: CommandContext,
@@ -53,7 +53,7 @@ export function createWatchReactor(
     async react(event: PersistedEvent, context: CommandContext): Promise<void> {
       const causalCycle = orchestrationCausalCycleId(selectOrchestrationEvent(event));
       const sourceWorkflowInstanceId = await resolveRunWorkflowInstanceId(event, runs);
-      for (const match of await orchestration.listWatchMatches(event)) {
+      for (const match of await orchestration.listWatchMatches(event, context)) {
         if (
           sourceWorkflowInstanceId !== undefined &&
           match.parent.workflowInstanceId !== sourceWorkflowInstanceId

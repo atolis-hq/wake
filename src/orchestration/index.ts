@@ -10,6 +10,8 @@ export * from './application/signal-reactor.js';
 
 export * from './application/watch-reactor.js';
 
+export * from './application/workflow-definition-registry.js';
+
 export * from './contracts/activity-outcome.js';
 
 export * from './contracts/commands.js';

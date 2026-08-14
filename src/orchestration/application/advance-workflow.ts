@@ -44,9 +44,13 @@ export class AdvanceWorkflow {
     context: CommandContext,
   ) {
     const loaded = await this.repository.loadRequired(id);
-    const configured = this.workflows.definition(loaded.view.workflowName).commands[
-      commandName(request.command)
-    ];
+    const definition = await this.workflows.definitionForOperation(
+      loaded.view,
+      loaded.sequence,
+      context,
+    );
+    if (definition === null) return (await this.repository.loadRequired(id)).view;
+    const configured = definition.commands[commandName(request.command)];
     if (configured === undefined)
       throw new Error(`Unknown supplemental command: ${request.command}`);
     if (!isAuthorisedActor(configured.allowedActors, context.actor.kind))
@@ -151,15 +155,17 @@ export class AdvanceWorkflow {
     if (loaded.view === null)
       throw new OperatorRetryIneligibleError('WorkflowInstance does not exist');
     if (loaded.view.operatorRetryCommandIds.includes(context.commandId)) return loaded.view;
-    const decision = decideOperatorRetry(
-      this.workflows.definition(loaded.view.workflowName),
+    const definition = await this.workflows.definitionForOperation(
       loaded.view,
-      {
-        commandId: context.commandId,
-        occurredAt: context.occurredAt,
-        causationId: context.commandId,
-      },
+      loaded.sequence,
+      context,
     );
+    if (definition === null) return (await this.repository.loadRequired(id)).view;
+    const decision = decideOperatorRetry(definition, loaded.view, {
+      commandId: context.commandId,
+      occurredAt: context.occurredAt,
+      causationId: context.commandId,
+    });
     if (decision.kind === 'ignored') throw new OperatorRetryIneligibleError(decision.reason);
     try {
       await this.repository.append(id, loaded.sequence, decision.events);
@@ -176,42 +182,60 @@ export class AdvanceWorkflow {
   }
 
   async listPendingActivations(workItemId?: string) {
-    return (await this.repository.list())
+    return (await this.listAllLoaded())
       .filter(
-        (view) =>
-          view !== null &&
+        ({ view }) =>
           view.status === WorkflowStatus.Active &&
           view.pendingActivation !== undefined &&
           (workItemId === undefined || view.workItemId === workItemId),
       )
-      .map((view) => ({ workflow: view!, activation: view!.pendingActivation! }));
+      .map(({ view }) => ({ workflow: view, activation: view.pendingActivation! }));
   }
 
   async listWaiting(signalKind?: SignalName) {
-    return (await this.repository.list()).filter(
-      (view) =>
-        view?.status === WorkflowStatus.Waiting &&
-        (signalKind === undefined || view.waitingFor?.signalKind === signalKind),
-    );
+    return (await this.listAllLoaded())
+      .filter(
+        ({ view }) =>
+          view.status === WorkflowStatus.Waiting &&
+          (signalKind === undefined || view.waitingFor?.signalKind === signalKind),
+      )
+      .map(({ view }) => view);
   }
 
   async listAll() {
-    return (await this.repository.list()).filter((view) => view !== null);
+    return (await this.listAllLoaded()).map(({ view }) => view);
   }
 
-  async listWatchMatches(event: PersistedEvent) {
-    return (await this.listAll()).flatMap((parent) => {
-      const definition = this.workflows.definition(parent.workflowName);
-      return definition.watches
-        .filter(
-          (watch) =>
-            watch.on?.events.includes(event.eventType) === true &&
-            watch.while.stages.includes(parent.currentStage) &&
-            watch.while.statuses.some((status) => status === parent.status) &&
-            matchesWatchPredicate(watch.where, event),
-        )
-        .map((watch) => ({ parent, watch }));
-    });
+  // One shared load per live instance, reused for both the watch match and
+  // (when a match needs blocking) the append sequence — avoids reloading
+  // every instance a second time just to recover its sequence.
+  private async listAllLoaded() {
+    return (await this.repository.list()).filter(
+      (loaded): loaded is { sequence: number; view: NonNullable<typeof loaded.view> } =>
+        loaded.view !== null,
+    );
+  }
+
+  async listWatchMatches(event: PersistedEvent, context?: CommandContext) {
+    const matches = await Promise.all(
+      (await this.listAllLoaded()).map(async ({ view: parent, sequence }) => {
+        const definition =
+          context === undefined
+            ? await this.workflows.definitionFor(parent)
+            : await this.workflows.definitionForOperation(parent, sequence, context);
+        if (definition === null) return [];
+        return definition.watches
+          .filter(
+            (watch) =>
+              watch.on?.events.includes(event.eventType) === true &&
+              watch.while.stages.includes(parent.currentStage) &&
+              watch.while.statuses.some((status) => status === parent.status) &&
+              matchesWatchPredicate(watch.where, event),
+          )
+          .map((watch) => ({ parent, watch }));
+      }),
+    );
+    return matches.flat();
   }
 }
 

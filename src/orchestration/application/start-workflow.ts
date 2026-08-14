@@ -1,27 +1,36 @@
-import type { CommandContext } from '../../kernel/index.js';
+import { createEventDraft, EventSourceKind, type CommandContext } from '../../kernel/index.js';
 import { WorkStatus, type WorkService } from '../../work/index.js';
 import type { StartWorkflowInstance } from '../contracts/commands.js';
-import type { CompiledWorkflow } from '../contracts/config.js';
-import type { WorkflowName } from '../contracts/identifiers.js';
-import { WorkflowInstanceKind } from '../contracts/vocabulary.js';
+import { OrchestrationEventType } from '../contracts/events.js';
+import { workflowInstanceStream } from '../contracts/streams.js';
+import type { WorkflowInstanceView } from '../contracts/views.js';
+import { WorkflowInstanceKind, WorkflowStatus } from '../contracts/vocabulary.js';
 import { validateChildProvenance } from '../domain/child-policy.js';
 import { startInstance } from '../domain/interpreter.js';
 import type { CoordinationClaims } from './coordination-claims.js';
 import type { OrchestrationRepository } from './orchestration-repository.js';
+import type { WorkflowDefinitionRegistry } from './workflow-definition-registry.js';
+import { WorkflowDefinitionUnavailableError } from './workflow-definition-registry.js';
+
+const TERMINAL_OR_BLOCKED_STATUSES: ReadonlySet<WorkflowStatus> = new Set([
+  WorkflowStatus.Blocked,
+  WorkflowStatus.Completed,
+  WorkflowStatus.Superseded,
+]);
 
 export class StartWorkflow {
   constructor(
     private readonly repository: OrchestrationRepository,
     private readonly claims: CoordinationClaims,
     private readonly work: WorkService,
-    private readonly definitions: Readonly<Record<string, CompiledWorkflow>>,
+    private readonly definitions: WorkflowDefinitionRegistry,
   ) {}
 
   async execute(command: StartWorkflowInstance, context: CommandContext) {
     const item = await this.work.get(command.workItemId);
     if (item === null || item.state !== WorkStatus.Open)
       throw new Error('WorkItem must exist and be open');
-    const definition = this.definition(command.workflowName);
+    const { definition, fingerprint } = this.definitions.currentDefinition(command.workflowName);
     const existing = await this.repository.load(command.workflowInstanceId);
     if (existing.view !== null) return existing.view;
     const startKind = validateChildProvenance(command);
@@ -35,9 +44,11 @@ export class StartWorkflow {
       )
         throw new Error('Child workflow must share its parent WorkItem and orchestration group');
     }
+    await this.definitions.register(command.workflowName, fingerprint, definition, context);
     const decision = startInstance({
       ...command,
       definition,
+      workflowDefinitionFingerprint: fingerprint,
       occurredAt: context.occurredAt,
       correlationId: context.correlationId,
       causationId: context.commandId,
@@ -47,9 +58,37 @@ export class StartWorkflow {
     return (await this.repository.loadRequired(command.workflowInstanceId)).view;
   }
 
-  definition(name: WorkflowName): CompiledWorkflow {
-    const definition = this.definitions[name];
-    if (definition === undefined) throw new Error(`Unknown workflow: ${name}`);
-    return definition;
+  definitionFor(view: Parameters<WorkflowDefinitionRegistry['resolve']>[0]) {
+    return this.definitions.resolve(view);
+  }
+
+  async definitionForOperation(
+    view: WorkflowInstanceView,
+    sequence: number,
+    context: CommandContext,
+  ) {
+    try {
+      return await this.definitions.resolve(view);
+    } catch (error) {
+      if (!(error instanceof WorkflowDefinitionUnavailableError)) throw error;
+      if (!TERMINAL_OR_BLOCKED_STATUSES.has(view.status))
+        await this.repository.append(view.workflowInstanceId, sequence, [
+          createEventDraft({
+            // workflowInstanceId is included because listWatchMatches shares one
+            // CommandContext across every matched parent in a batch; commandId
+            // alone would collide when two instances block in the same pass.
+            eventId: `${context.commandId}:${view.workflowInstanceId}:${OrchestrationEventType.InstanceBlocked}`,
+            eventType: OrchestrationEventType.InstanceBlocked,
+            occurredAt: context.occurredAt,
+            correlationId: context.correlationId,
+            causationId: context.commandId,
+            actor: context.actor,
+            source: { kind: EventSourceKind.Internal, id: 'orchestration-service' },
+            stream: workflowInstanceStream(view.workflowInstanceId),
+            payload: { reason: 'workflow-definition-unavailable' },
+          }),
+        ]);
+      return null;
+    }
   }
 }

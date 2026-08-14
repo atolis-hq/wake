@@ -23,6 +23,9 @@ export function foldWorkflowInstance(events: readonly WorkflowFact[]): WorkflowI
     workflowInstanceId: first.stream.id,
     workItemId: first.payload.workItemId,
     workflowName: first.payload.workflowName,
+    ...(first.payload.workflowDefinitionFingerprint === undefined
+      ? {}
+      : { workflowDefinitionFingerprint: first.payload.workflowDefinitionFingerprint }),
     orchestrationGroupId: first.payload.orchestrationGroupId,
     ...optionalChildFields(first.payload),
     status: WorkflowStatus.Active,

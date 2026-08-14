@@ -19,6 +19,7 @@ interface StartInstanceBase {
   readonly workItemId: WorkItemId;
   readonly orchestrationGroupId: OrchestrationGroupId;
   readonly definition: CompiledWorkflow;
+  readonly workflowDefinitionFingerprint?: string;
   readonly occurredAt: string;
   readonly correlationId: string;
   readonly causationId: string;
@@ -87,6 +88,9 @@ export function startInstance(input: StartInstanceInput): OrchestrationDecision 
           workflowName: input.definition.name,
           orchestrationGroupId: input.orchestrationGroupId,
           entry: input.definition.entry,
+          ...(input.workflowDefinitionFingerprint === undefined
+            ? {}
+            : { workflowDefinitionFingerprint: input.workflowDefinitionFingerprint }),
           ...child,
         },
         childEvents.length + 1,

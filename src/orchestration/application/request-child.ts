@@ -135,15 +135,17 @@ export class RequestChild {
       childWorkflowInstanceId: child.workflowInstanceId,
       requestId: metadata.requestId,
     };
-    const decision = decideSignal(
-      this.workflows.definition(parent.view.workflowName),
+    const definition = await this.workflows.definitionForOperation(
       parent.view,
-      {
-        signal,
-        occurredAt: context.occurredAt,
-        causationId: context.commandId,
-      },
+      parent.sequence,
+      context,
     );
+    if (definition === null) return;
+    const decision = decideSignal(definition, parent.view, {
+      signal,
+      occurredAt: context.occurredAt,
+      causationId: context.commandId,
+    });
     if (decision.kind === 'ignored') return;
     await this.repository.append(parent.view.workflowInstanceId, parent.sequence, [
       ...decision.events,

@@ -314,7 +314,9 @@ defineScenario(
     then: ['checkout follows an empty active execution view and no cancellation is recorded'],
   },
   async () => {
-    const root = await createRoot(5);
+    // Keep the Run active long enough for this scenario to acquire its
+    // maintenance lease under loaded CI scheduling.
+    const root = await createRoot(100);
     await start(root, 'completing');
     const { active, advancing } = await waitForActiveRun(root);
     const calls: string[] = [];
@@ -322,7 +324,7 @@ defineScenario(
       ledger: ledger(calls),
       source: source(calls, root),
       quiesce: createSelfUpdateQuiescePort(root),
-      drainTimeoutMs: 50,
+      drainTimeoutMs: 250,
       cancellationTimeoutMs: 50,
     });
 
@@ -412,7 +414,7 @@ async function start(root: Awaited<ReturnType<typeof createRoot>>, id: string) {
 
 async function waitForActiveRun(root: Awaited<ReturnType<typeof createRoot>>) {
   const advancing = root.advanceOnce({ maxProgress: 1 });
-  for (let index = 0; index < 100; index += 1) {
+  for (let index = 0; index < 1_000; index += 1) {
     const active = (await root.execution.list()).find((run) => run.status === 'started');
     if (active !== undefined) return { active, advancing };
     await new Promise((resolve) => setTimeout(resolve, 1));

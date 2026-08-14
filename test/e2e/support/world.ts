@@ -31,6 +31,7 @@ import {
   createWatchReactor,
   orchestrationGroupId,
   workflowInstanceId as parseWorkflowInstanceId,
+  workflowDefinitionsProjection,
   workflowName,
   type CompiledWorkflow,
   type WorkflowDefinitionConfig,
@@ -40,6 +41,7 @@ import {
   InMemoryCheckpointStore,
   InMemoryEventJournal,
   InMemoryProjectionStore,
+  ProjectionRunner,
 } from '../../../src/persistence/index.js';
 import {
   createResourceLookup,
@@ -95,7 +97,21 @@ export class TestWorld {
 
   readonly resources = createResourceService(this.journal, this.resourceLookup);
   readonly pullRequests = createPullRequestService(this.journal, this.work, this.resources);
-  readonly orchestration = createOrchestrationService(this.journal, this.work, this.definitions);
+  readonly orchestration = createOrchestrationService(
+    this.journal,
+    this.work,
+    this.definitions,
+    this.projections,
+  );
+
+  // resolve() falls back to this projection for historical (non-current) workflow
+  // fingerprints; keep it caught up before any call that may hit that path.
+  private readonly definitionProjections = new ProjectionRunner(
+    this.journal,
+    this.projections,
+    this.checkpoints,
+  );
+
   private recovery: RecoveryService | undefined;
   private execution = createExecutionService(
     this.journal,
@@ -253,12 +269,17 @@ export class TestWorld {
     return this.resources.discover(input, this.command());
   }
 
+  private async syncWorkflowDefinitions(): Promise<void> {
+    await this.definitionProjections.runOnce(workflowDefinitionsProjection);
+  }
+
   async startWorkflow(input: {
     workItemId: WorkItemId;
     workflowName: string;
     workflowInstanceId?: string;
     orchestrationGroupId?: string;
   }): Promise<WorkflowInstanceView> {
+    await this.syncWorkflowDefinitions();
     const id = input.workflowInstanceId ?? this.ids.next('workflow');
     return this.orchestration.start(
       {
@@ -282,10 +303,11 @@ export class TestWorld {
     );
   }
 
-  acceptSignal(
+  async acceptSignal(
     workflowInstanceId: string,
     signal: Parameters<typeof this.orchestration.acceptSignal>[1],
   ) {
+    await this.syncWorkflowDefinitions();
     return this.orchestration.acceptSignal(
       parseWorkflowInstanceId(workflowInstanceId),
       signal,
@@ -293,11 +315,12 @@ export class TestWorld {
     );
   }
 
-  acceptOutcome(
+  async acceptOutcome(
     workflowInstanceId: string,
     activationId: string,
     outcome: Parameters<typeof this.orchestration.acceptOutcome>[0]['outcome'],
   ) {
+    await this.syncWorkflowDefinitions();
     return this.orchestration.acceptOutcome(
       {
         workflowInstanceId: parseWorkflowInstanceId(workflowInstanceId),
@@ -308,10 +331,11 @@ export class TestWorld {
     );
   }
 
-  resolveExecutionFailure(
+  async resolveExecutionFailure(
     workflowInstanceId: string,
     input: Parameters<typeof this.orchestration.resolveExecutionFailure>[1],
   ) {
+    await this.syncWorkflowDefinitions();
     return this.orchestration.resolveExecutionFailure(
       parseWorkflowInstanceId(workflowInstanceId),
       input,
@@ -319,10 +343,11 @@ export class TestWorld {
     );
   }
 
-  requestSupplementalActivity(
+  async requestSupplementalActivity(
     workflowInstanceId: string,
     request: Parameters<typeof this.orchestration.requestSupplementalActivity>[1],
   ) {
+    await this.syncWorkflowDefinitions();
     return this.orchestration.requestSupplementalActivity(
       parseWorkflowInstanceId(workflowInstanceId),
       request,
@@ -331,6 +356,7 @@ export class TestWorld {
   }
 
   async advance(workItemId?: WorkItemId): Promise<AdvanceResult> {
+    await this.syncWorkflowDefinitions();
     const result = await this.advanceOnce({
       ...(workItemId === undefined ? {} : { workItemId }),
       maxProgress: 1,
@@ -373,6 +399,7 @@ export class TestWorld {
       }),
     ]);
     if (event === undefined) throw new Error('Watch trigger was not appended');
+    await this.syncWorkflowDefinitions();
     await this.watchReactor.runOnce();
   }
 

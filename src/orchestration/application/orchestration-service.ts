@@ -1,5 +1,5 @@
 import type { ActivationId, ActivityOutcome } from '../../activities/index.js';
-import type { CommandContext, EventJournal } from '../../kernel/index.js';
+import type { CommandContext, EventJournal, ProjectionStore } from '../../kernel/index.js';
 import type { WorkItemId, WorkService } from '../../work/index.js';
 import type { StartWorkflowInstance } from '../contracts/commands.js';
 import type { CompiledWorkflow } from '../contracts/config.js';
@@ -18,6 +18,7 @@ import { GroupBudgetRecorder } from './group-budget-recorder.js';
 import { OrchestrationRepository } from './orchestration-repository.js';
 import { RequestChild } from './request-child.js';
 import { StartWorkflow } from './start-workflow.js';
+import { WorkflowDefinitionRegistry } from './workflow-definition-registry.js';
 
 export class OrchestrationService {
   private readonly startWorkflow: StartWorkflow;
@@ -30,10 +31,16 @@ export class OrchestrationService {
     journal: EventJournal,
     work: WorkService,
     definitions: Readonly<Record<string, CompiledWorkflow>>,
+    projections?: ProjectionStore,
   ) {
     const repository = new OrchestrationRepository(journal);
     const claims = new CoordinationClaims(journal);
-    this.startWorkflow = new StartWorkflow(repository, claims, work, definitions);
+    this.startWorkflow = new StartWorkflow(
+      repository,
+      claims,
+      work,
+      new WorkflowDefinitionRegistry(journal, projections, definitions),
+    );
     this.acceptWorkflowSignal = new AcceptSignal(repository, this.startWorkflow, work);
     this.advanceWorkflow = new AdvanceWorkflow(repository, this.startWorkflow);
     this.childWorkflows = new RequestChild(
@@ -162,8 +169,11 @@ export class OrchestrationService {
     );
   }
 
-  listWatchMatches(event: Parameters<AdvanceWorkflow['listWatchMatches']>[0]) {
-    return this.advanceWorkflow.listWatchMatches(event);
+  listWatchMatches(
+    event: Parameters<AdvanceWorkflow['listWatchMatches']>[0],
+    context?: CommandContext,
+  ) {
+    return this.advanceWorkflow.listWatchMatches(event, context);
   }
 }
 
@@ -171,4 +181,5 @@ export const createOrchestrationService = (
   journal: EventJournal,
   work: WorkService,
   definitions: Readonly<Record<string, CompiledWorkflow>>,
-) => new OrchestrationService(journal, work, definitions);
+  projections?: ProjectionStore,
+) => new OrchestrationService(journal, work, definitions, projections);
