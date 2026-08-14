@@ -26,16 +26,16 @@ export class AcceptActivityOutcome {
       loaded.sequence,
       context,
     );
-    if (definition === null)
-      return (await this.repository.loadRequired(command.workflowInstanceId)).view;
-    const decision = decideActivityOutcome(definition, loaded.view, {
-      ...command,
-      outcome: orchestrationActivityOutcome(command.outcome),
-      occurredAt: context.occurredAt,
-      causationId: context.commandId,
-    });
-    if (decision.kind === 'append')
-      await this.repository.append(command.workflowInstanceId, loaded.sequence, decision.events);
+    if (definition !== null) {
+      const decision = decideActivityOutcome(definition, loaded.view, {
+        ...command,
+        outcome: orchestrationActivityOutcome(command.outcome),
+        occurredAt: context.occurredAt,
+        causationId: context.commandId,
+      });
+      if (decision.kind === 'append')
+        await this.repository.append(command.workflowInstanceId, loaded.sequence, decision.events);
+    }
     await this.reconcileChildCompletions(context);
     return (await this.repository.loadRequired(command.workflowInstanceId)).view;
   }

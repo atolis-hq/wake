@@ -175,37 +175,47 @@ export class AdvanceWorkflow {
   }
 
   async listPendingActivations(workItemId?: string) {
-    return (await this.repository.list())
+    return (await this.listAllLoaded())
       .filter(
-        (view) =>
-          view !== null &&
+        ({ view }) =>
           view.status === WorkflowStatus.Active &&
           view.pendingActivation !== undefined &&
           (workItemId === undefined || view.workItemId === workItemId),
       )
-      .map((view) => ({ workflow: view!, activation: view!.pendingActivation! }));
+      .map(({ view }) => ({ workflow: view, activation: view.pendingActivation! }));
   }
 
   async listWaiting(signalKind?: SignalName) {
-    return (await this.repository.list()).filter(
-      (view) =>
-        view?.status === WorkflowStatus.Waiting &&
-        (signalKind === undefined || view.waitingFor?.signalKind === signalKind),
-    );
+    return (await this.listAllLoaded())
+      .filter(
+        ({ view }) =>
+          view.status === WorkflowStatus.Waiting &&
+          (signalKind === undefined || view.waitingFor?.signalKind === signalKind),
+      )
+      .map(({ view }) => view);
   }
 
   async listAll() {
-    return (await this.repository.list()).filter((view) => view !== null);
+    return (await this.listAllLoaded()).map(({ view }) => view);
+  }
+
+  // One shared load per live instance, reused for both the watch match and
+  // (when a match needs blocking) the append sequence — avoids reloading
+  // every instance a second time just to recover its sequence.
+  private async listAllLoaded() {
+    return (await this.repository.list()).filter(
+      (loaded): loaded is { sequence: number; view: NonNullable<typeof loaded.view> } =>
+        loaded.view !== null,
+    );
   }
 
   async listWatchMatches(eventType: string, context?: CommandContext) {
     const matches = await Promise.all(
-      (await this.listAll()).map(async (parent) => {
-        const loaded = await this.repository.loadRequired(parent.workflowInstanceId);
+      (await this.listAllLoaded()).map(async ({ view: parent, sequence }) => {
         const definition =
           context === undefined
-            ? await this.workflows.definitionFor(loaded.view)
-            : await this.workflows.definitionForOperation(loaded.view, loaded.sequence, context);
+            ? await this.workflows.definitionFor(parent)
+            : await this.workflows.definitionForOperation(parent, sequence, context);
         if (definition === null) return [];
         return definition.watches
           .filter(

@@ -49,7 +49,7 @@ export class OrchestrationRepository {
         .filter((event) => isWorkflowInstanceStream(event.stream))
         .map((event) => event.stream.id),
     );
-    return Promise.all([...ids].map(async (id) => (await this.load(id)).view));
+    return Promise.all([...ids].map((id) => this.load(id)));
   }
 }
 

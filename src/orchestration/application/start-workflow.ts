@@ -2,7 +2,6 @@ import { createEventDraft, EventSourceKind, type CommandContext } from '../../ke
 import { WorkStatus, type WorkService } from '../../work/index.js';
 import type { StartWorkflowInstance } from '../contracts/commands.js';
 import { OrchestrationEventType } from '../contracts/events.js';
-import type { WorkflowName } from '../contracts/identifiers.js';
 import { workflowInstanceStream } from '../contracts/streams.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
 import { WorkflowInstanceKind, WorkflowStatus } from '../contracts/vocabulary.js';
@@ -12,6 +11,12 @@ import type { CoordinationClaims } from './coordination-claims.js';
 import type { OrchestrationRepository } from './orchestration-repository.js';
 import type { WorkflowDefinitionRegistry } from './workflow-definition-registry.js';
 import { WorkflowDefinitionUnavailableError } from './workflow-definition-registry.js';
+
+const TERMINAL_OR_BLOCKED_STATUSES: ReadonlySet<WorkflowStatus> = new Set([
+  WorkflowStatus.Blocked,
+  WorkflowStatus.Completed,
+  WorkflowStatus.Superseded,
+]);
 
 export class StartWorkflow {
   constructor(
@@ -53,10 +58,6 @@ export class StartWorkflow {
     return (await this.repository.loadRequired(command.workflowInstanceId)).view;
   }
 
-  definition(name: WorkflowName) {
-    return this.definitions.currentDefinition(name).definition;
-  }
-
   definitionFor(view: Parameters<WorkflowDefinitionRegistry['resolve']>[0]) {
     return this.definitions.resolve(view);
   }
@@ -70,10 +71,13 @@ export class StartWorkflow {
       return await this.definitions.resolve(view);
     } catch (error) {
       if (!(error instanceof WorkflowDefinitionUnavailableError)) throw error;
-      if (view.status !== WorkflowStatus.Blocked)
+      if (!TERMINAL_OR_BLOCKED_STATUSES.has(view.status))
         await this.repository.append(view.workflowInstanceId, sequence, [
           createEventDraft({
-            eventId: `${context.commandId}:${OrchestrationEventType.InstanceBlocked}`,
+            // workflowInstanceId is included because listWatchMatches shares one
+            // CommandContext across every matched parent in a batch; commandId
+            // alone would collide when two instances block in the same pass.
+            eventId: `${context.commandId}:${view.workflowInstanceId}:${OrchestrationEventType.InstanceBlocked}`,
             eventType: OrchestrationEventType.InstanceBlocked,
             occurredAt: context.occurredAt,
             correlationId: context.correlationId,

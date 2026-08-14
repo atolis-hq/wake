@@ -46,6 +46,12 @@ export class WorkflowDefinitionUnavailableError extends Error {
 }
 
 export class WorkflowDefinitionRegistry {
+  // WorkflowDefinitionRegistered events are never retracted, so once a
+  // (name, fingerprint) pair is observed registered it stays registered for
+  // the life of this process — caching it skips the shared-stream scan that
+  // register() would otherwise repeat on every workflow/child start.
+  private readonly knownRegistered = new Set<string>();
+
   constructor(
     private readonly journal: EventJournal,
     private readonly projections: ProjectionStore | undefined,
@@ -71,8 +77,8 @@ export class WorkflowDefinitionRegistry {
       readonly commandId: string;
     },
   ): Promise<void> {
-    const stream = workflowDefinitionsStream();
     if (await this.isRegistered(name, fingerprint)) return;
+    const stream = workflowDefinitionsStream();
     const draft = createEventDraft({
       eventId: `workflow-definition:${name}:${fingerprint}`,
       eventType: OrchestrationEventType.WorkflowDefinitionRegistered,
@@ -90,6 +96,7 @@ export class WorkflowDefinitionRegistry {
       const sequence = (await this.journal.readStream(stream)).length;
       try {
         await this.journal.append(stream, sequence, [draft]);
+        this.knownRegistered.add(workflowDefinitionKey(name, fingerprint));
         return;
       } catch (error) {
         if (await this.isRegistered(name, fingerprint)) return;
@@ -99,7 +106,9 @@ export class WorkflowDefinitionRegistry {
   }
 
   private async isRegistered(name: WorkflowName, fingerprint: string): Promise<boolean> {
-    return (await this.journal.readStream(workflowDefinitionsStream())).some((event) => {
+    const key = workflowDefinitionKey(name, fingerprint);
+    if (this.knownRegistered.has(key)) return true;
+    const found = (await this.journal.readStream(workflowDefinitionsStream())).some((event) => {
       const owned = selectOrchestrationEvent(event);
       return (
         owned?.eventType === OrchestrationEventType.WorkflowDefinitionRegistered &&
@@ -107,6 +116,8 @@ export class WorkflowDefinitionRegistry {
         owned.payload.fingerprint === fingerprint
       );
     });
+    if (found) this.knownRegistered.add(key);
+    return found;
   }
 
   async resolve(

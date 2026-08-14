@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import { z } from 'zod';
-import { activityName, ActivityRegistry } from '../../../src/activities/index.js';
+import { activationId, activityName, ActivityRegistry } from '../../../src/activities/index.js';
 import {
   correlationId,
   type CommandContext,
@@ -344,6 +344,88 @@ it('records typed metadata for every child coordination outcome', async () => {
   await service.requestChild(childRequest('trigger-2'), context('over-budget'));
   await service.rejectCausalActivation(childRequest('trigger-1'), context('reject-cycle'));
   await expectCoordinationMetadata(journal, child.workflowInstanceId);
+});
+
+it('still reconciles a pending child completion when an unrelated instance cannot resolve its definition', async () => {
+  const { definitions, journal, service, work } = await fixture();
+  const soloActivities = new ActivityRegistry();
+  soloActivities.register({
+    name: activityName('solo-work'),
+    inputSchema: z.object({}).strict(),
+    outcomeSchema: z.object({ kind: z.literal('done') }).strict(),
+    outcomeKinds: ['done'],
+    resources: [],
+    executionKind: 'deterministic',
+    handler: {
+      async execute() {
+        return { kind: 'done' } as const;
+      },
+    },
+  });
+  const solo = compileWorkflow(
+    'solo',
+    { stages: { work: { activity: 'solo-work', with: {}, on: { done: { then: 'done' } } } } },
+    soloActivities,
+    ['solo'],
+  );
+  const soloService = createOrchestrationService(journal, work, { ...definitions, solo });
+  const soloInstance = await soloService.start(
+    {
+      workflowInstanceId: workflowInstanceId('solo-1'),
+      workItemId: workId('2'),
+      workflowName: workflowName('solo'),
+      orchestrationGroupId: orchestrationGroupId('solo-group'),
+    },
+    context('start-solo'),
+  );
+
+  const parent = await startParent(service);
+  const child = requireStarted(
+    await service.requestChild(childRequest('trigger-1'), context('request-child')),
+  );
+  // Parent is still Active (not waiting for the child yet), so this completion
+  // is durably recorded but left unconsumed - the same setup as "does not
+  // consume a completion while its parent is active" above.
+  await service.acceptOutcome(
+    {
+      workflowInstanceId: child.workflowInstanceId,
+      activationId: child.pendingActivation!.activationId,
+      outcome: { kind: 'done' },
+    },
+    context('complete-child'),
+  );
+  expect(await eventsOf(journal, 'orchestration.child-completion-consumed')).toHaveLength(0);
+
+  await service.acceptOutcome(
+    {
+      workflowInstanceId: parent.workflowInstanceId,
+      activationId: parent.pendingActivation!.activationId,
+      outcome: { kind: 'blocked' },
+    },
+    context('block-parent'),
+  );
+  await service.waitForSignal(
+    parent.workflowInstanceId,
+    { signalKind: signalName('orchestration.child-completed') },
+    context('wait-child'),
+  );
+
+  // `service` (fixture's) never registered 'solo', so this acceptOutcome call
+  // can't resolve soloInstance's own definition and short-circuits into a
+  // block - but reconcileChildCompletions must still run unconditionally
+  // afterward, the same as it did before this instance existed.
+  await service.acceptOutcome(
+    {
+      workflowInstanceId: soloInstance.workflowInstanceId,
+      activationId: activationId('unused'),
+      outcome: { kind: 'done' },
+    },
+    context('missing-definition'),
+  );
+  expect((await service.get(soloInstance.workflowInstanceId))?.blockReason).toBe(
+    'workflow-definition-unavailable',
+  );
+  expect(await eventsOf(journal, 'orchestration.child-completion-consumed')).toHaveLength(1);
 });
 
 async function eventsOf(journal: EventJournal, eventType: string) {
