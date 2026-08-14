@@ -1,4 +1,4 @@
-import type { ActivationId, ActivityOutcome } from '../../activities/index.js';
+import type { ActivationId, ActivityOutcome, PullRequestService } from '../../activities/index.js';
 import type { CommandContext, EventJournal, ProjectionStore } from '../../kernel/index.js';
 import type { WorkItemId, WorkService } from '../../work/index.js';
 import type { StartWorkflowInstance } from '../contracts/commands.js';
@@ -32,6 +32,7 @@ export class OrchestrationService {
     work: WorkService,
     definitions: Readonly<Record<string, CompiledWorkflow>>,
     projections?: ProjectionStore,
+    pullRequests?: PullRequestService,
   ) {
     const repository = new OrchestrationRepository(journal);
     const claims = new CoordinationClaims(journal);
@@ -42,7 +43,7 @@ export class OrchestrationService {
       new WorkflowDefinitionRegistry(journal, projections, definitions),
     );
     this.acceptWorkflowSignal = new AcceptSignal(repository, this.startWorkflow, work);
-    this.advanceWorkflow = new AdvanceWorkflow(repository, this.startWorkflow);
+    this.advanceWorkflow = new AdvanceWorkflow(repository, this.startWorkflow, pullRequests);
     this.childWorkflows = new RequestChild(
       repository,
       claims,
@@ -155,6 +156,10 @@ export class OrchestrationService {
     return this.advanceWorkflow.listAll();
   }
 
+  resolveEventTransitions(context: CommandContext) {
+    return this.advanceWorkflow.resolveEventTransitions(context);
+  }
+
   reconcileChildCompletions(context: CommandContext) {
     return this.childWorkflows.reconcileChildCompletions(context);
   }
@@ -186,4 +191,5 @@ export const createOrchestrationService = (
   work: WorkService,
   definitions: Readonly<Record<string, CompiledWorkflow>>,
   projections?: ProjectionStore,
-) => new OrchestrationService(journal, work, definitions, projections);
+  pullRequests?: PullRequestService,
+) => new OrchestrationService(journal, work, definitions, projections, pullRequests);

@@ -51,6 +51,10 @@ export class OrchestrationRepository {
     );
     return Promise.all([...ids].map((id) => this.load(id)));
   }
+
+  readAll() {
+    return this.journal.readAll(0);
+  }
 }
 
 function isWorkflowEvent(

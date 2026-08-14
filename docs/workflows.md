@@ -147,6 +147,7 @@ Every `on.<outcome>` route requires `then`: another stage, `done`, or
 | `retry` | `{ max: positive integer }`; retries the current stage for this outcome. |
 | `await` | `{ signal, from }`; waits for a named signal from declared authorities before `then`. |
 | `watchGates` | One named watch, optionally with `onReject: { then }`; waits for a child-workflow verdict. |
+| `eventTransitions` | On `done` only, primary-PR facts that may advance the route instead of its watch gate. |
 
 Wake first records every non-waiting Activity outcome. If the stage does not
 declare a route for it, the instance blocks with `unconfigured outcome <kind>`;
@@ -161,6 +162,31 @@ settings. A follow-on outcome other than `done` blocks the instance.
 For another outcome, Wake retries only when the route has `retry` capacity and
 the Activity did not mark the outcome as requiring reconciliation. Otherwise
 it applies the route directly.
+
+`done` routes may additionally declare `eventTransitions`. They are an OR
+alternative to the configured single `watchGates` verdict and only support
+trusted native PR approvals, an externally merged primary PR, and opted-in
+failing checks. `then` inherits the enclosing route when omitted.
+
+```yaml
+on:
+  done:
+    then: merge
+    watchGates: [pr-review]
+    eventTransitions:
+      - events: [pr.review-accepted]
+      - events: [pr.state-changed]
+        where: { state: merged }
+        then: done
+      - events: [pr.checks-changed]
+        where: { checks: failing }
+        then: implement
+```
+
+Wake evaluates the correlated primary PR's current durable facts when this
+route begins waiting, as well as later observations. It fails closed when the
+primary PR is missing or ambiguous. An approval must be a trusted provider
+review for the current revision; issue-comment commands do not satisfy it.
 
 ```yaml
 on:

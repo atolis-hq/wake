@@ -13,6 +13,8 @@ import {
   type CompiledStage,
   type CompiledSupplementalCommand,
   type CompiledWatchGate,
+  type CompiledEventTransition,
+  type EventTransitionConfig,
   type CompiledWorkflow,
   type StageConfig,
   type WatchGateConfig,
@@ -142,6 +144,8 @@ function compileStage(
         throw new Error(
           `Route ${compiledWorkflowName}:${rawStageName}:${outcomeKind} cannot configure both await and watchGates`,
         );
+      if (route.eventTransitions !== undefined && outcomeKind !== ActivityOutcomeKind.Done)
+        throw new Error(`Route ${compiledWorkflowName}:${rawStageName}:${outcomeKind} eventTransitions are only valid on done`);
       const followOns = route.activities?.map((activity) => ({
         use: activityName(activity.use),
         with: activities.validateInput(activityName(activity.use), activity.with),
@@ -176,6 +180,9 @@ function compileStage(
                 allStages,
               ),
             }),
+        ...(route.eventTransitions === undefined
+          ? {}
+          : { eventTransitions: compileEventTransitions(route.eventTransitions, route.then, outcomeKind, allStages) }),
         id: `${compiledWorkflowName}:${rawStageName}:${outcomeKind}`,
       });
       return [outcomeKind, compiled];
@@ -187,6 +194,24 @@ function compileStage(
     ...(stage.execution === undefined ? {} : { execution: stage.execution }),
     on: Object.freeze(on),
   });
+}
+
+function compileEventTransitions(
+  entries: readonly EventTransitionConfig[],
+  inheritedThen: string,
+  outcomeKind: string,
+  allStages: WorkflowDefinitionConfig['stages'],
+): readonly CompiledEventTransition[] {
+  return Object.freeze(entries.map((entry) => {
+    const then = entry.then ?? inheritedThen;
+    if (!isReservedTerminal(then) && !(then in allStages))
+      throw new Error(`Unknown eventTransitions target: ${then}`);
+    return Object.freeze({
+      event: entry.events[0],
+      ...(entry.where === undefined ? {} : { where: entry.where }),
+      target: compileTarget(then, outcomeKind),
+    });
+  }));
 }
 
 function compileWatchGates(

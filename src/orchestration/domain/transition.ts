@@ -5,7 +5,7 @@ import type {
   TransitionTarget,
 } from '../contracts/config.js';
 import type { WorkflowOrchestrationEventDraft } from '../contracts/events.js';
-import { OrchestrationEventType, WatchGateVerdictSignal } from '../contracts/events.js';
+import { EventTransitionSignal, OrchestrationEventType, WatchGateVerdictSignal } from '../contracts/events.js';
 import type { StageName } from '../contracts/identifiers.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
 import { ApprovalAuthorityKind, TransitionTargetKind } from '../contracts/vocabulary.js';
@@ -29,21 +29,22 @@ export function finishRoute(
   input: TransitionInput,
   route: CompiledOutcomeRoute,
 ): void {
-  if (route.watchGates !== undefined) {
-    const gate = route.watchGates[0]!;
+  if (route.watchGates !== undefined || route.eventTransitions !== undefined) {
+    const gate = route.watchGates?.[0];
     events.push(
       stateDraft(
         state,
         input,
         OrchestrationEventType.SignalWaitStarted,
         {
-          signalKind: WatchGateVerdictSignal,
-          from: Object.freeze([
+          signalKind: gate === undefined ? EventTransitionSignal : WatchGateVerdictSignal,
+          ...(gate === undefined ? {} : { from: Object.freeze([
             { kind: ApprovalAuthorityKind.Watch, watch: gate.watch },
             { kind: ApprovalAuthorityKind.Human },
-          ]),
+          ]) }),
           resume: route.target,
-          onRejectResume: gate.onRejectTarget,
+          ...(gate === undefined ? {} : { onRejectResume: gate.onRejectTarget }),
+          ...(route.eventTransitions === undefined ? {} : { eventTransitions: route.eventTransitions }),
         },
         events.length + 1,
       ),

@@ -1,11 +1,16 @@
 import {
   ActivityEventType,
+  ActivityResourceRole,
   PullRequestCheckState,
+  PullRequestState,
+  selectActivityEvent,
+  type PullRequestService,
   selectActivityEvent,
   type ActivationId,
 } from '../../activities/index.js';
 import { EventSourceKind, createEventDraft, type CommandContext } from '../../kernel/index.js';
 import type { SupplementalActivityRequest } from '../contracts/events.js';
+import type { CompiledEventTransition } from '../contracts/config.js';
 import { OrchestrationEventType } from '../contracts/events.js';
 import {
   commandName,
@@ -20,6 +25,7 @@ import {
   requestOperatorRetry as decideOperatorRetry,
   requestSupplementalActivity as decideSupplementalActivity,
 } from '../domain/interpreter.js';
+import { acceptSignal as decideSignal } from '../domain/interpreter.js';
 import { isAuthorisedActor } from '../domain/supplemental-policy.js';
 import type { OrchestrationRepository } from './orchestration-repository.js';
 import type { StartWorkflow } from './start-workflow.js';
@@ -37,6 +43,7 @@ export class AdvanceWorkflow {
   constructor(
     private readonly repository: OrchestrationRepository,
     private readonly workflows: StartWorkflow,
+    private readonly pullRequests?: PullRequestService,
   ) {}
 
   async requestSupplementalActivity(
@@ -233,6 +240,44 @@ export class AdvanceWorkflow {
     return (await this.listAllLoaded()).map(({ view }) => view);
   }
 
+  async resolveEventTransitions(context: CommandContext) {
+    if (this.pullRequests === undefined) return;
+    const events = await this.repository.readAll();
+    for (const { view, sequence } of await this.listAllLoaded()) {
+      const transitions = view.waitingFor?.eventTransitions;
+      if (transitions === undefined) continue;
+      const input = await this.pullRequests.authorityInput(view.workItemId);
+      const primary = input.resources.filter(
+        (entry) =>
+          entry.resource.primaryCorrelationConflict === undefined &&
+          entry.correlations.filter(
+            (value) =>
+              value.role === ActivityResourceRole.Primary && value.workItemId === view.workItemId,
+          ).length === 1,
+      );
+      if (primary.length !== 1) continue;
+      const resourceId = primary[0]!.resource.resourceId;
+      const pr = input.pullRequests.find((candidate) => candidate.resourceId === resourceId);
+      if (pr === undefined) continue;
+      const fact = events.find((event) => {
+        const activity = selectActivityEvent(event);
+        if (activity === null || activity.stream.id !== resourceId) return false;
+        const transition = transitions.find((candidate) => candidate.event === activity.eventType && matchesEventTransition(candidate, activity.eventType, pr, input.acceptedSignals));
+        return transition !== undefined;
+      });
+      if (fact === undefined) continue;
+      const activity = selectActivityEvent(fact)!;
+      const transition = transitions.find((candidate) => candidate.event === activity.eventType && matchesEventTransition(candidate, activity.eventType, pr, input.acceptedSignals))!;
+      const definition = await this.workflows.definitionForOperation(view, sequence, context);
+      if (definition === null) continue;
+      const decision = decideSignal(definition, { ...view, waitingFor: { ...view.waitingFor!, resume: transition.target } }, {
+        signal: { kind: view.waitingFor!.signalKind, actorId: 'event-transition', actorDecision: { authorized: true, evidenceId: fact.eventId }, providerEventId: fact.eventId },
+        occurredAt: context.occurredAt, causationId: `${context.commandId}:${fact.eventId}`, consent: true,
+      });
+      if (decision.kind === 'append') await this.repository.append(view.workflowInstanceId, sequence, decision.events);
+    }
+  }
+
   // One shared load per live instance, reused for both the watch match and
   // (when a match needs blocking) the append sequence — avoids reloading
   // every instance a second time just to recover its sequence.
@@ -264,6 +309,19 @@ export class AdvanceWorkflow {
     );
     return matches.flat();
   }
+}
+
+function matchesEventTransition(
+  transition: CompiledEventTransition,
+  eventType: string,
+  pr: { readonly resourceId: string; readonly state: string; readonly checks: string; readonly headRevision: string; readonly acceptedReview?: { readonly revision: string } },
+  signals: readonly { readonly resourceId: string; readonly revision: string; readonly trusted: boolean }[],
+): boolean {
+  if (transition.event !== eventType) return false;
+  if (eventType === ActivityEventType.PrReviewAccepted)
+    return pr.acceptedReview?.revision === pr.headRevision && signals.some((signal) => signal.resourceId === pr.resourceId && signal.revision === pr.headRevision && signal.trusted);
+  if (eventType === ActivityEventType.PrStateChanged) return pr.state === PullRequestState.Merged;
+  return pr.checks === PullRequestCheckState.Failing;
 }
 
 function matchesWatchPredicate(

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { ApprovalAuthorityKind, WorkflowStatus } from './vocabulary.js';
 
-import { PullRequestCheckState, type ActivityName } from '../../activities/index.js';
+import { ActivityEventType, PullRequestCheckState, PullRequestState, type ActivityName } from '../../activities/index.js';
 import { WorkspaceMode, type WorkspaceMode as WorkspaceModeType } from '../../execution/index.js';
 import { MatchMode } from '../../kernel/index.js';
 import type { CommandName, SignalName, StageName, WatchId, WorkflowName } from './identifiers.js';
@@ -40,6 +40,11 @@ const watchGateConfigSchema = z.union([
       onReject: z.object({ then: identifier }).strict().optional(),
     })
     .strict(),
+]);
+const eventTransitionConfigSchema = z.union([
+  z.object({ events: z.tuple([z.literal(ActivityEventType.PrReviewAccepted)]), then: identifier.optional() }).strict(),
+  z.object({ events: z.tuple([z.literal(ActivityEventType.PrStateChanged)]), where: z.object({ state: z.literal(PullRequestState.Merged) }).strict(), then: identifier.optional() }).strict(),
+  z.object({ events: z.tuple([z.literal(ActivityEventType.PrChecksChanged)]), where: z.object({ checks: z.literal(PullRequestCheckState.Failing) }).strict(), then: identifier.optional() }).strict(),
 ]);
 const commandName = z.string().regex(/^\/[a-z][a-z0-9-]*$/);
 const canonicalEventName = z.string().regex(/^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)+$/);
@@ -86,6 +91,7 @@ export const outcomeRouteConfigSchema = z
     retry: bound.optional(),
     await: awaitConfigSchema.optional(),
     watchGates: z.array(watchGateConfigSchema).optional(),
+    eventTransitions: z.array(eventTransitionConfigSchema).min(1).optional(),
   })
   .strict();
 
@@ -157,6 +163,7 @@ export type FollowOnActivityConfig = z.infer<typeof followOnActivityConfigSchema
 export type AwaitConfig = z.infer<typeof awaitConfigSchema>;
 
 export type WatchGateConfig = z.infer<typeof watchGateConfigSchema>;
+export type EventTransitionConfig = z.infer<typeof eventTransitionConfigSchema>;
 
 export type OutcomeRouteConfig = z.infer<typeof outcomeRouteConfigSchema>;
 
@@ -198,13 +205,20 @@ export interface CompiledFollowOnActivity {
 
 export interface CompiledOutcomeRoute extends Omit<
   OutcomeRouteConfig,
-  'activities' | 'then' | 'await' | 'watchGates'
+  'activities' | 'then' | 'await' | 'watchGates' | 'eventTransitions'
 > {
   readonly id: string;
   readonly target: TransitionTarget;
   readonly activities?: readonly CompiledFollowOnActivity[];
   readonly await?: CompiledAwait;
   readonly watchGates?: readonly CompiledWatchGate[];
+  readonly eventTransitions?: readonly CompiledEventTransition[];
+}
+
+export interface CompiledEventTransition {
+  readonly event: typeof ActivityEventType.PrReviewAccepted | typeof ActivityEventType.PrStateChanged | typeof ActivityEventType.PrChecksChanged;
+  readonly where?: { readonly state: typeof PullRequestState.Merged } | { readonly checks: typeof PullRequestCheckState.Failing };
+  readonly target: TransitionTarget;
 }
 
 export interface CompiledStage extends Omit<StageConfig, 'activity' | 'execution' | 'on'> {

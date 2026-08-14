@@ -136,6 +136,13 @@ const transitionTargetSchema = z.discriminatedUnion('kind', [
     })
     .strict(),
 ]);
+const eventTransitionSchema = z
+  .object({
+    event: z.enum([ActivityEventType.PrReviewAccepted, ActivityEventType.PrStateChanged, ActivityEventType.PrChecksChanged]),
+    where: z.union([z.object({ state: z.literal('merged') }).strict(), z.object({ checks: z.literal('failing') }).strict()]).optional(),
+    target: transitionTargetSchema,
+  })
+  .strict();
 
 export const expectationSchema = z
   .object({
@@ -145,6 +152,7 @@ export const expectationSchema = z
     from: z.array(approvalAuthoritySchema).min(1).optional(),
     resume: transitionTargetSchema.optional(),
     onRejectResume: transitionTargetSchema.optional(),
+    eventTransitions: z.array(eventTransitionSchema).min(1).optional(),
   })
   .strict();
 

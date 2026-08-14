@@ -60,6 +60,25 @@ describe('compiled workflow contracts', () => {
     ).toBe(false);
   });
 
+  it('accepts only the documented primary-PR event transitions', () => {
+    expect(
+      outcomeRouteConfigSchema.safeParse({
+        then: 'done',
+        eventTransitions: [
+          { events: ['pr.review-accepted'] },
+          { events: ['pr.state-changed'], where: { state: 'merged' } },
+          { events: ['pr.checks-changed'], where: { checks: 'failing' }, then: 'implement' },
+        ],
+      }).success,
+    ).toBe(true);
+    expect(
+      outcomeRouteConfigSchema.safeParse({
+        then: 'done',
+        eventTransitions: [{ events: ['pr.state-changed'], where: { state: 'closed' } }],
+      }).success,
+    ).toBe(false);
+  });
+
   it('rejects a workflow outcome route not declared by its Activity', () => {
     expect(() =>
       compileWorkflow(

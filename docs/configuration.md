@@ -353,6 +353,7 @@ Every `on.<outcome>` route requires `then`, a non-empty target stage name or
 | `retry` | `{ max: positive integer }` | Bounds retries for this route. |
 | `await` | `{ signal, from }` | Pauses on a named signal accepted from one or more authorities. `from` entries are `human`, `auto`, or `{ kind: watch, id }`. |
 | `watchGates` | list | Requires named watch verdicts. An entry is either a watch id or `{ watch, onReject?: { then } }`. |
+| `eventTransitions` | list | `on.done` only. Each entry is one of `pr.review-accepted`, merged `pr.state-changed`, or failing `pr.checks-changed`; optional `then` inherits the route target. |
 
 Each `commands./name` entry requires `activity` and a non-empty
 `allowedActors` list containing `human`, `auto`, or `watch`; it may also carry

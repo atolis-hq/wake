@@ -9,6 +9,7 @@ import type { WorkItemId } from '../../work/index.js';
 import type { OrchestrationWaitingActivityOutcome } from './activity-outcome.js';
 import type {
   ApprovalAuthority,
+  CompiledEventTransition,
   CompiledWorkflow,
   StageConfig,
   TransitionTarget,
@@ -277,6 +278,7 @@ export interface SignalExpectation {
   readonly from?: readonly ApprovalAuthority[] | undefined;
   readonly resume?: TransitionTarget | undefined;
   readonly onRejectResume?: TransitionTarget | undefined;
+  readonly eventTransitions?: readonly CompiledEventTransition[] | undefined;
 }
 
 export interface OrchestrationSignal {
@@ -306,6 +308,7 @@ export interface ChildWorkflowRequest {
 export const WatchGateVerdictSignal = signalName('orchestration.watch-gate-verdict');
 
 export const ApprovedSignal = signalName('approved');
+export const EventTransitionSignal = signalName('orchestration.event-transition');
 
 /**
  * Every consumer that needs to know whether a wait renders as "awaiting

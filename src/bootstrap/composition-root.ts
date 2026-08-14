@@ -193,7 +193,7 @@ export async function createCompositionRoot(
       compileWorkflow(name, definition, activities, Object.keys(config.orchestration.workflows)),
     ]),
   );
-  const orchestration = createOrchestrationService(journal, work, definitions, projections);
+  const orchestration = createOrchestrationService(journal, work, definitions, projections, pullRequests);
   const workspaces = new GitWorkspaceProvider(paths.workspacesRoot, {
     async cloneLocator(id) {
       const resource = await resources.get(resourceId(id));
@@ -545,6 +545,12 @@ async function composeIntegrationRuntime(
     },
     react: async () => {
       await watch.runOnce();
+      await input.orchestration.resolveEventTransitions({
+        commandId: input.ids.next('command'),
+        correlationId: 'event-transitions' as never,
+        occurredAt: input.clock.now().toISOString(),
+        actor: { kind: EventActorKind.System, id: 'event-transition-reactor' },
+      });
       await artifacts.runOnce();
       await outcomes.runOnce();
       for (const provider of providers) await provider.maintenance?.runOnce();
