@@ -16,6 +16,7 @@ import {
 import { workflowInstanceStream } from '../contracts/streams.js';
 import { WorkflowStatus } from '../contracts/vocabulary.js';
 import {
+  requestChangesResume as decideChangesResume,
   requestOperatorRetry as decideOperatorRetry,
   requestSupplementalActivity as decideSupplementalActivity,
 } from '../domain/interpreter.js';
@@ -167,6 +168,32 @@ export class AdvanceWorkflow {
       causationId: context.commandId,
     });
     if (decision.kind === 'ignored') throw new OperatorRetryIneligibleError(decision.reason);
+    try {
+      await this.repository.append(id, loaded.sequence, decision.events);
+    } catch (error) {
+      const reloaded = await this.repository.loadRequired(id);
+      if (reloaded.view.operatorRetryCommandIds.includes(context.commandId)) return reloaded.view;
+      throw error;
+    }
+    return (await this.repository.loadRequired(id)).view;
+  }
+
+  async resumeBlockedStageForChanges(id: WorkflowInstanceId, context: CommandContext) {
+    const loaded = await this.repository.load(id);
+    if (loaded.view === null) return null;
+    if (loaded.view.operatorRetryCommandIds.includes(context.commandId)) return loaded.view;
+    const definition = await this.workflows.definitionForOperation(
+      loaded.view,
+      loaded.sequence,
+      context,
+    );
+    if (definition === null) return (await this.repository.loadRequired(id)).view;
+    const decision = decideChangesResume(definition, loaded.view, {
+      commandId: context.commandId,
+      occurredAt: context.occurredAt,
+      causationId: context.commandId,
+    });
+    if (decision.kind === 'ignored') return loaded.view;
     try {
       await this.repository.append(id, loaded.sequence, decision.events);
     } catch (error) {

@@ -131,6 +131,10 @@ export class OrchestrationService {
     return this.advanceWorkflow.retryBlockedFailedStage(workflowInstanceId, context);
   }
 
+  resumeBlockedStageForChanges(workflowInstanceId: WorkflowInstanceId, context: CommandContext) {
+    return this.advanceWorkflow.resumeBlockedStageForChanges(workflowInstanceId, context);
+  }
+
   get(id: WorkflowInstanceId) {
     return this.advanceWorkflow.get(id);
   }

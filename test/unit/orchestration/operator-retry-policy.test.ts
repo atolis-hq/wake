@@ -18,9 +18,11 @@ import {
   acceptActivityOutcome,
   compileWorkflow,
   foldWorkflowInstance,
+  isChangesResumeEligible,
   isOperatorRetryEligible,
   orchestrationActivityOutcome,
   OrchestrationEventType,
+  requestChangesResume,
   requestOperatorRetry,
   startInstance,
 } from '../../../src/orchestration/index.js';
@@ -76,6 +78,47 @@ function blockedFailedFixture() {
   return { definition, state: foldWorkflowInstance([...started.events, ...failed.events])! };
 }
 
+function blockedAgentFixture() {
+  const activities = new ActivityRegistry();
+  activities.register({
+    name: activityName('agent'),
+    inputSchema: z.object({}).strict(),
+    outcomeSchema: z.object({ kind: z.enum(['done', 'blocked']) }).strict(),
+    outcomeKinds: ['done', 'blocked'],
+    resources: [],
+    executionKind: 'deterministic',
+    handler: {
+      async execute() {
+        return { kind: 'done' };
+      },
+    },
+  });
+  const definition = compileWorkflow(
+    'default',
+    { stages: { refine: { activity: 'agent', with: {}, on: { done: { then: 'done' } } } } },
+    activities,
+  );
+  const started = startInstance({
+    workflowInstanceId: workflowInstanceId('workflow-2'),
+    workItemId: workId('2'),
+    orchestrationGroupId: orchestrationGroupId('group-2'),
+    definition,
+    occurredAt: '2026-08-12T12:00:00.000Z',
+    correlationId: 'correlation-2',
+    causationId: 'start-command',
+  });
+  if (started.kind !== 'append') throw new Error('expected start decision');
+  const beforeBlocked = foldWorkflowInstance(started.events)!;
+  const blocked = acceptActivityOutcome(definition, beforeBlocked, {
+    activationId: beforeBlocked.pendingActivation!.activationId,
+    outcome: orchestrationActivityOutcome({ kind: ActivityOutcomeKind.Blocked }),
+    occurredAt: '2026-08-12T12:01:00.000Z',
+    causationId: 'blocked-run',
+  });
+  if (blocked.kind !== 'append') throw new Error('expected blocked outcome decision');
+  return { definition, state: foldWorkflowInstance([...started.events, ...blocked.events])! };
+}
+
 const retryInput = {
   commandId: 'operator-retry-command',
   occurredAt: '2026-08-12T12:02:00.000Z',
@@ -83,6 +126,30 @@ const retryInput = {
 };
 
 describe('operator retry policy', () => {
+  it('resumes an agent-blocked stage for a /changes command', () => {
+    const { definition, state } = blockedAgentFixture();
+
+    expect(isChangesResumeEligible(state)).toBe(true);
+    const decision = requestChangesResume(definition, state, retryInput);
+
+    expect(decision).toMatchObject({
+      kind: 'append',
+      events: [
+        {
+          eventType: OrchestrationEventType.OperatorRetryRequested,
+          payload: {
+            activationId: state.pendingActivation!.activationId,
+            commandId: retryInput.commandId,
+          },
+        },
+        {
+          eventType: OrchestrationEventType.ActivityRequested,
+          payload: { activity: activityName('agent') },
+        },
+      ],
+    });
+  });
+
   it('rejects an empty operator retry command id', () => {
     const { definition, state } = blockedFailedFixture();
 
