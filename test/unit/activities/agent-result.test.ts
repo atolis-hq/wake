@@ -151,6 +151,8 @@ describe('agent template input', () => {
         expect(name).toBe('implement');
         expect(context).toEqual({
           workItemId: 'work-00000000000000000000000001',
+          isStart: true,
+          isResume: false,
           issueTitle: '',
           issueBody: '',
           comments: [],

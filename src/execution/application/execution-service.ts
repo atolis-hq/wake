@@ -90,7 +90,8 @@ async function attemptExecution(
     stage: activation.stage,
     ...(context.sessionPolicy === undefined ? {} : { policy: context.sessionPolicy }),
   };
-  const resumeSessionId = resumeSessionIdFor(resumeCandidates, runner.cli, resumeScope);
+  const resumedRun = resumeRunFor(resumeCandidates, runner.cli, resumeScope);
+  const resumeSessionId = resumedRun?.agent?.metadata.sessionId as string | undefined;
   const usageBaseline = usageBaselineFor(
     resumeCandidates,
     runner.cli,
@@ -149,6 +150,7 @@ async function attemptExecution(
     startedAt,
     runner,
     resumeSessionId,
+    resumedRun?.startedAt,
     usageBaseline,
     lease,
     reportRunnerStarted,
@@ -183,6 +185,7 @@ async function completeRun(
   startedAt: string,
   runner: ReturnType<typeof resolveRunner>,
   resumeSessionId: string | undefined,
+  resumeStartedAt: string | undefined,
   usageBaseline: ReturnType<typeof usageBaselineFor>,
   lease: WorkspaceLease | undefined,
   reportRunnerStarted: () => void,
@@ -199,6 +202,7 @@ async function completeRun(
       ...(runner.model === undefined ? {} : { runnerModel: runner.model }),
       ...(runner.effort === undefined ? {} : { runnerEffort: runner.effort }),
       ...(resumeSessionId === undefined ? {} : { resumeSessionId }),
+      ...(resumeStartedAt === undefined ? {} : { resumeStartedAt }),
       ...(usageBaseline === undefined ? {} : { usageBaseline }),
       ...(lease === undefined ? {} : { workspace: { path: lease.path, mode: lease.mode } }),
       reportRunnerStarted,
@@ -338,9 +342,20 @@ export function resumeSessionIdFor(
     readonly stage?: string | undefined;
   },
 ) {
+  return resumeRunFor(prior, cli, scope)?.agent?.metadata.sessionId as string | undefined;
+}
+
+function resumeRunFor(
+  prior: readonly RunView[],
+  cli: string | undefined,
+  scope?: {
+    readonly policy?: 'fresh' | 'resume-stage';
+    readonly workflowInstanceId: string;
+    readonly stage?: string | undefined;
+  },
+) {
   if (cli === undefined || scope?.policy === 'fresh') return undefined;
-  const eligible = resumeEligibleRuns(prior, scope);
-  return [...eligible]
+  return [...resumeEligibleRuns(prior, scope)]
     .filter((run) => isResumeTerminal(run.status))
     .sort(compareNewestTerminalRun)
     .find(
@@ -348,7 +363,7 @@ export function resumeSessionIdFor(
         run.runner?.cli === cli &&
         typeof run.agent?.metadata.sessionId === 'string' &&
         run.agent.metadata.sessionId.trim().length > 0,
-    )?.agent?.metadata.sessionId as string | undefined;
+    );
 }
 
 export function usageBaselineFor(

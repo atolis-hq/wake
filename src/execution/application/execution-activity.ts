@@ -45,6 +45,7 @@ export async function executeActivity(
     readonly runnerModel?: string;
     readonly runnerEffort?: string;
     readonly resumeSessionId?: string;
+    readonly resumeStartedAt?: string;
     readonly usageBaseline?: {
       readonly input: number;
       readonly output: number;
@@ -63,6 +64,7 @@ export async function executeActivity(
     occurredAt,
     runId: currentRunId,
     ...(request.resumeSessionId === undefined ? {} : { resumeSessionId: request.resumeSessionId }),
+    ...(request.resumeStartedAt === undefined ? {} : { resumeStartedAt: request.resumeStartedAt }),
     ...(request.usageBaseline === undefined ? {} : { usageBaseline: request.usageBaseline }),
     ...(request.reportRunnerStarted === undefined
       ? {}

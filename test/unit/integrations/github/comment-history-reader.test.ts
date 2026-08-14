@@ -120,6 +120,55 @@ it('includes feedback from every GitHub resource correlated to the work item', a
   ]);
 });
 
+it('returns only correlated comments observed after a resume boundary', async () => {
+  const world = new TestWorld();
+  const work = await world.createWork({ objective: 'resume from new feedback' });
+  for (const [number, suffix] of [
+    [7, '0'],
+    [8, '1'],
+  ] as const) {
+    const resource = await world.discoverResource({
+      resourceId: `resource-${'0'.repeat(25)}${suffix}` as never,
+      kind: resourceKind(number === 7 ? 'issue' : 'pull-request'),
+      externalKey: { adapter: GitHubAdapter, key: `atolis-hq/wake#${number}` },
+      capabilities: [resourceCapability('commentable')],
+    });
+    await world.resources.correlate(
+      resource.resourceId,
+      work.workItemId,
+      ResourceCorrelationRole.Primary,
+      {
+        commandId: `correlate-${number}`,
+        correlationId: correlationId(`resume-comment-${number}`),
+        occurredAt: world.clock.now().toISOString(),
+        actor: { kind: 'system', id: 'test' },
+      },
+    );
+  }
+  await appendIssueComment(world, {
+    issueNumber: 7,
+    id: 1,
+    body: 'already seen',
+    author: 'author',
+    updatedAt: '2026-08-08T00:00:00.000Z',
+  });
+  await appendIssueComment(world, {
+    issueNumber: 8,
+    id: 2,
+    body: 'new review feedback',
+    author: 'reviewer',
+    updatedAt: '2026-08-08T00:02:00.000Z',
+  });
+
+  await expect(
+    createCommentHistoryReader(world.journal, world.resources).forWorkItem(work.workItemId, {
+      observedSince: '2026-08-08T00:01:00.000Z',
+    }),
+  ).resolves.toEqual([
+    { author: 'reviewer', occurredAt: '2026-08-08T00:02:00.000Z', body: 'new review feedback' },
+  ]);
+});
+
 it('returns an empty list when there is no primary correlation', async () => {
   const world = new TestWorld();
   const work = await world.createWork({ objective: 'no resource yet' });
