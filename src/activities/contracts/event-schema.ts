@@ -17,6 +17,7 @@ import { ActivityOutcomeKind, ActivityResourceRole } from './vocabulary.js';
 type PullRequestEventName<Suffix extends string> = `pr.${Suffix}`;
 
 type ReviewEventName<Suffix extends string> = `review.${Suffix}`;
+
 type IssueEventName<Suffix extends string> = `issue.${Suffix}`;
 
 export interface ActivityEventTypes {
