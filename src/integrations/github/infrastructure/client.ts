@@ -1,5 +1,5 @@
 import { Octokit } from '@octokit/rest';
-import { MergeMethod } from '../../../activities/index.js';
+import { MergeMethod, PullRequestState } from '../../../activities/index.js';
 import { GitHubOutboundAction } from '../contracts/vocabulary.js';
 import {
   branch,
@@ -58,6 +58,11 @@ export function createGitHubClient(token: string) {
       listReviewComments(octokit, cache, owner, repo, pullNumber, pageSize),
     getIssueLabels: (owner: string, repo: string, issueNumber: number) =>
       getIssueLabels(octokit, cache, owner, repo, issueNumber),
+    getIssue: async (owner: string, repo: string, issueNumber: number) =>
+      octokit.rest.issues.get({ owner, repo, issue_number: issueNumber }).then(({ data }) => ({
+        id: String(data.id),
+        state: data.state,
+      })),
     setIssueLabels: async (
       owner: string,
       repo: string,
@@ -120,12 +125,13 @@ async function deliver(octokit: Octokit, command: GitHubDeliveryCommand): Promis
     return enableAutoMerge(octokit, command);
   }
   if (command.action === GitHubOutboundAction.Close) {
-    if (command.issue_number === undefined) throw new Error('GitHub issue completion requires an issue');
+    if (command.issue_number === undefined)
+      throw new Error('GitHub issue completion requires an issue');
     const response = await octokit.rest.issues.update({
       owner: command.owner,
       repo: command.repo,
       issue_number: command.issue_number,
-      state: 'closed',
+      state: PullRequestState.Closed,
     });
     return String(response.data.id);
   }

@@ -7,8 +7,6 @@ import {
 } from '../../../activities/index.js';
 import type { RunRepository } from '../../../execution/index.js';
 import {
-  createEventDraft,
-  EventSourceKind,
   UlidIdGenerator,
   type CheckpointStore,
   type EventJournal,
@@ -20,6 +18,7 @@ import {
   BuiltInResourceCapability,
   BuiltInResourceKind,
   ResourceCorrelationRole,
+  ResourceEventType,
   resourceId,
   resourceStream,
   type ResourceId,
@@ -291,8 +290,11 @@ export class InboundTranslator {
       if (
         events.some(
           (event) =>
-            event.eventType === 'integration.github.issue-completion-observation-consumed' &&
-            String(event.causationId) === String(intent.eventId),
+            event.eventType === ResourceEventType.IssueCompletionObservationConsumed &&
+            event.payload !== null &&
+            typeof event.payload === 'object' &&
+            'intentEventId' in event.payload &&
+            event.payload.intentEventId === intent.eventId,
         )
       )
         continue;
@@ -313,21 +315,7 @@ export class InboundTranslator {
     intentEventId: string,
     context: ReturnType<typeof commandContext>,
   ): Promise<void> {
-    const stream = resourceStream(resourceIdValue);
-    const events = await this.journal!.readStream(stream);
-    await this.journal!.append(stream, events.length, [
-      createEventDraft({
-        eventId: `${context.commandId}:issue-completion-observation-consumed`,
-        eventType: 'integration.github.issue-completion-observation-consumed',
-        occurredAt: context.occurredAt,
-        correlationId: context.correlationId,
-        causationId: intentEventId,
-        actor: context.actor,
-        source: { kind: EventSourceKind.Internal, id: this.adapter },
-        stream,
-        payload: { intentEventId },
-      }),
-    ]);
+    await this.resources!.consumeIssueCompletion(resourceIdValue, intentEventId, context);
   }
 
   private mintIdentity(externalKey: { readonly adapter: string; readonly key: string }) {

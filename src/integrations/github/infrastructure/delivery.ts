@@ -6,6 +6,7 @@ const GitHubDeliveryFailureCode = 'github-error';
 
 export function createGitHubDelivery(
   deliver: (intent: DeliveryIntentView, idempotencyKey: string) => Promise<string>,
+  reconcileIssue?: (intent: DeliveryIntentView) => Promise<string | null>,
 ): ExternalDeliveryAdapter {
   return {
     async deliver(intent) {
@@ -22,8 +23,15 @@ export function createGitHubDelivery(
         };
       }
     },
-    async reconcile() {
-      return { kind: DeliveryResultKind.Unknown };
+    async reconcile(intent) {
+      try {
+        const externalId = await reconcileIssue?.(intent);
+        return externalId === undefined || externalId === null
+          ? { kind: DeliveryResultKind.NotFound }
+          : { kind: DeliveryResultKind.Confirmed, externalId };
+      } catch {
+        return { kind: DeliveryResultKind.Unknown };
+      }
     },
   };
 }

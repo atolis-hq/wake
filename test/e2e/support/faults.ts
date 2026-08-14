@@ -131,8 +131,8 @@ export function faultInjectingDeliveryAdapter(
       faults.check('outbound.provider-acceptance.after');
       return result;
     },
-    async reconcile(reconciliationKey, signal) {
-      const result = await adapter.reconcile(reconciliationKey, signal);
+    async reconcile(intent, reconciliationKey, signal) {
+      const result = await adapter.reconcile(intent, reconciliationKey, signal);
       if (evidence !== undefined && 'externalId' in result)
         evidence.reconciledEffectIds.add(result.externalId);
       return result;

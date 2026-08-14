@@ -1,6 +1,11 @@
 import { z } from 'zod';
 
-import { createEventDraft, EventSourceKind, type EventJournal } from '../../kernel/index.js';
+import {
+  createEventDraft,
+  EventActorKind,
+  EventSourceKind,
+  type EventJournal,
+} from '../../kernel/index.js';
 import {
   BuiltInResourceCapability,
   BuiltInResourceKind,
@@ -54,7 +59,7 @@ export function createIssueCompleteActivity(
   resources: ResourceService,
 ): ActivityDefinition<
   typeof BuiltInActivityName.IssueComplete,
-  { readonly target: 'primary' },
+  { readonly target: typeof ActivityResourceRole.Primary },
   IssueCompleteOutcome
 > {
   return {
@@ -73,7 +78,7 @@ export function createIssueCompleteActivity(
 async function execute(
   journal: EventJournal,
   resources: ResourceService,
-  invocation: ActivityInvocation<{ readonly target: 'primary' }>,
+  invocation: ActivityInvocation<{ readonly target: typeof ActivityResourceRole.Primary }>,
   occurredAt: string,
 ): Promise<IssueCompleteOutcome> {
   const candidates = await Promise.all(
@@ -109,7 +114,7 @@ async function execute(
         occurredAt,
         correlationId: invocation.orchestrationGroupId,
         causationId: invocation.activationId,
-        actor: { kind: 'system', id: 'activities-issue' },
+        actor: { kind: EventActorKind.System, id: 'activities-issue' },
         source: { kind: EventSourceKind.Internal, id: 'activities-issue' },
         stream,
         payload: {

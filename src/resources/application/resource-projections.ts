@@ -37,6 +37,7 @@ export const resourceProjection: ProjectionDefinition<ResourceView | null> = {
             };
       case ResourceEventType.WorkCorrelationEstablished:
       case ResourceEventType.WorkCorrelationRetracted:
+      case ResourceEventType.IssueCompletionObservationConsumed:
         return previous;
       default:
         return assertNever(owned);
@@ -74,6 +75,7 @@ export const resourceCorrelationProjection: ProjectionDefinition<
       case ResourceEventType.ResourceDiscovered:
       case ResourceEventType.ResourceRevisionObserved:
       case ResourceEventType.WorkCorrelationConflicted:
+      case ResourceEventType.IssueCompletionObservationConsumed:
         return previous;
       default:
         return assertNever(owned);

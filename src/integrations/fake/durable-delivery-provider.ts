@@ -40,6 +40,7 @@ export class DurableFakeDeliveryProvider implements ExternalDeliveryAdapter {
   }
 
   async reconcile(
+    _intent: DeliveryIntentView,
     reconciliationKey: string,
   ): Promise<
     | { readonly kind: typeof DeliveryResultKind.Confirmed; readonly externalId: string }
